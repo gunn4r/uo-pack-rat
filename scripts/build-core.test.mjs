@@ -18,6 +18,14 @@ test("[fast] buildCore rebuilds only when the source is newer", () => {
   writeFileSync(src, "function f(x: number): number { return x; }\nexport { f };\n");
   buildCore({ src, out }); const first = statSync(out).mtimeMs;
   buildCore({ src, out }); assert.equal(statSync(out).mtimeMs, first, "untouched when up to date");
+  // Back-date the output well into the past before forcing the rebuild below. Windows' file-mtime
+  // write resolution is coarser than macOS/Linux (APFS/ext4 report sub-millisecond timestamps;
+  // NTFS writes through Node can land on the same ~tens-of-ms tick), so the initial build above and
+  // the rebuild's write can come back with an IDENTICAL mtimeMs there even though two real writes
+  // happened — a multi-second gap makes the "did it actually rewrite the file" check below
+  // resolution-independent on every platform, rather than racing the OS clock.
+  utimesSync(out, new Date(Date.now() - 60000), new Date(Date.now() - 60000));
+  const stale = statSync(out).mtimeMs;
   utimesSync(src, new Date(), new Date(Date.now() + 5000));
-  buildCore({ src, out }); assert.notEqual(statSync(out).mtimeMs, first, "rebuilt when source is newer");
+  buildCore({ src, out }); assert.notEqual(statSync(out).mtimeMs, stale, "rebuilt when source is newer");
 });
