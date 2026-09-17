@@ -1,0 +1,40 @@
+{
+  "$comment": "Pack Rat shard rules file schema v1. Draft-07 style, restricted to the keyword subset app/schema/validate.mjs supports. A rules file carries everything that is shard-specific rather than OSI-standard: property caps, the Resisting Spells resist-bonus formula, race-specific cap overrides, tag-penalty units, the rarity ladder (name + colour, in ascending order), the gargoyle race-lock policy and the free-skill list shown on character cards. app/rules.mjs validates every builtin and user rules file against this schema before it reaches setRules().",
+  "type": "object",
+  "additionalProperties": true,
+  "required": ["schemaVersion", "id", "name", "caps", "raceCaps", "resistSkillBonus", "tagUnits", "rarity", "raceLock", "freeSkills"],
+  "properties": {
+    "schemaVersion": { "type": "integer", "enum": [1] },
+    "id": { "type": "string", "minLength": 1, "pattern": "^[a-z0-9-]{1,40}$" },
+    "name": { "type": "string", "minLength": 1 },
+    "caps": { "type": "object" },
+    "raceCaps": { "type": "object" },
+    "resistSkillBonus": {
+      "type": "object",
+      "required": ["breakpoints"],
+      "properties": {
+        "breakpoints": { "type": "array" }
+      }
+    },
+    "tagUnits": { "type": "object" },
+    "rarity": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["name", "colour"],
+        "properties": {
+          "name": { "type": "string", "minLength": 1 },
+          "colour": { "type": "string", "minLength": 1 }
+        }
+      }
+    },
+    "raceLock": {
+      "type": "object",
+      "required": ["gargoyleOnly"],
+      "properties": {
+        "gargoyleOnly": { "type": "boolean" }
+      }
+    },
+    "freeSkills": { "type": "array", "items": { "type": "string" } }
+  }
+}

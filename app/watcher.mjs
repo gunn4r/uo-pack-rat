@@ -1,0 +1,246 @@
+// watcher.mjs — inbox ingestion: adapters drop scan files into <data>/inbox/<adapter>/ (temp-then-
+// rename, per adapter contract) instead of writing straight into <data>/scans/. This file turns an
+// inbox file into a normalised, schema-valid v2 scan under <data>/scans/, and watches an inbox
+// directory for new drops (plus a startup sweep for files that landed while the app was closed).
+//
+// acceptedName(doc, existingNames) — the scans/ filename for a v2 doc: <slug>-<stamp>.json, slug =
+// character with anything outside [A-Za-z0-9_-] turned to "_", stamp = scannedAt with ":" removed
+// and "-" removed from the date/time (kept only as the offset's sign, if any; "Z" stays "Z");
+// collisions against existingNames get "-2", "-3", ... appended before ".json".
+//
+// ingestFile({path, scansDir, shard, log}) — read + JSON.parse the inbox file, upgradeScan it,
+// validateScan it, write the result into scansDir under its acceptedName (temp-then-rename), then
+// unlink the inbox file. Returns {ok:true, file, character, scannedAt, warning?, duplicate?} or
+// {ok:false, reason}; never throws (a parse/upgrade/validate failure, or an I/O failure during the
+// write step itself, is reported through the reason instead — so a caller retry/reject loop always
+// sees a normal result). Idempotent: if scansDir already holds a file under this doc's accepted name
+// (with or without a collision suffix) whose own character+scannedAt match, the doc is already
+// ingested — the write is skipped, only the inbox cleanup is (re)attempted, and the result carries
+// duplicate:true so a caller doesn't treat it as a fresh accept. This is what makes a file that gets
+// stuck in the inbox (its unlink failed once — see below) safe to re-see later, including after a
+// real process restart, since this check reads scansDir itself rather than relying on anything kept
+// in memory. Otherwise the accept/reject contract is decided by the write into scansDir alone: once
+// that rename succeeds the file IS ingested, so a failure to then remove the now-redundant inbox copy
+// (the final unlink) is reported as ok:true with a `warning` string instead of ok:false — retrying a
+// successful ingest as a whole would write a second accepted copy of the same doc under a
+// collision-avoided name, which is exactly what the idempotency check above prevents on the next call.
+//
+// startWatcher({inboxDir, adapter, scansDir, getShard, log, onAccepted, onRejected, debounceMs,
+// retries, retryDelayMs, watch}) — creates inboxDir, watches it (non-recursive) for *.json changes
+// (debounced per filename), and runs scanOnce() once immediately so files dropped while the app was
+// closed are picked up. getShard() is called fresh right before each ingestFile() call (not once at
+// startup) so a shard switch via /api/settings takes effect on the very next file, not just after a
+// restart. A file that keeps failing ingestFile after `retries` attempts (retryDelayMs apart — a
+// half-written temp-then-rename can look invalid for a moment, and a transient write failure such as
+// a full disk counts as a failed attempt the same way) is moved to inboxDir/rejected/<name> with a
+// <name>.reason.txt beside it. A duplicate result (see ingestFile above) never calls onAccepted, since
+// nothing new was ingested. Every file (from an event or from scanOnce) is processed through one
+// promise chain, so two files' ingestion never interleaves; every await is guarded by a `closed` flag
+// so a close() mid-retry cuts the chain short instead of running past it.
+import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync, renameSync, unlinkSync, watch as fsWatch } from "node:fs";
+import { join } from "node:path";
+import { upgradeScan, validateScan } from "./scan-schema.mjs";
+
+const SCANNED_AT_RE = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.\d+)?([+-]\d{2}:\d{2}|Z)$/;
+
+function stampFor(scannedAt) {
+  const m = SCANNED_AT_RE.exec(String(scannedAt));
+  if (!m) throw new TypeError(`acceptedName: not an RFC 3339 scannedAt: ${scannedAt}`);
+  const [, y, mo, d, h, mi, s, off] = m;
+  return `${y}${mo}${d}T${h}${mi}${s}${off === "Z" ? "Z" : off.replace(":", "")}`;
+}
+
+export function acceptedName(doc, existingNames = new Set()) {
+  const slug = String(doc.character ?? "").replace(/[^A-Za-z0-9_-]/g, "_");
+  const stamp = stampFor(doc.scannedAt);
+  const base = `${slug}-${stamp}`;
+  let name = `${base}.json`;
+  for (let n = 2; existingNames.has(name); n++) name = `${base}-${n}.json`;
+  return name;
+}
+
+const escapeRegExp = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
+// A file already in scansDir under this doc's accepted base name (with or without a "-2"/"-3"...
+// collision suffix) whose own character+scannedAt match doc's is the SAME scan already ingested —
+// makes ingestFile idempotent against a stuck/duplicated inbox file. Reads scansDir directly (no
+// in-memory state), so this holds across a process restart too. Returns the matching filename or null.
+function findExistingAccepted(scansDir, doc) {
+  let names;
+  try { names = readdirSync(scansDir).filter((f) => f.endsWith(".json")); }
+  catch { return null; }
+  const base = acceptedName(doc, new Set()).slice(0, -".json".length);
+  const re = new RegExp(`^${escapeRegExp(base)}(?:-\\d+)?\\.json$`);
+  for (const name of names) {
+    if (!re.test(name)) continue;
+    let existingDoc;
+    try { existingDoc = JSON.parse(readFileSync(join(scansDir, name), "utf8")); }
+    catch { continue; }   // unreadable/corrupt existing file — not a usable match
+    if (existingDoc.character === doc.character && existingDoc.scannedAt === doc.scannedAt) return name;
+  }
+  return null;
+}
+
+export function ingestFile({ path, scansDir, shard, log = () => {} }) {
+  let raw;
+  try {
+    raw = JSON.parse(readFileSync(path, "utf8"));
+  } catch (e) {
+    return { ok: false, reason: `invalid JSON: ${e.message}` };
+  }
+  let doc;
+  try {
+    doc = upgradeScan(raw, { shard });
+  } catch (e) {
+    return { ok: false, reason: e.message };
+  }
+  const { ok, errors } = validateScan(doc);
+  if (!ok) return { ok: false, reason: `${errors[0].path} ${errors[0].msg}` };
+
+  const existingAccepted = findExistingAccepted(scansDir, doc);
+  if (existingAccepted) {
+    let warning;
+    try { unlinkSync(path); }
+    catch (e) { warning = `duplicate of ${existingAccepted} but could not remove it from the inbox: ${e.message}`; }
+    log(warning ?? `duplicate of ${existingAccepted}, removed from inbox`);
+    return { ok: true, file: existingAccepted, character: doc.character, scannedAt: doc.scannedAt, duplicate: true, ...(warning ? { warning } : {}) };
+  }
+
+  let file, tmp;
+  try {
+    mkdirSync(scansDir, { recursive: true });
+    let existing;
+    try { existing = new Set(readdirSync(scansDir).filter((f) => f.endsWith(".json"))); }
+    catch { existing = new Set(); }
+    file = acceptedName(doc, existing);
+    const dest = join(scansDir, file);
+    tmp = `${dest}.tmp`;
+    writeFileSync(tmp, JSON.stringify(doc));
+    renameSync(tmp, dest);
+  } catch (e) {
+    // Any of the writes above can throw (disk full, permissions, scansDir yanked out from under us).
+    // Report it as an ordinary ok:false so the caller's retry/reject contract still applies to it —
+    // an uncaught throw here would otherwise escape processFile's retry loop entirely and orphan the
+    // file with no further watch event to retrigger it.
+    if (tmp) { try { unlinkSync(tmp); } catch { /* tmp was never written, or already gone */ } }
+    return { ok: false, reason: `write failed: ${e.message}` };
+  }
+
+  // The doc is already safely in scansDir under `file` at this point — ingestion has succeeded.
+  // Removing the now-redundant inbox copy is best-effort cleanup, not part of the accept/reject
+  // contract: if this unlink is reported as a failure the caller would retry the whole ingestFile,
+  // re-reading the same inbox file and writing a SECOND accepted copy under a collision-avoided name
+  // — one drop becoming two scans. So a failed unlink is a warning alongside ok:true, never a reason
+  // to retry or quarantine.
+  let warning;
+  try {
+    unlinkSync(path);
+  } catch (e) {
+    warning = `accepted ${file} but could not remove it from the inbox: ${e.message}`;
+  }
+  log(warning ?? `accepted ${path} -> ${file}`);
+  return { ok: true, file, character: doc.character, scannedAt: doc.scannedAt, ...(warning ? { warning } : {}) };
+}
+
+const delayFactory = (pending) => (ms) => new Promise((resolve) => {
+  const entry = { timer: null, resolve };
+  entry.timer = setTimeout(() => { pending.delete(entry); resolve(); }, ms);
+  pending.add(entry);
+});
+
+export function startWatcher({
+  inboxDir, adapter, scansDir, getShard = () => undefined,
+  log = () => {}, onAccepted = () => {}, onRejected = () => {},
+  debounceMs = 300, retries = 3, retryDelayMs = 700, watch = fsWatch,
+} = {}) {
+  mkdirSync(inboxDir, { recursive: true });
+  let closed = false;
+  const debounceTimers = new Map();   // filename -> setTimeout id, reset on a second event
+  const pendingDelays = new Set();    // in-flight retry waits, resolved early by close()
+  const delay = delayFactory(pendingDelays);
+  let chain = Promise.resolve();
+
+  function rejectFile(name, reason) {
+    const rejectedDir = join(inboxDir, "rejected");
+    const src = join(inboxDir, name);
+    try {
+      if (!existsSync(src)) { log(`rejected ${name} (already gone): ${reason}`); onRejected({ file: name, reason }); return; }
+      mkdirSync(rejectedDir, { recursive: true });
+      const dest = join(rejectedDir, name);
+      renameSync(src, dest);
+      writeFileSync(`${dest}.reason.txt`, `${reason}\n`);
+    } catch (e) {
+      reason = `${reason} (also failed to move to rejected/: ${e.message})`;
+    }
+    log(`rejected ${name}: ${reason}`);
+    onRejected({ file: name, reason });
+  }
+
+  async function processFile(name) {
+    for (let attempt = 1; attempt <= retries; attempt++) {
+      if (closed) return;
+      const path = join(inboxDir, name);
+      if (!existsSync(path)) return;   // renamed/removed out from under us — ignored, not rejected
+
+      const result = ingestFile({ path, scansDir, shard: getShard(), log });
+      if (result.ok) {
+        // A duplicate (ingestFile found this doc already in scansDir — a stuck inbox file re-seen by
+        // scanOnce, possibly after a restart) means nothing NEW was ingested, so onAccepted must not
+        // fire again for it.
+        if (!result.duplicate) onAccepted({ file: result.file, character: result.character, scannedAt: result.scannedAt });
+        return;
+      }
+      if (attempt === retries) { rejectFile(name, result.reason); return; }
+      await delay(retryDelayMs);
+    }
+  }
+
+  function enqueue(name) {
+    chain = chain.then(() => (closed ? undefined : processFile(name)))
+      // This catch is the last line of defense for `chain` — if it throws, `chain` stays rejected
+      // with no handler, which is an unhandled-rejection crash for the whole process. `log` is
+      // supposed to be best-effort (the caller's job — app/vault-server.mjs wraps its own appendFileSync
+      // in a try/catch for exactly this), but defend against a caller that doesn't hold up its end too
+      // (post-review fix, Important 1).
+      .catch((e) => { try { log(`watcher error on ${name}: ${e && e.message}`); } catch { /* log itself must never re-throw here */ } });
+  }
+
+  function scanOnce() {
+    if (closed) return;
+    let names;
+    try { names = readdirSync(inboxDir).filter((f) => f.endsWith(".json")); }
+    catch (e) { log(`watcher scanOnce error: ${e.message}`); return; }
+    for (const name of names) enqueue(name);
+  }
+
+  function onWatchEvent(_eventType, filename) {
+    try {
+      if (closed || !filename) return;
+      const name = String(filename).replaceAll("\\", "/");
+      if (name.includes("/rejected/") || name.startsWith("rejected/")) return;
+      if (!name.endsWith(".json")) return;
+      const existingTimer = debounceTimers.get(name);
+      if (existingTimer) clearTimeout(existingTimer);
+      const t = setTimeout(() => { debounceTimers.delete(name); enqueue(name); }, debounceMs);
+      debounceTimers.set(name, t);
+    } catch (e) {
+      log(`watcher event error: ${e && e.message}`);
+    }
+  }
+
+  const watcher = watch(inboxDir, onWatchEvent);
+  log(`watching ${inboxDir} (adapter ${adapter})`);
+  scanOnce();   // pick up files that landed while the app was closed
+
+  return {
+    scanOnce,
+    close() {
+      closed = true;
+      for (const t of debounceTimers.values()) clearTimeout(t);
+      debounceTimers.clear();
+      for (const entry of pendingDelays) { clearTimeout(entry.timer); entry.resolve(); }
+      pendingDelays.clear();
+      try { watcher.close(); } catch { /* already closed */ }
+    },
+  };
+}

@@ -1,0 +1,57 @@
+name: Bug report
+description: Something in Pack Rat isn't working right.
+labels: ["bug"]
+body:
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened
+      description: What did you see go wrong?
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: What you expected
+      description: What should have happened instead?
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: The exact steps that trigger it, in order.
+      placeholder: |
+        1.
+        2.
+        3.
+    validations:
+      required: true
+  - type: input
+    id: os
+    attributes:
+      label: Your OS
+      description: e.g. macOS 15.1, Windows 11, Ubuntu 24.04
+    validations:
+      required: true
+  - type: input
+    id: app-version
+    attributes:
+      label: App version
+      description: Settings tab, or the installer file name you downloaded.
+    validations:
+      required: true
+  - type: input
+    id: game-client
+    attributes:
+      label: Game client
+      description: Which client and version (e.g. TazUO, and its version if you know it).
+    validations:
+      required: true
+  - type: checkboxes
+    id: no-personal-data
+    attributes:
+      label: Before submitting
+      options:
+        - label: I have not pasted a scan file, log, or screenshot containing my character names, account details, or other personal data into this report.
+          required: true

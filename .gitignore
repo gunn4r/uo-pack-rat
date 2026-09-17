@@ -1,0 +1,10 @@
+local/
+node_modules/
+test_logs/
+app/data/profiles.json
+app/data/runs/
+app/data/profiles.backup-*
+app/bench/results/
+.DS_Store
+.superpowers/
+dist/

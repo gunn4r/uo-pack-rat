@@ -1,0 +1,48 @@
+{
+  "$comment": "Pack Rat bridge protocol v1. Draft-07 style, restricted to the keyword subset app/schema/validate.mjs supports (no $ref/oneOf), so this file holds three independent schemas — command, result and status — each validated separately (app/contracts.test.mjs does one validate() call per shape). command = one line of <dataDir>/bridge/tazuo/queue.jsonl, written by POST /api/bridge (app/vault-server.mjs) and read by adapters/tazuo/packrat-bridge.py. result = one entry of status.results, keyed by the command's id. status = <dataDir>/bridge/tazuo/status.json, written by packrat-bridge.py (alive is always rfc3339_now(); a clean stop adds stopped:true, never the old numeric 0) and read by GET /api/bridge/status.",
+  "command": {
+    "type": "object",
+    "additionalProperties": false,
+    "required": ["id", "action", "serial", "name", "chain", "pos", "queuedAt"],
+    "properties": {
+      "id": { "type": "string", "minLength": 1 },
+      "action": { "type": "string", "enum": ["highlight", "grab", "goto"] },
+      "serial": { "type": "integer" },
+      "name": { "type": "string" },
+      "chain": { "type": "array", "items": { "type": "integer" } },
+      "pos": { "type": ["object", "null"] },
+      "queuedAt": { "type": "string" }
+    }
+  },
+  "result": {
+    "type": "object",
+    "additionalProperties": false,
+    "required": ["ok", "msg", "t"],
+    "properties": {
+      "ok": { "type": "boolean" },
+      "msg": { "type": "string" },
+      "t": { "type": "string", "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d+)?([+-]\\d{2}:\\d{2}|Z)$" }
+    }
+  },
+  "status": {
+    "type": "object",
+    "additionalProperties": false,
+    "required": ["alive", "character", "current", "results", "counts"],
+    "properties": {
+      "alive": { "type": "string", "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d+)?([+-]\\d{2}:\\d{2}|Z)$" },
+      "character": { "type": "string" },
+      "current": { "type": ["object", "null"] },
+      "results": { "type": "object" },
+      "counts": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["done", "failed"],
+        "properties": {
+          "done": { "type": "integer" },
+          "failed": { "type": "integer" }
+        }
+      },
+      "stopped": { "type": "boolean" }
+    }
+  }
+}

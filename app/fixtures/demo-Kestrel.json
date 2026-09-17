@@ -1,0 +1,2198 @@
+{
+ "version": 1,
+ "character": "Kestrel",
+ "scannedAt": "2026-01-01T12:00:00",
+ "stats": {
+  "str": 70,
+  "dex": 100,
+  "int": 40
+ },
+ "skills": {},
+ "maxes": {
+  "hits": 100,
+  "stam": 100,
+  "mana": 100
+ },
+ "resists": {
+  "phys": 0,
+  "fire": 0,
+  "cold": 0,
+  "poison": 0,
+  "energy": 0
+ },
+ "position": {
+  "x": 1,
+  "y": 1
+ },
+ "equipped": [
+  {
+   "serial": 1879769093,
+   "name": "Heater Shield",
+   "graphic": 7030,
+   "hue": 0,
+   "amount": 1,
+   "tooltip": [
+    "Heater Shield",
+    "Prized",
+    "Weight: 8 Stones",
+    "Fire Eater 10%",
+    "Mana Increase 5",
+    "Stamina Regeneration 4",
+    "Swing Speed Increase 31%",
+    "Damage Increase 67%",
+    "Physical Resist 1%",
+    "Energy Resist 1%",
+    "Strength Requirement 40",
+    "Durability 55 / 55",
+    "Lesser Artifact"
+   ]
+  },
+  {
+   "serial": 1879769094,
+   "name": "War Axe",
+   "graphic": 5040,
+   "hue": 0,
+   "amount": 1,
+   "tooltip": [
+    "War Axe",
+    "Antique",
+    "Weight: 8 Stones",
+    "Hit Fireball 36%",
+    "Hit Physical Area 44%",
+    "Strength Bonus 4",
+    "Defense Chance Increase 11%",
+    "Lower Mana Cost 2%",
+    "Swing Speed Increase 35%",
+    "Physical Damage 100%",
+    "Weapon Damage 12 - 16",
+    "Weapon Speed 3s",
+    "Strength Requirement 35",
+    "One-handed Weapon",
+    "Skill Required: Mace Fighting",
+    "Durability 255 / 255",
+    "Lesser Artifact"
+   ]
+  },
+  {
+   "serial": 1879769095,
+   "name": "Ring",
+   "graphic": 4234,
+   "hue": 0,
+   "amount": 1,
+   "tooltip": [
+    "Ring",
+    "Prized",
+    "Weight: 1 Stone",
+    "Fencing +14",
+    "Animal Lore +8",
+    "Night Sight",
+    "Luck 113",
+    "Enhance Potions 23%",
+    "Lower Reagent Cost 1%",
+    "Strength Bonus 4",
+    "Durability 255 / 255",
+    "Major Magic Item"
+   ]
+  },
+  {
+   "serial": 1879769100,
+   "name": "Armor Of Initiation",
+   "graphic": 5067,
+   "hue": 2500,
+   "amount": 1,
+   "tooltip": [
+    "Armor Of Initiation",
+    "Brittle",
+    "Blessed",
+    "Weight: 4 Stones",
+    "Part Of An Armor Set (6 Pieces)",
+    "Physical Resist 9%",
+    "Fire Resist 3%",
+    "Cold Resist 2%",
+    "Poison Resist 6%",
+    "Energy Resist 4%",
+    "Strength Requirement 20",
+    "Durability 150 / 150",
+    "Only When Full Set Is Present:",
+    "Physical Resist +2%",
+    "Fire Resist +4%",
+    "Cold Resist +4%",
+    "Poison Resist +3%",
+    "Energy Resist +5%"
+   ]
+  },
+  {
+   "serial": 1879769109,
+   "name": "Leather Gorget Of Sorcery",
+   "graphic": 5063,
+   "hue": 2627,
+   "amount": 1,
+   "tooltip": [
+    "Leather Gorget Of Sorcery",
+    "Cursed",
+    "Weight: 1 Stone",
+    "Mana Increase 10",
+    "Defense Chance Increase 4%",
+    "Lower Mana Cost 8%",
+    "Lower Reagent Cost 22%",
+    "Physical Resist 2%",
+    "Fire Resist 29%",
+    "Cold Resist 3%",
+    "Poison Resist 3%",
+    "Energy Resist 4%",
+    "Strength Requirement 20",
+    "Stamina Regeneration 4",
+    "Durability 32 / 33",
+    "Greater Artifact"
+   ]
+  },
+  {
+   "serial": 1879769112,
+   "name": "Mighty Chainmail Leggings",
+   "graphic": 5054,
+   "hue": 2587,
+   "amount": 1,
+   "tooltip": [
+    "Mighty Chainmail Leggings",
+    "Weight: 7 Stones",
+    "Durability +50%",
+    "Fire Eater 9%",
+    "Casting Focus 3%",
+    "Strength Bonus 3",
+    "Hit Point Increase 5",
+    "Defense Chance Increase 6%",
+    "Physical Resist 2%",
+    "Fire Resist 7%",
+    "Cold Resist 4%",
+    "Poison Resist 3%",
+    "Energy Resist 10%",
+    "Lower Requirements 80%",
+    "Strength Requirement 12",
+    "Durability 74 / 78",
+    "Greater Artifact"
+   ]
+  },
+  {
+   "serial": 1879769114,
+   "name": "Bracelet",
+   "graphic": 7942,
+   "hue": 0,
+   "amount": 1,
+   "tooltip": [
+    "Bracelet",
+    "Weight: 1 Stone",
+    "Intelligence Bonus 9",
+    "Faster Cast Recovery 3",
+    "Faster Casting 1",
+    "Fire Resist 11%",
+    "Durability 255 / 255",
+    "Major Magic Item"
+   ]
+  },
+  {
+   "serial": 1879769116,
+   "name": "Studded Gloves",
+   "graphic": 5077,
+   "hue": 2596,
+   "amount": 1,
+   "tooltip": [
+    "Studded Gloves",
+    "Brittle",
+    "Weight: 1 Stone",
+    "Fire Eater 11%",
+    "Intelligence Bonus 4",
+    "Luck 132",
+    "Enhance Potions 5%",
+    "Physical Resist 4%",
+    "Fire Resist 5%",
+    "Cold Resist 3%",
+    "Poison Resist 32%",
+    "Energy Resist 10%",
+    "Strength Requirement 25",
+    "Durability 255 / 255",
+    "Greater Artifact"
+   ]
+  }
+ ],
+ "roots": [
+  {
+   "serial": 1879769088,
+   "kind": "ground",
+   "name": "Metal Chest"
+  }
+ ],
+ "containers": {
+  "1879769088": {
+   "serial": 1879769088,
+   "name": "Metal Chest",
+   "kind": "ground",
+   "root": 1879769088,
+   "parent": null,
+   "pos": {
+    "x": 1000,
+    "y": 1000,
+    "z": 0
+   },
+   "tooltip": [
+    "Metal Chest",
+    "Weight: 10 Stones",
+    "Contents: 120/125 Items, 100 Stones"
+   ]
+  }
+ },
+ "items": [
+  {
+   "serial": 1879769089,
+   "name": "Runebook",
+   "amount": 1,
+   "tooltip": [
+    "Runebook",
+    "Blessed",
+    "Exceptional",
+    "Crafted By Nobody",
+    "Default: New Haven City"
+   ],
+   "container": 1879769088
+  },
+  {
+   "serial": 1879769090,
+   "name": "Lesser Cure Potion",
+   "graphic": 3847,
+   "hue": 0,
+   "amount": 15,
+   "tooltip": [
+    "15 Lesser Cure Potion",
+    "Weight: 11 Stones"
+   ],
+   "container": 1879769088
+  },
+  {
+   "serial": 1879769091,
+   "name": "Gold Coin",
+   "graphic": 3821,
+   "hue": 0,
+   "amount": 464,
+   "tooltip": [
+    "464 Gold Coin",
+    "Weight: 3 Stones"
+   ],
+   "container": 1879769088
+  },
+  {
+   "serial": 1879769092,
+   "name": "Drum",
+   "graphic": 3740,
+   "hue": 0,
+   "amount": 1,
+   "tooltip": [
+    "Drum",
+    "Uses Remaining: 447",
+    "Weight: 4 Stones",
+    "Blood Elemental Slayer"
+   ],
+   "container": 1879769088
+  },
+  {
+   "serial": 1879769096,
+   "name": "Summon Creature",
+   "graphic": 8020,
+   "hue": 0,
+   "amount": 2,
+   "tooltip": [
+    "2 Summon Creature",
+    "Weight: 2 Stones"
+   ],
+   "container": 1879769088
+  },
+  {
+   "serial": 1879769097,
+   "name": "A Tattered Treasure Map Leading To A Warrior's Supply",
+   "graphic": 5356,
+   "hue": 0,
+   "amount": 1,
+   "tooltip": [
+    "A Tattered Treasure Map Leading To A Warrior's Supply",
+    "Weight: 1 Stone",
+    "For Somewhere In Felucca"
+   ],
+   "container": 1879769088
+  },
+  {
+   "serial": 1879769098,
+   "name": "Smith's Hammer",
+   "graphic": 5091,
+   "hue": 1269,
+   "amount": 1,
+   "tooltip": [
+    "Smith's Hammer",
+    "Uses Remaining: 59",
+    "Weight: 8 Stones",
+    "Hit Poison Area 50%",
+    "Hit Life Leech 24%",
+    "Reflect Physical Damage 9%",
+    "Physical Damage 30%",
+    "Poison Damage 70%",
+    "Weapon Damage 13 - 17",
+    "Weapon Speed 3.25s",
+    "Strength Requirement 5",
+    "One-handed Weapon",
+    "Skill Required: Mace Fighting",
+    "Strength Bonus 5",
+    "Durability 31 / 31",
+    "Minor Magic Item"
+   ],
+   "container": 1879769088
+  },
+  {
+   "serial": 1879769099,
+   "name": "Magic Arrow",
+   "graphic": 7986,
+   "hue": 0,
+   "amount": 1,
+   "tooltip": [
+    "Magic Arrow",
+    "Weight: 1 Stone"
+   ],
+   "container": 1879769088
+  },
+  {
+   "serial": 1879769101,
+   "name": "A Tattered Treasure Map Leading To An Artisan's Cache",
+   "graphic": 5356,
+   "hue": 0,
+   "amount": 1,
+   "tooltip": [
+    "A Tattered Treasure Map Leading To An Artisan's Cache",
+    "Weight: 1 Stone",
+    "For Somewhere In Felucca"
+   ],
+   "container": 1879769088
+  },
+  {
+   "serial": 1879769102,
+   "name": "Mind Blast",
+   "graphic": 8017,
+   "hue": 0,
+   "amount": 1,
+   "tooltip": [
+    "Mind Blast",
+    "Weight: 1 Stone"
+   ],
+   "container": 1879769088
+  },
+  {
+   "serial": 1879769103,
+   "name": "Vicious Crescent Blade",
+   "graphic": 9921,
+   "hue": 0,
+   "amount": 1,
+   "tooltip": [
+    "Vicious Crescent Blade",
+    "Weight: 1 Stone",
+    "Hit Poison Area 30%",
+    "Battle Lust",
+    "Hit Chance Increase 26%",
+    "Damage Increase 30%",
+    "Physical Damage 100%",
+    "Weapon Damage 12 - 15",
+    "Weapon Speed 2.5s",
+    "Strength Requirement 55",
+    "Two-handed Weapon",
+    "Skill Required: Swordsmanship",
+    "Hit Life Leech 57%",
+    "Durability 80 / 80",
+    "Greater Magic Item"
+   ],
+   "container": 1879769088
+  },
+  {
+   "serial": 1879769104,
+   "name": "Robe",
+   "graphic": 7939,
+   "hue": 1,
+   "amount": 1,
+   "tooltip": [
+    "Robe",
+    "Weight: 3 Stones",
+    "Strength Requirement 10"
+   ],
+   "container": 1879769088
+  },
+  {
+   "serial": 1879769105,
+   "name": "Scroll Of Transcendence",
+   "graphic": 5359,
+   "hue": 1168,
+   "amount": 1,
+   "tooltip": [
+    "Scroll Of Transcendence",
+    "Cursed",
+    "Weight: 1 Stone",
+    "Skill: Resisting Spells 0.5 Skill Points"
+   ],
+   "container": 1879769088
+  },
+  {
+   "serial": 1879769106,
+   "name": "Armor Of Initiation",
+   "graphic": 5069,
+   "hue": 2512,
+   "amount": 1,
+   "tooltip": [
+    "Armor Of Initiation",
+    "Blessed",
+    "Weight: 2 Stones",
+    "Part Of An Armor Set (6 Pieces)",
+    "Physical Resist 4%",
+    "Fire Resist 4%",
+    "Cold Resist 3%",
+    "Poison Resist 5%",
+    "Energy Resist 4%",
+    "Strength Requirement 20",
+    "Durability 132 / 150",
+    "Only When Full Set Is Present:",
+    "Physical Resist +2%",
+    "Fire Resist +6%",
+    "Cold Resist +5%",
+    "Energy Resist +5%"
+   ],
+   "container": 1879769088
+  },
+  {
+   "serial": 1879769107,
+   "name": "Scroll Of Transcendence",
+   "graphic": 5359,
+   "hue": 1168,
+   "amount": 1,
+   "tooltip": [
+    "Scroll Of Transcendence",
+    "Cursed",
+    "Weight: 1 Stone",
+    "Skill: Chivalry 0.6 Skill Points"
+   ],
+   "container": 1879769088
+  },
+  {
+   "serial": 1879769108,
+   "name": "Scroll Of Transcendence",
+   "graphic": 5359,
+   "hue": 1168,
+   "amount": 1,
+   "tooltip": [
+    "Scroll Of Transcendence",
+    "Cursed",
+    "Weight: 1 Stone",
+    "Skill: Animal Lore 0.1 Skill Points"
+   ],
+   "container": 1879769088
+  },
+  {
+   "serial": 1879769110,
+   "name": "Platemail Arms",
+   "graphic": 5136,
+   "hue": 0,
+   "amount": 1,
+   "tooltip": [
+    "Platemail Arms",
+    "Weight: 50 Stones",
+    "Poison Eater 8%",
+    "Strength Bonus 3",
+    "Mana Regeneration 2",
+    "Luck 94",
+    "Physical Resist 5%",
+    "Fire Resist 17%",
+    "Poison Resist 2%",
+    "Energy Resist 3%",
+    "Lower Requirements 80%",
+    "Strength Requirement 16",
+    "Durability 53 / 53",
+    "Major Magic Item"
+   ],
+   "container": 1879769088
+  },
+  {
+   "serial": 1879769111,
+   "name": "Strength Potion",
+   "graphic": 3849,
+   "hue": 0,
+   "amount": 4,
+   "tooltip": [
+    "4 Strength Potion",
+    "Weight: 3 Stones"
+   ],
+   "container": 1879769088
+  },
+  {
+   "serial": 1879769113,
+   "name": "Sulfurous Ash",
+   "graphic": 3980,
+   "hue": 0,
+   "amount": 29,
+   "tooltip": [
+    "29 Sulfurous Ash",
+    "Weight: 5 Stones"
+   ],
+   "container": 1879769088
+  },
+  {
+   "serial": 1879769115,
+   "name": "Arcane Ring",
+   "graphic": 4234,
+   "hue": 0,
+   "amount": 1,
+   "tooltip": [
+    "Arcane Ring",
+    "Weight: 1 Stone",
+    "Mana Regeneration 3",
+    "Luck 44",
+    "Lower Mana Cost 12%",
+    "Lower Reagent Cost 26%",
+    "Stamina Increase 3",
+    "Durability 255 / 255",
+    "Greater Magic Item"
+   ],
+   "container": 1879769088
+  },
+  {
+   "serial": 1879769117,
+   "name": "Mana Drain",
+   "graphic": 8011,
+   "hue": 0,
+   "amount": 2,
+   "tooltip": [
+    "2 Mana Drain",
+    "Weight: 2 Stones"
+   ],
+   "container": 1879769088
+  },
+  {
+   "serial": 1879769118,
+   "name": "Spellbook",
+   "amount": 1,
+   "tooltip": [
+    "Spellbook",
+    "Mana Increase 6",
+    "Blessed",
+    "64 Spells"
+   ],
+   "container": 1879769088
+  },
+  {
+   "serial": 1879769119,
+   "name": "Arcane Ringmail Leggings",
+   "graphic": 5104,
+   "hue": 0,
+   "amount": 1,
+   "tooltip": [
+    "Arcane Ringmail Leggings",
+    "Weight: 15 Stones",
+    "Casting Focus 2%",
+    "Dexterity Bonus 4",
+    "Intelligence Bonus 5",
+    "Hit Point Increase 4",
+    "Mana Increase 11",
+    "Hit Chance Increase 4%",
+    "Physical Resist 8%",
+    "Fire Resist 22%",
+    "Cold Resist 1%",
+    "Poison Resist 6%",
+    "Energy Resist 3%",
+    "Strength Requirement 40",
+    "Durability 49 / 49",
+    "Major Magic Item"
+   ],
+   "container": 1879769088
+  },
+  {
+   "serial": 1879769120,
+   "name": "Longsword",
+   "graphic": 3937,
+   "hue": 0,
+   "amount": 1,
+   "tooltip": [
+    "Longsword",
+    "Cursed",
+    "Weight: 7 Stones",
+    "Splintering Weapon 20%",
+    "Hit Energy Area 44%",
+    "Hit Life Leech 51%",
+    "Intelligence Bonus 5",
+    "Hit Point Regeneration 11",
+    "Faster Casting 1",
+    "Swing Speed Increase 21%",
+    "Damage Increase 58%",
+    "Energy Resist 10%",
+    "Physical Damage 100%",
+    "Weapon Damage 14 - 18",
+    "Weapon Speed 3.5s",
+    "Strength Requirement 0",
+    "One-handed Weapon",
+    "Skill Required: Swordsmanship",
+    "Durability 0 / 39",
+    "Major Artifact"
+   ],
+   "container": 1879769088
+  },
+  {
+   "serial": 1879769121,
+   "name": "Ring",
+   "graphic": 4234,
+   "hue": 0,
+   "amount": 1,
+   "tooltip": [
+    "Ring",
+    "Cursed",
+    "Weight: 1 Stone",
+    "Veterinary +13",
+    "Animal Taming +24",
+    "Damage Increase 25%",
+    "Durability 255 / 255",
+    "Greater Magic Item"
+   ],
+   "container": 1879769088
+  },
+  {
+   "serial": 1879769122,
+   "name": "Broadsword",
+   "graphic": 3934,
+   "hue": 0,
+   "amount": 1,
+   "tooltip": [
+    "Broadsword",
+    "Weight: 6 Stones",
+    "Hit Lightning 36%",
+    "Hit Cold Area 54%",
+    "Physical Resist 14%",
+    "Lower Requirements 60%",
+    "Physical Damage 40%",
+    "Chaos Damage 60%",
+    "Weapon Damage 13 - 17",
+    "Weapon Speed 3.25s",
+    "Strength Requirement 12",
+    "One-handed Weapon",
+    "Skill Required: Swordsmanship",
+    "Durability 36 / 38",
+    "Greater Magic Item"
+   ],
+   "container": 1879769088
+  },
+  {
+   "serial": 1879769123,
+   "name": "Ring",
+   "graphic": 4234,
+   "hue": 0,
+   "amount": 1,
+   "tooltip": [
+    "Ring",
+    "Cursed",
+    "Weight: 1 Stone",
+    "Anatomy +10",
+    "Damage Increase 21%",
+    "Spell Damage Increase 13%",
+    "Cold Resist 9%",
+    "Poison Resist 11%",
+    "Durability 255 / 255",
+    "Greater Magic Item"
+   ],
+   "container": 1879769088
+  },
+  {
+   "serial": 1879769124,
+   "name": "Gargish Stone Arms Of Alchemy",
+   "graphic": 644,
+   "hue": 0,
+   "amount": 1,
+   "tooltip": [
+    "Gargish Stone Arms Of Alchemy",
+    "Weight: 10 Stones",
+    "Gargoyles Only",
+    "Energy Eater 9%",
+    "Strength Bonus 2",
+    "Stamina Increase 3",
+    "Enhance Potions 5%",
+    "Physical Resist 6%",
+    "Fire Resist 6%",
+    "Cold Resist 14%",
+    "Poison Resist 8%",
+    "Energy Resist 6%",
+    "Strength Requirement 40",
+    "Durability 50 / 50",
+    "Greater Magic Item"
+   ],
+   "container": 1879769088
+  },
+  {
+   "serial": 1879769125,
+   "name": "Arcane Crescent Blade",
+   "graphic": 9921,
+   "hue": 0,
+   "amount": 1,
+   "tooltip": [
+    "Arcane Crescent Blade",
+    "Weight: 1 Stone",
+    "Hit Harm 49%",
+    "Hit Poison Area 36%",
+    "Hit Mana Leech 40%",
+    "Mana Regeneration 1",
+    "Damage Increase 70%",
+    "Physical Damage 100%",
+    "Weapon Damage 12 - 15",
+    "Weapon Speed 2.5s",
+    "Strength Requirement 20",
+    "Two-handed Weapon",
+    "Skill Required: Swordsmanship",
+    "Hit Lightning 43%",
+    "Durability 57 / 57",
+    "Lesser Magic Item"
+   ],
+   "container": 1879769088
+  },
+  {
+   "serial": 1879769126,
+   "name": "Mind Rot",
+   "graphic": 8807,
+   "hue": 0,
+   "amount": 1,
+   "tooltip": [
+    "Mind Rot",
+    "Weight: 1 Stone"
+   ],
+   "container": 1879769088
+  },
+  {
+   "serial": 1879769127,
+   "name": "Paralyze Field",
+   "graphic": 8027,
+   "hue": 0,
+   "amount": 4,
+   "tooltip": [
+    "4 Paralyze Field",
+    "Weight: 4 Stones"
+   ],
+   "container": 1879769088
+  },
+  {
+   "serial": 1879769128,
+   "name": "Elven Pants",
+   "graphic": 12227,
+   "hue": 2,
+   "amount": 1,
+   "tooltip": [
+    "Elven Pants",
+    "Weight: 2 Stones",
+    "Strength Requirement 10"
+   ],
+   "container": 1879769088
+  },
+  {
+   "serial": 1879769129,
+   "name": "Platemail Tunic",
+   "graphic": 5141,
+   "hue": 0,
+   "amount": 1,
+   "tooltip": [
+    "Platemail Tunic",
+    "Weight: 10 Stones",
+    "Cold Eater 10%",
+    "Lower Mana Cost 7%",
+    "Physical Resist 8%",
+    "Fire Resist 7%",
+    "Cold Resist 3%",
+    "Poison Resist 2%",
+    "Energy Resist 2%",
+    "Mage Armor",
+    "Lower Requirements 60%",
+    "Strength Requirement 20",
+    "Durability 59 / 59",
+    "Greater Magic Item"
+   ],
+   "container": 1879769088
+  },
+  {
+   "serial": 1879769130,
+   "name": "Ethereal Horse Statuette",
+   "graphic": 8413,
+   "hue": 0,
+   "amount": 1,
+   "tooltip": [
+    "Ethereal Horse Statuette",
+    "Blessed",
+    "Weight: 1 Stone",
+    "1st Year Veteran Reward",
+    "Mount Hue: Transparent"
+   ],
+   "container": 1879769088
+  },
+  {
+   "serial": 1879769131,
+   "name": "Halberd Of The Vampire",
+   "graphic": 5182,
+   "hue": 0,
+   "amount": 1,
+   "tooltip": [
+    "Halberd Of The Vampire",
+    "Cursed",
+    "Weight: 16 Stones",
+    "Hit Stamina Leech 34%",
+    "Hit Mana Leech 60%",
+    "Hit Fatigue 43%",
+    "Balanced",
+    "Reactive Paralyze",
+    "Physical Damage 100%",
+    "Weapon Damage 18 - 21",
+    "Weapon Speed 4s",
+    "Strength Requirement 95",
+    "Two-handed Weapon",
+    "Skill Required: Swordsmanship",
+    "Durability 63 / 63",
+    "Greater Magic Item"
+   ],
+   "container": 1879769088
+  },
+  {
+   "serial": 1879769132,
+   "name": "Ring",
+   "graphic": 7945,
+   "hue": 0,
+   "amount": 1,
+   "tooltip": [
+    "Ring",
+    "Weight: 1 Stone",
+    "Mana Increase 3",
+    "Faster Cast Recovery 3",
+    "Energy Resist 12%",
+    "Durability 255 / 255",
+    "Greater Magic Item"
+   ],
+   "container": 1879769088
+  },
+  {
+   "serial": 1879769133,
+   "name": "Book Of Chivalry",
+   "amount": 1,
+   "tooltip": [
+    "Book Of Chivalry",
+    "Fire Resist 6%",
+    "Blessed",
+    "10 Spells"
+   ],
+   "container": 1879769088
+  },
+  {
+   "serial": 1879769134,
+   "name": "Cleaver",
+   "graphic": 3779,
+   "hue": 0,
+   "amount": 1,
+   "tooltip": [
+    "Cleaver",
+    "Cursed",
+    "Weight: 2 Stones",
+    "Hit Dispel 68%",
+    "Hit Fire Area 39%",
+    "Strength Bonus 4",
+    "Hit Point Regeneration 10",
+    "Physical Damage 40%",
+    "Chaos Damage 60%",
+    "Weapon Damage 10 - 14",
+    "Weapon Speed 2.5s",
+    "Strength Requirement 10",
+    "One-handed Weapon",
+    "Skill Required: Swordsmanship",
+    "Durability 231 / 255",
+    "Major Magic Item"
+   ],
+   "container": 1879769088
+  },
+  {
+   "serial": 1879769135,
+   "name": "A Tattered Treasure Map Leading To A Warrior's Supply",
+   "graphic": 5356,
+   "hue": 0,
+   "amount": 1,
+   "tooltip": [
+    "A Tattered Treasure Map Leading To A Warrior's Supply",
+    "Weight: 1 Stone",
+    "For Somewhere In Felucca"
+   ],
+   "container": 1879769088
+  },
+  {
+   "serial": 1879769136,
+   "name": "Spellbook",
+   "amount": 1,
+   "tooltip": [
+    "Spellbook",
+    "Antique",
+    "Blessed",
+    "64 Spells"
+   ],
+   "container": 1879769088
+  },
+  {
+   "serial": 1879769137,
+   "name": "Halberd Of The Vampire",
+   "graphic": 5182,
+   "hue": 0,
+   "amount": 1,
+   "tooltip": [
+    "Halberd Of The Vampire",
+    "Cursed",
+    "Weight: 16 Stones",
+    "Hit Stamina Leech 30%",
+    "Hit Mana Leech 32%",
+    "Hit Fatigue 43%",
+    "Balanced",
+    "Reactive Paralyze",
+    "Physical Damage 100%",
+    "Weapon Damage 18 - 21",
+    "Weapon Speed 4s",
+    "Strength Requirement 45",
+    "Two-handed Weapon",
+    "Skill Required: Swordsmanship",
+    "Mana Regeneration 7",
+    "Durability 63 / 63",
+    "Greater Magic Item"
+   ],
+   "container": 1879769088
+  },
+  {
+   "serial": 1879769138,
+   "name": "Bracelet",
+   "graphic": 4230,
+   "hue": 0,
+   "amount": 1,
+   "tooltip": [
+    "Bracelet",
+    "Weight: 1 Stone",
+    "Dexterity Bonus 9",
+    "Mana Regeneration 2",
+    "Hit Chance Increase 25%",
+    "Spell Damage Increase 19%",
+    "Faster Casting 1",
+    "Durability 255 / 255",
+    "Greater Magic Item"
+   ],
+   "container": 1879769088
+  },
+  {
+   "serial": 1879769139,
+   "name": "Book Of Chivalry",
+   "amount": 1,
+   "tooltip": [
+    "Book Of Chivalry",
+    "Blessed",
+    "10 Spells"
+   ],
+   "container": 1879769088
+  },
+  {
+   "serial": 1879769140,
+   "name": "Log",
+   "graphic": 7133,
+   "hue": 0,
+   "amount": 111,
+   "tooltip": [
+    "111 Log",
+    "Weight: 262 Stones"
+   ],
+   "container": 1879769088
+  },
+  {
+   "serial": 1879769141,
+   "name": "Metal Kite Shield",
+   "graphic": 7028,
+   "hue": 2587,
+   "amount": 1,
+   "tooltip": [
+    "Metal Kite Shield",
+    "Weight: 7 Stones",
+    "Damage Eater 14%",
+    "Hit Point Regeneration 5",
+    "Stamina Regeneration 7",
+    "Energy Resist 1%",
+    "Strength Requirement 95",
+    "Durability 49 / 49",
+    "Greater Magic Item"
+   ],
+   "container": 1879769088
+  },
+  {
+   "serial": 1879769142,
+   "name": "Ring",
+   "graphic": 4234,
+   "hue": 0,
+   "amount": 1,
+   "tooltip": [
+    "Ring",
+    "Cursed",
+    "Weight: 1 Stone",
+    "Provocation +15",
+    "Discordance +15",
+    "Enhance Potions 25%",
+    "Swing Speed Increase 6%",
+    "Lower Reagent Cost 24%",
+    "Energy Resist 2%",
+    "Durability 255 / 255",
+    "Greater Artifact"
+   ],
+   "container": 1879769088
+  },
+  {
+   "serial": 1879769143,
+   "name": "Ethereal Horse Statuette",
+   "graphic": 8413,
+   "hue": 0,
+   "amount": 1,
+   "tooltip": [
+    "Ethereal Horse Statuette",
+    "Blessed",
+    "Weight: 1 Stone",
+    "1st Year Veteran Reward",
+    "Mount Hue: Transparent"
+   ],
+   "container": 1879769088
+  },
+  {
+   "serial": 1879769144,
+   "name": "Animated Ring",
+   "graphic": 7945,
+   "hue": 0,
+   "amount": 1,
+   "tooltip": [
+    "Animated Ring",
+    "Cursed",
+    "Weight: 1 Stone",
+    "Dexterity Bonus 7",
+    "Stamina Increase 4",
+    "Swing Speed Increase 4%",
+    "Spell Damage Increase 2%",
+    "Durability 255 / 255",
+    "Major Magic Item"
+   ],
+   "container": 1879769088
+  },
+  {
+   "serial": 1879769145,
+   "name": "Bladed Staff Of Haste",
+   "graphic": 9917,
+   "hue": 0,
+   "amount": 1,
+   "tooltip": [
+    "Bladed Staff Of Haste",
+    "Weight: 4 Stones",
+    "Hit Lower Defense 67%",
+    "Stamina Regeneration 2",
+    "Swing Speed Increase 33%",
+    "Physical Damage 100%",
+    "Weapon Damage 14 - 17",
+    "Weapon Speed 3s",
+    "Strength Requirement 50",
+    "Two-handed Weapon",
+    "Skill Required: Swordsmanship",
+    "Mana Regeneration 2",
+    "Durability 42 / 49",
+    "Greater Magic Item"
+   ],
+   "container": 1879769088
+  },
+  {
+   "serial": 1879769146,
+   "name": "Recall Rune",
+   "graphic": 7956,
+   "hue": 50,
+   "amount": 1,
+   "tooltip": [
+    "Recall Rune",
+    "Weight: 1 Stone",
+    "A Recall Rune For An Unknown Location (Trammel)"
+   ],
+   "container": 1879769088
+  },
+  {
+   "serial": 1879769147,
+   "name": "Mandrake Root",
+   "graphic": 3974,
+   "hue": 0,
+   "amount": 61,
+   "tooltip": [
+    "61 Mandrake Root",
+    "Weight: 5 Stones"
+   ],
+   "container": 1879769088
+  },
+  {
+   "serial": 1879769148,
+   "name": "Black Pearl",
+   "graphic": 3962,
+   "hue": 0,
+   "amount": 16,
+   "tooltip": [
+    "16 Black Pearl",
+    "Weight: 2 Stones"
+   ],
+   "container": 1879769088
+  },
+  {
+   "serial": 1879769149,
+   "name": "Doublet",
+   "graphic": 8059,
+   "hue": 1,
+   "amount": 1,
+   "tooltip": [
+    "Doublet",
+    "Weight: 2 Stones",
+    "Strength Requirement 10"
+   ],
+   "container": 1879769088
+  },
+  {
+   "serial": 1879769150,
+   "name": "Exquisite Ring",
+   "graphic": 4234,
+   "hue": 0,
+   "amount": 1,
+   "tooltip": [
+    "Exquisite Ring",
+    "Prized",
+    "Weight: 1 Stone",
+    "Dexterity Bonus 7",
+    "Intelligence Bonus 9",
+    "Mana Increase 4",
+    "Enhance Potions 27%",
+    "Fire Resist 9%",
+    "Energy Resist 16%",
+    "Durability 255 / 255",
+    "Major Magic Item"
+   ],
+   "container": 1879769088
+  },
+  {
+   "serial": 1879769151,
+   "name": "Invigorating Ring",
+   "graphic": 7945,
+   "hue": 0,
+   "amount": 1,
+   "tooltip": [
+    "Invigorating Ring",
+    "Antique",
+    "Weight: 1 Stone",
+    "Night Sight",
+    "Mana Regeneration 3",
+    "Enhance Potions 29%",
+    "Hit Chance Increase 11%",
+    "Lower Reagent Cost 15%",
+    "Poison Resist 15%",
+    "Energy Resist 17%",
+    "Durability 255 / 255",
+    "Major Magic Item"
+   ],
+   "container": 1879769088
+  },
+  {
+   "serial": 1879769152,
+   "name": "Lockpick",
+   "graphic": 5372,
+   "hue": 0,
+   "amount": 8,
+   "tooltip": [
+    "8 Lockpick",
+    "Weight: 15 Stones"
+   ],
+   "container": 1879769088
+  },
+  {
+   "serial": 1879769153,
+   "name": "Recall Rune",
+   "graphic": 7956,
+   "hue": 50,
+   "amount": 1,
+   "tooltip": [
+    "Recall Rune",
+    "Weight: 1 Stone",
+    "A Recall Rune For An Unknown Location (Trammel)"
+   ],
+   "container": 1879769088
+  },
+  {
+   "serial": 1879769154,
+   "name": "Vicious Composite Bow",
+   "graphic": 9922,
+   "hue": 0,
+   "amount": 1,
+   "tooltip": [
+    "Vicious Composite Bow",
+    "Cursed",
+    "Insured",
+    "Weight: 5 Stones",
+    "Hit Fire Area 34%",
+    "Hit Fatigue 50%",
+    "Hit Chance Increase 25%",
+    "Damage Increase 54%",
+    "Physical Damage 100%",
+    "Weapon Damage 16 - 20",
+    "Weapon Speed 4s",
+    "Range 10",
+    "Strength Requirement 95",
+    "Two-handed Weapon",
+    "Skill Required: Archery",
+    "Durability 32 / 32",
+    "Greater Magic Item"
+   ],
+   "container": 1879769088
+  },
+  {
+   "serial": 1879769155,
+   "name": "Clean Bandage",
+   "graphic": 3617,
+   "hue": 0,
+   "amount": 717,
+   "tooltip": [
+    "717 Clean Bandage",
+    "Weight: 49 Stones"
+   ],
+   "container": 1879769088
+  },
+  {
+   "serial": 1879769156,
+   "name": "Fortified Leather Gloves",
+   "graphic": 5062,
+   "hue": 2553,
+   "amount": 1,
+   "tooltip": [
+    "Fortified Leather Gloves",
+    "Prized",
+    "Insured",
+    "Weight: 1 Stone",
+    "Mana Regeneration 4",
+    "Lower Mana Cost 7%",
+    "Lower Reagent Cost 1%",
+    "Physical Resist 2%",
+    "Fire Resist 24%",
+    "Cold Resist 23%",
+    "Energy Resist 25%",
+    "Strength Requirement 20",
+    "Durability 32 / 35",
+    "Greater Artifact"
+   ],
+   "container": 1879769088
+  },
+  {
+   "serial": 1879769157,
+   "name": "Longsword",
+   "graphic": 3937,
+   "hue": 0,
+   "amount": 1,
+   "tooltip": [
+    "Longsword",
+    "Brittle",
+    "Crafted By Nobody",
+    "Exceptional",
+    "(Imbued)",
+    "Insured",
+    "Weight: 7 Stones",
+    "Hit Cold Area 44%",
+    "Hit Mana Leech 53%",
+    "Hit Life Leech 40%",
+    "Swing Speed Increase 22%",
+    "Damage Increase 50%",
+    "Physical Damage 100%",
+    "Weapon Damage 14 - 18",
+    "Weapon Speed 3.5s",
+    "Strength Requirement 40",
+    "One-handed Weapon",
+    "Skill Required: Swordsmanship",
+    "Durability 84 / 106"
+   ],
+   "container": 1879769088
+  },
+  {
+   "serial": 1879769158,
+   "name": "A Tattered Treasure Map Leading To A Mage's Cache",
+   "graphic": 5356,
+   "hue": 0,
+   "amount": 1,
+   "tooltip": [
+    "A Tattered Treasure Map Leading To A Mage's Cache",
+    "Weight: 1 Stone",
+    "For Somewhere In Felucca"
+   ],
+   "container": 1879769088
+  },
+  {
+   "serial": 1879769159,
+   "name": "Mind Rot",
+   "graphic": 8807,
+   "hue": 0,
+   "amount": 1,
+   "tooltip": [
+    "Mind Rot",
+    "Weight: 1 Stone"
+   ],
+   "container": 1879769088
+  },
+  {
+   "serial": 1879769160,
+   "name": "A Tattered Treasure Map Leading To An Artisan's Supply",
+   "graphic": 5356,
+   "hue": 0,
+   "amount": 1,
+   "tooltip": [
+    "A Tattered Treasure Map Leading To An Artisan's Supply",
+    "Weight: 1 Stone",
+    "For Somewhere In Felucca"
+   ],
+   "container": 1879769088
+  },
+  {
+   "serial": 1879769161,
+   "name": "Log",
+   "graphic": 7133,
+   "hue": 0,
+   "amount": 71,
+   "tooltip": [
+    "71 Log",
+    "Weight: 262 Stones"
+   ],
+   "container": 1879769088
+  },
+  {
+   "serial": 1879769162,
+   "name": "Garlic",
+   "graphic": 3972,
+   "hue": 0,
+   "amount": 25,
+   "tooltip": [
+    "25 Garlic",
+    "Weight: 3 Stones"
+   ],
+   "container": 1879769088
+  },
+  {
+   "serial": 1879769163,
+   "name": "Spiders' Silk",
+   "graphic": 3981,
+   "hue": 0,
+   "amount": 157,
+   "tooltip": [
+    "157 Spiders' Silk",
+    "Weight: 12 Stones"
+   ],
+   "container": 1879769088
+  },
+  {
+   "serial": 1879769164,
+   "name": "Studded Leggings",
+   "graphic": 5082,
+   "hue": 0,
+   "amount": 1,
+   "tooltip": [
+    "Studded Leggings",
+    "Weight: 5 Stones",
+    "Energy Eater 8%",
+    "Stamina Increase 6",
+    "Lower Reagent Cost 10%",
+    "Physical Resist 6%",
+    "Fire Resist 2%",
+    "Cold Resist 3%",
+    "Poison Resist 3%",
+    "Energy Resist 2%",
+    "Lower Requirements 40%",
+    "Strength Requirement 90",
+    "Durability 35 / 35",
+    "Lesser Magic Item"
+   ],
+   "container": 1879769088
+  },
+  {
+   "serial": 1879769165,
+   "name": "Arcane Ring",
+   "graphic": 4234,
+   "hue": 0,
+   "amount": 1,
+   "tooltip": [
+    "Arcane Ring",
+    "Weight: 1 Stone",
+    "Night Sight",
+    "Mana Regeneration 3",
+    "Faster Cast Recovery 3",
+    "Lower Reagent Cost 19%",
+    "Durability 255 / 255",
+    "Lesser Magic Item"
+   ],
+   "container": 1879769088
+  },
+  {
+   "serial": 1879769166,
+   "name": "Heavy Crossbow Of Wizardry",
+   "graphic": 5117,
+   "hue": 0,
+   "amount": 1,
+   "tooltip": [
+    "Heavy Crossbow Of Wizardry",
+    "Prized",
+    "Weight: 9 Stones",
+    "Hit Magic Arrow 50%",
+    "Hit Life Leech 2%",
+    "Mage Weapon -20 Skill",
+    "Intelligence Bonus 4",
+    "Mana Regeneration 2",
+    "Defense Chance Increase 13%",
+    "Physical Damage 100%",
+    "Weapon Damage 20 - 24",
+    "Weapon Speed 5s",
+    "Range 8",
+    "Strength Requirement 20",
+    "Two-handed Weapon",
+    "Skill Required: Archery",
+    "Durability 85 / 85",
+    "Greater Magic Item"
+   ],
+   "container": 1879769088
+  },
+  {
+   "serial": 1879769167,
+   "name": "Blade Spirits",
+   "graphic": 8013,
+   "hue": 0,
+   "amount": 2,
+   "tooltip": [
+    "2 Blade Spirits",
+    "Weight: 2 Stones"
+   ],
+   "container": 1879769088
+  },
+  {
+   "serial": 1879769168,
+   "name": "Jester Hat",
+   "graphic": 5916,
+   "hue": 0,
+   "amount": 1,
+   "tooltip": [
+    "Jester Hat",
+    "Weight: 1 Stone",
+    "Night Sight",
+    "Mana Increase 7",
+    "Lower Reagent Cost 17%",
+    "Fire Resist 5%",
+    "Cold Resist 2%",
+    "Poison Resist 2%",
+    "Energy Resist 9%",
+    "Strength Requirement 10",
+    "Durability 29 / 29",
+    "Greater Magic Item"
+   ],
+   "container": 1879769088
+  },
+  {
+   "serial": 1879769169,
+   "name": "Bracelet",
+   "graphic": 7942,
+   "hue": 0,
+   "amount": 1,
+   "tooltip": [
+    "Bracelet",
+    "Weight: 1 Stone",
+    "Animal Taming +20",
+    "Dexterity Bonus 8",
+    "Enhance Potions 25%",
+    "Damage Increase 23%",
+    "Poison Resist 14%",
+    "Durability 255 / 255",
+    "Lesser Artifact"
+   ],
+   "container": 1879769088
+  },
+  {
+   "serial": 1879769170,
+   "name": "Black Pearl",
+   "graphic": 3962,
+   "hue": 0,
+   "amount": 50,
+   "tooltip": [
+    "50 Black Pearl",
+    "Weight: 5 Stones"
+   ],
+   "container": 1879769088
+  },
+  {
+   "serial": 1879769171,
+   "name": "Mighty Orc Mask",
+   "graphic": 5147,
+   "hue": 0,
+   "amount": 1,
+   "tooltip": [
+    "Mighty Orc Mask",
+    "Weight: 4 Stones",
+    "Strength Bonus 4",
+    "Hit Point Increase 6",
+    "Mana Increase 7",
+    "Hit Point Regeneration 2",
+    "Physical Resist 4%",
+    "Fire Resist 3%",
+    "Cold Resist 30%",
+    "Poison Resist 7%",
+    "Energy Resist 4%",
+    "Strength Requirement 10",
+    "Enhance Potions 4%",
+    "Durability 20 / 20",
+    "Major Magic Item"
+   ],
+   "container": 1879769088
+  },
+  {
+   "serial": 1879769172,
+   "name": "Greater Heal",
+   "graphic": 8009,
+   "hue": 0,
+   "amount": 3,
+   "tooltip": [
+    "3 Greater Heal",
+    "Weight: 2 Stones"
+   ],
+   "container": 1879769088
+  },
+  {
+   "serial": 1879769173,
+   "name": "Fortified Bracelet",
+   "graphic": 7942,
+   "hue": 0,
+   "amount": 1,
+   "tooltip": [
+    "Fortified Bracelet",
+    "Weight: 1 Stone",
+    "Luck 96",
+    "Defense Chance Increase 16%",
+    "Faster Cast Recovery 3",
+    "Physical Resist 14%",
+    "Fire Resist 17%",
+    "Durability 255 / 255",
+    "Major Magic Item"
+   ],
+   "container": 1879769088
+  },
+  {
+   "serial": 1879769174,
+   "name": "Bracelet",
+   "graphic": 7942,
+   "hue": 0,
+   "amount": 1,
+   "tooltip": [
+    "Bracelet",
+    "Prized",
+    "Weight: 1 Stone",
+    "Intelligence Bonus 5",
+    "Defense Chance Increase 10%",
+    "Faster Cast Recovery 4",
+    "Spell Damage Increase 5%",
+    "Strength Bonus 8",
+    "Durability 255 / 255",
+    "Major Magic Item"
+   ],
+   "container": 1879769088
+  },
+  {
+   "serial": 1879769175,
+   "name": "Halberd",
+   "graphic": 5182,
+   "hue": 0,
+   "amount": 1,
+   "tooltip": [
+    "Halberd",
+    "Weight: 16 Stones",
+    "Gargoyle Slayer",
+    "Mage Weapon -21 Skill",
+    "Dexterity Bonus 4",
+    "Damage Increase 70%",
+    "Physical Damage 100%",
+    "Weapon Damage 18 - 21",
+    "Weapon Speed 4s",
+    "Strength Requirement 95",
+    "Two-handed Weapon",
+    "Skill Required: Swordsmanship",
+    "Strength Bonus 2",
+    "Durability 55 / 57",
+    "Greater Magic Item"
+   ],
+   "container": 1879769088
+  },
+  {
+   "serial": 1879769176,
+   "name": "Fortified Leather Skirt",
+   "graphic": 7176,
+   "hue": 2627,
+   "amount": 1,
+   "tooltip": [
+    "Fortified Leather Skirt",
+    "Cursed",
+    "Weight: 1 Stone",
+    "Kinetic Eater 15%",
+    "Reflect Physical Damage 20%",
+    "Lower Mana Cost 10%",
+    "Lower Reagent Cost 14%",
+    "Physical Resist 24%",
+    "Fire Resist 26%",
+    "Cold Resist 4%",
+    "Poison Resist 29%",
+    "Energy Resist 4%",
+    "Strength Requirement 20",
+    "Durability 30 / 31",
+    "Major Artifact"
+   ],
+   "container": 1879769088
+  },
+  {
+   "serial": 1879769177,
+   "name": "Mysterious Fragment",
+   "graphic": 7955,
+   "hue": 1916,
+   "amount": 1,
+   "tooltip": [
+    "Mysterious Fragment",
+    "Weight: 1 Stone"
+   ],
+   "container": 1879769088
+  },
+  {
+   "serial": 1879769178,
+   "name": "Metal Kite Shield",
+   "graphic": 7028,
+   "hue": 2587,
+   "amount": 1,
+   "tooltip": [
+    "Metal Kite Shield",
+    "Brittle",
+    "Weight: 7 Stones",
+    "Damage Eater 14%",
+    "Hit Point Regeneration 2",
+    "Stamina Regeneration 3",
+    "Energy Resist 1%",
+    "Strength Requirement 95",
+    "Durability 49 / 49",
+    "Greater Magic Item"
+   ],
+   "container": 1879769088
+  },
+  {
+   "serial": 1879769179,
+   "name": "Blood Oath",
+   "graphic": 8801,
+   "hue": 0,
+   "amount": 1,
+   "tooltip": [
+    "Blood Oath",
+    "Weight: 1 Stone"
+   ],
+   "container": 1879769088
+  },
+  {
+   "serial": 1879769180,
+   "name": "Sulfurous Ash",
+   "graphic": 3980,
+   "hue": 0,
+   "amount": 49,
+   "tooltip": [
+    "49 Sulfurous Ash",
+    "Weight: 10 Stones"
+   ],
+   "container": 1879769088
+  },
+  {
+   "serial": 1879769181,
+   "name": "Armor Of Initiation",
+   "graphic": 5062,
+   "hue": 2500,
+   "amount": 1,
+   "tooltip": [
+    "Armor Of Initiation",
+    "Brittle",
+    "Blessed",
+    "Weight: 1 Stone",
+    "Part Of An Armor Set (6 Pieces)",
+    "Physical Resist 6%",
+    "Fire Resist 3%",
+    "Cold Resist 4%",
+    "Poison Resist 2%",
+    "Energy Resist 4%",
+    "Strength Requirement 25",
+    "Luck 79",
+    "Durability 150 / 150",
+    "Only When Full Set Is Present:",
+    "Physical Resist +2%",
+    "Fire Resist +6%",
+    "Cold Resist +6%",
+    "Poison Resist +3%",
+    "Energy Resist +4%"
+   ],
+   "container": 1879769088
+  },
+  {
+   "serial": 1879769182,
+   "name": "Ingots",
+   "graphic": 7154,
+   "hue": 2219,
+   "amount": 81,
+   "tooltip": [
+    "81 Ingots",
+    "Weight: 10 Stones",
+    "Valorite"
+   ],
+   "container": 1879769088
+  },
+  {
+   "serial": 1879769183,
+   "name": "Deer Mask",
+   "graphic": 5447,
+   "hue": 0,
+   "amount": 1,
+   "tooltip": [
+    "Deer Mask",
+    "Prized",
+    "Weight: 4 Stones",
+    "Dexterity Bonus 5",
+    "Stamina Increase 7",
+    "Lower Reagent Cost 13%",
+    "Physical Resist 6%",
+    "Fire Resist 34%",
+    "Cold Resist 4%",
+    "Poison Resist 6%",
+    "Energy Resist 2%",
+    "Strength Requirement 10",
+    "Durability 24 / 24",
+    "Major Magic Item"
+   ],
+   "container": 1879769088
+  },
+  {
+   "serial": 1879769184,
+   "name": "Agility Potion",
+   "graphic": 3848,
+   "hue": 0,
+   "amount": 6,
+   "tooltip": [
+    "6 Agility Potion",
+    "Weight: 8 Stones"
+   ],
+   "container": 1879769088
+  },
+  {
+   "serial": 1879769185,
+   "name": "Scroll Of Transcendence",
+   "graphic": 5359,
+   "hue": 1168,
+   "amount": 1,
+   "tooltip": [
+    "Scroll Of Transcendence",
+    "Cursed",
+    "Weight: 1 Stone",
+    "Skill: Focus 0.1 Skill Points"
+   ],
+   "container": 1879769088
+  },
+  {
+   "serial": 1879769186,
+   "name": "Scroll Of Transcendence",
+   "graphic": 5359,
+   "hue": 1168,
+   "amount": 1,
+   "tooltip": [
+    "Scroll Of Transcendence",
+    "Cursed",
+    "Weight: 1 Stone",
+    "Skill: Spellweaving 0.2 Skill Points"
+   ],
+   "container": 1879769088
+  },
+  {
+   "serial": 1879769187,
+   "name": "Lesser Poison Potion",
+   "graphic": 3850,
+   "hue": 0,
+   "amount": 3,
+   "tooltip": [
+    "3 Lesser Poison Potion",
+    "Weight: 5 Stones"
+   ],
+   "container": 1879769088
+  },
+  {
+   "serial": 1879769188,
+   "name": "Bracelet Of Wizardry",
+   "graphic": 4230,
+   "hue": 0,
+   "amount": 1,
+   "tooltip": [
+    "Bracelet Of Wizardry",
+    "Weight: 1 Stone",
+    "Enhance Potions 30%",
+    "Faster Cast Recovery 2",
+    "Spell Damage Increase 7%",
+    "Lower Mana Cost 7%",
+    "Durability 255 / 255",
+    "Lesser Magic Item"
+   ],
+   "container": 1879769088
+  },
+  {
+   "serial": 1879769189,
+   "name": "Refresh Potion",
+   "graphic": 3851,
+   "hue": 0,
+   "amount": 4,
+   "tooltip": [
+    "4 Refresh Potion",
+    "Weight: 3 Stones"
+   ],
+   "container": 1879769088
+  },
+  {
+   "serial": 1879769190,
+   "name": "Cure Of Defense",
+   "graphic": 5163,
+   "hue": 2587,
+   "amount": 1,
+   "tooltip": [
+    "Cure Of Defense",
+    "Weight: 4 Stones",
+    "Armor Type: Hide",
+    "Bonus Type: Reinforced"
+   ],
+   "container": 1879769088
+  },
+  {
+   "serial": 1879769191,
+   "name": "Cloak",
+   "graphic": 5397,
+   "hue": 1,
+   "amount": 1,
+   "tooltip": [
+    "Cloak",
+    "Weight: 5 Stones",
+    "Strength Requirement 10"
+   ],
+   "container": 1879769088
+  },
+  {
+   "serial": 1879769192,
+   "name": "Power Crystal",
+   "graphic": 7964,
+   "hue": 0,
+   "amount": 1,
+   "tooltip": [
+    "Power Crystal",
+    "Weight: 1 Stone"
+   ],
+   "container": 1879769088
+  },
+  {
+   "serial": 1879769193,
+   "name": "Mandrake Root",
+   "graphic": 3974,
+   "hue": 0,
+   "amount": 42,
+   "tooltip": [
+    "42 Mandrake Root",
+    "Weight: 5 Stones"
+   ],
+   "container": 1879769088
+  },
+  {
+   "serial": 1879769194,
+   "name": "Bladed Staff Of Haste",
+   "graphic": 9917,
+   "hue": 0,
+   "amount": 1,
+   "tooltip": [
+    "Bladed Staff Of Haste",
+    "Weight: 4 Stones",
+    "Hit Lower Defense 70%",
+    "Stamina Regeneration 5",
+    "Reflect Physical Damage 11%",
+    "Swing Speed Increase 36%",
+    "Physical Damage 100%",
+    "Weapon Damage 14 - 17",
+    "Weapon Speed 3s",
+    "Strength Requirement 20",
+    "Two-handed Weapon",
+    "Skill Required: Swordsmanship",
+    "Durability 42 / 49",
+    "Greater Magic Item"
+   ],
+   "container": 1879769088
+  },
+  {
+   "serial": 1879769195,
+   "name": "Blood Moss",
+   "graphic": 3963,
+   "hue": 0,
+   "amount": 112,
+   "tooltip": [
+    "112 Blood Moss",
+    "Weight: 9 Stones"
+   ],
+   "container": 1879769088
+  },
+  {
+   "serial": 1879769196,
+   "name": "Cure Of Defense",
+   "graphic": 5163,
+   "hue": 2587,
+   "amount": 1,
+   "tooltip": [
+    "Cure Of Defense",
+    "Weight: 4 Stones",
+    "Armor Type: Studded Samurai",
+    "Bonus Type: Reinforced"
+   ],
+   "container": 1879769088
+  },
+  {
+   "serial": 1879769197,
+   "name": "Ring",
+   "graphic": 4234,
+   "hue": 0,
+   "amount": 1,
+   "tooltip": [
+    "Ring",
+    "Weight: 1 Stone",
+    "Damage Increase 20%",
+    "Defense Chance Increase 1%",
+    "Lower Reagent Cost 20%",
+    "Durability 255 / 255",
+    "Lesser Magic Item"
+   ],
+   "container": 1879769088
+  },
+  {
+   "serial": 1879769198,
+   "name": "Mighty Bronze Shield Of Sorcery",
+   "graphic": 7026,
+   "hue": 0,
+   "amount": 1,
+   "tooltip": [
+    "Mighty Bronze Shield Of Sorcery",
+    "Brittle",
+    "Weight: 6 Stones",
+    "Strength Bonus 3",
+    "Hit Point Regeneration 2",
+    "Mana Regeneration 4",
+    "Cold Resist 11%",
+    "Strength Requirement 35",
+    "Durability 28 / 28",
+    "Greater Magic Item"
+   ],
+   "container": 1879769088
+  },
+  {
+   "serial": 1879769199,
+   "name": "Fortified Bone Armor Of Wizardry",
+   "graphic": 5199,
+   "hue": 0,
+   "amount": 1,
+   "tooltip": [
+    "Fortified Bone Armor Of Wizardry",
+    "Weight: 6 Stones",
+    "Mana Regeneration 2",
+    "Lower Mana Cost 7%",
+    "Lower Reagent Cost 17%",
+    "Physical Resist 8%",
+    "Fire Resist 3%",
+    "Cold Resist 4%",
+    "Poison Resist 18%",
+    "Energy Resist 24%",
+    "Strength Requirement 25",
+    "Fire Resist +6%",
+    "Durability 29 / 29",
+    "Major Magic Item"
+   ],
+   "container": 1879769088
+  },
+  {
+   "serial": 1879769200,
+   "name": "Halberd",
+   "graphic": 5182,
+   "hue": 0,
+   "amount": 1,
+   "tooltip": [
+    "Halberd",
+    "Weight: 16 Stones",
+    "Gargoyle Slayer",
+    "Mage Weapon -21 Skill",
+    "Dexterity Bonus 4",
+    "Damage Increase 40%",
+    "Physical Damage 100%",
+    "Weapon Damage 18 - 21",
+    "Weapon Speed 4s",
+    "Strength Requirement 45",
+    "Two-handed Weapon",
+    "Skill Required: Swordsmanship",
+    "Durability 55 / 57",
+    "Greater Magic Item"
+   ],
+   "container": 1879769088
+  },
+  {
+   "serial": 1879769201,
+   "name": "Leather Tunic Of Wizardry",
+   "graphic": 5068,
+   "hue": 2627,
+   "amount": 1,
+   "tooltip": [
+    "Leather Tunic Of Wizardry",
+    "Weight: 6 Stones",
+    "Poison Eater 1%",
+    "Intelligence Bonus 3",
+    "Mana Increase 10",
+    "Mana Regeneration 2",
+    "Lower Mana Cost 6%",
+    "Lower Reagent Cost 21%",
+    "Physical Resist 2%",
+    "Fire Resist 2%",
+    "Cold Resist 23%",
+    "Poison Resist 3%",
+    "Energy Resist 3%",
+    "Strength Requirement 25",
+    "Energy Resist +5%",
+    "Durability 251 / 255",
+    "Lesser Artifact"
+   ],
+   "container": 1879769088
+  },
+  {
+   "serial": 1879769202,
+   "name": "Robe",
+   "graphic": 7939,
+   "hue": 1,
+   "amount": 1,
+   "tooltip": [
+    "Robe",
+    "Weight: 3 Stones",
+    "Strength Requirement 10"
+   ],
+   "container": 1879769088
+  },
+  {
+   "serial": 1879769203,
+   "name": "Mysterious Fragment",
+   "graphic": 7955,
+   "hue": 1912,
+   "amount": 1,
+   "tooltip": [
+    "Mysterious Fragment",
+    "Weight: 1 Stone"
+   ],
+   "container": 1879769088
+  },
+  {
+   "serial": 1879769204,
+   "name": "Ethereal Horse Statuette",
+   "graphic": 8413,
+   "hue": 0,
+   "amount": 1,
+   "tooltip": [
+    "Ethereal Horse Statuette",
+    "Blessed",
+    "Weight: 1 Stone",
+    "1st Year Veteran Reward",
+    "Mount Hue: Transparent"
+   ],
+   "container": 1879769088
+  },
+  {
+   "serial": 1879769205,
+   "name": "Bone Arms Of Haste",
+   "graphic": 5198,
+   "hue": 0,
+   "amount": 1,
+   "tooltip": [
+    "Bone Arms Of Haste",
+    "Weight: 2 Stones",
+    "Stamina Increase 7",
+    "Mana Increase 7",
+    "Stamina Regeneration 4",
+    "Lower Reagent Cost 15%",
+    "Physical Resist 3%",
+    "Fire Resist 3%",
+    "Cold Resist 4%",
+    "Poison Resist 2%",
+    "Energy Resist 4%",
+    "Strength Requirement 55",
+    "Durability 27 / 27",
+    "Greater Magic Item"
+   ],
+   "container": 1879769088
+  },
+  {
+   "serial": 1879769206,
+   "name": "Ring Of Slaughter",
+   "graphic": 4234,
+   "hue": 0,
+   "amount": 1,
+   "tooltip": [
+    "Ring Of Slaughter",
+    "Cursed",
+    "Weight: 1 Stone",
+    "Night Sight",
+    "Dexterity Bonus 7",
+    "Intelligence Bonus 6",
+    "Stamina Increase 3",
+    "Hit Chance Increase 12%",
+    "Faster Casting 1",
+    "Spell Damage Increase 2%",
+    "Durability 255 / 255",
+    "Major Magic Item"
+   ],
+   "container": 1879769088
+  },
+  {
+   "serial": 1879769207,
+   "name": "Pike",
+   "graphic": 9918,
+   "hue": 0,
+   "amount": 1,
+   "tooltip": [
+    "Pike",
+    "Weight: 8 Stones",
+    "Gargoyle Slayer",
+    "Hit Harm 45%",
+    "Hit Mana Drain 45%",
+    "Mana Increase 4",
+    "Stamina Regeneration 6",
+    "Physical Damage 100%",
+    "Weapon Damage 14 - 17",
+    "Weapon Speed 3s",
+    "Strength Requirement 20",
+    "Two-handed Weapon",
+    "Skill Required: Fencing",
+    "Durability 37 / 37",
+    "Greater Magic Item"
+   ],
+   "container": 1879769088
+  },
+  {
+   "serial": 1879769208,
+   "name": "Wooden Shield",
+   "graphic": 7034,
+   "hue": 0,
+   "amount": 1,
+   "tooltip": [
+    "Wooden Shield",
+    "Weight: 5 Stones",
+    "Reactive Paralyze",
+    "Hit Chance Increase 11%",
+    "Energy Resist 1%",
+    "Strength Requirement 45",
+    "Hit Point Increase 4",
+    "Durability 20 / 20",
+    "Lesser Magic Item"
+   ],
+   "container": 1879769088
+  }
+ ],
+ "_bench": {
+  "n": 120,
+  "gearFraction": 0.5,
+  "seed": 11,
+  "gearCount": 65
+ }
+}
