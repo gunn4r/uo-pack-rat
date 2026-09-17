@@ -1,0 +1,57 @@
+// config.mjs — every path the server, bench and adapters agree on, resolved once.
+//   data dir: --data <dir>  →  PACKRAT_DATA  →  ~/.pack-rat
+//   port:     --port N      →  PACKRAT_PORT  →  8765
+//   token:    --token <t>   →  PACKRAT_TOKEN →  null (no auth — the bare loopback server's default)
+//   --demo   serve app/fixtures instead of <data>/scans     --open   open the browser after listening
+import { homedir } from "node:os";
+import { join, dirname, resolve } from "node:path";
+import { mkdirSync, existsSync, writeFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
+import { DEFAULT_SHARD } from "./rules.mjs";
+
+export const APP_DIR = dirname(fileURLToPath(import.meta.url));
+export const DEFAULT_PORT = 8765;
+
+function flag(argv, name) { const i = argv.indexOf(name); return i >= 0 && i + 1 < argv.length ? argv[i + 1] : null; }
+
+export function resolveConfig(argv = process.argv.slice(2), env = process.env, home = homedir()) {
+  const dataDir = resolve(flag(argv, "--data") || env.PACKRAT_DATA || join(home, ".pack-rat"));
+  const rawPort = flag(argv, "--port") || env.PACKRAT_PORT || DEFAULT_PORT;
+  const port = Number.parseInt(rawPort, 10);
+  // 0 is a valid port: it asks the OS to assign a free one (read back from server.address().port).
+  if (!Number.isInteger(port) || port < 0 || port > 65535 || String(rawPort).trim() !== String(port)) {
+    throw new Error(`invalid port "${rawPort}" — use --port N or PACKRAT_PORT with 0..65535`);
+  }
+  const demo = argv.includes("--demo"), open = argv.includes("--open");
+  const token = flag(argv, "--token") || env.PACKRAT_TOKEN || null;
+  const bridge = join(dataDir, "bridge", "tazuo");
+  const logs = join(dataDir, "logs");
+  const inbox = join(dataDir, "inbox");
+  return {
+    dataDir, port, demo, open, token,
+    paths: {
+      scans: demo ? join(APP_DIR, "fixtures") : join(dataDir, "scans"),
+      profiles: join(dataDir, "profiles.json"),
+      defaultProfiles: join(APP_DIR, "data", "profiles.default.json"),
+      settings: join(dataDir, "settings.json"),
+      rules: join(dataDir, "rules"),   // user-defined/overriding shard rules files; app/rules/ is the builtin set
+      runs: join(dataDir, "runs"),
+      bridge, bridgeQueue: join(bridge, "queue.jsonl"), bridgeStatus: join(bridge, "status.json"),
+      logs, log: join(logs, "server.log"),   // logs = the directory (ensureLayout creates it); log = the one file 500s append to
+      core: env.PACKRAT_CORE ? resolve(env.PACKRAT_CORE) : join(APP_DIR, "dist", "optimizer-core.mjs"),
+      // inbox: where each adapter drops raw scan files (temp-then-rename) for the watcher to
+      // normalise into paths.scans. The per-adapter dead-letter spot a file lands in after it keeps
+      // failing to parse/validate is computed by app/watcher.mjs itself (join(inboxDir, "rejected")),
+      // not exposed here — nothing outside the watcher needs it.
+      inbox, inboxFor: (adapter) => join(inbox, adapter),
+    },
+  };
+}
+
+export function ensureLayout(config) {
+  for (const p of [config.dataDir, config.paths.runs, config.paths.bridge, config.paths.logs]) mkdirSync(p, { recursive: true });
+  if (!config.demo) mkdirSync(config.paths.scans, { recursive: true });
+  mkdirSync(config.paths.inboxFor("tazuo"), { recursive: true });
+  if (!existsSync(config.paths.settings)) writeFileSync(config.paths.settings, JSON.stringify({ schemaVersion: 1, shard: DEFAULT_SHARD }, null, 2) + "\n");
+  return config;
+}

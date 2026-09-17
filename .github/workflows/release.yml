@@ -1,0 +1,78 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  create-release:
+    name: Create the draft release
+    runs-on: ubuntu-latest
+    # Only a real tag push gets a release. A workflow_dispatch run (manual rehearsal, no tag) must
+    # never create or publish to one -- see the build job below, which skips --publish on that trigger.
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check the tag matches package.json's version
+        # electron-builder's publish step looks up a release by VERSION (package.json), not by tag --
+        # so a tag pushed without bumping the version first (RELEASING.md step 2 skipped, or a typo)
+        # would make this job create a draft for the tag while electron-builder later creates a SECOND
+        # one for the version, once the matrix starts building. Fail here, before either exists.
+        run: |
+          pkg_version="$(node -p "require('./package.json').version")"
+          if [ "$TAG" != "v$pkg_version" ]; then
+            echo "::error::tag $TAG does not match package.json's version (v$pkg_version) -- bump the version and re-tag before releasing, see RELEASING.md"
+            exit 1
+          fi
+        env:
+          TAG: ${{ github.ref_name }}
+      - name: Create the draft release if one doesn't already exist for this tag
+        # electron-builder's own publish step (getOrCreateRelease) looks up a release by tag before
+        # creating one -- but three platform runners doing that lookup at nearly the same moment can
+        # each find nothing and each create their own draft. Creating the draft here, in a single job
+        # the whole matrix depends on, guarantees exactly one draft exists before any platform uploads
+        # to it. Re-running a release workflow for a tag that partly failed finds the existing draft
+        # and reuses it rather than erroring.
+        run: |
+          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "release $TAG already exists, reusing it"
+          else
+            gh release create "$TAG" --repo "$GITHUB_REPOSITORY" --draft --title "$TAG" \
+              --notes "Draft release for $TAG, built by CI. Installers are uploaded by the platform matrix that follows."
+          fi
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ github.ref_name }}
+
+  build:
+    name: Build on ${{ matrix.os }}
+    needs: create-release
+    # create-release is skipped (not failed) on a workflow_dispatch run, since its own `if` is false --
+    # the build still has to run then, just without publishing, so this job's own condition covers both
+    # "the draft now exists" and "there was never supposed to be one this run."
+    if: always() && (needs.create-release.result == 'success' || needs.create-release.result == 'skipped')
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest, windows-latest, ubuntu-latest]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+      - run: npm ci
+      - name: Build (and publish to the draft release on a real tag push)
+        # A workflow_dispatch run (RELEASING.md's rehearsal step, no tag) builds every installer with
+        # `dist` (--publish never) so the NSIS/AppImage/DMG builders get exercised by hand before the
+        # first real tag, without creating or uploading to anything. Only a tag push runs `dist:publish`.
+        run: npm run ${{ github.event_name == 'push' && 'dist:publish' || 'dist' }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          CSC_IDENTITY_AUTO_DISCOVERY: "false"
