@@ -1,0 +1,52 @@
+{
+  "schemaVersion": 1,
+  "id": "uoalive",
+  "name": "UO Alive",
+  "caps": {
+    "physResist": 70,
+    "fireResist": 70,
+    "coldResist": 70,
+    "poisonResist": 70,
+    "energyResist": 70,
+    "hci": 45,
+    "dci": 45,
+    "ssi": 60,
+    "di": 100,
+    "lmc": 40,
+    "lrc": 100,
+    "fc": 2,
+    "fcr": 6,
+    "hpRegen": 18,
+    "stamRegen": 24,
+    "hpi": 25,
+    "manaRegen": 30,
+    "castingFocus": 12,
+    "sdi": 100
+  },
+  "raceCaps": {
+    "elf": { "energyResist": 75 }
+  },
+  "resistSkillBonus": {
+    "breakpoints": [[100, 0.4], [120, 0.2]]
+  },
+  "tagUnits": {
+    "cursed": 10.0,
+    "brittle": 4.0,
+    "antique": 1.5,
+    "prized": 0.5,
+    "massive": 0.5,
+    "unwieldy": 0.5
+  },
+  "rarity": [
+    { "name": "Minor Magic Item", "colour": "#a0a0a0" },
+    { "name": "Lesser Magic Item", "colour": "#20e31c" },
+    { "name": "Greater Magic Item", "colour": "#1cb5b7" },
+    { "name": "Major Magic Item", "colour": "#0070ff" },
+    { "name": "Lesser Artifact", "colour": "#a335ee" },
+    { "name": "Greater Artifact", "colour": "#c9a800" },
+    { "name": "Major Artifact", "colour": "#ff8000" },
+    { "name": "Legendary Artifact", "colour": "#e0342b" }
+  ],
+  "raceLock": { "gargoyleOnly": true },
+  "freeSkills": ["Lumberjacking", "Cartography", "Lockpicking", "Remove Trap", "Detecting Hidden", "Mining", "Fishing", "Hiding", "Item Identification", "Camping", "Begging", "Arms Lore", "Forensic Evaluation", "Taste Identification", "Cooking", "Tracking", "Herding"]
+}

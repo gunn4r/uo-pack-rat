@@ -1,0 +1,25 @@
+name: Feature request
+description: Suggest something Pack Rat should do that it doesn't yet.
+labels: ["enhancement"]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: The problem
+      description: What are you trying to do that Pack Rat doesn't help with today? Describe the situation, not the fix — there may be a simpler way to solve it than the one you have in mind.
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: A possible solution
+      description: If you have an idea of how this could work, describe it here. Optional — the problem above matters more.
+    validations:
+      required: false
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: What you're doing instead today
+      description: Any workaround you're already using, if any.
+    validations:
+      required: false

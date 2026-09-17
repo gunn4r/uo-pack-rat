@@ -1,0 +1,70 @@
+# Architecture: the desktop shell
+
+How the pieces in `electron/`, `app/watcher.mjs` and `app/installer.mjs` fit together — the processes, the token, the data directory, and what changes (or doesn't) between the desktop app and the bare `npm start` server. Read `CONTRIBUTING.md`'s Files table for the server's own routes and modules; this document is about the shell around it.
+
+## Processes
+
+Three processes make up the running desktop app, plus one worker thread spawned per suit-build job.
+
+`electron/main.mjs` is the Electron **main process** — the only code in the app that can touch the OS (native dialogs, opening a path in Finder/Explorer, the single-instance lock). It never runs any of the server's own code.
+
+`electron/server-entry.mjs` is a **`utilityProcess.fork()`** child of main: an ordinary Node process, not an Electron renderer, with no access to Electron's own globals. It just calls `app/vault-server.mjs`'s `startServer()` — the same function `npm start` uses — with one addition, a `host` object (see The host bridge, below). Running the server here rather than inside main means a server bug, a stuck watcher, or a worker thread pegging a CPU core can never take the window or the OS-facing code down with it, and the server process can be killed and restarted on its own.
+
+The **`BrowserWindow`** is a sandboxed renderer (`sandbox: true`, `contextIsolation: true`, `nodeIntegration: false`, no preload script) pointed at `http://127.0.0.1:<port>/`. It is a plain browser tab as far as the page's own code is concerned — every `fetch()` and `EventSource` call it makes is the same code that runs under the bare server, unmodified.
+
+Inside the server child, `app/optimize-worker.mjs` runs as a **worker thread** per suit-build job (`POST /api/optimize`), same as under the bare server — the shell doesn't change how builds run, only what forks the server that starts them.
+
+## The token
+
+Main generates a random UUID once per launch and hands it to the server child as the `PACKRAT_TOKEN` environment variable when it forks it, which makes `vault-server.mjs` require `Authorization: Bearer <token>` on every `/api/*` route (see `CONTRIBUTING.md`'s Security section — this is the same mechanism a developer can turn on by hand with `--token`/`PACKRAT_TOKEN` against the bare server). The token never reaches the page, a URL, or a log line: once the child reports which port it bound (`{type: "listening", port}` over `process.parentPort`), main registers a `session.defaultSession.webRequest.onBeforeSendHeaders` handler scoped to that origin that stamps every outgoing request to it with the header itself. The page's own `fetch()`/`EventSource` calls carry no token at all and need no knowledge that one exists — `GET /api/optimize/<id>/events` is deliberately exempt from the token check for exactly this reason (`EventSource` cannot set custom headers), authenticated instead by its unguessable job id plus a `?client=` match; `GET /api/events` (the inbox-watcher stream, below) is not exempt, since the shell's header attaches to every request to the server's origin regardless of path.
+
+## The host bridge
+
+Two things only the OS can do — show a native folder picker, open a path in Finder/Explorer — are needed by the setup wizard and the Settings tab, but the server has no window and no Electron APIs of its own. `vault-server.mjs` accepts an optional `{ host }` with `pickFolder({title}) -> Promise<string|null>` and `openPath(path) -> Promise<void>`, which back `POST /api/host/pick-folder` and `POST /api/host/open-path` (both 501 under the bare server, which passes no `host`). `server-entry.mjs` implements `host` by sending `{type: "host", id, op, args}` to main over `process.parentPort` and awaiting the matching `{type: "host-result", id, result}` reply, keyed by `id` so concurrent calls never cross; main does the real `dialog.showOpenDialog`/`shell.openPath` call and posts the result back. This is the only traffic on the parent-child channel besides the startup `listening` message and the `shutdown` message main sends on quit.
+
+## Data directory layout
+
+One directory holds everything, resolved the same way for the bare server and the shell: `--data <dir>`, else `PACKRAT_DATA`, else (desktop only) `app.getPath("userData")`, else (bare server) `~/.pack-rat`.
+
+```
+<data>/
+  scans/              normalised, schema-valid v2 scan files — what GET /api/inventory folds
+  inbox/<adapter>/     where each adapter drops raw scan files (temp-then-rename); watched
+    rejected/          a file that failed to parse/validate after retries, plus a .reason.txt
+  profiles.json        per-character suit-builder profiles and templates
+  settings.json        {shard, setupDone, client: {adapter, scriptsDir} | null}
+  rules/                user-defined or overriding shard rules files
+  runs/                 one file per finished suit-build job
+  bridge/tazuo/          queue.jsonl (commands) and status.json (the bridge script's heartbeat)
+  logs/
+    server.log           the server's own request/error log (ref-keyed stack traces)
+    shell.log             the shell's own lifecycle log (desktop only — see Logs, below)
+```
+
+`app/config.mjs`'s `resolveConfig()`/`ensureLayout()` computes and creates every one of these paths; the shell adds nothing to that function, it just supplies `--data`/`PACKRAT_DATA` before the child ever calls it. Under `--demo`, `scans` points at the committed `app/fixtures/` instead of `<data>/scans`, and no inbox watcher starts at all — the demo fold must never be written to. Legacy scans a player already has on disk from before the inbox existed are not moved automatically; `POST /api/import {dir}` (the wizard's "Import existing scans" step, and the Settings tab's own Import button) copies top-level `*.json` files from a chosen folder into `inbox/tazuo/` for the watcher to pick up, without ever touching or deleting the source.
+
+## The inbox watcher's lifecycle
+
+`app/watcher.mjs` runs one `startWatcher()` per adapter directory under `adapters/` that ships a `capabilities.json` (today: just `tazuo`), watching `inbox/<adapter>/` non-recursively for `*.json` changes via `fs.watch`, plus one `scanOnce()` sweep at startup so files dropped while the app was closed are picked up immediately.
+
+**Debounce.** A file's change events are collapsed with a 300 ms timer per filename — an adapter script's temp-then-rename write can fire more than one `fs.watch` event for the same drop, and this keeps it to one ingest attempt.
+
+**Ingest.** `ingestFile()` reads and `JSON.parse`s the file, upgrades it (v1 → v2) and validates it against the scan schema, then writes it into `scans/` under a normalised name (`<slug>-<stamp>.json`, temp-then-rename) before removing the inbox copy. It never throws — every failure mode (bad JSON, a failed upgrade, a schema violation, or an I/O error during the write itself) comes back as an ordinary `{ok: false, reason}` so the retry loop always sees ordinary data. It is also idempotent: before writing, it checks whether `scans/` already holds a file under this document's accepted name (with or without a collision suffix) whose own `character`+`scannedAt` match — if so, nothing new is written, which is what makes a file that got stuck in the inbox (e.g. its final cleanup unlink failed once) safe to re-see on a later `scanOnce()`, including after a process restart, since the check reads the scans directory itself rather than anything kept in memory.
+
+**Retry and quarantine.** A file that fails `ingestFile()` is retried up to 3 times, 700 ms apart (a half-written temp-then-rename can look invalid for a moment; a transient write failure such as a full disk counts as a failed attempt the same way). After the last retry it is moved to `inbox/<adapter>/rejected/<name>` with a `<name>.reason.txt` beside it explaining why, and `onRejected` fires so the page can toast it. A duplicate result never fires `onAccepted` — nothing new was ingested.
+
+**Ordering and shutdown.** Every file, whether discovered by a watch event or by `scanOnce()`, is processed through one promise chain, so two files' ingestion never interleaves. `getShard()` is re-read fresh immediately before each `ingestFile()` call (not cached at startup), so a shard switch via `PUT /api/settings` takes effect on the very next file rather than only after a restart. `close()` sets a `closed` flag every await point checks, so a shutdown mid-retry cuts the chain short instead of running past it.
+
+`GET /api/events` is the one shared Server-Sent-Events stream every connected browser tab listens to: `hello` on connect (which adapters are being watched), `inventory` once a file is accepted, `rejected` once one is quarantined, `ping` every 15 s. `app/ui/events.mjs` is the page's one listener; a burst of accepted files (an import, or a full scanner run across several chests) coalesces into one page reload via a 400 ms debounce plus an in-flight guard, rather than one reload per file.
+
+## The installer's guard
+
+`POST /api/setup/install {adapter, scriptsDir}` (backing the wizard's Install step and the Settings tab's Reinstall button) copies an adapter's scripts into the player's chosen `LegionScripts/` folder and writes `packrat-paths.json` there so the scripts know where this app's data directory is. Before touching anything on disk it checks the bridge's own `status.json` for a script that looks like it's still running in the client (an `alive` timestamp inside the last 30 s, not `stopped: true`) and refuses with a 409 naming the `-stopall` fix if so — overwriting a script file while a Legion script thread is mid-run against it is exactly the "orphaned script thread" trap the TazUO adapter's own README warns about, so the guard runs first, before any file is copied. Each script is copied to `<name>.new` and renamed into place (never written in place), so a reader never sees a half-written script mid-install; `packrat-paths.json` is written last, once every script is in position, so an interrupted install never leaves a paths file pointing a partial script set at data it doesn't yet match.
+
+## What the bare server can and cannot do
+
+Everything above except the token, the host bridge, and the two `logs/shell.log`/desktop-specific data-directory defaults applies equally to `node app/vault-server.mjs` / `npm start`. The bare server watches the same inbox, runs the same installer routes, and serves the same page — it just has no native folder picker or Finder integration (`POST /api/host/*` answers 501 without an embedder-supplied `host`, so the wizard and Settings tab fall back to a plain text input for a folder path) and, without a `--token`/`PACKRAT_TOKEN` set, runs with no token check on `/api/*` at all. Nothing in `app/` imports from `electron/` — the dependency runs one way, shell to server, which is what keeps `npm start`, `npm test`, and every non-Electron embedding of `startServer()` working unchanged.
+
+## Logs
+
+`<data>/logs/server.log` is the server's own log, unchanged by the shell: ref-keyed stack traces for a route or job failure (see `CONTRIBUTING.md`'s Security section), one line per failure, never returned to the client itself. `<data>/logs/shell.log` is desktop-only, written by `main.mjs`: its own lifecycle lines (`shell: starting …`, `shell: quitting …`) plus everything the server child prints to stdout/stderr, prefixed `server: `. A player reporting a bug needs to attach both files, or the ref from `server.log` alone if that's all that's relevant.

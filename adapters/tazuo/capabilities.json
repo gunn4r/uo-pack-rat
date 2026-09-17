@@ -1,0 +1,16 @@
+{
+  "adapter": "tazuo",
+  "version": "2.0.0",
+  "transport": "folder",
+  "capabilities": {
+    "layers": ["OneHanded", "TwoHanded", "Shoes", "Pants", "Shirt", "Helmet", "Gloves",
+      "Ring", "Talisman", "Necklace", "Waist", "Torso", "Bracelet", "Tunic",
+      "Earrings", "Arms", "Cloak", "Robe", "Skirt", "Legs"],
+    "arms": true,
+    "bank": true,
+    "ground": true,
+    "nested": true,
+    "tooltips": "opl",
+    "bridge": ["highlight", "grab", "goto"]
+  }
+}

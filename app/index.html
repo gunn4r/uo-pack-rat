@@ -1,0 +1,145 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Pack Rat</title>
+<link rel="icon" href="data:,">
+<link rel="stylesheet" href="/ui/styles.css">
+</head>
+<body>
+<header>
+  <div class="brand"><h1>Pack Rat</h1></div>
+  <div class="status" id="status">loading…</div>
+  <select id="shard" title="Shard rules — property caps, resist bonus, rarity colours, gargoyle race lock"></select>
+  <div class="status" id="bridge" title="packrat-bridge.py running in game?">bridge: …</div>
+  <nav role="tablist">
+    <button role="tab" data-tab="inventory" aria-selected="true">Inventory</button>
+    <button role="tab" data-tab="characters">Characters</button>
+    <button role="tab" data-tab="builder">Suit Builder</button>
+    <button role="tab" data-tab="containers">Containers</button>
+    <button role="tab" data-tab="settings">Settings</button>
+  </nav>
+</header>
+<dialog id="wizard" class="wizard"></dialog>
+<div id="tip" role="tooltip"></div>
+<div id="runs-drawer" class="drawer" inert>
+  <div class="drawer-backdrop"></div>
+  <aside class="drawer-panel" role="dialog" aria-label="Saved runs">
+    <div class="drawer-head"><h3>Saved runs · <span id="b-runs-who"></span></h3><button id="b-runs-close" title="close (Esc)">×</button></div>
+    <input id="b-runs-filter" type="search" placeholder="filter by name or change, e.g. DI floor">
+    <div class="row"><button id="b-compare" disabled>Compare selected</button><span class="small muted">tick two runs</span></div>
+    <div class="runs" id="b-runs"><div class="small muted">No runs yet for this character.</div></div>
+  </aside>
+</div>
+<main>
+  <section id="tab-inventory">
+    <div class="layout">
+      <aside class="stack">
+        <div class="panel stack">
+          <h3>Find</h3>
+          <input id="f-text" type="search" placeholder="name, property, slayer, location…">
+          <div class="field"><label>Slot</label><select id="f-slot"><option value="">any</option></select></div>
+          <div class="field"><label>Location</label><select id="f-loc"><option value="">anywhere</option></select></div>
+          <div class="field"><label>Rarity</label><select id="f-rarity"><option value="">any</option></select></div>
+          <div class="field"><label>Slayer</label><select id="f-slayer"><option value="">any</option></select></div>
+          <div class="field"><label>Kind</label><select id="f-kind"><option value="">everything</option></select></div>
+          <div class="field"><label>Seen</label><select id="f-seen"><option value="">any time</option><option value="1">last 24 hours</option><option value="7">last 7 days</option><option value="30">last 30 days</option></select></div>
+          <label class="row small"><input type="checkbox" id="f-nogarg"> hide gargoyle-only gear</label>
+          <label class="row small"><input type="checkbox" id="f-med"> meditation-safe gear only</label>
+          <label class="row small"><input type="checkbox" id="f-group"> group by name (stack totals)</label>
+          <div class="field"><label>Hide</label><div class="chips" id="f-tags"></div></div>
+        </div>
+        <div class="panel stack">
+          <h3>Property minimums</h3>
+          <div id="f-props" class="stack"></div>
+          <div class="row"><button id="f-addprop">+ property</button><button id="f-clear">Clear all</button></div>
+        </div>
+        <div class="panel stack">
+          <h3>Columns</h3>
+          <div class="chips" id="cols"></div>
+        </div>
+      </aside>
+      <div class="panel">
+        <div class="row" style="justify-content:space-between;margin-bottom:8px"><h2 id="inv-count">Inventory</h2><span class="small muted">click a header to sort · click a row for the full tooltip</span></div>
+        <div class="tablewrap scrolly"><table id="inv-table"><thead></thead><tbody></tbody></table></div>
+        <div class="row pager" id="inv-pager">
+          <button id="inv-prev">‹ prev</button>
+          <span class="small muted" id="inv-pager-text"></span>
+          <button id="inv-next">next ›</button>
+          <span class="grow"></span>
+          <label class="small muted">per page <select id="inv-pagesize"><option value="100">100</option><option value="200" selected>200</option><option value="500">500</option></select></label>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section id="tab-characters" hidden>
+    <div class="stack" id="char-cards"></div>
+  </section>
+
+  <section id="tab-builder" hidden>
+    <div class="layout">
+      <aside class="stack">
+        <div class="panel stack">
+          <h3>Character</h3>
+          <select id="b-char"></select>
+          <div class="field" title="a template is a saved set of builder settings (floors, weights, locks, pool filters) with no character in it; the pill says whether this character's settings still match the one it was applied from">
+            <label>Template</label>
+            <div class="row"><select id="b-tpl"></select><span class="pill" id="b-tpl-state"></span></div>
+            <div class="tpl-actions"><button class="small" id="b-tpl-apply" title="copy the selected template into the sidebar (Save profile keeps it)">Apply</button><button class="small" id="b-tpl-saveas" title="store the sidebar's settings as a new template">Save as…</button><button class="small" id="b-tpl-update" title="overwrite the selected template with the sidebar's settings">Update</button><button class="small" id="b-tpl-delete" title="delete the selected template; characters made from it keep their settings">Delete</button></div>
+          </div>
+          <div class="field"><label>Race</label><select id="b-race" title="an Elf's Energy resist cap is 75"><option value="human">Human</option><option value="elf">Elf</option><option value="gargoyle">Gargoyle</option></select></div>
+          <button id="b-runs-open" class="runs-open" title="browse, name, open and compare this character's saved builds">Saved runs <span class="pill num" id="b-runs-count">0</span></button>
+        </div>
+        <div class="panel stack">
+          <h3>Requirements (floors)</h3>
+          <div class="small muted">Hard by default: the suit must reach these. Tick <em>soft</em> to make one a preference instead.</div>
+          <div class="small muted" id="b-resist-note"></div>
+          <div class="grid2" id="b-floors"></div>
+          <div class="row"><select id="b-addfloor"></select><button id="b-addfloor-btn">+ floor</button></div>
+        </div>
+        <div class="panel stack">
+          <h3>Weights</h3>
+          <div class="grid2" id="b-weights"></div>
+          <div class="row"><select id="b-addweight"></select><button id="b-addweight-btn">+ weight</button></div>
+        </div>
+        <div class="panel stack">
+          <h3>Locked slots</h3>
+          <div class="chips" id="b-locked"></div>
+        </div>
+        <div class="panel stack">
+          <h3>Candidate pool</h3>
+          <label class="row small"><input type="checkbox" id="b-others"> allow gear worn by other characters</label>
+          <label class="row small"><input type="checkbox" id="b-garg"> allow gargoyle-only gear (Gargish …)</label>
+          <label class="row small" title="only leather/hide/leaf/cloth armour, pieces with Mage Armor, and Spell Channeling weapons/shields"><input type="checkbox" id="b-med"> meditation-safe gear only</label>
+          <div class="field" title="only weapons of this skill in the hands (plus a shield, except for archery)"><label>Weapons</label><select id="b-weapon"><option value="">any</option></select></div>
+          <div class="field"><label>Exclude tags</label><div class="chips" id="b-extags"></div></div>
+          <div class="field" title="leave out every piece carrying a bonus to these skills (the Summoner must have zero Necromancy and Spirit Speak)"><label>Forbid skill bonuses</label><div class="chips" id="b-exskills"></div></div>
+          <div class="field"><label>Skip containers</label><div class="chips" id="b-exroots"></div></div>
+          <div class="row"><div class="field"><label>STR limit</label><input type="number" id="b-str"></div><div class="field"><label>Restarts</label><input type="number" id="b-restarts" value="200"></div></div>
+          <div class="row"><label class="row small"><input type="checkbox" id="b-exact" checked> exact search (prove the best)</label><div class="field"><label>Time budget (s)</label><input type="number" id="b-budget" value="300"></div></div>
+          <div class="row" title="Also list other suits whose score is within this many points of the best, so you can pick between near-equal options. 0 = only exact ties. Needs exact search."><div class="field"><label>Other suits</label><input type="number" id="b-altcount" value="5" min="0" max="20"></div><div class="field"><label>Within points</label><input type="number" id="b-alttol" value="0" min="0"></div></div>
+        </div>
+        <div class="row"><button class="primary" id="b-run">Build best suit</button><button id="b-save">Save profile</button></div>
+      </aside>
+      <div class="stack scrollcol"><div id="b-msg"></div><div class="stack" id="b-result"><div class="panel empty">Pick a character and press <strong>Build best suit</strong>.</div></div></div>
+    </div>
+  </section>
+
+  <section id="tab-containers" hidden>
+    <div class="panel">
+      <h2 style="margin-bottom:8px">Scanned containers</h2>
+      <p class="small muted">Newest scan of a container wins. A container that was skipped in a scan (too far to open, or empty) keeps its last known contents; use <em>Forget</em> to drop one you emptied.</p>
+      <div class="tablewrap"><table id="cont-table"><thead><tr><th>Container</th><th>Kind</th><th>Scanned by</th><th>When</th><th class="n">Items</th><th></th></tr></thead><tbody></tbody></table></div>
+    </div>
+  </section>
+
+  <section id="tab-settings" data-panel="settings" class="settings" hidden>
+    <div class="stack" id="settings-body"><div class="panel empty">loading…</div></div>
+  </section>
+</main>
+
+<script type="module" src="/ui/app.mjs"></script>
+</body>
+</html>

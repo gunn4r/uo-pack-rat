@@ -1,0 +1,61 @@
+name: CI
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+
+jobs:
+  test:
+    name: Test on ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest, windows-latest, ubuntu-latest]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: npm ci
+      - name: Compile the adapter scripts
+        run: python -m py_compile adapters/tazuo/packrat-scanner.py adapters/tazuo/packrat-refresh.py adapters/tazuo/packrat-bridge.py
+      - name: Allow Electron's Linux sandbox to use unprivileged user namespaces
+        # ubuntu-latest's AppArmor policy blocks unprivileged user-namespace creation, which is
+        # exactly what Chromium's non-setuid sandbox falls back to (an npm-installed Electron never
+        # gets its chrome-sandbox helper installed as a root-owned SUID binary, so it's always on this
+        # path). This relaxes the runner VM's own kernel policy for the life of this ephemeral job —
+        # it changes nothing about the app's shipped sandbox posture. Chromium's sandbox stays ENABLED
+        # for the test run (this workflow never turns Electron's own sandbox off, by any means), so CI
+        # exercises the same configuration a player runs, not a weakened one.
+        # `|| true` on the write keeps a missing/renamed sysctl key on a future runner image from
+        # failing the job outright — but that would leave the sandbox silently blocked with nothing in
+        # the log to explain a red Linux leg, so the read-back below makes the outcome visible: a
+        # GitHub Actions warning annotation when the relaxation did not actually take effect.
+        if: runner.os == 'Linux'
+        run: |
+          sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0 || true
+          value="$(sysctl -n kernel.apparmor_restrict_unprivileged_userns 2>/dev/null || echo 'absent')"
+          if [ "$value" = "0" ]; then
+            echo "kernel.apparmor_restrict_unprivileged_userns=0 — unprivileged user namespaces allowed, Electron's sandbox can start"
+          else
+            echo "::warning::kernel.apparmor_restrict_unprivileged_userns is '$value', not 0 — this runner image may block Electron's sandbox from starting even with a display"
+          fi
+      - name: Test (Linux, virtual display for Electron)
+        if: runner.os == 'Linux'
+        run: xvfb-run -a npm test
+      - name: Test
+        if: runner.os != 'Linux'
+        run: npm test
+      - name: Upload the test summary
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-summary-${{ matrix.os }}
+          path: test_logs/latest_summary.json
+          if-no-files-found: warn

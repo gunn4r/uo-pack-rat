@@ -1,0 +1,131 @@
+{
+  "name": "pack-rat",
+  "version": "0.1.0",
+  "description": "Every item you own, every suit you could wear. Inventory and suit builder for Ultima Online players.",
+  "productName": "Pack Rat",
+  "license": "MIT",
+  "private": true,
+  "type": "module",
+  "main": "electron/main.mjs",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/gunn4r/uo-pack-rat.git"
+  },
+  "homepage": "https://github.com/gunn4r/uo-pack-rat",
+  "bugs": {
+    "url": "https://github.com/gunn4r/uo-pack-rat/issues"
+  },
+  "author": "gunn4r",
+  "engines": {
+    "node": ">=22.18"
+  },
+  "scripts": {
+    "build:core": "node scripts/build-core.mjs",
+    "prestart": "node scripts/build-core.mjs",
+    "pretest": "node scripts/build-core.mjs",
+    "predesktop": "node scripts/build-core.mjs",
+    "predist": "node scripts/build-core.mjs",
+    "predist:publish": "node scripts/build-core.mjs",
+    "start": "node scripts/start.mjs",
+    "desktop": "electron .",
+    "dist": "electron-builder --publish never",
+    "dist:dir": "electron-builder --dir --publish never",
+    "dist:publish": "electron-builder --publish always",
+    "test": "node scripts/test-runner.mjs",
+    "test:smoke": "node scripts/test-runner.mjs --smoke",
+    "test:fast": "node scripts/test-runner.mjs --fast"
+  },
+  "dependencies": {
+    "highs": "1.15.3"
+  },
+  "devDependencies": {
+    "electron": "44.4.1",
+    "electron-builder": "26.15.3",
+    "playwright": "1.63.0"
+  },
+  "build": {
+    "appId": "com.gunn4r.packrat",
+    "productName": "Pack Rat",
+    "copyright": "Copyright © 2026 gunn4r",
+    "directories": {
+      "output": "dist",
+      "buildResources": "build"
+    },
+    "files": [
+      "app/**",
+      "adapters/**",
+      "electron/**",
+      "scripts/optimizer-core.ts",
+      "package.json",
+      "!**/*.test.mjs",
+      "!local/**",
+      "!test_logs/**",
+      "!docs/**",
+      "!app/bench/**",
+      "!**/__pycache__/**",
+      "!app/data/profiles.json",
+      "!app/data/runs/**"
+    ],
+    "asar": true,
+    "asarUnpack": [
+      "app/**",
+      "adapters/**",
+      "node_modules/highs/**"
+    ],
+    "publish": {
+      "provider": "github",
+      "releaseType": "draft"
+    },
+    "mac": {
+      "category": "public.app-category.utilities",
+      "identity": null,
+      "target": [
+        {
+          "target": "dmg",
+          "arch": [
+            "x64",
+            "arm64"
+          ]
+        },
+        {
+          "target": "zip",
+          "arch": [
+            "x64",
+            "arm64"
+          ]
+        }
+      ]
+    },
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        },
+        {
+          "target": "portable",
+          "arch": [
+            "x64"
+          ]
+        }
+      ]
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "perMachine": false
+    },
+    "portable": {
+      "artifactName": "${productName}-${version}-portable-${os}-${arch}.${ext}"
+    },
+    "linux": {
+      "category": "Utility",
+      "target": [
+        "AppImage"
+      ]
+    },
+    "artifactName": "${productName}-${version}-${os}-${arch}.${ext}"
+  }
+}
