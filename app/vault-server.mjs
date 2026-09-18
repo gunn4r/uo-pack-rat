@@ -46,9 +46,15 @@
 //         Setup wizard (app/installer.mjs backs all of these): GET /api/setup {firstRun, settings,
 //         adapters, candidates, installed, available, dataDir} · POST /api/setup/locate {adapter, dir}
 //         · POST /api/setup/install {adapter, scriptsDir} (409 while a Legion script is running in the
-//         client, per installer.mjs's bridge-status guard) · POST /api/import {dir} (copies top-level
-//         *.json into the tazuo inbox; the watcher above does the rest) · GET /api/update-check (a
-//         GitHub releases/latest check; {configured: false} when package.json names no GitHub repo) ·
+//         client, per installer.mjs's bridge-status guard) · POST /api/import {dir, adapter?} (copies
+//         top-level *.json into an adapter's inbox, tazuo when adapter is omitted — the watcher above
+//         does the rest) · POST /api/import/paste {text, adapter} (app/import.mjs's parsePastedScan:
+//         what the ClassicUO web-client scanner prints, marker block or bare JSON, upgraded/validated
+//         and written straight into that adapter's inbox — for a client whose sandbox can't write
+//         files at all) · POST /api/import/rescan {} (scanOnce() on every running watcher, for a scan
+//         file the folder watcher missed; {adapters: [ids swept]}, empty under --demo) ·
+//         GET /api/update-check (a GitHub releases/latest check; {configured: false} when package.json
+//         names no GitHub repo) ·
 //         POST /api/host/pick-folder {title} and POST /api/host/open-path {which: "data"|"logs"} — both
 //         need the optional `host` startServer({..}, {host}) was given (a folder-picker/opener the
 //         Electron shell supplies); 501 on the bare server. GET/PUT /api/settings additionally carries
@@ -83,6 +89,7 @@ import { validate } from "./schema/validate.mjs";
 import { parseItemQuery, applyItemQuery, facetsOf } from "./item-query.mjs";
 import { DEFAULT_OPTIONAL_SLOTS } from "./mip.mjs";
 import { startWatcher } from "./watcher.mjs";
+import { parsePastedScan, writeScanToInbox } from "./import.mjs";
 import {
   listAdapters, candidateClientRoots, validateScriptsDir, installedVersion, installScripts,
   importScans, repoFromPackage, checkForUpdates,
@@ -580,19 +587,44 @@ export async function startServer(config = ensureLayout(resolveConfig()), { host
         return send(res, 200, { ok: true, installed: result.installed, version: result.version });
       }
       if (req.method === "POST" && url.pathname === "/api/import") {
-        const { dir } = await readBody(req);
+        // adapter defaults to "tazuo" — today's hard-coded behavior — so neither existing caller (the
+        // wizard's import step, Settings' own "Import a folder" row) has to change to keep working.
+        const { dir, adapter = "tazuo" } = await readBody(req);
+        // Security: same allowlist check every other route taking an adapter id makes (see
+        // /api/setup/locate above) — adapter reaches CONFIG.paths.inboxFor, a path.join, so an
+        // unchecked id could otherwise be used to probe/write outside the inbox tree.
+        if (!listAdapters(ADAPTERS_DIR).some((a) => a.id === adapter)) return send(res, 400, { ok: false, error: `unknown adapter: ${adapter}` });
         let dirStat = null;
         try { dirStat = statSync(dir); } catch { /* badDir below */ }
         if (!dir || !dirStat || !dirStat.isDirectory()) return send(res, 400, { ok: false, error: "dir must be an existing directory" });
-        const { copied, skipped } = importScans({ dir, inboxDir: CONFIG.paths.inboxFor("tazuo") });
+        const { copied, skipped } = importScans({ dir, inboxDir: CONFIG.paths.inboxFor(adapter) });
         // Nudge the watcher rather than waiting on fs.watch to notice the burst (post-review fix,
         // Minor 3): a large import can overflow the OS's change-event buffer (Windows
         // ReadDirectoryChangesW, macOS FSEvents coalescing), which would otherwise leave some of the
         // just-copied files sitting unread in the inbox until the next launch's startup sweep.
         // scanOnce() is idempotent (ingestFile's own accepted-name check) and a no-op under --demo,
         // where watchers is empty.
-        watchers.get("tazuo")?.scanOnce();
+        watchers.get(adapter)?.scanOnce();
         return send(res, 200, { ok: true, copied, skipped });
+      }
+      if (req.method === "POST" && url.pathname === "/api/import/paste") {
+        const { text, adapter } = await readBody(req);
+        // Same allowlist as every other adapter-taking route — adapter reaches
+        // CONFIG.paths.inboxFor -> path.join, so it must be a real, known id before that.
+        if (!listAdapters(ADAPTERS_DIR).some((a) => a.id === adapter)) return send(res, 400, { ok: false, error: `unknown adapter: ${adapter}` });
+        const parsed = parsePastedScan(text);
+        if (!parsed.ok) return send(res, 400, { ok: false, error: parsed.error });
+        const { file, character } = writeScanToInbox({ doc: parsed.doc, adapter, paths: CONFIG.paths });
+        // Same nudge as POST /api/import above — a single paste is not a burst, but there is no
+        // reason to make the player wait on fs.watch's debounce when the file is already on disk.
+        watchers.get(adapter)?.scanOnce();
+        return send(res, 200, { ok: true, written: file, character });
+      }
+      if (req.method === "POST" && url.pathname === "/api/import/rescan") {
+        await readBody(req);   // {} — no fields read, but every POST still needs a declared JSON body (readBody's own content-type check)
+        const adapterIds = Array.from(watchers.keys());
+        for (const id of adapterIds) watchers.get(id).scanOnce();
+        return send(res, 200, { ok: true, adapters: adapterIds });
       }
       if (req.method === "GET" && url.pathname === "/api/update-check") {
         const result = await checkForUpdates({ current: PACKAGE_JSON.version, repo: repoFromPackage(PACKAGE_JSON) });
