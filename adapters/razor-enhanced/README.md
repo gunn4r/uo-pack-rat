@@ -1,50 +1,21 @@
 # Razor Enhanced adapter
 
-Two IronPython 3.4 scripts that run inside [Razor Enhanced](https://razorenhanced.readthedocs.io/)
-(Windows-only) and feed the Pack Rat app. Razor Enhanced is what the shard officially distributes,
-so this adapter reaches the largest group of players Pack Rat couldn't previously serve at all.
+Two IronPython 3.4 scripts that run inside [Razor Enhanced](https://razorenhanced.readthedocs.io/) (Windows-only) and feed the Pack Rat app. Razor Enhanced is what the shard officially distributes, so this adapter reaches the largest group of players Pack Rat couldn't previously serve at all.
 
-**Status: unverified against a live client.** This adapter was written entirely from Razor
-Enhanced's official API reference (https://razorenhanced.readthedocs.io/api/, fetched
-2026-09-17) plus one community wiki page for the two conventions the official reference doesn't
-cover (see Sources, below). No Windows machine or running Razor Enhanced client was available
-while writing it — Pack Rat's own development happens on macOS. Everything below is either sourced
-from that documentation, called out as a documented-but-unconfirmed assumption, or marked as a
-genuine unknown. It ships without `fixture.scan.json` for exactly this reason: the fixture has to
-come from a real scan (see `docs/adapter-guide.md`'s Fixture rules), and a live Windows run is
-tracked as a later task. `app/contracts.test.mjs` skips any adapter folder missing a fixture, so
-this one is simply not exercised by that test yet.
+**Status: unverified against a live client.** This adapter was written entirely from Razor Enhanced's official API reference (https://razorenhanced.readthedocs.io/api/, fetched 2026-09-17) plus one community wiki page for the two conventions the official reference doesn't cover (see Sources, below). No Windows machine or running Razor Enhanced client was available while writing it — Pack Rat's own development happens on macOS. Everything below is either sourced from that documentation, called out as a documented-but-unconfirmed assumption, or marked as a genuine unknown. It ships without `fixture.scan.json` for exactly this reason: the fixture has to come from a real scan (see `docs/adapter-guide.md`'s Fixture rules), and a live Windows run is tracked as a later task. `app/contracts.test.mjs` skips any adapter folder missing a fixture, so this one is simply not exercised by that test yet.
 
 ## Install
 
-1. Copy both `.py` files into Razor Enhanced's Scripts folder (the folder its in-client Scripts
-   tab reads from — typically wherever Razor Enhanced itself was installed, under a `Scripts`
-   subfolder; RE has no fixed install location the way TazUO does, so there is no auto-detected
-   candidate path for this adapter yet — point the setup wizard at it by hand, or copy the files
-   in yourself).
-2. If the app's data directory is not the default (`~/.pack-rat` — on the Windows machine running
-   Razor Enhanced this is your Windows user profile, not the machine running Pack Rat itself,
-   unless they're the same computer), copy `packrat-paths.example.json` to `packrat-paths.json` in
-   that same folder, next to the two scripts, and set `dataDir` to wherever Pack Rat's data
-   directory actually is reachable from this machine.
-3. In Razor Enhanced's Scripts tab, add both files so they show up in the script list; each can be
-   started with a click or bound to a hotkey the same way any other Razor Enhanced script is.
+1. Copy both `.py` files into Razor Enhanced's Scripts folder (the folder its in-client Scripts tab reads from — a `Scripts` subfolder directly under wherever you unpacked Razor Enhanced itself; its own official install docs say only "unpack the archive in your own folder, run Razor.exe" (see Sources) — there is no fixed install location the way TazUO has, so **this adapter has no auto-detected candidate path in the setup wizard.** Point the wizard's folder picker at your Razor Enhanced folder, or its `Scripts` subfolder, by hand — `validateScriptsDir` accepts either shape, or copy the files in yourself).
+2. If the app's data directory is not the default (`~/.pack-rat` — on the Windows machine running Razor Enhanced this is your Windows user profile, not the machine running Pack Rat itself, unless they're the same computer), copy `packrat-paths.example.json` to `packrat-paths.json` in that same folder, next to the two scripts, and set `dataDir` to wherever Pack Rat's data directory actually is reachable from this machine.
+3. In Razor Enhanced's Scripts tab, add both files so they show up in the script list; each can be started with a click or bound to a hotkey the same way any other Razor Enhanced script is.
 
 ## What each script does
 
-- **`packrat-scanner.py`** — full inventory scan. Reads every equipped layer, the backpack
-  (nested bags included), the bank box if it's already open this session, and every openable
-  container on the ground within reach (recursively — bags in chests in chests). Dumps raw
-  tooltip lines; the app does all the parsing. Run it standing next to a chest cluster, once per
-  cluster, once per character.
-- **`packrat-bridge.py`** — the bridge. Leave it running while you use the app's Highlight, Grab,
-  and Go to buttons on the Suit Builder or Containers tab. Highlight recolors the item (and its
-  containing chest) for a few seconds and prints a local message; grab does the same walk/open
-  steps then moves the item into your backpack; go to just walks there. Bounded to 8 hours.
+- **`packrat-scanner.py`** — full inventory scan. Reads every equipped layer, the backpack (nested bags included), the bank box if it's already open this session, and every openable container on the ground within reach (recursively — bags in chests in chests). Dumps raw tooltip lines; the app does all the parsing. Run it standing next to a chest cluster, once per cluster, once per character.
+- **`packrat-bridge.py`** — the bridge. Leave it running while you use the app's Highlight, Grab, and Go to buttons on the Suit Builder or Containers tab. Highlight recolors the item (and its containing chest) for a few seconds and prints a local message; grab does the same walk/open steps then moves the item into your backpack; go to just walks there. Bounded to 8 hours.
 
-There is no quick-refresh script in this adapter (`adapters/tazuo/packrat-refresh.py`'s
-equivalent) — only the two files listed in this task. A full `packrat-scanner.py` run covers the
-same ground; add a refresh script later if the extra speed turns out to matter.
+There is no quick-refresh script in this adapter (`adapters/tazuo/packrat-refresh.py`'s equivalent) — only the two files listed in this task. A full `packrat-scanner.py` run covers the same ground; add a refresh script later if the extra speed turns out to matter.
 
 ## What this adapter reads, and the evidence for each capability
 
@@ -60,87 +31,27 @@ same ground; add a refresh script later if the extra speed turns out to matter.
 | `tooltips` | `"opl"` | `Item.Properties` returns `List[Property]`, and `Property.ToString()` renders one tooltip line — the same full multi-line read as TazUO's `API.ItemNameAndProps`, requested per item with `Items.WaitForProps` first. |
 | `bridge` | `["highlight", "grab", "goto"]` | See "The bridge actions," below — each is built from a specific documented call, not a guess. |
 
-**Razor Enhanced's own layer names differ from TazUO's.** TazUO's adapter (and the scan schema's
-own examples) use names like `OneHanded`, `Helmet`, `Necklace`, `Torso`. Razor Enhanced's
-documented layer vocabulary is `RightHand`, `LeftHand`, `Shoes`, `Pants`, `Shirt`, `Head`,
-`Gloves`, `Ring`, `Talisman`, `Neck`, `Waist`, `InnerTorso`, `Bracelet`, `MiddleTorso`,
-`Earrings`, `Arms`, `Cloak`, `OuterTorso`, `OuterLegs`, `InnerLegs` — this adapter uses those
-names, unchanged, in both `capabilities.json` and every `equipped[].layer` value. Eleven of them
-happen to already match the app's own `LAYER_TO_SLOT` vocabulary (`Gloves`, `Pants`, `Shoes`,
-`Shirt`, `Waist`, `Arms`, `Cloak`, `Ring`, `Talisman`, `Bracelet`, `Earrings`) and classify
-correctly for free; the rest (the hand layers, `Head`, `Neck`, and the torso/leg splits) don't
-match any `LAYER_TO_SLOT` key, so the app falls back to classifying those items by name instead —
-which is how it classifies gear from adapters with no layer data at all, so nothing is lost,
-only the "layer as a tie-breaker" shortcut. Translating `RightHand`/`LeftHand` to
-`OneHanded`/`TwoHanded`, or `Head` to `Helmet`, would likely be safe (those are well-known
-one-to-one UO layer synonyms), but the three-way `InnerTorso`/`MiddleTorso`/`OuterTorso` split
-and the two-way `InnerLegs`/`OuterLegs` split don't have one correct universal answer — which
-layer a given robe or set of leggings actually occupies is item-specific, not a fixed mapping —
-so guessing at a translation risked silently misclassifying gear for every Razor Enhanced user.
-Shipping the client's own honest layer names and letting the name-based classifier carry the
-ambiguous ones was the safer call.
+**Razor Enhanced's own layer names differ from TazUO's.** TazUO's adapter (and the scan schema's own examples) use names like `OneHanded`, `Helmet`, `Necklace`, `Torso`. Razor Enhanced's documented layer vocabulary is `RightHand`, `LeftHand`, `Shoes`, `Pants`, `Shirt`, `Head`, `Gloves`, `Ring`, `Talisman`, `Neck`, `Waist`, `InnerTorso`, `Bracelet`, `MiddleTorso`, `Earrings`, `Arms`, `Cloak`, `OuterTorso`, `OuterLegs`, `InnerLegs` — this adapter uses those names, unchanged, in both `capabilities.json` and every `equipped[].layer` value. Eleven of them happen to already match the app's own `LAYER_TO_SLOT` vocabulary (`Gloves`, `Pants`, `Shoes`, `Shirt`, `Waist`, `Arms`, `Cloak`, `Ring`, `Talisman`, `Bracelet`, `Earrings`) and classify correctly for free; the rest (the hand layers, `Head`, `Neck`, and the torso/leg splits) don't match any `LAYER_TO_SLOT` key, so the app falls back to classifying those items by name instead — which is how it classifies gear from adapters with no layer data at all, so nothing is lost, only the "layer as a tie-breaker" shortcut. Translating `RightHand`/`LeftHand` to `OneHanded`/`TwoHanded`, or `Head` to `Helmet`, would likely be safe (those are well-known one-to-one UO layer synonyms), but the three-way `InnerTorso`/`MiddleTorso`/`OuterTorso` split and the two-way `InnerLegs`/`OuterLegs` split don't have one correct universal answer — which layer a given robe or set of leggings actually occupies is item-specific, not a fixed mapping — so guessing at a translation risked silently misclassifying gear for every Razor Enhanced user. Shipping the client's own honest layer names and letting the name-based classifier carry the ambiguous ones was the safer call.
 
-**Skill names are likewise Razor Enhanced's own**, not TazUO's: `EvalInt` not `Evaluating
-Intelligence`, `Magic Resist` not `Resisting Spells`, `Macing` not `Mace Fighting`, `Blacksmith`
-not `Blacksmithy`, `Inscribe` not `Inscription`, `Spell Weaving` not `Spellweaving`, `Detect
-Hidden` not `Detecting Hidden`, `Item ID` not `Item Identification` — taken from the argument list
-`Player.GetRealSkillValue`/`Player.UseSkill` document. `docs/scan-schema.md` says skill keys are
-"skill names as the client shows them," and these are what this client shows.
+**Skill names are likewise Razor Enhanced's own**, not TazUO's: `EvalInt` not `Evaluating Intelligence`, `Magic Resist` not `Resisting Spells`, `Macing` not `Mace Fighting`, `Blacksmith` not `Blacksmithy`, `Inscribe` not `Inscription`, `Spell Weaving` not `Spellweaving`, `Detect Hidden` not `Detecting Hidden`, `Item ID` not `Item Identification` — taken from the argument list `Player.GetRealSkillValue`/`Player.UseSkill` document. `docs/scan-schema.md` says skill keys are "skill names as the client shows them," and these are what this client shows.
 
-**Skill values match TazUO's own `{value, base, cap}` shape and meaning.** `value` is
-`Player.GetSkillValue`, documented as "the value of the skill, with modifiers" — the effective
-number the paperdoll shows, item bonuses (Resisting Spells' gear bonus, for instance) included,
-the same thing TazUO's `sk.Value` reports. `base` is `Player.GetRealSkillValue`, documented as
-"the base/real value of the skill" — the trained skill with no gear added, matching TazUO's
-`sk.Base`. `cap` is `Player.GetSkillCap`. (`GetSkillValue` is documented immediately beside
-`GetRealSkillValue` on the same page — an earlier version of this file relied on
-`GetRealSkillValue` alone, on the mistaken belief that no item-bonused skill read existed in
-Razor Enhanced's Player surface at all; that was wrong, and is fixed here.)
+**Skill values match TazUO's own `{value, base, cap}` shape and meaning.** `value` is `Player.GetSkillValue`, documented as "the value of the skill, with modifiers" — the effective number the paperdoll shows, item bonuses (Resisting Spells' gear bonus, for instance) included, the same thing TazUO's `sk.Value` reports. `base` is `Player.GetRealSkillValue`, documented as "the base/real value of the skill" — the trained skill with no gear added, matching TazUO's `sk.Base`. `cap` is `Player.GetSkillCap`. (`GetSkillValue` is documented immediately beside `GetRealSkillValue` on the same page — an earlier version of this file relied on `GetRealSkillValue` alone, on the mistaken belief that no item-bonused skill read existed in Razor Enhanced's Player surface at all; that was wrong, and is fixed here.)
 
 ## The bridge actions
 
-- **`highlight`** — Razor Enhanced's docs have no "flash text above an arbitrary item" call (only
-  `Player.HeadMessage`, which is above the *player*, not the item). Instead this recolors the item
-  — and, when the command carries a container chain, its **immediate parent** (`chain[-1]`, the
-  bag it's actually sitting in — not `chain[0]`, the outer root; matters in a deeply nested chest,
-  where "the outer chest glowed" tells you nothing about which bag inside it to open next) — with
-  `Items.SetColor(serial, hue)`, documented as affecting only your own client and not persisting,
-  for a few seconds, then restores the original hue. A `Player.HeadMessage` naming the item plays
-  alongside it as a local status line. This is a different mechanic from TazUO's overhead text
-  (which marks the item plus that same immediate-parent container, `chain[-1]`, with `HeadMsg`
-  rather than a recolor), but it satisfies the same job: something visibly changes, locally, near
-  the item, for a few seconds.
-- **`grab`** — `Items.Move(source, destination, amount)`, with `amount: -1` (documented as "the
-  whole stack") moving the item into `Player.Backpack`, then a re-read of the item's `Container`
-  to confirm it landed before reporting success — same verify-after-move discipline as
-  `adapters/tazuo/`.
-- **`goto`** — `Player.PathFindTo(x, y, z)` to the container's position (from the live `Item` when
-  the client already knows it, else the scanned `pos`), polled against `Player.DistanceTo`/manual
-  distance math until in reach or a timeout. Whether `PathFindTo` blocks until arrival or returns
-  immediately isn't documented either way — the poll loop after it is safe regardless (it either
-  finds itself already in range on the first check, or waits out the actual walk).
+- **`highlight`** — Razor Enhanced's docs have no "flash text above an arbitrary item" call (only `Player.HeadMessage`, which is above the *player*, not the item). Instead this recolors the item — and, when the command carries a container chain, its **immediate parent** (`chain[-1]`, the bag it's actually sitting in — not `chain[0]`, the outer root; matters in a deeply nested chest, where "the outer chest glowed" tells you nothing about which bag inside it to open next) — with `Items.SetColor(serial, hue)`, documented as affecting only your own client and not persisting, for a few seconds, then restores it with `Items.SetColor(serial, -1)` — the call's own documented sentinel for "reset original color," used instead of reading `Hue` before the recolor and writing that number back by hand (an earlier version of this script did that; fixed here, since a captured `Hue` read that came back wrong — e.g. an unreadable one silently defaulting to 0 — would have restored to the wrong color instead of the item's real one). A `Player.HeadMessage` naming the item plays alongside it as a local status line. This is a different mechanic from TazUO's overhead text (which marks the item plus that same immediate-parent container, `chain[-1]`, with `HeadMsg` rather than a recolor), but it satisfies the same job: something visibly changes, locally, near the item, for a few seconds.
+- **`grab`** — `Items.Move(source, destination, amount)`, with `amount: -1` (documented as "the whole stack") moving the item into `Player.Backpack`, then a re-read of the item's `Container` to confirm it landed before reporting success — same verify-after-move discipline as `adapters/tazuo/`.
+- **`goto`** — `Player.PathFindTo(x, y, z)` to the container's position (from the live `Item` when the client already knows it, else the scanned `pos`), polled against `Player.DistanceTo`/manual distance math until in reach or a timeout. Whether `PathFindTo` blocks until arrival or returns immediately isn't documented either way — the poll loop after it is safe regardless (it either finds itself already in range on the first check, or waits out the actual walk).
 
-All three require the container chain to be opened first with `Items.WaitForContents`, per
-container, in order — the same "open, then trust the contents" discipline the scanner itself uses.
+All three require the container chain to be opened first with `Items.WaitForContents`, per container, in order — the same "open, then trust the contents" discipline the scanner itself uses.
 
 ## Stopping the bridge
 
-`while Player.Connected` — not a literal `while True` — bounds the main loop, per a community
-convention documented on the UO Eventine wiki (see Sources): the loop ends on its own if the
-character disconnects or logs out, and it's bounded to `MAX_HOURS` regardless. **What isn't
-verified: whether Razor Enhanced exposes anything like TazUO's `API.StopRequested` for detecting a
-mid-loop Stop-button press from inside a running script.** No such flag turned up in the official
-API reference. If Razor Enhanced's Stop button works the way most embedded scripting engines of
-this shape do (aborting the script's thread outright), the bridge simply ends wherever it happens
-to be, which is an acceptable, safe failure mode for a script that only ever acts on one command
-at a time — but this is unconfirmed, not a documented guarantee, and the first live run should
-specifically check that Stop actually ends the script promptly.
+`while Player.Connected` — not a literal `while True` — bounds the main loop, per a community convention documented on the UO Eventine wiki (see Sources): the loop ends on its own if the character disconnects or logs out, and it's bounded to `MAX_HOURS` regardless. **What isn't verified: whether Razor Enhanced exposes anything like TazUO's `API.StopRequested` for detecting a mid-loop Stop-button press from inside a running script.** No such flag turned up in the official API reference. If Razor Enhanced's Stop button works the way most embedded scripting engines of this shape do (aborting the script's thread outright), the bridge simply ends wherever it happens to be, which is an acceptable, safe failure mode for a script that only ever acts on one command at a time — but this is unconfirmed, not a documented guarantee, and the first live run should specifically check that Stop actually ends the script promptly.
 
 ## The AFK rule
 
-These scripts read what your character can see and move one item when you click. They never
-fight, farm, or loop unattended — the same statement every Pack Rat adapter makes (see
-`docs/adapter-guide.md`'s "attended-only statement").
+These scripts read what your character can see and move one item when you click. They never fight, farm, or loop unattended — the same statement every Pack Rat adapter makes (see `docs/adapter-guide.md`'s "attended-only statement").
 
 ## Data directory resolution
 
@@ -150,71 +61,23 @@ Both scripts resolve their data directory the same way, checked in order:
 2. the `PACKRAT_DATA` environment variable.
 3. `~/.pack-rat`.
 
-The scanner writes to `<dataDir>/inbox/razor-enhanced/<Character>-<YYYYmmdd-HHMMSS>.json`. The
-running app watches that folder (`app/watcher.mjs`) and moves each file into `<dataDir>/scans/`
-under its own normalised name once it parses and validates — a file that keeps failing ends up
-under `<dataDir>/inbox/razor-enhanced/rejected/` instead, with a `.reason.txt` beside it. The
-bridge reads `<dataDir>/bridge/razor-enhanced/queue.jsonl` and writes
-`<dataDir>/bridge/razor-enhanced/status.json`. Every write goes through a temp-file-then-rename so
-a crash or a read mid-write never leaves a half-written file behind.
+The scanner writes to `<dataDir>/inbox/razor-enhanced/<Character>-<YYYYmmdd-HHMMSS>.json`. The running app watches that folder (`app/watcher.mjs`) and moves each file into `<dataDir>/scans/` under its own normalised name once it parses and validates — a file that keeps failing ends up under `<dataDir>/inbox/razor-enhanced/rejected/` instead, with a `.reason.txt` beside it. The bridge reads `<dataDir>/bridge/razor-enhanced/queue.jsonl` and writes `<dataDir>/bridge/razor-enhanced/status.json`. Every write goes through a temp-file-then-rename so a crash or a read mid-write never leaves a half-written file behind.
 
 ## Limits
 
-- Bank contents are only readable while the bank box is already open this session — same
-  restriction as `adapters/tazuo/`.
-- A container's contents only reach the client after `Items.WaitForContents` has opened it once in
-  this session — the scanner and bridge both do this before trusting a container's contents.
+- Bank contents are only readable while the bank box is already open this session — same restriction as `adapters/tazuo/`.
+- A container's contents only reach the client after `Items.WaitForContents` has opened it once in this session — the scanner and bridge both do this before trusting a container's contents.
 - No quick-refresh script yet (see "What each script does," above).
+- A container nested deeper than `MAX_NEST` is recorded as an ordinary (unopened) item — its own tooltip intact, but nothing inside it, since it was never opened — the same handling `adapters/tazuo/`'s scanner gives the same case, rather than silently dropping it and its contents from the scan.
 
 ## What's still outstanding
 
-- **Nothing has run against a live client.** Every API call this adapter uses is individually
-  documented, but nobody has run either script against a real character on a real Windows machine.
-  Treat the first live run as a real test. `Items.Filter()`'s constructor call, whether
-  `Player.PathFindTo` blocks, and the Stop-button behavior noted above are the specific spots most
-  likely to surprise.
-- **No `fixture.scan.json`.** See "Status," above — a real run (Task 6) should generate one the
-  way `adapters/tazuo/fixture.scan.json` was: play a scan, scrub it per `docs/adapter-guide.md`'s
-  Fixture rules, and drop it in here.
-- **Candidate-path auto-detection is a best-effort guess, not a confirmed location.** `app/installer.mjs`'s
-  `candidateClientRoots` now proposes `<root>/ClassicUO/Data/Plugins/Razor/Scripts` under
-  Desktop/Downloads/Documents (and, on win32, `%LOCALAPPDATA%` and `C:\`) for a root named
-  `CUOLauncher` — the layout razorce.com's Windows install guide documents for the ClassicUO
-  Launcher + Razor plugin combo (fetched 2026-09-17), gated to win32 since Razor Enhanced only runs
-  there. Nobody has confirmed this against a real install (same "Status: unverified" caveat as the
-  rest of this adapter) — it's the best documented guess available, not a fact. The setup step's own
-  manual folder picker (`validateScriptsDir` also recognizes `<picked>/Razor/Scripts` and
-  `<picked>/Scripts` as fallback shapes) still works when the guess misses.
+- **Nothing has run against a live client.** Every API call this adapter uses is individually documented, but nobody has run either script against a real character on a real Windows machine. Treat the first live run as a real test. `Items.Filter()`'s constructor call, whether `Player.PathFindTo` blocks, and the Stop-button behavior noted above are the specific spots most likely to surprise.
+- **No `fixture.scan.json`.** See "Status," above — a real run (Task 6) should generate one the way `adapters/tazuo/fixture.scan.json` was: play a scan, scrub it per `docs/adapter-guide.md`'s Fixture rules, and drop it in here.
+- **No candidate-path auto-detection.** `app/installer.mjs`'s `candidateClientRoots` proposes nothing for this adapter, on any platform: Razor Enhanced's own official install docs (razorenhanced.net/dokuwiki, "Install & Configure," fetched 2026-09-17) say only "unpack the archive in your own folder, run Razor.exe" — no fixed install location, so no well-known root name to look for under Desktop/Downloads/Documents the way `TazUO` is for that adapter. (An earlier version of this file and of `app/installer.mjs` guessed `<root>/ClassicUO/Data/Plugins/Razor/Scripts` under a root named `CUOLauncher`, sourced from razorce.com's Windows install guide — that guide is for **Razor Community Edition** ("UO Razor"), a different, unrelated assistant with no Python scripting API at all, not Razor Enhanced; the guess was wrong and has been removed rather than replaced with another unconfirmed one.) The setup wizard's manual folder picker is the only path in: `validateScriptsDir` accepts the folder you pick as-is, `<picked>/Scripts`, `<picked>/Razor/Scripts`, or `<picked>/ClassicUO/Data/Plugins/Razor/Scripts` (for a player who picked the ClassicUO Launcher root instead of the Razor folder itself — a real, common shape if you also run the separate Razor Community Edition/CUO Launcher combo, but recognizing it here is a convenience for the manual picker, not a claim about where Razor Enhanced itself installs; see the correction above).
 
 ## Sources
 
-- https://razorenhanced.readthedocs.io/api/ — the official Python API reference (fetched
-  2026-09-17), specifically the `Player`, `Item`, `Items`, `Items.Filter`, `Property`,
-  `PathFinding`, and `Misc` pages. Confirms: `Item.Contains`/`IsContainer`/`IsCorpse`/`ItemID`/
-  `Layer`/`RootContainer`/`Properties`; `Items.WaitForContents(bag, delay)` ("Open a container an
-  wait for the Items to load"); `Items.WaitForProps(item, delay)`; `Items.Move(source,
-  destination, amount, x, y)` with `amount: -1` for the whole stack; `Items.SetColor(serial,
-  color)` as client-local and non-persistent; `Items.Filter`'s `OnGround`/`RangeMax`/
-  `IsContainer`/`IsCorpse`/`Layers` fields and `Items.ApplyFilter`; `Player.GetItemOnLayer`/
-  `CheckLayer`'s full layer-name list; `Player.GetSkillValue` ("the value of the skill, with
-  modifiers") and `Player.GetRealSkillValue` ("the base/real value of the skill") as two distinct,
-  separately documented calls sharing the same skill-name argument list, plus `GetSkillCap`;
-  `Player.Backpack`/`Bank`/`Str`/`Dex`/`Int`/`Hits`/`HitsMax`/`Mana`/`ManaMax`/
-  `Stam`/`StamMax`/`AR`/`FireResistance`/`ColdResistance`/`PoisonResistance`/`EnergyResistance`/
-  `Position`; `Player.HeadMessage` as "Visible only by the Player"; `Player.ChatSay`/`ChatWhisper`/
-  `ChatYell` as network speech, distinct from the above; `Player.PathFindTo(x, y, z)`;
-  `Player.DistanceTo`/`InRangeItem`; `Misc.SendMessage(msg, color, wait)` as "Send a message to
-  the client" (distinguished from the `Chat*` family the same way); `Misc.Pause(millisec)`.
-- https://uoeventine.net/wiki/index.php/Razor_Enhanced_Basics — a community wiki, not official
-  documentation, cited for exactly two conventions the official reference doesn't state: that
-  `Items.WaitForContents` "should always be used when opening a container with a script before
-  having it look through the contents" (the basis for this adapter's open-before-read discipline),
-  and that `while Player.Connected:` is the idiomatic replacement for `while True:` in a
-  long-running Razor Enhanced script (the basis for the bridge's main loop condition). Both are
-  presented there as established community practice, not as a claim this adapter's own behavior
-  has been tested.
-- https://www.razorce.com/install/windows/ — the community install guide for Razor + the ClassicUO
-  Launcher on Windows (fetched 2026-09-17), cited only for the `<launcher root>/ClassicUO/Data/Plugins/Razor`
-  layout `app/installer.mjs`'s `candidateClientRoots` now guesses a `Scripts` subfolder under (see
-  "What's still outstanding," above). Like the wiki citation above, this documents one common install
-  method, not a guarantee every player's Razor Enhanced lands there.
+- https://razorenhanced.readthedocs.io/api/ — the official Python API reference (fetched 2026-09-17), specifically the `Player`, `Item`, `Items`, `Items.Filter`, `Property`, `PathFinding`, and `Misc` pages. Confirms: `Item.Contains`/`IsContainer`/`IsCorpse`/`ItemID`/`Layer`/`RootContainer`/`Properties`; `Items.WaitForContents(bag, delay)` ("Open a container an wait for the Items to load"); `Items.WaitForProps(item, delay)`; `Items.Move(source, destination, amount, x, y)` with `amount: -1` for the whole stack; `Items.SetColor(serial, color)` as client-local and non-persistent, with `color: -1` documented as its own "reset original color" sentinel (default value, used here to restore after a highlight instead of a captured `Hue` read written back by hand); `Items.Filter`'s `OnGround`/`RangeMax`/`IsContainer`/`IsCorpse`/`Layers` fields and `Items.ApplyFilter`; `Player.GetItemOnLayer`/`CheckLayer`'s full layer-name list; `Player.GetSkillValue` ("the value of the skill, with modifiers") and `Player.GetRealSkillValue` ("the base/real value of the skill") as two distinct, separately documented calls sharing the same skill-name argument list, plus `GetSkillCap`; `Player.Backpack`/`Bank`/`Str`/`Dex`/`Int`/`Hits`/`HitsMax`/`Mana`/`ManaMax`/`Stam`/`StamMax`/`AR`/`FireResistance`/`ColdResistance`/`PoisonResistance`/`EnergyResistance`/`Position`; `Player.HeadMessage` as "Visible only by the Player"; `Player.ChatSay`/`ChatWhisper`/`ChatYell` as network speech, distinct from the above; `Player.PathFindTo(x, y, z)`; `Player.DistanceTo`/`InRangeItem`; `Misc.SendMessage(msg, color, wait)` as "Send a message to the client" (distinguished from the `Chat*` family the same way); `Misc.Pause(millisec)`.
+- https://uoeventine.net/wiki/index.php/Razor_Enhanced_Basics — a community wiki, not official documentation, cited for exactly two conventions the official reference doesn't state: that `Items.WaitForContents` "should always be used when opening a container with a script before having it look through the contents" (the basis for this adapter's open-before-read discipline), and that `while Player.Connected:` is the idiomatic replacement for `while True:` in a long-running Razor Enhanced script (the basis for the bridge's main loop condition). Both are presented there as established community practice, not as a claim this adapter's own behavior has been tested.
+- http://razorenhanced.net/dokuwiki/doku.php?id=install_configure — Razor Enhanced's own official "Install & Configure" wiki page (fetched 2026-09-17), cited for the install location statement above: "unpack archive in your own folder, run Razor.exe," with no fixed default location. This is the basis for shipping no auto-detected candidate path for this adapter (see "What's still outstanding," above). **Correction:** an earlier version of this file, and of `app/installer.mjs`'s `candidateClientRoots`, cited `https://www.razorce.com/install/windows/` for a `<launcher root>/ClassicUO/Data/Plugins/Razor/Scripts` candidate path. That site (razorce.com) documents **Razor Community Edition** ("UO Razor"), a different, unrelated assistant — a revival of the original 2D Razor — that has no Python scripting API and is not Razor Enhanced; every other citation in this adapter correctly points at Razor Enhanced's own docs, but that one didn't, and the guessed candidate path built from it has been removed rather than replaced with another unconfirmed one.

@@ -201,9 +201,12 @@ export async function startServer(config = ensureLayout(resolveConfig()), { host
   const SCANS = CONFIG.paths.scans, PROFILES = CONFIG.paths.profiles, DEFAULT_PROFILES = CONFIG.paths.defaultProfiles;
   const RUNS = CONFIG.paths.runs, BRIDGE = CONFIG.paths.bridge, SETTINGS = CONFIG.paths.settings, USER_RULES_DIR = CONFIG.paths.rules;
   // Sibling of app/ at the repo root by default — each adapters/<id>/ directory that ships a
-  // capabilities.json is one adapter the non-demo server watches an inbox for (today: just
-  // adapters/tazuo/). Overridable (config.mjs's --adapters/PACKRAT_ADAPTERS_DIR) so a test can point
-  // a real running server at a throwaway folder of fixture adapters instead of the repo's real ones.
+  // capabilities.json is one adapter the non-demo server watches an inbox for (today: three —
+  // adapters/tazuo/, adapters/razor-enhanced/, and adapters/classicuo-web/, the last of which never
+  // has anything to watch since its "paste" transport writes into the inbox only via POST
+  // /api/import/paste, never a folder drop). Overridable (config.mjs's --adapters/PACKRAT_ADAPTERS_DIR)
+  // so a test can point a real running server at a throwaway folder of fixture adapters instead of the
+  // repo's real ones.
   const ADAPTERS_DIR = CONFIG.paths.adaptersDir || join(HERE, "..", "adapters");
 
   // The core is built once (scripts/build-core.mjs, run via the pretest/prestart npm hooks or the
@@ -565,7 +568,11 @@ export async function startServer(config = ensureLayout(resolveConfig()), { host
         const installed = currentSettings.client ? installedVersion(currentSettings.client.scriptsDir, currentSettings.client.adapter) : null;
         return send(res, 200, {
           ok: true, firstRun: !currentSettings.setupDone, settings: currentSettings, adapters,
-          candidates, installed, available, dataDir: CONFIG.dataDir,
+          // platform: this machine's process.platform — on this desktop app, always the same machine
+          // the player's game client runs on. Lets the wizard/Import tab (app/ui/adapters.mjs's
+          // availableAdapters) hide a platform-restricted adapter (Razor Enhanced, Windows-only)
+          // instead of offering a choice that can never work (Phase 6 final review, deferred minor).
+          candidates, installed, available, dataDir: CONFIG.dataDir, platform: process.platform,
         });
       }
       if (req.method === "POST" && url.pathname === "/api/setup/locate") {
@@ -625,11 +632,25 @@ export async function startServer(config = ensureLayout(resolveConfig()), { host
         if (!listAdapters(ADAPTERS_DIR).some((a) => a.id === adapter)) return send(res, 400, { ok: false, error: `unknown adapter: ${adapter}` });
         const parsed = parsePastedScan(text);
         if (!parsed.ok) return send(res, 400, { ok: false, error: parsed.error });
+        // Post-review minor: `adapter` (which inbox the file gets filed under, from the Import tab's
+        // picker) and `parsed.doc.adapter.id` (what the pasted document itself says it came from) can
+        // disagree — a player who picks the wrong adapter in the dropdown before pasting, most likely
+        // when only one client is configured and the picker is hidden (see ui/import.mjs's
+        // adapterPicker) so the mismatch has no visible cause. Harmless to the fold itself (nothing
+        // downstream trusts which inbox a scan sat in over the document's own adapter block), but
+        // worth surfacing rather than filing it silently — logged here, and returned as `warning` so
+        // the Import tab can show it too.
+        const declaredAdapter = parsed.doc?.adapter?.id;
+        const mismatch = declaredAdapter && declaredAdapter !== adapter;
+        if (mismatch) {
+          safeAppendLog(CONFIG.paths.log, `${new Date().toISOString()} import-paste warn: pasted into "${adapter}"'s inbox but the document declares adapter "${declaredAdapter}"\n`);
+        }
         const { file, character } = writeScanToInbox({ doc: parsed.doc, adapter, paths: CONFIG.paths });
         // Same nudge as POST /api/import above — a single paste is not a burst, but there is no
         // reason to make the player wait on fs.watch's debounce when the file is already on disk.
         watchers.get(adapter)?.scanOnce();
-        return send(res, 200, { ok: true, written: file, character });
+        return send(res, 200, { ok: true, written: file, character,
+          ...(mismatch ? { warning: `filed under "${adapter}", but this scan says it's from "${declaredAdapter}" — check the Adapter picker above` } : {}) });
       }
       if (req.method === "POST" && url.pathname === "/api/import/rescan") {
         await readBody(req);   // {} — no fields read, but every POST still needs a declared JSON body (readBody's own content-type check)
