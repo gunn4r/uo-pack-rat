@@ -9,6 +9,25 @@ const VERSION_RE = /ADAPTER_VERSION\s*=\s*"([^"]+)"/;
 const ADAPTER_ID_RE = /^[a-z0-9-]+$/;
 export const RUNNING_MESSAGE = 'a Pack Rat script is running in the client — type -stopall in game, wait for "No scripts are currently running", then retry';
 
+// Per-adapter shape of "the folder inside a candidate/picked root that actually holds the scripts",
+// most-specific form first. Shared by candidateClientRoots (known install locations) and
+// validateScriptsDir (whatever folder the player picked by hand) so a new folder-transport adapter
+// only ever grows this one map instead of both functions separately. A paste-transport adapter (see
+// docs/adapter-guide.md) has no entry here on purpose — it has no scripts folder to find.
+const NESTED_SCRIPTS_SUFFIX = {
+  tazuo: [["TazUO", "LegionScripts"], ["LegionScripts"]],
+  // Grounded in the ClassicUO Launcher + Razor plugin layout razorce.com's Windows install guide
+  // documents (fetched 2026-09-17): Razor is unzipped into <launcher root>/ClassicUO/Data/Plugins/Razor,
+  // and its own in-client Scripts tab reads a `Scripts` subfolder there — the same convention
+  // adapters/razor-enhanced/README.md describes in prose ("typically wherever Razor Enhanced itself
+  // was installed, under a Scripts subfolder"). Unconfirmed against a live install (same "Status:
+  // unverified" caveat as the rest of that adapter) — treat this as a best-effort guess, not a fact.
+  "razor-enhanced": [["ClassicUO", "Data", "Plugins", "Razor", "Scripts"], ["Razor", "Scripts"], ["Scripts"]],
+};
+// The well-known root folder name candidateClientRoots looks for under Desktop/Downloads/Documents
+// (and, on win32, LOCALAPPDATA and the drive root) for each folder-transport adapter.
+const CANDIDATE_ROOT_NAME = { tazuo: "TazUO", "razor-enhanced": "CUOLauncher" };
+
 // ---- listAdapters ---------------------------------------------------------------------------------
 // One entry per adaptersDir subdirectory that ships a capabilities.json (the same test
 // app/contracts.test.mjs uses to find an adapter). name is the README's first Markdown heading text,
@@ -23,9 +42,16 @@ export function listAdapters(adaptersDir) {
     const dir = join(adaptersDir, d.name);
     const capPath = join(dir, "capabilities.json");
     if (!existsSync(capPath)) continue;
-    let capabilities;
-    try { capabilities = JSON.parse(readFileSync(capPath, "utf8")).capabilities || {}; }
+    let raw;
+    try { raw = JSON.parse(readFileSync(capPath, "utf8")); }
     catch { continue; }
+    const capabilities = raw.capabilities || {};
+    // "folder" (the adapter writes scripts into a player-chosen client folder) or "paste" (no
+    // filesystem access — the player pastes what the script prints into the Import tab instead).
+    // See docs/adapter-guide.md. Anything other than the literal "paste" is treated as "folder" so an
+    // adapter that omits the field entirely (there shouldn't be one, but nothing enforces it here)
+    // still gets offered for installation rather than silently disappearing from the wizard.
+    const transport = raw.transport === "paste" ? "paste" : "folder";
     let name = d.name;
     const readmePath = join(dir, "README.md");
     try {
@@ -33,7 +59,7 @@ export function listAdapters(adaptersDir) {
       if (m) name = m[1].trim();
     } catch { /* no README — fall back to the directory name */ }
     const scripts = scriptNamesIn(dir);
-    out.push({ id: d.name, name, scripts, capabilities, summary: summarize(capabilities) });
+    out.push({ id: d.name, name, scripts, capabilities, transport, summary: summarize(capabilities) });
   }
   return out;
 }
@@ -56,42 +82,55 @@ function summarize(capabilities) {
 }
 
 // ---- candidateClientRoots --------------------------------------------------------------------------
-// Where the TazUO client folder usually lands. Each candidate root is checked two ways — the client
-// unzipped one level deeper than the download folder (root/TazUO/LegionScripts, the common real-world
-// layout — see validateScriptsDir's <dir>/TazUO/LegionScripts form) or directly (root/LegionScripts) —
-// and only the LegionScripts directories that actually exist are returned, deduped, in root order.
+// Where a folder-transport client's folder usually lands, per adapter (NESTED_SCRIPTS_SUFFIX /
+// CANDIDATE_ROOT_NAME above). Each candidate root is checked in most-specific-first order — the
+// client unzipped one or more levels deeper than the download folder (the common real-world layout —
+// see validateScriptsDir's identical nested forms) down to the direct/shallowest shape — and only the
+// scripts directories that actually exist are returned, deduped, in root order. An adapter with no
+// entry in NESTED_SCRIPTS_SUFFIX (paste-transport, or simply unknown) proposes nothing: there is
+// either no folder to find, or no known layout to look for yet.
 export function candidateClientRoots({ adapter, home, platform = process.platform, env = process.env, exists = existsSync } = {}) {
-  if (adapter !== "tazuo" || !home) return [];
-  const roots = [join(home, "Desktop", "TazUO"), join(home, "Downloads", "TazUO"), join(home, "Documents", "TazUO")];
+  const suffixes = NESTED_SCRIPTS_SUFFIX[adapter];
+  if (!suffixes || !home) return [];
+  // Razor Enhanced only runs on Windows (adapters/razor-enhanced/README.md) — proposing a candidate on
+  // darwin/linux would point at a folder that can never exist for this client.
+  if (adapter === "razor-enhanced" && platform !== "win32") return [];
+  const rootName = CANDIDATE_ROOT_NAME[adapter];
+  const roots = [join(home, "Desktop", rootName), join(home, "Downloads", rootName), join(home, "Documents", rootName)];
   if (platform === "win32") {
-    if (env.LOCALAPPDATA) roots.push(`${env.LOCALAPPDATA}/TazUO`);
-    roots.push("C:\\TazUO");
+    if (env.LOCALAPPDATA) roots.push(join(env.LOCALAPPDATA, rootName));
+    roots.push(`C:\\${rootName}`);
   }
   const seen = new Set();
   const out = [];
   for (const root of roots) {
-    const nested = join(root, "TazUO", "LegionScripts");
-    const direct = join(root, "LegionScripts");
-    const hit = exists(nested) ? nested : exists(direct) ? direct : null;
+    let hit = null;
+    for (const suffix of suffixes) {
+      const p = join(root, ...suffix);
+      if (exists(p)) { hit = p; break; }
+    }
     if (hit && !seen.has(hit)) { seen.add(hit); out.push(hit); }
   }
   return out;
 }
 
 // ---- validateScriptsDir -----------------------------------------------------------------------------
-// Accepts the folder the user picked as-is, or either of the two real-world layouts a step down from
-// it. adapter is accepted for a future adapter whose client folder shape differs; today only tazuo ships.
+// Accepts the folder the user picked as-is, or any of that adapter's real-world layouts a step or more
+// down from it (NESTED_SCRIPTS_SUFFIX above). adapter with no entry there (a future folder-transport
+// adapter this map hasn't caught up with yet) falls back to tazuo's own shape rather than accepting
+// nothing — the closest guess is better than refusing every folder outright.
 export function validateScriptsDir(dir, adapter) {
   if (!dir || typeof dir !== "string") return { ok: false, error: "a folder is required" };
+  const suffixes = NESTED_SCRIPTS_SUFFIX[adapter] || NESTED_SCRIPTS_SUFFIX.tazuo;
   // Check the more-specific nested forms first: a picked folder that itself happens to exist (it
   // almost always does — it's a folder the user or a file dialog chose) must not shadow a real
-  // LegionScripts folder one or two levels below it.
-  const candidates = [join(dir, "TazUO", "LegionScripts"), join(dir, "LegionScripts"), dir];
+  // scripts folder one or more levels below it.
+  const candidates = [...suffixes.map((s) => join(dir, ...s)), dir];
   for (const c of candidates) {
     try { if (statSync(c).isDirectory()) return { ok: true, scriptsDir: c }; }
     catch { /* try the next form */ }
   }
-  return { ok: false, error: `no LegionScripts folder found under ${dir}${adapter ? ` for adapter "${adapter}"` : ""}` };
+  return { ok: false, error: `no scripts folder found under ${dir}${adapter ? ` for adapter "${adapter}"` : ""}` };
 }
 
 // ---- installedVersion --------------------------------------------------------------------------------
@@ -122,6 +161,18 @@ export function installedVersion(scriptsDir, adapter) {
 // anything closer than that (plausible ordinary clock skew between two machines/processes) still counts
 // as alive, so the guard doesn't get weaker for the normal case.
 const FUTURE_SKEW_TOLERANCE_S = 300;
+
+// Reads capabilities.json straight off disk rather than going through listAdapters (which the caller
+// has usually already called, but installScripts must stand on its own — see its own comment above
+// about defence in depth against a caller that skips the allowlist check). Missing/unreadable
+// capabilities.json is treated as "folder" (installable) rather than refused: an adapter this
+// permissive about its own metadata is a metadata problem, not evidence it has nothing to install.
+function adapterTransport(srcDir) {
+  try {
+    const raw = JSON.parse(readFileSync(join(srcDir, "capabilities.json"), "utf8"));
+    return raw.transport === "paste" ? "paste" : "folder";
+  } catch { return "folder"; }
+}
 
 function bridgeAlive(bridgeStatusPath, now, log = () => {}) {
   let st;
@@ -159,6 +210,14 @@ export function installScripts({ adapter, adaptersDir, scriptsDir, dataDir, brid
   const srcDir = join(resolvedAdaptersDir, adapter);
   if (dirname(srcDir) !== resolvedAdaptersDir) {
     return { ok: false, code: "badAdapter", error: `adapter "${adapter}" does not resolve under ${adaptersDir}` };
+  }
+  // A paste-transport adapter (docs/adapter-guide.md) has no scripts folder to write to — its whole
+  // point is that its sandbox can't write files at all. Reject it here, before the running-script
+  // guard and the scriptsDir check, so the error names the real reason ("nothing to install") instead
+  // of the misleading "badDir: no adapter scripts found" scriptNamesIn would otherwise produce below
+  // (true today only because a paste-transport adapter happens to ship no packrat-*.py files).
+  if (adapterTransport(srcDir) === "paste") {
+    return { ok: false, code: "noInstall", error: `adapter "${adapter}" has nothing to install — it has no scripts folder; use the Import tab instead` };
   }
   if (bridgeStatusPath && bridgeAlive(bridgeStatusPath, now(), log)) {
     return { ok: false, code: "running", error: RUNNING_MESSAGE };

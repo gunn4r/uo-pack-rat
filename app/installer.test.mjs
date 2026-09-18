@@ -24,6 +24,23 @@ function fakeAdaptersDir() {
   return dir;
 }
 
+// Same idea, but with the real tazuo/ AND razor-enhanced/ folders side by side — for the tests below
+// that check one adapter's install never reaches into another's.
+function fakeMultiAdaptersDir() {
+  const dir = tmp("qm-installer-multi-adapters-");
+  cpSync(join(REAL_ADAPTERS_DIR, "tazuo"), join(dir, "tazuo"), { recursive: true });
+  cpSync(join(REAL_ADAPTERS_DIR, "razor-enhanced"), join(dir, "razor-enhanced"), { recursive: true });
+  return dir;
+}
+
+// The real classicuo-web/ folder, alone — the one shipped paste-transport adapter, with no packrat-*.py
+// scripts of its own.
+function fakeWebAdapterDir() {
+  const dir = tmp("qm-installer-web-adapter-");
+  cpSync(join(REAL_ADAPTERS_DIR, "classicuo-web"), join(dir, "classicuo-web"), { recursive: true });
+  return dir;
+}
+
 // ---- listAdapters -----------------------------------------------------------------------------------
 
 test("[fast] listAdapters finds tazuo with its three scripts and a summary mentioning grab", () => {
@@ -36,6 +53,16 @@ test("[fast] listAdapters finds tazuo with its three scripts and a summary menti
   assert.match(tazuo.summary, /grab/);
   assert.equal(typeof tazuo.name, "string");
   assert.ok(tazuo.name.length > 0);
+  assert.equal(tazuo.transport, "folder");
+});
+
+test("[fast] listAdapters reports transport:\"paste\" and no scripts for the classicuo-web adapter", () => {
+  const adapters = listAdapters(fakeWebAdapterDir());
+  assert.equal(adapters.length, 1);
+  const [web] = adapters;
+  assert.equal(web.id, "classicuo-web");
+  assert.equal(web.transport, "paste");
+  assert.deepEqual(web.scripts, [], "a paste-transport adapter ships no packrat-*.py scripts to install");
 });
 
 test("[fast] listAdapters ignores a subdirectory with no capabilities.json and returns [] for a missing adaptersDir", () => {
@@ -79,6 +106,21 @@ test("[fast] candidateClientRoots adds LOCALAPPDATA and C:\\TazUO on win32", () 
 test("[fast] candidateClientRoots returns [] for an unknown adapter or a missing home", () => {
   assert.deepEqual(candidateClientRoots({ adapter: "nope", home: "/h", exists: () => true }), []);
   assert.deepEqual(candidateClientRoots({ adapter: "tazuo", home: "", exists: () => true }), []);
+});
+
+// Candidate roots are per adapter, not a single tazuo-shaped guess: razor-enhanced looks for the
+// ClassicUO-Launcher-plus-Razor-plugin layout (adapters/razor-enhanced/README.md's "typically wherever
+// Razor Enhanced itself was installed, under a Scripts subfolder"), under its own root name, and only
+// on win32 — Razor Enhanced is Windows-only, so proposing a candidate on darwin/linux would point at a
+// folder that can never exist for this client, even if a test's fake `exists` says it does.
+test("[fast] candidateClientRoots proposes a Razor Enhanced root at the ClassicUO/Data/Plugins/Razor/Scripts shape, win32 only", () => {
+  const home = "C:\\Users\\example";
+  const scripts = join(home, "Desktop", "CUOLauncher", "ClassicUO", "Data", "Plugins", "Razor", "Scripts");
+  const exists = (p) => p === scripts;
+  const win = candidateClientRoots({ adapter: "razor-enhanced", home, platform: "win32", env: {}, exists });
+  assert.deepEqual(win, [scripts]);
+  const mac = candidateClientRoots({ adapter: "razor-enhanced", home, platform: "darwin", env: {}, exists });
+  assert.deepEqual(mac, [], "Razor Enhanced is Windows-only — no candidate on a non-win32 platform even if the folder exists");
 });
 
 // ---- validateScriptsDir -------------------------------------------------------------------------------
@@ -248,6 +290,37 @@ test("[fast] installScripts still refuses when alive is only slightly ahead (ord
   const scriptsDir = tmp("qm-is-slight-future-dest-");
   const result = installScripts({ adapter: "tazuo", adaptersDir: fakeAdaptersDir(), scriptsDir, dataDir: tmp("qm-is-data-"), bridgeStatusPath: sp });
   assert.deepEqual(result, { ok: false, code: "running", error: RUNNING_MESSAGE });
+});
+
+// installScripts is parameterised by adapter+adaptersDir already, but nothing previously proved two
+// real, differently-shaped adapters living in the same adaptersDir stay isolated from each other —
+// this is that proof, with the two adapters that actually ship side by side today.
+test("[fast] installScripts for one adapter never copies another adapter's scripts into scriptsDir", () => {
+  const adaptersDir = fakeMultiAdaptersDir();
+  const scriptsDir = tmp("qm-is-isolation-dest-");
+  const result = installScripts({ adapter: "razor-enhanced", adaptersDir, scriptsDir, dataDir: tmp("qm-is-data-"), bridgeStatusPath: join(scriptsDir, "no-status.json") });
+  assert.equal(result.ok, true, JSON.stringify(result));
+  assert.deepEqual(result.installed.sort(), ["packrat-bridge.py", "packrat-scanner.py"]);
+  assert.equal(existsSync(join(scriptsDir, "packrat-refresh.py")), false, "tazuo's refresh script (razor-enhanced ships none) was not copied");
+  for (const name of result.installed) {
+    const srcBuf = readFileSync(join(adaptersDir, "razor-enhanced", name));
+    const destBuf = readFileSync(join(scriptsDir, name));
+    assert.ok(srcBuf.equals(destBuf), `${name} came from razor-enhanced's own folder, not tazuo's`);
+  }
+});
+
+// A paste-transport adapter has no scripts folder to write to at all (see docs/adapter-guide.md) — it
+// must never be offered for installation, and installScripts itself must refuse it before touching
+// the filesystem, the same defence-in-depth discipline the badAdapter tests above apply to a
+// traversal/unknown id.
+test("[fast] installScripts refuses a paste-transport adapter with code noInstall before touching the filesystem", () => {
+  const adaptersDir = fakeWebAdapterDir();
+  const scriptsDir = tmp("qm-is-paste-dest-");
+  const result = installScripts({ adapter: "classicuo-web", adaptersDir, scriptsDir, dataDir: tmp("qm-is-data-"), bridgeStatusPath: join(scriptsDir, "no-status.json") });
+  assert.equal(result.ok, false);
+  assert.equal(result.code, "noInstall", JSON.stringify(result));
+  assert.match(result.error, /nothing to install/);
+  assert.deepEqual(readdirSync(scriptsDir), [], "nothing was written for a paste-transport adapter");
 });
 
 // ---- importScans ---------------------------------------------------------------------------------------

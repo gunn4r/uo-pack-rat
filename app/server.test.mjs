@@ -975,6 +975,52 @@ test("[fast] GET /api/setup lists the tazuo adapter, its available (repo-shipped
   }
 });
 
+// Task 5, Phase 6: the wizard/Settings tell a folder-transport adapter (installable) apart from a
+// paste-transport one (nothing to install, sent to the Import tab instead) by this field — never by a
+// hard-coded adapter id. Uses the repo's own three shipped adapters, not a throwaway fixture dir.
+test("[fast] GET /api/setup reports each real adapter's transport; POST /api/setup/install refuses the paste-transport classicuo-web adapter with 400", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "qm-setup-transport-"));
+  const s2 = await startServer(ensureLayout(resolveConfig(["--port", "0", "--data", dir], {})));
+  try {
+    const setup = await (await fetch(s2.url + "/api/setup")).json();
+    const tazuo = setup.adapters.find((a) => a.id === "tazuo");
+    const web = setup.adapters.find((a) => a.id === "classicuo-web");
+    assert.ok(tazuo, JSON.stringify(setup.adapters.map((a) => a.id)));
+    assert.ok(web, JSON.stringify(setup.adapters.map((a) => a.id)));
+    assert.equal(tazuo.transport, "folder", JSON.stringify(tazuo));
+    assert.equal(web.transport, "paste", JSON.stringify(web));
+
+    const scriptsDir = mkdtempSync(join(tmpdir(), "qm-setup-transport-dest-"));
+    const r = await fetch(s2.url + "/api/setup/install", {
+      method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ adapter: "classicuo-web", scriptsDir }),
+    });
+    assert.equal(r.status, 400);
+    const body = await r.json();
+    assert.match(body.error, /nothing to install/);
+    assert.deepEqual(readdirSync(scriptsDir), [], "nothing was written for a paste-transport adapter");
+    assert.equal((await (await fetch(s2.url + "/api/settings")).json()).settings.client, undefined, "a refused install must not save settings.client");
+  } finally {
+    await s2.close();
+  }
+});
+
+test("[fast] POST /api/setup/locate resolves a nested .../ClassicUO/Data/Plugins/Razor/Scripts folder for the razor-enhanced adapter", async () => {
+  const s2 = await startServer(ensureLayout(resolveConfig(["--port", "0", "--data", mkdtempSync(join(tmpdir(), "qm-setup-locate-razor-"))], {})));
+  try {
+    const clientRoot = mkdtempSync(join(tmpdir(), "qm-client-razor-"));
+    const scriptsDir = join(clientRoot, "ClassicUO", "Data", "Plugins", "Razor", "Scripts");
+    mkdirSync(scriptsDir, { recursive: true });
+    const r = await fetch(s2.url + "/api/setup/locate", {
+      method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ adapter: "razor-enhanced", dir: clientRoot }),
+    });
+    assert.equal(r.status, 200);
+    const body = await r.json();
+    assert.equal(body.scriptsDir, scriptsDir);
+  } finally {
+    await s2.close();
+  }
+});
+
 // Task 2, Phase 6: the page decides whether to offer the Highlight/Grab/Go-to bridge buttons from
 // GET /api/setup's {settings.client, adapters} — settings.client names which installed adapter is
 // active, and adapters carries that adapter's own capabilities.bridge list. This is the one route

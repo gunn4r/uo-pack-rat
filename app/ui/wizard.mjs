@@ -1,7 +1,10 @@
-// ui/wizard.mjs — the first-run / "Run setup again" wizard: shard → client → locate → install.
-// Task 3, Phase 4. A <dialog id="wizard"> (index.html ships it empty) that this module fills and
-// drives with showModal()/close(); every step is reachable AND skippable, and every close path
-// (Finish, Skip, or Esc) marks setup done so the wizard never traps the user or re-opens itself.
+// ui/wizard.mjs — the first-run / "Run setup again" wizard: shard → client → locate → install, for a
+// folder-transport client (see docs/adapter-guide.md) — or shard → client → (nothing to locate) →
+// (nothing to install, go paste in the Import tab) for a paste-transport one, like the ClassicUO web
+// client. Task 3, Phase 4; Task 5, Phase 6 added the branch. A <dialog id="wizard"> (index.html ships
+// it empty) that this module fills and drives with showModal()/close(); every step is reachable AND
+// skippable, and every close path (Finish, Skip, or Esc) marks setup done so the wizard never traps
+// the user or re-opens itself.
 import { state } from "./store.mjs";
 import { $, el, toast } from "./dom.mjs";
 import { api } from "./api.mjs";
@@ -11,20 +14,37 @@ import { changeShard } from "./shard.mjs";
 // The shard's AFK rule, shown verbatim on step 1 only for shards that need it (uoalive today).
 const AFK_NOTICE = "UO Alive allows AFK skill training, but bans unattended resource, combat and loot gathering. Pack Rat's scripts are attended tools: they read what you can see and move an item only when you click.";
 
-// Copied verbatim from adapters/tazuo/README.md's "What to press" list (Task 3 brief — no fetch,
-// no re-derivation; if the README's wording changes, update this constant to match by hand).
-const WHAT_TO_PRESS = [
-  "After a gearing or skill-training session on a character: run `packrat-refresh.py`.",
-  "The first time you scan a character, or whenever chests/bags move or get restocked: stand near the cluster and run `packrat-scanner.py`; repeat at each cluster.",
-  "Whenever you want to use the app's Highlight/Grab/Go to buttons: start `packrat-bridge.py` and leave it running.",
-];
+// "What to press in game" is built from the script NAMES the install just reported, not copied from
+// one adapter's README — adapters/tazuo/ ships packrat-refresh.py and adapters/razor-enhanced/
+// doesn't, so a fixed TazUO-shaped list would be wrong (or incomplete) for any other folder-transport
+// adapter. Every adapter that ships a script matching one of these three follows the same
+// packrat-scanner.py / packrat-refresh.py / packrat-bridge.py naming convention (docs/adapter-guide.md);
+// a script whose name matches none of them is a future kind of script this list doesn't know how to
+// describe yet, so it's simply left out rather than guessed at.
+function whatToPressLines(installedNames) {
+  const has = (key) => installedNames.find((n) => n.includes(key));
+  const lines = [];
+  const refresh = has("refresh");
+  if (refresh) lines.push(`After a gearing or skill-training session on a character: run \`${refresh}\`.`);
+  const scanner = has("scanner");
+  if (scanner) lines.push(`The first time you scan a character, or whenever chests/bags move or get restocked: stand near the cluster and run \`${scanner}\`; repeat at each cluster.`);
+  const bridge = has("bridge");
+  if (bridge) lines.push(`Whenever you want to use the app's Highlight/Grab/Go to buttons: start \`${bridge}\` and leave it running.`);
+  return lines;
+}
 
-const STEP_TITLES = { 1: "Shard", 2: "Client", 3: "Locate your client folder", 4: "Install" };
+const STEP_TITLES = { 1: "Shard", 2: "Client" };
+// Steps 3 and 4 read differently for a paste-transport client (nothing to locate, nothing to install)
+// than a folder-transport one — see isPasteAdapter() below.
+function stepTitle(step) {
+  if (step === 3) return isPasteAdapter() ? "Nothing to install" : "Locate your client folder";
+  if (step === 4) return isPasteAdapter() ? "Import your scans" : "Install";
+  return STEP_TITLES[step];
+}
 
-// WHAT_TO_PRESS's strings stay the verbatim copy (backticks included, matching the README's own
-// Markdown); this splits each on its backtick pairs and renders the wrapped script name as a real
-// <code> element via el() (text nodes only, no innerHTML) instead of showing the backtick
-// characters literally.
+// whatToPressLines()'s strings carry Markdown-style backticks around each script name; this splits
+// each on its backtick pairs and renders the wrapped part as a real <code> element via el() (text
+// nodes only, no innerHTML) instead of showing the backtick characters literally.
 function withCode(text) {
   return text.split("`").map((part, i) => (i % 2 === 1 ? el("code", {}, part) : part));
 }
@@ -59,12 +79,24 @@ export async function openWizard({ firstRun = false } = {}) {
   if (!dialog.open) dialog.showModal();
 }
 
+// The adapter object (listAdapters' shape: {id, name, scripts, capabilities, transport, summary})
+// currently selected in the wizard — looked up fresh each call rather than cached on wiz, since the
+// radio in step2() is the only thing that ever changes wiz.adapter and always re-renders right after.
+function currentAdapterInfo() {
+  return wiz.setup.adapters.find((a) => a.id === wiz.adapter) || null;
+}
+// A paste-transport client (docs/adapter-guide.md — the ClassicUO web client today) has no folder to
+// locate and no scripts to install: steps 3 and 4 branch on this instead of naming the adapter.
+function isPasteAdapter() {
+  return currentAdapterInfo()?.transport === "paste";
+}
+
 function render() {
   const dialog = $("#wizard");
   if (!dialog || !wiz) return;
   dialog.replaceChildren(
     el("div", { class: "wizard-head" },
-      el("h2", {}, `Step ${wiz.step} of 4 · ${STEP_TITLES[wiz.step]}`),
+      el("h2", {}, `Step ${wiz.step} of 4 · ${stepTitle(wiz.step)}`),
       el("span", { class: "small muted" }, wiz.firstRun ? "First-run setup" : "Setup")),
     el("div", { class: "wizard-body" }, stepBody()),
     footer());
@@ -73,6 +105,7 @@ function render() {
 function stepBody() {
   if (wiz.step === 1) return step1();
   if (wiz.step === 2) return step2();
+  if (isPasteAdapter()) return wiz.step === 3 ? pasteStep3() : pasteStep4();
   if (wiz.step === 3) return step3();
   return step4();
 }
@@ -99,16 +132,23 @@ function step1() {
 }
 
 // ---------------------------------------------------------------- step 2: client
+// Every adapter is offered here regardless of transport — a paste-transport client still needs to be
+// named so the player identifies their own client and steps 3/4 branch correctly; it just carries an
+// extra line saying what picking it means, since there's nothing to install for it (no adapter name is
+// ever hard-coded here — the branch is entirely a.transport, read off capabilities.json).
 function step2() {
   if (!wiz.setup.adapters.length) return el("div", { class: "msg bad" }, "No client adapters are available in this build.");
   return el("div", { class: "stack" }, ...wiz.setup.adapters.map((a) => {
     const radio = el("input", { type: "radio", name: "wiz-adapter", onchange: () => { wiz.adapter = a.id; wiz.scriptsDir = null; wiz.locateError = null; wiz.installed = null; render(); } });
     radio.checked = a.id === wiz.adapter;
-    return el("label", { class: "row" }, radio, el("div", {}, el("div", {}, a.name), a.summary ? el("div", { class: "small muted" }, a.summary) : null));
+    return el("label", { class: "row" }, radio, el("div", {},
+      el("div", {}, a.name),
+      a.summary ? el("div", { class: "small muted" }, a.summary) : null,
+      a.transport === "paste" ? el("div", { class: "small muted" }, "No files to install — you'll paste what its scanner prints into the Import tab.") : null));
   }));
 }
 
-// ---------------------------------------------------------------- step 3: locate
+// ---------------------------------------------------------------- step 3: locate (folder-transport only)
 function step3() {
   const candidates = wiz.setup.candidates[wiz.adapter] || [];
   const radios = candidates.map((dir) => {
@@ -116,9 +156,10 @@ function step3() {
     radio.checked = dir === wiz.scriptsDir;
     return el("label", { class: "row" }, radio, el("span", { class: "small" }, dir));
   });
+  const clientName = currentAdapterInfo()?.name || "client";
   return el("div", { class: "stack" },
     candidates.length ? el("div", { class: "stack" }, ...radios) : el("div", { class: "small muted" }, "No likely folder found automatically."),
-    pickFolderRow({ title: "Choose your TazUO client's LegionScripts folder", buttonLabel: "Choose a folder…", onResolved: locate }),
+    pickFolderRow({ title: `Choose your ${clientName}'s scripts folder`, buttonLabel: "Choose a folder…", onResolved: locate }),
     wiz.locateError ? el("div", { class: "msg bad" }, wiz.locateError) : null,
     wiz.scriptsDir && !wiz.locateError ? el("div", { class: "msg" },
       `Resolved to: ${wiz.scriptsDir}`,
@@ -130,6 +171,27 @@ async function locate(dir) {
     wiz.scriptsDir = r.scriptsDir; wiz.installed = r.installed; wiz.locateError = null;
   } catch (e) { wiz.locateError = e.message; wiz.scriptsDir = null; wiz.installed = null; }
   render();
+}
+
+// ---------------------------------------------------------------- steps 3/4, paste-transport branch
+// Nothing to locate and nothing to install (docs/adapter-guide.md's "paste" transport) — sent straight
+// to the Import tab instead. finish() is what actually persists settings.client for this branch (see
+// below); "Go to Import tab" both finishes and navigates in one click, but the ordinary Finish button
+// in the footer works too, just without the navigation.
+function pasteStep3() {
+  const clientName = currentAdapterInfo()?.name || "This client";
+  return el("div", { class: "stack" },
+    el("div", { class: "msg" }, `${clientName} can't write files to disk, so there's no folder to locate or install scripts into.`));
+}
+function pasteStep4() {
+  const clientName = currentAdapterInfo()?.name || "This client";
+  return el("div", { class: "stack" },
+    el("div", { class: "msg" }, `Run ${clientName}'s scanner, copy what it prints, and paste it into the Import tab — the app validates and folds it in exactly like a scan a folder-based client dropped into its inbox.`),
+    el("button", { class: "primary", onclick: goToImport }, "Go to Import tab"));
+}
+async function goToImport() {
+  await finish();
+  location.hash = "#/import";
 }
 
 // ---------------------------------------------------------------- step 4: install
@@ -148,7 +210,7 @@ function step4() {
     installedNames ? el("div", { class: "stack" },
       el("div", { class: "msg" }, `Installed: ${installedNames.join(", ")}`),
       el("div", { class: "small" }, "What to press in game:"),
-      el("ul", { class: "small" }, ...WHAT_TO_PRESS.map((t) => el("li", {}, ...withCode(t))))) : null,
+      el("ul", { class: "small" }, ...whatToPressLines(installedNames).map((t) => el("li", {}, ...withCode(t))))) : null,
     el("div", { class: "wizard-divider" }),
     el("div", { class: "small muted" }, "Already have scan files? Import a folder"),
     pickFolderRow({ title: "Choose a folder of scan files to import", buttonLabel: "Choose a folder…", onResolved: doImport }),
@@ -167,7 +229,10 @@ async function doInstall() {
 async function doImport(dir) {
   wiz.importBusy = true; render();
   try {
-    const r = await api("/api/import", { method: "POST", body: { dir } });
+    // adapter: wiz.adapter (post-review fix) — this used to omit it and rely on the server's "tazuo"
+    // default, which silently imported into the wrong adapter's inbox for anyone setting up
+    // razor-enhanced here.
+    const r = await api("/api/import", { method: "POST", body: { dir, adapter: wiz.adapter } });
     wiz.importMsg = `copied ${r.copied}${r.skipped ? ` (skipped ${r.skipped} already present)` : ""}`;
   } catch (e) { wiz.importMsg = e.message; }
   wiz.importBusy = false; render();
@@ -201,7 +266,9 @@ function footer() {
   const backBtn = el("button", { onclick: () => { wiz.step--; render(); } }, "Back");
   backBtn.disabled = wiz.step === 1;
   const nextBtn = el("button", { class: "primary", onclick: () => { wiz.step++; render(); } }, "Next");
-  nextBtn.disabled = wiz.step === 3 && !wiz.scriptsDir;
+  // Step 3 only gates on a resolved scriptsDir for a folder-transport client — a paste-transport one
+  // has nothing to locate, so pasteStep3() never sets wiz.scriptsDir and must not be stuck here.
+  nextBtn.disabled = wiz.step === 3 && !isPasteAdapter() && !wiz.scriptsDir;
   const isLast = wiz.step === 4;
   return el("div", { class: "row wizard-foot" },
     backBtn,
@@ -222,7 +289,22 @@ function closeAs(kind) {
   dialog.close();
 }
 async function skip() { await persistSetupDone(); closeAs("done"); }
-async function finish() { await persistSetupDone(); closeAs("done"); }
+// finish() is the one path that persists a paste-transport pick: a folder-transport client already got
+// settings.client written by doInstall()'s own POST /api/setup/install, but a paste-transport client
+// never calls that route (there's nothing to install), so finish() writes settings.client here instead
+// — reached both by the footer's own Finish button and by pasteStep4()'s "Go to Import tab" (which
+// calls finish() then navigates). Skip deliberately does NOT do this: skipping means "I didn't finish
+// setup," not "commit whatever radio happened to be selected."
+async function finish() {
+  if (isPasteAdapter() && wiz.adapter) {
+    try {
+      const r = await api("/api/settings", { method: "PUT", body: { client: { adapter: wiz.adapter, scriptsDir: "" } } });
+      state.settings = r.settings;
+    } catch (e) { toast(e.message, "bad"); }
+  }
+  await persistSetupDone();
+  closeAs("done");
+}
 
 // Esc fires the dialog's native "cancel" then "close" with no returnValue set — treat that exactly
 // like Skip (setupDone: true) so leaving the wizard by any path never leaves it re-opening itself.
