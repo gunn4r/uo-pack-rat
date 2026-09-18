@@ -23,7 +23,7 @@
 - **Prose is never hard-wrapped** — one paragraph is one line, in every Markdown file this phase writes or edits.
 - **Read results from `test_logs/latest_summary.json`**, never console output.
 - **Never commit** `local/`, `app/dist/`, `test_logs/`, `.superpowers/`, `dist/`, `node_modules/`.
-- **Never touch anything outside the repository** — not `~/r/ultima_online`, not `~/Desktop/TazUO` (the user's live game scripts), not `~/.pack-rat` (the user's real data), not `~/.claude`.
+- **Never touch anything outside the repository** — not the maintainer's original private workspace, not their live game-client folder, not `~/.pack-rat` (their real data), not `~/.claude`. Each dispatch names those paths literally; the plan does not, because the plan is published.
 - **Fixtures come from real runs, anonymised** (`docs/adapter-guide.md`'s Fixture rules, via `scripts/make-adapter-fixture.mjs`). A hand-written fixture is not acceptable; an adapter whose fixture cannot be produced yet ships without one and is skipped by the contract test until it can.
 
 ---
