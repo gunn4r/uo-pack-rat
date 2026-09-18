@@ -65,6 +65,8 @@ Three small Python scripts run inside the TazUO client and feed the app — inst
 
 All three are attended tools: they read what your character can see and move an item only when you click something in the app. They never fight, farm, or loop unattended — which matters, because most UO shards (including the one this was built for) ban unattended combat, resource, and loot gathering, sometimes with severe penalties. Nothing here is built to get around that rule; check your own shard's policy before running anything automated.
 
+**On the [ClassicUO web client](https://play.classicuo.org)** there's no filesystem to install scripts into, so instead there's one script, `adapters/classicuo-web/packrat-scanner.ts`, that prints its scan to the console area below the scripting window; you copy that and paste it into the app's Import tab. See `adapters/classicuo-web/README.md` for the steps and, importantly, what that client can't see (the bank box, most likely the equipped arms slot, and any ground container outside a small known list) — this adapter hasn't been run against a live client yet, and the README says exactly what's still unverified.
+
 ## Your data
 
 Everything the app knows lives in one folder on your machine:

@@ -1,0 +1,16 @@
+{
+  "adapter": "classicuo-web",
+  "version": "1.0.0",
+  "transport": "paste",
+  "capabilities": {
+    "layers": ["OneHanded", "TwoHanded", "Shoes", "Pants", "Shirt", "Helmet", "Gloves",
+      "Ring", "Talisman", "Necklace", "Waist", "Torso", "Bracelet", "Tunic",
+      "Earrings", "Arms", "Cloak", "Robe", "Skirt", "Legs"],
+    "arms": false,
+    "bank": false,
+    "ground": true,
+    "nested": true,
+    "tooltips": "opl",
+    "bridge": []
+  }
+}
