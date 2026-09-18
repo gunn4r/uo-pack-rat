@@ -87,23 +87,29 @@ Hidden` not `Detecting Hidden`, `Item ID` not `Item Identification` — taken fr
 `Player.GetRealSkillValue`/`Player.UseSkill` document. `docs/scan-schema.md` says skill keys are
 "skill names as the client shows them," and these are what this client shows.
 
-**Skill values are `Player.GetRealSkillValue`, documented as "the base/real value of the skill"**
-— not necessarily the same number the paperdoll shows once item bonuses (Resisting Spells' gear
-bonus, for instance) are added in. No separate "effective/displayed" skill read turned up
-anywhere in the fetched Player docs. `docs/scan-schema.md` doesn't require a specific shape here
-("whatever shape the adapter reads off the skill gump"), so this isn't a schema violation, just a
-fidelity note: treat this adapter's skill values as trained skill, not necessarily paperdoll
-skill, until someone confirms otherwise against a live client.
+**Skill values match TazUO's own `{value, base, cap}` shape and meaning.** `value` is
+`Player.GetSkillValue`, documented as "the value of the skill, with modifiers" — the effective
+number the paperdoll shows, item bonuses (Resisting Spells' gear bonus, for instance) included,
+the same thing TazUO's `sk.Value` reports. `base` is `Player.GetRealSkillValue`, documented as
+"the base/real value of the skill" — the trained skill with no gear added, matching TazUO's
+`sk.Base`. `cap` is `Player.GetSkillCap`. (`GetSkillValue` is documented immediately beside
+`GetRealSkillValue` on the same page — an earlier version of this file relied on
+`GetRealSkillValue` alone, on the mistaken belief that no item-bonused skill read existed in
+Razor Enhanced's Player surface at all; that was wrong, and is fixed here.)
 
 ## The bridge actions
 
 - **`highlight`** — Razor Enhanced's docs have no "flash text above an arbitrary item" call (only
   `Player.HeadMessage`, which is above the *player*, not the item). Instead this recolors the item
-  — and, when the command carries a container chain, the chest it's inside — with
+  — and, when the command carries a container chain, its **immediate parent** (`chain[-1]`, the
+  bag it's actually sitting in — not `chain[0]`, the outer root; matters in a deeply nested chest,
+  where "the outer chest glowed" tells you nothing about which bag inside it to open next) — with
   `Items.SetColor(serial, hue)`, documented as affecting only your own client and not persisting,
   for a few seconds, then restores the original hue. A `Player.HeadMessage` naming the item plays
-  alongside it as a local status line. This is a different mechanic from TazUO's overhead text, but
-  it satisfies the same job: something visibly changes, locally, near the item, for a few seconds.
+  alongside it as a local status line. This is a different mechanic from TazUO's overhead text
+  (which marks the item plus that same immediate-parent container, `chain[-1]`, with `HeadMsg`
+  rather than a recolor), but it satisfies the same job: something visibly changes, locally, near
+  the item, for a few seconds.
 - **`grab`** — `Items.Move(source, destination, amount)`, with `amount: -1` (documented as "the
   whole stack") moving the item into `Player.Backpack`, then a re-read of the item's `Container`
   to confirm it landed before reporting success — same verify-after-move discipline as
@@ -159,8 +165,6 @@ a crash or a read mid-write never leaves a half-written file behind.
 - A container's contents only reach the client after `Items.WaitForContents` has opened it once in
   this session — the scanner and bridge both do this before trusting a container's contents.
 - No quick-refresh script yet (see "What each script does," above).
-- `Player.GetRealSkillValue` reads the base/real skill, not necessarily the item-bonused value the
-  paperdoll shows (see above).
 
 ## What's still outstanding
 
@@ -189,8 +193,10 @@ a crash or a read mid-write never leaves a half-written file behind.
   destination, amount, x, y)` with `amount: -1` for the whole stack; `Items.SetColor(serial,
   color)` as client-local and non-persistent; `Items.Filter`'s `OnGround`/`RangeMax`/
   `IsContainer`/`IsCorpse`/`Layers` fields and `Items.ApplyFilter`; `Player.GetItemOnLayer`/
-  `CheckLayer`'s full layer-name list; `Player.GetRealSkillValue`/`GetSkillCap`/`UseSkill`'s full
-  skill-name list; `Player.Backpack`/`Bank`/`Str`/`Dex`/`Int`/`Hits`/`HitsMax`/`Mana`/`ManaMax`/
+  `CheckLayer`'s full layer-name list; `Player.GetSkillValue` ("the value of the skill, with
+  modifiers") and `Player.GetRealSkillValue` ("the base/real value of the skill") as two distinct,
+  separately documented calls sharing the same skill-name argument list, plus `GetSkillCap`;
+  `Player.Backpack`/`Bank`/`Str`/`Dex`/`Int`/`Hits`/`HitsMax`/`Mana`/`ManaMax`/
   `Stam`/`StamMax`/`AR`/`FireResistance`/`ColdResistance`/`PoisonResistance`/`EnergyResistance`/
   `Position`; `Player.HeadMessage` as "Visible only by the Player"; `Player.ChatSay`/`ChatWhisper`/
   `ChatYell` as network speech, distinct from the above; `Player.PathFindTo(x, y, z)`;
