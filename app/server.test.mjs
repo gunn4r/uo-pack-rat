@@ -164,6 +164,98 @@ test("[fast] POST /api/bridge validates the assembled line against BRIDGE_SCHEMA
     await s2.close();
   }
 });
+
+// ---- Per-adapter bridge routing (Phase 6 final review follow-up) ----------------------------------
+// The bridge queue/status routes and the installer's running-bridge guard used to be hard-coded to
+// <data>/bridge/tazuo/ regardless of which client was actually configured — a Razor Enhanced player
+// whose capabilities.json declares all three bridge actions got real Highlight/Grab/Go-to buttons
+// that queued commands into a folder adapters/razor-enhanced/packrat-bridge.py never reads (it reads
+// its own <data>/bridge/razor-enhanced/, per its own header). These three tests cover exactly the
+// three things asked for: a command lands in the CONFIGURED adapter's own queue and not another's,
+// the status indicator reads the configured adapter's own status, and the install guard checks the
+// adapter actually being installed.
+
+test("[fast] POST /api/bridge queues into the configured adapter's own directory, not a fixed tazuo one, and never cross-contaminates", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "qm-bridge-routing-"));
+  const s2 = await startServer(ensureLayout(resolveConfig(["--demo", "--port", "0", "--data", dir], {})));
+  try {
+    const setClient = await fetch(s2.url + "/api/settings", { method: "PUT", headers: { "content-type": "application/json" },
+      body: JSON.stringify({ client: { adapter: "razor-enhanced", scriptsDir: dir } }) });
+    assert.equal(setClient.status, 200, JSON.stringify(await setClient.json()));
+
+    const r = await fetch(s2.url + "/api/bridge", { method: "POST", headers: { "content-type": "application/json" },
+      body: JSON.stringify({ action: "grab", serial: 0x40000010, name: "Ring", chain: [], pos: null }) });
+    assert.equal(r.status, 200, JSON.stringify(await r.json().catch(() => null)));
+
+    assert.ok(existsSync(join(dir, "bridge", "razor-enhanced", "queue.jsonl")), "the command landed in razor-enhanced's own queue");
+    assert.equal(existsSync(join(dir, "bridge", "tazuo", "queue.jsonl")), false, "nothing was written to tazuo's queue for a razor-enhanced-configured client");
+    const lines = readFileSync(join(dir, "bridge", "razor-enhanced", "queue.jsonl"), "utf8").trim().split("\n");
+    assert.equal(lines.length, 1);
+    assert.equal(JSON.parse(lines[0]).action, "grab");
+  } finally {
+    await s2.close();
+  }
+});
+
+test("[fast] GET /api/bridge/status reads the configured adapter's own status.json, not a fixed tazuo one", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "qm-bridge-status-routing-"));
+  // razor-enhanced's status, written directly (as its own packrat-bridge.py would) — deliberately
+  // different from anything that would ever land in bridge/tazuo/.
+  const razorBridgeDir = join(dir, "bridge", "razor-enhanced");
+  mkdirSync(razorBridgeDir, { recursive: true });
+  writeFileSync(join(razorBridgeDir, "status.json"), JSON.stringify({
+    alive: new Date().toISOString(), character: "RazorPlayer", current: null, results: {}, counts: { done: 0, failed: 0 },
+  }));
+  // A DIFFERENT (older/dead) tazuo status, so a test that accidentally read the wrong file would be
+  // caught by either the character name or the online flag being wrong, not just a missing-file 404.
+  const tazuoBridgeDir = join(dir, "bridge", "tazuo");
+  mkdirSync(tazuoBridgeDir, { recursive: true });
+  writeFileSync(join(tazuoBridgeDir, "status.json"), JSON.stringify({
+    alive: new Date(Date.now() - 3600_000).toISOString(), character: "WrongCharacter", current: null, results: {}, counts: { done: 0, failed: 0 },
+  }));
+
+  const s2 = await startServer(ensureLayout(resolveConfig(["--demo", "--port", "0", "--data", dir], {})));
+  try {
+    const setClient = await fetch(s2.url + "/api/settings", { method: "PUT", headers: { "content-type": "application/json" },
+      body: JSON.stringify({ client: { adapter: "razor-enhanced", scriptsDir: dir } }) });
+    assert.equal(setClient.status, 200, JSON.stringify(await setClient.json()));
+
+    const st = await (await fetch(s2.url + "/api/bridge/status")).json();
+    assert.equal(st.online, true, JSON.stringify(st));
+    assert.equal(st.character, "RazorPlayer", "must read razor-enhanced's own status, not tazuo's stale one");
+  } finally {
+    await s2.close();
+  }
+});
+
+test("[fast] POST /api/setup/install's running-bridge guard checks the adapter being INSTALLED, not the currently-configured client", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "qm-bridge-install-guard-"));
+  // tazuo's bridge looks alive — but we're about to install razor-enhanced, a different adapter, so
+  // this must NOT block the install.
+  const tazuoBridgeDir = join(dir, "bridge", "tazuo");
+  mkdirSync(tazuoBridgeDir, { recursive: true });
+  writeFileSync(join(tazuoBridgeDir, "status.json"), JSON.stringify({ alive: new Date().toISOString(), character: "Someone", current: null, results: {}, counts: { done: 0, failed: 0 } }));
+
+  const s2 = await startServer(ensureLayout(resolveConfig(["--port", "0", "--data", dir], {})));
+  try {
+    const scriptsDir1 = mkdtempSync(join(tmpdir(), "qm-bridge-install-guard-dest1-"));
+    const installOther = await fetch(s2.url + "/api/setup/install", { method: "POST", headers: { "content-type": "application/json" },
+      body: JSON.stringify({ adapter: "razor-enhanced", scriptsDir: scriptsDir1 }) });
+    assert.equal(installOther.status, 200, `installing razor-enhanced must not be blocked by tazuo's own bridge running: ${JSON.stringify(await installOther.json().catch(() => null))}`);
+
+    // Now make razor-enhanced's OWN bridge look alive, and installing razor-enhanced again must be refused.
+    const razorBridgeDir = join(dir, "bridge", "razor-enhanced");
+    mkdirSync(razorBridgeDir, { recursive: true });
+    writeFileSync(join(razorBridgeDir, "status.json"), JSON.stringify({ alive: new Date().toISOString(), character: "Someone", current: null, results: {}, counts: { done: 0, failed: 0 } }));
+    const scriptsDir2 = mkdtempSync(join(tmpdir(), "qm-bridge-install-guard-dest2-"));
+    const installSelf = await fetch(s2.url + "/api/setup/install", { method: "POST", headers: { "content-type": "application/json" },
+      body: JSON.stringify({ adapter: "razor-enhanced", scriptsDir: scriptsDir2 }) });
+    assert.equal(installSelf.status, 409, "installing razor-enhanced again must be refused once ITS OWN bridge looks alive");
+  } finally {
+    await s2.close();
+  }
+});
+
 test("[fast] /ui/ rejects traversal and unlisted files", async () => {
   assert.equal((await get("/ui/../vault-server.mjs")).status, 404);
   assert.equal((await get("/ui/nope.mjs")).status, 404);

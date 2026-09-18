@@ -40,17 +40,23 @@ export async function sendBridge(action, it) {
 // 2): every adapter's README documents copying the scripts in BY HAND as a normal install path (no
 // call through the wizard's install step at all, so settings.client never gets written even though
 // the scripts are in place and running), and the wizard's own Skip button leaves settings.client
-// unset on purpose (skipping means "I didn't finish setup," not "no client exists"). A TazUO player
-// who installed by hand, or skipped the wizard after installing another way, has a real, working
+// unset on purpose (skipping means "I didn't finish setup," not "no client exists"). A player who
+// installed by hand, or skipped the wizard after installing another way, has a real, working
 // packrat-bridge.py running — but currentAdapter() below still returns null for them, so every
 // Highlight/Grab/Go-to button disappears with no way to get them back short of running the wizard's
-// install step for real. That's a genuine gap, not a documented tradeoff, and it isn't fixed here:
-// fixing it needs a way to know WHICH adapter a bridge that's actually reporting online belongs to,
-// and today there isn't one — GET/POST /api/bridge are themselves hardcoded to a single path,
-// <dataDir>/bridge/tazuo/ (app/config.mjs's `paths.bridge`; see docs/bridge-protocol.md's own "today
-// that's <data>/bridge/tazuo/" caveat), so no adapter other than tazuo could ever be detected this
-// way even if this function tried. The real fix is making the bridge status/queue routes
-// adapter-aware; until then, this is a known limitation, not silently-assumed-fine behavior.
+// install step for real. That's a genuine gap, not a documented tradeoff, and it isn't fixed here.
+//
+// A later fix (Phase 6 final review follow-up) made GET/POST /api/bridge themselves adapter-aware —
+// app/config.mjs's `paths.bridgeFor(adapter)` replaced the single hard-coded `<dataDir>/bridge/tazuo/`
+// path (docs/bridge-protocol.md updated to match), and the server now reads/writes whichever
+// adapter's directory `settings.client.adapter` names, falling back to "tazuo" only when no client is
+// configured at all. That fixes the SERVER side for anyone whose configured client's bridge is
+// actually running, including the common hand-installed-TazUO case (their bridge really does write to
+// bridge/tazuo/, which is exactly what the unconfigured fallback now points at). It does NOT fix the
+// gap this comment describes: currentAdapter() below still can't show buttons for a client with no
+// settings.client at all, because it has no way to know WHICH adapter's capabilities.bridge list to
+// render buttons from — the server routing and the button-visibility gate are two different problems,
+// and only the first one has a general fix today.
 export function currentAdapter() {
   const client = state.setup?.settings?.client;
   if (!client) return null;
