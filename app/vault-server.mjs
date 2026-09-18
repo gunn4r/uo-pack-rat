@@ -188,7 +188,15 @@ function safeAppendLog(file, line) {
 // Promise<string|null>, openPath(path) -> Promise<void> }. Without it, POST /api/host/* answers 501
 // ("not available outside the desktop app") rather than throwing — the bare `node app/vault-server.mjs`
 // / test-harness path never has a folder picker or an OS file-opener to call.
-export async function startServer(config = ensureLayout(resolveConfig()), { host } = {}) {
+// `watcherOptions` is passed straight through to every app/watcher.mjs startWatcher() call below —
+// nothing outside tests should ever set it, since the defaults (debounceMs/retries/retryDelayMs) are
+// real product behavior. It exists so a test that wants to observe a reject-after-retries cycle over
+// SSE doesn't have to wait out the real debounce + backoff (300ms + 2×700ms = 1700ms of production
+// timing) inside a fixed-timeout SSE read — app/watcher.test.mjs already shortens these same knobs
+// (debounceMs:20, retryDelayMs:20) when calling startWatcher() directly; this gives app/server.test.mjs
+// the same lever for the route-level equivalent instead of relying on a wide timeout margin to absorb
+// real wall-clock retry delay plus whatever scheduling/fs-watch jitter a loaded machine adds on top.
+export async function startServer(config = ensureLayout(resolveConfig()), { host, watcherOptions = {} } = {}) {
   const CONFIG = config;
   const SCANS = CONFIG.paths.scans, PROFILES = CONFIG.paths.profiles, DEFAULT_PROFILES = CONFIG.paths.defaultProfiles;
   const RUNS = CONFIG.paths.runs, BRIDGE = CONFIG.paths.bridge, SETTINGS = CONFIG.paths.settings, USER_RULES_DIR = CONFIG.paths.rules;
@@ -251,6 +259,7 @@ export async function startServer(config = ensureLayout(resolveConfig()), { host
         log: (msg) => safeAppendLog(CONFIG.paths.log, `${new Date().toISOString()} watcher[${id}] ${msg}\n`),
         onAccepted: ({ file, character, scannedAt }) => broadcastEvent("inventory", { file, character, scannedAt, at: Date.now() }),
         onRejected: ({ file, reason }) => broadcastEvent("rejected", { file, reason, at: Date.now() }),
+        ...watcherOptions,
       });
       watchers.set(id, handle);
     }
