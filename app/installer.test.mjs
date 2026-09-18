@@ -54,6 +54,19 @@ test("[fast] listAdapters finds tazuo with its three scripts and a summary menti
   assert.equal(typeof tazuo.name, "string");
   assert.ok(tazuo.name.length > 0);
   assert.equal(tazuo.transport, "folder");
+  assert.equal(tazuo.platform, null, "tazuo has no platform restriction — capabilities.json carries no platform field");
+});
+
+// Phase 6 final review follow-up: capabilities.json's optional top-level `platform` field (see
+// docs/adapter-guide.md's "Platform restriction") must surface on the object listAdapters returns —
+// this is what app/ui/adapters.mjs's platformCompatible reads instead of hard-coding an adapter id.
+test("[fast] listAdapters surfaces razor-enhanced's platform:\"win32\" from its real capabilities.json", () => {
+  const adapters = listAdapters(fakeMultiAdaptersDir());
+  const razor = adapters.find((a) => a.id === "razor-enhanced");
+  assert.ok(razor, JSON.stringify(adapters.map((a) => a.id)));
+  assert.equal(razor.platform, "win32");
+  const tazuo = adapters.find((a) => a.id === "tazuo");
+  assert.equal(tazuo.platform, null);
 });
 
 test("[fast] listAdapters reports transport:\"paste\" and no scripts for the classicuo-web adapter", () => {
@@ -121,6 +134,29 @@ test("[fast] candidateClientRoots proposes nothing for razor-enhanced (no known 
   assert.deepEqual(win, [], "no well-known root name to guess at, even on win32");
   const mac = candidateClientRoots({ adapter: "razor-enhanced", home, platform: "darwin", env: {}, exists });
   assert.deepEqual(mac, [], "also Windows-only, so no candidate on a non-win32 platform either");
+});
+
+// Phase 6 final review follow-up: the platform gate is now data-driven (an `adapterPlatform` param,
+// fed from the adapter's own capabilities.json via listAdapters — see docs/adapter-guide.md's
+// "Platform restriction"), not a hard-coded `adapter === "razor-enhanced"` check. razor-enhanced
+// itself can't prove this in isolation (it has no CANDIDATE_ROOT_NAME entry at all, so it always
+// returns [] regardless of platform — the test above already covers that path). This exercises the
+// adapterPlatform parameter directly, using tazuo (which DOES have a real candidate path) as the
+// vehicle, to prove the gate itself works for any adapter a future capabilities.json restricts.
+test("[fast] candidateClientRoots gates on the adapterPlatform param, not a hard-coded adapter id", () => {
+  const home = "/Users/example";
+  const legionScripts = join(home, "Desktop", "TazUO", "LegionScripts");
+  const exists = (p) => p === legionScripts;
+  // tazuo has a real candidate here — but a caller-supplied adapterPlatform mismatching the current
+  // platform must still suppress it, exactly the way it would for a real platform-restricted adapter.
+  const blocked = candidateClientRoots({ adapter: "tazuo", home, platform: "darwin", env: {}, exists, adapterPlatform: "win32" });
+  assert.deepEqual(blocked, [], "adapterPlatform mismatching the current platform suppresses the candidate, even for an adapter that would otherwise have one");
+  // A matching adapterPlatform doesn't suppress anything.
+  const allowed = candidateClientRoots({ adapter: "tazuo", home, platform: "darwin", env: {}, exists, adapterPlatform: "darwin" });
+  assert.deepEqual(allowed, [legionScripts]);
+  // Omitting adapterPlatform entirely (the default) behaves exactly as before — no gating at all.
+  const unrestricted = candidateClientRoots({ adapter: "tazuo", home, platform: "darwin", env: {}, exists });
+  assert.deepEqual(unrestricted, [legionScripts]);
 });
 
 // ---- validateScriptsDir -------------------------------------------------------------------------------

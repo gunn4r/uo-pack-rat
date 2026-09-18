@@ -2,6 +2,7 @@
   "adapter": "razor-enhanced",
   "version": "1.0.0",
   "transport": "folder",
+  "platform": "win32",
   "capabilities": {
     "layers": ["RightHand", "LeftHand", "Shoes", "Pants", "Shirt", "Head", "Gloves", "Ring",
       "Talisman", "Neck", "Waist", "InnerTorso", "Bracelet", "MiddleTorso", "Earrings", "Arms",

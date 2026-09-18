@@ -10,8 +10,8 @@ import { $, el, toast } from "./dom.mjs";
 import { api } from "./api.mjs";
 import { renderSettings } from "./settings.mjs";
 import { changeShard } from "./shard.mjs";
-import { defaultAdapterId, availableAdapters } from "./adapters.mjs";
-export { defaultAdapterId, availableAdapters };
+import { defaultAdapterId, availableAdapters, platformCompatible } from "./adapters.mjs";
+export { defaultAdapterId, availableAdapters, platformCompatible };
 
 // The shard's AFK rule, shown verbatim on step 1 only for shards that need it (uoalive today).
 const AFK_NOTICE = "UO Alive allows AFK skill training, but bans unattended resource, combat and loot gathering. Pack Rat's scripts are attended tools: they read what you can see and move an item only when you click.";
@@ -138,23 +138,37 @@ function step1() {
 }
 
 // ---------------------------------------------------------------- step 2: client
-// Every PLATFORM-COMPATIBLE adapter is offered here regardless of transport — a paste-transport
-// client still needs to be named so the player identifies their own client and steps 3/4 branch
-// correctly; it just carries an extra line saying what picking it means, since there's nothing to
-// install for it (no adapter name is ever hard-coded here for the transport branch — that's entirely
-// a.transport, read off capabilities.json). Razor Enhanced (Windows-only) is filtered out on any
-// other platform by availableAdapters — offering it, or defaulting to it, elsewhere would point a
-// player at scripts nothing on their machine can ever run (Phase 6 final review, deferred minor).
+// Every adapter is offered here regardless of transport — a paste-transport client still needs to be
+// named so the player identifies their own client and steps 3/4 branch correctly; it just carries an
+// extra line saying what picking it means, since there's nothing to install for it (no adapter name
+// is ever hard-coded here for the transport branch — that's entirely a.transport, read off
+// capabilities.json). A platform-incompatible adapter (Razor Enhanced, Windows-only, on any other
+// platform — a.platform from capabilities.json, never a hard-coded id here either, see
+// platformCompatible) is still SHOWN, so a player who's heard of it doesn't wonder why it's missing,
+// but its radio is disabled and it carries a plain "Windows only" note instead of being selectable —
+// the wizard never lets a player pick a client that cannot run on this machine (Phase 6 final
+// review). The initial/default selection (openWizard, above) is drawn from availableAdapters, so the
+// wizard never silently lands on one either, even though it's visible here.
 function step2() {
-  const adapters = availableAdapters(wiz.setup.adapters, wiz.setup.platform);
+  const adapters = wiz.setup.adapters || [];
   if (!adapters.length) return el("div", { class: "msg bad" }, "No client adapters are available in this build.");
   return el("div", { class: "stack" }, ...adapters.map((a) => {
-    const radio = el("input", { type: "radio", name: "wiz-adapter", onchange: () => { wiz.adapter = a.id; wiz.scriptsDir = null; wiz.locateError = null; wiz.installed = null; render(); } });
+    const compatible = platformCompatible(a, wiz.setup.platform);
+    // el()'s generic branch does `setAttribute(k, v)` with no null handling — passing `disabled:
+    // null`/`title: null` would set the literal string "null" (a boolean attribute is present, and
+    // thus true, regardless of its value), backwards from "not disabled" here. Build the attrs
+    // objects conditionally instead, same fix shape as step1()'s shard <select> uses for `selected`.
+    const radioAttrs = { type: "radio", name: "wiz-adapter", onchange: () => { wiz.adapter = a.id; wiz.scriptsDir = null; wiz.locateError = null; wiz.installed = null; render(); } };
+    if (!compatible) radioAttrs.disabled = "";
+    const radio = el("input", radioAttrs);
     radio.checked = a.id === wiz.adapter;
-    return el("label", { class: "row" }, radio, el("div", {},
+    const labelAttrs = { class: "row" };
+    if (!compatible) labelAttrs.title = `${a.name} only runs on ${a.platform} — not available on this machine`;
+    return el("label", labelAttrs, radio, el("div", {},
       el("div", {}, a.name),
       a.summary ? el("div", { class: "small muted" }, a.summary) : null,
-      a.transport === "paste" ? el("div", { class: "small muted" }, "No files to install — you'll paste what its scanner prints into the Import tab.") : null));
+      !compatible ? el("div", { class: "small muted" }, `${a.platform} only — not available on this machine`) : null,
+      compatible && a.transport === "paste" ? el("div", { class: "small muted" }, "No files to install — you'll paste what its scanner prints into the Import tab.") : null));
   }));
 }
 

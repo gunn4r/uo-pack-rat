@@ -562,7 +562,7 @@ export async function startServer(config = ensureLayout(resolveConfig()), { host
         const adapters = listAdapters(ADAPTERS_DIR);
         const candidates = {}, available = {};
         for (const a of adapters) {
-          candidates[a.id] = candidateClientRoots({ adapter: a.id, home: homedir(), platform: process.platform, env: process.env });
+          candidates[a.id] = candidateClientRoots({ adapter: a.id, home: homedir(), platform: process.platform, env: process.env, adapterPlatform: a.platform });
           available[a.id] = installedVersion(join(ADAPTERS_DIR, a.id), a.id).version;
         }
         const installed = currentSettings.client ? installedVersion(currentSettings.client.scriptsDir, currentSettings.client.adapter) : null;

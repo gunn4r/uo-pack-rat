@@ -61,6 +61,12 @@ export function listAdapters(adaptersDir) {
     // adapter that omits the field entirely (there shouldn't be one, but nothing enforces it here)
     // still gets offered for installation rather than silently disappearing from the wizard.
     const transport = raw.transport === "paste" ? "paste" : "folder";
+    // Optional: the one Node process.platform value ("win32"/"darwin"/"linux") this adapter's client
+    // can run on at all, straight from the adapter's own capabilities.json — never hard-coded by
+    // adapter id anywhere else (app/ui/adapters.mjs's platformCompatible reads exactly this field).
+    // Absent/non-string means "works on every platform" (tazuo, classicuo-web today); Razor Enhanced
+    // is the one adapter that sets it ("win32" — it's a Windows-only client, per its own README).
+    const platform = typeof raw.platform === "string" ? raw.platform : null;
     let name = d.name;
     const readmePath = join(dir, "README.md");
     try {
@@ -68,7 +74,7 @@ export function listAdapters(adaptersDir) {
       if (m) name = m[1].trim();
     } catch { /* no README — fall back to the directory name */ }
     const scripts = scriptNamesIn(dir);
-    out.push({ id: d.name, name, scripts, capabilities, transport, summary: summarize(capabilities) });
+    out.push({ id: d.name, name, scripts, capabilities, transport, platform, summary: summarize(capabilities) });
   }
   return out;
 }
@@ -98,12 +104,14 @@ function summarize(capabilities) {
 // scripts directories that actually exist are returned, deduped, in root order. An adapter with no
 // entry in NESTED_SCRIPTS_SUFFIX (paste-transport, or simply unknown) proposes nothing: there is
 // either no folder to find, or no known layout to look for yet.
-export function candidateClientRoots({ adapter, home, platform = process.platform, env = process.env, exists = existsSync } = {}) {
+// adapterPlatform is the calling adapter's own capabilities.json `platform` field (listAdapters'
+// output carries it as `a.platform`) — never a hard-coded adapter id here. A platform-restricted
+// adapter (Razor Enhanced, "win32", today) proposes no candidate on any other platform: a folder
+// that can never exist for this client on this machine. null/omitted means no restriction.
+export function candidateClientRoots({ adapter, home, platform = process.platform, env = process.env, exists = existsSync, adapterPlatform = null } = {}) {
   const suffixes = NESTED_SCRIPTS_SUFFIX[adapter];
   if (!suffixes || !home) return [];
-  // Razor Enhanced only runs on Windows (adapters/razor-enhanced/README.md) — proposing a candidate on
-  // darwin/linux would point at a folder that can never exist for this client.
-  if (adapter === "razor-enhanced" && platform !== "win32") return [];
+  if (adapterPlatform && platform !== adapterPlatform) return [];
   const rootName = CANDIDATE_ROOT_NAME[adapter];
   // No well-known root name for this adapter (razor-enhanced today — see CANDIDATE_ROOT_NAME's
   // comment): nothing to guess at, so propose no candidates rather than joining onto `undefined`.

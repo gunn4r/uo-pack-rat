@@ -1003,6 +1003,18 @@ test("[fast] GET /api/setup reports each real adapter's transport; POST /api/set
     assert.equal(tazuo.transport, "folder", JSON.stringify(tazuo));
     assert.equal(web.transport, "paste", JSON.stringify(web));
 
+    // Phase 6 final review follow-up: capabilities.json's optional platform field, surfaced end to
+    // end through the real server — razor-enhanced is win32-only, the other two carry no restriction,
+    // and its candidates list is empty on this (non-Windows CI/dev) machine's real platform.
+    const razor = setup.adapters.find((a) => a.id === "razor-enhanced");
+    assert.ok(razor, JSON.stringify(setup.adapters.map((a) => a.id)));
+    assert.equal(razor.platform, "win32", JSON.stringify(razor));
+    assert.equal(tazuo.platform, null);
+    assert.equal(web.platform, null);
+    if (setup.platform !== "win32") {
+      assert.deepEqual(setup.candidates["razor-enhanced"], [], "no candidate for a platform-restricted adapter on the wrong platform");
+    }
+
     const scriptsDir = mkdtempSync(join(tmpdir(), "qm-setup-transport-dest-"));
     const r = await fetch(s2.url + "/api/setup/install", {
       method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ adapter: "classicuo-web", scriptsDir }),
