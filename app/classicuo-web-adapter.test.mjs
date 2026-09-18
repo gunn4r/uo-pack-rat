@@ -12,6 +12,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
+import { spawnSync } from "node:child_process";
 import { validateScan } from "./scan-schema.mjs";
 import { PASTE_BEGIN, PASTE_END } from "./import.mjs";
 
@@ -19,6 +20,27 @@ const HERE = dirname(fileURLToPath(import.meta.url));
 const ADAPTER_DIR = join(HERE, "..", "adapters", "classicuo-web");
 const capsFile = JSON.parse(readFileSync(join(ADAPTER_DIR, "capabilities.json"), "utf8"));
 const scannerSrc = readFileSync(join(ADAPTER_DIR, "packrat-scanner.ts"), "utf8");
+const scannerPath = join(ADAPTER_DIR, "packrat-scanner.ts");
+
+// Nothing else in this suite ever actually PARSES packrat-scanner.ts as code — every other test here
+// reads it as text (regexes for CAPABILITIES/markers). That gap is real: a source-corruption bug
+// (found live during this phase — a literal U+2028/U+2029 escape sequence written next to raw
+// hex digits in a regex/string literal, silently became the ACTUAL line/paragraph-separator
+// character partway through an editing pass, which is itself a syntax error inside a regex literal)
+// shipped undetected until someone happened to run the file by hand. Running it under Node's own
+// TypeScript type-stripping is the cheapest real parse check available (no external compiler
+// dependency, matches how `scripts/build-core.mjs` already treats `scripts/optimizer-core.ts`): the
+// script always calls `main()` unconditionally at its own end and references sandbox-only ambient
+// globals (`player`, `client`, `log`, `sleep`) that don't exist outside the real client, so it can
+// never exit 0 here — the only question worth asking is WHETHER it failed to run (an ordinary,
+// expected ReferenceError for a missing global) or failed to even PARSE (a SyntaxError, which this
+// test exists to catch).
+test("[fast] classicuo-web: packrat-scanner.ts is syntactically valid TypeScript (parses; fails only on a missing sandbox global, never a SyntaxError)", () => {
+  const r = spawnSync(process.execPath, ["--experimental-strip-types", scannerPath], { encoding: "utf8" });
+  assert.notEqual(r.status, 0, `expected packrat-scanner.ts to fail outside the real client sandbox (no player/client/log/sleep globals) — a clean exit here would itself be surprising:\n${r.stderr}`);
+  assert.doesNotMatch(r.stderr || "", /SyntaxError/, `packrat-scanner.ts failed to PARSE, not just to run:\n${r.stderr}`);
+  assert.match(r.stderr || "", /ReferenceError/, `expected a ReferenceError for a missing sandbox global, got:\n${r.stderr}`);
+});
 
 // Post-review fix (Phase 6 final review, Important 3): this used to be a third hand-typed copy of
 // the scanner's CAPABILITIES object, asserted only against itself — a change to the real
