@@ -6,7 +6,7 @@
 import { state } from "./store.mjs";
 import { $, el, toast } from "./dom.mjs";
 import { api } from "./api.mjs";
-import { openWizard, pickFolderRow } from "./wizard.mjs";
+import { openWizard } from "./wizard.mjs";
 import { bridgeNoteEl } from "./bridge.mjs";
 
 // Reinstall's own checkbox/result — separate from the wizard's, since this panel can act
@@ -27,7 +27,7 @@ export async function renderSettings(setup) {
     catch (e) { root.replaceChildren(el("div", { class: "panel empty" }, `Could not load setup info: ${e.message}`)); return; }
   }
   state.setup = setup;
-  root.replaceChildren(storagePanel(setup), clientPanel(setup), importPanel(), updatePanel());
+  root.replaceChildren(storagePanel(setup), clientPanel(setup), importPointer(), updatePanel());
 }
 
 // ---------------------------------------------------------------- storage: data dir / logs
@@ -58,6 +58,14 @@ function clientPanel(setup) {
     return el("div", { class: "panel stack" }, el("h3", {}, "Client"), el("div", { class: "small muted" }, "No client configured yet."), runAgain);
   }
   const adapter = setup.adapters.find((a) => a.id === client.adapter);
+  // A paste-transport client (docs/adapter-guide.md) has no scripts folder and nothing to reinstall —
+  // settings.client.scriptsDir is "" for one of these (see wizard.mjs's finish()), never a real path.
+  if (adapter?.transport === "paste") {
+    return el("div", { class: "panel stack" }, el("h3", {}, "Client"),
+      el("div", {}, adapter.name),
+      el("div", { class: "small muted" }, "Nothing installed for this client — paste scan text into the Import tab."),
+      runAgain);
+  }
   const installedVersion = setup.installed?.version;
   const availableVersion = setup.available?.[client.adapter];
   const checkbox = el("input", { type: "checkbox", onchange: (e) => { reinstall.checked = e.target.checked; renderSettings(setup); } });
@@ -83,15 +91,16 @@ function clientPanel(setup) {
 }
 
 // ---------------------------------------------------------------- import
-function importPanel() {
-  const msg = el("span", { class: "small" });
+// Task 5, Phase 6 (post-review consolidation): this panel used to have its own "Import a folder"
+// control, duplicating the one Task 1 added to the Import tab (app/ui/import.mjs) — and the two had
+// drifted apart, since this one never sent `adapter` in its POST /api/import body and so silently
+// imported into the tazuo inbox regardless of which client was actually configured. Kept the Import
+// tab's control as the one place to import a folder (it already has the adapter picker, the paste box
+// for a paste-transport client, and Rescan — this panel had none of that); Settings now just points
+// there instead of maintaining a second, adapter-unaware copy.
+function importPointer() {
   return el("div", { class: "panel stack" }, el("h3", {}, "Import"),
-    el("div", { class: "small muted" }, "Already have scan files? Import a folder"),
-    pickFolderRow({ title: "Choose a folder of scan files to import", onResolved: async (dir) => {
-      try { const r = await api("/api/import", { method: "POST", body: { dir } }); msg.textContent = `copied ${r.copied}${r.skipped ? ` (skipped ${r.skipped} already present)` : ""}`; }
-      catch (e) { msg.textContent = e.message; }
-    } }),
-    msg);
+    el("div", { class: "small muted" }, "Import scan files or paste a scan from the ", el("a", { href: "#/import" }, "Import tab"), "."));
 }
 
 // ---------------------------------------------------------------- update check
