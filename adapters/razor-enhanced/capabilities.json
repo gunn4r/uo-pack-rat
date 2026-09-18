@@ -1,0 +1,16 @@
+{
+  "adapter": "razor-enhanced",
+  "version": "1.0.0",
+  "transport": "folder",
+  "capabilities": {
+    "layers": ["RightHand", "LeftHand", "Shoes", "Pants", "Shirt", "Head", "Gloves", "Ring",
+      "Talisman", "Neck", "Waist", "InnerTorso", "Bracelet", "MiddleTorso", "Earrings", "Arms",
+      "Cloak", "OuterTorso", "OuterLegs", "InnerLegs"],
+    "arms": true,
+    "bank": true,
+    "ground": true,
+    "nested": true,
+    "tooltips": "opl",
+    "bridge": ["highlight", "grab", "goto"]
+  }
+}

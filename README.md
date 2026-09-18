@@ -49,7 +49,7 @@ chmod +x "Pack Rat-<version>-linux-x86_64.AppImage"
 
 ## First run
 
-The first time you launch Pack Rat, a setup wizard walks you through four short steps: which shard's rules to use, which game client to link (TazUO today), locating that client's `LegionScripts` folder (auto-detected where possible, or pick it by hand), and installing the adapter scripts into it. Every step can be skipped, and skipping never traps you — you can reopen the wizard later from the Settings tab.
+The first time you launch Pack Rat, a setup wizard walks you through four short steps: which shard's rules to use, which game client to link (TazUO or Razor Enhanced today), locating that client's scripts folder (auto-detected where possible for TazUO, or pick it by hand — Razor Enhanced has no single well-known install location, so its folder is always picked by hand for now), and installing the adapter scripts into it. Every step can be skipped, and skipping never traps you — you can reopen the wizard later from the Settings tab.
 
 Once the scripts are installed, there's nothing left to see until you run one in-game: stand near a chest cluster and run the scanner script (below), and its output appears in the app within a few seconds, picked up automatically.
 
@@ -65,7 +65,9 @@ Three small Python scripts run inside the TazUO client and feed the app — inst
 
 All three are attended tools: they read what your character can see and move an item only when you click something in the app. They never fight, farm, or loop unattended — which matters, because most UO shards (including the one this was built for) ban unattended combat, resource, and loot gathering, sometimes with severe penalties. Nothing here is built to get around that rule; check your own shard's policy before running anything automated.
 
-**On the [ClassicUO web client](https://play.classicuo.org)** there's no filesystem to install scripts into, so instead there's one script, `adapters/classicuo-web/packrat-scanner.ts`, that prints its scan to the console area below the scripting window; you copy that and paste it into the app's Import tab. See `adapters/classicuo-web/README.md` for the steps and, importantly, what that client can't see (the bank box, most likely the equipped arms slot, and any ground container outside a small known list) — this adapter hasn't been run against a live client yet, and the README says exactly what's still unverified.
+**On [Razor Enhanced](https://razorenhanced.readthedocs.io/)** (Windows-only, and what most shards officially distribute) two IronPython scripts do the same job: a scanner and a bridge, installed into Razor Enhanced's own Scripts folder — see `adapters/razor-enhanced/README.md` for install steps, exactly which capabilities are backed by which documented API call, and what's still unverified (this adapter, too, hasn't been run against a live client yet; development happens on macOS, and Razor Enhanced is Windows-only).
+
+**On the [ClassicUO web client](https://play.classicuo.org)** there's no filesystem to install scripts into, so instead there's one script, `adapters/classicuo-web/packrat-scanner.ts`, that prints its scan to the console area below the scripting window; you copy that and paste it into the app's Import tab. See `adapters/classicuo-web/README.md` for the steps and, importantly, what that client can't see (the bank box, most likely the equipped arms slot, and any ground container outside a small known list) — this adapter hasn't been run against a live client yet either, and the README says exactly what's still unverified.
 
 ## Your data
 
