@@ -176,9 +176,13 @@ def do_highlight(cmd):
     name = cmd.get("name") or str(getattr(it, "Name", "") or "item")
     targets = [it]
     if cmd.get("chain"):
-        root = Items.FindBySerial(as_int(cmd["chain"][0]))
-        if root is not None:
-            targets.append(root)
+        # chain[-1] is the item's IMMEDIATE parent, not chain[0] (the outer root) -- matches
+        # adapters/tazuo/packrat-bridge.py's do_highlight, which marks the item itself plus
+        # `chain[-1]` ("is in here"). In a deeply nested chest, recoloring the outer root instead
+        # would tell the player almost nothing about which of several bags inside it to open next.
+        parent = Items.FindBySerial(as_int(cmd["chain"][-1]))
+        if parent is not None:
+            targets.append(parent)
     original_hues = {}
     for t in targets:
         s = as_int(getattr(t, "Serial", 0))
