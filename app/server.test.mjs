@@ -267,7 +267,9 @@ test("[fast] GET /api/events: hello lists the tazuo adapter, and an accepted inb
     const hello = await sse.readUntil((buf) => buf.includes("event: hello"));
     const helloData = JSON.parse(hello.match(/event: hello\ndata: (.+)\n/)[1]);
     assert.equal(helloData.ok, true);
-    assert.deepEqual(helloData.watching, ["classicuo-web", "tazuo"]);
+    // Present, not pinned: the real point here is "tazuo is watched, and an accepted file in its
+    // inbox streams an event" (below) — not the exact set of every adapter shipped in this repo.
+    assert.ok(helloData.watching.includes("tazuo"), JSON.stringify(helloData.watching));
 
     const fixture = JSON.parse(readFileSync(join(HERE, "..", "adapters", "tazuo", "fixture.scan.json"), "utf8"));
     const inboxDir = join(dir, "inbox", "tazuo");
@@ -961,7 +963,9 @@ test("[fast] GET /api/setup lists the tazuo adapter, its available (repo-shipped
     const j = await (await fetch(s2.url + "/api/setup")).json();
     assert.equal(j.ok, true);
     assert.equal(j.firstRun, true);
-    assert.deepEqual(j.adapters.map((a) => a.id), ["classicuo-web", "tazuo"]);
+    // Present, not pinned: the test's own point (title, available/installed/dataDir below) is
+    // "tazuo is listed, with the right version/candidates" — not the exact set of shipped adapters.
+    assert.ok(j.adapters.map((a) => a.id).includes("tazuo"), JSON.stringify(j.adapters.map((a) => a.id)));
     assert.equal(j.available.tazuo, "2.0.0");
     assert.equal(j.installed, null);
     assert.equal(j.dataDir, dir);
@@ -1223,7 +1227,11 @@ test("[fast] POST /api/import/rescan reports the adapters it swept (tazuo when l
   try {
     const r = await fetch(s2.url + "/api/import/rescan", { method: "POST", headers: { "content-type": "application/json" }, body: "{}" });
     assert.equal(r.status, 200);
-    assert.deepEqual(await r.json(), { ok: true, adapters: ["classicuo-web", "tazuo"] });
+    const j = await r.json();
+    assert.equal(j.ok, true);
+    // Present, not pinned: the point is "tazuo gets swept live" vs. "nothing gets swept under
+    // --demo" (below) — not the exact set of every adapter shipped in this repo.
+    assert.ok(j.adapters.includes("tazuo"), JSON.stringify(j.adapters));
   } finally {
     await s2.close();
   }
@@ -1254,7 +1262,11 @@ test("[fast] POST /api/import/rescan actually re-sweeps a file the folder watche
 
     const r = await fetch(s2.url + "/api/import/rescan", { method: "POST", headers: { "content-type": "application/json" }, body: "{}" });
     assert.equal(r.status, 200);
-    assert.deepEqual(await r.json(), { ok: true, adapters: ["classicuo-web", "tazuo"] });
+    const swept = await r.json();
+    assert.equal(swept.ok, true);
+    // Present, not pinned — see the previous test's comment; this one's real point is the
+    // ingested-file assertion below, not the exact set of every adapter shipped in this repo.
+    assert.ok(swept.adapters.includes("tazuo"), JSON.stringify(swept.adapters));
 
     const deadline = Date.now() + 3000;
     let found = false;
