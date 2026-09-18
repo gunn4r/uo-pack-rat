@@ -1,7 +1,7 @@
 // server.test.mjs — HTTP route tests against a real listening server (ephemeral port, tmp data dir).
 import { test, before, after } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, readdirSync, existsSync, renameSync, rmSync } from "node:fs";
+import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, readdirSync, existsSync, renameSync, rmSync, cpSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
@@ -966,6 +966,56 @@ test("[fast] GET /api/setup lists the tazuo adapter, its available (repo-shipped
     assert.equal(j.installed, null);
     assert.equal(j.dataDir, dir);
     assert.ok(Array.isArray(j.candidates.tazuo), JSON.stringify(j.candidates));
+  } finally {
+    await s2.close();
+  }
+});
+
+// Task 2, Phase 6: the page decides whether to offer the Highlight/Grab/Go-to bridge buttons from
+// GET /api/setup's {settings.client, adapters} — settings.client names which installed adapter is
+// active, and adapters carries that adapter's own capabilities.bridge list. This is the one route
+// test both facts land in together, so it exercises the real contract the page reads rather than the
+// pure listAdapters()/installer.mjs unit already covered by app/installer.test.mjs. --adapters points
+// the whole server at a throwaway folder holding a copy of the real tazuo adapter (full bridge) next
+// to a minimal fixture adapter that declares no bridge at all, standing in for a client like the
+// ClassicUO web adapter that can't run one.
+test("[fast] GET /api/setup: an adapter with no bridge reports capabilities.bridge:[]; tazuo still reports the three actions", async () => {
+  const adaptersDir = mkdtempSync(join(tmpdir(), "qm-adapters-"));
+  cpSync(join(HERE, "..", "adapters", "tazuo"), join(adaptersDir, "tazuo"), { recursive: true });
+  const noBridgeDir = join(adaptersDir, "nobridge");
+  mkdirSync(noBridgeDir, { recursive: true });
+  writeFileSync(join(noBridgeDir, "capabilities.json"), JSON.stringify({
+    adapter: "nobridge", version: "1.0.0", transport: "folder",
+    capabilities: { layers: [], arms: false, bank: false, ground: false, nested: false, tooltips: "label", bridge: [] },
+  }));
+  const dataDir = mkdtempSync(join(tmpdir(), "qm-setup-nobridge-"));
+  const scriptsDir = mkdtempSync(join(tmpdir(), "qm-setup-nobridge-scripts-"));
+  const s2 = await startServer(ensureLayout(resolveConfig(["--port", "0", "--data", dataDir, "--adapters", adaptersDir], {})));
+  try {
+    const setup = await (await fetch(s2.url + "/api/setup")).json();
+    assert.deepEqual(setup.adapters.map((a) => a.id).sort(), ["nobridge", "tazuo"]);
+    assert.deepEqual(setup.adapters.find((a) => a.id === "nobridge").capabilities.bridge, []);
+    assert.deepEqual(setup.adapters.find((a) => a.id === "tazuo").capabilities.bridge, ["highlight", "grab", "goto"]);
+
+    // settings.client names which of those is active — PUT it at the no-bridge adapter first.
+    const putNoBridge = await fetch(s2.url + "/api/settings", {
+      method: "PUT", headers: { "content-type": "application/json" },
+      body: JSON.stringify({ client: { adapter: "nobridge", scriptsDir } }),
+    });
+    assert.equal(putNoBridge.status, 200);
+    let after = await (await fetch(s2.url + "/api/setup")).json();
+    assert.equal(after.settings.client.adapter, "nobridge");
+    assert.deepEqual(after.adapters.find((a) => a.id === after.settings.client.adapter).capabilities.bridge, []);
+
+    // Switching to tazuo flips the same lookup back to the three actions — same shape, no restart.
+    const putTazuo = await fetch(s2.url + "/api/settings", {
+      method: "PUT", headers: { "content-type": "application/json" },
+      body: JSON.stringify({ client: { adapter: "tazuo", scriptsDir } }),
+    });
+    assert.equal(putTazuo.status, 200);
+    after = await (await fetch(s2.url + "/api/setup")).json();
+    assert.equal(after.settings.client.adapter, "tazuo");
+    assert.deepEqual(after.adapters.find((a) => a.id === after.settings.client.adapter).capabilities.bridge, ["highlight", "grab", "goto"]);
   } finally {
     await s2.close();
   }
