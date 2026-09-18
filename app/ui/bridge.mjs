@@ -34,10 +34,23 @@ export async function sendBridge(action, it) {
 // the Inventory tab) — that let a bridge-less character's rows still show buttons whenever ANY OTHER
 // scanned character's adapter had one, which is exactly the "page assumes every client is TazUO"
 // (or, worse, "assumes the union of every client ever used") bug this task exists to fix.
-// settings.client being unset is a reliable "no working bridge" signal, not just "wizard not run":
-// POST /api/setup/install is the only thing that ever writes packrat-paths.json (the file the
-// scripts read to find this app's data directory), and it sets settings.client in the same request —
-// a client the scripts can actually talk to implies settings.client is already set.
+// settings.client being unset is NOT a reliable "no working bridge" signal — this comment used to
+// claim POST /api/setup/install is the only thing that ever writes settings.client, so an unset
+// client implied nothing was installed. That's false on two counts (Phase 6 final review, Important
+// 2): every adapter's README documents copying the scripts in BY HAND as a normal install path (no
+// call through the wizard's install step at all, so settings.client never gets written even though
+// the scripts are in place and running), and the wizard's own Skip button leaves settings.client
+// unset on purpose (skipping means "I didn't finish setup," not "no client exists"). A TazUO player
+// who installed by hand, or skipped the wizard after installing another way, has a real, working
+// packrat-bridge.py running — but currentAdapter() below still returns null for them, so every
+// Highlight/Grab/Go-to button disappears with no way to get them back short of running the wizard's
+// install step for real. That's a genuine gap, not a documented tradeoff, and it isn't fixed here:
+// fixing it needs a way to know WHICH adapter a bridge that's actually reporting online belongs to,
+// and today there isn't one — GET/POST /api/bridge are themselves hardcoded to a single path,
+// <dataDir>/bridge/tazuo/ (app/config.mjs's `paths.bridge`; see docs/bridge-protocol.md's own "today
+// that's <data>/bridge/tazuo/" caveat), so no adapter other than tazuo could ever be detected this
+// way even if this function tried. The real fix is making the bridge status/queue routes
+// adapter-aware; until then, this is a known limitation, not silently-assumed-fine behavior.
 export function currentAdapter() {
   const client = state.setup?.settings?.client;
   if (!client) return null;

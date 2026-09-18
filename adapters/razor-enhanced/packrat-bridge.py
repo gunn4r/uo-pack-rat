@@ -183,10 +183,8 @@ def do_highlight(cmd):
         parent = Items.FindBySerial(as_int(cmd["chain"][-1]))
         if parent is not None:
             targets.append(parent)
-    original_hues = {}
     for t in targets:
         s = as_int(getattr(t, "Serial", 0))
-        original_hues[s] = as_int(getattr(t, "Hue", 0))
         try:
             Items.SetColor(s, HIGHLIGHT_HUE)
         except Exception:
@@ -199,7 +197,13 @@ def do_highlight(cmd):
     for t in targets:
         s = as_int(getattr(t, "Serial", 0))
         try:
-            Items.SetColor(s, original_hues.get(s, -1))
+            # -1 is Items.SetColor's own documented sentinel for "reset original color" (razorenhanced
+            # readthedocs, Items.SetColor: "color: Int32 Color as number. (default: -1, reset original
+            # color)") -- restoring this way, instead of reading Hue before the highlight and setting
+            # it back by hand, means the client's own true original color always wins, including a
+            # case a captured `Hue` read could get wrong (e.g. an unreadable Hue defaulting to 0 and
+            # then being written back as if 0 -- no hue -- really were the item's original color).
+            Items.SetColor(s, -1)
         except Exception:
             pass
     return True, "highlighted {0}".format(name)

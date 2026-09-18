@@ -979,6 +979,10 @@ test("[fast] GET /api/setup lists the tazuo adapter, its available (repo-shipped
     assert.equal(j.installed, null);
     assert.equal(j.dataDir, dir);
     assert.ok(Array.isArray(j.candidates.tazuo), JSON.stringify(j.candidates));
+    // Phase 6 final review, deferred minor: the wizard/Import tab need this to hide the Windows-only
+    // razor-enhanced adapter on any other platform (app/ui/adapters.mjs's availableAdapters) — it
+    // must be this process's real process.platform, not a placeholder.
+    assert.equal(j.platform, process.platform);
   } finally {
     await s2.close();
   }
@@ -1237,6 +1241,60 @@ test("[fast] POST /api/import/paste: a good paste (marker block, with noise arou
       if (!found) await new Promise((resolve) => setTimeout(resolve, 100));
     }
     assert.ok(found, "the pasted scan folded into /api/inventory within 3s");
+  } finally {
+    await s2.close();
+  }
+});
+
+// Post-review minor: the route now compares the picked `adapter` (which inbox the file lands in)
+// against the pasted document's own `adapter.id` and returns a `warning` on a mismatch — harmless to
+// the fold (the file still lands and still folds correctly), but the player should be told, since the
+// picker that would have caught this is hidden whenever only one client is configured.
+test("[fast] POST /api/import/paste: filing a scan under a different adapter than it declares returns a warning, but still lands and folds", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "qm-paste-mismatch-"));
+  const s2 = await startServer(ensureLayout(resolveConfig(["--port", "0", "--data", dir], {})));
+  try {
+    const fixture = JSON.parse(readFileSync(join(HERE, "..", "adapters", "tazuo", "fixture.scan.json"), "utf8"));   // adapter.id: "tazuo"
+    const r = await fetch(s2.url + "/api/import/paste", {
+      method: "POST", headers: { "content-type": "application/json" },
+      body: JSON.stringify({ text: JSON.stringify(fixture), adapter: "razor-enhanced" }),   // deliberately the wrong adapter
+    });
+    assert.equal(r.status, 200);
+    const body = await r.json();
+    assert.equal(body.ok, true);
+    assert.match(body.warning, /razor-enhanced/);
+    assert.match(body.warning, /tazuo/);
+    assert.ok(body.written, JSON.stringify(body));
+
+    // "Still lands and folds": the watcher's own scanOnce() nudge (fired right after the write) can
+    // move the file out of the inbox before this test ever gets to look — same race the "good paste"
+    // test above sidesteps by polling /api/inventory instead of the inbox directory directly, so this
+    // does the same rather than asserting on inbox-file timing.
+    const deadline = Date.now() + 3000;
+    let found = false;
+    while (Date.now() < deadline && !found) {
+      const inv = await (await fetch(s2.url + "/api/inventory")).json();
+      found = Boolean(inv.inventory.characters[fixture.character]);
+      if (!found) await new Promise((resolve) => setTimeout(resolve, 100));
+    }
+    assert.ok(found, "the mismatched-adapter paste still folded into /api/inventory within 3s");
+  } finally {
+    await s2.close();
+  }
+});
+
+test("[fast] POST /api/import/paste: a matching adapter carries no warning field", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "qm-paste-match-"));
+  const s2 = await startServer(ensureLayout(resolveConfig(["--port", "0", "--data", dir], {})));
+  try {
+    const fixture = JSON.parse(readFileSync(join(HERE, "..", "adapters", "tazuo", "fixture.scan.json"), "utf8"));
+    const r = await fetch(s2.url + "/api/import/paste", {
+      method: "POST", headers: { "content-type": "application/json" },
+      body: JSON.stringify({ text: JSON.stringify(fixture), adapter: "tazuo" }),
+    });
+    const body = await r.json();
+    assert.equal(body.ok, true);
+    assert.equal(body.warning, undefined);
   } finally {
     await s2.close();
   }

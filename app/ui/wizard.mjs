@@ -10,6 +10,8 @@ import { $, el, toast } from "./dom.mjs";
 import { api } from "./api.mjs";
 import { renderSettings } from "./settings.mjs";
 import { changeShard } from "./shard.mjs";
+import { defaultAdapterId, availableAdapters } from "./adapters.mjs";
+export { defaultAdapterId, availableAdapters };
 
 // The shard's AFK rule, shown verbatim on step 1 only for shards that need it (uoalive today).
 const AFK_NOTICE = "UO Alive allows AFK skill training, but bans unattended resource, combat and loot gathering. Pack Rat's scripts are attended tools: they read what you can see and move an item only when you click.";
@@ -62,7 +64,11 @@ export async function openWizard({ firstRun = false } = {}) {
   wiz = {
     firstRun, setup, step: 1,
     shard: setup.settings.shard || state.settings?.shard || state.availableShards?.[0]?.id || "",
-    adapter: client?.adapter || setup.adapters[0]?.id || null,
+    // availableAdapters filters out Razor Enhanced on any platform but win32 (Phase 6 final review,
+    // deferred minor) — defaultAdapterId itself has no platform of its own to filter by, and
+    // "razor-enhanced" sorts before "tazuo" alphabetically, so passing it the unfiltered list would
+    // default a Mac/Linux player straight to the one adapter that can never work for them.
+    adapter: client?.adapter || defaultAdapterId(availableAdapters(setup.adapters, setup.platform)),
     scriptsDir: client?.scriptsDir || null,
     locateError: null,
     installed: client ? setup.installed : null,   // {version, files} for the already-configured client, if any
@@ -132,13 +138,17 @@ function step1() {
 }
 
 // ---------------------------------------------------------------- step 2: client
-// Every adapter is offered here regardless of transport — a paste-transport client still needs to be
-// named so the player identifies their own client and steps 3/4 branch correctly; it just carries an
-// extra line saying what picking it means, since there's nothing to install for it (no adapter name is
-// ever hard-coded here — the branch is entirely a.transport, read off capabilities.json).
+// Every PLATFORM-COMPATIBLE adapter is offered here regardless of transport — a paste-transport
+// client still needs to be named so the player identifies their own client and steps 3/4 branch
+// correctly; it just carries an extra line saying what picking it means, since there's nothing to
+// install for it (no adapter name is ever hard-coded here for the transport branch — that's entirely
+// a.transport, read off capabilities.json). Razor Enhanced (Windows-only) is filtered out on any
+// other platform by availableAdapters — offering it, or defaulting to it, elsewhere would point a
+// player at scripts nothing on their machine can ever run (Phase 6 final review, deferred minor).
 function step2() {
-  if (!wiz.setup.adapters.length) return el("div", { class: "msg bad" }, "No client adapters are available in this build.");
-  return el("div", { class: "stack" }, ...wiz.setup.adapters.map((a) => {
+  const adapters = availableAdapters(wiz.setup.adapters, wiz.setup.platform);
+  if (!adapters.length) return el("div", { class: "msg bad" }, "No client adapters are available in this build.");
+  return el("div", { class: "stack" }, ...adapters.map((a) => {
     const radio = el("input", { type: "radio", name: "wiz-adapter", onchange: () => { wiz.adapter = a.id; wiz.scriptsDir = null; wiz.locateError = null; wiz.installed = null; render(); } });
     radio.checked = a.id === wiz.adapter;
     return el("label", { class: "row" }, radio, el("div", {},

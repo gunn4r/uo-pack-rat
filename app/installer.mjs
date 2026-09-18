@@ -16,17 +16,26 @@ export const RUNNING_MESSAGE = 'a Pack Rat script is running in the client — t
 // docs/adapter-guide.md) has no entry here on purpose — it has no scripts folder to find.
 const NESTED_SCRIPTS_SUFFIX = {
   tazuo: [["TazUO", "LegionScripts"], ["LegionScripts"]],
-  // Grounded in the ClassicUO Launcher + Razor plugin layout razorce.com's Windows install guide
-  // documents (fetched 2026-09-17): Razor is unzipped into <launcher root>/ClassicUO/Data/Plugins/Razor,
-  // and its own in-client Scripts tab reads a `Scripts` subfolder there — the same convention
-  // adapters/razor-enhanced/README.md describes in prose ("typically wherever Razor Enhanced itself
-  // was installed, under a Scripts subfolder"). Unconfirmed against a live install (same "Status:
-  // unverified" caveat as the rest of that adapter) — treat this as a best-effort guess, not a fact.
+  // Razor Enhanced's own official install docs (razorenhanced.net/dokuwiki, "Install & Configure",
+  // fetched 2026-09-17) say only "unpack archive in your own folder, run Razor.exe" — there is no
+  // fixed install location, so there is no well-known root name for candidateClientRoots to guess
+  // (see CANDIDATE_ROOT_NAME below: razor-enhanced has no entry there, on purpose — candidateClientRoots
+  // returns [] for this adapter before it ever reaches this array, so nothing here feeds an
+  // auto-detected candidate). These shapes are for validateScriptsDir only: a player who points the
+  // folder picker at their own Razor Enhanced install (whatever they named it, wherever it lives)
+  // still resolves to its Scripts subfolder. The ClassicUO/Data/Plugins/Razor/Scripts form covers a
+  // player who picked the ClassicUO Launcher root instead of the Razor folder itself — a real, common
+  // shape for players who also run the separate Razor Community Edition/CUO Launcher combo (see
+  // adapters/razor-enhanced/README.md's Sources for why that combo is a DIFFERENT product from Razor
+  // Enhanced and must never be offered as an auto-detected guess); recognizing it here when the player
+  // picks it by hand is a harmless convenience, not a claim about where Razor Enhanced installs.
   "razor-enhanced": [["ClassicUO", "Data", "Plugins", "Razor", "Scripts"], ["Razor", "Scripts"], ["Scripts"]],
 };
 // The well-known root folder name candidateClientRoots looks for under Desktop/Downloads/Documents
-// (and, on win32, LOCALAPPDATA and the drive root) for each folder-transport adapter.
-const CANDIDATE_ROOT_NAME = { tazuo: "TazUO", "razor-enhanced": "CUOLauncher" };
+// (and, on win32, LOCALAPPDATA and the drive root) for each folder-transport adapter. An adapter with
+// no fixed install location (razor-enhanced — see NESTED_SCRIPTS_SUFFIX above) has no entry here on
+// purpose: candidateClientRoots returns [] for it and the manual folder picker is the only path.
+const CANDIDATE_ROOT_NAME = { tazuo: "TazUO" };
 
 // ---- listAdapters ---------------------------------------------------------------------------------
 // One entry per adaptersDir subdirectory that ships a capabilities.json (the same test
@@ -96,6 +105,9 @@ export function candidateClientRoots({ adapter, home, platform = process.platfor
   // darwin/linux would point at a folder that can never exist for this client.
   if (adapter === "razor-enhanced" && platform !== "win32") return [];
   const rootName = CANDIDATE_ROOT_NAME[adapter];
+  // No well-known root name for this adapter (razor-enhanced today — see CANDIDATE_ROOT_NAME's
+  // comment): nothing to guess at, so propose no candidates rather than joining onto `undefined`.
+  if (!rootName) return [];
   const roots = [join(home, "Desktop", rootName), join(home, "Downloads", rootName), join(home, "Documents", rootName)];
   if (platform === "win32") {
     if (env.LOCALAPPDATA) roots.push(join(env.LOCALAPPDATA, rootName));

@@ -116,17 +116,27 @@ const MAX_NEST = 4;            // bags in bags in bags
 const OPL_TIMEOUT_MS = 1500;   // client.queryItemOPL's own timeout
 const YIELD_EVERY = 4;         // sleep after this many container/tooltip reads (defensive pacing)
 const YIELD_MS = 150;
-// The print loop (step 6, below) gets its own, much lighter cadence than YIELD_EVERY/YIELD_MS
-// above. Those numbers were picked for tooltip/container reads, which are genuinely slow network
-// round trips — sleeping 150ms every 4th one costs little next to the read itself. Printing an
-// already-built line, by contrast, is a local, near-instant operation: reusing the scan cadence
-// there would turn a ~500-line scan (a well-geared character) into roughly 125 sleeps of 150ms —
-// about 19 seconds of the console visibly doing nothing, long enough that a player watching it is
-// likely to interrupt the script and lose the whole scan, the exact failure this pacing exists to
-// avoid. The print loop still needs occasional yield points for the same undocumented-watchdog
-// risk (see the header comment), just far fewer of them: every 25 lines costs 20 sleeps of 50ms on
-// that same ~500-line scan, about 1 second total.
-const PRINT_YIELD_EVERY = 25;  // lines
+// The print loop (step 6, below) prints the COMPACT form of the document (JSON.stringify(doc), no
+// indent argument), chunked into fixed-size slices, rather than one log() call per line of the
+// pretty-printed JSON. The original one-line-per-JSON-line approach measured against a real, similarly
+// sized scan (adapters/tazuo/fixture.scan.json, a 319-item character, used here only as a size proxy
+// since this adapter ships no fixture of its own) came out to 7,340 lines pretty-printed — at the old
+// PRINT_YIELD_EVERY=25/PRINT_YIELD_MS=50 cadence that's ~294 sleeps, about 15 seconds of the console
+// visibly doing nothing (long enough a watching player is likely to interrupt the script and lose the
+// whole scan), and 7,340 console lines for the player to select and copy correctly — losing even one
+// line of the marked block anywhere but the very end makes the whole paste fail app/import.mjs's
+// PASTE_BEGIN/PASTE_END check. The same document compact (no whitespace) is 119,315 bytes for that
+// fixture; chunked at PRINT_CHUNK_CHARS below that is ~60 lines total — small enough that a player can
+// visually confirm nothing scrolled past, and the whole print finishes in well under a second even
+// with pacing. PRINT_CHUNK_CHARS=2000 was picked as a middle ground: large enough to cut the line
+// count by two orders of magnitude, small enough to stay comfortably under any undocumented per-line
+// length a console pane might impose (nothing in https://www.classicuo.org/scripting/ documents one,
+// but a game-client-adjacent text widget capping an unusually long line is a plausible failure mode
+// this adapter has no way to test against a live client yet). This also settles the previously-open
+// question of whether the console preserves embedded newlines inside one log() call: it no longer
+// matters, because a compact-JSON chunk never contains one — there is nothing to preserve or lose.
+const PRINT_CHUNK_CHARS = 2000;  // characters per printed line — see the comment above
+const PRINT_YIELD_EVERY = 10;  // sleep after this many printed chunks (defensive pacing; see above)
 const PRINT_YIELD_MS = 50;
 
 // webClient equippedItems key -> canonical layer name (docs/adapter-guide.md's full-coverage list,
@@ -397,20 +407,24 @@ function main(): void {
     equipped,
   };
 
-  // 6) Print the marked block, one console line at a time (it is unverified whether this client's
-  // console area preserves embedded newlines inside a single log() call — printing line-by-line
-  // sidesteps that entirely, at the cost of one log() call per line). This is the single largest
-  // burst of calls anywhere in the script on a well-geared character, so it still gets defensive
+  // 6) Print the marked block: the COMPACT form of the document (no indentation, no whitespace at
+  // all), split into PRINT_CHUNK_CHARS-size slices, one console line per chunk — see the
+  // PRINT_CHUNK_CHARS comment above for why (line count, watch-and-interrupt risk, and the now-moot
+  // embedded-newline question). A chunk boundary can and does land in the middle of a string value;
+  // that's fine because app/import.mjs's extractJsonText strips every \r/\n from the pasted text
+  // before parsing, so the newline the player's copy/paste reintroduces at each boundary is discarded
+  // rather than preserved, reconstructing the exact original compact string. This is still the single
+  // largest burst of calls anywhere in the script on a well-geared character, so it keeps defensive
   // yielding for the same undocumented-watchdog risk as the scan phase — losing the print loop
-  // partway is worse than losing a scan loop partway: app/import.mjs only recognizes the marked
-  // form when BOTH markers are present, so a print that dies after BEGIN but before END falls back
-  // to parsing the raw (truncated) text and fails outright, discarding the whole scan rather than
-  // just its tail. It uses `printYieldTick()`, not `yieldTick()`, on purpose — see the
-  // PRINT_YIELD_EVERY/PRINT_YIELD_MS comment above.
-  const text = JSON.stringify(doc, null, 2);
+  // partway is worse than losing a scan loop partway: app/import.mjs only recognizes the marked form
+  // when BOTH markers are present, so a print that dies after BEGIN but before END fails outright
+  // (with a specific "looks truncated" message), discarding the whole scan rather than just its tail.
+  // It uses `printYieldTick()`, not `yieldTick()`, on purpose — see the PRINT_YIELD_EVERY/
+  // PRINT_YIELD_MS comment above.
+  const text = JSON.stringify(doc);
   log(PASTE_BEGIN);
-  for (const line of text.split("\n")) {
-    log(line);
+  for (let i = 0; i < text.length; i += PRINT_CHUNK_CHARS) {
+    log(text.slice(i, i + PRINT_CHUNK_CHARS));
     printYieldTick();
   }
   log(PASTE_END);

@@ -49,7 +49,7 @@ chmod +x "Pack Rat-<version>-linux-x86_64.AppImage"
 
 ## First run
 
-The first time you launch Pack Rat, a setup wizard walks you through four short steps: which shard's rules to use, which game client to link (TazUO or Razor Enhanced today), locating that client's scripts folder (auto-detected where possible for TazUO, or pick it by hand — Razor Enhanced has no single well-known install location, so its folder is always picked by hand for now), and installing the adapter scripts into it. Every step can be skipped, and skipping never traps you — you can reopen the wizard later from the Settings tab.
+The first time you launch Pack Rat, a setup wizard walks you through four short steps: which shard's rules to use, which game client to link (TazUO, Razor Enhanced, or the ClassicUO web client today), locating that client's scripts folder for TazUO or Razor Enhanced (auto-detected where possible for TazUO; Razor Enhanced has no single well-known install location, so its folder is always picked by hand for now — the ClassicUO web client has no folder to locate at all, since it can't write files, and instead sends you to the Import tab to paste what its scanner prints), and installing the adapter scripts into it. Every step can be skipped, and skipping never traps you — you can reopen the wizard later from the Settings tab.
 
 Once the scripts are installed, there's nothing left to see until you run one in-game: stand near a chest cluster and run the scanner script (below), and its output appears in the app within a few seconds, picked up automatically.
 

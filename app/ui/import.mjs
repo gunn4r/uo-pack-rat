@@ -9,6 +9,7 @@ import { state } from "./store.mjs";
 import { $, el } from "./dom.mjs";
 import { api } from "./api.mjs";
 import { pickFolderRow } from "./wizard.mjs";
+import { defaultAdapterId, availableAdapters } from "./adapters.mjs";
 
 // This tab's own working state — text box contents, the picked adapter (once there's more than one
 // to choose from), busy flag, and the last result line. Survives switching away and back (the section
@@ -16,15 +17,22 @@ import { pickFolderRow } from "./wizard.mjs";
 // builder's in-memory state elsewhere in this app.
 const imp = { text: "", adapter: null, busy: false, result: null };
 
+// Falls back through: an adapter explicitly picked in this tab's own <select>, then the configured
+// client, then defaultAdapterId's first-installable-adapter rule over the PLATFORM-FILTERED adapter
+// list (never state.setup.adapters[0], or the unfiltered list, directly — the former sorts
+// alphabetically by directory name and would default to the paste-transport classicuo-web adapter,
+// the latter would default a non-Windows player to the Windows-only razor-enhanced adapter since
+// "razor-enhanced" < "tazuo" alphabetically; see wizard.mjs's defaultAdapterId/availableAdapters for
+// why both matter, Phase 6 final review, Blocker 2 and a deferred minor).
 function adapterId() {
-  return imp.adapter || state.settings?.client?.adapter || state.setup?.adapters?.[0]?.id || null;
+  return imp.adapter || state.settings?.client?.adapter || defaultAdapterId(availableAdapters(state.setup?.adapters, state.setup?.platform)) || null;
 }
 
-// Only shown once a second adapter actually exists — no point asking a player to pick from a list of
-// one. (All three shipped adapters are always in state.setup.adapters regardless of transport, so this
-// already covers today's tazuo/razor-enhanced/classicuo-web as soon as more than one is installable.)
+// Only shown once a second PLATFORM-COMPATIBLE adapter actually exists — no point asking a player to
+// pick from a list of one, and no point offering a Windows-only adapter (razor-enhanced) to a player
+// on any other platform (Phase 6 final review, deferred minor).
 function adapterPicker() {
-  const adapters = state.setup?.adapters || [];
+  const adapters = availableAdapters(state.setup?.adapters, state.setup?.platform);
   if (adapters.length <= 1) return null;
   const current = adapterId();
   const sel = el("select", { onchange: (e) => { imp.adapter = e.target.value; } },
@@ -72,7 +80,10 @@ async function doPaste() {
   imp.busy = true; renderImport();
   try {
     const r = await api("/api/import/paste", { method: "POST", body: { text: imp.text, adapter } });
-    setResult(false, `${r.character}'s scan landed — it'll show up in the inventory in a moment.`);
+    // r.warning: the adapter picked above doesn't match what the pasted document itself declares
+    // (POST /api/import/paste's own post-review minor fix) — harmless to the fold, but worth showing
+    // rather than filing it silently, since the picker is hidden whenever only one client is set up.
+    setResult(false, `${r.character}'s scan landed — it'll show up in the inventory in a moment.${r.warning ? ` (${r.warning})` : ""}`);
     imp.text = "";
   } catch (e) {
     setResult(true, e.message);

@@ -108,19 +108,19 @@ test("[fast] candidateClientRoots returns [] for an unknown adapter or a missing
   assert.deepEqual(candidateClientRoots({ adapter: "tazuo", home: "", exists: () => true }), []);
 });
 
-// Candidate roots are per adapter, not a single tazuo-shaped guess: razor-enhanced looks for the
-// ClassicUO-Launcher-plus-Razor-plugin layout (adapters/razor-enhanced/README.md's "typically wherever
-// Razor Enhanced itself was installed, under a Scripts subfolder"), under its own root name, and only
-// on win32 — Razor Enhanced is Windows-only, so proposing a candidate on darwin/linux would point at a
-// folder that can never exist for this client, even if a test's fake `exists` says it does.
-test("[fast] candidateClientRoots proposes a Razor Enhanced root at the ClassicUO/Data/Plugins/Razor/Scripts shape, win32 only", () => {
+// Razor Enhanced has no fixed install location (its own official docs say only "unpack in your own
+// folder, run Razor.exe" — see app/installer.mjs's NESTED_SCRIPTS_SUFFIX comment), so unlike tazuo it
+// has no entry in CANDIDATE_ROOT_NAME and candidateClientRoots must propose nothing for it — on any
+// platform, even win32, and even when a folder that would match one of its NESTED_SCRIPTS_SUFFIX
+// shapes actually exists. The manual folder picker (validateScriptsDir, below) is the only path.
+test("[fast] candidateClientRoots proposes nothing for razor-enhanced (no known install location), on any platform", () => {
   const home = "C:\\Users\\example";
-  const scripts = join(home, "Desktop", "CUOLauncher", "ClassicUO", "Data", "Plugins", "Razor", "Scripts");
+  const scripts = join(home, "Desktop", "CUOLauncher", "Razor", "Scripts");
   const exists = (p) => p === scripts;
   const win = candidateClientRoots({ adapter: "razor-enhanced", home, platform: "win32", env: {}, exists });
-  assert.deepEqual(win, [scripts]);
+  assert.deepEqual(win, [], "no well-known root name to guess at, even on win32");
   const mac = candidateClientRoots({ adapter: "razor-enhanced", home, platform: "darwin", env: {}, exists });
-  assert.deepEqual(mac, [], "Razor Enhanced is Windows-only — no candidate on a non-win32 platform even if the folder exists");
+  assert.deepEqual(mac, [], "also Windows-only, so no candidate on a non-win32 platform either");
 });
 
 // ---- validateScriptsDir -------------------------------------------------------------------------------
