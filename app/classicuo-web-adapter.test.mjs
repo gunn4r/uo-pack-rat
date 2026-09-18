@@ -13,30 +13,71 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import { validateScan } from "./scan-schema.mjs";
+import { PASTE_BEGIN, PASTE_END } from "./import.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const ADAPTER_DIR = join(HERE, "..", "adapters", "classicuo-web");
 const capsFile = JSON.parse(readFileSync(join(ADAPTER_DIR, "capabilities.json"), "utf8"));
+const scannerSrc = readFileSync(join(ADAPTER_DIR, "packrat-scanner.ts"), "utf8");
 
-// Mirrors packrat-scanner.ts's own CAPABILITIES constant. Kept as a separate literal (not read out
-// of the .ts source) so this test breaks loudly if the two are ever hand-edited out of sync — same
-// failure mode app/contracts.test.mjs's deep-equal check catches for adapters that do ship a fixture.
-const SCANNER_CAPABILITIES = {
-  layers: ["OneHanded", "TwoHanded", "Shoes", "Pants", "Shirt", "Helmet", "Gloves",
-    "Ring", "Talisman", "Necklace", "Waist", "Torso", "Bracelet", "Tunic",
-    "Earrings", "Arms", "Cloak", "Robe", "Skirt", "Legs"],
-  arms: false,
-  bank: false,
-  ground: true,
-  nested: true,
-  tooltips: "opl",
-  bridge: [],
-};
+// Post-review fix (Phase 6 final review, Important 3): this used to be a third hand-typed copy of
+// the scanner's CAPABILITIES object, asserted only against itself — a change to the real
+// packrat-scanner.ts (add a layer, flip `arms`, add a bridge action) could never fail this test no
+// matter how far it drifted, while the comment above claimed the opposite. This now pulls the
+// literal `const CAPABILITIES = { ... };` block straight out of the .ts source and parses it
+// field-by-field with targeted regexes (not `new Function`/`eval` on source text — a security review
+// flagged an earlier draft of this fix for exactly that, and a hand-rolled parser over a handful of
+// known field shapes (a quoted-string array, a boolean, a quoted string) is no harder and doesn't
+// execute anything), so a real edit to the scanner is what this test is actually checking against.
+// The comparison against capabilities.json (below) is unchanged; it's the source of the "expected"
+// value that changed, not what it's compared to.
+function extractScannerCapabilities(src) {
+  const block = /const CAPABILITIES\s*=\s*(\{[\s\S]*?\n\};)/.exec(src);
+  assert.ok(block, "packrat-scanner.ts: could not find `const CAPABILITIES = { ... };` — did it move or get renamed?");
+  const body = block[1];
+  const stringArray = (field) => {
+    const m = new RegExp(`${field}:\\s*\\[([\\s\\S]*?)\\]`).exec(body);
+    assert.ok(m, `packrat-scanner.ts CAPABILITIES: no "${field}: [...]" field found`);
+    return [...m[1].matchAll(/"([^"]*)"/g)].map((x) => x[1]);
+  };
+  const bool = (field) => {
+    const m = new RegExp(`${field}:\\s*(true|false)`).exec(body);
+    assert.ok(m, `packrat-scanner.ts CAPABILITIES: no "${field}: true|false" field found`);
+    return m[1] === "true";
+  };
+  const str = (field) => {
+    const m = new RegExp(`${field}:\\s*"([^"]*)"`).exec(body);
+    assert.ok(m, `packrat-scanner.ts CAPABILITIES: no "${field}: "..."" field found`);
+    return m[1];
+  };
+  return {
+    layers: stringArray("layers"), arms: bool("arms"), bank: bool("bank"), ground: bool("ground"),
+    nested: bool("nested"), tooltips: str("tooltips"), bridge: stringArray("bridge"),
+  };
+}
+const SCANNER_CAPABILITIES = extractScannerCapabilities(scannerSrc);
 
-test("[fast] classicuo-web: capabilities.json matches the scanner's own CAPABILITIES constant", () => {
+test("[fast] classicuo-web: capabilities.json matches the scanner's own CAPABILITIES constant, read from the real .ts source", () => {
   assert.equal(capsFile.adapter, "classicuo-web");
   assert.equal(capsFile.transport, "paste");
   assert.deepEqual(capsFile.capabilities, SCANNER_CAPABILITIES);
+});
+
+// The paste markers the scanner prints (PASTE_BEGIN/PASTE_END, also regexed straight out of the .ts
+// source) must be byte-identical to the ones app/import.mjs's extractJsonText actually looks for —
+// docs/adapter-guide.md and both READMEs document this as a hard requirement ("must match
+// app/import.mjs's PASTE_BEGIN/PASTE_END byte-for-byte", the scanner's own header comment says), but
+// nothing enforced it: a typo'd marker in either file would silently break every paste from this
+// adapter (parsePastedScan falls back to treating the whole paste as bare JSON, which still usually
+// fails, but with a confusing "not valid JSON" error instead of pointing at the real cause).
+function extractScannerConst(src, name) {
+  const m = new RegExp(`const ${name}\\s*=\\s*"([^"]*)"`).exec(src);
+  assert.ok(m, `packrat-scanner.ts: could not find \`const ${name} = "..."\``);
+  return m[1];
+}
+test("[fast] classicuo-web: the scanner's paste markers match app/import.mjs's PASTE_BEGIN/PASTE_END exactly", () => {
+  assert.equal(extractScannerConst(scannerSrc, "PASTE_BEGIN"), PASTE_BEGIN);
+  assert.equal(extractScannerConst(scannerSrc, "PASTE_END"), PASTE_END);
 });
 
 // A representative document in the shape docs/scan-schema.md describes and packrat-scanner.ts's

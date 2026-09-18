@@ -170,14 +170,14 @@ def scan_root(root_item, kind, label, containers, items, seen):
     could not be opened (too far, locked): the app's fold then keeps whatever it last knew about
     this root instead of wiping it (see docs/scan-schema.md's Fold rules)."""
     root_serial = as_int(getattr(root_item, "Serial", 0))
-    queue = [root_item]
+    queue = [(root_item, None)]
     seen_containers = set()
     n_items = 0
     depth = 0
     while queue and depth < MAX_NEST:
         depth += 1
         next_queue = []
-        for cont in queue:
+        for cont, _parent_unused in queue:
             cserial = as_int(getattr(cont, "Serial", 0))
             if cserial in seen_containers:
                 continue
@@ -202,12 +202,21 @@ def scan_root(root_item, kind, label, containers, items, seen):
                     continue
                 seen.add(ks)
                 if is_container(kid):
-                    next_queue.append(kid)
+                    next_queue.append((kid, cserial))
                 else:
                     lines = tooltip_lines(kid)
                     items.append(item_dict(kid, lines, cserial))
                     n_items += 1
         queue = next_queue
+    # Anything still queued here was found (its parent container was already opened) but MAX_NEST
+    # was reached before it could be opened itself. Record it as an ordinary (unopened) item, its
+    # own tooltip intact, instead of silently dropping it and everything that would have been
+    # inside it -- matches adapters/tazuo/packrat-scanner.py's handling of the same case (an
+    # over-deep bag becomes an item, not a hole in the scan).
+    for cont, parent in queue:
+        lines = tooltip_lines(cont)
+        items.append(item_dict(cont, lines, parent))
+        n_items += 1
     opened = root_serial in seen_containers
     if opened:
         containers[root_serial] = {"serial": root_serial, "name": label, "parent": None,
