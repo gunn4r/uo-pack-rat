@@ -234,17 +234,21 @@ SKILL_NAMES = [
 
 
 def read_skills():
-    # Player.GetRealSkillValue is documented as "the base/real value of the skill" -- unlike
-    # TazUO's API.getSkill(x).value, no separate item-bonused/effective reading was found in RE's
-    # official docs, so "value" here is the trained skill, not necessarily what the paperdoll
-    # shows with gear bonuses added. See README.md's Sources section.
+    # Same three fields as TazUO's adapter, same meaning: "value" is Player.GetSkillValue,
+    # documented as "the value of the skill, with modifiers" -- the effective, item-bonused number
+    # the paperdoll shows (e.g. Resisting Spells' gear bonus is folded in). "base" is
+    # Player.GetRealSkillValue, documented as "the base/real value" -- the trained skill with no
+    # gear added. "cap" is Player.GetSkillCap. Gate on the effective value, same as TazUO's own
+    # `sk.Value` gate, so a skill with real value 0 but a positive item bonus (rare, but possible)
+    # still gets reported.
     out = {}
     for name in SKILL_NAMES:
-        val = as_float(Player.GetRealSkillValue(name), -1.0)
+        val = as_float(Player.GetSkillValue(name), -1.0)
         if val <= 0:
             continue
+        base = as_float(Player.GetRealSkillValue(name), val)
         cap = as_float(Player.GetSkillCap(name), 0.0)
-        out[name] = {"value": round(val, 1), "cap": round(cap, 1)}
+        out[name] = {"value": round(val, 1), "base": round(base, 1), "cap": round(cap, 1)}
     return out
 
 
