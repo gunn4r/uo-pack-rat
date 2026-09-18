@@ -2,6 +2,7 @@
 //   data dir: --data <dir>  →  PACKRAT_DATA  →  ~/.pack-rat
 //   port:     --port N      →  PACKRAT_PORT  →  8765
 //   token:    --token <t>   →  PACKRAT_TOKEN →  null (no auth — the bare loopback server's default)
+//   adapters: --adapters <dir> → PACKRAT_ADAPTERS_DIR → <repo>/adapters (real ones; tests point elsewhere)
 //   --demo   serve app/fixtures instead of <data>/scans     --open   open the browser after listening
 import { homedir } from "node:os";
 import { join, dirname, resolve } from "node:path";
@@ -24,6 +25,11 @@ export function resolveConfig(argv = process.argv.slice(2), env = process.env, h
   }
   const demo = argv.includes("--demo"), open = argv.includes("--open");
   const token = flag(argv, "--token") || env.PACKRAT_TOKEN || null;
+  // Sibling of app/ at the repo root by default (every adapters/<id>/ directory that ships a
+  // capabilities.json is one adapter the server watches/offers) — overridable the same way
+  // PACKRAT_CORE is, so a test can point a real running server at a throwaway folder of fixture
+  // adapters instead of the repo's real ones.
+  const adaptersDir = resolve(flag(argv, "--adapters") || env.PACKRAT_ADAPTERS_DIR || join(APP_DIR, "..", "adapters"));
   const bridge = join(dataDir, "bridge", "tazuo");
   const logs = join(dataDir, "logs");
   const inbox = join(dataDir, "inbox");
@@ -39,6 +45,7 @@ export function resolveConfig(argv = process.argv.slice(2), env = process.env, h
       bridge, bridgeQueue: join(bridge, "queue.jsonl"), bridgeStatus: join(bridge, "status.json"),
       logs, log: join(logs, "server.log"),   // logs = the directory (ensureLayout creates it); log = the one file 500s append to
       core: env.PACKRAT_CORE ? resolve(env.PACKRAT_CORE) : join(APP_DIR, "dist", "optimizer-core.mjs"),
+      adaptersDir,
       // inbox: where each adapter drops raw scan files (temp-then-rename) for the watcher to
       // normalise into paths.scans. The per-adapter dead-letter spot a file lands in after it keeps
       // failing to parse/validate is computed by app/watcher.mjs itself (join(inboxDir, "rejected")),

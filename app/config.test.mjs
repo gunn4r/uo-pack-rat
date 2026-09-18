@@ -63,3 +63,9 @@ test("[smoke] config: token defaults to null; --token beats PACKRAT_TOKEN; paths
   assert.equal(resolveConfig([], { PACKRAT_TOKEN: "envtok" }, "/h").token, "envtok");
   assert.equal(resolveConfig(["--token", "flagtok"], { PACKRAT_TOKEN: "envtok" }, "/h").token, "flagtok");
 });
+test("[smoke] config: paths.adaptersDir defaults to the repo's adapters/ folder, --adapters beats PACKRAT_ADAPTERS_DIR", () => {
+  const c = resolveConfig([], {}, "/h");
+  assert.ok(c.paths.adaptersDir.endsWith("adapters"), c.paths.adaptersDir);
+  assert.equal(resolveConfig([], { PACKRAT_ADAPTERS_DIR: "/env-adapters" }, "/h").paths.adaptersDir, resolve("/env-adapters"));
+  assert.equal(resolveConfig(["--adapters", "/flag-adapters"], { PACKRAT_ADAPTERS_DIR: "/env-adapters" }, "/h").paths.adaptersDir, resolve("/flag-adapters"));
+});

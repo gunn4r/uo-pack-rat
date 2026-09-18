@@ -44,6 +44,13 @@ test("[slow] the packaged UI renders, switches tabs and lists the demo inventory
     await rows.first().waitFor({ timeout: 30_000 });
     assert.ok(await rows.count() > 0, "demo fixtures should fill the inventory table");
 
+    // Task 2, Phase 6: a fresh --data dir has no settings.json, so no client is configured yet —
+    // the capability-driven bridge controls (Highlight/Grab/Go to) must not render for any row, and
+    // the one-line explanation takes their place instead of a silently missing button.
+    assert.equal(await page.locator("#inv-table .act").count(), 0, "no bridge buttons should render with no client configured");
+    await page.waitForSelector("#inv-bridge-note .bridge-note", { timeout: 10_000 });
+    assert.match(await page.locator("#inv-bridge-note .bridge-note").innerText(), /client/i);
+
     // A fresh --data dir has no settings.json, so /api/setup reports firstRun and app.mjs's load()
     // opens the first-run wizard (a <dialog>) on top of everything — real behavior for a new user,
     // not a test artifact, so it's dismissed the way a user would (ui/wizard.mjs's Skip button)

@@ -24,17 +24,49 @@ export async function sendBridge(action, it) {
     return r;
   } catch (e) { return { ok: false, error: e.message }; }
 }
-// Which bridge actions to offer: the selected builder character's own adapter.capabilities.bridge
-// list when one is selected (e.g. the Suit Builder tab), else the union of every known character's
-// adapter capabilities (the Inventory tab, where no single character is in context and a button
-// should show if ANY adapter on file could serve it — the server/script still refuses per-character).
+// Which bridge actions the page may offer, full stop: the currently configured client's own
+// capabilities.bridge list, read from GET /api/setup's {settings.client, adapters} (cached in
+// state.setup by app.mjs's load(), refreshed whenever the Settings tab or the wizard changes it).
+// Not per-character: only one client is ever physically running the bridge at a time (a player logs
+// into one game client and runs one adapter's packrat-bridge.py, or none), so "what can the bridge do
+// right now" is a single global fact, not something that varies row to row. Earlier this read each
+// item's own scanning character's adapter (falling back to a union across every scanned character on
+// the Inventory tab) — that let a bridge-less character's rows still show buttons whenever ANY OTHER
+// scanned character's adapter had one, which is exactly the "page assumes every client is TazUO"
+// (or, worse, "assumes the union of every client ever used") bug this task exists to fix.
+// settings.client being unset is a reliable "no working bridge" signal, not just "wizard not run":
+// POST /api/setup/install is the only thing that ever writes packrat-paths.json (the file the
+// scripts read to find this app's data directory), and it sets settings.client in the same request —
+// a client the scripts can actually talk to implies settings.client is already set.
+export function currentAdapter() {
+  const client = state.setup?.settings?.client;
+  if (!client) return null;
+  return state.setup?.adapters?.find((a) => a.id === client.adapter) || null;
+}
 function allowedBridgeActions() {
-  const char = state.builder.character;
-  const own = char && state.inv?.characters?.[char]?.adapter?.capabilities?.bridge;
-  if (own) return own;
-  const all = new Set();
-  for (const c of Object.values(state.inv?.characters || {})) for (const a of c?.adapter?.capabilities?.bridge || []) all.add(a);
-  return [...all];
+  return currentAdapter()?.capabilities?.bridge || [];
+}
+const ALL_BRIDGE_ACTIONS = ["highlight", "grab", "goto"];
+// One short line explaining why the bridge controls are missing or limited — null once every action
+// is available (today, that's exactly TazUO's set, so a TazUO player sees nothing new here). Callers
+// place this once per panel, never per row: repeating it on every item would be far noisier than the
+// silently-missing button it replaces.
+export function bridgeNote() {
+  const client = state.setup?.settings?.client;
+  if (!client) return "No client set up yet — visit Settings to install one that supports in-game actions like Highlight/Grab/Go to.";
+  const adapter = currentAdapter();
+  const allowed = adapter?.capabilities?.bridge || [];
+  if (allowed.length >= ALL_BRIDGE_ACTIONS.length) return null;
+  const name = adapter?.name || client.adapter;
+  if (!allowed.length) return `${name} can't run in-game actions — Highlight, Grab and Go to aren't available for this client.`;
+  const missing = ALL_BRIDGE_ACTIONS.filter((a) => !allowed.includes(a));
+  return `${name} only supports ${allowed.join(", ")} here — ${missing.join(", ")} ${missing.length === 1 ? "isn't" : "aren't"} available for this client.`;
+}
+// The note as a ready-to-insert element, or null when there's nothing to say (keeps callers from
+// repeating the `bridgeNote() ? el(...) : null` conditional at every call site).
+export function bridgeNoteEl() {
+  const msg = bridgeNote();
+  return msg ? el("div", { class: "msg warn bridge-note" }, msg) : null;
 }
 export function actButtons(it) {
   if (!it || it.equippedBy) return null;
@@ -54,7 +86,10 @@ export function actButtons(it) {
 }
 // Grab all: one Grab per fetch-list piece, sent one after another (300 ms apart, stopping at the first refusal).
 // Pieces already in this character's backpack, or worn by anyone, are left out; each result toasts like a single Grab.
+// Returns null (nothing to render at all — the panel that calls this shows bridgeNoteEl() instead)
+// when the current client's adapter has no "grab" action.
 export function grabAllRow(items) {
+  if (!allowedBridgeActions().includes("grab")) return null;
   const me = state.builder.character;
   const todo = items.filter((i) => !i.equippedBy && !(i.location.kind === "backpack" && i.location.character === me));
   const status = el("span", { class: "small muted" }, todo.length < items.length ? `${items.length - todo.length} already with ${me} or worn` : "");

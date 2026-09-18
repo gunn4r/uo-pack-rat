@@ -7,7 +7,7 @@ import { state, invStamp } from "./store.mjs";
 import { $, el, label, full, fmtN, fmtSecs, fmtRunTime, slotLabel, toast } from "./dom.mjs";
 import { api, CLIENT_ID } from "./api.mjs";
 import { sheetHtml } from "./sheet.mjs";
-import { actButtons, grabAllRow } from "./bridge.mjs";
+import { actButtons, grabAllRow, bridgeNoteEl } from "./bridge.mjs";
 import { resolveItems } from "./items.mjs";
 import { parseRoute, routeFor } from "./app.mjs";
 import { loadRuns, settingsSnapshot, openRunsDrawer, closeRunsDrawer, renderRuns, compareSelected } from "./runs.mjs";
@@ -359,9 +359,13 @@ export async function renderResult(res, current, prof = optimizerProfile()) {
   const fetchNode = Object.keys(fetchList).length
     ? el("div", { class: "panel stack" }, el("div", { class: "row", style: "justify-content:space-between" }, el("h2", {}, "Fetch list"), grabAllRow(Object.values(fetchList).flat())), ...Object.entries(fetchList).map(([loc, items]) => el("div", {}, el("div", { class: "small muted" }, loc), el("ul", { style: "margin:4px 0 0 18px" }, ...items.map((i) => el("li", { "data-serial": i.serial }, i.name, " ", i.equippedBy ? el("span", { class: "tag" }, "worn by " + i.equippedBy) : actButtons(i)))))))
     : null;
+  // Only worth a line when there's actually something to move — nothing to bridge to when the plan
+  // has zero changes. Same note as the Inventory tab's (currentAdapter's capabilities.bridge), shown
+  // once here rather than repeated on every Plan/Fetch-list row's missing button.
+  const noteNode = changes.length ? bridgeNoteEl() : null;
   // Every node is built — install them all in one replaceChildren() call, the only DOM write this
   // function makes, so an overtaken (bailed-out) call never leaves a partial/mixed panel behind.
-  $("#b-result").replaceChildren(...[topPanel, altNode, sheetNode, planNode, fetchNode].filter(Boolean));
+  $("#b-result").replaceChildren(...[topPanel, noteNode, altNode, sheetNode, planNode, fetchNode].filter(Boolean));
 }
 // The best suit and the other suits within the tolerance, each described by how it differs from the best: which
 // pieces change and which property totals move (weighted or not). Show puts that suit into the plan and sheet below.

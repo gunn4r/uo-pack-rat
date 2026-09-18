@@ -7,7 +7,7 @@ import { PROP_FULL, tagUnits } from "../vault-lib.mjs";
 import { state } from "./store.mjs";
 import { $, el, label, full, colVal, slotLabel, isStale, ago, EXTRA_COLS, fmtN, rarityColor, rarCell, fmtWhen } from "./dom.mjs";
 import { api } from "./api.mjs";
-import { actButtons } from "./bridge.mjs";
+import { actButtons, bridgeNoteEl } from "./bridge.mjs";
 
 // ---------------------------------------------------------------- inventory filters
 // Populated once from state.facets (the server's facetsOf() snapshot over the whole inventory, set
@@ -116,6 +116,9 @@ export function renderInventory() {
   } }, text + (key === k ? (d > 0 ? " ▾" : " ▴") : ""));
   const body = $("#inv-table tbody"); body.replaceChildren();
   $("#inv-count").textContent = groups ? `${fmtN(total)} distinct names` : `${fmtN(total)} stacks · ${fmtN(pieces)} pieces`;
+  // One line, once, rather than repeating it on every row's missing Highlight/Grab/Go-to buttons.
+  const note = bridgeNoteEl();
+  $("#inv-bridge-note").replaceChildren(...(note ? [note] : []));
   renderPager(total);
   if (groups) {
     $("#inv-table thead").replaceChildren(el("tr", {}, th("name", "Name"), th("kind", "Kind"), th("amount", "Total", "n"), th("stacks", "Stacks", "n"), el("th", {}, "Where")));

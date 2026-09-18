@@ -7,6 +7,7 @@ import { state } from "./store.mjs";
 import { $, el, toast } from "./dom.mjs";
 import { api } from "./api.mjs";
 import { openWizard, pickFolderRow } from "./wizard.mjs";
+import { bridgeNoteEl } from "./bridge.mjs";
 
 // Reinstall's own checkbox/result — separate from the wizard's, since this panel can act
 // independently of it (the client is already configured; no need to re-walk shard/client/locate).
@@ -73,6 +74,7 @@ function clientPanel(setup) {
     el("div", { class: "small muted" }, client.scriptsDir),
     el("div", { class: "small" }, installedVersion ? `installed ${installedVersion}` : "not installed",
       availableVersion && availableVersion !== installedVersion ? ` · ${availableVersion} available` : ""),
+    bridgeNoteEl(),
     el("label", { class: "row" }, checkbox, "No scripts are running in the client"),
     reinstallBtn,
     reinstall.error ? el("div", { class: "msg bad" }, reinstall.error) : null,
