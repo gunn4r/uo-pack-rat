@@ -211,6 +211,24 @@ function printYieldTick(): void {
   if (_printYieldCount % PRINT_YIELD_EVERY === 0) sleep(PRINT_YIELD_MS);
 }
 
+// chunkEnd — the end index of a chunk starting at `start`, sized `size`, but backed off by one when
+// that would split a UTF-16 surrogate pair (see the print loop's own comment, above, for why this
+// matters). A pair is HIGH surrogate (0xD800-0xDBFF) then LOW surrogate (0xDC00-0xDFFF); checking only
+// the chunk's own last code unit for "is this a high surrogate" is sufficient — if it is, the code
+// unit right after the boundary is that pair's low half (astral characters are always exactly two
+// code units, never more), so backing the boundary off by one keeps the whole pair in the NEXT chunk
+// instead. Applied consistently from i=0 (always a valid boundary — the very start of the string),
+// each chunk's end becomes the next chunk's start, so a low surrogate can never end up orphaned at
+// the start of a chunk either: by induction, every boundary this function ever returns is valid.
+function chunkEnd(text: string, start: number, size: number): number {
+  let end = Math.min(start + size, text.length);
+  if (end < text.length) {
+    const lastUnit = text.charCodeAt(end - 1);
+    if (lastUnit >= 0xd800 && lastUnit <= 0xdbff) end -= 1;
+  }
+  return end;
+}
+
 // tooltipOf — the full on-paperdoll-line read. Falls back to the bare (possibly blank) `.name` only
 // when queryItemOPL itself comes back empty; every caller records which happened via nameSource.
 function tooltipOf(serial: number): { lines: string[]; name: string; nameSource: "opl" | "label" } {
@@ -413,18 +431,46 @@ function main(): void {
   // embedded-newline question). A chunk boundary can and does land in the middle of a string value;
   // that's fine because app/import.mjs's extractJsonText strips every \r/\n from the pasted text
   // before parsing, so the newline the player's copy/paste reintroduces at each boundary is discarded
-  // rather than preserved, reconstructing the exact original compact string. This is still the single
-  // largest burst of calls anywhere in the script on a well-geared character, so it keeps defensive
-  // yielding for the same undocumented-watchdog risk as the scan phase — losing the print loop
-  // partway is worse than losing a scan loop partway: app/import.mjs only recognizes the marked form
-  // when BOTH markers are present, so a print that dies after BEGIN but before END fails outright
-  // (with a specific "looks truncated" message), discarding the whole scan rather than just its tail.
-  // It uses `printYieldTick()`, not `yieldTick()`, on purpose — see the PRINT_YIELD_EVERY/
-  // PRINT_YIELD_MS comment above.
-  const text = JSON.stringify(doc);
+  // rather than preserved, reconstructing the exact original compact string — and it's SOUND, not
+  // just convenient: JSON string escaping means a raw \r or \n can never appear inside the printed
+  // text in the first place (JSON.stringify always escapes them as \r/\n, two characters, never the
+  // control byte itself), so stripping can never touch an escape sequence or change what a tooltip
+  // says. Two things chunking still has to get right on its own, though (both fixed here, a later
+  // review pass on the first version of this loop): a chunk boundary must never split a UTF-16
+  // surrogate pair (an astral character — an emoji, say, in an engraved item name — encodes as two
+  // 16-bit code units, and plain slice() has no idea about that; cutting between them corrupts the
+  // character on any environment along the copy/paste path that doesn't preserve a lone surrogate
+  // byte-for-byte, which many don't, since a lone surrogate isn't valid UTF-8 — silently, with no
+  // parse error to notice), handled by chunkEnd() below; and U+2028/U+2029 (LINE/PARAGRAPH SEPARATOR)
+  // are, unlike \r/\n, valid UNESCAPED characters inside a JSON string — JSON.stringify never escapes
+  // them — so a console that treats either as a line break on render or copy could turn it into a
+  // real newline, which extractJsonText's own \r/\n stripping would then delete as if it were print-
+  // loop formatting, corrupting that tooltip line. Escaped explicitly below, at the cost of two string
+  // replaces, since JSON's own `\uXXXX` escape is something both JSON.stringify's readers and
+  // JSON.parse already understand — cheaper than arguing it's unlikely enough to skip.
+  //
+  // This is still the single largest burst of calls anywhere in the script on a well-geared
+  // character, so it keeps defensive yielding for the same undocumented-watchdog risk as the scan
+  // phase — losing the print loop partway is worse than losing a scan loop partway: app/import.mjs
+  // only recognizes the marked form when BOTH markers are present, so a print that dies after BEGIN
+  // but before END fails outright (with a specific "looks truncated" message), discarding the whole
+  // scan rather than just its tail. It uses `printYieldTick()`, not `yieldTick()`, on purpose — see
+  // the PRINT_YIELD_EVERY/PRINT_YIELD_MS comment above.
+  // Built via String.fromCharCode rather than a literal escape in a regex/string source,
+  // deliberately -- a literal backslash-u escape sitting next to raw hex digits in this exact
+  // spot silently became the ACTUAL LINE SEPARATOR/PARAGRAPH SEPARATOR character partway
+  // through an earlier edit of this file (caught by a parse check refusing the result: a raw
+  // U+2028 inside a regex literal source is itself a syntax error, since a regex literal may
+  // not contain an unescaped line terminator -- which is what led here). String.fromCharCode
+  // has no escape syntax for any tool in the authoring pipeline to misinterpret.
+  const lineSep = String.fromCharCode(0x2028);
+  const paraSep = String.fromCharCode(0x2029);
+  const text = JSON.stringify(doc).split(lineSep).join("\\u2028").split(paraSep).join("\\u2029");
   log(PASTE_BEGIN);
-  for (let i = 0; i < text.length; i += PRINT_CHUNK_CHARS) {
-    log(text.slice(i, i + PRINT_CHUNK_CHARS));
+  for (let i = 0; i < text.length;) {
+    const end = chunkEnd(text, i, PRINT_CHUNK_CHARS);
+    log(text.slice(i, end));
+    i = end;
     printYieldTick();
   }
   log(PASTE_END);
