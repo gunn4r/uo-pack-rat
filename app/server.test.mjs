@@ -267,7 +267,7 @@ test("[fast] GET /api/events: hello lists the tazuo adapter, and an accepted inb
     const hello = await sse.readUntil((buf) => buf.includes("event: hello"));
     const helloData = JSON.parse(hello.match(/event: hello\ndata: (.+)\n/)[1]);
     assert.equal(helloData.ok, true);
-    assert.deepEqual(helloData.watching, ["tazuo"]);
+    assert.deepEqual(helloData.watching, ["classicuo-web", "tazuo"]);
 
     const fixture = JSON.parse(readFileSync(join(HERE, "..", "adapters", "tazuo", "fixture.scan.json"), "utf8"));
     const inboxDir = join(dir, "inbox", "tazuo");
@@ -961,7 +961,7 @@ test("[fast] GET /api/setup lists the tazuo adapter, its available (repo-shipped
     const j = await (await fetch(s2.url + "/api/setup")).json();
     assert.equal(j.ok, true);
     assert.equal(j.firstRun, true);
-    assert.deepEqual(j.adapters.map((a) => a.id), ["tazuo"]);
+    assert.deepEqual(j.adapters.map((a) => a.id), ["classicuo-web", "tazuo"]);
     assert.equal(j.available.tazuo, "2.0.0");
     assert.equal(j.installed, null);
     assert.equal(j.dataDir, dir);
@@ -1223,7 +1223,7 @@ test("[fast] POST /api/import/rescan reports the adapters it swept (tazuo when l
   try {
     const r = await fetch(s2.url + "/api/import/rescan", { method: "POST", headers: { "content-type": "application/json" }, body: "{}" });
     assert.equal(r.status, 200);
-    assert.deepEqual(await r.json(), { ok: true, adapters: ["tazuo"] });
+    assert.deepEqual(await r.json(), { ok: true, adapters: ["classicuo-web", "tazuo"] });
   } finally {
     await s2.close();
   }
@@ -1254,7 +1254,7 @@ test("[fast] POST /api/import/rescan actually re-sweeps a file the folder watche
 
     const r = await fetch(s2.url + "/api/import/rescan", { method: "POST", headers: { "content-type": "application/json" }, body: "{}" });
     assert.equal(r.status, 200);
-    assert.deepEqual(await r.json(), { ok: true, adapters: ["tazuo"] });
+    assert.deepEqual(await r.json(), { ok: true, adapters: ["classicuo-web", "tazuo"] });
 
     const deadline = Date.now() + 3000;
     let found = false;
