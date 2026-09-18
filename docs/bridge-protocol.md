@@ -6,7 +6,7 @@ Ground truth: `app/schema/bridge.v1.schema.json` (validated by `app/contracts.te
 
 ## Files
 
-Everything lives under `<data>/bridge/<adapter-id>/` — today that's `<data>/bridge/tazuo/` (config `paths.bridge`, `paths.bridgeQueue`, `paths.bridgeStatus`):
+Everything lives under `<data>/bridge/<adapter-id>/` — genuinely per adapter now (Phase 6 final review follow-up; it used to be hard-coded to `<data>/bridge/tazuo/` regardless of which client was actually configured, which meant a Razor Enhanced player's Highlight/Grab/Go-to buttons queued commands nothing would ever read). `app/config.mjs`'s `paths.bridgeFor(adapter)`/`bridgeQueueFor(adapter)`/`bridgeStatusFor(adapter)` resolve the directory and its two files for whichever adapter is named; `paths.bridge`/`bridgeQueue`/`bridgeStatus` still exist as their own keys, unchanged in value — they are exactly `bridgeFor("tazuo")`'s own paths, kept for anything that still reads them directly. `POST /api/bridge` and `GET /api/bridge/status` (`app/vault-server.mjs`) resolve the adapter live off `settings.client.adapter` on every call (falling back to `"tazuo"` only when no client is configured at all, matching this route's own pre-existing behavior for that case) — never a value captured once at server startup, so switching clients takes effect on the very next request.
 
 | File | Written by | Read by | Contents |
 |---|---|---|---|
