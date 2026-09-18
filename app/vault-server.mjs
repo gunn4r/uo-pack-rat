@@ -199,7 +199,7 @@ function safeAppendLog(file, line) {
 export async function startServer(config = ensureLayout(resolveConfig()), { host, watcherOptions = {} } = {}) {
   const CONFIG = config;
   const SCANS = CONFIG.paths.scans, PROFILES = CONFIG.paths.profiles, DEFAULT_PROFILES = CONFIG.paths.defaultProfiles;
-  const RUNS = CONFIG.paths.runs, BRIDGE = CONFIG.paths.bridge, SETTINGS = CONFIG.paths.settings, USER_RULES_DIR = CONFIG.paths.rules;
+  const RUNS = CONFIG.paths.runs, SETTINGS = CONFIG.paths.settings, USER_RULES_DIR = CONFIG.paths.rules;
   // Sibling of app/ at the repo root by default — each adapters/<id>/ directory that ships a
   // capabilities.json is one adapter the non-demo server watches an inbox for (today: three —
   // adapters/tazuo/, adapters/razor-enhanced/, and adapters/classicuo-web/, the last of which never
@@ -220,6 +220,15 @@ export async function startServer(config = ensureLayout(resolveConfig()), { host
   // (or <data>/rules/<shard>.json override) is currently active. ensureLayout() already wrote a default
   // settings.json if none existed, so this file exists by the time startServer runs.
   let currentSettings = existsSync(SETTINGS) ? JSON.parse(readFileSync(SETTINGS, "utf8")) : { schemaVersion: 1, shard: DEFAULT_SHARD };
+  // Which adapter's bridge the page-facing bridge routes (POST /api/bridge, GET /api/bridge/status)
+  // talk to — the currently CONFIGURED client, re-read live off currentSettings on every call rather
+  // than captured once at startup, so a client switch (a fresh install, or "Run setup again") takes
+  // effect on the very next request with no restart. Falls back to "tazuo" when no client is
+  // configured at all, matching this route's own pre-existing behavior before it became per-adapter
+  // (Phase 6 final review follow-up) — an unconfigured/hand-installed player was already the
+  // documented limitation app/ui/bridge.mjs's currentAdapter() comment describes; this fallback keeps
+  // that exact case exactly as limited as before, not worse.
+  const bridgeAdapter = () => currentSettings.client?.adapter || "tazuo";
   // The app must never fail to start because settings.json names a shard that no longer loads (its
   // rules file was deleted, edited into invalid shape, or never existed — e.g. a stale user override).
   // Fall back to DEFAULT_SHARD IN MEMORY ONLY: settings.json itself is left untouched, so fixing the
@@ -594,7 +603,14 @@ export async function startServer(config = ensureLayout(resolveConfig()), { host
         // installScripts also re-validates the id itself (defence in depth), but the route rejects it
         // first so the error is the clear "unknown adapter" rather than installScripts' own message.
         if (!listAdapters(ADAPTERS_DIR).some((a) => a.id === adapter)) return send(res, 400, { ok: false, error: `unknown adapter: ${adapter}` });
-        const result = installScripts({ adapter, adaptersDir: ADAPTERS_DIR, scriptsDir, dataDir: CONFIG.dataDir, bridgeStatusPath: CONFIG.paths.bridgeStatus,
+        // bridgeStatusPath is THIS adapter's own bridge status (the one whose scripts are about to be
+        // overwritten on disk), not necessarily the currently-configured client's (bridgeAdapter()) —
+        // those can differ, e.g. installing razor-enhanced for the first time while tazuo is still the
+        // configured client from an earlier setup. Guarding against the wrong adapter's running-script
+        // state would both miss a real conflict (razor-enhanced's own bridge actually running) and
+        // could refuse an install that's perfectly safe (tazuo's bridge running has no bearing on
+        // overwriting razor-enhanced's files) — so this always checks the adapter param itself.
+        const result = installScripts({ adapter, adaptersDir: ADAPTERS_DIR, scriptsDir, dataDir: CONFIG.dataDir, bridgeStatusPath: CONFIG.paths.bridgeStatusFor(adapter),
           log: (msg) => safeAppendLog(CONFIG.paths.log, `${new Date().toISOString()} setup-install ${msg}\n`) });
         if (!result.ok) {
           return send(res, result.code === "running" ? 409 : 400, { ok: false, error: result.error, code: result.code, installed: result.installed });
@@ -806,12 +822,16 @@ export async function startServer(config = ensureLayout(resolveConfig()), { host
         // deliverable, and it was unenforced at the only place the app writes it.
         const { ok, errors } = validate(BRIDGE_SCHEMA.command, line);
         if (!ok) return send(res, 400, { ok: false, error: `${errors[0].path} ${errors[0].msg}`, errors });
-        mkdirSync(BRIDGE, { recursive: true });
-        appendFileSync(CONFIG.paths.bridgeQueue, JSON.stringify(line) + "\n");
+        // Queue into the CONFIGURED client's own bridge directory (bridgeAdapter(), above) — not a
+        // fixed "tazuo" — so a Razor Enhanced player's Highlight/Grab/Go-to buttons reach the bridge
+        // script that's actually reading commands (Phase 6 final review follow-up).
+        const adapter = bridgeAdapter();
+        mkdirSync(CONFIG.paths.bridgeFor(adapter), { recursive: true });
+        appendFileSync(CONFIG.paths.bridgeQueueFor(adapter), JSON.stringify(line) + "\n");
         return send(res, 200, { ok: true, id });
       }
       if (req.method === "GET" && url.pathname === "/api/bridge/status") {
-        const f = CONFIG.paths.bridgeStatus;
+        const f = CONFIG.paths.bridgeStatusFor(bridgeAdapter());
         if (!existsSync(f)) return send(res, 200, { ok: true, online: false });
         try {
           const st = JSON.parse(readFileSync(f, "utf8"));

@@ -18,6 +18,19 @@ test("[smoke] config: defaults to ~/.pack-rat and port 8765", () => {
   assert.equal(c.paths.inbox, join(c.dataDir, "inbox"));
   assert.equal(c.paths.inboxFor("tazuo"), join(c.dataDir, "inbox", "tazuo"));
 });
+// Phase 6 final review follow-up: the bridge became per-adapter (bridgeFor/bridgeQueueFor/
+// bridgeStatusFor), mirroring inboxFor — bridge/bridgeQueue/bridgeStatus (above) must still be
+// exactly bridgeFor("tazuo")'s own paths, so an existing TazUO player's data directory needs no
+// migration: the fixed key and the per-adapter resolver produce byte-identical paths for "tazuo".
+test("[smoke] config: bridgeFor/bridgeQueueFor/bridgeStatusFor are per-adapter, and bridgeFor(\"tazuo\") equals the legacy fixed bridge path", () => {
+  const c = resolveConfig([], {}, "/home/x");
+  assert.equal(c.paths.bridgeFor("tazuo"), c.paths.bridge, "no migration for an existing TazUO player: same path either way");
+  assert.equal(c.paths.bridgeQueueFor("tazuo"), c.paths.bridgeQueue);
+  assert.equal(c.paths.bridgeStatusFor("tazuo"), c.paths.bridgeStatus);
+  assert.equal(c.paths.bridgeFor("razor-enhanced"), join(c.dataDir, "bridge", "razor-enhanced"));
+  assert.equal(c.paths.bridgeQueueFor("razor-enhanced"), join(c.dataDir, "bridge", "razor-enhanced", "queue.jsonl"));
+  assert.equal(c.paths.bridgeStatusFor("razor-enhanced"), join(c.dataDir, "bridge", "razor-enhanced", "status.json"));
+});
 test("[smoke] config: ensureLayout creates the tazuo inbox directory", async () => {
   const { mkdtempSync, existsSync } = await import("node:fs");
   const { tmpdir } = await import("node:os");

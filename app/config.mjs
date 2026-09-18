@@ -30,7 +30,21 @@ export function resolveConfig(argv = process.argv.slice(2), env = process.env, h
   // PACKRAT_CORE is, so a test can point a real running server at a throwaway folder of fixture
   // adapters instead of the repo's real ones.
   const adaptersDir = resolve(flag(argv, "--adapters") || env.PACKRAT_ADAPTERS_DIR || join(APP_DIR, "..", "adapters"));
-  const bridge = join(dataDir, "bridge", "tazuo");
+  // bridgeRoot/bridgeFor: each adapter gets its own <dataDir>/bridge/<adapter>/ directory, the same
+  // shape as inbox/inboxFor just below — a Razor Enhanced player's packrat-bridge.py already reads
+  // and writes bridge/razor-enhanced/ on its own (its own header literal, verified against the real
+  // script, not assumed), so the app-side routes just need to point at the SAME adapter's directory
+  // instead of a fixed one (Phase 6 final review follow-up: the bridge queue/status routes were
+  // hard-coded to "tazuo" regardless of which client was actually configured, so a Razor Enhanced
+  // player's Highlight/Grab/Go-to buttons queued commands into a folder that adapter's bridge script
+  // never reads — a silent no-op, exactly what capability-driven buttons exist to prevent).
+  const bridgeRoot = join(dataDir, "bridge");
+  // bridge/bridgeQueue/bridgeStatus: kept as their own top-level keys, unchanged in value, for
+  // whatever still reads them directly — they are exactly bridgeFor("tazuo")'s own paths (this is
+  // also why an existing TazUO player needs no data migration: "tazuo" was always the literal
+  // component this path used, so a per-adapter resolver keyed by adapter id reproduces the identical
+  // path for that one adapter without moving anything on disk).
+  const bridge = join(bridgeRoot, "tazuo");
   const logs = join(dataDir, "logs");
   const inbox = join(dataDir, "inbox");
   return {
@@ -43,6 +57,13 @@ export function resolveConfig(argv = process.argv.slice(2), env = process.env, h
       rules: join(dataDir, "rules"),   // user-defined/overriding shard rules files; app/rules/ is the builtin set
       runs: join(dataDir, "runs"),
       bridge, bridgeQueue: join(bridge, "queue.jsonl"), bridgeStatus: join(bridge, "status.json"),
+      // bridgeFor(adapter): the directory; bridgeQueueFor/bridgeStatusFor: the two files inside it.
+      // Callers (app/vault-server.mjs's bridge routes, and POST /api/setup/install's running-bridge
+      // guard) resolve these against whichever adapter is actually relevant to that request, not a
+      // constant captured once at server startup.
+      bridgeFor: (adapter) => join(bridgeRoot, adapter),
+      bridgeQueueFor: (adapter) => join(bridgeRoot, adapter, "queue.jsonl"),
+      bridgeStatusFor: (adapter) => join(bridgeRoot, adapter, "status.json"),
       logs, log: join(logs, "server.log"),   // logs = the directory (ensureLayout creates it); log = the one file 500s append to
       core: env.PACKRAT_CORE ? resolve(env.PACKRAT_CORE) : join(APP_DIR, "dist", "optimizer-core.mjs"),
       adaptersDir,

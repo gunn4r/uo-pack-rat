@@ -35,7 +35,7 @@ One directory holds everything, resolved the same way for the bare server and th
   settings.json        {shard, setupDone, client: {adapter, scriptsDir} | null}
   rules/                user-defined or overriding shard rules files
   runs/                 one file per finished suit-build job
-  bridge/tazuo/          queue.jsonl (commands) and status.json (the bridge script's heartbeat)
+  bridge/<adapter>/     queue.jsonl (commands) and status.json (the bridge script's heartbeat); the CONFIGURED client's own directory, not a fixed "tazuo"
   logs/
     server.log           the server's own request/error log (ref-keyed stack traces)
     shell.log             the shell's own lifecycle log (desktop only — see Logs, below)
@@ -45,7 +45,7 @@ One directory holds everything, resolved the same way for the bare server and th
 
 ## The inbox watcher's lifecycle
 
-`app/watcher.mjs` runs one `startWatcher()` per adapter directory under `adapters/` that ships a `capabilities.json` (today: just `tazuo`), watching `inbox/<adapter>/` non-recursively for `*.json` changes via `fs.watch`, plus one `scanOnce()` sweep at startup so files dropped while the app was closed are picked up immediately.
+`app/watcher.mjs` runs one `startWatcher()` per adapter directory under `adapters/` that ships a `capabilities.json` (today: all three — `tazuo`, `razor-enhanced`, and `classicuo-web`, though the last never sees a folder drop, since its paste transport only ever reaches its inbox via `POST /api/import/paste`), watching `inbox/<adapter>/` non-recursively for `*.json` changes via `fs.watch`, plus one `scanOnce()` sweep at startup so files dropped while the app was closed are picked up immediately.
 
 **Debounce.** A file's change events are collapsed with a 300 ms timer per filename — an adapter script's temp-then-rename write can fire more than one `fs.watch` event for the same drop, and this keeps it to one ingest attempt.
 
