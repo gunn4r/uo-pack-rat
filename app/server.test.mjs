@@ -74,21 +74,56 @@ function sseReader(response) {
   const reader = response.body.getReader();
   const decoder = new TextDecoder();
   let buf = "";
+  // A reader.read() that loses the Promise.race below (the timeout wins) is NOT cancelled — it stays
+  // pending and will still resolve with whatever chunk arrives next. `pending` remembers that in-flight
+  // call across readUntil invocations, so a caller that retries readUntil after a timeout (see
+  // readUntilOrRescan below) reuses it instead of issuing a second, concurrent reader.read(): two
+  // concurrent reads on one reader resolve strictly in call order, so a second call would only ever see
+  // the chunk AFTER the one the first (abandoned) call is still waiting on — silently stealing the very
+  // event a retry is waiting for. Found by exactly that symptom: a synthetic "fs.watch delivers nothing"
+  // repro that proved the server-side broadcast happened (via the watcher's own log) while a naive retry
+  // still timed out.
+  let pending = null;
   async function readUntil(matcher, { timeoutMs = 3000 } = {}) {
     const deadline = Date.now() + timeoutMs;
     while (!matcher(buf)) {
       const remaining = Math.max(1, deadline - Date.now());
       if (remaining <= 1 && Date.now() >= deadline) throw new Error(`sseReader: timed out waiting for a match; got:\n${buf}`);
+      if (!pending) pending = reader.read();
       const { value, done } = await Promise.race([
-        reader.read(),
+        pending,
         new Promise((_, reject) => setTimeout(() => reject(new Error("sseReader: timed out")), remaining)),
       ]);
+      pending = null;   // consumed — safe to start a fresh read() next iteration (ours or a later retry's)
       if (done) throw new Error(`sseReader: stream ended before a match; got:\n${buf}`);
       buf += decoder.decode(value, { stream: true });
     }
     return buf;
   }
   return { readUntil, cancel: () => reader.cancel().catch(() => {}) };
+}
+
+// A dropped inbox file's fs.watch notification can be silently missed by the OS — reproduced live
+// (not a timing-margin issue: an instrumented trace showed the watcher's fs.watch callback firing
+// ZERO times for the whole life of the affected watcher, not late) in
+// .superpowers/sdd/2026-09-17-phase-6-adapters/sse-flake-report.md. app/vault-server.mjs's own
+// POST /api/import and /api/import/paste routes already treat this as expected platform behavior and
+// nudge scanOnce() themselves instead of trusting fs.watch alone (see their "Nudge the watcher"
+// comments); POST /api/import/rescan exposes that same nudge for a drop the app didn't make itself —
+// exactly the case here, and exactly what a real player would click if their drop never lit up. So a
+// test waiting on a live SSE event from a dropped file does what a real player would do when fs.watch
+// stays silent: rescan once, then keep waiting — a longer timeout would not help an event that never
+// fires at all. Any OTHER readUntil failure (the stream ending, a wiring/crash bug) is not swallowed —
+// only "timed out" retries through the rescan; scanOnce()/ingestFile are idempotent, so a rescan that
+// races a live event that was merely slow (not dropped) is harmless either way.
+async function readUntilOrRescan(sse, matcher, serverUrl, { timeoutMs = 3000, rescanTimeoutMs = 5000 } = {}) {
+  try {
+    return await sse.readUntil(matcher, { timeoutMs });
+  } catch (e) {
+    if (!/timed out/.test(e.message)) throw e;
+    await fetch(serverUrl + "/api/import/rescan", { method: "POST", headers: { "content-type": "application/json" }, body: "{}" });
+    return sse.readUntil(matcher, { timeoutMs: rescanTimeoutMs });
+  }
 }
 
 test("[smoke] / serves the page with a CSP and no inline script", async () => {
@@ -369,7 +404,7 @@ test("[fast] GET /api/events: hello lists the tazuo adapter, and an accepted inb
     writeFileSync(tmpPath, JSON.stringify(fixture));
     renameSync(tmpPath, join(inboxDir, "drop.json"));
 
-    const invBuf = await sse.readUntil((buf) => buf.includes("event: inventory"));
+    const invBuf = await readUntilOrRescan(sse, (buf) => buf.includes("event: inventory"), s2.url);
     const invData = JSON.parse(invBuf.match(/event: inventory\ndata: (.+)\n/)[1]);
     assert.equal(invData.character, fixture.character);
     assert.equal(existsSync(join(inboxDir, "drop.json")), false, "the inbox file is gone once accepted");
@@ -399,7 +434,7 @@ test("[fast] GET /api/events: an invalid inbox file streams a rejected event and
     writeFileSync(tmpPath, "not json");
     renameSync(tmpPath, join(inboxDir, "bad.json"));
 
-    const rejBuf = await sse.readUntil((buf) => buf.includes("event: rejected"), { timeoutMs: 5000 });
+    const rejBuf = await readUntilOrRescan(sse, (buf) => buf.includes("event: rejected"), s2.url, { timeoutMs: 5000 });
     const rejData = JSON.parse(rejBuf.match(/event: rejected\ndata: (.+)\n/)[1]);
     assert.equal(rejData.file, "bad.json");
     assert.ok(existsSync(join(inboxDir, "rejected", "bad.json")));
@@ -441,7 +476,7 @@ test("[fast] a log destination that throws on every write does not crash the ser
     // app/watcher.mjs) threw, leaving the watcher's promise chain rejected with no handler — an
     // unhandled rejection that took the whole process down well before this event could ever fire,
     // and well before the retries/rejectFile below would ever run.
-    const rejBuf = await sse.readUntil((buf) => buf.includes("event: rejected"), { timeoutMs: 5000 });
+    const rejBuf = await readUntilOrRescan(sse, (buf) => buf.includes("event: rejected"), s2.url, { timeoutMs: 5000 });
     const rejData = JSON.parse(rejBuf.match(/event: rejected\ndata: (.+)\n/)[1]);
     assert.equal(rejData.file, "bad.json");
     assert.ok(existsSync(join(inboxDir, "rejected", "bad.json")), "the bad file was still quarantined despite every log write failing");
