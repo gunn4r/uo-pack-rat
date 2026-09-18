@@ -176,12 +176,15 @@ a crash or a read mid-write never leaves a half-written file behind.
 - **No `fixture.scan.json`.** See "Status," above — a real run (Task 6) should generate one the
   way `adapters/tazuo/fixture.scan.json` was: play a scan, scrub it per `docs/adapter-guide.md`'s
   Fixture rules, and drop it in here.
-- **No candidate-path auto-detection.** `app/installer.mjs`'s `candidateClientRoots` only knows
-  where TazUO tends to land (`adapter !== "tazuo"` returns no candidates for anything else) —
-  Razor Enhanced has no single well-known install location the way TazUO's Desktop/Downloads/
-  Documents convention does, so this adapter's setup step always needs the folder picked by hand.
-  A later task could add real candidate paths once someone confirms where Razor Enhanced actually
-  tends to be installed.
+- **Candidate-path auto-detection is a best-effort guess, not a confirmed location.** `app/installer.mjs`'s
+  `candidateClientRoots` now proposes `<root>/ClassicUO/Data/Plugins/Razor/Scripts` under
+  Desktop/Downloads/Documents (and, on win32, `%LOCALAPPDATA%` and `C:\`) for a root named
+  `CUOLauncher` — the layout razorce.com's Windows install guide documents for the ClassicUO
+  Launcher + Razor plugin combo (fetched 2026-09-17), gated to win32 since Razor Enhanced only runs
+  there. Nobody has confirmed this against a real install (same "Status: unverified" caveat as the
+  rest of this adapter) — it's the best documented guess available, not a fact. The setup step's own
+  manual folder picker (`validateScriptsDir` also recognizes `<picked>/Razor/Scripts` and
+  `<picked>/Scripts` as fallback shapes) still works when the guess misses.
 
 ## Sources
 
@@ -210,3 +213,8 @@ a crash or a read mid-write never leaves a half-written file behind.
   long-running Razor Enhanced script (the basis for the bridge's main loop condition). Both are
   presented there as established community practice, not as a claim this adapter's own behavior
   has been tested.
+- https://www.razorce.com/install/windows/ — the community install guide for Razor + the ClassicUO
+  Launcher on Windows (fetched 2026-09-17), cited only for the `<launcher root>/ClassicUO/Data/Plugins/Razor`
+  layout `app/installer.mjs`'s `candidateClientRoots` now guesses a `Scripts` subfolder under (see
+  "What's still outstanding," above). Like the wiki citation above, this documents one common install
+  method, not a guarantee every player's Razor Enhanced lands there.

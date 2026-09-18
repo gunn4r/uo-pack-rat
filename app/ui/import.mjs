@@ -20,8 +20,9 @@ function adapterId() {
   return imp.adapter || state.settings?.client?.adapter || state.setup?.adapters?.[0]?.id || null;
 }
 
-// Only shown once a second adapter actually exists (today: just tazuo) — no point asking a player to
-// pick from a list of one.
+// Only shown once a second adapter actually exists — no point asking a player to pick from a list of
+// one. (All three shipped adapters are always in state.setup.adapters regardless of transport, so this
+// already covers today's tazuo/razor-enhanced/classicuo-web as soon as more than one is installable.)
 function adapterPicker() {
   const adapters = state.setup?.adapters || [];
   if (adapters.length <= 1) return null;
