@@ -111,9 +111,6 @@ const UI_NAME_RE = /^[a-z0-9-]+\.(mjs|css)$/;
 const PROFILES_SCHEMA = JSON.parse(readFileSync(join(HERE, "schema", "profiles.v2.schema.json"), "utf8"));
 const BRIDGE_SCHEMA = JSON.parse(readFileSync(join(HERE, "schema", "bridge.v1.schema.json"), "utf8"));
 const EVENTS_ROUTE_RE = /^\/api\/optimize\/[\w-]+\/events$/;
-// Sibling of app/ at the repo root — each adapters/<id>/ directory that ships a capabilities.json is
-// one adapter the non-demo server watches an inbox for (today: just adapters/tazuo/).
-const ADAPTERS_DIR = join(HERE, "..", "adapters");
 
 function send(res, status, body, type = "application/json") {
   const data = type === "application/json" ? JSON.stringify(body) : body;
@@ -195,6 +192,11 @@ export async function startServer(config = ensureLayout(resolveConfig()), { host
   const CONFIG = config;
   const SCANS = CONFIG.paths.scans, PROFILES = CONFIG.paths.profiles, DEFAULT_PROFILES = CONFIG.paths.defaultProfiles;
   const RUNS = CONFIG.paths.runs, BRIDGE = CONFIG.paths.bridge, SETTINGS = CONFIG.paths.settings, USER_RULES_DIR = CONFIG.paths.rules;
+  // Sibling of app/ at the repo root by default — each adapters/<id>/ directory that ships a
+  // capabilities.json is one adapter the non-demo server watches an inbox for (today: just
+  // adapters/tazuo/). Overridable (config.mjs's --adapters/PACKRAT_ADAPTERS_DIR) so a test can point
+  // a real running server at a throwaway folder of fixture adapters instead of the repo's real ones.
+  const ADAPTERS_DIR = CONFIG.paths.adaptersDir || join(HERE, "..", "adapters");
 
   // The core is built once (scripts/build-core.mjs, run via the pretest/prestart npm hooks or the
   // launcher scripts) into app/dist/optimizer-core.mjs; each optimize-worker.mjs thread imports it by
