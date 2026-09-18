@@ -27,7 +27,10 @@
 //   evidence, not an assumption, so `capabilities.json` ships `"arms": false` — the conservative,
 //   honest reading — and this script never crashes if `equippedItems.arms` is undefined; it just
 //   omits that piece and moves on. Task 6's first live run is what actually settles this one way or
-//   the other on THIS deployment.
+//   the other on THIS deployment. (Nothing in `docs/scan-schema.md` currently defines what
+//   `capabilities.layers` means when a layer it lists isn't backed by a `true` per-layer capability
+//   flag — read it here as "attempted", not "readable"; `arms` is the one layer in this adapter's
+//   list where those two differ.)
 // - ANY GROUND CONTAINER WHOSE GRAPHIC ISN'T IN `CONTAINER_GRAPHICS` BELOW. The published API has no
 //   "list every object within N tiles" call (TazUO's Legion Script has `GetItemsOnGround(range)`,
 //   which returns literally everything nearby for client-side filtering; this sandbox's closest
@@ -40,9 +43,16 @@
 //   documented example — there is no `player.use()`/open method in the published Player surface
 //   either, so this script never tries to open anything explicitly). A related project's live testing
 //   of the same client found a locked/trapped container's `.contents` getter can throw instead of
-//   just returning `undefined`. Every `.contents` read here is wrapped in try/catch for exactly that;
-//   a container that throws, or that comes back `undefined`, is recorded with `opened: false` (root)
-//   or simply left unlisted (nested), never crashes the scan.
+//   just returning `undefined`. Every `.contents` read here is wrapped in try/catch for exactly that.
+//   For a ROOT, that's recorded honestly as `opened: false` with no items under it. For a NESTED
+//   item, the script has no way to tell "this is a container I can't read" apart from "this isn't a
+//   container at all" — both read back as `undefined` from `safeContents()` — so a nested item whose
+//   contents throw or come back empty is simply recorded as an ordinary item, not flagged as an
+//   unreadable container and not left out of the scan.
+// - DEEPLY NESTED BAGS STOP RECURSING AFTER `MAX_NEST` LEVELS (4). A bag past that depth is recorded
+//   as a plain item (its own contents are never read), the same as the "can't tell a container from
+//   an item" case just above — this is a deliberate, silent cap (mirroring
+//   `adapters/tazuo/packrat-scanner.py`'s own `MAX_NEST`), not a client limitation.
 // - ITEM NAMES OFF THE BARE OBJECT CAN BE UNRELIABLE. `Entity.name` is documented as returning an
 //   empty string "if not known to the client yet" — so this script never trusts `.name` alone for
 //   anything it reports; every item and container is named from `client.queryItemOPL(serial)`'s own
@@ -369,10 +379,19 @@ function main(): void {
 
   // 6) Print the marked block, one console line at a time (it is unverified whether this client's
   // console area preserves embedded newlines inside a single log() call — printing line-by-line
-  // sidesteps that entirely, at the cost of one log() call per line).
+  // sidesteps that entirely, at the cost of one log() call per line). This is the single largest
+  // burst of calls anywhere in the script on a well-geared character, so it gets the same
+  // defensive yielding as the scan phase (yieldTick(), below) — losing the print loop partway is
+  // worse than losing a scan loop partway: app/import.mjs only recognizes the marked form when
+  // BOTH markers are present, so a print that dies after BEGIN but before END falls back to
+  // parsing the raw (truncated) text and fails outright, discarding the whole scan rather than
+  // just its tail.
   const text = JSON.stringify(doc, null, 2);
   log(PASTE_BEGIN);
-  for (const line of text.split("\n")) log(line);
+  for (const line of text.split("\n")) {
+    log(line);
+    yieldTick();
+  }
   log(PASTE_END);
 
   client.sysMsg(`Pack Rat scan done: ${items.length} items in ${roots.length} container(s), ` +
