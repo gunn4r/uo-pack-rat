@@ -106,6 +106,17 @@ test("[fast] CI runs the suite on all three desktop platforms", () => {
   assert.doesNotMatch(ci, /TEST_SKIP_ELECTRON/, "CI must not skip the shell tests");
 });
 
+test("[fast] CI compiles every adapter's Python scripts generically, not one adapter's files named by hand", () => {
+  const ci = workflow("ci.yml");
+  assert.match(
+    ci,
+    /py_compile adapters\/\*\/packrat-\*\.py/,
+    "the compile step must glob every adapters/*/packrat-*.py, so a new adapter needs no edit here",
+  );
+  assert.doesNotMatch(ci, /adapters\/tazuo\/packrat-scanner\.py/, "must not hard-code tazuo's own script paths");
+  assert.match(ci, /shell:\s*bash/, "the glob needs bash on windows-latest too (its default shell, pwsh, doesn't expand wildcard arguments to external commands)");
+});
+
 test("[fast] Linux CI relaxes the unprivileged-userns restriction Electron's sandbox needs, keeps the sandbox itself enabled, and makes a silent no-op visible", () => {
   const ci = workflow("ci.yml");
   assert.match(
