@@ -32,17 +32,20 @@ h1, h2, h3 { margin: 0; text-wrap: balance; font-weight: 600; }
 h1 { font-size: 18px; letter-spacing: .01em; }
 h2 { font-size: 15px; }
 h3 { font-size: 13px; color: var(--muted); text-transform: uppercase; letter-spacing: .06em; }
-button, input, select { font: inherit; color: inherit; }
+button, input, select, textarea { font: inherit; color: inherit; }
 button { background: var(--surface-2); border: 1px solid var(--line); border-radius: 6px; padding: 6px 12px; cursor: pointer; }
 button:hover { border-color: var(--accent); }
 button.primary { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); font-weight: 600; }
 button:disabled { opacity: .5; cursor: not-allowed; }
 button:disabled:hover { border-color: var(--line); }
 button.primary:disabled:hover { border-color: var(--accent); }
-button:focus-visible, input:focus-visible, select:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
-input, select { background: var(--surface); border: 1px solid var(--line); border-radius: 6px; padding: 5px 8px; }
+button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+input, select, textarea { background: var(--surface); border: 1px solid var(--line); border-radius: 6px; padding: 5px 8px; }
 input[type=number] { width: 5.5em; font-family: var(--mono); text-align: right; }
 input[type=checkbox] { accent-color: var(--accent); }
+/* Import tab (ui/import.mjs): the paste textarea fills its panel — the panel's own padding/max-width
+   is the container decision, not something the textarea imposes on itself. */
+textarea { width: 100%; box-sizing: border-box; resize: vertical; font-family: var(--mono); font-size: 12px; }
 .num { font-family: var(--mono); font-variant-numeric: tabular-nums; }
 .muted { color: var(--muted); }
 .small { font-size: 12px; }

@@ -1078,6 +1078,147 @@ test("[fast] POST /api/import copies two fixtures (not the stray .txt) into the 
   }
 });
 
+test("[fast] POST /api/import takes an explicit adapter (same result as the default) and rejects an unknown one, writing nothing", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "qm-import-adapter-"));
+  const s2 = await startServer(ensureLayout(resolveConfig(["--port", "0", "--data", dir], {})));
+  try {
+    const fixture = JSON.parse(readFileSync(join(HERE, "..", "adapters", "tazuo", "fixture.scan.json"), "utf8"));
+    const srcDir = mkdtempSync(join(tmpdir(), "qm-import-adapter-src-"));
+    writeFileSync(join(srcDir, "one.json"), JSON.stringify(fixture));
+
+    const r = await fetch(s2.url + "/api/import", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ dir: srcDir, adapter: "tazuo" }) });
+    assert.equal(r.status, 200);
+    assert.deepEqual(await r.json(), { ok: true, copied: 1, skipped: 0 });
+
+    const bad = await fetch(s2.url + "/api/import", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ dir: srcDir, adapter: "not-a-real-adapter" }) });
+    assert.equal(bad.status, 400);
+    assert.match((await bad.json()).error, /unknown adapter/);
+    assert.equal(existsSync(join(dir, "inbox", "not-a-real-adapter")), false, "a rejected adapter id must never create its own inbox directory");
+  } finally {
+    await s2.close();
+  }
+});
+
+// ---- Task 1, Phase 6: POST /api/import/paste, POST /api/import/rescan -----------------------------
+test("[fast] POST /api/import/paste: a good paste (marker block, with noise around it) lands a file the watcher then ingests", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "qm-paste-"));
+  const s2 = await startServer(ensureLayout(resolveConfig(["--port", "0", "--data", dir], {})));
+  try {
+    const fixture = JSON.parse(readFileSync(join(HERE, "..", "adapters", "tazuo", "fixture.scan.json"), "utf8"));
+    const text = [
+      "console output from the web client scanner",
+      "-----BEGIN PACK RAT SCAN-----",
+      JSON.stringify(fixture),
+      "-----END PACK RAT SCAN-----",
+      "done",
+    ].join("\n");
+
+    const r = await fetch(s2.url + "/api/import/paste", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ text, adapter: "tazuo" }) });
+    assert.equal(r.status, 200);
+    const body = await r.json();
+    assert.equal(body.ok, true);
+    assert.equal(body.character, fixture.character);
+    assert.ok(body.written, JSON.stringify(body));
+
+    const deadline = Date.now() + 3000;
+    let found = false;
+    while (Date.now() < deadline && !found) {
+      const inv = await (await fetch(s2.url + "/api/inventory")).json();
+      found = Boolean(inv.inventory.characters[fixture.character]);
+      if (!found) await new Promise((resolve) => setTimeout(resolve, 100));
+    }
+    assert.ok(found, "the pasted scan folded into /api/inventory within 3s");
+  } finally {
+    await s2.close();
+  }
+});
+
+test("[fast] POST /api/import/paste: a bad paste is 400 with the parse error and writes nothing to the inbox", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "qm-paste-bad-"));
+  const s2 = await startServer(ensureLayout(resolveConfig(["--port", "0", "--data", dir], {})));
+  try {
+    const inboxDir = join(dir, "inbox", "tazuo");
+    const before = existsSync(inboxDir) ? readdirSync(inboxDir) : [];
+
+    const r = await fetch(s2.url + "/api/import/paste", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ text: "not json at all", adapter: "tazuo" }) });
+    assert.equal(r.status, 400);
+    const body = await r.json();
+    assert.equal(body.ok, false);
+    assert.match(body.error, /JSON/);
+
+    const after = existsSync(inboxDir) ? readdirSync(inboxDir) : [];
+    assert.deepEqual(after, before, "a rejected paste must not write into the inbox");
+  } finally {
+    await s2.close();
+  }
+});
+
+test("[fast] POST /api/import/paste: an unknown adapter id is rejected with 400", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "qm-paste-adapter-"));
+  const s2 = await startServer(ensureLayout(resolveConfig(["--port", "0", "--data", dir], {})));
+  try {
+    const fixture = JSON.parse(readFileSync(join(HERE, "..", "adapters", "tazuo", "fixture.scan.json"), "utf8"));
+    const r = await fetch(s2.url + "/api/import/paste", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ text: JSON.stringify(fixture), adapter: "not-a-real-adapter" }) });
+    assert.equal(r.status, 400);
+    assert.match((await r.json()).error, /unknown adapter/);
+    assert.equal(existsSync(join(dir, "inbox", "not-a-real-adapter")), false);
+  } finally {
+    await s2.close();
+  }
+});
+
+test("[fast] POST /api/import/rescan reports the adapters it swept (tazuo when live, empty under --demo)", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "qm-rescan-"));
+  const s2 = await startServer(ensureLayout(resolveConfig(["--port", "0", "--data", dir], {})));
+  try {
+    const r = await fetch(s2.url + "/api/import/rescan", { method: "POST", headers: { "content-type": "application/json" }, body: "{}" });
+    assert.equal(r.status, 200);
+    assert.deepEqual(await r.json(), { ok: true, adapters: ["tazuo"] });
+  } finally {
+    await s2.close();
+  }
+
+  const demoDir = mkdtempSync(join(tmpdir(), "qm-rescan-demo-"));
+  const s3 = await startServer(ensureLayout(resolveConfig(["--demo", "--port", "0", "--data", demoDir], {})));
+  try {
+    const r = await fetch(s3.url + "/api/import/rescan", { method: "POST", headers: { "content-type": "application/json" }, body: "{}" });
+    assert.equal(r.status, 200);
+    assert.deepEqual(await r.json(), { ok: true, adapters: [] });
+  } finally {
+    await s3.close();
+  }
+});
+
+test("[fast] POST /api/import/rescan actually re-sweeps a file the folder watcher missed", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "qm-rescan-sweep-"));
+  const s2 = await startServer(ensureLayout(resolveConfig(["--port", "0", "--data", dir], {})));
+  try {
+    const fixture = JSON.parse(readFileSync(join(HERE, "..", "adapters", "tazuo", "fixture.scan.json"), "utf8"));
+    // Drop the file with a single write (no rename event) while the server is briefly paused from
+    // handling requests — the startup sweep already ran before this file existed, so nothing has
+    // ingested it yet; POST /api/import/rescan is what a player reaches for when a drop like this
+    // never showed up.
+    const inboxDir = join(dir, "inbox", "tazuo");
+    mkdirSync(inboxDir, { recursive: true });
+    writeFileSync(join(inboxDir, "missed.json"), JSON.stringify(fixture));
+
+    const r = await fetch(s2.url + "/api/import/rescan", { method: "POST", headers: { "content-type": "application/json" }, body: "{}" });
+    assert.equal(r.status, 200);
+    assert.deepEqual(await r.json(), { ok: true, adapters: ["tazuo"] });
+
+    const deadline = Date.now() + 3000;
+    let found = false;
+    while (Date.now() < deadline && !found) {
+      const inv = await (await fetch(s2.url + "/api/inventory")).json();
+      found = Boolean(inv.inventory.characters[fixture.character]);
+      if (!found) await new Promise((resolve) => setTimeout(resolve, 100));
+    }
+    assert.ok(found, "rescan folded the missed file into /api/inventory within 3s");
+  } finally {
+    await s2.close();
+  }
+});
+
 test("[fast] GET /api/update-check reflects package.json (no repository field today => configured:false, no network call)", async () => {
   const pkg = JSON.parse(readFileSync(join(HERE, "..", "package.json"), "utf8"));
   const j = await (await get("/api/update-check")).json();
