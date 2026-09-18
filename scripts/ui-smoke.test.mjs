@@ -3,7 +3,7 @@
 // electron or playwright is absent (a plain clone), or under TEST_SKIP_ELECTRON.
 import test from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, rmSync, writeFileSync, mkdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -67,5 +67,87 @@ test("[slow] the packaged UI renders, switches tabs and lists the demo inventory
   } finally {
     await app.close();
     rmSync(dataDir, { recursive: true, force: true });
+  }
+});
+
+// Post-review fix (Task 2, Phase 6, round 1): the no-bridge case above was covered at the DOM level,
+// but "TazUO shows all three buttons and no note" and "a partial-bridge adapter offers only its
+// declared action" were only exercised through GET /api/setup's JSON (app/server.test.mjs) — a
+// regression in the actual render path (app/ui/bridge.mjs's actButtons()/bridgeNote()) could pass
+// every existing test. These two prove the other two gate conditions at the DOM level too.
+test("[slow] with tazuo configured, the demo inventory shows all three bridge buttons and no note", async (t) => {
+  const why = unavailable();
+  if (why) return t.skip(why);
+
+  const { _electron } = await import("playwright");
+  const dataDir = mkdtempSync(join(tmpdir(), "packrat-ui-tazuo-"));
+  // Pre-seed settings.json (setupDone: true skips the wizard; client names the real tazuo adapter,
+  // whose adapters/tazuo/capabilities.json declares all three bridge actions) rather than driving
+  // the wizard through the UI — this test is about the render path once a client IS configured, not
+  // about the wizard flow itself (already covered above).
+  writeFileSync(join(dataDir, "settings.json"), JSON.stringify({
+    schemaVersion: 1, shard: "uoalive", setupDone: true, client: { adapter: "tazuo", scriptsDir: dataDir },
+  }));
+  const app = await _electron.launch({ args: [ROOT, "--demo", "--data", dataDir], cwd: ROOT, timeout: 60_000 });
+  try {
+    const page = await app.firstWindow();
+    await page.waitForSelector("#status", { timeout: 30_000 });
+    await page.locator("#inv-table tbody tr").first().waitFor({ timeout: 30_000 });
+
+    await page.waitForSelector("#inv-table .act button", { timeout: 10_000 });
+    const labels = await page.locator("#inv-table .act button").allInnerTexts();
+    for (const want of ["Highlight", "Grab", "Go to"]) {
+      assert.ok(labels.includes(want), `expected a "${want}" button somewhere in the table, got ${JSON.stringify(labels)}`);
+    }
+    assert.equal(await page.locator("#inv-bridge-note .bridge-note").count(), 0, "tazuo has full bridge support — nothing to explain");
+    assert.equal(await page.locator("#wizard[open]").count(), 0, "setupDone:true should skip the first-run wizard");
+  } finally {
+    await app.close();
+    rmSync(dataDir, { recursive: true, force: true });
+  }
+});
+
+test("[slow] a partial-bridge adapter only offers its declared action, and the note names what's missing", async (t) => {
+  const why = unavailable();
+  if (why) return t.skip(why);
+
+  const { _electron } = await import("playwright");
+  const dataDir = mkdtempSync(join(tmpdir(), "packrat-ui-partial-"));
+  const adaptersDir = mkdtempSync(join(tmpdir(), "packrat-ui-partial-adapters-"));
+  const partialDir = join(adaptersDir, "partial-bridge");
+  mkdirSync(partialDir, { recursive: true });
+  writeFileSync(join(partialDir, "capabilities.json"), JSON.stringify({
+    adapter: "partial-bridge", version: "1.0.0", transport: "folder",
+    capabilities: { layers: [], arms: false, bank: false, ground: false, nested: false, tooltips: "label", bridge: ["highlight"] },
+  }));
+  writeFileSync(join(dataDir, "settings.json"), JSON.stringify({
+    schemaVersion: 1, shard: "uoalive", setupDone: true, client: { adapter: "partial-bridge", scriptsDir: dataDir },
+  }));
+  // PACKRAT_ADAPTERS_DIR (the same override app/config.mjs/app/server.test.mjs use) points the whole
+  // app — main process and the forked server child, which inherits main's process.env — at this
+  // throwaway adapter instead of the repo's real adapters/, without touching electron/main.mjs.
+  const app = await _electron.launch({
+    args: [ROOT, "--demo", "--data", dataDir], cwd: ROOT, timeout: 60_000,
+    env: { ...process.env, PACKRAT_ADAPTERS_DIR: adaptersDir },
+  });
+  try {
+    const page = await app.firstWindow();
+    await page.waitForSelector("#status", { timeout: 30_000 });
+    await page.locator("#inv-table tbody tr").first().waitFor({ timeout: 30_000 });
+
+    await page.waitForSelector("#inv-table .act button", { timeout: 10_000 });
+    const labels = await page.locator("#inv-table .act button").allInnerTexts();
+    assert.ok(labels.length > 0, "at least one row should offer Highlight");
+    assert.ok(labels.every((l) => l === "Highlight"), `only Highlight should render, got ${JSON.stringify(labels)}`);
+
+    await page.waitForSelector("#inv-bridge-note .bridge-note", { timeout: 10_000 });
+    const note = await page.locator("#inv-bridge-note .bridge-note").innerText();
+    assert.match(note, /Highlight/, note);
+    assert.match(note, /Grab/, note);
+    assert.match(note, /Go to/, note);
+  } finally {
+    await app.close();
+    rmSync(dataDir, { recursive: true, force: true });
+    rmSync(adaptersDir, { recursive: true, force: true });
   }
 });
