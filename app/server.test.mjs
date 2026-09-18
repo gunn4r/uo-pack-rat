@@ -292,7 +292,11 @@ test("[fast] GET /api/events: hello lists the tazuo adapter, and an accepted inb
 
 test("[fast] GET /api/events: an invalid inbox file streams a rejected event and lands under rejected/", async () => {
   const dir = mkdtempSync(join(tmpdir(), "qm-events-rej-"));
-  const s2 = await startServer(ensureLayout(resolveConfig(["--port", "0", "--data", dir], {})));
+  // Fast watcher timing (matches app/watcher.test.mjs's own debounceMs:20/retryDelayMs:20 convention):
+  // this waits out a full debounce + retries-1 backoff delays before the reject fires, so leaving the
+  // production defaults (300ms/700ms) in only barely clears the SSE read's timeout on a loaded machine.
+  const s2 = await startServer(ensureLayout(resolveConfig(["--port", "0", "--data", dir], {})),
+    { watcherOptions: { debounceMs: 20, retries: 3, retryDelayMs: 20 } });
   try {
     const res = await fetch(s2.url + "/api/events");
     const sse = sseReader(res);
@@ -321,7 +325,12 @@ test("[fast] GET /api/events: an invalid inbox file streams a rejected event and
 // chmod that root or Windows can ignore).
 test("[fast] a log destination that throws on every write does not crash the server: the bad file still lands in rejected/ and GET /api/inventory still serves", async () => {
   const dir = mkdtempSync(join(tmpdir(), "qm-log-crash-"));
-  const s2 = await startServer(ensureLayout(resolveConfig(["--port", "0", "--data", dir], {})));
+  // Fast watcher timing (see the sibling "invalid inbox file" test above for why): without this, the
+  // rejected event only fires after debounceMs + (retries-1)×retryDelayMs of real wall-clock waiting
+  // (300 + 2×700 = 1700ms with the production defaults) inside a fixed 5000ms SSE read — comfortable
+  // in isolation, but tight enough that a loaded machine (a full-suite run, real CI) can trip it.
+  const s2 = await startServer(ensureLayout(resolveConfig(["--port", "0", "--data", dir], {})),
+    { watcherOptions: { debounceMs: 20, retries: 3, retryDelayMs: 20 } });
   try {
     const logsDir = join(dir, "logs");   // ensureLayout() already created this as a real directory
     rmSync(logsDir, { recursive: true, force: true });
