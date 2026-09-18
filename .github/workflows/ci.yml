@@ -23,8 +23,14 @@ jobs:
         with:
           python-version: "3.12"
       - run: npm ci
-      - name: Compile the adapter scripts
-        run: python -m py_compile adapters/tazuo/packrat-scanner.py adapters/tazuo/packrat-refresh.py adapters/tazuo/packrat-bridge.py
+      - name: Compile every adapter's Python scripts
+        # Globs adapters/*/packrat-*.py so a new adapter (adapters/razor-enhanced/ today) is
+        # covered automatically -- nothing to edit here when one ships. shell: bash makes the glob
+        # behave the same on windows-latest (whose default shell is pwsh, which doesn't expand
+        # wildcard arguments to external commands the way bash does) as it already does on macOS
+        # and Linux.
+        shell: bash
+        run: python -m py_compile adapters/*/packrat-*.py
       - name: Allow Electron's Linux sandbox to use unprivileged user namespaces
         # ubuntu-latest's AppArmor policy blocks unprivileged user-namespace creation, which is
         # exactly what Chromium's non-setuid sandbox falls back to (an npm-installed Electron never
