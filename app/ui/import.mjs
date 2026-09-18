@@ -9,7 +9,7 @@ import { state } from "./store.mjs";
 import { $, el } from "./dom.mjs";
 import { api } from "./api.mjs";
 import { pickFolderRow } from "./wizard.mjs";
-import { defaultAdapterId, availableAdapters } from "./adapters.mjs";
+import { defaultAdapterId, availableAdapters, platformCompatible } from "./adapters.mjs";
 
 // This tab's own working state — text box contents, the picked adapter (once there's more than one
 // to choose from), busy flag, and the last result line. Survives switching away and back (the section
@@ -28,15 +28,28 @@ function adapterId() {
   return imp.adapter || state.settings?.client?.adapter || defaultAdapterId(availableAdapters(state.setup?.adapters, state.setup?.platform)) || null;
 }
 
-// Only shown once a second PLATFORM-COMPATIBLE adapter actually exists — no point asking a player to
-// pick from a list of one, and no point offering a Windows-only adapter (razor-enhanced) to a player
-// on any other platform (Phase 6 final review, deferred minor).
+// Only shown once a second adapter actually exists at all — no point asking a player to pick from a
+// list of one. Shows every shipped adapter (never pre-filtered by platform — see wizard.mjs's step2()
+// for why): a platform-incompatible one (Razor Enhanced, Windows-only, on any other platform —
+// platformCompatible reads a.platform from capabilities.json, never a hard-coded id) still appears,
+// disabled, with its name suffixed " (Windows only)" rather than silently missing, so a player who's
+// heard of it isn't left wondering where it went. adapterId()'s own default (above) still only ever
+// draws from availableAdapters, so this picker's *default selection* is never one a player can't use.
 function adapterPicker() {
-  const adapters = availableAdapters(state.setup?.adapters, state.setup?.platform);
+  const adapters = state.setup?.adapters || [];
   if (adapters.length <= 1) return null;
   const current = adapterId();
   const sel = el("select", { onchange: (e) => { imp.adapter = e.target.value; } },
-    ...adapters.map((a) => el("option", { value: a.id, selected: a.id === current ? "" : null }, a.name)));
+    ...adapters.map((a) => {
+      const compatible = platformCompatible(a, state.setup?.platform);
+      // el() has no null-attribute handling (setAttribute(k, null) sets the literal string "null",
+      // which for a boolean attribute like `disabled` is still "present" — see wizard.mjs's step2()
+      // for the same fix shape): build attrs conditionally instead of passing null for "off".
+      const optAttrs = { value: a.id, selected: a.id === current ? "" : null };
+      if (!compatible) optAttrs.disabled = "";
+      const opt = el("option", optAttrs, compatible ? a.name : `${a.name} (${a.platform} only)`);
+      return opt;
+    }));
   for (const o of sel.querySelectorAll("option[selected='null']")) o.removeAttribute("selected");
   return el("div", { class: "field" }, el("label", {}, "Adapter"), sel);
 }
