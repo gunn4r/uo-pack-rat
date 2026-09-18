@@ -1,8 +1,9 @@
 #!/usr/bin/env node
 // test-runner.mjs — the project's standard test interface.
 //   node scripts/test-runner.mjs [--smoke|--fast]      (full when no flag)
-// Drives node:test's run() over app/*.test.mjs + scripts/*.test.mjs, spawns the Python adapter test
-// (fast + full modes only), and writes test_logs/latest_summary.json. Tags are name prefixes:
+// Drives node:test's run() over every **/*.test.mjs found by a recursive walk of app/ + scripts/
+// (node_modules/dist/fixtures excluded), spawns the Python adapter test (fast + full modes only),
+// and writes test_logs/latest_summary.json. Tags are name prefixes:
 // [smoke] [fast] [slow]. TEST_SKIP_SLOW=1 skips the [slow] cases (see individual test files).
 import { run } from "node:test";
 import { writeFileSync, mkdirSync, readdirSync } from "node:fs";
@@ -16,7 +17,17 @@ const mode = process.argv.includes("--smoke") ? "smoke" : process.argv.includes(
 const patterns = mode === "smoke" ? [/^\[smoke\]/] : mode === "fast" ? [/^\[(smoke|fast)\]/] : undefined;
 buildCore();
 
-const files = ["app", "scripts"].flatMap((d) => readdirSync(join(ROOT, d)).filter((f) => f.endsWith(".test.mjs")).map((f) => join(ROOT, d, f)));
+// Recursive so a test file in a new subdirectory (app/schema/validate.test.mjs was the one this
+// missed) is picked up automatically — a hard-coded third/fourth top-level directory is what
+// created that hole, and would only postpone the next one. node_modules is a defensive exclusion
+// (none exists under app/ or scripts/ today); dist is generated build output that must never be
+// walked; fixtures holds test INPUT data (JSON fixtures consumed by tests), never tests themselves.
+const walk = (dir) => readdirSync(dir, { withFileTypes: true }).flatMap((e) => {
+  const p = join(dir, e.name);
+  if (e.isDirectory()) return e.name === "node_modules" || e.name === "dist" || e.name === "fixtures" ? [] : walk(p);
+  return e.name.endsWith(".test.mjs") ? [p] : [];
+});
+const files = ["app", "scripts"].flatMap((d) => walk(join(ROOT, d)));
 let total = 0, passed = 0, failed = 0, skipped = 0; const failures = [];
 
 // A file whose tests are ALL excluded by testNamePatterns still emits one synthetic PASS for the
