@@ -47,20 +47,33 @@ function allowedBridgeActions() {
   return currentAdapter()?.capabilities?.bridge || [];
 }
 const ALL_BRIDGE_ACTIONS = ["highlight", "grab", "goto"];
-// One short line explaining why the bridge controls are missing or limited — null once every action
-// is available (today, that's exactly TazUO's set, so a TazUO player sees nothing new here). Callers
-// place this once per panel, never per row: repeating it on every item would be far noisier than the
-// silently-missing button it replaces.
+// The button labels actButtons() itself uses (see below) — the note names actions the same way the
+// missing buttons would have read, not the raw capability strings ("goto" reads as "Go to" in here,
+// same as the button that isn't there).
+const ACTION_LABELS = { highlight: "Highlight", grab: "Grab", goto: "Go to" };
+// One short line explaining why the bridge controls are missing or limited — null once every KNOWN
+// action is present (today, that's exactly TazUO's set, so a TazUO player sees nothing new here).
+// Post-review fix: this used to compare allowed.length against ALL_BRIDGE_ACTIONS.length, so an
+// adapter declaring three actions that aren't exactly highlight/grab/goto (a typo, or some future
+// action name this build doesn't know) satisfied the count and silently suppressed the note while
+// actButtons()'s own .includes() checks still correctly filtered every button out — exactly the
+// silently-missing-button bug this task exists to remove, reappearing on malformed adapter data.
+// A set-membership check can't be fooled that way; an unrecognized action name is simply never
+// "present" for this purpose (the app has no button for it either, so nothing about it belongs in
+// the "supports" half of the message — see `known` below). Callers place this once per panel, never
+// per row: repeating it on every item would be far noisier than the silently-missing button it
+// replaces.
 export function bridgeNote() {
   const client = state.setup?.settings?.client;
   if (!client) return "No client set up yet — visit Settings to install one that supports in-game actions like Highlight/Grab/Go to.";
   const adapter = currentAdapter();
-  const allowed = adapter?.capabilities?.bridge || [];
-  if (allowed.length >= ALL_BRIDGE_ACTIONS.length) return null;
+  const allowedSet = new Set(adapter?.capabilities?.bridge || []);
+  if (ALL_BRIDGE_ACTIONS.every((a) => allowedSet.has(a))) return null;
   const name = adapter?.name || client.adapter;
-  if (!allowed.length) return `${name} can't run in-game actions — Highlight, Grab and Go to aren't available for this client.`;
-  const missing = ALL_BRIDGE_ACTIONS.filter((a) => !allowed.includes(a));
-  return `${name} only supports ${allowed.join(", ")} here — ${missing.join(", ")} ${missing.length === 1 ? "isn't" : "aren't"} available for this client.`;
+  const known = ALL_BRIDGE_ACTIONS.filter((a) => allowedSet.has(a));
+  const missing = ALL_BRIDGE_ACTIONS.filter((a) => !allowedSet.has(a));
+  if (!known.length) return `${name} can't run in-game actions — Highlight, Grab and Go to aren't available for this client.`;
+  return `${name} only supports ${known.map((a) => ACTION_LABELS[a]).join(", ")} here — ${missing.map((a) => ACTION_LABELS[a]).join(", ")} ${missing.length === 1 ? "isn't" : "aren't"} available for this client.`;
 }
 // The note as a ready-to-insert element, or null when there's nothing to say (keeps callers from
 // repeating the `bridgeNote() ? el(...) : null` conditional at every call site).
