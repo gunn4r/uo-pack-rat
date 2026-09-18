@@ -116,6 +116,18 @@ const MAX_NEST = 4;            // bags in bags in bags
 const OPL_TIMEOUT_MS = 1500;   // client.queryItemOPL's own timeout
 const YIELD_EVERY = 4;         // sleep after this many container/tooltip reads (defensive pacing)
 const YIELD_MS = 150;
+// The print loop (step 6, below) gets its own, much lighter cadence than YIELD_EVERY/YIELD_MS
+// above. Those numbers were picked for tooltip/container reads, which are genuinely slow network
+// round trips — sleeping 150ms every 4th one costs little next to the read itself. Printing an
+// already-built line, by contrast, is a local, near-instant operation: reusing the scan cadence
+// there would turn a ~500-line scan (a well-geared character) into roughly 125 sleeps of 150ms —
+// about 19 seconds of the console visibly doing nothing, long enough that a player watching it is
+// likely to interrupt the script and lose the whole scan, the exact failure this pacing exists to
+// avoid. The print loop still needs occasional yield points for the same undocumented-watchdog
+// risk (see the header comment), just far fewer of them: every 25 lines costs 20 sleeps of 50ms on
+// that same ~500-line scan, about 1 second total.
+const PRINT_YIELD_EVERY = 25;  // lines
+const PRINT_YIELD_MS = 50;
 
 // webClient equippedItems key -> canonical layer name (docs/adapter-guide.md's full-coverage list,
 // matching adapters/tazuo/capabilities.json's own 20 entries one-for-one). `equippedItems` also
@@ -179,6 +191,14 @@ let _yieldCount = 0;
 function yieldTick(): void {
   _yieldCount++;
   if (_yieldCount % YIELD_EVERY === 0) sleep(YIELD_MS);
+}
+
+// printYieldTick — the print loop's own, lighter version of yieldTick (see the PRINT_YIELD_EVERY/
+// PRINT_YIELD_MS comment above for why it needs a different cadence rather than reusing this one).
+let _printYieldCount = 0;
+function printYieldTick(): void {
+  _printYieldCount++;
+  if (_printYieldCount % PRINT_YIELD_EVERY === 0) sleep(PRINT_YIELD_MS);
 }
 
 // tooltipOf — the full on-paperdoll-line read. Falls back to the bare (possibly blank) `.name` only
@@ -380,17 +400,18 @@ function main(): void {
   // 6) Print the marked block, one console line at a time (it is unverified whether this client's
   // console area preserves embedded newlines inside a single log() call — printing line-by-line
   // sidesteps that entirely, at the cost of one log() call per line). This is the single largest
-  // burst of calls anywhere in the script on a well-geared character, so it gets the same
-  // defensive yielding as the scan phase (yieldTick(), below) — losing the print loop partway is
-  // worse than losing a scan loop partway: app/import.mjs only recognizes the marked form when
-  // BOTH markers are present, so a print that dies after BEGIN but before END falls back to
-  // parsing the raw (truncated) text and fails outright, discarding the whole scan rather than
-  // just its tail.
+  // burst of calls anywhere in the script on a well-geared character, so it still gets defensive
+  // yielding for the same undocumented-watchdog risk as the scan phase — losing the print loop
+  // partway is worse than losing a scan loop partway: app/import.mjs only recognizes the marked
+  // form when BOTH markers are present, so a print that dies after BEGIN but before END falls back
+  // to parsing the raw (truncated) text and fails outright, discarding the whole scan rather than
+  // just its tail. It uses `printYieldTick()`, not `yieldTick()`, on purpose — see the
+  // PRINT_YIELD_EVERY/PRINT_YIELD_MS comment above.
   const text = JSON.stringify(doc, null, 2);
   log(PASTE_BEGIN);
   for (const line of text.split("\n")) {
     log(line);
-    yieldTick();
+    printYieldTick();
   }
   log(PASTE_END);
 
