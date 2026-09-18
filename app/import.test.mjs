@@ -106,3 +106,56 @@ test("[fast] parsePastedScan reconstructs a compact scan pasted as newline-joine
   assert.equal(r.ok, true, r.error);
   assert.equal(r.doc.character, demoKestrel.character);
 });
+
+// Re-review follow-up (surrogate-pair chunking): the print loop's chunk boundary can land in the
+// middle of a UTF-16 surrogate pair (an astral character -- outside the Basic Multilingual Plane,
+// encoded as a HIGH surrogate followed by a LOW surrogate -- e.g. an emoji in an engraved item name).
+// Splitting one corrupts that one character on any environment along the copy/paste path that
+// doesn't preserve a lone unpaired surrogate byte-for-byte, with no parse error to notice (JSON.parse
+// happily accepts a lone surrogate inside a string). adapters/classicuo-web/packrat-scanner.ts's
+// chunkEnd() backs the boundary off by one whenever it would end on a high surrogate. This loads and
+// exercises the REAL, shipped chunkEnd() -- via node:module's stripTypeScriptTypes plus a data: URL
+// import, not a reimplementation and not new Function/eval on extracted source (see
+// app/classicuo-web-adapter.test.mjs's own CAPABILITIES-extraction comment for why that distinction
+// matters here) -- and proves the round trip through the real parsePastedScan survives even when the
+// chunk size is chosen specifically to force the split.
+test("[fast] parsePastedScan survives a real astral character split across a chunk boundary by the scanner's own chunkEnd()", async () => {
+  const { stripTypeScriptTypes } = await import("node:module");
+  const scannerPath = join(HERE, "..", "adapters", "classicuo-web", "packrat-scanner.ts");
+  const scannerSrc = readFileSync(scannerPath, "utf8");
+  const m = /function chunkEnd\(text: string, start: number, size: number\): number \{[\s\S]*?\n\}/.exec(scannerSrc);
+  assert.ok(m, "packrat-scanner.ts: could not find chunkEnd() -- did it move or get renamed?");
+  const stripped = stripTypeScriptTypes(`export ${m[0]}`, { mode: "strip" });
+  const { chunkEnd } = await import(`data:text/javascript,${encodeURIComponent(stripped)}`);
+
+  // An actual astral character, built from its two UTF-16 code units rather than written as a
+  // literal escape sequence in this source file (U+1F600, GRINNING FACE: high surrogate 0xD83D, low
+  // surrogate 0xDE00).
+  const astral = String.fromCharCode(0xd83d, 0xde00);
+  const doc = { ...demoKestrel, character: demoKestrel.character + astral };
+  const compact = JSON.stringify(doc);
+  const astralAt = compact.indexOf(astral);
+  assert.ok(astralAt > 0, "the astral character should actually be present in the compact document");
+  // A chunk size that ends the first chunk exactly one code unit into the pair -- the precise
+  // boundary that would split it if chunkEnd() didn't back off.
+  const chunkSize = astralAt + 1;
+
+  const chunks = [];
+  for (let i = 0; i < compact.length;) {
+    const end = chunkEnd(compact, i, chunkSize);
+    assert.ok(end > i, "chunkEnd() must always make forward progress");
+    chunks.push(compact.slice(i, end));
+    i = end;
+  }
+  assert.ok(chunks.length > 3, "the fixture should be large enough to actually exercise multiple chunks");
+  // Direct proof no boundary split the pair: no chunk but the last ends on a high surrogate.
+  for (const c of chunks.slice(0, -1)) {
+    const lastUnit = c.charCodeAt(c.length - 1);
+    assert.ok(!(lastUnit >= 0xd800 && lastUnit <= 0xdbff), `a chunk ended on a high surrogate: ${JSON.stringify(c)}`);
+  }
+
+  const pasted = [PASTE_BEGIN, ...chunks, PASTE_END].join("\n");
+  const r = parsePastedScan(pasted);
+  assert.equal(r.ok, true, r.error);
+  assert.equal(r.doc.character, demoKestrel.character + astral, "the astral character survived the real chunkEnd() split and the real parsePastedScan reconstruction intact");
+});
