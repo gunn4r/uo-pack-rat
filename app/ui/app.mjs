@@ -15,6 +15,7 @@ import { renderContainers } from "./containers.mjs";
 import { connectEvents } from "./events.mjs";
 import { openWizard } from "./wizard.mjs";
 import { renderSettings } from "./settings.mjs";
+import { renderImport } from "./import.mjs";
 import { changeShard } from "./shard.mjs";
 
 // ---------------------------------------------------------------- data
@@ -43,6 +44,7 @@ export async function load() {
     : inv.demo ? "no scans yet (demo data)" : "no scans yet";
   buildFilters(); fetchItems(); renderCharacters(); buildBuilder(); renderContainers();
   renderSettings(setupRes);
+  renderImport();
   connectEvents();
   if (setupRes.firstRun && !state.wizardShown) { state.wizardShown = true; openWizard({ firstRun: true }); }
 }
@@ -99,10 +101,10 @@ function renderShardPicker() {
 }
 
 // ---------------------------------------------------------------- tabs + hash routes
-// #/inventory, #/characters, #/containers, #/builder/<Character>, #/settings. A reload lands where you were;
-// tab clicks add a history entry (back/forward walk the tabs); switching the builder's character replaces the
-// entry instead.
-const TABS = ["inventory", "characters", "builder", "containers", "settings"];
+// #/inventory, #/characters, #/containers, #/builder/<Character>, #/import, #/settings. A reload lands where
+// you were; tab clicks add a history entry (back/forward walk the tabs); switching the builder's character
+// replaces the entry instead.
+const TABS = ["inventory", "characters", "builder", "containers", "import", "settings"];
 export function parseRoute() {
   const parts = location.hash.replace(/^#\/?/, "").split("/").filter(Boolean).map((x) => { try { return decodeURIComponent(x); } catch { return x; } });
   const tab = TABS.includes(parts[0]) ? parts[0] : "inventory";
