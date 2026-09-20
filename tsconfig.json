@@ -20,5 +20,5 @@
     "noEmit": true
   },
   "include": ["app/**/*", "electron/**/*", "scripts/**/*"],
-  "exclude": ["node_modules", "app/dist", "adapters", "local", "dist", "scripts/optimizer-core.ts"]
+  "exclude": ["node_modules", "app/dist", "adapters", "local", "dist"]
 }

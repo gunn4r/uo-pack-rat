@@ -1,6 +1,6 @@
 // solver.test.mjs — solver-equivalence tests: HiGHS (app/exact-solver.mjs, app/mip.mjs,
 // app/mip-solve.mjs) must never disagree with the core's own exact branch-and-bound
-// (scripts/optimizer-core.ts) about what the best suit is worth, only ever get there faster (or, on
+// (scripts/optimizer-core.mts) about what the best suit is worth, only ever get there faster (or, on
 // a real-sized inventory where neither proves in budget, no worse). Every "equal" assertion in this
 // file compares HiGHS's re-scored result against the CORE's OWN numbers — never against the MIP's
 // internal objective, which is on a different (offset) scale.

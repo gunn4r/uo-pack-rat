@@ -2,7 +2,7 @@
 // no solver import here (app/mip-solve.mjs owns the runtime). Every modelling choice reproduces
 // app/bench/mip-spike.mjs, which was validated to the decimal against the core's proven optima —
 // see docs/solver.md for the model and app/bench/REPORT.md for the evidence.
-export const HARD_FLOOR_BONUS = 1e7;   // == scripts/optimizer-core.ts HARD_FLOOR_BONUS
+export const HARD_FLOOR_BONUS = 1e7;   // == scripts/optimizer-core.mts HARD_FLOOR_BONUS
 export const DEFAULT_SLOTS = ["helmet", "chest", "arms", "hands", "legs", "neck", "ring", "bracelet", "talisman", "cloak", "oneHanded", "twoHanded"];
 export const DEFAULT_OPTIONAL_SLOTS = ["cloak", "talisman", "ring", "bracelet", "neck", "oneHanded", "twoHanded"];
 const INF = Infinity;

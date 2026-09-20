@@ -52,10 +52,10 @@ interface OptAssignment {
 interface OptProfile {
   weights: Record<string, number>;
   caps: Record<string, number>;
-  floors?: Record<string, number>;
+  floors?: Record<string, number> | undefined;
   floorBonus?: number;
   floorPartial?: number;
-  hardFloors?: string[];    // floors that act as requirements: their bonus is HARD_FLOOR_BONUS, so no mix of other gains can buy a miss
+  hardFloors?: string[] | undefined;    // floors that act as requirements: their bonus is HARD_FLOOR_BONUS, so no mix of other gains can buy a miss
 }
 const HARD_FLOOR_BONUS = 1e7;
 
@@ -116,11 +116,11 @@ interface OptResult {
   restarts: number;
   evaluations: number;
   method?: string;        // "heuristic" | "exact"
-  proven?: boolean;       // exact phase finished the whole tree: this is the optimum for the given pools/profile
-  nodes?: number;         // branch-and-bound nodes visited
-  pruned?: { before: number; after: number };   // candidate counts before/after dominance pruning
-  alternatives?: { best: OptAssignment; score: number }[];   // other suits within altTolerance of the best, best first (never the best itself)
-  altTolerance?: number;
+  proven?: boolean | undefined;       // exact phase finished the whole tree: this is the optimum for the given pools/profile
+  nodes?: number | undefined;         // branch-and-bound nodes visited
+  pruned?: { before: number; after: number } | undefined;   // candidate counts before/after dominance pruning
+  alternatives?: { best: OptAssignment; score: number }[] | undefined;   // other suits within altTolerance of the best, best first (never the best itself)
+  altTolerance?: number | undefined;
 }
 
 // Internal: a flattened property space so scoring is an array loop instead of object churn.
@@ -181,7 +181,7 @@ function optIsValidAssignment(a: OptAssignment): boolean {
   if (optIsTwoHandedWeapon(th) && oh) return false;
   const slots = Object.keys(a);
   for (let i = 0; i < slots.length; i++) {
-    const s = slots[i];
+    const s = slots[i]!;
     const it = a[s];
     if (it && it.slot !== s) return false;
   }
@@ -200,25 +200,25 @@ function optCollectKeys(pools: Record<string, OptItem[]>, current: OptAssignment
   };
   // Profile keys first, in a stable order, so the space layout does not depend on pool order.
   const wk = Object.keys(profile.weights || {}).sort();
-  for (let i = 0; i < wk.length; i++) add(wk[i]);
+  for (let i = 0; i < wk.length; i++) add(wk[i]!);
   const ck = Object.keys(profile.caps || {}).sort();
-  for (let i = 0; i < ck.length; i++) add(ck[i]);
+  for (let i = 0; i < ck.length; i++) add(ck[i]!);
   const fk = Object.keys(profile.floors || {}).sort();
-  for (let i = 0; i < fk.length; i++) add(fk[i]);
+  for (let i = 0; i < fk.length; i++) add(fk[i]!);
   const poolSlots = Object.keys(pools).sort();
   for (let i = 0; i < poolSlots.length; i++) {
-    const list = pools[poolSlots[i]] || [];
+    const list = pools[poolSlots[i]!] || [];
     for (let j = 0; j < list.length; j++) {
-      const pk = Object.keys(list[j].props || {}).sort();
-      for (let k = 0; k < pk.length; k++) add(pk[k]);
+      const pk = Object.keys(list[j]!.props || {}).sort();
+      for (let k = 0; k < pk.length; k++) add(pk[k]!);
     }
   }
   const curSlots = Object.keys(current || {}).sort();
   for (let i = 0; i < curSlots.length; i++) {
-    const it = current[curSlots[i]];
+    const it = current[curSlots[i]!];
     if (!it) continue;
     const pk = Object.keys(it.props || {}).sort();
-    for (let k = 0; k < pk.length; k++) add(pk[k]);
+    for (let k = 0; k < pk.length; k++) add(pk[k]!);
   }
   return out;
 }
@@ -234,11 +234,11 @@ function optBuildSpace(keys: string[], profile: OptProfile): OptSpace {
   const weights = profile.weights || {};
   const hard: Record<string, boolean> = {};
   const hardList = profile.hardFloors || [];
-  for (let i = 0; i < hardList.length; i++) hard[hardList[i]] = true;
+  for (let i = 0; i < hardList.length; i++) hard[hardList[i]!] = true;
   const baseBonus = typeof profile.floorBonus === "number" ? profile.floorBonus : 1000;
   const floorBonusArr: number[] = [];
   for (let i = 0; i < keys.length; i++) {
-    const k = keys[i];
+    const k = keys[i]!;
     index[k] = i;
     w.push(typeof weights[k] === "number" ? weights[k] : 0);
     cap.push(typeof caps[k] === "number" ? caps[k] : Infinity);
@@ -269,9 +269,9 @@ function optVec(it: OptItem | null, space: OptSpace): number[] {
   const props = it.props || {};
   const pk = Object.keys(props);
   for (let i = 0; i < pk.length; i++) {
-    const idx = space.index[pk[i]];
+    const idx = space.index[pk[i]!];
     if (idx === undefined) continue; // property outside the space contributes nothing
-    v[idx] += props[pk[i]];
+    v[idx]! += props[pk[i]!]!;
   }
   space.vecCache.set(it, v);
   return v;
@@ -283,12 +283,12 @@ function optScoreVector(totals: number[], space: OptSpace): number {
   space.evals++;
   let s = 0;
   for (let i = 0; i < totals.length; i++) {
-    const t = totals[i];
-    const c = space.cap[i];
-    s += space.w[i] * (t < c ? t : c);
-    const f = space.floor[i];
+    const t = totals[i]!;
+    const c = space.cap[i]!;
+    s += space.w[i]! * (t < c ? t : c);
+    const f = space.floor[i]!;
     if (f > 0) {
-      const fb = space.floorBonusArr[i];
+      const fb = space.floorBonusArr[i]!;
       if (t >= f) s += fb;
       else s += fb * space.floorPartial * (t > 0 ? t / f : 0);
     }
@@ -303,16 +303,16 @@ function optScoreVector(totals: number[], space: OptSpace): number {
 function scoreSet(items: OptAssignment | (OptItem | null)[], profile: OptProfile): number {
   const list: (OptItem | null)[] = [];
   if (Array.isArray(items)) {
-    for (let i = 0; i < items.length; i++) list.push(items[i]);
+    for (let i = 0; i < items.length; i++) list.push(items[i]!);
   } else {
     const slots = Object.keys(items).sort();
-    for (let i = 0; i < slots.length; i++) list.push(items[slots[i]]);
+    for (let i = 0; i < slots.length; i++) list.push(items[slots[i]!]!);
   }
   const seen: Record<string, boolean> = {};
   const keys: string[] = [];
   const addKeys = function (o: Record<string, number>): void {
     const ks = Object.keys(o || {}).sort();
-    for (let i = 0; i < ks.length; i++) if (!seen[ks[i]]) { seen[ks[i]] = true; keys.push(ks[i]); }
+    for (let i = 0; i < ks.length; i++) if (!seen[ks[i]!]) { seen[ks[i]!] = true; keys.push(ks[i]!); }
   };
   addKeys(profile.weights || {});
   addKeys(profile.caps || {});
@@ -321,8 +321,8 @@ function scoreSet(items: OptAssignment | (OptItem | null)[], profile: OptProfile
   const space = optBuildSpace(keys, profile);
   const totals = space.zero.slice();
   for (let i = 0; i < list.length; i++) {
-    const v = optVec(list[i], space);
-    for (let j = 0; j < totals.length; j++) totals[j] += v[j];
+    const v = optVec(list[i]!, space);
+    for (let j = 0; j < totals.length; j++) totals[j]! += v[j]!;
   }
   return optScoreVector(totals, space);
 }
@@ -332,14 +332,14 @@ function optAssignmentTotals(a: OptAssignment): Record<string, number> {
   const out: Record<string, number> = {};
   const slots = Object.keys(a).sort();
   for (let i = 0; i < slots.length; i++) {
-    const it = a[slots[i]];
+    const it = a[slots[i]!];
     if (!it) continue;
     const props = it.props || {};
     const pk = Object.keys(props).sort();
-    for (let j = 0; j < pk.length; j++) out[pk[j]] = (out[pk[j]] || 0) + props[pk[j]];
+    for (let j = 0; j < pk.length; j++) out[pk[j]!] = (out[pk[j]!] || 0) + props[pk[j]!]!;
   }
   const keys = Object.keys(out);
-  for (let i = 0; i < keys.length; i++) if (out[keys[i]] === 0) delete out[keys[i]];
+  for (let i = 0; i < keys.length; i++) if (out[keys[i]!] === 0) delete out[keys[i]!];
   return out;
 }
 
@@ -371,7 +371,7 @@ function optCandidatesFor(slot: string, pools: Record<string, OptItem[]>, curren
   const seenSerial: Record<string, boolean> = {};
   const pool = pools[slot] || [];
   for (let i = 0; i < pool.length; i++) {
-    const it = pool[i];
+    const it = pool[i]!;
     if (it.slot !== slot) continue;
     if (seenSerial[String(it.serial)]) continue;
     seenSerial[String(it.serial)] = true;
@@ -394,14 +394,14 @@ function optCandidatesFor(slot: string, pools: Record<string, OptItem[]>, curren
 function optTotalsOf(a: OptAssignment, slots: string[], space: OptSpace): number[] {
   const totals = space.zero.slice();
   for (let i = 0; i < slots.length; i++) {
-    const v = optVec(a[slots[i]] || null, space);
-    for (let j = 0; j < totals.length; j++) totals[j] += v[j];
+    const v = optVec(a[slots[i]!] || null, space);
+    for (let j = 0; j < totals.length; j++) totals[j]! += v[j]!;
   }
   return totals;
 }
 
 function optAddVec(totals: number[], v: number[], sign: number): void {
-  for (let i = 0; i < totals.length; i++) totals[i] += sign * v[i];
+  for (let i = 0; i < totals.length; i++) totals[i]! += sign * v[i]!;
 }
 
 // Exhaustively re-optimize the weapon pair (oneHanded x twoHanded) against a fixed rest of the
@@ -416,7 +416,7 @@ function optBestWeaponPair(totals: number[], a: OptAssignment, oneCands: (OptIte
   let bestTwo: OptItem | null = null;
   let bestScore = -Infinity;
   for (let i = 0; i < twoCands.length; i++) {
-    const two = twoCands[i];
+    const two = twoCands[i]!;
     const vTwo = optVec(two, space);
     optAddVec(totals, vTwo, 1);
     if (optIsTwoHandedWeapon(two)) {
@@ -425,7 +425,7 @@ function optBestWeaponPair(totals: number[], a: OptAssignment, oneCands: (OptIte
       if (s > bestScore) { bestScore = s; bestOne = null; bestTwo = two; }
     } else {
       for (let j = 0; j < oneCands.length; j++) {
-        const one = oneCands[j];
+        const one = oneCands[j]!;
         const vOne = optVec(one, space);
         optAddVec(totals, vOne, 1);
         const s = optScoreVector(totals, space);
@@ -447,7 +447,7 @@ function optBestWeaponPair(totals: number[], a: OptAssignment, oneCands: (OptIte
 function optLocalSearch(a: OptAssignment, slots: string[], cands: Record<string, (OptItem | null)[]>, space: OptSpace, maxPasses: number): { assignment: OptAssignment; score: number } {
   const EPS = 1e-9;
   const cur: OptAssignment = {};
-  for (let i = 0; i < slots.length; i++) cur[slots[i]] = a[slots[i]] || null;
+  for (let i = 0; i < slots.length; i++) cur[slots[i]!] = a[slots[i]!] || null;
   const totals = optTotalsOf(cur, slots, space);
   let score = optScoreVector(totals, space);
   for (let pass = 0; pass < maxPasses; pass++) {
@@ -456,14 +456,14 @@ function optLocalSearch(a: OptAssignment, slots: string[], cands: Record<string,
     let bestItem: OptItem | null = null;
     let bestPair: { one: OptItem | null; two: OptItem | null; score: number } | null = null;
     for (let i = 0; i < slots.length; i++) {
-      const slot = slots[i];
+      const slot = slots[i]!;
       if (slot === "oneHanded" || slot === "twoHanded") continue; // handled by the pair move
       const have = cur[slot] || null;
       const vHave = optVec(have, space);
       optAddVec(totals, vHave, -1);
-      const list = cands[slot];
+      const list = cands[slot]!;
       for (let j = 0; j < list.length; j++) {
-        const cand = list[j];
+        const cand = list[j]!;
         if (cand === have) continue;
         const vC = optVec(cand, space);
         optAddVec(totals, vC, 1);
@@ -505,20 +505,20 @@ function optLocalSearch(a: OptAssignment, slots: string[], cands: Record<string,
 // beat — kept in the result as `greedyScore` so callers can see the margin.
 function optGreedySeed(slots: string[], cands: Record<string, (OptItem | null)[]>, space: OptSpace): OptAssignment {
   const cur: OptAssignment = {};
-  for (let i = 0; i < slots.length; i++) cur[slots[i]] = null;
+  for (let i = 0; i < slots.length; i++) cur[slots[i]!] = null;
   const totals = space.zero.slice();
   for (let i = 0; i < slots.length; i++) {
-    const slot = slots[i];
+    const slot = slots[i]!;
     if (slot === "oneHanded" || slot === "twoHanded") continue;
-    const list = cands[slot];
+    const list = cands[slot]!;
     let best: OptItem | null = null;
     let bestScore = -Infinity;
     for (let j = 0; j < list.length; j++) {
-      const vC = optVec(list[j], space);
+      const vC = optVec(list[j]!, space);
       optAddVec(totals, vC, 1);
       const s = optScoreVector(totals, space);
       optAddVec(totals, vC, -1);
-      if (s > bestScore) { bestScore = s; best = list[j]; }
+      if (s > bestScore) { bestScore = s; best = list[j]!; }
     }
     cur[slot] = best;
     optAddVec(totals, optVec(best, space), 1);
@@ -532,8 +532,8 @@ function optGreedySeed(slots: string[], cands: Record<string, (OptItem | null)[]
 function optRandomSeed(slots: string[], cands: Record<string, (OptItem | null)[]>, rnd: () => number): OptAssignment {
   const cur: OptAssignment = {};
   for (let i = 0; i < slots.length; i++) {
-    const list = cands[slots[i]];
-    cur[slots[i]] = list[Math.floor(rnd() * list.length)] || null;
+    const list = cands[slots[i]!]!;
+    cur[slots[i]!] = list[Math.floor(rnd() * list.length)] || null;
   }
   if (optIsTwoHandedWeapon(cur["twoHanded"] || null)) cur["oneHanded"] = null;
   return cur;
@@ -542,8 +542,8 @@ function optRandomSeed(slots: string[], cands: Record<string, (OptItem | null)[]
 function optSanitize(a: OptAssignment, slots: string[]): OptAssignment {
   const out: OptAssignment = {};
   for (let i = 0; i < slots.length; i++) {
-    const it = a ? a[slots[i]] || null : null;
-    out[slots[i]] = it && it.slot === slots[i] ? it : null;
+    const it = a ? a[slots[i]!] || null : null;
+    out[slots[i]!] = it && it.slot === slots[i] ? it : null;
   }
   if (optIsTwoHandedWeapon(out["twoHanded"] || null)) out["oneHanded"] = null;
   return out;
@@ -563,8 +563,8 @@ function optSanitize(a: OptAssignment, slots: string[]): OptAssignment {
 // lets whole subtrees be skipped when the bound cannot beat the incumbent.
 // ---------------------------------------------------------------------------
 function optDimSign(space: OptSpace, i: number): number {
-  if (space.w[i] > 0 || space.floor[i] > 0) return 1;
-  if (space.w[i] < 0) return -1;
+  if (space.w[i]! > 0 || space.floor[i]! > 0) return 1;
+  if (space.w[i]! < 0) return -1;
   return 0;
 }
 
@@ -572,8 +572,8 @@ function optDominates(a: number[], b: number[], space: OptSpace): boolean {
   // true when a is at least as good as b on every dimension that matters
   for (let i = 0; i < a.length; i++) {
     const sg = optDimSign(space, i);
-    if (sg > 0 && a[i] < b[i]) return false;
-    if (sg < 0 && a[i] > b[i]) return false;
+    if (sg > 0 && a[i]! < b[i]!) return false;
+    if (sg < 0 && a[i]! > b[i]!) return false;
   }
   return true;
 }
@@ -581,12 +581,12 @@ function optDominates(a: number[], b: number[], space: OptSpace): boolean {
 function optDominancePrune(list: (OptItem | null)[], space: OptSpace, keepNull: boolean): (OptItem | null)[] {
   const out: (OptItem | null)[] = [];
   for (let i = 0; i < list.length; i++) {
-    const a = list[i];
+    const a = list[i]!;
     if (a === null) { if (keepNull || !list.some((b) => b !== null && optDominates(optVec(b, space), space.zero, space))) out.push(null); continue; }
     const va = optVec(a, space);
     let dominated = false;
     for (let j = 0; j < list.length && !dominated; j++) {
-      const b = list[j];
+      const b = list[j]!;
       if (b === null || b === a) continue;
       if (b.twoHanded === true && a.twoHanded !== true) continue;   // a two-handed weapon cannot stand in for a shield: the shield leaves a hand free
       const vb = optVec(b, space);
@@ -603,7 +603,7 @@ function optDominancePrune(list: (OptItem | null)[], space: OptSpace, keepNull: 
 function optBranchAndBound(slots: string[], cands: Record<string, (OptItem | null)[]>, space: OptSpace, incumbent: OptAssignment, incumbentScore: number, budgetMs: number, tick?: (nodes: number, bestScore: number, improvements: number, explored: number) => void, tickEveryMs?: number, alt?: { count: number; tolerance: number }): { best: OptAssignment; score: number; proven: boolean; nodes: number; improvements: number; alts: { a: OptAssignment; score: number }[] } {
   // slot order: most constrained (fewest candidates) first; the weapon pair goes last so the
   // two-hander rule is a cheap local check (twoHanded is enumerated before oneHanded).
-  const order = slots.filter((x) => x !== "oneHanded" && x !== "twoHanded").sort((a, b) => cands[a].length - cands[b].length);
+  const order = slots.filter((x) => x !== "oneHanded" && x !== "twoHanded").sort((a, b) => cands[a]!.length - cands[b]!.length);
   if (slots.indexOf("twoHanded") >= 0) order.push("twoHanded");
   if (slots.indexOf("oneHanded") >= 0) order.push("oneHanded");
   const n = order.length, dims = space.keys.length;
@@ -617,16 +617,16 @@ function optBranchAndBound(slots: string[], cands: Record<string, (OptItem | nul
   const suf: number[][] = new Array(n + 1);
   suf[n] = space.zero.slice();
   for (let k = n - 1; k >= 0; k--) {
-    const acc = suf[k + 1].slice();
+    const acc = suf[k + 1]!.slice();
     for (let d = 0; d < dims; d++) {
       const sg = optDimSign(space, d);
       if (sg === 0) continue;
       let ext = sg > 0 ? -Infinity : Infinity;
-      for (let j = 0; j < lists[k].length; j++) {
-        const v = optVec(lists[k][j], space)[d];
+      for (let j = 0; j < lists[k]!.length; j++) {
+        const v = optVec(lists[k]![j]!, space)[d]!;
         if (sg > 0 ? v > ext : v < ext) ext = v;
       }
-      acc[d] += ext;
+      acc[d]! += ext;
     }
     suf[k] = acc;
   }
@@ -637,33 +637,33 @@ function optBranchAndBound(slots: string[], cands: Record<string, (OptItem | nul
   // best of every property at once. Both are valid upper bounds; the search takes the smaller one.
   const concave: boolean[] = new Array(dims);
   for (let d = 0; d < dims; d++) {
-    let ok = space.w[d] >= 0;
-    for (let k = 0; k < n && ok; k++) for (let j = 0; j < lists[k].length && ok; j++) if (optVec(lists[k][j], space)[d] < 0) ok = false;
+    let ok = space.w[d]! >= 0;
+    for (let k = 0; k < n && ok; k++) for (let j = 0; j < lists[k]!.length && ok; j++) if (optVec(lists[k]![j]!, space)[d]! < 0) ok = false;
     concave[d] = ok;
   }
   const sparse: number[][][] = lists.map((l) => l.map((it) => {
     const v = optVec(it, space), out: number[] = [];
-    for (let d = 0; d < dims; d++) if (concave[d] && space.w[d] > 0 && v[d] > 0) out.push(d, v[d]);
+    for (let d = 0; d < dims; d++) if (concave[d] && space.w[d]! > 0 && v[d]! > 0) out.push(d, v[d]!);
     return out;
   }));
-  const capped = function (d: number, t: number): number { const c = space.cap[d]; return space.w[d] * (t < c ? t : c); };
+  const capped = function (d: number, t: number): number { const c = space.cap[d]!; return space.w[d]! * (t < c ? t : c); };
   const tightBound = function (k: number): number {
     let s = 0, gainA = 0;
     for (let d = 0; d < dims; d++) {
-      const t = totals[d], tOpt = t + suf[k][d];
+      const t = totals[d]!, tOpt = t + suf[k]![d]!;
       if (concave[d]) { const now = capped(d, t); s += now; gainA += capped(d, tOpt) - now; }
       else s += capped(d, tOpt);
-      const f = space.floor[d];
-      if (f > 0) { const fb = space.floorBonusArr[d]; s += tOpt >= f ? fb : fb * space.floorPartial * (tOpt > 0 ? tOpt / f : 0); }
+      const f = space.floor[d]!;
+      if (f > 0) { const fb = space.floorBonusArr[d]!; s += tOpt >= f ? fb : fb * space.floorPartial * (tOpt > 0 ? tOpt / f : 0); }
     }
     let gainB = 0;
     for (let lvl = k; lvl < n && gainB < gainA; lvl++) {
-      const sp = sparse[lvl];
+      const sp = sparse[lvl]!;
       let best = 0;   // every gain here is >= 0, so 0 never underestimates the best choice
       for (let j = 0; j < sp.length; j++) {
-        const e = sp[j];
+        const e = sp[j]!;
         let gain = 0;
-        for (let q = 0; q < e.length; q += 2) { const d = e[q], t = totals[d]; gain += capped(d, t + e[q + 1]) - capped(d, t); }
+        for (let q = 0; q < e.length; q += 2) { const d = e[q]!, t = totals[d]!; gain += capped(d, t + e[q + 1]!) - capped(d, t); }
         if (gain > best) best = gain;
       }
       gainB += best;
@@ -677,11 +677,11 @@ function optBranchAndBound(slots: string[], cands: Record<string, (OptItem | nul
   const idx: number[] = new Array(n).fill(0);
   const leavesBelow: number[] = new Array(n + 1);   // leaves under one node at depth k
   leavesBelow[n] = 1;
-  for (let k = n - 1; k >= 0; k--) leavesBelow[k] = leavesBelow[k + 1] * lists[k].length;
+  for (let k = n - 1; k >= 0; k--) leavesBelow[k] = leavesBelow[k + 1]! * lists[k]!.length;
   const explored = function (): number {   // fraction of the whole tree behind the search
     let done = 0;
-    for (let k = 0; k < n; k++) done += idx[k] * leavesBelow[k + 1];
-    return leavesBelow[0] > 0 ? done / leavesBelow[0] : 1;
+    for (let k = 0; k < n; k++) done += idx[k]! * leavesBelow[k + 1]!;
+    return leavesBelow[0]! > 0 ? done / leavesBelow[0]! : 1;
   };
   // bestScore is the score of `best`, the best suit this search found; cut is the pruning threshold.
   let best: OptAssignment = incumbent, bestScore = incumbentScore, cut = incumbentScore, nodes = 0, proven = true, improvements = 0;
@@ -706,15 +706,15 @@ function optBranchAndBound(slots: string[], cands: Record<string, (OptItem | nul
         cut = sc;
         improvements++;
         const a: OptAssignment = {};
-        for (let i = 0; i < n; i++) a[order[i]] = pick[i];
+        for (let i = 0; i < n; i++) a[order[i]!] = pick[i]!;
         best = a;
       }
       if (alt && sc >= altThr() - EPS && (altList.length < altMax || sc > altMin + EPS)) {
         const a: OptAssignment = {};
-        for (let i = 0; i < n; i++) a[order[i]] = pick[i];
+        for (let i = 0; i < n; i++) a[order[i]!] = pick[i]!;
         if (altList.length < altMax) altList.push({ a: a, score: sc });
-        else { let mi = 0; for (let i = 1; i < altList.length; i++) if (altList[i].score < altList[mi].score) mi = i; altList[mi] = { a: a, score: sc }; }
-        if (altList.length >= altMax) { altMin = Infinity; for (let i = 0; i < altList.length; i++) if (altList[i].score < altMin) altMin = altList[i].score; }
+        else { let mi = 0; for (let i = 1; i < altList.length; i++) if (altList[i]!.score < altList[mi]!.score) mi = i; altList[mi] = { a: a, score: sc }; }
+        if (altList.length >= altMax) { altMin = Infinity; for (let i = 0; i < altList.length; i++) if (altList[i]!.score < altMin) altMin = altList[i]!.score; }
       }
       return true;
     }
@@ -723,20 +723,20 @@ function optBranchAndBound(slots: string[], cands: Record<string, (OptItem | nul
       if (tick && now >= nextTick) { nextTick = now + every; tick(nodes, cut, improvements, explored()); }
       if (now - t0 > budgetMs) return false;
     }
-    for (let d = 0; d < dims; d++) bound[d] = totals[d] + suf[k][d];
+    for (let d = 0; d < dims; d++) bound[d] = totals[d]! + suf[k]![d]!;
     if (pruneAt(optScoreVector(bound, space))) return true;   // subtree cannot beat the incumbent (or reach the alternatives list)
     if (n - k >= 2 && pruneAt(tightBound(k))) return true;     // ... nor under the tighter, item-coupled bound
-    const slot = order[k], list = lists[k];
-    const twoH = slot === "oneHanded" && k > 0 && order[k - 1] === "twoHanded" && optIsTwoHandedWeapon(pick[k - 1]);
+    const slot = order[k], list = lists[k]!;
+    const twoH = slot === "oneHanded" && k > 0 && order[k - 1] === "twoHanded" && optIsTwoHandedWeapon(pick[k - 1]!);
     for (let j = 0; j < list.length; j++) {
       idx[k] = j;
-      const it = list[j];
+      const it = list[j]!;
       if (twoH && it !== null) continue;              // a two-handed weapon leaves no free hand
       const v = optVec(it, space);
-      for (let d = 0; d < dims; d++) totals[d] += v[d];
+      for (let d = 0; d < dims; d++) totals[d]! += v[d]!;
       pick[k] = it;
       const ok = rec(k + 1);
-      for (let d = 0; d < dims; d++) totals[d] -= v[d];
+      for (let d = 0; d < dims; d++) totals[d]! -= v[d]!;
       pick[k] = null;
       if (!ok) { proven = false; return false; }
     }
@@ -756,7 +756,7 @@ function optimizeSuit(pools: Record<string, OptItem[]>, current: OptAssignment, 
   const maxPasses = typeof opts.maxPasses === "number" ? opts.maxPasses : 200;
   const optionalList = opts.optionalSlots || optDefaultOptionalSlots();
   const optional: Record<string, boolean> = {};
-  for (let i = 0; i < optionalList.length; i++) optional[optionalList[i]] = true;
+  for (let i = 0; i < optionalList.length; i++) optional[optionalList[i]!] = true;
 
   const cur = optSanitize(current || {}, slots);
   const keys = optCollectKeys(pools || {}, cur, profile);
@@ -764,7 +764,7 @@ function optimizeSuit(pools: Record<string, OptItem[]>, current: OptAssignment, 
   const gradSpace = optBuildSpace(keys, optGradientProfile(profile));
 
   const cands: Record<string, (OptItem | null)[]> = {};
-  for (let i = 0; i < slots.length; i++) cands[slots[i]] = optCandidatesFor(slots[i], pools || {}, cur, optional);
+  for (let i = 0; i < slots.length; i++) cands[slots[i]!] = optCandidatesFor(slots[i]!, pools || {}, cur, optional);
   // A two-handed weapon needs the one-handed layer empty. When that layer has no empty option (it is locked to the
   // worn weapon), two-handed weapons are not candidates at all; otherwise the hill climber's weapon-pair move could
   // swap one in and quietly drop the locked weapon.
@@ -792,17 +792,17 @@ function optimizeSuit(pools: Record<string, OptItem[]>, current: OptAssignment, 
   const budgetMs = typeof opts.timeBudgetMs === "number" ? opts.timeBudgetMs : 15000;
   const progressEvery = typeof opts.progressEveryMs === "number" && opts.progressEveryMs > 0 ? opts.progressEveryMs : 250;
   let candCount = 0;
-  for (let i = 0; i < slots.length; i++) candCount += cands[slots[i]].length;
+  for (let i = 0; i < slots.length; i++) candCount += cands[slots[i]!]!.length;
   const prog: OptProgress = { phase: "heuristic", elapsedMs: 0, restartsDone: 0, restarts: restarts, nodes: 0, explored: 0, budgetMs: budgetMs,
     improvements: 0, lastImprovementMs: 0, bestScore: bestScore, currentScore: currentScore, floorsMet: 0, floorsTotal: 0, candidates: candCount };
-  for (let i = 0; i < space.keys.length; i++) if (space.floor[i] > 0) prog.floorsTotal++;
+  for (let i = 0; i < space.keys.length; i++) if (space.floor[i]! > 0) prog.floorsTotal++;
   let nextProgress = t0;
   const noteBest = function (assignment: OptAssignment, score: number): void {
     prog.bestScore = score;
     prog.lastImprovementMs = Date.now() - t0;
     const tv = optTotalsOf(assignment, slots, space);
     let met = 0;
-    for (let i = 0; i < space.keys.length; i++) if (space.floor[i] > 0 && tv[i] >= space.floor[i]) met++;
+    for (let i = 0; i < space.keys.length; i++) if (space.floor[i]! > 0 && tv[i]! >= space.floor[i]!) met++;
     prog.floorsMet = met;
   };
   const emit = function (force?: boolean): void {
@@ -829,11 +829,11 @@ function optimizeSuit(pools: Record<string, OptItem[]>, current: OptAssignment, 
     // empty slots; the local search repairs the rest. Only a starting point: it can never lower the result.
     const warm: OptAssignment = {};
     for (let i = 0; i < slots.length; i++) {
-      const want = opts.warmStart[slots[i]];
+      const want = opts.warmStart[slots[i]!];
       let hit: OptItem | null = null;
-      const list = cands[slots[i]];
-      for (let j = 0; j < list.length && want; j++) { const c = list[j]; if (c && c.serial === want) { hit = c; break; } }
-      warm[slots[i]] = hit;
+      const list = cands[slots[i]!]!;
+      for (let j = 0; j < list.length && want; j++) { const c = list[j]!; if (c && c.serial === want) { hit = c; break; } }
+      warm[slots[i]!] = hit;
     }
     consider(optSanitize(warm, slots));
   }
@@ -854,11 +854,11 @@ function optimizeSuit(pools: Record<string, OptItem[]>, current: OptAssignment, 
     let before = 0, after = 0;
     const pcands: Record<string, (OptItem | null)[]> = {};
     for (let i = 0; i < slots.length; i++) {
-      const s = slots[i];
+      const s = slots[i]!;
       const keepNull = s === "oneHanded" || s === "twoHanded" || !!optional[s];
       // Dominance pruning is safe for the single best suit only: a dominated piece can still belong in a runner-up.
-      pcands[s] = alt ? cands[s].slice() : optDominancePrune(cands[s], space, keepNull);
-      before += cands[s].length; after += pcands[s].length;
+      pcands[s] = alt ? cands[s]!.slice() : optDominancePrune(cands[s]!, space, keepNull);
+      before += cands[s]!.length; after += pcands[s]!.length;
     }
     prog.phase = "exact"; prog.candidates = after; emit(true);
     const heuristicImprovements = prog.improvements;
@@ -872,14 +872,14 @@ function optimizeSuit(pools: Record<string, OptItem[]>, current: OptAssignment, 
     if (bb.score > bestScore) { best = optSanitize(bb.best, slots); bestScore = bb.score; noteBest(best, bestScore); }
     method = "exact"; proven = bb.proven; nodes = bb.nodes; pruned = { before: before, after: after };
     if (alt) {
-      const sigOf = function (a: OptAssignment): string { const parts: string[] = []; for (let i = 0; i < slots.length; i++) { const it = a[slots[i]]; parts.push(it ? String(it.serial) : "0"); } return parts.join(","); };
+      const sigOf = function (a: OptAssignment): string { const parts: string[] = []; for (let i = 0; i < slots.length; i++) { const it = a[slots[i]!]; parts.push(it ? String(it.serial) : "0"); } return parts.join(","); };
       const seen: Record<string, boolean> = {};
       seen[sigOf(best)] = true;
       const list = bb.alts.map(function (e) { const a = optSanitize(e.a, slots); return { best: a, score: optScoreVector(optTotalsOf(a, slots, space), space) }; });
       list.sort(function (x, y) { return y.score - x.score; });
       alternatives = [];
       for (let i = 0; i < list.length && alternatives.length < alt.count; i++) {
-        const e = list[i];
+        const e = list[i]!;
         if (e.score < bestScore - altTol - 1e-9) break;
         const k = sigOf(e.best);
         if (seen[k]) continue;
@@ -894,7 +894,7 @@ function optimizeSuit(pools: Record<string, OptItem[]>, current: OptAssignment, 
   // Per-slot diff report.
   const changes: OptSlotChange[] = [];
   for (let i = 0; i < slots.length; i++) {
-    const slot = slots[i];
+    const slot = slots[i]!;
     const from = cur[slot] || null;
     const to = best[slot] || null;
     if (from === to) continue;
@@ -907,11 +907,11 @@ function optimizeSuit(pools: Record<string, OptItem[]>, current: OptAssignment, 
     const fk = from ? collect(from.props) : [];
     const tk = to ? collect(to.props) : [];
     const all: string[] = [];
-    for (let j = 0; j < tk.length; j++) if (!seenKey[tk[j]]) { seenKey[tk[j]] = true; all.push(tk[j]); }
-    for (let j = 0; j < fk.length; j++) if (!seenKey[fk[j]]) { seenKey[fk[j]] = true; all.push(fk[j]); }
+    for (let j = 0; j < tk.length; j++) if (!seenKey[tk[j]!]) { seenKey[tk[j]!] = true; all.push(tk[j]!); }
+    for (let j = 0; j < fk.length; j++) if (!seenKey[fk[j]!]) { seenKey[fk[j]!] = true; all.push(fk[j]!); }
     all.sort();
     for (let j = 0; j < all.length; j++) {
-      const k = all[j];
+      const k = all[j]!;
       const d = ((to && to.props[k]) || 0) - ((from && from.props[k]) || 0);
       if (d !== 0) gained[k] = d;
     }

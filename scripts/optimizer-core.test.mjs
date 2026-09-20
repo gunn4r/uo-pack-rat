@@ -1,11 +1,11 @@
 // ============================================================================
-// optimizer-core.test.mjs — offline test harness for optimizer-core.ts.
+// optimizer-core.test.mjs — offline test harness for optimizer-core.mts.
 //
 // Run:  node --test scripts/optimizer-core.test.mjs   or   node scripts/optimizer-core.test.mjs
 //
 // HOW THE CORE IS LOADED: the core is built once by scripts/build-core.mjs (Node's native
 // TypeScript type stripping, no dependencies) into app/dist/optimizer-core.mjs, and every caller —
-// this harness, the server, the bench — imports that same built module. The source, scripts/optimizer-core.ts,
+// this harness, the server, the bench — imports that same built module. The source, scripts/optimizer-core.mts,
 // stays paste-able into the game client (no top-level imports/exports of its own besides the trailing
 // `export { ... }` block build-core.mjs's output keeps) while the tests exercise the exact source that ships.
 // Requires Node >= 22.6 (type stripping); verified on v24. If a future runtime drops native

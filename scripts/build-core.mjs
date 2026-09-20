@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// build-core.mjs — compile scripts/optimizer-core.ts (a real ES module) into app/dist/optimizer-core.mjs
+// build-core.mjs — compile scripts/optimizer-core.mts (a real ES module) into app/dist/optimizer-core.mjs
 // by stripping types with node:module. Idempotent: rewrites only when the source is newer.
 import { stripTypeScriptTypes } from "node:module";
 import { readFileSync, writeFileSync, mkdirSync, existsSync, statSync } from "node:fs";
@@ -7,7 +7,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
 const ROOT = dirname(dirname(fileURLToPath(import.meta.url)));
-export const CORE_SRC = join(ROOT, "scripts", "optimizer-core.ts");
+export const CORE_SRC = join(ROOT, "scripts", "optimizer-core.mts");
 export const CORE_OUT = join(ROOT, "app", "dist", "optimizer-core.mjs");
 
 const SELF = fileURLToPath(import.meta.url);
