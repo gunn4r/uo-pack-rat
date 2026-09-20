@@ -6,7 +6,7 @@ import { mkdtempSync, writeFileSync, readFileSync, existsSync, readdirSync, rena
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { acceptedName, ingestFile, startWatcher } from "./watcher.mjs";
-import { TAZUO_V1_CAPS } from "./scan-schema.mjs";
+import { TAZUO_V1_CAPS } from "./scan-schema.mts";
 
 const SHARD = "uoalive";
 const tmp = (prefix) => mkdtempSync(join(tmpdir(), prefix));
@@ -184,7 +184,7 @@ test("[fast] startWatcher: close() stops processing — a fire() afterward does 
 });
 
 test("[fast] startWatcher: getShard is read fresh per ingest, not captured once at startup", async () => {
-  // A doc with no shard of its own takes upgradeScan's fallback (getShard()) — see app/scan-schema.mjs
+  // A doc with no shard of its own takes upgradeScan's fallback (getShard()) — see app/scan-schema.mts
   // upgradeScan: "shard: raw.shard ?? shard". Dropping two such files around a getShard() value change
   // (simulating a PUT /api/settings shard switch mid-run) must stamp each with the shard in effect at
   // ITS ingest, not whatever startWatcher saw when it was first called.

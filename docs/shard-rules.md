@@ -2,7 +2,7 @@
 
 Everything that is shard-specific rather than OSI-standard — property caps, the Resisting Spells resist bonus, race-specific overrides, tag penalties, the rarity ladder, the gargoyle race lock, and which skills are "free" (outside the 720-point cap) — lives in one JSON file per shard, never hardcoded in the app. This document explains every key, how to add your own shard (or override a builtin one) without touching the app's code, and works the resist-bonus formula by hand.
 
-Ground truth: `app/schema/rules.v1.schema.json` (the contract every rules file is checked against), `app/rules/uoalive.json` and `app/rules/generic-osi.json` (the two builtins), `app/rules.mjs` (the loader), and `app/vault-lib.mjs` (`resistSkillBonus`, `effectiveProfile`, `tagUnits`, `setRules`/`getRules` — the consumers).
+Ground truth: `app/schema/rules.v1.schema.json` (the contract every rules file is checked against), `app/rules/uoalive.json` and `app/rules/generic-osi.json` (the two builtins), `app/rules.mts` (the loader), and `app/vault-lib.mjs` (`resistSkillBonus`, `effectiveProfile`, `tagUnits`, `setRules`/`getRules` — the consumers).
 
 ## File shape
 
@@ -23,7 +23,7 @@ Ground truth: `app/schema/rules.v1.schema.json` (the contract every rules file i
 }
 ```
 
-Every one of these keys is **required** by `app/schema/rules.v1.schema.json` — a rules file missing any of them fails validation and is rejected (`app/rules.mjs`'s `loadFile` throws, naming the file path, when `validate()` reports errors). `additionalProperties: true` at the top level, so a rules file may carry extra fields the app doesn't read yet; only `caps`, `raceCaps`, `tagUnits` themselves are unconstrained-shape objects (the schema checks they're objects, not their individual keys — same tradeoff `scan.v2.schema.json` makes for `containers`).
+Every one of these keys is **required** by `app/schema/rules.v1.schema.json` — a rules file missing any of them fails validation and is rejected (`app/rules.mts`'s `loadFile` throws, naming the file path, when `validate()` reports errors). `additionalProperties: true` at the top level, so a rules file may carry extra fields the app doesn't read yet; only `caps`, `raceCaps`, `tagUnits` themselves are unconstrained-shape objects (the schema checks they're objects, not their individual keys — same tradeoff `scan.v2.schema.json` makes for `containers`).
 
 ## Every key
 

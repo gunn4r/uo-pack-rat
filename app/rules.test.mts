@@ -1,12 +1,12 @@
-// rules.test.mjs — tests for rules.mjs (loadRules/listRules): schema validation, the builtin shards,
+// rules.test.mts — tests for rules.mts (loadRules/listRules): schema validation, the builtin shards,
 // user-directory overrides, and error naming. Tags are name prefixes: [smoke] [fast] [slow].
-// Run: node --test app/rules.test.mjs   or   node app/rules.test.mjs
+// Run: node --test app/rules.test.mts   or   node app/rules.test.mts
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { mkdtempSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import { loadRules, listRules, DEFAULT_SHARD } from "./rules.mjs";
+import { loadRules, listRules, DEFAULT_SHARD } from "./rules.mts";
 
 test("[smoke] loadRules(\"uoalive\") validates and carries all 19 property caps", () => {
   const r = loadRules("uoalive");
@@ -14,7 +14,9 @@ test("[smoke] loadRules(\"uoalive\") validates and carries all 19 property caps"
   assert.equal(Object.keys(r.caps).length, 19);
   assert.equal(r.caps.physResist, 70);
   assert.deepEqual(r.resistSkillBonus.breakpoints, [[100, 0.4], [120, 0.2]]);
-  assert.equal(r.raceCaps.elf.energyResist, 75);
+  // raceCaps is Record<string, unknown> in the generated RulesV1 type (the schema doesn't reify a
+  // per-race shape) — cast to read the nested field this rules file actually carries.
+  assert.equal((r.raceCaps.elf as Record<string, unknown>).energyResist, 75);
   assert.equal(r.raceLock.gargoyleOnly, true);
 });
 
@@ -51,8 +53,8 @@ test("[fast] a user rules dir overrides a builtin of the same id and appears wit
   }));
   const rules = listRules({ userRulesDir: dir });
   const uoalive = rules.find((r) => r.id === "uoalive");
-  assert.equal(uoalive.source, "user");
-  assert.equal(uoalive.name, "UO Alive (custom)");
+  assert.equal(uoalive!.source, "user");
+  assert.equal(uoalive!.name, "UO Alive (custom)");
   // A second user file also carrying id "uoalive" — files are read in sorted filename order, so
   // "uoalive.json" (sorts after "custom.json") is the one loadRules() resolves to here. The point
   // being tested is NOT "the filename matching the id wins" (that was the pre-fix, buggy rule) — see

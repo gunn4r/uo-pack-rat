@@ -1,8 +1,8 @@
-// validate.test.mjs — tests for the zero-dependency JSON Schema subset validator (validate.mjs).
-// Tags are name prefixes: [smoke] [fast] [slow]. Run: node --test app/schema/validate.test.mjs
+// validate.test.mts — tests for the zero-dependency JSON Schema subset validator (validate.mts).
+// Tags are name prefixes: [smoke] [fast] [slow]. Run: node --test app/schema/validate.test.mts
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { validate } from "./validate.mjs";
+import { validate } from "./validate.mts";
 
 test("[smoke] validate: a valid doc passes with no errors", () => {
   const schema = { type: "object", required: ["a"], properties: { a: { type: "integer" } } };
@@ -16,15 +16,15 @@ test("[smoke] validate: wrong type reports /field + \"expected integer\"", () =>
   const r = validate(schema, { field: "1" });
   assert.equal(r.ok, false);
   assert.equal(r.errors.length, 1);
-  assert.equal(r.errors[0].path, "/field");
-  assert.equal(r.errors[0].msg, "expected integer");
+  assert.equal(r.errors[0]!.path, "/field");
+  assert.equal(r.errors[0]!.msg, "expected integer");
 });
 
 test("[smoke] validate: integer is distinct from number — a float fails an integer schema", () => {
   const schema = { type: "object", properties: { field: { type: "integer" } } };
   const r = validate(schema, { field: 1.5 });
   assert.equal(r.ok, false);
-  assert.equal(r.errors[0].msg, "expected integer");
+  assert.equal(r.errors[0]!.msg, "expected integer");
   const ok = validate({ type: "object", properties: { field: { type: "number" } } }, { field: 1.5 });
   assert.equal(ok.ok, true);
 });
@@ -33,8 +33,8 @@ test("[smoke] validate: missing required reports / \"missing required: x\"", () 
   const schema = { type: "object", required: ["x"], properties: { x: { type: "string" } } };
   const r = validate(schema, {});
   assert.equal(r.ok, false);
-  assert.equal(r.errors[0].path, "/");
-  assert.equal(r.errors[0].msg, "missing required: x");
+  assert.equal(r.errors[0]!.path, "/");
+  assert.equal(r.errors[0]!.msg, "missing required: x");
 });
 
 test("[smoke] validate: additionalProperties: false rejects extras", () => {
@@ -50,8 +50,8 @@ test("[smoke] validate: items errors carry the index path", () => {
   const r = validate(schema, [1, "two", 3]);
   assert.equal(r.ok, false);
   assert.equal(r.errors.length, 1);
-  assert.equal(r.errors[0].path, "/1");
-  assert.equal(r.errors[0].msg, "expected integer");
+  assert.equal(r.errors[0]!.path, "/1");
+  assert.equal(r.errors[0]!.msg, "expected integer");
 });
 
 test("[smoke] validate: enum rejects a value outside the list", () => {
@@ -59,7 +59,7 @@ test("[smoke] validate: enum rejects a value outside the list", () => {
   assert.equal(validate(schema, "a").ok, true);
   const r = validate(schema, "c");
   assert.equal(r.ok, false);
-  assert.equal(r.errors[0].path, "/");
+  assert.equal(r.errors[0]!.path, "/");
 });
 
 test("[smoke] validate: pattern rejects a non-matching string", () => {
@@ -78,7 +78,7 @@ test("[smoke] validate: nested object errors carry the full path /a/b/c", () => 
   const schema = { type: "object", properties: { a: { type: "object", properties: { b: { type: "object", properties: { c: { type: "integer" } } } } } } };
   const r = validate(schema, { a: { b: { c: "nope" } } });
   assert.equal(r.ok, false);
-  assert.equal(r.errors[0].path, "/a/b/c");
+  assert.equal(r.errors[0]!.path, "/a/b/c");
 });
 
 test("[smoke] validate: type: [\"string\",\"null\"] accepts null", () => {

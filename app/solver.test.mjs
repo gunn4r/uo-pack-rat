@@ -11,7 +11,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import { dirname, join } from "node:path";
 import { buildPools, effectiveProfile, setRules, foldSnapshots } from "./vault-lib.mjs";
 import * as VaultLib from "./vault-lib.mjs";
-import { upgradeScan } from "./scan-schema.mjs";
+import { upgradeScan } from "./scan-schema.mts";
 import { corePath } from "./config.mjs";
 import { solveExact } from "./exact-solver.mjs";
 import { DEFAULT_SLOTS } from "./mip.mjs";

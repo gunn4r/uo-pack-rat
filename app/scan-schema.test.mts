@@ -1,11 +1,11 @@
-// scan-schema.test.mjs — tests for the scan v2 schema and the v1→v2 upgrade-on-read.
-// Tags: [smoke] [fast]. Run: node --test app/scan-schema.test.mjs
+// scan-schema.test.mts — tests for the scan v2 schema and the v1→v2 upgrade-on-read.
+// Tags: [smoke] [fast]. Run: node --test app/scan-schema.test.mts
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
-import { upgradeScan, validateScan, parseStamp, TAZUO_V1_CAPS, SCAN_V2_SCHEMA } from "./scan-schema.mjs";
+import { upgradeScan, validateScan, parseStamp, TAZUO_V1_CAPS, SCAN_V2_SCHEMA } from "./scan-schema.mts";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const demoKestrel = JSON.parse(readFileSync(join(HERE, "fixtures", "demo-Kestrel.json"), "utf8"));
@@ -65,14 +65,17 @@ test("[fast] upgradeScan: string serials in a v1 file become numbers everywhere"
     items: [{ serial: "123", name: "Sword", tooltip: ["Sword"], amount: 1, container: "100" }],
   };
   const up = upgradeScan(raw, { shard: "test" });
-  assert.equal(up.items[0].serial, 123); assert.equal(typeof up.items[0].serial, "number");
-  assert.equal(up.items[0].container, 100); assert.equal(typeof up.items[0].container, "number");
-  assert.equal(up.containers["100"].serial, 100);
-  assert.equal(up.containers["100"].root, 100);
-  assert.equal(up.roots[0].serial, 100); assert.equal(typeof up.roots[0].serial, "number");
-  assert.equal(up.equipped[0].serial, 10); assert.equal(typeof up.equipped[0].serial, "number");
-  assert.equal(up.items[0].nameSource, "opl");
-  assert.equal(up.equipped[0].nameSource, "opl");
+  assert.equal(up.items[0]!.serial, 123); assert.equal(typeof up.items[0]!.serial, "number");
+  assert.equal(up.items[0]!.container, 100); assert.equal(typeof up.items[0]!.container, "number");
+  // containers is Record<string, unknown> in the generated ScanV2 type (the schema only declares its
+  // top-level shape, not each entry's) — cast to read the fields upgradeScan() actually puts there.
+  const container100 = up.containers["100"] as Record<string, unknown>;
+  assert.equal(container100.serial, 100);
+  assert.equal(container100.root, 100);
+  assert.equal(up.roots[0]!.serial, 100); assert.equal(typeof up.roots[0]!.serial, "number");
+  assert.equal(up.equipped[0]!.serial, 10); assert.equal(typeof up.equipped[0]!.serial, "number");
+  assert.equal(up.items[0]!.nameSource, "opl");
+  assert.equal(up.equipped[0]!.nameSource, "opl");
 });
 
 test("[fast] upgradeScan: adapter.capabilities equals TAZUO_V1_CAPS, which lists the 20 v1 scanner layers", () => {

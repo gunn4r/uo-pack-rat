@@ -7,7 +7,7 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { dirname, join } from "node:path";
 import { parseTooltip, classify, foldSnapshots, buildPools, requirementReport, totalsOf, propertyKeys, bagLabel, kindOf, groupByName, slayersOf, medableOf, weaponAllowed, settingsDiff, PROP_LABELS, effectiveProfile, resistSkillBonus, toOptItem, labelOf, builderKeys, migrateProfiles, templateFrom, TEMPLATE_KEYS, setRules, getRules, tagUnits } from "./vault-lib.mjs";
-import { upgradeScan, TAZUO_V1_CAPS } from "./scan-schema.mjs";
+import { upgradeScan, TAZUO_V1_CAPS } from "./scan-schema.mts";
 import { runKey, reusableRun, runSummary, normalizeRun } from "./runs-lib.mjs";
 import { corePath } from "./config.mjs";
 

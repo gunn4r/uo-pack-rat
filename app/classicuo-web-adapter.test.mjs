@@ -13,7 +13,7 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import { spawnSync } from "node:child_process";
-import { validateScan } from "./scan-schema.mjs";
+import { validateScan } from "./scan-schema.mts";
 import { PASTE_BEGIN, PASTE_END } from "./import.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));

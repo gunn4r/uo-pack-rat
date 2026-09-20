@@ -2,7 +2,7 @@
 
 A scan file is a snapshot written by an adapter script running inside a game client — one file per scan, never edited afterward. The server reads every file under `<data>/scans/`, upgrades each to the current shape, validates it, and folds the whole set into one inventory. This document describes schema v2, the v1→v2 upgrade, and the fold rules that turn a pile of snapshots into "what does everyone own right now."
 
-Ground truth: `app/schema/scan.v2.schema.json` (the portable JSON Schema, restricted to the keyword subset `app/schema/validate.mjs` supports) and `app/scan-schema.mjs` (`SCAN_V2_SCHEMA`, a byte-identical inline copy — `app/scan-schema.test.mjs` asserts the two files never drift apart, because `scan-schema.mjs` is served straight to the browser and cannot `fs.readFileSync` the JSON file). Fold rules live in `app/vault-lib.mjs`'s `foldSnapshots`.
+Ground truth: `app/schema/scan.v2.schema.json` (the portable JSON Schema, restricted to the keyword subset `app/schema/validate.mts` supports) and `app/scan-schema.mts` (`SCAN_V2_SCHEMA`, a byte-identical inline copy — `app/scan-schema.test.mts` asserts the two files never drift apart, because `scan-schema.mts` is served straight to the browser and cannot `fs.readFileSync` the JSON file). Fold rules live in `app/vault-lib.mjs`'s `foldSnapshots`.
 
 ## Top-level fields
 
@@ -86,13 +86,13 @@ Every item on the character's paperdoll. Same fields as `items`, plus `layer` (s
 
 ## v1 → v2 upgrade
 
-Every scan file on disk is v1 or v2 shaped; the server upgrades v1 files to v2 on every read (`upgradeScan` in `app/scan-schema.mjs`), so the fold and every schema check downstream only ever sees v2. Nothing is rewritten on disk — the upgrade happens in memory, every time the file is read, and the original v1 file is left alone.
+Every scan file on disk is v1 or v2 shaped; the server upgrades v1 files to v2 on every read (`upgradeScan` in `app/scan-schema.mts`), so the fold and every schema check downstream only ever sees v2. Nothing is rewritten on disk — the upgrade happens in memory, every time the file is read, and the original v1 file is left alone.
 
 A v1 file is recognized by `version: 1` (instead of `schemaVersion`). The upgrade:
 
 - Sets `schemaVersion: 2` and drops `version`.
 - Converts `scannedAt` from v1's naive local wall-clock string (`"2026-09-13T14:20:44"`, no offset — what `packrat-scanner.py`/`packrat-refresh.py` and the pre-v2 server both wrote) to RFC 3339, using **this machine's** UTC offset for that specific date and time (DST-correct — the offset is computed from a `Date` built out of the same year/month/day/hour/minute/second, not from "now").
-- Stamps `adapter`: `{id: "tazuo", version: "1", client: "TazUO", clientVersion: null, capabilities: TAZUO_V1_CAPS}` — except a tombstone (`character` starting with `_`), which gets `id: "app"` instead, since a v1-shaped tombstone was never written by a game-client adapter. `TAZUO_V1_CAPS` (in `app/scan-schema.mjs`) is the capability set the original scanner script actually had: all 20 equip layers, arms/bank/ground/nested all `true`, `tooltips: "opl"`, `bridge: ["highlight", "grab", "goto"]`.
+- Stamps `adapter`: `{id: "tazuo", version: "1", client: "TazUO", clientVersion: null, capabilities: TAZUO_V1_CAPS}` — except a tombstone (`character` starting with `_`), which gets `id: "app"` instead, since a v1-shaped tombstone was never written by a game-client adapter. `TAZUO_V1_CAPS` (in `app/scan-schema.mts`) is the capability set the original scanner script actually had: all 20 equip layers, arms/bank/ground/nested all `true`, `tooltips: "opl"`, `bridge: ["highlight", "grab", "goto"]`.
 - Marks every `roots[]` entry `opened: true` — v1 had no concept of a root the scan couldn't open, so every listed root is treated as successfully opened.
 - Coerces every serial-shaped field to a number: `roots[].serial`, `containers` keys and each entry's `.serial`/`.parent`/`.root`, `items[].serial`/`.container`, `equipped[].serial`. (v1 data was occasionally serialized with string serials; the fold assumes numbers throughout.)
 - Gives every `items[]`/`equipped[]` entry `nameSource: "opl"` (v1 tooltips were always the full on-paperdoll-line read; there was no `"label"`-only mode yet).

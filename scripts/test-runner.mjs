@@ -23,7 +23,7 @@ const patterns = mode === "smoke" ? [/^\[smoke\]/] : mode === "fast" ? [/^\[(smo
 buildSchemaTypes();
 buildUi();   // app/server.test.mjs's [smoke] cases fetch app/dist/item-query.mjs and the page itself
 
-// Recursive so a test file in a new subdirectory (app/schema/validate.test.mjs was the one this
+// Recursive so a test file in a new subdirectory (app/schema/validate.test.mts was the one this
 // missed) is picked up automatically — a hard-coded third/fourth top-level directory is what
 // created that hole, and would only postpone the next one. node_modules is a defensive exclusion
 // (none exists under app/ or scripts/ today); dist is generated build output that must never be

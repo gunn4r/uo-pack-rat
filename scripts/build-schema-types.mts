@@ -1,6 +1,6 @@
 // build-schema-types.mts — derive app/schema/types.d.mts from the four JSON Schema files that are
 // the runtime authority for Pack Rat's scan, bridge, rules and profile shapes (app/schema/*.schema.json,
-// enforced at runtime by app/schema/validate.mjs). Hand-written types would be a second authority
+// enforced at runtime by app/schema/validate.mts). Hand-written types would be a second authority
 // free to drift from what the validator actually checks; this generates one from the other instead.
 //
 // schemaToTypeSource(name, schema) turns one JSON Schema object into TypeScript source: an
@@ -214,7 +214,7 @@ function resolveTypeParts(ctx: Ctx, schema: JsonSchema, pointer: string, suggest
 
   // Everything this generator understands, named up front, so any other keyword — oneOf, anyOf,
   // patternProperties, const, not, … — is caught here and throws, rather than being silently
-  // skipped the way app/schema/validate.mjs's runtime subset intentionally does.
+  // skipped the way app/schema/validate.mts's runtime subset intentionally does.
   const KNOWN = new Set<string>(["type", "enum", ...STRUCTURAL_KEYWORDS, ...IGNORED_KEYWORDS]);
   const stray = keys.filter((k) => !KNOWN.has(k));
   if (stray.length > 0) throw unsupported(stray[0]!, pointer);
