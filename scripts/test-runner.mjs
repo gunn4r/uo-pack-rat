@@ -11,11 +11,13 @@ import { spawnSync } from "node:child_process";
 import { dirname, join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 import { buildCore } from "./build-core.mjs";
+import { buildUi } from "./build-ui.mjs";
 
 const ROOT = dirname(dirname(fileURLToPath(import.meta.url)));
 const mode = process.argv.includes("--smoke") ? "smoke" : process.argv.includes("--fast") ? "fast" : "full";
 const patterns = mode === "smoke" ? [/^\[smoke\]/] : mode === "fast" ? [/^\[(smoke|fast)\]/] : undefined;
 buildCore();
+buildUi();   // app/server.test.mjs's [smoke] cases fetch app/dist/item-query.mjs and the page itself
 
 // Recursive so a test file in a new subdirectory (app/schema/validate.test.mjs was the one this
 // missed) is picked up automatically — a hard-coded third/fourth top-level directory is what

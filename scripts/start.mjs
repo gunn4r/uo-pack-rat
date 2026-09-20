@@ -7,8 +7,10 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { resolveConfig } from "../app/config.mjs";
 import { buildCore } from "./build-core.mjs";
+import { buildUi } from "./build-ui.mjs";
 
 buildCore();
+buildUi();
 const ROOT = dirname(dirname(fileURLToPath(import.meta.url)));
 const args = process.argv.slice(2);
 let port;

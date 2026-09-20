@@ -21,7 +21,7 @@
   },
   "scripts": {
     "build:core": "node scripts/build-core.mjs",
-    "build:ui": "tsc -p tsconfig.browser.json",
+    "build:ui": "node scripts/build-ui.mjs",
     "typecheck": "tsc -p tsconfig.json",
     "prestart": "npm run build:core && npm run build:ui",
     "pretest": "npm run build:core && npm run build:ui",
