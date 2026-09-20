@@ -19,9 +19,14 @@ import { validate } from "./schema/validate.mjs";
 
 const BRIDGE_SCHEMA = JSON.parse(readFileSync(join(dirname(fileURLToPath(import.meta.url)), "schema", "bridge.v1.schema.json"), "utf8"));
 
-buildSchemaTypes(); // so a bare `node --test app/server.test.mjs` works on a fresh clone (no pretest hook run)
-buildCore();        // — tsconfig.browser.json includes app/schema/types.d.mts, so it must exist before buildUi()
-buildUi();          // this file's own route tests fetch /ui/app.mjs and /vault-lib.mjs from app/dist/
+// Order matters: build the schema types before buildCore()/buildUi() run, not because
+// tsconfig.browser.json's `include` enforces it (a missing literal entry there is silently
+// dropped, not an error — verified) but because this and the two calls below are the only actual
+// guarantee app/schema/types.d.mts exists before anything imports from it. Also so a bare
+// `node --test app/server.test.mjs` works on a fresh clone (no pretest hook run).
+buildSchemaTypes();
+buildCore();
+buildUi();   // this file's own route tests fetch /ui/app.mjs and /vault-lib.mjs from app/dist/
 const HERE = dirname(fileURLToPath(import.meta.url));
 // This file's own vault-lib.mjs import is a separate module instance from the one the server
 // dynamically re-imports per request (busted by mtime) — a direct call here to a rules-aware

@@ -10,7 +10,10 @@ import { buildCore } from "./build-core.mjs";
 import { buildUi } from "./build-ui.mjs";
 import { buildSchemaTypes } from "./build-schema-types.mts";
 
-buildSchemaTypes();   // tsconfig.browser.json includes app/schema/types.d.mts — build it before buildUi()
+// Build the schema types before buildCore()/buildUi() — this call, not tsconfig.browser.json's
+// `include` (a missing literal entry there is silently dropped, not an error), is what actually
+// guarantees app/schema/types.d.mts exists before anything imports from it.
+buildSchemaTypes();
 buildCore();
 buildUi();
 const ROOT = dirname(dirname(fileURLToPath(import.meta.url)));
