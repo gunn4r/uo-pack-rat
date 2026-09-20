@@ -229,12 +229,16 @@ export async function startServer(config = ensureLayout(resolveConfig()), { host
   // Which adapter's bridge the page-facing bridge routes (POST /api/bridge, GET /api/bridge/status)
   // talk to — the currently CONFIGURED client, re-read live off currentSettings on every call rather
   // than captured once at startup, so a client switch (a fresh install, or "Run setup again") takes
-  // effect on the very next request with no restart. Falls back to "tazuo" when no client is
-  // configured at all, matching this route's own pre-existing behavior before it became per-adapter
-  // (Phase 6 final review follow-up) — an unconfigured/hand-installed player was already the
-  // documented limitation app/ui/bridge.mjs's currentAdapter() comment describes; this fallback keeps
-  // that exact case exactly as limited as before, not worse.
-  const bridgeAdapter = () => currentSettings.client?.adapter || "tazuo";
+  // effect on the very next request with no restart. Falls back to DEFAULT_BRIDGE_ADAPTER when no
+  // client is configured at all, matching this route's own pre-existing behavior before it became
+  // per-adapter (Phase 6 final review follow-up). GET /api/setup below reports this exact same id back
+  // to the page as `bridgeAdapter` (guarded there against a discovered-adapters list that doesn't
+  // actually contain it — a throwaway test fixture dir, say) so app/ui/bridge.mjs's currentAdapter()
+  // can show the Highlight/Grab/Go-to buttons for an unconfigured/hand-installed player against the
+  // SAME adapter this function is already routing their commands to, rather than the page guessing
+  // "tazuo" independently and risking the two disagreeing.
+  const DEFAULT_BRIDGE_ADAPTER = "tazuo";
+  const bridgeAdapter = () => currentSettings.client?.adapter || DEFAULT_BRIDGE_ADAPTER;
   // The app must never fail to start because settings.json names a shard that no longer loads (its
   // rules file was deleted, edited into invalid shape, or never existed — e.g. a stale user override).
   // Fall back to DEFAULT_SHARD IN MEMORY ONLY: settings.json itself is left untouched, so fixing the
@@ -584,6 +588,13 @@ export async function startServer(config = ensureLayout(resolveConfig()), { host
           available[a.id] = installedVersion(join(ADAPTERS_DIR, a.id), a.id).version;
         }
         const installed = currentSettings.client ? installedVersion(currentSettings.client.scriptsDir, currentSettings.client.adapter) : null;
+        // The id bridgeAdapter() is ACTUALLY routing POST /api/bridge / GET /api/bridge/status to right
+        // now — reused, not restated, so this can never drift from the real routing decision. Guarded
+        // to null when that id doesn't name a real discovered adapter (a test's throwaway --adapters
+        // dir with no "tazuo" in it, say): reporting an id nothing can resolve would just move the
+        // "buttons for an adapter that doesn't exist" bug onto the page instead of fixing it.
+        const resolvedBridgeAdapter = bridgeAdapter();
+        const bridgeAdapterField = adapters.some((a) => a.id === resolvedBridgeAdapter) ? resolvedBridgeAdapter : null;
         return send(res, 200, {
           ok: true, firstRun: !currentSettings.setupDone, settings: currentSettings, adapters,
           // platform: this machine's process.platform — on this desktop app, always the same machine
@@ -591,6 +602,9 @@ export async function startServer(config = ensureLayout(resolveConfig()), { host
           // availableAdapters) hide a platform-restricted adapter (Razor Enhanced, Windows-only)
           // instead of offering a choice that can never work (Phase 6 final review, deferred minor).
           candidates, installed, available, dataDir: CONFIG.dataDir, platform: process.platform,
+          // app/ui/bridge.mjs's currentAdapter() falls back to this when settings.client is unset (a
+          // hand-installed or Skip-through-the-wizard player) — see the bridgeAdapter() comment above.
+          bridgeAdapter: bridgeAdapterField,
         });
       }
       if (req.method === "POST" && url.pathname === "/api/setup/locate") {

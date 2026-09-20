@@ -1231,6 +1231,69 @@ test("[fast] GET /api/setup: an adapter with no bridge reports capabilities.brid
   }
 });
 
+// Bug fix: a player who pressed Skip in the setup wizard (settings.client left unset on purpose — see
+// app/ui/bridge.mjs's currentAdapter() comment) or installed an adapter's scripts by hand had every
+// Highlight/Grab/Go-to button vanish, even though POST /api/bridge / GET /api/bridge/status were
+// already routing to bridgeAdapter()'s own default the whole time. GET /api/setup now reports that same
+// routing target as `bridgeAdapter`, so the page can fall back to it instead of hiding the buttons.
+test("[fast] GET /api/setup reports bridgeAdapter: \"tazuo\" (the real bridge routing default) when no client is configured", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "qm-setup-bridgeadapter-default-"));
+  const s2 = await startServer(ensureLayout(resolveConfig(["--port", "0", "--data", dir], {})));
+  try {
+    const setup = await (await fetch(s2.url + "/api/setup")).json();
+    assert.equal(setup.settings.client, undefined);
+    assert.equal(setup.bridgeAdapter, "tazuo");
+  } finally {
+    await s2.close();
+  }
+});
+
+test("[fast] GET /api/setup reports bridgeAdapter matching a configured client's own adapter, not the default", async () => {
+  const adaptersDir = mkdtempSync(join(tmpdir(), "qm-adapters-bridgeadapter-"));
+  cpSync(join(HERE, "..", "adapters", "tazuo"), join(adaptersDir, "tazuo"), { recursive: true });
+  const noBridgeDir = join(adaptersDir, "nobridge");
+  mkdirSync(noBridgeDir, { recursive: true });
+  writeFileSync(join(noBridgeDir, "capabilities.json"), JSON.stringify({
+    adapter: "nobridge", version: "1.0.0", transport: "folder",
+    capabilities: { layers: [], arms: false, bank: false, ground: false, nested: false, tooltips: "label", bridge: [] },
+  }));
+  const dataDir = mkdtempSync(join(tmpdir(), "qm-setup-bridgeadapter-configured-"));
+  const scriptsDir = mkdtempSync(join(tmpdir(), "qm-setup-bridgeadapter-configured-scripts-"));
+  const s2 = await startServer(ensureLayout(resolveConfig(["--port", "0", "--data", dataDir, "--adapters", adaptersDir], {})));
+  try {
+    const put = await fetch(s2.url + "/api/settings", {
+      method: "PUT", headers: { "content-type": "application/json" },
+      body: JSON.stringify({ client: { adapter: "nobridge", scriptsDir } }),
+    });
+    assert.equal(put.status, 200);
+    const setup = await (await fetch(s2.url + "/api/setup")).json();
+    assert.equal(setup.settings.client.adapter, "nobridge");
+    assert.equal(setup.bridgeAdapter, "nobridge", "a configured client wins over the tazuo default");
+  } finally {
+    await s2.close();
+  }
+});
+
+test("[fast] GET /api/setup reports bridgeAdapter: null when no client is configured and the default (\"tazuo\") isn't among the discovered adapters", async () => {
+  const adaptersDir = mkdtempSync(join(tmpdir(), "qm-adapters-bridgeadapter-null-"));
+  const noBridgeDir = join(adaptersDir, "nobridge");
+  mkdirSync(noBridgeDir, { recursive: true });
+  writeFileSync(join(noBridgeDir, "capabilities.json"), JSON.stringify({
+    adapter: "nobridge", version: "1.0.0", transport: "folder",
+    capabilities: { layers: [], arms: false, bank: false, ground: false, nested: false, tooltips: "label", bridge: [] },
+  }));
+  const dataDir = mkdtempSync(join(tmpdir(), "qm-setup-bridgeadapter-null-"));
+  const s2 = await startServer(ensureLayout(resolveConfig(["--port", "0", "--data", dataDir, "--adapters", adaptersDir], {})));
+  try {
+    const setup = await (await fetch(s2.url + "/api/setup")).json();
+    assert.deepEqual(setup.adapters.map((a) => a.id), ["nobridge"]);
+    assert.equal(setup.settings.client, undefined);
+    assert.equal(setup.bridgeAdapter, null, "nothing named \"tazuo\" exists in this throwaway adapters dir, so there is no id left to fall back to");
+  } finally {
+    await s2.close();
+  }
+});
+
 test("[fast] POST /api/setup/locate resolves a nested X/TazUO/LegionScripts folder to that path", async () => {
   const s2 = await startServer(ensureLayout(resolveConfig(["--port", "0", "--data", mkdtempSync(join(tmpdir(), "qm-setup-locate-"))], {})));
   try {
