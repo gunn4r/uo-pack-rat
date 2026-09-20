@@ -6,13 +6,14 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import { upgradeScan, validateScan, parseStamp, TAZUO_V1_CAPS, SCAN_V2_SCHEMA } from "./scan-schema.mts";
+import type { ScanV2 } from "./schema/types.d.mts";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const demoKestrel = JSON.parse(readFileSync(join(HERE, "fixtures", "demo-Kestrel.json"), "utf8"));
 const RFC3339 = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?([+-]\d{2}:\d{2}|Z)$/;
 
 test("[smoke] upgradeScan: a v1 fixture upgrades to a valid v2 doc", () => {
-  const up = upgradeScan(demoKestrel, { shard: "uoalive" });
+  const up = upgradeScan(demoKestrel, { shard: "uoalive" }) as ScanV2;   // known-good fixture: the cast stands in for the validateScan() a real caller runs
   const v = validateScan(up);
   assert.equal(v.ok, true, JSON.stringify(v.errors));
   assert.equal(up.schemaVersion, 2);
@@ -46,7 +47,7 @@ test("[smoke] upgradeScan: a v2 doc passes through unchanged except shard stampe
 
 test("[smoke] upgradeScan: a tombstone (character starting with _) gets adapter.id \"app\"", () => {
   const tomb = { version: 1, character: "_vault", scannedAt: "2026-01-01T00:00:00", stats: {}, equipped: [], roots: [], containers: {}, items: [] };
-  const up = upgradeScan(tomb, { shard: "uoalive" });
+  const up = upgradeScan(tomb, { shard: "uoalive" }) as ScanV2;   // known-good fixture: the cast stands in for the validateScan() a real caller runs
   assert.equal(up.adapter.id, "app");
   assert.equal(up.schemaVersion, 2);
 });
@@ -64,7 +65,7 @@ test("[fast] upgradeScan: string serials in a v1 file become numbers everywhere"
     containers: { 100: { serial: "100", name: "Backpack", parent: null, root: "100", kind: "backpack" } },
     items: [{ serial: "123", name: "Sword", tooltip: ["Sword"], amount: 1, container: "100" }],
   };
-  const up = upgradeScan(raw, { shard: "test" });
+  const up = upgradeScan(raw, { shard: "test" }) as ScanV2;   // known-good fixture: the cast stands in for the validateScan() a real caller runs
   assert.equal(up.items[0]!.serial, 123); assert.equal(typeof up.items[0]!.serial, "number");
   assert.equal(up.items[0]!.container, 100); assert.equal(typeof up.items[0]!.container, "number");
   // containers is Record<string, unknown> in the generated ScanV2 type (the schema only declares its
@@ -79,7 +80,7 @@ test("[fast] upgradeScan: string serials in a v1 file become numbers everywhere"
 });
 
 test("[fast] upgradeScan: adapter.capabilities equals TAZUO_V1_CAPS, which lists the 20 v1 scanner layers", () => {
-  const up = upgradeScan(demoKestrel, { shard: "uoalive" });
+  const up = upgradeScan(demoKestrel, { shard: "uoalive" }) as ScanV2;   // known-good fixture: the cast stands in for the validateScan() a real caller runs
   assert.deepEqual(up.adapter.capabilities, TAZUO_V1_CAPS);
   assert.equal(TAZUO_V1_CAPS.layers.length, 20);
   assert.deepEqual(TAZUO_V1_CAPS.bridge, ["highlight", "grab", "goto"]);
@@ -115,6 +116,6 @@ test("[fast] validateScan: account must be a hashed-looking id (lowercase hex, 1
 
 test("[fast] parseStamp: a naive local stamp and its RFC 3339 upgrade parse to the same epoch", () => {
   const naive = "2026-03-15T09:30:00";
-  const up = upgradeScan({ version: 1, character: "X", scannedAt: naive, stats: {}, equipped: [], roots: [], containers: {}, items: [] }, { shard: "uoalive" });
+  const up = upgradeScan({ version: 1, character: "X", scannedAt: naive, stats: {}, equipped: [], roots: [], containers: {}, items: [] }, { shard: "uoalive" }) as ScanV2;   // known-good fixture: the cast stands in for the validateScan() a real caller runs
   assert.equal(parseStamp(naive), parseStamp(up.scannedAt));
 });

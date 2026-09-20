@@ -158,14 +158,18 @@ function tazuoAdapter(character: unknown): ScanV2Adapter {
 //
 // `raw` is unknown provenance (a file on disk, or a paste from another player) — this function's own
 // `typeof`/property checks are the only thing standing between it and the return, so every read off
-// `raw` past those checks is a cast, not a claim the shape is actually proven. The real gate is
-// validateScan(), which every caller of upgradeScan() also calls (see docs/scan-schema.md) — this
-// function's job is only to normalize a v1 OR v2 shaped document into the v2 shape, matching its
-// pre-TypeScript behavior exactly.
-export function upgradeScan(raw: unknown, { shard }: { shard?: string | null | undefined } = {}): ScanV2 {
+// `raw` past those checks is a cast, not a claim the shape is actually proven. This function's job is
+// only to normalize a v1 OR v2 shaped document into the v2 LAYOUT, matching its pre-TypeScript
+// behavior exactly; it checks nothing but the version field, so it returns UnvalidatedScan, not
+// ScanV2. The real gate is validateScan(): a caller earns a ScanV2 by running it and casting
+// (`doc as ScanV2`) only on the ok branch — see app/watcher, app/import and app/vault-server. A
+// caller that skips validateScan() has to write that cast with nothing above it to justify it, which
+// is the point: {schemaVersion: 2, shard: {}} comes back from here looking perfectly well-formed.
+export type UnvalidatedScan = Record<string, unknown>;
+export function upgradeScan(raw: unknown, { shard }: { shard?: string | null | undefined } = {}): UnvalidatedScan {
   if (raw && typeof raw === "object" && (raw as Record<string, unknown>).schemaVersion === 2) {
     const doc = raw as Record<string, unknown>;
-    return { ...doc, shard: doc.shard ?? shard } as ScanV2;
+    return { ...doc, shard: doc.shard ?? shard } as UnvalidatedScan;
   }
   if (raw && typeof raw === "object" && (raw as Record<string, unknown>).version === 1) {
     const doc = raw as Record<string, unknown>;
@@ -186,7 +190,7 @@ export function upgradeScan(raw: unknown, { shard }: { shard?: string | null | u
       shard: doc.shard ?? shard,
       adapter: tazuoAdapter(doc.character),
       roots, containers, items, equipped,
-    } as ScanV2;
+    } as UnvalidatedScan;
   }
   throw new TypeError("upgradeScan: document is neither v1 (version: 1) nor v2 (schemaVersion: 2)");
 }
