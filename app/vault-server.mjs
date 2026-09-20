@@ -62,8 +62,9 @@
 // Every text/html response carries the Content-Security-Policy below; every response carries
 // x-content-type-options: nosniff. Any PUT/POST whose body is read must declare content-type:
 // application/json, else 415 (readBody()) — the SSE cancel beacon sends no body, so it's exempt.
-// The optimizer is scripts/optimizer-core.mts, built once by scripts/build-core.mjs into
-// app/dist/optimizer-core.mjs (config.mjs's paths.core) — one core module, one build, every caller imports it.
+// The optimizer is scripts/optimizer-core.mts, run straight from source (no build step) — every
+// caller imports it from the one path config.mjs's paths.core/corePath() resolves (PACKRAT_CORE
+// overrides it).
 // Localhost security (CONTRIBUTING.md's Security section has the full writeup): every request's
 // Host must name this server and its Origin (if any) must match, or 403; with CONFIG.token set,
 // every /api/* route but the SSE events stream needs `Authorization: Bearer <token>`, or 401 — the
@@ -214,11 +215,11 @@ export async function startServer(config = ensureLayout(resolveConfig()), { host
   // repo's real ones.
   const ADAPTERS_DIR = CONFIG.paths.adaptersDir || join(HERE, "..", "adapters");
 
-  // The core is built once (scripts/build-core.mjs, run via the pretest/prestart npm hooks or the
-  // launcher scripts) into app/dist/optimizer-core.mjs; each optimize-worker.mjs thread imports it by
-  // URL for its own build. The main thread never imports it itself — every optimizeSuit/scoreSet call
-  // (heuristic or, since HiGHS, exact) happens inside that one worker (app/exact-solver.mjs).
-  if (!existsSync(CONFIG.paths.core)) throw new Error(`optimizer core not built — run: npm run build:core (looked in ${CONFIG.paths.core})`);
+  // No build step — CONFIG.paths.core resolves straight to scripts/optimizer-core.mts (or wherever
+  // PACKRAT_CORE points); each optimize-worker.mjs thread imports it by URL for its own copy. The main
+  // thread never imports it itself — every optimizeSuit/scoreSet call (heuristic or, since HiGHS,
+  // exact) happens inside that one worker (app/exact-solver.mjs).
+  if (!existsSync(CONFIG.paths.core)) throw new Error(`optimizer core not found at ${CONFIG.paths.core} — check PACKRAT_CORE, or that the repo checkout has scripts/optimizer-core.mts`);
   const CORE_URL = pathToFileURL(CONFIG.paths.core).href;
 
   // The shard picker: <data>/settings.json ({schemaVersion, shard}) names which app/rules/<shard>.json

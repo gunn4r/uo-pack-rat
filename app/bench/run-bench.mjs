@@ -23,10 +23,9 @@ import { tmpdir, availableParallelism } from "node:os";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { Worker } from "node:worker_threads";
 import { learnModel, generateScan, readRealSnapshots, ROOT, BENCH_SHARD } from "./gen-inventory.mjs";
-import { resolveConfig } from "../config.mjs";
+import { resolveConfig, corePath } from "../config.mjs";
 import { upgradeScan } from "../scan-schema.mjs";
 import { loadRules } from "../rules.mjs";
-import { buildCore } from "../../scripts/build-core.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const argv = process.argv.slice(2);
@@ -91,8 +90,8 @@ function resolveProfileDef(pname) {
 
 const lib = await import(pathToFileURL(join(ROOT, "app", "vault-lib.mjs")).href);
 lib.setRules(loadRules(BENCH_SHARD));
-// the core's dominance-prune internals ship in the built module too, so the lever can be counted apples to apples
-const CORE_URL = pathToFileURL(buildCore()).href;
+// the core's dominance-prune internals are exported too, so the lever can be counted apples to apples
+const CORE_URL = pathToFileURL(corePath()).href;
 const core = await import(CORE_URL);
 // what the core's own dominance prune keeps of the pools alone (no "wear nothing" entries, no worn extras)
 function corePruneCount(pools, current, profile) {

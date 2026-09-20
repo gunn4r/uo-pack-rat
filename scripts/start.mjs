@@ -6,15 +6,15 @@ import { createServer } from "node:net";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { resolveConfig } from "../app/config.mjs";
-import { buildCore } from "./build-core.mjs";
 import { buildUi } from "./build-ui.mjs";
 import { buildSchemaTypes } from "./build-schema-types.mts";
 
-// Build the schema types before buildCore()/buildUi() — this call, not tsconfig.browser.json's
-// `include` (a missing literal entry there is silently dropped, not an error), is what actually
-// guarantees app/schema/types.d.mts exists before anything imports from it.
+// Build the schema types before buildUi() — this call, not tsconfig.browser.json's `include` (a
+// missing literal entry there is silently dropped, not an error), is what actually guarantees
+// app/schema/types.d.mts exists before anything imports from it. The optimizer core needs no build
+// step — every caller imports scripts/optimizer-core.mts straight from source (config.mjs's
+// corePath()/paths.core; PACKRAT_CORE overrides it).
 buildSchemaTypes();
-buildCore();
 buildUi();
 const ROOT = dirname(dirname(fileURLToPath(import.meta.url)));
 const args = process.argv.slice(2);

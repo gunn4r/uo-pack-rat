@@ -9,7 +9,7 @@ import { dirname, join } from "node:path";
 import { parseTooltip, classify, foldSnapshots, buildPools, requirementReport, totalsOf, propertyKeys, bagLabel, kindOf, groupByName, slayersOf, medableOf, weaponAllowed, settingsDiff, PROP_LABELS, effectiveProfile, resistSkillBonus, toOptItem, labelOf, builderKeys, migrateProfiles, templateFrom, TEMPLATE_KEYS, setRules, getRules, tagUnits } from "./vault-lib.mjs";
 import { upgradeScan, TAZUO_V1_CAPS } from "./scan-schema.mjs";
 import { runKey, reusableRun, runSummary, normalizeRun } from "./runs-lib.mjs";
-import { buildCore } from "../scripts/build-core.mjs";
+import { corePath } from "./config.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const SKIP_SLOW = process.env.TEST_SKIP_SLOW ? "TEST_SKIP_SLOW" : false;
@@ -540,10 +540,9 @@ test("[fast] fold: a nested container folds whether the scanner said kind \"bag\
 });
 
 // ---- optimizer through the same loader the server uses -------------------------------------
-// buildCore() is idempotent (skips the rebuild when app/dist is already newer than the source) —
-// calling it here means this file also runs standalone (`node --test app/gear-vault.test.mjs`)
-// without depending on the npm `pretest` hook having built the core first.
-const core = await import(pathToFileURL(buildCore()).href);
+// No build step — corePath() resolves straight to scripts/optimizer-core.mts, so this file also runs
+// standalone (`node --test app/gear-vault.test.mjs`) with no npm `pretest` hook needed first.
+const core = await import(pathToFileURL(corePath()).href);
 const demoInv = foldSnapshots([kestrel, dorran]);
 const demoProfiles = JSON.parse(readFileSync(join(HERE, "data", "profiles.default.json"), "utf8"));
 // Any real profile shape will do here (weights/floors/caps to score item sets) — use the archer

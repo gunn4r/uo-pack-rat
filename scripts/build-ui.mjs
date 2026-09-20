@@ -2,8 +2,8 @@
 // build-ui.mjs — compile the browser-facing TypeScript (app/ui/**, vault-lib.*, item-query.*,
 // scan-schema.*, schema/validate.*) via tsconfig.browser.json into app/dist/, which is what
 // vault-server.mjs actually serves the page from (never the source tree — see its own header
-// comment). Unlike build-core.mjs's hand-rolled node:module type stripping, this needs the real
-// tsc: module resolution across app/ui/*.mts, not a single paste-able file stripped in isolation.
+// comment). Unlike the optimizer core (a single paste-able file Node runs from source with no build
+// step at all), this needs the real tsc: module resolution across app/ui/*.mts.
 //
 // Always runs — no mtime freshness check. tsc itself already skips unchanged files internally
 // (it's a project build, not a from-scratch one every time), and a from-scratch mtime comparison
@@ -43,10 +43,9 @@ export function buildUi({ tsconfig = TSCONFIG } = {}) {
   const tscEntry = resolveTscEntry();
   if (!tscEntry || !existsSync(tscEntry)) {
     // The packaged Electron app ships no devDependencies (electron-builder's `files` list excludes
-    // them) — it carries a pre-built app/dist/ instead (see electron/server-entry.mjs's header:
-    // it never calls buildCore() either, for the same reason). Only tolerate a missing compiler
-    // when there's already a built page to fall back to; otherwise this must fail loudly rather
-    // than serve a stale or absent page with no explanation.
+    // them) — it carries a pre-built app/dist/ instead. Only tolerate a missing compiler when
+    // there's already a built page to fall back to; otherwise this must fail loudly rather than
+    // serve a stale or absent page with no explanation.
     // Say so when it happens (the packaged app never calls buildUi() at all — electron/server-entry.mjs
     // does no building — so this is always a source checkout): it means the page
     // being served is whatever was last built, not the sources on disk (`npm ci --omit=dev` followed

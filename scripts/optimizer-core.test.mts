@@ -1,33 +1,49 @@
 // ============================================================================
-// optimizer-core.test.mjs — offline test harness for optimizer-core.mts.
+// optimizer-core.test.mts — offline test harness for optimizer-core.mts.
 //
-// Run:  node --test scripts/optimizer-core.test.mjs   or   node scripts/optimizer-core.test.mjs
+// Run:  node --test scripts/optimizer-core.test.mts   or   node scripts/optimizer-core.test.mts
 //
-// HOW THE CORE IS LOADED: the core is built once by scripts/build-core.mjs (Node's native
-// TypeScript type stripping, no dependencies) into app/dist/optimizer-core.mjs, and every caller —
-// this harness, the server, the bench — imports that same built module. The source, scripts/optimizer-core.mts,
-// stays paste-able into the game client (no top-level imports/exports of its own besides the trailing
-// `export { ... }` block build-core.mjs's output keeps) while the tests exercise the exact source that ships.
-// Requires Node >= 22.6 (type stripping); verified on v24. If a future runtime drops native
-// stripping, the fallback is `npx tsx` on a .ts mirror of this file.
+// HOW THE CORE IS LOADED: no build step — every caller (this harness, the server, the bench) imports
+// scripts/optimizer-core.mts straight from source, via Node's native TypeScript type stripping, by the
+// path config.mjs's corePath()/paths.core resolves (PACKRAT_CORE overrides it). The source stays
+// paste-able into the game client (no imports of its own, no top-level exports beyond its one trailing
+// `export { ... }` line) while this harness exercises the exact file that ships. Requires Node >= 22.18
+// (stable type stripping); verified on v24. If a future runtime drops native stripping, the fallback is
+// `npx tsx` on this same file.
 //
 // None of the cases below use an exact/budgeted search (no `exact: true`, no `timeBudgetMs`) — every
 // one is a cheap heuristic-restart run, so all are tagged [fast].
+//
+// TYPES: the core is loaded by a runtime-computed path (`corePath()`), so TypeScript can't see its
+// actual export types — `core` and everything destructured from it are `any`. The item/pools/current
+// shapes this harness builds ITSELF (`makeWorld` and the inline pools below) are given real local
+// types (mirroring optimizer-core.mts's own `OptItem`, duplicated rather than imported — the core
+// stays import-free and export-free beyond its one trailing export line; see CONTRIBUTING.md).
 // ============================================================================
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { pathToFileURL } from "node:url";
-import { buildCore } from "./build-core.mjs";
+import { corePath } from "../app/config.mjs";
 
-const core = await import(pathToFileURL(buildCore()).href);
+const core = await import(pathToFileURL(corePath()).href);
 const { scoreSet, optimizeSuit, optIsValidAssignment, optMulberry32, optDefaultSlots, optAssignmentTotals } = core;
 
 // ---------------------------------------------------------------------------
 // Seeded synthetic data
 // ---------------------------------------------------------------------------
 
-const SLOTS = optDefaultSlots();
+interface OptItem {
+  serial: number;
+  name: string;
+  slot: string;
+  twoHanded?: boolean;
+  props: Record<string, number>;
+}
+type Pools = Record<string, OptItem[]>;
+type Assignment = Record<string, OptItem | null>;
+
+const SLOTS: string[] = optDefaultSlots();
 const PROPS = ["physResist", "fireResist", "coldResist", "poisonResist", "energyResist", "hci", "dci", "di", "ssi", "lmc", "stamInc", "hpInc"];
 
 const PROFILE = {
@@ -40,22 +56,22 @@ const PROFILE = {
 
 // Builds ~`perSlot` candidates for every slot. Deterministic for a given seed. Some twoHanded
 // candidates are real two-handed weapons (twoHanded: true), the rest are shields.
-function makeWorld(seed, perSlot) {
+function makeWorld(seed: number, perSlot: number): { pools: Pools; current: Assignment } {
   const rnd = optMulberry32(seed);
-  const pick = (arr) => arr[Math.floor(rnd() * arr.length)];
-  const pools = {};
+  const pick = (arr: readonly string[]): string => arr[Math.floor(rnd() * arr.length)]!;
+  const pools: Pools = {};
   let serial = 1000;
   for (const slot of SLOTS) {
-    const list = [];
+    const list: OptItem[] = [];
     for (let i = 0; i < perSlot; i++) {
-      const props = {};
+      const props: Record<string, number> = {};
       const n = 2 + Math.floor(rnd() * 3);
       for (let j = 0; j < n; j++) {
         const p = pick(PROPS);
         const mag = p.endsWith("Resist") ? 3 + Math.floor(rnd() * 16) : 1 + Math.floor(rnd() * 20);
         props[p] = (props[p] || 0) + mag;
       }
-      const item = { serial: serial++, name: `${slot}-${i}`, slot, props };
+      const item: OptItem = { serial: serial++, name: `${slot}-${i}`, slot, props };
       // A third of the twoHanded pool are two-handed weapons; the rest are shields.
       if (slot === "twoHanded" && i % 3 === 0) item.twoHanded = true;
       list.push(item);
@@ -63,8 +79,11 @@ function makeWorld(seed, perSlot) {
     pools[slot] = list;
   }
   // The "currently equipped" suit: one arbitrary (seeded) piece per slot, kept structurally legal.
-  const current = {};
-  for (const slot of SLOTS) current[slot] = pools[slot][Math.floor(rnd() * pools[slot].length)];
+  const current: Assignment = {};
+  for (const slot of SLOTS) {
+    const list = pools[slot]!;
+    current[slot] = list[Math.floor(rnd() * list.length)]!;
+  }
   if (current.twoHanded && current.twoHanded.twoHanded === true) current.oneHanded = null;
   return { pools, current };
 }
@@ -93,7 +112,7 @@ test("[fast] never returns a set violating the 2H/shield constraint", () => {
 // A two-handed weapon so dominant that it must be chosen, forcing the oneHanded layer empty.
 test("[fast] takes a dominant 2H weapon and empties the oneHanded layer", () => {
   const { pools, current } = makeWorld(9, 12);
-  pools.twoHanded.push({ serial: 999001, name: "Obliterator", slot: "twoHanded", twoHanded: true, props: { di: 100, hci: 45, ssi: 60 } });
+  pools.twoHanded!.push({ serial: 999001, name: "Obliterator", slot: "twoHanded", twoHanded: true, props: { di: 100, hci: 45, ssi: 60 } });
   const r = optimizeSuit(pools, current, PROFILE, { seed: 9, restarts: 20 });
   assert.equal(r.best.twoHanded.name, "Obliterator");
   assert.equal(r.best.oneHanded, null);
@@ -133,10 +152,10 @@ test("[fast] points above a cap contribute zero", () => {
 // (3) Determinism: same seed, same everything.
 test("[fast] determinism: same seed => identical result", () => {
   const { pools, current } = makeWorld(31337, 30);
-  const key = (r) => JSON.stringify({
+  const key = (r: any) => JSON.stringify({
     score: r.score,
-    picks: SLOTS.map((s) => (r.best[s] ? r.best[s].serial : null)),
-    changes: r.perSlotChanges.map((c) => `${c.slot}:${c.fromSerial}->${c.toSerial}`),
+    picks: SLOTS.map((s: string) => (r.best[s] ? r.best[s].serial : null)),
+    changes: r.perSlotChanges.map((c: any) => `${c.slot}:${c.fromSerial}->${c.toSerial}`),
     totals: r.totals
   });
   const a = optimizeSuit(pools, current, PROFILE, { seed: 12345, restarts: 25 });
@@ -162,7 +181,7 @@ test("[fast] finds the known optimum that requires two individually-inferior pie
     floorBonus: 1000,
     floorPartial: 0
   };
-  const pools = {};
+  const pools: Pools = {};
   let serial = 500;
   for (const slot of SLOTS) {
     pools[slot] = [{ serial: serial++, name: `filler-${slot}`, slot, props: { di: 5 } }];
@@ -175,8 +194,8 @@ test("[fast] finds the known optimum that requires two individually-inferior pie
     { serial: 611, name: "DI Plate", slot: "chest", props: { di: 20 } },
     { serial: 612, name: "Ember Plate", slot: "chest", props: { fireResist: 30 } }
   ];
-  const current = {};
-  for (const slot of SLOTS) current[slot] = pools[slot][0];
+  const current: Assignment = {};
+  for (const slot of SLOTS) current[slot] = pools[slot]![0]!;
 
   // restarts: 0 leaves only the deterministic seeds (current, greedy, gradient continuation).
   // Passing here proves the gradient seed is what escapes the greedy basin, rather than a lucky
@@ -201,7 +220,7 @@ test("[fast] finds the known optimum that requires two individually-inferior pie
 test("[fast] perSlotChanges reports every changed slot with its property delta", () => {
   const { pools, current } = makeWorld(55, 20);
   const r = optimizeSuit(pools, current, PROFILE, { seed: 55, restarts: 20 });
-  const changed = SLOTS.filter((s) => {
+  const changed = SLOTS.filter((s: string) => {
     const f = current[s] || null, t = r.best[s] || null;
     return (f ? f.serial : 0) !== (t ? t.serial : 0);
   });
@@ -241,10 +260,10 @@ test("[fast] sample run is inspectable (seed 2026)", (t) => {
   const r = optimizeSuit(pools, current, PROFILE, { seed: 2026 });
   t.diagnostic(`current ${r.currentScore.toFixed(1)} -> greedy ${r.greedyScore.toFixed(1)} -> optimized ${r.score.toFixed(1)}  (delta ${r.delta.toFixed(1)}, ${r.perSlotChanges.length} slots changed)`);
   const res = ["physResist", "fireResist", "coldResist", "poisonResist", "energyResist"];
-  const fmt = (tot) => res.map((k) => `${k.replace("Resist", "")} ${tot[k] || 0}`).join("  ");
+  const fmt = (tot: Record<string, number>) => res.map((k) => `${k.replace("Resist", "")} ${tot[k] || 0}`).join("  ");
   t.diagnostic(`resists before: ${fmt(r.totals.before)}`);
   t.diagnostic(`resists after:  ${fmt(r.totals.after)}`);
-  t.diagnostic(`equipped: ${SLOTS.map((s) => `${s}=${r.best[s] ? r.best[s].name : "-"}`).join(", ")}`);
+  t.diagnostic(`equipped: ${SLOTS.map((s: string) => `${s}=${r.best[s] ? r.best[s].name : "-"}`).join(", ")}`);
   assert.ok(optIsValidAssignment(r.best));
 });
 

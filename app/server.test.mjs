@@ -12,20 +12,19 @@ import { startServer } from "./vault-server.mjs";
 import { buildPools, foldSnapshots, setRules } from "./vault-lib.mjs";
 import { upgradeScan, validateScan } from "./scan-schema.mjs";
 import { DEFAULT_OPTIONAL_SLOTS } from "./mip.mjs";
-import { buildCore } from "../scripts/build-core.mjs";
 import { buildUi } from "../scripts/build-ui.mjs";
 import { buildSchemaTypes } from "../scripts/build-schema-types.mts";
 import { validate } from "./schema/validate.mjs";
 
 const BRIDGE_SCHEMA = JSON.parse(readFileSync(join(dirname(fileURLToPath(import.meta.url)), "schema", "bridge.v1.schema.json"), "utf8"));
 
-// Order matters: build the schema types before buildCore()/buildUi() run, not because
-// tsconfig.browser.json's `include` enforces it (a missing literal entry there is silently
-// dropped, not an error — verified) but because this and the two calls below are the only actual
-// guarantee app/schema/types.d.mts exists before anything imports from it. Also so a bare
-// `node --test app/server.test.mjs` works on a fresh clone (no pretest hook run).
+// Order matters: build the schema types before buildUi() runs, not because tsconfig.browser.json's
+// `include` enforces it (a missing literal entry there is silently dropped, not an error — verified)
+// but because this call is the only actual guarantee app/schema/types.d.mts exists before anything
+// imports from it. Also so a bare `node --test app/server.test.mjs` works on a fresh clone (no
+// pretest hook run). The optimizer core needs no build step of its own — startServer() below resolves
+// it straight from source via config.mjs's paths.core (PACKRAT_CORE overrides it).
 buildSchemaTypes();
-buildCore();
 buildUi();   // this file's own route tests fetch /ui/app.mjs and /vault-lib.mjs from app/dist/
 const HERE = dirname(fileURLToPath(import.meta.url));
 // This file's own vault-lib.mjs import is a separate module instance from the one the server
