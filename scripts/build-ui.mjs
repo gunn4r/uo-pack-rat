@@ -47,11 +47,21 @@ export function buildUi({ tsconfig = TSCONFIG } = {}) {
     // it never calls buildCore() either, for the same reason). Only tolerate a missing compiler
     // when there's already a built page to fall back to; otherwise this must fail loudly rather
     // than serve a stale or absent page with no explanation.
-    if (existsSync(UI_ENTRY_OUT)) return UI_ENTRY_OUT;
+    // Say so when it happens (the packaged app never calls buildUi() at all — electron/server-entry.mjs
+    // does no building — so this is always a source checkout): it means the page
+    // being served is whatever was last built, not the sources on disk (`npm ci --omit=dev` followed
+    // by a branch switch is the way to get here), and that must not pass silently.
+    if (existsSync(UI_ENTRY_OUT)) {
+      console.warn("build-ui: no TypeScript compiler installed — serving the existing app/dist/ as-is, which may be stale. Run `npm install` to rebuild the page from source.");
+      return UI_ENTRY_OUT;
+    }
     throw new Error("the TypeScript compiler isn't installed (no `typescript` package found) and app/dist/ui/app.mjs doesn't exist yet — run `npm install`");
   }
-  // tsc's own entry (bin/tsc) is a plain `import "../lib/tsc.js"` — runs under a bare `node`
-  // invocation with no shell, so no PATH/shebang-execute-bit dependency either.
+  // TypeScript 7 is the native compiler: bin/tsc is a small JS launcher that finds and runs a
+  // platform-specific binary from one of typescript's optionalDependencies. Spawning the launcher
+  // under process.execPath keeps this free of any PATH or shebang dependency; if the native binary
+  // is missing (`npm ci --omit=optional`, an unlisted platform) the launcher exits non-zero and the
+  // throw below surfaces its message rather than serving a stale page.
   const result = spawnSync(process.execPath, [tscEntry, "-p", tsconfig], { cwd: ROOT, encoding: "utf8" });
   if (result.error) throw result.error;
   if (result.status !== 0) {
