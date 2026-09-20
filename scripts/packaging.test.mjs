@@ -26,13 +26,14 @@ test("[fast] every platform ships the targets the spec settled on", () => {
   assert.deepEqual(build.linux?.target, ["AppImage"]);
 });
 
-test("[fast] the bundle carries the adapters and the built core, not the tests or the user's data", () => {
+test("[fast] the bundle carries the adapters and the optimizer core's source, not the tests or the user's data", () => {
   const files = build.files ?? [];
   const has = (p) => files.includes(p);
   assert.ok(has("app/**"), "app/ must ship");
   assert.ok(has("adapters/**"), "adapters/ must ship — the installer copies the scripts out of it");
   assert.ok(has("electron/**"), "the shell itself must ship");
-  for (const excluded of ["!**/*.test.mjs", "!local/**", "!test_logs/**", "!docs/**", "!app/bench/**"]) {
+  assert.ok(has("scripts/optimizer-core.mts"), "the optimizer core ships as source — there is no built copy to ship instead");
+  for (const excluded of ["!**/*.test.mjs", "!**/*.test.mts", "!local/**", "!test_logs/**", "!docs/**", "!app/bench/**"]) {
     assert.ok(files.includes(excluded), `${excluded} must be excluded`);
   }
 });

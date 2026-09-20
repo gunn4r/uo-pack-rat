@@ -9,17 +9,16 @@ import { join, dirname } from "node:path";
 import { pathToFileURL, fileURLToPath } from "node:url";
 import { tmpdir } from "node:os";
 import highsLoader from "highs";
-import { resolveConfig } from "../config.mjs";
+import { resolveConfig, corePath } from "../config.mjs";
 import { upgradeScan } from "../scan-schema.mjs";
 import { loadRules } from "../rules.mjs";
-import { buildCore } from "../../scripts/build-core.mjs";
 
 const APP_DIR = dirname(fileURLToPath(import.meta.url).replace("/bench/", "/"));
 const SCRATCH = join(tmpdir(), "mip-spike");
 const [nArg = "real", whoArg, limitS = "600", frac = "0.3"] = process.argv.slice(2);
 const lib = await import(pathToFileURL(join(APP_DIR, "vault-lib.mjs")).href);
 lib.setRules(loadRules("uoalive"));   // same shard the bench's real scans and profiles.json were recorded against
-const core = await import(pathToFileURL(buildCore()).href);
+const core = await import(pathToFileURL(corePath()).href);
 
 // ---- the same cell construction as the bench ----
 const config = resolveConfig();

@@ -3,9 +3,11 @@
 // electron/main.mjs (utilityProcess.fork). Config is env-driven: main sets PACKRAT_DATA, PACKRAT_TOKEN
 // and PACKRAT_PORT=0 in the child's environment before forking, and forwards --demo (when the user
 // passed it) as a fork argument, so the ordinary resolveConfig()/ensureLayout() pair in app/config.mjs
-// picks all of it up unchanged. The packaged app ships app/dist/optimizer-core.mjs pre-built — this
-// file never runs scripts/build-core.mjs itself (dev's `npm run desktop` does that once, up front, via
-// the predesktop script).
+// picks all of it up unchanged. The optimizer core needs no build step: config.mjs's paths.core
+// resolves straight to scripts/optimizer-core.mts, both in dev and in the packaged app (whose
+// build.files ships that one source file — no asarUnpack entry needed for it; Electron's asar fs/module
+// patches serve a dynamic `import()` of a .mts file straight out of app.asar, worker threads included,
+// verified live against a real `electron-builder --dir` tree, Phase 8 Task 3).
 //
 // Talks to main.mjs over process.parentPort, the utility-process side of the two-way channel:
 //   -> {type: "listening", port, url}                 once startServer() is listening

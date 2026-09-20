@@ -10,18 +10,17 @@ import { writeFileSync, mkdirSync, readdirSync } from "node:fs";
 import { spawnSync } from "node:child_process";
 import { dirname, join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
-import { buildCore } from "./build-core.mjs";
 import { buildUi } from "./build-ui.mjs";
 import { buildSchemaTypes } from "./build-schema-types.mts";
 
 const ROOT = dirname(dirname(fileURLToPath(import.meta.url)));
 const mode = process.argv.includes("--smoke") ? "smoke" : process.argv.includes("--fast") ? "fast" : "full";
 const patterns = mode === "smoke" ? [/^\[smoke\]/] : mode === "fast" ? [/^\[(smoke|fast)\]/] : undefined;
-// Build the schema types before buildCore()/buildUi() — this call, not tsconfig.browser.json's
-// `include` (a missing literal entry there is silently dropped, not an error), is what actually
-// guarantees app/schema/types.d.mts exists before anything imports from it.
+// Build the schema types before buildUi() — this call, not tsconfig.browser.json's `include` (a
+// missing literal entry there is silently dropped, not an error), is what actually guarantees
+// app/schema/types.d.mts exists before anything imports from it. The optimizer core needs no build
+// step — every caller imports scripts/optimizer-core.mts straight from source.
 buildSchemaTypes();
-buildCore();
 buildUi();   // app/server.test.mjs's [smoke] cases fetch app/dist/item-query.mjs and the page itself
 
 // Recursive so a test file in a new subdirectory (app/schema/validate.test.mjs was the one this

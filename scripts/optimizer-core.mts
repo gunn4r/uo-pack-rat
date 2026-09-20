@@ -1,5 +1,5 @@
 // ============================================================================
-// optimizer-core.ts — whole-suit gear optimizer CORE.
+// optimizer-core.mts — whole-suit gear optimizer CORE.
 // ----------------------------------------------------------------------------
 // PURE LOGIC ONLY. No game globals (no `player`, `client`, `Gump`, ...), no imports, no
 // top-level exports — this file is meant to be PASTED INLINE into a game script, so it is
@@ -18,7 +18,7 @@
 // greedy, the currently equipped suit, a GRADIENT seed (see optGradientProfile below), and N
 // seeded-random restarts. Best local optimum wins.
 //
-// Companion offline test: optimizer-core.test.mjs (`node scripts/optimizer-core.test.mjs`).
+// Companion offline test: optimizer-core.test.mts (`node scripts/optimizer-core.test.mts`).
 // ============================================================================
 
 // ---------------------------------------------------------------------------

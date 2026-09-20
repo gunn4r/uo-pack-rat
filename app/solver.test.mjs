@@ -12,7 +12,7 @@ import { dirname, join } from "node:path";
 import { buildPools, effectiveProfile, setRules, foldSnapshots } from "./vault-lib.mjs";
 import * as VaultLib from "./vault-lib.mjs";
 import { upgradeScan } from "./scan-schema.mjs";
-import { buildCore } from "../scripts/build-core.mjs";
+import { corePath } from "./config.mjs";
 import { solveExact } from "./exact-solver.mjs";
 import { DEFAULT_SLOTS } from "./mip.mjs";
 import { learnModel, generateScan } from "./bench/gen-inventory.mjs";
@@ -23,7 +23,7 @@ const HERE = dirname(fileURLToPath(import.meta.url));
 // effectiveProfile) needs its own setRules(), same as gear-vault.test.mjs / server.test.mjs.
 setRules(JSON.parse(readFileSync(join(HERE, "rules", "uoalive.json"), "utf8")));
 
-const core = await import(pathToFileURL(buildCore()).href);
+const core = await import(pathToFileURL(corePath()).href);
 
 // The TazUO fixture (Task 1's adapter fixture): 319 real items, character "Fixture". Already
 // schemaVersion 2 — upgradeScan just stamps the shard.

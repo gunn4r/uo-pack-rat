@@ -11,9 +11,19 @@ import { fileURLToPath } from "node:url";
 import { DEFAULT_SHARD } from "./rules.mjs";
 
 export const APP_DIR = dirname(fileURLToPath(import.meta.url));
+export const ROOT_DIR = dirname(APP_DIR);
 export const DEFAULT_PORT = 8765;
 
 function flag(argv, name) { const i = argv.indexOf(name); return i >= 0 && i + 1 < argv.length ? argv[i + 1] : null; }
+
+// corePath: where the optimizer core module lives — scripts/optimizer-core.mts by default (Node runs
+// it straight from source, no build step; see CONTRIBUTING.md), or PACKRAT_CORE when a caller wants
+// to point at an alternate build without touching this file. Its own exported function, not inlined
+// into resolveConfig's return, so every caller that needs the path before a full config object exists
+// (tests, the bench) resolves it the same one way `paths.core` below does.
+export function corePath(env = process.env) {
+  return env.PACKRAT_CORE ? resolve(env.PACKRAT_CORE) : join(ROOT_DIR, "scripts", "optimizer-core.mts");
+}
 
 export function resolveConfig(argv = process.argv.slice(2), env = process.env, home = homedir()) {
   const dataDir = resolve(flag(argv, "--data") || env.PACKRAT_DATA || join(home, ".pack-rat"));
@@ -65,7 +75,7 @@ export function resolveConfig(argv = process.argv.slice(2), env = process.env, h
       bridgeQueueFor: (adapter) => join(bridgeRoot, adapter, "queue.jsonl"),
       bridgeStatusFor: (adapter) => join(bridgeRoot, adapter, "status.json"),
       logs, log: join(logs, "server.log"),   // logs = the directory (ensureLayout creates it); log = the one file 500s append to
-      core: env.PACKRAT_CORE ? resolve(env.PACKRAT_CORE) : join(APP_DIR, "dist", "optimizer-core.mjs"),
+      core: corePath(env),
       adaptersDir,
       // inbox: where each adapter drops raw scan files (temp-then-rename) for the watcher to
       // normalise into paths.scans. The per-adapter dead-letter spot a file lands in after it keeps

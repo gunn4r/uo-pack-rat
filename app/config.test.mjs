@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { join, resolve } from "node:path";
-import { resolveConfig, ensureLayout } from "./config.mjs";
+import { resolveConfig, ensureLayout, corePath } from "./config.mjs";
 
 test("[smoke] config: defaults to ~/.pack-rat and port 8765", () => {
   const c = resolveConfig([], {}, "/home/x");
@@ -64,10 +64,14 @@ test("[smoke] config: --demo points scans at app/fixtures, --open sets open", ()
 test("[smoke] config: a non-numeric --port throws with a message naming the bad value", () => {
   assert.throws(() => resolveConfig(["--port", "abc"], {}, "/h"), /invalid port/);
 });
-test("[smoke] config: paths.core defaults under app/dist, PACKRAT_CORE wins", () => {
+test("[smoke] config: paths.core defaults to the source module under scripts/, PACKRAT_CORE wins", () => {
   const c = resolveConfig([], {}, "/h");
-  assert.ok(c.paths.core.endsWith(join("app", "dist", "optimizer-core.mjs")));
+  assert.ok(c.paths.core.endsWith(join("scripts", "optimizer-core.mts")));
   assert.equal(resolveConfig([], { PACKRAT_CORE: "/x/core.mjs" }, "/h").paths.core, resolve("/x/core.mjs"));
+});
+test("[smoke] config: corePath resolves the same way paths.core does, callable before a full config exists", () => {
+  assert.ok(corePath({}).endsWith(join("scripts", "optimizer-core.mts")), "no PACKRAT_CORE: the source module under scripts/");
+  assert.equal(corePath({ PACKRAT_CORE: "/x/core.mjs" }), resolve("/x/core.mjs"), "PACKRAT_CORE overrides, resolved against cwd");
 });
 test("[smoke] config: token defaults to null; --token beats PACKRAT_TOKEN; paths.log sits under paths.logs", () => {
   const c = resolveConfig([], {}, "/h");
