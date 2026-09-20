@@ -12,7 +12,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import { learnModel, generateScan, readRealSnapshots, SCANS_DIR } from "./gen-inventory.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
-const lib = await import(pathToFileURL(join(HERE, "..", "vault-lib.mjs")).href);
+const lib = await import(pathToFileURL(join(HERE, "..", "vault-lib.mts")).href);
 const model = learnModel(readRealSnapshots(SCANS_DIR), lib);
 
 const SPECS = [

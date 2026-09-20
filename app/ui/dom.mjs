@@ -1,11 +1,11 @@
 // ui/dom.mjs — DOM helpers, formatting/label helpers, rarity, and the in-game style hover tooltip.
 // Moved verbatim out of index.html's inline <script type="module"> (Task 4, the page split).
-import { SLOT_LABELS, labelOf, fullOf } from "../vault-lib.mjs";
-import { EXTRA_COLS, rarityRank as rarityRankOf } from "../item-query.mjs";
+import { SLOT_LABELS, labelOf, fullOf } from "../vault-lib.mts";
+import { EXTRA_COLS, rarityRank as rarityRankOf } from "../item-query.mts";
 import { state } from "./store.mjs";
 import { resolveItems } from "./items.mjs";
 
-export { EXTRA_COLS, colVal } from "../item-query.mjs";
+export { EXTRA_COLS, colVal } from "../item-query.mts";
 
 export const $ = (s, el = document) => el.querySelector(s);
 export const el = (tag, attrs = {}, ...kids) => {

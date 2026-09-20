@@ -3,7 +3,7 @@
 // `parseRoute`/`routeFor` are exported beyond the brief's explicit list because builder.mjs's
 // buildBuilder/selectCharacter call them directly (the router reaches into the builder for the
 // #/builder/<name> deep link, and the builder reads the route back).
-import { migrateProfiles, setRules } from "../vault-lib.mjs";
+import { migrateProfiles, setRules } from "../vault-lib.mts";
 import { state } from "./store.mjs";
 import { $, el, installTooltip } from "./dom.mjs";
 import { api } from "./api.mjs";

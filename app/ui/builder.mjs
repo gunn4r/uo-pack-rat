@@ -2,7 +2,7 @@
 // the optimize job (progress panel, SSE), and the result panel. The saved-runs drawer
 // (history/open/compare) moved out to ui/runs.mjs (Task 5, the page split, part B).
 // Moved verbatim out of index.html's inline <script type="module"> (Task 4, the page split).
-import { PROP_LABELS, OPTIMIZER_SLOTS, tagUnits, WEAPON_SKILLS, resistSkillBonus, effectiveProfile, getRules, RESIST_KEYS, templateFrom, requirementReport, totalsOf, settingsDiff, bagLabel } from "../vault-lib.mjs";
+import { PROP_LABELS, OPTIMIZER_SLOTS, tagUnits, WEAPON_SKILLS, resistSkillBonus, effectiveProfile, getRules, RESIST_KEYS, templateFrom, requirementReport, totalsOf, settingsDiff, bagLabel } from "../vault-lib.mts";
 import { state, invStamp } from "./store.mjs";
 import { $, el, label, full, fmtN, fmtSecs, fmtRunTime, slotLabel, toast } from "./dom.mjs";
 import { api, CLIENT_ID } from "./api.mjs";

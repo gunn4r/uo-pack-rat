@@ -2,7 +2,7 @@
 // <script type="module"> (Task 4, the page split). The Forget handler calls `load` from app.mjs —
 // a module cycle (containers ↔ app) that is fine here since both are function declarations only
 // called after bootstrap.
-import { bagLabel } from "../vault-lib.mjs";
+import { bagLabel } from "../vault-lib.mts";
 import { state } from "./store.mjs";
 import { $, el, fmtWhen, toast } from "./dom.mjs";
 import { api } from "./api.mjs";

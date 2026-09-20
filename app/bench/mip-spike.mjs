@@ -16,7 +16,7 @@ import { loadRules } from "../rules.mts";
 const APP_DIR = dirname(fileURLToPath(import.meta.url).replace("/bench/", "/"));
 const SCRATCH = join(tmpdir(), "mip-spike");
 const [nArg = "real", whoArg, limitS = "600", frac = "0.3"] = process.argv.slice(2);
-const lib = await import(pathToFileURL(join(APP_DIR, "vault-lib.mjs")).href);
+const lib = await import(pathToFileURL(join(APP_DIR, "vault-lib.mts")).href);
 lib.setRules(loadRules("uoalive"));   // same shard the bench's real scans and profiles.json were recorded against
 const core = await import(pathToFileURL(corePath()).href);
 

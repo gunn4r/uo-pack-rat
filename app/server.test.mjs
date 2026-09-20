@@ -9,7 +9,7 @@ import http from "node:http";
 import { createConnection } from "node:net";
 import { resolveConfig, ensureLayout } from "./config.mjs";
 import { startServer } from "./vault-server.mjs";
-import { buildPools, foldSnapshots, setRules } from "./vault-lib.mjs";
+import { buildPools, foldSnapshots, setRules } from "./vault-lib.mts";
 import { upgradeScan, validateScan } from "./scan-schema.mts";
 import { DEFAULT_OPTIONAL_SLOTS } from "./mip.mjs";
 import { buildUi } from "../scripts/build-ui.mjs";
@@ -27,7 +27,7 @@ const BRIDGE_SCHEMA = JSON.parse(readFileSync(join(dirname(fileURLToPath(import.
 buildSchemaTypes();
 buildUi();   // this file's own route tests fetch /ui/app.mjs and /vault-lib.mjs from app/dist/
 const HERE = dirname(fileURLToPath(import.meta.url));
-// This file's own vault-lib.mjs import is a separate module instance from the one the server
+// This file's own vault-lib.mts import is a separate module instance from the one the server
 // dynamically re-imports per request (busted by mtime) — a direct call here to a rules-aware
 // function (buildPools) needs its own setRules().
 setRules(JSON.parse(readFileSync(join(HERE, "rules", "uoalive.json"), "utf8")));

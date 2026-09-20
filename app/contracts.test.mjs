@@ -11,7 +11,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { validate } from "./schema/validate.mts";
 import { SCAN_V2_SCHEMA } from "./scan-schema.mts";
-import { foldSnapshots, setRules } from "./vault-lib.mjs";
+import { foldSnapshots, setRules } from "./vault-lib.mts";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const ROOT = dirname(HERE);

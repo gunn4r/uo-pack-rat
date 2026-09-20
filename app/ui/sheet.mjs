@@ -1,7 +1,7 @@
 // ui/sheet.mjs — the in-game style character sheet (before/after), shared by the Characters tab
 // and the Suit Builder's result panel. Moved verbatim out of index.html's inline
 // <script type="module"> (Task 4, the page split).
-import { totalsOf, resistSkillBonus } from "../vault-lib.mjs";
+import { totalsOf, resistSkillBonus } from "../vault-lib.mts";
 import { state } from "./store.mjs";
 import { full, esc } from "./dom.mjs";
 
