@@ -303,10 +303,10 @@ function optScoreVector(totals: number[], space: OptSpace): number {
 function scoreSet(items: OptAssignment | (OptItem | null)[], profile: OptProfile): number {
   const list: (OptItem | null)[] = [];
   if (Array.isArray(items)) {
-    for (let i = 0; i < items.length; i++) list.push(items[i]!);
+    for (let i = 0; i < items.length; i++) list.push(items[i] as OptItem | null);
   } else {
     const slots = Object.keys(items).sort();
-    for (let i = 0; i < slots.length; i++) list.push(items[slots[i]!]!);
+    for (let i = 0; i < slots.length; i++) list.push(items[slots[i]!] as OptItem | null);
   }
   const seen: Record<string, boolean> = {};
   const keys: string[] = [];
@@ -321,7 +321,7 @@ function scoreSet(items: OptAssignment | (OptItem | null)[], profile: OptProfile
   const space = optBuildSpace(keys, profile);
   const totals = space.zero.slice();
   for (let i = 0; i < list.length; i++) {
-    const v = optVec(list[i]!, space);
+    const v = optVec(list[i] as OptItem | null, space);
     for (let j = 0; j < totals.length; j++) totals[j]! += v[j]!;
   }
   return optScoreVector(totals, space);
@@ -416,7 +416,7 @@ function optBestWeaponPair(totals: number[], a: OptAssignment, oneCands: (OptIte
   let bestTwo: OptItem | null = null;
   let bestScore = -Infinity;
   for (let i = 0; i < twoCands.length; i++) {
-    const two = twoCands[i]!;
+    const two = twoCands[i] as OptItem | null;
     const vTwo = optVec(two, space);
     optAddVec(totals, vTwo, 1);
     if (optIsTwoHandedWeapon(two)) {
@@ -425,7 +425,7 @@ function optBestWeaponPair(totals: number[], a: OptAssignment, oneCands: (OptIte
       if (s > bestScore) { bestScore = s; bestOne = null; bestTwo = two; }
     } else {
       for (let j = 0; j < oneCands.length; j++) {
-        const one = oneCands[j]!;
+        const one = oneCands[j] as OptItem | null;
         const vOne = optVec(one, space);
         optAddVec(totals, vOne, 1);
         const s = optScoreVector(totals, space);
@@ -463,7 +463,7 @@ function optLocalSearch(a: OptAssignment, slots: string[], cands: Record<string,
       optAddVec(totals, vHave, -1);
       const list = cands[slot]!;
       for (let j = 0; j < list.length; j++) {
-        const cand = list[j]!;
+        const cand = list[j] as OptItem | null;
         if (cand === have) continue;
         const vC = optVec(cand, space);
         optAddVec(totals, vC, 1);
@@ -514,11 +514,11 @@ function optGreedySeed(slots: string[], cands: Record<string, (OptItem | null)[]
     let best: OptItem | null = null;
     let bestScore = -Infinity;
     for (let j = 0; j < list.length; j++) {
-      const vC = optVec(list[j]!, space);
+      const vC = optVec(list[j] as OptItem | null, space);
       optAddVec(totals, vC, 1);
       const s = optScoreVector(totals, space);
       optAddVec(totals, vC, -1);
-      if (s > bestScore) { bestScore = s; best = list[j]!; }
+      if (s > bestScore) { bestScore = s; best = list[j] as OptItem | null; }
     }
     cur[slot] = best;
     optAddVec(totals, optVec(best, space), 1);
@@ -581,12 +581,12 @@ function optDominates(a: number[], b: number[], space: OptSpace): boolean {
 function optDominancePrune(list: (OptItem | null)[], space: OptSpace, keepNull: boolean): (OptItem | null)[] {
   const out: (OptItem | null)[] = [];
   for (let i = 0; i < list.length; i++) {
-    const a = list[i]!;
+    const a = list[i] as OptItem | null;
     if (a === null) { if (keepNull || !list.some((b) => b !== null && optDominates(optVec(b, space), space.zero, space))) out.push(null); continue; }
     const va = optVec(a, space);
     let dominated = false;
     for (let j = 0; j < list.length && !dominated; j++) {
-      const b = list[j]!;
+      const b = list[j] as OptItem | null;
       if (b === null || b === a) continue;
       if (b.twoHanded === true && a.twoHanded !== true) continue;   // a two-handed weapon cannot stand in for a shield: the shield leaves a hand free
       const vb = optVec(b, space);
@@ -623,7 +623,7 @@ function optBranchAndBound(slots: string[], cands: Record<string, (OptItem | nul
       if (sg === 0) continue;
       let ext = sg > 0 ? -Infinity : Infinity;
       for (let j = 0; j < lists[k]!.length; j++) {
-        const v = optVec(lists[k]![j]!, space)[d]!;
+        const v = optVec(lists[k]![j] as OptItem | null, space)[d]!;
         if (sg > 0 ? v > ext : v < ext) ext = v;
       }
       acc[d]! += ext;
@@ -638,7 +638,7 @@ function optBranchAndBound(slots: string[], cands: Record<string, (OptItem | nul
   const concave: boolean[] = new Array(dims);
   for (let d = 0; d < dims; d++) {
     let ok = space.w[d]! >= 0;
-    for (let k = 0; k < n && ok; k++) for (let j = 0; j < lists[k]!.length && ok; j++) if (optVec(lists[k]![j]!, space)[d]! < 0) ok = false;
+    for (let k = 0; k < n && ok; k++) for (let j = 0; j < lists[k]!.length && ok; j++) if (optVec(lists[k]![j] as OptItem | null, space)[d]! < 0) ok = false;
     concave[d] = ok;
   }
   const sparse: number[][][] = lists.map((l) => l.map((it) => {
@@ -688,7 +688,7 @@ function optBranchAndBound(slots: string[], cands: Record<string, (OptItem | nul
   const t0 = Date.now();
   const every = typeof tickEveryMs === "number" && tickEveryMs > 0 ? tickEveryMs : 250;
   let nextTick = t0 + every;
-  const bound = new Array(dims);
+  const bound: number[] = new Array(dims);
   const EPS = 1e-9;
   // Alternatives: keep the best (count + 1) leaves scoring at least cut - tolerance. Pruning then only drops a
   // subtree whose bound is strictly below that threshold, so ties survive. The threshold only ever rises (cut
@@ -706,12 +706,12 @@ function optBranchAndBound(slots: string[], cands: Record<string, (OptItem | nul
         cut = sc;
         improvements++;
         const a: OptAssignment = {};
-        for (let i = 0; i < n; i++) a[order[i]!] = pick[i]!;
+        for (let i = 0; i < n; i++) a[order[i]!] = pick[i] as OptItem | null;
         best = a;
       }
       if (alt && sc >= altThr() - EPS && (altList.length < altMax || sc > altMin + EPS)) {
         const a: OptAssignment = {};
-        for (let i = 0; i < n; i++) a[order[i]!] = pick[i]!;
+        for (let i = 0; i < n; i++) a[order[i]!] = pick[i] as OptItem | null;
         if (altList.length < altMax) altList.push({ a: a, score: sc });
         else { let mi = 0; for (let i = 1; i < altList.length; i++) if (altList[i]!.score < altList[mi]!.score) mi = i; altList[mi] = { a: a, score: sc }; }
         if (altList.length >= altMax) { altMin = Infinity; for (let i = 0; i < altList.length; i++) if (altList[i]!.score < altMin) altMin = altList[i]!.score; }
@@ -727,10 +727,10 @@ function optBranchAndBound(slots: string[], cands: Record<string, (OptItem | nul
     if (pruneAt(optScoreVector(bound, space))) return true;   // subtree cannot beat the incumbent (or reach the alternatives list)
     if (n - k >= 2 && pruneAt(tightBound(k))) return true;     // ... nor under the tighter, item-coupled bound
     const slot = order[k], list = lists[k]!;
-    const twoH = slot === "oneHanded" && k > 0 && order[k - 1] === "twoHanded" && optIsTwoHandedWeapon(pick[k - 1]!);
+    const twoH = slot === "oneHanded" && k > 0 && order[k - 1] === "twoHanded" && optIsTwoHandedWeapon(pick[k - 1] as OptItem | null);
     for (let j = 0; j < list.length; j++) {
       idx[k] = j;
-      const it = list[j]!;
+      const it = list[j] as OptItem | null;
       if (twoH && it !== null) continue;              // a two-handed weapon leaves no free hand
       const v = optVec(it, space);
       for (let d = 0; d < dims; d++) totals[d]! += v[d]!;
@@ -832,7 +832,7 @@ function optimizeSuit(pools: Record<string, OptItem[]>, current: OptAssignment, 
       const want = opts.warmStart[slots[i]!];
       let hit: OptItem | null = null;
       const list = cands[slots[i]!]!;
-      for (let j = 0; j < list.length && want; j++) { const c = list[j]!; if (c && c.serial === want) { hit = c; break; } }
+      for (let j = 0; j < list.length && want; j++) { const c = list[j] as OptItem | null; if (c && c.serial === want) { hit = c; break; } }
       warm[slots[i]!] = hit;
     }
     consider(optSanitize(warm, slots));
