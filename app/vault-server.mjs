@@ -83,11 +83,11 @@ import { statSync } from "node:fs";
 import { Worker } from "node:worker_threads";
 import { unlinkSync } from "node:fs";
 import { randomUUID, timingSafeEqual } from "node:crypto";
-import { runKey, reusableRun, runSummary, stripOpts, normalizeRun } from "./runs-lib.mjs";
+import { runKey, reusableRun, runSummary, stripOpts, normalizeRun } from "./runs-lib.mts";
 import { upgradeScan, validateScan } from "./scan-schema.mts";
 import { loadRules, listRules, DEFAULT_SHARD } from "./rules.mts";
 import { validate } from "./schema/validate.mts";
-import { parseItemQuery, applyItemQuery, facetsOf } from "./item-query.mjs";
+import { parseItemQuery, applyItemQuery, facetsOf } from "./item-query.mts";
 import { DEFAULT_OPTIONAL_SLOTS } from "./mip.mjs";
 import { startWatcher } from "./watcher.mjs";
 import { parsePastedScan, writeScanToInbox } from "./import.mjs";
@@ -292,8 +292,8 @@ export async function startServer(config = ensureLayout(resolveConfig()), { host
   // Every access also (re-)applies the current shard's rules, since a fresh import starts with none loaded.
   let libCache = { mtime: 0, mod: null };
   async function lib() {
-    const mtime = statSync(join(HERE, "vault-lib.mjs")).mtimeMs;
-    if (!libCache.mod || libCache.mtime !== mtime) libCache = { mtime, mod: await import(pathToFileURL(join(HERE, "vault-lib.mjs")).href + "?v=" + mtime) };
+    const mtime = statSync(join(HERE, "vault-lib.mts")).mtimeMs;
+    if (!libCache.mod || libCache.mtime !== mtime) libCache = { mtime, mod: await import(pathToFileURL(join(HERE, "vault-lib.mts")).href + "?v=" + mtime) };
     libCache.mod.setRules(currentRules);
     return libCache.mod;
   }

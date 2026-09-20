@@ -2,7 +2,7 @@
 
 A scan file is a snapshot written by an adapter script running inside a game client — one file per scan, never edited afterward. The server reads every file under `<data>/scans/`, upgrades each to the current shape, validates it, and folds the whole set into one inventory. This document describes schema v2, the v1→v2 upgrade, and the fold rules that turn a pile of snapshots into "what does everyone own right now."
 
-Ground truth: `app/schema/scan.v2.schema.json` (the portable JSON Schema, restricted to the keyword subset `app/schema/validate.mts` supports) and `app/scan-schema.mts` (`SCAN_V2_SCHEMA`, a byte-identical inline copy — `app/scan-schema.test.mts` asserts the two files never drift apart, because `scan-schema.mts` is served straight to the browser and cannot `fs.readFileSync` the JSON file). Fold rules live in `app/vault-lib.mjs`'s `foldSnapshots`.
+Ground truth: `app/schema/scan.v2.schema.json` (the portable JSON Schema, restricted to the keyword subset `app/schema/validate.mts` supports) and `app/scan-schema.mts` (`SCAN_V2_SCHEMA`, a byte-identical inline copy — `app/scan-schema.test.mts` asserts the two files never drift apart, because `scan-schema.mts` is served straight to the browser and cannot `fs.readFileSync` the JSON file). Fold rules live in `app/vault-lib.mts`'s `foldSnapshots`.
 
 ## Top-level fields
 
@@ -78,11 +78,11 @@ Every item in an opened container, not equipped.
 | `amount` | number | Stack size (1 for a non-stackable item). |
 | `name` | string | Display name. |
 | `nameSource` | string, `"opl"` or `"label"` | Whether `name`/`tooltip` came from the full on-paperdoll-line tooltip or just the label — mirrors the adapter's own `capabilities.tooltips`, but per-item, since a specific read can fall back even when the adapter usually gets the full tooltip. |
-| `tooltip` | array of strings | Every tooltip line, raw — `app/vault-lib.mjs`'s `parseTooltip` turns this into properties, tags, and flags. |
+| `tooltip` | array of strings | Every tooltip line, raw — `app/vault-lib.mts`'s `parseTooltip` turns this into properties, tags, and flags. |
 
 ## `equipped`
 
-Every item on the character's paperdoll. Same fields as `items`, plus `layer` (string or `null`) — the equip-layer name (`"OneHanded"`, `"Helmet"`, …), used to classify which optimizer slot the item occupies (`LAYER_TO_SLOT` in `app/vault-lib.mjs`) even when the name alone wouldn't say. `equipped` entries have no `container` field — they aren't in any container.
+Every item on the character's paperdoll. Same fields as `items`, plus `layer` (string or `null`) — the equip-layer name (`"OneHanded"`, `"Helmet"`, …), used to classify which optimizer slot the item occupies (`LAYER_TO_SLOT` in `app/vault-lib.mts`) even when the name alone wouldn't say. `equipped` entries have no `container` field — they aren't in any container.
 
 ## v1 → v2 upgrade
 
@@ -103,7 +103,7 @@ Passing something that is neither v1- nor v2-shaped throws `TypeError`. On the s
 
 ## Fold rules
 
-`foldSnapshots(snapshots)` (`app/vault-lib.mjs`) takes every v2-upgraded, schema-valid scan and produces one inventory. It requires v2 input — call `upgradeScan` first, or it throws.
+`foldSnapshots(snapshots)` (`app/vault-lib.mts`) takes every v2-upgraded, schema-valid scan and produces one inventory. It requires v2 input — call `upgradeScan` first, or it throws.
 
 - **Order.** Every snapshot is a fact about the world at the moment it was taken. Snapshots are sorted by `scannedAt`, parsed to an epoch with `parseStamp` (not a plain string comparison — a v1 scan's original naive-local string and a v2 scan's RFC 3339 string don't necessarily sort correctly against each other as plain strings once time zones are involved, so the fold always compares real instants).
 - **Replace-per-root.** A scan's `roots[]` (excluding any with `opened: false` — see below) names the set of containers this snapshot has fresh information about. Before folding a scan in, the fold deletes every previously-known item and container under any of those roots, then adds back exactly what this scan says is there now. A root not mentioned in a scan at all is left completely alone — the fold only ever touches what a scan actually claims to know about.

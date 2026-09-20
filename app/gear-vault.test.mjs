@@ -1,4 +1,4 @@
-// gear-vault.test.mjs — tests for vault-lib.mjs (parser, classifier, fold, pools) and the optimizer
+// gear-vault.test.mjs — tests for vault-lib.mts (parser, classifier, fold, pools) and the optimizer
 // core through the same loader the server uses. Tags are name prefixes: [smoke] [fast] [slow].
 // Run: node --test app/gear-vault.test.mjs   or   node app/gear-vault.test.mjs
 import { test } from "node:test";
@@ -6,16 +6,16 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { dirname, join } from "node:path";
-import { parseTooltip, classify, foldSnapshots, buildPools, requirementReport, totalsOf, propertyKeys, bagLabel, kindOf, groupByName, slayersOf, medableOf, weaponAllowed, settingsDiff, PROP_LABELS, effectiveProfile, resistSkillBonus, toOptItem, labelOf, builderKeys, migrateProfiles, templateFrom, TEMPLATE_KEYS, setRules, getRules, tagUnits } from "./vault-lib.mjs";
+import { parseTooltip, classify, foldSnapshots, buildPools, requirementReport, totalsOf, propertyKeys, bagLabel, kindOf, groupByName, slayersOf, medableOf, weaponAllowed, settingsDiff, PROP_LABELS, effectiveProfile, resistSkillBonus, toOptItem, labelOf, builderKeys, migrateProfiles, templateFrom, TEMPLATE_KEYS, setRules, getRules, tagUnits } from "./vault-lib.mts";
 import { upgradeScan, TAZUO_V1_CAPS } from "./scan-schema.mts";
-import { runKey, reusableRun, runSummary, normalizeRun } from "./runs-lib.mjs";
+import { runKey, reusableRun, runSummary, normalizeRun } from "./runs-lib.mts";
 import { corePath } from "./config.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const SKIP_SLOW = process.env.TEST_SKIP_SLOW ? "TEST_SKIP_SLOW" : false;
 
 // Every test in this file runs against the UO Alive shard rules — the same rules file the app ships
-// as the default shard (Phase 2, Task 2: shard rules moved out of vault-lib.mjs into app/rules/).
+// as the default shard (Phase 2, Task 2: shard rules moved out of vault-lib.mts into app/rules/).
 setRules(JSON.parse(readFileSync(join(HERE, "rules", "uoalive.json"), "utf8")));
 
 // ---- parser -------------------------------------------------------------------------------

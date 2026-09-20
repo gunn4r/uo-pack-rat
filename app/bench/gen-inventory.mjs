@@ -183,7 +183,7 @@ if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
   const arg = (k, d) => { const i = process.argv.indexOf(`--${k}`); return i > 0 ? process.argv[i + 1] : d; };
   const n = +arg("n", 1000), gearFraction = +arg("gear", 0.3), seed = +arg("seed", 1);
   const out = arg("out", process.env.TMPDIR || "/tmp");
-  const lib = await import(pathToFileURL(join(ROOT, "app", "vault-lib.mjs")).href);
+  const lib = await import(pathToFileURL(join(ROOT, "app", "vault-lib.mts")).href);
   lib.setRules(loadRules(BENCH_SHARD));
   const model = learnModel(readRealSnapshots(), lib);
   const scan = generateScan(model, { n, gearFraction, seed, lib });

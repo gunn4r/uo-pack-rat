@@ -88,7 +88,7 @@ function resolveProfileDef(pname) {
   return null;
 }
 
-const lib = await import(pathToFileURL(join(ROOT, "app", "vault-lib.mjs")).href);
+const lib = await import(pathToFileURL(join(ROOT, "app", "vault-lib.mts")).href);
 lib.setRules(loadRules(BENCH_SHARD));
 // the core's dominance-prune internals are exported too, so the lever can be counted apples to apples
 const CORE_URL = pathToFileURL(corePath()).href;

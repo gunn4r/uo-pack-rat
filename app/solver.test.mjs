@@ -9,8 +9,8 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { dirname, join } from "node:path";
-import { buildPools, effectiveProfile, setRules, foldSnapshots } from "./vault-lib.mjs";
-import * as VaultLib from "./vault-lib.mjs";
+import { buildPools, effectiveProfile, setRules, foldSnapshots } from "./vault-lib.mts";
+import * as VaultLib from "./vault-lib.mts";
 import { upgradeScan } from "./scan-schema.mts";
 import { corePath } from "./config.mjs";
 import { solveExact } from "./exact-solver.mjs";
@@ -18,7 +18,7 @@ import { DEFAULT_SLOTS } from "./mip.mjs";
 import { learnModel, generateScan } from "./bench/gen-inventory.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
-// This file's own vault-lib.mjs import is a separate module instance from the one the server
+// This file's own vault-lib.mts import is a separate module instance from the one the server
 // dynamically re-imports per request — a direct call to a rules-aware function (buildPools,
 // effectiveProfile) needs its own setRules(), same as gear-vault.test.mjs / server.test.mjs.
 setRules(JSON.parse(readFileSync(join(HERE, "rules", "uoalive.json"), "utf8")));

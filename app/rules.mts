@@ -1,6 +1,6 @@
 // rules.mts — loads a shard's rules file (app/rules/<id>.json, or userRulesDir/<id>.json first when
 // given) and validates it against app/schema/rules.v1.schema.json before anything downstream sees
-// it. Node-only (reads files) — never imported by vault-lib.mjs, which only exposes setRules/
+// it. Node-only (reads files) — never imported by vault-lib.mts, which only exposes setRules/
 // getRules. The server calls loadRules() once at startup and again on a PUT /api/settings shard
 // change; the page instead fetches the already-loaded rules object from GET /api/rules.
 import { readFileSync, existsSync, readdirSync } from "node:fs";
