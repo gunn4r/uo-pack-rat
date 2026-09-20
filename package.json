@@ -21,11 +21,13 @@
   },
   "scripts": {
     "build:core": "node scripts/build-core.mjs",
-    "prestart": "node scripts/build-core.mjs",
-    "pretest": "node scripts/build-core.mjs",
-    "predesktop": "node scripts/build-core.mjs",
-    "predist": "node scripts/build-core.mjs",
-    "predist:publish": "node scripts/build-core.mjs",
+    "build:ui": "tsc -p tsconfig.browser.json",
+    "typecheck": "tsc -p tsconfig.json",
+    "prestart": "npm run build:core && npm run build:ui",
+    "pretest": "npm run build:core && npm run build:ui",
+    "predesktop": "npm run build:core && npm run build:ui",
+    "predist": "npm run build:core && npm run build:ui",
+    "predist:publish": "npm run build:core && npm run build:ui",
     "start": "node scripts/start.mjs",
     "desktop": "electron .",
     "dist": "electron-builder --publish never",
@@ -39,9 +41,11 @@
     "highs": "1.15.3"
   },
   "devDependencies": {
+    "@types/node": "24.10.1",
     "electron": "44.4.1",
     "electron-builder": "26.15.3",
-    "playwright": "1.63.0"
+    "playwright": "1.63.0",
+    "typescript": "7.0.2"
   },
   "build": {
     "appId": "com.gunn4r.packrat",

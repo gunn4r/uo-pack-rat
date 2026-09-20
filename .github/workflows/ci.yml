@@ -23,6 +23,8 @@ jobs:
         with:
           python-version: "3.12"
       - run: npm ci
+      - name: Type-check
+        run: npm run typecheck
       - name: Compile every adapter's Python scripts
         # Globs adapters/*/packrat-*.py so a new adapter (adapters/razor-enhanced/ today) is
         # covered automatically -- nothing to edit here when one ships. shell: bash makes the glob

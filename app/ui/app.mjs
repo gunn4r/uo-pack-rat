@@ -16,7 +16,7 @@ import { connectEvents } from "./events.mjs";
 import { openWizard } from "./wizard.mjs";
 import { renderSettings } from "./settings.mjs";
 import { renderImport } from "./import.mjs";
-import { changeShard } from "./shard.mjs";
+import { changeShard } from "./shard.mts";
 
 // ---------------------------------------------------------------- data
 export async function load() {
@@ -95,7 +95,7 @@ function renderShardPicker() {
   for (const o of sel.querySelectorAll("option[selected='null']")) o.removeAttribute("selected");
   sel.onchange = async () => {
     const shard = sel.value;
-    const ok = await changeShard(shard);   // ui/shard.mjs: PUT then reload — same path the wizard's shard step uses
+    const ok = await changeShard(shard);   // ui/shard.mts: PUT then reload — same path the wizard's shard step uses
     if (!ok) sel.value = state.settings.shard;
   };
 }

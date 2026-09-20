@@ -25,7 +25,7 @@ buildCore();
 const walk = (dir) => readdirSync(dir, { withFileTypes: true }).flatMap((e) => {
   const p = join(dir, e.name);
   if (e.isDirectory()) return e.name === "node_modules" || e.name === "dist" || e.name === "fixtures" ? [] : walk(p);
-  return e.name.endsWith(".test.mjs") ? [p] : [];
+  return e.name.endsWith(".test.mjs") || e.name.endsWith(".test.mts") ? [p] : [];
 });
 const files = ["app", "scripts"].flatMap((d) => walk(join(ROOT, d)));
 let total = 0, passed = 0, failed = 0, skipped = 0; const failures = [];

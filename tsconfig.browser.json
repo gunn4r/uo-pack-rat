@@ -1,0 +1,19 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": false,
+    "outDir": "app/dist",
+    "rootDir": "app",
+    "types": [],
+    "lib": ["esnext", "dom", "dom.iterable"]
+  },
+  "include": [
+    "app/ui/**/*",
+    "app/vault-lib.*",
+    "app/item-query.*",
+    "app/scan-schema.*",
+    "app/schema/validate.*",
+    "app/schema/types.d.mts"
+  ],
+  "exclude": ["node_modules", "app/dist", "**/*.test.mjs", "**/*.test.mts"]
+}

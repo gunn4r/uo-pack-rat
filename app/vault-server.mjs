@@ -99,6 +99,11 @@ import { homedir } from "node:os";
 import { resolveConfig, ensureLayout, APP_DIR } from "./config.mjs";
 const HERE = APP_DIR;
 const PACKAGE_JSON = JSON.parse(readFileSync(join(HERE, "..", "package.json"), "utf8"));
+// The page is served from app/dist/, never from the source tree: app/ui/*.mts and the shared
+// modules are TypeScript, which no browser can parse. `npm run build:ui` (tsc -p
+// tsconfig.browser.json) emits a .mjs for each of them here, rewriting every ./x.mts specifier to
+// ./x.mjs on the way out, so the URLs the page fetches are exactly the ones it fetched before.
+const WEB = join(HERE, "dist");
 
 // Global Constraints CSP: no inline/external script beyond same-origin, no framing, no form posts
 // off-page. Applied to every text/html response; every response also gets nosniff.
@@ -469,16 +474,19 @@ export async function startServer(config = ensureLayout(resolveConfig()), { host
         if (!authOk) return send(res, 401, { ok: false, error: "unauthorized" });
       }
       if (req.method === "GET" && url.pathname === "/") return send(res, 200, readFileSync(join(HERE, "index.html"), "utf8"), "text/html");
-      if (req.method === "GET" && url.pathname === "/vault-lib.mjs") return send(res, 200, readFileSync(join(HERE, "vault-lib.mjs"), "utf8"), "text/javascript");
-      if (req.method === "GET" && url.pathname === "/item-query.mjs") return send(res, 200, readFileSync(join(HERE, "item-query.mjs"), "utf8"), "text/javascript");
-      if (req.method === "GET" && url.pathname === "/scan-schema.mjs") return send(res, 200, readFileSync(join(HERE, "scan-schema.mjs"), "utf8"), "text/javascript");
+      if (req.method === "GET" && url.pathname === "/vault-lib.mjs") return send(res, 200, readFileSync(join(WEB, "vault-lib.mjs"), "utf8"), "text/javascript");
+      if (req.method === "GET" && url.pathname === "/item-query.mjs") return send(res, 200, readFileSync(join(WEB, "item-query.mjs"), "utf8"), "text/javascript");
+      if (req.method === "GET" && url.pathname === "/scan-schema.mjs") return send(res, 200, readFileSync(join(WEB, "scan-schema.mjs"), "utf8"), "text/javascript");
       // scan-schema.mjs imports validate() from here — the browser resolves that relative import
       // against scan-schema.mjs's own served URL, so this needs its own static route too.
-      if (req.method === "GET" && url.pathname === "/schema/validate.mjs") return send(res, 200, readFileSync(join(HERE, "schema", "validate.mjs"), "utf8"), "text/javascript");
+      if (req.method === "GET" && url.pathname === "/schema/validate.mjs") return send(res, 200, readFileSync(join(WEB, "schema", "validate.mjs"), "utf8"), "text/javascript");
       if (req.method === "GET" && url.pathname.startsWith("/ui/")) {
         const name = url.pathname.slice("/ui/".length);
         if (!UI_NAME_RE.test(name)) return send(res, 404, { ok: false, error: "not found" });
-        const f = join(HERE, "ui", name);
+        // Modules come from the build (app/dist/ui/), stylesheets from the source tree: tsc emits only
+        // what it compiles, so styles.css never appears in app/dist/. Splitting here keeps one URL space
+        // (/ui/<name>) over two directories rather than adding a copy step to the build.
+        const f = name.endsWith(".css") ? join(HERE, "ui", name) : join(WEB, "ui", name);
         if (!existsSync(f)) return send(res, 404, { ok: false, error: "not found" });
         return send(res, 200, readFileSync(f, "utf8"), name.endsWith(".css") ? "text/css" : "text/javascript");
       }
