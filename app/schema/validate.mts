@@ -1,4 +1,4 @@
-// validate.mjs — a hand-written JSON Schema SUBSET validator. Zero dependencies, browser-safe (no
+// validate.mts — a hand-written JSON Schema SUBSET validator. Zero dependencies, browser-safe (no
 // Node imports), served to the page as well as used from Node tests/servers. Supports exactly the
 // keywords Pack Rat's own contracts need: type (string or array; "integer" is distinct from
 // "number"), properties, required, additionalProperties (boolean only — no schema form), items
@@ -11,7 +11,35 @@
 // collected (a huge invalid document should not turn validation into a second parse pass).
 const MAX_ERRORS = 20;
 
-function typeMatches(value, t) {
+// The runtime keyword subset above, as a type — deliberately its own small shape rather than a
+// reach into scripts/build-schema-types.mts's JsonSchema (that one understands $ref/$defs and
+// additionalProperties-as-schema for TYPE GENERATION; this one is what this file's own `walk`
+// actually interprets at runtime). Every field is optional: a schema specifying none of them
+// matches anything, exactly like the untyped original.
+export interface ValidatorSchema {
+  type?: string | string[];
+  properties?: Record<string, ValidatorSchema>;
+  required?: string[];
+  additionalProperties?: boolean;
+  items?: ValidatorSchema;
+  enum?: unknown[];
+  pattern?: string;
+  minimum?: number;
+  maximum?: number;
+  minLength?: number;
+}
+
+export interface ValidationError {
+  path: string;
+  msg: string;
+}
+
+export interface ValidationResult {
+  ok: boolean;
+  errors: ValidationError[];
+}
+
+function typeMatches(value: unknown, t: string): boolean {
   switch (t) {
     case "integer": return typeof value === "number" && Number.isInteger(value);
     case "number": return typeof value === "number";
@@ -24,7 +52,7 @@ function typeMatches(value, t) {
   }
 }
 
-function walk(schema, value, path, errors) {
+function walk(schema: ValidatorSchema, value: unknown, path: string, errors: ValidationError[]): void {
   if (errors.length >= MAX_ERRORS) return;
   const at = path || "/";
 
@@ -52,23 +80,28 @@ function walk(schema, value, path, errors) {
   }
 
   if (value !== null && typeof value === "object" && !Array.isArray(value)) {
+    // Narrowed to "a plain object", but `value` stays `unknown`-shaped past this point — an
+    // untrusted document's own keys are not known to the type system, so indexing needs a cast.
+    // This does not skip or weaken any check below: `key in obj` and `Object.keys(obj)` are the
+    // same runtime membership tests the untyped version made.
+    const obj = value as Record<string, unknown>;
     if (schema.required) {
       for (const key of schema.required) {
-        if (!(key in value)) errors.push({ path: at, msg: `missing required: ${key}` });
+        if (!(key in obj)) errors.push({ path: at, msg: `missing required: ${key}` });
         if (errors.length >= MAX_ERRORS) return;
       }
     }
     if (schema.properties) {
       for (const [key, sub] of Object.entries(schema.properties)) {
-        if (key in value) {
-          walk(sub, value[key], `${path}/${key}`, errors);
+        if (key in obj) {
+          walk(sub, obj[key], `${path}/${key}`, errors);
           if (errors.length >= MAX_ERRORS) return;
         }
       }
     }
     if (schema.additionalProperties === false) {
       const allowed = new Set(Object.keys(schema.properties || {}));
-      for (const key of Object.keys(value)) {
+      for (const key of Object.keys(obj)) {
         if (!allowed.has(key)) {
           errors.push({ path: `${path}/${key}`, msg: `additional property not allowed: ${key}` });
           if (errors.length >= MAX_ERRORS) return;
@@ -78,15 +111,18 @@ function walk(schema, value, path, errors) {
   }
 
   if (schema.items && Array.isArray(value)) {
-    for (let i = 0; i < value.length; i++) {
-      walk(schema.items, value[i], `${path}/${i}`, errors);
+    // Array.isArray narrows `value` for the condition above but the element type is still whatever
+    // the untrusted document actually holds — read it as unknown[], same reasoning as `obj` above.
+    const arr = value as unknown[];
+    for (let i = 0; i < arr.length; i++) {
+      walk(schema.items, arr[i], `${path}/${i}`, errors);
       if (errors.length >= MAX_ERRORS) return;
     }
   }
 }
 
-export function validate(schema, doc, path = "") {
-  const errors = [];
+export function validate(schema: ValidatorSchema, doc: unknown, path = ""): ValidationResult {
+  const errors: ValidationError[] = [];
   walk(schema, doc, path, errors);
   return { ok: errors.length === 0, errors: errors.slice(0, MAX_ERRORS) };
 }

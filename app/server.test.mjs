@@ -10,11 +10,11 @@ import { createConnection } from "node:net";
 import { resolveConfig, ensureLayout } from "./config.mjs";
 import { startServer } from "./vault-server.mjs";
 import { buildPools, foldSnapshots, setRules } from "./vault-lib.mjs";
-import { upgradeScan, validateScan } from "./scan-schema.mjs";
+import { upgradeScan, validateScan } from "./scan-schema.mts";
 import { DEFAULT_OPTIONAL_SLOTS } from "./mip.mjs";
 import { buildUi } from "../scripts/build-ui.mjs";
 import { buildSchemaTypes } from "../scripts/build-schema-types.mts";
-import { validate } from "./schema/validate.mjs";
+import { validate } from "./schema/validate.mts";
 
 const BRIDGE_SCHEMA = JSON.parse(readFileSync(join(dirname(fileURLToPath(import.meta.url)), "schema", "bridge.v1.schema.json"), "utf8"));
 

@@ -39,7 +39,7 @@
 // so a close() mid-retry cuts the chain short instead of running past it.
 import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync, renameSync, unlinkSync, watch as fsWatch } from "node:fs";
 import { join } from "node:path";
-import { upgradeScan, validateScan } from "./scan-schema.mjs";
+import { upgradeScan, validateScan } from "./scan-schema.mts";
 
 const SCANNED_AT_RE = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.\d+)?([+-]\d{2}:\d{2}|Z)$/;
 

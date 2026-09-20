@@ -7,7 +7,7 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import { parsePastedScan, PASTE_BEGIN, PASTE_END } from "./import.mjs";
-import { upgradeScan, validateScan } from "./scan-schema.mjs";
+import { upgradeScan, validateScan } from "./scan-schema.mts";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const demoKestrel = JSON.parse(readFileSync(join(HERE, "fixtures", "demo-Kestrel.json"), "utf8"));

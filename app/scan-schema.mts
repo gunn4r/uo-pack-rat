@@ -1,13 +1,14 @@
-// scan-schema.mjs — the scan v2 schema, the v1→v2 upgrade-on-read, and epoch-based scan ordering.
+// scan-schema.mts — the scan v2 schema, the v1→v2 upgrade-on-read, and epoch-based scan ordering.
 // Browser-safe: no Node-only imports (no "node:fs"), so it can be served to the page exactly like
 // vault-lib.mjs (which imports parseStamp from here for fold ordering) — see the /scan-schema.mjs
 // static route in vault-server.mjs. Because it must stay fs-free, SCAN_V2_SCHEMA is an inline JS
-// object rather than a read of app/schema/scan.v2.schema.json; scan-schema.test.mjs asserts the two
+// object rather than a read of app/schema/scan.v2.schema.json; scan-schema.test.mts asserts the two
 // stay identical, and app/schema/scan.v2.schema.json is the copy other (non-JS) tooling can read.
-import { validate } from "./schema/validate.mjs";
+import { validate, type ValidationResult } from "./schema/validate.mts";
+import type { ScanV2, ScanV2Adapter, ScanV2AdapterCapabilities } from "./schema/types.d.mts";
 
 // The 20 layer names the v1 scanner (adapters/tazuo/packrat-scanner.py, ALL_LAYERS) walks.
-export const TAZUO_V1_CAPS = {
+export const TAZUO_V1_CAPS: ScanV2AdapterCapabilities = {
   layers: ["OneHanded", "TwoHanded", "Shoes", "Pants", "Shirt", "Helmet", "Gloves",
     "Ring", "Talisman", "Necklace", "Waist", "Torso", "Bracelet", "Tunic",
     "Earrings", "Arms", "Cloak", "Robe", "Skirt", "Legs"],
@@ -108,14 +109,14 @@ export const SCAN_V2_SCHEMA = {
   },
 };
 
-export function validateScan(doc) {
+export function validateScan(doc: unknown): ValidationResult {
   return validate(SCAN_V2_SCHEMA, doc);
 }
 
 // Date.parse already treats a date-time string with no offset as LOCAL time (ECMA-262), and
 // resolves an offset/Z form as absolute — exactly the "naive stamp = local time" rule the v1→v2
 // upgrade below relies on, so no bespoke parsing is needed here.
-export function parseStamp(s) {
+export function parseStamp(s: string): number {
   return Date.parse(s);
 }
 
@@ -125,21 +126,21 @@ const NAIVE_LOCAL_RE = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})$/;
 // packrat-refresh.py / the pre-Task-1 server's localStamp() all wrote) into RFC 3339 using
 // THIS machine's UTC offset at that wall-clock instant (DST-correct: the offset is read off a Date
 // built from the same y/m/d/h/mi/s, not off "now").
-function naiveLocalToRfc3339(stamp) {
+function naiveLocalToRfc3339(stamp: string): string {
   const m = NAIVE_LOCAL_RE.exec(stamp);
   if (!m) throw new TypeError(`upgradeScan: not a naive local scannedAt: ${stamp}`);
-  const [, y, mo, d, h, mi, s] = m;
+  const [, y, mo, d, h, mi, s] = m as unknown as [string, string, string, string, string, string, string];
   const dt = new Date(+y, +mo - 1, +d, +h, +mi, +s);
   const offMin = -dt.getTimezoneOffset();   // minutes EAST of UTC
   const sign = offMin >= 0 ? "+" : "-";
   const abs = Math.abs(offMin);
-  const pad2 = (n) => String(n).padStart(2, "0");
+  const pad2 = (n: number) => String(n).padStart(2, "0");
   return `${y}-${mo}-${d}T${h}:${mi}:${s}${sign}${pad2(Math.floor(abs / 60))}:${pad2(abs % 60)}`;
 }
 
-const num = (v) => (v == null ? v : Number(v));
+const num = (v: unknown): number | null | undefined => (v == null ? v : Number(v));
 
-function tazuoAdapter(character) {
+function tazuoAdapter(character: unknown): ScanV2Adapter {
   return {
     id: String(character ?? "").startsWith("_") ? "app" : "tazuo",
     version: "1", client: "TazUO", clientVersion: null, capabilities: TAZUO_V1_CAPS,
@@ -154,29 +155,38 @@ function tazuoAdapter(character) {
 //            .parent/.root, items[].serial/.container, equipped[].serial) coerced to a number,
 //            and every item/equipped entry gets nameSource:"opl".
 //   neither → throws TypeError.
-export function upgradeScan(raw, { shard } = {}) {
-  if (raw && typeof raw === "object" && raw.schemaVersion === 2) {
-    return { ...raw, shard: raw.shard ?? shard };
+//
+// `raw` is unknown provenance (a file on disk, or a paste from another player) — this function's own
+// `typeof`/property checks are the only thing standing between it and the return, so every read off
+// `raw` past those checks is a cast, not a claim the shape is actually proven. The real gate is
+// validateScan(), which every caller of upgradeScan() also calls (see docs/scan-schema.md) — this
+// function's job is only to normalize a v1 OR v2 shaped document into the v2 shape, matching its
+// pre-TypeScript behavior exactly.
+export function upgradeScan(raw: unknown, { shard }: { shard?: string | null | undefined } = {}): ScanV2 {
+  if (raw && typeof raw === "object" && (raw as Record<string, unknown>).schemaVersion === 2) {
+    const doc = raw as Record<string, unknown>;
+    return { ...doc, shard: doc.shard ?? shard } as ScanV2;
   }
-  if (raw && typeof raw === "object" && raw.version === 1) {
-    const containers = {};
-    for (const [key, c] of Object.entries(raw.containers || {})) {
+  if (raw && typeof raw === "object" && (raw as Record<string, unknown>).version === 1) {
+    const doc = raw as Record<string, unknown>;
+    const containers: Record<string, unknown> = {};
+    for (const [key, c] of Object.entries((doc.containers as Record<string, Record<string, unknown>>) || {})) {
       containers[String(Number(key))] = {
         ...c, serial: num(c.serial), parent: c.parent == null ? null : num(c.parent), root: num(c.root),
       };
     }
-    const roots = (raw.roots || []).map((r) => ({ ...r, serial: num(r.serial), opened: true }));
-    const items = (raw.items || []).map((it) => ({ ...it, serial: num(it.serial), container: num(it.container), nameSource: "opl" }));
-    const equipped = (raw.equipped || []).map((it) => ({ ...it, serial: num(it.serial), nameSource: "opl" }));
-    const { version, ...rest } = raw;
+    const roots = ((doc.roots as Record<string, unknown>[]) || []).map((r) => ({ ...r, serial: num(r.serial), opened: true }));
+    const items = ((doc.items as Record<string, unknown>[]) || []).map((it) => ({ ...it, serial: num(it.serial), container: num(it.container), nameSource: "opl" }));
+    const equipped = ((doc.equipped as Record<string, unknown>[]) || []).map((it) => ({ ...it, serial: num(it.serial), nameSource: "opl" }));
+    const { version, ...rest } = doc;
     return {
       ...rest,
       schemaVersion: 2,
-      scannedAt: naiveLocalToRfc3339(raw.scannedAt),
-      shard: raw.shard ?? shard,
-      adapter: tazuoAdapter(raw.character),
+      scannedAt: naiveLocalToRfc3339(doc.scannedAt as string),
+      shard: doc.shard ?? shard,
+      adapter: tazuoAdapter(doc.character),
       roots, containers, items, equipped,
-    };
+    } as ScanV2;
   }
   throw new TypeError("upgradeScan: document is neither v1 (version: 1) nor v2 (schemaVersion: 2)");
 }

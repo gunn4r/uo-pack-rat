@@ -10,8 +10,8 @@ import { pathToFileURL, fileURLToPath } from "node:url";
 import { tmpdir } from "node:os";
 import highsLoader from "highs";
 import { resolveConfig, corePath } from "../config.mjs";
-import { upgradeScan } from "../scan-schema.mjs";
-import { loadRules } from "../rules.mjs";
+import { upgradeScan } from "../scan-schema.mts";
+import { loadRules } from "../rules.mts";
 
 const APP_DIR = dirname(fileURLToPath(import.meta.url).replace("/bench/", "/"));
 const SCRATCH = join(tmpdir(), "mip-spike");

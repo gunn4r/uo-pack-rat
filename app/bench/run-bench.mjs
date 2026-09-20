@@ -24,8 +24,8 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import { Worker } from "node:worker_threads";
 import { learnModel, generateScan, readRealSnapshots, ROOT, BENCH_SHARD } from "./gen-inventory.mjs";
 import { resolveConfig, corePath } from "../config.mjs";
-import { upgradeScan } from "../scan-schema.mjs";
-import { loadRules } from "../rules.mjs";
+import { upgradeScan } from "../scan-schema.mts";
+import { loadRules } from "../rules.mts";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const argv = process.argv.slice(2);

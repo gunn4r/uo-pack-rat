@@ -13,7 +13,7 @@
 // named by two different rules.
 import { mkdirSync, writeFileSync, renameSync, readdirSync } from "node:fs";
 import { join } from "node:path";
-import { upgradeScan, validateScan } from "./scan-schema.mjs";
+import { upgradeScan, validateScan } from "./scan-schema.mts";
 import { acceptedName } from "./watcher.mjs";
 
 // The web-client scanner wraps its printed JSON in these so a player can select-all the console/chat

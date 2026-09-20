@@ -8,7 +8,7 @@ import { homedir } from "node:os";
 import { join, dirname, resolve } from "node:path";
 import { mkdirSync, existsSync, writeFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
-import { DEFAULT_SHARD } from "./rules.mjs";
+import { DEFAULT_SHARD } from "./rules.mts";
 
 export const APP_DIR = dirname(fileURLToPath(import.meta.url));
 export const ROOT_DIR = dirname(APP_DIR);

@@ -4,15 +4,15 @@
 //
 // Shard rules (property caps, the Resisting Spells resist-bonus formula, race cap overrides, tag-
 // penalty units, the rarity ladder, the gargoyle race-lock policy) live in app/rules/<shard>.json,
-// loaded (Node-only, by app/rules.mjs) and handed in here with setRules() — this module never reads
+// loaded (Node-only, by app/rules.mts) and handed in here with setRules() — this module never reads
 // a rules file itself, so it stays usable in the browser. getRules() throws until setRules() has run:
 // a forgotten call must be loud, not a silent wrong answer.
-import { parseStamp } from "./scan-schema.mjs";
+import { parseStamp } from "./scan-schema.mts";
 
 let RULES = null;
 export function setRules(r) { RULES = r; }
 export function getRules() {
-  if (!RULES) throw new Error("rules not loaded — call setRules() first (see app/rules.mjs)");
+  if (!RULES) throw new Error("rules not loaded — call setRules() first (see app/rules.mts)");
   return RULES;
 }
 

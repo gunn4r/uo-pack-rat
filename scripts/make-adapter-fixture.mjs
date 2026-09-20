@@ -9,7 +9,7 @@
 // from capabilities.json) so the fixture represents what THIS adapter actually emits today, not
 // whatever an older real scan happened to carry. Prints item/container/root counts.
 import { readFileSync, writeFileSync } from "node:fs";
-import { upgradeScan } from "../app/scan-schema.mjs";
+import { upgradeScan } from "../app/scan-schema.mts";
 
 const [, , inPath, outPath] = process.argv;
 if (!inPath || !outPath) {

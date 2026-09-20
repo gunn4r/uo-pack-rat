@@ -18,8 +18,8 @@ import { readFileSync, readdirSync, writeFileSync, mkdirSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { resolveConfig } from "../config.mjs";
-import { upgradeScan } from "../scan-schema.mjs";
-import { loadRules } from "../rules.mjs";
+import { upgradeScan } from "../scan-schema.mts";
+import { loadRules } from "../rules.mts";
 
 // Real scans on disk and the synthetic scans this file generates are both raw v1 (packrat-scanner.py's own
 // shape) — every fold below upgrades to v2 first, since foldSnapshots (Task 1) now requires it and throws otherwise.
