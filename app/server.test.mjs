@@ -13,11 +13,13 @@ import { buildPools, foldSnapshots, setRules } from "./vault-lib.mjs";
 import { upgradeScan, validateScan } from "./scan-schema.mjs";
 import { DEFAULT_OPTIONAL_SLOTS } from "./mip.mjs";
 import { buildCore } from "../scripts/build-core.mjs";
+import { buildUi } from "../scripts/build-ui.mjs";
 import { validate } from "./schema/validate.mjs";
 
 const BRIDGE_SCHEMA = JSON.parse(readFileSync(join(dirname(fileURLToPath(import.meta.url)), "schema", "bridge.v1.schema.json"), "utf8"));
 
 buildCore();   // so a bare `node --test app/server.test.mjs` works on a fresh clone (no pretest hook run)
+buildUi();     // same reason — this file's own route tests fetch /ui/app.mjs and /vault-lib.mjs from app/dist/
 const HERE = dirname(fileURLToPath(import.meta.url));
 // This file's own vault-lib.mjs import is a separate module instance from the one the server
 // dynamically re-imports per request (busted by mtime) — a direct call here to a rules-aware
