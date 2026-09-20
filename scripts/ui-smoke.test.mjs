@@ -44,10 +44,19 @@ test("[slow] the packaged UI renders, switches tabs and lists the demo inventory
     await rows.first().waitFor({ timeout: 30_000 });
     assert.ok(await rows.count() > 0, "demo fixtures should fill the inventory table");
 
-    // Task 2, Phase 6: a fresh --data dir has no settings.json, so no client is configured yet —
-    // the capability-driven bridge controls (Highlight/Grab/Go to) must not render for any row, and
-    // the one-line explanation takes their place instead of a silently missing button.
-    assert.equal(await page.locator("#inv-table .act").count(), 0, "no bridge buttons should render with no client configured");
+    // Task 2, Phase 6 (bug fix, later): a fresh --data dir has no settings.json, so no client is
+    // configured yet, but GET /api/setup's `bridgeAdapter` still resolves to "tazuo" here (this run
+    // uses the repo's real adapters/ dir, and POST /api/bridge itself already falls back to tazuo when
+    // no client is configured) — so app/ui/bridge.mjs's currentAdapter() falls back to it too, and the
+    // real tazuo adapter's full capabilities.bridge means every row gets all three buttons. The note
+    // is a short explanation of that fallback, not a "here's what's missing" message — it still
+    // contains "client", so it isn't asserted more precisely here (see the dedicated fallback-note
+    // check in app/server.test.mjs and app/bridge-adapter-fallback.test.mjs).
+    await page.waitForSelector("#inv-table .act button", { timeout: 10_000 });
+    const fallbackLabels = await page.locator("#inv-table .act button").allInnerTexts();
+    for (const want of ["Highlight", "Grab", "Go to"]) {
+      assert.ok(fallbackLabels.includes(want), `expected a "${want}" button somewhere in the table (bridgeAdapter fallback), got ${JSON.stringify(fallbackLabels)}`);
+    }
     await page.waitForSelector("#inv-bridge-note .bridge-note", { timeout: 10_000 });
     assert.match(await page.locator("#inv-bridge-note .bridge-note").innerText(), /client/i);
 
