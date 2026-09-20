@@ -9,7 +9,7 @@ import { state } from "./store.mjs";
 import { $, el, toast } from "./dom.mjs";
 import { api } from "./api.mjs";
 import { renderSettings } from "./settings.mjs";
-import { changeShard } from "./shard.mjs";
+import { changeShard } from "./shard.mts";
 import { defaultAdapterId, availableAdapters, platformCompatible } from "./adapters.mjs";
 export { defaultAdapterId, availableAdapters, platformCompatible };
 
@@ -121,7 +121,7 @@ function step1() {
   const sel = el("select", {}, ...state.availableShards.map((r) => el("option", { value: r.id, selected: r.id === wiz.shard ? "" : null }, r.name)));
   sel.onchange = async () => {
     const shard = sel.value;
-    // Same path the header picker uses (ui/shard.mjs): PUT then reload the whole page, so the new
+    // Same path the header picker uses (ui/shard.mts): PUT then reload the whole page, so the new
     // shard's rules (caps, rarity, tag units, pools) apply everywhere at once. The old code here only
     // synced the header <select>'s displayed value and re-rendered the wizard itself, leaving
     // state.rules (and the inventory folded under it) on the previous shard until a manual reload —

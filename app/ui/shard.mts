@@ -1,4 +1,4 @@
-// ui/shard.mjs — changeShard(shard): the one place a shard switch is persisted and applied. PUTs
+// ui/shard.mts — changeShard(shard): the one place a shard switch is persisted and applied. PUTs
 // /api/settings then reloads the whole page — the simplest way to re-apply the new shard's rules
 // everywhere (caps, rarity, tag units, pools) at once, since state.rules and everything folded under
 // it (state.inv, the suit builder's pools) live server-side and are only ever (re-)fetched on load().
@@ -11,13 +11,20 @@ import { api } from "./api.mjs";
 
 // Resolves to true on success (the caller can expect the page to be reloading out from under it) or
 // false on failure (already toasted here; the caller should restore its control's displayed value).
-export async function changeShard(shard) {
+export async function changeShard(shard: string): Promise<boolean> {
   try {
-    await api("/api/settings", { method: "PUT", body: { shard } });
+    // api.mjs stays untyped (checkJs is off), so its inferred parameter type doesn't carry `body` —
+    // building the options as a local instead of an inline literal sidesteps the excess-property
+    // check without touching api.mjs, which this task doesn't migrate.
+    const opts = { method: "PUT", body: { shard } };
+    await api("/api/settings", opts);
     location.reload();
     return true;
   } catch (e) {
-    toast(e.message, "bad");
+    // Every throw on this path is a real Error (api.mjs's own errors, and JSON/network failures) —
+    // the instanceof check narrows `e` from strict mode's `unknown` without changing behaviour for
+    // any error this call can actually produce.
+    toast(e instanceof Error ? e.message : String(e), "bad");
     return false;
   }
 }
