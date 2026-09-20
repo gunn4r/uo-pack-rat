@@ -807,14 +807,14 @@ test("[fast] two POST /api/optimize with no X-Client-Id never supersede each oth
 
 // Post-review fix: job failures (not just route-level 500s) now write a ref-keyed entry to the same
 // log file, and the ref reaches the client in the sanitized job.error text. Deterministic trigger:
-// a pools entry with a null item — {helmet: [null]} — makes optimizer-core.ts's optCollectKeys read
+// a pools entry with a null item — {helmet: [null]} — makes optimizer-core.mts's optCollectKeys read
 // `list[j].props` with no null check on list[j] itself (unlike the `|| {}` that guards the *result*
 // of that read) — confirmed by a throwaway probe before writing this test. The route only rejects a
 // falsy `profile`, not a malformed `pools`/`current`, so this reaches the worker uncaught. (An earlier
 // version of this test used a profile with `caps` but no `weights`, which threw in optBuildSpace;
 // Phase 2 Task 5 guarded that spot with `profile.weights || {}`, so this test needed a new trigger —
 // verified RED against the old body once the guard landed, GREEN with this one.) Tied to this specific
-// optimizer-core.ts behavior, out of this task's scope to change; if a future core update guards
+// optimizer-core.mts behavior, out of this task's scope to change; if a future core update guards
 // `list[j]` too, this test would need a different way to provoke a job failure.
 test("[fast] a job that throws inside the optimizer logs its stack with a ref; the client only sees the sanitized ref", async () => {
   const dir = mkdtempSync(join(tmpdir(), "qm-"));

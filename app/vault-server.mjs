@@ -62,7 +62,7 @@
 // Every text/html response carries the Content-Security-Policy below; every response carries
 // x-content-type-options: nosniff. Any PUT/POST whose body is read must declare content-type:
 // application/json, else 415 (readBody()) — the SSE cancel beacon sends no body, so it's exempt.
-// The optimizer is scripts/optimizer-core.ts, built once by scripts/build-core.mjs into
+// The optimizer is scripts/optimizer-core.mts, built once by scripts/build-core.mjs into
 // app/dist/optimizer-core.mjs (config.mjs's paths.core) — one core module, one build, every caller imports it.
 // Localhost security (CONTRIBUTING.md's Security section has the full writeup): every request's
 // Host must name this server and its Origin (if any) must match, or 403; with CONFIG.token set,

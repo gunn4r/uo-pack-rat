@@ -29,7 +29,7 @@ const scannerPath = join(ADAPTER_DIR, "packrat-scanner.ts");
 // character partway through an editing pass, which is itself a syntax error inside a regex literal)
 // shipped undetected until someone happened to run the file by hand. Running it under Node's own
 // TypeScript type-stripping is the cheapest real parse check available (no external compiler
-// dependency, matches how `scripts/build-core.mjs` already treats `scripts/optimizer-core.ts`): the
+// dependency, matches how `scripts/build-core.mjs` already treats `scripts/optimizer-core.mts`): the
 // script always calls `main()` unconditionally at its own end and references sandbox-only ambient
 // globals (`player`, `client`, `log`, `sleep`) that don't exist outside the real client, so it can
 // never exit 0 here — the only question worth asking is WHETHER it failed to run (an ordinary,

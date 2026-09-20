@@ -61,7 +61,7 @@
       "app/**",
       "adapters/**",
       "electron/**",
-      "scripts/optimizer-core.ts",
+      "scripts/optimizer-core.mts",
       "package.json",
       "!**/*.test.mjs",
       "!local/**",
