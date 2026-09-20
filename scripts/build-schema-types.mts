@@ -12,13 +12,17 @@
 // exactly the drift this generator exists to prevent.
 //
 // Understood keywords: type (a string, or an array of strings unioned), enum (a union of literal
-// types), properties, required, additionalProperties (schema form only — becomes an index
-// signature; the boolean form has no type-level meaning under TypeScript's structural typing, so
-// it's consumed but otherwise a no-op), items (single-schema form — tuple form is unsupported),
-// and $ref (local-document only: "#/$defs/<name>" or "#/definitions/<name>", resolved against the
-// document passed to schemaToTypeSource; repeated refs to the same target share one declaration).
-// pattern, minLength, minimum and maximum constrain values, not shapes, so they're consumed and
-// ignored for the same reason the metadata keyword $comment is.
+// types — string/number/boolean/null members only; an enum containing an object or array throws,
+// since JSON.stringify-ing it would emit valid-looking TypeScript that means something else
+// entirely — an open object *shape*, not a literal value), properties, required,
+// additionalProperties (schema form only — becomes an index signature; the boolean form has no
+// type-level meaning under TypeScript's structural typing, so it's consumed but otherwise a
+// no-op), items (single-schema form only — tuple form and the boolean forms are unsupported), and
+// $ref (local-document only: "#/$defs/<name>" or "#/definitions/<name>", resolved against the
+// document passed to schemaToTypeSource; repeated refs to the same target share one declaration; a
+// ref cycle throws instead of recursing forever). pattern, minLength, minimum and maximum
+// constrain values, not shapes, so they're consumed and ignored for the same reason the metadata
+// keyword $comment is.
 //
 // buildSchemaTypes() reads the four schema files and writes app/schema/types.d.mts, only rewriting
 // it when the generated content actually changed. bridge.v1.schema.json is not itself one schema —
@@ -45,7 +49,7 @@ type JsonSchema = {
   properties?: Record<string, JsonSchema>;
   required?: string[];
   additionalProperties?: boolean | JsonSchema;
-  items?: JsonSchema;
+  items?: JsonSchema | JsonSchema[] | boolean;
   pattern?: string;
   minLength?: number;
   minimum?: number;
@@ -61,7 +65,9 @@ type Ctx = {
   readonly namePrefix: string;
   readonly root: JsonSchema;
   readonly decls: Map<string, string>; // name -> body text, in first-seen order
+  readonly declPointers: Map<string, string>; // name -> the JSON pointer that first defined it
   readonly refCache: Map<string, string>; // $ref string -> already-resolved type expression
+  readonly resolvingRefs: Set<string>; // $ref strings currently being resolved, to catch cycles
 };
 
 function isSchemaObject(v: unknown): v is JsonSchema {
@@ -86,11 +92,21 @@ function propertyKey(key: string): string {
   return IDENT_RE.test(key) ? key : JSON.stringify(key);
 }
 
+// Two different schema locations (JSON pointers) that happen to derive the same PascalCase name
+// are a collision even when their shapes happen to match today — the path-to-name mapping is
+// supposed to be injective, and a same-shape merge is only accidentally safe until one side's
+// shape drifts from the other's. So this only tolerates a second registration when it's literally
+// the same pointer being resolved again (the $ref cache already prevents that in practice, but the
+// guard stays defensive rather than assuming its only caller).
 function registerDecl(ctx: Ctx, name: string, body: string, pointer: string): void {
-  const existing = ctx.decls.get(name);
-  if (existing !== undefined && existing !== body) {
-    throw new Error(`type name collision: "${name}" would be generated with two different shapes (last seen at ${pointer})`);
+  const existingPointer = ctx.declPointers.get(name);
+  if (existingPointer !== undefined) {
+    if (existingPointer !== pointer) {
+      throw new Error(`type name collision: "${name}" is generated from two different schema locations (${existingPointer} and ${pointer}) — rename one of the properties so they don't share a generated name`);
+    }
+    return;
   }
+  ctx.declPointers.set(name, pointer);
   ctx.decls.set(name, body);
 }
 
@@ -146,6 +162,7 @@ function resolveOnePrimitive(ctx: Ctx, schema: JsonSchema, t: string, pointer: s
       return "null";
     case "array": {
       if (schema.items === undefined) return "unknown[]";
+      if (typeof schema.items === "boolean") throw unsupported(`items: ${schema.items}`, `${pointer}/items`);
       if (Array.isArray(schema.items)) throw unsupported("items (tuple form)", `${pointer}/items`);
       return arrayItemType(ctx, schema.items, `${pointer}/items`, `${suggestedName}Item`);
     }
@@ -178,11 +195,21 @@ function resolveTypeParts(ctx: Ctx, schema: JsonSchema, pointer: string, suggest
     const cacheKey = schema.$ref;
     const cached = ctx.refCache.get(cacheKey);
     if (cached !== undefined) return cached;
-    const { target, localName } = resolveRefTarget(ctx.root, schema.$ref, pointer);
-    const defsName = `${ctx.namePrefix}${pascalCase(localName)}`;
-    const result = resolveTypeParts(ctx, target, schema.$ref, defsName, false);
-    ctx.refCache.set(cacheKey, result);
-    return result;
+    // A ref that's still being resolved further up the same call stack is a cycle — recursing into
+    // it again would never terminate (a real RangeError, not the promised "throws, naming the
+    // construct and the pointer"). Never try to model the cycle as a recursive TypeScript type;
+    // throwing is the contract this generator keeps for everything it doesn't understand.
+    if (ctx.resolvingRefs.has(cacheKey)) throw unsupported(`$ref cycle: "${cacheKey}" refers back to itself`, pointer);
+    ctx.resolvingRefs.add(cacheKey);
+    try {
+      const { target, localName } = resolveRefTarget(ctx.root, schema.$ref, pointer);
+      const defsName = `${ctx.namePrefix}${pascalCase(localName)}`;
+      const result = resolveTypeParts(ctx, target, schema.$ref, defsName, false);
+      ctx.refCache.set(cacheKey, result);
+      return result;
+    } finally {
+      ctx.resolvingRefs.delete(cacheKey);
+    }
   }
 
   // Everything this generator understands, named up front, so any other keyword — oneOf, anyOf,
@@ -194,6 +221,15 @@ function resolveTypeParts(ctx: Ctx, schema: JsonSchema, pointer: string, suggest
 
   if (schema.enum !== undefined) {
     if (schema.enum.length === 0) throw new Error(`empty "enum" at ${pointer}`);
+    // JSON.stringify-ing an object or array member would emit syntactically valid TypeScript that
+    // means something entirely different from the schema's intent — an open object/array *shape*
+    // (e.g. `{"a":1}` -> `{ a: 1 }`, which matches ANY object with an `a: 1` property) rather than a
+    // literal singleton value. That's exactly the "silently emit something wrong" failure mode this
+    // generator exists to avoid, so only the JSON Schema primitive enum members are allowed here.
+    for (const v of schema.enum) {
+      const t = v === null ? "null" : Array.isArray(v) ? "array" : typeof v;
+      if (t !== "null" && t !== "string" && t !== "number" && t !== "boolean") throw unsupported(`enum member of type ${t}`, pointer);
+    }
     return schema.enum.map((v) => JSON.stringify(v)).join(" | ");
   }
 
@@ -212,7 +248,7 @@ function typeRef(ctx: Ctx, schema: JsonSchema, pointer: string, suggestedName: s
 
 export function schemaToTypeSource(name: string, schema: unknown): string {
   const root = asJsonSchema(schema, "#");
-  const ctx: Ctx = { namePrefix: name, root, decls: new Map(), refCache: new Map() };
+  const ctx: Ctx = { namePrefix: name, root, decls: new Map(), declPointers: new Map(), refCache: new Map(), resolvingRefs: new Set() };
   const body = resolveTypeParts(ctx, root, "#", name, true);
   const blocks = [`export type ${name} = ${body};`];
   for (const [declName, declBody] of ctx.decls) blocks.push(`export type ${declName} = ${declBody};`);
@@ -228,7 +264,7 @@ function asPlainObject(v: unknown, path: string): Record<string, unknown> {
   return v;
 }
 
-export function buildSchemaTypes(): string {
+export function buildSchemaTypes({ out = TYPES_OUT }: { out?: string } = {}): string {
   const files = {
     scan: join(SCHEMA_DIR, "scan.v2.schema.json"),
     bridge: join(SCHEMA_DIR, "bridge.v1.schema.json"),
@@ -250,10 +286,10 @@ export function buildSchemaTypes(): string {
   const sourceList = Object.values(files).map((f) => relative(ROOT, f)).join(", ");
   const content = `// generated from ${sourceList} by scripts/build-schema-types.mts — do not edit\n\n${sections.join("\n")}`;
 
-  mkdirSync(dirname(TYPES_OUT), { recursive: true });
-  if (existsSync(TYPES_OUT) && readFileSync(TYPES_OUT, "utf8") === content) return TYPES_OUT;
-  writeFileSync(TYPES_OUT, content);
-  return TYPES_OUT;
+  mkdirSync(dirname(out), { recursive: true });
+  if (existsSync(out) && readFileSync(out, "utf8") === content) return out;
+  writeFileSync(out, content);
+  return out;
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) console.log(buildSchemaTypes());

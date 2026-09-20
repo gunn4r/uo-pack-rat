@@ -2,7 +2,10 @@
 // Tags are name prefixes: [smoke] [fast] [slow]. Run: node --test scripts/build-schema-types.test.mts
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { schemaToTypeSource } from "./build-schema-types.mts";
+import { mkdtempSync, readFileSync, statSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { schemaToTypeSource, buildSchemaTypes } from "./build-schema-types.mts";
 
 test("[fast] required and optional properties differ", () => {
   const src = schemaToTypeSource("Demo", {
@@ -112,4 +115,81 @@ test("[fast] items given as a tuple (an array of schemas) is unsupported", () =>
 
 test("[fast] a schema with neither type, enum nor $ref throws rather than emitting any", () => {
   assert.throws(() => schemaToTypeSource("Demo", { type: "object", properties: { x: {} } }), /no "type", "enum" or "\$ref"/);
+});
+
+// ---- fix round 1 (task-2-review.md findings #1, #2, #3, #5, #6, #7) ----------------------------
+
+test("[fast] a $ref cycle throws a named error instead of overflowing the stack", () => {
+  assert.throws(
+    () =>
+      schemaToTypeSource("Demo", {
+        type: "object",
+        required: ["a"],
+        properties: { a: { $ref: "#/$defs/A" } },
+        $defs: { A: { type: "object", required: ["self"], properties: { self: { $ref: "#/$defs/A" } } } },
+      }),
+    /\$ref cycle/,
+  );
+});
+
+test("[fast] an enum containing an object throws rather than emitting a wrong-but-valid type", () => {
+  assert.throws(() => schemaToTypeSource("Demo", { type: "object", properties: { x: { enum: [{ a: 1 }] } } }), /enum/);
+});
+
+test("[fast] an enum containing an array throws rather than emitting a wrong-but-valid type", () => {
+  assert.throws(() => schemaToTypeSource("Demo", { type: "object", properties: { x: { enum: [[1, 2]] } } }), /enum/);
+});
+
+test("[fast] an enum of strings/numbers/booleans/null still works (only object/array members are rejected)", () => {
+  const src = schemaToTypeSource("Demo", { type: "object", required: ["x"], properties: { x: { enum: [1, "a", true, null] } } });
+  assert.match(src, /x: 1 \| "a" \| true \| null;/);
+});
+
+test("[fast] items: false throws naming items specifically, not the generic no-type message", () => {
+  assert.throws(
+    () => schemaToTypeSource("Demo", { type: "object", properties: { x: { type: "array", items: false } } }),
+    /items/,
+  );
+});
+
+test("[fast] two different schema locations that derive the same name collide even with identical shapes", () => {
+  // item.x -> DemoItemX, and sibling property itemX -> DemoItemX: same generated name, same shape
+  // ({ serial: number }), but two different JSON pointers — must not merge silently.
+  assert.throws(
+    () =>
+      schemaToTypeSource("Demo", {
+        type: "object",
+        required: ["item", "itemX"],
+        properties: {
+          item: {
+            type: "object",
+            required: ["x"],
+            properties: { x: { type: "object", required: ["serial"], properties: { serial: { type: "number" } } } },
+          },
+          itemX: { type: "object", required: ["serial"], properties: { serial: { type: "number" } } },
+        },
+      }),
+    /collision/,
+  );
+});
+
+test("[fast] buildSchemaTypes against the real four schema files exports the 15 expected type names", () => {
+  const out = join(mkdtempSync(join(tmpdir(), "schema-types-")), "types.d.mts");
+  buildSchemaTypes({ out });
+  const src = readFileSync(out, "utf8");
+  const expected = [
+    "ScanV2", "ScanV2Adapter", "ScanV2AdapterCapabilities", "ScanV2RootsItem", "ScanV2ItemsItem", "ScanV2EquippedItem",
+    "BridgeV1Command", "BridgeV1Result", "BridgeV1Status", "BridgeV1StatusCounts",
+    "RulesV1", "RulesV1ResistSkillBonus", "RulesV1RarityItem", "RulesV1RaceLock",
+    "ProfilesV2",
+  ];
+  for (const name of expected) assert.match(src, new RegExp(`export type ${name} = `), name);
+});
+
+test("[fast] buildSchemaTypes only rewrites the output when its content actually changed", () => {
+  const out = join(mkdtempSync(join(tmpdir(), "schema-types-")), "types.d.mts");
+  buildSchemaTypes({ out });
+  const first = statSync(out).mtimeMs;
+  buildSchemaTypes({ out });
+  assert.equal(statSync(out).mtimeMs, first, "untouched on a no-op rebuild");
 });

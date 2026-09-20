@@ -23,6 +23,7 @@
     "build:types": "node scripts/build-schema-types.mts",
     "build:core": "node scripts/build-core.mjs",
     "build:ui": "node scripts/build-ui.mjs",
+    "pretypecheck": "npm run build:types",
     "typecheck": "tsc -p tsconfig.json",
     "prestart": "npm run build:types && npm run build:core && npm run build:ui",
     "pretest": "npm run build:types && npm run build:core && npm run build:ui",
