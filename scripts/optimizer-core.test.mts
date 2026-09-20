@@ -270,16 +270,9 @@ test("[fast] sample run is inspectable (seed 2026)", (t) => {
 // (unlike caps/floors on the same lines), so a profile that carries caps/floors but no weights key
 // threw instead of scoring everything at weight 0. A profile missing `weights` entirely is a real
 // shape a caller can send (e.g. a hard-floors-only build); it must return a normal result.
-//
-// TYPE NOTE: OptProfile declares `weights` required, but the core's own runtime is deliberately more
-// lenient than that — this is the regression test proving it. The `as unknown as` cast below is at
-// this one call site only (the shapes don't overlap enough for a direct `as`, since `weights` is
-// genuinely absent, not just differently typed), exercising exactly the shape the core is asked to
-// tolerate; it is not a reason to relax OptProfile itself (a wider type change to the core is out of
-// this task's scope).
 test("[fast] optimizeSuit with a profile lacking weights returns a result instead of throwing", () => {
   const { pools, current } = makeWorld(99, 10);
-  const profile = { caps: PROFILE.caps, floors: PROFILE.floors, floorBonus: 1000 } as unknown as Parameters<typeof optimizeSuit>[2];   // no weights key
+  const profile: Parameters<typeof optimizeSuit>[2] = { caps: PROFILE.caps, floors: PROFILE.floors, floorBonus: 1000 };   // no weights — OptProfile declares it optional
   const r = optimizeSuit(pools, current, profile, { seed: 99 });
   assert.ok(optIsValidAssignment(r.best));
   assert.equal(typeof r.score, "number");
