@@ -1,4 +1,4 @@
-// localstorage-shim-for-tests.mjs — a minimal globalThis.localStorage stub, side-effect only (no
+// localstorage-shim-for-tests.mjs — a minimal globalThis.localStorage stub, side-
 // exports). Import statements are hoisted above every other top-level statement in an ES module, so a
 // plain `globalThis.localStorage = ...` line written ABOVE a static `import` in the same file still
 // runs AFTER that import's module graph has already evaluated — too late for app/ui/store.mjs's own

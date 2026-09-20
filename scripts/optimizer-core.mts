@@ -50,7 +50,7 @@ interface OptAssignment {
 // not — the partial term is what gives the hill climber a gradient to follow toward a floor
 // it has not reached yet, while the jump at the floor is what makes reaching it decisive.
 interface OptProfile {
-  weights: Record<string, number>;
+  weights?: Record<string, number> | undefined;   // optional: every read is `profile.weights || {}`
   caps: Record<string, number>;
   floors?: Record<string, number> | undefined;
   floorBonus?: number;
