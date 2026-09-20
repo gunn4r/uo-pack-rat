@@ -8,7 +8,9 @@ import { fileURLToPath } from "node:url";
 import { resolveConfig } from "../app/config.mjs";
 import { buildCore } from "./build-core.mjs";
 import { buildUi } from "./build-ui.mjs";
+import { buildSchemaTypes } from "./build-schema-types.mts";
 
+buildSchemaTypes();   // tsconfig.browser.json includes app/schema/types.d.mts — build it before buildUi()
 buildCore();
 buildUi();
 const ROOT = dirname(dirname(fileURLToPath(import.meta.url)));

@@ -12,10 +12,12 @@ import { dirname, join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 import { buildCore } from "./build-core.mjs";
 import { buildUi } from "./build-ui.mjs";
+import { buildSchemaTypes } from "./build-schema-types.mts";
 
 const ROOT = dirname(dirname(fileURLToPath(import.meta.url)));
 const mode = process.argv.includes("--smoke") ? "smoke" : process.argv.includes("--fast") ? "fast" : "full";
 const patterns = mode === "smoke" ? [/^\[smoke\]/] : mode === "fast" ? [/^\[(smoke|fast)\]/] : undefined;
+buildSchemaTypes();   // tsconfig.browser.json includes app/schema/types.d.mts — build it before buildUi()
 buildCore();
 buildUi();   // app/server.test.mjs's [smoke] cases fetch app/dist/item-query.mjs and the page itself
 
