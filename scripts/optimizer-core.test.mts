@@ -14,36 +14,35 @@
 // None of the cases below use an exact/budgeted search (no `exact: true`, no `timeBudgetMs`) — every
 // one is a cheap heuristic-restart run, so all are tagged [fast].
 //
-// TYPES: the core is loaded by a runtime-computed path (`corePath()`), so TypeScript can't see its
-// actual export types — `core` and everything destructured from it are `any`. The item/pools/current
-// shapes this harness builds ITSELF (`makeWorld` and the inline pools below) are given real local
-// types (mirroring optimizer-core.mts's own `OptItem`, duplicated rather than imported — the core
-// stays import-free and export-free beyond its one trailing export line; see CONTRIBUTING.md).
+// TYPES: `import type * as Core` pulls in the core's export TYPES only — fully erased by type
+// stripping, so it changes nothing at runtime — while the actual value load stays the runtime-computed
+// `await import(pathToFileURL(corePath()).href)` the real path (and PACKRAT_CORE) depends on; casting
+// that value `as typeof Core` gives every destructured function its real signature instead of `any`,
+// so a real arity/shape mistake here is a compile error, not a silent pass. The core exports no type
+// names (only its functions, in one trailing `export { ... }` line — see CONTRIBUTING.md, and it must
+// stay that way), so `OptItem`/`Pools`/`Assignment`/`OptResult` below are derived structurally through
+// `Parameters<>`/`ReturnType<>` on `Core.optimizeSuit` rather than imported or hand-duplicated.
 // ============================================================================
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { pathToFileURL } from "node:url";
 import { corePath } from "../app/config.mjs";
+import type * as Core from "./optimizer-core.mts";
 
-const core = await import(pathToFileURL(corePath()).href);
+const core = (await import(pathToFileURL(corePath()).href)) as typeof Core;
 const { scoreSet, optimizeSuit, optIsValidAssignment, optMulberry32, optDefaultSlots, optAssignmentTotals } = core;
 
 // ---------------------------------------------------------------------------
 // Seeded synthetic data
 // ---------------------------------------------------------------------------
 
-interface OptItem {
-  serial: number;
-  name: string;
-  slot: string;
-  twoHanded?: boolean;
-  props: Record<string, number>;
-}
-type Pools = Record<string, OptItem[]>;
-type Assignment = Record<string, OptItem | null>;
+type Pools = Parameters<typeof Core.optimizeSuit>[0];
+type Assignment = Parameters<typeof Core.optimizeSuit>[1];
+type OptItem = Pools[string][number];
+type OptResult = ReturnType<typeof Core.optimizeSuit>;
 
-const SLOTS: string[] = optDefaultSlots();
+const SLOTS = optDefaultSlots();
 const PROPS = ["physResist", "fireResist", "coldResist", "poisonResist", "energyResist", "hci", "dci", "di", "ssi", "lmc", "stamInc", "hpInc"];
 
 const PROFILE = {
@@ -114,7 +113,7 @@ test("[fast] takes a dominant 2H weapon and empties the oneHanded layer", () => 
   const { pools, current } = makeWorld(9, 12);
   pools.twoHanded!.push({ serial: 999001, name: "Obliterator", slot: "twoHanded", twoHanded: true, props: { di: 100, hci: 45, ssi: 60 } });
   const r = optimizeSuit(pools, current, PROFILE, { seed: 9, restarts: 20 });
-  assert.equal(r.best.twoHanded.name, "Obliterator");
+  assert.equal(r.best.twoHanded!.name, "Obliterator");
   assert.equal(r.best.oneHanded, null);
   assert.ok(optIsValidAssignment(r.best));
 });
@@ -142,8 +141,8 @@ test("[fast] scoreSet (pure) agrees with the search's incremental scoring", () =
 
 // Over-cap points are worth nothing — the property that makes this a set-level problem at all.
 test("[fast] points above a cap contribute zero", () => {
-  const a = [{ serial: 1, name: "a", slot: "helmet", props: { fireResist: 70 } }];
-  const b = [{ serial: 2, name: "b", slot: "helmet", props: { fireResist: 200 } }];
+  const a: OptItem[] = [{ serial: 1, name: "a", slot: "helmet", props: { fireResist: 70 } }];
+  const b: OptItem[] = [{ serial: 2, name: "b", slot: "helmet", props: { fireResist: 200 } }];
   const p = { weights: { fireResist: 1 }, caps: { fireResist: 70 } };
   assert.equal(scoreSet(a, p), scoreSet(b, p));
   assert.equal(scoreSet(a, p), 70);
@@ -152,10 +151,10 @@ test("[fast] points above a cap contribute zero", () => {
 // (3) Determinism: same seed, same everything.
 test("[fast] determinism: same seed => identical result", () => {
   const { pools, current } = makeWorld(31337, 30);
-  const key = (r: any) => JSON.stringify({
+  const key = (r: OptResult) => JSON.stringify({
     score: r.score,
-    picks: SLOTS.map((s: string) => (r.best[s] ? r.best[s].serial : null)),
-    changes: r.perSlotChanges.map((c: any) => `${c.slot}:${c.fromSerial}->${c.toSerial}`),
+    picks: SLOTS.map((s) => { const it = r.best[s]; return it ? it.serial : null; }),
+    changes: r.perSlotChanges.map((c) => `${c.slot}:${c.fromSerial}->${c.toSerial}`),
     totals: r.totals
   });
   const a = optimizeSuit(pools, current, PROFILE, { seed: 12345, restarts: 25 });
@@ -206,8 +205,8 @@ test("[fast] finds the known optimum that requires two individually-inferior pie
 
   // 10 filler slots x di 5 = 50 di, fire 40 + 30 = 70 >= 65.
   const OPTIMUM = 1000 + 0.1 * 70 + 50;
-  assert.equal(r.best.helmet.name, "Fire Crown", `helmet was ${r.best.helmet && r.best.helmet.name}`);
-  assert.equal(r.best.chest.name, "Ember Plate", `chest was ${r.best.chest && r.best.chest.name}`);
+  assert.equal(r.best.helmet!.name, "Fire Crown", `helmet was ${r.best.helmet && r.best.helmet.name}`);
+  assert.equal(r.best.chest!.name, "Ember Plate", `chest was ${r.best.chest && r.best.chest.name}`);
   assert.ok(Math.abs(r.score - OPTIMUM) < 1e-6, `score ${r.score} != optimum ${OPTIMUM}`);
   assert.equal(r.totals.after.fireResist, 70);
   // Per-item greedy really does get stuck on the damage pieces — this is what set-level buys.
@@ -220,7 +219,7 @@ test("[fast] finds the known optimum that requires two individually-inferior pie
 test("[fast] perSlotChanges reports every changed slot with its property delta", () => {
   const { pools, current } = makeWorld(55, 20);
   const r = optimizeSuit(pools, current, PROFILE, { seed: 55, restarts: 20 });
-  const changed = SLOTS.filter((s: string) => {
+  const changed = SLOTS.filter((s) => {
     const f = current[s] || null, t = r.best[s] || null;
     return (f ? f.serial : 0) !== (t ? t.serial : 0);
   });
@@ -263,7 +262,7 @@ test("[fast] sample run is inspectable (seed 2026)", (t) => {
   const fmt = (tot: Record<string, number>) => res.map((k) => `${k.replace("Resist", "")} ${tot[k] || 0}`).join("  ");
   t.diagnostic(`resists before: ${fmt(r.totals.before)}`);
   t.diagnostic(`resists after:  ${fmt(r.totals.after)}`);
-  t.diagnostic(`equipped: ${SLOTS.map((s: string) => `${s}=${r.best[s] ? r.best[s].name : "-"}`).join(", ")}`);
+  t.diagnostic(`equipped: ${SLOTS.map((s) => { const it = r.best[s]; return `${s}=${it ? it.name : "-"}`; }).join(", ")}`);
   assert.ok(optIsValidAssignment(r.best));
 });
 
@@ -271,9 +270,16 @@ test("[fast] sample run is inspectable (seed 2026)", (t) => {
 // (unlike caps/floors on the same lines), so a profile that carries caps/floors but no weights key
 // threw instead of scoring everything at weight 0. A profile missing `weights` entirely is a real
 // shape a caller can send (e.g. a hard-floors-only build); it must return a normal result.
+//
+// TYPE NOTE: OptProfile declares `weights` required, but the core's own runtime is deliberately more
+// lenient than that — this is the regression test proving it. The `as unknown as` cast below is at
+// this one call site only (the shapes don't overlap enough for a direct `as`, since `weights` is
+// genuinely absent, not just differently typed), exercising exactly the shape the core is asked to
+// tolerate; it is not a reason to relax OptProfile itself (a wider type change to the core is out of
+// this task's scope).
 test("[fast] optimizeSuit with a profile lacking weights returns a result instead of throwing", () => {
   const { pools, current } = makeWorld(99, 10);
-  const profile = { caps: PROFILE.caps, floors: PROFILE.floors, floorBonus: 1000 };   // no weights key
+  const profile = { caps: PROFILE.caps, floors: PROFILE.floors, floorBonus: 1000 } as unknown as Parameters<typeof optimizeSuit>[2];   // no weights key
   const r = optimizeSuit(pools, current, profile, { seed: 99 });
   assert.ok(optIsValidAssignment(r.best));
   assert.equal(typeof r.score, "number");
