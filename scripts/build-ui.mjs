@@ -46,7 +46,7 @@ export function buildUi({ tsconfig = TSCONFIG } = {}) {
     // them) — it carries a pre-built app/dist/ instead. Only tolerate a missing compiler when
     // there's already a built page to fall back to; otherwise this must fail loudly rather than
     // serve a stale or absent page with no explanation.
-    // Say so when it happens (the packaged app never calls buildUi() at all — electron/server-entry.mjs
+    // Say so when it happens (the packaged app never calls buildUi() at all — electron/server-entry.mts
     // does no building — so this is always a source checkout): it means the page
     // being served is whatever was last built, not the sources on disk (`npm ci --omit=dev` followed
     // by a branch switch is the way to get here), and that must not pass silently.

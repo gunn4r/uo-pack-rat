@@ -213,7 +213,7 @@ function safeAppendLog(file: string, line: string): void {
 
 // What only a real desktop shell (Electron) can supply to startServer — see the `host` parameter
 // note below. Neither method's argument/return shape is validated by this file (title is read
-// straight off a request body with no check; the caller — electron/server-entry.mjs's own `host`
+// straight off a request body with no check; the caller — electron/server-entry.mts's own `host`
 // object — is the only implementation), so `title` is `unknown`, not `string`, matching the "stays
 // unknown until checked" rule for anything that crosses the HTTP boundary.
 export interface HostBridge {

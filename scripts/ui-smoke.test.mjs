@@ -25,8 +25,8 @@ test("[slow] the packaged UI renders, switches tabs and lists the demo inventory
 
   const { _electron } = await import("playwright");
   const dataDir = mkdtempSync(join(tmpdir(), "packrat-ui-"));
-  // Same shape as shell-smoke.test.mjs's runSmoke: the absolute ROOT (not ".") as args[0] is what
-  // main.mjs expects in dev (process.argv.slice(2) skips the electron binary and this project path),
+  // Same shape as shell-smoke.test.mts's runSmoke: the absolute ROOT (not ".") as args[0] is what
+  // main.mts expects in dev (process.argv.slice(2) skips the electron binary and this project path),
   // and cwd: ROOT keeps that resolution independent of wherever `node --test` was invoked from.
   const app = await _electron.launch({ args: [ROOT, "--demo", "--data", dataDir], cwd: ROOT, timeout: 60_000 });
   try {
@@ -134,7 +134,7 @@ test("[slow] a partial-bridge adapter only offers its declared action, and the n
   }));
   // PACKRAT_ADAPTERS_DIR (the same override app/config.mts/app/server.test.mjs use) points the whole
   // app — main process and the forked server child, which inherits main's process.env — at this
-  // throwaway adapter instead of the repo's real adapters/, without touching electron/main.mjs.
+  // throwaway adapter instead of the repo's real adapters/, without touching electron/main.mts.
   const app = await _electron.launch({
     args: [ROOT, "--demo", "--data", dataDir], cwd: ROOT, timeout: 60_000,
     env: { ...process.env, PACKRAT_ADAPTERS_DIR: adaptersDir },
