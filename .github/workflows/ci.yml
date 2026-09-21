@@ -9,6 +9,8 @@ jobs:
   test:
     name: Test on ${{ matrix.os }}
     runs-on: ${{ matrix.os }}
+    # The whole job takes about three minutes; a hang must fail, not sit for the six-hour default.
+    timeout-minutes: 20
     strategy:
       fail-fast: false
       matrix:
