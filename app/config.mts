@@ -119,10 +119,18 @@ export function resolveConfig(argv: string[] = process.argv.slice(2), env: NodeJ
   };
 }
 
+// 0700/0600 rather than the default 0755/0644 (post-review fix, Minor 12): PRIVACY.md's promise is
+// that a player's inventory never leaves their machine, and on a shared machine another local account
+// could read <data>/scans/, settings.json (which names their game-client folder) and logs/server.log.
+// Only applies at CREATION — an existing directory keeps whatever mode it has — and the mode bits are
+// a no-op on Windows, where Node ignores all but the read-only bit.
+export const DATA_DIR_MODE = 0o700;
+export const DATA_FILE_MODE = 0o600;
+
 export function ensureLayout(config: Config): Config {
-  for (const p of [config.dataDir, config.paths.runs, config.paths.bridge, config.paths.logs]) mkdirSync(p, { recursive: true });
-  if (!config.demo) mkdirSync(config.paths.scans, { recursive: true });
-  mkdirSync(config.paths.inboxFor("tazuo"), { recursive: true });
-  if (!existsSync(config.paths.settings)) writeFileSync(config.paths.settings, JSON.stringify({ schemaVersion: 1, shard: DEFAULT_SHARD }, null, 2) + "\n");
+  for (const p of [config.dataDir, config.paths.runs, config.paths.bridge, config.paths.logs]) mkdirSync(p, { recursive: true, mode: DATA_DIR_MODE });
+  if (!config.demo) mkdirSync(config.paths.scans, { recursive: true, mode: DATA_DIR_MODE });
+  mkdirSync(config.paths.inboxFor("tazuo"), { recursive: true, mode: DATA_DIR_MODE });
+  if (!existsSync(config.paths.settings)) writeFileSync(config.paths.settings, JSON.stringify({ schemaVersion: 1, shard: DEFAULT_SHARD }, null, 2) + "\n", { mode: DATA_FILE_MODE });
   return config;
 }

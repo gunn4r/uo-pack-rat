@@ -1,6 +1,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { join, resolve } from "node:path";
+import { mkdtempSync, statSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { resolveConfig, ensureLayout, corePath } from "./config.mts";
 
 test("[smoke] config: defaults to ~/.pack-rat and port 8765", () => {
@@ -85,4 +87,22 @@ test("[smoke] config: paths.adaptersDir defaults to the repo's adapters/ folder,
   assert.ok(c.paths.adaptersDir.endsWith("adapters"), c.paths.adaptersDir);
   assert.equal(resolveConfig([], { PACKRAT_ADAPTERS_DIR: "/env-adapters" }, "/h").paths.adaptersDir, resolve("/env-adapters"));
   assert.equal(resolveConfig(["--adapters", "/flag-adapters"], { PACKRAT_ADAPTERS_DIR: "/env-adapters" }, "/h").paths.adaptersDir, resolve("/flag-adapters"));
+});
+
+// Phase 7 security review, Minor 12: the data directory and every file in it were created at the
+// process umask's default (0755/0644), so on a shared machine another local account could read
+// <data>/scans/, settings.json (which names the player's game-client folder) and logs/server.log.
+// PRIVACY.md's promise is that this data never leaves the machine; the modes should not be looser
+// than that intent. Windows has no POSIX mode bits, so the assertion is POSIX-only — the mode option
+// itself is a harmless no-op there.
+test("[smoke] config: ensureLayout creates the data dir 0700 and settings.json 0600", { skip: process.platform === "win32" ? "POSIX modes only" : false }, () => {
+  // A SUBDIRECTORY of the temp dir, not the temp dir itself: mkdtempSync already forces 0700 on what
+  // it creates, so testing that would prove nothing about ensureLayout.
+  const dataDir = join(mkdtempSync(join(tmpdir(), "qm-modes-")), "pack-rat");
+  const c = ensureLayout(resolveConfig(["--data", dataDir], {}));
+  assert.equal(statSync(c.dataDir).mode & 0o777, 0o700);
+  assert.equal(statSync(c.paths.runs).mode & 0o777, 0o700);
+  assert.equal(statSync(c.paths.scans).mode & 0o777, 0o700);
+  assert.equal(statSync(c.paths.logs).mode & 0o777, 0o700);
+  assert.equal(statSync(c.paths.settings).mode & 0o777, 0o600);
 });
