@@ -1,8 +1,11 @@
-// installer.mjs — pure functions behind the setup wizard: adapter discovery, client-folder
+// installer.mts — pure functions behind the setup wizard: adapter discovery, client-folder
 // detection, script install/verify, scan import, and a GitHub-releases update check. node:fs and
 // node:path only; the one bit of I/O that isn't the local filesystem (checkForUpdates' HTTP call)
 // takes an injectable fetchImpl so callers (and tests) never depend on a real fetch global.
-import { existsSync, statSync, lstatSync, readdirSync, readFileSync, writeFileSync, copyFileSync, renameSync, unlinkSync, mkdirSync } from "node:fs";
+import {
+  existsSync, statSync, lstatSync, readdirSync, readFileSync, writeFileSync, copyFileSync, renameSync,
+  unlinkSync, mkdirSync, type Dirent, type Stats,
+} from "node:fs";
 import { join, resolve, dirname } from "node:path";
 
 const VERSION_RE = /ADAPTER_VERSION\s*=\s*"([^"]+)"/;
@@ -14,7 +17,9 @@ export const RUNNING_MESSAGE = 'a Pack Rat script is running in the client — t
 // validateScriptsDir (whatever folder the player picked by hand) so a new folder-transport adapter
 // only ever grows this one map instead of both functions separately. A paste-transport adapter (see
 // docs/adapter-guide.md) has no entry here on purpose — it has no scripts folder to find.
-const NESTED_SCRIPTS_SUFFIX = {
+type ScriptsSuffix = string[][];
+
+const NESTED_SCRIPTS_SUFFIX: Record<string, ScriptsSuffix> = {
   tazuo: [["TazUO", "LegionScripts"], ["LegionScripts"]],
   // Razor Enhanced's own official install docs (razorenhanced.net/dokuwiki, "Install & Configure",
   // fetched 2026-09-17) say only "unpack archive in your own folder, run Razor.exe" — there is no
@@ -35,24 +40,34 @@ const NESTED_SCRIPTS_SUFFIX = {
 // (and, on win32, LOCALAPPDATA and the drive root) for each folder-transport adapter. An adapter with
 // no fixed install location (razor-enhanced — see NESTED_SCRIPTS_SUFFIX above) has no entry here on
 // purpose: candidateClientRoots returns [] for it and the manual folder picker is the only path.
-const CANDIDATE_ROOT_NAME = { tazuo: "TazUO" };
+const CANDIDATE_ROOT_NAME: Record<string, string> = { tazuo: "TazUO" };
 
 // ---- listAdapters ---------------------------------------------------------------------------------
 // One entry per adaptersDir subdirectory that ships a capabilities.json (the same test
 // app/contracts.test.mjs uses to find an adapter). name is the README's first Markdown heading text,
 // falling back to the directory name; summary is a short human line built from capabilities.
-export function listAdapters(adaptersDir) {
-  let entries;
+export interface AdapterInfo {
+  id: string;
+  name: string;
+  scripts: string[];
+  capabilities: unknown;
+  transport: "folder" | "paste";
+  platform: string | null;
+  summary: string;
+}
+
+export function listAdapters(adaptersDir: string): AdapterInfo[] {
+  let entries: Dirent[];
   try { entries = readdirSync(adaptersDir, { withFileTypes: true }); }
   catch { return []; }
-  const out = [];
+  const out: AdapterInfo[] = [];
   for (const d of entries.sort((a, b) => a.name.localeCompare(b.name))) {
     if (!d.isDirectory()) continue;
     const dir = join(adaptersDir, d.name);
     const capPath = join(dir, "capabilities.json");
     if (!existsSync(capPath)) continue;
-    let raw;
-    try { raw = JSON.parse(readFileSync(capPath, "utf8")); }
+    let raw: Record<string, unknown>;
+    try { raw = JSON.parse(readFileSync(capPath, "utf8")) as Record<string, unknown>; }
     catch { continue; }
     const capabilities = raw.capabilities || {};
     // "folder" (the adapter writes scripts into a player-chosen client folder) or "paste" (no
@@ -71,7 +86,7 @@ export function listAdapters(adaptersDir) {
     const readmePath = join(dir, "README.md");
     try {
       const m = /^#\s+(.+)$/m.exec(readFileSync(readmePath, "utf8"));
-      if (m) name = m[1].trim();
+      if (m) name = m[1]!.trim();
     } catch { /* no README — fall back to the directory name */ }
     const scripts = scriptNamesIn(dir);
     out.push({ id: d.name, name, scripts, capabilities, transport, platform, summary: summarize(capabilities) });
@@ -79,20 +94,24 @@ export function listAdapters(adaptersDir) {
   return out;
 }
 
-function scriptNamesIn(dir) {
+function scriptNamesIn(dir: string): string[] {
   try { return readdirSync(dir).filter((f) => f.startsWith("packrat-") && f.endsWith(".py")).sort(); }
   catch { return []; }
 }
 
-function summarize(capabilities) {
-  const reads = [];
-  if (capabilities.layers && capabilities.layers.length) reads.push("every layer");
-  if (capabilities.bank) reads.push("bank");
-  if (capabilities.ground) reads.push("ground");
-  if (capabilities.nested) reads.push("nested bags");
-  const bits = [];
+// capabilities is whatever a capabilities.json's own "capabilities" field held (raw.capabilities ||
+// {} above) — never schema-validated, so every read here is a cast describing the existing (unchecked)
+// trust in that file's shape, not a claim it's actually been verified.
+function summarize(capabilities: unknown): string {
+  const caps = capabilities as { layers?: unknown[]; bank?: unknown; ground?: unknown; nested?: unknown; bridge?: unknown[] };
+  const reads: string[] = [];
+  if (caps.layers && caps.layers.length) reads.push("every layer");
+  if (caps.bank) reads.push("bank");
+  if (caps.ground) reads.push("ground");
+  if (caps.nested) reads.push("nested bags");
+  const bits: string[] = [];
   if (reads.length) bits.push(`reads ${reads.join(", ")}`);
-  if (capabilities.bridge && capabilities.bridge.length) bits.push(`bridge: ${capabilities.bridge.join(", ")}`);
+  if (caps.bridge && caps.bridge.length) bits.push(`bridge: ${caps.bridge.join(", ")}`);
   return bits.join("; ");
 }
 
@@ -108,7 +127,20 @@ function summarize(capabilities) {
 // output carries it as `a.platform`) — never a hard-coded adapter id here. A platform-restricted
 // adapter (Razor Enhanced, "win32", today) proposes no candidate on any other platform: a folder
 // that can never exist for this client on this machine. null/omitted means no restriction.
-export function candidateClientRoots({ adapter, home, platform = process.platform, env = process.env, exists = existsSync, adapterPlatform = null } = {}) {
+export interface CandidateClientRootsOptions {
+  adapter: string;
+  home: string;
+  platform?: NodeJS.Platform;
+  env?: NodeJS.ProcessEnv;
+  exists?: (path: string) => boolean;
+  adapterPlatform?: string | null;
+}
+
+export function candidateClientRoots(
+  {
+    adapter, home, platform = process.platform, env = process.env, exists = existsSync, adapterPlatform = null,
+  }: CandidateClientRootsOptions = {} as CandidateClientRootsOptions,   // every real call site supplies adapter/home (see app/installer.test.mts, app/vault-server.mjs); this cast is compiler-only, matching config.mts's rawPort pattern
+): string[] {
   const suffixes = NESTED_SCRIPTS_SUFFIX[adapter];
   if (!suffixes || !home) return [];
   if (adapterPlatform && platform !== adapterPlatform) return [];
@@ -121,10 +153,10 @@ export function candidateClientRoots({ adapter, home, platform = process.platfor
     if (env.LOCALAPPDATA) roots.push(join(env.LOCALAPPDATA, rootName));
     roots.push(`C:\\${rootName}`);
   }
-  const seen = new Set();
-  const out = [];
+  const seen = new Set<string>();
+  const out: string[] = [];
   for (const root of roots) {
-    let hit = null;
+    let hit: string | null = null;
     for (const suffix of suffixes) {
       const p = join(root, ...suffix);
       if (exists(p)) { hit = p; break; }
@@ -139,9 +171,21 @@ export function candidateClientRoots({ adapter, home, platform = process.platfor
 // down from it (NESTED_SCRIPTS_SUFFIX above). adapter with no entry there (a future folder-transport
 // adapter this map hasn't caught up with yet) falls back to tazuo's own shape rather than accepting
 // nothing — the closest guess is better than refusing every folder outright.
-export function validateScriptsDir(dir, adapter) {
+// The `error?: undefined`/`scriptsDir?: undefined` siblings let a caller (see app/installer.test.mts)
+// read either field off the union before narrowing on `ok`, without each read site needing its own
+// narrowing or cast; they carry no runtime meaning of their own.
+export type ValidateScriptsDirResult =
+  | { ok: true; scriptsDir: string; error?: undefined }
+  | { ok: false; error: string; scriptsDir?: undefined };
+
+// dir/adapter cross an HTTP boundary as-is (POST /api/setup/locate's request body — see
+// app/vault-server.mjs), so neither is trusted to already be a string; dir's own shape is checked
+// below before use, exactly as the pre-TypeScript code did, and adapter is only ever used as an object
+// index (a JS index coerces any value to a string key regardless of what TS is told it is here), so
+// the cast at that read site describes the existing behaviour rather than changing it.
+export function validateScriptsDir(dir: unknown, adapter: unknown): ValidateScriptsDirResult {
   if (!dir || typeof dir !== "string") return { ok: false, error: "a folder is required" };
-  const suffixes = NESTED_SCRIPTS_SUFFIX[adapter] || NESTED_SCRIPTS_SUFFIX.tazuo;
+  const suffixes = NESTED_SCRIPTS_SUFFIX[adapter as string] || NESTED_SCRIPTS_SUFFIX.tazuo!;
   // Check the more-specific nested forms first: a picked folder that itself happens to exist (it
   // almost always does — it's a folder the user or a file dialog chose) must not shadow a real
   // scripts folder one or more levels below it.
@@ -158,16 +202,21 @@ export function validateScriptsDir(dir, adapter) {
 // (scriptsDir) and, by GET /api/setup, for the repo's own adapters/<id>/ to report the shipped version.
 // version comes from the scanner script (its name contains "scanner"; falls back to the first script
 // alphabetically so a differently-named future adapter still reports something) when present, else null.
-export function installedVersion(scriptsDir, adapter) {
+export interface InstalledVersionResult {
+  version: string | null;
+  files: Record<string, boolean>;
+}
+
+export function installedVersion(scriptsDir: string, adapter: unknown): InstalledVersionResult {
   const names = scriptNamesIn(scriptsDir);
-  const files = {};
+  const files: Record<string, boolean> = {};
   for (const n of names) files[n] = true;
   const scanner = names.find((n) => n.includes("scanner")) || names[0] || null;
-  let version = null;
+  let version: string | null = null;
   if (scanner) {
     try {
       const m = VERSION_RE.exec(readFileSync(join(scriptsDir, scanner), "utf8"));
-      if (m) version = m[1];
+      if (m) version = m[1]!;
     } catch { /* unreadable — leave null */ }
   }
   void adapter;   // not needed today (script names are adapter-agnostic); kept for interface symmetry
@@ -187,19 +236,22 @@ const FUTURE_SKEW_TOLERANCE_S = 300;
 // about defence in depth against a caller that skips the allowlist check). Missing/unreadable
 // capabilities.json is treated as "folder" (installable) rather than refused: an adapter this
 // permissive about its own metadata is a metadata problem, not evidence it has nothing to install.
-function adapterTransport(srcDir) {
+function adapterTransport(srcDir: string): "folder" | "paste" {
   try {
-    const raw = JSON.parse(readFileSync(join(srcDir, "capabilities.json"), "utf8"));
+    const raw = JSON.parse(readFileSync(join(srcDir, "capabilities.json"), "utf8")) as Record<string, unknown>;
     return raw.transport === "paste" ? "paste" : "folder";
   } catch { return "folder"; }
 }
 
-function bridgeAlive(bridgeStatusPath, now, log = () => {}) {
-  let st;
-  try { st = JSON.parse(readFileSync(bridgeStatusPath, "utf8")); }
+function bridgeAlive(bridgeStatusPath: string, now: number, log: (msg: string) => void = () => {}): boolean {
+  let st: Record<string, unknown>;
+  try { st = JSON.parse(readFileSync(bridgeStatusPath, "utf8")) as Record<string, unknown>; }
   catch { return false; }
   if (st.stopped === true || st.alive == null) return false;
-  const aliveMs = typeof st.alive === "number" ? st.alive * 1000 : Date.parse(st.alive);
+  // st.alive is whatever status.json's own "alive" field held (a Legion-script-written file — see
+  // adapters/tazuo's bridge script) — Date.parse ToStrings a non-string argument regardless of what
+  // TS is told its type is here, so this cast describes the existing (unvalidated) trust, not a change.
+  const aliveMs = typeof st.alive === "number" ? st.alive * 1000 : Date.parse(st.alive as string);
   if (Number.isNaN(aliveMs)) return false;
   const ageS = (now - aliveMs) / 1000;
   if (ageS < -FUTURE_SKEW_TOLERANCE_S) {
@@ -222,7 +274,28 @@ function bridgeAlive(bridgeStatusPath, now, log = () => {}) {
 // the id's shape (path separators and traversal segments like ".." can't match [a-z0-9-]+), then,
 // once srcDir is built, that it actually resolves to a direct child of adaptersDir — catching a case
 // the shape check alone wouldn't (e.g. adaptersDir itself containing a symlink).
-export function installScripts({ adapter, adaptersDir, scriptsDir, dataDir, bridgeStatusPath, now = Date.now, log = () => {} } = {}) {
+export interface InstallScriptsOptions {
+  adapter: unknown;
+  adaptersDir: string;
+  scriptsDir: string;
+  dataDir: string;
+  bridgeStatusPath?: string | undefined;
+  now?: () => number;
+  log?: (msg: string) => void;
+}
+
+// The undefined-typed siblings on each branch let a caller (see app/installer.test.mts) read any field
+// off the union before narrowing on `ok`, without each read site needing its own narrowing or cast;
+// they carry no runtime meaning of their own.
+export type InstallScriptsResult =
+  | { ok: true; installed: string[]; version: string | null; code?: undefined; error?: undefined }
+  | { ok: false; code: "badAdapter" | "noInstall" | "running" | "badDir" | "writeFailed"; error: string; installed?: string[]; version?: undefined };
+
+export function installScripts(
+  {
+    adapter, adaptersDir, scriptsDir, dataDir, bridgeStatusPath, now = Date.now, log = () => {},
+  }: InstallScriptsOptions = {} as InstallScriptsOptions,   // every real call site supplies every required key (see app/installer.test.mts, app/vault-server.mjs); this cast is compiler-only, matching config.mts's rawPort pattern
+): InstallScriptsResult {
   if (typeof adapter !== "string" || !ADAPTER_ID_RE.test(adapter)) {
     return { ok: false, code: "badAdapter", error: `invalid adapter id: ${JSON.stringify(adapter)}` };
   }
@@ -242,7 +315,7 @@ export function installScripts({ adapter, adaptersDir, scriptsDir, dataDir, brid
   if (bridgeStatusPath && bridgeAlive(bridgeStatusPath, now(), log)) {
     return { ok: false, code: "running", error: RUNNING_MESSAGE };
   }
-  let destStat = null;
+  let destStat: Stats | null = null;
   try { destStat = statSync(scriptsDir); } catch { /* missing — badDir below */ }
   if (!destStat || !destStat.isDirectory()) {
     return { ok: false, code: "badDir", error: `not a directory: ${scriptsDir}` };
@@ -253,7 +326,7 @@ export function installScripts({ adapter, adaptersDir, scriptsDir, dataDir, brid
   // Each write is individually guarded: a failure partway through (disk full, permission revoked mid-
   // run) removes its own dangling .new and returns the codes/partial `installed` list the caller can
   // report honestly, instead of an uncaught throw that only surfaces as a generic stack-free 500.
-  const installed = [];
+  const installed: string[] = [];
   for (const name of names) {
     const dest = join(scriptsDir, name);
     const tmp = `${dest}.new`;
@@ -262,7 +335,7 @@ export function installScripts({ adapter, adaptersDir, scriptsDir, dataDir, brid
       renameSync(tmp, dest);
     } catch (e) {
       try { unlinkSync(tmp); } catch { /* never got written, or already gone */ }
-      return { ok: false, code: "writeFailed", error: e.message, installed: [...installed] };
+      return { ok: false, code: "writeFailed", error: (e as Error).message, installed: [...installed] };
     }
     installed.push(name);
   }
@@ -270,18 +343,28 @@ export function installScripts({ adapter, adaptersDir, scriptsDir, dataDir, brid
   try {
     writeFileSync(join(scriptsDir, "packrat-paths.json"), `${JSON.stringify({ dataDir }, null, 1)}\n`);
   } catch (e) {
-    return { ok: false, code: "writeFailed", error: e.message, installed: [...installed] };
+    return { ok: false, code: "writeFailed", error: (e as Error).message, installed: [...installed] };
   }
   return { ok: true, installed, version };
 }
 
 // ---- importScans ----------------------------------------------------------------------------------
-// Copies top-level *.json files from a user-picked folder into an adapter's inbox for app/watcher.mjs
+// Copies top-level *.json files from a user-picked folder into an adapter's inbox for app/watcher.mts
 // to normalise; never touches (moves or deletes) the source. A name already present in inboxDir is
 // left alone and counted as skipped, matching the Global Constraint that import never overwrites.
-export function importScans({ dir, inboxDir }) {
+export interface ImportScansParams {
+  dir: string;
+  inboxDir: string;
+}
+
+export interface ImportScansResult {
+  copied: number;
+  skipped: number;
+}
+
+export function importScans({ dir, inboxDir }: ImportScansParams): ImportScansResult {
   mkdirSync(inboxDir, { recursive: true });
-  let names;
+  let names: string[];
   try { names = readdirSync(dir); } catch { return { copied: 0, skipped: 0 }; }
   let copied = 0, skipped = 0;
   for (const name of names.sort()) {
@@ -306,8 +389,12 @@ export function importScans({ dir, inboxDir }) {
 // | "git+https://github.com/o/n.git" | {url: "..."} all resolve; anything not pointing at github.com,
 // or no repository field at all, is null — GET /api/update-check then reports {configured: false}
 // without ever constructing a URL or calling fetch.
-export function repoFromPackage(pkg) {
-  const repository = pkg && pkg.repository;
+// pkg is package.json content, handed in already-parsed — this function's own ad hoc typeof checks
+// below are the only validation it has ever had; the casts here describe that existing trust level to
+// the compiler, they don't add or remove a check.
+export function repoFromPackage(pkg: unknown): string | null {
+  const doc = pkg as { repository?: unknown } | null | undefined;
+  const repository = doc && (doc.repository as { url?: unknown } | string | null | undefined);
   const raw = typeof repository === "string" ? repository : repository && typeof repository.url === "string" ? repository.url : null;
   if (!raw) return null;
   let m = /^github:([^/]+)\/([^/#]+)/.exec(raw);
@@ -315,7 +402,7 @@ export function repoFromPackage(pkg) {
   return m ? `${m[1]}/${m[2]}` : null;
 }
 
-function compareSemver(a, b) {
+function compareSemver(a: string, b: string): number {
   const pa = String(a || "0").split(".").map((n) => Number.parseInt(n, 10) || 0);
   const pb = String(b || "0").split(".").map((n) => Number.parseInt(n, 10) || 0);
   for (let i = 0; i < 3; i++) {
@@ -325,20 +412,45 @@ function compareSemver(a, b) {
   return 0;
 }
 
-export async function checkForUpdates({ current, repo, fetchImpl = fetch } = {}) {
+// fetchImpl's declared shape is only the bit of Response this function actually reads (status, json())
+// — narrower than the real global fetch's Promise<Response>, so both the real fetch (the default) and
+// a test's plain {status, json} fake satisfy it.
+type FetchLike = (url: string, init?: { headers?: Record<string, string> }) => Promise<{ status: number; json: () => Promise<unknown> }>;
+
+export interface CheckForUpdatesParams {
+  current: string;
+  repo: string | null;
+  fetchImpl?: FetchLike;
+}
+
+// The undefined-typed siblings on each branch let a caller (see app/installer.test.mts) read any field
+// off the union before narrowing on `configured`, without each read site needing its own narrowing or
+// cast; they carry no runtime meaning of their own.
+export type CheckForUpdatesResult =
+  | { configured: false; error?: undefined; current?: undefined; latest?: undefined; url?: undefined; upToDate?: undefined }
+  | { configured: true; error: string; current?: undefined; latest?: undefined; url?: undefined; upToDate?: undefined }
+  | { configured: true; current: string; latest: string; url: string; upToDate: boolean; error?: undefined };
+
+export async function checkForUpdates(
+  { current, repo, fetchImpl = fetch }: CheckForUpdatesParams = {} as CheckForUpdatesParams,   // every real call site supplies current/repo (see app/installer.test.mts, app/vault-server.mjs); this cast is compiler-only, matching config.mts's rawPort pattern
+): Promise<CheckForUpdatesResult> {
   if (!repo) return { configured: false };
-  let res;
+  let res: { status: number; json: () => Promise<unknown> };
   try {
     res = await fetchImpl(`https://api.github.com/repos/${repo}/releases/latest`, {
       headers: { accept: "application/vnd.github+json", "user-agent": "pack-rat" },
     });
   } catch (e) {
-    return { configured: true, error: e.message };
+    return { configured: true, error: (e as Error).message };
   }
   if (!res || res.status !== 200) return { configured: true, error: `GitHub releases/latest returned ${res ? res.status : "no response"}` };
-  let body;
+  let body: unknown;
   try { body = await res.json(); }
-  catch (e) { return { configured: true, error: `invalid release response: ${e.message}` }; }
-  const latest = String(body.tag_name || "").replace(/^v/, "");
-  return { configured: true, current, latest, url: body.html_url, upToDate: compareSemver(current, latest) >= 0 };
+  catch (e) { return { configured: true, error: `invalid release response: ${(e as Error).message}` }; }
+  // body is the parsed JSON of a GitHub releases/latest response — never schema-checked before this
+  // (same unvalidated trust as elsewhere in this file); tag_name is coerced through String() either
+  // way, but html_url is forwarded as-is, exactly like the pre-TypeScript code.
+  const release = body as { tag_name?: string; html_url?: string };
+  const latest = String(release.tag_name || "").replace(/^v/, "");
+  return { configured: true, current, latest, url: release.html_url as string, upToDate: compareSemver(current, latest) >= 0 };
 }

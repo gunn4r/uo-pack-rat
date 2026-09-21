@@ -5,7 +5,7 @@
 
 // Whether `adapter` can run at all on `platform` — driven entirely by the adapter's OWN data
 // (`a.platform`, from `capabilities.json`'s optional top-level `platform` field, surfaced by
-// app/installer.mjs's listAdapters), never by hard-coding an adapter id here. Razor Enhanced sets
+// app/installer.mts's listAdapters), never by hard-coding an adapter id here. Razor Enhanced sets
 // `platform: "win32"` (it's a Windows-only client, per its own README); no other shipped adapter
 // restricts itself, so `a.platform` is null/absent for them and this always returns true. `platform`
 // is GET /api/setup's own `platform` field — the server's `process.platform`, which on this desktop

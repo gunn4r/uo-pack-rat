@@ -112,7 +112,7 @@ export function resolveConfig(argv: string[] = process.argv.slice(2), env: NodeJ
       adaptersDir,
       // inbox: where each adapter drops raw scan files (temp-then-rename) for the watcher to
       // normalise into paths.scans. The per-adapter dead-letter spot a file lands in after it keeps
-      // failing to parse/validate is computed by app/watcher.mjs itself (join(inboxDir, "rejected")),
+      // failing to parse/validate is computed by app/watcher.mts itself (join(inboxDir, "rejected")),
       // not exposed here — nothing outside the watcher needs it.
       inbox, inboxFor: (adapter: string) => join(inbox, adapter),
     },

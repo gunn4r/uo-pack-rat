@@ -390,7 +390,7 @@ test("[fast] close() ends open SSE streams instead of waiting out their keep-ali
   }
 });
 
-// GET /api/events (Task 1, Phase 4): a non-demo server watches inbox/tazuo/ (app/watcher.mjs) and
+// GET /api/events (Task 1, Phase 4): a non-demo server watches inbox/tazuo/ (app/watcher.mts) and
 // streams accept/reject over one shared SSE connection; --demo starts no watcher at all.
 test("[fast] GET /api/events: hello lists the tazuo adapter, and an accepted inbox file streams an inventory event", async () => {
   const dir = mkdtempSync(join(tmpdir(), "qm-events-"));
@@ -427,7 +427,7 @@ test("[fast] GET /api/events: hello lists the tazuo adapter, and an accepted inb
 
 test("[fast] GET /api/events: an invalid inbox file streams a rejected event and lands under rejected/", async () => {
   const dir = mkdtempSync(join(tmpdir(), "qm-events-rej-"));
-  // Fast watcher timing (matches app/watcher.test.mjs's own debounceMs:20/retryDelayMs:20 convention):
+  // Fast watcher timing (matches app/watcher.test.mts's own debounceMs:20/retryDelayMs:20 convention):
   // this waits out a full debounce + retries-1 backoff delays before the reject fires, so leaving the
   // production defaults (300ms/700ms) in only barely clears the SSE read's timeout on a loaded machine.
   const s2 = await startServer(ensureLayout(resolveConfig(["--port", "0", "--data", dir], {})),
@@ -454,7 +454,7 @@ test("[fast] GET /api/events: an invalid inbox file streams a rejected event and
 
 // Post-review fix (Important 1): a log destination that throws on every write (a full disk, or a
 // user deleting logs/ via the Settings tab's own "Open" button — spec §11's own examples) used to
-// crash the whole process, since app/watcher.mjs's ingestFile/enqueue treated `log()` as "never
+// crash the whole process, since app/watcher.mts's ingestFile/enqueue treated `log()` as "never
 // throws". Replacing logs/ with a plain FILE of the same name is the cross-platform way to make
 // every appendFileSync into it fail (ENOTDIR/EEXIST depending on the OS, rather than relying on a
 // chmod that root or Windows can ignore).
@@ -481,7 +481,7 @@ test("[fast] a log destination that throws on every write does not crash the ser
     renameSync(tmpPath, join(inboxDir, "bad.json"));
 
     // Before the fix, the watcher's very first log() call (app/vault-server.mjs's callback into
-    // app/watcher.mjs) threw, leaving the watcher's promise chain rejected with no handler — an
+    // app/watcher.mts) threw, leaving the watcher's promise chain rejected with no handler — an
     // unhandled rejection that took the whole process down well before this event could ever fire,
     // and well before the retries/rejectFile below would ever run.
     const rejBuf = await readUntilOrRescan(sse, (buf) => buf.includes("event: rejected"), s2.url, { timeoutMs: 5000 });
@@ -1097,8 +1097,8 @@ test("[fast] a new scan file changes /api/inventory without a restart", async ()
 });
 
 // ---- Setup wizard (Task 2, Phase 4): GET/POST /api/setup*, POST /api/import, GET /api/update-check,
-// POST /api/host/*, and PUT /api/settings' setupDone/client extension. app/installer.test.mjs covers
-// the pure installer.mjs functions directly; these cover the routes wiring them up.
+// POST /api/host/*, and PUT /api/settings' setupDone/client extension. app/installer.test.mts covers
+// the pure installer.mts functions directly; these cover the routes wiring them up.
 
 test("[fast] GET /api/setup lists the tazuo adapter, its available (repo-shipped) version, and firstRun:true on a fresh data dir", async () => {
   const dir = mkdtempSync(join(tmpdir(), "qm-setup-"));
@@ -1185,7 +1185,7 @@ test("[fast] POST /api/setup/locate resolves a nested .../ClassicUO/Data/Plugins
 // GET /api/setup's {settings.client, adapters} — settings.client names which installed adapter is
 // active, and adapters carries that adapter's own capabilities.bridge list. This is the one route
 // test both facts land in together, so it exercises the real contract the page reads rather than the
-// pure listAdapters()/installer.mjs unit already covered by app/installer.test.mjs. --adapters points
+// pure listAdapters()/installer.mts unit already covered by app/installer.test.mts. --adapters points
 // the whole server at a throwaway folder holding a copy of the real tazuo adapter (full bridge) next
 // to a minimal fixture adapter that declares no bridge at all, standing in for a client like the
 // ClassicUO web adapter that can't run one.
@@ -1656,7 +1656,7 @@ test("[fast] PUT /api/settings {client: {adapter: 5}} is 400 naming client", asy
 // Post-review fix (security, Important finding 1): adapter must be checked against the real,
 // known adapter ids before it can reach a filesystem path — a traversal id like "../../../../tmp/evil"
 // must never let /api/setup/locate or /api/setup/install (or PUT /api/settings' client.adapter) act on
-// an arbitrary directory. installer.test.mjs covers installScripts' own defence-in-depth rejection
+// an arbitrary directory. installer.test.mts covers installScripts' own defence-in-depth rejection
 // directly; these cover the route-level allowlist check in front of it.
 test("[fast] POST /api/setup/locate and POST /api/setup/install reject a traversal/unknown adapter id with 400, writing nothing", async () => {
   const dir = mkdtempSync(join(tmpdir(), "qm-setup-badadapter-"));

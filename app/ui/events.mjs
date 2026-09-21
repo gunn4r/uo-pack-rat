@@ -1,5 +1,5 @@
 // ui/events.mjs — the one shared EventSource("/api/events") for the page's life (Task 3, Phase 4).
-// A non-demo server watches each adapter's inbox (app/watcher.mjs) and broadcasts every scan it
+// A non-demo server watches each adapter's inbox (app/watcher.mts) and broadcasts every scan it
 // accepts or rejects to every connected browser tab; this module is the page's one listener for
 // that stream, so a scan dropped in game shows up here without the user ever touching the reload
 // button. EventSource reconnects on its own (the browser's default behaviour) — no retry logic needed.

@@ -14,7 +14,7 @@ import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import { spawnSync } from "node:child_process";
 import { validateScan } from "./scan-schema.mts";
-import { PASTE_BEGIN, PASTE_END } from "./import.mjs";
+import { PASTE_BEGIN, PASTE_END } from "./import.mts";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const ADAPTER_DIR = join(HERE, "..", "adapters", "classicuo-web");
@@ -86,9 +86,9 @@ test("[fast] classicuo-web: capabilities.json matches the scanner's own CAPABILI
 });
 
 // The paste markers the scanner prints (PASTE_BEGIN/PASTE_END, also regexed straight out of the .ts
-// source) must be byte-identical to the ones app/import.mjs's extractJsonText actually looks for —
+// source) must be byte-identical to the ones app/import.mts's extractJsonText actually looks for —
 // docs/adapter-guide.md and both READMEs document this as a hard requirement ("must match
-// app/import.mjs's PASTE_BEGIN/PASTE_END byte-for-byte", the scanner's own header comment says), but
+// app/import.mts's PASTE_BEGIN/PASTE_END byte-for-byte", the scanner's own header comment says), but
 // nothing enforced it: a typo'd marker in either file would silently break every paste from this
 // adapter (parsePastedScan falls back to treating the whole paste as bare JSON, which still usually
 // fails, but with a confusing "not valid JSON" error instead of pointing at the real cause).
@@ -97,7 +97,7 @@ function extractScannerConst(src, name) {
   assert.ok(m, `packrat-scanner.ts: could not find \`const ${name} = "..."\``);
   return m[1];
 }
-test("[fast] classicuo-web: the scanner's paste markers match app/import.mjs's PASTE_BEGIN/PASTE_END exactly", () => {
+test("[fast] classicuo-web: the scanner's paste markers match app/import.mts's PASTE_BEGIN/PASTE_END exactly", () => {
   assert.equal(extractScannerConst(scannerSrc, "PASTE_BEGIN"), PASTE_BEGIN);
   assert.equal(extractScannerConst(scannerSrc, "PASTE_END"), PASTE_END);
 });

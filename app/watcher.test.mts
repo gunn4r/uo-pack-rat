@@ -1,17 +1,21 @@
-// watcher.test.mjs — app/watcher.mjs: acceptedName's naming rule, ingestFile's normalise-then-move,
+// watcher.test.mts — app/watcher.mts: acceptedName's naming rule, ingestFile's normalise-then-move,
 // and startWatcher's debounce/retry/reject/scanOnce/close behavior against an injected fake `watch`.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, writeFileSync, readFileSync, existsSync, readdirSync, renameSync, chmodSync } from "node:fs";
+import { mkdtempSync, writeFileSync, readFileSync, existsSync, readdirSync, renameSync, chmodSync, type WatchListener } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import { acceptedName, ingestFile, startWatcher } from "./watcher.mjs";
+import {
+  acceptedName, ingestFile, startWatcher,
+  type StartWatcherOnAcceptedInfo, type StartWatcherOnRejectedInfo,
+} from "./watcher.mts";
 import { TAZUO_V1_CAPS } from "./scan-schema.mts";
+import type { ScanV2 } from "./schema/types.d.mts";
 
 const SHARD = "uoalive";
-const tmp = (prefix) => mkdtempSync(join(tmpdir(), prefix));
+const tmp = (prefix: string): string => mkdtempSync(join(tmpdir(), prefix));
 
-function validDoc(overrides = {}) {
+function validDoc(overrides: Partial<ScanV2> = {}): ScanV2 {
   return {
     schemaVersion: 2, character: "Fixture", scannedAt: "2026-01-01T12:00:00+00:00", shard: SHARD,
     adapter: { id: "tazuo", version: "2.0.0", client: "TazUO", clientVersion: null, capabilities: TAZUO_V1_CAPS },
@@ -62,8 +66,8 @@ test("[fast] ingestFile: a valid inbox file lands in scansDir under its accepted
   assert.equal(result.character, "Fixture");
   assert.equal(result.scannedAt, doc.scannedAt);
   assert.equal(result.file, "Fixture-20260101T120000+0000.json");
-  assert.ok(existsSync(join(scansDir, result.file)));
-  assert.equal(JSON.parse(readFileSync(join(scansDir, result.file), "utf8")).character, "Fixture");
+  assert.ok(existsSync(join(scansDir, result.file!)));
+  assert.equal(JSON.parse(readFileSync(join(scansDir, result.file!), "utf8")).character, "Fixture");
   assert.equal(existsSync(src), false);
 });
 
@@ -73,7 +77,7 @@ test("[fast] ingestFile: a schema-invalid doc reports the validation reason and 
   writeFileSync(src, JSON.stringify({ schemaVersion: 2 }));
   const result = ingestFile({ path: src, scansDir, shard: SHARD, log: () => {} });
   assert.equal(result.ok, false);
-  assert.ok(result.reason.length > 0, result.reason);
+  assert.ok(result.reason!.length > 0, result.reason);
   assert.ok(existsSync(src));
   assert.equal(existsSync(scansDir) && readdirSync(scansDir).length > 0, false);
 });
@@ -84,21 +88,29 @@ test("[fast] ingestFile: unparsable JSON reports an 'invalid JSON' reason", () =
   writeFileSync(src, "not json");
   const result = ingestFile({ path: src, scansDir, shard: SHARD, log: () => {} });
   assert.equal(result.ok, false);
-  assert.match(result.reason, /^invalid JSON: /);
+  assert.match(result.reason!, /^invalid JSON: /);
   assert.ok(existsSync(src));
 });
 
 // ---- startWatcher (injected fake `watch`) --------------------------------------------------------
 
-function fakeWatch() {
-  let listener = null;
-  const watch = (_dir, l) => { listener = l; return { close: () => { listener = null; } }; };
+// The call signature matches watcher.mts's own WatchFn (dir, listener) => {close}, reusing node:fs's
+// own WatchListener<string> type for the listener so this is assignable to startWatcher's `watch`
+// option; `fire` itself is test-only, not part of the shape startWatcher expects.
+interface FakeWatch {
+  (dir: string, listener: WatchListener<string>): { close: () => void };
+  fire: WatchListener<string>;
+}
+
+function fakeWatch(): FakeWatch {
+  let listener: WatchListener<string> | null = null;
+  const watch = ((_dir: string, l: WatchListener<string>) => { listener = l; return { close: () => { listener = null; } }; }) as FakeWatch;
   watch.fire = (eventType, filename) => { if (listener) listener(eventType, filename); };
   return watch;
 }
 
-function waitFor(check, { timeoutMs = 1000, stepMs = 10 } = {}) {
-  return new Promise((resolve, reject) => {
+function waitFor(check: () => boolean, { timeoutMs = 1000, stepMs = 10 }: { timeoutMs?: number; stepMs?: number } = {}): Promise<void> {
+  return new Promise<void>((resolve, reject) => {
     const start = Date.now();
     const tick = () => {
       if (check()) return resolve();
@@ -110,7 +122,7 @@ function waitFor(check, { timeoutMs = 1000, stepMs = 10 } = {}) {
 }
 
 // Simulates the adapter contract (temp-then-rename) so the watcher only ever sees the final name.
-function dropFile(dir, name, content) {
+function dropFile(dir: string, name: string, content: string): void {
   const tmpPath = join(dir, `${name}.tmp`);
   writeFileSync(tmpPath, content);
   renameSync(tmpPath, join(dir, name));
@@ -119,7 +131,7 @@ function dropFile(dir, name, content) {
 test("[fast] startWatcher: a dropped valid file is accepted within 1s of the debounced event firing", async () => {
   const inboxDir = tmp("qm-inbox-ok-"), scansDir = tmp("qm-scans-ok-");
   const watch = fakeWatch();
-  const accepted = [];
+  const accepted: StartWatcherOnAcceptedInfo[] = [];
   const handle = startWatcher({
     inboxDir, adapter: "tazuo", scansDir, getShard: () => SHARD, watch,
     onAccepted: (a) => accepted.push(a), debounceMs: 20, retries: 3, retryDelayMs: 20,
@@ -127,15 +139,15 @@ test("[fast] startWatcher: a dropped valid file is accepted within 1s of the deb
   dropFile(inboxDir, "drop.json", JSON.stringify(validDoc()));
   watch.fire("rename", "drop.json");
   await waitFor(() => accepted.length === 1);
-  assert.equal(accepted[0].character, "Fixture");
-  assert.ok(existsSync(join(scansDir, accepted[0].file)));
+  assert.equal(accepted[0]!.character, "Fixture");
+  assert.ok(existsSync(join(scansDir, accepted[0]!.file)));
   handle.close();
 });
 
 test("[fast] startWatcher: a file that never becomes valid is rejected after `retries` attempts, with a .reason.txt, onRejected once", async () => {
   const inboxDir = tmp("qm-inbox-rej-"), scansDir = tmp("qm-scans-rej-");
   const watch = fakeWatch();
-  const rejected = [];
+  const rejected: StartWatcherOnRejectedInfo[] = [];
   const handle = startWatcher({
     inboxDir, adapter: "tazuo", scansDir, getShard: () => SHARD, watch,
     onRejected: (r) => rejected.push(r), debounceMs: 20, retries: 3, retryDelayMs: 20,
@@ -145,7 +157,7 @@ test("[fast] startWatcher: a file that never becomes valid is rejected after `re
   await waitFor(() => rejected.length >= 1, { timeoutMs: 2000 });
   await new Promise((r) => setTimeout(r, 50));   // let anything further settle
   assert.equal(rejected.length, 1);
-  assert.equal(rejected[0].file, "bad.json");
+  assert.equal(rejected[0]!.file, "bad.json");
   assert.ok(existsSync(join(inboxDir, "rejected", "bad.json")));
   assert.ok(existsSync(join(inboxDir, "rejected", "bad.json.reason.txt")));
   assert.match(readFileSync(join(inboxDir, "rejected", "bad.json.reason.txt"), "utf8"), /invalid JSON/);
@@ -156,21 +168,21 @@ test("[fast] startWatcher: scanOnce() ingests a file that was already present, w
   const inboxDir = tmp("qm-inbox-scan-"), scansDir = tmp("qm-scans-scan-");
   writeFileSync(join(inboxDir, "preexisting.json"), JSON.stringify(validDoc({ character: "Preexisting" })));
   const watch = fakeWatch();
-  const accepted = [];
+  const accepted: StartWatcherOnAcceptedInfo[] = [];
   // startWatcher itself runs scanOnce() once at start — no fire() call anywhere in this test.
   const handle = startWatcher({
     inboxDir, adapter: "tazuo", scansDir, getShard: () => SHARD, watch,
     onAccepted: (a) => accepted.push(a), debounceMs: 20, retries: 3, retryDelayMs: 20,
   });
   await waitFor(() => accepted.length === 1);
-  assert.equal(accepted[0].character, "Preexisting");
+  assert.equal(accepted[0]!.character, "Preexisting");
   handle.close();
 });
 
 test("[fast] startWatcher: close() stops processing — a fire() afterward does nothing", async () => {
   const inboxDir = tmp("qm-inbox-close-"), scansDir = tmp("qm-scans-close-");
   const watch = fakeWatch();
-  const accepted = [];
+  const accepted: StartWatcherOnAcceptedInfo[] = [];
   const handle = startWatcher({
     inboxDir, adapter: "tazuo", scansDir, getShard: () => SHARD, watch,
     onAccepted: (a) => accepted.push(a), debounceMs: 20, retries: 3, retryDelayMs: 20,
@@ -190,13 +202,13 @@ test("[fast] startWatcher: getShard is read fresh per ingest, not captured once 
   // ITS ingest, not whatever startWatcher saw when it was first called.
   const inboxDir = tmp("qm-inbox-shard-"), scansDir = tmp("qm-scans-shard-");
   const watch = fakeWatch();
-  const accepted = [];
+  const accepted: StartWatcherOnAcceptedInfo[] = [];
   let shard = "uoalive";
   const handle = startWatcher({
     inboxDir, adapter: "tazuo", scansDir, getShard: () => shard, watch,
     onAccepted: (a) => accepted.push(a), debounceMs: 20, retries: 3, retryDelayMs: 20,
   });
-  const noShardDoc = (character) => { const d = validDoc({ character }); delete d.shard; return d; };
+  const noShardDoc = (character: string) => { const d = validDoc({ character }); delete d.shard; return d; };
 
   dropFile(inboxDir, "first.json", JSON.stringify(noShardDoc("First")));
   watch.fire("rename", "first.json");
@@ -208,8 +220,8 @@ test("[fast] startWatcher: getShard is read fresh per ingest, not captured once 
   watch.fire("rename", "second.json");
   await waitFor(() => accepted.length === 2);
 
-  const firstDoc = JSON.parse(readFileSync(join(scansDir, accepted[0].file), "utf8"));
-  const secondDoc = JSON.parse(readFileSync(join(scansDir, accepted[1].file), "utf8"));
+  const firstDoc = JSON.parse(readFileSync(join(scansDir, accepted[0]!.file), "utf8"));
+  const secondDoc = JSON.parse(readFileSync(join(scansDir, accepted[1]!.file), "utf8"));
   assert.equal(firstDoc.shard, "uoalive");
   assert.equal(secondDoc.shard, "siege");
   handle.close();
@@ -224,7 +236,7 @@ test("[fast] startWatcher: a write failure during accept quarantines the file, o
   const scansDir = join(scansParent, "occupied");
   writeFileSync(scansDir, "not a directory");
   const watch = fakeWatch();
-  const rejected = [];
+  const rejected: StartWatcherOnRejectedInfo[] = [];
   const handle = startWatcher({
     inboxDir, adapter: "tazuo", scansDir, getShard: () => SHARD, watch,
     onRejected: (r) => rejected.push(r), debounceMs: 20, retries: 2, retryDelayMs: 20,
@@ -234,8 +246,8 @@ test("[fast] startWatcher: a write failure during accept quarantines the file, o
   await waitFor(() => rejected.length >= 1, { timeoutMs: 2000 });
   await new Promise((r) => setTimeout(r, 50));   // let anything further settle
   assert.equal(rejected.length, 1);
-  assert.equal(rejected[0].file, "good.json");
-  assert.match(rejected[0].reason, /write failed/);
+  assert.equal(rejected[0]!.file, "good.json");
+  assert.match(rejected[0]!.reason, /write failed/);
   assert.ok(existsSync(join(inboxDir, "rejected", "good.json")));
   assert.match(readFileSync(join(inboxDir, "rejected", "good.json.reason.txt"), "utf8"), /write failed/);
   handle.close();
@@ -257,8 +269,8 @@ test("[fast] startWatcher: an unlink failure after a successful write is still a
   chmodSync(inboxDir, 0o500);   // r-x, no write — unlink of a file inside it now fails
   try {
     const watch = fakeWatch();
-    const accepted = [];
-    const rejected = [];
+    const accepted: StartWatcherOnAcceptedInfo[] = [];
+    const rejected: StartWatcherOnRejectedInfo[] = [];
     const handle = startWatcher({
       inboxDir, adapter: "tazuo", scansDir, getShard: () => SHARD, watch,
       onAccepted: (a) => accepted.push(a), onRejected: (r) => rejected.push(r),
@@ -293,7 +305,7 @@ test("[fast] startWatcher: a real restart re-finding a stuck duplicate inbox fil
   writeFileSync(join(inboxDir, "first.json"), content);
 
   const watch1 = fakeWatch();
-  const accepted1 = [];
+  const accepted1: StartWatcherOnAcceptedInfo[] = [];
   const handle1 = startWatcher({
     inboxDir, adapter: "tazuo", scansDir, getShard: () => SHARD, watch: watch1,
     onAccepted: (a) => accepted1.push(a), debounceMs: 20, retries: 2, retryDelayMs: 20,
@@ -308,7 +320,7 @@ test("[fast] startWatcher: a real restart re-finding a stuck duplicate inbox fil
   // real restart: a brand-new startWatcher with no memory of handle1 at all.
   writeFileSync(join(inboxDir, "second.json"), content);
   const watch2 = fakeWatch();
-  const accepted2 = [];
+  const accepted2: StartWatcherOnAcceptedInfo[] = [];
   const handle2 = startWatcher({
     inboxDir, adapter: "tazuo", scansDir, getShard: () => SHARD, watch: watch2,
     onAccepted: (a) => accepted2.push(a), debounceMs: 20, retries: 2, retryDelayMs: 20,

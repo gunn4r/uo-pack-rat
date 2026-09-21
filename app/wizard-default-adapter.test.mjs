@@ -9,7 +9,7 @@
 // Mac/Linux player to the one adapter that can never work for them; they're still SHOWN it, disabled,
 // with a plain note — see app/ui/wizard.mjs's step2()/app/ui/import.mjs's adapterPicker() — just never
 // silently selected). platformCompatible is driven entirely by the adapter's OWN `platform` field
-// (from capabilities.json, surfaced by app/installer.mjs's listAdapters), never a hard-coded adapter
+// (from capabilities.json, surfaced by app/installer.mts's listAdapters), never a hard-coded adapter
 // id — several cases below build a "razor-enhanced"-id object with no `platform` field specifically to
 // prove that (it must read as compatible everywhere, since nothing here names it a restriction).
 // Lives at the top level of app/ (not app/ui/) because scripts/test-runner.mjs only globs

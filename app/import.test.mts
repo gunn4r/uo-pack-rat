@@ -1,21 +1,22 @@
-// import.test.mjs — app/import.mjs: parsePastedScan's marker-or-bare extraction, JSON/schema
-// rejection, and the v1→v2 upgrade it shares with app/watcher.mjs's ingestFile.
-// Tags: [fast]. Run: node --test app/import.test.mjs
+// import.test.mts — app/import.mts: parsePastedScan's marker-or-bare extraction, JSON/schema
+// rejection, and the v1→v2 upgrade it shares with app/watcher.mts's ingestFile.
+// Tags: [fast]. Run: node --test app/import.test.mts
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
-import { parsePastedScan, PASTE_BEGIN, PASTE_END } from "./import.mjs";
+import { parsePastedScan, PASTE_BEGIN, PASTE_END } from "./import.mts";
 import { upgradeScan, validateScan } from "./scan-schema.mts";
+import type { ScanV2 } from "./schema/types.d.mts";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
-const demoKestrel = JSON.parse(readFileSync(join(HERE, "fixtures", "demo-Kestrel.json"), "utf8"));
+const demoKestrel = JSON.parse(readFileSync(join(HERE, "fixtures", "demo-Kestrel.json"), "utf8")) as ScanV2;
 
 test("[fast] parsePastedScan accepts a bare JSON document", () => {
   const r = parsePastedScan(JSON.stringify(demoKestrel));
   assert.equal(r.ok, true, r.error);
-  assert.equal(r.doc.character, demoKestrel.character);
+  assert.equal(r.doc!.character, demoKestrel.character);
   const v = validateScan(r.doc);
   assert.equal(v.ok, true, JSON.stringify(v.errors));
 });
@@ -31,49 +32,52 @@ test("[fast] parsePastedScan finds the document inside a marked block with log n
   ].join("\n");
   const r = parsePastedScan(pasted);
   assert.equal(r.ok, true, r.error);
-  assert.equal(r.doc.character, demoKestrel.character);
+  assert.equal(r.doc!.character, demoKestrel.character);
 });
 
 test("[fast] parsePastedScan rejects text with no JSON, naming what it looked for", () => {
   const r = parsePastedScan("nothing was copied, just some log lines from the client");
   assert.equal(r.ok, false);
-  assert.match(r.error, /no JSON found/);
-  assert.match(r.error, new RegExp(PASTE_BEGIN.replace(/[-]/g, "\\-")));
+  assert.match(r.error!, /no JSON found/);
+  assert.match(r.error!, new RegExp(PASTE_BEGIN.replace(/[-]/g, "\\-")));
 });
 
 test("[fast] parsePastedScan rejects a document that is valid JSON but not a scan", () => {
   const r = parsePastedScan(JSON.stringify({ hello: "world" }));
   assert.equal(r.ok, false);
-  assert.match(r.error, /neither v1|v2/);
+  assert.match(r.error!, /neither v1|v2/);
 });
 
 test("[fast] parsePastedScan rejects malformed JSON with a parse error, not a schema error", () => {
   const r = parsePastedScan("{not valid json");
   assert.equal(r.ok, false);
-  assert.match(r.error, /JSON/);
+  assert.match(r.error!, /JSON/);
 });
 
 test("[fast] parsePastedScan rejects an empty paste", () => {
   const r = parsePastedScan("   ");
   assert.equal(r.ok, false);
-  assert.match(r.error, /no JSON found/);
+  assert.match(r.error!, /no JSON found/);
 });
 
 test("[fast] parsePastedScan upgrades a v1 document the way the watcher does", () => {
   const r = parsePastedScan(JSON.stringify(demoKestrel));
   assert.equal(r.ok, true, r.error);
-  const expected = upgradeScan(demoKestrel);
-  assert.equal(r.doc.schemaVersion, 2);
-  assert.equal(r.doc.adapter.id, expected.adapter.id);
-  assert.equal(r.doc.scannedAt, expected.scannedAt);
-  assert.deepEqual(r.doc.roots.map((x) => x.opened), expected.roots.map((x) => x.opened));
-  assert.ok(r.doc.roots.every((x) => x.opened === true));
+  const doc = r.doc!;
+  // demoKestrel is a known-good v1 fixture, so upgradeScan's own output here is a real ScanV2 shape —
+  // this test compares it field-by-field against parsePastedScan's, it doesn't re-validate it.
+  const expected = upgradeScan(demoKestrel) as ScanV2;
+  assert.equal(doc.schemaVersion, 2);
+  assert.equal(doc.adapter.id, expected.adapter.id);
+  assert.equal(doc.scannedAt, expected.scannedAt);
+  assert.deepEqual(doc.roots.map((x) => x.opened), expected.roots.map((x) => x.opened));
+  assert.ok(doc.roots.every((x) => x.opened === true));
 });
 
 test("[fast] parsePastedScan: a valid document inside markers still fails schema validation when it's malformed", () => {
   const r = parsePastedScan(`${PASTE_BEGIN}\n${JSON.stringify({ schemaVersion: 2 })}\n${PASTE_END}`);
   assert.equal(r.ok, false);
-  assert.ok(r.error.length > 0, r.error);
+  assert.ok(r.error!.length > 0, r.error);
 });
 
 // Post-review fix: a BEGIN marker with no matching END is the exact shape of a truncated copy (the
@@ -84,8 +88,8 @@ test("[fast] parsePastedScan reports a specific truncated-paste error when BEGIN
   const pasted = [PASTE_BEGIN, JSON.stringify(demoKestrel).slice(0, 50)].join("\n");   // cut off mid-document, no END
   const r = parsePastedScan(pasted);
   assert.equal(r.ok, false);
-  assert.match(r.error, /truncated/);
-  assert.match(r.error, new RegExp(PASTE_END.replace(/[-]/g, "\\-")));
+  assert.match(r.error!, /truncated/);
+  assert.match(r.error!, new RegExp(PASTE_END.replace(/[-]/g, "\\-")));
 });
 
 // adapters/classicuo-web/packrat-scanner.ts's print loop prints the COMPACT (whitespace-free) form of
@@ -98,13 +102,13 @@ test("[fast] parsePastedScan reports a specific truncated-paste error when BEGIN
 test("[fast] parsePastedScan reconstructs a compact scan pasted as newline-joined fixed-size chunks, even split mid-string", () => {
   const compact = JSON.stringify(demoKestrel);
   const chunkSize = 17;   // small and not a divisor of any obviously-aligned field, to force mid-token cuts
-  const chunks = [];
+  const chunks: string[] = [];
   for (let i = 0; i < compact.length; i += chunkSize) chunks.push(compact.slice(i, i + chunkSize));
   assert.ok(chunks.length > 5, "the fixture should be large enough to actually exercise multiple chunks");
   const pasted = [PASTE_BEGIN, ...chunks, PASTE_END].join("\n");
   const r = parsePastedScan(pasted);
   assert.equal(r.ok, true, r.error);
-  assert.equal(r.doc.character, demoKestrel.character);
+  assert.equal(r.doc!.character, demoKestrel.character);
 });
 
 // Re-review follow-up (surrogate-pair chunking): the print loop's chunk boundary can land in the
@@ -140,7 +144,7 @@ test("[fast] parsePastedScan survives a real astral character split across a chu
   // boundary that would split it if chunkEnd() didn't back off.
   const chunkSize = astralAt + 1;
 
-  const chunks = [];
+  const chunks: string[] = [];
   for (let i = 0; i < compact.length;) {
     const end = chunkEnd(compact, i, chunkSize);
     assert.ok(end > i, "chunkEnd() must always make forward progress");
@@ -157,5 +161,5 @@ test("[fast] parsePastedScan survives a real astral character split across a chu
   const pasted = [PASTE_BEGIN, ...chunks, PASTE_END].join("\n");
   const r = parsePastedScan(pasted);
   assert.equal(r.ok, true, r.error);
-  assert.equal(r.doc.character, demoKestrel.character + astral, "the astral character survived the real chunkEnd() split and the real parsePastedScan reconstruction intact");
+  assert.equal(r.doc!.character, demoKestrel.character + astral, "the astral character survived the real chunkEnd() split and the real parsePastedScan reconstruction intact");
 });

@@ -1,4 +1,4 @@
-// installer.test.mjs — app/installer.mjs: adapter discovery, client-folder detection, script
+// installer.test.mts — app/installer.mts: adapter discovery, client-folder detection, script
 // install/verify, scan import, and the GitHub-releases update check. All [fast] — tmp dirs only, no
 // real network (checkForUpdates takes an injected fetchImpl in every test here).
 import { test } from "node:test";
@@ -10,11 +10,11 @@ import { fileURLToPath } from "node:url";
 import {
   listAdapters, candidateClientRoots, validateScriptsDir, installedVersion, installScripts,
   importScans, repoFromPackage, checkForUpdates, RUNNING_MESSAGE,
-} from "./installer.mjs";
+} from "./installer.mts";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const REAL_ADAPTERS_DIR = join(HERE, "..", "adapters");
-const tmp = (prefix) => mkdtempSync(join(tmpdir(), prefix));
+const tmp = (prefix: string): string => mkdtempSync(join(tmpdir(), prefix));
 
 // A fake adaptersDir built by copying the real adapters/tazuo/ folder, so these tests exercise the
 // actual shipped scripts/capabilities/README rather than a hand-built fixture that could drift from them.
@@ -46,10 +46,11 @@ function fakeWebAdapterDir() {
 test("[fast] listAdapters finds tazuo with its three scripts and a summary mentioning grab", () => {
   const adapters = listAdapters(fakeAdaptersDir());
   assert.equal(adapters.length, 1);
-  const [tazuo] = adapters;
+  const tazuo = adapters[0]!;
   assert.equal(tazuo.id, "tazuo");
   assert.deepEqual(tazuo.scripts.sort(), ["packrat-bridge.py", "packrat-refresh.py", "packrat-scanner.py"]);
-  assert.ok(tazuo.capabilities && tazuo.capabilities.bank, JSON.stringify(tazuo.capabilities));
+  const tazuoCaps = tazuo.capabilities as { bank?: unknown };
+  assert.ok(tazuoCaps && tazuoCaps.bank, JSON.stringify(tazuo.capabilities));
   assert.match(tazuo.summary, /grab/);
   assert.equal(typeof tazuo.name, "string");
   assert.ok(tazuo.name.length > 0);
@@ -66,13 +67,13 @@ test("[fast] listAdapters surfaces razor-enhanced's platform:\"win32\" from its 
   assert.ok(razor, JSON.stringify(adapters.map((a) => a.id)));
   assert.equal(razor.platform, "win32");
   const tazuo = adapters.find((a) => a.id === "tazuo");
-  assert.equal(tazuo.platform, null);
+  assert.equal(tazuo!.platform, null);
 });
 
 test("[fast] listAdapters reports transport:\"paste\" and no scripts for the classicuo-web adapter", () => {
   const adapters = listAdapters(fakeWebAdapterDir());
   assert.equal(adapters.length, 1);
-  const [web] = adapters;
+  const web = adapters[0]!;
   assert.equal(web.id, "classicuo-web");
   assert.equal(web.transport, "paste");
   assert.deepEqual(web.scripts, [], "a paste-transport adapter ships no packrat-*.py scripts to install");
@@ -92,7 +93,7 @@ test("[fast] candidateClientRoots returns only qualifying dirs, in order, dedupe
   const home = "/Users/example";
   const desktop = join(home, "Desktop", "TazUO", "LegionScripts");
   const documents = join(home, "Documents", "TazUO", "TazUO", "LegionScripts");
-  const exists = (p) => p === desktop || p === documents;
+  const exists = (p: string) => p === desktop || p === documents;
   const out = candidateClientRoots({ adapter: "tazuo", home, platform: "darwin", env: {}, exists });
   assert.deepEqual(out, [desktop, documents]);
 });
@@ -101,7 +102,7 @@ test("[fast] candidateClientRoots reports one hit per root even when both its ne
   const home = "/h";
   const nested = join(home, "Desktop", "TazUO", "TazUO", "LegionScripts");
   const direct = join(home, "Desktop", "TazUO", "LegionScripts");
-  const exists = (p) => p === nested || p === direct;   // both qualify for the same root
+  const exists = (p: string) => p === nested || p === direct;   // both qualify for the same root
   const out = candidateClientRoots({ adapter: "tazuo", home, platform: "darwin", env: {}, exists });
   assert.deepEqual(out, [nested], "the nested (real-world) layout wins over the direct one for the same root, with no duplicate entry");
 });
@@ -111,7 +112,7 @@ test("[fast] candidateClientRoots adds LOCALAPPDATA and C:\\TazUO on win32", () 
   const localAppData = "C:\\Users\\example\\AppData\\Local";
   const winLegion = join(`${localAppData}/TazUO`, "LegionScripts");
   const cRootLegion = join("C:\\TazUO", "LegionScripts");
-  const exists = (p) => p === winLegion || p === cRootLegion;
+  const exists = (p: string) => p === winLegion || p === cRootLegion;
   const out = candidateClientRoots({ adapter: "tazuo", home, platform: "win32", env: { LOCALAPPDATA: localAppData }, exists });
   assert.deepEqual(out, [winLegion, cRootLegion]);
 });
@@ -122,14 +123,14 @@ test("[fast] candidateClientRoots returns [] for an unknown adapter or a missing
 });
 
 // Razor Enhanced has no fixed install location (its own official docs say only "unpack in your own
-// folder, run Razor.exe" — see app/installer.mjs's NESTED_SCRIPTS_SUFFIX comment), so unlike tazuo it
+// folder, run Razor.exe" — see app/installer.mts's NESTED_SCRIPTS_SUFFIX comment), so unlike tazuo it
 // has no entry in CANDIDATE_ROOT_NAME and candidateClientRoots must propose nothing for it — on any
 // platform, even win32, and even when a folder that would match one of its NESTED_SCRIPTS_SUFFIX
 // shapes actually exists. The manual folder picker (validateScriptsDir, below) is the only path.
 test("[fast] candidateClientRoots proposes nothing for razor-enhanced (no known install location), on any platform", () => {
   const home = "C:\\Users\\example";
   const scripts = join(home, "Desktop", "CUOLauncher", "Razor", "Scripts");
-  const exists = (p) => p === scripts;
+  const exists = (p: string) => p === scripts;
   const win = candidateClientRoots({ adapter: "razor-enhanced", home, platform: "win32", env: {}, exists });
   assert.deepEqual(win, [], "no well-known root name to guess at, even on win32");
   const mac = candidateClientRoots({ adapter: "razor-enhanced", home, platform: "darwin", env: {}, exists });
@@ -146,7 +147,7 @@ test("[fast] candidateClientRoots proposes nothing for razor-enhanced (no known 
 test("[fast] candidateClientRoots gates on the adapterPlatform param, not a hard-coded adapter id", () => {
   const home = "/Users/example";
   const legionScripts = join(home, "Desktop", "TazUO", "LegionScripts");
-  const exists = (p) => p === legionScripts;
+  const exists = (p: string) => p === legionScripts;
   // tazuo has a real candidate here — but a caller-supplied adapterPlatform mismatching the current
   // platform must still suppress it, exactly the way it would for a real platform-restricted adapter.
   const blocked = candidateClientRoots({ adapter: "tazuo", home, platform: "darwin", env: {}, exists, adapterPlatform: "win32" });
@@ -206,7 +207,7 @@ test("[fast] installedVersion reads 2.0.0 after an install and null before", () 
 
 // ---- installScripts -----------------------------------------------------------------------------------
 
-function statusPath(dir) { return join(dir, "status.json"); }
+function statusPath(dir: string): string { return join(dir, "status.json"); }
 
 test("[fast] installScripts refuses with code: \"running\" when status.json is alive within 30s and not stopped", () => {
   const bridgeDir = tmp("qm-is-running-");
@@ -430,7 +431,7 @@ test("[fast] checkForUpdates: configured false with no repo (no fetchImpl call n
 });
 
 test("[fast] checkForUpdates: upToDate true when current >= latest, and carries the release html_url", async () => {
-  const fetchImpl = async (url) => {
+  const fetchImpl = async (url: string) => {
     assert.match(url, /^https:\/\/api\.github\.com\/repos\/owner\/name\/releases\/latest$/);
     return { status: 200, json: async () => ({ tag_name: "v0.1.0", html_url: "https://github.com/owner/name/releases/tag/v0.1.0" }) };
   };
