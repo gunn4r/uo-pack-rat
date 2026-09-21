@@ -5,14 +5,14 @@ import { spawn } from "node:child_process";
 import { createServer } from "node:net";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { resolveConfig } from "../app/config.mjs";
+import { resolveConfig } from "../app/config.mts";
 import { buildUi } from "./build-ui.mjs";
 import { buildSchemaTypes } from "./build-schema-types.mts";
 
 // Build the schema types before buildUi() — this call, not tsconfig.browser.json's `include` (a
 // missing literal entry there is silently dropped, not an error), is what actually guarantees
 // app/schema/types.d.mts exists before anything imports from it. The optimizer core needs no build
-// step — every caller imports scripts/optimizer-core.mts straight from source (config.mjs's
+// step — every caller imports scripts/optimizer-core.mts straight from source (config.mts's
 // corePath()/paths.core; PACKRAT_CORE overrides it).
 buildSchemaTypes();
 buildUi();

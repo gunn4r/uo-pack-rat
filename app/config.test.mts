@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { join, resolve } from "node:path";
-import { resolveConfig, ensureLayout, corePath } from "./config.mjs";
+import { resolveConfig, ensureLayout, corePath } from "./config.mts";
 
 test("[smoke] config: defaults to ~/.pack-rat and port 8765", () => {
   const c = resolveConfig([], {}, "/home/x");
@@ -41,7 +41,7 @@ test("[smoke] config: ensureLayout creates the tazuo inbox directory", async () 
 test("[smoke] config: ensureLayout writes a default settings.json (shard uoalive) if none exists", async () => {
   const { mkdtempSync } = await import("node:fs");
   const { tmpdir } = await import("node:os");
-  const { ensureLayout } = await import("./config.mjs");
+  const { ensureLayout } = await import("./config.mts");
   const { readFileSync } = await import("node:fs");
   const dir = mkdtempSync(join(tmpdir(), "qm-cfg-"));
   const c = ensureLayout(resolveConfig(["--data", dir], {}));

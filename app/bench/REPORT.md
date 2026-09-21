@@ -1,6 +1,6 @@
 # Suit-builder scale benchmark — report (Sep 12–13 2026)
 
-How the Pack Rat suit builder behaves as the inventory grows from today's 459 items (281 gear) to 50,000, where the exact search stops proving the optimum, which quantity drives the blow-up, and which lever would fix it. Two runs, both on the server's own worker (`app/optimize-worker.mjs`) and its parallel path (`shared-search.mjs`, WORKERS = min(8, cores − 1) = 8 on this 10-core machine, Node v24.15.0):
+How the Pack Rat suit builder behaves as the inventory grows from today's 459 items (281 gear) to 50,000, where the exact search stops proving the optimum, which quantity drives the blow-up, and which lever would fix it. Two runs, both on the server's own worker (`app/optimize-worker.mts`) and its parallel path (`shared-search.mjs`, WORKERS = min(8, cores − 1) = 8 on this 10-core machine, Node v24.15.0):
 
 - **Run 1** (`results/2026-09-12T23-18-11.{json,md}`, 24 min): N ∈ {500, 2000, 5000, 10000, 25000, 50000} × gear fraction {0.3 realistic, 1.0 all-gear} × {Dorran, Kestrel, Rowan with the weapon filter off}. Single thread with a 90 s exact budget; the 8-worker path (90 s) on every cell one thread could not prove, until it failed too.
 - **Run 2** (`results/2026-09-13T00-01-31-realistic-parallel.{json,md}`, 15 min): the realistic cells at N ∈ {500, 2000, 20000, 30000} along the server's path exactly as `vault-server.mjs` runs it (1.5 s solo attempt, then 8 workers with a 120 s budget), plus the pruning-lever measurement.

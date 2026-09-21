@@ -54,7 +54,7 @@ export async function sendBridge(action, it) {
 // to fall back to, not a caller mistake.
 //
 // GET/POST /api/bridge are themselves adapter-aware (Phase 6 final review follow-up) —
-// app/config.mjs's `paths.bridgeFor(adapter)` replaced the single hard-coded `<dataDir>/bridge/tazuo/`
+// app/config.mts's `paths.bridgeFor(adapter)` replaced the single hard-coded `<dataDir>/bridge/tazuo/`
 // path (docs/bridge-protocol.md), and the server reads/writes whichever adapter's directory
 // `settings.client.adapter` names, falling back to bridgeAdapter()'s default only when no client is
 // configured at all. With the fallback above, the button-visibility gate here now matches that same

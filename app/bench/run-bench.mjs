@@ -1,6 +1,6 @@
 // run-bench.mjs — suit-builder scale benchmark. Sweeps inventory size x gear fraction x profile, measuring the
 // fold, the /api/inventory payload, pool sizes, dominance pruning, and the heuristic + exact phases (the exact
-// phase runs through app/optimize-worker.mjs exactly as the server would: HiGHS when it loads, the core's own
+// phase runs through app/optimize-worker.mts exactly as the server would: HiGHS when it loads, the core's own
 // heuristic as the honest fallback otherwise) and writes results/<stamp>.json + results/<stamp>.md. Reads real
 // scans only to learn the generator model and to supply the characters; synthetic scans go to the scratch
 // directory, never to the data directory's scans/.
@@ -10,7 +10,7 @@
 //                                [--scratch <dir>] [--seed 1]
 //   node app/bench/run-bench.mjs --render results/<stamp>.json      (re-render the markdown tables only)
 //
-// Every optimizer call runs in app/optimize-worker.mjs (the server's worker) under a hard wall cap, because the
+// Every optimizer call runs in app/optimize-worker.mts (the server's worker) under a hard wall cap, because the
 // core's timeBudgetMs only bounds the exact phase: the heuristic restarts and the O(n^2) dominance prune are
 // unbounded, and at large pools they are the cost. A killed worker is recorded with its last progress snapshot.
 // (The old escalation to a multi-thread branch-and-bound pool, once the single thread failed to prove a cell,
@@ -23,7 +23,7 @@ import { tmpdir, availableParallelism } from "node:os";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { Worker } from "node:worker_threads";
 import { learnModel, generateScan, readRealSnapshots, ROOT, BENCH_SHARD } from "./gen-inventory.mjs";
-import { resolveConfig, corePath } from "../config.mjs";
+import { resolveConfig, corePath } from "../config.mts";
 import { upgradeScan } from "../scan-schema.mts";
 import { loadRules } from "../rules.mts";
 
@@ -125,7 +125,7 @@ function buildCell(inv, who, patch) {
 // every phase change emits unconditionally, so heuristic / prune / exact durations are exact.
 function runWorker(data, capMs, logThis = true) {
   return new Promise((resolve) => {
-    const w = new Worker(new URL("../optimize-worker.mjs", import.meta.url), { workerData: { coreUrl: CORE_URL, ...data } });
+    const w = new Worker(new URL("../optimize-worker.mts", import.meta.url), { workerData: { coreUrl: CORE_URL, ...data } });
     const t0 = Date.now(), phases = {};
     let heurScore = null, last = null, settled = false;
     const finish = (extra) => {

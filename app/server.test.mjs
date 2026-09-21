@@ -7,11 +7,11 @@ import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
 import http from "node:http";
 import { createConnection } from "node:net";
-import { resolveConfig, ensureLayout } from "./config.mjs";
+import { resolveConfig, ensureLayout } from "./config.mts";
 import { startServer } from "./vault-server.mjs";
 import { buildPools, foldSnapshots, setRules } from "./vault-lib.mts";
 import { upgradeScan, validateScan } from "./scan-schema.mts";
-import { DEFAULT_OPTIONAL_SLOTS } from "./mip.mjs";
+import { DEFAULT_OPTIONAL_SLOTS } from "./mip.mts";
 import { buildUi } from "../scripts/build-ui.mjs";
 import { buildSchemaTypes } from "../scripts/build-schema-types.mts";
 import { validate } from "./schema/validate.mts";
@@ -23,7 +23,7 @@ const BRIDGE_SCHEMA = JSON.parse(readFileSync(join(dirname(fileURLToPath(import.
 // but because this call is the only actual guarantee app/schema/types.d.mts exists before anything
 // imports from it. Also so a bare `node --test app/server.test.mjs` works on a fresh clone (no
 // pretest hook run). The optimizer core needs no build step of its own — startServer() below resolves
-// it straight from source via config.mjs's paths.core (PACKRAT_CORE overrides it).
+// it straight from source via config.mts's paths.core (PACKRAT_CORE overrides it).
 buildSchemaTypes();
 buildUi();   // this file's own route tests fetch /ui/app.mjs and /vault-lib.mjs from app/dist/
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -854,7 +854,7 @@ test("[fast] a route that throws returns a stack-free 500 with a ref that appear
   assert.ok(log.includes(body.ref), "the ref appears in the log file");
 });
 
-// Task 2 (Phase 3): the worker now runs an exact build through app/exact-solver.mjs (HiGHS), not the
+// Task 2 (Phase 3): the worker now runs an exact build through app/exact-solver.mts (HiGHS), not the
 // retired multi-thread branch-and-bound. On the small demo fixture this proves well inside a normal
 // test timeout — poll /status until done, then confirm the saved run carries the identical score.
 test("[fast] POST /api/optimize exact: the job finishes with solver \"highs\", proven, and the saved run carries the same score", async () => {

@@ -1,5 +1,5 @@
 // mip-spike.mjs — SPIKE (Sep 13 2026): solve the suit problem as a mixed-integer program with HiGHS (WASM) and compare
-// against the core's proven scores. Superseded by app/mip.mjs + app/exact-solver.mjs (the real orchestrator the
+// against the core's proven scores. Superseded by app/mip.mts + app/exact-solver.mts (the real orchestrator the
 // server uses); kept as evidence behind REPORT.md's MIP addendum, not wired into the app.
 // Needs the `highs` npm package (WASM HiGHS, MIT) installed next to it or resolvable
 // from a scratch dir: `npm i highs`. node mip-spike.mjs <N|real> <Profile> [timeLimitS]; CORE_CHECK=<s> also runs the
@@ -9,7 +9,7 @@ import { join, dirname } from "node:path";
 import { pathToFileURL, fileURLToPath } from "node:url";
 import { tmpdir } from "node:os";
 import highsLoader from "highs";
-import { resolveConfig, corePath } from "../config.mjs";
+import { resolveConfig, corePath } from "../config.mts";
 import { upgradeScan } from "../scan-schema.mts";
 import { loadRules } from "../rules.mts";
 

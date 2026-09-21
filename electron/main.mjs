@@ -27,10 +27,10 @@ function flag(argv, name) {
 const argv = app.isPackaged ? process.argv.slice(1) : process.argv.slice(2);
 const demo = argv.includes("--demo");
 const smoke = argv.includes("--smoke");
-// resolve() (single arg, same style as app/config.mjs's own resolveConfig) turns a relative --data
+// resolve() (single arg, same style as app/config.mts's own resolveConfig) turns a relative --data
 // into an absolute path against process.cwd() — app.setPath("userData", …) below refuses a relative
 // path outright, and the lock file / shell.log paths need to agree with what the server child
-// resolves for the same value (config.mjs:18) regardless of the shell's cwd (post-review fix, Minor 6).
+// resolves for the same value (config.mts:18) regardless of the shell's cwd (post-review fix, Minor 6).
 const dataDir = resolve(flag(argv, "--data") || process.env.PACKRAT_DATA || app.getPath("userData"));
 // Redirect Electron's own userData (its single-instance lock file included) into the same directory
 // we're pointing the server at, so a --data <tmp> smoke/test run never collides with, or is blocked

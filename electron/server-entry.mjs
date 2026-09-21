@@ -2,8 +2,8 @@
 // server-entry.mjs — the Pack Rat server, forked as an Electron utility process by
 // electron/main.mjs (utilityProcess.fork). Config is env-driven: main sets PACKRAT_DATA, PACKRAT_TOKEN
 // and PACKRAT_PORT=0 in the child's environment before forking, and forwards --demo (when the user
-// passed it) as a fork argument, so the ordinary resolveConfig()/ensureLayout() pair in app/config.mjs
-// picks all of it up unchanged. The optimizer core needs no build step: config.mjs's paths.core
+// passed it) as a fork argument, so the ordinary resolveConfig()/ensureLayout() pair in app/config.mts
+// picks all of it up unchanged. The optimizer core needs no build step: config.mts's paths.core
 // resolves straight to scripts/optimizer-core.mts, both in dev and in the packaged app (whose
 // build.files ships that one source file — no asarUnpack entry needed for it; Electron's asar fs/module
 // patches serve a dynamic `import()` of a .mts file straight out of app.asar, worker threads included,
@@ -16,7 +16,7 @@
 //       Electron can show a native folder picker or ask the OS to open a path) and resolves the
 //       promise vault-server.mjs is awaiting once main's matching host-result message arrives.
 //   <- {type: "shutdown"}                              close the server, then exit(0)
-import { ensureLayout, resolveConfig } from "../app/config.mjs";
+import { ensureLayout, resolveConfig } from "../app/config.mts";
 import { startServer } from "../app/vault-server.mjs";
 
 const parentPort = process.parentPort;
