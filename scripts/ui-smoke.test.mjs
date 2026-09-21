@@ -160,3 +160,58 @@ test("[slow] a partial-bridge adapter only offers its declared action, and the n
     rmSync(adaptersDir, { recursive: true, force: true });
   }
 });
+
+// Bug fix (round 2): the Suit Builder's "Save as…" used window.prompt(), which Electron does not
+// implement (it returns null/undefined with no error, so the handler's `if (!name) return` bailed
+// silently) — it worked in a plain browser, which is why the bug went unnoticed until it shipped.
+// ui/dialog.mjs's promptText() replaces it with an in-page <dialog>; this drives the real Electron
+// window through Save as… end to end (open the builder, click Save as…, type a name in the dialog,
+// confirm) and checks the template landed server-side, the one thing window.prompt() could never do.
+test("[slow] Save as… in the suit builder opens an in-page dialog and saves the template (Electron has no window.prompt)", async (t) => {
+  const why = unavailable();
+  if (why) return t.skip(why);
+
+  const { _electron } = await import("playwright");
+  const dataDir = mkdtempSync(join(tmpdir(), "packrat-ui-saveas-"));
+  // setupDone:true skips the first-run wizard (already covered above) — this test is about the
+  // Save as… dialog, not the wizard flow.
+  writeFileSync(join(dataDir, "settings.json"), JSON.stringify({ schemaVersion: 1, shard: "uoalive", setupDone: true }));
+  const app = await _electron.launch({ args: [ROOT, "--demo", "--data", dataDir], cwd: ROOT, timeout: 60_000 });
+  try {
+    const page = await app.firstWindow();
+    await page.waitForSelector("#status", { timeout: 30_000 });
+
+    await page.click('[role="tab"][data-tab="builder"]');
+    await page.waitForSelector("#tab-builder:not([hidden])", { timeout: 10_000 });
+    // buildBuilder() auto-selects the first character from the demo fixtures (Dorran/Kestrel) once
+    // its <option>s exist — the "Save as…" button needs a selected character's settings to snapshot.
+    await page.waitForFunction(() => document.querySelector("#b-char")?.value, { timeout: 10_000 });
+
+    await page.click("#b-tpl-saveas");
+    const dialog = page.locator(".prompt-dialog[open]");
+    await dialog.waitFor({ timeout: 10_000 });
+    const input = dialog.locator("input[type=text]");
+    // Focus lands in the input with its text selected (any existing text is a type-over, not an edit) —
+    // typing replaces the selection rather than appending to it.
+    await expectFocused(page, input);
+    const templateName = `UI Smoke Template ${Date.now()}`;
+    await input.fill(templateName);
+    await dialog.getByRole("button", { name: "Save" }).click();
+    await dialog.waitFor({ state: "detached", timeout: 10_000 });
+
+    const r = await page.evaluate(() => fetch("/api/profiles").then((res) => res.json()));
+    const names = Object.keys(r.profiles?.templates || {});
+    assert.ok(names.includes(templateName), `expected "${templateName}" among the saved templates, got ${JSON.stringify(names)}`);
+  } finally {
+    await app.close();
+    rmSync(dataDir, { recursive: true, force: true });
+  }
+});
+// Small helper: assert the given locator's element is the page's activeElement — Playwright has no
+// built-in "is focused" locator assertion in this project's test setup (no @playwright/test expect()),
+// so this reads document.activeElement inside the page instead.
+async function expectFocused(page, locator) {
+  const handle = await locator.elementHandle();
+  const focused = await page.evaluate((el) => el === document.activeElement, handle);
+  assert.ok(focused, "expected the dialog's input to be focused");
+}
