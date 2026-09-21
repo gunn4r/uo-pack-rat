@@ -5,6 +5,12 @@ on:
     branches: ["**"]
   pull_request:
 
+# Stated rather than inherited. The repository default is read-only today, so this changes nothing
+# now -- it is here so that raising that default later cannot silently hand a fork's pull request a
+# write-scoped token. Nothing in this workflow needs to write anything.
+permissions:
+  contents: read
+
 jobs:
   test:
     name: Test on ${{ matrix.os }}
@@ -16,15 +22,21 @@ jobs:
       matrix:
         os: [macos-latest, windows-latest, ubuntu-latest]
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: "22"
           cache: npm
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
         with:
           python-version: "3.12"
-      - run: npm ci
+      - name: Install dependencies without running install scripts
+        # See the same step in release.yml for why this is safe: the tree's only install script
+        # belongs to electron-winstaller, which is Squirrel-only and lazily required, and neither
+        # Electron's binary (fetched on first require) nor TypeScript's native compiler (platform
+        # optionalDependencies) comes from an install script. The Electron smoke test in this job is
+        # what proves it -- it launches a real Electron, so a missing binary would fail here.
+        run: npm ci --ignore-scripts
       - name: Type-check
         run: npm run typecheck
       - name: Compile every adapter's Python scripts
@@ -64,7 +76,7 @@ jobs:
         run: npm test
       - name: Upload the test summary
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: test-summary-${{ matrix.os }}
           path: test_logs/latest_summary.json
