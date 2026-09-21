@@ -5,6 +5,7 @@
 import { PROP_LABELS, OPTIMIZER_SLOTS, tagUnits, WEAPON_SKILLS, resistSkillBonus, effectiveProfile, getRules, RESIST_KEYS, templateFrom, requirementReport, totalsOf, settingsDiff, bagLabel } from "../vault-lib.mts";
 import { state, invStamp } from "./store.mjs";
 import { $, el, label, full, fmtN, fmtSecs, fmtRunTime, slotLabel, toast } from "./dom.mjs";
+import { promptText } from "./dialog.mjs";
 import { api, CLIENT_ID } from "./api.mjs";
 import { sheetHtml } from "./sheet.mjs";
 import { actButtons, grabAllRow, bridgeNoteEl } from "./bridge.mjs";
@@ -96,7 +97,7 @@ function applyTemplate() {
   toast(`${name} applied to the sidebar. Save profile to keep it.`, "good");
 }
 async function saveTemplateAs() {
-  const name = (prompt("Template name", state.builder.profile.template || "") || "").trim();
+  const name = await promptText({ title: "Template name", value: state.builder.profile.template || "" });
   if (!name || (state.profiles.templates[name] && !confirm(`Overwrite the ${name} template?`))) return;
   state.profiles.templates[name] = templateFrom(readControls());
   state.builder.profile.template = name;

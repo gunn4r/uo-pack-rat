@@ -228,6 +228,13 @@ tr.shown td { background: var(--sel); }
 .wizard-foot { margin-top: 16px; padding-top: 12px; border-top: 1px solid var(--line); }
 .wizard-foot .grow { flex: 1; }
 
+/* Single-field prompt dialogs (ui/dialog.mjs's promptText — the in-page replacement for
+   window.prompt(), which Electron doesn't implement). Shares .wizard's look, just narrower: the
+   dialog decides its own width, the input inside it fills that width in turn (never the other way
+   round). */
+.prompt-dialog { max-width: 28rem; width: min(28rem, 92vw); }
+.prompt-dialog input[type=text] { width: 100%; }
+
 /* Settings tab (ui/settings.mjs): .kv is a label/value[/action] row — distinct from the shared flex
    .row utility, which the checkbox and folder-picker rows in the same panels still use unchanged. */
 .settings .kv { display: grid; grid-template-columns: 140px 1fr auto; align-items: center; gap: 6px 10px; }
