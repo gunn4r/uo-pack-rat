@@ -38,7 +38,7 @@
 // promise chain, so two files' ingestion never interleaves; every await is guarded by a `closed` flag
 // so a close() mid-retry cuts the chain short instead of running past it.
 import {
-  existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync, renameSync, unlinkSync,
+  existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync, renameSync, unlinkSync, lstatSync,
   watch as fsWatch, type WatchListener,
 } from "node:fs";
 import { join } from "node:path";
@@ -46,6 +46,28 @@ import { upgradeScan, validateScan, type UnvalidatedScan } from "./scan-schema.m
 import type { ScanV2 } from "./schema/types.d.mts";
 
 const SCANNED_AT_RE = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.\d+)?([+-]\d{2}:\d{2}|Z)$/;
+
+// The ceiling on an inbox file, in bytes. POST /api/import/paste has always been capped (readBody's
+// 50 MB default) but the folder-drop path — the primary one — was not, and reading a scan costs
+// roughly 9x its size in RSS: the band between ~200 MB and V8's ~512 MB max string length lands in
+// heap OOM, which is an uncatchable abort that repeats on every restart because the startup sweep
+// re-reads the same file. A real TazUO scan of a full bank is well under 10 MB (Phase 7 security
+// review, Area 2, Important 5).
+export const MAX_INBOX_BYTES = 32 * 1024 * 1024;
+
+const errMessage = (e: unknown): string => String((e as Error | undefined)?.message ?? e);
+
+// V8's JSON parse error embeds a short excerpt of the bytes it was handed ("Unexpected token 'o',
+// \"not json\" is not valid JSON"), and this string is written to rejected/<name>.reason.txt and
+// pushed to the page over SSE — a file-content-into-a-displayed-string channel, which matters most
+// for exactly the inbox entries we should not have read in the first place. Keep the shape of the
+// failure, never the bytes (Phase 7 security review, Area 2, Note 1).
+function jsonErrorReason(e: unknown): string {
+  const msg = errMessage(e);
+  if (/unexpected end of json input/i.test(msg)) return "invalid JSON: unexpected end of input (the file looks truncated)";
+  const at = /position (\d+)/i.exec(msg);
+  return at ? `invalid JSON: syntax error at position ${at[1]}` : "invalid JSON: syntax error";
+}
 
 function stampFor(scannedAt: unknown): string {
   const m = SCANNED_AT_RE.exec(String(scannedAt));
@@ -108,17 +130,35 @@ export type IngestFileResult =
   | { ok: false; reason: string; file?: undefined; character?: undefined; scannedAt?: undefined; duplicate?: undefined; warning?: undefined };
 
 export function ingestFile({ path, scansDir, shard, log = () => {} }: IngestFileParams): IngestFileResult {
+  // Stat before read: lstat (not stat) so a symlink is seen as a symlink rather than followed into
+  // whatever it points at, and the size is checked against MAX_INBOX_BYTES while the file is still
+  // just an inode. Neither check ever opens the file.
+  let size: number;
+  try {
+    const st = lstatSync(path);
+    if (!st.isFile()) return { ok: false, reason: "not a regular file (an inbox entry that is a symlink, directory or device is never read)" };
+    size = st.size;
+  } catch (e) {
+    return { ok: false, reason: `could not read: ${errMessage(e)}` };
+  }
+  if (size > MAX_INBOX_BYTES) return { ok: false, reason: `too large: ${size} bytes, the limit is ${MAX_INBOX_BYTES}` };
+  let text: string;
+  try {
+    text = readFileSync(path, "utf8");
+  } catch (e) {
+    return { ok: false, reason: `could not read: ${errMessage(e)}` };
+  }
   let raw: unknown;
   try {
-    raw = JSON.parse(readFileSync(path, "utf8"));
+    raw = JSON.parse(text);
   } catch (e) {
-    return { ok: false, reason: `invalid JSON: ${(e as Error).message}` };
+    return { ok: false, reason: jsonErrorReason(e) };
   }
   let doc: UnvalidatedScan;
   try {
     doc = upgradeScan(raw, { shard });
   } catch (e) {
-    return { ok: false, reason: (e as Error).message };
+    return { ok: false, reason: errMessage(e) };
   }
   const { ok, errors } = validateScan(doc);
   if (!ok) return { ok: false, reason: `${errors[0]!.path} ${errors[0]!.msg}` };
@@ -128,7 +168,7 @@ export function ingestFile({ path, scansDir, shard, log = () => {} }: IngestFile
   if (existingAccepted) {
     let warning: string | undefined;
     try { unlinkSync(path); }
-    catch (e) { warning = `duplicate of ${existingAccepted} but could not remove it from the inbox: ${(e as Error).message}`; }
+    catch (e) { warning = `duplicate of ${existingAccepted} but could not remove it from the inbox: ${errMessage(e)}`; }
     log(warning ?? `duplicate of ${existingAccepted}, removed from inbox`);
     return { ok: true, file: existingAccepted, character: scan.character, scannedAt: scan.scannedAt, duplicate: true, ...(warning ? { warning } : {}) };
   }
@@ -150,7 +190,7 @@ export function ingestFile({ path, scansDir, shard, log = () => {} }: IngestFile
     // an uncaught throw here would otherwise escape processFile's retry loop entirely and orphan the
     // file with no further watch event to retrigger it.
     if (tmp) { try { unlinkSync(tmp); } catch { /* tmp was never written, or already gone */ } }
-    return { ok: false, reason: `write failed: ${(e as Error).message}` };
+    return { ok: false, reason: `write failed: ${errMessage(e)}` };
   }
 
   // The doc is already safely in scansDir under `file` at this point — ingestion has succeeded.
@@ -163,7 +203,7 @@ export function ingestFile({ path, scansDir, shard, log = () => {} }: IngestFile
   try {
     unlinkSync(path);
   } catch (e) {
-    warning = `accepted ${file} but could not remove it from the inbox: ${(e as Error).message}`;
+    warning = `accepted ${file} but could not remove it from the inbox: ${errMessage(e)}`;
   }
   log(warning ?? `accepted ${path} -> ${file}`);
   return { ok: true, file, character: scan.character, scannedAt: scan.scannedAt, ...(warning ? { warning } : {}) };
@@ -231,20 +271,28 @@ export function startWatcher(
   const delay = delayFactory(pendingDelays);
   let chain: Promise<void> = Promise.resolve();
 
+  // log/onAccepted/onRejected belong to the caller, and a throw from any of them used to cost the
+  // page its `rejected` SSE event — the file was quarantined correctly but vanished from the inbox
+  // with nothing said about it. Each is called through one of these, so the watcher's own contract
+  // never depends on a subscriber holding up its end (Phase 7 security review, Area 2, Minor 3).
+  const safeLog = (msg: string): void => { try { log(msg); } catch { /* a caller's logger must never break ingestion */ } };
+  const notifyAccepted = (info: StartWatcherOnAcceptedInfo): void => { try { onAccepted(info); } catch { /* likewise for a subscriber */ } };
+  const notifyRejected = (info: StartWatcherOnRejectedInfo): void => { try { onRejected(info); } catch { /* likewise for a subscriber */ } };
+
   function rejectFile(name: string, reason: string): void {
     const rejectedDir = join(inboxDir, "rejected");
     const src = join(inboxDir, name);
     try {
-      if (!existsSync(src)) { log(`rejected ${name} (already gone): ${reason}`); onRejected({ file: name, reason }); return; }
+      if (!existsSync(src)) { safeLog(`rejected ${name} (already gone): ${reason}`); notifyRejected({ file: name, reason }); return; }
       mkdirSync(rejectedDir, { recursive: true });
       const dest = join(rejectedDir, name);
       renameSync(src, dest);
       writeFileSync(`${dest}.reason.txt`, `${reason}\n`);
     } catch (e) {
-      reason = `${reason} (also failed to move to rejected/: ${(e as Error).message})`;
+      reason = `${reason} (also failed to move to rejected/: ${errMessage(e)})`;
     }
-    log(`rejected ${name}: ${reason}`);
-    onRejected({ file: name, reason });
+    safeLog(`rejected ${name}: ${reason}`);
+    notifyRejected({ file: name, reason });
   }
 
   async function processFile(name: string): Promise<void> {
@@ -253,12 +301,12 @@ export function startWatcher(
       const path = join(inboxDir, name);
       if (!existsSync(path)) return;   // renamed/removed out from under us — ignored, not rejected
 
-      const result = ingestFile({ path, scansDir, shard: getShard(), log });
+      const result = ingestFile({ path, scansDir, shard: getShard(), log: safeLog });
       if (result.ok) {
         // A duplicate (ingestFile found this doc already in scansDir — a stuck inbox file re-seen by
         // scanOnce, possibly after a restart) means nothing NEW was ingested, so onAccepted must not
         // fire again for it.
-        if (!result.duplicate) onAccepted({ file: result.file, character: result.character, scannedAt: result.scannedAt });
+        if (!result.duplicate) notifyAccepted({ file: result.file, character: result.character, scannedAt: result.scannedAt });
         return;
       }
       if (attempt === retries) { rejectFile(name, result.reason); return; }
@@ -273,14 +321,14 @@ export function startWatcher(
       // supposed to be best-effort (the caller's job — app/vault-server.mts wraps its own appendFileSync
       // in a try/catch for exactly this), but defend against a caller that doesn't hold up its end too
       // (post-review fix, Important 1).
-      .catch((e: unknown) => { try { log(`watcher error on ${name}: ${e && (e as Error).message}`); } catch { /* log itself must never re-throw here */ } });
+      .catch((e: unknown) => { safeLog(`watcher error on ${name}: ${errMessage(e)}`); });
   }
 
   function scanOnce(): void {
     if (closed) return;
     let names: string[];
     try { names = readdirSync(inboxDir).filter((f) => f.endsWith(".json")); }
-    catch (e) { log(`watcher scanOnce error: ${(e as Error).message}`); return; }
+    catch (e) { safeLog(`watcher scanOnce error: ${errMessage(e)}`); return; }
     for (const name of names) enqueue(name);
   }
 
@@ -295,12 +343,12 @@ export function startWatcher(
       const t = setTimeout(() => { debounceTimers.delete(name); enqueue(name); }, debounceMs);
       debounceTimers.set(name, t);
     } catch (e) {
-      log(`watcher event error: ${e && (e as Error).message}`);
+      safeLog(`watcher event error: ${errMessage(e)}`);
     }
   }
 
   const watcher = watch(inboxDir, onWatchEvent);
-  log(`watching ${inboxDir} (adapter ${adapter})`);
+  safeLog(`watching ${inboxDir} (adapter ${adapter})`);
   scanOnce();   // pick up files that landed while the app was closed
 
   return {

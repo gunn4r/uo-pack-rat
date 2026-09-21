@@ -255,7 +255,7 @@ test("[fast] fold: scans order by epoch, not string comparison of scannedAt — 
     adapter: { id: "tazuo", version: "1", client: "TazUO", clientVersion: null, capabilities: TAZUO_V1_CAPS },
     stats: kestrel.stats, equipped: [],
     roots: [{ serial: root, kind: "ground", name: "Metal Chest", opened: true }],
-    containers: { [root]: kestrel.containers[root] },
+    containers: { [root]: kestrel.containers[root]! },
     items: [{ serial: itemSerial, name: itemName, tooltip: [itemName], amount: 1, container: root, nameSource: "opl" }],
   });
   const earlierByEpoch = mkScan("2026-09-11T10:00:00+02:00", 101, "Early Item");   // 08:00 UTC
@@ -803,4 +803,76 @@ test("[slow] warm start never lowers the result and keeps a proven optimum", { s
   assert.ok(warm.score >= cold.score - 1e-6, "a warm start at the optimum stays there with no restarts at all");
   const bogus = core.optimizeSuit(demoPools as unknown as OptPools, demoCurrent as unknown as OptAssignment, archerProfile, { seed: 1, restarts: 20, warmStart: { helmet: 999999999 } });
   assert.ok(bogus.score >= res.score - 1e-6, "an unknown serial is simply ignored");
+});
+
+// ---- hostile scan content (Phase 7 security review, Area 2) ---------------------------------
+// Everything expensive in the pipeline happens AFTER a scan is accepted and written to <data>/scans/,
+// so a scan that makes parseTooltip or foldSnapshots superlinear costs the server that time on every
+// fold, and again on the first fold after every restart. Both tests below assert on structure AND on
+// a generous ms ceiling: the ceiling is what actually catches a reintroduced quadratic (the pre-fix
+// numbers were 9 s at 128k characters and 2.3 s at 20k items), the structure is what catches a "fix"
+// that just stops parsing.
+test("[fast] parseTooltip: a pathological tooltip line parses in linear time", () => {
+  const line = "a" + " ".repeat(200_000) + "5x";   // the lazy head and the [\s:+]* separator used to overlap on every space
+  const t0 = Date.now();
+  const p = parseTooltip(["Katana", line, "Weight: 1 Stone"]);
+  const ms = Date.now() - t0;
+  assert.equal(p.name, "Katana");
+  assert.equal(p.weight, 1, "the lines after the pathological one are still parsed");
+  assert.ok(ms < 1000, `parseTooltip took ${ms} ms on one 200k-character line — the fallback regex is quadratic again`);
+});
+
+test("[fast] fold: container lookup is indexed, so containers keyed by anything still fold in linear time", () => {
+  // Nothing requires snap.containers' KEYS to equal the entries' own serials. The fold's old fallback
+  // was a linear Object.values(...).find() per item, so a scan naming its keys "k1", "k2"... paid
+  // items x containers. Same scan twice, only the key naming differs: same result, no time cliff.
+  const ITEMS = 10_000, CONTAINERS = 1000, ROOT = 9_000_000;
+  const build = (keyed: boolean): ScanV2 => {
+    const containers: Record<string, unknown> = { [keyed ? ROOT : "root"]: { serial: ROOT, root: ROOT, parent: null, kind: "ground", name: "Metal Chest" } };
+    for (let i = 0; i < CONTAINERS; i++) containers[keyed ? String(ROOT + 1 + i) : `k${i}`] = { serial: ROOT + 1 + i, root: ROOT, parent: ROOT, kind: "container", name: `Bag ${i}` };
+    const items = Array.from({ length: ITEMS }, (_, i) => ({ serial: ROOT + 1 + CONTAINERS + i, name: `Iron Ingot`, tooltip: ["Iron Ingot"], amount: 1, container: ROOT + 1 + (i % CONTAINERS), nameSource: "opl" }));
+    return {
+      schemaVersion: 2, character: "Kestrel", scannedAt: "2026-01-01T12:00:00+00:00",
+      adapter: { id: "tazuo", version: "1", client: "TazUO", clientVersion: null, capabilities: TAZUO_V1_CAPS },
+      stats: {}, skills: {}, equipped: [],
+      roots: [{ serial: ROOT, kind: "ground", name: "Metal Chest", opened: true }],
+      containers, items,
+    } as unknown as ScanV2;
+  };
+  const t0 = Date.now();
+  const straight = foldSnapshots([build(true)]);
+  const t1 = Date.now();
+  const hostile = foldSnapshots([build(false)]);
+  const t2 = Date.now();
+  assert.deepEqual(Object.keys(hostile.items).sort(), Object.keys(straight.items).sort());
+  assert.equal(Object.keys(hostile.items).length, ITEMS + CONTAINERS);
+  // Ratio, not a wall-clock ceiling: both folds do identical work, so a slow machine moves both ends
+  // together. Measured before the fix, this pair ran 12x-144x apart depending on the counts.
+  const straightMs = t1 - t0, hostileMs = t2 - t1;
+  assert.ok(hostileMs < straightMs * 5 + 250, `mis-keyed containers folded in ${hostileMs} ms against ${straightMs} ms for the same scan keyed by serial — the per-item container scan is back`);
+});
+
+test("[fast] fold: the maps it builds have a null prototype, so a scan cannot name a key that changes one", () => {
+  // `obj["__proto__"] = value` invokes the inherited setter and REPLACES that object's prototype —
+  // silently dropping the entry and hanging an attacker-controlled inherited key off the map.
+  const mk = (character: string, serial: unknown): ScanV2 => ({
+    schemaVersion: 2, character, scannedAt: "2026-01-01T12:00:00+00:00",
+    adapter: { id: "tazuo", version: "1", client: "TazUO", clientVersion: null, capabilities: TAZUO_V1_CAPS },
+    stats: {}, skills: {}, equipped: [],
+    roots: [{ serial: 1, kind: "ground", name: "Chest", opened: true }],
+    containers: { a: { serial: 1, root: 1, parent: null, kind: "ground", name: "Chest" }, b: { serial, root: 1, parent: 1, kind: "container", name: "evil" } },
+    items: [],
+  } as unknown as ScanV2);
+  const inv = foldSnapshots([mk("Kestrel", "__proto__")]);
+  for (const map of [inv.items, inv.containers, inv.characters]) {
+    assert.equal(Object.getPrototypeOf(map), null, "a fold map still inherits from Object.prototype");
+    assert.equal((map as Record<string, unknown>)["name"], undefined, "an attacker-controlled inherited key is readable off a fold map");
+  }
+  // the container is an ordinary key of its own rather than something that vanished into a prototype
+  assert.ok(Object.keys(inv.containers).includes("__proto__"));
+  assert.equal(Object.getPrototypeOf({}), Object.prototype);   // and nothing global was touched
+  // the same shape in the CHARACTER name (the other attacker-chosen key) leaves the map's prototype alone
+  const named = foldSnapshots([mk("__proto__", 2)]);
+  assert.equal(Object.getPrototypeOf(named.characters), null);
+  assert.equal((named.characters as Record<string, unknown>)["name"], undefined);
 });

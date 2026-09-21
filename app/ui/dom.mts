@@ -29,9 +29,13 @@ export type ElAttrValue = string | number | boolean | null | undefined;
 export type ElEventHandler = (e: any) => unknown;   // any: this bag hands the value straight to addEventListener; every caller in this codebase reads event-target-specific fields (e.target.value, .checked, .dataset) with no narrowing anywhere, and the target is always the element the same call just created, so a real Event type would force a cast at every one of this page's ~60 listener call sites for no safety actually gained
 export type ElAttrs = Record<string, ElAttrValue | ElEventHandler>;
 export type ElChild = Node | string | number | boolean | null | undefined;
+// There is deliberately no `html:` key any more: it set innerHTML, and its only two call sites (the
+// Characters tab and the Suit Builder's result panel, both passing the character sheet) were what
+// carried scan-supplied markup into the page. Both build nodes now, and nothing in this codebase
+// assigns innerHTML at all (Phase 7 security review, Area 2, Important 1).
 export const el = <K extends keyof HTMLElementTagNameMap>(tag: K, attrs: ElAttrs = {}, ...kids: Array<ElChild | ElChild[]>): HTMLElementTagNameMap[K] => {
   const e = document.createElement(tag);
-  for (const [k, v] of Object.entries(attrs)) { if (k === "class") e.className = v as string; else if (k.startsWith("on")) e.addEventListener(k.slice(2), v as ElEventHandler); else if (k === "html") e.innerHTML = v as string; else e.setAttribute(k, v as string); }
+  for (const [k, v] of Object.entries(attrs)) { if (k === "class") e.className = v as string; else if (k.startsWith("on")) e.addEventListener(k.slice(2), v as ElEventHandler); else e.setAttribute(k, v as string); }
   // (kid as Node).nodeType: the same duck-typing the pre-migration code did with no type at all — a
   // string/number/boolean kid has no `.nodeType` property and reads undefined (falsy) here exactly as
   // it always has; the cast only satisfies the checker, it changes nothing this line actually does.
@@ -67,13 +71,14 @@ export const rarityRank = (name: string | null | undefined): number => rarityRan
 export const rarityColor = (name: string | null | undefined): string | null => { const r = (state.rules?.rarity || []).find((r) => r.name.toLowerCase() === String(name || "").toLowerCase()); return r ? r.colour : null; };
 export const rarRank = (it: Item): number => rarityRank(it.rarity);
 export const rarCell = (it: Item): HTMLElement => it.rarity ? el("span", { style: `color:${rarityColor(it.rarity) || "inherit"};font-weight:500` }, it.rarity) : el("span", { class: "muted" }, "·");
-// esc(t) — HTML-escape a value before interpolating it into an HTML STRING (sheetHtml and friends,
-// which build markup with template literals rather than el()'s text nodes). Scan files are
-// third-party adapter data (character names, skill names): a scan-supplied name landing in an HTML
-// string unescaped is defacement (Phase 1's CSP already blocks script execution and exfiltration),
-// but Phase 2 is precisely what makes scan files untrusted input, so anything built as a raw string
-// must escape what it interpolates.
-export const esc = (t: unknown): string => String(t).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", "\"": "&quot;", "'": "&#39;" }[c] as string));
+// safeColor(c) — a colour that is safe to put in a style property, or null. The one dynamic colour
+// the page takes from a scan is the <BASEFONT COLOR=#rrggbb> tag the client writes into a tooltip
+// line's own text; it reaches a `style` through tipNode below. That capture is already regex-bound,
+// so this is belt and braces — but a sink that can only ever be handed a validated colour is a sink
+// that stays safe when the next caller isn't so careful (Phase 7 security review, Area 2, Note 3).
+// There is no HTML-escaping helper here any more: nothing in the page builds markup as a string.
+const COLOR_RE = /^#(?:[0-9a-f]{3}|[0-9a-f]{6})$/i;
+export const safeColor = (c: string | null | undefined): string | null => (typeof c === "string" && COLOR_RE.test(c) ? c : null);
 
 export const fmtN = (x: number | string | null | undefined): string => (+(x as string) || 0).toLocaleString();
 export const fmtSecs = (ms: number): string => ms >= 1000 ? `${(ms / 1000).toFixed(1)} s` : `${Math.round(ms)} ms`;
@@ -105,9 +110,9 @@ export function toast(text: string, cls = ""): void {
 
 // A hover tooltip's item shape is looser than vault-lib.mts's Item: it also renders the itemCache's
 // full records AND suit-builder candidates resolveItems() returns, which only ever carry {lines,
-// name, amount, rarity, location?} — declared locally because tipHtml() reads exactly these fields
+// name, amount, rarity, location?} — declared locally because tipNode() reads exactly these fields
 // and nothing else, and a candidate that isn't a full Item still renders a tooltip today.
-interface TooltipItem {
+export interface TooltipItem {
   lines?: string[] | undefined;
   name: string;
   amount?: number | undefined;
@@ -120,46 +125,61 @@ interface TooltipLine {
   bold: boolean;
   italic: boolean;
 }
+const HOT_PROPS = /swing speed increase|defense chance increase|hit chance increase|faster casting|faster cast recovery|lower reagent cost|lower mana cost|spell damage increase/i;
+function tipLine(raw: string): TooltipLine {
+  let color: string | null = null, bold = false, italic = false;
+  let text = String(raw).replace(/<basefont[^>]*color=["']?(#[0-9a-f]{6})["']?[^>]*>/gi, (_, c: string) => { color = c; return ""; }).replace(/<\/?b>/gi, () => { bold = true; return ""; }).replace(/<[^>]+>/g, "").trim();
+  if (/^\(?(imbued|exceptional|insured|blessed)\)?$/i.test(text)) { italic = true; text = text.replace(/[()]/g, ""); }
+  return { text, color, bold, italic };
+}
+// tipNode(it) — the hover tooltip, built as DOM nodes. Every value in here comes off a scan file's
+// own tooltip lines, and this used to be the page's other raw-string builder: its local escaper
+// covered only & < >, which is correct for a text position and one careless edit away from not being
+// correct for an attribute. Module-scope (not a closure inside installTooltip) so it is importable
+// on its own — see app/ui-render.test.mts. Phase 7 security review, Area 2, Note 3.
+export function tipNode(it: TooltipItem): HTMLDivElement {
+  const lines = (it.lines || []).slice(1).map(tipLine);
+  const keyed = (key: string, value: string): HTMLDivElement => el("div", {}, el("span", { class: "t-key" }, key), " " + value);
+  const head: TooltipLine[] = [], info: HTMLDivElement[] = [], body: HTMLDivElement[] = [];
+  let rarity: TooltipLine | null = null;
+  for (const l of lines) {
+    const t = l.text;
+    let m;
+    if (/^(minor|lesser|greater|major|legendary) (magic item|artifact)$/i.test(t)) { rarity = l; continue; }
+    if (/^crafted by /i.test(t) || l.italic) { head.push(l); continue; }
+    if ((m = t.match(/^weapon damage\s+(.+)$/i))) { info.push(keyed("Damage:", m[1]!)); continue; }
+    if ((m = t.match(/^weapon speed\s+(.+)$/i))) { info.push(keyed("Speed:", m[1]!)); continue; }
+    if ((m = t.match(/^weight:?\s+(\d+)/i))) { info.push(keyed("Weight:", m[1]!)); continue; }
+    if ((m = t.match(/^durability\s+(\d+)\s*\/\s*(\d+)/i))) {
+      const pct = Math.max(0, Math.min(100, 100 * +m[1]! / (+m[2]! || 1)));
+      info.push(keyed("Durability:", `${m[1]} / ${m[2]}`), el("div", { class: "t-dur" }, el("div", { style: `width:${pct}%` })));
+      continue;
+    }
+    if ((m = t.match(/^contents:?\s+(\d+)\/(\d+) items,?\s*(\d+) stones/i))) { info.push(keyed("Items:", `${m[1]}/${m[2]}`), keyed("Items Weight:", m[3]!)); continue; }
+    if ((m = t.match(/^strength requirement\s+(\d+)/i))) { body.unshift(el("div", {}, `Required Strength: ${m[1]}`)); continue; }
+    if ((m = t.match(/^(durability)\s+\+(\d+)%$/i))) { body.push(el("div", {}, el("span", { class: "t-val" }, `+${m[2]}%`), " Durability")); continue; }
+    if ((m = t.match(/^(.*?)[\s:]+\+?(-?\d+(?:\.\d+)?)\s*(%?)$/)) && m[1] && !/^(weight|default)/i.test(m[1])) {
+      const name = m[1].replace(/:$/, ""), cls = /leech/i.test(name) ? "t-leech" : HOT_PROPS.test(name) ? "t-hot" : "";
+      body.push(el("div", {}, el("span", { class: "t-val" }, `${+m[2]! >= 0 ? "+" : ""}${m[2]}${m[3]}`), " ", el("span", { class: cls }, name)));
+      continue;
+    }
+    const color = safeColor(l.color);
+    body.push(el("div", { class: l.bold ? "t-b" : "", ...(color ? { style: `color:${color}` } : {}) }, t));
+  }
+  const headNodes = head.map((l) => {
+    const color = safeColor(l.color);
+    return el("div", { class: `t-center ${l.italic ? "t-i" : ""} ${l.bold ? "t-b" : ""}`, ...(color ? { style: `color:${color}` } : {}) }, l.text);
+  });
+  const rarNode = rarity ? el("div", { class: "t-center", style: `color:${safeColor(rarity.color) || "#e6c85a"}` }, rarity.text) : null;
+  const qty = (it.amount || 1) > 1 ? `${it.amount} ` : "";
+  return el("div", {},
+    el("div", { class: "t-name" }, qty + it.name),
+    rarNode, ...headNodes, ...info,
+    body.length ? el("div", { class: "t-hr" }) : null, ...body,
+    ...(it.location ? [el("div", { class: "t-hr" }), el("div", { class: "t-muted" }, it.location.text)] : []));
+}
 export function installTooltip(): void {
   const tip = $<HTMLElement>("#tip")!;
-  const HOT_PROPS = /swing speed increase|defense chance increase|hit chance increase|faster casting|faster cast recovery|lower reagent cost|lower mana cost|spell damage increase/i;
-  function tipLine(raw: string): TooltipLine {
-    let color: string | null = null, bold = false, italic = false;
-    let text = String(raw).replace(/<basefont[^>]*color=["']?(#[0-9a-f]{6})["']?[^>]*>/gi, (_, c: string) => { color = c; return ""; }).replace(/<\/?b>/gi, () => { bold = true; return ""; }).replace(/<[^>]+>/g, "").trim();
-    if (/^\(?(imbued|exceptional|insured|blessed)\)?$/i.test(text)) { italic = true; text = text.replace(/[()]/g, ""); }
-    return { text, color, bold, italic };
-  }
-  function tipHtml(it: TooltipItem): string {
-    const lines = (it.lines || []).slice(1).map(tipLine);
-    const esc = (t: string): string => t.replace(/[&<>]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[c] as string));
-    const head: TooltipLine[] = [], info: string[] = [], body: string[] = [];
-    let rarity: TooltipLine | null = null;
-    for (const l of lines) {
-      const t = l.text;
-      let m;
-      if (/^(minor|lesser|greater|major|legendary) (magic item|artifact)$/i.test(t)) { rarity = l; continue; }
-      if (/^crafted by /i.test(t) || l.italic) { head.push(l); continue; }
-      if ((m = t.match(/^weapon damage\s+(.+)$/i))) { info.push(`<div><span class="t-key">Damage:</span> ${esc(m[1]!)}</div>`); continue; }
-      if ((m = t.match(/^weapon speed\s+(.+)$/i))) { info.push(`<div><span class="t-key">Speed:</span> ${esc(m[1]!)}</div>`); continue; }
-      if ((m = t.match(/^weight:?\s+(\d+)/i))) { info.push(`<div><span class="t-key">Weight:</span> ${m[1]}</div>`); continue; }
-      if ((m = t.match(/^durability\s+(\d+)\s*\/\s*(\d+)/i))) { const pct = Math.max(0, Math.min(100, 100 * +m[1]! / (+m[2]! || 1))); info.push(`<div><span class="t-key">Durability:</span> ${m[1]} / ${m[2]}</div><div class="t-dur"><div style="width:${pct}%"></div></div>`); continue; }
-      if ((m = t.match(/^contents:?\s+(\d+)\/(\d+) items,?\s*(\d+) stones/i))) { info.push(`<div><span class="t-key">Items:</span> ${m[1]}/${m[2]}</div><div><span class="t-key">Items Weight:</span> ${m[3]}</div>`); continue; }
-      if ((m = t.match(/^strength requirement\s+(\d+)/i))) { body.unshift(`<div>Required Strength: ${m[1]}</div>`); continue; }
-      if ((m = t.match(/^(durability)\s+\+(\d+)%$/i))) { body.push(`<div><span class="t-val">+${m[2]}%</span> Durability</div>`); continue; }
-      if ((m = t.match(/^(.*?)[\s:]+\+?(-?\d+(?:\.\d+)?)\s*(%?)$/)) && m[1] && !/^(weight|default)/i.test(m[1])) {
-        const name = m[1].replace(/:$/, ""), cls = /leech/i.test(name) ? "t-leech" : HOT_PROPS.test(name) ? "t-hot" : "";
-        body.push(`<div><span class="t-val">${+m[2]! >= 0 ? "+" : ""}${m[2]}${m[3]}</span> <span class="${cls}">${esc(name)}</span></div>`);
-        continue;
-      }
-      const style = l.color ? ` style="color:${l.color}"` : "";
-      body.push(`<div class="${l.bold ? "t-b" : ""}"${style}>${esc(t)}</div>`);
-    }
-    const headHtml = head.map((l) => `<div class="t-center ${l.italic ? "t-i" : ""} ${l.bold ? "t-b" : ""}"${l.color ? ` style="color:${l.color}"` : ""}>${esc(l.text)}</div>`).join("");
-    const rarHtml = rarity ? `<div class="t-center" style="color:${rarity.color || "#e6c85a"}">${esc(rarity.text)}</div>` : "";
-    const qty = (it.amount || 1) > 1 ? `${it.amount} ` : "";
-    const loc = it.location ? `<div class="t-hr"></div><div class="t-muted">${esc(it.location.text)}</div>` : "";
-    return `<div class="t-name">${qty}${esc(it.name)}</div>${rarHtml}${headHtml}${info.join("")}${body.length ? `<div class="t-hr"></div>${body.join("")}` : ""}${loc}`;
-  }
   function placeTip(e: MouseEvent): void {
     const pad = 14, w = tip.offsetWidth, h = tip.offsetHeight;
     let x = e.clientX + pad, y = e.clientY + pad;
@@ -177,13 +197,13 @@ export function installTooltip(): void {
     const serial = +host.dataset.serial!;
     hoverSerial = serial;
     const cached = state.itemCache.get(serial);
-    if (cached) { tip.innerHTML = tipHtml(cached); tip.style.display = "block"; placeTip(e); return; }
+    if (cached) { tip.replaceChildren(tipNode(cached)); tip.style.display = "block"; placeTip(e); return; }
     tip.style.display = "none";
     resolveItems([serial]).then((found) => {
       if (hoverSerial !== serial) return;   // the pointer moved on before this resolved
       const it = found[serial];
       if (!it) return;
-      tip.innerHTML = tipHtml(it); tip.style.display = "block"; placeTip(e);
+      tip.replaceChildren(tipNode(it)); tip.style.display = "block"; placeTip(e);
     });
   });
   document.addEventListener("mousemove", (e) => { if (tip.style.display === "block") placeTip(e); });

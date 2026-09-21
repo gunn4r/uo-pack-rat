@@ -2,11 +2,11 @@
 // and startWatcher's debounce/retry/reject/scanOnce/close behavior against an injected fake `watch`.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, writeFileSync, readFileSync, existsSync, readdirSync, renameSync, chmodSync, type WatchListener } from "node:fs";
+import { mkdtempSync, writeFileSync, readFileSync, existsSync, readdirSync, renameSync, chmodSync, symlinkSync, type WatchListener } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import {
-  acceptedName, ingestFile, startWatcher,
+  acceptedName, ingestFile, startWatcher, MAX_INBOX_BYTES,
   type StartWatcherOnAcceptedInfo, type StartWatcherOnRejectedInfo,
 } from "./watcher.mts";
 import { TAZUO_V1_CAPS } from "./scan-schema.mts";
@@ -331,4 +331,75 @@ test("[fast] startWatcher: a real restart re-finding a stuck duplicate inbox fil
   assert.equal(accepted2.length, 0, "the new watcher's own scanOnce() must not report this as newly accepted");
   assert.equal(readdirSync(scansDir).filter((f) => f.endsWith(".json")).length, 1, "still exactly one scan file");
   handle2.close();
+});
+
+// ---- hostile / hostile-adjacent inbox files (Phase 7 security review, Area 2) --------------------
+
+test("[fast] ingestFile: a file over the size cap is rejected without being read", () => {
+  const inboxDir = tmp("qm-inbox-big-"), scansDir = tmp("qm-scans-big-");
+  const path = join(inboxDir, "big.json");
+  // Valid JSON, so nothing but the size check can be what rejects it. A real scan is well under
+  // 10 MB; the measured cost of reading one is ~9x its size in RSS, so an unbounded read is an
+  // OOM abort that repeats on every restart (the startup sweep re-reads the same file).
+  writeFileSync(path, JSON.stringify(validDoc()) + " ".repeat(MAX_INBOX_BYTES));
+  const r = ingestFile({ path, scansDir, shard: SHARD });
+  assert.equal(r.ok, false);
+  assert.match(r.reason!, /too large/);
+  assert.equal(readdirSync(scansDir).filter((f) => f.endsWith(".json")).length, 0);
+});
+
+test("[fast] ingestFile: an inbox entry that is not a regular file is rejected without being read", { skip: process.platform === "win32" ? "symlinks need elevation on Windows" : false }, () => {
+  const inboxDir = tmp("qm-inbox-link-"), scansDir = tmp("qm-scans-link-"), elsewhere = tmp("qm-elsewhere-");
+  const target = join(elsewhere, "target.json");
+  writeFileSync(target, JSON.stringify(validDoc()));
+  const path = join(inboxDir, "link.json");
+  symlinkSync(target, path);
+  const r = ingestFile({ path, scansDir, shard: SHARD });
+  assert.equal(r.ok, false);
+  assert.match(r.reason!, /not a regular file/);
+  assert.equal(existsSync(target), true, "the symlink's target must never be touched");
+  assert.equal(readdirSync(scansDir).filter((f) => f.endsWith(".json")).length, 0);
+});
+
+test("[fast] ingestFile: the reason for unparsable JSON never carries the file's own bytes", () => {
+  const inboxDir = tmp("qm-inbox-leak-"), scansDir = tmp("qm-scans-leak-");
+  const path = join(inboxDir, "secret.json");
+  const secret = "aws_secret_access_key=wJalrXUtnFEMI/K7MDENG";
+  writeFileSync(path, secret);   // V8's own parse error quotes an excerpt of what it was given
+  const r = ingestFile({ path, scansDir, shard: SHARD });
+  assert.equal(r.ok, false);
+  assert.ok(!r.reason!.includes("wJalrXUtnFEMI"), `the reject reason leaked file content: ${r.reason}`);
+  assert.match(r.reason!, /invalid JSON/);
+});
+
+test("[fast] startWatcher: a throwing log still quarantines the file AND reports it to the page", async () => {
+  const inboxDir = tmp("qm-inbox-badlog-"), scansDir = tmp("qm-scans-badlog-");
+  writeFileSync(join(inboxDir, "bad.json"), "not json at all");
+  const watch = fakeWatch();
+  const rejected: StartWatcherOnRejectedInfo[] = [];
+  const handle = startWatcher({
+    inboxDir, adapter: "tazuo", scansDir, getShard: () => SHARD, watch,
+    log: () => { throw null; },   // a non-Error throw, from the one callback the watcher does not own
+    onRejected: (r) => rejected.push(r), debounceMs: 10, retries: 1, retryDelayMs: 10,
+  });
+  await waitFor(() => rejected.length === 1);
+  assert.equal(existsSync(join(inboxDir, "rejected", "bad.json")), true);
+  assert.equal(rejected[0]!.file, "bad.json");
+  handle.close();
+});
+
+test("[fast] startWatcher: a throwing onAccepted does not take down the watcher's queue", async () => {
+  const inboxDir = tmp("qm-inbox-badcb-"), scansDir = tmp("qm-scans-badcb-");
+  writeFileSync(join(inboxDir, "good.json"), JSON.stringify(validDoc()));
+  const watch = fakeWatch();
+  const handle = startWatcher({
+    inboxDir, adapter: "tazuo", scansDir, getShard: () => SHARD, watch,
+    onAccepted: () => { throw new Error("subscriber blew up"); }, debounceMs: 10, retries: 1, retryDelayMs: 10,
+  });
+  await waitFor(() => readdirSync(scansDir).filter((f) => f.endsWith(".json")).length === 1);
+  // the queue still runs afterwards
+  writeFileSync(join(inboxDir, "good2.json"), JSON.stringify(validDoc({ scannedAt: "2026-01-02T12:00:00+00:00" })));
+  watch.fire("rename", "good2.json");
+  await waitFor(() => readdirSync(scansDir).filter((f) => f.endsWith(".json")).length === 2);
+  handle.close();
 });

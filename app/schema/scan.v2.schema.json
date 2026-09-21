@@ -1,11 +1,11 @@
 {
-  "$comment": "Pack Rat scan file schema v2. Draft-07 style, restricted to the keyword subset app/schema/validate.mjs supports. additionalProperties is true at the top level (adapters may add fields, e.g. refresh's meta) but false inside adapter and adapter.capabilities, which are a closed contract every adapter must match exactly. This JSON literal must stay identical to SCAN_V2_SCHEMA in app/scan-schema.mjs (app/scan-schema.test.mjs asserts that) because scan-schema.mjs is served to the browser and cannot load this file via fs or a JSON import attribute.",
+  "$comment": "Pack Rat scan file schema v2. Draft-07 style, restricted to the keyword subset app/schema/validate.mjs supports. additionalProperties is true at the top level (adapters may add fields, e.g. refresh's meta) but false inside adapter and adapter.capabilities, which are a closed contract every adapter must match exactly, and a SUBSCHEMA on the arbitrarily-keyed maps (stats, maxes, resists, position, skills, containers), which is how their values get checked at all. This JSON literal must stay identical to SCAN_V2_SCHEMA in app/scan-schema.mjs (app/scan-schema.test.mjs asserts that) because scan-schema.mjs is served to the browser and cannot load this file via fs or a JSON import attribute.",
   "type": "object",
   "additionalProperties": true,
   "required": ["schemaVersion", "character", "scannedAt", "adapter", "stats", "roots", "containers", "items", "equipped"],
   "properties": {
     "schemaVersion": { "type": "integer", "enum": [2] },
-    "character": { "type": "string", "minLength": 1 },
+    "character": { "type": "string", "minLength": 1, "maxLength": 64 },
     "scannedAt": { "type": "string", "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d+)?([+-]\\d{2}:\\d{2}|Z)$" },
     "shard": { "type": ["string", "null"] },
     "account": { "type": "string", "pattern": "^[a-f0-9]{16,64}$", "$comment": "an opaque hashed account id (e.g. hex SHA-256 of the account name) — never the plaintext name" },
@@ -34,39 +34,65 @@
         }
       }
     },
-    "stats": { "type": "object" },
-    "position": { "type": ["object", "null"] },
-    "maxes": { "type": ["object", "null"] },
-    "resists": { "type": ["object", "null"] },
-    "skills": { "type": "object" },
+    "stats": { "type": "object", "additionalProperties": { "type": "number" } },
+    "position": { "type": ["object", "null"], "additionalProperties": { "type": "number" } },
+    "maxes": { "type": ["object", "null"], "additionalProperties": { "type": "number" } },
+    "resists": { "type": ["object", "null"], "additionalProperties": { "type": "number" } },
+    "skills": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "object",
+        "required": ["value", "cap"],
+        "properties": {
+          "value": { "type": "number", "minimum": 0, "maximum": 1000 },
+          "base": { "type": "number", "minimum": 0, "maximum": 1000 },
+          "cap": { "type": "number", "minimum": 0, "maximum": 1000 }
+        }
+      }
+    },
     "roots": {
       "type": "array",
       "items": {
         "type": "object",
         "required": ["serial", "kind", "name", "opened"],
         "properties": {
-          "serial": { "type": "integer" },
+          "serial": { "type": "integer", "minimum": 0, "maximum": 4294967295 },
           "kind": { "type": "string", "enum": ["backpack", "bank", "ground"] },
-          "name": { "type": "string" },
+          "name": { "type": "string", "maxLength": 256 },
           "opened": { "type": "boolean" }
         }
       }
     },
-    "containers": { "type": "object" },
+    "containers": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "object",
+        "required": ["serial", "root"],
+        "properties": {
+          "serial": { "type": "integer", "minimum": 0, "maximum": 4294967295 },
+          "root": { "type": "integer", "minimum": 0, "maximum": 4294967295 },
+          "parent": { "type": ["integer", "null"], "minimum": 0, "maximum": 4294967295 },
+          "kind": { "type": "string", "maxLength": 64 },
+          "name": { "type": "string", "maxLength": 256 },
+          "pos": { "type": ["object", "null"], "additionalProperties": { "type": "number" } },
+          "tooltip": { "type": "array", "maxItems": 256, "items": { "type": "string", "maxLength": 512 } }
+        }
+      }
+    },
     "items": {
       "type": "array",
       "items": {
         "type": "object",
         "required": ["serial", "container", "nameSource"],
         "properties": {
-          "serial": { "type": "integer" },
-          "container": { "type": "integer" },
-          "graphic": { "type": ["number", "null"] },
-          "hue": { "type": ["number", "null"] },
-          "amount": { "type": "number" },
-          "name": { "type": "string" },
+          "serial": { "type": "integer", "minimum": 0, "maximum": 4294967295 },
+          "container": { "type": "integer", "minimum": 0, "maximum": 4294967295 },
+          "graphic": { "type": ["number", "null"], "minimum": 0, "maximum": 65535 },
+          "hue": { "type": ["number", "null"], "minimum": 0, "maximum": 65535 },
+          "amount": { "type": "number", "minimum": 0, "maximum": 4294967295 },
+          "name": { "type": "string", "maxLength": 256 },
           "nameSource": { "type": "string", "enum": ["opl", "label"] },
-          "tooltip": { "type": "array", "items": { "type": "string" } }
+          "tooltip": { "type": "array", "maxItems": 256, "items": { "type": "string", "maxLength": 512 } }
         }
       }
     },
@@ -76,14 +102,14 @@
         "type": "object",
         "required": ["serial", "nameSource"],
         "properties": {
-          "serial": { "type": "integer" },
-          "graphic": { "type": ["number", "null"] },
-          "hue": { "type": ["number", "null"] },
-          "amount": { "type": "number" },
-          "name": { "type": "string" },
+          "serial": { "type": "integer", "minimum": 0, "maximum": 4294967295 },
+          "graphic": { "type": ["number", "null"], "minimum": 0, "maximum": 65535 },
+          "hue": { "type": ["number", "null"], "minimum": 0, "maximum": 65535 },
+          "amount": { "type": "number", "minimum": 0, "maximum": 4294967295 },
+          "name": { "type": "string", "maxLength": 256 },
           "nameSource": { "type": "string", "enum": ["opl", "label"] },
-          "tooltip": { "type": "array", "items": { "type": "string" } },
-          "layer": { "type": ["string", "null"] }
+          "tooltip": { "type": "array", "maxItems": 256, "items": { "type": "string", "maxLength": 512 } },
+          "layer": { "type": ["string", "null"], "maxLength": 64 }
         }
       }
     }

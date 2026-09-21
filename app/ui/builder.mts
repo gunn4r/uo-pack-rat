@@ -9,7 +9,7 @@ import type { BuilderProfile, BuilderJob, BuilderJobUi } from "./store.mts";
 import { $, el, label, full, fmtN, fmtSecs, fmtRunTime, slotLabel, toast } from "./dom.mts";
 import { promptText } from "./dialog.mts";
 import { api, CLIENT_ID } from "./api.mts";
-import { sheetHtml } from "./sheet.mts";
+import { sheetNode } from "./sheet.mts";
 import { actButtons, grabAllRow, bridgeNoteEl } from "./bridge.mts";
 import { resolveItems } from "./items.mts";
 import { parseRoute, routeFor } from "./app.mts";
@@ -362,7 +362,7 @@ export async function renderResult(res: OptimizeResult, current: OptSuit, prof: 
     el("div", { class: "chips" }, ...report.filter((x) => x.value || x.floor != null).map((x) => el("span", { class: "pill " + (x.met === false ? "bad" : x.capped ? "good" : ""), title: full(x.key) + (x.floor != null ? ` · floor ${pd(x.key, x.floor)}` : "") + (x.cap != null ? ` · cap ${pd(x.key, x.cap)}` : "") + (rsb && RESIST_KEYS.includes(x.key) ? ` · includes +${rsb} from Resisting Spells` : "") },
       `${x.label} ${pd(x.key, before[x.key] || 0)} → ${pd(x.key, x.value)}${x.cap != null ? "/" + pd(x.key, x.cap) : ""}${x.over ? ` (${x.over} wasted)` : ""}`))));
   const altNode = res.altTolerance != null ? altPanel(res, current, prof, view) : null;
-  const sheetNode = el("div", { class: "panel", html: sheetHtml(state.builder.character!, current, suit) });
+  const sheetPanel = el("div", { class: "panel" }, sheetNode(state.builder.character!, current, suit));
   const changes = OPTIMIZER_SLOTS.filter((sl) => (current[sl]?.serial || 0) !== (suit[sl]?.serial || 0)).map((sl): { slot: string; toSerial: number } => ({ slot: sl, toSerial: suit[sl]?.serial || 0 }));
   const rowsAll = OPTIMIZER_SLOTS.map((slot) => ({ slot, now: current[slot], next: suit[slot] }));
   // The optimizer's own item shape (serial/name/slot/props) has no location/equippedBy — resolve
@@ -395,7 +395,7 @@ export async function renderResult(res: OptimizeResult, current: OptSuit, prof: 
   // Every node is built — install them all in one replaceChildren() call, the only DOM write this
   // function makes, so an overtaken (bailed-out) call never leaves a partial/mixed panel behind.
   // `.filter(Boolean)` doesn't narrow the null branches away — same documented gap as runs.mts.
-  $<HTMLElement>("#b-result")!.replaceChildren(...[topPanel, noteNode, altNode, sheetNode, planNode, fetchNode].filter(Boolean) as HTMLElement[]);
+  $<HTMLElement>("#b-result")!.replaceChildren(...[topPanel, noteNode, altNode, sheetPanel, planNode, fetchNode].filter(Boolean) as HTMLElement[]);
 }
 // The best suit and the other suits within the tolerance, each described by how it differs from the best: which
 // pieces change and which property totals move (weighted or not). Show puts that suit into the plan and sheet below.

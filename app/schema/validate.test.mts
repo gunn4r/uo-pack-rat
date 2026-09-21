@@ -119,3 +119,38 @@ test("[fast] validate: object type excludes null and arrays", () => {
   assert.equal(validate({ type: "object" }, null).ok, false);
   assert.equal(validate({ type: "object" }, []).ok, false);
 });
+
+test("[fast] validate: required and properties are own-property checks, not `in` (which walks the prototype chain)", () => {
+  // `"toString" in {}` is true, so an `in`-based check reported a document as carrying a field it has
+  // nothing of its own for — and then validated Object.prototype.toString (a function) against the
+  // subschema. Every trust boundary in the app funnels through this file (Phase 7, Area 2, Minor 2).
+  const r = validate({ type: "object", required: ["toString", "constructor", "valueOf"] }, {});
+  assert.equal(r.ok, false);
+  assert.deepEqual(r.errors.map((e) => e.msg), ["missing required: toString", "missing required: constructor", "missing required: valueOf"]);
+  assert.equal(validate({ type: "object", properties: { toString: { type: "string" } } }, {}).ok, true);
+  // a JSON-supplied OWN property of the same name is still checked
+  assert.equal(validate({ type: "object", properties: { toString: { type: "string" } } }, JSON.parse('{"toString": 1}')).ok, false);
+});
+
+test("[fast] validate: maxLength bounds a string and maxItems bounds an array", () => {
+  assert.equal(validate({ type: "string", maxLength: 4 }, "abcd").ok, true);
+  const r = validate({ type: "string", maxLength: 4 }, "abcde");
+  assert.equal(r.ok, false);
+  assert.equal(r.errors[0]!.msg, "longer than maxLength 4");
+  assert.equal(validate({ type: "array", maxItems: 2 }, [1, 2]).ok, true);
+  assert.equal(validate({ type: "array", maxItems: 2 }, [1, 2, 3]).errors[0]!.msg, "more than maxItems 2");
+});
+
+test("[fast] validate: additionalProperties given a schema applies it to every key `properties` does not name", () => {
+  const schema = { type: "object", properties: { id: { type: "string" } }, additionalProperties: { type: "number" } };
+  assert.equal(validate(schema, { id: "x", a: 1, b: 2 }).ok, true);
+  const r = validate(schema, { id: "x", a: "no" });
+  assert.equal(r.ok, false);
+  assert.equal(r.errors[0]!.path, "/a");
+  assert.equal(r.errors[0]!.msg, "expected number");
+  // the boolean form keeps its old meaning
+  assert.equal(validate({ type: "object", properties: { id: { type: "string" } }, additionalProperties: false }, { id: "x", a: 1 }).ok, false);
+  assert.equal(validate({ type: "object", properties: { id: { type: "string" } }, additionalProperties: true }, { id: "x", a: 1 }).ok, true);
+  // a hostile own "__proto__" key from JSON.parse is walked like any other own key
+  assert.equal(validate(schema, JSON.parse('{"id": "x", "__proto__": "no"}')).ok, false);
+});

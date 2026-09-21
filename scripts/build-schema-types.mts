@@ -52,13 +52,15 @@ type JsonSchema = {
   items?: JsonSchema | JsonSchema[] | boolean;
   pattern?: string;
   minLength?: number;
+  maxLength?: number;
+  maxItems?: number;
   minimum?: number;
   maximum?: number;
 };
 
 // Keywords with no type-level meaning — collected (so they don't trip the "unsupported construct"
 // check) and then ignored. $defs/definitions are metadata for $ref to find, not a shape of their own.
-const IGNORED_KEYWORDS = new Set(["$comment", "pattern", "minLength", "minimum", "maximum", "$defs", "definitions"]);
+const IGNORED_KEYWORDS = new Set(["$comment", "pattern", "minLength", "maxLength", "maxItems", "minimum", "maximum", "$defs", "definitions"]);
 const STRUCTURAL_KEYWORDS = ["type", "properties", "required", "additionalProperties", "items"] as const;
 
 type Ctx = {
