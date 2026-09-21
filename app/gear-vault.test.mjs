@@ -45,6 +45,45 @@ test("[smoke] FCR is not double-counted as FC, SDI is not DI", () => {
   assert.deepEqual(p.props, { fcr: 3, fc: 1, sdi: 12, di: 5 });
 });
 
+// A minus sign counts only when it sits immediately before the digits ("-1", not "- 1") — a stray
+// "\D*" used to swallow the sign and read "Faster Casting -1" as +1 (the only negative standard
+// property found across the owner's 24 real scans, 212 lines).
+test("[smoke] a negative property value (Faster Casting -1) is read as negative, not positive", () => {
+  const neg = parseTooltip(["Ring", "Faster Casting -1"]);
+  assert.equal(neg.props.fc, -1);
+  const pos = parseTooltip(["Ring", "Faster Casting 1"]);
+  assert.equal(pos.props.fc, 1);
+  // FCR still wins its own key and is not folded into fc alongside a negative fc
+  const both = parseTooltip(["Ring", "Faster Cast Recovery 3", "Faster Casting -1"]);
+  assert.deepEqual(both.props, { fcr: 3, fc: -1 });
+});
+
+test("[fast] a percent property is unaffected by the negative-value fix", () => {
+  const p = parseTooltip(["Ring", "Lower Mana Cost 8%"]);
+  assert.equal(p.props.lmc, 8);
+});
+
+test("[fast] a weapon damage range is unaffected by the negative-value fix — the low end is not misread as negative", () => {
+  const p = parseTooltip(["Sword", "Weapon Damage 13 - 16"]);
+  assert.deepEqual(p.extras["weapon damage"], [13, 16]);
+});
+
+test("[fast] a dash separated from its number by a space is not read as negative", () => {
+  const p = parseTooltip(["Trinket", "Spectral Resonance - 1"]);
+  assert.equal(Object.values(p.props).some((v) => v < 0), false, "no modeled property reads negative");
+  assert.equal(Object.values(p.extras).flat().some((v) => v < 0), false, "no extra reads negative");
+  // the general extras line still captures the number itself, positively — only the sign-adjacency rule is under test
+  const key = Object.keys(p.extras).find((k) => k.trim() === "spectral resonance");
+  assert.equal(p.extras[key], 1);
+});
+
+test("[fast] end to end: an item whose tooltip reads Faster Casting -1 contributes -1 to totalsOf for a suit containing it", () => {
+  const parsed = parseTooltip(["Cursed Ring", "Faster Casting -1"]);
+  const it = toOptItem({ serial: 1, name: parsed.name, slot: "ring", props: parsed.props, extras: parsed.extras });
+  const totals = totalsOf({ ring: it });
+  assert.equal(totals.fc, -1);
+});
+
 test("[fast] skill bonuses and slayers land in extras/flags for searching", () => {
   const p = parseTooltip(["Bracelet of Sorcery", "Chivalry +10", "Healing +20", "Orc Slayer", "Night Sight"]);
   assert.equal(p.extras.chivalry, 10);
@@ -692,6 +731,22 @@ test("[fast] a locked one-handed weapon keeps two-handed weapons out of the suit
   }
   const free = core.optimizeSuit({ oneHanded: [sword], twoHanded: [staff, shield] }, {}, pr, { seed: 1, restarts: 10, slots: hands, optionalSlots: hands, exact: true });
   assert.equal(free.best.twoHanded.serial, 2, "with the hand free the staff wins");
+});
+
+// Under the old "\D*" reading, "Faster Casting -1" parsed as +1 and the cursed ring would have won
+// this search (fc weighted positively). With the sign read correctly it must lose to the plain ring.
+test("[fast] the solver scores a Faster Casting -1 item as a loss, not a gain", () => {
+  const plain = { serial: 1, name: "Plain Ring", slot: "ring", props: {} };
+  // props come from the real parser, not a hand-written literal, so this test is sensitive to the
+  // PROP_PATTERNS fix itself, not just to the (already-correct) solver scoring of a negative.
+  const cursed = { serial: 2, name: "Cursed Ring", slot: "ring", props: parseTooltip(["Cursed Ring", "Faster Casting -1"]).props };
+  const prof = { weights: { fc: 10 }, caps: {} };
+  // Start already wearing the plain ring (a required slot, currently filled, so "equip nothing" is not on
+  // the table) with only the cursed ring as a swap candidate. Under the old "\D*" reading FC -1 parsed as
+  // +1, which times weight 10 is +10, so the hill climber would have swapped to the cursed ring; read
+  // correctly as -1 it scores -10 and must lose to keeping the plain ring.
+  const r = core.optimizeSuit({ ring: [cursed] }, { ring: plain }, prof, { seed: 1, restarts: 3, slots: ["ring"], optionalSlots: [], exact: true, timeBudgetMs: 2000 });
+  assert.equal(r.best.ring && r.best.ring.serial, plain.serial, "the un-cursed ring must win once FC -1 is read as a loss");
 });
 
 test("[slow] warm start never lowers the result and keeps a proven optimum", { skip: SKIP_SLOW }, () => {
