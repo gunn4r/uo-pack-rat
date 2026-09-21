@@ -879,19 +879,26 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
           }
           if (s.strLimit != null && typeof s.strLimit !== "number") return send(res, 400, { ok: false, error: "settings.strLimit must be a number" });
           // Every field of `s` was checked above (when present); this cast is the trust boundary the
-          // migration recipe describes — placed AFTER those checks, not instead of them.
+          // migration recipe describes — placed AFTER those checks, not instead of them. The four list
+          // fields are `unknown[]` because Array.isArray() is all that ran on them: nothing looked at
+          // their elements.
           const { allowOthersWorn = false, strLimit = Infinity, excludeTags = [], excludeRoots = [], allowGargoyle = false, medOnly = false, weaponSkill = null, excludeSkills = [], lockedSlots = [] } = s as {
-            allowOthersWorn?: boolean; strLimit?: number; excludeTags?: string[]; excludeRoots?: Array<string | number>;
-            allowGargoyle?: boolean; medOnly?: boolean; weaponSkill?: string | null; excludeSkills?: string[]; lockedSlots?: string[];
+            allowOthersWorn?: boolean; strLimit?: number; excludeTags?: unknown[]; excludeRoots?: unknown[];
+            allowGargoyle?: boolean; medOnly?: boolean; weaponSkill?: string | null; excludeSkills?: unknown[]; lockedSlots?: unknown[];
           };
+          // The hand-off to buildPools() and the slot loops below need element types, and nothing above
+          // established any. These casts are that gap, written down in one place: today it is harmless
+          // (every use is an includes()/Set lookup or an object key, which tolerate any element), and a
+          // real element check would be a behaviour change that belongs to the security review.
+          const tagList = excludeTags as string[], rootList = excludeRoots as Array<string | number>, skillList = excludeSkills as string[], lockedList = lockedSlots as string[];
           const { inv } = await getInventory();
           // character is only ever truthy-checked (`if (character)` above), never typeof-checked — see report.
-          const built = (await lib()).buildPools(inv, character as string, { allowOthersWorn, strength: strLimit, excludeTags, excludeRoots, excludeGargoyle: !allowGargoyle, medOnly, weaponSkill, excludeSkills });
+          const built = (await lib()).buildPools(inv, character as string, { allowOthersWorn, strength: strLimit, excludeTags: tagList, excludeRoots: rootList, excludeGargoyle: !allowGargoyle, medOnly, weaponSkill, excludeSkills: skillList });
           pools = built.pools; current = built.current; blocked = built.blocked;
           skipped = Object.fromEntries(Object.entries(built.skipped).map(([k, v]) => [k, v.length]));
           for (const slot of blocked) delete current[slot];       // a worn piece the filters now rule out must not stay "current"
-          for (const slot of lockedSlots) pools[slot] = [];        // a locked slot offers no alternatives — it always keeps current
-          opts = { ...(opts as RunOpts), optionalSlots: DEFAULT_OPTIONAL_SLOTS.filter((slot) => !lockedSlots.includes(slot)) };
+          for (const slot of lockedList) pools[slot] = [];        // a locked slot offers no alternatives — it always keeps current
+          opts = { ...(opts as RunOpts), optionalSlots: DEFAULT_OPTIONAL_SLOTS.filter((slot) => !lockedList.includes(slot)) };
           meta = { ...meta, character, settings: s };
         }
         if (!profile) return send(res, 400, { ok: false, error: "profile required" });

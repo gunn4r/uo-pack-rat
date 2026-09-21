@@ -703,7 +703,7 @@ export interface RunSettings {
   medOnly?: boolean | undefined;
   allowOthersWorn?: boolean | undefined;
   exact?: boolean | undefined;
-  weaponSkill?: string | undefined;
+  weaponSkill?: string | null | undefined;   // null is what templateFrom() produces, and settingsDiff() is documented to take templates
   strLimit?: number | undefined;
   restarts?: number | undefined;
   budgetMs?: number | undefined;
