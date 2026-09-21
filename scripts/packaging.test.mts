@@ -19,6 +19,7 @@ interface BuildConfig {
   portable?: { artifactName?: string | undefined } | undefined;
   files?: string[] | undefined;
   asarUnpack?: string[] | undefined;
+  electronFuses?: Record<string, boolean> | undefined;
   publish?: { provider?: string | undefined; releaseType?: string | undefined } | undefined;
   artifactName?: string | undefined;
 }
@@ -85,11 +86,44 @@ test("[fast] the bundle excludes the page's TypeScript sources (the compiled app
   assert.ok(!files.includes("!app/ui/**"), "app/ui/**/*.mts must not be excluded via a pattern broad enough to also drop styles.css");
 });
 
-test("[fast] worker-thread and adapter files are unpacked from the asar", () => {
+test("[fast] only the files that must be loose on disk are unpacked from the asar — the app's own code is not", () => {
+  // app/** used to be unpacked wholesale on the belief that "worker threads under asar are
+  // undocumented". That is the app itself — the server, the installer, the watcher and the compiled
+  // page — sitting beside the archive as ordinary user-writable files that nothing signs or hashes,
+  // so tampering with the code the shell then stamps its bearer token onto costs one `cp` (phase-7
+  // security review, Important 3). It is now inside the asar, proven against a real
+  // `electron-builder --dir` tree on macOS: the packaged app served its page, answered an
+  // authenticated /api/setup, and ran a full optimize job to completion — a worker thread loaded out
+  // of app.asar, HiGHS loaded from app.asar.unpacked beside it, solver "highs", proven true. That
+  // last leg is what `--smoke` checks on every run now (electron/main.mts's OPTIMIZE_CHECK_JS), so
+  // nobody has to take this comment's word for it.
   const unpacked = build.asarUnpack ?? [];
-  assert.ok(unpacked.includes("app/**"), "worker threads under asar are undocumented — unpack app/");
+  assert.ok(!unpacked.includes("app/**"), "app/ must stay INSIDE the asar — it is the app's own code, and unpacking it makes on-disk tampering a supported configuration");
   assert.ok(unpacked.includes("adapters/**"), "the installer copies .py files out to the game client");
   assert.ok(unpacked.includes("node_modules/highs/**"), "the solver's wasm is loaded from disk");
+});
+
+test("[fast] the shipped binary is not left usable as a general-purpose Node interpreter", () => {
+  // Every Electron fuse ships permissive by default, which leaves the installed app able to run an
+  // arbitrary script as plain Node (ELECTRON_RUN_AS_NODE), honour NODE_OPTIONS, and open an
+  // inspector port into its own main process — the standard "live off the land with an installed
+  // Electron app" path (phase-7 security review, Important 2). Nothing in the PACKAGED app needs any
+  // of them: the server child is a utilityProcess (its own mechanism, unaffected by runAsNode), and
+  // the one ELECTRON_RUN_AS_NODE use in the project is scripts/build-ui.mts, which runs only when
+  // !app.isPackaged and is not even shipped (see the build.files test above).
+  const fuses = build.electronFuses ?? {};
+  assert.equal(fuses.runAsNode, false, "the app binary must not run arbitrary scripts as Node");
+  assert.equal(fuses.enableNodeOptionsEnvironmentVariable, false, "NODE_OPTIONS must not be honoured");
+  assert.equal(fuses.enableNodeCliInspectArguments, false, "--inspect must not open a debugger on the main process");
+  assert.equal(fuses.onlyLoadAppFromAsar, true, "the app must load from app.asar only, never from a loose app/ directory beside it");
+  assert.equal(fuses.resetAdHocDarwinSignature, true, "flipping fuses rewrites the binary and invalidates its ad-hoc signature — an unsigned mac build must be re-signed or it will not launch on Apple Silicon");
+  // Deliberately NOT set: enableCookieEncryption (it makes Chromium take a key from the OS keychain
+  // at startup — an unsigned build's identity changes every release, so every user would be prompted
+  // for keychain access by an app that stores no cookies and no secrets; observed live on the
+  // maintainer's machine during this change) and enableEmbeddedAsarIntegrityValidation (the expected
+  // hash lives in a file exactly as writable as the asar it describes, so without code signing it
+  // stops nobody — revisit it and onlyLoadAppFromAsar together if this project ever signs).
+  assert.ok(!("enableCookieEncryption" in fuses), "enableCookieEncryption prompts every user of an unsigned build for keychain access and protects nothing here");
 });
 
 test("[fast] the release build never tries to sign", () => {
@@ -190,8 +224,32 @@ test("[fast] the release workflow builds unsigned, on a tag, into a draft releas
   const rel = workflow("release.yml");
   assert.match(rel, /tags:\s*\n\s*- *['"]?v\*/, "triggered by a v* tag");
   assert.match(rel, /CSC_IDENTITY_AUTO_DISCOVERY: *["']?false/, "no signing this phase");
-  assert.match(rel, /dist:publish/, "calls the publish-always script, not dist -- --publish always");
+  // The build job builds and publishes NOTHING (`npm run dist` is --publish never); a separate job
+  // with its own token uploads the artifacts to the draft. So the matrix that runs the whole
+  // dependency tree never holds a release token — see the token/npm test below.
+  assert.match(rel, /run: npm run dist\b/, "the build matrix runs the non-publishing dist script");
   assert.doesNotMatch(rel, /APPLE_ID|CSC_LINK|notarize/i, "no signing or notarization secrets");
+});
+
+test("[fast] no step that runs npm in the release workflow carries a write-scoped token", () => {
+  // The publish job holds `contents: write`; the build job runs 300-odd development packages as
+  // ordinary code. A step that did both would hand the dependency tree a token that can write to
+  // releases — which is the one concentrated risk the phase-7 supply-chain review named.
+  const steps = workflow("release.yml").split(/\n {6}- /).slice(1);
+  for (const step of steps) {
+    if (/\bnpm\b/.test(step)) assert.doesNotMatch(step, /GH_TOKEN|GITHUB_TOKEN/, `a step that runs npm must not carry a release token:\n${step.slice(0, 160)}`);
+  }
+});
+
+test("[fast] every action both workflows use is pinned to a full commit sha, and says which tag that was", () => {
+  // A mutable tag (`@v4`) is whatever that tag points at on the day CI runs, in a job that can build
+  // the installers players download. The trailing `# vX.Y.Z` comment is what makes a pin reviewable
+  // and renewable — a bare sha with no note of its version is a pin nobody dares update.
+  for (const name of ["ci.yml", "release.yml"]) {
+    for (const line of workflow(name).split("\n").filter((l) => /^\s*-?\s*uses:/.test(l))) {
+      assert.match(line, /uses: \S+@[0-9a-f]{40} +# +v\d/, `${name}: pin to a sha and name the tag — ${line.trim()}`);
+    }
+  }
 });
 
 test("[fast] the release workflow can be run by hand to rehearse a build, without publishing anything", () => {

@@ -11,10 +11,12 @@
 // event and ParentPort's 'message' event no better than `any` (see electron.d.ts), and this project's
 // convention is to treat anything crossing a process boundary as `unknown` until it's checked. Narrow
 // by the `type` field first; only read the rest of a message once `type` has matched one of these.
-// Matching `type` is ALL that is checked: the other fields (port, url, id, op, args, result) are then
-// trusted by a whole-object cast, exactly as the untyped code trusted them. That is acceptable only
-// because both ends of this channel are this app's own code; these interfaces describe what the two
-// processes send each other, not something either side verifies.
+// Matching `type` is nearly all that is checked: the remaining fields (port, url, id, result) are
+// trusted by a whole-object cast, exactly as the untyped code trusted them. The exception is a host
+// request's `args`, which main.mts runs through electron/host-args.mts before either value reaches an
+// OS call — the phase-7 security review's Important 1 is what happens when a message's own claim is
+// taken as the argument to shell.openPath. These interfaces describe what the two processes send each
+// other; only `args` describes something the receiving side then verifies.
 
 // server-entry.mts -> main.mts, once startServer() is listening.
 export interface ListeningMessage {
@@ -25,8 +27,18 @@ export interface ListeningMessage {
 
 // server-entry.mts -> main.mts: relays one app/vault-server.mts HostBridge call that only Electron's
 // main process can actually perform. `args`' shape follows HostBridge's own two method signatures
-// exactly (app/vault-server.mts: pickFolder's `title` is unvalidated end to end, hence `unknown`;
-// openPath's `path` is always one of two Config-derived directory strings, never request-supplied).
+// exactly (app/vault-server.mts: pickFolder's `title` is unvalidated end to end, hence `unknown`).
+// Both are checked at the far end before they reach an OS call, by electron/host-args.mts — this
+// channel carries what the child SAYS, and main.mts is where that becomes what the OS is asked to do.
+//
+// openPath's `args` is a DISCRIMINATOR, "data" or "logs", not a path: main.mts owns those two
+// directories and resolves them itself, so a compromised server child cannot name a third thing for
+// the OS to launch (phase-7 security review, Important 1). It stays typed `string` rather than the
+// two literals because a server that still resolves the path itself — the shape this channel carried
+// before the review — has to keep compiling and keep working; main.mts accepts such a value only when
+// it is byte-identical to one of the two directories it computed, and refuses everything else.
+// What the server side should send, from POST /api/host/open-path's already-validated `which`:
+//     await host.openPath(which);        // "data" | "logs" — NOT CONFIG.dataDir / CONFIG.paths.logs
 export interface PickFolderRequest {
   type: "host";
   id: number;
