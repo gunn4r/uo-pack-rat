@@ -101,7 +101,7 @@ export function resolveConfig(argv: string[] = process.argv.slice(2), env: NodeJ
       runs: join(dataDir, "runs"),
       bridge, bridgeQueue: join(bridge, "queue.jsonl"), bridgeStatus: join(bridge, "status.json"),
       // bridgeFor(adapter): the directory; bridgeQueueFor/bridgeStatusFor: the two files inside it.
-      // Callers (app/vault-server.mjs's bridge routes, and POST /api/setup/install's running-bridge
+      // Callers (app/vault-server.mts's bridge routes, and POST /api/setup/install's running-bridge
       // guard) resolve these against whichever adapter is actually relevant to that request, not a
       // constant captured once at server startup.
       bridgeFor: (adapter: string) => join(bridgeRoot, adapter),

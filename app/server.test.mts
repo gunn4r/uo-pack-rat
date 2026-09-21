@@ -7,17 +7,17 @@ import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
 import http from "node:http";
 import { createConnection } from "node:net";
-import { resolveConfig, ensureLayout, type Config } from "./config.mts";
-import { startServer, type ServerHandle, type HostBridge } from "./vault-server.mts";
+import { resolveConfig, ensureLayout } from "./config.mts";
+import { startServer, type ServerHandle } from "./vault-server.mts";
 import { buildPools, foldSnapshots, setRules } from "./vault-lib.mts";
 import { upgradeScan, validateScan } from "./scan-schema.mts";
 import { DEFAULT_OPTIONAL_SLOTS } from "./mip.mts";
 import { buildUi } from "../scripts/build-ui.mjs";
 import { buildSchemaTypes } from "../scripts/build-schema-types.mts";
 import { validate, type ValidatorSchema } from "./schema/validate.mts";
-import type { Item, Inventory, ProfilesFile, Template } from "./vault-lib.mts";
+import type { Item, Inventory, ProfilesFile } from "./vault-lib.mts";
 import type { RulesV1, ScanV2 } from "./schema/types.d.mts";
-import type { AdapterInfo, InstallScriptsResult, CheckForUpdatesResult } from "./installer.mts";
+import type { AdapterInfo, InstallScriptsResult } from "./installer.mts";
 
 // ---------------------------------------------------------------------------------------------
 // HTTP responses are unknown provenance — every route is reachable by any local caller, trusted
@@ -261,7 +261,7 @@ function sseReader(response: Response): SseReaderHandle {
 // A dropped inbox file's fs.watch notification can be silently missed by the OS — reproduced live
 // (not a timing-margin issue: an instrumented trace showed the watcher's fs.watch callback firing
 // ZERO times for the whole life of the affected watcher, not late) in
-// .superpowers/sdd/2026-09-17-phase-6-adapters/sse-flake-report.md. app/vault-server.mjs's own
+// .superpowers/sdd/2026-09-17-phase-6-adapters/sse-flake-report.md. app/vault-server.mts's own
 // POST /api/import and /api/import/paste routes already treat this as expected platform behavior and
 // nudge scanOnce() themselves instead of trusting fs.watch alone (see their "Nudge the watcher"
 // comments); POST /api/import/rescan exposes that same nudge for a drop the app didn't make itself —
@@ -476,7 +476,7 @@ test("[fast] writes require application/json", async () => {
   assert.equal(r.status, 415);
 });
 
-// readScans() (app/vault-server.mjs) upgrades and schema-validates every scan file on read; a file
+// readScans() (app/vault-server.mts) upgrades and schema-validates every scan file on read; a file
 // that fails either step must be logged (console.warn) and skipped, never crash the server or the
 // rest of the fold. Uses a non-demo server (--demo redirects paths.scans to app/fixtures, which this
 // test needs to control directly) with its own scans/ directory seeded with one valid v1 fixture
@@ -627,7 +627,7 @@ test("[fast] a log destination that throws on every write does not crash the ser
     writeFileSync(tmpPath, "not json");
     renameSync(tmpPath, join(inboxDir, "bad.json"));
 
-    // Before the fix, the watcher's very first log() call (app/vault-server.mjs's callback into
+    // Before the fix, the watcher's very first log() call (app/vault-server.mts's callback into
     // app/watcher.mts) threw, leaving the watcher's promise chain rejected with no handler — an
     // unhandled rejection that took the whole process down well before this event could ever fire,
     // and well before the retries/rejectFile below would ever run.

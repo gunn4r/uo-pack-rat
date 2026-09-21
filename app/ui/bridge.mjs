@@ -46,7 +46,7 @@ export async function sendBridge(action, it) {
 // disappeared with no way to get them back short of running the wizard's install step for real — fixed
 // here by falling back to state.setup.bridgeAdapter: the SAME adapter id the server is actually
 // routing POST /api/bridge and GET /api/bridge/status to when no client is configured (the
-// bridgeAdapter() function in app/vault-server.mjs, whose result GET /api/setup now also reports; see
+// bridgeAdapter() function in app/vault-server.mts, whose result GET /api/setup now also reports; see
 // docs/bridge-protocol.md). Reusing the server's own routing target — rather than the page picking its
 // own "tazuo" guess independently — means the buttons this renders and the client the commands
 // actually reach can never disagree; the server already guards that id to one that really exists among

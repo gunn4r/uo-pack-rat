@@ -1,7 +1,7 @@
 // scan-schema.mts — the scan v2 schema, the v1→v2 upgrade-on-read, and epoch-based scan ordering.
 // Browser-safe: no Node-only imports (no "node:fs"), so it can be served to the page exactly like
 // vault-lib.mts (which imports parseStamp from here for fold ordering) — see the /scan-schema.mjs
-// static route in vault-server.mjs. Because it must stay fs-free, SCAN_V2_SCHEMA is an inline JS
+// static route in vault-server.mts. Because it must stay fs-free, SCAN_V2_SCHEMA is an inline JS
 // object rather than a read of app/schema/scan.v2.schema.json; scan-schema.test.mts asserts the two
 // stay identical, and app/schema/scan.v2.schema.json is the copy other (non-JS) tooling can read.
 import { validate, type ValidationResult } from "./schema/validate.mts";

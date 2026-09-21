@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // build-ui.mjs — compile the browser-facing TypeScript (app/ui/**, vault-lib.*, item-query.*,
 // scan-schema.*, schema/validate.*) via tsconfig.browser.json into app/dist/, which is what
-// vault-server.mjs actually serves the page from (never the source tree — see its own header
+// vault-server.mts actually serves the page from (never the source tree — see its own header
 // comment). Unlike the optimizer core (a single paste-able file Node runs from source with no build
 // step at all), this needs the real tsc: module resolution across app/ui/*.mts.
 //

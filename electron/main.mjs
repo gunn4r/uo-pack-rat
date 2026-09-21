@@ -2,7 +2,7 @@
 // (server-entry.mjs) as a utility process, opens one BrowserWindow on it, stamps every request to
 // that server with a per-launch bearer token (session.webRequest, never a URL/log/page value), and
 // answers the two native-only calls the server's page cannot make itself: choosing a folder and
-// opening one in Finder (POST /api/host/pick-folder|open-path, see app/vault-server.mjs's `host`
+// opening one in Finder (POST /api/host/pick-folder|open-path, see app/vault-server.mts's `host`
 // param — server-entry.mjs relays those over process.parentPort, this file does the actual OS call).
 //
 // Flags: --data <dir> (else PACKRAT_DATA, else app.getPath("userData")) · --demo (forwarded to the

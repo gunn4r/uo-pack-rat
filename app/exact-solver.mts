@@ -1,7 +1,7 @@
 // exact-solver.mts — the orchestration between the core's heuristic search and the HiGHS exact
 // solver (app/mip.mts + app/mip-solve.mts). One call, one job, no worker pool: HiGHS itself
 // explores the tree, so there is nothing left to split across threads (that's what retired the
-// multi-worker branch-and-bound path this app used to run in app/vault-server.mjs, backed by the
+// multi-worker branch-and-bound path this app used to run in app/vault-server.mts, backed by the
 // core's own `shared` option and a since-deleted shared-search.mjs).
 //
 // Flow: (1) run the core's own heuristic search for a fast, always-available incumbent: bestScore,

@@ -12,9 +12,9 @@
 // Talks to main.mjs over process.parentPort, the utility-process side of the two-way channel:
 //   -> {type: "listening", port, url}                 once startServer() is listening
 //   <-> {type: "host", id, op, args} / {type: "host-result", id, result}
-//       forwards vault-server.mjs's host.pickFolder({title})/host.openPath(path) calls to main (only
+//       forwards vault-server.mts's host.pickFolder({title})/host.openPath(path) calls to main (only
 //       Electron can show a native folder picker or ask the OS to open a path) and resolves the
-//       promise vault-server.mjs is awaiting once main's matching host-result message arrives.
+//       promise vault-server.mts is awaiting once main's matching host-result message arrives.
 //   <- {type: "shutdown"}                              close the server, then exit(0)
 import { ensureLayout, resolveConfig } from "../app/config.mts";
 import { startServer } from "../app/vault-server.mts";

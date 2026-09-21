@@ -139,7 +139,7 @@ export interface CandidateClientRootsOptions {
 export function candidateClientRoots(
   {
     adapter, home, platform = process.platform, env = process.env, exists = existsSync, adapterPlatform = null,
-  }: CandidateClientRootsOptions = {} as CandidateClientRootsOptions,   // every real call site supplies adapter/home (see app/installer.test.mts, app/vault-server.mjs); this cast is compiler-only, matching config.mts's rawPort pattern
+  }: CandidateClientRootsOptions = {} as CandidateClientRootsOptions,   // every real call site supplies adapter/home (see app/installer.test.mts, app/vault-server.mts); this cast is compiler-only, matching config.mts's rawPort pattern
 ): string[] {
   const suffixes = NESTED_SCRIPTS_SUFFIX[adapter];
   if (!suffixes || !home) return [];
@@ -179,7 +179,7 @@ export type ValidateScriptsDirResult =
   | { ok: false; error: string; scriptsDir?: undefined };
 
 // dir/adapter cross an HTTP boundary as-is (POST /api/setup/locate's request body — see
-// app/vault-server.mjs), so neither is trusted to already be a string; dir's own shape is checked
+// app/vault-server.mts), so neither is trusted to already be a string; dir's own shape is checked
 // below before use, exactly as the pre-TypeScript code did, and adapter is only ever used as an object
 // index (a JS index coerces any value to a string key regardless of what TS is told it is here), so
 // the cast at that read site describes the existing behaviour rather than changing it.
@@ -296,7 +296,7 @@ export type InstallScriptsResult =
 export function installScripts(
   {
     adapter, adaptersDir, scriptsDir, dataDir, bridgeStatusPath, now = Date.now, log = () => {},
-  }: InstallScriptsOptions = {} as InstallScriptsOptions,   // every real call site supplies every required key (see app/installer.test.mts, app/vault-server.mjs); this cast is compiler-only, matching config.mts's rawPort pattern
+  }: InstallScriptsOptions = {} as InstallScriptsOptions,   // every real call site supplies every required key (see app/installer.test.mts, app/vault-server.mts); this cast is compiler-only, matching config.mts's rawPort pattern
 ): InstallScriptsResult {
   if (typeof adapter !== "string" || !ADAPTER_ID_RE.test(adapter)) {
     return { ok: false, code: "badAdapter", error: `invalid adapter id: ${JSON.stringify(adapter)}` };
@@ -439,7 +439,7 @@ export type CheckForUpdatesResult =
   | { configured: true; current: string; latest: string; url: unknown; upToDate: boolean; error?: undefined };
 
 export async function checkForUpdates(
-  { current, repo, fetchImpl = fetch }: CheckForUpdatesParams = {} as CheckForUpdatesParams,   // every real call site supplies current/repo (see app/installer.test.mts, app/vault-server.mjs); this cast is compiler-only, matching config.mts's rawPort pattern
+  { current, repo, fetchImpl = fetch }: CheckForUpdatesParams = {} as CheckForUpdatesParams,   // every real call site supplies current/repo (see app/installer.test.mts, app/vault-server.mts); this cast is compiler-only, matching config.mts's rawPort pattern
 ): Promise<CheckForUpdatesResult> {
   if (!repo) return { configured: false };
   let res: { status: number; json: () => Promise<unknown> };

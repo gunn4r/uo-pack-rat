@@ -2,7 +2,7 @@
 // a player pasting what the ClassicUO web client's sandboxed scanner printed (it cannot write files
 // at all), and a manual rescan for a player whose folder watcher missed a drop. Both still end up
 // going through app/watcher.mts the normal way — this module only gets a scan doc INTO an adapter's
-// inbox; app/vault-server.mjs nudges the watcher (scanOnce()) the same way POST /api/import already
+// inbox; app/vault-server.mts nudges the watcher (scanOnce()) the same way POST /api/import already
 // does, so acceptance, rejection and the /api/events broadcast are all one code path regardless of
 // how the file got into the inbox.
 //
