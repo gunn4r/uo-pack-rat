@@ -1,25 +1,27 @@
-// main.mjs — the Electron shell's main process. Forks the Pack Rat server
-// (server-entry.mjs) as a utility process, opens one BrowserWindow on it, stamps every request to
+// main.mts — the Electron shell's main process. Forks the Pack Rat server
+// (server-entry.mts) as a utility process, opens one BrowserWindow on it, stamps every request to
 // that server with a per-launch bearer token (session.webRequest, never a URL/log/page value), and
 // answers the two native-only calls the server's page cannot make itself: choosing a folder and
 // opening one in Finder (POST /api/host/pick-folder|open-path, see app/vault-server.mts's `host`
-// param — server-entry.mjs relays those over process.parentPort, this file does the actual OS call).
+// param — server-entry.mts relays those over process.parentPort, this file does the actual OS call).
 //
 // Flags: --data <dir> (else PACKRAT_DATA, else app.getPath("userData")) · --demo (forwarded to the
 // server child unchanged) · --smoke (see runSmokeCheck below — exits instead of staying open, for
-// scripts/shell-smoke.test.mjs).
+// scripts/shell-smoke.test.mts).
 import { app, BrowserWindow, dialog, session, shell, utilityProcess } from "electron";
+import type { UtilityProcess } from "electron";
 import { randomUUID } from "node:crypto";
 import { appendFileSync, mkdirSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import type { HostRequestMessage, HostResultMessage, ListeningMessage, ServerErrorMessage, ShutdownMessage } from "./protocol.mts";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
-const SERVER_ENTRY = join(HERE, "server-entry.mjs");
+const SERVER_ENTRY = join(HERE, "server-entry.mts");
 
-function flag(argv, name) {
+function flag(argv: string[], name: string): string | null {
   const i = argv.indexOf(name);
-  return i >= 0 && i + 1 < argv.length ? argv[i + 1] : null;
+  return i >= 0 && i + 1 < argv.length ? argv[i + 1]! : null;
 }
 
 // `electron .` in dev puts [electronBinary, ".", ...ours] in process.argv; a packaged app drops the
@@ -40,7 +42,7 @@ app.setPath("userData", dataDir);
 const logsDir = join(dataDir, "logs");
 mkdirSync(logsDir, { recursive: true });
 const logPath = join(logsDir, "shell.log");
-function logLine(line) {
+function logLine(line: string): void {
   try {
     appendFileSync(logPath, `${new Date().toISOString()} ${line}\n`);
   } catch {
@@ -53,16 +55,16 @@ const token = randomUUID();
 if (!app.requestSingleInstanceLock()) {
   app.quit();
 } else {
-  let win = null;
-  let child = null;
-  let currentOrigin = null;
-  let currentPort = null;
+  let win: BrowserWindow | null = null;
+  let child: UtilityProcess | null = null;
+  let currentOrigin: string | null = null;
+  let currentPort: number | null = null;
   let restartCount = 0;
   let quitting = false;
-  let smokeTimer = null;
+  let smokeTimer: NodeJS.Timeout | null = null;
   let smokeDone = false;
 
-  function createWindow() {
+  function createWindow(): BrowserWindow {
     const w = new BrowserWindow({
       width: 1280,
       height: 860,
@@ -95,7 +97,7 @@ if (!app.requestSingleInstanceLock()) {
     return w;
   }
 
-  function spawnChild() {
+  function spawnChild(): UtilityProcess {
     const demoArgs = demo ? ["--demo"] : [];
     const c = utilityProcess.fork(SERVER_ENTRY, demoArgs, {
       env: { ...process.env, PACKRAT_DATA: dataDir, PACKRAT_TOKEN: token, PACKRAT_PORT: "0" },
@@ -109,7 +111,7 @@ if (!app.requestSingleInstanceLock()) {
     return c;
   }
 
-  function onListening(port) {
+  function onListening(port: number): void {
     currentPort = port;
     currentOrigin = `http://127.0.0.1:${port}`;
     logLine(`server: listening on ${currentOrigin}`);
@@ -123,45 +125,55 @@ if (!app.requestSingleInstanceLock()) {
     win.loadURL(`${currentOrigin}/`);
   }
 
-  async function handleHostOp(msg) {
-    let result = null;
+  async function handleHostOp(msg: HostRequestMessage): Promise<void> {
+    let result: string | null = null;
     try {
       if (msg.op === "pickFolder") {
         const opts = msg.args || {};
+        // @ts-expect-error TS2345 — Electron's showOpenDialog only declares a `(window: BaseWindow, …)`
+        // overload, never one that also accepts `undefined`, even though the native implementation
+        // dispatches purely on argument count and already tolerates it here (this exact call already
+        // worked at runtime before this migration). Branching into two separate calls to satisfy the
+        // type would be a structural change this task's no-new-branching rule forbids. See the report.
         const res = await dialog.showOpenDialog(win || undefined, {
+          // `title` crosses two process hops (an HTTP request body -> server-entry.mts's host bridge
+          // -> here) with no runtime check anywhere along the way, so it stays `unknown` per this
+          // file's own "unknown at the boundary" rule; the @ts-expect-error two lines up already
+          // covers this whole call (TypeScript reports a failed overload resolution once for the
+          // entire argument list, not once per property), so this line needs no directive of its own.
           title: opts.title,
           properties: ["openDirectory"],
         });
-        result = res.canceled || !res.filePaths.length ? null : res.filePaths[0];
+        result = res.canceled || !res.filePaths.length ? null : res.filePaths[0]!;
       } else if (msg.op === "openPath") {
         const err = await shell.openPath(msg.args);
         if (err) logLine(`host openPath error: ${err}`);
       }
     } catch (e) {
-      logLine(`host ${msg.op} error: ${e?.message || e}`);
+      logLine(`host ${msg.op} error: ${(e as Error)?.message || e}`);
     }
-    child?.postMessage({ type: "host-result", id: msg.id, result });
+    child?.postMessage({ type: "host-result", id: msg.id, result } satisfies HostResultMessage);
   }
 
-  function onChildMessage(msg) {
+  function onChildMessage(msg: unknown): void {
     if (!msg || typeof msg !== "object") return;
-    if (msg.type === "listening") {
-      onListening(msg.port);
-    } else if (msg.type === "host") {
-      handleHostOp(msg);
-    } else if (msg.type === "error") {
-      logLine(`server: fatal ${msg.message}`);
+    if ((msg as { type: unknown }).type === "listening") {
+      onListening((msg as ListeningMessage).port);
+    } else if ((msg as { type: unknown }).type === "host") {
+      handleHostOp(msg as HostRequestMessage);
+    } else if ((msg as { type: unknown }).type === "error") {
+      logLine(`server: fatal ${(msg as ServerErrorMessage).message}`);
     }
   }
 
-  function onChildExit(code) {
+  function onChildExit(code: number): void {
     if (quitting) return;
     if (smoke) {
       // runSmokeCheck (and the 30s timeout below) always set smokeDone before killing the child
       // itself to report its own outcome — this exit event is the child reacting to that kill(), not
       // a real crash, so it must not overwrite the exit code/line already sent.
       if (smokeDone) return;
-      clearTimeout(smokeTimer);
+      clearTimeout(smokeTimer as NodeJS.Timeout | undefined);
       logLine(`server: exited unexpectedly (code ${code})`);
       console.log(`SMOKE FAIL server exited unexpectedly (code ${code})`);
       app.exit(1);
@@ -187,8 +199,8 @@ if (!app.requestSingleInstanceLock()) {
   // without #status ever showing it, since load()'s own catch only reports the FIRST rejected
   // promise's message. So the second half makes an authenticated call straight from the renderer and
   // requires 200 (post-review fix, Important 2).
-  async function pollStatus(w, deadline) {
-    let status = "";
+  async function pollStatus(w: BrowserWindow, deadline: number): Promise<unknown> {
+    let status: unknown = "";
     while (Date.now() < deadline) {
       status = await w.webContents.executeJavaScript('document.querySelector("#status")?.textContent ?? ""');
       if (typeof status === "string" && status.length > 0 && !status.startsWith("loading")) return status;
@@ -196,11 +208,11 @@ if (!app.requestSingleInstanceLock()) {
     }
     return status;
   }
-  async function runSmokeCheck(w) {
+  async function runSmokeCheck(w: BrowserWindow): Promise<void> {
     try {
       const status = await pollStatus(w, Date.now() + 15000);
       if (typeof status !== "string" || status.length === 0 || status.startsWith("loading") || status.includes("failed")) {
-        clearTimeout(smokeTimer);
+        clearTimeout(smokeTimer as NodeJS.Timeout | undefined);
         smokeDone = true;
         console.log(`SMOKE FAIL #status did not finish loading: ${JSON.stringify(status)}`);
         child?.kill();
@@ -208,7 +220,7 @@ if (!app.requestSingleInstanceLock()) {
         return;
       }
       const apiStatus = await w.webContents.executeJavaScript('fetch("/api/setup").then((r) => r.status).catch(() => -1)');
-      clearTimeout(smokeTimer);
+      clearTimeout(smokeTimer as NodeJS.Timeout | undefined);
       smokeDone = true;
       if (apiStatus === 200) {
         console.log(`SMOKE OK ${currentPort}`);
@@ -220,15 +232,15 @@ if (!app.requestSingleInstanceLock()) {
         app.exit(1);
       }
     } catch (e) {
-      clearTimeout(smokeTimer);
+      clearTimeout(smokeTimer as NodeJS.Timeout | undefined);
       smokeDone = true;
-      console.log(`SMOKE FAIL ${e?.message || e}`);
+      console.log(`SMOKE FAIL ${(e as Error)?.message || e}`);
       child?.kill();
       app.exit(1);
     }
   }
 
-  function shutdownChild() {
+  function shutdownChild(): Promise<void> {
     return new Promise((resolve) => {
       if (!child || child.pid == null) return resolve();
       let done = false;
@@ -238,7 +250,7 @@ if (!app.requestSingleInstanceLock()) {
         resolve();
       };
       child.once("exit", finish);
-      child.postMessage({ type: "shutdown" });
+      child.postMessage({ type: "shutdown" } satisfies ShutdownMessage);
       setTimeout(() => {
         if (done) return;
         child?.kill();
