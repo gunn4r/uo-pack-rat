@@ -20,8 +20,6 @@ const BANNED: [RegExp, string, string[]][] = [
   [/gunn4r/i, "the maintainer's account — only the repository URL may carry it",
     ["package.json", "package-lock.json", "README.md", "CONTRIBUTING.md", "SECURITY.md", "RELEASING.md",
      ".github/ISSUE_TEMPLATE/config.yml", "scripts/packaging.test.mts", "scripts/scrub.test.mts",
-     "docs/superpowers/plans/2026-09-17-phase-5-packaging.md",
-     "docs/superpowers/plans/2026-09-17-phase-6-adapters.md",
      // LICENSE: MIT needs an identifiable copyright holder, and gunn4r is the public account name —
      // already the repository owner, the electron-builder appId and package.json's author.
      "LICENSE"]],

@@ -7,5 +7,7 @@ app/data/profiles.backup-*
 app/bench/results/
 .DS_Store
 .superpowers/
+docs/superpowers/
+docs/research/
 dist/
 app/schema/types.d.mts
