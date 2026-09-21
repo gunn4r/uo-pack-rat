@@ -1,4 +1,4 @@
-// server.test.mjs — HTTP route tests against a real listening server (ephemeral port, tmp data dir).
+// server.test.mts — HTTP route tests against a real listening server (ephemeral port, tmp data dir).
 import { test, before, after } from "node:test";
 import assert from "node:assert/strict";
 import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, readdirSync, existsSync, renameSync, rmSync, cpSync } from "node:fs";
@@ -7,16 +7,146 @@ import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
 import http from "node:http";
 import { createConnection } from "node:net";
-import { resolveConfig, ensureLayout } from "./config.mts";
-import { startServer } from "./vault-server.mts";
+import { resolveConfig, ensureLayout, type Config } from "./config.mts";
+import { startServer, type ServerHandle, type HostBridge } from "./vault-server.mts";
 import { buildPools, foldSnapshots, setRules } from "./vault-lib.mts";
 import { upgradeScan, validateScan } from "./scan-schema.mts";
 import { DEFAULT_OPTIONAL_SLOTS } from "./mip.mts";
 import { buildUi } from "../scripts/build-ui.mjs";
 import { buildSchemaTypes } from "../scripts/build-schema-types.mts";
-import { validate } from "./schema/validate.mts";
+import { validate, type ValidatorSchema } from "./schema/validate.mts";
+import type { Item, Inventory, ProfilesFile, Template } from "./vault-lib.mts";
+import type { RulesV1, ScanV2 } from "./schema/types.d.mts";
+import type { AdapterInfo, InstallScriptsResult, CheckForUpdatesResult } from "./installer.mts";
 
-const BRIDGE_SCHEMA = JSON.parse(readFileSync(join(dirname(fileURLToPath(import.meta.url)), "schema", "bridge.v1.schema.json"), "utf8"));
+// ---------------------------------------------------------------------------------------------
+// HTTP responses are unknown provenance — every route is reachable by any local caller, trusted
+// or not, and TypeScript's own DOM lib types Response.json() as Promise<any>, which would
+// silently defeat this file's whole point (an `any` swallows a route that stops sending a field
+// the same way it swallows a typo). asJson<T>() narrows the parsed body down at the read site:
+// `asJson(x)` for a one-level ok/error/whatever check (defaults to a loose Record<string,
+// unknown> — every field still reads back `unknown`, forcing a real assertion, never a silent
+// property read), `asJson<SomeResponse>(x)` where a test navigates two or more levels deep. The
+// per-endpoint interfaces below are declared once, reusing the server's own exported types
+// (Item/Inventory/ProfilesFile/RulesV1/AdapterInfo/InstallScriptsResult/SavedRun/...) wherever
+// they exist, rather than restating a shape the source already names.
+function asJson<T = Record<string, unknown>>(body: unknown): T {
+  return body as T;
+}
+
+interface InventoryFacets {
+  kinds: unknown[];
+  gearSkills: string[];
+  propKeys?: string[];
+  [key: string]: unknown;
+}
+interface InventorySummary {
+  itemCount: number;
+  items?: undefined;
+  facets: InventoryFacets;
+  worn: Record<string, unknown>;
+  containers: Record<string, unknown>;
+  rootCounts: Record<string, unknown>;
+  characters: Record<string, Record<string, unknown>>;
+  propKeys: string[];
+}
+interface InventoryResponse {
+  ok: boolean;
+  snapshotCount: number;
+  scansDir?: string;
+  inventory: InventorySummary;
+}
+interface ProfilesResponse {
+  ok?: boolean;
+  profiles: ProfilesFile;
+}
+interface RulesResponse {
+  ok: boolean;
+  shard: string;
+  rules: RulesV1;
+  available: Array<{ id: string; name: string; source: string }>;
+  fallback: boolean;
+}
+interface ClientSetting { adapter: string; scriptsDir: string; }
+interface SettingsResponse {
+  ok?: boolean;
+  settings: { shard: string; setupDone?: boolean; client?: ClientSetting };
+}
+interface SetupAdapter extends Omit<AdapterInfo, "capabilities"> {
+  capabilities: { bridge: string[]; [key: string]: unknown };
+}
+interface SetupResponse {
+  ok: boolean;
+  firstRun: boolean;
+  adapters: SetupAdapter[];
+  available: Record<string, string | null>;
+  installed: { version: string | null; files: Record<string, boolean> } | null;
+  dataDir: string;
+  candidates: Record<string, string[]>;
+  platform: string;
+  settings: { client?: ClientSetting };
+  bridgeAdapter: string | null;
+}
+interface LocateResponse {
+  scriptsDir?: string;
+  installed?: { version: string | null; files: Record<string, boolean> };
+  error?: string;
+}
+interface ItemsPageResponse {
+  ok: boolean;
+  rows?: Item[];
+  groups?: unknown[];
+  total: number;
+  pieces?: number;
+  limit?: number;
+}
+interface ItemsBySerialResponse {
+  ok: boolean;
+  items: Record<string, Item>;
+}
+// Covers both a POST /api/optimize start response and a GET /api/optimize/<id>/status poll —
+// several tests reassign one `status` variable across both shapes as a job runs to completion
+// (see vault-server.mts's own POST /api/optimize and jobSnapshot() response literals).
+interface OptimizeJobResponse {
+  id?: string;
+  warmFrom?: string | null;
+  superseded?: string | null;
+  warning?: string;
+  poolSize?: number;
+  skipped?: Record<string, unknown>;
+  current?: Record<string, unknown>;
+  blocked?: string[];
+  cached?: boolean;
+  state?: string;
+  progress?: unknown;
+  result?: { solver?: string; proven?: boolean; score?: number; method?: string; [key: string]: unknown };
+  ms?: number;
+  error?: string;
+  runId?: string;
+}
+interface RunResponse {
+  ok?: boolean;
+  run: { result: { score: number; [key: string]: unknown }; [key: string]: unknown };
+}
+interface RescanResponse {
+  ok: boolean;
+  adapters: string[];
+}
+// assert.match/doesNotMatch need a real string, not `unknown` — every 4xx/5xx body this file checks
+// with a regex against .error gets this cast instead of Record<string, unknown>'s default.
+interface ErrorBody {
+  error: string;
+  ref?: string;
+}
+interface PasteResponse {
+  ok: boolean;
+  character?: string;
+  written?: string;
+  warning?: string;
+  error?: string;
+}
+
+const BRIDGE_SCHEMA = JSON.parse(readFileSync(join(dirname(fileURLToPath(import.meta.url)), "schema", "bridge.v1.schema.json"), "utf8")) as { command: ValidatorSchema; result: ValidatorSchema; status: ValidatorSchema };
 
 // Order matters: build the schema types before buildUi() runs, not because tsconfig.browser.json's
 // `include` enforces it (a missing literal entry there is silently dropped, not an error — verified)
@@ -30,26 +160,26 @@ const HERE = dirname(fileURLToPath(import.meta.url));
 // This file's own vault-lib.mts import is a separate module instance from the one the server
 // dynamically re-imports per request (busted by mtime) — a direct call here to a rules-aware
 // function (buildPools) needs its own setRules().
-setRules(JSON.parse(readFileSync(join(HERE, "rules", "uoalive.json"), "utf8")));
+setRules(JSON.parse(readFileSync(join(HERE, "rules", "uoalive.json"), "utf8")) as RulesV1);
 
-let srv;
+let srv: ServerHandle;
 before(async () => { srv = await startServer(ensureLayout(resolveConfig(["--demo", "--port", "0", "--data", mkdtempSync(join(tmpdir(), "qm-"))], {}))); });
 after(() => srv.close());
-const get = (p) => fetch(srv.url + p);
+const get = (p: string): Promise<Response> => fetch(srv.url + p);
 
 // Since Task 5, GET /api/inventory never carries the full item map (the page pages GET /api/items
 // instead), so a test that wants to run buildPools() itself — to check the server's by-character
 // /api/optimize form against a client-equivalent call — has to fold the same scan files the server
 // folds, the same way the server's own readScans()+getInventory() do (upgrade, validate, skip a bad
 // file rather than throw), instead of reading the (now slimmer) HTTP response.
-function foldFixtures(dir, shard = "uoalive") {
-  const docs = [];
+function foldFixtures(dir: string, shard = "uoalive"): Inventory {
+  const docs: ScanV2[] = [];
   for (const f of readdirSync(dir).filter((f) => f.endsWith(".json")).sort()) {
     try {
-      const raw = JSON.parse(readFileSync(join(dir, f), "utf8"));
+      const raw: unknown = JSON.parse(readFileSync(join(dir, f), "utf8"));
       const doc = upgradeScan(raw, { shard });
       const { ok } = validateScan(doc);
-      if (ok) docs.push(doc);
+      if (ok) docs.push(doc as ScanV2);   // known-good fixture: the cast stands in for the validateScan() a real caller runs, gated on the ok check just above
     } catch { /* skip an unparsable fixture, same as the server does */ }
   }
   return foldSnapshots(docs);
@@ -58,13 +188,26 @@ function foldFixtures(dir, shard = "uoalive") {
 // fetch() (both browser and Node's undici) refuses to let a caller set Host or Origin — both are on
 // the Fetch spec's forbidden-header list — so the Host/Origin tests below go around it with node:http
 // directly, which has no such restriction. rawReq(url, {method, headers, body}) → {status, headers, text, json()}.
-function rawReq(url, { method = "GET", headers = {}, body } = {}) {
+// `.json()` here is a SYNCHRONOUS, already-resolved read (unlike fetch's own Promise-returning
+// Response.json()) — its own return type is `unknown`, same reasoning as asJson() above.
+interface RawResponse {
+  status: number | undefined;
+  headers: http.IncomingHttpHeaders;
+  text: string;
+  json: () => unknown;
+}
+interface RawReqOptions {
+  method?: string;
+  headers?: http.OutgoingHttpHeaders;
+  body?: string;
+}
+function rawReq(url: string, { method = "GET", headers = {}, body }: RawReqOptions = {}): Promise<RawResponse> {
   return new Promise((resolve, reject) => {
     const u = new URL(url);
     const req = http.request({ hostname: u.hostname, port: u.port, path: u.pathname + u.search, method, headers }, (res) => {
       let buf = "";
       res.setEncoding("utf8");
-      res.on("data", (c) => { buf += c; });
+      res.on("data", (c: string) => { buf += c; });
       res.on("end", () => resolve({ status: res.statusCode, headers: res.headers, text: buf, json: () => JSON.parse(buf) }));
     });
     req.on("error", reject);
@@ -78,8 +221,12 @@ function rawReq(url, { method = "GET", headers = {}, body } = {}) {
 // reader + decoder + growing buffer a test can call readUntil(matcher) on repeatedly (a stream can
 // only ever be locked by one reader — getReader() a second time throws — so the reader is created
 // once and reused for every event the test waits on).
-function sseReader(response) {
-  const reader = response.body.getReader();
+interface SseReaderHandle {
+  readUntil: (matcher: (buf: string) => boolean, opts?: { timeoutMs?: number }) => Promise<string>;
+  cancel: () => Promise<void>;
+}
+function sseReader(response: Response): SseReaderHandle {
+  const reader = response.body!.getReader();   // every caller passes the body of a 200 SSE response, which always carries a body
   const decoder = new TextDecoder();
   let buf = "";
   // A reader.read() that loses the Promise.race below (the timeout wins) is NOT cancelled — it stays
@@ -91,8 +238,8 @@ function sseReader(response) {
   // event a retry is waiting for. Found by exactly that symptom: a synthetic "fs.watch delivers nothing"
   // repro that proved the server-side broadcast happened (via the watcher's own log) while a naive retry
   // still timed out.
-  let pending = null;
-  async function readUntil(matcher, { timeoutMs = 3000 } = {}) {
+  let pending: Promise<ReadableStreamReadResult<Uint8Array>> | null = null;
+  async function readUntil(matcher: (buf: string) => boolean, { timeoutMs = 3000 }: { timeoutMs?: number } = {}): Promise<string> {
     const deadline = Date.now() + timeoutMs;
     while (!matcher(buf)) {
       const remaining = Math.max(1, deadline - Date.now());
@@ -100,7 +247,7 @@ function sseReader(response) {
       if (!pending) pending = reader.read();
       const { value, done } = await Promise.race([
         pending,
-        new Promise((_, reject) => setTimeout(() => reject(new Error("sseReader: timed out")), remaining)),
+        new Promise<never>((_, reject) => setTimeout(() => reject(new Error("sseReader: timed out")), remaining)),
       ]);
       pending = null;   // consumed — safe to start a fresh read() next iteration (ours or a later retry's)
       if (done) throw new Error(`sseReader: stream ended before a match; got:\n${buf}`);
@@ -124,11 +271,11 @@ function sseReader(response) {
 // fires at all. Any OTHER readUntil failure (the stream ending, a wiring/crash bug) is not swallowed —
 // only "timed out" retries through the rescan; scanOnce()/ingestFile are idempotent, so a rescan that
 // races a live event that was merely slow (not dropped) is harmless either way.
-async function readUntilOrRescan(sse, matcher, serverUrl, { timeoutMs = 3000, rescanTimeoutMs = 5000 } = {}) {
+async function readUntilOrRescan(sse: SseReaderHandle, matcher: (buf: string) => boolean, serverUrl: string, { timeoutMs = 3000, rescanTimeoutMs = 5000 }: { timeoutMs?: number; rescanTimeoutMs?: number } = {}): Promise<string> {
   try {
     return await sse.readUntil(matcher, { timeoutMs });
   } catch (e) {
-    if (!/timed out/.test(e.message)) throw e;
+    if (!/timed out/.test((e as Error).message)) throw e;
     await fetch(serverUrl + "/api/import/rescan", { method: "POST", headers: { "content-type": "application/json" }, body: "{}" });
     return sse.readUntil(matcher, { timeoutMs: rescanTimeoutMs });
   }
@@ -144,7 +291,7 @@ test("[smoke] / has no inline <script>", async () => {
   assert.doesNotMatch(await r.text(), /<script(?![^>]*\bsrc=)/, "no inline <script>");
 });
 test("[smoke] /api/inventory has no scansDir and folds the demo fixtures", async () => {
-  const j = await (await get("/api/inventory")).json();
+  const j = asJson<InventoryResponse>(await (await get("/api/inventory")).json());
   assert.equal(j.ok, true); assert.equal("scansDir" in j, false); assert.ok(j.snapshotCount >= 2);
 });
 // --demo points paths.scans at the committed app/fixtures/ directory; Forget must refuse there
@@ -155,7 +302,7 @@ test("[fast] POST /api/forget is refused under --demo, and app/fixtures/ stays c
     method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ root: 12345 }),
   });
   assert.equal(r.status, 409);
-  assert.deepEqual(await r.json(), { ok: false, error: "demo data is read-only" });
+  assert.deepEqual(asJson(await r.json()), { ok: false, error: "demo data is read-only" });
   assert.deepEqual(readdirSync(join(HERE, "fixtures")).sort(), before, "no file was written under app/fixtures/");
 });
 // Post-review fix: only truthiness was checked, so {root:"abc"} used to return 200 and write a
@@ -196,10 +343,10 @@ test("[fast] POST /api/bridge validates the assembled line against BRIDGE_SCHEMA
     const good = await fetch(s2.url + "/api/bridge", { method: "POST", headers: { "content-type": "application/json" },
       body: JSON.stringify({ action: "grab", serial: 0x40000010, name: "Ring", chain: [1, 2], pos: null }) });
     assert.equal(good.status, 200);
-    const { id } = await good.json();
+    const { id } = asJson(await good.json());
     const lines = readFileSync(join(dir, "bridge", "tazuo", "queue.jsonl"), "utf8").trim().split("\n");
     assert.equal(lines.length, 1, "only the valid call should have queued a line");
-    const written = JSON.parse(lines[0]);
+    const written = JSON.parse(lines[0]!);
     assert.equal(written.id, id);
     const v = validate(BRIDGE_SCHEMA.command, written);
     assert.equal(v.ok, true, JSON.stringify(v.errors));
@@ -224,7 +371,7 @@ test("[fast] POST /api/bridge queues into the configured adapter's own directory
   try {
     const setClient = await fetch(s2.url + "/api/settings", { method: "PUT", headers: { "content-type": "application/json" },
       body: JSON.stringify({ client: { adapter: "razor-enhanced", scriptsDir: dir } }) });
-    assert.equal(setClient.status, 200, JSON.stringify(await setClient.json()));
+    assert.equal(setClient.status, 200, JSON.stringify(asJson(await setClient.json())));
 
     const r = await fetch(s2.url + "/api/bridge", { method: "POST", headers: { "content-type": "application/json" },
       body: JSON.stringify({ action: "grab", serial: 0x40000010, name: "Ring", chain: [], pos: null }) });
@@ -234,7 +381,7 @@ test("[fast] POST /api/bridge queues into the configured adapter's own directory
     assert.equal(existsSync(join(dir, "bridge", "tazuo", "queue.jsonl")), false, "nothing was written to tazuo's queue for a razor-enhanced-configured client");
     const lines = readFileSync(join(dir, "bridge", "razor-enhanced", "queue.jsonl"), "utf8").trim().split("\n");
     assert.equal(lines.length, 1);
-    assert.equal(JSON.parse(lines[0]).action, "grab");
+    assert.equal(JSON.parse(lines[0]!).action, "grab");
   } finally {
     await s2.close();
   }
@@ -261,9 +408,9 @@ test("[fast] GET /api/bridge/status reads the configured adapter's own status.js
   try {
     const setClient = await fetch(s2.url + "/api/settings", { method: "PUT", headers: { "content-type": "application/json" },
       body: JSON.stringify({ client: { adapter: "razor-enhanced", scriptsDir: dir } }) });
-    assert.equal(setClient.status, 200, JSON.stringify(await setClient.json()));
+    assert.equal(setClient.status, 200, JSON.stringify(asJson(await setClient.json())));
 
-    const st = await (await fetch(s2.url + "/api/bridge/status")).json();
+    const st = asJson(await (await fetch(s2.url + "/api/bridge/status")).json());
     assert.equal(st.online, true, JSON.stringify(st));
     assert.equal(st.character, "RazorPlayer", "must read razor-enhanced's own status, not tazuo's stale one");
   } finally {
@@ -343,12 +490,12 @@ test("[fast] readScans() skips invalid scan files (bad JSON, schema-invalid) ins
   writeFileSync(join(scansDir, "bad-schema.json"), JSON.stringify({ schemaVersion: 2, character: 5 }));
   const s2 = await startServer(ensureLayout(resolveConfig(["--port", "0", "--data", dir], {})));
   try {
-    const j1 = await (await fetch(s2.url + "/api/inventory")).json();
+    const j1 = asJson<InventoryResponse>(await (await fetch(s2.url + "/api/inventory")).json());
     assert.equal(j1.ok, true);
     assert.equal(j1.snapshotCount, 1, "only the one valid scan should have folded");
     assert.ok(j1.inventory.characters.Kestrel, "the valid scan folded despite the two bad files alongside it");
     // a second request proves the bad files didn't leave the server in a broken state
-    const j2 = await (await fetch(s2.url + "/api/inventory")).json();
+    const j2 = asJson<InventoryResponse>(await (await fetch(s2.url + "/api/inventory")).json());
     assert.equal(j2.ok, true);
     assert.equal(j2.snapshotCount, 1);
   } finally {
@@ -363,24 +510,24 @@ test("[fast] close() ends open SSE streams instead of waiting out their keep-ali
   const dir = mkdtempSync(join(tmpdir(), "qm-"));
   const s2 = await startServer(ensureLayout(resolveConfig(["--demo", "--port", "0", "--data", dir], {})));
   try {
-    const inv = await (await fetch(s2.url + "/api/inventory")).json();
-    const profiles = await (await fetch(s2.url + "/api/profiles")).json();
-    const rules = await (await fetch(s2.url + "/api/rules")).json();
-    const character = Object.keys(inv.inventory.characters)[0];
+    const inv = asJson<InventoryResponse>(await (await fetch(s2.url + "/api/inventory")).json());
+    const profiles = asJson<ProfilesResponse>(await (await fetch(s2.url + "/api/profiles")).json());
+    const rules = asJson<RulesResponse>(await (await fetch(s2.url + "/api/rules")).json());
+    const character = Object.keys(inv.inventory.characters)[0]!;
     const { pools, current } = buildPools(foldFixtures(join(HERE, "fixtures")), character, {});
-    const templateName = Object.keys(profiles.profiles.templates)[0];
-    const profile = { ...profiles.profiles.templates[templateName], caps: rules.rules.caps };
+    const templateName = Object.keys(profiles.profiles.templates!)[0]!;
+    const profile = { ...profiles.profiles.templates![templateName], caps: rules.rules.caps };
     const r = await fetch(s2.url + "/api/optimize", {
       method: "POST", headers: { "content-type": "application/json", "x-client-id": "close-test-client" },
       body: JSON.stringify({ pools, current, profile, opts: { exact: true, timeBudgetMs: 5000 } }),
     });
-    const { id } = await r.json();
+    const { id } = asJson<OptimizeJobResponse>(await r.json());
     // The events route requires ?client= to match the job's own clientId (the X-Client-Id header sent
     // above) since the null-clientId collision fix — omitting it now correctly 403s (see the two tests
     // in the "localhost security" section below that check that directly).
     const events = await fetch(s2.url + `/api/optimize/${id}/events?client=close-test-client`);
     assert.equal(events.status, 200);
-    const first = await events.body.getReader().read();   // "hello" — proves the client attached while the job was running
+    const first = await events.body!.getReader().read();   // "hello" — proves the client attached while the job was running
     assert.match(new TextDecoder().decode(first.value), /event: hello/);
     const t0 = Date.now();
     await s2.close();
@@ -400,7 +547,7 @@ test("[fast] GET /api/events: hello lists the tazuo adapter, and an accepted inb
     assert.equal(res.status, 200);
     const sse = sseReader(res);
     const hello = await sse.readUntil((buf) => buf.includes("event: hello"));
-    const helloData = JSON.parse(hello.match(/event: hello\ndata: (.+)\n/)[1]);
+    const helloData = JSON.parse(hello.match(/event: hello\ndata: (.+)\n/)![1]!);
     assert.equal(helloData.ok, true);
     // Present, not pinned: the real point here is "tazuo is watched, and an accepted file in its
     // inbox streams an event" (below) — not the exact set of every adapter shipped in this repo.
@@ -413,12 +560,12 @@ test("[fast] GET /api/events: hello lists the tazuo adapter, and an accepted inb
     renameSync(tmpPath, join(inboxDir, "drop.json"));
 
     const invBuf = await readUntilOrRescan(sse, (buf) => buf.includes("event: inventory"), s2.url);
-    const invData = JSON.parse(invBuf.match(/event: inventory\ndata: (.+)\n/)[1]);
+    const invData = JSON.parse(invBuf.match(/event: inventory\ndata: (.+)\n/)![1]!);
     assert.equal(invData.character, fixture.character);
     assert.equal(existsSync(join(inboxDir, "drop.json")), false, "the inbox file is gone once accepted");
     sse.cancel();
 
-    const inv = await (await fetch(s2.url + "/api/inventory")).json();
+    const inv = asJson<InventoryResponse>(await (await fetch(s2.url + "/api/inventory")).json());
     assert.ok(inv.inventory.characters[fixture.character], JSON.stringify(Object.keys(inv.inventory.characters)));
   } finally {
     await s2.close();
@@ -443,7 +590,7 @@ test("[fast] GET /api/events: an invalid inbox file streams a rejected event and
     renameSync(tmpPath, join(inboxDir, "bad.json"));
 
     const rejBuf = await readUntilOrRescan(sse, (buf) => buf.includes("event: rejected"), s2.url, { timeoutMs: 5000 });
-    const rejData = JSON.parse(rejBuf.match(/event: rejected\ndata: (.+)\n/)[1]);
+    const rejData = JSON.parse(rejBuf.match(/event: rejected\ndata: (.+)\n/)![1]!);
     assert.equal(rejData.file, "bad.json");
     assert.ok(existsSync(join(inboxDir, "rejected", "bad.json")));
     sse.cancel();
@@ -485,7 +632,7 @@ test("[fast] a log destination that throws on every write does not crash the ser
     // unhandled rejection that took the whole process down well before this event could ever fire,
     // and well before the retries/rejectFile below would ever run.
     const rejBuf = await readUntilOrRescan(sse, (buf) => buf.includes("event: rejected"), s2.url, { timeoutMs: 5000 });
-    const rejData = JSON.parse(rejBuf.match(/event: rejected\ndata: (.+)\n/)[1]);
+    const rejData = JSON.parse(rejBuf.match(/event: rejected\ndata: (.+)\n/)![1]!);
     assert.equal(rejData.file, "bad.json");
     assert.ok(existsSync(join(inboxDir, "rejected", "bad.json")), "the bad file was still quarantined despite every log write failing");
     sse.cancel();
@@ -494,7 +641,7 @@ test("[fast] a log destination that throws on every write does not crash the ser
     // (let alone with 200) if the unhandled rejection from before the fix had taken it down.
     const invRes = await fetch(s2.url + "/api/inventory");
     assert.equal(invRes.status, 200, "the server kept serving /api/inventory after a run of failed log writes");
-    assert.equal((await invRes.json()).ok, true);
+    assert.equal(asJson(await invRes.json()).ok, true);
   } finally {
     await s2.close();
   }
@@ -507,7 +654,7 @@ test("[fast] GET /api/events: --demo starts no watcher (hello.watching is empty)
     const res = await fetch(s2.url + "/api/events");
     const sse = sseReader(res);
     const hello = await sse.readUntil((buf) => buf.includes("event: hello"));
-    const helloData = JSON.parse(hello.match(/event: hello\ndata: (.+)\n/)[1]);
+    const helloData = JSON.parse(hello.match(/event: hello\ndata: (.+)\n/)![1]!);
     assert.deepEqual(helloData.watching, []);
     sse.cancel();
   } finally {
@@ -519,7 +666,7 @@ test("[fast] GET /api/events: --demo starts no watcher (hello.watching is empty)
 // listRules() finds; PUT /api/settings switches the shard (validated against that same list) and the
 // next GET /api/rules reflects it; an unknown shard is rejected before anything is written.
 test("[fast] GET /api/rules reports the current shard and at least the two builtin rules files", async () => {
-  const j = await (await get("/api/rules")).json();
+  const j = asJson<RulesResponse>(await (await get("/api/rules")).json());
   assert.equal(j.ok, true);
   assert.equal(j.shard, "uoalive");
   assert.equal(j.rules.id, "uoalive");
@@ -533,14 +680,14 @@ test("[fast] PUT /api/settings switches the shard; a following GET /api/rules re
   try {
     const put = await fetch(s2.url + "/api/settings", { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify({ shard: "generic-osi" }) });
     assert.equal(put.status, 200);
-    assert.equal((await put.json()).settings.shard, "generic-osi");
-    const rules = await (await fetch(s2.url + "/api/rules")).json();
+    assert.equal(asJson<SettingsResponse>(await put.json()).settings.shard, "generic-osi");
+    const rules = asJson<RulesResponse>(await (await fetch(s2.url + "/api/rules")).json());
     assert.equal(rules.shard, "generic-osi");
     assert.equal(rules.rules.id, "generic-osi");
     const bad = await fetch(s2.url + "/api/settings", { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify({ shard: "nope" }) });
     assert.equal(bad.status, 400);
     // rejecting "nope" must not have overwritten the shard switch that already succeeded
-    assert.equal((await (await fetch(s2.url + "/api/rules")).json()).shard, "generic-osi");
+    assert.equal((asJson<RulesResponse>(await (await fetch(s2.url + "/api/rules")).json())).shard, "generic-osi");
   } finally {
     await s2.close();
   }
@@ -549,10 +696,10 @@ test("[fast] GET /api/settings reads back the persisted shard", async () => {
   const dir = mkdtempSync(join(tmpdir(), "qm-"));
   const s2 = await startServer(ensureLayout(resolveConfig(["--demo", "--port", "0", "--data", dir], {})));
   try {
-    const before = await (await fetch(s2.url + "/api/settings")).json();
+    const before = asJson<SettingsResponse>(await (await fetch(s2.url + "/api/settings")).json());
     assert.equal(before.settings.shard, "uoalive");
     await fetch(s2.url + "/api/settings", { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify({ shard: "generic-osi" }) });
-    const after = await (await fetch(s2.url + "/api/settings")).json();
+    const after = asJson<SettingsResponse>(await (await fetch(s2.url + "/api/settings")).json());
     assert.equal(after.settings.shard, "generic-osi");
     assert.equal(JSON.parse(readFileSync(join(dir, "settings.json"), "utf8")).shard, "generic-osi", "the switch is persisted to settings.json");
   } finally {
@@ -560,7 +707,7 @@ test("[fast] GET /api/settings reads back the persisted shard", async () => {
   }
 });
 
-const validRulesFile = (id, name) => JSON.stringify({
+const validRulesFile = (id: string, name: string): string => JSON.stringify({
   schemaVersion: 1, id, name, caps: { physResist: 70 }, raceCaps: {}, resistSkillBonus: { breakpoints: [] },
   tagUnits: {}, rarity: [], raceLock: { gargoyleOnly: false }, freeSkills: [],
 });
@@ -576,11 +723,11 @@ test("[fast] a user rules file named differently than its id lists, loads via PU
   try {
     mkdirSync(join(dir, "rules"), { recursive: true });
     writeFileSync(join(dir, "rules", "my-shard-file.json"), validRulesFile("myshard", "My Shard"));
-    const listed = (await (await fetch(s2.url + "/api/rules")).json()).available;
+    const listed = (asJson<RulesResponse>(await (await fetch(s2.url + "/api/rules")).json())).available;
     assert.ok(listed.some((r) => r.id === "myshard" && r.source === "user"), JSON.stringify(listed));
     const put = await fetch(s2.url + "/api/settings", { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify({ shard: "myshard" }) });
-    assert.equal(put.status, 200, JSON.stringify(await put.json()));
-    const rules = await (await fetch(s2.url + "/api/rules")).json();
+    assert.equal(put.status, 200, JSON.stringify(asJson<SettingsResponse>(await put.json())));
+    const rules = asJson<RulesResponse>(await (await fetch(s2.url + "/api/rules")).json());
     assert.equal(rules.shard, "myshard");
     assert.equal(rules.rules.id, "myshard");
     assert.equal(rules.fallback, false);
@@ -591,7 +738,7 @@ test("[fast] a user rules file named differently than its id lists, loads via PU
   // must still serve the shard settings.json names, even though its rules file's name doesn't match.
   const s3 = await startServer(ensureLayout(resolveConfig(["--demo", "--port", "0", "--data", dir], {})));
   try {
-    const rules = await (await fetch(s3.url + "/api/rules")).json();
+    const rules = asJson<RulesResponse>(await (await fetch(s3.url + "/api/rules")).json());
     assert.equal(rules.shard, "myshard");
     assert.equal(rules.rules.id, "myshard");
     assert.equal(rules.fallback, false);
@@ -609,7 +756,7 @@ test("[fast] PUT /api/settings with a shard whose rules file fails validation is
     const before = JSON.parse(readFileSync(join(dir, "settings.json"), "utf8"));
     const put = await fetch(s2.url + "/api/settings", { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify({ shard: "badshard" }) });
     assert.equal(put.status, 400);
-    assert.match((await put.json()).error, /badshard/);
+    assert.match(asJson<ErrorBody>(await put.json()).error, /badshard/);
     assert.deepEqual(JSON.parse(readFileSync(join(dir, "settings.json"), "utf8")), before, "a failed PUT must never touch settings.json");
   } finally {
     await s2.close();
@@ -627,7 +774,7 @@ test("[fast] a data dir whose settings.json names a shard with no rules file sta
   writeFileSync(join(dir, "settings.json"), JSON.stringify({ schemaVersion: 1, shard: "gone" }, null, 2) + "\n");
   const s2 = await startServer(ensureLayout(resolveConfig(["--demo", "--port", "0", "--data", dir], {})));
   try {
-    const rules = await (await fetch(s2.url + "/api/rules")).json();
+    const rules = asJson<RulesResponse>(await (await fetch(s2.url + "/api/rules")).json());
     assert.equal(rules.shard, "uoalive");
     assert.equal(rules.rules.id, "uoalive");
     assert.equal(rules.fallback, true);
@@ -643,9 +790,9 @@ test("[fast] a user rules file named differently than its id overrides a builtin
   writeFileSync(join(dir, "rules", "mine.json"), validRulesFile("uoalive", "UO Alive (mine)"));
   const s2 = await startServer(ensureLayout(resolveConfig(["--demo", "--port", "0", "--data", dir], {})));
   try {
-    const rules = await (await fetch(s2.url + "/api/rules")).json();
+    const rules = asJson<RulesResponse>(await (await fetch(s2.url + "/api/rules")).json());
     assert.equal(rules.rules.name, "UO Alive (mine)");
-    assert.equal(rules.available.find((r) => r.id === "uoalive").source, "user");
+    assert.equal(rules.available.find((r) => r.id === "uoalive")!.source, "user");
   } finally {
     await s2.close();
   }
@@ -657,7 +804,7 @@ test("[fast] a user rules file named differently than its id overrides a builtin
 // above (used by every test above this line) stays token-free and untouched. Flat test()s, not a
 // describe() block: the test runner (scripts/test-runner.mjs) only tallies nesting-0 tests, so a
 // describe() would fold all of these into a single pass/fail and drop them from the per-test count.
-let tsrv, tdir;
+let tsrv: ServerHandle, tdir: string;
 before(async () => {
   tdir = mkdtempSync(join(tmpdir(), "qm-sec-"));
   tsrv = await startServer(ensureLayout(resolveConfig(["--demo", "--port", "0", "--data", tdir, "--token", "t0ken"], {})));
@@ -668,7 +815,7 @@ const authHost = () => ({ host: `localhost:${tsrv.port}`, authorization: "Bearer
 test("[fast] /api/inventory: no token is 401, the right bearer token is 200", async () => {
   const noAuth = await rawReq(`${tsrv.url}/api/inventory`, { headers: { host: `localhost:${tsrv.port}` } });
   assert.equal(noAuth.status, 401);
-  assert.equal(noAuth.json().ok, false);
+  assert.equal(asJson(noAuth.json()).ok, false);
   const withAuth = await rawReq(`${tsrv.url}/api/inventory`, { headers: authHost() });
   assert.equal(withAuth.status, 200);
 });
@@ -704,12 +851,12 @@ test("[fast] Origin: null (a sandboxed iframe / file:// origin) is 403", async (
 // Host header. A raw HTTP/1.0 request (Host is optional in that version) proves the check refuses a
 // genuinely absent Host, not just a forged one.
 test("[fast] a raw HTTP/1.0 request with no Host header at all is 403", async () => {
-  const raw = await new Promise((resolve, reject) => {
+  const raw = await new Promise<string>((resolve, reject) => {
     const sock = createConnection({ port: tsrv.port, host: "127.0.0.1" }, () => {
       sock.write("GET /api/inventory HTTP/1.0\r\nAuthorization: Bearer t0ken\r\n\r\n");
     });
     let buf = "";
-    sock.on("data", (c) => { buf += c.toString("utf8"); });
+    sock.on("data", (c: Buffer) => { buf += c.toString("utf8"); });
     sock.on("end", () => resolve(buf));
     sock.on("error", reject);
   });
@@ -726,28 +873,28 @@ test("[fast] PUT /api/profiles: an oversized multi-byte body is 413 (bytes, not 
     method: "PUT", headers: { ...authHost(), "content-type": "application/json" }, body: oversized,
   });
   assert.equal(big.status, 413);
-  assert.equal(big.json().error, "profiles too large");
+  assert.equal(asJson(big.json()).error, "profiles too large");
   const bad = await rawReq(`${tsrv.url}/api/profiles`, {
     method: "PUT", headers: { ...authHost(), "content-type": "application/json" }, body: JSON.stringify({ schemaVersion: 2, templates: {}, characters: 5 }),
   });
   assert.equal(bad.status, 400);
-  assert.match(bad.json().error, /\/characters/);
+  assert.match(asJson<ErrorBody>(bad.json()).error, /\/characters/);
 });
 
 test("[fast] two POST /api/optimize from the same X-Client-Id: the second supersedes the first, whose status becomes cancelled", async () => {
-  const inv = (await rawReq(`${tsrv.url}/api/inventory`, { headers: authHost() })).json();
-  const profiles = (await rawReq(`${tsrv.url}/api/profiles`, { headers: authHost() })).json();
-  const rules = (await rawReq(`${tsrv.url}/api/rules`, { headers: authHost() })).json();
-  const character = Object.keys(inv.inventory.characters)[0];
+  const inv = asJson<InventoryResponse>((await rawReq(`${tsrv.url}/api/inventory`, { headers: authHost() })).json());
+  const profiles = asJson<ProfilesResponse>((await rawReq(`${tsrv.url}/api/profiles`, { headers: authHost() })).json());
+  const rules = asJson<RulesResponse>((await rawReq(`${tsrv.url}/api/rules`, { headers: authHost() })).json());
+  const character = Object.keys(inv.inventory.characters)[0]!;
   const { pools, current } = buildPools(foldFixtures(join(HERE, "fixtures")), character, {});
-  const templateName = Object.keys(profiles.profiles.templates)[0];
-  const profile = { ...profiles.profiles.templates[templateName], caps: rules.rules.caps };
+  const templateName = Object.keys(profiles.profiles.templates!)[0]!;
+  const profile = { ...profiles.profiles.templates![templateName], caps: rules.rules.caps };
   const body = JSON.stringify({ pools, current, profile, opts: { exact: true, timeBudgetMs: 5000 } });
   const postHeaders = { ...authHost(), "content-type": "application/json", "x-client-id": "client-A" };
-  const first = (await rawReq(`${tsrv.url}/api/optimize`, { method: "POST", headers: postHeaders, body })).json();
-  const second = (await rawReq(`${tsrv.url}/api/optimize`, { method: "POST", headers: postHeaders, body })).json();
+  const first = asJson<OptimizeJobResponse>((await rawReq(`${tsrv.url}/api/optimize`, { method: "POST", headers: postHeaders, body })).json());
+  const second = asJson<OptimizeJobResponse>((await rawReq(`${tsrv.url}/api/optimize`, { method: "POST", headers: postHeaders, body })).json());
   assert.equal(second.superseded, first.id);
-  const firstStatus = (await rawReq(`${tsrv.url}/api/optimize/${first.id}/status`, { headers: authHost() })).json();
+  const firstStatus = asJson<OptimizeJobResponse>((await rawReq(`${tsrv.url}/api/optimize/${first.id}/status`, { headers: authHost() })).json());
   assert.equal(firstStatus.state, "cancelled");
   await rawReq(`${tsrv.url}/api/optimize/${second.id}/cancel`, { method: "POST", headers: authHost() });
 });
@@ -761,18 +908,18 @@ test("[fast] a job started without X-Client-Id can't be read via its events rout
   const dir = mkdtempSync(join(tmpdir(), "qm-"));
   const s2 = await startServer(ensureLayout(resolveConfig(["--demo", "--port", "0", "--data", dir], {})));
   try {
-    const inv = await (await fetch(s2.url + "/api/inventory")).json();
-    const profiles = await (await fetch(s2.url + "/api/profiles")).json();
-    const rules = await (await fetch(s2.url + "/api/rules")).json();
-    const character = Object.keys(inv.inventory.characters)[0];
+    const inv = asJson<InventoryResponse>(await (await fetch(s2.url + "/api/inventory")).json());
+    const profiles = asJson<ProfilesResponse>(await (await fetch(s2.url + "/api/profiles")).json());
+    const rules = asJson<RulesResponse>(await (await fetch(s2.url + "/api/rules")).json());
+    const character = Object.keys(inv.inventory.characters)[0]!;
     const { pools, current } = buildPools(foldFixtures(join(HERE, "fixtures")), character, {});
-    const templateName = Object.keys(profiles.profiles.templates)[0];
-    const profile = { ...profiles.profiles.templates[templateName], caps: rules.rules.caps };
+    const templateName = Object.keys(profiles.profiles.templates!)[0]!;
+    const profile = { ...profiles.profiles.templates![templateName], caps: rules.rules.caps };
     const r = await fetch(s2.url + "/api/optimize", {
       method: "POST", headers: { "content-type": "application/json" },   // deliberately no X-Client-Id
       body: JSON.stringify({ pools, current, profile, opts: { exact: true, timeBudgetMs: 5000 } }),
     });
-    const { id } = await r.json();
+    const { id } = asJson(await r.json());
     const events = await fetch(s2.url + `/api/optimize/${id}/events`);   // deliberately no ?client= either
     assert.equal(events.status, 403);
     await fetch(s2.url + `/api/optimize/${id}/cancel`, { method: "POST" });
@@ -785,15 +932,15 @@ test("[fast] two POST /api/optimize with no X-Client-Id never supersede each oth
   const dir = mkdtempSync(join(tmpdir(), "qm-"));
   const s2 = await startServer(ensureLayout(resolveConfig(["--demo", "--port", "0", "--data", dir], {})));
   try {
-    const inv = await (await fetch(s2.url + "/api/inventory")).json();
-    const profiles = await (await fetch(s2.url + "/api/profiles")).json();
-    const rules = await (await fetch(s2.url + "/api/rules")).json();
-    const character = Object.keys(inv.inventory.characters)[0];
+    const inv = asJson<InventoryResponse>(await (await fetch(s2.url + "/api/inventory")).json());
+    const profiles = asJson<ProfilesResponse>(await (await fetch(s2.url + "/api/profiles")).json());
+    const rules = asJson<RulesResponse>(await (await fetch(s2.url + "/api/rules")).json());
+    const character = Object.keys(inv.inventory.characters)[0]!;
     const { pools, current } = buildPools(foldFixtures(join(HERE, "fixtures")), character, {});
-    const templateName = Object.keys(profiles.profiles.templates)[0];
-    const profile = { ...profiles.profiles.templates[templateName], caps: rules.rules.caps };
+    const templateName = Object.keys(profiles.profiles.templates!)[0]!;
+    const profile = { ...profiles.profiles.templates![templateName], caps: rules.rules.caps };
     const body = JSON.stringify({ pools, current, profile, opts: { exact: true, timeBudgetMs: 5000 } });
-    const post = () => fetch(s2.url + "/api/optimize", { method: "POST", headers: { "content-type": "application/json" }, body }).then((x) => x.json());
+    const post = () => fetch(s2.url + "/api/optimize", { method: "POST", headers: { "content-type": "application/json" }, body }).then((x) => asJson(x.json()));
     const first = await post();
     const second = await post();
     assert.equal(second.superseded, null);
@@ -823,17 +970,17 @@ test("[fast] a job that throws inside the optimizer logs its stack with a ref; t
       method: "POST", headers: { "content-type": "application/json" },
       body: JSON.stringify({ pools: { helmet: [null] }, current: {}, profile: { caps: { physResist: 70 } }, opts: {} }),
     });
-    const { id } = await r.json();
-    let status;
+    const { id } = asJson<OptimizeJobResponse>(await r.json());
+    let status: OptimizeJobResponse | undefined;
     for (let i = 0; i < 50; i++) {
-      status = await (await fetch(s2.url + `/api/optimize/${id}/status`)).json();
+      status = asJson<OptimizeJobResponse>(await (await fetch(s2.url + `/api/optimize/${id}/status`)).json());
       if (status.state !== "running") break;
       await new Promise((res) => setTimeout(res, 20));
     }
-    assert.equal(status.state, "error");
-    assert.match(status.error, /^internal error \(ref [0-9a-f]{8}\)$/);
-    assert.doesNotMatch(status.error, /at file:|\.mjs:\d+:\d+/, "no stack trace text reaches the client");
-    const ref = status.error.match(/ref ([0-9a-f]{8})/)[1];
+    assert.equal(status!.state, "error");
+    assert.match(status!.error!, /^internal error \(ref [0-9a-f]{8}\)$/);
+    assert.doesNotMatch(status!.error!, /at file:|\.mjs:\d+:\d+/, "no stack trace text reaches the client");
+    const ref = status!.error!.match(/ref ([0-9a-f]{8})/)![1]!;
     const log = readFileSync(join(dir, "logs", "server.log"), "utf8");
     assert.ok(log.includes(ref), "the ref appears in the log file");
     assert.match(log, /TypeError.*optCollectKeys/s, "the real stack trace reached the log file");
@@ -846,12 +993,12 @@ test("[fast] a route that throws returns a stack-free 500 with a ref that appear
   writeFileSync(join(tdir, "profiles.json"), "{not json");
   const r = await rawReq(`${tsrv.url}/api/profiles`, { headers: authHost() });
   assert.equal(r.status, 500);
-  const body = r.json();
+  const body = asJson<ErrorBody>(r.json());
   assert.equal(body.error, "internal error");
   assert.ok(body.ref, "a ref is present");
   assert.doesNotMatch(r.text, /at file:|\.mjs:\d+:\d+/, "no stack trace text reaches the response body");
   const log = readFileSync(join(tdir, "logs", "server.log"), "utf8");
-  assert.ok(log.includes(body.ref), "the ref appears in the log file");
+  assert.ok(log.includes(body.ref!), "the ref appears in the log file");
 });
 
 // Task 2 (Phase 3): the worker now runs an exact build through app/exact-solver.mts (HiGHS), not the
@@ -861,30 +1008,30 @@ test("[fast] POST /api/optimize exact: the job finishes with solver \"highs\", p
   const dir = mkdtempSync(join(tmpdir(), "qm-"));
   const s2 = await startServer(ensureLayout(resolveConfig(["--demo", "--port", "0", "--data", dir], {})));
   try {
-    const inv = await (await fetch(s2.url + "/api/inventory")).json();
-    const profiles = await (await fetch(s2.url + "/api/profiles")).json();
-    const rules = await (await fetch(s2.url + "/api/rules")).json();
-    const character = Object.keys(inv.inventory.characters)[0];
+    const inv = asJson<InventoryResponse>(await (await fetch(s2.url + "/api/inventory")).json());
+    const profiles = asJson<ProfilesResponse>(await (await fetch(s2.url + "/api/profiles")).json());
+    const rules = asJson<RulesResponse>(await (await fetch(s2.url + "/api/rules")).json());
+    const character = Object.keys(inv.inventory.characters)[0]!;
     const { pools, current } = buildPools(foldFixtures(join(HERE, "fixtures")), character, {});
-    const templateName = Object.keys(profiles.profiles.templates)[0];
-    const profile = { ...profiles.profiles.templates[templateName], caps: rules.rules.caps };
+    const templateName = Object.keys(profiles.profiles.templates!)[0]!;
+    const profile = { ...profiles.profiles.templates![templateName], caps: rules.rules.caps };
     const r = await fetch(s2.url + "/api/optimize", {
       method: "POST", headers: { "content-type": "application/json" },
       body: JSON.stringify({ pools, current, profile, opts: { exact: true, timeBudgetMs: 20000, restarts: 50, seed: 2026 } }),
     });
-    const { id } = await r.json();
-    let status;
+    const { id } = asJson<OptimizeJobResponse>(await r.json());
+    let status: OptimizeJobResponse | undefined;
     for (let i = 0; i < 300; i++) {
-      status = await (await fetch(s2.url + `/api/optimize/${id}/status`)).json();
+      status = asJson<OptimizeJobResponse>(await (await fetch(s2.url + `/api/optimize/${id}/status`)).json());
       if (status.state !== "running") break;
       await new Promise((res) => setTimeout(res, 100));
     }
-    assert.equal(status.state, "done", JSON.stringify(status));
-    assert.equal(status.result.solver, "highs");
-    assert.equal(status.result.proven, true);
-    assert.ok(status.runId);
-    const run = await (await fetch(s2.url + `/api/runs/${status.runId}`)).json();
-    assert.equal(run.run.result.score, status.result.score);
+    assert.equal(status!.state, "done", JSON.stringify(status));
+    assert.equal(status!.result!.solver, "highs");
+    assert.equal(status!.result!.proven, true);
+    assert.ok(status!.runId);
+    const run = asJson<RunResponse>(await (await fetch(s2.url + `/api/runs/${status!.runId}`)).json());
+    assert.equal(run.run.result.score, status!.result!.score);
   } finally {
     await s2.close();
   }
@@ -904,7 +1051,7 @@ test("[smoke] /item-query.mjs is served as text/javascript with nosniff", async 
 });
 
 test("[smoke] /api/inventory carries facets, worn gear and counts, and no item list", async () => {
-  const j = await (await get("/api/inventory")).json();
+  const j = asJson<InventoryResponse>(await (await get("/api/inventory")).json());
   assert.equal(j.ok, true);
   assert.equal(j.inventory.items, undefined);
   assert.ok(j.inventory.itemCount > 0);
@@ -924,7 +1071,7 @@ test("[smoke] /api/inventory carries facets, worn gear and counts, and no item l
 // `state.inv`/`state.facets` without going through GET /api/items, so a future field removal fails
 // here instead of surfacing only as a live "failed to load" banner.
 test("[smoke] /api/inventory carries every field the page's non-paged tabs read directly", async () => {
-  const j = await (await get("/api/inventory")).json();
+  const j = asJson<InventoryResponse>(await (await get("/api/inventory")).json());
   const inv = j.inventory;
   assert.ok(inv.containers && Object.keys(inv.containers).length > 0, "containers.mjs reads state.inv.containers");
   assert.ok(inv.rootCounts && Object.keys(inv.rootCounts).length > 0, "containers.mjs reads state.inv.rootCounts");
@@ -935,38 +1082,38 @@ test("[smoke] /api/inventory carries every field the page's non-paged tabs read 
 });
 
 test("[fast] /api/items pages, sorts and searches", async () => {
-  const inv = await (await get("/api/inventory")).json();
+  const inv = asJson<InventoryResponse>(await (await get("/api/inventory")).json());
   const total = inv.inventory.itemCount;
-  const page = await (await get("/api/items?limit=5")).json();
+  const page = asJson<ItemsPageResponse>(await (await get("/api/items?limit=5")).json());
   assert.equal(page.ok, true);
-  assert.equal(page.rows.length, 5);
+  assert.equal(page.rows!.length, 5);
   assert.equal(page.total, total);
-  const all = await (await get("/api/items?limit=500")).json();
-  assert.equal(all.rows.length, total);
-  const names = all.rows.map((r) => r.name);
+  const all = asJson<ItemsPageResponse>(await (await get("/api/items?limit=500")).json());
+  assert.equal(all.rows!.length, total);
+  const names = all.rows!.map((r) => r.name);
   assert.deepEqual(names, [...names].sort((a, b) => a.localeCompare(b)), "sort=name (default) is A-to-Z");
-  const rev = await (await get("/api/items?limit=500&sort=name&dir=-1")).json();
-  assert.deepEqual(rev.rows.map((r) => r.name), [...names].reverse(), "dir=-1 reverses the default sort");
-  const search = await (await get("/api/items?q=" + encodeURIComponent("Vicious Crescent Blade"))).json();
-  assert.ok(search.rows.length >= 1, JSON.stringify(search));
-  assert.ok(search.rows.some((r) => r.name === "Vicious Crescent Blade"));
-  const clamp = await (await get("/api/items?limit=9999")).json();
+  const rev = asJson<ItemsPageResponse>(await (await get("/api/items?limit=500&sort=name&dir=-1")).json());
+  assert.deepEqual(rev.rows!.map((r) => r.name), [...names].reverse(), "dir=-1 reverses the default sort");
+  const search = asJson<ItemsPageResponse>(await (await get("/api/items?q=" + encodeURIComponent("Vicious Crescent Blade"))).json());
+  assert.ok(search.rows!.length >= 1, JSON.stringify(search));
+  assert.ok(search.rows!.some((r) => r.name === "Vicious Crescent Blade"));
+  const clamp = asJson<ItemsPageResponse>(await (await get("/api/items?limit=9999")).json());
   assert.equal(clamp.limit, 500);
-  const grouped = await (await get("/api/items?group=1")).json();
+  const grouped = asJson<ItemsPageResponse>(await (await get("/api/items?group=1")).json());
   assert.equal(grouped.ok, true);
   assert.ok(Array.isArray(grouped.groups) && grouped.groups.length > 0);
   assert.ok(!("rows" in grouped));
 });
 
 test("[fast] GET /api/items/by-serial resolves full item records by serial", async () => {
-  const page = await (await get("/api/items?limit=3")).json();
-  const serials = page.rows.map((r) => r.serial);
+  const page = asJson<ItemsPageResponse>(await (await get("/api/items?limit=3")).json());
+  const serials = page.rows!.map((r) => r.serial);
   const unknown = 999999999;
-  const res = await (await get(`/api/items/by-serial?serials=${[...serials, unknown].join(",")}`)).json();
+  const res = asJson<ItemsBySerialResponse>(await (await get(`/api/items/by-serial?serials=${[...serials, unknown].join(",")}`)).json());
   assert.equal(res.ok, true);
   for (const s of serials) {
     assert.ok(res.items[s], `serial ${s} should resolve`);
-    assert.ok(res.items[s].location, `serial ${s} should carry a location`);
+    assert.ok(res.items[s]!.location, `serial ${s} should carry a location`);
   }
   assert.equal(res.items[unknown], undefined, "an unknown serial is simply absent, not an error");
   const tooMany = await get(`/api/items/by-serial?serials=${Array.from({ length: 201 }, (_, i) => i + 1).join(",")}`);
@@ -979,18 +1126,18 @@ test("[fast] /api/optimize by character builds the same pools as the client did"
   const dir = mkdtempSync(join(tmpdir(), "qm-"));
   const s2 = await startServer(ensureLayout(resolveConfig(["--demo", "--port", "0", "--data", dir], {})));
   try {
-    const invFull = await (await fetch(s2.url + "/api/inventory")).json();
-    const profiles = await (await fetch(s2.url + "/api/profiles")).json();
-    const rules = await (await fetch(s2.url + "/api/rules")).json();
-    const character = Object.keys(invFull.inventory.characters)[0];
-    const templateName = Object.keys(profiles.profiles.templates)[0];
-    const profile = { ...profiles.profiles.templates[templateName], caps: rules.rules.caps };
+    const invFull = asJson<InventoryResponse>(await (await fetch(s2.url + "/api/inventory")).json());
+    const profiles = asJson<ProfilesResponse>(await (await fetch(s2.url + "/api/profiles")).json());
+    const rules = asJson<RulesResponse>(await (await fetch(s2.url + "/api/rules")).json());
+    const character = Object.keys(invFull.inventory.characters)[0]!;
+    const templateName = Object.keys(profiles.profiles.templates!)[0]!;
+    const profile = { ...profiles.profiles.templates![templateName], caps: rules.rules.caps };
     // The full item map used to come straight off /api/inventory; since Task 5 removed it from the
     // wire, fold the same demo fixtures the server folds (foldFixtures above) to get an equivalent
     // local inventory for this "does the server build what the client used to build" comparison.
     const localInv = foldFixtures(join(HERE, "fixtures"));
     const { pools, current } = buildPools(localInv, character, {});
-    const localPoolSize = Object.values(pools).reduce((a, v) => a + v.length, 0);
+    const localPoolSize = Object.values(pools).reduce((a, v) => a + (v || []).length, 0);
 
     // 1) the OLD body form — start it and wait for it to finish so it lands as a saved, reusable run.
     // opts.optionalSlots must match what the by-character form derives server-side (every
@@ -1001,15 +1148,15 @@ test("[fast] /api/optimize by character builds the same pools as the client did"
       method: "POST", headers: { "content-type": "application/json" },
       body: JSON.stringify({ pools, current, profile, opts: oldOpts }),
     });
-    const j1 = await r1.json();
+    const j1 = asJson<OptimizeJobResponse>(await r1.json());
     assert.equal(r1.status, 200, JSON.stringify(j1));
     assert.equal(j1.poolSize, localPoolSize);
     assert.deepEqual(j1.skipped, {}, "the old body form reports no skipped counts (it never called buildPools)");
     assert.deepEqual(j1.blocked, []);
-    let status = j1;
+    let status: OptimizeJobResponse = j1;
     for (let i = 0; i < 100 && status.state !== "done"; i++) {
       await new Promise((res) => setTimeout(res, 20));
-      status = await (await fetch(s2.url + `/api/optimize/${j1.id}/status`)).json();
+      status = asJson<OptimizeJobResponse>(await (await fetch(s2.url + `/api/optimize/${j1.id}/status`)).json());
     }
     assert.equal(status.state, "done", JSON.stringify(status));
 
@@ -1019,7 +1166,7 @@ test("[fast] /api/optimize by character builds the same pools as the client did"
       method: "POST", headers: { "content-type": "application/json" },
       body: JSON.stringify({ character, settings: {}, profile, opts: { exact: false } }),
     });
-    const j2 = await r2.json();
+    const j2 = asJson(await r2.json());
     assert.equal(r2.status, 200, JSON.stringify(j2));
     assert.equal(j2.poolSize, localPoolSize);
     assert.deepEqual(j2.current, current);
@@ -1030,18 +1177,18 @@ test("[fast] /api/optimize by character builds the same pools as the client did"
 });
 
 test("[fast] /api/optimize by character with a bad settings type is 400", async () => {
-  const inv = await (await get("/api/inventory")).json();
-  const profiles = await (await get("/api/profiles")).json();
-  const rules = await (await get("/api/rules")).json();
-  const character = Object.keys(inv.inventory.characters)[0];
-  const templateName = Object.keys(profiles.profiles.templates)[0];
-  const profile = { ...profiles.profiles.templates[templateName], caps: rules.rules.caps };
+  const inv = asJson<InventoryResponse>(await (await get("/api/inventory")).json());
+  const profiles = asJson<ProfilesResponse>(await (await get("/api/profiles")).json());
+  const rules = asJson<RulesResponse>(await (await get("/api/rules")).json());
+  const character = Object.keys(inv.inventory.characters)[0]!;
+  const templateName = Object.keys(profiles.profiles.templates!)[0]!;
+  const profile = { ...profiles.profiles.templates![templateName], caps: rules.rules.caps };
   const r = await fetch(srv.url + "/api/optimize", {
     method: "POST", headers: { "content-type": "application/json" },
     body: JSON.stringify({ character, settings: { excludeTags: "cursed" }, profile, opts: {} }),
   });
   assert.equal(r.status, 400);
-  assert.match((await r.json()).error, /excludeTags/);
+  assert.match(asJson<ErrorBody>(await r.json()).error, /excludeTags/);
 });
 
 // Post-review fix: `null` in an optional settings field (strLimit/excludeTags/excludeRoots/
@@ -1051,18 +1198,18 @@ test("[fast] /api/optimize by character with a bad settings type is 400", async 
 // field's null threw once buildPools tried to .map/.includes it. A saved run's settings (re-posted
 // from the runs drawer) can carry exactly this shape, so it had to be treated the same as "absent".
 test("[fast] /api/optimize by character: null settings fields behave like absent fields (same poolSize as {}), not a type error", async () => {
-  const inv = await (await get("/api/inventory")).json();
-  const profiles = await (await get("/api/profiles")).json();
-  const rules = await (await get("/api/rules")).json();
-  const character = Object.keys(inv.inventory.characters)[0];
-  const templateName = Object.keys(profiles.profiles.templates)[0];
-  const profile = { ...profiles.profiles.templates[templateName], caps: rules.rules.caps };
-  const post = async (settings) => {
+  const inv = asJson<InventoryResponse>(await (await get("/api/inventory")).json());
+  const profiles = asJson<ProfilesResponse>(await (await get("/api/profiles")).json());
+  const rules = asJson<RulesResponse>(await (await get("/api/rules")).json());
+  const character = Object.keys(inv.inventory.characters)[0]!;
+  const templateName = Object.keys(profiles.profiles.templates!)[0]!;
+  const profile = { ...profiles.profiles.templates![templateName], caps: rules.rules.caps };
+  const post = async (settings: Record<string, unknown>): Promise<{ status: number; body: OptimizeJobResponse }> => {
     const r = await fetch(srv.url + "/api/optimize", {
       method: "POST", headers: { "content-type": "application/json" },
       body: JSON.stringify({ character, settings, profile, opts: { exact: false } }),
     });
-    return { status: r.status, body: await r.json() };
+    return { status: r.status, body: asJson<OptimizeJobResponse>(await r.json()) };
   };
   const baseline = await post({});
   assert.equal(baseline.status, 200, JSON.stringify(baseline.body));
@@ -1077,7 +1224,7 @@ test("[fast] a new scan file changes /api/inventory without a restart", async ()
   const dir = mkdtempSync(join(tmpdir(), "qm-"));
   const s2 = await startServer(ensureLayout(resolveConfig(["--port", "0", "--data", dir], {})));
   try {
-    const before = await (await fetch(s2.url + "/api/inventory")).json();
+    const before = asJson<InventoryResponse>(await (await fetch(s2.url + "/api/inventory")).json());
     assert.equal(before.inventory.itemCount, 0);
     const scansDir = join(dir, "scans");
     mkdirSync(scansDir, { recursive: true });
@@ -1089,7 +1236,7 @@ test("[fast] a new scan file changes /api/inventory without a restart", async ()
       roots: [], containers: {}, items: [],
     };
     writeFileSync(join(scansDir, "cache-probe.json"), JSON.stringify(snap));
-    const after = await (await fetch(s2.url + "/api/inventory")).json();
+    const after = asJson<InventoryResponse>(await (await fetch(s2.url + "/api/inventory")).json());
     assert.ok(after.inventory.itemCount > before.inventory.itemCount, `${before.inventory.itemCount} -> ${after.inventory.itemCount}`);
   } finally {
     await s2.close();
@@ -1104,7 +1251,7 @@ test("[fast] GET /api/setup lists the tazuo adapter, its available (repo-shipped
   const dir = mkdtempSync(join(tmpdir(), "qm-setup-"));
   const s2 = await startServer(ensureLayout(resolveConfig(["--port", "0", "--data", dir], {})));
   try {
-    const j = await (await fetch(s2.url + "/api/setup")).json();
+    const j = asJson<SetupResponse>(await (await fetch(s2.url + "/api/setup")).json());
     assert.equal(j.ok, true);
     assert.equal(j.firstRun, true);
     // Present, not pinned: the test's own point (title, available/installed/dataDir below) is
@@ -1130,7 +1277,7 @@ test("[fast] GET /api/setup reports each real adapter's transport; POST /api/set
   const dir = mkdtempSync(join(tmpdir(), "qm-setup-transport-"));
   const s2 = await startServer(ensureLayout(resolveConfig(["--port", "0", "--data", dir], {})));
   try {
-    const setup = await (await fetch(s2.url + "/api/setup")).json();
+    const setup = asJson<SetupResponse>(await (await fetch(s2.url + "/api/setup")).json());
     const tazuo = setup.adapters.find((a) => a.id === "tazuo");
     const web = setup.adapters.find((a) => a.id === "classicuo-web");
     assert.ok(tazuo, JSON.stringify(setup.adapters.map((a) => a.id)));
@@ -1155,10 +1302,10 @@ test("[fast] GET /api/setup reports each real adapter's transport; POST /api/set
       method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ adapter: "classicuo-web", scriptsDir }),
     });
     assert.equal(r.status, 400);
-    const body = await r.json();
-    assert.match(body.error, /nothing to install/);
+    const body = asJson<InstallScriptsResult>(await r.json());
+    assert.match(body.error!, /nothing to install/);
     assert.deepEqual(readdirSync(scriptsDir), [], "nothing was written for a paste-transport adapter");
-    assert.equal((await (await fetch(s2.url + "/api/settings")).json()).settings.client, undefined, "a refused install must not save settings.client");
+    assert.equal((asJson<SettingsResponse>(await (await fetch(s2.url + "/api/settings")).json())).settings.client, undefined, "a refused install must not save settings.client");
   } finally {
     await s2.close();
   }
@@ -1174,7 +1321,7 @@ test("[fast] POST /api/setup/locate resolves a nested .../ClassicUO/Data/Plugins
       method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ adapter: "razor-enhanced", dir: clientRoot }),
     });
     assert.equal(r.status, 200);
-    const body = await r.json();
+    const body = asJson(await r.json());
     assert.equal(body.scriptsDir, scriptsDir);
   } finally {
     await s2.close();
@@ -1202,10 +1349,10 @@ test("[fast] GET /api/setup: an adapter with no bridge reports capabilities.brid
   const scriptsDir = mkdtempSync(join(tmpdir(), "qm-setup-nobridge-scripts-"));
   const s2 = await startServer(ensureLayout(resolveConfig(["--port", "0", "--data", dataDir, "--adapters", adaptersDir], {})));
   try {
-    const setup = await (await fetch(s2.url + "/api/setup")).json();
+    const setup = asJson<SetupResponse>(await (await fetch(s2.url + "/api/setup")).json());
     assert.deepEqual(setup.adapters.map((a) => a.id).sort(), ["nobridge", "tazuo"]);
-    assert.deepEqual(setup.adapters.find((a) => a.id === "nobridge").capabilities.bridge, []);
-    assert.deepEqual(setup.adapters.find((a) => a.id === "tazuo").capabilities.bridge, ["highlight", "grab", "goto"]);
+    assert.deepEqual(setup.adapters.find((a) => a.id === "nobridge")!.capabilities.bridge, []);
+    assert.deepEqual(setup.adapters.find((a) => a.id === "tazuo")!.capabilities.bridge, ["highlight", "grab", "goto"]);
 
     // settings.client names which of those is active — PUT it at the no-bridge adapter first.
     const putNoBridge = await fetch(s2.url + "/api/settings", {
@@ -1213,9 +1360,9 @@ test("[fast] GET /api/setup: an adapter with no bridge reports capabilities.brid
       body: JSON.stringify({ client: { adapter: "nobridge", scriptsDir } }),
     });
     assert.equal(putNoBridge.status, 200);
-    let after = await (await fetch(s2.url + "/api/setup")).json();
-    assert.equal(after.settings.client.adapter, "nobridge");
-    assert.deepEqual(after.adapters.find((a) => a.id === after.settings.client.adapter).capabilities.bridge, []);
+    let after = asJson<SetupResponse>(await (await fetch(s2.url + "/api/setup")).json());
+    assert.equal(after.settings.client!.adapter, "nobridge");
+    assert.deepEqual(after.adapters.find((a) => a.id === after.settings.client!.adapter)!.capabilities.bridge, []);
 
     // Switching to tazuo flips the same lookup back to the three actions — same shape, no restart.
     const putTazuo = await fetch(s2.url + "/api/settings", {
@@ -1223,9 +1370,9 @@ test("[fast] GET /api/setup: an adapter with no bridge reports capabilities.brid
       body: JSON.stringify({ client: { adapter: "tazuo", scriptsDir } }),
     });
     assert.equal(putTazuo.status, 200);
-    after = await (await fetch(s2.url + "/api/setup")).json();
-    assert.equal(after.settings.client.adapter, "tazuo");
-    assert.deepEqual(after.adapters.find((a) => a.id === after.settings.client.adapter).capabilities.bridge, ["highlight", "grab", "goto"]);
+    after = asJson<SetupResponse>(await (await fetch(s2.url + "/api/setup")).json());
+    assert.equal(after.settings.client!.adapter, "tazuo");
+    assert.deepEqual(after.adapters.find((a) => a.id === after.settings.client!.adapter)!.capabilities.bridge, ["highlight", "grab", "goto"]);
   } finally {
     await s2.close();
   }
@@ -1240,7 +1387,7 @@ test("[fast] GET /api/setup reports bridgeAdapter: \"tazuo\" (the real bridge ro
   const dir = mkdtempSync(join(tmpdir(), "qm-setup-bridgeadapter-default-"));
   const s2 = await startServer(ensureLayout(resolveConfig(["--port", "0", "--data", dir], {})));
   try {
-    const setup = await (await fetch(s2.url + "/api/setup")).json();
+    const setup = asJson<SetupResponse>(await (await fetch(s2.url + "/api/setup")).json());
     assert.equal(setup.settings.client, undefined);
     assert.equal(setup.bridgeAdapter, "tazuo");
   } finally {
@@ -1266,8 +1413,8 @@ test("[fast] GET /api/setup reports bridgeAdapter matching a configured client's
       body: JSON.stringify({ client: { adapter: "nobridge", scriptsDir } }),
     });
     assert.equal(put.status, 200);
-    const setup = await (await fetch(s2.url + "/api/setup")).json();
-    assert.equal(setup.settings.client.adapter, "nobridge");
+    const setup = asJson<SetupResponse>(await (await fetch(s2.url + "/api/setup")).json());
+    assert.equal(setup.settings.client!.adapter, "nobridge");
     assert.equal(setup.bridgeAdapter, "nobridge", "a configured client wins over the tazuo default");
   } finally {
     await s2.close();
@@ -1285,7 +1432,7 @@ test("[fast] GET /api/setup reports bridgeAdapter: null when no client is config
   const dataDir = mkdtempSync(join(tmpdir(), "qm-setup-bridgeadapter-null-"));
   const s2 = await startServer(ensureLayout(resolveConfig(["--port", "0", "--data", dataDir, "--adapters", adaptersDir], {})));
   try {
-    const setup = await (await fetch(s2.url + "/api/setup")).json();
+    const setup = asJson<SetupResponse>(await (await fetch(s2.url + "/api/setup")).json());
     assert.deepEqual(setup.adapters.map((a) => a.id), ["nobridge"]);
     assert.equal(setup.settings.client, undefined);
     assert.equal(setup.bridgeAdapter, null, "nothing named \"tazuo\" exists in this throwaway adapters dir, so there is no id left to fall back to");
@@ -1304,9 +1451,9 @@ test("[fast] POST /api/setup/locate resolves a nested X/TazUO/LegionScripts fold
       method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ adapter: "tazuo", dir: clientRoot }),
     });
     assert.equal(r.status, 200);
-    const body = await r.json();
+    const body = asJson<LocateResponse>(await r.json());
     assert.equal(body.scriptsDir, legionDir);
-    assert.equal(body.installed.version, null);
+    assert.equal(body.installed!.version, null);
 
     const bad = await fetch(s2.url + "/api/setup/locate", {
       method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ adapter: "tazuo", dir: join(clientRoot, "does-not-exist") }),
@@ -1325,28 +1472,28 @@ test("[fast] POST /api/setup/install installs the scripts, saves settings.client
     const install = await fetch(s2.url + "/api/setup/install", {
       method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ adapter: "tazuo", scriptsDir }),
     });
-    const installBody = await install.json();
+    const installBody = asJson<InstallScriptsResult>(await install.json());
     assert.equal(install.status, 200, JSON.stringify(installBody));
-    assert.deepEqual(installBody.installed.sort(), ["packrat-bridge.py", "packrat-refresh.py", "packrat-scanner.py"]);
+    assert.deepEqual(installBody.installed!.sort(), ["packrat-bridge.py", "packrat-refresh.py", "packrat-scanner.py"]);
     assert.equal(installBody.version, "2.0.0");
     assert.ok(existsSync(join(scriptsDir, "packrat-scanner.py")));
     assert.ok(existsSync(join(scriptsDir, "packrat-paths.json")));
     assert.equal(existsSync(join(scriptsDir, "packrat-scanner.py.new")), false);
 
-    const settingsAfterInstall = await (await fetch(s2.url + "/api/settings")).json();
+    const settingsAfterInstall = asJson<SettingsResponse>(await (await fetch(s2.url + "/api/settings")).json());
     assert.deepEqual(settingsAfterInstall.settings.client, { adapter: "tazuo", scriptsDir });
 
-    const setupAfterInstall = await (await fetch(s2.url + "/api/setup")).json();
+    const setupAfterInstall = asJson<SetupResponse>(await (await fetch(s2.url + "/api/setup")).json());
     assert.equal(setupAfterInstall.firstRun, true, "an install alone must not clear firstRun");
-    assert.equal(setupAfterInstall.installed.version, "2.0.0");
+    assert.equal(setupAfterInstall.installed!.version, "2.0.0");
 
     const done = await fetch(s2.url + "/api/settings", {
       method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify({ setupDone: true }),
     });
     assert.equal(done.status, 200);
-    assert.equal((await (await fetch(s2.url + "/api/setup")).json()).firstRun, false);
+    assert.equal((asJson<SetupResponse>(await (await fetch(s2.url + "/api/setup")).json())).firstRun, false);
     // the earlier install's settings.client survives a later, unrelated settings PUT
-    assert.deepEqual((await (await fetch(s2.url + "/api/settings")).json()).settings.client, { adapter: "tazuo", scriptsDir });
+    assert.deepEqual((asJson<SettingsResponse>(await (await fetch(s2.url + "/api/settings")).json())).settings.client, { adapter: "tazuo", scriptsDir });
   } finally {
     await s2.close();
   }
@@ -1363,7 +1510,7 @@ test("[fast] POST /api/setup/install refuses 409 with the -stopall message while
       method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ adapter: "tazuo", scriptsDir }),
     });
     assert.equal(r.status, 409);
-    const body = await r.json();
+    const body = asJson<ErrorBody>(await r.json());
     assert.match(body.error, /-stopall/);
     assert.deepEqual(readdirSync(scriptsDir), [], "nothing was written while refused");
   } finally {
@@ -1383,7 +1530,7 @@ test("[fast] POST /api/import copies two fixtures (not the stray .txt) into the 
 
     const r = await fetch(s2.url + "/api/import", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ dir: srcDir }) });
     assert.equal(r.status, 200);
-    assert.deepEqual(await r.json(), { ok: true, copied: 2, skipped: 0 });
+    assert.deepEqual(asJson(await r.json()), { ok: true, copied: 2, skipped: 0 });
 
     const badDir = await fetch(s2.url + "/api/import", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ dir: join(srcDir, "does-not-exist") }) });
     assert.equal(badDir.status, 400);
@@ -1391,7 +1538,7 @@ test("[fast] POST /api/import copies two fixtures (not the stray .txt) into the 
     const deadline = Date.now() + 3000;
     let found = false;
     while (Date.now() < deadline && !found) {
-      const inv = await (await fetch(s2.url + "/api/inventory")).json();
+      const inv = asJson<InventoryResponse>(await (await fetch(s2.url + "/api/inventory")).json());
       found = Boolean(inv.inventory.characters[fixture.character]);
       if (!found) await new Promise((resolve) => setTimeout(resolve, 100));
     }
@@ -1411,11 +1558,11 @@ test("[fast] POST /api/import takes an explicit adapter (same result as the defa
 
     const r = await fetch(s2.url + "/api/import", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ dir: srcDir, adapter: "tazuo" }) });
     assert.equal(r.status, 200);
-    assert.deepEqual(await r.json(), { ok: true, copied: 1, skipped: 0 });
+    assert.deepEqual(asJson(await r.json()), { ok: true, copied: 1, skipped: 0 });
 
     const bad = await fetch(s2.url + "/api/import", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ dir: srcDir, adapter: "not-a-real-adapter" }) });
     assert.equal(bad.status, 400);
-    assert.match((await bad.json()).error, /unknown adapter/);
+    assert.match(asJson<ErrorBody>(await bad.json()).error, /unknown adapter/);
     assert.equal(existsSync(join(dir, "inbox", "not-a-real-adapter")), false, "a rejected adapter id must never create its own inbox directory");
   } finally {
     await s2.close();
@@ -1438,7 +1585,7 @@ test("[fast] POST /api/import/paste: a good paste (marker block, with noise arou
 
     const r = await fetch(s2.url + "/api/import/paste", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ text, adapter: "tazuo" }) });
     assert.equal(r.status, 200);
-    const body = await r.json();
+    const body = asJson<PasteResponse>(await r.json());
     assert.equal(body.ok, true);
     assert.equal(body.character, fixture.character);
     assert.ok(body.written, JSON.stringify(body));
@@ -1446,7 +1593,7 @@ test("[fast] POST /api/import/paste: a good paste (marker block, with noise arou
     const deadline = Date.now() + 3000;
     let found = false;
     while (Date.now() < deadline && !found) {
-      const inv = await (await fetch(s2.url + "/api/inventory")).json();
+      const inv = asJson<InventoryResponse>(await (await fetch(s2.url + "/api/inventory")).json());
       found = Boolean(inv.inventory.characters[fixture.character]);
       if (!found) await new Promise((resolve) => setTimeout(resolve, 100));
     }
@@ -1470,10 +1617,10 @@ test("[fast] POST /api/import/paste: filing a scan under a different adapter tha
       body: JSON.stringify({ text: JSON.stringify(fixture), adapter: "razor-enhanced" }),   // deliberately the wrong adapter
     });
     assert.equal(r.status, 200);
-    const body = await r.json();
+    const body = asJson<PasteResponse>(await r.json());
     assert.equal(body.ok, true);
-    assert.match(body.warning, /razor-enhanced/);
-    assert.match(body.warning, /tazuo/);
+    assert.match(body.warning!, /razor-enhanced/);
+    assert.match(body.warning!, /tazuo/);
     assert.ok(body.written, JSON.stringify(body));
 
     // "Still lands and folds": the watcher's own scanOnce() nudge (fired right after the write) can
@@ -1483,7 +1630,7 @@ test("[fast] POST /api/import/paste: filing a scan under a different adapter tha
     const deadline = Date.now() + 3000;
     let found = false;
     while (Date.now() < deadline && !found) {
-      const inv = await (await fetch(s2.url + "/api/inventory")).json();
+      const inv = asJson<InventoryResponse>(await (await fetch(s2.url + "/api/inventory")).json());
       found = Boolean(inv.inventory.characters[fixture.character]);
       if (!found) await new Promise((resolve) => setTimeout(resolve, 100));
     }
@@ -1502,7 +1649,7 @@ test("[fast] POST /api/import/paste: a matching adapter carries no warning field
       method: "POST", headers: { "content-type": "application/json" },
       body: JSON.stringify({ text: JSON.stringify(fixture), adapter: "tazuo" }),
     });
-    const body = await r.json();
+    const body = asJson<PasteResponse>(await r.json());
     assert.equal(body.ok, true);
     assert.equal(body.warning, undefined);
   } finally {
@@ -1519,9 +1666,9 @@ test("[fast] POST /api/import/paste: a bad paste is 400 with the parse error and
 
     const r = await fetch(s2.url + "/api/import/paste", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ text: "not json at all", adapter: "tazuo" }) });
     assert.equal(r.status, 400);
-    const body = await r.json();
+    const body = asJson<PasteResponse>(await r.json());
     assert.equal(body.ok, false);
-    assert.match(body.error, /JSON/);
+    assert.match(body.error!, /JSON/);
 
     const after = existsSync(inboxDir) ? readdirSync(inboxDir) : [];
     assert.deepEqual(after, before, "a rejected paste must not write into the inbox");
@@ -1537,7 +1684,7 @@ test("[fast] POST /api/import/paste: an unknown adapter id is rejected with 400"
     const fixture = JSON.parse(readFileSync(join(HERE, "..", "adapters", "tazuo", "fixture.scan.json"), "utf8"));
     const r = await fetch(s2.url + "/api/import/paste", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ text: JSON.stringify(fixture), adapter: "not-a-real-adapter" }) });
     assert.equal(r.status, 400);
-    assert.match((await r.json()).error, /unknown adapter/);
+    assert.match(asJson<ErrorBody>(await r.json()).error, /unknown adapter/);
     assert.equal(existsSync(join(dir, "inbox", "not-a-real-adapter")), false);
   } finally {
     await s2.close();
@@ -1550,7 +1697,7 @@ test("[fast] POST /api/import/rescan reports the adapters it swept (tazuo when l
   try {
     const r = await fetch(s2.url + "/api/import/rescan", { method: "POST", headers: { "content-type": "application/json" }, body: "{}" });
     assert.equal(r.status, 200);
-    const j = await r.json();
+    const j = asJson<RescanResponse>(await r.json());
     assert.equal(j.ok, true);
     // Present, not pinned: the point is "tazuo gets swept live" vs. "nothing gets swept under
     // --demo" (below) — not the exact set of every adapter shipped in this repo.
@@ -1564,7 +1711,7 @@ test("[fast] POST /api/import/rescan reports the adapters it swept (tazuo when l
   try {
     const r = await fetch(s3.url + "/api/import/rescan", { method: "POST", headers: { "content-type": "application/json" }, body: "{}" });
     assert.equal(r.status, 200);
-    assert.deepEqual(await r.json(), { ok: true, adapters: [] });
+    assert.deepEqual(asJson(await r.json()), { ok: true, adapters: [] });
   } finally {
     await s3.close();
   }
@@ -1585,7 +1732,7 @@ test("[fast] POST /api/import/rescan actually re-sweeps a file the folder watche
 
     const r = await fetch(s2.url + "/api/import/rescan", { method: "POST", headers: { "content-type": "application/json" }, body: "{}" });
     assert.equal(r.status, 200);
-    const swept = await r.json();
+    const swept = asJson<RescanResponse>(await r.json());
     assert.equal(swept.ok, true);
     // Present, not pinned — see the previous test's comment; this one's real point is the
     // ingested-file assertion below, not the exact set of every adapter shipped in this repo.
@@ -1594,7 +1741,7 @@ test("[fast] POST /api/import/rescan actually re-sweeps a file the folder watche
     const deadline = Date.now() + 3000;
     let found = false;
     while (Date.now() < deadline && !found) {
-      const inv = await (await fetch(s2.url + "/api/inventory")).json();
+      const inv = asJson<InventoryResponse>(await (await fetch(s2.url + "/api/inventory")).json());
       found = Boolean(inv.inventory.characters[fixture.character]);
       if (!found) await new Promise((resolve) => setTimeout(resolve, 100));
     }
@@ -1606,7 +1753,7 @@ test("[fast] POST /api/import/rescan actually re-sweeps a file the folder watche
 
 test("[fast] GET /api/update-check reflects package.json (no repository field today => configured:false, no network call)", async () => {
   const pkg = JSON.parse(readFileSync(join(HERE, "..", "package.json"), "utf8"));
-  const j = await (await get("/api/update-check")).json();
+  const j = asJson(await (await get("/api/update-check")).json());
   assert.equal(j.ok, true);
   assert.equal(j.configured, pkg.repository ? true : false, JSON.stringify(pkg.repository));
 });
@@ -1618,15 +1765,15 @@ test("[fast] POST /api/host/pick-folder and open-path are 501 without a host; an
   assert.equal(noHostOpen.status, 501);
 
   const dir = mkdtempSync(join(tmpdir(), "qm-host-"));
-  const opened = [];
+  const opened: string[] = [];
   const s2 = await startServer(
     ensureLayout(resolveConfig(["--demo", "--port", "0", "--data", dir], {})),
-    { host: { pickFolder: async () => "/x", openPath: async (p) => { opened.push(p); } } },
+    { host: { pickFolder: async () => "/x", openPath: async (p: string) => { opened.push(p); } } },
   );
   try {
     const picked = await fetch(s2.url + "/api/host/pick-folder", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ title: "Pick" }) });
     assert.equal(picked.status, 200);
-    assert.equal((await picked.json()).path, "/x");
+    assert.equal(asJson(await picked.json()).path, "/x");
 
     const openOk = await fetch(s2.url + "/api/host/open-path", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ which: "data" }) });
     assert.equal(openOk.status, 200);
@@ -1647,7 +1794,7 @@ test("[fast] PUT /api/settings {client: {adapter: 5}} is 400 naming client", asy
       method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify({ client: { adapter: 5, scriptsDir: "/x" } }),
     });
     assert.equal(r.status, 400);
-    assert.match((await r.json()).error, /client/);
+    assert.match(asJson<ErrorBody>(await r.json()).error, /client/);
   } finally {
     await s2.close();
   }
@@ -1669,16 +1816,16 @@ test("[fast] POST /api/setup/locate and POST /api/setup/install reject a travers
       method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ adapter: evilAdapter, dir: probeDir }),
     });
     assert.equal(locate.status, 400);
-    assert.match((await locate.json()).error, /adapter/);
+    assert.match(asJson<ErrorBody>(await locate.json()).error, /adapter/);
 
     const scriptsDir = mkdtempSync(join(tmpdir(), "qm-badadapter-dest-"));
     const install = await fetch(s2.url + "/api/setup/install", {
       method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ adapter: evilAdapter, scriptsDir }),
     });
     assert.equal(install.status, 400);
-    assert.match((await install.json()).error, /adapter/);
+    assert.match(asJson<ErrorBody>(await install.json()).error, /adapter/);
     assert.deepEqual(readdirSync(scriptsDir), [], "nothing was written for a rejected adapter id");
-    assert.equal((await (await fetch(s2.url + "/api/settings")).json()).settings.client, undefined, "a rejected install must not save settings.client");
+    assert.equal((asJson<SettingsResponse>(await (await fetch(s2.url + "/api/settings")).json())).settings.client, undefined, "a rejected install must not save settings.client");
 
     // an unknown-but-shape-valid adapter id (no traversal characters, just not a real adapter) is
     // rejected the same way
@@ -1699,8 +1846,8 @@ test("[fast] PUT /api/settings {client: {adapter: \"../evil\", scriptsDir}} is 4
       method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify({ client: { adapter: "../evil", scriptsDir: "/x" } }),
     });
     assert.equal(r.status, 400);
-    assert.match((await r.json()).error, /adapter/);
-    assert.equal((await (await fetch(s2.url + "/api/settings")).json()).settings.client, undefined, "a rejected PUT must not save settings.client");
+    assert.match(asJson<ErrorBody>(await r.json()).error, /adapter/);
+    assert.equal((asJson<SettingsResponse>(await (await fetch(s2.url + "/api/settings")).json())).settings.client, undefined, "a rejected PUT must not save settings.client");
   } finally {
     await s2.close();
   }
