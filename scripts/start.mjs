@@ -28,5 +28,5 @@ try {
 
 const free = await new Promise((ok) => { const s = createServer(); s.once("error", () => ok(false)); s.listen(port, "127.0.0.1", () => s.close(() => ok(true))); });
 if (!free) { console.error(`port ${port} is in use — stop the other server or pass --port`); process.exit(2); }
-const child = spawn(process.execPath, [join(ROOT, "app", "vault-server.mjs"), ...args], { stdio: "inherit" });
+const child = spawn(process.execPath, [join(ROOT, "app", "vault-server.mts"), ...args], { stdio: "inherit" });
 child.on("exit", (code) => process.exit(code ?? 0));

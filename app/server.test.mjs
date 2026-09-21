@@ -8,7 +8,7 @@ import { fileURLToPath } from "node:url";
 import http from "node:http";
 import { createConnection } from "node:net";
 import { resolveConfig, ensureLayout } from "./config.mts";
-import { startServer } from "./vault-server.mjs";
+import { startServer } from "./vault-server.mts";
 import { buildPools, foldSnapshots, setRules } from "./vault-lib.mts";
 import { upgradeScan, validateScan } from "./scan-schema.mts";
 import { DEFAULT_OPTIONAL_SLOTS } from "./mip.mts";
@@ -300,7 +300,7 @@ test("[fast] POST /api/setup/install's running-bridge guard checks the adapter b
 });
 
 test("[fast] /ui/ rejects traversal and unlisted files", async () => {
-  assert.equal((await get("/ui/../vault-server.mjs")).status, 404);
+  assert.equal((await get("/ui/../vault-server.mts")).status, 404);
   assert.equal((await get("/ui/nope.mjs")).status, 404);
 });
 test("[fast] /ui/app.mjs is served with the right content-type", async () => {
