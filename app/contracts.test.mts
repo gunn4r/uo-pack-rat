@@ -1,17 +1,18 @@
-// contracts.test.mjs — folds every adapter's fixture.scan.json against its own capabilities.json,
+// contracts.test.mts — folds every adapter's fixture.scan.json against its own capabilities.json,
 // checking the two contracts agree with each other and with the shared scan/bridge schemas. An
 // "adapter" here is any directory under adapters/ that ships both a capabilities.json and a
 // fixture.scan.json (today: adapters/tazuo/); a future adapter picks these tests up for free just by
 // shipping those two files.
-// Run: node --test app/contracts.test.mjs   or   node app/contracts.test.mjs
+// Run: node --test app/contracts.test.mts   or   node app/contracts.test.mts
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync, readdirSync, existsSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { validate } from "./schema/validate.mts";
+import { validate, type ValidatorSchema } from "./schema/validate.mts";
 import { SCAN_V2_SCHEMA } from "./scan-schema.mts";
 import { foldSnapshots, setRules } from "./vault-lib.mts";
+import type { RulesV1, ScanV2, ScanV2AdapterCapabilities } from "./schema/types.d.mts";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const ROOT = dirname(HERE);
@@ -19,11 +20,17 @@ const ADAPTERS_DIR = join(ROOT, "adapters");
 
 // Every test in this file runs against the UO Alive shard rules, same as gear-vault.test.mjs —
 // foldSnapshots needs setRules() called before anything else touches it.
-setRules(JSON.parse(readFileSync(join(HERE, "rules", "uoalive.json"), "utf8")));
+setRules(JSON.parse(readFileSync(join(HERE, "rules", "uoalive.json"), "utf8")) as RulesV1);
 
 const adapterDirs = existsSync(ADAPTERS_DIR)
   ? readdirSync(ADAPTERS_DIR, { withFileTypes: true }).filter((d) => d.isDirectory()).map((d) => d.name)
   : [];
+
+// capabilities.json's own shape (app/installer.mts's AdapterInfo reads more of it; this file only ever
+// reads .capabilities off it).
+interface CapabilitiesFile {
+  capabilities: ScanV2AdapterCapabilities;
+}
 
 for (const name of adapterDirs) {
   const dir = join(ADAPTERS_DIR, name);
@@ -32,20 +39,20 @@ for (const name of adapterDirs) {
   if (!existsSync(capsPath) || !existsSync(fixturePath)) continue;   // not every adapters/* subdir ships a contract yet
 
   test(`[smoke] adapters/${name}: capabilities.json validates against the scan schema's capabilities shape`, () => {
-    const caps = JSON.parse(readFileSync(capsPath, "utf8"));
+    const caps = JSON.parse(readFileSync(capsPath, "utf8")) as CapabilitiesFile;
     const { ok, errors } = validate(SCAN_V2_SCHEMA.properties.adapter.properties.capabilities, caps.capabilities);
     assert.ok(ok, JSON.stringify(errors));
   });
 
   test(`[smoke] adapters/${name}: fixture.scan.json validates against scan.v2.schema.json`, () => {
-    const fixture = JSON.parse(readFileSync(fixturePath, "utf8"));
+    const fixture = JSON.parse(readFileSync(fixturePath, "utf8")) as ScanV2;   // known-good fixture: the cast stands in for the validateScan() a real caller runs
     const { ok, errors } = validate(SCAN_V2_SCHEMA, fixture);
     assert.ok(ok, JSON.stringify(errors));
   });
 
   test(`[smoke] adapters/${name}: fixture folds into a character with a nested container and worn items located on it`, () => {
-    const caps = JSON.parse(readFileSync(capsPath, "utf8"));
-    const fixture = JSON.parse(readFileSync(fixturePath, "utf8"));
+    const caps = JSON.parse(readFileSync(capsPath, "utf8")) as CapabilitiesFile;
+    const fixture = JSON.parse(readFileSync(fixturePath, "utf8")) as ScanV2;   // known-good fixture: the cast stands in for the validateScan() a real caller runs
     const inv = foldSnapshots([fixture]);
 
     assert.ok(Object.keys(inv.characters).length >= 1, "at least one character");
@@ -71,7 +78,7 @@ test("[smoke] at least one adapter ships a capabilities.json + fixture.scan.json
 });
 
 // ---- bridge v1 protocol schema -------------------------------------------------------------
-const BRIDGE_SCHEMA = JSON.parse(readFileSync(join(HERE, "schema", "bridge.v1.schema.json"), "utf8"));
+const BRIDGE_SCHEMA = JSON.parse(readFileSync(join(HERE, "schema", "bridge.v1.schema.json"), "utf8")) as { command: ValidatorSchema; result: ValidatorSchema; status: ValidatorSchema };
 
 test("[fast] bridge.v1.schema.json accepts the documented command, result and status examples", () => {
   const command = { id: "1700000000000-1234", action: "grab", serial: 0x40000010, name: "Ring",

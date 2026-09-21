@@ -1,12 +1,12 @@
-// classicuo-web-adapter.test.mjs — the classicuo-web adapter ships no fixture.scan.json yet (see
+// classicuo-web-adapter.test.mts — the classicuo-web adapter ships no fixture.scan.json yet (see
 // adapters/classicuo-web/README.md: nobody has run packrat-scanner.ts against a live client), so
-// app/contracts.test.mjs skips it entirely. This file stands in for that until a real fixture
+// app/contracts.test.mts skips it entirely. This file stands in for that until a real fixture
 // exists: it proves the shape packrat-scanner.ts is written to emit — built by hand here from
 // docs/scan-schema.md field by field, not copied from the scanner — validates against the same v2
 // schema every other adapter's output does, and that adapters/classicuo-web/capabilities.json
 // matches the CAPABILITIES constant the scanner itself carries (the same drift the real contract
 // test guards against once a fixture lands).
-// Tags: [fast]. Run: node --test app/classicuo-web-adapter.test.mjs
+// Tags: [fast]. Run: node --test app/classicuo-web-adapter.test.mts
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
@@ -15,10 +15,19 @@ import { dirname, join } from "node:path";
 import { spawnSync } from "node:child_process";
 import { validateScan } from "./scan-schema.mts";
 import { PASTE_BEGIN, PASTE_END } from "./import.mts";
+import type { ScanV2AdapterCapabilities } from "./schema/types.d.mts";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const ADAPTER_DIR = join(HERE, "..", "adapters", "classicuo-web");
-const capsFile = JSON.parse(readFileSync(join(ADAPTER_DIR, "capabilities.json"), "utf8"));
+
+// capabilities.json's own shape (app/installer.mts's AdapterInfo reads more of it; this file only
+// ever reads .adapter/.transport/.capabilities off it).
+interface CapabilitiesFile {
+  adapter: string;
+  transport: string;
+  capabilities: ScanV2AdapterCapabilities;
+}
+const capsFile = JSON.parse(readFileSync(join(ADAPTER_DIR, "capabilities.json"), "utf8")) as CapabilitiesFile;
 const scannerSrc = readFileSync(join(ADAPTER_DIR, "packrat-scanner.ts"), "utf8");
 const scannerPath = join(ADAPTER_DIR, "packrat-scanner.ts");
 
@@ -53,28 +62,28 @@ test("[fast] classicuo-web: packrat-scanner.ts is syntactically valid TypeScript
 // execute anything), so a real edit to the scanner is what this test is actually checking against.
 // The comparison against capabilities.json (below) is unchanged; it's the source of the "expected"
 // value that changed, not what it's compared to.
-function extractScannerCapabilities(src) {
+function extractScannerCapabilities(src: string): ScanV2AdapterCapabilities {
   const block = /const CAPABILITIES\s*=\s*(\{[\s\S]*?\n\};)/.exec(src);
   assert.ok(block, "packrat-scanner.ts: could not find `const CAPABILITIES = { ... };` — did it move or get renamed?");
-  const body = block[1];
-  const stringArray = (field) => {
+  const body = block[1]!;   // present whenever block matched — the regex's only capture group
+  const stringArray = (field: string): string[] => {
     const m = new RegExp(`${field}:\\s*\\[([\\s\\S]*?)\\]`).exec(body);
     assert.ok(m, `packrat-scanner.ts CAPABILITIES: no "${field}: [...]" field found`);
-    return [...m[1].matchAll(/"([^"]*)"/g)].map((x) => x[1]);
+    return [...m[1]!.matchAll(/"([^"]*)"/g)].map((x) => x[1]!);   // present whenever the outer match succeeded
   };
-  const bool = (field) => {
+  const bool = (field: string): boolean => {
     const m = new RegExp(`${field}:\\s*(true|false)`).exec(body);
     assert.ok(m, `packrat-scanner.ts CAPABILITIES: no "${field}: true|false" field found`);
     return m[1] === "true";
   };
-  const str = (field) => {
+  const str = (field: string): string => {
     const m = new RegExp(`${field}:\\s*"([^"]*)"`).exec(body);
     assert.ok(m, `packrat-scanner.ts CAPABILITIES: no "${field}: "..."" field found`);
-    return m[1];
+    return m[1]!;   // present whenever m matched — the regex's only capture group
   };
   return {
     layers: stringArray("layers"), arms: bool("arms"), bank: bool("bank"), ground: bool("ground"),
-    nested: bool("nested"), tooltips: str("tooltips"), bridge: stringArray("bridge"),
+    nested: bool("nested"), tooltips: str("tooltips") as ScanV2AdapterCapabilities["tooltips"], bridge: stringArray("bridge"),
   };
 }
 const SCANNER_CAPABILITIES = extractScannerCapabilities(scannerSrc);
@@ -92,10 +101,10 @@ test("[fast] classicuo-web: capabilities.json matches the scanner's own CAPABILI
 // nothing enforced it: a typo'd marker in either file would silently break every paste from this
 // adapter (parsePastedScan falls back to treating the whole paste as bare JSON, which still usually
 // fails, but with a confusing "not valid JSON" error instead of pointing at the real cause).
-function extractScannerConst(src, name) {
+function extractScannerConst(src: string, name: string): string {
   const m = new RegExp(`const ${name}\\s*=\\s*"([^"]*)"`).exec(src);
   assert.ok(m, `packrat-scanner.ts: could not find \`const ${name} = "..."\``);
-  return m[1];
+  return m[1]!;   // present whenever m matched — the regex's only capture group
 }
 test("[fast] classicuo-web: the scanner's paste markers match app/import.mts's PASTE_BEGIN/PASTE_END exactly", () => {
   assert.equal(extractScannerConst(scannerSrc, "PASTE_BEGIN"), PASTE_BEGIN);
@@ -121,7 +130,30 @@ test("[fast] classicuo-web: the scanner's paste markers match app/import.mts's P
 //   (main() writes that dict entry before calling walk(), unconditionally on opened/not-opened —
 //   the earlier version of this fixture omitted it for the locked case, which passed only because
 //   the schema doesn't constrain `containers`' shape; fixed here to mirror the real code).
-function representativeDoc() {
+interface RepresentativeRoot { serial: number; kind: string; name: string; opened: boolean; }
+interface RepresentativeContainerEntry {
+  serial: number; kind: string; name: string; parent: number | null; root: number;
+  pos?: { x: number; y: number; z: number };
+  tooltip?: string[];
+}
+interface RepresentativeItem { serial: number; container: number; graphic: number; hue: number; amount: number; name: string; nameSource: string; tooltip: string[]; }
+interface RepresentativeEquippedItem { serial: number; graphic: number; hue: number; amount: number; name: string; nameSource: string; tooltip: string[]; layer: string; }
+interface RepresentativeDoc {
+  schemaVersion: 2;
+  character: string;
+  scannedAt: string;
+  adapter: { id: string; version: string; client: string; clientVersion: string | null; capabilities: ScanV2AdapterCapabilities };
+  stats: Record<string, number>;
+  position: { x: number; y: number; z: number };
+  maxes: Record<string, number>;
+  resists: Record<string, number>;
+  skills: Record<string, { value: number; cap: number }>;
+  roots: RepresentativeRoot[];
+  containers: Record<string, RepresentativeContainerEntry>;
+  items: RepresentativeItem[];
+  equipped: RepresentativeEquippedItem[];
+}
+function representativeDoc(): RepresentativeDoc {
   return {
     schemaVersion: 2,
     character: "Fixture",
