@@ -75,10 +75,17 @@
     ],
     "asar": true,
     "asarUnpack": [
-      "app/**",
       "adapters/**",
       "node_modules/highs/**"
     ],
+    "electronFuses": {
+      "runAsNode": false,
+      "enableNodeOptionsEnvironmentVariable": false,
+      "enableNodeCliInspectArguments": false,
+      "onlyLoadAppFromAsar": true,
+      "grantFileProtocolExtraPrivileges": false,
+      "resetAdHocDarwinSignature": true
+    },
     "publish": {
       "provider": "github",
       "releaseType": "draft"
