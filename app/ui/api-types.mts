@@ -362,7 +362,7 @@ export interface BridgeQueueApiResponse {
   id: string;
 }
 
-// SSE payloads on the shared /api/events stream (ui/events.mjs) — mirror vault-server.mts's
+// SSE payloads on the shared /api/events stream (ui/events.mts) — mirror vault-server.mts's
 // broadcastEvent("inventory", …) / broadcastEvent("rejected", …) literals (app/watcher.mts's
 // onAccepted/onRejected info plus an `at` timestamp).
 export interface InventoryEvent {

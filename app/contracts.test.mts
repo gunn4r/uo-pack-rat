@@ -18,7 +18,7 @@ const HERE = dirname(fileURLToPath(import.meta.url));
 const ROOT = dirname(HERE);
 const ADAPTERS_DIR = join(ROOT, "adapters");
 
-// Every test in this file runs against the UO Alive shard rules, same as gear-vault.test.mjs —
+// Every test in this file runs against the UO Alive shard rules, same as gear-vault.test.mts —
 // foldSnapshots needs setRules() called before anything else touches it.
 setRules(JSON.parse(readFileSync(join(HERE, "rules", "uoalive.json"), "utf8")) as RulesV1);
 

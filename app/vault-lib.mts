@@ -1,6 +1,6 @@
 // vault-lib.mts — Pack Rat shared logic: tooltip parsing, slot classification, snapshot folding,
 // optimizer pool building and requirement reports. Used by index.html (browser, via the
-// server) and gear-vault.test.mjs (Node). No dependencies, no DOM.
+// server) and gear-vault.test.mts (Node). No dependencies, no DOM.
 //
 // Shard rules (property caps, the Resisting Spells resist-bonus formula, race cap overrides, tag-
 // penalty units, the rarity ladder, the gargoyle race-lock policy) live in app/rules/<shard>.json,

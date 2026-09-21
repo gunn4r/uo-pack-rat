@@ -120,7 +120,7 @@ test("[fast] parsePastedScan reconstructs a compact scan pasted as newline-joine
 // chunkEnd() backs the boundary off by one whenever it would end on a high surrogate. This loads and
 // exercises the REAL, shipped chunkEnd() -- via node:module's stripTypeScriptTypes plus a data: URL
 // import, not a reimplementation and not new Function/eval on extracted source (see
-// app/classicuo-web-adapter.test.mjs's own CAPABILITIES-extraction comment for why that distinction
+// app/classicuo-web-adapter.test.mts's own CAPABILITIES-extraction comment for why that distinction
 // matters here) -- and proves the round trip through the real parsePastedScan survives even when the
 // chunk size is chosen specifically to force the split.
 test("[fast] parsePastedScan survives a real astral character split across a chunk boundary by the scanner's own chunkEnd()", async () => {

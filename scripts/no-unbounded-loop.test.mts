@@ -38,7 +38,7 @@ test("[smoke] no adapter .py file contains the banned unbounded-loop literal, in
   assert.deepEqual(found, [], `banned unbounded-loop literal found:\n${found.join("\n")}`);
 });
 
-// A guard that silently sees zero files proves nothing — this is app/scan-schema.test.mjs's own
+// A guard that silently sees zero files proves nothing — this is app/scan-schema.test.mts's own
 // "the guard actually sees tracked files" idiom, applied here to just the adapters/ subtree.
 test("[smoke] the guard actually sees adapter .py files", () => {
   const files = adapterPyFiles();

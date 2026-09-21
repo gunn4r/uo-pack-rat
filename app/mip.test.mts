@@ -185,7 +185,7 @@ test("[fast] mip: a soft floor makes y,s columns with costs bonus,1 and the thre
   assert.equal(built.model.rowUpper[kRow], 0);
 });
 
-// Regression coverage for a bug found through app/solver.test.mjs's HiGHS-vs-core equivalence
+// Regression coverage for a bug found through app/solver.test.mts's HiGHS-vs-core equivalence
 // tests (Task 2): the k-row (s ≤ k·t) used to be added BEFORE u existed and never referenced it, so
 // whenever a suit actually drove t negative, s ≤ k·t (negative) conflicted with s ≥ 0 regardless of
 // u — the model was infeasible for the exact suits the u/guard-row pair was supposed to make

@@ -5,19 +5,19 @@
 // also self-starts when run directly (node app/vault-server.mts / node scripts/start.mts).
 // Routes: GET /  (index.html) · GET /vault-lib.mjs · GET /item-query.mjs (pure filter/sort/facet logic
 //         shared by the browser and GET /api/items below — no DOM, no node: imports, servable byte for
-//         byte like vault-lib.mjs) · GET /scan-schema.mjs (vault-lib.mjs imports it for parseStamp, so
+//         byte like vault-lib.mts) · GET /scan-schema.mjs (vault-lib.mts imports it for parseStamp, so
 //         it must be servable to the browser the same way) ·
-//         GET /schema/validate.mjs (scan-schema.mjs's own import, same reason) ·
+//         GET /schema/validate.mjs (scan-schema.mts's own import, same reason) ·
 //         GET /ui/<name> (name matching /^[a-z0-9-]+\.(mjs|css)$/, served from app/ui/, else 404) ·
 //         GET /api/inventory (the cached fold of every scan — getInventory(), keyed by a signature of
-//         the scans directory + shard + vault-lib.mjs mtime, so an edited/added/removed scan file is
+//         the scans directory + shard + vault-lib.mts mtime, so an edited/added/removed scan file is
 //         picked up on the next request with no restart; each scan file is upgraded v1→v2 and schema-
 //         validated on read — readScans() — an invalid or unparsable file is logged and skipped) — the
 //         response carries facets/worn/rootCounts/itemCount/propKeys — never the full item map
 //         (that stopped shipping in Task 5, once the page moved to paging GET /api/items instead)
 //         GET /api/items?q=&slot=&loc=&rarity=&kind=&seenDays=&slayer=&nogarg=&med=&hide=&prop=&group=
 //         &sort=&dir=&offset=&limit= — a paged, server-side search/sort over the same folded inventory
-//         (parseItemQuery/applyItemQuery, app/item-query.mjs) ·
+//         (parseItemQuery/applyItemQuery, app/item-query.mts) ·
 //         GET /api/items/by-serial?serials=1,2,3 — full item records (location/tags/equippedBy…) by
 //         serial, 1-200 at a time (400 otherwise); a serial with no item is simply absent from the
 //         response · GET|PUT /api/profiles (<data>/profiles.json)
@@ -246,7 +246,7 @@ export interface ServerHandle {
 // real product behavior. It exists so a test that wants to observe a reject-after-retries cycle over
 // SSE doesn't have to wait out the real debounce + backoff (300ms + 2×700ms = 1700ms of production
 // timing) inside a fixed-timeout SSE read — app/watcher.test.mts already shortens these same knobs
-// (debounceMs:20, retryDelayMs:20) when calling startWatcher() directly; this gives app/server.test.mjs
+// (debounceMs:20, retryDelayMs:20) when calling startWatcher() directly; this gives app/server.test.mts
 // the same lever for the route-level equivalent instead of relying on a wide timeout margin to absorb
 // real wall-clock retry delay plus whatever scheduling/fs-watch jitter a loaded machine adds on top.
 export async function startServer(config: Config = ensureLayout(resolveConfig()), { host, watcherOptions = {} }: StartServerOptions = {}): Promise<ServerHandle> {
@@ -291,7 +291,7 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
   // client is configured at all, matching this route's own pre-existing behavior before it became
   // per-adapter (Phase 6 final review follow-up). GET /api/setup below reports this exact same id back
   // to the page as `bridgeAdapter` (guarded there against a discovered-adapters list that doesn't
-  // actually contain it — a throwaway test fixture dir, say) so app/ui/bridge.mjs's currentAdapter()
+  // actually contain it — a throwaway test fixture dir, say) so app/ui/bridge.mts's currentAdapter()
   // can show the Highlight/Grab/Go-to buttons for an unconfigured/hand-installed player against the
   // SAME adapter this function is already routing their commands to, rather than the page guessing
   // "tazuo" independently and risking the two disagreeing.
@@ -345,7 +345,7 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
     }
   }
 
-  // vault-lib.mjs is re-imported whenever its mtime changes, so edits to the parser/fold take effect on
+  // vault-lib.mts is re-imported whenever its mtime changes, so edits to the parser/fold take effect on
   // the next request without restarting the server (ES module cache is keyed by URL: bust with the mtime).
   // Every access also (re-)applies the current shard's rules, since a fresh import starts with none loaded.
   let libCache: { mtime: number; mod: typeof VaultLib | null } = { mtime: 0, mod: null };
@@ -383,7 +383,7 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
   // getInventory() caches the fold (readScans + foldSnapshots) — the expensive part of every route that
   // needs the inventory — keyed by a signature of the scans directory (every *.json file's name, mtimeMs
   // and size, so an add/edit/delete/rename is caught with no restart), the current shard id (a shard
-  // switch changes parseTooltip/classify via rules) and vault-lib.mjs's own mtime (the same value lib()
+  // switch changes parseTooltip/classify via rules) and vault-lib.mts's own mtime (the same value lib()
   // already tracks for its dev-reload). /api/forget's tombstone is just another file landing in the scans
   // directory, so it invalidates the cache the same way — no separate invalidation path needed.
   let invCache: { sig: string | null; value: { inv: Inventory; snapshotCount: number; stamp: string } | null } = { sig: null, value: null };
@@ -707,11 +707,11 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
         return send(res, 200, {
           ok: true, firstRun: !currentSettings.setupDone, settings: currentSettings, adapters,
           // platform: this machine's process.platform — on this desktop app, always the same machine
-          // the player's game client runs on. Lets the wizard/Import tab (app/ui/adapters.mjs's
+          // the player's game client runs on. Lets the wizard/Import tab (app/ui/adapters.mts's
           // availableAdapters) hide a platform-restricted adapter (Razor Enhanced, Windows-only)
           // instead of offering a choice that can never work (Phase 6 final review, deferred minor).
           candidates, installed, available, dataDir: CONFIG.dataDir, platform: process.platform,
-          // app/ui/bridge.mjs's currentAdapter() falls back to this when settings.client is unset (a
+          // app/ui/bridge.mts's currentAdapter() falls back to this when settings.client is unset (a
           // hand-installed or Skip-through-the-wizard player) — see the bridgeAdapter() comment above.
           bridgeAdapter: bridgeAdapterField,
         });
@@ -789,7 +789,7 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
         // Post-review minor: `adapter` (which inbox the file gets filed under, from the Import tab's
         // picker) and `parsed.doc.adapter.id` (what the pasted document itself says it came from) can
         // disagree — a player who picks the wrong adapter in the dropdown before pasting, most likely
-        // when only one client is configured and the picker is hidden (see ui/import.mjs's
+        // when only one client is configured and the picker is hidden (see ui/import.mts's
         // adapterPicker) so the mismatch has no visible cause. Harmless to the fold itself (nothing
         // downstream trusts which inbox a scan sat in over the document's own adapter block), but
         // worth surfacing rather than filing it silently — logged here, and returned as `warning` so
@@ -859,7 +859,7 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
         let skipped: Record<string, number> = {}, blocked: string[] = [];
         // The by-character form: the caller sends {character, settings} instead of building pools/current
         // itself, and the server runs buildPools() against the cached inventory — the same function and
-        // the same defaults the page's own optimizerProfile() uses (ui/builder.mjs), so a request built
+        // the same defaults the page's own optimizerProfile() uses (ui/builder.mts), so a request built
         // this way and an equivalent hand-built {pools,current} request key identically (runKey below) and
         // reuse each other's saved runs.
         if (character) {
@@ -910,7 +910,7 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
         // take a while — the page shows this line above the progress panel (Task 3).
         const poolSize = typeof meta.poolSize === "number" ? meta.poolSize : Object.values(pools).reduce((a: number, v) => a + (Array.isArray(v) ? v.length : 0), 0);
         // The by-character form doesn't hand the caller's meta a poolSize/skipped up front (unlike the
-        // old form, whose client computes them itself — ui/builder.mjs) — fill them in now so a saved
+        // old form, whose client computes them itself — ui/builder.mts) — fill them in now so a saved
         // run started this way (saveRun() below reads job.meta) carries the same figures the response does.
         if (character) { meta.poolSize = poolSize; meta.skipped = skipped; }
         if (hit) return send(res, 200, { ok: true, cached: true, run: hit, poolSize, skipped, current, blocked });
@@ -921,7 +921,7 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
         // own declared fields (an index-signature read, same trust as everywhere else in this route).
         if (last) fullOpts.warmStart = Object.fromEntries(Object.entries(last.result!.best as Record<string, { serial: number } | null>).map(([slot, it]) => [slot, it ? it.serial : null]));
         // Cap: one running optimize job per client. A real client id is only ever supplied by the
-        // page's own ui/api.mjs; a curl/test caller with no X-Client-Id is never deduped against itself.
+        // page's own ui/api.mts; a curl/test caller with no X-Client-Id is never deduped against itself.
         let superseded: string | null = null;
         if (headerClientId) {
           for (const j of jobs.values()) {
