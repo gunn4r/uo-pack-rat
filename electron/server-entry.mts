@@ -9,6 +9,12 @@
 // patches serve a dynamic `import()` of a .mts file straight out of app.asar, worker threads included,
 // verified live against a real `electron-builder --dir` tree, Phase 8 Task 3).
 //
+// This file itself does no building: main.mts builds the schema types and the browser-facing page
+// (scripts/build-schema-types.mts, scripts/build-ui.mjs) before it ever forks this one, and only in a
+// dev checkout (!app.isPackaged) — a packaged app ships a pre-built app/dist/ and no scripts/ at all
+// beyond optimizer-core.mts, so this module's own graph must stay safe to load without scripts/
+// existing, which ruling out any build step here (even a conditional one) guarantees.
+//
 // Talks to main.mts over process.parentPort, the utility-process side of the two-way channel described
 // in full by ./protocol.mts:
 //   -> ListeningMessage                                once startServer() is listening
