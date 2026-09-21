@@ -9,8 +9,10 @@ export const DEFAULT_SLOTS: string[] = ["helmet", "chest", "arms", "hands", "leg
 export const DEFAULT_OPTIONAL_SLOTS: string[] = ["cloak", "talisman", "ring", "bracelet", "neck", "oneHanded", "twoHanded"];
 const INF = Infinity;
 
-// One CSR-row entry: [columnIndex, coefficient].
-type Entry = [number, number];
+// One CSR-row entry: [columnIndex, coefficient]. A plain inline `[a, b]` array literal infers as
+// `number[]`, not this tuple, so every row-building callback below that returns one is annotated
+// `: Term =>` (erased at compile time, changes no literal) rather than relying on inference.
+type Term = [number, number];
 
 // A model column. Every "x" column carries slot+item (one candidate in one slot); every "c"/"y"/
 // "s"/"u" column carries the dimension it was built for — see buildSuitMip's comments for what
@@ -123,24 +125,26 @@ export function buildSuitMip({ pools = {}, current = {}, profile, optionalSlots 
 
   // ---- rows (CSR) ----
   const rowLower: number[] = [], rowUpper: number[] = [], starts: number[] = [0], indices: number[] = [], values: number[] = [];
-  const addRow = (entries: Entry[], lo: number, hi: number): number => { for (const [j, v] of entries) { indices.push(j); values.push(v); } starts.push(indices.length); rowLower.push(lo); rowUpper.push(hi); return rowLower.length - 1; };
-  // Tuple constructor: keeps every row-building array literal below an Entry[] instead of TypeScript's
-  // default number[][] inference for an inline [a, b] literal.
-  const pair = (j: number, v: number): Entry => [j, v];
+  const addRow = (entries: Term[], lo: number, hi: number): number => { for (const [j, v] of entries) { indices.push(j); values.push(v); } starts.push(indices.length); rowLower.push(lo); rowUpper.push(hi); return rowLower.length - 1; };
   let scoreOffset = 0;
   const unreachableFloors: string[] = [], hardRows: Record<string, number> = {}, capCols: Record<string, CapCol> = {}, floorCols: Record<string, FloorCol> = {};
   for (const d of dims) {
     const w = W[d] || 0, cap = CAPS[d], f = FL[d] || 0;
     // Every j in allX is an x column, which always carries `item` (set in the loop above) — the two
     // `!` below are in range by construction, not an unchecked assumption about caller input.
-    const xs: Entry[] = allX.map((j): Entry => pair(j, cols[j]!.item!.props[d] || 0)).filter(([, v]) => v !== 0);
+    const xs: Term[] = allX.map((j): Term => [j, cols[j]!.item!.props[d] || 0]).filter(([, v]) => v !== 0);
     if (w !== 0) {
       if (Number.isFinite(cap) && w > 0) {                       // w·min(t, cap): c ≤ t, c ≤ cap, maximise w·c (min is concave); c may go negative like t
-        const c = addCol({ name: `c_${d}`, kind: "c", dim: d }, w, -INF, cap!, false);
-        addRow([pair(c, 1), ...xs.map(([j, v]): Entry => pair(j, -v))], -INF, 0);
-        capCols[d] = { col: c, cap: cap! };
+        // Number.isFinite(number: unknown) is not a type predicate, so TS can't narrow `cap` itself
+        // from the check just above — re-reading the same CAPS[d] (never mutated in between) into a
+        // shadowed, honestly-typed `cap` restores plain `cap` use (incl. the `capCols` shorthand)
+        // for the rest of this block, in range by construction rather than asserted.
+        const cap = CAPS[d] as number;
+        const c = addCol({ name: `c_${d}`, kind: "c", dim: d }, w, -INF, cap, false);
+        addRow([[c, 1], ...xs.map(([j, v]): Term => [j, -v])], -INF, 0);
+        capCols[d] = { col: c, cap };
       } else {                                                    // uncapped: linear, aggregated per column
-        for (const [j, v] of xs) colCost[j] = (colCost[j] ?? 0) + w * v;
+        for (const [j, v] of xs) colCost[j]! += w * v;
       }
     }
     if (f <= 0) continue;
@@ -153,30 +157,30 @@ export function buildSuitMip({ pools = {}, current = {}, profile, optionalSlots 
     const bonus = isHard ? HARD_FLOOR_BONUS : FB, k = bonus * PARTIAL / f, sMax = bonus * PARTIAL;
     const y = unreachable ? null : addCol({ name: `y_${d}`, kind: "y", dim: d }, bonus, 0, 1, true);
     const sv = addCol({ name: `s_${d}`, kind: "s", dim: d }, 1, 0, sMax, false);
-    if (y != null) addRow([...xs, pair(y, -f)], 0, INF);
+    if (y != null) addRow([...xs, [y, -f]], 0, INF);
     // the core gives zero partial credit below a total of 0: s ≤ k·t alone would make a negative-total
     // suit infeasible (s ≥ 0 but k·t < 0 there), so when a negative total is possible a binary u relaxes
     // that same row by k·N (N = −minReach, the most negative t can go) — u = 0 forces t ≥ 0 (s ≤ k·t
     // applies unrelaxed), u = 1 lifts s ≤ k·t by k·N and a separate row forces s = 0 outright.
     let minReach = 0; for (const s of Object.keys(xIndex)) minReach += Math.min(0, ...xIndex[s]!.map((j) => cols[j]!.item!.props[d] || 0));
     const u = minReach < 0 ? addCol({ name: `u_${d}`, kind: "u", dim: d }, 0, 0, 1, true) : null;
-    const kRow: Entry[] = [pair(sv, 1), ...xs.map(([j, v]): Entry => pair(j, -k * v))];
-    if (u != null) kRow.push(pair(u, k * minReach));        // + k·N·u, since k·minReach = −k·N
+    const kRow: Term[] = [[sv, 1], ...xs.map(([j, v]): Term => [j, -k * v])];
+    if (u != null) kRow.push([u, k * minReach]);        // + k·N·u, since k·minReach = −k·N
     addRow(kRow, -INF, 0);
-    if (y != null) addRow([pair(sv, 1), pair(y, sMax)], -INF, sMax);
+    if (y != null) addRow([[sv, 1], [y, sMax]], -INF, sMax);
     if (u != null) {
-      addRow([...xs, pair(u, -minReach)], 0, INF);              // t + N·u ≥ 0 with N = −minReach
-      addRow([pair(sv, 1), pair(u, sMax)], -INF, sMax);              // s ≤ sMax·(1 − u)
+      addRow([...xs, [u, -minReach]], 0, INF);              // t + N·u ≥ 0 with N = −minReach
+      addRow([[sv, 1], [u, sMax]], -INF, sMax);              // s ≤ sMax·(1 − u)
     }
     floorCols[d] = { f, k, sMax, y, s: sv, u };
   }
   for (const s of Object.keys(xIndex)) {                        // one per slot: = 1 when required and worn, else ≤ 1
     const curItem = current[s];
-    const req = !optional.has(s) && !!curItem && curItem.slot === s;
-    addRow(xIndex[s]!.map((j) => pair(j, 1)), req ? 1 : -INF, 1);
+    const req = !optional.has(s) && curItem && curItem.slot === s;
+    addRow(xIndex[s]!.map((j) => [j, 1]), req ? 1 : -INF, 1);
   }
   const twoH = (xIndex.twoHanded || []).filter((j) => cols[j]!.item!.twoHanded === true), oneH = xIndex.oneHanded || [];
-  if (twoH.length && oneH.length) addRow([...twoH, ...oneH].map((j) => pair(j, 1)), -INF, 1);   // a two-hander forbids the one-hand slot
+  if (twoH.length && oneH.length) addRow([...twoH, ...oneH].map((j) => [j, 1]), -INF, 1);   // a two-hander forbids the one-hand slot
 
   const model: MipModel = { numCols: cols.length, numRows: rowLower.length, sense: "maximize", offset: 0, colCost, colLower, colUpper, rowLower, rowUpper,
     matrix: { format: "csr", numRows: rowLower.length, numCols: cols.length, starts, indices, values }, integrality };
@@ -193,19 +197,20 @@ export function buildSuitMip({ pools = {}, current = {}, profile, optionalSlots 
 export function startVector(built: BuiltMip, assignment: Partial<Record<string, OptItem>> = {}): Float64Array {
   const { cols, xIndex, dims, capCols, floorCols, model } = built;
   const vec = new Float64Array(model.numCols);
-  const totals: Record<string, number> = Object.fromEntries(dims.map((d): [string, number] => [d, 0]));
+  const totals = Object.fromEntries(dims.map((d) => [d, 0]));
   for (const s of Object.keys(xIndex)) {
     const item = assignment[s];
     for (const j of xIndex[s]!) {
       // Every j in xIndex[s] is one of this slot's x columns, which always carries `item`.
       if (item && cols[j]!.item!.serial === item.serial) {
         vec[j] = 1;
-        for (const d of dims) totals[d] = (totals[d] ?? 0) + (cols[j]!.item!.props[d] || 0);
+        // Every d here comes from `dims`, the same array totals was built from — always present.
+        for (const d of dims) totals[d]! += cols[j]!.item!.props[d] || 0;
       }
     }
   }
   for (const d of dims) {
-    const t = totals[d] ?? 0;
+    const t = totals[d]!;
     const cc = capCols[d];
     if (cc) vec[cc.col] = Math.min(t, cc.cap);
     const fc = floorCols[d];
