@@ -20,13 +20,14 @@ import "../scripts/localstorage-shim-for-tests.mjs";
 
 import test from "node:test";
 import assert from "node:assert/strict";
-import { state } from "./ui/store.mjs";
+import { state } from "./ui/store.mts";
 import { currentAdapter, bridgeNote } from "./ui/bridge.mjs";
 
-// app/ui/store.mjs is untyped JS (checkJs is off for it — see the migration plan's "an imported .mjs
-// module's exports come through loosely typed" rule), so `state.setup`'s inferred type is just its
-// initial value, `null`. This is the minimal shape THIS file's own tests write into it — not a stand-in
-// for a richer production type, since ui/store.mjs declares none — cast at the assignment site below.
+// ui/store.mts types state.setup as api-types.mts's full SetupApiResponse | null — richer than this
+// file needs. TestSetupState is the minimal shape THIS file's own fixtures actually exercise
+// (currentAdapter()/bridgeNote() only ever read settings.client, adapters[].{id,name,capabilities.bridge}
+// and bridgeAdapter); the cast at the assignment site below stands in for a real SetupApiResponse the
+// same way a hand-built fixture always does, not a claim this covers every field that type declares.
 interface TestAdapter {
   id: string;
   name: string;

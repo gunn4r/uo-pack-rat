@@ -4,15 +4,15 @@
 // buildBuilder/selectCharacter call them directly (the router reaches into the builder for the
 // #/builder/<name> deep link, and the builder reads the route back).
 import { migrateProfiles, setRules } from "../vault-lib.mts";
-import { state } from "./store.mjs";
-import { $, el, installTooltip } from "./dom.mjs";
-import { api } from "./api.mjs";
+import { state } from "./store.mts";
+import { $, el, installTooltip } from "./dom.mts";
+import { api } from "./api.mts";
 import { pollBridge } from "./bridge.mjs";
 import { buildFilters, fetchItems } from "./inventory.mjs";
-import { renderCharacters } from "./characters.mjs";
+import { renderCharacters } from "./characters.mts";
 import { buildBuilder, selectCharacter } from "./builder.mjs";
-import { renderContainers } from "./containers.mjs";
-import { connectEvents } from "./events.mjs";
+import { renderContainers } from "./containers.mts";
+import { connectEvents } from "./events.mts";
 import { openWizard } from "./wizard.mjs";
 import { renderSettings } from "./settings.mjs";
 import { renderImport } from "./import.mjs";

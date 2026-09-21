@@ -3,9 +3,9 @@
 // listing) so the tab reflects whatever the wizard, or this tab's own actions, just changed —
 // unlike the rest of the app's renderX() functions, which are pure over state the caller already
 // fetched, this one owns its own freshness because so many different actions can invalidate it.
-import { state } from "./store.mjs";
-import { $, el, toast } from "./dom.mjs";
-import { api } from "./api.mjs";
+import { state } from "./store.mts";
+import { $, el, toast } from "./dom.mts";
+import { api } from "./api.mts";
 import { openWizard } from "./wizard.mjs";
 import { bridgeNoteEl } from "./bridge.mjs";
 

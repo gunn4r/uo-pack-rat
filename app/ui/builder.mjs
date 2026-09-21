@@ -3,13 +3,13 @@
 // (history/open/compare) moved out to ui/runs.mjs (Task 5, the page split, part B).
 // Moved verbatim out of index.html's inline <script type="module"> (Task 4, the page split).
 import { PROP_LABELS, OPTIMIZER_SLOTS, tagUnits, WEAPON_SKILLS, resistSkillBonus, effectiveProfile, getRules, RESIST_KEYS, templateFrom, requirementReport, totalsOf, settingsDiff, bagLabel } from "../vault-lib.mts";
-import { state, invStamp } from "./store.mjs";
-import { $, el, label, full, fmtN, fmtSecs, fmtRunTime, slotLabel, toast } from "./dom.mjs";
-import { promptText } from "./dialog.mjs";
-import { api, CLIENT_ID } from "./api.mjs";
-import { sheetHtml } from "./sheet.mjs";
+import { state, invStamp } from "./store.mts";
+import { $, el, label, full, fmtN, fmtSecs, fmtRunTime, slotLabel, toast } from "./dom.mts";
+import { promptText } from "./dialog.mts";
+import { api, CLIENT_ID } from "./api.mts";
+import { sheetHtml } from "./sheet.mts";
 import { actButtons, grabAllRow, bridgeNoteEl } from "./bridge.mjs";
-import { resolveItems } from "./items.mjs";
+import { resolveItems } from "./items.mts";
 import { parseRoute, routeFor } from "./app.mjs";
 import { loadRuns, settingsSnapshot, openRunsDrawer, closeRunsDrawer, renderRuns, compareSelected } from "./runs.mjs";
 

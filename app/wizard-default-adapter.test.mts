@@ -18,11 +18,11 @@
 // module scope).
 import test from "node:test";
 import assert from "node:assert/strict";
-import { defaultAdapterId, availableAdapters, platformCompatible } from "./ui/adapters.mjs";
+import { defaultAdapterId, availableAdapters, platformCompatible } from "./ui/adapters.mts";
 
-// app/ui/adapters.mjs is untyped JS (checkJs is off for it), so its exported functions' parameters
-// come through as `any` — this local shape is just what THIS file's own fixtures need, not a stand-in
-// for a richer production type (ui/adapters.mjs declares none).
+// ui/adapters.mts types its three exports' adapter parameters as AdapterLike ({id, transport?,
+// platform?}) — this local shape is what THIS file's own fixtures need (a plain, non-optional
+// `transport`), structurally compatible with AdapterLike, not a stand-in for a richer production type.
 interface AdapterFixture {
   id: string;
   transport: string;

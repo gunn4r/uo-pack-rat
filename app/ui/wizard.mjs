@@ -5,12 +5,12 @@
 // it empty) that this module fills and drives with showModal()/close(); every step is reachable AND
 // skippable, and every close path (Finish, Skip, or Esc) marks setup done so the wizard never traps
 // the user or re-opens itself.
-import { state } from "./store.mjs";
-import { $, el, toast } from "./dom.mjs";
-import { api } from "./api.mjs";
+import { state } from "./store.mts";
+import { $, el, toast } from "./dom.mts";
+import { api } from "./api.mts";
 import { renderSettings } from "./settings.mjs";
 import { changeShard } from "./shard.mts";
-import { defaultAdapterId, availableAdapters, platformCompatible } from "./adapters.mjs";
+import { defaultAdapterId, availableAdapters, platformCompatible } from "./adapters.mts";
 export { defaultAdapterId, availableAdapters, platformCompatible };
 
 // The shard's AFK rule, shown verbatim on step 1 only for shards that need it (uoalive today).
