@@ -241,6 +241,42 @@ test("[fast] mip: a hard floor no suit can reach is listed unreachable, gets no 
   assert.equal(built.scoreOffset, 0);        // an unreachable hard floor never counts toward scoreOffset
 });
 
+// bugfix-pass-review.md Important #1: `reach` (the per-dimension "best total any suit could ever
+// reach" bound used to decide unreachability) used to fold `Math.max(0, ...)` over every slot's
+// candidates, as if "contribute 0" (leave the slot empty) were always legal. That's only true for
+// an OPTIONAL slot. A ring slot forced required by `current` (never optional, currently worn), whose
+// only two candidates are both negative in `fc`, paired with an optional neck slot whose only
+// candidate is exactly the hard floor (fc: 2): the phantom 0 for the ring slot made `reach` read
+// 0 + 2 = 2, "reachable" — but the ring slot can never actually be left empty, so the true best total
+// is neck's 2 plus the ring's least-bad real candidate (-3) = -1, genuinely below the floor.
+function requiredNegativeFloorFixture(ringOptional: boolean): BuiltMip {
+  const negRingA = mkItem(301, "ring", { fc: -5 });
+  const negRingB = mkItem(302, "ring", { fc: -3 });
+  const fcNeck = mkItem(311, "neck", { fc: 2 });
+  const floorProfile = { weights: {}, caps: {}, floors: { fc: 2 }, hardFloors: ["fc"], floorBonus: 1000, floorPartial: 0.5 };
+  return buildSuitMip({
+    pools: { ring: [negRingA, negRingB], neck: [fcNeck] },
+    current: { ring: negRingA },
+    profile: floorProfile,
+    slots: ["ring", "neck"],
+    optionalSlots: ringOptional ? ["ring", "neck"] : ["neck"],
+  });
+}
+
+test("[fast] mip: a hard floor is flagged unreachable when only a REQUIRED slot's negative-only candidates keep it out of reach", () => {
+  const built = requiredNegativeFloorFixture(false);
+  assertWellFormed(built);
+  assert.deepEqual(built.unreachableFloors, ["fc"]);
+  assert.equal(built.hardRows.fc, undefined, "no hard row for a floor the reach estimate itself proves unreachable");
+});
+
+test("[fast] mip: the same fixture with the slot made OPTIONAL is reachable (leaving it empty reaches the floor via neck alone) — guards against over-correcting", () => {
+  const built = requiredNegativeFloorFixture(true);
+  assertWellFormed(built);
+  assert.deepEqual(built.unreachableFloors, []);
+  assert.equal(typeof built.hardRows.fc, "number", "a genuine hard row: the floor really is reachable once the ring slot may be left empty");
+});
+
 test("[fast] mip: hardAsSoft models every hard floor as soft, with no hard rows and scoreOffset 0", () => {
   const built = build({ hardAsSoft: true });
   assertWellFormed(built);

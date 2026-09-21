@@ -122,6 +122,14 @@ export function buildSuitMip({ pools = {}, current = {}, profile, optionalSlots 
     xIndex[s] = list.map((it, i) => addCol({ name: `x_${s}_${i}`, kind: "x", slot: s, item: it }, 0, 0, 1, true));
   }
   const allX: number[] = Object.values(xIndex).flat();
+  // A slot's x-columns are forced to exactly 1 (never "leave it empty") exactly when it is not
+  // optional and its currently-worn item is one of its own candidates — the same predicate the
+  // "one per slot" row below builds from. `reach` (just below) needs this same distinction: "the
+  // slot could contribute 0" is only a real option for a slot this predicate says is NOT required.
+  const isRequired = (s: string): boolean => {
+    const curItem = current[s];
+    return !optional.has(s) && !!curItem && curItem.slot === s;
+  };
 
   // ---- rows (CSR) ----
   const rowLower: number[] = [], rowUpper: number[] = [], starts: number[] = [0], indices: number[] = [], values: number[] = [];
@@ -148,8 +156,15 @@ export function buildSuitMip({ pools = {}, current = {}, profile, optionalSlots 
       }
     }
     if (f <= 0) continue;
-    // per-slot maxima: a floor above them can never be met, so its met-indicator is 0 for every suit
-    let reach = 0; for (const s of Object.keys(xIndex)) reach += Math.max(0, ...xIndex[s]!.map((j) => cols[j]!.item!.props[d] || 0));
+    // per-slot maxima: a floor above them can never be met, so its met-indicator is 0 for every suit.
+    // "Contribute 0" (leave the slot empty) is only ever a real option for an OPTIONAL slot — a
+    // required slot's true best is the max over its own real candidates, with no phantom 0 folded in
+    // (mirrors scripts/optimizer-core.mts's suf/ext bound, which never injects one either).
+    let reach = 0;
+    for (const s of Object.keys(xIndex)) {
+      const vals = xIndex[s]!.map((j) => cols[j]!.item!.props[d] || 0);
+      reach += isRequired(s) ? Math.max(...vals) : Math.max(0, ...vals);
+    }
     const isHard = hard.has(d), unreachable = reach < f;
     if (isHard && !hardAsSoft && !unreachable) { hardRows[d] = addRow(xs, f, INF); scoreOffset += HARD_FLOOR_BONUS; continue; }
     if (unreachable) unreachableFloors.push(d);
@@ -174,11 +189,7 @@ export function buildSuitMip({ pools = {}, current = {}, profile, optionalSlots 
     }
     floorCols[d] = { f, k, sMax, y, s: sv, u };
   }
-  for (const s of Object.keys(xIndex)) {                        // one per slot: = 1 when required and worn, else ≤ 1
-    const curItem = current[s];
-    const req = !optional.has(s) && curItem && curItem.slot === s;
-    addRow(xIndex[s]!.map((j) => [j, 1]), req ? 1 : -INF, 1);
-  }
+  for (const s of Object.keys(xIndex)) addRow(xIndex[s]!.map((j) => [j, 1]), isRequired(s) ? 1 : -INF, 1);   // one per slot: = 1 when required and worn, else ≤ 1
   const twoH = (xIndex.twoHanded || []).filter((j) => cols[j]!.item!.twoHanded === true), oneH = xIndex.oneHanded || [];
   if (twoH.length && oneH.length) addRow([...twoH, ...oneH].map((j) => [j, 1]), -INF, 1);   // a two-hander forbids the one-hand slot
 
