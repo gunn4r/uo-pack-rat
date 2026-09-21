@@ -1,10 +1,10 @@
 // ui/runs.mjs — the saved-runs drawer: settings snapshot/apply, load/open/rename/compare a saved run.
 // Moved verbatim out of ui/builder.mjs (Task 5, the page split, part B).
 import { OPTIMIZER_SLOTS, RESIST_KEYS, resistSkillBonus, effectiveProfile, totalsOf, settingsDiff } from "../vault-lib.mts";
-import { state, invStamp } from "./store.mjs";
-import { $, el, label, full, fmtSecs, fmtRunTime, slotLabel, toast } from "./dom.mjs";
-import { api } from "./api.mjs";
-import { resolveItems } from "./items.mjs";
+import { state, invStamp } from "./store.mts";
+import { $, el, label, full, fmtSecs, fmtRunTime, slotLabel, toast } from "./dom.mts";
+import { api } from "./api.mts";
+import { resolveItems } from "./items.mts";
 import { renderResult, poolControls, renderProfile, runStats } from "./builder.mjs";
 
 // ---------------------------------------------------------------- saved runs (history, open, compare)

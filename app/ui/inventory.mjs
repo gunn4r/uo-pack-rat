@@ -4,9 +4,9 @@
 // item-query.mts's parseItemQuery reads off a URLSearchParams), fetchItems() builds the query string
 // from it and lands the response in state.page, and renderInventory() only ever draws state.page.
 import { PROP_FULL, tagUnits } from "../vault-lib.mts";
-import { state } from "./store.mjs";
-import { $, el, label, full, colVal, slotLabel, isStale, ago, EXTRA_COLS, fmtN, rarityColor, rarCell, fmtWhen } from "./dom.mjs";
-import { api } from "./api.mjs";
+import { state } from "./store.mts";
+import { $, el, label, full, colVal, slotLabel, isStale, ago, EXTRA_COLS, fmtN, rarityColor, rarCell, fmtWhen } from "./dom.mts";
+import { api } from "./api.mts";
 import { actButtons, bridgeNoteEl } from "./bridge.mjs";
 
 // ---------------------------------------------------------------- inventory filters

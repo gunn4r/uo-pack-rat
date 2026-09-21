@@ -1,7 +1,21 @@
-// ui/adapters.mjs — pure adapter-selection helpers shared by the wizard and the Import tab. No DOM
-// or app/ui/store.mjs dependency (unlike most of ui/*.mjs, which touch localStorage/document at
+// ui/adapters.mts — pure adapter-selection helpers shared by the wizard and the Import tab. No DOM
+// or app/ui/store.mts dependency (unlike most of ui/*.mts, which touch localStorage/document at
 // module scope and so can only run in a real browser or under Playwright) — kept separate on purpose
-// so it can be unit-tested directly under plain node:test. See app/wizard-default-adapter.test.mjs.
+// so it can be unit-tested directly under plain node:test. See app/wizard-default-adapter.test.mts.
+
+// The adapter fields these three functions actually read — not api-types.mts's AdapterSummary
+// (which this module deliberately has no dependency on, per the header comment above and
+// app/wizard-default-adapter.test.mts's own fixtures, which build plain {id, transport, platform?}
+// objects with no other AdapterSummary field). `transport` stays a plain `string` (not the narrower
+// "folder" | "paste" union) since every comparison here is `=== "paste"`/`!== "paste"`, which works
+// identically either way, and a real adapter's transport is unvalidated network data by the time it
+// reaches this module (GET /api/setup's response) — narrowing it here would just move a cast onto
+// every caller for no benefit.
+export interface AdapterLike {
+  id: string;
+  transport?: string | undefined;
+  platform?: string | null | undefined;
+}
 
 // Whether `adapter` can run at all on `platform` — driven entirely by the adapter's OWN data
 // (`a.platform`, from `capabilities.json`'s optional top-level `platform` field, surfaced by
@@ -15,16 +29,16 @@
 // wizard's client list is not platform-filtered, so a Mac player can pick the Windows-only adapter")
 // as a must-fix-before-merge item. The wizard/Import tab still SHOW an incompatible adapter (so a
 // player who's heard of it isn't left wondering why it's missing) but disable choosing it and say
-// why — see wizard.mjs's step2() and import.mjs's adapterPicker() — while defaultAdapterId (below)
+// why — see wizard.mts's step2() and import.mts's adapterPicker() — while defaultAdapterId (below)
 // is never handed one, so the app never silently lands a player on a client that can't work for them.
-export function platformCompatible(adapter, platform) {
+export function platformCompatible(adapter: AdapterLike | null | undefined, platform: string | null | undefined): boolean {
   return !adapter?.platform || adapter.platform === platform;
 }
 // The adapters actually worth silently DEFAULTING to on this platform — what defaultAdapterId (below)
 // chooses among. Not what the wizard/Import tab RENDER: those show every shipped adapter and disable
 // the platform-incompatible ones in place (platformCompatible, above, drives that per-adapter), so a
 // player always sees the full list and why one entry isn't chooseable here.
-export function availableAdapters(adapters, platform) {
+export function availableAdapters<A extends AdapterLike>(adapters: A[] | null | undefined, platform: string | null | undefined): A[] {
   return (adapters || []).filter((a) => platformCompatible(a, platform));
 }
 
@@ -39,7 +53,7 @@ export function availableAdapters(adapters, platform) {
 // Callers MUST pass an already platform-filtered list (availableAdapters, above) — this function has
 // no platform of its own to filter by, and "razor-enhanced" < "tazuo" alphabetically, so an
 // unfiltered list would default a non-Windows player to the one adapter that can never work for them.
-export function defaultAdapterId(adapters) {
+export function defaultAdapterId(adapters: AdapterLike[] | null | undefined): string | null {
   if (!adapters || !adapters.length) return null;
-  return (adapters.find((a) => a.transport !== "paste") || adapters[0]).id;
+  return (adapters.find((a) => a.transport !== "paste") || adapters[0]!).id;
 }

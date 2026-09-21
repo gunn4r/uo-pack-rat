@@ -1,9 +1,9 @@
 // ui/bridge.mjs — Highlight / Grab / Go-to buttons and the packrat-bridge.py connection
 // status. Moved verbatim out of index.html's inline <script type="module"> (Task 4, the page
 // split).
-import { state, bridge } from "./store.mjs";
-import { $, el, toast } from "./dom.mjs";
-import { api } from "./api.mjs";
+import { state, bridge } from "./store.mts";
+import { $, el, toast } from "./dom.mts";
+import { api } from "./api.mts";
 
 // ---------------------------------------------------------------- bridge (Highlight / Grab / Go to)
 export function chainOf(it) {

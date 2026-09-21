@@ -5,11 +5,11 @@
 // use; rescan is the escape hatch for a player whose folder watcher missed a drop. All three land a
 // file in an adapter's inbox and nudge the watcher server-side — the inventory refresh itself rides
 // the existing SSE "inventory" event -> ui/events.mjs's reload(), not a call made from here.
-import { state } from "./store.mjs";
-import { $, el } from "./dom.mjs";
-import { api } from "./api.mjs";
+import { state } from "./store.mts";
+import { $, el } from "./dom.mts";
+import { api } from "./api.mts";
 import { pickFolderRow } from "./wizard.mjs";
-import { defaultAdapterId, availableAdapters, platformCompatible } from "./adapters.mjs";
+import { defaultAdapterId, availableAdapters, platformCompatible } from "./adapters.mts";
 
 // This tab's own working state — text box contents, the picked adapter (once there's more than one
 // to choose from), busy flag, and the last result line. Survives switching away and back (the section
