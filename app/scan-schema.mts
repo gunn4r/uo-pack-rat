@@ -16,15 +16,33 @@ export const TAZUO_V1_CAPS: ScanV2AdapterCapabilities = {
   bridge: ["highlight", "grab", "goto"],
 };
 
+// A UO serial is a 32-bit unsigned integer, and a graphic/hue is a 16-bit one. Without these bounds
+// `serial: 1e308` satisfied `{type: "integer"}` (Number.isInteger says so), and two serials above
+// 2^53 that round to the same double collapsed into ONE fold entry — silent data loss, and a cheap
+// way to make a specific item unreachable to the bridge. Same story for the length bounds below: a
+// tooltip line fed parseTooltip, a character name became a filename, and neither had a ceiling.
+// (Phase 7 security review, Area 2, Important 3 and Minor 4.)
+const SERIAL = { type: "integer", minimum: 0, maximum: 4294967295 };
+const SERIAL_OR_NULL = { type: ["integer", "null"], minimum: 0, maximum: 4294967295 };
+const GRAPHIC = { type: ["number", "null"], minimum: 0, maximum: 65535 };
+const AMOUNT = { type: "number", minimum: 0, maximum: 4294967295 };
+const NAME = { type: "string", maxLength: 256 };
+const TOOLTIP = { type: "array", maxItems: 256, items: { type: "string", maxLength: 512 } };
+// stats/maxes/resists/position are keyed by the adapter (str/dex/int, hits/stam/mana, phys/fire/...)
+// and hold plain numbers — every adapter writes ints. They used to be `{type: "object"}` with no
+// properties at all, so their values reached the character sheet unchecked.
+const NUMBER_MAP = { type: "object", additionalProperties: { type: "number" } };
+const NUMBER_MAP_OR_NULL = { type: ["object", "null"], additionalProperties: { type: "number" } };
+
 // Keep byte-for-byte identical to app/schema/scan.v2.schema.json (a test enforces this).
 export const SCAN_V2_SCHEMA = {
-  "$comment": "Pack Rat scan file schema v2. Draft-07 style, restricted to the keyword subset app/schema/validate.mjs supports. additionalProperties is true at the top level (adapters may add fields, e.g. refresh's meta) but false inside adapter and adapter.capabilities, which are a closed contract every adapter must match exactly. This JSON literal must stay identical to SCAN_V2_SCHEMA in app/scan-schema.mjs (app/scan-schema.test.mjs asserts that) because scan-schema.mjs is served to the browser and cannot load this file via fs or a JSON import attribute.",
+  "$comment": "Pack Rat scan file schema v2. Draft-07 style, restricted to the keyword subset app/schema/validate.mjs supports. additionalProperties is true at the top level (adapters may add fields, e.g. refresh's meta) but false inside adapter and adapter.capabilities, which are a closed contract every adapter must match exactly, and a SUBSCHEMA on the arbitrarily-keyed maps (stats, maxes, resists, position, skills, containers), which is how their values get checked at all. This JSON literal must stay identical to SCAN_V2_SCHEMA in app/scan-schema.mjs (app/scan-schema.test.mjs asserts that) because scan-schema.mjs is served to the browser and cannot load this file via fs or a JSON import attribute.",
   type: "object",
   additionalProperties: true,
   required: ["schemaVersion", "character", "scannedAt", "adapter", "stats", "roots", "containers", "items", "equipped"],
   properties: {
     schemaVersion: { type: "integer", enum: [2] },
-    character: { type: "string", minLength: 1 },
+    character: { type: "string", minLength: 1, maxLength: 64 },
     scannedAt: { type: "string", pattern: "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d+)?([+-]\\d{2}:\\d{2}|Z)$" },
     shard: { type: ["string", "null"] },
     account: { type: "string", pattern: "^[a-f0-9]{16,64}$", "$comment": "an opaque hashed account id (e.g. hex SHA-256 of the account name) — never the plaintext name" },
@@ -53,39 +71,73 @@ export const SCAN_V2_SCHEMA = {
         },
       },
     },
-    stats: { type: "object" },
-    position: { type: ["object", "null"] },
-    maxes: { type: ["object", "null"] },
-    resists: { type: ["object", "null"] },
-    skills: { type: "object" },
+    stats: NUMBER_MAP,
+    position: NUMBER_MAP_OR_NULL,
+    maxes: NUMBER_MAP_OR_NULL,
+    resists: NUMBER_MAP_OR_NULL,
+    // Keyed by skill name; every adapter writes {value, cap} and TazUO/Razor Enhanced add `base`.
+    // A wrong-shaped entry used to pass validation and then throw inside the character sheet's
+    // render, taking the Characters tab and the Suit Builder down on every launch until the file was
+    // deleted by hand (Phase 7 security review, Area 2, Important 2).
+    skills: {
+      type: "object",
+      additionalProperties: {
+        type: "object",
+        required: ["value", "cap"],
+        properties: {
+          value: { type: "number", minimum: 0, maximum: 1000 },
+          base: { type: "number", minimum: 0, maximum: 1000 },
+          cap: { type: "number", minimum: 0, maximum: 1000 },
+        },
+      },
+    },
     roots: {
       type: "array",
       items: {
         type: "object",
         required: ["serial", "kind", "name", "opened"],
         properties: {
-          serial: { type: "integer" },
+          serial: SERIAL,
           kind: { type: "string", enum: ["backpack", "bank", "ground"] },
-          name: { type: "string" },
+          name: NAME,
           opened: { type: "boolean" },
         },
       },
     },
-    containers: { type: "object" },
+    // Keyed by serial, but nothing requires the KEY to match the entry's own serial — the fold
+    // indexes by the entry's `serial`, which is why that field (not the key) is what has to be a
+    // real serial: a container calling itself "__proto__" replaced the prototype of the fold's own
+    // map (Phase 7 security review, Area 2, Minor 1).
+    containers: {
+      type: "object",
+      additionalProperties: {
+        type: "object",
+        required: ["serial", "root"],
+        properties: {
+          serial: SERIAL,
+          root: SERIAL,
+          parent: SERIAL_OR_NULL,
+          kind: { type: "string", maxLength: 64 },
+          name: NAME,
+          pos: NUMBER_MAP_OR_NULL,
+          tooltip: TOOLTIP,
+        },
+      },
+    },
     items: {
       type: "array",
       items: {
         type: "object",
         required: ["serial", "container", "nameSource"],
         properties: {
-          serial: { type: "integer" },
-          container: { type: "integer" },
-          graphic: { type: ["number", "null"] },
-          hue: { type: ["number", "null"] },
-          amount: { type: "number" },
-          name: { type: "string" },
+          serial: SERIAL,
+          container: SERIAL,
+          graphic: GRAPHIC,
+          hue: GRAPHIC,
+          amount: AMOUNT,
+          name: NAME,
           nameSource: { type: "string", enum: ["opl", "label"] },
-          tooltip: { type: "array", items: { type: "string" } },
+          tooltip: TOOLTIP,
         },
       },
     },
@@ -95,14 +147,14 @@ export const SCAN_V2_SCHEMA = {
         type: "object",
         required: ["serial", "nameSource"],
         properties: {
-          serial: { type: "integer" },
-          graphic: { type: ["number", "null"] },
-          hue: { type: ["number", "null"] },
-          amount: { type: "number" },
-          name: { type: "string" },
+          serial: SERIAL,
+          graphic: GRAPHIC,
+          hue: GRAPHIC,
+          amount: AMOUNT,
+          name: NAME,
           nameSource: { type: "string", enum: ["opl", "label"] },
-          tooltip: { type: "array", items: { type: "string" } },
-          layer: { type: ["string", "null"] },
+          tooltip: TOOLTIP,
+          layer: { type: ["string", "null"], maxLength: 64 },
         },
       },
     },

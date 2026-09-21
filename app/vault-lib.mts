@@ -264,7 +264,21 @@ export function effectiveProfile(p: Profile = {}, character: Character | null = 
 export const tagUnits = (): Record<string, number> => getRules().tagUnits as Record<string, number>;
 const RARITY_RE = /^(minor|lesser|greater|major|legendary) (magic item|artifact)$|^reforged|artifact$/i;
 
-const stripHtml = (s: unknown): string => String(s || "").replace(/<[^>]+>/g, "").trim();
+// The longest line any real tooltip carries is ~54 characters; the scan schema caps one at 512
+// (scan.v2.schema.json's tooltip items), so a validated scan is never truncated here. The cap is
+// repeated at the parser because a scan already on disk from before that bound existed still gets
+// parsed on every fold — and regex cost on a line is what a hostile scan used to buy (Phase 7
+// security review, Area 2, Important 3).
+const MAX_TOOLTIP_LINE = 512;
+const stripHtml = (s: unknown): string => String(s || "").slice(0, MAX_TOOLTIP_LINE).replace(/<[^>]+>/g, "").trim();
+// "any other numeric line" — the fallback that turns an unmodeled line into an `extras` entry. It
+// matches the TAIL (a number, an optional %/s, an optional "- N" range) anchored to the end, and the
+// property name is whatever precedes it; the old single expression put a lazy `(.*?)` head in front
+// of a greedy `[\s:+]*` separator, and the two overlapped on the same characters, so a line ending in
+// something the tail could not match forced the engine through every split of the overlap — clean
+// O(n^2) (9 s on one 128k-character line). Leftmost-match picks the same number the lazy head did,
+// and stripping the separator run off the end of the head reproduces what `[\s:+]*` used to eat.
+const NUMERIC_TAIL_RE = /(-?\d+(?:\.\d+)?)\s*(%|s)?\s*(?:-\s*(\d+))?$/;
 
 // Returns { name, props, tags, strReq, rarity, extras, flags, lines }.
 //   props  : modeled numeric properties (optimizer keys)
@@ -293,10 +307,11 @@ export function parseTooltip(rawLines?: Array<string | undefined> | undefined): 
       if (mm) { props[key] = (props[key] || 0) + +mm[1]!; matched = true; break; }
     }
     if (matched) continue;
-    const num = line.match(/^(.*?)[\s:+]*(-?\d+(?:\.\d+)?)\s*(%|s)?\s*(?:-\s*(\d+))?$/);
-    if (num && num[1]!.trim()) {
-      const key = num[1]!.trim().replace(/[^a-z0-9 ]/g, "").replace(/\s+/g, " ");
-      extras[key] = num[4] ? [+num[2]!, +num[4]] : +num[2]!;
+    const num = line.match(NUMERIC_TAIL_RE);
+    const head = num ? line.slice(0, num.index).replace(/[\s:+]*$/, "") : "";
+    if (num && head.trim()) {
+      const key = head.trim().replace(/[^a-z0-9 ]/g, "").replace(/\s+/g, " ");
+      extras[key] = num[3] ? [+num[1]!, +num[3]] : +num[1]!;
     } else {
       flags.push(line);
     }
@@ -409,7 +424,13 @@ interface EnrichLoc {
 }
 
 export function foldSnapshots(snapshots: ScanV2[]): Inventory {
-  const inv: Inventory = { characters: {}, containers: {}, items: {}, scans: [] };
+  // Null-prototype dictionaries, not `{}`: every key below comes from the scan (a container's own
+  // serial, the character's name), and `obj["__proto__"] = value` on an ordinary object invokes the
+  // inherited setter and REPLACES that object's prototype — the entry silently disappears and an
+  // attacker-controlled inherited key becomes readable off the map. JSON.stringify and every
+  // Object.keys/values/entries read below behave identically on a null-prototype object (Phase 7
+  // security review, Area 2, Minor 1).
+  const inv: Inventory = { characters: Object.create(null), containers: Object.create(null), items: Object.create(null), scans: [] };
   const sorted = [...snapshots].sort((a, b) => parseStamp(a.scannedAt) - parseStamp(b.scannedAt));
   for (const snap of sorted) {
     if (snap.schemaVersion !== 2) throw new Error("foldSnapshots needs v2 scans — call upgradeScan first");
@@ -425,6 +446,11 @@ export function foldSnapshots(snapshots: ScanV2[]): Inventory {
     }
     for (const [serial, c] of Object.entries(inv.containers)) if (roots.has(+c.root)) delete inv.containers[serial];
     const snapContainers = (snap.containers || {}) as Record<string, ScanContainerRaw>;
+    // Indexed once per snapshot, by the entry's own serial — nothing requires snap.containers' KEYS
+    // to be serials at all, and the old per-item `Object.values(...).find(...)` fallback for a key
+    // that didn't match cost items x containers (2.3 s for 20,000 items across 2,000 containers,
+    // every fold and every restart). Strictly faster for an honest scan too.
+    const bySerial = new Map<number, ScanContainerRaw>(Object.values(snapContainers).map((c) => [+c.serial, c]));
     for (const c of Object.values(snapContainers)) {
       if (!roots.has(+c.root)) continue;
       inv.containers[c.serial] = { ...c, scannedBy: char, scannedAt: snap.scannedAt };
@@ -440,7 +466,7 @@ export function foldSnapshots(snapshots: ScanV2[]): Inventory {
       inv.items[c.serial] = bag;
     }
     for (const raw of snap.items || []) {
-      const c = snapContainers[raw.container] || Object.values(snapContainers).find((x) => +x.serial === +raw.container);
+      const c = bySerial.get(+raw.container);
       const root = c ? +c.root : null;
       if (root == null || !roots.has(root)) continue;
       inv.items[raw.serial] = enrich(raw, { root, container: +raw.container, equippedBy: null, layer: null, seenAt: snap.scannedAt, scannedBy: char });

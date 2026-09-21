@@ -3,7 +3,7 @@
 // `pillFor` and `CAP_KEYS` were dead code in the original (defined, never called) and are dropped.
 import { state } from "./store.mts";
 import { $, el, slotLabel, rarityColor, fmtWhen } from "./dom.mts";
-import { sheetHtml } from "./sheet.mts";
+import { sheetNode } from "./sheet.mts";
 import type { Item, Character } from "../vault-lib.mts";
 import type { SkillEntry } from "./api-types.mts";
 
@@ -52,7 +52,7 @@ export function renderCharacters(): void {
     const current = Object.fromEntries(worn.map((i): [number, Item] => [i.serial, i]));
     cards.append(el("div", { class: "panel stack" },
       el("div", { class: "row", style: "justify-content:space-between" }, el("h2", {}, name), el("span", { class: "small muted" }, c ? `scanned ${fmtWhen(c.scannedAt)}` : "not scanned yet")),
-      c ? el("div", { class: "charcard" }, dollHtml(name), el("div", { html: sheetHtml(name, current, null) })) : null,
+      c ? el("div", { class: "charcard" }, dollHtml(name), el("div", {}, sheetNode(name, current, null))) : null,
       c ? freeSkillsLine(c) : null));
   }
 }

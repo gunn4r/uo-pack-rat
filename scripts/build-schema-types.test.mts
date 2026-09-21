@@ -51,6 +51,27 @@ test("[fast] an unsupported construct fails loudly rather than emitting any", ()
   assert.throws(() => schemaToTypeSource("Demo", { type: "object", properties: { x: { oneOf: [{ type: "string" }] } } }), /oneOf/);
 });
 
+test("[fast] validation-only keywords are accepted and ignored, not mistaken for an unsupported construct", () => {
+  // These bound a VALUE, not a shape (app/schema/validate.mts enforces them at run time), so they
+  // have no type-level meaning — but the generator throws on anything it doesn't recognise, and it
+  // runs ahead of every unpackaged launch, so an unlisted one is a startup error dialog rather than
+  // a looser type. Phase 7 security review, Area 2: the scan schema grew all of these at once.
+  const src = schemaToTypeSource("Demo", {
+    type: "object",
+    required: ["name"],
+    properties: {
+      name: { type: "string", minLength: 1, maxLength: 64, pattern: "^[a-z]+$" },
+      serial: { type: "integer", minimum: 0, maximum: 4294967295 },
+      tooltip: { type: "array", maxItems: 256, items: { type: "string", maxLength: 512 } },
+    },
+  });
+  assert.match(src, /name: string;/);
+  assert.match(src, /serial\?: number;/);
+  assert.match(src, /tooltip\?: string\[\];/);
+  // and the loud failure is still loud for a construct that really would change the type
+  assert.throws(() => schemaToTypeSource("Demo", { type: "object", properties: { x: { type: "string", patternProperties: {} } } }), /patternProperties/);
+});
+
 // ---- constructs the pinned requirements call for but the tests above don't exercise -----------
 
 test("[fast] an integer enum emits a numeric literal union (schemaVersion-style)", () => {
@@ -173,12 +194,13 @@ test("[fast] two different schema locations that derive the same name collide ev
   );
 });
 
-test("[fast] buildSchemaTypes against the real four schema files exports the 15 expected type names", () => {
+test("[fast] buildSchemaTypes against the real four schema files exports the 17 expected type names", () => {
   const out = join(mkdtempSync(join(tmpdir(), "schema-types-")), "types.d.mts");
   buildSchemaTypes({ out });
   const src = readFileSync(out, "utf8");
   const expected = [
     "ScanV2", "ScanV2Adapter", "ScanV2AdapterCapabilities", "ScanV2RootsItem", "ScanV2ItemsItem", "ScanV2EquippedItem",
+    "ScanV2SkillsValue", "ScanV2ContainersValue",
     "BridgeV1Command", "BridgeV1Result", "BridgeV1Status", "BridgeV1StatusCounts",
     "RulesV1", "RulesV1ResistSkillBonus", "RulesV1RarityItem", "RulesV1RaceLock",
     "ProfilesV2",
