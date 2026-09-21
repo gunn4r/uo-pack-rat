@@ -38,6 +38,18 @@ export const el = <K extends keyof HTMLElementTagNameMap>(tag: K, attrs: ElAttrs
   for (const kid of kids.flat()) if (kid != null) e.append((kid as Node).nodeType ? (kid as Node) : document.createTextNode(String(kid)));
   return e;
 };
+// compactChildren(kids) — drop null/undefined entries from a children array before it reaches
+// replaceChildren()/append()/etc: those methods' real (Node | string) signature has no null member, so
+// a literal null argument WebIDL-coerces to the text node "null" rather than being skipped (unlike a
+// null nested inside an el() call's own kids, which el() above explicitly filters via its `kid != null`
+// check). Generic and DOM-free (no `document` touch) so it's importable and testable under plain
+// node:test without a browser DOM — see app/import-children.test.mts. Callers build a plain array of
+// "always-present panel, maybe-null panel" and filter once, matching builder.mts's renderResult
+// (`.filter(Boolean) as HTMLElement[]`) and runs.mts's renderRuns (filters a mapped array); import.mts's
+// renderImport is the one call site that used to skip the filter and pass a bare null straight through.
+export function compactChildren<T>(kids: readonly (T | null | undefined)[]): T[] {
+  return kids.filter((k): k is T => k != null);
+}
 export const fmtWhen = (s: string | null | undefined): string => s ? String(s).replace("T", " ").slice(0, 16) : "";
 export const ago = (s: string): string => { const d = (Date.now() - Date.parse(s)) / 864e5; return !isFinite(d) ? "" : d < 1 / 24 ? "just now" : d < 1 ? `${Math.round(d * 24)}h ago` : d < 30 ? `${Math.round(d)}d ago` : fmtWhen(s).slice(0, 10); };
 // stale = last seen more than 7 days before the newest scan we have at all
