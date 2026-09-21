@@ -5,7 +5,7 @@
 //
 // HOW THE CORE IS LOADED: no build step — every caller (this harness, the server, the bench) imports
 // scripts/optimizer-core.mts straight from source, via Node's native TypeScript type stripping, by the
-// path config.mjs's corePath()/paths.core resolves (PACKRAT_CORE overrides it). The source stays
+// path config.mts's corePath()/paths.core resolves (PACKRAT_CORE overrides it). The source stays
 // paste-able into the game client (no imports of its own, no top-level exports beyond its one trailing
 // `export { ... }` line) while this harness exercises the exact file that ships. Requires Node >= 22.18
 // (stable type stripping); verified on v24. If a future runtime drops native stripping, the fallback is
@@ -27,7 +27,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { pathToFileURL } from "node:url";
-import { corePath } from "../app/config.mjs";
+import { corePath } from "../app/config.mts";
 import type * as Core from "./optimizer-core.mts";
 
 const core = (await import(pathToFileURL(corePath()).href)) as typeof Core;

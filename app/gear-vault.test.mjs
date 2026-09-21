@@ -9,7 +9,7 @@ import { dirname, join } from "node:path";
 import { parseTooltip, classify, foldSnapshots, buildPools, requirementReport, totalsOf, propertyKeys, bagLabel, kindOf, groupByName, slayersOf, medableOf, weaponAllowed, settingsDiff, PROP_LABELS, effectiveProfile, resistSkillBonus, toOptItem, labelOf, builderKeys, migrateProfiles, templateFrom, TEMPLATE_KEYS, setRules, getRules, tagUnits } from "./vault-lib.mts";
 import { upgradeScan, TAZUO_V1_CAPS } from "./scan-schema.mts";
 import { runKey, reusableRun, runSummary, normalizeRun } from "./runs-lib.mts";
-import { corePath } from "./config.mjs";
+import { corePath } from "./config.mts";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const SKIP_SLOW = process.env.TEST_SKIP_SLOW ? "TEST_SKIP_SLOW" : false;

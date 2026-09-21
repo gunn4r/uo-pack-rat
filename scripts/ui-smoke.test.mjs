@@ -132,7 +132,7 @@ test("[slow] a partial-bridge adapter only offers its declared action, and the n
   writeFileSync(join(dataDir, "settings.json"), JSON.stringify({
     schemaVersion: 1, shard: "uoalive", setupDone: true, client: { adapter: "partial-bridge", scriptsDir: dataDir },
   }));
-  // PACKRAT_ADAPTERS_DIR (the same override app/config.mjs/app/server.test.mjs use) points the whole
+  // PACKRAT_ADAPTERS_DIR (the same override app/config.mts/app/server.test.mjs use) points the whole
   // app — main process and the forked server child, which inherits main's process.env — at this
   // throwaway adapter instead of the repo's real adapters/, without touching electron/main.mjs.
   const app = await _electron.launch({

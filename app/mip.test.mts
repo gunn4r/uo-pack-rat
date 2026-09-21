@@ -1,12 +1,13 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { buildSuitMip, startVector, pickedOf, noGoodRow, HARD_FLOOR_BONUS } from "./mip.mjs";
+import { buildSuitMip, startVector, pickedOf, noGoodRow, HARD_FLOOR_BONUS, type BuiltMip } from "./mip.mts";
+import type { OptItem } from "./vault-lib.mts";
 
 // ---------------------------------------------------------------------------
 // Shared fixtures and helpers
 // ---------------------------------------------------------------------------
 
-const mkItem = (serial, slot, props, extra = {}) => ({ serial, name: `item${serial}`, slot, props, ...extra });
+const mkItem = (serial: number, slot: string, props: Record<string, number>, extra: { twoHanded?: true } = {}): OptItem => ({ serial, name: `item${serial}`, slot, props, ...extra });
 
 // The profile from the task brief: two capped positive weights (hci, dci), one uncapped weight
 // that can go negative (tagPenalty), one hard floor (lrc) and one soft floor (fc).
@@ -25,13 +26,13 @@ const current = { ring: ringA, neck: neckWorn, bracelet: braceletA };
 const slots = ["ring", "neck", "bracelet", "oneHanded", "twoHanded"];
 const optionalSlots = ["ring", "oneHanded", "twoHanded"];        // neck and bracelet are required
 
-function build(overrides = {}) {
+function build(overrides: Partial<Parameters<typeof buildSuitMip>[0]> = {}): BuiltMip {
   return buildSuitMip({ pools, current, profile, slots, optionalSlots, ...overrides });
 }
 
 // A structural check applied to every built model in this file: the CSR arrays are internally
 // consistent and every column reference is in range.
-function assertWellFormed(built) {
+function assertWellFormed(built: BuiltMip): void {
   const { starts, indices, values, numCols } = built.model.matrix;
   assert.equal(starts.length, built.model.numRows + 1, "starts.length === numRows + 1");
   assert.equal(starts.at(-1), indices.length, "starts.at(-1) === indices.length");
@@ -39,19 +40,19 @@ function assertWellFormed(built) {
   for (const j of indices) assert.ok(j >= 0 && j < numCols, `column index ${j} in range`);
 }
 
-function xCol(built, slot, serial) {
-  return built.xIndex[slot].find((j) => built.cols[j].item.serial === serial);
+function xCol(built: BuiltMip, slot: string, serial: number): number | undefined {
+  return built.xIndex[slot]!.find((j) => built.cols[j]!.item!.serial === serial);
 }
-function colOfDim(built, dim, kind) {
+function colOfDim(built: BuiltMip, dim: string, kind: string): number {
   return built.cols.findIndex((c) => c.dim === dim && c.kind === kind);
 }
 // The dense row checker the brief asks for: every row's Σ(coeff·vec) sits inside its bounds.
-function checkRows(built, vec) {
+function checkRows(built: BuiltMip, vec: Float64Array): void {
   const { matrix, rowLower, rowUpper, numRows } = built.model;
   for (let r = 0; r < numRows; r++) {
     let sum = 0;
-    for (let k = matrix.starts[r]; k < matrix.starts[r + 1]; k++) sum += matrix.values[k] * vec[matrix.indices[k]];
-    assert.ok(sum >= rowLower[r] - 1e-9 && sum <= rowUpper[r] + 1e-9, `row ${r} sum ${sum} not in [${rowLower[r]}, ${rowUpper[r]}]`);
+    for (let k = matrix.starts[r]!; k < matrix.starts[r + 1]!; k++) sum += matrix.values[k]! * vec[matrix.indices[k]!]!;
+    assert.ok(sum >= rowLower[r]! - 1e-9 && sum <= rowUpper[r]! + 1e-9, `row ${r} sum ${sum} not in [${rowLower[r]}, ${rowUpper[r]}]`);
   }
 }
 
@@ -62,7 +63,7 @@ function checkRows(built, vec) {
 test("[fast] mip: one x per candidate per slot, and integrality is 1 for x/y and 0 for c/s", () => {
   const built = build();
   assertWellFormed(built);
-  assert.equal(built.xIndex.ring.length, pools.ring.length);      // current.ring (ringA) is already in the pool: no extra append
+  assert.equal(built.xIndex.ring!.length, pools.ring.length);      // current.ring (ringA) is already in the pool: no extra append
   for (const kind of ["x", "y"]) for (const c of built.cols.filter((c) => c.kind === kind)) assert.equal(built.model.integrality[built.cols.indexOf(c)], 1);
   for (const kind of ["c", "s"]) for (const c of built.cols.filter((c) => c.kind === kind)) assert.equal(built.model.integrality[built.cols.indexOf(c)], 0);
 });
@@ -70,10 +71,10 @@ test("[fast] mip: one x per candidate per slot, and integrality is 1 for x/y and
 test("[fast] mip: a worn candidate absent from the pool is appended (keep-what-you-wear)", () => {
   const built = build({ current: { ...current, ring: ringC } });
   assertWellFormed(built);
-  assert.equal(built.xIndex.ring.length, pools.ring.length + 1);
+  assert.equal(built.xIndex.ring!.length, pools.ring.length + 1);
   const j = xCol(built, "ring", ringC.serial);
   assert.ok(j !== undefined);
-  assert.equal(built.cols[j].item.serial, ringC.serial);
+  assert.equal(built.cols[j!]!.item!.serial, ringC.serial);
 });
 
 // A slot with no pool of its own but a worn piece gets exactly one candidate: the worn item,
@@ -82,13 +83,13 @@ test("[fast] mip: a worn candidate absent from the pool is appended (keep-what-y
 test("[fast] mip: a slot with no pool but a worn piece gets one x column, forced to 1 when the slot is required", () => {
   const built = build();
   assertWellFormed(built);
-  assert.equal(built.xIndex.neck.length, 1);
-  const j = built.xIndex.neck[0];
-  assert.equal(built.cols[j].item.serial, neckWorn.serial);
-  const rowIdxFor = (b, jj) => {
+  assert.equal(built.xIndex.neck!.length, 1);
+  const j = built.xIndex.neck![0]!;
+  assert.equal(built.cols[j]!.item!.serial, neckWorn.serial);
+  const rowIdxFor = (b: BuiltMip, jj: number): number => {
     const { matrix } = b.model;
     for (let r = 0; r < b.model.numRows; r++) {
-      const start = matrix.starts[r], end = matrix.starts[r + 1];
+      const start = matrix.starts[r]!, end = matrix.starts[r + 1]!;
       if (end - start === 1 && matrix.indices[start] === jj) return r;
     }
     return -1;
@@ -98,7 +99,7 @@ test("[fast] mip: a slot with no pool but a worn piece gets one x column, forced
   assert.equal(built.model.rowUpper[rowIdx], 1);
 
   const optionalBuilt = build({ optionalSlots: [...optionalSlots, "neck"] });
-  const j2 = optionalBuilt.xIndex.neck[0];
+  const j2 = optionalBuilt.xIndex.neck![0]!;
   const rowIdx2 = rowIdxFor(optionalBuilt, j2);
   assert.equal(optionalBuilt.model.rowLower[rowIdx2], -Infinity);   // optional: the same lone candidate is merely available
   assert.equal(optionalBuilt.model.rowUpper[rowIdx2], 1);
@@ -119,22 +120,22 @@ test("[fast] mip: a capped positive weight makes a c column and a matching row",
   // find the row through matrix.starts: the one row containing the c column
   const { matrix } = built.model;
   let rowIdx = -1;
-  for (let r = 0; r < built.model.numRows && rowIdx < 0; r++) for (let k = matrix.starts[r]; k < matrix.starts[r + 1]; k++) if (matrix.indices[k] === cHci) rowIdx = r;
+  for (let r = 0; r < built.model.numRows && rowIdx < 0; r++) for (let k = matrix.starts[r]!; k < matrix.starts[r + 1]!; k++) if (matrix.indices[k] === cHci) rowIdx = r;
   assert.ok(rowIdx >= 0);
   assert.equal(built.model.rowUpper[rowIdx], 0);
-  const start = matrix.starts[rowIdx], end = matrix.starts[rowIdx + 1];
-  const coeffOf = (j) => { for (let k = start; k < end; k++) if (matrix.indices[k] === j) return matrix.values[k]; return 0; };
+  const start = matrix.starts[rowIdx]!, end = matrix.starts[rowIdx + 1]!;
+  const coeffOf = (j: number): number => { for (let k = start; k < end; k++) if (matrix.indices[k] === j) return matrix.values[k]!; return 0; };
   assert.equal(coeffOf(cHci), 1);
-  assert.equal(coeffOf(xCol(built, "ring", ringA.serial)), -ringA.props.hci);
-  assert.equal(coeffOf(xCol(built, "ring", ringB.serial)), -ringB.props.hci);
-  assert.equal(coeffOf(xCol(built, "oneHanded", oneHandedA.serial)), -oneHandedA.props.hci);
+  assert.equal(coeffOf(xCol(built, "ring", ringA.serial)!), -ringA.props.hci!);
+  assert.equal(coeffOf(xCol(built, "ring", ringB.serial)!), -ringB.props.hci!);
+  assert.equal(coeffOf(xCol(built, "oneHanded", oneHandedA.serial)!), -oneHandedA.props.hci!);
 });
 
 test("[fast] mip: an uncapped weight (tagPenalty) lands in colCost of each x; model.offset is always 0", () => {
   const built = build();
   assertWellFormed(built);
-  assert.equal(built.model.colCost[xCol(built, "ring", ringA.serial)], profile.weights.tagPenalty * ringA.props.tagPenalty);
-  assert.equal(built.model.colCost[xCol(built, "ring", ringB.serial)], profile.weights.tagPenalty * ringB.props.tagPenalty);
+  assert.equal(built.model.colCost[xCol(built, "ring", ringA.serial)!], profile.weights.tagPenalty * ringA.props.tagPenalty!);
+  assert.equal(built.model.colCost[xCol(built, "ring", ringB.serial)!], profile.weights.tagPenalty * ringB.props.tagPenalty!);
   assert.equal(colOfDim(built, "tagPenalty", "c"), -1);                 // never a capped column
   assert.equal(built.model.offset, 0);
 });
@@ -153,8 +154,8 @@ test("[fast] mip: a reachable hard floor makes one row and counts HARD_FLOOR_BON
   assert.deepEqual(built.unreachableFloors, []);
   const rowIdx = built.hardRows.lrc;
   assert.ok(rowIdx !== undefined);
-  assert.equal(built.model.rowLower[rowIdx], profile.floors.lrc);
-  assert.equal(built.model.rowUpper[rowIdx], Infinity);
+  assert.equal(built.model.rowLower[rowIdx!], profile.floors.lrc);
+  assert.equal(built.model.rowUpper[rowIdx!], Infinity);
   assert.equal(built.scoreOffset, HARD_FLOOR_BONUS);
   assert.equal(colOfDim(built, "lrc", "y"), -1);                  // a hard, reachable floor gets a plain row, no y/s
 });
@@ -170,17 +171,17 @@ test("[fast] mip: a soft floor makes y,s columns with costs bonus,1 and the thre
   assert.equal(built.model.colCost[sJ], 1);
   assert.equal(built.model.colUpper[sJ], sMax);
   const { matrix } = built.model;
-  const rowsOf = (j) => { const out = []; for (let r = 0; r < built.model.numRows; r++) for (let k2 = matrix.starts[r]; k2 < matrix.starts[r + 1]; k2++) if (matrix.indices[k2] === j) out.push(r); return out; };
-  const coeffIn = (r, j) => { for (let k2 = matrix.starts[r]; k2 < matrix.starts[r + 1]; k2++) if (matrix.indices[k2] === j) return matrix.values[k2]; return 0; };
-  const yRow = rowsOf(yJ).find((r) => coeffIn(r, yJ) < 0);
+  const rowsOf = (j: number): number[] => { const out: number[] = []; for (let r = 0; r < built.model.numRows; r++) for (let k2 = matrix.starts[r]!; k2 < matrix.starts[r + 1]!; k2++) if (matrix.indices[k2] === j) out.push(r); return out; };
+  const coeffIn = (r: number, j: number): number => { for (let k2 = matrix.starts[r]!; k2 < matrix.starts[r + 1]!; k2++) if (matrix.indices[k2] === j) return matrix.values[k2]!; return 0; };
+  const yRow = rowsOf(yJ).find((r) => coeffIn(r, yJ) < 0)!;
   assert.equal(built.model.rowLower[yRow], 0);
   assert.equal(built.model.rowUpper[yRow], Infinity);
   assert.equal(coeffIn(yRow, yJ), -f);
-  const boundRow = rowsOf(yJ).find((r) => coeffIn(r, yJ) === sMax);
+  const boundRow = rowsOf(yJ).find((r) => coeffIn(r, yJ) === sMax)!;
   assert.equal(coeffIn(boundRow, sJ), 1);
   assert.equal(built.model.rowUpper[boundRow], sMax);
-  const kRow = rowsOf(sJ).find((r) => coeffIn(r, xCol(built, "ring", ringA.serial)) !== 0);
-  assert.equal(coeffIn(kRow, xCol(built, "ring", ringA.serial)), -k * ringA.props.fc);
+  const kRow = rowsOf(sJ).find((r) => coeffIn(r, xCol(built, "ring", ringA.serial)!) !== 0)!;
+  assert.equal(coeffIn(kRow, xCol(built, "ring", ringA.serial)!), -k * ringA.props.fc!);
   assert.equal(built.model.rowUpper[kRow], 0);
 });
 
@@ -196,31 +197,31 @@ test("[fast] mip: a soft-floor dim with a negative candidate adds a u column and
   assertWellFormed(built);
   const uJ = colOfDim(built, "fc", "u");
   assert.ok(uJ >= 0);
-  const minReach = Math.min(0, ringA.props.fc, ringB.props.fc) + Math.min(0, 0) + Math.min(0, 0);
+  const minReach = Math.min(0, ringA.props.fc!, ringB.props.fc!) + Math.min(0, 0) + Math.min(0, 0);
   const { matrix } = built.model;
-  const rowsOf = (j) => { const out = []; for (let r = 0; r < built.model.numRows; r++) for (let k2 = matrix.starts[r]; k2 < matrix.starts[r + 1]; k2++) if (matrix.indices[k2] === j) out.push(r); return out; };
-  const rowSize = (r) => matrix.starts[r + 1] - matrix.starts[r];
-  const coeffIn = (r, j) => { for (let k2 = matrix.starts[r]; k2 < matrix.starts[r + 1]; k2++) if (matrix.indices[k2] === j) return matrix.values[k2]; return 0; };
+  const rowsOf = (j: number): number[] => { const out: number[] = []; for (let r = 0; r < built.model.numRows; r++) for (let k2 = matrix.starts[r]!; k2 < matrix.starts[r + 1]!; k2++) if (matrix.indices[k2] === j) out.push(r); return out; };
+  const rowSize = (r: number): number => matrix.starts[r + 1]! - matrix.starts[r]!;
+  const coeffIn = (r: number, j: number): number => { for (let k2 = matrix.starts[r]!; k2 < matrix.starts[r + 1]!; k2++) if (matrix.indices[k2] === j) return matrix.values[k2]!; return 0; };
   const sJ = colOfDim(built, "fc", "s");
   const k = (profile.floorBonus * profile.floorPartial) / profile.floors.fc;
 
   // "t + N·u ≥ 0": the only u-row without sv in it.
-  const guard1 = rowsOf(uJ).find((r) => coeffIn(r, sJ) === 0);
+  const guard1 = rowsOf(uJ).find((r) => coeffIn(r, sJ) === 0)!;
   assert.equal(coeffIn(guard1, uJ), -minReach);
   assert.equal(built.model.rowLower[guard1], 0);
 
   // "s ≤ sMax·(1 − u)": the u-row whose ONLY columns are sv and u (the k-row also has sv, but plus
   // every x column too, so column count disambiguates it unambiguously from the k-row below).
   const bonus = profile.floorBonus, partial = profile.floorPartial;
-  const guard2 = rowsOf(uJ).find((r) => coeffIn(r, sJ) === 1 && rowSize(r) === 2);
+  const guard2 = rowsOf(uJ).find((r) => coeffIn(r, sJ) === 1 && rowSize(r) === 2)!;
   assert.equal(coeffIn(guard2, uJ), bonus * partial);
   assert.equal(built.model.rowUpper[guard2], bonus * partial);
 
   // the k-row itself: s ≤ k·t normally, relaxed by +k·minReach·u (the bug this test now guards).
   const kRow = rowsOf(uJ).find((r) => coeffIn(r, sJ) === 1 && rowSize(r) > 2);
   assert.ok(kRow !== undefined, "the k-row must reference u once a negative total is possible");
-  assert.equal(coeffIn(kRow, uJ), k * minReach);
-  assert.equal(built.model.rowUpper[kRow], 0);
+  assert.equal(coeffIn(kRow!, uJ), k * minReach);
+  assert.equal(built.model.rowUpper[kRow!], 0);
 });
 
 test("[fast] mip: no u column when a soft floor's candidates are never negative", () => {
@@ -258,11 +259,11 @@ test("[fast] mip: slot rows are = 1 for a required worn slot, ≤ 1 otherwise, r
   const built = build();
   assertWellFormed(built);
   const { matrix } = built.model;
-  const rowFor = (slot) => {
+  const rowFor = (slot: string): number => {
     const cols = new Set(built.xIndex[slot]);
     for (let r = 0; r < built.model.numRows; r++) {
-      const start = matrix.starts[r], end = matrix.starts[r + 1];
-      if (end - start === cols.size && Array.from({ length: end - start }, (_, i) => matrix.indices[start + i]).every((j) => cols.has(j))) return r;
+      const start = matrix.starts[r]!, end = matrix.starts[r + 1]!;
+      if (end - start === cols.size && Array.from({ length: end - start }, (_, i) => matrix.indices[start + i]).every((j) => cols.has(j!))) return r;
     }
     return -1;
   };
@@ -278,10 +279,10 @@ test("[fast] mip: the hands row appears only when a two-hander and a one-hander 
   const built = build();
   assertWellFormed(built);
   const { matrix } = built.model;
-  const twoJ = xCol(built, "twoHanded", twoHandedA.serial), oneJ = xCol(built, "oneHanded", oneHandedA.serial);
+  const twoJ = xCol(built, "twoHanded", twoHandedA.serial)!, oneJ = xCol(built, "oneHanded", oneHandedA.serial)!;
   let handsRow = -1;
   for (let r = 0; r < built.model.numRows; r++) {
-    const start = matrix.starts[r], end = matrix.starts[r + 1];
+    const start = matrix.starts[r]!, end = matrix.starts[r + 1]!;
     if (end - start === 2 && [matrix.indices[start], matrix.indices[start + 1]].sort().join() === [twoJ, oneJ].sort().join()) handsRow = r;
   }
   assert.ok(handsRow >= 0);
@@ -306,15 +307,15 @@ test("[fast] mip: startVector on the worn suit satisfies every row", () => {
 test("[fast] mip: floorCols and capCols name the same columns the cols array does", () => {
   const built = build();
   for (const [d, cc] of Object.entries(built.capCols)) {
-    assert.equal(built.cols[cc.col].kind, "c");
-    assert.equal(built.cols[cc.col].dim, d);
-    assert.equal(cc.cap, profile.caps[d]);
+    assert.equal(built.cols[cc.col]!.kind, "c");
+    assert.equal(built.cols[cc.col]!.dim, d);
+    assert.equal(cc.cap, profile.caps[d as keyof typeof profile.caps]);
   }
   for (const [d, fc] of Object.entries(built.floorCols)) {
-    assert.equal(built.cols[fc.s].kind, "s");
-    assert.equal(built.cols[fc.s].dim, d);
-    if (fc.y != null) { assert.equal(built.cols[fc.y].kind, "y"); assert.equal(built.cols[fc.y].dim, d); }
-    if (fc.u != null) { assert.equal(built.cols[fc.u].kind, "u"); assert.equal(built.cols[fc.u].dim, d); }
+    assert.equal(built.cols[fc.s]!.kind, "s");
+    assert.equal(built.cols[fc.s]!.dim, d);
+    if (fc.y != null) { assert.equal(built.cols[fc.y]!.kind, "y"); assert.equal(built.cols[fc.y]!.dim, d); }
+    if (fc.u != null) { assert.equal(built.cols[fc.u]!.kind, "u"); assert.equal(built.cols[fc.u]!.dim, d); }
   }
   // every dim that actually got a c/y/s/u column is named by exactly one of the two maps
   const colDims = new Set(built.cols.filter((c) => c.dim != null).map((c) => c.dim));
@@ -325,13 +326,13 @@ test("[fast] mip: floorCols and capCols name the same columns the cols array doe
 test("[fast] mip: pickedOf maps > 0.5 columns to items", () => {
   const built = build();
   const colValue = new Float64Array(built.model.numCols);
-  colValue[xCol(built, "ring", ringA.serial)] = 1;
-  colValue[xCol(built, "bracelet", braceletA.serial)] = 1;
-  colValue[built.xIndex.neck[0]] = 1;
+  colValue[xCol(built, "ring", ringA.serial)!] = 1;
+  colValue[xCol(built, "bracelet", braceletA.serial)!] = 1;
+  colValue[built.xIndex.neck![0]!] = 1;
   const picked = pickedOf(built, colValue);
-  assert.equal(picked.ring.serial, ringA.serial);
-  assert.equal(picked.bracelet.serial, braceletA.serial);
-  assert.equal(picked.neck.serial, neckWorn.serial);
+  assert.equal(picked.ring!.serial, ringA.serial);
+  assert.equal(picked.bracelet!.serial, braceletA.serial);
+  assert.equal(picked.neck!.serial, neckWorn.serial);
 });
 
 test("[fast] mip: noGoodRow is the proper cut over every x column", () => {
@@ -350,7 +351,7 @@ test("[fast] mip: noGoodRow is the proper cut over every x column", () => {
 // ---------------------------------------------------------------------------
 
 test("[fast] HiGHS solves a 3-slot toy exactly and the no-good cut yields the runner-up", async () => {
-  const { loadHighs, openModel, solveModel, addNoGood, closeModel } = await import("./mip-solve.mjs");
+  const { loadHighs, openModel, solveModel, addNoGood, closeModel } = await import("./mip-solve.mts");
   const toyProfile = { weights: { val: 1 }, caps: {}, floors: {} };
   const toyPools = {
     ring: [mkItem(201, "ring", { val: 5 }), mkItem(202, "ring", { val: 3 }), mkItem(203, "ring", { val: -2 })],
@@ -362,18 +363,18 @@ test("[fast] HiGHS solves a 3-slot toy exactly and the no-good cut yields the ru
   assertWellFormed(built);
 
   // brute force: every combination of the 3 candidates plus "empty" per slot, scored exactly as optScoreVector does
-  const scoreOf = (items) => {
-    const totals = {};
+  const scoreOf = (items: (OptItem | null)[]): number => {
+    const totals: Record<string, number> = {};
     for (const it of items) if (it) for (const [k, v] of Object.entries(it.props)) totals[k] = (totals[k] || 0) + v;
     let s = 0;
-    for (const [d, w] of Object.entries(toyProfile.weights)) { const cap = toyProfile.caps[d], t = totals[d] || 0; s += w * (Number.isFinite(cap) && t > cap ? cap : t); }
+    for (const [d, w] of Object.entries(toyProfile.weights)) { const cap = (toyProfile.caps as Record<string, number>)[d], t = totals[d] || 0; s += w * (Number.isFinite(cap) && t > cap! ? cap! : t); }
     return s;
   };
-  const withEmpty = (list) => [...list, null];
-  const combos = [];
+  const withEmpty = <T,>(list: T[]): (T | null)[] => [...list, null];
+  const combos: { ring: OptItem | null; bracelet: OptItem | null; talisman: OptItem | null }[] = [];
   for (const r of withEmpty(toyPools.ring)) for (const b of withEmpty(toyPools.bracelet)) for (const t of withEmpty(toyPools.talisman)) combos.push({ ring: r, bracelet: b, talisman: t });
   const scored = combos.map((c) => ({ c, score: scoreOf([c.ring, c.bracelet, c.talisman]) })).sort((a, b) => b.score - a.score);
-  const [best, second] = scored;
+  const [best, second] = scored as [{ c: typeof combos[number]; score: number }, { c: typeof combos[number]; score: number }];
 
   const highs = await loadHighs();
   const handle = openModel(highs, built);
@@ -381,23 +382,23 @@ test("[fast] HiGHS solves a 3-slot toy exactly and the no-good cut yields the ru
     const start = startVector(built, {});
     const result = solveModel(handle, { timeLimitS: 10, start });
     assert.equal(result.status, "optimal");
-    const picked = pickedOf(built, result.colValue);
-    assert.ok(Math.abs(result.objective + built.scoreOffset - best.score) < 1e-6, `${result.objective} + ${built.scoreOffset} != ${best.score}`);
-    for (const s of toySlots) assert.equal(picked[s]?.serial, best.c[s]?.serial);
+    const picked = pickedOf(built, result.colValue!);
+    assert.ok(Math.abs(result.objective! + built.scoreOffset - best.score) < 1e-6, `${result.objective} + ${built.scoreOffset} != ${best.score}`);
+    for (const s of toySlots) assert.equal(picked[s]?.serial, best.c[s as keyof typeof best.c]?.serial);
 
     addNoGood(handle, built, picked);
     const result2 = solveModel(handle, { timeLimitS: 10 });
     assert.equal(result2.status, "optimal");
-    const picked2 = pickedOf(built, result2.colValue);
-    assert.ok(Math.abs(result2.objective + built.scoreOffset - second.score) < 1e-6, `${result2.objective} + ${built.scoreOffset} != ${second.score}`);
-    for (const s of toySlots) assert.equal(picked2[s]?.serial ?? null, second.c[s]?.serial ?? null);
+    const picked2 = pickedOf(built, result2.colValue!);
+    assert.ok(Math.abs(result2.objective! + built.scoreOffset - second.score) < 1e-6, `${result2.objective} + ${built.scoreOffset} != ${second.score}`);
+    for (const s of toySlots) assert.equal(picked2[s]?.serial ?? null, second.c[s as keyof typeof second.c]?.serial ?? null);
   } finally {
     closeModel(handle);
   }
 });
 
 test("[fast] loadHighs rejects under PACKRAT_NO_HIGHS", async () => {
-  const { loadHighs } = await import("./mip-solve.mjs");
+  const { loadHighs } = await import("./mip-solve.mts");
   await loadHighs();                                   // populate the memo first
   process.env.PACKRAT_NO_HIGHS = "1";
   await assert.rejects(() => loadHighs(), /HiGHS disabled by PACKRAT_NO_HIGHS/);
@@ -406,7 +407,7 @@ test("[fast] loadHighs rejects under PACKRAT_NO_HIGHS", async () => {
 });
 
 // A tiny, deterministic PRNG (mulberry32) so the "deliberately large" model below is reproducible.
-function mulberry32(seed) {
+function mulberry32(seed: number): () => number {
   return function () {
     seed |= 0; seed = (seed + 0x6d2b79f5) | 0;
     let t = Math.imul(seed ^ (seed >>> 15), 1 | seed);
@@ -416,7 +417,7 @@ function mulberry32(seed) {
 }
 
 test("[fast] mip-solve: gapFromEvents computes the absolute gap from the last event carrying both bounds", async () => {
-  const { gapFromEvents } = await import("./mip-solve.mjs");
+  const { gapFromEvents } = await import("./mip-solve.mts");
   assert.equal(gapFromEvents("optimal", { dual: 999, primal: -999 }), 0, "optimal is always gap 0, whatever the last event says");
   assert.equal(gapFromEvents("optimal", null), 0, "optimal is gap 0 even with no event at all");
   assert.equal(gapFromEvents("timeLimit", { dual: 120, primal: 100 }), 20);
@@ -428,7 +429,7 @@ test("[fast] mip-solve: gapFromEvents computes the absolute gap from the last ev
 });
 
 test("[fast] mip-solve: a short time limit on a large model reports a status-consistent gapAbs either way", async () => {
-  const { loadHighs, openModel, solveModel, closeModel, gapFromEvents } = await import("./mip-solve.mjs");
+  const { loadHighs, openModel, solveModel, closeModel, gapFromEvents } = await import("./mip-solve.mts");
   // A small toy (like the one above) proves optimal almost instantly, so exercising the time-limit
   // path needs a model deliberately sized to plausibly still be mid-solve at a short time limit: 20
   // slots x 400 candidates over 5 weighted/floored dims (8,005 x columns). This assertion never
@@ -438,17 +439,19 @@ test("[fast] mip-solve: a short time limit on a large model reports a status-con
   const rand = mulberry32(2026);
   const DIMS = ["d0", "d1", "d2", "d3", "d4"];
   const bigSlots = Array.from({ length: 20 }, (_, i) => `bigSlot${i}`);
-  const bigPools = Object.fromEntries(bigSlots.map((s) => [s, Array.from({ length: 400 }, (_, i) => ({
-    serial: `${s}-${i}`, slot: s, props: Object.fromEntries(DIMS.map((d) => [d, Math.round((rand() * 100 - 40) * 10) / 10])) }))]));
+  // Deliberately lighter than OptItem (no `name`, a string serial): buildSuitMip only ever reads
+  // slot/serial/props/twoHanded off a candidate, so this scale fixture skips what it never checks.
+  const bigPools = Object.fromEntries(bigSlots.map((s): [string, { serial: string; slot: string; props: Record<string, number> }[]] => [s, Array.from({ length: 400 }, (_, i) => ({
+    serial: `${s}-${i}`, slot: s, props: Object.fromEntries(DIMS.map((d): [string, number] => [d, Math.round((rand() * 100 - 40) * 10) / 10])) }))]));
   const bigProfile = { weights: { d0: 3, d1: 2, d2: -1, d3: 1 }, caps: { d0: 800, d1: 600 }, floors: { d2: 900, d4: 300 }, hardFloors: ["d2"], floorBonus: 1000, floorPartial: 0.5 };
-  const built = buildSuitMip({ pools: bigPools, current: {}, profile: bigProfile, slots: bigSlots, optionalSlots: bigSlots });
+  const built = buildSuitMip({ pools: bigPools as unknown as Partial<Record<string, OptItem[]>>, current: {}, profile: bigProfile, slots: bigSlots, optionalSlots: bigSlots });
   assertWellFormed(built);
 
   const highs = await loadHighs();
   const handle = openModel(highs, built);
   handle.model.options.set({ mip_min_logging_interval: 0 });   // HiGHS's own default (5s) would never fire within this test
   try {
-    const events = [];
+    const events: { dual: number | undefined; primal: number | undefined }[] = [];
     const result = solveModel(handle, { timeLimitS: 1.1, start: startVector(built, {}), onEvent: (e) => events.push(e) });
     assert.ok(result.status === "optimal" || result.status === "timeLimit", `unexpected status ${result.status}`);
     if (result.status === "optimal") {

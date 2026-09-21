@@ -17,14 +17,14 @@ The server is a real zero-dependency `node:http` server with its own routes, SSE
 ## Flags
 
 - `--data <dir>` (else `PACKRAT_DATA`, else `app.getPath("userData")`) — passed through to the server child as `PACKRAT_DATA`, and also used as Electron's own `userData` path (so a `--data <tmp>` run's single-instance lock, cache, etc. never collide with a real running instance).
-- `--demo` — forwarded to the server child unchanged (it's an argv flag there too, matching `app/config.mjs`'s `resolveConfig`).
+- `--demo` — forwarded to the server child unchanged (it's an argv flag there too, matching `app/config.mts`'s `resolveConfig`).
 - `--smoke` — after the window's first `did-finish-load`, reads `#status`'s text out of the page; if it's non-empty, prints `SMOKE OK <port>` and exits 0, otherwise `SMOKE FAIL <reason>` and exits 1 (a 30 s overall timeout counts as a failure too). This is what `scripts/shell-smoke.test.mjs` drives — see `TESTING.md`.
 
 ## Lifecycle
 
 Single-instance lock (`app.requestSingleInstanceLock()`); a second launch just focuses the existing window. If the server child dies unexpectedly, `main.mjs` restarts it once; a second death shows an error dialog naming the log file and quits. On quit (`Cmd+Q`, closing the window, or the restart giving up) `main.mjs` sends the child a `{type: "shutdown"}` message, which calls the server's own `close()` and exits — if the child hasn't exited within 2 s, it's killed outright, so quitting never leaves an orphaned server process behind.
 
-Logs land in `<data>/logs/shell.log` (the shell's own lifecycle lines plus everything the child prints to stdout/stderr); the server's own request log is the existing `<data>/logs/server.log` from `app/config.mjs`.
+Logs land in `<data>/logs/shell.log` (the shell's own lifecycle lines plus everything the child prints to stdout/stderr); the server's own request log is the existing `<data>/logs/server.log` from `app/config.mts`.
 
 ## What's not exercised by the automated smoke test
 

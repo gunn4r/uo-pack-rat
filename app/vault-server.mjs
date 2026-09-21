@@ -63,7 +63,7 @@
 // x-content-type-options: nosniff. Any PUT/POST whose body is read must declare content-type:
 // application/json, else 415 (readBody()) — the SSE cancel beacon sends no body, so it's exempt.
 // The optimizer is scripts/optimizer-core.mts, run straight from source (no build step) — every
-// caller imports it from the one path config.mjs's paths.core/corePath() resolves (PACKRAT_CORE
+// caller imports it from the one path config.mts's paths.core/corePath() resolves (PACKRAT_CORE
 // overrides it).
 // Localhost security (CONTRIBUTING.md's Security section has the full writeup): every request's
 // Host must name this server and its Origin (if any) must match, or 403; with CONFIG.token set,
@@ -88,7 +88,7 @@ import { upgradeScan, validateScan } from "./scan-schema.mts";
 import { loadRules, listRules, DEFAULT_SHARD } from "./rules.mts";
 import { validate } from "./schema/validate.mts";
 import { parseItemQuery, applyItemQuery, facetsOf } from "./item-query.mts";
-import { DEFAULT_OPTIONAL_SLOTS } from "./mip.mjs";
+import { DEFAULT_OPTIONAL_SLOTS } from "./mip.mts";
 import { startWatcher } from "./watcher.mjs";
 import { parsePastedScan, writeScanToInbox } from "./import.mjs";
 import {
@@ -97,7 +97,7 @@ import {
 } from "./installer.mjs";
 import { homedir } from "node:os";
 
-import { resolveConfig, ensureLayout, APP_DIR } from "./config.mjs";
+import { resolveConfig, ensureLayout, APP_DIR } from "./config.mts";
 const HERE = APP_DIR;
 const PACKAGE_JSON = JSON.parse(readFileSync(join(HERE, "..", "package.json"), "utf8"));
 // The page is served from app/dist/, never from the source tree: app/ui/*.mts and the shared
@@ -210,15 +210,15 @@ export async function startServer(config = ensureLayout(resolveConfig()), { host
   // capabilities.json is one adapter the non-demo server watches an inbox for (today: three —
   // adapters/tazuo/, adapters/razor-enhanced/, and adapters/classicuo-web/, the last of which never
   // has anything to watch since its "paste" transport writes into the inbox only via POST
-  // /api/import/paste, never a folder drop). Overridable (config.mjs's --adapters/PACKRAT_ADAPTERS_DIR)
+  // /api/import/paste, never a folder drop). Overridable (config.mts's --adapters/PACKRAT_ADAPTERS_DIR)
   // so a test can point a real running server at a throwaway folder of fixture adapters instead of the
   // repo's real ones.
   const ADAPTERS_DIR = CONFIG.paths.adaptersDir || join(HERE, "..", "adapters");
 
   // No build step — CONFIG.paths.core resolves straight to scripts/optimizer-core.mts (or wherever
-  // PACKRAT_CORE points); each optimize-worker.mjs thread imports it by URL for its own copy. The main
+  // PACKRAT_CORE points); each optimize-worker.mts thread imports it by URL for its own copy. The main
   // thread never imports it itself — every optimizeSuit/scoreSet call (heuristic or, since HiGHS,
-  // exact) happens inside that one worker (app/exact-solver.mjs).
+  // exact) happens inside that one worker (app/exact-solver.mts).
   if (!existsSync(CONFIG.paths.core)) throw new Error(`optimizer core not found at ${CONFIG.paths.core} — check PACKRAT_CORE, or that the repo checkout has scripts/optimizer-core.mts`);
   const CORE_URL = pathToFileURL(CONFIG.paths.core).href;
 
@@ -359,7 +359,7 @@ export async function startServer(config = ensureLayout(resolveConfig()), { host
   // ---- optimizer jobs: one worker thread per build, progress over Server-Sent Events -----------
   // A job keeps its last progress snapshot and its final result, so a page that reconnects (or
   // reloads) can catch up. Cancel = terminate the worker. Finished jobs are dropped after a while.
-  // An exact build (opts.exact) runs entirely inside that one worker: app/exact-solver.mjs hands the
+  // An exact build (opts.exact) runs entirely inside that one worker: app/exact-solver.mts hands the
   // problem to HiGHS, which explores the tree itself — there is nothing left to split across a
   // thread pool, so (unlike the pre-HiGHS branch-and-bound) this is always exactly one worker per job.
   const jobs = new Map();
@@ -378,7 +378,7 @@ export async function startServer(config = ensureLayout(resolveConfig()), { host
       // Same stack-free rule as the route-level 500s, and now the same ref-keyed, file-backed log too
       // (post-review: job failures used to go to console.error only, with no ref and no file trail —
       // unrecoverable in a headless/backgrounded deployment). Note the worker's own try/catch
-      // (optimize-worker.mjs) already stringifies a caught error as `${e.stack}` before it ever leaves
+      // (optimize-worker.mts) already stringifies a caught error as `${e.stack}` before it ever leaves
       // the worker thread, so e.message here can ALREADY be a full stack trace in that path (an
       // uncaught worker crash instead reaches here as a normal Error with a normal e.message) — logging
       // e.stack ?? e.message covers both, and the client only ever sees the sanitized ref line either way.
@@ -393,7 +393,7 @@ export async function startServer(config = ensureLayout(resolveConfig()), { host
   }
   function spawnWorker(job, data, onProgress, onWarn) {
     return new Promise((resolve, reject) => {
-      const w = new Worker(new URL("./optimize-worker.mjs", import.meta.url), { workerData: { coreUrl: CORE_URL, ...data } });
+      const w = new Worker(new URL("./optimize-worker.mts", import.meta.url), { workerData: { coreUrl: CORE_URL, ...data } });
       job.workers.add(w);
       let settled = false;
       w.on("message", (m) => {
