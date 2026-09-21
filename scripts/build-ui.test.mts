@@ -3,11 +3,11 @@ import assert from "node:assert/strict";
 import { readFileSync, existsSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { buildUi } from "./build-ui.mjs";
+import { buildUi } from "./build-ui.mts";
 
 const ROOT = dirname(dirname(fileURLToPath(import.meta.url)));
 
-// Builds into the REAL app/dist (not a temp copy) — other test files (app/server.test.mjs among
+// Builds into the REAL app/dist (not a temp copy) — other test files (app/server.test.mts among
 // them) read app/dist later in the same run, and the runner drives everything at concurrency: 1,
 // so leaving the real build in place is required, not just convenient. buildUi() always recompiles
 // (no freshness check of its own), so this is safe to run alongside those other buildUi() callers.

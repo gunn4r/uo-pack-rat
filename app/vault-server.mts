@@ -2,7 +2,7 @@
 //   node app/vault-server.mts [--data <dir>] [--port N] [--demo] [--open]
 // Exports startServer(config) → { server, port, url, close() } — nothing runs at import time, so a
 // test (or another launcher) can start and stop as many independent instances as it likes. The file
-// also self-starts when run directly (node app/vault-server.mts / node scripts/start.mjs).
+// also self-starts when run directly (node app/vault-server.mts / node scripts/start.mts).
 // Routes: GET /  (index.html) · GET /vault-lib.mjs · GET /item-query.mjs (pure filter/sort/facet logic
 //         shared by the browser and GET /api/items below — no DOM, no node: imports, servable byte for
 //         byte like vault-lib.mjs) · GET /scan-schema.mjs (vault-lib.mjs imports it for parseStamp, so

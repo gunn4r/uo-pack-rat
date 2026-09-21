@@ -10,7 +10,7 @@ import { writeFileSync, mkdirSync, readdirSync } from "node:fs";
 import { spawnSync } from "node:child_process";
 import { dirname, join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
-import { buildUi } from "./build-ui.mjs";
+import { buildUi } from "./build-ui.mts";
 import { buildSchemaTypes } from "./build-schema-types.mts";
 
 const ROOT = dirname(dirname(fileURLToPath(import.meta.url)));

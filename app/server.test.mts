@@ -12,7 +12,7 @@ import { startServer, type ServerHandle } from "./vault-server.mts";
 import { buildPools, foldSnapshots, setRules } from "./vault-lib.mts";
 import { upgradeScan, validateScan } from "./scan-schema.mts";
 import { DEFAULT_OPTIONAL_SLOTS } from "./mip.mts";
-import { buildUi } from "../scripts/build-ui.mjs";
+import { buildUi } from "../scripts/build-ui.mts";
 import { buildSchemaTypes } from "../scripts/build-schema-types.mts";
 import { validate, type ValidatorSchema } from "./schema/validate.mts";
 import type { Item, Inventory, ProfilesFile } from "./vault-lib.mts";

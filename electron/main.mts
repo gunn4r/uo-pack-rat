@@ -286,18 +286,18 @@ if (!app.requestSingleInstanceLock()) {
     logLine(`shell: starting (demo=${demo} smoke=${smoke} dataDir=${dataDir})`);
     if (!app.isPackaged) {
       // `npm run desktop` builds the page first via its `predesktop` npm hook (build:types then
-      // build:ui — see scripts/start.mjs's comment for why the schema types have to come first).
+      // build:ui — see scripts/start.mts's comment for why the schema types have to come first).
       // A bare `electron .` (or a globally installed `electron .`) skips npm hooks entirely, so on a
       // fresh clone nothing has built app/dist/ yet and the server would 404 its own page — this
-      // mirrors scripts/start.mjs's self-heal for the browser path, here rather than in
+      // mirrors scripts/start.mts's self-heal for the browser path, here rather than in
       // electron/server-entry.mts because scripts/ never ships in the packaged app (only
       // scripts/optimizer-core.mts does, via package.json's build.files) and server-entry.mts's own
       // module graph has to stay safe to load in a packaged app that lacks scripts/ entirely. The
       // imports are dynamic and live inside this !app.isPackaged branch for the same reason: a
-      // packaged app must never even attempt to resolve scripts/build-ui.mjs.
+      // packaged app must never even attempt to resolve scripts/build-ui.mts.
       try {
         const { buildSchemaTypes } = await import("../scripts/build-schema-types.mts");
-        const { buildUi } = await import("../scripts/build-ui.mjs");
+        const { buildUi } = await import("../scripts/build-ui.mts");
         buildSchemaTypes();
         buildUi();
       } catch (e) {
