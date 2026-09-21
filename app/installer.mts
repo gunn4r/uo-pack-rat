@@ -44,7 +44,7 @@ const CANDIDATE_ROOT_NAME: Record<string, string> = { tazuo: "TazUO" };
 
 // ---- listAdapters ---------------------------------------------------------------------------------
 // One entry per adaptersDir subdirectory that ships a capabilities.json (the same test
-// app/contracts.test.mjs uses to find an adapter). name is the README's first Markdown heading text,
+// app/contracts.test.mts uses to find an adapter). name is the README's first Markdown heading text,
 // falling back to the directory name; summary is a short human line built from capabilities.
 export interface AdapterInfo {
   id: string;
@@ -78,7 +78,7 @@ export function listAdapters(adaptersDir: string): AdapterInfo[] {
     const transport = raw.transport === "paste" ? "paste" : "folder";
     // Optional: the one Node process.platform value ("win32"/"darwin"/"linux") this adapter's client
     // can run on at all, straight from the adapter's own capabilities.json — never hard-coded by
-    // adapter id anywhere else (app/ui/adapters.mjs's platformCompatible reads exactly this field).
+    // adapter id anywhere else (app/ui/adapters.mts's platformCompatible reads exactly this field).
     // Absent/non-string means "works on every platform" (tazuo, classicuo-web today); Razor Enhanced
     // is the one adapter that sets it ("win32" — it's a Windows-only client, per its own README).
     const platform = typeof raw.platform === "string" ? raw.platform : null;

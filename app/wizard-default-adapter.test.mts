@@ -1,4 +1,4 @@
-// wizard-default-adapter.test.mts — app/ui/adapters.mjs: defaultAdapterId (the setup wizard and the
+// wizard-default-adapter.test.mts — app/ui/adapters.mts: defaultAdapterId (the setup wizard and the
 // Import tab must never silently default to a paste-transport adapter — Phase 6 final review, Blocker
 // 2 — a new TazUO/Razor Enhanced player who clicked through the wizard without reading the radio
 // buttons was routed down the paste branch because setup.adapters[0] sorts alphabetically, and
@@ -7,14 +7,14 @@
 // must-fix-before-merge item from the same final review, and a trap defaultAdapterId falls straight
 // into on its own: "razor-enhanced" < "tazuo" alphabetically, so an unfiltered list defaults a
 // Mac/Linux player to the one adapter that can never work for them; they're still SHOWN it, disabled,
-// with a plain note — see app/ui/wizard.mjs's step2()/app/ui/import.mjs's adapterPicker() — just never
+// with a plain note — see app/ui/wizard.mts's step2()/app/ui/import.mjs's adapterPicker() — just never
 // silently selected). platformCompatible is driven entirely by the adapter's OWN `platform` field
 // (from capabilities.json, surfaced by app/installer.mts's listAdapters), never a hard-coded adapter
 // id — several cases below build a "razor-enhanced"-id object with no `platform` field specifically to
 // prove that (it must read as compatible everywhere, since nothing here names it a restriction).
 // Lives at the top level of app/ (not app/ui/) because scripts/test-runner.mts only globs
-// app/*.test.mjs — app/ui/adapters.mjs is deliberately DOM-free so it can be imported directly under
-// plain node:test, unlike the rest of ui/*.mjs (which import ui/store.mjs and touch localStorage at
+// app/*.test.mts — app/ui/adapters.mts is deliberately DOM-free so it can be imported directly under
+// plain node:test, unlike the rest of ui/*.mjs (which import ui/store.mts and touch localStorage at
 // module scope).
 import test from "node:test";
 import assert from "node:assert/strict";

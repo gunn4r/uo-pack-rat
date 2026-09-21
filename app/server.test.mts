@@ -151,7 +151,7 @@ const BRIDGE_SCHEMA = JSON.parse(readFileSync(join(dirname(fileURLToPath(import.
 // Order matters: build the schema types before buildUi() runs, not because tsconfig.browser.json's
 // `include` enforces it (a missing literal entry there is silently dropped, not an error — verified)
 // but because this call is the only actual guarantee app/schema/types.d.mts exists before anything
-// imports from it. Also so a bare `node --test app/server.test.mjs` works on a fresh clone (no
+// imports from it. Also so a bare `node --test app/server.test.mts` works on a fresh clone (no
 // pretest hook run). The optimizer core needs no build step of its own — startServer() below resolves
 // it straight from source via config.mts's paths.core (PACKRAT_CORE overrides it).
 buildSchemaTypes();
@@ -454,7 +454,7 @@ test("[fast] /ui/app.mjs is served with the right content-type", async () => {
   assert.equal((await get("/ui/app.mjs")).status, 200);
   assert.equal((await get("/ui/app.mjs")).headers.get("content-type"), "text/javascript; charset=utf-8");
 });
-// ui/shard.mjs (Important 3's fix: changeShard(), shared by the header picker and the wizard's shard
+// ui/shard.mts (Important 3's fix: changeShard(), shared by the header picker and the wizard's shard
 // step) is just another file under app/ui/ — the /ui/<name> allowlist route needs no per-file
 // registration, but a new module is still worth a one-line proof it's actually reachable.
 test("[fast] /ui/shard.mjs is served with the right content-type", async () => {
@@ -1060,25 +1060,25 @@ test("[smoke] /api/inventory carries facets, worn gear and counts, and no item l
 });
 
 // Regression test for a live bug found in the browser gate after Task 5: page load() threw
-// "Cannot convert undefined or null to object" — NOT in containers.mjs (its `state.inv.containers`/
-// `rootCounts` reads were fine all along), but in builder.mjs's renderProfile(), which called the
-// client-side vault-lib.mjs helpers gearSkills()/builderKeys() against state.inv — and those do
+// "Cannot convert undefined or null to object" — NOT in containers.mts (its `state.inv.containers`/
+// `rootCounts` reads were fine all along), but in builder.mts's renderProfile(), which called the
+// client-side vault-lib.mts helpers gearSkills()/builderKeys() against state.inv — and those do
 // `Object.values(inv.items)`, which is exactly the field Task 5 stopped shipping. The throw happened
 // before renderContainers() ran (buildBuilder() runs first in load()'s sequence), which is why the
 // Containers tab looked broken — it was collateral, not its own bug. Fixed by adding `gearSkills` to
-// GET /api/inventory's `facets` (item-query.mjs's facetsOf, mirroring `propKeys`) so the page never
+// GET /api/inventory's `facets` (item-query.mts's facetsOf, mirroring `propKeys`) so the page never
 // needs the full item map for this. This test pins every field a client module reads directly off
 // `state.inv`/`state.facets` without going through GET /api/items, so a future field removal fails
 // here instead of surfacing only as a live "failed to load" banner.
 test("[smoke] /api/inventory carries every field the page's non-paged tabs read directly", async () => {
   const j = asJson<InventoryResponse>(await (await get("/api/inventory")).json());
   const inv = j.inventory;
-  assert.ok(inv.containers && Object.keys(inv.containers).length > 0, "containers.mjs reads state.inv.containers");
-  assert.ok(inv.rootCounts && Object.keys(inv.rootCounts).length > 0, "containers.mjs reads state.inv.rootCounts");
-  assert.ok(inv.characters && Object.keys(inv.characters).length > 0, "characters.mjs/builder.mjs read state.inv.characters");
-  assert.ok(inv.worn && Object.keys(inv.worn).length > 0, "characters.mjs/sheet.mjs read state.inv.worn");
-  assert.ok(Array.isArray(inv.facets.gearSkills) && inv.facets.gearSkills.length > 0, "builder.mjs's renderProfile reads state.facets.gearSkills");
-  assert.ok(Array.isArray(inv.propKeys) && inv.propKeys.length > 0, "builder.mjs/inventory.mjs read state.propKeys");
+  assert.ok(inv.containers && Object.keys(inv.containers).length > 0, "containers.mts reads state.inv.containers");
+  assert.ok(inv.rootCounts && Object.keys(inv.rootCounts).length > 0, "containers.mts reads state.inv.rootCounts");
+  assert.ok(inv.characters && Object.keys(inv.characters).length > 0, "characters.mts/builder.mts read state.inv.characters");
+  assert.ok(inv.worn && Object.keys(inv.worn).length > 0, "characters.mts/sheet.mts read state.inv.worn");
+  assert.ok(Array.isArray(inv.facets.gearSkills) && inv.facets.gearSkills.length > 0, "builder.mts's renderProfile reads state.facets.gearSkills");
+  assert.ok(Array.isArray(inv.propKeys) && inv.propKeys.length > 0, "builder.mts/inventory.mts read state.propKeys");
 });
 
 test("[fast] /api/items pages, sorts and searches", async () => {
@@ -1262,7 +1262,7 @@ test("[fast] GET /api/setup lists the tazuo adapter, its available (repo-shipped
     assert.equal(j.dataDir, dir);
     assert.ok(Array.isArray(j.candidates.tazuo), JSON.stringify(j.candidates));
     // Phase 6 final review, deferred minor: the wizard/Import tab need this to hide the Windows-only
-    // razor-enhanced adapter on any other platform (app/ui/adapters.mjs's availableAdapters) — it
+    // razor-enhanced adapter on any other platform (app/ui/adapters.mts's availableAdapters) — it
     // must be this process's real process.platform, not a placeholder.
     assert.equal(j.platform, process.platform);
   } finally {
@@ -1379,7 +1379,7 @@ test("[fast] GET /api/setup: an adapter with no bridge reports capabilities.brid
 });
 
 // Bug fix: a player who pressed Skip in the setup wizard (settings.client left unset on purpose — see
-// app/ui/bridge.mjs's currentAdapter() comment) or installed an adapter's scripts by hand had every
+// app/ui/bridge.mts's currentAdapter() comment) or installed an adapter's scripts by hand had every
 // Highlight/Grab/Go-to button vanish, even though POST /api/bridge / GET /api/bridge/status were
 // already routing to bridgeAdapter()'s own default the whole time. GET /api/setup now reports that same
 // routing target as `bridgeAdapter`, so the page can fall back to it instead of hiding the buttons.

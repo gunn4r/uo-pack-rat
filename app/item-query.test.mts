@@ -1,5 +1,5 @@
 // item-query.test.mts — app/item-query.mts: parseItemQuery's defaults/clamps, applyItemQuery's predicate
-// (parity with ui/inventory.mjs's filtered()) and sort (parity with renderInventory()), facetsOf, and
+// (parity with ui/inventory.mts's filtered()) and sort (parity with renderInventory()), facetsOf, and
 // rarityRank. Hand-built fixture items (no scan files, no server) so this stays fast and pure.
 import { test } from "node:test";
 import assert from "node:assert/strict";
@@ -187,8 +187,8 @@ test("[fast] facetsOf: slots/locations/rarities/slayers/kinds/propKeys/gearSkill
   assert.deepEqual(f.kinds.find((k) => k.name === "gear")!.count, ITEMS.filter((i) => i.kind === "gear").length);
   assert.ok(f.propKeys.includes("hci") && f.propKeys.includes("physResist"));
   // The fixture items below carry no skill-bonus extras, so this is an array, not a populated list —
-  // GET /api/inventory's demo-data equivalent (app/server.test.mjs) checks the populated case, this
-  // one checks facetsOf actually calls gearSkills() and returns its shape (regression: builder.mjs's
+  // GET /api/inventory's demo-data equivalent (app/server.test.mts) checks the populated case, this
+  // one checks facetsOf actually calls gearSkills() and returns its shape (regression: builder.mts's
   // renderProfile used to call gearSkills(state.inv) directly, which broke when GET /api/inventory
   // stopped shipping the full item map — facetsOf.gearSkills is what it reads instead, now).
   assert.deepEqual(f.gearSkills, []);

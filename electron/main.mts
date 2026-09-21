@@ -194,7 +194,7 @@ if (!app.requestSingleInstanceLock()) {
     }
   }
 
-  // #status ships as "loading…" (app/index.html) until ui/app.mjs's load() finishes, and reads
+  // #status ships as "loading…" (app/index.html) until ui/app.mts's load() finishes, and reads
   // "failed to load: <message>" if it throws — both are non-empty, so the old "any non-empty #status"
   // check passed on either one, most likely on "loading…" every time (did-finish-load fires before
   // load()'s own fetches resolve). Poll instead, up to a 15s budget of the outer 30s smokeTimer.

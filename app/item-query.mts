@@ -1,9 +1,9 @@
-// item-query.mts — pure item-list filtering/sorting/paging/faceting, shared by the browser (ui/dom.mjs
-// re-exports EXTRA_COLS/colVal; ui/inventory.mjs's filtered()/renderInventory() logic will move here in a
+// item-query.mts — pure item-list filtering/sorting/paging/faceting, shared by the browser (ui/dom.mts
+// re-exports EXTRA_COLS/colVal; ui/inventory.mts's filtered()/renderInventory() logic will move here in a
 // later task) and the server (vault-server.mts's GET /api/items, GET /api/inventory's facets). No DOM, no
 // node: imports — this file is served to the browser byte-for-byte, the same way vault-lib.mts is.
 //
-// parseItemQuery/applyItemQuery reproduce, field for field, the predicate in app/ui/inventory.mjs's
+// parseItemQuery/applyItemQuery reproduce, field for field, the predicate in app/ui/inventory.mts's
 // filtered() (~lines 42-58) and the sort in renderInventory() (~lines 59-66) as of Task 4: state.hideTags
 // (a Set) becomes query.hideTags (an array, .includes() instead of .has()), state.propFilters becomes
 // query.props, and $("#f-text").value.trim().toLowerCase() becomes query.q (already normalized by
@@ -15,7 +15,7 @@ import { itemSearchBlob, groupByName, KINDS, SLOT_LABELS, propertyKeys, gearSkil
 import type { Item, ItemGroup } from "./vault-lib.mts";
 import type { RulesV1RarityItem } from "./schema/types.d.mts";
 
-// Columns computed from an item but not stored under item.props — moved verbatim from ui/dom.mjs (Task 4).
+// Columns computed from an item but not stored under item.props — moved verbatim from ui/dom.mts (Task 4).
 export const EXTRA_COLS: Record<string, [string, string]> = { strReq: ["STR req", "Strength Requirement"], weight: ["Wt", "Weight (stones)"] };
 export const colVal = (it: Item, c: string): number => (c === "strReq" ? it.strReq || 0 : c === "weight" ? it.weight || 0 : it.props[c] || 0);
 
@@ -138,10 +138,10 @@ export interface Facets {
   itemCount: number;
 }
 // The filter UI's option lists + counts, over a set of items (usually the whole inventory). Reproduces
-// buildFilters() (app/ui/inventory.mjs ~lines 9-22) as data instead of DOM.
+// buildFilters() (app/ui/inventory.mts ~lines 9-22) as data instead of DOM.
 //
 // gearSkills is here for the same reason propKeys is: the Suit Builder's "Forbid skill bonuses"
-// chips and its floor/weight key list (ui/builder.mjs's renderProfile) need every skill that
+// chips and its floor/weight key list (ui/builder.mts's renderProfile) need every skill that
 // appears as a gear bonus ANYWHERE in the inventory, which — like propKeys — is only computable
 // from the full item set. Since GET /api/inventory stopped shipping that (Task 5), this facet is
 // the one place left for the page to get it, instead of calling vault-lib.mts's gearSkills()

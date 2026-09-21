@@ -253,7 +253,7 @@ test("[fast] runtime: 12 slots x 30 candidates under 2s", (t) => {
 });
 
 // A realistic run, printed as a diagnostic so the output is inspectable by eye (`node --test` shows
-// diagnostics; plain `node scripts/optimizer-core.test.mjs` prints test results as TAP either way).
+// diagnostics; plain `node scripts/optimizer-core.test.mts` prints test results as TAP either way).
 test("[fast] sample run is inspectable (seed 2026)", (t) => {
   const { pools, current } = makeWorld(2026, 30);
   const r = optimizeSuit(pools, current, PROFILE, { seed: 2026 });

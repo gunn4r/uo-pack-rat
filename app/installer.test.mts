@@ -60,7 +60,7 @@ test("[fast] listAdapters finds tazuo with its three scripts and a summary menti
 
 // Phase 6 final review follow-up: capabilities.json's optional top-level `platform` field (see
 // docs/adapter-guide.md's "Platform restriction") must surface on the object listAdapters returns —
-// this is what app/ui/adapters.mjs's platformCompatible reads instead of hard-coding an adapter id.
+// this is what app/ui/adapters.mts's platformCompatible reads instead of hard-coding an adapter id.
 test("[fast] listAdapters surfaces razor-enhanced's platform:\"win32\" from its real capabilities.json", () => {
   const adapters = listAdapters(fakeMultiAdaptersDir());
   const razor = adapters.find((a) => a.id === "razor-enhanced");
