@@ -9,7 +9,7 @@ import { dirname, join } from "node:path";
 import {
   parseTooltip, classify, foldSnapshots, buildPools, requirementReport, totalsOf, propertyKeys, bagLabel, kindOf, groupByName, slayersOf, medableOf, weaponAllowed, settingsDiff, PROP_LABELS, effectiveProfile, resistSkillBonus, toOptItem, labelOf, builderKeys, migrateProfiles, templateFrom, TEMPLATE_KEYS, setRules, getRules, tagUnits,
 } from "./vault-lib.mts";
-import type { Item, Inventory, ItemLocation, ProfilesFile, RunSettings } from "./vault-lib.mts";
+import type { Item, Inventory, ItemLocation, ProfilesFile } from "./vault-lib.mts";
 import { upgradeScan, TAZUO_V1_CAPS } from "./scan-schema.mts";
 import { runKey, reusableRun, runSummary, normalizeRun } from "./runs-lib.mts";
 import type { SavedRun } from "./runs-lib.mts";
@@ -507,15 +507,8 @@ test("[fast] templateFrom snapshots the builder settings without race, STR limit
 test("[fast] template drift: settingsDiff between a template and a profile ignores race and STR, names real changes", () => {
   const tpl = templateFrom({ floors: { hci: 45 }, weights: { di: 6 }, lockedSlots: ["twoHanded"], weaponSkill: "archery" });
   const same = { ...tpl, race: "elf", strLimit: 95, excludeRoots: [1], template: "archer" };
-  // Source-type finding (reported, not fixed — out of scope here): vault-lib.mts's settingsDiff(a:
-  // RunSettings, b: RunSettings) declares weaponSkill?: string | undefined, but templateFrom() — the
-  // ONLY producer vault-lib.mts's own header comment names for exactly this call ("drift between the
-  // two is settingsDiff(templateFrom(template), templateFrom(profile))"), and what app/ui/builder.mjs's
-  // real settingsDiff(templateFrom(tpl), templateFrom(readControls())) call does — returns Template,
-  // whose weaponSkill is `string | null` (never undefined). RunSettings' weaponSkill likely needs
-  // `| null` added; casting at this real, documented call site rather than loosening the source.
-  assert.deepEqual(settingsDiff(tpl as RunSettings, templateFrom(same) as RunSettings), []);
-  const drift = settingsDiff(tpl as RunSettings, templateFrom({ ...same, floors: { hci: 40 }, allowOthersWorn: true, medOnly: true, lockedSlots: [] }) as RunSettings);
+  assert.deepEqual(settingsDiff(tpl, templateFrom(same)), []);
+  const drift = settingsDiff(tpl, templateFrom({ ...same, floors: { hci: 40 }, allowOthersWorn: true, medOnly: true, lockedSlots: [] }));
   assert.ok(drift.includes(`${PROP_LABELS.hci} floor 45 → 40`), JSON.stringify(drift));
   assert.ok(drift.includes("others' worn gear allowed"));
   assert.ok(drift.includes("meditation-safe only"));
