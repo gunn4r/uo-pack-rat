@@ -1,6 +1,6 @@
 # The Electron shell
 
-Two files. `main.mts` is the Electron main process: it opens one `BrowserWindow`, forks the actual Pack Rat server as a utility-process child, and is the only thing in this app that can talk to the OS (a native folder picker, opening a path in Finder, a single-instance lock). `server-entry.mts` is that child — it just calls `app/vault-server.mts`'s `startServer()`, the same function `scripts/start.mjs` uses for the bare `npm start` path, with one addition: a `host` object that relays `pickFolder`/`openPath` back to `main.mts` over `process.parentPort`, since a plain Node process has no dialog API of its own.
+Three files. `main.mts` is the Electron main process: it opens one `BrowserWindow`, forks the actual Pack Rat server as a utility-process child, and is the only thing in this app that can talk to the OS (a native folder picker, opening a path in Finder, a single-instance lock). `server-entry.mts` is that child — it just calls `app/vault-server.mts`'s `startServer()`, the same function `scripts/start.mjs` uses for the bare `npm start` path, with one addition: a `host` object that relays `pickFolder`/`openPath` back to `main.mts` over `process.parentPort`, since a plain Node process has no dialog API of its own. `protocol.mts` declares the message shapes that cross that `process.parentPort` channel (`ListeningMessage`, `HostRequestMessage`, `HostResultMessage`, `ServerErrorMessage`, `ShutdownMessage`); both files pull it in with `import type`, so it compiles to nothing at runtime.
 
 ## Why a utility process, not the main process
 
@@ -19,6 +19,12 @@ The server is a real zero-dependency `node:http` server with its own routes, SSE
 - `--data <dir>` (else `PACKRAT_DATA`, else `app.getPath("userData")`) — passed through to the server child as `PACKRAT_DATA`, and also used as Electron's own `userData` path (so a `--data <tmp>` run's single-instance lock, cache, etc. never collide with a real running instance).
 - `--demo` — forwarded to the server child unchanged (it's an argv flag there too, matching `app/config.mts`'s `resolveConfig`).
 - `--smoke` — after the window's first `did-finish-load`, reads `#status`'s text out of the page; if it's non-empty, prints `SMOKE OK <port>` and exits 0, otherwise `SMOKE FAIL <reason>` and exits 1 (a 30 s overall timeout counts as a failure too). This is what `scripts/shell-smoke.test.mts` drives — see `TESTING.md`.
+
+## Building before launch (dev only)
+
+`npm run desktop` builds the page first via its `predesktop` npm hook (`build:types` then `build:ui`). A bare `electron .` — or a globally installed `electron` binary — skips npm hooks entirely, so on a fresh clone nothing has built `app/dist/` yet and the server would 404 its own page, leaving the window blank with no explanation. `main.mts` self-heals this the same way `scripts/start.mjs` already does for the bare `npm start` path: as soon as `app.whenReady()` fires, and only when `!app.isPackaged`, it dynamically imports `scripts/build-schema-types.mts` and `scripts/build-ui.mjs` and runs them before forking the server child. The imports are dynamic, and live inside that `!app.isPackaged` branch, because `scripts/` never ships in the packaged app — only `scripts/optimizer-core.mts` does, per `package.json`'s `build.files` — so a packaged app must never even attempt to resolve them. This is `main.mts`'s job, not `server-entry.mts`'s: the packaged app's `server-entry.mts` has to stay loadable with no `scripts/` directory around it at all, ruling out any build step there, conditional or not.
+
+A build failure surfaces the same way the two existing failure paths in this file already do, rather than a third: under `--smoke` it's a `SMOKE FAIL build failed: <message>` stdout line and exit 1 (what `scripts/shell-smoke.test.mts` reads); otherwise it's `dialog.showErrorBox` naming the log file, followed by `app.quit()` — the same shape `onChildExit`'s give-up-after-one-restart branch already uses. Either way the window never opens on the broken page.
 
 ## Lifecycle
 

@@ -278,8 +278,42 @@ if (!app.requestSingleInstanceLock()) {
     shutdownChild().finally(() => app.quit());
   });
 
-  app.whenReady().then(() => {
+  app.whenReady().then(async () => {
     logLine(`shell: starting (demo=${demo} smoke=${smoke} dataDir=${dataDir})`);
+    if (!app.isPackaged) {
+      // `npm run desktop` builds the page first via its `predesktop` npm hook (build:types then
+      // build:ui — see scripts/start.mjs's comment for why the schema types have to come first).
+      // A bare `electron .` (or a globally installed `electron .`) skips npm hooks entirely, so on a
+      // fresh clone nothing has built app/dist/ yet and the server would 404 its own page — this
+      // mirrors scripts/start.mjs's self-heal for the browser path, here rather than in
+      // electron/server-entry.mts because scripts/ never ships in the packaged app (only
+      // scripts/optimizer-core.mts does, via package.json's build.files) and server-entry.mts's own
+      // module graph has to stay safe to load in a packaged app that lacks scripts/ entirely. The
+      // imports are dynamic and live inside this !app.isPackaged branch for the same reason: a
+      // packaged app must never even attempt to resolve scripts/build-ui.mjs.
+      try {
+        const { buildSchemaTypes } = await import("../scripts/build-schema-types.mts");
+        const { buildUi } = await import("../scripts/build-ui.mjs");
+        buildSchemaTypes();
+        buildUi();
+      } catch (e) {
+        const message = (e as Error)?.message || String(e);
+        logLine(`shell: build failed: ${message}`);
+        // Match the two existing failure idioms this file already uses rather than inventing a
+        // third: --smoke reports failures as a stdout line + a bare exit code (see runSmokeCheck and
+        // onChildExit's smoke branch, both read by scripts/shell-smoke.test.mts), everything else
+        // reports fatal startup problems with a native dialog naming the log file (onChildExit's
+        // give-up-after-one-restart branch).
+        if (smoke) {
+          console.log(`SMOKE FAIL build failed: ${message}`);
+          app.exit(1);
+        } else {
+          dialog.showErrorBox("Pack Rat", `Failed to build the app before launch. See the log at ${logPath}.\n\n${message}`);
+          app.quit();
+        }
+        return;
+      }
+    }
     if (smoke) {
       smokeTimer = setTimeout(() => {
         smokeDone = true;
