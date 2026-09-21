@@ -1,7 +1,7 @@
-// make-fixtures.mjs — regenerate app/fixtures/demo-*.json from the empirical model. Needs real scans in
+// make-fixtures.mts — regenerate app/fixtures/demo-*.json from the empirical model. Needs real scans in
 // the data directory (PACKRAT_DATA=./local). Output is deterministic for a given seed.
 //
-// generateScan() (see gen-inventory.mjs) hands back a flat scan: items live in scan.items (each with a
+// generateScan() (see gen-inventory.mts) hands back a flat scan: items live in scan.items (each with a
 // .container pointing at a root ground-chest serial), and scan.equipped is always []. Real character
 // scans do carry worn gear, so this script also PROMOTES a handful of the generated gear items — one
 // per optimizer slot — from scan.items into scan.equipped, so the fixtures exercise the fold's worn/
@@ -9,10 +9,11 @@
 import { writeFileSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import { learnModel, generateScan, readRealSnapshots, SCANS_DIR } from "./gen-inventory.mjs";
+import { learnModel, generateScan, readRealSnapshots, SCANS_DIR, type SynthItem } from "./gen-inventory.mts";
+import type * as VaultLib from "../vault-lib.mts";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
-const lib = await import(pathToFileURL(join(HERE, "..", "vault-lib.mts")).href);
+const lib = (await import(pathToFileURL(join(HERE, "..", "vault-lib.mts")).href)) as typeof VaultLib;
 const model = learnModel(readRealSnapshots(SCANS_DIR), lib);
 
 const SPECS = [
@@ -21,8 +22,8 @@ const SPECS = [
 ];
 
 // Pick up to `max` generated gear items, one per optimizer slot, to promote to "worn".
-function pickEquippable(items, max) {
-  const bySlot = new Map();
+function pickEquippable(items: (SynthItem & { container: number })[], max: number): (SynthItem & { container: number })[] {
+  const bySlot = new Map<string, SynthItem & { container: number }>();
   for (const it of items) {
     const parsed = lib.parseTooltip(it.tooltip);
     const cls = lib.classify(parsed.name, parsed, null);
@@ -33,7 +34,7 @@ function pickEquippable(items, max) {
   return [...bySlot.values()];
 }
 
-const scrub = (it) => { if (it.tooltip) it.tooltip = it.tooltip.map((l) => l.replace(/^Crafted By .*/i, "Crafted By Nobody")); };
+const scrub = (it: SynthItem): void => { if (it.tooltip) it.tooltip = it.tooltip.map((l) => l.replace(/^Crafted By .*/i, "Crafted By Nobody")); };
 
 for (const s of SPECS) {
   const scan = generateScan(model, { n: s.n, gearFraction: 0.5, seed: s.seed, serialBase: 0x70000000 + s.seed * 0x10000, scannedAt: "2026-01-01T12:00:00", lib });

@@ -13,10 +13,10 @@
 // a default-parameter expression, evaluated lazily at call time, not at import time), and
 // app/ui/api.mts's `sessionStorage` read is already wrapped in its own try/catch with a fallback for
 // exactly this "no Web Storage global" case. So a minimal `globalThis.localStorage` stub — imported
-// FIRST, see ../scripts/localstorage-shim-for-tests.mjs for why it has to be its own module rather than a plain
+// FIRST, see ../scripts/localstorage-shim-for-tests.mts for why it has to be its own module rather than a plain
 // statement in this file — is enough to run bridge.mts's pure functions under plain node:test — no
 // real DOM, no Playwright.
-import "../scripts/localstorage-shim-for-tests.mjs";
+import "../scripts/localstorage-shim-for-tests.mts";
 
 import test from "node:test";
 import assert from "node:assert/strict";

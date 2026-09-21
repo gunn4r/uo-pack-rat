@@ -1,4 +1,4 @@
-// gen-inventory.mjs — synthetic scan generator for the suit-builder scale benchmark.
+// gen-inventory.mts — synthetic scan generator for the suit-builder scale benchmark.
 //
 // Learns the empirical shape of the REAL gear in the data directory's scans/*.json (per slot: which tooltip lines co-occur,
 // the value range of every stat line, tag frequency, rarity, STR requirements, two-handedness, weapon skill lines)
@@ -11,7 +11,7 @@
 // dropped, and tags are kept or replaced by frequency. Non-gear items are verbatim copies of real non-gear items
 // (reagents, potions, scrolls, resources ...) with fresh serials. Nothing here touches the data directory's scans/.
 //
-//   node app/bench/gen-inventory.mjs --n 5000 --gear 0.3 --seed 1 --out <dir>
+//   node app/bench/gen-inventory.mts --n 5000 --gear 0.3 --seed 1 --out <dir>
 //
 // Library use: learnModel(snapshots, lib) -> model; generateScan(model, {n, gearFraction, seed}) -> scan object.
 import { readFileSync, readdirSync, writeFileSync, mkdirSync } from "node:fs";
@@ -20,6 +20,8 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import { resolveConfig } from "../config.mts";
 import { upgradeScan } from "../scan-schema.mts";
 import { loadRules } from "../rules.mts";
+import type * as VaultLib from "../vault-lib.mts";
+import type { ScanV2 } from "../schema/types.d.mts";
 
 // Real scans on disk and the synthetic scans this file generates are both raw v1 (packrat-scanner.py's own
 // shape) — every fold below upgrades to v2 first, since foldSnapshots (Task 1) now requires it and throws otherwise.
@@ -31,14 +33,14 @@ const HERE = dirname(fileURLToPath(import.meta.url));
 export const ROOT = dirname(dirname(HERE));
 export const SCANS_DIR = resolveConfig().paths.scans;
 
-export function mulberry32(seed) {
+export function mulberry32(seed: number): () => number {
   let a = seed >>> 0;
   return () => { a = (a + 0x6d2b79f5) >>> 0; let t = a; t = Math.imul(t ^ (t >>> 15), t | 1); t ^= t + Math.imul(t ^ (t >>> 7), t | 61); return ((t ^ (t >>> 14)) >>> 0) / 4294967296; };
 }
-const pick = (rnd, arr) => arr[Math.floor(rnd() * arr.length)];
+const pick = <T,>(rnd: () => number, arr: T[]): T => arr[Math.floor(rnd() * arr.length)]!;   // every call site's arr is non-empty by construction (see each call below)
 
-export function readRealSnapshots(dir = SCANS_DIR) {
-  return readdirSync(dir).filter((f) => f.endsWith(".json")).sort().map((f) => JSON.parse(readFileSync(join(dir, f), "utf8")));
+export function readRealSnapshots(dir: string = SCANS_DIR): unknown[] {
+  return readdirSync(dir).filter((f) => f.endsWith(".json")).sort().map((f): unknown => JSON.parse(readFileSync(join(dir, f), "utf8")));
 }
 
 // Lines that are NOT stats: kept verbatim on a copy (weight, durability, damage spread, speed, range, uses ...).
@@ -46,7 +48,7 @@ const FIXED_LINE_RE = /^(weight|durability|weapon damage|weapon speed|range|uses
 const NUM_LINE_RE = /^(.*?)(-?\d+)(%?)$/;
 
 // A stat line = a line the parser turns into an optimizer property or a skill bonus ("Anatomy +15").
-function statTemplate(line, lib) {
+function statTemplate(line: string, lib: typeof VaultLib): { template: string; value: number } | null {
   if (FIXED_LINE_RE.test(line)) return null;
   const m = line.match(NUM_LINE_RE);
   if (!m) return null;
@@ -54,29 +56,69 @@ function statTemplate(line, lib) {
   const isProp = Object.keys(parsed.props).some((k) => k !== "tagPenalty");
   const isSkill = Object.keys(parsed.extras).some((k) => lib.SKILL_NAMES.includes(k));
   if (!isProp && !isSkill) return null;
-  return { template: `${m[1]}#${m[3]}`, value: +m[2] };
+  return { template: `${m[1]!}#${m[3]!}`, value: +m[2]! };   // NUM_LINE_RE has exactly 3 capture groups; a successful match always populates all three
 }
 const TAG_LINES = ["Cursed", "Brittle", "Antique", "Prized", "Massive", "Unwieldy"];
 
-export function learnModel(snapshots, lib) {
-  const inv = lib.foldSnapshots(snapshots.map((s) => upgradeScan(s, { shard: BENCH_SHARD })));
+interface GearEntry {
+  slot: string;
+  name: string;
+  lines: string[];
+  statIdx: number[];
+  strReq: number;
+  graphic: number | null | undefined;
+  hue: number | null | undefined;
+  tags: string[];
+}
+interface NonGearEntry {
+  lines: string[];
+  amount: number;
+  graphic: number | null | undefined;
+  hue: number | null | undefined;
+  name: string;
+  // Never actually set by learnModel below — synthNonGear's `t.tooltip ? ... : t.lines.slice()` check
+  // is dead-branch-always-false as a result, faithfully preserved from the original JS rather than fixed.
+  tooltip?: string[] | undefined;
+}
+interface SlotStats {
+  values: Record<string, number[]>;
+  freq: Record<string, number>;
+  str: number[];
+  tags: Record<string, number>;
+  n: number;
+  freqList: { template: string; count: number }[];
+  tagList: { tag: string; count: number }[];
+  tagRate: number;
+}
+export interface Model {
+  gear: GearEntry[];
+  nonGear: NonGearEntry[];
+  slotStats: Record<string, SlotStats>;
+  realItems: number;
+  realGear: number;
+  realNonGear: number;
+  slotCounts: Record<string, number>;
+}
+
+export function learnModel(snapshots: unknown[], lib: typeof VaultLib): Model {
+  const inv = lib.foldSnapshots(snapshots.map((s) => upgradeScan(s, { shard: BENCH_SHARD }) as ScanV2));   // bench-only: real snapshots come from <dataDir>/scans/, already validateScan()-checked by watcher.mts on the way in; synthetic ones are this repo's own generateScan() output below — never re-validated here
   const items = Object.values(inv.items);
-  const gear = [], nonGear = [];
-  const slotStats = {};   // slot -> { values: {template -> [numbers]}, freq: {template -> count}, str: [numbers], tags: {tag -> count}, n }
+  const gear: GearEntry[] = [], nonGear: NonGearEntry[] = [];
+  const slotStats: Record<string, SlotStats> = {};   // slot -> { values: {template -> [numbers]}, freq: {template -> count}, str: [numbers], tags: {tag -> count}, n }
   for (const it of items) {
     if (!it.lines || !it.lines.length) continue;
     if (it.kind === "container") continue;
     if (it.gear && it.slot) {
       const lines = it.lines.slice();
-      const stats = [], fixed = [], tags = [];
+      const stats: { idx: number; template: string; value: number }[] = [], fixed: string[] = [], tags: string[] = [];
       for (let i = 1; i < lines.length; i++) {
-        const l = lines[i];
+        const l = lines[i]!;
         if (TAG_LINES.includes(l)) { tags.push(l); continue; }
         const st = statTemplate(l, lib);
         if (st) stats.push({ idx: i, ...st }); else fixed.push(l);
       }
-      gear.push({ slot: it.slot, name: lines[0], lines, statIdx: stats.map((s) => s.idx), strReq: it.strReq, graphic: it.graphic, hue: it.hue, tags });
-      const ss = (slotStats[it.slot] ||= { values: {}, freq: {}, str: [], tags: {}, n: 0 });
+      gear.push({ slot: it.slot, name: lines[0]!, lines, statIdx: stats.map((s) => s.idx), strReq: it.strReq, graphic: it.graphic, hue: it.hue, tags });
+      const ss = (slotStats[it.slot] ||= { values: {}, freq: {}, str: [], tags: {}, n: 0 } as unknown as SlotStats);   // freqList/tagList/tagRate are filled in by the loop below, before anything reads them
       ss.n++;
       ss.str.push(it.strReq || 0);
       for (const s of stats) { (ss.values[s.template] ||= []).push(s.value); ss.freq[s.template] = (ss.freq[s.template] || 0) + 1; }
@@ -94,21 +136,31 @@ export function learnModel(snapshots, lib) {
     slotCounts: Object.fromEntries(Object.entries(slotStats).map(([s, v]) => [s, v.n])) };
 }
 
-const weighted = (rnd, list, key) => {
+const weighted = <T extends { count: number }>(rnd: () => number, list: T[], key: "count"): T => {
   let total = 0; for (const e of list) total += e[key];
   let r = rnd() * total;
   for (const e of list) { r -= e[key]; if (r <= 0) return e; }
-  return list[list.length - 1];
+  return list[list.length - 1]!;
 };
 
-function synthGear(model, rnd, serial, lib) {
+export interface SynthItem {
+  serial: number;
+  name: string;
+  graphic: number | null | undefined;
+  hue: number | null | undefined;
+  amount: number;
+  tooltip: string[];
+  slot?: string | undefined;
+}
+
+function synthGear(model: Model, rnd: () => number, serial: number, lib: typeof VaultLib): SynthItem {
   const t = pick(rnd, model.gear);
-  const ss = model.slotStats[t.slot];
+  const ss = model.slotStats[t.slot]!;   // every t.slot came from a GearEntry learnModel derived alongside this same slotStats entry
   const lines = t.lines.slice();
-  const present = new Set();
+  const present = new Set<string>();
   // resample stat values (bootstrap from the slot's observed values for that line, then jitter)
   for (const i of t.statIdx) {
-    const st = statTemplate(lines[i], lib);
+    const st = statTemplate(lines[i]!, lib);   // t.statIdx are indices into t.lines, captured at model-build time from this same array
     if (!st) continue;
     present.add(st.template);
     if (rnd() < 0.75) {
@@ -124,7 +176,7 @@ function synthGear(model, rnd, serial, lib) {
   if (rnd() < 0.25 && ss.freqList.length) {
     const e = weighted(rnd, ss.freqList, "count");
     if (!present.has(e.template)) {
-      const v = Math.max(1, Math.round(pick(rnd, ss.values[e.template]) * (0.75 + rnd() * 0.5)));
+      const v = Math.max(1, Math.round(pick(rnd, ss.values[e.template]!) * (0.75 + rnd() * 0.5)));   // e.template came from ss.freqList, built from the same keys as ss.values
       const at = Math.max(1, lines.findIndex((l) => /^durability/i.test(l)));
       lines.splice(at, 0, e.template.replace("#", String(v)));
     }
@@ -133,7 +185,7 @@ function synthGear(model, rnd, serial, lib) {
   const kept = lines.filter((l) => !TAG_LINES.includes(l));
   const tags = t.tags.filter(() => rnd() < 0.7);
   if (!tags.length && ss.tagList.length && rnd() < ss.tagRate * 0.5) tags.push(weighted(rnd, ss.tagList, "count").tag);
-  const out = [kept[0], ...tags, ...kept.slice(1)];
+  const out = [kept[0]!, ...tags, ...kept.slice(1)];   // kept always has at least the item's own name line (never a TAG_LINE)
   // STR requirement: half the time re-drawn from the slot's list
   if (rnd() < 0.5) {
     const i = out.findIndex((l) => /^strength requirement/i.test(l));
@@ -143,28 +195,49 @@ function synthGear(model, rnd, serial, lib) {
   return { serial, name: t.name, graphic: t.graphic, hue: t.hue, amount: 1, tooltip: out, slot: t.slot };
 }
 
-function synthNonGear(model, rnd, serial) {
+function synthNonGear(model: Model, rnd: () => number, serial: number): SynthItem {
   const t = pick(rnd, model.nonGear);
   const amount = t.amount > 1 ? Math.max(1, Math.round(t.amount * (0.5 + rnd()))) : 1;
   const tooltip = t.tooltip ? t.tooltip.slice() : t.lines.slice();
-  if (amount > 1) tooltip[0] = `${amount} ${tooltip[0].replace(/^\d+\s+/, "")}`;
+  if (amount > 1) tooltip[0] = `${amount} ${tooltip[0]!.replace(/^\d+\s+/, "")}`;   // tooltip is a non-empty items[].lines by construction (learnModel's own !it.lines.length guard)
   return { serial, name: t.name, graphic: t.graphic, hue: t.hue, amount, tooltip };
+}
+
+export interface SynthRoot { serial: number; kind: string; name: string }
+export interface SynthContainer {
+  serial: number; name: string; kind: string; root: number; parent: null;
+  pos: { x: number; y: number; z: number }; tooltip: string[];
+}
+export interface SynthScan {
+  version: 1;
+  character: string;
+  scannedAt: string;
+  stats: { str: number; dex: number; int: number };
+  skills: Record<string, never>;
+  maxes: { hits: number; stam: number; mana: number };
+  resists: { phys: number; fire: number; cold: number; poison: number; energy: number };
+  position: { x: number; y: number };
+  equipped: SynthItem[];
+  roots: SynthRoot[];
+  containers: Record<string, SynthContainer>;
+  items: (SynthItem & { container: number })[];
+  _bench: { n: number; gearFraction: number; seed: number; gearCount: number };
 }
 
 // One scan of n synthetic items spread over ground chests of 120, written by pseudo-character "_bench" (the fold
 // does not list "_" characters, so no fake character appears; its roots are fresh serials so nothing real is replaced).
-export function generateScan(model, { n, gearFraction = 0.3, seed = 1, serialBase = 0x70000000, scannedAt = "2026-09-12T23:59:00", lib }) {
+export function generateScan(model: Model, { n, gearFraction = 0.3, seed = 1, serialBase = 0x70000000, scannedAt = "2026-09-12T23:59:00", lib }: { n: number; gearFraction?: number; seed?: number; serialBase?: number; scannedAt?: string; lib: typeof VaultLib }): SynthScan {
   const rnd = mulberry32(seed);
   const CHEST = 120;
   const nChests = Math.max(1, Math.ceil(n / CHEST));
-  const roots = [], containers = {};
+  const roots: SynthRoot[] = [], containers: Record<string, SynthContainer> = {};
   for (let c = 0; c < nChests; c++) {
     const serial = serialBase + c;
     roots.push({ serial, kind: "ground", name: "Metal Chest" });
     containers[String(serial)] = { serial, name: "Metal Chest", kind: "ground", root: serial, parent: null, pos: { x: 1000 + (c % 20), y: 1000 + Math.floor(c / 20), z: 0 },
       tooltip: ["Metal Chest", "Weight: 10 Stones", `Contents: ${Math.min(CHEST, n - c * CHEST)}/125 Items, 100 Stones`] };
   }
-  const items = [];
+  const items: (SynthItem & { container: number })[] = [];
   let serial = serialBase + nChests, gearCount = 0;
   for (let i = 0; i < n; i++) {
     const container = serialBase + Math.floor(i / CHEST);
@@ -180,10 +253,10 @@ export function generateScan(model, { n, gearFraction = 0.3, seed = 1, serialBas
 }
 
 if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
-  const arg = (k, d) => { const i = process.argv.indexOf(`--${k}`); return i > 0 ? process.argv[i + 1] : d; };
+  const arg = <D extends string | number>(k: string, d: D): string | D => { const i = process.argv.indexOf(`--${k}`); return i > 0 ? process.argv[i + 1]! : d; };
   const n = +arg("n", 1000), gearFraction = +arg("gear", 0.3), seed = +arg("seed", 1);
   const out = arg("out", process.env.TMPDIR || "/tmp");
-  const lib = await import(pathToFileURL(join(ROOT, "app", "vault-lib.mts")).href);
+  const lib = (await import(pathToFileURL(join(ROOT, "app", "vault-lib.mts")).href)) as typeof VaultLib;
   lib.setRules(loadRules(BENCH_SHARD));
   const model = learnModel(readRealSnapshots(), lib);
   const scan = generateScan(model, { n, gearFraction, seed, lib });

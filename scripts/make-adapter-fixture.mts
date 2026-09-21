@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// make-adapter-fixture.mjs <real-scan.json> <out.json> — turns one real scan file (v1 or v2, from
+// make-adapter-fixture.mts <real-scan.json> <out.json> — turns one real scan file (v1 or v2, from
 // local/scans/, never committed) into an anonymised fixture safe to commit and fold in tests.
 // Upgrades to v2 via upgradeScan, then: character -> "Fixture", position -> {x:1,y:1}, every
 // container pos -> {x:1,y:1,z:0}, every serial remapped in order of first appearance to
@@ -10,26 +10,51 @@
 // whatever an older real scan happened to carry. Prints item/container/root counts.
 import { readFileSync, writeFileSync } from "node:fs";
 import { upgradeScan } from "../app/scan-schema.mts";
+import type { ScanV2, ScanV2AdapterCapabilities } from "../app/schema/types.d.mts";
 
 const [, , inPath, outPath] = process.argv;
 if (!inPath || !outPath) {
-  console.error("usage: node scripts/make-adapter-fixture.mjs <real-scan.json> <out.json>");
+  console.error("usage: node scripts/make-adapter-fixture.mts <real-scan.json> <out.json>");
   process.exit(1);
 }
 
-const raw = JSON.parse(readFileSync(inPath, "utf8"));
-const scan = upgradeScan(raw, {});
+// scan.containers is looser in the generated ScanV2 type (Record<string, unknown> — the schema
+// itself declares containers as `{type: "object"}` with no nested `properties`) than what this
+// script actually reads/writes on each entry; FixtureScan narrows just that one field.
+interface FixtureContainer {
+  serial: number;
+  parent?: number | string | null | undefined;
+  root: number | string;
+  pos?: { x: number; y: number; z: number } | undefined;
+  tooltip?: string[] | undefined;
+  [key: string]: unknown;
+}
+type FixtureScan = Omit<ScanV2, "containers"> & { containers: Record<string, FixtureContainer> };
 
-const serialMap = new Map();
+const raw: unknown = JSON.parse(readFileSync(inPath, "utf8"));
+// This is the one caller in the repo that hands upgradeScan()'s output straight to code that reads
+// it as if it were a validated ScanV2 without ever calling validateScan() — unlike the bench
+// scripts (app/bench/gen-inventory.mts and friends), which only ever read from the app's own
+// watcher-validated <dataDir>/scans/ directory or this repo's own synthetic data, `inPath` here is
+// an arbitrary file a developer names on the command line (a raw capture, per this file's own
+// header comment). That is a real gap — a malformed real scan would surface as a confusing failure
+// somewhere downstream (this script, or later app/contracts.test.mts against the fixture it wrote)
+// rather than a clear "this file doesn't validate" message right here — but adding validateScan()
+// is a behaviour change, and is deliberately NOT made in this migration; see the task-12 report.
+const scan = upgradeScan(raw, {}) as FixtureScan;
+
+const serialMap = new Map<number, number>();
 let next = 0x40000000;
-function remap(s) {
+function remap(s: number | string): number;
+function remap(s: number | string | null | undefined): number | null | undefined;
+function remap(s: number | string | null | undefined): number | null | undefined {
   if (s == null) return s;
   const n = Number(s);
   if (!serialMap.has(n)) serialMap.set(n, next++);
-  return serialMap.get(n);
+  return serialMap.get(n)!;   // just set above if it wasn't already there
 }
 
-function scrubTooltip(lines) {
+function scrubTooltip(lines: string[] | undefined): string[] {
   return (lines || []).map((l) => {
     if (/^Crafted By /.test(l)) return "Crafted By Nobody";
     // Treasure-map decode credit line (UO Alive) — same shape/risk as "Crafted By".
@@ -52,10 +77,10 @@ for (const it of scan.equipped || []) remap(it.serial);
 
 const roots = (scan.roots || []).map((r) => ({ ...r, serial: remap(r.serial) }));
 
-const containers = {};
+const containers: Record<string, FixtureContainer> = {};
 for (const c of Object.values(scan.containers || {})) {
   const serial = remap(c.serial);
-  const next_ = {
+  const next_: FixtureContainer = {
     ...c,
     serial,
     parent: c.parent == null ? null : remap(c.parent),
@@ -73,7 +98,8 @@ const equipped = (scan.equipped || []).map((it) => ({
   ...it, serial: remap(it.serial), tooltip: scrubTooltip(it.tooltip),
 }));
 
-const CAPABILITIES = JSON.parse(readFileSync(new URL("../adapters/tazuo/capabilities.json", import.meta.url), "utf8"));
+interface AdapterCapabilitiesFile { adapter: string; version: string; capabilities: ScanV2AdapterCapabilities }
+const CAPABILITIES = JSON.parse(readFileSync(new URL("../adapters/tazuo/capabilities.json", import.meta.url), "utf8")) as AdapterCapabilitiesFile;
 
 const { account, ...rest } = scan;
 const fixture = {
