@@ -10,7 +10,7 @@ Every adapter lives at `adapters/<id>/` and ships four things:
 |---|---|
 | One or more scripts | The actual client-side code: at minimum something that produces scan files. `adapters/tazuo/` ships three — a full scanner, a quick refresh (stats/skills/worn/backpack only, for after a gearing session), and a bridge — but a minimal adapter can ship just a scanner. |
 | `README.md` | Install steps (where the scripts go), what to press and when, and the adapter's limits (what it can't read, what it needs standing near). Written for a player, not a developer. |
-| `capabilities.json` | This adapter's contract, as data: `{adapter, version, transport, platform?, capabilities: {...}}` matching the shape of a scan's own `adapter.capabilities` (see `docs/scan-schema.md`). The scripts' own `CAPABILITIES` dict (whatever they're written in) must match the `capabilities` object exactly — that's what the contract test checks. `platform` is optional — see "Platform restriction," below — and not part of the `capabilities` object itself, so the contract test's `capabilities`-only comparison doesn't touch it. |
+| `capabilities.json` | This adapter's contract, as data: `{adapter, version, transport, platform?, actions, capabilities: {...}}`, where `capabilities` matches the shape of a scan's own `adapter.capabilities` (see `docs/scan-schema.md`). The scripts' own `CAPABILITIES` dict (whatever they're written in) must match the `capabilities` object exactly — that's what the contract test checks. `platform` is optional — see "Platform restriction," below — and `actions` is required — see "Declared actions," below. Neither is part of the `capabilities` object itself, so the contract test's `capabilities`-only comparison doesn't touch them. |
 | `fixture.scan.json` | One anonymised, real scan — see Fixture rules, below — that exercises this adapter's quirks: nested containers, worn items, whatever's distinctive about what this client can and can't see. |
 
 Ship all four and the contract test (`app/contracts.test.mts`) picks the adapter up automatically — nothing to register anywhere else. An `adapters/<id>/` directory missing either `capabilities.json` or `fixture.scan.json` is simply skipped by that test file (not every subdirectory has to be a finished adapter, but one that claims to be needs both).
@@ -53,6 +53,23 @@ One more is on the roadmap, for a host that could act on its own but still can't
 - **HTTP to localhost (roadmap).** For a client that can make outbound requests — `POST` a scan directly to the running server, long-poll for bridge commands, `POST` results back. Same schemas, different delivery.
 
 Whichever transport an adapter uses, the scan and bridge **schemas themselves don't change** — only how the bytes get from the game client to the app's data directory.
+
+## Declared actions
+
+`capabilities` says what an adapter can **read** — which layers, whether it sees the bank, the ground, nested bags — plus a `bridge` list of action names. None of that says the adapter also **walks the character, opens containers and moves items**. A player or a reviewer reading `capabilities.json` could not tell that installing an adapter grants a movement primitive, which is the sort of thing that should be declared rather than discovered.
+
+`actions` is that declaration: a required top-level array naming, in this app's own vocabulary, what the adapter's scripts do in the world. The terms are fixed, and `app/adapters.test.mts` holds them as a contract in both directions — an adapter that calls one of these primitives without declaring it fails the build, and one that declares a term no script calls fails too.
+
+| Term | Means | The client calls behind it |
+|---|---|---|
+| `open-container` | Double-clicking a container to open it, so its contents reach the client. | `API.UseObject`, `Items.WaitForContents` |
+| `move-to-own-backpack` | Moving one item into the player's own backpack. The destination is hard-coded in every adapter and is deliberately **not** a protocol field (`docs/bridge-protocol.md`) — keep it that way. | `API.MoveItem`, `Items.Move` |
+| `pathfind-local` | Walking the character, bounded by the bridge's own distance cap and pathfind timeout. | `API.Pathfind`, `API.PathfindEntity`, `Player.PathFindTo` |
+| `client-local-highlight` | Overhead text, a marked tile, a recolour — visible to the player and nobody else. Never a speech packet (see "adapters never speak publicly" in `docs/bridge-protocol.md`). | `API.HeadMsg`, `API.MarkTile`, `Player.HeadMessage`, `Items.SetColor` |
+
+A read-only adapter declares `"actions": []`, and an adapter with `bridge: []` must — the test enforces that pairing. `adapters/classicuo-web/` is the example: it reads and prints, and does nothing in the world at all.
+
+Adding a new term means adding it to `ACTION_PRIMITIVES` in `app/adapters.test.mts` with the call pattern that means it, and documenting it in the table above. A world-acting primitive with no term is the case the contract exists to catch.
 
 ## Platform restriction
 
