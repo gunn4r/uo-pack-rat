@@ -34,9 +34,9 @@
     "dist": "electron-builder --publish never",
     "dist:dir": "electron-builder --dir --publish never",
     "dist:publish": "electron-builder --publish always",
-    "test": "node scripts/test-runner.mjs",
-    "test:smoke": "node scripts/test-runner.mjs --smoke",
-    "test:fast": "node scripts/test-runner.mjs --fast"
+    "test": "node scripts/test-runner.mts",
+    "test:smoke": "node scripts/test-runner.mts --smoke",
+    "test:fast": "node scripts/test-runner.mts --fast"
   },
   "dependencies": {
     "highs": "1.15.3"

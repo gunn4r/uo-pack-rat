@@ -12,7 +12,7 @@
 // (from capabilities.json, surfaced by app/installer.mts's listAdapters), never a hard-coded adapter
 // id — several cases below build a "razor-enhanced"-id object with no `platform` field specifically to
 // prove that (it must read as compatible everywhere, since nothing here names it a restriction).
-// Lives at the top level of app/ (not app/ui/) because scripts/test-runner.mjs only globs
+// Lives at the top level of app/ (not app/ui/) because scripts/test-runner.mts only globs
 // app/*.test.mjs — app/ui/adapters.mjs is deliberately DOM-free so it can be imported directly under
 // plain node:test, unlike the rest of ui/*.mjs (which import ui/store.mjs and touch localStorage at
 // module scope).

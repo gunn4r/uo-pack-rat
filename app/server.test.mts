@@ -802,7 +802,7 @@ test("[fast] a user rules file named differently than its id overrides a builtin
 // Task 4: localhost security — token, Host/Origin, profiles size cap + schema, one job per
 // X-Client-Id, stack-free 500s. A second, dedicated server with --token "t0ken", so the bare `srv`
 // above (used by every test above this line) stays token-free and untouched. Flat test()s, not a
-// describe() block: the test runner (scripts/test-runner.mjs) only tallies nesting-0 tests, so a
+// describe() block: the test runner (scripts/test-runner.mts) only tallies nesting-0 tests, so a
 // describe() would fold all of these into a single pass/fail and drop them from the per-test count.
 let tsrv: ServerHandle, tdir: string;
 before(async () => {

@@ -27,7 +27,7 @@ A fixture is a real scan, scrubbed, not a hand-written one — real data exercis
 - `account` dropped entirely.
 - `stats`/`maxes`/`resists`/`skills` kept as-is — they're not personally identifying and the fold needs realistic numbers.
 
-`adapters/tazuo/fixture.scan.json` was generated this way with `scripts/make-adapter-fixture.mjs <real-scan.json> <out.json>` from a real scan in `local/scans/` (a developer-only, git-ignored folder — never committed) — pick the source scan with the most nested containers for the best coverage. Before committing a regenerated fixture, sanity-check by eye: `grep -c "<any real character name>" adapters/<id>/fixture.scan.json` must print `0`, and `grep -i "crafted by\|engraved" adapters/<id>/fixture.scan.json` should show only the scrubbed `Nobody`/`Fixture` placeholders.
+`adapters/tazuo/fixture.scan.json` was generated this way with `scripts/make-adapter-fixture.mts <real-scan.json> <out.json>` from a real scan in `local/scans/` (a developer-only, git-ignored folder — never committed) — pick the source scan with the most nested containers for the best coverage. Before committing a regenerated fixture, sanity-check by eye: `grep -c "<any real character name>" adapters/<id>/fixture.scan.json` must print `0`, and `grep -i "crafted by\|engraved" adapters/<id>/fixture.scan.json` should show only the scrubbed `Nobody`/`Fixture` placeholders.
 
 ## How the contract test runs over your fixture
 
