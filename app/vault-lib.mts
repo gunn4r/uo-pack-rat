@@ -524,6 +524,14 @@ export interface OptItem {
   props: PropMap;
   twoHanded?: true | undefined;
 }
+// buildPools() only ever stores an item after `!it.slot` has already sent it to `continue` — every
+// item it hands the solver has passed that filter, so its slot is honestly a string, not the plain
+// OptItem's `string | null`. scripts/optimizer-core.mts declares its own (unexported) OptItem with a
+// required, non-null `slot` — the two are independently declared (the core is a paste-able file with
+// no imports; see its own header comment) describing the same runtime objects, and they already
+// drifted once with nothing to catch it (app/solver.test.mts's compile-time assignability guard, next
+// to its own note on the cast this boundary needs, is what catches it now).
+export type PooledOptItem = OptItem & { slot: string };
 export interface BuildPoolsOptions {
   allowOthersWorn?: boolean | undefined;
   strength?: number | undefined;
@@ -538,18 +546,21 @@ export interface SkippedLists {
   str: Item[]; tags: Item[]; worn: Item[]; roots: Item[]; gargoyle: Item[]; nonMed: Item[]; weapon: Item[]; skill: Item[];
 }
 export interface BuildPoolsResult {
-  pools: Partial<Record<string, OptItem[]>>;
-  current: Partial<Record<string, OptItem>>;
+  pools: Partial<Record<string, PooledOptItem[]>>;
+  current: Partial<Record<string, PooledOptItem>>;
   skipped: SkippedLists;
   blocked: string[];
 }
 export function buildPools(inv: Inventory, character: string, opts: BuildPoolsOptions = {}): BuildPoolsResult {
   const { allowOthersWorn = false, strength = Infinity, excludeTags = [], excludeRoots = [], excludeGargoyle = getRules().raceLock.gargoyleOnly, medOnly = false, weaponSkill = null, excludeSkills = [] } = opts;
-  const pools: Partial<Record<string, OptItem[]>> = {}, current: Partial<Record<string, OptItem>> = {}, skipped: SkippedLists = { str: [], tags: [], worn: [], roots: [], gargoyle: [], nonMed: [], weapon: [], skill: [] };
+  const pools: Partial<Record<string, PooledOptItem[]>> = {}, current: Partial<Record<string, PooledOptItem>> = {}, skipped: SkippedLists = { str: [], tags: [], worn: [], roots: [], gargoyle: [], nonMed: [], weapon: [], skill: [] };
   const exRoots = new Set(excludeRoots.map(Number));
   for (const it of Object.values(inv.items)) {
     if (!it.gear || !it.slot || !OPTIMIZER_SLOTS.includes(it.slot)) continue;
-    const opt = toOptItem(it);
+    // toOptItem's own return type is the plain OptItem (slot: string | null) — this cast is the one
+    // place that fact narrows to PooledOptItem, backed by the `!it.slot` check just above (no runtime
+    // change: opt.slot is it.slot, already known non-null here).
+    const opt = toOptItem(it) as PooledOptItem;
     if (it.equippedBy === character) { if (!current[it.slot]) current[it.slot] = opt; }
     if (it.equippedBy && it.equippedBy !== character && !allowOthersWorn) { skipped.worn.push(it); continue; }
     if (excludeGargoyle && it.gargoyle) { skipped.gargoyle.push(it); continue; }

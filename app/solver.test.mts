@@ -9,7 +9,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { dirname, join } from "node:path";
-import { buildPools, effectiveProfile, setRules, foldSnapshots, type ProfilesFile, type Template } from "./vault-lib.mts";
+import { buildPools, effectiveProfile, setRules, foldSnapshots, type ProfilesFile, type Template, type BuildPoolsResult } from "./vault-lib.mts";
 import * as VaultLib from "./vault-lib.mts";
 import { upgradeScan } from "./scan-schema.mts";
 import type { ScanV2 } from "./schema/types.d.mts";
@@ -44,17 +44,38 @@ const templateNames = Object.keys(defaultProfiles.templates!);
 // of the shipped default templates: `overrides` land on the template (before effectiveProfile), so
 // e.g. `{ overrides: { floors: { ...template.floors, luck: 5000 } } }` adds an extra hard floor.
 //
-// fixturePools/fixtureCurrent are vault-lib.mts's OptItem-based shapes (buildPools's own return
-// type); the core's own OptItem (unexported, derived via Parameters<>/ReturnType<> on
-// Core.optimizeSuit — see app/exact-solver.mts's header note) is structurally a shade stricter in
-// places (e.g. a required, non-null `slot`) even though every value here is the same runtime
-// object either way, so the cast is the one place this file crosses that boundary.
+// fixturePools/fixtureCurrent are vault-lib.mts's PooledOptItem-based shapes (buildPools's own return
+// type, honestly typed with a required, non-null `slot` — see vault-lib.mts's own comment on
+// PooledOptItem). The cast below is still needed, but for a narrower reason now: OptPools/OptAssignment
+// (derived via Parameters<> on Core.optimizeSuit — see app/exact-solver.mts's header note) are plain
+// `Record`s, while buildPools's own return type is a `Partial<Record<...>>` (a slot with no candidates
+// is simply absent, not present with an empty array) — that optional-vs-required container shape is
+// what the cast crosses now, not an item-level mismatch. The guard below asserts the item level stays
+// aligned on its own.
 function cell(profileName: string, { soft = [], overrides = {} }: { soft?: string[] | undefined; overrides?: Partial<Template> | undefined } = {}): { pools: OptPools; current: OptAssignment; profile: OptProfile } {
   const template = defaultProfiles.templates![profileName]!;
   const p = { ...template, softFloors: [...soft], ...overrides };
   const profile = effectiveProfile(p, inv.characters.Fixture!);
   return { pools: fixturePools as unknown as OptPools, current: fixtureCurrent as unknown as OptAssignment, profile };
 }
+
+// Compile-time-only guard (review follow-up): scripts/optimizer-core.mts declares its own OptItem
+// (unexported, no import from vault-lib.mts — the core is a paste-able file with no imports at all,
+// see its own header comment) and vault-lib.mts declares its own, independently. A reviewer proved
+// with `tsc` they had ALREADY drifted once (vault-lib's plain OptItem had `slot: string | null`; the
+// core's has always required a non-null `slot`) with nothing to catch it but a human reading a `tsc`
+// diff by hand — harmless only because every caller of toOptItem happened to filter out slotless
+// items before building pools. buildPools's PooledOptItem now types that filtering honestly; this
+// line asserts, at compile time only (no runtime check, no value ever read — see `void` below), that
+// a pooled item's `slot` is assignable to the core's own item's `slot`. If the two drift again,
+// `npm run typecheck` fails exactly here instead of staying silent. (The item's OTHER fields aren't
+// checked here on purpose: `twoHanded`'s `true | undefined` vs the core's plain `boolean` is a
+// separate, already-accepted structural difference — see app/exact-solver.mts's header note — not a
+// drift this guard is for.)
+type CorePooledItem = NonNullable<OptPools[string]>[number];
+type VaultPooledItem = NonNullable<BuildPoolsResult["pools"][string]>[number];
+const _pooledSlotAssignable: CorePooledItem["slot"] = null as unknown as VaultPooledItem["slot"];
+void _pooledSlotAssignable;
 
 const sig = (assignment: OptAssignment | null | undefined): string => DEFAULT_SLOTS.map((s) => (assignment && assignment[s] ? assignment[s]!.serial : null)).join(",");
 
