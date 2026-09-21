@@ -44,6 +44,20 @@ function resolveTscEntry(): string | null {
   return join(dirname(pkgPath), bin);
 }
 
+// A compile takes well under a second; this only exists so a child that never exits fails the
+// build with ETIMEDOUT instead of blocking its caller forever.
+const TSC_TIMEOUT_MS = 120_000;
+
+// electron/main.mts calls buildUi() from Electron's main process, where process.execPath is the
+// Electron binary rather than node — spawned as-is it would start a second Electron app with the
+// tsc launcher as its main script, which on Windows never returns. ELECTRON_RUN_AS_NODE makes that
+// binary behave as plain Node for this one child; under real Node it is left unset.
+export function tscSpawnEnv(
+  versions: NodeJS.ProcessVersions = process.versions, env: NodeJS.ProcessEnv = process.env,
+): NodeJS.ProcessEnv {
+  return versions.electron ? { ...env, ELECTRON_RUN_AS_NODE: "1" } : env;
+}
+
 export function buildUi({ tsconfig = TSCONFIG }: { tsconfig?: string } = {}): string {
   const tscEntry = resolveTscEntry();
   if (!tscEntry || !existsSync(tscEntry)) {
@@ -66,7 +80,9 @@ export function buildUi({ tsconfig = TSCONFIG }: { tsconfig?: string } = {}): st
   // under process.execPath keeps this free of any PATH or shebang dependency; if the native binary
   // is missing (`npm ci --omit=optional`, an unlisted platform) the launcher exits non-zero and the
   // throw below surfaces its message rather than serving a stale page.
-  const result = spawnSync(process.execPath, [tscEntry, "-p", tsconfig], { cwd: ROOT, encoding: "utf8" });
+  const result = spawnSync(process.execPath, [tscEntry, "-p", tsconfig], {
+    cwd: ROOT, encoding: "utf8", env: tscSpawnEnv(), timeout: TSC_TIMEOUT_MS,
+  });
   if (result.error) throw result.error;
   if (result.status !== 0) {
     throw new Error(`tsc -p ${relative(ROOT, tsconfig)} failed (exit ${result.status}):\n${result.stdout || ""}${result.stderr || ""}`);

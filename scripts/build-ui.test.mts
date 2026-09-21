@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { readFileSync, existsSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { buildUi } from "./build-ui.mts";
+import { buildUi, tscSpawnEnv } from "./build-ui.mts";
 
 const ROOT = dirname(dirname(fileURLToPath(import.meta.url)));
 
@@ -21,4 +21,12 @@ test("[fast] buildUi compiles the page into app/dist/ui, with extensions rewritt
   assert.ok(appJs.includes("./shard.mjs"), "app.mjs should import shard.mjs by its compiled extension");
   assert.ok(!appJs.includes("./shard.mts"), "app.mjs must not still reference the .mts source extension");
   assert.ok(!existsSync(join(ROOT, "app", "dist", "ui", "styles.css")), "tsc must not emit a .css file — the source tree's copy is served directly");
+});
+
+test("[fast] the tsc child runs as plain Node when buildUi is called from Electron's main process", () => {
+  const env = { PATH: "x" };
+  assert.equal(tscSpawnEnv({ ...process.versions, electron: "44.4.1" }, env).ELECTRON_RUN_AS_NODE, "1");
+  assert.equal(tscSpawnEnv({ ...process.versions, electron: "44.4.1" }, env).PATH, "x");
+  const { electron: _electron, ...plainNode } = process.versions;
+  assert.equal(tscSpawnEnv(plainNode as NodeJS.ProcessVersions, env), env);
 });
