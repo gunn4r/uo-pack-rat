@@ -3,7 +3,8 @@
 // real network (checkForUpdates takes an injected fetchImpl in every test here).
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, readdirSync, existsSync, cpSync, symlinkSync } from "node:fs";
+import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, readdirSync, existsSync, lstatSync, chmodSync, cpSync, symlinkSync } from "node:fs";
+import { execFileSync } from "node:child_process";
 import { join, dirname } from "node:path";
 import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
@@ -14,7 +15,25 @@ import {
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const REAL_ADAPTERS_DIR = join(HERE, "..", "adapters");
+// Read, never hard-coded: an adapter version bump must not need an edit here.
+const TAZUO_VERSION = (JSON.parse(readFileSync(join(REAL_ADAPTERS_DIR, "tazuo", "capabilities.json"), "utf8")) as { version: string }).version;
 const tmp = (prefix: string): string => mkdtempSync(join(tmpdir(), prefix));
+
+// Creating a symlink needs elevated privilege (or Developer Mode) on Windows, and a FIFO can't be
+// created there at all — the Phase 7 path-handling tests below pin behaviour against exactly those
+// two file types, so each one that can't build its own setup returns early instead of failing. The
+// same shape as the existing importScans symlink test's `madeSymlink` flag, hoisted so every case
+// that needs it says so the same way. CI runs ubuntu/macos/windows, so this is a real path.
+function trySymlink(target: string, path: string): boolean {
+  try { symlinkSync(target, path); return true; }
+  catch { return false; }
+}
+
+function tryFifo(path: string): boolean {
+  if (process.platform === "win32") return false;
+  try { execFileSync("mkfifo", [path]); return true; }
+  catch { return false; }
+}
 
 // A fake adaptersDir built by copying the real adapters/tazuo/ folder, so these tests exercise the
 // actual shipped scripts/capabilities/README rather than a hand-built fixture that could drift from them.
@@ -184,9 +203,45 @@ test("[fast] validateScriptsDir rejects a file and a missing dir", () => {
   assert.equal(validateScriptsDir(null, "tazuo").ok, false);
 });
 
+// Post-review fix (security, Phase 7): both NESTED_SCRIPTS_SUFFIX and CANDIDATE_ROOT_NAME are plain
+// object literals, so a prototype-chain key used to resolve to something truthy and defeat the
+// fallback — validateScriptsDir("/tmp", "constructor") threw "suffixes.map is not a function" and
+// candidateClientRoots threw ERR_INVALID_ARG_TYPE out of path.join, instead of the documented
+// not-found result. Neither is reachable through a route (every one checks the id against
+// listAdapters first), but both functions are typed and documented to accept an UNKNOWN adapter and
+// degrade gracefully, and that contract has to actually hold.
+test("[fast] validateScriptsDir and candidateClientRoots degrade gracefully on a prototype-chain adapter id", () => {
+  const dir = tmp("qm-vsd-proto-");
+  for (const adapter of ["constructor", "__proto__", "toString", "valueOf", "hasOwnProperty"]) {
+    // The picked folder itself exists, so the tazuo fallback shape accepts it — the point is that it
+    // returns a result at all rather than throwing.
+    assert.deepEqual(validateScriptsDir(dir, adapter), { ok: true, scriptsDir: dir }, adapter);
+    assert.equal(validateScriptsDir(join(dir, "does-not-exist"), adapter).ok, false, adapter);
+    assert.deepEqual(candidateClientRoots({ adapter, home: "/Users/example", platform: "darwin", env: {}, exists: () => true }), [], adapter);
+  }
+});
+
+// Post-review fix (security, Phase 7): "\\host\share" is a perfectly good absolute path on win32, and
+// the first thing done with an accepted scriptsDir is a readdirSync — an outbound SMB connection to a
+// host the caller named, i.e. an NTLM authentication attempt against it, repeated on every later
+// GET /api/setup because the value is persisted. The shape is refused before any filesystem call, on
+// every platform (POSIX gains nothing from a leading "//" either), and so is a relative path.
+test("[fast] validateScriptsDir rejects a UNC/device path and a relative path on their shape alone", () => {
+  for (const dir of ["\\\\host\\share", "\\\\host\\share\\Scripts", "//host/share", "\\\\?\\C:\\Scripts"]) {
+    const result = validateScriptsDir(dir, "tazuo");
+    assert.equal(result.ok, false, dir);
+    assert.match(result.error, /UNC or device path/, dir);
+  }
+  for (const dir of ["relative/path", "./Scripts", "Scripts"]) {
+    const result = validateScriptsDir(dir, "tazuo");
+    assert.equal(result.ok, false, dir);
+    assert.match(result.error, /absolute path/, dir);
+  }
+});
+
 // ---- installedVersion ---------------------------------------------------------------------------------
 
-test("[fast] installedVersion reads 2.0.0 after an install and null before", () => {
+test("[fast] installedVersion reads the adapter version after an install and null before", () => {
   const scriptsDir = tmp("qm-iv-");
   const before = installedVersion(scriptsDir, "tazuo");
   assert.equal(before.version, null);
@@ -199,10 +254,54 @@ test("[fast] installedVersion reads 2.0.0 after an install and null before", () 
   assert.equal(result.ok, true);
 
   const after = installedVersion(scriptsDir, "tazuo");
-  assert.equal(after.version, "2.0.0");
+  assert.equal(after.version, TAZUO_VERSION);
   assert.equal(after.files["packrat-scanner.py"], true);
   assert.equal(after.files["packrat-refresh.py"], true);
   assert.equal(after.files["packrat-bridge.py"], true);
+});
+
+// Post-review fix (security, Phase 7): scriptNamesIn now reads withFileTypes and keeps only regular
+// files, so a name that merely LOOKS like a script is never opened. A symlink used to be followed
+// (GET /api/setup would report an unrelated file's ADAPTER_VERSION capture — a read oracle over any
+// persisted scriptsDir), and a FIFO used to block readFileSync forever, hanging the whole
+// single-threaded server with no recovery short of hand-editing settings.json.
+test("[fast] installedVersion skips a symlinked, FIFO or directory packrat-scanner.py rather than reading it", () => {
+  const scriptsDir = tmp("qm-iv-notafile-");
+  const outside = tmp("qm-iv-notafile-target-");
+  const target = join(outside, "other.py");
+  writeFileSync(target, 'ADAPTER_VERSION = "9.9.9"\n');
+
+  if (trySymlink(target, join(scriptsDir, "packrat-scanner.py"))) {
+    const linked = installedVersion(scriptsDir, "tazuo");
+    assert.equal(linked.version, null, "a symlink is not a script — its target's version is never reported");
+    assert.deepEqual(linked.files, {}, "and the name isn't reported as installed either");
+  }
+
+  const fifoDir = tmp("qm-iv-fifo-");
+  if (tryFifo(join(fifoDir, "packrat-scanner.py"))) {
+    const fifo = installedVersion(fifoDir, "tazuo");   // must RETURN — a regression here blocks forever
+    assert.deepEqual(fifo, { version: null, files: {} });
+  }
+
+  const dirDir = tmp("qm-iv-dir-");
+  mkdirSync(join(dirDir, "packrat-scanner.py"), { recursive: true });
+  assert.deepEqual(installedVersion(dirDir, "tazuo"), { version: null, files: {} }, "a directory under a script's name is not a script");
+});
+
+// Post-review fix (security, Phase 7): the version read is bounded (64 KiB from the head of the file)
+// rather than slurping whatever is under the name — an ordinary huge file in a persisted scriptsDir
+// was a memory-exhaustion variant of the FIFO hang above. A real adapter script is ~13 KB with its
+// ADAPTER_VERSION line near the top, so the cap never bites in practice.
+test("[fast] installedVersion reads a bounded head of the script, not the whole file", () => {
+  const near = tmp("qm-iv-bounded-near-");
+  writeFileSync(join(near, "packrat-scanner.py"), `ADAPTER_VERSION = "1.2.3"\n${"#".repeat(300_000)}\n`);
+  assert.equal(installedVersion(near, "tazuo").version, "1.2.3", "a version line in the head is still found");
+
+  const far = tmp("qm-iv-bounded-far-");
+  writeFileSync(join(far, "packrat-scanner.py"), `${"#".repeat(300_000)}\nADAPTER_VERSION = "1.2.3"\n`);
+  const result = installedVersion(far, "tazuo");
+  assert.equal(result.version, null, "nothing past the cap is read");
+  assert.equal(result.files["packrat-scanner.py"], true, "the file is still reported as installed");
 });
 
 // ---- installScripts -----------------------------------------------------------------------------------
@@ -252,7 +351,7 @@ test("[fast] installScripts installs byte-identical copies, leaves no .new files
   const dataDir = "/some/data/dir";
   const result = installScripts({ adapter: "tazuo", adaptersDir, scriptsDir, dataDir, bridgeStatusPath: join(scriptsDir, "no-status.json") });
   assert.equal(result.ok, true, JSON.stringify(result));
-  assert.equal(result.version, "2.0.0");
+  assert.equal(result.version, TAZUO_VERSION);
   assert.deepEqual(result.installed.sort(), ["packrat-bridge.py", "packrat-refresh.py", "packrat-scanner.py"]);
 
   for (const name of result.installed) {
@@ -360,6 +459,117 @@ test("[fast] installScripts refuses a paste-transport adapter with code noInstal
   assert.deepEqual(readdirSync(scriptsDir), [], "nothing was written for a paste-transport adapter");
 });
 
+// Post-review fix (security, Phase 7): the temp file each script is copied through is randomly named
+// and opened O_EXCL, so a symlink pre-planted at the old, published "<name>.new" is never the path
+// written. This is a real precondition, not a contrived one: a game-client folder in this ecosystem
+// is routinely an unpacked third-party archive, and an archive may contain symlinks. Before the fix
+// the install truncated and rewrote the symlink's target — anywhere the player could write — returned
+// ok:true with no warning, and then renamed the SYMLINK into the final name, so every later install,
+// upgrade and Settings "Reinstall" wrote through it too.
+test("[fast] installScripts never writes through a symlink pre-planted at a script's temp name", () => {
+  const scriptsDir = tmp("qm-is-tmplink-dest-");
+  const outside = tmp("qm-is-tmplink-outside-");
+  const canary = join(outside, "canary.txt");
+  writeFileSync(canary, "untouched");
+  if (!trySymlink(canary, join(scriptsDir, "packrat-scanner.py.new"))) return;
+  const result = installScripts({ adapter: "tazuo", adaptersDir: fakeAdaptersDir(), scriptsDir, dataDir: tmp("qm-is-data-"), bridgeStatusPath: join(scriptsDir, "no-status.json") });
+  assert.equal(result.ok, true, JSON.stringify(result));
+  assert.equal(readFileSync(canary, "utf8"), "untouched", "the file the planted symlink pointed at was never written");
+  assert.equal(lstatSync(join(scriptsDir, "packrat-scanner.py")).isFile(), true, "the installed script is a real file, not the planted symlink renamed into place");
+});
+
+// The final-name case: a rename over a symlink already replaced the link rather than writing through
+// it (safe by accident), but the file is now refused outright instead — the folder isn't in the shape
+// an install expects, and silently replacing a link the player put there is its own surprise. Pinned
+// so the temp-name rewrite above can't quietly regress it either way.
+test("[fast] installScripts refuses a destination that is a symlink rather than writing through it", () => {
+  const scriptsDir = tmp("qm-is-destlink-dest-");
+  const outside = tmp("qm-is-destlink-outside-");
+  const canary = join(outside, "canary.txt");
+  writeFileSync(canary, "untouched");
+  if (!trySymlink(canary, join(scriptsDir, "packrat-scanner.py"))) return;
+  const result = installScripts({ adapter: "tazuo", adaptersDir: fakeAdaptersDir(), scriptsDir, dataDir: tmp("qm-is-data-"), bridgeStatusPath: join(scriptsDir, "no-status.json") });
+  assert.equal(result.ok, false, JSON.stringify(result));
+  assert.equal(result.code, "writeFailed");
+  assert.match(result.error, /symlink/);
+  assert.equal(readFileSync(canary, "utf8"), "untouched");
+  assert.deepEqual(result.installed, ["packrat-bridge.py", "packrat-refresh.py"], "the scripts installed before the refusal are reported");
+  assert.deepEqual(readdirSync(scriptsDir).filter((f) => f.endsWith(".new")), [], "no dangling temp file");
+});
+
+// packrat-paths.json used to be the one write here that wasn't a temp-then-rename at all — a bare
+// writeFileSync, which follows a symlink at the destination. Same preconditions as the test above,
+// and a second, independent vector: fixing only the script writes would have left this one open.
+test("[fast] installScripts refuses a symlinked packrat-paths.json rather than writing through it", () => {
+  const scriptsDir = tmp("qm-is-pathslink-dest-");
+  const outside = tmp("qm-is-pathslink-outside-");
+  const canary = join(outside, "canary.json");
+  writeFileSync(canary, '{"untouched": true}');
+  if (!trySymlink(canary, join(scriptsDir, "packrat-paths.json"))) return;
+  const result = installScripts({ adapter: "tazuo", adaptersDir: fakeAdaptersDir(), scriptsDir, dataDir: "/some/data/dir", bridgeStatusPath: join(scriptsDir, "no-status.json") });
+  assert.equal(result.ok, false, JSON.stringify(result));
+  assert.equal(result.code, "writeFailed");
+  assert.deepEqual(JSON.parse(readFileSync(canary, "utf8")), { untouched: true });
+});
+
+test("[fast] installScripts leaves no temp file behind and reports pathsFile on a clean install", () => {
+  const scriptsDir = tmp("qm-is-notemp-dest-");
+  const result = installScripts({ adapter: "tazuo", adaptersDir: fakeAdaptersDir(), scriptsDir, dataDir: "/some/data/dir", bridgeStatusPath: join(scriptsDir, "no-status.json") });
+  assert.equal(result.ok, true, JSON.stringify(result));
+  assert.equal(result.pathsFile, "written");
+  const leftovers = readdirSync(scriptsDir).filter((f) => !f.endsWith(".py") && f !== "packrat-paths.json");
+  assert.deepEqual(leftovers, [], "no packrat-paths.json.<random>.new or script temp survives");
+});
+
+// Post-review fix (correctness, Phase 7): adapters/razor-enhanced/README.md's install step 2 tells the
+// player to hand-author packrat-paths.json with a dataDir reachable from the WINDOWS machine running
+// the client — by construction not this machine's dataDir. Overwriting it unconditionally undid that
+// documented cross-machine setup on the next install or Settings "Reinstall", with no message, and
+// the symptom (scans simply stop arriving) points nowhere near the cause.
+test("[fast] installScripts keeps a hand-authored packrat-paths.json naming a different dataDir", () => {
+  const scriptsDir = tmp("qm-is-pathskeep-dest-");
+  const authored = '{\n "dataDir": "Z:\\\\pack-rat"\n}\n';
+  writeFileSync(join(scriptsDir, "packrat-paths.json"), authored);
+  const result = installScripts({ adapter: "tazuo", adaptersDir: fakeAdaptersDir(), scriptsDir, dataDir: "/some/data/dir", bridgeStatusPath: join(scriptsDir, "no-status.json") });
+  assert.equal(result.ok, true, JSON.stringify(result));
+  assert.equal(result.pathsFile, "kept", "the install reports that it kept the player's file, so the UI can say so");
+  assert.equal(readFileSync(join(scriptsDir, "packrat-paths.json"), "utf8"), authored, "byte-identical — not even reformatted");
+  assert.equal(existsSync(join(scriptsDir, "packrat-paths.json.bak")), false, "nothing was written, so there's nothing to back up");
+  assert.deepEqual(result.installed.sort(), ["packrat-bridge.py", "packrat-refresh.py", "packrat-scanner.py"], "the scripts themselves still install");
+});
+
+test("[fast] installScripts rewrites a packrat-paths.json naming this same dataDir, and backs up one that isn't in the documented shape", () => {
+  const same = tmp("qm-is-pathssame-dest-");
+  writeFileSync(join(same, "packrat-paths.json"), '{"dataDir": "/some/data/dir"}');
+  const sameResult = installScripts({ adapter: "tazuo", adaptersDir: fakeAdaptersDir(), scriptsDir: same, dataDir: "/some/data/dir", bridgeStatusPath: join(same, "no-status.json") });
+  assert.equal(sameResult.ok, true, JSON.stringify(sameResult));
+  assert.equal(sameResult.pathsFile, "written", "same dataDir, different formatting — nothing of the player's is lost by rewriting it");
+  assert.deepEqual(JSON.parse(readFileSync(join(same, "packrat-paths.json"), "utf8")), { dataDir: "/some/data/dir" });
+
+  const junk = tmp("qm-is-pathsjunk-dest-");
+  writeFileSync(join(junk, "packrat-paths.json"), "not json at all");
+  const junkResult = installScripts({ adapter: "tazuo", adaptersDir: fakeAdaptersDir(), scriptsDir: junk, dataDir: "/some/data/dir", bridgeStatusPath: join(junk, "no-status.json") });
+  assert.equal(junkResult.ok, true, JSON.stringify(junkResult));
+  assert.equal(junkResult.pathsFile, "backed-up");
+  assert.equal(readFileSync(join(junk, "packrat-paths.json.bak"), "utf8"), "not json at all", "the unreadable file is preserved beside the new one, never simply dropped");
+  assert.deepEqual(JSON.parse(readFileSync(join(junk, "packrat-paths.json"), "utf8")), { dataDir: "/some/data/dir" });
+});
+
+// Finding 7: the dirname(srcDir) check is purely lexical — path.resolve and path.dirname touch no
+// filesystem and resolve no symlink, so an adaptersDir reached through a symlink installs exactly as a
+// real directory does. That is the actual behaviour; this pins it so the code and the comment beside
+// it (which used to claim a symlink defence this check does not give) cannot disagree again.
+test("[fast] installScripts installs normally when adaptersDir is reached through a symlink", () => {
+  const real = fakeAdaptersDir();
+  const linkDir = tmp("qm-is-adapterslink-");
+  const link = join(linkDir, "adapters");
+  if (!trySymlink(real, link)) return;
+  const scriptsDir = tmp("qm-is-adapterslink-dest-");
+  const result = installScripts({ adapter: "tazuo", adaptersDir: link, scriptsDir, dataDir: tmp("qm-is-data-"), bridgeStatusPath: join(scriptsDir, "no-status.json") });
+  assert.equal(result.ok, true, JSON.stringify(result));
+  assert.deepEqual(result.installed.sort(), ["packrat-bridge.py", "packrat-refresh.py", "packrat-scanner.py"]);
+});
+
 // ---- importScans ---------------------------------------------------------------------------------------
 
 test("[fast] importScans copies only *.json, skips duplicates, and never removes the source", () => {
@@ -374,7 +584,7 @@ test("[fast] importScans copies only *.json, skips duplicates, and never removes
   writeFileSync(join(inboxDir, "a.json"), JSON.stringify({ already: "here" }));   // pre-existing duplicate
 
   const result = importScans({ dir, inboxDir });
-  assert.deepEqual(result, { copied: 1, skipped: 1 });   // b.json copied; a.json skipped (already present)
+  assert.deepEqual(result, { copied: 1, skipped: 1, failed: 0 });   // b.json copied; a.json skipped (already present)
   assert.deepEqual(JSON.parse(readFileSync(join(inboxDir, "a.json"), "utf8")), { already: "here" }, "the pre-existing file was not overwritten");
   assert.deepEqual(JSON.parse(readFileSync(join(inboxDir, "b.json"), "utf8")), { b: 1 });
   assert.equal(existsSync(join(inboxDir, "nested.json")), false, "nested files are not copied (top level only)");
@@ -386,7 +596,7 @@ test("[fast] importScans copies only *.json, skips duplicates, and never removes
 
 test("[fast] importScans on a missing source dir copies nothing", () => {
   const inboxDir = tmp("qm-import-inbox-missing-");
-  assert.deepEqual(importScans({ dir: join(inboxDir, "does-not-exist"), inboxDir }), { copied: 0, skipped: 0 });
+  assert.deepEqual(importScans({ dir: join(inboxDir, "does-not-exist"), inboxDir }), { copied: 0, skipped: 0, failed: 0 });
 });
 
 // Post-review fix: a *.json symlink in the source folder must not have its TARGET's bytes copied —
@@ -406,6 +616,45 @@ test("[fast] importScans does not follow a *.json symlink (only the real file is
   if (madeSymlink) {
     assert.equal(result.copied, 1, "only the real file was copied, the symlink was skipped");
     assert.equal(existsSync(join(inboxDir, "link.json")), false, "the symlink itself was never copied under");
+  }
+});
+
+// Post-review fix (security, Phase 7): the write side of importScans had the same blind spots the
+// install side did. existsSync follows a symlink, so a DANGLING one already sitting in the inbox under
+// a scan's name read as "absent" and the copy replaced it — and the copy itself went through a
+// predictable "<dest>.tmp". The destination is inside Pack Rat's own data directory rather than a
+// player-picked folder, so the precondition is narrower than the installer's, but it's the same bug.
+test("[fast] importScans never writes through a symlink sitting in the inbox under a scan's name", () => {
+  const dir = tmp("qm-import-destlink-src-");
+  writeFileSync(join(dir, "a.json"), JSON.stringify({ a: 1 }));
+  writeFileSync(join(dir, "b.json"), JSON.stringify({ b: 1 }));
+  const outside = tmp("qm-import-destlink-outside-");
+  const canary = join(outside, "canary.json");
+  writeFileSync(canary, '{"untouched": true}');
+  const inboxDir = tmp("qm-import-destlink-inbox-");
+  // a.json → a live symlink, b.json → a DANGLING one (the case existsSync used to miss entirely).
+  if (!trySymlink(canary, join(inboxDir, "a.json"))) return;
+  if (!trySymlink(join(outside, "gone.json"), join(inboxDir, "b.json"))) return;
+  const result = importScans({ dir, inboxDir });
+  assert.deepEqual(result, { copied: 0, skipped: 2, failed: 0 }, "both names are taken, whatever type is under them");
+  assert.deepEqual(JSON.parse(readFileSync(canary, "utf8")), { untouched: true });
+  assert.equal(existsSync(join(outside, "gone.json")), false, "the dangling link's target was not created by writing through it");
+});
+
+// The per-file copy is wrapped so one failure is counted rather than thrown: an EPERM partway through
+// a folder import used to escape the loop as a generic 500, with the already-copied files left behind
+// and nothing in the result to say which made it. chmod is only meaningful on POSIX.
+test("[fast] importScans counts a failed copy and finishes the folder instead of throwing", () => {
+  if (process.platform === "win32" || process.getuid?.() === 0) return;   // root ignores the mode bits
+  const dir = tmp("qm-import-failed-src-");
+  writeFileSync(join(dir, "a.json"), JSON.stringify({ a: 1 }));
+  writeFileSync(join(dir, "b.json"), JSON.stringify({ b: 1 }));
+  const inboxDir = tmp("qm-import-failed-inbox-");
+  chmodSync(inboxDir, 0o555);   // readable, not writable
+  try {
+    assert.deepEqual(importScans({ dir, inboxDir }), { copied: 0, skipped: 0, failed: 2 });
+  } finally {
+    chmodSync(inboxDir, 0o755);
   }
 });
 
@@ -444,6 +693,36 @@ test("[fast] checkForUpdates: upToDate false when a newer release exists", async
   const result = await checkForUpdates({ current: "0.1.0", repo: "owner/name", fetchImpl });
   assert.equal(result.upToDate, false);
   assert.equal(result.latest, "0.9.0");
+});
+
+// Post-review fix (security, Phase 7): html_url used to be forwarded exactly as GitHub's response
+// carried it, straight into an <a href> in the page. It's now only used when it really is an
+// https://github.com/<this repo>/releases/… URL; anything else falls back to this repo's own releases
+// page, which is always a safe place to send the player and keeps the result's shape unchanged.
+test("[fast] checkForUpdates falls back to the repo's releases page for an html_url that isn't this repo's", async () => {
+  const releases = "https://github.com/owner/name/releases";
+  for (const html_url of [
+    "https://example.com/owner/name/releases/tag/v1",   // another host
+    "http://github.com/owner/name/releases/tag/v1",     // not https
+    "https://github.com/someone/else/releases/tag/v1",  // another repository
+    "https://github.com/owner/name/settings",           // this repo, but not a releases path
+    "javascript:alert(1)",                              // not a URL at all
+    "",
+    null,
+    undefined,
+    42,
+  ]) {
+    const fetchImpl = async () => ({ status: 200, json: async () => ({ tag_name: "v0.9.0", html_url }) });
+    const result = await checkForUpdates({ current: "0.1.0", repo: "owner/name", fetchImpl });
+    assert.equal(result.url, releases, JSON.stringify(html_url));
+    assert.equal(result.latest, "0.9.0", "everything else about the result is unchanged");
+  }
+  // A real release URL under this repo is used as-is, including a case-differing owner/name.
+  for (const html_url of [`${releases}/tag/v0.9.0`, releases, "https://github.com/Owner/Name/releases/tag/v0.9.0"]) {
+    const fetchImpl = async () => ({ status: 200, json: async () => ({ tag_name: "v0.9.0", html_url }) });
+    const result = await checkForUpdates({ current: "0.1.0", repo: "owner/name", fetchImpl });
+    assert.equal(result.url, html_url, "a genuine release URL for this repository is passed through");
+  }
 });
 
 test("[fast] checkForUpdates: a non-200 response reports configured:true with an error, not a throw", async () => {

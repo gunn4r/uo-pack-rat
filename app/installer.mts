@@ -4,9 +4,10 @@
 // takes an injectable fetchImpl so callers (and tests) never depend on a real fetch global.
 import {
   existsSync, statSync, lstatSync, readdirSync, readFileSync, writeFileSync, copyFileSync, renameSync,
-  unlinkSync, mkdirSync, type Dirent, type Stats,
+  unlinkSync, mkdirSync, openSync, readSync, closeSync, fstatSync, constants, type Dirent, type Stats,
 } from "node:fs";
-import { join, resolve, dirname } from "node:path";
+import { join, resolve, dirname, isAbsolute } from "node:path";
+import { randomBytes } from "node:crypto";
 
 const VERSION_RE = /ADAPTER_VERSION\s*=\s*"([^"]+)"/;
 const ADAPTER_ID_RE = /^[a-z0-9-]+$/;
@@ -41,6 +42,95 @@ const NESTED_SCRIPTS_SUFFIX: Record<string, ScriptsSuffix> = {
 // no fixed install location (razor-enhanced — see NESTED_SCRIPTS_SUFFIX above) has no entry here on
 // purpose: candidateClientRoots returns [] for it and the manual folder picker is the only path.
 const CANDIDATE_ROOT_NAME: Record<string, string> = { tazuo: "TazUO" };
+
+// ---- safe writes and bounded reads ------------------------------------------------------------------
+// Every destination this module writes (an adapter script, packrat-paths.json, an imported scan) goes
+// through atomicReplace, and every file it reads back goes through readHead. Both folders on the other
+// end are chosen by the player, and in this ecosystem a game-client folder is routinely an unpacked
+// third-party archive — which is allowed to contain symlinks, FIFOs and directories under any name it
+// likes. So neither side trusts a name to be what it looks like: the write refuses a destination that
+// is anything other than absent or a regular file, and the read refuses anything that isn't a regular
+// file once the fd is actually open.
+
+// The temp name is random, not the "<dest>.new" this file used to use. A fixed, published temp name is
+// a path an attacker can pre-plant a symlink at, and copyFileSync/writeFileSync follow one — the write
+// lands outside the folder, and the rename then moves the SYMLINK into the final name, so every later
+// install writes through it too. O_EXCL on top (COPYFILE_EXCL for a copy, flag "wx" for a write) means
+// the temp is only ever a file this call itself created, which also closes the TOCTOU window an
+// lstat-then-open check on a predictable name would leave open.
+function tempNameFor(dest: string): string { return `${dest}.${randomBytes(8).toString("hex")}.new`; }
+
+function fileKind(st: Stats): string {
+  if (st.isSymbolicLink()) return "a symlink";
+  if (st.isDirectory()) return "a directory";
+  if (st.isFIFO()) return "a FIFO";
+  if (st.isSocket()) return "a socket";
+  return "not a regular file";
+}
+
+// writeTemp is handed the temp path and must create it with O_EXCL (see tempNameFor). Throws on a
+// refusal or a failed write — every caller already runs inside a try/catch that turns that into its
+// own reported result, rather than an uncaught throw surfacing as a stack-free 500.
+function atomicReplace(dest: string, writeTemp: (tmp: string) => void): void {
+  // lstat, never stat: a symlink at dest is refused by its own type rather than resolved to whatever
+  // it points at. An absent dest is the ordinary case, not an error.
+  let st: Stats | null = null;
+  try { st = lstatSync(dest); } catch { /* absent — nothing to refuse */ }
+  if (st && !st.isFile()) throw new Error(`refusing to write ${dest}: it is ${fileKind(st)}`);
+  const tmp = tempNameFor(dest);
+  try {
+    writeTemp(tmp);
+    renameSync(tmp, dest);
+  } catch (e) {
+    try { unlinkSync(tmp); } catch { /* never created, or already gone */ }
+    throw e;
+  }
+}
+
+function copyFileAtomic(src: string, dest: string): void {
+  atomicReplace(dest, (tmp) => copyFileSync(src, tmp, constants.COPYFILE_EXCL));
+}
+
+function writeFileAtomic(dest: string, body: string): void {
+  atomicReplace(dest, (tmp) => writeFileSync(tmp, body, { flag: "wx" }));
+}
+
+// 64 KiB off the head of a file is the whole of what this module ever reads: an adapter script is
+// ~13 KB with its ADAPTER_VERSION line in the first 60 lines, and packrat-paths.json is three lines.
+// A bounded read is what keeps an ordinary huge file under one of those names from being a
+// memory-exhaustion variant of the FIFO hang readHead's own flags close off.
+const HEAD_READ_BYTES = 64 * 1024;
+
+// O_NOFOLLOW refuses a symlink at the final component, O_NONBLOCK keeps a FIFO from parking this
+// (single-threaded) process forever, and the fstat is what makes both TOCTOU-proof: it describes the
+// fd actually opened, not a name that could have changed since. Neither flag exists on win32, where
+// `?? 0` leaves the open plain — Windows has no FIFO-in-a-directory case, and CreateFile does not
+// traverse a reparse point the way open(2) traverses a symlink. null means "not readable as a regular
+// file", which every caller treats the same as absent.
+function readHead(path: string, max: number = HEAD_READ_BYTES): string | null {
+  const flags = constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0) | (constants.O_NONBLOCK ?? 0);
+  let fd: number;
+  try { fd = openSync(path, flags); } catch { return null; }
+  try {
+    if (!fstatSync(fd).isFile()) return null;
+    const buf = Buffer.allocUnsafe(max);
+    const n = readSync(fd, buf, 0, max, 0);
+    return buf.toString("utf8", 0, n);
+  } catch { return null; }
+  finally { closeSync(fd); }
+}
+
+// Object.hasOwn, not a bare index: both maps above are plain object literals, so every key on
+// Object.prototype ("constructor", "__proto__", "toString", …) resolved to something truthy and
+// defeated the `|| tazuo` fallback — validateScriptsDir(dir, "constructor") threw "suffixes.map is not
+// a function" and candidateClientRoots threw ERR_INVALID_ARG_TYPE out of path.join, instead of the
+// ordinary not-found result both are documented to return for an unknown adapter. Not reachable
+// through any route (each checks the id against listAdapters first), but the documented contract has
+// to be true for the next caller that trusts it.
+function suffixesFor(adapter: unknown): ScriptsSuffix | null {
+  if (typeof adapter !== "string" || !Object.hasOwn(NESTED_SCRIPTS_SUFFIX, adapter)) return null;
+  return NESTED_SCRIPTS_SUFFIX[adapter]!;
+}
 
 // ---- listAdapters ---------------------------------------------------------------------------------
 // One entry per adaptersDir subdirectory that ships a capabilities.json (the same test
@@ -94,9 +184,18 @@ export function listAdapters(adaptersDir: string): AdapterInfo[] {
   return out;
 }
 
+// withFileTypes + isFile(): only a regular file counts as a script. A symlink's dirent reports its own
+// type (isFile() is false for it), so a symlinked name is skipped rather than resolved to its target —
+// which is what used to make installedVersion a read oracle over any persisted scriptsDir. A directory
+// or a FIFO under a packrat-*.py name is skipped for the same reason: one reached copyFileSync and
+// failed EISDIR partway through an install, the other blocked readFileSync forever.
 function scriptNamesIn(dir: string): string[] {
-  try { return readdirSync(dir).filter((f) => f.startsWith("packrat-") && f.endsWith(".py")).sort(); }
+  let entries: Dirent[];
+  try { entries = readdirSync(dir, { withFileTypes: true }); }
   catch { return []; }
+  return entries
+    .filter((d) => d.isFile() && d.name.startsWith("packrat-") && d.name.endsWith(".py"))
+    .map((d) => d.name).sort();
 }
 
 // capabilities is whatever a capabilities.json's own "capabilities" field held (raw.capabilities ||
@@ -141,10 +240,10 @@ export function candidateClientRoots(
     adapter, home, platform = process.platform, env = process.env, exists = existsSync, adapterPlatform = null,
   }: CandidateClientRootsOptions = {} as CandidateClientRootsOptions,   // every real call site supplies adapter/home (see app/installer.test.mts, app/vault-server.mts); this cast is compiler-only, matching config.mts's rawPort pattern
 ): string[] {
-  const suffixes = NESTED_SCRIPTS_SUFFIX[adapter];
+  const suffixes = suffixesFor(adapter);
   if (!suffixes || !home) return [];
   if (adapterPlatform && platform !== adapterPlatform) return [];
-  const rootName = CANDIDATE_ROOT_NAME[adapter];
+  const rootName = Object.hasOwn(CANDIDATE_ROOT_NAME, adapter) ? CANDIDATE_ROOT_NAME[adapter] : undefined;
   // No well-known root name for this adapter (razor-enhanced today — see CANDIDATE_ROOT_NAME's
   // comment): nothing to guess at, so propose no candidates rather than joining onto `undefined`.
   if (!rootName) return [];
@@ -178,6 +277,19 @@ export type ValidateScriptsDirResult =
   | { ok: true; scriptsDir: string; error?: undefined }
   | { ok: false; error: string; scriptsDir?: undefined };
 
+// A path is refused on its own shape, before any filesystem call, when it isn't absolute or starts
+// with two separators. On win32 "\\host\share" is a perfectly good absolute path whose first use — the
+// statSync below, and then a readdirSync on every later GET /api/setup, because the wizard persists
+// what this accepts — is an outbound SMB connection to a host the caller named, i.e. an NTLM
+// authentication attempt against it, repeated on every render and every launch. The "\\?\" device form
+// is the same shape. POSIX has nothing to gain from a leading "//" either, so one rule covers both
+// platforms and neither has to guess at the other's syntax.
+function badPathShape(dir: string): string | null {
+  if (/^[\\/]{2}/.test(dir)) return "a UNC or device path is not a scripts folder";
+  if (!isAbsolute(dir)) return "a scripts folder must be an absolute path";
+  return null;
+}
+
 // dir/adapter cross an HTTP boundary as-is (POST /api/setup/locate's request body — see
 // app/vault-server.mts), so neither is trusted to already be a string; dir's own shape is checked
 // below before use, exactly as the pre-TypeScript code did, and adapter is only ever used as an object
@@ -185,7 +297,9 @@ export type ValidateScriptsDirResult =
 // the cast at that read site describes the existing behaviour rather than changing it.
 export function validateScriptsDir(dir: unknown, adapter: unknown): ValidateScriptsDirResult {
   if (!dir || typeof dir !== "string") return { ok: false, error: "a folder is required" };
-  const suffixes = NESTED_SCRIPTS_SUFFIX[adapter as string] || NESTED_SCRIPTS_SUFFIX.tazuo!;
+  const shapeError = badPathShape(dir);
+  if (shapeError) return { ok: false, error: `${shapeError}: ${dir}` };
+  const suffixes = suffixesFor(adapter) || NESTED_SCRIPTS_SUFFIX.tazuo!;
   // Check the more-specific nested forms first: a picked folder that itself happens to exist (it
   // almost always does — it's a folder the user or a file dialog chose) must not shadow a real
   // scripts folder one or more levels below it.
@@ -214,10 +328,11 @@ export function installedVersion(scriptsDir: string, adapter: unknown): Installe
   const scanner = names.find((n) => n.includes("scanner")) || names[0] || null;
   let version: string | null = null;
   if (scanner) {
-    try {
-      const m = VERSION_RE.exec(readFileSync(join(scriptsDir, scanner), "utf8"));
-      if (m) version = m[1]!;
-    } catch { /* unreadable — leave null */ }
+    // readHead, not readFileSync: bounded, never follows a symlink, and never blocks on a FIFO — see
+    // its own comment. Unreadable (or not a regular file after all) leaves version null.
+    const head = readHead(join(scriptsDir, scanner));
+    const m = head === null ? null : VERSION_RE.exec(head);
+    if (m) version = m[1]!;
   }
   void adapter;   // not needed today (script names are adapter-agnostic); kept for interface symmetry
   return { version, files };
@@ -264,16 +379,24 @@ function bridgeAlive(bridgeStatusPath: string, now: number, log: (msg: string) =
 // ---- installScripts ------------------------------------------------------------------------------
 // The running-script guard comes first, before anything on disk is touched: a Legion script mid-run
 // against the very files this is about to overwrite is exactly the "orphaned script thread" trap
-// (see the project CLAUDE.md's Legion gotchas) — refuse instead of racing it. Each file is copied to
-// <name>.new and renamed into place (never written in place), so a reader never sees a half-written
-// script; packrat-paths.json is written last, once every script is in position.
+// (see the project CLAUDE.md's Legion gotchas) — refuse instead of racing it. Each file goes through
+// atomicReplace (see its own comment above: a randomly-named O_EXCL temp, a destination that must be
+// absent or a regular file, then a rename), so a reader never sees a half-written script and no write
+// here can be redirected out of the chosen folder by something already sitting in it.
+// packrat-paths.json is handled last, once every script is in position — and is the one destination
+// that may legitimately already hold the player's own content, so it is not overwritten blind.
 //
 // `adapter` is validated before it ever reaches a path.join: a caller is expected to have already
 // checked it against listAdapters(adaptersDir)'s known ids (every /api/setup/* route does), but this
 // function enforces it again itself — defence in depth against a caller that skips that check. First
 // the id's shape (path separators and traversal segments like ".." can't match [a-z0-9-]+), then,
-// once srcDir is built, that it actually resolves to a direct child of adaptersDir — catching a case
-// the shape check alone wouldn't (e.g. adaptersDir itself containing a symlink).
+// once srcDir is built, a purely LEXICAL check that it is a direct child of adaptersDir. That second
+// check catches nothing the regex hasn't already — path.resolve and path.dirname touch no filesystem,
+// so neither resolves a symlink, and an adaptersDir reached through one installs exactly as a real
+// directory does (pinned in app/installer.test.mts). It is kept as a cheap guard against a future
+// loosening of the regex, not as a filesystem-level defence; an earlier version of this comment
+// claimed it caught "adaptersDir itself containing a symlink", which it never did. Making that claim
+// true would take realpathSync on both sides, and a failure mode when adaptersDir doesn't exist.
 export interface InstallScriptsOptions {
   adapter: unknown;
   adaptersDir: string;
@@ -286,12 +409,18 @@ export interface InstallScriptsOptions {
   log?: (msg: string) => void;
 }
 
+// What became of packrat-paths.json: "written" (created, or replaced with content that loses nothing —
+// see the install's own comment at that write), "unchanged" (already byte-identical), "kept" (the
+// player's own, naming a different dataDir — left exactly as it stands), or "backed-up" (not in the
+// documented shape at all, so it was copied to packrat-paths.json.bak before being replaced).
+export type PathsFileOutcome = "written" | "unchanged" | "kept" | "backed-up";
+
 // The undefined-typed siblings on each branch let a caller (see app/installer.test.mts) read any field
 // off the union before narrowing on `ok`, without each read site needing its own narrowing or cast;
 // they carry no runtime meaning of their own.
 export type InstallScriptsResult =
-  | { ok: true; installed: string[]; version: string | null; code?: undefined; error?: undefined }
-  | { ok: false; code: "badAdapter" | "noInstall" | "running" | "badDir" | "writeFailed"; error: string; installed?: string[]; version?: undefined };
+  | { ok: true; installed: string[]; version: string | null; pathsFile: PathsFileOutcome; code?: undefined; error?: undefined }
+  | { ok: false; code: "badAdapter" | "noInstall" | "running" | "badDir" | "writeFailed"; error: string; installed?: string[]; version?: undefined; pathsFile?: undefined };
 
 export function installScripts(
   {
@@ -335,24 +464,48 @@ export function installScripts(
   // report honestly, instead of an uncaught throw that only surfaces as a generic stack-free 500.
   const installed: string[] = [];
   for (const name of names) {
-    const dest = join(destDir, name);
-    const tmp = `${dest}.new`;
-    try {
-      copyFileSync(join(srcDir, name), tmp);
-      renameSync(tmp, dest);
-    } catch (e) {
-      try { unlinkSync(tmp); } catch { /* never got written, or already gone */ }
-      return { ok: false, code: "writeFailed", error: (e as Error).message, installed: [...installed] };
-    }
+    try { copyFileAtomic(join(srcDir, name), join(destDir, name)); }
+    catch (e) { return { ok: false, code: "writeFailed", error: (e as Error).message, installed: [...installed] }; }
     installed.push(name);
   }
   const { version } = installedVersion(destDir, adapter);
-  try {
-    writeFileSync(join(destDir, "packrat-paths.json"), `${JSON.stringify({ dataDir }, null, 1)}\n`);
-  } catch (e) {
-    return { ok: false, code: "writeFailed", error: (e as Error).message, installed: [...installed] };
+  let pathsFile: PathsFileOutcome;
+  try { pathsFile = writePathsFile(destDir, dataDir); }
+  catch (e) { return { ok: false, code: "writeFailed", error: (e as Error).message, installed: [...installed] }; }
+  return { ok: true, installed, version, pathsFile };
+}
+
+// packrat-paths.json is the one destination here that may already hold something the PLAYER wrote:
+// adapters/razor-enhanced/README.md's install step 2 tells them to hand-author it with a dataDir
+// reachable from the Windows machine running the client, which by construction is not this machine's
+// CONFIG.dataDir. Rewriting it unconditionally undid that documented cross-machine setup on the next
+// install or Settings "Reinstall", with no message, and the symptom (scans simply stop arriving)
+// points nowhere near the cause. So a file already naming a DIFFERENT dataDir is left exactly as it
+// stands and reported, since the app cannot tell a deliberate cross-machine path from a stale one and
+// the player's own edit is the better guess. A file naming this same dataDir is rewritten (identical
+// content, nothing to lose), and a file in no recognisable shape at all — unparsable, or with no
+// string dataDir, which is nothing following the README produces — is replaced but copied to
+// packrat-paths.json.bak first, so a hand-edit is never simply dropped. A symlink here isn't handled
+// as a case at all: readHead refuses to follow one, so it falls to atomicReplace, which refuses it.
+function writePathsFile(destDir: string, dataDir: string): PathsFileOutcome {
+  const dest = join(destDir, "packrat-paths.json");
+  const desired = `${JSON.stringify({ dataDir }, null, 1)}\n`;
+  const existing = readHead(dest);
+  if (existing !== null) {
+    let existingDataDir: unknown;
+    // The file's own contents, never validated against anything — this typeof is the whole check.
+    try { existingDataDir = (JSON.parse(existing) as { dataDir?: unknown }).dataDir; }
+    catch { existingDataDir = undefined; }
+    if (typeof existingDataDir === "string" && existingDataDir !== dataDir) return "kept";
+    if (existing === desired) return "unchanged";
+    if (typeof existingDataDir !== "string") {
+      writeFileAtomic(`${dest}.bak`, existing);
+      writeFileAtomic(dest, desired);
+      return "backed-up";
+    }
   }
-  return { ok: true, installed, version };
+  writeFileAtomic(dest, desired);
+  return "written";
 }
 
 // ---- importScans ----------------------------------------------------------------------------------
@@ -367,13 +520,14 @@ export interface ImportScansParams {
 export interface ImportScansResult {
   copied: number;
   skipped: number;
+  failed: number;
 }
 
 export function importScans({ dir, inboxDir }: ImportScansParams): ImportScansResult {
   mkdirSync(inboxDir, { recursive: true });
   let names: string[];
-  try { names = readdirSync(dir); } catch { return { copied: 0, skipped: 0 }; }
-  let copied = 0, skipped = 0;
+  try { names = readdirSync(dir); } catch { return { copied: 0, skipped: 0, failed: 0 }; }
+  let copied = 0, skipped = 0, failed = 0;
   for (const name of names.sort()) {
     if (!name.endsWith(".json")) continue;
     const src = join(dir, name);
@@ -382,13 +536,20 @@ export function importScans({ dir, inboxDir }: ImportScansParams): ImportScansRe
     // target's bytes under statSync, wherever that target is.
     try { if (!lstatSync(src).isFile()) continue; } catch { continue; }
     const dest = join(inboxDir, name);
-    if (existsSync(dest)) { skipped++; continue; }
-    const tmp = `${dest}.tmp`;
-    copyFileSync(src, tmp);
-    renameSync(tmp, dest);
-    copied++;
+    // lstatSync here too, not existsSync: existsSync FOLLOWS a symlink, so a dangling one already
+    // sitting in the inbox under a scan's name read as "absent" and the copy below replaced it.
+    // Anything at all under this name means the name is taken — import never overwrites (the Global
+    // Constraint), whatever type the thing under it happens to be.
+    let taken = true;
+    try { lstatSync(dest); } catch { taken = false; }
+    if (taken) { skipped++; continue; }
+    // Counted, not thrown: an EPERM partway through a folder used to escape the loop as a generic 500
+    // with the already-copied files silently left behind and nothing in the result to say which. The
+    // rest of the folder still gets its chance.
+    try { copyFileAtomic(src, dest); copied++; }
+    catch { failed++; }
   }
-  return { copied, skipped };
+  return { copied, skipped, failed };
 }
 
 // ---- repoFromPackage / checkForUpdates -------------------------------------------------------------
@@ -455,11 +616,29 @@ export async function checkForUpdates(
   try { body = await res.json(); }
   catch (e) { return { configured: true, error: `invalid release response: ${(e as Error).message}` }; }
   // body is the parsed JSON of a GitHub releases/latest response — never schema-checked before this
-  // (same unvalidated trust as elsewhere in this file); tag_name is coerced through String() either
-  // way, but html_url is forwarded as-is, exactly like the pre-TypeScript code — so the result's `url`
-  // is typed `unknown`, not `string`: nothing here establishes that GitHub sent one, or that it is a
-  // string, or that it is an http(s) URL. Whoever renders it has to check (see app/ui/settings).
+  // (same unvalidated trust as elsewhere in this file); tag_name is coerced through String(), and
+  // html_url now goes through releaseUrl rather than being forwarded as-is. `url` stays typed
+  // `unknown` so the result's shape is unchanged for every caller, but at run time it is always a
+  // string this module vouched for.
   const release = body as { tag_name?: unknown; html_url?: unknown };
   const latest = String(release.tag_name || "").replace(/^v/, "");
-  return { configured: true, current, latest, url: release.html_url, upToDate: compareSemver(current, latest) >= 0 };
+  return { configured: true, current, latest, url: releaseUrl(release.html_url, repo), upToDate: compareSemver(current, latest) >= 0 };
+}
+
+// html_url used to reach the page as an <a href> exactly as the release response carried it — a value
+// from off this machine, never checked to be a string, an https URL, or even a URL at all. It is only
+// used now when it really is an https://github.com/<this repo>/releases… address; anything else falls
+// back to that repository's own releases page, which is always a correct place to send the player and
+// needs no response to construct. GitHub treats owner/name case-insensitively, so the comparison does
+// too.
+function releaseUrl(raw: unknown, repo: string): string {
+  const fallback = `https://github.com/${repo}/releases`;
+  if (typeof raw !== "string") return fallback;
+  let parsed: URL;
+  try { parsed = new URL(raw); } catch { return fallback; }
+  if (parsed.protocol !== "https:" || parsed.host !== "github.com") return fallback;
+  const prefix = `/${repo.toLowerCase()}/releases`;
+  const path = parsed.pathname.toLowerCase();
+  if (path !== prefix && !path.startsWith(`${prefix}/`)) return fallback;
+  return raw;
 }
