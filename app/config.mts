@@ -61,7 +61,7 @@ export function corePath(env: NodeJS.ProcessEnv = process.env): string {
 export function resolveConfig(argv: string[] = process.argv.slice(2), env: NodeJS.ProcessEnv = process.env, home: string = homedir()): Config {
   const dataDir = resolve(flag(argv, "--data") || env.PACKRAT_DATA || join(home, ".pack-rat"));
   const rawPort = flag(argv, "--port") || env.PACKRAT_PORT || DEFAULT_PORT;
-  const port = Number.parseInt(String(rawPort), 10);
+  const port = Number.parseInt(rawPort as string, 10);   // rawPort can be the number DEFAULT_PORT; parseInt ToString-coerces a non-string argument at runtime regardless, so this cast is compiler-only
   // 0 is a valid port: it asks the OS to assign a free one (read back from server.address().port).
   if (!Number.isInteger(port) || port < 0 || port > 65535 || String(rawPort).trim() !== String(port)) {
     throw new Error(`invalid port "${rawPort}" — use --port N or PACKRAT_PORT with 0..65535`);

@@ -99,10 +99,7 @@ export async function loadHighs(): Promise<HighsInstance> {
   // namespace — even though the "import" condition's real build/highs.mjs is genuine ESM with a
   // real default export. This cast is the one place that trusts the real (ESM) runtime shape
   // over the mistyped one.
-  if (!cached) {
-    const loader = (await import("highs")).default as unknown as () => Promise<HighsInstance>;
-    cached = loader();
-  }
+  if (!cached) cached = ((await import("highs")).default as unknown as () => Promise<HighsInstance>)();
   return cached;
 }
 
@@ -120,11 +117,10 @@ export type HighsStatus = "optimal" | "timeLimit" | "infeasible" | "interrupted"
 
 const STATUS_TEXT: Record<string, string> = {};   // reverse lookup of highs.constants.modelStatus, built lazily per highs instance
 function statusTextFor(highs: HighsInstance | undefined, code: number | undefined): string {
-  const key = code === undefined ? "__none__" : String(code);
-  if (!STATUS_TEXT[key] && highs) {
-    for (const [name, value] of Object.entries(highs.constants.modelStatus)) STATUS_TEXT[String(value)] = name;
+  if (!STATUS_TEXT[code === undefined ? "__none__" : code] && highs) {
+    for (const [name, value] of Object.entries(highs.constants.modelStatus)) STATUS_TEXT[value] = name;
   }
-  return STATUS_TEXT[key] ?? "other";
+  return STATUS_TEXT[code as number] ?? "other";
 }
 function statusOf(highs: HighsInstance, code: number): HighsStatus {
   const m = highs.constants.modelStatus;
@@ -191,7 +187,6 @@ export function solveModel(handle: Handle, { timeLimitS, start, onEvent }: Solve
     last = { objective: e.data.objective_function_value, primal: e.data.mip_primal_bound, dual: e.data.mip_dual_bound,
       gap: e.data.mip_gap, nodes: Number(e.data.mip_node_count ?? 0n), runningTime: e.data.running_time };
     if (onEvent) onEvent({ kind, ...last });
-    return undefined;
   };
   const t0 = Date.now();
   model.run({ [highs.constants.callbackType.mipImprovingSolution]: forward("improving"), [highs.constants.callbackType.mipLogging]: forward("log") });
