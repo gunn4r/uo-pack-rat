@@ -1,4 +1,4 @@
-// item-query.test.mjs — app/item-query.mjs: parseItemQuery's defaults/clamps, applyItemQuery's predicate
+// item-query.test.mts — app/item-query.mts: parseItemQuery's defaults/clamps, applyItemQuery's predicate
 // (parity with ui/inventory.mjs's filtered()) and sort (parity with renderInventory()), facetsOf, and
 // rarityRank. Hand-built fixture items (no scan files, no server) so this stays fast and pure.
 import { test } from "node:test";
@@ -28,7 +28,7 @@ function mk(overrides: Record<string, unknown>): Item {
     ...overrides,
   };
   it.lines = it.lines || [it.name];
-  // mk() deliberately builds a PARTIAL fixture: only the fields item-query.mjs's functions actually
+  // mk() deliberately builds a PARTIAL fixture: only the fields item-query.mts's functions actually
   // read (see the module header's field list) — not a full enriched Item (no serial/root/container/
   // equippedBy/...). Cast once here, at the test's own fixture boundary, per the migration plan's
   // "a test deliberately passing malformed input gets a cast at that call site" rule. Every real

@@ -1,7 +1,7 @@
 // ui/inventory.mjs — the Inventory tab: filters, columns, sorting, the table itself. Task 5: the
 // table is now a server-paged view over GET /api/items instead of a client-side filter/sort/slice
 // pass over every scanned item — state.query is the page-side source of truth (the exact shape
-// item-query.mjs's parseItemQuery reads off a URLSearchParams), fetchItems() builds the query string
+// item-query.mts's parseItemQuery reads off a URLSearchParams), fetchItems() builds the query string
 // from it and lands the response in state.page, and renderInventory() only ever draws state.page.
 import { PROP_FULL, tagUnits } from "../vault-lib.mts";
 import { state } from "./store.mjs";
