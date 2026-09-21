@@ -10,7 +10,7 @@ Standard interface (`npm test` and its variants are the same runner as `./script
 
 Results land in `test_logs/latest_summary.json`. Read that, not the console output.
 
-Everything runs on Node's built-in test runner (`node:test`); `scripts/test-runner.mts` drives it with the programmatic `run()` API over every `*.test.mjs`/`*.test.mts` file found by a **recursive** walk of `app/` and `scripts/` (excluding `node_modules/`, `dist/`, and `fixtures/`), then writes the summary. Discovery is recursive specifically so a test file in a new subdirectory — `app/schema/validate.test.mts` was the one this missed for a while — is picked up automatically, with no runner edit needed.
+Everything runs on Node's built-in test runner (`node:test`); `scripts/test-runner.mts` drives it with the programmatic `run()` API over every `*.test.mts` file found by a **recursive** walk of `app/` and `scripts/` (excluding `node_modules/`, `dist/`, and `fixtures/`), then writes the summary. Discovery is recursive specifically so a test file in a new subdirectory — `app/schema/validate.test.mts` was the one this missed for a while — is picked up automatically, with no runner edit needed.
 
 ## What is under test
 
