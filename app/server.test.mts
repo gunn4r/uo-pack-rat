@@ -157,6 +157,10 @@ const BRIDGE_SCHEMA = JSON.parse(readFileSync(join(dirname(fileURLToPath(import.
 buildSchemaTypes();
 buildUi();   // this file's own route tests fetch /ui/app.mjs and /vault-lib.mjs from app/dist/
 const HERE = dirname(fileURLToPath(import.meta.url));
+// The version the repo's own tazuo adapter ships, read the same way installer.mts's installedVersion
+// reads it — every assertion about a "repo-shipped" or "just installed" version compares against this
+// rather than a literal, so bumping ADAPTER_VERSION in the .py is not also a test edit.
+const TAZUO_VERSION = /ADAPTER_VERSION\s*=\s*"([^"]+)"/.exec(readFileSync(join(HERE, "..", "adapters", "tazuo", "packrat-scanner.py"), "utf8"))![1]!;
 // This file's own vault-lib.mts import is a separate module instance from the one the server
 // dynamically re-imports per request (busted by mtime) — a direct call here to a rules-aware
 // function (buildPools) needs its own setRules().
@@ -953,22 +957,22 @@ test("[fast] two POST /api/optimize with no X-Client-Id never supersede each oth
 
 // Post-review fix: job failures (not just route-level 500s) now write a ref-keyed entry to the same
 // log file, and the ref reaches the client in the sanitized job.error text. Deterministic trigger:
-// a pools entry with a null item — {helmet: [null]} — makes optimizer-core.mts's optCollectKeys read
-// `list[j].props` with no null check on list[j] itself (unlike the `|| {}` that guards the *result*
-// of that read) — confirmed by a throwaway probe before writing this test. The route only rejects a
-// falsy `profile`, not a malformed `pools`/`current`, so this reaches the worker uncaught. (An earlier
-// version of this test used a profile with `caps` but no `weights`, which threw in optBuildSpace;
-// Phase 2 Task 5 guarded that spot with `profile.weights || {}`, so this test needed a new trigger —
-// verified RED against the old body once the guard landed, GREEN with this one.) Tied to this specific
-// optimizer-core.mts behavior, out of this task's scope to change; if a future core update guards
-// `list[j]` too, this test would need a different way to provoke a job failure.
+// a PACKRAT_CORE pointing at a module that throws on import, so the `await import(coreUrl)` at the top
+// of optimize-worker.mts (outside its own try/catch) reaches the server as a worker 'error' event.
+// This used to provoke the throw with `{pools: {helmet: [null]}}` — optimizer-core.mts's optCollectKeys
+// reads `list[j].props` with no null check on `list[j]` itself — but POST /api/optimize now refuses a
+// malformed pools entry with a 400 before any worker starts (phase-7 security review, Important 5),
+// which is where that body should die. A broken core is the honest remaining way in, and unlike the old
+// trigger it does not depend on optimizer-core.mts internals staying unguarded.
 test("[fast] a job that throws inside the optimizer logs its stack with a ref; the client only sees the sanitized ref", async () => {
   const dir = mkdtempSync(join(tmpdir(), "qm-"));
-  const s2 = await startServer(ensureLayout(resolveConfig(["--demo", "--port", "0", "--data", dir], {})));
+  const brokenCore = join(mkdtempSync(join(tmpdir(), "qm-core-")), "optimizer-core.mts");
+  writeFileSync(brokenCore, 'throw new TypeError("optimizer core is broken");\n');
+  const s2 = await startServer(ensureLayout(resolveConfig(["--demo", "--port", "0", "--data", dir], { PACKRAT_CORE: brokenCore })));
   try {
     const r = await fetch(s2.url + "/api/optimize", {
       method: "POST", headers: { "content-type": "application/json" },
-      body: JSON.stringify({ pools: { helmet: [null] }, current: {}, profile: { caps: { physResist: 70 } }, opts: {} }),
+      body: JSON.stringify({ pools: {}, current: {}, profile: { caps: { physResist: 70 } }, opts: {} }),
     });
     const { id } = asJson<OptimizeJobResponse>(await r.json());
     let status: OptimizeJobResponse | undefined;
@@ -983,7 +987,7 @@ test("[fast] a job that throws inside the optimizer logs its stack with a ref; t
     const ref = status!.error!.match(/ref ([0-9a-f]{8})/)![1]!;
     const log = readFileSync(join(dir, "logs", "server.log"), "utf8");
     assert.ok(log.includes(ref), "the ref appears in the log file");
-    assert.match(log, /TypeError.*optCollectKeys/s, "the real stack trace reached the log file");
+    assert.match(log, /TypeError.*optimizer core is broken/s, "the real stack trace reached the log file");
   } finally {
     await s2.close();
   }
@@ -1257,7 +1261,7 @@ test("[fast] GET /api/setup lists the tazuo adapter, its available (repo-shipped
     // Present, not pinned: the test's own point (title, available/installed/dataDir below) is
     // "tazuo is listed, with the right version/candidates" — not the exact set of shipped adapters.
     assert.ok(j.adapters.map((a) => a.id).includes("tazuo"), JSON.stringify(j.adapters.map((a) => a.id)));
-    assert.equal(j.available.tazuo, "2.0.0");
+    assert.equal(j.available.tazuo, TAZUO_VERSION);
     assert.equal(j.installed, null);
     assert.equal(j.dataDir, dir);
     assert.ok(Array.isArray(j.candidates.tazuo), JSON.stringify(j.candidates));
@@ -1475,7 +1479,7 @@ test("[fast] POST /api/setup/install installs the scripts, saves settings.client
     const installBody = asJson<InstallScriptsResult>(await install.json());
     assert.equal(install.status, 200, JSON.stringify(installBody));
     assert.deepEqual(installBody.installed!.sort(), ["packrat-bridge.py", "packrat-refresh.py", "packrat-scanner.py"]);
-    assert.equal(installBody.version, "2.0.0");
+    assert.equal(installBody.version, TAZUO_VERSION);
     assert.ok(existsSync(join(scriptsDir, "packrat-scanner.py")));
     assert.ok(existsSync(join(scriptsDir, "packrat-paths.json")));
     assert.equal(existsSync(join(scriptsDir, "packrat-scanner.py.new")), false);
@@ -1485,7 +1489,7 @@ test("[fast] POST /api/setup/install installs the scripts, saves settings.client
 
     const setupAfterInstall = asJson<SetupResponse>(await (await fetch(s2.url + "/api/setup")).json());
     assert.equal(setupAfterInstall.firstRun, true, "an install alone must not clear firstRun");
-    assert.equal(setupAfterInstall.installed!.version, "2.0.0");
+    assert.equal(setupAfterInstall.installed!.version, TAZUO_VERSION);
 
     const done = await fetch(s2.url + "/api/settings", {
       method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify({ setupDone: true }),
@@ -1530,7 +1534,7 @@ test("[fast] POST /api/import copies two fixtures (not the stray .txt) into the 
 
     const r = await fetch(s2.url + "/api/import", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ dir: srcDir }) });
     assert.equal(r.status, 200);
-    assert.deepEqual(asJson(await r.json()), { ok: true, copied: 2, skipped: 0 });
+    assert.deepEqual(asJson(await r.json()), { ok: true, copied: 2, skipped: 0, failed: 0 });
 
     const badDir = await fetch(s2.url + "/api/import", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ dir: join(srcDir, "does-not-exist") }) });
     assert.equal(badDir.status, 400);
@@ -1558,7 +1562,7 @@ test("[fast] POST /api/import takes an explicit adapter (same result as the defa
 
     const r = await fetch(s2.url + "/api/import", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ dir: srcDir, adapter: "tazuo" }) });
     assert.equal(r.status, 200);
-    assert.deepEqual(asJson(await r.json()), { ok: true, copied: 1, skipped: 0 });
+    assert.deepEqual(asJson(await r.json()), { ok: true, copied: 1, skipped: 0, failed: 0 });
 
     const bad = await fetch(s2.url + "/api/import", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ dir: srcDir, adapter: "not-a-real-adapter" }) });
     assert.equal(bad.status, 400);
@@ -1768,7 +1772,7 @@ test("[fast] POST /api/host/pick-folder and open-path are 501 without a host; an
   const opened: string[] = [];
   const s2 = await startServer(
     ensureLayout(resolveConfig(["--demo", "--port", "0", "--data", dir], {})),
-    { host: { pickFolder: async () => "/x", openPath: async (p: string) => { opened.push(p); } } },
+    { host: { pickFolder: async () => "/x", openPath: async (w: "data" | "logs") => { opened.push(w); } } },
   );
   try {
     const picked = await fetch(s2.url + "/api/host/pick-folder", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ title: "Pick" }) });
@@ -1777,7 +1781,9 @@ test("[fast] POST /api/host/pick-folder and open-path are 501 without a host; an
 
     const openOk = await fetch(s2.url + "/api/host/open-path", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ which: "data" }) });
     assert.equal(openOk.status, 200);
-    assert.deepEqual(opened, [dir]);
+    // The DISCRIMINATOR crosses the host bridge, not a path this process resolved — electron/main.mts
+    // owns the two directories it maps to (phase-7 security review, area-4 Important 1).
+    assert.deepEqual(opened, ["data"]);
 
     const openBad = await fetch(s2.url + "/api/host/open-path", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ which: "etc" }) });
     assert.equal(openBad.status, 400);
@@ -1848,6 +1854,433 @@ test("[fast] PUT /api/settings {client: {adapter: \"../evil\", scriptsDir}} is 4
     assert.equal(r.status, 400);
     assert.match(asJson<ErrorBody>(await r.json()).error, /adapter/);
     assert.equal((asJson<SettingsResponse>(await (await fetch(s2.url + "/api/settings")).json())).settings.client, undefined, "a rejected PUT must not save settings.client");
+  } finally {
+    await s2.close();
+  }
+});
+
+// ---- Phase 7 security review: the server's own hardening ------------------------------------------
+// One block, one finding per test, each named after the property it pins rather than the bug it came
+// from. Every test here was verified RED against the pre-fix server before the fix landed.
+
+// Important 8: JSON.parse("null") is a perfectly well-formed body, and destructuring it is a
+// TypeError — ten routes answered 500 and appended a full V8 stack to <data>/logs/server.log, which
+// is neither rotated nor size-capped. One asObject() guard in front of them all.
+const OBJECT_BODY_ROUTES: Array<[string, string]> = [
+  ["PUT", "/api/settings"], ["POST", "/api/setup/locate"], ["POST", "/api/setup/install"],
+  ["POST", "/api/import"], ["POST", "/api/import/paste"], ["POST", "/api/import/rescan"],
+  ["POST", "/api/host/pick-folder"], ["POST", "/api/host/open-path"], ["POST", "/api/optimize"],
+  ["POST", "/api/bridge"], ["POST", "/api/forget"],
+];
+test("[fast] a null/array/scalar JSON body is a clean 400 on every body-reading route, and the log does not grow", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "qm-nullbody-"));
+  // A host stub, so the two /api/host/* routes get past their own 501 and reach the body read.
+  const s2 = await startServer(
+    ensureLayout(resolveConfig(["--port", "0", "--data", dir], {})),
+    { host: { pickFolder: async () => null, openPath: async () => {} } },
+  );
+  const log = join(dir, "logs", "server.log");
+  const before = existsSync(log) ? readFileSync(log, "utf8").length : 0;
+  try {
+    for (const [method, path] of OBJECT_BODY_ROUTES) {
+      for (const body of ["null", "[]", '"x"', "42"]) {
+        const r = await fetch(s2.url + path, { method, headers: { "content-type": "application/json" }, body });
+        assert.equal(r.status, 400, `${method} ${path} with body ${body}`);
+        assert.equal(asJson<ErrorBody>(await r.json()).error, "body must be a JSON object");
+      }
+    }
+    const after = existsSync(log) ? readFileSync(log, "utf8").length : 0;
+    assert.equal(after, before, "a rejected body writes nothing to server.log");
+  } finally {
+    await s2.close();
+  }
+});
+
+// Important 6 / area-4 minor 3: frame-ancestors has no default-src fallback, so `default-src 'none'`
+// never delivered the "no framing" the comment claimed, and no X-Frame-Options was sent at all.
+test("[smoke] / carries frame-ancestors 'none', and every response carries x-frame-options: DENY", async () => {
+  const page = await get("/");
+  assert.match(page.headers.get("content-security-policy") || "", /frame-ancestors 'none'/);
+  assert.equal(page.headers.get("x-frame-options"), "DENY");
+  const json = await get("/api/inventory");
+  assert.equal(json.headers.get("x-frame-options"), "DENY", "not just text/html");
+});
+
+// Minor 7: both timeouts were 0, so a socket that sent half a request line and then stopped was never
+// closed. The old comment justified that with the exact solver's minutes-long searches — but those are
+// on the RESPONSE side, which neither of these governs, and a finite requestTimeout leaves a long-lived
+// SSE response alone (the request itself completed on connect). server.timeout, which WOULD cut a
+// stream, stays disabled.
+test("[fast] the server keeps finite header/request timeouts, and an SSE stream still streams under them", async () => {
+  assert.ok(srv.server.headersTimeout > 0, "headersTimeout must not be disabled");
+  assert.ok(srv.server.requestTimeout > 0, "requestTimeout must not be disabled");
+  assert.equal(srv.server.timeout, 0, "the idle-socket timeout stays off — it would cut an SSE stream");
+  const sse = sseReader(await get("/api/events"));
+  try {
+    await sse.readUntil((b) => b.includes("event: hello"));
+  } finally {
+    await sse.cancel();
+  }
+});
+
+// Important 3 / area-3 finding 4: install took the raw body value and only installScripts'
+// statSync().isDirectory() stood between it and the copy loop, while locate validated — so the two
+// halves of the wizard disagreed about what a scripts folder is. Now install resolves the SAME nested
+// form locate returns, and persists that.
+test("[fast] POST /api/setup/install resolves the nested scripts folder like locate does, and persists the resolved path", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "qm-install-nested-"));
+  const s2 = await startServer(ensureLayout(resolveConfig(["--port", "0", "--data", dir], {})));
+  try {
+    const clientRoot = mkdtempSync(join(tmpdir(), "qm-install-nested-client-"));
+    const legionDir = join(clientRoot, "TazUO", "LegionScripts");
+    mkdirSync(legionDir, { recursive: true });
+    const r = await fetch(s2.url + "/api/setup/install", {
+      method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ adapter: "tazuo", scriptsDir: clientRoot }),
+    });
+    assert.equal(r.status, 200, await r.clone().text());
+    assert.ok(existsSync(join(legionDir, "packrat-scanner.py")), "installed into the nested scripts folder");
+    assert.equal(existsSync(join(clientRoot, "packrat-scanner.py")), false, "and not into the picked root");
+    assert.deepEqual((asJson<SettingsResponse>(await (await fetch(s2.url + "/api/settings")).json())).settings.client,
+      { adapter: "tazuo", scriptsDir: legionDir }, "the RESOLVED folder is what gets persisted");
+  } finally {
+    await s2.close();
+  }
+});
+
+test("[fast] POST /api/setup/install refuses a scriptsDir that is not a folder, writing nothing and saving no client", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "qm-install-baddir-"));
+  const s2 = await startServer(ensureLayout(resolveConfig(["--port", "0", "--data", dir], {})));
+  try {
+    const clientRoot = mkdtempSync(join(tmpdir(), "qm-install-baddir-client-"));
+    const missing = join(clientRoot, "no-such-folder");
+    for (const bad of [missing, "relative/path", "\\\\host\\share", "//host/share", 5, null]) {
+      const r = await fetch(s2.url + "/api/setup/install", {
+        method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ adapter: "tazuo", scriptsDir: bad }),
+      });
+      assert.equal(r.status, 400, `scriptsDir ${JSON.stringify(bad)} should be refused`);
+      assert.equal(asJson<ErrorBody & { code?: string }>(await r.json()).code, "badDir");
+    }
+    assert.equal(existsSync(missing), false, "a refused install creates nothing");
+    assert.equal((asJson<SettingsResponse>(await (await fetch(s2.url + "/api/settings")).json())).settings.client, undefined);
+  } finally {
+    await s2.close();
+  }
+});
+
+// Important 3: PUT /api/settings type-checked client.scriptsDir as a string and persisted it, after
+// which GET /api/setup read whatever it named on every render — a UNC path dialled out over SMB on
+// win32, a directory holding a FIFO hung the whole single-threaded process, and neither recovered on
+// restart because the value was on disk.
+test("[fast] PUT /api/settings validates client.scriptsDir (absolute, non-UNC, a real client folder) and leaves settings.json alone when it doesn't", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "qm-settings-scriptsdir-"));
+  const s2 = await startServer(ensureLayout(resolveConfig(["--port", "0", "--data", dir], {})));
+  try {
+    const clientRoot = mkdtempSync(join(tmpdir(), "qm-settings-scriptsdir-client-"));
+    for (const bad of [join(clientRoot, "no-such-folder"), "relative/path", "\\\\host\\share", "//host/share", 5]) {
+      const r = await fetch(s2.url + "/api/settings", {
+        method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify({ client: { adapter: "tazuo", scriptsDir: bad } }),
+      });
+      assert.equal(r.status, 400, `scriptsDir ${JSON.stringify(bad)} should be refused`);
+      assert.match(asJson<ErrorBody>(await r.json()).error, /client/);
+    }
+    assert.equal(JSON.parse(readFileSync(join(dir, "settings.json"), "utf8")).client, undefined, "no rejected value reached settings.json");
+
+    // a real folder is accepted, resolved to the nested form, and can be cleared again
+    const legionDir = join(clientRoot, "TazUO", "LegionScripts");
+    mkdirSync(legionDir, { recursive: true });
+    const good = await fetch(s2.url + "/api/settings", {
+      method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify({ client: { adapter: "tazuo", scriptsDir: clientRoot } }),
+    });
+    assert.equal(good.status, 200);
+    assert.deepEqual(asJson<SettingsResponse>(await good.json()).settings.client, { adapter: "tazuo", scriptsDir: legionDir });
+    const cleared = await fetch(s2.url + "/api/settings", {
+      method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify({ client: null }),
+    });
+    assert.equal(cleared.status, 200);
+    assert.equal(asJson<SettingsResponse>(await cleared.json()).settings.client, null);
+  } finally {
+    await s2.close();
+  }
+});
+
+test("[fast] PUT /api/settings type-checks shard before it reaches loadRules", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "qm-settings-shardtype-"));
+  const s2 = await startServer(ensureLayout(resolveConfig(["--port", "0", "--data", dir], {})));
+  try {
+    for (const bad of [5, {}, [], null, "x".repeat(200)]) {
+      const r = await fetch(s2.url + "/api/settings", {
+        method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify({ shard: bad }),
+      });
+      assert.equal(r.status, 400, `shard ${JSON.stringify(bad)} should be refused`);
+    }
+  } finally {
+    await s2.close();
+  }
+});
+
+// Important 3: a message naming the path it probed turned this route into a clean yes/no oracle for
+// any absolute path on the machine — "existing directory" vs "file or absent", for free.
+test("[fast] POST /api/setup/locate never echoes the path it probed", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "qm-locate-oracle-"));
+  const s2 = await startServer(ensureLayout(resolveConfig(["--port", "0", "--data", dir], {})));
+  try {
+    const probe = join(mkdtempSync(join(tmpdir(), "qm-locate-oracle-probe-")), "definitely-not-here");
+    const r = await fetch(s2.url + "/api/setup/locate", {
+      method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ adapter: "tazuo", dir: probe }),
+    });
+    assert.equal(r.status, 400);
+    const { error } = asJson<ErrorBody>(await r.json());
+    assert.doesNotMatch(error, /definitely-not-here/, "the probed path must not come back in the error");
+    assert.doesNotMatch(error, /\//, "nor any path at all");
+  } finally {
+    await s2.close();
+  }
+});
+
+// Important 4: name was never type- or length-checked and the assembled document was never validated,
+// so {name: {}} returned 200 and wrote a file every later fold re-read and re-rejected forever, while
+// the user's Forget silently did nothing.
+test("[fast] POST /api/forget validates name, bounds it, and only ever writes a document that passes validateScan", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "qm-forget-name-"));
+  const s2 = await startServer(ensureLayout(resolveConfig(["--port", "0", "--data", dir], {})));
+  const scans = join(dir, "scans");
+  try {
+    for (const bad of [{}, [], 5, true]) {
+      const r = await fetch(s2.url + "/api/forget", {
+        method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ root: 1, name: bad }),
+      });
+      assert.equal(r.status, 400, `name ${JSON.stringify(bad)} should be refused`);
+    }
+    assert.equal(existsSync(scans) ? readdirSync(scans).length : 0, 0, "no tombstone was written for any rejected name");
+
+    // a body far past what four small scalar fields need is refused outright (this route used to
+    // inherit readBody's 50 MB default, which is what let a 200 KB name become a 200 KB scan file)
+    const huge = await fetch(s2.url + "/api/forget", {
+      method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ root: 1, name: "x".repeat(20_000) }),
+    });
+    assert.equal(huge.status, 413);
+    assert.equal(readdirSync(scans).length, 0, "and nothing was written for it either");
+
+    const long = await fetch(s2.url + "/api/forget", {
+      method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ root: 1, name: "x".repeat(1000) }),
+    });
+    assert.equal(long.status, 200);
+    const files = readdirSync(scans);
+    assert.equal(files.length, 1);
+    const doc = JSON.parse(readFileSync(join(scans, files[0]!), "utf8"));
+    assert.equal(doc.roots[0].name.length, 64, "the label is capped");
+    assert.equal(validateScan(doc).ok, true, "every file this route writes passes the scan contract");
+
+    // one file per forgotten root, not one per click: the name used to carry a millisecond timestamp,
+    // so a loop of calls grew <data>/scans/ without bound and slowed every later fold
+    for (let i = 0; i < 5; i++) {
+      await fetch(s2.url + "/api/forget", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ root: 1, name: "chest" }) });
+    }
+    assert.deepEqual(readdirSync(scans), files, "re-forgetting a root replaces its tombstone instead of adding one");
+  } finally {
+    await s2.close();
+  }
+});
+
+// Important 5, first half: pools/current/profile/opts were unvalidated. {pools:{helmet:[null]}} started
+// a real worker thread that died with a TypeError, and an unbounded opts.restarts/timeBudgetMs went
+// straight into the search.
+test("[fast] POST /api/optimize rejects a malformed pools/current/profile and an out-of-range opts instead of starting a job", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "qm-optimize-validate-"));
+  const s2 = await startServer(ensureLayout(resolveConfig(["--demo", "--port", "0", "--data", dir], {})));
+  const profile = { caps: { physResist: 70 }, weights: {} };
+  const post = (body: unknown): Promise<Response> => fetch(s2.url + "/api/optimize", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
+  try {
+    const bad: unknown[] = [
+      { pools: { helmet: [null] }, current: {}, profile, opts: {} },
+      { pools: { helmet: [{ serial: 1, name: "x", slot: "helmet" }] }, current: {}, profile, opts: {} },   // no props
+      { pools: { helmet: "not-an-array" }, current: {}, profile, opts: {} },
+      { pools: [], current: {}, profile, opts: {} },
+      { pools: {}, current: { helmet: 5 }, profile, opts: {} },
+      { pools: {}, current: {}, profile: "not-an-object", opts: {} },
+      { pools: {}, current: {}, profile, opts: { restarts: 1e12 } },
+      { pools: {}, current: {}, profile, opts: { timeBudgetMs: Number.MAX_SAFE_INTEGER } },
+      { pools: {}, current: {}, profile, opts: { timeBudgetMs: "10s" } },
+      { pools: {}, current: {}, profile, opts: { exact: "yes" } },
+      { pools: {}, current: {}, profile, opts: { spawnShell: true } },   // unknown option
+      { pools: {}, current: {}, profile, opts: [] },
+      { pools: {}, current: {}, profile, opts: {}, meta: [] },
+      { pools: {}, current: {}, profile, opts: {}, character: 5 },
+    ];
+    for (const body of bad) {
+      const r = await post(body);
+      assert.equal(r.status, 400, JSON.stringify(body).slice(0, 120));
+    }
+    assert.equal(existsSync(join(dir, "runs")) ? readdirSync(join(dir, "runs")).length : 0, 0, "no job ever started, so no run was saved");
+  } finally {
+    await s2.close();
+  }
+});
+
+// Important 5, second half: saveRun wrote `settings: meta.settings` verbatim, so a padded meta became a
+// padded file in <data>/runs/ — which readRuns() re-parses on every POST /api/optimize and GET /api/runs.
+test("[fast] POST /api/optimize persists only the known meta fields, so caller padding never reaches <data>/runs/", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "qm-optimize-meta-"));
+  const s2 = await startServer(ensureLayout(resolveConfig(["--demo", "--port", "0", "--data", dir], {})));
+  try {
+    const inv = foldFixtures(join(HERE, "fixtures"));
+    const character = Object.keys(inv.characters)[0]!;
+    const { pools, current } = buildPools(inv, character, {});
+    const profile = { caps: { physResist: 70 }, weights: { physResist: 1 } };
+    const huge = await fetch(s2.url + "/api/optimize", {
+      method: "POST", headers: { "content-type": "application/json" },
+      body: JSON.stringify({ pools, current, profile, opts: {}, meta: { character, settings: { pad: "p".repeat(200_000) } } }),
+    });
+    assert.equal(huge.status, 400, "an oversized meta is refused outright");
+
+    const ok = await fetch(s2.url + "/api/optimize", {
+      method: "POST", headers: { "content-type": "application/json" },
+      body: JSON.stringify({ pools, current, profile, opts: {}, meta: { character, secret: "s".repeat(500), settings: { allowOthersWorn: true } } }),
+    });
+    assert.equal(ok.status, 200, await ok.clone().text());
+    const { id } = asJson<OptimizeJobResponse>(await ok.json());
+    const runFile = join(dir, "runs", `${id}.json`);
+    for (let i = 0; i < 200 && !existsSync(runFile); i++) await new Promise((r) => setTimeout(r, 20));
+    const saved = readFileSync(runFile, "utf8");
+    assert.doesNotMatch(saved, /secret|sssss/, "an unknown meta field is not persisted");
+    assert.match(saved, new RegExp(`"character":"${character}"`), "the known ones still are");
+  } finally {
+    await s2.close();
+  }
+});
+
+// Important 5, third half: the supersede rule is per-X-Client-Id and is skipped entirely when the
+// header is absent, so a header-less (or header-rotating) caller could start unbounded worker threads.
+test("[fast] POST /api/optimize caps concurrent jobs server-wide, even for callers with no X-Client-Id", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "qm-optimize-cap-"));
+  // A PACKRAT_CORE whose optimizeSuit parks its worker thread for ever (Atomics.wait on a shared
+  // buffer nothing ever notifies — no CPU, no timing assumption): every job started here stays
+  // "running" until close() terminates it, which is exactly the state the cap counts. A real search
+  // would make this test a race against how fast HiGHS happens to finish.
+  const hangingCore = join(mkdtempSync(join(tmpdir(), "qm-core-hang-")), "optimizer-core.mts");
+  writeFileSync(hangingCore, "export function optimizeSuit() {\n  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0);\n  return {};\n}\n");
+  const s2 = await startServer(ensureLayout(resolveConfig(["--demo", "--port", "0", "--data", dir], { PACKRAT_CORE: hangingCore })));
+  try {
+    const profile = { caps: { physResist: 70 }, weights: { physResist: 1 } };
+    const body = JSON.stringify({ pools: {}, current: {}, profile, opts: {} });
+    const statuses: number[] = [];
+    for (let i = 0; i < 6; i++) {
+      const r = await fetch(s2.url + "/api/optimize", { method: "POST", headers: { "content-type": "application/json" }, body });
+      statuses.push(r.status);
+      await r.arrayBuffer();
+    }
+    assert.equal(statuses[0], 200, "the first one still runs");
+    assert.ok(statuses.includes(429), `a request past the cap must be refused, got ${statuses.join(",")}`);
+    assert.equal(statuses[statuses.length - 1], 429, "and it stays refused while those jobs are alive");
+  } finally {
+    await s2.close();
+  }
+});
+
+// Minor 9: BRIDGE_SCHEMA.command constrains the TYPES of action/serial/chain but sets no maxLength on
+// name and no item cap on chain — and this is the one route whose input reaches the game client.
+test("[fast] POST /api/bridge bounds name, chain and the assembled line, queueing nothing when they blow the cap", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "qm-bridge-bounds-"));
+  const s2 = await startServer(ensureLayout(resolveConfig(["--demo", "--port", "0", "--data", dir], {})));
+  const queue = join(dir, "bridge", "tazuo", "queue.jsonl");
+  try {
+    const bad: unknown[] = [
+      { action: "grab", serial: 1, name: "n".repeat(1000), chain: [], pos: null },
+      { action: "grab", serial: 1, name: 5, chain: [], pos: null },
+      { action: "grab", serial: 1, name: "n", chain: Array.from({ length: 64 }, (_, i) => i), pos: null },
+      { action: "grab", serial: 1, name: "n", chain: [], pos: { blob: "b".repeat(8000) } },
+    ];
+    for (const body of bad) {
+      const r = await fetch(s2.url + "/api/bridge", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
+      assert.equal(r.status, 400, JSON.stringify(body).slice(0, 80));
+    }
+    // and the body itself is capped well below readBody's 50 MB default (a 500 KB name used to take
+    // queue.jsonl to half a megabyte in one request)
+    const enormous = await fetch(s2.url + "/api/bridge", {
+      method: "POST", headers: { "content-type": "application/json" },
+      body: JSON.stringify({ action: "grab", serial: 1, name: "n".repeat(1_000_000), chain: [], pos: null }),
+    });
+    assert.equal(enormous.status, 413);
+    assert.equal(existsSync(queue), false, "nothing was appended to the queue");
+  } finally {
+    await s2.close();
+  }
+});
+
+// Minor 13: String(label) throws on an object with a null prototype or a throwing toString — a 500
+// plus a stack for what is a one-line type check.
+test("[fast] PUT /api/runs/<id> type-checks label instead of String()-ing whatever arrives", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "qm-run-label-"));
+  const s2 = await startServer(ensureLayout(resolveConfig(["--demo", "--port", "0", "--data", dir], {})));
+  try {
+    mkdirSync(join(dir, "runs"), { recursive: true });
+    writeFileSync(join(dir, "runs", "r1.json"), JSON.stringify({ id: "r1", character: "Kestrel", createdAt: new Date().toISOString(), result: { score: 1 } }));
+    for (const bad of [{}, [], 5, true, null]) {
+      const r = await fetch(s2.url + "/api/runs/r1", { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify({ label: bad }) });
+      assert.equal(r.status, 400, `label ${JSON.stringify(bad)} should be refused`);
+    }
+    const ok = await fetch(s2.url + "/api/runs/r1", { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify({ label: "L".repeat(500) }) });
+    assert.equal(ok.status, 200);
+    assert.equal(JSON.parse(readFileSync(join(dir, "runs", "r1.json"), "utf8")).label.length, 120);
+  } finally {
+    await s2.close();
+  }
+});
+
+// area-4 minor 1: the title crossed two process hops into a native, app-modal folder dialog with no
+// check of any kind and the 50 MB default body cap behind it.
+test("[fast] POST /api/host/pick-folder passes on only a short string title, and the shell's default otherwise", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "qm-pickfolder-title-"));
+  const seen: Array<{ title?: unknown }> = [];
+  const s2 = await startServer(
+    ensureLayout(resolveConfig(["--demo", "--port", "0", "--data", dir], {})),
+    { host: { pickFolder: async (opts) => { seen.push(opts); return "/x"; } } },
+  );
+  try {
+    for (const title of [{ evil: 1 }, 5, "T".repeat(500), null]) {
+      const r = await fetch(s2.url + "/api/host/pick-folder", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ title }) });
+      assert.equal(r.status, 200);
+    }
+    assert.deepEqual(seen, [{}, {}, {}, {}], "anything but a short string falls back to the shell's own title");
+    const good = await fetch(s2.url + "/api/host/pick-folder", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ title: "Pick your client folder" }) });
+    assert.equal(good.status, 200);
+    assert.deepEqual(seen[4], { title: "Pick your client folder" });
+  } finally {
+    await s2.close();
+  }
+});
+
+// area-4 minor 5: nothing below this process bounds a host call — callHost never expires a pending
+// entry, and a result posted after the server child was respawned is dropped — so a dialog whose
+// answer never comes back held the socket open for ever, since requestTimeout governs request RECEIPT
+// and never touches a response that has not started. The real ceiling is a minute, too long to sit
+// through here, so this pins the wiring rather than the clock: both host calls go through the bounded
+// wrapper, which the unbounded original did not have at all.
+test("[fast] both POST /api/host/* routes await a BOUNDED host call, and a timed-out one answers 504", () => {
+  const src = readFileSync(join(HERE, "vault-server.mts"), "utf8");
+  assert.match(src, /withHostTimeout\(host\.pickFolder\(/, "pick-folder goes through the timeout wrapper");
+  assert.match(src, /withHostTimeout\(host\.openPath\(/, "so does open-path");
+  assert.match(src, /e\.statusCode = 504;/, "and a timed-out host call answers 504");
+});
+
+// Minor 10: extractJsonText strips literal newlines before JSON.parse, but a \n ESCAPE survives that
+// and parses into a real newline — which then went raw into a log line, letting a caller forge as many
+// correctly-timestamped entries as it liked in the file the 500-handler's `ref` scheme relies on.
+test("[fast] POST /api/import/paste cannot forge log lines through the document's own adapter.id", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "qm-paste-logforge-"));
+  const s2 = await startServer(ensureLayout(resolveConfig(["--port", "0", "--data", dir], {})));
+  const log = join(dir, "logs", "server.log");
+  try {
+    const fixture = JSON.parse(readFileSync(join(HERE, "..", "adapters", "tazuo", "fixture.scan.json"), "utf8"));
+    fixture.adapter.id = "tazuo\n2026-01-02T03:04:05.000Z watcher[tazuo] accepted a scan that never existed";
+    const r = await fetch(s2.url + "/api/import/paste", {
+      method: "POST", headers: { "content-type": "application/json" },
+      body: JSON.stringify({ text: JSON.stringify(fixture), adapter: "razor-enhanced" }),
+    });
+    assert.equal(r.status, 200, await r.clone().text());
+    // The watcher logs its own lines here too, so this asserts the shape rather than a line count:
+    // the forged text must never START a line, which is the only thing that makes it a log entry.
+    assert.doesNotMatch(readFileSync(log, "utf8"), /^2026-01-02T03:04:05\.000Z/m, "the forged line never became a line");
   } finally {
     await s2.close();
   }

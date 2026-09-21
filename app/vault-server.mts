@@ -59,9 +59,11 @@
 //         need the optional `host` startServer({..}, {host}) was given (a folder-picker/opener the
 //         Electron shell supplies); 501 on the bare server. GET/PUT /api/settings additionally carries
 //         setupDone and client ({adapter, scriptsDir} | null).
-// Every text/html response carries the Content-Security-Policy below; every response carries
-// x-content-type-options: nosniff. Any PUT/POST whose body is read must declare content-type:
-// application/json, else 415 (readBody()) — the SSE cancel beacon sends no body, so it's exempt.
+// Every text/html response carries the Content-Security-Policy below (including frame-ancestors
+// 'none'); every response carries x-content-type-options: nosniff and x-frame-options: DENY. Any
+// PUT/POST whose body is read must declare content-type: application/json, else 415 (readBody()) —
+// the SSE cancel beacon sends no body, so it's exempt — and its body must be a JSON OBJECT, else 400
+// (asObject()). Files and directories this server creates are 0600/0700 (a no-op on Windows).
 // The optimizer is scripts/optimizer-core.mts, run straight from source (no build step) — every
 // caller imports it from the one path config.mts's paths.core/corePath() resolves (PACKRAT_CORE
 // overrides it).
@@ -77,7 +79,7 @@
 import http from "node:http";
 import { readFileSync, writeFileSync, appendFileSync, readdirSync, existsSync, mkdirSync, copyFileSync } from "node:fs";
 import { pathToFileURL } from "node:url";
-import { dirname, join } from "node:path";
+import { dirname, isAbsolute, join } from "node:path";
 import { spawn } from "node:child_process";
 import { statSync, type Stats } from "node:fs";
 import { Worker } from "node:worker_threads";
@@ -98,7 +100,7 @@ import {
 } from "./installer.mts";
 import { homedir } from "node:os";
 
-import { resolveConfig, ensureLayout, APP_DIR, type Config } from "./config.mts";
+import { resolveConfig, ensureLayout, APP_DIR, DATA_DIR_MODE, DATA_FILE_MODE, type Config } from "./config.mts";
 import type { Item, Inventory, ProfilesFile } from "./vault-lib.mts";
 import type * as VaultLib from "./vault-lib.mts";
 import type { ScanV2, RulesV1 } from "./schema/types.d.mts";
@@ -116,8 +118,12 @@ const PACKAGE_JSON = JSON.parse(readFileSync(join(HERE, "..", "package.json"), "
 const WEB = join(HERE, "dist");
 
 // Global Constraints CSP: no inline/external script beyond same-origin, no framing, no form posts
-// off-page. Applied to every text/html response; every response also gets nosniff.
-const CSP = "default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; connect-src 'self'; img-src 'self' data:; font-src 'self'; base-uri 'none'; form-action 'none'";
+// off-page. Applied to every text/html response; every response also gets nosniff and
+// x-frame-options: DENY. frame-ancestors has to be spelled out — it is one of the few directives
+// with no default-src fallback, so the comment used to claim a "no framing" the header never sent
+// (post-review fix, Important 6): any page could iframe GET / (a framed navigation carries this
+// server's own Host and no Origin, so the middleware passes it) and clickjack the app.
+const CSP = "default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; connect-src 'self'; img-src 'self' data:; font-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'";
 const UI_NAME_RE = /^[a-z0-9-]+\.(mjs|css)$/;
 // Localhost security (spec §4.5): a request's Host must name this server, an Origin (when present)
 // must be this same origin, and — with a token configured — every /api/* route except the SSE
@@ -138,7 +144,10 @@ function send(res: http.ServerResponse, status: number, body: unknown, type = "a
   // Every non-JSON caller passes an already-read string (readFileSync's result) — the cast is
   // compiler-only, matching config.mts's rawPort pattern.
   const data = type === "application/json" ? JSON.stringify(body) : (body as string);
-  const headers: Record<string, string> = { "content-type": type + "; charset=utf-8", "cache-control": "no-store", "x-content-type-options": "nosniff" };
+  // x-frame-options rides on EVERY response, not just text/html: it is the belt to the CSP's braces
+  // for anything that ignores frame-ancestors, and a JSON response rendered directly as a document
+  // is framable too.
+  const headers: Record<string, string> = { "content-type": type + "; charset=utf-8", "cache-control": "no-store", "x-content-type-options": "nosniff", "x-frame-options": "DENY" };
   if (type === "text/html") headers["content-security-policy"] = CSP;
   res.writeHead(status, headers);
   res.end(data);
@@ -178,6 +187,10 @@ function readBody(req: http.IncomingMessage, { limit = 50e6, tooLargeMsg = "body
       bytes += c.length;   // c is a Buffer — .length is bytes, not decoded characters
       if (bytes > limit) {
         tooLarge = true;
+        // Stop reading the doomed upload right here rather than draining the rest of it (post-review
+        // fix, Minor 7): the top-level catch destroys the request once the 413 is on the wire, and
+        // pausing in the meantime means the remaining megabytes never reach this process at all.
+        req.pause();
         const e = new Error(tooLargeMsg) as HttpError;
         e.statusCode = 413;
         reject(e);
@@ -194,6 +207,46 @@ function readBody(req: http.IncomingMessage, { limit = 50e6, tooLargeMsg = "body
   });
 }
 
+// Every route below reads its body as an object of named fields, but JSON.parse happily returns
+// null, an array, a string or a number for a perfectly well-formed body — and destructuring null is
+// a TypeError, so a literal `null` body used to 500 ten routes at once, each appending a stack to
+// the log (post-review fix, Minor 8). One guard in front of them all turns that into the 400 it
+// always was. Throws rather than returning a result the caller has to check: the statusCode the
+// top-level handler already reads off readBody's own errors carries it straight to the client.
+function asObject(body: unknown): Record<string, unknown> {
+  if (!body || typeof body !== "object" || Array.isArray(body)) {
+    const e = new Error("body must be a JSON object") as HttpError;
+    e.statusCode = 400;
+    throw e;
+  }
+  return body as Record<string, unknown>;
+}
+
+// A request field that must be a real string of bounded length. `unknown` in, a narrowed string out,
+// so a route reads the value directly after the check instead of casting it.
+function isBoundedString(v: unknown, max: number): v is string {
+  return typeof v === "string" && v.length > 0 && v.length <= max;
+}
+// Same for an integer within an inclusive range (opts.restarts, opts.timeBudgetMs, …).
+function isBoundedInt(v: unknown, min: number, max: number): v is number {
+  return typeof v === "number" && Number.isInteger(v) && v >= min && v <= max;
+}
+// Bounds a caller-supplied value before it is interpolated into an error message or a log line.
+function short(v: unknown): string { return String(v).slice(0, 64); }
+
+const MAX_PATH_LEN = 4096;
+// A Windows UNC path (\\host\share, and its forward-slash twin) is a perfectly good string, and on
+// win32 a readdirSync against one is an outbound SMB connection — an NTLM authentication attempt
+// against a host the caller named. installer.mts's validateScriptsDir refuses both forms (and a
+// relative path) for a client scripts folder itself; POST /api/import's `dir` is a folder of scan
+// files, never a scripts folder, so it never reaches that function and needs the same rule here.
+const UNC_RE = /^[\\/]{2}/;
+// What a failed locate/install tells the caller. Deliberately says nothing about the path it probed:
+// echoing the resolved path back made these routes a clean existence oracle for any absolute path on
+// the machine — "existing directory" vs "file or absent", for free, from an unauthenticated route in
+// the bare `npm start` configuration (post-review fix, Important 3).
+const NO_CLIENT_FOLDER = "no scripts folder found there for that client";
+
 // Every log append in this file goes through here rather than a bare appendFileSync (post-review
 // fix, Important 1): a deleted logs/ dir (the Settings tab's own "Open" button shows the user right
 // where to find it) or a full disk must never throw out of a log call — ingestFile's and enqueue's
@@ -204,21 +257,99 @@ function readBody(req: http.IncomingMessage, { limit = 50e6, tooLargeMsg = "body
 // under a running server, since recreating an already-existing dir is a no-op.
 function safeAppendLog(file: string, line: string): void {
   try {
-    mkdirSync(dirname(file), { recursive: true });
-    appendFileSync(file, line);
+    mkdirSync(dirname(file), { recursive: true, mode: DATA_DIR_MODE });
+    appendFileSync(file, line, { mode: DATA_FILE_MODE });
   } catch (e) {
     console.error(`log write failed (${file}): ${e && (e as Error).message}`);
   }
 }
 
+// ---- POST /api/optimize's request shape ---------------------------------------------------------
+// Everything below this comment runs on a body any local caller can send. Until this pass the route
+// checked `profile` for truthiness and nothing else, so a malformed pools entry reached the worker
+// thread and ended the job in an internal-error ref with a full stack in the log — an attacker-driven
+// path into the unrotated log file, and a confusing failure for a page bug (post-review fix,
+// Important 5). Every helper here returns the reason it refused (for a 400) or null.
+
+// One optimizer candidate: vault-lib's OptItem, {serial, name, slot, props}. The core reads `.props`
+// off every entry with no null guard of its own, so both a literal null and an item with no props
+// have to be refused here.
+function optItemError(it: unknown): string | null {
+  if (!it || typeof it !== "object" || Array.isArray(it)) return "every candidate must be an object";
+  const props = (it as Record<string, unknown>).props;
+  if (!props || typeof props !== "object" || Array.isArray(props)) return "every candidate needs a props object";
+  return null;
+}
+function poolsError(pools: unknown): string | null {
+  if (!pools || typeof pools !== "object" || Array.isArray(pools)) return "pools must be an object";
+  for (const [slot, list] of Object.entries(pools as Record<string, unknown>)) {
+    if (!Array.isArray(list)) return `pools.${short(slot)} must be an array`;
+    for (const it of list) { const e = optItemError(it); if (e) return `pools.${short(slot)}: ${e}`; }
+  }
+  return null;
+}
+// current is the worn suit: slot -> candidate, or null/absent for an empty slot.
+function currentError(current: unknown): string | null {
+  if (!current || typeof current !== "object" || Array.isArray(current)) return "current must be an object";
+  for (const [slot, it] of Object.entries(current as Record<string, unknown>)) {
+    if (it == null) continue;
+    const e = optItemError(it); if (e) return `current.${short(slot)}: ${e}`;
+  }
+  return null;
+}
+// The search options a caller may set, and the range each one may sit in. An allowlist rather than a
+// shape check, so an unknown key is refused rather than handed to the solver — which also means an
+// own `__proto__` key out of JSON.parse never reaches the Object.assign that builds fullOpts.
+// optionalSlots/warmStart are set by the route itself after this runs; seed/restarts/timeBudgetMs/
+// exact/alternatives are what app/ui/builder.mts actually sends.
+const OPTS_MAX_TIME_BUDGET_MS = 60 * 60 * 1000;
+function optsError(opts: Record<string, unknown>): string | null {
+  for (const [k, v] of Object.entries(opts)) {
+    switch (k) {
+      case "exact": if (typeof v !== "boolean") return "opts.exact must be a boolean"; break;
+      case "seed": if (!isBoundedInt(v, 0, 2 ** 31)) return "opts.seed must be an integer"; break;
+      case "restarts": if (!isBoundedInt(v, 1, 10000)) return "opts.restarts must be an integer between 1 and 10000"; break;
+      case "timeBudgetMs": if (!isBoundedInt(v, 0, OPTS_MAX_TIME_BUDGET_MS)) return `opts.timeBudgetMs must be an integer between 0 and ${OPTS_MAX_TIME_BUDGET_MS}`; break;
+      case "optionalSlots":
+        if (!Array.isArray(v) || v.length > 32 || v.some((s) => !isBoundedString(s, 32))) return "opts.optionalSlots must be an array of at most 32 slot names";
+        break;
+      case "alternatives": {
+        if (!v || typeof v !== "object" || Array.isArray(v)) return "opts.alternatives must be an object";
+        const { count, tolerance } = v as Record<string, unknown>;
+        if (!isBoundedInt(count, 0, 100)) return "opts.alternatives.count must be an integer between 0 and 100";
+        if (typeof tolerance !== "number" || !Number.isFinite(tolerance) || tolerance < 0) return "opts.alternatives.tolerance must be a non-negative number";
+        break;
+      }
+      default: return `opts.${short(k)} is not a supported search option`;
+    }
+  }
+  return null;
+}
+// meta is the caller's own bookkeeping, and saveRun() used to persist it verbatim into
+// <data>/runs/<uuid>.json — a megabyte of padding in meta.settings became a megabyte on disk that
+// every later readRuns() re-parsed, on the two hottest routes. Copy only the fields saveRun actually
+// reads; the route caps the result's serialized size on top of that.
+const META_MAX_BYTES = 32e3;
+function pickMeta(meta: Record<string, unknown>): Record<string, unknown> {
+  const out: Record<string, unknown> = {};
+  if (isBoundedString(meta.character, 64)) out.character = meta.character;
+  if (isBoundedString(meta.inventoryStamp, 256)) out.inventoryStamp = meta.inventoryStamp;
+  if (typeof meta.poolSize === "number" && Number.isFinite(meta.poolSize)) out.poolSize = meta.poolSize;
+  if (meta.settings && typeof meta.settings === "object" && !Array.isArray(meta.settings)) out.settings = meta.settings;
+  if (meta.skipped && typeof meta.skipped === "object" && !Array.isArray(meta.skipped)) out.skipped = meta.skipped;
+  return out;
+}
+
 // What only a real desktop shell (Electron) can supply to startServer — see the `host` parameter
-// note below. Neither method's argument/return shape is validated by this file (title is read
-// straight off a request body with no check; the caller — electron/server-entry.mts's own `host`
-// object — is the only implementation), so `title` is `unknown`, not `string`, matching the "stays
-// unknown until checked" rule for anything that crosses the HTTP boundary.
+// note below. `title` stays `unknown` rather than `string` because it begins life as a request-body
+// field: the route drops anything that is not a short string before calling, and electron/host-args
+// .mts coerces it again at the far end, but the TYPE records where the value came from.
+// openPath takes the DISCRIMINATOR "data" | "logs", never a resolved path: the shell owns those two
+// directories and looks them up itself, so this process — the lower-trust half of the split — cannot
+// name a third thing for the OS to launch (phase-7 security review, area-4 Important 1).
 export interface HostBridge {
   pickFolder?: ((opts: { title?: unknown }) => Promise<string | null>) | undefined;
-  openPath?: ((path: string) => Promise<void>) | undefined;
+  openPath?: ((which: "data" | "logs") => Promise<void>) | undefined;
 }
 
 export interface StartServerOptions {
@@ -406,8 +537,8 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
   // place, keeping the pre-migration file once as profiles.backup-<date>.json next to it.
   async function readProfiles(): Promise<ProfilesFile> {
     if (!existsSync(PROFILES)) {
-      mkdirSync(dirname(PROFILES), { recursive: true });
-      writeFileSync(PROFILES, readFileSync(DEFAULT_PROFILES, "utf8"));
+      mkdirSync(dirname(PROFILES), { recursive: true, mode: DATA_DIR_MODE });
+      writeFileSync(PROFILES, readFileSync(DEFAULT_PROFILES, "utf8"), { mode: DATA_FILE_MODE });
     }
     // profiles.json is trusted, unvalidated file content at this point (the same trust readRules'
     // loadFile and readScans' upgradeScan extend to their own on-disk inputs) — migrateProfiles' own
@@ -416,7 +547,7 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
     if (changed) {
       const backup = join(dirname(PROFILES), `profiles.backup-${new Date().toISOString().slice(0, 10)}.json`);
       if (!existsSync(backup)) copyFileSync(PROFILES, backup);
-      writeFileSync(PROFILES, JSON.stringify(profiles, null, 2) + "\n");
+      writeFileSync(PROFILES, JSON.stringify(profiles, null, 2) + "\n", { mode: DATA_FILE_MODE });
     }
     return profiles;
   }
@@ -463,7 +594,32 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
   }
   const jobs = new Map<string, Job>();
   const JOB_TTL_MS = 10 * 60 * 1000;
+  // A server-wide ceiling on live worker threads, on top of the per-X-Client-Id supersede below: that
+  // rule is skipped entirely when the header is absent, so a caller that omits (or rotates) it could
+  // start arbitrarily many `new Worker()` threads, each holding its full result for JOB_TTL_MS
+  // (post-review fix, Important 5). Four is well past what one page ever has in flight — it only ever
+  // runs one build at a time — and leaves room for a couple of stale jobs a client has walked away from.
+  const MAX_RUNNING_JOBS = 4;
   const timers = new Set<NodeJS.Timeout>();   // every setTimeout/setInterval this instance owns, so close() can stop them all
+
+  // Nothing below this process bounds a host call: electron/server-entry.mts's callHost never expires
+  // a pending entry, and a result posted after the server child was respawned is dropped on the floor
+  // (area-4 minor 5) — so a folder dialog whose answer never comes back would hang this request for
+  // ever, since server.requestTimeout governs request RECEIPT only and never touches a response that
+  // has not started. Bound it here and answer 504 instead of holding the socket open.
+  const HOST_CALL_TIMEOUT_MS = 60 * 1000;
+  function withHostTimeout<T>(p: Promise<T>): Promise<T> {
+    return new Promise<T>((resolve, reject) => {
+      const t = setTimeout(() => {
+        const e = new Error("the desktop app did not answer") as HttpError;
+        e.statusCode = 504;
+        reject(e);
+      }, HOST_CALL_TIMEOUT_MS);
+      t.unref(); timers.add(t);
+      const done = (): void => { clearTimeout(t); timers.delete(t); };
+      p.then((v) => { done(); resolve(v); }, (e: unknown) => { done(); reject(e as Error); });
+    });
+  }
 
   // Job ids are crypto.randomUUID() (spec §4.5) rather than the old Date.now()-based id: the SSE
   // events route is exempt from the bearer token (EventSource can't carry one), so the id itself
@@ -550,14 +706,14 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
     return out.sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt)));
   }
   function saveRun(job: Job) {
-    mkdirSync(RUNS, { recursive: true });
+    mkdirSync(RUNS, { recursive: true, mode: DATA_DIR_MODE });
     const meta = job.meta || {};
     const run = { id: job.id, key: job.key, character: meta.character || "?", createdAt: new Date().toISOString(), label: "",
       schemaVersion: 1,
       settings: meta.settings || {}, inventoryStamp: meta.inventoryStamp || null, poolSize: meta.poolSize ?? null, skipped: meta.skipped || {},
       opts: stripOpts(job.input.opts), budgetMs: job.input.opts.timeBudgetMs ?? null, explored: job.progress?.explored ?? null,
       result: job.result, ms: job.ms };
-    writeFileSync(join(RUNS, `${run.id}.json`), JSON.stringify(run));
+    writeFileSync(join(RUNS, `${run.id}.json`), JSON.stringify(run), { mode: DATA_FILE_MODE });
     return run;
   }
 
@@ -641,8 +797,8 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
         const body = await readBody(req, { limit: 1e6, tooLargeMsg: "profiles too large" });
         const { ok, errors } = validate(PROFILES_SCHEMA, body);
         if (!ok) return send(res, 400, { ok: false, error: `${errors[0]!.path} ${errors[0]!.msg}`, errors });
-        mkdirSync(dirname(PROFILES), { recursive: true });
-        writeFileSync(PROFILES, JSON.stringify(body, null, 2) + "\n");
+        mkdirSync(dirname(PROFILES), { recursive: true, mode: DATA_DIR_MODE });
+        writeFileSync(PROFILES, JSON.stringify(body, null, 2) + "\n", { mode: DATA_FILE_MODE });
         return send(res, 200, { ok: true });
       }
       if (req.method === "GET" && url.pathname === "/api/settings") return send(res, 200, { ok: true, settings: currentSettings });
@@ -650,37 +806,59 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
         // Any subset of {shard, setupDone, client} — Task 2 extended this route to carry the setup
         // wizard's own state without disturbing the shard-switch contract above it. Each field present
         // in the body is validated before ANYTHING is written (load-then-persist, same reasoning as
-        // before: a rejected field must never partially land on disk or in memory). `body` stays a weak
-        // Record so every field below reads as `unknown` until its own check narrows it, same as the
-        // rest of this route always did (none of these fields were typeof-checked before body.shard was
-        // handed to loadRules, for instance — see the report).
-        const body = (await readBody(req)) as Record<string, unknown>;
+        // before: a rejected field must never partially land on disk or in memory), and every field is
+        // now checked POSITIVELY — a string is a bounded string, a folder is a folder this server is
+        // willing to read (post-review fix, area-3 finding 3: client.scriptsDir used to be persisted on
+        // a bare typeof check, after which GET /api/setup readdir/readFileSync'd whatever it named on
+        // every page load, hanging the whole single-threaded process on a FIFO and dialling out over
+        // SMB for a UNC path). These three are the only fields this route persists.
+        const body = asObject(await readBody(req));
         let nextRules = currentRules, nextFallback = rulesFallback;
         const hasShard = Object.prototype.hasOwnProperty.call(body, "shard");
         if (hasShard) {
-          try { nextRules = loadRules(body.shard as string, { userRulesDir: USER_RULES_DIR }); }
+          if (!isBoundedString(body.shard, 64)) return send(res, 400, { ok: false, error: "settings.shard must be a string" });
+          try { nextRules = loadRules(body.shard, { userRulesDir: USER_RULES_DIR }); }
           catch { return send(res, 400, { ok: false, error: `unknown or invalid shard: ${body.shard}` }); }
           nextFallback = false;
         }
         if (Object.prototype.hasOwnProperty.call(body, "setupDone") && typeof body.setupDone !== "boolean") {
           return send(res, 400, { ok: false, error: "settings.setupDone must be a boolean" });
         }
+        // undefined = the body said nothing about the client and the persisted one is left alone;
+        // null = clear it (an explicit null, or an empty scriptsDir — what the Settings tab sends to
+        // forget a client); an object = a validated, RESOLVED {adapter, scriptsDir}.
+        let nextClient: ClientSettings | null | undefined;
         if (Object.prototype.hasOwnProperty.call(body, "client")) {
-          const c = body.client as Record<string, unknown> | null | undefined;
-          const shapeOk = c === null || (c && typeof c === "object" && typeof c.adapter === "string" && typeof c.scriptsDir === "string");
-          if (!shapeOk) return send(res, 400, { ok: false, error: "settings.client must be null or {adapter, scriptsDir}" });
-          // Security (post-review fix): client.adapter must be a real, known adapter id before it can
-          // ever reach installer.mts's path.join calls — see the /api/setup/install note below.
-          if (c !== null && !listAdapters(ADAPTERS_DIR).some((a) => a.id === c!.adapter)) {
-            return send(res, 400, { ok: false, error: `settings.client.adapter: unknown adapter "${c!.adapter}"` });
+          const c = body.client;
+          if (c === null) nextClient = null;
+          else {
+            const rec = (c && typeof c === "object" && !Array.isArray(c)) ? c as Record<string, unknown> : null;
+            if (!rec || !isBoundedString(rec.adapter, 64) || typeof rec.scriptsDir !== "string" || rec.scriptsDir.length > MAX_PATH_LEN) {
+              return send(res, 400, { ok: false, error: "settings.client must be null or {adapter, scriptsDir}" });
+            }
+            const adapter = rec.adapter;
+            // Security (post-review fix): client.adapter must be a real, known adapter id before it can
+            // ever reach installer.mts's path.join calls — see the /api/setup/install note below.
+            if (!listAdapters(ADAPTERS_DIR).some((a) => a.id === adapter)) {
+              return send(res, 400, { ok: false, error: `settings.client.adapter: unknown adapter "${adapter}"` });
+            }
+            if (!rec.scriptsDir.trim()) nextClient = null;
+            else {
+              // The same acceptance POST /api/setup/locate applies, so the wizard and a hand-written
+              // settings PUT can never disagree about what a scripts folder is — and the RESOLVED
+              // path is what gets persisted, not the raw body value.
+              const located = validateScriptsDir(rec.scriptsDir, adapter);
+              if (!located.ok) return send(res, 400, { ok: false, error: `settings.client.scriptsDir: ${NO_CLIENT_FOLDER}` });
+              nextClient = { adapter, scriptsDir: located.scriptsDir };
+            }
           }
         }
         currentSettings = { ...currentSettings, schemaVersion: 1 };
         if (hasShard) currentSettings.shard = body.shard as string;
         if (Object.prototype.hasOwnProperty.call(body, "setupDone")) currentSettings.setupDone = body.setupDone as boolean;
-        if (Object.prototype.hasOwnProperty.call(body, "client")) currentSettings.client = body.client as ClientSettings | null;
-        mkdirSync(dirname(SETTINGS), { recursive: true });
-        writeFileSync(SETTINGS, JSON.stringify(currentSettings, null, 2) + "\n");
+        if (nextClient !== undefined) currentSettings.client = nextClient;
+        mkdirSync(dirname(SETTINGS), { recursive: true, mode: DATA_DIR_MODE });
+        writeFileSync(SETTINGS, JSON.stringify(currentSettings, null, 2) + "\n", { mode: DATA_FILE_MODE });
         currentRules = nextRules;
         rulesFallback = nextFallback;
         return send(res, 200, { ok: true, settings: currentSettings });
@@ -696,6 +874,10 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
           candidates[a.id] = candidateClientRoots({ adapter: a.id, home: homedir(), platform: process.platform, env: process.env, adapterPlatform: a.platform });
           available[a.id] = installedVersion(join(ADAPTERS_DIR, a.id), a.id).version;
         }
+        // installedVersion() runs against whatever path settings.json names, on every wizard/Settings
+        // render. PUT /api/settings and POST /api/setup/install both validate that path now, and
+        // installer.mts opens only regular files there (never following a symlink, never blocking on a
+        // FIFO, bounded read) — so a hand-edited settings.json can no longer hang or over-read here.
         const installed = currentSettings.client ? installedVersion(currentSettings.client.scriptsDir, currentSettings.client.adapter) : null;
         // The id bridgeAdapter() is ACTUALLY routing POST /api/bridge / GET /api/bridge/status to right
         // now — reused, not restated, so this can never drift from the real routing decision. Guarded
@@ -717,24 +899,37 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
         });
       }
       if (req.method === "POST" && url.pathname === "/api/setup/locate") {
-        const { adapter, dir } = (await readBody(req)) as Record<string, unknown>;
+        const { adapter, dir } = asObject(await readBody(req, { limit: 8e3 }));
         // Security (post-review fix): adapter is only ever used in an error string by validateScriptsDir
         // itself, but every route taking an adapter id is checked against the real, known ids the same
         // way, so a caller can't probe with an arbitrary string here either.
-        if (!listAdapters(ADAPTERS_DIR).some((a) => a.id === adapter)) return send(res, 400, { ok: false, error: `unknown adapter: ${adapter}` });
+        if (!listAdapters(ADAPTERS_DIR).some((a) => a.id === adapter)) return send(res, 400, { ok: false, error: `unknown adapter: ${short(adapter)}` });
+        // Every refusal from here down is the same opaque line: this route's whole purpose is to say
+        // yes or no about a folder the user picked, and validateScriptsDir's own messages name the
+        // path they probed — which made that yes/no a filesystem oracle for any absolute path on the
+        // machine (the body cap above is what bounds the path's length).
         const result = validateScriptsDir(dir, adapter);
-        if (!result.ok) return send(res, 400, { ok: false, error: result.error });
+        if (!result.ok) return send(res, 400, { ok: false, error: NO_CLIENT_FOLDER });
         return send(res, 200, { ok: true, scriptsDir: result.scriptsDir, installed: installedVersion(result.scriptsDir, adapter) });
       }
       if (req.method === "POST" && url.pathname === "/api/setup/install") {
-        const { adapter, scriptsDir } = (await readBody(req)) as Record<string, unknown>;
+        const { adapter, scriptsDir } = asObject(await readBody(req, { limit: 8e3 }));
         // Security (post-review fix): adapter must be one of listAdapters()'s real ids before it can
         // reach installScripts, which joins it onto adaptersDir to find the scripts to copy — an
         // unchecked adapter (e.g. "../../../../tmp/evil") would otherwise let this route copy an
         // arbitrary packrat-*.py from anywhere on disk into the user's LegionScripts folder.
         // installScripts also re-validates the id itself (defence in depth), but the route rejects it
         // first so the error is the clear "unknown adapter" rather than installScripts' own message.
-        if (!listAdapters(ADAPTERS_DIR).some((a) => a.id === adapter)) return send(res, 400, { ok: false, error: `unknown adapter: ${adapter}` });
+        if (!listAdapters(ADAPTERS_DIR).some((a) => a.id === adapter)) return send(res, 400, { ok: false, error: `unknown adapter: ${short(adapter)}` });
+        // The destination goes through the SAME acceptance POST /api/setup/locate applies (post-review
+        // fix, area-3 finding 4): the two halves of the wizard used to disagree about what a scripts
+        // folder is — locate validated, install took the raw body value and only installScripts'
+        // statSync().isDirectory() stood between it and the copy loop. What gets written to (and
+        // persisted as the configured client) is validateScriptsDir's RESOLVED path, so a caller that
+        // names a client root gets the nested scripts folder locate would have returned, not the root.
+        const located = validateScriptsDir(scriptsDir, adapter);
+        if (!located.ok) return send(res, 400, { ok: false, error: NO_CLIENT_FOLDER, code: "badDir" });
+        const destDir = located.scriptsDir;
         // bridgeStatusPath is THIS adapter's own bridge status (the one whose scripts are about to be
         // overwritten on disk), not necessarily the currently-configured client's (bridgeAdapter()) —
         // those can differ, e.g. installing razor-enhanced for the first time while tazuo is still the
@@ -745,31 +940,36 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
         // `adapter as string` here (and in the client assignment below) is the erased cast placed AFTER
         // the allowlist check just above proved it — same pattern installer.mts's own compiler-only
         // casts use.
-        const result = installScripts({ adapter, adaptersDir: ADAPTERS_DIR, scriptsDir, dataDir: CONFIG.dataDir, bridgeStatusPath: CONFIG.paths.bridgeStatusFor(adapter as string),
+        const result = installScripts({ adapter, adaptersDir: ADAPTERS_DIR, scriptsDir: destDir, dataDir: CONFIG.dataDir, bridgeStatusPath: CONFIG.paths.bridgeStatusFor(adapter as string),
           log: (msg) => safeAppendLog(CONFIG.paths.log, `${new Date().toISOString()} setup-install ${msg}\n`) });
         if (!result.ok) {
           return send(res, result.code === "running" ? 409 : 400, { ok: false, error: result.error, code: result.code, installed: result.installed });
         }
-        currentSettings = { ...currentSettings, schemaVersion: 1, client: { adapter: adapter as string, scriptsDir: scriptsDir as string } };
-        mkdirSync(dirname(SETTINGS), { recursive: true });
-        writeFileSync(SETTINGS, JSON.stringify(currentSettings, null, 2) + "\n");
-        return send(res, 200, { ok: true, installed: result.installed, version: result.version });
+        currentSettings = { ...currentSettings, schemaVersion: 1, client: { adapter: adapter as string, scriptsDir: destDir } };
+        mkdirSync(dirname(SETTINGS), { recursive: true, mode: DATA_DIR_MODE });
+        writeFileSync(SETTINGS, JSON.stringify(currentSettings, null, 2) + "\n", { mode: DATA_FILE_MODE });
+        // pathsFile: what happened to packrat-paths.json on the way in (written/unchanged/kept/
+        // backed-up) — installScripts no longer silently clobbers a hand-authored one, and the page
+        // can say so.
+        return send(res, 200, { ok: true, installed: result.installed, version: result.version, scriptsDir: destDir, pathsFile: result.pathsFile });
       }
       if (req.method === "POST" && url.pathname === "/api/import") {
         // adapter defaults to "tazuo" — today's hard-coded behavior — so neither existing caller (the
         // wizard's import step, Settings' own "Import a folder" row) has to change to keep working.
-        const { dir, adapter = "tazuo" } = (await readBody(req)) as Record<string, unknown>;
+        const { dir, adapter = "tazuo" } = asObject(await readBody(req, { limit: 8e3 }));
         // Security: same allowlist check every other route taking an adapter id makes (see
         // /api/setup/locate above) — adapter reaches CONFIG.paths.inboxFor, a path.join, so an
         // unchecked id could otherwise be used to probe/write outside the inbox tree.
-        if (!listAdapters(ADAPTERS_DIR).some((a) => a.id === adapter)) return send(res, 400, { ok: false, error: `unknown adapter: ${adapter}` });
+        if (!listAdapters(ADAPTERS_DIR).some((a) => a.id === adapter)) return send(res, 400, { ok: false, error: `unknown adapter: ${short(adapter)}` });
+        // dir is checked positively (post-review fix) before statSync ever sees it: an absolute,
+        // bounded, non-UNC path — the same shape validateScriptsDir requires of a scripts folder.
+        if (!isBoundedString(dir, MAX_PATH_LEN) || UNC_RE.test(dir) || !isAbsolute(dir)) return send(res, 400, { ok: false, error: "dir must be an existing directory" });
         let dirStat: Stats | null = null;
-        // dir is never typeof-checked before this — only statSync's own throw (caught below) stands
-        // between an arbitrary body value and the "dir must be an existing directory" 400, exactly the
-        // pre-existing behavior; the cast is compiler-only (see report).
-        try { dirStat = statSync(dir as string); } catch { /* badDir below */ }
-        if (!dir || !dirStat || !dirStat.isDirectory()) return send(res, 400, { ok: false, error: "dir must be an existing directory" });
-        const { copied, skipped } = importScans({ dir: dir as string, inboxDir: CONFIG.paths.inboxFor(adapter as string) });
+        try { dirStat = statSync(dir); } catch { /* badDir below */ }
+        if (!dirStat || !dirStat.isDirectory()) return send(res, 400, { ok: false, error: "dir must be an existing directory" });
+        // failed: files importScans could not copy (a symlinked source, an unwritable destination) —
+        // counted rather than thrown, and reported so a partial import is visible instead of silent.
+        const { copied, skipped, failed } = importScans({ dir, inboxDir: CONFIG.paths.inboxFor(adapter as string) });
         // Nudge the watcher rather than waiting on fs.watch to notice the burst (post-review fix,
         // Minor 3): a large import can overflow the OS's change-event buffer (Windows
         // ReadDirectoryChangesW, macOS FSEvents coalescing), which would otherwise leave some of the
@@ -777,13 +977,13 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
         // scanOnce() is idempotent (ingestFile's own accepted-name check) and a no-op under --demo,
         // where watchers is empty.
         watchers.get(adapter as string)?.scanOnce();
-        return send(res, 200, { ok: true, copied, skipped });
+        return send(res, 200, { ok: true, copied, skipped, failed });
       }
       if (req.method === "POST" && url.pathname === "/api/import/paste") {
-        const { text, adapter } = (await readBody(req)) as Record<string, unknown>;
+        const { text, adapter } = asObject(await readBody(req));
         // Same allowlist as every other adapter-taking route — adapter reaches
         // CONFIG.paths.inboxFor -> path.join, so it must be a real, known id before that.
-        if (!listAdapters(ADAPTERS_DIR).some((a) => a.id === adapter)) return send(res, 400, { ok: false, error: `unknown adapter: ${adapter}` });
+        if (!listAdapters(ADAPTERS_DIR).some((a) => a.id === adapter)) return send(res, 400, { ok: false, error: `unknown adapter: ${short(adapter)}` });
         const parsed = parsePastedScan(text);
         if (!parsed.ok) return send(res, 400, { ok: false, error: parsed.error });
         // Post-review minor: `adapter` (which inbox the file gets filed under, from the Import tab's
@@ -794,10 +994,15 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
         // downstream trusts which inbox a scan sat in over the document's own adapter block), but
         // worth surfacing rather than filing it silently — logged here, and returned as `warning` so
         // the Import tab can show it too.
-        const declaredAdapter = parsed.doc?.adapter?.id;
+        // The declared id is the pasted DOCUMENT's own field, so it is caller-controlled text: bounded
+        // and JSON.stringify'd before it reaches a log line (post-review fix, Minor 10). A JSON string
+        // escape (\n) survives parsePastedScan's literal-newline strip and parses into a real newline,
+        // so raw interpolation let a caller forge as many correctly-timestamped log lines as it liked —
+        // in the one file the 500-handler's `ref` scheme is built around.
+        const declaredAdapter = parsed.doc?.adapter?.id ? short(parsed.doc.adapter.id) : undefined;
         const mismatch = declaredAdapter && declaredAdapter !== adapter;
         if (mismatch) {
-          safeAppendLog(CONFIG.paths.log, `${new Date().toISOString()} import-paste warn: pasted into "${adapter}"'s inbox but the document declares adapter "${declaredAdapter}"\n`);
+          safeAppendLog(CONFIG.paths.log, `${new Date().toISOString()} import-paste warn: pasted into ${JSON.stringify(adapter)}'s inbox but the document declares adapter ${JSON.stringify(declaredAdapter)}\n`);
         }
         const { file, character } = writeScanToInbox({ doc: parsed.doc, adapter: adapter as string, paths: CONFIG.paths });
         // Same nudge as POST /api/import above — a single paste is not a burst, but there is no
@@ -807,7 +1012,7 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
           ...(mismatch ? { warning: `filed under "${adapter}", but this scan says it's from "${declaredAdapter}" — check the Adapter picker above` } : {}) });
       }
       if (req.method === "POST" && url.pathname === "/api/import/rescan") {
-        await readBody(req);   // {} — no fields read, but every POST still needs a declared JSON body (readBody's own content-type check)
+        asObject(await readBody(req, { limit: 8e3 }));   // {} — no fields read, but every POST still needs a declared JSON object body (readBody's content-type check, asObject's shape check)
         const adapterIds = Array.from(watchers.keys());
         // id came from watchers.keys() itself, read synchronously with no intervening mutation of the
         // map — the entry is guaranteed present.
@@ -820,15 +1025,22 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
       }
       if (req.method === "POST" && url.pathname === "/api/host/pick-folder") {
         if (!host || typeof host.pickFolder !== "function") return send(res, 501, { ok: false, error: "not available outside the desktop app" });
-        const { title } = (await readBody(req)) as Record<string, unknown>;
-        const path = await host.pickFolder({ title });
+        const { title } = asObject(await readBody(req, { limit: 8e3 }));
+        // A dialog title is a short display string or nothing at all. Anything else — a non-string, or
+        // a megabyte of text the 50 MB default body cap used to wave through — falls back to the
+        // shell's own default rather than crossing two process hops into a native, app-modal dialog
+        // the user is being asked to trust (post-review fix, area-4 minor 1).
+        const path = await withHostTimeout(host.pickFolder(isBoundedString(title, 120) ? { title } : {}));
         return send(res, 200, { ok: true, path });
       }
       if (req.method === "POST" && url.pathname === "/api/host/open-path") {
         if (!host || typeof host.openPath !== "function") return send(res, 501, { ok: false, error: "not available outside the desktop app" });
-        const { which } = (await readBody(req)) as Record<string, unknown>;
+        const { which } = asObject(await readBody(req, { limit: 8e3 }));
         if (which !== "data" && which !== "logs") return send(res, 400, { ok: false, error: 'which must be "data" or "logs"' });
-        await host.openPath(which === "data" ? CONFIG.dataDir : CONFIG.paths.logs);
+        // The DISCRIMINATOR crosses the wire, not a resolved path (phase-7 security review, area-4
+        // Important 1): the shell owns the two directories it maps "data"/"logs" to, so this process —
+        // the lower-trust half of the split — cannot name a third thing for the OS to launch.
+        await withHostTimeout(host.openPath(which));
         return send(res, 200, { ok: true });
       }
       if (req.method === "GET" && url.pathname === "/api/events") {
@@ -852,16 +1064,29 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
         // pools/current/opts/meta/settings stay Record<string,unknown> (property-accessible, every
         // field still `unknown`) all the way through this route; profile/character stay bare `unknown`
         // — nothing here validates their shape beyond what's checked explicitly below (see report).
-        let { pools = {}, current = {}, profile, opts = {}, meta = {}, character = null, settings = {} } = (await readBody(req)) as {
+        let { pools = {}, current = {}, profile, opts = {}, meta = {}, character = null, settings = {} } = asObject(await readBody(req)) as {
           pools?: Record<string, unknown>; current?: Record<string, unknown>; profile?: unknown; opts?: Record<string, unknown>;
           meta?: Record<string, unknown>; character?: unknown; settings?: Record<string, unknown>;
         };
+        // Everything the caller sent is checked before anything is started (post-review fix, Important
+        // 5): opts against a small allowlist of search options with real ranges, meta down to the five
+        // fields saveRun() reads and a serialized-size cap, and — for the hand-built form below — the
+        // pools/current element shapes the optimizer core assumes but never checks.
+        if (!opts || typeof opts !== "object" || Array.isArray(opts)) return send(res, 400, { ok: false, error: "opts must be an object" });
+        const badOpts = optsError(opts);
+        if (badOpts) return send(res, 400, { ok: false, error: badOpts });
+        if (!meta || typeof meta !== "object" || Array.isArray(meta)) return send(res, 400, { ok: false, error: "meta must be an object" });
+        meta = pickMeta(meta);
+        if (JSON.stringify(meta).length > META_MAX_BYTES) return send(res, 400, { ok: false, error: "meta is too large" });
         let skipped: Record<string, number> = {}, blocked: string[] = [];
         // The by-character form: the caller sends {character, settings} instead of building pools/current
         // itself, and the server runs buildPools() against the cached inventory — the same function and
         // the same defaults the page's own optimizerProfile() uses (ui/builder.mts), so a request built
         // this way and an equivalent hand-built {pools,current} request key identically (runKey below) and
         // reuse each other's saved runs.
+        // character names a folded inventory key and lands in a saved run's own `character` field —
+        // truthy-checked only, until this pass (see report).
+        if (character != null && !isBoundedString(character, 64)) return send(res, 400, { ok: false, error: "character must be a string" });
         if (character) {
           // A `null` in any optional field (as a saved run's settings can carry — e.g. re-posted from
           // the runs drawer) means "use the default", exactly like an absent field, not "the value is
@@ -892,16 +1117,23 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
           // real element check would be a behaviour change that belongs to the security review.
           const tagList = excludeTags as string[], rootList = excludeRoots as Array<string | number>, skillList = excludeSkills as string[], lockedList = lockedSlots as string[];
           const { inv } = await getInventory();
-          // character is only ever truthy-checked (`if (character)` above), never typeof-checked — see report.
-          const built = (await lib()).buildPools(inv, character as string, { allowOthersWorn, strength: strLimit, excludeTags: tagList, excludeRoots: rootList, excludeGargoyle: !allowGargoyle, medOnly, weaponSkill, excludeSkills: skillList });
+          const built = (await lib()).buildPools(inv, character, { allowOthersWorn, strength: strLimit, excludeTags: tagList, excludeRoots: rootList, excludeGargoyle: !allowGargoyle, medOnly, weaponSkill, excludeSkills: skillList });
           pools = built.pools; current = built.current; blocked = built.blocked;
           skipped = Object.fromEntries(Object.entries(built.skipped).map(([k, v]) => [k, v.length]));
           for (const slot of blocked) delete current[slot];       // a worn piece the filters now rule out must not stay "current"
           for (const slot of lockedList) pools[slot] = [];        // a locked slot offers no alternatives — it always keeps current
           opts = { ...(opts as RunOpts), optionalSlots: DEFAULT_OPTIONAL_SLOTS.filter((slot) => !lockedList.includes(slot)) };
           meta = { ...meta, character, settings: s };
+        } else {
+          // The hand-built form: pools/current came straight off the body, so this is where a literal
+          // null candidate ({pools: {helmet: [null]}}) or an item with no props gets refused rather
+          // than reaching the worker and ending the job in an internal-error ref. The by-character
+          // form above builds both itself, so it needs no element check.
+          const badPools = poolsError(pools) || currentError(current);
+          if (badPools) return send(res, 400, { ok: false, error: badPools });
         }
-        if (!profile) return send(res, 400, { ok: false, error: "profile required" });
+        // profile is scored against in the worker; a string or a number would fail there, not here.
+        if (!profile || typeof profile !== "object" || Array.isArray(profile)) return send(res, 400, { ok: false, error: "profile required" });
         const fullOpts = Object.assign({ seed: 2026, restarts: 200 }, opts as RunOpts);
         const key = runKey({ pools, current, profile, opts: fullOpts });
         const runs = readRuns();
@@ -928,6 +1160,12 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
             if (j.clientId && j.clientId === headerClientId && j.state === "running") { cancelJob(j); superseded = j.id; break; }
           }
         }
+        // …and a server-wide ceiling behind it, for the callers the per-client rule can't see (see
+        // MAX_RUNNING_JOBS). Counted after the supersede above, so a page that rebuilds while its own
+        // job is still running never trips it.
+        let running = 0;
+        for (const j of jobs.values()) if (j.state === "running") running++;
+        if (running >= MAX_RUNNING_JOBS) return send(res, 429, { ok: false, error: "too many builds are already running; try again in a moment" });
         const jobClientId = headerClientId || randomUUID();
         const job = startJob({ pools, current, profile, opts: fullOpts }, key, meta, jobClientId);
         if (poolSize > 50000) job.meta.warning = "over 50,000 candidates; the exact solver may take a while";
@@ -944,10 +1182,13 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
         if (req.method === "GET") return send(res, 200, { ok: true, run: normalizeRun(JSON.parse(readFileSync(f, "utf8")) as SavedRun) });
         if (req.method === "DELETE") { unlinkSync(f); return send(res, 200, { ok: true }); }
         if (req.method === "PUT") {
-          const { label = "" } = (await readBody(req)) as Record<string, unknown>;
+          const { label = "" } = asObject(await readBody(req, { limit: 8e3 }));
+          // String() throws on an object with a null prototype or a throwing toString — a 500 plus a
+          // stack for what is a one-line type check (post-review fix, Minor 13).
+          if (typeof label !== "string") return send(res, 400, { ok: false, error: "label must be a string" });
           const run = normalizeRun(JSON.parse(readFileSync(f, "utf8")) as SavedRun);
-          run.label = String(label).slice(0, 120);
-          writeFileSync(f, JSON.stringify(run));
+          run.label = label.slice(0, 120);
+          writeFileSync(f, JSON.stringify(run), { mode: DATA_FILE_MODE });
           return send(res, 200, { ok: true, run: runSummary(run) });
         }
       }
@@ -972,7 +1213,14 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
       }
       if (req.method === "POST" && url.pathname === "/api/bridge") {
         // queue a command for packrat-bridge.py: {action, serial, name, chain: [root…parent], pos|null}
-        const cmd = (await readBody(req)) as Record<string, unknown>;
+        const cmd = asObject(await readBody(req, { limit: 64e3, tooLargeMsg: "bridge command too large" }));
+        // Bounded checks in front of the schema (post-review fix, Minor 9). BRIDGE_SCHEMA.command
+        // constrains the TYPES of action/serial/chain but sets no maxLength on name and no item cap on
+        // chain, so a 500,000-character name took queue.jsonl to half a megabyte in one request — and
+        // this is the one route whose input crosses into the player's running game client, so its
+        // ceilings are worth stating here rather than only in the contract.
+        if (!isBoundedString(cmd.name, 200)) return send(res, 400, { ok: false, error: "name must be a string of at most 200 characters" });
+        if (cmd.chain != null && (!Array.isArray(cmd.chain) || cmd.chain.length > 16)) return send(res, 400, { ok: false, error: "chain must be an array of at most 16 serials" });
         const id = `${Date.now()}-${Math.floor(Math.random() * 1e4)}`;
         // Copy exactly the documented fields into the queue line — the page may send extras (e.g. a
         // human-readable location string) that the bridge does not need and should not carry forward.
@@ -987,19 +1235,28 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
         // Queue into the CONFIGURED client's own bridge directory (bridgeAdapter(), above) — not a
         // fixed "tazuo" — so a Razor Enhanced player's Highlight/Grab/Go-to buttons reach the bridge
         // script that's actually reading commands (Phase 6 final review follow-up).
+        // pos is `object|null` in the contract with no shape of its own, so the assembled line is
+        // size-checked once at the end — the only bound the field-level checks above can't give.
+        const text = JSON.stringify(line) + "\n";
+        if (text.length > 4096) return send(res, 400, { ok: false, error: "bridge command too large" });
         const adapter = bridgeAdapter();
-        mkdirSync(CONFIG.paths.bridgeFor(adapter), { recursive: true });
-        appendFileSync(CONFIG.paths.bridgeQueueFor(adapter), JSON.stringify(line) + "\n");
+        mkdirSync(CONFIG.paths.bridgeFor(adapter), { recursive: true, mode: DATA_DIR_MODE });
+        appendFileSync(CONFIG.paths.bridgeQueueFor(adapter), text, { mode: DATA_FILE_MODE });
         return send(res, 200, { ok: true, id });
       }
       if (req.method === "GET" && url.pathname === "/api/bridge/status") {
         const f = CONFIG.paths.bridgeStatusFor(bridgeAdapter());
         if (!existsSync(f)) return send(res, 200, { ok: true, online: false });
         try {
-          const st = JSON.parse(readFileSync(f, "utf8")) as Record<string, unknown>;
+          const parsed: unknown = JSON.parse(readFileSync(f, "utf8"));
+          // status.json is written by the adapter's own bridge script and is hand-editable; a file that
+          // parses to an array, a string or a number would otherwise be spread into the response as
+          // index keys. Anything but a plain object reads as "not running".
+          if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return send(res, 200, { ok: true, online: false });
+          const st = parsed as Record<string, unknown>;
           // The bridge's "alive" timestamp is either a legacy epoch-seconds number or an RFC 3339 string
-          // (new format, Task 7) — accept both.
-          const aliveMs = typeof st.alive === "number" ? st.alive * 1000 : Date.parse(st.alive as string);
+          // (new format, Task 7) — accept both, and nothing else.
+          const aliveMs = typeof st.alive === "number" ? st.alive * 1000 : typeof st.alive === "string" ? Date.parse(st.alive) : NaN;
           const age = st.alive != null && !Number.isNaN(aliveMs) ? (Date.now() - aliveMs) / 1000 : Infinity;
           return send(res, 200, { ok: true, online: age < 8, age: Math.round(age), ...st });
         } catch { return send(res, 200, { ok: true, online: false }); }
@@ -1013,28 +1270,60 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
         // --demo points SCANS at app/fixtures/ (repo data, committed) — Forget must never write a
         // tombstone there, or a demo session leaves a stray file in the working tree.
         if (CONFIG.demo) return send(res, 409, { ok: false, error: "demo data is read-only" });
-        const { root, name = "forgotten" } = (await readBody(req)) as Record<string, unknown>;
+        // Four small scalar fields — no reason for this route to accept the 50 MB default, which is
+        // what let a 200,000-character `name` become a 200 KB scan file (post-review fix, Important 4).
+        const { root, name = "forgotten" } = asObject(await readBody(req, { limit: 8e3 }));
         // A non-numeric root used to pass this check (only truthiness was tested), writing a
         // tombstone whose roots[0].serial serializes to null — every later read then logs a schema
         // violation and the file accumulates forever while the user believes it worked (post-review
         // fix). root is never typeof-checked — the +root coercion below is the only check it gets
         // (same as the pre-TypeScript behavior); the casts here are compiler-only.
         if (!Number.isInteger(+(root as string)) || +(root as string) <= 0) return send(res, 400, { ok: false, error: "root required (positive integer serial)" });
-        mkdirSync(SCANS, { recursive: true });
+        // `name` is the container's display label and goes straight into the document's roots[0].name,
+        // which the scan contract requires to be a string — so a non-string used to write a file that
+        // every later fold re-read and re-rejected ("/roots/0/name expected string"), for the life of
+        // the install, while the user's Forget silently did nothing (post-review fix, Important 4).
+        if (typeof name !== "string") return send(res, 400, { ok: false, error: "name must be a string" });
+        const label = name.slice(0, 64).trim() || "forgotten";   // a display label, and the schema wants a non-empty one
+        mkdirSync(SCANS, { recursive: true, mode: DATA_DIR_MODE });
         const stamp = new Date().toISOString();
+        const serial = +(root as string);
         const snap = {
           schemaVersion: 2, character: "_vault", scannedAt: stamp,
           adapter: { id: "app", version: "1", client: "Pack Rat", clientVersion: null,
             capabilities: { layers: [], arms: false, bank: false, ground: false, nested: false, tooltips: "label", bridge: [] } },
           shard: currentSettings.shard, stats: {}, equipped: [],
-          roots: [{ serial: +(root as string), kind: "ground", name, opened: true }], containers: {}, items: [],
+          roots: [{ serial, kind: "ground", name: label, opened: true }], containers: {}, items: [],
         };
-        writeFileSync(join(SCANS, `_forget-${stamp.replace(/[:.]/g, "-")}-${(+(root as string)).toString(16)}.json`), JSON.stringify(snap));
+        // Nothing this route writes may be a file the fold then skips — check the assembled document
+        // against the same contract readScans() checks every file against. A failure here is this
+        // app's own bug, so it takes the 500-with-a-ref path and no file is written.
+        const { ok: snapOk, errors: snapErrors } = validateScan(snap);
+        if (!snapOk) throw new Error(`refusing to write an invalid tombstone: ${snapErrors.map((e) => `${e.path} ${e.msg}`).join("; ")}`);
+        // One file per forgotten root, not one per click: the name used to carry the millisecond
+        // timestamp, so a loop of Forget calls (or a user who forgets the same container twice) grew
+        // <data>/scans/ without bound and slowed every later fold, since readScans() parses the whole
+        // directory. Re-forgetting a root now replaces its tombstone with a newer scannedAt, which is
+        // exactly what the fold wants anyway (newest scan of a root wins, by parseStamp — the file
+        // name has never been what orders them).
+        writeFileSync(join(SCANS, `_forget-${serial.toString(16)}.json`), JSON.stringify(snap), { mode: DATA_FILE_MODE });
         return send(res, 200, { ok: true });
       }
       send(res, 404, { ok: false, error: "not found" });
     } catch (e) {
-      if (e && (e as HttpError).statusCode) return send(res, (e as HttpError).statusCode!, { ok: false, error: (e as HttpError).message });
+      if (e && (e as HttpError).statusCode) {
+        const status = (e as HttpError).statusCode!;
+        // A 413 means the rest of the upload is already doomed: readBody stopped consuming it at the
+        // cap (req.pause(), so TCP backpressure stalls the sender instead of this process draining
+        // however many more megabytes are coming), and `connection: close` tears the connection down
+        // once the refusal is on the wire rather than leaving it open for a request that can never
+        // complete (post-review fix, Minor 7). A graceful close, not req.destroy(): destroying resets
+        // a client that is still writing its body, which loses the very 413 it was just sent — proven
+        // against the oversized-profiles test below, whose 1.2 MB body is still in flight. Node merges
+        // this with the headers send() passes to writeHead().
+        if (status === 413) res.setHeader("connection", "close");
+        return send(res, status, { ok: false, error: (e as HttpError).message });
+      }
       // Stack-free 500 (spec §4.5): the client gets a short ref, never the stack; the stack goes to
       // the log file keyed by that same ref, so a bug report only needs the ref to be actionable.
       const ref = randomUUID().slice(0, 8);
@@ -1043,7 +1332,15 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
     }
   });
 
-  server.requestTimeout = 0; server.headersTimeout = 0; server.timeout = 0;   // exact searches can legitimately run for minutes
+  // Both of these used to be 0 (disabled), justified by "exact searches can legitimately run for
+  // minutes" — but that is about the RESPONSE side, which neither of them governs: requestTimeout is
+  // the ceiling on RECEIVING a request, and headersTimeout the ceiling on receiving its headers, so a
+  // socket that sent half a request line and then stopped was never closed at all (post-review fix,
+  // Minor 7 — slowloris). Node's own defaults are the right values here. Probe-verified that an SSE
+  // response outlives requestTimeout: the request itself completed on connect, so no per-route
+  // exemption is needed for GET /api/events or the per-job optimize stream. server.timeout (the idle
+  // socket timeout, which WOULD cut a long-lived stream) stays disabled.
+  server.requestTimeout = 300_000; server.headersTimeout = 60_000; server.timeout = 0;
   await new Promise<void>((resolve, reject) => {
     const onError = (e: Error) => { server.off("listening", onListening); reject(e); };
     const onListening = () => { server.off("error", onError); resolve(); };
