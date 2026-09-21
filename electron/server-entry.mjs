@@ -17,7 +17,7 @@
 //       promise vault-server.mjs is awaiting once main's matching host-result message arrives.
 //   <- {type: "shutdown"}                              close the server, then exit(0)
 import { ensureLayout, resolveConfig } from "../app/config.mts";
-import { startServer } from "../app/vault-server.mjs";
+import { startServer } from "../app/vault-server.mts";
 
 const parentPort = process.parentPort;
 
