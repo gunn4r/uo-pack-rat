@@ -19,7 +19,7 @@ There is no quick-refresh script in this adapter (`adapters/tazuo/packrat-refres
 
 ## What this adapter reads, and the evidence for each capability
 
-`capabilities.json` also declares, at its top level (not inside the `capabilities` object the table below covers): `"transport": "folder"` (see `docs/adapter-guide.md`'s Transports section) and `"platform": "win32"` — Razor Enhanced only runs on Windows, so the setup wizard and the Import tab's adapter picker show this adapter but disable choosing it, and never default to it, anywhere else (`docs/adapter-guide.md`'s "Platform restriction" section; `app/ui/adapters.mjs`'s `platformCompatible`).
+`capabilities.json` also declares, at its top level (not inside the `capabilities` object the table below covers): `"transport": "folder"` (see `docs/adapter-guide.md`'s Transports section) and `"platform": "win32"` — Razor Enhanced only runs on Windows, so the setup wizard and the Import tab's adapter picker show this adapter but disable choosing it, and never default to it, anywhere else (`docs/adapter-guide.md`'s "Platform restriction" section; `app/ui/adapters.mts`'s `platformCompatible`).
 
 `capabilities.json`'s `capabilities` object claims:
 

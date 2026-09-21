@@ -1,32 +1,46 @@
-// ui/bridge.mjs — Highlight / Grab / Go-to buttons and the packrat-bridge.py connection
+// ui/bridge.mts — Highlight / Grab / Go-to buttons and the packrat-bridge.py connection
 // status. Moved verbatim out of index.html's inline <script type="module"> (Task 4, the page
 // split).
 import { state, bridge } from "./store.mts";
 import { $, el, toast } from "./dom.mts";
 import { api } from "./api.mts";
+import type { Item, Container } from "../vault-lib.mts";
+import type { BridgeQueueApiResponse, BridgeStatusApiResponse } from "./api-types.mts";
 
 // ---------------------------------------------------------------- bridge (Highlight / Grab / Go to)
-export function chainOf(it) {
-  const chain = []; let cur = it.container != null ? state.inv.containers[it.container] : null, guard = 0;
-  while (cur && guard++ < 8) { chain.unshift(+cur.serial); cur = cur.parent != null ? state.inv.containers[cur.parent] : null; }
+export function chainOf(it: Item): number[] {
+  const chain: number[] = []; let cur = it.container != null ? state.inv!.containers[it.container] : null, guard = 0;
+  while (cur && guard++ < 8) { chain.unshift(+cur.serial); cur = cur.parent != null ? state.inv!.containers[cur.parent] : null; }
   return chain;
 }
 export const BRIDGE_OFFLINE = "Bridge is offline — press Play on packrat-bridge.py in game first.";
-export const rootPos = (it) => (it.root != null ? state.inv.containers[it.root] : null)?.pos || null;
+// `.pos` is not a field vault-lib.mts's Container type declares (nor anything the fold ever writes
+// onto a container — grepped the whole fold/scan-schema/watcher pipeline; nothing assigns it), so
+// this has read as `undefined` — and rootPos() as always `null` — for as long as this code has
+// existed. Preserved exactly (this task migrates types, not behaviour): the cast lets a genuinely
+// unmodeled field through unchanged rather than silently dropping the read or inventing a shape for
+// data nothing here has ever produced.
+export const rootPos = (it: Item): unknown => ((it.root != null ? state.inv!.containers[it.root] : null) as (Container & { pos?: unknown }) | null)?.pos || null;
 // Queue one command for an item; the status poll toasts its result once packrat-bridge.py reports it.
-export async function sendBridge(action, it) {
+// The success branch is narrowed to `ok: true` (BridgeQueueApiResponse's own `ok` is plain `boolean`,
+// matching every route's response shape generally) so `r.ok ? r.id : r.error` below discriminates the
+// union properly — POST /api/bridge only ever sends this body on a 200 (api.mts throws for anything
+// else), so `ok` is always literally `true` on that path in practice.
+export async function sendBridge(action: string, it: Item): Promise<(BridgeQueueApiResponse & { ok: true }) | { ok: false; error: string }> {
   try {
     // name is required by BRIDGE_SCHEMA.command — it.name should always be set, but a falsy/missing
     // one used to serialize away entirely (JSON.stringify drops an undefined property), which the
     // server now rejects with a 400 instead of silently queuing a contract-violating line.
-    const r = await api("/api/bridge", { method: "POST", body: { action, serial: it.serial, name: it.name || "?", chain: chainOf(it), pos: rootPos(it), location: it.location?.text } });
+    const r = await api<BridgeQueueApiResponse>("/api/bridge", { method: "POST", body: { action, serial: it.serial, name: it.name || "?", chain: chainOf(it), pos: rootPos(it), location: it.location?.text } });
     if (r.ok) bridge.pending.set(r.id, it.name);
-    return r;
-  } catch (e) { return { ok: false, error: e.message }; }
+    // `ok: true` here is the trust the function's own return type documents above, not a new runtime
+    // check — this cast is compiler-only.
+    return r as BridgeQueueApiResponse & { ok: true };
+  } catch (e) { return { ok: false, error: (e as Error).message }; }
 }
 // Which bridge actions the page may offer, full stop: the currently configured client's own
 // capabilities.bridge list, read from GET /api/setup's {settings.client, adapters, bridgeAdapter}
-// (cached in state.setup by app.mjs's load(), refreshed whenever the Settings tab or the wizard
+// (cached in state.setup by app.mts's load(), refreshed whenever the Settings tab or the wizard
 // changes it). Not per-character: only one client is ever physically running the bridge at a time (a
 // player logs into one game client and runs one adapter's packrat-bridge.py, or none), so "what can
 // the bridge do right now" is a single global fact, not something that varies row to row. Earlier
@@ -65,14 +79,14 @@ export function currentAdapter() {
   if (!id) return null;
   return state.setup?.adapters?.find((a) => a.id === id) || null;
 }
-function allowedBridgeActions() {
+function allowedBridgeActions(): string[] {
   return currentAdapter()?.capabilities?.bridge || [];
 }
 const ALL_BRIDGE_ACTIONS = ["highlight", "grab", "goto"];
 // The button labels actButtons() itself uses (see below) — the note names actions the same way the
 // missing buttons would have read, not the raw capability strings ("goto" reads as "Go to" in here,
 // same as the button that isn't there).
-const ACTION_LABELS = { highlight: "Highlight", grab: "Grab", goto: "Go to" };
+const ACTION_LABELS: Record<string, string> = { highlight: "Highlight", grab: "Grab", goto: "Go to" };
 // One short line explaining what the bridge controls are doing or why they're missing/limited — null
 // only when a real configured client is present AND every KNOWN action is present (today, that's
 // exactly TazUO's set, so a TazUO player who ran the wizard's install step sees nothing new here). A
@@ -90,7 +104,7 @@ const ACTION_LABELS = { highlight: "Highlight", grab: "Grab", goto: "Go to" };
 // belongs in the "supports" half of the message — see `known` below). Callers place this once per
 // panel, never per row: repeating it on every item would be far noisier than the silently-missing
 // button it replaces.
-export function bridgeNote() {
+export function bridgeNote(): string | null {
   const client = state.setup?.settings?.client;
   const adapter = currentAdapter();
   if (!client) {
@@ -112,14 +126,14 @@ export function bridgeNote() {
 }
 // The note as a ready-to-insert element, or null when there's nothing to say (keeps callers from
 // repeating the `bridgeNote() ? el(...) : null` conditional at every call site).
-export function bridgeNoteEl() {
+export function bridgeNoteEl(): HTMLDivElement | null {
   const msg = bridgeNote();
   return msg ? el("div", { class: "msg warn bridge-note" }, msg) : null;
 }
-export function actButtons(it) {
+export function actButtons(it: Item | null | undefined): HTMLSpanElement | null {
   if (!it || it.equippedBy) return null;
   const allowed = allowedBridgeActions();
-  const send = (action) => async (e) => {
+  const send = (action: string) => async (e: Event): Promise<void> => {
     e.stopPropagation();
     if (!bridge.online) { toast(BRIDGE_OFFLINE, "bad"); return; }
     const r = await sendBridge(action, it);
@@ -136,16 +150,20 @@ export function actButtons(it) {
 // Pieces already in this character's backpack, or worn by anyone, are left out; each result toasts like a single Grab.
 // Returns null (nothing to render at all — the panel that calls this shows bridgeNoteEl() instead)
 // when the current client's adapter has no "grab" action.
-export function grabAllRow(items) {
+export function grabAllRow(items: Item[]): HTMLSpanElement | null {
   if (!allowedBridgeActions().includes("grab")) return null;
   const me = state.builder.character;
-  const todo = items.filter((i) => !i.equippedBy && !(i.location.kind === "backpack" && i.location.character === me));
+  // Every folded item carries a location (foldSnapshots unconditionally assigns one to every item
+  // before it's ever handed to the page — see vault-lib.mts) even though Item.location is optional in
+  // its own type (a piece being folded is momentarily location-less mid-fold, before that pass runs);
+  // this `!` documents that existing assumption rather than adding a new one.
+  const todo = items.filter((i) => !i.equippedBy && !(i.location!.kind === "backpack" && i.location!.character === me));
   const status = el("span", { class: "small muted" }, todo.length < items.length ? `${items.length - todo.length} already with ${me} or worn` : "");
   const btn = el("button", { id: "b-grab-all", "data-count": todo.length, onclick: async () => {
     if (!bridge.online) { toast(BRIDGE_OFFLINE, "bad"); return; }
     if (bridge.character !== me && !confirm(`The bridge is running on ${bridge.character}, not ${me}: the pieces would land in ${bridge.character}'s backpack. Grab them anyway?`)) return;
     btn.dataset.busy = "1"; btn.disabled = true;
-    let sent = 0, stopped = null;
+    let sent = 0, stopped: string | null = null;
     for (const it of todo) {
       status.textContent = `Grabbing ${sent + 1}/${todo.length}: ${it.name}…`;
       const r = await sendBridge("grab", it);
@@ -161,17 +179,17 @@ export function grabAllRow(items) {
   return el("span", { class: "row" }, btn, status);
 }
 // Enabled only while the bridge is online and something is left to grab; the title says why otherwise.
-export function grabAllState(btn = $("#b-grab-all")) {
+export function grabAllState(btn: HTMLButtonElement | null = $<HTMLButtonElement>("#b-grab-all")): void {
   if (!btn || btn.dataset.busy) return;
-  const count = +btn.dataset.count;
+  const count = +(btn.dataset.count as string);
   btn.disabled = !bridge.online || !count;
   btn.title = !bridge.online ? BRIDGE_OFFLINE : !count ? `nothing to grab: every piece is already with ${state.builder.character} or worn` : "queue a Grab for every piece on the fetch list, one after another";
 }
-export async function pollBridge() {
+export async function pollBridge(): Promise<void> {
   try {
-    const st = await api("/api/bridge/status");
+    const st = await api<BridgeStatusApiResponse>("/api/bridge/status");
     bridge.online = !!st.online; bridge.character = st.character || null;
-    const b = $("#bridge");
+    const b = $<HTMLElement>("#bridge")!;
     if (!st.online) { b.className = "status"; b.textContent = "bridge: offline"; }
     else if (st.current) { b.className = "status busy"; b.textContent = `bridge: ${st.character} · ${st.current.action} ${st.current.name || ""}`; }
     else { b.className = "status on"; b.textContent = `bridge: ${st.character} ready`; }

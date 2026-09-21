@@ -47,6 +47,20 @@ test("[fast] the bundle never ships a developer's own local data, even though ap
   assert.ok(files.includes("!app/data/runs/**"), "nor their saved optimizer runs");
 });
 
+test("[fast] the bundle excludes the page's TypeScript sources (the compiled app/dist/ui/ is what runs) but still ships its stylesheet", () => {
+  // Once app/ui/**/*.mts is compiled to app/dist/ui/ (npm run build:ui, part of predist), the .mts
+  // sources are redundant weight in the packaged app — the packaged server (vault-server.mts, run
+  // from app/** source directly) never reads them, only the browser-served /ui/<name>.mjs route does,
+  // and that's served from app/dist/. Only this ONE pattern is excluded, not a broader "!app/**/*.mts"
+  // — the server itself still runs from app/*.mts source, so excluding all .mts under app/ would break it.
+  const files = build.files ?? [];
+  assert.ok(files.includes("!app/ui/**/*.mts"), "app/ui/**/*.mts (the page's TS sources) must be excluded — only the compiled app/dist/ui/ output is served");
+  assert.ok(!files.some((p) => p === "!app/**/*.mts" || p === "!app/**"), "the exclusion must be scoped to app/ui/, not all of app/ (the server runs from app/*.mts source)");
+  // app/ui/styles.css is served straight from the source tree (vault-server.mts's /ui/ route), not
+  // from app/dist/ — it must still ship even though its .mts siblings don't.
+  assert.ok(!files.includes("!app/ui/**"), "app/ui/**/*.mts must not be excluded via a pattern broad enough to also drop styles.css");
+});
+
 test("[fast] worker-thread and adapter files are unpacked from the asar", () => {
   const unpacked = build.asarUnpack ?? [];
   assert.ok(unpacked.includes("app/**"), "worker threads under asar are undocumented — unpack app/");
@@ -139,7 +153,7 @@ test("[fast] Linux CI relaxes the unprivileged-userns restriction Electron's san
   // necessarily names both strings above, in assertions.
   const self = fileURLToPath(import.meta.url);
   const shippedDirs = ["electron", "app", "adapters"];
-  const testFiles = filesUnder(join(root, "scripts")).filter((p) => p.endsWith(".test.mjs"));
+  const testFiles = filesUnder(join(root, "scripts")).filter((p) => p.endsWith(".test.mjs") || p.endsWith(".test.mts"));
   const suspects = [...shippedDirs.flatMap((d) => filesUnder(join(root, d))), ...testFiles].filter((p) => p !== self);
   for (const file of suspects) {
     const text = readFileSync(file, "utf8");

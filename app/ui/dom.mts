@@ -22,7 +22,10 @@ export const $ = <E extends Element = Element>(s: string, el: ParentNode = docum
 // binding already stringifies whatever's passed via ToString, exactly as before: passing a number or
 // null through it already produced "6"/"null", per this file's own rarity/tag-chip callers elsewhere
 // in this page, which rely on exactly that coercion).
-export type ElAttrValue = string | number | null | undefined;
+// `boolean` covers aria-* attributes (e.g. "aria-pressed": state.cols.includes(k)) — setAttribute's
+// ToString coercion turns `true`/`false` into the literal strings "true"/"false", which is exactly
+// the value an aria attribute wants.
+export type ElAttrValue = string | number | boolean | null | undefined;
 export type ElEventHandler = (e: any) => unknown;   // any: this bag hands the value straight to addEventListener; every caller in this codebase reads event-target-specific fields (e.target.value, .checked, .dataset) with no narrowing anywhere, and the target is always the element the same call just created, so a real Event type would force a cast at every one of this page's ~60 listener call sites for no safety actually gained
 export type ElAttrs = Record<string, ElAttrValue | ElEventHandler>;
 export type ElChild = Node | string | number | boolean | null | undefined;

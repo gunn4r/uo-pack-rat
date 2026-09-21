@@ -1,4 +1,4 @@
-// ui-smoke.test.mjs — [slow]: drives the real Electron window with Playwright. The shell smoke test
+// ui-smoke.test.mts — [slow]: drives the real Electron window with Playwright. The shell smoke test
 // proves the app boots and serves; this one proves the page renders and its tabs work. Skipped when
 // electron or playwright is absent (a plain clone), or under TEST_SKIP_ELECTRON.
 import test from "node:test";
@@ -8,10 +8,11 @@ import { tmpdir } from "node:os";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createRequire } from "node:module";
+import type { Page } from "playwright";
 
 const ROOT = dirname(dirname(fileURLToPath(import.meta.url)));
 const require_ = createRequire(import.meta.url);
-function unavailable() {
+function unavailable(): string | null {
   if (process.env.TEST_SKIP_ELECTRON) return "TEST_SKIP_ELECTRON is set";
   for (const dep of ["electron", "playwright"]) {
     try { require_.resolve(dep); } catch { return `${dep} is not installed`; }
@@ -31,7 +32,7 @@ test("[slow] the packaged UI renders, switches tabs and lists the demo inventory
   const app = await _electron.launch({ args: [ROOT, "--demo", "--data", dataDir], cwd: ROOT, timeout: 60_000 });
   try {
     const page = await app.firstWindow();
-    const errors = [];
+    const errors: string[] = [];
     page.on("pageerror", (e) => errors.push(String(e)));
 
     assert.equal(await page.title(), "Pack Rat");
@@ -47,11 +48,11 @@ test("[slow] the packaged UI renders, switches tabs and lists the demo inventory
     // Task 2, Phase 6 (bug fix, later): a fresh --data dir has no settings.json, so no client is
     // configured yet, but GET /api/setup's `bridgeAdapter` still resolves to "tazuo" here (this run
     // uses the repo's real adapters/ dir, and POST /api/bridge itself already falls back to tazuo when
-    // no client is configured) — so app/ui/bridge.mjs's currentAdapter() falls back to it too, and the
+    // no client is configured) — so app/ui/bridge.mts's currentAdapter() falls back to it too, and the
     // real tazuo adapter's full capabilities.bridge means every row gets all three buttons. The note
     // is a short explanation of that fallback, not a "here's what's missing" message — it still
     // contains "client", so it isn't asserted more precisely here (see the dedicated fallback-note
-    // check in app/server.test.mjs and app/bridge-adapter-fallback.test.mjs).
+    // check in app/server.test.mts and app/bridge-adapter-fallback.test.mts).
     await page.waitForSelector("#inv-table .act button", { timeout: 10_000 });
     const fallbackLabels = await page.locator("#inv-table .act button").allInnerTexts();
     for (const want of ["Highlight", "Grab", "Go to"]) {
@@ -60,9 +61,9 @@ test("[slow] the packaged UI renders, switches tabs and lists the demo inventory
     await page.waitForSelector("#inv-bridge-note .bridge-note", { timeout: 10_000 });
     assert.match(await page.locator("#inv-bridge-note .bridge-note").innerText(), /client/i);
 
-    // A fresh --data dir has no settings.json, so /api/setup reports firstRun and app.mjs's load()
+    // A fresh --data dir has no settings.json, so /api/setup reports firstRun and app.mts's load()
     // opens the first-run wizard (a <dialog>) on top of everything — real behavior for a new user,
-    // not a test artifact, so it's dismissed the way a user would (ui/wizard.mjs's Skip button)
+    // not a test artifact, so it's dismissed the way a user would (ui/wizard.mts's Skip button)
     // rather than worked around.
     await page.waitForSelector("#wizard[open]", { timeout: 10_000 });
     await page.locator("#wizard").getByRole("button", { name: "Skip" }).click();
@@ -81,8 +82,8 @@ test("[slow] the packaged UI renders, switches tabs and lists the demo inventory
 
 // Post-review fix (Task 2, Phase 6, round 1): the no-bridge case above was covered at the DOM level,
 // but "TazUO shows all three buttons and no note" and "a partial-bridge adapter offers only its
-// declared action" were only exercised through GET /api/setup's JSON (app/server.test.mjs) — a
-// regression in the actual render path (app/ui/bridge.mjs's actButtons()/bridgeNote()) could pass
+// declared action" were only exercised through GET /api/setup's JSON (app/server.test.mts) — a
+// regression in the actual render path (app/ui/bridge.mts's actButtons()/bridgeNote()) could pass
 // every existing test. These two prove the other two gate conditions at the DOM level too.
 test("[slow] with tazuo configured, the demo inventory shows all three bridge buttons and no note", async (t) => {
   const why = unavailable();
@@ -132,12 +133,15 @@ test("[slow] a partial-bridge adapter only offers its declared action, and the n
   writeFileSync(join(dataDir, "settings.json"), JSON.stringify({
     schemaVersion: 1, shard: "uoalive", setupDone: true, client: { adapter: "partial-bridge", scriptsDir: dataDir },
   }));
-  // PACKRAT_ADAPTERS_DIR (the same override app/config.mts/app/server.test.mjs use) points the whole
+  // PACKRAT_ADAPTERS_DIR (the same override app/config.mts/app/server.test.mts use) points the whole
   // app — main process and the forked server child, which inherits main's process.env — at this
   // throwaway adapter instead of the repo's real adapters/, without touching electron/main.mts.
   const app = await _electron.launch({
     args: [ROOT, "--demo", "--data", dataDir], cwd: ROOT, timeout: 60_000,
-    env: { ...process.env, PACKRAT_ADAPTERS_DIR: adaptersDir },
+    // Playwright's own `env` option wants Record<string, string> (no `undefined`); process.env's real
+    // entries are all plain strings at runtime (NodeJS.ProcessEnv only types them as possibly
+    // undefined for keys that were never set) — this cast is compiler-only, the spread itself is unchanged.
+    env: { ...process.env, PACKRAT_ADAPTERS_DIR: adaptersDir } as Record<string, string>,
   });
   try {
     const page = await app.firstWindow();
@@ -164,7 +168,7 @@ test("[slow] a partial-bridge adapter only offers its declared action, and the n
 // Bug fix (round 2): the Suit Builder's "Save as…" used window.prompt(), which Electron does not
 // implement (it returns null/undefined with no error, so the handler's `if (!name) return` bailed
 // silently) — it worked in a plain browser, which is why the bug went unnoticed until it shipped.
-// ui/dialog.mjs's promptText() replaces it with an in-page <dialog>; this drives the real Electron
+// ui/dialog.mts's promptText() replaces it with an in-page <dialog>; this drives the real Electron
 // window through Save as… end to end (open the builder, click Save as…, type a name in the dialog,
 // confirm) and checks the template landed server-side, the one thing window.prompt() could never do.
 test("[slow] Save as… in the suit builder opens an in-page dialog and saves the template (Electron has no window.prompt)", async (t) => {
@@ -185,7 +189,7 @@ test("[slow] Save as… in the suit builder opens an in-page dialog and saves th
     await page.waitForSelector("#tab-builder:not([hidden])", { timeout: 10_000 });
     // buildBuilder() auto-selects the first character from the demo fixtures (Dorran/Kestrel) once
     // its <option>s exist — the "Save as…" button needs a selected character's settings to snapshot.
-    await page.waitForFunction(() => document.querySelector("#b-char")?.value, { timeout: 10_000 });
+    await page.waitForFunction(() => document.querySelector<HTMLSelectElement>("#b-char")?.value, { timeout: 10_000 });
 
     await page.click("#b-tpl-saveas");
     const dialog = page.locator(".prompt-dialog[open]");
@@ -199,7 +203,7 @@ test("[slow] Save as… in the suit builder opens an in-page dialog and saves th
     await dialog.getByRole("button", { name: "Save" }).click();
     await dialog.waitFor({ state: "detached", timeout: 10_000 });
 
-    const r = await page.evaluate(() => fetch("/api/profiles").then((res) => res.json()));
+    const r: { profiles?: { templates?: Record<string, unknown> } } = await page.evaluate(() => fetch("/api/profiles").then((res) => res.json()));
     const names = Object.keys(r.profiles?.templates || {});
     assert.ok(names.includes(templateName), `expected "${templateName}" among the saved templates, got ${JSON.stringify(names)}`);
   } finally {
@@ -210,7 +214,7 @@ test("[slow] Save as… in the suit builder opens an in-page dialog and saves th
 // Small helper: assert the given locator's element is the page's activeElement — Playwright has no
 // built-in "is focused" locator assertion in this project's test setup (no @playwright/test expect()),
 // so this reads document.activeElement inside the page instead.
-async function expectFocused(page, locator) {
+async function expectFocused(page: Page, locator: ReturnType<Page["locator"]>): Promise<void> {
   const handle = await locator.elementHandle();
   const focused = await page.evaluate((el) => el === document.activeElement, handle);
   assert.ok(focused, "expected the dialog's input to be focused");
