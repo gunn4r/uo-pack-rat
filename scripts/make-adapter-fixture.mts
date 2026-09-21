@@ -9,7 +9,7 @@
 // from capabilities.json) so the fixture represents what THIS adapter actually emits today, not
 // whatever an older real scan happened to carry. Prints item/container/root counts.
 import { readFileSync, writeFileSync } from "node:fs";
-import { upgradeScan } from "../app/scan-schema.mts";
+import { upgradeScan, validateScan, type UnvalidatedScan } from "../app/scan-schema.mts";
 import type { ScanV2, ScanV2AdapterCapabilities } from "../app/schema/types.d.mts";
 
 const [, , inPath, outPath] = process.argv;
@@ -32,16 +32,35 @@ interface FixtureContainer {
 type FixtureScan = Omit<ScanV2, "containers"> & { containers: Record<string, FixtureContainer> };
 
 const raw: unknown = JSON.parse(readFileSync(inPath, "utf8"));
-// This is the one caller in the repo that hands upgradeScan()'s output straight to code that reads
-// it as if it were a validated ScanV2 without ever calling validateScan() — unlike the bench
-// scripts (app/bench/gen-inventory.mts and friends), which only ever read from the app's own
-// watcher-validated <dataDir>/scans/ directory or this repo's own synthetic data, `inPath` here is
-// an arbitrary file a developer names on the command line (a raw capture, per this file's own
-// header comment). That is a real gap — a malformed real scan would surface as a confusing failure
-// somewhere downstream (this script, or later app/contracts.test.mts against the fixture it wrote)
-// rather than a clear "this file doesn't validate" message right here — but adding validateScan()
-// is a behaviour change, and is deliberately NOT made in this migration; see the task-12 report.
-const scan = upgradeScan(raw, {}) as FixtureScan;
+// `inPath` is an arbitrary file a developer names on the command line — a raw capture off a client
+// that (per this file's own header comment) may never have run against a live client before, so it's
+// exactly the input most likely to be malformed. upgradeScan() only checks the version field
+// (app/scan-schema.mts's own comment: it "returns UnvalidatedScan, not ScanV2 ... a caller earns a
+// ScanV2 by running [validateScan] and casting only on the ok branch"), so earn it here the same way
+// app/import.mts and app/watcher.mts do, rather than reading the upgraded doc as if it were already
+// proven: a malformed real scan now fails right here with the schema error that names the problem,
+// instead of surfacing later as a confusing failure in this script or in app/contracts.test.mts
+// against the bad fixture it would otherwise have written.
+let upgraded: UnvalidatedScan;
+try {
+  // shard: null — same reasoning as app/import.mts's parsePastedScan: this script takes no server
+  // state to stamp a real shard with either. Passing no `shard` option at all (the default,
+  // undefined) would set the key to a literal `undefined` on a v1 doc with no shard of its own,
+  // which then fails validateScan's `["string", "null"]` type check below even though the doc is
+  // otherwise perfectly valid (validate.mts's `key in obj` check treats an explicitly-undefined
+  // property as present) — hit live against app/fixtures/demo-Kestrel.json, a real shipped fixture.
+  upgraded = upgradeScan(raw, { shard: null });
+} catch (e) {
+  console.error((e as Error).message);
+  process.exit(1);
+}
+const inputCheck = validateScan(upgraded);
+if (!inputCheck.ok) {
+  console.error(`${inPath} does not upgrade to a valid scan:`);
+  for (const err of inputCheck.errors) console.error(`  ${err.path} ${err.msg}`);
+  process.exit(1);
+}
+const scan = upgraded as ScanV2 as FixtureScan;
 
 const serialMap = new Map<number, number>();
 let next = 0x40000000;
@@ -110,6 +129,20 @@ const fixture = {
   adapter: { id: CAPABILITIES.adapter, version: CAPABILITIES.version, client: "TazUO", clientVersion: null, capabilities: CAPABILITIES.capabilities },
   roots, containers, items, equipped,
 };
+
+// The anonymising step above (remapping serials, scrubbing tooltip lines, replacing adapter/character/
+// scannedAt/position) rebuilds the document by hand rather than mutating the already-validated `scan`
+// in place, so it can just as easily produce something the schema rejects (a dropped required field, a
+// serial remapped to the wrong type) as the raw input could. Validate what's actually about to be
+// written, not just what came in: app/contracts.test.mts will reject an invalid fixture later anyway,
+// and failing here — before anything is written, with the schema error that names the problem — is
+// kinder than a confusing failure in that test run.
+const outputCheck = validateScan(fixture);
+if (!outputCheck.ok) {
+  console.error(`${outPath} would not be a valid fixture:`);
+  for (const err of outputCheck.errors) console.error(`  ${err.path} ${err.msg}`);
+  process.exit(1);
+}
 
 writeFileSync(outPath, JSON.stringify(fixture, null, 1) + "\n");
 
