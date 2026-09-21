@@ -1,4 +1,4 @@
-// packaging.test.mjs — the electron-builder config is product interface: which files reach a
+// packaging.test.mts — the electron-builder config is product interface: which files reach a
 // player's machine, under which target, with which identifiers. It lives in package.json (JSON,
 // so it needs no YAML parser to check) and these tests are what keep it honest.
 import test from "node:test";
@@ -7,8 +7,32 @@ import { readFileSync, readdirSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 
+// Only the electron-builder + package.json fields these tests actually read — package.json's own
+// full shape (dependencies, devDependencies, engines, …) isn't this file's concern.
+interface BuildTarget { target: string; arch: string[] }
+interface BuildConfig {
+  appId?: string | undefined;
+  mac?: { target?: BuildTarget[] | undefined; identity?: string | null | undefined } | undefined;
+  win?: { target?: BuildTarget[] | undefined; artifactName?: string | undefined } | undefined;
+  linux?: { target?: string[] | undefined } | undefined;
+  nsis?: { artifactName?: string | undefined } | undefined;
+  portable?: { artifactName?: string | undefined } | undefined;
+  files?: string[] | undefined;
+  asarUnpack?: string[] | undefined;
+  publish?: { provider?: string | undefined; releaseType?: string | undefined } | undefined;
+  artifactName?: string | undefined;
+}
+interface PackageJson {
+  name?: string | undefined;
+  productName?: string | undefined;
+  license?: string | undefined;
+  repository?: { url?: string | undefined } | undefined;
+  scripts?: Record<string, string> | undefined;
+  build?: BuildConfig | undefined;
+}
+
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
-const pkg = JSON.parse(readFileSync(join(root, "package.json"), "utf8"));
+const pkg = JSON.parse(readFileSync(join(root, "package.json"), "utf8")) as PackageJson;
 const build = pkg.build ?? {};
 
 test("[fast] package metadata carries the public identity", () => {
@@ -21,14 +45,14 @@ test("[fast] package metadata carries the public identity", () => {
 
 test("[fast] every platform ships the targets the spec settled on", () => {
   assert.deepEqual(build.mac?.target?.map((t) => t.target).sort(), ["dmg", "zip"]);
-  for (const t of build.mac.target) assert.deepEqual(t.arch, ["x64", "arm64"]);
+  for (const t of build.mac!.target!) assert.deepEqual(t.arch, ["x64", "arm64"]);
   assert.deepEqual(build.win?.target?.map((t) => t.target).sort(), ["nsis", "portable"]);
   assert.deepEqual(build.linux?.target, ["AppImage"]);
 });
 
 test("[fast] the bundle carries the adapters and the optimizer core's source, not the tests or the user's data", () => {
   const files = build.files ?? [];
-  const has = (p) => files.includes(p);
+  const has = (p: string): boolean => files.includes(p);
   assert.ok(has("app/**"), "app/ must ship");
   assert.ok(has("adapters/**"), "adapters/ must ship — the installer copies the scripts out of it");
   assert.ok(has("electron/**"), "the shell itself must ship");
@@ -79,7 +103,7 @@ test("[fast] the two Windows targets cannot resolve to the same artifact filenam
   // different target names, both reading build[targetName] as their target-specific options — so with
   // no override, both fall through to the same global pattern and collide on
   // "Pack Rat-<version>-win-x64.exe", and whichever electron-builder writes second overwrites the first.
-  const effectivePattern = (targetName) => build[targetName]?.artifactName || build.win?.artifactName || build.artifactName;
+  const effectivePattern = (targetName: "nsis" | "portable"): string | undefined => build[targetName]?.artifactName || build.win?.artifactName || build.artifactName;
   const nsisPattern = effectivePattern("nsis");
   const portablePattern = effectivePattern("portable");
   assert.notEqual(nsisPattern, portablePattern, "nsis and portable would resolve to the same artifact filename");
@@ -100,10 +124,10 @@ test("[fast] a publish-always script exists for the release workflow, separate f
   assert.match(scripts.dist ?? "", /--publish never/);
 });
 
-const workflow = (name) => readFileSync(join(root, ".github/workflows", name), "utf8");
+const workflow = (name: string): string => readFileSync(join(root, ".github/workflows", name), "utf8");
 
-function filesUnder(dir) {
-  const out = [];
+function filesUnder(dir: string): string[] {
+  const out: string[] = [];
   for (const entry of readdirSync(dir, { withFileTypes: true })) {
     const p = join(dir, entry.name);
     if (entry.isDirectory()) out.push(...filesUnder(p));

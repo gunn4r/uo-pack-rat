@@ -1,4 +1,4 @@
-// no-unbounded-loop.test.mjs — [smoke]: standing guard for the project rule (CLAUDE.md's Global
+// no-unbounded-loop.test.mts — [smoke]: standing guard for the project rule (CLAUDE.md's Global
 // Constraints, both the plan that added the Razor Enhanced/classicuo-web adapters and every adapter
 // script's own header) that no adapter `.py` file may contain a literal `while True`, `while (true)`,
 // or `while(true)` anywhere — comments and strings included, not just live code. TazUO itself refuses

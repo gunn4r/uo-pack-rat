@@ -21,7 +21,7 @@
   },
   "scripts": {
     "build:types": "node scripts/build-schema-types.mts",
-    "build:ui": "node scripts/build-ui.mjs",
+    "build:ui": "node scripts/build-ui.mts",
     "pretypecheck": "npm run build:types",
     "typecheck": "tsc -p tsconfig.json",
     "prestart": "npm run build:types && npm run build:ui",
@@ -29,7 +29,7 @@
     "predesktop": "npm run build:types && npm run build:ui",
     "predist": "npm run build:types && npm run build:ui",
     "predist:publish": "npm run build:types && npm run build:ui",
-    "start": "node scripts/start.mjs",
+    "start": "node scripts/start.mts",
     "desktop": "electron .",
     "dist": "electron-builder --publish never",
     "dist:dir": "electron-builder --dir --publish never",

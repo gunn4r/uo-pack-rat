@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// build-ui.mjs — compile the browser-facing TypeScript (app/ui/**, vault-lib.*, item-query.*,
+// build-ui.mts — compile the browser-facing TypeScript (app/ui/**, vault-lib.*, item-query.*,
 // scan-schema.*, schema/validate.*) via tsconfig.browser.json into app/dist/, which is what
 // vault-server.mts actually serves the page from (never the source tree — see its own header
 // comment). Unlike the optimizer core (a single paste-able file Node runs from source with no build
@@ -20,12 +20,17 @@ export const TSCONFIG = join(ROOT, "tsconfig.browser.json");
 // presence is what "app/dist already has a built page" means, for the no-compiler fallback below.
 const UI_ENTRY_OUT = join(ROOT, "app", "dist", "ui", "app.mjs");
 
+// The one shape this file reads off the installed `typescript` package's own package.json — its
+// `bin` field, which npm's own package.json spec allows as either a bare string (one binary, named
+// after the package) or a name -> path map (several binaries).
+interface TypescriptPackageJson { bin?: string | Record<string, string> | undefined }
+
 // Resolve the installed `typescript` package's own `tsc` entry point (its package.json `bin` field)
 // rather than hard-coding `node_modules/typescript/bin/tsc` or shelling out to `npx`/a PATH lookup —
 // `import.meta.resolve` uses Node's real ESM resolver (respects `typescript`'s `exports` map, works
 // whether the package is hoisted to the repo root or nested), and doesn't depend on a network call
 // or a globally-installed tsc the way `npx` would.
-function resolveTscEntry() {
+function resolveTscEntry(): string | null {
   let pkgUrl;
   try {
     pkgUrl = import.meta.resolve("typescript/package.json");
@@ -33,13 +38,13 @@ function resolveTscEntry() {
     return null; // the `typescript` devDependency isn't installed — see the packaged-app fallback in buildUi()
   }
   const pkgPath = fileURLToPath(pkgUrl);
-  const pkg = JSON.parse(readFileSync(pkgPath, "utf8"));
+  const pkg = JSON.parse(readFileSync(pkgPath, "utf8")) as TypescriptPackageJson;
   const bin = typeof pkg.bin === "string" ? pkg.bin : pkg.bin?.tsc;
   if (!bin) return null;
   return join(dirname(pkgPath), bin);
 }
 
-export function buildUi({ tsconfig = TSCONFIG } = {}) {
+export function buildUi({ tsconfig = TSCONFIG }: { tsconfig?: string } = {}): string {
   const tscEntry = resolveTscEntry();
   if (!tscEntry || !existsSync(tscEntry)) {
     // The packaged Electron app ships no devDependencies (electron-builder's `files` list excludes
