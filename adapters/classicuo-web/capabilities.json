@@ -2,6 +2,7 @@
   "adapter": "classicuo-web",
   "version": "1.0.0",
   "transport": "paste",
+  "actions": [],
   "capabilities": {
     "layers": ["OneHanded", "TwoHanded", "Shoes", "Pants", "Shirt", "Helmet", "Gloves",
       "Ring", "Talisman", "Necklace", "Waist", "Torso", "Bracelet", "Tunic",

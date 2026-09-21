@@ -1,8 +1,9 @@
 {
   "adapter": "razor-enhanced",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "transport": "folder",
   "platform": "win32",
+  "actions": ["open-container", "move-to-own-backpack", "pathfind-local", "client-local-highlight"],
   "capabilities": {
     "layers": ["RightHand", "LeftHand", "Shoes", "Pants", "Shirt", "Head", "Gloves", "Ring",
       "Talisman", "Neck", "Waist", "InnerTorso", "Bracelet", "MiddleTorso", "Earrings", "Arms",

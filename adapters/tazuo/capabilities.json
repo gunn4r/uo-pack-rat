@@ -1,7 +1,8 @@
 {
   "adapter": "tazuo",
-  "version": "2.0.0",
+  "version": "2.1.0",
   "transport": "folder",
+  "actions": ["open-container", "move-to-own-backpack", "pathfind-local", "client-local-highlight"],
   "capabilities": {
     "layers": ["OneHanded", "TwoHanded", "Shoes", "Pants", "Shirt", "Helmet", "Gloves",
       "Ring", "Talisman", "Necklace", "Waist", "Torso", "Bracelet", "Tunic",
