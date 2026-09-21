@@ -295,6 +295,10 @@ export interface RunSummaryLike {
   ms: number | null;
   method: string | null;
   proven: boolean | null;
+  score: number | null;
+  currentScore: number | null;
+  delta: number | null;
+  nodes: number | null;
 }
 export interface RunsListApiResponse {
   ok: boolean;
