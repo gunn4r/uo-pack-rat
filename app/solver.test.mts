@@ -172,6 +172,44 @@ test("[fast] jointly unreachable hard floors fall back honestly", async () => {
   assert.ok(Math.abs(r.score - coreBruteForce) < 1e-3, `${r.score} vs brute force ${coreBruteForce}`);
 });
 
+// bugfix-pass-review.md Important #1, at the solveExact level: a REQUIRED ring slot (forced by
+// `current`, not in optionalSlots) whose only two candidates are both negative in `fc`, paired with
+// an optional neck slot whose only candidate is exactly the hard floor (fc: 2). Pre-fix,
+// buildSuitMip's `reach` estimate let the required ring slot "contribute 0" as if leaving it empty
+// were legal, read the floor as reachable (0 + 2 = 2 ≥ 2), and emitted a genuine hard row — the true
+// infeasibility (the ring can only ever contribute -5 or -3, never 0) then only surfaced as HiGHS
+// reporting the whole model `infeasible` on the first solve, costing a wasted solve plus a
+// hardAsSoft retry (`floorsConflict: true`) for a floor that was never reachable, ring included or
+// not. Fixed, buildSuitMip classifies `fc` unreachable up front (no hard row emitted at all), so the
+// very first solve is feasible and no retry is needed — `floorsConflict` is the field that makes this
+// observable without any new production hook (set true only when the FIRST solve comes back
+// `infeasible`; see app/exact-solver.mts's own comment on the retry branch).
+function requiredSlotNegativeFloorCell() {
+  const ringA = { serial: 90201, name: "Draining Ring A", slot: "ring", props: { fc: -5 } };
+  const ringB = { serial: 90202, name: "Draining Ring B", slot: "ring", props: { fc: -3 } };
+  const neckItem = { serial: 90203, name: "Casting Neck", slot: "neck", props: { fc: 2 } };
+  const pools = { ring: [ringA, ringB], neck: [neckItem] };
+  const current = { ring: ringA };                     // forces the ring slot required: worn, and NOT in optionalSlots
+  const slots = ["ring", "neck"];
+  const optionalSlots = ["neck"];
+  const profile = { weights: { fc: 1 }, caps: {}, floors: { fc: 2 }, hardFloors: ["fc"], floorBonus: 1000 };
+  return { pools, current, profile, ringA, ringB, neckItem, slots, optionalSlots };
+}
+
+test("[fast] a hard floor unreachable only because a REQUIRED slot's candidates are all negative is flagged unreachable and needs no infeasible-then-hardAsSoft retry", async () => {
+  const { pools, current, profile, ringA, ringB, neckItem, slots, optionalSlots } = requiredSlotNegativeFloorCell();
+  const opts: OptOptions = { exact: true, timeBudgetMs: 5000, restarts: 20, seed: 1, slots, optionalSlots };
+  const r = await solveExact({ core, pools, current, profile, opts, onProgress: () => {} });
+  assert.ok(r.unreachableFloors.includes("fc"), JSON.stringify(r.unreachableFloors));
+  assert.equal(r.floorsConflict, false, "buildSuitMip must classify this floor unreachable BEFORE the solve — no wasted infeasible/hardAsSoft round trip");
+  assert.equal(r.solver, "highs");
+  let coreBruteForce = -Infinity;
+  for (const ring of [ringA, ringB]) for (const neck of [null, neckItem]) {   // ring has no "leave it empty" option: it is required
+    coreBruteForce = Math.max(coreBruteForce, core.scoreSet({ ring, neck }, profile));
+  }
+  assert.ok(Math.abs(r.score - coreBruteForce) < 1e-3, `${r.score} vs brute force ${coreBruteForce}`);
+});
+
 test("[fast] a negative total on a soft-floored dimension gets zero credit, like the core", async (t) => {
   const item = { serial: 90101, name: "Draining Ring", slot: "ring", props: { manaRegen: -3, hci: 50 } };
   const pools = { ring: [item] };
