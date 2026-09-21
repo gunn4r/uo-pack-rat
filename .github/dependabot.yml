@@ -1,0 +1,26 @@
+# Dependabot keeps two things current that nothing else in this repository will notice going stale:
+# the npm lockfile (which is fully pinned by design, so it never moves on its own) and the commit
+# SHAs that .github/workflows/*.yml pin every action to (which are deliberately immutable, so they
+# rot instead of drifting). This file only configures version updates -- Dependabot ALERTS and
+# security updates are repository settings a maintainer has to switch on by hand, see RELEASING.md.
+version: 2
+updates:
+  - package-ecosystem: npm
+    directory: "/"
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    groups:
+      # One pull request a week for the routine devDependency churn, rather than five. Majors stay
+      # separate and unbatched: electron and electron-builder majors change what ships to a player's
+      # machine and each deserves its own review and its own three-platform CI run.
+      dev-minor-and-patch:
+        dependency-type: development
+        update-types:
+          - minor
+          - patch
+
+  - package-ecosystem: github-actions
+    directory: "/"
+    schedule:
+      interval: weekly

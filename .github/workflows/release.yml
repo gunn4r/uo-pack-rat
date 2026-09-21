@@ -6,23 +6,34 @@ on:
       - "v*"
   workflow_dispatch:
 
+# Read-only by default, raised per job. Only `create-release` and `publish` get contents: write,
+# and neither of them runs `npm ci` or any code from the dependency tree -- so a compromised dev
+# dependency never has a write-scoped token in its environment. The `build` job, which does run the
+# whole tree, is contents: read with no token at all and builds with publishing switched off; its
+# output reaches the release as workflow artifacts that `publish` uploads.
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   create-release:
     name: Create the draft release
     runs-on: ubuntu-latest
-    # Only a real tag push gets a release. A workflow_dispatch run (manual rehearsal, no tag) must
-    # never create or publish to one -- see the build job below, which skips --publish on that trigger.
+    # Two short gh calls; a hang must fail rather than sit for the six-hour default.
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    # Only a real tag push gets a release. A workflow_dispatch run (RELEASING.md's rehearsal, which
+    # runs before the first tag exists) is BUILD-ONLY: it skips this job and the publish job below,
+    # so a dispatch from an arbitrary ref can neither create a release nor upload to one, and the
+    # only job it does run holds no write-scoped token.
     if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
       - name: Check the tag matches package.json's version
-        # electron-builder's publish step looks up a release by VERSION (package.json), not by tag --
-        # so a tag pushed without bumping the version first (RELEASING.md step 2 skipped, or a typo)
-        # would make this job create a draft for the tag while electron-builder later creates a SECOND
-        # one for the version, once the matrix starts building. Fail here, before either exists.
+        # Every artifact's file name is built from package.json's version, so a tag pushed without
+        # bumping the version first (RELEASING.md step 2 skipped, or a typo) would produce a draft
+        # named for the tag full of files named for a different version. Fail here, before the draft
+        # exists and before three runners spend twenty minutes building.
         run: |
           pkg_version="$(node -p "require('./package.json').version")"
           if [ "$TAG" != "v$pkg_version" ]; then
@@ -32,18 +43,16 @@ jobs:
         env:
           TAG: ${{ github.ref_name }}
       - name: Create the draft release if one doesn't already exist for this tag
-        # electron-builder's own publish step (getOrCreateRelease) looks up a release by tag before
-        # creating one -- but three platform runners doing that lookup at nearly the same moment can
-        # each find nothing and each create their own draft. Creating the draft here, in a single job
-        # the whole matrix depends on, guarantees exactly one draft exists before any platform uploads
-        # to it. Re-running a release workflow for a tag that partly failed finds the existing draft
-        # and reuses it rather than erroring.
+        # Exactly one job creates the draft, ahead of the build matrix, so there is never more than
+        # one. Re-running a release workflow for a tag that partly failed finds the existing draft
+        # and reuses it rather than erroring. It stays a DRAFT until a human publishes it by hand
+        # (RELEASING.md step 8) -- nothing here ever makes a release public.
         run: |
           if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
             echo "release $TAG already exists, reusing it"
           else
             gh release create "$TAG" --repo "$GITHUB_REPOSITORY" --draft --title "$TAG" \
-              --notes "Draft release for $TAG, built by CI. Installers are uploaded by the platform matrix that follows."
+              --notes "Draft release for $TAG, built by CI. Installers and SHA256SUMS are uploaded by the jobs that follow."
           fi
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -54,25 +63,93 @@ jobs:
     needs: create-release
     # create-release is skipped (not failed) on a workflow_dispatch run, since its own `if` is false --
     # the build still has to run then, just without publishing, so this job's own condition covers both
-    # "the draft now exists" and "there was never supposed to be one this run."
+    # "the draft now exists" and "there was never supposed to be one this run." A *failed* gate is
+    # neither success nor skipped, so a tag/version mismatch correctly stops the whole matrix.
     if: always() && (needs.create-release.result == 'success' || needs.create-release.result == 'skipped')
     runs-on: ${{ matrix.os }}
+    # Three platforms' installers; slower than CI's test run, but a hang must still fail.
+    timeout-minutes: 60
+    # This job runs 300-odd development packages as ordinary code on the runner. It gets no release
+    # token and no write scope, so the worst a poisoned dependency can do is corrupt an artifact that
+    # a human has to download, launch and check (RELEASING.md step 6) before anything is published.
+    permissions:
+      contents: read
     strategy:
       fail-fast: false
       matrix:
         os: [macos-latest, windows-latest, ubuntu-latest]
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: "22"
           cache: npm
-      - run: npm ci
-      - name: Build (and publish to the draft release on a real tag push)
-        # A workflow_dispatch run (RELEASING.md's rehearsal step, no tag) builds every installer with
-        # `dist` (--publish never) so the NSIS/AppImage/DMG builders get exercised by hand before the
-        # first real tag, without creating or uploading to anything. Only a tag push runs `dist:publish`.
-        run: npm run ${{ github.event_name == 'push' && 'dist:publish' || 'dist' }}
+      - name: Install dependencies without running install scripts
+        # --ignore-scripts: the only package in the tree with an install script is
+        # electron-winstaller, which reaches it solely as a dependency of the peer
+        # electron-builder-squirrel-windows, and app-builder-lib require()s that lazily inside the
+        # Squirrel target branch only. This project builds nsis + portable, never Squirrel, so that
+        # script is never needed. Electron's own binary does NOT arrive through an install script in
+        # this version -- node_modules/electron/index.js fetches it on first require -- and
+        # TypeScript's native compiler arrives as platform-gated optionalDependencies, integrity
+        # pinned in the lockfile. Neither is affected. Add electron's install step back explicitly if
+        # a Squirrel target is ever added.
+        run: npm ci --ignore-scripts
+      - name: Build the installers (never publishes)
+        # `dist` is electron-builder --publish never. Publishing is a separate job with a separate
+        # token, so nothing in this step can reach the release even on a real tag push.
+        run: npm run dist
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: "false"
+      - name: Upload the installers as workflow artifacts
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: installers-${{ matrix.os }}
+          # Only the distributable files -- not dist/'s unpacked app directories or builder-debug.yml.
+          # Each platform matches only some of these patterns; if-no-files-found: error catches a
+          # matrix leg that somehow produced nothing at all.
+          path: |
+            dist/*.dmg
+            dist/*.zip
+            dist/*.exe
+            dist/*.AppImage
+            dist/*.blockmap
+            dist/latest*.yml
+          if-no-files-found: error
+
+  publish:
+    name: Publish to the draft release
+    needs: build
+    # Tag pushes only. A dispatched rehearsal never reaches this job, so it can never publish from an
+    # arbitrary ref -- the rehearsal builds and stops, with its artifacts left on the workflow run.
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      # Deliberately no checkout and no npm install: this job's entire dependency surface is
+      # download-artifact, coreutils and the gh CLI. It never executes a line of this repository's
+      # code or of any npm package, which is what keeps the write-scoped token out of reach of the
+      # dependency tree that produced the files it uploads.
+      - name: Download every platform's installers
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          pattern: installers-*
+          merge-multiple: true
+          path: dist
+      - name: Generate SHA256SUMS
+        # Written outside dist/ so the manifest never lists itself. Names, not paths, so a player who
+        # downloads everything into one folder can run `sha256sum -c SHA256SUMS` (or, on macOS,
+        # `shasum -a 256 -c SHA256SUMS`) straight from it -- see RELEASING.md.
+        run: |
+          cd dist
+          sha256sum -- * > "$RUNNER_TEMP/SHA256SUMS"
+          cat "$RUNNER_TEMP/SHA256SUMS"
+      - name: Upload the installers and the checksums to the draft release
+        # --clobber so re-running a partly-failed release replaces files rather than erroring. The
+        # release stays a draft; a human publishes it (RELEASING.md step 8).
+        run: gh release upload "$TAG" "$RUNNER_TEMP/SHA256SUMS" dist/* --repo "$GITHUB_REPOSITORY" --clobber
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          CSC_IDENTITY_AUTO_DISCOVERY: "false"
+          TAG: ${{ github.ref_name }}
