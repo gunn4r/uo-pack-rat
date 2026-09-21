@@ -48,7 +48,7 @@ A scan file may carry additional top-level fields beyond these (`additionalPrope
 | `tooltips` | string, `"opl"` or `"label"` | Whether item text comes from the client's full on-paperdoll-line tooltip (`"opl"`, every property line readable) or just the bare name label (`"label"`, no properties). |
 | `bridge` | array of strings | Which bridge actions (`"highlight"`, `"grab"`, `"goto"`) this adapter's bridge script can execute — see `docs/bridge-protocol.md`. Empty for an adapter that ships no bridge. |
 
-The page uses a character's latest scan's `adapter.capabilities.bridge` list to decide which Highlight/Grab/Go-to buttons to offer for that character (`app/ui/bridge.mjs`'s `actButtons`); the bridge script itself is still the final word on what it will actually do.
+The page uses a character's latest scan's `adapter.capabilities.bridge` list to decide which Highlight/Grab/Go-to buttons to offer for that character (`app/ui/bridge.mts`'s `actButtons`); the bridge script itself is still the final word on what it will actually do.
 
 ## `roots`
 

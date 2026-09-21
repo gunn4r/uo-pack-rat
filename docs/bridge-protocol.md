@@ -2,13 +2,13 @@
 
 The bridge is how the app reaches back into the game client: the Suit Builder and Containers tabs' Highlight, Grab, and Go-to buttons don't move anything themselves — they queue a command, and an adapter script running inside the game client (attended, one command at a time) carries it out. This document describes protocol v1: the file layout, the three message shapes, the actions, and the rules that keep it safe to leave running.
 
-Ground truth: `app/schema/bridge.v1.schema.json` (validated by `app/contracts.test.mts`), `app/vault-server.mts` (`POST /api/bridge`, `GET /api/bridge/status`), `adapters/tazuo/packrat-bridge.py` (the reference adapter implementation), and `app/ui/bridge.mjs` (the page's side).
+Ground truth: `app/schema/bridge.v1.schema.json` (validated by `app/contracts.test.mts`), `app/vault-server.mts` (`POST /api/bridge`, `GET /api/bridge/status`), `adapters/tazuo/packrat-bridge.py` (the reference adapter implementation), and `app/ui/bridge.mts` (the page's side).
 
 ## Files
 
 Everything lives under `<data>/bridge/<adapter-id>/` — genuinely per adapter now (Phase 6 final review follow-up; it used to be hard-coded to `<data>/bridge/tazuo/` regardless of which client was actually configured, which meant a Razor Enhanced player's Highlight/Grab/Go-to buttons queued commands nothing would ever read). `app/config.mts`'s `paths.bridgeFor(adapter)`/`bridgeQueueFor(adapter)`/`bridgeStatusFor(adapter)` resolve the directory and its two files for whichever adapter is named; `paths.bridge`/`bridgeQueue`/`bridgeStatus` still exist as their own keys, unchanged in value — they are exactly `bridgeFor("tazuo")`'s own paths, kept for anything that still reads them directly. `POST /api/bridge` and `GET /api/bridge/status` (`app/vault-server.mts`) resolve the adapter live off `settings.client.adapter` on every call (falling back to `"tazuo"` only when no client is configured at all, matching this route's own pre-existing behavior for that case) — never a value captured once at server startup, so switching clients takes effect on the very next request.
 
-That fallback used to be a server-only fact the page couldn't see: a player with no `settings.client` (pressed Skip in the wizard, or installed an adapter's scripts by hand — both leave it unset on purpose) had a real bridge running and reachable at this same fallback path, but the page's `currentAdapter()` had no way to know which adapter's `capabilities.bridge` to render buttons from, so every Highlight/Grab/Go-to button vanished. `GET /api/setup` (docs/architecture.md's "Capability-driven bridge controls") now also reports this exact routing id as `bridgeAdapter` — the same function's result, guarded to `null` when that id isn't among the discovered adapters — so `app/ui/bridge.mjs`'s `currentAdapter()` can fall back to it too, keeping the button-visibility decision and the actual command-routing decision from ever disagreeing.
+That fallback used to be a server-only fact the page couldn't see: a player with no `settings.client` (pressed Skip in the wizard, or installed an adapter's scripts by hand — both leave it unset on purpose) had a real bridge running and reachable at this same fallback path, but the page's `currentAdapter()` had no way to know which adapter's `capabilities.bridge` to render buttons from, so every Highlight/Grab/Go-to button vanished. `GET /api/setup` (docs/architecture.md's "Capability-driven bridge controls") now also reports this exact routing id as `bridgeAdapter` — the same function's result, guarded to `null` when that id isn't among the discovered adapters — so `app/ui/bridge.mts`'s `currentAdapter()` can fall back to it too, keeping the button-visibility decision and the actual command-routing decision from ever disagreeing.
 
 | File | Written by | Read by | Contents |
 |---|---|---|---|
@@ -96,7 +96,7 @@ The bridge script only ever acts on commands queued **after it started**. On lau
 
 ## The wrong-character confirm
 
-Every grab lands the item in **whichever character's client the bridge is currently running on** — not necessarily the character the Suit Builder tab is showing. Grab All (`app/ui/bridge.mjs`) checks this before queuing anything: if the bridge's reported `character` doesn't match the builder's currently selected character, it asks first —
+Every grab lands the item in **whichever character's client the bridge is currently running on** — not necessarily the character the Suit Builder tab is showing. Grab All (`app/ui/bridge.mts`) checks this before queuing anything: if the bridge's reported `character` doesn't match the builder's currently selected character, it asks first —
 
 > "The bridge is running on `<bridge character>`, not `<builder character>`: the pieces would land in `<bridge character>`'s backpack. Grab them anyway?"
 

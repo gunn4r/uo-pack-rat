@@ -70,7 +70,8 @@
       "!app/bench/**",
       "!**/__pycache__/**",
       "!app/data/profiles.json",
-      "!app/data/runs/**"
+      "!app/data/runs/**",
+      "!app/ui/**/*.mts"
     ],
     "asar": true,
     "asarUnpack": [

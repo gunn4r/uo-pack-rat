@@ -1,4 +1,4 @@
-// bridge-adapter-fallback.test.mts — app/ui/bridge.mjs's currentAdapter()/bridgeNote(): the bug fix
+// bridge-adapter-fallback.test.mts — app/ui/bridge.mts's currentAdapter()/bridgeNote(): the bug fix
 // where a player who pressed Skip in the setup wizard, or installed an adapter's scripts by hand
 // (settings.client left unset on purpose in both cases — see currentAdapter()'s own comment), lost
 // every Highlight/Grab/Go-to button even though POST /api/bridge was already routing commands to
@@ -6,22 +6,22 @@
 // same routing id back as state.setup.bridgeAdapter, and currentAdapter() falls back to it when
 // settings.client is unset.
 //
-// app/ui/bridge.mjs is not DOM-free like app/ui/adapters.mjs (app/wizard-default-adapter.test.mjs) —
-// it imports app/ui/store.mjs, which reads `localStorage.getItem` at MODULE SCOPE to seed
-// state.cols. Nothing else in the bridge.mjs -> {store,dom,api}.mjs import chain touches `document` or
-// `localStorage` at module scope: app/ui/dom.mjs's `document` uses are all inside function bodies (or
+// app/ui/bridge.mts is not DOM-free like app/ui/adapters.mts (app/wizard-default-adapter.test.mts) —
+// it imports app/ui/store.mts, which reads `localStorage.getItem` at MODULE SCOPE to seed
+// state.cols. Nothing else in the bridge.mts -> {store,dom,api}.mts import chain touches `document` or
+// `localStorage` at module scope: app/ui/dom.mts's `document` uses are all inside function bodies (or
 // a default-parameter expression, evaluated lazily at call time, not at import time), and
-// app/ui/api.mjs's `sessionStorage` read is already wrapped in its own try/catch with a fallback for
+// app/ui/api.mts's `sessionStorage` read is already wrapped in its own try/catch with a fallback for
 // exactly this "no Web Storage global" case. So a minimal `globalThis.localStorage` stub — imported
 // FIRST, see ../scripts/localstorage-shim-for-tests.mjs for why it has to be its own module rather than a plain
-// statement in this file — is enough to run bridge.mjs's pure functions under plain node:test — no
+// statement in this file — is enough to run bridge.mts's pure functions under plain node:test — no
 // real DOM, no Playwright.
 import "../scripts/localstorage-shim-for-tests.mjs";
 
 import test from "node:test";
 import assert from "node:assert/strict";
 import { state } from "./ui/store.mts";
-import { currentAdapter, bridgeNote } from "./ui/bridge.mjs";
+import { currentAdapter, bridgeNote } from "./ui/bridge.mts";
 
 // ui/store.mts types state.setup as api-types.mts's full SetupApiResponse | null — richer than this
 // file needs. TestSetupState is the minimal shape THIS file's own fixtures actually exercise

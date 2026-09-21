@@ -1,12 +1,12 @@
 // ui/containers.mts — the Containers tab. Moved verbatim out of index.html's inline
-// <script type="module"> (Task 4, the page split). The Forget handler calls `load` from app.mjs —
+// <script type="module"> (Task 4, the page split). The Forget handler calls `load` from app.mts —
 // a module cycle (containers ↔ app) that is fine here since both are function declarations only
 // called after bootstrap.
 import { bagLabel } from "../vault-lib.mts";
 import { state } from "./store.mts";
 import { $, el, fmtWhen, toast } from "./dom.mts";
 import { api } from "./api.mts";
-import { load } from "./app.mjs";
+import { load } from "./app.mts";
 import type { ForgetApiResponse } from "./api-types.mts";
 
 // ---------------------------------------------------------------- containers
