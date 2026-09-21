@@ -16,7 +16,7 @@ import type { ScanV2 } from "./schema/types.d.mts";
 import { corePath } from "./config.mts";
 import { solveExact, type OptPools, type OptAssignment, type OptProfile } from "./exact-solver.mts";
 import { DEFAULT_SLOTS } from "./mip.mts";
-import { learnModel, generateScan } from "./bench/gen-inventory.mjs";
+import { learnModel, generateScan } from "./bench/gen-inventory.mts";
 import type * as Core from "../scripts/optimizer-core.mts";
 
 // solveExact's own `opts` field type (the core's real OptOptions, derived rather than restated —

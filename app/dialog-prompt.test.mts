@@ -1,4 +1,4 @@
-// dialog-prompt.test.mjs — app/ui/dialog.mts's normalizePromptValue(): the pure bit of promptText()
+// dialog-prompt.test.mts — app/ui/dialog.mts's normalizePromptValue(): the pure bit of promptText()
 // (the in-page replacement for window.prompt(), which Electron doesn't implement — see
 // ui/builder.mts's saveTemplateAs and scripts/ui-smoke.test.mts's Electron-level "Save as…" case)
 // that can be tested without a DOM: what typed text becomes the resolved value.
@@ -8,7 +8,7 @@
 // which reads `localStorage.getItem` at MODULE SCOPE, so the shim below (imported first, its own
 // module for the same reason bridge-adapter-fallback.test.mts's does) is needed to import it at all
 // under plain node:test.
-import "../scripts/localstorage-shim-for-tests.mjs";
+import "../scripts/localstorage-shim-for-tests.mts";
 
 import test from "node:test";
 import assert from "node:assert/strict";

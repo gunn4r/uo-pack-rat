@@ -1,6 +1,6 @@
 // mip.mts — the suit problem as a mixed-integer program, built as HiGHS sparse (CSR) arrays. Pure:
 // no solver import here (app/mip-solve.mts owns the runtime). Every modelling choice reproduces
-// app/bench/mip-spike.mjs, which was validated to the decimal against the core's proven optima —
+// app/bench/mip-spike.mts, which was validated to the decimal against the core's proven optima —
 // see docs/solver.md for the model and app/bench/REPORT.md for the evidence.
 import type { OptItem } from "./vault-lib.mts";
 
@@ -249,7 +249,7 @@ export interface NoGoodRow {
   values: number[];
 }
 
-// The proper cut Σ_picked x − Σ_unpicked x ≤ |picked| − 1 over every x column (mip-spike.mjs's
+// The proper cut Σ_picked x − Σ_unpicked x ≤ |picked| − 1 over every x column (mip-spike.mts's
 // KBEST inline text construction, reproduced over the sparse columns instead of LP text).
 export function noGoodRow(built: BuiltMip, picked: Partial<Record<string, OptItem>>): NoGoodRow {
   const indices: number[] = [], values: number[] = [];
