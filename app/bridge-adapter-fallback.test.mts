@@ -2,7 +2,7 @@
 // where a player who pressed Skip in the setup wizard, or installed an adapter's scripts by hand
 // (settings.client left unset on purpose in both cases — see currentAdapter()'s own comment), lost
 // every Highlight/Grab/Go-to button even though POST /api/bridge was already routing commands to
-// bridgeAdapter()'s own default (app/vault-server.mjs) the whole time. GET /api/setup now reports that
+// bridgeAdapter()'s own default (app/vault-server.mts) the whole time. GET /api/setup now reports that
 // same routing id back as state.setup.bridgeAdapter, and currentAdapter() falls back to it when
 // settings.client is unset.
 //

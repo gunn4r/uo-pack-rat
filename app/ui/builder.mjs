@@ -177,7 +177,7 @@ async function runBuild() {
   job.id = r.id;
   job.timer = setInterval(() => job.ui.tick(job), 200);
   // EventSource can't carry the X-Client-Id header (or the token) — the server instead checks this
-  // ?client= query param against the job's own owner (see vault-server.mjs's events route).
+  // ?client= query param against the job's own owner (see vault-server.mts's events route).
   const es = new EventSource(`/api/optimize/${job.id}/events?client=${encodeURIComponent(CLIENT_ID)}`);
   job.es = es;
   const onProgress = (p) => { job.last = p; job.lastProgressAt = Date.now(); job.lastServerAt = Date.now(); job.connected = true; job.ui.update(job); };

@@ -99,7 +99,7 @@ A v1 file is recognized by `version: 1` (instead of `schemaVersion`). The upgrad
 
 A v2 document passed through `upgradeScan` is returned as-is, except a scan with no `shard` field gets the shard passed in (`upgradeScan(raw, {shard})`) — it never overwrites a `shard` the scan already carries.
 
-Passing something that is neither v1- nor v2-shaped throws `TypeError`. On the server, a scan file that fails to parse, fails to upgrade, or fails `validateScan` afterward is logged (`console.warn`) and skipped — never allowed to take down the whole fold (`readScans` in `app/vault-server.mjs`).
+Passing something that is neither v1- nor v2-shaped throws `TypeError`. On the server, a scan file that fails to parse, fails to upgrade, or fails `validateScan` afterward is logged (`console.warn`) and skipped — never allowed to take down the whole fold (`readScans` in `app/vault-server.mts`).
 
 ## Fold rules
 

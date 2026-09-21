@@ -12,9 +12,9 @@
 
 In scope:
 
-- The localhost HTTP server (`app/vault-server.mjs`) and its token, `Host`/`Origin` checks, and request handling.
+- The localhost HTTP server (`app/vault-server.mts`) and its token, `Host`/`Origin` checks, and request handling.
 - The setup wizard's script installer (`app/installer.mts`) — path handling when copying adapter scripts into a game-client folder, and the running-script guard.
-- The scan and bridge file parsers (`app/scan-schema.mts`, `app/watcher.mts`, the bridge protocol handling in `app/vault-server.mjs`) — anything that reads a file an adapter script or a player produced.
+- The scan and bridge file parsers (`app/scan-schema.mts`, `app/watcher.mts`, the bridge protocol handling in `app/vault-server.mts`) — anything that reads a file an adapter script or a player produced.
 - The Electron shell (`electron/main.mjs`) — window settings, navigation restrictions, and how the per-launch token is attached to requests.
 
 Out of scope:

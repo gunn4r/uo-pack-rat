@@ -13,7 +13,7 @@ import { bridgeNoteEl } from "./bridge.mjs";
 // independently of it (the client is already configured; no need to re-walk shard/client/locate).
 const reinstall = { checked: false, error: null, result: null };
 let lastUpdateCheck = null;
-// Optimistic until the first 501 proves POST /api/host/* isn't wired up (a bare `node vault-server.mjs`
+// Optimistic until the first 501 proves POST /api/host/* isn't wired up (a bare `node vault-server.mts`
 // rather than the Electron shell). Deliberately never re-probed afterward: whether a desktop host is
 // attached is fixed for the whole life of the page (set once when the process started, never toggled
 // at runtime), so once a 501 answers the question there is nothing to learn by asking again.

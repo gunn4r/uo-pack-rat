@@ -222,7 +222,7 @@ export function startWatcher(
     inboxDir, adapter, scansDir, getShard = () => undefined,
     log = () => {}, onAccepted = () => {}, onRejected = () => {},
     debounceMs = 300, retries = 3, retryDelayMs = 700, watch = fsWatch,
-  }: StartWatcherOptions = {} as StartWatcherOptions,   // every real call site supplies inboxDir/adapter/scansDir (see app/watcher.test.mts, app/vault-server.mjs); this cast is compiler-only, matching config.mts's rawPort pattern
+  }: StartWatcherOptions = {} as StartWatcherOptions,   // every real call site supplies inboxDir/adapter/scansDir (see app/watcher.test.mts, app/vault-server.mts); this cast is compiler-only, matching config.mts's rawPort pattern
 ): WatcherHandle {
   mkdirSync(inboxDir, { recursive: true });
   let closed = false;
@@ -270,7 +270,7 @@ export function startWatcher(
     chain = chain.then(() => (closed ? undefined : processFile(name)))
       // This catch is the last line of defense for `chain` — if it throws, `chain` stays rejected
       // with no handler, which is an unhandled-rejection crash for the whole process. `log` is
-      // supposed to be best-effort (the caller's job — app/vault-server.mjs wraps its own appendFileSync
+      // supposed to be best-effort (the caller's job — app/vault-server.mts wraps its own appendFileSync
       // in a try/catch for exactly this), but defend against a caller that doesn't hold up its end too
       // (post-review fix, Important 1).
       .catch((e: unknown) => { try { log(`watcher error on ${name}: ${e && (e as Error).message}`); } catch { /* log itself must never re-throw here */ } });

@@ -1,6 +1,6 @@
 // item-query.mts — pure item-list filtering/sorting/paging/faceting, shared by the browser (ui/dom.mjs
 // re-exports EXTRA_COLS/colVal; ui/inventory.mjs's filtered()/renderInventory() logic will move here in a
-// later task) and the server (vault-server.mjs's GET /api/items, GET /api/inventory's facets). No DOM, no
+// later task) and the server (vault-server.mts's GET /api/items, GET /api/inventory's facets). No DOM, no
 // node: imports — this file is served to the browser byte-for-byte, the same way vault-lib.mts is.
 //
 // parseItemQuery/applyItemQuery reproduce, field for field, the predicate in app/ui/inventory.mjs's
