@@ -1,4 +1,4 @@
-// wizard-default-adapter.test.mjs — app/ui/adapters.mjs: defaultAdapterId (the setup wizard and the
+// wizard-default-adapter.test.mts — app/ui/adapters.mjs: defaultAdapterId (the setup wizard and the
 // Import tab must never silently default to a paste-transport adapter — Phase 6 final review, Blocker
 // 2 — a new TazUO/Razor Enhanced player who clicked through the wizard without reading the radio
 // buttons was routed down the paste branch because setup.adapters[0] sorts alphabetically, and
@@ -20,8 +20,17 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { defaultAdapterId, availableAdapters, platformCompatible } from "./ui/adapters.mjs";
 
+// app/ui/adapters.mjs is untyped JS (checkJs is off for it), so its exported functions' parameters
+// come through as `any` — this local shape is just what THIS file's own fixtures need, not a stand-in
+// for a richer production type (ui/adapters.mjs declares none).
+interface AdapterFixture {
+  id: string;
+  transport: string;
+  platform?: string;
+}
+
 test("[fast] defaultAdapterId picks the first folder-transport adapter even when a paste adapter sorts first", () => {
-  const adapters = [
+  const adapters: AdapterFixture[] = [
     { id: "classicuo-web", transport: "paste" },
     { id: "razor-enhanced", transport: "folder" },
     { id: "tazuo", transport: "folder" },
@@ -30,13 +39,13 @@ test("[fast] defaultAdapterId picks the first folder-transport adapter even when
 });
 
 test("[fast] defaultAdapterId never returns a paste-transport id when any folder-transport adapter exists, for every ordering", () => {
-  const base = [
+  const base: AdapterFixture[] = [
     { id: "classicuo-web", transport: "paste" },
     { id: "razor-enhanced", transport: "folder" },
     { id: "tazuo", transport: "folder" },
   ];
   // All 6 permutations of a 3-element array — the guarantee must not depend on list order.
-  const permutations = (arr) => arr.length <= 1 ? [arr] : arr.flatMap((x, i) =>
+  const permutations = <T,>(arr: T[]): T[][] => arr.length <= 1 ? [arr] : arr.flatMap((x, i) =>
     permutations([...arr.slice(0, i), ...arr.slice(i + 1)]).map((rest) => [x, ...rest]));
   for (const order of permutations(base)) {
     const picked = order.find((a) => a.id === defaultAdapterId(order));
@@ -60,7 +69,7 @@ test("[fast] defaultAdapterId returns null for an empty or missing adapter list"
 // one adapter that can never work there. defaultAdapterId itself doesn't look at `platform` at all
 // (it has no platform of its own to check), so this holds regardless of whether the objects carry one.
 test("[fast] defaultAdapterId on the unfiltered list defaults to razor-enhanced — demonstrating why callers must filter first", () => {
-  const adapters = [
+  const adapters: AdapterFixture[] = [
     { id: "classicuo-web", transport: "paste" },
     { id: "razor-enhanced", transport: "folder", platform: "win32" },
     { id: "tazuo", transport: "folder" },
@@ -70,7 +79,7 @@ test("[fast] defaultAdapterId on the unfiltered list defaults to razor-enhanced 
 
 // The real, shipped shape: razor-enhanced carries platform: "win32" (adapters/razor-enhanced/
 // capabilities.json), the other two carry no `platform` field at all (no restriction).
-const THREE_ADAPTERS = [
+const THREE_ADAPTERS: AdapterFixture[] = [
   { id: "classicuo-web", transport: "paste" },
   { id: "razor-enhanced", transport: "folder", platform: "win32" },
   { id: "tazuo", transport: "folder" },
@@ -100,9 +109,9 @@ test("[fast] platformCompatible reads a.platform, not the adapter's id", () => {
 });
 
 test("[fast] availableAdapters drops razor-enhanced on darwin/linux and keeps it on win32", () => {
-  assert.deepEqual(availableAdapters(THREE_ADAPTERS, "darwin").map((a) => a.id), ["classicuo-web", "tazuo"]);
-  assert.deepEqual(availableAdapters(THREE_ADAPTERS, "linux").map((a) => a.id), ["classicuo-web", "tazuo"]);
-  assert.deepEqual(availableAdapters(THREE_ADAPTERS, "win32").map((a) => a.id), ["classicuo-web", "razor-enhanced", "tazuo"]);
+  assert.deepEqual(availableAdapters(THREE_ADAPTERS, "darwin").map((a: AdapterFixture) => a.id), ["classicuo-web", "tazuo"]);
+  assert.deepEqual(availableAdapters(THREE_ADAPTERS, "linux").map((a: AdapterFixture) => a.id), ["classicuo-web", "tazuo"]);
+  assert.deepEqual(availableAdapters(THREE_ADAPTERS, "win32").map((a: AdapterFixture) => a.id), ["classicuo-web", "razor-enhanced", "tazuo"]);
 });
 
 test("[fast] availableAdapters tolerates a missing list", () => {

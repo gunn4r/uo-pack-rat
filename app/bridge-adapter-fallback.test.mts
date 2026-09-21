@@ -1,4 +1,4 @@
-// bridge-adapter-fallback.test.mjs — app/ui/bridge.mjs's currentAdapter()/bridgeNote(): the bug fix
+// bridge-adapter-fallback.test.mts — app/ui/bridge.mjs's currentAdapter()/bridgeNote(): the bug fix
 // where a player who pressed Skip in the setup wizard, or installed an adapter's scripts by hand
 // (settings.client left unset on purpose in both cases — see currentAdapter()'s own comment), lost
 // every Highlight/Grab/Go-to button even though POST /api/bridge was already routing commands to
@@ -23,57 +23,76 @@ import assert from "node:assert/strict";
 import { state } from "./ui/store.mjs";
 import { currentAdapter, bridgeNote } from "./ui/bridge.mjs";
 
-const TAZUO = { id: "tazuo", name: "TazUO", capabilities: { bridge: ["highlight", "grab", "goto"] } };
-const NOBRIDGE = { id: "nobridge", name: "No Bridge Client", capabilities: { bridge: [] } };
+// app/ui/store.mjs is untyped JS (checkJs is off for it — see the migration plan's "an imported .mjs
+// module's exports come through loosely typed" rule), so `state.setup`'s inferred type is just its
+// initial value, `null`. This is the minimal shape THIS file's own tests write into it — not a stand-in
+// for a richer production type, since ui/store.mjs declares none — cast at the assignment site below.
+interface TestAdapter {
+  id: string;
+  name: string;
+  capabilities: { bridge: string[] };
+}
+interface TestSetupState {
+  settings: { client: { adapter: string; scriptsDir: string } | null };
+  adapters: TestAdapter[];
+  bridgeAdapter: string | null;
+}
+const setSetup = (s: TestSetupState | null): void => { (state as { setup: TestSetupState | null }).setup = s; };
+
+const TAZUO: TestAdapter = { id: "tazuo", name: "TazUO", capabilities: { bridge: ["highlight", "grab", "goto"] } };
+const NOBRIDGE: TestAdapter = { id: "nobridge", name: "No Bridge Client", capabilities: { bridge: [] } };
 
 // ---------------------------------------------------------------- currentAdapter()
 
 test("[fast] currentAdapter falls back to state.setup.bridgeAdapter when no client is configured", () => {
-  state.setup = { settings: { client: null }, adapters: [TAZUO, NOBRIDGE], bridgeAdapter: "tazuo" };
+  setSetup({ settings: { client: null }, adapters: [TAZUO, NOBRIDGE], bridgeAdapter: "tazuo" });
   assert.deepEqual(currentAdapter(), TAZUO);
 });
 
 test("[fast] currentAdapter returns null when no client is configured and the fallback id is null (server had nothing to fall back to either)", () => {
-  state.setup = { settings: { client: null }, adapters: [TAZUO, NOBRIDGE], bridgeAdapter: null };
+  setSetup({ settings: { client: null }, adapters: [TAZUO, NOBRIDGE], bridgeAdapter: null });
   assert.equal(currentAdapter(), null);
 });
 
 test("[fast] currentAdapter returns null when settings.setup itself has never loaded", () => {
-  state.setup = null;
+  setSetup(null);
   assert.equal(currentAdapter(), null);
 });
 
 test("[fast] currentAdapter prefers a configured client over the fallback id, even when they differ", () => {
-  state.setup = { settings: { client: { adapter: "nobridge", scriptsDir: "/x" } }, adapters: [TAZUO, NOBRIDGE], bridgeAdapter: "tazuo" };
+  setSetup({ settings: { client: { adapter: "nobridge", scriptsDir: "/x" } }, adapters: [TAZUO, NOBRIDGE], bridgeAdapter: "tazuo" });
   assert.deepEqual(currentAdapter(), NOBRIDGE);
 });
 
 test("[fast] currentAdapter returns null for a configured client whose adapter id isn't in the discovered list (unchanged pre-existing behavior)", () => {
-  state.setup = { settings: { client: { adapter: "ghost", scriptsDir: "/x" } }, adapters: [TAZUO, NOBRIDGE], bridgeAdapter: "tazuo" };
+  setSetup({ settings: { client: { adapter: "ghost", scriptsDir: "/x" } }, adapters: [TAZUO, NOBRIDGE], bridgeAdapter: "tazuo" });
   assert.equal(currentAdapter(), null);
 });
 
 // ---------------------------------------------------------------- bridgeNote()
 
 test("[fast] bridgeNote names the fallback adapter and points at Settings when no client is configured but the fallback resolves", () => {
-  state.setup = { settings: { client: null }, adapters: [TAZUO, NOBRIDGE], bridgeAdapter: "tazuo" };
-  const msg = bridgeNote();
+  setSetup({ settings: { client: null }, adapters: [TAZUO, NOBRIDGE], bridgeAdapter: "tazuo" });
+  // bridgeNote()'s return type is string | null; this branch always returns a string (a fallback
+  // adapter resolved) — the `!` stands in for the assert.ok(x) narrowing node:assert's types don't
+  // give string | null (see the migration plan's `!` rule), not a case this test means to detect null.
+  const msg = bridgeNote()!;
   assert.match(msg, /TazUO/);
   assert.match(msg, /Settings/);
   assert.doesNotMatch(msg, /No client set up yet/, "must not be the old blanket message — the buttons are actually working here");
 });
 
 test("[fast] bridgeNote keeps the original \"no client\" message when neither a client nor a fallback resolves", () => {
-  state.setup = { settings: { client: null }, adapters: [TAZUO, NOBRIDGE], bridgeAdapter: null };
+  setSetup({ settings: { client: null }, adapters: [TAZUO, NOBRIDGE], bridgeAdapter: null });
   assert.equal(bridgeNote(), "No client set up yet — visit Settings to install one that supports in-game actions like Highlight/Grab/Go to.");
 });
 
 test("[fast] bridgeNote returns null for a fully-capable CONFIGURED client (unchanged pre-existing behavior)", () => {
-  state.setup = { settings: { client: { adapter: "tazuo", scriptsDir: "/x" } }, adapters: [TAZUO, NOBRIDGE], bridgeAdapter: "tazuo" };
+  setSetup({ settings: { client: { adapter: "tazuo", scriptsDir: "/x" } }, adapters: [TAZUO, NOBRIDGE], bridgeAdapter: "tazuo" });
   assert.equal(bridgeNote(), null);
 });
 
 test("[fast] bridgeNote still reports missing actions for a CONFIGURED client with no bridge (unchanged pre-existing behavior)", () => {
-  state.setup = { settings: { client: { adapter: "nobridge", scriptsDir: "/x" } }, adapters: [TAZUO, NOBRIDGE], bridgeAdapter: "tazuo" };
+  setSetup({ settings: { client: { adapter: "nobridge", scriptsDir: "/x" } }, adapters: [TAZUO, NOBRIDGE], bridgeAdapter: "tazuo" });
   assert.equal(bridgeNote(), "No Bridge Client can't run in-game actions — Highlight, Grab and Go to aren't available for this client.");
 });
