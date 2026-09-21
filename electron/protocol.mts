@@ -11,6 +11,10 @@
 // event and ParentPort's 'message' event no better than `any` (see electron.d.ts), and this project's
 // convention is to treat anything crossing a process boundary as `unknown` until it's checked. Narrow
 // by the `type` field first; only read the rest of a message once `type` has matched one of these.
+// Matching `type` is ALL that is checked: the other fields (port, url, id, op, args, result) are then
+// trusted by a whole-object cast, exactly as the untyped code trusted them. That is acceptable only
+// because both ends of this channel are this app's own code; these interfaces describe what the two
+// processes send each other, not something either side verifies.
 
 // server-entry.mts -> main.mts, once startServer() is listening.
 export interface ListeningMessage {

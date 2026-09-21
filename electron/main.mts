@@ -134,7 +134,11 @@ if (!app.requestSingleInstanceLock()) {
         // overload, never one that also accepts `undefined`, even though the native implementation
         // dispatches purely on argument count and already tolerates it here (this exact call already
         // worked at runtime before this migration). Branching into two separate calls to satisfy the
-        // type would be a structural change this task's no-new-branching rule forbids. See the report.
+        // type would be a structural change the migration's no-new-branching rule forbade.
+        // This one directive currently hides TWO independent errors on the call below, not one: the
+        // overload mismatch on `win || undefined`, and `title: unknown` where Electron wants a string.
+        // If the first is ever fixed, the directive will NOT report itself unused — the second keeps
+        // it alive — so whoever touches this call has to deal with `title` deliberately.
         const res = await dialog.showOpenDialog(win || undefined, {
           // `title` crosses two process hops (an HTTP request body -> server-entry.mts's host bridge
           // -> here) with no runtime check anywhere along the way, so it stays `unknown` per this
