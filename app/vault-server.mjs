@@ -39,16 +39,16 @@
 //         {file, reason, at} once one is moved to its adapter's rejected/ folder, ping every 15s. A
 //         normal token-protected /api/* route (no SSE exemption — unlike /api/optimize/<id>/events,
 //         this stream carries no per-job secret an EventSource couldn't send anyway). Non-demo mode
-//         starts one app/watcher.mjs per adapters/<id>/ directory that ships a capabilities.json
+//         starts one app/watcher.mts per adapters/<id>/ directory that ships a capabilities.json
 //         (today: tazuo), watching paths.inboxFor(id) and normalising accepted files into
 //         paths.scans; --demo starts none (paths.scans there is the committed app/fixtures/, which
 //         must never be written to).
-//         Setup wizard (app/installer.mjs backs all of these): GET /api/setup {firstRun, settings,
+//         Setup wizard (app/installer.mts backs all of these): GET /api/setup {firstRun, settings,
 //         adapters, candidates, installed, available, dataDir} · POST /api/setup/locate {adapter, dir}
 //         · POST /api/setup/install {adapter, scriptsDir} (409 while a Legion script is running in the
-//         client, per installer.mjs's bridge-status guard) · POST /api/import {dir, adapter?} (copies
+//         client, per installer.mts's bridge-status guard) · POST /api/import {dir, adapter?} (copies
 //         top-level *.json into an adapter's inbox, tazuo when adapter is omitted — the watcher above
-//         does the rest) · POST /api/import/paste {text, adapter} (app/import.mjs's parsePastedScan:
+//         does the rest) · POST /api/import/paste {text, adapter} (app/import.mts's parsePastedScan:
 //         what the ClassicUO web-client scanner prints, marker block or bare JSON, upgraded/validated
 //         and written straight into that adapter's inbox — for a client whose sandbox can't write
 //         files at all) · POST /api/import/rescan {} (scanOnce() on every running watcher, for a scan
@@ -89,12 +89,12 @@ import { loadRules, listRules, DEFAULT_SHARD } from "./rules.mts";
 import { validate } from "./schema/validate.mts";
 import { parseItemQuery, applyItemQuery, facetsOf } from "./item-query.mts";
 import { DEFAULT_OPTIONAL_SLOTS } from "./mip.mts";
-import { startWatcher } from "./watcher.mjs";
-import { parsePastedScan, writeScanToInbox } from "./import.mjs";
+import { startWatcher } from "./watcher.mts";
+import { parsePastedScan, writeScanToInbox } from "./import.mts";
 import {
   listAdapters, candidateClientRoots, validateScriptsDir, installedVersion, installScripts,
   importScans, repoFromPackage, checkForUpdates,
-} from "./installer.mjs";
+} from "./installer.mts";
 import { homedir } from "node:os";
 
 import { resolveConfig, ensureLayout, APP_DIR } from "./config.mts";
@@ -172,7 +172,7 @@ function readBody(req, { limit = 50e6, tooLargeMsg = "body too large" } = {}) {
 // Every log append in this file goes through here rather than a bare appendFileSync (post-review
 // fix, Important 1): a deleted logs/ dir (the Settings tab's own "Open" button shows the user right
 // where to find it) or a full disk must never throw out of a log call — ingestFile's and enqueue's
-// "never throws" contracts (app/watcher.mjs) depend on it, and an uncaught throw from inside a
+// "never throws" contracts (app/watcher.mts) depend on it, and an uncaught throw from inside a
 // route's own catch block (the 500-handler's log line) would otherwise escape as an unhandled
 // rejection and take the whole process down. Best-effort: on failure, fall back to console.error
 // once for that line and move on; mkdirSync(recursive) re-creates the logs dir lazily if it vanished
@@ -194,11 +194,11 @@ function safeAppendLog(file, line) {
 // Promise<string|null>, openPath(path) -> Promise<void> }. Without it, POST /api/host/* answers 501
 // ("not available outside the desktop app") rather than throwing — the bare `node app/vault-server.mjs`
 // / test-harness path never has a folder picker or an OS file-opener to call.
-// `watcherOptions` is passed straight through to every app/watcher.mjs startWatcher() call below —
+// `watcherOptions` is passed straight through to every app/watcher.mts startWatcher() call below —
 // nothing outside tests should ever set it, since the defaults (debounceMs/retries/retryDelayMs) are
 // real product behavior. It exists so a test that wants to observe a reject-after-retries cycle over
 // SSE doesn't have to wait out the real debounce + backoff (300ms + 2×700ms = 1700ms of production
-// timing) inside a fixed-timeout SSE read — app/watcher.test.mjs already shortens these same knobs
+// timing) inside a fixed-timeout SSE read — app/watcher.test.mts already shortens these same knobs
 // (debounceMs:20, retryDelayMs:20) when calling startWatcher() directly; this gives app/server.test.mjs
 // the same lever for the route-level equivalent instead of relying on a wide timeout margin to absorb
 // real wall-clock retry delay plus whatever scheduling/fs-watch jitter a loaded machine adds on top.
@@ -257,7 +257,7 @@ export async function startServer(config = ensureLayout(resolveConfig()), { host
     rulesFallback = true;
   }
 
-  // ---- /api/events: one shared SSE stream, fed by one app/watcher.mjs per adapter ------------------
+  // ---- /api/events: one shared SSE stream, fed by one app/watcher.mts per adapter ------------------
   // Non-demo only — --demo's paths.scans is the committed app/fixtures/, which a watcher must never
   // write into. Each adapter is a directory under adapters/ that ships a capabilities.json; today
   // that's just adapters/tazuo/. watchers: id -> {close(), scanOnce()}; eventClients: every response
@@ -276,7 +276,7 @@ export async function startServer(config = ensureLayout(resolveConfig()), { host
     for (const id of adapterIds) {
       const handle = startWatcher({
         // getShard reads currentSettings.shard live, per ingest — not captured once here — so a
-        // PUT /api/settings shard switch takes effect on the very next dropped file (app/watcher.mjs).
+        // PUT /api/settings shard switch takes effect on the very next dropped file (app/watcher.mts).
         inboxDir: CONFIG.paths.inboxFor(id), adapter: id, scansDir: SCANS, getShard: () => currentSettings.shard,
         log: (msg) => safeAppendLog(CONFIG.paths.log, `${new Date().toISOString()} watcher[${id}] ${msg}\n`),
         onAccepted: ({ file, character, scannedAt }) => broadcastEvent("inventory", { file, character, scannedAt, at: Date.now() }),
@@ -561,7 +561,7 @@ export async function startServer(config = ensureLayout(resolveConfig()), { host
           const shapeOk = c === null || (c && typeof c === "object" && typeof c.adapter === "string" && typeof c.scriptsDir === "string");
           if (!shapeOk) return send(res, 400, { ok: false, error: "settings.client must be null or {adapter, scriptsDir}" });
           // Security (post-review fix): client.adapter must be a real, known adapter id before it can
-          // ever reach installer.mjs's path.join calls — see the /api/setup/install note below.
+          // ever reach installer.mts's path.join calls — see the /api/setup/install note below.
           if (c !== null && !listAdapters(ADAPTERS_DIR).some((a) => a.id === c.adapter)) {
             return send(res, 400, { ok: false, error: `settings.client.adapter: unknown adapter "${c.adapter}"` });
           }

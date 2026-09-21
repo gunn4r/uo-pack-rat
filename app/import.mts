@@ -1,7 +1,7 @@
-// import.mjs — the import paths that aren't "an adapter dropped a file and the watcher noticed":
+// import.mts — the import paths that aren't "an adapter dropped a file and the watcher noticed":
 // a player pasting what the ClassicUO web client's sandboxed scanner printed (it cannot write files
 // at all), and a manual rescan for a player whose folder watcher missed a drop. Both still end up
-// going through app/watcher.mjs the normal way — this module only gets a scan doc INTO an adapter's
+// going through app/watcher.mts the normal way — this module only gets a scan doc INTO an adapter's
 // inbox; app/vault-server.mjs nudges the watcher (scanOnce()) the same way POST /api/import already
 // does, so acceptance, rejection and the /api/events broadcast are all one code path regardless of
 // how the file got into the inbox.
@@ -9,12 +9,14 @@
 // parsePastedScan(text) is pure — no fs, takes and returns values only, so it's cheaply unit
 // testable and reusable by anything else that needs to make sense of a paste (Task 3's paste
 // transport). writeScanToInbox does the one bit of IO: an atomic temp-then-rename write, named by
-// app/watcher.mjs's own acceptedName so a paste-written file and a watcher-ingested file are never
+// app/watcher.mts's own acceptedName so a paste-written file and a watcher-ingested file are never
 // named by two different rules.
 import { mkdirSync, writeFileSync, renameSync, readdirSync } from "node:fs";
 import { join } from "node:path";
-import { upgradeScan, validateScan } from "./scan-schema.mts";
-import { acceptedName } from "./watcher.mjs";
+import { upgradeScan, validateScan, type UnvalidatedScan } from "./scan-schema.mts";
+import { acceptedName } from "./watcher.mts";
+import type { ConfigPaths } from "./config.mts";
+import type { ScanV2 } from "./schema/types.d.mts";
 
 // The web-client scanner wraps its printed JSON in these so a player can select-all the console/chat
 // output (log noise and all) and paste the whole thing; a paste of the JSON alone must work too.
@@ -38,7 +40,12 @@ export const PASTE_END = "-----END PACK RAT SCAN-----";
 // copy that got cut short — so the caller can give a specific error instead of the generic "that
 // doesn't look like valid JSON" a truncated marker block would otherwise fail with (it's neither
 // empty nor un-marked, it's just missing its closing half).
-function extractJsonText(text) {
+interface ExtractedJsonText {
+  text: string;
+  truncated: boolean;
+}
+
+function extractJsonText(text: unknown): ExtractedJsonText {
   const raw = String(text ?? "").replace(/[\r\n]+/g, "");
   const beginAt = raw.indexOf(PASTE_BEGIN);
   const endAt = beginAt === -1 ? -1 : raw.indexOf(PASTE_END, beginAt + PASTE_BEGIN.length);
@@ -54,7 +61,14 @@ function extractJsonText(text) {
 // an explicit `undefined` (its own no-option default) for a doc that doesn't already name one. The
 // doc lands in the inbox shard-less and picks up whatever shard is active when the watcher's own
 // ingestFile reads it back out — same as any other inbox file, no separate rule for a pasted one.
-export function parsePastedScan(text) {
+// The `error?: undefined`/`doc?: undefined` siblings let a caller (see app/import.test.mts) read
+// either field off the union before narrowing on `ok` — e.g. as an assertion failure message — without
+// each read site needing its own narrowing or cast; they carry no runtime meaning of their own.
+export type ParsePastedScanResult =
+  | { ok: true; doc: ScanV2; error?: undefined }
+  | { ok: false; error: string; doc?: undefined };
+
+export function parsePastedScan(text: unknown): ParsePastedScanResult {
   const { text: jsonText, truncated } = extractJsonText(text);
   if (truncated) {
     return { ok: false, error: `found ${PASTE_BEGIN} but no ${PASTE_END} — this paste looks truncated; copy the whole console block again, all the way to the END marker` };
@@ -62,32 +76,43 @@ export function parsePastedScan(text) {
   if (!jsonText || !/[{[]/.test(jsonText)) {
     return { ok: false, error: `no JSON found in the pasted text — paste the whole block between ${PASTE_BEGIN} and ${PASTE_END}, or the scan JSON by itself` };
   }
-  let parsed;
+  let parsed: unknown;
   try {
     parsed = JSON.parse(jsonText);
   } catch (e) {
-    return { ok: false, error: `that doesn't look like valid JSON: ${e.message}` };
+    return { ok: false, error: `that doesn't look like valid JSON: ${(e as Error).message}` };
   }
-  let doc;
+  let doc: UnvalidatedScan;
   try {
     doc = upgradeScan(parsed, { shard: null });
   } catch (e) {
-    return { ok: false, error: e.message };
+    return { ok: false, error: (e as Error).message };
   }
   const { ok, errors } = validateScan(doc);
-  if (!ok) return { ok: false, error: `${errors[0].path} ${errors[0].msg}` };
-  return { ok: true, doc };
+  if (!ok) return { ok: false, error: `${errors[0]!.path} ${errors[0]!.msg}` };
+  return { ok: true, doc: doc as ScanV2 };
 }
 
 // writeScanToInbox({doc, adapter, paths}) — atomic temp-then-rename write of an already-upgraded,
-// schema-valid doc into paths.inboxFor(adapter), under the name app/watcher.mjs's own acceptedName
+// schema-valid doc into paths.inboxFor(adapter), under the name app/watcher.mts's own acceptedName
 // would give it (collision-checked against whatever's already sitting in that inbox, same as
 // ingestFile's own scansDir write). Returns {file, character}. IO only — the caller has already done
 // all the parsing/validation via parsePastedScan.
-export function writeScanToInbox({ doc, adapter, paths }) {
+export interface WriteScanToInboxParams {
+  doc: ScanV2;
+  adapter: string;
+  paths: ConfigPaths;
+}
+
+export interface WriteScanToInboxResult {
+  file: string;
+  character: string;
+}
+
+export function writeScanToInbox({ doc, adapter, paths }: WriteScanToInboxParams): WriteScanToInboxResult {
   const inboxDir = paths.inboxFor(adapter);
   mkdirSync(inboxDir, { recursive: true });
-  let existing;
+  let existing: Set<string>;
   try { existing = new Set(readdirSync(inboxDir).filter((f) => f.endsWith(".json"))); }
   catch { existing = new Set(); }
   const file = acceptedName(doc, existing);
