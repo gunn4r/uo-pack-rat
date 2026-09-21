@@ -6,7 +6,7 @@
 // file in an adapter's inbox and nudge the watcher server-side — the inventory refresh itself rides
 // the existing SSE "inventory" event -> ui/events.mts's reload(), not a call made from here.
 import { state } from "./store.mts";
-import { $, el } from "./dom.mts";
+import { $, el, compactChildren } from "./dom.mts";
 import type { ElAttrs } from "./dom.mts";
 import { api } from "./api.mts";
 import { pickFolderRow } from "./wizard.mts";
@@ -69,28 +69,25 @@ export function renderImport(): void {
   const rescanBtn = el("button", { onclick: doRescan }, "Rescan inbox");
   rescanBtn.disabled = imp.busy;
 
-  root.replaceChildren(
-    el("div", { class: "panel stack" }, el("h3", {}, "Paste a scan"),
-      el("div", { class: "small muted" }, "For a client that can't write files itself: run its scanner, copy what it printed, and paste it here."),
-      adapterPicker(),
-      textarea,
-      pasteBtn),
-    el("div", { class: "panel stack" }, el("h3", {}, "Import a folder"),
-      el("div", { class: "small muted" }, "Already have scan files on disk? Import every one from a folder."),
-      pickFolderRow({ title: "Choose a folder of scan files to import", onResolved: doImportFolder })),
-    el("div", { class: "panel stack" }, el("h3", {}, "Rescan"),
-      el("div", { class: "small muted" }, "If a scan dropped in the client never showed up, sweep the inbox again — this catches anything a folder watcher missed."),
-      rescanBtn),
-    // @ts-expect-error — pre-existing: replaceChildren()'s real (Node | string) signature has no
-    // null member, and a literal null argument WebIDL-coerces to the text node "null" rather than
-    // being skipped (unlike a null nested inside an el() call's own kids, which dom.mts's el()
-    // explicitly filters — see its `kid != null` check). Click path: open the Import tab before
-    // pasting/importing/rescanning anything (imp.result's default) — a stray "null" text node
-    // renders after the Rescan panel. Not fixed here (this task migrates types, not behaviour); every
-    // other render function in this codebase that can hit this either filters with `.filter(Boolean)`
-    // (builder.mts's renderResult) or builds an array first (runs.mts's renderRuns) — this call site
-    // is the one place that pattern was missed.
-    imp.result ? el("div", { class: `msg ${imp.result.bad ? "bad" : ""}` }, imp.result.text) : null);
+  const pastePanel = el("div", { class: "panel stack" }, el("h3", {}, "Paste a scan"),
+    el("div", { class: "small muted" }, "For a client that can't write files itself: run its scanner, copy what it printed, and paste it here."),
+    adapterPicker(),
+    textarea,
+    pasteBtn);
+  const folderPanel = el("div", { class: "panel stack" }, el("h3", {}, "Import a folder"),
+    el("div", { class: "small muted" }, "Already have scan files on disk? Import every one from a folder."),
+    pickFolderRow({ title: "Choose a folder of scan files to import", onResolved: doImportFolder }));
+  const rescanPanel = el("div", { class: "panel stack" }, el("h3", {}, "Rescan"),
+    el("div", { class: "small muted" }, "If a scan dropped in the client never showed up, sweep the inbox again — this catches anything a folder watcher missed."),
+    rescanBtn);
+  const resultPanel = imp.result ? el("div", { class: `msg ${imp.result.bad ? "bad" : ""}` }, imp.result.text) : null;
+
+  // compactChildren drops resultPanel when it's null instead of passing it straight to
+  // replaceChildren() — see dom.mts's compactChildren for why that matters (a stray literal null used
+  // to render as the text "null" after the Rescan panel until the Import tab's first paste/import/
+  // rescan). Same pattern as builder.mts's renderResult (`.filter(Boolean)`) and runs.mts's renderRuns
+  // (builds an array first) — this call site was the one place it was missed.
+  root.replaceChildren(...compactChildren([pastePanel, folderPanel, rescanPanel, resultPanel]));
 }
 
 function setResult(bad: boolean, text: string): void {
