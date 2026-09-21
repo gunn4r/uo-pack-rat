@@ -1,11 +1,12 @@
 #!/usr/bin/env node
-// test-runner.mjs — the project's standard test interface.
-//   node scripts/test-runner.mjs [--smoke|--fast]      (full when no flag)
-// Drives node:test's run() over every **/*.test.mjs found by a recursive walk of app/ + scripts/
+// test-runner.mts — the project's standard test interface.
+//   node scripts/test-runner.mts [--smoke|--fast]      (full when no flag)
+// Drives node:test's run() over every **/*.test.mts found by a recursive walk of app/ + scripts/
 // (node_modules/dist/fixtures excluded), spawns the Python adapter test (fast + full modes only),
 // and writes test_logs/latest_summary.json. Tags are name prefixes:
 // [smoke] [fast] [slow]. TEST_SKIP_SLOW=1 skips the [slow] cases (see individual test files).
 import { run } from "node:test";
+import type { test as NodeTest } from "node:test";
 import { writeFileSync, mkdirSync, readdirSync } from "node:fs";
 import { spawnSync } from "node:child_process";
 import { dirname, join, relative } from "node:path";
@@ -21,20 +22,25 @@ const patterns = mode === "smoke" ? [/^\[smoke\]/] : mode === "fast" ? [/^\[(smo
 // app/schema/types.d.mts exists before anything imports from it. The optimizer core needs no build
 // step — every caller imports scripts/optimizer-core.mts straight from source.
 buildSchemaTypes();
-buildUi();   // app/server.test.mjs's [smoke] cases fetch app/dist/item-query.mjs and the page itself
+buildUi();   // app/server.test.mts's [smoke] cases fetch app/dist/item-query.mjs and the page itself
 
 // Recursive so a test file in a new subdirectory (app/schema/validate.test.mts was the one this
 // missed) is picked up automatically — a hard-coded third/fourth top-level directory is what
 // created that hole, and would only postpone the next one. node_modules is a defensive exclusion
 // (none exists under app/ or scripts/ today); dist is generated build output that must never be
 // walked; fixtures holds test INPUT data (JSON fixtures consumed by tests), never tests themselves.
-const walk = (dir) => readdirSync(dir, { withFileTypes: true }).flatMap((e) => {
+//
+// Only *.test.mts now — every test file in the repo finished its .mjs -> .mts migration in this
+// same phase (scripts/make-adapter-fixture.mts and friends were the last non-test .mjs files, and
+// the ONLY *.test.mjs the walk ever found were this project's own), so the .test.mjs arm this walk
+// used to carry is dead code; `git ls-files '*.test.mjs'` prints nothing, confirming it.
+const walk = (dir: string): string[] => readdirSync(dir, { withFileTypes: true }).flatMap((e): string[] => {
   const p = join(dir, e.name);
   if (e.isDirectory()) return e.name === "node_modules" || e.name === "dist" || e.name === "fixtures" ? [] : walk(p);
-  return e.name.endsWith(".test.mjs") || e.name.endsWith(".test.mts") ? [p] : [];
+  return e.name.endsWith(".test.mts") ? [p] : [];
 });
 const files = ["app", "scripts"].flatMap((d) => walk(join(ROOT, d)));
-let total = 0, passed = 0, failed = 0, skipped = 0; const failures = [];
+let total = 0, passed = 0, failed = 0, skipped = 0; const failures: { file: string; line: number; test_name: string; error: string }[] = [];
 
 // A file whose tests are ALL excluded by testNamePatterns still emits one synthetic PASS for the
 // file itself (nesting: 0, same as a real test — the nesting check alone doesn't catch it), with
@@ -46,7 +52,7 @@ let total = 0, passed = 0, failed = 0, skipped = 0; const failures = [];
 // A `{ todo: "..." }` test reports through test:pass when it passes and test:fail when it throws
 // (unlike the CLI reporter, which buckets both outcomes as "todo" and never fails the run) — fold
 // both into skipped here so a todo case can neither pass nor block the suite.
-const isFileWrapper = (t) => t.name === t.file;
+const isFileWrapper = (t: { name: string; file?: string | undefined }): boolean => t.name === t.file;
 
 // The house rule is to read test_logs/latest_summary.json for results, never raw console output — so
 // a thrown run() (a bad node:test option, an unexpected stream error, …) must still overwrite the
@@ -55,15 +61,15 @@ const isFileWrapper = (t) => t.name === t.file;
 // the finally so it runs on every path, success or failure.
 try {
   const stream = run({ files, testNamePatterns: patterns, concurrency: 1 });
-  stream.on("test:pass", (t) => { if (t.nesting > 0 || isFileWrapper(t)) return; total++; if (t.skip || t.todo) skipped++; else passed++; });
-  stream.on("test:fail", (t) => {
+  stream.on("test:pass", (t: NodeTest.EventData.TestPass) => { if (t.nesting > 0 || isFileWrapper(t)) return; total++; if (t.skip || t.todo) skipped++; else passed++; });
+  stream.on("test:fail", (t: NodeTest.EventData.TestFail) => {
     if (t.nesting > 0) return;
     if (t.todo && !isFileWrapper(t)) { total++; skipped++; return; }
     total++; failed++;
     const name = isFileWrapper(t) ? "file failed to load" : t.name;
     failures.push({ file: relative(ROOT, t.file || ""), line: t.line || 0, test_name: name, error: String(t.details?.error?.message || t.details?.error || "failed").slice(0, 600) });
   });
-  stream.on("test:stderr", (m) => process.stderr.write(m.message));
+  stream.on("test:stderr", (m: NodeTest.EventData.TestStderr) => process.stderr.write(m.message));
   // The TestsStream must actually be drained for its "test:pass"/"test:fail" events to flow — awaiting
   // only a terminal "end"/"summary" event without consuming the stream leaves run() stalled.
   for await (const _chunk of stream) { /* events are handled by the listeners above */ }
@@ -74,7 +80,8 @@ try {
   if (mode !== "smoke") runPython();
 } catch (e) {
   total++; failed++;
-  failures.push({ file: "scripts/test-runner.mjs", line: 0, test_name: "test runner", error: String((e && e.stack) || e).slice(0, 600) });
+  const err = e as { stack?: unknown };
+  failures.push({ file: "scripts/test-runner.mts", line: 0, test_name: "test runner", error: String((e && err.stack) || e).slice(0, 600) });
 } finally {
   mkdirSync(join(ROOT, "test_logs"), { recursive: true });
   const summary = { timestamp: new Date().toISOString(), mode, total, passed, failed, skipped, failures };
@@ -84,7 +91,7 @@ try {
 }
 process.exit(failed ? 1 : 0);
 
-function runPython() {
+function runPython(): void {
   const cmds = ["python3", "python"];
   const py = cmds.find((c) => { const r = spawnSync(c, ["--version"], { encoding: "utf8" }); return !r.error && /^Python 3/.test((r.stdout || "") + (r.stderr || "")); });
   total++;
