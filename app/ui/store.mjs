@@ -9,7 +9,7 @@ export const state = {
   wizardShown: false,   // load() opens the first-run wizard at most once per page life; reload() never touches this
   facets: null,   // GET /api/inventory's facets: slots/locations/rarities/slayers/kinds + counts, snapshotted once at load()
   // The page-side source of truth for the Inventory tab's filters/sort/paging — the exact shape
-  // parseItemQuery (item-query.mjs) reads off a URLSearchParams, so fetchItems() builds the query
+  // parseItemQuery (item-query.mts) reads off a URLSearchParams, so fetchItems() builds the query
   // string straight from this object. hideTags/props are arrays here (not a Set), matching the wire
   // form; nothing hidden by default: power scrolls are Cursed.
   query: { q: "", slot: "", loc: "", rarity: "", kind: "", seenDays: 0, slayer: "", nogarg: false, med: false, hideTags: [], props: [], group: false, sort: "name", dir: 1, offset: 0, limit: 200 },

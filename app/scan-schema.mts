@@ -5,7 +5,7 @@
 // object rather than a read of app/schema/scan.v2.schema.json; scan-schema.test.mts asserts the two
 // stay identical, and app/schema/scan.v2.schema.json is the copy other (non-JS) tooling can read.
 import { validate, type ValidationResult } from "./schema/validate.mts";
-import type { ScanV2, ScanV2Adapter, ScanV2AdapterCapabilities } from "./schema/types.d.mts";
+import type { ScanV2Adapter, ScanV2AdapterCapabilities } from "./schema/types.d.mts";
 
 // The 20 layer names the v1 scanner (adapters/tazuo/packrat-scanner.py, ALL_LAYERS) walks.
 export const TAZUO_V1_CAPS: ScanV2AdapterCapabilities = {
