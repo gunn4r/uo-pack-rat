@@ -4,27 +4,50 @@ A scan file is a snapshot written by an adapter script running inside a game cli
 
 Ground truth: `app/schema/scan.v2.schema.json` (the portable JSON Schema, restricted to the keyword subset `app/schema/validate.mts` supports) and `app/scan-schema.mts` (`SCAN_V2_SCHEMA`, a byte-identical inline copy — `app/scan-schema.test.mts` asserts the two files never drift apart, because `scan-schema.mts` is served straight to the browser and cannot `fs.readFileSync` the JSON file). Fold rules live in `app/vault-lib.mts`'s `foldSnapshots`.
 
+**Before you share one:** a scan file is a complete picture of one character — the name, every skill, every stat and resist, every item with its serial and full tooltip (including "Crafted by" and engraved text), and the world coordinates of the character and of every ground container, which in practice is the player's house and the tile of each chest in it. `PRIVACY.md` has the long version and the advice; the Fixture rules in `docs/adapter-guide.md` say what the repository's own scrubber removes before a scan becomes a committed test fixture.
+
 ## Top-level fields
 
 | Field | Type | Meaning |
 |---|---|---|
 | `schemaVersion` | integer, must be `2` | The scan format version. A v1 file (no `schemaVersion`, instead `version: 1`) is upgraded to this shape on read — see below. |
-| `character` | string, non-empty | Whose scan this is. `_vault` is reserved for a Forget tombstone (see Fold rules) — never a real character name. |
+| `character` | string, 1–64 characters | Whose scan this is. `_vault` is reserved for a Forget tombstone (see Fold rules) — never a real character name. It is also the one scan field that becomes a filename (`acceptedName` in `app/watcher.mts` slugifies it to `[A-Za-z0-9_-]`), which is why it has a maximum. |
 | `scannedAt` | string, RFC 3339 date-time | When the scan was taken. Used to order every snapshot in the fold (`parseStamp`, `Date.parse` — an offset-less string is read as this machine's local time per ECMA-262, matching the v1→v2 upgrade's own rule). |
 | `shard` | string or `null`, optional | Which shard's rules apply to this scan (`app/rules/<id>.json`). The server stamps the currently-configured shard onto a scan that doesn't already carry one; an already-stamped scan keeps its own. |
-| `account` | string, optional | An **opaque, hashed** identifier for the game account — e.g. lowercase hex SHA-256 of the account name — never the plaintext account name. Never required; an adapter that cannot hash the name should omit the field entirely rather than send it in the clear. This is what keeps a scan file safe to attach to a bug report. |
+| `account` | string, optional, 16–64 lowercase hex characters | An **opaque, hashed** identifier for the game account — e.g. hex SHA-256 of the account name — never the plaintext account name; the pattern is what enforces that. Never required, and no shipped adapter writes it today; an adapter that cannot hash the name should omit the field entirely rather than send it in the clear. |
 | `adapter` | object, required | Describes the adapter that produced this scan — see below. |
-| `stats` | object, required (can be empty) | Raw stat block, e.g. `{str, dex, int}`. Shape is adapter-defined; the app reads named fields it recognizes and ignores the rest. |
-| `position` | object or `null`, optional | Where the character was standing, e.g. `{x, y, z}`. |
-| `maxes` | object or `null`, optional | Max pools, e.g. `{hits, stam, mana}`. |
-| `resists` | object or `null`, optional | Paperdoll resist totals as the client reports them (post-cap; see `CONTRIBUTING.md`'s resist notes). |
-| `skills` | object, required (can be empty) | Skill name → `{value, cap}` (or whatever shape the adapter reads off the skill gump). Keys are skill names as the client shows them, e.g. `"Resisting Spells"`. |
+| `stats` | object of numbers, required (can be empty) | Raw stat block, e.g. `{str, dex, int}`. Which keys exist is adapter-defined; the app reads the named fields it recognizes and ignores the rest. Every **value** must be a number. |
+| `position` | object of numbers or `null`, optional | Where the character was standing, e.g. `{x, y, z}`. |
+| `maxes` | object of numbers or `null`, optional | Max pools, e.g. `{hits, stam, mana}`. |
+| `resists` | object of numbers or `null`, optional | Paperdoll resist totals as the client reports them (post-cap; see `CONTRIBUTING.md`'s resist notes). |
+| `skills` | object, required (can be empty) | Skill name → `{value, cap}`, each a number from 0 to 1000, with an optional `base` on the same scale. Keys are skill names as the client shows them, e.g. `"Resisting Spells"`. Both `value` and `cap` are required on every entry. |
 | `roots` | array, required | The top-level containers this scan opened — see below. |
-| `containers` | object, required (can be empty) | Every container this scan saw, keyed by serial (as a string) — see below. Not walked field-by-field by the schema (same tradeoff as `profiles.json`'s `characters`/`templates`): the validator only checks it is an object. |
+| `containers` | object, required (can be empty) | Every container this scan saw, keyed by serial (as a string) — see below. Each entry must carry at least `serial` and `root`. |
 | `items` | array, required | Every non-equipped item this scan saw, in any opened container — see below. |
 | `equipped` | array, required | Every item on the character's paperdoll — see below. |
 
 A scan file may carry additional top-level fields beyond these (`additionalProperties: true` at the top level) — the quick-refresh adapter script adds a `meta: {mode, name, roots}` key, which the fold simply ignores. `adapter` and `adapter.capabilities`, though, are a **closed contract**: `additionalProperties: false` there, so an adapter must match the shape below exactly, no extra fields.
+
+## Types and bounds
+
+A scan file is untrusted input — players share them, and the app has no way to tell one someone else wrote from one of your own (`docs/threat-model.md` explains why, and what the defence is). So every field the schema describes is typed and bounded, and `validateScan()` returning `ok` is meant to be worth relying on.
+
+The maps whose keys are not known in advance — `stats`, `position`, `maxes`, `resists`, `skills`, `containers`, and each container's `pos` — get their values checked through `additionalProperties` used as a **subschema** rather than as a `false`. That is a keyword `app/schema/validate.mts` implements specifically so these maps are not a hole in the middle of an otherwise-checked document: a `stats` entry has to be a number, a `skills` entry has to be an object with a numeric `value` and `cap`.
+
+Numeric and length bounds, in one place so an adapter author can find them:
+
+| Field | Bound | Why |
+|---|---|---|
+| every serial (`roots[].serial`, `containers`' `serial`/`root`/`parent`, `items[].serial`/`.container`, `equipped[].serial`) | integer, 0 – 4294967295 | UO serials are 32-bit. Above 2^53 two different serials can round to the same double and silently collapse into one inventory entry. |
+| `graphic`, `hue` | 0 – 65535 | 16-bit client values. |
+| `amount` | 0 – 4294967295 | Keeps a stack total finite — an unbounded one turns a sum into `Infinity`. |
+| `character` | ≤ 64 characters | Becomes a filename. |
+| `name` (root, container, item, equipped) | ≤ 256 characters | Display text. |
+| `kind` (container), `layer` | ≤ 64 characters | Short enumerated-ish values. |
+| every `tooltip` | ≤ 256 lines, each ≤ 512 characters | `parseTooltip` runs over every line of every item on every fold. The bound is what keeps a single crafted line from dominating that work. |
+| `skills` entry `value` / `base` / `cap` | 0 – 1000 | A skill is 0.0–120.0 on any shard this targets; 1000 is generous headroom, not a shard rule. |
+
+Unbounded on purpose: the number of `items`, `containers`, `roots` and `equipped` entries. A real inventory is genuinely large and no honest limit suggested itself; the 32 MB file-size cap in `app/watcher.mts`'s `ingestFile` is the bound that actually applies, and it is checked from the file's own inode before a byte is read.
 
 ## `adapter`
 
@@ -63,7 +86,9 @@ One entry per top-level container the scan attempted to open: the backpack, the 
 
 ## `containers`
 
-Keyed by serial (as a string). Every container the scan saw, root or nested. A container entry generally carries `serial`, `kind`, `name`, `parent` (the containing serial, or `null` for a root), and `root` (which root this container ultimately sits under); an adapter may include more (e.g. `tooltip`, `pos` for a ground container's coordinates, used by the bridge's Go-to action).
+Keyed by serial (as a string). Every container the scan saw, root or nested. An entry **must** carry `serial` and `root` (which root this container ultimately sits under); it generally also carries `kind`, `name` and `parent` (the containing serial, or `null` for a root). An adapter may include more — `tooltip`, and `pos` for a ground container's coordinates, which the bridge's Go-to action uses.
+
+The map's key does not have to equal the entry's own `serial` (nothing could enforce that portably), and the fold no longer cares: it indexes each snapshot's containers by serial once, rather than falling back to a scan of every container per item.
 
 ## `items`
 

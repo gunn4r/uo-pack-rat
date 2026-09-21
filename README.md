@@ -28,6 +28,8 @@ Once a release is published, download the file for your platform from this repos
 
 (`<version>` is the release's version number, e.g. `0.1.0`.) On macOS, a `.zip` of each build is also published alongside the `.dmg`, for anyone who'd rather unzip and drag the app to `Applications` by hand than use the installer.
 
+**Check what you downloaded.** Every release also carries a `SHA256SUMS` file listing each installer's hash. Download it into the same folder and run `shasum -a 256 -c SHA256SUMS --ignore-missing` (macOS) or `sha256sum -c SHA256SUMS --ignore-missing` (Linux, or Windows under WSL or Git Bash) — `RELEASING.md`'s "Verifying a download" section has the PowerShell equivalent, and is honest about what this does and doesn't prove. It is worth doing whenever a build reached you from anywhere but the Releases page: a Discord repost, a forum mirror, or an "easier installer" someone rehosted.
+
 ### The unsigned-build warnings
 
 Pack Rat isn't code-signed yet (see `SECURITY.md` and `RELEASING.md`'s Before 1.0 section) — every OS is going to warn you before it lets an unsigned app run. That warning is expected; here's how to get past it on each platform.

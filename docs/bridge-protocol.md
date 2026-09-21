@@ -29,13 +29,13 @@ One line of `queue.jsonl`, one JSON object per line:
 |---|---|---|
 | `id` | string, non-empty | Identifies this command — the page uses it to match a later result back to the button that queued it. |
 | `action` | string, one of `"highlight"`, `"grab"`, `"goto"` | What to do — see Actions below. |
-| `serial` | integer | The target item's serial. |
-| `name` | string | The item's display name (so the bridge script's on-screen messages don't have to look it up itself). |
-| `chain` | array of integers | The container chain from the root down to the item's immediate parent, outermost first (`[root, …, parent]`) — what the bridge needs to open, in order, to reach the item. Empty for an item sitting directly in a root already open (rare in practice). |
-| `pos` | object or `null` | The root container's last known position (`{x, y, z}`), when the app has one on file (from the scan that found it) — lets the bridge walk there even if the container isn't currently in view. `null` when no position is on file. |
-| `queuedAt` | string | When the server appended this command. |
+| `serial` | integer ≥ 1 | The target item's serial. |
+| `name` | string, ≤ 120 characters | The item's display name (so the bridge script's on-screen messages don't have to look it up itself). It is only ever printed on screen. Each bridge truncates to the same 120. |
+| `chain` | array of integers ≥ 1, at most 8 | The container chain from the root down to the item's immediate parent, outermost first (`[root, …, parent]`) — what the bridge needs to open, in order, to reach the item. Empty for an item sitting directly in a root already open (rare in practice). The cap is 8 because the page walks at most 8 parents and the scanner's own nesting limit is 4, so nothing legitimate is longer. |
+| `pos` | object or `null` | The root container's last known world tile, when the app has one on file (from the scan that found it) — lets the bridge walk there even if the container isn't currently in view. A typed, closed shape: required integer `x` (0–7168), `y` (0–4096) and `z` (−128–127), plus an optional `facet` (0–5, Felucca through Ter Mur) that nothing writes today. The x/y bounds are the widest UO facet, so they are a sanity check rather than a per-facet one. `null` when no position is on file. |
+| `queuedAt` | string, RFC 3339 | When the server appended this command. Not decoration — see Freshness below. |
 
-`POST /api/bridge` builds this line itself from the request body (`{action, serial, name, chain, pos}` — `location` and any other extra field the page might send along is dropped, never carried into the queue), assigns the `id`, and appends it. It requires `action` and `serial`; everything else defaults (`chain: []`, `pos: null`).
+`POST /api/bridge` builds this line itself from the request body (`{action, serial, name, chain, pos}` — `location` and any other extra field the page might send along is dropped, never carried into the queue), assigns the `id` and `queuedAt`, validates the assembled line against the `command` schema, and only then appends it. It requires `action` and `serial`; everything else defaults (`chain: []`, `pos: null`). The body is capped at 64 KB.
 
 ## Result
 
@@ -93,6 +93,21 @@ An `action` the adapter's own `capabilities.bridge` list doesn't include (see `d
 The bridge script only ever acts on commands queued **after it started**. On launch it reads the queue file's current size and remembers that byte offset (`offset = os.path.getsize(QUEUE)`); every poll after that only reads bytes past the last offset it has already consumed. Anything already sitting in `queue.jsonl` from before this run — a stale command from a session that ended without the bridge running, or one queued while the bridge was closed — is never executed. This is a deliberate safety property, not an oversight: a player who starts the bridge should only ever see it act on things they click after that point, never replay a backlog blindly.
 
 (If the queue file is ever truncated to something shorter than the remembered offset — the server rotating or clearing it — the bridge resets its offset to 0 and starts reading from the top again, since the file it knew about no longer exists in the form it expected.)
+
+## What the bridge refuses
+
+`queue.jsonl` is an ordinary file in the data directory. The app writes it, but so can anything else on the machine, and a line in it moves a real character in a live game. So a bridge script trusts nothing in that file and re-checks every line itself rather than assuming the server validated it — the server's check is real, but the file is not the server's to guard. The block of checks below is byte-identical in both bridge scripts, and a test asserts it stays that way. An adapter that ships a bridge is expected to implement all of it.
+
+- **Freshness.** `queuedAt` is parsed, not ignored. A command older than **60 seconds**, more than **5 seconds** in the future, or carrying a missing or unparseable stamp is recorded as expired and never executed. This is what makes a replayed backlog inert, and the offset rule above is still the first line of that.
+- **Duplicates.** An id that already ran in this session is skipped. The last 500 are remembered.
+- **Rate.** At most **4 commands per poll** and **40 per rolling minute**. The excess is *deferred*, never dropped, and reading pauses while 64 are already pending, so nothing is lost to backpressure. Exceeding the minute budget is treated as a signal rather than a nuisance: the bridge records the refusal, says plainly in-game that the queue is being written faster than a person clicks, and **stops**. Forty a minute is comfortably above the largest burst the app itself produces (a twenty-piece "Grab all", sent a few hundred milliseconds apart).
+- **Container-ness.** Every entry of `chain` must pass the same container test the scanner uses — corpses refused by both flag and graphic — before it is opened. Double-click is UO's universal "use" verb: a potion drinks, a rune opens its gump, a deed places. A chain longer than 8 is refused outright.
+- **Distance.** A destination further than **24 tiles** (the client's own view range) from where the character is standing, or outside the map's bounds, is refused with "walk closer and retry" rather than pathfound. Still one pathfind attempt per command, bounded by the existing 20-second timeout.
+- **Grab source.** The *destination* has always been hard-coded to the player's own backpack and is deliberately **not** a protocol field — keep it that way. The *source* is now checked too: the item's root must resolve to the player's backpack, their bank, or a container in the chain that same command just opened. A guild chest someone left open nearby, a stranger's pack, or something lying on the ground is refused.
+- **Per-line containment.** Every line is handled in its own `try`, and a payload that is not a JSON object is rejected by type rather than reaching a field access. A junk line no longer takes the rest of its read with it; the poll's rejects are reported as one aggregated result so they are visible on the page instead of vanishing.
+- **Bounded reads.** At most 256 KB per poll and 16 KB per line; a longer line is a counted refusal, never a silent drop. A partial trailing line waits for the next poll. `results` is trimmed to the last 30 in memory as well as at write time, so `status.json` cannot be made to grow without bound.
+
+A refusal is always *recorded*, never silent: it becomes a `result` with `ok: false` and a readable message, which the page toasts and the player sees in game.
 
 ## The wrong-character confirm
 
