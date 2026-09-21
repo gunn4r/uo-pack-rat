@@ -277,7 +277,9 @@ function bridgeAlive(bridgeStatusPath: string, now: number, log: (msg: string) =
 export interface InstallScriptsOptions {
   adapter: unknown;
   adaptersDir: string;
-  scriptsDir: string;
+  // `unknown`, like validateScriptsDir(dir: unknown): the one real caller (POST /api/setup/install)
+  // passes this straight off the request body, and nothing validates it before this function runs.
+  scriptsDir: unknown;
   dataDir: string;
   bridgeStatusPath?: string | undefined;
   now?: () => number;
@@ -316,10 +318,15 @@ export function installScripts(
     return { ok: false, code: "running", error: RUNNING_MESSAGE };
   }
   let destStat: Stats | null = null;
-  try { destStat = statSync(scriptsDir); } catch { /* missing — badDir below */ }
+  // The cast is compiler-only: statSync() throws ERR_INVALID_ARG_TYPE on anything that is not a path,
+  // and that throw lands in this same catch, so a non-string scriptsDir comes out as badDir below.
+  try { destStat = statSync(scriptsDir as string); } catch { /* missing, or not a path at all — badDir below */ }
   if (!destStat || !destStat.isDirectory()) {
     return { ok: false, code: "badDir", error: `not a directory: ${scriptsDir}` };
   }
+  // statSync() just succeeded on it, and nothing a JSON request body can carry is a Buffer or a URL,
+  // so from here scriptsDir is a string naming a real directory.
+  const destDir = scriptsDir as string;
   const names = scriptNamesIn(srcDir);
   if (!names.length) return { ok: false, code: "badDir", error: `no adapter scripts found for "${adapter}" in ${adaptersDir}` };
 
@@ -328,7 +335,7 @@ export function installScripts(
   // report honestly, instead of an uncaught throw that only surfaces as a generic stack-free 500.
   const installed: string[] = [];
   for (const name of names) {
-    const dest = join(scriptsDir, name);
+    const dest = join(destDir, name);
     const tmp = `${dest}.new`;
     try {
       copyFileSync(join(srcDir, name), tmp);
@@ -339,9 +346,9 @@ export function installScripts(
     }
     installed.push(name);
   }
-  const { version } = installedVersion(scriptsDir, adapter);
+  const { version } = installedVersion(destDir, adapter);
   try {
-    writeFileSync(join(scriptsDir, "packrat-paths.json"), `${JSON.stringify({ dataDir }, null, 1)}\n`);
+    writeFileSync(join(destDir, "packrat-paths.json"), `${JSON.stringify({ dataDir }, null, 1)}\n`);
   } catch (e) {
     return { ok: false, code: "writeFailed", error: (e as Error).message, installed: [...installed] };
   }
@@ -429,7 +436,7 @@ export interface CheckForUpdatesParams {
 export type CheckForUpdatesResult =
   | { configured: false; error?: undefined; current?: undefined; latest?: undefined; url?: undefined; upToDate?: undefined }
   | { configured: true; error: string; current?: undefined; latest?: undefined; url?: undefined; upToDate?: undefined }
-  | { configured: true; current: string; latest: string; url: string; upToDate: boolean; error?: undefined };
+  | { configured: true; current: string; latest: string; url: unknown; upToDate: boolean; error?: undefined };
 
 export async function checkForUpdates(
   { current, repo, fetchImpl = fetch }: CheckForUpdatesParams = {} as CheckForUpdatesParams,   // every real call site supplies current/repo (see app/installer.test.mts, app/vault-server.mjs); this cast is compiler-only, matching config.mts's rawPort pattern
@@ -449,8 +456,10 @@ export async function checkForUpdates(
   catch (e) { return { configured: true, error: `invalid release response: ${(e as Error).message}` }; }
   // body is the parsed JSON of a GitHub releases/latest response — never schema-checked before this
   // (same unvalidated trust as elsewhere in this file); tag_name is coerced through String() either
-  // way, but html_url is forwarded as-is, exactly like the pre-TypeScript code.
-  const release = body as { tag_name?: string; html_url?: string };
+  // way, but html_url is forwarded as-is, exactly like the pre-TypeScript code — so the result's `url`
+  // is typed `unknown`, not `string`: nothing here establishes that GitHub sent one, or that it is a
+  // string, or that it is an http(s) URL. Whoever renders it has to check (see app/ui/settings).
+  const release = body as { tag_name?: unknown; html_url?: unknown };
   const latest = String(release.tag_name || "").replace(/^v/, "");
-  return { configured: true, current, latest, url: release.html_url as string, upToDate: compareSemver(current, latest) >= 0 };
+  return { configured: true, current, latest, url: release.html_url, upToDate: compareSemver(current, latest) >= 0 };
 }
