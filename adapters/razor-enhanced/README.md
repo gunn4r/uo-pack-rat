@@ -19,7 +19,7 @@ There is no quick-refresh script in this adapter (`adapters/tazuo/packrat-refres
 
 ## What this adapter reads, and the evidence for each capability
 
-`capabilities.json` also declares, at its top level (not inside the `capabilities` object the table below covers): `"transport": "folder"` (see `docs/adapter-guide.md`'s Transports section) and `"platform": "win32"` — Razor Enhanced only runs on Windows, so the setup wizard and the Import tab's adapter picker show this adapter but disable choosing it, and never default to it, anywhere else (`docs/adapter-guide.md`'s "Platform restriction" section; `app/ui/adapters.mts`'s `platformCompatible`).
+`capabilities.json` also declares, at its top level (not inside the `capabilities` object the table below covers): `"transport": "folder"` (see `docs/adapter-guide.md`'s Transports section), `"platform": "win32"` — Razor Enhanced only runs on Windows, so the setup wizard and the Import tab's adapter picker show this adapter but disable choosing it, and never default to it, anywhere else (`docs/adapter-guide.md`'s "Platform restriction" section; `app/ui/adapters.mts`'s `platformCompatible`) — and `"actions"`, the list of things these scripts do *in the world* as opposed to read: `open-container` (`Items.WaitForContents`), `move-to-own-backpack` (`Items.Move` into `Player.Backpack`, a destination that is hard-coded and deliberately not a protocol field), `pathfind-local` (`Player.PathFindTo`, bounded — see "What the bridge refuses") and `client-local-highlight` (`Items.SetColor` and `Player.HeadMessage`, both client-local). `app/adapters.test.mts` fails the build if a script calls one of those primitives without declaring it, or declares one it never calls.
 
 `capabilities.json`'s `capabilities` object claims:
 
@@ -46,6 +46,17 @@ There is no quick-refresh script in this adapter (`adapters/tazuo/packrat-refres
 - **`goto`** — `Player.PathFindTo(x, y, z)` to the container's position (from the live `Item` when the client already knows it, else the scanned `pos`), polled against `Player.DistanceTo`/manual distance math until in reach or a timeout. Whether `PathFindTo` blocks until arrival or returns immediately isn't documented either way — the poll loop after it is safe regardless (it either finds itself already in range on the first check, or waits out the actual walk).
 
 All three require the container chain to be opened first with `Items.WaitForContents`, per container, in order — the same "open, then trust the contents" discipline the scanner itself uses.
+
+## What the bridge refuses
+
+`<dataDir>/bridge/razor-enhanced/queue.jsonl` is an ordinary file. The app writes it, but so could anything else running on the machine, and a line in it drives your character. The bridge therefore trusts nothing in it and re-checks every line itself rather than assuming the app already did; the guards are exactly the ones `adapters/tazuo/packrat-bridge.py` applies, out of a block of pure helper functions both bridges carry byte-identically (`adapters/test_adapters.py` asserts they stay identical and exercises them directly, with no client involved):
+
+- **Nothing but a container is opened.** `Items.WaitForContents` opens a container, and opening is a double-click — on anything else that is UO's universal "use" verb. Every entry of a command's chain must pass the same `is_container()` check the scanner uses, corpse refusal included, and a chain longer than 8 containers is refused outright.
+- **Stale and repeated commands are refused.** A command carries the time the app queued it; older than 60 seconds, or more than 5 seconds in the future, is reported as expired and never run, and an id that already ran is skipped. The offset rule still drops anything queued before the script started.
+- **A flooded queue stops the bridge.** A rolling budget of 40 commands a minute — well above the 20-piece "Grab all" that is the largest legitimate burst the app produces — ends the run with a message when it trips.
+- **No walking beyond 24 tiles.** That is the client's own view range; a destination further away is refused with "walk closer and retry" rather than pathfound to. The `PathFindTo` + poll loop stays one attempt per command inside `WALK_TIMEOUT_S`.
+- **A grab's source is checked, not just its destination.** The piece must resolve to `Player.Backpack`, `Player.Bank`, or the chain that same command just opened; anything else the client happens to know about — a guild chest left open nearby, another player's pack, an item on the ground — is refused.
+- **One bad line never strands the rest.** Each line is handled on its own, so a junk line, a payload that is not a JSON object, or one over 16 KB is counted and reported while the commands behind it still run. Reads are capped at 256 KB per poll and the kept results at 30.
 
 ## Stopping the bridge
 
