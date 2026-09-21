@@ -6,8 +6,8 @@ Three Legion Script (Python) files that run inside the TazUO game client and fee
 
 The scanner and refresh scripts write scan files as **schema v2** (`schemaVersion: 2`), and the bridge speaks **protocol v1**. Both are validated against `app/schema/scan.v2.schema.json` and `app/schema/bridge.v1.schema.json` respectively.
 
-- `capabilities.json` in this folder is this adapter's contract: what it can read (every equipped layer including arms, the bank when open, ground containers, nested bags, OPL-sourced tooltips) and which bridge actions it executes (`highlight`, `grab`, `goto`). The three scripts' `CAPABILITIES` dict literal must match it exactly — a test (`test_paths.py`) and the top-level `npm test` contract suite (`app/contracts.test.mjs`) both enforce this.
-- `fixture.scan.json` is an anonymised real scan (character renamed to `Fixture`, every position and serial scrubbed, `Crafted By`/`Engraved` tooltip lines replaced) used by `app/contracts.test.mjs` to prove the schema, the capabilities, and the app's fold all agree. Regenerate it from a real scan in `local/scans/` (never commit that folder) with:
+- `capabilities.json` in this folder is this adapter's contract: what it can read (every equipped layer including arms, the bank when open, ground containers, nested bags, OPL-sourced tooltips) and which bridge actions it executes (`highlight`, `grab`, `goto`). The three scripts' `CAPABILITIES` dict literal must match it exactly — a test (`test_paths.py`) and the top-level `npm test` contract suite (`app/contracts.test.mts`) both enforce this.
+- `fixture.scan.json` is an anonymised real scan (character renamed to `Fixture`, every position and serial scrubbed, `Crafted By`/`Engraved` tooltip lines replaced) used by `app/contracts.test.mts` to prove the schema, the capabilities, and the app's fold all agree. Regenerate it from a real scan in `local/scans/` (never commit that folder) with:
 
   ```
   node scripts/make-adapter-fixture.mts local/scans/<Character>-<timestamp>.json adapters/tazuo/fixture.scan.json
