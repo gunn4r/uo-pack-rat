@@ -76,10 +76,12 @@ export function selectCharacter(name: string): void {
   renderTemplateOptions(state.builder.profile!.template);
   renderProfile();
   state.builder.compare = new Set(); state.builder.openRun = null;
+  renderSeq++;   // a result still resolving its pieces for the previous character must not draw now
   // A build that finished while another character was on screen waits here for its own character.
   const parked = state.builder.parked;
   if (parked?.name === name) {
     state.builder.parked = null;
+    $<HTMLElement>("#b-msg .parked-note")?.remove();
     showFinished(parked);
   } else $<HTMLElement>("#b-result")!.replaceChildren(el("div", { class: "panel empty" }, `Press Build best suit for ${name}.`));
   loadRuns();
@@ -183,7 +185,7 @@ export function renderProfile(): void {
   $<HTMLElement>("#b-exroots")!.replaceChildren(...roots.map((r) => el("button", { class: "chip", "aria-pressed": p.excludeRoots!.includes(r.serial), onclick: (e) => { p.excludeRoots = p.excludeRoots!.includes(r.serial) ? p.excludeRoots!.filter((x) => x !== r.serial) : [...p.excludeRoots!, r.serial]; e.target.setAttribute("aria-pressed", p.excludeRoots!.includes(r.serial)); } }, `${r.kind === "ground" ? "" : r.scannedBy + "'s "}${r.label || bagLabel(r)}`)));
   updateTemplatePill();
 }
-export function optimizerProfile(): EffectiveProfile {
+function optimizerProfile(): EffectiveProfile {
   // effectiveProfile's own default parameter (`character = null`) already treats an omitted/undefined
   // argument the same as an explicit null — same reasoning as runs.mts's identical cast on this call.
   return effectiveProfile(state.builder.profile!, state.inv!.characters[state.builder.character!] as Character | null);
@@ -266,7 +268,7 @@ function finishJob(job: BuilderJob, r: JobFinishInfo): void {
   // Switched to another character while it ran: never draw this suit (or its Plan and Grab all)
   // under that character. It waits until its own character is selected again.
   const away = job.name !== state.builder.character;
-  const note = away ? el("div", { class: "msg" }, `${job.name}'s build finished. Switch back to ${job.name} to see it.`) : null;
+  const note = away ? el("div", { class: "msg parked-note" }, `${job.name}'s build finished. Switch back to ${job.name} to see it.`) : null;
   endJob(job, el("div", { class: "stack" }, note, job.warning ? el("div", { class: "msg warn" }, job.warning) : null, stats));
   if (away) { state.builder.parked = finished; return; }
   showFinished(finished);
@@ -394,7 +396,9 @@ function resultLoadError(e: unknown): void {
 // a mix of two different suits (it either builds its nodes and installs them, or bails and touches
 // nothing — never a partial append).
 let renderSeq = 0;
-export async function renderResult(res: OptimizeResult, current: OptSuit, prof: EffectiveProfile = optimizerProfile(), name: string = state.builder.character!): Promise<void> {
+// `name` is the character the result was built for, never read from the selection: a caller that
+// awaited anything before this call may find another character selected by now.
+export async function renderResult(res: OptimizeResult, current: OptSuit, prof: EffectiveProfile, name: string): Promise<void> {
   const mySeq = ++renderSeq;
   const alts = res.alternatives || [];
   const view = state.builder.altView != null && alts[state.builder.altView] ? state.builder.altView : null;
