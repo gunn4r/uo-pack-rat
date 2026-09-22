@@ -52,7 +52,8 @@
 //         what the ClassicUO web-client scanner prints, marker block or bare JSON, upgraded/validated
 //         and written straight into that adapter's inbox — for a client whose sandbox can't write
 //         files at all) · POST /api/import/rescan {} (scanOnce() on every running watcher, for a scan
-//         file the folder watcher missed; {adapters: [ids swept]}, empty under --demo) ·
+//         file the folder watcher missed; {adapters: [ids swept]}, empty under --demo; 503 with
+//         {failed: [ids]} when an inbox could not be swept) ·
 //         GET /api/update-check (a GitHub releases/latest check; {configured: false} when package.json
 //         names no GitHub repo) ·
 //         POST /api/host/pick-folder {title} and POST /api/host/open-path {which: "data"|"logs"} — both
@@ -77,7 +78,7 @@
 // that throws returns {error:"internal error", ref} with the stack only in CONFIG.paths.log, keyed by ref.
 
 import http from "node:http";
-import { readFileSync, writeFileSync, appendFileSync, readdirSync, existsSync, mkdirSync, copyFileSync, renameSync } from "node:fs";
+import { readFileSync, appendFileSync, readdirSync, existsSync, mkdirSync, copyFileSync, renameSync } from "node:fs";
 import { pathToFileURL } from "node:url";
 import { dirname, isAbsolute, join } from "node:path";
 import { spawn } from "node:child_process";
@@ -94,6 +95,7 @@ import { parseItemQuery, applyItemQuery, facetsOf, type ItemQueryRows, type Item
 import { DEFAULT_OPTIONAL_SLOTS } from "./mip.mts";
 import { startWatcher, jsonErrorReason, type StartWatcherOptions, type WatcherHandle } from "./watcher.mts";
 import { parsePastedScan, writeScanToInbox } from "./import.mts";
+import { writeFileAtomic } from "./atomic-write.mts";
 import {
   listAdapters, candidateClientRoots, validateScriptsDir, installedVersion, installScripts,
   importScans, repoFromPackage, checkForUpdates,
@@ -220,8 +222,14 @@ function readBody(req: http.IncomingMessage, { limit = 50e6, tooLargeMsg = "body
     });
     req.on("end", () => {
       if (tooLarge) return reject(tooLarge);
+      // A body that does not parse is the caller's mistake, not this server's: a 400 carrying
+      // jsonErrorReason's shape of the failure (never the body's own bytes), and no stack in the log.
       try { const buf = Buffer.concat(chunks); resolve(buf.length ? JSON.parse(buf.toString("utf8")) : {}); }
-      catch (e) { reject(e); }
+      catch (e) {
+        const bad = new Error(jsonErrorReason(e)) as HttpError;
+        bad.statusCode = 400;
+        reject(bad);
+      }
     });
     req.on("error", reject);
   });
@@ -255,6 +263,8 @@ function isBoundedInt(v: unknown, min: number, max: number): v is number {
 function short(v: unknown): string { return String(v).slice(0, 64); }
 
 const MAX_PATH_LEN = 4096;
+// The largest serial the scan contract accepts (app/schema/scan.v2.schema.json: a 32-bit unsigned).
+const MAX_SERIAL = 0xFFFFFFFF;
 // A Windows UNC path (\\host\share, and its forward-slash twin) is a perfectly good string, and on
 // win32 a readdirSync against one is an outbound SMB connection — an NTLM authentication attempt
 // against a host the caller named. installer.mts's validateScriptsDir refuses both forms (and a
@@ -372,9 +382,18 @@ export interface HostBridge {
   openPath?: ((which: "data" | "logs") => Promise<void>) | undefined;
 }
 
+// How long a finished build's result stays readable (retentionMs, timed from when it finished), and
+// how far past its own time budget a build may still be running before it is cancelled as stuck
+// (runGraceMs). Only tests set these, for the same reason as watcherOptions below.
+export interface JobTimings {
+  retentionMs?: number | undefined;
+  runGraceMs?: number | undefined;
+}
+
 export interface StartServerOptions {
   host?: HostBridge | undefined;
   watcherOptions?: Partial<StartWatcherOptions> | undefined;
+  jobTimings?: JobTimings | undefined;
 }
 
 export interface ServerHandle {
@@ -400,7 +419,8 @@ export interface ServerHandle {
 // (debounceMs:20, retryDelayMs:20) when calling startWatcher() directly; this gives app/server.test.mts
 // the same lever for the route-level equivalent instead of relying on a wide timeout margin to absorb
 // real wall-clock retry delay plus whatever scheduling/fs-watch jitter a loaded machine adds on top.
-export async function startServer(config: Config = ensureLayout(resolveConfig()), { host, watcherOptions = {} }: StartServerOptions = {}): Promise<ServerHandle> {
+// `jobTimings` (JobTimings above) shortens the job clocks for a test in the same way.
+export async function startServer(config: Config = ensureLayout(resolveConfig()), { host, watcherOptions = {}, jobTimings = {} }: StartServerOptions = {}): Promise<ServerHandle> {
   const CONFIG = config;
   const SCANS = CONFIG.paths.scans, PROFILES = CONFIG.paths.profiles, DEFAULT_PROFILES = CONFIG.paths.defaultProfiles;
   const RUNS = CONFIG.paths.runs, SETTINGS = CONFIG.paths.settings, USER_RULES_DIR = CONFIG.paths.rules;
@@ -448,6 +468,15 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
     console.warn(msg);
     safeAppendLog(CONFIG.paths.log, `${new Date().toISOString()} startup-fallback ${msg}\n`);
   }
+  // An unreadable data file is renamed to <file>.corrupt (never overwritten: an older .corrupt keeps
+  // its name and the new one gets a timestamp) so whatever was in it can still be recovered by hand.
+  // Returns the name it was kept as, or throws when the rename itself fails.
+  function moveAside(file: string): string {
+    let aside = `${file}.corrupt`;
+    if (existsSync(aside)) aside = `${file}.corrupt-${Date.now()}`;
+    renameSync(file, aside);
+    return aside;
+  }
   function loadSettings(): SettingsDoc {
     const defaults: SettingsDoc = { schemaVersion: 1, shard: DEFAULT_SHARD };
     if (!existsSync(SETTINGS)) return defaults;
@@ -455,11 +484,10 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
     try { doc = JSON.parse(readFileSync(SETTINGS, "utf8")); }
     catch (e) { doc = undefined; why = jsonErrorReason(e); }
     if (!doc || typeof doc !== "object" || Array.isArray(doc)) {
-      let aside = `${SETTINGS}.corrupt`;
-      if (existsSync(aside)) aside = `${SETTINGS}.corrupt-${Date.now()}`;
+      let aside: string;
       try {
-        renameSync(SETTINGS, aside);
-        writeFileSync(SETTINGS, JSON.stringify(defaults, null, 2) + "\n", { mode: DATA_FILE_MODE, flag: "wx" });
+        aside = moveAside(SETTINGS);
+        writeFileAtomic(SETTINGS, JSON.stringify(defaults, null, 2) + "\n", DATA_FILE_MODE);
       } catch (e) {
         startupWarning(`settings.json could not be moved aside (${(e as Error).message}); running on defaults without touching it`);
         return defaults;
@@ -467,19 +495,39 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
       startupWarning(`settings.json is unreadable (${why}); starting on defaults — the old file was kept as ${aside}`);
       return defaults;
     }
-    const loaded = doc as SettingsDoc;
-    const client = loaded.client as unknown;
-    if (client != null) {
-      const rec = typeof client === "object" && !Array.isArray(client) ? client as Record<string, unknown> : null;
-      const known = rec && typeof rec.adapter === "string" && typeof rec.scriptsDir === "string" && listAdapters(ADAPTERS_DIR).some((a) => a.id === rec.adapter);
-      if (!known) {
-        startupWarning(`settings.json names a client adapter this install does not ship (${JSON.stringify(short(rec?.adapter))}); ignoring that client for this run — settings.json is unchanged`);
-        return { ...loaded, client: null };
-      }
-    }
-    return loaded;
+    return doc as SettingsDoc;
   }
-  let currentSettings = loadSettings();
+  function clientIsKnown(doc: SettingsDoc): boolean {
+    const client = doc.client as unknown;
+    if (client == null) return true;
+    const rec = typeof client === "object" && !Array.isArray(client) ? client as Record<string, unknown> : null;
+    const known = !!rec && typeof rec.adapter === "string" && typeof rec.scriptsDir === "string" && listAdapters(ADAPTERS_DIR).some((a) => a.id === rec.adapter);
+    if (!known) startupWarning(`settings.json names a client adapter this install does not ship (${JSON.stringify(short(rec?.adapter))}); ignoring that client for this run — settings.json is unchanged`);
+    return known;
+  }
+  // Two views of the same settings. savedSettings is exactly what settings.json holds, and the only
+  // thing ever written back to it; currentSettings is what this run actually uses — savedSettings
+  // with the two startup fallbacks (an unknown client dropped, an unloadable shard replaced) laid on
+  // top. Every write merges only the fields its request changed into savedSettings, so a fallback
+  // can never be persisted over the player's real value by an unrelated save (a wizard's setupDone,
+  // say): fixing the rules file or reinstalling the newer version and restarting picks the original
+  // choice back up, as the fallback promises.
+  let savedSettings = loadSettings();
+  let clientIgnored = !clientIsKnown(savedSettings);
+  // The shard fallback below sets this; declared here so effectiveSettings() can read it.
+  let rulesFallback = false;
+  function effectiveSettings(): SettingsDoc {
+    return { ...savedSettings, ...(clientIgnored ? { client: null } : {}), ...(rulesFallback ? { shard: DEFAULT_SHARD } : {}) };
+  }
+  let currentSettings = effectiveSettings();
+  function saveSettings(changes: Partial<SettingsDoc>): void {
+    const next: SettingsDoc = { ...savedSettings, schemaVersion: 1, ...changes };
+    mkdirSync(dirname(SETTINGS), { recursive: true, mode: DATA_DIR_MODE });
+    writeFileAtomic(SETTINGS, JSON.stringify(next, null, 2) + "\n", DATA_FILE_MODE);
+    savedSettings = next;
+    if ("client" in changes) clientIgnored = false;
+    currentSettings = effectiveSettings();
+  }
   // Which adapter's bridge the page-facing bridge routes (POST /api/bridge, GET /api/bridge/status)
   // talk to — the currently CONFIGURED client, re-read live off currentSettings on every call rather
   // than captured once at startup, so a client switch (a fresh install, or "Run setup again") takes
@@ -499,15 +547,15 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
   // named shard's rules file and restarting picks the original choice back up. GET /api/rules reports
   // this as `fallback: true` so the page can tell the user rather than silently serving a different
   // shard than settings.json names.
-  let currentRules: RulesV1, rulesFallback = false;
+  let currentRules: RulesV1;
   try {
     currentRules = loadRules(currentSettings.shard, { userRulesDir: USER_RULES_DIR });
   } catch (e) {
     const msg = `settings.json names shard "${currentSettings.shard}", which failed to load (${(e as Error).message}); falling back to "${DEFAULT_SHARD}" for this run — settings.json is unchanged`;
     startupWarning(msg);
     currentRules = loadRules(DEFAULT_SHARD, { userRulesDir: USER_RULES_DIR });
-    currentSettings = { ...currentSettings, shard: DEFAULT_SHARD };
     rulesFallback = true;
+    currentSettings = effectiveSettings();
   }
 
   // ---- /api/events: one shared SSE stream, fed by one app/watcher.mts per adapter ------------------
@@ -518,7 +566,11 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
   const watchers = new Map<string, WatcherHandle>();
   const eventClients = new Set<http.ServerResponse>();
   function broadcastEvent(event: string, data: unknown): void { for (const c of eventClients) sse(c, event, data); }
-  if (!CONFIG.demo) {
+  // The watchers themselves start only once the port is bound (startWatchers(), called after
+  // listen() below): their startup sweep moves inbox files into scans/, and a server that then fails
+  // to bind (EADDRINUSE) must not have done that, nor leave live watchers behind it.
+  function startWatchers(): void {
+    if (CONFIG.demo) return;
     let adapterIds: string[] = [];
     try {
       adapterIds = readdirSync(ADAPTERS_DIR, { withFileTypes: true })
@@ -599,19 +651,36 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
 
   // Seeds profiles.json from the default on first run and migrates an old-shape file (archetypes → templates) in
   // place, keeping the pre-migration file once as profiles.backup-<date>.json next to it.
+  // A profiles.json that does not parse (a write cut short before writes were atomic, or a bad hand
+  // edit) used to answer every GET /api/profiles with a 500 until someone fixed the file by hand. It
+  // is now moved aside the same way loadSettings() moves an unreadable settings.json, and the
+  // defaults are seeded in its place, with a log line naming where the old file went.
   async function readProfiles(): Promise<ProfilesFile> {
-    if (!existsSync(PROFILES)) {
+    const seed = (): void => {
       mkdirSync(dirname(PROFILES), { recursive: true, mode: DATA_DIR_MODE });
-      writeFileSync(PROFILES, readFileSync(DEFAULT_PROFILES, "utf8"), { mode: DATA_FILE_MODE });
+      writeFileAtomic(PROFILES, readFileSync(DEFAULT_PROFILES, "utf8"), DATA_FILE_MODE);
+    };
+    if (!existsSync(PROFILES)) seed();
+    let doc: unknown, why = "not a JSON object";
+    try { doc = JSON.parse(readFileSync(PROFILES, "utf8")); }
+    catch (e) {
+      if (!(e instanceof SyntaxError)) throw e;   // an I/O failure is not a damaged file — leave it alone
+      why = jsonErrorReason(e);
+    }
+    if (!doc || typeof doc !== "object" || Array.isArray(doc)) {
+      const aside = moveAside(PROFILES);
+      seed();
+      safeAppendLog(CONFIG.paths.log, `${new Date().toISOString()} profiles.json is unreadable (${why}); reseeded from the defaults — the old file was kept as ${aside}\n`);
+      doc = JSON.parse(readFileSync(PROFILES, "utf8"));
     }
     // profiles.json is trusted, unvalidated file content at this point (the same trust readRules'
     // loadFile and readScans' upgradeScan extend to their own on-disk inputs) — migrateProfiles' own
     // loose ProfilesFile shape (every field optional) is what actually tolerates a malformed file.
-    const { profiles, changed } = (await lib()).migrateProfiles(JSON.parse(readFileSync(PROFILES, "utf8")) as ProfilesFile);
+    const { profiles, changed } = (await lib()).migrateProfiles(doc as ProfilesFile);
     if (changed) {
       const backup = join(dirname(PROFILES), `profiles.backup-${new Date().toISOString().slice(0, 10)}.json`);
       if (!existsSync(backup)) copyFileSync(PROFILES, backup);
-      writeFileSync(PROFILES, JSON.stringify(profiles, null, 2) + "\n", { mode: DATA_FILE_MODE });
+      writeFileAtomic(PROFILES, JSON.stringify(profiles, null, 2) + "\n", DATA_FILE_MODE);
     }
     return profiles;
   }
@@ -657,10 +726,21 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
     workers: Set<Worker>;
   }
   const jobs = new Map<string, Job>();
-  const JOB_TTL_MS = 10 * 60 * 1000;
+  // A finished job (done, failed or cancelled) stays readable for this long AFTER it finishes, so a
+  // page that reconnects or reloads can still collect its result. This clock used to start with the
+  // build and also cancel a build still running when it rang: a player's 15-minute budget (the route
+  // accepts up to 60) was killed at 10:00, and a result finishing at 9:59 was dropped a second later.
+  const JOB_RETENTION_MS = jobTimings.retentionMs ?? 10 * 60 * 1000;
+  // A running build is only cancelled as stuck once it is this far past its own time budget (the
+  // core's 15 s default when it names none) — never before the budget the route accepted for it. The
+  // grace covers the heuristic restarts that run ahead of the exact phase's budget.
+  const JOB_RUN_GRACE_MS = jobTimings.runGraceMs ?? 10 * 60 * 1000;
+  const DEFAULT_TIME_BUDGET_MS = 15000;
+  // Set by close(): a worker terminated by shutdown is not a failed build.
+  let closing = false;
   // A server-wide ceiling on live worker threads, on top of the per-X-Client-Id supersede below: that
   // rule is skipped entirely when the header is absent, so a caller that omits (or rotates) it could
-  // start arbitrarily many `new Worker()` threads, each holding its full result for JOB_TTL_MS
+  // start arbitrarily many `new Worker()` threads, each holding its full result for JOB_RETENTION_MS
   // (post-review fix, Important 5). Four is well past what one page ever has in flight — it only ever
   // runs one build at a time — and leaves room for a couple of stale jobs a client has walked away from.
   const MAX_RUNNING_JOBS = 4;
@@ -694,7 +774,8 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
     const job: Job = { id, clientId, key, meta, input, state: "running", startedAt: Date.now(), progress: null, result: null, ms: null, error: null, runId: null, clients: new Set(), workers: new Set() };
     jobs.set(id, job);
     runJob(job).catch((e) => {
-      if (job.state !== "running") return;   // cancelled: the terminated workers reject, nothing to report
+      // Cancelled (or the server is shutting down): the terminated workers reject, nothing to report.
+      if (job.state !== "running" || closing) return;
       // Same stack-free rule as the route-level 500s, and now the same ref-keyed, file-backed log too
       // (post-review: job failures used to go to console.error only, with no ref and no file trail —
       // unrecoverable in a headless/backgrounded deployment). Note the worker's own try/catch
@@ -707,7 +788,7 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
       job.state = "error"; job.error = `internal error (ref ${ref})`;
       finish(job, "failed", { error: job.error });
     });
-    const t = setTimeout(() => { if (job.state === "running") cancelJob(job); jobs.delete(id); timers.delete(t); }, JOB_TTL_MS);
+    const t = setTimeout(() => { timers.delete(t); cancelJob(job); }, (input.opts.timeBudgetMs ?? DEFAULT_TIME_BUDGET_MS) + JOB_RUN_GRACE_MS);
     t.unref(); timers.add(t);
     return job;
   }
@@ -748,7 +829,12 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
   function jobSnapshot(job: Job) { return { id: job.id, state: job.state, progress: job.progress, result: job.result, ms: job.ms, error: job.error, runId: job.runId }; }
   function sse(res: http.ServerResponse, event: string, data: unknown): void { res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`); }
   function broadcast(job: Job, event: string, data: unknown): void { for (const c of job.clients) sse(c, event, data); }
-  function finish(job: Job, event: string, data: unknown): void { broadcast(job, event, data); for (const c of job.clients) c.end(); job.clients.clear(); }
+  // The retention clock starts here, when the job ends — however it ends.
+  function finish(job: Job, event: string, data: unknown): void {
+    broadcast(job, event, data); for (const c of job.clients) c.end(); job.clients.clear();
+    const t = setTimeout(() => { jobs.delete(job.id); timers.delete(t); }, JOB_RETENTION_MS);
+    t.unref(); timers.add(t);
+  }
   function streamJob(job: Job, res: http.ServerResponse): void {
     res.writeHead(200, SSE_HEADERS);
     sse(res, "hello", jobSnapshot(job));   // catch-up: last progress, or the final outcome if it already ended
@@ -778,7 +864,7 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
       settings: meta.settings || {}, inventoryStamp: meta.inventoryStamp || null, poolSize: meta.poolSize ?? null, skipped: meta.skipped || {},
       opts: stripOpts(job.input.opts), budgetMs: job.input.opts.timeBudgetMs ?? null, explored: job.progress?.explored ?? null,
       result: job.result, ms: job.ms };
-    writeFileSync(join(RUNS, `${run.id}.json`), JSON.stringify(run), { mode: DATA_FILE_MODE });
+    writeFileAtomic(join(RUNS, `${run.id}.json`), JSON.stringify(run), DATA_FILE_MODE);
     return run;
   }
 
@@ -863,7 +949,7 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
         const { ok, errors } = validate(PROFILES_SCHEMA, body);
         if (!ok) return send(res, 400, { ok: false, error: `${errors[0]!.path} ${errors[0]!.msg}`, errors });
         mkdirSync(dirname(PROFILES), { recursive: true, mode: DATA_DIR_MODE });
-        writeFileSync(PROFILES, JSON.stringify(body, null, 2) + "\n", { mode: DATA_FILE_MODE });
+        writeFileAtomic(PROFILES, JSON.stringify(body, null, 2) + "\n", DATA_FILE_MODE);
         return send(res, 200, { ok: true });
       }
       if (req.method === "GET" && url.pathname === "/api/settings") return send(res, 200, { ok: true, settings: currentSettings });
@@ -918,14 +1004,16 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
             }
           }
         }
-        currentSettings = { ...currentSettings, schemaVersion: 1 };
-        if (hasShard) currentSettings.shard = body.shard as string;
-        if (Object.prototype.hasOwnProperty.call(body, "setupDone")) currentSettings.setupDone = body.setupDone as boolean;
-        if (nextClient !== undefined) currentSettings.client = nextClient;
-        mkdirSync(dirname(SETTINGS), { recursive: true, mode: DATA_DIR_MODE });
-        writeFileSync(SETTINGS, JSON.stringify(currentSettings, null, 2) + "\n", { mode: DATA_FILE_MODE });
+        // Only the fields this request carried reach settings.json (saveSettings): a startup fallback
+        // for a field it did not name stays in memory, where it belongs.
+        const changes: Partial<SettingsDoc> = {};
+        if (hasShard) changes.shard = body.shard as string;
+        if (Object.prototype.hasOwnProperty.call(body, "setupDone")) changes.setupDone = body.setupDone as boolean;
+        if (nextClient !== undefined) changes.client = nextClient;
+        saveSettings(changes);
         currentRules = nextRules;
         rulesFallback = nextFallback;
+        currentSettings = effectiveSettings();
         return send(res, 200, { ok: true, settings: currentSettings });
       }
       if (req.method === "GET" && url.pathname === "/api/rules") {
@@ -1010,9 +1098,7 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
         if (!result.ok) {
           return send(res, result.code === "running" ? 409 : 400, { ok: false, error: result.error, code: result.code, installed: result.installed });
         }
-        currentSettings = { ...currentSettings, schemaVersion: 1, client: { adapter: adapter as string, scriptsDir: destDir } };
-        mkdirSync(dirname(SETTINGS), { recursive: true, mode: DATA_DIR_MODE });
-        writeFileSync(SETTINGS, JSON.stringify(currentSettings, null, 2) + "\n", { mode: DATA_FILE_MODE });
+        saveSettings({ client: { adapter: adapter as string, scriptsDir: destDir } });
         // pathsFile: what happened to packrat-paths.json on the way in (written/unchanged/kept/
         // backed-up) — installScripts no longer silently clobbers a hand-authored one, and the page
         // can say so.
@@ -1080,11 +1166,12 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
       }
       if (req.method === "POST" && url.pathname === "/api/import/rescan") {
         asObject(await readBody(req, { limit: 8e3 }));   // {} — no fields read, but every POST still needs a declared JSON object body (readBody's content-type check, asObject's shape check)
-        const adapterIds = Array.from(watchers.keys());
-        // id came from watchers.keys() itself, read synchronously with no intervening mutation of the
-        // map — the entry is guaranteed present.
-        for (const id of adapterIds) watchers.get(id)!.scanOnce();
-        return send(res, 200, { ok: true, adapters: adapterIds });
+        // scanOnce() recreates a deleted inbox and re-arms its watch; false means it could not sweep
+        // at all (the reason is in the log), and that is reported rather than answered with ok: true.
+        const adapters: string[] = [], failed: string[] = [];
+        for (const [id, handle] of watchers) (handle.scanOnce() ? adapters : failed).push(id);
+        if (failed.length) return send(res, 503, { ok: false, error: `could not sweep the inbox for ${failed.join(", ")} — see the log`, adapters, failed });
+        return send(res, 200, { ok: true, adapters });
       }
       if (req.method === "GET" && url.pathname === "/api/update-check") {
         const result = await checkForUpdates({ current: PACKAGE_JSON.version, repo: repoFromPackage(PACKAGE_JSON) });
@@ -1184,6 +1271,9 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
           // real element check would be a behaviour change that belongs to the security review.
           const tagList = excludeTags as string[], rootList = excludeRoots as Array<string | number>, skillList = excludeSkills as string[], lockedList = lockedSlots as string[];
           const { inv } = await getInventory();
+          // buildPools would happily build pools from every other character's gear and save the run
+          // under a name the inventory has never seen.
+          if (!Object.hasOwn(inv.characters, character)) return send(res, 404, { ok: false, error: `no scans for character ${JSON.stringify(character)}` });
           const built = (await lib()).buildPools(inv, character, { allowOthersWorn, strength: strLimit, excludeTags: tagList, excludeRoots: rootList, excludeGargoyle: !allowGargoyle, medOnly, weaponSkill, excludeSkills: skillList });
           pools = built.pools; current = built.current; blocked = built.blocked;
           skipped = Object.fromEntries(Object.entries(built.skipped).map(([k, v]) => [k, v.length]));
@@ -1221,18 +1311,21 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
         if (last) fullOpts.warmStart = Object.fromEntries(Object.entries(last.result!.best as Record<string, { serial: number } | null>).map(([slot, it]) => [slot, it ? it.serial : null]));
         // Cap: one running optimize job per client. A real client id is only ever supplied by the
         // page's own ui/api.mts; a curl/test caller with no X-Client-Id is never deduped against itself.
-        let superseded: string | null = null;
+        let previous: Job | null = null;
         if (headerClientId) {
           for (const j of jobs.values()) {
-            if (j.clientId && j.clientId === headerClientId && j.state === "running") { cancelJob(j); superseded = j.id; break; }
+            if (j.clientId && j.clientId === headerClientId && j.state === "running") { previous = j; break; }
           }
         }
         // …and a server-wide ceiling behind it, for the callers the per-client rule can't see (see
-        // MAX_RUNNING_JOBS). Counted after the supersede above, so a page that rebuilds while its own
-        // job is still running never trips it.
+        // MAX_RUNNING_JOBS). Checked BEFORE the supersede, counting the job it would replace as already
+        // freed, so a refused request never cancels anything: a page that rebuilds while its own job
+        // is still running never trips it, and one that does trip it keeps the build it had.
         let running = 0;
-        for (const j of jobs.values()) if (j.state === "running") running++;
+        for (const j of jobs.values()) if (j.state === "running" && j !== previous) running++;
         if (running >= MAX_RUNNING_JOBS) return send(res, 429, { ok: false, error: "too many builds are already running; try again in a moment" });
+        if (previous) cancelJob(previous);
+        const superseded = previous ? previous.id : null;
         const jobClientId = headerClientId || randomUUID();
         const job = startJob({ pools, current, profile, opts: fullOpts }, key, meta, jobClientId);
         if (poolSize > 50000) job.meta.warning = "over 50,000 candidates; the exact solver may take a while";
@@ -1246,16 +1339,27 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
       if (runMatch) {
         const f = join(RUNS, `${runMatch[1]!}.json`);
         if (!existsSync(f)) return send(res, 404, { ok: false, error: "no such run" });
-        if (req.method === "GET") return send(res, 200, { ok: true, run: normalizeRun(JSON.parse(readFileSync(f, "utf8")) as SavedRun) });
+        // A run file that does not parse is reported for what it is — readRuns() already leaves it out
+        // of the list — rather than a 500 on every open; DELETE still removes it.
+        const readRun = (): SavedRun | null => {
+          try { return normalizeRun(JSON.parse(readFileSync(f, "utf8")) as SavedRun); }
+          catch (e) { if (e instanceof SyntaxError) return null; throw e; }
+        };
+        const DAMAGED_RUN = "that saved run's file is damaged and cannot be read; delete it";
+        if (req.method === "GET") {
+          const run = readRun();
+          return run ? send(res, 200, { ok: true, run }) : send(res, 404, { ok: false, error: DAMAGED_RUN });
+        }
         if (req.method === "DELETE") { unlinkSync(f); return send(res, 200, { ok: true }); }
         if (req.method === "PUT") {
           const { label = "" } = asObject(await readBody(req, { limit: 8e3 }));
           // String() throws on an object with a null prototype or a throwing toString — a 500 plus a
           // stack for what is a one-line type check (post-review fix, Minor 13).
           if (typeof label !== "string") return send(res, 400, { ok: false, error: "label must be a string" });
-          const run = normalizeRun(JSON.parse(readFileSync(f, "utf8")) as SavedRun);
+          const run = readRun();
+          if (!run) return send(res, 404, { ok: false, error: DAMAGED_RUN });
           run.label = label.slice(0, 120);
-          writeFileSync(f, JSON.stringify(run), { mode: DATA_FILE_MODE });
+          writeFileAtomic(f, JSON.stringify(run), DATA_FILE_MODE);
           return send(res, 200, { ok: true, run: runSummary(run) });
         }
       }
@@ -1325,7 +1429,9 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
           // (new format, Task 7) — accept both, and nothing else.
           const aliveMs = typeof st.alive === "number" ? st.alive * 1000 : typeof st.alive === "string" ? Date.parse(st.alive) : NaN;
           const age = st.alive != null && !Number.isNaN(aliveMs) ? (Date.now() - aliveMs) / 1000 : Infinity;
-          return send(res, 200, { ok: true, online: age < 8, age: Math.round(age), ...st });
+          // The file's own fields go first, so a stray ok/online/age in a hand-edited or foreign file
+          // (the bridge schema allows none of them) can never override what this server computed.
+          return send(res, 200, { ...st, ok: true, online: age < 8, age: Math.round(age) });
         } catch { return send(res, 200, { ok: true, online: false }); }
       }
       if (req.method === "POST" && url.pathname === "/api/forget") {
@@ -1343,9 +1449,11 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
         // A non-numeric root used to pass this check (only truthiness was tested), writing a
         // tombstone whose roots[0].serial serializes to null — every later read then logs a schema
         // violation and the file accumulates forever while the user believes it worked (post-review
-        // fix). root is never typeof-checked — the +root coercion below is the only check it gets
-        // (same as the pre-TypeScript behavior); the casts here are compiler-only.
-        if (!Number.isInteger(+(root as string)) || +(root as string) <= 0) return send(res, 400, { ok: false, error: "root required (positive integer serial)" });
+        // fix). root is a number or a string of decimal digits, nothing else: a bare +root coercion
+        // let `true` through as serial 1, and 2**60 or "1e300" past the integer check into the
+        // tombstone's own schema check, which is the 500 path. The ceiling is the scan contract's own.
+        const serial = typeof root === "number" ? root : typeof root === "string" && /^\d{1,10}$/.test(root) ? Number(root) : NaN;
+        if (!Number.isInteger(serial) || serial <= 0 || serial > MAX_SERIAL) return send(res, 400, { ok: false, error: "root required (positive integer serial)" });
         // `name` is the container's display label and goes straight into the document's roots[0].name,
         // which the scan contract requires to be a string — so a non-string used to write a file that
         // every later fold re-read and re-rejected ("/roots/0/name expected string"), for the life of
@@ -1354,7 +1462,6 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
         const label = name.slice(0, 64).trim() || "forgotten";   // a display label, and the schema wants a non-empty one
         mkdirSync(SCANS, { recursive: true, mode: DATA_DIR_MODE });
         const stamp = new Date().toISOString();
-        const serial = +(root as string);
         const snap = {
           schemaVersion: 2, character: "_vault", scannedAt: stamp,
           adapter: { id: "app", version: "1", client: "Pack Rat", clientVersion: null,
@@ -1373,7 +1480,7 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
         // directory. Re-forgetting a root now replaces its tombstone with a newer scannedAt, which is
         // exactly what the fold wants anyway (newest scan of a root wins, by parseStamp — the file
         // name has never been what orders them).
-        writeFileSync(join(SCANS, `_forget-${serial.toString(16)}.json`), JSON.stringify(snap), { mode: DATA_FILE_MODE });
+        writeFileAtomic(join(SCANS, `_forget-${serial.toString(16)}.json`), JSON.stringify(snap), DATA_FILE_MODE);
         return send(res, 200, { ok: true });
       }
       send(res, 404, { ok: false, error: "not found" });
@@ -1412,6 +1519,7 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
     server.once("listening", onListening);
     server.listen(CONFIG.port, "127.0.0.1");
   });
+  startWatchers();
   const port = (server.address() as AddressInfo).port;
   const url = `http://localhost:${port}`;
   console.log(`Pack Rat: ${url}  (data: ${CONFIG.dataDir})  token: ${CONFIG.token ? "set" : "none (dev)"}`);
@@ -1425,6 +1533,10 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
     close: () => new Promise<void>((ok) => {
       for (const t of timers) clearTimeout(t);   // clearTimeout also clears intervals (same id space)
       timers.clear();
+      // closing first: a build still running when the server quits ends because of the quit, and its
+      // worker's exit must not be logged as an internal error with a ref (a phantom crash in every
+      // server.log attached to a bug report after a quit mid-build).
+      closing = true;
       for (const job of jobs.values()) for (const w of job.workers) w.terminate();
       for (const w of watchers.values()) w.close();
       // server.close() waits for every connection "waiting for a response" — an attached SSE stream
