@@ -2,7 +2,7 @@
 // and startWatcher's debounce/retry/reject/scanOnce/close behavior against an injected fake `watch`.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, writeFileSync, readFileSync, existsSync, readdirSync, renameSync, chmodSync, symlinkSync, type WatchListener } from "node:fs";
+import { mkdtempSync, writeFileSync, readFileSync, existsSync, readdirSync, renameSync, chmodSync, symlinkSync, statSync, rmSync, type WatchListener } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import {
@@ -98,14 +98,25 @@ test("[fast] ingestFile: unparsable JSON reports an 'invalid JSON' reason", () =
 // own WatchListener<string> type for the listener so this is assignable to startWatcher's `watch`
 // option; `fire` itself is test-only, not part of the shape startWatcher expects.
 interface FakeWatch {
-  (dir: string, listener: WatchListener<string>): { close: () => void };
+  (dir: string, listener: WatchListener<string>): { close: () => void; on: (event: "error", l: (e: Error) => void) => void };
   fire: WatchListener<string>;
+  // Emits an 'error' on the current watch handle, the way a real FSWatcher does when its directory is
+  // deleted or moved on Windows (EPERM).
+  fail: (e: Error) => void;
+  calls: number;
 }
 
 function fakeWatch(): FakeWatch {
   let listener: WatchListener<string> | null = null;
-  const watch = ((_dir: string, l: WatchListener<string>) => { listener = l; return { close: () => { listener = null; } }; }) as FakeWatch;
+  let onError: ((e: Error) => void) | null = null;
+  const watch = ((_dir: string, l: WatchListener<string>) => {
+    watch.calls++;
+    listener = l; onError = null;
+    return { close: () => { listener = null; onError = null; }, on: (_event: "error", h: (e: Error) => void) => { onError = h; } };
+  }) as FakeWatch;
+  watch.calls = 0;
   watch.fire = (eventType, filename) => { if (listener) listener(eventType, filename); };
+  watch.fail = (e) => { if (!onError) throw e; onError(e); };   // no listener = what Node does: an uncaught throw
   return watch;
 }
 
@@ -401,5 +412,75 @@ test("[fast] startWatcher: a throwing onAccepted does not take down the watcher'
   writeFileSync(join(inboxDir, "good2.json"), JSON.stringify(validDoc({ scannedAt: "2026-01-02T12:00:00+00:00" })));
   watch.fire("rename", "good2.json");
   await waitFor(() => readdirSync(scansDir).filter((f) => f.endsWith(".json")).length === 2);
+  handle.close();
+});
+
+// ---- data-directory modes and a self-healing watch (issue #18) ---------------------------------------
+
+const POSIX_MODES = process.platform === "win32" ? "mode bits are a no-op on Windows" : false;
+
+test("[fast] ingestFile: an accepted scan is written 0600 and leaves no temp file behind", { skip: POSIX_MODES }, () => {
+  const inboxDir = tmp("qm-inbox-mode-"), scansDir = tmp("qm-scans-mode-");
+  const path = join(inboxDir, "drop.json");
+  writeFileSync(path, JSON.stringify(validDoc()));
+  const r = ingestFile({ path, scansDir, shard: SHARD });
+  assert.equal(r.ok, true, r.reason);
+  assert.equal(statSync(join(scansDir, r.file!)).mode & 0o777, 0o600);
+  assert.deepEqual(readdirSync(scansDir), [r.file], "only the accepted file, no temp");
+});
+
+test("[fast] startWatcher: an inbox it has to create is created 0700", { skip: POSIX_MODES }, () => {
+  const inboxDir = join(tmp("qm-inbox-parent-"), "inbox", "tazuo"), scansDir = tmp("qm-scans-dirmode-");
+  const handle = startWatcher({ inboxDir, adapter: "tazuo", scansDir, getShard: () => SHARD, watch: fakeWatch() });
+  assert.equal(statSync(inboxDir).mode & 0o777, 0o700);
+  handle.close();
+});
+
+test("[fast] startWatcher: an 'error' from the watch is logged and the watch is re-armed, not left dead", async () => {
+  const inboxDir = tmp("qm-inbox-err-"), scansDir = tmp("qm-scans-err-");
+  const watch = fakeWatch();
+  const logs: string[] = [];
+  const accepted: StartWatcherOnAcceptedInfo[] = [];
+  const handle = startWatcher({
+    inboxDir, adapter: "tazuo", scansDir, getShard: () => SHARD, watch, log: (m) => logs.push(m),
+    onAccepted: (a) => accepted.push(a), debounceMs: 10, retries: 1, retryDelayMs: 10,
+  });
+  assert.equal(watch.calls, 1);
+  watch.fail(Object.assign(new Error("EPERM: operation not permitted, watch"), { code: "EPERM" }));
+  await waitFor(() => watch.calls === 2);
+  assert.ok(logs.some((l) => /EPERM/.test(l)), logs.join("\n"));
+  dropFile(inboxDir, "after.json", JSON.stringify(validDoc()));
+  watch.fire("rename", "after.json");   // reaches the re-armed watch's listener
+  await waitFor(() => accepted.length === 1);
+  handle.close();
+});
+
+test("[fast] startWatcher: scanOnce() recreates a deleted inbox, re-arms the watch and reports success", async () => {
+  const inboxDir = join(tmp("qm-inbox-gone-"), "tazuo"), scansDir = tmp("qm-scans-gone-");
+  const watch = fakeWatch();
+  const accepted: StartWatcherOnAcceptedInfo[] = [];
+  const handle = startWatcher({
+    inboxDir, adapter: "tazuo", scansDir, getShard: () => SHARD, watch,
+    onAccepted: (a) => accepted.push(a), debounceMs: 10, retries: 1, retryDelayMs: 10,
+  });
+  rmSync(inboxDir, { recursive: true });
+  assert.equal(handle.scanOnce(), true);
+  assert.equal(existsSync(inboxDir), true, "the inbox is back");
+  assert.equal(watch.calls, 2, "a watch on a deleted directory is dead, so it is armed again");
+  dropFile(inboxDir, "later.json", JSON.stringify(validDoc()));
+  watch.fire("rename", "later.json");
+  await waitFor(() => accepted.length === 1);
+  handle.close();
+});
+
+test("[fast] startWatcher: scanOnce() reports failure when the inbox cannot be recreated", () => {
+  const parent = tmp("qm-inbox-blocked-");
+  const inboxDir = join(parent, "inbox", "tazuo"), scansDir = tmp("qm-scans-blocked-");
+  const logs: string[] = [];
+  const handle = startWatcher({ inboxDir, adapter: "tazuo", scansDir, getShard: () => SHARD, watch: fakeWatch(), log: (m) => logs.push(m) });
+  rmSync(join(parent, "inbox"), { recursive: true });
+  writeFileSync(join(parent, "inbox"), "a file where the inbox folder should be");
+  assert.equal(handle.scanOnce(), false);
+  assert.ok(logs.some((l) => /scanOnce/.test(l)), logs.join("\n"));
   handle.close();
 });
