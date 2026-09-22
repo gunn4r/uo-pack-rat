@@ -200,3 +200,23 @@ test("[fast] validateScan: adapter.id must look like an adapter id (lowercase, d
     assert.ok(v.errors.some((e) => e.path === "/adapter/id"), JSON.stringify(v.errors));
   }
 });
+
+// The scannedAt pattern cannot tell a real date from month 13 or hour 25, and Date.parse returns NaN
+// for those, which used to scramble the fold's time order (see gear-vault.test.mts's fold test).
+test("[fast] validateScan: a scannedAt that is not a real date/time is rejected", () => {
+  const doc = (scannedAt: string) => ({
+    schemaVersion: 2, character: "_vault", scannedAt,
+    adapter: { id: "app", version: "1", client: "Pack Rat", clientVersion: null,
+      capabilities: { layers: [], arms: false, bank: false, ground: false, nested: false, tooltips: "label", bridge: [] } },
+    stats: {}, equipped: [], roots: [{ serial: 1, kind: "ground", name: "x", opened: true }], containers: {}, items: [],
+  });
+  for (const bad of ["2026-13-01T10:00:00Z", "2026-09-11T25:00:00Z", "2026-09-11T10:61:00Z", "2026-02-30T10:00:00+02:00", "2026-09-11T10:00:60Z", "2026-09-11T10:00:00+24:00"]) {
+    const v = validateScan(doc(bad));
+    assert.equal(v.ok, false, bad);
+    assert.ok(v.errors.some((e) => e.path === "/scannedAt"), `${bad}: ${JSON.stringify(v.errors)}`);
+  }
+  for (const good of ["2026-02-28T23:59:59Z", "2028-02-29T00:00:00-07:00", "2026-09-11T10:00:00.123Z", "2026-09-11T10:00:00+14:00"]) {
+    const v = validateScan(doc(good));
+    assert.equal(v.ok, true, `${good}: ${JSON.stringify(v.errors)}`);
+  }
+});

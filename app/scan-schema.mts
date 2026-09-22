@@ -162,8 +162,26 @@ export const SCAN_V2_SCHEMA = {
   },
 };
 
+// The scannedAt pattern only checks the shape: it admits month 13, hour 25, minute 61 or 30 February,
+// which Date.parse either rejects (NaN) or silently rolls over. The fold orders scans by this stamp,
+// so a scan whose fields do not name a real date and time is refused here.
+const STAMP_FIELDS_RE = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.\d+)?(?:Z|[+-](\d{2}):(\d{2}))$/;
+export function isRealStamp(s: string): boolean {
+  const m = STAMP_FIELDS_RE.exec(s);
+  if (!m) return false;
+  const [y, mo, d, h, mi, sec, oh = 0, om = 0] = m.slice(1).map((v) => (v == null ? undefined : +v)) as number[];
+  const day = new Date(Date.UTC(y!, mo! - 1, d!));
+  return day.getUTCFullYear() === y && day.getUTCMonth() === mo! - 1 && day.getUTCDate() === d
+    && h! <= 23 && mi! <= 59 && sec! <= 59 && oh <= 23 && om <= 59 && Number.isFinite(Date.parse(s));
+}
+
 export function validateScan(doc: unknown): ValidationResult {
-  return validate(SCAN_V2_SCHEMA, doc);
+  const result = validate(SCAN_V2_SCHEMA, doc);
+  const stamp = (doc as { scannedAt?: unknown } | null)?.scannedAt;
+  if (result.ok && typeof stamp === "string" && !isRealStamp(stamp)) {
+    return { ok: false, errors: [{ path: "/scannedAt", msg: "not a real date and time" }] };
+  }
+  return result;
 }
 
 // Date.parse already treats a date-time string with no offset as LOCAL time (ECMA-262), and
