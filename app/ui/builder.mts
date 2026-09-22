@@ -5,7 +5,7 @@
 import { PROP_LABELS, OPTIMIZER_SLOTS, tagUnits, WEAPON_SKILLS, resistSkillBonus, effectiveProfile, getRules, RESIST_KEYS, templateFrom, requirementReport, totalsOf, settingsDiff, bagLabel } from "../vault-lib.mts";
 import type { EffectiveProfile, RunSettings, Item, Character } from "../vault-lib.mts";
 import { state, invStamp } from "./store.mts";
-import type { BuilderProfile, BuilderJob, BuilderJobUi } from "./store.mts";
+import type { BuilderProfile, BuilderJob, BuilderJobUi, FinishedBuild } from "./store.mts";
 import { $, el, label, full, fmtN, fmtSecs, fmtRunTime, slotLabel, toast } from "./dom.mts";
 import { promptText } from "./dialog.mts";
 import { api, CLIENT_ID } from "./api.mts";
@@ -18,9 +18,11 @@ import { loadRuns, settingsSnapshot, openRunsDrawer, closeRunsDrawer, renderRuns
 import type { OptSuit, OptimizeResult, OptimizeProgress, OptimizeStartApiResponse, OptimizeCancelApiResponse, JobSnapshotEvent, JobDoneEvent, JobFailedEvent, JobCancelledEvent, SavedRunLike } from "./api-types.mts";
 
 // ---------------------------------------------------------------- suit builder
-export function buildBuilder(): void {
-  const names = [...new Set([...Object.keys(state.inv!.characters), ...Object.keys(state.profiles!.characters || {})])];
-  $<HTMLSelectElement>("#b-char")!.replaceChildren(...names.map((n) => el("option", { value: n }, n)));
+// The builder's listeners and fixed options, attached once for the page's life (app.mts's load()).
+// Everything that depends on the inventory is syncBuilderCharacters()'s job, which runs on every load
+// and refresh; wiring these there appended another set of weapon options and another Escape handler
+// each time.
+export function initBuilder(): void {
   $<HTMLSelectElement>("#b-char")!.onchange = () => selectCharacter($<HTMLSelectElement>("#b-char")!.value);
   $<HTMLButtonElement>("#b-tpl-apply")!.onclick = applyTemplate; $<HTMLButtonElement>("#b-tpl-saveas")!.onclick = saveTemplateAs; $<HTMLButtonElement>("#b-tpl-update")!.onclick = updateTemplate; $<HTMLButtonElement>("#b-tpl-delete")!.onclick = deleteTemplate;
   for (const ev of ["input", "change", "click"]) $<HTMLElement>("#tab-builder aside")!.addEventListener(ev, updateTemplatePill);   // any edit to the sidebar re-checks the drift
@@ -36,7 +38,25 @@ export function buildBuilder(): void {
   document.addEventListener("keydown", (e) => { if (e.key === "Escape" && $<HTMLElement>("#runs-drawer")!.classList.contains("open")) closeRunsDrawer(); });
   $<HTMLButtonElement>("#b-addfloor-btn")!.onclick = () => { state.builder.profile!.floors![$<HTMLSelectElement>("#b-addfloor")!.value] ??= 0; renderProfile(); };
   $<HTMLButtonElement>("#b-addweight-btn")!.onclick = () => { state.builder.profile!.weights![$<HTMLSelectElement>("#b-addweight")!.value] ??= 1; renderProfile(); };
-  if (names.length) { const want = parseRoute().character; selectCharacter(names.includes(want as string) ? want as string : names[0]!); }
+}
+// The character list after the inventory or profiles changed (a first load, a scan landing, a Forget).
+// A character still present stays selected and keeps its sidebar, unsaved edits included; the sidebar
+// is redrawn so a newly scanned chest or gear skill is offered. Only when the selection is gone (or
+// there was none) does it move: to the route's character, else the first.
+export function syncBuilderCharacters(): void {
+  const names = [...new Set([...Object.keys(state.inv!.characters), ...Object.keys(state.profiles!.characters || {})])];
+  const keep = state.builder.character;
+  $<HTMLSelectElement>("#b-char")!.replaceChildren(...names.map((n) => el("option", { value: n }, n)));
+  if (keep && names.includes(keep) && state.builder.profile) {
+    $<HTMLSelectElement>("#b-char")!.value = keep;
+    renderProfile();
+  } else if (names.length) {
+    const want = parseRoute().character;
+    selectCharacter(names.includes(want as string) ? want as string : names[0]!);
+  } else {
+    state.builder.character = null; state.builder.profile = null;
+    $<HTMLElement>("#b-result")!.replaceChildren(el("div", { class: "panel empty" }, "No characters scanned yet."));
+  }
 }
 export function selectCharacter(name: string): void {
   state.builder.character = name;
@@ -55,8 +75,13 @@ export function selectCharacter(name: string): void {
   poolControls(state.builder.profile!);
   renderTemplateOptions(state.builder.profile!.template);
   renderProfile();
-  $<HTMLElement>("#b-result")!.replaceChildren(el("div", { class: "panel empty" }, `Press Build best suit for ${name}.`));
   state.builder.compare = new Set(); state.builder.openRun = null;
+  // A build that finished while another character was on screen waits here for its own character.
+  const parked = state.builder.parked;
+  if (parked?.name === name) {
+    state.builder.parked = null;
+    showFinished(parked);
+  } else $<HTMLElement>("#b-result")!.replaceChildren(el("div", { class: "panel empty" }, `Press Build best suit for ${name}.`));
   loadRuns();
 }
 // The pool checkboxes and the weapon select are read into the profile on demand (readControls) and set from it (poolControls).
@@ -155,16 +180,17 @@ export function renderProfile(): void {
   p.excludeTags ||= [];
   $<HTMLElement>("#b-extags")!.replaceChildren(...Object.keys(tagUnits()).map((t) => el("button", { class: "chip", "aria-pressed": p.excludeTags!.includes(t), onclick: (e) => { p.excludeTags = p.excludeTags!.includes(t) ? p.excludeTags!.filter((x) => x !== t) : [...p.excludeTags!, t]; e.target.setAttribute("aria-pressed", p.excludeTags!.includes(t)); } }, t)));
   const roots = Object.values(state.inv!.containers).filter((c) => c.parent == null);
-  $<HTMLElement>("#b-exroots")!.replaceChildren(...roots.map((r) => el("button", { class: "chip", "aria-pressed": p.excludeRoots!.includes(r.serial), onclick: (e) => { p.excludeRoots = p.excludeRoots!.includes(r.serial) ? p.excludeRoots!.filter((x) => x !== r.serial) : [...p.excludeRoots!, r.serial]; e.target.setAttribute("aria-pressed", p.excludeRoots!.includes(r.serial)); } }, `${r.kind === "ground" ? "" : r.scannedBy + "'s "}${bagLabel(r)}`)));
+  $<HTMLElement>("#b-exroots")!.replaceChildren(...roots.map((r) => el("button", { class: "chip", "aria-pressed": p.excludeRoots!.includes(r.serial), onclick: (e) => { p.excludeRoots = p.excludeRoots!.includes(r.serial) ? p.excludeRoots!.filter((x) => x !== r.serial) : [...p.excludeRoots!, r.serial]; e.target.setAttribute("aria-pressed", p.excludeRoots!.includes(r.serial)); } }, `${r.kind === "ground" ? "" : r.scannedBy + "'s "}${r.label || bagLabel(r)}`)));
   updateTemplatePill();
 }
-function optimizerProfile(): EffectiveProfile {
+export function optimizerProfile(): EffectiveProfile {
   // effectiveProfile's own default parameter (`character = null`) already treats an omitted/undefined
   // argument the same as an explicit null — same reasoning as runs.mts's identical cast on this call.
   return effectiveProfile(state.builder.profile!, state.inv!.characters[state.builder.character!] as Character | null);
 }
 async function runBuild(): Promise<void> {
-  const name = state.builder.character!, p = readControls();
+  if (!state.builder.character || !state.builder.profile) { toast("No character to build for yet: scan one first.", "bad"); return; }
+  const name = state.builder.character, p = readControls();
   const settings: RunSettings = { allowOthersWorn: p.allowOthersWorn, strLimit: p.strLimit, excludeTags: p.excludeTags, excludeRoots: p.excludeRoots, allowGargoyle: p.allowGargoyle, medOnly: p.medOnly, weaponSkill: p.weaponSkill, excludeSkills: p.excludeSkills || [], lockedSlots: p.lockedSlots };
   const exact = $<HTMLInputElement>("#b-exact")!.checked, budgetMs = 1000 * (+$<HTMLInputElement>("#b-budget")!.value || 300);
   const altCount = Math.max(0, Math.min(20, +$<HTMLInputElement>("#b-altcount")!.value || 0)), altTol = Math.max(0, +$<HTMLInputElement>("#b-alttol")!.value || 0);
@@ -172,7 +198,11 @@ async function runBuild(): Promise<void> {
   // Pools/current/skipped are the server's job now (buildPools against its own cached inventory,
   // POST /api/optimize's by-character form) — the client only ever sends the character + settings
   // and reads poolSize/skipped/current/warning back off the response.
-  const job: BuilderJob = { id: null, es: null, name, exact, budgetMs, poolSize: null, skipped: {}, current: {}, warning: null, startedAt: Date.now(), lastProgressAt: Date.now(), lastServerAt: Date.now(), last: null, connected: true, ui: null, timer: null };
+  // The job keeps the character and the effective profile it was started with: the player can switch
+  // characters while it runs, and the result must be judged and shown against these, not whatever
+  // the sidebar holds when it lands.
+  const profile = optimizerProfile();
+  const job: BuilderJob = { id: null, es: null, name, profile, exact, budgetMs, poolSize: null, skipped: {}, current: {}, warning: null, startedAt: Date.now(), lastProgressAt: Date.now(), lastServerAt: Date.now(), last: null, connected: true, ui: null, timer: null };
   state.builder.job = job;
   $<HTMLButtonElement>("#b-run")!.disabled = true;
   job.ui = runPanel(job);
@@ -182,7 +212,7 @@ async function runBuild(): Promise<void> {
   // the fields below (poolSize/skipped/current/id/...) are readable once `!r.ok` has returned.
   let r: (OptimizeStartApiResponse & { ok: true }) | { ok: false; error: string };
   try {
-    r = (await api<OptimizeStartApiResponse>("/api/optimize", { method: "POST", body: { character: name, settings, profile: optimizerProfile(), opts,
+    r = (await api<OptimizeStartApiResponse>("/api/optimize", { method: "POST", body: { character: name, settings, profile, opts,
       meta: { character: name, settings: settingsSnapshot(), inventoryStamp: invStamp() } } })) as OptimizeStartApiResponse & { ok: true };
     // optimizeErrorMessage (ui/messages.mts) explains the one refusal that isn't about this build at
     // all: 429, four jobs already running (vault-server.mts's MAX_RUNNING_JOBS) — this page only ever
@@ -216,7 +246,12 @@ async function runBuild(): Promise<void> {
   es.addEventListener("done", (e: MessageEvent<string>) => finishJob(job, JSON.parse(e.data) as JobDoneEvent));
   es.addEventListener("failed", (e: MessageEvent<string>) => endJob(job, el("div", { class: "msg bad" }, (JSON.parse(e.data) as JobFailedEvent).error)));
   es.addEventListener("cancelled", (e: MessageEvent<string>) => endJob(job, el("div", { class: "msg" }, `Cancelled after ${fmtSecs((JSON.parse(e.data) as JobCancelledEvent).ms)}.`)));
-  es.onerror = () => { job.connected = false; };   // EventSource reconnects by itself; "hello" then catches us up
+  // EventSource reconnects by itself and "hello" then catches us up — unless the server refused the
+  // stream (a restart forgot the job: 404), after which it stays closed for good.
+  es.onerror = () => {
+    job.connected = false;
+    if (es.readyState === EventSource.CLOSED) endJob(job, el("div", { class: "msg bad" }, "Lost the build: the server no longer knows this job (it may have restarted). Build again."));
+  };
 }
 function endJob(job: BuilderJob, node?: HTMLElement | null): void {
   if (state.builder.job !== job) return;
@@ -227,12 +262,21 @@ function endJob(job: BuilderJob, node?: HTMLElement | null): void {
 interface JobFinishInfo { result: OptimizeResult; ms: number; runId: string | null; reused?: SavedRunLike | null | undefined; }
 function finishJob(job: BuilderJob, r: JobFinishInfo): void {
   const stats = runStats({ ok: true, result: r.result, ms: r.ms }, job.poolSize, job.skipped, null, r.reused || null);
-  endJob(job, job.warning ? el("div", { class: "stack" }, el("div", { class: "msg warn" }, job.warning), stats) : stats);
-  state.builder.result = r.result;
-  state.builder.openRun = r.runId || null;
-  state.builder.altView = null;
-  renderResult(r.result, job.current).catch(resultLoadError);
+  const finished: FinishedBuild = { name: job.name, result: r.result, current: job.current, profile: job.profile, runId: r.runId || null };
+  // Switched to another character while it ran: never draw this suit (or its Plan and Grab all)
+  // under that character. It waits until its own character is selected again.
+  const away = job.name !== state.builder.character;
+  const note = away ? el("div", { class: "msg" }, `${job.name}'s build finished. Switch back to ${job.name} to see it.`) : null;
+  endJob(job, el("div", { class: "stack" }, note, job.warning ? el("div", { class: "msg warn" }, job.warning) : null, stats));
+  if (away) { state.builder.parked = finished; return; }
+  showFinished(finished);
   loadRuns();
+}
+function showFinished(f: FinishedBuild): void {
+  state.builder.result = f.result;
+  state.builder.openRun = f.runId;
+  state.builder.altView = null;
+  renderResult(f.result, f.current, f.profile, f.name).catch(resultLoadError);
 }
 export async function cancelJob(job: BuilderJob): Promise<void> {
   if (!job.id) { endJob(job, el("div", { class: "msg" }, "Cancelled.")); return; }
@@ -350,7 +394,7 @@ function resultLoadError(e: unknown): void {
 // a mix of two different suits (it either builds its nodes and installs them, or bails and touches
 // nothing — never a partial append).
 let renderSeq = 0;
-export async function renderResult(res: OptimizeResult, current: OptSuit, prof: EffectiveProfile = optimizerProfile()): Promise<void> {
+export async function renderResult(res: OptimizeResult, current: OptSuit, prof: EffectiveProfile = optimizerProfile(), name: string = state.builder.character!): Promise<void> {
   const mySeq = ++renderSeq;
   const alts = res.alternatives || [];
   const view = state.builder.altView != null && alts[state.builder.altView] ? state.builder.altView : null;
@@ -360,13 +404,13 @@ export async function renderResult(res: OptimizeResult, current: OptSuit, prof: 
   const rsb = prof.resistBonus || 0, pd = (k: string, v: number | null | undefined): number | null | undefined => (v != null && RESIST_KEYS.includes(k) ? v + rsb : v);   // resists shown as the paperdoll shows them
   const unmet = report.filter((x) => x.met === false);
   const topPanel = el("div", { class: "panel stack" },
-    el("div", { class: "row", style: "justify-content:space-between" }, el("h2", {}, view == null ? `Best suit for ${state.builder.character}` : `Suit #${view + 2} for ${state.builder.character}`),
+    el("div", { class: "row", style: "justify-content:space-between" }, el("h2", {}, view == null ? `Best suit for ${name}` : `Suit #${view + 2} for ${name}`),
       el("span", { class: "num small muted" }, `score ${Math.round(res.currentScore)} → ${Math.round(suitScore)} (${suitScore - res.currentScore >= 0 ? "+" : ""}${Math.round(suitScore - res.currentScore)})`)),
     unmet.length ? el("div", { class: "msg bad" }, "Requirements NOT met with this inventory: " + unmet.map((x) => `${x.label} ${pd(x.key, x.value)}/${pd(x.key, x.floor)}`).join(", ")) : el("div", { class: "msg" }, "Every requirement is met."),
     el("div", { class: "chips" }, ...report.filter((x) => x.value || x.floor != null).map((x) => el("span", { class: "pill " + (x.met === false ? "bad" : x.capped ? "good" : ""), title: full(x.key) + (x.floor != null ? ` · floor ${pd(x.key, x.floor)}` : "") + (x.cap != null ? ` · cap ${pd(x.key, x.cap)}` : "") + (rsb && RESIST_KEYS.includes(x.key) ? ` · includes +${rsb} from Resisting Spells` : "") },
       `${x.label} ${pd(x.key, before[x.key] || 0)} → ${pd(x.key, x.value)}${x.cap != null ? "/" + pd(x.key, x.cap) : ""}${x.over ? ` (${x.over} wasted)` : ""}`))));
-  const altNode = res.altTolerance != null ? altPanel(res, current, prof, view) : null;
-  const sheetPanel = el("div", { class: "panel" }, sheetNode(state.builder.character!, current, suit));
+  const altNode = res.altTolerance != null ? altPanel(res, current, prof, view, name) : null;
+  const sheetPanel = el("div", { class: "panel" }, sheetNode(name, current, suit));
   const changes = OPTIMIZER_SLOTS.filter((sl) => (current[sl]?.serial || 0) !== (suit[sl]?.serial || 0)).map((sl): { slot: string; toSerial: number } => ({ slot: sl, toSerial: suit[sl]?.serial || 0 }));
   const rowsAll = OPTIMIZER_SLOTS.map((slot) => ({ slot, now: current[slot], next: suit[slot] }));
   // The optimizer's own item shape (serial/name/slot/props) has no location/equippedBy — resolve
@@ -382,15 +426,15 @@ export async function renderResult(res: OptimizeResult, current: OptSuit, prof: 
         const changed = (now?.serial || 0) !== (next?.serial || 0);
         const item = changed && next ? resolved[next.serial] || null : null;
         return el("tr", { class: changed ? "item" : "", style: changed ? "background:var(--sel)" : "" },
-          el("td", { class: "muted" }, slotLabel(slot)), el("td", { class: changed ? "muted" : "name", "data-serial": now ? now.serial : "" }, now ? now.name : "—"),
-          el("td", { class: "name", "data-serial": next ? next.serial : "" }, changed ? (next ? next.name : "(nothing)") : el("span", { class: "muted" }, "keep")),
+          el("td", { class: "muted" }, slotLabel(slot)), el("td", { class: changed ? "muted" : "name", ...(now ? { "data-serial": now.serial } : {}) }, now ? now.name : "—"),
+          el("td", { class: "name", ...(next ? { "data-serial": next.serial } : {}) }, changed ? (next ? next.name : "(nothing)") : el("span", { class: "muted" }, "keep")),
           el("td", { class: "small" }, changed && next ? (item ? item.location!.text : el("span", { class: "muted" }, "not in the current inventory")) : "", " ", item ? actButtons(item) : null),
           el("td", { class: "small muted" }, next ? Object.entries(next.props).filter(([k]) => k !== "tagPenalty").map(([k, v]) => `${label(k)} ${v}`).join(" · ") : ""));
       })))));
   const fetchList: Record<string, Item[]> = {};
-  for (const c of changes) { const it = c.toSerial ? resolved[c.toSerial] || null : null; if (it && it.equippedBy !== state.builder.character) (fetchList[it.location!.text] ||= []).push(it); }
+  for (const c of changes) { const it = c.toSerial ? resolved[c.toSerial] || null : null; if (it && it.equippedBy !== name) (fetchList[it.location!.text] ||= []).push(it); }
   const fetchNode = Object.keys(fetchList).length
-    ? el("div", { class: "panel stack" }, el("div", { class: "row", style: "justify-content:space-between" }, el("h2", {}, "Fetch list"), grabAllRow(Object.values(fetchList).flat())), ...Object.entries(fetchList).map(([loc, items]) => el("div", {}, el("div", { class: "small muted" }, loc), el("ul", { style: "margin:4px 0 0 18px" }, ...items.map((i) => el("li", { "data-serial": i.serial }, i.name, " ", i.equippedBy ? el("span", { class: "tag" }, "worn by " + i.equippedBy) : actButtons(i)))))))
+    ? el("div", { class: "panel stack" }, el("div", { class: "row", style: "justify-content:space-between" }, el("h2", {}, "Fetch list"), grabAllRow(Object.values(fetchList).flat(), name)), ...Object.entries(fetchList).map(([loc, items]) => el("div", {}, el("div", { class: "small muted" }, loc), el("ul", { style: "margin:4px 0 0 18px" }, ...items.map((i) => el("li", { "data-serial": i.serial }, i.name, " ", i.equippedBy ? el("span", { class: "tag" }, "worn by " + i.equippedBy) : actButtons(i)))))))
     : null;
   // Only worth a line when there's actually something to move — nothing to bridge to when the plan
   // has zero changes. Same note as the Inventory tab's (currentAdapter's capabilities.bridge), shown
@@ -403,7 +447,7 @@ export async function renderResult(res: OptimizeResult, current: OptSuit, prof: 
 }
 // The best suit and the other suits within the tolerance, each described by how it differs from the best: which
 // pieces change and which property totals move (weighted or not). Show puts that suit into the plan and sheet below.
-function altPanel(res: OptimizeResult, current: OptSuit, prof: EffectiveProfile, view: number | null): HTMLDivElement {
+function altPanel(res: OptimizeResult, current: OptSuit, prof: EffectiveProfile, view: number | null, name: string): HTMLDivElement {
   const all = [{ best: res.best, score: res.score }, ...(res.alternatives || [])];
   const tb = totalsOf(res.best);
   const shownIdx = view == null ? 0 : view + 1;
@@ -418,7 +462,7 @@ function altPanel(res: OptimizeResult, current: OptSuit, prof: EffectiveProfile,
       el("td", { class: "num" }, i === 0 ? "" : Math.abs(d) < 1e-6 ? "ties" : fmtN(Math.round(d))),
       el("td", {}, i === 0 ? el("span", { class: "muted" }, "the proven best") : slotsDiff.map((sl) => `${slotLabel(sl)}: ${s.best[sl] ? s.best[sl]!.name : "(nothing)"}`).join(" · ")),
       el("td", { class: "small muted" }, i === 0 ? "" : propDiff.join(" · ") || "same totals"),
-      el("td", {}, i === shownIdx ? el("span", { class: "pill good" }, "showing") : el("button", { class: "small", onclick: () => { state.builder.altView = i === 0 ? null : i - 1; renderResult(res, current, prof).catch(resultLoadError); } }, "Show")));
+      el("td", {}, i === shownIdx ? el("span", { class: "pill good" }, "showing") : el("button", { class: "small", onclick: () => { state.builder.altView = i === 0 ? null : i - 1; renderResult(res, current, prof, name).catch(resultLoadError); } }, "Show")));
   });
   return el("div", { class: "panel stack" },
     el("h2", {}, `Other suits within ${fmtN(res.altTolerance)} points of the best`),
@@ -426,6 +470,7 @@ function altPanel(res: OptimizeResult, current: OptSuit, prof: EffectiveProfile,
     el("div", { class: "tablewrap" }, el("table", { class: "alt-table" }, el("thead", {}, el("tr", {}, el("th", {}, "Suit"), el("th", {}, "Points vs best"), el("th", {}, "Different pieces"), el("th", {}, "Totals vs best"), el("th", {}, ""))), el("tbody", {}, ...rows))));
 }
 async function saveProfile(): Promise<void> {
+  if (!state.builder.character || !state.builder.profile) { toast("No character to save a profile for yet: scan one first.", "bad"); return; }
   state.profiles!.characters ||= {};
   state.profiles!.characters[state.builder.character!] = JSON.parse(JSON.stringify(readControls()));   // a copy: later sidebar edits must not ride along with a template save
   const r = await putProfiles();

@@ -5,33 +5,52 @@
 // from it and lands the response in state.page, and renderInventory() only ever draws state.page.
 import { PROP_FULL, tagUnits } from "../vault-lib.mts";
 import { state } from "./store.mts";
-import { $, el, label, full, colVal, slotLabel, isStale, ago, EXTRA_COLS, fmtN, rarityColor, rarCell, fmtWhen } from "./dom.mts";
+import { $, el, label, full, colVal, slotLabel, isStale, ago, EXTRA_COLS, fmtN, rarityColor, rarCell, fmtWhen, toast } from "./dom.mts";
 import { api } from "./api.mts";
 import { actButtons, bridgeNoteEl } from "./bridge.mts";
-import type { ItemsApiResponse } from "./api-types.mts";
+import { clampOffset, optionsKeeping, clearedQuery } from "./view-state.mts";
+import type { SelectOption } from "./view-state.mts";
+import type { ItemsApiResponse, UiPrefs } from "./api-types.mts";
 
 // ---------------------------------------------------------------- inventory filters
-// Populated once from state.facets (the server's facetsOf() snapshot over the whole inventory, set
-// in app.mts's load()) — the same "built from the full set, not the current filter" behavior the
-// original client-side buildFilters() had (it always read every scanned item, never the filtered set).
+// Rebuilt from state.facets (the server's facetsOf() snapshot over the whole inventory) on every load
+// and refresh — the same "built from the full set, not the current filter" behavior the original
+// client-side buildFilters() had. Each dropdown is then set back from state.query, which is what the
+// table is filtered by: a refresh that left a select on its first option would show "any" over a
+// table that is still filtered.
 export function buildFilters(): void {
   const f = state.facets || { slots: [], locations: [], rarities: [], slayers: [], slayerAny: 0, kinds: [], propKeys: [] };
-  $<HTMLSelectElement>("#f-slot")!.replaceChildren(el("option", { value: "" }, "any"), ...f.slots.map((s) => el("option", { value: s }, slotLabel(s))), el("option", { value: "?" }, "unknown slot"));
-  $<HTMLSelectElement>("#f-loc")!.replaceChildren(el("option", { value: "" }, "anywhere"), ...f.locations.map((l) => el("option", { value: l }, l)));
-  $<HTMLSelectElement>("#f-rarity")!.replaceChildren(el("option", { value: "" }, "any"), ...f.rarities.map((r) => el("option", { value: r }, r)));
-  $<HTMLSelectElement>("#f-slayer")!.replaceChildren(el("option", { value: "" }, "any"), el("option", { value: "*" }, `any slayer (${f.slayerAny})`), ...f.slayers.map(({ name, count }) => el("option", { value: name }, `${name} (${count})`)));
+  const q = state.query;
+  fillSelect("#f-slot", [{ value: "", label: "any" }, ...f.slots.map((s) => ({ value: s, label: slotLabel(s) })), { value: "?", label: "unknown slot" }], q.slot);
+  fillSelect("#f-loc", [{ value: "", label: "anywhere" }, ...f.locations.map((l) => ({ value: l, label: l }))], q.loc);
+  fillSelect("#f-rarity", [{ value: "", label: "any" }, ...f.rarities.map((r) => ({ value: r, label: r }))], q.rarity);
+  fillSelect("#f-slayer", [{ value: "", label: "any" }, { value: "*", label: `any slayer (${f.slayerAny})` }, ...f.slayers.map(({ name, count }) => ({ value: name, label: `${name} (${count})` }))], q.slayer);
+  fillSelect("#f-kind", [{ value: "", label: "everything" }, ...f.kinds.map(({ name, count }) => ({ value: name, label: `${name} (${count})` }))], q.kind);
+  renderTagChips();
+  renderPropFilters();
+  renderColChips();
+}
+function fillSelect(sel: string, options: SelectOption[], current: string): void {
+  const node = $<HTMLSelectElement>(sel)!;
+  node.replaceChildren(...optionsKeeping(options, current, (v) => `${v} (none now)`).map((o) => el("option", { value: o.value }, o.label)));
+  node.value = current;
+}
+function renderTagChips(): void {
   $<HTMLDivElement>("#f-tags")!.replaceChildren(...Object.keys(tagUnits()).map((t) => el("button", { class: "chip", "aria-pressed": state.query.hideTags.includes(t), onclick: (e) => {
     state.query.hideTags = state.query.hideTags.includes(t) ? state.query.hideTags.filter((x) => x !== t) : [...state.query.hideTags, t];
     e.target.setAttribute("aria-pressed", state.query.hideTags.includes(t)); requery();
   } }, t)));
-  renderPropFilters();
-  renderColChips();
-  $<HTMLSelectElement>("#f-kind")!.replaceChildren(el("option", { value: "" }, "everything"), ...f.kinds.map(({ name, count }) => el("option", { value: name }, `${name} (${count})`)));
+}
+// The filter controls' listeners, attached once for the page's life (app.mts). buildFilters() runs
+// again on every refresh; wiring these there stacked another listener per control each time.
+export function initFilters(): void {
   for (const id of ["#f-text", "#f-slot", "#f-loc", "#f-rarity", "#f-kind", "#f-seen", "#f-slayer", "#f-nogarg", "#f-med", "#f-group"]) $(id)!.addEventListener("input", onFilterChange);
   $<HTMLButtonElement>("#f-addprop")!.onclick = () => { state.query.props.push({ key: state.propKeys[0] || "hci", min: 1 }); renderPropFilters(); requery(); };
   $<HTMLButtonElement>("#f-clear")!.onclick = () => {
-    state.query.props = []; $<HTMLInputElement>("#f-text")!.value = ""; $<HTMLSelectElement>("#f-slot")!.value = ""; $<HTMLSelectElement>("#f-loc")!.value = ""; $<HTMLSelectElement>("#f-rarity")!.value = ""; $<HTMLSelectElement>("#f-slayer")!.value = "";
-    renderPropFilters(); onFilterChange();
+    state.query = clearedQuery(state.query);
+    $<HTMLInputElement>("#f-text")!.value = ""; $<HTMLSelectElement>("#f-seen")!.value = "";
+    $<HTMLInputElement>("#f-nogarg")!.checked = false; $<HTMLInputElement>("#f-med")!.checked = false;
+    buildFilters(); fetchItems();
   };
   $<HTMLButtonElement>("#inv-prev")!.onclick = () => { if (state.query.offset > 0) { state.query.offset = Math.max(0, state.query.offset - state.query.limit); fetchItems(); } };
   $<HTMLButtonElement>("#inv-next")!.onclick = () => { if (state.query.offset + state.query.limit < state.page.total) { state.query.offset += state.query.limit; fetchItems(); } };
@@ -50,8 +69,22 @@ export function renderColChips(): void {
   const all = [...new Set([...state.propKeys, ...Object.keys(EXTRA_COLS), ...state.cols])];
   $<HTMLDivElement>("#cols")!.replaceChildren(...all.map((k) => el("button", { class: "chip", title: full(k), "aria-pressed": state.cols.includes(k), onclick: (e) => {
     state.cols = state.cols.includes(k) ? state.cols.filter((x) => x !== k) : [...state.cols, k];
-    localStorage.setItem("vault.cols", JSON.stringify(state.cols)); e.target.setAttribute("aria-pressed", state.cols.includes(k)); renderInventory();
+    saveCols(); e.target.setAttribute("aria-pressed", state.cols.includes(k)); renderInventory();
   } }, label(k))));
+}
+// The column choice is kept by the server (<data>/ui-prefs.json), not localStorage: the desktop app
+// serves the page from a new port on every launch, and localStorage belongs to one origin, so a
+// choice saved there was gone at the next start.
+function saveCols(): void {
+  api("/api/ui-prefs", { method: "PUT", body: { cols: state.cols } }).catch((e: Error) => toast(`Could not save the column choice: ${e.message}`, "bad"));
+}
+// load()'s GET /api/ui-prefs answer. With no saved choice yet, a choice this browser made before the
+// server kept it (localStorage "vault.cols") is adopted once and saved server-side.
+export function applyUiPrefs(prefs: UiPrefs | null | undefined): void {
+  if (prefs?.cols) { state.cols = prefs.cols; return; }
+  let legacy: unknown = null;
+  try { legacy = JSON.parse(localStorage.getItem("vault.cols") || "null"); } catch { /* unreadable: keep the defaults */ }
+  if (Array.isArray(legacy) && legacy.every((c) => typeof c === "string")) { state.cols = legacy; saveCols(); }
 }
 // Every plain filter control (search text, the dropdowns, the checkboxes): read them all into
 // state.query, reset to page 1 (a changed filter can only ever invalidate the current offset), fetch.
@@ -106,6 +139,10 @@ async function doFetch(): Promise<void> {
   try { res = await api<ItemsApiResponse>(`/api/items?${params.toString()}`); }
   catch { return; }   // a transient fetch error leaves the last good page on screen rather than blanking it
   if (mine !== reqSeq) return;   // a newer request has since been issued — this response is stale, drop it
+  // A Forget or a rescan can shrink the list under the page on screen: move to the last page that has
+  // rows and fetch that instead of drawing an empty table under "141–48 of 48".
+  const clamped = clampOffset(q.offset, q.limit, res.total);
+  if (clamped !== q.offset) { q.offset = clamped; doFetch(); return; }
   state.page = "groups" in res
     ? { rows: [], groups: res.groups, total: res.total, pieces: 0 }
     : { rows: res.rows, groups: null, total: res.total, pieces: res.pieces };
@@ -114,7 +151,7 @@ async function doFetch(): Promise<void> {
 export function renderInventory(): void {
   const { rows, groups, total, pieces } = state.page;
   const k = state.query.sort, d = state.query.dir;
-  const th = (key: string, text: string, cls = ""): HTMLTableCellElement => el("th", { class: (key === k ? "sorted " : "") + cls, title: PROP_FULL[key] || "", onclick: () => {
+  const th = (key: string, text: string, cls = ""): HTMLTableCellElement => el("th", { class: "sortable " + (key === k ? "sorted " : "") + cls, title: PROP_FULL[key] || "", onclick: () => {
     if (state.query.sort === key) state.query.dir *= -1; else { state.query.sort = key; state.query.dir = 1; }
     fetchItems();
   } }, text + (key === k ? (d > 0 ? " ▾" : " ▴") : ""));

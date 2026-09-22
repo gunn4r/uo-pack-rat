@@ -46,6 +46,16 @@ export interface SettingsApiResponse {
   settings: SettingsData;
 }
 
+// GET /api/ui-prefs — the page's own view choices, kept in <data>/ui-prefs.json. Every field is
+// optional: absent means "never chosen", and the page keeps its default.
+export interface UiPrefs {
+  cols?: string[] | undefined;
+}
+export interface UiPrefsApiResponse {
+  ok: boolean;
+  prefs: UiPrefs;
+}
+
 // GET /api/rules' `available` list — mirrors app/rules.mts's RulesEntry, trimmed to what the page
 // ever reads (id, name) off state.availableShards.
 export interface ShardOption {
