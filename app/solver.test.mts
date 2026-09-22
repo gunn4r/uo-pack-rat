@@ -119,7 +119,8 @@ test("[fast] soft floors match", async (t) => {
 // Like runBoth: the core's alternatives are only exact when its search proved within the time budget
 // (about 10 s for this cell on a laptop, more on a CI runner), so an unproven core is checked for
 // no-regression, rank by rank, instead of equality.
-test("[fast] k-best matches the core's alternatives score for score; no alternative equals the best's serial set", async (t) => {
+test("[slow] k-best matches the core's alternatives score for score; no alternative equals the best's serial set",
+  { skip: process.env.TEST_SKIP_SLOW === "1" }, async (t) => {
   const name = templateNames[0]!;
   const { pools, current, profile } = cell(name);
   const opts: OptOptions = { ...BASE_OPTS, alternatives: { count: 3, tolerance: 1e9 } };
