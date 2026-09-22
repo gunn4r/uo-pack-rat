@@ -23,9 +23,12 @@ import time
 
 def data_dir():
     """<script folder>/packrat-paths.json {"dataDir": "..."} -> $PACKRAT_DATA -> ~/.pack-rat"""
-    here = os.path.dirname(os.path.abspath(__file__))
-    cfg = os.path.join(here, "packrat-paths.json")
-    if os.path.exists(cfg):
+    try:
+        here = os.path.dirname(os.path.abspath(__file__))
+    except NameError:                    # a host that runs the script text without defining __file__
+        here = ""
+    cfg = os.path.join(here, "packrat-paths.json") if here else ""
+    if cfg and os.path.exists(cfg):
         with open(cfg, "r", encoding="utf-8") as f:
             d = json.load(f).get("dataDir")
         if d:
@@ -166,13 +169,17 @@ def root_pos(it, kind):
 
 def scan_root(root_item, kind, label, containers, items, seen):
     """Open root_item and every nested container inside it, breadth-first, up to MAX_NEST levels
-    deep, listing everything. Returns (item_count, opened) -- opened=False means the root itself
-    could not be opened (too far, locked): the app's fold then keeps whatever it last knew about
-    this root instead of wiping it (see docs/scan-schema.md's Fold rules)."""
+    deep, listing everything. Returns (item_count, opened) -- opened=False means the root, or a bag
+    inside it, could not be opened (too far, locked, a slow server): the app's fold replaces a whole
+    root at once, so it then keeps whatever it last knew about this root instead of wiping it (see
+    docs/scan-schema.md's Fold rules). Nothing reaches containers/items/seen unless the whole root
+    read cleanly."""
     root_serial = as_int(getattr(root_item, "Serial", 0))
     queue = [(root_item, None)]
     seen_containers = set()
-    n_items = 0
+    found_seen = set()
+    found_containers = {}
+    found_items = []
     depth = 0
     while queue and depth < MAX_NEST:
         depth += 1
@@ -183,30 +190,33 @@ def scan_root(root_item, kind, label, containers, items, seen):
                 continue
             seen_containers.add(cserial)
             try:
-                Items.WaitForContents(cont, CONTENTS_WAIT_MS)
+                arrived = bool(Items.WaitForContents(cont, CONTENTS_WAIT_MS))
             except Exception:
-                continue
-            if cserial != root_serial:
-                lines = tooltip_lines(cont)
-                parent = as_int(getattr(cont, "Container", 0), root_serial) or root_serial
-                containers[cserial] = {"serial": cserial, "name": lines[0] if lines else str(getattr(cont, "Name", "") or ""),
-                                       "parent": parent, "root": root_serial, "kind": "container",
-                                       "tooltip": lines}
+                arrived = False
             try:
                 kids = list(cont.Contains or [])
             except Exception:
                 kids = []
+            if not arrived and not kids:
+                # WaitForContents timed out and the client holds nothing for it: unopened, not empty.
+                if cserial != root_serial:
+                    sysmsg("  a bag inside {0} did not open -- {0} not recorded, the app keeps what it knew".format(label), ALARM_HUE)
+                return 0, False
+            if cserial != root_serial:
+                lines = tooltip_lines(cont)
+                parent = as_int(getattr(cont, "Container", 0), root_serial) or root_serial
+                found_containers[cserial] = {"serial": cserial, "name": lines[0] if lines else str(getattr(cont, "Name", "") or ""),
+                                             "parent": parent, "root": root_serial, "kind": "container",
+                                             "tooltip": lines}
             for kid in kids:
                 ks = as_int(getattr(kid, "Serial", 0))
-                if ks in seen:
+                if ks in seen or ks in found_seen:
                     continue
-                seen.add(ks)
+                found_seen.add(ks)
                 if is_container(kid):
                     next_queue.append((kid, cserial))
                 else:
-                    lines = tooltip_lines(kid)
-                    items.append(item_dict(kid, lines, cserial))
-                    n_items += 1
+                    found_items.append(item_dict(kid, tooltip_lines(kid), cserial))
         queue = next_queue
     # Anything still queued here was found (its parent container was already opened) but MAX_NEST
     # was reached before it could be opened itself. Record it as an ordinary (unopened) item, its
@@ -214,22 +224,20 @@ def scan_root(root_item, kind, label, containers, items, seen):
     # inside it -- matches adapters/tazuo/packrat-scanner.py's handling of the same case (an
     # over-deep bag becomes an item, not a hole in the scan).
     for cont, parent in queue:
-        lines = tooltip_lines(cont)
-        items.append(item_dict(cont, lines, parent))
-        n_items += 1
-    opened = root_serial in seen_containers
-    if opened:
-        containers[root_serial] = {"serial": root_serial, "name": label, "parent": None,
-                                   "root": root_serial, "kind": kind, "pos": root_pos(root_item, kind)}
-    return n_items, opened
+        found_items.append(item_dict(cont, tooltip_lines(cont), parent))
+    seen.update(found_seen)
+    containers.update(found_containers)
+    items.extend(found_items)
+    containers[root_serial] = {"serial": root_serial, "name": label, "parent": None,
+                               "root": root_serial, "kind": kind, "pos": root_pos(root_item, kind)}
+    return len(found_items), True
 
 
 # Razor Enhanced's own skill names (Player.GetRealSkillValue / Player.UseSkill's documented
-# argument list) -- these differ from TazUO's ("EvalInt" not "Evaluating Intelligence", "Magic
-# Resist" not "Resisting Spells", "Macing" not "Mace Fighting", "Blacksmith" not "Blacksmithy",
-# "Inscribe" not "Inscription", "Spell Weaving" not "Spellweaving", "Detect Hidden" not "Detecting
-# Hidden", "Item ID" not "Item Identification"). docs/scan-schema.md's `skills` field says "Keys
-# are skill names as the client shows them" -- these are what this client shows.
+# argument list). Several differ from the names the game shows and the app reads ("Magic Resist"
+# for "Resisting Spells", "Swords" for "Swordsmanship", ...), so each is written under the game's
+# name: the app's Resisting Spells resist bonus, for one, looks for exactly that key. Skill names,
+# unlike RE's torso layers, map one to one.
 SKILL_NAMES = [
     "Alchemy", "Anatomy", "Animal Lore", "Item ID", "Arms Lore", "Parry", "Begging", "Blacksmith",
     "Fletching", "Peacemaking", "Camping", "Carpentry", "Cartography", "Cooking", "Detect Hidden",
@@ -238,8 +246,14 @@ SKILL_NAMES = [
     "Musicianship", "Poisoning", "Archery", "Spirit Speak", "Stealing", "Tailoring", "Animal Taming",
     "Taste ID", "Tinkering", "Tracking", "Veterinary", "Swords", "Macing", "Fencing", "Wrestling",
     "Lumberjacking", "Mining", "Meditation", "Stealth", "Remove Trap", "Necromancy", "Focus",
-    "Chivalry", "Bushido", "Ninjitsu", "Spell Weaving", "Imbuing",
+    "Chivalry", "Bushido", "Ninjitsu", "Spell Weaving", "Imbuing", "Throwing",
 ]
+GAME_SKILL_NAME = {
+    "Item ID": "Item Identification", "Blacksmith": "Blacksmithy", "Fletching": "Bowcraft/Fletching",
+    "Detect Hidden": "Detecting Hidden", "EvalInt": "Evaluating Intelligence", "Inscribe": "Inscription",
+    "Magic Resist": "Resisting Spells", "Taste ID": "Taste Identification", "Swords": "Swordsmanship",
+    "Macing": "Mace Fighting", "Spell Weaving": "Spellweaving",
+}
 
 
 def read_skills():
@@ -249,15 +263,18 @@ def read_skills():
     # Player.GetRealSkillValue, documented as "the base/real value" -- the trained skill with no
     # gear added. "cap" is Player.GetSkillCap. Gate on the effective value, same as TazUO's own
     # `sk.Value` gate, so a skill with real value 0 but a positive item bonus (rare, but possible)
-    # still gets reported.
+    # still gets reported. A name this RE build does not know is skipped, not fatal.
     out = {}
     for name in SKILL_NAMES:
-        val = as_float(Player.GetSkillValue(name), -1.0)
-        if val <= 0:
+        try:
+            val = as_float(Player.GetSkillValue(name), -1.0)
+            if val <= 0:
+                continue
+            base = as_float(Player.GetRealSkillValue(name), val)
+            cap = as_float(Player.GetSkillCap(name), 0.0)
+        except Exception:
             continue
-        base = as_float(Player.GetRealSkillValue(name), val)
-        cap = as_float(Player.GetSkillCap(name), 0.0)
-        out[name] = {"value": round(val, 1), "base": round(base, 1), "cap": round(cap, 1)}
+        out[GAME_SKILL_NAME.get(name, name)] = {"value": round(val, 1), "base": round(base, 1), "cap": round(cap, 1)}
     return out
 
 

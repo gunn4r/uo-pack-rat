@@ -30,9 +30,15 @@ import time
 
 def data_dir():
     """<script folder>/packrat-paths.json {"dataDir": "..."} → $PACKRAT_DATA → ~/.pack-rat"""
-    here = os.path.dirname(os.path.abspath(__file__))
-    cfg = os.path.join(here, "packrat-paths.json")
-    if os.path.exists(cfg):
+    try:
+        here = os.path.dirname(os.path.abspath(__file__))
+    except NameError:                    # a host that runs the script text without defining __file__
+        try:
+            here = str(API.ScriptPath)
+        except Exception:
+            here = ""
+    cfg = os.path.join(here, "packrat-paths.json") if here else ""
+    if cfg and os.path.exists(cfg):
         with open(cfg, "r", encoding="utf-8") as f:
             d = json.load(f).get("dataDir")
         if d:
@@ -75,6 +81,7 @@ ALL_LAYERS = ["OneHanded", "TwoHanded", "Shoes", "Pants", "Shirt", "Helmet", "Gl
               "Ring", "Talisman", "Necklace", "Waist", "Torso", "Bracelet", "Tunic",
               "Earrings", "Arms", "Cloak", "Robe", "Skirt", "Legs"]
 CONTAINER_RE = re.compile(r"\b(chest|box|crate|bag|pouch|basket|trunk|armoire|cabinet|backpack)\b", re.I)
+DEED_RE = re.compile(r"\bdeed\b", re.I)
 # Engraved bags and Backpacks match no name pattern — detect by graphic too (probe-verified Aug 2026).
 CONTAINER_GRAPHICS = {0x0E75, 0x0E76, 0x0E79, 0x0E7D, 0x09AA, 0x09A8, 0x09A9, 0x09AB,
                       0x0E3C, 0x0E3D, 0x0E3E, 0x0E3F, 0x0E40, 0x0E41, 0x0E42, 0x0E43,
@@ -99,6 +106,8 @@ def is_container(item, name):
             return False          # corpses are containers to the client; never open them
     except Exception:
         pass
+    if DEED_RE.search(name or ""):
+        return False              # "Wooden Chest deed": double-clicking it raises a placement cursor
     try:
         if bool(getattr(item, "IsContainer", False)):
             return True
@@ -135,8 +144,19 @@ def root_pos(serial, kind):
         return None
 
 
+def was_opened(serial):
+    """The client's own word that a container's contents arrived (its gump opened)."""
+    try:
+        it = API.FindItem(int(serial))
+        return it is not None and bool(getattr(it, "Opened", False))
+    except Exception:
+        return False
+
+
 def scan_root(root_serial, kind, label, containers, items, seen):
-    """Open root + every nested container, list everything. Returns item count (0 = nothing/unopened)."""
+    """Open root + every nested container, list everything. Returns the item count, or -1 when the
+    root must not be recorded at all (it or a bag inside it did not open, or Stop was pressed): the
+    app's fold replaces a whole root at once, so a partial read would erase what it knew."""
     root_serial = int(root_serial)
     opened, to_open, listing = set(), [root_serial], []
     for _ in range(MAX_NEST):
@@ -145,7 +165,7 @@ def scan_root(root_serial, kind, label, containers, items, seen):
             break
         for c in fresh:
             if API.StopRequested:
-                return 0
+                return -1
             try:
                 API.UseObject(c)
             except Exception:
@@ -161,18 +181,23 @@ def scan_root(root_serial, kind, label, containers, items, seen):
             s = int(it.Serial)
             if is_container(it, nm) and s not in opened and s not in to_open:
                 to_open.append(s)
+    if API.StopRequested:
+        return -1
     if not listing:
         # Opened-but-empty is a fact worth recording (the app then clears whatever it last knew about
         # this container). Not opened (too far, locked) is not: return -1 so the app keeps its memory.
-        try:
-            it = API.FindItem(root_serial)
-            if it is not None and bool(getattr(it, "Opened", False)):
-                containers[root_serial] = {"serial": root_serial, "name": label, "parent": None,
-                                           "root": root_serial, "kind": kind, "pos": root_pos(root_serial, kind)}
-                return 0
-        except Exception:
-            pass
+        if was_opened(root_serial):
+            containers[root_serial] = {"serial": root_serial, "name": label, "parent": None,
+                                       "root": root_serial, "kind": kind, "pos": root_pos(root_serial, kind)}
+            return 0
         return -1
+    # The same test for every bag inside: one that lists nothing and never opened (locked, or its
+    # contents lagged) cannot be told apart from an empty one, so the whole root goes unrecorded.
+    parents = set(int(getattr(it, "Container", 0) or 0) for it in listing)
+    for c in opened:
+        if c != root_serial and c not in parents and not was_opened(c):
+            sysmsg(f"  a bag inside {label} did not open — {label} not recorded, the app keeps what it knew", ALARM_HUE)
+            return -1
     try:
         API.RequestOPLData([int(it.Serial) for it in listing])
         API.Pause(0.5)

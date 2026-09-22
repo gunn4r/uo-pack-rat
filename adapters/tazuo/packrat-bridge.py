@@ -27,9 +27,15 @@ import time
 
 def data_dir():
     """<script folder>/packrat-paths.json {"dataDir": "..."} → $PACKRAT_DATA → ~/.pack-rat"""
-    here = os.path.dirname(os.path.abspath(__file__))
-    cfg = os.path.join(here, "packrat-paths.json")
-    if os.path.exists(cfg):
+    try:
+        here = os.path.dirname(os.path.abspath(__file__))
+    except NameError:                    # a host that runs the script text without defining __file__
+        try:
+            here = str(API.ScriptPath)
+        except Exception:
+            here = ""
+    cfg = os.path.join(here, "packrat-paths.json") if here else ""
+    if cfg and os.path.exists(cfg):
         with open(cfg, "r", encoding="utf-8") as f:
             d = json.load(f).get("dataDir")
         if d:
@@ -267,6 +273,7 @@ def resolve_root(serial, find_fn):
 # universal "use" verb — a potion drinks, a rune recalls, a deed places. Only containers, and never
 # corpses, may be opened.
 CONTAINER_RE = re.compile(r"\b(chest|box|crate|bag|pouch|basket|trunk|armoire|cabinet|backpack)\b", re.I)
+DEED_RE = re.compile(r"\bdeed\b", re.I)
 # Engraved bags and Backpacks match no name pattern — detect by graphic too (probe-verified Aug 2026).
 CONTAINER_GRAPHICS = {0x0E75, 0x0E76, 0x0E79, 0x0E7D, 0x09AA, 0x09A8, 0x09A9, 0x09AB,
                       0x0E3C, 0x0E3D, 0x0E3E, 0x0E3F, 0x0E40, 0x0E41, 0x0E42, 0x0E43,
@@ -282,6 +289,8 @@ def is_container(item, name):
             return False          # corpses are containers to the client; never open them
     except Exception:
         pass
+    if DEED_RE.search(name or ""):
+        return False              # "Wooden Chest deed": double-clicking it raises a placement cursor
     try:
         if bool(getattr(item, "IsContainer", False)):
             return True
