@@ -140,8 +140,26 @@ test("[fast] mip: an uncapped weight (tagPenalty) lands in colCost of each x; mo
   assert.equal(built.model.offset, 0);
 });
 
-test("[fast] mip: a negative weight with a finite cap throws (non-concave)", () => {
-  assert.throws(() => buildSuitMip({ pools: {}, current: {}, profile: { weights: { foo: -1 }, caps: { foo: 10 }, floors: {} } }), /non-concave/);
+// w·min(t, cap) with w < 0 is convex, so maximising it needs c pinned to min(t, cap) from below too:
+// a binary z with c ≥ t − M1·z and c ≥ cap − M2·(1 − z). This used to throw "non-concave" and fail
+// the whole job, although the page lets a player enter a negative weight on any capped property.
+test("[fast] mip: a negative weight with a finite cap adds a z column pinning c to min(t, cap)", () => {
+  const rings = [mkItem(1, "ring", { dci: 10 }), mkItem(2, "ring", { dci: -4 })];
+  const neck = [mkItem(3, "neck", { dci: 12 })];
+  const built = buildSuitMip({ pools: { ring: rings, neck }, current: {}, profile: { weights: { dci: -1 }, caps: { dci: 15 }, floors: {} } });
+  assertWellFormed(built);
+  const cc = built.capCols.dci!;
+  assert.equal(built.cols[cc.col]!.kind, "c");
+  assert.equal(built.model.colCost[cc.col], -1);
+  assert.ok(cc.z != null && built.cols[cc.z]!.kind === "z" && built.model.integrality[cc.z] === 1);
+  // every suit's start vector (c = min(t, cap), z = t ≥ cap) satisfies every row
+  for (const ring of [null, ...rings]) for (const nk of [null, ...neck]) {
+    const assignment = { ...(ring ? { ring } : {}), ...(nk ? { neck: nk } : {}) };
+    const t = (ring?.props.dci ?? 0) + (nk?.props.dci ?? 0);
+    const vec = startVector(built, assignment);
+    assert.equal(vec[cc.col], Math.min(t, 15));
+    checkRows(built, vec);
+  }
 });
 
 // ---------------------------------------------------------------------------
@@ -173,10 +191,12 @@ test("[fast] mip: a soft floor makes y,s columns with costs bonus,1 and the thre
   const { matrix } = built.model;
   const rowsOf = (j: number): number[] => { const out: number[] = []; for (let r = 0; r < built.model.numRows; r++) for (let k2 = matrix.starts[r]!; k2 < matrix.starts[r + 1]!; k2++) if (matrix.indices[k2] === j) out.push(r); return out; };
   const coeffIn = (r: number, j: number): number => { for (let k2 = matrix.starts[r]!; k2 < matrix.starts[r + 1]!; k2++) if (matrix.indices[k2] === j) return matrix.values[k2]!; return 0; };
+  // the "met" row t ≥ f·y, as t − (f − minReach)·y ≥ minReach (ringB's fc −1 makes minReach −1)
+  const minReach = -1;
   const yRow = rowsOf(yJ).find((r) => coeffIn(r, yJ) < 0)!;
-  assert.equal(built.model.rowLower[yRow], 0);
+  assert.equal(built.model.rowLower[yRow], minReach);
   assert.equal(built.model.rowUpper[yRow], Infinity);
-  assert.equal(coeffIn(yRow, yJ), -f);
+  assert.equal(coeffIn(yRow, yJ), -(f - minReach));
   const boundRow = rowsOf(yJ).find((r) => coeffIn(r, yJ) === sMax)!;
   assert.equal(coeffIn(boundRow, sJ), 1);
   assert.equal(built.model.rowUpper[boundRow], sMax);
@@ -222,6 +242,23 @@ test("[fast] mip: a soft-floor dim with a negative candidate adds a u column and
   assert.ok(kRow !== undefined, "the k-row must reference u once a negative total is possible");
   assert.equal(coeffIn(kRow!, uJ), k * minReach);
   assert.equal(built.model.rowUpper[kRow!], 0);
+});
+
+// Regression (review C1): the met row used to be t − f·y ≥ 0, which with y = 0 still forced t ≥ 0 —
+// every suit with a negative total on a REACHABLE soft floor was infeasible, although the core scores
+// it (no credit on that floor, the rest counted). The u column only ever relaxed the k-row.
+test("[fast] mip: a suit with a negative total on a reachable soft floor is feasible (y = 0 leaves t free)", () => {
+  const built = build({ profile: { ...profile, floors: { fc: profile.floors.fc }, hardFloors: [] } });
+  assert.ok(colOfDim(built, "fc", "y") >= 0, "the fc floor is reachable, so it has a met indicator");
+  checkRows(built, startVector(built, { ring: ringB, neck: neckWorn, bracelet: braceletA }));   // fc total −1
+});
+
+// Review M4: the page shows unreachableFloors as "these required floors cannot be reached", so an
+// out-of-reach SOFT floor (a preference, not a requirement) must not be listed there.
+test("[fast] mip: an unreachable soft floor gets no met indicator and is not listed as an unreachable required floor", () => {
+  const built = build({ profile: { ...profile, floors: { ...profile.floors, fc: 100000 } } });
+  assert.equal(colOfDim(built, "fc", "y"), -1);
+  assert.deepEqual(built.unreachableFloors, []);
 });
 
 test("[fast] mip: no u column when a soft floor's candidates are never negative", () => {
@@ -451,6 +488,26 @@ function mulberry32(seed: number): () => number {
     return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
   };
 }
+
+// Review M7: when no callback carried a dual bound, `dual` fell back to the primal objective, so a
+// time-limited incumbent looked proven (bound == incumbent). docs/solver.md promises null there.
+test("[fast] mip-solve: a timeLimit solve with no callback reports no dual bound, not the incumbent", async () => {
+  const { solveModel } = await import("./mip-solve.mts");
+  const constants = {
+    objectiveSense: { maximize: 1, minimize: 2 }, modelStatus: { optimal: 7, timeLimit: 13, infeasible: 8, interrupted: 17 },
+    solutionStatus: { feasible: 2 }, callbackType: { mipImprovingSolution: 3, mipLogging: 4 },
+  };
+  const model = {
+    passModel: () => {}, options: { set: () => {} }, setSolution: () => {}, run: () => {}, addRow: () => {}, disposed: false, dispose: () => {},
+    info: { get: (name: string) => (name === "primal_solution_status" ? 2 : 0) },
+    getModelStatus: () => 13, getSolution: () => ({ colValue: new Float64Array(1) }), getObjectiveValue: () => 42,
+  };
+  const r = solveModel({ highs: { createModel: () => model, constants }, model, built: build() }, { timeLimitS: 1 });
+  assert.equal(r.status, "timeLimit");
+  assert.equal(r.objective, 42);
+  assert.equal(r.dual, null);
+  assert.equal(r.gapAbs, null);
+});
 
 test("[fast] mip-solve: gapFromEvents computes the absolute gap from the last event carrying both bounds", async () => {
   const { gapFromEvents } = await import("./mip-solve.mts");
