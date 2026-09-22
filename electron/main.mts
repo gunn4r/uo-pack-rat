@@ -16,6 +16,7 @@ import { appendFileSync, mkdirSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { dialogTitle, openPathTarget } from "./host-args.mts";
+import { externalOpenDecision, navigationDecision } from "./navigation.mts";
 import type { HostRequestMessage, HostResultMessage, ListeningMessage, ServerErrorMessage, ShutdownMessage } from "./protocol.mts";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -85,34 +86,18 @@ if (!app.requestSingleInstanceLock()) {
     preventDefault: () => void;
   }
 
-  // Bound, scheme and rate limit on anything the page asks the OS browser to open. No host allowlist:
-  // the one external link the UI has today is the "View release" GitHub URL in app/ui/settings.mts,
-  // and that value is host-checked where it is born (app/installer.mts, which owns the GitHub API
-  // response) — a second list here would silently break the next legitimate link (a wiki page, an
-  // issue URL) without adding a control the born-side check doesn't already give.
-  const MAX_EXTERNAL_URL = 2048;
-  const EXTERNAL_OPEN_GAP_MS = 1000;
-  let lastExternalOpen = 0;
+  // electron/navigation.mts decides whether a link may go to the OS browser (https only, bounded,
+  // one a second); this file only keeps the clock and makes the call.
+  let lastExternalOpen: number | null = null;
 
   function openExternal(url: string): void {
-    if (url.length > MAX_EXTERNAL_URL) return logLine(`window-open: refused a ${url.length}-character url`);
-    let parsed: URL;
-    try {
-      parsed = new URL(url);
-    } catch {
-      return logLine("window-open: refused an unparsable url");
-    }
-    // https only — every real link this app produces is https, and http: buys a MITM a second bite
-    // at a URL the user already trusts enough to click.
-    if (parsed.protocol !== "https:") return logLine(`window-open: refused scheme ${parsed.protocol}`);
-    // One tab per second at most, so page code cannot drive window.open in a loop and launch
-    // unbounded browser tabs (or unbounded external-app launches) behind a single user click.
     const now = Date.now();
-    if (now - lastExternalOpen < EXTERNAL_OPEN_GAP_MS) return logLine("window-open: throttled");
+    const decision = externalOpenDecision(url, now, lastExternalOpen);
+    if ("refused" in decision) return logLine(decision.refused === "throttled" ? "window-open: throttled" : `window-open: refused ${decision.refused}`);
     lastExternalOpen = now;
     // openExternal rejects (an OS with no handler for the scheme, a user-cancelled prompt); an
     // unhandled rejection in the main process is a crash waiting to happen, so it lands in the log.
-    shell.openExternal(parsed.href).catch((e) => logLine(`window-open error: ${(e as Error)?.message || e}`));
+    shell.openExternal(decision.open).catch((e) => logLine(`window-open error: ${(e as Error)?.message || e}`));
   }
 
   // Every guard any webContents needs, applied from app.on("web-contents-created") below rather than
@@ -129,17 +114,10 @@ if (!app.requestSingleInstanceLock()) {
     // frame only; will-frame-navigate also covers a subframe (including one trying to navigate _top),
     // and will-redirect catches a server-side redirect chain that leaves the origin mid-flight.
     const blockOffOrigin = (e: NavigationEvent): void => {
-      let origin;
-      try {
-        origin = new URL(e.url).origin;
-      } catch {
-        origin = null;
-      }
-      // devtools:// is Chromium's own frontend navigating itself — a webContents this guard now also
-      // sees, since it attaches to every one of them rather than only the window createWindow makes.
-      if (origin === currentOrigin || e.url.startsWith("devtools://")) return;
+      const decision = navigationDecision(e.url, currentOrigin);
+      if (decision.allowed) return;
       e.preventDefault();
-      logLine(`navigation refused: ${origin ?? "unparsable"}`);
+      logLine(`navigation refused: ${decision.origin}`);
     };
     wc.on("will-navigate", blockOffOrigin);
     wc.on("will-frame-navigate", blockOffOrigin);
