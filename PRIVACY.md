@@ -32,11 +32,12 @@ Everything lives under one data directory:
 - **Profiles** — your saved suit-builder settings per character (floors, weights, locked slots, and the rest).
 - **Saved runs** — the results of past suit-builder searches, so you can revisit or compare them without rerunning the solver.
 - **Settings** — which shard's rules you're using, which game-client folder is linked, and whether you've been through first-run setup.
+- **View choices** — which columns the Inventory tab shows (`ui-prefs.json`).
 - **The bridge queue** — commands waiting for the in-game bridge script (Highlight / Grab / Go to) to pick up and act on, and its own status file.
 - **Logs** — see below.
 - **The desktop app's browser profile.** Because everything belongs in one folder, the desktop app also points Electron's own Chromium storage here — caches, `Local Storage`, `Cookies`, and a handful of similar files. The page sets no cookies and stores nothing about you in them; they are browser-engine bookkeeping. They are listed because the Settings tab's "Open" button shows you this whole folder, and it is better to know what those files are than to wonder.
 
-The server creates its own folders owner-only (`0700`) and writes settings, profiles, saved runs, accepted scans, the bridge queue and `server.log` owner-only (`0600`), so another account on a shared machine cannot read them — and cannot reach your scans either, since the folder holding them is owner-only too. On the desktop app the shell creates `logs/` and `logs/shell.log` itself before the server starts, also owner-only (`0700` and `0600`). The data directory itself is created with your system's ordinary default permissions, but nothing inside it is readable by another account.
+The server creates its own folders owner-only (`0700`) and writes settings, view choices, profiles, saved runs, accepted scans, the bridge queue and `server.log` owner-only (`0600`), so another account on a shared machine cannot read them — and cannot reach your scans either, since the folder holding them is owner-only too. On the desktop app the shell creates `logs/` and `logs/shell.log` itself before the server starts, also owner-only (`0700` and `0600`). The data directory itself is created with your system's ordinary default permissions, but nothing inside it is readable by another account.
 
 **Deleting the data directory deletes all of it.** There's no copy anywhere else. The desktop app's Settings tab has a button that opens this folder directly if you want to look inside or back it up yourself.
 

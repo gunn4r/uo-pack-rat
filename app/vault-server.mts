@@ -31,7 +31,10 @@
 //         A request whose inputs match a saved run that cannot be bettered returns {cached: true, run} at once.
 //         GET /api/runs?character= (saved runs, newest first) · GET|PUT {label}|DELETE /api/runs/<id>
 //         POST /api/forget {root} (drop a container from the inventory: writes a tombstone scan;
-//         409 under --demo, which must never write into the committed app/fixtures/)
+//         409 under --demo, which must never write into the committed app/fixtures/) ·
+//         POST /api/forget-character {character} (drop a character's card, worn set, backpack and bank:
+//         a `_vault` tombstone carrying forgetCharacter; 409 under --demo) ·
+//         GET|PUT /api/ui-prefs (<data>/ui-prefs.json: {cols?}, the page's view choices)
 //         POST /api/bridge {action, serial, name, chain: [root…parent], pos|null} (queue for packrat-bridge.py) · GET /api/bridge/status
 //         GET /api/events — SSE, one stream shared by every connected client (not per-job like the
 //         optimize events above): hello {ok, watching: [adapter ids]} on connect, inventory
@@ -651,6 +654,15 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
 
   // Seeds profiles.json from the default on first run and migrates an old-shape file (archetypes → templates) in
   // place, keeping the pre-migration file once as profiles.backup-<date>.json next to it.
+  // <data>/ui-prefs.json: the page's view choices (GET/PUT /api/ui-prefs). A missing, unreadable or
+  // malformed file reads as "nothing chosen", and the page keeps its defaults.
+  const UI_PREFS = join(CONFIG.dataDir, "ui-prefs.json");
+  function readUiPrefs(): { cols?: string[] } {
+    try {
+      const raw = JSON.parse(readFileSync(UI_PREFS, "utf8")) as { cols?: unknown };
+      return Array.isArray(raw?.cols) && raw.cols.every((c) => typeof c === "string") ? { cols: raw.cols as string[] } : {};
+    } catch { return {}; }
+  }
   // A profiles.json that does not parse (a write cut short before writes were atomic, or a bad hand
   // edit) used to answer every GET /api/profiles with a 500 until someone fixed the file by hand. It
   // is now moved aside the same way loadSettings() moves an unreadable settings.json, and the
@@ -954,6 +966,21 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
         if (!ok) return send(res, 400, { ok: false, error: `${errors[0]!.path} ${errors[0]!.msg}`, errors });
         mkdirSync(dirname(PROFILES), { recursive: true, mode: DATA_DIR_MODE });
         writeFileAtomic(PROFILES, JSON.stringify(body, null, 2) + "\n", DATA_FILE_MODE);
+        return send(res, 200, { ok: true });
+      }
+      if (req.method === "GET" && url.pathname === "/api/ui-prefs") return send(res, 200, { ok: true, prefs: readUiPrefs() });
+      if (req.method === "PUT" && url.pathname === "/api/ui-prefs") {
+        // The page's own view choices (today: the Inventory tab's columns). Kept here rather than in
+        // the page's localStorage because the desktop app serves the page from a new port, and so a new
+        // origin, on every launch. Only known fields, each checked, are written.
+        const body = asObject(await readBody(req, { limit: 16e3 }));
+        const next = readUiPrefs();
+        if (Object.prototype.hasOwnProperty.call(body, "cols")) {
+          const cols = body.cols;
+          if (!Array.isArray(cols) || cols.length > 200 || !cols.every((c) => isBoundedString(c, 64))) return send(res, 400, { ok: false, error: "cols must be a list of at most 200 column keys" });
+          next.cols = cols as string[];
+        }
+        writeFileAtomic(UI_PREFS, JSON.stringify(next, null, 2) + "\n", DATA_FILE_MODE);
         return send(res, 200, { ok: true });
       }
       if (req.method === "GET" && url.pathname === "/api/settings") return send(res, 200, { ok: true, settings: currentSettings });
@@ -1485,6 +1512,27 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
         // exactly what the fold wants anyway (newest scan of a root wins, by parseStamp — the file
         // name has never been what orders them).
         writeFileAtomic(join(SCANS, `_forget-${serial.toString(16)}.json`), JSON.stringify(snap), DATA_FILE_MODE);
+        return send(res, 200, { ok: true });
+      }
+      if (req.method === "POST" && url.pathname === "/api/forget-character") {
+        // A character tombstone: a `_vault` scan naming the character in `forgetCharacter`, which the
+        // fold (vault-lib.mts's forgetCharacter) handles by dropping the character's card, worn set,
+        // backpack and bank. Same demo refusal and validate-before-write rule as /api/forget above.
+        if (CONFIG.demo) return send(res, 409, { ok: false, error: "demo data is read-only" });
+        const { character } = asObject(await readBody(req, { limit: 8e3 }));
+        if (!isBoundedString(character, 64) || character.startsWith("_")) return send(res, 400, { ok: false, error: "character required (a scanned character's name)" });
+        mkdirSync(SCANS, { recursive: true, mode: DATA_DIR_MODE });
+        const snap = {
+          schemaVersion: 2, character: "_vault", scannedAt: new Date().toISOString(), forgetCharacter: character,
+          adapter: { id: "app", version: "1", client: "Pack Rat", clientVersion: null,
+            capabilities: { layers: [], arms: false, bank: false, ground: false, nested: false, tooltips: "label", bridge: [] } },
+          shard: currentSettings.shard, stats: {}, equipped: [], roots: [], containers: {}, items: [],
+        };
+        const { ok: snapOk, errors: snapErrors } = validateScan(snap);
+        if (!snapOk) throw new Error(`refusing to write an invalid tombstone: ${snapErrors.map((e) => `${e.path} ${e.msg}`).join("; ")}`);
+        // One file per forgotten character (hex of the name: any name is a safe file name that way),
+        // replaced with a newer stamp if the character is forgotten again.
+        writeFileAtomic(join(SCANS, `_forget-char-${Buffer.from(character).toString("hex")}.json`), JSON.stringify(snap), DATA_FILE_MODE);
         return send(res, 200, { ok: true });
       }
       send(res, 404, { ok: false, error: "not found" });
