@@ -147,7 +147,7 @@ def item_dict(it, lines, container_serial, layer=None):
 
 # Named like a container (or carrying a bag graphic) but never one: a deed places an addon, a bag of
 # sending raises a target cursor, a music box plays. Opening them opens nothing.
-NOT_A_CONTAINER_RE = re.compile(r"\b(deed|sending|music box)\b", re.I)
+NOT_A_CONTAINER_RE = re.compile(r"\b(deed(?!\s+box)|sending|music box)\b", re.I)   # a "Commodity Deed Box" IS one
 
 
 def is_container(it):
