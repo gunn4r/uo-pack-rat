@@ -18,6 +18,7 @@
 
 import json
 import os
+import re
 import time
 
 
@@ -144,6 +145,11 @@ def item_dict(it, lines, container_serial, layer=None):
     return d
 
 
+# Named like a container (or carrying a bag graphic) but never one: a deed places an addon, a bag of
+# sending raises a target cursor, a music box plays. Opening them opens nothing.
+NOT_A_CONTAINER_RE = re.compile(r"\b(deed|sending|music box)\b", re.I)
+
+
 def is_container(it):
     try:
         if bool(getattr(it, "IsCorpse", False)) or as_int(getattr(it, "ItemID", 0)) == 0x2006:
@@ -151,6 +157,8 @@ def is_container(it):
     except Exception:
         pass
     try:
+        if NOT_A_CONTAINER_RE.search(str(getattr(it, "Name", "") or "")):
+            return False          # "Wooden Chest deed", "a bag of sending": see NOT_A_CONTAINER_RE
         return bool(getattr(it, "IsContainer", False))
     except Exception:
         return False
@@ -167,24 +175,33 @@ def root_pos(it, kind):
         return None
 
 
+def container_entry(cont, root_serial, opened):
+    lines = tooltip_lines(cont)
+    entry = {"serial": as_int(getattr(cont, "Serial", 0)),
+             "name": lines[0] if lines else str(getattr(cont, "Name", "") or ""),
+             "parent": as_int(getattr(cont, "Container", 0), root_serial) or root_serial,
+             "root": root_serial, "kind": "container", "tooltip": lines}
+    if not opened:
+        entry["opened"] = False
+    return entry
+
+
 def scan_root(root_item, kind, label, containers, items, seen):
     """Open root_item and every nested container inside it, breadth-first, up to MAX_NEST levels
-    deep, listing everything. Returns (item_count, opened) -- opened=False means the root, or a bag
-    inside it, could not be opened (too far, locked, a slow server): the app's fold replaces a whole
-    root at once, so it then keeps whatever it last knew about this root instead of wiping it (see
-    docs/scan-schema.md's Fold rules). Nothing reaches containers/items/seen unless the whole root
-    read cleanly."""
+    deep, listing everything. Returns (item_count, opened) -- opened=False means the root itself
+    could not be opened (too far, locked, a slow server): the app's fold then keeps whatever it last
+    knew about this root instead of wiping it (see docs/scan-schema.md's Fold rules). A bag INSIDE
+    the root that did not open, or sits deeper than MAX_NEST, is recorded with "opened": False, and
+    the fold keeps whatever it last knew inside that one bag while the rest of the root updates."""
     root_serial = as_int(getattr(root_item, "Serial", 0))
-    queue = [(root_item, None)]
+    queue = [root_item]
     seen_containers = set()
-    found_seen = set()
-    found_containers = {}
-    found_items = []
+    n_items = 0
     depth = 0
     while queue and depth < MAX_NEST:
         depth += 1
         next_queue = []
-        for cont, _parent_unused in queue:
+        for cont in queue:
             cserial = as_int(getattr(cont, "Serial", 0))
             if cserial in seen_containers:
                 continue
@@ -197,40 +214,43 @@ def scan_root(root_item, kind, label, containers, items, seen):
                 kids = list(cont.Contains or [])
             except Exception:
                 kids = []
-            if not arrived and not kids:
-                # WaitForContents timed out and the client holds nothing for it: unopened, not empty.
-                if cserial != root_serial:
-                    sysmsg("  a bag inside {0} did not open -- {0} not recorded, the app keeps what it knew".format(label), ALARM_HUE)
-                return 0, False
-            if cserial != root_serial:
-                lines = tooltip_lines(cont)
-                parent = as_int(getattr(cont, "Container", 0), root_serial) or root_serial
-                found_containers[cserial] = {"serial": cserial, "name": lines[0] if lines else str(getattr(cont, "Name", "") or ""),
-                                             "parent": parent, "root": root_serial, "kind": "container",
-                                             "tooltip": lines}
+            # WaitForContents timed out and the client holds nothing for it: unopened, not empty.
+            # (Whether RE answers True for a bag that opened EMPTY is undocumented; if it does not,
+            # an empty bag lands here too, which only keeps its -- empty -- old contents.)
+            unopened = not arrived and not kids
+            if cserial == root_serial:
+                if unopened:
+                    return 0, False
+                containers[root_serial] = {"serial": root_serial, "name": label, "parent": None,
+                                           "root": root_serial, "kind": kind, "pos": root_pos(root_item, kind)}
+            else:
+                containers[cserial] = container_entry(cont, root_serial, not unopened)
+                if unopened:
+                    note_unopened(containers[cserial], label)
             for kid in kids:
                 ks = as_int(getattr(kid, "Serial", 0))
-                if ks in seen or ks in found_seen:
+                if ks in seen:
                     continue
-                found_seen.add(ks)
+                seen.add(ks)
                 if is_container(kid):
-                    next_queue.append((kid, cserial))
+                    next_queue.append(kid)
                 else:
-                    found_items.append(item_dict(kid, tooltip_lines(kid), cserial))
+                    items.append(item_dict(kid, tooltip_lines(kid), cserial))
+                    n_items += 1
         queue = next_queue
     # Anything still queued here was found (its parent container was already opened) but MAX_NEST
-    # was reached before it could be opened itself. Record it as an ordinary (unopened) item, its
-    # own tooltip intact, instead of silently dropping it and everything that would have been
-    # inside it -- matches adapters/tazuo/packrat-scanner.py's handling of the same case (an
-    # over-deep bag becomes an item, not a hole in the scan).
-    for cont, parent in queue:
-        found_items.append(item_dict(cont, tooltip_lines(cont), parent))
-    seen.update(found_seen)
-    containers.update(found_containers)
-    items.extend(found_items)
-    containers[root_serial] = {"serial": root_serial, "name": label, "parent": None,
-                               "root": root_serial, "kind": kind, "pos": root_pos(root_item, kind)}
-    return len(found_items), True
+    # was reached before it could be opened itself: recorded as a bag not opened, so the fold keeps
+    # what it knew inside it -- the same handling adapters/tazuo/packrat-scanner.py gives the case.
+    for cont in queue:
+        entry = container_entry(cont, root_serial, False)
+        containers[entry["serial"]] = entry
+        note_unopened(entry, label)
+    return n_items, True
+
+
+def note_unopened(entry, label):
+    sysmsg("  {0} in {1} was not opened -- its contents are kept from the last scan".format(
+        entry["name"] or "a bag", label), ALARM_HUE)
 
 
 # Razor Enhanced's own skill names (Player.GetRealSkillValue / Player.UseSkill's documented

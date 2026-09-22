@@ -22,6 +22,18 @@ def home(world):
     world.add(RING, BAG, name="Ruby Ring", container_like=False, OnGround=False)
 
 
+def nest(world, parent, depth):
+    """`depth` bags each inside the last, starting in `parent`, with a ring in the deepest; returns the
+    bags, outermost first."""
+    bags = []
+    for i in range(depth):
+        bags.append(0x40000100 + i)
+        world.add(bags[-1], parent, name="Bag", OnGround=False)
+        parent = bags[-1]
+    world.add(0x40000200, parent, name="Deep Ring", container_like=False, OnGround=False)
+    return bags
+
+
 class DataDir(object):
     def setUp(self):
         self.data = tempfile.mkdtemp()
@@ -81,14 +93,34 @@ class TazUOScanner(DataDir, unittest.TestCase):
         [s] = self.scans("tazuo")
         self.assertFalse(self.root(s, CHEST)["opened"])
 
-    def test_a_bag_that_did_not_open_leaves_its_whole_root_unrecorded(self):
+    def test_a_bag_that_did_not_open_is_marked_unopened_and_the_rest_of_its_root_recorded(self):
         w = World(); home(w); w.locked.add(BAG)
+        w.add(RING + 0x20, CHEST, name="Loose Ring", container_like=False, OnGround=False)
         self.scan(w)
         [s] = self.scans("tazuo")
-        self.assertFalse(self.root(s, CHEST)["opened"])
-        self.assertNotIn(str(BAG), s["containers"])
-        self.assertNotIn(str(CHEST), s["containers"])
-        self.assertTrue(self.root(s, PACK)["opened"], "the backpack is unaffected")
+        self.assertTrue(self.root(s, CHEST)["opened"])
+        self.assertIs(s["containers"][str(BAG)]["opened"], False)
+        self.assertIn(RING + 0x20, [i["serial"] for i in s["items"]])
+        self.assertTrue(any("Bag" in m and "kept from the last scan" in m for m in w.messages), w.messages)
+
+    def test_a_bag_of_sending_is_never_double_clicked_and_is_recorded_as_an_item(self):
+        w = World(); home(w)
+        w.add(0x40000021, CHEST, name="a bag of sending", OnGround=False, Graphic=0x0E76)
+        self.scan(w)
+        self.assertNotIn(("open", 0x40000021), w.calls)
+        [s] = self.scans("tazuo")
+        self.assertTrue(self.root(s, CHEST)["opened"])
+        self.assertIn(0x40000021, [i["serial"] for i in s["items"]])
+        self.assertNotIn(str(0x40000021), s["containers"])
+
+    def test_a_bag_nested_past_the_depth_limit_is_marked_unopened(self):
+        w = World(); home(w)
+        # chest > BAG > bags[0] > bags[1] are opened (MAX_NEST = 4 levels); bags[2] is seen, not opened
+        deepest = nest(w, BAG, 5)[2]
+        self.scan(w)
+        [s] = self.scans("tazuo")
+        self.assertIs(s["containers"][str(deepest)]["opened"], False)
+        self.assertNotIn(deepest, [i["serial"] for i in s["items"]])
 
     def test_an_empty_bag_that_did_open_is_recorded(self):
         w = World(); home(w); w.add(EMPTY, CHEST, name="Pouch", OnGround=False)
@@ -124,13 +156,15 @@ class TazUORefresh(DataDir, unittest.TestCase):
         for name in ("is_container", "was_opened", "scan_root"):
             self.assertEqual(body(self.SCRIPT, name), body(TazUOScanner.SCRIPT, name), name)
 
-    def test_a_bag_in_the_backpack_that_did_not_open_writes_nothing(self):
+    def test_a_bag_in_the_backpack_that_did_not_open_is_marked_unopened(self):
         w = World(); home(w)
         w.add(BAG + 0x100, PACK, name="Pouch", OnGround=False)
         w.add(RING + 0x100, BAG + 0x100, name="Ring", container_like=False, OnGround=False)
         w.locked.add(BAG + 0x100)
         run_script(self.SCRIPT, w, api=tazuo_api(w, PACK))
-        self.assertEqual(self.scans("tazuo"), [])
+        [s] = self.scans("tazuo")
+        self.assertIs(s["containers"][str(BAG + 0x100)]["opened"], False)
+        self.assertIn(RING2, [i["serial"] for i in s["items"]])
 
 
 class RazorScanner(DataDir, unittest.TestCase):
@@ -153,13 +187,45 @@ class RazorScanner(DataDir, unittest.TestCase):
         self.assertFalse(self.root(s, CHEST)["opened"])
         self.assertNotIn(str(CHEST), s["containers"])
 
-    def test_a_bag_that_did_not_open_leaves_its_whole_root_unrecorded(self):
+    def test_a_bag_that_did_not_open_is_marked_unopened_and_the_rest_of_its_root_recorded(self):
         w = World(); home(w); w.locked.add(BAG)
+        w.add(RING + 0x20, CHEST, name="Loose Ring", container_like=False, OnGround=False)
         self.scan(w)
         [s] = self.scans("razor-enhanced")
-        self.assertFalse(self.root(s, CHEST)["opened"])
-        self.assertNotIn(str(BAG), s["containers"])
-        self.assertTrue(self.root(s, PACK)["opened"])
+        self.assertTrue(self.root(s, CHEST)["opened"])
+        self.assertIs(s["containers"][str(BAG)]["opened"], False)
+        self.assertIn(RING + 0x20, [i["serial"] for i in s["items"]])
+        self.assertTrue(any("Bag" in m and "kept from the last scan" in m for m in w.messages), w.messages)
+
+    def test_an_empty_bag_neither_blocks_nor_erases_whichever_way_wait_for_contents_answers(self):
+        for empty_wait_false in (False, True):
+            w = World(); home(w); w.empty_wait_false = empty_wait_false
+            w.add(EMPTY, CHEST, name="Pouch", OnGround=False)
+            self.scan(w)
+            s = self.scans("razor-enhanced")[-1]
+            self.assertTrue(self.root(s, CHEST)["opened"], empty_wait_false)
+            self.assertEqual(sorted(i["serial"] for i in s["items"]), [RING, RING2], empty_wait_false)
+            # Answered True: recorded empty. Answered False: marked unopened, so the fold keeps
+            # whatever it knew inside -- never erased either way.
+            self.assertIs(s["containers"][str(EMPTY)].get("opened", True), not empty_wait_false)
+            shutil.rmtree(os.path.join(self.data, "inbox"), ignore_errors=True)
+
+    def test_a_bag_of_sending_is_never_opened_and_is_recorded_as_an_item(self):
+        w = World(); home(w)
+        w.add(0x40000021, CHEST, name="a bag of sending", OnGround=False, Graphic=0x0E76)
+        self.scan(w)
+        self.assertNotIn(("open", 0x40000021), w.calls)
+        [s] = self.scans("razor-enhanced")
+        self.assertIn(0x40000021, [i["serial"] for i in s["items"]])
+
+    def test_a_bag_nested_past_the_depth_limit_is_marked_unopened(self):
+        w = World(); home(w)
+        # chest > BAG > bags[0] > bags[1] are opened (MAX_NEST = 4 levels); bags[2] is seen, not opened
+        deepest = nest(w, BAG, 5)[2]
+        self.scan(w)
+        [s] = self.scans("razor-enhanced")
+        self.assertIs(s["containers"][str(deepest)]["opened"], False)
+        self.assertNotIn(deepest, [i["serial"] for i in s["items"]])
 
     def test_skills_are_written_under_the_names_the_app_reads(self):
         w = World(); home(w)

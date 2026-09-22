@@ -51,9 +51,9 @@
 //   nested item counts as a container only when it holds something or carries a known container
 //   graphic (`isContainer()`); anything else is recorded as an ordinary item, not left out.
 // - DEEPLY NESTED BAGS STOP RECURSING AFTER `MAX_NEST` LEVELS (4). A bag past that depth is recorded
-//   as a plain item (its own contents are never read), the same as the "can't tell a container from
-//   an item" case just above — this is a deliberate, silent cap (mirroring
-//   `adapters/tazuo/packrat-scanner.py`'s own `MAX_NEST`), not a client limitation.
+//   as a container with `opened: false` (its own contents are never read), so the app keeps whatever
+//   it last knew inside it — a deliberate cap (mirroring `adapters/tazuo/packrat-scanner.py`'s own
+//   `MAX_NEST`), not a client limitation.
 // - ITEM NAMES OFF THE BARE OBJECT CAN BE UNRELIABLE. `Entity.name` is documented as returning an
 //   empty string "if not known to the client yet" — so this script never trusts `.name` alone for
 //   anything it reports; every item and container is named from `client.queryItemOPL(serial)`'s own
@@ -96,7 +96,7 @@ const PASTE_END = "-----END PACK RAT SCAN-----";
 // contract test (app/contracts.test.mjs, once this adapter ships a fixture) compares them.
 // ---------------------------------------------------------------------------------------------
 const ADAPTER_ID = "classicuo-web";
-const ADAPTER_VERSION = "1.0.0";
+const ADAPTER_VERSION = "1.1.0";
 const CAPABILITIES = {
   layers: ["OneHanded", "TwoHanded", "Shoes", "Pants", "Shirt", "Helmet", "Gloves",
     "Ring", "Talisman", "Necklace", "Waist", "Torso", "Bracelet", "Tunic",
@@ -296,10 +296,11 @@ function walk(rootSerial: number, containerItem: any, containers: Record<string,
     const s = Number(kid.serial);
     if (seen.has(s)) continue;
     seen.add(s);
-    if (depth < MAX_NEST && isContainer(kid)) {
-      // A nested container: record it in `containers`, then recurse into it.
+    if (isContainer(kid)) {
+      // A nested container: record it in `containers`, then recurse into it — or, past MAX_NEST,
+      // mark it not opened, so the app keeps what it last knew inside it.
       const t = tooltipOf(s);
-      containers[String(s)] = {
+      const entry: any = {
         serial: s,
         kind: "container",
         name: t.name || String(kid.name || ""),
@@ -307,7 +308,9 @@ function walk(rootSerial: number, containerItem: any, containers: Record<string,
         root: rootSerial,
         tooltip: t.lines,
       };
-      walk(rootSerial, kid, containers, items, seen, depth + 1);
+      containers[String(s)] = entry;
+      if (depth < MAX_NEST) walk(rootSerial, kid, containers, items, seen, depth + 1);
+      else entry.opened = false;
       continue;
     }
     items.push(itemEntry(kid, Number(containerItem.serial)));

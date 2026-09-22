@@ -297,7 +297,9 @@ def chain_problem(chain, i, it, own):
 # universal "use" verb — a potion drinks, a rune recalls, a deed places. Only containers, and never
 # corpses, may be opened.
 CONTAINER_RE = re.compile(r"\b(chest|box|crate|bag|pouch|basket|trunk|armoire|cabinet|backpack)\b", re.I)
-DEED_RE = re.compile(r"\bdeed\b", re.I)
+# Named like a container (or carrying a bag graphic) but never one: a deed places an addon, a bag
+# of sending raises a target cursor, a music box plays. Double-clicking them opens nothing.
+NOT_A_CONTAINER_RE = re.compile(r"\b(deed|sending|music box)\b", re.I)
 # Engraved bags and Backpacks match no name pattern — detect by graphic too (probe-verified Aug 2026).
 CONTAINER_GRAPHICS = {0x0E75, 0x0E76, 0x0E79, 0x0E7D, 0x09AA, 0x09A8, 0x09A9, 0x09AB,
                       0x0E3C, 0x0E3D, 0x0E3E, 0x0E3F, 0x0E40, 0x0E41, 0x0E42, 0x0E43,
@@ -314,8 +316,8 @@ def is_container(item, name):
             return False          # corpses are containers to the client; never open them
     except Exception:
         pass
-    if DEED_RE.search(name or ""):
-        return False              # "Wooden Chest deed": double-clicking it raises a placement cursor
+    if NOT_A_CONTAINER_RE.search(name or ""):
+        return False              # "Wooden Chest deed", "a bag of sending": see NOT_A_CONTAINER_RE
     try:
         if bool(getattr(item, "IsContainer", False)):
             return True
@@ -401,8 +403,13 @@ def wait_for_walk(started, arrived):
         if busy is not None and not busy():
             break
     cancel = getattr(API, "CancelPathfinding", None)
-    if cancel is not None and busy is not None and busy():
-        cancel()
+    if busy is not None and busy():
+        if cancel is not None:
+            cancel()
+        # A build with no CancelPathfinding has no way to stop its pathfinder: the character may walk
+        # on until the client's own timeout (WALK_TIMEOUT_S, passed to the call) ends it. The command
+        # is still reported failed and `current` cleared right after, so the page does not show it as
+        # running.
     return arrived()
 
 
