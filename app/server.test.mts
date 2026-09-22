@@ -2685,6 +2685,9 @@ test("[fast] POST /api/forget-character drops the character, its worn set, backp
     for (const bad of [{}, { character: "" }, { character: 5 }, { character: "x".repeat(65) }, { character: "_vault" }]) {
       assert.equal((await forget(bad)).status, 400, `${JSON.stringify(bad)} should be refused`);
     }
+    // No tombstone for a name the inventory has never had: one file per arbitrary name would pile up.
+    assert.equal((await forget({ character: "Nobody" })).status, 404);
+    assert.deepEqual(readdirSync(join(dir, "scans")).filter((f) => f.startsWith("_forget-char-")), [], "nothing was written for a refused name");
     assert.equal((await forget({ character: "Dorran" })).status, 200);
     const after = await inventory();
     assert.equal(after.characters.Dorran, undefined, "the character card is gone");

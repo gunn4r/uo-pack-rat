@@ -1521,6 +1521,8 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
         if (CONFIG.demo) return send(res, 409, { ok: false, error: "demo data is read-only" });
         const { character } = asObject(await readBody(req, { limit: 8e3 }));
         if (!isBoundedString(character, 64) || character.startsWith("_")) return send(res, 400, { ok: false, error: "character required (a scanned character's name)" });
+        // Only a character the inventory has: a tombstone per arbitrary name would pile up in scans/.
+        if (!Object.hasOwn((await getInventory()).inv.characters, character)) return send(res, 404, { ok: false, error: `no scanned character named ${short(character)}` });
         mkdirSync(SCANS, { recursive: true, mode: DATA_DIR_MODE });
         const snap = {
           schemaVersion: 2, character: "_vault", scannedAt: new Date().toISOString(), forgetCharacter: character,
