@@ -75,7 +75,8 @@
           "kind": { "type": "string", "maxLength": 64 },
           "name": { "type": "string", "maxLength": 256 },
           "pos": { "type": ["object", "null"], "additionalProperties": { "type": "number" } },
-          "tooltip": { "type": "array", "maxItems": 256, "items": { "type": "string", "maxLength": 512 } }
+          "tooltip": { "type": "array", "maxItems": 256, "items": { "type": "string", "maxLength": 512 } },
+          "opened": { "type": "boolean" }
         }
       }
     },
