@@ -100,10 +100,14 @@ export interface SolveExactArgs {
 }
 
 const countCandidates = (built: BuiltMip): number => Object.values(built.xIndex).reduce((n, list) => n + list.length, 0);
-const assignmentOf = (picked: Partial<Record<string, OptItem>>): OptAssignment =>
+const assignmentOf = (picked: Partial<Record<string, OptItem>>, slots: string[]): OptAssignment =>
   // picked's values are mip.mts's OptItem (vault-lib's), one slot short of the core's own item
   // shape (see the file-header note) — the same runtime objects either way.
-  Object.fromEntries(DEFAULT_SLOTS.map((s): [string, OptItem | null] => [s, picked[s] || null])) as unknown as OptAssignment;
+  Object.fromEntries(slots.map((s): [string, OptItem | null] => [s, picked[s] || null])) as unknown as OptAssignment;
+// Scores near HARD_FLOOR_BONUS (1e7 per hard floor) carry float noise of a few 1e-9 from summing in
+// a different order, so "one score beats another" needs a margin above that noise (and far below
+// HiGHS's own mip_abs_gap of 1e-3) — else an exact tie reads as the heuristic leading.
+const SCORE_EPS = 1e-6;
 const serialsOf = (suit: Partial<Record<string, { serial: number } | null>> | null | undefined): Record<string, number | null> =>
   Object.fromEntries(Object.entries(suit || {}).map(([slot, it]): [string, number | null] => [slot, it ? it.serial : null]));
 
@@ -114,9 +118,11 @@ export async function solveExact({
   const budget = opts.timeBudgetMs ?? 15000;
   const restarts = opts.restarts ?? 200;
   const optionalSlots = opts.optionalSlots ?? DEFAULT_OPTIONAL_SLOTS;
+  const slots = opts.slots ?? DEFAULT_SLOTS;
 
   // ---- step 1: the heuristic incumbent, always available -----------------------------------
-  const heur = core.optimizeSuit(pools, current, profile, { ...opts, exact: false, restarts, onProgress: (p: CoreProgress) => onProgress({ ...p, at: now() }) });
+  // Its random restarts get at most half the budget, so HiGHS always keeps the other half.
+  const heur = core.optimizeSuit(pools, current, profile, { ...opts, exact: false, restarts, heuristicBudgetMs: budget / 2, onProgress: (p: CoreProgress) => onProgress({ ...p, at: now() }) });
   const heuristicMs = now() - t0;
 
   // ---- step 2: build the MIP ----------------------------------------------------------------
@@ -126,7 +132,7 @@ export async function solveExact({
   const mipCurrent = current as unknown as Partial<Record<string, OptItem>>;
   // profile (the core's own OptProfile, caps required) satisfies mip.mts's MipProfile (every field
   // optional) as-is — no cast needed in this direction.
-  const built = buildSuitMip({ pools: mipPools, current: mipCurrent, profile, optionalSlots });
+  const built = buildSuitMip({ pools: mipPools, current: mipCurrent, profile, optionalSlots, slots });
   if (built.cols.every((c) => c.kind !== "x")) {
     // Nothing to decide (every slot fixed or empty): the heuristic's suit is trivially optimal.
     return { ...heur, method: "exact", proven: true, solver: "none", bound: heur.score, gapPoints: 0, mipMs: 0, heuristicMs, unreachableFloors: built.unreachableFloors };
@@ -148,7 +154,9 @@ export async function solveExact({
   let active = built;
   let handle = openModel(highs, active);
   try {
-    const remaining = () => Math.max(1, (budget - (now() - t0)) / 1000);
+    // Every HiGHS call (first solve, hardAsSoft retry, each alternative) shares what is left of the
+    // one budget. A limit of 0 still returns the MIP start as the incumbent.
+    const remaining = () => Math.max(0, (budget - (now() - t0)) / 1000);
     let lastEmit = 0;
     const toScore = (v: number | null | undefined): number | null => (v == null ? null : v + active.scoreOffset);
     const onEvent = (ev: { kind: string; primal: number | undefined; dual: number | undefined; nodes: number }) => {
@@ -174,7 +182,7 @@ export async function solveExact({
       // soft so the fallback below still reports the best honestly-reachable suit.
       floorsConflict = true;
       closeModel(handle);
-      active = buildSuitMip({ pools: mipPools, current: mipCurrent, profile, optionalSlots, hardAsSoft: true });
+      active = buildSuitMip({ pools: mipPools, current: mipCurrent, profile, optionalSlots, slots, hardAsSoft: true });
       handle = openModel(highs, active);
       solve = solveModel(handle, { timeLimitS: remaining(), start: startVector(active, heur.best as unknown as Partial<Record<string, OptItem>>), onEvent });
     }
@@ -217,7 +225,7 @@ export async function solveExact({
     const alternatives: { best: OptAssignment; score: number }[] = [];
     let lastPicked = picked;
     if (alt) {
-      for (let k = 0; k < alt.count; k++) {
+      for (let k = 0; k < alt.count && now() - t0 < budget; k++) {
         addNoGood(handle, active, lastPicked);
         onProgress({ phase: "alternatives", found: alternatives.length, wanted: alt.count, elapsedMs: now() - t0, budgetMs: budget, bestScore: mipScore, at: now() });
         const sk = solveModel(handle, { timeLimitS: remaining() });
@@ -225,7 +233,7 @@ export async function solveExact({
         const score = sk.objective! + active.scoreOffset;
         if (score < mipScore - altTolerance! - 1e-9) break;
         const skPicked = pickedOf(active, sk.colValue!);
-        const assignment = assignmentOf(skPicked);
+        const assignment = assignmentOf(skPicked, slots);
         alternatives.push({ best: assignment, score: core.scoreSet(assignment, profile) });
         lastPicked = skPicked;
       }
@@ -242,32 +250,40 @@ export async function solveExact({
     // core's own re-optimization of `picked` (a different search than HiGHS's) still landed below it
     // — hand the heuristic's OWN suit to the core instead, so `final` can never be a regression, and
     // report it honestly as unproven with a warning rather than silently as an exact result.
-    const heuristicLeads = heur.score > mipScore + 1e-9;
+    // Each of the three guards below revokes `proven` and warns with the numbers. After an `optimal`
+    // status any of them firing means the model and the core disagree about a suit's score — a
+    // modelling bug, not a race — so HiGHS's bound is no bound on the core's scores either.
+    const stats = `HiGHS status ${solve.status}, objective ${mipScore}, heuristic ${heur.score}`;
+    const heuristicLeads = heur.score > mipScore + SCORE_EPS;
     let final = core.optimizeSuit(pools, current, profile, { ...opts, exact: false, restarts: 0, warmStart: serialsOf(heuristicLeads ? heur.best : picked) });
-    let coreImproved = false;
+    let coreImproved = false, rescoreMismatch = false;
     if (!heuristicLeads) {
-      if (final.score > mipScore + 1e-6) {
-        onWarn(`core improved on HiGHS by ${final.score - mipScore}`);
+      if (final.score > mipScore + SCORE_EPS) {
+        onWarn(`core improved on HiGHS by ${final.score - mipScore} (${stats})`);
         coreImproved = true;
       }
-      if (Math.abs(final.score - mipScore) > 1e-3 && final.score < mipScore) throw new Error("re-score mismatch");
+      if (final.score < mipScore - 1e-3) {
+        onWarn(`re-score mismatch: the core scores HiGHS's suit ${final.score} (${stats})`);
+        rescoreMismatch = true;
+      }
     }
     let belowHeuristic = heuristicLeads;
-    if (!heuristicLeads && final.score < heur.score - 1e-9) {
+    if (!heuristicLeads && final.score < heur.score - SCORE_EPS) {
       final = core.optimizeSuit(pools, current, profile, { ...opts, exact: false, restarts: 0, warmStart: serialsOf(heur.best) });
       belowHeuristic = true;
     }
-    if (belowHeuristic) onWarn(`exact search's suit scored below the heuristic's ${heur.score} — reporting the heuristic's suit instead of a regression`);
+    if (belowHeuristic) onWarn(`exact search's suit scored below the heuristic's ${heur.score} — reporting the heuristic's suit instead of a regression (${stats})`);
 
     const mipMs = now() - t0 - heuristicMs;
-    const boundRaw = solve.status === "optimal" ? solve.objective : solve.dual;
+    const disagree = solve.status === "optimal" && (coreImproved || belowHeuristic || rescoreMismatch);
+    const boundRaw = disagree ? null : solve.status === "optimal" ? solve.objective : solve.dual;
     return {
       ...final,
       method: "exact",
-      proven: solve.status === "optimal" && !coreImproved && !belowHeuristic,
+      proven: solve.status === "optimal" && !coreImproved && !belowHeuristic && !rescoreMismatch,
       solver: "highs",
       bound: toScore(boundRaw),
-      gapPoints: solve.gapAbs,
+      gapPoints: disagree ? null : solve.gapAbs,
       nodes: solve.nodes,
       restarts,
       evaluations: heur.evaluations + final.evaluations,
