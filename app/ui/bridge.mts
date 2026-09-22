@@ -191,8 +191,15 @@ export async function pollBridge(): Promise<void> {
     else if (st.current) { b.className = "status busy"; b.textContent = `bridge: ${st.character} · ${st.current.action} ${st.current.name || ""}`; }
     else { b.className = "status on"; b.textContent = `bridge: ${st.character} ready`; }
     grabAllState();
+    // A refused command (expired, a chain that does not check out, the bridge stopping first) comes
+    // back under its own id like any other result, so it is toasted here too — named, since a refusal
+    // message alone does not say which of several queued clicks it was.
     for (const [id, r] of Object.entries(st.results || {})) {
-      if (bridge.pending.has(id) && !bridge.seen.has(id)) { bridge.seen.add(id); bridge.pending.delete(id); toast(r.msg, r.ok ? "good" : "bad"); }
+      if (bridge.pending.has(id) && !bridge.seen.has(id)) {
+        const name = bridge.pending.get(id);
+        bridge.seen.add(id); bridge.pending.delete(id);
+        toast(r.ok ? r.msg : `${name}: ${r.msg}`, r.ok ? "good" : "bad");
+      }
     }
   } catch { /* server down; leave the pill as is */ }
 }
