@@ -3,12 +3,13 @@
 // node:path only; the one bit of I/O that isn't the local filesystem (checkForUpdates' HTTP call)
 // takes an injectable fetchImpl so callers (and tests) never depend on a real fetch global.
 import {
-  existsSync, statSync, lstatSync, readdirSync, readFileSync, writeFileSync, copyFileSync, renameSync,
-  unlinkSync, mkdirSync, openSync, readSync, closeSync, fstatSync, constants, type Dirent, type Stats,
+  existsSync, statSync, lstatSync, readdirSync, readFileSync, copyFileSync,
+  mkdirSync, openSync, readSync, closeSync, fstatSync, constants, type Dirent, type Stats,
 } from "node:fs";
 import { join, resolve, dirname, isAbsolute } from "node:path";
-import { randomBytes } from "node:crypto";
 import { MAX_INBOX_BYTES } from "./watcher.mts";
+import { atomicReplace, writeFileAtomic } from "./atomic-write.mts";
+import { DATA_DIR_MODE } from "./config.mts";
 
 const VERSION_RE = /ADAPTER_VERSION\s*=\s*"([^"]+)"/;
 const ADAPTER_ID_RE = /^[a-z0-9-]+$/;
@@ -53,49 +54,12 @@ const CANDIDATE_ROOT_NAME: Record<string, string> = { tazuo: "TazUO" };
 // is anything other than absent or a regular file, and the read refuses anything that isn't a regular
 // file once the fd is actually open.
 
-// The temp name is random, not the "<dest>.new" this file used to use. A fixed, published temp name is
-// a path an attacker can pre-plant a symlink at, and copyFileSync/writeFileSync follow one — the write
-// lands outside the folder, and the rename then moves the SYMLINK into the final name, so every later
-// install writes through it too. O_EXCL on top (COPYFILE_EXCL for a copy, flag "wx" for a write) means
-// the temp is only ever a file this call itself created, which also closes the TOCTOU window an
-// lstat-then-open check on a predictable name would leave open.
-function tempNameFor(dest: string): string { return `${dest}.${randomBytes(8).toString("hex")}.new`; }
-
-function fileKind(st: Stats): string {
-  if (st.isSymbolicLink()) return "a symlink";
-  if (st.isDirectory()) return "a directory";
-  if (st.isFIFO()) return "a FIFO";
-  if (st.isSocket()) return "a socket";
-  return "not a regular file";
-}
-
-// writeTemp is handed the temp path and must create it with O_EXCL (see tempNameFor). Throws on a
-// refusal or a failed write — every caller already runs inside a try/catch that turns that into its
-// own reported result, rather than an uncaught throw surfacing as a stack-free 500.
-// Exported for app/import.mts, whose pasted-scan write lands in the same inbox importScans writes to
-// and used a predictable "<dest>.tmp" of its own; one rule for both rather than two spellings of it.
-export function atomicReplace(dest: string, writeTemp: (tmp: string) => void): void {
-  // lstat, never stat: a symlink at dest is refused by its own type rather than resolved to whatever
-  // it points at. An absent dest is the ordinary case, not an error.
-  let st: Stats | null = null;
-  try { st = lstatSync(dest); } catch { /* absent — nothing to refuse */ }
-  if (st && !st.isFile()) throw new Error(`refusing to write ${dest}: it is ${fileKind(st)}`);
-  const tmp = tempNameFor(dest);
-  try {
-    writeTemp(tmp);
-    renameSync(tmp, dest);
-  } catch (e) {
-    try { unlinkSync(tmp); } catch { /* never created, or already gone */ }
-    throw e;
-  }
-}
-
+// atomicReplace and writeFileAtomic live in app/atomic-write.mts (a randomly-named O_EXCL temp,
+// renamed over a destination that must be absent or a regular file), shared with the server's own
+// data-directory writes. Every caller here already runs inside a try/catch that turns a throw into
+// its own reported result, rather than an uncaught throw surfacing as a stack-free 500.
 function copyFileAtomic(src: string, dest: string): void {
   atomicReplace(dest, (tmp) => copyFileSync(src, tmp, constants.COPYFILE_EXCL));
-}
-
-function writeFileAtomic(dest: string, body: string): void {
-  atomicReplace(dest, (tmp) => writeFileSync(tmp, body, { flag: "wx" }));
 }
 
 // 64 KiB off the head of a file is the whole of what this module ever reads: an adapter script is
@@ -537,7 +501,7 @@ export interface ImportScansResult {
 }
 
 export function importScans({ dir, inboxDir }: ImportScansParams): ImportScansResult {
-  mkdirSync(inboxDir, { recursive: true });
+  mkdirSync(inboxDir, { recursive: true, mode: DATA_DIR_MODE });
   let names: string[];
   try { names = readdirSync(dir); } catch { return { copied: 0, skipped: 0, failed: 0, failures: [] }; }
   let copied = 0, skipped = 0, failed = 0;
