@@ -41,7 +41,7 @@
 // 'error' from it is logged and the watch re-armed, a deleted inbox is recreated (and watched again)
 // by the next sweep, and scanOnce() returns false when it could not sweep at all.
 import {
-  existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync, renameSync, unlinkSync, lstatSync,
+  existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync, renameSync, unlinkSync, lstatSync, statSync,
   watch as fsWatch, type WatchListener,
 } from "node:fs";
 import { join } from "node:path";
@@ -61,6 +61,20 @@ const SCANNED_AT_RE = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.\d+)
 export const MAX_INBOX_BYTES = 32 * 1024 * 1024;
 
 const errMessage = (e: unknown): string => String((e as Error | undefined)?.message ?? e);
+
+// A watch that keeps failing is re-armed after retryDelayMs, doubling per consecutive failure up to
+// this ceiling; one that then stays up this long counts as healthy again, so its next failure starts
+// a fresh streak (and is logged — only the first failure of a streak is).
+const MAX_REARM_DELAY_MS = 60 * 1000;
+const WATCH_STABLE_MS = 60 * 1000;
+
+// Which directory a path names right now (device + inode), or null when there is none. A watch
+// follows the directory it was armed on, not the name, so a folder deleted and recreated under the
+// same name — by a sync tool, a paste's own mkdir, an import — needs a new watch even though the
+// path exists again.
+function dirIdentity(path: string): string | null {
+  try { const st = statSync(path); return `${st.dev}:${st.ino}`; } catch { return null; }
+}
 
 // V8's JSON parse error embeds a short excerpt of the bytes it was handed ("Unexpected token 'o',
 // \"not json\" is not valid JSON"), and this string is written to rejected/<name>.reason.txt and
@@ -334,17 +348,18 @@ export function startWatcher(
   // <data>/inbox/ used to leave every watcher dead for the rest of the session — fs.watch on a
   // removed directory never fires again, and readdir failed with ENOENT on every rescan. mkdirSync
   // with recursive returns the first directory it had to create, so a non-undefined result means the
-  // inbox was gone and the old watch is dead with it. A watch that is not armed (it errored, or the
-  // inbox was gone) is armed again here too, so every sweep leaves a live watch behind it.
+  // inbox was gone and the old watch is dead with it. A watch that is not armed (it errored), or
+  // that was armed on a directory the inbox path no longer names (deleted and recreated by anything
+  // else), is armed again here too, so every sweep leaves a live watch behind it.
   function scanOnce(): boolean {
     if (closed) return false;
     let names: string[];
     try {
       const recreated = mkdirSync(inboxDir, { recursive: true, mode: DATA_DIR_MODE }) !== undefined;
       if (recreated) safeLog(`inbox ${inboxDir} was missing; recreated it`);
-      if ((recreated || !watcher) && !arm()) return false;
+      if ((recreated || !watcher || dirIdentity(inboxDir) !== armedOn) && !arm()) return false;
       names = readdirSync(inboxDir).filter((f) => f.endsWith(".json"));
-    } catch (e) { safeLog(`watcher scanOnce error: ${errMessage(e)}`); return false; }
+    } catch (e) { watchFailed(`watcher scanOnce error: ${errMessage(e)}`); return false; }
     for (const name of names) enqueue(name);
     return true;
   }
@@ -353,8 +368,10 @@ export function startWatcher(
     try {
       if (closed) return;
       // Deleting the watched directory itself is reported as an event on it (macOS/Linux) and then
-      // nothing more, ever — sweep, which recreates the inbox and re-arms the watch.
-      if (!existsSync(inboxDir)) { scheduleRecovery(); return; }
+      // nothing more, ever — sweep, which recreates the inbox and re-arms the watch. The event can
+      // also arrive after something else has already recreated the folder, so the test is "is this
+      // still the directory the watch is on", not "does the path exist".
+      if (dirIdentity(inboxDir) !== armedOn) { scheduleRecovery(); return; }
       if (!filename) return;
       const name = String(filename).replaceAll("\\", "/");
       if (name.includes("/rejected/") || name.startsWith("rejected/")) return;
@@ -370,31 +387,41 @@ export function startWatcher(
 
   // The live watch, or null when arming it failed. A real FSWatcher emits 'error' (EPERM on Windows
   // when the watched directory is deleted or moved), and an 'error' with no listener is an uncaught
-  // exception that takes the whole server down; with this listener it is logged, and the watch is
-  // re-armed a moment later (the retry delay, so a watch that keeps failing cannot spin).
+  // exception that takes the whole server down; with this listener it is noted (watchFailed), and the
+  // watch is re-armed after a delay that grows while it keeps failing, so a watch the OS keeps
+  // refusing can neither spin nor fill server.log.
   let watcher: ReturnType<WatchFn> | null = null;
+  let armedOn: string | null = null;   // dirIdentity() of the directory the live watch is on
+  let armedAt = 0, failures = 0;
   let recoveryTimer: NodeJS.Timeout | null = null;
   function arm(): boolean {
     if (watcher) { try { watcher.close(); } catch { /* already closed */ } }
-    watcher = null;
+    watcher = null; armedOn = null;
     if (closed) return false;
     try {
       const w = watch(inboxDir, onWatchEvent);
       w.on("error", (e) => {
-        safeLog(`watch error on ${inboxDir}: ${errMessage(e)}; re-arming`);
         if (watcher === w) { try { w.close(); } catch { /* already closed */ } watcher = null; }
-        scheduleRecovery();
+        watchFailed(`watch error on ${inboxDir}: ${errMessage(e)}`);
       });
-      watcher = w;
+      watcher = w; armedOn = dirIdentity(inboxDir); armedAt = Date.now();
       return true;
     } catch (e) {
-      safeLog(`could not watch ${inboxDir}: ${errMessage(e)}`);
+      watchFailed(`could not watch ${inboxDir}: ${errMessage(e)}`);
       return false;
     }
   }
+  // Logged once per streak of failures, not once per attempt; the recovery sweep keeps retrying.
+  function watchFailed(msg: string): void {
+    if (failures > 0 && Date.now() - armedAt >= WATCH_STABLE_MS) failures = 0;   // it had stayed up: a new streak
+    if (failures === 0) safeLog(`${msg}; retrying, and not logging further failures until the watch stays up for a minute`);
+    failures++;
+    scheduleRecovery();
+  }
   function scheduleRecovery(): void {
     if (closed || recoveryTimer) return;
-    recoveryTimer = setTimeout(() => { recoveryTimer = null; scanOnce(); }, retryDelayMs);
+    const delay = Math.min(retryDelayMs * 2 ** Math.max(0, failures - 1), MAX_REARM_DELAY_MS);
+    recoveryTimer = setTimeout(() => { recoveryTimer = null; scanOnce(); }, delay);
   }
 
   arm();

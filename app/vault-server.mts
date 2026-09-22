@@ -724,6 +724,9 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
     runId: string | null;
     clients: Set<http.ServerResponse>;
     workers: Set<Worker>;
+    // The stuck-build timer (budget + JOB_RUN_GRACE_MS); finish() clears it, so a finished job's
+    // result is held by the retention timer alone rather than pinned by this one's closure too.
+    stuckTimer: NodeJS.Timeout | null;
   }
   const jobs = new Map<string, Job>();
   // A finished job (done, failed or cancelled) stays readable for this long AFTER it finishes, so a
@@ -771,7 +774,7 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
   // must be unguessable — the events route's ownership check (below) is the other half of that.
   function startJob(input: JobInput, key: string, meta: Record<string, unknown>, clientId: string | string[] | null = null): Job {
     const id = randomUUID();
-    const job: Job = { id, clientId, key, meta, input, state: "running", startedAt: Date.now(), progress: null, result: null, ms: null, error: null, runId: null, clients: new Set(), workers: new Set() };
+    const job: Job = { id, clientId, key, meta, input, state: "running", startedAt: Date.now(), progress: null, result: null, ms: null, error: null, runId: null, clients: new Set(), workers: new Set(), stuckTimer: null };
     jobs.set(id, job);
     runJob(job).catch((e) => {
       // Cancelled (or the server is shutting down): the terminated workers reject, nothing to report.
@@ -788,8 +791,8 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
       job.state = "error"; job.error = `internal error (ref ${ref})`;
       finish(job, "failed", { error: job.error });
     });
-    const t = setTimeout(() => { timers.delete(t); cancelJob(job); }, (input.opts.timeBudgetMs ?? DEFAULT_TIME_BUDGET_MS) + JOB_RUN_GRACE_MS);
-    t.unref(); timers.add(t);
+    const t = setTimeout(() => { timers.delete(t); job.stuckTimer = null; cancelJob(job); }, (input.opts.timeBudgetMs ?? DEFAULT_TIME_BUDGET_MS) + JOB_RUN_GRACE_MS);
+    t.unref(); timers.add(t); job.stuckTimer = t;
     return job;
   }
   function spawnWorker(job: Job, data: { pools: unknown; current: unknown; profile: unknown; opts: RunOpts }, onProgress: (p: SolveProgress) => void, onWarn?: (message: string) => void): Promise<WorkerDoneMessage> {
@@ -832,6 +835,7 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
   // The retention clock starts here, when the job ends — however it ends.
   function finish(job: Job, event: string, data: unknown): void {
     broadcast(job, event, data); for (const c of job.clients) c.end(); job.clients.clear();
+    if (job.stuckTimer) { clearTimeout(job.stuckTimer); timers.delete(job.stuckTimer); job.stuckTimer = null; }
     const t = setTimeout(() => { jobs.delete(job.id); timers.delete(t); }, JOB_RETENTION_MS);
     t.unref(); timers.add(t);
   }
