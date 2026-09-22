@@ -3,12 +3,12 @@
 // Run: node --test app/gear-vault.test.mts   or   node app/gear-vault.test.mts
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { readFileSync, readdirSync, existsSync } from "node:fs";
 import { createHash } from "node:crypto";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { dirname, join } from "node:path";
 import {
-  parseTooltip, classify, foldSnapshots, buildPools, requirementReport, totalsOf, propertyKeys, bagLabel, kindOf, groupByName, slayersOf, medableOf, weaponAllowed, settingsDiff, PROP_LABELS, effectiveProfile, resistSkillBonus, toOptItem, labelOf, builderKeys, migrateProfiles, templateFrom, TEMPLATE_KEYS, setRules, getRules, tagUnits,
+  parseTooltip, classify, foldSnapshots, buildPools, requirementReport, totalsOf, propertyKeys, bagLabel, kindOf, groupByName, slayersOf, medableOf, weaponAllowed, settingsDiff, PROP_LABELS, LAYER_TO_SLOT, effectiveProfile, resistSkillBonus, toOptItem, labelOf, builderKeys, migrateProfiles, templateFrom, TEMPLATE_KEYS, setRules, getRules, tagUnits,
 } from "./vault-lib.mts";
 import type { Item, Inventory, ItemLocation, ProfilesFile } from "./vault-lib.mts";
 import { upgradeScan, TAZUO_V1_CAPS } from "./scan-schema.mts";
@@ -113,6 +113,29 @@ test("[fast] skill bonuses and slayers land in extras/flags for searching", () =
   assert.ok(p.flags.includes("night sight"));
 });
 
+// ServUO prints a set piece's full-set bonus after a header line; those lines only apply while all
+// the pieces are worn, so they are kept apart from the piece's own props. Tooltip copied verbatim
+// from the TazUO fixture.
+test("[smoke] parseTooltip keeps an armour set's full-set bonus out of the piece's own props", () => {
+  const p = parseTooltip(["Armor Of Initiation", "Blessed", "Weight: 1 Stone", "Part Of An Armor Set (6 Pieces)", "Brittle",
+    "Physical Resist 7%", "Fire Resist 4%", "Cold Resist 4%", "Poison Resist 6%", "Energy Resist 4%", "Strength Requirement 20",
+    "Durability 123 / 150", "<br>Only When Full Set Is Present:", "Physical Resist +2%", "Fire Resist +5%", "Cold Resist +5%",
+    "Poison Resist +3%", "Energy Resist +5%"]);
+  assert.deepEqual(p.props, { physResist: 7, fireResist: 4, coldResist: 4, poisonResist: 6, energyResist: 4, tagPenalty: 4 });
+  assert.deepEqual(p.setBonus, { physResist: 2, fireResist: 5, coldResist: 5, poisonResist: 3, energyResist: 5 });
+  assert.equal(p.strReq, 20);
+  assert.deepEqual(p.extras.durability, [123, 150]);
+});
+
+test("[fast] parseTooltip: the set block also starts at \"Full Armor Set Present\", and non-property set lines are flagged as set lines", () => {
+  const p = parseTooltip(["Leggings Of Bane", "Poison Resist 8%", "Full Armor Set Present", "Hit Point Increase 10", "Night Sight"]);
+  assert.deepEqual(p.props, { poisonResist: 8 });
+  assert.deepEqual(p.setBonus, { hpi: 10 });
+  assert.ok(p.flags.includes("set: night sight"));
+  assert.ok(!p.flags.includes("night sight"), "a set-only effect is not the piece's own");
+  assert.deepEqual(parseTooltip(["Ring", "Luck 40"]).setBonus, {}, "a piece with no set block has an empty setBonus");
+});
+
 // ---- classifier ---------------------------------------------------------------------------
 test("[smoke] classify: names map to optimizer slots, containers/consumables are not gear", () => {
   assert.equal(classify("Leather Gorget").slot, "neck");
@@ -137,6 +160,56 @@ test("[smoke] classify: names map to optimizer slots, containers/consumables are
 test("[fast] classify: equipped layer wins over the name", () => {
   assert.equal(classify("Weird Thing", null, "Torso").slot, "chest");
   assert.equal(classify("Chainmail Leggings", null, "Pants").slot, "legs");
+});
+
+test("[smoke] classify: every \"... Arms\" name is an arms piece, never chest and never unslotted", () => {
+  for (const n of ["Platemail Arms", "Ringmail Arms", "Leaf Arms", "Leaf Arms Of Haste", "Bone Arms Of Haste", "Gargish Platemail Arms", "Gargish Stone Arms Of Alchemy"]) {
+    assert.deepEqual(classify(n), { slot: "arms", twoHanded: false, gear: true }, n);
+  }
+});
+
+test("[fast] classify: names the base-name rules used to miss", () => {
+  const want: Array<[string, string]> = [["Leather Skirt", "legs"], ["Fortified Leather Skirt", "legs"], ["Long Pants", "legs"], ["Elven Pants", "legs"],
+    ["Hakama", "legs"], ["Tattsuke Hakama", "legs"], ["Kasa", "helmet"], ["Cloth Ninja Hood", "helmet"], ["Fur Cape", "cloak"], ["Mantle", "cloak"],
+    ["Quiver Of Infinity", "cloak"], ["Beads", "neck"], ["Gold Ring", "ring"], ["Gold Bracelet", "bracelet"]];
+  for (const [n, slot] of want) assert.equal(classify(n).slot, slot, n);
+  assert.equal(classify("Gold Coin").gear, false, "gold coins are still not gear");
+  assert.equal(classify("Bolt Of Cloth").gear, false, "cloth is still a resource");
+});
+
+// Middle-torso clothing (Tunic layer: doublet, cloth tunic, surcoat, body sash) is worn OVER chest
+// armour, so it gets its own slot instead of competing with the Torso layer's chest piece.
+test("[fast] classify: a middle-torso piece has its own slot, not chest", () => {
+  assert.equal(classify("Doublet", null, "Tunic").slot, "tunic");
+  assert.equal(classify("Doublet").slot, "tunic");
+  assert.equal(classify("Surcoat").slot, "tunic");
+  assert.equal(classify("Heart Of The Lion", null, "Torso").slot, "chest");
+  assert.equal(classify("Studded Tunic").slot, "chest", "armour named Tunic is still chest by name");
+});
+
+// The client's own tiledata says which layer every wearable graphic goes on; the graphic decides
+// wherever it is known, so a named artifact or a set piece whose name says nothing (or the wrong
+// thing: every Armor Of Initiation piece is called "Armor") lands in its real slot.
+test("[smoke] classify: a known graphic decides the slot where the name is not enough", () => {
+  assert.equal(classify("Heart Of The Lion", null, null, 5141).slot, "chest");   // platemail
+  assert.equal(classify("Armor Of Initiation", null, null, 5063).slot, "neck");   // leather gorget
+  assert.equal(classify("Armor Of Initiation", null, null, 5067).slot, "legs");   // leather leggings
+  assert.equal(classify("Armor Of Initiation", null, null, 5062).slot, "hands");   // leather gloves
+  assert.equal(classify("Armor Of Initiation", null, null, 7609).slot, "helmet");   // leather cap
+  assert.equal(classify("Armor Of Initiation", null, null, 5069).slot, "arms");   // leather sleeves
+  assert.equal(classify("Cloth Ninja Hood", null, null, 10127).slot, "helmet");
+  assert.equal(classify("Doublet", null, null, 8059).slot, "tunic");
+  assert.equal(classify("Some Artifact Quiver", null, null, 12215).slot, "cloak");
+  assert.equal(classify("Ring Of The Artificer", null, null, 7945).slot, "ring");
+  // held graphics: the tooltip's weapon lines and the name still decide one hand or two (tiledata
+  // files bows under the one-handed layer, which the server does not follow)
+  assert.equal(classify("Bow", parseTooltip(["Bow", "Two-handed Weapon"]), null, 5042).slot, "twoHanded");
+  assert.equal(classify("Bow", null, null, 5042).slot, "twoHanded");
+  assert.deepEqual(classify("Towering Order Shield", null, null, 7108), { slot: "twoHanded", twoHanded: false, gear: true });
+  assert.deepEqual(classify("Aegis Of Grace", null, null, 7108), { slot: "twoHanded", twoHanded: false, gear: true }, "an artifact shield with no shield word in its name");
+  // an unknown or non-wearable graphic falls back to the name rules
+  assert.equal(classify("Leather Gorget", null, null, 1).slot, "neck");
+  assert.equal(classify("Bandage", null, null, 3617).gear, false);
 });
 
 test("[fast] slayersOf reads slayer lines and the classic names", () => {
@@ -264,6 +337,25 @@ test("[fast] fold: scans order by epoch, not string comparison of scannedAt — 
   const inv = foldSnapshots([earlierByEpoch, laterByEpoch]);
   assert.ok(!inv.items[101], "the earlier-by-epoch scan's item should have been replaced");
   assert.ok(inv.items[102], "the later-by-epoch scan's item should have won the root");
+});
+
+// validateScan refuses an impossible scannedAt, but a scan already folded from before that check
+// must still not break the sort: a NaN comparator result reads as "equal" and lets an older scan of
+// the root fold last.
+test("[fast] fold: a scan whose scannedAt is not a real date sorts first instead of scrambling the order", () => {
+  const root = kestrel.roots[0]!.serial;
+  const mkScan = (character: string, scannedAt: string, itemSerial: number, itemName: string): ScanV2 => ({
+    schemaVersion: 2, character, scannedAt,
+    adapter: { id: "tazuo", version: "1", client: "TazUO", clientVersion: null, capabilities: TAZUO_V1_CAPS },
+    stats: kestrel.stats, equipped: [],
+    roots: [{ serial: root, kind: "ground", name: "Metal Chest", opened: true }],
+    containers: { [root]: kestrel.containers[root]! },
+    items: [{ serial: itemSerial, name: itemName, tooltip: [itemName], amount: 1, container: root, nameSource: "opl" }],
+  });
+  const inv = foldSnapshots([mkScan("Kestrel", "2026-09-11T12:00:00Z", 201, "New"), mkScan("Dorran", "2026-13-01T10:00:00Z", 202, "Bad"),
+    mkScan("Kestrel", "2026-09-11T10:00:00Z", 203, "Old")]);
+  assert.ok(inv.items[201], "the newest scan of the root wins");
+  assert.ok(!inv.items[203], "the older scan does not fold last");
 });
 
 test("[fast] fold: a scan that skipped a container keeps what was known about it", () => {
@@ -454,6 +546,70 @@ test("[fast] bagLabel prefers the engraving", () => {
   assert.equal(bagLabel({ serial: 1, name: "Metal Chest", tooltip: ["Metal Chest"] }), "Metal Chest");
 });
 
+// ---- the shipped corpus: every adapter fixture and the demo data ---------------------------
+// Hand-picked classify/parse cases missed set bonuses, "... Arms" and named artifacts for a long
+// time; these tests run the real scans through the same parse + classify path the fold uses.
+const ADAPTERS_DIR = join(HERE, "..", "adapters");
+const corpus: Array<{ label: string; scan: ScanV2 }> = [
+  ...readdirSync(ADAPTERS_DIR).filter((a) => existsSync(join(ADAPTERS_DIR, a, "fixture.scan.json")))
+    .map((a) => ({ label: `adapters/${a}`, scan: JSON.parse(readFileSync(join(ADAPTERS_DIR, a, "fixture.scan.json"), "utf8")) as ScanV2 })),   // known-good fixture: the cast stands in for the validateScan() a real caller runs
+  { label: "demo-Kestrel", scan: kestrel }, { label: "demo-Dorran", scan: dorran },
+];
+const SET_HEADER_RE = /^(<br>)?(only when full set is present|full armor set present)/i;
+
+for (const { label, scan } of corpus) {
+  test(`[fast] corpus ${label}: every prop-carrying piece of gear has a slot, and every "... Arms" piece is in the arms slot`, () => {
+    const items = Object.values(foldSnapshots([scan]).items).filter((i) => i.gear);
+    const unslotted = items.filter((i) => !i.slot && Object.keys(i.props).some((k) => k !== "tagPenalty")).map((i) => `${i.name} (graphic ${i.graphic})`);
+    assert.deepEqual(unslotted, [], "gear the optimizer would never see");
+    for (const it of items.filter((i) => /\barms\b/i.test(i.name))) assert.equal(it.slot, "arms", it.name);
+  });
+
+  test(`[fast] corpus ${label}: a set piece's own props are exactly its lines above the full-set header`, () => {
+    let sets = 0;
+    for (const raw of [...scan.items, ...scan.equipped]) {
+      const lines = raw.tooltip || [];
+      const at = lines.findIndex((l) => SET_HEADER_RE.test(l));
+      if (at < 0) continue;
+      sets++;
+      const whole = parseTooltip(lines), own = parseTooltip(lines.slice(0, at));
+      assert.deepEqual(whole.props, own.props, `${raw.name}: own props`);
+      assert.deepEqual(whole.setBonus, parseTooltip([lines[0], ...lines.slice(at + 1)]).props, `${raw.name}: set bonus`);
+    }
+    assert.ok(sets > 0, `${label} carries set pieces, so this test is not vacuous`);
+  });
+
+  test(`[fast] corpus ${label}: a worn piece taken off lands in the slot its layer put it in`, () => {
+    let checked = 0;
+    for (const raw of scan.equipped) {
+      if (!raw.layer || !LAYER_TO_SLOT[raw.layer]) continue;
+      const parsed = parseTooltip(raw.tooltip?.length ? raw.tooltip : [raw.name]);
+      const off = classify(parsed.name || raw.name, parsed, null, raw.graphic);
+      assert.equal(off.slot, LAYER_TO_SLOT[raw.layer], `${raw.name} (worn on ${raw.layer}, graphic ${raw.graphic})`);
+      checked++;
+    }
+    // the synthetic demo scans record no worn layer; a real adapter fixture must
+    if (label.startsWith("adapters/")) assert.ok(checked > 0, "the fixture records worn layers");
+  });
+}
+
+test("[smoke] corpus: known TazUO fixture pieces land in their real slots with their own resists", () => {
+  const scan = corpus.find((c) => c.label === "adapters/tazuo")!.scan;
+  const items = Object.values(foldSnapshots([scan]).items);
+  const find = (name: string, graphic?: number) => items.filter((i) => i.name === name && (graphic == null || i.graphic === graphic));
+  assert.ok(find("Heart Of The Lion").length && find("Heart Of The Lion").every((i) => i.slot === "chest"));
+  assert.ok(find("Platemail Arms").every((i) => i.slot === "arms"));
+  assert.ok(find("Leaf Arms").every((i) => i.slot === "arms"));
+  assert.ok(find("Doublet").length && find("Doublet").every((i) => i.slot === "tunic"));
+  const initiation: Array<[number, string]> = [[5063, "neck"], [5067, "legs"], [5062, "hands"], [7609, "helmet"], [5068, "chest"], [5069, "arms"]];
+  for (const [g, slot] of initiation) {
+    const [piece] = find("Armor Of Initiation", g);
+    assert.equal(piece?.slot, slot, `Armor Of Initiation graphic ${g}`);
+    assert.equal(piece?.props.physResist, 7, "own physical resist, not own + set bonus");
+    assert.equal(piece?.setBonus?.physResist, 2);
+  }
+});
+
 // ---- pools --------------------------------------------------------------------------------
 test("[smoke] buildPools: other characters' worn gear is excluded by default, STR-gated, tag-filtered", () => {
   const inv = foldSnapshots([kestrel, dorran]);
@@ -625,6 +781,21 @@ test("[fast] getRules()/setRules() and resistSkillBonus() are shard-swappable: g
     assert.equal(eGeneric.caps.energyResist, 75, "raceCaps.elf.energyResist is the same 75 on generic-osi");
   } finally {
     setRules(uoalive);   // restore for every test after this one in the file, even if an assertion above throws
+  }
+});
+
+// Tooltip lines are matched lower-cased, so a rules file that writes a tag unit's key as "Cursed"
+// must still match the "Cursed" tooltip line.
+test("[fast] tag-unit keys match whatever case the rules file wrote them in", () => {
+  const uoalive = getRules();
+  try {
+    setRules({ ...uoalive, tagUnits: { Cursed: 10, BRITTLE: 4 } });
+    const p = parseTooltip(["Ring", "Cursed", "Brittle"]);
+    assert.deepEqual(p.tags, ["cursed", "brittle"]);
+    assert.equal(p.props.tagPenalty, 14);
+    assert.deepEqual(tagUnits(), { cursed: 10, brittle: 4 });
+  } finally {
+    setRules(uoalive);
   }
 });
 

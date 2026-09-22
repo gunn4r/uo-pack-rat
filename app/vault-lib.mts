@@ -24,6 +24,7 @@ export type ExtrasMap = Record<string, ExtraValue>;
 export interface ParsedTooltip {
   name: string;
   props: PropMap;
+  setBonus: PropMap;
   tags: string[];
   strReq: number;
   rarity: string | null;
@@ -60,6 +61,7 @@ export interface Item {
   hue?: number | null | undefined;
   amount: number;
   props: PropMap;
+  setBonus: PropMap;
   extras: ExtrasMap;
   flags: string[];
   tags: string[];
@@ -264,8 +266,15 @@ export function effectiveProfile(p: Profile = {}, character: Character | null = 
 
 // Cursed/Brittle/Antique/Prized (/Massive/Unwieldy on shards that use them) tag-penalty units, from
 // the shard's rules file. A function, not a constant, because it must reflect whichever shard is
-// currently loaded (setRules() may be called again after a shard switch).
-export const tagUnits = (): Record<string, number> => getRules().tagUnits as Record<string, number>;
+// currently loaded (setRules() may be called again after a shard switch). Keys are lower-cased, since
+// parseTooltip matches them against lower-cased tooltip lines and a rules file may write "Cursed".
+const TAG_UNITS_CACHE = new WeakMap<object, Record<string, number>>();
+export function tagUnits(): Record<string, number> {
+  const raw = getRules().tagUnits;
+  let lower = TAG_UNITS_CACHE.get(raw);
+  if (!lower) TAG_UNITS_CACHE.set(raw, lower = Object.fromEntries(Object.entries(raw).map(([k, v]) => [k.toLowerCase(), v])));
+  return lower;
+}
 const RARITY_RE = /^(minor|lesser|greater|major|legendary) (magic item|artifact)$|^reforged|artifact$/i;
 
 // The longest line any real tooltip carries is ~54 characters; the scan schema caps one at 512
@@ -284,18 +293,34 @@ const stripHtml = (s: unknown): string => String(s || "").slice(0, MAX_TOOLTIP_L
 // and stripping the separator run off the end of the head reproduces what `[\s:+]*` used to eat.
 const NUMERIC_TAIL_RE = /(-?\d+(?:\.\d+)?)\s*(%|s)?\s*(?:-\s*(\d+))?$/;
 
-// Returns { name, props, tags, strReq, rarity, extras, flags, lines }.
-//   props  : modeled numeric properties (optimizer keys)
-//   extras : every other numeric line as { "swordsmanship": 10, "durability": [57, 57] ... }
-//   flags  : non-numeric lines (lowercased), e.g. "spell channeling", "mage armor", "orc slayer"
+// A set piece lists its full-set bonus after one of these header lines (ServUO cliloc 1072378
+// "<br>Only when full set is present:" while the set is incomplete, 1072377 "Full Armor Set Present"
+// while it is worn whole). Everything after the header describes the set, not the piece.
+const SET_HEADER_RE = /^(only when full set is present|full armor set present)\b/;
+
+// Returns { name, props, setBonus, tags, strReq, rarity, extras, flags, lines }.
+//   props    : modeled numeric properties (optimizer keys) of the piece itself
+//   setBonus : modeled properties in the full-set block, which apply only while every piece of the
+//              set is worn; kept apart so a piece is never credited with them on its own
+//   extras   : every other numeric line as { "swordsmanship": 10, "durability": [57, 57] ... }
+//   flags    : non-numeric lines (lowercased), e.g. "spell channeling", "mage armor", "orc slayer";
+//              a set-block line no pattern models is kept as "set: <line>"
 export function parseTooltip(rawLines?: Array<string | undefined> | undefined): ParsedTooltip {
   const TU = tagUnits();
   const lines = (rawLines || []).map(stripHtml).filter(Boolean);
   const name = (lines[0] || "").replace(/^\d+\s+(?=\S)/, "");
-  const props: PropMap = {}, extras: ExtrasMap = {}, flags: string[] = [], tags: string[] = [];
+  const props: PropMap = {}, setBonus: PropMap = {}, extras: ExtrasMap = {}, flags: string[] = [], tags: string[] = [];
   let strReq = 0, rarity: string | null = null, twoHanded: boolean | null = null, weight: number | null = null, skillReq: string | null = null;
+  let inSet = false;
   for (const raw of lines.slice(1)) {
     const line = raw.toLowerCase();
+    if (SET_HEADER_RE.test(line)) { inSet = true; continue; }
+    if (inSet) {
+      const hit = PROP_PATTERNS.find(([, pat]) => pat.test(line));
+      if (hit) setBonus[hit[0]] = (setBonus[hit[0]] || 0) + +line.match(hit[1])![1]!;
+      else flags.push("set: " + line);
+      continue;
+    }
     if (Object.prototype.hasOwnProperty.call(TU, line)) { tags.push(line); continue; }
     if (RARITY_RE.test(raw)) { rarity = raw; continue; }
     let m;
@@ -321,12 +346,18 @@ export function parseTooltip(rawLines?: Array<string | undefined> | undefined): 
     }
   }
   if (tags.length) props.tagPenalty = tags.reduce((a, t) => a + TU[t]!, 0);
-  return { name, props, tags, strReq, rarity, extras, flags, twoHanded, weight, skillReq, lines };
+  return { name, props, setBonus, tags, strReq, rarity, extras, flags, twoHanded, weight, skillReq, lines };
 }
 
 // ---------------------------------------------------------------------------
-// Slot classification by NAME (UO base names are standardized). Layer wins when the item is
-// equipped; the tooltip's "Two-handed Weapon" line wins over the name regex when present.
+// Slot classification. The worn layer wins when the item is equipped. Unequipped, the item's graphic
+// decides wherever the client's tiledata lists it as wearable (GRAPHIC_LAYER_RUNS below): a named
+// artifact ("Heart Of The Lion") or a set whose every piece is called "Armor Of Initiation" says
+// nothing about its slot by name, or says the wrong thing. Held graphics (weapons, shields,
+// spellbooks) still go through the name and tooltip rules first, because tiledata files bows under
+// the one-handed layer and cannot tell a shield from a two-handed weapon. Names (UO base names are
+// standardized) are the fallback for a graphic the table does not know; the tooltip's
+// "Two-handed Weapon" line wins over the name regex when present.
 // ---------------------------------------------------------------------------
 const WEAPON_RE = /\b(scimitar|katana|longsword|broadsword|viking sword|cutlass|cleaver|bone harvester|machete|no-dachi|double axe|war axe|battle axe|large battle axe|two handed axe|executioner|ornate axe|hatchet|axe|bardiche|halberd|paladin sword|radiant|dagger|kryss|war fork|short spear|spear|pike|pitchfork|leafblade|boning knife|sai|tekagi|mace|maul|club|war hammer|hammer pick|scepter|diamond mace|tessen|nunchaku|black staff|quarter staff|staff|bow|crossbow|yumi|longbow|composite|lance|scythe|knife|sledge hammer|soul glaive|cyclone|boomerang|glass sword|glass staff|stone war sword|crook|crescent blade|wakizashi|daisho|bokuto|lajatang|kama|tetsubo|war cleaver|spellblade|rune blade|war mace|bloodblade|dread sword|dual short axes|dual pointed spear|shortblade|longblade|talwar|disc mace|serpentstone staff|wild staff|gnarled staff|sword|blade)\b/i;
 const TWO_H_RE = /\b(two handed|double axe|large battle axe|bardiche|halberd|no-dachi|executioner|maul|war hammer|black staff|quarter staff|bow|crossbow|yumi|longbow|composite|scythe|pike|war fork|spear|lance|lajatang|tetsubo|daisho|bokuto|gnarled staff|wild staff|serpentstone staff|soul glaive|dual pointed spear|dual short axes|sledge hammer|scepter|glass staff)\b/i;
@@ -334,29 +365,35 @@ const SHIELD_RE = /\b(shield|buckler)\b/i;
 const SPELLBOOK_RE = /\b(spellbook|book of (chivalry|bushido|ninjitsu|magery|necromancy|mysticism|spellweaving)|necromancer spellbook|mysticism book|tome)\b/i;   // NOT bare "mystic": "Mystic Ring" is a ring
 const JEWEL_SLOTS: Array<[string, RegExp]> = [["ring", /\bring\b/i], ["bracelet", /\bbracelet\b/i], ["talisman", /\btalisman\b/i], ["neck", /\bnecklace\b/i], ["earrings", /\bearrings\b/i]];
 const ARMOR_SLOTS: Array<[string, RegExp]> = [
-  ["helmet", /\b(helm|helmet|bascinet|circlet|coif|cap|hat|mask|skullcap|bandana|bonnet|hood|glasses|goggles|hatsuburi|jingasa|kabuto)\b/i],
-  ["neck", /\b(gorget|mempo)\b/i],
+  ["helmet", /\b(helm|helmet|bascinet|circlet|coif|cap|hat|mask|skullcap|bandana|bonnet|hood|glasses|goggles|hatsuburi|jingasa|kabuto|kasa)\b/i],
+  ["neck", /\b(gorget|mempo|beads)\b/i],
   ["hands", /\b(gloves|gauntlets)\b/i],
-  ["arms", /\b(sleeves|vambraces|rerebrace|pauldrons|hiro sode)\b/i],
-  ["legs", /\b(leggings|chausses|greaves|kilt|shorts|haidate|suneate|leg guards|tonlet)\b/i],
-  ["cloak", /\bcloak\b/i],
+  ["arms", /\b(arms|sleeves|vambraces|rerebrace|pauldrons|hiro sode)\b/i],
+  ["legs", /\b(leggings|chausses|greaves|kilt|shorts|haidate|suneate|leg guards|tonlet|skirt|pants|hakama)\b/i],
+  ["cloak", /\b(cloak|cape|mantle|quiver)\b/i],
   ["feet", /\b(sandals|boots|shoes|thigh boots|tabi)\b/i],
-  ["robe", /\b(robe|surcoat|tunic top|shroud)\b/i],
-  ["chest", /\b(armor|tunic|breastplate|hauberk|ringmail|chainmail|platemail|plate|hide|doublet|do|chest|jacket|shirt|vest|bustier|female plate)\b/i],
+  ["robe", /\b(robe|tunic top|shroud)\b/i],
+  ["tunic", /\b(doublet|surcoat|body sash)\b/i],
+  ["chest", /\b(armor|tunic|breastplate|hauberk|ringmail|chainmail|platemail|plate|hide|do|chest|jacket|shirt|vest|bustier|female plate)\b/i],
   ["waist", /\b(sash|apron|obi|half apron|belt)\b/i],
 ];
-const SKIP_RE = /\b(bandage|potion|reagent|ore|ingot|log|board|scroll|deed|gold|arrow|bolt|garlic|ginseng|mandrake|nightshade|bloodmoss|sulfurous|black pearl|key|map|gem|cloth|feather|shaft|kindling|torch|lantern|fish|powder|essence|seed|runebook|bag of|pouch|backpack|chest of|crate|box|bottle|jar|token|ticket|coin|doubloon|bone pile|bark|sap|ingots|jewelry box)\b/i;
+// No bare "gold": gold coins are caught by "coin", and "Gold Ring" / "Gold Bracelet" are jewellery.
+// "cloth" is a resource unless it names a garment ("Cloth Ninja Hood").
+const SKIP_RE = /\b(bandage|potion|reagent|ore|ingot|log|board|scroll|deed|arrow|bolt|garlic|ginseng|mandrake|nightshade|bloodmoss|sulfurous|black pearl|key|map|gem|cloth(?! ninja)|feather|shaft|kindling|torch|lantern|fish|powder|essence|seed|runebook|bag of|pouch|backpack|chest of|crate|box|bottle|jar|token|ticket|coin|doubloon|bone pile|bark|sap|ingots|jewelry box)\b/i;
+// Middle-torso clothing (the Tunic layer: doublet, cloth tunic, surcoat, body sash) is worn over chest
+// armour (the Torso layer), so it has its own "tunic" slot rather than competing for "chest". Like
+// robe, shirt, feet, waist and earrings, it is tracked but not one of the slots the optimizer fills.
 export const LAYER_TO_SLOT: Record<string, string> = {
   OneHanded: "oneHanded", TwoHanded: "twoHanded", Helmet: "helmet", Gloves: "hands", Arms: "arms",
   Legs: "legs", Pants: "legs", Necklace: "neck", Ring: "ring", Bracelet: "bracelet", Talisman: "talisman",
   Torso: "chest", Cloak: "cloak", Shoes: "feet", Robe: "robe", Earrings: "earrings", Waist: "waist",
-  Tunic: "chest", Shirt: "shirt", Skirt: "legs",
+  Tunic: "tunic", Shirt: "shirt", Skirt: "legs",
 };
 export const OPTIMIZER_SLOTS: string[] = ["helmet", "chest", "arms", "hands", "legs", "neck", "ring", "bracelet", "talisman", "cloak", "oneHanded", "twoHanded"];
 export const SLOT_LABELS: Record<string, string> = {
   helmet: "Head", chest: "Chest", arms: "Arms", hands: "Hands", legs: "Legs", neck: "Neck", ring: "Ring",
   bracelet: "Bracelet", talisman: "Talisman", cloak: "Cloak", oneHanded: "Weapon (1H)", twoHanded: "Weapon 2H / Shield",
-  feet: "Feet", robe: "Robe", earrings: "Earrings", waist: "Waist", shirt: "Shirt", spellbook: "Spellbook",
+  feet: "Feet", robe: "Robe", tunic: "Middle Torso", earrings: "Earrings", waist: "Waist", shirt: "Shirt", spellbook: "Spellbook",
 };
 
 const SPELL_NAMES = new Set(("clumsy,create food,feeblemind,heal,magic arrow,night sight,reactive armor,weaken,agility,cunning,cure,harm,magic trap,magic untrap,protection,strength,bless,fireball,magic lock,poison,telekinesis,teleport,unlock,wall of stone,arch cure,arch protection,curse,fire field,greater heal,lightning,mana drain,recall,blade spirits,dispel field,incognito,magic reflection,mind blast,paralyze,poison field,summon creature,dispel,energy bolt,explosion,invisibility,mark,mass curse,paralyze field,reveal,chain lightning,energy field,flamestrike,gate travel,mana vampire,mass dispel,meteor swarm,polymorph,earthquake,energy vortex,resurrection,air elemental,summon daemon,earth elemental,fire elemental,water elemental,summon air elemental,summon earth elemental,summon fire elemental,summon water elemental,"
@@ -365,8 +402,60 @@ const SPELL_NAMES = new Set(("clumsy,create food,feeblemind,heal,magic arrow,nig
   + "cleanse by fire,close wounds,consecrate weapon,divine fury,dispel evil,enemy of one,holy light,noble sacrifice,remove curse,sacred journey,"
   + "honorable execution,confidence,evasion,counter attack,lightning strike,momentum strike,focus attack,death strike,animal form,ki attack,surprise attack,backstab,shadowjump,mirror image,"
   + "arcane circle,gift of renewal,immolating weapon,attune weapon,thunderstorm,nature's fury,summon fey,summon fiend,reaper form,wildfire,essence of wind,dryad allure,ethereal voyage,word of death,gift of life,arcane empowerment").split(","));
+// The paperdoll layer each tiledata layer number stands for (TazUO's Layer enum names, the same names
+// an adapter reports for a worn item's layer).
+const TILEDATA_LAYERS: Record<number, string> = { 1: "OneHanded", 2: "TwoHanded", 3: "Shoes", 4: "Pants", 5: "Shirt", 6: "Helmet", 7: "Gloves",
+  8: "Ring", 9: "Talisman", 10: "Necklace", 12: "Waist", 13: "Torso", 14: "Bracelet", 17: "Tunic", 18: "Earrings", 19: "Arms", 20: "Cloak",
+  22: "Robe", 23: "Skirt", 24: "Legs" };
+// Every wearable gear graphic in the client's tiledata, as [first graphic, count, tiledata layer] runs
+// in graphic order. Generated from a 7.0.117 client's tiledata.mul; regenerate with
+// `node scripts/gen-graphic-layers.mts <tiledata.mul>`, which rewrites only this block.
+// BEGIN generated by scripts/gen-graphic-layers.mts
+const GRAPHIC_LAYER_RUNS: ReadonlyArray<readonly [number, number, number]> = [
+  [526,1,1],[643,2,19],[645,2,13],[647,2,7],[649,2,4],[769,2,19],[771,2,13],[773,2,4],[775,2,19],[777,2,13],[779,2,7],[781,2,4],[784,2,7],[1027,2,19],[1029,2,13],[1031,2,7],
+  [1033,2,4],[2301,1,2],[2302,6,1],[2308,3,2],[2311,1,1],[2312,1,2],[2314,3,1],[2575,10,2],[2594,4,2],[2600,1,2],[3519,2,2],[3568,2,2],[3570,4,1],[3643,1,1],[3713,2,2],[3717,2,1],
+  [3719,4,2],[3778,4,1],[3834,1,1],[3907,4,2],[3911,2,1],[3913,6,2],[3919,4,1],[3932,6,1],[3938,3,2],[3947,1,2],[4020,2,1],[4229,1,10],[4230,1,14],[4231,1,18],[4232,2,10],[4234,1,8],
+  [4246,1,9],[5039,12,1],[5051,1,6],[5054,1,4],[5055,1,13],[5056,1,6],[5059,1,4],[5060,1,13],[5061,1,19],[5062,1,7],[5063,1,10],[5067,1,4],[5068,1,13],[5069,1,19],[5070,1,7],[5074,1,4],
+  [5075,1,13],[5076,1,19],[5077,1,7],[5078,1,10],[5082,1,4],[5083,1,13],[5084,1,19],[5085,1,7],[5089,1,4],[5090,1,13],[5091,2,1],[5099,1,7],[5100,2,13],[5102,2,19],[5104,2,4],[5106,1,7],
+  [5108,2,2],[5110,2,1],[5112,4,2],[5116,6,1],[5122,2,2],[5124,4,1],[5128,8,6],[5136,1,19],[5137,1,4],[5138,1,6],[5139,1,10],[5140,1,7],[5141,2,13],[5143,1,19],[5144,1,7],[5145,1,6],
+  [5146,1,4],[5147,2,6],[5176,6,1],[5182,2,2],[5184,2,1],[5186,2,2],[5198,1,19],[5199,1,13],[5200,1,7],[5201,1,6],[5202,1,4],[5203,1,19],[5204,1,13],[5205,1,7],[5206,1,6],[5207,1,4],
+  [5397,1,20],[5398,1,23],[5399,2,5],[5422,2,4],[5424,1,20],[5425,1,23],[5431,2,23],[5433,2,4],[5435,2,12],[5437,2,17],[5439,2,6],[5441,2,17],[5443,10,6],[5703,1,2],[5899,8,3],[5907,10,6],
+  [5934,1,6],[6588,2,1],[7026,10,2],[7107,5,2],[7168,2,4],[7170,6,13],[7176,2,4],[7178,4,13],[7609,2,6],[7933,2,5],[7935,6,22],[7941,1,10],[7942,1,14],[7943,1,18],[7944,1,10],[7945,1,8],
+  [7946,1,10],[7947,2,6],[8059,2,17],[8095,4,17],[8189,2,17],[8258,2,22],[8270,3,22],[8786,3,1],[8794,2,1],[8965,2,6],[8967,2,3],[8969,2,20],[8971,2,23],[8973,2,22],[8975,2,17],[9068,2,6],
+  [9100,1,1],[9120,1,1],[9556,3,2],[9559,1,1],[9560,5,2],[9565,4,1],[9569,2,2],[9571,1,1],[9572,11,2],[9583,1,1],[9584,3,2],[9587,4,1],[9591,2,2],[9593,1,1],[9594,2,2],[9596,4,1],
+  [9700,2,4],[9702,6,5],[9708,6,22],[9714,2,23],[9793,2,13],[9795,2,7],[9797,2,6],[9799,4,4],[9803,2,10],[9805,6,4],[9811,4,3],[9815,2,19],[9817,16,5],[9835,4,19],[9841,3,13],[9844,1,19],
+  [9847,4,7],[9851,13,22],[9865,10,6],[9885,2,6],[9889,4,6],[9901,1,20],[9902,1,22],[9903,1,3],[9904,1,7],[9914,1,2],[9915,2,1],[9917,3,2],[9920,1,1],[9921,4,2],[9925,2,1],[9927,3,2],
+  [9930,1,1],[9931,3,2],[9934,2,1],[10100,5,6],[10105,2,10],[10107,3,13],[10110,3,19],[10113,1,6],[10114,2,22],[10116,2,6],[10118,3,4],[10121,1,6],[10122,4,4],[10126,2,6],[10128,1,12],[10129,1,4],
+  [10130,1,7],[10131,2,13],[10133,3,3],[10136,1,6],[10137,1,22],[10138,1,23],[10139,1,4],[10140,1,22],[10141,1,10],[10142,2,22],[10144,1,12],[10145,1,17],[10146,2,2],[10148,1,1],[10149,3,2],[10152,1,1],
+  [10153,1,2],[10154,1,1],[10155,1,2],[10157,3,2],[10175,5,6],[10180,2,10],[10182,3,13],[10185,3,19],[10188,1,6],[10189,2,22],[10191,2,6],[10193,3,4],[10196,1,6],[10197,4,4],[10201,2,6],[10203,1,12],
+  [10204,1,4],[10205,1,7],[10206,2,13],[10208,3,3],[10211,1,6],[10212,1,22],[10213,1,23],[10214,1,4],[10215,1,22],[10216,1,10],[10217,2,22],[10219,1,12],[10220,1,17],[10221,2,2],[10223,1,1],[10224,3,2],
+  [10227,1,1],[10228,1,2],[10229,1,1],[10230,1,2],[10232,3,2],[11009,1,2],[11010,4,20],[11014,2,4],[11016,2,13],[11018,2,19],[11020,2,7],[11022,2,10],[11024,2,6],[11026,2,3],[11111,1,13],[11112,1,12],
+  [11113,1,10],[11114,1,7],[11115,1,4],[11116,1,19],[11117,1,13],[11118,6,6],[11124,1,13],[11125,1,7],[11126,1,10],[11127,1,19],[11128,1,4],[11129,1,13],[11550,3,2],[11553,5,1],[11558,1,2],[11559,1,1],
+  [11560,1,2],[11561,1,1],[11562,3,2],[11565,5,1],[11570,1,2],[11571,1,1],[11572,1,2],[11573,1,1],[11600,1,1],[11677,1,1],[12120,4,9],[12215,1,20],[12216,1,6],[12217,2,22],[12219,4,5],[12227,1,4],
+  [12228,1,3],[12229,1,13],[12230,1,7],[12231,1,10],[12232,1,19],[12233,2,4],[12235,1,13],[12638,1,13],[12639,1,12],[12640,1,10],[12641,1,7],[12642,1,4],[12643,1,19],[12644,1,13],[12645,6,6],[12651,1,13],
+  [12652,1,7],[12653,1,10],[12654,1,19],[12655,1,4],[12656,1,13],[12657,1,20],[12658,1,6],[12659,2,22],[12661,4,5],[12665,1,4],[12666,1,3],[12667,1,13],[12668,1,7],[12669,1,10],[12670,1,19],[12671,2,4],
+  [12673,1,13],[15285,1,10],[16384,4,22],[16455,2,19],[16457,2,13],[16459,2,7],[16461,2,4],[16463,2,19],[16465,2,13],[16467,2,7],[16469,2,4],[16471,2,19],[16473,2,13],[16475,2,7],[16477,2,4],[16479,2,19],
+  [16481,2,13],[16483,2,7],[16485,2,4],[16487,1,1],[16488,1,2],[16490,3,1],[16493,1,2],[16494,1,1],[16495,2,2],[16497,4,1],[16501,1,2],[16502,1,1],[16638,4,2],[16856,2,3],[16896,12,2],[16912,1,10],
+  [16913,1,14],[16914,1,8],[16915,1,18],[16936,3,2],[16940,1,2],[17118,2,3],[17677,2,12],[17790,2,20],[17828,2,20],[17841,1,18],[17843,1,18],[17988,2,18],[18090,2,17],[18100,2,17],[18606,2,1],[18608,6,2],
+  [18614,2,1],[18616,2,2],[18618,10,1],[18628,2,2],[18630,2,1],[18632,2,2],[18634,2,1],[18636,6,2],[19357,1,22],[19358,3,6],[19722,2,10],[20696,2,12],[30742,1,22],[30743,2,2],[30745,1,3],[30746,1,6],
+  [30747,3,23],[30750,1,22],[30753,1,22],[30754,2,13],[30756,4,4],[30760,1,6],[30761,1,10],[30762,2,13],[30764,1,4],[30765,1,6],[30766,1,19],[39301,2,22],[40485,8,9],[40687,2,22],[40695,2,4],[40697,2,6],
+  [40699,2,5],[40767,2,6],[40775,2,6],[41131,5,22],[41415,2,6],[41417,2,10],[41462,1,12],[41609,3,1],[41613,2,3],[41615,2,6],[41617,3,1],[41620,1,3],[41621,1,18],[41622,1,3],[41674,2,22],[41793,2,1],
+  [41795,2,2],[41797,2,1],[41799,2,2],[41801,2,10],[41962,1,6],[41995,1,2],[41996,3,12],[41999,1,10],[42000,2,6],[42002,1,22],[42003,1,20],[42025,2,10],[42027,2,6],[42569,2,2],[42752,4,17],[42855,4,2],
+  [42866,1,2],[42947,2,2],[42969,1,7],[42970,1,19],[42971,1,4],[42972,2,13],[42974,2,6],[42976,1,7],[42977,1,19],[42978,1,12],[43057,2,2],[43285,2,2],[44701,1,6],[44702,1,10],[44703,1,19],[44704,1,7],
+  [44705,1,13],[44706,1,4],[44707,1,20],[44708,2,1],[44710,1,2],[44711,1,10],[44712,1,13],[44713,1,4],[44714,1,7],[44715,1,19],[44716,1,6],[44717,1,10],[44718,1,19],[44719,1,7],[44720,1,13],[44721,1,4],
+  [44722,1,20],[44723,2,1],[44725,1,2],[44726,1,10],[44727,1,13],[44728,1,4],[44729,1,7],[44730,1,19],[44731,1,6],[44732,1,10],[44733,1,19],[44734,1,7],[44735,1,13],[44736,1,4],[44737,1,20],[44738,2,1],
+  [44740,1,2],[44741,1,10],[44742,1,13],[44743,1,4],[44744,1,7],[44745,1,19],[44746,1,6],[44747,1,10],[44748,1,19],[44749,1,7],[44750,1,13],[44751,1,4],[44752,1,20],[44753,2,1],[44755,1,2],[44756,1,10],
+  [44757,1,13],[44758,1,4],[44759,1,7],[44760,1,19],[44805,1,12],[44845,1,2],[44958,1,20],[45504,1,14],[45534,1,22],[45535,2,2],[45719,1,10],[45720,6,17],[45751,4,22],[45767,1,6],[45768,1,13],[45769,1,19],
+  [45770,1,4],[45771,1,7],[45772,1,10],[46090,1,6],[46152,1,18],[46266,5,10],[46271,4,1],[46275,4,2],[46279,8,1],[46290,2,10],[46292,2,1],[46294,2,2],[46296,2,10],[46298,4,1],[46302,2,2],[46304,2,1],
+  [46306,2,22],[46375,4,12],
+];
+// END generated
+const GRAPHIC_LAYER = new Map<number, string>();
+for (const [first, count, layer] of GRAPHIC_LAYER_RUNS) for (let g = first; g < first + count; g++) GRAPHIC_LAYER.set(g, TILEDATA_LAYERS[layer]!);
+export const layerOfGraphic = (graphic: number | null | undefined): string | null => (graphic == null ? null : GRAPHIC_LAYER.get(graphic) ?? null);
+
 // Returns { slot, twoHanded, gear } — gear=false for consumables/resources/unknown names.
-export function classify(name: string | null | undefined, parsed?: ParsedTooltip | null | undefined, layer?: string | null | undefined): ClassifyResult {
+export function classify(name: string | null | undefined, parsed?: ParsedTooltip | null | undefined, layer?: string | null | undefined, graphic?: number | null | undefined): ClassifyResult {
   const n = name || "";
   let slot = null, two = false;
   if (layer && LAYER_TO_SLOT[layer]) {
@@ -374,6 +463,9 @@ export function classify(name: string | null | undefined, parsed?: ParsedTooltip
     two = slot === "twoHanded" && !SHIELD_RE.test(n) && (parsed?.twoHanded ?? TWO_H_RE.test(n));
     return { slot, twoHanded: two, gear: true };
   }
+  const graphicLayer = layerOfGraphic(graphic);
+  const held = graphicLayer === "OneHanded" || graphicLayer === "TwoHanded";
+  if (graphicLayer && !held) return { slot: LAYER_TO_SLOT[graphicLayer]!, twoHanded: false, gear: true };
   if (SPELL_NAMES.has(n.toLowerCase().trim())) return { slot: null, twoHanded: false, gear: false };   // spell scrolls are named after the spell
   if (SPELLBOOK_RE.test(n)) return { slot: "oneHanded", twoHanded: false, gear: true };
   if (SKIP_RE.test(n)) return { slot: null, twoHanded: false, gear: false };
@@ -382,6 +474,9 @@ export function classify(name: string | null | undefined, parsed?: ParsedTooltip
     two = parsed?.twoHanded ?? TWO_H_RE.test(n);
     return { slot: two ? "twoHanded" : "oneHanded", twoHanded: two, gear: true };
   }
+  // A held graphic with no weapon name or weapon lines: a shield (TwoHanded) or a spellbook-like
+  // off-hand item (OneHanded).
+  if (held) return { slot: LAYER_TO_SLOT[graphicLayer]!, twoHanded: false, gear: true };
   for (const [s, rx] of JEWEL_SLOTS) if (rx.test(n)) return { slot: s, twoHanded: false, gear: true };
   for (const [s, rx] of ARMOR_SLOTS) if (rx.test(n)) return { slot: s, twoHanded: false, gear: true };
   // Unknown name but carries item properties: still gear, slot unknown.
@@ -435,7 +530,11 @@ export function foldSnapshots(snapshots: ScanV2[]): Inventory {
   // Object.keys/values/entries read below behave identically on a null-prototype object (Phase 7
   // security review, Area 2, Minor 1).
   const inv: Inventory = { characters: Object.create(null), containers: Object.create(null), items: Object.create(null), scans: [] };
-  const sorted = [...snapshots].sort((a, b) => parseStamp(a.scannedAt) - parseStamp(b.scannedAt));
+  // validateScan refuses a scannedAt that is not a real instant, but a scan folded from before that
+  // check could still carry one: it sorts first, because a NaN comparator result reads as "equal" and
+  // would let an older scan of a root fold after a newer one.
+  const stampOf = (s: string): number => { const t = parseStamp(s); return Number.isFinite(t) ? t : -Infinity; };
+  const sorted = [...snapshots].sort((a, b) => stampOf(a.scannedAt) - stampOf(b.scannedAt));
   for (const snap of sorted) {
     if (snap.schemaVersion !== 2) throw new Error("foldSnapshots needs v2 scans — call upgradeScan first");
     const char = snap.character;
@@ -556,10 +655,10 @@ function labelContainers(inv: Inventory): void {
 
 function enrich(raw: EnrichRaw, loc: EnrichLoc): Item {
   const parsed = parseTooltip(raw.tooltip && raw.tooltip.length ? raw.tooltip : [raw.name]);
-  const cls = classify(parsed.name || raw.name, parsed, loc.layer);
+  const cls = classify(parsed.name || raw.name, parsed, loc.layer, raw.graphic);
   return {
     serial: +raw.serial, name: parsed.name || raw.name || "", graphic: raw.graphic, hue: raw.hue, amount: raw.amount || 1,
-    props: parsed.props, extras: parsed.extras, flags: parsed.flags, tags: parsed.tags, strReq: parsed.strReq,
+    props: parsed.props, setBonus: parsed.setBonus, extras: parsed.extras, flags: parsed.flags, tags: parsed.tags, strReq: parsed.strReq,
     rarity: parsed.rarity, weight: parsed.weight, skillReq: parsed.skillReq, lines: parsed.lines,
     gargoyle: /\bgargish\b/i.test(parsed.name || raw.name || "") || parsed.flags.includes("gargoyles only"),
     slayers: slayersOf(parsed.flags),
@@ -962,7 +1061,7 @@ export function slayersOf(flags: string[] | null | undefined): string[] {
 // Meditation rule (ServUO): armour materials with MeditationAllowance None/Half block or halve mana regen unless the
 // piece has Mage Armor; a held weapon or shield blocks it unless Spell Channeling (spellbooks are fine). Jewellery,
 // cloaks, talismans and cloth never interfere.
-const ARMOR_SLOT_SET = new Set(["helmet", "chest", "arms", "hands", "legs", "neck", "feet", "robe", "waist", "shirt"]);
+const ARMOR_SLOT_SET = new Set(["helmet", "chest", "arms", "hands", "legs", "neck", "feet", "robe", "tunic", "waist", "shirt"]);
 // material words that always block meditation (platemail, chain, bone, studded …)
 const NONMED_RE = /\b(platemail|plate|chainmail|chain|ringmail|bone|dragon|woodland|studded|metal|stone|verite|valorite|agapite|bronze|copper|shadow iron|dull copper|gold|scale)\b/i;
 // material words that mean leather/cloth (meditation allowed) — checked before the helm list
