@@ -14,14 +14,15 @@ import type { RulesV1, ScanV2 } from "./schema/types.d.mts";
 
 setRules(JSON.parse(readFileSync(join(dirname(fileURLToPath(import.meta.url)), "rules", "uoalive.json"), "utf8")) as RulesV1);
 
-const CHEST = 100, BAG = 101, POUCH = 102, RING = 200, GEM = 201, PEARL = 202, NEWGEM = 203;
+const CHEST = 100, CHEST2 = 110, BAG = 101, POUCH = 102, RING = 200, GEM = 201, PEARL = 202, NEWGEM = 203;
 const item = (serial: number, container: number, name: string) => ({ serial, container, name, nameSource: "opl", tooltip: [name] });
-const scan = (scannedAt: string, containers: Record<string, unknown>, items: ReturnType<typeof item>[]): ScanV2 => {
+const scan = (scannedAt: string, containers: Record<string, unknown>, items: ReturnType<typeof item>[],
+  roots: number[] = [CHEST], character = "Tester"): ScanV2 => {
   const doc = {
-    schemaVersion: 2, character: "Tester", scannedAt, stats: {},
+    schemaVersion: 2, character, scannedAt, stats: {},
     adapter: { id: "tazuo", version: "2.2.0", client: "TazUO", clientVersion: null,
       capabilities: { layers: [], arms: true, bank: true, ground: true, nested: true, tooltips: "opl", bridge: [] } },
-    roots: [{ serial: CHEST, kind: "ground", name: "Chest", opened: true }],
+    roots: roots.map((serial) => ({ serial, kind: "ground", name: "Chest " + serial, opened: true })),
     containers, items, equipped: [],
   };
   const v = validateScan(doc);
@@ -55,3 +56,23 @@ test("[fast] once the bag opens again its contents are replaced as usual", () =>
   assert.equal(inv.items[PEARL], undefined);
   assert.ok(inv.items[BAG]);
 });
+
+// The unopened bag may have moved since the last scan: into another chest, or another character's
+// chest. What is kept inside it now lives under the bag's NEW root — otherwise the next scan of the
+// old chest would delete it, though it is still in the bag.
+for (const character of ["Tester", "Other"]) {
+  test(`[fast] contents kept inside an unopened bag that moved to another chest follow it there (scanned by ${character})`, () => {
+    const chest2 = { serial: CHEST2, kind: "ground", name: "Chest 2", parent: null, root: CHEST2 };
+    const moved = scan("2026-09-21T10:00:00Z", { [CHEST]: chest, [CHEST2]: chest2, [BAG]: { ...bag({ opened: false }), parent: CHEST2, root: CHEST2 } }, [], [CHEST, CHEST2], character);
+    let inv = foldSnapshots([first, moved]);
+    for (const s of [RING, PEARL, POUCH]) {
+      assert.equal(inv.items[s]!.root, CHEST2, `item ${s} follows the bag`);
+      assert.equal(inv.items[s]!.scannedBy, character);
+    }
+    assert.equal(inv.containers[POUCH]!.root, CHEST2);
+    assert.equal(inv.containers[POUCH]!.scannedBy, character);
+    const oldChestAgain = scan("2026-09-22T10:00:00Z", { [CHEST]: chest }, []);
+    inv = foldSnapshots([first, moved, oldChestAgain]);
+    assert.ok(inv.items[RING] && inv.items[PEARL] && inv.items[POUCH], "a later scan of the old chest leaves them alone");
+  });
+}
