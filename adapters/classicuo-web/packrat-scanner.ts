@@ -44,11 +44,12 @@
 //   either, so this script never tries to open anything explicitly). A related project's live testing
 //   of the same client found a locked/trapped container's `.contents` getter can throw instead of
 //   just returning `undefined`. Every `.contents` read here is wrapped in try/catch for exactly that.
-//   For a ROOT, that's recorded honestly as `opened: false` with no items under it. For a NESTED
-//   item, the script has no way to tell "this is a container I can't read" apart from "this isn't a
-//   container at all" — both read back as `undefined` from `safeContents()` — so a nested item whose
-//   contents throw or come back empty is simply recorded as an ordinary item, not flagged as an
-//   unreadable container and not left out of the scan.
+//   For a ROOT, that's recorded honestly as `opened: false` with no items under it, and so is a
+//   ground root whose contents read as an empty array (never opened is likelier than empty). For a
+//   NESTED item, the script has no way to tell "this is a container I can't read" apart from "this
+//   isn't a container at all", and a build may give every item an empty `contents` array — so a
+//   nested item counts as a container only when it holds something or carries a known container
+//   graphic (`isContainer()`); anything else is recorded as an ordinary item, not left out.
 // - DEEPLY NESTED BAGS STOP RECURSING AFTER `MAX_NEST` LEVELS (4). A bag past that depth is recorded
 //   as a plain item (its own contents are never read), the same as the "can't tell a container from
 //   an item" case just above — this is a deliberate, silent cap (mirroring
@@ -194,6 +195,15 @@ function safeContents(item: any): any[] | undefined {
   }
 }
 
+// A client build may hand every item an empty `contents` array, container or not, so an array alone
+// proves nothing: a child counts as a container when it holds something, or when its graphic is one
+// of the known container graphics (an empty bag).
+function isContainer(item: any): boolean {
+  const c = safeContents(item);
+  if (c === undefined) return false;
+  return c.length > 0 || CONTAINER_GRAPHICS.includes(Number(item?.graphic));
+}
+
 // yieldTick — sleep every YIELD_EVERY calls, so a long recursive scan gives the sandbox a break
 // between chunks of work instead of running one uninterrupted tight loop (see header comment on the
 // undocumented/unverified CPU watchdog).
@@ -286,8 +296,7 @@ function walk(rootSerial: number, containerItem: any, containers: Record<string,
     const s = Number(kid.serial);
     if (seen.has(s)) continue;
     seen.add(s);
-    const kidContents = depth < MAX_NEST ? safeContents(kid) : undefined;
-    if (kidContents !== undefined) {
+    if (depth < MAX_NEST && isContainer(kid)) {
       // A nested container: record it in `containers`, then recurse into it.
       const t = tooltipOf(s);
       containers[String(s)] = {
@@ -377,7 +386,9 @@ function main(): void {
     containers[String(s)] = { serial: s, kind: "ground", name, parent: null, root: s,
       pos: { x: Number(g.x || 0), y: Number(g.y || 0), z: Number(g.z || 0) }, tooltip: t.lines };
     const n = walk(s, g, containers, items, seen, 0);
-    roots.push({ serial: s, kind: "ground", name, opened: n >= 0 });
+    // This script never opens anything, so a ground chest reading [] is more likely one the client
+    // never loaded than an empty one: record it unopened, so the app keeps what it last knew.
+    roots.push({ serial: s, kind: "ground", name, opened: n >= 0 && (safeContents(g) || []).length > 0 });
   }
   client.sysMsg(`  ground: ${roots.filter((r) => r.kind === "ground").length} container(s) found ` +
     `within ${SCAN_RANGE} tiles`, 88);
