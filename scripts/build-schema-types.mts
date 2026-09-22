@@ -20,7 +20,7 @@
 // no-op), items (single-schema form only — tuple form and the boolean forms are unsupported), and
 // $ref (local-document only: "#/$defs/<name>" or "#/definitions/<name>", resolved against the
 // document passed to schemaToTypeSource; repeated refs to the same target share one declaration; a
-// ref cycle throws instead of recursing forever). pattern, minLength, minimum and maximum
+// ref cycle throws instead of recursing forever). pattern, minLength, minItems, minimum and maximum
 // constrain values, not shapes, so they're consumed and ignored for the same reason the metadata
 // keyword $comment is.
 //
@@ -53,6 +53,7 @@ type JsonSchema = {
   pattern?: string;
   minLength?: number;
   maxLength?: number;
+  minItems?: number;
   maxItems?: number;
   minimum?: number;
   maximum?: number;
@@ -60,7 +61,7 @@ type JsonSchema = {
 
 // Keywords with no type-level meaning — collected (so they don't trip the "unsupported construct"
 // check) and then ignored. $defs/definitions are metadata for $ref to find, not a shape of their own.
-const IGNORED_KEYWORDS = new Set(["$comment", "pattern", "minLength", "maxLength", "maxItems", "minimum", "maximum", "$defs", "definitions"]);
+const IGNORED_KEYWORDS = new Set(["$comment", "pattern", "minLength", "maxLength", "minItems", "maxItems", "minimum", "maximum", "$defs", "definitions"]);
 const STRUCTURAL_KEYWORDS = ["type", "properties", "required", "additionalProperties", "items"] as const;
 
 type Ctx = {

@@ -4,7 +4,7 @@
 // "number"), properties, required, additionalProperties (false to close a shape, or a schema applied
 // to every key `properties` does not name — which is how an arbitrarily-keyed map such as a scan's
 // stats/skills/containers gets its values checked), items (a single schema applied to every array
-// element), enum, pattern, minimum, maximum, minLength, maxLength, maxItems.
+// element), enum, pattern, minimum, maximum, minLength, maxLength, minItems, maxItems.
 // "nullable" has no dedicated keyword — express it as type: ["string", "null"] etc. Every other
 // keyword (e.g. patternProperties, oneOf, $ref) is silently ignored: this is a subset, not a full
 // implementation, and every schema in this repo is written to stay inside it.
@@ -30,6 +30,7 @@ export interface ValidatorSchema {
   maximum?: number;
   minLength?: number;
   maxLength?: number;
+  minItems?: number;
   maxItems?: number;
 }
 
@@ -82,6 +83,9 @@ function walk(schema: ValidatorSchema, value: unknown, path: string, errors: Val
   }
   if (schema.maxLength != null && typeof value === "string" && value.length > schema.maxLength) {
     errors.push({ path: at, msg: `longer than maxLength ${schema.maxLength}` });
+  }
+  if (schema.minItems != null && Array.isArray(value) && value.length < schema.minItems) {
+    errors.push({ path: at, msg: `fewer than minItems ${schema.minItems}` });
   }
   if (schema.maxItems != null && Array.isArray(value) && value.length > schema.maxItems) {
     errors.push({ path: at, msg: `more than maxItems ${schema.maxItems}` });
