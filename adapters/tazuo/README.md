@@ -15,7 +15,7 @@ The scanner and refresh scripts write scan files as **schema v2** (`schemaVersio
   ```
 
   Pick the real scan with the most nested containers for the best coverage; the script prints item/container/root counts when it's done. Sanity-check the result before committing: grep the fixture for each of your real character names (case-insensitive) and confirm none of them print, and `grep -i "crafted by\|engraved" adapters/tazuo/fixture.scan.json` should show only `Nobody`/`Fixture`.
-- A root the scanner could not open (too far, locked) is still listed in `roots[]`, but with `opened: false` and no items for that root — the app's fold treats that exactly like the root wasn't scanned at all, keeping whatever it last knew about it.
+- A root the scanner could not fully read — too far, locked, a bag inside it that lists nothing and never opened (the client's `Opened` flag), or Stop pressed while it was opening — is still listed in `roots[]`, but with `opened: false` and no items for that root — the app's fold treats that exactly like the root wasn't scanned at all, keeping whatever it last knew about it. A scan stopped mid-way writes no file at all; so does a refresh whose backpack, or a bag in it, did not open. Something named a deed is never double-clicked.
 - The bridge's `status.json` `alive` field is always an RFC 3339 timestamp (never the old numeric epoch-seconds `0`); a clean Stop adds `"stopped": true` instead.
 
 ## What each script does
@@ -29,11 +29,12 @@ The scanner and refresh scripts write scan files as **schema v2** (`schemaVersio
 `<dataDir>/bridge/tazuo/queue.jsonl` is an ordinary file. The app writes it, but so could anything else running on your machine, and a line in it drives your character. So the bridge trusts nothing in it and re-checks every line itself rather than assuming the app already did. What it will not do:
 
 - **Open anything that is not a container.** Double-click is UO's universal "use" verb — a potion drinks, a rune opens its gump, a deed places — so every entry of a command's container chain has to pass the same `is_container()` check the scanner uses, corpse refusal included, before it is opened. A chain longer than 8 containers is refused outright (the deepest the app can even produce is 4).
+- **Open a container that is not yours to open.** The first container in the chain must lie on the ground or be your own backpack or open bank box, and each one after it must sit inside the one before — checked against the live client just before each double-click, so another player's pack is never opened, whichever position in the chain names it.
 - **Run a stale or repeated command.** A command carries the time the app queued it; anything older than 60 seconds, or more than 5 seconds in the future, is reported as expired and never executed, and an id that already ran is skipped. Commands queued before the script started are still ignored, as before.
 - **Keep going when the queue is written faster than a person clicks.** A rolling budget of 40 commands a minute — comfortably more than the 20-piece "Grab all" that is the largest burst the app produces — stops the bridge with a message when it trips, because at that rate something other than you is writing that file.
-- **Walk more than 24 tiles.** That is the client's own view range; a Go to (or the walk a Highlight/Grab does to reach a chest) further than that is refused with "walk closer and retry" instead of pathfinding across the map. The walk itself stays one attempt per command, bounded by the existing 20-second pathfind timeout.
+- **Walk more than 24 tiles.** That is the client's own view range; a Go to (or the walk a Highlight/Grab does to reach a chest) further than that is refused with "walk closer and retry" instead of pathfinding across the map. The walk itself stays one attempt per command, bounded by the existing 20-second pathfind timeout, and runs without blocking so the status heartbeat keeps the app's bridge pill online (`API.Pathfinding()` / `CancelPathfinding()`). Nothing in your own backpack or bank is walked to.
 - **Grab from anywhere but your own things.** The destination was always hard-coded to your backpack; the *source* is now checked too. The piece has to resolve to your backpack, your bank, or the container chain that same command just opened — a guild chest someone left open nearby, a stranger's pack, or an item lying on the ground is refused rather than moved.
-- **Lose the rest of a batch to one bad line.** Every line is handled on its own: a junk line, a line that is not a JSON object, or one over 16 KB is counted and reported while the commands behind it still run. Reads are capped at 256 KB per poll and the kept results at 30, so neither the client nor `status.json` can be made to grow without bound.
+- **Lose the rest of a batch to one bad line, or refuse quietly.** Every line is handled on its own: a junk line, a line that is not a JSON object, or one over 16 KB is counted and reported while the commands behind it still run. A refused command that carries an id is recorded under that id, so the app toasts the reason on the button you clicked. Reads are capped at 256 KB per poll and the kept results at 30, so neither the client nor `status.json` can be made to grow without bound.
 
 ## The AFK rule
 
@@ -61,7 +62,7 @@ Either way TazUO's Script Manager still needs its own one-time hotkey/macro-butt
 
 All three scripts resolve their data directory the same way, checked in order:
 
-1. `packrat-paths.json` next to the script (`{"dataDir": "..."}`).
+1. `packrat-paths.json` next to the script (`{"dataDir": "..."}`). The script's folder comes from `__file__`, or from `API.ScriptPath` if TazUO runs the script without defining `__file__` (which build does is unverified), and this step is skipped if neither is available.
 2. the `PACKRAT_DATA` environment variable.
 3. `~/.pack-rat`.
 
