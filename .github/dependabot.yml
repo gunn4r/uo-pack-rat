@@ -10,6 +10,12 @@ updates:
     schedule:
       interval: weekly
     open-pull-requests-limit: 5
+    ignore:
+      # @types/node tracks the Node release line the app targets (engines: >=22.18, CI on Node 22), not
+      # the newest Node. A newer major's types would let code compile that does not run on Node 22.
+      # Move this deliberately when the supported Node version moves.
+      - dependency-name: "@types/node"
+        update-types: ["version-update:semver-major"]
     groups:
       # One pull request a week for the routine devDependency churn, rather than five. Majors stay
       # separate and unbatched: electron and electron-builder majors change what ships to a player's
