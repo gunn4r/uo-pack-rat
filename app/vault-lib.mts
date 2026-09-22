@@ -449,20 +449,30 @@ export function foldSnapshots(snapshots: ScanV2[]): Inventory {
     // A container INSIDE a root that the scan saw but could not open (`opened: false` on its
     // containers entry: a bag that did not open, or one nested deeper than the adapter reads) is not
     // evidence it is empty. Everything the fold knew inside it — items and bags, however deep — is
-    // kept, with its old seenAt; the rest of the root is replaced as usual.
-    const unopened = new Set(Object.values((snap.containers || {}) as Record<string, { serial: number; root: number; opened?: unknown }>)
-      .filter((c) => c.opened === false && roots.has(+c.root)).map((c) => +c.serial));
-    const insideUnopened = (serial: number | null | undefined): boolean => {
+    // kept, with its old seenAt; the rest of the root is replaced as usual. The bag may have moved
+    // (another chest, another character's), so what is kept moves with it: its root becomes the
+    // bag's new root and scannedBy this scanner, or the next scan of the old root would delete it.
+    const unopened = new Map(Object.values((snap.containers || {}) as Record<string, { serial: number; root: number; opened?: unknown }>)
+      .filter((c) => c.opened === false && roots.has(+c.root)).map((c) => [+c.serial, +c.root]));
+    const unopenedRootAbove = (serial: number | null | undefined): number | null => {
       for (let cur = serial, guard = 0; cur != null && guard < 64; guard++) {
-        if (unopened.has(+cur)) return true;
+        if (unopened.has(+cur)) return unopened.get(+cur)!;
         cur = inv.containers[cur]?.parent;
       }
-      return false;
+      return null;
     };
     const keptItems = new Set<string>(), keptContainers = new Set<string>();
     if (unopened.size) {
-      for (const [serial, it] of Object.entries(inv.items)) if (insideUnopened(it.container)) keptItems.add(serial);
-      for (const [serial, c] of Object.entries(inv.containers)) if (insideUnopened(c.parent)) keptContainers.add(serial);
+      const moves: [{ root: number | null; scannedBy: string }, number][] = [];
+      for (const [serial, it] of Object.entries(inv.items)) {
+        const root = unopenedRootAbove(it.container);
+        if (root != null) { keptItems.add(serial); moves.push([it, root]); }
+      }
+      for (const [serial, c] of Object.entries(inv.containers)) {
+        const root = unopenedRootAbove(c.parent);
+        if (root != null) { keptContainers.add(serial); moves.push([c, root]); }
+      }
+      for (const [kept, root] of moves) { kept.root = root; kept.scannedBy = char; }
     }
     for (const [serial, it] of Object.entries(inv.items)) {
       if ((it.equippedBy === char) || (it.root != null && roots.has(+it.root) && !keptItems.has(serial))) delete inv.items[serial];
