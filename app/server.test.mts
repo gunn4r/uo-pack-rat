@@ -1,7 +1,7 @@
 // server.test.mts — HTTP route tests against a real listening server (ephemeral port, tmp data dir).
 import { test, before, after } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, readdirSync, existsSync, renameSync, rmSync, cpSync } from "node:fs";
+import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, readdirSync, existsSync, renameSync, rmSync, cpSync, statSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
@@ -993,8 +993,11 @@ test("[fast] a job that throws inside the optimizer logs its stack with a ref; t
   }
 });
 
+// A profiles.json that is a directory is an I/O failure the route does not recover from (a truncated
+// one is moved aside and reseeded instead), so it still reaches the catch-all 500.
 test("[fast] a route that throws returns a stack-free 500 with a ref that appears in the log", async () => {
-  writeFileSync(join(tdir, "profiles.json"), "{not json");
+  rmSync(join(tdir, "profiles.json"), { force: true });
+  mkdirSync(join(tdir, "profiles.json"));
   const r = await rawReq(`${tsrv.url}/api/profiles`, { headers: authHost() });
   assert.equal(r.status, 500);
   const body = asJson<ErrorBody>(r.json());
@@ -2369,6 +2372,269 @@ test("[fast] a persisted client naming an adapter this install does not ship is 
     assert.equal(setup.bridgeAdapter, "tazuo", "the bridge routes fall back to the default adapter, never the unvalidated id");
     assert.equal(readFileSync(join(dir, "settings.json"), "utf8"), onDisk, "settings.json on disk is left as it stands");
     assert.equal(existsSync(join(dir, "evil")), false);
+  } finally {
+    await s2.close();
+  }
+});
+
+// ---- issue #18: server durability ------------------------------------------------------------------
+
+const JSON_HEADERS = { "content-type": "application/json" };
+const readJson = (p: string): Record<string, unknown> => JSON.parse(readFileSync(p, "utf8")) as Record<string, unknown>;
+const logText = (dir: string): string => existsSync(join(dir, "logs", "server.log")) ? readFileSync(join(dir, "logs", "server.log"), "utf8") : "";
+// An optimizer core whose search parks its worker thread for `ms` (for ever when omitted), with no
+// CPU spent and no dependence on how fast a real search happens to be.
+function parkedCore(ms?: number): string {
+  const core = join(mkdtempSync(join(tmpdir(), "qm-core-park-")), "optimizer-core.mts");
+  writeFileSync(core, `export function optimizeSuit() {\n  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0${ms == null ? "" : `, ${ms}`});\n  return {};\n}\n`);
+  return core;
+}
+const TINY_OPTIMIZE = { pools: {}, current: {}, profile: { caps: { physResist: 70 }, weights: { physResist: 1 } } };
+async function pollJob(url: string, id: string, until: (s: OptimizeJobResponse & { status: number }) => boolean, timeoutMs = 5000): Promise<OptimizeJobResponse & { status: number }> {
+  const deadline = Date.now() + timeoutMs;
+  for (;;) {
+    const r = await fetch(`${url}/api/optimize/${id}/status`);
+    const s = { ...asJson<OptimizeJobResponse>(await r.json()), status: r.status };
+    if (until(s) || Date.now() > deadline) return s;
+    await new Promise((res) => setTimeout(res, 20));
+  }
+}
+
+test("[fast] a settings write after a startup shard fallback keeps the shard settings.json names", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "qm-fallback-put-"));
+  writeFileSync(join(dir, "settings.json"), JSON.stringify({ schemaVersion: 1, shard: "myshard" }, null, 2) + "\n");
+  const s2 = await startServer(ensureLayout(resolveConfig(["--demo", "--port", "0", "--data", dir], {})));
+  try {
+    const r = await fetch(s2.url + "/api/settings", { method: "PUT", headers: JSON_HEADERS, body: JSON.stringify({ setupDone: true }) });
+    assert.equal(r.status, 200);
+    const onDisk = readJson(join(dir, "settings.json"));
+    assert.equal(onDisk.shard, "myshard", "the in-memory fallback must never be written over the player's shard");
+    assert.equal(onDisk.setupDone, true);
+    const rules = asJson<RulesResponse>(await (await fetch(s2.url + "/api/rules")).json());
+    assert.equal(rules.shard, "uoalive");
+    assert.equal(rules.fallback, true, "still running on the fallback for this session");
+  } finally {
+    await s2.close();
+  }
+});
+
+test("[fast] a settings write keeps a client whose adapter this install does not ship", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "qm-client-put-"));
+  const client = { adapter: "from-a-newer-version", scriptsDir: "/Users/example/Client/Scripts" };
+  writeFileSync(join(dir, "settings.json"), JSON.stringify({ schemaVersion: 1, shard: "uoalive", client }, null, 2) + "\n");
+  const s2 = await startServer(ensureLayout(resolveConfig(["--demo", "--port", "0", "--data", dir], {})));
+  try {
+    const got = asJson<SettingsResponse>(await (await fetch(s2.url + "/api/settings")).json());
+    assert.equal(got.settings.client, null, "ignored for this run");
+    const r = await fetch(s2.url + "/api/settings", { method: "PUT", headers: JSON_HEADERS, body: JSON.stringify({ setupDone: true }) });
+    assert.equal(r.status, 200);
+    assert.deepEqual(readJson(join(dir, "settings.json")).client, client, "settings.json keeps the client it named");
+  } finally {
+    await s2.close();
+  }
+});
+
+test("[fast] a malformed JSON body is a 400 naming the problem, with nothing logged", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "qm-badjson-"));
+  const s2 = await startServer(ensureLayout(resolveConfig(["--demo", "--port", "0", "--data", dir], {})));
+  try {
+    for (const [method, path] of [["PUT", "/api/settings"], ["PUT", "/api/profiles"], ["POST", "/api/optimize"]] as const) {
+      const r = await fetch(s2.url + path, { method, headers: JSON_HEADERS, body: "{not json" });
+      assert.equal(r.status, 400, `${method} ${path}`);
+      const body = asJson<ErrorBody>(await r.json());
+      assert.match(body.error, /invalid JSON/);
+      assert.equal(body.ref, undefined);
+    }
+    assert.equal(logText(dir), "", "no stack reaches the log for a caller's bad body");
+  } finally {
+    await s2.close();
+  }
+});
+
+test("[fast] a truncated profiles.json is moved aside and reseeded from the defaults, not a 500 on every read", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "qm-badprofiles-"));
+  const s2 = await startServer(ensureLayout(resolveConfig(["--demo", "--port", "0", "--data", dir], {})));
+  try {
+    writeFileSync(join(dir, "profiles.json"), '{"schemaVersion": 2, "templ');
+    const r = await fetch(s2.url + "/api/profiles");
+    assert.equal(r.status, 200);
+    const defaults = JSON.parse(readFileSync(join(HERE, "data", "profiles.default.json"), "utf8")) as ProfilesFile;
+    assert.deepEqual(Object.keys(asJson<ProfilesResponse>(await r.json()).profiles.templates!), Object.keys(defaults.templates!));
+    assert.equal(readFileSync(join(dir, "profiles.json.corrupt"), "utf8"), '{"schemaVersion": 2, "templ', "the damaged file is kept for the player");
+    assert.match(logText(dir), /profiles\.json is unreadable/);
+    assert.equal((await fetch(s2.url + "/api/profiles")).status, 200, "and the next read is ordinary");
+  } finally {
+    await s2.close();
+  }
+});
+
+test("[fast] a truncated saved run answers a clear 404, not a 500, and can still be deleted", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "qm-badrun-"));
+  const s2 = await startServer(ensureLayout(resolveConfig(["--demo", "--port", "0", "--data", dir], {})));
+  try {
+    const id = "0b5c1a4e-0000-4000-8000-000000000001";
+    writeFileSync(join(dir, "runs", `${id}.json`), '{"id":"0b5c');
+    const got = await fetch(s2.url + `/api/runs/${id}`);
+    assert.equal(got.status, 404);
+    assert.match(asJson<ErrorBody>(await got.json()).error, /damaged/);
+    const put = await fetch(s2.url + `/api/runs/${id}`, { method: "PUT", headers: JSON_HEADERS, body: JSON.stringify({ label: "x" }) });
+    assert.equal(put.status, 404);
+    assert.equal((await fetch(s2.url + `/api/runs/${id}`, { method: "DELETE" })).status, 200);
+    assert.equal(existsSync(join(dir, "runs", `${id}.json`)), false);
+  } finally {
+    await s2.close();
+  }
+});
+
+// A write through a temp file and a rename replaces the file's inode; writing in place (the old
+// writeFileSync onto the live name, which a crash can leave truncated) keeps it.
+test("[fast] settings, profiles and tombstones are replaced through a renamed temp file, created 0600, leaving no temp behind", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "qm-atomic-"));
+  const s2 = await startServer(ensureLayout(resolveConfig(["--port", "0", "--data", dir], {})));
+  try {
+    const profiles = asJson<ProfilesResponse>(await (await fetch(s2.url + "/api/profiles")).json()).profiles;
+    const forget = () => fetch(s2.url + "/api/forget", { method: "POST", headers: JSON_HEADERS, body: JSON.stringify({ root: 4660 }) });
+    assert.equal((await forget()).status, 200);
+    const files = [join(dir, "settings.json"), join(dir, "profiles.json"), join(dir, "scans", "_forget-1234.json")];
+    const before = files.map((f) => statSync(f).ino);
+    assert.equal((await fetch(s2.url + "/api/settings", { method: "PUT", headers: JSON_HEADERS, body: JSON.stringify({ setupDone: true }) })).status, 200);
+    assert.equal((await fetch(s2.url + "/api/profiles", { method: "PUT", headers: JSON_HEADERS, body: JSON.stringify(profiles) })).status, 200);
+    assert.equal((await forget()).status, 200);
+    files.forEach((f, i) => {
+      assert.notEqual(statSync(f).ino, before[i], `${f} was rewritten in place`);
+      if (process.platform !== "win32") assert.equal(statSync(f).mode & 0o777, 0o600, f);
+    });
+    for (const d of [dir, join(dir, "scans")]) assert.deepEqual(readdirSync(d).filter((f) => f.endsWith(".new") || f.endsWith(".tmp")), [], d);
+  } finally {
+    await s2.close();
+  }
+});
+
+test("[fast] a build that outlives the finished-job retention is not cancelled, and its result is kept for that long after it finishes", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "qm-job-retention-"));
+  const s2 = await startServer(ensureLayout(resolveConfig(["--demo", "--port", "0", "--data", dir], { PACKRAT_CORE: parkedCore(600) })),
+    { jobTimings: { retentionMs: 300 } });
+  try {
+    const r = await fetch(s2.url + "/api/optimize", { method: "POST", headers: JSON_HEADERS, body: JSON.stringify({ ...TINY_OPTIMIZE, opts: {} }) });
+    const { id } = asJson<OptimizeJobResponse>(await r.json());
+    const done = await pollJob(s2.url, id!, (s) => s.state !== "running");
+    assert.equal(done.status, 200);
+    assert.equal(done.state, "done", "a 600 ms build must not be cancelled by a 300 ms retention");
+    await new Promise((res) => setTimeout(res, 100));
+    assert.equal((await fetch(s2.url + `/api/optimize/${id}/status`)).status, 200, "still there shortly after it finished");
+    const gone = await pollJob(s2.url, id!, (s) => s.status === 404, 3000);
+    assert.equal(gone.status, 404, "dropped once the retention after finishing has passed");
+  } finally {
+    await s2.close();
+  }
+});
+
+test("[fast] a build still running well past its own time budget is cancelled", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "qm-job-ceiling-"));
+  const s2 = await startServer(ensureLayout(resolveConfig(["--demo", "--port", "0", "--data", dir], { PACKRAT_CORE: parkedCore() })),
+    { jobTimings: { runGraceMs: 100 } });
+  try {
+    const r = await fetch(s2.url + "/api/optimize", { method: "POST", headers: JSON_HEADERS, body: JSON.stringify({ ...TINY_OPTIMIZE, opts: { timeBudgetMs: 100 } }) });
+    const { id } = asJson<OptimizeJobResponse>(await r.json());
+    const s = await pollJob(s2.url, id!, (x) => x.state !== "running", 3000);
+    assert.equal(s.state, "cancelled");
+  } finally {
+    await s2.close();
+  }
+});
+
+test("[fast] closing the server during a build logs no phantom job failure", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "qm-close-job-"));
+  const s2 = await startServer(ensureLayout(resolveConfig(["--demo", "--port", "0", "--data", dir], { PACKRAT_CORE: parkedCore() })));
+  const r = await fetch(s2.url + "/api/optimize", { method: "POST", headers: JSON_HEADERS, body: JSON.stringify({ ...TINY_OPTIMIZE, opts: {} }) });
+  assert.equal(r.status, 200);
+  await r.arrayBuffer();
+  await new Promise((res) => setTimeout(res, 300));   // let the worker start and park
+  await s2.close();
+  await new Promise((res) => setTimeout(res, 300));   // the terminated worker's exit arrives after close()
+  assert.doesNotMatch(logText(dir), /job /, "a quit mid-build is not an internal error");
+});
+
+test("[fast] POST /api/forget refuses a boolean, an unsafe integer and a serial past the scan contract's range", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "qm-forget-root-"));
+  const s2 = await startServer(ensureLayout(resolveConfig(["--port", "0", "--data", dir], {})));
+  try {
+    for (const bad of [true, 2 ** 60, "1e300", "0x10", 2 ** 32, " 7"]) {
+      const r = await fetch(s2.url + "/api/forget", { method: "POST", headers: JSON_HEADERS, body: JSON.stringify({ root: bad }) });
+      assert.equal(r.status, 400, `root ${JSON.stringify(bad)} should be rejected`);
+    }
+    assert.equal(readdirSync(join(dir, "scans")).length, 0, "no tombstone was written");
+    assert.doesNotMatch(logText(dir), /POST \/api\/forget|refusing/, "and nothing reached the 500 path");
+    assert.equal((await fetch(s2.url + "/api/forget", { method: "POST", headers: JSON_HEADERS, body: JSON.stringify({ root: "4660" }) })).status, 200, "a decimal string still works");
+  } finally {
+    await s2.close();
+  }
+});
+
+test("[fast] GET /api/bridge/status: a status file cannot override the server's own ok/online/age", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "qm-bridge-override-"));
+  mkdirSync(join(dir, "bridge", "tazuo"), { recursive: true });
+  writeFileSync(join(dir, "bridge", "tazuo", "status.json"), JSON.stringify({ alive: "2020-01-01T00:00:00Z", ok: false, online: true, age: 0, character: "Old" }));
+  const s2 = await startServer(ensureLayout(resolveConfig(["--demo", "--port", "0", "--data", dir], {})));
+  try {
+    const st = asJson(await (await fetch(s2.url + "/api/bridge/status")).json());
+    assert.equal(st.ok, true);
+    assert.equal(st.online, false);
+    assert.ok((st.age as number) > 1000, String(st.age));
+    assert.equal(st.character, "Old", "the documented fields still come through");
+  } finally {
+    await s2.close();
+  }
+});
+
+test("[fast] POST /api/optimize for a character with no scans is a 404 and saves nothing", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "qm-optimize-nobody-"));
+  const s2 = await startServer(ensureLayout(resolveConfig(["--demo", "--port", "0", "--data", dir], {})));
+  try {
+    const r = await fetch(s2.url + "/api/optimize", { method: "POST", headers: JSON_HEADERS, body: JSON.stringify({ character: "Nobody", profile: TINY_OPTIMIZE.profile }) });
+    assert.equal(r.status, 404);
+    assert.match(asJson<ErrorBody>(await r.json()).error, /Nobody/);
+    assert.deepEqual(readdirSync(join(dir, "runs")), []);
+  } finally {
+    await s2.close();
+  }
+});
+
+test("[fast] a server that cannot bind its port starts no watcher and leaves the inbox alone", async () => {
+  const blocker = http.createServer();
+  await new Promise<void>((res) => blocker.listen(0, "127.0.0.1", res));
+  const port = (blocker.address() as { port: number }).port;
+  const dir = mkdtempSync(join(tmpdir(), "qm-port-taken-"));
+  const cfg = ensureLayout(resolveConfig(["--port", String(port), "--data", dir], {}));
+  const fixture = readdirSync(join(HERE, "fixtures")).find((f) => /^demo-.*\.json$/.test(f))!;
+  cpSync(join(HERE, "fixtures", fixture), join(dir, "inbox", "tazuo", fixture));
+  try {
+    await assert.rejects(startServer(cfg), /EADDRINUSE/);
+    await new Promise((res) => setTimeout(res, 100));
+    assert.ok(existsSync(join(dir, "inbox", "tazuo", fixture)), "the drop is still waiting for the server that does start");
+    assert.deepEqual(readdirSync(join(dir, "scans")), []);
+  } finally {
+    await new Promise((res) => blocker.close(res));
+  }
+});
+
+test("[fast] POST /api/import/rescan recreates a deleted inbox, and reports a sweep that could not run", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "qm-rescan-gone-"));
+  const s2 = await startServer(ensureLayout(resolveConfig(["--port", "0", "--data", dir], {})));
+  try {
+    rmSync(join(dir, "inbox"), { recursive: true });
+    const r = await fetch(s2.url + "/api/import/rescan", { method: "POST", headers: JSON_HEADERS, body: "{}" });
+    assert.equal(r.status, 200);
+    assert.ok(asJson<RescanResponse>(await r.json()).adapters.includes("tazuo"));
+    assert.ok(existsSync(join(dir, "inbox", "tazuo")), "the inbox is back");
+
+    rmSync(join(dir, "inbox"), { recursive: true });
+    writeFileSync(join(dir, "inbox"), "a file where the inbox folder should be");
+    const bad = await fetch(s2.url + "/api/import/rescan", { method: "POST", headers: JSON_HEADERS, body: "{}" });
+    assert.equal(bad.status, 503);
+    const body = asJson<ErrorBody & { failed: string[] }>(await bad.json());
+    assert.ok(body.failed.includes("tazuo"), JSON.stringify(body));
+    assert.match(body.error, /tazuo/);
   } finally {
     await s2.close();
   }
