@@ -293,28 +293,40 @@ const stripHtml = (s: unknown): string => String(s || "").slice(0, MAX_TOOLTIP_L
 // and stripping the separator run off the end of the head reproduces what `[\s:+]*` used to eat.
 const NUMERIC_TAIL_RE = /(-?\d+(?:\.\d+)?)\s*(%|s)?\s*(?:-\s*(\d+))?$/;
 
-// A set piece lists its full-set bonus after one of these header lines (ServUO cliloc 1072378
-// "<br>Only when full set is present:" while the set is incomplete, 1072377 "Full Armor Set Present"
-// while it is worn whole). Everything after the header describes the set, not the piece.
-const SET_HEADER_RE = /^(only when full set is present|full armor set present)\b/;
+// A set piece describes its set in one of two places (ServUO BaseArmor.AddNameProperties and
+// GetSetProperties, SetHelper.GetSetProperties). While the set is incomplete, the header "<br>Only
+// when full set is present:" (cliloc 1072378) comes LAST, and every line after it is the set's bonus.
+// While the whole set is worn, "Full Armor Set Present" (1072377) or "Full Weapon/Armor Set Present"
+// (1073492) comes near the TOP, followed by the set's "(total)" lines, which sum every piece, and
+// then the piece's own lines. So after that header only "(total)" lines (and the bard set's cooldown
+// line) belong to the set, and the first other line ends the block.
+const SET_INCOMPLETE_RE = /^only when full set is present\b/;
+const SET_WORN_RE = /^full (weapon\/)?armor set present\b/;
+const SET_TOTAL_LINE_RE = /\(total\)$|^mastery bonus cooldown\b/;
 
 // Returns { name, props, setBonus, tags, strReq, rarity, extras, flags, lines }.
 //   props    : modeled numeric properties (optimizer keys) of the piece itself
-//   setBonus : modeled properties in the full-set block, which apply only while every piece of the
-//              set is worn; kept apart so a piece is never credited with them on its own
+//   setBonus : modeled properties in an incomplete set's bonus block, which apply only while every
+//              piece of the set is worn; kept apart so a piece is never credited with them on its own
 //   extras   : every other numeric line as { "swordsmanship": 10, "durability": [57, 57] ... }
 //   flags    : non-numeric lines (lowercased), e.g. "spell channeling", "mage armor", "orc slayer";
-//              a set-block line no pattern models is kept as "set: <line>"
+//              a set-block line no pattern models, and every "(total)" line of a worn full set,
+//              is kept as "set: <line>"
 export function parseTooltip(rawLines?: Array<string | undefined> | undefined): ParsedTooltip {
   const TU = tagUnits();
   const lines = (rawLines || []).map(stripHtml).filter(Boolean);
   const name = (lines[0] || "").replace(/^\d+\s+(?=\S)/, "");
   const props: PropMap = {}, setBonus: PropMap = {}, extras: ExtrasMap = {}, flags: string[] = [], tags: string[] = [];
   let strReq = 0, rarity: string | null = null, twoHanded: boolean | null = null, weight: number | null = null, skillReq: string | null = null;
-  let inSet = false;
+  let inSet = false, inSetTotals = false;
   for (const raw of lines.slice(1)) {
     const line = raw.toLowerCase();
-    if (SET_HEADER_RE.test(line)) { inSet = true; continue; }
+    if (SET_INCOMPLETE_RE.test(line)) { inSet = true; continue; }
+    if (SET_WORN_RE.test(line)) { inSetTotals = true; continue; }
+    if (inSetTotals) {
+      if (SET_TOTAL_LINE_RE.test(line)) { flags.push("set: " + line); continue; }
+      inSetTotals = false;
+    }
     if (inSet) {
       const hit = PROP_PATTERNS.find(([, pat]) => pat.test(line));
       if (hit) setBonus[hit[0]] = (setBonus[hit[0]] || 0) + +line.match(hit[1])![1]!;
@@ -362,6 +374,7 @@ export function parseTooltip(rawLines?: Array<string | undefined> | undefined): 
 const WEAPON_RE = /\b(scimitar|katana|longsword|broadsword|viking sword|cutlass|cleaver|bone harvester|machete|no-dachi|double axe|war axe|battle axe|large battle axe|two handed axe|executioner|ornate axe|hatchet|axe|bardiche|halberd|paladin sword|radiant|dagger|kryss|war fork|short spear|spear|pike|pitchfork|leafblade|boning knife|sai|tekagi|mace|maul|club|war hammer|hammer pick|scepter|diamond mace|tessen|nunchaku|black staff|quarter staff|staff|bow|crossbow|yumi|longbow|composite|lance|scythe|knife|sledge hammer|soul glaive|cyclone|boomerang|glass sword|glass staff|stone war sword|crook|crescent blade|wakizashi|daisho|bokuto|lajatang|kama|tetsubo|war cleaver|spellblade|rune blade|war mace|bloodblade|dread sword|dual short axes|dual pointed spear|shortblade|longblade|talwar|disc mace|serpentstone staff|wild staff|gnarled staff|sword|blade)\b/i;
 const TWO_H_RE = /\b(two handed|double axe|large battle axe|bardiche|halberd|no-dachi|executioner|maul|war hammer|black staff|quarter staff|bow|crossbow|yumi|longbow|composite|scythe|pike|war fork|spear|lance|lajatang|tetsubo|daisho|bokuto|gnarled staff|wild staff|serpentstone staff|soul glaive|dual pointed spear|dual short axes|sledge hammer|scepter|glass staff)\b/i;
 const SHIELD_RE = /\b(shield|buckler)\b/i;
+const HELD_TOOL_RE = /\b(fishing pole|candle|candelabra|torch|lantern|light source)\b/i;
 const SPELLBOOK_RE = /\b(spellbook|book of (chivalry|bushido|ninjitsu|magery|necromancy|mysticism|spellweaving)|necromancer spellbook|mysticism book|tome)\b/i;   // NOT bare "mystic": "Mystic Ring" is a ring
 const JEWEL_SLOTS: Array<[string, RegExp]> = [["ring", /\bring\b/i], ["bracelet", /\bbracelet\b/i], ["talisman", /\btalisman\b/i], ["neck", /\bnecklace\b/i], ["earrings", /\bearrings\b/i]];
 const ARMOR_SLOTS: Array<[string, RegExp]> = [
@@ -474,13 +487,14 @@ export function classify(name: string | null | undefined, parsed?: ParsedTooltip
     two = parsed?.twoHanded ?? TWO_H_RE.test(n);
     return { slot: two ? "twoHanded" : "oneHanded", twoHanded: two, gear: true };
   }
-  // A held graphic with no weapon name or weapon lines: a shield (TwoHanded) or a spellbook-like
-  // off-hand item (OneHanded).
-  if (held) return { slot: LAYER_TO_SLOT[graphicLayer]!, twoHanded: false, gear: true };
+  // A held graphic with no weapon name or weapon lines is an artifact shield (TwoHanded) or a
+  // spellbook-like off-hand item (OneHanded) only when it carries item properties: tiledata also
+  // files fishing poles, candles and light sources under the hand layers, and those are tools.
+  const hasProps = parsed && Object.keys(parsed.props).some((k) => k !== "tagPenalty");
+  if (held && hasProps && !HELD_TOOL_RE.test(n)) return { slot: LAYER_TO_SLOT[graphicLayer]!, twoHanded: false, gear: true };
   for (const [s, rx] of JEWEL_SLOTS) if (rx.test(n)) return { slot: s, twoHanded: false, gear: true };
   for (const [s, rx] of ARMOR_SLOTS) if (rx.test(n)) return { slot: s, twoHanded: false, gear: true };
   // Unknown name but carries item properties: still gear, slot unknown.
-  const hasProps = parsed && Object.keys(parsed.props).some((k) => k !== "tagPenalty");
   return { slot: null, twoHanded: false, gear: !!hasProps };
 }
 

@@ -127,8 +127,25 @@ test("[smoke] parseTooltip keeps an armour set's full-set bonus out of the piece
   assert.deepEqual(p.extras.durability, [123, 150]);
 });
 
-test("[fast] parseTooltip: the set block also starts at \"Full Armor Set Present\", and non-property set lines are flagged as set lines", () => {
-  const p = parseTooltip(["Leggings Of Bane", "Poison Resist 8%", "Full Armor Set Present", "Hit Point Increase 10", "Night Sight"]);
+// A WORN full set prints its header near the top (ServUO BaseArmor.AddNameProperties: right after
+// "Part Of An Armor Set"), then the set's "(total)" lines (SetHelper.GetSetProperties and
+// BaseArmor.GetSetProperties while SetEquipped), and only then the piece's own lines. The totals sum
+// every piece of the set, so they are neither the piece's own props nor a per-piece bonus.
+test("[smoke] parseTooltip: a worn full set's header sits at the top and only its (total) lines are set lines", () => {
+  for (const header of ["Full Armor Set Present", "Full Weapon/Armor Set Present"]) {
+    const p = parseTooltip(["Armor Of Initiation", "Blessed", "Weight: 1 Stone", "Part Of An Armor Set (6 Pieces)", header,
+      "Physical Resist 44% (total)", "Fire Resist 29% (total)", "Hit Point Regeneration 3 (total)", "Brittle",
+      "Physical Resist 7%", "Fire Resist 4%", "Cold Resist 4%", "Poison Resist 6%", "Energy Resist 4%", "Strength Requirement 20", "Durability 123 / 150"]);
+    assert.deepEqual(p.props, { physResist: 7, fireResist: 4, coldResist: 4, poisonResist: 6, energyResist: 4, tagPenalty: 4 }, header);
+    assert.deepEqual(p.setBonus, {}, "set totals are not a per-piece bonus");
+    assert.equal(p.strReq, 20);
+    assert.deepEqual(p.extras.durability, [123, 150]);
+    assert.ok(p.flags.includes("set: physical resist 44% (total)"));
+  }
+});
+
+test("[fast] parseTooltip: after the incomplete-set header, non-property set lines are flagged as set lines", () => {
+  const p = parseTooltip(["Leggings Of Bane", "Poison Resist 8%", "<br>Only When Full Set Is Present:", "Hit Point Increase 10", "Night Sight"]);
   assert.deepEqual(p.props, { poisonResist: 8 });
   assert.deepEqual(p.setBonus, { hpi: 10 });
   assert.ok(p.flags.includes("set: night sight"));
@@ -206,7 +223,11 @@ test("[smoke] classify: a known graphic decides the slot where the name is not e
   assert.equal(classify("Bow", parseTooltip(["Bow", "Two-handed Weapon"]), null, 5042).slot, "twoHanded");
   assert.equal(classify("Bow", null, null, 5042).slot, "twoHanded");
   assert.deepEqual(classify("Towering Order Shield", null, null, 7108), { slot: "twoHanded", twoHanded: false, gear: true });
-  assert.deepEqual(classify("Aegis Of Grace", null, null, 7108), { slot: "twoHanded", twoHanded: false, gear: true }, "an artifact shield with no shield word in its name");
+  assert.deepEqual(classify("Aegis Of Grace", parseTooltip(["Aegis Of Grace", "Physical Resist 15%"]), null, 7108), { slot: "twoHanded", twoHanded: false, gear: true }, "an artifact shield with no shield word in its name");
+  // a held graphic that is a tool, not a weapon: no weapon lines, so never a weapon-slot candidate
+  assert.equal(classify("Fishing Pole", parseTooltip(["Fishing Pole", "Weight: 8 Stones"]), null, 3520).gear, false);
+  assert.equal(classify("Lucky Fishing Pole", parseTooltip(["Lucky Fishing Pole", "Luck 100"]), null, 3520).slot, null);
+  assert.equal(classify("Candle", parseTooltip(["Candle"]), null, 2575).gear, false);
   // an unknown or non-wearable graphic falls back to the name rules
   assert.equal(classify("Leather Gorget", null, null, 1).slot, "neck");
   assert.equal(classify("Bandage", null, null, 3617).gear, false);
@@ -555,7 +576,8 @@ const corpus: Array<{ label: string; scan: ScanV2 }> = [
     .map((a) => ({ label: `adapters/${a}`, scan: JSON.parse(readFileSync(join(ADAPTERS_DIR, a, "fixture.scan.json"), "utf8")) as ScanV2 })),   // known-good fixture: the cast stands in for the validateScan() a real caller runs
   { label: "demo-Kestrel", scan: kestrel }, { label: "demo-Dorran", scan: dorran },
 ];
-const SET_HEADER_RE = /^(<br>)?(only when full set is present|full armor set present)/i;
+// The fixtures carry only the incomplete-set header, which ServUO prints last, so everything below it is the set block.
+const SET_HEADER_RE = /^(<br>)?only when full set is present/i;
 
 for (const { label, scan } of corpus) {
   test(`[fast] corpus ${label}: every prop-carrying piece of gear has a slot, and every "... Arms" piece is in the arms slot`, () => {

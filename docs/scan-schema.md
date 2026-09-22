@@ -105,7 +105,7 @@ Every item in an opened container, not equipped.
 | `amount` | number | Stack size (1 for a non-stackable item). |
 | `name` | string | Display name. |
 | `nameSource` | string, `"opl"` or `"label"` | Whether `name`/`tooltip` came from the full on-paperdoll-line tooltip or just the label — mirrors the adapter's own `capabilities.tooltips`, but per-item, since a specific read can fall back even when the adapter usually gets the full tooltip. |
-| `tooltip` | array of strings | Every tooltip line, raw — `app/vault-lib.mts`'s `parseTooltip` turns this into properties, tags, and flags. A set piece's lines after its "Only When Full Set Is Present:" or "Full Armor Set Present" header are the full-set bonus: they go to the item's `setBonus`, never its own `props`, so a piece is not credited with a bonus that needs every other piece worn (the optimizer does not model set bonuses). |
+| `tooltip` | array of strings | Every tooltip line, raw — `app/vault-lib.mts`'s `parseTooltip` turns this into properties, tags, and flags. A set piece that is not part of a worn full set ends with an "Only When Full Set Is Present:" header, and the lines after it are the full-set bonus: they go to the item's `setBonus`, never its own `props`, so a piece is not credited with a bonus that needs every other piece worn (the optimizer does not model set bonuses). A piece of a worn full set instead carries "Full Armor Set Present" (or "Full Weapon/Armor Set Present") near the top, followed by the set's "(total)" lines and then the piece's own lines; the "(total)" lines, which sum the whole set, are kept only as `set: …` flags, and the piece's own lines below them are read as usual. |
 
 ## `equipped`
 
