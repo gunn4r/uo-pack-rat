@@ -270,7 +270,7 @@ class UntrustedInput(unittest.TestCase):
             for bad in (0, -1, "0x40000010", 1.5, None, True):
                 cmd, _ = ns["check_command"](fresh(serial=bad), ["grab"], NOW)
                 self.assertIsNone(cmd, "%s accepted serial=%r" % (name, bad))
-            for bad in ("", None, 5):
+            for bad in ("", None, 5, "x" * (ns["MAX_ID"] + 1)):
                 cmd, _ = ns["check_command"](fresh(id=bad), ["grab"], NOW)
                 self.assertIsNone(cmd, "%s accepted id=%r" % (name, bad))
 
@@ -405,6 +405,26 @@ class UntrustedInput(unittest.TestCase):
             self.assertEqual(root, their_pack, name)
             self.assertNotIn(root, set([my_pack, my_bank]) | set([0x40000003]), name)
 
+    def test_chain_problem_accepts_a_ground_root_or_your_own_and_bags_nested_in_order(self):
+        chest, bag, pouch, my_pack = 0x40000003, 0x40000004, 0x40000005, 0x40000001
+        own = set([my_pack])
+        for name, ns in self.each():
+            ok = ns["chain_problem"]
+            self.assertEqual(ok([chest, bag], 0, Item(OnGround=True), own), "", name)
+            self.assertEqual(ok([chest, bag, pouch], 1, Item(container=chest), own), "", name)
+            self.assertEqual(ok([chest, bag, pouch], 2, Item(container=bag), own), "", name)
+            self.assertEqual(ok([my_pack, pouch], 0, Item(container=0x100, OnGround=False), own), "", name)
+
+    def test_chain_problem_refuses_another_mobiles_pack_and_a_bag_outside_the_chain(self):
+        chest, stranger_pack, other_bag, my_pack = 0x40000003, 0x40000030, 0x40000021, 0x40000001
+        own = set([my_pack])
+        for name, ns in self.each():
+            why = ns["chain_problem"]([stranger_pack], 0, Item(container=0x222, OnGround=False), own)
+            self.assertIn("refused", why, name)
+            why = ns["chain_problem"]([chest, other_bag], 1, Item(container=0x40000020), own)
+            self.assertIn("refused", why, name)
+            why = ns["chain_problem"]([chest, stranger_pack], 1, Item(container=0x222), own)
+            self.assertIn("refused", why, name)
 
 if __name__ == "__main__":
     unittest.main()
