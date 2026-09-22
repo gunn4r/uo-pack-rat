@@ -1,6 +1,5 @@
 // ui/view-state.mts — the page's pure state rules: what a refresh keeps, where the pager lands and
-// what "Clear all" resets. No DOM, no
-// store.mts (which touches localStorage at module scope), so app/ui-state.test.mts imports it under
+// what "Clear all" resets. No DOM and no store.mts import, so app/ui-state.test.mts imports it under
 // plain node:test, the same arrangement as ui/adapters.mts.
 import type { ItemQuery } from "../item-query.mts";
 

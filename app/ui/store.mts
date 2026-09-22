@@ -122,7 +122,7 @@ export interface AppState {
   newestScan?: string | null | undefined;
 }
 
-export const DEFAULT_COLS = ["physResist", "fireResist", "coldResist", "poisonResist", "energyResist", "hci", "dci", "ssi", "di", "lmc", "lrc", "fc", "fcr", "manaRegen"];
+const DEFAULT_COLS = ["physResist", "fireResist", "coldResist", "poisonResist", "energyResist", "hci", "dci", "ssi", "di", "lmc", "lrc", "fc", "fcr", "manaRegen"];
 
 export const state: AppState = {
   inv: null, profiles: null, rules: null, settings: null, availableShards: [], propKeys: [],
