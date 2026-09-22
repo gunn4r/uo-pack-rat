@@ -1,6 +1,6 @@
 // ui/store.mts — the shared mutable state object, the bridge connection state, and invStamp.
 // Moved verbatim out of index.html's inline <script type="module"> (Task 4, the page split).
-import type { CharacterEntryRaw, ProfilesFile, Item } from "../vault-lib.mts";
+import type { CharacterEntryRaw, ProfilesFile, Item, EffectiveProfile } from "../vault-lib.mts";
 import type { ItemQuery, Facets, ItemQueryGroups } from "../item-query.mts";
 import type { RulesV1 } from "../schema/types.d.mts";
 import type { InventoryData, SettingsData, ShardOption, SetupApiResponse, OptSuit, OptimizeResult, OptimizeProgress, RunSummaryLike } from "./api-types.mts";
@@ -31,6 +31,7 @@ export interface BuilderJob {
   id: string | null;
   es: EventSource | null;
   name: string;
+  profile: EffectiveProfile;   // the effective profile the build was started with, for judging its result
   exact: boolean;
   budgetMs: number;
   poolSize: number | null;
@@ -52,6 +53,14 @@ export interface BuilderJob {
   // builder.mts's runPanel) — absent for the whole heuristic phase and for a job that never goes exact.
   exactStartMs?: number | undefined;
 }
+// A finished build and everything needed to draw it for the character it was built for.
+export interface FinishedBuild {
+  name: string;
+  result: OptimizeResult;
+  current: OptSuit;
+  profile: EffectiveProfile;
+  runId: string | null;
+}
 export interface BuilderState {
   character: string | null;
   profile: BuilderProfile | null;
@@ -61,6 +70,8 @@ export interface BuilderState {
   compare: Set<string>;
   openRun: string | null;
   altView: number | null;
+  // A build that finished while another character was selected, shown when its character is next.
+  parked: FinishedBuild | null;
 }
 // The current page from GET /api/items (inventory.mts's doFetch()) — rows XOR groups, matching
 // item-query.mts's ItemQueryRows | ItemQueryGroups union, folded into one always-both-keys shape so
@@ -111,6 +122,8 @@ export interface AppState {
   newestScan?: string | null | undefined;
 }
 
+export const DEFAULT_COLS = ["physResist", "fireResist", "coldResist", "poisonResist", "energyResist", "hci", "dci", "ssi", "di", "lmc", "lrc", "fc", "fcr", "manaRegen"];
+
 export const state: AppState = {
   inv: null, profiles: null, rules: null, settings: null, availableShards: [], propKeys: [],
   // GET /api/setup's last known answer (adapters, candidates, installed/available versions, firstRun) —
@@ -131,15 +144,22 @@ export const state: AppState = {
   // renders its own rows, which already carry full records. Cleared whenever load() refreshes the
   // inventory (a rescan can move or drop a piece).
   itemCache: new Map(),
-  // localStorage's own read is untrusted/unchecked, same as before this file had types: a corrupt or
-  // hand-edited `vault.cols` entry produced whatever JSON.parse() gave it then, and produces the same
-  // thing now — this cast documents that trust boundary rather than adding a check that wasn't there.
-  cols: (JSON.parse(localStorage.getItem("vault.cols") || "null") as string[] | null) || ["physResist", "fireResist", "coldResist", "poisonResist", "energyResist", "hci", "dci", "ssi", "di", "lmc", "lrc", "fc", "fcr", "manaRegen"],
-  builder: { character: null, profile: null, result: null, job: null, runs: [], compare: new Set(), openRun: null, altView: null },
+  // The Inventory tab's columns. The saved choice lives server-side (GET/PUT /api/ui-prefs,
+  // inventory.mts's applyUiPrefs) because the desktop app's page origin changes with its port on every
+  // launch, and localStorage is scoped to the origin; these are the defaults until that answer lands.
+  cols: [...DEFAULT_COLS],
+  builder: { character: null, profile: null, result: null, job: null, runs: [], compare: new Set(), openRun: null, altView: null, parked: null },
 };
 
 // ---------------------------------------------------------------- bridge (Highlight / Grab / Go to)
 export const bridge: BridgeState = { online: false, character: null, seen: new Set(), pending: new Map() };
 
 // ---------------------------------------------------------------- saved runs (history, open, compare)
-export const invStamp = (): string => (state.inv?.scans || []).reduce((m, x) => (String(x.scannedAt) > m ? String(x.scannedAt) : m), "");
+// The newest scan's own stamp, compared as instants: adapters write naive local or offset stamps and
+// the Forget tombstones write UTC `…Z`, so the string maximum can pick the older of two scans.
+export function newestStamp(scans: ReadonlyArray<{ scannedAt: string }>): string | null {
+  let best: string | null = null, bestMs = -Infinity;
+  for (const s of scans) { const ms = Date.parse(s.scannedAt); if (ms > bestMs) { bestMs = ms; best = s.scannedAt; } }
+  return best;
+}
+export const invStamp = (): string => newestStamp(state.inv?.scans || []) || "";

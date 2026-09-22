@@ -170,6 +170,8 @@ export async function openRun(id: string): Promise<void> {
   await renderResult(run.result, current, profileFromSettings(run.settings));
 }
 export async function compareSelected(): Promise<void> {
+  // Same rule as openRun: a build finishing would draw over the comparison.
+  if (state.builder.job) { toast("A build is running. Cancel it or wait before comparing runs."); return; }
   const ids = [...state.builder.compare];
   if (ids.length !== 2) return;
   const got = await Promise.all(ids.map((id) => api<RunApiResponse>(`/api/runs/${id}`).catch(() => ({ ok: false }))));
@@ -189,8 +191,8 @@ export async function compareSelected(): Promise<void> {
   const slotRows = OPTIMIZER_SLOTS.map((slot) => {
     const a = A.result.best[slot], b = B.result.best[slot], same = (a?.serial || 0) === (b?.serial || 0);
     return el("tr", { style: same ? "" : "background:var(--sel)" }, el("td", { class: "muted" }, slotLabel(slot)),
-      el("td", { class: "name", "data-serial": a ? a.serial : "" }, a ? a.name : "—"),
-      el("td", { class: "name", "data-serial": b ? b.serial : "" }, same ? el("span", { class: "muted" }, "same") : b ? b.name : "—"));
+      el("td", { class: "name", ...(a ? { "data-serial": a.serial } : {}) }, a ? a.name : "—"),
+      el("td", { class: "name", ...(b ? { "data-serial": b.serial } : {}) }, same ? el("span", { class: "muted" }, "same") : b ? b.name : "—"));
   });
   const statRows = keys.map((k) => {
     const va = ta[k] || 0, vb = tb[k] || 0, d = vb - va;

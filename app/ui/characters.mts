@@ -2,7 +2,9 @@
 // Moved verbatim out of index.html's inline <script type="module"> (Task 4, the page split).
 // `pillFor` and `CAP_KEYS` were dead code in the original (defined, never called) and are dropped.
 import { state } from "./store.mts";
-import { $, el, slotLabel, rarityColor, fmtWhen } from "./dom.mts";
+import { $, el, slotLabel, rarityColor, fmtWhen, toast } from "./dom.mts";
+import { api } from "./api.mts";
+import { reload } from "./app.mts";
 import { sheetNode } from "./sheet.mts";
 import type { Item, Character } from "../vault-lib.mts";
 import type { SkillEntry } from "./api-types.mts";
@@ -51,8 +53,27 @@ export function renderCharacters(): void {
     const worn = inv.worn[name] || [];
     const current = Object.fromEntries(worn.map((i): [number, Item] => [i.serial, i]));
     cards.append(el("div", { class: "panel stack" },
-      el("div", { class: "row", style: "justify-content:space-between" }, el("h2", {}, name), el("span", { class: "small muted" }, c ? `scanned ${fmtWhen(c.scannedAt)}` : "not scanned yet")),
+      el("div", { class: "row", style: "justify-content:space-between" }, el("h2", {}, name),
+        el("span", { class: "row" }, el("span", { class: "small muted" }, c ? `scanned ${fmtWhen(c.scannedAt)}` : "not scanned yet"), el("button", { class: "small", onclick: () => forgetCharacter(name) }, "Forget"))),
       c ? el("div", { class: "charcard" }, dollHtml(name), el("div", {}, sheetNode(name, current, null))) : null,
       c ? freeSkillsLine(c) : null));
   }
+}
+
+// A character deleted, renamed or moved off the account would otherwise keep its card and its worn
+// set in the inventory for good: nothing else ever removes them. POST /api/forget-character writes a
+// tombstone the fold drops the character's worn gear, backpack and bank for; a saved Suit Builder
+// profile would keep the card on this tab, so it goes too. A later scan of the character brings the
+// scanned parts back.
+async function forgetCharacter(name: string): Promise<void> {
+  if (!confirm(`Forget ${name}? Their card, worn gear, backpack and bank leave the inventory, and their saved Suit Builder profile is deleted. Scanning ${name} again brings the scanned parts back.`)) return;
+  try {
+    if (state.inv!.characters[name]) await api("/api/forget-character", { method: "POST", body: { character: name } });
+    const profiles = state.profiles!;
+    if (profiles.characters?.[name]) {
+      delete profiles.characters[name];
+      await api("/api/profiles", { method: "PUT", body: profiles });
+    }
+    await reload();
+  } catch (e) { toast((e as Error).message, "bad"); }
 }

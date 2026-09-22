@@ -1,92 +1,86 @@
 // ui/app.mts — bootstrap: load(), the hash router, tab-nav wiring, the tooltip/bridge kickoff.
 // Moved verbatim out of index.html's inline <script type="module"> (Task 4, the page split).
 // `parseRoute`/`routeFor` are exported beyond the brief's explicit list because builder.mts's
-// buildBuilder/selectCharacter call them directly (the router reaches into the builder for the
+// syncBuilderCharacters/selectCharacter call them directly (the router reaches into the builder for the
 // #/builder/<name> deep link, and the builder reads the route back).
 import { migrateProfiles, setRules } from "../vault-lib.mts";
-import { state } from "./store.mts";
+import { state, newestStamp } from "./store.mts";
 import { $, el, installTooltip } from "./dom.mts";
 import { api } from "./api.mts";
 import { pollBridge } from "./bridge.mts";
-import { buildFilters, fetchItems } from "./inventory.mts";
+import { buildFilters, fetchItems, initFilters, applyUiPrefs } from "./inventory.mts";
 import { renderCharacters } from "./characters.mts";
-import { buildBuilder, selectCharacter } from "./builder.mts";
+import { initBuilder, syncBuilderCharacters, selectCharacter } from "./builder.mts";
 import { renderContainers } from "./containers.mts";
 import { connectEvents } from "./events.mts";
 import { openWizard } from "./wizard.mts";
 import { renderSettings } from "./settings.mts";
 import { renderImport } from "./import.mts";
 import { changeShard } from "./shard.mts";
-import type { SettingsApiResponse, RulesApiResponse, SetupApiResponse, InventoryApiResponse, ProfilesApiResponse } from "./api-types.mts";
+import type { SettingsApiResponse, RulesApiResponse, SetupApiResponse, InventoryApiResponse, ProfilesApiResponse, UiPrefsApiResponse } from "./api-types.mts";
 
 // ---------------------------------------------------------------- data
+// The panels a failed load has to say something in, instead of leaving them on "loading…" or empty.
+// The inventory-backed tabs depend on /api/inventory and /api/profiles; Settings and Import only on the
+// first three routes.
+const DATA_PANELS = ["#inv-table tbody", "#char-cards", "#b-result", "#cont-table tbody"];
+const SETUP_PANELS = ["#settings-body", "#import-body"];
+function loadFailed(e: unknown, panels: string[]): void {
+  const msg = `Could not load: ${(e as Error).message}`;
+  $<HTMLElement>("#status")!.textContent = "failed to load: " + (e as Error).message;
+  for (const sel of panels) {
+    const node = $<HTMLElement>(sel)!;
+    const panel = el("div", { class: "panel empty" }, el("div", { class: "msg bad" }, msg), "Reload the page once the data folder is fixed; the Settings tab can open it.");
+    node.replaceChildren(node.tagName === "TBODY" ? el("tr", {}, el("td", { colspan: 20 }, panel)) : panel);
+  }
+}
+// api() throws with the server's own message ("internal error"); the panels above also need to know
+// which request it was.
+function get<T>(path: string): Promise<T> { return api<T>(path).catch((e: Error) => { throw new Error(`${path} failed: ${e.message}`); }); }
+
+let wired = false;
 export async function load(): Promise<void> {
   // The shard's rules (property caps, the Resisting Spells formula, race caps, tag units, the rarity
   // ladder, the free-skill list) must be loaded before anything that reads them, so this fetch and
-  // setRules() run before the inventory/profiles load below. /api/setup rides along in the same
-  // Promise.all — it answers before the inventory/profiles fetch and is needed for both the Settings
-  // tab's first paint and the first-run wizard check below.
-  const [settingsRes, rulesRes, setupRes] = await Promise.all([api<SettingsApiResponse>("/api/settings"), api<RulesApiResponse>("/api/rules"), api<SetupApiResponse>("/api/setup")]);
+  // setRules() run before the inventory/profiles load below. /api/ui-prefs never fails the load: the
+  // default columns stand in for it.
+  let settingsRes: SettingsApiResponse, rulesRes: RulesApiResponse, setupRes: SetupApiResponse, prefs: UiPrefsApiResponse | null;
+  try {
+    [settingsRes, rulesRes, setupRes, prefs] = await Promise.all([get<SettingsApiResponse>("/api/settings"), get<RulesApiResponse>("/api/rules"), get<SetupApiResponse>("/api/setup"), api<UiPrefsApiResponse>("/api/ui-prefs").catch(() => null)]);
+  } catch (e) { loadFailed(e, [...DATA_PANELS, ...SETUP_PANELS]); return; }
   state.settings = settingsRes.settings;
   state.rules = rulesRes.rules;
   state.availableShards = rulesRes.available;
   state.setup = setupRes;
   setRules(state.rules);
+  applyUiPrefs(prefs?.prefs);
   renderShardPicker();
-  const [inv, prof] = await Promise.all([api<InventoryApiResponse>("/api/inventory"), api<ProfilesApiResponse>("/api/profiles")]);
-  state.inv = inv.inventory; state.profiles = migrateProfiles(prof.profiles).profiles;
-  state.itemCache.clear();   // a rescan can move or drop a piece — stale by-serial lookups must not survive it
-  state.facets = state.inv.facets;
-  state.propKeys = state.inv.propKeys;
-  state.newestScan = state.inv.scans.map((x) => x.scannedAt).sort().pop() || null;
-  const chars = Object.keys(state.inv.characters);
-  $<HTMLElement>("#status")!.textContent = inv.snapshotCount
-    ? `${state.inv.itemCount} items · ${chars.length} character${chars.length === 1 ? "" : "s"} scanned (${chars.join(", ")}) · ${inv.snapshotCount} scans`
-    : inv.demo ? "no scans yet (demo data)" : "no scans yet";
-  buildFilters(); fetchItems(); renderCharacters(); buildBuilder(); renderContainers();
+  // Settings, Import, the live-scan stream and the first-run wizard need nothing from the inventory,
+  // so they come up before it: a failed inventory or profiles fetch must not take the Settings tab
+  // (the page's way to the data folder) down with it.
   renderSettings(setupRes);
   renderImport();
   connectEvents();
   if (setupRes.firstRun && !state.wizardShown) { state.wizardShown = true; openWizard({ firstRun: true }); }
+  if (!wired) { wired = true; initFilters(); initBuilder(); }
+  try { await reload(); } catch (e) { loadFailed(e, DATA_PANELS); }
 }
 
-// A live scan landing (events.mts, on the "inventory" SSE event) re-runs just the data half of
-// load(): inventory/profiles, never rules/settings/setup (those don't change from a scan) — and
-// never touches the visible tab or the builder's selected character, unlike buildBuilder(), which
-// would otherwise silently jump to the route's/first character on every background refresh.
+// The data half of load(): inventory and profiles, and everything drawn from them. A live scan landing
+// (events.mts, the "inventory" SSE event) and Forget run just this; rules/settings/setup don't change
+// from a scan. It keeps the visible tab, the filters, the page and the builder's character and sidebar.
 export async function reload(): Promise<void> {
-  const [inv, prof] = await Promise.all([api<InventoryApiResponse>("/api/inventory"), api<ProfilesApiResponse>("/api/profiles")]);
+  const [inv, prof] = await Promise.all([get<InventoryApiResponse>("/api/inventory"), get<ProfilesApiResponse>("/api/profiles")]);
   state.inv = inv.inventory; state.profiles = migrateProfiles(prof.profiles).profiles;
-  state.itemCache.clear();
+  state.itemCache.clear();   // a rescan can move or drop a piece — stale by-serial lookups must not survive it
   state.facets = state.inv.facets;
   state.propKeys = state.inv.propKeys;
-  state.newestScan = state.inv.scans.map((x) => x.scannedAt).sort().pop() || null;
+  state.newestScan = newestStamp(state.inv.scans);
   const chars = Object.keys(state.inv.characters);
   $<HTMLElement>("#status")!.textContent = inv.snapshotCount
     ? `${state.inv.itemCount} items · ${chars.length} character${chars.length === 1 ? "" : "s"} scanned (${chars.join(", ")}) · ${inv.snapshotCount} scans`
     : inv.demo ? "no scans yet (demo data)" : "no scans yet";
-  buildFilters(); fetchItems(); renderCharacters(); renderContainers();
-  // Refresh the builder's character list (a rescan can introduce a character never seen before)
-  // without re-selecting one when the current selection is still valid — buildBuilder()'s
-  // selectCharacter() call would otherwise reset the sidebar and wipe whatever result panel is on
-  // screen for no reason.
-  const names = [...new Set([...Object.keys(state.inv.characters), ...Object.keys(state.profiles.characters || {})])];
-  const keep = state.builder.character;
-  $<HTMLSelectElement>("#b-char")!.replaceChildren(...names.map((n) => el("option", { value: n }, n)));
-  if (keep && names.includes(keep)) {
-    $<HTMLSelectElement>("#b-char")!.value = keep;
-  } else if (names.length) {
-    // Either nothing was selected yet, or the previously selected character disappeared from the
-    // inventory between reloads — not reachable via a scan-only SSE trigger today (a scan only adds
-    // data), but the fallback is cheap and keeps state.builder.character from pointing at a
-    // character state.inv/state.profiles no longer has.
-    selectCharacter(names[0]!);
-  } else {
-    // Nothing left to build for at all: clear the stale selection instead of leaving it pointing at
-    // a character that no longer exists anywhere in state.
-    state.builder.character = null;
-    $<HTMLElement>("#b-result")!.replaceChildren(el("div", { class: "panel empty" }, "No characters scanned yet."));
-  }
+  buildFilters(); fetchItems(); renderCharacters(); renderContainers(); syncBuilderCharacters();
 }
 
 // ---------------------------------------------------------------- shard picker
