@@ -186,8 +186,20 @@ class TazUOBridge(BridgeCase, unittest.TestCase):
 
     def start(self, world):
         api = tazuo_api(world, PACK)
+        if getattr(self, "drop_cancel", False):
+            del api.CancelPathfinding
         world.clock.at(RUN_S, lambda: setattr(api, "StopRequested", True))
         run_script(adapter_path("tazuo", "packrat-bridge.py"), world, api=api)
+
+
+    def test_a_timed_out_walk_is_reported_failed_even_where_pathfinding_cannot_be_cancelled(self):
+        w = home(); w.no_path = True
+        self.drop_cancel = True
+        final, writes = self.run_bridge(w, 1, [self.cmd("g2", "goto", FAR_RING, [FAR])])
+        self.assertFalse(final["results"]["g2"]["ok"])
+        done, status = [(t, s) for t, s in writes if "g2" in s.get("results", {})][0]
+        self.assertLess(done, 1 + 20 + 3, "the walk gave up at its own timeout")
+        self.assertIsNone(status["current"], "and stopped being reported as running")
 
 
 class RazorBridge(BridgeCase, unittest.TestCase):

@@ -213,8 +213,13 @@ def razor_globals(world, backpack, bank=None, skills=None):
 
         @staticmethod
         def WaitForContents(it, ms):
+            # Whether RE reports True for a container that opened EMPTY is undocumented; a world with
+            # empty_wait_false set models the answer being False.
             world.clock.advance(ms / 1000.0)
-            return world.open(int(it.Serial))
+            ok = world.open(int(it.Serial))
+            if ok and getattr(world, "empty_wait_false", False) and not world.kids(int(it.Serial), False):
+                return False
+            return ok
 
         @staticmethod
         def WaitForProps(it, ms):

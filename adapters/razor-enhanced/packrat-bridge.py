@@ -28,6 +28,7 @@
 
 import json
 import os
+import re
 import time
 
 
@@ -304,6 +305,11 @@ counts = {"done": 0, "failed": 0}
 last_status = {"current": None, "at": 0.0}
 
 
+# Named like a container (or carrying a bag graphic) but never one: a deed places an addon, a bag of
+# sending raises a target cursor, a music box plays. Opening them opens nothing.
+NOT_A_CONTAINER_RE = re.compile(r"\b(deed|sending|music box)\b", re.I)
+
+
 def is_container(it):
     try:
         if bool(getattr(it, "IsCorpse", False)) or as_int(getattr(it, "ItemID", 0)) == 0x2006:
@@ -311,6 +317,8 @@ def is_container(it):
     except Exception:
         pass
     try:
+        if NOT_A_CONTAINER_RE.search(str(getattr(it, "Name", "") or "")):
+            return False          # "Wooden Chest deed", "a bag of sending": see NOT_A_CONTAINER_RE
         return bool(getattr(it, "IsContainer", False))
     except Exception:
         return False
