@@ -3,6 +3,7 @@
 //   npm start -- --open        npm start -- --demo --port 9000
 import { spawn } from "node:child_process";
 import { createServer } from "node:net";
+import { constants } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { resolveConfig } from "../app/config.mts";
@@ -30,4 +31,10 @@ try {
 const free = await new Promise<boolean>((ok) => { const s = createServer(); s.once("error", () => ok(false)); s.listen(port, "127.0.0.1", () => s.close(() => ok(true))); });
 if (!free) { console.error(`port ${port} is in use — stop the other server or pass --port`); process.exit(2); }
 const child = spawn(process.execPath, [join(ROOT, "app", "vault-server.mts"), ...args], { stdio: "inherit" });
-child.on("exit", (code) => process.exit(code ?? 0));
+// A signal to this wrapper (`kill <pid>`, a process manager's SIGTERM) is passed on to the server, and
+// this process exits when the server does. Without the handlers the wrapper dies alone and leaves the
+// server running and holding the port. Ctrl+C already reaches both, as one process group.
+for (const signal of ["SIGINT", "SIGTERM"] as const) process.on(signal, () => child.kill(signal));
+// A server killed by a signal (an OOM kill, SIGKILL) has no exit code; report it the way a shell
+// does, 128 + the signal number, rather than as a clean 0.
+child.on("exit", (code, signal) => process.exit(code ?? 128 + (signal ? constants.signals[signal] : 0)));
