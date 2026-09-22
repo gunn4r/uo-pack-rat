@@ -411,7 +411,7 @@ export interface ServerHandle {
 // config-derived path, the optimizer core, and the route handler live inside this function so a
 // test can spin up (and tear down) as many independent instances as it likes.
 // `host` is what only a real desktop shell (Electron) can supply: { pickFolder({title}) ->
-// Promise<string|null>, openPath(path) -> Promise<void> }. Without it, POST /api/host/* answers 501
+// Promise<string|null>, openPath(which: "data" | "logs") -> Promise<void> }. Without it, POST /api/host/* answers 501
 // ("not available outside the desktop app") rather than throwing — the bare `node app/vault-server.mts`
 // / test-harness path never has a folder picker or an OS file-opener to call.
 // `watcherOptions` is passed straight through to every app/watcher.mts startWatcher() call below —
