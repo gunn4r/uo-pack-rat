@@ -7,16 +7,16 @@
     "schemaVersion": { "type": "integer", "enum": [1] },
     "id": { "type": "string", "minLength": 1, "pattern": "^[a-z0-9-]{1,40}$" },
     "name": { "type": "string", "minLength": 1 },
-    "caps": { "type": "object" },
-    "raceCaps": { "type": "object" },
+    "caps": { "type": "object", "additionalProperties": { "type": "number" } },
+    "raceCaps": { "type": "object", "additionalProperties": { "type": "object", "additionalProperties": { "type": "number" } } },
     "resistSkillBonus": {
       "type": "object",
       "required": ["breakpoints"],
       "properties": {
-        "breakpoints": { "type": "array" }
+        "breakpoints": { "type": "array", "items": { "type": "array", "minItems": 2, "maxItems": 2, "items": { "type": "number" } } }
       }
     },
-    "tagUnits": { "type": "object" },
+    "tagUnits": { "type": "object", "additionalProperties": { "type": "number" } },
     "rarity": {
       "type": "array",
       "items": {
