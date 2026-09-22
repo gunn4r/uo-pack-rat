@@ -5,6 +5,7 @@
 // entry point owns the process: writing test_logs/latest_summary.json, printing, the exit code.
 import { run } from "node:test";
 import type { test as NodeTest } from "node:test";
+import { realpathSync } from "node:fs";
 import { resolve, relative, sep } from "node:path";
 
 export type Mode = "smoke" | "fast" | "full";
@@ -18,16 +19,27 @@ export interface SuiteOptions {
   // callback rather than work done by the caller so a failure in it lands in the summary like any
   // other: a tsc error in app/ui must never leave the previous run's green summary on disk.
   prepare: () => string[];
-  // Per test, in ms. A hung test fails with its own name instead of blocking the run for ever.
-  // Left out, node:test applies no limit.
+  // In ms, per test on Node 24 and per file on Node 22 (whose run() applies it to the file as a
+  // whole). Either way a hung test fails the run instead of blocking it for ever. Left out, node:test
+  // applies no limit.
   timeout?: number | undefined;
 }
 
 export const patternsFor = (mode: Mode): RegExp[] | undefined =>
   mode === "smoke" ? [/^\[smoke\]/] : mode === "fast" ? [/^\[(smoke|fast)\]/] : undefined;
 
+// Every path is compared and reported in one canonical form. node:test reports some events under the
+// file's real path and others under the path it was given, and the two differ whenever a directory on
+// the way is a symlink (macOS's /var -> /private/var holds every temp directory).
+const canonical = (p: string): string => {
+  try {
+    return realpathSync(p);
+  } catch {
+    return resolve(p);
+  }
+};
 // The summary is read on every platform, and path.relative gives backslashes on Windows.
-const posixRelative = (root: string, file: string): string => relative(root, file).split(sep).join("/");
+const posixRelative = (root: string, file: string): string => relative(canonical(root), file).split(sep).join("/");
 
 const ERROR_CAP = 600;
 
@@ -46,7 +58,7 @@ export async function runSuite({ root, mode, prepare, timeout }: SuiteOptions): 
     failures.push({ file, line, test_name, error: error.slice(0, ERROR_CAP) });
   };
   try {
-    const files = prepare().map((f) => resolve(f));
+    const files = prepare().map(canonical);
     // A file that runs to completion always ends with a test:summary carrying its own path, whether
     // its tests passed, failed or were all filtered out. One that stops part-way (a process.exit(0)
     // in a test or in a module it imports) sends no summary, and often nothing else either: the tests
@@ -69,21 +81,25 @@ export async function runSuite({ root, mode, prepare, timeout }: SuiteOptions): 
       // which buckets it as "todo" and never fails the run) — fold it into skipped so a todo case can
       // neither pass nor block the suite.
       if (t.todo && !isFileWrapper(t)) { total++; skipped++; return; }
-      const file = t.file ? resolve(t.file) : "";
+      const file = t.file ? canonical(t.file) : "";
       const eventError = String(t.details?.error?.message || t.details?.error || "failed");
       if (isFileWrapper(t)) {
         failedToLoad.add(file);
-        fail(posixRelative(root, file), t.line || 0, "file failed to load", stderrTail.get(file)?.trim() || eventError);
+        // Node 22 applies run()'s `timeout` to each file as a whole, so a hung test shows up as its
+        // file timing out rather than as the test itself (Node 24 reports the test).
+        const timedOut = (t.details?.error as { failureType?: unknown } | undefined)?.failureType === "testTimeoutFailure";
+        if (timedOut) fail(posixRelative(root, file), t.line || 0, "file timed out", eventError);
+        else fail(posixRelative(root, file), t.line || 0, "file failed to load", stderrTail.get(file)?.trim() || eventError);
       } else {
         fail(posixRelative(root, file), t.line || 0, t.name, eventError);
       }
     });
     stream.on("test:stderr", (m: NodeTest.EventData.TestStderr) => {
       process.stderr.write(m.message);
-      const file = resolve(m.file);
+      const file = canonical(m.file);
       stderrTail.set(file, ((stderrTail.get(file) ?? "") + m.message).slice(-ERROR_CAP));
     });
-    stream.on("test:summary", (s: NodeTest.EventData.TestSummary) => { if (s.file) finished.add(resolve(s.file)); });
+    stream.on("test:summary", (s: NodeTest.EventData.TestSummary) => { if (s.file) finished.add(canonical(s.file)); });
     // The TestsStream must actually be drained for its events to flow — awaiting only a terminal
     // "end"/"summary" event without consuming the stream leaves run() stalled.
     for await (const _chunk of stream) { /* events are handled by the listeners above */ }
