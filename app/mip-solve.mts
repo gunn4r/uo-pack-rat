@@ -202,7 +202,9 @@ export function solveModel(handle: Handle, { timeLimitS, start, onEvent }: Solve
   // `null` here (the only directly-visible assignment) and every read below to `never`. The cast
   // restores the variable's own declared type; it is not widening anything TS wasn't already told.
   const lastEvent = last as SolveEventData | null;
-  const dual = lastEvent?.dual ?? (objective ?? null);
+  // No callback carried a dual bound: only a proven optimum is its own bound. A timed-out incumbent
+  // is not, so the bound is unknown (null) rather than the incumbent itself.
+  const dual = lastEvent?.dual ?? (status === "optimal" ? objective : null);
   const primal = lastEvent?.primal ?? (objective ?? null);
   const gapAbs = gapFromEvents(status, lastEvent);
   return { status, statusText, objective, primal, dual, gapAbs, nodes, colValue, ms };
