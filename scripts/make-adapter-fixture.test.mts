@@ -138,3 +138,19 @@ test("[fast] a fixture that still names the character or the account is refused,
     assert.ok(!existsSync(outPath), "no output file may be written");
   });
 });
+
+test("[fast] each word of a multi-word character name is refused on its own, short words aside", () => {
+  withScan((scan) => {
+    scan.character = "Aldric the Bold";
+    scan.roots[0]!.name = "Aldric's Backpack";           // the first name alone
+    scan.items[0]!.name = "bold sword";                   // the last word alone, any case
+    scan.items[1]!.name = "the Backpack";                 // "the" joins the name, it is not part of it
+  }, (inPath, outPath) => {
+    const r = run(inPath, outPath);
+    assert.notEqual(r.status, 0, `the fixture must not be written; stdout: ${r.stdout}`);
+    assert.match(r.stderr, /\/roots\/0\/name/);
+    assert.match(r.stderr, /\/items\/0\/name/);
+    assert.doesNotMatch(r.stderr, /\/items\/1\/name/);
+    assert.ok(!existsSync(outPath), "no output file may be written");
+  });
+});
