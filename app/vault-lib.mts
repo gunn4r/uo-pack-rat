@@ -446,10 +446,28 @@ export function foldSnapshots(snapshots: ScanV2[]): Inventory {
     // about that root instead of wiping it. Only opened:true roots (the historical v1→v2 upgrade
     // stamps every root opened:true, so old scans are unaffected) participate in replace-per-root.
     const roots = new Set((snap.roots || []).filter((r) => r.opened !== false).map((r) => +r.serial));
-    for (const [serial, it] of Object.entries(inv.items)) {
-      if ((it.equippedBy === char) || (it.root != null && roots.has(+it.root))) delete inv.items[serial];
+    // A container INSIDE a root that the scan saw but could not open (`opened: false` on its
+    // containers entry: a bag that did not open, or one nested deeper than the adapter reads) is not
+    // evidence it is empty. Everything the fold knew inside it — items and bags, however deep — is
+    // kept, with its old seenAt; the rest of the root is replaced as usual.
+    const unopened = new Set(Object.values((snap.containers || {}) as Record<string, { serial: number; root: number; opened?: unknown }>)
+      .filter((c) => c.opened === false && roots.has(+c.root)).map((c) => +c.serial));
+    const insideUnopened = (serial: number | null | undefined): boolean => {
+      for (let cur = serial, guard = 0; cur != null && guard < 64; guard++) {
+        if (unopened.has(+cur)) return true;
+        cur = inv.containers[cur]?.parent;
+      }
+      return false;
+    };
+    const keptItems = new Set<string>(), keptContainers = new Set<string>();
+    if (unopened.size) {
+      for (const [serial, it] of Object.entries(inv.items)) if (insideUnopened(it.container)) keptItems.add(serial);
+      for (const [serial, c] of Object.entries(inv.containers)) if (insideUnopened(c.parent)) keptContainers.add(serial);
     }
-    for (const [serial, c] of Object.entries(inv.containers)) if (roots.has(+c.root)) delete inv.containers[serial];
+    for (const [serial, it] of Object.entries(inv.items)) {
+      if ((it.equippedBy === char) || (it.root != null && roots.has(+it.root) && !keptItems.has(serial))) delete inv.items[serial];
+    }
+    for (const [serial, c] of Object.entries(inv.containers)) if (roots.has(+c.root) && !keptContainers.has(serial)) delete inv.containers[serial];
     const snapContainers = (snap.containers || {}) as Record<string, ScanContainerRaw>;
     // Indexed once per snapshot, by the entry's own serial — nothing requires snap.containers' KEYS
     // to be serials at all, and the old per-item `Object.values(...).find(...)` fallback for a key

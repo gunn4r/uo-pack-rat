@@ -121,6 +121,7 @@ export const SCAN_V2_SCHEMA = {
           name: NAME,
           pos: NUMBER_MAP_OR_NULL,
           tooltip: TOOLTIP,
+          opened: { type: "boolean" },
         },
       },
     },
