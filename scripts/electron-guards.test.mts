@@ -7,8 +7,9 @@
 // process — so it gets source-level assertions in the `scripts/packaging.test.mts` idiom: they pin
 // the *presence* of each guard and that its call site routes through the tested decision, while
 // `scripts/shell-smoke.test.mts` proves the file as a whole still boots. A source pin cannot prove
-// what a guard decides, so a decision that matters belongs in one of the pure modules, not here. All `[fast]`: reading two source files and calling a handful of pure functions costs
-// nothing, and these are exactly the checks that should run on every `--fast` pass.
+// what a guard decides, so a decision that matters belongs in one of the pure modules, not here.
+// All `[fast]`: reading two source files and calling a handful of pure functions costs nothing, and
+// these are exactly the checks that should run on every `--fast` pass.
 import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
@@ -17,6 +18,7 @@ import { dirname, join } from "node:path";
 import { dialogTitle, openPathTarget } from "../electron/host-args.mts";
 import { createPendingHostCalls, HOST_CALL_TIMEOUT_MS } from "../electron/pending-calls.mts";
 import { EXTERNAL_OPEN_GAP_MS, externalOpenDecision, MAX_EXTERNAL_URL, navigationDecision } from "../electron/navigation.mts";
+import { RESTART_WINDOW_MS, shouldRestart } from "../electron/restart-policy.mts";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const mainSource = readFileSync(join(root, "electron", "main.mts"), "utf8");
@@ -258,4 +260,31 @@ test("[fast] a host result goes to the child that asked, never to whichever one 
   assert.match(mainSource, /onChildMessage\(msg, c\)/, "the child that sent a message must travel with it");
   assert.match(mainSource, /if \(!child \|\| child !== from\)/, "a result for a replaced child is dropped");
   assert.doesNotMatch(mainSource, /child\?\.postMessage\(\{ type: "host-result"/, "the unconditional post is what this replaces");
+  assert.match(mainSource, /if \(child === exited\) child = null;\s*if \(quitting\) return;/, "an exited child is cleared even while quitting, so a late result finds nobody to post to");
+});
+
+// ---- restarting the server child (electron/restart-policy.mts) ----------------------------------
+// The shell used to restart the child once per app lifetime, so a crash at hour 1 and an unrelated
+// one at hour 5 quit the whole app with "stopped unexpectedly twice in a row".
+
+test("[fast] the first server crash is always restarted", () => {
+  assert.equal(shouldRestart(null, 0), true);
+  assert.equal(shouldRestart(null, 5 * 60 * 60 * 1000), true);
+});
+
+test("[fast] a second crash soon after a restart gives up instead of looping", () => {
+  const restartedAt = 1_000_000;
+  assert.equal(shouldRestart(restartedAt, restartedAt + 1), false);
+  assert.equal(shouldRestart(restartedAt, restartedAt + RESTART_WINDOW_MS - 1), false);
+});
+
+test("[fast] crashes far apart are each restarted", () => {
+  const restartedAt = 1_000_000;
+  assert.equal(shouldRestart(restartedAt, restartedAt + RESTART_WINDOW_MS), true);
+  assert.equal(shouldRestart(restartedAt, restartedAt + 4 * 60 * 60 * 1000), true);
+});
+
+test("[fast] main.mts asks the restart policy and records each restart", () => {
+  assert.match(mainSource, /if \(shouldRestart\(lastRestartAt, now\)\) \{\s*lastRestartAt = now;/);
+  assert.doesNotMatch(mainSource, /restartCount/, "the lifetime counter is what this replaces");
 });
