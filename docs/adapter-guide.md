@@ -92,7 +92,7 @@ More generally: a shard's own rules are what governs whether a player may run an
 Every adapter — no exceptions — is attended-only and inventory-only:
 
 - A scanner or refresh script reads what the character can currently see (equipped items, opened containers) and writes one file. It does not wait, loop, or act on anything; it runs once and stops.
-- A bridge script executes **one command at a time**, and only a command that a player's click in the app queued after the bridge started (see `docs/bridge-protocol.md`'s offset rule) — it has no loop of its own to leave running unattended, and it does nothing without a human having just clicked a button. It walks, opens a container, and either flashes a name or moves one item; it never fights, farms, loots a corpse, or gathers a resource.
+- A bridge script executes **one command at a time**, and only a command that a player's click in the app queued after the bridge started (see `docs/bridge-protocol.md`'s offset rule) — its loop is bounded (a time limit, a rate budget, Stop) and acts only on queued clicks, and it does nothing without a human having just clicked a button. It walks, opens a container, and either flashes a name or moves one item; it never fights, farms, loots a corpse, or gathers a resource.
 - Every adapter script's messages to the player are local-only (see `docs/bridge-protocol.md`'s "adapters never speak publicly" rule) — nothing an adapter does should be visible to, or affect, anyone else in the game world.
 
 An adapter proposal that can't honestly make all three of these claims does not belong in `adapters/`, regardless of which client it targets.
