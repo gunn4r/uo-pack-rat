@@ -44,7 +44,7 @@ import {
   existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync, renameSync, unlinkSync, lstatSync, statSync,
   watch as fsWatch, type WatchListener,
 } from "node:fs";
-import { join } from "node:path";
+import { basename, join } from "node:path";
 import { upgradeScan, validateScan, type UnvalidatedScan } from "./scan-schema.mts";
 import { writeFileAtomic } from "./atomic-write.mts";
 import { DATA_DIR_MODE, DATA_FILE_MODE } from "./config.mts";
@@ -68,12 +68,13 @@ const errMessage = (e: unknown): string => String((e as Error | undefined)?.mess
 const MAX_REARM_DELAY_MS = 60 * 1000;
 const WATCH_STABLE_MS = 60 * 1000;
 
-// Which directory a path names right now (device + inode), or null when there is none. A watch
-// follows the directory it was armed on, not the name, so a folder deleted and recreated under the
-// same name — by a sync tool, a paste's own mkdir, an import — needs a new watch even though the
-// path exists again.
+// Which directory a path names right now (device + inode + birth time in nanoseconds), or null when
+// there is none. A watch follows the directory it was armed on, not the name, so a folder deleted and
+// recreated under the same name — by a sync tool, a paste's own mkdir, an import — needs a new watch
+// even though the path exists again. The birth time is there because Linux hands a freed inode
+// number straight to the next directory created, so device + inode alone can match a new folder.
 function dirIdentity(path: string): string | null {
-  try { const st = statSync(path); return `${st.dev}:${st.ino}`; } catch { return null; }
+  try { const st = statSync(path, { bigint: true }); return `${st.dev}:${st.ino}:${st.birthtimeNs}`; } catch { return null; }
 }
 
 // V8's JSON parse error embeds a short excerpt of the bytes it was handed ("Unexpected token 'o',
@@ -371,7 +372,13 @@ export function startWatcher(
       // nothing more, ever — sweep, which recreates the inbox and re-arms the watch. The event can
       // also arrive after something else has already recreated the folder, so the test is "is this
       // still the directory the watch is on", not "does the path exist".
-      if (dirIdentity(inboxDir) !== armedOn) { scheduleRecovery(); return; }
+      // An event naming the inbox itself (inotify's delete-self, for one) says the same even when the
+      // file system cannot tell the new folder from the old one.
+      if (dirIdentity(inboxDir) !== armedOn || (filename != null && String(filename) === basename(inboxDir))) {
+        armedOn = null;   // stale: the next sweep re-arms whatever the identity check says
+        scheduleRecovery();
+        return;
+      }
       if (!filename) return;
       const name = String(filename).replaceAll("\\", "/");
       if (name.includes("/rejected/") || name.startsWith("rejected/")) return;
