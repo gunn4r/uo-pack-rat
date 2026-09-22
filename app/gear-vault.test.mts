@@ -370,7 +370,7 @@ test("[fast] fold: same-named containers side by side get distinct location text
   for (const c of chests) assert.match(c.label!, /^Metal Chest /);
 });
 
-test("[fast] fold: a uniquely named container keeps its plain label, and a position tells same-named roots apart when it can", () => {
+test("[fast] fold: a uniquely named container keeps its plain label; same-named ones get their serial, which does not change as others come and go", () => {
   const scan = upgradeScan({
     version: 1, character: "Dorran", scannedAt: "2026-09-12T10:00:00", stats: {}, equipped: [],
     roots: [{ serial: 1, kind: "ground", name: "Metal Chest" }, { serial: 2, kind: "ground", name: "Metal Chest" }, { serial: 3, kind: "ground", name: "Wooden Box" }],
@@ -382,9 +382,15 @@ test("[fast] fold: a uniquely named container keeps its plain label, and a posit
     items: [1, 2, 3].map((c) => ({ serial: 100 + c, name: "Ring", tooltip: ["Ring"], amount: 1, container: c })),
   }, { shard: "test" }) as ScanV2;   // known-good fixture: the cast stands in for the validateScan() a real caller runs
   const inv = foldSnapshots([scan]);
-  assert.equal(inv.items[101]!.location!.text, "Metal Chest (1500, 1600)");
-  assert.equal(inv.items[102]!.location!.text, "Metal Chest (1502, 1600)");
+  assert.equal(inv.items[101]!.location!.text, "Metal Chest (0x1)");
+  assert.equal(inv.items[102]!.location!.text, "Metal Chest (0x2)");
   assert.equal(inv.items[103]!.location!.text, "Wooden Box");
+  // A third Metal Chest standing on the first one's tile leaves the other two labels as they were.
+  const third: ScanV2 = { ...scan, roots: [...scan.roots, { serial: 4, kind: "ground", name: "Metal Chest", opened: true }],
+    containers: { ...scan.containers, 4: { serial: 4, root: 4, parent: null, kind: "ground", name: "Metal Chest", pos: { x: 1500, y: 1600, z: 0 } } } };
+  const again = foldSnapshots([third]);
+  assert.equal(again.items[101]!.location!.text, "Metal Chest (0x1)");
+  assert.equal(again.items[102]!.location!.text, "Metal Chest (0x2)");
 });
 
 test("[smoke] fold: a quick refresh (backpack as the only root) replaces the worn set, keeps the bank and relocates a taken-off piece", () => {

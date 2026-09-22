@@ -510,7 +510,8 @@ function forgetCharacter(inv: Inventory, name: unknown): void {
 // view's per-place counts and the builder's Fetch list key on, and a house full of chests called
 // "Metal Chest" (or three "A Bag"s in one backpack) would otherwise merge into one place. Containers
 // that share a label and sit side by side (the same parent; for ground roots, every ground root) get
-// a suffix: the position when that alone tells them apart, else the serial. A backpack or bank root
+// their serial as a suffix: unlike a position, it never changes when another same-named container is
+// added or moved, so a saved filter or a remembered location keeps meaning the same chest. A backpack or bank root
 // is never shown by its own name (locationOf names it after its owner), so those roots are left out.
 function labelContainers(inv: Inventory): void {
   const groups = new Map<string, Container[]>();
@@ -521,13 +522,7 @@ function labelContainers(inv: Inventory): void {
     if (list) list.push(c); else groups.set(key, [c]);
   }
   for (const list of groups.values()) {
-    for (const c of list) {
-      const base = bagLabel(c);
-      if (list.length === 1) { c.label = base; continue; }
-      const x = c.pos?.x, y = c.pos?.y;
-      const placed = Number.isFinite(x) && Number.isFinite(y) && list.filter((o) => o.pos?.x === x && o.pos?.y === y).length === 1;
-      c.label = placed ? `${base} (${x}, ${y})` : `${base} (0x${(+c.serial).toString(16)})`;
-    }
+    for (const c of list) c.label = list.length === 1 ? bagLabel(c) : `${bagLabel(c)} (0x${(+c.serial).toString(16)})`;
   }
 }
 
