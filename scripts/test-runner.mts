@@ -21,10 +21,10 @@ import { runSuite, type Mode } from "./run-suite.mts";
 
 const ROOT = dirname(dirname(fileURLToPath(import.meta.url)));
 const mode: Mode = process.argv.includes("--smoke") ? "smoke" : process.argv.includes("--fast") ? "fast" : "full";
-// Per test, and generous on purpose: it sits under CI's 20-minute job timeout and far above any test
-// in the suite. It only exists so a hung test fails with its own name in a local run instead of
-// blocking it for ever.
-const TEST_TIMEOUT_MS = 15 * 60 * 1000;
+// Generous on purpose. Node 24 applies it to each test and Node 22 to each file as a whole, and it is
+// above CI's 20-minute job timeout so it can never fail a slow but healthy CI run. It only exists so
+// a hung test fails a local run instead of blocking it for ever.
+const TEST_TIMEOUT_MS = 30 * 60 * 1000;
 
 // Recursive so a test file in a new subdirectory (app/schema/validate.test.mts was the one this
 // missed) is picked up automatically — a hard-coded third/fourth top-level directory is what
