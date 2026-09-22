@@ -103,6 +103,16 @@ class TazUOScanner(DataDir, unittest.TestCase):
         self.assertIn(RING + 0x20, [i["serial"] for i in s["items"]])
         self.assertTrue(any("Bag" in m and "kept from the last scan" in m for m in w.messages), w.messages)
 
+    def test_a_commodity_deed_box_is_a_real_container_and_is_opened(self):
+        w = World(); home(w)
+        w.add(0x40000022, CHEST, name="Commodity Deed Box", OnGround=False)
+        w.add(0x40000023, 0x40000022, name="Commodity Deed", container_like=False, OnGround=False)
+        self.scan(w)
+        self.assertIn(("open", 0x40000022), w.calls)
+        [s] = self.scans("tazuo")
+        self.assertIn(str(0x40000022), s["containers"])
+        self.assertIn(0x40000023, [i["serial"] for i in s["items"]])
+
     def test_a_bag_of_sending_is_never_double_clicked_and_is_recorded_as_an_item(self):
         w = World(); home(w)
         w.add(0x40000021, CHEST, name="a bag of sending", OnGround=False, Graphic=0x0E76)
@@ -209,6 +219,16 @@ class RazorScanner(DataDir, unittest.TestCase):
             # whatever it knew inside -- never erased either way.
             self.assertIs(s["containers"][str(EMPTY)].get("opened", True), not empty_wait_false)
             shutil.rmtree(os.path.join(self.data, "inbox"), ignore_errors=True)
+
+    def test_a_commodity_deed_box_is_a_real_container_and_is_opened(self):
+        w = World(); home(w)
+        w.add(0x40000022, CHEST, name="Commodity Deed Box", OnGround=False)
+        w.add(0x40000023, 0x40000022, name="Commodity Deed", container_like=False, OnGround=False)
+        self.scan(w)
+        self.assertIn(("open", 0x40000022), w.calls)
+        [s] = self.scans("razor-enhanced")
+        self.assertIn(str(0x40000022), s["containers"])
+        self.assertIn(0x40000023, [i["serial"] for i in s["items"]])
 
     def test_a_bag_of_sending_is_never_opened_and_is_recorded_as_an_item(self):
         w = World(); home(w)

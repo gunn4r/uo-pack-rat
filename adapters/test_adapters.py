@@ -179,6 +179,23 @@ class Conventions(unittest.TestCase):
             self.assertIsNotNone(b, "%s bridge lacks is_container" % name)
             self.assertEqual(a, b, "%s: the bridge's is_container has drifted from the scanner's" % name)
 
+    def test_the_never_a_container_names_are_the_same_everywhere(self):
+        # A deed, a bag of sending or a music box is never double-clicked, but a "Commodity Deed Box"
+        # is a real container: every scanner and bridge carries the same rule.
+        lines = set()
+        for name, d in adapter_dirs():
+            for f in py_files(d):
+                m = re.search(r"^NOT_A_CONTAINER_RE = .*$", read_text(os.path.join(d, f)), re.M)
+                if m:
+                    lines.add(m.group(0))
+                    ns = {"re": re}
+                    exec(m.group(0), ns)
+                    rx = ns["NOT_A_CONTAINER_RE"]
+                    for no in ("Wooden Chest Deed", "a bag of sending", "a music box"):
+                        self.assertTrue(rx.search(no), "%s/%s: %s" % (name, f, no))
+                    self.assertIsNone(rx.search("Commodity Deed Box"), "%s/%s" % (name, f))
+        self.assertEqual(len(lines), 1, sorted(lines))
+
     def test_every_bridge_carries_the_same_untrusted_input_block(self):
         blocks = {}
         for name, d in bridge_dirs():
