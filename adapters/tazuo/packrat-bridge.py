@@ -59,7 +59,7 @@ def rfc3339_now():
 
 
 ADAPTER_ID = "tazuo"
-ADAPTER_VERSION = "2.1.0"
+ADAPTER_VERSION = "2.2.0"
 CAPABILITIES = {
     "layers": ["OneHanded", "TwoHanded", "Shoes", "Pants", "Shirt", "Helmet", "Gloves",
                "Ring", "Talisman", "Necklace", "Waist", "Torso", "Bracelet", "Tunic",

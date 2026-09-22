@@ -92,9 +92,10 @@ Failures return `{error: "internal error", ref}` and nothing else — the stack 
 
 Server side, `POST /api/bridge` validates the line against the bridge schema before appending and copies only the documented fields, never the page's whole body. Client side, each `packrat-bridge.py` refuses:
 
-- a command whose `queuedAt` is missing, unparseable, more than 60 seconds old or more than 5 seconds in the future, and any id it has already run;
+- a command whose `queuedAt` is missing, unparseable, more than 60 seconds old or more than 5 seconds in the future, and any id it has already accepted (or one longer than 64 characters). A refused line with a usable id is recorded under that id, so the page shows why;
 - more than 4 commands per poll or 40 per rolling minute — the excess is deferred, never dropped, and a sustained flood stops the script with a message, because at that rate something other than a person is writing the file;
 - opening anything that is not a live container, corpses included, using the same check the scanners use, and any chain longer than 8 (the deepest the app can produce is 4);
+- opening a chain that does not lead down from its own root: `chain[0]` must lie on the ground or be the player's own backpack or open bank box, and each later entry must sit directly inside the one before it, checked against the live client before each double-click — so a line cannot name another player's pack and make the character snoop it;
 - a walk further than 24 tiles — the client's own view range — or a destination outside the map's bounds;
 - a grab whose *source* does not resolve to the player's own backpack, their bank, or the chain that same command just opened. The *destination* has always been hard-coded to the player's own backpack and is deliberately not a protocol field; keep it that way.
 
