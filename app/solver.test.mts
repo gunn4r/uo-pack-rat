@@ -116,7 +116,10 @@ test("[fast] soft floors match", async (t) => {
   await runBoth(t, cell(name, { soft }), BASE_OPTS);
 });
 
-test("[fast] k-best matches the core's alternatives score for score; no alternative equals the best's serial set", async () => {
+// Like runBoth: the core's alternatives are only exact when its search proved within the time budget
+// (about 10 s for this cell on a laptop, more on a CI runner), so an unproven core is checked for
+// no-regression, rank by rank, instead of equality.
+test("[fast] k-best matches the core's alternatives score for score; no alternative equals the best's serial set", async (t) => {
   const name = templateNames[0]!;
   const { pools, current, profile } = cell(name);
   const opts: OptOptions = { ...BASE_OPTS, alternatives: { count: 3, tolerance: 1e9 } };
@@ -126,7 +129,12 @@ test("[fast] k-best matches the core's alternatives score for score; no alternat
   const rScores = (r.alternatives || []).map((a) => a.score).sort((a, b) => b - a);
   const refScores = (ref.alternatives || []).map((a) => a.score).sort((a, b) => b - a);
   assert.equal(rScores.length, refScores.length, `${rScores.length} highs alternatives vs ${refScores.length} core alternatives`);
-  for (let i = 0; i < rScores.length; i++) assert.ok(Math.abs(rScores[i]! - refScores[i]!) < 1e-3, `alternative ${i}: ${rScores[i]} != ${refScores[i]}`);
+  if (r.proven && ref.proven) {
+    for (let i = 0; i < rScores.length; i++) assert.ok(Math.abs(rScores[i]! - refScores[i]!) < 1e-3, `alternative ${i}: ${rScores[i]} != ${refScores[i]}`);
+  } else {
+    t.diagnostic(`not both proven (highs proven=${r.proven}, core proven=${ref.proven}) — checking no-regression instead of equality`);
+    for (let i = 0; i < rScores.length; i++) assert.ok(rScores[i]! >= refScores[i]! - 1e-6, `alternative ${i}: HiGHS ${rScores[i]} worse than the core's ${refScores[i]}`);
+  }
   const bestSig = sig(r.best);
   for (const a of r.alternatives!) assert.notEqual(sig(a.best), bestSig, "an alternative must never equal the best's own serial set");
 });
