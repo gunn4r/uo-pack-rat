@@ -1873,7 +1873,7 @@ const OBJECT_BODY_ROUTES: Array<[string, string]> = [
   ["PUT", "/api/settings"], ["POST", "/api/setup/locate"], ["POST", "/api/setup/install"],
   ["POST", "/api/import"], ["POST", "/api/import/paste"], ["POST", "/api/import/rescan"],
   ["POST", "/api/host/pick-folder"], ["POST", "/api/host/open-path"], ["POST", "/api/optimize"],
-  ["POST", "/api/bridge"], ["POST", "/api/forget"],
+  ["POST", "/api/bridge"], ["POST", "/api/forget"], ["POST", "/api/forget-character"], ["PUT", "/api/ui-prefs"],
 ];
 test("[fast] a null/array/scalar JSON body is a clean 400 on every body-reading route, and the log does not grow", async () => {
   const dir = mkdtempSync(join(tmpdir(), "qm-nullbody-"));
@@ -2638,4 +2638,77 @@ test("[fast] POST /api/import/rescan recreates a deleted inbox, and reports a sw
   } finally {
     await s2.close();
   }
+});
+
+// The Inventory tab's column choice used to live in localStorage, which belongs to one origin; the
+// desktop app serves the page from a new port on every launch, so the choice was gone at each start.
+// It is kept in <data>/ui-prefs.json instead, and survives a server on another port.
+test("[fast] GET/PUT /api/ui-prefs keeps the column choice across a restart on another port", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "qm-uiprefs-"));
+  const put = (url: string, body: unknown): Promise<Response> => fetch(url + "/api/ui-prefs", { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
+  const s1 = await startServer(ensureLayout(resolveConfig(["--port", "0", "--data", dir], {})));
+  try {
+    assert.deepEqual(asJson(await (await fetch(s1.url + "/api/ui-prefs")).json()), { ok: true, prefs: {} }, "nothing chosen yet");
+    assert.equal((await put(s1.url, { cols: ["hci"] })).status, 200);
+    const firstInode = statSync(join(dir, "ui-prefs.json")).ino;
+    assert.equal((await put(s1.url, { cols: ["hci", "sk:magery", "strReq"] })).status, 200);
+    assert.notEqual(statSync(join(dir, "ui-prefs.json")).ino, firstInode, "replaced through a renamed temp file, not rewritten in place");
+    if (process.platform !== "win32") assert.equal(statSync(join(dir, "ui-prefs.json")).mode & 0o777, 0o600);
+    for (const bad of [{ cols: "hci" }, { cols: [5] }, { cols: [""] }, { cols: ["x".repeat(65)] }, { cols: Array.from({ length: 201 }, (_, i) => `k${i}`) }]) {
+      assert.equal((await put(s1.url, bad)).status, 400, `${JSON.stringify(bad).slice(0, 60)} should be refused`);
+    }
+  } finally {
+    await s1.close();
+  }
+  const s2 = await startServer(ensureLayout(resolveConfig(["--port", "0", "--data", dir], {})));
+  try {
+    assert.notEqual(s2.url, s1.url);
+    assert.deepEqual(asJson(await (await fetch(s2.url + "/api/ui-prefs")).json()), { ok: true, prefs: { cols: ["hci", "sk:magery", "strReq"] } });
+  } finally {
+    await s2.close();
+  }
+});
+
+// A deleted, renamed or transferred character used to keep its card and worn set in the inventory
+// forever: the fold only drops what a newer scan of the same root or character replaces.
+test("[fast] POST /api/forget-character drops the character, its worn set, backpack and bank, and a rescan brings it back", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "qm-forgetchar-"));
+  mkdirSync(join(dir, "scans"), { recursive: true });
+  cpSync(join(HERE, "fixtures", "demo-Dorran.json"), join(dir, "scans", "demo-Dorran.json"));
+  cpSync(join(HERE, "fixtures", "demo-Kestrel.json"), join(dir, "scans", "demo-Kestrel.json"));
+  const s2 = await startServer(ensureLayout(resolveConfig(["--port", "0", "--data", dir], {})));
+  const forget = (body: unknown): Promise<Response> => fetch(s2.url + "/api/forget-character", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
+  const inventory = async (): Promise<InventorySummary> => asJson<InventoryResponse>(await (await fetch(s2.url + "/api/inventory")).json()).inventory;
+  try {
+    const before = await inventory();
+    assert.ok(before.characters.Dorran && (before.worn.Dorran as unknown[]).length > 0);
+    for (const bad of [{}, { character: "" }, { character: 5 }, { character: "x".repeat(65) }, { character: "_vault" }]) {
+      assert.equal((await forget(bad)).status, 400, `${JSON.stringify(bad)} should be refused`);
+    }
+    assert.equal((await forget({ character: "Dorran" })).status, 200);
+    const after = await inventory();
+    assert.equal(after.characters.Dorran, undefined, "the character card is gone");
+    assert.equal(after.worn.Dorran, undefined, "and its worn set");
+    const dorranRoots = Object.values(after.containers).filter((c) => (c as { scannedBy?: string; kind?: string }).scannedBy === "Dorran" && ["backpack", "bank"].includes((c as { kind: string }).kind));
+    assert.deepEqual(dorranRoots, [], "and its backpack and bank");
+    assert.ok(after.characters.Kestrel, "another character is untouched");
+    const tombs = readdirSync(join(dir, "scans")).filter((f) => f.startsWith("_forget-char-"));
+    assert.equal(tombs.length, 1);
+    assert.equal(validateScan(JSON.parse(readFileSync(join(dir, "scans", tombs[0]!), "utf8"))).ok, true, "the tombstone passes the scan contract");
+
+    // A newer scan of the character brings it back.
+    const rescan = JSON.parse(readFileSync(join(HERE, "fixtures", "demo-Dorran.json"), "utf8"));
+    // A v1 scan's stamp is naive local time: an hour from now, in this machine's clock.
+    const later = new Date(Date.now() + 3600_000), p2 = (n: number): string => String(n).padStart(2, "0");
+    rescan.scannedAt = `${later.getFullYear()}-${p2(later.getMonth() + 1)}-${p2(later.getDate())}T${p2(later.getHours())}:${p2(later.getMinutes())}:${p2(later.getSeconds())}`;
+    writeFileSync(join(dir, "scans", "demo-Dorran-later.json"), JSON.stringify(rescan));
+    assert.ok((await inventory()).characters.Dorran, "rescanned, the character is back");
+  } finally {
+    await s2.close();
+  }
+});
+
+test("[fast] POST /api/forget-character is refused under --demo", async () => {
+  const r = await fetch(srv.url + "/api/forget-character", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ character: "Dorran" }) });
+  assert.equal(r.status, 409);
 });
