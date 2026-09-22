@@ -4,6 +4,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
+import { createHash } from "node:crypto";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { dirname, join } from "node:path";
 import {
@@ -575,6 +576,25 @@ test("[fast] saved runs: the key ignores budget and warm start; a run is reused 
   assert.equal(reusableRun([{ key: k, result: { method: "heuristic" } }], k, {})!.result!.method, "heuristic");
   assert.equal(reusableRun([proven], "other", {}), null);
   assert.equal(runSummary({ id: "x", result: { method: "exact", proven: true, score: 3 } }).score, 3);
+});
+// Regression (review I2): the solver's fallbacks (HiGHS failed to load, the floors-conflict retry ran
+// out of time) come back as method "heuristic", which the reuse rule used to treat as a deterministic
+// heuristic run and serve forever, whatever budget was asked for or whether HiGHS works again.
+test("[fast] saved runs: a solver fallback is never reused, at any budget", () => {
+  const k = "key";
+  const unavailable: SavedRun = { key: k, budgetMs: 300000, result: { method: "heuristic", solver: "fallback", fallbackReason: "HiGHS unavailable" } };
+  const conflict: SavedRun = { key: k, budgetMs: 300000, result: { method: "heuristic", solver: "fallback", floorsConflict: true } };
+  assert.equal(reusableRun([unavailable], k, { timeBudgetMs: 1000 }), null);
+  assert.equal(reusableRun([conflict], k, { timeBudgetMs: 1000 }), null);
+  assert.equal(reusableRun([conflict, { key: k, result: { method: "exact", proven: true, solver: "highs" } }], k, {})!.result!.proven, true, "an older proven run with the same key still answers");
+});
+
+// Regression (review I3): the key had no solver version, so a suit a since-fixed model wrongly
+// proved optimal kept being served as "proven" from disk. The version is part of the hash now.
+test("[fast] saved runs: the key carries the solver version, so runs saved before a model fix no longer match", () => {
+  const input = { pools: {}, current: {}, profile: { weights: { hci: 1 } }, opts: { exact: true } };
+  const unversioned = createHash("sha1").update(JSON.stringify(input)).digest("hex");
+  assert.notEqual(runKey(input), unversioned);
 });
 test("[fast] runs: normalizeRun upgrades allowOthers/budgetS and stamps schemaVersion", () => {
   const r = normalizeRun({ id: "x", settings: { allowOthers: true, budgetS: 30 }, result: {} });
