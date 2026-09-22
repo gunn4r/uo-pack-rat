@@ -53,12 +53,12 @@ test("[fast] openPath refuses every path the server child could name, including 
   }
 });
 
-test("[fast] openPath still accepts a legacy already-resolved path, but only the exact two", () => {
-  // app/vault-server.mts resolved the path itself before this change. Until its one-line switch to
-  // sending the discriminator lands, an old server must keep working — but only by naming, byte for
-  // byte, a directory main.mts computed itself.
-  assert.equal(openPathTarget(DATA, DATA, LOGS), DATA);
-  assert.equal(openPathTarget(LOGS, DATA, LOGS), LOGS);
+test("[fast] openPath refuses even the exact directories when named as paths", () => {
+  // It used to accept a byte-identical path too, for a server that resolved the path itself. The
+  // server sends the discriminator and always ships in the same package as this shell, so no such
+  // server exists, and that arm only widened what the child could say.
+  assert.equal(openPathTarget(DATA, DATA, LOGS), null);
+  assert.equal(openPathTarget(LOGS, DATA, LOGS), null);
 });
 
 test("[fast] a dialog title is coerced to a short, single-line string whatever the server sends", () => {

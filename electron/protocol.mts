@@ -33,12 +33,8 @@ export interface ListeningMessage {
 //
 // openPath's `args` is a DISCRIMINATOR, "data" or "logs", not a path: main.mts owns those two
 // directories and resolves them itself, so a compromised server child cannot name a third thing for
-// the OS to launch (phase-7 security review, Important 1). It stays typed `string` rather than the
-// two literals because a server that still resolves the path itself — the shape this channel carried
-// before the review — has to keep compiling and keep working; main.mts accepts such a value only when
-// it is byte-identical to one of the two directories it computed, and refuses everything else.
-// What the server side should send, from POST /api/host/open-path's already-validated `which`:
-//     await host.openPath(which);        // "data" | "logs" — NOT CONFIG.dataDir / CONFIG.paths.logs
+// the OS to launch (phase-7 security review, Important 1). The type names what the server sends; what
+// arrives is still whatever the child posted, which is why main.mts checks it (host-args.mts).
 export interface PickFolderRequest {
   type: "host";
   id: number;
@@ -49,7 +45,7 @@ export interface OpenPathRequest {
   type: "host";
   id: number;
   op: "openPath";
-  args: string;
+  args: "data" | "logs";
 }
 export type HostRequestMessage = PickFolderRequest | OpenPathRequest;
 
