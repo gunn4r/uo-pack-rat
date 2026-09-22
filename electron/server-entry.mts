@@ -19,7 +19,7 @@
 // in full by ./protocol.mts:
 //   -> ListeningMessage                                once startServer() is listening
 //   <-> HostRequestMessage / HostResultMessage
-//       forwards vault-server.mts's host.pickFolder({title})/host.openPath(path) calls to main (only
+//       forwards vault-server.mts's host.pickFolder({title})/host.openPath(which) calls to main (only
 //       Electron can show a native folder picker or ask the OS to open a path) and resolves the
 //       promise vault-server.mts is awaiting once main's matching host-result message arrives — or
 //       rejects it once ./pending-calls.mts's timeout expires, for an answer that never comes.
@@ -54,7 +54,7 @@ const pendingHostCalls = createPendingHostCalls();
 // this file"), not something a runtime check here could close without changing what value reaches the
 // caller.
 function callHost(op: "pickFolder", args: { title?: unknown }): Promise<string | null>;
-function callHost(op: "openPath", args: string): Promise<void>;
+function callHost(op: "openPath", args: "data" | "logs"): Promise<void>;
 function callHost(op: HostRequestMessage["op"], args: unknown): Promise<unknown> {
   return new Promise((resolve, reject) => {
     const id = pendingHostCalls.start(resolve, reject);
@@ -64,7 +64,7 @@ function callHost(op: HostRequestMessage["op"], args: unknown): Promise<unknown>
 
 const host: HostBridge = {
   pickFolder: (opts) => callHost("pickFolder", opts),
-  openPath: (path) => callHost("openPath", path),
+  openPath: (which) => callHost("openPath", which),
 };
 
 let closeServer: (() => Promise<void>) | null = null;

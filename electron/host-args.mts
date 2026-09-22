@@ -15,17 +15,12 @@
 // openPath's wire value is a DISCRIMINATOR, never a path: main.mts owns the two directories it maps
 // to (dataDir, and logs inside it), so a compromised server child cannot name a third one and have
 // the OS launch it. Returns the directory to open, or null for anything else — the caller logs the
-// refusal and performs no OS call.
-//
-// The two legacy arms accept a value that is byte-identical to one of those two directories, because
-// app/vault-server.mts's POST /api/host/open-path resolved the path itself before this change
-// (`host.openPath(which === "data" ? CONFIG.dataDir : CONFIG.paths.logs)`) and both sides derive the
-// same strings from the same PACKRAT_DATA: main.mts resolve()s it and joins "logs", app/config.mts
-// does the identical pair. They are an exact-string equality against a value main.mts computed, not
-// a path check — a path that merely resolves or normalises to one of them is still refused.
+// refusal and performs no OS call. A path is refused even when it is byte-identical to one of the two
+// directories: the server always sends the discriminator, and it ships in the same package as this
+// shell, so there is no older server that still sends a resolved path.
 export function openPathTarget(which: unknown, dataDir: string, logsDir: string): string | null {
-  if (which === "data" || which === dataDir) return dataDir;
-  if (which === "logs" || which === logsDir) return logsDir;
+  if (which === "data") return dataDir;
+  if (which === "logs") return logsDir;
   return null;
 }
 
