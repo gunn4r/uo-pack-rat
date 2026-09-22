@@ -8,7 +8,7 @@ import { state } from "./store.mts";
 import { $, el, label, full, colVal, slotLabel, isStale, ago, EXTRA_COLS, fmtN, rarityColor, rarCell, fmtWhen, toast } from "./dom.mts";
 import { api } from "./api.mts";
 import { actButtons, bridgeNoteEl } from "./bridge.mts";
-import { clampOffset, optionsKeeping, clearedQuery } from "./view-state.mts";
+import { clampOffset, optionsKeeping, clearedQuery, colsFromPrefs } from "./view-state.mts";
 import type { SelectOption } from "./view-state.mts";
 import type { ItemsApiResponse, UiPrefs } from "./api-types.mts";
 
@@ -78,13 +78,14 @@ export function renderColChips(): void {
 function saveCols(): void {
   api("/api/ui-prefs", { method: "PUT", body: { cols: state.cols } }).catch((e: Error) => toast(`Could not save the column choice: ${e.message}`, "bad"));
 }
-// load()'s GET /api/ui-prefs answer. With no saved choice yet, a choice this browser made before the
-// server kept it (localStorage "vault.cols") is adopted once and saved server-side.
-export function applyUiPrefs(prefs: UiPrefs | null | undefined): void {
-  if (prefs?.cols) { state.cols = prefs.cols; return; }
+// load()'s GET /api/ui-prefs answer (null when that request failed); colsFromPrefs decides whether a
+// choice this browser saved before the server kept it is adopted.
+export function applyUiPrefs(prefs: UiPrefs | null): void {
   let legacy: unknown = null;
-  try { legacy = JSON.parse(localStorage.getItem("vault.cols") || "null"); } catch { /* unreadable: keep the defaults */ }
-  if (Array.isArray(legacy) && legacy.every((c) => typeof c === "string")) { state.cols = legacy; saveCols(); }
+  try { legacy = JSON.parse(localStorage.getItem("vault.cols") || "null"); } catch { /* unreadable: nothing to adopt */ }
+  const { cols, save } = colsFromPrefs(prefs, legacy);
+  if (cols) state.cols = cols;
+  if (save) saveCols();
 }
 // Every plain filter control (search text, the dropdowns, the checkboxes): read them all into
 // state.query, reset to page 1 (a changed filter can only ever invalidate the current offset), fetch.

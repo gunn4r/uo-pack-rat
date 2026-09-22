@@ -4,7 +4,7 @@
 // scripts/ui-state.test.mts.
 import test from "node:test";
 import assert from "node:assert/strict";
-import { clampOffset, optionsKeeping, clearedQuery } from "./ui/view-state.mts";
+import { clampOffset, optionsKeeping, clearedQuery, colsFromPrefs } from "./ui/view-state.mts";
 import type { ItemQuery } from "./item-query.mts";
 
 test("[fast] clampOffset keeps an offset that still has rows", () => {
@@ -44,4 +44,21 @@ test("[fast] clearedQuery resets every filter and keeps the view", () => {
     nogarg: false, med: false, hideTags: [], props: [], group: true, sort: "hci", dir: -1, offset: 0, limit: 100,
   });
   assert.deepEqual(q.hideTags, ["cursed"], "the query passed in is not mutated");
+});
+
+test("[fast] colsFromPrefs uses the server's saved columns and never migrates over them", () => {
+  assert.deepEqual(colsFromPrefs({ cols: ["hci"] }, ["dci"]), { cols: ["hci"], save: false });
+});
+
+test("[fast] colsFromPrefs adopts an old browser-saved choice only when the server answered with none", () => {
+  assert.deepEqual(colsFromPrefs({}, ["dci", "sk:magery"]), { cols: ["dci", "sk:magery"], save: true });
+  assert.deepEqual(colsFromPrefs(null, ["dci"]), { cols: null, save: false }, "a failed GET must not push the old choice over the server's");
+  assert.deepEqual(colsFromPrefs({}, null), { cols: null, save: false });
+});
+
+test("[fast] colsFromPrefs drops an old choice the server would refuse instead of failing every load", () => {
+  assert.deepEqual(colsFromPrefs({}, Array.from({ length: 201 }, (_, i) => `k${i}`)), { cols: null, save: false });
+  assert.deepEqual(colsFromPrefs({}, ["hci", ""]), { cols: null, save: false });
+  assert.deepEqual(colsFromPrefs({}, ["x".repeat(65)]), { cols: null, save: false });
+  assert.deepEqual(colsFromPrefs({}, "hci"), { cols: null, save: false });
 });

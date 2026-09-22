@@ -53,7 +53,7 @@ export async function load(): Promise<void> {
   state.availableShards = rulesRes.available;
   state.setup = setupRes;
   setRules(state.rules);
-  applyUiPrefs(prefs?.prefs);
+  applyUiPrefs(prefs ? prefs.prefs : null);
   renderShardPicker();
   // Settings, Import, the live-scan stream and the first-run wizard need nothing from the inventory,
   // so they come up before it: a failed inventory or profiles fetch must not take the Settings tab
