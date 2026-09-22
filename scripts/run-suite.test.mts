@@ -129,9 +129,12 @@ test("[fast] a build failure before the tests is recorded as a failure with the 
   assert.match(s.failures[0]?.error ?? "", /TS2304/);
 });
 
-test("[fast] a hung test fails on the per-test timeout instead of blocking the run", () => {
+test("[fast] a hung test fails on the timeout instead of blocking the run", () => {
   // The interval it leaves behind would also keep the file's process alive after the timeout.
   const s = suiteOver({ "hangs.test.mts": `import { test } from "node:test";\ntest("[fast] hangs", () => new Promise(() => { setInterval(() => {}, 1000); }));\n` }, "full", 300);
-  assert.equal(s.failed, 1);
-  assert.equal(s.failures[0]?.test_name, "[fast] hangs");
+  assert.equal(s.failed, 1, JSON.stringify(s.failures));
+  assert.equal(s.failures[0]?.file, "hangs.test.mts");
+  // Node 24 names the test; Node 22 applies the timeout to the whole file and names that.
+  assert.ok(["[fast] hangs", "file timed out"].includes(s.failures[0]?.test_name ?? ""), s.failures[0]?.test_name);
+  assert.match(s.failures[0]?.error ?? "", /timed out/);
 });
