@@ -31,9 +31,16 @@ export interface RunKeyInput {
   profile?: unknown;
   opts?: RunOpts;
 }
-// Everything that shapes the answer: the candidate pools, the worn suit, the scoring profile, the search options.
+// The version of the search code a saved run's answer came from. Bump it on any change to the MIP
+// model (app/mip.mts), the orchestration (app/exact-solver.mts) or the core's scoring and search
+// (scripts/optimizer-core.mts) that can change a result, so runs saved before it stop matching and
+// are never served as "reused". 2: soft floors allow negative totals, negative capped weights.
+export const SOLVER_VERSION = 2;
+
+// Everything that shapes the answer: the candidate pools, the worn suit, the scoring profile, the
+// search options, and the solver version.
 export function runKey({ pools = {}, current = {}, profile = {}, opts = {} }: RunKeyInput): string {
-  return createHash("sha1").update(JSON.stringify({ pools, current, profile, opts: stripOpts(opts) })).digest("hex");
+  return createHash("sha1").update(JSON.stringify({ solver: SOLVER_VERSION, pools, current, profile, opts: stripOpts(opts) })).digest("hex");
 }
 
 export interface RunResult {
@@ -71,12 +78,16 @@ export interface SavedRun {
   result?: RunResult | undefined;
 }
 
-// A saved run answers a new request when its inputs match and running again could not do better: it was
-// proven optimal, it was a heuristic run (deterministic for the same inputs), or it already had at least the
-// time budget now asked for. `runs` is newest first, so the newest match wins.
+// A saved run answers a new request when its inputs match and running again is not expected to do
+// better: it was proven optimal, it was a heuristic run (its restarts are fixed by the seed; the warm
+// start the server adds can only lift a rerun, so the saved one may trail a fresh one slightly), or
+// it was an unproven exact run that already had at least the time budget now asked for. A solver
+// fallback (`solver: "fallback"`: HiGHS failed to load, or the floors-conflict retry ran out of time)
+// never answers — it depends on the environment and the clock, not only on the inputs. `runs` is
+// newest first, so the newest match wins.
 export function reusableRun(runs: SavedRun[], key: string, opts: { timeBudgetMs?: number } = {}): SavedRun | null {
   const want = typeof opts.timeBudgetMs === "number" ? opts.timeBudgetMs : 15000;
-  return runs.find((r) => r.key === key && r.result && (r.result.proven || r.result.method !== "exact" || (r.budgetMs ?? 0) >= want)) || null;
+  return runs.find((r) => r.key === key && r.result && r.result.solver !== "fallback" && (r.result.proven || r.result.method !== "exact" || (r.budgetMs ?? 0) >= want)) || null;
 }
 
 export interface RunSummary {
