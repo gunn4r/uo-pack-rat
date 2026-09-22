@@ -86,6 +86,8 @@ WALK_POLL_MS = 500
 CONTENTS_WAIT_MS = 1200
 GRAB_SETTLE_MS = 1200
 HIGHLIGHT_MS = 8000
+HIGHLIGHT_POLL_MS = 1000
+STATUS_EVERY_S = 2.0       # heartbeat: the app calls the bridge offline once `alive` is 8 s old
 HIGHLIGHT_HUE = 53         # bright yellow-green
 ALARM_HUE, OK_HUE, INFO_HUE = 33, 68, 88
 
@@ -98,6 +100,7 @@ ALARM_HUE, OK_HUE, INFO_HUE = 33, 68, 88
 # this file's own em dashes and f-strings: Razor Enhanced's IronPython carries the same text.
 MAX_CHAIN = 8              # containers one command may open (app/ui/bridge.mts's own chainOf guard)
 MAX_NAME = 120             # a name is only ever printed on screen
+MAX_ID = 64                # the app's ids are ~18 characters; a result is keyed by one
 MAX_AGE_S = 60             # a command is a click: anything older is a replayed backlog
 CLOCK_SKEW_S = 5           # same machine, but the clocks still tick apart
 BUDGET_WINDOW_S = 60       # rolling window for MAX_CMDS_PER_WINDOW
@@ -192,6 +195,8 @@ def check_command(cmd, actions, now_s):
     cid = cmd.get("id")
     if not isinstance(cid, str) or not cid:
         return None, "command has no id"
+    if len(cid) > MAX_ID:
+        return None, "command id is longer than {0} characters".format(MAX_ID)
     if cmd.get("action") not in actions:
         return None, "unknown action"
     if not is_serial(cmd.get("serial")):
@@ -273,15 +278,35 @@ def resolve_root(serial, find_fn):
     return cur
 
 
+def chain_problem(chain, i, it, own):
+    """Why chain[i] must not be opened, or "" when it may. `it` is the live item for chain[i] and
+    `own` the serials of the player's own backpack and bank. The root has to be one of those or lie
+    on the ground -- never a container another mobile carries -- and every later entry has to sit
+    directly inside the entry before it, so a chain only ever leads down into its own root."""
+    c = int(chain[i])
+    if i == 0:
+        if c in own or bool(getattr(it, "OnGround", False)):
+            return ""
+        return "refused: 0x{0:x} is not on the ground, your backpack or your open bank box".format(c)
+    try:
+        parent = int(getattr(it, "Container", 0) or 0)
+    except Exception:
+        parent = 0
+    if parent != int(chain[i - 1]):
+        return "refused: 0x{0:x} is not inside 0x{1:x} -- rescan and try again".format(c, int(chain[i - 1]))
+    return ""
+
+
 # ---- end of the untrusted-input section --------------------------------------------------------
 
 results = {}                # id -> {ok, msg, t}
 counts = {"done": 0, "failed": 0}
+last_status = {"current": None, "at": 0.0}
 
 
 def is_container(it):
     try:
-        if bool(getattr(it, "IsCorpse", False)):
+        if bool(getattr(it, "IsCorpse", False)) or as_int(getattr(it, "ItemID", 0)) == 0x2006:
             return False          # corpses are containers to the client; never open them
     except Exception:
         pass
@@ -306,6 +331,7 @@ def as_int(v, default=0):
 
 
 def write_status(current=None):
+    last_status["current"], last_status["at"] = current, time.time()
     try:
         items = list(results.items())
         keep = dict(items[-MAX_RESULTS:])
@@ -313,6 +339,13 @@ def write_status(current=None):
                                     "current": current, "results": keep, "counts": counts})
     except Exception as e:
         sysmsg("bridge: status write failed: {0}".format(e), ALARM_HUE)
+
+
+def heartbeat():
+    """Rewrite the status file during a long action (a highlight, a walk) so the app keeps seeing the
+    bridge online and keeps its buttons working; cheap to call often."""
+    if time.time() - last_status["at"] >= STATUS_EVERY_S:
+        write_status(last_status["current"])
 
 
 def record(cid, ok, msg):
@@ -361,7 +394,10 @@ def walk_to(pos, root_serial):
     Player.DistanceTo) when the client already knows it; falls back to the scanned pos dict
     otherwise. Player.PathFindTo's own blocking behaviour is undocumented, so this polls afterward
     rather than assuming it either blocks or returns instantly -- safe either way. A destination
-    further than MAX_WALK_TILES is refused rather than walked to."""
+    further than MAX_WALK_TILES is refused rather than walked to. Your own backpack and bank need no
+    walk: they are on you, and a worn container's position is not yours."""
+    if as_int(root_serial) in own_roots([]):
+        return True
     it = find(root_serial)
     if it is not None:
         if in_reach_of_item(it):
@@ -376,6 +412,7 @@ def walk_to(pos, root_serial):
         deadline = time.time() + WALK_TIMEOUT_S
         while time.time() < deadline and Player.Connected:
             Misc.Pause(WALK_POLL_MS)
+            heartbeat()
             if in_reach_of_item(it):
                 return True
         return in_reach_of_item(it)
@@ -391,6 +428,7 @@ def walk_to(pos, root_serial):
         deadline = time.time() + WALK_TIMEOUT_S
         while time.time() < deadline and Player.Connected:
             Misc.Pause(WALK_POLL_MS)
+            heartbeat()
             if dist_to_xy(pos["x"], pos["y"]) <= REACH:
                 return True
         return dist_to_xy(pos["x"], pos["y"]) <= REACH
@@ -398,11 +436,17 @@ def walk_to(pos, root_serial):
 
 
 def open_chain(chain):
-    """Open root, then each nested bag in order. Returns (ok, message)."""
+    """Open root, then each nested bag in order. Returns (ok, message). Each entry is checked against
+    the live client before it is opened: the root must be on the ground or your own backpack or bank,
+    and each bag must really sit inside the one opened before it (chain_problem)."""
+    own = own_roots([])
     for i, c in enumerate(chain):
         it = find(c)
         if it is None:
             return False, "container {0}/{1} (0x{2:x}) is not in view -- walk there and try again".format(i + 1, len(chain), as_int(c))
+        why = chain_problem(chain, i, it, own)
+        if why:
+            return False, why
         # Items.WaitForContents is an open-the-container call, and opening is a double-click: on a
         # non-container that is UO's universal "use" verb (a potion drinks, a rune recalls, a deed
         # places). Same restraint the scanner already applies, and corpses are refused with it.
@@ -412,6 +456,7 @@ def open_chain(chain):
             Items.WaitForContents(it, CONTENTS_WAIT_MS)
         except Exception as e:
             return False, "could not open container: {0}".format(e)
+        heartbeat()
     return True, "opened"
 
 
@@ -439,7 +484,10 @@ def do_highlight(cmd):
         Player.HeadMessage(HIGHLIGHT_HUE, "Pack Rat: {0}".format(name))
     except Exception:
         pass
-    Misc.Pause(HIGHLIGHT_MS)
+    t_end = time.time() + HIGHLIGHT_MS / 1000.0
+    while time.time() < t_end and Player.Connected:
+        Misc.Pause(HIGHLIGHT_POLL_MS)
+        heartbeat()
     for t in targets:
         s = as_int(getattr(t, "Serial", 0))
         try:
@@ -486,6 +534,10 @@ def run(cmd):
     if action not in CAPABILITIES["bridge"]:
         return False, "unknown action"
     if chain:
+        root = find(chain[0])
+        why = chain_problem(chain, 0, root, own_roots([])) if root is not None else ""
+        if why:
+            return False, why                # never walk toward a container someone else carries
         if not walk_to(cmd.get("pos"), chain[0]):
             return False, "could not reach the container (not in view / too far / no path) -- walk closer and retry"
         if action == "goto":
@@ -549,33 +601,39 @@ def main():
                             bad += 1
                             continue
                         cmd, why = check_command(parsed, CAPABILITIES["bridge"], time.time())
-                        if cmd is None:
-                            bad += 1
+                        cid = parsed.get("id") if isinstance(parsed, dict) else None
+                        if not isinstance(cid, str) or not cid or len(cid) > MAX_ID:
+                            bad += 1                     # no id the page could match a result to
                             continue
-                        if cmd["id"] in seen:
-                            continue                     # already executed: a repeat is not a click
+                        if cid in seen:
+                            continue                     # already accepted: a repeat is not a click
                         if not budget_ok(spent, time.time()):
-                            record(cmd["id"], False, "too many commands at once -- bridge stopping")
+                            record(cid, False, "too many commands at once -- bridge stopping")
                             sysmsg("Pack Rat bridge: the queue is being written faster than a person clicks. Stopping -- start it again yourself if this was you.", ALARM_HUE)
                             flooded = True
                             break
                         spent.append(time.time())
+                        seen.append(cid)
+                        del seen[:-MAX_SEEN_IDS]
+                        if cmd is None:
+                            # Refused (stale, malformed): recorded under the command's own id, so the
+                            # page that queued it toasts the reason instead of waiting forever.
+                            record(cid, False, why)
+                            continue
                         pending.append(cmd)
                     except Exception:
                         bad += 1
                 if bad:
                     # One aggregated result rather than one per junk line, so a flood of garbage
                     # cannot itself flood the status file.
-                    record("rejected-{0}".format(rfc3339_now()), False,
-                           "{0} queue line(s) ignored (unreadable, stale or not a command)".format(bad))
+                    record("rejected-{0}-{1}".format(rfc3339_now(), counts["failed"]), False,
+                           "{0} queue line(s) ignored (unreadable or not a command)".format(bad))
         except Exception as e:
             sysmsg("bridge: queue read failed: {0}".format(e), ALARM_HUE)
         ran = 0
         while pending and ran < MAX_CMDS_PER_POLL and Player.Connected and not flooded:
             cmd = pending.pop(0)
             ran += 1
-            seen.append(cmd["id"])
-            del seen[:-MAX_SEEN_IDS]
             try:
                 sysmsg("bridge: {0} {1}".format(cmd["action"], cmd["name"]), INFO_HUE)
                 write_status({"id": cmd["id"], "action": cmd["action"], "name": cmd["name"]})
@@ -591,6 +649,8 @@ def main():
             write_status(None)
             next_status = time.time() + 2.0
         Misc.Pause(POLL_MS)
+    for cmd in pending:
+        record(cmd["id"], False, "not run -- the bridge stopped first")
     try:
         write_json_atomic(STATUS, {"alive": rfc3339_now(), "character": str(Player.Name),
                                     "current": None, "results": results, "counts": counts,
