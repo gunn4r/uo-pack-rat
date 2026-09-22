@@ -152,10 +152,25 @@ test("[fast] the release always publishes as a draft, explicitly, not by relying
   assert.equal(build.publish?.releaseType, "draft");
 });
 
-test("[fast] a publish-always script exists for the release workflow, separate from dist", () => {
+test("[fast] no packaging script publishes; the release workflow's publish job is the only uploader", () => {
+  // A local `electron-builder --publish always` run with GH_TOKEN set creates and fills a release of
+  // its own, which is exactly the path the workflow's build/publish split exists to rule out.
   const scripts = pkg.scripts ?? {};
-  assert.match(scripts["dist:publish"] ?? "", /--publish always/);
   assert.match(scripts.dist ?? "", /--publish never/);
+  for (const [name, command] of Object.entries(scripts)) {
+    if (/electron-builder/.test(command)) assert.match(command, /--publish never/, `${name} must not publish`);
+  }
+});
+
+test("[fast] every packaging script builds the page first", () => {
+  // The packaged server never builds anything (electron/server-entry.mts), so a package made without
+  // app/dist/ opens on a 404, and one made over an old app/dist/ quietly ships a stale page.
+  const scripts = pkg.scripts ?? {};
+  const packaging = Object.keys(scripts).filter((name) => /electron-builder/.test(scripts[name] ?? ""));
+  assert.ok(packaging.includes("dist") && packaging.includes("dist:dir"), `found: ${packaging.join(", ")}`);
+  for (const name of packaging) {
+    assert.equal(scripts[`pre${name}`], "npm run build:types && npm run build:ui", `${name} needs a pre${name} hook that builds the page`);
+  }
 });
 
 const workflow = (name: string): string => readFileSync(join(root, ".github/workflows", name), "utf8");
