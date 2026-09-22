@@ -41,11 +41,17 @@ export function applySettings(st: RunSettings): void {
 // at runtime — this cast documents that rather than adding a new `?? null` that can't change the
 // value actually bound inside the function.
 export const profileFromSettings = (st: RunSettings) => effectiveProfile(st, state.inv!.characters[state.builder.character!] as Character | null);
+// A generation counter, like fetchItems()'s: a slow list for the previously selected character must
+// not land in the drawer after the selection moved on.
+let runsSeq = 0;
 export async function loadRuns(): Promise<void> {
-  const name = state.builder.character;
+  const name = state.builder.character, mine = ++runsSeq;
   if (!name) return;
-  try { state.builder.runs = (await api<RunsListApiResponse>(`/api/runs?character=${encodeURIComponent(name)}`)).runs || []; }
-  catch { state.builder.runs = []; }
+  let runs: RunSummaryLike[];
+  try { runs = (await api<RunsListApiResponse>(`/api/runs?character=${encodeURIComponent(name)}`)).runs || []; }
+  catch { runs = []; }
+  if (mine !== runsSeq) return;
+  state.builder.runs = runs;
   renderRuns();
 }
 export function openRunsDrawer(): void {
@@ -113,12 +119,17 @@ export function renameRun(run: RunSummaryLike, labelEl: HTMLDivElement): void {
 type RunFetch = (RunApiResponse & { ok: true }) | { ok: false; error?: string | undefined };
 export async function openRun(id: string): Promise<void> {
   if (state.builder.job) { toast("A build is running. Cancel it or wait before opening a saved run."); return; }
+  // The run belongs to the character selected now; if the player picks another one while it loads,
+  // it is dropped rather than drawn (with its Fetch list and Grab all) under that one.
+  const name = state.builder.character;
+  if (!name) return;
   let r: RunFetch;
   try { r = (await api<RunApiResponse>(`/api/runs/${id}`)) as RunApiResponse & { ok: true }; } catch (e) { r = { ok: false, error: (e as Error).message }; }
   // The only way `r.ok` is false is the catch above, which always sets `error` to a real string —
   // RunFetch's `error?` is looser than that actual guarantee, so this `!` documents it rather than
   // adding a new `|| ""` fallback a genuinely-missing error has never needed.
   if (!r.ok) { toast(r.error!, "bad"); return; }
+  if (state.builder.character !== name) return;
   const run = r.run;
   state.builder.openRun = id; renderRuns(); closeRunsDrawer();
   const diff = settingsDiff(settingsSnapshot(), run.settings);
@@ -140,6 +151,7 @@ export async function openRun(id: string): Promise<void> {
   const current: Record<string, OptItem | null> = Object.fromEntries(OPTIMIZER_SLOTS.map((slot): [string, OptItem | null] => [slot, best[slot] || null]));
   const changes = run.result.perSlotChanges || [];
   const resolved = await resolveItems(changes.map((c) => c.fromSerial).filter(Boolean));
+  if (state.builder.character !== name) return;
   const unresolvedSlots: string[] = [];
   for (const c of changes) {
     if (!c.fromSerial) { current[c.slot] = null; continue; }
@@ -167,7 +179,7 @@ export async function openRun(id: string): Promise<void> {
     // helper already handles whatever shape actually arrives (an array or a plain count).
     runStats({ ok: true, result: run.result, ms: run.ms! }, run.poolSize, run.skipped as Record<string, unknown> | undefined, run.explored)));
   state.builder.altView = null;
-  await renderResult(run.result, current, profileFromSettings(run.settings));
+  await renderResult(run.result, current, profileFromSettings(run.settings), name);
 }
 export async function compareSelected(): Promise<void> {
   // Same rule as openRun: a build finishing would draw over the comparison.

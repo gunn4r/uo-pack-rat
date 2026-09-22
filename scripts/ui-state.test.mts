@@ -233,3 +233,45 @@ test("[slow] the Inventory column choice survives a restart of the desktop app",
     rmSync(dataDir, { recursive: true, force: true });
   }
 });
+
+// The saved-runs path has its own awaits: openRun fetches the run and resolves its pieces before
+// drawing, and loadRuns fetches the list. A character switch during either must not draw one
+// character's run (or list) under another.
+test("[slow] a saved run or run list that lands after a character switch is not shown under the new character", async (t) => {
+  const why = unavailable();
+  if (why) return t.skip(why);
+  const dataDir = seedDataDir("packrat-ui-runs-");
+  const { app, page, errors } = await launch(dataDir);
+  try {
+    await page.locator("#inv-table tbody tr.item").first().waitFor({ timeout: 30_000 });
+    await openTab(page, "builder");
+    await page.waitForFunction(() => document.querySelector<HTMLSelectElement>("#b-char")?.value, { timeout: 10_000 });
+    const [builtFor, other] = await page.locator("#b-char option").allInnerTexts() as [string, string];
+    await page.selectOption("#b-char", builtFor);
+    await page.fill("#b-budget", "3");
+    await page.click("#b-run");
+    await page.waitForFunction(() => !document.querySelector<HTMLButtonElement>("#b-run")?.disabled, undefined, { timeout: 60_000 });
+    await page.waitForSelector("#b-runs .run-main", { state: "attached", timeout: 10_000 });
+
+    // Open the saved run with its fetch held back, and switch character while it is in flight.
+    await page.route("**/api/runs/*", async (route) => { await new Promise((r) => setTimeout(r, 1500)); await route.continue(); });
+    await page.click("#b-runs-open");
+    await page.click("#b-runs .run-main");
+    await page.selectOption("#b-char", other);
+    await page.waitForTimeout(3000);
+    assert.doesNotMatch(await page.locator("#b-result").innerText(), /Best suit for/, "the run opened for one character is not drawn under the other");
+    await page.unroute("**/api/runs/*");
+
+    // A slow run list for the old character must not fill the drawer under the new one.
+    await page.route(`**/api/runs?character=${encodeURIComponent(builtFor)}`, async (route) => { await new Promise((r) => setTimeout(r, 1500)); await route.continue(); });
+    await page.selectOption("#b-char", builtFor);
+    await page.selectOption("#b-char", other);
+    await page.waitForTimeout(3000);
+    assert.equal(await page.locator("#b-runs .run-main").count(), 0, `${other} has no saved runs; ${builtFor}'s late list must not show under ${other}`);
+
+    assert.deepEqual(errors, []);
+  } finally {
+    await app.close();
+    rmSync(dataDir, { recursive: true, force: true });
+  }
+});
