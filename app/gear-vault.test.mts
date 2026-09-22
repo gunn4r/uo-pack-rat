@@ -311,6 +311,83 @@ test("[fast] fold: a Forget tombstone (v2, stamped toISOString()) one wall-clock
   assert.ok(!Object.values(inv.items).some((i) => i.root === root), "the later tombstone dropped the root's contents");
 });
 
+// A character tombstone (POST /api/forget-character): nothing else ever removes a deleted or renamed
+// character's card, worn set, backpack or bank from the fold.
+const V2_APP = { id: "app", version: "1", client: "Pack Rat", clientVersion: null, capabilities: { layers: [], arms: false, bank: false, ground: false, nested: false, tooltips: "label" as const, bridge: [] } };
+function twoCharacterScans(): ScanV2[] {
+  const mk = (character: string, base: number, scannedAt: string): ScanV2 => upgradeScan({
+    version: 1, character, scannedAt, stats: { str: 100 },
+    equipped: [{ serial: base + 1, name: "Ring", tooltip: ["Ring", "Hit Chance Increase 5%"], layer: "Ring" }],
+    roots: [{ serial: base + 10, kind: "backpack", name: "Backpack" }, { serial: base + 20, kind: "bank", name: "Bank box" }, { serial: base + 30, kind: "ground", name: "Metal Chest" }],
+    containers: {
+      [base + 10]: { serial: base + 10, root: base + 10, parent: null, kind: "backpack", name: "Backpack" },
+      [base + 20]: { serial: base + 20, root: base + 20, parent: null, kind: "bank", name: "Bank box" },
+      [base + 30]: { serial: base + 30, root: base + 30, parent: null, kind: "ground", name: "Metal Chest" },
+    },
+    items: [base + 10, base + 20, base + 30].map((c, i) => ({ serial: base + 100 + i, name: "Bracelet", tooltip: ["Bracelet"], amount: 1, container: c })),
+  }, { shard: "test" }) as ScanV2;   // known-good fixture: the cast stands in for the validateScan() a real caller runs
+  return [mk("Dorran", 1000, "2026-09-12T10:00:00"), mk("Kestrel", 2000, "2026-09-12T10:00:00")];
+}
+const forgetCharacterTomb = (character: string, scannedAt: string): ScanV2 => ({
+  schemaVersion: 2, character: "_vault", scannedAt, adapter: V2_APP, stats: {}, equipped: [], roots: [], containers: {}, items: [], forgetCharacter: character,
+} as ScanV2);
+
+test("[fast] fold: a character tombstone drops the card, worn set, backpack and bank, and keeps the ground containers it scanned", () => {
+  const [dorran, kestrelScan] = twoCharacterScans() as [ScanV2, ScanV2];
+  const inv = foldSnapshots([dorran, kestrelScan, forgetCharacterTomb("Dorran", "2026-09-13T00:00:00Z")]);
+  assert.equal(inv.characters.Dorran, undefined);
+  assert.ok(!Object.values(inv.items).some((i) => i.equippedBy === "Dorran"), "the worn set is gone");
+  assert.ok(!inv.containers[1010] && !inv.containers[1020], "the backpack and bank are gone");
+  assert.ok(!inv.items[1100] && !inv.items[1101], "and what was in them");
+  assert.ok(inv.items[1102], "a ground chest belongs to the house, not the character, and stays");
+  assert.ok(inv.characters.Kestrel && inv.items[2001] && inv.items[2100], "another character is untouched");
+});
+
+test("[fast] fold: a scan newer than the character tombstone brings the character back; an older one does not", () => {
+  const [dorran, kestrelScan] = twoCharacterScans() as [ScanV2, ScanV2];
+  const tomb = forgetCharacterTomb("Dorran", "2026-09-13T00:00:00Z");
+  assert.ok(foldSnapshots([dorran, kestrelScan, tomb, { ...dorran, scannedAt: "2026-09-14T00:00:00Z" }]).characters.Dorran);
+  assert.equal(foldSnapshots([tomb, kestrelScan, dorran]).characters.Dorran, undefined, "fold order is by stamp, not by list order");
+});
+
+test("[fast] fold: forgetCharacter is only honoured on the app's own _vault tombstone", () => {
+  const [dorran, kestrelScan] = twoCharacterScans() as [ScanV2, ScanV2];
+  const inv = foldSnapshots([dorran, { ...kestrelScan, scannedAt: "2026-09-13T00:00:00Z", forgetCharacter: "Dorran" } as ScanV2]);
+  assert.ok(inv.characters.Dorran, "an adapter scan carrying the field does not forget anyone");
+});
+
+// Location text is what the Location filter, group counts and the builder's Fetch list key on: two
+// ground chests both called "Metal Chest" (or three "A Bag"s in one backpack) must not read the same.
+test("[fast] fold: same-named containers side by side get distinct location text", () => {
+  const fixture = JSON.parse(readFileSync(join(HERE, "..", "adapters", "tazuo", "fixture.scan.json"), "utf8")) as ScanV2;
+  const inv = foldSnapshots([fixture]);
+  const byContainer = new Map<number, string>();
+  for (const it of foldedItems(inv)) if (it.container != null && !it.equippedBy) byContainer.set(it.container, it.location.text);
+  const texts = [...byContainer.values()];
+  assert.equal(new Set(texts).size, texts.length, `every container reads differently: ${JSON.stringify(texts)}`);
+  const chests = Object.values(inv.containers).filter((c) => c.parent == null && c.name === "Metal Chest");
+  assert.ok(chests.length > 1);
+  assert.equal(new Set(chests.map((c) => c.label)).size, chests.length, "each Metal Chest root has its own label");
+  for (const c of chests) assert.match(c.label!, /^Metal Chest /);
+});
+
+test("[fast] fold: a uniquely named container keeps its plain label, and a position tells same-named roots apart when it can", () => {
+  const scan = upgradeScan({
+    version: 1, character: "Dorran", scannedAt: "2026-09-12T10:00:00", stats: {}, equipped: [],
+    roots: [{ serial: 1, kind: "ground", name: "Metal Chest" }, { serial: 2, kind: "ground", name: "Metal Chest" }, { serial: 3, kind: "ground", name: "Wooden Box" }],
+    containers: {
+      1: { serial: 1, root: 1, parent: null, kind: "ground", name: "Metal Chest", pos: { x: 1500, y: 1600, z: 0 } },
+      2: { serial: 2, root: 2, parent: null, kind: "ground", name: "Metal Chest", pos: { x: 1502, y: 1600, z: 0 } },
+      3: { serial: 3, root: 3, parent: null, kind: "ground", name: "Wooden Box", pos: { x: 1504, y: 1600, z: 0 } },
+    },
+    items: [1, 2, 3].map((c) => ({ serial: 100 + c, name: "Ring", tooltip: ["Ring"], amount: 1, container: c })),
+  }, { shard: "test" }) as ScanV2;   // known-good fixture: the cast stands in for the validateScan() a real caller runs
+  const inv = foldSnapshots([scan]);
+  assert.equal(inv.items[101]!.location!.text, "Metal Chest (1500, 1600)");
+  assert.equal(inv.items[102]!.location!.text, "Metal Chest (1502, 1600)");
+  assert.equal(inv.items[103]!.location!.text, "Wooden Box");
+});
+
 test("[smoke] fold: a quick refresh (backpack as the only root) replaces the worn set, keeps the bank and relocates a taken-off piece", () => {
   const bag = { 10: { serial: 10, root: 10, parent: null, kind: "backpack", name: "Backpack" } };
   const fullRaw = { version: 1, character: "Dorran", scannedAt: "2026-09-12T10:00:00", stats: { str: 100 },

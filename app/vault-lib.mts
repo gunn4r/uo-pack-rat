@@ -92,6 +92,10 @@ export interface Container {
   parent?: number | null | undefined;
   root: number;
   tooltip?: string[] | undefined;
+  pos?: Record<string, number> | null | undefined;
+  // The container's segment in location text: its bagLabel, plus a distinguishing suffix when another
+  // container with the same label sits beside it (labelContainers). Set by every fold.
+  label?: string | undefined;
   scannedBy: string;
   scannedAt: string;
 }
@@ -435,6 +439,7 @@ export function foldSnapshots(snapshots: ScanV2[]): Inventory {
   for (const snap of sorted) {
     if (snap.schemaVersion !== 2) throw new Error("foldSnapshots needs v2 scans — call upgradeScan first");
     const char = snap.character;
+    if (char === "_vault") forgetCharacter(inv, (snap as ScanV2 & { forgetCharacter?: unknown }).forgetCharacter);
     // A root with opened:false (open failed — too far, locked) is still listed in snap.roots, but
     // carries no items; it must be treated exactly like a root the snapshot didn't mention at all —
     // i.e. excluded from the replace-per-root set below — so the fold keeps whatever it last knew
@@ -481,8 +486,49 @@ export function foldSnapshots(snapshots: ScanV2[]): Inventory {
     }
     inv.scans.push({ character: char, scannedAt: snap.scannedAt, items: (snap.items || []).length, roots: [...roots] });
   }
+  labelContainers(inv);
   for (const it of Object.values(inv.items)) it.location = locationOf(it, inv);
   return inv;
+}
+
+// A character tombstone (POST /api/forget-character: a `_vault` scan carrying `forgetCharacter`)
+// removes what only that character's scans ever put there: its card, its worn set, and its backpack
+// and bank roots with everything under them. Ground containers it scanned stay: they belong to a
+// house, and another character's scan may be the one keeping them current. A later scan of the
+// character brings it back, by the fold's usual newest-wins order.
+function forgetCharacter(inv: Inventory, name: unknown): void {
+  if (typeof name !== "string" || !name) return;
+  const roots = new Set(Object.values(inv.containers).filter((c) => c.parent == null && c.scannedBy === name && (c.kind === "backpack" || c.kind === "bank")).map((c) => +c.root));
+  for (const [serial, it] of Object.entries(inv.items)) {
+    if (it.equippedBy === name || (it.root != null && roots.has(+it.root))) delete inv.items[serial];
+  }
+  for (const [serial, c] of Object.entries(inv.containers)) if (roots.has(+c.root)) delete inv.containers[serial];
+  delete inv.characters[name];
+}
+
+// Each container's segment in location text. Location text is what the Location filter, the group
+// view's per-place counts and the builder's Fetch list key on, and a house full of chests called
+// "Metal Chest" (or three "A Bag"s in one backpack) would otherwise merge into one place. Containers
+// that share a label and sit side by side (the same parent; for ground roots, every ground root) get
+// a suffix: the position when that alone tells them apart, else the serial. A backpack or bank root
+// is never shown by its own name (locationOf names it after its owner), so those roots are left out.
+function labelContainers(inv: Inventory): void {
+  const groups = new Map<string, Container[]>();
+  for (const c of Object.values(inv.containers)) {
+    const scope = c.parent != null ? `in ${c.parent}` : c.kind === "backpack" || c.kind === "bank" ? `own ${c.serial}` : "ground";
+    const key = `${scope}\u0000${bagLabel(c)}`;
+    const list = groups.get(key);
+    if (list) list.push(c); else groups.set(key, [c]);
+  }
+  for (const list of groups.values()) {
+    for (const c of list) {
+      const base = bagLabel(c);
+      if (list.length === 1) { c.label = base; continue; }
+      const x = c.pos?.x, y = c.pos?.y;
+      const placed = Number.isFinite(x) && Number.isFinite(y) && list.filter((o) => o.pos?.x === x && o.pos?.y === y).length === 1;
+      c.label = placed ? `${base} (${x}, ${y})` : `${base} (0x${(+c.serial).toString(16)})`;
+    }
+  }
 }
 
 function enrich(raw: EnrichRaw, loc: EnrichLoc): Item {
@@ -506,7 +552,7 @@ export function containerPath(serial: number | null, inv: Inventory): string[] {
   // directly — never matches, `cur` comes back undefined, and the loop below simply doesn't run.
   let cur: Container | null | undefined = inv.containers[serial as number], guard = 0;
   while (cur && guard++ < 8) {
-    names.unshift(bagLabel(cur));
+    names.unshift(cur.label || bagLabel(cur));
     cur = cur.parent != null ? inv.containers[cur.parent] : null;
   }
   return names;
@@ -535,7 +581,7 @@ export function locationOf(it: Item, inv: Inventory): ItemLocation {
   if (kind === "backpack") text = `${owner}'s backpack` + (path.length > 1 ? " › " + path.slice(1).join(" › ") : "");
   else if (kind === "bank") text = `${owner}'s bank` + (path.length > 1 ? " › " + path.slice(1).join(" › ") : "");
   else text = path.join(" › ") || "unknown";
-  return { kind, character: owner, text, root: it.root, rootName: root ? bagLabel(root) : "?" };
+  return { kind, character: owner, text, root: it.root, rootName: root ? root.label || bagLabel(root) : "?" };
 }
 
 // ---------------------------------------------------------------------------
