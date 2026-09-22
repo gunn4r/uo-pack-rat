@@ -94,7 +94,7 @@ Tags are prefixes on the test's own name, not a separate parameter: `test("[smok
 - `--fast` → `[smoke]` and `[fast]` (cheap; no brute-force or generated-cell proof, though `[fast]` now includes a handful of short real HiGHS solves — a few seconds each, not the exhaustive kind `[slow]` marks).
 - full (no flag) → everything, `[slow]` included.
 
-`[slow]` marks the exhaustive/exact-search proofs that run `optimizeSuit` with `exact: true` and a real `timeBudgetMs`, or the equivalent HiGHS proof on a large generated cell — the 150/80-random-suit brute-force comparisons and the demo-inventory exact/warm-start checks in `app/gear-vault.test.mts`, and `app/solver.test.mts`'s 3,000-item generated-cell case (HiGHS proves it; the core is checked against it wherever the core also proves it in budget). Set `TEST_SKIP_SLOW=1` to skip them (they register as `node:test` `skip` results, which the runner counts under `skipped`, not `passed`):
+`[slow]` marks the exhaustive/exact-search proofs that run `optimizeSuit` with `exact: true` and a real `timeBudgetMs`, or the equivalent HiGHS proof on a large generated cell — the 150/80-random-suit brute-force comparisons and the demo-inventory exact/warm-start checks in `app/gear-vault.test.mts`, and `app/solver.test.mts`'s 3,000-item generated-cell case (HiGHS proves it; the core is checked against it wherever the core also proves it in budget) and its k-best alternatives case (the core's exact search on the fixture's melee cell, 10-20 s). Set `TEST_SKIP_SLOW=1` to skip them (they register as `node:test` `skip` results, which the runner counts under `skipped`, not `passed`):
 
 ```
 TEST_SKIP_SLOW=1 npm test
