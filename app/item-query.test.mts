@@ -176,6 +176,14 @@ test("[fast] applyItemQuery: group mode shapes rows as JSON-safe groups and sort
   assert.deepEqual(byName.groups.map((g) => g.name), ["Arrow", "Bandage"]);
 });
 
+test("[fast] applyItemQuery: group mode sorts by Stacks when the page asks for it", () => {
+  const items = [mk({ name: "Arrow", kind: "ammo", amount: 500 }), mk({ name: "Bandage", kind: "bandage", amount: 1 }), mk({ name: "Bandage", kind: "bandage", amount: 1 }), mk({ name: "Bandage", kind: "bandage", amount: 1 })];
+  const most = applyItemQuery(items, parseItemQuery(new URLSearchParams("group=1&sort=stacks")), ctx) as ItemQueryGroups;
+  assert.deepEqual(most.groups.map((g) => [g.name, g.stacks]), [["Bandage", 3], ["Arrow", 1]]);
+  const fewest = applyItemQuery(items, parseItemQuery(new URLSearchParams("group=1&sort=stacks&dir=-1")), ctx) as ItemQueryGroups;
+  assert.deepEqual(fewest.groups.map((g) => g.name), ["Arrow", "Bandage"]);
+});
+
 test("[fast] facetsOf: slots/locations/rarities/slayers/kinds/propKeys/gearSkills/itemCount", () => {
   const f = facetsOf(ITEMS, { rarity: RARITY_LADDER });
   assert.deepEqual(f.slots, [...new Set(ITEMS.map((i) => i.slot).filter(Boolean))].sort());
