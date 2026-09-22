@@ -23,7 +23,9 @@ test("[fast] ok two", () => {});
 // about the real runner. The driver prints the summary as JSON on its last line.
 const RUN_SUITE_URL = new URL("./run-suite.mts", import.meta.url).href;
 
-function suiteOver(sources: Record<string, string>, mode: Mode = "full", timeout?: number): Summary {
+// `timeout` and `watchdogMs` are runSuite's own options, shortened so a hung file costs well under a
+// second here instead of the real runner's minutes.
+function suiteOver(sources: Record<string, string>, mode: Mode = "full", { timeout, watchdogMs = 500 }: { timeout?: number; watchdogMs?: number } = {}): Summary {
   const dir = mkdtempSync(join(tmpdir(), "packrat-run-suite-"));
   try {
     const files = Object.entries(sources).map(([name, source]) => {
@@ -32,7 +34,7 @@ function suiteOver(sources: Record<string, string>, mode: Mode = "full", timeout
       return p;
     });
     const driver = `import { runSuite } from ${JSON.stringify(RUN_SUITE_URL)};
-const s = await runSuite({ root: ${JSON.stringify(dir)}, mode: ${JSON.stringify(mode)}, timeout: ${JSON.stringify(timeout ?? null)} ?? undefined, prepare: () => ${JSON.stringify(files)} });
+const s = await runSuite({ root: ${JSON.stringify(dir)}, mode: ${JSON.stringify(mode)}, timeout: ${JSON.stringify(timeout ?? null)} ?? undefined, watchdogMs: ${watchdogMs}, prepare: () => ${JSON.stringify(files)} });
 console.log(JSON.stringify(s));`;
     const env = { ...process.env };
     delete env.NODE_TEST_CONTEXT;
@@ -130,11 +132,60 @@ test("[fast] a build failure before the tests is recorded as a failure with the 
 });
 
 test("[fast] a hung test fails on the timeout instead of blocking the run", () => {
-  // The interval it leaves behind would also keep the file's process alive after the timeout.
-  const s = suiteOver({ "hangs.test.mts": `import { test } from "node:test";\ntest("[fast] hangs", () => new Promise(() => { setInterval(() => {}, 1000); }));\n` }, "full", 300);
-  assert.equal(s.failed, 1, JSON.stringify(s.failures));
-  assert.equal(s.failures[0]?.file, "hangs.test.mts");
+  // The interval it leaves behind would also keep the file's process alive after the timeout, which on
+  // Node 24 (per-test timeout) is the watchdog's job; Node 22 times the whole file out and kills it.
+  const s = suiteOver({ "hangs.test.mts": `import { test } from "node:test";\ntest("[fast] hangs", () => new Promise(() => { setInterval(() => {}, 1000); }));\n` }, "full", { timeout: 300 });
+  assert.ok(s.failed >= 1, JSON.stringify(s.failures));
+  assert.ok(s.failures.every((f) => f.file === "hangs.test.mts"), JSON.stringify(s.failures));
   // Node 24 names the test; Node 22 applies the timeout to the whole file and names that.
-  assert.ok(["[fast] hangs", "file timed out"].includes(s.failures[0]?.test_name ?? ""), s.failures[0]?.test_name);
-  assert.match(s.failures[0]?.error ?? "", /timed out/);
+  assert.ok(s.failures.some((f) => ["[fast] hangs", "file timed out"].includes(f.test_name) && /timed out/.test(f.error)), JSON.stringify(s.failures));
+});
+
+test("[fast] a file that leaves a handle open after its tests pass is stopped and named, not waited on for ever", () => {
+  const s = suiteOver({ "leaks.test.mts": `import { test } from "node:test";\ntest("[fast] leaks an interval", () => { setInterval(() => {}, 1000); });\n` });
+  assert.equal(s.passed, 1, "the test itself passed");
+  assert.equal(s.failed, 1, JSON.stringify(s.failures));
+  assert.equal(s.failures[0]?.test_name, "file kept running after its tests finished");
+});
+
+test("[fast] an error thrown after a test returned fails the file", () => {
+  // A timer that throws once its test has already been reported as passing: node:test can only charge
+  // it to the file, which is why nothing may cut a file short the moment its last test returns.
+  const s = suiteOver({
+    "late-throw.test.mts": `import { test } from "node:test";\ntest("[fast] returns first", () => { setTimeout(() => { throw new Error("late boom after return"); }, 20); });\n`,
+  });
+  assert.equal(s.passed, 1);
+  assert.equal(s.failed, 1, JSON.stringify(s.failures));
+  assert.equal(s.failures[0]?.test_name, "file failed after its tests finished");
+  assert.match(s.failures[0]?.error ?? "", /late boom after return/);
+});
+
+test("[fast] a promise rejected after a test returned fails the file", () => {
+  const s = suiteOver({
+    "late-reject.test.mts": `import { test } from "node:test";\ntest("[fast] returns first", () => { void Promise.reject(new Error("late rejection")); });\n`,
+  });
+  assert.equal(s.failed, 1, JSON.stringify(s.failures));
+  assert.equal(s.failures[0]?.test_name, "file failed after its tests finished");
+  assert.match(s.failures[0]?.error ?? "", /late rejection/);
+});
+
+test("[fast] a failing exit code set by a passing test fails the file, and says so", () => {
+  const s = suiteOver({ "exit-code.test.mts": `import { test } from "node:test";\ntest("[fast] sets it", () => { process.exitCode = 3; });\n` });
+  assert.equal(s.failed, 1, JSON.stringify(s.failures));
+  assert.equal(s.failures[0]?.test_name, "file failed after its tests finished");
+});
+
+test("[fast] process.exit(1) part-way through is a file that stopped early, not a load failure", () => {
+  const s = suiteOver({
+    "exit-one.test.mts": `import { test } from "node:test";\ntest("[fast] fine", () => {});\ntest("[fast] exits", () => { process.exit(1); });\ntest("[fast] never", () => {});\n`,
+  });
+  assert.equal(s.failed, 1, JSON.stringify(s.failures));
+  assert.equal(s.failures[0]?.test_name, "file stopped before its tests finished");
+});
+
+test("[fast] a file with no tests in it fails with that diagnosis in a full run", () => {
+  const s = suiteOver({ "ok.test.mts": PASSING, "empty.test.mts": `// forgot the tests\n` });
+  assert.equal(s.failed, 1, JSON.stringify(s.failures));
+  assert.equal(s.failures[0]?.file, "empty.test.mts");
+  assert.equal(s.failures[0]?.test_name, "file registered no tests");
 });

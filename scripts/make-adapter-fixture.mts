@@ -146,9 +146,16 @@ if (!outputCheck.ok) {
 // public repository. So search what is about to be written for the source identity, in any case, and
 // refuse with the path of every string that still carries it. "Fixture" is the placeholder itself:
 // re-running the tool on an already-anonymised scan is not a leak.
-const identities = [scan.character, account]
+//
+// A multi-word character name is also searched word by word ("Aldric the Bold" leaks as "Aldric's
+// Backpack" too). Words under three letters, and the joining words "the" and "and", are left out:
+// they turn up in ordinary item names and tooltip lines and would refuse every scan.
+const NAME_JOINERS = new Set(["the", "and"]);
+const nameWords = (name: string): string[] =>
+  name.toLowerCase().split(/[^\p{L}\p{N}]+/u).filter((w) => w.length >= 3 && !NAME_JOINERS.has(w));
+const identities = [...new Set([scan.character, account]
   .filter((v): v is string => typeof v === "string" && v.trim() !== "" && v.toLowerCase() !== "fixture")
-  .map((v) => v.toLowerCase());
+  .flatMap((v) => [v.toLowerCase(), ...(v === scan.character ? nameWords(v) : [])]))];
 const leaks: string[] = [];
 function findLeaks(value: unknown, path: string): void {
   if (typeof value === "string") {
