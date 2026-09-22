@@ -11,11 +11,12 @@
 // transport). writeScanToInbox does the one bit of IO: an atomic temp-then-rename write, named by
 // app/watcher.mts's own acceptedName so a paste-written file and a watcher-ingested file are never
 // named by two different rules.
-import { mkdirSync, writeFileSync, readdirSync } from "node:fs";
+import { mkdirSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import { upgradeScan, validateScan, type UnvalidatedScan } from "./scan-schema.mts";
 import { acceptedName, jsonErrorReason } from "./watcher.mts";
-import { atomicReplace } from "./installer.mts";
+import { writeFileAtomic } from "./atomic-write.mts";
+import { DATA_DIR_MODE, DATA_FILE_MODE } from "./config.mts";
 import type { ConfigPaths } from "./config.mts";
 import type { ScanV2 } from "./schema/types.d.mts";
 
@@ -104,8 +105,8 @@ export function parsePastedScan(text: unknown): ParsePastedScanResult {
 // would give it (collision-checked against whatever's already sitting in that inbox, same as
 // ingestFile's own scansDir write). Returns {file, character}. IO only — the caller has already done
 // all the parsing/validation via parsePastedScan.
-// The write goes through app/installer.mts's atomicReplace, the same helper importScans' own copies
-// use, rather than the predictable "<dest>.tmp" this used to write: a published temp name is a path
+// The write goes through app/atomic-write.mts's writeFileAtomic, the same helper importScans' own
+// copies use, rather than the predictable "<dest>.tmp" this used to write: a published temp name is a path
 // something else can pre-plant a symlink at, and writeFileSync follows one — the bytes land outside
 // the inbox and the rename then moves the SYMLINK into the scan's final name. atomicReplace's temp is
 // random and created O_EXCL, and it refuses a destination that is anything but absent or a regular
@@ -123,12 +124,12 @@ export interface WriteScanToInboxResult {
 
 export function writeScanToInbox({ doc, adapter, paths }: WriteScanToInboxParams): WriteScanToInboxResult {
   const inboxDir = paths.inboxFor(adapter);
-  mkdirSync(inboxDir, { recursive: true });
+  mkdirSync(inboxDir, { recursive: true, mode: DATA_DIR_MODE });
   let existing: Set<string>;
   try { existing = new Set(readdirSync(inboxDir).filter((f) => f.endsWith(".json"))); }
   catch { existing = new Set(); }
   const file = acceptedName(doc, existing);
   const dest = join(inboxDir, file);
-  atomicReplace(dest, (tmp) => writeFileSync(tmp, JSON.stringify(doc), { flag: "wx" }));
+  writeFileAtomic(dest, JSON.stringify(doc), DATA_FILE_MODE);
   return { file, character: doc.character };
 }

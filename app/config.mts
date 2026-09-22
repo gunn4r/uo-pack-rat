@@ -6,9 +6,10 @@
 //   --demo   serve app/fixtures instead of <data>/scans     --open   open the browser after listening
 import { homedir } from "node:os";
 import { join, dirname, resolve } from "node:path";
-import { mkdirSync, existsSync, writeFileSync } from "node:fs";
+import { mkdirSync, existsSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { DEFAULT_SHARD } from "./rules.mts";
+import { writeFileAtomic } from "./atomic-write.mts";
 
 export const APP_DIR = dirname(fileURLToPath(import.meta.url));
 export const ROOT_DIR = dirname(APP_DIR);
@@ -131,6 +132,6 @@ export function ensureLayout(config: Config): Config {
   for (const p of [config.dataDir, config.paths.runs, config.paths.bridge, config.paths.logs]) mkdirSync(p, { recursive: true, mode: DATA_DIR_MODE });
   if (!config.demo) mkdirSync(config.paths.scans, { recursive: true, mode: DATA_DIR_MODE });
   mkdirSync(config.paths.inboxFor("tazuo"), { recursive: true, mode: DATA_DIR_MODE });
-  if (!existsSync(config.paths.settings)) writeFileSync(config.paths.settings, JSON.stringify({ schemaVersion: 1, shard: DEFAULT_SHARD }, null, 2) + "\n", { mode: DATA_FILE_MODE });
+  if (!existsSync(config.paths.settings)) writeFileAtomic(config.paths.settings, JSON.stringify({ schemaVersion: 1, shard: DEFAULT_SHARD }, null, 2) + "\n", DATA_FILE_MODE);
   return config;
 }
