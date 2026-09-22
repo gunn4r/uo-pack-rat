@@ -42,7 +42,7 @@
     "highs": "1.15.3"
   },
   "devDependencies": {
-    "@types/node": "24.10.1",
+    "@types/node": "26.6.2",
     "electron": "44.4.1",
     "electron-builder": "26.15.3",
     "playwright": "1.63.0",
