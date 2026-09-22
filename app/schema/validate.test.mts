@@ -154,3 +154,8 @@ test("[fast] validate: additionalProperties given a schema applies it to every k
   // a hostile own "__proto__" key from JSON.parse is walked like any other own key
   assert.equal(validate(schema, JSON.parse('{"id": "x", "__proto__": "no"}')).ok, false);
 });
+
+test("[fast] validate: minItems bounds an array from below", () => {
+  assert.equal(validate({ type: "array", minItems: 2 }, [1, 2]).ok, true);
+  assert.equal(validate({ type: "array", minItems: 2 }, [1]).errors[0]!.msg, "fewer than minItems 2");
+});
