@@ -81,7 +81,9 @@ ALL_LAYERS = ["OneHanded", "TwoHanded", "Shoes", "Pants", "Shirt", "Helmet", "Gl
               "Ring", "Talisman", "Necklace", "Waist", "Torso", "Bracelet", "Tunic",
               "Earrings", "Arms", "Cloak", "Robe", "Skirt", "Legs"]
 CONTAINER_RE = re.compile(r"\b(chest|box|crate|bag|pouch|basket|trunk|armoire|cabinet|backpack)\b", re.I)
-DEED_RE = re.compile(r"\bdeed\b", re.I)
+# Named like a container (or carrying a bag graphic) but never one: a deed places an addon, a bag
+# of sending raises a target cursor, a music box plays. Double-clicking them opens nothing.
+NOT_A_CONTAINER_RE = re.compile(r"\b(deed|sending|music box)\b", re.I)
 # Engraved bags and Backpacks match no name pattern — detect by graphic too (probe-verified Aug 2026).
 CONTAINER_GRAPHICS = {0x0E75, 0x0E76, 0x0E79, 0x0E7D, 0x09AA, 0x09A8, 0x09A9, 0x09AB,
                       0x0E3C, 0x0E3D, 0x0E3E, 0x0E3F, 0x0E40, 0x0E41, 0x0E42, 0x0E43,
@@ -106,8 +108,8 @@ def is_container(item, name):
             return False          # corpses are containers to the client; never open them
     except Exception:
         pass
-    if DEED_RE.search(name or ""):
-        return False              # "Wooden Chest deed": double-clicking it raises a placement cursor
+    if NOT_A_CONTAINER_RE.search(name or ""):
+        return False              # "Wooden Chest deed", "a bag of sending": see NOT_A_CONTAINER_RE
     try:
         if bool(getattr(item, "IsContainer", False)):
             return True
@@ -155,8 +157,10 @@ def was_opened(serial):
 
 def scan_root(root_serial, kind, label, containers, items, seen):
     """Open root + every nested container, list everything. Returns the item count, or -1 when the
-    root must not be recorded at all (it or a bag inside it did not open, or Stop was pressed): the
-    app's fold replaces a whole root at once, so a partial read would erase what it knew."""
+    root must not be recorded at all (it did not open, or Stop was pressed): the app's fold replaces a
+    whole root at once, so a partial read would erase what it knew. A bag INSIDE the root that did not
+    open, or sits deeper than MAX_NEST, is recorded with "opened": False, and the fold keeps whatever
+    it last knew inside that one bag."""
     root_serial = int(root_serial)
     opened, to_open, listing = set(), [root_serial], []
     for _ in range(MAX_NEST):
@@ -192,12 +196,10 @@ def scan_root(root_serial, kind, label, containers, items, seen):
             return 0
         return -1
     # The same test for every bag inside: one that lists nothing and never opened (locked, or its
-    # contents lagged) cannot be told apart from an empty one, so the whole root goes unrecorded.
+    # contents lagged) cannot be told apart from an empty one, and nor can one found past MAX_NEST.
     parents = set(int(getattr(it, "Container", 0) or 0) for it in listing)
-    for c in opened:
-        if c != root_serial and c not in parents and not was_opened(c):
-            sysmsg(f"  a bag inside {label} did not open — {label} not recorded, the app keeps what it knew", ALARM_HUE)
-            return -1
+    unopened = set(c for c in opened if c != root_serial and c not in parents and not was_opened(c))
+    unopened.update(c for c in to_open if c not in opened)
     try:
         API.RequestOPLData([int(it.Serial) for it in listing])
         API.Pause(0.5)
@@ -213,10 +215,13 @@ def scan_root(root_serial, kind, label, containers, items, seen):
         seen.add(s)
         lines = tooltip_lines(s)
         parent = int(getattr(it, "Container", root_serial) or root_serial)
-        if s in opened:
-            containers[s] = {"serial": s, "name": lines[0] if lines else str(it.Name or ""),
-                             "parent": parent, "root": root_serial, "kind": "container",
-                             "tooltip": lines}
+        if s in opened or s in unopened:
+            cname = lines[0] if lines else str(it.Name or "")
+            containers[s] = {"serial": s, "name": cname, "parent": parent, "root": root_serial,
+                             "kind": "container", "tooltip": lines}
+            if s in unopened:
+                containers[s]["opened"] = False
+                sysmsg(f"  {cname or 'a bag'} in {label} was not opened — its contents are kept from the last scan", ALARM_HUE)
             continue
         items.append(item_dict(it, lines, parent))
         n += 1
