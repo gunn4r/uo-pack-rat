@@ -66,7 +66,7 @@ export function renderCharacters(): void {
 // profile would keep the card on this tab, so it goes too. A later scan of the character brings the
 // scanned parts back.
 async function forgetCharacter(name: string): Promise<void> {
-  if (!confirm(`Forget ${name}? Their card, worn gear, backpack and bank leave the inventory, and their saved Suit Builder profile is deleted. Scanning ${name} again brings the scanned parts back.`)) return;
+  if (!confirm(`Forget ${name}? Their card, worn gear, backpack and bank leave the inventory, and their saved Suit Builder profile is deleted. Their saved runs stay. Scanning ${name} again brings the scanned parts back.`)) return;
   try {
     if (state.inv!.characters[name]) await api("/api/forget-character", { method: "POST", body: { character: name } });
     const profiles = state.profiles!;
