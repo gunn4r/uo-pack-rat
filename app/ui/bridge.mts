@@ -4,7 +4,7 @@
 import { state, bridge } from "./store.mts";
 import { $, el, toast } from "./dom.mts";
 import { api } from "./api.mts";
-import type { Item, Container } from "../vault-lib.mts";
+import type { Item } from "../vault-lib.mts";
 import type { BridgeQueueApiResponse, BridgeStatusApiResponse } from "./api-types.mts";
 
 // ---------------------------------------------------------------- bridge (Highlight / Grab / Go to)
@@ -14,13 +14,10 @@ export function chainOf(it: Item): number[] {
   return chain;
 }
 export const BRIDGE_OFFLINE = "Bridge is offline — press Play on packrat-bridge.py in game first.";
-// `.pos` is not a field vault-lib.mts's Container type declares (nor anything the fold ever writes
-// onto a container — grepped the whole fold/scan-schema/watcher pipeline; nothing assigns it), so
-// this has read as `undefined` — and rootPos() as always `null` — for as long as this code has
-// existed. Preserved exactly (this task migrates types, not behaviour): the cast lets a genuinely
-// unmodeled field through unchanged rather than silently dropping the read or inventing a shape for
-// data nothing here has ever produced.
-export const rootPos = (it: Item): unknown => ((it.root != null ? state.inv!.containers[it.root] : null) as (Container & { pos?: unknown }) | null)?.pos || null;
+// A ground root's position, which the bridge's "Go to" walks to. The fold copies every scanned
+// container field onto inv.containers, `pos` included (docs/scan-schema.md), so a ground root from a
+// scanner that records positions carries one; a backpack or bank root has none.
+export const rootPos = (it: Item): unknown => (it.root != null ? state.inv!.containers[it.root] : null)?.pos || null;
 // Queue one command for an item; the status poll toasts its result once packrat-bridge.py reports it.
 // The success branch is narrowed to `ok: true` (BridgeQueueApiResponse's own `ok` is plain `boolean`,
 // matching every route's response shape generally) so `r.ok ? r.id : r.error` below discriminates the
@@ -150,9 +147,9 @@ export function actButtons(it: Item | null | undefined): HTMLSpanElement | null 
 // Pieces already in this character's backpack, or worn by anyone, are left out; each result toasts like a single Grab.
 // Returns null (nothing to render at all — the panel that calls this shows bridgeNoteEl() instead)
 // when the current client's adapter has no "grab" action.
-export function grabAllRow(items: Item[]): HTMLSpanElement | null {
+// `me` is the character the suit was built for, which is not always the one selected in the builder.
+export function grabAllRow(items: Item[], me: string): HTMLSpanElement | null {
   if (!allowedBridgeActions().includes("grab")) return null;
-  const me = state.builder.character;
   // Every folded item carries a location (foldSnapshots unconditionally assigns one to every item
   // before it's ever handed to the page — see vault-lib.mts) even though Item.location is optional in
   // its own type (a piece being folded is momentarily location-less mid-fold, before that pass runs);
