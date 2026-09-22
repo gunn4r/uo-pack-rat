@@ -26,8 +26,11 @@ A fixture is a real scan, scrubbed, not a hand-written one — real data exercis
 - `scannedAt` → a fixed, unremarkable timestamp (`"2026-01-01T12:00:00+00:00"`).
 - `account` dropped entirely.
 - `stats`/`maxes`/`resists`/`skills` kept as-is — they're not personally identifying and the fold needs realistic numbers.
+- `adapter.version` and `adapter.capabilities` → the ones in `adapters/<id>/capabilities.json` for the scan's own `adapter.id`, so the fixture matches what that adapter ships today (the scan's `client` name is kept). A scan from an adapter with no `capabilities.json` here is refused.
 
-`adapters/tazuo/fixture.scan.json` was generated this way with `scripts/make-adapter-fixture.mts <real-scan.json> <out.json>` from a real scan in `local/scans/` (a developer-only, git-ignored folder — never committed) — pick the source scan with the most nested containers for the best coverage. Before committing a regenerated fixture, sanity-check by eye: `grep -c "<any real character name>" adapters/<id>/fixture.scan.json` must print `0`, and `grep -i "crafted by\|engraved" adapters/<id>/fixture.scan.json` should show only the scrubbed `Nobody`/`Fixture` placeholders.
+Only those fields are rewritten, and a name also turns up elsewhere (a container called "<name>'s Backpack", an item name, a tooltip line). So the tool searches everything it is about to write for the source character name and account id, in any case, and refuses to write the fixture if either is still there, listing the JSON path of each hit. Rename those in a copy of the scan and run it again.
+
+`adapters/tazuo/fixture.scan.json` was generated this way with `scripts/make-adapter-fixture.mts <real-scan.json> <out.json>` from a real scan in `local/scans/` (a developer-only, git-ignored folder — never committed) — pick the source scan with the most nested containers for the best coverage. Before committing a regenerated fixture, still sanity-check by eye, since the tool only knows the one character in the scan: `grep -c "<any other real character name>" adapters/<id>/fixture.scan.json` must print `0`, and `grep -i "crafted by\|engraved" adapters/<id>/fixture.scan.json` should show only the scrubbed `Nobody`/`Fixture` placeholders.
 
 ## How the contract test runs over your fixture
 

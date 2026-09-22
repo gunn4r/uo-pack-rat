@@ -5,31 +5,21 @@
 // container pos -> {x:1,y:1,z:0}, every serial remapped in order of first appearance to
 // 0x40000000+n (consistent across roots/containers/items/equipped), "Crafted By ..." tooltip lines
 // -> "Crafted By Nobody", "Engraved: ..." lines -> "Engraved: Fixture", scannedAt pinned to a fixed
-// stamp, account dropped, and adapter replaced with the real adapter identity (id/version/capabilities
-// from capabilities.json) so the fixture represents what THIS adapter actually emits today, not
-// whatever an older real scan happened to carry. Prints item/container/root counts.
-import { readFileSync, writeFileSync } from "node:fs";
+// stamp, account dropped, and adapter.version/capabilities replaced from the capabilities.json of the
+// adapter that produced the scan (its adapter.id; its own client name is kept) so the fixture
+// represents what THAT adapter actually emits today, not whatever an older real scan happened to
+// carry. Refuses to write anything that still contains the source character or account name
+// anywhere (a container called "<name>'s Backpack", an item or tooltip line naming them), since only
+// the fields above are rewritten. Prints item/container/root counts.
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { upgradeScan, validateScan, type UnvalidatedScan } from "../app/scan-schema.mts";
-import type { ScanV2, ScanV2AdapterCapabilities } from "../app/schema/types.d.mts";
+import type { ScanV2, ScanV2AdapterCapabilities, ScanV2ContainersValue } from "../app/schema/types.d.mts";
 
 const [, , inPath, outPath] = process.argv;
 if (!inPath || !outPath) {
   console.error("usage: node scripts/make-adapter-fixture.mts <real-scan.json> <out.json>");
   process.exit(1);
 }
-
-// scan.containers is looser in the generated ScanV2 type (Record<string, unknown> — the schema
-// itself declares containers as `{type: "object"}` with no nested `properties`) than what this
-// script actually reads/writes on each entry; FixtureScan narrows just that one field.
-interface FixtureContainer {
-  serial: number;
-  parent?: number | string | null | undefined;
-  root: number | string;
-  pos?: { x: number; y: number; z: number } | undefined;
-  tooltip?: string[] | undefined;
-  [key: string]: unknown;
-}
-type FixtureScan = Omit<ScanV2, "containers"> & { containers: Record<string, FixtureContainer> };
 
 const raw: unknown = JSON.parse(readFileSync(inPath, "utf8"));
 // `inPath` is an arbitrary file a developer names on the command line — a raw capture off a client
@@ -60,7 +50,7 @@ if (!inputCheck.ok) {
   for (const err of inputCheck.errors) console.error(`  ${err.path} ${err.msg}`);
   process.exit(1);
 }
-const scan = upgraded as ScanV2 as FixtureScan;
+const scan = upgraded as ScanV2;
 
 const serialMap = new Map<number, number>();
 let next = 0x40000000;
@@ -96,10 +86,10 @@ for (const it of scan.equipped || []) remap(it.serial);
 
 const roots = (scan.roots || []).map((r) => ({ ...r, serial: remap(r.serial) }));
 
-const containers: Record<string, FixtureContainer> = {};
+const containers: Record<string, ScanV2ContainersValue> = {};
 for (const c of Object.values(scan.containers || {})) {
   const serial = remap(c.serial);
-  const next_: FixtureContainer = {
+  const next_: ScanV2ContainersValue = {
     ...c,
     serial,
     parent: c.parent == null ? null : remap(c.parent),
@@ -117,8 +107,15 @@ const equipped = (scan.equipped || []).map((it) => ({
   ...it, serial: remap(it.serial), tooltip: scrubTooltip(it.tooltip),
 }));
 
+// The scan's own adapter.id picks the capabilities file. validateScan has already held it to the
+// schema's `^[a-z0-9-]+$`, so it can only name a folder directly under adapters/.
 interface AdapterCapabilitiesFile { adapter: string; version: string; capabilities: ScanV2AdapterCapabilities }
-const CAPABILITIES = JSON.parse(readFileSync(new URL("../adapters/tazuo/capabilities.json", import.meta.url), "utf8")) as AdapterCapabilitiesFile;
+const capabilitiesUrl = new URL(`../adapters/${scan.adapter.id}/capabilities.json`, import.meta.url);
+if (!existsSync(capabilitiesUrl)) {
+  console.error(`${inPath} was produced by adapter "${scan.adapter.id}", which has no adapters/${scan.adapter.id}/capabilities.json in this repository`);
+  process.exit(1);
+}
+const CAPABILITIES = JSON.parse(readFileSync(capabilitiesUrl, "utf8")) as AdapterCapabilitiesFile;
 
 const { account, ...rest } = scan;
 const fixture = {
@@ -126,7 +123,7 @@ const fixture = {
   character: "Fixture",
   scannedAt: "2026-01-01T12:00:00+00:00",
   position: scan.position ? { x: 1, y: 1 } : scan.position,
-  adapter: { id: CAPABILITIES.adapter, version: CAPABILITIES.version, client: "TazUO", clientVersion: null, capabilities: CAPABILITIES.capabilities },
+  adapter: { id: CAPABILITIES.adapter, version: CAPABILITIES.version, client: scan.adapter.client, clientVersion: null, capabilities: CAPABILITIES.capabilities },
   roots, containers, items, equipped,
 };
 
@@ -141,6 +138,35 @@ const outputCheck = validateScan(fixture);
 if (!outputCheck.ok) {
   console.error(`${outPath} would not be a valid fixture:`);
   for (const err of outputCheck.errors) console.error(`  ${err.path} ${err.msg}`);
+  process.exit(1);
+}
+
+// Only the fields above are rewritten; a name also turns up in container and item names ("<name>'s
+// Backpack"), tooltip lines and anything an adapter adds, and this file is about to be committed to a
+// public repository. So search what is about to be written for the source identity, in any case, and
+// refuse with the path of every string that still carries it. "Fixture" is the placeholder itself:
+// re-running the tool on an already-anonymised scan is not a leak.
+const identities = [scan.character, account]
+  .filter((v): v is string => typeof v === "string" && v.trim() !== "" && v.toLowerCase() !== "fixture")
+  .map((v) => v.toLowerCase());
+const leaks: string[] = [];
+function findLeaks(value: unknown, path: string): void {
+  if (typeof value === "string") {
+    if (identities.some((id) => value.toLowerCase().includes(id))) leaks.push(path);
+  } else if (Array.isArray(value)) {
+    value.forEach((v, i) => findLeaks(v, `${path}/${i}`));
+  } else if (value && typeof value === "object") {
+    for (const [k, v] of Object.entries(value)) {
+      if (identities.some((id) => k.toLowerCase().includes(id))) leaks.push(`${path}/${k} (key)`);
+      findLeaks(v, `${path}/${k}`);
+    }
+  }
+}
+findLeaks(fixture, "");
+if (leaks.length) {
+  console.error(`${outPath} would still contain the source character or account name, at:`);
+  for (const path of leaks) console.error(`  ${path}`);
+  console.error("Rename those in a copy of the scan and run this again; nothing was written.");
   process.exit(1);
 }
 
