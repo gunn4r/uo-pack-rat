@@ -33,9 +33,12 @@ import time
 
 def data_dir():
     """<script folder>/packrat-paths.json {"dataDir": "..."} -> $PACKRAT_DATA -> ~/.pack-rat"""
-    here = os.path.dirname(os.path.abspath(__file__))
-    cfg = os.path.join(here, "packrat-paths.json")
-    if os.path.exists(cfg):
+    try:
+        here = os.path.dirname(os.path.abspath(__file__))
+    except NameError:                    # a host that runs the script text without defining __file__
+        here = ""
+    cfg = os.path.join(here, "packrat-paths.json") if here else ""
+    if cfg and os.path.exists(cfg):
         with open(cfg, "r", encoding="utf-8") as f:
             d = json.load(f).get("dataDir")
         if d:
