@@ -134,7 +134,11 @@ test("[fast] a host call nobody answers expires, rejects with the server's own 5
   const calls = createPendingHostCalls(20);
   let id = 0;
   const answered = new Promise<unknown>((resolve, reject) => { id = calls.start(resolve, reject); });
-  const e = await answered.then(() => null, (err: Error & { statusCode?: number }) => err);
+  // The registry's timer is unref'd on purpose, so it cannot keep this file's process alive on its own:
+  // Node 22's test runner then sees an empty event loop before it fires and cancels every test after
+  // this one (Node 24 does not). Hold the loop open until the expiry has settled.
+  const keepAlive = setInterval(() => {}, 1000);
+  const e = await answered.then(() => null, (err: Error & { statusCode?: number }) => err).finally(() => clearInterval(keepAlive));
   assert.ok(e, "the call must reject rather than hang for ever");
   assert.equal(e!.statusCode, 504, "app/vault-server.mts's route handler answers with this status");
   assert.match(e!.message, /did not answer/);

@@ -194,34 +194,32 @@ function readBody(req: http.IncomingMessage, { limit = 50e6, tooLargeMsg = "body
       return reject(e);
     }
     const chunks: Buffer[] = [];
-    let bytes = 0, tooLarge = false, discarded = 0;
+    let bytes = 0, discarded = 0;
+    let tooLarge: HttpError | null = null;
     req.on("data", (c: Buffer) => {
       if (tooLarge) {
-        // Past the cap, a chunk is counted and dropped, never kept — and only up to OVERFLOW_DRAIN_BYTES.
-        // Pausing outright here (the post-review Minor 7 fix) meant a client still writing its body
-        // saw the connection end under it before it could read the 413, which Node's fetch reports as
-        // "fetch failed" / EPIPE rather than the refusal it was sent — reliably, under load, for any
-        // body well past its route's cap. Letting a bounded tail drain keeps the answer readable for a
-        // body that is merely too big, and past that bound the socket is destroyed, so an upload of
-        // arbitrary size still costs this process at most OVERFLOW_DRAIN_BYTES of reading and nothing
-        // of memory. The top-level catch's `connection: close` then retires the connection either way.
+        // Past the cap, a chunk is counted and dropped, never kept, and the 413 waits for the request
+        // to end. Answering at once — the connection closes behind a `connection: close` answer —
+        // raced a client still writing its body: it saw the socket end under it before it could read
+        // the refusal, which Node's fetch reports as "fetch failed" / EPIPE. Waiting for `end` makes
+        // the answer readable for a body that is merely too big; past OVERFLOW_DRAIN_BYTES the 413
+        // goes out and the socket is destroyed, so an upload of any size still costs this process at
+        // most that much reading and nothing of memory.
         discarded += c.length;
-        if (discarded > OVERFLOW_DRAIN_BYTES) req.destroy();
+        if (discarded > OVERFLOW_DRAIN_BYTES) { reject(tooLarge); req.destroy(); }
         return;
       }
       bytes += c.length;   // c is a Buffer — .length is bytes, not decoded characters
       if (bytes > limit) {
-        tooLarge = true;
         chunks.length = 0;   // the accepted part is doomed too — release it now
-        const e = new Error(tooLargeMsg) as HttpError;
-        e.statusCode = 413;
-        reject(e);
+        tooLarge = new Error(tooLargeMsg) as HttpError;
+        tooLarge.statusCode = 413;
         return;
       }
       chunks.push(c);
     });
     req.on("end", () => {
-      if (tooLarge) return;
+      if (tooLarge) return reject(tooLarge);
       try { const buf = Buffer.concat(chunks); resolve(buf.length ? JSON.parse(buf.toString("utf8")) : {}); }
       catch (e) { reject(e); }
     });
@@ -1382,13 +1380,11 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
     } catch (e) {
       if (e && (e as HttpError).statusCode) {
         const status = (e as HttpError).statusCode!;
-        // A 413 means the rest of the upload is already doomed: readBody keeps nothing past the cap and
-        // drains at most OVERFLOW_DRAIN_BYTES more of it (destroying the socket beyond that), and
-        // `connection: close` tears the connection down once the refusal is on the wire rather than
-        // leaving it open for a request that can never complete (post-review fix, Minor 7). The bounded
-        // drain is what lets a client still writing its body read this 413 at all — a paused request
-        // plus a close reset such a client before it read the response. Node merges this header with
-        // the ones send() passes to writeHead().
+        // A 413 means the upload was refused: readBody kept nothing past the cap and only rejects once
+        // the request has ended (or, past OVERFLOW_DRAIN_BYTES of overflow, destroys the socket), and
+        // `connection: close` retires the connection once the refusal is on the wire (post-review fix,
+        // Minor 7). Waiting for the end is what lets a client that was still writing its body read this
+        // 413 at all. Node merges this header with the ones send() passes to writeHead().
         if (status === 413) res.setHeader("connection", "close");
         return send(res, status, { ok: false, error: (e as HttpError).message });
       }
