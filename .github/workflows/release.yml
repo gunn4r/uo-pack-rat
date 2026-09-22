@@ -46,7 +46,7 @@ jobs:
         # Exactly one job creates the draft, ahead of the build matrix, so there is never more than
         # one. Re-running a release workflow for a tag that partly failed finds the existing draft
         # and reuses it rather than erroring. It stays a DRAFT until a human publishes it by hand
-        # (RELEASING.md step 8) -- nothing here ever makes a release public.
+        # (RELEASING.md step 9) -- nothing here ever makes a release public.
         run: |
           if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
             echo "release $TAG already exists, reusing it"
@@ -148,7 +148,7 @@ jobs:
           cat "$RUNNER_TEMP/SHA256SUMS"
       - name: Upload the installers and the checksums to the draft release
         # --clobber so re-running a partly-failed release replaces files rather than erroring. The
-        # release stays a draft; a human publishes it (RELEASING.md step 8).
+        # release stays a draft; a human publishes it (RELEASING.md step 9).
         run: gh release upload "$TAG" "$RUNNER_TEMP/SHA256SUMS" dist/* --repo "$GITHUB_REPOSITORY" --clobber
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
