@@ -3,7 +3,7 @@
 // real network (checkForUpdates takes an injected fetchImpl in every test here).
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, readdirSync, existsSync, lstatSync, chmodSync, cpSync, symlinkSync } from "node:fs";
+import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, readdirSync, existsSync, lstatSync, chmodSync, cpSync, symlinkSync, truncateSync } from "node:fs";
 import { execFileSync } from "node:child_process";
 import { join, dirname } from "node:path";
 import { tmpdir } from "node:os";
@@ -12,6 +12,7 @@ import {
   listAdapters, candidateClientRoots, validateScriptsDir, installedVersion, installScripts,
   importScans, repoFromPackage, checkForUpdates, RUNNING_MESSAGE,
 } from "./installer.mts";
+import { MAX_INBOX_BYTES } from "./watcher.mts";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const REAL_ADAPTERS_DIR = join(HERE, "..", "adapters");
@@ -584,7 +585,7 @@ test("[fast] importScans copies only *.json, skips duplicates, and never removes
   writeFileSync(join(inboxDir, "a.json"), JSON.stringify({ already: "here" }));   // pre-existing duplicate
 
   const result = importScans({ dir, inboxDir });
-  assert.deepEqual(result, { copied: 1, skipped: 1, failed: 0 });   // b.json copied; a.json skipped (already present)
+  assert.deepEqual(result, { copied: 1, skipped: 1, failed: 0, failures: [] });   // b.json copied; a.json skipped (already present)
   assert.deepEqual(JSON.parse(readFileSync(join(inboxDir, "a.json"), "utf8")), { already: "here" }, "the pre-existing file was not overwritten");
   assert.deepEqual(JSON.parse(readFileSync(join(inboxDir, "b.json"), "utf8")), { b: 1 });
   assert.equal(existsSync(join(inboxDir, "nested.json")), false, "nested files are not copied (top level only)");
@@ -596,7 +597,7 @@ test("[fast] importScans copies only *.json, skips duplicates, and never removes
 
 test("[fast] importScans on a missing source dir copies nothing", () => {
   const inboxDir = tmp("qm-import-inbox-missing-");
-  assert.deepEqual(importScans({ dir: join(inboxDir, "does-not-exist"), inboxDir }), { copied: 0, skipped: 0, failed: 0 });
+  assert.deepEqual(importScans({ dir: join(inboxDir, "does-not-exist"), inboxDir }), { copied: 0, skipped: 0, failed: 0, failures: [] });
 });
 
 // Post-review fix: a *.json symlink in the source folder must not have its TARGET's bytes copied —
@@ -636,7 +637,7 @@ test("[fast] importScans never writes through a symlink sitting in the inbox und
   if (!trySymlink(canary, join(inboxDir, "a.json"))) return;
   if (!trySymlink(join(outside, "gone.json"), join(inboxDir, "b.json"))) return;
   const result = importScans({ dir, inboxDir });
-  assert.deepEqual(result, { copied: 0, skipped: 2, failed: 0 }, "both names are taken, whatever type is under them");
+  assert.deepEqual(result, { copied: 0, skipped: 2, failed: 0, failures: [] }, "both names are taken, whatever type is under them");
   assert.deepEqual(JSON.parse(readFileSync(canary, "utf8")), { untouched: true });
   assert.equal(existsSync(join(outside, "gone.json")), false, "the dangling link's target was not created by writing through it");
 });
@@ -652,10 +653,35 @@ test("[fast] importScans counts a failed copy and finishes the folder instead of
   const inboxDir = tmp("qm-import-failed-inbox-");
   chmodSync(inboxDir, 0o555);   // readable, not writable
   try {
-    assert.deepEqual(importScans({ dir, inboxDir }), { copied: 0, skipped: 0, failed: 2 });
+    const result = importScans({ dir, inboxDir });
+    assert.equal(result.copied, 0);
+    assert.equal(result.failed, 2);
+    assert.deepEqual(result.failures.map((f) => f.name), ["a.json", "b.json"], "each failure names its own file");
+    for (const f of result.failures) assert.ok(f.reason.length > 0, "a failure carries a reason, not just a count");
   } finally {
     chmodSync(inboxDir, 0o755);
   }
+});
+
+// The same ceiling app/watcher.mts's ingestFile enforces (MAX_INBOX_BYTES), applied on the way IN: an
+// oversize file used to be copied into the inbox and only refused once it got there, where it sat
+// being re-read and re-rejected by every startup sweep. truncateSync gives the inode the size without
+// writing 32 MB of bytes.
+test("[fast] importScans refuses a source file bigger than the inbox limit before it reaches the inbox", () => {
+  const dir = tmp("qm-import-toobig-src-");
+  writeFileSync(join(dir, "small.json"), JSON.stringify({ a: 1 }));
+  const big = join(dir, "big.json");
+  writeFileSync(big, "{}");
+  truncateSync(big, MAX_INBOX_BYTES + 1);
+  const inboxDir = tmp("qm-import-toobig-inbox-");
+
+  const result = importScans({ dir, inboxDir });
+  assert.equal(result.copied, 1, "the rest of the folder still gets its chance");
+  assert.equal(result.skipped, 0);
+  assert.equal(result.failed, 1);
+  assert.deepEqual(result.failures.map((f) => f.name), ["big.json"]);
+  assert.match(result.failures[0]!.reason, /too large/);
+  assert.deepEqual(readdirSync(inboxDir).sort(), ["small.json"], "the oversize file never reached the inbox");
 });
 
 // ---- repoFromPackage -------------------------------------------------------------------------------------

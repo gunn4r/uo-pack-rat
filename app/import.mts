@@ -11,10 +11,11 @@
 // transport). writeScanToInbox does the one bit of IO: an atomic temp-then-rename write, named by
 // app/watcher.mts's own acceptedName so a paste-written file and a watcher-ingested file are never
 // named by two different rules.
-import { mkdirSync, writeFileSync, renameSync, readdirSync } from "node:fs";
+import { mkdirSync, writeFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import { upgradeScan, validateScan, type UnvalidatedScan } from "./scan-schema.mts";
-import { acceptedName } from "./watcher.mts";
+import { acceptedName, jsonErrorReason } from "./watcher.mts";
+import { atomicReplace } from "./installer.mts";
 import type { ConfigPaths } from "./config.mts";
 import type { ScanV2 } from "./schema/types.d.mts";
 
@@ -37,9 +38,9 @@ export const PASTE_END = "-----END PACK RAT SCAN-----";
 // formatting whitespace — but stripping \r/\n is harmless for that form too, so one rule covers both.)
 //
 // Returns `truncated: true` when a BEGIN marker was found but no matching END — the exact shape of a
-// copy that got cut short — so the caller can give a specific error instead of the generic "that
-// doesn't look like valid JSON" a truncated marker block would otherwise fail with (it's neither
-// empty nor un-marked, it's just missing its closing half).
+// copy that got cut short — so the caller can give a specific error instead of the generic parse
+// failure a truncated marker block would otherwise produce (it's neither empty nor un-marked, it's
+// just missing its closing half).
 interface ExtractedJsonText {
   text: string;
   truncated: boolean;
@@ -80,7 +81,12 @@ export function parsePastedScan(text: unknown): ParsePastedScanResult {
   try {
     parsed = JSON.parse(jsonText);
   } catch (e) {
-    return { ok: false, error: `that doesn't look like valid JSON: ${(e as Error).message}` };
+    // jsonErrorReason, not the raw error: V8's parse message embeds an excerpt of the bytes it was
+    // handed ("Unexpected token 'o', \"not json\" is not valid JSON"), and this string goes straight
+    // back to the page as POST /api/import/paste's `error`. The same rule app/watcher.mts applies to
+    // an inbox file — keep the shape of the failure, never the content (Phase 7 security review,
+    // Area 2, Note 1).
+    return { ok: false, error: `${jsonErrorReason(e)} — copy the whole block again, markers included` };
   }
   let doc: UnvalidatedScan;
   try {
@@ -98,6 +104,12 @@ export function parsePastedScan(text: unknown): ParsePastedScanResult {
 // would give it (collision-checked against whatever's already sitting in that inbox, same as
 // ingestFile's own scansDir write). Returns {file, character}. IO only — the caller has already done
 // all the parsing/validation via parsePastedScan.
+// The write goes through app/installer.mts's atomicReplace, the same helper importScans' own copies
+// use, rather than the predictable "<dest>.tmp" this used to write: a published temp name is a path
+// something else can pre-plant a symlink at, and writeFileSync follows one — the bytes land outside
+// the inbox and the rename then moves the SYMLINK into the scan's final name. atomicReplace's temp is
+// random and created O_EXCL, and it refuses a destination that is anything but absent or a regular
+// file (Phase 7 security review, Area 3's finding, applied to the one write that had been missed).
 export interface WriteScanToInboxParams {
   doc: ScanV2;
   adapter: string;
@@ -117,8 +129,6 @@ export function writeScanToInbox({ doc, adapter, paths }: WriteScanToInboxParams
   catch { existing = new Set(); }
   const file = acceptedName(doc, existing);
   const dest = join(inboxDir, file);
-  const tmp = `${dest}.tmp`;
-  writeFileSync(tmp, JSON.stringify(doc));
-  renameSync(tmp, dest);
+  atomicReplace(dest, (tmp) => writeFileSync(tmp, JSON.stringify(doc), { flag: "wx" }));
   return { file, character: doc.character };
 }

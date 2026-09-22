@@ -14,7 +14,7 @@
       "additionalProperties": false,
       "required": ["id", "version", "client", "clientVersion", "capabilities"],
       "properties": {
-        "id": { "type": "string", "minLength": 1 },
+        "id": { "type": "string", "minLength": 1, "maxLength": 64, "pattern": "^[a-z0-9-]+$", "$comment": "the same shape app/installer.mts's ADAPTER_ID_RE admits and every adapter-taking route checks — this id names an inbox, a bridge directory and a capabilities folder, so a scan must not be able to carry one that could not be an adapter directory name; 64 matches the bound PUT /api/settings puts on client.adapter" },
         "version": { "type": "string" },
         "client": { "type": "string" },
         "clientVersion": { "type": ["string", "null"] },

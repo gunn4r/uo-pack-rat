@@ -62,7 +62,9 @@ const errMessage = (e: unknown): string => String((e as Error | undefined)?.mess
 // pushed to the page over SSE — a file-content-into-a-displayed-string channel, which matters most
 // for exactly the inbox entries we should not have read in the first place. Keep the shape of the
 // failure, never the bytes (Phase 7 security review, Area 2, Note 1).
-function jsonErrorReason(e: unknown): string {
+// Exported for app/import.mts: a pasted scan reaches the page the same way (POST /api/import/paste's
+// own `error`), so the two answer a bad document with one rule rather than two.
+export function jsonErrorReason(e: unknown): string {
   const msg = errMessage(e);
   if (/unexpected end of json input/i.test(msg)) return "invalid JSON: unexpected end of input (the file looks truncated)";
   const at = /position (\d+)/i.exec(msg);

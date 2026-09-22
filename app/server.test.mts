@@ -1534,7 +1534,7 @@ test("[fast] POST /api/import copies two fixtures (not the stray .txt) into the 
 
     const r = await fetch(s2.url + "/api/import", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ dir: srcDir }) });
     assert.equal(r.status, 200);
-    assert.deepEqual(asJson(await r.json()), { ok: true, copied: 2, skipped: 0, failed: 0 });
+    assert.deepEqual(asJson(await r.json()), { ok: true, copied: 2, skipped: 0, failed: 0, failures: [] });
 
     const badDir = await fetch(s2.url + "/api/import", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ dir: join(srcDir, "does-not-exist") }) });
     assert.equal(badDir.status, 400);
@@ -1562,7 +1562,7 @@ test("[fast] POST /api/import takes an explicit adapter (same result as the defa
 
     const r = await fetch(s2.url + "/api/import", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ dir: srcDir, adapter: "tazuo" }) });
     assert.equal(r.status, 200);
-    assert.deepEqual(asJson(await r.json()), { ok: true, copied: 1, skipped: 0, failed: 0 });
+    assert.deepEqual(asJson(await r.json()), { ok: true, copied: 1, skipped: 0, failed: 0, failures: [] });
 
     const bad = await fetch(s2.url + "/api/import", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ dir: srcDir, adapter: "not-a-real-adapter" }) });
     assert.equal(bad.status, 400);
@@ -2277,10 +2277,98 @@ test("[fast] POST /api/import/paste cannot forge log lines through the document'
       method: "POST", headers: { "content-type": "application/json" },
       body: JSON.stringify({ text: JSON.stringify(fixture), adapter: "razor-enhanced" }),
     });
-    assert.equal(r.status, 200, await r.clone().text());
+    // The scan schema now bounds adapter.id to an adapter-id shape (^[a-z0-9-]+$, at most 64), so a
+    // newline-carrying id is refused before the route's own JSON.stringify'd log line is even reached
+    // — that escaping stays as defence in depth, and the log must still carry no forged entry.
+    assert.equal(r.status, 400, await r.clone().text());
+    assert.match(asJson<ErrorBody>(await r.json()).error, /\/adapter\/id/);
     // The watcher logs its own lines here too, so this asserts the shape rather than a line count:
     // the forged text must never START a line, which is the only thing that makes it a log entry.
-    assert.doesNotMatch(readFileSync(log, "utf8"), /^2026-01-02T03:04:05\.000Z/m, "the forged line never became a line");
+    const text = existsSync(log) ? readFileSync(log, "utf8") : "";
+    assert.doesNotMatch(text, /^2026-01-02T03:04:05\.000Z/m, "the forged line never became a line");
+  } finally {
+    await s2.close();
+  }
+});
+
+// The two event-stream routes write their own headers rather than going through send(), so the
+// "every response carries x-frame-options" rule used to stop at them. Both share SSE_HEADERS now.
+test("[fast] the event streams carry the same anti-framing headers every other response does", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "qm-sse-headers-"));
+  const s2 = await startServer(ensureLayout(resolveConfig(["--demo", "--port", "0", "--data", dir], {})));
+  try {
+    const res = await fetch(s2.url + "/api/events");
+    assert.equal(res.status, 200);
+    assert.equal(res.headers.get("x-frame-options"), "DENY");
+    assert.match(res.headers.get("content-security-policy") || "", /frame-ancestors 'none'/);
+    assert.equal(res.headers.get("x-content-type-options"), "nosniff");
+    await res.body?.cancel();
+  } finally {
+    await s2.close();
+  }
+  // The per-job stream needs a running job to open; it is pinned to the same constant at the source.
+  const source = readFileSync(join(HERE, "vault-server.mts"), "utf8");
+  assert.equal((source.match(/res\.writeHead\(200, SSE_HEADERS\)/g) || []).length, 2, "both stream routes use SSE_HEADERS");
+  assert.doesNotMatch(source, /"content-type": "text\/event-stream", "cache-control": "no-store", connection: "keep-alive", "x-content-type-options": "nosniff" \}/, "no stream writes its own header set any more");
+});
+
+// The contract's own bounds (name maxLength 120, chain maxItems 8 — the adapters' MAX_NAME/MAX_CHAIN)
+// used to be documentation only: the validator implemented neither keyword, so the route's looser
+// 200/16 pre-checks were the only refusal. validate.mts implements both now, and the route runs it.
+test("[fast] POST /api/bridge refuses a name or chain past the bridge schema's own bounds", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "qm-bridge-schema-bounds-"));
+  const s2 = await startServer(ensureLayout(resolveConfig(["--demo", "--port", "0", "--data", dir], {})));
+  try {
+    const post = (body: unknown) => fetch(s2.url + "/api/bridge", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
+    const longName = await post({ action: "grab", serial: 1, name: "n".repeat(121), chain: [], pos: null });
+    assert.equal(longName.status, 400);
+    assert.match(asJson<ErrorBody>(await longName.json()).error, /\/name .*maxLength 120/);
+    const longChain = await post({ action: "grab", serial: 1, name: "n", chain: Array.from({ length: 9 }, (_, i) => i + 1), pos: null });
+    assert.equal(longChain.status, 400);
+    assert.match(asJson<ErrorBody>(await longChain.json()).error, /\/chain .*maxItems 8/);
+    assert.equal(existsSync(join(dir, "bridge", "tazuo", "queue.jsonl")), false, "nothing was queued");
+  } finally {
+    await s2.close();
+  }
+});
+
+// A settings.json that doesn't parse used to throw out of startServer — the app would not start at
+// all (exit 2) over a file the player may have hand-edited. It now starts on defaults, keeps the
+// unreadable file aside as settings.json.corrupt, and never overwrites an older one.
+test("[fast] a corrupt settings.json is kept aside and the server starts on defaults", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "qm-settings-corrupt-"));
+  const config = ensureLayout(resolveConfig(["--demo", "--port", "0", "--data", dir], {}));
+  writeFileSync(join(dir, "settings.json"), "{ this is not json");
+  writeFileSync(join(dir, "settings.json.corrupt"), "an older corrupt file");
+  const s2 = await startServer(config);
+  try {
+    const settings = asJson<SettingsResponse>(await (await fetch(s2.url + "/api/settings")).json());
+    assert.equal(settings.settings.shard, "uoalive");
+    assert.equal(readFileSync(join(dir, "settings.json.corrupt"), "utf8"), "an older corrupt file", "an older .corrupt is never overwritten");
+    const aside = readdirSync(dir).filter((f) => /^settings\.json\.corrupt-\d+$/.test(f));
+    assert.equal(aside.length, 1, JSON.stringify(readdirSync(dir)));
+    assert.equal(readFileSync(join(dir, aside[0]!), "utf8"), "{ this is not json", "the unreadable file survives byte for byte");
+    assert.equal(JSON.parse(readFileSync(join(dir, "settings.json"), "utf8")).shard, "uoalive", "defaults were written back");
+  } finally {
+    await s2.close();
+  }
+});
+
+// bridgeAdapter() joins the persisted client's adapter id into the bridge queue/status paths, and
+// PUT /api/settings refuses an unknown id — a hand-edited settings.json must not be a way round that.
+test("[fast] a persisted client naming an adapter this install does not ship is ignored for the run, file untouched", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "qm-settings-badadapter-"));
+  const config = ensureLayout(resolveConfig(["--demo", "--port", "0", "--data", dir], {}));
+  const onDisk = JSON.stringify({ schemaVersion: 1, shard: "uoalive", client: { adapter: "../../evil", scriptsDir: "/tmp" } }, null, 2) + "\n";
+  writeFileSync(join(dir, "settings.json"), onDisk);
+  const s2 = await startServer(config);
+  try {
+    const settings = asJson<SettingsResponse>(await (await fetch(s2.url + "/api/settings")).json());
+    assert.equal(settings.settings.client ?? null, null);
+    const setup = asJson<SetupResponse & { bridgeAdapter: string | null }>(await (await fetch(s2.url + "/api/setup")).json());
+    assert.equal(setup.bridgeAdapter, "tazuo", "the bridge routes fall back to the default adapter, never the unvalidated id");
+    assert.equal(readFileSync(join(dir, "settings.json"), "utf8"), onDisk, "settings.json on disk is left as it stands");
+    assert.equal(existsSync(join(dir, "evil")), false);
   } finally {
     await s2.close();
   }

@@ -1,0 +1,96 @@
+// ui-messages.test.mts — app/ui/messages.mts, the plain sentences the page shows for an outcome the
+// server reports as a count, a status code or a one-word field. It lives in app/ rather than app/ui/
+// for the same reason app/ui-render.test.mts and app/wizard-default-adapter.test.mts do:
+// tsconfig.browser.json compiles app/ui/** for the browser. No DOM stub is needed here — messages.mts
+// is pure text, which is the whole point of keeping it out of the modules that render it.
+// All [fast]. Run: node --test app/ui-messages.test.mts
+import { test } from "node:test";
+import assert from "node:assert/strict";
+import { importOutcome, pathsFileNote, installedIntoNote, clientFolderGone, clientErrorMessage, hostErrorMessage, optimizeErrorMessage, errorText } from "./ui/messages.mts";
+import type { ApiError } from "./ui/api-types.mts";
+
+function apiError(message: string, extra: { status?: number; code?: unknown } = {}): ApiError {
+  const e: ApiError = new Error(message);
+  if (extra.status !== undefined) e.status = extra.status;
+  if (extra.code !== undefined) e.code = extra.code;
+  return e;
+}
+
+// ---- POST /api/import ----------------------------------------------------------------------------
+test("[fast] an import that copied everything reads the way it always did", () => {
+  assert.equal(importOutcome({ copied: 2, skipped: 0, failed: 0 }), "copied 2 scan files — they'll show up in the inventory in a moment.");
+  assert.match(importOutcome({ copied: 1, skipped: 0, failed: 0 }), /^copied 1 scan file —/, "one file is not '1 scan files'");
+  assert.match(importOutcome({ copied: 3, skipped: 2, failed: 0 }), /skipped 2 already present/);
+});
+
+test("[fast] an import with nothing new says so, and says why when it was all duplicates", () => {
+  assert.equal(importOutcome({ copied: 0, skipped: 0, failed: 0 }), "nothing new in that folder.");
+  assert.match(importOutcome({ copied: 0, skipped: 1, failed: 0 }), /1 file was already imported/);
+  assert.match(importOutcome({ copied: 0, skipped: 4, failed: 0 }), /4 files were already imported/);
+});
+
+// The counted-not-thrown failures (an oversize source file, an unwritable destination) used to reach
+// the page as a number nothing rendered: a partial import read exactly like a complete one.
+test("[fast] files the import could not take are reported, with their reasons", () => {
+  const text = importOutcome({ copied: 1, skipped: 0, failed: 1, failures: [{ name: "big.json", reason: "too large: 40000000 bytes, the limit is 33554432" }] });
+  assert.match(text, /copied 1 scan file/);
+  assert.match(text, /1 file could not be imported: big\.json \(too large/);
+});
+
+test("[fast] a count with no reasons still reports the count", () => {
+  assert.match(importOutcome({ copied: 0, skipped: 0, failed: 2 }), /2 files could not be imported\./);
+});
+
+test("[fast] a folder full of failures names only the first few", () => {
+  const failures = Array.from({ length: 9 }, (_, i) => ({ name: `f${i}.json`, reason: "too large" }));
+  const text = importOutcome({ copied: 0, skipped: 0, failed: 9, failures });
+  assert.match(text, /9 files could not be imported/);
+  assert.match(text, /f0\.json/);
+  assert.doesNotMatch(text, /f3\.json/, "one bad folder must not fill the panel");
+});
+
+// ---- POST /api/setup/install -----------------------------------------------------------------------
+test("[fast] only the two packrat-paths.json decisions a player has to know about say anything", () => {
+  assert.equal(pathsFileNote("written"), null);
+  assert.equal(pathsFileNote("unchanged"), null);
+  assert.equal(pathsFileNote(undefined), null);
+  assert.match(pathsFileNote("kept")!, /^Kept your existing packrat-paths\.json/);
+  assert.match(pathsFileNote("backed-up")!, /packrat-paths\.json\.bak/);
+});
+
+test("[fast] the install reports the folder the server resolved, not nothing at all", () => {
+  assert.equal(installedIntoNote("/Users/example/TazUO/TazUO/LegionScripts"), "Installed into /Users/example/TazUO/TazUO/LegionScripts");
+  assert.equal(installedIntoNote(undefined), null);
+});
+
+// ---- a client folder that is no longer there ------------------------------------------------------
+test("[fast] both routes' ways of saying 'that folder is gone' become one sentence", () => {
+  // POST /api/setup/install answers 400 with code "badDir"; PUT /api/settings names the field.
+  assert.equal(clientFolderGone(apiError("no scripts folder found there for that client", { status: 400, code: "badDir" })), true);
+  assert.equal(clientFolderGone(apiError("settings.client.scriptsDir: no scripts folder found there for that client", { status: 400 })), true);
+  assert.equal(clientFolderGone(apiError("a Pack Rat script is running in the client", { status: 409, code: "running" })), false);
+  assert.match(clientErrorMessage(apiError("no scripts folder found there for that client", { status: 400, code: "badDir" })), /run setup again/);
+});
+
+test("[fast] every other install failure is shown exactly as the server worded it", () => {
+  const running = "a Pack Rat script is running in the client — type -stopall in game";
+  assert.equal(clientErrorMessage(apiError(running, { status: 409, code: "running" })), running);
+});
+
+// ---- POST /api/host/* ------------------------------------------------------------------------------
+test("[fast] a host call the desktop app never answered says so instead of showing a bare timeout", () => {
+  const timedOut = apiError("the desktop app did not answer", { status: 504 });
+  assert.equal(hostErrorMessage(timedOut, "Could not open that folder"), "Could not open that folder — the desktop app didn't answer. Try again.");
+  assert.equal(hostErrorMessage(apiError("something else", { status: 400 }), "Could not open that folder"), "something else");
+});
+
+// ---- POST /api/optimize ----------------------------------------------------------------------------
+test("[fast] a 429 explains that the builds are somebody else's, not a failure of this one", () => {
+  assert.match(optimizeErrorMessage(apiError("too many builds are already running; try again in a moment", { status: 429 })), /Wait for it to finish/);
+  assert.equal(optimizeErrorMessage(apiError("character not found", { status: 400 })), "character not found");
+});
+
+test("[fast] errorText survives a rejection that isn't an Error at all", () => {
+  assert.equal(errorText("plain string"), "plain string");
+  assert.equal(errorText(new Error("real error")), "real error");
+});

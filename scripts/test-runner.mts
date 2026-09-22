@@ -2,13 +2,18 @@
 // test-runner.mts — the project's standard test interface.
 //   node scripts/test-runner.mts [--smoke|--fast]      (full when no flag)
 // Drives node:test's run() over every **/*.test.mts found by a recursive walk of app/ + scripts/
-// (node_modules/dist/fixtures excluded), spawns the Python adapter test (fast + full modes only),
-// and writes test_logs/latest_summary.json. Tags are name prefixes:
-// [smoke] [fast] [slow]. TEST_SKIP_SLOW=1 skips the [slow] cases (see individual test files).
+// (node_modules/dist/fixtures excluded) and writes test_logs/latest_summary.json. Tags are name
+// prefixes: [smoke] [fast] [slow]. TEST_SKIP_SLOW=1 skips the [slow] cases (see individual files).
+//
+// The adapters' Python tests are not spawned from here any more. This file used to run
+// adapters/tazuo/test_paths.py by name; app/adapters.test.mts now walks adapters/ for every
+// test_*.py and runs each one as a [fast] node:test case with the same `python3 -W error` (and the
+// same probe for python3-then-python), skipping with a note when neither is on PATH. That covers the
+// same file in the same modes, counts into the same summary, and picks up a new adapter's tests with
+// no edit here — so the copy that lived in this file was doing nothing the suite wasn't.
 import { run } from "node:test";
 import type { test as NodeTest } from "node:test";
 import { writeFileSync, mkdirSync, readdirSync } from "node:fs";
-import { spawnSync } from "node:child_process";
 import { dirname, join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 import { buildUi } from "./build-ui.mts";
@@ -76,8 +81,6 @@ try {
   // tests filtered out by the name pattern are neither run nor counted by node:test; this runner's
   // summary only reports what node:test actually ran (skipped[] here means `skip: true` tests, e.g. [slow]
   // cases under TEST_SKIP_SLOW — not tests a --smoke/--fast pattern excluded entirely).
-
-  if (mode !== "smoke") runPython();
 } catch (e) {
   total++; failed++;
   const err = e as { stack?: unknown };
@@ -90,12 +93,3 @@ try {
   for (const f of failures) console.log(`  FAIL ${f.file} ${f.test_name}: ${f.error}`);
 }
 process.exit(failed ? 1 : 0);
-
-function runPython(): void {
-  const cmds = ["python3", "python"];
-  const py = cmds.find((c) => { const r = spawnSync(c, ["--version"], { encoding: "utf8" }); return !r.error && /^Python 3/.test((r.stdout || "") + (r.stderr || "")); });
-  total++;
-  if (!py) { skipped++; console.log("  SKIP adapters/tazuo/test_paths.py (no python3/python on PATH)"); return; }
-  const r = spawnSync(py, ["-W", "error", join(ROOT, "adapters", "tazuo", "test_paths.py")], { encoding: "utf8" });
-  if (r.status === 0) passed++; else { failed++; failures.push({ file: "adapters/tazuo/test_paths.py", line: 0, test_name: "adapter path tests", error: (r.stderr || r.stdout).slice(-600) }); }
-}

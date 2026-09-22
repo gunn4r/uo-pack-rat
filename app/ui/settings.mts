@@ -4,10 +4,11 @@
 // unlike the rest of the app's renderX() functions, which are pure over state the caller already
 // fetched, this one owns its own freshness because so many different actions can invalidate it.
 import { state } from "./store.mts";
-import { $, el, toast } from "./dom.mts";
+import { $, el, noteEl, toast } from "./dom.mts";
 import { api } from "./api.mts";
 import { openWizard } from "./wizard.mts";
 import { bridgeNoteEl } from "./bridge.mts";
+import { clientErrorMessage, hostErrorMessage, installedIntoNote, pathsFileNote } from "./messages.mts";
 import type { ApiError, SetupApiResponse, AdapterSummary, InstallApiResponse, UpdateCheckApiResponse } from "./api-types.mts";
 
 // Reinstall's own checkbox/result — separate from the wizard's, since this panel can act
@@ -40,7 +41,9 @@ function openPathRow(label: string, which: string, path: string): HTMLDivElement
     try { await api("/api/host/open-path", { method: "POST", body: { which } }); }
     catch (e) {
       if ((e as ApiError).status === 501) { hostAvailable = false; renderSettings(); }
-      else toast((e as Error).message, "bad");
+      // 504 (the shell never answered) reads as a bare "did not answer" without this — see
+      // messages.mts's hostErrorMessage.
+      else toast(hostErrorMessage(e, `Could not open the ${label.toLowerCase()}`), "bad");
     }
   } }, "Open");
   return el("div", { class: "kv" }, el("span", { class: "small muted" }, `${label}: `), el("span", { class: "small" }, path), btn);
@@ -74,7 +77,9 @@ function clientPanel(setup: SetupApiResponse): HTMLDivElement {
   const reinstallBtn = el("button", { onclick: async () => {
     reinstall.error = null;
     try { reinstall.result = await api<InstallApiResponse>("/api/setup/install", { method: "POST", body: { adapter: client.adapter, scriptsDir: client.scriptsDir } }); }
-    catch (e) { reinstall.error = (e as Error).message; }   // includes the 409 "-stopall" text verbatim
+    // The 409 "-stopall" text comes through verbatim; the one failure worth rewording is the folder
+    // this panel just sent being gone since it was persisted (see messages.mts's clientFolderGone).
+    catch (e) { reinstall.error = clientErrorMessage(e); }
     renderSettings();
   } }, "Reinstall scripts");
   reinstallBtn.disabled = !reinstall.checked;
@@ -88,6 +93,11 @@ function clientPanel(setup: SetupApiResponse): HTMLDivElement {
     reinstallBtn,
     reinstall.error ? el("div", { class: "msg bad" }, reinstall.error) : null,
     reinstall.result ? el("div", { class: "msg" }, `Installed: ${reinstall.result.installed.join(", ")}`) : null,
+    // Where the scripts actually went (the server resolves it), and what became of packrat-paths.json
+    // — a "kept" file is the whole reason scans then stop arriving, and saying nothing about it is
+    // how that became a symptom with no visible cause (see app/installer.mts's writePathsFile).
+    reinstall.result ? noteEl(installedIntoNote(reinstall.result.scriptsDir)) : null,
+    reinstall.result ? noteEl(pathsFileNote(reinstall.result.pathsFile)) : null,
     runAgain);
 }
 
@@ -117,8 +127,11 @@ function updatePanel(): HTMLDivElement {
   } }, "Check for updates");
   return el("div", { class: "panel stack" }, el("h3", {}, "Updates"), btn,
     lastUpdateCheck ? el("div", { class: "small" }, updateText(lastUpdateCheck)) : null,
-    // lastUpdateCheck.url is `unknown` on purpose (installer.mts's checkForUpdates forwards GitHub's
-    // html_url unvalidated) — this cast is the one place that reaches the page, flagged for the
-    // security review rather than narrowed here (api-types.mts's own comment on the field).
-    lastUpdateCheck?.url ? el("a", { href: lastUpdateCheck.url as string, target: "_blank", rel: "noopener noreferrer" }, "View release") : null);
+    // lastUpdateCheck.url is a string the server vouched for: installer.mts's checkForUpdates runs
+    // GitHub's html_url through releaseUrl(), which returns it only when it really is an
+    // https://github.com/<this repo>/releases… address and falls back to that repository's own
+    // releases page otherwise. It used to be forwarded exactly as the release response carried it,
+    // and this line cast an `unknown` straight into an href (api-types.mts's own comment on the field
+    // has the rest).
+    lastUpdateCheck?.url ? el("a", { href: lastUpdateCheck.url, target: "_blank", rel: "noopener noreferrer" }, "View release") : null);
 }

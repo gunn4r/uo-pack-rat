@@ -54,6 +54,11 @@ export const el = <K extends keyof HTMLElementTagNameMap>(tag: K, attrs: ElAttrs
 export function compactChildren<T>(kids: readonly (T | null | undefined)[]): T[] {
   return kids.filter((k): k is T => k != null);
 }
+// noteEl(text) — one quiet line, or nothing at all for a null. The sentences in ui/messages.mts are
+// deliberately optional (pathsFileNote says nothing about the ordinary outcomes), and every panel
+// that shows one would otherwise repeat the same call-it-twice ternary to avoid rendering a blank
+// row. Returns null, which is what compactChildren/el()'s own kid filter already handle.
+export const noteEl = (text: string | null): HTMLDivElement | null => text ? el("div", { class: "small muted" }, text) : null;
 export const fmtWhen = (s: string | null | undefined): string => s ? String(s).replace("T", " ").slice(0, 16) : "";
 export const ago = (s: string): string => { const d = (Date.now() - Date.parse(s)) / 864e5; return !isFinite(d) ? "" : d < 1 / 24 ? "just now" : d < 1 ? `${Math.round(d * 24)}h ago` : d < 30 ? `${Math.round(d)}d ago` : fmtWhen(s).slice(0, 10); };
 // stale = last seen more than 7 days before the newest scan we have at all

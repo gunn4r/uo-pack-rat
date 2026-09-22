@@ -9,6 +9,7 @@ import type { BuilderProfile, BuilderJob, BuilderJobUi } from "./store.mts";
 import { $, el, label, full, fmtN, fmtSecs, fmtRunTime, slotLabel, toast } from "./dom.mts";
 import { promptText } from "./dialog.mts";
 import { api, CLIENT_ID } from "./api.mts";
+import { optimizeErrorMessage } from "./messages.mts";
 import { sheetNode } from "./sheet.mts";
 import { actButtons, grabAllRow, bridgeNoteEl } from "./bridge.mts";
 import { resolveItems } from "./items.mts";
@@ -183,7 +184,10 @@ async function runBuild(): Promise<void> {
   try {
     r = (await api<OptimizeStartApiResponse>("/api/optimize", { method: "POST", body: { character: name, settings, profile: optimizerProfile(), opts,
       meta: { character: name, settings: settingsSnapshot(), inventoryStamp: invStamp() } } })) as OptimizeStartApiResponse & { ok: true };
-  } catch (e) { r = { ok: false, error: (e as Error).message }; }
+    // optimizeErrorMessage (ui/messages.mts) explains the one refusal that isn't about this build at
+    // all: 429, four jobs already running (vault-server.mts's MAX_RUNNING_JOBS) — this page only ever
+    // runs one, so the others are another tab's.
+  } catch (e) { r = { ok: false, error: optimizeErrorMessage(e) }; }
   if (state.builder.job !== job) { if (r.ok) api(`/api/optimize/${r.id}/cancel`, { method: "POST" }).catch(() => {}); return; }   // cancelled while the request was in flight
   if (!r.ok) { endJob(job, el("div", { class: "msg bad" }, r.error)); return; }
   job.poolSize = r.poolSize; job.skipped = r.skipped; job.current = r.current; job.warning = r.warning || null;

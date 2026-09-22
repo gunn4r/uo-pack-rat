@@ -21,11 +21,13 @@
 //   <-> HostRequestMessage / HostResultMessage
 //       forwards vault-server.mts's host.pickFolder({title})/host.openPath(path) calls to main (only
 //       Electron can show a native folder picker or ask the OS to open a path) and resolves the
-//       promise vault-server.mts is awaiting once main's matching host-result message arrives.
+//       promise vault-server.mts is awaiting once main's matching host-result message arrives — or
+//       rejects it once ./pending-calls.mts's timeout expires, for an answer that never comes.
 //   <- ShutdownMessage                                 close the server, then exit(0)
 import { ensureLayout, resolveConfig } from "../app/config.mts";
 import { startServer } from "../app/vault-server.mts";
 import type { HostBridge } from "../app/vault-server.mts";
+import { createPendingHostCalls } from "./pending-calls.mts";
 import type { HostRequestMessage, HostResultMessage, ListeningMessage } from "./protocol.mts";
 
 // This module only ever runs as an Electron utilityProcess.fork() entry point (electron/main.mts's
@@ -39,8 +41,10 @@ import type { HostRequestMessage, HostResultMessage, ListeningMessage } from "./
 // exactly what happened before this migration too; nothing about that changed.
 const parentPort = process.parentPort;
 
-let nextId = 1;
-const pendingHostCalls = new Map<number, (result: unknown) => void>();
+// Every relayed call is registered here and expires on its own (./pending-calls.mts): main.mts drops
+// a result whose originating child is gone, so without an expiry the promise below — and the HTTP
+// request awaiting it — would never settle at all.
+const pendingHostCalls = createPendingHostCalls();
 
 // Two overloads keep pickFolder's and openPath's promises honest to HostBridge's two different
 // per-method shapes (Promise<string | null> vs. Promise<void>); the implementation signature below is
@@ -52,9 +56,8 @@ const pendingHostCalls = new Map<number, (result: unknown) => void>();
 function callHost(op: "pickFolder", args: { title?: unknown }): Promise<string | null>;
 function callHost(op: "openPath", args: string): Promise<void>;
 function callHost(op: HostRequestMessage["op"], args: unknown): Promise<unknown> {
-  return new Promise((resolve) => {
-    const id = nextId++;
-    pendingHostCalls.set(id, resolve);
+  return new Promise((resolve, reject) => {
+    const id = pendingHostCalls.start(resolve, reject);
     parentPort.postMessage({ type: "host", id, op, args } as HostRequestMessage);
   });
 }
@@ -80,11 +83,9 @@ parentPort.on("message", (e) => {
   const msg: unknown = e?.data;
   if (!msg || typeof msg !== "object") return;
   if ((msg as { type: unknown }).type === "host-result") {
-    const resolve = pendingHostCalls.get((msg as HostResultMessage).id);
-    if (resolve) {
-      pendingHostCalls.delete((msg as HostResultMessage).id);
-      resolve((msg as HostResultMessage).result);
-    }
+    // A false return is a result for a call that is no longer waiting (it expired, or was already
+    // answered) — there is nothing to deliver it to, so it is dropped.
+    pendingHostCalls.settle((msg as HostResultMessage).id, (msg as HostResultMessage).result);
     return;
   }
   if ((msg as { type: unknown }).type === "shutdown") {

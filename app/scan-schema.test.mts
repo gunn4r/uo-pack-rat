@@ -185,3 +185,18 @@ test("[fast] validateScan: the shipped fixtures and every adapter's real output 
   const v = validateScan(upgradeScan(fixture, { shard: "uoalive" }));
   assert.equal(v.ok, true, `adapters/tazuo/fixture.scan.json: ${JSON.stringify(v.errors)}`);
 });
+
+// adapter.id used to be any non-empty string. It names an inbox, a bridge directory and an adapters/
+// folder elsewhere in the app, so a scan must not carry one that could not be an adapter id at all.
+test("[fast] validateScan: adapter.id must look like an adapter id (lowercase, digits, hyphens, at most 64)", () => {
+  const fixture = JSON.parse(readFileSync(join(HERE, "..", "adapters", "tazuo", "fixture.scan.json"), "utf8")) as ScanV2;
+  for (const id of ["tazuo", "razor-enhanced", "classicuo-web", "app"]) {
+    const v = validateScan({ ...fixture, adapter: { ...fixture.adapter, id } });
+    assert.equal(v.ok, true, `${id}: ${JSON.stringify(v.errors)}`);
+  }
+  for (const id of ["../../evil", "TazUO", "taz uo", "tazuo\n", "a".repeat(65), ""]) {
+    const v = validateScan({ ...fixture, adapter: { ...fixture.adapter, id } });
+    assert.equal(v.ok, false, `${JSON.stringify(id)} must be refused`);
+    assert.ok(v.errors.some((e) => e.path === "/adapter/id"), JSON.stringify(v.errors));
+  }
+});

@@ -9,6 +9,7 @@ import { state } from "./store.mts";
 import { $, el, compactChildren } from "./dom.mts";
 import type { ElAttrs } from "./dom.mts";
 import { api } from "./api.mts";
+import { importOutcome } from "./messages.mts";
 import { pickFolderRow } from "./wizard.mts";
 import { defaultAdapterId, availableAdapters, platformCompatible } from "./adapters.mts";
 import type { ImportApiResponse, ImportPasteApiResponse, RescanApiResponse } from "./api-types.mts";
@@ -118,9 +119,10 @@ async function doImportFolder(dir: string): Promise<void> {
   imp.busy = true; renderImport();
   try {
     const r = await api<ImportApiResponse>("/api/import", { method: "POST", body: { dir, adapter } });
-    setResult(false, r.copied
-      ? `copied ${r.copied} scan file${r.copied === 1 ? "" : "s"}${r.skipped ? ` (skipped ${r.skipped} already present)` : ""} — they'll show up in the inventory in a moment.`
-      : `nothing new in that folder${r.skipped ? ` — ${r.skipped} file${r.skipped === 1 ? " was" : "s were"} already imported` : ""}.`);
+    // importOutcome (ui/messages.mts) is the same sentence the wizard's own import step shows, and
+    // the one place `failed`/`failures` are worded — a partial import used to read exactly like a
+    // complete one, since nothing rendered the count of files the import could not take.
+    setResult(Boolean(r.failed) && !r.copied, importOutcome(r));
   } catch (e) {
     setResult(true, (e as Error).message);
   }
