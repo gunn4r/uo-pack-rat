@@ -9,7 +9,8 @@
 // collisions against existingNames get "-2", "-3", ... appended before ".json".
 //
 // ingestFile({path, scansDir, shard, log}) — read + JSON.parse the inbox file, upgradeScan it,
-// validateScan it, write the result into scansDir under its acceptedName (temp-then-rename), then
+// validateScan it, write the result into scansDir under its acceptedName (app/atomic-write.mts's
+// writeFileAtomic: a random temp, renamed into place, created 0600 like every data file), then
 // unlink the inbox file. Returns {ok:true, file, character, scannedAt, warning?, duplicate?} or
 // {ok:false, reason}; never throws (a parse/upgrade/validate failure, or an I/O failure during the
 // write step itself, is reported through the reason instead — so a caller retry/reject loop always
@@ -36,13 +37,17 @@
 // <name>.reason.txt beside it. A duplicate result (see ingestFile above) never calls onAccepted, since
 // nothing new was ingested. Every file (from an event or from scanOnce) is processed through one
 // promise chain, so two files' ingestion never interleaves; every await is guarded by a `closed` flag
-// so a close() mid-retry cuts the chain short instead of running past it.
+// so a close() mid-retry cuts the chain short instead of running past it. The watch heals itself: an
+// 'error' from it is logged and the watch re-armed, a deleted inbox is recreated (and watched again)
+// by the next sweep, and scanOnce() returns false when it could not sweep at all.
 import {
   existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync, renameSync, unlinkSync, lstatSync,
   watch as fsWatch, type WatchListener,
 } from "node:fs";
 import { join } from "node:path";
 import { upgradeScan, validateScan, type UnvalidatedScan } from "./scan-schema.mts";
+import { writeFileAtomic } from "./atomic-write.mts";
+import { DATA_DIR_MODE, DATA_FILE_MODE } from "./config.mts";
 import type { ScanV2 } from "./schema/types.d.mts";
 
 const SCANNED_AT_RE = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.\d+)?([+-]\d{2}:\d{2}|Z)$/;
@@ -175,23 +180,19 @@ export function ingestFile({ path, scansDir, shard, log = () => {} }: IngestFile
     return { ok: true, file: existingAccepted, character: scan.character, scannedAt: scan.scannedAt, duplicate: true, ...(warning ? { warning } : {}) };
   }
 
-  let file: string, tmp: string | undefined;
+  let file: string;
   try {
-    mkdirSync(scansDir, { recursive: true });
+    mkdirSync(scansDir, { recursive: true, mode: DATA_DIR_MODE });
     let existing: Set<string>;
     try { existing = new Set(readdirSync(scansDir).filter((f) => f.endsWith(".json"))); }
     catch { existing = new Set(); }
     file = acceptedName(scan, existing);
-    const dest = join(scansDir, file);
-    tmp = `${dest}.tmp`;
-    writeFileSync(tmp, JSON.stringify(scan));
-    renameSync(tmp, dest);
+    writeFileAtomic(join(scansDir, file), JSON.stringify(scan), DATA_FILE_MODE);
   } catch (e) {
     // Any of the writes above can throw (disk full, permissions, scansDir yanked out from under us).
     // Report it as an ordinary ok:false so the caller's retry/reject contract still applies to it —
     // an uncaught throw here would otherwise escape processFile's retry loop entirely and orphan the
-    // file with no further watch event to retrigger it.
-    if (tmp) { try { unlinkSync(tmp); } catch { /* tmp was never written, or already gone */ } }
+    // file with no further watch event to retrigger it. writeFileAtomic removes its own temp.
     return { ok: false, reason: `write failed: ${errMessage(e)}` };
   }
 
@@ -225,9 +226,9 @@ const delayFactory = (pending: Set<PendingDelay>) => (ms: number): Promise<void>
 // The shape of the injectable `watch` option: node:fs's own `watch(filename, listener)` overload
 // (WatchListener<string>'s event is "rename"|"change", filename is string|null under strict types —
 // the code below already copes with a null filename), narrowed to just the call shape and the
-// `.close()` this file actually uses, so watcher.test.mts's fake `watch` (which returns a plain
-// {close} object, not a real FSWatcher) satisfies it too.
-export type WatchFn = (dir: string, listener: WatchListener<string>) => { close: () => void };
+// `.close()`/`.on("error")` this file actually uses, so watcher.test.mts's fake `watch` (a plain
+// object, not a real FSWatcher) satisfies it too.
+export type WatchFn = (dir: string, listener: WatchListener<string>) => { close: () => void; on: (event: "error", listener: (e: Error) => void) => unknown };
 
 export interface StartWatcherOnAcceptedInfo {
   file: string;
@@ -254,8 +255,11 @@ export interface StartWatcherOptions {
   watch?: WatchFn;
 }
 
+// scanOnce() answers whether the sweep actually ran: false means the inbox could not be read or
+// recreated, or no watch could be armed on it (the reason is logged), so a caller such as POST
+// /api/import/rescan never reports a sweep that did not happen.
 export interface WatcherHandle {
-  scanOnce: () => void;
+  scanOnce: () => boolean;
   close: () => void;
 }
 
@@ -266,7 +270,7 @@ export function startWatcher(
     debounceMs = 300, retries = 3, retryDelayMs = 700, watch = fsWatch,
   }: StartWatcherOptions = {} as StartWatcherOptions,   // every real call site supplies inboxDir/adapter/scansDir (see app/watcher.test.mts, app/vault-server.mts); this cast is compiler-only, matching config.mts's rawPort pattern
 ): WatcherHandle {
-  mkdirSync(inboxDir, { recursive: true });
+  mkdirSync(inboxDir, { recursive: true, mode: DATA_DIR_MODE });
   let closed = false;
   const debounceTimers = new Map<string, NodeJS.Timeout>();   // filename -> setTimeout id, reset on a second event
   const pendingDelays = new Set<PendingDelay>();    // in-flight retry waits, resolved early by close()
@@ -286,10 +290,10 @@ export function startWatcher(
     const src = join(inboxDir, name);
     try {
       if (!existsSync(src)) { safeLog(`rejected ${name} (already gone): ${reason}`); notifyRejected({ file: name, reason }); return; }
-      mkdirSync(rejectedDir, { recursive: true });
+      mkdirSync(rejectedDir, { recursive: true, mode: DATA_DIR_MODE });
       const dest = join(rejectedDir, name);
       renameSync(src, dest);
-      writeFileSync(`${dest}.reason.txt`, `${reason}\n`);
+      writeFileSync(`${dest}.reason.txt`, `${reason}\n`, { mode: DATA_FILE_MODE });
     } catch (e) {
       reason = `${reason} (also failed to move to rejected/: ${errMessage(e)})`;
     }
@@ -326,17 +330,32 @@ export function startWatcher(
       .catch((e: unknown) => { safeLog(`watcher error on ${name}: ${errMessage(e)}`); });
   }
 
-  function scanOnce(): void {
-    if (closed) return;
+  // A sweep first makes sure there is an inbox to sweep: a player (or a cleanup tool) deleting
+  // <data>/inbox/ used to leave every watcher dead for the rest of the session — fs.watch on a
+  // removed directory never fires again, and readdir failed with ENOENT on every rescan. mkdirSync
+  // with recursive returns the first directory it had to create, so a non-undefined result means the
+  // inbox was gone and the old watch is dead with it. A watch that is not armed (it errored, or the
+  // inbox was gone) is armed again here too, so every sweep leaves a live watch behind it.
+  function scanOnce(): boolean {
+    if (closed) return false;
     let names: string[];
-    try { names = readdirSync(inboxDir).filter((f) => f.endsWith(".json")); }
-    catch (e) { safeLog(`watcher scanOnce error: ${errMessage(e)}`); return; }
+    try {
+      const recreated = mkdirSync(inboxDir, { recursive: true, mode: DATA_DIR_MODE }) !== undefined;
+      if (recreated) safeLog(`inbox ${inboxDir} was missing; recreated it`);
+      if ((recreated || !watcher) && !arm()) return false;
+      names = readdirSync(inboxDir).filter((f) => f.endsWith(".json"));
+    } catch (e) { safeLog(`watcher scanOnce error: ${errMessage(e)}`); return false; }
     for (const name of names) enqueue(name);
+    return true;
   }
 
   function onWatchEvent(_eventType: string, filename: string | null): void {
     try {
-      if (closed || !filename) return;
+      if (closed) return;
+      // Deleting the watched directory itself is reported as an event on it (macOS/Linux) and then
+      // nothing more, ever — sweep, which recreates the inbox and re-arms the watch.
+      if (!existsSync(inboxDir)) { scheduleRecovery(); return; }
+      if (!filename) return;
       const name = String(filename).replaceAll("\\", "/");
       if (name.includes("/rejected/") || name.startsWith("rejected/")) return;
       if (!name.endsWith(".json")) return;
@@ -349,9 +368,38 @@ export function startWatcher(
     }
   }
 
-  const watcher = watch(inboxDir, onWatchEvent);
+  // The live watch, or null when arming it failed. A real FSWatcher emits 'error' (EPERM on Windows
+  // when the watched directory is deleted or moved), and an 'error' with no listener is an uncaught
+  // exception that takes the whole server down; with this listener it is logged, and the watch is
+  // re-armed a moment later (the retry delay, so a watch that keeps failing cannot spin).
+  let watcher: ReturnType<WatchFn> | null = null;
+  let recoveryTimer: NodeJS.Timeout | null = null;
+  function arm(): boolean {
+    if (watcher) { try { watcher.close(); } catch { /* already closed */ } }
+    watcher = null;
+    if (closed) return false;
+    try {
+      const w = watch(inboxDir, onWatchEvent);
+      w.on("error", (e) => {
+        safeLog(`watch error on ${inboxDir}: ${errMessage(e)}; re-arming`);
+        if (watcher === w) { try { w.close(); } catch { /* already closed */ } watcher = null; }
+        scheduleRecovery();
+      });
+      watcher = w;
+      return true;
+    } catch (e) {
+      safeLog(`could not watch ${inboxDir}: ${errMessage(e)}`);
+      return false;
+    }
+  }
+  function scheduleRecovery(): void {
+    if (closed || recoveryTimer) return;
+    recoveryTimer = setTimeout(() => { recoveryTimer = null; scanOnce(); }, retryDelayMs);
+  }
+
+  arm();
   safeLog(`watching ${inboxDir} (adapter ${adapter})`);
-  scanOnce();   // pick up files that landed while the app was closed
+  scanOnce();   // pick up files that landed while the app was closed (and arm again if that failed)
 
   return {
     scanOnce,
@@ -361,7 +409,8 @@ export function startWatcher(
       debounceTimers.clear();
       for (const entry of pendingDelays) { clearTimeout(entry.timer!); entry.resolve(); }
       pendingDelays.clear();
-      try { watcher.close(); } catch { /* already closed */ }
+      if (recoveryTimer) { clearTimeout(recoveryTimer); recoveryTimer = null; }
+      if (watcher) { try { watcher.close(); } catch { /* already closed */ } watcher = null; }
     },
   };
 }
