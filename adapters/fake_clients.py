@@ -42,6 +42,7 @@ class Clock(object):
         m.localtime = lambda secs=None: real_time.localtime(self.now if secs is None else secs)
         m.strftime = real_time.strftime
         m.sleep = lambda s: self.advance(s)
+        m.__getattr__ = lambda name: getattr(real_time, name)   # everything else (datetime needs some)
         return m
 
 
@@ -152,18 +153,22 @@ def tazuo_api(world, backpack, bank=0, skills=None):
         world.items[int(s)].Container = int(dst)
     api.MoveItem = move
 
-    def walk_to(x, y):
-        """The fake pathfinder: gets there at once, or never when world.no_path is set."""
+    def walk_to(x, y, wait, timeout):
+        """The fake pathfinder: gets there at once, or never when world.no_path is set -- and then a
+        waiting call blocks for its whole timeout, the way the client's does."""
         world.calls.append(("walk", x, y))
         if getattr(world, "no_path", False):
+            if wait:
+                world.clock.advance(float(timeout))
+                return False
             api.walking[0] = True
-            return False
+            return True
         world.px, world.py = x, y
         sync()
         return True
 
-    api.Pathfind = lambda x, y, z=0, distance=1, wait=False, timeout=10, *a: walk_to(int(x), int(y))
-    api.PathfindEntity = lambda s, distance=1, wait=False, timeout=10, *a: walk_to(world.items[int(s)].X, world.items[int(s)].Y)
+    api.Pathfind = lambda x, y, z=0, distance=1, wait=False, timeout=10, *a: walk_to(int(x), int(y), wait, timeout)
+    api.PathfindEntity = lambda s, distance=1, wait=False, timeout=10, *a: walk_to(world.items[int(s)].X, world.items[int(s)].Y, wait, timeout)
     api.Pathfinding = lambda: api.walking[0]
     api.CancelPathfinding = lambda: api.walking.__setitem__(0, False)
     return api

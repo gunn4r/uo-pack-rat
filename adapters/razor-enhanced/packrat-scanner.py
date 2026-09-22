@@ -146,7 +146,7 @@ def item_dict(it, lines, container_serial, layer=None):
 
 def is_container(it):
     try:
-        if bool(getattr(it, "IsCorpse", False)):
+        if bool(getattr(it, "IsCorpse", False)) or as_int(getattr(it, "ItemID", 0)) == 0x2006:
             return False          # corpses are containers to the client; never open them
     except Exception:
         pass

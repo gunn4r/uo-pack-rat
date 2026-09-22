@@ -76,7 +76,9 @@ POLL_S = 0.5
 MAX_HOURS = 8
 REACH = 2                 # tiles: containers open only when this close
 WALK_TIMEOUT_S = 20
+WALK_POLL_S = 0.5
 PAUSE_OPEN = 1.0
+STATUS_EVERY_S = 2.0      # heartbeat: the app calls the bridge offline once `alive` is 8 s old
 HIGHLIGHT_S = 8
 HIGHLIGHT_HUE = 53        # bright yellow-green
 MARK_HUE = 53
@@ -91,6 +93,7 @@ ALARM_HUE, OK_HUE, INFO_HUE = 33, 68, 88
 # this file's own em dashes and f-strings: Razor Enhanced's IronPython carries the same text.
 MAX_CHAIN = 8              # containers one command may open (app/ui/bridge.mts's own chainOf guard)
 MAX_NAME = 120             # a name is only ever printed on screen
+MAX_ID = 64                # the app's ids are ~18 characters; a result is keyed by one
 MAX_AGE_S = 60             # a command is a click: anything older is a replayed backlog
 CLOCK_SKEW_S = 5           # same machine, but the clocks still tick apart
 BUDGET_WINDOW_S = 60       # rolling window for MAX_CMDS_PER_WINDOW
@@ -185,6 +188,8 @@ def check_command(cmd, actions, now_s):
     cid = cmd.get("id")
     if not isinstance(cid, str) or not cid:
         return None, "command has no id"
+    if len(cid) > MAX_ID:
+        return None, "command id is longer than {0} characters".format(MAX_ID)
     if cmd.get("action") not in actions:
         return None, "unknown action"
     if not is_serial(cmd.get("serial")):
@@ -266,6 +271,25 @@ def resolve_root(serial, find_fn):
     return cur
 
 
+def chain_problem(chain, i, it, own):
+    """Why chain[i] must not be opened, or "" when it may. `it` is the live item for chain[i] and
+    `own` the serials of the player's own backpack and bank. The root has to be one of those or lie
+    on the ground -- never a container another mobile carries -- and every later entry has to sit
+    directly inside the entry before it, so a chain only ever leads down into its own root."""
+    c = int(chain[i])
+    if i == 0:
+        if c in own or bool(getattr(it, "OnGround", False)):
+            return ""
+        return "refused: 0x{0:x} is not on the ground, your backpack or your open bank box".format(c)
+    try:
+        parent = int(getattr(it, "Container", 0) or 0)
+    except Exception:
+        parent = 0
+    if parent != int(chain[i - 1]):
+        return "refused: 0x{0:x} is not inside 0x{1:x} -- rescan and try again".format(c, int(chain[i - 1]))
+    return ""
+
+
 # ---- end of the untrusted-input section --------------------------------------------------------
 
 # Container detection, copied verbatim from packrat-scanner.py (adapters/test_adapters.py asserts
@@ -281,6 +305,7 @@ CONTAINER_GRAPHICS = {0x0E75, 0x0E76, 0x0E79, 0x0E7D, 0x09AA, 0x09A8, 0x09A9, 0x
 
 results = {}              # id -> {ok, msg}
 counts = {"done": 0, "failed": 0}
+last_status = {"current": None, "at": 0.0}
 
 
 def is_container(item, name):
@@ -309,6 +334,7 @@ def sysmsg(msg, hue=OK_HUE):
 
 
 def write_status(current=None):
+    last_status["current"], last_status["at"] = current, time.time()
     try:
         keep = dict(list(results.items())[-MAX_RESULTS:])
         write_json_atomic(STATUS, {"alive": rfc3339_now(),
@@ -316,6 +342,13 @@ def write_status(current=None):
                                     "results": keep, "counts": counts})
     except Exception as e:
         sysmsg(f"bridge: status write failed: {e}", ALARM_HUE)
+
+
+def heartbeat():
+    """Rewrite the status file during a long action (a highlight, a walk) so the app keeps seeing the
+    bridge online and keeps its buttons working; cheap to call often."""
+    if time.time() - last_status["at"] >= STATUS_EVERY_S:
+        write_status(last_status["current"])
 
 
 def record(cid, ok, msg):
@@ -352,9 +385,33 @@ def own_roots(chain):
     return allowed
 
 
+def wait_for_walk(started, arrived):
+    """Poll a non-blocking pathfind until it arrives, gives up, or WALK_TIMEOUT_S passes, keeping the
+    status heartbeat going throughout (a blocking pathfind would leave the app calling the bridge
+    offline for up to the whole timeout)."""
+    if started is False:
+        return arrived()                 # no path at all
+    busy = getattr(API, "Pathfinding", None)
+    deadline = time.time() + WALK_TIMEOUT_S
+    while time.time() < deadline and not API.StopRequested:
+        API.Pause(WALK_POLL_S)
+        heartbeat()
+        if arrived():
+            return True
+        if busy is not None and not busy():
+            break
+    cancel = getattr(API, "CancelPathfinding", None)
+    if cancel is not None and busy is not None and busy():
+        cancel()
+    return arrived()
+
+
 def walk_to(pos, root_serial):
     """Get within REACH of the container. Uses the live item if the client knows it, else the scanned
-    position. A destination further than MAX_WALK_TILES is refused rather than walked to."""
+    position. A destination further than MAX_WALK_TILES is refused rather than walked to. Your own
+    backpack and bank need no walk: they are on you, and a worn container's X/Y is not your position."""
+    if int(root_serial) in own_roots([]):
+        return True
     it = find(root_serial)
     on_ground = it is not None and bool(getattr(it, "OnGround", False))
     if on_ground:
@@ -362,24 +419,30 @@ def walk_to(pos, root_serial):
             return True
         if not within_walk(API.Player.X, API.Player.Y, it.X, it.Y):
             return False
-        API.PathfindEntity(int(root_serial), REACH, True, WALK_TIMEOUT_S)
-        return dist_to(it.X, it.Y) <= REACH
+        started = API.PathfindEntity(int(root_serial), REACH, False, WALK_TIMEOUT_S)
+        return wait_for_walk(started, lambda: dist_to(it.X, it.Y) <= REACH)
     if pos:
         if dist_to(pos["x"], pos["y"]) <= REACH:
             return True
         if not within_walk(API.Player.X, API.Player.Y, pos["x"], pos["y"]):
             return False
-        API.Pathfind(int(pos["x"]), int(pos["y"]), int(pos.get("z", 0)), REACH, True, WALK_TIMEOUT_S)
-        return dist_to(pos["x"], pos["y"]) <= REACH
+        started = API.Pathfind(int(pos["x"]), int(pos["y"]), int(pos.get("z", 0)), REACH, False, WALK_TIMEOUT_S)
+        return wait_for_walk(started, lambda: dist_to(pos["x"], pos["y"]) <= REACH)
     return it is not None and dist_to(it.X, it.Y) <= REACH
 
 
 def open_chain(chain):
-    """Open root, then each nested bag in order. Returns (ok, message)."""
+    """Open root, then each nested bag in order. Returns (ok, message). Each entry is checked against
+    the live client before it is double-clicked: the root must be on the ground or your own backpack
+    or bank, and each bag must really sit inside the one opened before it (chain_problem)."""
+    own = own_roots([])
     for i, c in enumerate(chain):
         it = find(c)
         if it is None:
             return False, f"container {i + 1}/{len(chain)} (0x{int(c):x}) is not in view — walk there and try again"
+        why = chain_problem(chain, i, it, own)
+        if why:
+            return False, why
         if not is_container(it, str(getattr(it, "Name", "") or "")):
             return False, f"refused: 0x{int(c):x} is not a container — the bridge only ever opens containers"
         try:
@@ -387,6 +450,7 @@ def open_chain(chain):
         except Exception as e:
             return False, f"could not open container: {e}"
         API.Pause(PAUSE_OPEN)
+        heartbeat()
     return True, "opened"
 
 
@@ -413,6 +477,7 @@ def do_highlight(cmd):
         except Exception:
             pass
         API.Pause(1.5)
+        heartbeat()
     if pos:
         try:
             API.RemoveMarkedTile(int(pos["x"]), int(pos["y"]))
@@ -449,6 +514,10 @@ def run(cmd):
     if action not in CAPABILITIES["bridge"]:
         return False, "unknown action"
     if chain:
+        root = find(chain[0])
+        why = chain_problem(chain, 0, root, own_roots([])) if root is not None else ""
+        if why:
+            return False, why                # never walk toward a container someone else carries
         if not walk_to(cmd.get("pos"), chain[0]):
             return False, "could not reach the container (not in view / too far / no path) — walk closer and retry"
         if action == "goto":
@@ -510,32 +579,38 @@ def main():
                             bad += 1
                             continue
                         cmd, why = check_command(parsed, CAPABILITIES["bridge"], time.time())
-                        if cmd is None:
-                            bad += 1
+                        cid = parsed.get("id") if isinstance(parsed, dict) else None
+                        if not isinstance(cid, str) or not cid or len(cid) > MAX_ID:
+                            bad += 1                     # no id the page could match a result to
                             continue
-                        if cmd["id"] in seen:
-                            continue                     # already executed: a repeat is not a click
+                        if cid in seen:
+                            continue                     # already accepted: a repeat is not a click
                         if not budget_ok(spent, time.time()):
-                            record(cmd["id"], False, "too many commands at once — bridge stopping")
+                            record(cid, False, "too many commands at once — bridge stopping")
                             sysmsg("Pack Rat bridge: the queue is being written faster than a person clicks. Stopping — start it again yourself if this was you.", ALARM_HUE)
                             flooded = True
                             break
                         spent.append(time.time())
+                        seen.append(cid)
+                        del seen[:-MAX_SEEN_IDS]
+                        if cmd is None:
+                            # Refused (stale, malformed): recorded under the command's own id, so the
+                            # page that queued it toasts the reason instead of waiting forever.
+                            record(cid, False, why)
+                            continue
                         pending.append(cmd)
                     except Exception:
                         bad += 1
                 if bad:
                     # One aggregated result rather than one per junk line, so a flood of garbage
                     # cannot itself flood the status file.
-                    record(f"rejected-{rfc3339_now()}", False, f"{bad} queue line(s) ignored (unreadable, stale or not a command)")
+                    record(f"rejected-{rfc3339_now()}-{counts['failed']}", False, f"{bad} queue line(s) ignored (unreadable or not a command)")
         except Exception as e:
             sysmsg(f"bridge: queue read failed: {e}", ALARM_HUE)
         ran = 0
         while pending and ran < MAX_CMDS_PER_POLL and not API.StopRequested and not flooded:
             cmd = pending.pop(0)
             ran += 1
-            seen.append(cmd["id"])
-            del seen[:-MAX_SEEN_IDS]
             try:
                 sysmsg(f"bridge: {cmd['action']} {cmd['name']}", INFO_HUE)
                 write_status({"id": cmd["id"], "action": cmd["action"], "name": cmd["name"]})
@@ -551,6 +626,8 @@ def main():
             write_status(None)
             next_status = time.time() + 2.0
         API.Pause(POLL_S)
+    for cmd in pending:
+        record(cmd["id"], False, "not run — the bridge stopped first")
     try:
         write_json_atomic(STATUS, {"alive": rfc3339_now(), "character": str(API.Player.Name),
                                     "current": None, "results": results, "counts": counts,
