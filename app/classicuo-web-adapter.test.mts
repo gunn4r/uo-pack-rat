@@ -200,3 +200,14 @@ test("[fast] classicuo-web: every root (opened or not) has a matching containers
     if (root.kind === "ground") assert.ok(entry.pos, "a ground root's containers entry should carry pos");
   }
 });
+
+test("[fast] classicuo-web: a bag nested past MAX_NEST is recorded as a container not opened, not as a plain item", async () => {
+  let inner = fakeItem(0x40000300, "Deep Ring", RING_GRAPHIC, undefined);
+  const bags: number[] = [];
+  for (let i = 6; i >= 1; i--) { bags.unshift(0x40000200 + i); inner = fakeItem(0x40000200 + i, "A Bag", BAG_GRAPHIC, [inner]); }
+  const doc = await runScanner({ backpack: fakeItem(0x40000001, "Backpack", BAG_GRAPHIC, [inner]) });
+  const unopened = Object.values(doc.containers).filter((c) => (c as { opened?: boolean }).opened === false).map((c) => c.serial);
+  assert.equal(unopened.length, 1, JSON.stringify(doc.containers));
+  assert.ok(bags.includes(unopened[0]!));
+  assert.deepEqual(doc.items.filter((i) => bags.includes(i.serial)), [], "no bag is recorded as a plain item");
+});
