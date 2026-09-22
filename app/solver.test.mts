@@ -16,6 +16,7 @@ import type { ScanV2 } from "./schema/types.d.mts";
 import { corePath } from "./config.mts";
 import { solveExact, type OptPools, type OptAssignment, type OptProfile } from "./exact-solver.mts";
 import { DEFAULT_SLOTS } from "./mip.mts";
+import { solveModel as realSolveModel, type Handle, type SolveModelOptions } from "./mip-solve.mts";
 import { learnModel, generateScan } from "./bench/gen-inventory.mts";
 import type * as Core from "../scripts/optimizer-core.mts";
 
@@ -220,6 +221,108 @@ test("[fast] a negative total on a soft-floored dimension gets zero credit, like
   const opts: OptOptions = { exact: true, timeBudgetMs: 5000, restarts: 20, seed: 1, slots, optionalSlots };
   const { r } = await runBoth(t, { pools, current, profile }, opts);
   assert.equal(r.best.ring?.serial, item.serial, "the item is worth taking despite the unmet soft floor");
+});
+
+// Exhaustive maximum of the core's own scoreSet over every choice per slot (null = leave it empty).
+function bruteMax(choices: Record<string, (NonNullable<OptPools[string]>[number] | null)[]>, profile: OptProfile): number {
+  let best = -Infinity;
+  const slots = Object.keys(choices);
+  const rec = (i: number, pick: OptAssignment): void => {
+    if (i === slots.length) { best = Math.max(best, core.scoreSet(pick, profile)); return; }
+    for (const it of choices[slots[i]!]!) rec(i + 1, { ...pick, [slots[i]!]: it });
+  };
+  rec(0, {});
+  return best;
+}
+
+// Regression (review C1): with a REACHABLE soft floor the met row forced the floored total ≥ 0 even
+// when the floor was not met, so HiGHS proved the best suit with luck ≥ 0 optimal and never saw the
+// better one at luck −11. (The existing negative-total test above uses an unreachable floor, which
+// builds no met row at all, so it never exercised this.)
+test("[fast] a reachable soft floor with a negative-total optimum: HiGHS proves the brute-force best", async () => {
+  const hciRing = { serial: 90201, name: "Gambler's Ring", slot: "ring", props: { luck: -11, hci: 30 } };
+  const luckRing = { serial: 90202, name: "Lucky Ring", slot: "ring", props: { luck: 18 } };
+  const neck = { serial: 90203, name: "Plain Gorget", slot: "neck", props: { hci: 2, luck: 1 } };
+  const pools = { ring: [hciRing, luckRing], neck: [neck] };
+  const slots = ["ring", "neck"], optionalSlots = ["ring", "neck"];
+  const profile = { weights: { hci: 1 }, caps: {}, floors: { luck: 18 }, hardFloors: [] as string[], floorBonus: 10 };
+  const r = await solveExact({ core, pools, current: {}, profile, opts: { exact: true, timeBudgetMs: 5000, restarts: 0, seed: 1, slots, optionalSlots }, onProgress: () => {} });
+  const oracle = bruteMax({ ring: [null, hciRing, luckRing], neck: [null, neck] }, profile);
+  assert.equal(r.solver, "highs");
+  assert.equal(r.proven, true, "a two-slot instance proves");
+  assert.ok(Math.abs(r.score - oracle) < 1e-6, `HiGHS ${r.score} vs brute force ${oracle}`);
+  assert.equal(r.best.ring?.serial, hciRing.serial);
+});
+
+// Regression (review I1): a negative weight on any capped property (every resist, hci, dci, fcr …
+// carries a shard cap) made buildSuitMip throw, so the job died with an internal error.
+test("[fast] a negative weight on a capped property: HiGHS proves the brute-force best", async () => {
+  const rings = [
+    { serial: 90301, name: "Dodgy Ring", slot: "ring", props: { dci: 20, hci: 4 } },
+    { serial: 90302, name: "Steady Ring", slot: "ring", props: { dci: 5, hci: 3 } },
+  ];
+  const necks = [
+    { serial: 90303, name: "Dodgy Gorget", slot: "neck", props: { dci: 12, hci: 9 } },
+    { serial: 90304, name: "Clumsy Gorget", slot: "neck", props: { dci: -6, hci: 1 } },
+  ];
+  const slots = ["ring", "neck"], optionalSlots = ["ring", "neck"];
+  const profile = { weights: { dci: -1, hci: 1 }, caps: { dci: 15, hci: 45 }, floors: {}, hardFloors: [] as string[] };
+  const r = await solveExact({ core, pools: { ring: rings, neck: necks }, current: {}, profile, opts: { exact: true, timeBudgetMs: 5000, restarts: 0, seed: 1, slots, optionalSlots }, onProgress: () => {} });
+  const oracle = bruteMax({ ring: [null, ...rings], neck: [null, ...necks] }, profile);
+  assert.equal(r.solver, "highs");
+  assert.equal(r.proven, true);
+  assert.ok(Math.abs(r.score - oracle) < 1e-6, `HiGHS ${r.score} vs brute force ${oracle}`);
+});
+
+// Review M1: opts.slots narrowed the heuristic but not the MIP, which modelled every default slot —
+// here the neck, which the core then refused to score, so the job failed on "re-score mismatch".
+test("[fast] opts.slots narrows the MIP like the heuristic", async () => {
+  const ring = { serial: 90401, name: "Ring", slot: "ring", props: { hci: 5 } };
+  const neck = { serial: 90402, name: "Gorget", slot: "neck", props: { hci: 9 } };
+  const r = await solveExact({ core, pools: { ring: [ring], neck: [neck] }, current: {}, profile: { weights: { hci: 1 }, caps: {} }, opts: { exact: true, timeBudgetMs: 5000, restarts: 0, seed: 1, slots: ["ring"], optionalSlots: ["ring"] }, onProgress: () => {} });
+  assert.equal(r.proven, true);
+  assert.equal(r.score, 5);
+  assert.deepEqual(Object.keys(r.best), ["ring"]);
+});
+
+// Review M2: a HiGHS objective above the core's own re-score used to throw "re-score mismatch" and
+// fail the job. It is a modelling disagreement like the neighbouring guards: warn, report unproven.
+test("[fast] a HiGHS objective the core cannot reproduce is reported unproven with a warning, not thrown", async () => {
+  const name = templateNames[0]!;
+  const { pools, current, profile } = cell(name);
+  const warnings: string[] = [];
+  const inflated = (handle: Handle, o: SolveModelOptions) => { const r = realSolveModel(handle, o); return { ...r, objective: r.objective! + 50 }; };
+  const r = await solveExact({ core, pools, current, profile, opts: { ...BASE_OPTS, timeBudgetMs: 5000 }, onProgress: () => {}, onWarn: (m) => warnings.push(m), solveModel: inflated });
+  assert.equal(r.proven, false);
+  assert.equal(r.bound, null, "an objective the core cannot reproduce bounds nothing");
+  assert.ok(warnings.some((w) => /re-score mismatch/.test(w)), warnings.join(" | "));
+  assert.ok(Math.abs(core.scoreSet(r.best, profile) - r.score) < 1e-6);
+});
+
+// Review I5: the budget is wall-clock for the whole job. The heuristic's restarts stop at half of it,
+// every HiGHS call gets only what is left (no 1 s floor each), and the alternatives stop once it is spent.
+test("[fast] timeBudgetMs bounds the heuristic's restarts", async () => {
+  const name = templateNames[0]!;
+  const { pools, current, profile } = cell(name);
+  const t0 = Date.now();
+  const r = await solveExact({ core, pools, current, profile, opts: { exact: true, timeBudgetMs: 1000, restarts: 1e7, seed: 1 }, onProgress: () => {} });
+  const ms = Date.now() - t0;
+  assert.ok(r.heuristicMs < 1000, `the heuristic took ${r.heuristicMs} ms of a 1000 ms budget`);
+  assert.ok(ms < 5000, `the whole job took ${ms} ms on a 1000 ms budget`);
+});
+
+test("[fast] HiGHS calls and alternatives share the remaining budget", async () => {
+  const rings = [1, 2, 3, 4].map((i) => ({ serial: 90500 + i, name: `Ring ${i}`, slot: "ring", props: { hci: i } }));
+  const necks = [1, 2, 3].map((i) => ({ serial: 90510 + i, name: `Gorget ${i}`, slot: "neck", props: { hci: i } }));
+  let clock = 0;
+  const limits: { at: number; limitS: number }[] = [];
+  const timed = (handle: Handle, o: SolveModelOptions) => { limits.push({ at: clock, limitS: o.timeLimitS! }); const r = realSolveModel(handle, o); clock += 400; return r; };
+  const r = await solveExact({ core, pools: { ring: rings, neck: necks }, current: {}, profile: { weights: { hci: 1 }, caps: {} },
+    opts: { exact: true, timeBudgetMs: 1000, restarts: 0, seed: 1, slots: ["ring", "neck"], optionalSlots: ["ring", "neck"], alternatives: { count: 10, tolerance: 1e9 } },
+    onProgress: () => {}, solveModel: timed, now: () => clock });
+  for (const { at, limitS } of limits) assert.ok(limitS <= (1000 - at) / 1000 + 1e-9, `a call at ${at} ms got ${limitS} s`);
+  assert.equal(limits.length, 3, "the first solve at 0 ms plus alternatives at 400 and 800 ms; none once 1000 ms are spent");
+  assert.equal(r.alternatives!.length, 2);
 });
 
 test("[fast] HiGHS unavailable → the heuristic result, flagged", async () => {
