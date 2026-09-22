@@ -69,6 +69,7 @@ interface OptOptions {
   yieldEvery?: number;    // search starts between yieldFn calls (default 1)
   exact?: boolean;        // after the heuristic, run dominance pruning + branch-and-bound (proves the optimum or reports best-within-budget)
   timeBudgetMs?: number;  // wall-clock budget for the exact phase (default 15000)
+  heuristicBudgetMs?: number;  // wall-clock cap on the seeded-random restarts (default none): once spent, the remaining restarts are skipped. The fixed starts (worn, greedy, gradient, warm) always run.
   onProgress?: (p: OptProgress) => void;  // live progress, throttled to progressEveryMs (default 250); never affects results
   progressEveryMs?: number;
   warmStart?: Record<string, number | null>;  // slot -> serial of an earlier best suit; mapped onto this run's candidates and used as one more search start
@@ -555,14 +556,18 @@ function optSanitize(a: OptAssignment, slots: string[]): OptAssignment {
 
 // ---------------------------------------------------------------------------
 // Exact phase: dominance pruning + branch-and-bound.
-// The score is separable per property and monotone in each total (non-decreasing where the weight
-// is positive or a floor exists, non-increasing where the weight is negative — the tag penalty).
-// So (1) a candidate that is >= another on every "good" dimension and <= on every "bad" one can
-// never be part of a better suit than the other: drop it; (2) an optimistic bound for a partial
-// suit is the score of totals + the per-dimension best any remaining slot could still add, which
-// lets whole subtrees be skipped when the bound cannot beat the incumbent.
+// The score is separable per property: a weight term w·min(t, cap) (non-decreasing in t when w > 0,
+// non-increasing when w < 0 — the tag penalty) plus a floor term (non-decreasing in t). A property
+// with a negative weight AND a floor is neither: more can win the floor, less saves weight.
+// So (1) a candidate that is >= another on every "good" dimension, <= on every "bad" one and equal
+// on every non-monotone one can never be part of a better suit than the other: drop it; (2) an
+// optimistic bound for a partial suit takes, per dimension, the weight term at whichever end of the
+// reachable range it prefers and the floor term at the top end, which lets whole subtrees be
+// skipped when the bound cannot beat the incumbent.
 // ---------------------------------------------------------------------------
+// +1 more is better, -1 less is better, 0 irrelevant, 2 neither (negative weight with a floor).
 function optDimSign(space: OptSpace, i: number): number {
+  if (space.w[i]! < 0 && space.floor[i]! > 0) return 2;
   if (space.w[i]! > 0 || space.floor[i]! > 0) return 1;
   if (space.w[i]! < 0) return -1;
   return 0;
@@ -572,8 +577,9 @@ function optDominates(a: number[], b: number[], space: OptSpace): boolean {
   // true when a is at least as good as b on every dimension that matters
   for (let i = 0; i < a.length; i++) {
     const sg = optDimSign(space, i);
-    if (sg > 0 && a[i]! < b[i]!) return false;
-    if (sg < 0 && a[i]! > b[i]!) return false;
+    if (sg === 1 && a[i]! < b[i]!) return false;
+    if (sg === -1 && a[i]! > b[i]!) return false;
+    if (sg === 2 && a[i]! !== b[i]!) return false;
   }
   return true;
 }
@@ -613,22 +619,21 @@ function optBranchAndBound(slots: string[], cands: Record<string, (OptItem | nul
     l.sort((a, b) => optScoreVector(optVec(b, space), space) - optScoreVector(optVec(a, space), space));
     return l;
   });
-  // suffix "best possible remaining addition" per dimension (max for good dims, min for bad dims)
-  const suf: number[][] = new Array(n + 1);
-  suf[n] = space.zero.slice();
+  // suffix range of what the remaining slots can still add, per dimension: sufHi the most, sufLo the least
+  const sufHi: number[][] = new Array(n + 1), sufLo: number[][] = new Array(n + 1);
+  sufHi[n] = space.zero.slice(); sufLo[n] = space.zero.slice();
   for (let k = n - 1; k >= 0; k--) {
-    const acc = suf[k + 1]!.slice();
+    const hi = sufHi[k + 1]!.slice(), lo = sufLo[k + 1]!.slice();
     for (let d = 0; d < dims; d++) {
-      const sg = optDimSign(space, d);
-      if (sg === 0) continue;
-      let ext = sg > 0 ? -Infinity : Infinity;
+      let mx = -Infinity, mn = Infinity;
       for (let j = 0; j < lists[k]!.length; j++) {
         const v = optVec(lists[k]![j] as OptItem | null, space)[d]!;
-        if (sg > 0 ? v > ext : v < ext) ext = v;
+        if (v > mx) mx = v;
+        if (v < mn) mn = v;
       }
-      acc[d]! += ext;
+      hi[d]! += mx; lo[d]! += mn;
     }
-    suf[k] = acc;
+    sufHi[k] = hi; sufLo[k] = lo;
   }
   // Tighter bound for the capped weight terms. For a dimension whose weight is >= 0 and whose item values are all
   // >= 0, w*min(t, cap) is concave, so the joint gain of several items is at most the sum of their separate
@@ -647,14 +652,28 @@ function optBranchAndBound(slots: string[], cands: Record<string, (OptItem | nul
     return out;
   }));
   const capped = function (d: number, t: number): number { const c = space.cap[d]!; return space.w[d]! * (t < c ? t : c); };
+  const floorTerm = function (d: number, t: number): number {
+    const f = space.floor[d]!;
+    if (!(f > 0)) return 0;
+    const fb = space.floorBonusArr[d]!;
+    return t >= f ? fb : fb * space.floorPartial * (t > 0 ? t / f : 0);
+  };
+  // The weight term's best over the reachable range [t + sufLo, t + sufHi] (w·min(t, cap) is monotone,
+  // so it is one of the two ends), and the floor term's best (always the top end).
+  const weightBest = function (d: number, k: number): number { const t = totals[d]!; return space.w[d]! < 0 ? capped(d, t + sufLo[k]![d]!) : capped(d, t + sufHi[k]![d]!); };
+  const looseBound = function (k: number): number {
+    space.evals++;
+    let s = 0;
+    for (let d = 0; d < dims; d++) s += weightBest(d, k) + floorTerm(d, totals[d]! + sufHi[k]![d]!);
+    return s;
+  };
   const tightBound = function (k: number): number {
     let s = 0, gainA = 0;
     for (let d = 0; d < dims; d++) {
-      const t = totals[d]!, tOpt = t + suf[k]![d]!;
-      if (concave[d]) { const now = capped(d, t); s += now; gainA += capped(d, tOpt) - now; }
-      else s += capped(d, tOpt);
-      const f = space.floor[d]!;
-      if (f > 0) { const fb = space.floorBonusArr[d]!; s += tOpt >= f ? fb : fb * space.floorPartial * (tOpt > 0 ? tOpt / f : 0); }
+      const t = totals[d]!;
+      if (concave[d]) { const now = capped(d, t); s += now; gainA += capped(d, t + sufHi[k]![d]!) - now; }
+      else s += weightBest(d, k);
+      s += floorTerm(d, t + sufHi[k]![d]!);
     }
     let gainB = 0;
     for (let lvl = k; lvl < n && gainB < gainA; lvl++) {
@@ -688,7 +707,6 @@ function optBranchAndBound(slots: string[], cands: Record<string, (OptItem | nul
   const t0 = Date.now();
   const every = typeof tickEveryMs === "number" && tickEveryMs > 0 ? tickEveryMs : 250;
   let nextTick = t0 + every;
-  const bound: number[] = new Array(dims);
   const EPS = 1e-9;
   // Alternatives: keep the best (count + 1) leaves scoring at least cut - tolerance. Pruning then only drops a
   // subtree whose bound is strictly below that threshold, so ties survive. The threshold only ever rises (cut
@@ -723,8 +741,7 @@ function optBranchAndBound(slots: string[], cands: Record<string, (OptItem | nul
       if (tick && now >= nextTick) { nextTick = now + every; tick(nodes, cut, improvements, explored()); }
       if (now - t0 > budgetMs) return false;
     }
-    for (let d = 0; d < dims; d++) bound[d] = totals[d]! + suf[k]![d]!;
-    if (pruneAt(optScoreVector(bound, space))) return true;   // subtree cannot beat the incumbent (or reach the alternatives list)
+    if (pruneAt(looseBound(k))) return true;                   // subtree cannot beat the incumbent (or reach the alternatives list)
     if (n - k >= 2 && pruneAt(tightBound(k))) return true;     // ... nor under the tighter, item-coupled bound
     const slot = order[k], list = lists[k]!;
     const twoH = slot === "oneHanded" && k > 0 && order[k - 1] === "twoHanded" && optIsTwoHandedWeapon(pick[k - 1] as OptItem | null);
@@ -838,7 +855,8 @@ function optimizeSuit(pools: Record<string, OptItem[]>, current: OptAssignment, 
     consider(optSanitize(warm, slots));
   }
   const rnd = optMulberry32(seed);
-  for (let i = 0; i < restarts; i++) { consider(optRandomSeed(slots, cands, rnd)); prog.restartsDone = i + 1; emit(); }
+  const heuristicBudgetMs = typeof opts.heuristicBudgetMs === "number" ? opts.heuristicBudgetMs : Infinity;
+  for (let i = 0; i < restarts && Date.now() - t0 < heuristicBudgetMs; i++) { consider(optRandomSeed(slots, cands, rnd)); prog.restartsDone = i + 1; emit(); }
   emit(true);   // the end of a phase always reports, however fast it went
 
   best = optSanitize(best, slots);

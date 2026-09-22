@@ -277,3 +277,19 @@ test("[fast] optimizeSuit with a profile lacking weights returns a result instea
   assert.ok(optIsValidAssignment(r.best));
   assert.equal(typeof r.score, "number");
 });
+
+// Review I4: a property with a negative weight AND a floor is not monotone (more can win the floor,
+// less saves weight), but dominance pruning treated it as "more is better" and dropped the better
+// ring here: A (luck 10) scores −10 + 100 = 90, B (luck 20) scores −20 + 100 = 80. The exact search's
+// optimistic bound made the same assumption; the brute-force check in app/solver-fuzz.test.mts covers it.
+test("[fast] dominance pruning keeps the better item on a negatively weighted, floored property", () => {
+  const a: OptItem = { serial: 1, name: "A", slot: "ring", props: { luck: 10 } };
+  const b: OptItem = { serial: 2, name: "B", slot: "ring", props: { luck: 20 } };
+  const profile = { weights: { luck: -1 }, caps: {}, floors: { luck: 10 }, floorBonus: 100 };
+  assert.ok(scoreSet([a], profile) > scoreSet([b], profile));
+  const space = core.optBuildSpace(core.optCollectKeys({ ring: [a, b] }, {}, profile), profile);
+  assert.ok(core.optDominancePrune([a, b], space, false).includes(a));
+  const r = optimizeSuit({ ring: [b, a] }, {}, profile, { exact: true, restarts: 0, slots: ["ring"], optionalSlots: ["ring"] });
+  assert.equal(r.proven, true);
+  assert.equal(r.best.ring?.serial, a.serial);
+});
