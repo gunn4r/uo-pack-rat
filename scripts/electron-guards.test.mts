@@ -1,21 +1,24 @@
-// electron-guards.test.mts — the shell's security guards, from the phase-7 review. Two kinds of
-// check live here, and the split is deliberate. `electron/host-args.mts` holds the two decisions that
-// stand between the server child's wire messages and an OS call, so those get real unit tests with
-// real forged values. Everything else in `electron/main.mts` is unreachable from `node:test` — that
-// file imports `electron` at the top level and only loads inside a real Electron process — so it gets
-// source-level assertions in the `scripts/packaging.test.mts` idiom: they pin the *presence* of each
-// guard, which is what a later refactor is most likely to drop, while `scripts/shell-smoke.test.mts`
-// proves the file as a whole still boots. All `[fast]`: reading two source files and calling two pure
-// functions costs nothing, and these are exactly the checks that should run on every `--fast` pass.
+// electron-guards.test.mts — the shell's guards, from the phase-7 review. Two kinds of check live
+// here, and the split is deliberate. `electron/host-args.mts` and `electron/pending-calls.mts` hold
+// the decisions that stand between the server child's wire messages and an OS call (and the registry
+// that bounds one in flight), so those get real unit tests with real forged values. Everything else
+// in `electron/main.mts` is unreachable from `node:test` — that file imports `electron` at the top
+// level and only loads inside a real Electron process — so it gets source-level assertions in the
+// `scripts/packaging.test.mts` idiom: they pin the *presence* of each guard, which is what a later
+// refactor is most likely to drop, while `scripts/shell-smoke.test.mts` proves the file as a whole
+// still boots. All `[fast]`: reading two source files and calling a handful of pure functions costs
+// nothing, and these are exactly the checks that should run on every `--fast` pass.
 import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import { dialogTitle, openPathTarget } from "../electron/host-args.mts";
+import { createPendingHostCalls, HOST_CALL_TIMEOUT_MS } from "../electron/pending-calls.mts";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const mainSource = readFileSync(join(root, "electron", "main.mts"), "utf8");
+const entrySource = readFileSync(join(root, "electron", "server-entry.mts"), "utf8");
 
 // The two directories main.mts computes for itself; any other string is something the child made up.
 const DATA = "/tmp/pack-rat-data";
@@ -111,4 +114,73 @@ test("[fast] DevTools are off in a packaged build unless the documented flag is 
   assert.match(mainSource, /devTools: !app\.isPackaged \|\| devtools/);
   assert.match(mainSource, /argv\.includes\("--devtools"\)/, "the flag is the only way back in");
   assert.match(readFileSync(join(root, "electron", "README.md"), "utf8"), /--devtools/, "a debug flag nobody documented is a debug flag nobody can use");
+});
+
+// ---- host calls in flight (electron/pending-calls.mts) ------------------------------------------
+// The registry used to be a bare Map with no expiry, and main.mts answered whichever child was
+// current rather than the one that asked — so a server child that died while a native dialog was
+// open left an entry (and the HTTP request behind it) pending for the life of the process.
+
+test("[fast] a host call that is answered resolves once and leaves nothing behind", async () => {
+  const calls = createPendingHostCalls(HOST_CALL_TIMEOUT_MS);
+  let id = 0;
+  const answered = new Promise<unknown>((resolve, reject) => { id = calls.start(resolve, reject); });
+  assert.equal(calls.settle(id, "/Users/example/TazUO"), true);
+  assert.equal(await answered, "/Users/example/TazUO");
+  assert.equal(calls.settle(id, "a second answer"), false, "a settled call is gone from the registry");
+});
+
+test("[fast] a host call nobody answers expires, rejects with the server's own 504, and is dropped", async () => {
+  const calls = createPendingHostCalls(20);
+  let id = 0;
+  const answered = new Promise<unknown>((resolve, reject) => { id = calls.start(resolve, reject); });
+  const e = await answered.then(() => null, (err: Error & { statusCode?: number }) => err);
+  assert.ok(e, "the call must reject rather than hang for ever");
+  assert.equal(e!.statusCode, 504, "app/vault-server.mts's route handler answers with this status");
+  assert.match(e!.message, /did not answer/);
+  // The late result a dead child's dialog finally produced has nowhere to go — dropped, not resolved.
+  assert.equal(calls.settle(id, "/Users/example/too-late"), false);
+});
+
+test("[fast] ids are per-call, so one call's answer never settles another", async () => {
+  const calls = createPendingHostCalls(HOST_CALL_TIMEOUT_MS);
+  let first = 0, second = 0;
+  const a = new Promise<unknown>((resolve, reject) => { first = calls.start(resolve, reject); });
+  const b = new Promise<unknown>((resolve, reject) => { second = calls.start(resolve, reject); });
+  assert.notEqual(first, second);
+  calls.settle(second, "second");
+  assert.equal(await b, "second");
+  assert.equal(calls.settle(first, "first"), true, "the other call is still waiting for its own id");
+  assert.equal(await a, "first");
+});
+
+test("[fast] the two host-call bounds agree with each other", () => {
+  assert.match(readFileSync(join(root, "app", "vault-server.mts"), "utf8"), /HOST_CALL_TIMEOUT_MS = 60 \* 1000/, "the HTTP layer's own 504 timeout");
+  assert.equal(HOST_CALL_TIMEOUT_MS, 60 * 1000);
+  assert.match(entrySource, /createPendingHostCalls\(/, "server-entry.mts must register host calls through the expiring registry");
+});
+
+test("[fast] the shell's own log directory and file are created 0700/0600, and never chmodded", () => {
+  // The shell writes <data>/logs/shell.log before the server child exists, so these two calls are
+  // what create that directory on a fresh machine — app/config.mts's ensureLayout only finds it.
+  assert.match(mainSource, /mkdirSync\(logsDir, \{ recursive: true, mode: 0o700 \}\)/);
+  assert.match(mainSource, /appendFileSync\(logPath, `[^`]*`, \{ mode: 0o600 \}\)/);
+  assert.doesNotMatch(mainSource, /chmodSync/, "an existing directory or file keeps whatever mode the player gave it");
+});
+
+test("[fast] the origin the token is stamped onto is built from a checked port and a literal host", () => {
+  // The port is whatever the utility process said it bound; the origin decides which requests carry
+  // the bearer token and where the window may navigate.
+  assert.match(mainSource, /Number\.isInteger\(p\) && p >= 1 && p <= 65535/);
+  assert.match(mainSource, /if \(!isPort\(port\)\) return logLine/);
+  assert.match(mainSource, /currentOrigin = `http:\/\/127\.0\.0\.1:\$\{port\}`/, "the host is a literal, never a value off the wire");
+  assert.doesNotMatch(mainSource, /ListeningMessage\)\.url/, "the message's own url field must not be read");
+});
+
+test("[fast] a host result goes to the child that asked, never to whichever one is current", () => {
+  // The whole of this one is that `child` is a mutable slot main.mts reassigns on a restart, so
+  // posting to it after an await can hand a dialog's answer to a process that never asked for it.
+  assert.match(mainSource, /onChildMessage\(msg, c\)/, "the child that sent a message must travel with it");
+  assert.match(mainSource, /if \(!child \|\| child !== from\)/, "a result for a replaced child is dropped");
+  assert.doesNotMatch(mainSource, /child\?\.postMessage\(\{ type: "host-result"/, "the unconditional post is what this replaces");
 });

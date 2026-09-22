@@ -1,13 +1,17 @@
 // import.test.mts — app/import.mts: parsePastedScan's marker-or-bare extraction, JSON/schema
-// rejection, and the v1→v2 upgrade it shares with app/watcher.mts's ingestFile.
+// rejection, the v1→v2 upgrade it shares with app/watcher.mts's ingestFile, and writeScanToInbox's
+// own write.
 // Tags: [fast]. Run: node --test app/import.test.mts
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { readFileSync, writeFileSync, readdirSync, mkdtempSync, symlinkSync, lstatSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
-import { parsePastedScan, PASTE_BEGIN, PASTE_END } from "./import.mts";
+import { parsePastedScan, writeScanToInbox, PASTE_BEGIN, PASTE_END } from "./import.mts";
+import { acceptedName } from "./watcher.mts";
 import { upgradeScan, validateScan } from "./scan-schema.mts";
+import type { ConfigPaths } from "./config.mts";
 import type { ScanV2 } from "./schema/types.d.mts";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -162,4 +166,70 @@ test("[fast] parsePastedScan survives a real astral character split across a chu
   const r = parsePastedScan(pasted);
   assert.equal(r.ok, true, r.error);
   assert.equal(r.doc!.character, demoKestrel.character + astral, "the astral character survived the real chunkEnd() split and the real parsePastedScan reconstruction intact");
+});
+
+// ---- the parse error never carries the pasted bytes ----------------------------------------------
+// V8's own JSON parse message quotes an excerpt of what it was handed, and POST /api/import/paste
+// returns this string to the page verbatim. app/watcher.mts already refused to do that for an inbox
+// file (jsonErrorReason); the paste path is the same channel and now shares the same rule.
+test("[fast] a parse failure reports the shape of the error, never the pasted text", () => {
+  const secret = "correct-horse-battery-staple";
+  const r = parsePastedScan(`{"token": ${secret}}`);
+  assert.equal(r.ok, false);
+  assert.doesNotMatch(r.error!, new RegExp(secret), `the paste's own bytes must not come back in ${JSON.stringify(r.error)}`);
+  assert.match(r.error!, /invalid JSON/);
+});
+
+test("[fast] a document cut short reports the shape of the failure, not an excerpt of it", () => {
+  const r = parsePastedScan(JSON.stringify(demoKestrel).slice(0, 200));   // no markers, just cut short
+  assert.equal(r.ok, false);
+  assert.match(r.error!, /invalid JSON/);
+  assert.doesNotMatch(r.error!, new RegExp(demoKestrel.character), "not even the character name is echoed back");
+});
+
+// ---- writeScanToInbox ----------------------------------------------------------------------------
+// The write used to go through a predictable "<dest>.tmp", which is a path something else can plant a
+// symlink at; writeFileSync follows one, so the bytes land wherever it points and the rename moves
+// the LINK into the scan's final name. It goes through app/installer.mts's atomicReplace now (random
+// O_EXCL temp, a destination that must be absent or a regular file) — the same helper importScans'
+// own copies use.
+function pathsFor(inboxDir: string): ConfigPaths {
+  // Only inboxFor is reached by writeScanToInbox; the cast names that rather than building a whole
+  // resolved config for a function that reads one key (app/config.test.mts covers the real thing).
+  return { inboxFor: () => inboxDir } as unknown as ConfigPaths;
+}
+// The fixture is a v1 document; writeScanToInbox takes what parsePastedScan hands it, which is the
+// upgraded one (acceptedName needs the RFC 3339 scannedAt that upgrade produces).
+const pastedKestrel = (): ScanV2 => {
+  const r = parsePastedScan(JSON.stringify(demoKestrel));
+  assert.equal(r.ok, true, r.error);
+  return r.doc!;
+};
+
+test("[fast] writeScanToInbox lands the doc under its accepted name and leaves no temp file behind", () => {
+  const inboxDir = mkdtempSync(join(tmpdir(), "qm-paste-write-"));
+  const { file, character } = writeScanToInbox({ doc: pastedKestrel(), adapter: "tazuo", paths: pathsFor(inboxDir) });
+  assert.equal(character, demoKestrel.character);
+  assert.deepEqual(readdirSync(inboxDir), [file], "the accepted name, and nothing else");
+  assert.equal((JSON.parse(readFileSync(join(inboxDir, file), "utf8")) as ScanV2).character, demoKestrel.character);
+});
+
+test("[fast] writeScanToInbox does not write through a symlink planted at the old predictable temp name", () => {
+  const inboxDir = mkdtempSync(join(tmpdir(), "qm-paste-link-"));
+  const outside = mkdtempSync(join(tmpdir(), "qm-paste-outside-"));
+  const canary = join(outside, "canary.json");
+  writeFileSync(canary, '{"untouched": true}');
+  const doc = pastedKestrel();
+  const expected = acceptedName(doc, new Set());
+  // "<dest>.tmp" was the name this function used to write every pasted scan through. The link is not
+  // itself a *.json name, so it doesn't collide with the doc's accepted name — under the old write it
+  // was simply followed, putting the scan's bytes in the canary and then renaming the LINK into place.
+  try { symlinkSync(canary, join(inboxDir, `${expected}.tmp`)); }
+  catch { return; }   // symlink creation needs elevated privilege on Windows — same early return as installer.test.mts
+
+  const { file } = writeScanToInbox({ doc, adapter: "tazuo", paths: pathsFor(inboxDir) });
+  assert.equal(file, expected);
+  assert.deepEqual(JSON.parse(readFileSync(canary, "utf8")), { untouched: true }, "the link's target was never written through");
+  assert.equal(lstatSync(join(inboxDir, file)).isFile(), true, "the scan landed as a real file, not as the moved link");
+  assert.equal((JSON.parse(readFileSync(join(inboxDir, file), "utf8")) as ScanV2).character, demoKestrel.character);
 });

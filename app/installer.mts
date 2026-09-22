@@ -8,6 +8,7 @@ import {
 } from "node:fs";
 import { join, resolve, dirname, isAbsolute } from "node:path";
 import { randomBytes } from "node:crypto";
+import { MAX_INBOX_BYTES } from "./watcher.mts";
 
 const VERSION_RE = /ADAPTER_VERSION\s*=\s*"([^"]+)"/;
 const ADAPTER_ID_RE = /^[a-z0-9-]+$/;
@@ -71,7 +72,9 @@ function fileKind(st: Stats): string {
 // writeTemp is handed the temp path and must create it with O_EXCL (see tempNameFor). Throws on a
 // refusal or a failed write — every caller already runs inside a try/catch that turns that into its
 // own reported result, rather than an uncaught throw surfacing as a stack-free 500.
-function atomicReplace(dest: string, writeTemp: (tmp: string) => void): void {
+// Exported for app/import.mts, whose pasted-scan write lands in the same inbox importScans writes to
+// and used a predictable "<dest>.tmp" of its own; one rule for both rather than two spellings of it.
+export function atomicReplace(dest: string, writeTemp: (tmp: string) => void): void {
   // lstat, never stat: a symlink at dest is refused by its own type rather than resolved to whatever
   // it points at. An absent dest is the ordinary case, not an error.
   let st: Stats | null = null;
@@ -517,24 +520,47 @@ export interface ImportScansParams {
   inboxDir: string;
 }
 
+// One entry per file this import could not take, in the order they were met — `failed` counts them
+// all, this list names the first few so the page can say WHY rather than only how many. Bounded
+// because a folder can hold any number of unreadable files and this crosses an HTTP response.
+export interface ImportFailure {
+  name: string;
+  reason: string;
+}
+const MAX_REPORTED_FAILURES = 10;
+
 export interface ImportScansResult {
   copied: number;
   skipped: number;
   failed: number;
+  failures: ImportFailure[];
 }
 
 export function importScans({ dir, inboxDir }: ImportScansParams): ImportScansResult {
   mkdirSync(inboxDir, { recursive: true });
   let names: string[];
-  try { names = readdirSync(dir); } catch { return { copied: 0, skipped: 0, failed: 0 }; }
+  try { names = readdirSync(dir); } catch { return { copied: 0, skipped: 0, failed: 0, failures: [] }; }
   let copied = 0, skipped = 0, failed = 0;
+  const failures: ImportFailure[] = [];
+  const fail = (name: string, reason: string): void => {
+    failed++;
+    if (failures.length < MAX_REPORTED_FAILURES) failures.push({ name, reason });
+  };
   for (const name of names.sort()) {
     if (!name.endsWith(".json")) continue;
     const src = join(dir, name);
     // lstatSync (not statSync) so a *.json symlink is rejected by its own type rather than resolved
     // to whatever it points at — the source folder is user-picked, and a symlinked name copies its
     // target's bytes under statSync, wherever that target is.
-    try { if (!lstatSync(src).isFile()) continue; } catch { continue; }
+    let srcStat: Stats;
+    try { srcStat = lstatSync(src); } catch { continue; }
+    if (!srcStat.isFile()) continue;
+    // The same ceiling app/watcher.mts puts on an inbox file, applied while the file is still just an
+    // inode on the source side. Copying it first and letting ingestFile refuse it afterwards left a
+    // file the watcher rejects on every startup sweep sitting in the inbox — and, for an import big
+    // enough to matter, spent the disk on it twice over. Reported as failed rather than skipped:
+    // skipped means "already imported", and this one never will be.
+    if (srcStat.size > MAX_INBOX_BYTES) { fail(name, `too large: ${srcStat.size} bytes, the limit is ${MAX_INBOX_BYTES}`); continue; }
     const dest = join(inboxDir, name);
     // lstatSync here too, not existsSync: existsSync FOLLOWS a symlink, so a dangling one already
     // sitting in the inbox under a scan's name read as "absent" and the copy below replaced it.
@@ -547,9 +573,9 @@ export function importScans({ dir, inboxDir }: ImportScansParams): ImportScansRe
     // with the already-copied files silently left behind and nothing in the result to say which. The
     // rest of the folder still gets its chance.
     try { copyFileAtomic(src, dest); copied++; }
-    catch { failed++; }
+    catch (e) { fail(name, (e as Error)?.message || "could not copy"); }
   }
-  return { copied, skipped, failed };
+  return { copied, skipped, failed, failures };
 }
 
 // ---- repoFromPackage / checkForUpdates -------------------------------------------------------------

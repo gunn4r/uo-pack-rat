@@ -135,37 +135,54 @@ export interface LocateApiResponse {
 }
 // POST /api/setup/install — mirrors app/installer.mts's InstallScriptsResult's `ok: true` branch (the
 // `ok: false` branch never reaches the page as a parsed success value; api.mts throws on a non-2xx
-// response instead, so callers read that through the thrown Error, not this type).
+// response instead, so callers read that through the thrown Error, not this type), plus the two
+// fields the route itself adds: `scriptsDir`, the folder the server RESOLVED out of what the page
+// sent (a client root becomes its nested scripts folder), and `pathsFile`, what became of
+// packrat-paths.json — "written" | "unchanged" | "kept" | "backed-up" (installer.mts's
+// PathsFileOutcome, restated as a string union here; ui/messages.mts turns it into a sentence).
 export interface InstallApiResponse {
   ok: boolean;
   installed: string[];
   version: string | null;
+  scriptsDir?: string | undefined;
+  pathsFile?: string | undefined;
 }
 export interface HostPickFolderApiResponse {
   ok: boolean;
   path: string | null;
 }
 
-// GET /api/update-check — mirrors app/installer.mts's CheckForUpdatesResult. `url` stays `unknown` ON
-// PURPOSE: it is GitHub's `html_url`, forwarded unchecked by checkForUpdates() (see that file's own
-// comment) — nothing here establishes it is even a string, let alone an http(s) URL. Whoever renders
-// it (ui/settings.mts) casts at that one site with its own comment pointing at the security review;
-// this type must not narrow it for them.
+// GET /api/update-check — mirrors app/installer.mts's CheckForUpdatesResult. `url` is typed `string`
+// here although the server-side type still says `unknown`: checkForUpdates() no longer forwards
+// GitHub's `html_url` as it found it, it runs it through installer.mts's releaseUrl(), which returns
+// either that value once it has been proved an https://github.com/<this repo>/releases… address or
+// the repository's own releases page. The wire is still unvalidated network input like every other
+// response here — what changed is that the one field with a security claim on it now has a server
+// that vouches for it, so the page no longer needs a cast with a warning attached.
 export interface UpdateCheckApiResponse {
   configured: boolean;
   error?: string | undefined;
   current?: string | undefined;
   latest?: string | undefined;
-  url?: unknown;
+  url?: string | undefined;
   upToDate?: boolean | undefined;
 }
 
 // ---------------------------------------------------------------- import
 
+// POST /api/import — `failed` counts the files importScans could not take (one bigger than the inbox
+// limit, an unwritable destination) and `failures` names the first few of them with a reason; the
+// server bounds that list (app/installer.mts's MAX_REPORTED_FAILURES).
+export interface ImportFailureInfo {
+  name: string;
+  reason: string;
+}
 export interface ImportApiResponse {
   ok: boolean;
   copied: number;
   skipped: number;
+  failed?: number | undefined;
+  failures?: ImportFailureInfo[] | undefined;
 }
 export interface ImportPasteApiResponse {
   ok: boolean;

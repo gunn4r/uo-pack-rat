@@ -77,7 +77,7 @@
 // that throws returns {error:"internal error", ref} with the stack only in CONFIG.paths.log, keyed by ref.
 
 import http from "node:http";
-import { readFileSync, writeFileSync, appendFileSync, readdirSync, existsSync, mkdirSync, copyFileSync } from "node:fs";
+import { readFileSync, writeFileSync, appendFileSync, readdirSync, existsSync, mkdirSync, copyFileSync, renameSync } from "node:fs";
 import { pathToFileURL } from "node:url";
 import { dirname, isAbsolute, join } from "node:path";
 import { spawn } from "node:child_process";
@@ -92,7 +92,7 @@ import { loadRules, listRules, DEFAULT_SHARD } from "./rules.mts";
 import { validate, type ValidatorSchema } from "./schema/validate.mts";
 import { parseItemQuery, applyItemQuery, facetsOf, type ItemQueryRows, type ItemQueryGroups } from "./item-query.mts";
 import { DEFAULT_OPTIONAL_SLOTS } from "./mip.mts";
-import { startWatcher, type StartWatcherOptions, type WatcherHandle } from "./watcher.mts";
+import { startWatcher, jsonErrorReason, type StartWatcherOptions, type WatcherHandle } from "./watcher.mts";
 import { parsePastedScan, writeScanToInbox } from "./import.mts";
 import {
   listAdapters, candidateClientRoots, validateScriptsDir, installedVersion, installScripts,
@@ -153,6 +153,15 @@ function send(res: http.ServerResponse, status: number, body: unknown, type = "a
   res.end(data);
 }
 
+// The two event-stream routes write their own headers (a stream is never finished by send()), so the
+// "every response carries x-frame-options" rule is restated here rather than inherited: the same
+// nosniff/DENY pair send() adds, plus the CSP's frame-ancestors half, since a text/event-stream
+// response opened directly as a document is as framable as a JSON one.
+const SSE_HEADERS: Record<string, string> = {
+  "content-type": "text/event-stream", "cache-control": "no-store", connection: "keep-alive",
+  "x-content-type-options": "nosniff", "x-frame-options": "DENY", "content-security-policy": "frame-ancestors 'none'",
+};
+
 interface ReadBodyOptions {
   limit?: number;
   tooLargeMsg?: string;
@@ -169,6 +178,10 @@ interface ReadBodyOptions {
 // plain "é", 2 bytes/1 code unit) could then smuggle up to ~2x the intended byte limit past the check.
 // The resolved body is `unknown` provenance (an HTTP request from any caller, trusted or not) — every
 // route below narrows the fields it actually reads, per the route's own pre-existing checks.
+// How much of an over-cap body readBody keeps reading (and discarding) after it has refused it, so the
+// client gets to finish writing and actually read its 413 — see the overflow branch below.
+const OVERFLOW_DRAIN_BYTES = 4 * 1024 * 1024;
+
 function readBody(req: http.IncomingMessage, { limit = 50e6, tooLargeMsg = "body too large" }: ReadBodyOptions = {}): Promise<unknown> {
   return new Promise((resolve, reject) => {
     // Global Constraint (spec §4.5): a PUT/POST must declare a JSON body. The SSE cancel beacon
@@ -181,16 +194,25 @@ function readBody(req: http.IncomingMessage, { limit = 50e6, tooLargeMsg = "body
       return reject(e);
     }
     const chunks: Buffer[] = [];
-    let bytes = 0, tooLarge = false;
+    let bytes = 0, tooLarge = false, discarded = 0;
     req.on("data", (c: Buffer) => {
-      if (tooLarge) return;
+      if (tooLarge) {
+        // Past the cap, a chunk is counted and dropped, never kept — and only up to OVERFLOW_DRAIN_BYTES.
+        // Pausing outright here (the post-review Minor 7 fix) meant a client still writing its body
+        // saw the connection end under it before it could read the 413, which Node's fetch reports as
+        // "fetch failed" / EPIPE rather than the refusal it was sent — reliably, under load, for any
+        // body well past its route's cap. Letting a bounded tail drain keeps the answer readable for a
+        // body that is merely too big, and past that bound the socket is destroyed, so an upload of
+        // arbitrary size still costs this process at most OVERFLOW_DRAIN_BYTES of reading and nothing
+        // of memory. The top-level catch's `connection: close` then retires the connection either way.
+        discarded += c.length;
+        if (discarded > OVERFLOW_DRAIN_BYTES) req.destroy();
+        return;
+      }
       bytes += c.length;   // c is a Buffer — .length is bytes, not decoded characters
       if (bytes > limit) {
         tooLarge = true;
-        // Stop reading the doomed upload right here rather than draining the rest of it (post-review
-        // fix, Minor 7): the top-level catch destroys the request once the 413 is on the wire, and
-        // pausing in the meantime means the remaining megabytes never reach this process at all.
-        req.pause();
+        chunks.length = 0;   // the accepted part is doomed too — release it now
         const e = new Error(tooLargeMsg) as HttpError;
         e.statusCode = 413;
         reject(e);
@@ -414,7 +436,52 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
   // The shard picker: <data>/settings.json ({schemaVersion, shard}) names which app/rules/<shard>.json
   // (or <data>/rules/<shard>.json override) is currently active. ensureLayout() already wrote a default
   // settings.json if none existed, so this file exists by the time startServer runs.
-  let currentSettings = (existsSync(SETTINGS) ? JSON.parse(readFileSync(SETTINGS, "utf8")) : { schemaVersion: 1, shard: DEFAULT_SHARD }) as SettingsDoc;
+  // A settings.json that does not parse, or is not an object, used to throw out of startServer and
+  // stop the app from starting at all (exit 2) — for a file the app itself writes and a player may
+  // hand-edit. It now starts on defaults instead, with a logged warning, and the unreadable file is
+  // moved aside as settings.json.corrupt (never overwritten: an older .corrupt keeps its name and the
+  // new one gets a timestamp) so whatever was in it can still be recovered by hand. Defaults are then
+  // written back, the same file ensureLayout() writes on a fresh data directory.
+  // A persisted client whose adapter id is not one this install ships is dropped IN MEMORY ONLY (the
+  // same rule as the shard fallback below — settings.json is left as it stands): bridgeAdapter()
+  // joins that id into the bridge queue/status paths, and PUT /api/settings already refuses an
+  // unknown one, so a hand-edited file must not be a way round that check.
+  function startupWarning(msg: string): void {
+    console.warn(msg);
+    safeAppendLog(CONFIG.paths.log, `${new Date().toISOString()} startup-fallback ${msg}\n`);
+  }
+  function loadSettings(): SettingsDoc {
+    const defaults: SettingsDoc = { schemaVersion: 1, shard: DEFAULT_SHARD };
+    if (!existsSync(SETTINGS)) return defaults;
+    let doc: unknown, why = "not a JSON object";
+    try { doc = JSON.parse(readFileSync(SETTINGS, "utf8")); }
+    catch (e) { doc = undefined; why = jsonErrorReason(e); }
+    if (!doc || typeof doc !== "object" || Array.isArray(doc)) {
+      let aside = `${SETTINGS}.corrupt`;
+      if (existsSync(aside)) aside = `${SETTINGS}.corrupt-${Date.now()}`;
+      try {
+        renameSync(SETTINGS, aside);
+        writeFileSync(SETTINGS, JSON.stringify(defaults, null, 2) + "\n", { mode: DATA_FILE_MODE, flag: "wx" });
+      } catch (e) {
+        startupWarning(`settings.json could not be moved aside (${(e as Error).message}); running on defaults without touching it`);
+        return defaults;
+      }
+      startupWarning(`settings.json is unreadable (${why}); starting on defaults — the old file was kept as ${aside}`);
+      return defaults;
+    }
+    const loaded = doc as SettingsDoc;
+    const client = loaded.client as unknown;
+    if (client != null) {
+      const rec = typeof client === "object" && !Array.isArray(client) ? client as Record<string, unknown> : null;
+      const known = rec && typeof rec.adapter === "string" && typeof rec.scriptsDir === "string" && listAdapters(ADAPTERS_DIR).some((a) => a.id === rec.adapter);
+      if (!known) {
+        startupWarning(`settings.json names a client adapter this install does not ship (${JSON.stringify(short(rec?.adapter))}); ignoring that client for this run — settings.json is unchanged`);
+        return { ...loaded, client: null };
+      }
+    }
+    return loaded;
+  }
+  let currentSettings = loadSettings();
   // Which adapter's bridge the page-facing bridge routes (POST /api/bridge, GET /api/bridge/status)
   // talk to — the currently CONFIGURED client, re-read live off currentSettings on every call rather
   // than captured once at startup, so a client switch (a fresh install, or "Run setup again") takes
@@ -439,8 +506,7 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
     currentRules = loadRules(currentSettings.shard, { userRulesDir: USER_RULES_DIR });
   } catch (e) {
     const msg = `settings.json names shard "${currentSettings.shard}", which failed to load (${(e as Error).message}); falling back to "${DEFAULT_SHARD}" for this run — settings.json is unchanged`;
-    console.warn(msg);
-    safeAppendLog(CONFIG.paths.log, `${new Date().toISOString()} startup-fallback ${msg}\n`);
+    startupWarning(msg);
     currentRules = loadRules(DEFAULT_SHARD, { userRulesDir: USER_RULES_DIR });
     currentSettings = { ...currentSettings, shard: DEFAULT_SHARD };
     rulesFallback = true;
@@ -602,11 +668,12 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
   const MAX_RUNNING_JOBS = 4;
   const timers = new Set<NodeJS.Timeout>();   // every setTimeout/setInterval this instance owns, so close() can stop them all
 
-  // Nothing below this process bounds a host call: electron/server-entry.mts's callHost never expires
-  // a pending entry, and a result posted after the server child was respawned is dropped on the floor
-  // (area-4 minor 5) — so a folder dialog whose answer never comes back would hang this request for
-  // ever, since server.requestTimeout governs request RECEIPT only and never touches a response that
-  // has not started. Bound it here and answer 504 instead of holding the socket open.
+  // A folder dialog whose answer never comes back would otherwise hang this request for ever:
+  // server.requestTimeout governs request RECEIPT only and never touches a response that has not
+  // started. Bound it here and answer 504 instead of holding the socket open. The embedder bounds its
+  // own half of the same call with the same 60 s (electron/pending-calls.mts, whose expiry rejects
+  // with this very statusCode), so whichever side notices first the caller sees one answer — this is
+  // not a second chance for a call the shell already gave up on (area-4 minor 5).
   const HOST_CALL_TIMEOUT_MS = 60 * 1000;
   function withHostTimeout<T>(p: Promise<T>): Promise<T> {
     return new Promise<T>((resolve, reject) => {
@@ -685,7 +752,7 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
   function broadcast(job: Job, event: string, data: unknown): void { for (const c of job.clients) sse(c, event, data); }
   function finish(job: Job, event: string, data: unknown): void { broadcast(job, event, data); for (const c of job.clients) c.end(); job.clients.clear(); }
   function streamJob(job: Job, res: http.ServerResponse): void {
-    res.writeHead(200, { "content-type": "text/event-stream", "cache-control": "no-store", connection: "keep-alive", "x-content-type-options": "nosniff" });
+    res.writeHead(200, SSE_HEADERS);
     sse(res, "hello", jobSnapshot(job));   // catch-up: last progress, or the final outcome if it already ended
     if (job.state !== "running") { res.end(); return; }
     job.clients.add(res);
@@ -967,9 +1034,11 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
         let dirStat: Stats | null = null;
         try { dirStat = statSync(dir); } catch { /* badDir below */ }
         if (!dirStat || !dirStat.isDirectory()) return send(res, 400, { ok: false, error: "dir must be an existing directory" });
-        // failed: files importScans could not copy (a symlinked source, an unwritable destination) —
-        // counted rather than thrown, and reported so a partial import is visible instead of silent.
-        const { copied, skipped, failed } = importScans({ dir, inboxDir: CONFIG.paths.inboxFor(adapter as string) });
+        // failed: files importScans could not take (one bigger than the inbox limit, an unwritable
+        // destination) — counted rather than thrown, and reported so a partial import is visible
+        // instead of silent. `failures` names the first few of them with a reason (importScans bounds
+        // that list itself), which is what lets the Import tab say why instead of only how many.
+        const { copied, skipped, failed, failures } = importScans({ dir, inboxDir: CONFIG.paths.inboxFor(adapter as string) });
         // Nudge the watcher rather than waiting on fs.watch to notice the burst (post-review fix,
         // Minor 3): a large import can overflow the OS's change-event buffer (Windows
         // ReadDirectoryChangesW, macOS FSEvents coalescing), which would otherwise leave some of the
@@ -977,7 +1046,7 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
         // scanOnce() is idempotent (ingestFile's own accepted-name check) and a no-op under --demo,
         // where watchers is empty.
         watchers.get(adapter as string)?.scanOnce();
-        return send(res, 200, { ok: true, copied, skipped, failed });
+        return send(res, 200, { ok: true, copied, skipped, failed, failures });
       }
       if (req.method === "POST" && url.pathname === "/api/import/paste") {
         const { text, adapter } = asObject(await readBody(req));
@@ -1044,7 +1113,7 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
         return send(res, 200, { ok: true });
       }
       if (req.method === "GET" && url.pathname === "/api/events") {
-        res.writeHead(200, { "content-type": "text/event-stream", "cache-control": "no-store", connection: "keep-alive", "x-content-type-options": "nosniff" });
+        res.writeHead(200, SSE_HEADERS);
         sse(res, "hello", { ok: true, watching: Array.from(watchers.keys()) });
         eventClients.add(res);
         const ping = setInterval(() => sse(res, "ping", { at: Date.now() }), 15000);
@@ -1214,11 +1283,11 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
       if (req.method === "POST" && url.pathname === "/api/bridge") {
         // queue a command for packrat-bridge.py: {action, serial, name, chain: [root…parent], pos|null}
         const cmd = asObject(await readBody(req, { limit: 64e3, tooLargeMsg: "bridge command too large" }));
-        // Bounded checks in front of the schema (post-review fix, Minor 9). BRIDGE_SCHEMA.command
-        // constrains the TYPES of action/serial/chain but sets no maxLength on name and no item cap on
-        // chain, so a 500,000-character name took queue.jsonl to half a megabyte in one request — and
-        // this is the one route whose input crosses into the player's running game client, so its
-        // ceilings are worth stating here rather than only in the contract.
+        // Cheap bounded checks in front of the schema (post-review fix, Minor 9): a 500,000-character
+        // name once took queue.jsonl to half a megabyte in one request. These are loose outer bounds on
+        // what is even worth assembling; the contract's own, tighter limits (name maxLength 120, chain
+        // maxItems 8 — the adapters' MAX_NAME/MAX_CHAIN) are enforced by the validate() call below,
+        // now that app/schema/validate.mts implements both keywords.
         if (!isBoundedString(cmd.name, 200)) return send(res, 400, { ok: false, error: "name must be a string of at most 200 characters" });
         if (cmd.chain != null && (!Array.isArray(cmd.chain) || cmd.chain.length > 16)) return send(res, 400, { ok: false, error: "chain must be an array of at most 16 serials" });
         const id = `${Date.now()}-${Math.floor(Math.random() * 1e4)}`;
@@ -1313,14 +1382,13 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
     } catch (e) {
       if (e && (e as HttpError).statusCode) {
         const status = (e as HttpError).statusCode!;
-        // A 413 means the rest of the upload is already doomed: readBody stopped consuming it at the
-        // cap (req.pause(), so TCP backpressure stalls the sender instead of this process draining
-        // however many more megabytes are coming), and `connection: close` tears the connection down
-        // once the refusal is on the wire rather than leaving it open for a request that can never
-        // complete (post-review fix, Minor 7). A graceful close, not req.destroy(): destroying resets
-        // a client that is still writing its body, which loses the very 413 it was just sent — proven
-        // against the oversized-profiles test below, whose 1.2 MB body is still in flight. Node merges
-        // this with the headers send() passes to writeHead().
+        // A 413 means the rest of the upload is already doomed: readBody keeps nothing past the cap and
+        // drains at most OVERFLOW_DRAIN_BYTES more of it (destroying the socket beyond that), and
+        // `connection: close` tears the connection down once the refusal is on the wire rather than
+        // leaving it open for a request that can never complete (post-review fix, Minor 7). The bounded
+        // drain is what lets a client still writing its body read this 413 at all — a paused request
+        // plus a close reset such a client before it read the response. Node merges this header with
+        // the ones send() passes to writeHead().
         if (status === 413) res.setHeader("connection", "close");
         return send(res, status, { ok: false, error: (e as HttpError).message });
       }

@@ -6,9 +6,10 @@
 // skippable, and every close path (Finish, Skip, or Esc) marks setup done so the wizard never traps
 // the user or re-opens itself.
 import { state } from "./store.mts";
-import { $, el, toast } from "./dom.mts";
+import { $, el, noteEl, toast } from "./dom.mts";
 import type { ElAttrs } from "./dom.mts";
 import { api } from "./api.mts";
+import { clientErrorMessage, hostErrorMessage, importOutcome, installedIntoNote, pathsFileNote } from "./messages.mts";
 import { renderSettings } from "./settings.mts";
 import { changeShard } from "./shard.mts";
 import { defaultAdapterId, availableAdapters, platformCompatible } from "./adapters.mts";
@@ -251,6 +252,10 @@ function step4(): HTMLDivElement {
     wiz!.installError ? el("div", { class: "msg bad" }, wiz!.installError) : null,
     installedNames ? el("div", { class: "stack" },
       el("div", { class: "msg" }, `Installed: ${installedNames.join(", ")}`),
+      // The folder the server RESOLVED (what was picked and what was written to differ whenever a
+      // client root was picked), and what became of packrat-paths.json — see messages.mts.
+      noteEl(installedIntoNote(wiz!.installResult?.scriptsDir)),
+      noteEl(pathsFileNote(wiz!.installResult?.pathsFile)),
       el("div", { class: "small" }, "What to press in game:"),
       el("ul", { class: "small" }, ...whatToPressLines(installedNames).map((t) => el("li", {}, ...withCode(t))))) : null,
     el("div", { class: "wizard-divider" }),
@@ -263,8 +268,12 @@ async function doInstall(): Promise<void> {
   try {
     const r = await api<InstallApiResponse>("/api/setup/install", { method: "POST", body: { adapter: wiz!.adapter, scriptsDir: wiz!.scriptsDir } });
     wiz!.installResult = r;
-    state.settings = { ...state.settings!, client: { adapter: wiz!.adapter as string, scriptsDir: wiz!.scriptsDir as string } };
-  } catch (e) { wiz!.installError = (e as Error).message; }   // includes the 409 "-stopall" text verbatim
+    // The server's own resolved folder, not the one this step sent: POST /api/setup/install turns a
+    // picked client root into its nested scripts folder, and that is what it persisted as the client.
+    state.settings = { ...state.settings!, client: { adapter: wiz!.adapter as string, scriptsDir: r.scriptsDir || (wiz!.scriptsDir as string) } };
+    // The 409 "-stopall" text comes through verbatim; a folder that has gone missing since it was
+    // located gets the one sentence that says what to do about it (messages.mts's clientFolderGone).
+  } catch (e) { wiz!.installError = clientErrorMessage(e); }
   render();
   renderSettings();
 }
@@ -275,7 +284,9 @@ async function doImport(dir: string): Promise<void> {
     // default, which silently imported into the wrong adapter's inbox for anyone setting up
     // razor-enhanced here.
     const r = await api<ImportApiResponse>("/api/import", { method: "POST", body: { dir, adapter: wiz!.adapter } });
-    wiz!.importMsg = `copied ${r.copied}${r.skipped ? ` (skipped ${r.skipped} already present)` : ""}`;
+    // One sentence, shared with the Import tab (messages.mts) — this step used to word it for itself
+    // and, like that one, said nothing at all about the files the import could not take.
+    wiz!.importMsg = importOutcome(r);
   } catch (e) { wiz!.importMsg = (e as Error).message; }
   wiz!.importBusy = false; render();
 }
@@ -290,7 +301,9 @@ export function pickFolderRow({ title, buttonLabel = "Choose a folder…", onRes
       if (r.path) onResolved(r.path);
     } catch (e) {
       if ((e as ApiError).status === 501) wrap.replaceChildren(...fallback());
-      else toast((e as Error).message, "bad");
+      // 504: the shell never answered the picker (app/vault-server.mts's withHostTimeout). The
+      // typed-path fallback is still there, so say what happened rather than leaving a dead button.
+      else toast(hostErrorMessage(e, "Could not open the folder picker"), "bad");
     }
   };
   function fallback(): [HTMLInputElement, HTMLButtonElement] {
@@ -342,7 +355,10 @@ async function finish(): Promise<void> {
     try {
       const r = await api<SettingsApiResponse>("/api/settings", { method: "PUT", body: { client: { adapter: wiz!.adapter, scriptsDir: "" } } });
       state.settings = r.settings;
-    } catch (e) { toast((e as Error).message, "bad"); }
+      // PUT /api/settings validates client.scriptsDir before persisting it and answers 400 naming the
+      // field when the folder is no longer one it will read — clientErrorMessage is what turns that
+      // into a sentence with a next step in it (messages.mts).
+    } catch (e) { toast(clientErrorMessage(e), "bad"); }
   }
   await persistSetupDone();
   closeAs("done");

@@ -44,12 +44,20 @@ const dataDir = resolve(flag(argv, "--data") || process.env.PACKRAT_DATA || app.
 // by, a real running instance using the default location.
 app.setPath("userData", dataDir);
 
+// 0700/0600, the same modes app/config.mts's ensureLayout gives the rest of the data directory —
+// mirrored here rather than imported because this file runs before (and independently of) the server
+// child that owns that module, and shell.log is written on paths where no server exists at all (a
+// build failure, a child that never came up). The shell gets here FIRST on every launch, so on a
+// fresh machine these two calls are what actually create <data>/logs; ensureLayout's own mkdir then
+// finds it already there. Both modes apply on CREATION only — neither call chmods an existing
+// directory or file, so a player who has deliberately loosened either one keeps their choice, and a
+// log written by an older build is not silently re-permissioned underneath them.
 const logsDir = join(dataDir, "logs");
-mkdirSync(logsDir, { recursive: true });
+mkdirSync(logsDir, { recursive: true, mode: 0o700 });
 const logPath = join(logsDir, "shell.log");
 function logLine(line: string): void {
   try {
-    appendFileSync(logPath, `${new Date().toISOString()} ${line}\n`);
+    appendFileSync(logPath, `${new Date().toISOString()} ${line}\n`, { mode: 0o600 });
   } catch {
     /* logging is best-effort — never let it crash the shell */
   }
@@ -177,12 +185,24 @@ if (!app.requestSingleInstanceLock()) {
     });
     c.stdout?.on("data", (b) => logLine(`server: ${b.toString().trimEnd()}`));
     c.stderr?.on("data", (b) => logLine(`server: ${b.toString().trimEnd()}`));
-    c.on("message", onChildMessage);
+    // The child travels with its own messages: `child` below is a mutable slot this file reassigns
+    // when the server is restarted, and a host op can await a native dialog for as long as the user
+    // leaves it open — long enough for the process that asked to have died and been replaced.
+    c.on("message", (msg) => onChildMessage(msg, c));
     c.on("exit", (code) => onChildExit(code));
     return c;
   }
 
+  // The port is whatever the child SAID it bound (protocol.mts: every field but `type` crosses the
+  // wire untrusted), and it is what the origin below is built from — the origin that decides which
+  // requests get the bearer token stamped on them and which navigations the page is allowed to make.
+  // A value that is not a real port number would build an origin matching something else entirely,
+  // so it is checked here rather than interpolated. The message's own `url` field is never read at
+  // all for the same reason: the host is the literal 127.0.0.1, always, never a name off the wire.
+  const isPort = (p: unknown): p is number => typeof p === "number" && Number.isInteger(p) && p >= 1 && p <= 65535;
+
   function onListening(port: number): void {
+    if (!isPort(port)) return logLine(`server: ignored a listening message with port ${JSON.stringify(port)}`);
     currentPort = port;
     currentOrigin = `http://127.0.0.1:${port}`;
     logLine(`server: listening on ${currentOrigin}`);
@@ -196,7 +216,7 @@ if (!app.requestSingleInstanceLock()) {
     win.loadURL(`${currentOrigin}/`);
   }
 
-  async function handleHostOp(msg: HostRequestMessage): Promise<void> {
+  async function handleHostOp(msg: HostRequestMessage, from: UtilityProcess): Promise<void> {
     let result: string | null = null;
     try {
       if (msg.op === "pickFolder") {
@@ -235,15 +255,22 @@ if (!app.requestSingleInstanceLock()) {
     } catch (e) {
       logLine(`host ${msg.op} error: ${(e as Error)?.message || e}`);
     }
-    child?.postMessage({ type: "host-result", id: msg.id, result } satisfies HostResultMessage);
+    // Only ever the child that asked. A native dialog can stay open for minutes, and if the server
+    // process died meanwhile (onChildExit respawns it once), `child` is a DIFFERENT process by now —
+    // one whose own pending-call ids mean something else entirely. Its ids restart at 1 on every
+    // launch, so posting there is not merely useless, it can resolve an unrelated call with this
+    // one's answer. The asker is gone, so the result goes nowhere; electron/pending-calls.mts is
+    // what stops the dead process's own caller hanging on it.
+    if (!child || child !== from) return logLine(`host ${msg.op}: dropped a result for a server process that is gone`);
+    child.postMessage({ type: "host-result", id: msg.id, result } satisfies HostResultMessage);
   }
 
-  function onChildMessage(msg: unknown): void {
+  function onChildMessage(msg: unknown, from: UtilityProcess): void {
     if (!msg || typeof msg !== "object") return;
     if ((msg as { type: unknown }).type === "listening") {
       onListening((msg as ListeningMessage).port);
     } else if ((msg as { type: unknown }).type === "host") {
-      handleHostOp(msg as HostRequestMessage);
+      handleHostOp(msg as HostRequestMessage, from);
     } else if ((msg as { type: unknown }).type === "error") {
       logLine(`server: fatal ${(msg as ServerErrorMessage).message}`);
     }
