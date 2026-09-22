@@ -2,7 +2,7 @@
 // and startWatcher's debounce/retry/reject/scanOnce/close behavior against an injected fake `watch`.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, writeFileSync, readFileSync, existsSync, readdirSync, renameSync, chmodSync, symlinkSync, statSync, rmSync, type WatchListener } from "node:fs";
+import { mkdtempSync, writeFileSync, readFileSync, existsSync, readdirSync, renameSync, chmodSync, symlinkSync, statSync, rmSync, mkdirSync, type WatchListener } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import {
@@ -483,4 +483,47 @@ test("[fast] startWatcher: scanOnce() reports failure when the inbox cannot be r
   assert.equal(handle.scanOnce(), false);
   assert.ok(logs.some((l) => /scanOnce/.test(l)), logs.join("\n"));
   handle.close();
+});
+
+test("[fast] startWatcher: an inbox deleted and recreated by something else is watched again on the next sweep", async () => {
+  const inboxDir = join(tmp("qm-inbox-swap-"), "tazuo"), scansDir = tmp("qm-scans-swap-");
+  const watch = fakeWatch();
+  const handle = startWatcher({ inboxDir, adapter: "tazuo", scansDir, getShard: () => SHARD, watch, debounceMs: 10, retries: 1, retryDelayMs: 10 });
+  rmSync(inboxDir, { recursive: true });
+  mkdirSync(inboxDir);   // a sync tool, a paste's own mkdir, an import — anything but the watcher
+  assert.equal(handle.scanOnce(), true);
+  assert.equal(watch.calls, 2, "the old watch was on the deleted folder, so it is armed again");
+  handle.close();
+});
+
+test("[fast] startWatcher: a watch event after the inbox was swapped for a new folder re-arms the watch by itself", async () => {
+  const inboxDir = join(tmp("qm-inbox-swap-ev-"), "tazuo"), scansDir = tmp("qm-scans-swap-ev-");
+  const watch = fakeWatch();
+  const handle = startWatcher({ inboxDir, adapter: "tazuo", scansDir, getShard: () => SHARD, watch, debounceMs: 10, retries: 1, retryDelayMs: 10 });
+  rmSync(inboxDir, { recursive: true });
+  mkdirSync(inboxDir);
+  watch.fire("rename", "tazuo");   // the event arrives only once the folder is already back
+  await waitFor(() => watch.calls === 2);
+  handle.close();
+});
+
+test("[fast] startWatcher: a watch that keeps failing is retried with a growing delay and logged once", async () => {
+  const inboxDir = tmp("qm-inbox-flap-"), scansDir = tmp("qm-scans-flap-");
+  let calls = 0;
+  // Every watch this returns fails right after it is armed, the way a watch on a folder the OS keeps
+  // refusing would.
+  const watch = ((_dir: string, _l: WatchListener<string>) => {
+    calls++;
+    let onError: ((e: Error) => void) | null = null;
+    setImmediate(() => onError?.(new Error("EPERM: operation not permitted, watch")));
+    return { close: () => { onError = null; }, on: (_event: "error", h: (e: Error) => void) => { onError = h; } };
+  });
+  const logs: string[] = [];
+  const handle = startWatcher({ inboxDir, adapter: "tazuo", scansDir, getShard: () => SHARD, watch, log: (m) => logs.push(m), retryDelayMs: 10 });
+  await new Promise((r) => setTimeout(r, 400));
+  handle.close();
+  // 10, 20, 40, 80, 160 ms: about six arms in 400 ms with backoff, about forty without it.
+  assert.ok(calls <= 8, `re-armed ${calls} times in 400 ms`);
+  assert.ok(calls >= 3, `and it does keep retrying (${calls})`);
+  assert.equal(logs.filter((l) => /EPERM/.test(l)).length, 1, logs.join("\n"));
 });
