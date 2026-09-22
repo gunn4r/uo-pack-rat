@@ -72,3 +72,69 @@ test("[fast] a valid v1-shaped scan still upgrades and produces a valid fixture"
     rmSync(dir, { recursive: true, force: true });
   }
 });
+
+// Only the fields these cases rewrite; the rest of the shipped fixture passes through untouched.
+interface EditableScan {
+  character: string;
+  account?: string | undefined;
+  adapter: Record<string, unknown>;
+  roots: { name: string }[];
+  items: { name: string }[];
+}
+
+// The shipped TazUO fixture, reworked by `edit` into the "real scan" a case needs.
+function withScan(edit: (scan: EditableScan) => void, body: (inPath: string, outPath: string) => void): void {
+  const dir = mkdtempSync(join(tmpdir(), "packrat-make-fixture-"));
+  try {
+    const scan = JSON.parse(readFileSync(TAZUO_FIXTURE, "utf8")) as EditableScan;
+    edit(scan);
+    const inPath = join(dir, "real.scan.json");
+    writeFileSync(inPath, JSON.stringify(scan));
+    body(inPath, join(dir, "fixture.scan.json"));
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
+
+const RAZOR_CAPS = JSON.parse(readFileSync(join(ROOT, "adapters", "razor-enhanced", "capabilities.json"), "utf8")) as { adapter: string; version: string; capabilities: unknown };
+
+test("[fast] the fixture carries the identity of the adapter that produced the scan, not TazUO's", () => {
+  withScan((scan) => {
+    scan.adapter = { id: "razor-enhanced", version: "0.0.1", client: "Razor Enhanced", clientVersion: "0.8.2.242", capabilities: RAZOR_CAPS.capabilities };
+  }, (inPath, outPath) => {
+    const r = run(inPath, outPath);
+    assert.equal(r.status, 0, `expected exit 0, stderr: ${r.stderr}`);
+    const adapter = (JSON.parse(readFileSync(outPath, "utf8")) as { adapter: Record<string, unknown> }).adapter;
+    assert.equal(adapter.id, "razor-enhanced");
+    assert.equal(adapter.client, "Razor Enhanced", "the scan's own client name is kept");
+    // Version and capabilities come from the adapter's capabilities.json as it ships today, which is
+    // what app/contracts.test.mts compares the fixture against.
+    assert.equal(adapter.version, RAZOR_CAPS.version);
+    assert.deepEqual(adapter.capabilities, RAZOR_CAPS.capabilities);
+  });
+});
+
+test("[fast] a scan from an adapter this repository does not ship is refused", () => {
+  withScan((scan) => { scan.adapter.id = "no-such-adapter"; }, (inPath, outPath) => {
+    const r = run(inPath, outPath);
+    assert.notEqual(r.status, 0);
+    assert.match(r.stderr, /adapters\/no-such-adapter\/capabilities\.json/);
+    assert.ok(!existsSync(outPath), "no output file may be written");
+  });
+});
+
+test("[fast] a fixture that still names the character or the account is refused, naming where", () => {
+  withScan((scan) => {
+    scan.character = "Somebody";
+    // The account is a hashed id in a v2 scan, never the plaintext name, but it is still an identifier.
+    scan.account = "0123456789abcdef";
+    scan.roots[0]!.name = "SOMEBODY's Backpack";                      // any case
+    scan.items[0]!.name = "Pouch 0123456789ABCDEF";
+  }, (inPath, outPath) => {
+    const r = run(inPath, outPath);
+    assert.notEqual(r.status, 0, `the fixture must not be written; stdout: ${r.stdout}`);
+    assert.match(r.stderr, /\/roots\/0\/name/);
+    assert.match(r.stderr, /\/items\/0\/name/);
+    assert.ok(!existsSync(outPath), "no output file may be written");
+  });
+});
