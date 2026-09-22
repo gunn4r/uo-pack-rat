@@ -13,9 +13,11 @@ updates:
     ignore:
       # @types/node tracks the Node release line the app targets (engines: >=22.18, CI on Node 22), not
       # the newest Node. A newer major's types would let code compile that does not run on Node 22.
-      # Move this deliberately when the supported Node version moves.
+      # Move this deliberately when the supported Node version moves. The ignore names the versions
+      # rather than "semver-major" updates, because that form is relative to whatever is installed: it
+      # kept a 24.x that was added by hand current instead of holding the line at 22.
       - dependency-name: "@types/node"
-        update-types: ["version-update:semver-major"]
+        versions: [">=23"]
     groups:
       # One pull request a week for the routine devDependency churn, rather than five. Majors stay
       # separate and unbatched: electron and electron-builder majors change what ships to a player's
