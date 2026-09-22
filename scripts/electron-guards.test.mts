@@ -1,12 +1,13 @@
 // electron-guards.test.mts — the shell's guards, from the phase-7 review. Two kinds of check live
-// here, and the split is deliberate. `electron/host-args.mts` and `electron/pending-calls.mts` hold
-// the decisions that stand between the server child's wire messages and an OS call (and the registry
-// that bounds one in flight), so those get real unit tests with real forged values. Everything else
-// in `electron/main.mts` is unreachable from `node:test` — that file imports `electron` at the top
-// level and only loads inside a real Electron process — so it gets source-level assertions in the
-// `scripts/packaging.test.mts` idiom: they pin the *presence* of each guard, which is what a later
-// refactor is most likely to drop, while `scripts/shell-smoke.test.mts` proves the file as a whole
-// still boots. All `[fast]`: reading two source files and calling a handful of pure functions costs
+// here, and the split is deliberate. `electron/host-args.mts`, `electron/navigation.mts` and
+// `electron/pending-calls.mts` hold the decisions that stand between the server child's wire messages
+// or the page and an OS call (and the registry that bounds one in flight), so those get real unit
+// tests with real forged values. Everything else in `electron/main.mts` is unreachable from
+// `node:test` — that file imports `electron` at the top level and only loads inside a real Electron
+// process — so it gets source-level assertions in the `scripts/packaging.test.mts` idiom: they pin
+// the *presence* of each guard and that its call site routes through the tested decision, while
+// `scripts/shell-smoke.test.mts` proves the file as a whole still boots. A source pin cannot prove
+// what a guard decides, so a decision that matters belongs in one of the pure modules, not here. All `[fast]`: reading two source files and calling a handful of pure functions costs
 // nothing, and these are exactly the checks that should run on every `--fast` pass.
 import test from "node:test";
 import assert from "node:assert/strict";
@@ -15,6 +16,7 @@ import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import { dialogTitle, openPathTarget } from "../electron/host-args.mts";
 import { createPendingHostCalls, HOST_CALL_TIMEOUT_MS } from "../electron/pending-calls.mts";
+import { EXTERNAL_OPEN_GAP_MS, externalOpenDecision, MAX_EXTERNAL_URL, navigationDecision } from "../electron/navigation.mts";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const mainSource = readFileSync(join(root, "electron", "main.mts"), "utf8");
@@ -91,23 +93,92 @@ test("[fast] the session denies every permission, device and the spellchecker", 
   assert.match(mainSource, /spellcheck: false/, "webPreferences must not run the builtin spellchecker either");
 });
 
-test("[fast] every webContents inherits the navigation and window-open guards, subframes included", () => {
-  assert.match(mainSource, /app\.on\("web-contents-created"/, "the guards attach to any webContents, not only the one window createWindow makes");
-  for (const event of ["will-navigate", "will-frame-navigate", "will-redirect", "will-attach-webview"]) {
-    assert.match(mainSource, new RegExp(`wc\\.on\\("${event}"`), `${event} must be guarded`);
+// ---- navigation and external links (electron/navigation.mts) -------------------------------------
+// These used to be regexes over main.mts's source, and they kept matching with every guard switched
+// off: they pinned identifiers and event names, which survive any edit to the logic behind them. The
+// decisions now live in a pure module and are tested by what they decide; the source pins that remain
+// only prove main.mts routes each event through them.
+
+const ORIGIN = "http://127.0.0.1:52431";
+
+test("[fast] navigation stays on the local server's own origin", () => {
+  for (const url of [`${ORIGIN}/`, `${ORIGIN}/ui/app.mjs?x=1#top`, `${ORIGIN}`]) {
+    assert.deepEqual(navigationDecision(url, ORIGIN), { allowed: true }, url);
   }
-  assert.match(mainSource, /setWindowOpenHandler/);
-  assert.match(mainSource, /action: "deny"/, "no page-opened window is ever created inside the app");
+  for (const [url, origin] of [
+    ["https://evil.example/", "https://evil.example"],
+    ["http://127.0.0.1:52432/", "http://127.0.0.1:52432"],   // another port is another origin
+    ["http://localhost:52431/", "http://localhost:52431"],   // the same server by another name is too
+    ["https://127.0.0.1:52431/", "https://127.0.0.1:52431"],
+    ["file:///etc/passwd", "null"],
+    ["about:blank", "null"],
+    ["javascript:alert(1)", "null"],
+  ] as const) {
+    assert.deepEqual(navigationDecision(url, ORIGIN), { allowed: false, origin }, url);
+  }
+  assert.deepEqual(navigationDecision("not a url", ORIGIN), { allowed: false, origin: "unparsable" });
 });
 
-test("[fast] an external link is parsed, bounded and throttled rather than regex-tested and fired", () => {
-  // Minor 2: the old handler regex-tested the scheme, dropped openExternal's promise, and had no
-  // length or rate bound. There is deliberately no host allowlist — see the comment at that call site.
-  assert.match(mainSource, /new URL\(url\)/, "the url must be parsed, not pattern-matched");
-  assert.match(mainSource, /parsed\.protocol !== "https:"/, "http: is not good enough for a link the user is about to trust");
-  assert.match(mainSource, /MAX_EXTERNAL_URL/, "an over-long url is refused");
-  assert.match(mainSource, /EXTERNAL_OPEN_GAP_MS/, "page code must not be able to open unbounded browser tabs");
-  assert.match(mainSource, /shell\.openExternal\(parsed\.href\)\.catch\(/, "a rejected openExternal must be handled, not left to crash the main process");
+test("[fast] before the server has said where it listens, every navigation is refused", () => {
+  // currentOrigin is null until the child's listening message; an unparsable url must not compare
+  // equal to it and slip through.
+  assert.deepEqual(navigationDecision(`${ORIGIN}/`, null), { allowed: false, origin: ORIGIN });
+  assert.deepEqual(navigationDecision("not a url", null), { allowed: false, origin: "unparsable" });
+});
+
+test("[fast] Chromium's own DevTools frontend may navigate itself", () => {
+  assert.deepEqual(navigationDecision("devtools://devtools/bundled/devtools_app.html", ORIGIN), { allowed: true });
+  assert.deepEqual(navigationDecision("devtools://devtools/bundled/devtools_app.html", null), { allowed: true });
+});
+
+test("[fast] an external link opens only over https, parsed rather than pattern-matched", () => {
+  assert.deepEqual(externalOpenDecision("https://github.com/example/project/releases", 10_000, null), { open: "https://github.com/example/project/releases" });
+  // What goes to the OS is the parser's normalised href, never the raw string.
+  assert.deepEqual(externalOpenDecision("HTTPS://GitHub.com/a b", 10_000, null), { open: "https://github.com/a%20b" });
+  for (const [url, scheme] of [
+    ["http://github.com/", "http:"],   // a MITM's second bite at a link the user already trusts
+    ["javascript:alert(1)", "javascript:"],
+    ["file:///Applications/Calculator.app", "file:"],
+    ["data:text/html,<script>1</script>", "data:"],
+    ["smb://attacker/share", "smb:"],
+    ["vscode://file/etc/passwd", "vscode:"],
+  ] as const) {
+    assert.deepEqual(externalOpenDecision(url, 10_000, null), { refused: `scheme ${scheme}` }, url);
+  }
+  assert.deepEqual(externalOpenDecision("https://", 10_000, null), { refused: "an unparsable url" });
+  for (const bad of [undefined, null, 42, { href: "https://github.com/" }]) {
+    assert.deepEqual(externalOpenDecision(bad, 10_000, null), { refused: "a url that is not a string" });
+  }
+});
+
+test("[fast] an over-long external link is refused before it is parsed", () => {
+  const base = "https://github.com/";
+  const atLimit = base + "a".repeat(MAX_EXTERNAL_URL - base.length);
+  assert.equal(atLimit.length, 2048);
+  assert.deepEqual(externalOpenDecision(atLimit, 10_000, null), { open: atLimit });
+  assert.deepEqual(externalOpenDecision(atLimit + "a", 10_000, null), { refused: "a 2049-character url" });
+});
+
+test("[fast] external links are throttled to one a second, so page code cannot open unbounded tabs", () => {
+  const url = "https://github.com/";
+  assert.deepEqual(externalOpenDecision(url, 10_000, 9_001), { refused: "throttled" });
+  assert.deepEqual(externalOpenDecision(url, 10_000, 10_000), { refused: "throttled" });
+  assert.deepEqual(externalOpenDecision(url, 10_000, 10_000 - EXTERNAL_OPEN_GAP_MS), { open: url });
+  // The very first link is never throttled, however early in the clock it comes.
+  assert.deepEqual(externalOpenDecision(url, 0, null), { open: url });
+});
+
+test("[fast] every webContents routes navigation and window-open through those decisions", () => {
+  assert.match(mainSource, /app\.on\("web-contents-created"/, "the guards attach to any webContents, not only the one window createWindow makes");
+  for (const event of ["will-navigate", "will-frame-navigate", "will-redirect"]) {
+    assert.match(mainSource, new RegExp(`wc\\.on\\("${event}", blockOffOrigin\\)`), `${event} must go through the navigation guard`);
+  }
+  assert.match(mainSource, /wc\.on\("will-attach-webview", \(e\) => \{\s*e\.preventDefault\(\);/, "a webview attach is refused");
+  assert.match(mainSource, /navigationDecision\(e\.url, currentOrigin\)/);
+  assert.match(mainSource, /if \(decision\.allowed\) return;\s*e\.preventDefault\(\);/, "a refused navigation is actually prevented");
+  assert.match(mainSource, /setWindowOpenHandler\(\(\{ url \}\) => \{\s*openExternal\(url\);\s*return \{ action: "deny" \};/, "no page-opened window is ever created inside the app");
+  assert.match(mainSource, /externalOpenDecision\(url, now, lastExternalOpen\)/);
+  assert.match(mainSource, /shell\.openExternal\(decision\.open\)\.catch\(/, "only the decided href is opened, and a rejected openExternal is handled rather than left to crash the main process");
 });
 
 test("[fast] DevTools are off in a packaged build unless the documented flag is passed", () => {
