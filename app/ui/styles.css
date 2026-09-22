@@ -80,7 +80,8 @@ section[hidden] { display: none; }
 .tablewrap.scrolly th { box-shadow: 0 1px 0 var(--line); z-index: 1; }
 table { border-collapse: collapse; width: 100%; font-size: 13px; }
 th, td { padding: 6px 8px; border-bottom: 1px solid var(--line); text-align: left; vertical-align: top; white-space: nowrap; }
-th { font-size: 11px; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); position: sticky; top: 0; background: var(--surface); cursor: pointer; }
+th { font-size: 11px; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); position: sticky; top: 0; background: var(--surface); }
+th.sortable { cursor: pointer; }
 th.sorted { color: var(--accent); }
 td.n, th.n { text-align: right; font-family: var(--mono); font-variant-numeric: tabular-nums; }
 tr.item:hover td { background: var(--surface-2); }

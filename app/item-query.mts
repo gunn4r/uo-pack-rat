@@ -119,7 +119,9 @@ export function applyItemQuery(items: Item[], query: ItemQuery, { rarity = [], n
     return typeof av === "number" ? ((bv as number) - av) * d : String(av).localeCompare(String(bv)) * d;
   });
   if (query.group) {
-    const groups = groupByName(sorted).sort((a, b) => (k === "amount" ? (b.amount - a.amount) * d : k === "kind" ? a.kind.localeCompare(b.kind) * d : a.name.localeCompare(b.name) * d));
+    // Group mode's sortable headers are Name, Kind, Total (amount) and Stacks; the numeric ones sort
+    // high-to-low at dir +1, like the row view's numeric columns.
+    const groups = groupByName(sorted).sort((a, b) => (k === "amount" ? (b.amount - a.amount) * d : k === "stacks" ? (b.stacks - a.stacks) * d : k === "kind" ? a.kind.localeCompare(b.kind) * d : a.name.localeCompare(b.name) * d));
     return { groups: groups.slice(query.offset, query.offset + query.limit).map(groupJson), total: groups.length };
   }
   const pieces = found.reduce((a, i) => a + (i.amount || 1), 0);
