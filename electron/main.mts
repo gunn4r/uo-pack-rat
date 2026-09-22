@@ -17,6 +17,7 @@ import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { dialogTitle, openPathTarget } from "./host-args.mts";
 import { externalOpenDecision, navigationDecision } from "./navigation.mts";
+import { shouldRestart } from "./restart-policy.mts";
 import type { HostRequestMessage, HostResultMessage, ListeningMessage, ServerErrorMessage, ShutdownMessage } from "./protocol.mts";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -73,7 +74,7 @@ if (!app.requestSingleInstanceLock()) {
   let child: UtilityProcess | null = null;
   let currentOrigin: string | null = null;
   let currentPort: number | null = null;
-  let restartCount = 0;
+  let lastRestartAt: number | null = null;
   let quitting = false;
   let smokeTimer: NodeJS.Timeout | null = null;
   let smokeDone = false;
@@ -167,7 +168,7 @@ if (!app.requestSingleInstanceLock()) {
     // when the server is restarted, and a host op can await a native dialog for as long as the user
     // leaves it open — long enough for the process that asked to have died and been replaced.
     c.on("message", (msg) => onChildMessage(msg, c));
-    c.on("exit", (code) => onChildExit(code));
+    c.on("exit", (code) => onChildExit(code, c));
     return c;
   }
 
@@ -234,13 +235,19 @@ if (!app.requestSingleInstanceLock()) {
       logLine(`host ${msg.op} error: ${(e as Error)?.message || e}`);
     }
     // Only ever the child that asked. A native dialog can stay open for minutes, and if the server
-    // process died meanwhile (onChildExit respawns it once), `child` is a DIFFERENT process by now —
+    // process died meanwhile (onChildExit respawns it), `child` is a DIFFERENT process by now —
     // one whose own pending-call ids mean something else entirely. Its ids restart at 1 on every
     // launch, so posting there is not merely useless, it can resolve an unrelated call with this
     // one's answer. The asker is gone, so the result goes nowhere; electron/pending-calls.mts is
     // what stops the dead process's own caller hanging on it.
     if (!child || child !== from) return logLine(`host ${msg.op}: dropped a result for a server process that is gone`);
-    child.postMessage({ type: "host-result", id: msg.id, result } satisfies HostResultMessage);
+    // The asker can be dead already with its exit event still queued behind this code; a throw here
+    // would surface as an unhandled rejection from this un-awaited function, so it lands in the log.
+    try {
+      child.postMessage({ type: "host-result", id: msg.id, result } satisfies HostResultMessage);
+    } catch (e) {
+      logLine(`host ${msg.op}: could not deliver the result: ${(e as Error)?.message || e}`);
+    }
   }
 
   function onChildMessage(msg: unknown, from: UtilityProcess): void {
@@ -254,7 +261,10 @@ if (!app.requestSingleInstanceLock()) {
     }
   }
 
-  function onChildExit(code: number): void {
+  function onChildExit(code: number, exited: UtilityProcess): void {
+    // Cleared on every path, quitting included, so a native dialog that resolves after its asker has
+    // gone finds no child to post to (handleHostOp) rather than a dead one.
+    if (child === exited) child = null;
     if (quitting) return;
     if (smoke) {
       // runSmokeCheck (and the 30s timeout below) always set smokeDone before killing the child
@@ -268,12 +278,15 @@ if (!app.requestSingleInstanceLock()) {
       return;
     }
     logLine(`server: exited unexpectedly (code ${code})`);
-    if (restartCount < 1) {
-      restartCount++;
-      logLine("server: restarting (attempt 1 of 1)");
+    // electron/restart-policy.mts: every crash is restarted unless the last restart was only minutes
+    // ago, which means the child is crash-looping.
+    const now = Date.now();
+    if (shouldRestart(lastRestartAt, now)) {
+      lastRestartAt = now;
+      logLine("server: restarting");
       child = spawnChild();
     } else {
-      dialog.showErrorBox("Pack Rat", `The local server stopped unexpectedly twice in a row. See the log at ${logPath}`);
+      dialog.showErrorBox("Pack Rat", `The local server stopped unexpectedly again within minutes of being restarted. See the log at ${logPath}`);
       app.quit();
     }
   }
@@ -445,7 +458,7 @@ if (!app.requestSingleInstanceLock()) {
         // third: --smoke reports failures as a stdout line + a bare exit code (see runSmokeCheck and
         // onChildExit's smoke branch, both read by scripts/shell-smoke.test.mts), everything else
         // reports fatal startup problems with a native dialog naming the log file (onChildExit's
-        // give-up-after-one-restart branch).
+        // give-up branch).
         if (smoke) {
           console.log(`SMOKE FAIL build failed: ${message}`);
           app.exit(1);
