@@ -96,3 +96,22 @@ test("[fast] an invalid user rules file throws naming the file path", () => {
   writeFileSync(path, JSON.stringify({ schemaVersion: 1, id: "broken" }));   // missing every other required key
   assert.throws(() => loadRules("broken", { userRulesDir: dir }), new RegExp(path.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
 });
+
+// The rules schema used to check shapes only, so a string cap or a one-element breakpoint passed
+// validation and turned into NaN caps and string tag penalties downstream.
+test("[fast] a user rules file with non-numeric caps, tag units or breakpoints is rejected", () => {
+  const good = loadRules("uoalive");
+  const bad: Array<[string, Record<string, unknown>]> = [
+    ["caps", { caps: { ...good.caps, fc: "two" } }],
+    ["raceCaps", { raceCaps: { elf: { energyResist: "75" } } }],
+    ["tagUnits", { tagUnits: { ...good.tagUnits, cursed: "10" } }],
+    ["one-element breakpoint", { resistSkillBonus: { breakpoints: [[100]] } }],
+    ["three-element breakpoint", { resistSkillBonus: { breakpoints: [[100, 0.4, 1]] } }],
+    ["string breakpoint", { resistSkillBonus: { breakpoints: [["100", 0.4]] } }],
+  ];
+  for (const [what, patch] of bad) {
+    const dir = mkdtempSync(join(tmpdir(), "qm-rules-values-"));
+    writeFileSync(join(dir, "bad.json"), JSON.stringify({ ...good, id: "bad", ...patch }));
+    assert.throws(() => loadRules("bad", { userRulesDir: dir }), /bad\.json/, what);
+  }
+});
