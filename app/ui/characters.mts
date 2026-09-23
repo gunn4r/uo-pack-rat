@@ -186,7 +186,7 @@ function renderSheet(name: string): void {
 // tombstone the fold drops the character's worn gear, backpack and bank for; a saved Suit Builder
 // profile would keep the row on this screen, so it goes too. A later scan of the character brings the
 // scanned parts back.
-async function forgetCharacter(name: string): Promise<void> {
+export async function forgetCharacter(name: string): Promise<void> {
   if (!await confirmDialog({ title: `Forget ${name}?`, body: `Their card, worn gear, backpack and bank leave the inventory, and their saved Suit Builder profile is deleted. Their saved runs stay. Scanning ${name} again brings the scanned parts back.`, confirmLabel: `Forget ${name}` })) return;
   try {
     if (state.inv!.characters[name]) await api("/api/forget-character", { method: "POST", body: { character: name } });
