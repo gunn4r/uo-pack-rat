@@ -78,7 +78,17 @@ const SCENES: Scene[] = [
   { name: "bridge popover", enter: async (p) => { await p.click("#bridge"); await p.waitForSelector(".pop"); }, leave: (p) => p.keyboard.press("Escape") },
   { name: "collapsed sidebar", enter: async (p) => { await route(p, "#/inventory", "#inv-table tbody tr.item"); await p.click("#sidebar-pin"); await p.waitForSelector("#app.collapsed"); },
     leave: (p) => p.click("#sidebar-pin") },
-  { name: "settings", enter: (p) => route(p, "#/settings", "#settings-body .panel") },
+  { name: "settings", enter: (p) => route(p, "#/settings", "#set-general .set-row") },
+  // ---- Settings (phase 12): the lower sections (the danger zone), with a failed update check under its row
+  { name: "settings data and updates", enter: async (p) => {
+    await route(p, "#/settings", "#set-general .set-row");
+    await p.click("#settings-nav [data-section=set-updates]");
+    // A fixed answer instead of a real call to GitHub: the scene measures the failure message, not the network.
+    await p.route("**/api/update-check", (r) => r.fulfill({ contentType: "application/json", body: JSON.stringify({ ok: true, configured: true, error: "GitHub releases/latest returned 404" }) }));
+    await p.click("#set-check-updates");
+    await p.waitForSelector("#set-updates .msg", { timeout: 20_000 });
+    await p.locator("#set-data").scrollIntoViewIfNeeded();
+  } },
   // ---- import drawer states (phase 10): a clean paste with its preview, a paste that doesn't parse, scan files
   { name: "import preview", enter: async (p) => {
     await route(p, "#/import", "#import-drawer:not([hidden]) #imp-text");

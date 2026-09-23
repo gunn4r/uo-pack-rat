@@ -14,7 +14,7 @@ import { initBuilder, syncBuilderCharacters, selectCharacter } from "./builder.m
 import { renderContainers } from "./containers.mts";
 import { connectEvents } from "./events.mts";
 import { openWizard } from "./wizard.mts";
-import { renderSettings } from "./settings.mts";
+import { renderSettings, syncSettingsCharacters } from "./settings.mts";
 import { renderImport } from "./import.mts";
 import { applyLook } from "./theme.mts";
 import { initShell, applyShellPrefs, renderNavCounts, setCurrentNav } from "./shell.mts";
@@ -82,6 +82,7 @@ export async function reload(): Promise<void> {
   state.newestScan = newestStamp(state.inv.scans);
   renderNavCounts();
   buildFilters(); fetchItems(); renderCharacters(); renderContainers(); syncBuilderCharacters();
+  syncSettingsCharacters();
 }
 
 // ---------------------------------------------------------------- screens + hash routes

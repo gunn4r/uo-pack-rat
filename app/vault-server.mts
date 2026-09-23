@@ -1146,6 +1146,8 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
           // hand-installed or Skip-through-the-wizard player) — see the bridgeAdapter() comment above.
           bridgeAdapter: bridgeAdapterField,
           dataDirCheck: dataDirCheck(),
+          // Settings › Updates names the running version ("Pack Rat 0.1.0") before any update check.
+          version: PACKAGE_JSON.version,
         });
       }
       if (req.method === "POST" && url.pathname === "/api/setup/locate") {
