@@ -191,6 +191,7 @@ test("[slow] Save as… in the suit builder opens an in-page dialog and saves th
     // its <option>s exist — the "Save as…" button needs a selected character's settings to snapshot.
     await page.waitForFunction(() => document.querySelector<HTMLSelectElement>("#b-char")?.value, { timeout: 10_000 });
 
+    await page.click("#b-tpl-menu");   // Save as… lives in the template's ⋯ menu
     await page.click("#b-tpl-saveas");
     const dialog = page.locator(".prompt-dialog[open]");
     await dialog.waitFor({ timeout: 10_000 });

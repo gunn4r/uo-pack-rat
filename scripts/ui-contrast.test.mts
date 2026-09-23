@@ -58,16 +58,78 @@ const SCENES: Scene[] = [
   { name: "builder result", enter: async (p) => {
     await route(p, "#/builder", "#b-run");
     await p.waitForFunction(() => document.querySelector<HTMLSelectElement>("#b-char")?.value, undefined, { timeout: 10_000 });
-    await p.fill("#b-budget", "2");
+    await p.click("#b-sec-adv .b-sec-head button");   // Advanced: a short budget, and other suits so that card draws too
+    await p.fill("#b-budget", "2"); await p.fill("#b-altcount", "5"); await p.fill("#b-alttol", "40");
+    await p.click("#b-sec-adv .b-sec-head button");
     await p.click("#b-run");
     await p.waitForFunction(() => !document.querySelector<HTMLButtonElement>("#b-run")?.disabled && document.querySelector("#b-result h2"), undefined, { timeout: 60_000 });
   } },
   { name: "import drawer", enter: (p) => route(p, "#/import", "#import-drawer:not([hidden]) #import-body .panel"), leave: (p) => p.keyboard.press("Escape") },
-  { name: "runs drawer", enter: (p) => route(p, "#/runs", "#runs-drawer:not([hidden]) .runrow"), leave: (p) => p.keyboard.press("Escape") },
+  { name: "runs drawer", enter: (p) => route(p, "#/runs", "#runs-drawer:not([hidden]) .run-card"), leave: (p) => p.keyboard.press("Escape") },
   { name: "bridge popover", enter: async (p) => { await p.click("#bridge"); await p.waitForSelector(".pop"); }, leave: (p) => p.keyboard.press("Escape") },
   { name: "collapsed sidebar", enter: async (p) => { await route(p, "#/inventory", "#inv-table tbody tr.item"); await p.click("#sidebar-pin"); await p.waitForSelector("#app.collapsed"); },
     leave: (p) => p.click("#sidebar-pin") },
   { name: "settings", enter: (p) => route(p, "#/settings", "#settings-body .panel") },
+  // ---- builder (phases 7-9): the result's lower cards, compare, the drawer's menu and rename, the panel's
+  // popovers and field error, the running build, the empty state. They follow "builder result" above, whose
+  // build they reuse.
+  { name: "builder result details", enter: async (p) => {
+    await route(p, "#/builder", "#b-result h2");
+    await p.locator("#b-result").getByRole("switch", { name: "Show unchanged slots" }).check();
+    await p.locator("#b-result").getByRole("button", { name: "Full sheet" }).click();
+    await p.locator("#b-result .b-disclose").click();
+    await p.waitForSelector("#b-details");
+    await p.evaluate(() => { document.querySelector(".b-results")!.scrollTop = 99999; });
+  } },
+  { name: "builder compare suits", enter: async (p) => {
+    const ticks = p.locator("section[aria-label='Other suits'] tbody input[type=checkbox]");
+    await ticks.nth(0).check(); await ticks.nth(1).check();
+    await p.getByRole("button", { name: "Compare 2 suits" }).click();
+    await p.waitForSelector("#b-compare-view:not([hidden]) .b-cmp");
+  }, leave: async (p) => { await p.getByRole("button", { name: "Back to result" }).click(); } },
+  { name: "runs drawer menu and rename", enter: async (p) => {
+    // a second run, so there are two to tick
+    await p.click("#b-sec-adv .b-sec-head button"); await p.fill("#b-restarts", "150"); await p.click("#b-sec-adv .b-sec-head button");
+    await p.click("#b-run");
+    await p.waitForFunction(() => !document.querySelector<HTMLButtonElement>("#b-run")?.disabled && document.querySelector("#b-result h2"), undefined, { timeout: 60_000 });
+    await route(p, "#/runs", "#runs-drawer:not([hidden]) .run-card");
+    await p.waitForFunction(() => document.querySelectorAll("#b-runs .run-card").length >= 2);
+    const ticks = p.locator("#b-runs input[type=checkbox]"); await ticks.nth(0).check(); await ticks.nth(1).check();
+    await p.locator("#b-runs .run-card").nth(1).locator("button[aria-haspopup=menu]").click();
+    await p.getByRole("menuitem", { name: "Rename" }).click();
+    await p.waitForSelector("#b-runs .run-rename input");
+    await p.locator("#b-runs .run-card").nth(0).locator("button[aria-haspopup=menu]").click();
+    await p.waitForSelector(".pop[role=menu]");
+  }, leave: async (p) => { await p.keyboard.press("Escape"); } },
+  { name: "builder compare runs", enter: async (p) => {
+    await p.click("#b-runs-compare");
+    await p.waitForSelector("#b-compare-view:not([hidden]) .b-cmp");
+  }, leave: async (p) => { await p.getByRole("button", { name: "Back to result" }).click(); } },
+  { name: "builder template menu", enter: async (p) => { await p.click("#b-tpl-menu"); await p.waitForSelector(".pop[role=menu]"); }, leave: (p) => p.keyboard.press("Escape") },
+  { name: "builder property picker", enter: async (p) => { await p.click("#b-addfloor"); await p.waitForSelector(".pop .b-pick-list"); }, leave: (p) => p.keyboard.press("Escape") },
+  { name: "builder chip checklist", enter: async (p) => { await p.click("#b-locked"); await p.waitForSelector(".pop .b-checks"); }, leave: (p) => p.keyboard.press("Escape") },
+  { name: "builder advanced field error", enter: async (p) => {
+    await p.click("#b-sec-weights .b-sec-head button");   // the weights' rule rows too
+    await p.click("#b-sec-adv .b-sec-head button");
+    await p.fill("#b-restarts", "300000");
+    await p.click("#b-run");
+    await p.waitForSelector("#b-restarts-err");
+  }, leave: async (p) => { await p.fill("#b-restarts", "200"); } },
+  { name: "builder running", enter: async (p) => {
+    // hold the start request so the progress card stays up while it is measured
+    await p.route("**/api/optimize", async (r) => { await new Promise((res) => setTimeout(res, 20_000)); await r.continue().catch(() => {}); });
+    await p.click("#b-run");
+    await p.waitForSelector("#b-msg .b-progress");
+  }, leave: async (p) => {
+    await p.locator("#b-msg .b-progress").getByRole("button", { name: /Cancel/ }).click();
+    await p.waitForFunction(() => !document.querySelector<HTMLButtonElement>("#b-run")?.disabled);
+    await p.unroute("**/api/optimize");
+  } },
+  { name: "builder current suit", enter: async (p) => {
+    const names = await p.locator("#b-char option").allInnerTexts();
+    await p.selectOption("#b-char", names[1]!);
+    await p.waitForSelector("#b-current");
+  } },
 ];
 
 async function launch(dataDir: string): Promise<{ app: ElectronApplication; page: Page; errors: string[] }> {
