@@ -75,9 +75,17 @@ class Item(object):
 
     def _container_gump(self, w):
         # The real call waits on the client's main thread; a world with gump_delay set makes each
-        # lookup cost that many seconds.
+        # lookup cost that many seconds. It walks the client's gump list from the back and takes the
+        # first gump of ANY type with this serial, and an item's name plate always sits behind its
+        # container window: while the item has one (world.labels) the call answers None.
         w.clock.advance(getattr(w, "gump_delay", 0.0))
+        if self.Serial in w.labels:
+            return None
         return ContainerGump(w, self) if self.Opened else None
+
+    def GetItemData(self):
+        """TazUO's ApiItem.GetItemData(): the item's tiledata flags (only IsWearable is modelled)."""
+        return types.SimpleNamespace(IsWearable=bool(getattr(self, "Wearable", False)))
 
 
 class ContainerGump(object):
@@ -92,6 +100,8 @@ class ContainerGump(object):
         return self.dispose
 
     def dispose(self):
+        # A world with dispose_delay set makes each close cost that many seconds.
+        self.world.clock.advance(getattr(self.world, "dispose_delay", 0.0))
         close_window(self.world, self.item)
 
 
@@ -107,11 +117,15 @@ def close_window(world, item):
 
 
 class World(object):
-    """Items by serial, which of them are locked, and every world-acting call the script made."""
+    """Items by serial, which of them are locked, and every world-acting call the script made.
+    `labels` holds the items showing a name plate right now; `label_after_open` maps a serial to
+    the seconds after its window opens that its name plate appears."""
     def __init__(self):
         self.clock = Clock()
         self.items = {}
         self.locked = set()
+        self.labels = set()
+        self.label_after_open = {}
         self.calls = []
         self.messages = []
         self.px, self.py = 10, 10
@@ -124,8 +138,12 @@ class World(object):
     def open(self, serial):
         it = self.items.get(serial)
         self.calls.append(("open", serial))
-        if it is not None and it.IsContainer and serial not in self.locked:
+        # `Openable` marks a container whose graphic the client does not flag as one.
+        if it is not None and (it.IsContainer or getattr(it, "Openable", False)) and serial not in self.locked:
             it.Opened = it.EverOpened = True
+            if serial in self.label_after_open:
+                self.clock.hooks.append((self.clock.now + self.label_after_open[serial],
+                                         lambda: self.labels.add(serial)))
             return True
         return False
 

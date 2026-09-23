@@ -191,10 +191,30 @@ class Conventions(unittest.TestCase):
                     ns = {"re": re}
                     exec(m.group(0), ns)
                     rx = ns["NOT_A_CONTAINER_RE"]
-                    for no in ("Wooden Chest Deed", "a bag of sending", "a music box"):
+                    for no in ("Wooden Chest Deed", "a bag of sending", "a music box", "Spellbook",
+                               "Mysticism Spellbook", "Book of Chivalry", "Runebook", "Runic Atlas",
+                               "Scrapper's Compendium", "a tome"):
                         self.assertTrue(rx.search(no), "%s/%s: %s" % (name, f, no))
-                    self.assertIsNone(rx.search("Commodity Deed Box"), "%s/%s" % (name, f))
+                    for yes in ("Commodity Deed Box", "Bookcase", "Wooden Chest"):
+                        self.assertIsNone(rx.search(yes), "%s/%s: %s" % (name, f, yes))
         self.assertEqual(len(lines), 1, sorted(lines))
+
+    def test_the_never_a_container_graphics_are_the_same_everywhere(self):
+        # A book is a container to the client (its spells are its contents), but double-clicking one
+        # opens a spellbook or runebook, never a container window: every scanner and bridge refuses
+        # the same graphics, whatever the book is called.
+        lines = set()
+        for name, d in adapter_dirs():
+            for f in py_files(d):
+                t = read_text(os.path.join(d, f))
+                if "def is_container(" not in t:
+                    continue
+                m = re.search(r"^NOT_A_CONTAINER_GRAPHICS = .*$", t, re.M)
+                self.assertIsNotNone(m, "%s/%s lacks NOT_A_CONTAINER_GRAPHICS" % (name, f))
+                lines.add(m.group(0))
+        self.assertEqual(len(lines), 1, sorted(lines))
+        graphics = ast.literal_eval(lines.pop().split("=", 1)[1].split("#")[0].strip())
+        self.assertLessEqual({0x0EFA, 0x2D50, 0x2D9D}, graphics, "the spellbooks a live scan opened")
 
     def test_every_bridge_carries_the_same_untrusted_input_block(self):
         blocks = {}

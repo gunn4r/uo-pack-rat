@@ -65,7 +65,7 @@ def rfc3339_now():
 
 
 ADAPTER_ID = "razor-enhanced"
-ADAPTER_VERSION = "1.3.0"
+ADAPTER_VERSION = "1.4.0"
 # Keep this literal in sync with capabilities.json and packrat-scanner.py's own copy.
 CAPABILITIES = {
     "layers": ["RightHand", "LeftHand", "Shoes", "Pants", "Shirt", "Head", "Gloves", "Ring",
@@ -306,11 +306,17 @@ last_status = {"current": None, "at": 0.0}
 
 
 # Named like a container (or carrying a bag graphic) but never one: a deed places an addon, a bag of
-# sending raises a target cursor, a music box plays. Opening them opens nothing.
-NOT_A_CONTAINER_RE = re.compile(r"\b(deed(?!\s+box)|sending|music box)\b", re.I)   # a "Commodity Deed Box" IS one
+# sending raises a target cursor, a music box plays. Opening them opens nothing. A book of any kind
+# (spellbooks of every school, runebooks, a runic atlas, a tome) is a container to the client, but
+# opening one opens a spellbook or runebook window, never a container window.
+NOT_A_CONTAINER_RE = re.compile(r"\b(deed(?!\s+box)|sending|music box|\w*book|tome|atlas|compendium)\b", re.I)   # a "Commodity Deed Box" IS one
+# The books by graphic too, whatever they are called (ServUO's item classes; the first three seen live).
+NOT_A_CONTAINER_GRAPHICS = {0x0EFA, 0x2D50, 0x2D9D, 0x2252, 0x2253, 0x225A, 0x225B, 0x238C, 0x23A0, 0x22C5, 0x9C16}
 
 
 def is_container(it):
+    # Only the client's own IsContainer flag says yes; there is no name fallback, so armour named
+    # like a chest ("Platemail Chest") is never taken for one.
     try:
         if bool(getattr(it, "IsCorpse", False)) or as_int(getattr(it, "ItemID", 0)) == 0x2006:
             return False          # corpses are containers to the client; never open them
@@ -318,7 +324,9 @@ def is_container(it):
         pass
     try:
         if NOT_A_CONTAINER_RE.search(str(getattr(it, "Name", "") or "")):
-            return False          # "Wooden Chest deed", "a bag of sending": see NOT_A_CONTAINER_RE
+            return False          # "Wooden Chest deed", "a bag of sending", a spellbook: see NOT_A_CONTAINER_RE
+        if as_int(getattr(it, "ItemID", 0)) in NOT_A_CONTAINER_GRAPHICS:
+            return False
         return bool(getattr(it, "IsContainer", False))
     except Exception:
         return False

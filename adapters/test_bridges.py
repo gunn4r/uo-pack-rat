@@ -15,6 +15,7 @@ from fake_clients import PLAYER, STRANGER, World, adapter_path, razor_globals, r
 PACK, POUCH, CHEST, BAG, FAR = 0x40000001, 0x40000002, 0x40000003, 0x40000004, 0x40000005
 RING, AMULET, BRACELET, FAR_RING = 0x40000010, 0x40000011, 0x40000012, 0x40000013
 OTHER_CHEST, OTHER_BAG, STRANGER_PACK, STRANGER_RING = 0x40000020, 0x40000021, 0x40000030, 0x40000031
+BOOK, RUNEBOOK, ARMOUR = 0x40000040, 0x40000041, 0x40000042
 RUN_S = 120                      # every scenario stops the bridge after this many fake seconds
 
 
@@ -36,6 +37,9 @@ def home():
     w.add(OTHER_BAG, OTHER_CHEST, name="Bag", OnGround=False)
     w.add(STRANGER_PACK, STRANGER, name="Backpack", OnGround=False, X=0, Y=0)
     w.add(STRANGER_RING, STRANGER_PACK, name="Ring", container_like=False, OnGround=False)
+    w.add(BOOK, PACK, name="Mysticism Spellbook", Graphic=0x2D9D, OnGround=False)
+    w.add(RUNEBOOK, PACK, name="Runebook", Graphic=0x22C5, OnGround=False)
+    w.add(ARMOUR, PACK, name="Gargish Stone Chest", container_like=False, Graphic=0x1415, OnGround=False)
     return w
 
 
@@ -164,6 +168,14 @@ class BridgeCase(object):
         final, _ = self.run_bridge(w, 1, [self.cmd("n1", "highlight", AMULET, [CHEST, OTHER_BAG])])
         self.assertFalse(final["results"]["n1"]["ok"])
         self.assertNotIn(OTHER_BAG, self.opened(w))
+
+    def test_a_book_or_a_piece_of_armour_in_the_chain_is_refused_and_never_opened(self):
+        w = home()
+        cmds = [self.cmd("k%d" % i, "highlight", RING, [PACK, s]) for i, s in enumerate((BOOK, RUNEBOOK, ARMOUR))]
+        final, _ = self.run_bridge(w, 1, cmds)
+        for c in cmds:
+            self.assertFalse(final["results"][c["id"]]["ok"], final["results"][c["id"]])
+        self.assertEqual([s for s in self.opened(w) if s in (BOOK, RUNEBOOK, ARMOUR)], [])
 
     # ---- refusals reach the page --------------------------------------------------------------------
 

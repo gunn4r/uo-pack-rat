@@ -7299,7 +7299,7 @@
  "schemaVersion": 2,
  "adapter": {
   "id": "tazuo",
-  "version": "2.3.0",
+  "version": "2.4.0",
   "client": "TazUO",
   "clientVersion": null,
   "capabilities": {

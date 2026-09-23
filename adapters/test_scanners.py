@@ -22,6 +22,30 @@ def home(world):
     world.add(RING, BAG, name="Ruby Ring", container_like=False, OnGround=False)
 
 
+# Things the client may call a container, or whose name says "chest", that are not item containers:
+# double-clicking a book opens a spellbook or runebook, never a container window, and armour is worn.
+BOOKS = [("Spellbook", 0x0EFA), ("Mysticism Spellbook", 0x2D9D), ("Spellweaving Spellbook", 0x2D50),
+         ("Necromancer Spellbook", 0x2253), ("Book of Chivalry", 0x2252), ("Book of Bushido", 0x238C),
+         ("Book of Ninjitsu", 0x23A0), ("Book of Masteries", 0x225A), ("Runebook", 0x22C5),
+         ("Runic Atlas", 0x9C16), ("", 0x2D50)]
+ARMOUR = ["Gargish Stone Chest", "Gargish Platemail Chest Of Sorcery", "Platemail Chest"]
+
+
+def books_and_armour(world, parent, first=0x40000500):
+    """Every book in BOOKS (the client says IsContainer, as it does for a spellbook) and every piece of
+    ARMOUR (not a container to the client), plus a piece the client calls wearable whose name alone
+    would pass for a chest; returns their serials."""
+    out = []
+    for i, (name, graphic) in enumerate(BOOKS):
+        out.append(first + i)
+        world.add(out[-1], parent, name=name, Graphic=graphic, OnGround=False)
+    for i, name in enumerate(ARMOUR + ["Chest"]):
+        out.append(first + 0x40 + i)
+        world.add(out[-1], parent, name=name, container_like=False, Graphic=0x1415,
+                  Wearable=(name == "Chest"), OnGround=False)
+    return out
+
+
 def nest(world, parent, depth):
     """`depth` bags each inside the last, starting in `parent`, with a ring in the deepest; returns the
     bags, outermost first."""
@@ -188,11 +212,11 @@ class TazUOScanner(DataDir, unittest.TestCase):
         self.assertEqual(self.closed(w), [CHEST, PACK])
 
     def test_after_a_stop_closing_gives_up_within_the_clients_stop_grace(self):
-        # TazUO detaches a stopped script's thread after 2 s; each window lookup waits on the
-        # client's main thread, so closing after a Stop must end well inside that.
+        # TazUO detaches a stopped script's thread after 2 s; a close that waits on the client's
+        # main thread could run past that, so closing after a Stop must end well inside it.
         w = World(); home(w)
         bags = nest(w, CHEST, 3)
-        w.gump_delay = 0.4
+        w.dispose_delay = 0.4
         api = tazuo_api(w, PACK)
         started, t0 = [], []
 
@@ -206,14 +230,14 @@ class TazUOScanner(DataDir, unittest.TestCase):
         self.assertTrue(t0, "the scan should have seen the Stop")
         self.assertEqual(self.scans("tazuo"), [])
         self.assertTrue(started, "some windows still close after a Stop")
-        # From the first window lookup to the end of the last one.
-        self.assertLessEqual(max(started) - (min(started) - w.gump_delay), 2.0)
+        # From the start of the first close to the end of the last one.
+        self.assertLessEqual(max(started) - (min(started) - w.dispose_delay), 2.0)
         self.assertLess(len(started), len(bags) + 3, "the rest are left open")
 
     def test_without_a_stop_every_window_closes_however_long_it_takes(self):
         w = World(); home(w)
         nest(w, CHEST, 3)
-        w.gump_delay = 0.4
+        w.gump_delay = w.dispose_delay = 0.4
         self.scan(w)
         self.assertEqual(len(self.closed(w)), 6)
 
@@ -230,6 +254,41 @@ class TazUOScanner(DataDir, unittest.TestCase):
         with self.assertRaises(RuntimeError):
             run_script(self.SCRIPT, w, api=api)
         self.assertEqual(self.closed(w), [CHEST, PACK])
+
+    def test_a_ground_chest_whose_name_plate_appears_after_it_opens_is_still_closed(self):
+        # TazUO's GetContainerGump() finds an item's name plate instead of its window: the handle
+        # is taken right after the scan's own UseObject, before the plate shows.
+        w = World(); home(w)
+        w.label_after_open = {CHEST: 0.5}
+        self.scan(w)
+        self.assertEqual(self.closed(w), [BAG, CHEST, PACK])
+        self.assertIn(CHEST, w.labels, "the plate did show before the windows were closed")
+
+    def test_a_window_whose_name_plate_showed_from_the_start_stays_open_and_is_reported(self):
+        w = World(); home(w)
+        w.labels.add(CHEST)
+        self.scan(w)
+        self.assertEqual(self.closed(w), [BAG, PACK])
+        self.assertTrue(w.items[CHEST].Opened)
+        self.assertEqual(len(self.scans("tazuo")), 1)
+        self.assertTrue(any("1 container window" in m and "by hand" in m for m in w.messages), w.messages)
+
+    def test_books_and_armour_are_never_double_clicked_and_are_recorded_as_items(self):
+        w = World(); home(w)
+        serials = books_and_armour(w, PACK) + books_and_armour(w, CHEST, first=0x40000600)
+        self.scan(w)
+        opened = [c[1] for c in w.calls if c[0] == "open"]
+        self.assertEqual([s for s in serials if s in opened], [])
+        [s] = self.scans("tazuo")
+        items = [i["serial"] for i in s["items"]]
+        self.assertEqual([x for x in serials if x not in items], [])
+
+    def test_a_chest_the_client_does_not_flag_is_still_opened_by_its_name(self):
+        w = World(); home(w)
+        c = w.items[CHEST]
+        c.IsContainer, c.Graphic, c.Openable = False, 0x1234, True
+        self.scan(w)
+        self.assertIn(("open", CHEST), w.calls)
 
     def test_a_client_without_the_window_calls_leaves_windows_open_and_does_not_raise(self):
         for flag in ("no_container_gump", "gump_without_dispose"):
@@ -256,7 +315,7 @@ class TazUORefresh(DataDir, unittest.TestCase):
             m = re.search(r"^def %s\(.*?(?=^def |^[A-Z_]+ = )" % name, t, re.S | re.M)
             self.assertIsNotNone(m, "%s lacks %s" % (path, name))
             return m.group(0)
-        for name in ("is_container", "was_opened", "note_if_closed", "scan_root", "close_opened"):
+        for name in ("is_container", "was_opened", "note_if_closed", "open_container", "scan_root", "close_opened"):
             self.assertEqual(body(self.SCRIPT, name), body(TazUOScanner.SCRIPT, name), name)
 
     def test_a_bag_in_the_backpack_that_did_not_open_is_marked_unopened(self):
@@ -339,6 +398,16 @@ class RazorScanner(DataDir, unittest.TestCase):
         self.assertNotIn(("open", 0x40000021), w.calls)
         [s] = self.scans("razor-enhanced")
         self.assertIn(0x40000021, [i["serial"] for i in s["items"]])
+
+    def test_books_and_armour_are_never_opened_and_are_recorded_as_items(self):
+        w = World(); home(w)
+        serials = books_and_armour(w, PACK) + books_and_armour(w, CHEST, first=0x40000600)
+        self.scan(w)
+        opened = [c[1] for c in w.calls if c[0] == "open"]
+        self.assertEqual([s for s in serials if s in opened], [])
+        [s] = self.scans("razor-enhanced")
+        items = [i["serial"] for i in s["items"]]
+        self.assertEqual([x for x in serials if x not in items], [])
 
     def test_a_bag_nested_past_the_depth_limit_is_marked_unopened(self):
         w = World(); home(w)
