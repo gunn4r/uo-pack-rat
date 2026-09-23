@@ -47,21 +47,19 @@ td.n, th.n { text-align: right; font-variant-numeric: tabular-nums; }
 details summary { cursor: pointer; color: var(--color-text-muted); font-size: var(--text-sm); }
 @media (prefers-reduced-motion: no-preference) { button, .chip { transition: background var(--duration-fast), border-color var(--duration-fast); } }
 
-/* in-game style hover tooltip: always drawn in dark mode (index.html gives #tip its own data-mode), so the
-   game's colours read as designed */
-#tip { position: fixed; z-index: var(--z-tooltip); pointer-events: none; display: none; width: max-content; max-width: var(--tooltip-w); padding: var(--space-2) var(--space-3); background: var(--color-surface-raised); color: var(--color-text); border: var(--border-width) solid var(--color-border); border-radius: var(--radius-md); font-size: var(--text-sm); line-height: var(--lh-sm); box-shadow: var(--shadow-2); }
-#tip .t-name { text-align: center; font-weight: var(--weight-semibold); font-size: var(--text-base); line-height: var(--lh-base); }
-#tip .t-center { text-align: center; }
-#tip .t-i { font-style: italic; }
-#tip .t-b { font-weight: var(--weight-semibold); }
-#tip .t-hr { border-top: var(--border-width) solid var(--color-border); margin: var(--space-1-5) 0; }
-#tip .t-val { color: var(--color-success); }
-#tip .t-leech { color: var(--res-energy); }
-#tip .t-hot { color: var(--color-highlight); }
-#tip .t-key { color: var(--color-text-muted); }
-#tip .t-dur { height: 4px; background: var(--color-surface-sunken); border-radius: var(--radius-sm); margin: var(--space-0-5) 0 var(--space-1); }
-#tip .t-dur > div { height: 100%; background: var(--color-accent); border-radius: var(--radius-sm); }
-#tip .t-muted { color: var(--color-text-muted); }
+/* the item tooltip (dom.mts tipNode, design spec 4.3): always drawn in dark mode (index.html gives #tip its
+   own data-mode), so the game's colours read as designed; 280 px, the body face, pointer-safe */
+#tip { position: fixed; z-index: var(--z-tooltip); pointer-events: none; display: none; width: var(--tooltip-w); padding: var(--space-3); background: var(--color-surface-raised); color: var(--color-text); border: var(--border-width) solid var(--color-border); border-radius: var(--radius-md); font-size: var(--text-sm); line-height: var(--lh-sm); box-shadow: var(--shadow-2); }
+#tip .tipcard { display: flex; flex-direction: column; gap: 6px; }
+#tip .tip-head { display: flex; align-items: center; gap: var(--space-2); }
+#tip .tip-name { flex: 1 1 auto; min-width: 0; font-size: var(--text-base); line-height: var(--lh-base); }
+#tip .tip-head .tag { flex: none; }
+#tip .tip-lines { display: flex; flex-direction: column; gap: 2px; font-size: 12px; line-height: 18px; }
+#tip .tip-foot { display: flex; align-items: center; gap: 6px; min-width: 0; }
+#tip .tip-foot > span { flex: none; white-space: nowrap; }
+#tip .tip-foot > span:last-child { flex: 0 1 auto; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+#tip .t-res-phys { color: var(--res-phys); } #tip .t-res-fire { color: var(--res-fire); } #tip .t-res-cold { color: var(--res-cold); }
+#tip .t-res-poison { color: var(--res-poison); } #tip .t-res-energy { color: var(--res-energy); }
 [data-serial] { cursor: default; }
 
 /* character sheet */
