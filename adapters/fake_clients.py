@@ -58,9 +58,46 @@ class Item(object):
         self.Hue = 0
         self.Amount = 1
         self.Opened = False
+        self.EverOpened = False
         self.OnGround = container == 0
+        self._world = None
         for k, v in kw.items():
             setattr(self, k, v)
+
+    @property
+    def GetContainerGump(self):
+        """TazUO's ApiItem.GetContainerGump(): this container's open window, or None. A world with
+        no_container_gump set models a client build without the call (the attribute is missing)."""
+        w = self._world
+        if w is None or getattr(w, "no_container_gump", False):
+            raise AttributeError("GetContainerGump")
+        return lambda: ContainerGump(w, self) if self.Opened else None
+
+
+class ContainerGump(object):
+    """An open container window. Dispose() closes it the way the client does: the item's Opened
+    flag drops. A world with gump_without_dispose set models a window object lacking Dispose."""
+    def __init__(self, world, item):
+        self.world, self.item = world, item
+
+    def __getattr__(self, name):
+        if name != "Dispose" or getattr(self.world, "gump_without_dispose", False):
+            raise AttributeError(name)
+        return self.dispose
+
+    def dispose(self):
+        close_window(self.world, self.item)
+
+
+def close_window(world, item):
+    """Close an item's container window; a container with no window open is left alone."""
+    if not item.Opened:
+        return
+    world.calls.append(("close", item.Serial))
+    item.Opened = False
+    hook = getattr(world, "on_close", None)
+    if hook is not None:
+        hook(item.Serial)
 
 
 class World(object):
@@ -75,13 +112,14 @@ class World(object):
 
     def add(self, serial, container=0, **kw):
         self.items[serial] = Item(serial, container, **kw)
+        self.items[serial]._world = self
         return self.items[serial]
 
     def open(self, serial):
         it = self.items.get(serial)
         self.calls.append(("open", serial))
         if it is not None and it.IsContainer and serial not in self.locked:
-            it.Opened = True
+            it.Opened = it.EverOpened = True
             return True
         return False
 
@@ -196,6 +234,8 @@ def razor_globals(world, backpack, bank=None, skills=None):
                 return [REItem(k) for k in world.kids(it.Serial, False)]
             if name == "Properties":
                 return [it.Name]
+            if name == "ContainerOpened":
+                return it.EverOpened     # RE sets it when contents first arrive and never clears it
             return getattr(it, name)
 
     def wrap(it):
@@ -238,6 +278,13 @@ def razor_globals(world, backpack, bank=None, skills=None):
         @staticmethod
         def SetColor(s, hue):
             world.calls.append(("color", int(s), hue))
+
+        @staticmethod
+        def Close(s):
+            close_window(world, world.items[int(s)])
+
+    if getattr(world, "no_items_close", False):
+        del Items.Close            # a Razor Enhanced build without Items.Close
 
     skills = skills or {}
 
