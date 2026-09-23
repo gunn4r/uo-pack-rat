@@ -3,7 +3,7 @@
 // Exports startServer(config) → { server, port, url, close() } — nothing runs at import time, so a
 // test (or another launcher) can start and stop as many independent instances as it likes. The file
 // also self-starts when run directly (node app/vault-server.mts / node scripts/start.mts).
-// Routes: GET /  (index.html) · GET /vault-lib.mjs · GET /item-query.mjs (pure filter/sort/facet logic
+// Routes: GET /  (index.html) · GET /favicon.png (app/assets/, the logo at 64 px) · GET /vault-lib.mjs · GET /item-query.mjs (pure filter/sort/facet logic
 //         shared by the browser and GET /api/items below — no DOM, no node: imports, servable byte for
 //         byte like vault-lib.mts) · GET /scan-schema.mjs (vault-lib.mts imports it for parseStamp, so
 //         it must be servable to the browser the same way) ·
@@ -146,13 +146,13 @@ interface HttpError extends Error {
 }
 
 function send(res: http.ServerResponse, status: number, body: unknown, type = "application/json"): void {
-  // Every non-JSON caller passes an already-read string (readFileSync's result) — the cast is
-  // compiler-only, matching config.mts's rawPort pattern.
-  const data = type === "application/json" ? JSON.stringify(body) : (body as string);
+  // Every non-JSON caller passes an already-read file: a string (readFileSync's utf8 result) for
+  // text, a Buffer for the favicon — the cast is compiler-only, matching config.mts's rawPort pattern.
+  const data = type === "application/json" ? JSON.stringify(body) : (body as string | Buffer);
   // x-frame-options rides on EVERY response, not just text/html: it is the belt to the CSP's braces
   // for anything that ignores frame-ancestors, and a JSON response rendered directly as a document
   // is framable too.
-  const headers: Record<string, string> = { "content-type": type + "; charset=utf-8", "cache-control": "no-store", "x-content-type-options": "nosniff", "x-frame-options": "DENY" };
+  const headers: Record<string, string> = { "content-type": type.startsWith("image/") ? type : type + "; charset=utf-8", "cache-control": "no-store", "x-content-type-options": "nosniff", "x-frame-options": "DENY" };
   if (type === "text/html") headers["content-security-policy"] = CSP;
   res.writeHead(status, headers);
   res.end(data);
@@ -906,6 +906,7 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
         if (!authOk) return send(res, 401, { ok: false, error: "unauthorized" });
       }
       if (req.method === "GET" && url.pathname === "/") return send(res, 200, readFileSync(join(HERE, "index.html"), "utf8"), "text/html");
+      if (req.method === "GET" && url.pathname === "/favicon.png") return send(res, 200, readFileSync(join(HERE, "assets", "favicon.png")), "image/png");
       if (req.method === "GET" && url.pathname === "/vault-lib.mjs") return send(res, 200, readFileSync(join(WEB, "vault-lib.mjs"), "utf8"), "text/javascript");
       if (req.method === "GET" && url.pathname === "/item-query.mjs") return send(res, 200, readFileSync(join(WEB, "item-query.mjs"), "utf8"), "text/javascript");
       if (req.method === "GET" && url.pathname === "/scan-schema.mjs") return send(res, 200, readFileSync(join(WEB, "scan-schema.mjs"), "utf8"), "text/javascript");
