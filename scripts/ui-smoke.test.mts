@@ -36,7 +36,7 @@ test("[slow] the packaged UI renders, switches tabs and lists the demo inventory
     page.on("pageerror", (e) => errors.push(String(e)));
 
     assert.equal(await page.title(), "Pack Rat");
-    await page.waitForSelector("#status", { timeout: 30_000 });
+    await page.waitForSelector("#status", { state: "attached", timeout: 30_000 });   // attached, not visible: a narrow window collapses the sidebar, which hides the status line
 
     // The inventory tab is the default: the demo fixtures must produce rows, not the empty state.
     // #inv-table is the real markup (app/index.html) — the tab sections carry no data-tab-panel
@@ -101,7 +101,7 @@ test("[slow] with tazuo configured, the demo inventory shows all three bridge bu
   const app = await _electron.launch({ args: [ROOT, "--demo", "--data", dataDir], cwd: ROOT, timeout: 60_000 });
   try {
     const page = await app.firstWindow();
-    await page.waitForSelector("#status", { timeout: 30_000 });
+    await page.waitForSelector("#status", { state: "attached", timeout: 30_000 });   // attached, not visible: a narrow window collapses the sidebar, which hides the status line
     await page.locator("#inv-table tbody tr").first().waitFor({ timeout: 30_000 });
 
     await page.waitForSelector("#inv-table .act button", { timeout: 10_000 });
@@ -145,7 +145,7 @@ test("[slow] a partial-bridge adapter only offers its declared action, and the n
   });
   try {
     const page = await app.firstWindow();
-    await page.waitForSelector("#status", { timeout: 30_000 });
+    await page.waitForSelector("#status", { state: "attached", timeout: 30_000 });   // attached, not visible: a narrow window collapses the sidebar, which hides the status line
     await page.locator("#inv-table tbody tr").first().waitFor({ timeout: 30_000 });
 
     await page.waitForSelector("#inv-table .act button", { timeout: 10_000 });
@@ -183,7 +183,7 @@ test("[slow] Save as… in the suit builder opens an in-page dialog and saves th
   const app = await _electron.launch({ args: [ROOT, "--demo", "--data", dataDir], cwd: ROOT, timeout: 60_000 });
   try {
     const page = await app.firstWindow();
-    await page.waitForSelector("#status", { timeout: 30_000 });
+    await page.waitForSelector("#status", { state: "attached", timeout: 30_000 });   // attached, not visible: a narrow window collapses the sidebar, which hides the status line
 
     await page.click('[data-nav="builder"]');
     await page.waitForSelector("#tab-builder:not([hidden])", { timeout: 10_000 });
