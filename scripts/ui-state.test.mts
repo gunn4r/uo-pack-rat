@@ -163,7 +163,7 @@ test("[slow] a build finished for one character is never shown under another", a
   }
 });
 
-test("[slow] a character can be forgotten from the Characters tab", async (t) => {
+test("[slow] a character's sheet opens from the roster, and a character can be forgotten from its row menu", async (t) => {
   const why = unavailable();
   if (why) return t.skip(why);
   const dataDir = seedDataDir("packrat-ui-forgetchar-");
@@ -171,13 +171,36 @@ test("[slow] a character can be forgotten from the Characters tab", async (t) =>
   try {
     await page.locator("#inv-table tbody tr.item").first().waitFor({ timeout: 30_000 });
     await openTab(page, "characters");
-    const cards = page.locator("#char-cards > .panel");
-    assert.equal(await cards.count(), 2);
-    const gone = await cards.first().locator("h2").innerText();
-    await cards.first().getByRole("button", { name: "Forget" }).click();
+    const rows = page.locator("#char-table tbody tr[data-name]");
+    await rows.first().waitFor({ timeout: 10_000 });
+    assert.equal(await rows.count(), 2);
+    const gone = (await rows.first().getAttribute("data-name"))!;
+    const other = (await rows.nth(1).getAttribute("data-name"))!;
+    // The name opens the sheet at its own route; next/previous walk the roster; the breadcrumb goes back.
+    await rows.first().getByRole("link", { name: gone }).click();
+    await page.waitForSelector(`#tab-characters .sheet[data-character="${gone}"]`);
+    assert.equal(await page.evaluate(() => location.hash), `#/characters/${gone}`);
+    assert.equal(await page.locator("#h-characters").innerText(), gone);
+    await page.getByRole("button", { name: `Next character: ${other}` }).click();
+    await page.waitForSelector(`#tab-characters .sheet[data-character="${other}"]`);
+    // a filled slot tile shows that piece's tooltip lines
+    const tile = page.locator("#tab-characters .sheet button.slot").first();
+    const piece = await tile.locator(".nm").innerText();
+    await tile.click();
+    assert.ok((await page.locator(".pop.item-pop").innerText()).includes(piece), `the slot popover names ${piece}`);
+    await page.keyboard.press("Escape");
+    await page.locator("#tab-characters .crumbs").getByRole("link", { name: "Characters" }).click();
+    await rows.first().waitFor();
+    // Forget lives in the row's ⋯ menu, which the keyboard reaches: ↑ from the first item wraps to the last
+    await rows.first().getByRole("button", { name: `More actions for ${gone}` }).click();
+    const menu = page.getByRole("menu", { name: `Actions for ${gone}` });
+    await menu.waitFor();
+    await page.keyboard.press("ArrowUp");
+    assert.equal(await page.evaluate(() => document.activeElement?.textContent), `Forget ${gone}…`, "↑ from the first item wraps to Forget");
+    await page.keyboard.press("Enter");
     await confirmYes(page, new RegExp(`^Forget ${gone}\\?$`));
-    await page.waitForFunction(() => document.querySelectorAll("#char-cards > .panel").length === 1, undefined, { timeout: 15_000 });
-    assert.notEqual(await cards.first().locator("h2").innerText(), gone);
+    await page.waitForFunction(() => document.querySelectorAll("#char-table tbody tr[data-name]").length === 1, undefined, { timeout: 15_000 });
+    assert.notEqual(await rows.first().getAttribute("data-name"), gone);
     // Its worn set left the inventory with it.
     const locs = await page.locator("#f-loc option").allInnerTexts();
     assert.ok(!locs.includes(`Worn by ${gone}`), `no "Worn by ${gone}" location is left, got ${JSON.stringify(locs)}`);
@@ -205,7 +228,7 @@ test("[slow] a failed request during load shows an error, renders Settings and s
     await page.waitForFunction(() => !/loading/.test(document.querySelector("#settings-body")?.textContent || "loading"), undefined, { timeout: 15_000 });
     assert.doesNotMatch(await page.locator("#import-body").innerText(), /^loading/);
     await openTab(page, "characters");
-    assert.match(await page.locator("#char-cards").innerText(), /\/api\/profiles/, "the Characters tab names the request that failed");
+    assert.match(await page.locator("#char-body").innerText(), /\/api\/profiles/, "the Characters screen names the request that failed");
     await openTab(page, "builder");
     assert.match(await page.locator("#b-result").innerText(), /\/api\/profiles/, "the Suit Builder names the request that failed");
   } finally {

@@ -50,6 +50,7 @@ function elements(n: FakeElement): FakeElement[] {
 }
 (globalThis as unknown as { document: unknown }).document = {
   createElement: (tag: string) => new FakeElement(tag),
+  createElementNS: (_ns: string, tag: string) => new FakeElement(tag),   // the sheet's info message carries an icon
   createTextNode: (s: string) => new FakeText(s),
 };
 
@@ -80,7 +81,7 @@ test("[fast] sheetNode renders scan-supplied stats and maxes as text, never as m
   assert.ok(!html.includes("<img"), `stats/maxes reached the parser as markup: ${html.slice(0, 400)}`);
   assert.ok(!elements(node).some((e) => e.tagName.toLowerCase() === "img"), "an <img> element was built from scan data");
   // and it is still SHOWN — dropped silently would pass the check above for the wrong reason
-  assert.ok(node.textContent.includes("Strength"), "the attributes table did not render");
+  assert.ok(node.textContent.includes("STR"), "the attributes did not render");
 });
 
 test("[fast] sheetNode renders a scan-supplied character name as text, never as markup", () => {
@@ -101,6 +102,19 @@ test("[fast] sheetNode survives a skills entry that is not a {value, cap} pair",
 test("[fast] sheetNode renders a scan-supplied skill NAME as text, never as markup", () => {
   withCharacter("Kestrel", { skills: { [PAYLOAD]: { value: 100, cap: 120 } } });
   assert.ok(!serialize(sheetNode("Kestrel", {}, null) as unknown as Node).includes("<img"), "a skill name reached the parser as markup");
+});
+
+test("[fast] sheetNode renders a worn piece's scan-supplied name, tags and rarity as text, never as markup or style", () => {
+  const piece = { serial: 1, name: PAYLOAD, slot: "helmet", props: { fireResist: 72 }, tags: [PAYLOAD], rarity: `x);background:url(${PAYLOAD})` };
+  withCharacter("Kestrel", {});
+  (state.inv as unknown as { worn: Record<string, unknown[]> }).worn.Kestrel = [piece];
+  const node = sheetNode("Kestrel", { "1": piece as never }, null) as unknown as Node;
+  const html = serialize(node);
+  assert.ok(!html.includes("<img"), "a worn piece's name or tag reached the parser as markup");
+  assert.ok(!elements(node).some((e) => (e.attrs.style || "").includes("url(")), "an unknown rarity reached a style attribute");
+  assert.ok(node.textContent.includes(PAYLOAD), "the piece is not shown at all");
+  // and the figures are the real ones: Fire 72 on a 70 cap shows 70 with the badge
+  assert.ok(node.textContent.includes("cap +2"), "the Fire tile has no cap badge");
 });
 
 test("[fast] safeColor accepts only #rgb / #rrggbb and drops everything else", () => {
