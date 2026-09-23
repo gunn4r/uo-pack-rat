@@ -172,7 +172,9 @@ export function tipNode(it: TooltipItem): HTMLDivElement {
   const tierColor = tier ? rarityColor(tier) : null;
   const qty = (it.amount || 1) > 1 ? `${it.amount} ` : "";
   const tagEls = [...tags].map((t) => tagChip(t));
-  const foot = [tier ? el("span", tierColor ? { style: `color:${tierColor}` } : {}, tier) : null, tier && it.location ? el("span", { class: "faint", "aria-hidden": "true" }, "·") : null, it.location ? el("span", { class: "muted" }, it.location.text) : null].filter((x): x is HTMLSpanElement => !!x);
+  // The tier and where the item is, each on a line of its own: a location is often long, and sharing a line
+  // with the tier cut it off.
+  const foot = [tier ? el("span", tierColor ? { style: `color:${tierColor}` } : {}, tier) : null, it.location ? el("span", { class: "muted tip-where" }, it.location.text) : null].filter((x): x is HTMLSpanElement => !!x);
   return el("div", { class: "tipcard" },
     el("div", { class: "tip-head" }, el("span", { class: "strong tip-name", ...(tierColor ? { style: `color:${tierColor}` } : {}) }, qty + it.name), ...tagEls),
     body.length ? el("div", { class: "divider" }) : null,

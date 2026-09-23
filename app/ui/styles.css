@@ -40,9 +40,8 @@ details summary { cursor: pointer; color: var(--color-text-muted); font-size: va
 .tipcard-host .tip-name { flex: 1 1 auto; min-width: 0; font-size: var(--text-base); line-height: var(--lh-base); }
 .tipcard-host .tip-head .tag { flex: none; }
 .tipcard-host .tip-lines { display: flex; flex-direction: column; gap: 2px; font-size: 12px; line-height: 18px; }
-.tipcard-host .tip-foot { display: flex; align-items: center; gap: 6px; min-width: 0; }
-.tipcard-host .tip-foot > span { flex: none; white-space: nowrap; }
-.tipcard-host .tip-foot > span:last-child { flex: 0 1 auto; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.tipcard-host .tip-foot { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.tipcard-host .tip-where { overflow-wrap: anywhere; }   /* the whole location, wrapped: never cut off */
 .tipcard-host .t-res-phys { color: var(--res-phys); } .tipcard-host .t-res-fire { color: var(--res-fire); } .tipcard-host .t-res-cold { color: var(--res-cold); }
 .tipcard-host .t-res-poison { color: var(--res-poison); } .tipcard-host .t-res-energy { color: var(--res-energy); }
 [data-serial] { cursor: default; }
