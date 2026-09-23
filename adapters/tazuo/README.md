@@ -1,8 +1,53 @@
 # TazUO adapter scripts
 
-Three Legion Script (Python) files that run inside the TazUO game client and feed the Pack Rat app. Each is a self-contained, attended, one-shot or bounded tool — see "The AFK rule" below.
+Three small scripts that run inside the TazUO game client and send what your character owns to the Pack Rat app. You only run them when you are at the keyboard (see [The AFK rule](#the-afk-rule)).
 
-## Contract (scan v2 / bridge v1)
+- **`packrat-scanner.py` — the full scan.** Reads everything you are wearing, your backpack, your bank box if it is open, and every chest and bag you can reach, including bags inside chests.
+- **`packrat-refresh.py` — the quick refresh.** Reads just your stats, skills, what you are wearing and your backpack.
+- **`packrat-bridge.py` — the bridge.** Makes the app's **Highlight**, **Grab** and **Go to** buttons work.
+
+## Install
+
+The easy way is the setup window in the Pack Rat app: pick **TazUO** as your client, let it find (or pick) your TazUO folder, and click **Install scripts**. The main [README](../../README.md#3-the-setup-window) walks through it. To get new versions of the scripts later, use **Reinstall scripts** in the app's **Settings** tab.
+
+Before installing or reinstalling, if the game is running: type `-stopall` in the game's chat and wait for **"No scripts are currently running"**. Pack Rat refuses to replace a script that is still running, and tells you to do exactly this.
+
+To install by hand instead:
+
+1. Copy the three `packrat-….py` files into the folder where TazUO keeps its scripts (the `LegionScripts` folder inside your TazUO folder).
+2. Tell the scripts where Pack Rat keeps its data. In the Pack Rat app, open the **Settings** tab and note the folder shown next to **Data directory**. Copy `packrat-paths.example.json` into the same folder as the scripts, rename the copy to `packrat-paths.json`, open it in a text editor, and replace `~/.pack-rat` with that folder. On Windows, write the folder with forward slashes (`C:/Users/example/AppData/Roaming/Pack Rat`) so the file stays valid. (You can skip this step only if you run Pack Rat from source with its default data folder, `~/.pack-rat`.)
+
+## What to press
+
+- **The first time you scan a character, or whenever your chests or bags change:** walk to a group of chests and run `packrat-scanner.py`. Walk to the next group and run it again. To include your bank, open your bank box first.
+- **After gearing up or training a character:** run `packrat-refresh.py`. It works anywhere.
+- **When you want to use the app's Highlight, Grab or Go to buttons:** start `packrat-bridge.py` and leave it running. The app shows **bridge: *your character* ready** at the top while it is running.
+
+## Starting a script
+
+1. In the game, open the Script Manager from TazUO's top menu: **Legion Script**.
+2. Find the script in the list and press its **Play** button.
+
+To start a script with one key, right-click it in the Script Manager, choose **Set Hotkey**, and press the key you want. Pressing the key again stops it. The Script Manager's **Create Macro Button** is another way to get a one-click button for a script. Pack Rat's installer only copies files; setting up hotkeys is up to you, once per script.
+
+## Good to know
+
+- The scanner only reads chests close enough to open. A chest it can't open is kept as it was in your last scan, not emptied.
+- The bank is only read while your bank box is open.
+- A scan takes from a few seconds to a couple of minutes, depending on how many bags it has to open. If you stop it part way, it saves nothing, and you can simply run it again.
+- The bridge stops by itself after 8 hours, or when you press Stop. Start it again when you need it.
+- The bridge only walks up to 24 tiles. If an item is further away, it tells you to walk closer and try again.
+- A scan file shows where your house and chests are. Don't share one publicly without reading the main README's [privacy note](../../README.md#keep-your-scan-files-to-yourself).
+
+## The AFK rule
+
+These scripts read what your character can see and move one item when you click. They never fight, farm, or loop unattended.
+
+## For developers
+
+Everything below is for people working on the adapter itself.
+
+### Contract (scan v2 / bridge v1)
 
 The scanner and refresh scripts write scan files as **schema v2** (`schemaVersion: 2`), and the bridge speaks **protocol v1**. Both are validated against `app/schema/scan.v2.schema.json` and `app/schema/bridge.v1.schema.json` respectively.
 
@@ -18,13 +63,13 @@ The scanner and refresh scripts write scan files as **schema v2** (`schemaVersio
 - A root the scanner could not open (too far, locked) is still listed in `roots[]`, but with `opened: false` and no items for that root — the app's fold treats that exactly like the root wasn't scanned at all, keeping whatever it last knew about it. A bag *inside* a root that lists nothing and never opened (the client's `Opened` flag), or that sits deeper than `MAX_NEST`, is recorded in `containers` with `"opened": false`: the rest of the root updates, and the app keeps what it last knew inside that bag. The scanner says so in game, naming the bag. A scan stopped mid-way writes no file at all; so does a refresh whose backpack did not open. Things named like a container that never open as one — a deed, a bag of sending, a music box — are never double-clicked and are recorded as ordinary items (a Commodity Deed Box is a real container and is opened).
 - The bridge's `status.json` `alive` field is always an RFC 3339 timestamp (never the old numeric epoch-seconds `0`); a clean Stop adds `"stopped": true` instead.
 
-## What each script does
+### What each script does
 
 - **`packrat-scanner.py`** — full inventory scan. Reads every equipped layer, the backpack (nested bags included), the bank box if it is open, and every openable container within reach (recursively — bags in chests in chests). Dumps raw tooltips; the app does all the parsing. Run it standing next to a chest cluster, once per cluster, once per character. Takes anywhere from a few seconds to a couple of minutes depending on how much there is to open.
 - **`packrat-refresh.py`** — quick refresh. Reads this character's stats, skills, maxes, resists, position, every equipped layer, and the backpack only — nothing else is opened. Takes a few seconds. Run it after gearing up or training, without needing to stand anywhere special.
-- **`packrat-bridge.py`** — the bridge. Leave it running while you use the app's Highlight, Grab, and Go to buttons on the Suit Builder or Containers tab. It executes one command at a time: highlight flashes an item's name and marks its container's tile for a few seconds, grab walks to the item, opens its container chain, and moves it into your backpack, and go to just walks there. Bounded to 8 hours; Stop ends it cleanly.
+- **`packrat-bridge.py`** — the bridge. Leave it running while you use the app's Highlight, Grab, and Go to buttons on the Suit Builder or Inventory tab. It executes one command at a time: highlight flashes an item's name and marks its container's tile for a few seconds, grab walks to the item, opens its container chain, and moves it into your backpack, and go to just walks there. Bounded to 8 hours; Stop ends it cleanly.
 
-## What the bridge refuses
+### What the bridge refuses
 
 `<dataDir>/bridge/tazuo/queue.jsonl` is an ordinary file. The app writes it, but so could anything else running on your machine, and a line in it drives your character. So the bridge trusts nothing in it and re-checks every line itself rather than assuming the app already did. What it will not do:
 
@@ -36,39 +81,23 @@ The scanner and refresh scripts write scan files as **schema v2** (`schemaVersio
 - **Grab from anywhere but your own things.** The destination was always hard-coded to your backpack; the *source* is now checked too. The piece has to resolve to your backpack, your bank, or the container chain that same command just opened — a guild chest someone left open nearby, a stranger's pack, or an item lying on the ground is refused rather than moved.
 - **Lose the rest of a batch to one bad line, or refuse quietly.** Every line is handled on its own: a junk line, a line that is not a JSON object, or one over 16 KB is counted and reported while the commands behind it still run. A refused command that carries an id is recorded under that id, so the app toasts the reason on the button you clicked. Reads are capped at 256 KB per poll and the kept results at 30, so neither the client nor `status.json` can be made to grow without bound.
 
-## The AFK rule
+### What the installer does
 
-These scripts read what your character can see and move one item when you click. They never fight, farm, or loop unattended.
+The app's first-run setup wizard installs this adapter: pick TazUO as the client, either accept a detected `LegionScripts/` folder or browse to one, and its Install step copies all three scripts there and writes a `packrat-paths.json` beside them pointing at the app's own data directory. The Settings tab's Reinstall button repeats this later (picking up new script versions, or re-pointing at a moved data directory) without walking the whole wizard again. Either one refuses, with a 409 and a message naming the fix, if a script looks like it is still running in the client at that moment (overwriting a script file while a Legion script thread is mid-run against it can orphan that thread) — type `-stopall` in game, wait for "No scripts are currently running", then retry. Either way TazUO's Script Manager still needs its own one-time hotkey/macro-button setup per script — the installer places files, it doesn't touch TazUO's own configuration.
 
-## Install
-
-The app's first-run setup wizard does this for you: pick TazUO as the client, either accept a detected `LegionScripts/` folder or browse to one, and its Install step copies all three scripts there and writes a `packrat-paths.json` beside them pointing at the app's own data directory. The Settings tab's Reinstall button repeats this later (picking up new script versions, or re-pointing at a moved data directory) without walking the whole wizard again. Either one refuses, with a 409 and a message naming the fix, if a script looks like it is still running in the client at that moment (see The AFK rule, below, for why that matters) — type `-stopall` in game, wait for "No scripts are currently running", then retry.
-
-To install by hand instead — no wizard, or scripting a fresh checkout:
-
-1. Copy all three `.py` files into `<TazUO>/TazUO/LegionScripts/`.
-2. If the app's data directory is not the default (`~/.pack-rat`), copy `packrat-paths.example.json` to `packrat-paths.json` in that same folder, next to the three scripts, and set `dataDir` to match.
-3. In TazUO's Script Manager, use "Create Macro Button" for each script, or bind a hotkey, so you can run them without opening the manager every time.
-
-Either way TazUO's Script Manager still needs its own one-time hotkey/macro-button setup per script (step 3 above) — the installer places files, it doesn't touch TazUO's own configuration.
-
-## What to press
-
-- After a gearing or skill-training session on a character: run `packrat-refresh.py`.
-- The first time you scan a character, or whenever chests/bags move or get restocked: stand near the cluster and run `packrat-scanner.py`; repeat at each cluster.
-- Whenever you want to use the app's Highlight/Grab/Go to buttons: start `packrat-bridge.py` and leave it running.
-
-## Data directory resolution
+### Data directory resolution
 
 All three scripts resolve their data directory the same way, checked in order:
 
-1. `packrat-paths.json` next to the script (`{"dataDir": "..."}`). The script's folder comes from `__file__`, or from `API.ScriptPath` if TazUO runs the script without defining `__file__` (which build does is unverified), and this step is skipped if neither is available.
+1. `packrat-paths.json` next to the script (`{"dataDir": "..."}`, `~` expanded). The script's folder comes from `__file__`, or from `API.ScriptPath` if TazUO runs the script without defining `__file__` (which build does is unverified), and this step is skipped if neither is available.
 2. the `PACKRAT_DATA` environment variable.
 3. `~/.pack-rat`.
 
+`~/.pack-rat` is the bare server's default (`npm start`). The desktop app keeps its data in the platform's application-data folder instead (see the main README's "Your data"), which is why the hand install above always writes `packrat-paths.json` for a desktop-app player.
+
 The scanner and refresh scripts write to `<dataDir>/inbox/tazuo/<Character>-<YYYYmmdd-HHMMSS>.json` (the refresh script appends `-quick` before `.json`). The running app watches that folder (`app/watcher.mts`) and moves each file into `<dataDir>/scans/` under its own normalised name once it parses and validates — a file that keeps failing ends up under `<dataDir>/inbox/tazuo/rejected/` instead, with a `.reason.txt` beside it. The bridge reads `<dataDir>/bridge/tazuo/queue.jsonl` and writes `<dataDir>/bridge/tazuo/status.json`. Every write goes through a temp-file-then-rename so a crash or a read mid-write never leaves a half-written file behind.
 
-## Limits
+### Limits
 
 - Bank contents are only readable while the bank box is open; the scanner records the bank as a root only when it can see something in it.
 - A container's contents only reach the client after it has been opened once in this session — the scanner and bridge both open a container before trying to read or move anything in it.
