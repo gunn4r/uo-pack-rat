@@ -247,6 +247,50 @@ test("[slow] a build finished for one character is never shown under another", a
   }
 });
 
+// The progress card holds focus while a build runs (Esc cancels it there); replacing it must hand focus on,
+// never drop it on <body>: to the result's heading when it finishes, to "Build again" when cancelled, and back
+// to Build when the build could not start.
+test("[slow] focus moves on, not to the page body, when a build finishes, is cancelled or fails", async (t) => {
+  const why = unavailable();
+  if (why) return t.skip(why);
+  const dataDir = seedDataDir("packrat-ui-buildfocus-");
+  const { app, page, errors } = await launch(dataDir);
+  const active = (): Promise<{ tag: string; id: string; text: string }> => page.evaluate(() => { const a = document.activeElement as HTMLElement; return { tag: a.tagName, id: a.id, text: (a.innerText || "").trim() }; });
+  try {
+    await page.locator("#inv-table tbody tr.item").first().waitFor({ timeout: 30_000 });
+    await openTab(page, "builder");
+    await page.waitForFunction(() => document.querySelector<HTMLSelectElement>("#b-char")?.value, { timeout: 10_000 });
+    const name = await page.locator("#b-char").inputValue();
+    await page.click("#b-sec-adv .b-sec-head button");
+    await page.fill("#b-budget", "2");
+    await page.click("#b-run");
+    await page.waitForFunction(() => !document.querySelector<HTMLButtonElement>("#b-run")?.disabled && document.querySelector("#b-result h2"), undefined, { timeout: 60_000 });
+    await page.waitForFunction(() => document.activeElement?.tagName === "H2", undefined, { timeout: 5_000 });
+    assert.deepEqual(await active(), { tag: "H2", id: "", text: `Best suit for ${name}` }, "finished: the result's heading");
+
+    // Held at the start request, so the card is up; Esc on the card cancels.
+    let release = (): void => {};
+    await page.route("**/api/optimize", async (r) => { await new Promise<void>((res) => { release = res; }); await r.abort().catch(() => {}); });
+    await page.click("#b-run");
+    await page.waitForSelector("#b-msg .b-progress");
+    await page.keyboard.press("Escape");
+    await page.waitForFunction(() => !document.querySelector<HTMLButtonElement>("#b-run")?.disabled);
+    assert.equal((await active()).text, "Build again", "cancelled: Build again");
+    release();
+    await page.unroute("**/api/optimize");
+
+    await page.route("**/api/optimize", (r) => r.fulfill({ status: 500, contentType: "application/json", body: JSON.stringify({ ok: false, error: "internal error" }) }));
+    await page.click("#b-run");
+    await page.waitForSelector("#b-msg .msg.bad");
+    assert.equal((await active()).id, "b-run", "failed to start: back to Build");
+    await page.unroute("**/api/optimize");
+    assert.deepEqual(errors, []);
+  } finally {
+    await app.close();
+    rmSync(dataDir, { recursive: true, force: true });
+  }
+});
+
 test("[slow] a character's sheet opens from the roster, and a character can be forgotten from its row menu", async (t) => {
   const why = unavailable();
   if (why) return t.skip(why);
