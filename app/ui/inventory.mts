@@ -648,9 +648,12 @@ function rebuildTable(): void {
       : txt(c.label);
     return el("th", { class: c.num ? "num" : "", scope: "col", ...(sort ? { "aria-sort": sort } : {}) }, inner);
   }), isGrouped ? null : el("th", { class: "act-cell", scope: "col" }, txt("Actions", "sr"))));
+  // A focused row is about to be detached (focus would drop to <body>): the redrawn active row takes it.
+  const rowHadFocus = !!document.activeElement?.matches("#inv-table tbody tr.item");
   rowCache = new Map();
   t.querySelector("tbody")!.replaceChildren();
   renderTable();
+  if (rowHadFocus) rowEl(activeIndex)?.focus();
 }
 // A timer rather than requestAnimationFrame: a window in the background gets no animation frames, and the
 // table must still catch up with a scroll or resize made while it was hidden.
