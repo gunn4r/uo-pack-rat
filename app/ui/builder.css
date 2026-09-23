@@ -130,3 +130,10 @@
 /* A worn or fetched piece that shows the item tooltip on hover and on keyboard focus; a table row takes the
    focus ring as an inset outline (a box-shadow does not draw on a <tr>). */
 .pr tr.b-tip:focus-visible { box-shadow: none; outline: 2px solid var(--color-focus); outline-offset: -2px; }
+/* The Fetch list's pieces: one inline run, comma-separated, each its own tooltip target (a dotted underline
+   says there is more on hover). The list is plain block flow, so a long name wraps like prose. */
+.b-fetch-pieces { margin: 0; padding: 0; list-style: none; color: var(--color-text-muted); }
+.b-fetch-pieces li { display: inline; }
+.b-fetch-pieces li:not(:last-child)::after { content: ", "; }
+.b-fetch-piece { text-decoration: underline dotted var(--color-border-strong); text-underline-offset: 3px; cursor: default; border-radius: var(--radius-sm); }
+.b-fetch-piece:hover { color: var(--color-text); }

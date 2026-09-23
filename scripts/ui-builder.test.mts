@@ -1,7 +1,8 @@
 // ui-builder.test.mts — [slow]: the Suit Builder's keyboard and hover behaviour, driven in the real Electron
 // window with Playwright (the launch scripts/ui-state.test.mts uses). Each case is maintainer feedback on the
 // redesign (PR #43): ⌘↵ building from anywhere on the screen, not only with focus inside it; the item tooltip
-// on the current suit's pieces. Skipped when electron or playwright is absent, or under TEST_SKIP_ELECTRON.
+// on the current suit's and the Fetch list's pieces. Skipped when electron or playwright is absent, or under
+// TEST_SKIP_ELECTRON.
 import test from "node:test";
 import assert from "node:assert/strict";
 import { mkdtempSync, rmSync, writeFileSync, mkdirSync, copyFileSync } from "node:fs";
@@ -115,6 +116,32 @@ test("[slow] the current suit's pieces show the item tooltip on hover and on key
     await rows.nth(0).focus();
     await page.keyboard.press("Tab");
     assert.equal(await page.evaluate(() => document.activeElement?.closest("tr")?.dataset.serial != null), true, "the row takes focus");
+    assert.equal(await tipName(page), name);
+    assert.deepEqual(errors, []);
+  } finally {
+    await app.close();
+    rmSync(dataDir, { recursive: true, force: true });
+  }
+});
+
+test("[slow] the Fetch list's pieces show the item tooltip on hover and on keyboard focus", async (t) => {
+  const why = unavailable();
+  if (why) return t.skip(why);
+  const dataDir = seedDataDir("packrat-ui-fetchtip-");
+  const { app, page, errors } = await launch(dataDir);
+  try {
+    await openBuilder(page);
+    await page.click("#b-run");
+    await built(page);
+    const pieces = page.locator("section[aria-label='Fetch list'] .b-fetch-piece");
+    assert.ok(await pieces.count() > 1, "the fetch list names its pieces one by one");
+    const name = await pieces.nth(1).innerText();
+    await pieces.nth(1).scrollIntoViewIfNeeded();
+    assert.equal(await hoverTip(page, pieces.nth(1)), name);
+    await page.mouse.move(2, 2);
+    await pieces.nth(0).focus();
+    await page.keyboard.press("Tab");
+    assert.equal(await page.evaluate(() => document.activeElement?.textContent), name, "Tab reaches the next piece");
     assert.equal(await tipName(page), name);
     assert.deepEqual(errors, []);
   } finally {
