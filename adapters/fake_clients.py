@@ -71,7 +71,13 @@ class Item(object):
         w = self._world
         if w is None or getattr(w, "no_container_gump", False):
             raise AttributeError("GetContainerGump")
-        return lambda: ContainerGump(w, self) if self.Opened else None
+        return lambda: self._container_gump(w)
+
+    def _container_gump(self, w):
+        # The real call waits on the client's main thread; a world with gump_delay set makes each
+        # lookup cost that many seconds.
+        w.clock.advance(getattr(w, "gump_delay", 0.0))
+        return ContainerGump(w, self) if self.Opened else None
 
 
 class ContainerGump(object):
