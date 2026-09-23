@@ -108,7 +108,15 @@ test("[slow] refresh, Forget and paging keep the page's state", async (t) => {
     await page.waitForFunction(() => document.querySelector<HTMLSelectElement>("#b-char")?.value, { timeout: 10_000 });
     const names = await page.locator("#b-char option").allInnerTexts();
     await page.selectOption("#b-char", names[1]!);
-    const weaponOptions = await page.locator("#b-weapon option").count();
+    // The Weapons chip's choices, counted in its popover: wiring the panel twice would draw a second chip.
+    const weaponChoices = async (): Promise<number> => {
+      assert.equal(await page.locator("#b-weapon").count(), 1, "one Weapons chip");
+      await page.click("#b-weapon");
+      const n = await page.locator(".pop input[type=radio]").count();
+      await page.keyboard.press("Escape");
+      return n;
+    };
+    const weaponOptions = await weaponChoices();
 
     await openTab(page, "containers");
     const counts = await page.locator("#cont-table tbody tr td:nth-child(5)").allInnerTexts();
@@ -119,7 +127,8 @@ test("[slow] refresh, Forget and paging keep the page's state", async (t) => {
     const after = await pagerText(page);
     assert.match(after, /^1–(\d+) of \1$/, `the pager lands on the only page left, got ${after}`);
     assert.ok(await page.locator("#inv-table tbody tr.item").count() > 0, "rows are shown after the Forget");
-    assert.equal(await page.locator("#b-weapon option").count(), weaponOptions, "Forget does not add another set of weapon options");
+    await openTab(page, "builder");
+    assert.equal(await weaponChoices(), weaponOptions, "Forget does not add another set of weapon options");
     assert.equal(await page.locator("#b-char").inputValue(), names[1], "Forget does not move the builder to another character");
 
     assert.deepEqual(errors, []);
@@ -140,6 +149,7 @@ test("[slow] a build finished for one character is never shown under another", a
     await page.waitForFunction(() => document.querySelector<HTMLSelectElement>("#b-char")?.value, { timeout: 10_000 });
     const [builtFor, other] = await page.locator("#b-char option").allInnerTexts() as [string, string];
     await page.selectOption("#b-char", builtFor);
+    await page.click("#b-sec-adv .b-sec-head button");   // the time budget is under Advanced, collapsed by default
     await page.fill("#b-budget", "3");
     await page.click("#b-run");
     await page.selectOption("#b-char", other);
@@ -154,6 +164,7 @@ test("[slow] a build finished for one character is never shown under another", a
     await page.selectOption("#b-char", builtFor);
     await page.waitForSelector("#b-result h2", { timeout: 10_000 });
     assert.equal(await page.locator("#b-result h2").first().innerText(), `Best suit for ${builtFor}`);
+    await page.locator("#b-result").getByRole("button", { name: "Full sheet" }).click();
     assert.match(await page.locator("#b-result .sheet").first().innerText(), new RegExp(builtFor));
 
     assert.deepEqual(errors, []);
@@ -264,6 +275,7 @@ test("[slow] a saved run or run list that lands after a character switch is not 
     await page.waitForFunction(() => document.querySelector<HTMLSelectElement>("#b-char")?.value, { timeout: 10_000 });
     const [builtFor, other] = await page.locator("#b-char option").allInnerTexts() as [string, string];
     await page.selectOption("#b-char", builtFor);
+    await page.click("#b-sec-adv .b-sec-head button");   // the time budget is under Advanced, collapsed by default
     await page.fill("#b-budget", "3");
     await page.click("#b-run");
     await page.waitForFunction(() => !document.querySelector<HTMLButtonElement>("#b-run")?.disabled, undefined, { timeout: 60_000 });
@@ -272,7 +284,8 @@ test("[slow] a saved run or run list that lands after a character switch is not 
     // Open the saved run with its fetch held back, and switch character while it is in flight.
     await page.route("**/api/runs/*", async (route) => { await new Promise((r) => setTimeout(r, 1500)); await route.continue(); });
     await page.click("#b-runs-open");
-    await page.click("#b-runs .run-main");
+    await page.click("#b-runs .run-card button[aria-haspopup=menu]");
+    await page.getByRole("menuitem", { name: "Open" }).click();
     await page.selectOption("#b-char", other);
     await page.waitForTimeout(3000);
     assert.doesNotMatch(await page.locator("#b-result").innerText(), /Best suit for/, "the run opened for one character is not drawn under the other");

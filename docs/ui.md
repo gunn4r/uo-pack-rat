@@ -33,7 +33,7 @@ Selection is two attributes on `<html>`, set by `app/ui/theme.mts` from the ui-p
 | Shell: sidebar, bridge control and popover, collapse | `#app > nav#sidebar` | `ui/shell.mts` (routes in `ui/app.mts`) | `ui/shell.css` |
 | Inventory, with its Items and Containers views | `main#tab-inventory` (`#inv-view-items`, `#tab-containers`) | `ui/inventory.mts`, `ui/containers.mts` | `ui/inventory.css` |
 | Characters | `main#tab-characters` | `ui/characters.mts`, `ui/sheet.mts` | `ui/characters.css` |
-| Suit Builder | `main#tab-builder` | `ui/builder.mts` | `ui/builder.css` |
+| Suit Builder | `main#tab-builder` | `ui/builder.mts` (panel, build), `ui/builder-result.mts` (result, compare), `ui/builder-model.mts` (pure logic) | `ui/builder.css` |
 | Saved runs drawer | `#runs-drawer` | `ui/runs.mts` | `ui/runs.css` |
 | Settings | `main#tab-settings` | `ui/settings.mts` | `ui/settings.css` |
 | Import drawer | `#import-drawer` (body `#import-body`) | `ui/import.mts` | `ui/import.css` |
@@ -71,3 +71,11 @@ What exists:
 ## Contrast check
 
 `scripts/contrast-probe.mts` measures contrast on the rendered page: every text/background pair (compositing semi-transparent fills down to an opaque layer), field values, placeholders, control boundaries, icons in icon-only buttons and messages, and status dots. `scripts/ui-contrast.test.mts` (`[slow]`, full suite) runs it in the Electron window over the demo data on every scene in light and dark, and fails on any pair under 4.5:1 for text (3:1 for large text) or 3:1 for edges, icons and dots; a disabled control only needs 3:1 text. When you add a screen, drawer, popover or dialog, add a scene there.
+
+## Suit Builder
+
+The panel (`ui/builder.mts`) is drawn from state, never read back from the DOM: `state.builder.profile` holds the template settings, requirements, weights and candidate pool, and the exported `knobs` object holds the Advanced fields as typed strings, so a bad value can sit in its field with its error until fixed. A build, a saved profile and a saved run's settings snapshot (`ui/runs.mts`'s `settingsSnapshot`) all read from there. Sections redraw one at a time (`redraw(id)`), so an edit keeps the panel's scroll and focus. The numbers and words the screen shows (section summaries, validation messages with the allowed range, resist outcomes, other-changes badges, compare rows and best values, run labels and badges) come from `ui/builder-model.mts`, which has no DOM and is tested directly (`app/builder-model.test.mts`); its `SOLVER_LIMITS` must equal the server's `OPTS_LIMITS` (a test checks).
+
+Bridge actions anywhere on the screen go through `ui/bridge.mts`: `bridgeGate(action)` returns the reason an action can't run (the client lacks it, or "Bridge offline. Press Play on packrat-bridge.py in game.") for a disabled control's tooltip, `grabAll(items, me)` sends a list of Grabs one after another, and `pollBridge` dispatches a `bridgechange` event on `document` when the bridge comes or goes, so gated controls redraw. `setNavBusy(nav, busy)` in `ui/shell.mts` puts a busy dot on a nav item while a build runs.
+
+The compare view (2-3 suits from a result's Other suits, or 2-3 saved runs from the drawer) replaces the panel and results with a full-width table and swaps the top bar for a breadcrumb (`#b-cmp-topbar`); "Back to result" or the breadcrumb returns. "Full sheet" in "<name> after the change" shows `ui/sheet.mts`'s before/after sheet for now; the Characters screen's shared "now → after" sheet component is meant to replace it there.
