@@ -296,7 +296,7 @@ def chain_problem(chain, i, it, own):
 # the two stay identical): the bridge double-clicks whatever `chain` names, and double-click is UO's
 # universal "use" verb — a potion drinks, a rune recalls, a deed places. Only containers, and never
 # corpses, may be opened.
-CONTAINER_RE = re.compile(r"\b(chest|box|crate|bag|pouch|basket|trunk|armoire|cabinet|backpack)\b", re.I)
+CONTAINER_RE = re.compile(r"\b(chest|box|toolbox|crate|bag|pouch|basket|trunk|armoire|cabinet|backpack)\b", re.I)
 # Named like a container (or carrying a bag graphic) but never one: a deed places an addon, a bag
 # of sending raises a target cursor, a music box plays. Double-clicking them opens nothing. A book of
 # any kind (spellbooks of every school, runebooks, a runic atlas, a tome) is a container to the
@@ -304,12 +304,15 @@ CONTAINER_RE = re.compile(r"\b(chest|box|crate|bag|pouch|basket|trunk|armoire|ca
 NOT_A_CONTAINER_RE = re.compile(r"\b(deed(?!\s+box)|sending|music box|\w*book|tome|atlas|compendium)\b", re.I)   # a "Commodity Deed Box" IS one
 # The books by graphic too, whatever they are called (ServUO's item classes; the first three seen live).
 NOT_A_CONTAINER_GRAPHICS = {0x0EFA, 0x2D50, 0x2D9D, 0x2252, 0x2253, 0x225A, 0x225B, 0x238C, 0x23A0, 0x22C5, 0x9C16}
-# A piece of armour or clothing is never a container, however its name reads ("Platemail Chest").
-WEARABLE_RE = re.compile(r"\b(gargish|plate\w*|chain\w*|ring\s*mail|studded|leather|armou?r)\b", re.I)
+# A piece of armour or clothing is never a container, however its name reads ("Platemail Chest"). No
+# "gargish" here: a Gargish Chest is a real container; gargoyle armour is caught by the client's
+# own wearable flag instead.
+WEARABLE_RE = re.compile(r"\b(plate\w*|chain\w*|ring\s*mail|studded|leather|armou?r)\b", re.I)
 # Engraved bags and Backpacks match no name pattern — detect by graphic too (probe-verified Aug 2026).
 CONTAINER_GRAPHICS = {0x0E75, 0x0E76, 0x0E79, 0x0E7D, 0x09AA, 0x09A8, 0x09A9, 0x09AB,
                       0x0E3C, 0x0E3D, 0x0E3E, 0x0E3F, 0x0E40, 0x0E41, 0x0E42, 0x0E43,
-                      0x0E7C, 0x0E7E, 0x0E7F, 0xA32F, 0xA333}
+                      0x0E7C, 0x0E7E, 0x0E7F, 0xA32F, 0xA333,
+                      0x4025, 0x4026}   # Gargish Chest: UO Alive's tiledata does not flag it
 
 results = {}              # id -> {ok, msg}
 counts = {"done": 0, "failed": 0}
@@ -336,7 +339,8 @@ def is_container(item, name):
     if graphic in CONTAINER_GRAPHICS:
         return True
     # Last, the name, which the client's own flags have not vouched for: never for armour or clothing
-    # ("Gargish Stone Chest"), by its name or by the client's tiledata calling it wearable.
+    # ("Platemail Chest", "Gargish Stone Chest"), by its name or by the client's tiledata calling it
+    # wearable.
     if WEARABLE_RE.search(name or ""):
         return False
     try:

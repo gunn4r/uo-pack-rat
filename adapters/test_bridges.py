@@ -39,7 +39,7 @@ def home():
     w.add(STRANGER_RING, STRANGER_PACK, name="Ring", container_like=False, OnGround=False)
     w.add(BOOK, PACK, name="Mysticism Spellbook", Graphic=0x2D9D, OnGround=False)
     w.add(RUNEBOOK, PACK, name="Runebook", Graphic=0x22C5, OnGround=False)
-    w.add(ARMOUR, PACK, name="Gargish Stone Chest", container_like=False, Graphic=0x1415, OnGround=False)
+    w.add(ARMOUR, PACK, name="Gargish Stone Chest", container_like=False, Graphic=0x1415, Wearable=True, OnGround=False)
     return w
 
 
