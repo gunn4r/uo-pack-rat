@@ -35,7 +35,7 @@
 //         409 under --demo, which must never write into the committed app/fixtures/) ·
 //         POST /api/forget-character {character} (drop a character's card, worn set, backpack and bank:
 //         a `_vault` tombstone carrying forgetCharacter; 409 under --demo) ·
-//         GET|PUT /api/ui-prefs (<data>/ui-prefs.json: {cols?, theme?, appearance?, sidebar?, density?}, the page's view choices)
+//         GET|PUT /api/ui-prefs (<data>/ui-prefs.json: {cols?, colsVersion?, theme?, appearance?, sidebar?, density?}, the page's view choices)
 //         POST /api/bridge {action, serial, name, chain: [root…parent], pos|null} (queue for packrat-bridge.py) · GET /api/bridge/status
 //         GET /api/events — SSE, one stream shared by every connected client (not per-job like the
 //         optimize events above): hello {ok, watching: [adapter ids]} on connect, inventory
@@ -139,6 +139,7 @@ const UI_PREF_CHOICES = {
   appearance: ["light", "system", "dark"],
   sidebar: ["auto", "collapsed"],
   density: ["dense", "regular"],   // the Inventory table's row height
+  colsVersion: ["2"],              // the column set `cols` was saved against (app/ui/view-state.mts's COLS_VERSION)
 } as const satisfies Record<string, readonly string[]>;
 type UiPrefsFile = { cols?: string[] } & { -readonly [K in keyof typeof UI_PREF_CHOICES]?: string };
 // Localhost security (spec §4.5): a request's Host must name this server, an Origin (when present)
