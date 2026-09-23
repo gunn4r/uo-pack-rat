@@ -400,8 +400,10 @@ export function popover(anchor: HTMLElement, content: Kids, { label, width, onCl
 export function closePopover(): void { openPopover?.close(); }
 
 // ---------------------------------------------------------------- tooltip
-// A small text tooltip on hover (after --delay-tooltip) and on keyboard focus, described-by the anchor.
-export function tooltip(anchor: HTMLElement, text: string): HTMLElement {
+// A small text tooltip on hover (after --delay-tooltip) and on keyboard focus, described-by the anchor. Above
+// the anchor by default (below when there is no room); side "right" puts it beside the anchor instead, for an
+// anchor with text right above it that the tooltip must not cover (above again when there is no room).
+export function tooltip(anchor: HTMLElement, text: string, { side = "top" }: { side?: "top" | "right" } = {}): HTMLElement {
   const tip = el("div", { class: "tip", role: "tooltip", id: nextId("tip") }, text);
   let timer = 0;
   anchor.setAttribute("aria-describedby", [anchor.getAttribute("aria-describedby"), tip.id].filter(Boolean).join(" "));
@@ -411,6 +413,11 @@ export function tooltip(anchor: HTMLElement, text: string): HTMLElement {
       if (!anchor.isConnected) return;
       document.body.append(tip);
       const a = anchor.getBoundingClientRect(), w = tip.offsetWidth, h = tip.offsetHeight;
+      if (side === "right" && a.right + 6 + w <= innerWidth - 8) {
+        tip.style.left = `${a.right + 6}px`;
+        tip.style.top = `${Math.max(8, a.top + a.height / 2 - h / 2)}px`;
+        return;
+      }
       const top = a.top - h - 6 > 8 ? a.top - h - 6 : a.bottom + 6;
       tip.style.left = `${Math.max(8, Math.min(a.left + a.width / 2 - w / 2, innerWidth - w - 8))}px`;
       tip.style.top = `${top}px`;
@@ -578,4 +585,23 @@ export function menu(anchor: HTMLElement, items: Array<MenuItem | "divider">, { 
     buttons[to]!.focus();
   });
   return Object.assign(handle, { counts });
+}
+
+// ---- builder
+// Copy text (a serial) to the clipboard; resolves whether it worked. The Clipboard API first. The desktop
+// app's session denies every permission (electron/main.mts), clipboard writes included, so there the copy
+// goes through a selected off-screen textarea and execCommand("copy"), which the click's user activation
+// allows without a permission. Focus goes back where it was.
+export async function copyText(text: string): Promise<boolean> {
+  try { await navigator.clipboard.writeText(text); return true; } catch { /* denied or absent: the fallback below */ }
+  const back = document.activeElement as HTMLElement | null;
+  const ta = el("textarea", { class: "sr", readonly: "", "aria-hidden": "true", tabindex: "-1" });
+  ta.value = text;
+  document.body.append(ta);
+  ta.select();
+  let ok = false;
+  try { ok = document.execCommand("copy"); } catch { ok = false; }
+  ta.remove();
+  back?.focus?.();
+  return ok;
 }

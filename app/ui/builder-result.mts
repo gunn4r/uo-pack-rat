@@ -7,13 +7,14 @@ import { OPTIMIZER_SLOTS, RESIST_KEYS, getRules, resistSkillBonus, totalsOf, req
 import type { EffectiveProfile, Item, OptItem, PropMap } from "../vault-lib.mts";
 import { state } from "./store.mts";
 import type { BuildMeta } from "./store.mts";
-import { $, el, label, fmtN, fmtSecs, fmtRunTime, slotLabel, rarCell } from "./dom.mts";
-import { box, txt, button, icon, badge, message, meter, switchControl, check, table, tableFoot, rowActions, tipWrap, keyValue, token } from "./components.mts";
+import { $, el, label, fmtN, fmtSecs, fmtRunTime, slotLabel, rarCell, showItemTip, hideItemTip, toast } from "./dom.mts";
+import { box, txt, button, icon, badge, message, meter, switchControl, check, table, tableFoot, rowActions, tipWrap, tooltip, keyValue, token, copyText } from "./components.mts";
 import { sheetNode } from "./sheet.mts";
 import { bridgeActionReason, runBridgeAction, grabAll, grabbable } from "./bridge.mts";
 import { resolveItems } from "./items.mts";
 import { renderPanel } from "./builder.mts";
-import { afterChange, compareModel, hiddenRowsNote, otherChanges, plural, resistOutcome, toggleCompare, propName, type CompareMember } from "./builder-model.mts";
+import { splitSerial } from "./inventory.mts";
+import { afterChange, compareModel, hiddenRowsNote, locationCrumbs, otherChanges, plural, resistOutcome, toggleCompare, propName, type CompareMember } from "./builder-model.mts";
 import type { OptSuit, OptimizeResult, SavedRunLike } from "./api-types.mts";
 
 const RESIST_NAMES: Record<string, [string, string]> = { physResist: ["Physical", "--res-phys"], fireResist: ["Fire", "--res-fire"], coldResist: ["Cold", "--res-cold"], poisonResist: ["Poison", "--res-poison"], energyResist: ["Energy", "--res-energy"] };
@@ -21,6 +22,16 @@ const serialHex = (s: number): string => `0x${s.toString(16)}`;
 // A piece's key properties, strongest first: "SSI 35 · DCI 11 · Hit Fireball 36".
 function keyProps(props: PropMap | undefined, n = 3): string {
   return Object.entries(props || {}).filter(([k, v]) => k !== "tagPenalty" && !k.endsWith("Pool") && v).sort((a, b) => Math.abs(b[1]) - Math.abs(a[1])).slice(0, n).map(([k, v]) => `${label(k)} ${v}`).join(" · ");
+}
+// A piece the item tooltip answers for: hovering it shows the tooltip (dom.mts's installTooltip reads
+// data-serial), and so does 400 ms of keyboard focus, as on an Inventory row.
+function tipTarget<T extends HTMLElement>(node: T, serial: number): T {
+  node.dataset.serial = String(serial);
+  node.tabIndex = 0;
+  node.classList.add("b-tip");
+  node.addEventListener("focus", () => { if (node.matches(":focus-visible")) showItemTip(serial, node); });
+  node.addEventListener("blur", () => hideItemTip());
+  return node;
 }
 // A resist's cap for this character's race, in paperdoll terms.
 function raceCap(k: string, race: string | null | undefined): number {
@@ -36,7 +47,7 @@ function resistTile(k: string, after: number, floor: number | null, cap: number,
   const value = before == null
     ? box("span", { class: "b-resist-val" }, txt(after, "t-xl"), txt(`/ ${target}`, "muted"))
     : box("span", { class: "b-resist-val" }, txt(before, "muted"), icon("arrow-right", { size: "sm" }), txt(after, "t-xl"), txt(`/ ${cap}`, "muted"));
-  return box("div", { class: "resist" }, el("span", { class: "t-sm", style: `color:var(${colour})` }, name), value,
+  return box("div", { class: `resist tint tint-${colour.slice(6)}` }, el("span", { class: "t-sm resist-name", style: `color:var(${colour})` }, name), value,
     meter(Math.min(after, target), target, { tone: out.tone === "warn" ? "warn" : "ok", label: `${name} ${after} of ${target}` }), txt(out.text, `t-sm tone-${out.tone}`));
 }
 
@@ -58,12 +69,14 @@ function currentSuitCard(name: string): HTMLElement {
   const totals = totalsOf(Object.fromEntries(worn.map((i) => [String(i.serial), i as unknown as OptItem])));
   const tiles = RESIST_KEYS.map((k) => resistTile(k, (totals[k] || 0) + rsb, p?.floors?.[k] ?? null, raceCap(k, p?.race)));
   const order = (it: Item): number => { const i = OPTIMIZER_SLOTS.indexOf(it.slot || ""); return i < 0 ? 99 : i; };
-  const rows = [...worn].sort((a, b) => order(a) - order(b)).map((it) => ({ cells: [slotLabel(it.slot), txt(it.name), rarCell(it), txt(keyProps(it.props) || "no properties", keyProps(it.props) ? "muted" : "faint")] }));
+  const sorted = [...worn].sort((a, b) => order(a) - order(b));
+  const rows = sorted.map((it) => ({ cells: [slotLabel(it.slot), txt(it.name), rarCell(it), txt(keyProps(it.props) || "no properties", keyProps(it.props) ? "muted" : "faint")] }));
+  const tbl = rows.length ? table({ label: "Worn now", columns: [{ label: "Slot", width: "18%" }, { label: "Wearing", width: "30%" }, { label: "Rarity", width: "18%" }, { label: "Key properties" }], rows }) : null;
+  tbl?.querySelectorAll("tbody tr").forEach((tr, i) => tipTarget(tr as HTMLTableRowElement, sorted[i]!.serial));
   return el("section", { class: "card b-flush", id: "b-current", "aria-label": `${name}'s current suit` },
     box("div", { class: "card-head" }, el("h2", {}, "Current suit"), txt(`What ${name} wears now, against the requirements`, "t-sm muted")),
     box("div", { class: "b-resists card-pad" }, ...tiles),
-    rows.length ? table({ label: "Worn now", columns: [{ label: "Slot", width: "18%" }, { label: "Wearing", width: "30%" }, { label: "Rarity", width: "18%" }, { label: "Key properties" }], rows })
-      : box("div", { class: "card-pad" }, el("p", { class: "muted" }, txt(`${name} wore nothing the last scan could read.`))));
+    tbl || box("div", { class: "card-pad" }, el("p", { class: "muted" }, txt(`${name} wore nothing the last scan could read.`))));
 }
 
 // ---------------------------------------------------------------- result
@@ -187,6 +200,26 @@ function planCard(current: OptSuit, suit: OptSuit, name: string, changes: string
     !showUnchanged && unchanged.length && changes.length ? tableFoot(txt(`Unchanged: ${unchangedNames.join(", ")}`, "ellip")) : null);
 }
 // ---- 3. fetch list: one row per container, walk to each once
+// The row's place in full, as a path that wraps between and inside crumbs, never cut short: "Dorran's bank ›
+// Metal Chest 0x… › A Bag", selectable so any part of it can be copied. A crumb's serial (a same-named sibling's
+// tell) is drawn in faint mono; the last crumb's is left out when the row's meta line already shows it.
+function crumbsEl(where: string, contHex: string): HTMLOListElement {
+  const crumbs = locationCrumbs(where);
+  return el("ol", { class: "b-place", "aria-label": `Location: ${where}` }, ...crumbs.map((c, i) => {
+    const { name: nm, serial } = splitSerial(c);
+    const showSerial = serial && !(i === crumbs.length - 1 && serial.toLowerCase() === contHex);
+    return el("li", {}, i ? el("span", { class: "b-place-sep", "aria-hidden": "true" }, "›") : null, i ? " " : null,
+      txt(nm, "b-place-name"), showSerial ? " " : null, showSerial ? txt(serial, "mono faint t-sm") : null, " ");
+  }));
+}
+// A small icon button that copies `text` (a serial) and says so in a toast; it ends its line, so its tooltip
+// sits in the free space to its right.
+function copyButton(text: string, what: string): HTMLButtonElement {
+  const b = button({ label: `Copy ${what} ${text}`, icon: "clipboard", iconOnly: true, size: "sm", variant: "ghost",
+    onClick: async () => { if (await copyText(text)) toast(`Copied ${text}`, "good"); else toast(`Could not copy the ${what}.`, "bad"); } });
+  tooltip(b, `Copy ${what}`, { side: "right" });   // beside it, never over the place's path above
+  return b;
+}
 function fetchCard(items: Item[], name: string): HTMLElement | null {
   if (!items.length) return null;
   const groups = new Map<string, Item[]>();
@@ -199,9 +232,14 @@ function fetchCard(items: Item[], name: string): HTMLElement | null {
     const grabGate = mine.length ? bridgeActionReason("grab", mine[0]!) : `Nothing to grab here: it is already with ${name} or worn.`;
     const go = button({ label: "Go to", size: "sm", icon: "goto", disabled: !!goGate, onClick: () => runBridgeAction("goto", first) });
     const grab = button({ label: `Grab ${mine.length || list.length}`, size: "sm", icon: "grab", disabled: !!grabGate, onClick: () => grabAll(list, name) });
+    const pieces = el("ul", { class: "b-fetch-pieces", "aria-label": `${plural(list.length, "piece")} to fetch` },
+      ...list.map((it) => el("li", {}, tipTarget(txt(it.name, "b-fetch-piece"), it.serial))));
+    const contHex = cont ? serialHex(+cont.serial) : "";
     return box("div", { class: "b-fetch" },
-      box("span", { class: "b-fetch-where" }, txt(where, "strong ellip"), txt(`${cont && !where.includes(serialHex(+cont.serial)) ? serialHex(+cont.serial) + " · " : ""}${plural(list.length, "piece")}`, "t-sm faint")),
-      el("p", { class: "muted" }, txt(list.map((i) => i.name).join(", "))),
+      box("div", { class: "b-fetch-where" }, crumbsEl(where, contHex),
+        box("div", { class: "b-fetch-meta t-sm" }, txt(`${plural(list.length, "piece")}${contHex ? " ·" : ""}`, "faint"),
+          contHex ? txt(contHex, "mono") : null, contHex ? copyButton(contHex, "container serial") : null)),
+      pieces,
       box("span", { class: "b-fetch-acts" }, goGate ? tipWrap(go, goGate) : go, grabGate ? tipWrap(grab, grabGate) : grab));
   });
   return el("section", { class: "card", "aria-label": "Fetch list" },

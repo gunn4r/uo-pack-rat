@@ -108,7 +108,8 @@ export function knobFromServerError(text: string): KnobField | null {
   if (/strLimit/.test(text)) return "strLimit";
   return null;
 }
-// "Exact · 10,000 restarts · 300 s · 5 other suits within 40 · STR limit 110"
+// "Exact · 10,000 restarts · 300 s · 5 other suits within 40" (STR limit is not under Advanced: it has its
+// own field beside Race)
 export function advancedSummary(k: Knobs): string {
   const n = (s: string): number => Number(s);
   return [
@@ -116,7 +117,6 @@ export function advancedSummary(k: Knobs): string {
     `${plural(n(k.restarts), "restart")}`,
     k.exact ? `${num(n(k.budgetS))} s` : "",
     k.exact && n(k.altCount) > 0 ? `${plural(n(k.altCount), "other suit")} within ${num(n(k.altTol))}` : "",
-    k.strLimit.trim() ? `STR limit ${k.strLimit.trim()}` : "",
   ].filter(Boolean).join(" · ");
 }
 
@@ -129,6 +129,12 @@ export function resistOutcome(after: number, floor: number | null | undefined, c
   if (after === cap) return { text: "At cap", tone: "ok" };
   if (floor != null) return { text: `Meets ${floor}`, tone: "ok" };
   return { text: `${cap - after} below cap`, tone: "muted" };
+}
+// A Fetch list row's place as its path of containers ("Dorran's bank › Metal Chest (0x…) › A Bag", vault-lib's
+// locationOf text), one crumb each, so the row can wrap it whole instead of cutting it short.
+export function locationCrumbs(text: string | null | undefined): string[] {
+  const parts = (text || "").split(" › ").map((p) => p.trim()).filter(Boolean);
+  return parts.length ? parts : ["Unknown place"];
 }
 // The result's other changes, as badges: every requirement or weighted property (resists have their own
 // tiles) whose total moves, gains first. A requirement the suit misses is a loss whatever its direction.
