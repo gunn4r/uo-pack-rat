@@ -26,6 +26,8 @@ import type { OptimizeResult, OptimizeProgress, SavedRunLike, OptimizeStartApiRe
 // options a profile never carried.
 export const knobs: Knobs = { strLimit: "", restarts: "200", exact: true, budgetS: "300", altCount: "5", altTol: "0" };
 const open: Record<string, boolean> = { req: true, weights: false, pool: true, adv: false };
+// A requirement or weight row's property name: up to two lines, the full name in its title.
+const ruleName = (nm: string): HTMLSpanElement => { const t = txt(nm, "rule-name"); t.title = nm; return t; };
 const KNOB_IDS: Record<KnobField, string> = { strLimit: "b-str", restarts: "b-restarts", budgetS: "b-budget", altCount: "b-altcount", altTol: "b-alttol" };
 
 // ---------------------------------------------------------------- wiring
@@ -262,7 +264,7 @@ function requirementsSection(): HTMLElement {
       const nm = propName(k);
       const hard = segmented({ label: `${nm}: hard or soft`, options: [{ value: "hard", label: "Hard" }, { value: "soft", label: "Soft" }], value: p.softFloors!.includes(k) ? "soft" : "hard",
         onChange: (v) => { p.softFloors = p.softFloors!.filter((x) => x !== k); if (v === "soft") p.softFloors.push(k); updateTemplateBadge(); } });
-      return box("div", { class: "rule-row", "data-key": k }, txt(nm, "ellip"), txt("≥", "muted"), boundNumber(p.floors!, k, `${nm} minimum`, k), hard,
+      return box("div", { class: "rule-row", "data-key": k }, ruleName(nm), txt("≥", "muted"), boundNumber(p.floors!, k, `${nm} minimum`, k), hard,
         button({ label: `Remove requirement: ${nm}`, icon: "close", iconOnly: true, variant: "ghost", size: "sm", onClick: () => { delete p.floors![k]; p.softFloors = p.softFloors!.filter((x) => x !== k); redraw("req"); focusIn("req", ".b-add"); } }));
     });
     const add = filterChip({ label: "Add requirement", add: true, attrs: { class: "fchip add b-add", id: "b-addfloor" } });
@@ -276,7 +278,7 @@ function weightsSection(): HTMLElement {
   return section("weights", "Weights", { count: keys.length, summary: () => weightsSummary(p.weights), body: () => {
     const rows = keys.map((k) => {
       const nm = propName(k);
-      return box("div", { class: "rule-row weight", "data-key": k }, txt(nm, "ellip"), boundNumber(p.weights!, k, `${nm} weight`, k),
+      return box("div", { class: "rule-row weight", "data-key": k }, ruleName(nm), boundNumber(p.weights!, k, `${nm} weight`, k),
         button({ label: `Remove weight: ${nm}`, icon: "close", iconOnly: true, variant: "ghost", size: "sm", onClick: () => { delete p.weights![k]; redraw("weights"); focusIn("weights", ".b-add"); } }));
     });
     const add = filterChip({ label: "Add weight", add: true, attrs: { class: "fchip add b-add", id: "b-addweight" } });
