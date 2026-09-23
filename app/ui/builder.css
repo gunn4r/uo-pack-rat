@@ -40,6 +40,9 @@
 .rule-row.weight { grid-template-columns: minmax(0, 1fr) 64px var(--control-sm); }
 .pr .rule-row .input.num { width: 100%; }
 .rule-row .field-error { grid-column: 1 / -1; }
+/* the property name wraps to a second line rather than cutting off ("Physical …" at 1024 px), and only a
+   name too long for two lines is clamped; its full name is its title */
+.rule-row .rule-name { overflow-wrap: anywhere; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; line-height: var(--lh-sm); }
 .b-add { align-self: flex-start; }
 .b-chips { display: flex; flex-wrap: wrap; gap: var(--space-1-5); }
 .b-switches { display: flex; flex-direction: column; gap: var(--space-2); }
@@ -117,7 +120,9 @@
   .b-panel-scroll { overflow: visible; }
   .b-panel-toggle { display: flex; }
   .b-panel.folded .b-panel-scroll { display: none; }
-  .b-panel-foot { position: sticky; bottom: 0; z-index: var(--z-sticky); }
+  /* the page's bottom padding would leave a strip of scrolled panel text showing under the bar: the bar
+     reaches down over it, opaque, and pads its own content back up */
+  .b-panel-foot { position: sticky; bottom: calc(-1 * var(--space-4)); z-index: var(--z-sticky); padding-bottom: calc(var(--space-3) + var(--space-4)); margin-bottom: calc(-1 * var(--space-4)); background: var(--color-surface); color: var(--color-text); border-top: var(--border-width) solid var(--color-border); }
   .b-results { overflow: visible; }
   .b-resists, .b-stats { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 }
