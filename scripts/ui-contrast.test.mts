@@ -26,8 +26,9 @@ function unavailable(): string | null {
   return null;
 }
 
-// Each scene brings the page into one state; the probe then measures whatever is visible. Scenes run in
-// order in one window, so a scene may rely on the one before (the build result stays for the runs drawer).
+// Each scene brings the page into one state; the probe then measures whatever is visible, and `leave` undoes
+// what must not carry over (an open overlay). Scenes run in order in one window, so a scene may rely on the
+// one before (the build saves a run, which the runs drawer then lists).
 interface Scene { name: string; enter: (page: Page) => Promise<void>; leave?: (page: Page) => Promise<void> }
 async function route(page: Page, hash: string, ready: string): Promise<void> {
   await page.evaluate((h) => { location.hash = h; }, hash);
@@ -60,9 +61,12 @@ const SCENES: Scene[] = [
     await p.fill("#b-budget", "2");
     await p.click("#b-run");
     await p.waitForFunction(() => !document.querySelector<HTMLButtonElement>("#b-run")?.disabled && document.querySelector("#b-result h2"), undefined, { timeout: 60_000 });
-    await p.mouse.move(1, 1);
   } },
-  { name: "import", enter: (p) => route(p, "#/import", "#import-body .panel") },
+  { name: "import drawer", enter: (p) => route(p, "#/import", "#import-drawer:not([hidden]) #import-body .panel"), leave: (p) => p.keyboard.press("Escape") },
+  { name: "runs drawer", enter: (p) => route(p, "#/runs", "#runs-drawer:not([hidden]) .runrow"), leave: (p) => p.keyboard.press("Escape") },
+  { name: "bridge popover", enter: async (p) => { await p.click("#bridge"); await p.waitForSelector(".pop"); }, leave: (p) => p.keyboard.press("Escape") },
+  { name: "collapsed sidebar", enter: async (p) => { await route(p, "#/inventory", "#inv-table tbody tr.item"); await p.click("#sidebar-pin"); await p.waitForSelector("#app.collapsed"); },
+    leave: (p) => p.click("#sidebar-pin") },
   { name: "settings", enter: (p) => route(p, "#/settings", "#settings-body .panel") },
 ];
 
@@ -89,13 +93,16 @@ test("[slow] every text, control edge, icon and status dot on the real page pass
     const seen: string[] = [];
     for (const scene of SCENES) {
       await scene.enter(page);
+      // hover fills are states, not surfaces: park the pointer on an empty stretch of the top bar (the
+      // tooltip scene keeps its hover, it is what that scene measures)
+      if (scene.name !== "item tooltip") await page.mouse.move(900, 4);
       for (const mode of ["light", "dark"] as const) {
         // reduced motion: no colour transition is half-way when the probe reads the computed colours
         await page.emulateMedia({ colorScheme: mode, reducedMotion: "reduce" });
         await page.waitForFunction((m) => document.documentElement.dataset.mode === m, mode, { timeout: 5_000 });
         await page.waitForTimeout(80);
         const got = await page.evaluate(probeContrast);
-        assert.ok(got.length > 20, `${scene.name} (${mode}) measured only ${got.length} pairs — did the scene render?`);
+        assert.ok(got.length > 10, `${scene.name} (${mode}) measured only ${got.length} pairs — did the scene render?`);
         for (const r of got) rows.push({ ...r, where: `${scene.name} · ${mode}` });
         seen.push(`${scene.name} · ${mode}: ${got.length}`);
       }

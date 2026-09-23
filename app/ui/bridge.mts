@@ -4,8 +4,9 @@
 import { state, bridge } from "./store.mts";
 import { $, el, toast } from "./dom.mts";
 import { api } from "./api.mts";
-import { confirmDialog } from "./components.mts";
-import { bridgeOfflineText, dataDirNotice } from "./messages.mts";
+import { confirmDialog, icon } from "./components.mts";
+import { bridgeView, dataDirNotice } from "./messages.mts";
+import type { BridgeView } from "./messages.mts";
 import type { Item } from "../vault-lib.mts";
 import type { BridgeQueueApiResponse, BridgeStatusApiResponse } from "./api-types.mts";
 
@@ -184,19 +185,26 @@ export function grabAllState(btn: HTMLButtonElement | null = $<HTMLButtonElement
   btn.disabled = !bridge.online || !count;
   btn.title = !bridge.online ? BRIDGE_OFFLINE : !count ? `nothing to grab: every piece is already with ${state.builder.character} or worn` : "queue a Grab for every piece on the fetch list, one after another";
 }
-const PILL_TITLE = "packrat-bridge.py running in game?";
+// The sidebar's bridge status control (index.html's #bridge; ui/shell.mts opens its popover). pollBridge
+// redraws it every 2.5 s from GET /api/bridge/status; the view itself is messages.mts's bridgeView.
+let lastView: BridgeView = { state: "offline", dot: "", label: "Checking the bridge…", title: "Checking the bridge", detail: "Pack Rat is asking packrat-bridge.py whether it is running." };
+let lastAnswered: number | null = null;
+export const currentBridgeView = (): BridgeView => lastView;
+export const bridgeLastAnswered = (): number | null => lastAnswered;
+function renderBridgeControl(view: BridgeView): void {
+  lastView = view;
+  const b = $<HTMLElement>("#bridge");
+  if (!b) return;
+  b.replaceChildren(el("span", { class: `dot ${view.dot}`.trim() }), el("span", { class: "ellip bridge-label" }, view.label), icon("chevron-up", { size: "sm" }));
+  b.setAttribute("data-state", view.state);
+  b.setAttribute("aria-label", `${view.label}. Bridge details`);
+}
 export async function pollBridge(): Promise<void> {
   try {
     const st = await api<BridgeStatusApiResponse>("/api/bridge/status");
     bridge.online = !!st.online; bridge.character = st.character || null;
-    const b = $<HTMLElement>("#bridge")!;
-    // An offline pill whose cause is known (the scripts write to another data folder) says so, and its
-    // hover carries the banner's full sentence; otherwise the hover is the pill's own question.
-    const check = state.setup?.dataDirCheck;
-    b.title = (!st.online && check?.status === "mismatch" && dataDirNotice(check)) || PILL_TITLE;
-    if (!st.online) { b.className = "status"; b.textContent = bridgeOfflineText(check); }
-    else if (st.current) { b.className = "status busy"; b.textContent = `bridge: ${st.character} · ${st.current.action} ${st.current.name || ""}`; }
-    else { b.className = "status on"; b.textContent = `bridge: ${st.character} ready`; }
+    if (st.online) lastAnswered = Date.now();
+    renderBridgeControl(bridgeView(st, { clientSet: !!state.setup?.settings?.client, clientName: currentAdapter()?.name || null, check: state.setup?.dataDirCheck }));
     grabAllState();
     // A refused command (expired, a chain that does not check out, the bridge stopping first) comes
     // back under its own id like any other result, so it is toasted here too — named, since a refusal
@@ -208,7 +216,7 @@ export async function pollBridge(): Promise<void> {
         toast(r.ok ? r.msg : `${name}: ${r.msg}`, r.ok ? "good" : "bad");
       }
     }
-  } catch { /* server down; leave the pill as is */ }
+  } catch { /* server down; leave the control as is */ }
 }
 
 // ---------------------------------------------------------------- data-folder banner (#notice)

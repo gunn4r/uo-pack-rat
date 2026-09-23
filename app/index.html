@@ -8,25 +8,191 @@
 <link rel="stylesheet" href="/ui/tokens.css">
 <link rel="stylesheet" href="/ui/components.css">
 <link rel="stylesheet" href="/ui/styles.css">
+<link rel="stylesheet" href="/ui/shell.css">
+<link rel="stylesheet" href="/ui/inventory.css">
+<link rel="stylesheet" href="/ui/characters.css">
+<link rel="stylesheet" href="/ui/builder.css">
+<link rel="stylesheet" href="/ui/settings.css">
+<link rel="stylesheet" href="/ui/import.css">
+<link rel="stylesheet" href="/ui/wizard.css">
+<link rel="stylesheet" href="/ui/runs.css">
 </head>
 <body class="pr">
-<header>
-  <div class="brand"><h1>Pack Rat</h1></div>
-  <div class="status" id="status">loading…</div>
-  <select id="shard" title="Shard rules — property caps, resist bonus, rarity colours, gargoyle race lock"></select>
-  <div class="status" id="bridge" title="packrat-bridge.py running in game?">bridge: …</div>
-  <nav role="tablist">
-    <button role="tab" data-tab="inventory" aria-selected="true">Inventory</button>
-    <button role="tab" data-tab="characters">Characters</button>
-    <button role="tab" data-tab="builder">Suit Builder</button>
-    <button role="tab" data-tab="containers">Containers</button>
-    <button role="tab" data-tab="import">Import</button>
-    <button role="tab" data-tab="settings">Settings</button>
+<!-- ============================================================ app shell (ui/shell.mts, ui/shell.css) -->
+<div id="app" class="shell">
+  <nav class="sidebar" id="sidebar" aria-label="Main">
+    <div class="brand"><img src="/favicon.png" alt=""><span class="brand-name">Pack Rat</span></div>
+    <a class="nav-item" href="#/inventory" data-nav="inventory"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 7l9-4 9 4v10l-9 4-9-4z"></path><path d="M3 7l9 4 9-4M12 11v10"></path></svg><span class="nav-label">Inventory</span><span class="count" id="nav-count-inventory"></span></a>
+    <a class="nav-item" href="#/characters" data-nav="characters"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><circle cx="9" cy="8" r="3.5"></circle><path d="M2.5 20c.8-3.6 3.4-5.5 6.5-5.5s5.7 1.9 6.5 5.5"></path><path d="M16 4.5a3.5 3.5 0 0 1 0 7M18 14.8c1.8.7 3 2.4 3.5 5.2"></path></svg><span class="nav-label">Characters</span><span class="count" id="nav-count-characters"></span></a>
+    <a class="nav-item" href="#/builder" data-nav="builder"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3l8 3v6c0 4.5-3.4 8-8 9-4.6-1-8-4.5-8-9V6z"></path></svg><span class="nav-label">Suit Builder</span></a>
+    <a class="nav-item nav-sub" href="#/runs" data-nav="runs"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"></circle><path d="M12 7v5l3 2"></path></svg><span class="nav-label">Runs</span><span class="count" id="nav-count-runs"></span></a>
+    <a class="nav-item" href="#/import" data-nav="import"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v12M7 10l5 5 5-5"></path><path d="M4 17v3h16v-3"></path></svg><span class="nav-label">Import</span><kbd class="kbd" aria-hidden="true">⌘I</kbd></a>
+    <a class="nav-item" href="#/settings" data-nav="settings"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3"></circle><path d="M12 2v3M12 19v3M4.9 4.9l2.1 2.1M17 17l2.1 2.1M2 12h3M19 12h3M4.9 19.1 7 17M17 7l2.1-2.1"></path></svg><span class="nav-label">Settings</span></a>
+    <div class="sidebar-foot">
+      <p class="t-sm muted sidebar-meta"><span id="status">Loading…</span></p>
+      <button class="bridge" id="bridge" type="button" aria-haspopup="dialog" aria-expanded="false"><span class="dot" id="bridge-dot"></span><span class="ellip" id="bridge-label">Checking the bridge…</span><svg class="i i-sm" viewBox="0 0 24 24" aria-hidden="true"><path d="m6 15 6-6 6 6"></path></svg></button>
+      <button class="nav-item sidebar-pin" id="sidebar-pin" type="button" aria-pressed="false"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2"></rect><path d="M9 4v16"></path></svg><span class="nav-label">Collapse sidebar</span></button>
+    </div>
   </nav>
-</header>
-<div id="notice" class="msg warn" role="status" hidden></div>
+
+  <div class="main">
+    <div id="notice" class="msg warn" role="status" hidden></div>
+
+    <!-- ========================================================== Inventory (ui/inventory.mts, ui/containers.mts, ui/inventory.css) -->
+    <main class="screen" id="tab-inventory" aria-labelledby="h-inventory">
+      <header class="topbar">
+        <h1 id="h-inventory">Inventory</h1>
+        <div class="seg" id="inv-view" role="radiogroup" aria-label="View">
+          <button type="button" role="radio" data-view="items" aria-checked="true"><span>Items</span></button>
+          <button type="button" role="radio" data-view="containers" aria-checked="false" tabindex="-1"><span>Containers</span></button>
+        </div>
+        <span class="spacer"></span>
+        <a class="btn btn-sm" href="#/import" id="inv-import"><svg class="i i-sm" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v12M7 10l5 5 5-5"></path><path d="M4 17v3h16v-3"></path></svg><span>Import scans</span></a>
+      </header>
+      <div class="page">
+        <div id="inv-view-items" class="inv-view">
+          <div class="layout">
+            <aside class="stack">
+              <div class="panel stack">
+                <h3>Find</h3>
+                <input id="f-text" type="search" placeholder="name, property, slayer, location…">
+                <div class="field"><label>Slot</label><select id="f-slot"><option value="">any</option></select></div>
+                <div class="field"><label>Location</label><select id="f-loc"><option value="">anywhere</option></select></div>
+                <div class="field"><label>Rarity</label><select id="f-rarity"><option value="">any</option></select></div>
+                <div class="field"><label>Slayer</label><select id="f-slayer"><option value="">any</option></select></div>
+                <div class="field"><label>Kind</label><select id="f-kind"><option value="">everything</option></select></div>
+                <div class="field"><label>Seen</label><select id="f-seen"><option value="">any time</option><option value="1">last 24 hours</option><option value="7">last 7 days</option><option value="30">last 30 days</option></select></div>
+                <label class="row small"><input type="checkbox" id="f-nogarg"> hide gargoyle-only gear</label>
+                <label class="row small"><input type="checkbox" id="f-med"> meditation-safe gear only</label>
+                <label class="row small"><input type="checkbox" id="f-group"> group by name (stack totals)</label>
+                <div class="field"><label>Hide</label><div class="chips" id="f-tags"></div></div>
+              </div>
+              <div class="panel stack">
+                <h3>Property minimums</h3>
+                <div id="f-props" class="stack"></div>
+                <div class="row"><button id="f-addprop">+ property</button><button id="f-clear">Clear all</button></div>
+              </div>
+              <div class="panel stack">
+                <h3>Columns</h3>
+                <div class="chips" id="cols"></div>
+              </div>
+            </aside>
+            <div class="panel">
+              <div class="row" style="justify-content:space-between;margin-bottom:8px"><h2 id="inv-count">Inventory</h2><span class="small muted">click a header to sort · click a row for the full tooltip</span></div>
+              <div id="inv-bridge-note"></div>
+              <div class="tablewrap scrolly"><table id="inv-table"><thead></thead><tbody></tbody></table></div>
+              <div class="row pager" id="inv-pager">
+                <button id="inv-prev">‹ prev</button>
+                <span class="small muted" id="inv-pager-text"></span>
+                <button id="inv-next">next ›</button>
+                <span class="grow"></span>
+                <label class="small muted">per page <select id="inv-pagesize"><option value="100">100</option><option value="200" selected>200</option><option value="500">500</option></select></label>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div id="tab-containers" class="inv-view" hidden>
+          <div class="panel">
+            <h2 style="margin-bottom:8px">Scanned containers</h2>
+            <p class="small muted">Newest scan of a container wins. A container that was skipped in a scan (too far to open, or empty) keeps its last known contents; use <em>Forget</em> to drop one you emptied.</p>
+            <div class="tablewrap"><table id="cont-table"><thead><tr><th>Container</th><th>Kind</th><th>Scanned by</th><th>When</th><th class="n">Items</th><th></th></tr></thead><tbody></tbody></table></div>
+          </div>
+        </div>
+      </div>
+    </main>
+
+    <!-- ========================================================== Characters (ui/characters.mts, ui/characters.css) -->
+    <main class="screen" id="tab-characters" aria-labelledby="h-characters" hidden>
+      <header class="topbar"><h1 id="h-characters">Characters</h1></header>
+      <div class="page">
+        <div class="stack" id="char-cards"></div>
+      </div>
+    </main>
+
+    <!-- ========================================================== Suit Builder (ui/builder.mts, ui/runs.mts, ui/builder.css) -->
+    <main class="screen" id="tab-builder" aria-labelledby="h-builder" hidden>
+      <header class="topbar">
+        <h1 id="h-builder">Suit Builder</h1>
+        <span class="spacer"></span>
+        <button class="btn btn-sm" type="button" id="b-runs-open"><svg class="i i-sm" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"></circle><path d="M12 7v5l3 2"></path></svg><span>Saved runs</span><span class="badge" id="b-runs-count">0</span></button>
+      </header>
+      <div class="page">
+        <div class="layout">
+          <aside class="stack">
+            <div class="panel stack">
+              <h3>Character</h3>
+              <select id="b-char"></select>
+              <div class="field" title="a template is a saved set of builder settings (floors, weights, locks, pool filters) with no character in it; the pill says whether this character's settings still match the one it was applied from">
+                <label>Template</label>
+                <div class="row"><select id="b-tpl"></select><span class="pill" id="b-tpl-state"></span></div>
+                <div class="tpl-actions"><button class="small" id="b-tpl-apply" title="copy the selected template into the sidebar (Save profile keeps it)">Apply</button><button class="small" id="b-tpl-saveas" title="store the sidebar's settings as a new template">Save as…</button><button class="small" id="b-tpl-update" title="overwrite the selected template with the sidebar's settings">Update</button><button class="small" id="b-tpl-delete" title="delete the selected template; characters made from it keep their settings">Delete</button></div>
+              </div>
+              <div class="field"><label>Race</label><select id="b-race" title="an Elf's Energy resist cap is 75"><option value="human">Human</option><option value="elf">Elf</option><option value="gargoyle">Gargoyle</option></select></div>
+            </div>
+            <div class="panel stack">
+              <h3>Requirements (floors)</h3>
+              <div class="small muted">Hard by default: the suit must reach these. Tick <em>soft</em> to make one a preference instead.</div>
+              <div class="small muted" id="b-resist-note"></div>
+              <div class="grid2" id="b-floors"></div>
+              <div class="row"><select id="b-addfloor"></select><button id="b-addfloor-btn">+ floor</button></div>
+            </div>
+            <div class="panel stack">
+              <h3>Weights</h3>
+              <div class="grid2" id="b-weights"></div>
+              <div class="row"><select id="b-addweight"></select><button id="b-addweight-btn">+ weight</button></div>
+            </div>
+            <div class="panel stack">
+              <h3>Locked slots</h3>
+              <div class="chips" id="b-locked"></div>
+            </div>
+            <div class="panel stack">
+              <h3>Candidate pool</h3>
+              <label class="row small"><input type="checkbox" id="b-others"> allow gear worn by other characters</label>
+              <label class="row small"><input type="checkbox" id="b-garg"> allow gargoyle-only gear (Gargish …)</label>
+              <label class="row small" title="only leather/hide/leaf/cloth armour, pieces with Mage Armor, and Spell Channeling weapons/shields"><input type="checkbox" id="b-med"> meditation-safe gear only</label>
+              <div class="field" title="only weapons of this skill in the hands (plus a shield, except for archery)"><label>Weapons</label><select id="b-weapon"><option value="">any</option></select></div>
+              <div class="field"><label>Exclude tags</label><div class="chips" id="b-extags"></div></div>
+              <div class="field" title="leave out every piece carrying a bonus to these skills (the Summoner must have zero Necromancy and Spirit Speak)"><label>Forbid skill bonuses</label><div class="chips" id="b-exskills"></div></div>
+              <div class="field"><label>Skip containers</label><div class="chips" id="b-exroots"></div></div>
+              <div class="row"><div class="field"><label>STR limit</label><input type="number" id="b-str"></div><div class="field"><label>Restarts</label><input type="number" id="b-restarts" value="200"></div></div>
+              <div class="row"><label class="row small"><input type="checkbox" id="b-exact" checked> exact search (prove the best)</label><div class="field"><label>Time budget (s)</label><input type="number" id="b-budget" value="300"></div></div>
+              <div class="row" title="Also list other suits whose score is within this many points of the best, so you can pick between near-equal options. 0 = only exact ties. Needs exact search."><div class="field"><label>Other suits</label><input type="number" id="b-altcount" value="5" min="0" max="20"></div><div class="field"><label>Within points</label><input type="number" id="b-alttol" value="0" min="0"></div></div>
+            </div>
+            <div class="row"><button class="primary" id="b-run">Build best suit</button><button id="b-save">Save profile</button></div>
+          </aside>
+          <div class="stack scrollcol"><div id="b-msg"></div><div class="stack" id="b-result"><div class="panel empty">Pick a character and press <strong>Build best suit</strong>.</div></div></div>
+        </div>
+      </div>
+    </main>
+
+    <!-- ========================================================== Settings (ui/settings.mts, ui/settings.css) -->
+    <main class="screen settings" id="tab-settings" data-panel="settings" aria-labelledby="h-settings" hidden>
+      <header class="topbar"><h1 id="h-settings">Settings</h1></header>
+      <div class="page">
+        <div class="stack" id="settings-body"><div class="panel empty">loading…</div></div>
+      </div>
+    </main>
+  </div>
+</div>
+
+<!-- ============================================================ overlays: outside #app, which goes inert while a drawer is open -->
 <dialog id="wizard" class="wizard"></dialog>
 <div id="tip" role="tooltip" data-theme="default" data-mode="dark"></div>
+
+<!-- Import drawer (ui/import.mts, ui/import.css) -->
+<div class="drawer-root" id="import-drawer" hidden inert>
+  <div class="scrim" data-drawer-close></div>
+  <aside class="drawer drawer-wide" role="dialog" aria-modal="true" aria-labelledby="import-drawer-title">
+    <header class="overlay-head">
+      <span class="overlay-titles"><h2 id="import-drawer-title">Import scans</h2></span>
+      <span class="spacer"></span>
+      <button class="btn btn-ghost btn-icon" type="button" data-drawer-close aria-label="Close Import"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"></path></svg></button>
+    </header>
+    <div class="drawer-body" id="import-body"><div class="panel empty">loading…</div></div>
+  </aside>
+</div>
+
+<!-- Saved runs drawer (ui/runs.mts, ui/runs.css) -->
 <div class="drawer-root" id="runs-drawer" hidden inert>
   <div class="scrim" data-drawer-close></div>
   <aside class="drawer" role="dialog" aria-modal="true" aria-labelledby="runs-drawer-title">
@@ -43,118 +209,6 @@
     </div>
   </aside>
 </div>
-<main>
-  <section id="tab-inventory">
-    <div class="layout">
-      <aside class="stack">
-        <div class="panel stack">
-          <h3>Find</h3>
-          <input id="f-text" type="search" placeholder="name, property, slayer, location…">
-          <div class="field"><label>Slot</label><select id="f-slot"><option value="">any</option></select></div>
-          <div class="field"><label>Location</label><select id="f-loc"><option value="">anywhere</option></select></div>
-          <div class="field"><label>Rarity</label><select id="f-rarity"><option value="">any</option></select></div>
-          <div class="field"><label>Slayer</label><select id="f-slayer"><option value="">any</option></select></div>
-          <div class="field"><label>Kind</label><select id="f-kind"><option value="">everything</option></select></div>
-          <div class="field"><label>Seen</label><select id="f-seen"><option value="">any time</option><option value="1">last 24 hours</option><option value="7">last 7 days</option><option value="30">last 30 days</option></select></div>
-          <label class="row small"><input type="checkbox" id="f-nogarg"> hide gargoyle-only gear</label>
-          <label class="row small"><input type="checkbox" id="f-med"> meditation-safe gear only</label>
-          <label class="row small"><input type="checkbox" id="f-group"> group by name (stack totals)</label>
-          <div class="field"><label>Hide</label><div class="chips" id="f-tags"></div></div>
-        </div>
-        <div class="panel stack">
-          <h3>Property minimums</h3>
-          <div id="f-props" class="stack"></div>
-          <div class="row"><button id="f-addprop">+ property</button><button id="f-clear">Clear all</button></div>
-        </div>
-        <div class="panel stack">
-          <h3>Columns</h3>
-          <div class="chips" id="cols"></div>
-        </div>
-      </aside>
-      <div class="panel">
-        <div class="row" style="justify-content:space-between;margin-bottom:8px"><h2 id="inv-count">Inventory</h2><span class="small muted">click a header to sort · click a row for the full tooltip</span></div>
-        <div id="inv-bridge-note"></div>
-        <div class="tablewrap scrolly"><table id="inv-table"><thead></thead><tbody></tbody></table></div>
-        <div class="row pager" id="inv-pager">
-          <button id="inv-prev">‹ prev</button>
-          <span class="small muted" id="inv-pager-text"></span>
-          <button id="inv-next">next ›</button>
-          <span class="grow"></span>
-          <label class="small muted">per page <select id="inv-pagesize"><option value="100">100</option><option value="200" selected>200</option><option value="500">500</option></select></label>
-        </div>
-      </div>
-    </div>
-  </section>
-
-  <section id="tab-characters" hidden>
-    <div class="stack" id="char-cards"></div>
-  </section>
-
-  <section id="tab-builder" hidden>
-    <div class="layout">
-      <aside class="stack">
-        <div class="panel stack">
-          <h3>Character</h3>
-          <select id="b-char"></select>
-          <div class="field" title="a template is a saved set of builder settings (floors, weights, locks, pool filters) with no character in it; the pill says whether this character's settings still match the one it was applied from">
-            <label>Template</label>
-            <div class="row"><select id="b-tpl"></select><span class="pill" id="b-tpl-state"></span></div>
-            <div class="tpl-actions"><button class="small" id="b-tpl-apply" title="copy the selected template into the sidebar (Save profile keeps it)">Apply</button><button class="small" id="b-tpl-saveas" title="store the sidebar's settings as a new template">Save as…</button><button class="small" id="b-tpl-update" title="overwrite the selected template with the sidebar's settings">Update</button><button class="small" id="b-tpl-delete" title="delete the selected template; characters made from it keep their settings">Delete</button></div>
-          </div>
-          <div class="field"><label>Race</label><select id="b-race" title="an Elf's Energy resist cap is 75"><option value="human">Human</option><option value="elf">Elf</option><option value="gargoyle">Gargoyle</option></select></div>
-          <button id="b-runs-open" class="runs-open" title="browse, name, open and compare this character's saved builds">Saved runs <span class="pill num" id="b-runs-count">0</span></button>
-        </div>
-        <div class="panel stack">
-          <h3>Requirements (floors)</h3>
-          <div class="small muted">Hard by default: the suit must reach these. Tick <em>soft</em> to make one a preference instead.</div>
-          <div class="small muted" id="b-resist-note"></div>
-          <div class="grid2" id="b-floors"></div>
-          <div class="row"><select id="b-addfloor"></select><button id="b-addfloor-btn">+ floor</button></div>
-        </div>
-        <div class="panel stack">
-          <h3>Weights</h3>
-          <div class="grid2" id="b-weights"></div>
-          <div class="row"><select id="b-addweight"></select><button id="b-addweight-btn">+ weight</button></div>
-        </div>
-        <div class="panel stack">
-          <h3>Locked slots</h3>
-          <div class="chips" id="b-locked"></div>
-        </div>
-        <div class="panel stack">
-          <h3>Candidate pool</h3>
-          <label class="row small"><input type="checkbox" id="b-others"> allow gear worn by other characters</label>
-          <label class="row small"><input type="checkbox" id="b-garg"> allow gargoyle-only gear (Gargish …)</label>
-          <label class="row small" title="only leather/hide/leaf/cloth armour, pieces with Mage Armor, and Spell Channeling weapons/shields"><input type="checkbox" id="b-med"> meditation-safe gear only</label>
-          <div class="field" title="only weapons of this skill in the hands (plus a shield, except for archery)"><label>Weapons</label><select id="b-weapon"><option value="">any</option></select></div>
-          <div class="field"><label>Exclude tags</label><div class="chips" id="b-extags"></div></div>
-          <div class="field" title="leave out every piece carrying a bonus to these skills (the Summoner must have zero Necromancy and Spirit Speak)"><label>Forbid skill bonuses</label><div class="chips" id="b-exskills"></div></div>
-          <div class="field"><label>Skip containers</label><div class="chips" id="b-exroots"></div></div>
-          <div class="row"><div class="field"><label>STR limit</label><input type="number" id="b-str"></div><div class="field"><label>Restarts</label><input type="number" id="b-restarts" value="200"></div></div>
-          <div class="row"><label class="row small"><input type="checkbox" id="b-exact" checked> exact search (prove the best)</label><div class="field"><label>Time budget (s)</label><input type="number" id="b-budget" value="300"></div></div>
-          <div class="row" title="Also list other suits whose score is within this many points of the best, so you can pick between near-equal options. 0 = only exact ties. Needs exact search."><div class="field"><label>Other suits</label><input type="number" id="b-altcount" value="5" min="0" max="20"></div><div class="field"><label>Within points</label><input type="number" id="b-alttol" value="0" min="0"></div></div>
-        </div>
-        <div class="row"><button class="primary" id="b-run">Build best suit</button><button id="b-save">Save profile</button></div>
-      </aside>
-      <div class="stack scrollcol"><div id="b-msg"></div><div class="stack" id="b-result"><div class="panel empty">Pick a character and press <strong>Build best suit</strong>.</div></div></div>
-    </div>
-  </section>
-
-  <section id="tab-containers" hidden>
-    <div class="panel">
-      <h2 style="margin-bottom:8px">Scanned containers</h2>
-      <p class="small muted">Newest scan of a container wins. A container that was skipped in a scan (too far to open, or empty) keeps its last known contents; use <em>Forget</em> to drop one you emptied.</p>
-      <div class="tablewrap"><table id="cont-table"><thead><tr><th>Container</th><th>Kind</th><th>Scanned by</th><th>When</th><th class="n">Items</th><th></th></tr></thead><tbody></tbody></table></div>
-    </div>
-  </section>
-
-  <section id="tab-import" hidden>
-    <div class="stack" id="import-body"><div class="panel empty">loading…</div></div>
-  </section>
-
-  <section id="tab-settings" data-panel="settings" class="settings" hidden>
-    <div class="stack" id="settings-body"><div class="panel empty">loading…</div></div>
-  </section>
-</main>
 
 <script type="module" src="/ui/app.mjs"></script>
 </body>

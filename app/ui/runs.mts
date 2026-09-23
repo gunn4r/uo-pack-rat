@@ -6,6 +6,7 @@ import { state, invStamp } from "./store.mts";
 import { $, el, label, full, fmtSecs, fmtRunTime, slotLabel, toast } from "./dom.mts";
 import { api } from "./api.mts";
 import { bindDrawer, type DrawerHandle } from "./components.mts";
+import { renderNavCounts } from "./shell.mts";
 import { resolveItems } from "./items.mts";
 import { renderResult, poolControls, renderProfile, runStats } from "./builder.mts";
 import type { RunsListApiResponse, RunApiResponse, RunPutApiResponse, RunSummaryLike, SavedRunLike } from "./api-types.mts";
@@ -69,6 +70,7 @@ export function renderRuns(): void {
   const box = $<HTMLElement>("#b-runs")!, runs = state.builder.runs || [], sel = state.builder.compare, stamp = invStamp();
   for (const id of [...sel]) if (!runs.some((r) => r.id === id)) sel.delete(id);
   $<HTMLElement>("#b-runs-count")!.textContent = String(runs.length);
+  renderNavCounts();
   if (!runs.length) { box.replaceChildren(el("div", { class: "small muted" }, "No runs yet for this character.")); updateCompareBtn(); return; }
   const q = ($<HTMLInputElement>("#b-runs-filter")!.value || "").trim().toLowerCase();
   const rows = runs.map((run, i) => {

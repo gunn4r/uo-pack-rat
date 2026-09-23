@@ -94,9 +94,48 @@ export function dataDirNotice(check: DataDirCheckInfo | undefined): string | nul
   }
   return null;
 }
-// The header's bridge pill while the bridge is offline: a mismatch is the one cause the app can name.
+// The sidebar's bridge label while the bridge is offline: a mismatch is the one cause the app can name.
 export function bridgeOfflineText(check: DataDirCheckInfo | undefined): string {
-  return check?.status === "mismatch" ? "bridge: offline — your game scripts write to another folder" : "bridge: offline";
+  return check?.status === "mismatch" ? "Bridge offline — your game scripts write to another folder" : "Bridge offline";
+}
+
+// ---------------------------------------------------------------- the sidebar's bridge status control
+// Four states (design spec 3.1): ready (green), busy (accent, with what it is doing), offline (grey) and no
+// client set up (amber). `label` is the control's one line, which truncates; `title` and `detail` fill its
+// popover. A bridge that answers is ready or busy whatever the settings say; one that doesn't is "no client
+// set up" only when no client was ever chosen, else offline, with the data-folder mismatch named as its
+// cause when that is what it is.
+export type BridgeState = "ready" | "busy" | "offline" | "noclient";
+export interface BridgeView { state: BridgeState; dot: "ok" | "busy" | "" | "warn"; label: string; title: string; detail: string }
+export interface BridgeStatusLike { online: boolean; character?: string | null | undefined; current?: { action?: string | undefined; name?: string | null | undefined } | null | undefined }
+export function bridgeView(st: BridgeStatusLike | null, opts: { clientSet: boolean; clientName: string | null; check?: DataDirCheckInfo | undefined }): BridgeView {
+  const who = st?.character || "the game";
+  if (st?.online && st.current) {
+    const doing = `${st.current.action || ""} ${st.current.name || ""}`.trim();
+    return { state: "busy", dot: "busy", label: `${who} · ${doing}`, title: "Bridge busy", detail: `packrat-bridge.py is running on ${who} and working through: ${doing}.` };
+  }
+  if (st?.online) return { state: "ready", dot: "ok", label: `Bridge ready · ${who}`, title: "Bridge ready", detail: `packrat-bridge.py is running on ${who}. Highlight, Grab and Go to reach the game.` };
+  if (!opts.clientSet && opts.check?.status !== "mismatch") {
+    return { state: "noclient", dot: "warn", label: "No client set up", title: "No client set up", detail: opts.clientName ? `Pack Rat hasn't been told which game client you play on, so in-game actions go to ${opts.clientName} by default. Run setup in Settings to choose.` : "Pack Rat hasn't been told which game client you play on. Run setup in Settings to install its scripts." };
+  }
+  const where = opts.clientName ? `in ${opts.clientName}` : "in game";
+  return { state: "offline", dot: "", label: bridgeOfflineText(opts.check), title: "Bridge offline", detail: dataDirNotice(opts.check) || `Pack Rat can't reach packrat-bridge.py. Press Play on it ${where}; Pack Rat reconnects by itself.` };
+}
+
+// ---------------------------------------------------------------- dates
+// One format everywhere (design spec 5): relative under a day ("just now", "5 min ago", "3 h ago"), then
+// "Jan 1, 12:00", with the year only when it isn't this year's. An unreadable stamp reads as "".
+const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+export function relativeWhen(iso: string | null | undefined, now: Date = new Date()): string {
+  const t = Date.parse(String(iso || ""));
+  if (!Number.isFinite(t)) return "";
+  const mins = (now.getTime() - t) / 60_000;
+  if (mins >= 0 && mins < 1) return "just now";
+  if (mins >= 0 && mins < 60) return `${Math.floor(mins)} min ago`;
+  if (mins >= 0 && mins < 24 * 60) return `${Math.floor(mins / 60)} h ago`;
+  const d = new Date(t);
+  const hm = `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
+  return `${MONTHS[d.getMonth()]} ${d.getDate()}${d.getFullYear() === now.getFullYear() ? "" : `, ${d.getFullYear()}`}, ${hm}`;
 }
 
 // ---------------------------------------------------------------- POST /api/host/*

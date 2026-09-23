@@ -24,11 +24,31 @@ Selection is two attributes on `<html>`, set by `app/ui/theme.mts` from the ui-p
 
 **Fonts** are bundled: IBM Plex Sans 400/500/600 and IBM Plex Mono 400/500 (latin subset, woff2) in `app/ui/fonts/`, served by `GET /ui/fonts/<name>.woff2` under the page's `font-src 'self'` CSP. Mono is for identifiers only (serials, paths, pasted scan text, key hints); numbers use the body face with `font-variant-numeric: tabular-nums`.
 
+## The shell and where each screen lives
+
+`app/index.html` is one shell (`#app`, a grid of the sidebar and `.main`) holding one `<main class="screen">` per screen, each with its `h1` in a 48 px top bar (`header.topbar`) and its content in `.page`. Overlays sit outside `#app`, which goes inert while a drawer is open. Each screen's markup is its own delimited block of `index.html` (or is built by its module), and each has its own stylesheet, linked from `index.html`, so work on one screen rarely touches another's files:
+
+| Screen or overlay | Markup | Module | Stylesheet |
+|---|---|---|---|
+| Shell: sidebar, bridge control and popover, collapse | `#app > nav#sidebar` | `ui/shell.mts` (routes in `ui/app.mts`) | `ui/shell.css` |
+| Inventory, with its Items and Containers views | `main#tab-inventory` (`#inv-view-items`, `#tab-containers`) | `ui/inventory.mts`, `ui/containers.mts` | `ui/inventory.css` |
+| Characters | `main#tab-characters` | `ui/characters.mts`, `ui/sheet.mts` | `ui/characters.css` |
+| Suit Builder | `main#tab-builder` | `ui/builder.mts` | `ui/builder.css` |
+| Saved runs drawer | `#runs-drawer` | `ui/runs.mts` | `ui/runs.css` |
+| Settings | `main#tab-settings` | `ui/settings.mts` | `ui/settings.css` |
+| Import drawer | `#import-drawer` (body `#import-body`) | `ui/import.mts` | `ui/import.css` |
+| Setup wizard | `dialog#wizard` | `ui/wizard.mts` | `ui/wizard.css` |
+
+Routes (`ui/app.mts`): `#/inventory`, `#/containers` (Inventory's Containers view), `#/characters`, `#/builder/<Character>`, `#/runs` (the builder with the saved-runs drawer open), `#/import` (the Import drawer over whichever screen was showing; ⌘I opens it) and `#/settings`. Closing a drawer puts the route back without a history entry; changing screen clears the toasts and closes any popover. The sidebar collapses to 56 px icons below 1180 px, or at any width when pinned (the ui-prefs `sidebar` field); nav labels stay in the accessibility tree when collapsed.
+
+The bridge status control at the sidebar foot has four states (ready, busy, offline, no client set up), worded by `bridgeView()` in `ui/messages.mts` and redrawn by `pollBridge()` in `ui/bridge.mts`; its popover says the state in words, the client, when it last answered, and offers Check again and Client settings. The shard picker and the Theme and Appearance controls are in Settings › General.
+
 ## Stylesheets
 
 - `app/ui/tokens.css` — the tokens and `@font-face`.
 - `app/ui/components.css` — base resets and the shared component classes. Resets are wrapped in `:where()` (zero specificity) and variants are compound classes (`.btn.btn-primary`), so a reset can never outrank a component: `.pr button { color: inherit }` (0,1,1) would beat `.btn-primary` (0,1,0) and every filled button would inherit dark text.
-- `app/ui/styles.css` — layouts that are not yet a screen file of their own. No literal colours anywhere: every colour is a token.
+- `app/ui/shell.css` and one file per screen (table above).
+- `app/ui/styles.css` — the older shared classes the screens still use (`.panel`, `.stack`, `.row`, plain tables, the character sheet, the item tooltip) until each screen moves onto components. No literal colours anywhere: every colour is a token.
 
 `<body class="pr">` is the root the resets hang off.
 

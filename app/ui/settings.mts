@@ -6,6 +6,9 @@
 import { state } from "./store.mts";
 import { $, el, noteEl, toast } from "./dom.mts";
 import { api } from "./api.mts";
+import { box, field, segmented, select, txt } from "./components.mts";
+import { applyLook, currentLook, resolveTheme, type Appearance } from "./theme.mts";
+import { changeShard } from "./shard.mts";
 import { openWizard } from "./wizard.mts";
 import { bridgeNoteEl, renderDataDirNotice } from "./bridge.mts";
 import { clientErrorMessage, hostErrorMessage, installedIntoNote, pathsFileNote } from "./messages.mts";
@@ -30,7 +33,27 @@ export async function renderSettings(setup?: SetupApiResponse): Promise<void> {
   }
   state.setup = setup;
   renderDataDirNotice();
-  root.replaceChildren(storagePanel(setup), clientPanel(setup), importPointer(), updatePanel());
+  root.replaceChildren(generalPanel(), storagePanel(setup), clientPanel(setup), importPointer(), updatePanel());
+}
+
+// ---------------------------------------------------------------- general: look and shard rules
+// The theme family (Britannia is listed, not built yet), light/system/dark, and the shard rules (moved here
+// from the old header: a setup-level choice, not something to change mid-session). Theme and appearance are
+// ui-prefs, applied at once by theme.mts; a shard switch reloads the page (shard.mts).
+function generalPanel(): HTMLDivElement {
+  const look = currentLook();
+  const save = (body: Record<string, string>): void => { api("/api/ui-prefs", { method: "PUT", body }).catch((e: Error) => toast(`Could not save the look: ${e.message}`, "bad")); };
+  const theme = select([{ value: "default", label: "Default" }, { value: "britannia", label: "Britannia (coming soon)", disabled: true }], resolveTheme(look.theme), { attrs: { id: "set-theme" } });
+  theme.addEventListener("change", () => { applyLook({ theme: theme.value }); save({ theme: theme.value }); });
+  const appearance = segmented({ label: "Appearance", size: "md", value: look.appearance,
+    options: [{ value: "light", label: "Light" }, { value: "system", label: "System" }, { value: "dark", label: "Dark" }],
+    onChange: (v) => { applyLook({ appearance: v as Appearance }); save({ appearance: v }); } });
+  const shard = select(state.availableShards.map((r) => ({ value: r.id, label: r.name })), state.settings?.shard || "", { attrs: { id: "shard" } });
+  shard.addEventListener("change", async () => { if (!await changeShard(shard.value)) shard.value = state.settings!.shard; });
+  return el("div", { class: "panel stack" }, el("h3", {}, "General"),
+    field({ label: "Theme", control: theme }),
+    box("div", { class: "field" }, txt("Appearance", "label"), appearance),
+    field({ label: "Shard rules", control: shard, help: "Property caps, the resist bonus, rarity colours and the gargoyle race lock." }));
 }
 
 // ---------------------------------------------------------------- storage: data dir / logs
@@ -68,7 +91,7 @@ function clientPanel(setup: SetupApiResponse): HTMLDivElement {
   if (adapter?.transport === "paste") {
     return el("div", { class: "panel stack" }, el("h3", {}, "Client"),
       el("div", {}, adapter.name),
-      el("div", { class: "small muted" }, "Nothing installed for this client — paste scan text into the Import tab."),
+      el("div", { class: "small muted" }, "Nothing installed for this client — paste scan text into Import."),
       runAgain);
   }
   const installedVersion = setup.installed?.version;
@@ -112,7 +135,7 @@ function clientPanel(setup: SetupApiResponse): HTMLDivElement {
 // there instead of maintaining a second, adapter-unaware copy.
 function importPointer(): HTMLDivElement {
   return el("div", { class: "panel stack" }, el("h3", {}, "Import"),
-    el("div", { class: "small muted" }, "Import scan files or paste a scan from the ", el("a", { href: "#/import" }, "Import tab"), "."));
+    el("div", { class: "small muted" }, el("span", {}, "Import scan files or paste a scan from ", el("a", { href: "#/import" }, "Import"), " (⌘I).")));
 }
 
 // ---------------------------------------------------------------- update check

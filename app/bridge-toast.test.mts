@@ -11,7 +11,7 @@ import "../scripts/localstorage-shim-for-tests.mts";
 import test from "node:test";
 import assert from "node:assert/strict";
 import { bridge, state } from "./ui/store.mts";
-import { pollBridge, renderDataDirNotice } from "./ui/bridge.mts";
+import { pollBridge, renderDataDirNotice, currentBridgeView } from "./ui/bridge.mts";
 import type { SetupApiResponse } from "./ui/api-types.mts";
 
 interface FakeEl { nodeType: 1; className: string; textContent: string; title?: string; hidden?: boolean; kids: unknown[]; listeners: Record<string, () => void>; setAttribute(): void; addEventListener(type: string, fn: () => void): void; append(...k: unknown[]): void; replaceChildren(...k: unknown[]): void; remove(): void }
@@ -71,15 +71,18 @@ test("[fast] pollBridge toasts a refused command under the piece's name, a succe
 // like a bridge nobody had started.
 const MISMATCH = { status: "mismatch", scriptsDir: "/Users/example/LegionScripts", scriptsDataDir: "/Users/example/dev-data", dataDir: "/Users/example/.pack-rat" } as const;
 
-test("[fast] an offline bridge pill names a data-folder mismatch as the cause, and only that", async () => {
+test("[fast] an offline bridge control names a data-folder mismatch as the cause, and only that", async () => {
   status = { ok: true, online: false };
-  state.setup = { dataDirCheck: MISMATCH } as unknown as SetupApiResponse;
+  state.setup = { settings: { client: { adapter: "tazuo" } }, dataDirCheck: MISMATCH } as unknown as SetupApiResponse;
   await pollBridge();
-  assert.equal(pill.textContent, "bridge: offline — your game scripts write to another folder");
-  assert.match(pill.title!, /\/Users\/example\/dev-data/, "the hover names the folders");
-  state.setup = { dataDirCheck: { status: "match", scriptsDir: "/x" } } as unknown as SetupApiResponse;
+  assert.equal(textOf(pill), "Bridge offline — your game scripts write to another folder");
+  assert.match(currentBridgeView().detail, /\/Users\/example\/dev-data/, "its popover names the folders");
+  state.setup = { settings: { client: { adapter: "tazuo" } }, dataDirCheck: { status: "match", scriptsDir: "/x" } } as unknown as SetupApiResponse;
   await pollBridge();
-  assert.equal(pill.textContent, "bridge: offline");
+  assert.equal(textOf(pill), "Bridge offline");
+  state.setup = { settings: { client: null }, dataDirCheck: { status: "match", scriptsDir: "/x" } } as unknown as SetupApiResponse;
+  await pollBridge();
+  assert.equal(textOf(pill), "No client set up");
   state.setup = null;
 });
 

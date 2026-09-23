@@ -134,6 +134,7 @@
 .pr .seg button:hover { color: var(--color-text); background: transparent; }
 .pr .seg button[aria-pressed="true"], .pr .seg button[aria-checked="true"] { background: var(--color-surface); color: var(--color-text); box-shadow: 0 0 0 1px var(--color-border-strong); }
 .pr .seg.seg-md button { height: calc(var(--control-md) - 6px); padding: 0 var(--space-3); font-size: var(--text-base); }
+.field > .seg { align-self: flex-start; }   /* in a column it keeps its own width */
 
 /* ---------------------------------------------------------------- chips, pills, badges, tags */
 .fchip { display: inline-flex; align-items: center; gap: 6px; height: var(--control-sm); padding: 0 var(--space-2) 0 var(--space-3); border-radius: var(--radius-full); border: var(--border-width) solid var(--color-border-strong); background: var(--color-surface); color: var(--color-text); font-size: var(--text-sm); font-weight: var(--weight-medium); white-space: nowrap; cursor: pointer; }

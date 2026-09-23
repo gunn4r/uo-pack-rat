@@ -1,0 +1,14 @@
+/* ui/runs.css — the saved-runs drawer (ui/runs.mts); the drawer frame itself is the .drawer component. Tokens only (docs/ui.md). */
+/* saved runs */
+.runs { display: flex; flex-direction: column; gap: var(--space-1); max-height: 340px; overflow-y: auto; }
+.runrow { display: flex; align-items: flex-start; gap: var(--space-2); padding: var(--space-1-5) var(--space-2); border: var(--border-width) solid var(--color-border); border-radius: var(--radius-md); background: var(--color-surface); color: var(--color-text); }
+.runrow.open { border-color: var(--color-accent); background: var(--color-accent-soft); color: var(--color-on-accent-soft); }
+.runrow > input { margin-top: 3px; }
+.run-main { flex: 1; min-width: 0; cursor: pointer; display: flex; flex-direction: column; gap: var(--space-0-5); }
+.run-top { display: flex; align-items: center; gap: var(--space-1-5); flex-wrap: wrap; font-size: var(--text-sm); }
+.run-label { font-size: var(--text-sm); color: var(--color-text-muted); overflow-wrap: anywhere; }
+.runrow.open .run-label { color: inherit; }
+.run-acts { display: flex; gap: var(--space-1); }
+.run-acts button { padding: 1px var(--space-1-5); font-size: var(--text-xs); }
+.run-name { width: 100%; }
+#runs-drawer .runs { max-height: none; flex: 1; min-height: 0; overflow-y: auto; }

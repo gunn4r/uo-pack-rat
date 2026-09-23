@@ -187,7 +187,7 @@ function step2(): HTMLDivElement {
       el("div", {}, a.name),
       a.summary ? el("div", { class: "small muted" }, a.summary) : null,
       !compatible ? el("div", { class: "small muted" }, `${a.platform} only — not available on this machine`) : null,
-      compatible && a.transport === "paste" ? el("div", { class: "small muted" }, "No files to install — you'll paste what its scanner prints into the Import tab.") : null));
+      compatible && a.transport === "paste" ? el("div", { class: "small muted" }, "No files to install — you'll paste what its scanner prints into Import.") : null));
   }));
 }
 
@@ -218,7 +218,7 @@ async function locate(dir: string): Promise<void> {
 // ---------------------------------------------------------------- steps 3/4, paste-transport branch
 // Nothing to locate and nothing to install (docs/adapter-guide.md's "paste" transport) — sent straight
 // to the Import tab instead. finish() is what actually persists settings.client for this branch (see
-// below); "Go to Import tab" both finishes and navigates in one click, but the ordinary Finish button
+// below); "Go to Import" both finishes and navigates in one click, but the ordinary Finish button
 // in the footer works too, just without the navigation.
 function pasteStep3(): HTMLDivElement {
   const clientName = currentAdapterInfo()?.name || "This client";
@@ -228,8 +228,8 @@ function pasteStep3(): HTMLDivElement {
 function pasteStep4(): HTMLDivElement {
   const clientName = currentAdapterInfo()?.name || "This client";
   return el("div", { class: "stack" },
-    el("div", { class: "msg" }, `Run ${clientName}'s scanner, copy what it prints, and paste it into the Import tab — the app validates and folds it in exactly like a scan a folder-based client dropped into its inbox.`),
-    el("button", { class: "primary", onclick: goToImport }, "Go to Import tab"));
+    el("div", { class: "msg" }, `Run ${clientName}'s scanner, copy what it prints, and paste it into Import — the app validates and folds it in exactly like a scan a folder-based client dropped into its inbox.`),
+    el("button", { class: "primary", onclick: goToImport }, "Go to Import"));
 }
 async function goToImport(): Promise<void> {
   await finish();
@@ -346,7 +346,7 @@ async function skip(): Promise<void> { await persistSetupDone(); closeAs("done")
 // finish() is the one path that persists a paste-transport pick: a folder-transport client already got
 // settings.client written by doInstall()'s own POST /api/setup/install, but a paste-transport client
 // never calls that route (there's nothing to install), so finish() writes settings.client here instead
-// — reached both by the footer's own Finish button and by pasteStep4()'s "Go to Import tab" (which
+// — reached both by the footer's own Finish button and by pasteStep4()'s "Go to Import" (which
 // calls finish() then navigates). Skip deliberately does NOT do this: skipping means "I didn't finish
 // setup," not "commit whatever radio happened to be selected."
 async function finish(): Promise<void> {

@@ -1,41 +1,14 @@
-/* ui/styles.css — the page's screen layouts, on the tokens in ui/tokens.css (docs/ui.md). No literal colours
-   here: every colour is a semantic role, so light, dark and later theme families come from the tokens alone.
-   Base resets and shared component classes live in ui/components.css. */
+/* ui/styles.css — the older shared page classes the screens still use (.panel, .stack, .row, plain tables, the
+   character sheet, the item tooltip), on the tokens in ui/tokens.css (docs/ui.md). No literal colours here.
+   The shell is ui/shell.css, components are ui/components.css, and each screen has its own file. */
 
 html, body { margin: 0; height: 100%; }
-/* app-shell: header fixed, main is the scroller. The inventory tab pins itself to the viewport so only the
-   table (and, when needed, the side panel) scroll — never the page. */
-body { display: flex; flex-direction: column; height: 100vh; overflow: hidden; }
-header { flex: none; }
-main { flex: 1; min-height: 0; overflow: auto; }
-#tab-inventory, #tab-builder { height: 100%; }
-#tab-inventory .layout, #tab-builder .layout { height: 100%; grid-template-rows: 100%; }
-#tab-inventory aside, #tab-builder aside { max-height: 100%; overflow-y: auto; }
-#tab-builder .scrollcol { max-height: 100%; overflow-y: auto; min-height: 0; }
-#tab-inventory .layout > .panel { height: 100%; min-height: 0; display: flex; flex-direction: column; }
-#tab-inventory .tablewrap.scrolly { flex: 1; min-height: 0; max-height: none; }
-main:has(#tab-inventory:not([hidden])), main:has(#tab-builder:not([hidden])) { padding-bottom: var(--space-4); }
 h1, h2, h3 { text-wrap: balance; font-weight: var(--weight-semibold); }
 h1 { font-family: var(--font-display); font-size: var(--text-lg); line-height: var(--lh-lg); }
 h2 { font-size: var(--text-md); line-height: var(--lh-md); }
-h3 { font-size: var(--text-xs); line-height: var(--lh-xs); color: var(--color-text-muted); text-transform: uppercase; letter-spacing: var(--tracking-caps); }
+.panel h3 { font-size: var(--text-xs); line-height: var(--lh-xs); color: var(--color-text-muted); text-transform: uppercase; letter-spacing: var(--tracking-caps); }
 input[type=number] { width: 5.5em; font-variant-numeric: tabular-nums; text-align: right; }
-/* Import tab (ui/import.mjs): the paste textarea fills its panel — the panel's own padding is the container
-   decision, not something the textarea imposes on itself. */
-textarea { width: 100%; resize: vertical; font-family: var(--font-mono); font-size: var(--text-sm); }
 .small { font-size: var(--text-sm); line-height: var(--lh-sm); }
-header { background: var(--color-surface); color: var(--color-text); border-bottom: var(--border-width) solid var(--color-border); padding: var(--space-2) var(--space-5); display: flex; align-items: center; gap: var(--space-4); flex-wrap: wrap; }
-header .brand { display: flex; align-items: baseline; gap: var(--space-2); }
-nav { display: flex; gap: var(--space-1); margin-left: auto; }
-nav button { border: 0; background: transparent; padding: var(--space-2) var(--space-3); border-bottom: 2px solid transparent; border-radius: 0; color: var(--color-text-muted); }
-nav button:hover { color: var(--color-text); background: transparent; }
-nav button[aria-selected="true"] { border-bottom-color: var(--color-accent); color: var(--color-text); font-weight: var(--weight-semibold); }
-.status { font-size: var(--text-sm); color: var(--color-text-muted); }
-main { padding: var(--space-4) var(--space-5) var(--space-10); }
-/* the inventory tab is fluid (many columns); the other tabs sit in a centred 1800px column */
-main > section:not(#tab-inventory):not(#tab-builder) { max-width: 1800px; margin: 0 auto; }   /* inventory and builder are fluid */
-#tab-builder .layout { grid-template-columns: 340px 1fr; }
-section[hidden] { display: none; }
 .layout { display: grid; grid-template-columns: 280px 1fr; gap: var(--space-4); align-items: start; }
 .layout > * { min-width: 0; }   /* grid items default to min-width:auto, which lets a wide table push the page sideways */
 @media (max-width: 900px) { .layout { grid-template-columns: 1fr; } }
@@ -48,42 +21,29 @@ section[hidden] { display: none; }
 .chips { display: flex; flex-wrap: wrap; gap: var(--space-1-5); }
 .chip { border: var(--border-width) solid var(--color-border-strong); border-radius: var(--radius-full); padding: var(--space-0-5) var(--space-2); font-size: var(--text-sm); background: var(--color-surface); color: var(--color-text); cursor: pointer; user-select: none; }
 .chip[aria-pressed="true"] { background: var(--color-chip-set); color: var(--color-on-chip-set); border-color: var(--color-accent); }
-.pager { flex: none; margin-top: var(--space-2); }
-.pager .grow { flex: 1; }
 .tablewrap { overflow-x: auto; }
-/* the inventory table scrolls inside its own box so the sticky header stays put (sticky can't cross an overflow-x container) */
-.tablewrap.scrolly { overflow: auto; max-height: calc(100vh - 150px); }
-.tablewrap.scrolly th { box-shadow: 0 1px 0 var(--color-border); z-index: var(--z-sticky); }
 table { border-collapse: collapse; width: 100%; font-size: var(--text-base); }
 th, td { padding: var(--space-1-5) var(--space-2); border-bottom: var(--border-width) solid var(--color-border); text-align: left; vertical-align: top; white-space: nowrap; }
 th { font-size: var(--text-sm); font-weight: var(--weight-medium); color: var(--color-text-muted); position: sticky; top: 0; background: var(--color-surface-subtle); }
 th.sortable { cursor: pointer; }
 th.sorted { color: var(--color-text); }
 td.n, th.n { text-align: right; font-variant-numeric: tabular-nums; }
-tr.item:hover td { background: var(--color-row-hover); color: var(--color-on-row-hover); }
-tr.detail td { white-space: normal; background: var(--color-surface-subtle); font-family: var(--font-mono); font-size: var(--text-sm); color: var(--color-text-muted); }
 .name { font-weight: var(--weight-medium); }
 .tag { margin-left: var(--space-1-5); vertical-align: middle; }   /* the .tag component (components.css) beside a name */
 .tag.cursed, .tag.brittle { color: var(--color-danger); border-color: var(--color-danger); }
 .tag.antique { color: var(--color-warning); border-color: var(--color-warning); }
 .tag.slayer { color: var(--color-accent); border-color: var(--color-accent); }
-.rar { display: inline-block; width: 8px; height: 8px; border-radius: var(--radius-full); margin-right: var(--space-1-5); background: var(--color-border-strong); vertical-align: middle; }
 .rar-name { font-weight: var(--weight-medium); }
 /* a shard tier with no --rarity-* token: its raw game colour on a dark chip, where game colours read (ui/dom.mts's rarCell) */
 .rar-raw { background: var(--color-surface-raised); padding: 0 var(--space-1-5); border-radius: var(--radius-sm); }
 .pill { display: inline-block; font-size: var(--text-sm); padding: 0 var(--space-2); border-radius: var(--radius-full); border: var(--border-width) solid var(--color-border-strong); color: var(--color-text); }
 .pill.good { border-color: var(--color-success); color: var(--color-success); } .pill.warn { border-color: var(--color-warning); color: var(--color-warning); } .pill.bad { border-color: var(--color-danger); color: var(--color-danger); }
-.grid2 { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: var(--space-1-5) var(--space-3); }
-.grid2 label { display: flex; justify-content: space-between; align-items: center; gap: var(--space-2); font-size: var(--text-sm); }
 .cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(360px, 1fr)); gap: var(--space-3); }
 .empty { padding: var(--space-10); text-align: center; color: var(--color-text-muted); }
 .empty code { font-family: var(--font-mono); background: var(--color-surface-sunken); color: var(--color-text); padding: var(--space-0-5) var(--space-1-5); border-radius: var(--radius-sm); }
 .stale { color: var(--color-warning); }
 .delta-up { color: var(--color-success); } .delta-down { color: var(--color-danger); }
 /* the data-folder banner under the header (ui/bridge.mts's renderDataDirNotice): one text span, one button */
-#notice { flex: none; margin: var(--space-2) var(--space-5) 0; }
-#notice[hidden] { display: none; }
-#notice > span { flex: 1; min-width: 0; overflow-wrap: anywhere; }
 details summary { cursor: pointer; color: var(--color-text-muted); font-size: var(--text-sm); }
 @media (prefers-reduced-motion: no-preference) { button, .chip { transition: background var(--duration-fast), border-color var(--duration-fast); } }
 
@@ -114,99 +74,18 @@ details summary { cursor: pointer; color: var(--color-text-muted); font-size: va
 .sheet .up { color: var(--color-success); } .sheet .down { color: var(--color-danger); } .sheet .same { color: var(--color-text-muted); }
 .sheet .cap { color: var(--color-text-muted); }
 .sheet .res { display: grid; grid-template-columns: repeat(5, auto); justify-content: space-between; gap: var(--space-1-5) var(--space-3); padding: var(--space-0-5) 0 var(--space-1); white-space: nowrap; }
-#b-result .sheet { max-width: 960px; }   /* before → after → Δ needs the room for five resists on one line */
 .sheet .res span b { font-weight: var(--weight-semibold); }
 .sheet .r-phys { color: var(--res-phys); } .sheet .r-fire { color: var(--res-fire); } .sheet .r-cold { color: var(--res-cold); } .sheet .r-poison { color: var(--res-poison); } .sheet .r-energy { color: var(--res-energy); }
 .sheet .title { text-align: center; font-weight: var(--weight-semibold); margin-bottom: var(--space-0-5); }
 .sheet .note { color: var(--color-text-muted); font-size: var(--text-xs); text-align: center; margin-top: var(--space-1-5); }
 
-/* schematic paperdoll */
-.doll { display: grid; grid-template-columns: repeat(4, 1fr); gap: var(--space-1-5); }
-.doll .slot { border: var(--border-width) solid var(--color-border-strong); border-radius: var(--radius-md); padding: var(--space-1) var(--space-2); min-height: 46px; background: var(--color-surface); color: var(--color-text); }
-.doll .slot .k { font-size: 10px; text-transform: uppercase; letter-spacing: var(--tracking-caps); color: var(--color-text-muted); }
-.doll .slot .n { font-size: var(--text-sm); font-weight: var(--weight-medium); white-space: normal; }
-.doll .slot.empty { border-style: dashed; background: var(--color-surface-subtle); }
-.doll .slot.empty .n { color: var(--color-text-faint); font-weight: var(--weight-regular); }
-.doll .slot.body { visibility: hidden; }
-.charcard { display: grid; grid-template-columns: minmax(300px, 420px) minmax(0, 760px); gap: var(--space-4); align-items: start; }
-@media (max-width: 1000px) { .charcard { grid-template-columns: 1fr; } }
 
-#bridge { padding: var(--space-0-5) var(--space-2); border-radius: var(--radius-full); border: var(--border-width) solid var(--color-border-strong); }
-#bridge.on { border-color: var(--color-success); color: var(--color-success); }
-#bridge.busy { border-color: var(--color-warning); color: var(--color-warning); }
-.act { display: inline-flex; gap: var(--space-1); }
-.act button { padding: 1px var(--space-1-5); font-size: var(--text-xs); }
 
-.stats { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2) var(--space-5); padding: var(--space-2) var(--space-3); }
-.stat-k { font-size: var(--text-xs); text-transform: uppercase; letter-spacing: var(--tracking-caps); color: var(--color-text-muted); }
-.stat-v { font-size: var(--text-base); }
-.stat-v.warn { color: var(--color-warning); } .stat-v.bad { color: var(--color-danger); }
 
-/* saved runs */
-.runs { display: flex; flex-direction: column; gap: var(--space-1); max-height: 340px; overflow-y: auto; }
-.runrow { display: flex; align-items: flex-start; gap: var(--space-2); padding: var(--space-1-5) var(--space-2); border: var(--border-width) solid var(--color-border); border-radius: var(--radius-md); background: var(--color-surface); color: var(--color-text); }
-.runrow.open { border-color: var(--color-accent); background: var(--color-accent-soft); color: var(--color-on-accent-soft); }
-.runrow > input { margin-top: 3px; }
-.run-main { flex: 1; min-width: 0; cursor: pointer; display: flex; flex-direction: column; gap: var(--space-0-5); }
-.run-top { display: flex; align-items: center; gap: var(--space-1-5); flex-wrap: wrap; font-size: var(--text-sm); }
-.run-label { font-size: var(--text-sm); color: var(--color-text-muted); overflow-wrap: anywhere; }
-.runrow.open .run-label { color: inherit; }
-.run-acts { display: flex; gap: var(--space-1); }
-.run-acts button { padding: 1px var(--space-1-5); font-size: var(--text-xs); }
-.run-name { width: 100%; }
-.cmp-head { display: grid; grid-template-columns: 1fr 1fr; gap: var(--space-3); }
-.runs-open { display: flex; align-items: center; justify-content: space-between; width: 100%; }
-/* sidebar pickers fit their row: long option names (skill bonuses) must not widen the select past the panel */
-#tab-builder aside select { max-width: 100%; min-width: 0; }
-#tab-builder aside .row > select { flex: 1 1 0; }
-.tpl-actions { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: var(--space-1-5); }
-.tpl-actions button { min-width: 0; padding-inline: var(--space-1); }
 
-#runs-drawer .runs { max-height: none; flex: 1; min-height: 0; overflow-y: auto; }
-tr.shown td { background: var(--color-row-selected); color: var(--color-on-row-selected); }
-.alt-table td { white-space: normal; vertical-align: top; }
-.alt-table td:nth-child(1), .alt-table td:nth-child(2), .alt-table td:nth-child(5) { white-space: nowrap; }
 
-/* live build progress */
-.run { display: flex; flex-direction: column; gap: var(--space-2); padding: var(--space-3) var(--space-4); border-color: var(--color-accent); }
-.run .stats { padding: var(--space-0-5) 0 0; }
-.run-head { display: flex; align-items: center; gap: var(--space-2); }
-.run-head .grow { flex: 1; }
-.beat { width: 10px; height: 10px; border-radius: var(--radius-full); background: var(--color-success); box-shadow: 0 0 0 0 var(--color-success); flex: none; }
-.beat.warn { background: var(--color-warning); box-shadow: none; animation: none; }
-.beat.bad { background: var(--color-danger); box-shadow: none; animation: none; }
-@keyframes beat { 0% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--color-success) 55%, transparent); } 100% { box-shadow: 0 0 0 9px transparent; } }
-@media (prefers-reduced-motion: no-preference) { .beat { animation: beat 1.2s ease-out infinite; } .run .fill { transition: width var(--duration-base) linear; } }
-.steps { display: flex; gap: var(--space-1-5); flex-wrap: wrap; }
-.steps .step { font-size: var(--text-xs); padding: 1px var(--space-2); border-radius: var(--radius-full); border: var(--border-width) solid var(--color-border-strong); color: var(--color-text-muted); }
-.steps .step.active { border-color: var(--color-accent); background: var(--color-accent); color: var(--color-on-accent); font-weight: var(--weight-semibold); }
-.steps .step.done { border-color: var(--color-success); background: var(--color-success-soft); color: var(--color-on-success-soft); }
-.run .bar { height: 8px; border-radius: var(--radius-full); background: var(--color-surface-sunken); overflow: hidden; }
-.run .bar .fill { height: 100%; width: 0; background: var(--color-accent); border-radius: var(--radius-full); }
-.run .bar.time { height: 4px; margin-top: calc(-1 * var(--space-1)); }
-.run .bar.time .fill { background: var(--color-text-muted); }
 
-/* first-run / "Run setup again" wizard (ui/wizard.mjs) — a native <dialog>, restyled to match the app's own
-   panels rather than the browser's default white box + system border. The dialog decides its width. */
-.wizard { width: min(var(--wizard-w), 94vw); border: var(--border-width-frame) solid var(--color-border); border-image: var(--frame-image); border-radius: var(--radius-xl); padding: var(--space-4) var(--space-5); background: var(--color-surface-raised); color: var(--color-text); box-shadow: var(--shadow-3); }
-.wizard::backdrop { background: var(--color-scrim); }
-.wizard-head { display: flex; align-items: baseline; justify-content: space-between; gap: var(--space-2); margin-bottom: var(--space-3); padding-bottom: var(--space-2); border-bottom: var(--border-width) solid var(--color-border); }
-.wizard-body { display: flex; flex-direction: column; gap: var(--space-2); min-height: 120px; }
-.wizard-body ul { margin: var(--space-1) 0; padding-left: var(--space-5); }
-.wizard-body code { font-family: var(--font-mono); font-size: var(--text-sm); background: var(--color-surface-sunken); color: var(--color-text); border-radius: var(--radius-sm); padding: 1px var(--space-1); }
-.wizard-divider { border-top: var(--border-width) solid var(--color-border); margin: var(--space-0-5) 0; }
-.wizard-foot { margin-top: var(--space-4); padding-top: var(--space-3); border-top: var(--border-width) solid var(--color-border); }
-.wizard-foot .grow { flex: 1; }
 
-/* Single-field prompt dialogs (ui/dialog.mjs's promptText — the in-page replacement for window.prompt(),
-   which Electron doesn't implement). Shares .wizard's look, just narrower: the dialog decides its own
-   width, the input inside it fills that width in turn (never the other way round). */
-.prompt-dialog { width: min(var(--dialog-w-sm), 92vw); }
-.prompt-dialog input[type=text] { width: 100%; }
-
-/* Settings tab (ui/settings.mjs): .path-row is a label/value[/action] row — distinct from the shared flex .row
-   utility, which the checkbox and folder-picker rows in the same panels still use unchanged. */
-.settings .path-row { display: grid; grid-template-columns: 140px 1fr auto; align-items: center; gap: var(--space-1-5) var(--space-2); }
 
 /* scrollbars: thin, rounded, theme-coloured (WebKit/Blink + Firefox) */
 * { scrollbar-width: thin; scrollbar-color: var(--color-border-strong) transparent; }
@@ -215,4 +94,4 @@ tr.shown td { background: var(--color-row-selected); color: var(--color-on-row-s
 *::-webkit-scrollbar-thumb { background: var(--color-border-strong); border-radius: var(--radius-full); border: 2px solid var(--color-surface); background-clip: padding-box; }
 *::-webkit-scrollbar-thumb:hover { background: var(--color-text-muted); background-clip: padding-box; }
 *::-webkit-scrollbar-corner { background: transparent; }
-.tablewrap.scrolly, #tab-inventory aside, #tab-builder aside, #tab-builder .scrollcol, #runs-drawer .runs { scrollbar-gutter: stable; }
+.tablewrap.scrolly, #tab-inventory aside, #tab-builder aside, #tab-builder .scrollcol, #runs-drawer .runs { scrollbar-gutter: stable; }   /* the screens' own scrollers */

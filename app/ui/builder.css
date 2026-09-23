@@ -1,0 +1,40 @@
+/* ui/builder.css — the Suit Builder screen (ui/builder.mts): constraints panel, live build progress, result. Tokens only (docs/ui.md). */
+/* the screen never scrolls: the constraints column and the results column scroll inside their own boxes */
+#tab-builder .page { overflow: hidden; }
+#tab-builder .layout { grid-template-columns: 340px 1fr; height: 100%; grid-template-rows: 100%; }
+#tab-builder aside { max-height: 100%; overflow-y: auto; }
+#tab-builder .scrollcol { max-height: 100%; overflow-y: auto; min-height: 0; }
+.grid2 { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: var(--space-1-5) var(--space-3); }
+.grid2 label { display: flex; justify-content: space-between; align-items: center; gap: var(--space-2); font-size: var(--text-sm); }
+#b-result .sheet { max-width: 960px; }   /* before → after → Δ needs the room for five resists on one line */
+.stats { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2) var(--space-5); padding: var(--space-2) var(--space-3); }
+.stat-k { font-size: var(--text-xs); text-transform: uppercase; letter-spacing: var(--tracking-caps); color: var(--color-text-muted); }
+.stat-v { font-size: var(--text-base); }
+.stat-v.warn { color: var(--color-warning); } .stat-v.bad { color: var(--color-danger); }
+.cmp-head { display: grid; grid-template-columns: 1fr 1fr; gap: var(--space-3); }
+/* sidebar pickers fit their row: long option names (skill bonuses) must not widen the select past the panel */
+#tab-builder aside select { max-width: 100%; min-width: 0; }
+#tab-builder aside .row > select { flex: 1 1 0; }
+.tpl-actions { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: var(--space-1-5); }
+.tpl-actions button { min-width: 0; padding-inline: var(--space-1); }
+tr.shown td { background: var(--color-row-selected); color: var(--color-on-row-selected); }
+.alt-table td { white-space: normal; vertical-align: top; }
+.alt-table td:nth-child(1), .alt-table td:nth-child(2), .alt-table td:nth-child(5) { white-space: nowrap; }
+/* live build progress */
+.run { display: flex; flex-direction: column; gap: var(--space-2); padding: var(--space-3) var(--space-4); border-color: var(--color-accent); }
+.run .stats { padding: var(--space-0-5) 0 0; }
+.run-head { display: flex; align-items: center; gap: var(--space-2); }
+.run-head .grow { flex: 1; }
+.beat { width: 10px; height: 10px; border-radius: var(--radius-full); background: var(--color-success); box-shadow: 0 0 0 0 var(--color-success); flex: none; }
+.beat.warn { background: var(--color-warning); box-shadow: none; animation: none; }
+.beat.bad { background: var(--color-danger); box-shadow: none; animation: none; }
+@keyframes beat { 0% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--color-success) 55%, transparent); } 100% { box-shadow: 0 0 0 9px transparent; } }
+@media (prefers-reduced-motion: no-preference) { .beat { animation: beat 1.2s ease-out infinite; } .run .fill { transition: width var(--duration-base) linear; } }
+.steps { display: flex; gap: var(--space-1-5); flex-wrap: wrap; }
+.steps .step { font-size: var(--text-xs); padding: 1px var(--space-2); border-radius: var(--radius-full); border: var(--border-width) solid var(--color-border-strong); color: var(--color-text-muted); }
+.steps .step.active { border-color: var(--color-accent); background: var(--color-accent); color: var(--color-on-accent); font-weight: var(--weight-semibold); }
+.steps .step.done { border-color: var(--color-success); background: var(--color-success-soft); color: var(--color-on-success-soft); }
+.run .bar { height: 8px; border-radius: var(--radius-full); background: var(--color-surface-sunken); overflow: hidden; }
+.run .bar .fill { height: 100%; width: 0; background: var(--color-accent); border-radius: var(--radius-full); }
+.run .bar.time { height: 4px; margin-top: calc(-1 * var(--space-1)); }
+.run .bar.time .fill { background: var(--color-text-muted); }

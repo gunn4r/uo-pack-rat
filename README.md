@@ -83,7 +83,7 @@ The first time Pack Rat opens, a setup window walks you through four steps. The 
    - You will see **Installed:** followed by the script names, and a short **What to press in game** list.
    - Click **Finish**.
 
-If you picked the **ClassicUO web client**, steps 3 and 4 are different: there is nothing to install for it. Step 4 has a **Go to Import tab** button; see [the web client](#the-classicuo-web-client) below.
+If you picked the **ClassicUO web client**, steps 3 and 4 are different: there is nothing to install for it. Step 4 has a **Go to Import** button; see [the web client](#the-classicuo-web-client) below.
 
 Every step has a **Skip** button, and skipping is safe. You can run setup again at any time from the **Settings** tab with **Run setup again**.
 
@@ -133,7 +133,7 @@ The web client can't save files, so it works differently: you copy and paste.
 1. Open [adapters/classicuo-web/packrat-scanner.ts](adapters/classicuo-web/packrat-scanner.ts), copy all of it, and paste it into the web client's scripting window as a new script.
 2. Stand near what you want scanned and run the script.
 3. It prints a block of text below the scripting window, starting with `-----BEGIN PACK RAT SCAN-----` and ending with `-----END PACK RAT SCAN-----`. Select all of it and copy it.
-4. In Pack Rat, open the **Import** tab, paste into the box under **Paste a scan**, and click **Paste scan**.
+4. In Pack Rat, open **Import** in the sidebar (or press ⌘I, Ctrl+I on Windows and Linux), paste into the box under **Paste a scan**, and click **Paste scan**.
 
 The web client can't see your bank box, probably can't see what you wear on your arms, and only finds common kinds of chests and bags. It also has no bridge, so the Highlight, Grab and Go to buttons don't appear for it. It has not been tried with a real game yet either. More in [adapters/classicuo-web/README.md](adapters/classicuo-web/README.md).
 
