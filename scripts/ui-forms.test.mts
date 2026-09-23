@@ -28,8 +28,18 @@ async function launch(dataDir: string): Promise<{ app: ElectronApplication; page
   const page = await app.firstWindow();
   const errors: string[] = [];
   page.on("pageerror", (e) => errors.push(String(e)));
-  await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0]!.setContentSize(1440, 900));
+  // The emulated viewport, not the window: a CI runner's screen can be smaller than the window, and the OS clamps it.
+  await page.setViewportSize({ width: 1440, height: 900 });
   return { app, page, errors };
+}
+// A paste lands as one insertion; typing a 43 KB scan key by key through page.fill() is slow enough to time out
+// on a CI runner, and isn't what a player does.
+async function paste(page: Page, selector: string, text: string): Promise<void> {
+  await page.locator(selector).evaluate((el, t) => {
+    const ta = el as HTMLTextAreaElement;
+    ta.focus(); ta.value = t;
+    ta.dispatchEvent(new InputEvent("input", { bubbles: true, inputType: "insertFromPaste" }));
+  }, text);
 }
 const setupDone = (dataDir: string): void => writeFileSync(join(dataDir, "settings.json"), JSON.stringify({ schemaVersion: 1, shard: "uoalive", setupDone: true }));
 
@@ -48,13 +58,13 @@ test("[slow] Import: paste default, instant preview, errors in the card, ⌘↵ 
     assert.equal(await page.locator("#imp-go").isDisabled(), true, "nothing to import yet");
 
     // A paste that doesn't parse: the error sits in the preview card, the primary stays off.
-    await page.fill("#imp-text", KESTREL.slice(0, 600));
+    await paste(page, "#imp-text", KESTREL.slice(0, 600));
     await page.waitForSelector(".imp-preview.bad");
     assert.match(await page.locator(".imp-preview").innerText(), /This doesn't read as a scan[\s\S]*invalid JSON/);
     assert.equal(await page.locator("#imp-go").isDisabled(), true);
 
     // A clean paste: the preview's counts and the button that says what will happen.
-    await page.fill("#imp-text", KESTREL);
+    await paste(page, "#imp-text", KESTREL);
     await page.waitForSelector(".imp-preview.ok");
     const card = await page.locator(".imp-preview").innerText();
     assert.match(card, /Kestrel's scan reads cleanly/);
@@ -113,9 +123,11 @@ test("[slow] Wizard: named stepper with branch-aware labels, radio cards, kept t
     // Step 2: radio cards, installable first; a client this machine can't run is shown disabled with the reason.
     await page.waitForSelector("#wizard .wiz-card");
     assert.match(await page.locator("#wizard").innerText(), /Step 2 of 4/);
+    // Installable clients this machine can run come first (Razor Enhanced too, on Windows), then the paste client.
     const names = await page.locator("#wizard .wiz-card-name .strong").allInnerTexts();
-    assert.deepEqual(names.slice(0, 2), ["TazUO", "ClassicUO web client"]);
-    assert.equal(await page.locator("#wizard input[value=tazuo]").isChecked(), true, "defaults to the installable client");
+    const installable = process.platform === "win32" ? ["Razor Enhanced", "TazUO"] : ["TazUO"];
+    assert.deepEqual(names.slice(0, installable.length + 1), [...installable, "ClassicUO web client"]);
+    assert.notEqual(await page.locator("#wizard input[name=wiz-adapter]:checked").getAttribute("value"), "classicuo-web", "defaults to an installable client");
     if (process.platform !== "win32") {
       assert.equal(await page.locator("#wizard input[value=razor-enhanced]").isDisabled(), true);
       assert.match(await page.locator("#wizard .wiz-card.off").innerText(), /Windows only[\s\S]*Not available on this (Mac|computer)\./);
@@ -194,7 +206,9 @@ test("[slow] Settings: section nav with the client warning, theme and appearance
     assert.match(await page.locator("#set-client").innerText(), /-stopall/);
 
     // The nav follows a click; Data's danger zone asks before forgetting, with the existing copy.
+    // The clicked section stays marked while its scroll runs, even when Data can't reach the top of the page.
     await page.click("#settings-nav [data-section=set-data]");
+    await page.waitForTimeout(1_000);
     assert.equal(await page.locator("#settings-nav [aria-current=true]").innerText(), "Data");
     assert.deepEqual(await page.locator("#set-forget-who option").allInnerTexts(), ["Dorran", "Kestrel"]);
     await page.click("#set-forget");
