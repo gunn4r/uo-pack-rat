@@ -124,7 +124,4 @@
 #cont-table td.cont-act { padding: 0 var(--space-1); text-align: right; }
 #cont-table .inv-loc .t-sm { flex: none; }
 
-/* Suit Builder rows still draw their bridge buttons with bridge.mts's actButtons() (phase 7/8 moves them). */
-.act { display: inline-flex; gap: var(--space-1); }
-.act button { padding: 1px var(--space-1-5); font-size: var(--text-xs); }
 .inv-pop .btn[hidden] { display: none; }

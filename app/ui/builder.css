@@ -1,40 +1,123 @@
-/* ui/builder.css — the Suit Builder screen (ui/builder.mts): constraints panel, live build progress, result. Tokens only (docs/ui.md). */
-/* the screen never scrolls: the constraints column and the results column scroll inside their own boxes */
-#tab-builder .page { overflow: hidden; }
-#tab-builder .layout { grid-template-columns: 340px 1fr; height: 100%; grid-template-rows: 100%; }
-#tab-builder aside { max-height: 100%; overflow-y: auto; }
-#tab-builder .scrollcol { max-height: 100%; overflow-y: auto; min-height: 0; }
-.grid2 { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: var(--space-1-5) var(--space-3); }
-.grid2 label { display: flex; justify-content: space-between; align-items: center; gap: var(--space-2); font-size: var(--text-sm); }
-#b-result .sheet { max-width: 960px; }   /* before → after → Δ needs the room for five resists on one line */
-.stats { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2) var(--space-5); padding: var(--space-2) var(--space-3); }
-.stat-k { font-size: var(--text-xs); text-transform: uppercase; letter-spacing: var(--tracking-caps); color: var(--color-text-muted); }
-.stat-v { font-size: var(--text-base); }
-.stat-v.warn { color: var(--color-warning); } .stat-v.bad { color: var(--color-danger); }
-.cmp-head { display: grid; grid-template-columns: 1fr 1fr; gap: var(--space-3); }
-/* sidebar pickers fit their row: long option names (skill bonuses) must not widen the select past the panel */
-#tab-builder aside select { max-width: 100%; min-width: 0; }
-#tab-builder aside .row > select { flex: 1 1 0; }
-.tpl-actions { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: var(--space-1-5); }
-.tpl-actions button { min-width: 0; padding-inline: var(--space-1); }
-tr.shown td { background: var(--color-row-selected); color: var(--color-on-row-selected); }
-.alt-table td { white-space: normal; vertical-align: top; }
-.alt-table td:nth-child(1), .alt-table td:nth-child(2), .alt-table td:nth-child(5) { white-space: nowrap; }
-/* live build progress */
-.run { display: flex; flex-direction: column; gap: var(--space-2); padding: var(--space-3) var(--space-4); border-color: var(--color-accent); }
-.run .stats { padding: var(--space-0-5) 0 0; }
-.run-head { display: flex; align-items: center; gap: var(--space-2); }
-.run-head .grow { flex: 1; }
-.beat { width: 10px; height: 10px; border-radius: var(--radius-full); background: var(--color-success); box-shadow: 0 0 0 0 var(--color-success); flex: none; }
-.beat.warn { background: var(--color-warning); box-shadow: none; animation: none; }
-.beat.bad { background: var(--color-danger); box-shadow: none; animation: none; }
-@keyframes beat { 0% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--color-success) 55%, transparent); } 100% { box-shadow: 0 0 0 9px transparent; } }
-@media (prefers-reduced-motion: no-preference) { .beat { animation: beat 1.2s ease-out infinite; } .run .fill { transition: width var(--duration-base) linear; } }
-.steps { display: flex; gap: var(--space-1-5); flex-wrap: wrap; }
-.steps .step { font-size: var(--text-xs); padding: 1px var(--space-2); border-radius: var(--radius-full); border: var(--border-width) solid var(--color-border-strong); color: var(--color-text-muted); }
-.steps .step.active { border-color: var(--color-accent); background: var(--color-accent); color: var(--color-on-accent); font-weight: var(--weight-semibold); }
-.steps .step.done { border-color: var(--color-success); background: var(--color-success-soft); color: var(--color-on-success-soft); }
-.run .bar { height: 8px; border-radius: var(--radius-full); background: var(--color-surface-sunken); overflow: hidden; }
-.run .bar .fill { height: 100%; width: 0; background: var(--color-accent); border-radius: var(--radius-full); }
-.run .bar.time { height: 4px; margin-top: calc(-1 * var(--space-1)); }
-.run .bar.time .fill { background: var(--color-text-muted); }
+/* ui/builder.css — the Suit Builder screen (ui/builder.mts, ui/builder-result.mts; design spec 4.6, 4.7): the
+   constraints panel with its sticky footer, the running build's progress card, the result, the compare view.
+   Tokens only (docs/ui.md). Every flex/grid box here holds element children only (the one-span rule). */
+
+/* ---------------------------------------------------------------- layout: panel 360 + fluid results */
+/* the screen never scrolls: the panel and the results column scroll inside their own boxes */
+#tab-builder .page.b-page { flex-direction: row; align-items: stretch; gap: var(--space-4); overflow: hidden; }
+.b-panel { width: var(--constraints-w); flex: none; display: flex; flex-direction: column; min-height: 0; overflow: hidden; }
+.b-panel-scroll { flex: 1 1 auto; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; }
+.b-panel-foot { flex: none; padding: var(--space-3) var(--space-4); }
+.b-panel-foot #b-run { flex: 1 1 auto; }
+.b-panel-toggle { display: none; }
+.b-results { flex: 1 1 auto; min-width: 0; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; gap: var(--space-4); }
+#b-msg, #b-result { display: flex; flex-direction: column; gap: var(--space-4); }
+#b-msg:empty { display: none; }
+/* a previous result stays on screen, dimmed and out of reach (inert, aria-hidden), until the new one lands */
+#b-result.b-stale { opacity: 0.45; }
+.b-compare-view { flex: 1 1 auto; min-width: 0; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; gap: var(--space-4); }
+#tab-builder.comparing .b-panel, #tab-builder.comparing .b-results { display: none; }
+.b-crumb { display: flex; align-items: center; gap: var(--space-2); min-width: 0; }
+.pr .b-crumb a { color: var(--color-text-muted); text-decoration: none; font-size: var(--text-md); white-space: nowrap; }
+.pr .b-crumb a:hover { color: var(--color-text); text-decoration: underline; }
+.pr .topbar .b-topbar-char { width: 160px; }
+#tab-builder .topbar[hidden], .b-compare-view[hidden] { display: none; }
+
+/* ---------------------------------------------------------------- panel sections */
+.b-sec { display: flex; flex-direction: column; gap: var(--space-2); padding: var(--space-3) var(--space-4); border-bottom: var(--border-width) solid var(--color-border); }
+.b-sec.b-sec-top { padding-top: var(--space-4); padding-bottom: var(--space-4); gap: var(--space-3); }
+.b-sec:last-child { border-bottom: 0; }
+.b-sec-head { display: flex; align-items: center; gap: var(--space-2); min-width: 0; min-height: var(--control-sm); }
+.b-sec-head h3 { white-space: nowrap; }
+.b-sec-head .ellip { flex: 1 1 auto; }
+.b-sec-body { display: flex; flex-direction: column; gap: var(--space-2); }
+.b-sec-body[hidden] { display: none; }
+.b-tpl-row { display: flex; align-items: center; gap: var(--space-1-5); min-width: 0; }
+.b-tpl-row .select { flex: 1 1 auto; }
+.b-rules { display: flex; flex-direction: column; gap: var(--space-1-5); }
+/* a requirement: name · ≥ · number · Hard|Soft · remove; a weight: name · number · remove */
+.rule-row { display: grid; grid-template-columns: minmax(0, 1fr) 16px 56px auto var(--control-sm); gap: var(--space-1-5); align-items: center; }
+.rule-row.weight { grid-template-columns: minmax(0, 1fr) 64px var(--control-sm); }
+.pr .rule-row .input.num { width: 100%; }
+.rule-row .field-error { grid-column: 1 / -1; }
+.b-add { align-self: flex-start; }
+.b-chips { display: flex; flex-wrap: wrap; gap: var(--space-1-5); }
+.b-switches { display: flex; flex-direction: column; gap: var(--space-2); }
+.b-switches .check { align-items: center; }
+/* Advanced: a two-column grid of labelled number fields */
+.b-adv { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-3); }
+.b-adv .b-adv-wide { grid-column: 1 / -1; }
+.pr .b-adv .input { width: 100%; }
+/* the property picker and the chips' checklists (popovers) */
+.b-pick-list { display: flex; flex-direction: column; max-height: 280px; overflow-y: auto; }
+.b-pick-list > *, .b-checks > * { flex: none; }   /* a scrolling list: rows keep their height */
+.pr .b-pick-list .menu-item { font-weight: var(--weight-regular); }
+.b-pick-list .menu-item .t-sm { margin-left: auto; }
+.b-checks { display: flex; flex-direction: column; gap: var(--space-2); max-height: 360px; overflow-y: auto; }
+.b-checks .check { align-items: center; }
+.b-pills { display: flex; flex-wrap: wrap; gap: var(--space-1-5); }
+
+/* ---------------------------------------------------------------- the running build */
+.b-progress { display: flex; flex-direction: column; gap: var(--space-3); padding: var(--space-4) var(--space-5); border-color: var(--color-accent); }
+.b-progress:focus { outline: none; }
+.b-progress:focus-visible { box-shadow: var(--ring-focus); }
+.b-row { display: flex; align-items: center; gap: var(--space-2); min-width: 0; }
+.b-prog { display: flex; flex-direction: column; gap: var(--space-1-5); }
+.b-prog-line { display: flex; gap: var(--space-2); font-size: var(--text-sm); line-height: var(--lh-sm); min-width: 0; }
+.b-stats { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: var(--space-3); padding-top: var(--space-3); border-top: var(--border-width) solid var(--color-border); }
+.b-stat { display: flex; flex-direction: column; gap: var(--space-0-5); min-width: 0; }
+.b-stat .v { overflow-wrap: anywhere; font-variant-numeric: tabular-nums; }
+.tone-ok { color: var(--color-success); } .tone-warn { color: var(--color-warning); } .tone-bad { color: var(--color-danger); } .tone-muted { color: var(--color-text-muted); }
+
+/* ---------------------------------------------------------------- result */
+.b-head-card { display: flex; flex-direction: column; gap: var(--space-4); padding: var(--space-5); }
+.b-headline { display: flex; align-items: center; gap: var(--space-3); min-width: 0; }
+.b-headline-text { display: flex; flex-direction: column; gap: var(--space-0-5); flex: 1 1 auto; min-width: 0; }
+.b-resists { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: var(--space-3); }
+.b-resist-val { display: flex; align-items: baseline; gap: var(--space-1-5); min-width: 0; }
+.b-resist-val .i { align-self: center; color: var(--color-text-muted); }
+.b-badges { display: flex; flex-wrap: wrap; gap: var(--space-1-5); }
+.b-flush { overflow: hidden; }
+.b-flush > .card-body { padding: 0; }
+.tbl td.b-act { overflow: visible; text-align: right; }
+.b-act .rowact { justify-content: flex-end; }
+.pr .rowact .btn.on { color: var(--color-on-chip-set); background: var(--color-chip-set); }
+.b-fetch { display: grid; grid-template-columns: 220px minmax(0, 1fr) auto; gap: var(--space-4); align-items: center; padding: var(--space-3) var(--space-4); border-bottom: var(--border-width) solid var(--color-border); }
+.b-fetch:last-child { border-bottom: 0; }
+.b-fetch-where { display: flex; flex-direction: column; min-width: 0; }
+.b-fetch-acts { display: flex; gap: var(--space-1-5); }
+.b-after { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: var(--space-3); padding: var(--space-3) var(--space-4); }
+.b-after-note { padding: 0 var(--space-4) var(--space-3); }
+.b-sheet-wrap { padding: 0 var(--space-4) var(--space-4); overflow-x: auto; }
+.pr .b-disclose { display: flex; align-items: center; gap: var(--space-3); width: 100%; padding: var(--space-3) var(--space-4); border: 0; background: none; color: var(--color-text); text-align: left; cursor: pointer; font-weight: var(--weight-regular); border-radius: var(--radius-lg); }
+.pr .b-disclose:hover { background: var(--color-surface-subtle); color: var(--color-text); }
+.b-disclose .t-sm { flex: 1 1 auto; min-width: 0; }
+.b-details { padding: 0 var(--space-4) var(--space-4); }
+
+/* ---------------------------------------------------------------- compare */
+.b-cmp-bar { display: flex; align-items: center; gap: var(--space-2); flex-wrap: wrap; }
+.b-cmp-bar .check { align-items: center; }
+.tbl.b-cmp th { height: 64px; }
+.b-cmp-col { display: flex; flex-direction: column; gap: var(--space-1); min-width: 0; }
+.tbl.b-cmp td { white-space: normal; }
+.tbl.b-cmp td.b-cmp-act { height: 44px; }
+
+/* ---------------------------------------------------------------- responsive (design spec 3.7) */
+@media (max-width: 1179px) {
+  .b-panel { width: 320px; }
+  /* before → after / cap needs about 140 px a tile; the Plan drops its Where column (the Fetch list says where) */
+  .b-head-card .b-resists { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .b-plan col:nth-child(4), .b-plan th:nth-child(4), .b-plan td:nth-child(4) { display: none; }
+}
+@media (max-width: 1279px) { .b-after { grid-template-columns: repeat(3, minmax(0, 1fr)); } .b-fetch { grid-template-columns: 180px minmax(0, 1fr) auto; } }
+/* under 1024 the panel becomes a full-width collapsible section above the results, its footer a sticky bar */
+@media (max-width: 1023px) {
+  #tab-builder .page.b-page { flex-direction: column; overflow-y: auto; }
+  .b-panel { width: auto; overflow: visible; }
+  .b-panel-scroll { overflow: visible; }
+  .b-panel-toggle { display: flex; }
+  .b-panel.folded .b-panel-scroll { display: none; }
+  .b-panel-foot { position: sticky; bottom: 0; z-index: var(--z-sticky); }
+  .b-results { overflow: visible; }
+  .b-resists, .b-stats { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}
