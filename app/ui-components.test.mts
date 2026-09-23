@@ -176,3 +176,18 @@ test("[fast] table(): sortable headers are buttons, the sorted one carries aria-
   assert.equal(tds[1]!.className, "num");
   assert.equal(tds[1]!.textContent, "", "an empty cell is blank, not a placeholder");
 });
+
+test("[fast] popoverPlacement: below the anchor, above when only that fits, and never past the viewport", () => {
+  const vp = { width: 800, height: 600 };
+  // Room below: under the anchor, capped to the room there.
+  assert.deepEqual(C.popoverPlacement({ top: 40, bottom: 68, left: 100 }, { width: 288, height: 200 }, vp), { top: 74, left: 100, maxHeight: 518 });
+  // Near the bottom, fits above: above it.
+  assert.deepEqual(C.popoverPlacement({ top: 500, bottom: 528, left: 100 }, { width: 288, height: 200 }, vp), { top: 294, left: 100, maxHeight: 486 });
+  // Taller than either side (the table-settings popover at 800 × 600): the larger side, capped to it, so it
+  // scrolls inside and its bottom stays on screen.
+  const tall = C.popoverPlacement({ top: 90, bottom: 118, left: 600 }, { width: 288, height: 900 }, vp);
+  assert.deepEqual(tall, { top: 124, left: 504, maxHeight: 468 });
+  assert.ok(tall.top + tall.maxHeight <= vp.height - 8, "its bottom edge is inside the viewport");
+  // Squeezed against the left edge.
+  assert.equal(C.popoverPlacement({ top: 40, bottom: 68, left: -20 }, { width: 288, height: 100 }, vp).left, 8);
+});
