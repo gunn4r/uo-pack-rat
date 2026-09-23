@@ -47,7 +47,7 @@ function resistTile(k: string, after: number, floor: number | null, cap: number,
   const value = before == null
     ? box("span", { class: "b-resist-val" }, txt(after, "t-xl"), txt(`/ ${target}`, "muted"))
     : box("span", { class: "b-resist-val" }, txt(before, "muted"), icon("arrow-right", { size: "sm" }), txt(after, "t-xl"), txt(`/ ${cap}`, "muted"));
-  return box("div", { class: "resist" }, el("span", { class: "t-sm", style: `color:var(${colour})` }, name), value,
+  return box("div", { class: `resist tint tint-${colour.slice(6)}` }, el("span", { class: "t-sm resist-name", style: `color:var(${colour})` }, name), value,
     meter(Math.min(after, target), target, { tone: out.tone === "warn" ? "warn" : "ok", label: `${name} ${after} of ${target}` }), txt(out.text, `t-sm tone-${out.tone}`));
 }
 

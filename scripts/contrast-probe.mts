@@ -35,7 +35,13 @@ export function probeContrast(): ContrastRow[] {
     const layers: RGBA[] = [];
     let n: Element | null = skipSelf ? el.parentElement : el;
     while (n) {
-      const c = parse(getComputedStyle(n).backgroundColor);
+      const cs = getComputedStyle(n);
+      // a tinted tile's corner wash (components.css .tint), taken at its strongest over the whole tile
+      if (n.classList.contains("tint")) {
+        const m = cs.getPropertyValue("--tint").trim().match(/^#([0-9a-f]{6})$/i), a = parseFloat(cs.getPropertyValue("--tint-a")) / 100;
+        if (m && a > 0) { const v = parseInt(m[1]!, 16); layers.push({ r: v >> 16, g: (v >> 8) & 255, b: v & 255, a }); }
+      }
+      const c = parse(cs.backgroundColor);
       if (c && c.a > 0) { layers.push(c); if (c.a >= 1) break; }
       n = n.parentElement;
     }
