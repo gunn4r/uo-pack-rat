@@ -187,6 +187,36 @@ class TazUOScanner(DataDir, unittest.TestCase):
         self.assertEqual(self.scans("tazuo"), [])
         self.assertEqual(self.closed(w), [CHEST, PACK])
 
+    def test_after_a_stop_closing_gives_up_within_the_clients_stop_grace(self):
+        # TazUO detaches a stopped script's thread after 2 s; each window lookup waits on the
+        # client's main thread, so closing after a Stop must end well inside that.
+        w = World(); home(w)
+        bags = nest(w, CHEST, 3)
+        w.gump_delay = 0.4
+        api = tazuo_api(w, PACK)
+        started, t0 = [], []
+
+        def stop_once_the_chest_is_read(serials):
+            if RING in serials:           # the chest's last level is listed: every window is open
+                api.StopRequested = True
+                t0.append(w.clock.now)
+        api.RequestOPLData = stop_once_the_chest_is_read
+        w.on_close = lambda serial: started.append(w.clock.now)
+        run_script(self.SCRIPT, w, api=api)
+        self.assertTrue(t0, "the scan should have seen the Stop")
+        self.assertEqual(self.scans("tazuo"), [])
+        self.assertTrue(started, "some windows still close after a Stop")
+        # From the first window lookup to the end of the last one.
+        self.assertLessEqual(max(started) - (min(started) - w.gump_delay), 2.0)
+        self.assertLess(len(started), len(bags) + 3, "the rest are left open")
+
+    def test_without_a_stop_every_window_closes_however_long_it_takes(self):
+        w = World(); home(w)
+        nest(w, CHEST, 3)
+        w.gump_delay = 0.4
+        self.scan(w)
+        self.assertEqual(len(self.closed(w)), 6)
+
     def test_it_closes_what_it_opened_when_the_scan_fails(self):
         w = World(); home(w)
         api = tazuo_api(w, PACK)

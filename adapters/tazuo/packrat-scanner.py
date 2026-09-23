@@ -70,6 +70,7 @@ GROUND_ONLY_AT_HOME = True   # when the bank box is open (you are at a bank) ski
 PAUSE_OPEN = 1.2         # after UseObject on a container (raise on laggy connections)
 MAX_NEST = 4             # bags in bags in bags
 OPENED_HERE = []         # container windows this run opened itself, in opening order (close_opened)
+STOP_CLOSE_S = 1.5       # after a Stop, stop closing windows after this long: the client gives a stopped script 2 s
 OUT_DIR = os.path.join(data_dir(), "inbox", "tazuo")
 ALARM_HUE, OK_HUE, INFO_HUE = 33, 68, 88
 
@@ -250,8 +251,17 @@ def close_opened():
     read and the scan file written, or after a Stop or an error, so it never changes what is recorded.
     Every call is looked up with getattr: a client build without GetContainerGump() or Dispose()
     leaves the window open rather than raising. API.CloseGump(serial) is no fallback, since it finds
-    gumps by their server gump id and a container window has none."""
+    gumps by their server gump id and a container window has none.
+
+    After a Stop the loop is bounded by STOP_CLOSE_S. Stop sets StopRequested, cancels the script's
+    token and interrupts its thread (a ThreadInterruptedException at the next blocking call, such as
+    API.Pause, which is why this finally still runs), and the client detaches a stopped script's
+    thread after 2 s. Each GetContainerGump() waits on the client's main thread, so a long list could
+    outlive that and leave the script unable to restart: whatever is not closed in time stays open."""
+    started = time.time()
     for it in reversed(OPENED_HERE):
+        if API.StopRequested and time.time() - started >= STOP_CLOSE_S:
+            break
         try:
             get_gump = getattr(it, "GetContainerGump", None)
             gump = get_gump() if get_gump is not None else None
