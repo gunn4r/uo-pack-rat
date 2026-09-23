@@ -5,7 +5,7 @@
 // and Settings (4.11). Skipped when electron or playwright is absent, or under TEST_SKIP_ELECTRON.
 import test from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -91,5 +91,77 @@ test("[slow] Import: paste default, instant preview, errors in the card, ⌘↵ 
   } finally {
     await app.close();
     rmSync(dataDir, { recursive: true, force: true });
+  }
+});
+
+test("[slow] Wizard: named stepper with branch-aware labels, radio cards, kept typed path, install then Finish", async (t) => {
+  const why = unavailable();
+  if (why) return t.skip(why);
+  const dataDir = mkdtempSync(join(tmpdir(), "packrat-forms-wizard-"));
+  const client = mkdtempSync(join(tmpdir(), "packrat-forms-client-"));
+  mkdirSync(join(client, "TazUO", "LegionScripts"), { recursive: true });
+  // No settings.json: a first run, so the wizard opens by itself.
+  const { app, page, errors } = await launch(dataDir);
+  const steps = (): Promise<string[]> => page.locator("#wizard .stepper .step").evaluateAll((els) => els.map((e) => e.firstElementChild!.nextElementSibling!.textContent || ""));
+  try {
+    await page.waitForSelector("#wizard[open]", { timeout: 30_000 });
+    assert.equal(await page.locator("#wiz-title").innerText(), "Set up Pack Rat");
+    assert.deepEqual(await steps(), ["Shard", "Client", "Client folder", "Install scanner"]);
+    assert.equal(await page.locator("#wizard [aria-current=step]").innerText(), "1\nShard");
+    await page.keyboard.press("Enter");   // ↵ is Continue
+
+    // Step 2: radio cards, installable first; a client this machine can't run is shown disabled with the reason.
+    await page.waitForSelector("#wizard .wiz-card");
+    assert.match(await page.locator("#wizard").innerText(), /Step 2 of 4/);
+    const names = await page.locator("#wizard .wiz-card-name .strong").allInnerTexts();
+    assert.deepEqual(names.slice(0, 2), ["TazUO", "ClassicUO web client"]);
+    assert.equal(await page.locator("#wizard input[value=tazuo]").isChecked(), true, "defaults to the installable client");
+    if (process.platform !== "win32") {
+      assert.equal(await page.locator("#wizard input[value=razor-enhanced]").isDisabled(), true);
+      assert.match(await page.locator("#wizard .wiz-card.off").innerText(), /Windows only[\s\S]*Not available on this (Mac|computer)\./);
+    }
+    // Picking the paste client renames steps 3 and 4 in the stepper at once.
+    await page.locator("#wizard input[value=classicuo-web]").check();
+    assert.deepEqual(await steps(), ["Shard", "Client", "Nothing to install", "Paste your first scan"]);
+    await page.locator("#wizard input[value=tazuo]").check();
+    assert.deepEqual(await steps(), ["Shard", "Client", "Client folder", "Install scanner"]);
+    await page.click("#wiz-primary");
+
+    // Step 3: a bad path stays in the field with the reason under it; Continue waits for a real folder.
+    await page.waitForSelector("#wiz-path");
+    assert.equal(await page.locator("#wiz-primary").isDisabled(), true);
+    await page.fill("#wiz-path", "/no/such/folder");
+    await page.click("#wiz-use-path");
+    await page.waitForSelector("#wizard .msg.bad");
+    assert.equal(await page.locator("#wiz-path").inputValue(), "/no/such/folder", "the typed path is kept");
+    assert.equal(await page.locator("#wiz-path").getAttribute("aria-invalid"), "true");
+    assert.match(await page.locator("#wizard .msg.bad").innerText(), /Check the path and try again\./);
+    await page.fill("#wiz-path", join(client, "TazUO"));
+    await page.locator("#wiz-path").press("Enter");
+    await page.waitForSelector("#wizard .msg.ok");
+    assert.match(await page.locator("#wizard .msg.ok").innerText(), /LegionScripts/);
+    await page.click("#wiz-primary");
+
+    // Step 4: the install is the one primary, gated on the -stopall line; Finish appears only after it succeeds.
+    await page.waitForSelector("#wiz-stopall");
+    assert.equal(await page.locator("#wiz-primary").innerText().then((s) => s.split("\n")[0]), "Install scanner");
+    assert.equal(await page.locator("#wiz-primary").isDisabled(), true);
+    assert.equal(await page.locator("#wizard").getByRole("button", { name: "Finish" }).count(), 0);
+    await page.check("#wiz-stopall");
+    await page.click("#wiz-primary");
+    await page.waitForSelector("#wizard .wiz-press");
+    assert.match(await page.locator("#wizard .wiz-press").innerText(), /packrat-scanner\.py/);
+    assert.equal(await page.locator("#wiz-primary").innerText().then((s) => s.split("\n")[0]), "Finish");
+    await page.click("#wiz-primary");
+    await page.waitForSelector("#wizard", { state: "hidden" });
+    const settings = JSON.parse(readFileSync(join(dataDir, "settings.json"), "utf8")) as { setupDone: boolean; client: { adapter: string; scriptsDir: string } };
+    assert.equal(settings.setupDone, true);
+    assert.equal(settings.client.adapter, "tazuo");
+    assert.match(settings.client.scriptsDir, /LegionScripts$/);
+    assert.deepEqual(errors, []);
+  } finally {
+    await app.close();
+    rmSync(dataDir, { recursive: true, force: true });
+    rmSync(client, { recursive: true, force: true });
   }
 });
