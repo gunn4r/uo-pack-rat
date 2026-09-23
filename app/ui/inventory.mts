@@ -15,7 +15,7 @@ import { $, el, label, full, slotLabel, rarityColor, safeColor, toast } from "./
 import { rarityToken } from "./items.mts";
 import { api } from "./api.mts";
 import { bridgeActionReason, runBridgeAction } from "./bridge.mts";
-import { optionsKeeping, colsFromPrefs } from "./view-state.mts";
+import { optionsKeeping, colsFromPrefs, COLS_VERSION } from "./view-state.mts";
 import { relativeWhen } from "./messages.mts";
 import { txt, box, icon, button, searchInput, filterChip, token, pill, segmented, switchControl, popover, closePopover, rowActions, message, menu, input, nextId } from "./components.mts";
 import type { Kids, MenuItem, PopoverHandle } from "./components.mts";
@@ -380,7 +380,7 @@ const allCols = (): string[] => [...new Set([...state.propKeys, ...ITEM_COLS, ..
 // The column choice is kept by the server (<data>/ui-prefs.json), not localStorage: the desktop app
 // serves the page from a new port on every launch, and localStorage belongs to one origin.
 function saveCols(): void {
-  api("/api/ui-prefs", { method: "PUT", body: { cols: state.cols } }).catch((e: Error) => toast(`Could not save the column choice: ${e.message}`, "bad"));
+  api("/api/ui-prefs", { method: "PUT", body: { cols: state.cols, colsVersion: COLS_VERSION } }).catch((e: Error) => toast(`Could not save the column choice: ${e.message}`, "bad"));
 }
 function setCols(cols: string[]): void { state.cols = cols; saveCols(); rebuildTable(); }
 function openSettings(): void {
@@ -463,8 +463,10 @@ function columns(): ColDef[] {
   const c = (key: string, text: string, width: number, num = false, title = ""): ColDef => ({ key, label: text, title, num, width, sortable: true });
   if (grouped()) return [c("name", "Name", 300), c("kind", "Kind", 120), c("amount", "Total", 88, true), c("stacks", "Stacks", 80, true), { ...c("where", "Where", 480), sortable: false }];
   const width = (k: string): number => (k === "seen" ? 112 : k === "kind" ? 96 : RESISTS.includes(k) ? 52 : Math.max(52, colShort(k, label).length * 8 + 28));
-  return [c("name", "Name", 250), c("rarity", "Rarity", 156), c("slot", "Slot", 120), c("location", "Location", 180),
-    ...state.cols.map((k) => c(k, colShort(k, label), width(k), !["kind", "seen", "med"].includes(k), colFull(k, full)))];
+  // Tags, when shown, sits right after Name wherever the saved list names it; it has nothing to sort on.
+  const tags = state.cols.includes("tags") ? [{ ...c("tags", "Tags", 108), sortable: false }] : [];
+  return [c("name", "Name", 250), ...tags, c("rarity", "Rarity", 156), c("slot", "Slot", 120), c("location", "Location", 180),
+    ...state.cols.filter((k) => k !== "tags").map((k) => c(k, colShort(k, label), width(k), !["kind", "seen", "med"].includes(k), colFull(k, full)))];
 }
 // Numbers sort highest first at dir 1 and names A to Z (item-query.mts), so the arrow follows the kind.
 function sortState(col: ColDef): "ascending" | "descending" | "none" {
@@ -500,7 +502,8 @@ export function locationEl(it: Item): HTMLElement {
 function cell(col: ColDef, it: Item): HTMLTableCellElement {
   const td = el("td", col.num ? { class: "num" } : {});
   switch (col.key) {
-    case "name": td.append(box("span", { class: "inv-name" }, txt(it.name, "ellip"), ...tagEls(it), (it.amount || 1) > 1 ? txt(`×${it.amount.toLocaleString("en-US")}`, "t-sm muted") : null)); break;
+    case "name": td.append(box("span", { class: "inv-name" }, txt(it.name, "ellip"), (it.amount || 1) > 1 ? txt(`×${it.amount.toLocaleString("en-US")}`, "t-sm muted") : null)); break;
+    case "tags": if (it.tags.length) td.append(box("span", { class: "inv-tags" }, ...tagEls(it))); break;
     case "rarity": { const r = rarityEl(it.rarity); if (r) td.append(r); break; }
     case "slot": if (it.slot) td.append(txt(slotLabel(it.slot))); break;
     case "location": td.append(locationEl(it)); break;

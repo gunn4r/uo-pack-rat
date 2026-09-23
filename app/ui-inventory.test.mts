@@ -78,8 +78,9 @@ test("[fast] tier and rule labels", () => {
   assert.equal(propRuleLabel({ key: "hci", min: 3, op: "eq" }, CTX.propLabel), "HCI = 3");
 });
 
-test("[fast] the default columns are the nine of the spec, and every column lands in a picker group", () => {
-  assert.equal(DEFAULT_COLS.length, 9);
+test("[fast] the default columns are Tags and the nine of the spec, and every column lands in a picker group", () => {
+  assert.deepEqual(DEFAULT_COLS, ["tags", "physResist", "fireResist", "coldResist", "poisonResist", "energyResist", "hci", "dci", "lmc", "lrc"]);
+  assert.equal(colGroup("tags"), "Item");
   assert.equal(colGroup("physResist"), "Resists");
   assert.equal(colGroup("ssi"), "Combat");
   assert.equal(colGroup("hitLifeLeech"), "Combat");
