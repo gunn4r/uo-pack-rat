@@ -138,8 +138,8 @@ export function sheetNode(name: string, before: SheetAssignment, after: SheetAss
   const resistTiles = RESISTS.map(([k, lbl, cls]) => {
     const cap = resistCap(k), rawB = (b[k] || 0) + rsb, rawA = (a[k] || 0) + rsb;
     const vb = Math.min(cap, rawB), va = Math.min(cap, rawA), full = atCap(va, cap), over = capBadgeText(rawA, cap);
-    return box("div", { class: `resist kpi${full ? " at-cap" : ""}` },
-      txt(lbl, `t-sm res-${cls}`),
+    return box("div", { class: `resist kpi tint tint-${cls}${full ? " at-cap" : ""}` },
+      txt(lbl, `t-sm resist-name res-${cls}`),
       box("span", { class: "kpi-value" }, vb === va ? null : txt(`${vb} →`, "muted"), txt(va, `t-2xl ${dirCls(va - vb)}`.trim()), txt(`/ ${cap}`, "muted"), over ? badge(over, "ok") : null),
       meter(va, cap, { tone: full ? "ok" : undefined, label: `${lbl} resist ${va} of ${cap}` }));
   });

@@ -281,3 +281,12 @@
    cards, a card in a drawer or a popover) keeps a plain 1px edge in its own border colour, so frames never
    nest and a card whose border colour carries a state (selected, clean, danger) still shows it. */
 :is(.card, .panel, .pop, .drawer, .dialog) .card { border-width: var(--border-width); border-image: none; }
+
+/* ---- builder: a resist tile tinted by its element (the Builder's tiles, the character sheet's, the item
+   peek's). A soft wash of the --res-* colour grows out of the top-right corner, over the tile's own surface;
+   the name above it is semibold in the same colour. --tint-a is the wash's strength where it is strongest,
+   and the contrast probe composites the text under it at that strength (the worst case). */
+.resist.tint { --tint-a: 13%; background: radial-gradient(circle at 100% 0%, color-mix(in srgb, var(--tint) var(--tint-a), transparent) 0, transparent 70%), var(--color-surface); }
+.tint-phys { --tint: var(--res-phys); } .tint-fire { --tint: var(--res-fire); } .tint-cold { --tint: var(--res-cold); }
+.tint-poison { --tint: var(--res-poison); } .tint-energy { --tint: var(--res-energy); }
+.resist-name { font-weight: var(--weight-semibold); }
