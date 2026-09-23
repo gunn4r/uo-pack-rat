@@ -50,9 +50,14 @@ const countText = (page: Page): Promise<string> => page.locator("#inv-foot .inv-
 async function waitCount(page: Page, want: RegExp): Promise<void> {
   await page.waitForFunction((src) => new RegExp(src).test(document.querySelector("#inv-foot .inv-count")?.textContent || ""), want.source, { timeout: 15_000 });
 }
+// A facet chip's popover. Below 1180 px an unset chip folds into "+ Filter", so it is opened from there.
+async function openFacet(page: Page, chip: string, name: string): Promise<void> {
+  if (await page.locator(chip).isVisible()) await page.click(chip);
+  else { await page.click("#f-add"); await page.getByRole("menuitem", { name: `${name}…` }).click(); }
+}
 // A checklist filter chip's popover: tick (or untick) one option by its value and close it.
-async function pickOption(page: Page, chip: string, value: string): Promise<void> {
-  await page.click(chip);
+async function pickOption(page: Page, chip: string, name: string, value: string): Promise<void> {
+  await openFacet(page, chip, name);
   await page.locator(`.pop input[value="${value}"]`).click();
   await page.keyboard.press("Escape");
   await page.waitForSelector(".pop", { state: "detached" });
@@ -89,7 +94,7 @@ test("[slow] refresh, Clear all, the virtual table and Forget keep the page's st
 
     // A background refresh (what the "inventory" SSE event runs) must leave the filter chip showing
     // the filter the table still applies.
-    await pickOption(page, "#f-slot", "bracelet");
+    await pickOption(page, "#f-slot", "Slot", "bracelet");
     await waitCount(page, /^\d+ of 160 stacks/);
     const filtered = await countText(page);
     // The page's own module (same URL as its <script>, so the same instance).
@@ -106,7 +111,7 @@ test("[slow] refresh, Clear all, the virtual table and Forget keep the page's st
     await page.getByRole("switch", { name: "Hide gargoyle-only gear" }).click();
     await page.keyboard.press("Escape");
     await page.fill("#f-text", "bracelet");
-    await waitCount(page, /^\d+ of 160 stacks/);
+    await page.waitForFunction(() => /Search: bracelet/.test(document.querySelector("#inv-active")?.textContent || ""), undefined, { timeout: 10_000 });
     assert.match(await page.locator("#inv-active").innerText(), /No gargoyle-only/);
     await page.click("#f-clear");
     await waitCount(page, /^160 stacks · /);
@@ -269,7 +274,7 @@ test("[slow] a character's sheet opens from the roster, and a character can be f
     assert.notEqual(await rows.first().getAttribute("data-name"), gone);
     // Its worn set left the inventory with it: the Location filter no longer offers it.
     await openTab(page, "inventory");
-    await page.click("#f-loc");
+    await openFacet(page, "#f-loc", "Location");
     const locs = await page.locator(".pop input[type=checkbox]").evaluateAll((is) => is.map((i) => (i as HTMLInputElement).value));
     await page.keyboard.press("Escape");
     assert.ok(!locs.includes(`loc:Worn by ${gone}`), `no "Worn by ${gone}" location is left, got ${JSON.stringify(locs)}`);
