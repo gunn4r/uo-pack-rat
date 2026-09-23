@@ -1,0 +1,149 @@
+/* ui/builder.css — the Suit Builder screen (ui/builder.mts, ui/builder-result.mts; design spec 4.6, 4.7): the
+   constraints panel with its sticky footer, the running build's progress card, the result, the compare view.
+   Tokens only (docs/ui.md). Every flex/grid box here holds element children only (the one-span rule). */
+
+/* ---------------------------------------------------------------- layout: panel 360 + fluid results */
+/* the screen never scrolls: the panel and the results column scroll inside their own boxes */
+#tab-builder .page.b-page { flex-direction: row; align-items: stretch; gap: var(--space-4); overflow: hidden; }
+.b-panel { width: var(--constraints-w); flex: none; display: flex; flex-direction: column; min-height: 0; overflow: hidden; }
+.b-panel-scroll { flex: 1 1 auto; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; }
+.b-panel-foot { flex: none; padding: var(--space-3) var(--space-4); }
+.b-panel-foot #b-run { flex: 1 1 auto; }
+.b-panel-toggle { display: none; }
+.b-results { flex: 1 1 auto; min-width: 0; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; gap: var(--space-4); }
+#b-msg, #b-result { display: flex; flex-direction: column; gap: var(--space-4); }
+#b-msg:empty { display: none; }
+/* a previous result stays on screen, dimmed and out of reach (inert, aria-hidden), until the new one lands */
+#b-result.b-stale { opacity: 0.45; }
+.b-compare-view { flex: 1 1 auto; min-width: 0; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; gap: var(--space-4); }
+#tab-builder.comparing .b-panel, #tab-builder.comparing .b-results { display: none; }
+.b-crumb { display: flex; align-items: center; gap: var(--space-2); min-width: 0; }
+.pr .b-crumb a { color: var(--color-text-muted); text-decoration: none; font-size: var(--text-md); white-space: nowrap; }
+.pr .b-crumb a:hover { color: var(--color-text); text-decoration: underline; }
+.pr .topbar .b-topbar-char { width: 160px; }
+#tab-builder .topbar[hidden], .b-compare-view[hidden] { display: none; }
+
+/* ---------------------------------------------------------------- panel sections */
+.b-sec { display: flex; flex-direction: column; gap: var(--space-2); padding: var(--space-3) var(--space-4); border-bottom: var(--border-width) solid var(--color-border); }
+.b-sec.b-sec-top { padding-top: var(--space-4); padding-bottom: var(--space-4); gap: var(--space-3); }
+.b-sec:last-child { border-bottom: 0; }
+.b-sec-head { display: flex; align-items: center; gap: var(--space-2); min-width: 0; min-height: var(--control-sm); }
+.b-sec-head h3 { white-space: nowrap; }
+.b-sec-head .ellip { flex: 1 1 auto; }
+.b-sec-body { display: flex; flex-direction: column; gap: var(--space-2); }
+.b-sec-body[hidden] { display: none; }
+.b-tpl-row { display: flex; align-items: center; gap: var(--space-1-5); min-width: 0; }
+.b-tpl-row .select { flex: 1 1 auto; }
+.b-race-row { display: flex; flex-wrap: wrap; align-items: flex-start; gap: var(--space-3) var(--space-4); }
+.b-race-row .b-str { flex: 0 0 96px; }
+.pr .b-race-row .b-str .input { width: 100%; }
+.b-rules { display: flex; flex-direction: column; gap: var(--space-1-5); }
+/* a requirement: name · ≥ · number · Hard|Soft · remove; a weight: name · number · remove */
+.rule-row { display: grid; grid-template-columns: minmax(0, 1fr) 16px 56px auto var(--control-sm); gap: var(--space-1-5); align-items: center; }
+.rule-row.weight { grid-template-columns: minmax(0, 1fr) 64px var(--control-sm); }
+.pr .rule-row .input.num { width: 100%; }
+.rule-row .field-error { grid-column: 1 / -1; }
+/* the property name wraps to a second line rather than cutting off ("Physical …" at 1024 px), and only a
+   name too long for two lines is clamped; its full name is its title */
+.rule-row .rule-name { overflow-wrap: anywhere; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; line-height: var(--lh-sm); }
+.b-add { align-self: flex-start; }
+.b-chips { display: flex; flex-wrap: wrap; gap: var(--space-1-5); }
+.b-switches { display: flex; flex-direction: column; gap: var(--space-2); }
+.b-switches .check { align-items: center; }
+/* Advanced: a two-column grid of labelled number fields */
+.b-adv { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-3); }
+.b-adv .b-adv-wide { grid-column: 1 / -1; }
+.pr .b-adv .input { width: 100%; }
+/* the property picker and the chips' checklists (popovers) */
+.b-pick-list { display: flex; flex-direction: column; max-height: 280px; overflow-y: auto; }
+.b-pick-list > *, .b-checks > * { flex: none; }   /* a scrolling list: rows keep their height */
+.pr .b-pick-list .menu-item { font-weight: var(--weight-regular); }
+.b-pick-list .menu-item .t-sm { margin-left: auto; }
+.b-checks { display: flex; flex-direction: column; gap: var(--space-2); max-height: 360px; overflow-y: auto; }
+.b-checks .check { align-items: center; }
+.b-pills { display: flex; flex-wrap: wrap; gap: var(--space-1-5); }
+
+/* ---------------------------------------------------------------- the running build */
+.b-progress { display: flex; flex-direction: column; gap: var(--space-3); padding: var(--space-4) var(--space-5); border-color: var(--color-accent); }
+.b-progress:focus { outline: none; }
+.b-progress:focus-visible { box-shadow: var(--ring-focus); }
+.b-row { display: flex; align-items: center; gap: var(--space-2); min-width: 0; }
+.b-prog { display: flex; flex-direction: column; gap: var(--space-1-5); }
+.b-prog-line { display: flex; gap: var(--space-2); font-size: var(--text-sm); line-height: var(--lh-sm); min-width: 0; }
+.b-stats { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: var(--space-3); padding-top: var(--space-3); border-top: var(--border-width) solid var(--color-border); }
+.b-stat { display: flex; flex-direction: column; gap: var(--space-0-5); min-width: 0; }
+.b-stat .v { overflow-wrap: anywhere; font-variant-numeric: tabular-nums; }
+.tone-ok { color: var(--color-success); } .tone-warn { color: var(--color-warning); } .tone-bad { color: var(--color-danger); } .tone-muted { color: var(--color-text-muted); }
+
+/* ---------------------------------------------------------------- result */
+.b-head-card { display: flex; flex-direction: column; gap: var(--space-4); padding: var(--space-5); }
+.b-headline { display: flex; align-items: center; gap: var(--space-3); min-width: 0; }
+.b-headline-text { display: flex; flex-direction: column; gap: var(--space-0-5); flex: 1 1 auto; min-width: 0; }
+.b-resists { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: var(--space-3); }
+.b-resist-val { display: flex; align-items: baseline; gap: var(--space-1-5); min-width: 0; }
+.b-resist-val .i { align-self: center; color: var(--color-text-muted); }
+.b-badges { display: flex; flex-wrap: wrap; gap: var(--space-1-5); }
+.b-flush { overflow: hidden; }
+.b-flush > .card-body { padding: 0; }
+.tbl td.b-act { overflow: visible; text-align: right; }
+.b-act .rowact { justify-content: flex-end; }
+.pr .rowact .btn.on { color: var(--color-on-chip-set); background: var(--color-chip-set); }
+/* A Fetch list row: the place (its full path, then the container serial and the piece count) beside the
+   actions, and the pieces under both. */
+.b-fetch { display: grid; grid-template-columns: minmax(0, 1fr) auto; column-gap: var(--space-4); row-gap: var(--space-2); align-items: start; padding: var(--space-3) var(--space-4); border-bottom: var(--border-width) solid var(--color-border); }
+.b-fetch:last-child { border-bottom: 0; }
+.b-fetch-where { display: flex; flex-direction: column; gap: var(--space-0-5); min-width: 0; }
+.b-fetch-acts { display: flex; gap: var(--space-1-5); grid-column: 2; grid-row: 1; }
+.b-fetch-pieces { grid-column: 1 / -1; }
+.b-place { margin: 0; padding: 0; list-style: none; font-weight: var(--weight-semibold); overflow-wrap: anywhere; }
+.b-place li { display: inline; }
+.b-place-sep, .b-place .mono { color: var(--color-text-muted); font-weight: var(--weight-regular); }
+.b-fetch-meta { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-1); color: var(--color-text-muted); min-width: 0; }
+.b-after { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: var(--space-3); padding: var(--space-3) var(--space-4); }
+.b-after-note { padding: 0 var(--space-4) var(--space-3); }
+.b-sheet-wrap { padding: 0 var(--space-4) var(--space-4); overflow-x: auto; }
+.pr .b-disclose { display: flex; align-items: center; gap: var(--space-3); width: 100%; padding: var(--space-3) var(--space-4); border: 0; background: none; color: var(--color-text); text-align: left; cursor: pointer; font-weight: var(--weight-regular); border-radius: var(--radius-lg); }
+.pr .b-disclose:hover { background: var(--color-surface-subtle); color: var(--color-text); }
+.b-disclose .t-sm { flex: 1 1 auto; min-width: 0; }
+.b-details { padding: 0 var(--space-4) var(--space-4); }
+
+/* ---------------------------------------------------------------- compare */
+.b-cmp-bar { display: flex; align-items: center; gap: var(--space-2); flex-wrap: wrap; }
+.b-cmp-bar .check { align-items: center; }
+.tbl.b-cmp th { height: 64px; }
+.b-cmp-col { display: flex; flex-direction: column; gap: var(--space-1); min-width: 0; }
+.tbl.b-cmp td { white-space: normal; }
+.tbl.b-cmp td.b-cmp-act { height: 44px; }
+
+/* ---------------------------------------------------------------- responsive (design spec 3.7) */
+@media (max-width: 1179px) {
+  .b-panel { width: 320px; }
+  /* before → after / cap needs about 140 px a tile; the Plan drops its Where column (the Fetch list says where) */
+  .b-head-card .b-resists { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .b-plan col:nth-child(4), .b-plan th:nth-child(4), .b-plan td:nth-child(4) { display: none; }
+}
+@media (max-width: 1279px) { .b-after { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+/* under 1024 the panel becomes a full-width collapsible section above the results, its footer a sticky bar */
+@media (max-width: 1023px) {
+  #tab-builder .page.b-page { flex-direction: column; overflow-y: auto; }
+  .b-panel { width: auto; overflow: visible; }
+  .b-panel-scroll { overflow: visible; }
+  .b-panel-toggle { display: flex; }
+  .b-panel.folded .b-panel-scroll { display: none; }
+  /* the page's bottom padding would leave a strip of scrolled panel text showing under the bar: the bar
+     reaches down over it, opaque, and pads its own content back up */
+  .b-panel-foot { position: sticky; bottom: calc(-1 * var(--space-4)); z-index: var(--z-sticky); padding-bottom: calc(var(--space-3) + var(--space-4)); margin-bottom: calc(-1 * var(--space-4)); background: var(--color-surface); color: var(--color-text); border-top: var(--border-width) solid var(--color-border); }
+  .b-results { overflow: visible; }
+  .b-resists, .b-stats { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}
+.b-no-char { padding: var(--space-4); }   /* the panel with no character: why Build and Save are off */
+/* A worn or fetched piece that shows the item tooltip on hover and on keyboard focus; a table row takes the
+   focus ring as an inset outline (a box-shadow does not draw on a <tr>). */
+.pr tr.b-tip:focus-visible { box-shadow: none; outline: 2px solid var(--color-focus); outline-offset: -2px; }
+/* The Fetch list's pieces: one inline run, comma-separated, each its own tooltip target (a dotted underline
+   says there is more on hover). The list is plain block flow, so a long name wraps like prose. */
+.b-fetch-pieces { margin: 0; padding: 0; list-style: none; color: var(--color-text-muted); }
+.b-fetch-pieces li { display: inline; }
+.b-fetch-pieces li:not(:last-child)::after { content: ", "; }
+.b-fetch-piece { text-decoration: underline dotted var(--color-border-strong); text-underline-offset: 3px; cursor: default; border-radius: var(--radius-sm); }
+.b-fetch-piece:hover { color: var(--color-text); }

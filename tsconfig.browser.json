@@ -12,6 +12,7 @@
     "app/vault-lib.*",
     "app/item-query.*",
     "app/scan-schema.*",
+    "app/paste-scan.*",
     "app/schema/validate.*",
     "app/schema/types.d.mts"
   ],

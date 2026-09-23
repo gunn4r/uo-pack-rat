@@ -8,7 +8,7 @@ import { fileURLToPath } from "node:url";
 import http from "node:http";
 import { createConnection } from "node:net";
 import { resolveConfig, ensureLayout } from "./config.mts";
-import { startServer as startRealServer, type ServerHandle, type StartServerOptions } from "./vault-server.mts";
+import { startServer as startRealServer, defaultClientSearch, type ServerHandle, type StartServerOptions } from "./vault-server.mts";
 import { buildPools, foldSnapshots, setRules } from "./vault-lib.mts";
 import { upgradeScan, validateScan } from "./scan-schema.mts";
 import { DEFAULT_OPTIONAL_SLOTS } from "./mip.mts";
@@ -97,6 +97,7 @@ interface SetupResponse {
   settings: { client?: ClientSetting };
   bridgeAdapter: string | null;
   dataDirCheck: DataDirCheck;
+  version: string;
 }
 interface LocateResponse {
   scriptsDir?: string;
@@ -108,6 +109,7 @@ interface ItemsPageResponse {
   rows?: Item[];
   groups?: unknown[];
   total: number;
+  stacks?: number;
   pieces?: number;
   limit?: number;
 }
@@ -476,6 +478,28 @@ test("[fast] /ui/shard.mjs is served with the right content-type", async () => {
   assert.equal((await get("/ui/shard.mjs")).status, 200);
   assert.equal((await get("/ui/shard.mjs")).headers.get("content-type"), "text/javascript; charset=utf-8");
 });
+// The bundled IBM Plex faces (app/ui/tokens.css's @font-face) come from app/ui/fonts/, byte for byte,
+// as font/woff2 with no charset: a font sent as text would be refused by the browser, and the CSP's
+// font-src 'self' allows exactly this origin. Anything but a flat .woff2 name in that folder is a 404.
+test("[fast] /ui/fonts/ serves the bundled woff2 files as binary font/woff2", async () => {
+  const name = "ibm-plex-sans-latin-400-normal.woff2";
+  const res = await get(`/ui/fonts/${name}`);
+  assert.equal(res.status, 200);
+  assert.equal(res.headers.get("content-type"), "font/woff2");
+  assert.equal(res.headers.get("x-content-type-options"), "nosniff");
+  assert.deepEqual(Buffer.from(await res.arrayBuffer()), readFileSync(join(HERE, "ui", "fonts", name)));
+  for (const bad of ["/ui/fonts/OFL-IBM-Plex-Sans.txt", "/ui/fonts/nope.woff2", "/ui/fonts/..%2fstyles.css", "/ui/fonts/sub/x.woff2"]) {
+    assert.equal((await get(bad)).status, 404, bad);
+  }
+});
+test("[fast] the page's stylesheets and fonts are allowed by its own CSP", async () => {
+  const csp = (await get("/")).headers.get("content-security-policy") || "";
+  assert.match(csp, /font-src 'self'/);
+  assert.match(csp, /style-src 'self'/);
+  assert.match(csp, /img-src 'self' data:/, "the Britannia theme's frame and texture are inline data: images");
+  for (const css of ["tokens.css", "britannia.css", "components.css", "styles.css"]) assert.equal((await get(`/ui/${css}`)).status, 200, css);
+  assert.equal((await get("/ui/fonts/cinzel-latin-600-normal.woff2")).status, 200, "Britannia's display face");
+});
 // scan-schema.mjs (served at /scan-schema.mjs) imports validate() from "./schema/validate.mjs" — the
 // browser resolves that relative import against scan-schema.mjs's own served URL, so it 404s without
 // this route. Caught live by the Task 2 browser check (a bootstrap import chain failure with no other
@@ -486,6 +510,12 @@ test("[fast] /schema/validate.mjs is servable (scan-schema.mjs's own relative im
   assert.equal(r.headers.get("content-type"), "text/javascript; charset=utf-8");
   assert.match(await r.text(), /export function validate/);
 });
+test("[fast] /paste-scan.mjs is servable (the Import drawer's preview parses with the server's rule)", async () => {
+  const r = await get("/paste-scan.mjs");
+  assert.equal(r.status, 200);
+  assert.equal(r.headers.get("content-type"), "text/javascript; charset=utf-8");
+  assert.match(await r.text(), /export function parsePastedScan/);
+});
 test("[fast] /favicon.png is the logo, served same-origin as image/png, and the page links it", async () => {
   const r = await get("/favicon.png");
   assert.equal(r.status, 200);
@@ -494,6 +524,17 @@ test("[fast] /favicon.png is the logo, served same-origin as image/png, and the 
   const body = Buffer.from(await r.arrayBuffer());
   assert.deepEqual(body, readFileSync(join(dirname(fileURLToPath(import.meta.url)), "assets", "favicon.png")), "the bytes arrive unaltered, not re-encoded as text");
   assert.match(await (await get("/")).text(), /<link rel="icon" type="image\/png" href="\/favicon\.png">/);
+});
+// The sidebar's mark is the rat's head cropped from the logo (build/README.md), 80 px so its 40 px circle is
+// sharp on a 2x screen; the full logo stays the favicon and the window icon.
+test("[fast] /logo-mark.png is the sidebar's mark, served as image/png, and the sidebar's brand uses it", async () => {
+  const r = await get("/logo-mark.png");
+  assert.equal(r.status, 200);
+  assert.equal(r.headers.get("content-type"), "image/png");
+  const body = Buffer.from(await r.arrayBuffer());
+  assert.deepEqual(body, readFileSync(join(dirname(fileURLToPath(import.meta.url)), "assets", "logo-mark.png")));
+  assert.deepEqual([body.readUInt32BE(16), body.readUInt32BE(20)], [80, 80], "80 × 80: a 40 px circle at 2x");
+  assert.match(await (await get("/")).text(), /<div class="brand"><img src="\/logo-mark\.png"/);
 });
 test("[fast] writes require application/json", async () => {
   const r = await fetch(srv.url + "/api/profiles", { method: "PUT", body: "{}" });
@@ -1130,6 +1171,11 @@ test("[fast] /api/items pages, sorts and searches", async () => {
   assert.equal(grouped.ok, true);
   assert.ok(Array.isArray(grouped.groups) && grouped.groups.length > 0);
   assert.ok(!("rows" in grouped));
+  assert.equal(grouped.stacks, all.total, "grouped, the answer still counts the stacks behind the names");
+  assert.equal(grouped.pieces, all.pieces);
+  // The Inventory's list filters and the rarity minimum reach the query from the wire.
+  const rings = asJson<ItemsPageResponse>(await (await get("/api/items?slot=ring&slot=bracelet&rarityMin=" + encodeURIComponent("Major Magic Item"))).json());
+  assert.ok(rings.rows!.length > 0 && rings.rows!.every((r) => ["ring", "bracelet"].includes(r.slot as string)), JSON.stringify(rings.rows!.map((r) => r.slot)));
 });
 
 test("[fast] GET /api/items/by-serial resolves full item records by serial", async () => {
@@ -1218,6 +1264,38 @@ test("[fast] /api/optimize by character with a bad settings type is 400", async 
   assert.match(asJson<ErrorBody>(await r.json()).error, /excludeTags/);
 });
 
+// The by-character form builds its pools from `settings`, but a saved run must still remember the page's
+// whole settings snapshot (meta.settings: floors, weights, race, the search knobs): the Saved runs drawer
+// labels, badges, compares and re-applies runs from it. The route used to replace meta.settings with the
+// pool settings alone, so every run came back with no floors or weights.
+test("[fast] /api/optimize by character: the saved run keeps the page's settings snapshot, with the pool settings it ran on", async () => {
+  const inv = asJson<InventoryResponse>(await (await get("/api/inventory")).json());
+  const profiles = asJson<ProfilesResponse>(await (await get("/api/profiles")).json());
+  const rules = asJson<RulesResponse>(await (await get("/api/rules")).json());
+  const character = Object.keys(inv.inventory.characters)[0]!;
+  const templateName = Object.keys(profiles.profiles.templates!)[0]!;
+  const profile = { ...profiles.profiles.templates![templateName], caps: rules.rules.caps, floors: { hci: 3 } };
+  const snapshot = { floors: { hci: 3 }, weights: { dci: 2 }, race: "elf", restarts: 7, strLimit: 999 };
+  const r = await fetch(srv.url + "/api/optimize", {
+    method: "POST", headers: { "content-type": "application/json" },
+    body: JSON.stringify({ character, settings: { strLimit: 120 }, profile, opts: { exact: false, restarts: 7 }, meta: { character, settings: snapshot } }),
+  });
+  const j = asJson<OptimizeJobResponse>(await r.json());
+  assert.equal(r.status, 200, JSON.stringify(j));
+  let status: OptimizeJobResponse = j;
+  for (let i = 0; i < 200 && status.state !== "done" && !j.cached; i++) {
+    await new Promise((res) => setTimeout(res, 20));
+    status = asJson<OptimizeJobResponse>(await (await fetch(srv.url + `/api/optimize/${j.id}/status`)).json());
+  }
+  const list = asJson<{ runs: Array<{ id: string; settings: Record<string, unknown> }> }>(await (await get(`/api/runs?character=${encodeURIComponent(character)}`)).json());
+  const run = list.runs.find((x) => x.id === (j.cached ? (j as { run?: { id: string } }).run!.id : j.id));
+  assert.ok(run, "the run was saved");
+  assert.deepEqual(run.settings.floors, { hci: 3 });
+  assert.deepEqual(run.settings.weights, { dci: 2 });
+  assert.equal(run.settings.race, "elf");
+  assert.equal(run.settings.strLimit, 120, "the pool settings the run actually used win over the snapshot's");
+});
+
 // Post-review fix: `null` in an optional settings field (strLimit/excludeTags/excludeRoots/
 // excludeSkills/lockedSlots) passed the `!= null` validation gate untouched, but the destructuring
 // defaults below it only fire on `undefined` — so `strLimit: null` reached buildPools as a literal
@@ -1270,7 +1348,7 @@ test("[fast] a new scan file changes /api/inventory without a restart", async ()
   }
 });
 
-// ---- Setup wizard (Task 2, Phase 4): GET/POST /api/setup*, POST /api/import, GET /api/update-check,
+// ---- Setup wizard (Task 2, Phase 4): GET/POST /api/setup*, GET /api/update-check,
 // POST /api/host/*, and PUT /api/settings' setupDone/client extension. app/installer.test.mts covers
 // the pure installer.mts functions directly; these cover the routes wiring them up.
 
@@ -1292,6 +1370,8 @@ test("[fast] GET /api/setup lists the tazuo adapter, its available (repo-shipped
     // razor-enhanced adapter on any other platform (app/ui/adapters.mts's availableAdapters) — it
     // must be this process's real process.platform, not a placeholder.
     assert.equal(j.platform, process.platform);
+    // Settings › Updates shows the running version before any update check.
+    assert.equal(j.version, (JSON.parse(readFileSync(join(dirname(fileURLToPath(import.meta.url)), "..", "package.json"), "utf8")) as { version: string }).version);
   } finally {
     await s2.close();
   }
@@ -1617,56 +1697,7 @@ test("[fast] POST /api/setup/install refuses 409 with the -stopall message while
   }
 });
 
-test("[fast] POST /api/import copies two fixtures (not the stray .txt) into the tazuo inbox, and the watcher folds them into /api/inventory", async () => {
-  const dir = mkdtempSync(join(tmpdir(), "qm-import-"));
-  const s2 = await startServer(ensureLayout(resolveConfig(["--port", "0", "--data", dir], {})));
-  try {
-    const fixture = JSON.parse(readFileSync(join(HERE, "..", "adapters", "tazuo", "fixture.scan.json"), "utf8"));
-    const srcDir = mkdtempSync(join(tmpdir(), "qm-import-src-"));
-    writeFileSync(join(srcDir, "one.json"), JSON.stringify(fixture));
-    writeFileSync(join(srcDir, "two.json"), JSON.stringify(fixture));
-    writeFileSync(join(srcDir, "notes.txt"), "not a scan");
 
-    const r = await fetch(s2.url + "/api/import", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ dir: srcDir }) });
-    assert.equal(r.status, 200);
-    assert.deepEqual(asJson(await r.json()), { ok: true, copied: 2, skipped: 0, failed: 0, failures: [] });
-
-    const badDir = await fetch(s2.url + "/api/import", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ dir: join(srcDir, "does-not-exist") }) });
-    assert.equal(badDir.status, 400);
-
-    const deadline = Date.now() + 3000;
-    let found = false;
-    while (Date.now() < deadline && !found) {
-      const inv = asJson<InventoryResponse>(await (await fetch(s2.url + "/api/inventory")).json());
-      found = Boolean(inv.inventory.characters[fixture.character]);
-      if (!found) await new Promise((resolve) => setTimeout(resolve, 100));
-    }
-    assert.ok(found, "the imported scan(s) folded into /api/inventory within 3s");
-  } finally {
-    await s2.close();
-  }
-});
-
-test("[fast] POST /api/import takes an explicit adapter (same result as the default) and rejects an unknown one, writing nothing", async () => {
-  const dir = mkdtempSync(join(tmpdir(), "qm-import-adapter-"));
-  const s2 = await startServer(ensureLayout(resolveConfig(["--port", "0", "--data", dir], {})));
-  try {
-    const fixture = JSON.parse(readFileSync(join(HERE, "..", "adapters", "tazuo", "fixture.scan.json"), "utf8"));
-    const srcDir = mkdtempSync(join(tmpdir(), "qm-import-adapter-src-"));
-    writeFileSync(join(srcDir, "one.json"), JSON.stringify(fixture));
-
-    const r = await fetch(s2.url + "/api/import", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ dir: srcDir, adapter: "tazuo" }) });
-    assert.equal(r.status, 200);
-    assert.deepEqual(asJson(await r.json()), { ok: true, copied: 1, skipped: 0, failed: 0, failures: [] });
-
-    const bad = await fetch(s2.url + "/api/import", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ dir: srcDir, adapter: "not-a-real-adapter" }) });
-    assert.equal(bad.status, 400);
-    assert.match(asJson<ErrorBody>(await bad.json()).error, /unknown adapter/);
-    assert.equal(existsSync(join(dir, "inbox", "not-a-real-adapter")), false, "a rejected adapter id must never create its own inbox directory");
-  } finally {
-    await s2.close();
-  }
-});
 
 // ---- Task 1, Phase 6: POST /api/import/paste, POST /api/import/rescan -----------------------------
 test("[fast] POST /api/import/paste: a good paste (marker block, with noise around it) lands a file the watcher then ingests", async () => {
@@ -1862,6 +1893,8 @@ test("[fast] POST /api/host/pick-folder and open-path are 501 without a host; an
   assert.equal(noHost.status, 501);
   const noHostOpen = await fetch(srv.url + "/api/host/open-path", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ which: "data" }) });
   assert.equal(noHostOpen.status, 501);
+  // The page learns this up front (Settings shows Copy path instead of an Open that can only fail).
+  assert.equal(asJson(await (await fetch(srv.url + "/api/setup")).json()).canOpenFolders, false);
 
   const dir = mkdtempSync(join(tmpdir(), "qm-host-"));
   const opened: string[] = [];
@@ -1870,6 +1903,7 @@ test("[fast] POST /api/host/pick-folder and open-path are 501 without a host; an
     { host: { pickFolder: async () => "/x", openPath: async (w: "data" | "logs") => { opened.push(w); } } },
   );
   try {
+    assert.equal(asJson(await (await fetch(s2.url + "/api/setup")).json()).canOpenFolders, true);
     const picked = await fetch(s2.url + "/api/host/pick-folder", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ title: "Pick" }) });
     assert.equal(picked.status, 200);
     assert.equal(asJson(await picked.json()).path, "/x");
@@ -1963,7 +1997,7 @@ test("[fast] PUT /api/settings {client: {adapter: \"../evil\", scriptsDir}} is 4
 // is neither rotated nor size-capped. One asObject() guard in front of them all.
 const OBJECT_BODY_ROUTES: Array<[string, string]> = [
   ["PUT", "/api/settings"], ["POST", "/api/setup/locate"], ["POST", "/api/setup/install"],
-  ["POST", "/api/import"], ["POST", "/api/import/paste"], ["POST", "/api/import/rescan"],
+  ["POST", "/api/import/paste"], ["POST", "/api/import/rescan"],
   ["POST", "/api/host/pick-folder"], ["POST", "/api/host/open-path"], ["POST", "/api/optimize"],
   ["POST", "/api/bridge"], ["POST", "/api/forget"], ["POST", "/api/forget-character"], ["PUT", "/api/ui-prefs"],
 ];
@@ -2761,6 +2795,31 @@ test("[fast] GET/PUT /api/ui-prefs keeps the column choice across a restart on a
   }
 });
 
+// The look (theme family, light/system/dark) and the pinned-collapsed sidebar are view choices like the
+// columns, and live in the same file for the same reason: the desktop app's origin changes every launch.
+// Each field is written only when valid, and a PUT of one field keeps the others.
+test("[fast] PUT /api/ui-prefs keeps theme, appearance, sidebar, density and the column set version, each checked, next to the columns", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "qm-uiprefs-look-"));
+  const put = (url: string, body: unknown): Promise<Response> => fetch(url + "/api/ui-prefs", { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
+  const s = await startServer(ensureLayout(resolveConfig(["--port", "0", "--data", dir], {})));
+  try {
+    assert.equal((await put(s.url, { cols: ["hci"] })).status, 200);
+    assert.equal((await put(s.url, { appearance: "dark" })).status, 200);
+    assert.equal((await put(s.url, { theme: "default", sidebar: "collapsed" })).status, 200);
+    assert.equal((await put(s.url, { density: "regular" })).status, 200);
+    assert.equal((await put(s.url, { cols: ["hci"], colsVersion: "2" })).status, 200);
+    assert.deepEqual(asJson(await (await fetch(s.url + "/api/ui-prefs")).json()), { ok: true, prefs: { cols: ["hci"], colsVersion: "2", appearance: "dark", theme: "default", sidebar: "collapsed", density: "regular" } });
+    for (const bad of [{ appearance: "sepia" }, { appearance: 1 }, { theme: "neon" }, { theme: "" }, { sidebar: "wide" }, { sidebar: true }, { density: "comfy" }, { colsVersion: 2 }, { colsVersion: "9" }]) {
+      assert.equal((await put(s.url, bad)).status, 400, `${JSON.stringify(bad)} should be refused`);
+    }
+    // A hand-edited file with a bad value reads as "never chosen" for that field only.
+    writeFileSync(join(dir, "ui-prefs.json"), JSON.stringify({ cols: ["dci"], appearance: "sepia", theme: "default", sidebar: 3 }));
+    assert.deepEqual(asJson(await (await fetch(s.url + "/api/ui-prefs")).json()), { ok: true, prefs: { cols: ["dci"], theme: "default" } });
+  } finally {
+    await s.close();
+  }
+});
+
 // A deleted, renamed or transferred character used to keep its card and worn set in the inventory
 // forever: the fold only drops what a newer scan of the same root or character replaces.
 test("[fast] POST /api/forget-character drops the character, its worn set, backpack and bank, and a rescan brings it back", async () => {
@@ -2806,4 +2865,24 @@ test("[fast] POST /api/forget-character drops the character, its worn set, backp
 test("[fast] POST /api/forget-character is refused under --demo", async () => {
   const r = await fetch(srv.url + "/api/forget-character", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ character: "Dorran" }) });
   assert.equal(r.status, 409);
+});
+
+// PACKRAT_CLIENT_HOME (what the Electron UI tests set) confines the client search to one folder: a client
+// planted there is found, the machine's own home is never the search's home, and nothing is proposed from
+// an environment folder or a fixed root.
+test("[fast] PACKRAT_CLIENT_HOME confines the client search to that folder", () => {
+  const home = mkdtempSync(join(tmpdir(), "qm-clienthome-"));
+  const tazuo = { id: "tazuo", name: "TazUO", scripts: [], capabilities: {}, transport: "folder" as const, platform: null, summary: "" };
+  try {
+    const empty = defaultClientSearch({ PACKRAT_CLIENT_HOME: home, LOCALAPPDATA: join(home, "..") });
+    assert.equal(empty.home, home);
+    assert.deepEqual(empty.candidates(tazuo), [], "an empty home proposes nothing");
+    const planted = join(home, "Desktop", "TazUO", "TazUO", "LegionScripts");
+    mkdirSync(planted, { recursive: true });
+    assert.deepEqual(defaultClientSearch({ PACKRAT_CLIENT_HOME: home }).candidates(tazuo), [planted]);
+    assert.deepEqual(defaultClientSearch({ PACKRAT_CLIENT_HOME: home }).candidates({ ...tazuo, platform: process.platform === "win32" ? "linux" : "win32" }), [], "an adapter for another OS offers nothing");
+    assert.notEqual(defaultClientSearch({}).home, home, "without it the search is the real home");
+  } finally {
+    rmSync(home, { recursive: true, force: true });
+  }
 });

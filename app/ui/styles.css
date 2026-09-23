@@ -1,254 +1,56 @@
-:root {
-  --bg: #eef0f4; --surface: #ffffff; --surface-2: #f6f7fa; --line: #d7dbe3; --ink: #1b1f27; --muted: #5d6472;
-  --accent: #9a6a1f; --accent-ink: #ffffff; --good: #2f7d4f; --warn: #b5760f; --bad: #b3261e; --sel: #fbf3e3;
-  --mono: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
-  --sans: "IBM Plex Sans", -apple-system, "Segoe UI", Helvetica, Arial, sans-serif;
-}
-@media (prefers-color-scheme: dark) {
-  :root:not([data-theme="light"]) {
-    --bg: #14171c; --surface: #1c2027; --surface-2: #232830; --line: #343a45; --ink: #e6e8ec; --muted: #9aa2b0;
-    --accent: #d9a247; --accent-ink: #1b1f27; --good: #5fbf85; --warn: #e0a83a; --bad: #ef6a5f; --sel: #2c2716;
-  }
-}
-:root[data-theme="dark"] {
-  --bg: #14171c; --surface: #1c2027; --surface-2: #232830; --line: #343a45; --ink: #e6e8ec; --muted: #9aa2b0;
-  --accent: #d9a247; --accent-ink: #1b1f27; --good: #5fbf85; --warn: #e0a83a; --bad: #ef6a5f; --sel: #2c2716;
-}
-* { box-sizing: border-box; }
-html, body { margin: 0; background: var(--bg); color: var(--ink); font: 14px/1.45 var(--sans); }
-/* app-shell: header fixed, main is the scroller. The inventory tab pins itself to the viewport so only the
-   table (and, when needed, the side panel) scroll — never the page. */
-body { display: flex; flex-direction: column; height: 100vh; overflow: hidden; }
-header { flex: none; }
-main { flex: 1; min-height: 0; overflow: auto; }
-#tab-inventory, #tab-builder { height: 100%; }
-#tab-inventory .layout, #tab-builder .layout { height: 100%; grid-template-rows: 100%; }
-#tab-inventory aside, #tab-builder aside { max-height: 100%; overflow-y: auto; }
-#tab-builder .scrollcol { max-height: 100%; overflow-y: auto; min-height: 0; }
-#tab-inventory .layout > .panel { height: 100%; min-height: 0; display: flex; flex-direction: column; }
-#tab-inventory .tablewrap.scrolly { flex: 1; min-height: 0; max-height: none; }
-main:has(#tab-inventory:not([hidden])), main:has(#tab-builder:not([hidden])) { padding-bottom: 16px; }
-h1, h2, h3 { margin: 0; text-wrap: balance; font-weight: 600; }
-h1 { font-size: 18px; letter-spacing: .01em; }
-h2 { font-size: 15px; }
-h3 { font-size: 13px; color: var(--muted); text-transform: uppercase; letter-spacing: .06em; }
-button, input, select, textarea { font: inherit; color: inherit; }
-button { background: var(--surface-2); border: 1px solid var(--line); border-radius: 6px; padding: 6px 12px; cursor: pointer; }
-button:hover { border-color: var(--accent); }
-button.primary { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); font-weight: 600; }
-button:disabled { opacity: .5; cursor: not-allowed; }
-button:disabled:hover { border-color: var(--line); }
-button.primary:disabled:hover { border-color: var(--accent); }
-button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
-input, select, textarea { background: var(--surface); border: 1px solid var(--line); border-radius: 6px; padding: 5px 8px; }
-input[type=number] { width: 5.5em; font-family: var(--mono); text-align: right; }
-input[type=checkbox] { accent-color: var(--accent); }
-/* Import tab (ui/import.mjs): the paste textarea fills its panel — the panel's own padding/max-width
-   is the container decision, not something the textarea imposes on itself. */
-textarea { width: 100%; box-sizing: border-box; resize: vertical; font-family: var(--mono); font-size: 12px; }
-.num { font-family: var(--mono); font-variant-numeric: tabular-nums; }
-.muted { color: var(--muted); }
-.small { font-size: 12px; }
-header { background: var(--surface); border-bottom: 1px solid var(--line); padding: 10px 20px; display: flex; align-items: center; gap: 18px; flex-wrap: wrap; }
-header .brand { display: flex; align-items: baseline; gap: 10px; }
-nav { display: flex; gap: 4px; margin-left: auto; }
-nav button { border: 0; background: transparent; padding: 8px 12px; border-bottom: 2px solid transparent; border-radius: 0; }
-nav button[aria-selected="true"] { border-bottom-color: var(--accent); font-weight: 600; }
-.status { font-size: 12px; color: var(--muted); }
-main { padding: 16px 20px 40px; }
-/* the inventory tab is fluid (many columns); the other tabs sit in a centred 1800px column */
-main > section:not(#tab-inventory):not(#tab-builder) { max-width: 1800px; margin: 0 auto; }   /* inventory and builder are fluid */
-#tab-builder .layout { grid-template-columns: 340px 1fr; }
-section[hidden] { display: none; }
-.layout { display: grid; grid-template-columns: 280px 1fr; gap: 16px; align-items: start; }
-.layout > * { min-width: 0; }   /* grid items default to min-width:auto, which lets a wide table push the page sideways */
-@media (max-width: 900px) { .layout { grid-template-columns: 1fr; } }
-.panel { background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 14px; }
-.panel + .panel { margin-top: 12px; }
-.stack { display: flex; flex-direction: column; gap: 10px; }
-.row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
-.field { display: flex; flex-direction: column; gap: 4px; }
-.field label { font-size: 12px; color: var(--muted); }
-.chips { display: flex; flex-wrap: wrap; gap: 6px; }
-.chip { border: 1px solid var(--line); border-radius: 999px; padding: 2px 10px; font-size: 12px; background: var(--surface-2); cursor: pointer; user-select: none; }
-.chip[aria-pressed="true"] { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
-.pager { flex: none; margin-top: 10px; }
-.pager .grow { flex: 1; }
-.tablewrap { overflow-x: auto; }
-/* the inventory table scrolls inside its own box so the sticky header stays put (sticky can't cross an overflow-x container) */
-.tablewrap.scrolly { overflow: auto; max-height: calc(100vh - 150px); }
-.tablewrap.scrolly th { box-shadow: 0 1px 0 var(--line); z-index: 1; }
-table { border-collapse: collapse; width: 100%; font-size: 13px; }
-th, td { padding: 6px 8px; border-bottom: 1px solid var(--line); text-align: left; vertical-align: top; white-space: nowrap; }
-th { font-size: 11px; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); position: sticky; top: 0; background: var(--surface); }
-th.sortable { cursor: pointer; }
-th.sorted { color: var(--accent); }
-td.n, th.n { text-align: right; font-family: var(--mono); font-variant-numeric: tabular-nums; }
-tr.item:hover td { background: var(--surface-2); }
-tr.detail td { white-space: normal; background: var(--surface-2); font-family: var(--mono); font-size: 12px; color: var(--muted); }
-.name { font-weight: 500; }
-.tag { display: inline-block; font-size: 10px; text-transform: uppercase; letter-spacing: .05em; border-radius: 4px; padding: 1px 5px; margin-left: 6px; background: var(--surface-2); border: 1px solid var(--line); color: var(--muted); }
-.tag.cursed, .tag.brittle { color: var(--bad); border-color: var(--bad); }
-.tag.antique { color: var(--warn); border-color: var(--warn); }
-.tag.slayer { color: var(--accent); border-color: var(--accent); }
-.rar { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 6px; background: var(--line); vertical-align: middle; }
-.pill { display: inline-block; font-family: var(--mono); font-size: 12px; padding: 1px 8px; border-radius: 999px; border: 1px solid var(--line); }
-.pill.good { border-color: var(--good); color: var(--good); } .pill.warn { border-color: var(--warn); color: var(--warn); } .pill.bad { border-color: var(--bad); color: var(--bad); }
-.grid2 { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 6px 12px; }
-.grid2 label { display: flex; justify-content: space-between; align-items: center; gap: 8px; font-size: 12px; }
-.cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(360px, 1fr)); gap: 12px; }
-.empty { padding: 40px; text-align: center; color: var(--muted); }
-.empty code { font-family: var(--mono); background: var(--surface-2); padding: 2px 6px; border-radius: 4px; }
-.stale { color: var(--warn); }
-.delta-up { color: var(--good); } .delta-down { color: var(--bad); }
-.msg { font-size: 12px; padding: 6px 10px; border-radius: 6px; border: 1px solid var(--line); background: var(--surface-2); }
-.msg.bad { border-color: var(--bad); color: var(--bad); }
-.msg.warn { border-color: var(--warn); color: var(--warn); }
-/* the data-folder banner under the header (ui/bridge.mts's renderDataDirNotice): one text span, one button */
-#notice { flex: none; margin: 10px 20px 0; display: flex; align-items: flex-start; gap: 12px; }
-#notice[hidden] { display: none; }
-#notice > span { flex: 1; min-width: 0; overflow-wrap: anywhere; }
-details summary { cursor: pointer; color: var(--muted); font-size: 12px; }
-@media (prefers-reduced-motion: no-preference) { button, .chip { transition: background .12s, border-color .12s; } }
+/* ui/styles.css — the older shared page classes the screens still use (.panel, .stack, .field, plain tables,
+   the item tooltip), on the tokens in ui/tokens.css (docs/ui.md). No literal colours here.
+   The shell is ui/shell.css, components are ui/components.css, and each screen has its own file. */
 
-/* in-game style hover tooltip */
-#tip { position: fixed; z-index: 50; pointer-events: none; display: none; max-width: 340px; padding: 8px 12px 10px; background: rgba(22, 24, 29, .96); color: #e8e8e8; border: 1px solid #3b3f48; border-radius: 4px; font: 12.5px/1.35 var(--mono); box-shadow: 0 6px 24px rgba(0,0,0,.45); }
-#tip .t-name { text-align: center; font-weight: 600; color: #fff; font-size: 13.5px; }
-#tip .t-center { text-align: center; }
-#tip .t-i { font-style: italic; }
-#tip .t-b { font-weight: 600; }
-#tip .t-hr { border-top: 1px solid #4a5060; margin: 6px 0; }
-#tip .t-val { color: #7fe27f; }
-#tip .t-leech { color: #d08cff; }
-#tip .t-hot { color: #e6c85a; }
-#tip .t-key { color: #d8d8d8; }
-#tip .t-dur { height: 4px; background: #2a2f3a; border-radius: 2px; margin: 2px 0 4px; }
-#tip .t-dur > div { height: 100%; background: #4f8de6; border-radius: 2px; }
-#tip .t-muted { color: #9aa2b0; }
+html, body { margin: 0; height: 100%; }
+h1, h2, h3 { text-wrap: balance; font-weight: var(--weight-semibold); }
+h1 { font-family: var(--font-display); font-size: var(--text-lg); line-height: var(--lh-lg); }
+h2 { font-size: var(--text-md); line-height: var(--lh-md); }
+.panel h3 { font-size: var(--text-xs); line-height: var(--lh-xs); color: var(--color-text-muted); text-transform: uppercase; letter-spacing: var(--tracking-caps); }
+input[type=number] { width: 5.5em; font-variant-numeric: tabular-nums; text-align: right; }
+.small { font-size: var(--text-sm); line-height: var(--lh-sm); }
+.panel { background: var(--color-surface); color: var(--color-text); border: var(--border-width-frame) solid var(--color-border); border-image: var(--frame-image); border-radius: var(--radius-lg); padding: var(--space-4); }
+.panel + .panel { margin-top: var(--space-3); }
+.stack { display: flex; flex-direction: column; gap: var(--space-2); }
+.field { display: flex; flex-direction: column; gap: var(--space-1); }
+.field label { font-size: var(--text-sm); color: var(--color-text-muted); }
+table { border-collapse: collapse; width: 100%; font-size: var(--text-base); }
+th, td { padding: var(--space-1-5) var(--space-2); border-bottom: var(--border-width) solid var(--color-border); text-align: left; vertical-align: top; white-space: nowrap; }
+th { font-size: var(--text-sm); font-weight: var(--weight-medium); color: var(--color-text-muted); position: sticky; top: 0; background: var(--color-surface-subtle); }
+td.n, th.n { text-align: right; font-variant-numeric: tabular-nums; }
+.name { font-weight: var(--weight-medium); }
+.tag { margin-left: var(--space-1-5); vertical-align: middle; }   /* the .tag component (components.css) beside a name */
+.tag.cursed, .tag.brittle { color: var(--color-danger); border-color: var(--color-danger); }
+.tag.antique { color: var(--color-warning); border-color: var(--color-warning); }
+.tag.slayer { color: var(--color-accent); border-color: var(--color-accent); }
+.rar-name { font-weight: var(--weight-medium); }
+/* a shard tier with no --rarity-* token: its raw game colour on a dark chip, where game colours read (ui/dom.mts's rarCell) */
+.rar-raw { background: var(--color-surface-raised); padding: 0 var(--space-1-5); border-radius: var(--radius-sm); }
+.empty { padding: var(--space-10); text-align: center; color: var(--color-text-muted); }
+.empty code { font-family: var(--font-mono); background: var(--color-surface-sunken); color: var(--color-text); padding: var(--space-0-5) var(--space-1-5); border-radius: var(--radius-sm); }
+details summary { cursor: pointer; color: var(--color-text-muted); font-size: var(--text-sm); }
+@media (prefers-reduced-motion: no-preference) { button { transition: background var(--duration-fast), border-color var(--duration-fast); } }
+
+/* the item tooltip (dom.mts tipNode, design spec 4.3): always drawn in dark mode (index.html gives #tip its
+   own data-mode), so the game's colours read as designed; 280 px, the body face, pointer-safe. A
+   .tipcard-host (#tip, the character sheet's slot popover) is anything that shows tipNode. */
+#tip { position: fixed; z-index: var(--z-tooltip); pointer-events: none; display: none; width: var(--tooltip-w); padding: var(--space-3); background: var(--color-surface-raised); color: var(--color-text); border: var(--border-width) solid var(--color-border); border-radius: var(--radius-md); font-size: var(--text-sm); line-height: var(--lh-sm); box-shadow: var(--shadow-2); }
+.tipcard-host .tipcard { display: flex; flex-direction: column; gap: 6px; }
+.tipcard-host .tip-head { display: flex; align-items: center; gap: var(--space-2); }
+.tipcard-host .tip-name { flex: 1 1 auto; min-width: 0; font-size: var(--text-base); line-height: var(--lh-base); }
+.tipcard-host .tip-head .tag { flex: none; }
+.tipcard-host .tip-lines { display: flex; flex-direction: column; gap: 2px; font-size: 12px; line-height: 18px; }
+.tipcard-host .tip-foot { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.tipcard-host .tip-where { overflow-wrap: anywhere; }   /* the whole location, wrapped: never cut off */
+.tipcard-host .t-res-phys { color: var(--res-phys); } .tipcard-host .t-res-fire { color: var(--res-fire); } .tipcard-host .t-res-cold { color: var(--res-cold); }
+.tipcard-host .t-res-poison { color: var(--res-poison); } .tipcard-host .t-res-energy { color: var(--res-energy); }
 [data-serial] { cursor: default; }
 
-/* character sheet (in-game style) */
-.sheet { max-width: 760px; background: #1b1d22; color: #e6e6e6; border: 1px solid #3b3f48; border-radius: 6px; padding: 10px 14px 12px; font: 12.5px/1.4 var(--mono); }
-.sheet h4 { margin: 8px 0 4px; text-align: center; color: #5aa9ff; font-size: 12.5px; font-weight: 600; letter-spacing: .02em; }
-.sheet .cols { display: grid; grid-template-columns: 1fr 1fr; gap: 0 24px; }
-.sheet table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
-.sheet td { padding: 1px 6px; border: 0; white-space: nowrap; color: #e6e6e6; }
-.sheet td.v { text-align: right; font-variant-numeric: tabular-nums; }
-.sheet td.lbl { color: #d8d8d8; }
-.sheet .up { color: #7fe27f; } .sheet .down { color: #ff7a6e; } .sheet .same { color: #8f97a3; }
-.sheet .cap { color: #8f97a3; }
-.sheet .res { display: grid; grid-template-columns: repeat(5, auto); justify-content: space-between; gap: 6px 14px; padding: 2px 0 4px; white-space: nowrap; }
-#b-result .sheet { max-width: 960px; }   /* before → after → Δ needs the room for five resists on one line */
-.sheet .res span b { font-weight: 600; }
-.sheet .r-phys { color: #ffb347; } .sheet .r-fire { color: #ff6b57; } .sheet .r-cold { color: #6fc3ff; } .sheet .r-poison { color: #7fe27f; } .sheet .r-energy { color: #c58cff; }
-.sheet .title { text-align: center; color: #f4d35e; font-weight: 600; margin-bottom: 2px; }
-.sheet .note { color: #8f97a3; font-size: 11px; text-align: center; margin-top: 6px; }
-
-/* schematic paperdoll */
-.doll { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; }
-.doll .slot { border: 1px solid var(--line); border-radius: 6px; padding: 5px 8px; min-height: 46px; background: var(--surface-2); }
-.doll .slot .k { font-size: 10px; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); }
-.doll .slot .n { font-size: 12px; font-weight: 500; white-space: normal; }
-.doll .slot.empty .n { color: var(--muted); font-weight: 400; }
-.doll .slot.body { visibility: hidden; }
-.charcard { display: grid; grid-template-columns: minmax(300px, 420px) minmax(0, 760px); gap: 16px; align-items: start; }
-@media (max-width: 1000px) { .charcard { grid-template-columns: 1fr; } }
-
-#bridge { padding: 2px 10px; border-radius: 999px; border: 1px solid var(--line); }
-#bridge.on { border-color: var(--good); color: var(--good); }
-#bridge.busy { border-color: var(--warn); color: var(--warn); }
-.act { display: inline-flex; gap: 4px; }
-.act button { padding: 1px 7px; font-size: 11px; }
-.toast { position: fixed; right: 16px; bottom: 16px; z-index: 60; padding: 8px 12px; border-radius: 6px; background: var(--surface); border: 1px solid var(--line); box-shadow: 0 6px 24px rgba(0,0,0,.25); font-size: 13px; max-width: 420px; }
-.toast.bad { border-color: var(--bad); color: var(--bad); } .toast.good { border-color: var(--good); }
-
-.stats { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 22px; padding: 10px 14px; }
-.stat-k { font-size: 10px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); }
-.stat-v { font-size: 13px; }
-.stat-v.warn { color: var(--warn); } .stat-v.bad { color: var(--bad); }
-
-/* saved runs */
-.runs { display: flex; flex-direction: column; gap: 4px; max-height: 340px; overflow-y: auto; }
-.runrow { display: flex; align-items: flex-start; gap: 8px; padding: 6px 8px; border: 1px solid var(--line); border-radius: 6px; background: var(--surface-2); }
-.runrow.open { border-color: var(--accent); }
-.runrow > input { margin-top: 3px; }
-.run-main { flex: 1; min-width: 0; cursor: pointer; display: flex; flex-direction: column; gap: 2px; }
-.run-top { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; font-size: 12px; }
-.run-label { font-size: 12px; color: var(--muted); overflow-wrap: anywhere; }
-.run-acts { display: flex; gap: 4px; }
-.run-acts button { padding: 1px 7px; font-size: 11px; }
-.run-name { width: 100%; }
-.cmp-head { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
-.runs-open { display: flex; align-items: center; justify-content: space-between; width: 100%; }
-/* sidebar pickers fit their row: long option names (skill bonuses) must not widen the select past the panel */
-#tab-builder aside select { max-width: 100%; min-width: 0; }
-#tab-builder aside .row > select { flex: 1 1 0; }
-.tpl-actions { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px; }
-.tpl-actions button { min-width: 0; padding-inline: 4px; }
-
-/* saved-runs drawer: slides in from the right over the results */
-.drawer { position: fixed; inset: 0; z-index: 40; pointer-events: none; }
-.drawer-backdrop { position: absolute; inset: 0; background: rgba(0, 0, 0, .28); opacity: 0; }
-.drawer-panel { position: absolute; top: 0; right: 0; height: 100%; width: min(480px, 94vw); box-sizing: border-box; display: flex; flex-direction: column; gap: 10px; padding: 14px 16px;
-  background: var(--surface); border-left: 1px solid var(--line); box-shadow: -10px 0 28px rgba(0, 0, 0, .2); transform: translateX(100%); }
-.drawer.open { pointer-events: auto; }
-.drawer.open .drawer-backdrop { opacity: 1; }
-.drawer.open .drawer-panel { transform: none; }
-.drawer-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
-.drawer-head button { padding: 2px 10px; font-size: 16px; line-height: 1.2; }
-.drawer .runs { max-height: none; flex: 1; min-height: 0; overflow-y: auto; }
-@media (prefers-reduced-motion: no-preference) { .drawer-panel { transition: transform .22s ease; } .drawer-backdrop { transition: opacity .22s ease; } }
-tr.shown td { background: var(--sel); }
-.alt-table td { white-space: normal; vertical-align: top; }
-.alt-table td:nth-child(1), .alt-table td:nth-child(2), .alt-table td:nth-child(5) { white-space: nowrap; }
-
-/* live build progress */
-.run { display: flex; flex-direction: column; gap: 8px; padding: 12px 14px; border-color: var(--accent); }
-.run .stats { padding: 2px 0 0; }
-.run-head { display: flex; align-items: center; gap: 10px; }
-.run-head .grow { flex: 1; }
-.beat { width: 10px; height: 10px; border-radius: 50%; background: var(--good); box-shadow: 0 0 0 0 var(--good); flex: none; }
-.beat.warn { background: var(--warn); box-shadow: none; animation: none; }
-.beat.bad { background: var(--bad); box-shadow: none; animation: none; }
-@keyframes beat { 0% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--good) 55%, transparent); } 100% { box-shadow: 0 0 0 9px transparent; } }
-@media (prefers-reduced-motion: no-preference) { .beat { animation: beat 1.4s ease-out infinite; } .run .fill { transition: width .25s linear; } }
-.steps { display: flex; gap: 6px; flex-wrap: wrap; }
-.step { font-family: var(--mono); font-size: 11px; padding: 1px 9px; border-radius: 999px; border: 1px solid var(--line); color: var(--muted); }
-.step.active { border-color: var(--accent); color: var(--accent); font-weight: 600; }
-.step.done { border-color: var(--good); color: var(--good); }
-.run .bar { height: 10px; border-radius: 999px; background: var(--surface-2); border: 1px solid var(--line); overflow: hidden; }
-.run .bar .fill { height: 100%; width: 0; background: var(--accent); border-radius: 999px; }
-.run .bar.time { height: 4px; border: 0; margin-top: -4px; }
-.run .bar.time .fill { background: var(--muted); }
-
-/* first-run / "Run setup again" wizard (ui/wizard.mjs) — a native <dialog>, restyled to match the
-   app's own panels rather than the browser's default white box + system border. */
-.wizard { max-width: 40rem; width: min(40rem, 94vw); border: 1px solid var(--line); border-radius: 10px; padding: 18px 20px; background: var(--surface); color: var(--ink); box-shadow: 0 12px 40px rgba(0, 0, 0, .35); }
-.wizard::backdrop { background: rgba(0, 0, 0, .45); }
-.wizard-head { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; margin-bottom: 12px; padding-bottom: 10px; border-bottom: 1px solid var(--line); }
-.wizard-body { display: flex; flex-direction: column; gap: 10px; min-height: 120px; }
-.wizard-body ul { margin: 4px 0; padding-left: 20px; }
-.wizard-body code { font-family: var(--mono); font-size: 12px; background: var(--surface-2); border-radius: 4px; padding: 1px 5px; }
-.wizard-divider { border-top: 1px solid var(--line); margin: 2px 0; }
-.wizard-foot { margin-top: 16px; padding-top: 12px; border-top: 1px solid var(--line); }
-.wizard-foot .grow { flex: 1; }
-
-/* Single-field prompt dialogs (ui/dialog.mjs's promptText — the in-page replacement for
-   window.prompt(), which Electron doesn't implement). Shares .wizard's look, just narrower: the
-   dialog decides its own width, the input inside it fills that width in turn (never the other way
-   round). */
-.prompt-dialog { max-width: 28rem; width: min(28rem, 92vw); }
-.prompt-dialog input[type=text] { width: 100%; }
-
-/* Settings tab (ui/settings.mjs): .kv is a label/value[/action] row — distinct from the shared flex
-   .row utility, which the checkbox and folder-picker rows in the same panels still use unchanged. */
-.settings .kv { display: grid; grid-template-columns: 140px 1fr auto; align-items: center; gap: 6px 10px; }
-
 /* scrollbars: thin, rounded, theme-coloured (WebKit/Blink + Firefox) */
-* { scrollbar-width: thin; scrollbar-color: var(--line) transparent; }
+* { scrollbar-width: thin; scrollbar-color: var(--color-border-strong) transparent; }
 *::-webkit-scrollbar { width: 10px; height: 10px; }
 *::-webkit-scrollbar-track { background: transparent; }
-*::-webkit-scrollbar-thumb { background: var(--line); border-radius: 999px; border: 2px solid var(--surface); background-clip: padding-box; }
-*::-webkit-scrollbar-thumb:hover { background: var(--muted); background-clip: padding-box; }
+*::-webkit-scrollbar-thumb { background: var(--color-border-strong); border-radius: var(--radius-full); border: 2px solid var(--color-surface); background-clip: padding-box; }
+*::-webkit-scrollbar-thumb:hover { background: var(--color-text-muted); background-clip: padding-box; }
 *::-webkit-scrollbar-corner { background: transparent; }
-.tablewrap.scrolly, #tab-inventory aside, #tab-builder aside, #tab-builder .scrollcol, .drawer .runs { scrollbar-gutter: stable; }
+#tab-inventory aside, #tab-builder aside, #runs-drawer .runs { scrollbar-gutter: stable; }   /* the screens' own scrollers */

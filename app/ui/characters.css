@@ -1,0 +1,79 @@
+/* ui/characters.css — the Characters screen (ui/characters.mts): the roster and the sheet page, and the
+   character sheet itself (ui/sheet.mts's sheetNode), which the Suit Builder's result reuses. Tokens only
+   (docs/ui.md). The sheet sizes itself from its own width (a container query), not the window's, so it
+   fits whatever column it is put in. */
+
+/* ---------------------------------------------------------------- roster (spec 4.4) */
+.char-search { width: 240px; }
+.roster { overflow: hidden; }
+.roster-scroll { overflow-x: auto; }
+/* The Character column takes what the fixed columns leave, never less than 160 px (868 px of fixed columns +
+   160): narrower than that the table scrolls sideways under a sticky Character column, as Inventory's Name does. */
+#char-table { min-width: 1028px; }
+#char-table th:first-child, #char-table td:first-child { position: sticky; left: 0; z-index: 1; background: var(--color-surface); color: var(--color-text); }
+#char-table th:first-child { z-index: calc(var(--z-sticky) + 1); background: var(--color-surface-subtle); color: var(--color-text-muted); }
+#char-table tr:hover td:first-child { background: var(--color-row-hover); color: var(--color-on-row-hover); }
+.roster-scroll.scrolled-x #char-table :is(th, td):first-child { box-shadow: 1px 0 0 var(--color-border); }
+#char-table td:first-child .char-link { display: block; overflow: hidden; text-overflow: ellipsis; }
+#char-table td { height: var(--row-comfortable); }
+#char-table td.no-match { height: auto; white-space: normal; }
+.pr a.char-link { color: var(--color-text); text-decoration: none; }
+.pr a.char-link:hover { color: var(--color-text); text-decoration: underline; }
+.res-cell { display: inline-flex; flex-direction: column; align-items: flex-end; gap: 3px; width: 100%; }
+.res-cell .meter { width: 100%; max-width: 48px; }
+.res-cell .at-cap { color: var(--color-success); }
+.row-btns { display: flex; gap: var(--space-1); justify-content: flex-end; }
+
+/* ---------------------------------------------------------------- sheet page (spec 4.5) */
+.crumbs { display: flex; align-items: center; gap: var(--space-2); min-width: 0; }
+.pr .crumbs a { color: var(--color-text-muted); text-decoration: none; }
+.pr .crumbs a:hover { color: var(--color-text); text-decoration: underline; }
+.crumbs h1 { overflow: hidden; text-overflow: ellipsis; }
+.sheet-meta { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--space-2); }
+.sheet-meta .mono { font-family: var(--font-mono); }
+
+/* ---------------------------------------------------------------- the sheet */
+.sheet { display: flex; flex-direction: column; gap: var(--space-4); min-width: 0; container-type: inline-size; }
+.sheet .up { color: var(--color-success); }
+.sheet .down { color: var(--color-danger); }
+
+.sheet-kpis { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: var(--space-3); }
+.resist.at-cap { border-color: var(--color-success); }
+.kpi-value { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--space-1); }
+.kpi-value .badge { margin-left: auto; }
+.res-phys { color: var(--res-phys); } .res-fire { color: var(--res-fire); } .res-cold { color: var(--res-cold); } .res-poison { color: var(--res-poison); } .res-energy { color: var(--res-energy); }
+.kv.kv-tight .kv-k, .kv.kv-tight .kv-v { min-height: 20px; border: 0; }
+.kv.kv-tight .kv-v { white-space: nowrap; }
+
+.sheet-cols { display: grid; grid-template-columns: minmax(0, 7fr) minmax(0, 5fr); gap: var(--space-4); align-items: start; }
+.sheet-slots { display: flex; flex-direction: column; gap: var(--space-4); padding: var(--space-4); }
+.slot-group { display: flex; flex-direction: column; gap: var(--space-2); }
+.slot-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--space-2); }
+.slot-grid.slot-grid-5 { grid-template-columns: repeat(5, minmax(0, 1fr)); }
+.slot.slot-sm { min-height: 52px; }
+.pr .sheet button.slot { cursor: pointer; font: inherit; font-weight: var(--weight-regular); }
+.sheet .slot.empty { padding: var(--space-2) var(--space-3); text-align: left; }   /* not the old page-level .empty (styles.css) */
+.pr .sheet button.slot:hover { background: var(--color-surface-subtle); color: var(--color-text); }
+.pr .sheet button.slot:focus-visible { outline: none; box-shadow: var(--ring-focus); }
+.slot-head { display: flex; align-items: center; gap: var(--space-1-5); }
+.slot-meta { display: flex; align-items: center; gap: var(--space-1-5); min-width: 0; }
+.slot-meta > .muted { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+.sheet-props { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: var(--space-3) var(--space-5); padding: var(--space-3) var(--space-4); }
+.prop-group { display: flex; flex-direction: column; gap: var(--space-1); min-width: 0; }
+.sheet-props-2 { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); column-gap: var(--space-5); }
+.sheet-foot { display: flex; flex-direction: column; gap: var(--space-2); padding: 0 var(--space-4) var(--space-4); }
+
+/* narrower than the 1440 layout: attributes and pools drop under the five resists, then the two cards stack */
+@container (max-width: 1040px) {
+  .sheet-kpis { grid-template-columns: repeat(10, minmax(0, 1fr)); }
+  .sheet-kpis > .kpi { grid-column: span 2; }
+  .sheet-kpis > .kpi-list { grid-column: span 5; }
+}
+@container (max-width: 960px) {
+  .sheet-cols { grid-template-columns: minmax(0, 1fr); }
+}
+
+/* a worn piece's tooltip in a popover: tipNode's own rules (styles.css, .tipcard-host), always dark */
+.pop.item-pop .pop-body { gap: var(--space-3); padding: var(--space-3); }
+.pop.item-pop .pop-body > .btn { align-self: flex-start; }

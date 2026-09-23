@@ -108,6 +108,8 @@ export interface RunSummary {
   delta: number | null;
   nodes: number | null;
   explored: unknown;
+  changes: number | null;                        // how many slots the run's suit changes
+  totalsAfter: Record<string, number> | null;    // the suit's item totals, for the drawer's resist and requirement badges
 }
 // What the run list needs: everything except the suit itself.
 export function runSummary(r: SavedRun): RunSummary {
@@ -118,6 +120,8 @@ export function runSummary(r: SavedRun): RunSummary {
     inventoryStamp: r.inventoryStamp || null, poolSize: r.poolSize ?? null, skipped: r.skipped || {}, ms: r.ms ?? null,
     method: res.method || null, proven: res.proven ?? null, score: res.score ?? null, currentScore: res.currentScore ?? null,
     delta: res.delta ?? null, nodes: res.nodes ?? null, explored: r.explored ?? null,
+    changes: Array.isArray(res.perSlotChanges) ? res.perSlotChanges.length : null,
+    totalsAfter: (res.totals as { after?: Record<string, number> } | undefined)?.after ?? null,
   };
 }
 

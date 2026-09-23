@@ -3,7 +3,8 @@
 import type { CharacterEntryRaw, ProfilesFile, Item, EffectiveProfile } from "../vault-lib.mts";
 import type { ItemQuery, Facets, ItemQueryGroups } from "../item-query.mts";
 import type { RulesV1 } from "../schema/types.d.mts";
-import type { InventoryData, SettingsData, ShardOption, SetupApiResponse, OptSuit, OptimizeResult, OptimizeProgress, RunSummaryLike } from "./api-types.mts";
+import { DEFAULT_COLS } from "./inv-model.mts";
+import type { InventoryData, SettingsData, ShardOption, SetupApiResponse, OptSuit, OptimizeResult, OptimizeProgress, RunSummaryLike, SavedRunLike } from "./api-types.mts";
 
 // The suit builder's own working copy of a character's settings: CharacterEntryRaw (vault-lib.mts)
 // minus `caps` (a legacy v1 field the page never reads or writes — see migrateProfiles; keeping it
@@ -60,6 +61,15 @@ export interface FinishedBuild {
   current: OptSuit;
   profile: EffectiveProfile;
   runId: string | null;
+  meta?: BuildMeta | undefined;   // what the result's Solver details disclosure reports
+}
+// How a result was found, for its Solver details: time, pool size, what the pool left out, and the saved
+// run it reused when the server answered from one.
+export interface BuildMeta {
+  ms: number;
+  poolSize: number | null;
+  skipped: Record<string, unknown> | undefined;
+  reused: SavedRunLike | null;
 }
 export interface BuilderState {
   character: string | null;
@@ -73,13 +83,16 @@ export interface BuilderState {
   // A build that finished while another character was selected, shown when its character is next.
   parked: FinishedBuild | null;
 }
-// The current page from GET /api/items (inventory.mts's doFetch()) — rows XOR groups, matching
-// item-query.mts's ItemQueryRows | ItemQueryGroups union, folded into one always-both-keys shape so
-// renderInventory() can read either without narrowing a union on every access.
+// What the Inventory table has loaded of the current query from GET /api/items (inventory.mts) — rows XOR
+// groups, matching item-query.mts's ItemQueryRows | ItemQueryGroups union, folded into one always-both-keys
+// shape. The table is virtual and loads in chunks as it scrolls, so `rows`/`groups` are SPARSE: index i
+// holds the i-th match once its chunk has landed. `total` counts rows (or names, grouped); `stacks` and
+// `pieces` count the matching stacks and pieces in either view.
 export interface PageState {
   rows: Item[];
   groups: ItemQueryGroups["groups"] | null;
   total: number;
+  stacks: number;
   pieces: number;
 }
 export interface BridgeState {
@@ -101,9 +114,9 @@ export interface AppState {
   setup: SetupApiResponse | null;
   wizardShown: boolean;   // load() opens the first-run wizard at most once per page life; reload() never touches this
   facets: Facets | null;   // GET /api/inventory's facets: slots/locations/rarities/slayers/kinds + counts, snapshotted once at load()
-  // The page-side source of truth for the Inventory tab's filters/sort/paging — the exact shape
-  // parseItemQuery (item-query.mts) reads off a URLSearchParams, so fetchItems() builds the query
-  // string straight from this object. hideTags/props are arrays here (not a Set), matching the wire
+  // The page-side source of truth for the Inventory tab's filters and sort — the exact shape
+  // parseItemQuery (item-query.mts) reads off a URLSearchParams (inv-model.mts's queryParams builds the
+  // query string from it; offset/limit are set per chunk). hideTags/props are arrays here (not a Set), matching the wire
   // form; nothing hidden by default: power scrolls are Cursed.
   query: ItemQuery;
   page: PageState;   // the current page from GET /api/items
@@ -115,14 +128,13 @@ export interface AppState {
   // inventory (a rescan can move or drop a piece).
   itemCache: Map<number, Item>;
   cols: string[];
+  density: "dense" | "regular";   // the Inventory table's rows, 32 or 40 px (ui-prefs `density`)
   builder: BuilderState;
   // Set only once app.mts's load()/reload() has fetched the inventory at least once — absent (not
   // null) before that, exactly as it is at runtime today (nothing in the initial object literal below
   // ever assigned it; app.mts's `state.newestScan = …` is the only place that creates the property).
   newestScan?: string | null | undefined;
 }
-
-const DEFAULT_COLS = ["physResist", "fireResist", "coldResist", "poisonResist", "energyResist", "hci", "dci", "ssi", "di", "lmc", "lrc", "fc", "fcr", "manaRegen"];
 
 export const state: AppState = {
   inv: null, profiles: null, rules: null, settings: null, availableShards: [], propKeys: [],
@@ -131,12 +143,13 @@ export const state: AppState = {
   setup: null,
   wizardShown: false,   // load() opens the first-run wizard at most once per page life; reload() never touches this
   facets: null,   // GET /api/inventory's facets: slots/locations/rarities/slayers/kinds + counts, snapshotted once at load()
-  // The page-side source of truth for the Inventory tab's filters/sort/paging — the exact shape
-  // parseItemQuery (item-query.mts) reads off a URLSearchParams, so fetchItems() builds the query
-  // string straight from this object. hideTags/props are arrays here (not a Set), matching the wire
+  // The page-side source of truth for the Inventory tab's filters and sort — the exact shape
+  // parseItemQuery (item-query.mts) reads off a URLSearchParams (inv-model.mts's queryParams builds the
+  // query string from it; offset/limit are set per chunk). hideTags/props are arrays here (not a Set), matching the wire
   // form; nothing hidden by default: power scrolls are Cursed.
-  query: { q: "", slot: "", loc: "", rarity: "", kind: "", seenDays: 0, slayer: "", nogarg: false, med: false, hideTags: [], props: [], group: false, sort: "name", dir: 1, offset: 0, limit: 200 },
-  page: { rows: [], groups: null, total: 0, pieces: 0 },   // the current page from GET /api/items
+  query: { q: "", chars: [], slot: [], loc: [], roots: [], rarity: "", rarityMin: "", kind: [], seenDays: 0, slayer: "", nogarg: false, med: false, hideTags: [], props: [], group: false, sort: "name", dir: 1, offset: 0, limit: 500 },
+  page: { rows: [], groups: null, total: 0, stacks: 0, pieces: 0 },   // what the Inventory table has loaded
+  density: "dense",
   // The full-item-by-serial cache (Task 5's item-lookup fix): GET /api/inventory no longer carries
   // the whole item map, so anything that needs to enrich a bare serial into a full record (the suit
   // builder's result panel, the hover tooltip) goes through ui/items.mts's resolveItems(), which

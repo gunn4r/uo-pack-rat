@@ -10,7 +10,7 @@ import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
 import {
   listAdapters, candidateClientRoots, validateScriptsDir, installedVersion, installScripts,
-  importScans, repoFromPackage, checkForUpdates, checkScriptsDataDir, RUNNING_MESSAGE,
+  repoFromPackage, checkForUpdates, checkScriptsDataDir, RUNNING_MESSAGE,
 } from "./installer.mts";
 import { MAX_INBOX_BYTES } from "./watcher.mts";
 
@@ -22,9 +22,8 @@ const tmp = (prefix: string): string => mkdtempSync(join(tmpdir(), prefix));
 
 // Creating a symlink needs elevated privilege (or Developer Mode) on Windows, and a FIFO can't be
 // created there at all — the Phase 7 path-handling tests below pin behaviour against exactly those
-// two file types, so each one that can't build its own setup returns early instead of failing. The
-// same shape as the existing importScans symlink test's `madeSymlink` flag, hoisted so every case
-// that needs it says so the same way. CI runs ubuntu/macos/windows, so this is a real path.
+// two file types, so each one that can't build its own setup returns early instead of failing, and
+// every case that needs it says so the same way. CI runs ubuntu/macos/windows, so this is a real path.
 function trySymlink(target: string, path: string): boolean {
   try { symlinkSync(target, path); return true; }
   catch { return false; }
@@ -715,119 +714,6 @@ test("[fast] installScripts installs normally when adaptersDir is reached throug
   const result = installScripts({ adapter: "tazuo", adaptersDir: link, scriptsDir, dataDir: tmp("qm-is-data-"), bridgeStatusPath: join(scriptsDir, "no-status.json") });
   assert.equal(result.ok, true, JSON.stringify(result));
   assert.deepEqual(result.installed.sort(), ["packrat-bridge.py", "packrat-refresh.py", "packrat-scanner.py"]);
-});
-
-// ---- importScans ---------------------------------------------------------------------------------------
-
-test("[fast] importScans copies only *.json, skips duplicates, and never removes the source", () => {
-  const dir = tmp("qm-import-src-");
-  writeFileSync(join(dir, "a.json"), JSON.stringify({ a: 1 }));
-  writeFileSync(join(dir, "b.json"), JSON.stringify({ b: 1 }));
-  writeFileSync(join(dir, "notes.txt"), "not a scan");
-  mkdirSync(join(dir, "subdir"), { recursive: true });
-  writeFileSync(join(dir, "subdir", "nested.json"), JSON.stringify({ nested: true }));
-
-  const inboxDir = tmp("qm-import-inbox-");
-  writeFileSync(join(inboxDir, "a.json"), JSON.stringify({ already: "here" }));   // pre-existing duplicate
-
-  const result = importScans({ dir, inboxDir });
-  assert.deepEqual(result, { copied: 1, skipped: 1, failed: 0, failures: [] });   // b.json copied; a.json skipped (already present)
-  assert.deepEqual(JSON.parse(readFileSync(join(inboxDir, "a.json"), "utf8")), { already: "here" }, "the pre-existing file was not overwritten");
-  assert.deepEqual(JSON.parse(readFileSync(join(inboxDir, "b.json"), "utf8")), { b: 1 });
-  assert.equal(existsSync(join(inboxDir, "nested.json")), false, "nested files are not copied (top level only)");
-  assert.equal(existsSync(join(inboxDir, "notes.txt")), false);
-
-  assert.deepEqual(readdirSync(dir).sort(), ["a.json", "b.json", "notes.txt", "subdir"], "nothing was removed from the source");
-  assert.deepEqual(readdirSync(inboxDir).filter((f) => f.endsWith(".tmp")), [], "no leftover .tmp files");
-});
-
-test("[fast] importScans on a missing source dir copies nothing", () => {
-  const inboxDir = tmp("qm-import-inbox-missing-");
-  assert.deepEqual(importScans({ dir: join(inboxDir, "does-not-exist"), inboxDir }), { copied: 0, skipped: 0, failed: 0, failures: [] });
-});
-
-// Post-review fix: a *.json symlink in the source folder must not have its TARGET's bytes copied —
-// lstatSync (not statSync) is what tells a symlink apart from a regular file without following it.
-test("[fast] importScans does not follow a *.json symlink (only the real file is copied)", () => {
-  const dir = tmp("qm-import-symlink-src-");
-  const target = tmp("qm-import-symlink-target-");
-  writeFileSync(join(target, "secret.json"), JSON.stringify({ should: "never be copied by name link.json" }));
-  writeFileSync(join(dir, "real.json"), JSON.stringify({ ok: true }));
-  const linkPath = join(dir, "link.json");
-  let madeSymlink = true;
-  try { symlinkSync(join(target, "secret.json"), linkPath); }
-  catch { madeSymlink = false; }   // symlink creation can require elevated privilege on some platforms
-  const inboxDir = tmp("qm-import-symlink-inbox-");
-  const result = importScans({ dir, inboxDir });
-  assert.equal(existsSync(join(inboxDir, "real.json")), true);
-  if (madeSymlink) {
-    assert.equal(result.copied, 1, "only the real file was copied, the symlink was skipped");
-    assert.equal(existsSync(join(inboxDir, "link.json")), false, "the symlink itself was never copied under");
-  }
-});
-
-// Post-review fix (security, Phase 7): the write side of importScans had the same blind spots the
-// install side did. existsSync follows a symlink, so a DANGLING one already sitting in the inbox under
-// a scan's name read as "absent" and the copy replaced it — and the copy itself went through a
-// predictable "<dest>.tmp". The destination is inside Pack Rat's own data directory rather than a
-// player-picked folder, so the precondition is narrower than the installer's, but it's the same bug.
-test("[fast] importScans never writes through a symlink sitting in the inbox under a scan's name", () => {
-  const dir = tmp("qm-import-destlink-src-");
-  writeFileSync(join(dir, "a.json"), JSON.stringify({ a: 1 }));
-  writeFileSync(join(dir, "b.json"), JSON.stringify({ b: 1 }));
-  const outside = tmp("qm-import-destlink-outside-");
-  const canary = join(outside, "canary.json");
-  writeFileSync(canary, '{"untouched": true}');
-  const inboxDir = tmp("qm-import-destlink-inbox-");
-  // a.json → a live symlink, b.json → a DANGLING one (the case existsSync used to miss entirely).
-  if (!trySymlink(canary, join(inboxDir, "a.json"))) return;
-  if (!trySymlink(join(outside, "gone.json"), join(inboxDir, "b.json"))) return;
-  const result = importScans({ dir, inboxDir });
-  assert.deepEqual(result, { copied: 0, skipped: 2, failed: 0, failures: [] }, "both names are taken, whatever type is under them");
-  assert.deepEqual(JSON.parse(readFileSync(canary, "utf8")), { untouched: true });
-  assert.equal(existsSync(join(outside, "gone.json")), false, "the dangling link's target was not created by writing through it");
-});
-
-// The per-file copy is wrapped so one failure is counted rather than thrown: an EPERM partway through
-// a folder import used to escape the loop as a generic 500, with the already-copied files left behind
-// and nothing in the result to say which made it. chmod is only meaningful on POSIX.
-test("[fast] importScans counts a failed copy and finishes the folder instead of throwing", () => {
-  if (process.platform === "win32" || process.getuid?.() === 0) return;   // root ignores the mode bits
-  const dir = tmp("qm-import-failed-src-");
-  writeFileSync(join(dir, "a.json"), JSON.stringify({ a: 1 }));
-  writeFileSync(join(dir, "b.json"), JSON.stringify({ b: 1 }));
-  const inboxDir = tmp("qm-import-failed-inbox-");
-  chmodSync(inboxDir, 0o555);   // readable, not writable
-  try {
-    const result = importScans({ dir, inboxDir });
-    assert.equal(result.copied, 0);
-    assert.equal(result.failed, 2);
-    assert.deepEqual(result.failures.map((f) => f.name), ["a.json", "b.json"], "each failure names its own file");
-    for (const f of result.failures) assert.ok(f.reason.length > 0, "a failure carries a reason, not just a count");
-  } finally {
-    chmodSync(inboxDir, 0o755);
-  }
-});
-
-// The same ceiling app/watcher.mts's ingestFile enforces (MAX_INBOX_BYTES), applied on the way IN: an
-// oversize file used to be copied into the inbox and only refused once it got there, where it sat
-// being re-read and re-rejected by every startup sweep. truncateSync gives the inode the size without
-// writing 32 MB of bytes.
-test("[fast] importScans refuses a source file bigger than the inbox limit before it reaches the inbox", () => {
-  const dir = tmp("qm-import-toobig-src-");
-  writeFileSync(join(dir, "small.json"), JSON.stringify({ a: 1 }));
-  const big = join(dir, "big.json");
-  writeFileSync(big, "{}");
-  truncateSync(big, MAX_INBOX_BYTES + 1);
-  const inboxDir = tmp("qm-import-toobig-inbox-");
-
-  const result = importScans({ dir, inboxDir });
-  assert.equal(result.copied, 1, "the rest of the folder still gets its chance");
-  assert.equal(result.skipped, 0);
-  assert.equal(result.failed, 1);
-  assert.deepEqual(result.failures.map((f) => f.name), ["big.json"]);
-  assert.match(result.failures[0]!.reason, /too large/);
-  assert.deepEqual(readdirSync(inboxDir).sort(), ["small.json"], "the oversize file never reached the inbox");
 });
 
 // ---- repoFromPackage -------------------------------------------------------------------------------------
