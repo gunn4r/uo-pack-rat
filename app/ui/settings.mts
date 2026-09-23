@@ -1,5 +1,5 @@
-// ui/settings.mts — the Settings screen (design spec 4.11): a section nav (General, Game client, Data,
-// Updates) beside a 720px column of cards made of setting rows — title and help on the left, the control
+// ui/settings.mts — the Settings screen (design spec 4.11): four sections (General, Game client, Data,
+// Updates) in a 720px column of cards made of setting rows — title and help on the left, the control
 // on the right. General holds the look (theme family, appearance) and the shard rules; Game client its
 // status, Run setup and Reinstall; Data the data folder and logs with Open, and the danger zone (forget a
 // character, forget a container); Updates the version and the update check. Always re-fetches GET
@@ -33,14 +33,6 @@ let hostAvailable = true;
 const THEMES = [{ id: "default", label: "Default" }, { id: "britannia", label: "Britannia" }];
 const isBuilt = (id: string): boolean => (BUILT_THEMES as readonly string[]).includes(id);
 
-const SECTIONS = [
-  { id: "set-general", label: "General" },
-  { id: "set-client", label: "Game client" },
-  { id: "set-data", label: "Data" },
-  { id: "set-updates", label: "Updates" },
-] as const;
-let currentSection: string = SECTIONS[0].id;
-
 export async function renderSettings(setup?: SetupApiResponse): Promise<void> {
   const root = $<HTMLElement>("#settings-body");
   if (!root) return;
@@ -50,48 +42,19 @@ export async function renderSettings(setup?: SetupApiResponse): Promise<void> {
   }
   state.setup = setup;
   renderDataDirNotice();
-  renderNav(setup);
   root.replaceChildren(generalSection(), clientSection(setup), dataSection(setup), updatesSection(setup));
 }
 
-// ---------------------------------------------------------------- section nav
-// Links like the sidebar's, but a click only scrolls its section into view: the location hash is the page's
-// router, so each href is the Settings route itself. Scrolling moves the marker to whichever section's
-// heading has passed the top.
-function renderNav(setup: SetupApiResponse): void {
-  const nav = $<HTMLElement>("#settings-nav");
-  if (!nav) return;
-  const noClient = !setup.settings.client;
-  nav.replaceChildren(...SECTIONS.map((s) => box("a", { href: "#/settings", class: "nav-item", "data-section": s.id, ...(s.id === currentSection ? { "aria-current": "true" } : {}),
-    onclick: (e: MouseEvent) => { e.preventDefault(); markSection(s.id); navScrolling = true; document.getElementById(s.id)?.scrollIntoView({ block: "start", behavior: "smooth" }); } },
-    txt(s.label),
-    s.id === "set-client" && noClient ? el("span", { class: "dot warn set-nav-dot", role: "img", "aria-label": "needs attention" }) : null)));
-}
-function markSection(id: string): void {
-  currentSection = id;
-  for (const b of document.querySelectorAll<HTMLElement>("#settings-nav [data-section]")) {
-    if (b.dataset.section === id) b.setAttribute("aria-current", "true"); else b.removeAttribute("aria-current");
-  }
-}
-// A nav click's own scroll must not move the marker: a section near the end can't reach the top, so the
-// "scrolled to the end" rule would mark Updates after a click on Data. The marker follows the scroll again
-// once the player scrolls themselves.
-let navScrolling = false;
-const settingsPage = $<HTMLElement>("#tab-settings .settings-page");
-for (const ev of ["wheel", "pointerdown", "keydown", "touchstart"]) settingsPage?.addEventListener(ev, () => { navScrolling = false; }, { passive: true });
-settingsPage?.addEventListener("scroll", (e) => {
-  if (navScrolling) return;
-  const page = e.currentTarget as HTMLElement;
-  const top = page.getBoundingClientRect().top + 24;
-  let at: string = SECTIONS[0].id;
-  for (const s of SECTIONS) { const h = document.getElementById(s.id); if (h && h.getBoundingClientRect().top <= top) at = s.id; }
-  if (page.scrollTop + page.clientHeight >= page.scrollHeight - 2) at = SECTIONS[3].id;   // scrolled to the end: the last section
-  if (at !== currentSection) markSection(at);
-}, { passive: true });
-
 // ---------------------------------------------------------------- building blocks
+// There is no section nav while the page is this short (the maintainer's call); a section that needs the
+// player's attention (Game client with no client set up) carries a warning dot beside its heading.
 function section(id: string, title: string, ...cards: Kids): HTMLElement {
-  return box("section", { class: "set-section", id, "aria-labelledby": `${id}-h` }, el("h2", { class: "t-lg", id: `${id}-h` }, title), ...cards);
+  return sectionFlagged(id, title, false, ...cards);
+}
+function sectionFlagged(id: string, title: string, flag: boolean, ...cards: Kids): HTMLElement {
+  const h = el("h2", { class: "t-lg", id: `${id}-h` }, title);
+  return box("section", { class: "set-section", id, "aria-labelledby": `${id}-h` },
+    flag ? box("div", { class: "set-section-head" }, h, el("span", { class: "dot warn", role: "img", "aria-label": "needs attention" })) : h, ...cards);
 }
 // A setting row: title and help on the left, the control on the right. `label` ties the title to a
 // control with an id (a <label for>); otherwise the title is plain text.
@@ -171,7 +134,7 @@ function clientSection(setup: SetupApiResponse): HTMLElement {
         r ? noteEl(installedIntoNote(r.scriptsDir)) : null,
         r ? noteEl(pathsFileNote(r.pathsFile)) : null] });
   }
-  return section("set-client", "Game client", box("div", { class: "card set-card" }, status, reinstallRow));
+  return sectionFlagged("set-client", "Game client", !setup.settings.client, box("div", { class: "card set-card" }, status, reinstallRow));
 }
 
 // ---------------------------------------------------------------- Data: folders, danger zone

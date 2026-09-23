@@ -151,7 +151,7 @@ const SCENES: Scene[] = [
   // ---- Settings (phase 12): the lower sections (the danger zone), with a failed update check under its row
   { name: "settings data and updates", enter: async (p) => {
     await route(p, "#/settings", "#set-general .set-row");
-    await p.click("#settings-nav [data-section=set-updates]");
+    await p.locator("#set-updates").scrollIntoViewIfNeeded();
     // A fixed answer instead of a real call to GitHub: the scene measures the failure message, not the network.
     await p.route("**/api/update-check", (r) => r.fulfill({ contentType: "application/json", body: JSON.stringify({ ok: true, configured: true, error: "GitHub releases/latest returned 404" }) }));
     await p.click("#set-check-updates");
