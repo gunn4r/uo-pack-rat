@@ -42,7 +42,7 @@ const SCENES: Scene[] = [
     await p.locator("#inv-table tbody tr.item", { hasText: "Arcane" }).first().locator("td").nth(1).hover();
     await p.waitForSelector("#tip[style*='block']", { timeout: 5_000 });
   } },
-  { name: "characters", enter: (p) => route(p, "#/characters", "#char-cards .panel") },
+  { name: "characters", enter: (p) => route(p, "#/characters", "#char-table tbody tr[data-name]") },
   { name: "containers", enter: (p) => route(p, "#/containers", "#cont-table tbody tr") },
   { name: "confirm dialog", enter: async (p) => {
     await p.locator("#cont-table tbody tr").first().getByRole("button", { name: "Forget" }).click();
@@ -68,6 +68,18 @@ const SCENES: Scene[] = [
   { name: "collapsed sidebar", enter: async (p) => { await route(p, "#/inventory", "#inv-table tbody tr.item"); await p.click("#sidebar-pin"); await p.waitForSelector("#app.collapsed"); },
     leave: (p) => p.click("#sidebar-pin") },
   { name: "settings", enter: (p) => route(p, "#/settings", "#settings-body .panel") },
+  // ---- characters
+  { name: "character row menu", enter: async (p) => {
+    await route(p, "#/characters", "#char-table tbody tr[data-name]");
+    await p.locator("#char-table tbody tr[data-name]").first().getByRole("button", { name: /^More actions/ }).click();
+    await p.waitForSelector(".pop-menu");
+  }, leave: (p) => p.keyboard.press("Escape") },
+  { name: "character sheet", enter: (p) => route(p, "#/characters/Dorran", "#tab-characters .sheet") },
+  { name: "character slot detail", enter: async (p) => {
+    await route(p, "#/characters/Dorran", "#tab-characters .sheet");
+    await p.locator("#tab-characters .sheet button.slot").first().click();
+    await p.waitForSelector(".pop.item-pop");
+  }, leave: (p) => p.keyboard.press("Escape") },
 ];
 
 async function launch(dataDir: string): Promise<{ app: ElectronApplication; page: Page; errors: string[] }> {

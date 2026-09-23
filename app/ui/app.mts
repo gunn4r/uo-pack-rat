@@ -9,7 +9,7 @@ import { $, el, installTooltip } from "./dom.mts";
 import { api } from "./api.mts";
 import { pollBridge } from "./bridge.mts";
 import { buildFilters, fetchItems, initFilters, applyUiPrefs } from "./inventory.mts";
-import { renderCharacters } from "./characters.mts";
+import { renderCharacters, showCharacter } from "./characters.mts";
 import { initBuilder, syncBuilderCharacters, selectCharacter } from "./builder.mts";
 import { renderContainers } from "./containers.mts";
 import { connectEvents } from "./events.mts";
@@ -26,7 +26,7 @@ import type { SettingsApiResponse, RulesApiResponse, SetupApiResponse, Inventory
 // The panels a failed load has to say something in, instead of leaving them on "loading…" or empty.
 // The inventory-backed tabs depend on /api/inventory and /api/profiles; Settings and Import only on the
 // first three routes.
-const DATA_PANELS = ["#inv-table tbody", "#char-cards", "#b-result", "#cont-table tbody"];
+const DATA_PANELS = ["#inv-table tbody", "#char-body", "#b-result", "#cont-table tbody"];
 const SETUP_PANELS = ["#settings-body", "#import-body"];
 function loadFailed(e: unknown, panels: string[]): void {
   const msg = `Could not load: ${(e as Error).message}`;
@@ -87,15 +87,15 @@ export async function reload(): Promise<void> {
 // ---------------------------------------------------------------- screens + hash routes
 // Four screens (Inventory, Characters, Suit Builder, Settings), each a <main> in index.html, and routes on
 // top of them: #/inventory, #/containers (Inventory's Containers view), #/characters,
-// #/builder/<Character>, #/runs (the Suit Builder with the saved-runs drawer open), #/import (the Import
+// #/characters/<Character> (that character's sheet), #/builder/<Character>, #/runs (the Suit Builder with the saved-runs drawer open), #/import (the Import
 // drawer over whichever screen was showing) and #/settings. A reload lands where you were; nav clicks add a
 // history entry (back/forward walk them, and close a drawer); switching the builder's character replaces the
 // entry instead.
 const ROUTES = ["inventory", "containers", "characters", "builder", "runs", "import", "settings"];
-export function parseRoute(): { tab: string; character: string | null } {
+export function parseRoute(): { tab: string; character: string | null; sheet: string | null } {
   const parts = location.hash.replace(/^#\/?/, "").split("/").filter(Boolean).map((x) => { try { return decodeURIComponent(x); } catch { return x; } });
   const tab = ROUTES.includes(parts[0] as string) ? parts[0]! : "inventory";
-  return { tab, character: tab === "builder" ? parts[1] || null : null };
+  return { tab, character: tab === "builder" ? parts[1] || null : null, sheet: tab === "characters" ? parts[1] || null : null };
 }
 export function routeFor(tab: string): string { return tab === "builder" && state.builder.character ? `#/builder/${encodeURIComponent(state.builder.character)}` : `#/${tab}`; }
 
@@ -125,6 +125,7 @@ function showTab(tab: string): void {
 function applyRoute(): void {
   const r = parseRoute();
   showTab(r.tab);
+  if (r.tab === "characters") showCharacter(r.sheet);
   if (r.tab === "builder" && state.inv) {
     if (r.character && r.character !== state.builder.character && state.inv.characters[r.character]) selectCharacter(r.character);
     else if (!r.character && state.builder.character) history.replaceState(null, "", routeFor("builder"));
@@ -142,6 +143,7 @@ for (const a of document.querySelectorAll<HTMLAnchorElement>("#sidebar [data-nav
 window.addEventListener("hashchange", applyRoute);
 initShell();
 showTab(parseRoute().tab);   // before the inventory loads, so a reload never flashes the wrong screen
+showCharacter(parseRoute().sheet);   // and a reload on a sheet lands on that sheet
 
 // A build left running when the tab closes would burn CPU for nothing: tell the server to drop it.
 window.addEventListener("pagehide", () => { const j = state.builder.job; if (j?.id) navigator.sendBeacon(`/api/optimize/${j.id}/cancel`); });
