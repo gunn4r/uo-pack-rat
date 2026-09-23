@@ -40,6 +40,9 @@ async function launch(dataDir: string): Promise<{ app: ElectronApplication; page
   const page = await app.firstWindow();
   const errors: string[] = [];
   page.on("pageerror", (e) => errors.push(String(e)));
+  // A CI runner's screen can be smaller than the window, which would fold the Inventory's filter chips into
+  // "+ Filter" (below 1180 px); these cases drive the chips, so the width is set on the page, not the window.
+  await page.setViewportSize({ width: 1440, height: 900 });
   return { app, page, errors };
 }
 const countText = (page: Page): Promise<string> => page.locator("#inv-foot .inv-count").innerText();
@@ -271,6 +274,23 @@ test("[slow] a character's sheet opens from the roster, and a character can be f
     await page.keyboard.press("Escape");
     assert.ok(!locs.includes(`loc:Worn by ${gone}`), `no "Worn by ${gone}" location is left, got ${JSON.stringify(locs)}`);
     assert.doesNotMatch(await page.locator("#b-char").innerText(), new RegExp(gone));
+
+    // "Show <name>'s items" narrows the Inventory with its Character filter, not a text search.
+    await page.evaluate(() => { location.hash = "#/characters"; });
+    await rows.first().waitFor();
+    await rows.first().getByRole("button", { name: `More actions for ${other}` }).click();
+    await page.getByRole("menuitem", { name: `Show ${other}'s items` }).click();
+    await page.waitForFunction((n) => document.querySelector("#f-char")?.textContent === `Character: ${n}`, other, { timeout: 10_000 });
+    assert.equal(await page.locator("#f-text").inputValue(), "");
+    // A slot tile's popover opens the piece in the Inventory's item peek.
+    await page.evaluate((n) => { location.hash = `#/characters/${encodeURIComponent(n)}`; }, other);
+    const slot = page.locator("#tab-characters .sheet button.slot").first();
+    await slot.waitFor({ timeout: 10_000 });
+    const worn = await slot.locator(".nm").innerText();
+    await slot.click();
+    await page.locator(".pop.item-pop").getByRole("button", { name: "Open in Inventory" }).click();
+    await page.waitForSelector("#inv-peek:not([hidden])", { timeout: 10_000 });
+    assert.equal(await page.locator("#peek-title").innerText(), worn);
 
     assert.deepEqual(errors, []);
   } finally {

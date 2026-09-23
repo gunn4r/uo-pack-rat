@@ -2,12 +2,12 @@
 // 48 px row per character with their resists against the cap, and a character's sheet at
 // #/characters/<Name> (the sheet itself is sheet.mts's sheetNode, shared with the Suit Builder).
 import { state } from "./store.mts";
-import { $, el, toast, tipNode, compactChildren } from "./dom.mts";
+import { $, el, toast, tipNode, hideItemTip, compactChildren } from "./dom.mts";
 import { txt, box, button, meter, table, searchInput, message, popover, menu, confirmDialog, type Column } from "./components.mts";
 import { api } from "./api.mts";
 import { reload } from "./app.mts";
 import { selectCharacter } from "./builder.mts";
-import { fetchItems } from "./inventory.mts";
+import { showCharacterItems, showItem } from "./inventory.mts";
 import { openWizard } from "./wizard.mts";
 import { relativeWhen } from "./messages.mts";
 import { sheetNode, wornSet, resistFigures, atCap, plural, type ResistFigure, type SheetItem } from "./sheet.mts";
@@ -63,16 +63,8 @@ function savedRuns(name: string): void {
   if (state.builder.character !== name) selectCharacter(name);
   go("#/runs");
 }
-// The Inventory narrowed to one character's things. Inventory has no character filter to hand this to
-// yet, so it searches for the name: item search text includes the location, which reads "Worn by X",
-// "X's backpack" or "X's bank" for everything the character carries.
-function showItems(name: string): void {
-  Object.assign(state.query, { q: name.toLowerCase(), offset: 0 });
-  const field = $<HTMLInputElement>("#f-text");
-  if (field) field.value = name;
-  fetchItems();
-  go("#/inventory");
-}
+// The Inventory narrowed to one character's things, through its Character filter.
+const showItems = (name: string): void => showCharacterItems(name);
 function moreMenu(anchor: HTMLElement, name: string, onSheet: boolean): void {
   const scanned = !!state.inv!.characters[name];
   const m = menu(anchor, [
@@ -139,14 +131,15 @@ function renderRoster(): void {
 }
 
 // ---------------------------------------------------------------- the character sheet
-// A worn piece's tooltip, the same lines the inventory's hover tooltip shows, in a popover that stays
-// until dismissed. The hover tooltip hides while it is open.
+// A worn piece's tooltip, drawn by the same builder as the inventory's item tooltip, in a popover that
+// stays until dismissed, with a way to the piece's full detail: the Inventory with it open in the item
+// peek. The hover tooltip hides while it is open.
 function slotDetail(it: SheetItem, tile: HTMLElement): void {
-  const tip = $<HTMLElement>("#tip");
-  if (tip) tip.style.display = "none";
+  hideItemTip();
   const item = it as Item;
-  const p = popover(tile, [tipNode(item)], { label: item.name, width: 280 });
-  p.root.classList.add("item-pop");
+  const p = popover(tile, [tipNode(item), button({ label: "Open in Inventory", size: "sm", icon: "inventory", onClick: () => showItem(item) })], { label: item.name, width: 280 });
+  p.root.classList.add("item-pop", "tipcard-host");
+  p.root.setAttribute("data-theme", "default");
   p.root.setAttribute("data-mode", "dark");
 }
 function metaLine(name: string): HTMLElement {
