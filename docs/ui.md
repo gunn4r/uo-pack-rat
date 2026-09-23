@@ -42,7 +42,7 @@ Selection is two attributes on `<html>`, set by `app/ui/theme.mts` from the ui-p
 
 Routes (`ui/app.mts`): `#/inventory`, `#/containers` (Inventory's Containers view), `#/characters`, `#/characters/<Name>` (that character's sheet), `#/builder/<Character>`, `#/runs` (the builder with the saved-runs drawer open), `#/import` (the Import drawer over whichever screen was showing; ⌘I opens it) and `#/settings`. Closing a drawer puts the route back without a history entry; changing screen clears the toasts and closes any popover. The sidebar collapses to 56 px icons below 1180 px, or at any width when pinned (the ui-prefs `sidebar` field); nav labels stay in the accessibility tree when collapsed.
 
-The bridge status control at the sidebar foot has four states (ready, busy, offline, no client set up), worded by `bridgeView()` in `ui/messages.mts` and redrawn by `pollBridge()` in `ui/bridge.mts`; its popover says the state in words, the client, when it last answered, and offers Check again and Client settings. The shard picker and the Theme and Appearance controls are in Settings › General.
+The sidebar's brand row is the logo at 40 px (36 px in the collapsed rail) beside the wordmark; it reads `GET /logo.png`, the 256 px app icon, so it stays sharp on a 2x screen (`/favicon.png` is only 64 px). The bridge status control at the sidebar foot has four states (ready, busy, offline, no client set up), worded by `bridgeView()` in `ui/messages.mts` and redrawn by `pollBridge()` in `ui/bridge.mts`; its popover says the state in words, the client, when it last answered, and offers Check again and Client settings. The shard picker and the Theme and Appearance controls are in Settings › General.
 
 ## Stylesheets
 

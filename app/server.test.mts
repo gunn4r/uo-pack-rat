@@ -525,6 +525,15 @@ test("[fast] /favicon.png is the logo, served same-origin as image/png, and the 
   assert.deepEqual(body, readFileSync(join(dirname(fileURLToPath(import.meta.url)), "assets", "favicon.png")), "the bytes arrive unaltered, not re-encoded as text");
   assert.match(await (await get("/")).text(), /<link rel="icon" type="image\/png" href="\/favicon\.png">/);
 });
+// The sidebar draws the logo at 40 px, 80 device pixels on a 2x screen: the 64 px favicon would blur, so it
+// reads the 256 px app icon.
+test("[fast] /logo.png is the 256 px app icon, served as image/png, and the sidebar's brand uses it", async () => {
+  const r = await get("/logo.png");
+  assert.equal(r.status, 200);
+  assert.equal(r.headers.get("content-type"), "image/png");
+  assert.deepEqual(Buffer.from(await r.arrayBuffer()), readFileSync(join(dirname(fileURLToPath(import.meta.url)), "assets", "icon.png")));
+  assert.match(await (await get("/")).text(), /<div class="brand"><img src="\/logo\.png"/);
+});
 test("[fast] writes require application/json", async () => {
   const r = await fetch(srv.url + "/api/profiles", { method: "PUT", body: "{}" });
   assert.equal(r.status, 415);
