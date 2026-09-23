@@ -3,7 +3,7 @@
 // node:path only; the one bit of I/O that isn't the local filesystem (checkForUpdates' HTTP call)
 // takes an injectable fetchImpl so callers (and tests) never depend on a real fetch global.
 import {
-  existsSync, statSync, lstatSync, readdirSync, readFileSync, copyFileSync,
+  existsSync, statSync, lstatSync, readdirSync, readFileSync, copyFileSync, realpathSync,
   mkdirSync, openSync, readSync, closeSync, fstatSync, constants, type Dirent, type Stats,
 } from "node:fs";
 import { join, resolve, dirname, isAbsolute } from "node:path";
@@ -303,6 +303,88 @@ export function installedVersion(scriptsDir: string, adapter: unknown): Installe
   }
   void adapter;   // not needed today (script names are adapter-agnostic); kept for interface symmetry
   return { version, files };
+}
+
+// ---- checkScriptsDataDir -----------------------------------------------------------------------------
+// Does the game client's installed scripts' data folder match the app's own? When it doesn't, scans and
+// bridge files land somewhere the app never looks: an empty inventory and an "offline" bridge with no
+// hint why (a developer's `npm start` on ~/.pack-rat against scripts pointed at a dev folder is the usual
+// way). The folders checked are the configured client's, else every auto-detected candidate — the same
+// ones the wizard offers — and only those actually holding a Pack Rat script, since a client folder with
+// none writes nothing anywhere. Among several detected folders, any one that matches is taken as the one
+// in use: the app cannot tell which client the player runs, and a false alarm is worse than a quiet one.
+// Reports; never changes anything.
+export type DataDirCheck =
+  | { status: "none" }
+  | { status: "match"; scriptsDir: string }
+  | { status: "mismatch"; scriptsDir: string; scriptsDataDir: string; dataDir: string }
+  | { status: "unreadable"; scriptsDir: string; error: string };
+
+export interface CheckScriptsDataDirOptions {
+  dataDir: string;
+  client: { adapter: string; scriptsDir: string } | null | undefined;
+  adapters: { id: string; platform: string | null }[];
+  home: string;
+  platform?: NodeJS.Platform;
+  env?: NodeJS.ProcessEnv;
+}
+
+// The adapters' data_dir() (adapters/*/packrat-*.py): packrat-paths.json's dataDir when the file exists
+// and names one, else $PACKRAT_DATA, else ~/.pack-rat, each through os.path.expanduser. $PACKRAT_DATA is
+// the GAME CLIENT's environment, which this process cannot see and which nothing documented sets, so
+// "no file" is compared against ~/.pack-rat. A relative dataDir resolves against the client's working
+// directory, equally unknowable, so it gives no verdict (null) rather than a guess. The read is
+// readHead's: a symlink or anything else that isn't a regular file is refused (the scripts would follow
+// it; this does not), and a file past the 64 KiB cap reads as truncated JSON, so as malformed.
+function scriptsDataDirIn(scriptsDir: string, home: string): { dataDir: string } | { error: string } | null {
+  const file = join(scriptsDir, "packrat-paths.json");
+  const fallback = { dataDir: join(home, ".pack-rat") };
+  try { lstatSync(file); }
+  catch (e) { return (e as NodeJS.ErrnoException).code === "ENOENT" ? fallback : { error: (e as Error).message }; }
+  const text = readHead(file);
+  if (text === null) return { error: "it is not a regular file" };
+  let doc: unknown;
+  try { doc = JSON.parse(text); }
+  catch (e) { return { error: `it is not valid JSON (${(e as Error).message})` }; }
+  if (!doc || typeof doc !== "object" || Array.isArray(doc)) return { error: "it is not a JSON object" };
+  const d = (doc as { dataDir?: unknown }).dataDir;
+  if (!d) return fallback;   // "", null, absent: the scripts' `if d:` falls through to the default
+  if (typeof d !== "string") return { error: "its dataDir is not a folder path" };
+  const expanded = d === "~" ? home : /^~[\\/]/.test(d) ? join(home, d.slice(2)) : d;
+  return isAbsolute(expanded) ? { dataDir: resolve(expanded) } : null;
+}
+
+// One folder written two ways (a trailing slash, a `..`, a symlink, /var vs /private/var on macOS) is
+// one folder: compare real paths where they exist, and case-fold on the two platforms whose default
+// filesystems ignore case.
+function samePath(a: string, b: string, platform: NodeJS.Platform): boolean {
+  const canon = (p: string): string => {
+    let out: string;
+    try { out = realpathSync.native(p); } catch { out = resolve(p); }
+    return platform === "win32" || platform === "darwin" ? out.toLowerCase() : out;
+  };
+  return canon(a) === canon(b);
+}
+
+export function checkScriptsDataDir({
+  dataDir, client, adapters, home, platform = process.platform, env = process.env,
+}: CheckScriptsDataDirOptions): DataDirCheck {
+  const folders = client
+    ? [client.scriptsDir]
+    : adapters.flatMap((a) => candidateClientRoots({ adapter: a.id, home, platform, env, adapterPlatform: a.platform }));
+  let verdict: DataDirCheck = { status: "none" };
+  for (const scriptsDir of folders) {
+    if (!scriptNamesIn(scriptsDir).length) continue;
+    const found = scriptsDataDirIn(scriptsDir, home);
+    if (!found) continue;
+    if ("error" in found) {
+      if (verdict.status === "none") verdict = { status: "unreadable", scriptsDir, error: found.error };
+      continue;
+    }
+    if (samePath(found.dataDir, dataDir, platform)) return { status: "match", scriptsDir };
+    if (verdict.status === "none") verdict = { status: "mismatch", scriptsDir, scriptsDataDir: found.dataDir, dataDir };
+  }
+  return verdict;
 }
 
 // A future-dated alive is untrusted rather than indefinitely fresh: without a cap, a skewed clock (or
