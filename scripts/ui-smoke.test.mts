@@ -70,7 +70,7 @@ test("[slow] the packaged UI renders, switches tabs and lists the demo inventory
     await page.waitForSelector("#wizard", { state: "hidden", timeout: 10_000 });
 
     // Switching tabs is the one interaction every session starts with.
-    await page.click('[role="tab"][data-tab="characters"]');
+    await page.click('[data-nav="characters"]');
     await page.waitForSelector("#tab-characters:not([hidden])", { timeout: 10_000 });
 
     assert.deepEqual(errors, [], "no uncaught page errors during load and tab switch");
@@ -185,7 +185,7 @@ test("[slow] Save as… in the suit builder opens an in-page dialog and saves th
     const page = await app.firstWindow();
     await page.waitForSelector("#status", { timeout: 30_000 });
 
-    await page.click('[role="tab"][data-tab="builder"]');
+    await page.click('[data-nav="builder"]');
     await page.waitForSelector("#tab-builder:not([hidden])", { timeout: 10_000 });
     // buildBuilder() auto-selects the first character from the demo fixtures (Dorran/Kestrel) once
     // its <option>s exist — the "Save as…" button needs a selected character's settings to snapshot.

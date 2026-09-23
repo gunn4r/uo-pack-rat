@@ -16,8 +16,10 @@ import { connectEvents } from "./events.mts";
 import { openWizard } from "./wizard.mts";
 import { renderSettings } from "./settings.mts";
 import { renderImport } from "./import.mts";
-import { changeShard } from "./shard.mts";
 import { applyLook } from "./theme.mts";
+import { initShell, applyShellPrefs, renderNavCounts, setCurrentNav } from "./shell.mts";
+import { bindDrawer, segmented, clearToasts, closePopover } from "./components.mts";
+import { openRunsDrawer, closeRunsDrawer } from "./runs.mts";
 import type { SettingsApiResponse, RulesApiResponse, SetupApiResponse, InventoryApiResponse, ProfilesApiResponse, UiPrefsApiResponse } from "./api-types.mts";
 
 // ---------------------------------------------------------------- data
@@ -56,7 +58,7 @@ export async function load(): Promise<void> {
   setRules(state.rules);
   applyUiPrefs(prefs ? prefs.prefs : null);
   applyLook(prefs ? prefs.prefs : null);
-  renderShardPicker();
+  applyShellPrefs(prefs ? prefs.prefs : null);
   // Settings, Import, the live-scan stream and the first-run wizard need nothing from the inventory,
   // so they come up before it: a failed inventory or profiles fetch must not take the Settings tab
   // (the page's way to the data folder) down with it.
@@ -78,43 +80,47 @@ export async function reload(): Promise<void> {
   state.facets = state.inv.facets;
   state.propKeys = state.inv.propKeys;
   state.newestScan = newestStamp(state.inv.scans);
-  const chars = Object.keys(state.inv.characters);
-  $<HTMLElement>("#status")!.textContent = inv.snapshotCount
-    ? `${state.inv.itemCount} items · ${chars.length} character${chars.length === 1 ? "" : "s"} scanned (${chars.join(", ")}) · ${inv.snapshotCount} scans`
-    : inv.demo ? "no scans yet (demo data)" : "no scans yet";
+  renderNavCounts();
   buildFilters(); fetchItems(); renderCharacters(); renderContainers(); syncBuilderCharacters();
 }
 
-// ---------------------------------------------------------------- shard picker
-function renderShardPicker(): void {
-  const sel = $<HTMLSelectElement>("#shard")!;
-  sel.replaceChildren(...state.availableShards.map((r) => el("option", { value: r.id, selected: r.id === state.settings!.shard ? "" : null }, r.name)));
-  for (const o of sel.querySelectorAll("option[selected='null']")) o.removeAttribute("selected");
-  sel.onchange = async () => {
-    const shard = sel.value;
-    const ok = await changeShard(shard);   // ui/shard.mts: PUT then reload — same path the wizard's shard step uses
-    if (!ok) sel.value = state.settings!.shard;
-  };
-}
-
-// ---------------------------------------------------------------- tabs + hash routes
-// #/inventory, #/characters, #/containers, #/builder/<Character>, #/import, #/settings. A reload lands where
-// you were; tab clicks add a history entry (back/forward walk the tabs); switching the builder's character
-// replaces the entry instead.
-const TABS = ["inventory", "characters", "builder", "containers", "import", "settings"];
+// ---------------------------------------------------------------- screens + hash routes
+// Four screens (Inventory, Characters, Suit Builder, Settings), each a <main> in index.html, and routes on
+// top of them: #/inventory, #/containers (Inventory's Containers view), #/characters,
+// #/builder/<Character>, #/runs (the Suit Builder with the saved-runs drawer open), #/import (the Import
+// drawer over whichever screen was showing) and #/settings. A reload lands where you were; nav clicks add a
+// history entry (back/forward walk them, and close a drawer); switching the builder's character replaces the
+// entry instead.
+const ROUTES = ["inventory", "containers", "characters", "builder", "runs", "import", "settings"];
 export function parseRoute(): { tab: string; character: string | null } {
   const parts = location.hash.replace(/^#\/?/, "").split("/").filter(Boolean).map((x) => { try { return decodeURIComponent(x); } catch { return x; } });
-  const tab = TABS.includes(parts[0] as string) ? parts[0]! : "inventory";
+  const tab = ROUTES.includes(parts[0] as string) ? parts[0]! : "inventory";
   return { tab, character: tab === "builder" ? parts[1] || null : null };
 }
 export function routeFor(tab: string): string { return tab === "builder" && state.builder.character ? `#/builder/${encodeURIComponent(state.builder.character)}` : `#/${tab}`; }
+
+let lastScreen = "inventory";
+const screenOf = (tab: string): string => (tab === "containers" ? "inventory" : tab === "runs" ? "builder" : tab === "import" ? lastScreen : tab);
+const importDrawer = bindDrawer($<HTMLElement>("#import-drawer")!);
+// Inventory's Items | Containers switch (in its top bar) is a view of one screen, not a screen of its own.
+const invView = segmented({ label: "View", options: [{ value: "items", label: "Items" }, { value: "containers", label: "Containers" }], value: "items", onChange: (v) => { location.hash = v === "containers" ? "#/containers" : "#/inventory"; } });
+invView.id = "inv-view";
+$<HTMLElement>("#inv-view")!.replaceWith(invView);
+function showInventoryView(view: "items" | "containers"): void {
+  invView.setValue(view);
+  $<HTMLElement>("#inv-view-items")!.hidden = view !== "items";
+  $<HTMLElement>("#tab-containers")!.hidden = view !== "containers";
+}
 function showTab(tab: string): void {
-  // setAttribute's own binding stringifies via ToString regardless of what's declared here — same
-  // reasoning as dom.mts's el(), and the same compiler-only cast (native setAttribute calls don't go
-  // through el()'s own ElAttrValue-typed bag, so this is the one place on this page a boolean reaches
-  // it directly).
-  for (const x of document.querySelectorAll<HTMLElement>("nav [role=tab]")) x.setAttribute("aria-selected", (x.dataset.tab === tab) as unknown as string);
-  for (const sec of document.querySelectorAll<HTMLElement>("main > section")) sec.hidden = sec.id !== "tab-" + tab;
+  const screen = screenOf(tab);
+  if (screen !== lastScreen) clearToasts();   // a toast belongs to the page it was raised on
+  closePopover();
+  for (const sec of document.querySelectorAll<HTMLElement>(".screen")) sec.hidden = sec.id !== "tab-" + screen;
+  setCurrentNav(tab === "containers" ? "inventory" : tab);
+  if (tab === "inventory" || tab === "containers") showInventoryView(tab === "containers" ? "containers" : "items");
+  if (tab !== "import") lastScreen = screen;
+  if (tab === "import") importDrawer.open(); else importDrawer.close();
+  if (tab === "runs") openRunsDrawer(); else if (screen !== "builder") closeRunsDrawer();
 }
 function applyRoute(): void {
   const r = parseRoute();
@@ -124,12 +130,18 @@ function applyRoute(): void {
     else if (!r.character && state.builder.character) history.replaceState(null, "", routeFor("builder"));
   }
 }
-for (const b of document.querySelectorAll<HTMLElement>("nav [role=tab]")) b.addEventListener("click", () => {
-  const next = routeFor(b.dataset.tab as string);
-  if (location.hash === next) showTab(b.dataset.tab as string); else location.hash = next;
+// A drawer the player closed (Esc, the scrim, ×) takes its route with it, without a history entry.
+importDrawer.root.addEventListener("drawerclose", () => { if (parseRoute().tab === "import") { history.replaceState(null, "", routeFor(lastScreen)); setCurrentNav(lastScreen); } });
+$<HTMLElement>("#runs-drawer")!.addEventListener("drawerclose", () => { if (parseRoute().tab === "runs") { history.replaceState(null, "", routeFor("builder")); setCurrentNav("builder"); } });
+// A nav click goes to that screen's own route (the builder keeps its character).
+for (const a of document.querySelectorAll<HTMLAnchorElement>("#sidebar [data-nav]")) a.addEventListener("click", (e) => {
+  e.preventDefault();
+  const next = routeFor(a.dataset.nav as string);
+  if (location.hash === next) showTab(a.dataset.nav as string); else location.hash = next;
 });
 window.addEventListener("hashchange", applyRoute);
-showTab(parseRoute().tab);   // before the inventory loads, so a reload never flashes the wrong tab
+initShell();
+showTab(parseRoute().tab);   // before the inventory loads, so a reload never flashes the wrong screen
 
 // A build left running when the tab closes would burn CPU for nothing: tell the server to drop it.
 window.addEventListener("pagehide", () => { const j = state.builder.job; if (j?.id) navigator.sendBeacon(`/api/optimize/${j.id}/cancel`); });

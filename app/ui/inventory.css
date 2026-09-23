@@ -1,0 +1,19 @@
+/* ui/inventory.css — the Inventory screen (ui/inventory.mts) and its Containers view (ui/containers.mts). Tokens only (docs/ui.md). */
+/* the screen never scrolls: the filter column and the table scroll inside their own boxes */
+#tab-inventory .page { overflow: hidden; }
+#inv-view-items { flex: 1 1 auto; min-height: 0; }
+#inv-view-items .layout { height: 100%; grid-template-rows: 100%; }
+#tab-inventory aside { max-height: 100%; overflow-y: auto; }
+#tab-containers { overflow: auto; min-height: 0; }
+#tab-inventory .layout > .panel { height: 100%; min-height: 0; display: flex; flex-direction: column; }
+#tab-inventory .tablewrap.scrolly { flex: 1; min-height: 0; max-height: none; }
+.pager { flex: none; margin-top: var(--space-2); }
+.pager .grow { flex: 1; }
+/* the inventory table scrolls inside its own box so the sticky header stays put (sticky can't cross an overflow-x container) */
+.tablewrap.scrolly { overflow: auto; max-height: calc(100vh - 150px); }
+.tablewrap.scrolly th { box-shadow: 0 1px 0 var(--color-border); z-index: var(--z-sticky); }
+tr.item:hover td { background: var(--color-row-hover); color: var(--color-on-row-hover); }
+tr.detail td { white-space: normal; background: var(--color-surface-subtle); font-family: var(--font-mono); font-size: var(--text-sm); color: var(--color-text-muted); }
+.rar { display: inline-block; width: 8px; height: 8px; border-radius: var(--radius-full); margin-right: var(--space-1-5); background: var(--color-border-strong); vertical-align: middle; }
+.act { display: inline-flex; gap: var(--space-1); }
+.act button { padding: 1px var(--space-1-5); font-size: var(--text-xs); }

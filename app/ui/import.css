@@ -1,0 +1,4 @@
+/* ui/import.css — the Import drawer (ui/import.mts); the drawer frame itself is the .drawer component. Tokens only (docs/ui.md). */
+/* the paste textarea fills its panel — the panel's own padding is the container decision, not something the
+   textarea imposes on itself */
+#import-body textarea { width: 100%; resize: vertical; font-family: var(--font-mono); font-size: var(--text-sm); }

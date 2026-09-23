@@ -57,8 +57,15 @@ async function confirmYes(page: Page, title: RegExp): Promise<void> {
   await dialog.locator("[data-confirm]").click();
   await dialog.waitFor({ state: "detached", timeout: 10_000 });
 }
+// A screen through its sidebar nav item; Containers is the Inventory screen's second view, picked in its
+// top bar (the view keeps the #tab-containers id).
 async function openTab(page: Page, tab: string): Promise<void> {
-  await page.click(`[role="tab"][data-tab="${tab}"]`);
+  if (tab === "containers") {
+    await page.click('[data-nav="inventory"]');
+    await page.locator("#inv-view").getByRole("radio", { name: "Containers" }).click();
+  } else {
+    await page.click(`[data-nav="${tab}"]`);
+  }
   await page.waitForSelector(`#tab-${tab}:not([hidden])`, { timeout: 10_000 });
 }
 

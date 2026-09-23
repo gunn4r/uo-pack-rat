@@ -1,0 +1,4 @@
+/* ui/settings.css — the Settings screen (ui/settings.mts). Tokens only (docs/ui.md). */
+/* Settings tab (ui/settings.mjs): .path-row is a label/value[/action] row — distinct from the shared flex .row
+   utility, which the checkbox and folder-picker rows in the same panels still use unchanged. */
+.settings .path-row { display: grid; grid-template-columns: 140px 1fr auto; align-items: center; gap: var(--space-1-5) var(--space-2); }

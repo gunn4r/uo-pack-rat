@@ -76,7 +76,8 @@ export function probeContrast(): ContrastRow[] {
     }
     // control boundaries (UI component, 3:1): a control that draws an edge or a fill must stand out from
     // what surrounds it; a ghost control (no visible border, no fill of its own) has no edge to measure
-    if (el.matches(CONTROLS) && !el.matches("input.switch")) {
+    // (a segmented control's options sit inside the .seg frame, which is the edge that is measured)
+    if (el.matches(CONTROLS) && !el.matches("input.switch") && !el.parentElement?.classList.contains("seg")) {
       const bc = parse(s.borderTopColor)!, around = bgOf(el, true), fill = bgOf(el);
       const hasBorder = parseFloat(s.borderTopWidth) > 0 && bc.a > 0;
       const ownFill = (parse(s.backgroundColor)?.a || 0) > 0;

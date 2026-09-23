@@ -6,7 +6,7 @@
 // All [fast]. Run: node --test app/ui-messages.test.mts
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { importOutcome, pathsFileNote, installedIntoNote, clientFolderGone, clientErrorMessage, hostErrorMessage, optimizeErrorMessage, errorText, dataDirNotice, bridgeOfflineText } from "./ui/messages.mts";
+import { importOutcome, pathsFileNote, installedIntoNote, clientFolderGone, clientErrorMessage, hostErrorMessage, optimizeErrorMessage, errorText, dataDirNotice, bridgeOfflineText, bridgeView, relativeWhen } from "./ui/messages.mts";
 import type { ApiError } from "./ui/api-types.mts";
 
 function apiError(message: string, extra: { status?: number; code?: unknown } = {}): ApiError {
@@ -77,9 +77,9 @@ test("[fast] control characters in a data-folder notice are dropped before it re
 });
 
 test("[fast] the offline bridge pill says why only when the cause is a data-folder mismatch", () => {
-  assert.equal(bridgeOfflineText({ status: "mismatch", scriptsDir: "/a", scriptsDataDir: "/b", dataDir: "/c" }), "bridge: offline — your game scripts write to another folder");
-  assert.equal(bridgeOfflineText({ status: "match", scriptsDir: "/a" }), "bridge: offline");
-  assert.equal(bridgeOfflineText(undefined), "bridge: offline");
+  assert.equal(bridgeOfflineText({ status: "mismatch", scriptsDir: "/a", scriptsDataDir: "/b", dataDir: "/c" }), "Bridge offline — your game scripts write to another folder");
+  assert.equal(bridgeOfflineText({ status: "match", scriptsDir: "/a" }), "Bridge offline");
+  assert.equal(bridgeOfflineText(undefined), "Bridge offline");
 });
 
 // ---- POST /api/setup/install -----------------------------------------------------------------------
@@ -126,4 +126,34 @@ test("[fast] a 429 explains that the builds are somebody else's, not a failure o
 test("[fast] errorText survives a rejection that isn't an Error at all", () => {
   assert.equal(errorText("plain string"), "plain string");
   assert.equal(errorText(new Error("real error")), "real error");
+});
+
+test("[fast] bridgeView: ready and busy whenever the bridge answers, else no client or offline", () => {
+  const client = { clientSet: true, clientName: "TazUO" };
+  assert.deepEqual(bridgeView({ online: true, character: "Kestrel" }, client), { state: "ready", dot: "ok", label: "Bridge ready · Kestrel", title: "Bridge ready", detail: "packrat-bridge.py is running on Kestrel. Highlight, Grab and Go to reach the game." });
+  const busy = bridgeView({ online: true, character: "Kestrel", current: { action: "grab", name: "Mighty Orc Mask" } }, { clientSet: false, clientName: null });
+  assert.equal(busy.state, "busy");
+  assert.equal(busy.label, "Kestrel · grab Mighty Orc Mask");
+  const off = bridgeView({ online: false }, client);
+  assert.deepEqual([off.state, off.dot, off.label], ["offline", "", "Bridge offline"]);
+  assert.match(off.detail, /Press Play on it in TazUO/);
+  const none = bridgeView(null, { clientSet: false, clientName: "TazUO" });
+  assert.deepEqual([none.state, none.dot, none.label], ["noclient", "warn", "No client set up"]);
+  assert.match(none.detail, /go to TazUO by default/);
+  // A data-folder mismatch is named as the cause, client or not.
+  const mismatch = { status: "mismatch", scriptsDir: "/s", scriptsDataDir: "/b", dataDir: "/c" } as const;
+  const m = bridgeView({ online: false }, { clientSet: false, clientName: null, check: mismatch });
+  assert.deepEqual([m.state, m.label], ["offline", "Bridge offline — your game scripts write to another folder"]);
+  assert.match(m.detail, /write to \/b, but Pack Rat is reading \/c/);
+});
+
+test("[fast] relativeWhen: relative under a day, then month day and time, with the year only when it differs", () => {
+  const now = new Date(2026, 8, 22, 21, 0);
+  assert.equal(relativeWhen(new Date(2026, 8, 22, 20, 59, 40).toISOString(), now), "just now");
+  assert.equal(relativeWhen(new Date(2026, 8, 22, 20, 5).toISOString(), now), "55 min ago");
+  assert.equal(relativeWhen(new Date(2026, 8, 22, 18, 0).toISOString(), now), "3 h ago");
+  assert.equal(relativeWhen(new Date(2026, 0, 1, 12, 0).toISOString(), now), "Jan 1, 12:00");
+  assert.equal(relativeWhen(new Date(2025, 11, 31, 9, 5).toISOString(), now), "Dec 31, 2025, 09:05");
+  assert.equal(relativeWhen("not a date", now), "");
+  assert.equal(relativeWhen(null, now), "");
 });

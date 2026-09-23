@@ -14,13 +14,13 @@ const ROOT = dirname(dirname(fileURLToPath(import.meta.url)));
 test("[fast] buildUi compiles the page into app/dist/ui, with extensions rewritten and no stray .css", () => {
   buildUi();
   const appOut = join(ROOT, "app", "dist", "ui", "app.mjs");
-  const shardOut = join(ROOT, "app", "dist", "ui", "shard.mjs");
+  const shellOut = join(ROOT, "app", "dist", "ui", "shell.mjs");
   assert.ok(existsSync(appOut), "app/dist/ui/app.mjs was not produced");
-  assert.ok(existsSync(shardOut), "app/dist/ui/shard.mjs was not produced");
+  assert.ok(existsSync(shellOut), "app/dist/ui/shell.mjs was not produced");
   const appJs = readFileSync(appOut, "utf8");
-  assert.ok(appJs.includes("./shard.mjs"), "app.mjs should import shard.mjs by its compiled extension");
-  assert.ok(!appJs.includes("./shard.mts"), "app.mjs must not still reference the .mts source extension");
-  assert.ok(!existsSync(join(ROOT, "app", "dist", "ui", "styles.css")), "tsc must not emit a .css file — the source tree's copy is served directly");
+  assert.ok(appJs.includes("./shell.mjs"), "app.mjs should import shell.mjs by its compiled extension");
+  assert.ok(!appJs.includes("./shell.mts"), "app.mjs must not still reference the .mts source extension");
+  for (const css of ["tokens.css", "components.css", "styles.css"]) assert.ok(!existsSync(join(ROOT, "app", "dist", "ui", css)), `tsc must not emit ${css} — the source tree's copy is served directly`);
 });
 
 test("[fast] the tsc child runs as plain Node when buildUi is called from Electron's main process", () => {
