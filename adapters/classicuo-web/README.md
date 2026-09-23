@@ -1,14 +1,53 @@
 # ClassicUO web client adapter (paste transport)
 
-This adapter is for players on the [ClassicUO web client](https://play.classicuo.org)'s TypeScript scripting panel. That sandbox has no filesystem access at all — it can't write scan files the way `adapters/tazuo/` does — so instead of a folder full of scripts and an inbox, this adapter is one script that prints its scan to the console area below the scripting window, and a paste into Pack Rat's own Import tab is how the data gets in.
+One script for people who play on the [ClassicUO web client](https://play.classicuo.org) (the one you play in a web browser). The web client can't save files, so this works by copy and paste: the script prints what your character owns, and you paste that into the Pack Rat app.
 
-**Status: unverified against a live client.** This adapter was written by researching the client's own published scripting API (https://www.classicuo.org/scripting/, namespaces `Player`/`Item`/`Client`/`Skill`, fetched 2026-09-17) — no game client was available to actually run `packrat-scanner.ts` while writing it. Everything below is either sourced from that documentation, carried over from a related project's own live testing of the same client family on a different shard, or marked as an assumption. It ships without `fixture.scan.json` for exactly this reason — see "What's still outstanding" below.
+**Not tested with a real game yet.** This script was written from the web client's documentation. If you try it, please [open an issue](../../README.md#help-something-isnt-working) and say what happened, good or bad.
 
 ## Install
 
-There's nothing to install in the usual sense — no folder to copy files into, no `packrat-paths.json`. Open `packrat-scanner.ts` in this folder, copy its whole contents, and paste it into the ClassicUO web client's scripting panel as a new script.
+There is nothing to install and no folder to pick.
+
+1. Open [`packrat-scanner.ts`](packrat-scanner.ts) (in this folder) and copy all of it.
+2. In the web client, open the scripting window and paste it in as a new script.
+
+In the Pack Rat setup window, pick **ClassicUO web client** as your client. Steps 3 and 4 then say there is nothing to install, and step 4 has a **Go to Import tab** button.
 
 ## Running a scan
+
+1. Log in and stand where your character can see what you want scanned. What you wear and your backpack are always read; chests and bags only when they are a few steps away.
+2. Run the script from the scripting window.
+3. It prints a block of text in the area below the scripting window, starting with `-----BEGIN PACK RAT SCAN-----` and ending with `-----END PACK RAT SCAN-----`.
+4. Select all the text in that area and copy it. Extra lines around the block are fine; Pack Rat finds the start and end lines itself.
+5. In Pack Rat, open the **Import** tab, paste into the box under **Paste a scan**, and click **Paste scan**.
+
+The script runs once and stops. Nothing keeps running, and it never does anything in the game. It only reads.
+
+## What it can't see
+
+- **Your bank box.** The web client gives scripts no way to reach it.
+- **What you wear on your arms**, most likely. The script tries, but expect that slot to be missing.
+- **Unusual chests.** It only finds common kinds of chests, bags and crates. A custom or rare container is not scanned.
+- **Locked or trapped chests**, and bags inside other bags that it can't read. These keep what your last scan saw, or show up as a plain item.
+- **Bags more than four levels deep** show up as a plain item, without their contents.
+
+There is also no bridge for the web client, so the **Highlight**, **Grab** and **Go to** buttons don't appear for characters scanned with it.
+
+A scan shows where your house and chests are. Don't share the pasted text publicly without reading the main README's [privacy note](../../README.md#keep-your-scan-files-to-yourself).
+
+## For developers
+
+Everything below is for people working on the adapter itself.
+
+### Status
+
+This adapter is for players on the [ClassicUO web client](https://play.classicuo.org)'s TypeScript scripting panel. That sandbox has no filesystem access at all — it can't write scan files the way `adapters/tazuo/` does — so instead of a folder full of scripts and an inbox, this adapter is one script that prints its scan to the console area below the scripting window, and a paste into Pack Rat's own Import tab is how the data gets in.
+
+**Unverified against a live client.** This adapter was written by researching the client's own published scripting API (https://www.classicuo.org/scripting/, namespaces `Player`/`Item`/`Client`/`Skill`, fetched 2026-09-17) — no game client was available to actually run `packrat-scanner.ts` while writing it. Everything below is either sourced from that documentation, carried over from a related project's own live testing of the same client family on a different shard, or marked as an assumption. It ships without `fixture.scan.json` for exactly this reason — see "What's still outstanding" below.
+
+### Running a scan, in detail
+
+There's nothing to install in the usual sense — no folder to copy files into, no `packrat-paths.json`. Open `packrat-scanner.ts` in this folder, copy its whole contents, and paste it into the ClassicUO web client's scripting panel as a new script.
 
 1. Log in and stand where your character can see what you want scanned (your equipped gear and backpack are always read; ground containers only within a few tiles — see below).
 2. Run the script from the scripting panel.
@@ -18,7 +57,7 @@ There's nothing to install in the usual sense — no folder to copy files into, 
 
 The script runs once and stops — nothing keeps running in the background, and it never acts on anything in the world. It's read-only and attended-only, the same as every Pack Rat adapter (see `docs/adapter-guide.md`'s "attended-only statement").
 
-## What this client cannot see
+### What this client cannot see
 
 - **The bank box.** The client's own `Player` API has a `backpack` property but nothing bank-shaped anywhere in the documented surface — no serial, no handle, no way to ask for it. A scan from this adapter never mentions a bank at all; there's no "bank: not opened" placeholder, because the script never gets far enough to know one exists.
 - **The equipped arms layer, most likely.** The documented `equippedItems` object does list an `arms` member, so the script still tries to read it like every other slot. But a related project's own live testing of this same client family (different shard) found that member comes back empty at runtime even while something is worn there, despite the type listing it. This adapter ships assuming that's still true (`capabilities.json`'s `arms: false`) rather than trusting the type signature — if your arms piece does show up in a real scan, that's a pleasant surprise worth reporting, not something to rely on. (`capabilities.json`'s `layers` list still names `Arms`, along with the other 19 — that field means "this script attempts the layer," not "this script can reliably read it"; `arms` is the one entry in the list where those two claims diverge, which is exactly why the separate `capabilities.arms` boolean exists.)
@@ -27,13 +66,13 @@ The script runs once and stops — nothing keeps running in the background, and 
 - **Locked or trapped containers.** Reading a container's contents can, per the same related project's testing, throw instead of just coming back empty. For a root (the backpack, a ground container), the script catches that and reports the root as `opened: false`, with no items listed under it. For a bag nested inside another container, the script has no way to tell "this is a container I couldn't read" apart from "this was never a container to begin with" — both cases look identical from here — so a nested bag that can't be read is recorded as an ordinary item instead, not flagged and not left out. A nested item counts as a container only when its contents hold something or its graphic is a known container graphic, so a client build that gives every item an empty `contents` array still reads items as items. And since this script never opens anything, a ground container whose contents read as an empty array is recorded `opened: false` (more likely never loaded than empty), so it cannot wipe an older scan of that chest.
 - **Bags nested more than four levels deep.** A bag past that depth is recorded as a plain item too (its own contents are never read) — a deliberate cap (`MAX_NEST` in the script), mirroring `adapters/tazuo/packrat-scanner.py`'s own limit, not something this particular client imposes.
 
-## What's still outstanding
+### What's still outstanding
 
 - **No `fixture.scan.json`.** Every other Pack Rat adapter ships one — a real, anonymised scan that the contract test (`app/contracts.test.mts`) checks end to end. This one doesn't, because producing it means actually running the script against a live ClassicUO web client session, which wasn't available while writing this adapter. The contract test skips any adapter folder missing a fixture, so this one is simply not exercised by it yet. A real run (tracked as a later task) should generate one the same way `adapters/tazuo/fixture.scan.json` was: play a scan, scrub it per `docs/adapter-guide.md`'s Fixture rules, and drop it in here.
 - **The scanner itself is unverified end to end.** Its individual pieces (which API calls exist, what they return, the `equippedItems` member list, the `contents`/OPL-throw behavior) are sourced as described above, but nobody has run the whole script against a real character yet. Treat the first live run as a real test, not a formality — property names guessed by pattern from documented siblings (`maxMana`, `strength` — not directly confirmed in the fetched docs, but present by the same naming convention as `maxStamina`/`dexterity`, which are confirmed) are the most likely spot for a silent wrong-value read rather than a crash, since every read in this script is defensive (`Number(x || 0)`) and simply produces a `0` instead of failing loudly if a property name turns out to be wrong.
 - **Printing is chunked compact JSON, not pretty-printed lines — and the embedded-newline question this replaced is now moot.** The script prints `JSON.stringify(doc)` (no indentation, no whitespace at all) split into fixed `PRINT_CHUNK_CHARS` = 2000-character slices, one `log()` call per slice, rather than one `log()` call per line of the pretty-printed JSON. That earlier approach, measured against a real, similarly sized scan used only as a size proxy (`adapters/tazuo/fixture.scan.json`, a 319-item character — this adapter still ships no fixture of its own), came out to 7,340 console lines and, at its old pacing, about 15 seconds of the console visibly doing nothing — long enough that a player watching it is likely to interrupt the script and lose the whole scan — plus 7,340 lines for the player to select and copy correctly, where missing even one breaks the paste. The same document compact is 119,315 bytes for that fixture; chunked at 2000 characters that's roughly 60 lines, finishing in well under a second even with pacing (`printYieldTick()` — a much lighter cadence than the scan phase's `yieldTick()`, since printing an already-built chunk is near-instant and doesn't need the same pause a slow tooltip query does; see the script's own `PRINT_YIELD_EVERY`/`PRINT_YIELD_MS`/`PRINT_CHUNK_CHARS` comment). This also settles whether the console preserves embedded newlines inside one `log()` call: it no longer matters, because a chunk of compact JSON never contains one, so there's nothing to preserve or lose in the print step itself. A chunk boundary can still land in the middle of a string value (2000 characters doesn't align to token boundaries), which reintroduces a newline at that point once the player's copy/paste rejoins the console lines — `app/import.mts`'s `extractJsonText` strips every `\r`/`\n` from the pasted text before parsing for exactly this reason, which is always safe since valid JSON never carries a meaningful raw newline (disallowed inside a string, insignificant everywhere else).
 
-## Sources
+### Sources
 
 - https://www.classicuo.org/scripting/ and its `globals`/`Player`/`Item`/`Client`/`Skill` namespace pages — the published API surface this script is written against (fetched 2026-09-17). Confirms: `Item.contents: undefined | Item[]` with no separate open call; `Player.backpack` exists and nothing bank-shaped does; `Player.equippedItems`'s full 24-member list (`arms`, `bracelet`, `cloak`, `earrings`, `gloves`, `helmet`, `legs`, `necklace`, `oneHanded`, `pants`, `ring`, `robe`, `shirt`, `shoes`, `skirt`, `talisman`, `torso`, `tunic`, `twoHanded`, `waist`, plus the non-gear `beard`/`face`/`hair`/`mount`); `client.queryItemOPL`'s return shape; `client.findType`/`findAllOfType`'s graphic-required signature (no "list nearby" call); `player.getAllSkills()`/the `Skill` interface's `{base, cap, index, lock, name, value}` shape, values ×10; `log()` printing to "the console area below the scripting window"; `sleep()` as the documented pacing idiom.
 - A related project's own prior live testing of the same ClassicUO web client on a different UO shard (not this repository) — the source for the arms-layer, bank-handle-absence, contents-can-throw, unreliable-bare-`.name`, `headMsg`-is-public/`sysMsg`-is-local, and undocumented-CPU-limit claims above. That testing is real operational evidence (not a guess), but it's evidence about a different deployment of the same client software, not this one — hence every claim sourced to it is called out explicitly rather than stated as settled fact.
