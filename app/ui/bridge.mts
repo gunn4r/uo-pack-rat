@@ -16,7 +16,7 @@ export function chainOf(it: Item): number[] {
   while (cur && guard++ < 8) { chain.unshift(+cur.serial); cur = cur.parent != null ? state.inv!.containers[cur.parent] : null; }
   return chain;
 }
-export const BRIDGE_OFFLINE = "Bridge is offline — press Play on packrat-bridge.py in game first.";
+export const BRIDGE_OFFLINE = "Bridge offline. Press Play on packrat-bridge.py in game.";
 // A ground root's position, which the bridge's "Go to" walks to. The fold copies every scanned
 // container field onto inv.containers, `pos` included (docs/scan-schema.md), so a ground root from a
 // scanner that records positions carries one; a backpack or bank root has none.
@@ -202,7 +202,10 @@ function renderBridgeControl(view: BridgeView): void {
 export async function pollBridge(): Promise<void> {
   try {
     const st = await api<BridgeStatusApiResponse>("/api/bridge/status");
+    const was = `${bridge.online}|${bridge.character}`;
     bridge.online = !!st.online; bridge.character = st.character || null;
+    // Screens that gate actions on the bridge (the Inventory's row actions and peek) redraw on this.
+    if (was !== `${bridge.online}|${bridge.character}`) document.dispatchEvent?.(new Event("bridgechange"));
     if (st.online) lastAnswered = Date.now();
     renderBridgeControl(bridgeView(st, { clientSet: !!state.setup?.settings?.client, clientName: currentAdapter()?.name || null, check: state.setup?.dataDirCheck }));
     grabAllState();
@@ -236,4 +239,24 @@ export function renderDataDirNotice(): void {
     el("span", {}, text),
     el("button", { class: "small", onclick: () => { dismissedNotice = text; renderDataDirNotice(); } }, "Dismiss"),
   );
+}
+
+// ---- inventory
+// Why one bridge action cannot run on one item right now, in words for its disabled button's tooltip, or
+// null when it can (spec 3.5: offline actions are disabled with the reason, never left live to fail).
+export function bridgeActionReason(action: "highlight" | "grab" | "goto", it: Item): string | null {
+  const name = ACTION_LABELS[action];
+  if (it.equippedBy) return `${it.equippedBy} is wearing it.`;
+  const adapter = currentAdapter();
+  if (!adapter) return "No game client is set up. Choose one in Settings.";
+  if (!allowedBridgeActions().includes(action)) return `${adapter.name || adapter.id} can't ${name} from Pack Rat.`;
+  if (action === "goto" && !rootPos(it)) return "Go to needs a container on the ground whose position was scanned.";
+  if (!bridge.online) return BRIDGE_OFFLINE;
+  return null;
+}
+// One bridge action from a row or the item peek: queued, and toasted as queued (the status poll toasts
+// the game's answer later).
+export async function runBridgeAction(action: "highlight" | "grab" | "goto", it: Item): Promise<void> {
+  const r = await sendBridge(action, it);
+  toast(r.ok ? `${ACTION_LABELS[action]}: ${it.name} queued for ${bridge.character}` : r.error, r.ok ? "" : "bad");
 }

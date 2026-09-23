@@ -531,3 +531,29 @@ export function showToast(text: string, tone: ToastTone = "info", { action }: { 
   return t;
 }
 export function clearToasts(): void { document.getElementById("toasts")?.replaceChildren(); }
+
+// ---- inventory
+// A "⋯" menu: a popover (role=menu) of menu-item buttons under its anchor. ↑/↓ move between the items,
+// Home/End jump, Esc closes and focus goes back to the anchor. Choosing an item closes the menu first,
+// so the item's action can open a dialog or another popover. A disabled item carries its reason.
+export interface MenuEntry { label: string; icon?: IconName | undefined; danger?: boolean | undefined; disabled?: string | null | undefined; onSelect: () => void }
+export function openMenu(anchor: HTMLElement, entries: MenuEntry[], label: string): PopoverHandle {
+  let handle: PopoverHandle | null = null;
+  const items = entries.map((m) => {
+    const b = box("button", { type: "button", role: "menuitem", class: `menu-item${m.danger ? " danger" : ""}`, tabindex: "-1", ...(m.disabled ? { "aria-disabled": "true", title: m.disabled } : {}) },
+      m.icon ? icon(m.icon, { size: "sm" }) : null, txt(m.label));
+    b.addEventListener("click", () => { if (m.disabled) return; handle?.close(); m.onSelect(); });
+    return b;
+  });
+  handle = popover(anchor, items, { label, role: "menu", width: 220 });
+  handle.root.classList.add("pop-menu");
+  handle.root.addEventListener("keydown", (e) => {
+    const i = items.indexOf(document.activeElement as HTMLButtonElement);
+    const to = e.key === "ArrowDown" ? i + 1 : e.key === "ArrowUp" ? i - 1 : e.key === "Home" ? 0 : e.key === "End" ? items.length - 1 : null;
+    if (to == null) return;
+    e.preventDefault();
+    items[(to + items.length) % items.length]?.focus();
+  });
+  items[0]?.focus();
+  return handle;
+}

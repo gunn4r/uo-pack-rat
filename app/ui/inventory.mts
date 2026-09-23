@@ -1,199 +1,841 @@
-// ui/inventory.mts — the Inventory tab: filters, columns, sorting, the table itself. Task 5: the
-// table is now a server-paged view over GET /api/items instead of a client-side filter/sort/slice
-// pass over every scanned item — state.query is the page-side source of truth (the exact shape
-// item-query.mts's parseItemQuery reads off a URLSearchParams), fetchItems() builds the query string
-// from it and lands the response in state.page, and renderInventory() only ever draws state.page.
-import { PROP_FULL, tagUnits } from "../vault-lib.mts";
+// ui/inventory.mts — the Inventory screen's Items view (design spec 4.2): the filter toolbar and its
+// popovers, the active-filter strip, the columns and density popover, and the virtual table over
+// GET /api/items. state.query is the filter state (the shape item-query.mts's parseItemQuery reads);
+// inv-model.mts holds the pure rules (query string, token wording, counts, row window, keyboard model).
+//
+// The table has no pager: it is virtual. Its body draws only the rows in view (plus a few either side)
+// between two spacer rows sized to the rest, and loads the matching rows from the server in 500-row
+// chunks as they scroll into view, so a large inventory costs one request per screenful reached, never
+// a pager click.
+import { SLOT_LABELS, tagUnits } from "../vault-lib.mts";
+import type { Item } from "../vault-lib.mts";
+import type { ItemQuery, Place } from "../item-query.mts";
 import { state } from "./store.mts";
-import { $, el, label, full, colVal, slotLabel, isStale, ago, EXTRA_COLS, fmtN, rarityColor, rarCell, fmtWhen, toast } from "./dom.mts";
+import { $, el, label, full, slotLabel, rarityColor, safeColor, toast } from "./dom.mts";
+import { rarityToken } from "./items.mts";
 import { api } from "./api.mts";
-import { actButtons, bridgeNoteEl } from "./bridge.mts";
-import { clampOffset, optionsKeeping, clearedQuery, colsFromPrefs } from "./view-state.mts";
-import type { SelectOption } from "./view-state.mts";
+import { bridgeActionReason, runBridgeAction } from "./bridge.mts";
+import { optionsKeeping, colsFromPrefs } from "./view-state.mts";
+import { relativeWhen } from "./messages.mts";
+import { txt, box, icon, button, searchInput, filterChip, token, pill, segmented, switchControl, popover, closePopover, rowActions, message, openMenu, input, nextId } from "./components.mts";
+import type { Kids, MenuEntry, PopoverHandle } from "./components.mts";
+import { plural, queryParams, activeFilters, clearAll, matchLine, countFact, emptyCause, rowWindow, chunksToFetch, gridKey, colShort, colFull, groupColumns, COL_GROUPS, DEFAULT_COLS, ITEM_COLS, shortTier, rootName } from "./inv-model.mts";
+import type { FilterToken } from "./inv-model.mts";
 import type { ItemsApiResponse, UiPrefs } from "./api-types.mts";
 
-// ---------------------------------------------------------------- inventory filters
-// Rebuilt from state.facets (the server's facetsOf() snapshot over the whole inventory) on every load
-// and refresh — the same "built from the full set, not the current filter" behavior the original
-// client-side buildFilters() had. Each dropdown is then set back from state.query, which is what the
-// table is filtered by: a refresh that left a select on its first option would show "any" over a
-// table that is still filtered.
-export function buildFilters(): void {
-  const f = state.facets || { slots: [], locations: [], rarities: [], slayers: [], slayerAny: 0, kinds: [], propKeys: [] };
-  const q = state.query;
-  fillSelect("#f-slot", [{ value: "", label: "any" }, ...f.slots.map((s) => ({ value: s, label: slotLabel(s) })), { value: "?", label: "unknown slot" }], q.slot);
-  fillSelect("#f-loc", [{ value: "", label: "anywhere" }, ...f.locations.map((l) => ({ value: l, label: l }))], q.loc);
-  fillSelect("#f-rarity", [{ value: "", label: "any" }, ...f.rarities.map((r) => ({ value: r, label: r }))], q.rarity);
-  fillSelect("#f-slayer", [{ value: "", label: "any" }, { value: "*", label: `any slayer (${f.slayerAny})` }, ...f.slayers.map(({ name, count }) => ({ value: name, label: `${name} (${count})` }))], q.slayer);
-  fillSelect("#f-kind", [{ value: "", label: "everything" }, ...f.kinds.map(({ name, count }) => ({ value: name, label: `${name} (${count})` }))], q.kind);
-  renderTagChips();
-  renderPropFilters();
-  renderColChips();
-}
-function fillSelect(sel: string, options: SelectOption[], current: string): void {
-  const node = $<HTMLSelectElement>(sel)!;
-  node.replaceChildren(...optionsKeeping(options, current, (v) => `${v} (none now)`).map((o) => el("option", { value: o.value }, o.label)));
-  node.value = current;
-}
-function renderTagChips(): void {
-  $<HTMLDivElement>("#f-tags")!.replaceChildren(...Object.keys(tagUnits()).map((t) => el("button", { class: "chip", "aria-pressed": state.query.hideTags.includes(t), onclick: (e) => {
-    state.query.hideTags = state.query.hideTags.includes(t) ? state.query.hideTags.filter((x) => x !== t) : [...state.query.hideTags, t];
-    e.target.setAttribute("aria-pressed", state.query.hideTags.includes(t)); requery();
-  } }, t)));
-}
-// The filter controls' listeners, attached once for the page's life (app.mts). buildFilters() runs
-// again on every refresh; wiring these there stacked another listener per control each time.
-export function initFilters(): void {
-  for (const id of ["#f-text", "#f-slot", "#f-loc", "#f-rarity", "#f-kind", "#f-seen", "#f-slayer", "#f-nogarg", "#f-med", "#f-group"]) $(id)!.addEventListener("input", onFilterChange);
-  $<HTMLButtonElement>("#f-addprop")!.onclick = () => { state.query.props.push({ key: state.propKeys[0] || "hci", min: 1 }); renderPropFilters(); requery(); };
-  $<HTMLButtonElement>("#f-clear")!.onclick = () => {
-    state.query = clearedQuery(state.query);
-    $<HTMLInputElement>("#f-text")!.value = ""; $<HTMLSelectElement>("#f-seen")!.value = "";
-    $<HTMLInputElement>("#f-nogarg")!.checked = false; $<HTMLInputElement>("#f-med")!.checked = false;
-    buildFilters(); fetchItems();
+const CHUNK = 500;              // rows per GET /api/items request (the server's own cap)
+const NARROW = "(max-width: 1179px)";
+const narrow = (): boolean => matchMedia(NARROW).matches;
+const $el = <E extends HTMLElement = HTMLElement>(sel: string): E => $<E>(sel)!;
+
+// ---------------------------------------------------------------- the filter state
+function filterContext() {
+  return {
+    slotLabel: (s: string) => slotLabel(s),
+    propLabel: (k: string) => label(k),
+    places: state.facets?.places || [],
+    ladder: (state.rules?.rarity || []).map((r) => r.name),
   };
-  $<HTMLButtonElement>("#inv-prev")!.onclick = () => { if (state.query.offset > 0) { state.query.offset = Math.max(0, state.query.offset - state.query.limit); fetchItems(); } };
-  $<HTMLButtonElement>("#inv-next")!.onclick = () => { if (state.query.offset + state.query.limit < state.page.total) { state.query.offset += state.query.limit; fetchItems(); } };
-  $<HTMLSelectElement>("#inv-pagesize")!.value = String(state.query.limit);
-  $<HTMLSelectElement>("#inv-pagesize")!.onchange = () => { state.query.limit = +$<HTMLSelectElement>("#inv-pagesize")!.value || 200; state.query.offset = 0; fetchItems(); };
 }
-export function renderPropFilters(): void {
-  $<HTMLDivElement>("#f-props")!.replaceChildren(...state.query.props.map((f, i) => el("div", { class: "row" },
-    el("select", { onchange: (e) => { f.key = e.target.value; requery(); } }, ...state.propKeys.map((k) => el("option", { value: k, selected: k === f.key ? "" : null }, `${label(k)} — ${full(k)}`))),
-    "≥", el("input", { type: "number", value: f.min, oninput: (e) => { f.min = +e.target.value; requery(); } }),
-    el("button", { onclick: () => { state.query.props.splice(i, 1); renderPropFilters(); requery(); } }, "×"))));
-  // strip null attrs the helper set literally
-  for (const o of $<HTMLDivElement>("#f-props")!.querySelectorAll("option[selected='null']")) o.removeAttribute("selected");
+const tokensNow = (): FilterToken[] => activeFilters(state.query, filterContext());
+// Every filter control lands here: the new state, the toolbar's chips and the strip redrawn, and the
+// table refetched from its first row.
+function setQuery(next: ItemQuery): void {
+  state.query = { ...next, offset: 0 };
+  syncToolbar();
+  requery(true);
 }
-export function renderColChips(): void {
-  const all = [...new Set([...state.propKeys, ...Object.keys(EXTRA_COLS), ...state.cols])];
-  $<HTMLDivElement>("#cols")!.replaceChildren(...all.map((k) => el("button", { class: "chip", title: full(k), "aria-pressed": state.cols.includes(k), onclick: (e) => {
-    state.cols = state.cols.includes(k) ? state.cols.filter((x) => x !== k) : [...state.cols, k];
-    saveCols(); e.target.setAttribute("aria-pressed", state.cols.includes(k)); renderInventory();
-  } }, label(k))));
+
+// ---------------------------------------------------------------- toolbar
+type ChipId = "char" | "slot" | "loc" | "rarity" | "kind" | "slayer" | "seen";
+const chips = {} as Record<ChipId, HTMLButtonElement>;
+let search: HTMLInputElement, addChip: HTMLButtonElement, viewSeg: HTMLDivElement & { setValue: (v: string) => void }, settingsBtn: HTMLButtonElement;
+const FACETS: ChipId[] = ["char", "slot", "loc", "rarity", "kind"];
+const CHIP_NAMES: Record<ChipId, string> = { char: "Character", slot: "Slot", loc: "Location", rarity: "Rarity", kind: "Kind", slayer: "Slayer", seen: "Seen" };
+
+// A chip's words: "Slot", "Slot: Ring", "Slot: Ring +2".
+function chipText(id: ChipId): string {
+  const q = state.query, name = CHIP_NAMES[id];
+  const many = (xs: string[]): string => (xs.length ? `${name}: ${xs[0]}${xs.length > 1 ? ` +${xs.length - 1}` : ""}` : name);
+  switch (id) {
+    case "char": return many(q.chars);
+    case "slot": return many(q.slot.map((s) => (s === "?" ? "no slot" : slotLabel(s))));
+    case "loc": return many([...q.roots.map((r) => splitSerial(rootName(r, state.facets?.places || [])).name), ...q.loc]);
+    case "rarity": return q.rarityMin ? `Rarity ≥ ${shortTier(q.rarityMin)}` : name;
+    case "kind": return many(q.kind);
+    case "slayer": return q.slayer === "*" ? "Any slayer" : `Slayer: ${q.slayer}`;
+    case "seen": return `Seen: ${q.seenDays === 1 ? "24 h" : `${q.seenDays} days`}`;
+  }
 }
+function chipSet(id: ChipId): boolean {
+  const q = state.query;
+  switch (id) {
+    case "char": return q.chars.length > 0;
+    case "slot": return q.slot.length > 0;
+    case "loc": return q.loc.length + q.roots.length > 0;
+    case "rarity": return !!q.rarityMin;
+    case "kind": return q.kind.length > 0;
+    case "slayer": return !!q.slayer;
+    case "seen": return !!q.seenDays;
+  }
+}
+// The chips are updated in place (never rebuilt), so an open popover keeps its anchor.
+function syncToolbar(): void {
+  if (!search) return;
+  for (const id of Object.keys(chips) as ChipId[]) {
+    const c = chips[id], on = chipSet(id);
+    c.querySelector("span")!.textContent = chipText(id);
+    c.classList.toggle("set", on);
+    // Slayer and Seen live behind "+ Filter" and show as a chip only while set.
+    if (id === "slayer" || id === "seen") c.hidden = !on;
+  }
+  if (search.value.trim().toLowerCase() !== state.query.q) search.value = state.query.q;
+  viewSeg.setValue(state.query.group ? "grouped" : "list");
+  renderActive();
+}
+
+let searchTimer = 0;
+function buildToolbar(): void {
+  const s = searchInput({ label: "Search items", placeholder: "Search name, property, slayer, location", hint: "/", attrs: { id: "f-text", "data-stop": "" } });
+  search = s.input;
+  s.root.classList.add("inv-search");
+  search.addEventListener("input", () => {
+    clearTimeout(searchTimer);
+    searchTimer = setTimeout(() => setQuery({ ...state.query, q: search.value.trim().toLowerCase() }), 150) as unknown as number;
+  });
+  search.addEventListener("keydown", (e) => { if (e.key === "Escape" && search.value) { e.stopPropagation(); search.value = ""; setQuery({ ...state.query, q: "" }); } });
+  for (const id of [...FACETS, "slayer", "seen"] as ChipId[]) {
+    chips[id] = filterChip({ label: CHIP_NAMES[id], attrs: { id: `f-${id}`, "data-stop": "", ...(FACETS.includes(id) ? { "data-facet": "" } : {}) }, onClick: () => openFacet(id, chips[id]) });
+  }
+  addChip = filterChip({ label: "Filter", add: true, attrs: { id: "f-add", "data-stop": "" }, onClick: () => openAddMenu() });
+  viewSeg = segmented({ label: "Rows", options: [{ value: "list", label: "List" }, { value: "grouped", label: "Grouped" }], value: "list", onChange: (v) => setView(v === "grouped") });
+  viewSeg.id = "inv-rows";
+  settingsBtn = button({ label: "Table settings: columns and density", icon: "sliders", iconOnly: true, size: "sm", attrs: { id: "inv-settings", "aria-haspopup": "dialog", "aria-expanded": "false", "data-stop": "" }, onClick: () => openSettings() });
+  $el("#inv-toolbar").replaceChildren(s.root, ...FACETS.map((id) => chips[id]), chips.slayer, chips.seen, addChip, el("span", { class: "spacer" }), viewSeg, settingsBtn);
+  rovingToolbar($el("#inv-toolbar"));
+  syncToolbar();
+}
+function setView(grouped: boolean): void {
+  if (state.query.group === grouped) return;
+  // The grouped view sorts by Name, Kind, Total or Stacks; any other sort falls back to Name.
+  const keep = grouped ? ["name", "kind", "amount", "stacks"].includes(state.query.sort) : state.query.sort !== "stacks";
+  setQuery({ ...state.query, group: grouped, ...(keep ? {} : { sort: "name", dir: 1 as const }) });
+}
+
+// Toolbar keyboard (spec 3.6): one tab stop; ←/→ move between the controls, Home/End jump. In the search
+// field the arrows move the caret until it reaches an end. The List/Grouped radios keep ↑/↓ for their value.
+function rovingToolbar(bar: HTMLElement): void {
+  const stops = (): HTMLElement[] => [...bar.querySelectorAll<HTMLElement>("[data-stop], .seg [aria-checked=true]")].filter((e) => e.getClientRects().length > 0);
+  const settle = (on: HTMLElement): void => { for (const s of bar.querySelectorAll<HTMLElement>("[data-stop], .seg button")) s.tabIndex = s === on ? 0 : -1; };
+  bar.addEventListener("keydown", (e) => {
+    if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(e.key)) return;
+    const t = e.target as HTMLElement;
+    if (t === search && (e.key === "Home" || e.key === "End" || (e.key === "ArrowLeft" && (search.selectionStart ?? 0) > 0) || (e.key === "ArrowRight" && (search.selectionEnd ?? 0) < search.value.length))) return;
+    const list = stops();
+    const seg = t.closest(".seg");
+    const at = list.findIndex((s) => s === t || (seg && s.closest(".seg") === seg));
+    const to = e.key === "Home" ? 0 : e.key === "End" ? list.length - 1 : at + (e.key === "ArrowRight" ? 1 : -1);
+    const next = list[Math.max(0, Math.min(list.length - 1, to))];
+    if (!next) return;
+    e.preventDefault(); e.stopPropagation();
+    settle(next); next.focus();
+  }, true);
+  bar.addEventListener("focusin", (e) => { const t = e.target as HTMLElement; if (t.matches("[data-stop], .seg button")) settle(t); });
+  settle(search);
+}
+
+// ---------------------------------------------------------------- facet popovers
+interface Option { value: string; label: string; count?: number | undefined; group?: string | undefined; sub?: boolean | undefined; mono?: string | undefined }
+// A checklist popover body: an optional search (past seven options), the options (grouped when they
+// carry a group), and a Clear button once anything is picked.
+function checklist({ title, options, selected, onChange, searchable = options.length > 7 }: { title: string; options: Option[]; selected: string[]; onChange: (next: string[]) => void; searchable?: boolean }): Kids {
+  let picked = [...selected];
+  const list = box("div", { class: "inv-opts", role: "group", "aria-label": title });
+  const clear = button({ label: "Clear", variant: "ghost", size: "sm", onClick: () => { picked = []; for (const i of list.querySelectorAll<HTMLInputElement>("input")) i.checked = false; onChange(picked); clear.hidden = true; } });
+  clear.hidden = !picked.length;
+  const draw = (filter: string): void => {
+    const kids: HTMLElement[] = [];
+    let group: string | undefined;
+    for (const o of options) {
+      if (filter && !`${o.label} ${o.mono || ""} ${o.group || ""}`.toLowerCase().includes(filter)) continue;
+      if (o.group && o.group !== group) { group = o.group; kids.push(txt(o.group, "inv-opt-group t-sm muted")); }
+      const cb = el("input", { type: "checkbox", value: o.value });
+      cb.checked = picked.includes(o.value);
+      cb.addEventListener("change", () => {
+        picked = cb.checked ? [...picked, o.value] : picked.filter((v) => v !== o.value);
+        clear.hidden = !picked.length;
+        onChange(picked);
+      });
+      kids.push(box("label", { class: `check inv-opt${o.sub ? " sub" : ""}` }, cb, txt(o.label, "ellip"), o.mono ? txt(o.mono, "mono faint") : null, o.count != null ? txt(o.count.toLocaleString("en-US"), "inv-opt-count") : null));
+    }
+    if (!kids.length) kids.push(txt("Nothing matches.", "t-sm muted"));
+    list.replaceChildren(...kids);
+  };
+  draw("");
+  const find = searchable ? searchInput({ label: `Find a ${title.toLowerCase()}`, placeholder: `Find a ${title.toLowerCase()}` }) : null;
+  if (find) { find.input.classList.add("input-sm"); find.input.addEventListener("input", () => draw(find.input.value.trim().toLowerCase())); }
+  return [box("div", { class: "inv-pop-head" }, txt(title, "caps"), el("span", { class: "spacer" }), clear), find?.root, list];
+}
+const SLOT_GROUPS: Record<string, string> = {
+  helmet: "Armour", chest: "Armour", arms: "Armour", hands: "Armour", legs: "Armour",
+  neck: "Jewellery", ring: "Jewellery", bracelet: "Jewellery", earrings: "Jewellery", talisman: "Jewellery",
+  oneHanded: "Weapons", twoHanded: "Weapons",
+  cloak: "Clothing", robe: "Clothing", tunic: "Clothing", shirt: "Clothing", feet: "Clothing", waist: "Clothing",
+};
+const SLOT_GROUP_ORDER = ["Armour", "Jewellery", "Weapons", "Clothing", "Other"];
+function placesByCharacter(): Map<string, Place[]> {
+  const m = new Map<string, Place[]>();
+  for (const p of state.facets?.places || []) m.set(p.character, [...(m.get(p.character) || []), p]);
+  return m;
+}
+// A picked value the facets no longer have (its last item was forgotten) stays listed, so the list keeps
+// showing the filter the table still applies (view-state.mts's optionsKeeping).
+const keeping = (opts: Option[], picked: string[], labelOf: (v: string) => string): Option[] =>
+  picked.reduce<Option[]>((acc, v) => optionsKeeping(acc as Array<Option & { label: string }>, v, (x) => `${labelOf(x)} (none now)`), opts);
+function charOptions(): Option[] {
+  const by = placesByCharacter();
+  const names = [...new Set([...Object.keys(state.inv?.characters || {}), ...by.keys()])].filter((n) => n && n !== "?").sort();
+  return keeping(names.map((n) => ({ value: n, label: n, count: (by.get(n) || []).reduce((a, p) => a + p.count, 0) })), state.query.chars, String);
+}
+function slotOptions(): Option[] {
+  const order = Object.keys(SLOT_LABELS);
+  const opts: Option[] = (state.facets?.slots || []).map((s) => ({ value: s, label: slotLabel(s), group: SLOT_GROUPS[s] || "Other" }))
+    .sort((a, b) => SLOT_GROUP_ORDER.indexOf(a.group!) - SLOT_GROUP_ORDER.indexOf(b.group!) || order.indexOf(a.value) - order.indexOf(b.value));
+  opts.push({ value: "?", label: "No known slot", group: "Other" });
+  return keeping(opts, state.query.slot, slotLabel);
+}
+function kindOptions(): Option[] {
+  return keeping((state.facets?.kinds || []).map((k) => ({ value: k.name, label: k.name, count: k.count })), state.query.kind, String);
+}
+// "Metal Chest (0x700b0000)" → the name and its serial, drawn apart (the serial in faint mono).
+export function splitSerial(text: string): { name: string; serial: string } {
+  const m = text.match(/^(.*?)\s*\((0x[0-9a-f]+)\)(.*)$/i);
+  return m ? { name: `${m[1]}${m[3]}`, serial: m[2]! } : { name: text, serial: "" };
+}
+// The Location tree: each character's worn set, backpack and bank (with the bags inside them), then the
+// containers on the ground. A root's checkbox takes everything inside it; a bag's takes just that bag.
+function locationOptions(): Option[] {
+  const out: Option[] = [];
+  const add = (group: string, ps: Place[], nameOf: (p: Place) => string): void => {
+    const roots = new Map<number, Place[]>();
+    for (const p of ps) if (p.root != null) roots.set(p.root, [...(roots.get(p.root) || []), p]);
+    for (const [root, inRoot] of roots) {
+      const top = inRoot.reduce((a, b) => (a.text.length <= b.text.length ? a : b));
+      const serial = splitSerial(top.rootName).serial;
+      out.push({ value: `root:${root}`, label: nameOf(top), group, count: inRoot.reduce((a, p) => a + p.count, 0), ...(serial ? { mono: serial } : {}) });
+      for (const p of inRoot) if (p.text.includes(" › ")) out.push({ value: `loc:${p.text}`, label: p.text.split(" › ").slice(1).join(" › "), group, sub: true, count: p.count });
+    }
+  };
+  const ground: Place[] = [];
+  for (const [who, ps] of [...placesByCharacter()].sort(([a], [b]) => a.localeCompare(b))) {
+    const worn = ps.find((p) => p.kind === "equipped");
+    if (worn) out.push({ value: `loc:${worn.text}`, label: "Worn", group: who, count: worn.count });
+    add(who, ps.filter((p) => p.kind === "backpack"), () => "Backpack");
+    add(who, ps.filter((p) => p.kind === "bank"), () => "Bank");
+    ground.push(...ps.filter((p) => !["equipped", "backpack", "bank"].includes(p.kind)));
+  }
+  add("On the ground", ground, (p) => splitSerial(p.rootName).name);
+  for (const r of state.query.roots) if (!out.some((o) => o.value === `root:${r}`)) out.push({ value: `root:${r}`, label: `${rootName(r, [])} (none now)`, group: "No longer scanned" });
+  for (const l of state.query.loc) if (!out.some((o) => o.value === `loc:${l}`)) out.push({ value: `loc:${l}`, label: `${l} (none now)`, group: "No longer scanned" });
+  return out;
+}
+// A single-choice list of radios; picking one sets the filter and closes the popover.
+function radioList(title: string, rows: Array<{ value: string; label: HTMLElement; count?: number | undefined }>, current: string, pick: (v: string) => void): HTMLElement {
+  const name = nextId("radio");
+  return box("div", { class: "inv-opts", role: "radiogroup", "aria-label": title }, ...rows.map((row) => {
+    const r = el("input", { type: "radio", name, value: row.value });
+    r.checked = current === row.value;
+    r.addEventListener("change", () => pick(row.value));
+    return box("label", { class: "check inv-opt" }, r, row.label, row.count != null ? txt(row.count.toLocaleString("en-US"), "inv-opt-count") : null);
+  }));
+}
+function rarityPanel(close: () => void): Kids {
+  const ladder = state.rules?.rarity || [];
+  return [box("div", { class: "inv-pop-head" }, txt("Rarity at least", "caps")),
+    radioList("Rarity at least", [{ value: "", label: txt("Any rarity") }, ...ladder.map((t) => ({ value: t.name, label: rarityEl(t.name) ?? txt(t.name) }))],
+      state.query.rarityMin, (v) => { setQuery({ ...state.query, rarityMin: v }); close(); })];
+}
+function slayerPanel(close: () => void): Kids {
+  const f = state.facets;
+  return [box("div", { class: "inv-pop-head" }, txt("Slayer", "caps")),
+    radioList("Slayer", [{ value: "", label: txt("No slayer filter") }, { value: "*", label: txt("Any slayer"), count: f?.slayerAny || 0 }, ...(f?.slayers || []).map((s) => ({ value: s.name, label: txt(s.name, "ellip"), count: s.count }))],
+      state.query.slayer, (v) => { setQuery({ ...state.query, slayer: v }); close(); })];
+}
+function seenPanel(): Kids {
+  const seg = segmented({ label: "Seen", options: [{ value: "0", label: "Any" }, { value: "1", label: "24 h" }, { value: "7", label: "7 days" }, { value: "30", label: "30 days" }], value: String(state.query.seenDays || 0), onChange: (v) => setQuery({ ...state.query, seenDays: +v }) });
+  return [box("div", { class: "inv-pop-head" }, txt("Seen in the last", "caps")), seg];
+}
+function tagsPanel(): Kids {
+  const pills = Object.keys(tagUnits()).map((t) => pill({ label: cap(t), pressed: state.query.hideTags.includes(t), off: true,
+    onToggle: (on) => setQuery({ ...state.query, hideTags: on ? [...state.query.hideTags, t] : state.query.hideTags.filter((x) => x !== t) }) }));
+  return [box("div", { class: "inv-pop-head" }, txt("Hide items tagged", "caps")), box("div", { class: "inv-pills" }, ...pills), txt("A struck-through tag is hidden.", "t-sm muted")];
+}
+function gearPanel(): Kids {
+  const garg = switchControl({ label: "Hide gargoyle-only gear", checked: state.query.nogarg, onChange: (on) => setQuery({ ...state.query, nogarg: on }) });
+  const med = switchControl({ label: "Meditation-safe gear only", checked: state.query.med, onChange: (on) => setQuery({ ...state.query, med: on }) });
+  return [box("div", { class: "inv-pop-head" }, txt("Gear", "caps")), garg.root, med.root];
+}
+function facetPanel(id: ChipId, close: () => void): Kids {
+  const q = state.query;
+  switch (id) {
+    case "char": return checklist({ title: "Character", options: charOptions(), selected: q.chars, onChange: (v) => setQuery({ ...state.query, chars: v }) });
+    case "slot": return checklist({ title: "Slot", options: slotOptions(), selected: q.slot, searchable: false, onChange: (v) => setQuery({ ...state.query, slot: v }) });
+    case "kind": return checklist({ title: "Kind", options: kindOptions(), selected: q.kind, onChange: (v) => setQuery({ ...state.query, kind: v }) });
+    case "loc": return checklist({ title: "Location", options: locationOptions(), selected: [...q.roots.map((r) => `root:${r}`), ...q.loc.map((l) => `loc:${l}`)], searchable: true,
+      onChange: (v) => setQuery({ ...state.query, roots: v.filter((x) => x.startsWith("root:")).map((x) => +x.slice(5)), loc: v.filter((x) => x.startsWith("loc:")).map((x) => x.slice(4)) }) });
+    case "rarity": return rarityPanel(close);
+    case "slayer": return slayerPanel(close);
+    case "seen": return seenPanel();
+  }
+}
+function openPanel(anchor: HTMLElement, title: string, body: (close: () => void) => Kids, width = 280): void {
+  let h: PopoverHandle | null = null;
+  h = popover(anchor, body(() => h?.close()), { label: title, width });
+  h.root.classList.add("inv-pop");
+}
+const openFacet = (id: ChipId, anchor: HTMLElement): void => openPanel(anchor, CHIP_NAMES[id], (c) => facetPanel(id, c), id === "loc" ? 320 : 280);
+
+// ---------------------------------------------------------------- "+ Filter"
+function openAddMenu(): void {
+  const entries: MenuEntry[] = [];
+  // Below 1180 px the unset facet chips fold in here, so the toolbar never wraps (spec 3.7).
+  if (narrow()) for (const id of FACETS) if (!chipSet(id)) entries.push({ label: `${CHIP_NAMES[id]}…`, onSelect: () => openFacet(id, addChip) });
+  entries.push(
+    { label: "Property rule…", onSelect: () => openPanel(addChip, "Property rule", propertyPanel, 300) },
+    { label: "Slayer…", onSelect: () => openPanel(addChip, "Slayer", slayerPanel) },
+    { label: "Seen…", onSelect: () => openPanel(addChip, "Seen", () => seenPanel()) },
+    { label: "Hide tags…", onSelect: () => openPanel(addChip, "Hide tags", () => tagsPanel()) },
+    { label: "Gargoyle and meditation…", onSelect: () => openPanel(addChip, "Gear", () => gearPanel()) },
+  );
+  openMenu(addChip, entries, "Add a filter");
+}
+// A property rule: the property (searchable, grouped like the column picker), ≥ ≤ =, a number. Rules
+// add up (an item must pass every one), which the popover says.
+function propertyPanel(close: () => void): Kids {
+  const keys = [...new Set([...state.propKeys, "strReq", "weight"])];
+  let key = "", op = "ge";
+  const chosen = txt("Pick a property", "t-sm muted");
+  const find = searchInput({ label: "Find a property", placeholder: "Find a property" });
+  find.input.classList.add("input-sm");
+  const list = box("div", { class: "inv-opts inv-prop-list", role: "listbox", "aria-label": "Properties" });
+  const num = input({ type: "number", value: 1, size: "sm", attrs: { "aria-label": "Value" } });
+  const opSeg = segmented({ label: "Comparison", options: [{ value: "ge", label: "≥" }, { value: "le", label: "≤" }, { value: "eq", label: "=" }], value: "ge", onChange: (v) => { op = v; } });
+  const add = button({ label: "Add rule", variant: "primary", size: "sm", disabled: true, onClick: () => {
+    if (!key || num.value === "" || !Number.isFinite(+num.value)) { num.focus(); return; }
+    setQuery({ ...state.query, props: [...state.query.props, { key, min: +num.value, ...(op === "ge" ? {} : { op: op as "le" | "eq" }) }] });
+    close();
+  } });
+  const draw = (filter: string): void => {
+    const kids: HTMLElement[] = [];
+    for (const g of groupColumns(keys)) {
+      const ks = g.keys.filter((k) => !filter || `${label(k)} ${colFull(k, full)}`.toLowerCase().includes(filter));
+      if (!ks.length) continue;
+      kids.push(txt(g.group, "inv-opt-group t-sm muted"));
+      for (const k of ks) {
+        const b = box("button", { type: "button", class: "menu-item inv-prop", role: "option", "aria-selected": String(k === key) }, txt(colFull(k, full), "ellip"), txt(label(k), "t-sm muted"));
+        b.addEventListener("click", () => {
+          key = k; chosen.textContent = colFull(k, full); chosen.className = "t-sm strong"; add.disabled = false;
+          for (const o of list.querySelectorAll("[role=option]")) o.setAttribute("aria-selected", String(o === b));
+          num.focus(); num.select();
+        });
+        kids.push(b);
+      }
+    }
+    list.replaceChildren(...(kids.length ? kids : [txt("No property matches.", "t-sm muted")]));
+  };
+  find.input.addEventListener("input", () => draw(find.input.value.trim().toLowerCase()));
+  num.addEventListener("keydown", (e) => { if (e.key === "Enter") add.click(); });
+  draw("");
+  return [box("div", { class: "inv-pop-head" }, txt("Property rule", "caps")), find.root, list, chosen, box("div", { class: "inv-rule" }, opSeg, num, add), txt("An item must pass every rule you add.", "t-sm muted")];
+}
+
+// ---------------------------------------------------------------- active-filter strip
+function renderActive(): void {
+  const strip = $el("#inv-active");
+  const tokens = tokensNow();
+  strip.hidden = !tokens.length;
+  if (!tokens.length) { strip.replaceChildren(); return; }
+  const p = state.page;
+  strip.replaceChildren(
+    txt(matchLine({ shown: p.stacks, total: state.facets?.itemCount || 0, grouped: !!p.groups, names: p.total }), "t-sm muted inv-match"),
+    ...tokenEls(tokens),
+    button({ label: "Clear all", variant: "ghost", size: "sm", attrs: { id: "f-clear" }, onClick: () => { closePopover(); setQuery(clearAll(state.query)); search.focus(); } }));
+}
+const tokenEls = (tokens: FilterToken[]): HTMLElement[] => tokens.map((t) => token({ label: t.label, removeLabel: t.removeLabel, onRemove: () => setQuery(t.remove(state.query)) }));
+
+// ---------------------------------------------------------------- columns and density popover
+// Every column the picker offers: the inventory's property keys plus the item's own fields and whatever
+// the saved choice names.
+const allCols = (): string[] => [...new Set([...state.propKeys, ...ITEM_COLS, ...state.cols])];
 // The column choice is kept by the server (<data>/ui-prefs.json), not localStorage: the desktop app
-// serves the page from a new port on every launch, and localStorage belongs to one origin, so a
-// choice saved there was gone at the next start.
+// serves the page from a new port on every launch, and localStorage belongs to one origin.
 function saveCols(): void {
   api("/api/ui-prefs", { method: "PUT", body: { cols: state.cols } }).catch((e: Error) => toast(`Could not save the column choice: ${e.message}`, "bad"));
 }
-// load()'s GET /api/ui-prefs answer (null when that request failed); colsFromPrefs decides whether a
-// choice this browser saved before the server kept it is adopted.
+function setCols(cols: string[]): void { state.cols = cols; saveCols(); rebuildTable(); }
+function openSettings(): void {
+  const all = allCols();
+  const count = txt("", "t-sm muted");
+  const paintCount = (): void => { count.textContent = `${state.cols.filter((c) => all.includes(c)).length} of ${all.length}`; };
+  paintCount();
+  const density = segmented({ label: "Row density", options: [{ value: "dense", label: "Dense · 32" }, { value: "regular", label: "Regular · 40" }], value: state.density, onChange: (v) => {
+    state.density = v === "regular" ? "regular" : "dense";
+    api("/api/ui-prefs", { method: "PUT", body: { density: state.density } }).catch((e: Error) => toast(`Could not save the density: ${e.message}`, "bad"));
+    rebuildTable();
+  } });
+  const find = searchInput({ label: "Find a column", placeholder: "Find a column", attrs: { id: "inv-col-q" } });
+  find.input.classList.add("input-sm");
+  const list = box("div", { class: "inv-opts", id: "inv-cols" });
+  let expanded = false;
+  const draw = (): void => {
+    const filter = find.input.value.trim().toLowerCase();
+    const groups = groupColumns(all);
+    const open = new Set<string>(expanded || filter ? COL_GROUPS : COL_GROUPS.slice(0, 3));
+    const kids: HTMLElement[] = [];
+    for (const g of groups) {
+      if (!open.has(g.group)) continue;
+      const keys = g.keys.filter((k) => !filter || `${colShort(k, label)} ${colFull(k, full)}`.toLowerCase().includes(filter));
+      if (!keys.length) continue;
+      kids.push(txt(g.group, "inv-opt-group t-sm muted"));
+      for (const k of keys) {
+        const cb = el("input", { type: "checkbox", "data-col": k });
+        cb.checked = state.cols.includes(k);
+        cb.addEventListener("change", () => { setCols(cb.checked ? [...state.cols, k] : state.cols.filter((c) => c !== k)); paintCount(); });
+        kids.push(box("label", { class: "check inv-opt" }, cb, txt(colFull(k, full), "ellip")));
+      }
+    }
+    const rest = groups.filter((g) => !open.has(g.group));
+    if (rest.length) {
+      const more = box("button", { type: "button", class: "menu-item inv-more", "aria-expanded": "false" }, txt(`${rest.map((g) => g.group).join(", ")} · ${rest.reduce((a, g) => a + g.keys.length, 0)} more`), icon("chevron-down", { size: "sm" }));
+      more.addEventListener("click", () => { expanded = true; draw(); list.querySelector<HTMLInputElement>(`input[data-col="${rest[0]!.keys[0]}"]`)?.focus(); });
+      kids.push(more);
+    }
+    if (!kids.length) kids.push(txt("No column matches.", "t-sm muted"));
+    list.replaceChildren(...kids);
+  };
+  find.input.addEventListener("input", draw);
+  draw();
+  let h: PopoverHandle | null = null;
+  // Below 1180 px the List | Grouped switch moves in here from the toolbar (spec 3.7).
+  const view = narrow() ? segmented({ label: "Rows", options: [{ value: "list", label: "List" }, { value: "grouped", label: "Grouped" }], value: state.query.group ? "grouped" : "list", onChange: (v) => setView(v === "grouped") }) : null;
+  h = popover(settingsBtn, [
+    view ? box("div", { class: "inv-pop-sec" }, txt("View", "caps"), view) : null,
+    box("div", { class: "inv-pop-sec" }, txt("Density", "caps"), density),
+    el("div", { class: "divider" }),
+    box("div", { class: "inv-pop-sec" }, box("div", { class: "inv-pop-head" }, txt("Columns", "caps"), el("span", { class: "spacer" }), count), find.root),
+    list,
+    box("div", { class: "overlay-foot inv-pop-foot" },
+      button({ label: "Reset to default", variant: "ghost", size: "sm", onClick: () => { setCols([...DEFAULT_COLS]); paintCount(); draw(); } }),
+      el("span", { class: "spacer" }),
+      button({ label: "Done", size: "sm", onClick: () => h?.close() })),
+  ], { label: "Table settings", width: 288 });
+  h.root.classList.add("inv-pop", "inv-settings-pop");
+}
+// load()'s GET /api/ui-prefs answer (null when that request failed): the saved columns (colsFromPrefs
+// decides whether a choice this browser saved before the server kept it is adopted) and the density.
 export function applyUiPrefs(prefs: UiPrefs | null): void {
   let legacy: unknown = null;
   try { legacy = JSON.parse(localStorage.getItem("vault.cols") || "null"); } catch { /* unreadable: nothing to adopt */ }
   const { cols, save } = colsFromPrefs(prefs, legacy);
   if (cols) state.cols = cols;
   if (save) saveCols();
+  if (prefs?.density) state.density = prefs.density;
+  if (search) rebuildTable();
 }
-// Every plain filter control (search text, the dropdowns, the checkboxes): read them all into
-// state.query, reset to page 1 (a changed filter can only ever invalidate the current offset), fetch.
-function onFilterChange(): void {
-  const q = state.query;
-  q.q = $<HTMLInputElement>("#f-text")!.value.trim().toLowerCase();
-  q.slot = $<HTMLSelectElement>("#f-slot")!.value;
-  q.loc = $<HTMLSelectElement>("#f-loc")!.value;
-  q.rarity = $<HTMLSelectElement>("#f-rarity")!.value;
-  q.kind = $<HTMLSelectElement>("#f-kind")!.value;
-  q.seenDays = +$<HTMLSelectElement>("#f-seen")!.value || 0;
-  q.slayer = $<HTMLSelectElement>("#f-slayer")!.value;
-  q.nogarg = $<HTMLInputElement>("#f-nogarg")!.checked;
-  q.med = $<HTMLInputElement>("#f-med")!.checked;
-  q.group = $<HTMLInputElement>("#f-group")!.checked;
-  requery();
-}
-function requery(): void { state.query.offset = 0; fetchItems(); }
 
-// ---------------------------------------------------------------- fetch + render
-// A request counter so a slow response to an old query can never clobber a newer one's result — the
-// debounce below already keeps keystrokes from firing a request per character, but a fetch already in
-// flight when the query changes again must still lose the race if it lands late.
-// debounceTimer is `number`, not `ReturnType<typeof setTimeout>` — dom.mts's toastTimer explains why:
-// this page only runs in the browser, but tsconfig.json's root config also type-checks it alongside
-// Node's ambient globals, which makes `typeof setTimeout` ambiguous between the two configs.
-let reqSeq = 0, debounceTimer: number | null = null;
+// ---------------------------------------------------------------- the table: columns and cells
+interface ColDef { key: string; label: string; title: string; num: boolean; width: number; sortable: boolean }
+const RESISTS = ["physResist", "fireResist", "coldResist", "poisonResist", "energyResist"];
+// The table's columns follow what it SHOWS: the previous query's rows stay up until the new one's first
+// chunk lands, so the header changes with the data, not with the click.
+const grouped = (): boolean => (loadedOnce ? !!state.page.groups : state.query.group);
+function columns(): ColDef[] {
+  const c = (key: string, text: string, width: number, num = false, title = ""): ColDef => ({ key, label: text, title, num, width, sortable: true });
+  if (grouped()) return [c("name", "Name", 300), c("kind", "Kind", 120), c("amount", "Total", 88, true), c("stacks", "Stacks", 80, true), { ...c("where", "Where", 480), sortable: false }];
+  const width = (k: string): number => (k === "seen" ? 112 : k === "kind" ? 96 : RESISTS.includes(k) ? 52 : Math.max(52, colShort(k, label).length * 8 + 28));
+  return [c("name", "Name", 250), c("rarity", "Rarity", 156), c("slot", "Slot", 120), c("location", "Location", 180),
+    ...state.cols.map((k) => c(k, colShort(k, label), width(k), !["kind", "seen", "med"].includes(k), colFull(k, full)))];
+}
+// Numbers sort highest first at dir 1 and names A to Z (item-query.mts), so the arrow follows the kind.
+function sortState(col: ColDef): "ascending" | "descending" | "none" {
+  if (state.query.sort !== col.key) return "none";
+  const ascending = col.num ? state.query.dir < 0 : state.query.dir > 0;
+  return ascending ? "ascending" : "descending";
+}
+function sortedBy(): string {
+  const col = columns().find((c) => c.key === state.query.sort);
+  const name = !col ? state.query.sort : col.key === "name" ? "name" : col.title || col.label;
+  if (col?.num) return `Sorted by ${name}, ${state.query.dir > 0 ? "highest" : "lowest"} first`;
+  return `Sorted by ${name}${state.query.dir < 0 ? ", Z to A" : ""}`;
+}
+const TAG_TONE: Record<string, "bad" | "warn" | undefined> = { cursed: "bad", brittle: "warn", antique: "warn", massive: "warn", unwieldy: "warn" };
+const cap = (s: string): string => s.charAt(0).toUpperCase() + s.slice(1);
+export function tagEls(it: Item): HTMLElement[] {
+  return it.tags.map((t) => box("span", { class: `tag${TAG_TONE[t] ? " " + TAG_TONE[t] : ""}` }, txt(cap(t))));
+}
+// A tier as its dot and name in its --rarity-* colour; a tier with no token keeps its game colour inside a
+// dark subtree, where the game colours were designed to live.
+export function rarityEl(rarity: string | null | undefined, cls = ""): HTMLElement | null {
+  if (!rarity) return null;
+  if (rarityToken(rarity)) return box("span", { class: `rar-tier${cls ? " " + cls : ""}`, style: `color:${rarityColor(rarity)}` }, txt(rarity));
+  const raw = rarityColor(rarity);
+  return box("span", { class: `rar-tier${cls ? " " + cls : ""}`, "data-theme": "default", "data-mode": "dark", style: raw ? `color:${safeColor(raw) || raw}` : "" }, txt(rarity));
+}
+export function locationEl(it: Item): HTMLElement {
+  const { name, serial } = splitSerial(it.location?.text || "");
+  return serial ? box("span", { class: "inv-loc" }, txt(name, "ellip"), txt(serial, "mono faint")) : txt(name, "ellip");
+}
+function cell(col: ColDef, it: Item): HTMLTableCellElement {
+  const td = el("td", col.num ? { class: "num" } : {});
+  switch (col.key) {
+    case "name": td.append(box("span", { class: "inv-name" }, txt(it.name, "ellip"), ...tagEls(it), (it.amount || 1) > 1 ? txt(`×${it.amount.toLocaleString("en-US")}`, "t-sm muted") : null)); break;
+    case "rarity": { const r = rarityEl(it.rarity); if (r) td.append(r); break; }
+    case "slot": if (it.slot) td.append(txt(slotLabel(it.slot))); break;
+    case "location": td.append(locationEl(it)); break;
+    case "amount": td.append(txt((it.amount || 1).toLocaleString("en-US"))); break;
+    case "kind": td.append(txt(it.kind)); break;
+    case "seen": td.append(txt(relativeWhen(it.seenAt))); break;
+    case "med": if (it.gear) td.append(txt(it.medable ? "Yes" : "No", it.medable ? "" : "muted")); break;
+    default: {
+      const v = col.key === "strReq" ? it.strReq : col.key === "weight" ? it.weight : it.props[col.key];
+      if (v) td.append(txt(String(v)));
+    }
+  }
+  return td;
+}
+type Group = NonNullable<typeof state.page.groups>[number];
+function groupCell(col: ColDef, g: Group): HTMLTableCellElement {
+  const td = el("td", col.num ? { class: "num" } : {});
+  const text = col.key === "name" ? g.name : col.key === "kind" ? g.kind : col.key === "amount" ? g.amount.toLocaleString("en-US") : col.key === "stacks" ? String(g.stacks)
+    : g.locations.map(([l, n]) => `${l} (${n.toLocaleString("en-US")})`).join(" · ");
+  td.append(txt(text, col.key === "where" || col.key === "name" ? "ellip" : ""));
+  return td;
+}
+
+// ---------------------------------------------------------------- the table: rows and actions
+const ACTIONS: Array<["highlight" | "grab" | "goto", string]> = [["highlight", "Highlight in game"], ["grab", "Grab to backpack"], ["goto", "Go to container"]];
+export function itemMenu(anchor: HTMLElement, it: Item): void {
+  const entries: MenuEntry[] = [];
+  if (it.root != null && !it.equippedBy) entries.push({ label: "Show everything in this container", icon: "folder", onSelect: () => showContainer(+it.root!) });
+  entries.push({ label: "Copy serial", icon: "clipboard", onSelect: () => {
+    const s = `0x${it.serial.toString(16)}`;
+    navigator.clipboard?.writeText(s).then(() => toast(`Copied ${s}`, "good"), () => toast("Could not copy the serial.", "bad"));
+  } });
+  openMenu(anchor, entries, `More actions for ${it.name}`);
+}
+function actionsCell(it: Item): HTMLTableCellElement {
+  return el("td", { class: "act-cell" }, rowActions([
+    ...ACTIONS.map(([action, text]) => ({ label: text, icon: action, disabled: bridgeActionReason(action, it), onClick: () => { runBridgeAction(action, it); } })),
+    { label: "More actions", icon: "more" as const, onClick: (e: MouseEvent) => itemMenu(e.currentTarget as HTMLElement, it) },
+  ]));
+}
+
+let rowCache = new Map<number, HTMLTableRowElement>();
+let activeIndex = 0;
+let rowH = 32;
+function rowFor(i: number, cols: ColDef[]): HTMLTableRowElement {
+  const cached = rowCache.get(i);
+  if (cached) return cached;
+  const p = state.page;
+  let tr: HTMLTableRowElement;
+  if (p.groups) {
+    const g = p.groups[i];
+    if (!g) return skeletonRow(cols, i);
+    tr = el("tr", { class: "item", "data-index": i, "aria-rowindex": i + 2, tabindex: "-1" }, ...cols.map((c) => groupCell(c, g)));
+  } else {
+    const it = p.rows[i];
+    if (!it) return skeletonRow(cols, i);
+    state.itemCache.set(it.serial, it);   // a drawn row IS the full record: seed the cache so the tooltip and builder never re-fetch it
+    tr = el("tr", { class: "item", "data-serial": it.serial, "data-index": i, "aria-rowindex": i + 2, tabindex: "-1" }, ...cols.map((c) => cell(c, it)), actionsCell(it));
+  }
+  rowCache.set(i, tr);
+  return tr;
+}
+const SKEL_W = [72, 54, 80, 46, 66, 58, 76, 50];
+function skeletonRow(cols: ColDef[], i: number): HTMLTableRowElement {
+  return el("tr", { class: "skel-row", "data-index": i, "aria-hidden": "true" },
+    ...cols.map((c, j) => el("td", c.num ? { class: "num" } : {}, el("span", { class: "skel", style: c.num ? `width:${12 + ((i + j) % 3) * 4}px;margin-left:auto` : `width:${SKEL_W[(i + j) % SKEL_W.length]}%` }))),
+    grouped() ? null : el("td", { class: "act-cell" }));
+}
+const spacer = (cls: string): HTMLTableRowElement => el("tr", { class: `vpad ${cls}`, "aria-hidden": "true" }, el("td", {}));
+
+// ---------------------------------------------------------------- the table: data
+// A request generation, so a slow chunk of an old query can never land in a newer one's table, and the
+// chunk offsets this generation has or is fetching. `fresh` says the page still shows the previous
+// query's rows, kept on screen (never blanked) until the first chunk of the new query lands.
+let gen = 0, fresh = false, loadError: string | null = null, loadedOnce = false;
+const have = new Set<number>();
+let debounceTimer = 0;
+// A refresh (a live scan landed, a Forget): the same filters, the scroll position kept.
 export function fetchItems(): void {
-  clearTimeout(debounceTimer as number | undefined);
-  debounceTimer = setTimeout(doFetch, 150) as unknown as number;
+  clearTimeout(debounceTimer);
+  debounceTimer = setTimeout(() => requery(false), 150) as unknown as number;
 }
-async function doFetch(): Promise<void> {
-  const q = state.query, mine = ++reqSeq;
-  const params = new URLSearchParams();
-  if (q.q) params.set("q", q.q);
-  if (q.slot) params.set("slot", q.slot);
-  if (q.loc) params.set("loc", q.loc);
-  if (q.rarity) params.set("rarity", q.rarity);
-  if (q.kind) params.set("kind", q.kind);
-  if (q.seenDays) params.set("seenDays", String(q.seenDays));
-  if (q.slayer) params.set("slayer", q.slayer);
-  if (q.nogarg) params.set("nogarg", "1");
-  if (q.med) params.set("med", "1");
-  for (const t of q.hideTags) params.append("hide", t);
-  for (const p of q.props) params.append("prop", `${p.key}:${p.min}`);
-  if (q.group) params.set("group", "1");
-  params.set("sort", q.sort);
-  params.set("dir", String(q.dir));
-  params.set("offset", String(q.offset));
-  params.set("limit", String(q.limit));
+function requery(toTop: boolean): void {
+  gen++; have.clear(); fresh = true; emptyAlone = null;
+  if (toTop) { $el("#inv-scroll").scrollTop = 0; activeIndex = 0; }
+  fetchChunk(0, gen);
+}
+async function fetchChunk(offset: number, g: number): Promise<void> {
+  have.add(offset);
   let res: ItemsApiResponse;
-  try { res = await api<ItemsApiResponse>(`/api/items?${params.toString()}`); }
-  catch { return; }   // a transient fetch error leaves the last good page on screen rather than blanking it
-  if (mine !== reqSeq) return;   // a newer request has since been issued — this response is stale, drop it
-  // A Forget or a rescan can shrink the list under the page on screen: move to the last page that has
-  // rows and fetch that instead of drawing an empty table under "141–48 of 48".
-  const clamped = clampOffset(q.offset, q.limit, res.total);
-  if (clamped !== q.offset) { q.offset = clamped; doFetch(); return; }
-  state.page = "groups" in res
-    ? { rows: [], groups: res.groups, total: res.total, pieces: 0 }
-    : { rows: res.rows, groups: null, total: res.total, pieces: res.pieces };
-  renderInventory();
-}
-export function renderInventory(): void {
-  const { rows, groups, total, pieces } = state.page;
-  const k = state.query.sort, d = state.query.dir;
-  const th = (key: string, text: string, cls = ""): HTMLTableCellElement => el("th", { class: "sortable " + (key === k ? "sorted " : "") + cls, title: PROP_FULL[key] || "", onclick: () => {
-    if (state.query.sort === key) state.query.dir *= -1; else { state.query.sort = key; state.query.dir = 1; }
-    fetchItems();
-  } }, text + (key === k ? (d > 0 ? " ▾" : " ▴") : ""));
-  const body = $<HTMLTableSectionElement>("#inv-table tbody")!; body.replaceChildren();
-  $<HTMLElement>("#inv-count")!.textContent = groups ? `${fmtN(total)} distinct names` : `${fmtN(total)} stacks · ${fmtN(pieces)} pieces`;
-  // One line, once, rather than repeating it on every row's missing Highlight/Grab/Go-to buttons.
-  const note = bridgeNoteEl();
-  $<HTMLDivElement>("#inv-bridge-note")!.replaceChildren(...(note ? [note] : []));
-  renderPager(total);
-  if (groups) {
-    $<HTMLTableSectionElement>("#inv-table thead")!.replaceChildren(el("tr", {}, th("name", "Name"), th("kind", "Kind"), th("amount", "Total", "n"), th("stacks", "Stacks", "n"), el("th", {}, "Where")));
-    for (const g of groups) body.append(el("tr", { class: "item" }, el("td", { class: "name" }, g.name), el("td", { class: "muted" }, g.kind),
-      el("td", { class: "n" }, g.amount.toLocaleString()), el("td", { class: "n" }, g.stacks),
-      el("td", { class: "small" }, g.locations.map(([l, n]) => `${l} (${n.toLocaleString()})`).join(" · "))));
-    if (!groups.length) body.append(el("tr", {}, el("td", { colspan: 5, class: "empty" }, "Nothing matches.")));
+  try { res = await api<ItemsApiResponse>(`/api/items?${queryParams({ ...state.query, offset, limit: CHUNK }).toString()}`); }
+  catch (e) {
+    if (g !== gen) return;
+    have.delete(offset);
+    // The first chunk failing leaves nothing to show; a later one leaves its rows as skeletons and says so.
+    if (offset === 0 && !loadedOnce) { inventoryFailed(e); return; }
+    toast(`Could not load more of the inventory: ${(e as Error).message}`, "bad");
     return;
   }
-  $<HTMLTableSectionElement>("#inv-table thead")!.replaceChildren(el("tr", {}, th("name", "Name"), th("rarity", "Rarity"), th("kind", "Kind"), th("amount", "Qty", "n"), th("slot", "Slot"), th("location", "Location"), th("seen", "Seen"), ...state.cols.map((c) => th(c, label(c), "n"))));
-  const span = 7 + state.cols.length;
-  if (!rows.length) { body.append(el("tr", {}, el("td", { colspan: span, class: "empty" }, state.inv?.itemCount ? "Nothing matches." : "No items yet. Run packrat-scanner.py in game, then reload."))); return; }
-  const frag = document.createDocumentFragment();
-  for (const it of rows) {
-    state.itemCache.set(it.serial, it);   // a rendered row already IS the full record — seed the cache so the tooltip/builder never re-fetch it
-    const tr = el("tr", { class: "item", "data-serial": it.serial },
-      el("td", {}, el("span", { class: "rar", style: it.rarity ? `background:${rarityColor(it.rarity) || "var(--line)"}` : "", title: it.rarity || "" }), el("span", { class: "name" }, it.name), ...(it.slayers || []).map((x) => el("span", { class: "tag slayer" }, x + " slayer")), it.gear && !it.medable ? el("span", { class: "tag", title: "blocks or halves meditation (no Mage Armor / Spell Channeling)" }, "no med") : null, ...it.tags.map((t) => el("span", { class: "tag " + t }, t))),
-      el("td", {}, rarCell(it)), el("td", { class: "muted" }, it.kind), el("td", { class: "n" }, (it.amount || 1) > 1 ? (it.amount).toLocaleString() : el("span", { class: "muted" }, "·")),
-      el("td", {}, it.slot ? slotLabel(it.slot) : el("span", { class: "muted" }, "·")), el("td", {}, it.location?.text || "", " ", actButtons(it)), el("td", { class: "small " + (isStale(it) ? "stale" : "muted") }, ago(it.seenAt)),
-      ...state.cols.map((c) => el("td", { class: "n" }, colVal(it, c) ? String(colVal(it, c)) : el("span", { class: "muted" }, "·"))));
-    tr.addEventListener("click", () => {
-      const next = tr.nextElementSibling;
-      if (next && next.classList.contains("detail")) { next.remove(); return; }
-      tr.after(el("tr", { class: "detail" }, el("td", { colspan: span }, it.lines.join("  ·  "), el("div", { class: "small" }, `serial 0x${it.serial.toString(16)} · seen ${fmtWhen(it.seenAt)} by ${it.scannedBy}`))));
-    });
-    frag.append(tr);
+  if (g !== gen) return;   // a newer query has been issued since: this answer is stale
+  if (fresh) {
+    fresh = false; loadedOnce = true;
+    rowCache = new Map();
+    state.page = "groups" in res
+      ? { rows: [], groups: new Array(res.total), total: res.total, stacks: res.stacks, pieces: res.pieces }
+      : { rows: new Array(res.total), groups: null, total: res.total, stacks: res.total, pieces: res.pieces };
+    activeIndex = Math.min(activeIndex, Math.max(0, res.total - 1));
+    if (!res.total && tokensNow().length) findEmptyCause(g);
+    renderActive();
+    rebuildTable();   // the header follows the data: its sort arrow, and the grouped view's columns
   }
-  body.append(frag);
+  const got: unknown[] = "groups" in res ? res.groups : res.rows;
+  const into: unknown[] = state.page.groups || state.page.rows;
+  got.forEach((r, i) => { into[offset + i] = r; rowCache.delete(offset + i); });
+  renderTable();
 }
-function renderPager(total: number): void {
-  const { offset, limit } = state.query;
-  const hi = Math.min(offset + limit, total);
-  $<HTMLElement>("#inv-pager-text")!.textContent = total ? `${fmtN(offset + 1)}–${fmtN(hi)} of ${fmtN(total)}` : "0 of 0";
-  $<HTMLButtonElement>("#inv-prev")!.disabled = offset <= 0;
-  $<HTMLButtonElement>("#inv-next")!.disabled = offset + limit >= total;
+
+// ---------------------------------------------------------------- the table: drawing
+let emptyAlone: string[] | null = null;
+function rebuildTable(): void {
+  const t = $el<HTMLTableElement>("#inv-table");
+  const cols = columns(), isGrouped = grouped();
+  t.classList.toggle("tbl-regular", state.density === "regular");
+  rowH = state.density === "regular" ? 40 : 32;
+  t.setAttribute("aria-colcount", String(cols.length));
+  t.style.minWidth = `${cols.reduce((a, c) => a + c.width, 0)}px`;
+  t.querySelector("colgroup")!.replaceChildren(...cols.map((c) => el("col", { style: `width:${c.width}px` })), ...(isGrouped ? [] : [el("col", { class: "act-col" })]));
+  t.querySelector("thead")!.replaceChildren(el("tr", { "aria-rowindex": 1 }, ...cols.map((c) => {
+    const sort = c.sortable ? sortState(c) : null;
+    const inner = c.sortable
+      ? box("button", { type: "button", ...(c.title ? { title: c.title } : {}), onclick: () => {
+        const q = state.query;
+        setQuery(q.sort === c.key ? { ...q, dir: q.dir > 0 ? -1 : 1 } : { ...q, sort: c.key, dir: 1 });
+      } }, txt(c.label), sort && sort !== "none" ? icon(sort === "ascending" ? "arrow-up" : "arrow-down", { size: "sm" }) : null)
+      : txt(c.label);
+    return el("th", { class: c.num ? "num" : "", scope: "col", ...(sort ? { "aria-sort": sort } : {}) }, inner);
+  }), isGrouped ? null : el("th", { class: "act-cell", scope: "col" }, txt("Actions", "sr"))));
+  rowCache = new Map();
+  t.querySelector("tbody")!.replaceChildren();
+  renderTable();
+}
+let raf = 0;
+function scheduleRender(): void { if (!raf) raf = requestAnimationFrame(() => { raf = 0; renderTable(); }); }
+function renderTable(): void {
+  const t = $el<HTMLTableElement>("#inv-table"), body = t.querySelector("tbody")!, scroller = $el("#inv-scroll");
+  const cols = columns(), span = cols.length + (grouped() ? 0 : 1);
+  const p = state.page;
+  if (loadError) { body.replaceChildren(); showState(errorState(loadError)); t.removeAttribute("aria-busy"); renderFoot(); return; }
+  if (!loadedOnce) {
+    // Still loading: skeleton rows under the real header; the filters stay usable.
+    body.replaceChildren(...Array.from({ length: 14 }, (_, i) => skeletonRow(cols, i)));
+    t.setAttribute("aria-busy", "true");
+    $el("#inv-state").hidden = true;
+    renderFoot();
+    return;
+  }
+  t.removeAttribute("aria-busy");
+  t.setAttribute("aria-rowcount", String(p.total + 1));
+  if (!p.total) { body.replaceChildren(); showState(state.facets?.itemCount ? emptyResultState() : noScansState()); renderFoot(); return; }
+  $el("#inv-state").hidden = true;
+  const head = t.tHead?.offsetHeight || 36;
+  const { start, end } = rowWindow({ scrollTop: scroller.scrollTop, viewport: scroller.clientHeight - head, rowHeight: rowH, count: p.total });
+  if (!fresh) for (const o of chunksToFetch(start, end, CHUNK, p.total, have)) fetchChunk(o, gen);
+  const want: HTMLTableRowElement[] = [];
+  for (let i = start; i < end; i++) want.push(rowFor(i, cols));
+  // Patch the body instead of replacing it: the focused row is never detached (a detached row loses
+  // focus), and rows already in place are not touched.
+  const top = body.querySelector<HTMLTableRowElement>(":scope > tr.vpad.top") || spacer("top");
+  const bottom = body.querySelector<HTMLTableRowElement>(":scope > tr.vpad.bottom") || spacer("bottom");
+  const keep = new Set<Node>([top, bottom, ...want]);
+  for (const n of [...body.children]) if (!keep.has(n)) n.remove();
+  if (body.firstChild !== top) body.prepend(top);
+  let prev: Node = top;
+  for (const tr of want) { if (prev.nextSibling !== tr) body.insertBefore(tr, prev.nextSibling); prev = tr; }
+  if (prev.nextSibling !== bottom) body.insertBefore(bottom, prev.nextSibling);
+  for (const [pad, h] of [[top, start * rowH], [bottom, (p.total - end) * rowH]] as const) {
+    const td = pad.firstChild as HTMLTableCellElement;
+    td.colSpan = span;
+    td.style.height = `${h}px`;
+    pad.hidden = h === 0;
+  }
+  // One row in the tab order: the active one, or the first drawn while the active one is scrolled away.
+  const rows = want.filter((tr) => tr.classList.contains("item"));
+  const current = rows.find((tr) => +tr.dataset.index! === activeIndex) || rows[0];
+  for (const tr of rows) tr.tabIndex = tr === current ? 0 : -1;
+  // The spacers must match the real row height exactly: measure it once rows exist.
+  const real = rows[0]?.getBoundingClientRect().height;
+  if (real && Math.abs(real - rowH) > 0.5) { rowH = real; scheduleRender(); }
+  renderFoot();
+}
+function showState(node: HTMLElement): void {
+  const holder = $el("#inv-state");
+  holder.replaceChildren(node);
+  holder.hidden = false;
+}
+function noScansState(): HTMLElement {
+  const noClient = !state.setup?.settings?.client;
+  return box("div", { class: "empty-state" }, icon("inventory"), el("h3", { class: "t-lg" }, "No scans yet"),
+    el("p", { class: "muted" }, txt(noClient ? "Set up your game client, then press Play on packrat-scanner.py in game to fill your inventory." : "Press Play on packrat-scanner.py in game, or import scan files you already have.")),
+    noClient
+      ? button({ label: "Run setup", variant: "primary", onClick: async () => { const { openWizard } = await import("./wizard.mts"); openWizard(); } })
+      : box("a", { class: "btn btn-primary", href: "#/import" }, txt("Import scans")));
+}
+function emptyResultState(): HTMLElement {
+  const tokens = tokensNow();
+  const cause = emptyAlone ? emptyCause(tokens, emptyAlone, state.facets?.itemCount || 0) : tokens.length === 1 ? emptyCause(tokens, [], state.facets?.itemCount || 0) : "Checking which filter excludes everything…";
+  return box("div", { class: "empty-state", id: "inv-empty" }, icon("search"), el("h3", { class: "t-lg" }, "No items match"), el("p", { class: "muted" }, txt(cause)),
+    tokens.length ? box("div", { class: "inv-empty-tokens" }, txt("Remove a filter:", "t-sm muted"), ...tokenEls(tokens)) : null,
+    button({ label: "Clear all filters", variant: "primary", onClick: () => { setQuery(clearAll(state.query)); search.focus(); } }));
+}
+// Which active filters match nothing on their own: one small query per filter, asked only when the
+// result is empty, so the sentence can name the cause (spec 3.5).
+async function findEmptyCause(g: number): Promise<void> {
+  const tokens = tokensNow();
+  if (tokens.length < 2) { emptyAlone = []; return; }
+  const alone: string[] = [];
+  await Promise.all(tokens.map(async (t) => {
+    // The query holding only this filter: every OTHER filter removed.
+    const only = tokens.filter((o) => o.id !== t.id).reduce((q, o) => o.remove(q), { ...state.query });
+    try {
+      const r = await api<ItemsApiResponse>(`/api/items?${queryParams({ ...only, group: false, offset: 0, limit: 1 }).toString()}`);
+      if (!r.total) alone.push(t.id);
+    } catch { /* the sentence falls back to naming the combination */ }
+  }));
+  if (g !== gen) return;
+  emptyAlone = alone;
+  if (!state.page.total) showState(emptyResultState());
+}
+function errorState(text: string): HTMLElement {
+  return box("div", { class: "inv-error" }, message({ tone: "bad", title: "Couldn't load the inventory", text: `${text}. Your scans are safe on disk.`,
+    actions: [
+      button({ label: "Try again", variant: "primary", size: "sm", onClick: async () => { loadError = null; loadedOnce = false; renderTable(); const { load } = await import("./app.mts"); load(); } }),
+      button({ label: "Open logs", size: "sm", onClick: () => { api("/api/host/open-path", { method: "POST", body: { which: "logs" } }).catch(() => { location.hash = "#/settings"; }); } }),
+    ] }));
+}
+// app.mts's load() or reload() failed: say so in the table's own card, and disable what needs the data.
+export function inventoryFailed(e: unknown): void {
+  loadError = String((e as Error).message || e).replace(/\.$/, "");
+  for (const c of $el("#inv-toolbar").querySelectorAll<HTMLButtonElement | HTMLInputElement>("button, input")) c.disabled = true;
+  renderTable();
+}
+const dot = (): HTMLElement => el("span", { class: "faint", "aria-hidden": "true" }, "·");
+function renderFoot(): void {
+  const foot = $el("#inv-foot"), p = state.page;
+  if (!loadedOnce || loadError) {
+    foot.replaceChildren(...(loadError ? [txt("Nothing loaded")] : [el("span", { class: "dot busy" }), txt("Loading inventory…"), el("span", { class: "spacer" }), txt("Filters stay usable")]));
+    $el("#inv-fade").hidden = true;
+    return;
+  }
+  const tokens = tokensNow(), all = allCols(), more = hiddenCols(), total = state.facets?.itemCount || 0;
+  $el("#inv-fade").hidden = !more;
+  const stacks = countFact({ shown: p.groups ? p.stacks : p.total, total, pieces: p.pieces, filtered: tokens.length > 0 });
+  const kids: Array<HTMLElement | null> = [txt(p.groups ? `${plural(p.total, "name")} · ${stacks}` : stacks, "inv-count"),
+    tokens.length ? dot() : null, tokens.length ? txt(plural(tokens.length, "filter")) : null, el("span", { class: "spacer" })];
+  if (more) kids.push(box("span", { class: "inv-more-cols" }, txt(`Scroll right for ${more} more ${more === 1 ? "column" : "columns"}`), icon("arrow-right", { size: "sm" })), dot());
+  kids.push(txt(sortedBy()));
+  if (!p.groups) kids.push(dot(), txt(`${state.cols.filter((c) => all.includes(c)).length} of ${all.length} columns`));
+  foot.replaceChildren(...kids.filter((k): k is HTMLElement => !!k));
+}
+// How many header cells sit wholly or partly past the scroller's right edge.
+function hiddenCols(): number {
+  const scroller = $el("#inv-scroll");
+  const edge = scroller.getBoundingClientRect().right;
+  let n = 0;
+  for (const th of scroller.querySelectorAll<HTMLElement>("thead th:not(.act-cell)")) if (th.getBoundingClientRect().right > edge + 1) n++;
+  return n;
+}
+
+// ---------------------------------------------------------------- keyboard, focus, pointer
+function rowEl(i: number): HTMLTableRowElement | null { return $el("#inv-table").querySelector<HTMLTableRowElement>(`tbody tr.item[data-index="${i}"]`); }
+// Scroll row i into view under the sticky header, draw, and focus it.
+function focusRow(i: number, focus = true): void {
+  const scroller = $el("#inv-scroll"), head = $el<HTMLTableElement>("#inv-table").tHead?.offsetHeight || 36;
+  activeIndex = Math.max(0, Math.min(state.page.total - 1, i));
+  const top = activeIndex * rowH, view = scroller.clientHeight - head;
+  if (top < scroller.scrollTop) scroller.scrollTop = top;
+  else if (top + rowH > scroller.scrollTop + view) scroller.scrollTop = top + rowH - view;
+  renderTable();
+  if (focus) rowEl(activeIndex)?.focus();
+}
+// A row's primary action: a grouped row opens its stacks.
+function activate(i: number): void {
+  if (state.page.groups) showGroup(i);
+}
+function wireTable(): void {
+  const scroller = $el("#inv-scroll"), body = $el<HTMLTableElement>("#inv-table").querySelector("tbody")!;
+  scroller.addEventListener("scroll", () => { scroller.classList.toggle("scrolled-x", scroller.scrollLeft > 0); scheduleRender(); }, { passive: true });
+  new ResizeObserver(scheduleRender).observe(scroller);
+  body.addEventListener("keydown", (e) => {
+    const tr = e.target as HTMLElement;
+    if (!tr.matches("tr.item")) return;
+    const i = +tr.dataset.index!;
+    const page = Math.max(1, Math.floor((scroller.clientHeight - 36) / rowH) - 1);
+    const m = gridKey(e.key, i, state.page.total, page);
+    if (!m || m.kind === "close") return;
+    e.preventDefault();
+    if (m.kind === "move") focusRow(m.index);
+    else activate(i);
+  });
+  body.addEventListener("focusin", (e) => {
+    const tr = (e.target as HTMLElement).closest<HTMLTableRowElement>("tr.item");
+    if (!tr || +tr.dataset.index! === activeIndex) return;
+    activeIndex = +tr.dataset.index!;
+    for (const r of body.querySelectorAll<HTMLTableRowElement>("tr.item")) r.tabIndex = r === tr ? 0 : -1;
+  });
+  body.addEventListener("click", (e) => {
+    const t = e.target as HTMLElement;
+    if (t.closest(".act-cell")) return;
+    const tr = t.closest<HTMLTableRowElement>("tr.item");
+    if (!tr) return;
+    activeIndex = +tr.dataset.index!;
+    tr.focus();
+    activate(activeIndex);
+  });
+  // "/" focuses the search from anywhere on the Inventory screen (spec 3.6).
+  document.addEventListener("keydown", (e) => {
+    if (e.key !== "/" || e.metaKey || e.ctrlKey || e.altKey) return;
+    const t = e.target as HTMLElement;
+    if (t.closest("input, textarea, select, [contenteditable], dialog, .drawer-root") || $el("#inv-view-items").offsetParent === null) return;
+    e.preventDefault();
+    search.focus(); search.select();
+  });
+  document.addEventListener("bridgechange", () => { rowCache = new Map(); renderTable(); });
+}
+// A grouped row opens its stacks: the list view searching for that name.
+function showGroup(i: number): void {
+  const g = state.page.groups?.[i];
+  if (g) setQuery({ ...state.query, group: false, q: g.name.toLowerCase(), sort: "name", dir: 1 });
+}
+
+// ---------------------------------------------------------------- entry points (app.mts, containers.mts)
+// Once, at startup: the toolbar, the table's header and its loading state.
+export function initFilters(): void {
+  buildToolbar();
+  wireTable();
+  rebuildTable();
+}
+// After every load and refresh: the facets changed, so the chips' words and the strip are redrawn, and
+// the toolbar comes back to life after a failed load.
+export function buildFilters(): void {
+  for (const c of $el("#inv-toolbar").querySelectorAll<HTMLButtonElement | HTMLInputElement>("button, input")) c.disabled = false;
+  loadError = null;
+  syncToolbar();
+}
+// Containers' "Show these items" and a row's "Show everything in this container": the Items view
+// filtered to one root container.
+export function showContainer(root: number): void {
+  setQuery({ ...clearAll(state.query), roots: [root] });
+  if (location.hash !== "#/inventory") location.hash = "#/inventory";
 }

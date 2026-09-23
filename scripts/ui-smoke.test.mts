@@ -20,6 +20,25 @@ function unavailable(): string | null {
   return null;
 }
 
+// The Inventory's row actions (ui/inventory.mts): icon buttons named by aria-label, drawn on every row
+// and shown on hover. A disabled one hangs its reason on a wrapper's tooltip (components.mts tipWrap).
+async function rowActionLabels(page: Page): Promise<string[]> {
+  await page.waitForSelector("#inv-table tbody tr.item .rowact button", { state: "attached", timeout: 10_000 });
+  return page.locator("#inv-table tbody tr.item").first().locator(".rowact button").evaluateAll((bs) => bs.map((b) => b.getAttribute("aria-label") || ""));
+}
+async function actionReason(page: Page, action: string): Promise<string> {
+  const row = page.locator("#inv-table tbody tr.item").first();
+  await row.hover();
+  const wrap = row.locator(".rowact .tipwrap", { has: page.locator(`button[aria-label="${action}"]`) });
+  if (!await wrap.count()) return "";
+  await wrap.hover();
+  const tip = page.locator(".tip[role=tooltip]").last();
+  await tip.waitFor({ timeout: 5_000 });
+  const text = await tip.innerText();
+  await page.mouse.move(0, 0);
+  return text;
+}
+
 test("[slow] the packaged UI renders, switches tabs and lists the demo inventory", async (t) => {
   const why = unavailable();
   if (why) return t.skip(why);
@@ -41,25 +60,9 @@ test("[slow] the packaged UI renders, switches tabs and lists the demo inventory
     // The inventory tab is the default: the demo fixtures must produce rows, not the empty state.
     // #inv-table is the real markup (app/index.html) — the tab sections carry no data-tab-panel
     // attribute, only a plain id ("tab-inventory") toggled via the [hidden] attribute.
-    const rows = page.locator("#inv-table tbody tr");
+    const rows = page.locator("#inv-table tbody tr.item");
     await rows.first().waitFor({ timeout: 30_000 });
     assert.ok(await rows.count() > 0, "demo fixtures should fill the inventory table");
-
-    // Task 2, Phase 6 (bug fix, later): a fresh --data dir has no settings.json, so no client is
-    // configured yet, but GET /api/setup's `bridgeAdapter` still resolves to "tazuo" here (this run
-    // uses the repo's real adapters/ dir, and POST /api/bridge itself already falls back to tazuo when
-    // no client is configured) — so app/ui/bridge.mts's currentAdapter() falls back to it too, and the
-    // real tazuo adapter's full capabilities.bridge means every row gets all three buttons. The note
-    // is a short explanation of that fallback, not a "here's what's missing" message — it still
-    // contains "client", so it isn't asserted more precisely here (see the dedicated fallback-note
-    // check in app/server.test.mts and app/bridge-adapter-fallback.test.mts).
-    await page.waitForSelector("#inv-table .act button", { timeout: 10_000 });
-    const fallbackLabels = await page.locator("#inv-table .act button").allInnerTexts();
-    for (const want of ["Highlight", "Grab", "Go to"]) {
-      assert.ok(fallbackLabels.includes(want), `expected a "${want}" button somewhere in the table (bridgeAdapter fallback), got ${JSON.stringify(fallbackLabels)}`);
-    }
-    await page.waitForSelector("#inv-bridge-note .bridge-note", { timeout: 10_000 });
-    assert.match(await page.locator("#inv-bridge-note .bridge-note").innerText(), /client/i);
 
     // A fresh --data dir has no settings.json, so /api/setup reports firstRun and app.mts's load()
     // opens the first-run wizard (a <dialog>) on top of everything — real behavior for a new user,
@@ -68,6 +71,21 @@ test("[slow] the packaged UI renders, switches tabs and lists the demo inventory
     await page.waitForSelector("#wizard[open]", { timeout: 10_000 });
     await page.locator("#wizard").getByRole("button", { name: "Skip" }).click();
     await page.waitForSelector("#wizard", { state: "hidden", timeout: 10_000 });
+
+    // Task 2, Phase 6 (bug fix, later): a fresh --data dir has no settings.json, so no client is
+    // configured yet, but GET /api/setup's `bridgeAdapter` still resolves to "tazuo" here (this run
+    // uses the repo's real adapters/ dir, and POST /api/bridge itself already falls back to tazuo when
+    // no client is configured) — so app/ui/bridge.mts's currentAdapter() falls back to it too, and the
+    // real tazuo adapter's full capabilities.bridge means every row gets all three actions. The bridge
+    // itself is not running, so each is drawn disabled with the offline reason (design spec 3.5), and
+    // the old amber "No client set up" bar above the table is gone: the sidebar's bridge control says it.
+    const labels = await rowActionLabels(page);
+    for (const want of ["Highlight in game", "Grab to backpack", "Go to container"]) {
+      assert.ok(labels.includes(want), `expected a "${want}" row action somewhere in the table (bridgeAdapter fallback), got ${JSON.stringify(labels)}`);
+    }
+    assert.match(await actionReason(page, "Grab to backpack"), /Bridge offline/);
+    assert.equal(await page.locator("#tab-inventory .bridge-note").count(), 0, "no amber client bar inside the Inventory");
+
 
     // Switching tabs is the one interaction every session starts with.
     await page.click('[data-nav="characters"]');
@@ -102,14 +120,15 @@ test("[slow] with tazuo configured, the demo inventory shows all three bridge bu
   try {
     const page = await app.firstWindow();
     await page.waitForSelector("#status", { timeout: 30_000 });
-    await page.locator("#inv-table tbody tr").first().waitFor({ timeout: 30_000 });
+    await page.locator("#inv-table tbody tr.item").first().waitFor({ timeout: 30_000 });
 
-    await page.waitForSelector("#inv-table .act button", { timeout: 10_000 });
-    const labels = await page.locator("#inv-table .act button").allInnerTexts();
-    for (const want of ["Highlight", "Grab", "Go to"]) {
-      assert.ok(labels.includes(want), `expected a "${want}" button somewhere in the table, got ${JSON.stringify(labels)}`);
+    const labels = await rowActionLabels(page);
+    for (const want of ["Highlight in game", "Grab to backpack", "Go to container"]) {
+      assert.ok(labels.includes(want), `expected a "${want}" row action somewhere in the table, got ${JSON.stringify(labels)}`);
     }
-    assert.equal(await page.locator("#inv-bridge-note .bridge-note").count(), 0, "tazuo has full bridge support — nothing to explain");
+    // TazUO supports all three, so the only reason a Grab is off here is the bridge not running.
+    assert.equal(await actionReason(page, "Grab to backpack"), "Bridge offline. Press Play on packrat-bridge.py in game.");
+    assert.equal(await page.locator("#tab-inventory .bridge-note").count(), 0, "tazuo has full bridge support — nothing to explain");
     assert.equal(await page.locator("#wizard[open]").count(), 0, "setupDone:true should skip the first-run wizard");
   } finally {
     await app.close();
@@ -146,18 +165,15 @@ test("[slow] a partial-bridge adapter only offers its declared action, and the n
   try {
     const page = await app.firstWindow();
     await page.waitForSelector("#status", { timeout: 30_000 });
-    await page.locator("#inv-table tbody tr").first().waitFor({ timeout: 30_000 });
+    await page.locator("#inv-table tbody tr.item").first().waitFor({ timeout: 30_000 });
 
-    await page.waitForSelector("#inv-table .act button", { timeout: 10_000 });
-    const labels = await page.locator("#inv-table .act button").allInnerTexts();
-    assert.ok(labels.length > 0, "at least one row should offer Highlight");
-    assert.ok(labels.every((l) => l === "Highlight"), `only Highlight should render, got ${JSON.stringify(labels)}`);
-
-    await page.waitForSelector("#inv-bridge-note .bridge-note", { timeout: 10_000 });
-    const note = await page.locator("#inv-bridge-note .bridge-note").innerText();
-    assert.match(note, /Highlight/, note);
-    assert.match(note, /Grab/, note);
-    assert.match(note, /Go to/, note);
+    // The row keeps all three buttons, so the table never changes shape; the two this client lacks
+    // are disabled and say why, naming the client.
+    const labels = await rowActionLabels(page);
+    for (const want of ["Highlight in game", "Grab to backpack", "Go to container"]) assert.ok(labels.includes(want), `${want} in ${JSON.stringify(labels)}`);
+    assert.match(await actionReason(page, "Grab to backpack"), /can't Grab/);
+    assert.match(await actionReason(page, "Go to container"), /can't Go to/);
+    assert.match(await actionReason(page, "Highlight in game"), /Bridge offline/, "Highlight is supported, so only the bridge being off holds it back");
   } finally {
     await app.close();
     rmSync(dataDir, { recursive: true, force: true });
