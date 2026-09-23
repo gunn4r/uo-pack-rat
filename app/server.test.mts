@@ -1351,14 +1351,16 @@ test("[fast] a matching client, no client at all, and --demo start without a dat
   assert.deepEqual(warned().filter((w) => w.includes("--data")), []);
 });
 
-test("[fast] with no client configured, GET /api/setup checks the auto-detected client folder", async () => {
+test("[fast] with no client configured, GET /api/setup checks the auto-detected client folder", async (t) => {
   const dir = mkdtempSync(join(tmpdir(), "qm-dd-detect-")), other = mkdtempSync(join(tmpdir(), "qm-dd-other-"));
   const root = join(FAKE_HOME, "Desktop", "TazUO");
   const legion = installedScripts(join(root, "TazUO", "LegionScripts"), other);
+  const warned = warnings(t);
   const s2 = await startServer(ensureLayout(resolveConfig(["--port", "0", "--data", dir], {})));
   try {
     const j = asJson<SetupResponse>(await (await fetch(s2.url + "/api/setup")).json());
     assert.deepEqual(j.dataDirCheck, { status: "mismatch", scriptsDir: legion, scriptsDataDir: other, dataDir: dir });
+    assert.equal(warned().filter((w) => w.includes(legion)).length, 1, "the startup warning names the detected folder");
   } finally {
     await s2.close();
     rmSync(root, { recursive: true, force: true });
