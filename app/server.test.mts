@@ -1337,7 +1337,7 @@ test("[fast] a new scan file changes /api/inventory without a restart", async ()
   }
 });
 
-// ---- Setup wizard (Task 2, Phase 4): GET/POST /api/setup*, POST /api/import, GET /api/update-check,
+// ---- Setup wizard (Task 2, Phase 4): GET/POST /api/setup*, GET /api/update-check,
 // POST /api/host/*, and PUT /api/settings' setupDone/client extension. app/installer.test.mts covers
 // the pure installer.mts functions directly; these cover the routes wiring them up.
 
@@ -1686,56 +1686,7 @@ test("[fast] POST /api/setup/install refuses 409 with the -stopall message while
   }
 });
 
-test("[fast] POST /api/import copies two fixtures (not the stray .txt) into the tazuo inbox, and the watcher folds them into /api/inventory", async () => {
-  const dir = mkdtempSync(join(tmpdir(), "qm-import-"));
-  const s2 = await startServer(ensureLayout(resolveConfig(["--port", "0", "--data", dir], {})));
-  try {
-    const fixture = JSON.parse(readFileSync(join(HERE, "..", "adapters", "tazuo", "fixture.scan.json"), "utf8"));
-    const srcDir = mkdtempSync(join(tmpdir(), "qm-import-src-"));
-    writeFileSync(join(srcDir, "one.json"), JSON.stringify(fixture));
-    writeFileSync(join(srcDir, "two.json"), JSON.stringify(fixture));
-    writeFileSync(join(srcDir, "notes.txt"), "not a scan");
 
-    const r = await fetch(s2.url + "/api/import", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ dir: srcDir }) });
-    assert.equal(r.status, 200);
-    assert.deepEqual(asJson(await r.json()), { ok: true, copied: 2, skipped: 0, failed: 0, failures: [] });
-
-    const badDir = await fetch(s2.url + "/api/import", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ dir: join(srcDir, "does-not-exist") }) });
-    assert.equal(badDir.status, 400);
-
-    const deadline = Date.now() + 3000;
-    let found = false;
-    while (Date.now() < deadline && !found) {
-      const inv = asJson<InventoryResponse>(await (await fetch(s2.url + "/api/inventory")).json());
-      found = Boolean(inv.inventory.characters[fixture.character]);
-      if (!found) await new Promise((resolve) => setTimeout(resolve, 100));
-    }
-    assert.ok(found, "the imported scan(s) folded into /api/inventory within 3s");
-  } finally {
-    await s2.close();
-  }
-});
-
-test("[fast] POST /api/import takes an explicit adapter (same result as the default) and rejects an unknown one, writing nothing", async () => {
-  const dir = mkdtempSync(join(tmpdir(), "qm-import-adapter-"));
-  const s2 = await startServer(ensureLayout(resolveConfig(["--port", "0", "--data", dir], {})));
-  try {
-    const fixture = JSON.parse(readFileSync(join(HERE, "..", "adapters", "tazuo", "fixture.scan.json"), "utf8"));
-    const srcDir = mkdtempSync(join(tmpdir(), "qm-import-adapter-src-"));
-    writeFileSync(join(srcDir, "one.json"), JSON.stringify(fixture));
-
-    const r = await fetch(s2.url + "/api/import", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ dir: srcDir, adapter: "tazuo" }) });
-    assert.equal(r.status, 200);
-    assert.deepEqual(asJson(await r.json()), { ok: true, copied: 1, skipped: 0, failed: 0, failures: [] });
-
-    const bad = await fetch(s2.url + "/api/import", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ dir: srcDir, adapter: "not-a-real-adapter" }) });
-    assert.equal(bad.status, 400);
-    assert.match(asJson<ErrorBody>(await bad.json()).error, /unknown adapter/);
-    assert.equal(existsSync(join(dir, "inbox", "not-a-real-adapter")), false, "a rejected adapter id must never create its own inbox directory");
-  } finally {
-    await s2.close();
-  }
-});
 
 // ---- Task 1, Phase 6: POST /api/import/paste, POST /api/import/rescan -----------------------------
 test("[fast] POST /api/import/paste: a good paste (marker block, with noise around it) lands a file the watcher then ingests", async () => {
@@ -2032,7 +1983,7 @@ test("[fast] PUT /api/settings {client: {adapter: \"../evil\", scriptsDir}} is 4
 // is neither rotated nor size-capped. One asObject() guard in front of them all.
 const OBJECT_BODY_ROUTES: Array<[string, string]> = [
   ["PUT", "/api/settings"], ["POST", "/api/setup/locate"], ["POST", "/api/setup/install"],
-  ["POST", "/api/import"], ["POST", "/api/import/paste"], ["POST", "/api/import/rescan"],
+  ["POST", "/api/import/paste"], ["POST", "/api/import/rescan"],
   ["POST", "/api/host/pick-folder"], ["POST", "/api/host/open-path"], ["POST", "/api/optimize"],
   ["POST", "/api/bridge"], ["POST", "/api/forget"], ["POST", "/api/forget-character"], ["PUT", "/api/ui-prefs"],
 ];

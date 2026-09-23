@@ -2,8 +2,7 @@
 // a player pasting what the ClassicUO web client's sandboxed scanner printed (it cannot write files
 // at all), and a manual rescan for a player whose folder watcher missed a drop. Both still end up
 // going through app/watcher.mts the normal way — this module only gets a scan doc INTO an adapter's
-// inbox; app/vault-server.mts nudges the watcher (scanOnce()) the same way POST /api/import already
-// does, so acceptance, rejection and the /api/events broadcast are all one code path regardless of
+// inbox; app/vault-server.mts then nudges the watcher (scanOnce()), so acceptance, rejection and the /api/events broadcast are all one code path regardless of
 // how the file got into the inbox.
 //
 // parsePastedScan(text) is pure — no fs, takes and returns values only (app/paste-scan.mts, shared
@@ -27,8 +26,8 @@ export { PASTE_BEGIN, PASTE_END, parsePastedScan, type ParsePastedScanResult } f
 // would give it (collision-checked against whatever's already sitting in that inbox, same as
 // ingestFile's own scansDir write). Returns {file, character}. IO only — the caller has already done
 // all the parsing/validation via parsePastedScan.
-// The write goes through app/atomic-write.mts's writeFileAtomic, the same helper importScans' own
-// copies use, rather than the predictable "<dest>.tmp" this used to write: a published temp name is a path
+// The write goes through app/atomic-write.mts's writeFileAtomic, the same helper the installer's copies
+// use, rather than the predictable "<dest>.tmp" this used to write: a published temp name is a path
 // something else can pre-plant a symlink at, and writeFileSync follows one — the bytes land outside
 // the inbox and the rename then moves the SYMLINK into the scan's final name. atomicReplace's temp is
 // random and created O_EXCL, and it refuses a destination that is anything but absent or a regular

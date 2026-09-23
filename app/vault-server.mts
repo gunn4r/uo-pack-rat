@@ -50,9 +50,7 @@
 //         Setup wizard (app/installer.mts backs all of these): GET /api/setup {firstRun, settings,
 //         adapters, candidates, installed, available, dataDir, dataDirCheck} · POST /api/setup/locate {adapter, dir}
 //         · POST /api/setup/install {adapter, scriptsDir} (409 while a Legion script is running in the
-//         client, per installer.mts's bridge-status guard) · POST /api/import {dir, adapter?} (copies
-//         top-level *.json into an adapter's inbox, tazuo when adapter is omitted — the watcher above
-//         does the rest) · POST /api/import/paste {text, adapter} (app/import.mts's parsePastedScan:
+//         client, per installer.mts's bridge-status guard) · POST /api/import/paste {text, adapter} (app/import.mts's parsePastedScan:
 //         what the ClassicUO web-client scanner prints, marker block or bare JSON, upgraded/validated
 //         and written straight into that adapter's inbox — for a client whose sandbox can't write
 //         files at all) · POST /api/import/rescan {} (scanOnce() on every running watcher, for a scan
@@ -84,9 +82,9 @@
 import http from "node:http";
 import { readFileSync, appendFileSync, readdirSync, existsSync, mkdirSync, copyFileSync, renameSync } from "node:fs";
 import { pathToFileURL } from "node:url";
-import { dirname, isAbsolute, join } from "node:path";
+import { dirname, join } from "node:path";
 import { spawn } from "node:child_process";
-import { statSync, type Stats } from "node:fs";
+import { statSync } from "node:fs";
 import { Worker } from "node:worker_threads";
 import { unlinkSync } from "node:fs";
 import { randomUUID, timingSafeEqual } from "node:crypto";
@@ -102,7 +100,7 @@ import { parsePastedScan, writeScanToInbox } from "./import.mts";
 import { writeFileAtomic } from "./atomic-write.mts";
 import {
   listAdapters, candidateClientRoots, validateScriptsDir, installedVersion, installScripts,
-  importScans, repoFromPackage, checkForUpdates, checkScriptsDataDir, type DataDirCheck, type AdapterInfo,
+  repoFromPackage, checkForUpdates, checkScriptsDataDir, type DataDirCheck, type AdapterInfo,
 } from "./installer.mts";
 import { dataDirNotice } from "./ui/messages.mts";
 import { homedir } from "node:os";
@@ -282,12 +280,6 @@ function short(v: unknown): string { return String(v).slice(0, 64); }
 const MAX_PATH_LEN = 4096;
 // The largest serial the scan contract accepts (app/schema/scan.v2.schema.json: a 32-bit unsigned).
 const MAX_SERIAL = 0xFFFFFFFF;
-// A Windows UNC path (\\host\share, and its forward-slash twin) is a perfectly good string, and on
-// win32 a readdirSync against one is an outbound SMB connection — an NTLM authentication attempt
-// against a host the caller named. installer.mts's validateScriptsDir refuses both forms (and a
-// relative path) for a client scripts folder itself; POST /api/import's `dir` is a folder of scan
-// files, never a scripts folder, so it never reaches that function and needs the same rule here.
-const UNC_RE = /^[\\/]{2}/;
 // What a failed locate/install tells the caller. Deliberately says nothing about the path it probed:
 // echoing the resolved path back made these routes a clean existence oracle for any absolute path on
 // the machine — "existing directory" vs "file or absent", for free, from an unauthenticated route in
@@ -1207,34 +1199,6 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
         // can say so.
         return send(res, 200, { ok: true, installed: result.installed, version: result.version, scriptsDir: destDir, pathsFile: result.pathsFile });
       }
-      if (req.method === "POST" && url.pathname === "/api/import") {
-        // adapter defaults to "tazuo" — today's hard-coded behavior — so neither existing caller (the
-        // wizard's import step, Settings' own "Import a folder" row) has to change to keep working.
-        const { dir, adapter = "tazuo" } = asObject(await readBody(req, { limit: 8e3 }));
-        // Security: same allowlist check every other route taking an adapter id makes (see
-        // /api/setup/locate above) — adapter reaches CONFIG.paths.inboxFor, a path.join, so an
-        // unchecked id could otherwise be used to probe/write outside the inbox tree.
-        if (!listAdapters(ADAPTERS_DIR).some((a) => a.id === adapter)) return send(res, 400, { ok: false, error: `unknown adapter: ${short(adapter)}` });
-        // dir is checked positively (post-review fix) before statSync ever sees it: an absolute,
-        // bounded, non-UNC path — the same shape validateScriptsDir requires of a scripts folder.
-        if (!isBoundedString(dir, MAX_PATH_LEN) || UNC_RE.test(dir) || !isAbsolute(dir)) return send(res, 400, { ok: false, error: "dir must be an existing directory" });
-        let dirStat: Stats | null = null;
-        try { dirStat = statSync(dir); } catch { /* badDir below */ }
-        if (!dirStat || !dirStat.isDirectory()) return send(res, 400, { ok: false, error: "dir must be an existing directory" });
-        // failed: files importScans could not take (one bigger than the inbox limit, an unwritable
-        // destination) — counted rather than thrown, and reported so a partial import is visible
-        // instead of silent. `failures` names the first few of them with a reason (importScans bounds
-        // that list itself), which is what lets the Import tab say why instead of only how many.
-        const { copied, skipped, failed, failures } = importScans({ dir, inboxDir: CONFIG.paths.inboxFor(adapter as string) });
-        // Nudge the watcher rather than waiting on fs.watch to notice the burst (post-review fix,
-        // Minor 3): a large import can overflow the OS's change-event buffer (Windows
-        // ReadDirectoryChangesW, macOS FSEvents coalescing), which would otherwise leave some of the
-        // just-copied files sitting unread in the inbox until the next launch's startup sweep.
-        // scanOnce() is idempotent (ingestFile's own accepted-name check) and a no-op under --demo,
-        // where watchers is empty.
-        watchers.get(adapter as string)?.scanOnce();
-        return send(res, 200, { ok: true, copied, skipped, failed, failures });
-      }
       if (req.method === "POST" && url.pathname === "/api/import/paste") {
         const { text, adapter } = asObject(await readBody(req));
         // Same allowlist as every other adapter-taking route — adapter reaches
@@ -1261,8 +1225,8 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
           safeAppendLog(CONFIG.paths.log, `${new Date().toISOString()} import-paste warn: pasted into ${JSON.stringify(adapter)}'s inbox but the document declares adapter ${JSON.stringify(declaredAdapter)}\n`);
         }
         const { file, character } = writeScanToInbox({ doc: parsed.doc, adapter: adapter as string, paths: CONFIG.paths });
-        // Same nudge as POST /api/import above — a single paste is not a burst, but there is no
-        // reason to make the player wait on fs.watch's debounce when the file is already on disk.
+        // Nudge the watcher: there is no reason to make the player wait on fs.watch's debounce when the
+        // file is already on disk.
         watchers.get(adapter as string)?.scanOnce();
         return send(res, 200, { ok: true, written: file, character,
           ...(mismatch ? { warning: `filed under "${adapter}", but this scan says it's from "${declaredAdapter}" — check the Adapter picker above` } : {}) });

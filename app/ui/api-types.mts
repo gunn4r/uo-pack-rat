@@ -193,20 +193,6 @@ export interface UpdateCheckApiResponse {
 
 // ---------------------------------------------------------------- import
 
-// POST /api/import — `failed` counts the files importScans could not take (one bigger than the inbox
-// limit, an unwritable destination) and `failures` names the first few of them with a reason; the
-// server bounds that list (app/installer.mts's MAX_REPORTED_FAILURES).
-export interface ImportFailureInfo {
-  name: string;
-  reason: string;
-}
-export interface ImportApiResponse {
-  ok: boolean;
-  copied: number;
-  skipped: number;
-  failed?: number | undefined;
-  failures?: ImportFailureInfo[] | undefined;
-}
 export interface ImportPasteApiResponse {
   ok: boolean;
   written: string;
