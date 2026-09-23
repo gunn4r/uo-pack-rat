@@ -36,6 +36,16 @@ async function route(page: Page, hash: string, ready: string): Promise<void> {
   await page.waitForSelector(ready, { timeout: 15_000 });
   await page.waitForTimeout(250);
 }
+// The wizard, opened from Settings' code path and walked forward `steps` times with its primary button.
+function openWizardAt(steps: number): (page: Page) => Promise<void> {
+  return async (page) => {
+    await page.evaluate(async () => { await (await import("/ui/wizard.mjs" as string)).openWizard(); });
+    await page.waitForSelector("#wizard[open] #wiz-primary");
+    for (let i = 0; i < steps; i++) await page.click("#wiz-primary");
+    await page.waitForTimeout(150);
+  };
+}
+async function closeWizard(page: Page): Promise<void> { await page.keyboard.press("Escape"); await page.waitForSelector("#wizard", { state: "hidden" }); }
 const SCENES: Scene[] = [
   { name: "inventory", enter: (p) => route(p, "#/inventory", "#inv-table tbody tr.item") },
   { name: "item tooltip", enter: async (p) => {
@@ -91,6 +101,22 @@ const SCENES: Scene[] = [
     }, [KESTREL]);
     await p.waitForSelector(".imp-file.bad");
   }, leave: async (p) => { await p.locator("#imp-mode").getByRole("radio", { name: "Paste a scan" }).click(); await p.keyboard.press("Escape"); } },
+  // ---- setup wizard (phase 11): the shard step with its notice, the client cards (selected, plain, disabled),
+  // a failed folder path, and the paste branch's last step
+  { name: "wizard shard", enter: openWizardAt(0), leave: closeWizard },
+  { name: "wizard client", enter: openWizardAt(1), leave: closeWizard },
+  { name: "wizard folder error", enter: async (p) => {
+    await openWizardAt(2)(p);
+    await p.fill("#wiz-path", "/no/such/folder");
+    await p.click("#wiz-use-path");
+    await p.waitForSelector("#wizard .msg.bad");
+  }, leave: closeWizard },
+  { name: "wizard paste branch", enter: async (p) => {
+    await openWizardAt(1)(p);
+    await p.locator("#wizard input[value=classicuo-web]").check();
+    await p.click("#wiz-primary"); await p.click("#wiz-primary");
+    await p.waitForSelector("#wizard .msg.info");
+  }, leave: closeWizard },
 ];
 
 async function launch(dataDir: string): Promise<{ app: ElectronApplication; page: Page; errors: string[] }> {
