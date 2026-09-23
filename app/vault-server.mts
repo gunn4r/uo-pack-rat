@@ -9,6 +9,7 @@
 //         it must be servable to the browser the same way) ·
 //         GET /schema/validate.mjs (scan-schema.mts's own import, same reason) ·
 //         GET /ui/<name> (name matching /^[a-z0-9-]+\.(mjs|css)$/, served from app/ui/, else 404) ·
+//         GET /ui/fonts/<name>.woff2 (the bundled IBM Plex faces, app/ui/fonts/, as binary font/woff2) ·
 //         GET /api/inventory (the cached fold of every scan — getInventory(), keyed by a signature of
 //         the scans directory + shard + vault-lib.mts mtime, so an edited/added/removed scan file is
 //         picked up on the next request with no restart; each scan file is upgraded v1→v2 and schema-
@@ -34,7 +35,7 @@
 //         409 under --demo, which must never write into the committed app/fixtures/) ·
 //         POST /api/forget-character {character} (drop a character's card, worn set, backpack and bank:
 //         a `_vault` tombstone carrying forgetCharacter; 409 under --demo) ·
-//         GET|PUT /api/ui-prefs (<data>/ui-prefs.json: {cols?}, the page's view choices)
+//         GET|PUT /api/ui-prefs (<data>/ui-prefs.json: {cols?, theme?, appearance?, sidebar?}, the page's view choices)
 //         POST /api/bridge {action, serial, name, chain: [root…parent], pos|null} (queue for packrat-bridge.py) · GET /api/bridge/status
 //         GET /api/events — SSE, one stream shared by every connected client (not per-job like the
 //         optimize events above): hello {ok, watching: [adapter ids]} on connect, inventory
@@ -131,6 +132,16 @@ const WEB = join(HERE, "dist");
 // server's own Host and no Origin, so the middleware passes it) and clickjack the app.
 const CSP = "default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; connect-src 'self'; img-src 'self' data:; font-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'";
 const UI_NAME_RE = /^[a-z0-9-]+\.(mjs|css)$/;
+const FONT_NAME_RE = /^[a-z0-9-]+\.woff2$/;
+// The closed-choice fields of <data>/ui-prefs.json (GET/PUT /api/ui-prefs) and what each may hold. A
+// theme family listed here may not be built yet: the page applies only the families it ships
+// (app/ui/theme.mts), so round 2's "britannia" can be stored before its tokens exist.
+const UI_PREF_CHOICES = {
+  theme: ["default", "britannia"],
+  appearance: ["light", "system", "dark"],
+  sidebar: ["auto", "collapsed"],
+} as const satisfies Record<string, readonly string[]>;
+type UiPrefsFile = { cols?: string[] } & { -readonly [K in keyof typeof UI_PREF_CHOICES]?: string };
 // Localhost security (spec §4.5): a request's Host must name this server, an Origin (when present)
 // must be this same origin, and — with a token configured — every /api/* route except the SSE
 // events stream (EventSource cannot carry an Authorization header; see below) must present it. None
@@ -148,12 +159,13 @@ interface HttpError extends Error {
 
 function send(res: http.ServerResponse, status: number, body: unknown, type = "application/json"): void {
   // Every non-JSON caller passes an already-read file: a string (readFileSync's utf8 result) for
-  // text, a Buffer for the favicon — the cast is compiler-only, matching config.mts's rawPort pattern.
+  // text, a Buffer for the favicon and the fonts — the cast is compiler-only, matching config.mts's
+  // rawPort pattern. Binary types (image/*, font/*) carry no charset.
   const data = type === "application/json" ? JSON.stringify(body) : (body as string | Buffer);
   // x-frame-options rides on EVERY response, not just text/html: it is the belt to the CSP's braces
   // for anything that ignores frame-ancestors, and a JSON response rendered directly as a document
   // is framable too.
-  const headers: Record<string, string> = { "content-type": type.startsWith("image/") ? type : type + "; charset=utf-8", "cache-control": "no-store", "x-content-type-options": "nosniff", "x-frame-options": "DENY" };
+  const headers: Record<string, string> = { "content-type": type.startsWith("image/") || type.startsWith("font/") ? type : type + "; charset=utf-8", "cache-control": "no-store", "x-content-type-options": "nosniff", "x-frame-options": "DENY" };
   if (type === "text/html") headers["content-security-policy"] = CSP;
   res.writeHead(status, headers);
   res.end(data);
@@ -685,12 +697,19 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
   // place, keeping the pre-migration file once as profiles.backup-<date>.json next to it.
   // <data>/ui-prefs.json: the page's view choices (GET/PUT /api/ui-prefs). A missing, unreadable or
   // malformed file reads as "nothing chosen", and the page keeps its defaults.
+  // Each field is read on its own: one bad value (a hand edit) drops that field, not the whole file.
   const UI_PREFS = join(CONFIG.dataDir, "ui-prefs.json");
-  function readUiPrefs(): { cols?: string[] } {
-    try {
-      const raw = JSON.parse(readFileSync(UI_PREFS, "utf8")) as { cols?: unknown };
-      return Array.isArray(raw?.cols) && raw.cols.every((c) => typeof c === "string") ? { cols: raw.cols as string[] } : {};
-    } catch { return {}; }
+  function readUiPrefs(): UiPrefsFile {
+    let raw: Record<string, unknown>;
+    try { raw = JSON.parse(readFileSync(UI_PREFS, "utf8")) as Record<string, unknown>; } catch { return {}; }
+    if (!raw || typeof raw !== "object") return {};
+    const out: UiPrefsFile = {};
+    if (Array.isArray(raw.cols) && raw.cols.every((c) => typeof c === "string")) out.cols = raw.cols as string[];
+    for (const [key, allowed] of Object.entries(UI_PREF_CHOICES)) {
+      const v = raw[key];
+      if (typeof v === "string" && (allowed as readonly string[]).includes(v)) out[key as keyof typeof UI_PREF_CHOICES] = v;
+    }
+    return out;
   }
   // A profiles.json that does not parse (a write cut short before writes were atomic, or a bad hand
   // edit) used to answer every GET /api/profiles with a 500 until someone fixed the file by hand. It
@@ -942,6 +961,14 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
       // scan-schema.mjs imports validate() from here — the browser resolves that relative import
       // against scan-schema.mjs's own served URL, so this needs its own static route too.
       if (req.method === "GET" && url.pathname === "/schema/validate.mjs") return send(res, 200, readFileSync(join(WEB, "schema", "validate.mjs"), "utf8"), "text/javascript");
+      if (req.method === "GET" && url.pathname.startsWith("/ui/fonts/")) {
+        // One flat folder of woff2 files and nothing else: the licence texts next to them, a subfolder or
+        // a dot-dot never match the name pattern.
+        const name = url.pathname.slice("/ui/fonts/".length);
+        const f = join(HERE, "ui", "fonts", name);
+        if (!FONT_NAME_RE.test(name) || !existsSync(f)) return send(res, 404, { ok: false, error: "not found" });
+        return send(res, 200, readFileSync(f), "font/woff2");
+      }
       if (req.method === "GET" && url.pathname.startsWith("/ui/")) {
         const name = url.pathname.slice("/ui/".length);
         if (!UI_NAME_RE.test(name)) return send(res, 404, { ok: false, error: "not found" });
@@ -1000,7 +1027,7 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
       }
       if (req.method === "GET" && url.pathname === "/api/ui-prefs") return send(res, 200, { ok: true, prefs: readUiPrefs() });
       if (req.method === "PUT" && url.pathname === "/api/ui-prefs") {
-        // The page's own view choices (today: the Inventory tab's columns). Kept here rather than in
+        // The page's own view choices (the Inventory tab's columns, the look, the sidebar). Kept here rather than in
         // the page's localStorage because the desktop app serves the page from a new port, and so a new
         // origin, on every launch. Only known fields, each checked, are written.
         const body = asObject(await readBody(req, { limit: 16e3 }));
@@ -1009,6 +1036,12 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
           const cols = body.cols;
           if (!Array.isArray(cols) || cols.length > 200 || !cols.every((c) => isBoundedString(c, 64))) return send(res, 400, { ok: false, error: "cols must be a list of at most 200 column keys" });
           next.cols = cols as string[];
+        }
+        for (const [key, allowed] of Object.entries(UI_PREF_CHOICES)) {
+          if (!Object.prototype.hasOwnProperty.call(body, key)) continue;
+          const v = body[key];
+          if (typeof v !== "string" || !(allowed as readonly string[]).includes(v)) return send(res, 400, { ok: false, error: `${key} must be one of ${allowed.join(", ")}` });
+          next[key as keyof typeof UI_PREF_CHOICES] = v;
         }
         writeFileAtomic(UI_PREFS, JSON.stringify(next, null, 2) + "\n", DATA_FILE_MODE);
         return send(res, 200, { ok: true });

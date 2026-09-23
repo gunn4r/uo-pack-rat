@@ -1,0 +1,53 @@
+/* ui/components.css — base resets and the shared component classes (docs/ui.md), ported from the approved
+   design canvas. Two rules hold everywhere in this file:
+   1. Resets are wrapped in :where() so they have zero specificity, and variants are written .btn.btn-primary:
+      a reset like ".pr button { color: inherit }" (0,1,1) would outrank ".btn-primary" (0,1,0) and every
+      filled button would inherit dark body text.
+   2. Every rule that sets a fill sets its --color-on-* text in the same rule. */
+
+/* ---------------------------------------------------------------- base */
+.pr { font-family: var(--font-body); font-size: var(--text-base); line-height: var(--lh-base); color: var(--color-text); background: var(--color-bg); background-image: var(--surface-texture); -webkit-font-smoothing: antialiased; }
+:where(.pr) *, :where(.pr) *::before, :where(.pr) *::after { box-sizing: border-box; }
+:where(.pr) :where(h1, h2, h3, h4, p) { margin: 0; }
+:where(.pr) :where(button, input, select, textarea) { font: inherit; color: inherit; }
+:where(.pr) :where(input, textarea)::placeholder { color: var(--color-placeholder); opacity: 1; }
+:where(.pr) :where(a) { color: var(--color-link); }
+:where(.pr) :where(a:hover) { color: var(--color-link-hover); }
+:where(.pr) :where(code, kbd, samp, pre) { font-family: var(--font-mono); }
+
+/* Bare controls the screens still render without a component class: plain secondary look, all at zero
+   specificity so any component class below wins. */
+:where(.pr) :where(button) { background: var(--color-surface); color: var(--color-text); border: var(--border-width) solid var(--color-border-strong); border-radius: var(--radius-md); padding: var(--space-1-5) var(--space-3); cursor: pointer; font-weight: var(--weight-medium); }
+:where(.pr) :where(button:hover) { background: var(--color-surface-subtle); color: var(--color-text); }
+:where(.pr) :where(button.primary) { background: var(--color-accent); border-color: var(--color-accent); color: var(--color-on-accent); font-weight: var(--weight-semibold); }
+:where(.pr) :where(button.primary:hover) { background: var(--color-accent-hover); border-color: var(--color-accent-hover); color: var(--color-on-accent-hover); }
+:where(.pr) :where(button:disabled, button:disabled:hover) { background: var(--color-disabled); border-color: var(--color-disabled); color: var(--color-on-disabled); cursor: not-allowed; }
+:where(.pr) :where(input:not([type=checkbox], [type=radio], [type=range]), select, textarea) { background: var(--color-surface); color: var(--color-text); border: var(--border-width) solid var(--color-border-strong); border-radius: var(--radius-md); padding: var(--space-1) var(--space-2); }
+:where(.pr) :where(input[type=checkbox], input[type=radio]) { accent-color: var(--color-accent); }
+:where(.pr) :where(button, input, select, textarea, a, [tabindex]):focus-visible { outline: none; box-shadow: var(--ring-focus); }
+
+/* ---------------------------------------------------------------- utilities */
+.mono { font-family: var(--font-mono); font-size: var(--text-sm); }
+.muted { color: var(--color-text-muted); }
+.faint { color: var(--color-text-faint); }
+.num { font-variant-numeric: tabular-nums; }
+.caps { font-size: var(--text-xs); line-height: var(--lh-xs); font-weight: var(--weight-medium); letter-spacing: var(--tracking-caps); text-transform: uppercase; color: var(--color-text-muted); }
+.t-sm { font-size: var(--text-sm); line-height: var(--lh-sm); }
+.t-md { font-size: var(--text-md); line-height: var(--lh-md); }
+.t-lg { font-size: var(--text-lg); line-height: var(--lh-lg); font-weight: var(--weight-semibold); }
+.t-xl { font-family: var(--font-display); font-size: var(--text-xl); line-height: var(--lh-xl); font-weight: var(--weight-semibold); }
+.t-2xl { font-family: var(--font-display); font-size: var(--text-2xl); line-height: var(--lh-2xl); font-weight: var(--weight-semibold); }
+.strong { font-weight: var(--weight-semibold); }
+.ellip { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+.spacer { flex: 1 1 auto; }
+.i { width: 16px; height: 16px; flex: none; fill: none; stroke: currentColor; stroke-width: 1.75; stroke-linecap: round; stroke-linejoin: round; }
+.i-sm { width: 14px; height: 14px; }
+
+/* ---------------------------------------------------------------- messages */
+.msg { display: flex; align-items: flex-start; gap: var(--space-2); padding: var(--space-2) var(--space-3); border-radius: var(--radius-md); font-size: var(--text-base); border: var(--border-width) solid transparent; background: var(--color-surface-subtle); color: var(--color-text); }
+.msg.info { background: var(--color-accent-soft); color: var(--color-on-accent-soft); }
+.msg.ok { background: var(--color-success-soft); color: var(--color-on-success-soft); }
+.msg.warn { background: var(--color-warning-soft); color: var(--color-on-warning-soft); }
+.msg.bad { background: var(--color-danger-soft); color: var(--color-on-danger-soft); }
+.msg .i { margin-top: 2px; }

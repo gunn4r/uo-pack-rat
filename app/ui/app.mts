@@ -17,6 +17,7 @@ import { openWizard } from "./wizard.mts";
 import { renderSettings } from "./settings.mts";
 import { renderImport } from "./import.mts";
 import { changeShard } from "./shard.mts";
+import { applyLook } from "./theme.mts";
 import type { SettingsApiResponse, RulesApiResponse, SetupApiResponse, InventoryApiResponse, ProfilesApiResponse, UiPrefsApiResponse } from "./api-types.mts";
 
 // ---------------------------------------------------------------- data
@@ -54,6 +55,7 @@ export async function load(): Promise<void> {
   state.setup = setupRes;
   setRules(state.rules);
   applyUiPrefs(prefs ? prefs.prefs : null);
+  applyLook(prefs ? prefs.prefs : null);
   renderShardPicker();
   // Settings, Import, the live-scan stream and the first-run wizard need nothing from the inventory,
   // so they come up before it: a failed inventory or profiles fetch must not take the Settings tab
@@ -132,6 +134,8 @@ showTab(parseRoute().tab);   // before the inventory loads, so a reload never fl
 // A build left running when the tab closes would burn CPU for nothing: tell the server to drop it.
 window.addEventListener("pagehide", () => { const j = state.builder.job; if (j?.id) navigator.sendBeacon(`/api/optimize/${j.id}/cancel`); });
 
+// The look before any data arrives: the system's light/dark until the saved choice lands in load().
+applyLook(null);
 installTooltip();
 setInterval(pollBridge, 2500); pollBridge();
 

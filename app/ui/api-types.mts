@@ -50,6 +50,9 @@ export interface SettingsApiResponse {
 // optional: absent means "never chosen", and the page keeps its default.
 export interface UiPrefs {
   cols?: string[] | undefined;
+  theme?: string | undefined;                          // a theme family ("default"; "britannia" in round 2)
+  appearance?: "light" | "system" | "dark" | undefined;
+  sidebar?: "auto" | "collapsed" | undefined;          // "collapsed" = pinned to icons at any width
 }
 export interface UiPrefsApiResponse {
   ok: boolean;

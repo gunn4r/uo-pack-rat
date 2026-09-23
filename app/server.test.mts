@@ -476,6 +476,26 @@ test("[fast] /ui/shard.mjs is served with the right content-type", async () => {
   assert.equal((await get("/ui/shard.mjs")).status, 200);
   assert.equal((await get("/ui/shard.mjs")).headers.get("content-type"), "text/javascript; charset=utf-8");
 });
+// The bundled IBM Plex faces (app/ui/tokens.css's @font-face) come from app/ui/fonts/, byte for byte,
+// as font/woff2 with no charset: a font sent as text would be refused by the browser, and the CSP's
+// font-src 'self' allows exactly this origin. Anything but a flat .woff2 name in that folder is a 404.
+test("[fast] /ui/fonts/ serves the bundled woff2 files as binary font/woff2", async () => {
+  const name = "ibm-plex-sans-latin-400-normal.woff2";
+  const res = await get(`/ui/fonts/${name}`);
+  assert.equal(res.status, 200);
+  assert.equal(res.headers.get("content-type"), "font/woff2");
+  assert.equal(res.headers.get("x-content-type-options"), "nosniff");
+  assert.deepEqual(Buffer.from(await res.arrayBuffer()), readFileSync(join(HERE, "ui", "fonts", name)));
+  for (const bad of ["/ui/fonts/OFL-IBM-Plex-Sans.txt", "/ui/fonts/nope.woff2", "/ui/fonts/..%2fstyles.css", "/ui/fonts/sub/x.woff2"]) {
+    assert.equal((await get(bad)).status, 404, bad);
+  }
+});
+test("[fast] the page's stylesheets and fonts are allowed by its own CSP", async () => {
+  const csp = (await get("/")).headers.get("content-security-policy") || "";
+  assert.match(csp, /font-src 'self'/);
+  assert.match(csp, /style-src 'self'/);
+  for (const css of ["tokens.css", "components.css", "styles.css"]) assert.equal((await get(`/ui/${css}`)).status, 200, css);
+});
 // scan-schema.mjs (served at /scan-schema.mjs) imports validate() from "./schema/validate.mjs" — the
 // browser resolves that relative import against scan-schema.mjs's own served URL, so it 404s without
 // this route. Caught live by the Task 2 browser check (a bootstrap import chain failure with no other
@@ -2758,6 +2778,29 @@ test("[fast] GET/PUT /api/ui-prefs keeps the column choice across a restart on a
     assert.deepEqual(asJson(await (await fetch(s2.url + "/api/ui-prefs")).json()), { ok: true, prefs: { cols: ["hci", "sk:magery", "strReq"] } });
   } finally {
     await s2.close();
+  }
+});
+
+// The look (theme family, light/system/dark) and the pinned-collapsed sidebar are view choices like the
+// columns, and live in the same file for the same reason: the desktop app's origin changes every launch.
+// Each field is written only when valid, and a PUT of one field keeps the others.
+test("[fast] PUT /api/ui-prefs keeps theme, appearance and sidebar, each checked, next to the columns", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "qm-uiprefs-look-"));
+  const put = (url: string, body: unknown): Promise<Response> => fetch(url + "/api/ui-prefs", { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
+  const s = await startServer(ensureLayout(resolveConfig(["--port", "0", "--data", dir], {})));
+  try {
+    assert.equal((await put(s.url, { cols: ["hci"] })).status, 200);
+    assert.equal((await put(s.url, { appearance: "dark" })).status, 200);
+    assert.equal((await put(s.url, { theme: "default", sidebar: "collapsed" })).status, 200);
+    assert.deepEqual(asJson(await (await fetch(s.url + "/api/ui-prefs")).json()), { ok: true, prefs: { cols: ["hci"], appearance: "dark", theme: "default", sidebar: "collapsed" } });
+    for (const bad of [{ appearance: "sepia" }, { appearance: 1 }, { theme: "neon" }, { theme: "" }, { sidebar: "wide" }, { sidebar: true }]) {
+      assert.equal((await put(s.url, bad)).status, 400, `${JSON.stringify(bad)} should be refused`);
+    }
+    // A hand-edited file with a bad value reads as "never chosen" for that field only.
+    writeFileSync(join(dir, "ui-prefs.json"), JSON.stringify({ cols: ["dci"], appearance: "sepia", theme: "default", sidebar: 3 }));
+    assert.deepEqual(asJson(await (await fetch(s.url + "/api/ui-prefs")).json()), { ok: true, prefs: { cols: ["dci"], theme: "default" } });
+  } finally {
+    await s.close();
   }
 });
 

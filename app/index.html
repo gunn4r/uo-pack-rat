@@ -1,13 +1,15 @@
 <!doctype html>
-<html lang="en">
+<html lang="en" data-theme="default" data-mode="light">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Pack Rat</title>
 <link rel="icon" type="image/png" href="/favicon.png">
+<link rel="stylesheet" href="/ui/tokens.css">
+<link rel="stylesheet" href="/ui/components.css">
 <link rel="stylesheet" href="/ui/styles.css">
 </head>
-<body>
+<body class="pr">
 <header>
   <div class="brand"><h1>Pack Rat</h1></div>
   <div class="status" id="status">loading…</div>
@@ -24,7 +26,7 @@
 </header>
 <div id="notice" class="msg warn" role="status" hidden></div>
 <dialog id="wizard" class="wizard"></dialog>
-<div id="tip" role="tooltip"></div>
+<div id="tip" role="tooltip" data-theme="default" data-mode="dark"></div>
 <div id="runs-drawer" class="drawer" inert>
   <div class="drawer-backdrop"></div>
   <aside class="drawer-panel" role="dialog" aria-label="Saved runs">

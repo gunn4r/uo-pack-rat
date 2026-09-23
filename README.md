@@ -208,4 +208,4 @@ The rest of this page is for people working on Pack Rat itself.
 
 ## License
 
-MIT — see `LICENSE`.
+MIT — see `LICENSE`. The bundled IBM Plex Sans and IBM Plex Mono fonts (`app/ui/fonts/`) are © IBM Corp. under the SIL Open Font License 1.1; their licence texts sit next to them.
