@@ -9,6 +9,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import { dirname, join } from "node:path";
 import {
   parseTooltip, classify, foldSnapshots, buildPools, requirementReport, totalsOf, propertyKeys, bagLabel, kindOf, groupByName, slayersOf, medableOf, weaponAllowed, settingsDiff, PROP_LABELS, LAYER_TO_SLOT, effectiveProfile, resistSkillBonus, toOptItem, labelOf, builderKeys, migrateProfiles, templateFrom, TEMPLATE_KEYS, setRules, getRules, tagUnits, tagInfo,
+  shardResistCap, resistCapsFor, resistCapsError, profileResistCaps, RESIST_CAP_LIMITS,
 } from "./vault-lib.mts";
 import type { Item, Inventory, ItemLocation, ProfilesFile } from "./vault-lib.mts";
 import { upgradeScan, TAZUO_V1_CAPS } from "./scan-schema.mts";
@@ -789,6 +790,50 @@ test("[fast] effectiveProfile: resist floors and caps are paperdoll values, less
   assert.equal(resistSkillBonus({ "Resisting Spells": { value: 100 } }), 40);
   assert.equal(resistSkillBonus({ "Resisting Spells": { value: 50 } }), 20);
   assert.ok(settingsDiff({ race: "human" }, { race: "elf", excludeSkills: ["necromancy"] }).includes("race human → elf"));
+});
+
+test("[fast] resist cap overrides: effectiveProfile values a resist up to the player's cap, paperdoll terms, and a floor counts up to it", () => {
+  const skills = { skills: { "Resisting Spells": { value: 41.5 } } } as never;   // +16
+  const e = effectiveProfile({ floors: { fireResist: 90, coldResist: 90 }, resistCaps: { fireResist: 95 } }, skills);
+  assert.equal(e.caps.fireResist, 79, "95 on the paperdoll less the Resisting Spells bonus");
+  assert.equal(e.caps.coldResist, 54, "an untouched resist keeps the shard's 70");
+  assert.equal(e.floors.fireResist, 74, "a Fire floor of 90 is no longer clamped to 70");
+  assert.equal(e.floors.coldResist, 54, "Cold's floor still is");
+  assert.deepEqual(e.resistCapOverrides, { fireResist: { cap: 95, shard: 70 } });
+  assert.deepEqual(profileResistCaps(e).fireResist, { cap: 95, shard: 70 });
+  assert.deepEqual(profileResistCaps(e).coldResist, { cap: 70, shard: 70 });
+  const lowered = effectiveProfile({ resistCaps: { physResist: 50 } }, null);
+  assert.equal(lowered.caps.physResist, 50);
+  assert.deepEqual(lowered.resistCapOverrides, { physResist: { cap: 50, shard: 70 } });
+  // No override, or one equal to the shard's cap for the race: the effective profile is exactly what it was
+  // before overrides existed (no resistCapOverrides key), so its run key, and every saved run, still match.
+  const plain = effectiveProfile({ floors: { fireResist: 60 }, race: "elf" }, skills);
+  assert.ok(!("resistCapOverrides" in plain));
+  assert.deepEqual(effectiveProfile({ floors: { fireResist: 60 }, race: "elf", resistCaps: { energyResist: 75 } }, skills), plain, "an Elf's Energy 75 is the shard's own cap");
+  assert.equal(effectiveProfile({ race: "human", resistCaps: { energyResist: 75 } }, null).resistCapOverrides!.energyResist!.shard, 70, "but raises a human's");
+  assert.equal(effectiveProfile({ resistCaps: { fireResist: Number.NaN } }, null).caps.fireResist, 70, "a value that is not a number is ignored");
+  assert.equal(shardResistCap("energyResist", "elf"), 75);
+  assert.equal(shardResistCap("energyResist", null), 70);
+  assert.deepEqual(resistCapsFor("elf", { fireResist: 95 }).energyResist, { cap: 75, shard: 75 });
+});
+
+test("[fast] resist cap overrides: resistCapsError holds the five resist keys to whole numbers 0-150; templates and settingsDiff carry them", () => {
+  assert.equal(resistCapsError(undefined), null);
+  assert.equal(resistCapsError({ fireResist: 95, coldResist: 0, physResist: 150 }), null);
+  assert.equal(resistCapsError([95]), "resistCaps must be an object");
+  assert.equal(resistCapsError({ hci: 5 }), "resistCaps.hci is not a resist");
+  assert.equal(resistCapsError({ fireResist: 95.5 }, "x"), "x.fireResist must be a whole number from 0 to 150");
+  assert.match(resistCapsError({ fireResist: 151 })!, /from 0 to 150/);
+  assert.match(resistCapsError({ fireResist: -1 })!, /from 0 to 150/);
+  assert.match(resistCapsError({ fireResist: "95" })!, /whole number/);
+  assert.deepEqual(RESIST_CAP_LIMITS, { min: 0, max: 150 });
+  const t = templateFrom({ resistCaps: { fireResist: 95 } });
+  assert.deepEqual(t.resistCaps, { fireResist: 95 });
+  assert.deepEqual(templateFrom({}).resistCaps, {}, "an old template without overrides loads with none");
+  assert.deepEqual(settingsDiff({}, { resistCaps: { fireResist: 95 } }), [`${PROP_LABELS.fireResist} cap set to 95`]);
+  assert.deepEqual(settingsDiff({ resistCaps: { fireResist: 95 } }, { resistCaps: { fireResist: 90 } }), [`${PROP_LABELS.fireResist} cap 95 → 90`]);
+  assert.deepEqual(settingsDiff({ resistCaps: { fireResist: 95 } }, {}), [`${PROP_LABELS.fireResist} cap back to the shard's`]);
+  assert.deepEqual(settingsDiff({ resistCaps: {} }, {}), [], "no overrides on either side is no change");
 });
 
 test("[fast] getRules()/setRules() and resistSkillBonus() are shard-swappable: generic-osi has no flat Resisting Spells bonus", () => {

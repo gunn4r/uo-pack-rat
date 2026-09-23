@@ -64,7 +64,7 @@ uoalive's breakpoints are `[[100, 0.4], [120, 0.2]]`: +0.4 per point of skill fr
 - Second breakpoint's slice: `min(120, 120) − 100 = 20` points at rate `0.2` → `20 × 0.2 = 4`.
 - Total: `40 + 4 = 44`, floored (already an integer here) → **44**.
 
-At exactly 100 skill, only the first slice applies: `100 × 0.4 = 40`. This bonus is added toward each resist's own cap (paperdoll display, and `effectiveProfile`'s floor/cap adjustment for the optimizer — see `CONTRIBUTING.md`'s "Resist floors and caps are paperdoll values" note) — it is not itself a property an item can carry, and it's computed fresh from the character's live scanned skill value every time, not stored anywhere.
+At exactly 100 skill, only the first slice applies: `100 × 0.4 = 40`. This bonus is added toward each resist's own cap (paperdoll display, and `effectiveProfile`'s floor/cap adjustment for the optimizer — see `CONTRIBUTING.md`'s "Resist floors and caps are paperdoll values" note), whether that cap is the shard's or one the player set for a build in the Suit Builder's Resist caps section (`docs/solver.md`, "Resist caps"). It is not itself a property an item can carry, and it's computed fresh from the character's live scanned skill value every time, not stored anywhere.
 
 ## Adding your own shard
 

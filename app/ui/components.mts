@@ -70,6 +70,7 @@ const ICONS = {
   sun: [["circle", { cx: "12", cy: "12", r: "4" }], P("M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4")],
   more: [["circle", { cx: "5", cy: "12", r: "1.3" }], ["circle", { cx: "12", cy: "12", r: "1.3" }], ["circle", { cx: "19", cy: "12", r: "1.3" }]],
   "panel-left": [["rect", { x: "3", y: "4", width: "18", height: "16", rx: "2" }], P("M9 4v16")],
+  undo: [P("M9 14 4 9l5-5"), P("M4 9h10.5a5.5 5.5 0 0 1 0 11H11")],
 } satisfies Record<string, Shape[]>;
 export type IconName = keyof typeof ICONS;
 const SVG_NS = "http://www.w3.org/2000/svg";

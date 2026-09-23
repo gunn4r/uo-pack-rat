@@ -1296,6 +1296,58 @@ test("[fast] /api/optimize by character: the saved run keeps the page's settings
   assert.equal(run.settings.strLimit, 120, "the pool settings the run actually used win over the snapshot's");
 });
 
+// Resist cap overrides (issue #44) persist with a profile or template and with each saved run, and the server
+// holds them to one rule everywhere: the five resist keys only, whole numbers from 0 to 150.
+test("[fast] resist cap overrides: profiles and saved runs keep them, and a bad one is refused with 400", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "qm-"));
+  const s2 = await startServer(ensureLayout(resolveConfig(["--demo", "--port", "0", "--data", dir], {})));
+  const put = (body: unknown): Promise<Response> => fetch(s2.url + "/api/profiles", { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
+  try {
+    const profiles = asJson<ProfilesResponse>(await (await fetch(s2.url + "/api/profiles")).json()).profiles;
+    const templateName = Object.keys(profiles.templates!)[0]!;
+    const character = Object.keys(asJson<InventoryResponse>(await (await fetch(s2.url + "/api/inventory")).json()).inventory.characters)[0]!;
+    const good = { ...profiles, characters: { ...profiles.characters, [character]: { template: templateName, race: "human", resistCaps: { fireResist: 95 } } },
+      templates: { ...profiles.templates, reaper: { ...profiles.templates![templateName]!, resistCaps: { fireResist: 95, coldResist: 60 } } } };
+    assert.equal((await put(good)).status, 200);
+    const back = asJson<ProfilesResponse>(await (await fetch(s2.url + "/api/profiles")).json()).profiles;
+    assert.deepEqual(back.characters![character]!.resistCaps, { fireResist: 95 });
+    assert.deepEqual(back.templates!.reaper!.resistCaps, { fireResist: 95, coldResist: 60 });
+    for (const [where, caps, path] of [["characters", { fireResist: 95.5 }, /\/characters\/.+\/resistCaps\/fireResist/], ["characters", { fireResist: 151 }, /resistCaps\/fireResist/],
+      ["templates", { luck: 5 }, /\/templates\/reaper\/resistCaps/], ["templates", "95", /\/templates\/reaper\/resistCaps/]] as const) {
+      const bad = where === "characters" ? { ...good, characters: { [character]: { resistCaps: caps } } } : { ...good, templates: { reaper: { resistCaps: caps } } };
+      const r = await put(bad);
+      assert.equal(r.status, 400, `${where} ${JSON.stringify(caps)}`);
+      assert.match(asJson<ErrorBody>(await r.json()).error, path);
+    }
+
+    // A build's settings snapshot carries the caps into its saved run; a bad one is refused before anything runs.
+    const rules = asJson<RulesResponse>(await (await fetch(s2.url + "/api/rules")).json());
+    const profile = { ...profiles.templates![templateName], caps: { ...rules.rules.caps, fireResist: 95 } };
+    const post = (settings: Record<string, unknown>, snapshot: Record<string, unknown>): Promise<Response> => fetch(s2.url + "/api/optimize", {
+      method: "POST", headers: { "content-type": "application/json" },
+      body: JSON.stringify({ character, settings, profile, opts: { exact: false, restarts: 3 }, meta: { character, settings: snapshot } }) });
+    for (const [settings, snapshot, msg] of [[{}, { resistCaps: { fireResist: -1 } }, /meta\.settings\.resistCaps\.fireResist must be a whole number from 0 to 150/],
+      [{}, { resistCaps: [95] }, /meta\.settings\.resistCaps must be an object/], [{ resistCaps: { hci: 5 } }, {}, /settings\.resistCaps\.hci is not a resist/]] as const) {
+      const r = await post(settings, snapshot);
+      assert.equal(r.status, 400, JSON.stringify(snapshot));
+      assert.match(asJson<ErrorBody>(await r.json()).error, msg);
+    }
+    const r = await post({}, { race: "human", resistCaps: { fireResist: 95 } });
+    const j = asJson<OptimizeJobResponse>(await r.json());
+    assert.equal(r.status, 200, JSON.stringify(j));
+    let status: OptimizeJobResponse = j;
+    for (let i = 0; i < 200 && status.state !== "done" && !j.cached; i++) {
+      await new Promise((res) => setTimeout(res, 20));
+      status = asJson<OptimizeJobResponse>(await (await fetch(s2.url + `/api/optimize/${j.id}/status`)).json());
+    }
+    const run = asJson<{ run: { settings: Record<string, unknown> } }>(await (await fetch(s2.url + `/api/runs/${j.id}`)).json()).run;
+    assert.deepEqual(run.settings.resistCaps, { fireResist: 95 }, "reopening the run shows the caps it was built with");
+  } finally {
+    await s2.close();
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 // Post-review fix: `null` in an optional settings field (strLimit/excludeTags/excludeRoots/
 // excludeSkills/lockedSlots) passed the `!= null` validation gate untouched, but the destructuring
 // defaults below it only fire on `undefined` — so `strLimit: null` reached buildPools as a literal

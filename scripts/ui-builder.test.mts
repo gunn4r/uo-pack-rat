@@ -2,7 +2,7 @@
 // Electron window with Playwright (the launch scripts/ui-state.test.mts uses). Each case is maintainer feedback
 // on the redesign (PR #43): ⌘↵ building from anywhere on the screen, not only with focus inside it; the item
 // tooltip on the current suit's and the Fetch list's pieces; a Fetch list place shown whole; STR limit out of
-// Advanced; a switch whose off and on states read apart. Skipped when electron or playwright is absent, or
+// Advanced; a switch whose off and on states read apart. And the resist cap overrides (issue #44). Skipped when electron or playwright is absent, or
 // under TEST_SKIP_ELECTRON.
 import test from "node:test";
 import assert from "node:assert/strict";
@@ -214,6 +214,61 @@ test("[slow] STR limit sits beside Race, in view with Advanced closed, and a bad
     await page.waitForSelector("#b-str-err");
     assert.equal(await page.evaluate(() => document.activeElement?.id), "b-str", "Build puts focus on the bad field");
     assert.equal(await page.locator("#b-sec-adv-body").count(), 0, "and leaves Advanced closed");
+    assert.deepEqual(errors, []);
+  } finally {
+    await app.close();
+    rmSync(dataDir, { recursive: true, force: true });
+  }
+});
+
+// Resist cap overrides (issue #44): a Fire cap raised to 95 for a Reaper Form suit is marked in the panel, the
+// result is measured against it and says so, the saved run shows it, and Save profile keeps it across a reload.
+// A cap out of range stops the build with its reason under the field; the reset puts the shard's cap back.
+test("[slow] a raised resist cap is marked, built with, shown in the result and the run, and saved with the profile", async (t) => {
+  const why = unavailable();
+  if (why) return t.skip(why);
+  const dataDir = seedDataDir("packrat-ui-rescaps-");
+  const { app, page, errors } = await launch(dataDir);
+  try {
+    await openBuilder(page);
+    const fire = page.locator("#b-cap-fireResist"), fireRow = page.locator("#b-sec-caps .rule-row[data-key=fireResist]");
+    await page.click("#b-sec-caps .b-sec-head button");
+    assert.equal(await fire.inputValue(), "70", "the shard's cap until the player types another");
+    assert.match(await fireRow.innerText(), /shard cap/);
+    await fire.fill("95");
+    assert.match(await fireRow.innerText(), /raised from 70/);
+    assert.equal(await fireRow.getByRole("button", { name: "Reset Fire resist cap to the shard's 70" }).count(), 1);
+
+    await page.click("#b-run");
+    await built(page);
+    const tile = page.locator("#b-result .b-head-card .resist", { hasText: "Fire" });
+    assert.match(await tile.innerText(), /\/ 95/);
+    assert.match(await tile.innerText(), /Cap raised from 70/);
+    await page.click("#b-runs-open");
+    await page.waitForSelector("#runs-drawer:not([hidden]) .run-card");
+    assert.match(await page.locator("#b-runs .run-card").first().innerText(), /cap 95/, "the saved run names its cap");
+    await page.keyboard.press("Escape");
+
+    // Saved with the profile: a reload brings it back.
+    await page.click("#b-save");
+    await page.waitForFunction(() => /Profile for .* saved/.test(document.body.textContent || ""), undefined, { timeout: 10_000 });
+    await page.reload();
+    await page.waitForSelector("#tab-builder:not([hidden]) #b-sec-caps", { timeout: 30_000 });
+    await page.click("#b-sec-caps .b-sec-head button");
+    assert.equal(await fire.inputValue(), "95", "the profile kept the override");
+
+    // Out of range: the build does not run, and the field says why and takes focus.
+    await fire.fill("200");
+    assert.equal(await page.locator("#b-cap-fireResist-err").innerText(), "Enter a whole number from 0 to 150.");
+    await page.click("#b-run");
+    assert.equal(await page.evaluate(() => document.activeElement?.id), "b-cap-fireResist");
+    assert.equal(await page.locator("#b-run").isDisabled(), false, "no build started");
+
+    // Reset: back to the shard's cap, no override left.
+    await fire.fill("95");
+    await fireRow.getByRole("button", { name: /^Reset Fire resist cap/ }).click();
+    assert.equal(await fire.inputValue(), "70");
+    assert.match(await page.locator("#b-sec-caps .rule-row[data-key=fireResist]").innerText(), /shard cap/);
     assert.deepEqual(errors, []);
   } finally {
     await app.close();
