@@ -9,7 +9,7 @@ import type { Container } from "../vault-lib.mts";
 import { state } from "./store.mts";
 import { $, el, toast } from "./dom.mts";
 import { api } from "./api.mts";
-import { txt, box, button, confirmDialog, openMenu, tableFoot } from "./components.mts";
+import { txt, box, button, confirmDialog, menu, tableFoot } from "./components.mts";
 import { relativeWhen } from "./messages.mts";
 import { plural } from "./inv-model.mts";
 import { reload } from "./app.mts";
@@ -56,10 +56,10 @@ export function renderContainers(): void {
       const label = r.label || bagLabel(r);
       const { name, serial } = splitSerial(label);
       const bags = Object.values(inv.containers).filter((c) => c.root === r.serial && c.parent != null).length;
-      const more = button({ label: `Actions for ${label}`, icon: "more", iconOnly: true, variant: "ghost", size: "sm", onClick: () => openMenu(more, [
+      const more = button({ label: `Actions for ${label}`, icon: "more", iconOnly: true, variant: "ghost", size: "sm", onClick: () => menu(more, [
         { label: "Show these items", icon: "inventory", onSelect: () => showContainer(+r.serial) },
         { label: "Forget…", danger: true, onSelect: () => { forget(r, label, n); } },
-      ], `Actions for ${label}`) });
+      ], { label: `Actions for ${label}` }) });
       rows.push(el("tr", { "data-root": r.serial },
         el("td", {}, box("span", { class: "inv-loc" }, txt(name, "ellip"), txt(serial || `0x${(+r.serial).toString(16)}`, "mono faint"), bags ? txt(plural(bags, "bag"), "t-sm muted") : null)),
         el("td", {}, txt(KIND_NAMES[String(r.kind)] || String(r.kind || "Unknown"))),

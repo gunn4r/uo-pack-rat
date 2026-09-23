@@ -17,8 +17,8 @@ import { api } from "./api.mts";
 import { bridgeActionReason, runBridgeAction } from "./bridge.mts";
 import { optionsKeeping, colsFromPrefs } from "./view-state.mts";
 import { relativeWhen } from "./messages.mts";
-import { txt, box, icon, button, searchInput, filterChip, token, pill, segmented, switchControl, popover, closePopover, rowActions, message, openMenu, input, nextId } from "./components.mts";
-import type { Kids, MenuEntry, PopoverHandle } from "./components.mts";
+import { txt, box, icon, button, searchInput, filterChip, token, pill, segmented, switchControl, popover, closePopover, rowActions, message, menu, input, nextId } from "./components.mts";
+import type { Kids, MenuItem, PopoverHandle } from "./components.mts";
 import { plural, queryParams, activeFilters, clearAll, matchLine, countFact, emptyCause, rowWindow, chunksToFetch, gridKey, colShort, colFull, groupColumns, COL_GROUPS, DEFAULT_COLS, ITEM_COLS, shortTier, rootName } from "./inv-model.mts";
 import type { FilterToken } from "./inv-model.mts";
 import type { ItemsApiResponse, UiPrefs } from "./api-types.mts";
@@ -300,7 +300,7 @@ const openFacet = (id: ChipId, anchor: HTMLElement): void => openPanel(anchor, C
 
 // ---------------------------------------------------------------- "+ Filter"
 function openAddMenu(): void {
-  const entries: MenuEntry[] = [];
+  const entries: MenuItem[] = [];
   // Below 1180 px the unset facet chips fold in here, so the toolbar never wraps (spec 3.7).
   if (narrow()) for (const id of FACETS) if (!chipSet(id)) entries.push({ label: `${CHIP_NAMES[id]}…`, onSelect: () => openFacet(id, addChip) });
   entries.push(
@@ -310,7 +310,7 @@ function openAddMenu(): void {
     { label: "Hide tags…", onSelect: () => openPanel(addChip, "Hide tags", () => tagsPanel()) },
     { label: "Gargoyle and meditation…", onSelect: () => openPanel(addChip, "Gear", () => gearPanel()) },
   );
-  openMenu(addChip, entries, "Add a filter");
+  menu(addChip, entries, { label: "Add a filter" });
 }
 // A property rule: the property (searchable, grouped like the column picker), ≥ ≤ =, a number. Rules
 // add up (an item must pass every one), which the popover says.
@@ -520,13 +520,13 @@ function groupCell(col: ColDef, g: Group): HTMLTableCellElement {
 // ---------------------------------------------------------------- the table: rows and actions
 const ACTIONS: Array<["highlight" | "grab" | "goto", string]> = [["highlight", "Highlight in game"], ["grab", "Grab to backpack"], ["goto", "Go to container"]];
 export function itemMenu(anchor: HTMLElement, it: Item): void {
-  const entries: MenuEntry[] = [{ label: "Open details", icon: "panel-left", onSelect: () => { const i = state.page.rows.findIndex((r) => r?.serial === it.serial); if (i >= 0) openPeekAt(i, true); } }];
+  const entries: MenuItem[] = [{ label: "Open details", icon: "panel-left", onSelect: () => { const i = state.page.rows.findIndex((r) => r?.serial === it.serial); if (i >= 0) openPeekAt(i, true); } }];
   if (it.root != null && !it.equippedBy) entries.push({ label: "Show everything in this container", icon: "folder", onSelect: () => showContainer(+it.root!) });
   entries.push({ label: "Copy serial", icon: "clipboard", onSelect: () => {
     const s = `0x${it.serial.toString(16)}`;
     navigator.clipboard?.writeText(s).then(() => toast(`Copied ${s}`, "good"), () => toast("Could not copy the serial.", "bad"));
   } });
-  openMenu(anchor, entries, `More actions for ${it.name}`);
+  menu(anchor, entries, { label: `More actions for ${it.name}` });
 }
 function actionsCell(it: Item): HTMLTableCellElement {
   return el("td", { class: "act-cell" }, rowActions([
