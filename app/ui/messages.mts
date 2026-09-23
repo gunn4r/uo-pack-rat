@@ -9,7 +9,7 @@
 // an install runs from both the wizard's last step and Settings' Reinstall row, and a folder import
 // runs from both the wizard and the Import tab. Two hand-written copies of "N files could not be
 // imported" is how the two drifted apart the last time (see ui/settings.mts's importPointer comment).
-import type { ApiError } from "./api-types.mts";
+import type { ApiError, DataDirCheckInfo } from "./api-types.mts";
 
 // ---------------------------------------------------------------- reading an api() rejection
 export function errorText(e: unknown): string {
@@ -74,6 +74,24 @@ export function clientErrorMessage(e: unknown): string {
   return clientFolderGone(e)
     ? "Pack Rat can't find that client folder any more — run setup again to point it at where the client lives now."
     : errorText(e);   // e.g. the 409 "-stopall" text, verbatim
+}
+
+// ---------------------------------------------------------------- GET /api/setup's dataDirCheck
+// The client's scripts writing to one data folder while the app reads another shows up as an empty
+// inventory and an offline bridge, and neither says why. The server logs this same sentence to the
+// console at startup (app/vault-server.mts imports it), so the banner and the terminal never disagree.
+export function dataDirNotice(check: DataDirCheckInfo | undefined): string | null {
+  if (check?.status === "mismatch") {
+    return `Your game scripts in ${check.scriptsDir} write to ${check.scriptsDataDir}, but Pack Rat is reading ${check.dataDir}, so new scans and the bridge won't show up here. Start Pack Rat on the scripts' folder (npm start -- --data ${check.scriptsDataDir}), or reinstall the scripts from Settings so they write to this one.`;
+  }
+  if (check?.status === "unreadable") {
+    return `Pack Rat can't read packrat-paths.json in ${check.scriptsDir} (${check.error}), so it can't tell where your game scripts write. Reinstall the scripts from Settings to rewrite it.`;
+  }
+  return null;
+}
+// The header's bridge pill while the bridge is offline: a mismatch is the one cause the app can name.
+export function bridgeOfflineText(check: DataDirCheckInfo | undefined): string {
+  return check?.status === "mismatch" ? "bridge: offline — your game scripts write to another folder" : "bridge: offline";
 }
 
 // ---------------------------------------------------------------- POST /api/host/*
