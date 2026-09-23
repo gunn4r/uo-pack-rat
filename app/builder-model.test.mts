@@ -10,7 +10,7 @@ import { setRules } from "./vault-lib.mts";
 import type { RulesV1 } from "./schema/types.d.mts";
 import {
   propName, weightsSummary, requirementsSummary, poolSummary, advancedSummary, knobError, firstKnobError, knobFromServerError, ruleValueError,
-  resistOutcome, otherChanges, afterChange, compareModel, hiddenRowsNote, toggleCompare, runAutoLabel, runBadges, plural, SOLVER_LIMITS,
+  resistOutcome, locationCrumbs, otherChanges, afterChange, compareModel, hiddenRowsNote, toggleCompare, runAutoLabel, runBadges, plural, SOLVER_LIMITS,
   type Knobs,
 } from "./ui/builder-model.mts";
 import { OPTS_LIMITS } from "./vault-server.mts";
@@ -46,9 +46,9 @@ test("[fast] builder model: the candidate pool summary says what is in and out",
 
 const knobs = (over: Partial<Knobs> = {}): Knobs => ({ strLimit: "110", restarts: "10000", exact: true, budgetS: "300", altCount: "5", altTol: "40", ...over });
 test("[fast] builder model: the Advanced summary names the search, its restarts, budget and other suits", () => {
-  assert.equal(advancedSummary(knobs()), "Exact · 10,000 restarts · 300 s · 5 other suits within 40 · STR limit 110");
+  assert.equal(advancedSummary(knobs()), "Exact · 10,000 restarts · 300 s · 5 other suits within 40", "STR limit has its own field, not under Advanced");
   assert.equal(advancedSummary(knobs({ exact: false, restarts: "1", strLimit: "" })), "Heuristic · 1 restart");
-  assert.equal(advancedSummary(knobs({ altCount: "0" })), "Exact · 10,000 restarts · 300 s · STR limit 110");
+  assert.equal(advancedSummary(knobs({ altCount: "0" })), "Exact · 10,000 restarts · 300 s");
 });
 
 test("[fast] builder model: an out-of-range knob gets a plain message with the allowed range", () => {
@@ -79,6 +79,14 @@ test("[fast] builder model: a resist tile says short, at cap, over cap or met", 
   assert.deepEqual(resistOutcome(70, 65, 70), { text: "At cap", tone: "ok" });
   assert.deepEqual(resistOutcome(86, 65, 70), { text: "16 over cap", tone: "muted" });
   assert.deepEqual(resistOutcome(40, null, 70), { text: "30 below cap", tone: "muted" });
+});
+
+test("[fast] builder model: a Fetch list location reads as its path of containers, never cut", () => {
+  assert.deepEqual(locationCrumbs("Dorran's bank › Metal Chest (0x40001a2b) › A Bag"), ["Dorran's bank", "Metal Chest (0x40001a2b)", "A Bag"]);
+  assert.deepEqual(locationCrumbs("Metal Chest (0x700b0000)"), ["Metal Chest (0x700b0000)"]);
+  assert.deepEqual(locationCrumbs("Worn by Kestrel"), ["Worn by Kestrel"]);
+  assert.deepEqual(locationCrumbs(""), ["Unknown place"]);
+  assert.deepEqual(locationCrumbs(undefined), ["Unknown place"]);
 });
 
 test("[fast] builder model: other changes are badges, gains first, resists and unchanged values left out", () => {

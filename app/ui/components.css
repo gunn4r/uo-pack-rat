@@ -125,10 +125,12 @@
 .pr .textarea { width: 100%; border-radius: var(--radius-md); border: var(--border-width) solid var(--color-border-strong); background: var(--color-surface); color: var(--color-text); padding: var(--space-2) var(--space-3); font-family: var(--font-mono); font-size: var(--text-sm); line-height: 18px; resize: vertical; }
 .check { display: flex; align-items: flex-start; gap: var(--space-2); font-size: var(--text-base); cursor: pointer; }
 .check input { margin: 3px 0 0; width: 14px; height: 14px; accent-color: var(--color-accent); flex: none; }
-.pr .check input.switch { appearance: none; -webkit-appearance: none; width: 32px; height: 18px; border-radius: var(--radius-full); background: var(--color-border-strong); position: relative; flex: none; margin: 1px 0 0; cursor: pointer; }
-.switch::after { content: ""; position: absolute; top: 2px; left: 2px; width: 14px; height: 14px; border-radius: var(--radius-full); background: var(--color-surface); transition: left var(--duration-fast) var(--ease-standard); }
-.pr .check input.switch:checked { background: var(--color-accent); }
-.switch:checked::after { left: 16px; background: var(--color-on-accent); }
+/* Off and on must read apart at a glance, in every theme and mode: off is a hollow track (the surface inside a
+   strong edge) with a small muted knob on the left; on is a filled accent track with a larger knob on the right. */
+.pr .check input.switch { appearance: none; -webkit-appearance: none; box-sizing: border-box; width: 34px; height: 20px; border-radius: var(--radius-full); border: 2px solid var(--color-border-strong); background: var(--color-surface); position: relative; flex: none; margin: 0; cursor: pointer; transition: background-color var(--duration-fast) var(--ease-standard), border-color var(--duration-fast) var(--ease-standard); }
+.switch::after { content: ""; position: absolute; top: 3px; left: 3px; width: 10px; height: 10px; border-radius: var(--radius-full); background: var(--color-text-muted); transition: left var(--duration-fast) var(--ease-standard), width var(--duration-fast) var(--ease-standard), height var(--duration-fast) var(--ease-standard), top var(--duration-fast) var(--ease-standard); }
+.pr .check input.switch:checked { background: var(--color-accent); border-color: var(--color-accent); }
+.switch:checked::after { top: 2px; left: 16px; width: 12px; height: 12px; background: var(--color-on-accent); }
 .seg { display: inline-flex; padding: 2px; gap: 2px; border-radius: var(--radius-md); background: var(--color-surface-sunken); border: var(--border-width) solid var(--color-border-strong); flex: none; }
 .pr .seg button { height: calc(var(--control-sm) - 6px); padding: 0 var(--space-2); border: 0; border-radius: var(--radius-sm); background: transparent; color: var(--color-text-muted); font-size: var(--text-sm); font-weight: var(--weight-medium); cursor: pointer; display: inline-flex; align-items: center; gap: 4px; }
 .pr .seg button:hover { color: var(--color-text); background: transparent; }
@@ -279,3 +281,12 @@
    cards, a card in a drawer or a popover) keeps a plain 1px edge in its own border colour, so frames never
    nest and a card whose border colour carries a state (selected, clean, danger) still shows it. */
 :is(.card, .panel, .pop, .drawer, .dialog) .card { border-width: var(--border-width); border-image: none; }
+
+/* ---- builder: a resist tile tinted by its element (the Builder's tiles, the character sheet's, the item
+   peek's). A soft wash of the --res-* colour grows out of the top-right corner, over the tile's own surface;
+   the name above it is semibold in the same colour. --tint-a is the wash's strength where it is strongest,
+   and the contrast probe composites the text under it at that strength (the worst case). */
+.resist.tint { --tint-a: 13%; background: radial-gradient(circle at 100% 0%, color-mix(in srgb, var(--tint) var(--tint-a), transparent) 0, transparent 70%), var(--color-surface); }
+.tint-phys { --tint: var(--res-phys); } .tint-fire { --tint: var(--res-fire); } .tint-cold { --tint: var(--res-cold); }
+.tint-poison { --tint: var(--res-poison); } .tint-energy { --tint: var(--res-energy); }
+.resist-name { font-weight: var(--weight-semibold); }

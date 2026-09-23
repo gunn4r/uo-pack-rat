@@ -81,7 +81,7 @@ function kvRows(rows: Array<[string, HTMLElement | string, boolean?]>, cls = "")
 const section = (title: string, ...kids: Array<HTMLElement | null>): HTMLElement => box("section", { class: "peek-sec", "aria-label": title }, txt(title, "caps"), ...kids);
 // A resist tile: the element's name in its colour (information is in the word too, not colour alone), the value.
 function resistTile(name: string, value: number, token: string): HTMLElement {
-  return box("div", { class: "resist" }, el("span", { class: "t-sm", style: `color:var(${token})` }, name), txt(String(value), "t-lg"));
+  return box("div", { class: `resist tint tint-${token.slice(6)}` }, el("span", { class: "t-sm resist-name", style: `color:var(${token})` }, name), txt(String(value), "t-lg"));
 }
 const ACTIONS: Array<["highlight" | "grab" | "goto", string, IconName]> = [["highlight", "Highlight", "highlight"], ["grab", "Grab", "grab"], ["goto", "Go to", "goto"]];
 
