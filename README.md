@@ -1,8 +1,6 @@
 <p align="center"><img src="build/icon.png" width="160" height="160" alt="The Pack Rat logo: a rat peeking out of an overstuffed leather adventurer's backpack, holding a gold coin"></p>
 
-# Pack Rat
-
-Every item you own, every suit you could wear.
+<h1 align="center">Pack Rat</h1>
 
 Pack Rat is a free app for Ultima Online players. It keeps a list of every item you own, on every character, in every bag, chest and bank box, and it can work out the best suit of gear you could put together from them.
 
