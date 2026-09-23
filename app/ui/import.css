@@ -6,10 +6,11 @@
 #imp-text { resize: vertical; font-size: var(--text-sm); line-height: var(--lh-sm); }
 .imp-help { display: flex; align-items: baseline; gap: var(--space-2); }
 
-/* preview card: the border says clean or not, the icon and title say it in words too */
+/* preview card: the border says clean or not, the icon and title say it in words too; a theme's frame image
+   would paint over that colour, so a judged preview drops it */
 .imp-preview { display: flex; flex-direction: column; gap: var(--space-2); padding: var(--space-3) var(--space-4); }
-.imp-preview.ok { border-color: var(--color-success); }
-.imp-preview.bad { border-color: var(--color-danger); }
+.imp-preview.ok { border-color: var(--color-success); border-image: none; }
+.imp-preview.bad { border-color: var(--color-danger); border-image: none; }
 .imp-preview-head { display: flex; align-items: center; gap: var(--space-2); }
 .imp-ok-icon { color: var(--color-success); flex: none; }
 .imp-bad-icon { color: var(--color-danger); flex: none; }
