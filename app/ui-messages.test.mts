@@ -6,7 +6,7 @@
 // All [fast]. Run: node --test app/ui-messages.test.mts
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { importOutcome, pathsFileNote, installedIntoNote, clientFolderGone, clientErrorMessage, hostErrorMessage, optimizeErrorMessage, errorText } from "./ui/messages.mts";
+import { importOutcome, pathsFileNote, installedIntoNote, clientFolderGone, clientErrorMessage, hostErrorMessage, optimizeErrorMessage, errorText, dataDirNotice, bridgeOfflineText } from "./ui/messages.mts";
 import type { ApiError } from "./ui/api-types.mts";
 
 function apiError(message: string, extra: { status?: number; code?: unknown } = {}): ApiError {
@@ -47,6 +47,31 @@ test("[fast] a folder full of failures names only the first few", () => {
   assert.match(text, /9 files could not be imported/);
   assert.match(text, /f0\.json/);
   assert.doesNotMatch(text, /f3\.json/, "one bad folder must not fill the panel");
+});
+
+// ---- GET /api/setup's dataDirCheck ------------------------------------------------------------------
+test("[fast] a data-folder mismatch names both folders and both fixes", () => {
+  const text = dataDirNotice({ status: "mismatch", scriptsDir: "/Users/example/TazUO/LegionScripts", scriptsDataDir: "/Users/example/dev-data", dataDir: "/Users/example/.pack-rat" })!;
+  assert.match(text, /\/Users\/example\/TazUO\/LegionScripts/);
+  assert.match(text, /write to \/Users\/example\/dev-data/);
+  assert.match(text, /reading \/Users\/example\/\.pack-rat/);
+  assert.match(text, /npm start -- --data \/Users\/example\/dev-data/);
+  assert.match(text, /reinstall the scripts from Settings/);
+});
+
+test("[fast] an unreadable packrat-paths.json is reported with the reason; a match or no client says nothing", () => {
+  const text = dataDirNotice({ status: "unreadable", scriptsDir: "/Users/example/LegionScripts", error: "it is not valid JSON" })!;
+  assert.match(text, /packrat-paths\.json in \/Users\/example\/LegionScripts/);
+  assert.match(text, /it is not valid JSON/);
+  assert.equal(dataDirNotice({ status: "match", scriptsDir: "/x" }), null);
+  assert.equal(dataDirNotice({ status: "none" }), null);
+  assert.equal(dataDirNotice(undefined), null, "an older server sends no check at all");
+});
+
+test("[fast] the offline bridge pill says why only when the cause is a data-folder mismatch", () => {
+  assert.equal(bridgeOfflineText({ status: "mismatch", scriptsDir: "/a", scriptsDataDir: "/b", dataDir: "/c" }), "bridge: offline — your game scripts write to another folder");
+  assert.equal(bridgeOfflineText({ status: "match", scriptsDir: "/a" }), "bridge: offline");
+  assert.equal(bridgeOfflineText(undefined), "bridge: offline");
 });
 
 // ---- POST /api/setup/install -----------------------------------------------------------------------
