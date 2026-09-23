@@ -195,8 +195,7 @@ export async function pollBridge(): Promise<void> {
     bridge.online = !!st.online; bridge.character = st.character || null;
     if (st.online) lastAnswered = Date.now();
     renderBridgeControl(bridgeView(st, { clientSet: !!state.setup?.settings?.client, clientName: currentAdapter()?.name || null, check: state.setup?.dataDirCheck }));
-    // Controls gated on the bridge listen for this to redraw when it comes online or goes offline.
-    if (was !== `${bridge.online}|${bridge.character}`) document.dispatchEvent(new Event("bridgechange"));
+    const changed = was !== `${bridge.online}|${bridge.character}`;
     // A refused command (expired, a chain that does not check out, the bridge stopping first) comes
     // back under its own id like any other result, so it is toasted here too — named, since a refusal
     // message alone does not say which of several queued clicks it was.
@@ -207,6 +206,8 @@ export async function pollBridge(): Promise<void> {
         toast(r.ok ? r.msg : `${name}: ${r.msg}`, r.ok ? "good" : "bad");
       }
     }
+    // Controls gated on the bridge listen for this to redraw when it comes online or goes offline.
+    if (changed && typeof document !== "undefined") document.dispatchEvent(new Event("bridgechange"));
   } catch { /* server down; leave the control as is */ }
 }
 
