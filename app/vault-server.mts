@@ -1156,6 +1156,10 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
           dataDirCheck: dataDirCheck(),
           // Settings › Updates names the running version ("Pack Rat 0.1.0") before any update check.
           version: PACKAGE_JSON.version,
+          // Whether POST /api/host/open-path can do anything: only the desktop shell opens a folder. The
+          // page offers Open there and Copy path in a plain browser (npm start), instead of an Open that
+          // answers 501 and vanishes.
+          canOpenFolders: typeof host?.openPath === "function",
         });
       }
       if (req.method === "POST" && url.pathname === "/api/setup/locate") {

@@ -1893,6 +1893,8 @@ test("[fast] POST /api/host/pick-folder and open-path are 501 without a host; an
   assert.equal(noHost.status, 501);
   const noHostOpen = await fetch(srv.url + "/api/host/open-path", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ which: "data" }) });
   assert.equal(noHostOpen.status, 501);
+  // The page learns this up front (Settings shows Copy path instead of an Open that can only fail).
+  assert.equal(asJson(await (await fetch(srv.url + "/api/setup")).json()).canOpenFolders, false);
 
   const dir = mkdtempSync(join(tmpdir(), "qm-host-"));
   const opened: string[] = [];
@@ -1901,6 +1903,7 @@ test("[fast] POST /api/host/pick-folder and open-path are 501 without a host; an
     { host: { pickFolder: async () => "/x", openPath: async (w: "data" | "logs") => { opened.push(w); } } },
   );
   try {
+    assert.equal(asJson(await (await fetch(s2.url + "/api/setup")).json()).canOpenFolders, true);
     const picked = await fetch(s2.url + "/api/host/pick-folder", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ title: "Pick" }) });
     assert.equal(picked.status, 200);
     assert.equal(asJson(await picked.json()).path, "/x");

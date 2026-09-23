@@ -8,7 +8,7 @@
 import { state } from "./store.mts";
 import { $, el, noteEl } from "./dom.mts";
 import { api } from "./api.mts";
-import { badge, box, button, check, message, segmented, select, txt, showToast, type Kids } from "./components.mts";
+import { badge, box, button, check, copyText, message, segmented, select, txt, showToast, type Kids } from "./components.mts";
 import { applyLook, currentLook, resolveTheme, BUILT_THEMES, type Appearance } from "./theme.mts";
 import { changeShard } from "./shard.mts";
 import { openWizard } from "./wizard.mts";
@@ -16,17 +16,13 @@ import { forgetCharacter } from "./characters.mts";
 import { bridgeNote, renderDataDirNotice } from "./bridge.mts";
 import { adapterCopy } from "./adapter-copy.mts";
 import { clientErrorMessage, dataDirNotice, errorText, hostErrorMessage, installedIntoNote, pathsFileNote } from "./messages.mts";
-import type { ApiError, SetupApiResponse, InstallApiResponse, UpdateCheckApiResponse } from "./api-types.mts";
+import type { SetupApiResponse, InstallApiResponse, UpdateCheckApiResponse } from "./api-types.mts";
 
 // Reinstall's own confirmation and result — separate from the wizard's, since this row acts on the client
 // that is already set up (no need to re-walk shard/client/folder).
 const reinstall: { checked: boolean; busy: boolean; error: string | null; result: InstallApiResponse | null } = { checked: false, busy: false, error: null, result: null };
 let lastUpdateCheck: UpdateCheckApiResponse | null = null;
 let checking = false;
-// Optimistic until the first 501 proves POST /api/host/* isn't wired up (a bare `node vault-server.mts`
-// rather than the Electron shell). Never re-probed: whether a desktop host is attached is fixed for the
-// whole life of the page, so once a 501 answers the question there is nothing to learn by asking again.
-let hostAvailable = true;
 
 // The theme families, in the order the select lists them. A family is chooseable once its tokens ship,
 // i.e. once its id is in theme.mts's BUILT_THEMES; until then it is listed, disabled, "coming soon".
@@ -138,16 +134,19 @@ function clientSection(setup: SetupApiResponse): HTMLElement {
 }
 
 // ---------------------------------------------------------------- Data: folders, danger zone
-function pathRow(label: string, which: string, path: string): HTMLElement {
-  const open = hostAvailable ? button({ label: "Open", icon: "folder", size: "sm", attrs: { "aria-label": `Open the ${label.toLowerCase()}` }, onClick: async () => {
-    try { await api("/api/host/open-path", { method: "POST", body: { which } }); }
-    catch (e) {
-      if ((e as ApiError).status === 501) { hostAvailable = false; void renderSettings(); }
+function pathRow(label: string, which: string, path: string, canOpen: boolean): HTMLElement {
+  // Only the desktop shell can open a folder (GET /api/setup's canOpenFolders); in a plain browser the
+  // useful thing is the path itself, so the button copies it instead.
+  const action = canOpen
+    ? button({ label: "Open", icon: "folder", size: "sm", attrs: { "aria-label": `Open the ${label.toLowerCase()}` }, onClick: async () => {
+      try { await api("/api/host/open-path", { method: "POST", body: { which } }); }
       // 504 (the shell never answered) reads as a bare "did not answer" without this — messages.mts's hostErrorMessage.
-      else showToast(hostErrorMessage(e, `Could not open the ${label.toLowerCase()}`), "bad");
-    }
-  } }) : null;
-  return box("div", { class: "set-path" }, txt(label, "t-md strong"), el("span", { class: "mono ellip", title: path }, path), open);
+      catch (e) { showToast(hostErrorMessage(e, `Could not open the ${label.toLowerCase()}`), "bad"); }
+    } })
+    : button({ label: "Copy path", icon: "clipboard", size: "sm", attrs: { "aria-label": `Copy the ${label.toLowerCase()} path` }, onClick: async () => {
+      if (await copyText(path)) showToast(`Copied ${path}`, "ok"); else showToast(`Could not copy the ${label.toLowerCase()} path.`, "bad");
+    } });
+  return box("div", { class: "set-path" }, txt(label, "t-md strong"), el("span", { class: "mono ellip", title: path }, path), action);
 }
 // Everyone Pack Rat knows by name: scanned characters and characters with only a saved Suit Builder profile.
 function knownCharacters(): string[] {
@@ -169,8 +168,8 @@ function dataSection(setup: SetupApiResponse): HTMLElement {
   } });
   return section("set-data", "Data",
     box("div", { class: "card set-card" },
-      pathRow("Data folder", "data", setup.dataDir),
-      pathRow("Logs", "logs", `${setup.dataDir}/logs`),
+      pathRow("Data folder", "data", setup.dataDir, setup.canOpenFolders === true),
+      pathRow("Logs", "logs", `${setup.dataDir}/logs`, setup.canOpenFolders === true),
       mismatch ? box("div", { class: "set-row-below set-pad" }, message({ tone: "warn", text: mismatch })) : null),
     box("div", { class: "card set-card set-danger", "aria-labelledby": "set-danger-h" },
       el("h3", { class: "t-md strong set-danger-title", id: "set-danger-h" }, "Danger zone"),
