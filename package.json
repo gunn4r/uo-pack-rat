@@ -49,6 +49,7 @@
     "appId": "com.gunn4r.packrat",
     "productName": "Pack Rat",
     "copyright": "Copyright © 2026 gunn4r",
+    "icon": "build/icon.png",
     "directories": {
       "output": "dist",
       "buildResources": "build"
