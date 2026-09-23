@@ -212,11 +212,12 @@ function crumbsEl(where: string, contHex: string): HTMLOListElement {
       txt(nm, "b-place-name"), showSerial ? " " : null, showSerial ? txt(serial, "mono faint t-sm") : null, " ");
   }));
 }
-// A small icon button that copies `text` (a serial) and says so in a toast.
+// A small icon button that copies `text` (a serial) and says so in a toast; it ends its line, so its tooltip
+// sits in the free space to its right.
 function copyButton(text: string, what: string): HTMLButtonElement {
   const b = button({ label: `Copy ${what} ${text}`, icon: "clipboard", iconOnly: true, size: "sm", variant: "ghost",
     onClick: async () => { if (await copyText(text)) toast(`Copied ${text}`, "good"); else toast(`Could not copy the ${what}.`, "bad"); } });
-  tooltip(b, `Copy ${what}`);
+  tooltip(b, `Copy ${what}`, { side: "right" });   // beside it, never over the place's path above
   return b;
 }
 function fetchCard(items: Item[], name: string): HTMLElement | null {
@@ -236,8 +237,8 @@ function fetchCard(items: Item[], name: string): HTMLElement | null {
     const contHex = cont ? serialHex(+cont.serial) : "";
     return box("div", { class: "b-fetch" },
       box("div", { class: "b-fetch-where" }, crumbsEl(where, contHex),
-        box("div", { class: "b-fetch-meta t-sm" }, contHex ? txt(contHex, "mono") : null, contHex ? copyButton(contHex, "container serial") : null,
-          txt(`${contHex ? "· " : ""}${plural(list.length, "piece")}`, "faint"))),
+        box("div", { class: "b-fetch-meta t-sm" }, txt(`${plural(list.length, "piece")}${contHex ? " ·" : ""}`, "faint"),
+          contHex ? txt(contHex, "mono") : null, contHex ? copyButton(contHex, "container serial") : null)),
       pieces,
       box("span", { class: "b-fetch-acts" }, goGate ? tipWrap(go, goGate) : go, grabGate ? tipWrap(grab, grabGate) : grab));
   });
