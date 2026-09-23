@@ -1,3 +1,5 @@
+<p align="center"><img src="build/icon.png" width="160" height="160" alt="The Pack Rat logo: a rat peeking out of an overstuffed leather adventurer's backpack, holding a gold coin"></p>
+
 # Pack Rat
 
 Every item you own, every suit you could wear.
