@@ -1,4 +1,4 @@
-/* ui/styles.css — the older shared page classes the screens still use (.panel, .stack, .row, plain tables, the
+/* ui/styles.css — the older shared page classes the screens still use (.panel, .stack, .field, plain tables,
    the item tooltip), on the tokens in ui/tokens.css (docs/ui.md). No literal colours here.
    The shell is ui/shell.css, components are ui/components.css, and each screen has its own file. */
 
@@ -9,24 +9,14 @@ h2 { font-size: var(--text-md); line-height: var(--lh-md); }
 .panel h3 { font-size: var(--text-xs); line-height: var(--lh-xs); color: var(--color-text-muted); text-transform: uppercase; letter-spacing: var(--tracking-caps); }
 input[type=number] { width: 5.5em; font-variant-numeric: tabular-nums; text-align: right; }
 .small { font-size: var(--text-sm); line-height: var(--lh-sm); }
-.layout { display: grid; grid-template-columns: 280px 1fr; gap: var(--space-4); align-items: start; }
-.layout > * { min-width: 0; }   /* grid items default to min-width:auto, which lets a wide table push the page sideways */
-@media (max-width: 900px) { .layout { grid-template-columns: 1fr; } }
 .panel { background: var(--color-surface); color: var(--color-text); border: var(--border-width-frame) solid var(--color-border); border-image: var(--frame-image); border-radius: var(--radius-lg); padding: var(--space-4); }
 .panel + .panel { margin-top: var(--space-3); }
 .stack { display: flex; flex-direction: column; gap: var(--space-2); }
-.row { display: flex; gap: var(--space-2); align-items: center; flex-wrap: wrap; }
 .field { display: flex; flex-direction: column; gap: var(--space-1); }
 .field label { font-size: var(--text-sm); color: var(--color-text-muted); }
-.chips { display: flex; flex-wrap: wrap; gap: var(--space-1-5); }
-.chip { border: var(--border-width) solid var(--color-border-strong); border-radius: var(--radius-full); padding: var(--space-0-5) var(--space-2); font-size: var(--text-sm); background: var(--color-surface); color: var(--color-text); cursor: pointer; user-select: none; }
-.chip[aria-pressed="true"] { background: var(--color-chip-set); color: var(--color-on-chip-set); border-color: var(--color-accent); }
-.tablewrap { overflow-x: auto; }
 table { border-collapse: collapse; width: 100%; font-size: var(--text-base); }
 th, td { padding: var(--space-1-5) var(--space-2); border-bottom: var(--border-width) solid var(--color-border); text-align: left; vertical-align: top; white-space: nowrap; }
 th { font-size: var(--text-sm); font-weight: var(--weight-medium); color: var(--color-text-muted); position: sticky; top: 0; background: var(--color-surface-subtle); }
-th.sortable { cursor: pointer; }
-th.sorted { color: var(--color-text); }
 td.n, th.n { text-align: right; font-variant-numeric: tabular-nums; }
 .name { font-weight: var(--weight-medium); }
 .tag { margin-left: var(--space-1-5); vertical-align: middle; }   /* the .tag component (components.css) beside a name */
@@ -36,16 +26,10 @@ td.n, th.n { text-align: right; font-variant-numeric: tabular-nums; }
 .rar-name { font-weight: var(--weight-medium); }
 /* a shard tier with no --rarity-* token: its raw game colour on a dark chip, where game colours read (ui/dom.mts's rarCell) */
 .rar-raw { background: var(--color-surface-raised); padding: 0 var(--space-1-5); border-radius: var(--radius-sm); }
-.pill { display: inline-block; font-size: var(--text-sm); padding: 0 var(--space-2); border-radius: var(--radius-full); border: var(--border-width) solid var(--color-border-strong); color: var(--color-text); }
-.pill.good { border-color: var(--color-success); color: var(--color-success); } .pill.warn { border-color: var(--color-warning); color: var(--color-warning); } .pill.bad { border-color: var(--color-danger); color: var(--color-danger); }
-.cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(360px, 1fr)); gap: var(--space-3); }
 .empty { padding: var(--space-10); text-align: center; color: var(--color-text-muted); }
 .empty code { font-family: var(--font-mono); background: var(--color-surface-sunken); color: var(--color-text); padding: var(--space-0-5) var(--space-1-5); border-radius: var(--radius-sm); }
-.stale { color: var(--color-warning); }
-.delta-up { color: var(--color-success); } .delta-down { color: var(--color-danger); }
-/* the data-folder banner under the header (ui/bridge.mts's renderDataDirNotice): one text span, one button */
 details summary { cursor: pointer; color: var(--color-text-muted); font-size: var(--text-sm); }
-@media (prefers-reduced-motion: no-preference) { button, .chip { transition: background var(--duration-fast), border-color var(--duration-fast); } }
+@media (prefers-reduced-motion: no-preference) { button { transition: background var(--duration-fast), border-color var(--duration-fast); } }
 
 /* the item tooltip (dom.mts tipNode, design spec 4.3): always drawn in dark mode (index.html gives #tip its
    own data-mode), so the game's colours read as designed; 280 px, the body face, pointer-safe. A
@@ -63,15 +47,6 @@ details summary { cursor: pointer; color: var(--color-text-muted); font-size: va
 .tipcard-host .t-res-poison { color: var(--res-poison); } .tipcard-host .t-res-energy { color: var(--res-energy); }
 [data-serial] { cursor: default; }
 
-
-
-
-
-
-
-
-
-
 /* scrollbars: thin, rounded, theme-coloured (WebKit/Blink + Firefox) */
 * { scrollbar-width: thin; scrollbar-color: var(--color-border-strong) transparent; }
 *::-webkit-scrollbar { width: 10px; height: 10px; }
@@ -79,4 +54,4 @@ details summary { cursor: pointer; color: var(--color-text-muted); font-size: va
 *::-webkit-scrollbar-thumb { background: var(--color-border-strong); border-radius: var(--radius-full); border: 2px solid var(--color-surface); background-clip: padding-box; }
 *::-webkit-scrollbar-thumb:hover { background: var(--color-text-muted); background-clip: padding-box; }
 *::-webkit-scrollbar-corner { background: transparent; }
-.tablewrap.scrolly, #tab-inventory aside, #tab-builder aside, #tab-builder .scrollcol, #runs-drawer .runs { scrollbar-gutter: stable; }   /* the screens' own scrollers */
+#tab-inventory aside, #tab-builder aside, #runs-drawer .runs { scrollbar-gutter: stable; }   /* the screens' own scrollers */

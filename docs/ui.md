@@ -50,7 +50,7 @@ The bridge status control at the sidebar foot has four states (ready, busy, offl
 - `app/ui/britannia.css` — the Britannia theme family's two mode blocks and its display face, linked right after `tokens.css`.
 - `app/ui/components.css` — base resets and the shared component classes. Resets are wrapped in `:where()` (zero specificity) and variants are compound classes (`.btn.btn-primary`), so a reset can never outrank a component: `.pr button { color: inherit }` (0,1,1) would beat `.btn-primary` (0,1,0) and every filled button would inherit dark text.
 - `app/ui/shell.css` and one file per screen (table above).
-- `app/ui/styles.css` — the older shared classes the screens still use (`.panel`, `.stack`, `.row`, plain tables, the item tooltip) until each screen moves onto components. No literal colours anywhere: every colour is a token.
+- `app/ui/styles.css` — the older shared classes the screens still use (`.panel`, `.stack`, `.field`, `.empty`, `.small`, plain tables, the item tooltip, the scrollbars) until each screen moves onto components. No literal colours anywhere: every colour is a token.
 
 `<body class="pr">` is the root the resets hang off.
 
