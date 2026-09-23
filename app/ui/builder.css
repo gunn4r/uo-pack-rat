@@ -43,6 +43,11 @@
 .rule-row.weight { grid-template-columns: minmax(0, 1fr) 64px var(--control-sm); }
 .pr .rule-row .input.num { width: 100%; }
 .rule-row .field-error { grid-column: 1 / -1; }
+/* a resist cap: name · number · "shard cap" or the override's note · reset; an overridden number is outlined in
+   the accent, and its note says what it was raised or lowered from (the outline is never the only signal) */
+.rule-row.cap { grid-template-columns: minmax(0, 1fr) 56px auto var(--control-sm); }
+.rule-row.cap .badge, .rule-row.cap .cap-shard { justify-self: start; white-space: nowrap; }
+.pr .rule-row .input.cap-set:not([aria-invalid="true"]) { border-color: var(--color-accent); box-shadow: 0 0 0 1px var(--color-accent); }
 /* the property name wraps to a second line rather than cutting off ("Physical …" at 1024 px), and only a
    name too long for two lines is clamped; its full name is its title */
 .rule-row .rule-name { overflow-wrap: anywhere; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; line-height: var(--lh-sm); }

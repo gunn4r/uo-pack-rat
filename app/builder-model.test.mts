@@ -6,11 +6,12 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { setRules } from "./vault-lib.mts";
+import { setRules, resistCapsFor } from "./vault-lib.mts";
 import type { RulesV1 } from "./schema/types.d.mts";
 import {
   propName, weightsSummary, requirementsSummary, poolSummary, advancedSummary, knobError, firstKnobError, knobFromServerError, ruleValueError,
   resistOutcome, locationCrumbs, otherChanges, afterChange, compareModel, hiddenRowsNote, toggleCompare, runAutoLabel, runBadges, plural, SOLVER_LIMITS,
+  resistCapError, withResistCap, capNote, resistCapsSummary, gearCapsText, capsLine, anyOverridden,
   type Knobs,
 } from "./ui/builder-model.mts";
 import { OPTS_LIMITS } from "./vault-server.mts";
@@ -152,4 +153,50 @@ test("[fast] builder model: a run's automatic label and its badges", () => {
   assert.deepEqual(runBadges(null, null, {}, 0, {}), [], "an old run with no summary data gets no badges");
   assert.equal(plural(1, "change"), "1 change");
   assert.equal(plural(2, "skill bonus", "skill bonuses"), "2 skill bonuses");
+});
+
+// ---- resist cap overrides (issue #44)
+test("[fast] resist caps: the field takes a whole number 0-150, and a cap set back to the shard's is no override", () => {
+  assert.equal(resistCapError("95"), null);
+  assert.equal(resistCapError("0"), null);
+  assert.equal(resistCapError("150"), null);
+  for (const bad of ["", "abc", "95.5", "-1", "151"]) assert.equal(resistCapError(bad), "Enter a whole number from 0 to 150.", bad);
+  assert.deepEqual(withResistCap({}, "fireResist", 95, 70), { fireResist: 95 });
+  assert.deepEqual(withResistCap({ fireResist: 95 }, "fireResist", 70, 70), {}, "back at the shard's cap");
+  assert.deepEqual(withResistCap(undefined, "coldResist", 60, 70), { coldResist: 60 });
+  const before = { fireResist: 95 };
+  withResistCap(before, "coldResist", 60, 70);
+  assert.deepEqual(before, { fireResist: 95 }, "pure: the old overrides are untouched");
+});
+
+test("[fast] resist caps: notes, the collapsed summary, the Requirements note, the compare line", () => {
+  assert.equal(capNote({ cap: 95, shard: 70 }), "raised from 70");
+  assert.equal(capNote({ cap: 50, shard: 70 }), "lowered from 70");
+  assert.equal(capNote({ cap: 70, shard: 70 }), null);
+  const human = resistCapsFor("human", {}), elf = resistCapsFor("elf", {});
+  assert.equal(resistCapsSummary(human), "Shard caps: 70 each");
+  assert.equal(resistCapsSummary(elf), "Shard caps: 70, Energy 75");
+  assert.equal(resistCapsSummary(resistCapsFor("human", { fireResist: 95 })), "Fire 95 (raised from 70) · the rest at the shard's cap");
+  assert.equal(resistCapsSummary(resistCapsFor("human", { fireResist: 95, coldResist: 60, physResist: 80, poisonResist: 90 })),
+    "Phys 80 (raised from 70) · Fire 95 (raised from 70) · Cold 60 (lowered from 70) · Poison 90 (raised from 70) · the other one at the shard's cap");
+  assert.equal(gearCapsText(human, 40), "so gear supplies up to 30");
+  assert.equal(gearCapsText(elf, 40), "so gear supplies up to 30 (Energy 35)");
+  assert.equal(gearCapsText(resistCapsFor("elf", { fireResist: 95 }), 40), "so gear supplies up to 30 (Fire 55, Energy 35)");
+  assert.equal(gearCapsText(resistCapsFor("human", { fireResist: 10 }), 40), "so gear supplies up to 30 (Fire 0)", "never below nothing");
+  assert.equal(capsLine(human), "Shard caps");
+  assert.equal(capsLine(resistCapsFor("human", { fireResist: 95 })), "Fire 95 (raised from 70)");
+  assert.equal(anyOverridden(elf), false, "an Elf's Energy 75 is the shard's own");
+  assert.equal(anyOverridden(resistCapsFor("human", { energyResist: 75 })), true);
+});
+
+test("[fast] resist caps: a run's badges say its overridden cap, and compare judges each run by its own caps", () => {
+  const caps = { physResist: 70, fireResist: 95, coldResist: 70, poisonResist: 70, energyResist: 70 };
+  const shard = { ...caps, fireResist: 70 };
+  const badges = runBadges(3, { physResist: 30, fireResist: 50, coldResist: 30, poisonResist: 30, energyResist: 30 }, {}, 40, caps, shard).map((b) => b.text);
+  assert.ok(badges.includes("Fire 90 · cap 95"), JSON.stringify(badges));
+  assert.ok(badges.includes("Phys 70"), "an untouched resist reads as before");
+  assert.ok(runBadges(3, { fireResist: 50 }, {}, 40, shard).map((b) => b.text).includes("Fire 70"), "no shard caps given: nothing is marked");
+  // Fire 90 in a run built for a cap of 95 beats Fire 86 in one built for 70 (worth 70 there).
+  const m = compareModel([{ assignment: {}, totals: { fireResist: 86 } }, { assignment: {}, totals: { fireResist: 90 }, caps: { fireResist: 95 } }], [], ["fireResist"], { fireResist: 70 });
+  assert.deepEqual(m.totals[0]!.best, [false, true]);
 });
