@@ -12,6 +12,7 @@ import { dirname, join } from "node:path";
 interface BuildTarget { target: string; arch: string[] }
 interface BuildConfig {
   appId?: string | undefined;
+  icon?: string | undefined;
   mac?: { target?: BuildTarget[] | undefined; identity?: string | null | undefined } | undefined;
   win?: { target?: BuildTarget[] | undefined; artifactName?: string | undefined } | undefined;
   linux?: { target?: string[] | undefined } | undefined;
@@ -35,6 +36,45 @@ interface PackageJson {
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const pkg = JSON.parse(readFileSync(join(root, "package.json"), "utf8")) as PackageJson;
 const build = pkg.build ?? {};
+
+// A PNG's width and height sit at fixed offsets in its IHDR chunk, right after the 8-byte signature
+// — enough to check an icon's dimensions without an image library.
+function pngSize(path: string): { width: number; height: number; bytes: number } {
+  const buf = readFileSync(path);
+  assert.deepEqual([...buf.subarray(0, 8)], [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a], `${path} must be a PNG`);
+  assert.equal(buf.toString("latin1", 12, 16), "IHDR", `${path} must start with its IHDR chunk`);
+  return { width: buf.readUInt32BE(16), height: buf.readUInt32BE(20), bytes: buf.length };
+}
+
+test("[fast] the installers take their icon from one committed 1024-px master, and it is not oversized", () => {
+  // electron-builder 26 generates the macOS .icns, the Windows .ico and Linux's icon set from a single
+  // PNG; the .icns wants 1024×1024 for its 512@2x slot. Naming it explicitly (rather than relying on
+  // the build/icon.png lookup) makes a moved or renamed file a build error instead of a silent
+  // fallback to Electron's default icon.
+  assert.equal(build.icon, "build/icon.png");
+  const { width, height, bytes } = pngSize(join(root, "build", "icon.png"));
+  assert.equal(width, height, "the icon must be square");
+  assert.ok(width >= 1024, `the icon must be at least 1024 px for the macOS .icns, got ${width}`);
+  assert.ok(bytes < 512 * 1024, `the master icon is committed and linked from the README; keep it optimised (got ${bytes} bytes)`);
+});
+
+test("[fast] the window icon and the page's favicon ship inside the bundle, small", () => {
+  // build/ does not ship (it is electron-builder's input, not the app), so the copies the running
+  // app uses live under app/assets/, which app/** carries into the asar.
+  const files = build.files ?? [];
+  assert.ok(!files.some((p) => p.startsWith("!app/assets")), "app/assets/ must ship");
+  const win = pngSize(join(root, "app", "assets", "icon.png"));
+  assert.deepEqual([win.width, win.height], [256, 256]);
+  assert.ok(win.bytes < 64 * 1024, `window icon too large: ${win.bytes} bytes`);
+  const fav = pngSize(join(root, "app", "assets", "favicon.png"));
+  assert.deepEqual([fav.width, fav.height], [64, 64]);
+  assert.ok(fav.bytes < 8 * 1024, `favicon too large: ${fav.bytes} bytes`);
+  // The window icon is what Linux and Windows show for the window (and the taskbar in a dev run);
+  // macOS ignores it and uses the bundle's .icns.
+  const main = readFileSync(join(root, "electron", "main.mts"), "utf8");
+  assert.match(main, /const WINDOW_ICON = join\(HERE, "\.\.", "app", "assets", "icon\.png"\);/);
+  assert.match(main, /new BrowserWindow\(\{[^]*?\bicon: WINDOW_ICON\b/);
+});
 
 test("[fast] package metadata carries the public identity", () => {
   assert.equal(pkg.name, "pack-rat");
