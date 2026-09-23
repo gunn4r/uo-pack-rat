@@ -10,7 +10,7 @@ import { state } from "./store.mts";
 import { $, el } from "./dom.mts";
 import { api } from "./api.mts";
 import { parsePastedScan, type ParsePastedScanResult } from "../paste-scan.mts";
-import { box, button, icon, message, segmented, select, textarea, txt, showToast, type Kids } from "./components.mts";
+import { box, button, icon, message, segmented, select, textarea, txt, showToast, type Kids, modalOpen } from "./components.mts";
 import { defaultImportAdapterId, platformCompatible } from "./adapters.mts";
 import { importOptionLabel } from "./adapter-copy.mts";
 import { importActionLabel, listText, plural, scanPreview, sendEach, sizeText, type ScanPreview } from "./import-preview.mts";
@@ -242,6 +242,7 @@ window.addEventListener("dragover", (e) => { if (carriesFiles(e)) { e.preventDef
 window.addEventListener("drop", (e) => {
   if (!carriesFiles(e)) return;
   e.preventDefault();
+  if (modalOpen()) return;   // a drop onto the wizard or a confirmation is not an import
   imp.mode = "files";
   if (location.hash !== "#/import") location.hash = "#/import";
   void addFiles([...(e.dataTransfer!.files || [])]);

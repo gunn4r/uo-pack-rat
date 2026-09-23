@@ -88,6 +88,17 @@ test("[slow] the shell: screens, routes, drawers, the bridge popover and Setting
     assert.deepEqual(await drawerState(page, "import-drawer"), [true, true]);
     assert.equal(await page.evaluate(() => document.getElementById("app")!.inert), false);
 
+    // ⌘I and a file drop leave a modal dialog alone: no drawer opens underneath it.
+    await page.evaluate(async () => { void (await import("/ui/components.mjs" as string)).confirmDialog({ title: "Forget Dorran?", body: "x", confirmLabel: "Forget Dorran" }); });
+    await page.waitForSelector("dialog.dialog[open]");
+    await page.keyboard.press(process.platform === "darwin" ? "Meta+i" : "Control+i");
+    await page.evaluate(() => { const dt = new DataTransfer(); dt.items.add(new File(["{}"], "scan.json", { type: "application/json" })); window.dispatchEvent(new DragEvent("drop", { dataTransfer: dt, cancelable: true })); });
+    await page.waitForTimeout(200);
+    assert.deepEqual(await drawerState(page, "import-drawer"), [true, true], "no Import drawer under the dialog");
+    assert.notEqual(await page.evaluate(() => location.hash), "#/import");
+    await page.keyboard.press("Escape");
+    await page.waitForFunction(() => !document.querySelector("dialog[open]"));
+
     // Runs opens the builder with the saved-runs drawer; navigating away closes it.
     await page.click('[data-nav="runs"]');
     await page.waitForSelector("#runs-drawer:not([hidden])");

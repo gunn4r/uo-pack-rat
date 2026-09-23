@@ -5,7 +5,7 @@
 import { state } from "./store.mts";
 import { $, el } from "./dom.mts";
 import { api } from "./api.mts";
-import { box, button, keyValue, popover, txt, type PopoverHandle } from "./components.mts";
+import { box, button, keyValue, popover, txt, type PopoverHandle, modalOpen } from "./components.mts";
 import { currentBridgeView, bridgeLastAnswered, currentAdapter, pollBridge } from "./bridge.mts";
 import { relativeWhen } from "./messages.mts";
 import type { UiPrefs } from "./api-types.mts";
@@ -91,9 +91,9 @@ export function initShell(): void {
   $<HTMLButtonElement>("#sidebar-pin")!.addEventListener("click", togglePin);
   $<HTMLElement>("#sidebar")!.addEventListener("keydown", navKeys);
   $<HTMLButtonElement>("#bridge")!.addEventListener("click", () => openBridgePopover());
-  // ⌘I (Ctrl+I off the Mac) opens Import over whatever page is showing.
+  // ⌘I (Ctrl+I off the Mac) opens Import over whatever page is showing — not over a modal dialog.
   document.addEventListener("keydown", (e) => {
-    if ((e.metaKey || e.ctrlKey) && !e.altKey && !e.shiftKey && e.key.toLowerCase() === "i") { e.preventDefault(); location.hash = "#/import"; }
+    if ((e.metaKey || e.ctrlKey) && !e.altKey && !e.shiftKey && e.key.toLowerCase() === "i") { e.preventDefault(); if (!modalOpen()) location.hash = "#/import"; }
   });
 }
 

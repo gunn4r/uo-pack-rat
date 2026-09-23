@@ -480,6 +480,9 @@ export function bindDrawer(root: HTMLElement): DrawerHandle {
 }
 
 // ---------------------------------------------------------------- dialog, confirmDialog
+// A modal dialog is up (the wizard, a confirmation): page-wide shortcuts and drops must leave it alone, or
+// they open a drawer underneath it and break its Esc and focus.
+export const modalOpen = (): boolean => !!document.querySelector("dialog[open]");
 // A centred modal on the native <dialog> (showModal makes everything behind it inert and keeps focus in).
 // Built fresh per call and removed once closed.
 export interface DialogOptions { title: string; body?: Kids; actions?: HTMLElement[]; role?: "dialog" | "alertdialog"; width?: "sm" | "md"; cls?: string; describedBy?: string | undefined; initialFocus?: HTMLElement | null; onCancel?: () => void }
