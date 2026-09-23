@@ -10,7 +10,7 @@ import { setRules } from "./vault-lib.mts";
 import type { RulesV1 } from "./schema/types.d.mts";
 import {
   propName, weightsSummary, requirementsSummary, poolSummary, advancedSummary, knobError, firstKnobError, knobFromServerError, ruleValueError,
-  resistOutcome, otherChanges, afterChange, compareModel, hiddenRowsNote, toggleCompare, runAutoLabel, runBadges, plural, SOLVER_LIMITS,
+  resistOutcome, locationCrumbs, otherChanges, afterChange, compareModel, hiddenRowsNote, toggleCompare, runAutoLabel, runBadges, plural, SOLVER_LIMITS,
   type Knobs,
 } from "./ui/builder-model.mts";
 import { OPTS_LIMITS } from "./vault-server.mts";
@@ -79,6 +79,14 @@ test("[fast] builder model: a resist tile says short, at cap, over cap or met", 
   assert.deepEqual(resistOutcome(70, 65, 70), { text: "At cap", tone: "ok" });
   assert.deepEqual(resistOutcome(86, 65, 70), { text: "16 over cap", tone: "muted" });
   assert.deepEqual(resistOutcome(40, null, 70), { text: "30 below cap", tone: "muted" });
+});
+
+test("[fast] builder model: a Fetch list location reads as its path of containers, never cut", () => {
+  assert.deepEqual(locationCrumbs("Dorran's bank › Metal Chest (0x40001a2b) › A Bag"), ["Dorran's bank", "Metal Chest (0x40001a2b)", "A Bag"]);
+  assert.deepEqual(locationCrumbs("Metal Chest (0x700b0000)"), ["Metal Chest (0x700b0000)"]);
+  assert.deepEqual(locationCrumbs("Worn by Kestrel"), ["Worn by Kestrel"]);
+  assert.deepEqual(locationCrumbs(""), ["Unknown place"]);
+  assert.deepEqual(locationCrumbs(undefined), ["Unknown place"]);
 });
 
 test("[fast] builder model: other changes are badges, gains first, resists and unchanged values left out", () => {

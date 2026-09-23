@@ -579,3 +579,22 @@ export function menu(anchor: HTMLElement, items: Array<MenuItem | "divider">, { 
   });
   return Object.assign(handle, { counts });
 }
+
+// ---- builder
+// Copy text (a serial) to the clipboard; resolves whether it worked. The Clipboard API first. The desktop
+// app's session denies every permission (electron/main.mts), clipboard writes included, so there the copy
+// goes through a selected off-screen textarea and execCommand("copy"), which the click's user activation
+// allows without a permission. Focus goes back where it was.
+export async function copyText(text: string): Promise<boolean> {
+  try { await navigator.clipboard.writeText(text); return true; } catch { /* denied or absent: the fallback below */ }
+  const back = document.activeElement as HTMLElement | null;
+  const ta = el("textarea", { class: "sr", readonly: "", "aria-hidden": "true", tabindex: "-1" });
+  ta.value = text;
+  document.body.append(ta);
+  ta.select();
+  let ok = false;
+  try { ok = document.execCommand("copy"); } catch { ok = false; }
+  ta.remove();
+  back?.focus?.();
+  return ok;
+}

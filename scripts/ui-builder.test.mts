@@ -149,3 +149,40 @@ test("[slow] the Fetch list's pieces show the item tooltip on hover and on keybo
     rmSync(dataDir, { recursive: true, force: true });
   }
 });
+
+test("[slow] a Fetch list row shows its whole place, wrapped not cut, and copies the container serial", async (t) => {
+  const why = unavailable();
+  if (why) return t.skip(why);
+  const dataDir = seedDataDir("packrat-ui-fetchplace-");
+  const { app, page, errors } = await launch(dataDir);
+  try {
+    await openBuilder(page);
+    await page.click("#b-run");
+    await built(page);
+    // A deep bag path on the first row's pieces (the demo's chests sit on the ground, one level deep), then a
+    // redraw through the Plan's switch.
+    const long = "Dorran's bank › Metal Chest (0x40001a2b) › Engraved: Caster Jewellery and Spare Suits › A Very Small Pouch Inside The Bag";
+    await page.evaluate(async (text) => {
+      const { state } = await import("/ui/store.mjs" as string);
+      const serials = [...document.querySelectorAll<HTMLElement>("section[aria-label='Fetch list'] .b-fetch:first-child [data-serial]")].map((n) => +n.dataset.serial!);
+      for (const s of serials) { const it = state.itemCache.get(s); it.location = { ...it.location, text }; }
+    }, long);
+    const sw = page.getByRole("switch", { name: "Show unchanged slots" });
+    await sw.click(); await sw.click();
+    const place = page.locator("section[aria-label='Fetch list'] .b-fetch").first().locator(".b-place");
+    await place.scrollIntoViewIfNeeded();
+    assert.equal((await place.innerText()).replace(/\s+/g, " ").trim(), "Dorran's bank › Metal Chest 0x40001a2b › Engraved: Caster Jewellery and Spare Suits › A Very Small Pouch Inside The Bag");
+    const fits = await place.evaluate((n) => [...n.querySelectorAll("*")].every((c) => c.scrollWidth <= c.clientWidth + 1 && getComputedStyle(c).textOverflow !== "ellipsis"));
+    assert.equal(fits, true, "no part of the place is cut short");
+
+    const copy = page.locator("section[aria-label='Fetch list'] .b-fetch").first().getByRole("button", { name: /^Copy container serial 0x/ });
+    const hex = (await copy.getAttribute("aria-label"))!.replace("Copy container serial ", "");
+    await copy.click();
+    await page.waitForFunction(() => /Copied 0x/.test(document.body.textContent || ""));
+    assert.equal(await app.evaluate(({ clipboard }) => clipboard.readText()), hex);
+    assert.deepEqual(errors, []);
+  } finally {
+    await app.close();
+    rmSync(dataDir, { recursive: true, force: true });
+  }
+});

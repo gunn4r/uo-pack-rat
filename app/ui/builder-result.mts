@@ -7,13 +7,14 @@ import { OPTIMIZER_SLOTS, RESIST_KEYS, getRules, resistSkillBonus, totalsOf, req
 import type { EffectiveProfile, Item, OptItem, PropMap } from "../vault-lib.mts";
 import { state } from "./store.mts";
 import type { BuildMeta } from "./store.mts";
-import { $, el, label, fmtN, fmtSecs, fmtRunTime, slotLabel, rarCell, showItemTip, hideItemTip } from "./dom.mts";
-import { box, txt, button, icon, badge, message, meter, switchControl, check, table, tableFoot, rowActions, tipWrap, keyValue, token } from "./components.mts";
+import { $, el, label, fmtN, fmtSecs, fmtRunTime, slotLabel, rarCell, showItemTip, hideItemTip, toast } from "./dom.mts";
+import { box, txt, button, icon, badge, message, meter, switchControl, check, table, tableFoot, rowActions, tipWrap, tooltip, keyValue, token, copyText } from "./components.mts";
 import { sheetNode } from "./sheet.mts";
 import { bridgeActionReason, runBridgeAction, grabAll, grabbable } from "./bridge.mts";
 import { resolveItems } from "./items.mts";
 import { renderPanel } from "./builder.mts";
-import { afterChange, compareModel, hiddenRowsNote, otherChanges, plural, resistOutcome, toggleCompare, propName, type CompareMember } from "./builder-model.mts";
+import { splitSerial } from "./inventory.mts";
+import { afterChange, compareModel, hiddenRowsNote, locationCrumbs, otherChanges, plural, resistOutcome, toggleCompare, propName, type CompareMember } from "./builder-model.mts";
 import type { OptSuit, OptimizeResult, SavedRunLike } from "./api-types.mts";
 
 const RESIST_NAMES: Record<string, [string, string]> = { physResist: ["Physical", "--res-phys"], fireResist: ["Fire", "--res-fire"], coldResist: ["Cold", "--res-cold"], poisonResist: ["Poison", "--res-poison"], energyResist: ["Energy", "--res-energy"] };
@@ -199,6 +200,25 @@ function planCard(current: OptSuit, suit: OptSuit, name: string, changes: string
     !showUnchanged && unchanged.length && changes.length ? tableFoot(txt(`Unchanged: ${unchangedNames.join(", ")}`, "ellip")) : null);
 }
 // ---- 3. fetch list: one row per container, walk to each once
+// The row's place in full, as a path that wraps between and inside crumbs, never cut short: "Dorran's bank ›
+// Metal Chest 0x… › A Bag", selectable so any part of it can be copied. A crumb's serial (a same-named sibling's
+// tell) is drawn in faint mono; the last crumb's is left out when the row's meta line already shows it.
+function crumbsEl(where: string, contHex: string): HTMLOListElement {
+  const crumbs = locationCrumbs(where);
+  return el("ol", { class: "b-place", "aria-label": `Location: ${where}` }, ...crumbs.map((c, i) => {
+    const { name: nm, serial } = splitSerial(c);
+    const showSerial = serial && !(i === crumbs.length - 1 && serial.toLowerCase() === contHex);
+    return el("li", {}, i ? el("span", { class: "b-place-sep", "aria-hidden": "true" }, "›") : null, i ? " " : null,
+      txt(nm, "b-place-name"), showSerial ? " " : null, showSerial ? txt(serial, "mono faint t-sm") : null, " ");
+  }));
+}
+// A small icon button that copies `text` (a serial) and says so in a toast.
+function copyButton(text: string, what: string): HTMLButtonElement {
+  const b = button({ label: `Copy ${what} ${text}`, icon: "clipboard", iconOnly: true, size: "sm", variant: "ghost",
+    onClick: async () => { if (await copyText(text)) toast(`Copied ${text}`, "good"); else toast(`Could not copy the ${what}.`, "bad"); } });
+  tooltip(b, `Copy ${what}`);
+  return b;
+}
 function fetchCard(items: Item[], name: string): HTMLElement | null {
   if (!items.length) return null;
   const groups = new Map<string, Item[]>();
@@ -213,8 +233,11 @@ function fetchCard(items: Item[], name: string): HTMLElement | null {
     const grab = button({ label: `Grab ${mine.length || list.length}`, size: "sm", icon: "grab", disabled: !!grabGate, onClick: () => grabAll(list, name) });
     const pieces = el("ul", { class: "b-fetch-pieces", "aria-label": `${plural(list.length, "piece")} to fetch` },
       ...list.map((it) => el("li", {}, tipTarget(txt(it.name, "b-fetch-piece"), it.serial))));
+    const contHex = cont ? serialHex(+cont.serial) : "";
     return box("div", { class: "b-fetch" },
-      box("span", { class: "b-fetch-where" }, txt(where, "strong ellip"), txt(`${cont && !where.includes(serialHex(+cont.serial)) ? serialHex(+cont.serial) + " · " : ""}${plural(list.length, "piece")}`, "t-sm faint")),
+      box("div", { class: "b-fetch-where" }, crumbsEl(where, contHex),
+        box("div", { class: "b-fetch-meta t-sm" }, contHex ? txt(contHex, "mono") : null, contHex ? copyButton(contHex, "container serial") : null,
+          txt(`${contHex ? "· " : ""}${plural(list.length, "piece")}`, "faint"))),
       pieces,
       box("span", { class: "b-fetch-acts" }, goGate ? tipWrap(go, goGate) : go, grabGate ? tipWrap(grab, grabGate) : grab));
   });

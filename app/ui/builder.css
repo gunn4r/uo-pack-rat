@@ -85,10 +85,17 @@
 .tbl td.b-act { overflow: visible; text-align: right; }
 .b-act .rowact { justify-content: flex-end; }
 .pr .rowact .btn.on { color: var(--color-on-chip-set); background: var(--color-chip-set); }
-.b-fetch { display: grid; grid-template-columns: 220px minmax(0, 1fr) auto; gap: var(--space-4); align-items: center; padding: var(--space-3) var(--space-4); border-bottom: var(--border-width) solid var(--color-border); }
+/* A Fetch list row: the place (its full path, then the container serial and the piece count) beside the
+   actions, and the pieces under both. */
+.b-fetch { display: grid; grid-template-columns: minmax(0, 1fr) auto; column-gap: var(--space-4); row-gap: var(--space-2); align-items: start; padding: var(--space-3) var(--space-4); border-bottom: var(--border-width) solid var(--color-border); }
 .b-fetch:last-child { border-bottom: 0; }
-.b-fetch-where { display: flex; flex-direction: column; min-width: 0; }
-.b-fetch-acts { display: flex; gap: var(--space-1-5); }
+.b-fetch-where { display: flex; flex-direction: column; gap: var(--space-0-5); min-width: 0; }
+.b-fetch-acts { display: flex; gap: var(--space-1-5); grid-column: 2; grid-row: 1; }
+.b-fetch-pieces { grid-column: 1 / -1; }
+.b-place { margin: 0; padding: 0; list-style: none; font-weight: var(--weight-semibold); overflow-wrap: anywhere; }
+.b-place li { display: inline; }
+.b-place-sep, .b-place .mono { color: var(--color-text-muted); font-weight: var(--weight-regular); }
+.b-fetch-meta { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-1); color: var(--color-text-muted); min-width: 0; }
 .b-after { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: var(--space-3); padding: var(--space-3) var(--space-4); }
 .b-after-note { padding: 0 var(--space-4) var(--space-3); }
 .b-sheet-wrap { padding: 0 var(--space-4) var(--space-4); overflow-x: auto; }
@@ -112,7 +119,7 @@
   .b-head-card .b-resists { grid-template-columns: repeat(3, minmax(0, 1fr)); }
   .b-plan col:nth-child(4), .b-plan th:nth-child(4), .b-plan td:nth-child(4) { display: none; }
 }
-@media (max-width: 1279px) { .b-after { grid-template-columns: repeat(3, minmax(0, 1fr)); } .b-fetch { grid-template-columns: 180px minmax(0, 1fr) auto; } }
+@media (max-width: 1279px) { .b-after { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
 /* under 1024 the panel becomes a full-width collapsible section above the results, its footer a sticky bar */
 @media (max-width: 1023px) {
   #tab-builder .page.b-page { flex-direction: column; overflow-y: auto; }
