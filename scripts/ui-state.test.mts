@@ -204,6 +204,22 @@ test("[slow] the item peek opens from a row, follows the arrow keys and closes w
     await page.waitForSelector("#tip[style*='block']", { timeout: 5_000 });
     await page.locator("#f-text").focus();
     await page.waitForFunction(() => document.querySelector<HTMLElement>("#tip")?.style.display === "none");
+    // The way a player uses it: a click on a row, a click on the peek's text (focus drops to <body>), then
+    // the keys. ↑/↓ still step and Esc still closes; typing in the search box keeps its arrows.
+    await rows.nth(2).click();
+    await page.waitForSelector("#inv-peek:not([hidden])");
+    await page.locator("#inv-peek .peek-sec .caps").first().click();
+    assert.equal(await page.evaluate(() => document.activeElement === document.body), true, "the click on the peek's text leaves focus on the page");
+    await page.keyboard.press("ArrowDown");
+    await page.waitForFunction(() => document.querySelector("#inv-table tbody tr.item.sel")?.getAttribute("data-index") === "3");
+    await page.keyboard.press("ArrowUp");
+    await page.waitForFunction(() => document.querySelector("#inv-table tbody tr.item.sel")?.getAttribute("data-index") === "2");
+    await page.locator("#f-text").click();
+    await page.keyboard.press("ArrowDown");
+    assert.equal(await rows.nth(2).getAttribute("aria-selected"), "true", "arrows in the search box do not step the peek");
+    await page.evaluate(() => (document.activeElement as HTMLElement).blur());
+    await page.keyboard.press("Escape");
+    await page.waitForSelector("#inv-peek", { state: "hidden" });
     assert.deepEqual(errors, []);
   } finally {
     await app.close();
