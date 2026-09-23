@@ -50,7 +50,7 @@ export interface SettingsApiResponse {
 // optional: absent means "never chosen", and the page keeps its default.
 export interface UiPrefs {
   cols?: string[] | undefined;
-  theme?: string | undefined;                          // a theme family ("default"; "britannia" in round 2)
+  theme?: string | undefined;                          // a theme family ("default" or "britannia")
   appearance?: "light" | "system" | "dark" | undefined;
   sidebar?: "auto" | "collapsed" | undefined;          // "collapsed" = pinned to icons at any width
   density?: "dense" | "regular" | undefined;           // the Inventory table's rows: 32 or 40 px

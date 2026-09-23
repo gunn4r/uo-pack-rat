@@ -1,7 +1,8 @@
 // ui-contrast.test.mts — [slow]: the contrast check from design spec 2.3, run on the REAL page. It drives the
 // Electron window with Playwright (the same launch as scripts/ui-smoke.test.mts) over the demo data, visits
-// each scene below in light and in dark (switched through prefers-color-scheme, which the page follows live
-// while the Appearance choice is "System"), and measures every text/background pair, field value,
+// each scene below in both theme families (Default and Britannia, switched through theme.mts's applyLook) and
+// in light and in dark (switched through prefers-color-scheme, which the page follows live while the
+// Appearance choice is "System"), and measures every text/background pair, field value,
 // placeholder, control boundary, meaningful icon and status dot with scripts/contrast-probe.mts. Any
 // failing pair fails the build. A screen or overlay added to the app gets a scene here.
 // [slow] and not [fast]: it launches Electron and runs a short build for the result screen.
@@ -276,7 +277,10 @@ async function launch(dataDir: string): Promise<{ app: ElectronApplication; page
   return { app, page, errors, size };
 }
 
-test("[slow] every text, control edge, icon and status dot on the real page passes contrast in light and dark", async (t) => {
+// Every theme family the page ships, each measured in both modes on every scene.
+const FAMILIES = ["default", "britannia"] as const;
+
+test("[slow] every text, control edge, icon and status dot on the real page passes contrast in both themes, light and dark", async (t) => {
   const why = unavailable();
   if (why) return t.skip(why);
   const dataDir = mkdtempSync(join(tmpdir(), "packrat-contrast-"));
@@ -293,16 +297,21 @@ test("[slow] every text, control edge, icon and status dot on the real page pass
       // hover fills are states, not surfaces: park the pointer on an empty stretch of the top bar (the
       // tooltip scene keeps its hover, it is what that scene measures)
       if (scene.name !== "item tooltip") await page.mouse.move(Math.min(900, size.width - 20), 4);
-      for (const mode of ["light", "dark"] as const) {
-        // reduced motion: no colour transition is half-way when the probe reads the computed colours
-        await page.emulateMedia({ colorScheme: mode, reducedMotion: "reduce" });
-        await page.waitForFunction((m) => document.documentElement.dataset.mode === m, mode, { timeout: 5_000 });
-        await page.waitForTimeout(80);
-        const got = await page.evaluate(probeContrast);
-        assert.ok(got.length > 10, `${scene.name} (${mode}) measured only ${got.length} pairs — did the scene render?`);
-        for (const r of got) rows.push({ ...r, where: `${scene.name} · ${mode}` });
-        seen.push(`${scene.name} · ${mode}: ${got.length}`);
+      for (const family of FAMILIES) {
+        // the page only (applyLook), not the saved ui-prefs: the scene stays as it is while the look changes
+        await page.evaluate(async (f) => (await import("/ui/theme.mjs" as string)).applyLook({ theme: f }), family);
+        for (const mode of ["light", "dark"] as const) {
+          // reduced motion: no colour transition is half-way when the probe reads the computed colours
+          await page.emulateMedia({ colorScheme: mode, reducedMotion: "reduce" });
+          await page.waitForFunction(([f, m]) => document.documentElement.dataset.theme === f && document.documentElement.dataset.mode === m, [family, mode], { timeout: 5_000 });
+          await page.waitForTimeout(80);
+          const got = await page.evaluate(probeContrast);
+          assert.ok(got.length > 10, `${scene.name} (${family} ${mode}) measured only ${got.length} pairs — did the scene render?`);
+          for (const r of got) rows.push({ ...r, where: `${scene.name} · ${family} ${mode}` });
+          seen.push(`${scene.name} · ${family} ${mode}: ${got.length}`);
+        }
       }
+      await page.evaluate(async () => (await import("/ui/theme.mjs" as string)).applyLook({ theme: "default" }));
       await page.emulateMedia({ colorScheme: "light" });
       await scene.leave?.(page);
     }

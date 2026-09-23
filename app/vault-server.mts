@@ -133,9 +133,9 @@ const WEB = join(HERE, "dist");
 const CSP = "default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; connect-src 'self'; img-src 'self' data:; font-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'";
 const UI_NAME_RE = /^[a-z0-9-]+\.(mjs|css)$/;
 const FONT_NAME_RE = /^[a-z0-9-]+\.woff2$/;
-// The closed-choice fields of <data>/ui-prefs.json (GET/PUT /api/ui-prefs) and what each may hold. A
-// theme family listed here may not be built yet: the page applies only the families it ships
-// (app/ui/theme.mts), so round 2's "britannia" can be stored before its tokens exist.
+// The closed-choice fields of <data>/ui-prefs.json (GET/PUT /api/ui-prefs) and what each may hold. The
+// page applies only the theme families it ships (app/ui/theme.mts's BUILT_THEMES) and draws Default for
+// anything else.
 const UI_PREF_CHOICES = {
   theme: ["default", "britannia"],
   appearance: ["light", "system", "dark"],
