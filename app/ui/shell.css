@@ -1,0 +1,42 @@
+/* ui/shell.css — the app shell around the screens (ui/shell.mts): sidebar, its collapsed form, the screen and
+   page frames. The sidebar and top bar components themselves are in components.css. Tokens only (docs/ui.md). */
+
+body { height: 100vh; overflow: hidden; }
+#app { height: 100vh; }
+.shell { grid-template-rows: minmax(0, 1fr); }   /* the one row is the window's height, whatever the screen holds */
+#app[inert] { pointer-events: none; }
+.sidebar { overflow-y: auto; overflow-x: hidden; }
+.sidebar-meta { padding: 0 var(--space-0-5); overflow-wrap: anywhere; }
+.sidebar .nav-sub .i { display: none; }          /* Runs is indented under Suit Builder while the labels show */
+.pr .sidebar-pin { height: var(--control-sm); font-size: var(--text-sm); }
+@media (max-width: 1179px) { .sidebar-pin { display: none; } }   /* below 1180 px the width alone collapses it */
+.bridge-pop-head { display: flex; align-items: center; gap: var(--space-2); }
+.bridge-pop-actions { display: flex; gap: var(--space-2); }
+
+/* collapsed: 56 px of icons; every label stays in the accessibility tree, only visually hidden */
+.shell.collapsed .sidebar { align-items: center; padding: var(--space-3) var(--space-2); }
+.shell.collapsed .brand { padding: var(--space-1) 0 var(--space-3); }
+.shell.collapsed .brand img { width: 36px; height: 36px; }   /* centred in the 40 px of the 56 px rail */
+.shell.collapsed .nav-item { width: 40px; justify-content: center; padding: 0; }
+.shell.collapsed .nav-sub .i { display: block; }
+.shell.collapsed :is(.nav-label, .brand-name, .bridge-label) { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+.shell.collapsed :is(.nav-item .count, .nav-item .kbd, .sidebar-meta, .bridge > .i) { display: none; }
+.shell.collapsed .sidebar-foot { padding: var(--space-2) 0 0; align-items: center; width: 100%; }
+.shell.collapsed .bridge { width: 40px; justify-content: center; padding: 0; }
+.shell.collapsed .topbar { padding: 0 var(--space-4); }
+.shell.collapsed .page { padding: var(--space-4); }
+
+/* the data-folder banner (ui/bridge.mts's renderDataDirNotice): one short line, Show details, Dismiss. It takes
+   its own height above the screen, and the screen (flex 1, min-height 0) shrinks to what is left. */
+.main > #notice { flex: none; margin: var(--space-3) var(--gutter) 0; align-items: center; padding-block: var(--space-1-5); }
+#notice[hidden] { display: none; }
+#notice > span { flex: 1; min-width: 0; }
+#notice > .btn { flex: none; }
+
+/* one screen at a time; its page scrolls unless the screen scrolls inner boxes itself (inventory, builder) */
+.screen { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; }
+.screen[hidden] { display: none; }
+.screen > .page { overflow: auto; width: 100%; max-width: var(--page-max); margin: 0 auto; }
+
+/* ---- builder: the busy dot on a nav item while a build runs */
+.nav-item .nav-busy { margin-left: auto; }

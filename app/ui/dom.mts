@@ -1,10 +1,11 @@
 // ui/dom.mts — DOM helpers, formatting/label helpers, rarity, and the in-game style hover tooltip.
 // Moved verbatim out of index.html's inline <script type="module"> (Task 4, the page split).
-import { SLOT_LABELS, labelOf, fullOf } from "../vault-lib.mts";
+import { SLOT_LABELS, labelOf, fullOf, tagInfo } from "../vault-lib.mts";
 import type { Item } from "../vault-lib.mts";
 import { EXTRA_COLS, rarityRank as rarityRankOf } from "../item-query.mts";
 import { state } from "./store.mts";
-import { resolveItems } from "./items.mts";
+import { resolveItems, rarityToken } from "./items.mts";
+import { showToast, tag, tooltip } from "./components.mts";
 
 export { EXTRA_COLS, colVal } from "../item-query.mts";
 
@@ -73,9 +74,21 @@ export const slotLabel = (s: string | null | undefined): string => SLOT_LABELS[s
 // tags in scanned tooltips) is shard data now (state.rules.rarity, from GET /api/rules) rather than
 // a hardcoded table — a shard with a different tier scheme ships its own app/rules/<shard>.json.
 export const rarityRank = (name: string | null | undefined): number => rarityRankOf(state.rules?.rarity || [], name);
-export const rarityColor = (name: string | null | undefined): string | null => { const r = (state.rules?.rarity || []).find((r) => r.name.toLowerCase() === String(name || "").toLowerCase()); return r ? r.colour : null; };
+// A tier's colour for the page: its --rarity-* token (items.mts's rarityToken) when the tier has one,
+// else the shard's raw game colour, which only reads well inside a dark subtree (see rarCell).
+export const rarityColor = (name: string | null | undefined): string | null => {
+  const token = rarityToken(name);
+  if (token) return `var(${token})`;
+  const r = (state.rules?.rarity || []).find((r) => r.name.toLowerCase() === String(name || "").toLowerCase());
+  return r ? safeColor(r.colour) : null;
+};
 export const rarRank = (it: Item): number => rarityRank(it.rarity);
-export const rarCell = (it: Item): HTMLElement => it.rarity ? el("span", { style: `color:${rarityColor(it.rarity) || "inherit"};font-weight:500` }, it.rarity) : el("span", { class: "muted" }, "·");
+export const rarCell = (it: Item): HTMLElement => {
+  if (!it.rarity) return el("span", { class: "muted" }, "·");
+  if (rarityToken(it.rarity)) return el("span", { class: "rar-name", style: `color:${rarityColor(it.rarity)}` }, it.rarity);
+  const raw = rarityColor(it.rarity);
+  return el("span", { class: "rar-name rar-raw", "data-theme": "default", "data-mode": "dark", style: raw ? `color:${raw}` : "" }, it.rarity);
+};
 // safeColor(c) — a colour that is safe to put in a style property, or null. The one dynamic colour
 // the page takes from a scan is the <BASEFONT COLOR=#rrggbb> tag the client writes into a tooltip
 // line's own text; it reaches a `style` through tipNode below. That capture is already regex-bound,
@@ -94,21 +107,12 @@ export function fmtRunTime(iso: string): string {
   return d.toDateString() === new Date().toDateString() ? hm : `${d.toLocaleDateString([], { month: "short", day: "numeric" })} ${hm}`;
 }
 
-// `number`, not `ReturnType<typeof setTimeout>`: this file only ever runs in the browser, where
-// setTimeout returns a number, but `ReturnType<typeof setTimeout>` is ambiguous once a program also
-// has Node's ambient globals in scope (tsconfig.json's root config, which type-checks this file too,
-// alongside tsconfig.browser.json's browser-only one) — the two configs disagree on which overload
-// `typeof setTimeout` even means, so naming the type directly is what stays correct under both.
-let toastTimer: number | null = null;
+// toast(text, cls) — the page's long-standing call, now the toast stack in components.mts (bottom-right, up to
+// three, errors stay until dismissed). cls keeps its old meaning: "" is information, "good" a success, "bad"
+// an error. (components.mts imports el() from here; the cycle is safe because neither module calls into the
+// other while it is still loading.)
 export function toast(text: string, cls = ""): void {
-  document.querySelectorAll(".toast").forEach((t) => t.remove());
-  const t = el("div", { class: "toast " + cls }, text); document.body.append(t);
-  // clearTimeout accepts (and no-ops on) null at runtime exactly like undefined — lib.dom.d.ts's own
-  // signature just doesn't say so; setTimeout's own return value goes through `unknown` for the same
-  // cross-config reason as the type annotation above (a direct `as number` fails under whichever
-  // config resolves it to Node's Timeout, since neither type "sufficiently overlaps" the other) —
-  // both casts are compiler-only, this file's actual runtime is always the browser's setTimeout.
-  clearTimeout(toastTimer as number | undefined); toastTimer = setTimeout(() => t.remove(), 6000) as unknown as number;
+  showToast(text, cls === "bad" ? "bad" : cls === "good" ? "ok" : "info");
 }
 
 // ---------------------------------------------------------------- in-game style tooltip
@@ -122,95 +126,121 @@ export interface TooltipItem {
   name: string;
   amount?: number | undefined;
   rarity?: string | null | undefined;
+  tags?: string[] | undefined;
   location?: { text: string } | undefined;
 }
 interface TooltipLine {
   text: string;
   color: string | null;
-  bold: boolean;
-  italic: boolean;
 }
-const HOT_PROPS = /swing speed increase|defense chance increase|hit chance increase|faster casting|faster cast recovery|lower reagent cost|lower mana cost|spell damage increase/i;
 function tipLine(raw: string): TooltipLine {
-  let color: string | null = null, bold = false, italic = false;
-  let text = String(raw).replace(/<basefont[^>]*color=["']?(#[0-9a-f]{6})["']?[^>]*>/gi, (_, c: string) => { color = c; return ""; }).replace(/<\/?b>/gi, () => { bold = true; return ""; }).replace(/<[^>]+>/g, "").trim();
-  if (/^\(?(imbued|exceptional|insured|blessed)\)?$/i.test(text)) { italic = true; text = text.replace(/[()]/g, ""); }
-  return { text, color, bold, italic };
+  let color: string | null = null;
+  const text = String(raw).replace(/<basefont[^>]*color=["']?(#[0-9a-f]{6})["']?[^>]*>/gi, (_, c: string) => { color = c; return ""; }).replace(/<[^>]+>/g, "").trim();
+  return { text, color };
 }
-// tipNode(it) — the hover tooltip, built as DOM nodes. Every value in here comes off a scan file's
-// own tooltip lines, and this used to be the page's other raw-string builder: its local escaper
-// covered only & < >, which is correct for a text position and one careless edit away from not being
-// correct for an attribute. Module-scope (not a closure inside installTooltip) so it is importable
-// on its own — see app/ui-render.test.mts. Phase 7 security review, Area 2, Note 3.
+const RARITY_LINE = /^(minor|lesser|greater|major|legendary) (magic item|artifact)$/i;
+const RESIST_LINE = /^(physical|fire|cold|poison|energy) resist\b/i;
+const RES_CLASS: Record<string, string> = { physical: "phys", fire: "fire", cold: "cold", poison: "poison", energy: "energy" };
+const TAG_TONE: Record<string, "bad" | "warn" | undefined> = { cursed: "bad", brittle: "warn", antique: "warn", massive: "warn", unwieldy: "warn" };
+// An item tag ("cursed") as its chip, in its tone. `describe` gives it the shard's plain-words meaning
+// (the rules' tagInfo) as a tooltip on hover and focus; a shard with no meaning for it gets a plain chip.
+export function tagChip(t: string, { describe = false }: { describe?: boolean } = {}): HTMLSpanElement {
+  const chip = tag(t.charAt(0).toUpperCase() + t.slice(1), TAG_TONE[t.toLowerCase()]);
+  const info = describe ? tagInfo(t) : null;
+  if (info) { chip.tabIndex = 0; chip.classList.add("tag-info"); tooltip(chip, info); }
+  return chip;
+}
+// tipNode(it) — the item tooltip (design spec 4.3), built as DOM nodes: the name in its rarity colour and
+// the item's tags; its tooltip lines in the game's order, resist lines in their element's colour and
+// durability and requirements muted; a footer with the rarity tier and where the item is. Every value
+// in here comes off a scan file's own tooltip lines, so nothing is ever markup, and the one colour a
+// line may carry (its <BASEFONT COLOR>) reaches a style only through safeColor. Module-scope so it is
+// importable on its own — see app/ui-render.test.mts.
 export function tipNode(it: TooltipItem): HTMLDivElement {
-  const lines = (it.lines || []).slice(1).map(tipLine);
-  const keyed = (key: string, value: string): HTMLDivElement => el("div", {}, el("span", { class: "t-key" }, key), " " + value);
-  const head: TooltipLine[] = [], info: HTMLDivElement[] = [], body: HTMLDivElement[] = [];
-  let rarity: TooltipLine | null = null;
+  const lines = (it.lines || []).slice(1).map(tipLine).filter((l) => l.text);
+  const tags = new Set((it.tags || []).map((t) => t.toLowerCase()));
+  let tier = it.rarity || null;
+  const body: HTMLElement[] = [];
   for (const l of lines) {
-    const t = l.text;
-    let m;
-    if (/^(minor|lesser|greater|major|legendary) (magic item|artifact)$/i.test(t)) { rarity = l; continue; }
-    if (/^crafted by /i.test(t) || l.italic) { head.push(l); continue; }
-    if ((m = t.match(/^weapon damage\s+(.+)$/i))) { info.push(keyed("Damage:", m[1]!)); continue; }
-    if ((m = t.match(/^weapon speed\s+(.+)$/i))) { info.push(keyed("Speed:", m[1]!)); continue; }
-    if ((m = t.match(/^weight:?\s+(\d+)/i))) { info.push(keyed("Weight:", m[1]!)); continue; }
-    if ((m = t.match(/^durability\s+(\d+)\s*\/\s*(\d+)/i))) {
-      const pct = Math.max(0, Math.min(100, 100 * +m[1]! / (+m[2]! || 1)));
-      info.push(keyed("Durability:", `${m[1]} / ${m[2]}`), el("div", { class: "t-dur" }, el("div", { style: `width:${pct}%` })));
-      continue;
-    }
-    if ((m = t.match(/^contents:?\s+(\d+)\/(\d+) items,?\s*(\d+) stones/i))) { info.push(keyed("Items:", `${m[1]}/${m[2]}`), keyed("Items Weight:", m[3]!)); continue; }
-    if ((m = t.match(/^strength requirement\s+(\d+)/i))) { body.unshift(el("div", {}, `Required Strength: ${m[1]}`)); continue; }
-    if ((m = t.match(/^(durability)\s+\+(\d+)%$/i))) { body.push(el("div", {}, el("span", { class: "t-val" }, `+${m[2]}%`), " Durability")); continue; }
-    if ((m = t.match(/^(.*?)[\s:]+\+?(-?\d+(?:\.\d+)?)\s*(%?)$/)) && m[1] && !/^(weight|default)/i.test(m[1])) {
-      const name = m[1].replace(/:$/, ""), cls = /leech/i.test(name) ? "t-leech" : HOT_PROPS.test(name) ? "t-hot" : "";
-      body.push(el("div", {}, el("span", { class: "t-val" }, `${+m[2]! >= 0 ? "+" : ""}${m[2]}${m[3]}`), " ", el("span", { class: cls }, name)));
-      continue;
-    }
-    const color = safeColor(l.color);
-    body.push(el("div", { class: l.bold ? "t-b" : "", ...(color ? { style: `color:${color}` } : {}) }, t));
+    if (RARITY_LINE.test(l.text)) { tier ||= l.text; continue; }
+    if (tags.has(l.text.toLowerCase())) continue;
+    const res = l.text.match(RESIST_LINE);
+    const muted = /^durability\s+\d|requirement|required/i.test(l.text);
+    const color = res ? null : safeColor(l.color);
+    body.push(el("span", { class: res ? `t-res t-res-${RES_CLASS[res[1]!.toLowerCase()]}` : muted ? "muted" : "", ...(color ? { style: `color:${color}` } : {}) }, l.text));
   }
-  const headNodes = head.map((l) => {
-    const color = safeColor(l.color);
-    return el("div", { class: `t-center ${l.italic ? "t-i" : ""} ${l.bold ? "t-b" : ""}`, ...(color ? { style: `color:${color}` } : {}) }, l.text);
-  });
-  const rarNode = rarity ? el("div", { class: "t-center", style: `color:${safeColor(rarity.color) || "#e6c85a"}` }, rarity.text) : null;
+  const tierColor = tier ? rarityColor(tier) : null;
   const qty = (it.amount || 1) > 1 ? `${it.amount} ` : "";
-  return el("div", {},
-    el("div", { class: "t-name" }, qty + it.name),
-    rarNode, ...headNodes, ...info,
-    body.length ? el("div", { class: "t-hr" }) : null, ...body,
-    ...(it.location ? [el("div", { class: "t-hr" }), el("div", { class: "t-muted" }, it.location.text)] : []));
+  const tagEls = [...tags].map((t) => tagChip(t));
+  // The tier and where the item is, each on a line of its own: a location is often long, and sharing a line
+  // with the tier cut it off.
+  const foot = [tier ? el("span", tierColor ? { style: `color:${tierColor}` } : {}, tier) : null, it.location ? el("span", { class: "muted tip-where" }, it.location.text) : null].filter((x): x is HTMLSpanElement => !!x);
+  return el("div", { class: "tipcard" },
+    el("div", { class: "tip-head" }, el("span", { class: "strong tip-name", ...(tierColor ? { style: `color:${tierColor}` } : {}) }, qty + it.name), ...tagEls),
+    body.length ? el("div", { class: "divider" }) : null,
+    body.length ? el("div", { class: "tip-lines" }, ...body) : null,
+    foot.length ? el("div", { class: "divider" }) : null,
+    foot.length ? el("div", { class: "tip-foot t-sm" }, ...foot) : null);
+}
+
+// The one item tooltip (#tip, always a dark subtree): shown 400 ms after the pointer settles on anything
+// carrying data-serial (the Inventory's rows, the Suit Builder's pieces), or after a row has had keyboard
+// focus for 400 ms (showItemTip). pointer-events: none, so it never takes the pointer from the table.
+const TIP_DELAY = 400;
+// tipAnchor is the focused row a keyboard tooltip belongs to (set as soon as focus asks for one, so a
+// stray pointer event while it waits cannot cancel it); null for a pointer tooltip.
+let tipTimer = 0, tipSerial: number | null = null, tipAnchor: HTMLElement | null = null;
+function tipEl(): HTMLElement { return $<HTMLElement>("#tip")!; }
+function placeAt(x: number, y: number): void {
+  const tip = tipEl(), pad = 14, w = tip.offsetWidth, h = tip.offsetHeight;
+  let left = x + pad, top = y + pad;
+  if (left + w > innerWidth - 8) left = x - w - pad;
+  if (top + h > innerHeight - 8) top = Math.max(8, innerHeight - h - 8);
+  tip.style.left = `${Math.max(8, left)}px`; tip.style.top = `${top}px`;
+}
+// Resolve the serial's record (the cache, else GET /api/items/by-serial) and show it, unless the pointer
+// or focus has moved on by the time it resolves.
+function showSerial(serial: number, place: () => void): void {
+  const paint = (it: TooltipItem): void => {
+    if (tipSerial !== serial) return;
+    const tip = tipEl();
+    tip.replaceChildren(tipNode(it));
+    tip.style.display = "block";
+    place();
+  };
+  const cached = state.itemCache.get(serial);
+  if (cached) { paint(cached); return; }
+  resolveItems([serial]).then((found) => { const it = found[serial]; if (it) paint(it); });
+}
+export function hideItemTip(): void {
+  clearTimeout(tipTimer);
+  tipSerial = null;
+  tipEl().style.display = "none";
+  if (tipAnchor) { tipAnchor.removeAttribute("aria-describedby"); tipAnchor = null; }
+}
+// The tooltip for a keyboard-focused row: after 400 ms, beside the row's Name cell.
+export function showItemTip(serial: number, anchor: HTMLElement): void {
+  hideItemTip();
+  tipSerial = serial;
+  tipAnchor = anchor;
+  tipTimer = setTimeout(() => {
+    if (!anchor.isConnected || document.activeElement !== anchor) return;
+    anchor.setAttribute("aria-describedby", "tip");
+    showSerial(serial, () => { const r = anchor.getBoundingClientRect(); placeAt(r.left + 240, r.top - 6); });
+  }, TIP_DELAY) as unknown as number;
 }
 export function installTooltip(): void {
-  const tip = $<HTMLElement>("#tip")!;
-  function placeTip(e: MouseEvent): void {
-    const pad = 14, w = tip.offsetWidth, h = tip.offsetHeight;
-    let x = e.clientX + pad, y = e.clientY + pad;
-    if (x + w > innerWidth - 8) x = e.clientX - w - pad;
-    if (y + h > innerHeight - 8) y = Math.max(8, innerHeight - h - 8);
-    tip.style.left = x + "px"; tip.style.top = y + "px";
-  }
-  // hoverSerial tracks which [data-serial] element the pointer is currently over — an async
-  // resolveItems() lookup (state.itemCache misses a serial not seeded by a rendered inventory row,
-  // e.g. a suit-builder candidate) must not paint a tooltip after the pointer has already moved on.
-  let hoverSerial: number | null = null;
+  let lastX = 0, lastY = 0;
   document.addEventListener("mouseover", (e) => {
     const host = (e.target as Element).closest("[data-serial]") as HTMLElement | null;
-    if (!host) { hoverSerial = null; tip.style.display = "none"; return; }
+    if (!host) { if (tipSerial != null && !tipAnchor) hideItemTip(); return; }
     const serial = +host.dataset.serial!;
-    hoverSerial = serial;
-    const cached = state.itemCache.get(serial);
-    if (cached) { tip.replaceChildren(tipNode(cached)); tip.style.display = "block"; placeTip(e); return; }
-    tip.style.display = "none";
-    resolveItems([serial]).then((found) => {
-      if (hoverSerial !== serial) return;   // the pointer moved on before this resolved
-      const it = found[serial];
-      if (!it) return;
-      tip.replaceChildren(tipNode(it)); tip.style.display = "block"; placeTip(e);
-    });
+    if (serial === tipSerial) return;
+    hideItemTip();
+    tipSerial = serial;
+    tipTimer = setTimeout(() => showSerial(serial, () => placeAt(lastX, lastY)), TIP_DELAY) as unknown as number;
   });
-  document.addEventListener("mousemove", (e) => { if (tip.style.display === "block") placeTip(e); });
-  document.addEventListener("mouseout", (e) => { if (!e.relatedTarget || !(e.relatedTarget as Element).closest?.("[data-serial]")) { hoverSerial = null; tip.style.display = "none"; } });
+  document.addEventListener("mousemove", (e) => { lastX = e.clientX; lastY = e.clientY; if (tipEl().style.display === "block" && !tipAnchor) placeAt(lastX, lastY); });
+  document.addEventListener("mouseout", (e) => { if (!tipAnchor && (!e.relatedTarget || !(e.relatedTarget as Element).closest?.("[data-serial]"))) hideItemTip(); });
+  document.addEventListener("keydown", (e) => { if (e.key === "Escape") hideItemTip(); }, true);
 }

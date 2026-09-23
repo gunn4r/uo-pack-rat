@@ -1,0 +1,145 @@
+/* ui/britannia.css — the Britannia theme family (docs/ui.md "The Britannia theme"): Pack Rat dressed as an
+   Ultima Online gump, from the logo palette. Light is a parchment ground with aged-paper cards, iron-gall ink
+   text and a brass accent; dark is a dark-wood ground with leather surfaces, parchment text and brass. It
+   overrides only the semantic roles spec 2.5 lists (every --color-*, the display face, the frame radii and
+   width, the frame image, the ground texture, the deeper shadows); spacing, type scale, control and row
+   heights, layout widths, z-layers and motion come from tokens.css, so no screen reflows between themes. The
+   resist and rarity colours are Default's, restated per mode, with the light ones darkened just enough for
+   the parchment. app/theme.test.mts checks that every property the Default blocks set per mode is set here
+   too, and scripts/ui-contrast.test.mts measures every scene in both families and modes.
+
+   Linked after tokens.css on purpose. A subtree that flips mode (the item tooltip carries data-theme="default"
+   data-mode="dark") matches both Default's own-attribute selector and the descendant selector below at the
+   same specificity, so the later file wins and the tooltip takes the dark mode of whichever family <html>
+   carries. The frame and the texture are drawn here as SVG (no game art): a three-line brass bevel sliced
+   into a border-image, and feTurbulence noise tiled over the ground. The noise is drawn once and repeated four
+   times, mirrored, into each tile, so every tile edge meets its own mirror image and the tiling has no seam
+   (feTurbulence's stitchTiles still left a visible edge at low frequencies). */
+
+/* Cinzel (SIL Open Font License 1.1, text in ui/fonts/): the display face only, latin subset, one weight.
+   The browser fetches it only once an element in a Britannia page asks for it. */
+@font-face { font-family: "Cinzel"; font-style: normal; font-weight: 600; font-display: swap; src: url("fonts/cinzel-latin-600-normal.woff2") format("woff2"); }
+
+/* ---------------------------------------------------------------- Britannia, light: parchment and brass */
+[data-theme="britannia"][data-mode="light"], [data-theme="britannia"] [data-mode="light"] {
+  /* surfaces and plain text */
+  --color-bg: #efe3c4;              /* the logo parchment, under the grain */
+  --color-surface: #faf4e3;         /* aged paper: cards, tables, sidebar, top bar */
+  --color-surface-subtle: #f3e9cf;  /* table header, footers, empty slots */
+  --color-surface-sunken: #e6d6ae;  /* meter tracks, skeletons, segmented track */
+  --color-surface-raised: #fcf7ea;  /* popovers, drawers, dialogs */
+  --color-surface-inverse: #2e2014; /* toasts, small tooltips: dark wood */
+  --color-text: #2a1e14;            /* iron-gall ink */
+  --color-text-muted: #5e4a34;
+  --color-text-faint: #654f38;
+  --color-placeholder: #5e4a34;
+  --color-link: #1f5a5f; --color-link-hover: #17474b;   /* the logo teal, lifted to read as a link */
+  --color-border: #d8c69c;
+  --color-border-strong: #8a7250;
+  --color-focus: #8a6414;           /* brass ring */
+
+  /* filled surfaces, each with its on-* text */
+  --color-accent: #7d5b12;        --color-on-accent: #fdf8ea;         /* deep brass */
+  --color-accent-hover: #664a0e;  --color-on-accent-hover: #fdf8ea;
+  --color-accent-soft: #f1e0ad;   --color-on-accent-soft: #58400c;
+  --color-info: #1f5a5f;          --color-on-info: #fdf8ea;
+  --color-success: #2f6428;       --color-on-success: #fdf8ea;
+  --color-success-hover: #25521f; --color-on-success-hover: #fdf8ea;
+  --color-success-soft: #e2e9c4;  --color-on-success-soft: #2a531f;
+  --color-warning: #924a0c;       --color-on-warning: #fdf8ea;
+  --color-warning-hover: #793d09; --color-on-warning-hover: #fdf8ea;
+  --color-warning-soft: #f7d2b2;  --color-on-warning-soft: #6e3606;
+  --color-danger: #8e2433;        --color-on-danger: #fdf8ea;         /* the logo crimson */
+  --color-danger-hover: #761d2a;  --color-on-danger-hover: #fdf8ea;
+  --color-danger-soft: #f4d8d2;   --color-on-danger-soft: #7c1f2c;
+  --color-highlight: #dcb03c;     --color-on-highlight: #2a1e14;      /* gold "Best", apart from the brass accent */
+  --color-row-hover: #f4ead1;     --color-on-row-hover: #2a1e14;
+  --color-row-selected: #efe0b4;  --color-on-row-selected: #2a1e14;
+  --color-nav-active: #f1e0ad;    --color-on-nav-active: #58400c;
+  --color-chip-set: #f1e0ad;      --color-on-chip-set: #58400c;
+  --color-disabled: #e6dbc0;      --color-on-disabled: #7f6d55;
+  --color-on-inverse: #f3e8cc; --color-on-inverse-muted: #cdb994;
+  --color-on-inverse-success: #9ed58f; --color-on-inverse-danger: #f5a0a4; --color-on-inverse-accent: #e5c36c;
+  --color-scrim: rgb(38 24 10 / 0.5);
+  --color-accent-fg: var(--color-on-accent); --color-accent-soft-fg: var(--color-on-accent-soft); --color-danger-fg: var(--color-on-danger);
+  --color-highlight-fg: var(--color-on-highlight); --color-text-inverse: var(--color-on-inverse);
+
+  /* game data colours: Default's light values, the ones under 4.6:1 on the parchment ground or the brass
+     selected row darkened just enough to clear it */
+  --res-phys: #55636a; --res-fire: #b3261e; --res-cold: #1f5fae; --res-poison: #2d7030; --res-energy: #7b3fb8;
+  --rarity-minor-magic: #616161; --rarity-lesser-magic: #10710e; --rarity-greater-magic: #116c6d; --rarity-major-magic: #005bd0;
+  --rarity-lesser-artifact: #8f1fda; --rarity-greater-artifact: #736000; --rarity-major-artifact: #984d00; --rarity-legendary-artifact: #bc231c;
+
+  /* type, shape, decoration */
+  --font-display: "Cinzel", Georgia, "Times New Roman", serif;
+  --radius-lg: 2px; --radius-xl: 2px;
+  --border-width-frame: 3px;
+  --frame-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='9' height='9' shape-rendering='crispEdges'%3E%3Crect width='9' height='9' fill='%235b4213'/%3E%3Crect x='1' y='1' width='7' height='7' fill='%23b8903a'/%3E%3Crect x='2' y='2' width='5' height='5' fill='%23e6cb85'/%3E%3Cpath d='M1 1h1v1H1zM7 1h1v1H7zM1 7h1v1H1zM7 7h1v1H7z' fill='%23f6e4a8'/%3E%3C/svg%3E") 3 stretch;
+  --surface-texture: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='512' height='512'%3E%3Cdefs%3E%3Cfilter id='g' x='0' y='0' width='1' height='1'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='3'/%3E%3CfeColorMatrix values='0 0 0 0 .36 0 0 0 0 .25 0 0 0 0 .1 .14 0 0 0 0'/%3E%3C/filter%3E%3Cfilter id='m' x='0' y='0' width='1' height='1'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.012' numOctaves='2'/%3E%3CfeColorMatrix values='0 0 0 0 .45 0 0 0 0 .32 0 0 0 0 .12 .16 0 0 0 -.04'/%3E%3C/filter%3E%3Cg id='q'%3E%3Crect width='256' height='256' filter='url(%23m)'/%3E%3Crect width='256' height='256' filter='url(%23g)'/%3E%3C/g%3E%3C/defs%3E%3Cuse href='%23q' transform='matrix(1 0 0 1 0 0)'/%3E%3Cuse href='%23q' transform='matrix(-1 0 0 1 512 0)'/%3E%3Cuse href='%23q' transform='matrix(1 0 0 -1 0 512)'/%3E%3Cuse href='%23q' transform='matrix(-1 0 0 -1 512 512)'/%3E%3C/svg%3E");
+
+  /* elevation: warmer and deeper, a gump lifted off the table */
+  --shadow-2: 0 4px 14px rgb(60 38 12 / 0.22);
+  --shadow-3: 0 18px 48px rgb(45 28 8 / 0.38);
+  --ring-focus: 0 0 0 2px var(--color-surface), 0 0 0 4px var(--color-focus);
+  color-scheme: light;
+}
+
+/* ---------------------------------------------------------------- Britannia, dark: wood, leather and brass */
+[data-theme="britannia"][data-mode="dark"], [data-theme="britannia"] [data-mode="dark"] {
+  --color-bg: #1a120b;              /* dark wood, under the grain */
+  --color-surface: #2a1c11;         /* leather */
+  --color-surface-subtle: #322216;
+  --color-surface-sunken: #140d07;
+  --color-surface-raised: #36251a;  /* popovers, drawers, dialogs: lighter leather */
+  --color-surface-inverse: #efe3c4; /* toasts, small tooltips: parchment */
+  --color-text: #efe3c4;            /* parchment */
+  --color-text-muted: #c7b491;
+  --color-text-faint: #b8a47f;
+  --color-placeholder: #c7b491;
+  --color-link: #86cbc2; --color-link-hover: #a6dad3;
+  --color-border: #4d3824;
+  --color-border-strong: #a08560;
+  --color-focus: #dcb45a;           /* brass ring */
+
+  --color-accent: #d8b155;        --color-on-accent: #22170a;         /* brass */
+  --color-accent-hover: #e4c170;  --color-on-accent-hover: #22170a;
+  --color-accent-soft: #4b3712;   --color-on-accent-soft: #f2d88f;
+  --color-info: #79c0b7;          --color-on-info: #0d2422;
+  --color-success: #8ccb7c;       --color-on-success: #10240c;
+  --color-success-hover: #a1d693; --color-on-success-hover: #10240c;
+  --color-success-soft: #25391a;  --color-on-success-soft: #aedda0;
+  --color-warning: #eba25a;       --color-on-warning: #2a1400;
+  --color-warning-hover: #f0b273; --color-on-warning-hover: #2a1400;
+  --color-warning-soft: #54270f;  --color-on-warning-soft: #f5c291;
+  --color-danger: #f08990;        --color-on-danger: #2a0a0f;
+  --color-danger-hover: #f4a2a7;  --color-on-danger-hover: #2a0a0f;
+  --color-danger-soft: #4c1d22;   --color-on-danger-soft: #f6aaae;
+  --color-highlight: #ebc554;     --color-on-highlight: #22170a;
+  --color-row-hover: #34241a;     --color-on-row-hover: #efe3c4;
+  --color-row-selected: #3f2d10;  --color-on-row-selected: #efe3c4;
+  --color-nav-active: #4b3712;    --color-on-nav-active: #f2d88f;
+  --color-chip-set: #4b3712;      --color-on-chip-set: #f2d88f;
+  --color-disabled: #3a2b1e;      --color-on-disabled: #a08a6c;
+  --color-on-inverse: #2a1e14; --color-on-inverse-muted: #5e4a34;
+  --color-on-inverse-success: #2f6428; --color-on-inverse-danger: #8e2433; --color-on-inverse-accent: #6f510f;
+  --color-scrim: rgb(0 0 0 / 0.62);
+  --color-accent-fg: var(--color-on-accent); --color-accent-soft-fg: var(--color-on-accent-soft); --color-danger-fg: var(--color-on-danger);
+  --color-highlight-fg: var(--color-on-highlight); --color-text-inverse: var(--color-on-inverse);
+
+  /* game data colours: Default's dark values, restated because the Default dark block only matches
+     data-theme="default" (without them a Britannia dark page would fall back to the light values on :root) */
+  --res-phys: #b7c2c3; --res-fire: #ff8a7a; --res-cold: #7fb2ff; --res-poison: #7fd48a; --res-energy: #c9a0ff;
+  --rarity-minor-magic: #a0a0a0; --rarity-lesser-magic: #20e31c; --rarity-greater-magic: #1cb5b7; --rarity-major-magic: #549fff;
+  --rarity-lesser-artifact: #c680f4; --rarity-greater-artifact: #c9a800; --rarity-major-artifact: #ff8000; --rarity-legendary-artifact: #eb7d77;
+
+  --font-display: "Cinzel", Georgia, "Times New Roman", serif;
+  --radius-lg: 2px; --radius-xl: 2px;
+  --border-width-frame: 3px;
+  --frame-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='9' height='9' shape-rendering='crispEdges'%3E%3Crect width='9' height='9' fill='%230d0804'/%3E%3Crect x='1' y='1' width='7' height='7' fill='%23a9843a'/%3E%3Crect x='2' y='2' width='5' height='5' fill='%23dcbd72'/%3E%3Cpath d='M1 1h1v1H1zM7 1h1v1H7zM1 7h1v1H1zM7 7h1v1H7z' fill='%23f2dc98'/%3E%3C/svg%3E") 3 stretch;
+  --surface-texture: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='2048' height='512'%3E%3Cdefs%3E%3Cfilter id='w' x='0' y='0' width='1' height='1'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.004 .22' numOctaves='3'/%3E%3CfeColorMatrix values='0 0 0 0 .55 0 0 0 0 .36 0 0 0 0 .17 .15 0 0 0 -.04'/%3E%3C/filter%3E%3Cg id='q'%3E%3Crect width='1024' height='256' filter='url(%23w)'/%3E%3C/g%3E%3C/defs%3E%3Cuse href='%23q' transform='matrix(1 0 0 1 0 0)'/%3E%3Cuse href='%23q' transform='matrix(-1 0 0 1 2048 0)'/%3E%3Cuse href='%23q' transform='matrix(1 0 0 -1 0 512)'/%3E%3Cuse href='%23q' transform='matrix(-1 0 0 -1 2048 512)'/%3E%3C/svg%3E");
+
+  --shadow-2: 0 4px 16px rgb(0 0 0 / 0.55);
+  --shadow-3: 0 18px 52px rgb(0 0 0 / 0.72);
+  --ring-focus: 0 0 0 2px var(--color-surface), 0 0 0 4px var(--color-focus);
+  color-scheme: dark;
+}

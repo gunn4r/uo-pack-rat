@@ -115,3 +115,16 @@ test("[fast] a user rules file with non-numeric caps, tag units or breakpoints i
     assert.throws(() => loadRules("bad", { userRulesDir: dir }), /bad\.json/, what);
   }
 });
+
+// tagInfo (a tag's meaning, shown on hover in the item peek) is optional; when present every value is a
+// non-empty string of at most 400 characters.
+test("[fast] tagInfo is optional and must map tags to short text", () => {
+  const dir = mkdtempSync(join(tmpdir(), "qm-rules-"));
+  const base = { schemaVersion: 1, name: "Tag shard", caps: {}, raceCaps: {}, resistSkillBonus: { breakpoints: [] }, tagUnits: { cursed: 1 }, rarity: [], raceLock: { gargoyleOnly: true }, freeSkills: [] };
+  writeFileSync(join(dir, "ok.json"), JSON.stringify({ ...base, id: "tagok", tagInfo: { cursed: "Drops on death." } }));
+  assert.equal(loadRules("tagok", { userRulesDir: dir }).tagInfo?.cursed, "Drops on death.");
+  for (const [i, bad] of [{ cursed: 5 }, { cursed: "" }, { cursed: "x".repeat(401) }].entries()) {
+    writeFileSync(join(dir, "bad.json"), JSON.stringify({ ...base, id: `tagbad${i}`, tagInfo: bad }));
+    assert.throws(() => loadRules(`tagbad${i}`, { userRulesDir: dir }), `${JSON.stringify(bad).slice(0, 40)} should be refused`);
+  }
+});

@@ -50,6 +50,11 @@ export interface SettingsApiResponse {
 // optional: absent means "never chosen", and the page keeps its default.
 export interface UiPrefs {
   cols?: string[] | undefined;
+  colsVersion?: "2" | undefined;                       // the column set `cols` was saved against (view-state.mts)
+  theme?: string | undefined;                          // a theme family ("default" or "britannia")
+  appearance?: "light" | "system" | "dark" | undefined;
+  sidebar?: "auto" | "collapsed" | undefined;          // "collapsed" = pinned to icons at any width
+  density?: "dense" | "regular" | undefined;           // the Inventory table's rows: 32 or 40 px
 }
 export interface UiPrefsApiResponse {
   ok: boolean;
@@ -145,6 +150,8 @@ export interface SetupApiResponse {
   platform: string;
   bridgeAdapter: string | null;
   dataDirCheck: DataDirCheckInfo;
+  version?: string | undefined;   // package.json's version (Settings › Updates)
+  canOpenFolders?: boolean | undefined;   // the desktop shell can open a folder (POST /api/host/open-path)
 }
 export interface LocateApiResponse {
   ok: boolean;
@@ -188,20 +195,6 @@ export interface UpdateCheckApiResponse {
 
 // ---------------------------------------------------------------- import
 
-// POST /api/import — `failed` counts the files importScans could not take (one bigger than the inbox
-// limit, an unwritable destination) and `failures` names the first few of them with a reason; the
-// server bounds that list (app/installer.mts's MAX_REPORTED_FAILURES).
-export interface ImportFailureInfo {
-  name: string;
-  reason: string;
-}
-export interface ImportApiResponse {
-  ok: boolean;
-  copied: number;
-  skipped: number;
-  failed?: number | undefined;
-  failures?: ImportFailureInfo[] | undefined;
-}
 export interface ImportPasteApiResponse {
   ok: boolean;
   written: string;
@@ -334,6 +327,8 @@ export interface RunSummaryLike {
   currentScore: number | null;
   delta: number | null;
   nodes: number | null;
+  changes?: number | null | undefined;                      // absent from a server older than the drawer's badges
+  totalsAfter?: Record<string, number> | null | undefined;
 }
 export interface RunsListApiResponse {
   ok: boolean;

@@ -1,0 +1,21 @@
+/* ui/runs.css — the Saved runs drawer (ui/runs.mts; design spec 4.8): 480 wide, 560 from 1600 px; one card per
+   run; the footer ticks up to three for the compare view. The drawer frame itself is the .drawer component.
+   Tokens only (docs/ui.md). */
+@media (min-width: 1600px) { .drawer.runs-drawer { width: min(var(--drawer-w-wide), 100vw); } }
+.runs-filter { padding: var(--space-3) var(--space-5); border-bottom: var(--border-width) solid var(--color-border); }
+.drawer-body.runs-body { padding: var(--space-2) var(--space-3); }
+.runs { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--space-2); }
+/* a run: tick · title, meta · ⋯ menu, then its badges under the title */
+.run-card { display: grid; grid-template-columns: 20px minmax(0, 1fr) auto; column-gap: var(--space-2); row-gap: var(--space-1-5); padding: var(--space-3); }
+.run-card.showing { border-color: var(--color-accent); background: var(--color-accent-soft); color: var(--color-on-accent-soft); }
+.run-card.showing .muted { color: var(--color-on-accent-soft); }
+.run-card > input[type=checkbox] { margin: 3px 0 0; accent-color: var(--color-accent); }
+.run-main { display: flex; flex-direction: column; gap: var(--space-0-5); min-width: 0; }
+.run-title { display: flex; align-items: center; gap: var(--space-2); min-width: 0; }
+.run-rename { display: flex; align-items: center; gap: var(--space-1-5); min-width: 0; }
+.run-rename .input { flex: 1 1 auto; }
+.run-badges { grid-column: 2 / 4; display: flex; flex-wrap: wrap; gap: var(--space-1-5); }
+.run-diff { overflow-wrap: anywhere; }
+.runs-empty { list-style: none; }
+/* a run's ⋯ menu is a popover on <body>: it must sit above the drawer it was opened from */
+.pop.pop-over-drawer { z-index: calc(var(--z-drawer) + 1); }

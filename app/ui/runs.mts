@@ -1,49 +1,47 @@
-// ui/runs.mts — the saved-runs drawer: settings snapshot/apply, load/open/rename/compare a saved run.
-// Moved verbatim out of ui/builder.mts (Task 5, the page split, part B).
-import { OPTIMIZER_SLOTS, RESIST_KEYS, resistSkillBonus, effectiveProfile, totalsOf, settingsDiff } from "../vault-lib.mts";
+// ui/runs.mts — the Saved runs drawer (design spec 4.8): one card per run with its name or automatic label,
+// meta line and summary badges, a ⋯ menu (Open, Rename inline, Delete with a confirm dialog), a filter, and a
+// footer that ticks up to three runs for the compare view (ui/builder-result.mts's openRunCompare). Also the
+// settings snapshot a run is saved with, and putting a saved run's settings back into the panel.
+import { OPTIMIZER_SLOTS, resistSkillBonus, effectiveProfile, totalsOf, settingsDiff, getRules } from "../vault-lib.mts";
 import type { RunSettings, OptItem, PropMap, Character } from "../vault-lib.mts";
 import { state, invStamp } from "./store.mts";
-import { $, el, label, full, fmtSecs, fmtRunTime, slotLabel, toast } from "./dom.mts";
+import { $, el, fmtSecs, fmtRunTime, toast } from "./dom.mts";
 import { api } from "./api.mts";
+import { bindDrawer, box, txt, button, badge, message, input, confirmDialog, menu, type DrawerHandle } from "./components.mts";
+import { renderNavCounts } from "./shell.mts";
 import { resolveItems } from "./items.mts";
-import { renderResult, poolControls, renderProfile, runStats } from "./builder.mts";
+import { renderPanel, readControls, knobs, applyKnobs } from "./builder.mts";
+import { renderResult, openRunCompare, closeCompare } from "./builder-result.mts";
+import { runAutoLabel, runBadges, toggleCompare, plural } from "./builder-model.mts";
 import type { RunsListApiResponse, RunApiResponse, RunPutApiResponse, RunSummaryLike, SavedRunLike } from "./api-types.mts";
 
-// ---------------------------------------------------------------- saved runs (history, open, compare)
+// ---------------------------------------------------------------- settings snapshot / apply
+// Everything a run can differ by, read from the panel's state (the profile and the Advanced fields).
 export function settingsSnapshot(): RunSettings {
-  const p = state.builder.profile!;
+  const p = readControls();
   return { floors: { ...(p.floors || {}) }, softFloors: [...(p.softFloors || [])], weights: { ...(p.weights || {}) }, lockedSlots: [...(p.lockedSlots || [])],
-    excludeTags: [...(p.excludeTags || [])], excludeRoots: [...(p.excludeRoots || [])], strLimit: +$<HTMLInputElement>("#b-str")!.value, allowGargoyle: $<HTMLInputElement>("#b-garg")!.checked,
-    medOnly: $<HTMLInputElement>("#b-med")!.checked, weaponSkill: $<HTMLSelectElement>("#b-weapon")!.value || "", allowOthersWorn: $<HTMLInputElement>("#b-others")!.checked,
-    restarts: +$<HTMLInputElement>("#b-restarts")!.value || 200, exact: $<HTMLInputElement>("#b-exact")!.checked, budgetMs: 1000 * (+$<HTMLInputElement>("#b-budget")!.value || 300),
-    altCount: +$<HTMLInputElement>("#b-altcount")!.value || 0, altTol: +$<HTMLInputElement>("#b-alttol")!.value || 0, race: $<HTMLSelectElement>("#b-race")!.value, excludeSkills: [...(p.excludeSkills || [])] };
+    excludeTags: [...(p.excludeTags || [])], excludeRoots: [...(p.excludeRoots || [])], strLimit: p.strLimit, allowGargoyle: !!p.allowGargoyle,
+    medOnly: !!p.medOnly, weaponSkill: p.weaponSkill || "", allowOthersWorn: !!p.allowOthersWorn,
+    restarts: Number(knobs.restarts) || 200, exact: knobs.exact, budgetMs: 1000 * (Number(knobs.budgetS) || 300),
+    altCount: Number(knobs.altCount) || 0, altTol: Number(knobs.altTol) || 0, race: p.race || "human", excludeSkills: [...(p.excludeSkills || [])] };
 }
 export function applySettings(st: RunSettings): void {
   const p = state.builder.profile!;
   Object.assign(p, { floors: { ...(st.floors || {}) }, softFloors: [...(st.softFloors || [])], weights: { ...(st.weights || {}) }, lockedSlots: [...(st.lockedSlots || [])],
     excludeTags: [...(st.excludeTags || [])], excludeRoots: [...(st.excludeRoots || [])], strLimit: st.strLimit, allowGargoyle: !!st.allowGargoyle, medOnly: !!st.medOnly, weaponSkill: st.weaponSkill || null,
     race: st.race || p.race || "human", excludeSkills: [...(st.excludeSkills || [])], allowOthersWorn: !!st.allowOthersWorn });
-  $<HTMLSelectElement>("#b-race")!.value = p.race || "human";
-  // HTMLInputElement.value's own setter coerces via ToString regardless of what's declared here —
-  // same reasoning as dom.mts's el()/setAttribute — these casts are compiler-only, not new String() calls.
-  if (st.strLimit != null) $<HTMLInputElement>("#b-str")!.value = st.strLimit as unknown as string;
-  poolControls(p);
-  if (st.restarts != null) $<HTMLInputElement>("#b-restarts")!.value = st.restarts as unknown as string;
-  if (st.exact != null) $<HTMLInputElement>("#b-exact")!.checked = !!st.exact;
-  if (st.budgetMs != null) $<HTMLInputElement>("#b-budget")!.value = (st.budgetMs / 1000) as unknown as string;
-  if (st.altCount != null) $<HTMLInputElement>("#b-altcount")!.value = st.altCount as unknown as string;
-  if (st.altTol != null) $<HTMLInputElement>("#b-alttol")!.value = st.altTol as unknown as string;
-  renderProfile();
-  toast("Settings loaded into the sidebar. Save profile to keep them.", "good");
+  applyKnobs(st);
+  renderPanel();
+  toast("Settings loaded into the panel. Save profile to keep them.", "good");
 }
-// effectiveProfile's own default parameter (`character = null`) already treats an omitted/undefined
-// argument the same as an explicit null, so a missing character here behaves identically either way
-// at runtime — this cast documents that rather than adding a new `?? null` that can't change the
-// value actually bound inside the function.
+// effectiveProfile's own default parameter already treats an omitted character the same as null.
 export const profileFromSettings = (st: RunSettings) => effectiveProfile(st, state.inv!.characters[state.builder.character!] as Character | null);
-// A generation counter, like fetchItems()'s: a slow list for the previously selected character must
-// not land in the drawer after the selection moved on.
+
+// ---------------------------------------------------------------- the list
+// A generation counter: a slow list for the previously selected character must not land after the
+// selection moved on.
 let runsSeq = 0;
+let compareNote: string | null = null;
 export async function loadRuns(): Promise<void> {
   const name = state.builder.character, mine = ++runsSeq;
   if (!name) return;
@@ -54,99 +52,129 @@ export async function loadRuns(): Promise<void> {
   state.builder.runs = runs;
   renderRuns();
 }
+// The drawer's behaviour (focus trap, Esc, scrim, inert when closed, focus back to the opener) is
+// components.mts's bindDrawer over the markup in index.html.
+let drawer: DrawerHandle | null = null;
+let wired = false;
+const runsDrawer = (): DrawerHandle => {
+  if (!wired) {
+    wired = true;
+    $<HTMLInputElement>("#b-runs-filter")!.addEventListener("input", () => renderRuns());
+    $<HTMLButtonElement>("#b-runs-clear")!.onclick = () => { state.builder.compare = new Set(); compareNote = null; renderRuns(); };
+    $<HTMLButtonElement>("#b-runs-compare")!.onclick = compareSelected;
+  }
+  return (drawer ||= bindDrawer($<HTMLElement>("#runs-drawer")!));
+};
 export function openRunsDrawer(): void {
-  const d = $<HTMLElement>("#runs-drawer")!;
-  $<HTMLElement>("#b-runs-who")!.textContent = state.builder.character || "";
-  d.inert = false; d.classList.add("open");
-  setTimeout(() => $<HTMLElement>("#b-runs-filter")!.focus(), 60);
+  renderRuns();
+  runsDrawer().open($<HTMLElement>("#b-runs-open"));
 }
-export function closeRunsDrawer(): void {
-  const d = $<HTMLElement>("#runs-drawer")!;
-  // hand focus back before the drawer turns inert, so focus never sits inside a hidden element
-  if (d.contains(document.activeElement)) $<HTMLElement>("#b-runs-open")!.focus();
-  d.classList.remove("open"); d.inert = true;
+export function closeRunsDrawer(): void { runsDrawer().close(); }
+// The footer: how many are ticked, Clear, and Compare. A fourth tick is refused and said here.
+function paintFooter(): void {
+  const n = state.builder.compare.size;
+  $<HTMLElement>("#b-runs-sel")!.replaceChildren(compareNote ? txt(compareNote, "tone-warn") : txt(`${n} of 3 selected`));
+  const btn = $<HTMLButtonElement>("#b-runs-compare")!;
+  btn.disabled = n < 2;
+  btn.replaceChildren(txt(n >= 2 ? `Compare ${plural(n, "run")}` : "Compare runs"));
+  $<HTMLButtonElement>("#b-runs-clear")!.disabled = n === 0;
 }
-export function updateCompareBtn(): void { $<HTMLButtonElement>("#b-compare")!.disabled = state.builder.compare.size !== 2; }
 export function renderRuns(): void {
-  const box = $<HTMLElement>("#b-runs")!, runs = state.builder.runs || [], sel = state.builder.compare, stamp = invStamp();
+  runsDrawer();
+  const box_ = $<HTMLElement>("#b-runs")!, runs = state.builder.runs || [], sel = state.builder.compare, stamp = invStamp();
   for (const id of [...sel]) if (!runs.some((r) => r.id === id)) sel.delete(id);
+  const name = state.builder.character || "";
   $<HTMLElement>("#b-runs-count")!.textContent = String(runs.length);
-  if (!runs.length) { box.replaceChildren(el("div", { class: "small muted" }, "No runs yet for this character.")); updateCompareBtn(); return; }
+  $<HTMLElement>("#b-runs-who")!.textContent = name ? `${name} · ${plural(runs.length, "run")} · newest first` : "";
+  renderNavCounts();
+  paintFooter();
+  if (!runs.length) { box_.replaceChildren(el("li", { class: "runs-empty" }, message({ tone: "info", text: "No saved runs yet. Every build is saved here." }))); return; }
   const q = ($<HTMLInputElement>("#b-runs-filter")!.value || "").trim().toLowerCase();
-  const rows = runs.map((run, i) => {
-    const prev = runs[i + 1];
-    const diff = prev ? settingsDiff(prev.settings, run.settings) : [];
-    const auto = !prev ? "first saved run" : diff.length ? diff.slice(0, 3).join(" · ") + (diff.length > 3 ? ` · +${diff.length - 3} more` : "") : "same settings as the run before";
-    if (q && !`${run.label || ""} ${auto} ${diff.join(" ")} ${fmtRunTime(run.createdAt)}`.toLowerCase().includes(q)) return null;
-    const verdict = run.method !== "exact" ? ["heuristic", ""] : run.proven ? ["proven", "good"] : ["budget", "warn"];
-    const labelEl = el("div", { class: "run-label", title: diff.length ? "vs the run before: " + diff.join(" · ") : "" }, run.label || auto);
-    return el("div", { class: "runrow" + (state.builder.openRun === run.id ? " open" : "") },
-      el("input", { type: "checkbox", title: "tick two runs to compare them", checked: sel.has(run.id) ? "" : null, onchange: (e) => { if (e.target.checked) sel.add(run.id); else sel.delete(run.id); updateCompareBtn(); } }),
-      el("div", { class: "run-main", title: "open this run", onclick: () => openRun(run.id) },
-        el("div", { class: "run-top" }, el("span", { class: "num" }, fmtRunTime(run.createdAt)), el("span", { class: "pill " + verdict[1] }, verdict[0]), el("span", { class: "small muted num" }, fmtSecs(run.ms || 0)),
-          run.inventoryStamp && run.inventoryStamp !== stamp ? el("span", { class: "pill warn", title: "the inventory has been rescanned since this run" }, "inventory changed") : null),
-        labelEl),
-      el("span", { class: "run-acts" },
-        el("button", { class: "small", title: "name this run", onclick: (e) => { e.stopPropagation(); renameRun(run, labelEl); } }, "Name"),
-        el("button", { class: "small", title: "delete this run", onclick: async (e) => { e.stopPropagation(); try { await api(`/api/runs/${run.id}`, { method: "DELETE" }); } catch (err) { toast((err as Error).message, "bad"); } sel.delete(run.id); if (state.builder.openRun === run.id) state.builder.openRun = null; loadRuns(); } }, "×")));
+  const rsb = resistSkillBonus(state.inv?.characters[name]?.skills);
+  const rules = getRules(), caps = { ...(rules.caps as Record<string, number>), ...((rules.raceCaps as Record<string, Record<string, number>> | undefined)?.[state.builder.profile?.race as string] || {}) };
+  const kept = runs.map((run, i) => {
+    const auto = runAutoLabel(runs[i + 1]?.settings ?? null, run.settings);
+    const title = run.label || auto.text;
+    if (q && !`${run.label || ""} ${auto.text} ${auto.diff.join(" ")} ${fmtRunTime(run.createdAt)}`.toLowerCase().includes(q)) return null;
+    return runCard(run, title, auto.diff, runBadges(run.changes, run.totalsAfter, run.settings.floors || {}, rsb, caps), run.inventoryStamp != null && run.inventoryStamp !== "" && run.inventoryStamp !== stamp);
+  }).filter((x): x is HTMLLIElement => !!x);
+  box_.replaceChildren(...(kept.length ? kept : [el("li", { class: "runs-empty" }, el("p", { class: "muted" }, txt("No saved run matches the filter.")))]));
+}
+function verdictOf(run: RunSummaryLike): { text: string; cls: string } {
+  if (run.method !== "exact") return { text: "heuristic", cls: "muted" };
+  return run.proven ? { text: "proven optimal", cls: "tone-ok" } : { text: "best within budget", cls: "tone-warn" };
+}
+function runCard(run: RunSummaryLike, title: string, diff: string[], badges: Array<{ text: string; tone?: "ok" | "warn" | undefined }>, stale: boolean): HTMLLIElement {
+  const sel = state.builder.compare, showing = state.builder.openRun === run.id, when = fmtRunTime(run.createdAt);
+  const tick = el("input", { type: "checkbox", "aria-label": `Select run from ${when}${run.label ? "" : `, ${title},`} for comparison` });
+  tick.checked = sel.has(run.id);
+  tick.addEventListener("change", () => {
+    const r = toggleCompare(sel, run.id, tick.checked);
+    state.builder.compare = r.next; compareNote = r.refused;
+    if (r.refused) tick.checked = false;
+    renderRuns();
+    if (r.refused) $<HTMLElement>(`#b-runs [data-run="${CSS.escape(run.id)}"] input[type=checkbox]`)?.focus();
   });
-  // `.filter(Boolean)` doesn't narrow away the `null` a skipped (filter-mismatched) row above
-  // returns — the cast documents what's actually true at runtime (every remaining element passed a
-  // truthiness check), not a new behaviour.
-  const kept = rows.filter(Boolean) as HTMLDivElement[];
-  box.replaceChildren(...(kept.length ? kept : [el("div", { class: "small muted" }, "No saved run matches the filter.")]));
-  for (const o of box.querySelectorAll("input[checked='null']")) o.removeAttribute("checked");
-  updateCompareBtn();
-}
-export function renameRun(run: RunSummaryLike, labelEl: HTMLDivElement): void {
-  const input = el("input", { type: "text", value: run.label || "", placeholder: "name this run", class: "run-name" });
-  let done = false;
-  const save = async (): Promise<void> => {
-    if (done) return; done = true;
-    try { await api<RunPutApiResponse>(`/api/runs/${run.id}`, { method: "PUT", body: { label: input.value.trim() } }); } catch (e) { toast((e as Error).message, "bad"); }
-    loadRuns();
+  const v = verdictOf(run);
+  const titleRow = box("div", { class: "run-title" }, txt(title, "strong ellip"), showing ? badge("Showing", "accent") : null, stale ? badge("Inventory changed", "warn") : null);
+  const main = box("div", { class: "run-main" }, titleRow, el("span", { class: "t-sm muted" }, txt(`${when} · ${fmtSecs(run.ms || 0)} · `), txt(v.text, v.cls)),
+    diff.length && run.label ? el("span", { class: "t-sm muted run-diff" }, txt(`vs the run before: ${diff.join(" · ")}`)) : null);
+  const more = button({ label: `Run actions: open, rename, delete`, icon: "more", iconOnly: true, variant: "ghost", size: "sm", attrs: { "aria-haspopup": "menu", "aria-expanded": "false" } });
+  const li = box("li", { class: `card run-card${showing ? " showing" : ""}`, "data-run": run.id }, tick, main, more,
+    badges.length ? box("div", { class: "run-badges" }, ...badges.map((b) => badge(b.text, b.tone))) : null);
+  more.onclick = () => {
+    const m = menu(more, [{ label: "Open", onSelect: () => openRun(run.id) }, { label: "Rename", onSelect: () => renameRun(run, main) }, { label: "Delete…", onSelect: () => deleteRun(run, title), danger: true }], { label: "Run actions", width: 180 });
+    m.root.classList.add("pop-over-drawer");   // the popover lives on <body>: it must sit above the drawer
   };
-  input.addEventListener("keydown", (e) => { if (e.key === "Enter") save(); if (e.key === "Escape") { e.stopPropagation(); done = true; renderRuns(); } });
-  input.addEventListener("blur", save);
-  input.addEventListener("click", (e) => e.stopPropagation());
-  labelEl.replaceChildren(input);
-  input.focus();
+  return li;
 }
-// GET /api/runs/<id> only ever resolves here as a real 200 (api.mts throws for a 404/other non-2xx,
-// caught below into the synthetic `{ok:false}` branch) — `ok: true` narrows the success branch the
-// same way bridge.mts's sendBridge() does, for the identical reason (api-types.mts's RunApiResponse
-// itself declares `ok: boolean`, matching every route's response shape generally).
+// Rename in place: an input with Save and Cancel; Enter saves, Esc cancels (without closing the drawer).
+export function renameRun(run: RunSummaryLike, main: HTMLElement): void {
+  const id = `run-name-${run.id}`;
+  const field = input({ size: "sm", value: run.label || "", placeholder: "Name this run", attrs: { id } });
+  const save = async (): Promise<void> => {
+    try { await api<RunPutApiResponse>(`/api/runs/${run.id}`, { method: "PUT", body: { label: field.value.trim() } }); } catch (e) { toast((e as Error).message, "bad"); }
+    await loadRuns();
+    $<HTMLElement>(`#b-runs [data-run="${CSS.escape(run.id)}"] .btn-icon`)?.focus();
+  };
+  const cancel = (): void => { renderRuns(); $<HTMLElement>(`#b-runs [data-run="${CSS.escape(run.id)}"] .btn-icon`)?.focus(); };
+  field.addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); save(); } if (e.key === "Escape") { e.stopPropagation(); cancel(); } });
+  main.firstElementChild!.replaceWith(box("div", { class: "run-rename" }, el("label", { class: "sr", for: id }, "Run name"), field,
+    button({ label: "Save", variant: "primary", size: "sm", onClick: save }), button({ label: "Cancel", variant: "ghost", size: "sm", onClick: cancel })));
+  field.focus(); field.select();
+}
+async function deleteRun(run: RunSummaryLike, title: string): Promise<void> {
+  if (!await confirmDialog({ title: `Delete the run from ${fmtRunTime(run.createdAt)}?`, body: `"${title}" and its suit are removed from the saved runs. Building again with the same settings makes a new one.`, confirmLabel: "Delete run" })) return;
+  try { await api(`/api/runs/${run.id}`, { method: "DELETE" }); } catch (err) { toast((err as Error).message, "bad"); return; }
+  state.builder.compare.delete(run.id);
+  if (state.builder.openRun === run.id) state.builder.openRun = null;
+  await loadRuns();
+  toast("Run deleted.", "good");
+}
+
+// ---------------------------------------------------------------- open / compare
+// GET /api/runs/<id> only resolves here as a real 200 (api.mts throws for anything else, caught into the
+// synthetic `{ok:false}` branch).
 type RunFetch = (RunApiResponse & { ok: true }) | { ok: false; error?: string | undefined };
 export async function openRun(id: string): Promise<void> {
   if (state.builder.job) { toast("A build is running. Cancel it or wait before opening a saved run."); return; }
-  // The run belongs to the character selected now; if the player picks another one while it loads,
-  // it is dropped rather than drawn (with its Fetch list and Grab all) under that one.
+  // The run belongs to the character selected now; if the player picks another one while it loads, it is
+  // dropped rather than drawn (with its Fetch list and Grab all) under that one.
   const name = state.builder.character;
   if (!name) return;
   let r: RunFetch;
   try { r = (await api<RunApiResponse>(`/api/runs/${id}`)) as RunApiResponse & { ok: true }; } catch (e) { r = { ok: false, error: (e as Error).message }; }
-  // The only way `r.ok` is false is the catch above, which always sets `error` to a real string —
-  // RunFetch's `error?` is looser than that actual guarantee, so this `!` documents it rather than
-  // adding a new `|| ""` fallback a genuinely-missing error has never needed.
   if (!r.ok) { toast(r.error!, "bad"); return; }
   if (state.builder.character !== name) return;
   const run = r.run;
-  state.builder.openRun = id; renderRuns(); closeRunsDrawer();
+  state.builder.openRun = id; renderRuns(); closeRunsDrawer(); closeCompare();
   const diff = settingsDiff(settingsSnapshot(), run.settings);
-  // A saved run never persisted the assignment it started from — only its result (best,
-  // perSlotChanges, totals). Reconstruct a per-slot "current" from that: an unchanged slot is
-  // whatever `best` has (perSlotChanges only lists slots that actually differ, and those items are
-  // real pool records with real props). A changed slot's original piece is named/serialed by its
-  // perSlotChanges entry but the run never stored its props — resolve it through resolveItems (the
-  // same cache/route renderResult already uses for the "wear instead" pieces) so a piece still in
-  // the inventory gets its real props back rather than an empty {}, which used to understate the
-  // "before" totals every chip and the sheet compare against. A piece the inventory no longer has
-  // (rescanned away since) can't be resolved that way; rather than silently show it as contributing
-  // nothing, recover its true contribution from the run's own `result.totals.before` (computed at
-  // run time from the real worn suit) minus everything the other slots already account for, and
-  // park that leftover on one of the unresolved pieces — totalsOf() only ever sums across the whole
-  // assignment, so it doesn't matter which slot carries it, and the chips/sheet baseline come out
-  // exactly right either way.
+  // A saved run never persisted the assignment it started from, only its result (best, perSlotChanges,
+  // totals). Reconstruct a per-slot "current" from that: an unchanged slot is whatever `best` has; a changed
+  // slot's original piece is resolved through the inventory so its real props come back. A piece the
+  // inventory no longer has gets its true contribution from the run's own `result.totals.before` minus
+  // everything the other slots account for, parked on one of the unresolved pieces (totalsOf() sums across
+  // the whole assignment, so which slot carries it doesn't matter).
   const best = run.result.best || {};
   const current: Record<string, OptItem | null> = Object.fromEntries(OPTIMIZER_SLOTS.map((slot): [string, OptItem | null] => [slot, best[slot] || null]));
   const changes = run.result.perSlotChanges || [];
@@ -156,8 +184,6 @@ export async function openRun(id: string): Promise<void> {
   for (const c of changes) {
     if (!c.fromSerial) { current[c.slot] = null; continue; }
     const item = resolved[c.fromSerial];
-    // c.from is only null for a slot with nothing "from" — this branch only runs when fromSerial is
-    // truthy, which this app never produces without a real `from` name alongside it.
     current[c.slot] = { serial: c.fromSerial, name: c.from!, slot: c.slot, props: item ? item.props : {} };
     if (!item) unresolvedSlots.push(c.slot);
   }
@@ -167,57 +193,29 @@ export async function openRun(id: string): Promise<void> {
     for (const k of new Set([...Object.keys(known), ...Object.keys(stored)])) leftover[k] = (stored[k] || 0) - (known[k] || 0);
     current[unresolvedSlots[0]!] = { ...current[unresolvedSlots[0]!], props: leftover } as OptItem;
   }
-  $<HTMLElement>("#b-msg")!.replaceChildren(el("div", { class: "panel stack saved-run" },
-    el("div", { class: "row", style: "justify-content:space-between" }, el("strong", {}, `Saved run · ${fmtRunTime(run.createdAt)}${run.label ? " · " + run.label : ""}`),
-      el("button", { onclick: () => applySettings(run.settings) }, "Load these settings")),
-    el("div", { class: "small muted" }, diff.length ? "Sidebar → this run: " + diff.join(" · ") : "Same settings as the sidebar."),
-    run.inventoryStamp && run.inventoryStamp !== invStamp() ? el("div", { class: "small stale" }, "The inventory has been rescanned since this run, so some pieces may have moved or changed.") : null,
-    // run.ms is `number | null` (SavedRunLike, matching a saved run's real on-disk shape) but a
-    // genuinely null one has never been guarded against here — same blind pass-through as
-    // builder.mts's identical runStats() call in its cached-run branch. run.skipped is `unknown`
-    // (a saved run's skip-list shape was never validated on the way in either) — runStats' own `cnt()`
-    // helper already handles whatever shape actually arrives (an array or a plain count).
-    runStats({ ok: true, result: run.result, ms: run.ms! }, run.poolSize, run.skipped as Record<string, unknown> | undefined, run.explored)));
+  const stale = run.inventoryStamp && run.inventoryStamp !== invStamp();
+  $<HTMLElement>("#b-msg")!.replaceChildren(message({ tone: "info", title: `Saved run · ${fmtRunTime(run.createdAt)}${run.label ? " · " + run.label : ""}`,
+    text: diff.length ? `Your settings → this run: ${diff.join(" · ")}` : "Same settings as the panel.",
+    actions: [button({ label: "Load these settings", size: "sm", onClick: () => applySettings(run.settings) })], attrs: { class: "msg info saved-run" } }),
+    ...(stale ? [message({ tone: "warn", text: "The inventory has been rescanned since this run, so some pieces may have moved or changed." })] : []));
   state.builder.altView = null;
-  await renderResult(run.result, current, profileFromSettings(run.settings), name);
+  state.builder.result = run.result;
+  // run.ms is `number | null` (a saved run's on-disk shape); run.skipped is whatever that run stored (live
+  // arrays or plain counts), which the Solver details' counter reads either way.
+  await renderResult(run.result, current, profileFromSettings(run.settings), name, { ms: run.ms ?? 0, poolSize: run.poolSize, skipped: run.skipped as Record<string, unknown> | undefined, reused: null });
 }
 export async function compareSelected(): Promise<void> {
   // Same rule as openRun: a build finishing would draw over the comparison.
   if (state.builder.job) { toast("A build is running. Cancel it or wait before comparing runs."); return; }
   const ids = [...state.builder.compare];
-  if (ids.length !== 2) return;
+  if (ids.length < 2) return;
   const got = await Promise.all(ids.map((id) => api<RunApiResponse>(`/api/runs/${id}`).catch(() => ({ ok: false }))));
-  if (!got.every((g) => g.ok)) { toast("Could not load both runs.", "bad"); return; }
-  // Every element passed the `.ok` check above — same narrowing gap `.filter(Boolean)` has elsewhere
-  // in this file (`.every()` doesn't propagate a type predicate back onto the source array).
-  const [A, B] = (got as Array<RunApiResponse & { ok: true }>).map((g) => g.run).sort((x, y) => String(x.createdAt).localeCompare(String(y.createdAt))) as [SavedRunLike, SavedRunLike];
-  const title = (r: SavedRunLike): string => `${fmtRunTime(r.createdAt)}${r.label ? " · " + r.label : ""}`;
-  const diff = settingsDiff(A.settings, B.settings);
-  const ta = totalsOf(A.result.best), tb = totalsOf(B.result.best), caps = state.rules!.caps || {};
-  const crsb = resistSkillBonus(state.inv!.characters[state.builder.character!]?.skills);
-  for (const k of RESIST_KEYS) { if (ta[k] != null) ta[k] += crsb; if (tb[k] != null) tb[k] += crsb; }
-  const fa = A.settings.floors || {}, fb = B.settings.floors || {};
-  const keys = [...new Set([...Object.keys(fa), ...Object.keys(fb), ...Object.keys(A.settings.weights || {}), ...Object.keys(B.settings.weights || {}), ...Object.keys(ta), ...Object.keys(tb)])]
-    .filter((k) => k !== "tagPenalty" && ((ta[k] || 0) || (tb[k] || 0) || fa[k] != null || fb[k] != null)).sort((x, y) => label(x).localeCompare(label(y)));
-  const cell = (v: number, k: string, floor: number | undefined): HTMLTableCellElement => el("td", { class: "num" + (floor != null && v < floor ? " delta-down" : ""), title: floor != null ? `floor ${floor}` : "" }, `${v}${(caps as Record<string, number>)[k] != null ? " / " + (caps as Record<string, number>)[k] : ""}`);
-  const slotRows = OPTIMIZER_SLOTS.map((slot) => {
-    const a = A.result.best[slot], b = B.result.best[slot], same = (a?.serial || 0) === (b?.serial || 0);
-    return el("tr", { style: same ? "" : "background:var(--sel)" }, el("td", { class: "muted" }, slotLabel(slot)),
-      el("td", { class: "name", ...(a ? { "data-serial": a.serial } : {}) }, a ? a.name : "—"),
-      el("td", { class: "name", ...(b ? { "data-serial": b.serial } : {}) }, same ? el("span", { class: "muted" }, "same") : b ? b.name : "—"));
-  });
-  const statRows = keys.map((k) => {
-    const va = ta[k] || 0, vb = tb[k] || 0, d = vb - va;
-    return el("tr", {}, el("td", { title: full(k) }, label(k)), cell(va, k, fa[k]), cell(vb, k, fb[k]),
-      el("td", { class: "num " + (d > 0 ? "delta-up" : d < 0 ? "delta-down" : "muted") }, d > 0 ? "+" + d : d < 0 ? String(d) : "·"));
-  });
-  state.builder.openRun = null; renderRuns(); closeRunsDrawer();
-  $<HTMLElement>("#b-msg")!.replaceChildren();
-  $<HTMLElement>("#b-result")!.replaceChildren(el("div", { class: "panel stack" },
-    el("h2", {}, "Compare runs"),
-    el("div", { class: "cmp-head" }, el("div", {}, el("div", { class: "stat-k" }, "A · older"), el("strong", {}, title(A))), el("div", {}, el("div", { class: "stat-k" }, "B · newer"), el("strong", {}, title(B)))),
-    el("div", { class: "small" }, diff.length ? "Settings A → B: " + diff.join(" · ") : "Same settings."),
-    el("div", { class: "tablewrap" }, el("table", {}, el("thead", {}, el("tr", {}, el("th", {}, "Slot"), el("th", {}, "A"), el("th", {}, "B"))), el("tbody", {}, ...slotRows))),
-    el("div", { class: "small muted" }, `Totals of the pieces each run chose; resists include the +${crsb} Resisting Spells bonus. Red = below that run's floor. Pieces outside the builder's slots are not included.`),
-    el("div", { class: "tablewrap" }, el("table", {}, el("thead", {}, el("tr", {}, el("th", {}, "Property"), el("th", {}, "A"), el("th", {}, "B"), el("th", {}, "B − A"))), el("tbody", {}, ...statRows)))));
+  if (!got.every((g) => g.ok)) { toast("Could not load the runs.", "bad"); return; }
+  // Every element passed the `.ok` check above; `.every()` doesn't narrow the source array.
+  const runs = (got as Array<RunApiResponse & { ok: true }>).map((g) => g.run).sort((x, y) => String(x.createdAt).localeCompare(String(y.createdAt))) as SavedRunLike[];
+  closeRunsDrawer();
+  // Each run under the name the drawer shows it by: its own, else its automatic label.
+  const list = state.builder.runs;
+  const titleOf = (r: SavedRunLike): string => { const i = list.findIndex((x) => x.id === r.id); return r.label || runAutoLabel(i >= 0 ? list[i + 1]?.settings ?? null : null, r.settings).text; };
+  openRunCompare(runs, titleOf, (id) => { openRun(id); }, (id) => { state.builder.compare.delete(id); renderRuns(); });
 }

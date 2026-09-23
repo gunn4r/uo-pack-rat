@@ -1,0 +1,27 @@
+/* ui/settings.css — the Settings screen (ui/settings.mts). Tokens only (docs/ui.md).
+   Full width, like every other screen (the page container caps it; the text inside is fluid). No section nav while the page is short.
+   Every flex/grid box here holds only elements (text is one span). */
+.settings-page { padding-top: var(--space-6); }
+.set-content { width: 100%; flex: 0 1 auto; min-width: 0; display: flex; flex-direction: column; gap: var(--space-8); padding-bottom: var(--space-8); }
+.set-section { display: flex; flex-direction: column; gap: var(--space-3); scroll-margin-top: var(--space-4); }
+.set-section h2 { font-family: var(--font-display); }
+.set-section-head { display: flex; align-items: center; gap: var(--space-2); }   /* a heading and its warning dot */
+
+/* setting rows: title + help on the left, the control on the right; a message or confirmation spans below */
+.set-card > :is(.set-row, .set-path) + :is(.set-row, .set-path) { border-top: var(--border-width) solid var(--color-border); }
+.set-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; column-gap: var(--space-6); row-gap: var(--space-3); align-items: center; padding: var(--space-4) var(--space-5); }
+.set-row-text { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.set-row-control { display: flex; align-items: center; justify-content: flex-end; }
+.set-row-below { grid-column: 1 / -1; display: flex; flex-direction: column; }
+.set-pad { padding: 0 var(--space-5) var(--space-4); }
+.set-inline { display: flex; align-items: center; gap: var(--space-2); }
+.pr .set-select { width: 200px; }
+.pr .set-forget-select { width: 140px; }
+
+/* a folder: label 160px · path fluid · Open */
+.set-path { display: grid; grid-template-columns: 160px minmax(0, 1fr) auto; align-items: center; gap: var(--space-4); padding: 14px var(--space-5); }
+
+/* danger zone: the card's edge and its title say it; the actions are danger-outline */
+.pr .set-danger { border-color: var(--color-danger); border-image: none; }   /* a theme's frame image would hide the colour */
+.set-danger-title { padding: 14px var(--space-5) 0; color: var(--color-danger); }
+.set-danger > .set-row:first-of-type { padding-top: var(--space-3); }

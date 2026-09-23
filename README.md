@@ -12,6 +12,7 @@ What you can do with it:
 - See what each character is wearing.
 - Ask for the best suit your items allow, with the stats you care about.
 - Press a button in the app to make the game show you where an item is, walk you to its chest, or put it in your backpack.
+- Dress the app up like the game: pick the **Britannia** theme in **Settings** for parchment, brass frames and a dark-wood night mode.
 
 ## Getting started
 
@@ -83,11 +84,11 @@ The first time Pack Rat opens, a setup window walks you through four steps. The 
    - You will see **Installed:** followed by the script names, and a short **What to press in game** list.
    - Click **Finish**.
 
-If you picked the **ClassicUO web client**, steps 3 and 4 are different: there is nothing to install for it. Step 4 has a **Go to Import tab** button; see [the web client](#the-classicuo-web-client) below.
+If you picked the **ClassicUO web client**, steps 3 and 4 are different: there is nothing to install for it. Step 4 has a **Go to Import** button; see [the web client](#the-classicuo-web-client) below.
 
 Every step has a **Skip** button, and skipping is safe. You can run setup again at any time from the **Settings** tab with **Run setup again**.
 
-If you already have scan files from before, step 4 also lets you bring them in: under **Already have scan files? Import a folder**, click **Choose a folder…** and pick the folder they are in.
+If you already have scan files from before, open **Import** in the sidebar, choose **Scan files**, and drop the files in (or click **Choose a folder…** and pick the folder they are in); each one is checked and previewed before you import it.
 
 ### 4. You're done when…
 
@@ -133,7 +134,7 @@ The web client can't save files, so it works differently: you copy and paste.
 1. Open [adapters/classicuo-web/packrat-scanner.ts](adapters/classicuo-web/packrat-scanner.ts), copy all of it, and paste it into the web client's scripting window as a new script.
 2. Stand near what you want scanned and run the script.
 3. It prints a block of text below the scripting window, starting with `-----BEGIN PACK RAT SCAN-----` and ending with `-----END PACK RAT SCAN-----`. Select all of it and copy it.
-4. In Pack Rat, open the **Import** tab, paste into the box under **Paste a scan**, and click **Paste scan**.
+4. In Pack Rat, open **Import** in the sidebar (or press ⌘I, Ctrl+I on Windows and Linux), paste into the box under **Paste a scan**, and click **Paste scan**.
 
 The web client can't see your bank box, probably can't see what you wear on your arms, and only finds common kinds of chests and bags. It also has no bridge, so the Highlight, Grab and Go to buttons don't appear for it. It has not been tried with a real game yet either. More in [adapters/classicuo-web/README.md](adapters/classicuo-web/README.md).
 
@@ -204,8 +205,8 @@ The rest of this page is for people working on Pack Rat itself.
 
 **Adapters and contracts.** Each client's scripts live in `adapters/<id>/`, and each adapter's README has a player section followed by its own "For developers" section (contract, what the bridge refuses, data-directory resolution, limits, what is still unverified): [TazUO](adapters/tazuo/README.md), [Razor Enhanced](adapters/razor-enhanced/README.md), [ClassicUO web client](adapters/classicuo-web/README.md). The contracts themselves are in `docs/`: [writing an adapter](docs/adapter-guide.md), [the scan file format](docs/scan-schema.md), [the bridge protocol](docs/bridge-protocol.md), [shard rules](docs/shard-rules.md), and [the threat model](docs/threat-model.md).
 
-**The setup wizard, in detail.** For TazUO it proposes candidate folders it finds automatically; Razor Enhanced has no single well-known install location, so its folder is always picked by hand; the ClassicUO web client (paste transport) has no folder to locate at all and sends the player to the Import tab instead. Install and Reinstall refuse while `<dataDir>/bridge/<adapter>/status.json` says a script is still alive in the client. `docs/architecture.md` has the full install path.
+**The setup wizard, in detail.** For TazUO it proposes candidate folders it finds automatically; Razor Enhanced has no single well-known install location, so its folder is always picked by hand; the ClassicUO web client (paste transport) has no folder to locate at all and sends the player to the Import drawer instead. Install and Reinstall refuse while `<dataDir>/bridge/<adapter>/status.json` says a script is still alive in the client. `docs/architecture.md` has the full install path.
 
 ## License
 
-MIT — see `LICENSE`.
+MIT — see `LICENSE`. The bundled IBM Plex Sans and IBM Plex Mono fonts (`app/ui/fonts/`) are © IBM Corp., and the Cinzel font the Britannia theme uses is © The Cinzel Project Authors, all under the SIL Open Font License 1.1; their licence texts sit next to them. The Britannia theme's frames and textures are drawn by the app itself; it uses no art from any game or game client.

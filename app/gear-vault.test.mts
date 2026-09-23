@@ -8,7 +8,7 @@ import { createHash } from "node:crypto";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { dirname, join } from "node:path";
 import {
-  parseTooltip, classify, foldSnapshots, buildPools, requirementReport, totalsOf, propertyKeys, bagLabel, kindOf, groupByName, slayersOf, medableOf, weaponAllowed, settingsDiff, PROP_LABELS, LAYER_TO_SLOT, effectiveProfile, resistSkillBonus, toOptItem, labelOf, builderKeys, migrateProfiles, templateFrom, TEMPLATE_KEYS, setRules, getRules, tagUnits,
+  parseTooltip, classify, foldSnapshots, buildPools, requirementReport, totalsOf, propertyKeys, bagLabel, kindOf, groupByName, slayersOf, medableOf, weaponAllowed, settingsDiff, PROP_LABELS, LAYER_TO_SLOT, effectiveProfile, resistSkillBonus, toOptItem, labelOf, builderKeys, migrateProfiles, templateFrom, TEMPLATE_KEYS, setRules, getRules, tagUnits, tagInfo,
 } from "./vault-lib.mts";
 import type { Item, Inventory, ItemLocation, ProfilesFile } from "./vault-lib.mts";
 import { upgradeScan, TAZUO_V1_CAPS } from "./scan-schema.mts";
@@ -821,6 +821,24 @@ test("[fast] tag-unit keys match whatever case the rules file wrote them in", ()
   }
 });
 
+// A tag's plain-words meaning comes from the shard's rules file too (the peek shows it on hover); a shard
+// that writes none, or none for that tag, gives no description rather than a made-up one.
+test("[fast] tagInfo reads a tag's meaning from the shard's rules, in any case, and is empty without one", () => {
+  const uoalive = getRules();
+  try {
+    assert.match(tagInfo("Antique") || "", /Powder of Fortifying/);
+    for (const t of Object.keys(tagUnits())) assert.ok(tagInfo(t), `UO Alive describes ${t}`);
+    setRules({ ...uoalive, tagInfo: { CURSED: "Drops on death." } });
+    assert.equal(tagInfo("cursed"), "Drops on death.");
+    assert.equal(tagInfo("brittle"), null);
+    const { tagInfo: _, ...none } = uoalive;
+    setRules(none as RulesV1);
+    assert.equal(tagInfo("cursed"), null);
+  } finally {
+    setRules(uoalive);
+  }
+});
+
 test("[fast] pool items carry stamina/mana/hits pools and skill bonuses; forbidden skill bonuses are left out, even when worn", () => {
   const it = { serial: 9, name: "x", slot: "ring", gear: true, props: { dexBonus: 5, stamInc: 3, intBonus: 2, strBonus: 4, hpi: 2 }, extras: { magery: 10, necromancy: 5, durability: [1, 1] as [number, number] },
     tags: [] as string[], strReq: 0, root: 1, equippedBy: null as string | null, gargoyle: false, medable: true } as unknown as Item;
@@ -852,6 +870,14 @@ test("[fast] saved runs: the key ignores budget and warm start; a run is reused 
   assert.equal(reusableRun([{ key: k, result: { method: "heuristic" } }], k, {})!.result!.method, "heuristic");
   assert.equal(reusableRun([proven], "other", {}), null);
   assert.equal(runSummary({ id: "x", result: { method: "exact", proven: true, score: 3 } }).score, 3);
+});
+test("[fast] saved runs: the list summary carries the change count and the suit's totals for the drawer's badges", () => {
+  const s = runSummary({ id: "x", result: { method: "exact", perSlotChanges: [{ slot: "ring" }, { slot: "cloak" }], totals: { before: { physResist: 3 }, after: { physResist: 29, luck: 10 } } } });
+  assert.equal(s.changes, 2);
+  assert.deepEqual(s.totalsAfter, { physResist: 29, luck: 10 });
+  const bare = runSummary({ id: "y", result: {} });
+  assert.equal(bare.changes, null, "an old run without perSlotChanges says nothing rather than 0 changes");
+  assert.equal(bare.totalsAfter, null);
 });
 // Regression (review I2): the solver's fallbacks (HiGHS failed to load, the floors-conflict retry ran
 // out of time) come back as method "heuristic", which the reuse rule used to treat as a deterministic

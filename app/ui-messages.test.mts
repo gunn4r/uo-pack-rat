@@ -6,7 +6,7 @@
 // All [fast]. Run: node --test app/ui-messages.test.mts
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { importOutcome, pathsFileNote, installedIntoNote, clientFolderGone, clientErrorMessage, hostErrorMessage, optimizeErrorMessage, errorText, dataDirNotice, bridgeOfflineText } from "./ui/messages.mts";
+import { pathsFileNote, installedIntoNote, clientFolderGone, clientErrorMessage, hostErrorMessage, optimizeErrorMessage, errorText, dataDirNotice, dataDirBanner, bridgeOfflineText, bridgeView, relativeWhen } from "./ui/messages.mts";
 import type { ApiError } from "./ui/api-types.mts";
 
 function apiError(message: string, extra: { status?: number; code?: unknown } = {}): ApiError {
@@ -15,39 +15,6 @@ function apiError(message: string, extra: { status?: number; code?: unknown } = 
   if (extra.code !== undefined) e.code = extra.code;
   return e;
 }
-
-// ---- POST /api/import ----------------------------------------------------------------------------
-test("[fast] an import that copied everything reads the way it always did", () => {
-  assert.equal(importOutcome({ copied: 2, skipped: 0, failed: 0 }), "copied 2 scan files — they'll show up in the inventory in a moment.");
-  assert.match(importOutcome({ copied: 1, skipped: 0, failed: 0 }), /^copied 1 scan file —/, "one file is not '1 scan files'");
-  assert.match(importOutcome({ copied: 3, skipped: 2, failed: 0 }), /skipped 2 already present/);
-});
-
-test("[fast] an import with nothing new says so, and says why when it was all duplicates", () => {
-  assert.equal(importOutcome({ copied: 0, skipped: 0, failed: 0 }), "nothing new in that folder.");
-  assert.match(importOutcome({ copied: 0, skipped: 1, failed: 0 }), /1 file was already imported/);
-  assert.match(importOutcome({ copied: 0, skipped: 4, failed: 0 }), /4 files were already imported/);
-});
-
-// The counted-not-thrown failures (an oversize source file, an unwritable destination) used to reach
-// the page as a number nothing rendered: a partial import read exactly like a complete one.
-test("[fast] files the import could not take are reported, with their reasons", () => {
-  const text = importOutcome({ copied: 1, skipped: 0, failed: 1, failures: [{ name: "big.json", reason: "too large: 40000000 bytes, the limit is 33554432" }] });
-  assert.match(text, /copied 1 scan file/);
-  assert.match(text, /1 file could not be imported: big\.json \(too large/);
-});
-
-test("[fast] a count with no reasons still reports the count", () => {
-  assert.match(importOutcome({ copied: 0, skipped: 0, failed: 2 }), /2 files could not be imported\./);
-});
-
-test("[fast] a folder full of failures names only the first few", () => {
-  const failures = Array.from({ length: 9 }, (_, i) => ({ name: `f${i}.json`, reason: "too large" }));
-  const text = importOutcome({ copied: 0, skipped: 0, failed: 9, failures });
-  assert.match(text, /9 files could not be imported/);
-  assert.match(text, /f0\.json/);
-  assert.doesNotMatch(text, /f3\.json/, "one bad folder must not fill the panel");
-});
 
 // ---- GET /api/setup's dataDirCheck ------------------------------------------------------------------
 test("[fast] a data-folder mismatch names both folders and both fixes", () => {
@@ -68,6 +35,17 @@ test("[fast] an unreadable packrat-paths.json is reported with the reason; a mat
   assert.equal(dataDirNotice(undefined), null, "an older server sends no check at all");
 });
 
+test("[fast] the banner says the problem in one short line with no paths; Settings keeps the full sentence", () => {
+  const mismatch = dataDirBanner({ status: "mismatch", scriptsDir: "/Users/example/TazUO/LegionScripts", scriptsDataDir: "/Users/example/dev-data", dataDir: "/Users/example/.pack-rat" });
+  assert.equal(mismatch, "Your game scripts write scans to a different folder than Pack Rat is reading.");
+  const unreadable = dataDirBanner({ status: "unreadable", scriptsDir: "/Users/example/LegionScripts", error: "it is not valid JSON" })!;
+  assert.doesNotMatch(unreadable, /\/Users/);
+  assert.match(unreadable, /packrat-paths\.json/);
+  assert.equal(dataDirBanner({ status: "match", scriptsDir: "/x" }), null);
+  assert.equal(dataDirBanner({ status: "none" }), null);
+  assert.equal(dataDirBanner(undefined), null);
+});
+
 test("[fast] control characters in a data-folder notice are dropped before it reaches a terminal", () => {
   const esc = "\u001b[2J\u001b]0;pwned\u0007";
   const mismatch = dataDirNotice({ status: "mismatch", scriptsDir: "/a", scriptsDataDir: `/b${esc}\nFAKE LINE`, dataDir: "/c" })!;
@@ -77,9 +55,9 @@ test("[fast] control characters in a data-folder notice are dropped before it re
 });
 
 test("[fast] the offline bridge pill says why only when the cause is a data-folder mismatch", () => {
-  assert.equal(bridgeOfflineText({ status: "mismatch", scriptsDir: "/a", scriptsDataDir: "/b", dataDir: "/c" }), "bridge: offline — your game scripts write to another folder");
-  assert.equal(bridgeOfflineText({ status: "match", scriptsDir: "/a" }), "bridge: offline");
-  assert.equal(bridgeOfflineText(undefined), "bridge: offline");
+  assert.equal(bridgeOfflineText({ status: "mismatch", scriptsDir: "/a", scriptsDataDir: "/b", dataDir: "/c" }), "Bridge offline — your game scripts write to another folder");
+  assert.equal(bridgeOfflineText({ status: "match", scriptsDir: "/a" }), "Bridge offline");
+  assert.equal(bridgeOfflineText(undefined), "Bridge offline");
 });
 
 // ---- POST /api/setup/install -----------------------------------------------------------------------
@@ -126,4 +104,34 @@ test("[fast] a 429 explains that the builds are somebody else's, not a failure o
 test("[fast] errorText survives a rejection that isn't an Error at all", () => {
   assert.equal(errorText("plain string"), "plain string");
   assert.equal(errorText(new Error("real error")), "real error");
+});
+
+test("[fast] bridgeView: ready and busy whenever the bridge answers, else no client or offline", () => {
+  const client = { clientSet: true, clientName: "TazUO" };
+  assert.deepEqual(bridgeView({ online: true, character: "Kestrel" }, client), { state: "ready", dot: "ok", label: "Bridge ready · Kestrel", title: "Bridge ready", detail: "packrat-bridge.py is running on Kestrel. Highlight, Grab and Go to reach the game." });
+  const busy = bridgeView({ online: true, character: "Kestrel", current: { action: "grab", name: "Mighty Orc Mask" } }, { clientSet: false, clientName: null });
+  assert.equal(busy.state, "busy");
+  assert.equal(busy.label, "Kestrel · grab Mighty Orc Mask");
+  const off = bridgeView({ online: false }, client);
+  assert.deepEqual([off.state, off.dot, off.label], ["offline", "", "Bridge offline"]);
+  assert.match(off.detail, /Press Play on it in TazUO/);
+  const none = bridgeView(null, { clientSet: false, clientName: "TazUO" });
+  assert.deepEqual([none.state, none.dot, none.label], ["noclient", "warn", "No client set up"]);
+  assert.match(none.detail, /go to TazUO by default/);
+  // A data-folder mismatch is named as the cause, client or not.
+  const mismatch = { status: "mismatch", scriptsDir: "/s", scriptsDataDir: "/b", dataDir: "/c" } as const;
+  const m = bridgeView({ online: false }, { clientSet: false, clientName: null, check: mismatch });
+  assert.deepEqual([m.state, m.label], ["offline", "Bridge offline — your game scripts write to another folder"]);
+  assert.match(m.detail, /write to \/b, but Pack Rat is reading \/c/);
+});
+
+test("[fast] relativeWhen: relative under a day, then month day and time, with the year only when it differs", () => {
+  const now = new Date(2026, 8, 22, 21, 0);
+  assert.equal(relativeWhen(new Date(2026, 8, 22, 20, 59, 40).toISOString(), now), "just now");
+  assert.equal(relativeWhen(new Date(2026, 8, 22, 20, 5).toISOString(), now), "55 min ago");
+  assert.equal(relativeWhen(new Date(2026, 8, 22, 18, 0).toISOString(), now), "3 h ago");
+  assert.equal(relativeWhen(new Date(2026, 0, 1, 12, 0).toISOString(), now), "Jan 1, 12:00");
+  assert.equal(relativeWhen(new Date(2025, 11, 31, 9, 5).toISOString(), now), "Dec 31, 2025, 09:05");
+  assert.equal(relativeWhen("not a date", now), "");
+  assert.equal(relativeWhen(null, now), "");
 });

@@ -3,12 +3,13 @@
 // Exports startServer(config) → { server, port, url, close() } — nothing runs at import time, so a
 // test (or another launcher) can start and stop as many independent instances as it likes. The file
 // also self-starts when run directly (node app/vault-server.mts / node scripts/start.mts).
-// Routes: GET /  (index.html) · GET /favicon.png (app/assets/, the logo at 64 px) · GET /vault-lib.mjs · GET /item-query.mjs (pure filter/sort/facet logic
+// Routes: GET /  (index.html) · GET /favicon.png (app/assets/, the logo at 64 px) · GET /logo-mark.png (the rat's head cropped from the logo, 80 px, the sidebar's mark) · GET /vault-lib.mjs · GET /item-query.mjs (pure filter/sort/facet logic
 //         shared by the browser and GET /api/items below — no DOM, no node: imports, servable byte for
 //         byte like vault-lib.mts) · GET /scan-schema.mjs (vault-lib.mts imports it for parseStamp, so
 //         it must be servable to the browser the same way) ·
 //         GET /schema/validate.mjs (scan-schema.mts's own import, same reason) ·
 //         GET /ui/<name> (name matching /^[a-z0-9-]+\.(mjs|css)$/, served from app/ui/, else 404) ·
+//         GET /ui/fonts/<name>.woff2 (the bundled IBM Plex faces, app/ui/fonts/, as binary font/woff2) ·
 //         GET /api/inventory (the cached fold of every scan — getInventory(), keyed by a signature of
 //         the scans directory + shard + vault-lib.mts mtime, so an edited/added/removed scan file is
 //         picked up on the next request with no restart; each scan file is upgraded v1→v2 and schema-
@@ -34,7 +35,7 @@
 //         409 under --demo, which must never write into the committed app/fixtures/) ·
 //         POST /api/forget-character {character} (drop a character's card, worn set, backpack and bank:
 //         a `_vault` tombstone carrying forgetCharacter; 409 under --demo) ·
-//         GET|PUT /api/ui-prefs (<data>/ui-prefs.json: {cols?}, the page's view choices)
+//         GET|PUT /api/ui-prefs (<data>/ui-prefs.json: {cols?, colsVersion?, theme?, appearance?, sidebar?, density?}, the page's view choices)
 //         POST /api/bridge {action, serial, name, chain: [root…parent], pos|null} (queue for packrat-bridge.py) · GET /api/bridge/status
 //         GET /api/events — SSE, one stream shared by every connected client (not per-job like the
 //         optimize events above): hello {ok, watching: [adapter ids]} on connect, inventory
@@ -49,9 +50,7 @@
 //         Setup wizard (app/installer.mts backs all of these): GET /api/setup {firstRun, settings,
 //         adapters, candidates, installed, available, dataDir, dataDirCheck} · POST /api/setup/locate {adapter, dir}
 //         · POST /api/setup/install {adapter, scriptsDir} (409 while a Legion script is running in the
-//         client, per installer.mts's bridge-status guard) · POST /api/import {dir, adapter?} (copies
-//         top-level *.json into an adapter's inbox, tazuo when adapter is omitted — the watcher above
-//         does the rest) · POST /api/import/paste {text, adapter} (app/import.mts's parsePastedScan:
+//         client, per installer.mts's bridge-status guard) · POST /api/import/paste {text, adapter} (app/import.mts's parsePastedScan:
 //         what the ClassicUO web-client scanner prints, marker block or bare JSON, upgraded/validated
 //         and written straight into that adapter's inbox — for a client whose sandbox can't write
 //         files at all) · POST /api/import/rescan {} (scanOnce() on every running watcher, for a scan
@@ -83,9 +82,9 @@
 import http from "node:http";
 import { readFileSync, appendFileSync, readdirSync, existsSync, mkdirSync, copyFileSync, renameSync } from "node:fs";
 import { pathToFileURL } from "node:url";
-import { dirname, isAbsolute, join } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import { spawn } from "node:child_process";
-import { statSync, type Stats } from "node:fs";
+import { statSync } from "node:fs";
 import { Worker } from "node:worker_threads";
 import { unlinkSync } from "node:fs";
 import { randomUUID, timingSafeEqual } from "node:crypto";
@@ -101,7 +100,7 @@ import { parsePastedScan, writeScanToInbox } from "./import.mts";
 import { writeFileAtomic } from "./atomic-write.mts";
 import {
   listAdapters, candidateClientRoots, validateScriptsDir, installedVersion, installScripts,
-  importScans, repoFromPackage, checkForUpdates, checkScriptsDataDir, type DataDirCheck, type AdapterInfo,
+  repoFromPackage, checkForUpdates, checkScriptsDataDir, type DataDirCheck, type AdapterInfo,
 } from "./installer.mts";
 import { dataDirNotice } from "./ui/messages.mts";
 import { homedir } from "node:os";
@@ -131,6 +130,18 @@ const WEB = join(HERE, "dist");
 // server's own Host and no Origin, so the middleware passes it) and clickjack the app.
 const CSP = "default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; connect-src 'self'; img-src 'self' data:; font-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'";
 const UI_NAME_RE = /^[a-z0-9-]+\.(mjs|css)$/;
+const FONT_NAME_RE = /^[a-z0-9-]+\.woff2$/;
+// The closed-choice fields of <data>/ui-prefs.json (GET/PUT /api/ui-prefs) and what each may hold. The
+// page applies only the theme families it ships (app/ui/theme.mts's BUILT_THEMES) and draws Default for
+// anything else.
+const UI_PREF_CHOICES = {
+  theme: ["default", "britannia"],
+  appearance: ["light", "system", "dark"],
+  sidebar: ["auto", "collapsed"],
+  density: ["dense", "regular"],   // the Inventory table's row height
+  colsVersion: ["2"],              // the column set `cols` was saved against (app/ui/view-state.mts's COLS_VERSION)
+} as const satisfies Record<string, readonly string[]>;
+type UiPrefsFile = { cols?: string[] } & { -readonly [K in keyof typeof UI_PREF_CHOICES]?: string };
 // Localhost security (spec §4.5): a request's Host must name this server, an Origin (when present)
 // must be this same origin, and — with a token configured — every /api/* route except the SSE
 // events stream (EventSource cannot carry an Authorization header; see below) must present it. None
@@ -148,12 +159,13 @@ interface HttpError extends Error {
 
 function send(res: http.ServerResponse, status: number, body: unknown, type = "application/json"): void {
   // Every non-JSON caller passes an already-read file: a string (readFileSync's utf8 result) for
-  // text, a Buffer for the favicon — the cast is compiler-only, matching config.mts's rawPort pattern.
+  // text, a Buffer for the favicon and the fonts — the cast is compiler-only, matching config.mts's
+  // rawPort pattern. Binary types (image/*, font/*) carry no charset.
   const data = type === "application/json" ? JSON.stringify(body) : (body as string | Buffer);
   // x-frame-options rides on EVERY response, not just text/html: it is the belt to the CSP's braces
   // for anything that ignores frame-ancestors, and a JSON response rendered directly as a document
   // is framable too.
-  const headers: Record<string, string> = { "content-type": type.startsWith("image/") ? type : type + "; charset=utf-8", "cache-control": "no-store", "x-content-type-options": "nosniff", "x-frame-options": "DENY" };
+  const headers: Record<string, string> = { "content-type": type.startsWith("image/") || type.startsWith("font/") ? type : type + "; charset=utf-8", "cache-control": "no-store", "x-content-type-options": "nosniff", "x-frame-options": "DENY" };
   if (type === "text/html") headers["content-security-policy"] = CSP;
   res.writeHead(status, headers);
   res.end(data);
@@ -269,12 +281,6 @@ function short(v: unknown): string { return String(v).slice(0, 64); }
 const MAX_PATH_LEN = 4096;
 // The largest serial the scan contract accepts (app/schema/scan.v2.schema.json: a 32-bit unsigned).
 const MAX_SERIAL = 0xFFFFFFFF;
-// A Windows UNC path (\\host\share, and its forward-slash twin) is a perfectly good string, and on
-// win32 a readdirSync against one is an outbound SMB connection — an NTLM authentication attempt
-// against a host the caller named. installer.mts's validateScriptsDir refuses both forms (and a
-// relative path) for a client scripts folder itself; POST /api/import's `dir` is a folder of scan
-// files, never a scripts folder, so it never reaches that function and needs the same rule here.
-const UNC_RE = /^[\\/]{2}/;
 // What a failed locate/install tells the caller. Deliberately says nothing about the path it probed:
 // echoing the resolved path back made these routes a clean existence oracle for any absolute path on
 // the machine — "existing directory" vs "file or absent", for free, from an unauthenticated route in
@@ -337,12 +343,15 @@ function currentError(current: unknown): string | null {
 // optionalSlots/warmStart are set by the route itself after this runs; seed/restarts/timeBudgetMs/
 // exact/alternatives are what app/ui/builder.mts actually sends.
 const OPTS_MAX_TIME_BUDGET_MS = 60 * 60 * 1000;
+// The same ranges as numbers the page can show: the Suit Builder's Advanced fields validate against a copy
+// (app/ui/builder-model.mts's SOLVER_LIMITS; app/server.test.mts checks the two agree).
+export const OPTS_LIMITS = { restarts: { min: 1, max: 10000 }, timeBudgetMs: { min: 0, max: OPTS_MAX_TIME_BUDGET_MS }, alternativesCount: { min: 0, max: 100 } } as const;
 function optsError(opts: Record<string, unknown>): string | null {
   for (const [k, v] of Object.entries(opts)) {
     switch (k) {
       case "exact": if (typeof v !== "boolean") return "opts.exact must be a boolean"; break;
       case "seed": if (!isBoundedInt(v, 0, 2 ** 31)) return "opts.seed must be an integer"; break;
-      case "restarts": if (!isBoundedInt(v, 1, 10000)) return "opts.restarts must be an integer between 1 and 10000"; break;
+      case "restarts": if (!isBoundedInt(v, OPTS_LIMITS.restarts.min, OPTS_LIMITS.restarts.max)) return `opts.restarts must be an integer between ${OPTS_LIMITS.restarts.min} and ${OPTS_LIMITS.restarts.max}`; break;
       case "timeBudgetMs": if (!isBoundedInt(v, 0, OPTS_MAX_TIME_BUDGET_MS)) return `opts.timeBudgetMs must be an integer between 0 and ${OPTS_MAX_TIME_BUDGET_MS}`; break;
       case "optionalSlots":
         if (!Array.isArray(v) || v.length > 32 || v.some((s) => !isBoundedString(s, 32))) return "opts.optionalSlots must be an array of at most 32 slot names";
@@ -350,7 +359,7 @@ function optsError(opts: Record<string, unknown>): string | null {
       case "alternatives": {
         if (!v || typeof v !== "object" || Array.isArray(v)) return "opts.alternatives must be an object";
         const { count, tolerance } = v as Record<string, unknown>;
-        if (!isBoundedInt(count, 0, 100)) return "opts.alternatives.count must be an integer between 0 and 100";
+        if (!isBoundedInt(count, OPTS_LIMITS.alternativesCount.min, OPTS_LIMITS.alternativesCount.max)) return `opts.alternatives.count must be an integer between ${OPTS_LIMITS.alternativesCount.min} and ${OPTS_LIMITS.alternativesCount.max}`;
         if (typeof tolerance !== "number" || !Number.isFinite(tolerance) || tolerance < 0) return "opts.alternatives.tolerance must be a non-negative number";
         break;
       }
@@ -399,13 +408,23 @@ export interface JobTimings {
 // check's fallback when no client is configured). The default is this machine's real home and
 // installer.mts's candidateClientRoots — which, on win32, also probes a fixed C:\TazUO — so a test
 // passes its own to never reach a real client folder on any OS.
+//
+// PACKRAT_CLIENT_HOME swaps the real home for another folder, for a server started in another process
+// (the Electron UI tests launch the whole app, so they cannot hand startServer an option): the search
+// then looks only under that folder, with no environment folders (LOCALAPPDATA) and no fixed roots
+// (C:\TazUO), so a test launch can never find, or read the packrat-paths.json of, a real client.
 export interface ClientSearch {
   home: string;
   candidates: (adapter: AdapterInfo) => string[];
 }
-export function defaultClientSearch(): ClientSearch {
+export function defaultClientSearch(env: NodeJS.ProcessEnv = process.env): ClientSearch {
+  if (env.PACKRAT_CLIENT_HOME) {
+    const home = resolve(env.PACKRAT_CLIENT_HOME);
+    // "linux" is the platform with no fixed roots; an adapter for another OS still offers nothing.
+    return { home, candidates: (a) => (a.platform && a.platform !== process.platform ? [] : candidateClientRoots({ adapter: a.id, home, platform: "linux", env: {} })) };
+  }
   const home = homedir();
-  return { home, candidates: (a) => candidateClientRoots({ adapter: a.id, home, platform: process.platform, env: process.env, adapterPlatform: a.platform }) };
+  return { home, candidates: (a) => candidateClientRoots({ adapter: a.id, home, platform: process.platform, env, adapterPlatform: a.platform }) };
 }
 
 export interface StartServerOptions {
@@ -685,12 +704,19 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
   // place, keeping the pre-migration file once as profiles.backup-<date>.json next to it.
   // <data>/ui-prefs.json: the page's view choices (GET/PUT /api/ui-prefs). A missing, unreadable or
   // malformed file reads as "nothing chosen", and the page keeps its defaults.
+  // Each field is read on its own: one bad value (a hand edit) drops that field, not the whole file.
   const UI_PREFS = join(CONFIG.dataDir, "ui-prefs.json");
-  function readUiPrefs(): { cols?: string[] } {
-    try {
-      const raw = JSON.parse(readFileSync(UI_PREFS, "utf8")) as { cols?: unknown };
-      return Array.isArray(raw?.cols) && raw.cols.every((c) => typeof c === "string") ? { cols: raw.cols as string[] } : {};
-    } catch { return {}; }
+  function readUiPrefs(): UiPrefsFile {
+    let raw: Record<string, unknown>;
+    try { raw = JSON.parse(readFileSync(UI_PREFS, "utf8")) as Record<string, unknown>; } catch { return {}; }
+    if (!raw || typeof raw !== "object") return {};
+    const out: UiPrefsFile = {};
+    if (Array.isArray(raw.cols) && raw.cols.every((c) => typeof c === "string")) out.cols = raw.cols as string[];
+    for (const [key, allowed] of Object.entries(UI_PREF_CHOICES)) {
+      const v = raw[key];
+      if (typeof v === "string" && (allowed as readonly string[]).includes(v)) out[key as keyof typeof UI_PREF_CHOICES] = v;
+    }
+    return out;
   }
   // A profiles.json that does not parse (a write cut short before writes were atomic, or a bad hand
   // edit) used to answer every GET /api/profiles with a 500 until someone fixed the file by hand. It
@@ -936,12 +962,23 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
       }
       if (req.method === "GET" && url.pathname === "/") return send(res, 200, readFileSync(join(HERE, "index.html"), "utf8"), "text/html");
       if (req.method === "GET" && url.pathname === "/favicon.png") return send(res, 200, readFileSync(join(HERE, "assets", "favicon.png")), "image/png");
+      if (req.method === "GET" && url.pathname === "/logo-mark.png") return send(res, 200, readFileSync(join(HERE, "assets", "logo-mark.png")), "image/png");
       if (req.method === "GET" && url.pathname === "/vault-lib.mjs") return send(res, 200, readFileSync(join(WEB, "vault-lib.mjs"), "utf8"), "text/javascript");
       if (req.method === "GET" && url.pathname === "/item-query.mjs") return send(res, 200, readFileSync(join(WEB, "item-query.mjs"), "utf8"), "text/javascript");
       if (req.method === "GET" && url.pathname === "/scan-schema.mjs") return send(res, 200, readFileSync(join(WEB, "scan-schema.mjs"), "utf8"), "text/javascript");
+      // The Import drawer's instant preview parses a paste with the server's own rule (app/paste-scan.mts).
+      if (req.method === "GET" && url.pathname === "/paste-scan.mjs") return send(res, 200, readFileSync(join(WEB, "paste-scan.mjs"), "utf8"), "text/javascript");
       // scan-schema.mjs imports validate() from here — the browser resolves that relative import
       // against scan-schema.mjs's own served URL, so this needs its own static route too.
       if (req.method === "GET" && url.pathname === "/schema/validate.mjs") return send(res, 200, readFileSync(join(WEB, "schema", "validate.mjs"), "utf8"), "text/javascript");
+      if (req.method === "GET" && url.pathname.startsWith("/ui/fonts/")) {
+        // One flat folder of woff2 files and nothing else: the licence texts next to them, a subfolder or
+        // a dot-dot never match the name pattern.
+        const name = url.pathname.slice("/ui/fonts/".length);
+        const f = join(HERE, "ui", "fonts", name);
+        if (!FONT_NAME_RE.test(name) || !existsSync(f)) return send(res, 404, { ok: false, error: "not found" });
+        return send(res, 200, readFileSync(f), "font/woff2");
+      }
       if (req.method === "GET" && url.pathname.startsWith("/ui/")) {
         const name = url.pathname.slice("/ui/".length);
         if (!UI_NAME_RE.test(name)) return send(res, 404, { ok: false, error: "not found" });
@@ -970,7 +1007,7 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
         const result = applyItemQuery(Object.values(inv.items), query, { rarity: currentRules.rarity });
         // applyItemQuery returns the ItemQueryRows | ItemQueryGroups union; narrow at each call site
         // by query.group, same as app/item-query.test.mts does — `total` is common to both branches.
-        if (query.group) return send(res, 200, { ok: true, total: result.total, offset: query.offset, limit: query.limit, groups: (result as ItemQueryGroups).groups });
+        if (query.group) { const g = result as ItemQueryGroups; return send(res, 200, { ok: true, total: g.total, stacks: g.stacks, pieces: g.pieces, offset: query.offset, limit: query.limit, groups: g.groups }); }
         return send(res, 200, { ok: true, total: result.total, pieces: (result as ItemQueryRows).pieces, offset: query.offset, limit: query.limit, rows: (result as ItemQueryRows).rows });
       }
       // GET /api/items/by-serial?serials=1,2,3 — the one place the page can still ask for a FULL item
@@ -1000,7 +1037,7 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
       }
       if (req.method === "GET" && url.pathname === "/api/ui-prefs") return send(res, 200, { ok: true, prefs: readUiPrefs() });
       if (req.method === "PUT" && url.pathname === "/api/ui-prefs") {
-        // The page's own view choices (today: the Inventory tab's columns). Kept here rather than in
+        // The page's own view choices (the Inventory tab's columns, the look, the sidebar). Kept here rather than in
         // the page's localStorage because the desktop app serves the page from a new port, and so a new
         // origin, on every launch. Only known fields, each checked, are written.
         const body = asObject(await readBody(req, { limit: 16e3 }));
@@ -1009,6 +1046,12 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
           const cols = body.cols;
           if (!Array.isArray(cols) || cols.length > 200 || !cols.every((c) => isBoundedString(c, 64))) return send(res, 400, { ok: false, error: "cols must be a list of at most 200 column keys" });
           next.cols = cols as string[];
+        }
+        for (const [key, allowed] of Object.entries(UI_PREF_CHOICES)) {
+          if (!Object.prototype.hasOwnProperty.call(body, key)) continue;
+          const v = body[key];
+          if (typeof v !== "string" || !(allowed as readonly string[]).includes(v)) return send(res, 400, { ok: false, error: `${key} must be one of ${allowed.join(", ")}` });
+          next[key as keyof typeof UI_PREF_CHOICES] = v;
         }
         writeFileAtomic(UI_PREFS, JSON.stringify(next, null, 2) + "\n", DATA_FILE_MODE);
         return send(res, 200, { ok: true });
@@ -1111,6 +1154,12 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
           // hand-installed or Skip-through-the-wizard player) — see the bridgeAdapter() comment above.
           bridgeAdapter: bridgeAdapterField,
           dataDirCheck: dataDirCheck(),
+          // Settings › Updates names the running version ("Pack Rat 0.1.0") before any update check.
+          version: PACKAGE_JSON.version,
+          // Whether POST /api/host/open-path can do anything: only the desktop shell opens a folder. The
+          // page offers Open there and Copy path in a plain browser (npm start), instead of an Open that
+          // answers 501 and vanishes.
+          canOpenFolders: typeof host?.openPath === "function",
         });
       }
       if (req.method === "POST" && url.pathname === "/api/setup/locate") {
@@ -1166,34 +1215,6 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
         // can say so.
         return send(res, 200, { ok: true, installed: result.installed, version: result.version, scriptsDir: destDir, pathsFile: result.pathsFile });
       }
-      if (req.method === "POST" && url.pathname === "/api/import") {
-        // adapter defaults to "tazuo" — today's hard-coded behavior — so neither existing caller (the
-        // wizard's import step, Settings' own "Import a folder" row) has to change to keep working.
-        const { dir, adapter = "tazuo" } = asObject(await readBody(req, { limit: 8e3 }));
-        // Security: same allowlist check every other route taking an adapter id makes (see
-        // /api/setup/locate above) — adapter reaches CONFIG.paths.inboxFor, a path.join, so an
-        // unchecked id could otherwise be used to probe/write outside the inbox tree.
-        if (!listAdapters(ADAPTERS_DIR).some((a) => a.id === adapter)) return send(res, 400, { ok: false, error: `unknown adapter: ${short(adapter)}` });
-        // dir is checked positively (post-review fix) before statSync ever sees it: an absolute,
-        // bounded, non-UNC path — the same shape validateScriptsDir requires of a scripts folder.
-        if (!isBoundedString(dir, MAX_PATH_LEN) || UNC_RE.test(dir) || !isAbsolute(dir)) return send(res, 400, { ok: false, error: "dir must be an existing directory" });
-        let dirStat: Stats | null = null;
-        try { dirStat = statSync(dir); } catch { /* badDir below */ }
-        if (!dirStat || !dirStat.isDirectory()) return send(res, 400, { ok: false, error: "dir must be an existing directory" });
-        // failed: files importScans could not take (one bigger than the inbox limit, an unwritable
-        // destination) — counted rather than thrown, and reported so a partial import is visible
-        // instead of silent. `failures` names the first few of them with a reason (importScans bounds
-        // that list itself), which is what lets the Import tab say why instead of only how many.
-        const { copied, skipped, failed, failures } = importScans({ dir, inboxDir: CONFIG.paths.inboxFor(adapter as string) });
-        // Nudge the watcher rather than waiting on fs.watch to notice the burst (post-review fix,
-        // Minor 3): a large import can overflow the OS's change-event buffer (Windows
-        // ReadDirectoryChangesW, macOS FSEvents coalescing), which would otherwise leave some of the
-        // just-copied files sitting unread in the inbox until the next launch's startup sweep.
-        // scanOnce() is idempotent (ingestFile's own accepted-name check) and a no-op under --demo,
-        // where watchers is empty.
-        watchers.get(adapter as string)?.scanOnce();
-        return send(res, 200, { ok: true, copied, skipped, failed, failures });
-      }
       if (req.method === "POST" && url.pathname === "/api/import/paste") {
         const { text, adapter } = asObject(await readBody(req));
         // Same allowlist as every other adapter-taking route — adapter reaches
@@ -1220,8 +1241,8 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
           safeAppendLog(CONFIG.paths.log, `${new Date().toISOString()} import-paste warn: pasted into ${JSON.stringify(adapter)}'s inbox but the document declares adapter ${JSON.stringify(declaredAdapter)}\n`);
         }
         const { file, character } = writeScanToInbox({ doc: parsed.doc, adapter: adapter as string, paths: CONFIG.paths });
-        // Same nudge as POST /api/import above — a single paste is not a burst, but there is no
-        // reason to make the player wait on fs.watch's debounce when the file is already on disk.
+        // Nudge the watcher: there is no reason to make the player wait on fs.watch's debounce when the
+        // file is already on disk.
         watchers.get(adapter as string)?.scanOnce();
         return send(res, 200, { ok: true, written: file, character,
           ...(mismatch ? { warning: `filed under "${adapter}", but this scan says it's from "${declaredAdapter}" — check the Adapter picker above` } : {}) });
@@ -1342,7 +1363,10 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
           for (const slot of blocked) delete current[slot];       // a worn piece the filters now rule out must not stay "current"
           for (const slot of lockedList) pools[slot] = [];        // a locked slot offers no alternatives — it always keeps current
           opts = { ...(opts as RunOpts), optionalSlots: DEFAULT_OPTIONAL_SLOTS.filter((slot) => !lockedList.includes(slot)) };
-          meta = { ...meta, character, settings: s };
+          // The saved run keeps the page's whole settings snapshot (floors, weights, race, search knobs:
+          // the runs drawer labels, compares and re-applies runs from it), with the pool settings it
+          // actually ran on written over it.
+          meta = { ...meta, character, settings: { ...((meta.settings as Record<string, unknown> | undefined) || {}), ...s } };
         } else {
           // The hand-built form: pools/current came straight off the body, so this is where a literal
           // null candidate ({pools: {helmet: [null]}}) or an item with no props gets refused rather
