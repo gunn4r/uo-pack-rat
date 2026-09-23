@@ -51,52 +51,25 @@
       </header>
       <div class="page">
         <div id="inv-view-items" class="inv-view">
-          <div class="layout">
-            <aside class="stack">
-              <div class="panel stack">
-                <h3>Find</h3>
-                <input id="f-text" type="search" placeholder="name, property, slayer, location…">
-                <div class="field"><label>Slot</label><select id="f-slot"><option value="">any</option></select></div>
-                <div class="field"><label>Location</label><select id="f-loc"><option value="">anywhere</option></select></div>
-                <div class="field"><label>Rarity</label><select id="f-rarity"><option value="">any</option></select></div>
-                <div class="field"><label>Slayer</label><select id="f-slayer"><option value="">any</option></select></div>
-                <div class="field"><label>Kind</label><select id="f-kind"><option value="">everything</option></select></div>
-                <div class="field"><label>Seen</label><select id="f-seen"><option value="">any time</option><option value="1">last 24 hours</option><option value="7">last 7 days</option><option value="30">last 30 days</option></select></div>
-                <label class="row small"><input type="checkbox" id="f-nogarg"> hide gargoyle-only gear</label>
-                <label class="row small"><input type="checkbox" id="f-med"> meditation-safe gear only</label>
-                <label class="row small"><input type="checkbox" id="f-group"> group by name (stack totals)</label>
-                <div class="field"><label>Hide</label><div class="chips" id="f-tags"></div></div>
+          <div class="inv-toolbar" id="inv-toolbar" role="toolbar" aria-label="Filters" aria-controls="inv-table"></div>
+          <div class="inv-active" id="inv-active" role="group" aria-label="Active filters" hidden></div>
+          <div class="inv-body" id="inv-body">
+            <section class="card inv-card" id="inv-card" aria-label="Items">
+              <div class="inv-scroll" id="inv-scroll">
+                <table class="tbl inv-tbl" id="inv-table" role="grid" aria-label="Items"><colgroup></colgroup><thead></thead><tbody></tbody></table>
+                <div class="inv-state" id="inv-state" hidden></div>
               </div>
-              <div class="panel stack">
-                <h3>Property minimums</h3>
-                <div id="f-props" class="stack"></div>
-                <div class="row"><button id="f-addprop">+ property</button><button id="f-clear">Clear all</button></div>
-              </div>
-              <div class="panel stack">
-                <h3>Columns</h3>
-                <div class="chips" id="cols"></div>
-              </div>
-            </aside>
-            <div class="panel">
-              <div class="row" style="justify-content:space-between;margin-bottom:8px"><h2 id="inv-count">Inventory</h2><span class="small muted">click a header to sort · click a row for the full tooltip</span></div>
-              <div id="inv-bridge-note"></div>
-              <div class="tablewrap scrolly"><table id="inv-table"><thead></thead><tbody></tbody></table></div>
-              <div class="row pager" id="inv-pager">
-                <button id="inv-prev">‹ prev</button>
-                <span class="small muted" id="inv-pager-text"></span>
-                <button id="inv-next">next ›</button>
-                <span class="grow"></span>
-                <label class="small muted">per page <select id="inv-pagesize"><option value="100">100</option><option value="200" selected>200</option><option value="500">500</option></select></label>
-              </div>
-            </div>
+              <div class="inv-fade" id="inv-fade" aria-hidden="true" hidden></div>
+              <div class="tbl-foot" id="inv-foot"></div>
+            </section>
+            <aside class="card peek" id="inv-peek" aria-label="Item detail" hidden></aside>
           </div>
         </div>
         <div id="tab-containers" class="inv-view" hidden>
-          <div class="panel">
-            <h2 style="margin-bottom:8px">Scanned containers</h2>
-            <p class="small muted">Newest scan of a container wins. A container that was skipped in a scan (too far to open, or empty) keeps its last known contents; use <em>Forget</em> to drop one you emptied.</p>
-            <div class="tablewrap"><table id="cont-table"><thead><tr><th>Container</th><th>Kind</th><th>Scanned by</th><th>When</th><th class="n">Items</th><th></th></tr></thead><tbody></tbody></table></div>
-          </div>
+          <section class="card inv-card" aria-label="Containers">
+            <div class="inv-scroll"><table class="tbl" id="cont-table" aria-label="Scanned containers"><colgroup></colgroup><thead></thead><tbody></tbody></table></div>
+            <div class="tbl-foot" id="cont-foot"></div>
+          </section>
         </div>
       </div>
     </main>

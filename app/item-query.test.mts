@@ -56,7 +56,7 @@ const names = (r: Item[]): string[] => r.map((it) => it.name);
 
 test("[fast] parseItemQuery: defaults with no params", () => {
   const q = parseItemQuery(new URLSearchParams());
-  assert.deepEqual(q, { q: "", slot: "", loc: "", rarity: "", kind: "", seenDays: 0, slayer: "", nogarg: false, med: false, hideTags: [], props: [], group: false, sort: "name", dir: 1, offset: 0, limit: 200 });
+  assert.deepEqual(q, { q: "", chars: [], slot: [], loc: [], roots: [], rarity: "", rarityMin: "", kind: [], seenDays: 0, slayer: "", nogarg: false, med: false, hideTags: [], props: [], group: false, sort: "name", dir: 1, offset: 0, limit: 200 });
 });
 
 test("[fast] parseItemQuery: clamps limit to [1, 500], offset to >= 0", () => {
@@ -201,6 +201,61 @@ test("[fast] facetsOf: slots/locations/rarities/slayers/kinds/propKeys/gearSkill
   // stopped shipping the full item map — facetsOf.gearSkills is what it reads instead, now).
   assert.deepEqual(f.gearSkills, []);
   assert.equal(f.itemCount, ITEMS.length);
+});
+
+test("[fast] parseItemQuery: list filters take repeated params, slot and kind also a comma list", () => {
+  const q = parseItemQuery(new URLSearchParams("char=Dorran&char=Kestrel&slot=ring,legs&kind=gear&kind=reagent&loc=" + encodeURIComponent("Metal Chest, left") + "&root=12&root=junk"));
+  assert.deepEqual(q.chars, ["Dorran", "Kestrel"]);
+  assert.deepEqual(q.slot, ["ring", "legs"]);
+  assert.deepEqual(q.kind, ["gear", "reagent"]);
+  assert.deepEqual(q.loc, ["Metal Chest, left"], "a location name keeps its comma");
+  assert.deepEqual(q.roots, [12], "a serial that is not a number is dropped");
+});
+
+test("[fast] parseItemQuery: prop rules carry an operator, and an unknown one drops the rule", () => {
+  assert.deepEqual(parseItemQuery(new URLSearchParams("prop=hci:ge:10&prop=lmc:le:4&prop=fc:eq:2&prop=dci:gt:1")).props,
+    [{ key: "hci", min: 10 }, { key: "lmc", min: 4, op: "le" }, { key: "fc", min: 2, op: "eq" }]);
+});
+
+test("[fast] applyItemQuery: any-of lists for slot, kind, character and location", () => {
+  const withOwners = ITEMS.map((it) => ({ ...it, location: { ...it.location!, character: it.location!.text.startsWith("Dorran") ? "Dorran" : "Kestrel" } }));
+  const rows = (s: string): string[] => names((applyItemQuery(withOwners, parseItemQuery(new URLSearchParams(s)), ctx) as ItemQueryRows).rows).sort();
+  assert.deepEqual(rows("slot=ring,hands"), ["Leather Gloves", "Vile Ring"]);
+  assert.deepEqual(rows("kind=bandage&kind=resource"), ["Bandage", "Iron Ingot"]);
+  assert.deepEqual(rows("char=Dorran"), ["Bandage", "Chainmail Tunic", "Cloth Robe", "Leather Gloves"]);
+  assert.deepEqual(rows("loc=" + encodeURIComponent("Dorran's bank") + "&loc=" + encodeURIComponent("Dorran's backpack")), ["Bandage", "Chainmail Tunic", "Cloth Robe", "Leather Gloves"]);
+});
+
+test("[fast] applyItemQuery: a root filter matches everything inside that container", () => {
+  const items = [mk({ name: "In chest", root: 7, location: { text: "Chest" } }), mk({ name: "In pouch", root: 7, location: { text: "Chest › Pouch" } }), mk({ name: "Elsewhere", root: 8, location: { text: "Box" } })];
+  assert.deepEqual(names((applyItemQuery(items, parseItemQuery(new URLSearchParams("root=7")), ctx) as ItemQueryRows).rows).sort(), ["In chest", "In pouch"]);
+  assert.deepEqual(names((applyItemQuery(items, parseItemQuery(new URLSearchParams("root=7&loc=Box")), ctx) as ItemQueryRows).rows).sort(), ["Elsewhere", "In chest", "In pouch"], "a root and a location add up");
+});
+
+test("[fast] applyItemQuery: rarityMin keeps that tier and every tier above it on the ladder", () => {
+  const { rows } = applyItemQuery(ITEMS, parseItemQuery(new URLSearchParams("rarityMin=" + encodeURIComponent("Greater Artifact"))), ctx) as ItemQueryRows;
+  assert.deepEqual(names(rows).sort(), ["Composite Bow", "Orc Slayer Cutlass", "Talisman of Mercy"]);
+});
+
+test("[fast] applyItemQuery: prop rules at most and exactly", () => {
+  const rows = (s: string): string[] => names((applyItemQuery(ITEMS, parseItemQuery(new URLSearchParams(s)), ctx) as ItemQueryRows).rows).sort();
+  assert.deepEqual(rows("kind=gear&prop=hci:le:10&prop=hci:ge:1"), ["Vile Ring"]);
+  assert.deepEqual(rows("prop=dci:eq:8"), ["Chainmail Tunic"]);
+});
+
+test("[fast] applyItemQuery: group mode also reports the stacks and pieces behind the names", () => {
+  const g = applyItemQuery(ITEMS, parseItemQuery(new URLSearchParams("group=1&kind=bandage,resource")), ctx) as ItemQueryGroups;
+  assert.equal(g.total, 2);
+  assert.equal(g.stacks, 2);
+  assert.equal(g.pieces, 150);
+});
+
+test("[fast] facetsOf: places name each location's owner, root and stack count", () => {
+  const items = [mk({ name: "A", root: 7, location: { text: "Chest", character: "Dorran", kind: "ground", root: 7, rootName: "Chest" } }), mk({ name: "B", root: 7, location: { text: "Chest", character: "Dorran", kind: "ground", root: 7, rootName: "Chest" } }), mk({ name: "C", location: { text: "Worn by Kestrel", character: "Kestrel", kind: "equipped", root: null } })];
+  assert.deepEqual(facetsOf(items).places, [
+    { text: "Chest", character: "Dorran", kind: "ground", root: 7, rootName: "Chest", count: 2 },
+    { text: "Worn by Kestrel", character: "Kestrel", kind: "equipped", root: null, rootName: "Worn by Kestrel", count: 1 },
+  ]);
 });
 
 test("[fast] rarityRank: known names rank in ladder order, unknown → 0", () => {

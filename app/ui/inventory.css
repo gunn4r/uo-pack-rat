@@ -1,19 +1,130 @@
-/* ui/inventory.css — the Inventory screen (ui/inventory.mts) and its Containers view (ui/containers.mts). Tokens only (docs/ui.md). */
-/* the screen never scrolls: the filter column and the table scroll inside their own boxes */
-#tab-inventory .page { overflow: hidden; }
-#inv-view-items { flex: 1 1 auto; min-height: 0; }
-#inv-view-items .layout { height: 100%; grid-template-rows: 100%; }
-#tab-inventory aside { max-height: 100%; overflow-y: auto; }
-#tab-containers { overflow: auto; min-height: 0; }
-#tab-inventory .layout > .panel { height: 100%; min-height: 0; display: flex; flex-direction: column; }
-#tab-inventory .tablewrap.scrolly { flex: 1; min-height: 0; max-height: none; }
-.pager { flex: none; margin-top: var(--space-2); }
-.pager .grow { flex: 1; }
-/* the inventory table scrolls inside its own box so the sticky header stays put (sticky can't cross an overflow-x container) */
-.tablewrap.scrolly { overflow: auto; max-height: calc(100vh - 150px); }
-.tablewrap.scrolly th { box-shadow: 0 1px 0 var(--color-border); z-index: var(--z-sticky); }
-tr.item:hover td { background: var(--color-row-hover); color: var(--color-on-row-hover); }
-tr.detail td { white-space: normal; background: var(--color-surface-subtle); font-family: var(--font-mono); font-size: var(--text-sm); color: var(--color-text-muted); }
-.rar { display: inline-block; width: 8px; height: 8px; border-radius: var(--radius-full); margin-right: var(--space-1-5); background: var(--color-border-strong); vertical-align: middle; }
+/* ui/inventory.css — the Inventory screen (ui/inventory.mts) and its Containers view (ui/containers.mts). Tokens only (docs/ui.md).
+   The page never scrolls: the toolbar and the active strip sit on top, and the table card fills the rest and
+   scrolls inside itself, with a sticky header, a sticky Name column and a fixed footer (spec 4.2). */
+#tab-inventory .page { overflow: hidden; gap: var(--space-3); }
+.inv-view { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; gap: var(--space-3); }
+.inv-view[hidden] { display: none; }
+
+/* ---------------------------------------------------------------- toolbar and active strip */
+.inv-toolbar { display: flex; align-items: center; gap: var(--space-2); flex: none; min-width: 0; flex-wrap: nowrap; }
+.inv-search { width: 320px; flex: 0 1 320px; min-width: 180px; }
+.inv-search .input { padding-right: 32px; }   /* room for the "/" hint */
+.inv-toolbar .fchip { flex: none; max-width: 240px; }
+.inv-toolbar .fchip > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.inv-toolbar .fchip[hidden] { display: none; }
+.inv-active { display: flex; align-items: center; gap: 6px; min-height: 28px; flex: none; min-width: 0; overflow: hidden; }
+.inv-active[hidden] { display: none; }
+.inv-match { margin-right: var(--space-1); white-space: nowrap; }
+.inv-active .token { flex: none; }
+/* Below 1180 px the unset facet chips fold into "+ Filter" and List | Grouped moves into table settings (spec 3.7). */
+@media (max-width: 1179px) {
+  .inv-search { flex-basis: 260px; width: 260px; }
+  .inv-toolbar .fchip[data-facet]:not(.set) { display: none; }
+  .inv-toolbar #inv-rows { display: none; }
+}
+
+/* ---------------------------------------------------------------- the table card */
+.inv-body { flex: 1 1 auto; min-height: 0; display: flex; gap: var(--space-4); position: relative; }
+.inv-card { flex: 1 1 auto; min-width: 0; min-height: 0; display: flex; flex-direction: column; overflow: hidden; position: relative; }
+#tab-containers > .inv-card { flex: 1 1 auto; }
+.inv-scroll { flex: 1 1 0; min-height: 0; overflow: auto; position: relative; display: flex; flex-direction: column; }
+.inv-scroll > table { flex: none; }
+.inv-tbl { width: 100%; }
+.inv-tbl tr.item { cursor: default; }
+.inv-tbl tr.item:focus-visible { outline: 2px solid var(--color-focus); outline-offset: -2px; }
+/* the sticky Name cell paints over the row's outline, so it draws its own part of the ring */
+.inv-tbl tr.item:focus-visible td:first-child { box-shadow: inset 2px 0 0 var(--color-focus), inset 0 2px 0 var(--color-focus), inset 0 -2px 0 var(--color-focus); }
+/* the sticky Name column, drawn over the columns scrolling under it */
+.inv-tbl th:first-child, .inv-tbl td:first-child { position: sticky; left: 0; z-index: 1; background: var(--color-surface); color: var(--color-text); }
+.inv-scroll.scrolled-x .inv-tbl th:first-child, .inv-scroll.scrolled-x .inv-tbl td:first-child { box-shadow: 1px 0 0 var(--color-border); }
+.inv-tbl th:first-child { z-index: calc(var(--z-sticky) + 1); background: var(--color-surface-subtle); }
+.inv-tbl tr.vpad td { padding: 0; border: 0; height: 0; background: none; box-shadow: none; position: static; }
+.inv-tbl tr.skel-row td { background: var(--color-surface); }
+.inv-name { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.inv-name .tag { flex: none; }
+/* A container's serial never shows cut: when it does not fit beside the name it wraps to a second line,
+   which the one-line box hides. */
+.inv-loc { display: flex; flex-wrap: wrap; align-items: baseline; column-gap: 6px; row-gap: 8px; min-width: 0; height: var(--lh-base); overflow: hidden; }
+.inv-loc > .ellip { flex: 0 1 auto; max-width: 100%; }
+.inv-loc > .mono { flex: none; }
+/* row actions: a zero-width column pinned to the right edge; the buttons show on row hover and focus */
+.inv-tbl col.act-col { width: 0; }
+.inv-tbl th.act-cell, .inv-tbl td.act-cell { position: sticky; right: 0; padding: 0; width: 0; overflow: visible; z-index: 1; }
+.inv-tbl td.act-cell .rowact { position: absolute; right: 0; top: 50%; transform: translateY(-50%); padding: 0 6px 0 10px; visibility: hidden; background: var(--color-row-hover); color: var(--color-on-row-hover); box-shadow: -8px 0 8px var(--color-row-hover); }
+.inv-tbl tr.item:hover td.act-cell .rowact, .inv-tbl tr.item:focus-within td.act-cell .rowact { visibility: visible; }
+.inv-tbl tr.sel td.act-cell .rowact { background: var(--color-row-selected); color: var(--color-on-row-selected); box-shadow: -8px 0 8px var(--color-row-selected); }
+.inv-tbl .rowact .tipwrap { display: inline-flex; }
+/* the right-edge fade while columns are scrolled off to the right; the footer says how many */
+.inv-fade { position: absolute; top: 0; right: 0; bottom: var(--row-footer); width: 40px; background: linear-gradient(to right, transparent, var(--color-surface)); pointer-events: none; z-index: 2; }
+.inv-fade[hidden] { display: none; }
+.inv-more-cols { display: inline-flex; align-items: center; gap: 4px; }
+#inv-foot { overflow: hidden; flex: none; }
+#inv-foot > span, #inv-foot .inv-foot-view > span { white-space: nowrap; }
+.inv-foot-view { display: flex; align-items: center; gap: var(--space-3); }
+#inv-foot { container-type: inline-size; }
+@container (max-width: 820px) { .inv-foot-view { display: none; } }
+.inv-state { display: flex; flex-direction: column; flex: 1 1 auto; min-height: 240px; position: sticky; left: 0; }
+.inv-state[hidden] { display: none; }
+.inv-state .empty-state { flex: 1 1 auto; }
+.inv-empty-tokens { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; justify-content: center; }
+.inv-error { padding: var(--space-5); display: flex; flex-direction: column; }
+
+/* ---------------------------------------------------------------- item peek (ui/peek.mts, spec 4.3) */
+/* Docked beside the table at 400 px (360 below 1280); below 1180 it lays over the table instead. */
+.peek { width: var(--peek-w); flex: none; display: flex; flex-direction: column; overflow: hidden; box-shadow: var(--shadow-2); min-height: 0; }
+.peek[hidden] { display: none; }
+@media (max-width: 1279px) { .peek { width: 360px; } }
+@media (max-width: 1179px) { .peek { position: absolute; top: 0; right: 0; bottom: 0; z-index: var(--z-peek); box-shadow: var(--shadow-3); } }
+.peek-head { display: flex; flex-direction: column; gap: var(--space-2); padding: var(--space-4) var(--space-4) var(--space-3); border-bottom: var(--border-width) solid var(--color-border); }
+.peek-title { display: flex; align-items: flex-start; gap: var(--space-2); }
+.peek-title h2 { flex: 1 1 auto; min-width: 0; overflow-wrap: anywhere; }
+.peek-meta { display: flex; align-items: center; flex-wrap: wrap; gap: var(--space-2); }
+.peek-body { flex: 1 1 auto; min-height: 0; overflow: auto; padding: var(--space-3) var(--space-4); display: flex; flex-direction: column; gap: var(--space-4); }
+.peek-sec { display: flex; flex-direction: column; gap: 6px; }
+.peek-sec .kv-v { min-width: 0; }
+.peek-props .kv-k { color: var(--color-text); }
+.peek-props .kv-k.muted, .peek-props .kv-v.muted { color: var(--color-text-muted); }
+.peek-dur { display: flex; align-items: center; gap: var(--space-2); }
+.peek-dur .meter { width: 72px; }
+.peek-resists { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 6px; }
+.peek-resists .resist { padding: var(--space-2); }
+.peek-foot { flex-direction: column; align-items: stretch; gap: var(--space-2); padding: var(--space-3) var(--space-4); }
+.peek-acts { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--space-2); }
+.peek-acts .tipwrap { display: flex; }
+.peek-acts .tipwrap .btn { width: 100%; }
+.peek-keys { display: flex; align-items: center; gap: 6px; }
+
+/* ---------------------------------------------------------------- popovers (filters, table settings) */
+.inv-pop .pop-body { gap: var(--space-2); padding: var(--space-3); }
+.inv-pop-head { display: flex; align-items: center; gap: var(--space-2); min-height: 24px; }
+.inv-pop-sec { display: flex; flex-direction: column; gap: var(--space-2); align-items: flex-start; }
+.inv-pop-sec > .search, .inv-pop-sec > .inv-pop-head { align-self: stretch; }
+.inv-opts { display: flex; flex-direction: column; gap: 2px; max-height: 320px; overflow: auto; margin: 0 calc(-1 * var(--space-1)); padding: 0 var(--space-1); }
+.inv-opt-group { padding: var(--space-1-5) 0 2px; }
+.inv-opt { align-items: center; min-height: 26px; min-width: 0; }
+.inv-opt input { margin: 0; }
+.inv-opt.sub { padding-left: var(--space-5); }
+.inv-opt .ellip { flex: 1 1 auto; }
+.inv-opt .inv-opt-count { margin-left: auto; font-size: var(--text-sm); color: var(--color-text-muted); font-variant-numeric: tabular-nums; }
+.inv-opt .mono { flex: none; }
+.inv-prop-list { max-height: 220px; }
+.pr .menu-item.inv-prop { height: 28px; justify-content: space-between; font-weight: var(--weight-regular); }
+.pr .menu-item.inv-prop[aria-selected="true"] { background: var(--color-chip-set); color: var(--color-on-chip-set); border: var(--border-width) solid var(--color-accent); }
+.pr .menu-item.inv-prop[aria-selected="true"] .muted { color: var(--color-on-chip-set); }
+.pr .menu-item.inv-more { height: 28px; font-size: var(--text-sm); color: var(--color-text-muted); }
+.inv-rule { display: flex; align-items: center; gap: var(--space-2); }
+.inv-rule .input.num { width: 72px; }
+.inv-pills { display: flex; flex-wrap: wrap; gap: 6px; }
+.inv-settings-pop .pop-body { padding: 0; gap: 0; }
+.inv-settings-pop .inv-pop-sec { padding: var(--space-3) var(--space-3) var(--space-2); }
+.inv-settings-pop #inv-cols { padding: var(--space-1) var(--space-3) var(--space-2); margin: 0; max-height: 300px; }
+.inv-pop-foot { padding: var(--space-2) var(--space-3); border-radius: 0 0 var(--radius-lg) var(--radius-lg); }
+
+/* ---------------------------------------------------------------- Containers view */
+#cont-table td.cont-act { padding: 0 var(--space-1); text-align: right; }
+#cont-table .inv-loc .t-sm { flex: none; }
+
+/* Suit Builder rows still draw their bridge buttons with bridge.mts's actButtons() (phase 7/8 moves them). */
 .act { display: inline-flex; gap: var(--space-1); }
 .act button { padding: 1px var(--space-1-5); font-size: var(--text-xs); }
+.inv-pop .btn[hidden] { display: none; }

@@ -1,7 +1,7 @@
 // ui-state.test.mts — [slow]: the page's state transitions, driven in the real Electron window with
 // Playwright (the same launch as scripts/ui-smoke.test.mts, which covers boot and tabs). Each case
 // here is a bug the 2026-09-22 review reproduced in a browser: a refresh resetting the filter
-// dropdowns while the table stayed filtered, the pager running off the end after a Forget, Forget
+// filters while the table stayed filtered, the table showing nothing after a Forget shrank it, Forget
 // re-running the whole page load (duplicated weapon options, the builder jumping to the first
 // character), a build shown under whichever character was selected when it finished, a failed request
 // leaving Settings on "loading…" forever, and no way to forget a character. Skipped when electron or
@@ -42,10 +42,17 @@ async function launch(dataDir: string): Promise<{ app: ElectronApplication; page
   page.on("pageerror", (e) => errors.push(String(e)));
   return { app, page, errors };
 }
-const pagerText = (page: Page): Promise<string> => page.locator("#inv-pager-text").innerText();
-// The table fetch is debounced (150 ms) and asynchronous: wait until the pager shows `want`.
-async function waitPager(page: Page, want: RegExp): Promise<void> {
-  await page.waitForFunction((src) => new RegExp(src).test(document.querySelector("#inv-pager-text")?.textContent || ""), want.source, { timeout: 15_000 });
+const countText = (page: Page): Promise<string> => page.locator("#inv-foot .inv-count").innerText();
+// The table fetch is debounced and asynchronous: wait until the footer's count fact shows `want`.
+async function waitCount(page: Page, want: RegExp): Promise<void> {
+  await page.waitForFunction((src) => new RegExp(src).test(document.querySelector("#inv-foot .inv-count")?.textContent || ""), want.source, { timeout: 15_000 });
+}
+// A checklist filter chip's popover: tick (or untick) one option by its value and close it.
+async function pickOption(page: Page, chip: string, value: string): Promise<void> {
+  await page.click(chip);
+  await page.locator(`.pop input[value="${value}"]`).click();
+  await page.keyboard.press("Escape");
+  await page.waitForSelector(".pop", { state: "detached" });
 }
 // Confirmations are the player's (components.mts's confirmDialog, a modal <dialog>): check the title
 // names the object, then answer with the confirming button. Cancel is the one focused by default.
@@ -69,7 +76,7 @@ async function openTab(page: Page, tab: string): Promise<void> {
   await page.waitForSelector(`#tab-${tab}:not([hidden])`, { timeout: 10_000 });
 }
 
-test("[slow] refresh, Forget and paging keep the page's state", async (t) => {
+test("[slow] refresh, Clear all, the virtual table and Forget keep the page's state", async (t) => {
   const why = unavailable();
   if (why) return t.skip(why);
   const dataDir = seedDataDir("packrat-ui-state-");
@@ -77,30 +84,39 @@ test("[slow] refresh, Forget and paging keep the page's state", async (t) => {
   try {
     await page.locator("#inv-table tbody tr.item").first().waitFor({ timeout: 30_000 });
 
-    // A background refresh (what the "inventory" SSE event runs) must leave the filter dropdown
-    // showing the filter the table still applies.
-    await page.selectOption("#f-slot", "bracelet");
-    await waitPager(page, /^1–\d+ of \d+$/);
-    const filtered = await pagerText(page);
+    // A background refresh (what the "inventory" SSE event runs) must leave the filter chip showing
+    // the filter the table still applies.
+    await pickOption(page, "#f-slot", "bracelet");
+    await waitCount(page, /^\d+ of 160 stacks/);
+    const filtered = await countText(page);
     // The page's own module (same URL as its <script>, so the same instance).
     await page.evaluate(async (url) => { await (await import(url)).reload(); }, "/ui/app.mjs");
-    await waitPager(page, /of/);
-    assert.equal(await page.locator("#f-slot").inputValue(), "bracelet", "the Slot filter still reads bracelet after a refresh");
-    assert.equal(await pagerText(page), filtered);
+    await page.waitForTimeout(500);
+    await waitCount(page, /stacks/);
+    assert.equal(await page.locator("#f-slot").innerText(), "Slot: Bracelet", "the Slot chip still reads Bracelet after a refresh");
+    assert.equal(await page.locator("#f-slot.set").count(), 1);
+    assert.equal(await countText(page), filtered);
 
-    // "Clear all" clears every filter, the checkboxes and Kind included.
-    await page.check("#f-nogarg");
+    // "Clear all" clears every filter, the switches behind "+ Filter" included, and the search.
+    await page.click("#f-add");
+    await page.getByRole("menuitem", { name: "Gargoyle and meditation…" }).click();
+    await page.getByRole("switch", { name: "Hide gargoyle-only gear" }).click();
+    await page.keyboard.press("Escape");
+    await page.fill("#f-text", "bracelet");
+    await waitCount(page, /^\d+ of 160 stacks/);
+    assert.match(await page.locator("#inv-active").innerText(), /No gargoyle-only/);
     await page.click("#f-clear");
-    await waitPager(page, /^1–100 of 160$|^1–160 of 160$/);
-    assert.equal(await page.locator("#f-slot").inputValue(), "");
-    assert.equal(await page.locator("#f-nogarg").isChecked(), false);
+    await waitCount(page, /^160 stacks · /);
+    assert.equal(await page.locator("#f-slot").innerText(), "Slot");
+    assert.equal(await page.locator("#f-text").inputValue(), "", "Clear all clears the search too");
+    assert.equal(await page.locator("#inv-active").isHidden(), true, "no active filters, no strip");
 
-    // Paging: 100 per page, go to the second page, then Forget the biggest container. The pager must
-    // land on a page that has rows, not "101–48 of 48" over an empty table.
-    await page.selectOption("#inv-pagesize", "100");
-    await waitPager(page, /^1–100 of 160$/);
-    await page.click("#inv-next");
-    await waitPager(page, /^101–160 of 160$/);
+    // No pager: the table is virtual. It draws a screenful of rows, and scrolling to the end brings the
+    // last one in.
+    const drawn = await page.locator("#inv-table tbody tr.item").count();
+    assert.ok(drawn > 0 && drawn < 160, `only the rows in view are drawn, got ${drawn}`);
+    await page.locator("#inv-scroll").evaluate((s) => { s.scrollTop = s.scrollHeight; });
+    await page.waitForSelector('#inv-table tbody tr.item[aria-rowindex="161"]', { timeout: 10_000 });
 
     // Pick the second character in the builder, so a Forget that reloads the whole page (and snaps
     // the builder back to the first character) shows up.
@@ -111,17 +127,64 @@ test("[slow] refresh, Forget and paging keep the page's state", async (t) => {
     const weaponOptions = await page.locator("#b-weapon option").count();
 
     await openTab(page, "containers");
-    const counts = await page.locator("#cont-table tbody tr td:nth-child(5)").allInnerTexts();
-    const biggest = counts.map(Number).reduce((best, n, i, all) => (n > all[best]! ? i : best), 0);
-    await page.locator("#cont-table tbody tr").nth(biggest).getByRole("button", { name: "Forget" }).click();
+    const rows = page.locator("#cont-table tbody tr[data-root]");
+    const counts = await rows.locator("td:nth-child(5)").allInnerTexts();
+    const biggest = counts.map((c) => Number(c.replace(/,/g, ""))).reduce((best, n, i, all) => (n > all[best]! ? i : best), 0);
+    await rows.nth(biggest).getByRole("button", { name: /^Actions for / }).click();
+    await page.getByRole("menuitem", { name: "Forget…" }).click();
     await confirmYes(page, /^Forget /);
-    await waitPager(page, /^1–\d+ of \d+$/);
-    const after = await pagerText(page);
-    assert.match(after, /^1–(\d+) of \1$/, `the pager lands on the only page left, got ${after}`);
+    await waitCount(page, /^(?!160 )\d+ stacks/);
+    const after = await countText(page);
+    assert.doesNotMatch(after, /^160 stacks/, `the forgotten container's items left the table, got ${after}`);
+    // The table was scrolled to its end before the Forget shrank it: it must show rows, not a blank body.
+    await openTab(page, "inventory");
+    await page.waitForSelector("#inv-table tbody tr.item", { timeout: 10_000 });
     assert.ok(await page.locator("#inv-table tbody tr.item").count() > 0, "rows are shown after the Forget");
     assert.equal(await page.locator("#b-weapon option").count(), weaponOptions, "Forget does not add another set of weapon options");
     assert.equal(await page.locator("#b-char").inputValue(), names[1], "Forget does not move the builder to another character");
 
+    assert.deepEqual(errors, []);
+  } finally {
+    await app.close();
+    rmSync(dataDir, { recursive: true, force: true });
+  }
+});
+
+// The item peek (design spec 4.3): a row click or Enter opens it beside the table with the row marked
+// selected, ↑/↓ step through the rows with it following, Esc closes it and hands focus back to the row,
+// and focusing a row for 400 ms shows the item tooltip.
+test("[slow] the item peek opens from a row, follows the arrow keys and closes with Esc", async (t) => {
+  const why = unavailable();
+  if (why) return t.skip(why);
+  const dataDir = seedDataDir("packrat-ui-peek-");
+  const { app, page, errors } = await launch(dataDir);
+  try {
+    const rows = page.locator("#inv-table tbody tr.item");
+    await rows.first().waitFor({ timeout: 30_000 });
+    const first = await rows.nth(0).getAttribute("data-serial");
+    await rows.nth(0).click();
+    await page.waitForSelector("#inv-peek:not([hidden])");
+    assert.equal(await rows.nth(0).getAttribute("aria-selected"), "true");
+    const title = await page.locator("#peek-title").innerText();
+    assert.equal(title, await rows.nth(0).locator(".inv-name > .ellip").innerText());
+    await page.keyboard.press("ArrowDown");
+    await page.waitForFunction((s) => document.querySelector("#inv-table tbody tr.item.sel")?.getAttribute("data-serial") !== s, first);
+    assert.equal(await rows.nth(1).getAttribute("aria-selected"), "true", "the peek follows the row the arrows moved to");
+    await page.keyboard.press("Escape");
+    await page.waitForSelector("#inv-peek", { state: "hidden" });
+    assert.equal(await page.evaluate(() => (document.activeElement as HTMLElement | null)?.dataset.index), "1", "focus is back on the row");
+    // Enter opens it again on the focused row; its Close button closes it.
+    await page.keyboard.press("Enter");
+    await page.waitForSelector("#inv-peek:not([hidden])");
+    await page.getByRole("button", { name: "Close detail" }).click();
+    await page.waitForSelector("#inv-peek", { state: "hidden" });
+    // A row that keeps keyboard focus shows its tooltip after the delay; it is gone once focus leaves.
+    await page.mouse.move(0, 0);
+    await rows.nth(1).focus();
+    await page.keyboard.press("ArrowDown");
+    await page.waitForSelector("#tip[style*='block']", { timeout: 5_000 });
+    await page.locator("#f-text").focus();
+    await page.waitForFunction(() => document.querySelector<HTMLElement>("#tip")?.style.display === "none");
     assert.deepEqual(errors, []);
   } finally {
     await app.close();
@@ -201,9 +264,12 @@ test("[slow] a character's sheet opens from the roster, and a character can be f
     await confirmYes(page, new RegExp(`^Forget ${gone}\\?$`));
     await page.waitForFunction(() => document.querySelectorAll("#char-table tbody tr[data-name]").length === 1, undefined, { timeout: 15_000 });
     assert.notEqual(await rows.first().getAttribute("data-name"), gone);
-    // Its worn set left the inventory with it.
-    const locs = await page.locator("#f-loc option").allInnerTexts();
-    assert.ok(!locs.includes(`Worn by ${gone}`), `no "Worn by ${gone}" location is left, got ${JSON.stringify(locs)}`);
+    // Its worn set left the inventory with it: the Location filter no longer offers it.
+    await openTab(page, "inventory");
+    await page.click("#f-loc");
+    const locs = await page.locator(".pop input[type=checkbox]").evaluateAll((is) => is.map((i) => (i as HTMLInputElement).value));
+    await page.keyboard.press("Escape");
+    assert.ok(!locs.includes(`loc:Worn by ${gone}`), `no "Worn by ${gone}" location is left, got ${JSON.stringify(locs)}`);
     assert.doesNotMatch(await page.locator("#b-char").innerText(), new RegExp(gone));
 
     assert.deepEqual(errors, []);
@@ -250,10 +316,13 @@ test("[slow] the Inventory column choice survives a restart of the desktop app",
       try {
         await page.locator("#inv-table tbody tr.item").first().waitFor({ timeout: 30_000 });
         origin = new URL(page.url()).origin;
-        const off = page.locator('#cols button[aria-pressed="false"]').first();
-        chip = await off.innerText();
+        const heads = await page.locator("#inv-table thead th").count();
+        await page.click("#inv-settings");
+        const off = page.locator("#inv-cols input[data-col]:not(:checked)").first();
+        chip = (await off.getAttribute("data-col"))!;
         await off.click();
-        await page.waitForFunction((c) => [...document.querySelectorAll("#inv-table thead th")].some((th) => th.textContent?.startsWith(c)), chip, { timeout: 10_000 });
+        await page.keyboard.press("Escape");
+        await page.waitForFunction((n) => document.querySelectorAll("#inv-table thead th").length === n + 1, heads, { timeout: 10_000 });
         // The PUT is fire-and-forget from the page; wait until the server has it.
         await page.waitForFunction(async () => ((await (await fetch("/api/ui-prefs")).json()).prefs.cols || []).length > 0, undefined, { timeout: 10_000 });
       } finally {
@@ -264,7 +333,9 @@ test("[slow] the Inventory column choice survives a restart of the desktop app",
     try {
       await page.locator("#inv-table tbody tr.item").first().waitFor({ timeout: 30_000 });
       assert.notEqual(new URL(page.url()).origin, origin, "a new launch is a new origin");
-      await page.waitForFunction((c) => [...document.querySelectorAll("#cols button")].some((b) => b.textContent === c && b.getAttribute("aria-pressed") === "true"), chip, { timeout: 10_000 });
+      await page.waitForTimeout(500);
+      await page.click("#inv-settings");
+      assert.equal(await page.locator(`#inv-cols input[data-col="${chip}"]`).isChecked(), true, `the ${chip} column is still chosen after a restart`);
     } finally {
       await app.close();
     }

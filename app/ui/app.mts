@@ -8,7 +8,7 @@ import { state, newestStamp } from "./store.mts";
 import { $, el, installTooltip } from "./dom.mts";
 import { api } from "./api.mts";
 import { pollBridge } from "./bridge.mts";
-import { buildFilters, fetchItems, initFilters, applyUiPrefs } from "./inventory.mts";
+import { buildFilters, fetchItems, initFilters, applyUiPrefs, inventoryFailed } from "./inventory.mts";
 import { renderCharacters, showCharacter } from "./characters.mts";
 import { initBuilder, syncBuilderCharacters, selectCharacter } from "./builder.mts";
 import { renderContainers } from "./containers.mts";
@@ -26,7 +26,8 @@ import type { SettingsApiResponse, RulesApiResponse, SetupApiResponse, Inventory
 // The panels a failed load has to say something in, instead of leaving them on "loading…" or empty.
 // The inventory-backed tabs depend on /api/inventory and /api/profiles; Settings and Import only on the
 // first three routes.
-const DATA_PANELS = ["#inv-table tbody", "#char-body", "#b-result", "#cont-table tbody"];
+// The Inventory screen says it in its own table card (inventory.mts's inventoryFailed).
+const DATA_PANELS = ["#char-body", "#b-result"];
 const SETUP_PANELS = ["#settings-body", "#import-body"];
 function loadFailed(e: unknown, panels: string[]): void {
   const msg = `Could not load: ${(e as Error).message}`;
@@ -36,6 +37,7 @@ function loadFailed(e: unknown, panels: string[]): void {
     const panel = el("div", { class: "panel empty" }, el("div", { class: "msg bad" }, msg), "Reload the page once the data folder is fixed; the Settings tab can open it.");
     node.replaceChildren(node.tagName === "TBODY" ? el("tr", {}, el("td", { colspan: 20 }, panel)) : panel);
   }
+  inventoryFailed(e);
 }
 // api() throws with the server's own message ("internal error"); the panels above also need to know
 // which request it was.
@@ -66,7 +68,7 @@ export async function load(): Promise<void> {
   renderImport();
   connectEvents();
   if (setupRes.firstRun && !state.wizardShown) { state.wizardShown = true; openWizard({ firstRun: true }); }
-  if (!wired) { wired = true; initFilters(); initBuilder(); }
+  if (!wired) { wired = true; initBuilder(); }
   try { await reload(); } catch (e) { loadFailed(e, DATA_PANELS); }
 }
 
@@ -145,6 +147,7 @@ for (const a of document.querySelectorAll<HTMLAnchorElement>("#sidebar [data-nav
 });
 window.addEventListener("hashchange", applyRoute);
 initShell();
+initFilters();   // the Inventory's toolbar and loading skeleton, before any data arrives
 showTab(parseRoute().tab);   // before the inventory loads, so a reload never flashes the wrong screen
 showCharacter(parseRoute().sheet);   // and a reload on a sheet lands on that sheet
 

@@ -142,3 +142,36 @@ test("[fast] tipNode keeps a line's own <basefont> colour but never lets one rea
   assert.ok(coloured.length > 0, "the line's colour was dropped entirely");
   for (const e of coloured) assert.match(e.attrs["style"]!, /^color:#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/, `a style attribute carried something other than a colour: ${e.attrs["style"]}`);
 });
+
+// The item tooltip's layout (design spec 4.3): the name in its tier's colour with the item's tags beside
+// it, the lines in the game's order with resist lines in their element's colour class and durability
+// muted, and a footer with the tier and where the item is. The tier and tag lines are not repeated.
+test("[fast] tipNode: name and tags on top, element-coloured resists, muted durability, tier and place below", () => {
+  const node = tipNode({ name: "Invigorating Ring", rarity: "Major Magic Item", tags: ["antique"], location: { text: "Metal Chest (0x700b0000)" },
+    lines: ["Invigorating Ring", "Antique", "Mana Regeneration 3", "Poison Resist 15%", "Durability 255 / 255", "Major Magic Item"] }) as unknown as FakeElement;
+  const all = elements(node);
+  const byClass = (c: string): FakeElement[] => all.filter((e) => e.className.split(" ").includes(c));
+  assert.equal(byClass("tip-name")[0]!.textContent, "Invigorating Ring");
+  assert.match(byClass("tip-name")[0]!.attrs["style"]!, /--rarity-major-magic/);
+  assert.equal(byClass("tag")[0]!.textContent, "Antique");
+  const lines = byClass("tip-lines")[0]!.childNodes.map((c) => c.textContent);
+  assert.deepEqual(lines, ["Mana Regeneration 3", "Poison Resist 15%", "Durability 255 / 255"], "the tag and tier lines are not repeated");
+  assert.equal(byClass("t-res-poison")[0]!.textContent, "Poison Resist 15%");
+  assert.equal(byClass("muted")[0]!.textContent, "Durability 255 / 255");
+  assert.match(byClass("tip-foot")[0]!.textContent, /^Major Magic Item·Metal Chest \(0x700b0000\)$/);
+});
+
+// The item peek's Properties section: the lines the Where and Resists sections do not already show, as
+// name/value pairs; a requirement muted, and a set piece's full-set block kept whole (its resist lines are
+// the set's bonus) and muted.
+test("[fast] propertyLines splits the peek's remaining lines into name and value", async () => {
+  const { propertyLines } = await import("./ui/peek.mts");
+  const it = { name: "Leather Shorts", lines: ["Leather Shorts", "Prized", "Weight: 3 Stones", "Cold Eater 10%", "Night Sight", "Physical Resist 23%", "Strength Requirement 20", "Durability 37 / 37", "Only When Full Set Is Present:", "Physical Resist 2%", "Greater Artifact"] } as never;
+  assert.deepEqual(propertyLines(it), [
+    { name: "Cold Eater", value: "10%", muted: false },
+    { name: "Night Sight", value: "", muted: false },
+    { name: "Strength Requirement", value: "20", muted: true },
+    { name: "Only When Full Set Is Present", value: "", muted: true },
+    { name: "Physical Resist", value: "2%", muted: true },
+  ]);
+});

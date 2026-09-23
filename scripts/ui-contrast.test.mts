@@ -53,10 +53,64 @@ const SCENES: Scene[] = [
     await p.locator("#inv-table tbody tr.item", { hasText: "Arcane" }).first().locator("td").nth(1).hover();
     await p.waitForSelector("#tip[style*='block']", { timeout: 5_000 });
   } },
+  // ---- inventory
+  { name: "inventory row actions", enter: async (p) => {
+    await route(p, "#/inventory", "#inv-table tbody tr.item");
+    await p.locator("#inv-table tbody tr.item").nth(2).hover();
+    await p.waitForTimeout(100);
+  }, leave: (p) => p.mouse.move(0, 0) },
+  { name: "inventory filters and strip", enter: async (p) => {
+    await p.click("#f-rarity");
+    await p.locator(".pop input[value='Greater Magic Item']").click();
+    await p.click("#f-kind");
+    await p.locator(".pop input[value=gear]").click();
+    await p.waitForSelector("#inv-active:not([hidden]) .token");
+  }, leave: (p) => p.keyboard.press("Escape") },
+  { name: "inventory rarity popover", enter: async (p) => { await p.click("#f-rarity"); await p.waitForSelector(".pop .rar-tier"); }, leave: (p) => p.keyboard.press("Escape") },
+  { name: "inventory location popover", enter: async (p) => { await p.click("#f-loc"); await p.waitForSelector(".pop .inv-opt"); }, leave: (p) => p.keyboard.press("Escape") },
+  { name: "inventory add-filter menu", enter: async (p) => { await p.click("#f-add"); await p.waitForSelector(".pop.pop-menu"); } },
+  { name: "inventory property rule", enter: async (p) => {
+    await p.getByRole("menuitem", { name: "Property rule…" }).click();
+    await p.locator(".pop .inv-prop").first().click();
+  }, leave: (p) => p.keyboard.press("Escape") },
+  { name: "inventory hide tags", enter: async (p) => {
+    await p.click("#f-add");
+    await p.getByRole("menuitem", { name: "Hide tags…" }).click();
+    await p.locator(".pop .pill").first().click();
+  }, leave: (p) => p.keyboard.press("Escape") },
+  { name: "inventory table settings", enter: async (p) => { await p.click("#inv-settings"); await p.waitForSelector("#inv-cols"); }, leave: (p) => p.keyboard.press("Escape") },
+  { name: "inventory item peek", enter: async (p) => {
+    if (await p.locator("#f-clear").isVisible()) await p.click("#f-clear");
+    await p.locator("#inv-table tbody tr.item", { hasText: "Arcane Ringmail Leggings" }).first().click();
+    await p.waitForSelector("#inv-peek:not([hidden]) .peek-resists");
+  }, leave: (p) => p.keyboard.press("Escape") },
+  { name: "inventory row focus tooltip", enter: async (p) => {
+    await p.locator("#inv-table tbody tr.item").first().focus();
+    await p.keyboard.press("ArrowDown");
+    await p.waitForSelector("#tip[style*='block'] .tip-lines", { timeout: 5_000 });
+  }, leave: (p) => p.keyboard.press("Escape") },
+  { name: "inventory empty result", enter: async (p) => {
+    await p.click("#f-rarity");
+    await p.locator(".pop input[value='Legendary Artifact']").click();
+    await p.waitForSelector("#inv-empty");
+  } },
+  { name: "inventory grouped", enter: async (p) => {
+    await p.click("#f-clear");
+    await p.locator("#inv-rows").getByRole("radio", { name: "Grouped" }).click();
+    await p.waitForFunction(() => /name/.test(document.querySelector("#inv-foot .inv-count")?.textContent || ""));
+  }, leave: (p) => p.locator("#inv-rows").getByRole("radio", { name: "List" }).click() },
+  { name: "inventory load failed", enter: async (p) => {
+    await p.evaluate(async () => (await import("/ui/inventory.mjs" as string)).inventoryFailed(new Error("/api/inventory failed: internal error")));
+    await p.waitForSelector(".inv-error .msg");
+  }, leave: (p) => p.evaluate(async () => { const I = await import("/ui/inventory.mjs" as string); I.buildFilters(); I.fetchItems(); }) },
   { name: "characters", enter: (p) => route(p, "#/characters", "#char-table tbody tr[data-name]") },
   { name: "containers", enter: (p) => route(p, "#/containers", "#cont-table tbody tr") },
+  { name: "containers menu", enter: async (p) => {
+    await p.locator("#cont-table tbody tr[data-root]").first().getByRole("button", { name: /^Actions for / }).click();
+    await p.waitForSelector(".pop.pop-menu");
+  } },
   { name: "confirm dialog", enter: async (p) => {
-    await p.locator("#cont-table tbody tr").first().getByRole("button", { name: "Forget" }).click();
+    await p.getByRole("menuitem", { name: "Forget…" }).click();
     await p.waitForSelector("dialog.dialog[open]");
   }, leave: (p) => p.keyboard.press("Escape") },
   { name: "toasts", enter: async (p) => {
