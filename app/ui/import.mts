@@ -13,7 +13,7 @@ import { parsePastedScan, type ParsePastedScanResult } from "../paste-scan.mts";
 import { box, button, icon, message, segmented, select, textarea, txt, showToast, type Kids } from "./components.mts";
 import { defaultImportAdapterId, platformCompatible } from "./adapters.mts";
 import { importOptionLabel } from "./adapter-copy.mts";
-import { importActionLabel, listText, plural, scanPreview, sizeText, type ScanPreview } from "./import-preview.mts";
+import { importActionLabel, listText, plural, scanPreview, sendEach, sizeText, type ScanPreview } from "./import-preview.mts";
 import { errorText, relativeWhen } from "./messages.mts";
 import { closeImportDrawer } from "./app.mts";
 import type { ImportPasteApiResponse, RescanApiResponse } from "./api-types.mts";
@@ -173,13 +173,14 @@ function rescanLine(): HTMLElement {
 }
 
 // What the primary button will import right now.
-function ready(): Array<{ text: string; adapter: string | null; preview: ScanPreview }> {
+// `file` is the list entry a pasted-in file came from, so a partial failure can drop exactly the ones sent.
+function ready(): Array<{ text: string; adapter: string | null; preview: ScanPreview; file?: ScanFile }> {
   if (imp.mode === "paste") {
     const adapter = pasteAdapterId();
     const pv = parsed ? previewOf(parsed, adapter) : null;
     return pv ? [{ text: imp.text, adapter, preview: pv }] : [];
   }
-  return imp.files.flatMap((f) => { const adapter = fileAdapterId(f); const pv = previewOf(f.parsed, adapter); return pv ? [{ text: f.text, adapter, preview: pv }] : []; });
+  return imp.files.flatMap((f) => { const adapter = fileAdapterId(f); const pv = previewOf(f.parsed, adapter); return pv ? [{ text: f.text, adapter, preview: pv, file: f }] : []; });
 }
 function renderFoot(): void {
   const foot = $<HTMLElement>("#import-foot");
@@ -198,19 +199,14 @@ async function doImport(): Promise<void> {
   if (!todo.length || imp.busy) return;
   if (todo.some((t) => !t.adapter)) { imp.error = "No client is set up yet. Run setup in Settings first."; renderImport(); return; }
   imp.busy = true; imp.error = null; renderFoot();
-  const landed: string[] = [];
-  try {
-    for (const t of todo) {
-      const r = await api<ImportPasteApiResponse>("/api/import/paste", { method: "POST", body: { text: t.text, adapter: t.adapter } });
-      landed.push(r.character);
-    }
-  } catch (e) {
-    imp.error = landed.length ? `${errorText(e)} (${listText(landed)} landed before this.)` : errorText(e);
-  }
+  const sent = await sendEach(todo, (t) => api<ImportPasteApiResponse>("/api/import/paste", { method: "POST", body: { text: t.text, adapter: t.adapter } }));
+  const landed = sent.landed.map((l) => l.result.character);
+  if (sent.error) imp.error = landed.length ? `${errorText(sent.error)} (${listText([...new Set(landed)])} landed before this.)` : errorText(sent.error);
   imp.busy = false;
   if (imp.error) {
-    // Files that already landed leave the list, so trying again sends only the rest.
-    if (imp.mode === "files") imp.files = imp.files.filter((f) => !f.parsed.ok || !landed.includes(f.parsed.doc.character));
+    // The files that landed leave the list, so trying again sends only the rest.
+    const done = new Set(sent.landed.map((l) => l.item.file));
+    if (imp.mode === "files") imp.files = imp.files.filter((f) => !done.has(f));
     renderImport();
     return;
   }
