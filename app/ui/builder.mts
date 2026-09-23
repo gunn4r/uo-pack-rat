@@ -8,6 +8,7 @@ import { state, invStamp } from "./store.mts";
 import type { BuilderProfile, BuilderJob, BuilderJobUi, FinishedBuild } from "./store.mts";
 import { $, el, label, full, fmtN, fmtSecs, fmtRunTime, slotLabel, toast } from "./dom.mts";
 import { promptText } from "./dialog.mts";
+import { confirmDialog } from "./components.mts";
 import { api, CLIENT_ID } from "./api.mts";
 import { optimizeErrorMessage } from "./messages.mts";
 import { sheetNode } from "./sheet.mts";
@@ -32,10 +33,7 @@ export function initBuilder(): void {
   $<HTMLButtonElement>("#b-compare")!.onclick = compareSelected;
   $<HTMLSelectElement>("#b-race")!.onchange = () => { state.builder.profile!.race = $<HTMLSelectElement>("#b-race")!.value; renderProfile(); };
   $<HTMLButtonElement>("#b-runs-open")!.onclick = openRunsDrawer;
-  $<HTMLButtonElement>("#b-runs-close")!.onclick = closeRunsDrawer;
-  $<HTMLElement>("#runs-drawer .drawer-backdrop")!.onclick = closeRunsDrawer;
   $<HTMLInputElement>("#b-runs-filter")!.oninput = () => renderRuns();
-  document.addEventListener("keydown", (e) => { if (e.key === "Escape" && $<HTMLElement>("#runs-drawer")!.classList.contains("open")) closeRunsDrawer(); });
   $<HTMLButtonElement>("#b-addfloor-btn")!.onclick = () => { state.builder.profile!.floors![$<HTMLSelectElement>("#b-addfloor")!.value] ??= 0; renderProfile(); };
   $<HTMLButtonElement>("#b-addweight-btn")!.onclick = () => { state.builder.profile!.weights![$<HTMLSelectElement>("#b-addweight")!.value] ??= 1; renderProfile(); };
 }
@@ -135,7 +133,7 @@ function applyTemplate(): void {
 }
 async function saveTemplateAs(): Promise<void> {
   const name = await promptText({ title: "Template name", value: state.builder.profile!.template || "" });
-  if (!name || (state.profiles!.templates![name] && !confirm(`Overwrite the ${name} template?`))) return;
+  if (!name || (state.profiles!.templates![name] && !await confirmDialog({ title: `Overwrite the ${name} template?`, body: `The ${name} template is replaced with the sidebar's settings.`, confirmLabel: `Overwrite ${name}` }))) return;
   state.profiles!.templates![name] = templateFrom(readControls());
   state.builder.profile!.template = name;
   renderTemplateOptions(name);
@@ -143,7 +141,7 @@ async function saveTemplateAs(): Promise<void> {
 }
 async function updateTemplate(): Promise<void> {
   const name = $<HTMLSelectElement>("#b-tpl")!.value;
-  if (!state.profiles!.templates![name] || !confirm(`Overwrite the ${name} template with the sidebar's settings?`)) return;
+  if (!state.profiles!.templates![name] || !await confirmDialog({ title: `Update the ${name} template?`, body: `The ${name} template is overwritten with the sidebar's settings.`, confirmLabel: `Update ${name}` })) return;
   state.profiles!.templates![name] = templateFrom(readControls());
   state.builder.profile!.template = name;
   updateTemplatePill();
@@ -151,7 +149,7 @@ async function updateTemplate(): Promise<void> {
 }
 async function deleteTemplate(): Promise<void> {
   const name = $<HTMLSelectElement>("#b-tpl")!.value;
-  if (!state.profiles!.templates![name] || !confirm(`Delete the ${name} template? Characters made from it keep their settings.`)) return;
+  if (!state.profiles!.templates![name] || !await confirmDialog({ title: `Delete the ${name} template?`, body: "Characters made from it keep their settings.", confirmLabel: `Delete ${name}` })) return;
   delete state.profiles!.templates![name];
   renderTemplateOptions();
   await saveTemplates(`Template ${name} deleted.`);

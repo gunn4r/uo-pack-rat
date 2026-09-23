@@ -3,6 +3,7 @@
 // `pillFor` and `CAP_KEYS` were dead code in the original (defined, never called) and are dropped.
 import { state } from "./store.mts";
 import { $, el, slotLabel, rarityColor, fmtWhen, toast } from "./dom.mts";
+import { confirmDialog } from "./components.mts";
 import { api } from "./api.mts";
 import { reload } from "./app.mts";
 import { sheetNode } from "./sheet.mts";
@@ -66,7 +67,7 @@ export function renderCharacters(): void {
 // profile would keep the card on this tab, so it goes too. A later scan of the character brings the
 // scanned parts back.
 async function forgetCharacter(name: string): Promise<void> {
-  if (!confirm(`Forget ${name}? Their card, worn gear, backpack and bank leave the inventory, and their saved Suit Builder profile is deleted. Their saved runs stay. Scanning ${name} again brings the scanned parts back.`)) return;
+  if (!await confirmDialog({ title: `Forget ${name}?`, body: `Their card, worn gear, backpack and bank leave the inventory, and their saved Suit Builder profile is deleted. Their saved runs stay. Scanning ${name} again brings the scanned parts back.`, confirmLabel: `Forget ${name}` })) return;
   try {
     if (state.inv!.characters[name]) await api("/api/forget-character", { method: "POST", body: { character: name } });
     const profiles = state.profiles!;

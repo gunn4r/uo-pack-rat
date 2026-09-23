@@ -37,7 +37,7 @@ export async function renderSettings(setup?: SetupApiResponse): Promise<void> {
 // .kv is the settings tab's own label/value[/action] grid row (styles.css) — distinct from the
 // shared flex .row utility, which the checkbox and folder-picker rows below still use as-is.
 function openPathRow(label: string, which: string, path: string): HTMLDivElement {
-  if (!hostAvailable) return el("div", { class: "kv" }, el("span", { class: "small muted" }, `${label}: `), el("span", { class: "small" }, path));
+  if (!hostAvailable) return el("div", { class: "path-row" }, el("span", { class: "small muted" }, `${label}: `), el("span", { class: "small" }, path));
   const btn = el("button", { class: "small", onclick: async () => {
     try { await api("/api/host/open-path", { method: "POST", body: { which } }); }
     catch (e) {
@@ -47,7 +47,7 @@ function openPathRow(label: string, which: string, path: string): HTMLDivElement
       else toast(hostErrorMessage(e, `Could not open the ${label.toLowerCase()}`), "bad");
     }
   } }, "Open");
-  return el("div", { class: "kv" }, el("span", { class: "small muted" }, `${label}: `), el("span", { class: "small" }, path), btn);
+  return el("div", { class: "path-row" }, el("span", { class: "small muted" }, `${label}: `), el("span", { class: "small" }, path), btn);
 }
 function storagePanel(setup: SetupApiResponse): HTMLDivElement {
   return el("div", { class: "panel stack" }, el("h3", {}, "Storage"),

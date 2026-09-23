@@ -47,6 +47,16 @@ const pagerText = (page: Page): Promise<string> => page.locator("#inv-pager-text
 async function waitPager(page: Page, want: RegExp): Promise<void> {
   await page.waitForFunction((src) => new RegExp(src).test(document.querySelector("#inv-pager-text")?.textContent || ""), want.source, { timeout: 15_000 });
 }
+// Confirmations are the player's (components.mts's confirmDialog, a modal <dialog>): check the title
+// names the object, then answer with the confirming button. Cancel is the one focused by default.
+async function confirmYes(page: Page, title: RegExp): Promise<void> {
+  const dialog = page.locator("dialog.dialog[open]");
+  await dialog.waitFor({ timeout: 10_000 });
+  assert.match(await dialog.locator("h2").innerText(), title);
+  assert.equal(await page.evaluate(() => (document.activeElement as HTMLElement | null)?.dataset.cancel), "", "Cancel has focus");
+  await dialog.locator("[data-confirm]").click();
+  await dialog.waitFor({ state: "detached", timeout: 10_000 });
+}
 async function openTab(page: Page, tab: string): Promise<void> {
   await page.click(`[role="tab"][data-tab="${tab}"]`);
   await page.waitForSelector(`#tab-${tab}:not([hidden])`, { timeout: 10_000 });
@@ -59,8 +69,6 @@ test("[slow] refresh, Forget and paging keep the page's state", async (t) => {
   const { app, page, errors } = await launch(dataDir);
   try {
     await page.locator("#inv-table tbody tr.item").first().waitFor({ timeout: 30_000 });
-    // Confirmation prompts are the player's; the test answers yes.
-    await page.evaluate(() => { window.confirm = () => true; });
 
     // A background refresh (what the "inventory" SSE event runs) must leave the filter dropdown
     // showing the filter the table still applies.
@@ -99,6 +107,7 @@ test("[slow] refresh, Forget and paging keep the page's state", async (t) => {
     const counts = await page.locator("#cont-table tbody tr td:nth-child(5)").allInnerTexts();
     const biggest = counts.map(Number).reduce((best, n, i, all) => (n > all[best]! ? i : best), 0);
     await page.locator("#cont-table tbody tr").nth(biggest).getByRole("button", { name: "Forget" }).click();
+    await confirmYes(page, /^Forget /);
     await waitPager(page, /^1–\d+ of \d+$/);
     const after = await pagerText(page);
     assert.match(after, /^1–(\d+) of \1$/, `the pager lands on the only page left, got ${after}`);
@@ -154,12 +163,12 @@ test("[slow] a character can be forgotten from the Characters tab", async (t) =>
   const { app, page, errors } = await launch(dataDir);
   try {
     await page.locator("#inv-table tbody tr.item").first().waitFor({ timeout: 30_000 });
-    await page.evaluate(() => { window.confirm = () => true; });
     await openTab(page, "characters");
     const cards = page.locator("#char-cards > .panel");
     assert.equal(await cards.count(), 2);
     const gone = await cards.first().locator("h2").innerText();
     await cards.first().getByRole("button", { name: "Forget" }).click();
+    await confirmYes(page, new RegExp(`^Forget ${gone}\\?$`));
     await page.waitForFunction(() => document.querySelectorAll("#char-cards > .panel").length === 1, undefined, { timeout: 15_000 });
     assert.notEqual(await cards.first().locator("h2").innerText(), gone);
     // Its worn set left the inventory with it.

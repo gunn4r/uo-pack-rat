@@ -59,7 +59,7 @@ export function probeContrast(): ContrastRow[] {
   };
   const CONTROLS = "button, input:not([type=checkbox]):not([type=radio]):not([type=range]), select, textarea, .fchip, .token, .pill, .chip, .seg, .bridge, .slot:not(.empty), .kbd";
   for (const el of document.querySelectorAll("body *")) {
-    if (["SCRIPT", "STYLE", "OPTION", "svg", "path", "circle"].includes(el.tagName)) continue;
+    if (["SCRIPT", "STYLE", "OPTION", "path", "circle", "rect"].includes(el.tagName)) continue;
     if (hidden(el)) continue;
     const s = getComputedStyle(el);
     const ownText = [...el.childNodes].some((n) => n.nodeType === 3 && (n.textContent || "").trim());

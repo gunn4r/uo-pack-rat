@@ -4,6 +4,7 @@
 import { state, bridge } from "./store.mts";
 import { $, el, toast } from "./dom.mts";
 import { api } from "./api.mts";
+import { confirmDialog } from "./components.mts";
 import { bridgeOfflineText, dataDirNotice } from "./messages.mts";
 import type { Item } from "../vault-lib.mts";
 import type { BridgeQueueApiResponse, BridgeStatusApiResponse } from "./api-types.mts";
@@ -159,7 +160,7 @@ export function grabAllRow(items: Item[], me: string): HTMLSpanElement | null {
   const status = el("span", { class: "small muted" }, todo.length < items.length ? `${items.length - todo.length} already with ${me} or worn` : "");
   const btn = el("button", { id: "b-grab-all", "data-count": todo.length, onclick: async () => {
     if (!bridge.online) { toast(BRIDGE_OFFLINE, "bad"); return; }
-    if (bridge.character !== me && !confirm(`The bridge is running on ${bridge.character}, not ${me}: the pieces would land in ${bridge.character}'s backpack. Grab them anyway?`)) return;
+    if (bridge.character !== me && !await confirmDialog({ title: `Grab into ${bridge.character}'s backpack?`, body: `The bridge is running on ${bridge.character}, not ${me}: the pieces would land in ${bridge.character}'s backpack.`, confirmLabel: "Grab anyway", danger: false })) return;
     btn.dataset.busy = "1"; btn.disabled = true;
     let sent = 0, stopped: string | null = null;
     for (const it of todo) {
