@@ -130,6 +130,12 @@ export function resistOutcome(after: number, floor: number | null | undefined, c
   if (floor != null) return { text: `Meets ${floor}`, tone: "ok" };
   return { text: `${cap - after} below cap`, tone: "muted" };
 }
+// A Fetch list row's place as its path of containers ("Dorran's bank › Metal Chest (0x…) › A Bag", vault-lib's
+// locationOf text), one crumb each, so the row can wrap it whole instead of cutting it short.
+export function locationCrumbs(text: string | null | undefined): string[] {
+  const parts = (text || "").split(" › ").map((p) => p.trim()).filter(Boolean);
+  return parts.length ? parts : ["Unknown place"];
+}
 // The result's other changes, as badges: every requirement or weighted property (resists have their own
 // tiles) whose total moves, gains first. A requirement the suit misses is a loss whatever its direction.
 export function otherChanges(keys: string[], before: PropMap, after: PropMap, caps: Record<string, number>, floors: Record<string, number> = {}): Array<{ text: string; tone: "ok" | "bad" }> {
