@@ -63,13 +63,11 @@ function savedRuns(name: string): void {
   if (state.builder.character !== name) selectCharacter(name);
   go("#/runs");
 }
-// The Inventory narrowed to one character's things, through its Character filter.
-const showItems = (name: string): void => showCharacterItems(name);
 function moreMenu(anchor: HTMLElement, name: string, onSheet: boolean): void {
   const scanned = !!state.inv!.characters[name];
   const m = menu(anchor, [
     ...(onSheet ? [] : [{ label: "Open character sheet", onSelect: () => go(sheetHash(name)) }]),
-    ...(scanned ? [{ label: `Show ${name}'s items`, onSelect: () => showItems(name) }, { label: "Saved runs", onSelect: () => savedRuns(name) }] : []),
+    ...(scanned ? [{ label: `Show ${name}'s items`, onSelect: () => showCharacterItems(name) }, { label: "Saved runs", onSelect: () => savedRuns(name) }] : []),
     "divider" as const,
     { label: `Forget ${name}…`, danger: true, onSelect: () => { void forgetCharacter(name); } },
   ], { label: `Actions for ${name}` });
@@ -164,7 +162,7 @@ function renderSheet(name: string): void {
     button({ label: `Previous character: ${prev}`, icon: "chevron-left", iconOnly: true, variant: "ghost", size: "sm", disabled: list.length < 2, onClick: () => go(sheetHash(prev)) }),
     button({ label: `Next character: ${next}`, icon: "chevron-right", iconOnly: true, variant: "ghost", size: "sm", disabled: list.length < 2, onClick: () => go(sheetHash(next)) }),
     el("span", { class: "spacer" }),
-    scanned ? button({ label: `Show ${name}'s items`, size: "sm", onClick: () => showItems(name) }) : null,
+    scanned ? button({ label: `Show ${name}'s items`, size: "sm", onClick: () => showCharacterItems(name) }) : null,
     scanned ? button({ label: "Build a suit", icon: "builder", variant: "primary", size: "sm", onClick: () => buildSuit(name) }) : null,
     moreButton(name, true)]));
   if (!scanned) {
