@@ -59,7 +59,7 @@ def rfc3339_now():
 
 
 ADAPTER_ID = "tazuo"
-ADAPTER_VERSION = "2.3.0"
+ADAPTER_VERSION = "2.4.0"
 CAPABILITIES = {
     "layers": ["OneHanded", "TwoHanded", "Shoes", "Pants", "Shirt", "Helmet", "Gloves",
                "Ring", "Talisman", "Necklace", "Waist", "Torso", "Bracelet", "Tunic",
@@ -298,8 +298,14 @@ def chain_problem(chain, i, it, own):
 # corpses, may be opened.
 CONTAINER_RE = re.compile(r"\b(chest|box|crate|bag|pouch|basket|trunk|armoire|cabinet|backpack)\b", re.I)
 # Named like a container (or carrying a bag graphic) but never one: a deed places an addon, a bag
-# of sending raises a target cursor, a music box plays. Double-clicking them opens nothing.
-NOT_A_CONTAINER_RE = re.compile(r"\b(deed(?!\s+box)|sending|music box)\b", re.I)   # a "Commodity Deed Box" IS one
+# of sending raises a target cursor, a music box plays. Double-clicking them opens nothing. A book of
+# any kind (spellbooks of every school, runebooks, a runic atlas, a tome) is a container to the
+# client, but double-clicking one opens a spellbook or runebook window, never a container window.
+NOT_A_CONTAINER_RE = re.compile(r"\b(deed(?!\s+box)|sending|music box|\w*book|tome|atlas|compendium)\b", re.I)   # a "Commodity Deed Box" IS one
+# The books by graphic too, whatever they are called (ServUO's item classes; the first three seen live).
+NOT_A_CONTAINER_GRAPHICS = {0x0EFA, 0x2D50, 0x2D9D, 0x2252, 0x2253, 0x225A, 0x225B, 0x238C, 0x23A0, 0x22C5, 0x9C16}
+# A piece of armour or clothing is never a container, however its name reads ("Platemail Chest").
+WEARABLE_RE = re.compile(r"\b(gargish|plate\w*|chain\w*|ring\s*mail|studded|leather|armou?r)\b", re.I)
 # Engraved bags and Backpacks match no name pattern — detect by graphic too (probe-verified Aug 2026).
 CONTAINER_GRAPHICS = {0x0E75, 0x0E76, 0x0E79, 0x0E7D, 0x09AA, 0x09A8, 0x09A9, 0x09AB,
                       0x0E3C, 0x0E3D, 0x0E3E, 0x0E3F, 0x0E40, 0x0E41, 0x0E42, 0x0E43,
@@ -312,20 +318,31 @@ last_status = {"current": None, "at": 0.0}
 
 def is_container(item, name):
     try:
-        if bool(getattr(item, "IsCorpse", False)) or int(getattr(item, "Graphic", 0) or 0) == 0x2006:
+        graphic = int(getattr(item, "Graphic", 0) or 0)
+    except Exception:
+        graphic = 0
+    try:
+        if bool(getattr(item, "IsCorpse", False)) or graphic == 0x2006:
             return False          # corpses are containers to the client; never open them
     except Exception:
         pass
-    if NOT_A_CONTAINER_RE.search(name or ""):
-        return False              # "Wooden Chest deed", "a bag of sending": see NOT_A_CONTAINER_RE
+    if NOT_A_CONTAINER_RE.search(name or "") or graphic in NOT_A_CONTAINER_GRAPHICS:
+        return False              # "Wooden Chest deed", "a bag of sending", a spellbook: see NOT_A_CONTAINER_RE
     try:
         if bool(getattr(item, "IsContainer", False)):
             return True
     except Exception:
         pass
+    if graphic in CONTAINER_GRAPHICS:
+        return True
+    # Last, the name, which the client's own flags have not vouched for: never for armour or clothing
+    # ("Gargish Stone Chest"), by its name or by the client's tiledata calling it wearable.
+    if WEARABLE_RE.search(name or ""):
+        return False
     try:
-        if int(item.Graphic) in CONTAINER_GRAPHICS:
-            return True
+        get_data = getattr(item, "GetItemData", None)
+        if get_data is not None and bool(getattr(get_data(), "IsWearable", False)):
+            return False
     except Exception:
         pass
     return bool(CONTAINER_RE.search(name or ""))
