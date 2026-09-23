@@ -6,7 +6,7 @@
 // All [fast]. Run: node --test app/ui-messages.test.mts
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { importOutcome, pathsFileNote, installedIntoNote, clientFolderGone, clientErrorMessage, hostErrorMessage, optimizeErrorMessage, errorText, dataDirNotice, bridgeOfflineText, bridgeView, relativeWhen } from "./ui/messages.mts";
+import { pathsFileNote, installedIntoNote, clientFolderGone, clientErrorMessage, hostErrorMessage, optimizeErrorMessage, errorText, dataDirNotice, bridgeOfflineText, bridgeView, relativeWhen } from "./ui/messages.mts";
 import type { ApiError } from "./ui/api-types.mts";
 
 function apiError(message: string, extra: { status?: number; code?: unknown } = {}): ApiError {
@@ -15,39 +15,6 @@ function apiError(message: string, extra: { status?: number; code?: unknown } = 
   if (extra.code !== undefined) e.code = extra.code;
   return e;
 }
-
-// ---- POST /api/import ----------------------------------------------------------------------------
-test("[fast] an import that copied everything reads the way it always did", () => {
-  assert.equal(importOutcome({ copied: 2, skipped: 0, failed: 0 }), "copied 2 scan files — they'll show up in the inventory in a moment.");
-  assert.match(importOutcome({ copied: 1, skipped: 0, failed: 0 }), /^copied 1 scan file —/, "one file is not '1 scan files'");
-  assert.match(importOutcome({ copied: 3, skipped: 2, failed: 0 }), /skipped 2 already present/);
-});
-
-test("[fast] an import with nothing new says so, and says why when it was all duplicates", () => {
-  assert.equal(importOutcome({ copied: 0, skipped: 0, failed: 0 }), "nothing new in that folder.");
-  assert.match(importOutcome({ copied: 0, skipped: 1, failed: 0 }), /1 file was already imported/);
-  assert.match(importOutcome({ copied: 0, skipped: 4, failed: 0 }), /4 files were already imported/);
-});
-
-// The counted-not-thrown failures (an oversize source file, an unwritable destination) used to reach
-// the page as a number nothing rendered: a partial import read exactly like a complete one.
-test("[fast] files the import could not take are reported, with their reasons", () => {
-  const text = importOutcome({ copied: 1, skipped: 0, failed: 1, failures: [{ name: "big.json", reason: "too large: 40000000 bytes, the limit is 33554432" }] });
-  assert.match(text, /copied 1 scan file/);
-  assert.match(text, /1 file could not be imported: big\.json \(too large/);
-});
-
-test("[fast] a count with no reasons still reports the count", () => {
-  assert.match(importOutcome({ copied: 0, skipped: 0, failed: 2 }), /2 files could not be imported\./);
-});
-
-test("[fast] a folder full of failures names only the first few", () => {
-  const failures = Array.from({ length: 9 }, (_, i) => ({ name: `f${i}.json`, reason: "too large" }));
-  const text = importOutcome({ copied: 0, skipped: 0, failed: 9, failures });
-  assert.match(text, /9 files could not be imported/);
-  assert.match(text, /f0\.json/);
-  assert.doesNotMatch(text, /f3\.json/, "one bad folder must not fill the panel");
-});
 
 // ---- GET /api/setup's dataDirCheck ------------------------------------------------------------------
 test("[fast] a data-folder mismatch names both folders and both fixes", () => {

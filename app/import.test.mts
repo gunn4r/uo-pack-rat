@@ -191,7 +191,7 @@ test("[fast] a document cut short reports the shape of the failure, not an excer
 // The write used to go through a predictable "<dest>.tmp", which is a path something else can plant a
 // symlink at; writeFileSync follows one, so the bytes land wherever it points and the rename moves
 // the LINK into the scan's final name. It goes through app/installer.mts's atomicReplace now (random
-// O_EXCL temp, a destination that must be absent or a regular file) — the same helper importScans'
+// O_EXCL temp, a destination that must be absent or a regular file) — the same helper the installer's
 // own copies use.
 function pathsFor(inboxDir: string): ConfigPaths {
   // Only inboxFor is reached by writeScanToInbox; the cast names that rather than building a whole

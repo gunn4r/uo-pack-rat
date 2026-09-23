@@ -88,7 +88,7 @@ If you picked the **ClassicUO web client**, steps 3 and 4 are different: there i
 
 Every step has a **Skip** button, and skipping is safe. You can run setup again at any time from the **Settings** tab with **Run setup again**.
 
-If you already have scan files from before, step 4 also lets you bring them in: under **Already have scan files? Import a folder**, click **Choose a folder…** and pick the folder they are in.
+If you already have scan files from before, open **Import** in the sidebar, choose **Scan files**, and drop the files in (or click **Choose a folder…** and pick the folder they are in); each one is checked and previewed before you import it.
 
 ### 4. You're done when…
 
