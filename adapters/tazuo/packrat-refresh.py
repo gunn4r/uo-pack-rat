@@ -73,9 +73,8 @@ CAPABILITIES = {
 
 
 PAUSE_OPEN = 1.2         # after UseObject on a container (raise on laggy connections)
-CAPTURE_STEP = 0.1       # during that pause, look for the new window this often until it is found
 MAX_NEST = 4             # bags in bags in bags
-OPENED_HERE = []         # [item, window] for each container this run opened itself, in opening order
+OPENED_HERE = []         # container windows this run opened itself, in opening order (close_opened)
 STOP_CLOSE_S = 1.5       # after a Stop, stop closing windows after this long: the client gives a stopped script 2 s
 OUT_DIR = os.path.join(data_dir(), "inbox", "tazuo")
 ALARM_HUE, OK_HUE, INFO_HUE = 33, 68, 88
@@ -83,7 +82,7 @@ ALARM_HUE, OK_HUE, INFO_HUE = 33, 68, 88
 ALL_LAYERS = ["OneHanded", "TwoHanded", "Shoes", "Pants", "Shirt", "Helmet", "Gloves",
               "Ring", "Talisman", "Necklace", "Waist", "Torso", "Bracelet", "Tunic",
               "Earrings", "Arms", "Cloak", "Robe", "Skirt", "Legs"]
-CONTAINER_RE = re.compile(r"\b(chest|box|crate|bag|pouch|basket|trunk|armoire|cabinet|backpack)\b", re.I)
+CONTAINER_RE = re.compile(r"\b(chest|box|toolbox|crate|bag|pouch|basket|trunk|armoire|cabinet|backpack)\b", re.I)
 # Named like a container (or carrying a bag graphic) but never one: a deed places an addon, a bag
 # of sending raises a target cursor, a music box plays. Double-clicking them opens nothing. A book of
 # any kind (spellbooks of every school, runebooks, a runic atlas, a tome) is a container to the
@@ -91,12 +90,15 @@ CONTAINER_RE = re.compile(r"\b(chest|box|crate|bag|pouch|basket|trunk|armoire|ca
 NOT_A_CONTAINER_RE = re.compile(r"\b(deed(?!\s+box)|sending|music box|\w*book|tome|atlas|compendium)\b", re.I)   # a "Commodity Deed Box" IS one
 # The books by graphic too, whatever they are called (ServUO's item classes; the first three seen live).
 NOT_A_CONTAINER_GRAPHICS = {0x0EFA, 0x2D50, 0x2D9D, 0x2252, 0x2253, 0x225A, 0x225B, 0x238C, 0x23A0, 0x22C5, 0x9C16}
-# A piece of armour or clothing is never a container, however its name reads ("Platemail Chest").
-WEARABLE_RE = re.compile(r"\b(gargish|plate\w*|chain\w*|ring\s*mail|studded|leather|armou?r)\b", re.I)
+# A piece of armour or clothing is never a container, however its name reads ("Platemail Chest"). No
+# "gargish" here: a Gargish Chest is a real container; gargoyle armour is caught by the client's
+# own wearable flag instead.
+WEARABLE_RE = re.compile(r"\b(plate\w*|chain\w*|ring\s*mail|studded|leather|armou?r)\b", re.I)
 # Engraved bags and Backpacks match no name pattern — detect by graphic too (probe-verified Aug 2026).
 CONTAINER_GRAPHICS = {0x0E75, 0x0E76, 0x0E79, 0x0E7D, 0x09AA, 0x09A8, 0x09A9, 0x09AB,
                       0x0E3C, 0x0E3D, 0x0E3E, 0x0E3F, 0x0E40, 0x0E41, 0x0E42, 0x0E43,
-                      0x0E7C, 0x0E7E, 0x0E7F, 0xA32F, 0xA333}
+                      0x0E7C, 0x0E7E, 0x0E7F, 0xA32F, 0xA333,
+                      0x4025, 0x4026}   # Gargish Chest: UO Alive's tiledata does not flag it
 
 
 def sysmsg(msg, hue=OK_HUE):
@@ -131,7 +133,8 @@ def is_container(item, name):
     if graphic in CONTAINER_GRAPHICS:
         return True
     # Last, the name, which the client's own flags have not vouched for: never for armour or clothing
-    # ("Gargish Stone Chest"), by its name or by the client's tiledata calling it wearable.
+    # ("Platemail Chest", "Gargish Stone Chest"), by its name or by the client's tiledata calling it
+    # wearable.
     if WEARABLE_RE.search(name or ""):
         return False
     try:
@@ -179,40 +182,13 @@ def note_if_closed(serial):
     """Remember a container whose window is not open yet, just before this run opens it, so
     close_opened() closes exactly the windows the run opened and never one the player had open. The
     client's own item object is kept rather than the serial: once Stop is pressed the client cancels
-    the script's lookups (FindItem answers nothing), while an item object still reaches its window.
-    Returns the [item, window] entry, its window still unknown, or None when the window was open."""
+    the script's lookups (FindItem answers nothing), while an item object still reaches its window."""
     try:
         it = API.FindItem(int(serial))
         if it is not None and not bool(getattr(it, "Opened", False)):
-            OPENED_HERE.append([it, None])
-            return OPENED_HERE[-1]
+            OPENED_HERE.append(it)
     except Exception:
         pass
-    return None
-
-
-def open_container(serial):
-    """Double-click a container, then wait PAUSE_OPEN for its contents, taking hold of the window it
-    opens as soon as the client has it. TazUO's GetContainerGump() looks the window up by serial and
-    takes the first gump of any kind with that serial, starting from the back of its gump list, where
-    an item's name plate (All Names, object handles) sits: while the item shows one, the lookup finds
-    the plate and answers None. A window taken before its plate appears can still be closed at the end;
-    one the lookup never finds is left open."""
-    entry = note_if_closed(serial)
-    try:
-        API.UseObject(serial)
-    except Exception:
-        pass
-    get_gump = getattr(entry[0], "GetContainerGump", None) if entry is not None else None
-    deadline = time.time() + PAUSE_OPEN
-    while time.time() < deadline:
-        API.Pause(CAPTURE_STEP)
-        if get_gump is None or entry[1] is not None:
-            continue
-        try:
-            entry[1] = get_gump()
-        except Exception:
-            get_gump = None
 
 
 def scan_root(root_serial, kind, label, containers, items, seen):
@@ -230,7 +206,12 @@ def scan_root(root_serial, kind, label, containers, items, seen):
         for c in fresh:
             if API.StopRequested:
                 return -1
-            open_container(c)
+            note_if_closed(c)
+            try:
+                API.UseObject(c)
+            except Exception:
+                pass
+            API.Pause(PAUSE_OPEN)
             opened.add(c)
         listing = API.ItemsInContainer(root_serial, True) or []
         for it in listing:
@@ -287,25 +268,29 @@ def scan_root(root_serial, kind, label, containers, items, seen):
 def close_opened():
     """Close the container windows this run opened, innermost first. Runs once everything has been
     read and the scan file written, or after a Stop or an error, so it never changes what is recorded.
-    Each window is the one open_container() took hold of; one it could not is looked up once more here
-    (its name plate may have gone), and one still not found stays open and is counted in a message.
     Every call is looked up with getattr: a client build without GetContainerGump() or Dispose()
     leaves the window open rather than raising. API.CloseGump(serial) is no fallback, since it finds
     gumps by their server gump id and a container window has none.
 
+    A container showing a name plate cannot be closed this way. GetContainerGump() asks
+    UIManager.GetGump(serial), which walks the gump list from its Last node and returns the first gump
+    of ANY kind with that serial, then checks it is a container window. UIManager.Add() puts a window
+    in front (AddFirst), but a name plate is added with front=false (AddLast), behind every window, so
+    while the item has a plate the lookup finds the plate and answers None, whenever it is asked. Such
+    windows stay open and are counted in a message. Upstream: PlayTazUO/TazUO#1087 and PR #1088.
+
     After a Stop the loop is bounded by STOP_CLOSE_S. Stop sets StopRequested, cancels the script's
     token and interrupts its thread (a ThreadInterruptedException at the next blocking call, such as
     API.Pause, which is why this finally still runs), and the client detaches a stopped script's
-    thread after 2 s. A lookup waits on the client's main thread, so a long list could outlive that
-    and leave the script unable to restart: whatever is not closed in time stays open."""
+    thread after 2 s. Each GetContainerGump() waits on the client's main thread, so a long list could
+    outlive that and leave the script unable to restart: whatever is not closed in time stays open."""
     started, left = time.time(), 0
-    for it, gump in reversed(OPENED_HERE):
+    for it in reversed(OPENED_HERE):
         if API.StopRequested and time.time() - started >= STOP_CLOSE_S:
             break
         try:
-            if gump is None:
-                get_gump = getattr(it, "GetContainerGump", None)
-                gump = get_gump() if get_gump is not None else None
+            get_gump = getattr(it, "GetContainerGump", None)
+            gump = get_gump() if get_gump is not None else None
             dispose = getattr(gump, "Dispose", None) if gump is not None else None
             if dispose is not None:
                 dispose()
