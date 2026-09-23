@@ -47,7 +47,7 @@
   /* layout (containers decide width; there is no text measure token) */
   --sidebar-w: 216px; --sidebar-w-collapsed: 56px; --topbar-h: 48px; --gutter: 24px;
   --peek-w: 400px; --constraints-w: 360px; --drawer-w: 480px; --drawer-w-wide: 560px;
-  --dialog-w-sm: 440px; --dialog-w-md: 560px; --wizard-w: 640px; --form-w: 720px;
+  --dialog-w-sm: 440px; --dialog-w-md: 560px; --wizard-w: 640px; --form-w: 720px; --settings-w: 952px;
   --popover-w: 280px; --tooltip-w: 280px; --page-max: 2048px;
 
   /* z-layers */
