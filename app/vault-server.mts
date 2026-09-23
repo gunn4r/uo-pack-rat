@@ -82,7 +82,7 @@
 import http from "node:http";
 import { readFileSync, appendFileSync, readdirSync, existsSync, mkdirSync, copyFileSync, renameSync } from "node:fs";
 import { pathToFileURL } from "node:url";
-import { dirname, join } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import { spawn } from "node:child_process";
 import { statSync } from "node:fs";
 import { Worker } from "node:worker_threads";
@@ -408,13 +408,23 @@ export interface JobTimings {
 // check's fallback when no client is configured). The default is this machine's real home and
 // installer.mts's candidateClientRoots — which, on win32, also probes a fixed C:\TazUO — so a test
 // passes its own to never reach a real client folder on any OS.
+//
+// PACKRAT_CLIENT_HOME swaps the real home for another folder, for a server started in another process
+// (the Electron UI tests launch the whole app, so they cannot hand startServer an option): the search
+// then looks only under that folder, with no environment folders (LOCALAPPDATA) and no fixed roots
+// (C:\TazUO), so a test launch can never find, or read the packrat-paths.json of, a real client.
 export interface ClientSearch {
   home: string;
   candidates: (adapter: AdapterInfo) => string[];
 }
-export function defaultClientSearch(): ClientSearch {
+export function defaultClientSearch(env: NodeJS.ProcessEnv = process.env): ClientSearch {
+  if (env.PACKRAT_CLIENT_HOME) {
+    const home = resolve(env.PACKRAT_CLIENT_HOME);
+    // "linux" is the platform with no fixed roots; an adapter for another OS still offers nothing.
+    return { home, candidates: (a) => (a.platform && a.platform !== process.platform ? [] : candidateClientRoots({ adapter: a.id, home, platform: "linux", env: {} })) };
+  }
   const home = homedir();
-  return { home, candidates: (a) => candidateClientRoots({ adapter: a.id, home, platform: process.platform, env: process.env, adapterPlatform: a.platform }) };
+  return { home, candidates: (a) => candidateClientRoots({ adapter: a.id, home, platform: process.platform, env, adapterPlatform: a.platform }) };
 }
 
 export interface StartServerOptions {

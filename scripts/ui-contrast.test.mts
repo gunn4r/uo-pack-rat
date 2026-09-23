@@ -15,7 +15,7 @@ import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createRequire } from "node:module";
 import type { ElectronApplication, Page } from "playwright";
-import { fitWindow, openFacet, setRows, type RealSize } from "./electron-window.mts";
+import { fitWindow, openFacet, setRows, type RealSize, testEnv } from "./electron-window.mts";
 import { probeContrast, failures, describeFailures, type ContrastRow } from "./contrast-probe.mts";
 
 const ROOT = dirname(dirname(fileURLToPath(import.meta.url)));
@@ -273,7 +273,7 @@ const SCENES: Scene[] = [
 
 async function launch(dataDir: string): Promise<{ app: ElectronApplication; page: Page; errors: string[]; size: RealSize }> {
   const { _electron } = await import("playwright");
-  const app = await _electron.launch({ args: [ROOT, "--demo", "--data", dataDir], cwd: ROOT, timeout: 60_000 });
+  const app = await _electron.launch({ args: [ROOT, "--demo", "--data", dataDir], cwd: ROOT, timeout: 60_000, env: testEnv() });
   const page = await app.firstWindow();
   const errors: string[] = [];
   page.on("pageerror", (e) => errors.push(String(e)));
