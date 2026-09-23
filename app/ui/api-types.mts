@@ -53,6 +53,7 @@ export interface UiPrefs {
   theme?: string | undefined;                          // a theme family ("default"; "britannia" in round 2)
   appearance?: "light" | "system" | "dark" | undefined;
   sidebar?: "auto" | "collapsed" | undefined;          // "collapsed" = pinned to icons at any width
+  density?: "dense" | "regular" | undefined;           // the Inventory table's rows: 32 or 40 px
 }
 export interface UiPrefsApiResponse {
   ok: boolean;

@@ -109,6 +109,7 @@ interface ItemsPageResponse {
   rows?: Item[];
   groups?: unknown[];
   total: number;
+  stacks?: number;
   pieces?: number;
   limit?: number;
 }
@@ -1157,6 +1158,11 @@ test("[fast] /api/items pages, sorts and searches", async () => {
   assert.equal(grouped.ok, true);
   assert.ok(Array.isArray(grouped.groups) && grouped.groups.length > 0);
   assert.ok(!("rows" in grouped));
+  assert.equal(grouped.stacks, all.total, "grouped, the answer still counts the stacks behind the names");
+  assert.equal(grouped.pieces, all.pieces);
+  // The Inventory's list filters and the rarity minimum reach the query from the wire.
+  const rings = asJson<ItemsPageResponse>(await (await get("/api/items?slot=ring&slot=bracelet&rarityMin=" + encodeURIComponent("Major Magic Item"))).json());
+  assert.ok(rings.rows!.length > 0 && rings.rows!.every((r) => ["ring", "bracelet"].includes(r.slot as string)), JSON.stringify(rings.rows!.map((r) => r.slot)));
 });
 
 test("[fast] GET /api/items/by-serial resolves full item records by serial", async () => {
@@ -2793,7 +2799,7 @@ test("[fast] GET/PUT /api/ui-prefs keeps the column choice across a restart on a
 // The look (theme family, light/system/dark) and the pinned-collapsed sidebar are view choices like the
 // columns, and live in the same file for the same reason: the desktop app's origin changes every launch.
 // Each field is written only when valid, and a PUT of one field keeps the others.
-test("[fast] PUT /api/ui-prefs keeps theme, appearance and sidebar, each checked, next to the columns", async () => {
+test("[fast] PUT /api/ui-prefs keeps theme, appearance, sidebar and density, each checked, next to the columns", async () => {
   const dir = mkdtempSync(join(tmpdir(), "qm-uiprefs-look-"));
   const put = (url: string, body: unknown): Promise<Response> => fetch(url + "/api/ui-prefs", { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
   const s = await startServer(ensureLayout(resolveConfig(["--port", "0", "--data", dir], {})));
@@ -2801,8 +2807,9 @@ test("[fast] PUT /api/ui-prefs keeps theme, appearance and sidebar, each checked
     assert.equal((await put(s.url, { cols: ["hci"] })).status, 200);
     assert.equal((await put(s.url, { appearance: "dark" })).status, 200);
     assert.equal((await put(s.url, { theme: "default", sidebar: "collapsed" })).status, 200);
-    assert.deepEqual(asJson(await (await fetch(s.url + "/api/ui-prefs")).json()), { ok: true, prefs: { cols: ["hci"], appearance: "dark", theme: "default", sidebar: "collapsed" } });
-    for (const bad of [{ appearance: "sepia" }, { appearance: 1 }, { theme: "neon" }, { theme: "" }, { sidebar: "wide" }, { sidebar: true }]) {
+    assert.equal((await put(s.url, { density: "regular" })).status, 200);
+    assert.deepEqual(asJson(await (await fetch(s.url + "/api/ui-prefs")).json()), { ok: true, prefs: { cols: ["hci"], appearance: "dark", theme: "default", sidebar: "collapsed", density: "regular" } });
+    for (const bad of [{ appearance: "sepia" }, { appearance: 1 }, { theme: "neon" }, { theme: "" }, { sidebar: "wide" }, { sidebar: true }, { density: "comfy" }]) {
       assert.equal((await put(s.url, bad)).status, 400, `${JSON.stringify(bad)} should be refused`);
     }
     // A hand-edited file with a bad value reads as "never chosen" for that field only.

@@ -271,3 +271,9 @@
 /* ---------------------------------------------------------------- forms (Import drawer, wizard, Settings) */
 /* a key hint inside a disabled button takes the disabled text colour, not the primary's on-accent white */
 .pr .btn[disabled] .kbd { background: transparent; color: var(--color-on-disabled); border-color: var(--color-on-disabled); }
+
+/* ---- inventory: the "⋯" menu (components.mts openMenu) */
+.pop.pop-menu .pop-body { padding: var(--space-1); gap: 0; }
+.pr .menu-item[aria-disabled="true"] { color: var(--color-text-muted); cursor: not-allowed; }
+.pr .menu-item[aria-disabled="true"]:hover { background: none; color: var(--color-text-muted); }
+.pr .menu-item:focus-visible { box-shadow: var(--ring-focus); outline: none; }

@@ -35,7 +35,7 @@
 //         409 under --demo, which must never write into the committed app/fixtures/) ·
 //         POST /api/forget-character {character} (drop a character's card, worn set, backpack and bank:
 //         a `_vault` tombstone carrying forgetCharacter; 409 under --demo) ·
-//         GET|PUT /api/ui-prefs (<data>/ui-prefs.json: {cols?, theme?, appearance?, sidebar?}, the page's view choices)
+//         GET|PUT /api/ui-prefs (<data>/ui-prefs.json: {cols?, theme?, appearance?, sidebar?, density?}, the page's view choices)
 //         POST /api/bridge {action, serial, name, chain: [root…parent], pos|null} (queue for packrat-bridge.py) · GET /api/bridge/status
 //         GET /api/events — SSE, one stream shared by every connected client (not per-job like the
 //         optimize events above): hello {ok, watching: [adapter ids]} on connect, inventory
@@ -140,6 +140,7 @@ const UI_PREF_CHOICES = {
   theme: ["default", "britannia"],
   appearance: ["light", "system", "dark"],
   sidebar: ["auto", "collapsed"],
+  density: ["dense", "regular"],   // the Inventory table's row height
 } as const satisfies Record<string, readonly string[]>;
 type UiPrefsFile = { cols?: string[] } & { -readonly [K in keyof typeof UI_PREF_CHOICES]?: string };
 // Localhost security (spec §4.5): a request's Host must name this server, an Origin (when present)
@@ -999,7 +1000,7 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
         const result = applyItemQuery(Object.values(inv.items), query, { rarity: currentRules.rarity });
         // applyItemQuery returns the ItemQueryRows | ItemQueryGroups union; narrow at each call site
         // by query.group, same as app/item-query.test.mts does — `total` is common to both branches.
-        if (query.group) return send(res, 200, { ok: true, total: result.total, offset: query.offset, limit: query.limit, groups: (result as ItemQueryGroups).groups });
+        if (query.group) { const g = result as ItemQueryGroups; return send(res, 200, { ok: true, total: g.total, stacks: g.stacks, pieces: g.pieces, offset: query.offset, limit: query.limit, groups: g.groups }); }
         return send(res, 200, { ok: true, total: result.total, pieces: (result as ItemQueryRows).pieces, offset: query.offset, limit: query.limit, rows: (result as ItemQueryRows).rows });
       }
       // GET /api/items/by-serial?serials=1,2,3 — the one place the page can still ask for a FULL item
