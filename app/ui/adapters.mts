@@ -57,3 +57,13 @@ export function defaultAdapterId(adapters: AdapterLike[] | null | undefined): st
   if (!adapters || !adapters.length) return null;
   return (adapters.find((a) => a.transport !== "paste") || adapters[0]!).id;
 }
+
+// The Import drawer's paste default: a pasted scan comes from a client that can't write files, so the
+// first paste-transport adapter this machine can run is the likeliest answer, whatever client the
+// wizard set up (a TazUO player pasting a friend's web-client scan still wants the paste client). An
+// explicit pick in the drawer wins; with no paste adapter at all it falls back to the configured client,
+// then to defaultAdapterId's rule.
+export function defaultImportAdapterId<A extends AdapterLike>(adapters: A[] | null | undefined, platform: string | null | undefined, configured?: string | null): string | null {
+  const usable = availableAdapters(adapters, platform);
+  return usable.find((a) => a.transport === "paste")?.id || configured || defaultAdapterId(usable);
+}
