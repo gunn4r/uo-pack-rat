@@ -2,7 +2,8 @@
 // Electron window with Playwright (the launch scripts/ui-state.test.mts uses). Each case is maintainer feedback
 // on the redesign (PR #43): ⌘↵ building from anywhere on the screen, not only with focus inside it; the item
 // tooltip on the current suit's and the Fetch list's pieces; a Fetch list place shown whole; STR limit out of
-// Advanced. Skipped when electron or playwright is absent, or under TEST_SKIP_ELECTRON.
+// Advanced; a switch whose off and on states read apart. Skipped when electron or playwright is absent, or
+// under TEST_SKIP_ELECTRON.
 import test from "node:test";
 import assert from "node:assert/strict";
 import { mkdtempSync, rmSync, writeFileSync, mkdirSync, copyFileSync } from "node:fs";
@@ -206,6 +207,39 @@ test("[slow] STR limit sits beside Race, in view with Advanced closed, and a bad
     await page.waitForSelector("#b-str-err");
     assert.equal(await page.evaluate(() => document.activeElement?.id), "b-str", "Build puts focus on the bad field");
     assert.equal(await page.locator("#b-sec-adv-body").count(), 0, "and leaves Advanced closed");
+    assert.deepEqual(errors, []);
+  } finally {
+    await app.close();
+    rmSync(dataDir, { recursive: true, force: true });
+  }
+});
+
+// A switch's off and on states read apart at a glance: the on track's fill is at least 3:1 against the off
+// track's (hollow, the surface's own colour), and the knob moves from left to right.
+test("[slow] a switch's on state stands apart from its off state in each theme and mode", async (t) => {
+  const why = unavailable();
+  if (why) return t.skip(why);
+  const dataDir = seedDataDir("packrat-ui-switch-");
+  const { app, page, errors } = await launch(dataDir);
+  try {
+    await openBuilder(page);
+    await page.getByRole("switch", { name: "Allow gargoyle-only gear" }).check();
+    for (const theme of ["default", "britannia"]) for (const mode of ["light", "dark"]) {
+      await page.evaluate(([th, md]) => { document.documentElement.dataset.theme = th!; document.documentElement.dataset.mode = md!; }, [theme, mode]);
+      await page.waitForTimeout(400);   // the track's colour transition
+      const got = await page.evaluate(() => {
+        const rgb = (c: string): number[] => c.match(/[\d.]+/g)!.slice(0, 3).map(Number);
+        const lum = (c: string): number => { const [r, g, b] = rgb(c).map((v) => { v /= 255; return v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4; }); return 0.2126 * r! + 0.7152 * g! + 0.0722 * b!; };
+        const ratio = (a: string, b: string): number => { const x = lum(a), y = lum(b); return (Math.max(x, y) + 0.05) / (Math.min(x, y) + 0.05); };
+        const off = document.querySelector<HTMLInputElement>("#b-others")!, on = document.querySelector<HTMLInputElement>("#b-garg")!;
+        const fill = (n: Element): string => getComputedStyle(n).backgroundColor;
+        const knobLeft = (n: Element): number => parseFloat(getComputedStyle(n, "::after").left);
+        return { fills: ratio(fill(on), fill(off)), offLeft: knobLeft(off), onLeft: knobLeft(on), checked: [off.checked, on.checked] };
+      });
+      assert.deepEqual(got.checked, [false, true]);
+      assert.ok(got.fills >= 3, `${theme} ${mode}: on vs off track ${got.fills.toFixed(2)}:1`);
+      assert.ok(got.onLeft > got.offLeft + 8, `${theme} ${mode}: the knob moves right when on`);
+    }
     assert.deepEqual(errors, []);
   } finally {
     await app.close();

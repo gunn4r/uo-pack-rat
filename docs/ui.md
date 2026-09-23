@@ -64,7 +64,7 @@ What exists:
 
 - Text and containers: `txt`, `box`, `icon(name, {size})`, `kbd`.
 - Buttons: `button({label, icon, iconAfter, variant: primary|secondary|ghost|danger|danger-outline, size: sm|md|lg, iconOnly, kbd, disabled, block, cls, onClick, attrs})`. An icon-only button's label becomes its `aria-label`.
-- Fields: `input`, `select`, `textarea`, `searchInput({label, placeholder, hint})`, `field({label, control, help, error})` (wires `for`, `aria-describedby`, `aria-invalid`), `check` and `switchControl` (`[input] [span]` rows), `segmented({label, options, value, onChange})` (radiogroup, arrow keys).
+- Fields: `input`, `select`, `textarea`, `searchInput({label, placeholder, hint})`, `field({label, control, help, error})` (wires `for`, `aria-describedby`, `aria-invalid`), `check` and `switchControl` (`[input] [span]` rows; a switch is off as a hollow track, the surface inside a strong edge with a small muted knob on the left, and on as an accent-filled track with a larger knob on the right, so the two never read alike), `segmented({label, options, value, onChange})` (radiogroup, arrow keys).
 - Chips and labels: `filterChip({label, set, add})`, `token({label, removeLabel, onRemove})`, `pill({label, pressed, off})`, `badge(text, tone)`, `tag(text, tone)`.
 - Status: `message({tone, title, text, actions})`, `meter(value, max, {tone})`, `progress(value, max, label)`, `stepper(steps, current)`.
 - Layout: `keyValue(pairs)`, `card({title, actions, body})`, `table({label, columns, rows})`, `tableFoot(...facts)`, `rowActions(actions)` (a disabled action carries its reason as a tooltip).
@@ -108,7 +108,7 @@ To add another theme family `<family>`:
 
 ## Contrast check
 
-`scripts/contrast-probe.mts` measures contrast on the rendered page: every text/background pair (compositing semi-transparent fills down to an opaque layer), field values, placeholders, control boundaries, icons in icon-only buttons and messages, and status dots. `scripts/ui-contrast.test.mts` (`[slow]`, full suite) runs it in the Electron window over the demo data on every scene in each theme family (Default and Britannia) in light and dark, and fails on any pair under 4.5:1 for text (3:1 for large text) or 3:1 for edges, icons and dots; a disabled control only needs 3:1 text. When you add a screen, drawer, popover or dialog, add a scene there.
+`scripts/contrast-probe.mts` measures contrast on the rendered page: every text/background pair (compositing semi-transparent fills down to an opaque layer), field values, placeholders, control boundaries, switch edges and knobs, icons in icon-only buttons and messages, and status dots. `scripts/ui-contrast.test.mts` (`[slow]`, full suite) runs it in the Electron window over the demo data on every scene in each theme family (Default and Britannia) in light and dark, and fails on any pair under 4.5:1 for text (3:1 for large text) or 3:1 for edges, icons and dots; a disabled control only needs 3:1 text. When you add a screen, drawer, popover or dialog, add a scene there.
 
 ## Characters and the shared character sheet
 

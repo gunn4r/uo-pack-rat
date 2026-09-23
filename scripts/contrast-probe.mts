@@ -4,7 +4,7 @@
 // ancestors compositing every background (semi-transparent fills such as the scrim are blended down to an
 // opaque layer), then computes the ratio. It also measures field values, placeholders, control boundaries
 // (border against the surrounding fill, or fill against surrounding fill, whichever is stronger), switch
-// tracks, icons inside icon-only buttons, toasts and messages, and status dots. Subtrees marked
+// edges and knobs, icons inside icon-only buttons, toasts and messages, and status dots. Subtrees marked
 // aria-hidden="true" and hidden elements are skipped. Disabled controls need 3:1 text and no boundary.
 // Used by scripts/ui-contrast.test.mts, which fails the build on any failing pair.
 
@@ -88,7 +88,16 @@ export function probeContrast(): ContrastRow[] {
         }
       }
     }
-    if (el.matches("input.switch")) push("switch-track", el, parse(s.backgroundColor)!, bgOf(el, true), 3);
+    // a switch's edge (its border, or its fill when that stands out more) against what surrounds it, and its
+    // knob against the track it sits on
+    if (el.matches("input.switch")) {
+      const around = bgOf(el, true), fill = bgOf(el), bc = parse(s.borderTopColor)!;
+      const hasBorder = parseFloat(s.borderTopWidth) > 0 && bc.a > 0;
+      const edge = hasBorder && ratio(bc, around) > ratio(fill, around) ? bc : fill;
+      push("switch-track", el, edge, around, 3);
+      const knob = parse(getComputedStyle(el, "::after").backgroundColor);
+      if (knob && knob.a > 0) push("switch-track", el, knob, fill, 3, "knob");
+    }
     // icons that carry meaning: inside icon-only buttons, and status icons in toasts and messages
     if (el.matches("svg.i") && (el.closest("button[aria-label], a[aria-label]") || el.closest(".toast, .msg"))) {
       push("icon", el.closest("[aria-label]") || el.parentElement!, parse(s.color)!, bgOf(el.parentElement!), 3);
