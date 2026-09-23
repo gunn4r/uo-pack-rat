@@ -220,6 +220,13 @@ test("[slow] the item peek opens from a row, follows the arrow keys and closes w
     await page.evaluate(() => (document.activeElement as HTMLElement).blur());
     await page.keyboard.press("Escape");
     await page.waitForSelector("#inv-peek", { state: "hidden" });
+    // A row's "⋯" menu is as wide as its longest item: "Show everything in this container" on one line, whole.
+    await rows.nth(2).hover();
+    await rows.nth(2).getByRole("button", { name: "More actions" }).click();
+    const item = page.getByRole("menuitem", { name: "Show everything in this container" });
+    const fit = await item.evaluate((b) => { const s = b.querySelector<HTMLElement>("span:not(.count)")!; return { lines: Math.round(s.getBoundingClientRect().height / parseFloat(getComputedStyle(s).lineHeight)), cut: s.scrollWidth > s.clientWidth }; });
+    assert.deepEqual(fit, { lines: 1, cut: false }, "the menu item's words neither wrap nor get cut off");
+    await page.keyboard.press("Escape");
     assert.deepEqual(errors, []);
   } finally {
     await app.close();

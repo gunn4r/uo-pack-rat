@@ -283,3 +283,7 @@
 /* ---- item tags with a meaning (dom.mts tagChip, describe): the shard's words on hover and focus */
 .tag.tag-info { cursor: help; }
 .tag.tag-info:focus-visible { box-shadow: var(--ring-focus); outline: none; }
+
+/* ---- menus size to their longest item (components.mts menu): no item's words wrap; the minimum is inline */
+.pop[role="menu"] { width: max-content; max-width: min(360px, calc(100vw - 16px)); }
+.pop-menu .menu-item > span:not(.count) { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
