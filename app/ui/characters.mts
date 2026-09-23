@@ -125,7 +125,9 @@ function renderRoster(): void {
   const cap = rows[0]?.resists?.[0]?.cap ?? all.find((r) => r.resists)?.resists?.[0]?.cap ?? 70;
   const foot = box("div", { class: "tbl-foot" }, txt(rows.length === all.length ? plural(all.length, "character") : `${rows.length} of ${plural(all.length, "character")}`),
     el("span", { class: "spacer" }), txt(`Resists are paperdoll values, capped at ${cap}`));
-  body().replaceChildren(el("div", { class: "card roster" }, el("div", { class: "roster-scroll" }, t), foot));
+  // Scrolled sideways, the sticky Character column draws an edge over the columns passing under it.
+  const scroller: HTMLDivElement = el("div", { class: "roster-scroll", onscroll: (): void => { scroller.classList.toggle("scrolled-x", scroller.scrollLeft > 0); } }, t);
+  body().replaceChildren(el("div", { class: "card roster" }, scroller, foot));
 }
 
 // ---------------------------------------------------------------- the character sheet
