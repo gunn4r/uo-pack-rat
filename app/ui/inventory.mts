@@ -17,7 +17,7 @@ import { api } from "./api.mts";
 import { bridgeActionReason, runBridgeAction } from "./bridge.mts";
 import { optionsKeeping, colsFromPrefs, COLS_VERSION } from "./view-state.mts";
 import { relativeWhen } from "./messages.mts";
-import { txt, box, icon, button, searchInput, filterChip, token, pill, segmented, switchControl, popover, closePopover, rowActions, message, menu, input, nextId } from "./components.mts";
+import { txt, box, icon, button, searchInput, filterChip, token, pill, segmented, switchControl, popover, closePopover, rowActions, message, menu, input, nextId, copyText } from "./components.mts";
 import type { Kids, MenuItem, PopoverHandle } from "./components.mts";
 import { plural, queryParams, activeFilters, clearAll, matchLine, countFact, emptyCause, rowWindow, chunksToFetch, gridKey, colShort, colFull, groupColumns, COL_GROUPS, DEFAULT_COLS, ITEM_COLS, shortTier, rootName } from "./inv-model.mts";
 import type { FilterToken } from "./inv-model.mts";
@@ -533,7 +533,7 @@ export function itemMenu(anchor: HTMLElement, it: Item): void {
   if (it.root != null && !it.equippedBy) entries.push({ label: "Show everything in this container", icon: "folder", onSelect: () => showContainer(+it.root!) });
   entries.push({ label: "Copy serial", icon: "clipboard", onSelect: () => {
     const s = `0x${it.serial.toString(16)}`;
-    navigator.clipboard?.writeText(s).then(() => toast(`Copied ${s}`, "good"), () => toast("Could not copy the serial.", "bad"));
+    void copyText(s).then((ok) => ok ? toast(`Copied ${s}`, "good") : toast("Could not copy the serial.", "bad"));
   } });
   menu(anchor, entries, { label: `More actions for ${it.name}` });
 }
