@@ -8,7 +8,7 @@ import { fileURLToPath } from "node:url";
 import http from "node:http";
 import { createConnection } from "node:net";
 import { resolveConfig, ensureLayout } from "./config.mts";
-import { startServer, type ServerHandle } from "./vault-server.mts";
+import { startServer as startRealServer, type ServerHandle, type StartServerOptions } from "./vault-server.mts";
 import { buildPools, foldSnapshots, setRules } from "./vault-lib.mts";
 import { upgradeScan, validateScan } from "./scan-schema.mts";
 import { DEFAULT_OPTIONAL_SLOTS } from "./mip.mts";
@@ -17,15 +17,17 @@ import { buildSchemaTypes } from "../scripts/build-schema-types.mts";
 import { validate, type ValidatorSchema } from "./schema/validate.mts";
 import type { Item, Inventory, ProfilesFile } from "./vault-lib.mts";
 import type { RulesV1, ScanV2 } from "./schema/types.d.mts";
-import type { AdapterInfo, InstallScriptsResult, DataDirCheck } from "./installer.mts";
+import { candidateClientRoots, type AdapterInfo, type InstallScriptsResult, type DataDirCheck } from "./installer.mts";
 
-// The server looks for the game client's scripts under the home folder, at startup and on every GET
-// /api/setup (installer.mts's checkScriptsDataDir), and reads the packrat-paths.json it finds there. No
-// test may read a real client folder, so this whole file (its own process under the runner) runs with
-// an empty temp home.
+// The server looks for the game client's scripts (GET /api/setup's candidates, and the data-folder
+// check at startup and on every GET /api/setup, which reads the packrat-paths.json it finds). No test
+// may reach a real client folder, so every server here gets an empty temp home to search, with the
+// platform pinned to one that has no fixed-path roots (candidateClientRoots adds C:\TazUO on win32).
 const FAKE_HOME = mkdtempSync(join(tmpdir(), "qm-home-"));
-process.env.HOME = process.env.USERPROFILE = FAKE_HOME;
-delete process.env.LOCALAPPDATA;
+const startServer = (config: Parameters<typeof startRealServer>[0], opts: StartServerOptions = {}): Promise<ServerHandle> => startRealServer(config, {
+  clientSearch: { home: FAKE_HOME, candidates: (a) => candidateClientRoots({ adapter: a.id, home: FAKE_HOME, platform: "linux", env: {}, adapterPlatform: a.platform }) },
+  ...opts,
+});
 
 // ---------------------------------------------------------------------------------------------
 // HTTP responses are unknown provenance — every route is reachable by any local caller, trusted
