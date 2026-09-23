@@ -338,6 +338,19 @@ function setBackgroundInert(on: boolean): void {
 }
 
 // ---------------------------------------------------------------- popover
+// Where a popover goes: under its anchor, or above it when it fits there and not below; never past the
+// viewport's edges (8 px margin). maxHeight is the room on the chosen side, so a popover taller than that
+// scrolls inside itself (.pop has overflow: auto) and its last control — "Done" — stays reachable.
+const EDGE = 8, GAP = 6;
+export function popoverPlacement(a: { top: number; bottom: number; left: number }, size: { width: number; height: number }, vp: { width: number; height: number }): { top: number; left: number; maxHeight: number } {
+  const below = Math.max(0, vp.height - EDGE - (a.bottom + GAP)), above = Math.max(0, a.top - GAP - EDGE);
+  const up = size.height > below && above > below;
+  const room = up ? above : below;
+  const h = Math.min(size.height, room);
+  const top = up ? a.top - GAP - h : a.bottom + GAP;
+  const left = Math.max(EDGE, Math.min(a.left, vp.width - size.width - EDGE));
+  return { top: Math.max(EDGE, top), left, maxHeight: Math.max(room, 0) };
+}
 // Anchored, non-modal: opens under its anchor (above when there's no room), closes on a click outside, on
 // Esc and on a second click of the anchor, and hands focus back to the anchor when it closed with focus inside.
 export interface PopoverHandle { root: HTMLElement; close: () => void; isOpen: () => boolean }
@@ -350,11 +363,9 @@ export function popover(anchor: HTMLElement, content: Kids, { label, width, onCl
   document.body.append(root);
   anchor.setAttribute("aria-expanded", "true");
   const place = (): void => {
-    const a = anchor.getBoundingClientRect(), w = root.offsetWidth, h = root.offsetHeight, gap = 6;
-    let top = a.bottom + gap;
-    if (top + h > innerHeight - 8 && a.top - gap - h > 8) top = a.top - gap - h;
-    const left = Math.max(8, Math.min(a.left, innerWidth - w - 8));
-    root.style.left = `${left}px`; root.style.top = `${Math.max(8, top)}px`;
+    root.style.maxHeight = "";   // measure its natural height
+    const p = popoverPlacement(anchor.getBoundingClientRect(), { width: root.offsetWidth, height: root.offsetHeight }, { width: innerWidth, height: innerHeight });
+    root.style.left = `${p.left}px`; root.style.top = `${p.top}px`; root.style.maxHeight = `${p.maxHeight}px`;
   };
   place();
   const onDown = (e: Event): void => { if (!root.contains(e.target as Node) && !anchor.contains(e.target as Node)) close(); };
