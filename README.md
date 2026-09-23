@@ -155,6 +155,9 @@ That is normal for Razor Enhanced, and it happens for TazUO when it is installed
 **The Grab button says "Bridge is offline".**
 The bridge script isn't running. In the game, start `packrat-bridge.py` and leave it running, then wait a few seconds until the top of the app says **bridge: *your character* ready**. The bridge stops on its own after 8 hours; just start it again.
 
+**Pack Rat says my game scripts write to another folder.**
+The scripts in your game client save scans to one folder and Pack Rat is reading a different one, so nothing you scan shows up and the bridge looks offline. In the **Settings** tab, type `-stopall` in the game first, then tick **No scripts are running in the client** and click **Reinstall scripts**: the scripts will then write to the folder Pack Rat reads. (Running from source? Start it on the scripts' folder instead: `npm start -- --data <the folder the message names>`.)
+
 **Pack Rat says a script is still running, or tells me to type `-stopall`.**
 Pack Rat won't replace the scripts while one of them is running in the game. In the game's chat, type `-stopall` and wait for **"No scripts are currently running"**. Then go back, tick **No scripts are running in the client**, and try again.
 
