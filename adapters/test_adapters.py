@@ -199,6 +199,22 @@ class Conventions(unittest.TestCase):
                         self.assertIsNone(rx.search(yes), "%s/%s: %s" % (name, f, yes))
         self.assertEqual(len(lines), 1, sorted(lines))
 
+    def test_the_wearable_names_are_the_same_everywhere(self):
+        # The name fallback's armour guard: every script carrying one carries the same line, and it
+        # never refuses a real container whose name only sounds like gear.
+        lines = set()
+        for name, d in adapter_dirs():
+            for f in py_files(d):
+                m = re.search(r"^WEARABLE_RE = .*$", read_text(os.path.join(d, f)), re.M)
+                if m:
+                    lines.add(m.group(0))
+        self.assertEqual(len(lines), 1, sorted(lines))
+        ns = {"re": re}
+        exec(lines.pop(), ns)
+        for yes in ("Gargish Chest", "Chest of Drawers", "Wooden Box", "Toolbox", "Golden Chest", "Crate"):
+            self.assertIsNone(ns["WEARABLE_RE"].search(yes), yes)
+        self.assertTrue(ns["WEARABLE_RE"].search("Platemail Chest"))
+
     def test_the_never_a_container_graphics_are_the_same_everywhere(self):
         # A book is a container to the client (its spells are its contents), but double-clicking one
         # opens a spellbook or runebook, never a container window: every scanner and bridge refuses

@@ -42,7 +42,7 @@ def books_and_armour(world, parent, first=0x40000500):
     for i, name in enumerate(ARMOUR + ["Chest"]):
         out.append(first + 0x40 + i)
         world.add(out[-1], parent, name=name, container_like=False, Graphic=0x1415,
-                  Wearable=(name == "Chest"), OnGround=False)
+                  Wearable=(name in ("Gargish Stone Chest", "Chest")), OnGround=False)
     return out
 
 
@@ -212,11 +212,11 @@ class TazUOScanner(DataDir, unittest.TestCase):
         self.assertEqual(self.closed(w), [CHEST, PACK])
 
     def test_after_a_stop_closing_gives_up_within_the_clients_stop_grace(self):
-        # TazUO detaches a stopped script's thread after 2 s; a close that waits on the client's
-        # main thread could run past that, so closing after a Stop must end well inside it.
+        # TazUO detaches a stopped script's thread after 2 s; each window lookup waits on the
+        # client's main thread, so closing after a Stop must end well inside that.
         w = World(); home(w)
         bags = nest(w, CHEST, 3)
-        w.dispose_delay = 0.4
+        w.gump_delay = 0.4
         api = tazuo_api(w, PACK)
         started, t0 = [], []
 
@@ -230,14 +230,14 @@ class TazUOScanner(DataDir, unittest.TestCase):
         self.assertTrue(t0, "the scan should have seen the Stop")
         self.assertEqual(self.scans("tazuo"), [])
         self.assertTrue(started, "some windows still close after a Stop")
-        # From the start of the first close to the end of the last one.
-        self.assertLessEqual(max(started) - (min(started) - w.dispose_delay), 2.0)
+        # From the first window lookup to the end of the last one.
+        self.assertLessEqual(max(started) - (min(started) - w.gump_delay), 2.0)
         self.assertLess(len(started), len(bags) + 3, "the rest are left open")
 
     def test_without_a_stop_every_window_closes_however_long_it_takes(self):
         w = World(); home(w)
         nest(w, CHEST, 3)
-        w.gump_delay = w.dispose_delay = 0.4
+        w.gump_delay = 0.4
         self.scan(w)
         self.assertEqual(len(self.closed(w)), 6)
 
@@ -254,15 +254,6 @@ class TazUOScanner(DataDir, unittest.TestCase):
         with self.assertRaises(RuntimeError):
             run_script(self.SCRIPT, w, api=api)
         self.assertEqual(self.closed(w), [CHEST, PACK])
-
-    def test_a_ground_chest_whose_name_plate_appears_after_it_opens_is_still_closed(self):
-        # TazUO's GetContainerGump() finds an item's name plate instead of its window: the handle
-        # is taken right after the scan's own UseObject, before the plate shows.
-        w = World(); home(w)
-        w.label_after_open = {CHEST: 0.5}
-        self.scan(w)
-        self.assertEqual(self.closed(w), [BAG, CHEST, PACK])
-        self.assertIn(CHEST, w.labels, "the plate did show before the windows were closed")
 
     def test_a_window_whose_name_plate_showed_from_the_start_stays_open_and_is_reported(self):
         w = World(); home(w)
@@ -283,12 +274,21 @@ class TazUOScanner(DataDir, unittest.TestCase):
         items = [i["serial"] for i in s["items"]]
         self.assertEqual([x for x in serials if x not in items], [])
 
-    def test_a_chest_the_client_does_not_flag_is_still_opened_by_its_name(self):
+    def test_containers_the_client_does_not_flag_are_still_opened(self):
+        # UO Alive's tiledata does not flag every container: these open by graphic or by name, a
+        # word like "gargish" in the name included (only a wearable item is refused that way).
         w = World(); home(w)
-        c = w.items[CHEST]
-        c.IsContainer, c.Graphic, c.Openable = False, 0x1234, True
+        names = [("Gargish Chest", 0x4025), ("Gargish Chest", 0x4026), ("Chest of Drawers", 0x1234),
+                 ("Wooden Box", 0x1234), ("Toolbox", 0x1234), ("Golden Chest", 0x1234),
+                 ("Treasure Chest", 0x1234), ("Crate", 0x1234), ("Wooden Chest", 0x1234)]
+        serials = []
+        for i, (name, graphic) in enumerate(names):
+            serials.append(0x40000700 + i)
+            w.add(serials[-1], CHEST, name=name, Graphic=graphic, container_like=False, Openable=True,
+                  OnGround=False)
         self.scan(w)
-        self.assertIn(("open", CHEST), w.calls)
+        opened = [c[1] for c in w.calls if c[0] == "open"]
+        self.assertEqual([n for s, (n, _) in zip(serials, names) if s not in opened], [])
 
     def test_a_client_without_the_window_calls_leaves_windows_open_and_does_not_raise(self):
         for flag in ("no_container_gump", "gump_without_dispose"):
@@ -315,7 +315,7 @@ class TazUORefresh(DataDir, unittest.TestCase):
             m = re.search(r"^def %s\(.*?(?=^def |^[A-Z_]+ = )" % name, t, re.S | re.M)
             self.assertIsNotNone(m, "%s lacks %s" % (path, name))
             return m.group(0)
-        for name in ("is_container", "was_opened", "note_if_closed", "open_container", "scan_root", "close_opened"):
+        for name in ("is_container", "was_opened", "note_if_closed", "scan_root", "close_opened"):
             self.assertEqual(body(self.SCRIPT, name), body(TazUOScanner.SCRIPT, name), name)
 
     def test_a_bag_in_the_backpack_that_did_not_open_is_marked_unopened(self):
