@@ -49,6 +49,17 @@ function openWizardAt(steps: number): (page: Page) => Promise<void> {
 }
 async function closeWizard(page: Page): Promise<void> { await page.keyboard.press("Escape"); await page.waitForSelector("#wizard", { state: "hidden" }); }
 let releaseStart: (() => void) | null = null;   // lets the held build request of "builder running" go
+// --demo never runs the data-folder check, so a scene hands the page its finding and redraws the banner
+// through the page's own modules (same URLs as its <script>, so the same instances).
+async function dataDirBanner(p: Page, check: Record<string, string>): Promise<void> {
+  await p.evaluate(async ([store, bridge, c]) => {
+    const { state } = await import(store!) as { state: { setup: Record<string, unknown> } };
+    state.setup = { ...state.setup, dataDirCheck: c };
+    (await import(bridge!) as { renderDataDirNotice: () => void }).renderDataDirNotice();
+  }, ["/ui/store.mjs", "/ui/bridge.mjs", check] as [string, string, Record<string, string>]);
+  if (check.status !== "none") await p.waitForSelector("#notice:not([hidden]) .btn");
+}
+
 const SCENES: Scene[] = [
   { name: "inventory", enter: (p) => route(p, "#/inventory", "#inv-table tbody tr.item") },
   { name: "item tooltip", enter: async (p) => {
@@ -93,6 +104,8 @@ const SCENES: Scene[] = [
     await p.locator("#inv-peek .tag.tag-info").first().focus();
     await p.waitForSelector("body > .tip");
   }, leave: (p) => p.keyboard.press("Escape") },
+  { name: "data-folder banner", enter: (p) => dataDirBanner(p, { status: "mismatch", scriptsDir: "/x/LegionScripts", scriptsDataDir: "/x/dev", dataDir: "/x/.pack-rat" }),
+    leave: (p) => dataDirBanner(p, { status: "none" }) },
   { name: "inventory row focus tooltip", enter: async (p) => {
     await p.locator("#inv-table tbody tr.item").first().focus();
     await p.keyboard.press("ArrowDown");
