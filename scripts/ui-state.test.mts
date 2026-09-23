@@ -120,8 +120,13 @@ test("[slow] refresh, Clear all, the virtual table and Forget keep the page's st
     // last one in.
     const drawn = await page.locator("#inv-table tbody tr.item").count();
     assert.ok(drawn > 0 && drawn < 160, `only the rows in view are drawn, got ${drawn}`);
-    await page.locator("#inv-scroll").evaluate((s) => { s.scrollTop = s.scrollHeight; });
-    await page.waitForSelector('#inv-table tbody tr.item[aria-rowindex="161"]', { timeout: 10_000 });
+    // Scrolled to the end the way a player does, until it stays there: the spacers can grow once the real row
+    // height is measured (fonts and scale differ between machines), which moves the end further down.
+    await page.waitForFunction(() => {
+      const s = document.querySelector<HTMLElement>("#inv-scroll")!;
+      s.scrollTop = s.scrollHeight;
+      return !!document.querySelector('#inv-table tbody tr.item[aria-rowindex="161"]');
+    }, undefined, { timeout: 10_000, polling: 100 });
 
     // Pick the second character in the builder, so a Forget that reloads the whole page (and snaps
     // the builder back to the first character) shows up.
