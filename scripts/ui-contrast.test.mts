@@ -14,6 +14,7 @@ import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createRequire } from "node:module";
 import type { ElectronApplication, Page } from "playwright";
+import { fitWindow, openFacet, setRows, type RealSize } from "./electron-window.mts";
 import { probeContrast, failures, describeFailures, type ContrastRow } from "./contrast-probe.mts";
 
 const ROOT = dirname(dirname(fileURLToPath(import.meta.url)));
@@ -60,14 +61,14 @@ const SCENES: Scene[] = [
     await p.waitForTimeout(100);
   }, leave: (p) => p.mouse.move(0, 0) },
   { name: "inventory filters and strip", enter: async (p) => {
-    await p.click("#f-rarity");
+    await openFacet(p, "rarity", "Rarity");
     await p.locator(".pop input[value='Greater Magic Item']").click();
-    await p.click("#f-kind");
+    await openFacet(p, "kind", "Kind");
     await p.locator(".pop input[value=gear]").click();
     await p.waitForSelector("#inv-active:not([hidden]) .token");
   }, leave: (p) => p.keyboard.press("Escape") },
-  { name: "inventory rarity popover", enter: async (p) => { await p.click("#f-rarity"); await p.waitForSelector(".pop .rar-tier"); }, leave: (p) => p.keyboard.press("Escape") },
-  { name: "inventory location popover", enter: async (p) => { await p.click("#f-loc"); await p.waitForSelector(".pop .inv-opt"); }, leave: (p) => p.keyboard.press("Escape") },
+  { name: "inventory rarity popover", enter: async (p) => { await openFacet(p, "rarity", "Rarity"); await p.waitForSelector(".pop .rar-tier"); }, leave: (p) => p.keyboard.press("Escape") },
+  { name: "inventory location popover", enter: async (p) => { await openFacet(p, "loc", "Location"); await p.waitForSelector(".pop .inv-opt"); }, leave: (p) => p.keyboard.press("Escape") },
   { name: "inventory add-filter menu", enter: async (p) => { await p.click("#f-add"); await p.waitForSelector(".pop.pop-menu"); } },
   { name: "inventory property rule", enter: async (p) => {
     await p.getByRole("menuitem", { name: "Property rule…" }).click();
@@ -90,15 +91,15 @@ const SCENES: Scene[] = [
     await p.waitForSelector("#tip[style*='block'] .tip-lines", { timeout: 5_000 });
   }, leave: (p) => p.keyboard.press("Escape") },
   { name: "inventory empty result", enter: async (p) => {
-    await p.click("#f-rarity");
+    await openFacet(p, "rarity", "Rarity");
     await p.locator(".pop input[value='Legendary Artifact']").click();
     await p.waitForSelector("#inv-empty");
   } },
   { name: "inventory grouped", enter: async (p) => {
     await p.click("#f-clear");
-    await p.locator("#inv-rows").getByRole("radio", { name: "Grouped" }).click();
+    await setRows(p, "Grouped");
     await p.waitForFunction(() => /name/.test(document.querySelector("#inv-foot .inv-count")?.textContent || ""));
-  }, leave: (p) => p.locator("#inv-rows").getByRole("radio", { name: "List" }).click() },
+  }, leave: (p) => setRows(p, "List") },
   { name: "inventory load failed", enter: async (p) => {
     await p.evaluate(async () => (await import("/ui/inventory.mjs" as string)).inventoryFailed(new Error("/api/inventory failed: internal error")));
     await p.waitForSelector(".inv-error .msg");
@@ -130,8 +131,12 @@ const SCENES: Scene[] = [
   { name: "import drawer", enter: (p) => route(p, "#/import", "#import-drawer:not([hidden]) #imp-mode"), leave: (p) => p.keyboard.press("Escape") },
   { name: "runs drawer", enter: (p) => route(p, "#/runs", "#runs-drawer:not([hidden]) .runrow"), leave: (p) => p.keyboard.press("Escape") },
   { name: "bridge popover", enter: async (p) => { await p.click("#bridge"); await p.waitForSelector(".pop"); }, leave: (p) => p.keyboard.press("Escape") },
-  { name: "collapsed sidebar", enter: async (p) => { await route(p, "#/inventory", "#inv-table tbody tr.item"); await p.click("#sidebar-pin"); await p.waitForSelector("#app.collapsed"); },
-    leave: (p) => p.click("#sidebar-pin") },
+  // Pinned collapsed where the window is wide enough to show the sidebar expanded; below 1180 px it already is.
+  { name: "collapsed sidebar", enter: async (p) => {
+    await route(p, "#/inventory", "#inv-table tbody tr.item");
+    if (await p.locator("#sidebar-pin").isVisible()) await p.click("#sidebar-pin");
+    await p.waitForSelector("#app.collapsed");
+  }, leave: async (p) => { if (await p.locator("#sidebar-pin[aria-pressed=true]").isVisible()) await p.click("#sidebar-pin"); } },
   { name: "settings", enter: (p) => route(p, "#/settings", "#set-general .set-row") },
   // ---- Settings (phase 12): the lower sections (the danger zone), with a failed update check under its row
   { name: "settings data and updates", enter: async (p) => {
@@ -195,16 +200,16 @@ const SCENES: Scene[] = [
   }, leave: (p) => p.keyboard.press("Escape") },
 ];
 
-async function launch(dataDir: string): Promise<{ app: ElectronApplication; page: Page; errors: string[] }> {
+async function launch(dataDir: string): Promise<{ app: ElectronApplication; page: Page; errors: string[]; size: RealSize }> {
   const { _electron } = await import("playwright");
   const app = await _electron.launch({ args: [ROOT, "--demo", "--data", dataDir], cwd: ROOT, timeout: 60_000 });
   const page = await app.firstWindow();
   const errors: string[] = [];
   page.on("pageerror", (e) => errors.push(String(e)));
-  // The viewport, not the window: a CI runner's screen can be narrower than 1440, and a window is clamped
-  // to its screen, while the emulated viewport (and so every media query) is not.
-  await page.setViewportSize({ width: 1440, height: 900 });
-  return { app, page, errors };
+  // The real window, as close to 1440 × 900 as the screen allows (scripts/electron-window.mts): the scenes
+  // measure whichever layout that width shows.
+  const size = await fitWindow(app, page, { width: 1440, height: 900 });
+  return { app, page, errors, size };
 }
 
 test("[slow] every text, control edge, icon and status dot on the real page passes contrast in light and dark", async (t) => {
@@ -213,7 +218,8 @@ test("[slow] every text, control edge, icon and status dot on the real page pass
   const dataDir = mkdtempSync(join(tmpdir(), "packrat-contrast-"));
   // setupDone skips the first-run wizard; --demo reads the committed demo scans.
   writeFileSync(join(dataDir, "settings.json"), JSON.stringify({ schemaVersion: 1, shard: "uoalive", setupDone: true }));
-  const { app, page, errors } = await launch(dataDir);
+  const { app, page, errors, size } = await launch(dataDir);
+  t.diagnostic(`window ${size.width} × ${size.height}`);
   try {
     await page.locator("#inv-table tbody tr.item").first().waitFor({ timeout: 30_000 });
     const rows: Array<ContrastRow & { where: string }> = [];
@@ -222,7 +228,7 @@ test("[slow] every text, control edge, icon and status dot on the real page pass
       await scene.enter(page);
       // hover fills are states, not surfaces: park the pointer on an empty stretch of the top bar (the
       // tooltip scene keeps its hover, it is what that scene measures)
-      if (scene.name !== "item tooltip") await page.mouse.move(900, 4);
+      if (scene.name !== "item tooltip") await page.mouse.move(Math.min(900, size.width - 20), 4);
       for (const mode of ["light", "dark"] as const) {
         // reduced motion: no colour transition is half-way when the probe reads the computed colours
         await page.emulateMedia({ colorScheme: mode, reducedMotion: "reduce" });
