@@ -536,8 +536,9 @@ export function clearToasts(): void { document.getElementById("toasts")?.replace
 // An action menu ("⋯") on the popover: role=menu, menuitem buttons, ↑/↓/Home/End move between the items
 // (roving tabindex), Enter or a click runs one and closes the menu, Esc closes it and focus goes back to the
 // anchor. A danger item is drawn in danger colour; "divider" draws a rule between groups. Each item's
-// `count` span is returned so a number that arrives later (saved runs) can be filled in.
-export interface MenuItem { label: string; onSelect: () => void; danger?: boolean | undefined; kbd?: string | undefined; count?: string | number | undefined }
+// `count` span is returned so a number that arrives later (saved runs) can be filled in. An item may lead
+// with an icon; a disabled item stays in the list (aria-disabled) and carries its reason as a title.
+export interface MenuItem { label: string; onSelect: () => void; danger?: boolean | undefined; kbd?: string | undefined; count?: string | number | undefined; icon?: IconName | undefined; disabled?: string | null | undefined }
 export function menu(anchor: HTMLElement, items: Array<MenuItem | "divider">, { label, width = 220 }: { label: string; width?: number }): PopoverHandle & { counts: Map<string, HTMLSpanElement> } {
   const counts = new Map<string, HTMLSpanElement>();
   const buttons: HTMLButtonElement[] = [];
@@ -547,7 +548,8 @@ export function menu(anchor: HTMLElement, items: Array<MenuItem | "divider">, { 
     const count = txt(it.count ?? "", "count");
     counts.set(it.label, count);
     const b = box("button", { type: "button", class: `menu-item${it.danger ? " danger" : ""}`, role: "menuitem", tabindex: buttons.length ? "-1" : "0",
-      onclick: () => { handle?.close(); it.onSelect(); } }, txt(it.label), it.kbd ? kbd(it.kbd) : count);
+      ...(it.disabled ? { "aria-disabled": "true", title: it.disabled } : {}),
+      onclick: () => { if (it.disabled) return; handle?.close(); it.onSelect(); } }, it.icon ? icon(it.icon, { size: "sm" }) : null, txt(it.label), it.kbd ? kbd(it.kbd) : count);
     buttons.push(b);
     return b;
   });
@@ -562,30 +564,4 @@ export function menu(anchor: HTMLElement, items: Array<MenuItem | "divider">, { 
     buttons[to]!.focus();
   });
   return Object.assign(handle, { counts });
-}
-
-// ---- inventory
-// A "⋯" menu: a popover (role=menu) of menu-item buttons under its anchor. ↑/↓ move between the items,
-// Home/End jump, Esc closes and focus goes back to the anchor. Choosing an item closes the menu first,
-// so the item's action can open a dialog or another popover. A disabled item carries its reason.
-export interface MenuEntry { label: string; icon?: IconName | undefined; danger?: boolean | undefined; disabled?: string | null | undefined; onSelect: () => void }
-export function openMenu(anchor: HTMLElement, entries: MenuEntry[], label: string): PopoverHandle {
-  let handle: PopoverHandle | null = null;
-  const items = entries.map((m) => {
-    const b = box("button", { type: "button", role: "menuitem", class: `menu-item${m.danger ? " danger" : ""}`, tabindex: "-1", ...(m.disabled ? { "aria-disabled": "true", title: m.disabled } : {}) },
-      m.icon ? icon(m.icon, { size: "sm" }) : null, txt(m.label));
-    b.addEventListener("click", () => { if (m.disabled) return; handle?.close(); m.onSelect(); });
-    return b;
-  });
-  handle = popover(anchor, items, { label, role: "menu", width: 220 });
-  handle.root.classList.add("pop-menu");
-  handle.root.addEventListener("keydown", (e) => {
-    const i = items.indexOf(document.activeElement as HTMLButtonElement);
-    const to = e.key === "ArrowDown" ? i + 1 : e.key === "ArrowUp" ? i - 1 : e.key === "Home" ? 0 : e.key === "End" ? items.length - 1 : null;
-    if (to == null) return;
-    e.preventDefault();
-    items[(to + items.length) % items.length]?.focus();
-  });
-  items[0]?.focus();
-  return handle;
 }
