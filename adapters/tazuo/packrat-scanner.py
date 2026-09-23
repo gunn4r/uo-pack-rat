@@ -2,7 +2,8 @@
 # the Pack Rat app. Reads every equipped layer, the backpack (nested bags included), the
 # bank box if it is open, and every openable container within SCAN_RANGE tiles (recursively: bags
 # in chests in chests). Dumps RAW tooltips — the app does all parsing, so this script stays dumb
-# and never needs updating when a new property shows up.
+# and never needs updating when a new property shows up. When done (or stopped) it closes the
+# container windows it opened itself; one you already had open stays open.
 #
 # Output: <data directory>/inbox/tazuo/<Character>-<YYYYmmdd-HHMMSS>.json (one file per run). The
 # app's inbox watcher (app/watcher.mjs) picks it up, normalises it and moves it into <data
@@ -53,7 +54,7 @@ def rfc3339_now():
 
 
 ADAPTER_ID = "tazuo"
-ADAPTER_VERSION = "2.2.0"
+ADAPTER_VERSION = "2.3.0"
 CAPABILITIES = {
     "layers": ["OneHanded", "TwoHanded", "Shoes", "Pants", "Shirt", "Helmet", "Gloves",
                "Ring", "Talisman", "Necklace", "Waist", "Torso", "Bracelet", "Tunic",
@@ -68,6 +69,7 @@ SCAN_GROUND = True       # False = backpack/bank only, never touch containers on
 GROUND_ONLY_AT_HOME = True   # when the bank box is open (you are at a bank) skip ground containers entirely
 PAUSE_OPEN = 1.2         # after UseObject on a container (raise on laggy connections)
 MAX_NEST = 4             # bags in bags in bags
+OPENED_HERE = []         # container windows this run opened itself, in opening order (close_opened)
 OUT_DIR = os.path.join(data_dir(), "inbox", "tazuo")
 ALARM_HUE, OK_HUE, INFO_HUE = 33, 68, 88
 
@@ -156,6 +158,19 @@ def was_opened(serial):
         return False
 
 
+def note_if_closed(serial):
+    """Remember a container whose window is not open yet, just before this run opens it, so
+    close_opened() closes exactly the windows the run opened and never one the player had open. The
+    client's own item object is kept rather than the serial: once Stop is pressed the client cancels
+    the script's lookups (FindItem answers nothing), while an item object still reaches its window."""
+    try:
+        it = API.FindItem(int(serial))
+        if it is not None and not bool(getattr(it, "Opened", False)):
+            OPENED_HERE.append(it)
+    except Exception:
+        pass
+
+
 def scan_root(root_serial, kind, label, containers, items, seen):
     """Open root + every nested container, list everything. Returns the item count, or -1 when the
     root must not be recorded at all (it did not open, or Stop was pressed): the app's fold replaces a
@@ -171,6 +186,7 @@ def scan_root(root_serial, kind, label, containers, items, seen):
         for c in fresh:
             if API.StopRequested:
                 return -1
+            note_if_closed(c)
             try:
                 API.UseObject(c)
             except Exception:
@@ -227,6 +243,24 @@ def scan_root(root_serial, kind, label, containers, items, seen):
         items.append(item_dict(it, lines, parent))
         n += 1
     return n
+
+
+def close_opened():
+    """Close the container windows this run opened, innermost first. Runs once everything has been
+    read and the scan file written, or after a Stop or an error, so it never changes what is recorded.
+    Every call is looked up with getattr: a client build without GetContainerGump() or Dispose()
+    leaves the window open rather than raising. API.CloseGump(serial) is no fallback, since it finds
+    gumps by their server gump id and a container window has none."""
+    for it in reversed(OPENED_HERE):
+        try:
+            get_gump = getattr(it, "GetContainerGump", None)
+            gump = get_gump() if get_gump is not None else None
+            dispose = getattr(gump, "Dispose", None) if gump is not None else None
+            if dispose is not None:
+                dispose()
+        except Exception:
+            pass
+    del OPENED_HERE[:]
 
 
 SKILL_NAMES = ["Anatomy", "Archery", "Bushido", "Chivalry", "Discordance", "Evaluating Intelligence", "Fencing", "Focus",
@@ -339,4 +373,7 @@ def main():
         sysmsg("  " + c, INFO_HUE)
 
 
-main()
+try:
+    main()
+finally:
+    close_opened()

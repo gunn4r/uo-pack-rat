@@ -57,6 +57,9 @@ class DataDir(object):
     def root(self, scan, serial):
         return [r for r in scan["roots"] if r["serial"] == serial][0]
 
+    def closed(self, world):
+        return [c[1] for c in world.calls if c[0] == "close"]
+
 
 class TazUOScanner(DataDir, unittest.TestCase):
     SCRIPT = adapter_path("tazuo", "packrat-scanner.py")
@@ -147,6 +150,66 @@ class TazUOScanner(DataDir, unittest.TestCase):
         [s] = self.scans("tazuo")
         self.assertTrue(self.root(s, CHEST)["opened"])
 
+    def test_it_closes_exactly_the_container_windows_it_opened_innermost_first(self):
+        w = World(); home(w)
+        w.add(0x40000030, 0, name="Metal Chest", X=11, Y=11); w.locked.add(0x40000030)
+        self.scan(w)
+        self.assertEqual(self.closed(w), [BAG, CHEST, PACK], "a locked chest never opened, so it has no window to close")
+        self.assertFalse(any(it.Opened for it in w.items.values()))
+
+    def test_windows_the_player_already_had_open_are_left_open(self):
+        w = World(); home(w)
+        w.items[PACK].Opened = w.items[CHEST].Opened = True
+        self.scan(w)
+        self.assertEqual(self.closed(w), [BAG])
+        self.assertTrue(w.items[PACK].Opened and w.items[CHEST].Opened)
+
+    def test_windows_close_only_after_the_scan_file_is_written(self):
+        w = World(); home(w)
+        written = []
+        w.on_close = lambda serial: written.append(len(self.scans("tazuo")))
+        self.scan(w)
+        self.assertEqual(written, [1, 1, 1])
+
+    def test_it_closes_what_it_opened_after_a_stop_even_once_lookups_by_serial_answer_nothing(self):
+        w = World(); home(w)
+        api = tazuo_api(w, PACK)
+        opener, finder = w.open, api.FindItem
+
+        def open_then_stop(serial):
+            if serial == CHEST:
+                api.StopRequested = True
+            return opener(serial)
+        api.UseObject = lambda s, *a: open_then_stop(int(s))
+        # The client cancels a stopped script's token, and FindItem then returns nothing.
+        api.FindItem = lambda s: None if api.StopRequested else finder(s)
+        run_script(self.SCRIPT, w, api=api)
+        self.assertEqual(self.scans("tazuo"), [])
+        self.assertEqual(self.closed(w), [CHEST, PACK])
+
+    def test_it_closes_what_it_opened_when_the_scan_fails(self):
+        w = World(); home(w)
+        api = tazuo_api(w, PACK)
+        lister = api.ItemsInContainer
+
+        def list_or_fail(s, recursive=False):
+            if int(s) == CHEST:
+                raise RuntimeError("client went away")
+            return lister(s, recursive)
+        api.ItemsInContainer = list_or_fail
+        with self.assertRaises(RuntimeError):
+            run_script(self.SCRIPT, w, api=api)
+        self.assertEqual(self.closed(w), [CHEST, PACK])
+
+    def test_a_client_without_the_window_calls_leaves_windows_open_and_does_not_raise(self):
+        for flag in ("no_container_gump", "gump_without_dispose"):
+            w = World(); home(w); setattr(w, flag, True)
+            self.scan(w)
+            self.assertEqual(self.closed(w), [], flag)
+            self.assertTrue(w.items[CHEST].Opened, flag)
+            self.assertEqual(len(self.scans("tazuo")), 1, flag)
+            shutil.rmtree(os.path.join(self.data, "inbox"), ignore_errors=True)
+
     def test_it_runs_where_the_host_defines_no___file__(self):
         w = World(); home(w)
         self.scan(w, with_file=False)
@@ -163,7 +226,7 @@ class TazUORefresh(DataDir, unittest.TestCase):
             m = re.search(r"^def %s\(.*?(?=^def |^[A-Z_]+ = )" % name, t, re.S | re.M)
             self.assertIsNotNone(m, "%s lacks %s" % (path, name))
             return m.group(0)
-        for name in ("is_container", "was_opened", "scan_root"):
+        for name in ("is_container", "was_opened", "note_if_closed", "scan_root", "close_opened"):
             self.assertEqual(body(self.SCRIPT, name), body(TazUOScanner.SCRIPT, name), name)
 
     def test_a_bag_in_the_backpack_that_did_not_open_is_marked_unopened(self):
@@ -175,6 +238,15 @@ class TazUORefresh(DataDir, unittest.TestCase):
         [s] = self.scans("tazuo")
         self.assertIs(s["containers"][str(BAG + 0x100)]["opened"], False)
         self.assertIn(RING2, [i["serial"] for i in s["items"]])
+
+    def test_it_closes_the_bags_it_opened_and_leaves_the_open_backpack_open(self):
+        w = World(); home(w)
+        w.items[PACK].Opened = True
+        w.add(BAG + 0x100, PACK, name="Pouch", OnGround=False)
+        run_script(self.SCRIPT, w, api=tazuo_api(w, PACK))
+        self.assertEqual(len(self.scans("tazuo")), 1)
+        self.assertEqual(self.closed(w), [BAG + 0x100])
+        self.assertTrue(w.items[PACK].Opened)
 
 
 class RazorScanner(DataDir, unittest.TestCase):
@@ -253,6 +325,46 @@ class RazorScanner(DataDir, unittest.TestCase):
         [s] = self.scans("razor-enhanced")
         self.assertEqual(sorted(s["skills"]), ["Evaluating Intelligence", "Resisting Spells", "Swordsmanship", "Tactics"])
         self.assertEqual(s["skills"]["Resisting Spells"]["value"], 100.0)
+
+    def test_it_closes_exactly_the_container_windows_it_opened_innermost_first(self):
+        w = World(); home(w)
+        self.scan(w)
+        self.assertEqual(self.closed(w), [BAG, CHEST, PACK])
+
+    def test_containers_opened_before_the_scan_are_left_open(self):
+        w = World(); home(w)
+        w.items[PACK].Opened = w.items[PACK].EverOpened = True
+        w.items[CHEST].Opened = w.items[CHEST].EverOpened = True
+        self.scan(w)
+        self.assertEqual(self.closed(w), [BAG])
+
+    def test_windows_close_only_after_the_scan_file_is_written(self):
+        w = World(); home(w)
+        written = []
+        w.on_close = lambda serial: written.append(len(self.scans("razor-enhanced")))
+        self.scan(w)
+        self.assertEqual(written, [1, 1, 1])
+
+    def test_it_closes_what_it_opened_when_the_scan_fails(self):
+        w = World(); home(w)
+        g = razor_globals(w, PACK)
+        waiter = g["Items"].WaitForContents
+
+        def wait_or_fail(it, ms):
+            if int(it.Serial) == BAG:
+                raise SystemExit("stopped")     # stands in for a Stop (RE aborts the script thread) or any error
+            return waiter(it, ms)
+        g["Items"].WaitForContents = staticmethod(wait_or_fail)
+        with self.assertRaises(SystemExit):
+            run_script(self.SCRIPT, w, extra_globals=g)
+        self.assertEqual(self.scans("razor-enhanced"), [])
+        self.assertEqual(self.closed(w), [CHEST, PACK])
+
+    def test_a_build_without_items_close_leaves_windows_open_and_does_not_raise(self):
+        w = World(); home(w); w.no_items_close = True
+        self.scan(w)
+        self.assertEqual(self.closed(w), [])
+        self.assertEqual(len(self.scans("razor-enhanced")), 1)
 
     def test_it_runs_where_the_host_defines_no___file__(self):
         w = World(); home(w)
