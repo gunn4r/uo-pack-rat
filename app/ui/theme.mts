@@ -6,9 +6,9 @@ import type { UiPrefs } from "./api-types.mts";
 
 export type Appearance = "light" | "system" | "dark";
 export type Mode = "light" | "dark";
-// The theme families whose tokens ship in tokens.css. The server may store a family that is not built yet
-// (round 2's "britannia"); the page draws the default look until it is.
-export const BUILT_THEMES = ["default"] as const;
+// The theme families whose tokens ship (Default in tokens.css, Britannia in britannia.css). The server may
+// store a family the page does not know; the page draws the default look for it.
+export const BUILT_THEMES = ["default", "britannia"] as const;
 export const DEFAULT_APPEARANCE: Appearance = "system";
 
 export function resolveTheme(theme: string | null | undefined): string {

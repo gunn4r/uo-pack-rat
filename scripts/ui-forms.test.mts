@@ -193,9 +193,21 @@ test("[slow] Settings: section nav with the client warning, theme and appearance
     assert.equal(await page.locator("#settings-nav [data-section=set-client] .dot.warn").count(), 1, "no client set up: a warning dot on Game client");
     assert.equal(await page.locator("#settings-nav [aria-current=true]").innerText(), "General");
 
-    // General: Britannia is listed but not chooseable yet; Appearance applies at once and is saved as a ui-pref.
-    assert.equal(await page.locator("#set-theme option[value=britannia]").isDisabled(), true);
-    assert.equal(await page.locator("#set-theme option[value=britannia]").innerText(), "Britannia (coming soon)");
+    // General: the Theme applies at once, is saved as a ui-pref and comes back on the next load; Appearance
+    // likewise.
+    assert.equal(await page.locator("#set-theme option[value=britannia]").isDisabled(), false);
+    assert.equal(await page.locator("#set-theme option[value=britannia]").innerText(), "Britannia");
+    await page.selectOption("#set-theme", "britannia");
+    await page.waitForFunction(() => document.documentElement.dataset.theme === "britannia");
+    await page.waitForFunction(async () => (await (await fetch("/api/ui-prefs")).json()).prefs.theme === "britannia");
+    await page.reload();
+    await page.waitForSelector("#set-general .set-row");
+    await page.waitForFunction(() => document.documentElement.dataset.theme === "britannia");
+    assert.equal(await page.locator("#set-theme").inputValue(), "britannia");
+    assert.match(await page.locator("#tab-settings .topbar h1").evaluate((h) => getComputedStyle(h).fontFamily), /Cinzel/, "Britannia's display face on the page title");
+    await page.selectOption("#set-theme", "default");
+    await page.waitForFunction(() => document.documentElement.dataset.theme === "default");
+    await page.waitForFunction(async () => (await (await fetch("/api/ui-prefs")).json()).prefs.theme === "default");
     await page.locator("#set-appearance").getByRole("radio", { name: "Dark" }).click();
     await page.waitForFunction(() => document.documentElement.dataset.mode === "dark");
     await page.waitForFunction(async () => (await (await fetch("/api/ui-prefs")).json()).prefs.appearance === "dark");

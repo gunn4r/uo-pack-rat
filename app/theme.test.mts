@@ -21,9 +21,60 @@ test("[fast] resolveMode: a missing or unknown appearance reads as system", () =
 
 test("[fast] resolveTheme: only a theme family whose tokens ship is applied", () => {
   assert.equal(resolveTheme("default"), "default");
-  assert.equal(resolveTheme("britannia"), "default", "stored for round 2, not built yet");
+  assert.equal(resolveTheme("britannia"), "britannia");
+  assert.equal(resolveTheme("sepia"), "default", "a family the page does not ship draws the default look");
   assert.equal(resolveTheme(undefined), "default");
   assert.equal(resolveTheme(""), "default");
+});
+
+// The custom properties one rule block of a stylesheet declares, found by the block's selector text.
+function declared(css: string, selector: string): Set<string> {
+  const at = css.indexOf(selector + " {");
+  assert.ok(at >= 0, `a block for ${selector}`);
+  const body = css.slice(css.indexOf("{", at) + 1, css.indexOf("\n}", at));
+  return new Set([...body.matchAll(/(--[\w-]+)\s*:/g)].map((m) => m[1]!));
+}
+
+test("[fast] every theme family sets each colour role, and everything Default sets per mode, in both of its modes", async () => {
+  const { readFileSync } = await import("node:fs");
+  const { BUILT_THEMES } = await import("./ui/theme.mts");
+  const tokens = readFileSync(new URL("./ui/tokens.css", import.meta.url), "utf8");
+  const light = declared(tokens, ':root, [data-theme="default"][data-mode="light"], [data-theme="default"] [data-mode="light"]');
+  const dark = declared(tokens, '[data-theme="default"][data-mode="dark"], [data-theme="default"] [data-mode="dark"]');
+  // Every colour role, and everything Default itself restates for dark mode (the game colours, shadows, the
+  // focus ring): a family block that missed one would fall back to Default's light value on :root, even
+  // in its dark mode.
+  const required = new Set([...light].filter((p) => p.startsWith("--color-")).concat([...dark]));
+  assert.ok(required.size > 60, `the Default blocks were read (${required.size} properties)`);
+  for (const family of BUILT_THEMES.filter((f) => f !== "default")) {
+    const css = readFileSync(new URL(`./ui/${family}.css`, import.meta.url), "utf8");
+    for (const mode of ["light", "dark"]) {
+      const got = declared(css, `[data-theme="${family}"][data-mode="${mode}"], [data-theme="${family}"] [data-mode="${mode}"]`);
+      const missing = [...required].filter((p) => !got.has(p));
+      assert.deepEqual(missing, [], `${family} ${mode} sets every role Default sets`);
+      const stray = [...got].filter((p) => !light.has(p) && !dark.has(p));
+      assert.deepEqual(stray, [], `${family} ${mode} overrides only tokens Default defines`);
+    }
+  }
+});
+
+test("[fast] index.html links each theme family's stylesheet after tokens.css, and its fonts ship", async () => {
+  const { readFileSync, existsSync } = await import("node:fs");
+  const { BUILT_THEMES } = await import("./ui/theme.mts");
+  const html = readFileSync(new URL("./index.html", import.meta.url), "utf8");
+  const tokensAt = html.indexOf('href="/ui/tokens.css"');
+  assert.ok(tokensAt > 0);
+  for (const family of BUILT_THEMES.filter((f) => f !== "default")) {
+    const at = html.indexOf(`href="/ui/${family}.css"`);
+    // later in the cascade: a dark-mode subtree (the item tooltip) takes the family of <html>, not Default
+    assert.ok(at > tokensAt, `${family}.css is linked after tokens.css`);
+    const css = readFileSync(new URL(`./ui/${family}.css`, import.meta.url), "utf8");
+    for (const m of css.matchAll(/url\("fonts\/([a-z0-9-]+\.woff2)"\)/g)) {
+      assert.ok(existsSync(new URL(`./ui/fonts/${m[1]}`, import.meta.url)), `${m[1]} is bundled`);
+    }
+    // every image the theme paints is inline (no request, nothing copied from a game client)
+    for (const m of css.matchAll(/url\("(?!data:|fonts\/)([^"]*)"\)/g)) assert.fail(`${family}.css loads ${m[1]}`);
+  }
 });
 
 test("[fast] rarityToken maps every shipped tier name to its --rarity-* token, and nothing else", async () => {

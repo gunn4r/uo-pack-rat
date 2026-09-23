@@ -167,7 +167,7 @@
 .card { background: var(--color-surface); color: var(--color-text); border: var(--border-width-frame) solid var(--color-border); border-image: var(--frame-image); border-radius: var(--radius-lg); }
 .card-pad { padding: var(--space-4); }
 .card-head { display: flex; align-items: center; gap: var(--space-3); padding: var(--space-3) var(--space-4); border-bottom: var(--border-width) solid var(--color-border); min-height: 48px; }
-.card-head h2, .card-head h3 { font-size: var(--text-md); line-height: var(--lh-md); font-weight: var(--weight-semibold); text-transform: none; letter-spacing: 0; color: var(--color-text); }
+.card-head h2, .card-head h3 { font-family: var(--font-display); font-size: var(--text-md); line-height: var(--lh-md); font-weight: var(--weight-semibold); text-transform: none; letter-spacing: 0; color: var(--color-text); }
 .divider { height: 1px; background: var(--color-border); flex: none; }
 .empty-state { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: var(--space-2); padding: var(--space-6); text-align: center; }
 
@@ -221,7 +221,7 @@
 .dialog-foot { display: flex; justify-content: flex-end; gap: var(--space-2); padding: var(--space-4) var(--space-6) var(--space-5); }
 .overlay-head { display: flex; align-items: center; gap: var(--space-3); padding: var(--space-4) var(--space-5); border-bottom: var(--border-width) solid var(--color-border); }
 .overlay-titles { display: flex; flex-direction: column; min-width: 0; }
-.overlay-head h2 { font-size: var(--text-lg); line-height: var(--lh-lg); font-weight: var(--weight-semibold); }
+.overlay-head h2 { font-family: var(--font-display); font-size: var(--text-lg); line-height: var(--lh-lg); font-weight: var(--weight-semibold); }
 .overlay-foot { display: flex; align-items: center; gap: var(--space-2); padding: var(--space-3) var(--space-5); border-top: var(--border-width) solid var(--color-border); background: var(--color-surface-subtle); color: var(--color-text); }
 .toasts { position: fixed; right: var(--space-4); bottom: var(--space-8); z-index: var(--z-toast); display: flex; flex-direction: column; align-items: flex-end; gap: var(--space-2); pointer-events: none; }
 .toast { display: flex; align-items: center; gap: var(--space-3); width: min(400px, calc(100vw - 32px)); min-height: 44px; padding: var(--space-2) var(--space-2) var(--space-2) var(--space-4); border-radius: var(--radius-lg); background: var(--color-surface-inverse); color: var(--color-on-inverse); box-shadow: var(--shadow-2); font-size: var(--text-base); pointer-events: auto; }
@@ -273,3 +273,9 @@
 /* ---------------------------------------------------------------- forms (Import drawer, wizard, Settings) */
 /* a key hint inside a disabled button takes the disabled text colour, not the primary's on-accent white */
 .pr .btn[disabled] .kbd { background: transparent; color: var(--color-on-disabled); border-color: var(--color-on-disabled); }
+
+/* ---- themes: one frame per stack. A theme's frame (--frame-image, --border-width-frame; Britannia's brass
+   gump border) belongs to the outermost surface; a card inside another framed surface (the wizard's client
+   cards, a card in a drawer or a popover) keeps a plain 1px edge in its own border colour, so frames never
+   nest and a card whose border colour carries a state (selected, clean, danger) still shows it. */
+:is(.card, .panel, .pop, .drawer, .dialog) .card { border-width: var(--border-width); border-image: none; }

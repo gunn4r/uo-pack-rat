@@ -496,7 +496,9 @@ test("[fast] the page's stylesheets and fonts are allowed by its own CSP", async
   const csp = (await get("/")).headers.get("content-security-policy") || "";
   assert.match(csp, /font-src 'self'/);
   assert.match(csp, /style-src 'self'/);
-  for (const css of ["tokens.css", "components.css", "styles.css"]) assert.equal((await get(`/ui/${css}`)).status, 200, css);
+  assert.match(csp, /img-src 'self' data:/, "the Britannia theme's frame and texture are inline data: images");
+  for (const css of ["tokens.css", "britannia.css", "components.css", "styles.css"]) assert.equal((await get(`/ui/${css}`)).status, 200, css);
+  assert.equal((await get("/ui/fonts/cinzel-latin-600-normal.woff2")).status, 200, "Britannia's display face");
 });
 // scan-schema.mjs (served at /scan-schema.mjs) imports validate() from "./schema/validate.mjs" — the
 // browser resolves that relative import against scan-schema.mjs's own served URL, so it 404s without

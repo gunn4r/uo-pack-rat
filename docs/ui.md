@@ -17,13 +17,13 @@ Three layers, so a second theme family is a value swap rather than a rewrite:
 - **Semantic roles** (`--color-*`, `--res-*`, `--rarity-*`, `--font-*`, `--radius-*`, `--shadow-*`, `--border-width-frame`, `--frame-image`, `--surface-texture`): every component reads only these. A theme family supplies a light and a dark set.
 - **Structural tokens** (`--space-*`, `--text-*`/`--lh-*`, `--control-*`, `--row-*`, layout widths, `--z-*`, motion): shared by every theme, so no screen reflows between themes.
 
-Selection is two attributes on `<html>`, set by `app/ui/theme.mts` from the ui-prefs `theme` and `appearance` fields (`GET/PUT /api/ui-prefs`, kept in `<data>/ui-prefs.json` because the desktop app's page origin changes every launch): `data-theme="default"` and `data-mode="light|dark"`. Appearance "System" follows `prefers-color-scheme` live. Any subtree can flip mode by carrying its own `data-theme` + `data-mode` (the item tooltip `#tip` is always dark). A new theme family adds `[data-theme="<family>"][data-mode="light"]` and `…[data-mode="dark"]` blocks overriding only the semantic roles, and its id to `BUILT_THEMES` in `app/ui/theme.mts`.
+Selection is two attributes on `<html>`, set by `app/ui/theme.mts` from the ui-prefs `theme` and `appearance` fields (`GET/PUT /api/ui-prefs`, kept in `<data>/ui-prefs.json` because the desktop app's page origin changes every launch): `data-theme="default|britannia"` and `data-mode="light|dark"`. Appearance "System" follows `prefers-color-scheme` live. Any subtree can flip mode by carrying its own `data-theme` + `data-mode` (the item tooltip `#tip` is always dark; under a Britannia page it takes Britannia's dark mode, see below). A new theme family is described under "The Britannia theme and adding a theme family".
 
 **The on-* rule.** Every filled surface has a paired `--color-on-*` text token, and the rule that sets the fill sets its on-* text too (`background: var(--color-danger); color: var(--color-on-danger)`). No filled component inherits its text colour. `--color-border` is decorative (dividers, card edges); `--color-border-strong` is for anything the user must find the edge of (inputs, selects, chips, secondary buttons). Disabled controls use `--color-disabled` / `--color-on-disabled`, never opacity.
 
 **Rarity** is data: the shard rules carry each tier's game colour, but most fail on a light page, so a tier is painted through its `--rarity-*` token (`rarityToken()` in `app/ui/items.mts`, `rarityColor()`/`rarCell()` in `app/ui/dom.mts`). A tier with no token falls back to its raw game colour inside a dark subtree.
 
-**Fonts** are bundled: IBM Plex Sans 400/500/600 and IBM Plex Mono 400/500 (latin subset, woff2) in `app/ui/fonts/`, served by `GET /ui/fonts/<name>.woff2` under the page's `font-src 'self'` CSP. Mono is for identifiers only (serials, paths, pasted scan text, key hints); numbers use the body face with `font-variant-numeric: tabular-nums`.
+**Fonts** are bundled: IBM Plex Sans 400/500/600 and IBM Plex Mono 400/500 (latin subset, woff2) in `app/ui/fonts/`, served by `GET /ui/fonts/<name>.woff2` under the page's `font-src 'self'` CSP. `--font-display` is the face for page titles (the top bar `h1`), card titles (`.card-head h2`), drawer and wizard titles (`.overlay-head h2`), Settings' section titles and KPI numbers (`.t-xl`, `.t-2xl`); in Default it is Plex Sans, so those elements look like the body text until a theme family swaps it. Mono is for identifiers only (serials, paths, pasted scan text, key hints); numbers use the body face with `font-variant-numeric: tabular-nums`.
 
 ## The shell and where each screen lives
 
@@ -47,6 +47,7 @@ The bridge status control at the sidebar foot has four states (ready, busy, offl
 ## Stylesheets
 
 - `app/ui/tokens.css` — the tokens and `@font-face`.
+- `app/ui/britannia.css` — the Britannia theme family's two mode blocks and its display face, linked right after `tokens.css`.
 - `app/ui/components.css` — base resets and the shared component classes. Resets are wrapped in `:where()` (zero specificity) and variants are compound classes (`.btn.btn-primary`), so a reset can never outrank a component: `.pr button { color: inherit }` (0,1,1) would beat `.btn-primary` (0,1,0) and every filled button would inherit dark text.
 - `app/ui/shell.css` and one file per screen (table above).
 - `app/ui/styles.css` — the older shared classes the screens still use (`.panel`, `.stack`, `.row`, plain tables, the item tooltip) until each screen moves onto components. No literal colours anywhere: every colour is a token.
@@ -82,9 +83,32 @@ What exists:
 - **Item tooltip** (`dom.mts` `tipNode`, `installTooltip`, `showItemTip`): the one `#tip`, always dark, 280 px, shown 400 ms after the pointer settles on anything with `data-serial` (Inventory rows, Suit Builder pieces) or after a row has had keyboard focus for 400 ms; `pointer-events: none`.
 - **Responsive.** Below 1180 px the unset facet chips fold into "+ Filter" and List | Grouped moves into the table settings popover, so the toolbar never wraps.
 
+## The Britannia theme and adding a theme family
+
+Britannia (`app/ui/britannia.css`, chosen in Settings › General › Theme and saved as the ui-prefs `theme`) dresses the page as an Ultima Online gump: light mode is a parchment ground with aged-paper cards, iron-gall ink text, a deep brass accent and crimson danger; dark mode is a dark-wood ground with leather surfaces, parchment text and a brighter brass. The logo teal is its link colour and its info fill. It changes only what spec 2.5 lets a family change, so no screen moves between themes:
+
+- every `--color-*` role (and the legacy aliases and `--ring-focus`, which are resolved per block);
+- `--res-*` and `--rarity-*`, restated per mode: Default's values, with the light ones that fell under 4.6:1 on the parchment darkened just enough;
+- `--font-display`: Cinzel 600 (SIL OFL, `app/ui/fonts/cinzel-latin-600-normal.woff2` with `OFL-Cinzel.txt`). Cinzel is capitals and small capitals only, so it goes on titles made of fixed words or names, never on anything whose letter case carries meaning (a serial like `0x700b0000` would read `0X700B0000`); that is why dialog titles, which can name a container, stay in the body face;
+- `--radius-lg` and `--radius-xl` (2 px, square gump corners), `--border-width-frame` (3 px);
+- `--frame-image`: a brass bevel (dark outer line, brass, pale highlight, lighter corner rivets) drawn as a 9 × 9 SVG data URI and sliced 3 px into a `border-image`. Cards, the old `.panel`, popovers, drawers and dialogs read it. A card inside another framed surface drops back to a plain 1 px edge (`components.css`, "one frame per stack"), and a card whose border colour carries a state (Settings' danger zone, the Import preview) sets `border-image: none` so its colour shows;
+- `--surface-texture`: noise from `feTurbulence` as an SVG data URI on the page ground only (never under dense text): fine grain plus a slow mottle on the parchment, long horizontal grain on the wood. Each tile holds the noise four times, mirrored, so the tiling has no seam;
+- `--shadow-2` and `--shadow-3`, warmer and deeper.
+
+Nothing in the theme comes from a game or a game client: the colours are the logo's, the frame and textures are drawn in the stylesheet, and the face is an open-licence font.
+
+`britannia.css` is linked after `tokens.css` on purpose. A subtree that flips mode carries `data-theme="default" data-mode="dark"` (the item tooltip, the rarity chips drawn in game colours); under a Britannia page it matches both Default's dark block (its own attributes) and Britannia's dark block (`[data-theme="britannia"] [data-mode="dark"]`, through `<html>`) at the same specificity, and the later file wins, so the tooltip is leather rather than Default's slate.
+
+To add another theme family `<family>`:
+
+1. Write `app/ui/<family>.css` with two blocks, `[data-theme="<family>"][data-mode="light"], [data-theme="<family>"] [data-mode="light"]` and the same for `dark`. Each must set every `--color-*` role Default's light block sets and every property Default's dark block sets (game colours, shadows, `--ring-focus`, the aliases), and nothing Default doesn't define; `app/theme.test.mts` checks both, so a new role added to Default later can't silently fall back to Default's light value inside the family. Structural tokens (spacing, type scale, heights, layout widths, z-layers, motion) are not overridable.
+2. Bundle any font as woff2 under `app/ui/fonts/` with its licence text, `@font-face` in the family's stylesheet, and name it only through `--font-display`. Keep images inline (`data:`); the CSP allows `img-src 'self' data:` and the theme test refuses any other `url()`.
+3. Link the stylesheet in `app/index.html` right after `tokens.css`, add the id to `BUILT_THEMES` in `app/ui/theme.mts`, the label to `THEMES` in `app/ui/settings.mts`, and the id to `UI_PREF_CHOICES.theme` in `app/vault-server.mts`.
+4. Add the id to `FAMILIES` in `scripts/ui-contrast.test.mts`, which then measures every scene in the new family in both modes, and look at every screen in both modes before calling it done.
+
 ## Contrast check
 
-`scripts/contrast-probe.mts` measures contrast on the rendered page: every text/background pair (compositing semi-transparent fills down to an opaque layer), field values, placeholders, control boundaries, icons in icon-only buttons and messages, and status dots. `scripts/ui-contrast.test.mts` (`[slow]`, full suite) runs it in the Electron window over the demo data on every scene in light and dark, and fails on any pair under 4.5:1 for text (3:1 for large text) or 3:1 for edges, icons and dots; a disabled control only needs 3:1 text. When you add a screen, drawer, popover or dialog, add a scene there.
+`scripts/contrast-probe.mts` measures contrast on the rendered page: every text/background pair (compositing semi-transparent fills down to an opaque layer), field values, placeholders, control boundaries, icons in icon-only buttons and messages, and status dots. `scripts/ui-contrast.test.mts` (`[slow]`, full suite) runs it in the Electron window over the demo data on every scene in each theme family (Default and Britannia) in light and dark, and fails on any pair under 4.5:1 for text (3:1 for large text) or 3:1 for edges, icons and dots; a disabled control only needs 3:1 text. When you add a screen, drawer, popover or dialog, add a scene there.
 
 ## Characters and the shared character sheet
 
@@ -112,3 +136,5 @@ The panel (`ui/builder.mts`) is drawn from state, never read back from the DOM: 
 The Plan and Fetch list gate their bridge actions with `ui/bridge.mts`'s `bridgeActionReason(action, item)` and run them with `runBridgeAction`; Grab all is `grabAll(items, me)` (Grabs one after another, leaving out what `grabbable()` says is already with the character or worn), and the result redraws on the `bridgechange` event. `setNavBusy(nav, busy)` in `ui/shell.mts` puts a busy dot on a nav item while a build runs. The template and saved-run ⋯ menus are components.mts's `menu()`; a menu opened inside the Saved runs drawer gets `pop-over-drawer` so it sits above the drawer.
 
 The compare view (2-3 suits from a result's Other suits, or 2-3 saved runs from the drawer) replaces the panel and results with a full-width table and swaps the top bar for a breadcrumb (`#b-cmp-topbar`); "Back to result" or the breadcrumb returns. "Full sheet" in "<name> after the change" opens the shared `sheetNode` in its now → after variant.
+
+- **Settings** (`ui/settings.mts`). The section nav is links to the Settings route itself whose click only scrolls (the location hash is the router); setting rows are `.set-row` (title and help left, control right, anything spanning below in `.set-row-below`). The Theme select lists every theme family and enables one once its id is in `ui/theme.mts`'s `BUILT_THEMES`; a choice applies at once and is saved with the other ui-prefs. The data-folder mismatch (`dataDirNotice`) shows in the Data card as well as the banner, and the danger zone's character list follows the inventory (`syncSettingsCharacters`, called from `reload()`).
