@@ -639,8 +639,10 @@ function rebuildTable(): void {
   t.querySelector("tbody")!.replaceChildren();
   renderTable();
 }
-let raf = 0;
-function scheduleRender(): void { if (!raf) raf = requestAnimationFrame(() => { raf = 0; renderTable(); }); }
+// A timer rather than requestAnimationFrame: a window in the background gets no animation frames, and the
+// table must still catch up with a scroll or resize made while it was hidden.
+let renderTimer = 0;
+function scheduleRender(): void { if (!renderTimer) renderTimer = setTimeout(() => { renderTimer = 0; renderTable(); }, 0) as unknown as number; }
 function renderTable(): void {
   const t = $el<HTMLTableElement>("#inv-table"), body = t.querySelector("tbody")!, scroller = $el("#inv-scroll");
   const cols = columns(), span = cols.length + (grouped() ? 0 : 1);
