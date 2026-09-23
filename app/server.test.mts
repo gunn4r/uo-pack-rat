@@ -1238,6 +1238,38 @@ test("[fast] /api/optimize by character with a bad settings type is 400", async 
   assert.match(asJson<ErrorBody>(await r.json()).error, /excludeTags/);
 });
 
+// The by-character form builds its pools from `settings`, but a saved run must still remember the page's
+// whole settings snapshot (meta.settings: floors, weights, race, the search knobs): the Saved runs drawer
+// labels, badges, compares and re-applies runs from it. The route used to replace meta.settings with the
+// pool settings alone, so every run came back with no floors or weights.
+test("[fast] /api/optimize by character: the saved run keeps the page's settings snapshot, with the pool settings it ran on", async () => {
+  const inv = asJson<InventoryResponse>(await (await get("/api/inventory")).json());
+  const profiles = asJson<ProfilesResponse>(await (await get("/api/profiles")).json());
+  const rules = asJson<RulesResponse>(await (await get("/api/rules")).json());
+  const character = Object.keys(inv.inventory.characters)[0]!;
+  const templateName = Object.keys(profiles.profiles.templates!)[0]!;
+  const profile = { ...profiles.profiles.templates![templateName], caps: rules.rules.caps, floors: { hci: 3 } };
+  const snapshot = { floors: { hci: 3 }, weights: { dci: 2 }, race: "elf", restarts: 7, strLimit: 999 };
+  const r = await fetch(srv.url + "/api/optimize", {
+    method: "POST", headers: { "content-type": "application/json" },
+    body: JSON.stringify({ character, settings: { strLimit: 120 }, profile, opts: { exact: false, restarts: 7 }, meta: { character, settings: snapshot } }),
+  });
+  const j = asJson<OptimizeJobResponse>(await r.json());
+  assert.equal(r.status, 200, JSON.stringify(j));
+  let status: OptimizeJobResponse = j;
+  for (let i = 0; i < 200 && status.state !== "done" && !j.cached; i++) {
+    await new Promise((res) => setTimeout(res, 20));
+    status = asJson<OptimizeJobResponse>(await (await fetch(srv.url + `/api/optimize/${j.id}/status`)).json());
+  }
+  const list = asJson<{ runs: Array<{ id: string; settings: Record<string, unknown> }> }>(await (await get(`/api/runs?character=${encodeURIComponent(character)}`)).json());
+  const run = list.runs.find((x) => x.id === (j.cached ? (j as { run?: { id: string } }).run!.id : j.id));
+  assert.ok(run, "the run was saved");
+  assert.deepEqual(run.settings.floors, { hci: 3 });
+  assert.deepEqual(run.settings.weights, { dci: 2 });
+  assert.equal(run.settings.race, "elf");
+  assert.equal(run.settings.strLimit, 120, "the pool settings the run actually used win over the snapshot's");
+});
+
 // Post-review fix: `null` in an optional settings field (strLimit/excludeTags/excludeRoots/
 // excludeSkills/lockedSlots) passed the `!= null` validation gate untouched, but the destructuring
 // defaults below it only fire on `undefined` — so `strLimit: null` reached buildPools as a literal
