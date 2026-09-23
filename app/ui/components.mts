@@ -531,3 +531,35 @@ export function showToast(text: string, tone: ToastTone = "info", { action }: { 
   return t;
 }
 export function clearToasts(): void { document.getElementById("toasts")?.replaceChildren(); }
+
+// ---- characters
+// An action menu ("⋯") on the popover: role=menu, menuitem buttons, ↑/↓/Home/End move between the items
+// (roving tabindex), Enter or a click runs one and closes the menu, Esc closes it and focus goes back to the
+// anchor. A danger item is drawn in danger colour; "divider" draws a rule between groups. Each item's
+// `count` span is returned so a number that arrives later (saved runs) can be filled in.
+export interface MenuItem { label: string; onSelect: () => void; danger?: boolean | undefined; kbd?: string | undefined; count?: string | number | undefined }
+export function menu(anchor: HTMLElement, items: Array<MenuItem | "divider">, { label, width = 220 }: { label: string; width?: number }): PopoverHandle & { counts: Map<string, HTMLSpanElement> } {
+  const counts = new Map<string, HTMLSpanElement>();
+  const buttons: HTMLButtonElement[] = [];
+  let handle: PopoverHandle | null = null;
+  const kids = items.map((it) => {
+    if (it === "divider") return el("div", { class: "divider", role: "separator" });
+    const count = txt(it.count ?? "", "count");
+    counts.set(it.label, count);
+    const b = box("button", { type: "button", class: `menu-item${it.danger ? " danger" : ""}`, role: "menuitem", tabindex: buttons.length ? "-1" : "0",
+      onclick: () => { handle?.close(); it.onSelect(); } }, txt(it.label), it.kbd ? kbd(it.kbd) : count);
+    buttons.push(b);
+    return b;
+  });
+  handle = popover(anchor, kids, { label, width, role: "menu" });
+  handle.root.classList.add("pop-menu");
+  handle.root.addEventListener("keydown", (e: KeyboardEvent) => {
+    const i = buttons.indexOf(document.activeElement as HTMLButtonElement);
+    const to = e.key === "ArrowDown" ? (i + 1) % buttons.length : e.key === "ArrowUp" ? (i - 1 + buttons.length) % buttons.length : e.key === "Home" ? 0 : e.key === "End" ? buttons.length - 1 : -1;
+    if (to < 0) return;
+    e.preventDefault();
+    buttons.forEach((b, j) => { b.tabIndex = j === to ? 0 : -1; });
+    buttons[to]!.focus();
+  });
+  return Object.assign(handle, { counts });
+}

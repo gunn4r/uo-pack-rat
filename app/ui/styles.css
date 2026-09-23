@@ -1,5 +1,5 @@
 /* ui/styles.css — the older shared page classes the screens still use (.panel, .stack, .row, plain tables, the
-   character sheet, the item tooltip), on the tokens in ui/tokens.css (docs/ui.md). No literal colours here.
+   the item tooltip), on the tokens in ui/tokens.css (docs/ui.md). No literal colours here.
    The shell is ui/shell.css, components are ui/components.css, and each screen has its own file. */
 
 html, body { margin: 0; height: 100%; }
@@ -64,20 +64,6 @@ details summary { cursor: pointer; color: var(--color-text-muted); font-size: va
 #tip .t-muted { color: var(--color-text-muted); }
 [data-serial] { cursor: default; }
 
-/* character sheet */
-.sheet { max-width: 760px; background: var(--color-surface-subtle); color: var(--color-text); border: var(--border-width) solid var(--color-border); border-radius: var(--radius-md); padding: var(--space-2) var(--space-3) var(--space-3); font-size: var(--text-sm); line-height: var(--lh-sm); }
-.sheet h4 { margin: var(--space-2) 0 var(--space-1); text-align: center; color: var(--color-text-muted); font-size: var(--text-xs); text-transform: uppercase; letter-spacing: var(--tracking-caps); font-weight: var(--weight-semibold); }
-.sheet .cols { display: grid; grid-template-columns: 1fr 1fr; gap: 0 var(--space-6); }
-.sheet table { width: 100%; border-collapse: collapse; font-size: var(--text-sm); }
-.sheet td { padding: 1px var(--space-1-5); border: 0; white-space: nowrap; color: var(--color-text); }
-.sheet td.v { text-align: right; font-variant-numeric: tabular-nums; }
-.sheet .up { color: var(--color-success); } .sheet .down { color: var(--color-danger); } .sheet .same { color: var(--color-text-muted); }
-.sheet .cap { color: var(--color-text-muted); }
-.sheet .res { display: grid; grid-template-columns: repeat(5, auto); justify-content: space-between; gap: var(--space-1-5) var(--space-3); padding: var(--space-0-5) 0 var(--space-1); white-space: nowrap; }
-.sheet .res span b { font-weight: var(--weight-semibold); }
-.sheet .r-phys { color: var(--res-phys); } .sheet .r-fire { color: var(--res-fire); } .sheet .r-cold { color: var(--res-cold); } .sheet .r-poison { color: var(--res-poison); } .sheet .r-energy { color: var(--res-energy); }
-.sheet .title { text-align: center; font-weight: var(--weight-semibold); margin-bottom: var(--space-0-5); }
-.sheet .note { color: var(--color-text-muted); font-size: var(--text-xs); text-align: center; margin-top: var(--space-1-5); }
 
 
 

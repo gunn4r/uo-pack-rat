@@ -48,7 +48,7 @@ The bridge status control at the sidebar foot has four states (ready, busy, offl
 - `app/ui/tokens.css` — the tokens and `@font-face`.
 - `app/ui/components.css` — base resets and the shared component classes. Resets are wrapped in `:where()` (zero specificity) and variants are compound classes (`.btn.btn-primary`), so a reset can never outrank a component: `.pr button { color: inherit }` (0,1,1) would beat `.btn-primary` (0,1,0) and every filled button would inherit dark text.
 - `app/ui/shell.css` and one file per screen (table above).
-- `app/ui/styles.css` — the older shared classes the screens still use (`.panel`, `.stack`, `.row`, plain tables, the character sheet, the item tooltip) until each screen moves onto components. No literal colours anywhere: every colour is a token.
+- `app/ui/styles.css` — the older shared classes the screens still use (`.panel`, `.stack`, `.row`, plain tables, the item tooltip) until each screen moves onto components. No literal colours anywhere: every colour is a token.
 
 `<body class="pr">` is the root the resets hang off.
 
@@ -71,3 +71,15 @@ What exists:
 ## Contrast check
 
 `scripts/contrast-probe.mts` measures contrast on the rendered page: every text/background pair (compositing semi-transparent fills down to an opaque layer), field values, placeholders, control boundaries, icons in icon-only buttons and messages, and status dots. `scripts/ui-contrast.test.mts` (`[slow]`, full suite) runs it in the Electron window over the demo data on every scene in light and dark, and fails on any pair under 4.5:1 for text (3:1 for large text) or 3:1 for edges, icons and dots; a disabled control only needs 3:1 text. When you add a screen, drawer, popover or dialog, add a scene there.
+
+## Characters and the shared character sheet
+
+The Characters screen has two routes: `#/characters` is the roster (one 48 px row per character: last scan, STR · DEX · INT, Hits · Stam · Mana, the five paperdoll resists with a meter to the cap, pieces worn, "Build suit" and a ⋯ menu), filtered by the top-bar search and sorted by its header buttons; `#/characters/<Name>` is that character's sheet, with a breadcrumb, previous/next, "Show <Name>'s items", "Build a suit" and a ⋯ menu. `parseRoute()` returns the sheet's name as `sheet` (the builder's `character` is untouched). The ⋯ menus are `menu(anchor, items, {label})` from `components.mts`: a popover with `role=menu`, ↑/↓/Home/End between the items, a danger item for Forget (which goes through `confirmDialog`). "Show <Name>'s items" searches the Inventory for the name until the Inventory has a character filter to hand it to.
+
+The sheet itself is one themed component, `sheetNode(name, before, after, opts?)` in `ui/sheet.mts`, used by the Characters screen and the Suit Builder result:
+
+- `before`: the suit to show, a `SheetAssignment` (`Record<string, SheetItem>` keyed by slot or serial; a `SheetItem` is `{serial, name, slot, props, rarity?, tags?}`, which both a scanned `Item` and an optimizer `OptItem` satisfy). `wornSet(name)` gives the character's worn set in this shape.
+- `after`: `null` for the one-suit sheet; a second assignment for the "now → after" variant, where every figure that moves reads "18 → 22" (the after number in success or danger colour), the slot tiles show the `after` suit with its new pieces badged "New", and the footnote adds the Hits/Stamina/Mana estimate note. Worn pieces the optimizer never touches count on both sides.
+- `opts.onSlot(item, tile)`: called when a filled slot tile is pressed; without it the tiles are still buttons carrying `data-serial`, so the page's hover tooltip works on them. The Characters screen opens the piece's tooltip lines in an always-dark popover (`.item-pop`).
+
+It returns a `div.sheet` (with `data-character`): a KPI row of seven tiles (five resists as value / cap with a meter and a "cap +N" badge when the raw sum passes the cap, then Attributes with the gear bonus split and Pools), then two cards in a 7fr / 5fr grid: Worn gear (Armour 3 × 2, Weapons and jewellery 3 × 2, Clothing a row of 5, anything else under Other; rarity-coloured borders, dashed empty slots) and Properties (Casting, Combat, Regeneration, Pools and other as key/value lists with the shard cap muted, the skills or an info message when the scan has none, and the Resisting Spells footnote). The sheet lays itself out from its own width with container queries (`ui/characters.css`): below 1040 px the attributes and pools drop under the resists, below 960 px the cards stack, so it fits whatever column it is put in. `resistFigures(name, set)` is the resist maths the roster shares with it. The pure formatters (`capBadgeText`, `atCap`, `bonusBreakdown`, `moveText`, `keyNumbers`, `tagTone`, `plural`) are exported and unit-tested in `app/ui-characters.test.mts`.

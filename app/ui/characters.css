@@ -1,12 +1,82 @@
-/* ui/characters.css — the Characters screen (ui/characters.mts): paperdoll and character cards. Tokens only (docs/ui.md).
-   The character sheet itself (.sheet) is shared with the Suit Builder result and lives in styles.css. */
-/* schematic paperdoll */
-.doll { display: grid; grid-template-columns: repeat(4, 1fr); gap: var(--space-1-5); }
-.doll .slot { border: var(--border-width) solid var(--color-border-strong); border-radius: var(--radius-md); padding: var(--space-1) var(--space-2); min-height: 46px; background: var(--color-surface); color: var(--color-text); }
-.doll .slot .k { font-size: 10px; text-transform: uppercase; letter-spacing: var(--tracking-caps); color: var(--color-text-muted); }
-.doll .slot .n { font-size: var(--text-sm); font-weight: var(--weight-medium); white-space: normal; }
-.doll .slot.empty { border-style: dashed; background: var(--color-surface-subtle); }
-.doll .slot.empty .n { color: var(--color-text-faint); font-weight: var(--weight-regular); }
-.doll .slot.body { visibility: hidden; }
-.charcard { display: grid; grid-template-columns: minmax(300px, 420px) minmax(0, 760px); gap: var(--space-4); align-items: start; }
-@media (max-width: 1000px) { .charcard { grid-template-columns: 1fr; } }
+/* ui/characters.css — the Characters screen (ui/characters.mts): the roster and the sheet page, and the
+   character sheet itself (ui/sheet.mts's sheetNode), which the Suit Builder's result reuses. Tokens only
+   (docs/ui.md). The sheet sizes itself from its own width (a container query), not the window's, so it
+   fits whatever column it is put in. */
+
+/* ---------------------------------------------------------------- roster (spec 4.4) */
+.char-search { width: 240px; }
+.roster { overflow: hidden; }
+.roster-scroll { overflow-x: auto; }
+#char-table { min-width: 880px; }
+#char-table td { height: var(--row-comfortable); }
+#char-table td.no-match { height: auto; white-space: normal; }
+.pr a.char-link { color: var(--color-text); text-decoration: none; }
+.pr a.char-link:hover { color: var(--color-text); text-decoration: underline; }
+.res-cell { display: inline-flex; flex-direction: column; align-items: flex-end; gap: 3px; width: 100%; }
+.res-cell .meter { width: 100%; max-width: 48px; }
+.res-cell .at-cap { color: var(--color-success); }
+.row-btns { display: flex; gap: var(--space-1); justify-content: flex-end; }
+
+/* ---------------------------------------------------------------- sheet page (spec 4.5) */
+.crumbs { display: flex; align-items: center; gap: var(--space-2); min-width: 0; }
+.pr .crumbs a { color: var(--color-text-muted); text-decoration: none; }
+.pr .crumbs a:hover { color: var(--color-text); text-decoration: underline; }
+.crumbs h1 { overflow: hidden; text-overflow: ellipsis; }
+.sheet-meta { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--space-2); }
+.sheet-meta .mono { font-family: var(--font-mono); }
+
+/* ---------------------------------------------------------------- the sheet */
+.sheet { display: flex; flex-direction: column; gap: var(--space-4); min-width: 0; container-type: inline-size; }
+.sheet .up { color: var(--color-success); }
+.sheet .down { color: var(--color-danger); }
+
+.sheet-kpis { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: var(--space-3); }
+.resist.at-cap { border-color: var(--color-success); }
+.kpi-value { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--space-1); }
+.kpi-value .badge { margin-left: auto; }
+.res-phys { color: var(--res-phys); } .res-fire { color: var(--res-fire); } .res-cold { color: var(--res-cold); } .res-poison { color: var(--res-poison); } .res-energy { color: var(--res-energy); }
+.kv.kv-tight .kv-k, .kv.kv-tight .kv-v { min-height: 20px; border: 0; }
+.kv.kv-tight .kv-v { white-space: nowrap; }
+
+.sheet-cols { display: grid; grid-template-columns: minmax(0, 7fr) minmax(0, 5fr); gap: var(--space-4); align-items: start; }
+.sheet-slots { display: flex; flex-direction: column; gap: var(--space-4); padding: var(--space-4); }
+.slot-group { display: flex; flex-direction: column; gap: var(--space-2); }
+.slot-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--space-2); }
+.slot-grid.slot-grid-5 { grid-template-columns: repeat(5, minmax(0, 1fr)); }
+.slot.slot-sm { min-height: 52px; }
+.pr .sheet button.slot { cursor: pointer; font: inherit; font-weight: var(--weight-regular); }
+.sheet .slot.empty { padding: var(--space-2) var(--space-3); text-align: left; }   /* not the old page-level .empty (styles.css) */
+.pr .sheet button.slot:hover { background: var(--color-surface-subtle); color: var(--color-text); }
+.pr .sheet button.slot:focus-visible { outline: none; box-shadow: var(--ring-focus); }
+.slot-head { display: flex; align-items: center; gap: var(--space-1-5); }
+.slot-meta { display: flex; align-items: center; gap: var(--space-1-5); min-width: 0; }
+.slot-meta > .muted { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+.sheet-props { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: var(--space-3) var(--space-5); padding: var(--space-3) var(--space-4); }
+.prop-group { display: flex; flex-direction: column; gap: var(--space-1); min-width: 0; }
+.sheet-props-2 { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); column-gap: var(--space-5); }
+.sheet-foot { display: flex; flex-direction: column; gap: var(--space-2); padding: 0 var(--space-4) var(--space-4); }
+
+/* narrower than the 1440 layout: attributes and pools drop under the five resists, then the two cards stack */
+@container (max-width: 1040px) {
+  .sheet-kpis { grid-template-columns: repeat(10, minmax(0, 1fr)); }
+  .sheet-kpis > .kpi { grid-column: span 2; }
+  .sheet-kpis > .kpi-list { grid-column: span 5; }
+}
+@container (max-width: 960px) {
+  .sheet-cols { grid-template-columns: minmax(0, 1fr); }
+}
+
+/* a worn piece's tooltip lines in a popover (always dark, like the hover tooltip in styles.css) */
+.pop.item-pop { font-size: var(--text-sm); line-height: var(--lh-sm); }
+.item-pop .t-name { text-align: center; font-weight: var(--weight-semibold); font-size: var(--text-base); line-height: var(--lh-base); }
+.item-pop .t-center { text-align: center; }
+.item-pop .t-i { font-style: italic; }
+.item-pop .t-b { font-weight: var(--weight-semibold); }
+.item-pop .t-hr { border-top: var(--border-width) solid var(--color-border); margin: var(--space-1-5) 0; }
+.item-pop .t-val { color: var(--color-success); }
+.item-pop .t-leech { color: var(--res-energy); }
+.item-pop .t-hot { color: var(--color-highlight); }
+.item-pop .t-key, .item-pop .t-muted { color: var(--color-text-muted); }
+.item-pop .t-dur { height: 4px; background: var(--color-surface-sunken); border-radius: var(--radius-sm); margin: var(--space-0-5) 0 var(--space-1); }
+.item-pop .t-dur > div { height: 100%; background: var(--color-accent); border-radius: var(--radius-sm); }
