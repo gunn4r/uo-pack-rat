@@ -13,13 +13,14 @@ export function plural(n: number, one: string, many = `${one}s`): string {
 }
 
 // ---------------------------------------------------------------- columns
-// The nine property columns a fresh install shows (spec 4.2), after Name, Rarity, Slot and Location.
-export const DEFAULT_COLS = ["physResist", "fireResist", "coldResist", "poisonResist", "energyResist", "hci", "dci", "lmc", "lrc"];
+// The columns a fresh install shows besides Name, Rarity, Slot and Location: the item's tags (drawn right
+// after Name wherever the list names them) and the nine property columns of spec 4.2.
+export const DEFAULT_COLS = ["tags", "physResist", "fireResist", "coldResist", "poisonResist", "energyResist", "hci", "dci", "lmc", "lrc"];
 // Columns that are not item properties: the item's own fields, offered in the Item group.
-export const ITEM_COLS = ["amount", "kind", "seen", "med", "strReq", "weight"];
+export const ITEM_COLS = ["tags", "amount", "kind", "seen", "med", "strReq", "weight"];
 // Header text where the table's narrow columns want a shorter word than the property's label.
-const SHORT: Record<string, string> = { poisonResist: "Pois", energyResist: "Nrg", amount: "Qty", kind: "Kind", seen: "Seen", med: "Med", strReq: "STR req", weight: "Wt" };
-const FULL: Record<string, string> = { amount: "Quantity", kind: "Kind", seen: "Last seen", med: "Meditation-safe", strReq: "Strength requirement", weight: "Weight" };
+const SHORT: Record<string, string> = { tags: "Tags", poisonResist: "Pois", energyResist: "Nrg", amount: "Qty", kind: "Kind", seen: "Seen", med: "Med", strReq: "STR req", weight: "Wt" };
+const FULL: Record<string, string> = { tags: "Tags", amount: "Quantity", kind: "Kind", seen: "Last seen", med: "Meditation-safe", strReq: "Strength requirement", weight: "Weight" };
 export const colShort = (key: string, label: (k: string) => string): string => SHORT[key] || label(key);
 export const colFull = (key: string, full: (k: string) => string): string => FULL[key] || full(key);
 // The column picker's groups, in the order the popover lists them. The first three are open; the rest

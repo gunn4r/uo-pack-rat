@@ -3,7 +3,7 @@
 // Exports startServer(config) → { server, port, url, close() } — nothing runs at import time, so a
 // test (or another launcher) can start and stop as many independent instances as it likes. The file
 // also self-starts when run directly (node app/vault-server.mts / node scripts/start.mts).
-// Routes: GET /  (index.html) · GET /favicon.png (app/assets/, the logo at 64 px) · GET /vault-lib.mjs · GET /item-query.mjs (pure filter/sort/facet logic
+// Routes: GET /  (index.html) · GET /favicon.png (app/assets/, the logo at 64 px) · GET /logo-mark.png (the rat's head cropped from the logo, 80 px, the sidebar's mark) · GET /vault-lib.mjs · GET /item-query.mjs (pure filter/sort/facet logic
 //         shared by the browser and GET /api/items below — no DOM, no node: imports, servable byte for
 //         byte like vault-lib.mts) · GET /scan-schema.mjs (vault-lib.mts imports it for parseStamp, so
 //         it must be servable to the browser the same way) ·
@@ -35,7 +35,7 @@
 //         409 under --demo, which must never write into the committed app/fixtures/) ·
 //         POST /api/forget-character {character} (drop a character's card, worn set, backpack and bank:
 //         a `_vault` tombstone carrying forgetCharacter; 409 under --demo) ·
-//         GET|PUT /api/ui-prefs (<data>/ui-prefs.json: {cols?, theme?, appearance?, sidebar?, density?}, the page's view choices)
+//         GET|PUT /api/ui-prefs (<data>/ui-prefs.json: {cols?, colsVersion?, theme?, appearance?, sidebar?, density?}, the page's view choices)
 //         POST /api/bridge {action, serial, name, chain: [root…parent], pos|null} (queue for packrat-bridge.py) · GET /api/bridge/status
 //         GET /api/events — SSE, one stream shared by every connected client (not per-job like the
 //         optimize events above): hello {ok, watching: [adapter ids]} on connect, inventory
@@ -82,7 +82,7 @@
 import http from "node:http";
 import { readFileSync, appendFileSync, readdirSync, existsSync, mkdirSync, copyFileSync, renameSync } from "node:fs";
 import { pathToFileURL } from "node:url";
-import { dirname, join } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import { spawn } from "node:child_process";
 import { statSync } from "node:fs";
 import { Worker } from "node:worker_threads";
@@ -139,6 +139,7 @@ const UI_PREF_CHOICES = {
   appearance: ["light", "system", "dark"],
   sidebar: ["auto", "collapsed"],
   density: ["dense", "regular"],   // the Inventory table's row height
+  colsVersion: ["2"],              // the column set `cols` was saved against (app/ui/view-state.mts's COLS_VERSION)
 } as const satisfies Record<string, readonly string[]>;
 type UiPrefsFile = { cols?: string[] } & { -readonly [K in keyof typeof UI_PREF_CHOICES]?: string };
 // Localhost security (spec §4.5): a request's Host must name this server, an Origin (when present)
@@ -407,13 +408,23 @@ export interface JobTimings {
 // check's fallback when no client is configured). The default is this machine's real home and
 // installer.mts's candidateClientRoots — which, on win32, also probes a fixed C:\TazUO — so a test
 // passes its own to never reach a real client folder on any OS.
+//
+// PACKRAT_CLIENT_HOME swaps the real home for another folder, for a server started in another process
+// (the Electron UI tests launch the whole app, so they cannot hand startServer an option): the search
+// then looks only under that folder, with no environment folders (LOCALAPPDATA) and no fixed roots
+// (C:\TazUO), so a test launch can never find, or read the packrat-paths.json of, a real client.
 export interface ClientSearch {
   home: string;
   candidates: (adapter: AdapterInfo) => string[];
 }
-export function defaultClientSearch(): ClientSearch {
+export function defaultClientSearch(env: NodeJS.ProcessEnv = process.env): ClientSearch {
+  if (env.PACKRAT_CLIENT_HOME) {
+    const home = resolve(env.PACKRAT_CLIENT_HOME);
+    // "linux" is the platform with no fixed roots; an adapter for another OS still offers nothing.
+    return { home, candidates: (a) => (a.platform && a.platform !== process.platform ? [] : candidateClientRoots({ adapter: a.id, home, platform: "linux", env: {} })) };
+  }
   const home = homedir();
-  return { home, candidates: (a) => candidateClientRoots({ adapter: a.id, home, platform: process.platform, env: process.env, adapterPlatform: a.platform }) };
+  return { home, candidates: (a) => candidateClientRoots({ adapter: a.id, home, platform: process.platform, env, adapterPlatform: a.platform }) };
 }
 
 export interface StartServerOptions {
@@ -951,6 +962,7 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
       }
       if (req.method === "GET" && url.pathname === "/") return send(res, 200, readFileSync(join(HERE, "index.html"), "utf8"), "text/html");
       if (req.method === "GET" && url.pathname === "/favicon.png") return send(res, 200, readFileSync(join(HERE, "assets", "favicon.png")), "image/png");
+      if (req.method === "GET" && url.pathname === "/logo-mark.png") return send(res, 200, readFileSync(join(HERE, "assets", "logo-mark.png")), "image/png");
       if (req.method === "GET" && url.pathname === "/vault-lib.mjs") return send(res, 200, readFileSync(join(WEB, "vault-lib.mjs"), "utf8"), "text/javascript");
       if (req.method === "GET" && url.pathname === "/item-query.mjs") return send(res, 200, readFileSync(join(WEB, "item-query.mjs"), "utf8"), "text/javascript");
       if (req.method === "GET" && url.pathname === "/scan-schema.mjs") return send(res, 200, readFileSync(join(WEB, "scan-schema.mjs"), "utf8"), "text/javascript");

@@ -91,7 +91,9 @@ test("[fast] the data-folder banner shows the mismatch, stays dismissed, and com
   renderDataDirNotice();
   assert.equal(notice.hidden, false);
   const text = textOf(notice);
-  assert.match(text, /npm start -- --data \/Users\/example\/dev-data/);
+  assert.match(text, /^Your game scripts write scans to a different folder than Pack Rat is reading\./, "one short line");
+  assert.doesNotMatch(text, /\/Users\/example/, "no paths: Settings › Data has them");
+  assert.ok(notice.kids.some((k) => textOf(k) === "Show details"), "a way to the details");
   const button = notice.kids.find((k) => textOf(k) === "Dismiss") as FakeEl | undefined;
   assert.ok(button?.listeners.click, "a dismiss button is there");
   button.listeners.click();

@@ -15,6 +15,7 @@ Ground truth: `app/schema/rules.v1.schema.json` (the contract every rules file i
   "raceCaps": { "elf": { "energyResist": 75 } },
   "resistSkillBonus": { "breakpoints": [[100, 0.4], [120, 0.2]] },
   "tagUnits": { "cursed": 10.0, "brittle": 4.0, "antique": 1.5, "prized": 0.5 },
+  "tagInfo": { "prized": "Costs more to insure, and can't be blessed." },
   "rarity": [
     { "name": "Minor Magic Item", "colour": "#a0a0a0" }
   ],
@@ -23,7 +24,7 @@ Ground truth: `app/schema/rules.v1.schema.json` (the contract every rules file i
 }
 ```
 
-Every one of these keys is **required** by `app/schema/rules.v1.schema.json` — a rules file missing any of them fails validation and is rejected (`app/rules.mts`'s `loadFile` throws, naming the file path, when `validate()` reports errors). `additionalProperties: true` at the top level, so a rules file may carry extra fields the app doesn't read yet; `caps`, `raceCaps` and `tagUnits` take any keys, but every value must be a number (`raceCaps` one level down), and every `resistSkillBonus.breakpoints` entry must be a pair of numbers, so a string cap or a one-element breakpoint is rejected rather than turning into a `NaN` cap or a string tag penalty downstream.
+Every one of these keys except `tagInfo` is **required** by `app/schema/rules.v1.schema.json` — a rules file missing any of them fails validation and is rejected (`app/rules.mts`'s `loadFile` throws, naming the file path, when `validate()` reports errors). `additionalProperties: true` at the top level, so a rules file may carry extra fields the app doesn't read yet; `caps`, `raceCaps` and `tagUnits` take any keys, but every value must be a number (`raceCaps` one level down), and every `resistSkillBonus.breakpoints` entry must be a pair of numbers, so a string cap or a one-element breakpoint is rejected rather than turning into a `NaN` cap or a string tag penalty downstream.
 
 ## Every key
 
@@ -36,6 +37,7 @@ Every one of these keys is **required** by `app/schema/rules.v1.schema.json` —
 | `raceCaps` | object, race name → partial `caps`-shaped object | Per-race overrides that **raise** (or otherwise change) one or more of the base caps for characters of that race — e.g. uoalive gives an Elf `energyResist: 75` instead of the base 70. Looked up by the character's own `race` field (from their profile, default `"human"` when unset). Only resist keys are meaningfully consumed by `effectiveProfile`/the character sheet today, but the shape allows any capped property. |
 | `resistSkillBonus` | object, `{breakpoints}` | The Resisting Spells skill's flat bonus toward each resist cap — see The resist-bonus formula, below. A shard with no such bonus (e.g. `generic-osi`) ships `{"breakpoints": []}`, not an absent key. |
 | `tagUnits` | object, tag name (as it appears in a tooltip, any case: `tagUnits()` lower-cases the keys) → number | The penalty **per unit** for a negative property tag — Cursed, Brittle, Antique, Prized are OSI-standard; a shard can add its own (uoalive adds Massive and Unwieldy). An item's tags become a single `tagPenalty` property (`parseTooltip` in `app/vault-lib.mts`, `props.tagPenalty = tags.reduce((a, t) => a + TU[t], 0)`) that the optimizer can weight negatively. |
+| `tagInfo` | *optional* object, tag name (any case) → text (1-400 characters) | What each tag means on this shard, in plain player language: the item peek shows it as a tooltip on the tag's chip (hover or focus). A tag with no entry, or a shard with no `tagInfo`, shows a plain chip. uoalive describes all six of its tags (Antique's durability and Powder of Fortifying limits, Cursed's insurance and death rules, and so on). The only optional key: every other key in this table is required. |
 | `rarity` | array of `{name, colour}`, ascending order | The shard's rarity ladder, from least to most rare. `colour` is the hex colour the client's tooltip renders that tier's name in — used to both label and colour-rank an item's rarity in the app (`rarityRank`/`rarityColor` in `app/ui/dom.mts`); an item's rank is its array index + 1 (0 = not on the ladder / no rarity line at all). |
 | `raceLock` | object, `{gargoyleOnly}` | Whether this shard enforces the gargoyle race lock — gargoyle-only gear (name `Gargish …`, or a `gargoyles only` tooltip flag) is excluded from a non-gargoyle character's optimizer pool by default (`buildPools`'s `excludeGargoyle` option, defaulted from this flag) unless the profile explicitly allows it. |
 | `freeSkills` | array of skill names | Skills this shard treats as free — outside the usual skill-point cap (e.g. uoalive's classic secondary-skill list: Lumberjacking, Cartography, Lockpicking, and so on). Shown as a muted footer line on each character's card in the Characters tab, filtered to the ones that character actually has points in. Purely informational — nothing in the optimizer reads this list. |

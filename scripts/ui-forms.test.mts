@@ -10,7 +10,7 @@ import { tmpdir } from "node:os";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createRequire } from "node:module";
-import { fitWindow } from "./electron-window.mts";
+import { fitWindow, testEnv } from "./electron-window.mts";
 import type { ElectronApplication, Page } from "playwright";
 
 const ROOT = dirname(dirname(fileURLToPath(import.meta.url)));
@@ -25,7 +25,7 @@ function unavailable(): string | null {
 }
 async function launch(dataDir: string): Promise<{ app: ElectronApplication; page: Page; errors: string[] }> {
   const { _electron } = await import("playwright");
-  const app = await _electron.launch({ args: [ROOT, "--demo", "--data", dataDir], cwd: ROOT, timeout: 60_000 });
+  const app = await _electron.launch({ args: [ROOT, "--demo", "--data", dataDir], cwd: ROOT, timeout: 60_000, env: testEnv() });
   const page = await app.firstWindow();
   const errors: string[] = [];
   page.on("pageerror", (e) => errors.push(String(e)));
@@ -179,7 +179,7 @@ test("[slow] Wizard: named stepper with branch-aware labels, radio cards, kept t
   }
 });
 
-test("[slow] Settings: section nav with the client warning, theme and appearance, Run setup, forget with confirm, update check messages", async (t) => {
+test("[slow] Settings: sections with the client warning, theme and appearance, Run setup, forget with confirm, update check messages", async (t) => {
   const why = unavailable();
   if (why) return t.skip(why);
   const dataDir = mkdtempSync(join(tmpdir(), "packrat-forms-settings-"));
@@ -189,9 +189,12 @@ test("[slow] Settings: section nav with the client warning, theme and appearance
     await page.locator("#inv-table tbody tr.item").first().waitFor({ timeout: 30_000 });
     await page.evaluate(() => { location.hash = "#/settings"; });
     await page.waitForSelector("#set-general .set-row");
-    assert.deepEqual(await page.locator("#settings-nav .nav-item").allInnerTexts(), ["General", "Game client", "Data", "Updates"]);
-    assert.equal(await page.locator("#settings-nav [data-section=set-client] .dot.warn").count(), 1, "no client set up: a warning dot on Game client");
-    assert.equal(await page.locator("#settings-nav [aria-current=true]").innerText(), "General");
+    // No section nav while the page is this short: the four sections' headings, and the client warning beside
+    // Game client's.
+    assert.equal(await page.locator("#settings-nav").count(), 0);
+    assert.deepEqual(await page.locator("#settings-body .set-section h2").allInnerTexts(), ["General", "Game client", "Data", "Updates"]);
+    assert.equal(await page.locator("#set-client .set-section-head .dot.warn[aria-label='needs attention']").count(), 1, "no client set up: a warning dot on Game client");
+    assert.equal(await page.locator("#settings-body .dot.warn").count(), 1, "and on no other section");
 
     // General: the Theme applies at once, is saved as a ui-pref and comes back on the next load; Appearance
     // likewise.
@@ -218,11 +221,8 @@ test("[slow] Settings: section nav with the client warning, theme and appearance
     assert.equal(await page.locator("#set-client").getByRole("button", { name: "Reinstall" }).isDisabled(), true);
     assert.match(await page.locator("#set-client").innerText(), /-stopall/);
 
-    // The nav follows a click; Data's danger zone asks before forgetting, with the existing copy.
-    // The clicked section stays marked while its scroll runs, even when Data can't reach the top of the page.
-    await page.click("#settings-nav [data-section=set-data]");
-    await page.waitForTimeout(1_000);
-    assert.equal(await page.locator("#settings-nav [aria-current=true]").innerText(), "Data");
+    // Data's danger zone asks before forgetting, with the existing copy.
+    await page.locator("#set-data").scrollIntoViewIfNeeded();
     assert.deepEqual(await page.locator("#set-forget-who option").allInnerTexts(), ["Dorran", "Kestrel"]);
     await page.click("#set-forget");
     await page.waitForSelector("dialog.dialog[open]");

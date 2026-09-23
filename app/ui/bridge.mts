@@ -5,7 +5,7 @@ import { state, bridge } from "./store.mts";
 import { $, el, toast } from "./dom.mts";
 import { api } from "./api.mts";
 import { confirmDialog, icon } from "./components.mts";
-import { bridgeView, dataDirNotice } from "./messages.mts";
+import { bridgeView, dataDirNotice, dataDirBanner } from "./messages.mts";
 import type { BridgeView } from "./messages.mts";
 import type { Item } from "../vault-lib.mts";
 import type { BridgeQueueApiResponse, BridgeStatusApiResponse } from "./api-types.mts";
@@ -188,22 +188,36 @@ export async function pollBridge(): Promise<void> {
 }
 
 // ---------------------------------------------------------------- data-folder banner (#notice)
-// GET /api/setup's dataDirCheck as a banner under the header: the client's scripts writing to another
+// GET /api/setup's dataDirCheck as a banner above the screen: the client's scripts writing to another
 // data folder than the app reads (or a packrat-paths.json the app can't read) is otherwise invisible —
-// an empty inventory and an offline bridge. Called wherever state.setup is refreshed (renderSettings),
-// so a reinstall clears it. Dismissing hides that exact sentence for the life of the page; a different
-// one (another folder, say) is news and shows again.
+// an empty inventory and an offline bridge. One short line (messages.mts's dataDirBanner), "Show details"
+// (Settings › Data, where the full sentence with both paths stays) and Dismiss. Called wherever
+// state.setup is refreshed (renderSettings), so a reinstall clears it. Dismissing hides that exact finding
+// for the life of the page; a different one (another folder, say) is news and shows again.
 let dismissedNotice: string | null = null;
 export function renderDataDirNotice(): void {
   const box = $<HTMLElement>("#notice");
   if (!box) return;
-  const text = dataDirNotice(state.setup?.dataDirCheck);
-  box.hidden = !text || text === dismissedNotice;
+  const check = state.setup?.dataDirCheck;
+  const full = dataDirNotice(check), text = dataDirBanner(check);
+  box.hidden = !full || !text || full === dismissedNotice;
   if (box.hidden) { box.replaceChildren(); return; }
   box.replaceChildren(
-    el("span", {}, text),
-    el("button", { class: "small", onclick: () => { dismissedNotice = text; renderDataDirNotice(); } }, "Dismiss"),
+    el("span", {}, text!),
+    el("a", { class: "btn btn-sm", href: "#/settings", onclick: (e: MouseEvent) => { e.preventDefault(); showDataSection(); } }, "Show details"),
+    el("button", { type: "button", class: "btn btn-ghost btn-sm", onclick: () => { dismissedNotice = full; renderDataDirNotice(); } }, "Dismiss"),
   );
+}
+// Settings › Data, scrolled into view once Settings has drawn it (its render waits on GET /api/setup).
+function showDataSection(): void {
+  location.hash = "#/settings";
+  const until = Date.now() + 3000;
+  const tick = (): void => {
+    const sec = document.getElementById("set-data");
+    if (sec?.offsetParent) sec.scrollIntoView({ block: "start" });
+    else if (Date.now() < until) setTimeout(tick, 50);
+  };
+  tick();
 }
 
 // ---- inventory

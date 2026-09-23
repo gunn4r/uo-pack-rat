@@ -275,6 +275,15 @@ export function tagUnits(): Record<string, number> {
   if (!lower) TAG_UNITS_CACHE.set(raw, lower = Object.fromEntries(Object.entries(raw).map(([k, v]) => [k.toLowerCase(), v])));
   return lower;
 }
+// A tag's meaning in plain words (the shard's rules `tagInfo`, optional), or null when the shard gives none.
+const TAG_INFO_CACHE = new WeakMap<object, Record<string, string>>();
+export function tagInfo(tag: string): string | null {
+  const raw = getRules().tagInfo;
+  if (!raw) return null;
+  let lower = TAG_INFO_CACHE.get(raw);
+  if (!lower) TAG_INFO_CACHE.set(raw, lower = Object.fromEntries(Object.entries(raw).map(([k, v]) => [k.toLowerCase(), v])));
+  return lower[tag.toLowerCase()] ?? null;
+}
 const RARITY_RE = /^(minor|lesser|greater|major|legendary) (magic item|artifact)$|^reforged|artifact$/i;
 
 // The longest line any real tooltip carries is ~54 characters; the scan schema caps one at 512
