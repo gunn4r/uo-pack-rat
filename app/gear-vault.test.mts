@@ -853,6 +853,14 @@ test("[fast] saved runs: the key ignores budget and warm start; a run is reused 
   assert.equal(reusableRun([proven], "other", {}), null);
   assert.equal(runSummary({ id: "x", result: { method: "exact", proven: true, score: 3 } }).score, 3);
 });
+test("[fast] saved runs: the list summary carries the change count and the suit's totals for the drawer's badges", () => {
+  const s = runSummary({ id: "x", result: { method: "exact", perSlotChanges: [{ slot: "ring" }, { slot: "cloak" }], totals: { before: { physResist: 3 }, after: { physResist: 29, luck: 10 } } } });
+  assert.equal(s.changes, 2);
+  assert.deepEqual(s.totalsAfter, { physResist: 29, luck: 10 });
+  const bare = runSummary({ id: "y", result: {} });
+  assert.equal(bare.changes, null, "an old run without perSlotChanges says nothing rather than 0 changes");
+  assert.equal(bare.totalsAfter, null);
+});
 // Regression (review I2): the solver's fallbacks (HiGHS failed to load, the floors-conflict retry ran
 // out of time) come back as method "heuristic", which the reuse rule used to treat as a deterministic
 // heuristic run and serve forever, whatever budget was asked for or whether HiGHS works again.

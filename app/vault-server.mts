@@ -349,12 +349,15 @@ function currentError(current: unknown): string | null {
 // optionalSlots/warmStart are set by the route itself after this runs; seed/restarts/timeBudgetMs/
 // exact/alternatives are what app/ui/builder.mts actually sends.
 const OPTS_MAX_TIME_BUDGET_MS = 60 * 60 * 1000;
+// The same ranges as numbers the page can show: the Suit Builder's Advanced fields validate against a copy
+// (app/ui/builder-model.mts's SOLVER_LIMITS; app/server.test.mts checks the two agree).
+export const OPTS_LIMITS = { restarts: { min: 1, max: 10000 }, timeBudgetMs: { min: 0, max: OPTS_MAX_TIME_BUDGET_MS }, alternativesCount: { min: 0, max: 100 } } as const;
 function optsError(opts: Record<string, unknown>): string | null {
   for (const [k, v] of Object.entries(opts)) {
     switch (k) {
       case "exact": if (typeof v !== "boolean") return "opts.exact must be a boolean"; break;
       case "seed": if (!isBoundedInt(v, 0, 2 ** 31)) return "opts.seed must be an integer"; break;
-      case "restarts": if (!isBoundedInt(v, 1, 10000)) return "opts.restarts must be an integer between 1 and 10000"; break;
+      case "restarts": if (!isBoundedInt(v, OPTS_LIMITS.restarts.min, OPTS_LIMITS.restarts.max)) return `opts.restarts must be an integer between ${OPTS_LIMITS.restarts.min} and ${OPTS_LIMITS.restarts.max}`; break;
       case "timeBudgetMs": if (!isBoundedInt(v, 0, OPTS_MAX_TIME_BUDGET_MS)) return `opts.timeBudgetMs must be an integer between 0 and ${OPTS_MAX_TIME_BUDGET_MS}`; break;
       case "optionalSlots":
         if (!Array.isArray(v) || v.length > 32 || v.some((s) => !isBoundedString(s, 32))) return "opts.optionalSlots must be an array of at most 32 slot names";
@@ -362,7 +365,7 @@ function optsError(opts: Record<string, unknown>): string | null {
       case "alternatives": {
         if (!v || typeof v !== "object" || Array.isArray(v)) return "opts.alternatives must be an object";
         const { count, tolerance } = v as Record<string, unknown>;
-        if (!isBoundedInt(count, 0, 100)) return "opts.alternatives.count must be an integer between 0 and 100";
+        if (!isBoundedInt(count, OPTS_LIMITS.alternativesCount.min, OPTS_LIMITS.alternativesCount.max)) return `opts.alternatives.count must be an integer between ${OPTS_LIMITS.alternativesCount.min} and ${OPTS_LIMITS.alternativesCount.max}`;
         if (typeof tolerance !== "number" || !Number.isFinite(tolerance) || tolerance < 0) return "opts.alternatives.tolerance must be a non-negative number";
         break;
       }
@@ -1375,7 +1378,10 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
           for (const slot of blocked) delete current[slot];       // a worn piece the filters now rule out must not stay "current"
           for (const slot of lockedList) pools[slot] = [];        // a locked slot offers no alternatives — it always keeps current
           opts = { ...(opts as RunOpts), optionalSlots: DEFAULT_OPTIONAL_SLOTS.filter((slot) => !lockedList.includes(slot)) };
-          meta = { ...meta, character, settings: s };
+          // The saved run keeps the page's whole settings snapshot (floors, weights, race, search knobs:
+          // the runs drawer labels, compares and re-applies runs from it), with the pool settings it
+          // actually ran on written over it.
+          meta = { ...meta, character, settings: { ...((meta.settings as Record<string, unknown> | undefined) || {}), ...s } };
         } else {
           // The hand-built form: pools/current came straight off the body, so this is where a literal
           // null candidate ({pools: {helmet: [null]}}) or an item with no props gets refused rather
