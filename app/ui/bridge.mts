@@ -83,7 +83,7 @@ function allowedBridgeActions(): string[] {
   return currentAdapter()?.capabilities?.bridge || [];
 }
 const ALL_BRIDGE_ACTIONS = ["highlight", "grab", "goto"];
-// The button labels actButtons() itself uses (see below) — the note names actions the same way the
+// The action names the page's buttons use — the note names actions the same way the
 // missing buttons would have read, not the raw capability strings ("goto" reads as "Go to" in here,
 // same as the button that isn't there).
 const ACTION_LABELS: Record<string, string> = { highlight: "Highlight", grab: "Grab", goto: "Go to" };
@@ -130,60 +130,26 @@ export function bridgeNoteEl(): HTMLDivElement | null {
   const msg = bridgeNote();
   return msg ? el("div", { class: "msg warn bridge-note" }, msg) : null;
 }
-export function actButtons(it: Item | null | undefined): HTMLSpanElement | null {
-  if (!it || it.equippedBy) return null;
-  const allowed = allowedBridgeActions();
-  const send = (action: string) => async (e: Event): Promise<void> => {
-    e.stopPropagation();
-    if (!bridge.online) { toast(BRIDGE_OFFLINE, "bad"); return; }
-    const r = await sendBridge(action, it);
-    toast(r.ok ? `${action}: ${it.name} queued for ${bridge.character}` : r.error, r.ok ? "" : "bad");
-  };
-  const btns = [
-    allowed.includes("highlight") ? el("button", { onclick: send("highlight"), title: "flash the item in game and mark its chest" }, "Highlight") : null,
-    allowed.includes("grab") ? el("button", { onclick: send("grab"), title: "move it to the backpack" }, "Grab") : null,
-    allowed.includes("goto") && rootPos(it) ? el("button", { onclick: send("goto"), title: "walk to the chest" }, "Go to") : null,
-  ].filter(Boolean);
-  return btns.length ? el("span", { class: "act" }, ...btns) : null;
+// Grab all: one Grab per piece, sent one after another (300 ms apart, stopping at the first refusal). Pieces
+// already in this character's backpack, or worn by anyone, are left out (grabbable() says which remain); the
+// outcome is one toast. `me` is the character the suit was built for, which is not always the one selected.
+export function grabbable(items: Item[], me: string): Item[] {
+  // Every folded item carries a location (foldSnapshots assigns one to every item before the page sees it).
+  return items.filter((i) => !i.equippedBy && !(i.location!.kind === "backpack" && i.location!.character === me));
 }
-// Grab all: one Grab per fetch-list piece, sent one after another (300 ms apart, stopping at the first refusal).
-// Pieces already in this character's backpack, or worn by anyone, are left out; each result toasts like a single Grab.
-// Returns null (nothing to render at all — the panel that calls this shows bridgeNoteEl() instead)
-// when the current client's adapter has no "grab" action.
-// `me` is the character the suit was built for, which is not always the one selected in the builder.
-export function grabAllRow(items: Item[], me: string): HTMLSpanElement | null {
-  if (!allowedBridgeActions().includes("grab")) return null;
-  // Every folded item carries a location (foldSnapshots unconditionally assigns one to every item
-  // before it's ever handed to the page — see vault-lib.mts) even though Item.location is optional in
-  // its own type (a piece being folded is momentarily location-less mid-fold, before that pass runs);
-  // this `!` documents that existing assumption rather than adding a new one.
-  const todo = items.filter((i) => !i.equippedBy && !(i.location!.kind === "backpack" && i.location!.character === me));
-  const status = el("span", { class: "small muted" }, todo.length < items.length ? `${items.length - todo.length} already with ${me} or worn` : "");
-  const btn = el("button", { id: "b-grab-all", "data-count": todo.length, onclick: async () => {
-    if (!bridge.online) { toast(BRIDGE_OFFLINE, "bad"); return; }
-    if (bridge.character !== me && !await confirmDialog({ title: `Grab into ${bridge.character}'s backpack?`, body: `The bridge is running on ${bridge.character}, not ${me}: the pieces would land in ${bridge.character}'s backpack.`, confirmLabel: "Grab anyway", danger: false })) return;
-    btn.dataset.busy = "1"; btn.disabled = true;
-    let sent = 0, stopped: string | null = null;
-    for (const it of todo) {
-      status.textContent = `Grabbing ${sent + 1}/${todo.length}: ${it.name}…`;
-      const r = await sendBridge("grab", it);
-      if (!r.ok) { stopped = `${it.name}: ${r.error}`; break; }
-      sent++;
-      if (sent < todo.length) await new Promise((res) => setTimeout(res, 300));
-    }
-    status.textContent = stopped ? `${sent}/${todo.length} queued, stopped at ${stopped}` : `${sent} grab${sent === 1 ? "" : "s"} queued for ${bridge.character}`;
-    toast(status.textContent, stopped ? "bad" : "");
-    delete btn.dataset.busy; grabAllState();
-  } }, `Grab all (${todo.length})`);
-  grabAllState(btn);
-  return el("span", { class: "row" }, btn, status);
-}
-// Enabled only while the bridge is online and something is left to grab; the title says why otherwise.
-export function grabAllState(btn: HTMLButtonElement | null = $<HTMLButtonElement>("#b-grab-all")): void {
-  if (!btn || btn.dataset.busy) return;
-  const count = +(btn.dataset.count as string);
-  btn.disabled = !bridge.online || !count;
-  btn.title = !bridge.online ? BRIDGE_OFFLINE : !count ? `nothing to grab: every piece is already with ${state.builder.character} or worn` : "queue a Grab for every piece on the fetch list, one after another";
+export async function grabAll(items: Item[], me: string): Promise<void> {
+  const todo = grabbable(items, me);
+  if (!todo.length) return;
+  if (!bridge.online) { toast(BRIDGE_OFFLINE, "bad"); return; }
+  if (bridge.character !== me && !await confirmDialog({ title: `Grab into ${bridge.character}'s backpack?`, body: `The bridge is running on ${bridge.character}, not ${me}: the pieces would land in ${bridge.character}'s backpack.`, confirmLabel: "Grab anyway", danger: false })) return;
+  let sent = 0, stopped: string | null = null;
+  for (const it of todo) {
+    const r = await sendBridge("grab", it);
+    if (!r.ok) { stopped = `${it.name}: ${r.error}`; break; }
+    sent++;
+    if (sent < todo.length) await new Promise((res) => setTimeout(res, 300));
+  }
+  toast(stopped ? `${sent} of ${todo.length} queued, stopped at ${stopped}` : `${sent} grab${sent === 1 ? "" : "s"} queued for ${bridge.character}`, stopped ? "bad" : "");
 }
 // The sidebar's bridge status control (index.html's #bridge; ui/shell.mts opens its popover). pollBridge
 // redraws it every 2.5 s from GET /api/bridge/status; the view itself is messages.mts's bridgeView.
@@ -208,7 +174,6 @@ export async function pollBridge(): Promise<void> {
     if (was !== `${bridge.online}|${bridge.character}`) document.dispatchEvent?.(new Event("bridgechange"));
     if (st.online) lastAnswered = Date.now();
     renderBridgeControl(bridgeView(st, { clientSet: !!state.setup?.settings?.client, clientName: currentAdapter()?.name || null, check: state.setup?.dataDirCheck }));
-    grabAllState();
     // A refused command (expired, a chain that does not check out, the bridge stopping first) comes
     // back under its own id like any other result, so it is toasted here too — named, since a refusal
     // message alone does not say which of several queued clicks it was.

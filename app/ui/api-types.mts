@@ -339,6 +339,8 @@ export interface RunSummaryLike {
   currentScore: number | null;
   delta: number | null;
   nodes: number | null;
+  changes?: number | null | undefined;                      // absent from a server older than the drawer's badges
+  totalsAfter?: Record<string, number> | null | undefined;
 }
 export interface RunsListApiResponse {
   ok: boolean;
