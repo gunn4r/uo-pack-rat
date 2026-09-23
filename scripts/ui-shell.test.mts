@@ -29,7 +29,9 @@ async function launch(dataDir: string, width = 1440): Promise<{ app: ElectronApp
   const page = await app.firstWindow();
   const errors: string[] = [];
   page.on("pageerror", (e) => errors.push(String(e)));
-  await app.evaluate(({ BrowserWindow }, w) => BrowserWindow.getAllWindows()[0]!.setContentSize(w, 900), width);
+  // The viewport, not the window: a CI runner's screen can be smaller than the width under test, and a
+  // window is clamped to its screen, while the emulated viewport (and so every media query) is not.
+  await page.setViewportSize({ width, height: 900 });
   await page.locator("#inv-table tbody tr.item").first().waitFor({ timeout: 30_000 });
   return { app, page, errors };
 }
@@ -123,7 +125,7 @@ test("[slow] the sidebar collapses to icons below 1180 px, and pinning it collap
     assert.equal(await sidebarWidth(run.page), 56);
     // Collapsed, every nav item keeps its name for a screen reader.
     assert.ok(await run.page.getByRole("link", { name: "Characters" }).isVisible());
-    await run.app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0]!.setContentSize(1440, 900));
+    await run.page.setViewportSize({ width: 1440, height: 900 });
     await run.page.waitForFunction(() => !document.getElementById("app")!.classList.contains("collapsed"));
     assert.equal(await sidebarWidth(run.page), 216);
     await run.page.click("#sidebar-pin");

@@ -197,7 +197,7 @@ test("[slow] a failed request during load shows an error, renders Settings and s
   const dataDir = seedDataDir("packrat-ui-loadfail-", { setupDone: false });
   const { app, page } = await launch(dataDir);
   try {
-    await page.waitForSelector("#status", { timeout: 30_000 });
+    await page.waitForSelector("#status", { state: "attached", timeout: 30_000 });   // attached, not visible: a narrow window collapses the sidebar, which hides the status line
     await page.route("**/api/profiles", (route) => route.fulfill({ status: 500, contentType: "application/json", body: JSON.stringify({ ok: false, error: "internal error" }) }));
     await page.reload();
     await page.waitForSelector("#wizard[open]", { timeout: 15_000 });

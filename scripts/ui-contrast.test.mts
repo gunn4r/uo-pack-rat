@@ -76,7 +76,9 @@ async function launch(dataDir: string): Promise<{ app: ElectronApplication; page
   const page = await app.firstWindow();
   const errors: string[] = [];
   page.on("pageerror", (e) => errors.push(String(e)));
-  await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0]!.setContentSize(1440, 900));
+  // The viewport, not the window: a CI runner's screen can be narrower than 1440, and a window is clamped
+  // to its screen, while the emulated viewport (and so every media query) is not.
+  await page.setViewportSize({ width: 1440, height: 900 });
   return { app, page, errors };
 }
 
