@@ -104,6 +104,10 @@ tr.detail td { white-space: normal; background: var(--surface-2); font-family: v
 .msg { font-size: 12px; padding: 6px 10px; border-radius: 6px; border: 1px solid var(--line); background: var(--surface-2); }
 .msg.bad { border-color: var(--bad); color: var(--bad); }
 .msg.warn { border-color: var(--warn); color: var(--warn); }
+/* the data-folder banner under the header (ui/bridge.mts's renderDataDirNotice): one text span, one button */
+#notice { flex: none; margin: 10px 20px 0; display: flex; align-items: flex-start; gap: 12px; }
+#notice[hidden] { display: none; }
+#notice > span { flex: 1; min-width: 0; overflow-wrap: anywhere; }
 details summary { cursor: pointer; color: var(--muted); font-size: 12px; }
 @media (prefers-reduced-motion: no-preference) { button, .chip { transition: background .12s, border-color .12s; } }
 
