@@ -515,3 +515,54 @@ test("[slow] a saved run or run list that lands after a character switch is not 
     rmSync(dataDir, { recursive: true, force: true });
   }
 });
+
+// The data-folder banner (#39) with the scripts writing elsewhere: one short line with no paths, above every
+// screen, and each screen shrinks to the room left (nothing past the window's bottom edge); "Show details"
+// lands on Settings › Data, where the full sentence names both folders; Dismiss hides it. The client is planted
+// in the test's own temp home (testEnv), never a real one.
+test("[slow] the data-folder banner is one line above every screen, which fits below it, and leads to Settings › Data", async (t) => {
+  const why = unavailable();
+  if (why) return t.skip(why);
+  const dataDir = seedDataDir("packrat-ui-notice-");
+  const home = mkdtempSync(join(tmpdir(), "packrat-ui-notice-home-"));
+  const scripts = join(home, "Desktop", "TazUO", "TazUO", "LegionScripts");
+  mkdirSync(scripts, { recursive: true });
+  writeFileSync(join(scripts, "packrat-scanner.py"), "# planted by the test\n");
+  writeFileSync(join(scripts, "packrat-paths.json"), JSON.stringify({ dataDir: join(home, "elsewhere") }));
+  const { _electron } = await import("playwright");
+  const app = await _electron.launch({ args: [ROOT, "--data", dataDir], cwd: ROOT, timeout: 60_000, env: testEnv({}, home) });
+  const page = await app.firstWindow();
+  const errors: string[] = [];
+  page.on("pageerror", (e) => errors.push(String(e)));
+  try {
+    for (const size of [{ width: 1440, height: 900 }, { width: 1024, height: 700 }]) {
+      const real = await fitWindow(app, page, size);
+      for (const tab of ["inventory", "builder", "characters", "settings"]) {
+        await openTab(page, tab);
+        await page.waitForSelector("#notice:not([hidden])", { timeout: 15_000 });
+        await page.waitForTimeout(300);
+        const m = await page.evaluate((id) => ({
+          notice: document.querySelector("#notice")!.getBoundingClientRect().height,
+          text: document.querySelector("#notice > span")!.textContent,
+          screenBottom: document.querySelector(`#tab-${id}`)!.getBoundingClientRect().bottom,
+          vh: innerHeight,
+        }), tab);
+        assert.equal(m.text, "Your game scripts write scans to a different folder than Pack Rat is reading.");
+        assert.ok(m.notice <= 56, `${tab} at ${real.width}: the banner is one line, got ${m.notice}px`);
+        assert.ok(m.screenBottom <= m.vh + 0.5, `${tab} at ${real.width}: the screen ends at the window's bottom (${m.screenBottom} > ${m.vh})`);
+      }
+    }
+    await openTab(page, "inventory");
+    await page.locator("#notice").getByRole("link", { name: "Show details" }).click();
+    await page.waitForSelector("#tab-settings:not([hidden]) #set-data .msg");
+    assert.match(await page.locator("#set-data .msg").innerText(), /elsewhere/, "Settings › Data names the scripts' folder in full");
+    await page.waitForFunction(() => { const r = document.querySelector("#set-data")!.getBoundingClientRect(); return r.top >= 0 && r.top < innerHeight; });
+    await page.locator("#notice").getByRole("button", { name: "Dismiss" }).click();
+    await page.waitForSelector("#notice", { state: "hidden" });
+    assert.deepEqual(errors, []);
+  } finally {
+    await app.close();
+    rmSync(dataDir, { recursive: true, force: true });
+    rmSync(home, { recursive: true, force: true });
+  }
+});

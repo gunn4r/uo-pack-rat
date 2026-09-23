@@ -156,7 +156,8 @@ function knownCharacters(): string[] {
 }
 function dataSection(setup: SetupApiResponse): HTMLElement {
   // The data-folder mismatch (#39): the client's scripts write somewhere this app doesn't read. The banner
-  // under the top bar says it on every screen; here it sits next to the folder it is about, and stays.
+  // over every screen says so in one short line and links here, where the full sentence with both paths
+  // sits next to the folder it is about, and stays.
   const mismatch = dataDirNotice(setup.dataDirCheck);
   const names = knownCharacters();
   const who = select(names.length ? names.map((n) => ({ value: n, label: n })) : [{ value: "", label: "No characters yet" }], names[0] || "", { attrs: { id: "set-forget-who", class: "select set-forget-select" } });

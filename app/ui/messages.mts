@@ -65,6 +65,13 @@ export function dataDirNotice(check: DataDirCheckInfo | undefined): string | nul
   }
   return null;
 }
+// The same finding as the banner over every screen says it: one short line, no paths (they are long, and
+// Settings › Data, where the banner's "Show details" goes, shows the full sentence).
+export function dataDirBanner(check: DataDirCheckInfo | undefined): string | null {
+  if (check?.status === "mismatch") return "Your game scripts write scans to a different folder than Pack Rat is reading.";
+  if (check?.status === "unreadable") return "Pack Rat can't read your game scripts' packrat-paths.json, so it can't tell where they write.";
+  return null;
+}
 // The sidebar's bridge label while the bridge is offline: a mismatch is the one cause the app can name.
 export function bridgeOfflineText(check: DataDirCheckInfo | undefined): string {
   return check?.status === "mismatch" ? "Bridge offline — your game scripts write to another folder" : "Bridge offline";
