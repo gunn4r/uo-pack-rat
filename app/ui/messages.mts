@@ -80,12 +80,17 @@ export function clientErrorMessage(e: unknown): string {
 // The client's scripts writing to one data folder while the app reads another shows up as an empty
 // inventory and an offline bridge, and neither says why. The server logs this same sentence to the
 // console at startup (app/vault-server.mts imports it), so the banner and the terminal never disagree.
+// The folder names and the parse error come out of a file in the client folder, which may be an
+// unpacked third-party archive, so control characters (a terminal escape sequence, a fake newline) are
+// dropped before the sentence reaches a terminal.
+const printable = (s: string): string => s.replace(/[\u0000-\u001f\u007f-\u009f]/g, "");
 export function dataDirNotice(check: DataDirCheckInfo | undefined): string | null {
   if (check?.status === "mismatch") {
-    return `Your game scripts in ${check.scriptsDir} write to ${check.scriptsDataDir}, but Pack Rat is reading ${check.dataDir}, so new scans and the bridge won't show up here. Start Pack Rat on the scripts' folder (npm start -- --data ${check.scriptsDataDir}), or reinstall the scripts from Settings so they write to this one.`;
+    const scripts = printable(check.scriptsDataDir);
+    return `Your game scripts in ${printable(check.scriptsDir)} write to ${scripts}, but Pack Rat is reading ${printable(check.dataDir)}, so new scans and the bridge won't show up here. Start Pack Rat on the scripts' folder (npm start -- --data ${scripts}), or reinstall the scripts from Settings so they write to this one.`;
   }
   if (check?.status === "unreadable") {
-    return `Pack Rat can't read packrat-paths.json in ${check.scriptsDir} (${check.error}), so it can't tell where your game scripts write. Reinstall the scripts from Settings to rewrite it.`;
+    return `Pack Rat can't read packrat-paths.json in ${printable(check.scriptsDir)} (${printable(check.error)}), so it can't tell where your game scripts write. Reinstall the scripts from Settings to rewrite it.`;
   }
   return null;
 }
