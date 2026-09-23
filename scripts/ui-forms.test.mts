@@ -10,7 +10,7 @@ import { tmpdir } from "node:os";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createRequire } from "node:module";
-import { fitWindow } from "./electron-window.mts";
+import { fitWindow, testEnv } from "./electron-window.mts";
 import type { ElectronApplication, Page } from "playwright";
 
 const ROOT = dirname(dirname(fileURLToPath(import.meta.url)));
@@ -25,7 +25,7 @@ function unavailable(): string | null {
 }
 async function launch(dataDir: string): Promise<{ app: ElectronApplication; page: Page; errors: string[] }> {
   const { _electron } = await import("playwright");
-  const app = await _electron.launch({ args: [ROOT, "--demo", "--data", dataDir], cwd: ROOT, timeout: 60_000 });
+  const app = await _electron.launch({ args: [ROOT, "--demo", "--data", dataDir], cwd: ROOT, timeout: 60_000, env: testEnv() });
   const page = await app.firstWindow();
   const errors: string[] = [];
   page.on("pageerror", (e) => errors.push(String(e)));

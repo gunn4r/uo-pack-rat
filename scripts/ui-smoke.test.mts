@@ -3,12 +3,13 @@
 // electron or playwright is absent (a plain clone), or under TEST_SKIP_ELECTRON.
 import test from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, rmSync, writeFileSync, mkdirSync } from "node:fs";
+import { mkdtempSync, rmSync, writeFileSync, mkdirSync, realpathSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createRequire } from "node:module";
 import type { Page } from "playwright";
+import { testEnv } from "./electron-window.mts";
 
 const ROOT = dirname(dirname(fileURLToPath(import.meta.url)));
 const require_ = createRequire(import.meta.url);
@@ -48,7 +49,7 @@ test("[slow] the packaged UI renders, switches tabs and lists the demo inventory
   // Same shape as shell-smoke.test.mts's runSmoke: the absolute ROOT (not ".") as args[0] is what
   // main.mts expects in dev (process.argv.slice(2) skips the electron binary and this project path),
   // and cwd: ROOT keeps that resolution independent of wherever `node --test` was invoked from.
-  const app = await _electron.launch({ args: [ROOT, "--demo", "--data", dataDir], cwd: ROOT, timeout: 60_000 });
+  const app = await _electron.launch({ args: [ROOT, "--demo", "--data", dataDir], cwd: ROOT, timeout: 60_000, env: testEnv() });
   try {
     const page = await app.firstWindow();
     const errors: string[] = [];
@@ -116,7 +117,7 @@ test("[slow] with tazuo configured, the demo inventory shows all three bridge bu
   writeFileSync(join(dataDir, "settings.json"), JSON.stringify({
     schemaVersion: 1, shard: "uoalive", setupDone: true, client: { adapter: "tazuo", scriptsDir: dataDir },
   }));
-  const app = await _electron.launch({ args: [ROOT, "--demo", "--data", dataDir], cwd: ROOT, timeout: 60_000 });
+  const app = await _electron.launch({ args: [ROOT, "--demo", "--data", dataDir], cwd: ROOT, timeout: 60_000, env: testEnv() });
   try {
     const page = await app.firstWindow();
     await page.waitForSelector("#status", { state: "attached", timeout: 30_000 });   // attached, not visible: a narrow window collapses the sidebar, which hides the status line
@@ -157,10 +158,7 @@ test("[slow] a partial-bridge adapter only offers its declared action, and the n
   // throwaway adapter instead of the repo's real adapters/, without touching electron/main.mts.
   const app = await _electron.launch({
     args: [ROOT, "--demo", "--data", dataDir], cwd: ROOT, timeout: 60_000,
-    // Playwright's own `env` option wants Record<string, string> (no `undefined`); process.env's real
-    // entries are all plain strings at runtime (NodeJS.ProcessEnv only types them as possibly
-    // undefined for keys that were never set) — this cast is compiler-only, the spread itself is unchanged.
-    env: { ...process.env, PACKRAT_ADAPTERS_DIR: adaptersDir } as Record<string, string>,
+    env: testEnv({ PACKRAT_ADAPTERS_DIR: adaptersDir }),
   });
   try {
     const page = await app.firstWindow();
@@ -196,7 +194,7 @@ test("[slow] Save as… in the suit builder opens an in-page dialog and saves th
   // setupDone:true skips the first-run wizard (already covered above) — this test is about the
   // Save as… dialog, not the wizard flow.
   writeFileSync(join(dataDir, "settings.json"), JSON.stringify({ schemaVersion: 1, shard: "uoalive", setupDone: true }));
-  const app = await _electron.launch({ args: [ROOT, "--demo", "--data", dataDir], cwd: ROOT, timeout: 60_000 });
+  const app = await _electron.launch({ args: [ROOT, "--demo", "--data", dataDir], cwd: ROOT, timeout: 60_000, env: testEnv() });
   try {
     const page = await app.firstWindow();
     await page.waitForSelector("#status", { state: "attached", timeout: 30_000 });   // attached, not visible: a narrow window collapses the sidebar, which hides the status line
@@ -226,6 +224,38 @@ test("[slow] Save as… in the suit builder opens an in-page dialog and saves th
   } finally {
     await app.close();
     rmSync(dataDir, { recursive: true, force: true });
+  }
+});
+// A test launch must never read a real game-client folder (it once found the maintainer's own TazUO
+// packrat-paths.json and showed his home paths in the data-folder banner). testEnv() points the server's client
+// search at a throwaway home; here a client planted in that home, whose scripts write elsewhere, is the only
+// one the app finds, so the search looked there and nowhere else (a real ~/Desktop/TazUO on the machine
+// running the test would show up as a second candidate or as the mismatch's folder).
+test("[slow] an Electron test launch searches only its own temp home for game clients", async (t) => {
+  const why = unavailable();
+  if (why) return t.skip(why);
+  const { _electron } = await import("playwright");
+  const dataDir = mkdtempSync(join(tmpdir(), "packrat-ui-clienthome-data-"));
+  const home = mkdtempSync(join(tmpdir(), "packrat-ui-clienthome-"));
+  const scripts = join(home, "Desktop", "TazUO", "TazUO", "LegionScripts");
+  mkdirSync(scripts, { recursive: true });
+  writeFileSync(join(scripts, "packrat-scanner.py"), "# planted by the test\n");
+  writeFileSync(join(scripts, "packrat-paths.json"), JSON.stringify({ dataDir: join(home, "elsewhere") }));
+  writeFileSync(join(dataDir, "settings.json"), JSON.stringify({ schemaVersion: 1, shard: "uoalive", setupDone: true }));
+  // Not --demo: the data-folder check (the banner's source) only runs on a real data folder.
+  const app = await _electron.launch({ args: [ROOT, "--data", dataDir], cwd: ROOT, timeout: 60_000, env: testEnv({}, home) });
+  try {
+    const page = await app.firstWindow();
+    await page.waitForSelector("#status", { state: "attached", timeout: 30_000 });
+    const setup: { candidates: Record<string, string[]>; dataDirCheck?: { status: string; scriptsDir?: string } } = await page.evaluate(() => fetch("/api/setup").then((r) => r.json()));
+    const found = Object.values(setup.candidates).flat();
+    assert.deepEqual(found.map((p) => realpathSync(p)), [realpathSync(scripts)], "the planted client is the only one found");
+    assert.equal(setup.dataDirCheck?.status, "mismatch");
+    assert.equal(realpathSync(setup.dataDirCheck!.scriptsDir!), realpathSync(scripts));
+  } finally {
+    await app.close();
+    rmSync(dataDir, { recursive: true, force: true });
+    rmSync(home, { recursive: true, force: true });
   }
 });
 // Small helper: assert the given locator's element is the page's activeElement — Playwright has no

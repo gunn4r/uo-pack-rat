@@ -4,6 +4,9 @@
 // that size clamped to the screen's work area, and the test reads back the width it really got and drives the
 // layout that width shows (a collapsed sidebar, facet chips folded into "+ Filter" below 1180 px). An assertion
 // only reachable above the real width is skipped with that reason, and still runs where the screen allows.
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import type { ElectronApplication, Page } from "playwright";
 
 export interface RealSize { width: number; height: number }
@@ -56,4 +59,23 @@ export async function setRows(page: Page, view: "List" | "Grouped"): Promise<voi
   await page.click("#inv-settings");
   await page.locator(".pop").getByRole("radiogroup", { name: "Rows" }).getByRole("radio", { name: view }).click();
   await page.keyboard.press("Escape");
+}
+
+// The environment every Electron UI test launches the app with: the test's own process.env plus
+// PACKRAT_CLIENT_HOME, a throwaway folder the server searches for game clients instead of the real home
+// (app/vault-server.mts's defaultClientSearch). Without it a test run finds the machine's real client
+// folders and reads their packrat-paths.json, and the page shows the player's own paths. One empty home per
+// test process unless a test passes its own (to plant a client in it); `extra` adds variables.
+let sharedHome: string | null = null;
+export function testEnv(extra: Record<string, string> = {}, home?: string): Record<string, string> {
+  if (!home) {
+    if (!sharedHome) {
+      const made = mkdtempSync(join(tmpdir(), "packrat-client-home-"));
+      process.on("exit", () => rmSync(made, { recursive: true, force: true }));
+      sharedHome = made;
+    }
+    home = sharedHome;
+  }
+  // Playwright's `env` wants plain strings; process.env's entries are, at runtime.
+  return { ...(process.env as Record<string, string>), PACKRAT_CLIENT_HOME: home, ...extra };
 }

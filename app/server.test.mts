@@ -8,7 +8,7 @@ import { fileURLToPath } from "node:url";
 import http from "node:http";
 import { createConnection } from "node:net";
 import { resolveConfig, ensureLayout } from "./config.mts";
-import { startServer as startRealServer, type ServerHandle, type StartServerOptions } from "./vault-server.mts";
+import { startServer as startRealServer, defaultClientSearch, type ServerHandle, type StartServerOptions } from "./vault-server.mts";
 import { buildPools, foldSnapshots, setRules } from "./vault-lib.mts";
 import { upgradeScan, validateScan } from "./scan-schema.mts";
 import { DEFAULT_OPTIONAL_SLOTS } from "./mip.mts";
@@ -2860,4 +2860,24 @@ test("[fast] POST /api/forget-character drops the character, its worn set, backp
 test("[fast] POST /api/forget-character is refused under --demo", async () => {
   const r = await fetch(srv.url + "/api/forget-character", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ character: "Dorran" }) });
   assert.equal(r.status, 409);
+});
+
+// PACKRAT_CLIENT_HOME (what the Electron UI tests set) confines the client search to one folder: a client
+// planted there is found, the machine's own home is never the search's home, and nothing is proposed from
+// an environment folder or a fixed root.
+test("[fast] PACKRAT_CLIENT_HOME confines the client search to that folder", () => {
+  const home = mkdtempSync(join(tmpdir(), "qm-clienthome-"));
+  const tazuo = { id: "tazuo", name: "TazUO", scripts: [], capabilities: {}, transport: "folder" as const, platform: null, summary: "" };
+  try {
+    const empty = defaultClientSearch({ PACKRAT_CLIENT_HOME: home, LOCALAPPDATA: join(home, "..") });
+    assert.equal(empty.home, home);
+    assert.deepEqual(empty.candidates(tazuo), [], "an empty home proposes nothing");
+    const planted = join(home, "Desktop", "TazUO", "TazUO", "LegionScripts");
+    mkdirSync(planted, { recursive: true });
+    assert.deepEqual(defaultClientSearch({ PACKRAT_CLIENT_HOME: home }).candidates(tazuo), [planted]);
+    assert.deepEqual(defaultClientSearch({ PACKRAT_CLIENT_HOME: home }).candidates({ ...tazuo, platform: process.platform === "win32" ? "linux" : "win32" }), [], "an adapter for another OS offers nothing");
+    assert.notEqual(defaultClientSearch({}).home, home, "without it the search is the real home");
+  } finally {
+    rmSync(home, { recursive: true, force: true });
+  }
 });
