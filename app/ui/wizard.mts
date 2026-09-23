@@ -205,8 +205,7 @@ function step3(): HTMLDivElement {
     pickFolderRow({ title: `Choose your ${clientName}'s scripts folder`, buttonLabel: "Choose a folder…", onResolved: locate }),
     wiz!.locateError ? el("div", { class: "msg bad" }, wiz!.locateError) : null,
     wiz!.scriptsDir && !wiz!.locateError ? el("div", { class: "msg" },
-      `Resolved to: ${wiz!.scriptsDir}`,
-      wiz!.installed?.version ? ` — already has version ${wiz!.installed.version} installed.` : " — nothing installed there yet.") : null);
+      `Resolved to: ${wiz!.scriptsDir}` + (wiz!.installed?.version ? ` — already has version ${wiz!.installed.version} installed.` : " — nothing installed there yet.")) : null);
 }
 async function locate(dir: string): Promise<void> {
   try {

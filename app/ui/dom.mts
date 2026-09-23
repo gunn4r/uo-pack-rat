@@ -4,7 +4,7 @@ import { SLOT_LABELS, labelOf, fullOf } from "../vault-lib.mts";
 import type { Item } from "../vault-lib.mts";
 import { EXTRA_COLS, rarityRank as rarityRankOf } from "../item-query.mts";
 import { state } from "./store.mts";
-import { resolveItems } from "./items.mts";
+import { resolveItems, rarityToken } from "./items.mts";
 
 export { EXTRA_COLS, colVal } from "../item-query.mts";
 
@@ -73,9 +73,21 @@ export const slotLabel = (s: string | null | undefined): string => SLOT_LABELS[s
 // tags in scanned tooltips) is shard data now (state.rules.rarity, from GET /api/rules) rather than
 // a hardcoded table — a shard with a different tier scheme ships its own app/rules/<shard>.json.
 export const rarityRank = (name: string | null | undefined): number => rarityRankOf(state.rules?.rarity || [], name);
-export const rarityColor = (name: string | null | undefined): string | null => { const r = (state.rules?.rarity || []).find((r) => r.name.toLowerCase() === String(name || "").toLowerCase()); return r ? r.colour : null; };
+// A tier's colour for the page: its --rarity-* token (items.mts's rarityToken) when the tier has one,
+// else the shard's raw game colour, which only reads well inside a dark subtree (see rarCell).
+export const rarityColor = (name: string | null | undefined): string | null => {
+  const token = rarityToken(name);
+  if (token) return `var(${token})`;
+  const r = (state.rules?.rarity || []).find((r) => r.name.toLowerCase() === String(name || "").toLowerCase());
+  return r ? safeColor(r.colour) : null;
+};
 export const rarRank = (it: Item): number => rarityRank(it.rarity);
-export const rarCell = (it: Item): HTMLElement => it.rarity ? el("span", { style: `color:${rarityColor(it.rarity) || "inherit"};font-weight:500` }, it.rarity) : el("span", { class: "muted" }, "·");
+export const rarCell = (it: Item): HTMLElement => {
+  if (!it.rarity) return el("span", { class: "muted" }, "·");
+  if (rarityToken(it.rarity)) return el("span", { class: "rar-name", style: `color:${rarityColor(it.rarity)}` }, it.rarity);
+  const raw = rarityColor(it.rarity);
+  return el("span", { class: "rar-name rar-raw", "data-theme": "default", "data-mode": "dark", style: raw ? `color:${raw}` : "" }, it.rarity);
+};
 // safeColor(c) — a colour that is safe to put in a style property, or null. The one dynamic colour
 // the page takes from a scan is the <BASEFONT COLOR=#rrggbb> tag the client writes into a tooltip
 // line's own text; it reaches a `style` through tipNode below. That capture is already regex-bound,
@@ -175,7 +187,10 @@ export function tipNode(it: TooltipItem): HTMLDivElement {
     const color = safeColor(l.color);
     return el("div", { class: `t-center ${l.italic ? "t-i" : ""} ${l.bold ? "t-b" : ""}`, ...(color ? { style: `color:${color}` } : {}) }, l.text);
   });
-  const rarNode = rarity ? el("div", { class: "t-center", style: `color:${safeColor(rarity.color) || "#e6c85a"}` }, rarity.text) : null;
+  // The tier line in its --rarity-* token (the tooltip is a dark subtree, so the dark values apply); a tier
+  // with no token keeps the colour its own tooltip line carries.
+  const tierColor = rarityToken(rarity?.text) ? rarityColor(rarity!.text) : safeColor(rarity?.color);
+  const rarNode = rarity ? el("div", { class: "t-center", style: `color:${tierColor || "var(--color-highlight)"}` }, rarity.text) : null;
   const qty = (it.amount || 1) > 1 ? `${it.amount} ` : "";
   return el("div", {},
     el("div", { class: "t-name" }, qty + it.name),

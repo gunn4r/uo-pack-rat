@@ -29,3 +29,15 @@ export async function resolveItems(serials: Array<number | null | undefined>): P
   for (const s of serials) { if (s == null) continue; const it = state.itemCache.get(+s); if (it) out[s] = it; }
   return out;
 }
+
+// ---------------------------------------------------------------- rarity colours
+// The shard rules carry each tier's game colour (rules.rarity), but five of the eight fail on a white
+// page, so the page paints a tier through its --rarity-* token (app/ui/tokens.css), which is the game hue
+// made legible per mode. A tier maps by name: "Lesser Magic Item" -> --rarity-lesser-magic. A shard that
+// adds a tier with no token gets null here, and the caller falls back to the raw colour inside a dark
+// subtree, where the game colours were designed to live.
+export const RARITY_TOKENS = ["minor-magic", "lesser-magic", "greater-magic", "major-magic", "lesser-artifact", "greater-artifact", "major-artifact", "legendary-artifact"] as const;
+export function rarityToken(name: string | null | undefined): string | null {
+  const slug = String(name || "").trim().toLowerCase().replace(/\s+item$/, "").replace(/\s+/g, "-");
+  return (RARITY_TOKENS as readonly string[]).includes(slug) ? `--rarity-${slug}` : null;
+}

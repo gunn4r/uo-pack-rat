@@ -1,0 +1,176 @@
+/* ui/tokens.css — the design tokens (docs/ui.md). Three layers so a second theme family is a value swap:
+   brand constants (--brand-*, never changed by mode), semantic roles (--color-*, --res-*, --rarity-*, fonts,
+   radii, shadows, frame hooks; every component reads only these) and structural tokens (spacing, type scale,
+   control and row heights, layout widths, z-layers, motion; shared by every theme).
+
+   Selection is two attributes on <html>, set by ui/theme.mts from the ui-prefs "theme" and "appearance"
+   fields: data-theme="default" and data-mode="light|dark". Any subtree can flip mode by carrying its own
+   data-mode (the item tooltip is always dark), which is why each mode block also matches as a descendant.
+   A theme family adds its own pair of blocks, [data-theme="<family>"][data-mode="light|dark"], overriding
+   only the semantic roles; nothing else here needs to change.
+
+   The on-* rule: every filled surface has a paired --color-on-* text token, and a component that sets a fill
+   sets its on-* text in the same rule. The legacy aliases at the end of each colour block are redefined in
+   every mode block, because an alias declared only on :root resolves to the light value inside a dark
+   subtree. There is deliberately no text-measure token: containers decide width, never text. */
+
+/* IBM Plex, bundled (SIL Open Font License 1.1, texts in ui/fonts/). Latin subset only; a glyph outside it
+   falls back to the next face in the stack, per glyph. */
+@font-face { font-family: "IBM Plex Sans"; font-style: normal; font-weight: 400; font-display: swap; src: url("fonts/ibm-plex-sans-latin-400-normal.woff2") format("woff2"); }
+@font-face { font-family: "IBM Plex Sans"; font-style: normal; font-weight: 500; font-display: swap; src: url("fonts/ibm-plex-sans-latin-500-normal.woff2") format("woff2"); }
+@font-face { font-family: "IBM Plex Sans"; font-style: normal; font-weight: 600; font-display: swap; src: url("fonts/ibm-plex-sans-latin-600-normal.woff2") format("woff2"); }
+@font-face { font-family: "IBM Plex Mono"; font-style: normal; font-weight: 400; font-display: swap; src: url("fonts/ibm-plex-mono-latin-400-normal.woff2") format("woff2"); }
+@font-face { font-family: "IBM Plex Mono"; font-style: normal; font-weight: 500; font-display: swap; src: url("fonts/ibm-plex-mono-latin-500-normal.woff2") format("woff2"); }
+
+/* ---------------------------------------------------------------- structural tokens (every theme) */
+:root {
+  /* type */
+  --text-xs: 11px;  --lh-xs: 16px;    /* caps group labels; 10px tag text is the one exception, see .tag */
+  --text-sm: 12px;  --lh-sm: 16px;    /* table header, meta, help */
+  --text-base: 13px; --lh-base: 20px; /* default UI and table body */
+  --text-md: 14px;  --lh-md: 20px;    /* nav, setting titles, form labels in dialogs */
+  --text-lg: 16px;  --lh-lg: 24px;    /* card and section titles, top bar title */
+  --text-xl: 20px;  --lh-xl: 28px;    /* result headline, settings section */
+  --text-2xl: 28px; --lh-2xl: 36px;   /* KPI numbers */
+  --weight-regular: 400; --weight-medium: 500; --weight-semibold: 600;
+  --tracking-caps: 0.04em;
+
+  /* spacing, 4-point */
+  --space-0-5: 2px; --space-1: 4px; --space-1-5: 6px; --space-2: 8px; --space-3: 12px; --space-4: 16px; --space-5: 20px;
+  --space-6: 24px; --space-8: 32px; --space-10: 40px; --space-12: 48px; --space-16: 64px;
+
+  /* controls and rows */
+  --control-xs: 22px; --control-sm: 28px; --control-md: 32px; --control-lg: 36px;
+  --row-dense: 32px; --row-regular: 40px; --row-comfortable: 48px; --row-header: 36px; --row-group: 32px; --row-footer: 36px;
+  --cell-pad-x: 12px;
+
+  /* layout (containers decide width; there is no text measure token) */
+  --sidebar-w: 216px; --sidebar-w-collapsed: 56px; --topbar-h: 48px; --gutter: 24px;
+  --peek-w: 400px; --constraints-w: 360px; --drawer-w: 480px; --drawer-w-wide: 560px;
+  --dialog-w-sm: 440px; --dialog-w-md: 560px; --wizard-w: 640px; --settings-nav-w: 200px; --form-w: 720px;
+  --popover-w: 280px; --tooltip-w: 280px; --page-max: 2048px;
+
+  /* z-layers */
+  --z-base: 0; --z-sticky: 10; --z-sidebar: 20; --z-peek: 30; --z-popover: 40; --z-drawer: 50; --z-dialog: 60; --z-toast: 70; --z-tooltip: 80;
+
+  /* motion */
+  --duration-fast: 120ms; --duration-base: 180ms; --duration-slow: 260ms;
+  --ease-standard: cubic-bezier(0.2, 0, 0, 1); --ease-exit: cubic-bezier(0.4, 0, 1, 1);
+  --delay-tooltip: 400ms;
+}
+
+/* ---------------------------------------------------------------- Default theme, light (also the base) */
+:root, [data-theme="default"][data-mode="light"], [data-theme="default"] [data-mode="light"] {
+  /* brand constants */
+  --brand-teal: #1f4a4f; --brand-brass: #c9a24a; --brand-crimson: #8e2433; --brand-leather: #8a5a2b; --brand-parchment: #efe3c4;
+
+  /* surfaces and plain text */
+  --color-bg: #f3f5f5;              /* app ground */
+  --color-surface: #ffffff;         /* cards, tables, sidebar, top bar */
+  --color-surface-subtle: #f7f9f9;  /* table header, footers, empty slots */
+  --color-surface-sunken: #eaeeee;  /* meter tracks, skeletons, segmented track */
+  --color-surface-raised: #ffffff;  /* popovers, drawers, dialogs */
+  --color-surface-inverse: #172224; /* toasts, small tooltips */
+  --color-text: #172224;
+  --color-text-muted: #55636a;      /* captions, secondary text, help */
+  --color-text-faint: #5f6d6e;      /* tertiary text (serials, "Empty"); still >= 4.5 on every light fill */
+  --color-placeholder: #55636a;
+  --color-link: #1d6b70; --color-link-hover: #17585c;
+  --color-border: #d6dddd;          /* dividers and card edges (decorative only) */
+  --color-border-strong: #76868a;   /* control boundaries: >= 3:1 on every light fill incl. selected rows */
+  --color-focus: #1d6b70;
+
+  /* filled surfaces, each with its on-* text */
+  --color-accent: #1d6b70;        --color-on-accent: #ffffff;         /* primary buttons, current step, switch on */
+  --color-accent-hover: #17585c;  --color-on-accent-hover: #ffffff;
+  --color-accent-soft: #e2efef;   --color-on-accent-soft: #13494d;    /* info messages, accent badges, done steps */
+  --color-info: #1d6b70;          --color-on-info: #ffffff;
+  --color-success: #1d6e3a;       --color-on-success: #ffffff;
+  --color-success-hover: #175a30; --color-on-success-hover: #ffffff;
+  --color-success-soft: #e3f2e7;  --color-on-success-soft: #185c31;   /* ok badges/messages, best-value cells */
+  --color-warning: #865400;       --color-on-warning: #ffffff;
+  --color-warning-hover: #6e4500; --color-on-warning-hover: #ffffff;
+  --color-warning-soft: #fcf2dc;  --color-on-warning-soft: #744800;   /* warn badges/messages, "differs" cells */
+  --color-danger: #a32436;        --color-on-danger: #ffffff;         /* destructive buttons */
+  --color-danger-hover: #8a1d2d;  --color-on-danger-hover: #ffffff;
+  --color-danger-soft: #fbe8ea;   --color-on-danger-soft: #931f30;
+  --color-highlight: #c9a24a;     --color-on-highlight: #172224;      /* brass "Best" badge */
+  --color-row-hover: #f3f7f7;     --color-on-row-hover: #172224;
+  --color-row-selected: #e2efef;  --color-on-row-selected: #172224;
+  --color-nav-active: #e2efef;    --color-on-nav-active: #13494d;     /* sidebar current item */
+  --color-chip-set: #e2efef;      --color-on-chip-set: #13494d;       /* set filter chips, pressed pills */
+  --color-disabled: #eaeeee;      --color-on-disabled: #707e80;       /* 3.6:1 by design (spec 2.3) */
+  --color-on-inverse: #f1f5f5; --color-on-inverse-muted: #b7c2c3;     /* toast and small-tooltip text */
+  --color-on-inverse-success: #5cc98a; --color-on-inverse-danger: #f2808b; --color-on-inverse-accent: #7fd3cf;
+  --color-scrim: rgb(15 21 22 / 0.45);
+  /* legacy aliases, redefined in every mode block */
+  --color-accent-fg: var(--color-on-accent); --color-accent-soft-fg: var(--color-on-accent-soft); --color-danger-fg: var(--color-on-danger);
+  --color-highlight-fg: var(--color-on-highlight); --color-text-inverse: var(--color-on-inverse);
+
+  /* game data colours (contrast-safe per mode, also on selected rows) */
+  --res-phys: #55636a; --res-fire: #b3261e; --res-cold: #1f5fae; --res-poison: #2f7532; --res-energy: #7b3fb8;
+  --rarity-minor-magic: #696969; --rarity-lesser-magic: #117a0f; --rarity-greater-magic: #127374; --rarity-major-magic: #0063e1;
+  --rarity-lesser-artifact: #9b22ec; --rarity-greater-artifact: #7d6800; --rarity-major-artifact: #a55300; --rarity-legendary-artifact: #cc261e;
+
+  /* type faces */
+  --font-body: "IBM Plex Sans", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-display: var(--font-body);
+  --font-mono: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, monospace;
+
+  /* shape */
+  --radius-sm: 4px; --radius-md: 6px; --radius-lg: 8px; --radius-xl: 12px; --radius-full: 999px;
+  --border-width: 1px; --border-width-frame: 1px;
+  --frame-image: none;          /* round 2: brass gump frame (border-image) */
+  --surface-texture: none;      /* round 2: parchment grain (background-image) */
+
+  /* elevation */
+  --shadow-1: none;
+  --shadow-2: 0 4px 16px rgb(15 21 22 / 0.12);
+  --shadow-3: 0 16px 48px rgb(15 21 22 / 0.20);
+  --ring-focus: 0 0 0 2px var(--color-surface), 0 0 0 4px var(--color-focus);
+  color-scheme: light;
+}
+
+/* ---------------------------------------------------------------- Default theme, dark */
+[data-theme="default"][data-mode="dark"], [data-theme="default"] [data-mode="dark"] {
+  --color-bg: #0f1516; --color-surface: #151c1d; --color-surface-subtle: #1b2324; --color-surface-sunken: #0b1011;
+  --color-surface-raised: #1d2627; --color-surface-inverse: #e6ecec;
+  --color-text: #e6ecec; --color-text-muted: #9eafb1; --color-text-faint: #8fa1a3; --color-placeholder: #9eafb1;
+  --color-link: #5fc4c0; --color-link-hover: #7fd3cf;
+  --color-border: #2b3638; --color-border-strong: #73878a; --color-focus: #5fc4c0;
+  --color-accent: #5fc4c0;        --color-on-accent: #062224;
+  --color-accent-hover: #7fd3cf;  --color-on-accent-hover: #062224;
+  --color-accent-soft: #16393a;   --color-on-accent-soft: #a8e3e0;
+  --color-info: #5fc4c0;          --color-on-info: #062224;
+  --color-success: #5cc98a;       --color-on-success: #06220f;
+  --color-success-hover: #7fd9a3; --color-on-success-hover: #06220f;
+  --color-success-soft: #133222;  --color-on-success-soft: #7fd9a3;
+  --color-warning: #e2b456;       --color-on-warning: #231600;
+  --color-warning-hover: #e9c173; --color-on-warning-hover: #231600;
+  --color-warning-soft: #3a2c10;  --color-on-warning-soft: #e9c173;
+  --color-danger: #f2808b;        --color-on-danger: #2a0a0f;
+  --color-danger-hover: #f59aa3;  --color-on-danger-hover: #2a0a0f;
+  --color-danger-soft: #3d1a1f;   --color-on-danger-soft: #f59aa3;
+  --color-highlight: #d4b25e;     --color-on-highlight: #172224;
+  --color-row-hover: #1a2223;     --color-on-row-hover: #e6ecec;
+  --color-row-selected: #16393a;  --color-on-row-selected: #e6ecec;
+  --color-nav-active: #16393a;    --color-on-nav-active: #a8e3e0;
+  --color-chip-set: #16393a;      --color-on-chip-set: #a8e3e0;
+  --color-disabled: #222b2c;      --color-on-disabled: #7d8f91;
+  --color-on-inverse: #172224; --color-on-inverse-muted: #55636a;
+  --color-on-inverse-success: #1d6e3a; --color-on-inverse-danger: #a32436; --color-on-inverse-accent: #1d6b70;
+  --color-scrim: rgb(0 0 0 / 0.6);
+  --color-accent-fg: var(--color-on-accent); --color-accent-soft-fg: var(--color-on-accent-soft); --color-danger-fg: var(--color-on-danger);
+  --color-highlight-fg: var(--color-on-highlight); --color-text-inverse: var(--color-on-inverse);
+  --res-phys: #b7c2c3; --res-fire: #ff8a7a; --res-cold: #7fb2ff; --res-poison: #7fd48a; --res-energy: #c9a0ff;
+  --rarity-minor-magic: #a0a0a0; --rarity-lesser-magic: #20e31c; --rarity-greater-magic: #1cb5b7; --rarity-major-magic: #549fff;
+  --rarity-lesser-artifact: #c680f4; --rarity-greater-artifact: #c9a800; --rarity-major-artifact: #ff8000; --rarity-legendary-artifact: #eb7d77;
+  --shadow-2: 0 4px 16px rgb(0 0 0 / 0.45);
+  --shadow-3: 0 16px 48px rgb(0 0 0 / 0.6);
+  --ring-focus: 0 0 0 2px var(--color-surface), 0 0 0 4px var(--color-focus);
+  color-scheme: dark;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root { --duration-fast: 0ms; --duration-base: 0ms; --duration-slow: 0ms; }
+}
