@@ -13,6 +13,7 @@ import { tmpdir } from "node:os";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createRequire } from "node:module";
+import { fitWindow, openFacet } from "./electron-window.mts";
 import type { ElectronApplication, Page } from "playwright";
 
 const ROOT = dirname(dirname(fileURLToPath(import.meta.url)));
@@ -40,9 +41,9 @@ async function launch(dataDir: string): Promise<{ app: ElectronApplication; page
   const page = await app.firstWindow();
   const errors: string[] = [];
   page.on("pageerror", (e) => errors.push(String(e)));
-  // A CI runner's screen can be smaller than the window, which would fold the Inventory's filter chips into
-  // "+ Filter" (below 1180 px); these cases drive the chips, so the width is set on the page, not the window.
-  await page.setViewportSize({ width: 1440, height: 900 });
+  // The real window, as close to 1440 × 900 as the screen allows (scripts/electron-window.mts). Below 1180 px
+  // the facet chips fold into "+ Filter", and pickOption/openFacet reach them there.
+  await fitWindow(app, page, { width: 1440, height: 900 });
   return { app, page, errors };
 }
 const countText = (page: Page): Promise<string> => page.locator("#inv-foot .inv-count").innerText();
@@ -50,9 +51,10 @@ const countText = (page: Page): Promise<string> => page.locator("#inv-foot .inv-
 async function waitCount(page: Page, want: RegExp): Promise<void> {
   await page.waitForFunction((src) => new RegExp(src).test(document.querySelector("#inv-foot .inv-count")?.textContent || ""), want.source, { timeout: 15_000 });
 }
-// A checklist filter chip's popover: tick (or untick) one option by its value and close it.
-async function pickOption(page: Page, chip: string, value: string): Promise<void> {
-  await page.click(chip);
+// A checklist facet's popover (its chip, or "+ Filter" when the chip is folded): tick (or untick) one option by
+// its value and close it.
+async function pickOption(page: Page, id: string, name: string, value: string): Promise<void> {
+  await openFacet(page, id, name);
   await page.locator(`.pop input[value="${value}"]`).click();
   await page.keyboard.press("Escape");
   await page.waitForSelector(".pop", { state: "detached" });
@@ -89,7 +91,7 @@ test("[slow] refresh, Clear all, the virtual table and Forget keep the page's st
 
     // A background refresh (what the "inventory" SSE event runs) must leave the filter chip showing
     // the filter the table still applies.
-    await pickOption(page, "#f-slot", "bracelet");
+    await pickOption(page, "slot", "Slot", "bracelet");
     await waitCount(page, /^\d+ of 160 stacks/);
     const filtered = await countText(page);
     // The page's own module (same URL as its <script>, so the same instance).
@@ -269,7 +271,7 @@ test("[slow] a character's sheet opens from the roster, and a character can be f
     assert.notEqual(await rows.first().getAttribute("data-name"), gone);
     // Its worn set left the inventory with it: the Location filter no longer offers it.
     await openTab(page, "inventory");
-    await page.click("#f-loc");
+    await openFacet(page, "loc", "Location");
     const locs = await page.locator(".pop input[type=checkbox]").evaluateAll((is) => is.map((i) => (i as HTMLInputElement).value));
     await page.keyboard.press("Escape");
     assert.ok(!locs.includes(`loc:Worn by ${gone}`), `no "Worn by ${gone}" location is left, got ${JSON.stringify(locs)}`);

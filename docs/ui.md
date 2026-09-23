@@ -7,6 +7,7 @@ How the page (`app/index.html`, `app/ui/`) is styled and built. Read this before
 1. **Text never caps its own width.** No `max-width`, `ch` width or measure token on `p`, `li`, headings, labels or any text element. Width is decided by containers only: the page, a grid track, a card, a drawer, a dialog, a table column. The token set has no measure token on purpose.
 2. **Grid and flex never split an inline flow.** Any element that is `display: flex | grid | inline-flex` holds only element children; every run of text is one `<span>`, and a run that mixes text with inline elements (`<strong>`, `<code>`, a muted number) is wrapped as a whole in one `<span>`. A button is `[icon svg] [span label]`, a switch label is `[input] [span text]`, a nav item is `[svg] [span label] [span count]`. The builders in `app/ui/components.mts` enforce this (see "The one-span rule" below).
 3. **Verify the rendered output, not the source.** Look at the screen in light and dark at 1440, 1280 and 1024 wide before calling a change done.
+4. **Electron UI tests use the real window size.** No test emulates a viewport larger than its real window; `fitWindow()` in `scripts/electron-window.mts` sizes the window within the screen and the test drives the layout that width shows (TESTING.md has the details and `PACKRAT_TEST_SCREEN` for trying a small screen).
 
 ## Tokens (`app/ui/tokens.css`)
 

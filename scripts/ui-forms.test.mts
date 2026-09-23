@@ -10,6 +10,7 @@ import { tmpdir } from "node:os";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createRequire } from "node:module";
+import { fitWindow } from "./electron-window.mts";
 import type { ElectronApplication, Page } from "playwright";
 
 const ROOT = dirname(dirname(fileURLToPath(import.meta.url)));
@@ -28,8 +29,8 @@ async function launch(dataDir: string): Promise<{ app: ElectronApplication; page
   const page = await app.firstWindow();
   const errors: string[] = [];
   page.on("pageerror", (e) => errors.push(String(e)));
-  // The emulated viewport, not the window: a CI runner's screen can be smaller than the window, and the OS clamps it.
-  await page.setViewportSize({ width: 1440, height: 900 });
+  // The real window, as close to 1440 × 900 as the screen allows (scripts/electron-window.mts).
+  await fitWindow(app, page, { width: 1440, height: 900 });
   return { app, page, errors };
 }
 // A paste lands as one insertion; typing a 43 KB scan key by key through page.fill() is slow enough to time out

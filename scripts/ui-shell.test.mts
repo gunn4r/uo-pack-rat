@@ -12,6 +12,7 @@ import { tmpdir } from "node:os";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createRequire } from "node:module";
+import { fitWindow, type RealSize } from "./electron-window.mts";
 import type { ElectronApplication, Page } from "playwright";
 
 const ROOT = dirname(dirname(fileURLToPath(import.meta.url)));
@@ -23,17 +24,16 @@ function unavailable(): string | null {
   }
   return null;
 }
-async function launch(dataDir: string, width = 1440): Promise<{ app: ElectronApplication; page: Page; errors: string[] }> {
+async function launch(dataDir: string, width = 1440): Promise<{ app: ElectronApplication; page: Page; errors: string[]; size: RealSize }> {
   const { _electron } = await import("playwright");
   const app = await _electron.launch({ args: [ROOT, "--demo", "--data", dataDir], cwd: ROOT, timeout: 60_000 });
   const page = await app.firstWindow();
   const errors: string[] = [];
   page.on("pageerror", (e) => errors.push(String(e)));
-  // The viewport, not the window: a CI runner's screen can be smaller than the width under test, and a
-  // window is clamped to its screen, while the emulated viewport (and so every media query) is not.
-  await page.setViewportSize({ width, height: 900 });
+  // The real window, as close to the width under test as the screen allows (scripts/electron-window.mts).
+  const size = await fitWindow(app, page, { width, height: 900 });
   await page.locator("#inv-table tbody tr.item").first().waitFor({ timeout: 30_000 });
-  return { app, page, errors };
+  return { app, page, errors, size };
 }
 const visibleScreens = (page: Page): Promise<string[]> => page.evaluate(() => [...document.querySelectorAll<HTMLElement>("main.screen")].filter((m) => !m.hidden).map((m) => m.id));
 const current = (page: Page): Promise<string[]> => page.evaluate(() => [...document.querySelectorAll<HTMLElement>("#sidebar [aria-current=page]")].map((a) => a.dataset.nav || ""));
@@ -119,26 +119,43 @@ test("[slow] the sidebar collapses to icons below 1180 px, and pinning it collap
   writeFileSync(join(dataDir, "settings.json"), JSON.stringify({ schemaVersion: 1, shard: "uoalive", setupDone: true }));
   const collapsed = (page: Page): Promise<boolean> => page.evaluate(() => document.getElementById("app")!.classList.contains("collapsed"));
   const sidebarWidth = (page: Page): Promise<number> => page.evaluate(() => document.getElementById("sidebar")!.getBoundingClientRect().width);
+  const prefs = (page: Page): Promise<{ sidebar?: string }> => page.evaluate(async () => (await (await fetch("/api/ui-prefs")).json()).prefs);
   let run = await launch(dataDir, 1100);
   try {
-    assert.equal(await collapsed(run.page), true, "1100 px wide: icons only");
+    assert.ok(run.size.width <= 1100, `asked for at most 1100 px, got ${run.size.width}`);
+    assert.equal(await collapsed(run.page), true, `${run.size.width} px wide: icons only`);
     assert.equal(await sidebarWidth(run.page), 56);
+    assert.equal(await run.page.locator("#sidebar-pin").isVisible(), false, "below 1180 px the width alone collapses it, so there is no pin");
     // Collapsed, every nav item keeps its name for a screen reader.
     assert.ok(await run.page.getByRole("link", { name: "Characters" }).isVisible());
-    await run.page.setViewportSize({ width: 1440, height: 900 });
-    await run.page.waitForFunction(() => !document.getElementById("app")!.classList.contains("collapsed"));
-    assert.equal(await sidebarWidth(run.page), 216);
-    await run.page.click("#sidebar-pin");
-    assert.equal(await collapsed(run.page), true, "pinned collapsed at 1440 px");
-    await run.page.waitForFunction(async () => (await (await fetch("/api/ui-prefs")).json()).prefs.sidebar === "collapsed");
+
+    // Wider than 1180 px — only where the screen allows a window that wide (locally, Ubuntu's virtual display).
+    const wide = await fitWindow(run.app, run.page, { width: 1440, height: 900 });
+    await t.test(`above 1180 px the labels show, and the pin collapses them (window ${wide.width} px)`, async (st) => {
+      if (wide.width < 1180) return st.skip(`this screen fits a window only ${wide.width} px wide; the expanded sidebar needs 1180`);
+      await run.page.waitForFunction(() => !document.getElementById("app")!.classList.contains("collapsed"));
+      assert.equal(await sidebarWidth(run.page), 216);
+      await run.page.click("#sidebar-pin");
+      assert.equal(await collapsed(run.page), true, `pinned collapsed at ${wide.width} px`);
+      await run.page.waitForFunction(async () => (await (await fetch("/api/ui-prefs")).json()).prefs.sidebar === "collapsed");
+    });
+    // Where the pin can't be reached the choice is stored the way the pin stores it, so the restart below
+    // still runs at every size.
+    if ((await prefs(run.page)).sidebar !== "collapsed") {
+      await run.page.evaluate(() => fetch("/api/ui-prefs", { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify({ sidebar: "collapsed" }) }));
+    }
     assert.deepEqual(run.errors, []);
   } finally { await run.app.close(); }
   assert.equal(JSON.parse(readFileSync(join(dataDir, "ui-prefs.json"), "utf8")).sidebar, "collapsed");
   run = await launch(dataDir, 1440);
   try {
-    await run.page.waitForFunction(() => document.getElementById("app")!.classList.contains("collapsed"), undefined, { timeout: 10_000 });
-    await run.page.click("#sidebar-pin");
-    assert.equal(await collapsed(run.page), false, "unpinned, 1440 px shows labels again");
+    await run.page.waitForFunction(() => document.getElementById("sidebar-pin")!.getAttribute("aria-pressed") === "true", undefined, { timeout: 10_000 });
+    assert.equal(await collapsed(run.page), true, "the pin survives a restart");
+    await t.test(`unpinned above 1180 px, the labels show again (window ${run.size.width} px)`, async (st) => {
+      if (run.size.width < 1180) return st.skip(`this screen fits a window only ${run.size.width} px wide; the expanded sidebar needs 1180`);
+      await run.page.click("#sidebar-pin");
+      assert.equal(await collapsed(run.page), false);
+    });
   } finally {
     await run.app.close();
     rmSync(dataDir, { recursive: true, force: true });
