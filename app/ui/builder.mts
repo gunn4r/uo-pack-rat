@@ -515,15 +515,23 @@ const cancelledNote = (ms: number): HTMLElement => message({ tone: "info", text:
 // A refusal or failure: an inline message at the top of the results; when it names a field, that field gets
 // the error and the focus.
 function failJob(job: BuilderJob, text: string): void {
-  endJob(job, message({ tone: "bad", title: "The build did not run", text }));
+  const hadFocus = endJob(job, message({ tone: "bad", title: "The build did not run", text }));
   const f = knobFromServerError(text);
   if (f) focusKnob(f, text);
+  else if (hadFocus) $<HTMLButtonElement>("#b-run")!.focus();
 }
-function endJob(job: BuilderJob, node?: HTMLElement | null): void {
-  if (state.builder.job !== job) return;
+// Ends the job and puts `node` where the progress card was. Returns whether focus was inside the card (it
+// has focus from the moment a build starts), so the caller can hand it on instead of dropping it on <body>:
+// endJob itself hands it to the node's first button ("Build again"), finishJob to the result's heading.
+function endJob(job: BuilderJob, node?: HTMLElement | null): boolean {
+  if (state.builder.job !== job) return false;
+  const msg = $<HTMLElement>("#b-msg")!;
+  const hadFocus = msg.contains(document.activeElement);
   clearInterval(job.timer as number | undefined); job.es?.close(); state.builder.job = null;
   setBuilding(false);
-  $<HTMLElement>("#b-msg")!.replaceChildren(...(node ? [node] : []));
+  msg.replaceChildren(...(node ? [node] : []));
+  if (hadFocus) node?.querySelector<HTMLElement>("button")?.focus();
+  return hadFocus;
 }
 interface JobFinishInfo { result: OptimizeResult; ms: number; runId: string | null; reused?: SavedRunLike | null | undefined }
 function finishJob(job: BuilderJob, r: JobFinishInfo): void {
@@ -534,17 +542,21 @@ function finishJob(job: BuilderJob, r: JobFinishInfo): void {
   const away = job.name !== state.builder.character;
   const notes = [away ? message({ tone: "info", text: `${job.name}'s build finished. Switch back to ${job.name} to see it.`, attrs: { class: "msg info parked-note" } }) : null,
     job.warning ? message({ tone: "warn", text: job.warning }) : null].filter((x): x is HTMLDivElement => x !== null);
-  endJob(job, null);
+  const hadFocus = endJob(job, null);
   $<HTMLElement>("#b-msg")!.replaceChildren(...notes);
-  if (away) { state.builder.parked = finished; return; }
-  showFinished(finished);
+  if (away) { state.builder.parked = finished; if (hadFocus) $<HTMLButtonElement>("#b-run")!.focus(); return; }
+  showFinished(finished, hadFocus);
   loadRuns();
 }
-function showFinished(f: FinishedBuild): void {
+// `focus`: the finished build's heading takes the focus the progress card had (tabindex -1: a target, not a stop).
+function showFinished(f: FinishedBuild, focus = false): void {
   state.builder.result = f.result;
   state.builder.openRun = f.runId;
   state.builder.altView = null;
-  renderResult(f.result, f.current, f.profile, f.name, f.meta).catch(resultLoadError);
+  renderResult(f.result, f.current, f.profile, f.name, f.meta).then(() => {
+    const h = focus ? $<HTMLElement>("#b-result h2") : null;
+    if (h) { h.tabIndex = -1; h.focus(); }
+  }).catch(resultLoadError);
 }
 export async function cancelJob(job: BuilderJob): Promise<void> {
   if (!job.id) { endJob(job, cancelledNote(Date.now() - job.startedAt)); return; }
