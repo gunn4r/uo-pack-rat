@@ -63,7 +63,7 @@ function renderNav(setup: SetupApiResponse): void {
   if (!nav) return;
   const noClient = !setup.settings.client;
   nav.replaceChildren(...SECTIONS.map((s) => box("a", { href: "#/settings", class: "nav-item", "data-section": s.id, ...(s.id === currentSection ? { "aria-current": "true" } : {}),
-    onclick: (e: MouseEvent) => { e.preventDefault(); markSection(s.id); document.getElementById(s.id)?.scrollIntoView({ block: "start", behavior: "smooth" }); } },
+    onclick: (e: MouseEvent) => { e.preventDefault(); markSection(s.id); navScrolling = true; document.getElementById(s.id)?.scrollIntoView({ block: "start", behavior: "smooth" }); } },
     txt(s.label),
     s.id === "set-client" && noClient ? el("span", { class: "dot warn set-nav-dot", role: "img", "aria-label": "needs attention" }) : null)));
 }
@@ -73,7 +73,14 @@ function markSection(id: string): void {
     if (b.dataset.section === id) b.setAttribute("aria-current", "true"); else b.removeAttribute("aria-current");
   }
 }
-$<HTMLElement>("#tab-settings .settings-page")?.addEventListener("scroll", (e) => {
+// A nav click's own scroll must not move the marker: a section near the end can't reach the top, so the
+// "scrolled to the end" rule would mark Updates after a click on Data. The marker follows the scroll again
+// once the player scrolls themselves.
+let navScrolling = false;
+const settingsPage = $<HTMLElement>("#tab-settings .settings-page");
+for (const ev of ["wheel", "pointerdown", "keydown", "touchstart"]) settingsPage?.addEventListener(ev, () => { navScrolling = false; }, { passive: true });
+settingsPage?.addEventListener("scroll", (e) => {
+  if (navScrolling) return;
   const page = e.currentTarget as HTMLElement;
   const top = page.getBoundingClientRect().top + 24;
   let at: string = SECTIONS[0].id;
