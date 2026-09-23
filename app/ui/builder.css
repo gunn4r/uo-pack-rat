@@ -126,3 +126,4 @@
   .b-results { overflow: visible; }
   .b-resists, .b-stats { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 }
+.b-no-char { padding: var(--space-4); }   /* the panel with no character: why Build and Save are off */

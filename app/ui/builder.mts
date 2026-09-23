@@ -66,8 +66,20 @@ export function syncBuilderCharacters(): void {
     selectCharacter(names.includes(want as string) ? want as string : names[0]!);
   } else {
     state.builder.character = null; state.builder.profile = null;
-    $<HTMLElement>("#b-panel-body")!.replaceChildren();
+    $<HTMLElement>("#b-panel-body")!.replaceChildren(el("p", { class: "muted b-no-char", id: "b-no-char" }, txt(NO_CHARACTER)));
     $<HTMLElement>("#b-result")!.replaceChildren(box("div", { class: "card empty-state" }, el("h2", { class: "t-lg" }, "No characters yet"), el("p", { class: "muted" }, txt("Import a scan and its character shows up here."))));
+  }
+  setNoCharacter(!names.length);
+}
+// With no character there is nothing to build or save: both buttons are disabled, and say why — in their
+// title, and in the panel's own line that they are described by.
+const NO_CHARACTER = "There is no character to build for yet. Import a scan first.";
+function setNoCharacter(none: boolean): void {
+  for (const id of ["#b-run", "#b-save"]) {
+    const b = $<HTMLButtonElement>(id)!;
+    if (!state.builder.job) b.disabled = none;
+    if (none) { b.title = NO_CHARACTER; b.setAttribute("aria-describedby", "b-no-char"); }
+    else { b.removeAttribute("title"); b.removeAttribute("aria-describedby"); }
   }
 }
 export function selectCharacter(name: string): void {

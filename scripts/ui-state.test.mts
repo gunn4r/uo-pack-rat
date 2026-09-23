@@ -291,6 +291,29 @@ test("[slow] focus moves on, not to the page body, when a build finishes, is can
   }
 });
 
+// With no scans there is no character: Build and Save are disabled and say why, rather than staying live
+// and only answering with a toast.
+test("[slow] with no character, Build best suit and Save profile are disabled with the reason", async (t) => {
+  const why = unavailable();
+  if (why) return t.skip(why);
+  const dataDir = mkdtempSync(join(tmpdir(), "packrat-ui-nochar-"));
+  writeFileSync(join(dataDir, "settings.json"), JSON.stringify({ schemaVersion: 1, shard: "uoalive", setupDone: true }));
+  const { app, page, errors } = await launch(dataDir);
+  try {
+    await openTab(page, "builder");
+    await page.waitForSelector("#b-no-char");
+    for (const id of ["#b-run", "#b-save"]) {
+      assert.equal(await page.locator(id).isDisabled(), true, `${id} is disabled`);
+      assert.match(await page.locator(id).getAttribute("title") || "", /no character to build for/);
+      assert.equal(await page.locator(id).getAttribute("aria-describedby"), "b-no-char");
+    }
+    assert.deepEqual(errors, []);
+  } finally {
+    await app.close();
+    rmSync(dataDir, { recursive: true, force: true });
+  }
+});
+
 test("[slow] a character's sheet opens from the roster, and a character can be forgotten from its row menu", async (t) => {
   const why = unavailable();
   if (why) return t.skip(why);
