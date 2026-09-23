@@ -610,6 +610,12 @@ async function fetchChunk(offset: number, g: number): Promise<void> {
   const into: unknown[] = state.page.groups || state.page.rows;
   got.forEach((r, i) => { into[offset + i] = r; rowCache.delete(offset + i); });
   renderTable();
+  // A piece asked for from elsewhere (showItem): open it in the peek once its row has landed.
+  if (peekWanted != null && !state.page.groups) {
+    const i = state.page.rows.findIndex((r) => r?.serial === peekWanted);
+    peekWanted = null;
+    if (i >= 0) { focusRow(i, false); openPeekAt(i); return; }
+  }
   // The peek follows a reload: its item's new record, or closed when the item left the list.
   if (offset === 0 && !state.page.groups) peekRefresh((serial) => state.page.rows.find((r) => r?.serial === serial), state.page.total > CHUNK);
   else if (state.page.groups) closePeek();
@@ -879,6 +885,15 @@ export function buildFilters(): void {
   for (const c of $el("#inv-toolbar").querySelectorAll<HTMLButtonElement | HTMLInputElement>("button, input")) c.disabled = false;
   loadError = null;
   syncToolbar();
+}
+// The character sheet's "Open in Inventory": the Items view searching for the piece's name, with that
+// piece open in the peek as soon as its row arrives.
+let peekWanted: number | null = null;
+export function showItem(it: { serial: number; name: string }): void {
+  closePeek();
+  peekWanted = it.serial;
+  setQuery({ ...clearAll(state.query), q: it.name.toLowerCase() });
+  if (location.hash !== "#/inventory") location.hash = "#/inventory";
 }
 // Containers' "Show these items" and a row's "Show everything in this container": the Items view
 // filtered to one root container.

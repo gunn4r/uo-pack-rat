@@ -48,18 +48,19 @@ details summary { cursor: pointer; color: var(--color-text-muted); font-size: va
 @media (prefers-reduced-motion: no-preference) { button, .chip { transition: background var(--duration-fast), border-color var(--duration-fast); } }
 
 /* the item tooltip (dom.mts tipNode, design spec 4.3): always drawn in dark mode (index.html gives #tip its
-   own data-mode), so the game's colours read as designed; 280 px, the body face, pointer-safe */
+   own data-mode), so the game's colours read as designed; 280 px, the body face, pointer-safe. A
+   .tipcard-host (#tip, the character sheet's slot popover) is anything that shows tipNode. */
 #tip { position: fixed; z-index: var(--z-tooltip); pointer-events: none; display: none; width: var(--tooltip-w); padding: var(--space-3); background: var(--color-surface-raised); color: var(--color-text); border: var(--border-width) solid var(--color-border); border-radius: var(--radius-md); font-size: var(--text-sm); line-height: var(--lh-sm); box-shadow: var(--shadow-2); }
-#tip .tipcard { display: flex; flex-direction: column; gap: 6px; }
-#tip .tip-head { display: flex; align-items: center; gap: var(--space-2); }
-#tip .tip-name { flex: 1 1 auto; min-width: 0; font-size: var(--text-base); line-height: var(--lh-base); }
-#tip .tip-head .tag { flex: none; }
-#tip .tip-lines { display: flex; flex-direction: column; gap: 2px; font-size: 12px; line-height: 18px; }
-#tip .tip-foot { display: flex; align-items: center; gap: 6px; min-width: 0; }
-#tip .tip-foot > span { flex: none; white-space: nowrap; }
-#tip .tip-foot > span:last-child { flex: 0 1 auto; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
-#tip .t-res-phys { color: var(--res-phys); } #tip .t-res-fire { color: var(--res-fire); } #tip .t-res-cold { color: var(--res-cold); }
-#tip .t-res-poison { color: var(--res-poison); } #tip .t-res-energy { color: var(--res-energy); }
+.tipcard-host .tipcard { display: flex; flex-direction: column; gap: 6px; }
+.tipcard-host .tip-head { display: flex; align-items: center; gap: var(--space-2); }
+.tipcard-host .tip-name { flex: 1 1 auto; min-width: 0; font-size: var(--text-base); line-height: var(--lh-base); }
+.tipcard-host .tip-head .tag { flex: none; }
+.tipcard-host .tip-lines { display: flex; flex-direction: column; gap: 2px; font-size: 12px; line-height: 18px; }
+.tipcard-host .tip-foot { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.tipcard-host .tip-foot > span { flex: none; white-space: nowrap; }
+.tipcard-host .tip-foot > span:last-child { flex: 0 1 auto; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.tipcard-host .t-res-phys { color: var(--res-phys); } .tipcard-host .t-res-fire { color: var(--res-fire); } .tipcard-host .t-res-cold { color: var(--res-cold); }
+.tipcard-host .t-res-poison { color: var(--res-poison); } .tipcard-host .t-res-energy { color: var(--res-energy); }
 [data-serial] { cursor: default; }
 
 
