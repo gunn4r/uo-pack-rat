@@ -1,6 +1,6 @@
 {
   "adapter": "razor-enhanced",
-  "version": "1.2.0",
+  "version": "1.3.0",
   "transport": "folder",
   "platform": "win32",
   "actions": ["open-container", "move-to-own-backpack", "pathfind-local", "client-local-highlight"],

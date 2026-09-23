@@ -55,7 +55,7 @@ def rfc3339_now():
 
 
 ADAPTER_ID = "razor-enhanced"
-ADAPTER_VERSION = "1.2.0"
+ADAPTER_VERSION = "1.3.0"
 # Keep this literal in sync with capabilities.json -- a test enforces the two never drift apart
 # for the TazUO adapter (test_paths.py) and the same discipline applies here by hand until this
 # adapter has its own test.
@@ -80,6 +80,7 @@ GROUND_ONLY_AT_HOME = True    # when the bank box is already open (you are at a 
 CONTENTS_WAIT_MS = 1500   # Items.WaitForContents' own open-and-wait timeout, per container
 PROPS_WAIT_MS = 800       # Items.WaitForProps' own request-and-wait timeout, per item
 MAX_NEST = 4              # bags in bags in bags
+OPENED_HERE = []          # containers this run opened itself, in opening order (close_opened)
 OUT_DIR = os.path.join(data_dir(), "inbox", "razor-enhanced")
 ALARM_HUE, OK_HUE, INFO_HUE = 33, 68, 88
 
@@ -206,6 +207,7 @@ def scan_root(root_item, kind, label, containers, items, seen):
             if cserial in seen_containers:
                 continue
             seen_containers.add(cserial)
+            note_if_closed(cont)
             try:
                 arrived = bool(Items.WaitForContents(cont, CONTENTS_WAIT_MS))
             except Exception:
@@ -246,6 +248,35 @@ def scan_root(root_item, kind, label, containers, items, seen):
         containers[entry["serial"]] = entry
         note_unopened(entry, label)
     return n_items, True
+
+
+def note_if_closed(cont):
+    """Remember a container this run is about to open for the first time, so close_opened() closes
+    only windows the run opened. Item.ContainerOpened is RE's documented "the container was opened"
+    flag: RE sets it when the contents first arrive and never clears it when the window closes, so a
+    container opened any time earlier this session (by the player, or by an earlier scan) counts as
+    already open and is left open. That errs on the side of never closing a window the player opened."""
+    try:
+        if not bool(getattr(cont, "ContainerOpened", False)):
+            OPENED_HERE.append(as_int(getattr(cont, "Serial", 0)))
+    except Exception:
+        pass
+
+
+def close_opened():
+    """Close the container windows this run opened, innermost first, with RE's documented
+    Items.Close(serial) ("Close opened container window"). Runs once everything has been read and the
+    scan file written, or after the script is stopped or fails, so it never changes what is recorded.
+    A build without Items.Close leaves the windows open rather than raising."""
+    close = getattr(Items, "Close", None)
+    for serial in reversed(OPENED_HERE):
+        if close is None:
+            break
+        try:
+            close(serial)
+        except Exception:
+            pass
+    del OPENED_HERE[:]
 
 
 def note_unopened(entry, label):
@@ -376,4 +407,7 @@ def main():
         sysmsg("  " + c, INFO_HUE)
 
 
-main()
+try:
+    main()
+finally:
+    close_opened()
