@@ -506,6 +506,12 @@ test("[fast] /schema/validate.mjs is servable (scan-schema.mjs's own relative im
   assert.equal(r.headers.get("content-type"), "text/javascript; charset=utf-8");
   assert.match(await r.text(), /export function validate/);
 });
+test("[fast] /paste-scan.mjs is servable (the Import drawer's preview parses with the server's rule)", async () => {
+  const r = await get("/paste-scan.mjs");
+  assert.equal(r.status, 200);
+  assert.equal(r.headers.get("content-type"), "text/javascript; charset=utf-8");
+  assert.match(await r.text(), /export function parsePastedScan/);
+});
 test("[fast] /favicon.png is the logo, served same-origin as image/png, and the page links it", async () => {
   const r = await get("/favicon.png");
   assert.equal(r.status, 200);

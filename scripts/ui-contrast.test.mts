@@ -8,7 +8,7 @@
 // Skipped when electron or playwright is absent, or under TEST_SKIP_ELECTRON.
 import test from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -17,6 +17,7 @@ import type { ElectronApplication, Page } from "playwright";
 import { probeContrast, failures, describeFailures, type ContrastRow } from "./contrast-probe.mts";
 
 const ROOT = dirname(dirname(fileURLToPath(import.meta.url)));
+const KESTREL = readFileSync(join(ROOT, "app", "fixtures", "demo-Kestrel.json"), "utf8");
 const require_ = createRequire(import.meta.url);
 function unavailable(): string | null {
   if (process.env.TEST_SKIP_ELECTRON) return "TEST_SKIP_ELECTRON is set";
@@ -62,12 +63,34 @@ const SCENES: Scene[] = [
     await p.click("#b-run");
     await p.waitForFunction(() => !document.querySelector<HTMLButtonElement>("#b-run")?.disabled && document.querySelector("#b-result h2"), undefined, { timeout: 60_000 });
   } },
-  { name: "import drawer", enter: (p) => route(p, "#/import", "#import-drawer:not([hidden]) #import-body .panel"), leave: (p) => p.keyboard.press("Escape") },
+  { name: "import drawer", enter: (p) => route(p, "#/import", "#import-drawer:not([hidden]) #imp-mode"), leave: (p) => p.keyboard.press("Escape") },
   { name: "runs drawer", enter: (p) => route(p, "#/runs", "#runs-drawer:not([hidden]) .runrow"), leave: (p) => p.keyboard.press("Escape") },
   { name: "bridge popover", enter: async (p) => { await p.click("#bridge"); await p.waitForSelector(".pop"); }, leave: (p) => p.keyboard.press("Escape") },
   { name: "collapsed sidebar", enter: async (p) => { await route(p, "#/inventory", "#inv-table tbody tr.item"); await p.click("#sidebar-pin"); await p.waitForSelector("#app.collapsed"); },
     leave: (p) => p.click("#sidebar-pin") },
   { name: "settings", enter: (p) => route(p, "#/settings", "#settings-body .panel") },
+  // ---- import drawer states (phase 10): a clean paste with its preview, a paste that doesn't parse, scan files
+  { name: "import preview", enter: async (p) => {
+    await route(p, "#/import", "#import-drawer:not([hidden]) #imp-text");
+    await p.fill("#imp-text", KESTREL);
+    await p.waitForSelector(".imp-preview.ok");
+  }, leave: (p) => p.keyboard.press("Escape") },
+  { name: "import error", enter: async (p) => {
+    await route(p, "#/import", "#import-drawer:not([hidden]) #imp-text");
+    await p.fill("#imp-text", KESTREL.slice(0, 600));
+    await p.waitForSelector(".imp-preview.bad");
+  }, leave: async (p) => { await p.fill("#imp-text", ""); await p.keyboard.press("Escape"); } },
+  { name: "import files", enter: async (p) => {
+    await route(p, "#/import", "#import-drawer:not([hidden]) #imp-mode");
+    await p.locator("#imp-mode").getByRole("radio", { name: "Scan files" }).click();
+    await p.evaluate(([k]) => {
+      const dt = new DataTransfer();
+      dt.items.add(new File([k!], "Kestrel.json", { type: "application/json" }));
+      dt.items.add(new File(["hello"], "notes.txt", { type: "text/plain" }));
+      window.dispatchEvent(new DragEvent("drop", { dataTransfer: dt, bubbles: true, cancelable: true }));
+    }, [KESTREL]);
+    await p.waitForSelector(".imp-file.bad");
+  }, leave: async (p) => { await p.locator("#imp-mode").getByRole("radio", { name: "Paste a scan" }).click(); await p.keyboard.press("Escape"); } },
 ];
 
 async function launch(dataDir: string): Promise<{ app: ElectronApplication; page: Page; errors: string[] }> {

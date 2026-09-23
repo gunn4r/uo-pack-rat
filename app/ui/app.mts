@@ -102,6 +102,8 @@ export function routeFor(tab: string): string { return tab === "builder" && stat
 let lastScreen = "inventory";
 const screenOf = (tab: string): string => (tab === "containers" ? "inventory" : tab === "runs" ? "builder" : tab === "import" ? lastScreen : tab);
 const importDrawer = bindDrawer($<HTMLElement>("#import-drawer")!);
+// The Import drawer closes itself once a scan lands (ui/import.mts); the drawerclose listener below puts the route back.
+export const closeImportDrawer = (): void => importDrawer.close();
 // Inventory's Items | Containers switch (in its top bar) is a view of one screen, not a screen of its own.
 const invView = segmented({ label: "View", options: [{ value: "items", label: "Items" }, { value: "containers", label: "Containers" }], value: "items", onChange: (v) => { location.hash = v === "containers" ? "#/containers" : "#/inventory"; } });
 invView.id = "inv-view";
