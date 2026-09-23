@@ -12,6 +12,7 @@ What you can do with it:
 - See what each character is wearing.
 - Ask for the best suit your items allow, with the stats you care about.
 - Press a button in the app to make the game show you where an item is, walk you to its chest, or put it in your backpack.
+- Dress the app up like the game: pick the **Britannia** theme in **Settings** for parchment, brass frames and a dark-wood night mode.
 
 ## Getting started
 
@@ -208,4 +209,4 @@ The rest of this page is for people working on Pack Rat itself.
 
 ## License
 
-MIT — see `LICENSE`. The bundled IBM Plex Sans and IBM Plex Mono fonts (`app/ui/fonts/`) are © IBM Corp. under the SIL Open Font License 1.1; their licence texts sit next to them.
+MIT — see `LICENSE`. The bundled IBM Plex Sans and IBM Plex Mono fonts (`app/ui/fonts/`) are © IBM Corp., and the Cinzel font the Britannia theme uses is © The Cinzel Project Authors, all under the SIL Open Font License 1.1; their licence texts sit next to them. The Britannia theme's frames and textures are drawn by the app itself; it uses no art from any game or game client.
