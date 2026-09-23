@@ -35,6 +35,7 @@ async function route(page: Page, hash: string, ready: string): Promise<void> {
   await page.waitForSelector(ready, { timeout: 15_000 });
   await page.waitForTimeout(250);
 }
+let releaseStart: (() => void) | null = null;   // lets the held build request of "builder running" go
 const SCENES: Scene[] = [
   { name: "inventory", enter: (p) => route(p, "#/inventory", "#inv-table tbody tr.item") },
   { name: "item tooltip", enter: async (p) => {
@@ -117,12 +118,13 @@ const SCENES: Scene[] = [
   }, leave: async (p) => { await p.fill("#b-restarts", "200"); } },
   { name: "builder running", enter: async (p) => {
     // hold the start request so the progress card stays up while it is measured
-    await p.route("**/api/optimize", async (r) => { await new Promise((res) => setTimeout(res, 20_000)); await r.continue().catch(() => {}); });
+    await p.route("**/api/optimize", async (r) => { await new Promise<void>((res) => { releaseStart = res; }); await r.abort().catch(() => {}); });
     await p.click("#b-run");
     await p.waitForSelector("#b-msg .b-progress");
   }, leave: async (p) => {
     await p.locator("#b-msg .b-progress").getByRole("button", { name: /Cancel/ }).click();
     await p.waitForFunction(() => !document.querySelector<HTMLButtonElement>("#b-run")?.disabled);
+    releaseStart?.();
     await p.unroute("**/api/optimize");
   } },
   { name: "builder current suit", enter: async (p) => {
