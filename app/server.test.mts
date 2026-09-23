@@ -97,6 +97,7 @@ interface SetupResponse {
   settings: { client?: ClientSetting };
   bridgeAdapter: string | null;
   dataDirCheck: DataDirCheck;
+  version: string;
 }
 interface LocateResponse {
   scriptsDir?: string;
@@ -505,6 +506,12 @@ test("[fast] /schema/validate.mjs is servable (scan-schema.mjs's own relative im
   assert.equal(r.status, 200);
   assert.equal(r.headers.get("content-type"), "text/javascript; charset=utf-8");
   assert.match(await r.text(), /export function validate/);
+});
+test("[fast] /paste-scan.mjs is servable (the Import drawer's preview parses with the server's rule)", async () => {
+  const r = await get("/paste-scan.mjs");
+  assert.equal(r.status, 200);
+  assert.equal(r.headers.get("content-type"), "text/javascript; charset=utf-8");
+  assert.match(await r.text(), /export function parsePastedScan/);
 });
 test("[fast] /favicon.png is the logo, served same-origin as image/png, and the page links it", async () => {
   const r = await get("/favicon.png");
@@ -1312,6 +1319,8 @@ test("[fast] GET /api/setup lists the tazuo adapter, its available (repo-shipped
     // razor-enhanced adapter on any other platform (app/ui/adapters.mts's availableAdapters) — it
     // must be this process's real process.platform, not a placeholder.
     assert.equal(j.platform, process.platform);
+    // Settings › Updates shows the running version before any update check.
+    assert.equal(j.version, (JSON.parse(readFileSync(join(dirname(fileURLToPath(import.meta.url)), "..", "package.json"), "utf8")) as { version: string }).version);
   } finally {
     await s2.close();
   }

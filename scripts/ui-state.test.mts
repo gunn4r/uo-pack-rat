@@ -224,7 +224,7 @@ test("[slow] a failed request during load shows an error, renders Settings and s
     await page.route("**/api/profiles", (route) => route.fulfill({ status: 500, contentType: "application/json", body: JSON.stringify({ ok: false, error: "internal error" }) }));
     await page.reload();
     await page.waitForSelector("#wizard[open]", { timeout: 15_000 });
-    await page.locator("#wizard").getByRole("button", { name: "Skip" }).click();
+    await page.locator("#wizard").getByRole("button", { name: "Set up later" }).click();
     await page.waitForFunction(() => !/loading/.test(document.querySelector("#settings-body")?.textContent || "loading"), undefined, { timeout: 15_000 });
     assert.doesNotMatch(await page.locator("#import-body").innerText(), /^loading/);
     await openTab(page, "characters");

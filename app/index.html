@@ -166,15 +166,16 @@
     <!-- ========================================================== Settings (ui/settings.mts, ui/settings.css) -->
     <main class="screen settings" id="tab-settings" data-panel="settings" aria-labelledby="h-settings" hidden>
       <header class="topbar"><h1 id="h-settings">Settings</h1></header>
-      <div class="page">
-        <div class="stack" id="settings-body"><div class="panel empty">loading…</div></div>
+      <div class="page settings-page">
+        <nav class="set-nav" id="settings-nav" aria-label="Settings sections"></nav>
+        <div class="set-content" id="settings-body"><div class="panel empty">loading…</div></div>
       </div>
     </main>
   </div>
 </div>
 
 <!-- ============================================================ overlays: outside #app, which goes inert while a drawer is open -->
-<dialog id="wizard" class="wizard"></dialog>
+<dialog id="wizard" class="dialog wizard"></dialog>
 <div id="tip" role="tooltip" data-theme="default" data-mode="dark"></div>
 
 <!-- Import drawer (ui/import.mts, ui/import.css) -->
@@ -182,11 +183,12 @@
   <div class="scrim" data-drawer-close></div>
   <aside class="drawer drawer-wide" role="dialog" aria-modal="true" aria-labelledby="import-drawer-title">
     <header class="overlay-head">
-      <span class="overlay-titles"><h2 id="import-drawer-title">Import scans</h2></span>
+      <span class="overlay-titles"><h2 id="import-drawer-title">Import scans</h2><span class="t-sm muted">Add a scan your client could not write as a file</span></span>
       <span class="spacer"></span>
       <button class="btn btn-ghost btn-icon" type="button" data-drawer-close aria-label="Close Import"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"></path></svg></button>
     </header>
     <div class="drawer-body" id="import-body"><div class="panel empty">loading…</div></div>
+    <footer class="overlay-foot" id="import-foot"></footer>
   </aside>
 </div>
 

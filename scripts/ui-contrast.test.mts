@@ -8,7 +8,7 @@
 // Skipped when electron or playwright is absent, or under TEST_SKIP_ELECTRON.
 import test from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -17,6 +17,7 @@ import type { ElectronApplication, Page } from "playwright";
 import { probeContrast, failures, describeFailures, type ContrastRow } from "./contrast-probe.mts";
 
 const ROOT = dirname(dirname(fileURLToPath(import.meta.url)));
+const KESTREL = readFileSync(join(ROOT, "app", "fixtures", "demo-Kestrel.json"), "utf8");
 const require_ = createRequire(import.meta.url);
 function unavailable(): string | null {
   if (process.env.TEST_SKIP_ELECTRON) return "TEST_SKIP_ELECTRON is set";
@@ -35,6 +36,16 @@ async function route(page: Page, hash: string, ready: string): Promise<void> {
   await page.waitForSelector(ready, { timeout: 15_000 });
   await page.waitForTimeout(250);
 }
+// The wizard, opened from Settings' code path and walked forward `steps` times with its primary button.
+function openWizardAt(steps: number): (page: Page) => Promise<void> {
+  return async (page) => {
+    await page.evaluate(async () => { await (await import("/ui/wizard.mjs" as string)).openWizard(); });
+    await page.waitForSelector("#wizard[open] #wiz-primary");
+    for (let i = 0; i < steps; i++) await page.click("#wiz-primary");
+    await page.waitForTimeout(150);
+  };
+}
+async function closeWizard(page: Page): Promise<void> { await page.keyboard.press("Escape"); await page.waitForSelector("#wizard", { state: "hidden" }); }
 const SCENES: Scene[] = [
   { name: "inventory", enter: (p) => route(p, "#/inventory", "#inv-table tbody tr.item") },
   { name: "item tooltip", enter: async (p) => {
@@ -62,12 +73,60 @@ const SCENES: Scene[] = [
     await p.click("#b-run");
     await p.waitForFunction(() => !document.querySelector<HTMLButtonElement>("#b-run")?.disabled && document.querySelector("#b-result h2"), undefined, { timeout: 60_000 });
   } },
-  { name: "import drawer", enter: (p) => route(p, "#/import", "#import-drawer:not([hidden]) #import-body .panel"), leave: (p) => p.keyboard.press("Escape") },
+  { name: "import drawer", enter: (p) => route(p, "#/import", "#import-drawer:not([hidden]) #imp-mode"), leave: (p) => p.keyboard.press("Escape") },
   { name: "runs drawer", enter: (p) => route(p, "#/runs", "#runs-drawer:not([hidden]) .runrow"), leave: (p) => p.keyboard.press("Escape") },
   { name: "bridge popover", enter: async (p) => { await p.click("#bridge"); await p.waitForSelector(".pop"); }, leave: (p) => p.keyboard.press("Escape") },
   { name: "collapsed sidebar", enter: async (p) => { await route(p, "#/inventory", "#inv-table tbody tr.item"); await p.click("#sidebar-pin"); await p.waitForSelector("#app.collapsed"); },
     leave: (p) => p.click("#sidebar-pin") },
-  { name: "settings", enter: (p) => route(p, "#/settings", "#settings-body .panel") },
+  { name: "settings", enter: (p) => route(p, "#/settings", "#set-general .set-row") },
+  // ---- Settings (phase 12): the lower sections (the danger zone), with a failed update check under its row
+  { name: "settings data and updates", enter: async (p) => {
+    await route(p, "#/settings", "#set-general .set-row");
+    await p.click("#settings-nav [data-section=set-updates]");
+    // A fixed answer instead of a real call to GitHub: the scene measures the failure message, not the network.
+    await p.route("**/api/update-check", (r) => r.fulfill({ contentType: "application/json", body: JSON.stringify({ ok: true, configured: true, error: "GitHub releases/latest returned 404" }) }));
+    await p.click("#set-check-updates");
+    await p.waitForSelector("#set-updates .msg", { timeout: 20_000 });
+    await p.locator("#set-data").scrollIntoViewIfNeeded();
+  } },
+  // ---- import drawer states (phase 10): a clean paste with its preview, a paste that doesn't parse, scan files
+  { name: "import preview", enter: async (p) => {
+    await route(p, "#/import", "#import-drawer:not([hidden]) #imp-text");
+    await p.fill("#imp-text", KESTREL);
+    await p.waitForSelector(".imp-preview.ok");
+  }, leave: (p) => p.keyboard.press("Escape") },
+  { name: "import error", enter: async (p) => {
+    await route(p, "#/import", "#import-drawer:not([hidden]) #imp-text");
+    await p.fill("#imp-text", KESTREL.slice(0, 600));
+    await p.waitForSelector(".imp-preview.bad");
+  }, leave: async (p) => { await p.fill("#imp-text", ""); await p.keyboard.press("Escape"); } },
+  { name: "import files", enter: async (p) => {
+    await route(p, "#/import", "#import-drawer:not([hidden]) #imp-mode");
+    await p.locator("#imp-mode").getByRole("radio", { name: "Scan files" }).click();
+    await p.evaluate(([k]) => {
+      const dt = new DataTransfer();
+      dt.items.add(new File([k!], "Kestrel.json", { type: "application/json" }));
+      dt.items.add(new File(["hello"], "notes.txt", { type: "text/plain" }));
+      window.dispatchEvent(new DragEvent("drop", { dataTransfer: dt, bubbles: true, cancelable: true }));
+    }, [KESTREL]);
+    await p.waitForSelector(".imp-file.bad");
+  }, leave: async (p) => { await p.locator("#imp-mode").getByRole("radio", { name: "Paste a scan" }).click(); await p.keyboard.press("Escape"); } },
+  // ---- setup wizard (phase 11): the shard step with its notice, the client cards (selected, plain, disabled),
+  // a failed folder path, and the paste branch's last step
+  { name: "wizard shard", enter: openWizardAt(0), leave: closeWizard },
+  { name: "wizard client", enter: openWizardAt(1), leave: closeWizard },
+  { name: "wizard folder error", enter: async (p) => {
+    await openWizardAt(2)(p);
+    await p.fill("#wiz-path", "/no/such/folder");
+    await p.click("#wiz-use-path");
+    await p.waitForSelector("#wizard .msg.bad");
+  }, leave: closeWizard },
+  { name: "wizard paste branch", enter: async (p) => {
+    await openWizardAt(1)(p);
+    await p.locator("#wizard input[value=classicuo-web]").check();
+    await p.click("#wiz-primary"); await p.click("#wiz-primary");
+    await p.waitForSelector("#wizard .msg.info");
+  }, leave: closeWizard },
   // ---- characters
   { name: "character row menu", enter: async (p) => {
     await route(p, "#/characters", "#char-table tbody tr[data-name]");

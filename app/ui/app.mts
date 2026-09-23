@@ -14,7 +14,7 @@ import { initBuilder, syncBuilderCharacters, selectCharacter } from "./builder.m
 import { renderContainers } from "./containers.mts";
 import { connectEvents } from "./events.mts";
 import { openWizard } from "./wizard.mts";
-import { renderSettings } from "./settings.mts";
+import { renderSettings, syncSettingsCharacters } from "./settings.mts";
 import { renderImport } from "./import.mts";
 import { applyLook } from "./theme.mts";
 import { initShell, applyShellPrefs, renderNavCounts, setCurrentNav } from "./shell.mts";
@@ -82,6 +82,7 @@ export async function reload(): Promise<void> {
   state.newestScan = newestStamp(state.inv.scans);
   renderNavCounts();
   buildFilters(); fetchItems(); renderCharacters(); renderContainers(); syncBuilderCharacters();
+  syncSettingsCharacters();
 }
 
 // ---------------------------------------------------------------- screens + hash routes
@@ -102,6 +103,8 @@ export function routeFor(tab: string): string { return tab === "builder" && stat
 let lastScreen = "inventory";
 const screenOf = (tab: string): string => (tab === "containers" ? "inventory" : tab === "runs" ? "builder" : tab === "import" ? lastScreen : tab);
 const importDrawer = bindDrawer($<HTMLElement>("#import-drawer")!);
+// The Import drawer closes itself once a scan lands (ui/import.mts); the drawerclose listener below puts the route back.
+export const closeImportDrawer = (): void => importDrawer.close();
 // Inventory's Items | Containers switch (in its top bar) is a view of one screen, not a screen of its own.
 const invView = segmented({ label: "View", options: [{ value: "items", label: "Items" }, { value: "containers", label: "Containers" }], value: "items", onChange: (v) => { location.hash = v === "containers" ? "#/containers" : "#/inventory"; } });
 invView.id = "inv-view";

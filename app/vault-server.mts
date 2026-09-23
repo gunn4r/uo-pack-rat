@@ -958,6 +958,8 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
       if (req.method === "GET" && url.pathname === "/vault-lib.mjs") return send(res, 200, readFileSync(join(WEB, "vault-lib.mjs"), "utf8"), "text/javascript");
       if (req.method === "GET" && url.pathname === "/item-query.mjs") return send(res, 200, readFileSync(join(WEB, "item-query.mjs"), "utf8"), "text/javascript");
       if (req.method === "GET" && url.pathname === "/scan-schema.mjs") return send(res, 200, readFileSync(join(WEB, "scan-schema.mjs"), "utf8"), "text/javascript");
+      // The Import drawer's instant preview parses a paste with the server's own rule (app/paste-scan.mts).
+      if (req.method === "GET" && url.pathname === "/paste-scan.mjs") return send(res, 200, readFileSync(join(WEB, "paste-scan.mjs"), "utf8"), "text/javascript");
       // scan-schema.mjs imports validate() from here — the browser resolves that relative import
       // against scan-schema.mjs's own served URL, so this needs its own static route too.
       if (req.method === "GET" && url.pathname === "/schema/validate.mjs") return send(res, 200, readFileSync(join(WEB, "schema", "validate.mjs"), "utf8"), "text/javascript");
@@ -1144,6 +1146,8 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
           // hand-installed or Skip-through-the-wizard player) — see the bridgeAdapter() comment above.
           bridgeAdapter: bridgeAdapterField,
           dataDirCheck: dataDirCheck(),
+          // Settings › Updates names the running version ("Pack Rat 0.1.0") before any update check.
+          version: PACKAGE_JSON.version,
         });
       }
       if (req.method === "POST" && url.pathname === "/api/setup/locate") {

@@ -87,7 +87,8 @@ test("[slow] components: confirm dialog, drawer, popover, toasts and tooltip beh
       const d = document.querySelector("dialog.dialog[open]")!;
       const info = { role: d.getAttribute("role"), focused: (document.activeElement as HTMLElement).dataset.cancel === "", danger: !!d.querySelector("[data-confirm].btn-danger") };
       if (sel) d.querySelector<HTMLElement>(sel)!.click(); else d.dispatchEvent(new Event("cancel", { cancelable: true }));
-      return { ...info, result: await p, left: document.querySelectorAll("dialog.dialog").length };
+      // #wizard is the page's one permanent .dialog (index.html ships it empty); a confirm dialog is removed once answered
+      return { ...info, result: await p, left: document.querySelectorAll("dialog.dialog:not(#wizard)").length };
     }, click);
     for (const [sel, want] of [["[data-confirm]", true], ["[data-cancel]", false], [null, false]] as const) {
       const r = await answer(sel);
