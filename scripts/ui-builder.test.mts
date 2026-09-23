@@ -1,7 +1,7 @@
 // ui-builder.test.mts — [slow]: the Suit Builder's keyboard and hover behaviour, driven in the real Electron
 // window with Playwright (the launch scripts/ui-state.test.mts uses). Each case is maintainer feedback on the
-// redesign (PR #43): ⌘↵ building from anywhere on the screen, not only with focus inside it. Skipped when
-// electron or playwright is absent, or under TEST_SKIP_ELECTRON.
+// redesign (PR #43): ⌘↵ building from anywhere on the screen, not only with focus inside it; the item tooltip
+// on the current suit's pieces. Skipped when electron or playwright is absent, or under TEST_SKIP_ELECTRON.
 import test from "node:test";
 import assert from "node:assert/strict";
 import { mkdtempSync, rmSync, writeFileSync, mkdirSync, copyFileSync } from "node:fs";
@@ -10,7 +10,7 @@ import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createRequire } from "node:module";
 import { fitWindow } from "./electron-window.mts";
-import type { ElectronApplication, Page } from "playwright";
+import type { ElectronApplication, Locator, Page } from "playwright";
 
 const ROOT = dirname(dirname(fileURLToPath(import.meta.url)));
 const require_ = createRequire(import.meta.url);
@@ -80,6 +80,42 @@ test("[slow] ⌘↵ builds from anywhere on the Builder screen, and not from beh
     await page.waitForTimeout(500);
     assert.equal(await page.locator("#b-run").isDisabled(), false, "no build started behind the drawer");
     assert.equal(starts, 2);
+    assert.deepEqual(errors, []);
+  } finally {
+    await app.close();
+    rmSync(dataDir, { recursive: true, force: true });
+  }
+});
+
+// The item tooltip's name once it shows (400 ms after a hover settles, or after keyboard focus).
+async function tipName(page: Page): Promise<string> {
+  await page.waitForFunction(() => getComputedStyle(document.querySelector("#tip")!).display === "block", undefined, { timeout: 5_000 });
+  return page.locator("#tip .tip-name").innerText();
+}
+async function hoverTip(page: Page, target: Locator): Promise<string> {
+  await page.mouse.move(2, 2);
+  await page.waitForFunction(() => getComputedStyle(document.querySelector("#tip")!).display === "none");
+  await target.hover();
+  return tipName(page);
+}
+
+test("[slow] the current suit's pieces show the item tooltip on hover and on keyboard focus", async (t) => {
+  const why = unavailable();
+  if (why) return t.skip(why);
+  const dataDir = seedDataDir("packrat-ui-buildtip-");
+  const { app, page, errors } = await launch(dataDir);
+  try {
+    await openBuilder(page);
+    const rows = page.locator("#b-current tbody tr");
+    assert.ok(await rows.count() > 0, "the current suit lists worn pieces");
+    const name = await rows.nth(1).locator("td").nth(1).innerText();
+    assert.equal(await hoverTip(page, rows.nth(1)), name);
+    // Tab from the row before reaches the row, and the tooltip follows it.
+    await page.mouse.move(2, 2);
+    await rows.nth(0).focus();
+    await page.keyboard.press("Tab");
+    assert.equal(await page.evaluate(() => document.activeElement?.closest("tr")?.dataset.serial != null), true, "the row takes focus");
+    assert.equal(await tipName(page), name);
     assert.deepEqual(errors, []);
   } finally {
     await app.close();

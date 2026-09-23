@@ -7,7 +7,7 @@ import { OPTIMIZER_SLOTS, RESIST_KEYS, getRules, resistSkillBonus, totalsOf, req
 import type { EffectiveProfile, Item, OptItem, PropMap } from "../vault-lib.mts";
 import { state } from "./store.mts";
 import type { BuildMeta } from "./store.mts";
-import { $, el, label, fmtN, fmtSecs, fmtRunTime, slotLabel, rarCell } from "./dom.mts";
+import { $, el, label, fmtN, fmtSecs, fmtRunTime, slotLabel, rarCell, showItemTip, hideItemTip } from "./dom.mts";
 import { box, txt, button, icon, badge, message, meter, switchControl, check, table, tableFoot, rowActions, tipWrap, keyValue, token } from "./components.mts";
 import { sheetNode } from "./sheet.mts";
 import { bridgeActionReason, runBridgeAction, grabAll, grabbable } from "./bridge.mts";
@@ -21,6 +21,16 @@ const serialHex = (s: number): string => `0x${s.toString(16)}`;
 // A piece's key properties, strongest first: "SSI 35 · DCI 11 · Hit Fireball 36".
 function keyProps(props: PropMap | undefined, n = 3): string {
   return Object.entries(props || {}).filter(([k, v]) => k !== "tagPenalty" && !k.endsWith("Pool") && v).sort((a, b) => Math.abs(b[1]) - Math.abs(a[1])).slice(0, n).map(([k, v]) => `${label(k)} ${v}`).join(" · ");
+}
+// A piece the item tooltip answers for: hovering it shows the tooltip (dom.mts's installTooltip reads
+// data-serial), and so does 400 ms of keyboard focus, as on an Inventory row.
+function tipTarget<T extends HTMLElement>(node: T, serial: number): T {
+  node.dataset.serial = String(serial);
+  node.tabIndex = 0;
+  node.classList.add("b-tip");
+  node.addEventListener("focus", () => { if (node.matches(":focus-visible")) showItemTip(serial, node); });
+  node.addEventListener("blur", () => hideItemTip());
+  return node;
 }
 // A resist's cap for this character's race, in paperdoll terms.
 function raceCap(k: string, race: string | null | undefined): number {
@@ -58,12 +68,14 @@ function currentSuitCard(name: string): HTMLElement {
   const totals = totalsOf(Object.fromEntries(worn.map((i) => [String(i.serial), i as unknown as OptItem])));
   const tiles = RESIST_KEYS.map((k) => resistTile(k, (totals[k] || 0) + rsb, p?.floors?.[k] ?? null, raceCap(k, p?.race)));
   const order = (it: Item): number => { const i = OPTIMIZER_SLOTS.indexOf(it.slot || ""); return i < 0 ? 99 : i; };
-  const rows = [...worn].sort((a, b) => order(a) - order(b)).map((it) => ({ cells: [slotLabel(it.slot), txt(it.name), rarCell(it), txt(keyProps(it.props) || "no properties", keyProps(it.props) ? "muted" : "faint")] }));
+  const sorted = [...worn].sort((a, b) => order(a) - order(b));
+  const rows = sorted.map((it) => ({ cells: [slotLabel(it.slot), txt(it.name), rarCell(it), txt(keyProps(it.props) || "no properties", keyProps(it.props) ? "muted" : "faint")] }));
+  const tbl = rows.length ? table({ label: "Worn now", columns: [{ label: "Slot", width: "18%" }, { label: "Wearing", width: "30%" }, { label: "Rarity", width: "18%" }, { label: "Key properties" }], rows }) : null;
+  tbl?.querySelectorAll("tbody tr").forEach((tr, i) => tipTarget(tr as HTMLTableRowElement, sorted[i]!.serial));
   return el("section", { class: "card b-flush", id: "b-current", "aria-label": `${name}'s current suit` },
     box("div", { class: "card-head" }, el("h2", {}, "Current suit"), txt(`What ${name} wears now, against the requirements`, "t-sm muted")),
     box("div", { class: "b-resists card-pad" }, ...tiles),
-    rows.length ? table({ label: "Worn now", columns: [{ label: "Slot", width: "18%" }, { label: "Wearing", width: "30%" }, { label: "Rarity", width: "18%" }, { label: "Key properties" }], rows })
-      : box("div", { class: "card-pad" }, el("p", { class: "muted" }, txt(`${name} wore nothing the last scan could read.`))));
+    tbl || box("div", { class: "card-pad" }, el("p", { class: "muted" }, txt(`${name} wore nothing the last scan could read.`))));
 }
 
 // ---------------------------------------------------------------- result
