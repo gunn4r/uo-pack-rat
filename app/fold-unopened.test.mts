@@ -20,7 +20,7 @@ const scan = (scannedAt: string, containers: Record<string, unknown>, items: Ret
   roots: number[] = [CHEST], character = "Tester"): ScanV2 => {
   const doc = {
     schemaVersion: 2, character, scannedAt, stats: {},
-    adapter: { id: "tazuo", version: "2.2.0", client: "TazUO", clientVersion: null,
+    adapter: { id: "tazuo", version: "2.3.0", client: "TazUO", clientVersion: null,
       capabilities: { layers: [], arms: true, bank: true, ground: true, nested: true, tooltips: "opl", bridge: [] } },
     roots: roots.map((serial) => ({ serial, kind: "ground", name: "Chest " + serial, opened: true })),
     containers, items, equipped: [],
