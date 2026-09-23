@@ -32,6 +32,22 @@ Selection is two attributes on `<html>`, set by `app/ui/theme.mts` from the ui-p
 
 `<body class="pr">` is the root the resets hang off.
 
+## Components (`app/ui/components.mts`)
+
+Small DOM builders over `el()` (`app/ui/dom.mts`); their CSS is `app/ui/components.css`, ported from the approved design canvas. Nothing sets `innerHTML` (scan files are hostile input, `docs/threat-model.md`); icons are built node by node from a fixed path table.
+
+**The one-span rule.** `txt(text, cls?)` returns exactly one `<span>`. `box(tag, attrs, ...kids)` builds a flex/grid container and throws on a bare string or number child. Every builder that takes a label wraps it itself. `FLEX_CLASSES` lists every class `components.css` draws as flex or grid; `app/ui-components.test.mts` checks the list against the stylesheet and that no builder puts a text node inside one, and `scripts/ui-components.test.mts` checks the rendered result. A new flex/grid class in `components.css` must be added to `FLEX_CLASSES`.
+
+What exists:
+
+- Text and containers: `txt`, `box`, `icon(name, {size})`, `kbd`.
+- Buttons: `button({label, icon, iconAfter, variant: primary|secondary|ghost|danger|danger-outline, size: sm|md|lg, iconOnly, kbd, disabled, block, cls, onClick, attrs})`. An icon-only button's label becomes its `aria-label`.
+- Fields: `input`, `select`, `textarea`, `searchInput({label, placeholder, hint})`, `field({label, control, help, error})` (wires `for`, `aria-describedby`, `aria-invalid`), `check` and `switchControl` (`[input] [span]` rows), `segmented({label, options, value, onChange})` (radiogroup, arrow keys).
+- Chips and labels: `filterChip({label, set, add})`, `token({label, removeLabel, onRemove})`, `pill({label, pressed, off})`, `badge(text, tone)`, `tag(text, tone)`.
+- Status: `message({tone, title, text, actions})`, `meter(value, max, {tone})`, `progress(value, max, label)`, `stepper(steps, current)`.
+- Layout: `keyValue(pairs)`, `card({title, actions, body})`, `table({label, columns, rows})`, `tableFoot(...facts)`, `rowActions(actions)` (a disabled action carries its reason as a tooltip).
+- Overlays: `popover(anchor, content, {label})` (anchored, light dismiss, Esc, focus back to the anchor), `tooltip(anchor, text)` and `tipWrap(control, text)` for a disabled control, `createDrawer({id, title, subtitle, body, footer})` / `bindDrawer(root)` for drawer markup already in `index.html` (focus trap, Esc, scrim, hidden + inert when closed, focus back to the opener, the shell `#app` inert while open), `openDialog({title, body, actions, role})` on the native `<dialog>`, `confirmDialog({title, body, confirmLabel, danger})` → `Promise<boolean>` (Cancel focused; the page's only yes/no question — never `window.confirm`), `showToast(text, tone, {action})` and `clearToasts()` (bottom-right stack of three; errors stay). `dom.mts`'s `toast(text, cls)` and `dialog.mts`'s `promptText()` sit on top of these.
+
 ## Contrast check
 
 `scripts/contrast-probe.mts` measures contrast on the rendered page: every text/background pair (compositing semi-transparent fills down to an opaque layer), field values, placeholders, control boundaries, icons in icon-only buttons and messages, and status dots. `scripts/ui-contrast.test.mts` (`[slow]`, full suite) runs it in the Electron window over the demo data on every scene in light and dark, and fails on any pair under 4.5:1 for text (3:1 for large text) or 3:1 for edges, icons and dots; a disabled control only needs 3:1 text. When you add a screen, drawer, popover or dialog, add a scene there.

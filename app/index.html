@@ -27,13 +27,20 @@
 <div id="notice" class="msg warn" role="status" hidden></div>
 <dialog id="wizard" class="wizard"></dialog>
 <div id="tip" role="tooltip" data-theme="default" data-mode="dark"></div>
-<div id="runs-drawer" class="drawer" inert>
-  <div class="drawer-backdrop"></div>
-  <aside class="drawer-panel" role="dialog" aria-label="Saved runs">
-    <div class="drawer-head"><h3>Saved runs · <span id="b-runs-who"></span></h3><button id="b-runs-close" title="close (Esc)">×</button></div>
-    <input id="b-runs-filter" type="search" placeholder="filter by name or change, e.g. DI floor">
-    <div class="row"><button id="b-compare" disabled>Compare selected</button><span class="small muted">tick two runs</span></div>
-    <div class="runs" id="b-runs"><div class="small muted">No runs yet for this character.</div></div>
+<div class="drawer-root" id="runs-drawer" hidden inert>
+  <div class="scrim" data-drawer-close></div>
+  <aside class="drawer" role="dialog" aria-modal="true" aria-labelledby="runs-drawer-title">
+    <header class="overlay-head">
+      <span class="overlay-titles"><h2 id="runs-drawer-title">Saved runs</h2><span class="t-sm muted" id="b-runs-who"></span></span>
+      <span class="spacer"></span>
+      <button class="btn btn-ghost btn-icon" type="button" id="b-runs-close" data-drawer-close aria-label="Close saved runs"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"></path></svg></button>
+    </header>
+    <div class="drawer-body">
+      <label class="sr" for="b-runs-filter">Filter saved runs</label>
+      <input id="b-runs-filter" class="input" type="search" placeholder="Filter by name or change, e.g. DI floor">
+      <div class="row"><button id="b-compare" disabled>Compare selected</button><span class="small muted">tick two runs</span></div>
+      <div class="runs" id="b-runs"><div class="small muted">No runs yet for this character.</div></div>
+    </div>
   </aside>
 </div>
 <main>

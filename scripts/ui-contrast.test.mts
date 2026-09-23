@@ -28,7 +28,7 @@ function unavailable(): string | null {
 
 // Each scene brings the page into one state; the probe then measures whatever is visible. Scenes run in
 // order in one window, so a scene may rely on the one before (the build result stays for the runs drawer).
-interface Scene { name: string; enter: (page: Page) => Promise<void> }
+interface Scene { name: string; enter: (page: Page) => Promise<void>; leave?: (page: Page) => Promise<void> }
 async function route(page: Page, hash: string, ready: string): Promise<void> {
   await page.evaluate((h) => { location.hash = h; }, hash);
   await page.waitForSelector(ready, { timeout: 15_000 });
@@ -43,6 +43,17 @@ const SCENES: Scene[] = [
   } },
   { name: "characters", enter: (p) => route(p, "#/characters", "#char-cards .panel") },
   { name: "containers", enter: (p) => route(p, "#/containers", "#cont-table tbody tr") },
+  { name: "confirm dialog", enter: async (p) => {
+    await p.locator("#cont-table tbody tr").first().getByRole("button", { name: "Forget" }).click();
+    await p.waitForSelector("dialog.dialog[open]");
+  }, leave: (p) => p.keyboard.press("Escape") },
+  { name: "toasts", enter: async (p) => {
+    await p.evaluate(async () => {
+      const C = await import("/ui/components.mjs" as string);
+      C.showToast("8 grabs queued for Dorran", "ok"); C.showToast("Grab: Mighty Orc Mask queued for Dorran", "info");
+      C.showToast("Bridge is offline. Press Play on packrat-bridge.py in game first.", "bad", { action: { label: "Details", onClick: () => {} } });
+    });
+  }, leave: (p) => p.evaluate(async () => (await import("/ui/components.mjs" as string)).clearToasts()) },
   { name: "builder result", enter: async (p) => {
     await route(p, "#/builder", "#b-run");
     await p.waitForFunction(() => document.querySelector<HTMLSelectElement>("#b-char")?.value, undefined, { timeout: 10_000 });
@@ -89,6 +100,7 @@ test("[slow] every text, control edge, icon and status dot on the real page pass
         seen.push(`${scene.name} · ${mode}: ${got.length}`);
       }
       await page.emulateMedia({ colorScheme: "light" });
+      await scene.leave?.(page);
     }
     const failed = failures(rows);
     assert.equal(failed.length, 0, `contrast failures (${failed.length} of ${rows.length} pairs):\n${describeFailures(failed)}`);

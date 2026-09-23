@@ -7,6 +7,7 @@ import { bagLabel } from "../vault-lib.mts";
 import { state } from "./store.mts";
 import { $, el, fmtWhen, toast } from "./dom.mts";
 import { api } from "./api.mts";
+import { confirmDialog } from "./components.mts";
 import { reload } from "./app.mts";
 import type { ForgetApiResponse } from "./api-types.mts";
 
@@ -26,7 +27,7 @@ export function renderContainers(): void {
     body.append(el("tr", {}, el("td", {}, el("span", { class: "name" }, name), bags.length ? el("div", { class: "small muted" }, bags.map((b) => b.label || bagLabel(b)).join(" · ")) : null),
       el("td", {}, r.kind), el("td", {}, r.scannedBy), el("td", { class: "num small" }, fmtWhen(r.scannedAt)), el("td", { class: "n" }, n),
       el("td", {}, el("button", { class: "small", onclick: async () => {
-        if (!confirm(`Forget ${name} and the ${n} items in it? It comes back the next time it is scanned.`)) return;
+        if (!await confirmDialog({ title: `Forget ${name}?`, body: `${name} and the ${n} items in it leave the inventory. It comes back the next time it is scanned.`, confirmLabel: `Forget ${name}` })) return;
         try { await api<ForgetApiResponse>("/api/forget", { method: "POST", body: { root: r.serial, name: bagLabel(r) } }); await reload(); } catch (e) { toast((e as Error).message, "bad"); }
       } }, "Forget"))));
   }

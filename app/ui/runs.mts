@@ -5,6 +5,7 @@ import type { RunSettings, OptItem, PropMap, Character } from "../vault-lib.mts"
 import { state, invStamp } from "./store.mts";
 import { $, el, label, full, fmtSecs, fmtRunTime, slotLabel, toast } from "./dom.mts";
 import { api } from "./api.mts";
+import { bindDrawer, type DrawerHandle } from "./components.mts";
 import { resolveItems } from "./items.mts";
 import { renderResult, poolControls, renderProfile, runStats } from "./builder.mts";
 import type { RunsListApiResponse, RunApiResponse, RunPutApiResponse, RunSummaryLike, SavedRunLike } from "./api-types.mts";
@@ -54,18 +55,15 @@ export async function loadRuns(): Promise<void> {
   state.builder.runs = runs;
   renderRuns();
 }
+// The drawer's behaviour (focus trap, Esc, scrim, inert when closed, focus back to the opener) is
+// components.mts's bindDrawer over the markup in index.html.
+let drawer: DrawerHandle | null = null;
+const runsDrawer = (): DrawerHandle => (drawer ||= bindDrawer($<HTMLElement>("#runs-drawer")!));
 export function openRunsDrawer(): void {
-  const d = $<HTMLElement>("#runs-drawer")!;
   $<HTMLElement>("#b-runs-who")!.textContent = state.builder.character || "";
-  d.inert = false; d.classList.add("open");
-  setTimeout(() => $<HTMLElement>("#b-runs-filter")!.focus(), 60);
+  runsDrawer().open($<HTMLElement>("#b-runs-open"));
 }
-export function closeRunsDrawer(): void {
-  const d = $<HTMLElement>("#runs-drawer")!;
-  // hand focus back before the drawer turns inert, so focus never sits inside a hidden element
-  if (d.contains(document.activeElement)) $<HTMLElement>("#b-runs-open")!.focus();
-  d.classList.remove("open"); d.inert = true;
-}
+export function closeRunsDrawer(): void { runsDrawer().close(); }
 export function updateCompareBtn(): void { $<HTMLButtonElement>("#b-compare")!.disabled = state.builder.compare.size !== 2; }
 export function renderRuns(): void {
   const box = $<HTMLElement>("#b-runs")!, runs = state.builder.runs || [], sel = state.builder.compare, stamp = invStamp();

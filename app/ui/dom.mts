@@ -5,6 +5,7 @@ import type { Item } from "../vault-lib.mts";
 import { EXTRA_COLS, rarityRank as rarityRankOf } from "../item-query.mts";
 import { state } from "./store.mts";
 import { resolveItems, rarityToken } from "./items.mts";
+import { showToast } from "./components.mts";
 
 export { EXTRA_COLS, colVal } from "../item-query.mts";
 
@@ -106,21 +107,12 @@ export function fmtRunTime(iso: string): string {
   return d.toDateString() === new Date().toDateString() ? hm : `${d.toLocaleDateString([], { month: "short", day: "numeric" })} ${hm}`;
 }
 
-// `number`, not `ReturnType<typeof setTimeout>`: this file only ever runs in the browser, where
-// setTimeout returns a number, but `ReturnType<typeof setTimeout>` is ambiguous once a program also
-// has Node's ambient globals in scope (tsconfig.json's root config, which type-checks this file too,
-// alongside tsconfig.browser.json's browser-only one) — the two configs disagree on which overload
-// `typeof setTimeout` even means, so naming the type directly is what stays correct under both.
-let toastTimer: number | null = null;
+// toast(text, cls) — the page's long-standing call, now the toast stack in components.mts (bottom-right, up to
+// three, errors stay until dismissed). cls keeps its old meaning: "" is information, "good" a success, "bad"
+// an error. (components.mts imports el() from here; the cycle is safe because neither module calls into the
+// other while it is still loading.)
 export function toast(text: string, cls = ""): void {
-  document.querySelectorAll(".toast").forEach((t) => t.remove());
-  const t = el("div", { class: "toast " + cls }, text); document.body.append(t);
-  // clearTimeout accepts (and no-ops on) null at runtime exactly like undefined — lib.dom.d.ts's own
-  // signature just doesn't say so; setTimeout's own return value goes through `unknown` for the same
-  // cross-config reason as the type annotation above (a direct `as number` fails under whichever
-  // config resolves it to Node's Timeout, since neither type "sufficiently overlaps" the other) —
-  // both casts are compiler-only, this file's actual runtime is always the browser's setTimeout.
-  clearTimeout(toastTimer as number | undefined); toastTimer = setTimeout(() => t.remove(), 6000) as unknown as number;
+  showToast(text, cls === "bad" ? "bad" : cls === "good" ? "ok" : "info");
 }
 
 // ---------------------------------------------------------------- in-game style tooltip

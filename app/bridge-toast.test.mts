@@ -5,7 +5,7 @@
 // "What the bridge refuses"), so this is the whole path from a refused line to the player's screen.
 //
 // Same localStorage shim as app/bridge-adapter-fallback.test.mts, plus just enough of `document` and
-// `fetch` for pollBridge(): one #bridge pill, a body that toasts append to, and the status response.
+// `fetch` for pollBridge(): one #bridge pill, the toast stack toasts append to, and the status response.
 import "../scripts/localstorage-shim-for-tests.mts";
 
 import test from "node:test";
@@ -26,15 +26,21 @@ function fakeEl(): FakeEl {
   };
 }
 const pill = fakeEl(), notice = fakeEl();
+// The toast stack (components.mts's showToast): each toast appended to it is recorded with its text and class.
+const stack = Object.assign(fakeEl(), {
+  append: (t: FakeEl) => toasts.push({ text: textOf(t), cls: t.className }),
+  get children() { return []; },
+});
 // The text a fake element holds, however deep: el() appends text nodes ({text}) and child elements.
 const textOf = (x: unknown): string => typeof x === "string" ? x : (x as { text?: string }).text ?? ((x as FakeEl).kids || []).map(textOf).join("");
 const g = globalThis as Record<string, unknown>;
 g.document = {
   querySelector: (s: string) => (s === "#bridge" ? pill : s === "#notice" ? notice : null),
   querySelectorAll: () => [],
+  getElementById: (id: string) => (id === "toasts" ? stack : null),
   createElement: () => fakeEl(),
+  createElementNS: () => fakeEl(),
   createTextNode: (text: string) => ({ text }),
-  body: { append: (t: FakeEl) => toasts.push({ text: textOf(t), cls: t.className }) },
 };
 let status: unknown = null;
 g.fetch = async () => ({ ok: true, json: async () => status });
@@ -53,7 +59,7 @@ test("[fast] pollBridge toasts a refused command under the piece's name, a succe
   await pollBridge();
   assert.deepEqual(toasts, [
     { text: "Ruby Ring: expired: queued 73s ago, not run", cls: "toast bad" },
-    { text: "grabbed Leather Gorget — it is in your backpack", cls: "toast good" },
+    { text: "grabbed Leather Gorget — it is in your backpack", cls: "toast ok" },
   ]);
   assert.equal(bridge.pending.size, 0);
   toasts.length = 0;
