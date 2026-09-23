@@ -11,3 +11,9 @@ magick logo.png -filter Lanczos -resize 1024x1024 -strip -colors 256 -define png
 magick logo.png -filter Lanczos -resize 256x256 -strip -colors 256 -define png:compression-level=9 app/assets/icon.png
 magick logo.png -filter Lanczos -resize 64x64 -strip -colors 256 -define png:compression-level=9 app/assets/favicon.png
 ```
+
+The sidebar's mark, `app/assets/logo-mark.png`, is the rat's head cropped from `build/icon.png` (a 448 px square whose top-left corner is at 300, 140) and scaled to 80 px, twice the 40 px circle the sidebar draws it in. Regenerate it whenever `build/icon.png` changes, and check the crop still frames the head:
+
+```
+magick build/icon.png -crop 448x448+300+140 +repage -filter Lanczos -resize 80x80 -strip -colors 256 -define png:compression-level=9 app/assets/logo-mark.png
+```
