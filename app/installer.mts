@@ -339,9 +339,12 @@ export interface CheckScriptsDataDirOptions {
 function scriptsDataDirIn(scriptsDir: string, home: string): { dataDir: string } | { error: string } | null {
   const file = join(scriptsDir, "packrat-paths.json");
   const fallback = { dataDir: join(home, ".pack-rat") };
-  try { lstatSync(file); }
+  // The lstat type check as well as readHead's own: win32 has no O_NOFOLLOW, and there readHead's open
+  // does follow a file symlink (CI proved it), so the name is refused before it is ever opened.
+  let isFile: boolean;
+  try { isFile = lstatSync(file).isFile(); }
   catch (e) { return (e as NodeJS.ErrnoException).code === "ENOENT" ? fallback : { error: (e as Error).message }; }
-  const text = readHead(file);
+  const text = isFile ? readHead(file) : null;
   if (text === null) return { error: "it is not a regular file" };
   let doc: unknown;
   try { doc = JSON.parse(text); }
