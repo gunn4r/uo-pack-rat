@@ -7,7 +7,14 @@
 .char-search { width: 240px; }
 .roster { overflow: hidden; }
 .roster-scroll { overflow-x: auto; }
-#char-table { min-width: 880px; }
+/* The Character column takes what the fixed columns leave, never less than 160 px (868 px of fixed columns +
+   160): narrower than that the table scrolls sideways under a sticky Character column, as Inventory's Name does. */
+#char-table { min-width: 1028px; }
+#char-table th:first-child, #char-table td:first-child { position: sticky; left: 0; z-index: 1; background: var(--color-surface); color: var(--color-text); }
+#char-table th:first-child { z-index: calc(var(--z-sticky) + 1); background: var(--color-surface-subtle); color: var(--color-text-muted); }
+#char-table tr:hover td:first-child { background: var(--color-row-hover); color: var(--color-on-row-hover); }
+.roster-scroll.scrolled-x #char-table :is(th, td):first-child { box-shadow: 1px 0 0 var(--color-border); }
+#char-table td:first-child .char-link { display: block; overflow: hidden; text-overflow: ellipsis; }
 #char-table td { height: var(--row-comfortable); }
 #char-table td.no-match { height: auto; white-space: normal; }
 .pr a.char-link { color: var(--color-text); text-decoration: none; }
