@@ -475,6 +475,15 @@ test("[fast] /schema/validate.mjs is servable (scan-schema.mjs's own relative im
   assert.equal(r.headers.get("content-type"), "text/javascript; charset=utf-8");
   assert.match(await r.text(), /export function validate/);
 });
+test("[fast] /favicon.png is the logo, served same-origin as image/png, and the page links it", async () => {
+  const r = await get("/favicon.png");
+  assert.equal(r.status, 200);
+  assert.equal(r.headers.get("content-type"), "image/png");
+  assert.equal(r.headers.get("x-content-type-options"), "nosniff");
+  const body = Buffer.from(await r.arrayBuffer());
+  assert.deepEqual(body, readFileSync(join(dirname(fileURLToPath(import.meta.url)), "assets", "favicon.png")), "the bytes arrive unaltered, not re-encoded as text");
+  assert.match(await (await get("/")).text(), /<link rel="icon" type="image\/png" href="\/favicon\.png">/);
+});
 test("[fast] writes require application/json", async () => {
   const r = await fetch(srv.url + "/api/profiles", { method: "PUT", body: "{}" });
   assert.equal(r.status, 415);
