@@ -15,6 +15,7 @@ body { height: 100vh; overflow: hidden; }
 /* collapsed: 56 px of icons; every label stays in the accessibility tree, only visually hidden */
 .shell.collapsed .sidebar { align-items: center; padding: var(--space-3) var(--space-2); }
 .shell.collapsed .brand { padding: var(--space-1) 0 var(--space-3); }
+.shell.collapsed .brand img { width: 36px; height: 36px; }   /* centred in the 40 px of the 56 px rail */
 .shell.collapsed .nav-item { width: 40px; justify-content: center; padding: 0; }
 .shell.collapsed .nav-sub .i { display: block; }
 .shell.collapsed :is(.nav-label, .brand-name, .bridge-label) { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
