@@ -306,11 +306,10 @@ test("[fast] installedVersion reads a bounded head of the script, not the whole 
 });
 
 // ---- checkScriptsDataDir --------------------------------------------------------------------------------
-// Every case builds its own temp home and scripts folder; nothing here looks at the real home folder.
-// platform is passed explicitly so the win32-only candidate roots (LOCALAPPDATA, C:\TazUO) are never
-// probed, and so the case-folding rule under test is the one named, not whatever machine runs it.
+// Every case builds its own temp home and scripts folder, and hands in the candidate folders itself, so
+// nothing here looks at a real client folder. platform is passed explicitly so the case-folding rule
+// under test is the one named, not whatever machine runs it.
 
-const TAZUO_ONLY = [{ id: "tazuo", platform: null }];
 // A scripts folder holding one Pack Rat script and, when `paths` is a string, that packrat-paths.json.
 function scriptsFolder(prefix: string, paths?: string): string {
   const dir = tmp(prefix);
@@ -323,7 +322,7 @@ const pathsJson = (dataDir: unknown): string => `${JSON.stringify({ dataDir }, n
 test("[fast] checkScriptsDataDir: a configured client whose packrat-paths.json names this data folder is a match", () => {
   const dataDir = tmp("qm-dd-data-");
   const scriptsDir = scriptsFolder("qm-dd-match-", pathsJson(dataDir));
-  const r = checkScriptsDataDir({ dataDir, client: { adapter: "tazuo", scriptsDir }, adapters: TAZUO_ONLY, home: tmp("qm-dd-home-"), platform: "linux" });
+  const r = checkScriptsDataDir({ dataDir, client: { adapter: "tazuo", scriptsDir }, candidates: [], home: tmp("qm-dd-home-"), platform: "linux" });
   assert.equal(r.status, "match");
   assert.equal(r.status === "match" && r.scriptsDir, scriptsDir);
 });
@@ -331,7 +330,7 @@ test("[fast] checkScriptsDataDir: a configured client whose packrat-paths.json n
 test("[fast] checkScriptsDataDir: a configured client whose scripts write elsewhere is a mismatch naming both folders", () => {
   const dataDir = tmp("qm-dd-data-"), other = tmp("qm-dd-other-");
   const scriptsDir = scriptsFolder("qm-dd-mismatch-", pathsJson(other));
-  const r = checkScriptsDataDir({ dataDir, client: { adapter: "tazuo", scriptsDir }, adapters: TAZUO_ONLY, home: tmp("qm-dd-home-"), platform: "linux" });
+  const r = checkScriptsDataDir({ dataDir, client: { adapter: "tazuo", scriptsDir }, candidates: [], home: tmp("qm-dd-home-"), platform: "linux" });
   assert.deepEqual(r, { status: "mismatch", scriptsDir, scriptsDataDir: other, dataDir });
 });
 
@@ -340,14 +339,14 @@ test("[fast] checkScriptsDataDir: no packrat-paths.json is compared against the 
   const scriptsDir = scriptsFolder("qm-dd-nofile-");
   const client = { adapter: "tazuo", scriptsDir };
   mkdirSync(join(home, ".pack-rat"));
-  assert.equal(checkScriptsDataDir({ dataDir: join(home, ".pack-rat"), client, adapters: TAZUO_ONLY, home, platform: "linux" }).status, "match", "the app on its own default and scripts on theirs agree");
+  assert.equal(checkScriptsDataDir({ dataDir: join(home, ".pack-rat"), client, candidates: [], home, platform: "linux" }).status, "match", "the app on its own default and scripts on theirs agree");
   const devData = tmp("qm-dd-dev-");
-  assert.deepEqual(checkScriptsDataDir({ dataDir: devData, client, adapters: TAZUO_ONLY, home, platform: "linux" }),
+  assert.deepEqual(checkScriptsDataDir({ dataDir: devData, client, candidates: [], home, platform: "linux" }),
     { status: "mismatch", scriptsDir, scriptsDataDir: join(home, ".pack-rat"), dataDir: devData });
   // The scripts treat an empty or missing dataDir exactly like a missing file (`if d:` in data_dir()).
   for (const body of [pathsJson(""), "{}\n", pathsJson(null)]) {
     const dir = scriptsFolder("qm-dd-empty-", body);
-    assert.equal(checkScriptsDataDir({ dataDir: join(home, ".pack-rat"), client: { adapter: "tazuo", scriptsDir: dir }, adapters: TAZUO_ONLY, home, platform: "linux" }).status, "match", body);
+    assert.equal(checkScriptsDataDir({ dataDir: join(home, ".pack-rat"), client: { adapter: "tazuo", scriptsDir: dir }, candidates: [], home, platform: "linux" }).status, "match", body);
   }
 });
 
@@ -355,7 +354,7 @@ test("[fast] checkScriptsDataDir: a malformed packrat-paths.json is reported, ne
   const dataDir = tmp("qm-dd-data-"), home = tmp("qm-dd-home-");
   for (const body of ["{not json", "[1, 2]\n", pathsJson(42), `{"dataDir": "${"x".repeat(70_000)}"}`]) {
     const scriptsDir = scriptsFolder("qm-dd-bad-", body);
-    const r = checkScriptsDataDir({ dataDir, client: { adapter: "tazuo", scriptsDir }, adapters: TAZUO_ONLY, home, platform: "linux" });
+    const r = checkScriptsDataDir({ dataDir, client: { adapter: "tazuo", scriptsDir }, candidates: [], home, platform: "linux" });
     assert.equal(r.status, "unreadable", body.slice(0, 40));
     assert.ok(r.status === "unreadable" && r.scriptsDir === scriptsDir && r.error.length > 0, "names the folder and says why");
   }
@@ -367,7 +366,7 @@ test("[fast] checkScriptsDataDir: a symlinked packrat-paths.json is not followed
   writeFileSync(target, pathsJson(dataDir));
   const scriptsDir = scriptsFolder("qm-dd-link-");
   if (!trySymlink(target, join(scriptsDir, "packrat-paths.json"))) { t.skip("symlinks need privilege here"); return; }
-  const r = checkScriptsDataDir({ dataDir, client: { adapter: "tazuo", scriptsDir }, adapters: TAZUO_ONLY, home: tmp("qm-dd-home-"), platform: "linux" });
+  const r = checkScriptsDataDir({ dataDir, client: { adapter: "tazuo", scriptsDir }, candidates: [], home: tmp("qm-dd-home-"), platform: "linux" });
   assert.equal(r.status, "unreadable", "a symlink is refused like any other file that isn't a regular file, even one naming the right folder");
 });
 
@@ -377,7 +376,7 @@ test("[fast] checkScriptsDataDir: the same folder written differently is still a
   mkdirSync(dataDir);
   const same = (written: string, platform: NodeJS.Platform = "linux", appDir = dataDir): string => {
     const scriptsDir = scriptsFolder("qm-dd-same-", pathsJson(written));
-    return checkScriptsDataDir({ dataDir: appDir, client: { adapter: "tazuo", scriptsDir }, adapters: TAZUO_ONLY, home, platform }).status;
+    return checkScriptsDataDir({ dataDir: appDir, client: { adapter: "tazuo", scriptsDir }, candidates: [], home, platform }).status;
   };
   assert.equal(same(`${dataDir}/`), "match", "trailing slash");
   assert.equal(same("~/packrat-data"), "match", "~ for the home folder");
@@ -395,13 +394,13 @@ test("[fast] checkScriptsDataDir: the same folder written differently is still a
 });
 
 test("[fast] checkScriptsDataDir: nothing configured and nothing detected says nothing", () => {
-  const r = checkScriptsDataDir({ dataDir: tmp("qm-dd-data-"), client: null, adapters: TAZUO_ONLY, home: tmp("qm-dd-home-"), platform: "linux" });
+  const r = checkScriptsDataDir({ dataDir: tmp("qm-dd-data-"), client: null, candidates: [], home: tmp("qm-dd-home-"), platform: "linux" });
   assert.deepEqual(r, { status: "none" });
 });
 
 test("[fast] checkScriptsDataDir: a folder with no Pack Rat scripts in it says nothing", () => {
   const scriptsDir = tmp("qm-dd-empty-client-");
-  const r = checkScriptsDataDir({ dataDir: tmp("qm-dd-data-"), client: { adapter: "tazuo", scriptsDir }, adapters: TAZUO_ONLY, home: tmp("qm-dd-home-"), platform: "linux" });
+  const r = checkScriptsDataDir({ dataDir: tmp("qm-dd-data-"), client: { adapter: "tazuo", scriptsDir }, candidates: [], home: tmp("qm-dd-home-"), platform: "linux" });
   assert.deepEqual(r, { status: "none" }, "no script there writes anywhere, so there is nothing to compare");
 });
 
@@ -411,14 +410,31 @@ test("[fast] checkScriptsDataDir: with no client configured, the auto-detected c
   mkdirSync(legion, { recursive: true });
   writeFileSync(join(legion, "packrat-bridge.py"), "#\n");
   writeFileSync(join(legion, "packrat-paths.json"), pathsJson(other));
-  const r = checkScriptsDataDir({ dataDir, client: null, adapters: TAZUO_ONLY, home, platform: "linux" });
+  const r = checkScriptsDataDir({ dataDir, client: null, candidates: candidateClientRoots({ adapter: "tazuo", home, platform: "linux", env: {} }), home, platform: "linux" });
   assert.deepEqual(r, { status: "mismatch", scriptsDir: legion, scriptsDataDir: other, dataDir });
   // A second detected folder that does match wins: the player may be using either one.
   const docs = join(home, "Documents", "TazUO", "LegionScripts");
   mkdirSync(docs, { recursive: true });
   writeFileSync(join(docs, "packrat-bridge.py"), "#\n");
   writeFileSync(join(docs, "packrat-paths.json"), pathsJson(dataDir));
-  assert.equal(checkScriptsDataDir({ dataDir, client: null, adapters: TAZUO_ONLY, home, platform: "linux" }).status, "match");
+  assert.equal(checkScriptsDataDir({ dataDir, client: null, candidates: candidateClientRoots({ adapter: "tazuo", home, platform: "linux", env: {} }), home, platform: "linux" }).status, "match");
+});
+
+test("[fast] checkScriptsDataDir: a mismatch in a later folder is not hidden behind an unreadable earlier one", () => {
+  const home = tmp("qm-dd-home-"), dataDir = tmp("qm-dd-data-"), other = tmp("qm-dd-other-");
+  const broken = scriptsFolder("qm-dd-broken-", "{not json");
+  const elsewhere = scriptsFolder("qm-dd-elsewhere-", pathsJson(other));
+  const r = checkScriptsDataDir({ dataDir, client: null, candidates: [broken, elsewhere], home, platform: "linux" });
+  assert.deepEqual(r, { status: "mismatch", scriptsDir: elsewhere, scriptsDataDir: other, dataDir });
+});
+
+test("[fast] checkScriptsDataDir: a UNC or device dataDir is never touched and gives no verdict", () => {
+  const home = tmp("qm-dd-home-"), dataDir = tmp("qm-dd-data-");
+  for (const unc of ["\\\\attacker\\share", "//attacker/share", "\\\\?\\C:\\data", "\\\\.\\pipe\\x"]) {
+    const scriptsDir = scriptsFolder("qm-dd-unc-", pathsJson(unc));
+    const r = checkScriptsDataDir({ dataDir, client: { adapter: "tazuo", scriptsDir }, candidates: [], home, platform: "win32" });
+    assert.deepEqual(r, { status: "none" }, unc);
+  }
 });
 
 // ---- installScripts -----------------------------------------------------------------------------------
@@ -627,6 +643,20 @@ test("[fast] installScripts refuses a symlinked packrat-paths.json rather than w
   assert.equal(result.ok, false, JSON.stringify(result));
   assert.equal(result.code, "writeFailed");
   assert.deepEqual(JSON.parse(readFileSync(canary, "utf8")), { untouched: true });
+});
+
+// The pre-read that decides "kept" must not follow the link either. A symlink to a file naming ANOTHER
+// dataDir used to be read through on win32 (no O_NOFOLLOW there) and answered "kept" — success, with the
+// link left in place — before the refusing write was ever reached.
+test("[fast] installScripts does not read through a symlinked packrat-paths.json to decide it is kept", () => {
+  const scriptsDir = tmp("qm-is-pathslink-kept-dest-");
+  const canary = join(tmp("qm-is-pathslink-kept-outside-"), "canary.json");
+  writeFileSync(canary, '{"dataDir": "/somewhere/else"}');
+  if (!trySymlink(canary, join(scriptsDir, "packrat-paths.json"))) return;
+  const result = installScripts({ adapter: "tazuo", adaptersDir: fakeAdaptersDir(), scriptsDir, dataDir: "/some/data/dir", bridgeStatusPath: join(scriptsDir, "no-status.json") });
+  assert.equal(result.ok, false, JSON.stringify(result));
+  assert.equal(result.code, "writeFailed");
+  assert.equal(readFileSync(canary, "utf8"), '{"dataDir": "/somewhere/else"}');
 });
 
 test("[fast] installScripts leaves no temp file behind and reports pathsFile on a clean install", () => {

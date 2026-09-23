@@ -68,13 +68,16 @@ function copyFileAtomic(src: string, dest: string): void {
 // memory-exhaustion variant of the FIFO hang readHead's own flags close off.
 const HEAD_READ_BYTES = 64 * 1024;
 
-// O_NOFOLLOW refuses a symlink at the final component, O_NONBLOCK keeps a FIFO from parking this
-// (single-threaded) process forever, and the fstat is what makes both TOCTOU-proof: it describes the
-// fd actually opened, not a name that could have changed since. Neither flag exists on win32, where
-// `?? 0` leaves the open plain — Windows has no FIFO-in-a-directory case, and CreateFile does not
-// traverse a reparse point the way open(2) traverses a symlink. null means "not readable as a regular
-// file", which every caller treats the same as absent.
+// The lstat refuses a name that is not a regular file before anything is opened — the only symlink
+// check win32 gets: neither O_NOFOLLOW nor O_NONBLOCK exists there (`?? 0` leaves the open plain), and
+// CreateFile DOES traverse a file symlink (a CI run on windows-latest read straight through one).
+// Elsewhere O_NOFOLLOW refuses a symlink at the final component, O_NONBLOCK keeps a FIFO from parking
+// this (single-threaded) process forever, and the fstat makes both TOCTOU-proof: it describes the fd
+// actually opened, not a name that could have changed since the lstat. Windows has no
+// FIFO-in-a-directory case. null means "not readable as a regular file", which every caller treats the
+// same as absent.
 function readHead(path: string, max: number = HEAD_READ_BYTES): string | null {
+  try { if (!lstatSync(path).isFile()) return null; } catch { return null; }
   const flags = constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0) | (constants.O_NONBLOCK ?? 0);
   let fd: number;
   try { fd = openSync(path, flags); } catch { return null; }
@@ -320,31 +323,33 @@ export type DataDirCheck =
   | { status: "mismatch"; scriptsDir: string; scriptsDataDir: string; dataDir: string }
   | { status: "unreadable"; scriptsDir: string; error: string };
 
+// candidates: the auto-detected client folders to fall back on when no client is configured — the
+// server passes candidateClientRoots' answers for each adapter (injectable there, so a test never
+// reaches a real client folder); home is where the scripts' ~ and ~/.pack-rat default resolve.
 export interface CheckScriptsDataDirOptions {
   dataDir: string;
   client: { adapter: string; scriptsDir: string } | null | undefined;
-  adapters: { id: string; platform: string | null }[];
+  candidates: string[];
   home: string;
   platform?: NodeJS.Platform;
-  env?: NodeJS.ProcessEnv;
 }
 
 // The adapters' data_dir() (adapters/*/packrat-*.py): packrat-paths.json's dataDir when the file exists
 // and names one, else $PACKRAT_DATA, else ~/.pack-rat, each through os.path.expanduser. $PACKRAT_DATA is
 // the GAME CLIENT's environment, which this process cannot see and which nothing documented sets, so
 // "no file" is compared against ~/.pack-rat. A relative dataDir resolves against the client's working
-// directory, equally unknowable, so it gives no verdict (null) rather than a guess. The read is
-// readHead's: a symlink or anything else that isn't a regular file is refused (the scripts would follow
-// it; this does not), and a file past the 64 KiB cap reads as truncated JSON, so as malformed.
+// directory, equally unknowable, so it gives no verdict (null) rather than a guess — and so does a UNC
+// or device path (badPathShape's rule): realpath-ing `\\host\share` would be an outbound SMB connection,
+// an NTLM attempt against whatever host a hand-edited or unpacked file names, at startup and on every
+// GET /api/setup. The read is readHead's: a symlink or anything else that isn't a regular file is
+// refused (the scripts would follow it; this does not), and a file past the 64 KiB cap reads as
+// truncated JSON, so as malformed. The lstat here only tells a missing file (the default) apart.
 function scriptsDataDirIn(scriptsDir: string, home: string): { dataDir: string } | { error: string } | null {
   const file = join(scriptsDir, "packrat-paths.json");
   const fallback = { dataDir: join(home, ".pack-rat") };
-  // The lstat type check as well as readHead's own: win32 has no O_NOFOLLOW, and there readHead's open
-  // does follow a file symlink (CI proved it), so the name is refused before it is ever opened.
-  let isFile: boolean;
-  try { isFile = lstatSync(file).isFile(); }
+  try { lstatSync(file); }
   catch (e) { return (e as NodeJS.ErrnoException).code === "ENOENT" ? fallback : { error: (e as Error).message }; }
-  const text = isFile ? readHead(file) : null;
+  const text = readHead(file);
   if (text === null) return { error: "it is not a regular file" };
   let doc: unknown;
   try { doc = JSON.parse(text); }
@@ -354,7 +359,7 @@ function scriptsDataDirIn(scriptsDir: string, home: string): { dataDir: string }
   if (!d) return fallback;   // "", null, absent: the scripts' `if d:` falls through to the default
   if (typeof d !== "string") return { error: "its dataDir is not a folder path" };
   const expanded = d === "~" ? home : /^~[\\/]/.test(d) ? join(home, d.slice(2)) : d;
-  return isAbsolute(expanded) ? { dataDir: resolve(expanded) } : null;
+  return badPathShape(expanded) ? null : { dataDir: resolve(expanded) };
 }
 
 // One folder written two ways (a trailing slash, a `..`, a symlink, /var vs /private/var on macOS) is
@@ -369,25 +374,21 @@ function samePath(a: string, b: string, platform: NodeJS.Platform): boolean {
   return canon(a) === canon(b);
 }
 
+// A match anywhere wins; otherwise the first mismatch, which is the actionable finding, outranks an
+// unreadable file met before it.
 export function checkScriptsDataDir({
-  dataDir, client, adapters, home, platform = process.platform, env = process.env,
+  dataDir, client, candidates, home, platform = process.platform,
 }: CheckScriptsDataDirOptions): DataDirCheck {
-  const folders = client
-    ? [client.scriptsDir]
-    : adapters.flatMap((a) => candidateClientRoots({ adapter: a.id, home, platform, env, adapterPlatform: a.platform }));
-  let verdict: DataDirCheck = { status: "none" };
-  for (const scriptsDir of folders) {
+  let mismatch: DataDirCheck | null = null, unreadable: DataDirCheck | null = null;
+  for (const scriptsDir of client ? [client.scriptsDir] : candidates) {
     if (!scriptNamesIn(scriptsDir).length) continue;
     const found = scriptsDataDirIn(scriptsDir, home);
     if (!found) continue;
-    if ("error" in found) {
-      if (verdict.status === "none") verdict = { status: "unreadable", scriptsDir, error: found.error };
-      continue;
-    }
+    if ("error" in found) { unreadable ??= { status: "unreadable", scriptsDir, error: found.error }; continue; }
     if (samePath(found.dataDir, dataDir, platform)) return { status: "match", scriptsDir };
-    if (verdict.status === "none") verdict = { status: "mismatch", scriptsDir, scriptsDataDir: found.dataDir, dataDir };
+    mismatch ??= { status: "mismatch", scriptsDir, scriptsDataDir: found.dataDir, dataDir };
   }
-  return verdict;
+  return mismatch ?? unreadable ?? { status: "none" };
 }
 
 // A future-dated alive is untrusted rather than indefinitely fresh: without a cap, a skewed clock (or
