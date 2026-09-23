@@ -1,8 +1,8 @@
-// ui-builder.test.mts — [slow]: the Suit Builder's keyboard and hover behaviour, driven in the real Electron
-// window with Playwright (the launch scripts/ui-state.test.mts uses). Each case is maintainer feedback on the
-// redesign (PR #43): ⌘↵ building from anywhere on the screen, not only with focus inside it; the item tooltip
-// on the current suit's and the Fetch list's pieces. Skipped when electron or playwright is absent, or under
-// TEST_SKIP_ELECTRON.
+// ui-builder.test.mts — [slow]: the Suit Builder's keyboard, hover and panel behaviour, driven in the real
+// Electron window with Playwright (the launch scripts/ui-state.test.mts uses). Each case is maintainer feedback
+// on the redesign (PR #43): ⌘↵ building from anywhere on the screen, not only with focus inside it; the item
+// tooltip on the current suit's and the Fetch list's pieces; a Fetch list place shown whole; STR limit out of
+// Advanced. Skipped when electron or playwright is absent, or under TEST_SKIP_ELECTRON.
 import test from "node:test";
 import assert from "node:assert/strict";
 import { mkdtempSync, rmSync, writeFileSync, mkdirSync, copyFileSync } from "node:fs";
@@ -180,6 +180,32 @@ test("[slow] a Fetch list row shows its whole place, wrapped not cut, and copies
     await copy.click();
     await page.waitForFunction(() => /Copied 0x/.test(document.body.textContent || ""));
     assert.equal(await app.evaluate(({ clipboard }) => clipboard.readText()), hex);
+    assert.deepEqual(errors, []);
+  } finally {
+    await app.close();
+    rmSync(dataDir, { recursive: true, force: true });
+  }
+});
+
+test("[slow] STR limit sits beside Race, in view with Advanced closed, and a bad value is shown there", async (t) => {
+  const why = unavailable();
+  if (why) return t.skip(why);
+  const dataDir = seedDataDir("packrat-ui-strlimit-");
+  const { app, page, errors } = await launch(dataDir);
+  try {
+    await openBuilder(page);
+    assert.equal(await page.locator("#b-sec-adv-body").count(), 0, "Advanced is closed");
+    const str = page.getByLabel("STR limit");
+    assert.equal(await str.isVisible(), true);
+    assert.equal(await page.locator("#b-sec-adv #b-str").count(), 0, "not under Advanced");
+    await page.click("#b-sec-adv .b-sec-head button");
+    assert.equal(await page.locator("#b-sec-adv #b-str").count(), 0, "not under Advanced when it is open either");
+    await page.click("#b-sec-adv .b-sec-head button");
+    await str.fill("0");
+    await page.click("#b-run");
+    await page.waitForSelector("#b-str-err");
+    assert.equal(await page.evaluate(() => document.activeElement?.id), "b-str", "Build puts focus on the bad field");
+    assert.equal(await page.locator("#b-sec-adv-body").count(), 0, "and leaves Advanced closed");
     assert.deepEqual(errors, []);
   } finally {
     await app.close();

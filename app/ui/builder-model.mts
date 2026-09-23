@@ -108,7 +108,8 @@ export function knobFromServerError(text: string): KnobField | null {
   if (/strLimit/.test(text)) return "strLimit";
   return null;
 }
-// "Exact · 10,000 restarts · 300 s · 5 other suits within 40 · STR limit 110"
+// "Exact · 10,000 restarts · 300 s · 5 other suits within 40" (STR limit is not under Advanced: it has its
+// own field beside Race)
 export function advancedSummary(k: Knobs): string {
   const n = (s: string): number => Number(s);
   return [
@@ -116,7 +117,6 @@ export function advancedSummary(k: Knobs): string {
     `${plural(n(k.restarts), "restart")}`,
     k.exact ? `${num(n(k.budgetS))} s` : "",
     k.exact && n(k.altCount) > 0 ? `${plural(n(k.altCount), "other suit")} within ${num(n(k.altTol))}` : "",
-    k.strLimit.trim() ? `STR limit ${k.strLimit.trim()}` : "",
   ].filter(Boolean).join(" · ");
 }
 

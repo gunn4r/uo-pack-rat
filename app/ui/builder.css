@@ -34,6 +34,9 @@
 .b-sec-body[hidden] { display: none; }
 .b-tpl-row { display: flex; align-items: center; gap: var(--space-1-5); min-width: 0; }
 .b-tpl-row .select { flex: 1 1 auto; }
+.b-race-row { display: flex; flex-wrap: wrap; align-items: flex-start; gap: var(--space-3) var(--space-4); }
+.b-race-row .b-str { flex: 0 0 96px; }
+.pr .b-race-row .b-str .input { width: 100%; }
 .b-rules { display: flex; flex-direction: column; gap: var(--space-1-5); }
 /* a requirement: name · ≥ · number · Hard|Soft · remove; a weight: name · number · remove */
 .rule-row { display: grid; grid-template-columns: minmax(0, 1fr) 16px 56px auto var(--control-sm); gap: var(--space-1-5); align-items: center; }

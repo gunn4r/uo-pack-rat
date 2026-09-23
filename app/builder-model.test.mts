@@ -46,9 +46,9 @@ test("[fast] builder model: the candidate pool summary says what is in and out",
 
 const knobs = (over: Partial<Knobs> = {}): Knobs => ({ strLimit: "110", restarts: "10000", exact: true, budgetS: "300", altCount: "5", altTol: "40", ...over });
 test("[fast] builder model: the Advanced summary names the search, its restarts, budget and other suits", () => {
-  assert.equal(advancedSummary(knobs()), "Exact · 10,000 restarts · 300 s · 5 other suits within 40 · STR limit 110");
+  assert.equal(advancedSummary(knobs()), "Exact · 10,000 restarts · 300 s · 5 other suits within 40", "STR limit has its own field, not under Advanced");
   assert.equal(advancedSummary(knobs({ exact: false, restarts: "1", strLimit: "" })), "Heuristic · 1 restart");
-  assert.equal(advancedSummary(knobs({ altCount: "0" })), "Exact · 10,000 restarts · 300 s · STR limit 110");
+  assert.equal(advancedSummary(knobs({ altCount: "0" })), "Exact · 10,000 restarts · 300 s");
 });
 
 test("[fast] builder model: an out-of-range knob gets a plain message with the allowed range", () => {
