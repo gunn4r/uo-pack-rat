@@ -150,6 +150,48 @@ test("[slow] refresh, Clear all, the virtual table and Forget keep the page's st
   }
 });
 
+// The item peek (design spec 4.3): a row click or Enter opens it beside the table with the row marked
+// selected, ↑/↓ step through the rows with it following, Esc closes it and hands focus back to the row,
+// and focusing a row for 400 ms shows the item tooltip.
+test("[slow] the item peek opens from a row, follows the arrow keys and closes with Esc", async (t) => {
+  const why = unavailable();
+  if (why) return t.skip(why);
+  const dataDir = seedDataDir("packrat-ui-peek-");
+  const { app, page, errors } = await launch(dataDir);
+  try {
+    const rows = page.locator("#inv-table tbody tr.item");
+    await rows.first().waitFor({ timeout: 30_000 });
+    const first = await rows.nth(0).getAttribute("data-serial");
+    await rows.nth(0).click();
+    await page.waitForSelector("#inv-peek:not([hidden])");
+    assert.equal(await rows.nth(0).getAttribute("aria-selected"), "true");
+    const title = await page.locator("#peek-title").innerText();
+    assert.equal(title, await rows.nth(0).locator(".inv-name > .ellip").innerText());
+    await page.keyboard.press("ArrowDown");
+    await page.waitForFunction((s) => document.querySelector("#inv-table tbody tr.item.sel")?.getAttribute("data-serial") !== s, first);
+    assert.equal(await rows.nth(1).getAttribute("aria-selected"), "true", "the peek follows the row the arrows moved to");
+    await page.keyboard.press("Escape");
+    await page.waitForSelector("#inv-peek", { state: "hidden" });
+    assert.equal(await page.evaluate(() => (document.activeElement as HTMLElement | null)?.dataset.index), "1", "focus is back on the row");
+    // Enter opens it again on the focused row; its Close button closes it.
+    await page.keyboard.press("Enter");
+    await page.waitForSelector("#inv-peek:not([hidden])");
+    await page.getByRole("button", { name: "Close detail" }).click();
+    await page.waitForSelector("#inv-peek", { state: "hidden" });
+    // A row that keeps keyboard focus shows its tooltip after the delay; it is gone once focus leaves.
+    await page.mouse.move(0, 0);
+    await rows.nth(1).focus();
+    await page.keyboard.press("ArrowDown");
+    await page.waitForSelector("#tip[style*='block']", { timeout: 5_000 });
+    await page.locator("#f-text").focus();
+    await page.waitForFunction(() => document.querySelector<HTMLElement>("#tip")?.style.display === "none");
+    assert.deepEqual(errors, []);
+  } finally {
+    await app.close();
+    rmSync(dataDir, { recursive: true, force: true });
+  }
+});
+
 test("[slow] a build finished for one character is never shown under another", async (t) => {
   const why = unavailable();
   if (why) return t.skip(why);

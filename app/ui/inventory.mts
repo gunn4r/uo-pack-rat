@@ -22,6 +22,8 @@ import type { Kids, MenuEntry, PopoverHandle } from "./components.mts";
 import { plural, queryParams, activeFilters, clearAll, matchLine, countFact, emptyCause, rowWindow, chunksToFetch, gridKey, colShort, colFull, groupColumns, COL_GROUPS, DEFAULT_COLS, ITEM_COLS, shortTier, rootName } from "./inv-model.mts";
 import type { FilterToken } from "./inv-model.mts";
 import type { ItemsApiResponse, UiPrefs } from "./api-types.mts";
+import { initPeek, openPeek, closePeek, peekOpen, peekSerial, peekRefresh } from "./peek.mts";
+import { showItemTip, hideItemTip } from "./dom.mts";
 
 const CHUNK = 500;              // rows per GET /api/items request (the server's own cap)
 const NARROW = "(max-width: 1179px)";
@@ -117,6 +119,7 @@ function buildToolbar(): void {
 }
 function setView(grouped: boolean): void {
   if (state.query.group === grouped) return;
+  if (grouped) closePeek();
   // The grouped view sorts by Name, Kind, Total or Stacks; any other sort falls back to Name.
   const keep = grouped ? ["name", "kind", "amount", "stacks"].includes(state.query.sort) : state.query.sort !== "stacks";
   setQuery({ ...state.query, group: grouped, ...(keep ? {} : { sort: "name", dir: 1 as const }) });
@@ -470,6 +473,8 @@ function sortedBy(): string {
 }
 const TAG_TONE: Record<string, "bad" | "warn" | undefined> = { cursed: "bad", brittle: "warn", antique: "warn", massive: "warn", unwieldy: "warn" };
 const cap = (s: string): string => s.charAt(0).toUpperCase() + s.slice(1);
+// The shard's tag words ("cursed", "prized", …), lower-cased: a tooltip line that is one of them is a tag.
+export const tagWords = (): string[] => Object.keys(tagUnits());
 export function tagEls(it: Item): HTMLElement[] {
   return it.tags.map((t) => box("span", { class: `tag${TAG_TONE[t] ? " " + TAG_TONE[t] : ""}` }, txt(cap(t))));
 }
@@ -515,7 +520,7 @@ function groupCell(col: ColDef, g: Group): HTMLTableCellElement {
 // ---------------------------------------------------------------- the table: rows and actions
 const ACTIONS: Array<["highlight" | "grab" | "goto", string]> = [["highlight", "Highlight in game"], ["grab", "Grab to backpack"], ["goto", "Go to container"]];
 export function itemMenu(anchor: HTMLElement, it: Item): void {
-  const entries: MenuEntry[] = [];
+  const entries: MenuEntry[] = [{ label: "Open details", icon: "panel-left", onSelect: () => { const i = state.page.rows.findIndex((r) => r?.serial === it.serial); if (i >= 0) openPeekAt(i, true); } }];
   if (it.root != null && !it.equippedBy) entries.push({ label: "Show everything in this container", icon: "folder", onSelect: () => showContainer(+it.root!) });
   entries.push({ label: "Copy serial", icon: "clipboard", onSelect: () => {
     const s = `0x${it.serial.toString(16)}`;
@@ -546,7 +551,8 @@ function rowFor(i: number, cols: ColDef[]): HTMLTableRowElement {
     const it = p.rows[i];
     if (!it) return skeletonRow(cols, i);
     state.itemCache.set(it.serial, it);   // a drawn row IS the full record: seed the cache so the tooltip and builder never re-fetch it
-    tr = el("tr", { class: "item", "data-serial": it.serial, "data-index": i, "aria-rowindex": i + 2, tabindex: "-1" }, ...cols.map((c) => cell(c, it)), actionsCell(it));
+    const sel = peekSerial() === it.serial;
+    tr = el("tr", { class: `item${sel ? " sel" : ""}`, "data-serial": it.serial, "data-index": i, "aria-rowindex": i + 2, "aria-selected": String(sel), tabindex: "-1" }, ...cols.map((c) => cell(c, it)), actionsCell(it));
   }
   rowCache.set(i, tr);
   return tr;
@@ -604,6 +610,9 @@ async function fetchChunk(offset: number, g: number): Promise<void> {
   const into: unknown[] = state.page.groups || state.page.rows;
   got.forEach((r, i) => { into[offset + i] = r; rowCache.delete(offset + i); });
   renderTable();
+  // The peek follows a reload: its item's new record, or closed when the item left the list.
+  if (offset === 0 && !state.page.groups) peekRefresh((serial) => state.page.rows.find((r) => r?.serial === serial), state.page.total > CHUNK);
+  else if (state.page.groups) closePeek();
 }
 
 // ---------------------------------------------------------------- the table: drawing
@@ -742,10 +751,10 @@ function renderFoot(): void {
   $el("#inv-fade").hidden = !more;
   const stacks = countFact({ shown: p.groups ? p.stacks : p.total, total, pieces: p.pieces, filtered: tokens.length > 0 });
   const kids: Array<HTMLElement | null> = [txt(p.groups ? `${plural(p.total, "name")} · ${stacks}` : stacks, "inv-count"),
-    tokens.length ? dot() : null, tokens.length ? txt(plural(tokens.length, "filter")) : null, el("span", { class: "spacer" })];
-  if (more) kids.push(box("span", { class: "inv-more-cols" }, txt(`Scroll right for ${more} more ${more === 1 ? "column" : "columns"}`), icon("arrow-right", { size: "sm" })), dot());
-  kids.push(txt(sortedBy()));
-  if (!p.groups) kids.push(dot(), txt(`${state.cols.filter((c) => all.includes(c)).length} of ${all.length} columns`));
+    tokens.length ? dot() : null, tokens.length ? txt(plural(tokens.length, "filter"), "inv-foot-filters") : null, el("span", { class: "spacer" })];
+  if (more) kids.push(box("span", { class: "inv-more-cols" }, txt(`Scroll right for ${more} more ${more === 1 ? "column" : "columns"}`), icon("arrow-right", { size: "sm" })));
+  // How the table is sorted and how many columns it shows: dropped first when the card gets narrow.
+  kids.push(box("span", { class: "inv-foot-view" }, more ? dot() : null, txt(sortedBy()), ...(p.groups ? [] : [dot(), txt(`${state.cols.filter((c) => all.includes(c)).length} of ${all.length} columns`)])));
   foot.replaceChildren(...kids.filter((k): k is HTMLElement => !!k));
 }
 // How many header cells sit wholly or partly past the scroller's right edge.
@@ -769,9 +778,27 @@ function focusRow(i: number, focus = true): void {
   renderTable();
   if (focus) rowEl(activeIndex)?.focus();
 }
-// A row's primary action: a grouped row opens its stacks.
+// A row's primary action: a list row opens the item peek, a grouped row opens its stacks.
 function activate(i: number): void {
-  if (state.page.groups) showGroup(i);
+  if (state.page.groups) showGroup(i); else openPeekAt(i);
+}
+// The peek on row i, the row marked selected (accent fill and edge) and made the active row.
+function openPeekAt(i: number, focusPeek = false): void {
+  const it = state.page.rows[i];
+  if (!it) return;
+  activeIndex = i;
+  hideItemTip();
+  openPeek(it, { focus: focusPeek });
+  markSelected();
+}
+function markSelected(): void {
+  const serial = peekSerial();
+  for (const tr of rowCache.values()) {
+    if (!tr.classList.contains("item")) continue;
+    const on = serial != null && +(tr.dataset.serial || -1) === serial;
+    tr.classList.toggle("sel", on);
+    tr.setAttribute("aria-selected", String(on));
+  }
 }
 function wireTable(): void {
   const scroller = $el("#inv-scroll"), body = $el<HTMLTableElement>("#inv-table").querySelector("tbody")!;
@@ -782,17 +809,31 @@ function wireTable(): void {
     if (!tr.matches("tr.item")) return;
     const i = +tr.dataset.index!;
     const page = Math.max(1, Math.floor((scroller.clientHeight - 36) / rowH) - 1);
+    if (e.key === "ArrowUp" && i === 0) { e.preventDefault(); $el<HTMLTableElement>("#inv-table").tHead?.querySelector("button")?.focus(); return; }
     const m = gridKey(e.key, i, state.page.total, page);
-    if (!m || m.kind === "close") return;
+    if (!m || (m.kind === "close" && !peekOpen())) return;
     e.preventDefault();
-    if (m.kind === "move") focusRow(m.index);
-    else activate(i);
+    if (m.kind === "move") { focusRow(m.index); if (peekOpen()) openPeekAt(m.index); }
+    else if (m.kind === "open") activate(i);
+    else closePeek(true);
   });
   body.addEventListener("focusin", (e) => {
     const tr = (e.target as HTMLElement).closest<HTMLTableRowElement>("tr.item");
-    if (!tr || +tr.dataset.index! === activeIndex) return;
+    if (!tr) return;
+    // Focusing a row for 400 ms shows its item tooltip, as hovering does (spec 3.6); not while the peek
+    // already shows the item in full.
+    if (e.target === tr && tr.dataset.serial && !peekOpen() && tr.matches(":focus-visible")) showItemTip(+tr.dataset.serial, tr);
+    if (+tr.dataset.index! === activeIndex) return;
     activeIndex = +tr.dataset.index!;
     for (const r of body.querySelectorAll<HTMLTableRowElement>("tr.item")) r.tabIndex = r === tr ? 0 : -1;
+  });
+  body.addEventListener("focusout", () => hideItemTip());
+  // From a column header, ↓ goes into the rows (the header comes first in the tab order); ↑ from the first
+  // row comes back up to the Name header.
+  $el<HTMLTableElement>("#inv-table").tHead!.addEventListener("keydown", (e) => {
+    if (e.key !== "ArrowDown" || !state.page.total) return;
+    e.preventDefault();
+    focusRow(activeIndex);
   });
   body.addEventListener("click", (e) => {
     const t = e.target as HTMLElement;
@@ -824,6 +865,10 @@ function showGroup(i: number): void {
 export function initFilters(): void {
   buildToolbar();
   wireTable();
+  initPeek({
+    step: (delta) => { focusRow(activeIndex + delta, false); openPeekAt(activeIndex); },
+    closed: (focusRowAfter) => { markSelected(); if (focusRowAfter) focusRow(activeIndex); },
+  });
   rebuildTable();
 }
 // After every load and refresh: the facets changed, so the chips' words and the strip are redrawn, and
@@ -836,6 +881,7 @@ export function buildFilters(): void {
 // Containers' "Show these items" and a row's "Show everything in this container": the Items view
 // filtered to one root container.
 export function showContainer(root: number): void {
+  closePeek();
   setQuery({ ...clearAll(state.query), roots: [root] });
   if (location.hash !== "#/inventory") location.hash = "#/inventory";
 }

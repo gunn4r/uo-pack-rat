@@ -68,6 +68,16 @@ const SCENES: Scene[] = [
     await p.locator(".pop .pill").first().click();
   }, leave: (p) => p.keyboard.press("Escape") },
   { name: "inventory table settings", enter: async (p) => { await p.click("#inv-settings"); await p.waitForSelector("#inv-cols"); }, leave: (p) => p.keyboard.press("Escape") },
+  { name: "inventory item peek", enter: async (p) => {
+    if (await p.locator("#f-clear").isVisible()) await p.click("#f-clear");
+    await p.locator("#inv-table tbody tr.item", { hasText: "Arcane Ringmail Leggings" }).first().click();
+    await p.waitForSelector("#inv-peek:not([hidden]) .peek-resists");
+  }, leave: (p) => p.keyboard.press("Escape") },
+  { name: "inventory row focus tooltip", enter: async (p) => {
+    await p.locator("#inv-table tbody tr.item").first().focus();
+    await p.keyboard.press("ArrowDown");
+    await p.waitForSelector("#tip[style*='block'] .tip-lines", { timeout: 5_000 });
+  }, leave: (p) => p.keyboard.press("Escape") },
   { name: "inventory empty result", enter: async (p) => {
     await p.click("#f-rarity");
     await p.locator(".pop input[value='Legendary Artifact']").click();
