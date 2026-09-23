@@ -24,9 +24,16 @@ export function clearedQuery(q: ItemQuery): ItemQuery {
 // The old one is adopted, and saved server-side, only when the server answered and has none, and only
 // if it is something PUT /api/ui-prefs would accept (at most 200 keys of 1-64 characters); otherwise it
 // is dropped rather than refused again on every load.
+//
+// A column the defaults gained later is shown once to a choice saved before it existed: the saved list
+// carries the version of the column set it was made against (COLS_VERSION), and an older list gets the
+// newer default columns added and is saved again, so turning one off afterwards sticks. Version 2 added
+// the Tags column.
+export const COLS_VERSION = "2";
+const withNewDefaults = (cols: string[]): string[] => (cols.includes("tags") ? cols : ["tags", ...cols]);
 export function colsFromPrefs(prefs: UiPrefs | null, legacy: unknown): { cols: string[] | null; save: boolean } {
   if (!prefs) return { cols: null, save: false };
-  if (prefs.cols) return { cols: prefs.cols, save: false };
+  if (prefs.cols) return prefs.colsVersion === COLS_VERSION ? { cols: prefs.cols, save: false } : { cols: withNewDefaults(prefs.cols), save: true };
   const ok = Array.isArray(legacy) && legacy.length <= 200 && legacy.every((c) => typeof c === "string" && c.length > 0 && c.length <= 64);
-  return ok ? { cols: legacy as string[], save: true } : { cols: null, save: false };
+  return ok ? { cols: withNewDefaults(legacy as string[]), save: true } : { cols: null, save: false };
 }

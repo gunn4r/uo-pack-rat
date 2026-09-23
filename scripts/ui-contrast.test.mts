@@ -15,7 +15,7 @@ import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createRequire } from "node:module";
 import type { ElectronApplication, Page } from "playwright";
-import { fitWindow, openFacet, setRows, type RealSize } from "./electron-window.mts";
+import { fitWindow, openFacet, setRows, type RealSize, testEnv } from "./electron-window.mts";
 import { probeContrast, failures, describeFailures, type ContrastRow } from "./contrast-probe.mts";
 
 const ROOT = dirname(dirname(fileURLToPath(import.meta.url)));
@@ -49,6 +49,17 @@ function openWizardAt(steps: number): (page: Page) => Promise<void> {
 }
 async function closeWizard(page: Page): Promise<void> { await page.keyboard.press("Escape"); await page.waitForSelector("#wizard", { state: "hidden" }); }
 let releaseStart: (() => void) | null = null;   // lets the held build request of "builder running" go
+// --demo never runs the data-folder check, so a scene hands the page its finding and redraws the banner
+// through the page's own modules (same URLs as its <script>, so the same instances).
+async function dataDirBanner(p: Page, check: Record<string, string>): Promise<void> {
+  await p.evaluate(async ([store, bridge, c]) => {
+    const { state } = await import(store!) as { state: { setup: Record<string, unknown> } };
+    state.setup = { ...state.setup, dataDirCheck: c };
+    (await import(bridge!) as { renderDataDirNotice: () => void }).renderDataDirNotice();
+  }, ["/ui/store.mjs", "/ui/bridge.mjs", check] as [string, string, Record<string, string>]);
+  if (check.status !== "none") await p.waitForSelector("#notice:not([hidden]) .btn");
+}
+
 const SCENES: Scene[] = [
   { name: "inventory", enter: (p) => route(p, "#/inventory", "#inv-table tbody tr.item") },
   { name: "item tooltip", enter: async (p) => {
@@ -87,6 +98,14 @@ const SCENES: Scene[] = [
     await p.locator("#inv-table tbody tr.item", { hasText: "Arcane Ringmail Leggings" }).first().click();
     await p.waitForSelector("#inv-peek:not([hidden]) .peek-resists");
   }, leave: (p) => p.keyboard.press("Escape") },
+  { name: "inventory peek tag meaning", enter: async (p) => {
+    if (await p.locator("#f-clear").isVisible()) await p.click("#f-clear");
+    await p.locator("#inv-table tbody tr.item", { hasText: "Animated Katana" }).first().click();
+    await p.locator("#inv-peek .tag.tag-info").first().focus();
+    await p.waitForSelector("body > .tip");
+  }, leave: (p) => p.keyboard.press("Escape") },
+  { name: "data-folder banner", enter: (p) => dataDirBanner(p, { status: "mismatch", scriptsDir: "/x/LegionScripts", scriptsDataDir: "/x/dev", dataDir: "/x/.pack-rat" }),
+    leave: (p) => dataDirBanner(p, { status: "none" }) },
   { name: "inventory row focus tooltip", enter: async (p) => {
     await p.locator("#inv-table tbody tr.item").first().focus();
     await p.keyboard.press("ArrowDown");
@@ -145,7 +164,7 @@ const SCENES: Scene[] = [
   // ---- Settings (phase 12): the lower sections (the danger zone), with a failed update check under its row
   { name: "settings data and updates", enter: async (p) => {
     await route(p, "#/settings", "#set-general .set-row");
-    await p.click("#settings-nav [data-section=set-updates]");
+    await p.locator("#set-updates").scrollIntoViewIfNeeded();
     // A fixed answer instead of a real call to GitHub: the scene measures the failure message, not the network.
     await p.route("**/api/update-check", (r) => r.fulfill({ contentType: "application/json", body: JSON.stringify({ ok: true, configured: true, error: "GitHub releases/latest returned 404" }) }));
     await p.click("#set-check-updates");
@@ -267,7 +286,7 @@ const SCENES: Scene[] = [
 
 async function launch(dataDir: string): Promise<{ app: ElectronApplication; page: Page; errors: string[]; size: RealSize }> {
   const { _electron } = await import("playwright");
-  const app = await _electron.launch({ args: [ROOT, "--demo", "--data", dataDir], cwd: ROOT, timeout: 60_000 });
+  const app = await _electron.launch({ args: [ROOT, "--demo", "--data", dataDir], cwd: ROOT, timeout: 60_000, env: testEnv() });
   const page = await app.firstWindow();
   const errors: string[] = [];
   page.on("pageerror", (e) => errors.push(String(e)));

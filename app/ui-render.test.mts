@@ -158,7 +158,8 @@ test("[fast] tipNode: name and tags on top, element-coloured resists, muted dura
   assert.deepEqual(lines, ["Mana Regeneration 3", "Poison Resist 15%", "Durability 255 / 255"], "the tag and tier lines are not repeated");
   assert.equal(byClass("t-res-poison")[0]!.textContent, "Poison Resist 15%");
   assert.equal(byClass("muted")[0]!.textContent, "Durability 255 / 255");
-  assert.match(byClass("tip-foot")[0]!.textContent, /^Major Magic Item·Metal Chest \(0x700b0000\)$/);
+  assert.deepEqual(byClass("tip-foot")[0]!.childNodes.map((c) => c.textContent), ["Major Magic Item", "Metal Chest (0x700b0000)"], "the tier and the location each get a line");
+  assert.equal(byClass("tip-where")[0]!.textContent, "Metal Chest (0x700b0000)");
 });
 
 // The item peek's Properties section: the lines the Where and Resists sections do not already show, as

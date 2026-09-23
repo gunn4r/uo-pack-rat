@@ -2,8 +2,8 @@
 // panel docked beside the table (400 px, 360 below 1280, laid over the table below 1180), while the
 // table stays live. Header: the name, ↑ / ↓ / close, rarity, tags and a Meditation-safe badge. Then where
 // it is, its resists and its other properties, and a footer with Highlight, Grab and Go to (disabled with
-// the reason when they cannot run). ↑/↓ step through the table's rows and Esc closes, from the panel or
-// from the table. inventory.mts owns the rows; this module is handed how to step and where focus goes back.
+// the reason when they cannot run). ↑/↓ step through the table's rows and Esc closes, from the panel, the table or
+// the bare page. inventory.mts owns the rows; this module is handed how to step and where focus goes back.
 import type { Item } from "../vault-lib.mts";
 import { $, el, slotLabel } from "./dom.mts";
 import { bridgeActionReason, runBridgeAction } from "./bridge.mts";
@@ -21,10 +21,21 @@ export const peekOpen = (): boolean => current != null;
 export const peekSerial = (): number | null => current?.serial ?? null;
 export function initPeek(h: typeof hooks): void {
   hooks = h;
-  panel().addEventListener("keydown", (e) => {
-    if (e.target instanceof HTMLInputElement) return;
-    if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); closePeek(true); }
-    else if ((e.key === "ArrowUp" || e.key === "ArrowDown") && !(e.target as HTMLElement).closest(".peek-body")) { e.preventDefault(); hooks.step(e.key === "ArrowUp" ? -1 : 1); }
+  // On the document, not the panel: a click on the panel's text, or on the page around the table, leaves
+  // focus on <body>, and a reload that redraws the table can detach the focused row, so a handler on the
+  // panel or the rows alone never hears the keys. A focused row's own keys are handled (and prevented)
+  // by the table first; anything being typed into, or a popover, menu, dialog or drawer, keeps its keys.
+  document.addEventListener("keydown", (e) => {
+    if (!current || e.defaultPrevented || e.metaKey || e.ctrlKey || e.altKey || !["Escape", "ArrowUp", "ArrowDown"].includes(e.key)) return;
+    const p = panel(), t = e.target as HTMLElement;
+    if (p.offsetParent === null || document.querySelector(".pop")) return;
+    const inPanel = p.contains(t);
+    if (!inPanel && t !== document.body && t !== document.documentElement && !t.closest("#inv-scroll tbody")) return;
+    if (t.closest("input, textarea, select, [contenteditable], dialog, .drawer-root")) return;
+    if (e.key === "Escape") { e.preventDefault(); closePeek(true); return; }
+    if (t.closest(".peek-body")) return;   // a focused part of the body keeps the arrows for scrolling
+    e.preventDefault();
+    hooks.step(e.key === "ArrowUp" ? -1 : 1);
   });
   document.addEventListener("bridgechange", () => { if (current) draw(current, false); });
 }
@@ -114,7 +125,7 @@ function draw(it: Item, focus: boolean): void {
         button({ label: "Previous item", icon: "chevron-up", iconOnly: true, variant: "ghost", size: "sm", onClick: () => hooks.step(-1) }),
         button({ label: "Next item", icon: "chevron-down", iconOnly: true, variant: "ghost", size: "sm", onClick: () => hooks.step(1) }),
         button({ label: "Close detail", icon: "close", iconOnly: true, variant: "ghost", size: "sm", attrs: { "data-peek-close": "" }, onClick: () => closePeek(true) })),
-      box("div", { class: "peek-meta" }, rarityEl(it.rarity, "strong"), ...tagEls(it), it.gear && it.medable ? badge("Meditation-safe", "ok") : null)),
+      box("div", { class: "peek-meta" }, rarityEl(it.rarity, "strong"), ...tagEls(it, { describe: true }), it.gear && it.medable ? badge("Meditation-safe", "ok") : null)),
     box("div", { class: "peek-body" },
       section("Where it is", kvRows(where)),
       hasResists ? section("Resists", box("div", { class: "peek-resists" }, ...RESISTS.map(([k, short, token]) => resistTile(short, it.props[k] || 0, token)))) : null,

@@ -15,7 +15,7 @@ import { $, el, label, full, slotLabel, rarityColor, safeColor, toast } from "./
 import { rarityToken } from "./items.mts";
 import { api } from "./api.mts";
 import { bridgeActionReason, runBridgeAction } from "./bridge.mts";
-import { optionsKeeping, colsFromPrefs } from "./view-state.mts";
+import { optionsKeeping, colsFromPrefs, COLS_VERSION } from "./view-state.mts";
 import { relativeWhen } from "./messages.mts";
 import { txt, box, icon, button, searchInput, filterChip, token, pill, segmented, switchControl, popover, closePopover, rowActions, message, menu, input, nextId } from "./components.mts";
 import type { Kids, MenuItem, PopoverHandle } from "./components.mts";
@@ -23,7 +23,7 @@ import { plural, queryParams, activeFilters, clearAll, matchLine, countFact, emp
 import type { FilterToken } from "./inv-model.mts";
 import type { ItemsApiResponse, UiPrefs } from "./api-types.mts";
 import { initPeek, openPeek, closePeek, peekOpen, peekSerial, peekRefresh } from "./peek.mts";
-import { showItemTip, hideItemTip } from "./dom.mts";
+import { showItemTip, hideItemTip, tagChip } from "./dom.mts";
 
 const CHUNK = 500;              // rows per GET /api/items request (the server's own cap)
 const NARROW = "(max-width: 1179px)";
@@ -380,7 +380,7 @@ const allCols = (): string[] => [...new Set([...state.propKeys, ...ITEM_COLS, ..
 // The column choice is kept by the server (<data>/ui-prefs.json), not localStorage: the desktop app
 // serves the page from a new port on every launch, and localStorage belongs to one origin.
 function saveCols(): void {
-  api("/api/ui-prefs", { method: "PUT", body: { cols: state.cols } }).catch((e: Error) => toast(`Could not save the column choice: ${e.message}`, "bad"));
+  api("/api/ui-prefs", { method: "PUT", body: { cols: state.cols, colsVersion: COLS_VERSION } }).catch((e: Error) => toast(`Could not save the column choice: ${e.message}`, "bad"));
 }
 function setCols(cols: string[]): void { state.cols = cols; saveCols(); rebuildTable(); }
 function openSettings(): void {
@@ -463,8 +463,10 @@ function columns(): ColDef[] {
   const c = (key: string, text: string, width: number, num = false, title = ""): ColDef => ({ key, label: text, title, num, width, sortable: true });
   if (grouped()) return [c("name", "Name", 300), c("kind", "Kind", 120), c("amount", "Total", 88, true), c("stacks", "Stacks", 80, true), { ...c("where", "Where", 480), sortable: false }];
   const width = (k: string): number => (k === "seen" ? 112 : k === "kind" ? 96 : RESISTS.includes(k) ? 52 : Math.max(52, colShort(k, label).length * 8 + 28));
-  return [c("name", "Name", 250), c("rarity", "Rarity", 156), c("slot", "Slot", 120), c("location", "Location", 180),
-    ...state.cols.map((k) => c(k, colShort(k, label), width(k), !["kind", "seen", "med"].includes(k), colFull(k, full)))];
+  // Tags, when shown, sits right after Name wherever the saved list names it; it has nothing to sort on.
+  const tags = state.cols.includes("tags") ? [{ ...c("tags", "Tags", 108), sortable: false }] : [];
+  return [c("name", "Name", 250), ...tags, c("rarity", "Rarity", 156), c("slot", "Slot", 120), c("location", "Location", 180),
+    ...state.cols.filter((k) => k !== "tags").map((k) => c(k, colShort(k, label), width(k), !["kind", "seen", "med"].includes(k), colFull(k, full)))];
 }
 // Numbers sort highest first at dir 1 and names A to Z (item-query.mts), so the arrow follows the kind.
 function sortState(col: ColDef): "ascending" | "descending" | "none" {
@@ -478,12 +480,11 @@ function sortedBy(): string {
   if (col?.num) return `Sorted by ${name}, ${state.query.dir > 0 ? "highest" : "lowest"} first`;
   return `Sorted by ${name}${state.query.dir < 0 ? ", Z to A" : ""}`;
 }
-const TAG_TONE: Record<string, "bad" | "warn" | undefined> = { cursed: "bad", brittle: "warn", antique: "warn", massive: "warn", unwieldy: "warn" };
 const cap = (s: string): string => s.charAt(0).toUpperCase() + s.slice(1);
 // The shard's tag words ("cursed", "prized", …), lower-cased: a tooltip line that is one of them is a tag.
 export const tagWords = (): string[] => Object.keys(tagUnits());
-export function tagEls(it: Item): HTMLElement[] {
-  return it.tags.map((t) => box("span", { class: `tag${TAG_TONE[t] ? " " + TAG_TONE[t] : ""}` }, txt(cap(t))));
+export function tagEls(it: Item, opts: { describe?: boolean } = {}): HTMLElement[] {
+  return it.tags.map((t) => tagChip(t, opts));
 }
 // A tier as its dot and name in its --rarity-* colour; a tier with no token keeps its game colour inside a
 // dark subtree, where the game colours were designed to live.
@@ -500,7 +501,8 @@ export function locationEl(it: Item): HTMLElement {
 function cell(col: ColDef, it: Item): HTMLTableCellElement {
   const td = el("td", col.num ? { class: "num" } : {});
   switch (col.key) {
-    case "name": td.append(box("span", { class: "inv-name" }, txt(it.name, "ellip"), ...tagEls(it), (it.amount || 1) > 1 ? txt(`×${it.amount.toLocaleString("en-US")}`, "t-sm muted") : null)); break;
+    case "name": td.append(box("span", { class: "inv-name" }, txt(it.name, "ellip"), (it.amount || 1) > 1 ? txt(`×${it.amount.toLocaleString("en-US")}`, "t-sm muted") : null)); break;
+    case "tags": if (it.tags.length) td.append(box("span", { class: "inv-tags" }, ...tagEls(it))); break;
     case "rarity": { const r = rarityEl(it.rarity); if (r) td.append(r); break; }
     case "slot": if (it.slot) td.append(txt(slotLabel(it.slot))); break;
     case "location": td.append(locationEl(it)); break;
@@ -648,9 +650,12 @@ function rebuildTable(): void {
       : txt(c.label);
     return el("th", { class: c.num ? "num" : "", scope: "col", ...(sort ? { "aria-sort": sort } : {}) }, inner);
   }), isGrouped ? null : el("th", { class: "act-cell", scope: "col" }, txt("Actions", "sr"))));
+  // A focused row is about to be detached (focus would drop to <body>): the redrawn active row takes it.
+  const rowHadFocus = !!document.activeElement?.matches("#inv-table tbody tr.item");
   rowCache = new Map();
   t.querySelector("tbody")!.replaceChildren();
   renderTable();
+  if (rowHadFocus) rowEl(activeIndex)?.focus();
 }
 // A timer rather than requestAnimationFrame: a window in the background gets no animation frames, and the
 // table must still catch up with a scroll or resize made while it was hidden.

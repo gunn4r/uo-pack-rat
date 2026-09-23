@@ -355,10 +355,10 @@ export function popoverPlacement(a: { top: number; bottom: number; left: number 
 // Esc and on a second click of the anchor, and hands focus back to the anchor when it closed with focus inside.
 export interface PopoverHandle { root: HTMLElement; close: () => void; isOpen: () => boolean }
 let openPopover: PopoverHandle | null = null;
-export function popover(anchor: HTMLElement, content: Kids, { label, width, onClose, role = "dialog" }: { label: string; width?: number | undefined; onClose?: (() => void) | undefined; role?: "dialog" | "menu" | "listbox" } = { label: "" }): PopoverHandle {
+export function popover(anchor: HTMLElement, content: Kids, { label, width, minWidth, onClose, role = "dialog" }: { label: string; width?: number | undefined; minWidth?: number | undefined; onClose?: (() => void) | undefined; role?: "dialog" | "menu" | "listbox" } = { label: "" }): PopoverHandle {
   if (openPopover) { const was = openPopover.root.dataset.anchor === anchor.dataset.popAnchor; openPopover.close(); if (was) return openPopover; }
   anchor.dataset.popAnchor ||= nextId("pop");
-  const root = box("div", { class: "pop", role, "aria-label": label, tabindex: "-1", "data-anchor": anchor.dataset.popAnchor, ...(width ? { style: `width:${width}px` } : {}) },
+  const root = box("div", { class: "pop", role, "aria-label": label, tabindex: "-1", "data-anchor": anchor.dataset.popAnchor, ...(width ? { style: `width:${width}px` } : minWidth ? { style: `min-width:${minWidth}px` } : {}) },
     box("div", { class: "pop-body" }, ...content));
   document.body.append(root);
   anchor.setAttribute("aria-expanded", "true");
@@ -559,6 +559,8 @@ export function clearToasts(): void { document.getElementById("toasts")?.replace
 // anchor. A danger item is drawn in danger colour; "divider" draws a rule between groups. Each item's
 // `count` span is returned so a number that arrives later (saved runs) can be filled in. An item may lead
 // with an icon; a disabled item stays in the list (aria-disabled) and carries its reason as a title.
+// The menu is as wide as its longest item, so no item's words wrap: `width` is only its minimum, and it
+// never grows past 360 px or the window (components.css, .pop[role="menu"]).
 export interface MenuItem { label: string; onSelect: () => void; danger?: boolean | undefined; kbd?: string | undefined; count?: string | number | undefined; icon?: IconName | undefined; disabled?: string | null | undefined }
 export function menu(anchor: HTMLElement, items: Array<MenuItem | "divider">, { label, width = 220 }: { label: string; width?: number }): PopoverHandle & { counts: Map<string, HTMLSpanElement> } {
   const counts = new Map<string, HTMLSpanElement>();
@@ -574,7 +576,7 @@ export function menu(anchor: HTMLElement, items: Array<MenuItem | "divider">, { 
     buttons.push(b);
     return b;
   });
-  handle = popover(anchor, kids, { label, width, role: "menu" });
+  handle = popover(anchor, kids, { label, minWidth: width, role: "menu" });
   handle.root.classList.add("pop-menu");
   handle.root.addEventListener("keydown", (e: KeyboardEvent) => {
     const i = buttons.indexOf(document.activeElement as HTMLButtonElement);

@@ -58,9 +58,9 @@
 .shell { display: grid; grid-template-columns: var(--sidebar-w) minmax(0, 1fr); height: 100%; }
 .shell.collapsed { grid-template-columns: var(--sidebar-w-collapsed) minmax(0, 1fr); }
 .sidebar { background: var(--color-surface); color: var(--color-text); border-right: var(--border-width) solid var(--color-border); display: flex; flex-direction: column; padding: var(--space-3) var(--space-2); gap: var(--space-1); min-height: 0; z-index: var(--z-sidebar); }
-.brand { display: flex; align-items: center; gap: var(--space-2); padding: var(--space-1) var(--space-2) var(--space-3); min-width: 0; }
-.brand img { width: 28px; height: 28px; border-radius: var(--radius-md); flex: none; }
-.brand-name { font-family: var(--font-display); font-size: var(--text-md); font-weight: var(--weight-semibold); white-space: nowrap; }
+.brand { display: flex; align-items: center; gap: var(--space-3); padding: var(--space-2) var(--space-2) var(--space-4); min-width: 0; }
+.brand img { width: 40px; height: 40px; border-radius: 50%; box-shadow: 0 0 0 2px var(--brand-brass); flex: none; }   /* the 80 px mark, sharp at 2x, in a brass ring */
+.brand-name { font-family: var(--font-display); font-size: var(--text-lg); line-height: var(--lh-lg); font-weight: var(--weight-semibold); white-space: nowrap; }
 .nav-item { display: flex; align-items: center; gap: var(--space-2); height: var(--control-md); padding: 0 var(--space-2); border-radius: var(--radius-md); color: var(--color-text-muted); text-decoration: none; font-size: var(--text-md); border: 0; background: none; width: 100%; text-align: left; cursor: pointer; white-space: nowrap; min-width: 0; }
 .pr a.nav-item { color: var(--color-text-muted); }
 .pr .nav-item:hover, .pr a.nav-item:hover { background: var(--color-surface-subtle); color: var(--color-text); }
@@ -290,3 +290,11 @@
 .tint-phys { --tint: var(--res-phys); } .tint-fire { --tint: var(--res-fire); } .tint-cold { --tint: var(--res-cold); }
 .tint-poison { --tint: var(--res-poison); } .tint-energy { --tint: var(--res-energy); }
 .resist-name { font-weight: var(--weight-semibold); }
+
+/* ---- item tags with a meaning (dom.mts tagChip, describe): the shard's words on hover and focus */
+.tag.tag-info { cursor: help; }
+.tag.tag-info:focus-visible { box-shadow: var(--ring-focus); outline: none; }
+
+/* ---- menus size to their longest item (components.mts menu): no item's words wrap; the minimum is inline */
+.pop[role="menu"] { width: max-content; max-width: min(360px, calc(100vw - 16px)); }
+.pop-menu .menu-item > span:not(.count) { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }

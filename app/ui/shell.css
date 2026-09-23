@@ -3,6 +3,7 @@
 
 body { height: 100vh; overflow: hidden; }
 #app { height: 100vh; }
+.shell { grid-template-rows: minmax(0, 1fr); }   /* the one row is the window's height, whatever the screen holds */
 #app[inert] { pointer-events: none; }
 .sidebar { overflow-y: auto; overflow-x: hidden; }
 .sidebar-meta { padding: 0 var(--space-0-5); overflow-wrap: anywhere; }
@@ -15,6 +16,7 @@ body { height: 100vh; overflow: hidden; }
 /* collapsed: 56 px of icons; every label stays in the accessibility tree, only visually hidden */
 .shell.collapsed .sidebar { align-items: center; padding: var(--space-3) var(--space-2); }
 .shell.collapsed .brand { padding: var(--space-1) 0 var(--space-3); }
+.shell.collapsed .brand img { width: 36px; height: 36px; }   /* centred in the 40 px of the 56 px rail */
 .shell.collapsed .nav-item { width: 40px; justify-content: center; padding: 0; }
 .shell.collapsed .nav-sub .i { display: block; }
 .shell.collapsed :is(.nav-label, .brand-name, .bridge-label) { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
@@ -24,10 +26,12 @@ body { height: 100vh; overflow: hidden; }
 .shell.collapsed .topbar { padding: 0 var(--space-4); }
 .shell.collapsed .page { padding: var(--space-4); }
 
-/* the data-folder banner (ui/bridge.mts's renderDataDirNotice): one text span, one button */
-.main > #notice { flex: none; margin: var(--space-3) var(--gutter) 0; align-items: center; }
+/* the data-folder banner (ui/bridge.mts's renderDataDirNotice): one short line, Show details, Dismiss. It takes
+   its own height above the screen, and the screen (flex 1, min-height 0) shrinks to what is left. */
+.main > #notice { flex: none; margin: var(--space-3) var(--gutter) 0; align-items: center; padding-block: var(--space-1-5); }
 #notice[hidden] { display: none; }
-#notice > span { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+#notice > span { flex: 1; min-width: 0; }
+#notice > .btn { flex: none; }
 
 /* one screen at a time; its page scrolls unless the screen scrolls inner boxes itself (inventory, builder) */
 .screen { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; }

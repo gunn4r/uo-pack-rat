@@ -6,7 +6,7 @@
 // All [fast]. Run: node --test app/ui-messages.test.mts
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { pathsFileNote, installedIntoNote, clientFolderGone, clientErrorMessage, hostErrorMessage, optimizeErrorMessage, errorText, dataDirNotice, bridgeOfflineText, bridgeView, relativeWhen } from "./ui/messages.mts";
+import { pathsFileNote, installedIntoNote, clientFolderGone, clientErrorMessage, hostErrorMessage, optimizeErrorMessage, errorText, dataDirNotice, dataDirBanner, bridgeOfflineText, bridgeView, relativeWhen } from "./ui/messages.mts";
 import type { ApiError } from "./ui/api-types.mts";
 
 function apiError(message: string, extra: { status?: number; code?: unknown } = {}): ApiError {
@@ -33,6 +33,17 @@ test("[fast] an unreadable packrat-paths.json is reported with the reason; a mat
   assert.equal(dataDirNotice({ status: "match", scriptsDir: "/x" }), null);
   assert.equal(dataDirNotice({ status: "none" }), null);
   assert.equal(dataDirNotice(undefined), null, "an older server sends no check at all");
+});
+
+test("[fast] the banner says the problem in one short line with no paths; Settings keeps the full sentence", () => {
+  const mismatch = dataDirBanner({ status: "mismatch", scriptsDir: "/Users/example/TazUO/LegionScripts", scriptsDataDir: "/Users/example/dev-data", dataDir: "/Users/example/.pack-rat" });
+  assert.equal(mismatch, "Your game scripts write scans to a different folder than Pack Rat is reading.");
+  const unreadable = dataDirBanner({ status: "unreadable", scriptsDir: "/Users/example/LegionScripts", error: "it is not valid JSON" })!;
+  assert.doesNotMatch(unreadable, /\/Users/);
+  assert.match(unreadable, /packrat-paths\.json/);
+  assert.equal(dataDirBanner({ status: "match", scriptsDir: "/x" }), null);
+  assert.equal(dataDirBanner({ status: "none" }), null);
+  assert.equal(dataDirBanner(undefined), null);
 });
 
 test("[fast] control characters in a data-folder notice are dropped before it reaches a terminal", () => {

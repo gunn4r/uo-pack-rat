@@ -13,7 +13,7 @@ import { tmpdir } from "node:os";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createRequire } from "node:module";
-import { fitWindow, openFacet } from "./electron-window.mts";
+import { fitWindow, openFacet, testEnv } from "./electron-window.mts";
 import type { ElectronApplication, Page } from "playwright";
 
 const ROOT = dirname(dirname(fileURLToPath(import.meta.url)));
@@ -37,7 +37,7 @@ function seedDataDir(prefix: string, { setupDone = true } = {}): string {
 }
 async function launch(dataDir: string): Promise<{ app: ElectronApplication; page: Page; errors: string[] }> {
   const { _electron } = await import("playwright");
-  const app = await _electron.launch({ args: [ROOT, "--data", dataDir], cwd: ROOT, timeout: 60_000 });
+  const app = await _electron.launch({ args: [ROOT, "--data", dataDir], cwd: ROOT, timeout: 60_000, env: testEnv() });
   const page = await app.firstWindow();
   const errors: string[] = [];
   page.on("pageerror", (e) => errors.push(String(e)));
@@ -204,6 +204,29 @@ test("[slow] the item peek opens from a row, follows the arrow keys and closes w
     await page.waitForSelector("#tip[style*='block']", { timeout: 5_000 });
     await page.locator("#f-text").focus();
     await page.waitForFunction(() => document.querySelector<HTMLElement>("#tip")?.style.display === "none");
+    // The way a player uses it: a click on a row, a click on the peek's text (focus drops to <body>), then
+    // the keys. ↑/↓ still step and Esc still closes; typing in the search box keeps its arrows.
+    await rows.nth(2).click();
+    await page.waitForSelector("#inv-peek:not([hidden])");
+    await page.locator("#inv-peek .peek-sec .caps").first().click();
+    assert.equal(await page.evaluate(() => document.activeElement === document.body), true, "the click on the peek's text leaves focus on the page");
+    await page.keyboard.press("ArrowDown");
+    await page.waitForFunction(() => document.querySelector("#inv-table tbody tr.item.sel")?.getAttribute("data-index") === "3");
+    await page.keyboard.press("ArrowUp");
+    await page.waitForFunction(() => document.querySelector("#inv-table tbody tr.item.sel")?.getAttribute("data-index") === "2");
+    await page.locator("#f-text").click();
+    await page.keyboard.press("ArrowDown");
+    assert.equal(await rows.nth(2).getAttribute("aria-selected"), "true", "arrows in the search box do not step the peek");
+    await page.evaluate(() => (document.activeElement as HTMLElement).blur());
+    await page.keyboard.press("Escape");
+    await page.waitForSelector("#inv-peek", { state: "hidden" });
+    // A row's "⋯" menu is as wide as its longest item: "Show everything in this container" on one line, whole.
+    await rows.nth(2).hover();
+    await rows.nth(2).getByRole("button", { name: "More actions" }).click();
+    const item = page.getByRole("menuitem", { name: "Show everything in this container" });
+    const fit = await item.evaluate((b) => { const s = b.querySelector<HTMLElement>("span:not(.count)")!; return { lines: Math.round(s.getBoundingClientRect().height / parseFloat(getComputedStyle(s).lineHeight)), cut: s.scrollWidth > s.clientWidth }; });
+    assert.deepEqual(fit, { lines: 1, cut: false }, "the menu item's words neither wrap nor get cut off");
+    await page.keyboard.press("Escape");
     assert.deepEqual(errors, []);
   } finally {
     await app.close();
@@ -490,5 +513,56 @@ test("[slow] a saved run or run list that lands after a character switch is not 
   } finally {
     await app.close();
     rmSync(dataDir, { recursive: true, force: true });
+  }
+});
+
+// The data-folder banner (#39) with the scripts writing elsewhere: one short line with no paths, above every
+// screen, and each screen shrinks to the room left (nothing past the window's bottom edge); "Show details"
+// lands on Settings › Data, where the full sentence names both folders; Dismiss hides it. The client is planted
+// in the test's own temp home (testEnv), never a real one.
+test("[slow] the data-folder banner is one line above every screen, which fits below it, and leads to Settings › Data", async (t) => {
+  const why = unavailable();
+  if (why) return t.skip(why);
+  const dataDir = seedDataDir("packrat-ui-notice-");
+  const home = mkdtempSync(join(tmpdir(), "packrat-ui-notice-home-"));
+  const scripts = join(home, "Desktop", "TazUO", "TazUO", "LegionScripts");
+  mkdirSync(scripts, { recursive: true });
+  writeFileSync(join(scripts, "packrat-scanner.py"), "# planted by the test\n");
+  writeFileSync(join(scripts, "packrat-paths.json"), JSON.stringify({ dataDir: join(home, "elsewhere") }));
+  const { _electron } = await import("playwright");
+  const app = await _electron.launch({ args: [ROOT, "--data", dataDir], cwd: ROOT, timeout: 60_000, env: testEnv({}, home) });
+  const page = await app.firstWindow();
+  const errors: string[] = [];
+  page.on("pageerror", (e) => errors.push(String(e)));
+  try {
+    for (const size of [{ width: 1440, height: 900 }, { width: 1024, height: 700 }]) {
+      const real = await fitWindow(app, page, size);
+      for (const tab of ["inventory", "builder", "characters", "settings"]) {
+        await openTab(page, tab);
+        await page.waitForSelector("#notice:not([hidden])", { timeout: 15_000 });
+        await page.waitForTimeout(300);
+        const m = await page.evaluate((id) => ({
+          notice: document.querySelector("#notice")!.getBoundingClientRect().height,
+          text: document.querySelector("#notice > span")!.textContent,
+          screenBottom: document.querySelector(`#tab-${id}`)!.getBoundingClientRect().bottom,
+          vh: innerHeight,
+        }), tab);
+        assert.equal(m.text, "Your game scripts write scans to a different folder than Pack Rat is reading.");
+        assert.ok(m.notice <= 56, `${tab} at ${real.width}: the banner is one line, got ${m.notice}px`);
+        assert.ok(m.screenBottom <= m.vh + 0.5, `${tab} at ${real.width}: the screen ends at the window's bottom (${m.screenBottom} > ${m.vh})`);
+      }
+    }
+    await openTab(page, "inventory");
+    await page.locator("#notice").getByRole("link", { name: "Show details" }).click();
+    await page.waitForSelector("#tab-settings:not([hidden]) #set-data .msg");
+    assert.match(await page.locator("#set-data .msg").innerText(), /elsewhere/, "Settings › Data names the scripts' folder in full");
+    await page.waitForFunction(() => { const r = document.querySelector("#set-data")!.getBoundingClientRect(); return r.top >= 0 && r.top < innerHeight; });
+    await page.locator("#notice").getByRole("button", { name: "Dismiss" }).click();
+    await page.waitForSelector("#notice", { state: "hidden" });
+    assert.deepEqual(errors, []);
+  } finally {
+    await app.close();
+    rmSync(dataDir, { recursive: true, force: true });
+    rmSync(home, { recursive: true, force: true });
   }
 });
