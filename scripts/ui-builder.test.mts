@@ -178,6 +178,13 @@ test("[slow] a Fetch list row shows its whole place, wrapped not cut, and copies
 
     const copy = page.locator("section[aria-label='Fetch list'] .b-fetch").first().getByRole("button", { name: /^Copy container serial 0x/ });
     const hex = (await copy.getAttribute("aria-label"))!.replace("Copy container serial ", "");
+    // Its tooltip sits beside it, clear of the path above.
+    await copy.hover();
+    const tip = page.locator(".tip[role=tooltip]", { hasText: "Copy container serial" });
+    await tip.waitFor({ timeout: 5_000 });
+    const [tb, pb, cb] = [await tip.boundingBox(), await place.boundingBox(), await copy.boundingBox()];
+    assert.ok(tb!.y >= pb!.y + pb!.height, `the tooltip (top ${tb!.y}) is below the path (bottom ${pb!.y + pb!.height})`);
+    assert.ok(tb!.x >= cb!.x + cb!.width, "and to the right of the button");
     await copy.click();
     await page.waitForFunction(() => /Copied 0x/.test(document.body.textContent || ""));
     assert.equal(await app.evaluate(({ clipboard }) => clipboard.readText()), hex);
