@@ -279,3 +279,7 @@
    cards, a card in a drawer or a popover) keeps a plain 1px edge in its own border colour, so frames never
    nest and a card whose border colour carries a state (selected, clean, danger) still shows it. */
 :is(.card, .panel, .pop, .drawer, .dialog) .card { border-width: var(--border-width); border-image: none; }
+
+/* ---- item tags with a meaning (dom.mts tagChip, describe): the shard's words on hover and focus */
+.tag.tag-info { cursor: help; }
+.tag.tag-info:focus-visible { box-shadow: var(--ring-focus); outline: none; }

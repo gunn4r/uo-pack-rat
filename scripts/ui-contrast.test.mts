@@ -87,6 +87,12 @@ const SCENES: Scene[] = [
     await p.locator("#inv-table tbody tr.item", { hasText: "Arcane Ringmail Leggings" }).first().click();
     await p.waitForSelector("#inv-peek:not([hidden]) .peek-resists");
   }, leave: (p) => p.keyboard.press("Escape") },
+  { name: "inventory peek tag meaning", enter: async (p) => {
+    if (await p.locator("#f-clear").isVisible()) await p.click("#f-clear");
+    await p.locator("#inv-table tbody tr.item", { hasText: "Animated Katana" }).first().click();
+    await p.locator("#inv-peek .tag.tag-info").first().focus();
+    await p.waitForSelector("body > .tip");
+  }, leave: (p) => p.keyboard.press("Escape") },
   { name: "inventory row focus tooltip", enter: async (p) => {
     await p.locator("#inv-table tbody tr.item").first().focus();
     await p.keyboard.press("ArrowDown");

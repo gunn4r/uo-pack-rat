@@ -17,6 +17,7 @@
       }
     },
     "tagUnits": { "type": "object", "additionalProperties": { "type": "number" } },
+    "tagInfo": { "type": "object", "additionalProperties": { "type": "string", "minLength": 1, "maxLength": 400 } },
     "rarity": {
       "type": "array",
       "items": {
