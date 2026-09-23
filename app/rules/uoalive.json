@@ -37,6 +37,14 @@
     "massive": 0.5,
     "unwieldy": 0.5
   },
+  "tagInfo": {
+    "cursed": "Can't be insured or blessed, and can't go in a Bag of Sending. It always drops to your corpse when you die.",
+    "brittle": "Can never be fortified: Powder of Fortifying doesn't work on it.",
+    "antique": "Starts at 255 durability and wears down in combat even when you aren't hit. Powder of Fortifying works on it at most three times, and each use lowers its maximum durability (to 250, then 200, then 150). It can be repaired but never enhanced.",
+    "prized": "Costs more to insure, and can't be blessed.",
+    "massive": "Needs 125 Strength to use.",
+    "unwieldy": "Weighs 50 stones."
+  },
   "rarity": [
     { "name": "Minor Magic Item", "colour": "#a0a0a0" },
     { "name": "Lesser Magic Item", "colour": "#20e31c" },

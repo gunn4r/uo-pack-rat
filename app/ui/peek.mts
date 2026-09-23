@@ -125,7 +125,7 @@ function draw(it: Item, focus: boolean): void {
         button({ label: "Previous item", icon: "chevron-up", iconOnly: true, variant: "ghost", size: "sm", onClick: () => hooks.step(-1) }),
         button({ label: "Next item", icon: "chevron-down", iconOnly: true, variant: "ghost", size: "sm", onClick: () => hooks.step(1) }),
         button({ label: "Close detail", icon: "close", iconOnly: true, variant: "ghost", size: "sm", attrs: { "data-peek-close": "" }, onClick: () => closePeek(true) })),
-      box("div", { class: "peek-meta" }, rarityEl(it.rarity, "strong"), ...tagEls(it), it.gear && it.medable ? badge("Meditation-safe", "ok") : null)),
+      box("div", { class: "peek-meta" }, rarityEl(it.rarity, "strong"), ...tagEls(it, { describe: true }), it.gear && it.medable ? badge("Meditation-safe", "ok") : null)),
     box("div", { class: "peek-body" },
       section("Where it is", kvRows(where)),
       hasResists ? section("Resists", box("div", { class: "peek-resists" }, ...RESISTS.map(([k, short, token]) => resistTile(short, it.props[k] || 0, token)))) : null,

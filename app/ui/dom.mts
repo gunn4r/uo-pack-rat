@@ -1,11 +1,11 @@
 // ui/dom.mts — DOM helpers, formatting/label helpers, rarity, and the in-game style hover tooltip.
 // Moved verbatim out of index.html's inline <script type="module"> (Task 4, the page split).
-import { SLOT_LABELS, labelOf, fullOf } from "../vault-lib.mts";
+import { SLOT_LABELS, labelOf, fullOf, tagInfo } from "../vault-lib.mts";
 import type { Item } from "../vault-lib.mts";
 import { EXTRA_COLS, rarityRank as rarityRankOf } from "../item-query.mts";
 import { state } from "./store.mts";
 import { resolveItems, rarityToken } from "./items.mts";
-import { showToast, tag } from "./components.mts";
+import { showToast, tag, tooltip } from "./components.mts";
 
 export { EXTRA_COLS, colVal } from "../item-query.mts";
 
@@ -142,6 +142,14 @@ const RARITY_LINE = /^(minor|lesser|greater|major|legendary) (magic item|artifac
 const RESIST_LINE = /^(physical|fire|cold|poison|energy) resist\b/i;
 const RES_CLASS: Record<string, string> = { physical: "phys", fire: "fire", cold: "cold", poison: "poison", energy: "energy" };
 const TAG_TONE: Record<string, "bad" | "warn" | undefined> = { cursed: "bad", brittle: "warn", antique: "warn", massive: "warn", unwieldy: "warn" };
+// An item tag ("cursed") as its chip, in its tone. `describe` gives it the shard's plain-words meaning
+// (the rules' tagInfo) as a tooltip on hover and focus; a shard with no meaning for it gets a plain chip.
+export function tagChip(t: string, { describe = false }: { describe?: boolean } = {}): HTMLSpanElement {
+  const chip = tag(t.charAt(0).toUpperCase() + t.slice(1), TAG_TONE[t.toLowerCase()]);
+  const info = describe ? tagInfo(t) : null;
+  if (info) { chip.tabIndex = 0; chip.classList.add("tag-info"); tooltip(chip, info); }
+  return chip;
+}
 // tipNode(it) — the item tooltip (design spec 4.3), built as DOM nodes: the name in its rarity colour and
 // the item's tags; its tooltip lines in the game's order, resist lines in their element's colour and
 // durability and requirements muted; a footer with the rarity tier and where the item is. Every value
@@ -163,7 +171,7 @@ export function tipNode(it: TooltipItem): HTMLDivElement {
   }
   const tierColor = tier ? rarityColor(tier) : null;
   const qty = (it.amount || 1) > 1 ? `${it.amount} ` : "";
-  const tagEls = [...tags].map((t) => tag(t.charAt(0).toUpperCase() + t.slice(1), TAG_TONE[t]));
+  const tagEls = [...tags].map((t) => tagChip(t));
   const foot = [tier ? el("span", tierColor ? { style: `color:${tierColor}` } : {}, tier) : null, tier && it.location ? el("span", { class: "faint", "aria-hidden": "true" }, "·") : null, it.location ? el("span", { class: "muted" }, it.location.text) : null].filter((x): x is HTMLSpanElement => !!x);
   return el("div", { class: "tipcard" },
     el("div", { class: "tip-head" }, el("span", { class: "strong tip-name", ...(tierColor ? { style: `color:${tierColor}` } : {}) }, qty + it.name), ...tagEls),

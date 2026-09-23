@@ -8,7 +8,7 @@ import { createHash } from "node:crypto";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { dirname, join } from "node:path";
 import {
-  parseTooltip, classify, foldSnapshots, buildPools, requirementReport, totalsOf, propertyKeys, bagLabel, kindOf, groupByName, slayersOf, medableOf, weaponAllowed, settingsDiff, PROP_LABELS, LAYER_TO_SLOT, effectiveProfile, resistSkillBonus, toOptItem, labelOf, builderKeys, migrateProfiles, templateFrom, TEMPLATE_KEYS, setRules, getRules, tagUnits,
+  parseTooltip, classify, foldSnapshots, buildPools, requirementReport, totalsOf, propertyKeys, bagLabel, kindOf, groupByName, slayersOf, medableOf, weaponAllowed, settingsDiff, PROP_LABELS, LAYER_TO_SLOT, effectiveProfile, resistSkillBonus, toOptItem, labelOf, builderKeys, migrateProfiles, templateFrom, TEMPLATE_KEYS, setRules, getRules, tagUnits, tagInfo,
 } from "./vault-lib.mts";
 import type { Item, Inventory, ItemLocation, ProfilesFile } from "./vault-lib.mts";
 import { upgradeScan, TAZUO_V1_CAPS } from "./scan-schema.mts";
@@ -816,6 +816,24 @@ test("[fast] tag-unit keys match whatever case the rules file wrote them in", ()
     assert.deepEqual(p.tags, ["cursed", "brittle"]);
     assert.equal(p.props.tagPenalty, 14);
     assert.deepEqual(tagUnits(), { cursed: 10, brittle: 4 });
+  } finally {
+    setRules(uoalive);
+  }
+});
+
+// A tag's plain-words meaning comes from the shard's rules file too (the peek shows it on hover); a shard
+// that writes none, or none for that tag, gives no description rather than a made-up one.
+test("[fast] tagInfo reads a tag's meaning from the shard's rules, in any case, and is empty without one", () => {
+  const uoalive = getRules();
+  try {
+    assert.match(tagInfo("Antique") || "", /Powder of Fortifying/);
+    for (const t of Object.keys(tagUnits())) assert.ok(tagInfo(t), `UO Alive describes ${t}`);
+    setRules({ ...uoalive, tagInfo: { CURSED: "Drops on death." } });
+    assert.equal(tagInfo("cursed"), "Drops on death.");
+    assert.equal(tagInfo("brittle"), null);
+    const { tagInfo: _, ...none } = uoalive;
+    setRules(none as RulesV1);
+    assert.equal(tagInfo("cursed"), null);
   } finally {
     setRules(uoalive);
   }

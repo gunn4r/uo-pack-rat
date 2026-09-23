@@ -23,7 +23,7 @@ import { plural, queryParams, activeFilters, clearAll, matchLine, countFact, emp
 import type { FilterToken } from "./inv-model.mts";
 import type { ItemsApiResponse, UiPrefs } from "./api-types.mts";
 import { initPeek, openPeek, closePeek, peekOpen, peekSerial, peekRefresh } from "./peek.mts";
-import { showItemTip, hideItemTip } from "./dom.mts";
+import { showItemTip, hideItemTip, tagChip } from "./dom.mts";
 
 const CHUNK = 500;              // rows per GET /api/items request (the server's own cap)
 const NARROW = "(max-width: 1179px)";
@@ -480,12 +480,11 @@ function sortedBy(): string {
   if (col?.num) return `Sorted by ${name}, ${state.query.dir > 0 ? "highest" : "lowest"} first`;
   return `Sorted by ${name}${state.query.dir < 0 ? ", Z to A" : ""}`;
 }
-const TAG_TONE: Record<string, "bad" | "warn" | undefined> = { cursed: "bad", brittle: "warn", antique: "warn", massive: "warn", unwieldy: "warn" };
 const cap = (s: string): string => s.charAt(0).toUpperCase() + s.slice(1);
 // The shard's tag words ("cursed", "prized", …), lower-cased: a tooltip line that is one of them is a tag.
 export const tagWords = (): string[] => Object.keys(tagUnits());
-export function tagEls(it: Item): HTMLElement[] {
-  return it.tags.map((t) => box("span", { class: `tag${TAG_TONE[t] ? " " + TAG_TONE[t] : ""}` }, txt(cap(t))));
+export function tagEls(it: Item, opts: { describe?: boolean } = {}): HTMLElement[] {
+  return it.tags.map((t) => tagChip(t, opts));
 }
 // A tier as its dot and name in its --rarity-* colour; a tier with no token keeps its game colour inside a
 // dark subtree, where the game colours were designed to live.
