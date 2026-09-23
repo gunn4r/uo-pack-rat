@@ -143,15 +143,17 @@ These are the invariants the phase-7 review turned into commitments. Breaking on
 | `containers.mts` | The Containers tab, including the Forget handler (which confirms first and refreshes through `reload()`, never the full `load()`). |
 | `characters.mts` | The Characters tab: schematic paperdoll + character sheet per character. |
 | `events.mts` | The one shared `EventSource("/api/events")` for the page's life — toasts and debounced `reload()` on the `inventory`/`rejected` SSE events. |
-| `adapters.mts` | Pure, DOM-free adapter-selection helpers (`defaultAdapterId`, `availableAdapters`, `platformCompatible`) shared by the wizard and the Import tab — kept dependency-free so `app/wizard-default-adapter.test.mts` can import them under plain `node:test`. |
+| `adapters.mts` | Pure, DOM-free adapter-selection helpers (`defaultAdapterId`, `availableAdapters`, `platformCompatible`) shared by the wizard and the Import drawer — kept dependency-free so `app/wizard-default-adapter.test.mts` can import them under plain `node:test`. |
 | `dialog.mts` | `promptText()`: an in-page `<dialog>` replacement for `window.prompt()` (Electron doesn't implement it). |
 | `bridge.mts` | Highlight / Grab / Go-to buttons and the `packrat-bridge.py` connection status/polling. |
-| `settings.mts` | The Settings tab: data/log locations, client install status, an Import pointer, update check. |
-| `import.mts` | The Import tab: paste a scan, import a folder of scan files, rescan the inbox. |
+| `settings.mts` | The Settings screen: a section nav (General, Game client, Data, Updates) beside setting rows — theme, appearance and shard rules; client status, Run setup and Reinstall; the data folder and logs with Open, and the danger zone (forget a character, forget a container); the version and update check. |
+| `import.mts` | The Import drawer: paste a scan or bring in scan files (dropped anywhere on the window, or a chosen folder), with an instant preview parsed by `app/paste-scan.mts` (the server's own rule, served at `/paste-scan.mjs`); rescan the inbox. |
+| `import-preview.mts` | Pure, DOM-free: the Import drawer's preview card as data (counts, the "already in Pack Rat" line, warnings, the primary button's sentence). |
+| `adapter-copy.mts` | Pure, DOM-free: what the page says about each game client, written per adapter (short names, client cards, the wizard's per-step copy and step names), with a plain fallback for an adapter it doesn't know. |
 | `inventory.mts` | The Inventory tab: filters, property/column chips, sorting, and the table itself. |
 | `runs.mts` | The saved-runs drawer: settings snapshot/apply, load/open/rename/compare a saved run. Split out of `builder.mts` to keep that file to one concern. |
 | `builder.mts` | The Suit Builder tab: character/template sidebar, requirements & weights, the optimize job (progress panel, SSE), and the result panel. |
-| `wizard.mts` | The first-run / "Run setup again" wizard: shard → client → locate → install (or, for a paste-transport client, straight to the Import tab). |
+| `wizard.mts` | The first-run / "Run setup" wizard: shard → client → client folder → install scanner, or for a paste-transport client shard → client → nothing to install → paste your first scan; a named stepper that renames the paste branch's steps, one primary per step. |
 | `app.mts` | Bootstrap: `load()`, the hash router (`parseRoute`/`routeFor`/`applyRoute`), tab-nav wiring, and the tooltip/bridge polling kickoff. The entry point `index.html` loads. |
 
 ## Data model (what the fold produces)

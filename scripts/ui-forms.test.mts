@@ -165,3 +165,59 @@ test("[slow] Wizard: named stepper with branch-aware labels, radio cards, kept t
     rmSync(client, { recursive: true, force: true });
   }
 });
+
+test("[slow] Settings: section nav with the client warning, theme and appearance, Run setup, forget with confirm, update check messages", async (t) => {
+  const why = unavailable();
+  if (why) return t.skip(why);
+  const dataDir = mkdtempSync(join(tmpdir(), "packrat-forms-settings-"));
+  setupDone(dataDir);
+  const { app, page, errors } = await launch(dataDir);
+  try {
+    await page.locator("#inv-table tbody tr.item").first().waitFor({ timeout: 30_000 });
+    await page.evaluate(() => { location.hash = "#/settings"; });
+    await page.waitForSelector("#set-general .set-row");
+    assert.deepEqual(await page.locator("#settings-nav .nav-item").allInnerTexts(), ["General", "Game client", "Data", "Updates"]);
+    assert.equal(await page.locator("#settings-nav [data-section=set-client] .dot.warn").count(), 1, "no client set up: a warning dot on Game client");
+    assert.equal(await page.locator("#settings-nav [aria-current=true]").innerText(), "General");
+
+    // General: Britannia is listed but not chooseable yet; Appearance applies at once and is saved as a ui-pref.
+    assert.equal(await page.locator("#set-theme option[value=britannia]").isDisabled(), true);
+    assert.equal(await page.locator("#set-theme option[value=britannia]").innerText(), "Britannia (coming soon)");
+    await page.locator("#set-appearance").getByRole("radio", { name: "Dark" }).click();
+    await page.waitForFunction(() => document.documentElement.dataset.mode === "dark");
+    await page.waitForFunction(async () => (await (await fetch("/api/ui-prefs")).json()).prefs.appearance === "dark");
+    await page.locator("#set-appearance").getByRole("radio", { name: "System" }).click();
+
+    // Game client: Run setup is the primary while no client exists; Reinstall waits for one.
+    assert.match(await page.locator("#set-run-setup").getAttribute("class") || "", /btn-primary/);
+    assert.equal(await page.locator("#set-client").getByRole("button", { name: "Reinstall" }).isDisabled(), true);
+    assert.match(await page.locator("#set-client").innerText(), /-stopall/);
+
+    // The nav follows a click; Data's danger zone asks before forgetting, with the existing copy.
+    await page.click("#settings-nav [data-section=set-data]");
+    assert.equal(await page.locator("#settings-nav [aria-current=true]").innerText(), "Data");
+    assert.deepEqual(await page.locator("#set-forget-who option").allInnerTexts(), ["Dorran", "Kestrel"]);
+    await page.click("#set-forget");
+    await page.waitForSelector("dialog.dialog[open]");
+    assert.equal(await page.locator("dialog.dialog[open] h2").innerText(), "Forget Dorran?");
+    await page.keyboard.press("Escape");
+    await page.waitForSelector("dialog.dialog[open]", { state: "detached" });
+    assert.equal(await page.locator("#set-data a[href='#/containers']").innerText(), "Choose in Containers…");
+
+    // Updates: the running version, and the check's answer as an inline message under its row.
+    assert.match(await page.locator("#set-updates").innerText(), /Pack Rat \d+\.\d+\.\d+/);
+    await page.route("**/api/update-check", (r) => r.fulfill({ contentType: "application/json", body: JSON.stringify({ ok: true, configured: true, error: "GitHub releases/latest returned 404" }) }));
+    await page.click("#set-check-updates");
+    await page.waitForSelector("#set-updates .msg.bad");
+    assert.equal(await page.locator("#set-updates .msg.bad").innerText(), "Could not check: GitHub releases/latest returned 404. Try again later.");
+    await page.unroute("**/api/update-check");
+    await page.route("**/api/update-check", (r) => r.fulfill({ contentType: "application/json", body: JSON.stringify({ ok: true, configured: true, current: "0.1.0", latest: "0.1.0", upToDate: true }) }));
+    await page.click("#set-check-updates");
+    await page.waitForSelector("#set-updates .msg.ok");
+    assert.equal(await page.locator("#set-updates .msg.ok").innerText(), "You have the latest version, 0.1.0.");
+    assert.deepEqual(errors, []);
+  } finally {
+    await app.close();
+    rmSync(dataDir, { recursive: true, force: true });
+  }
+});

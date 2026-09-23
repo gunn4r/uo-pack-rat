@@ -97,6 +97,7 @@ interface SetupResponse {
   settings: { client?: ClientSetting };
   bridgeAdapter: string | null;
   dataDirCheck: DataDirCheck;
+  version: string;
 }
 interface LocateResponse {
   scriptsDir?: string;
@@ -1318,6 +1319,8 @@ test("[fast] GET /api/setup lists the tazuo adapter, its available (repo-shipped
     // razor-enhanced adapter on any other platform (app/ui/adapters.mts's availableAdapters) — it
     // must be this process's real process.platform, not a placeholder.
     assert.equal(j.platform, process.platform);
+    // Settings › Updates shows the running version before any update check.
+    assert.equal(j.version, (JSON.parse(readFileSync(join(dirname(fileURLToPath(import.meta.url)), "..", "package.json"), "utf8")) as { version: string }).version);
   } finally {
     await s2.close();
   }
