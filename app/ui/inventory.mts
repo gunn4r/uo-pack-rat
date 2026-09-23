@@ -882,6 +882,13 @@ export function buildFilters(): void {
 }
 // Containers' "Show these items" and a row's "Show everything in this container": the Items view
 // filtered to one root container.
+// Characters' "Show Dorran's items": the Items view filtered to one character (worn, backpack, bank, and
+// the ground containers that character scanned), every other filter cleared.
+export function showCharacterItems(name: string): void {
+  closePeek();
+  setQuery({ ...clearAll(state.query), chars: [name] });
+  if (location.hash !== "#/inventory") location.hash = "#/inventory";
+}
 export function showContainer(root: number): void {
   closePeek();
   setQuery({ ...clearAll(state.query), roots: [root] });
