@@ -3,7 +3,7 @@
 // Exports startServer(config) → { server, port, url, close() } — nothing runs at import time, so a
 // test (or another launcher) can start and stop as many independent instances as it likes. The file
 // also self-starts when run directly (node app/vault-server.mts / node scripts/start.mts).
-// Routes: GET /  (index.html) · GET /favicon.png (app/assets/, the logo at 64 px) · GET /logo.png (the logo at 256 px, for the sidebar) · GET /vault-lib.mjs · GET /item-query.mjs (pure filter/sort/facet logic
+// Routes: GET /  (index.html) · GET /favicon.png (app/assets/, the logo at 64 px) · GET /logo-mark.png (the rat's head cropped from the logo, 80 px, the sidebar's mark) · GET /vault-lib.mjs · GET /item-query.mjs (pure filter/sort/facet logic
 //         shared by the browser and GET /api/items below — no DOM, no node: imports, servable byte for
 //         byte like vault-lib.mts) · GET /scan-schema.mjs (vault-lib.mts imports it for parseStamp, so
 //         it must be servable to the browser the same way) ·
@@ -962,7 +962,7 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
       }
       if (req.method === "GET" && url.pathname === "/") return send(res, 200, readFileSync(join(HERE, "index.html"), "utf8"), "text/html");
       if (req.method === "GET" && url.pathname === "/favicon.png") return send(res, 200, readFileSync(join(HERE, "assets", "favicon.png")), "image/png");
-      if (req.method === "GET" && url.pathname === "/logo.png") return send(res, 200, readFileSync(join(HERE, "assets", "icon.png")), "image/png");
+      if (req.method === "GET" && url.pathname === "/logo-mark.png") return send(res, 200, readFileSync(join(HERE, "assets", "logo-mark.png")), "image/png");
       if (req.method === "GET" && url.pathname === "/vault-lib.mjs") return send(res, 200, readFileSync(join(WEB, "vault-lib.mjs"), "utf8"), "text/javascript");
       if (req.method === "GET" && url.pathname === "/item-query.mjs") return send(res, 200, readFileSync(join(WEB, "item-query.mjs"), "utf8"), "text/javascript");
       if (req.method === "GET" && url.pathname === "/scan-schema.mjs") return send(res, 200, readFileSync(join(WEB, "scan-schema.mjs"), "utf8"), "text/javascript");
