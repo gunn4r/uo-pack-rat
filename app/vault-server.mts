@@ -1315,6 +1315,10 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
         if (!meta || typeof meta !== "object" || Array.isArray(meta)) return send(res, 400, { ok: false, error: "meta must be an object" });
         meta = pickMeta(meta);
         if (JSON.stringify(meta).length > META_MAX_BYTES) return send(res, 400, { ok: false, error: "meta is too large" });
+        // The resist cap overrides a saved run is reopened and compared with (the page reads them back as the caps
+        // the run was built with), held to the rule profiles.json's are.
+        const badCaps = (await lib()).resistCapsError((meta.settings as Record<string, unknown> | undefined)?.resistCaps, "meta.settings.resistCaps");
+        if (badCaps) return send(res, 400, { ok: false, error: badCaps });
         let skipped: Record<string, number> = {}, blocked: string[] = [];
         // The by-character form: the caller sends {character, settings} instead of building pools/current
         // itself, and the server runs buildPools() against the cached inventory — the same function and
@@ -1340,6 +1344,8 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
             if (s[f] != null && typeof s[f] !== "boolean") return send(res, 400, { ok: false, error: `settings.${f} must be a boolean` });
           }
           if (s.strLimit != null && typeof s.strLimit !== "number") return send(res, 400, { ok: false, error: "settings.strLimit must be a number" });
+          const badSettingsCaps = (await lib()).resistCapsError(s.resistCaps, "settings.resistCaps");
+          if (badSettingsCaps) return send(res, 400, { ok: false, error: badSettingsCaps });
           // Every field of `s` was checked above (when present); this cast is the trust boundary the
           // migration recipe describes — placed AFTER those checks, not instead of them. The four list
           // fields are `unknown[]` because Array.isArray() is all that ran on them: nothing looked at

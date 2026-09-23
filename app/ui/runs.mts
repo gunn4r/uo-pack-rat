@@ -2,7 +2,7 @@
 // meta line and summary badges, a ⋯ menu (Open, Rename inline, Delete with a confirm dialog), a filter, and a
 // footer that ticks up to three runs for the compare view (ui/builder-result.mts's openRunCompare). Also the
 // settings snapshot a run is saved with, and putting a saved run's settings back into the panel.
-import { OPTIMIZER_SLOTS, resistSkillBonus, effectiveProfile, totalsOf, settingsDiff, getRules } from "../vault-lib.mts";
+import { OPTIMIZER_SLOTS, RESIST_KEYS, resistSkillBonus, effectiveProfile, totalsOf, settingsDiff, resistCapsFor } from "../vault-lib.mts";
 import type { RunSettings, OptItem, PropMap, Character } from "../vault-lib.mts";
 import { state, invStamp } from "./store.mts";
 import { $, el, fmtSecs, fmtRunTime, toast } from "./dom.mts";
@@ -23,13 +23,13 @@ export function settingsSnapshot(): RunSettings {
     excludeTags: [...(p.excludeTags || [])], excludeRoots: [...(p.excludeRoots || [])], strLimit: p.strLimit, allowGargoyle: !!p.allowGargoyle,
     medOnly: !!p.medOnly, weaponSkill: p.weaponSkill || "", allowOthersWorn: !!p.allowOthersWorn,
     restarts: Number(knobs.restarts) || 200, exact: knobs.exact, budgetMs: 1000 * (Number(knobs.budgetS) || 300),
-    altCount: Number(knobs.altCount) || 0, altTol: Number(knobs.altTol) || 0, race: p.race || "human", excludeSkills: [...(p.excludeSkills || [])] };
+    altCount: Number(knobs.altCount) || 0, altTol: Number(knobs.altTol) || 0, race: p.race || "human", excludeSkills: [...(p.excludeSkills || [])], resistCaps: { ...(p.resistCaps || {}) } };
 }
 export function applySettings(st: RunSettings): void {
   const p = state.builder.profile!;
   Object.assign(p, { floors: { ...(st.floors || {}) }, softFloors: [...(st.softFloors || [])], weights: { ...(st.weights || {}) }, lockedSlots: [...(st.lockedSlots || [])],
     excludeTags: [...(st.excludeTags || [])], excludeRoots: [...(st.excludeRoots || [])], strLimit: st.strLimit, allowGargoyle: !!st.allowGargoyle, medOnly: !!st.medOnly, weaponSkill: st.weaponSkill || null,
-    race: st.race || p.race || "human", excludeSkills: [...(st.excludeSkills || [])], allowOthersWorn: !!st.allowOthersWorn });
+    race: st.race || p.race || "human", excludeSkills: [...(st.excludeSkills || [])], allowOthersWorn: !!st.allowOthersWorn, resistCaps: { ...(st.resistCaps || {}) } });
   applyKnobs(st);
   renderPanel();
   toast("Settings loaded into the panel. Save profile to keep them.", "good");
@@ -91,12 +91,14 @@ export function renderRuns(): void {
   if (!runs.length) { box_.replaceChildren(el("li", { class: "runs-empty" }, message({ tone: "info", text: "No saved runs yet. Every build is saved here." }))); return; }
   const q = ($<HTMLInputElement>("#b-runs-filter")!.value || "").trim().toLowerCase();
   const rsb = resistSkillBonus(state.inv?.characters[name]?.skills);
-  const rules = getRules(), caps = { ...(rules.caps as Record<string, number>), ...((rules.raceCaps as Record<string, Record<string, number>> | undefined)?.[state.builder.profile?.race as string] || {}) };
   const kept = runs.map((run, i) => {
     const auto = runAutoLabel(runs[i + 1]?.settings ?? null, run.settings);
     const title = run.label || auto.text;
     if (q && !`${run.label || ""} ${auto.text} ${auto.diff.join(" ")} ${fmtRunTime(run.createdAt)}`.toLowerCase().includes(q)) return null;
-    return runCard(run, title, auto.diff, runBadges(run.changes, run.totalsAfter, run.settings.floors || {}, rsb, caps), run.inventoryStamp != null && run.inventoryStamp !== "" && run.inventoryStamp !== stamp);
+    // the resist caps the run was built with (its race, its overrides), against the shard's for that race
+    const view = resistCapsFor(run.settings.race, run.settings.resistCaps);
+    const pick = (f: "cap" | "shard"): Record<string, number> => Object.fromEntries(RESIST_KEYS.map((k) => [k, view[k]![f]]));
+    return runCard(run, title, auto.diff, runBadges(run.changes, run.totalsAfter, run.settings.floors || {}, rsb, pick("cap"), pick("shard")), run.inventoryStamp != null && run.inventoryStamp !== "" && run.inventoryStamp !== stamp);
   }).filter((x): x is HTMLLIElement => !!x);
   box_.replaceChildren(...(kept.length ? kept : [el("li", { class: "runs-empty" }, el("p", { class: "muted" }, txt("No saved run matches the filter.")))]));
 }

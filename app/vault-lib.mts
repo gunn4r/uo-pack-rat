@@ -229,6 +229,37 @@ export function resistSkillBonus(skills: Record<string, unknown> | null | undefi
   return Math.floor(bonus);
 }
 
+// A resist's paperdoll cap on this shard for a race (an Elf's Energy is 75 on uoalive), else the shard's cap.
+export function shardResistCap(k: string, race: string | null | undefined): number {
+  const rules = getRules();
+  return (rules.raceCaps as Record<string, Record<string, number>> | undefined)?.[race as string]?.[k] ?? (rules.caps as Record<string, number>)[k] ?? 70;
+}
+// The range a player's resist cap override may take (the Builder's Resist caps fields, a profile's or template's
+// resistCaps, a saved run's settings.resistCaps): whole paperdoll numbers.
+export const RESIST_CAP_LIMITS = { min: 0, max: 150 } as const;
+// A resist's cap for one build, in paperdoll terms: `cap` is what the build values the resist up to, `shard` what
+// the shard's rules give this race. They differ only where the player overrode the cap (a suit worn in Reaper
+// Form, which takes 25 Fire, is built with a Fire cap of 95).
+export interface ResistCap { cap: number; shard: number }
+export function resistCapsFor(race: string | null | undefined, overrides: Record<string, number> | null | undefined): Record<string, ResistCap> {
+  return Object.fromEntries(RESIST_KEYS.map((k) => {
+    const shard = shardResistCap(k, race), o = overrides?.[k];
+    return [k, { cap: typeof o === "number" && Number.isFinite(o) ? o : shard, shard }];
+  }));
+}
+// What a resistCaps value is wrong about, or null when it is fine: an object naming only the five resists, each a
+// whole number within RESIST_CAP_LIMITS. The server checks a build's settings with this; PUT /api/profiles checks
+// profiles.json's with the same rule, written as JSON Schema in profiles.v2.schema.json.
+export function resistCapsError(v: unknown, path = "resistCaps"): string | null {
+  if (v == null) return null;
+  if (typeof v !== "object" || Array.isArray(v)) return `${path} must be an object`;
+  for (const [k, n] of Object.entries(v)) {
+    if (!RESIST_KEYS.includes(k)) return `${path}.${k} is not a resist`;
+    if (typeof n !== "number" || !Number.isInteger(n) || n < RESIST_CAP_LIMITS.min || n > RESIST_CAP_LIMITS.max) return `${path}.${k} must be a whole number from ${RESIST_CAP_LIMITS.min} to ${RESIST_CAP_LIMITS.max}`;
+  }
+  return null;
+}
+
 // The optimizer's profile for one character, as given (weights/floors are what the caller chose; caps are not
 // resolved yet — effectiveProfile() below is what turns this into caps a search can use).
 export interface Profile {
@@ -238,6 +269,7 @@ export interface Profile {
   weights?: Record<string, number> | undefined;
   floorBonus?: number | undefined;
   race?: string | null | undefined;
+  resistCaps?: Record<string, number> | undefined;
 }
 export interface EffectiveProfile {
   weights: Record<string, number>;
@@ -246,22 +278,40 @@ export interface EffectiveProfile {
   floorBonus: number;
   hardFloors: string[];
   resistBonus: number;
+  // Only the resists whose cap the player overrode, in paperdoll terms; absent when none is, so a profile with no
+  // override keeps the exact shape (and so the run key, runs-lib.mts) it had before overrides existed.
+  resistCapOverrides?: Record<string, ResistCap> | undefined;
 }
 // The optimizer's profile for one character. Resist floors and caps are written in paperdoll terms (what the
 // character sheet shows): the character's Resisting Spells bonus is subtracted so the search works on item totals,
-// and a race can raise a resist's cap (rules.raceCaps, e.g. an Elf's Energy cap). Every floor not marked soft is hard.
+// and a race can raise a resist's cap (rules.raceCaps, e.g. an Elf's Energy cap). The player's own resistCaps
+// replace the shard's per resist, and a resist floor counts up to its resist's cap. Every floor not marked soft is hard.
 export function effectiveProfile(p: Profile = {}, character: Character | null = null): EffectiveProfile {
   const rules = getRules();
   const rsb = resistSkillBonus(character?.skills);
   const caps: Record<string, number> = { ...rules.caps as Record<string, number>, ...(p.caps || {}) };
   const floors: Record<string, number> = { ...(p.floors || {}) };
+  const view = resistCapsFor(p.race, p.resistCaps);
+  const overrides: Record<string, ResistCap> = {};
   for (const k of RESIST_KEYS) {
-    const raceCap = (rules.raceCaps as Record<string, Record<string, number>>)?.[p.race as string]?.[k] ?? (rules.caps as Record<string, number>)[k] ?? 70;
-    caps[k] = Math.max(0, raceCap - rsb);
-    if (floors[k] != null) floors[k] = Math.max(0, Math.min(floors[k], raceCap) - rsb);
+    const { cap, shard } = view[k]!;
+    if (cap !== shard) overrides[k] = { cap, shard };
+    caps[k] = Math.max(0, cap - rsb);
+    if (floors[k] != null) floors[k] = Math.max(0, Math.min(floors[k], cap) - rsb);
   }
   const hardFloors = Object.keys(floors).filter((k) => !(p.softFloors || []).includes(k));
-  return { weights: { ...(p.weights || {}) }, caps, floors, floorBonus: p.floorBonus ?? 1000, hardFloors, resistBonus: rsb };
+  return { weights: { ...(p.weights || {}) }, caps, floors, floorBonus: p.floorBonus ?? 1000, hardFloors, resistBonus: rsb,
+    ...(Object.keys(overrides).length ? { resistCapOverrides: overrides } : {}) };
+}
+// A built profile's resist caps in paperdoll terms, what a result is shown against: the override where there is
+// one, else the item-total cap plus the Resisting Spells bonus.
+export function profileResistCaps(prof: EffectiveProfile): Record<string, ResistCap> {
+  return Object.fromEntries(RESIST_KEYS.map((k) => {
+    const o = prof.resistCapOverrides?.[k];
+    if (o) return [k, o];
+    const cap = (prof.caps[k] ?? 70) + (prof.resistBonus || 0);
+    return [k, { cap, shard: cap }];
+  }));
 }
 
 // Cursed/Brittle/Antique/Prized (/Massive/Unwieldy on shards that use them) tag-penalty units, from
@@ -829,7 +879,7 @@ export function weaponAllowed(it: Item, skill: string | null | undefined): boole
 // Templates: a full set of builder settings with no character in them (no race, STR limit or skipped containers).
 // A character's profile keeps its own working copy plus `template`, the name it was applied from; drift between the
 // two is settingsDiff(templateFrom(template), templateFrom(profile)).
-export const TEMPLATE_KEYS: string[] = ["floors", "softFloors", "weights", "floorBonus", "lockedSlots", "excludeTags", "excludeSkills", "allowOthersWorn", "allowGargoyle", "medOnly", "weaponSkill"];
+export const TEMPLATE_KEYS: string[] = ["floors", "softFloors", "weights", "floorBonus", "lockedSlots", "excludeTags", "excludeSkills", "allowOthersWorn", "allowGargoyle", "medOnly", "weaponSkill", "resistCaps"];
 export interface TemplateSource {
   floors?: Record<string, number> | undefined;
   softFloors?: string[] | undefined;
@@ -842,6 +892,7 @@ export interface TemplateSource {
   allowGargoyle?: boolean | undefined;
   medOnly?: boolean | undefined;
   weaponSkill?: string | null | undefined;
+  resistCaps?: Record<string, number> | undefined;   // the player's per-resist cap overrides, paperdoll terms
 }
 export interface Template {
   floors: Record<string, number>;
@@ -855,11 +906,12 @@ export interface Template {
   allowGargoyle: boolean;
   medOnly: boolean;
   weaponSkill: string | null;
+  resistCaps: Record<string, number>;
 }
 export function templateFrom(s: TemplateSource = {}): Template {
   return { floors: { ...(s.floors || {}) }, softFloors: [...(s.softFloors || [])], weights: { ...(s.weights || {}) }, floorBonus: s.floorBonus ?? 1000,
     lockedSlots: [...(s.lockedSlots || [])], excludeTags: [...(s.excludeTags || [])], excludeSkills: [...(s.excludeSkills || [])],
-    allowOthersWorn: !!s.allowOthersWorn, allowGargoyle: !!s.allowGargoyle, medOnly: !!s.medOnly, weaponSkill: s.weaponSkill || null };
+    allowOthersWorn: !!s.allowOthersWorn, allowGargoyle: !!s.allowGargoyle, medOnly: !!s.medOnly, weaponSkill: s.weaponSkill || null, resistCaps: { ...(s.resistCaps || {}) } };
 }
 
 // A profiles.json character entry, loosely — every field optional, TemplateSource's builder settings
@@ -930,6 +982,7 @@ export interface RunSettings {
   budgetMs?: number | undefined;
   altCount?: number | undefined;
   altTol?: number | undefined;
+  resistCaps?: Record<string, number> | undefined;
 }
 // What changed between two saved runs' builder settings, as short readable lines (b relative to a).
 export function settingsDiff(a: RunSettings = {}, b: RunSettings = {}): string[] {
@@ -942,6 +995,13 @@ export function settingsDiff(a: RunSettings = {}, b: RunSettings = {}): string[]
       else if (!(k in B)) out.push(`${L(k)} ${noun} ${A[k]} removed`);
       else if (A[k] !== B[k]) out.push(`${L(k)} ${noun} ${A[k]} → ${B[k]}`);
     }
+  }
+  // A resist cap override: set, changed, or taken off (back to the shard's cap for the character's race).
+  const RA: Record<string, number> = a.resistCaps || {}, RB: Record<string, number> = b.resistCaps || {};
+  for (const k of RESIST_KEYS.filter((x) => x in RA || x in RB)) {
+    if (!(k in RA)) out.push(`${L(k)} cap set to ${RB[k]}`);
+    else if (!(k in RB)) out.push(`${L(k)} cap back to the shard's`);
+    else if (RA[k] !== RB[k]) out.push(`${L(k)} cap ${RA[k]} → ${RB[k]}`);
   }
   const setDiff = <T,>(x: T[] = [], y: T[] = []): [T[], T[]] => [y.filter((v) => !x.includes(v)), x.filter((v) => !y.includes(v))];
   const [softOn, softOff] = setDiff(a.softFloors, b.softFloors);

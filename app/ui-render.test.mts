@@ -117,6 +117,23 @@ test("[fast] sheetNode renders a worn piece's scan-supplied name, tags and rarit
   assert.ok(node.textContent.includes("cap +2"), "the Fire tile has no cap badge");
 });
 
+// The Suit Builder's now → after sheet measures resists against the build's caps (a raised Fire cap of 95 for a
+// Reaper Form suit) and says so; the Characters screen's sheet, given no caps, keeps the shard's.
+test("[fast] sheetNode: a build's raised resist cap is used and named; without one the shard's cap stays", () => {
+  const piece = { serial: 1, name: "Fire Helm", slot: "helmet", props: { fireResist: 90 } };
+  withCharacter("Kestrel", {});
+  (state.inv as unknown as { worn: Record<string, unknown[]> }).worn.Kestrel = [];
+  const caps = { physResist: { cap: 70, shard: 70 }, fireResist: { cap: 95, shard: 70 }, coldResist: { cap: 70, shard: 70 }, poisonResist: { cap: 70, shard: 70 }, energyResist: { cap: 70, shard: 70 } };
+  const built = sheetNode("Kestrel", {}, { "1": piece as never }, { resistCaps: caps }) as unknown as Node;
+  assert.ok(built.textContent.includes("90/ 95"), `the Fire tile reads 90 of 95: ${built.textContent.slice(0, 300)}`);
+  assert.ok(built.textContent.includes("cap raised from 70"));
+  assert.ok(built.textContent.includes("This build caps Fire at 95 (the shard's is 70)."));
+  assert.ok(!built.textContent.includes("cap +"), "90 is under the raised cap: no over-cap badge");
+  const plain = sheetNode("Kestrel", { "1": piece as never }, null) as unknown as Node;
+  assert.ok(plain.textContent.includes("70/ 70") && plain.textContent.includes("cap +20"), "the Characters screen keeps the shard's 70");
+  assert.ok(!plain.textContent.includes("raised from"));
+});
+
 test("[fast] safeColor accepts only #rgb / #rrggbb and drops everything else", () => {
   assert.equal(safeColor("#fff"), "#fff");
   assert.equal(safeColor("#A335EE"), "#A335EE");

@@ -6,12 +6,13 @@
 // is attacker-controlled text, and a pasted "here's my suit" scan once turned into persistent
 // HTML/CSS injection inside the app window through this builder.
 import { totalsOf, resistSkillBonus } from "../vault-lib.mts";
-import type { OptItem } from "../vault-lib.mts";
+import type { OptItem, ResistCap } from "../vault-lib.mts";
 import { state } from "./store.mts";
 import { el, label, slotLabel } from "./dom.mts";
 import { rarityToken } from "./items.mts";
 import { txt, box, badge, tag, meter, message } from "./components.mts";
 import type { SkillEntry } from "./api-types.mts";
+import { capNote } from "./builder-model.mts";
 
 // The slot value the sheet needs out of a worn/candidate piece — both a full scanned Item (the
 // Characters screen's worn set) and an optimizer OptItem (the builder's `suit`/`current`) carry these,
@@ -26,6 +27,9 @@ export interface SheetOptions {
   // A filled slot tile was clicked (or pressed from the keyboard): show that piece. Without it the tiles
   // still carry data-serial, so the page's hover tooltip works on them.
   onSlot?: ((item: SheetItem, tile: HTMLElement) => void) | undefined;
+  // The Suit Builder's now → after sheet: the resist caps its build used, the player's overrides included. The
+  // Characters screen passes none and shows the shard's caps.
+  resistCaps?: Record<string, ResistCap> | undefined;
 }
 
 // ---------------------------------------------------------------- formatting (pure, unit-tested)
@@ -126,7 +130,10 @@ export function sheetNode(name: string, before: SheetAssignment, after: SheetAss
   const single = after == null;
   const then = after ?? before;
   const c = state.inv!.characters[name];
-  const { capOf, resistCap, race } = capsFor(name);
+  const { capOf, race } = capsFor(name);
+  const resistCap = (k: string): number => opts.resistCaps?.[k]?.cap ?? capsFor(name).resistCap(k);
+  // a build's override, said on its tile and in the footnote: "cap raised from 70"
+  const override = (k: string): ResistCap | null => { const c = opts.resistCaps?.[k]; return c && c.cap !== c.shard ? c : null; };
   const extras = withExtras(name, before);
   const b = totalsOf(extras(before)), a = totalsOf(extras(then));
   const d = (k: string): number => (a[k] || 0) - (b[k] || 0);
@@ -141,7 +148,8 @@ export function sheetNode(name: string, before: SheetAssignment, after: SheetAss
     return box("div", { class: `resist kpi tint tint-${cls}${full ? " at-cap" : ""}` },
       txt(lbl, `t-sm resist-name res-${cls}`),
       box("span", { class: "kpi-value" }, vb === va ? null : txt(`${vb} →`, "muted"), txt(va, `t-2xl ${dirCls(va - vb)}`.trim()), txt(`/ ${cap}`, "muted"), over ? badge(over, "ok") : null),
-      meter(va, cap, { tone: full ? "ok" : undefined, label: `${lbl} resist ${va} of ${cap}` }));
+      meter(va, cap, { tone: full ? "ok" : undefined, label: `${lbl} resist ${va} of ${cap}` }),
+      override(k) ? txt(`cap ${capNote(override(k)!)}`, "t-sm muted") : null);
   });
   // attributes: the scan's stats are totals with the current suit on; own points = total − current bonus
   const st = (c?.stats || {}) as Record<string, unknown>;
@@ -205,7 +213,9 @@ export function sheetNode(name: string, before: SheetAssignment, after: SheetAss
       free.length ? txt(`Free skills (outside the skill cap): ${free.join(", ")}`, "t-sm muted") : null)
     : message({ tone: "info", text: `Skills weren't in this scan. Rescan ${name} in game to record them.` });
   const raceNote = race !== "human" ? ` (${race[0]!.toUpperCase()}${race.slice(1)} racial caps may raise this for some resists)` : "";
-  const note = `Resists include the Resisting Spells bonus (+${rsb}) and are capped at ${resistCap("physResist")}${raceNote}.` +
+  const moved = RESISTS.filter(([k]) => override(k)).map(([k, lbl]) => `${lbl} at ${override(k)!.cap} (the shard's is ${override(k)!.shard})`);
+  const note = `Resists include the Resisting Spells bonus (+${rsb}) and are capped at ${capsFor(name).resistCap("physResist")}${raceNote}.` +
+    (moved.length ? ` This build caps ${moved.join(", ")}.` : "") +
     (single ? "" : " Hits, Stamina and Mana after = the current max plus the change in STR/2, DEX, INT and the HP, Stamina and Mana Increase properties (an estimate).");
   const props = el("section", { class: "card", "aria-label": "Properties" },
     box("div", { class: "card-head" }, el("h2", {}, "Properties"), el("span", { class: "spacer" }), txt(single ? "value / shard cap" : "now → after / shard cap", "t-sm muted")),

@@ -151,6 +151,18 @@ const SCENES: Scene[] = [
     await p.click("#b-run");
     await p.waitForFunction(() => !document.querySelector<HTMLButtonElement>("#b-run")?.disabled && document.querySelector("#b-result h2"), undefined, { timeout: 60_000 });
   } },
+  // Resist caps (issue #44): an overridden cap (accent outline, its "raised from" badge, the reset), a result built
+  // with it (the tile's "Cap raised from 70"), and an out-of-range cap's error. Fire stays at 95 for the scenes
+  // after this one, so the full sheet, the runs drawer and compare draw their override states too.
+  { name: "builder resist caps", enter: async (p) => {
+    await p.click("#b-sec-caps .b-sec-head button");
+    await p.fill("#b-cap-fireResist", "95");
+    await p.click("#b-run");
+    await p.waitForFunction(() => !document.querySelector<HTMLButtonElement>("#b-run")?.disabled && /raised from 70/.test(document.querySelector("#b-result .b-head-card")?.textContent || ""), undefined, { timeout: 60_000 });
+    await p.fill("#b-cap-coldResist", "200");
+    await p.waitForSelector("#b-cap-coldResist-err");
+    await p.locator("#b-sec-caps").scrollIntoViewIfNeeded();
+  }, leave: async (p) => { await p.fill("#b-cap-coldResist", "70"); } },
   { name: "import drawer", enter: (p) => route(p, "#/import", "#import-drawer:not([hidden]) #imp-mode"), leave: (p) => p.keyboard.press("Escape") },
   { name: "runs drawer", enter: (p) => route(p, "#/runs", "#runs-drawer:not([hidden]) .run-card"), leave: (p) => p.keyboard.press("Escape") },
   { name: "bridge popover", enter: async (p) => { await p.click("#bridge"); await p.waitForSelector(".pop"); }, leave: (p) => p.keyboard.press("Escape") },

@@ -3,8 +3,8 @@
 // "other changes" badges and "after the change" values, the compare table's differing rows and best values,
 // and a saved run's label and badges. No DOM and no page state, so app/builder-model.test.mts can check it
 // all directly; ui/builder.mts, ui/builder-result.mts and ui/runs.mts draw what it returns.
-import { labelOf, fullOf, RESIST_KEYS, SLOT_LABELS, settingsDiff } from "../vault-lib.mts";
-import type { PropMap, RunSettings } from "../vault-lib.mts";
+import { labelOf, fullOf, RESIST_KEYS, RESIST_CAP_LIMITS, SLOT_LABELS, settingsDiff } from "../vault-lib.mts";
+import type { PropMap, ResistCap, RunSettings } from "../vault-lib.mts";
 
 export const plural = (n: number, word: string, many = `${word}s`): string => `${n.toLocaleString("en-US")} ${n === 1 ? word : many}`;
 const num = (n: number): string => n.toLocaleString("en-US", { maximumFractionDigits: 2 });
@@ -63,6 +63,53 @@ export function poolSummary(p: PoolSettings): string {
     p.excludeRoots?.length ? `${plural(p.excludeRoots.length, "container")} skipped` : "",
   ].filter(Boolean).join(" · ");
 }
+
+// ---------------------------------------------------------------- resist caps
+// A resist's cap for a build is the shard's (race-aware) unless the player overrode it. The field takes a whole
+// paperdoll number in RESIST_CAP_LIMITS; setting it back to the shard's value removes the override, so a
+// profile only ever stores the caps that really differ.
+export const resistCapError = (raw: string): string | null => rangeError(raw, { ...RESIST_CAP_LIMITS, whole: true });
+export function withResistCap(overrides: Record<string, number> = {}, k: string, value: number, shard: number): Record<string, number> {
+  const next = { ...overrides };
+  if (value === shard) delete next[k]; else next[k] = value;
+  return next;
+}
+// "raised from 70" / "lowered from 70", or null when the cap is the shard's.
+export function capNote(c: ResistCap): string | null {
+  if (c.cap === c.shard) return null;
+  return `${c.cap > c.shard ? "raised" : "lowered"} from ${c.shard}`;
+}
+const overridden = (view: Record<string, ResistCap>): string[] => RESIST_KEYS.filter((k) => view[k] && view[k]!.cap !== view[k]!.shard);
+// The collapsed section's line: "Shard caps: 70 each" (with a race's exception, "70, Energy 75"), or the overrides
+// ("Fire 95 (raised from 70) · the rest at the shard's cap").
+export function resistCapsSummary(view: Record<string, ResistCap>): string {
+  const set = overridden(view);
+  if (set.length) {
+    const rest = RESIST_KEYS.length - set.length;
+    return [...set.map((k) => `${labelOf(k)} ${view[k]!.cap} (${capNote(view[k]!)})`), rest ? `${rest === 1 ? "the other one" : "the rest"} at the shard's cap` : ""].filter(Boolean).join(" · ");
+  }
+  const { common, odd } = commonAndOdd(RESIST_KEYS.map((k): [string, number] => [k, view[k]!.cap]));
+  return `Shard caps: ${odd.length ? [common, ...odd].join(", ") : `${common} each`}`;
+}
+// The most common value of the five and the others by name: { common: 70, odd: ["Energy 75"] }.
+function commonAndOdd(pairs: Array<[string, number]>): { common: number; odd: string[] } {
+  const count = new Map<number, number>();
+  for (const [, v] of pairs) count.set(v, (count.get(v) || 0) + 1);
+  const common = [...count.entries()].sort((a, b) => b[1] - a[1] || a[0] - b[0])[0]![0];
+  return { common, odd: pairs.filter(([, v]) => v !== common).map(([k, v]) => `${labelOf(k)} ${v}`) };
+}
+// The Requirements section's note, in item terms: what gear has to supply under each cap once Resisting Spells
+// has given its bonus. "so gear supplies up to 30 (Fire 55, Energy 35)".
+export function gearCapsText(view: Record<string, ResistCap>, rsb: number): string {
+  const { common, odd } = commonAndOdd(RESIST_KEYS.map((k): [string, number] => [k, Math.max(0, view[k]!.cap - rsb)]));
+  return `so gear supplies up to ${common}${odd.length ? ` (${odd.join(", ")})` : ""}`;
+}
+// A result's line about its caps, for the compare view: "Fire 95 (raised from 70)", or "Shard caps".
+export function capsLine(view: Record<string, ResistCap>): string {
+  const set = overridden(view);
+  return set.length ? set.map((k) => `${labelOf(k)} ${view[k]!.cap} (${capNote(view[k]!)})`).join(" · ") : "Shard caps";
+}
+export const anyOverridden = (view: Record<string, ResistCap>): boolean => overridden(view).length > 0;
 
 // ---------------------------------------------------------------- Advanced: the solver knobs
 // The ranges the server accepts (app/vault-server.mts's OPTS_LIMITS; app/server.test.mts checks this copy
@@ -171,7 +218,9 @@ export function afterChange(stats: Record<string, unknown>, maxes: Record<string
 // that slot, and a cell is marked when it differs from the first suit's. A total row differs when the values
 // are not all equal; its best cells are the highest value, where anything past the property's cap counts as
 // the cap (70 fire and 86 fire are equally good). Differences only hides the rows that agree and lists them.
-export interface CompareMember { assignment: Partial<Record<string, { serial: number; name: string } | null | undefined>>; totals: PropMap }
+// A member's own caps (a saved run built with other resist caps than the others) decide its best values; else the
+// shared caps do.
+export interface CompareMember { assignment: Partial<Record<string, { serial: number; name: string } | null | undefined>>; totals: PropMap; caps?: Record<string, number> | undefined }
 export interface ComparePieceRow { slot: string; label: string; cells: Array<{ text: string; diff: boolean }> }
 export interface CompareTotalRow { key: string; label: string; values: number[]; best: boolean[] }
 export interface CompareModel { pieces: ComparePieceRow[]; totals: CompareTotalRow[]; hiddenTotals: string[]; hiddenPieces: number }
@@ -189,7 +238,7 @@ export function compareModel(members: CompareMember[], slots: string[], keys: st
     const values = members.map((m) => m.totals[key] || 0);
     const same = values.every((v) => v === values[0]);
     if (same && differencesOnly) { hiddenTotals.push(propName(key)); continue; }
-    const eff = values.map((v) => (caps[key] != null ? Math.min(v, caps[key]) : v));
+    const eff = values.map((v, i) => { const cap = (members[i]!.caps || caps)[key]; return cap != null ? Math.min(v, cap) : v; });
     const top = Math.max(...eff), tie = eff.every((v) => v === eff[0]);
     totals.push({ key, label: propName(key), values, best: eff.map((v) => !tie && v === top) });
   }
@@ -223,8 +272,9 @@ export function runAutoLabel(prev: RunSettings | null, settings: RunSettings): {
   return { text: head[0]!.toUpperCase() + head.slice(1), diff };
 }
 // A run's badges: its change count, how many requirements its suit meets, and the five resists in
-// paperdoll values (item totals + the character's Resisting Spells bonus, clipped at each cap).
-export function runBadges(changes: number | null | undefined, totals: PropMap | null | undefined, floors: Record<string, number>, rsb: number, caps: Record<string, number>): Array<{ text: string; tone?: "ok" | "warn" | undefined }> {
+// paperdoll values (item totals + the character's Resisting Spells bonus, clipped at each cap). A resist whose cap
+// the run overrode says so: "Fire 90 · cap 95".
+export function runBadges(changes: number | null | undefined, totals: PropMap | null | undefined, floors: Record<string, number>, rsb: number, caps: Record<string, number>, shardCaps: Record<string, number> = caps): Array<{ text: string; tone?: "ok" | "warn" | undefined }> {
   const out: Array<{ text: string; tone?: "ok" | "warn" | undefined }> = [];
   if (changes != null) out.push({ text: plural(changes, "change") });
   if (!totals) return out;
@@ -234,6 +284,9 @@ export function runBadges(changes: number | null | undefined, totals: PropMap | 
     const met = floorKeys.filter((k) => pd(k, totals[k] || 0) >= floors[k]!).length;
     out.push({ text: `${met} of ${floorKeys.length} met`, tone: met === floorKeys.length ? "ok" : "warn" });
   }
-  for (const k of RESIST_KEYS) out.push({ text: `${labelOf(k)} ${Math.min(caps[k] ?? 70, pd(k, totals[k] || 0))}` });
+  for (const k of RESIST_KEYS) {
+    const cap = caps[k] ?? 70;
+    out.push({ text: `${labelOf(k)} ${Math.min(cap, pd(k, totals[k] || 0))}${cap !== (shardCaps[k] ?? cap) ? ` · cap ${cap}` : ""}` });
+  }
   return out;
 }

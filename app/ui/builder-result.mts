@@ -3,8 +3,8 @@
 // resist tiles and the other changes, the Plan, the Fetch list, the other suits, "<name> after the change",
 // Solver details), and the compare view for 2-3 suits or saved runs. The numbers come from
 // ui/builder-model.mts; the bridge actions are gated by ui/bridge.mts's bridgeActionReason().
-import { OPTIMIZER_SLOTS, RESIST_KEYS, getRules, resistSkillBonus, totalsOf, requirementReport, settingsDiff } from "../vault-lib.mts";
-import type { EffectiveProfile, Item, OptItem, PropMap } from "../vault-lib.mts";
+import { OPTIMIZER_SLOTS, RESIST_KEYS, getRules, resistSkillBonus, totalsOf, requirementReport, settingsDiff, resistCapsFor, profileResistCaps } from "../vault-lib.mts";
+import type { EffectiveProfile, Item, OptItem, PropMap, ResistCap } from "../vault-lib.mts";
 import { state } from "./store.mts";
 import type { BuildMeta } from "./store.mts";
 import { $, el, label, fmtN, fmtSecs, fmtRunTime, slotLabel, rarCell, showItemTip, hideItemTip, toast } from "./dom.mts";
@@ -14,7 +14,7 @@ import { bridgeActionReason, runBridgeAction, grabAll, grabbable } from "./bridg
 import { resolveItems } from "./items.mts";
 import { renderPanel } from "./builder.mts";
 import { splitSerial } from "./inventory.mts";
-import { afterChange, compareModel, hiddenRowsNote, locationCrumbs, otherChanges, plural, resistOutcome, toggleCompare, propName, type CompareMember } from "./builder-model.mts";
+import { afterChange, compareModel, hiddenRowsNote, locationCrumbs, otherChanges, plural, resistOutcome, toggleCompare, propName, capNote, capsLine, anyOverridden, type CompareMember } from "./builder-model.mts";
 import type { OptSuit, OptimizeResult, SavedRunLike } from "./api-types.mts";
 
 const RESIST_NAMES: Record<string, [string, string]> = { physResist: ["Physical", "--res-phys"], fireResist: ["Fire", "--res-fire"], coldResist: ["Cold", "--res-cold"], poisonResist: ["Poison", "--res-poison"], energyResist: ["Energy", "--res-energy"] };
@@ -33,22 +33,20 @@ function tipTarget<T extends HTMLElement>(node: T, serial: number): T {
   node.addEventListener("blur", () => hideItemTip());
   return node;
 }
-// A resist's cap for this character's race, in paperdoll terms.
-function raceCap(k: string, race: string | null | undefined): number {
-  const rules = getRules();
-  return (rules.raceCaps as Record<string, Record<string, number>> | undefined)?.[race as string]?.[k] ?? (rules.caps as Record<string, number>)[k] ?? 70;
-}
 // One resist tile: its name in its resist colour, the value (before → after when there is a before) against
-// the requirement or cap, a meter and the outcome line.
-function resistTile(k: string, after: number, floor: number | null, cap: number, before: number | null = null): HTMLElement {
+// the requirement or cap, a meter and the outcome line, and under it the cap's override when the build has one
+// ("Cap raised from 70"): the tile's numbers are then against the player's cap, not the shard's.
+function resistTile(k: string, after: number, floor: number | null, c: ResistCap, before: number | null = null): HTMLElement {
   const [name, colour] = RESIST_NAMES[k]!;
+  const cap = c.cap, note = capNote(c);
   const out = resistOutcome(after, floor, cap);
   const target = floor != null && before == null ? floor : cap;
   const value = before == null
     ? box("span", { class: "b-resist-val" }, txt(after, "t-xl"), txt(`/ ${target}`, "muted"))
     : box("span", { class: "b-resist-val" }, txt(before, "muted"), icon("arrow-right", { size: "sm" }), txt(after, "t-xl"), txt(`/ ${cap}`, "muted"));
   return box("div", { class: `resist tint tint-${colour.slice(6)}` }, el("span", { class: "t-sm resist-name", style: `color:var(${colour})` }, name), value,
-    meter(Math.min(after, target), target, { tone: out.tone === "warn" ? "warn" : "ok", label: `${name} ${after} of ${target}` }), txt(out.text, `t-sm tone-${out.tone}`));
+    meter(Math.min(after, target), target, { tone: out.tone === "warn" ? "warn" : "ok", label: `${name} ${after} of ${target}` }), txt(out.text, `t-sm tone-${out.tone}`),
+    note ? txt(`Cap ${note}`, "t-sm strong b-cap-note") : null);
 }
 
 // ---------------------------------------------------------------- empty state: the current suit
@@ -67,7 +65,8 @@ function currentSuitCard(name: string): HTMLElement {
   const p = state.builder.profile;
   const rsb = resistSkillBonus(state.inv!.characters[name]?.skills);
   const totals = totalsOf(Object.fromEntries(worn.map((i) => [String(i.serial), i as unknown as OptItem])));
-  const tiles = RESIST_KEYS.map((k) => resistTile(k, (totals[k] || 0) + rsb, p?.floors?.[k] ?? null, raceCap(k, p?.race)));
+  const caps = resistCapsFor(p?.race, p?.resistCaps);
+  const tiles = RESIST_KEYS.map((k) => resistTile(k, (totals[k] || 0) + rsb, p?.floors?.[k] ?? null, caps[k]!));
   const order = (it: Item): number => { const i = OPTIMIZER_SLOTS.indexOf(it.slot || ""); return i < 0 ? 99 : i; };
   const sorted = [...worn].sort((a, b) => order(a) - order(b));
   const rows = sorted.map((it) => ({ cells: [slotLabel(it.slot), txt(it.name), rarCell(it), txt(keyProps(it.props) || "no properties", keyProps(it.props) ? "muted" : "faint")] }));
@@ -117,7 +116,7 @@ export async function renderResult(res: OptimizeResult, current: OptSuit, prof: 
     planCard(current, suit, name, changes, resolved),
     fetchCard(fetchItems, name),
     res.altTolerance != null ? otherSuitsCard(res, view) : null,
-    afterCard(name, current, suit),
+    afterCard(name, current, suit, prof),
     detailsCard(res, meta, view),
   ].filter((x): x is HTMLElement => !!x);
   const out = $<HTMLElement>("#b-result")!;
@@ -146,7 +145,8 @@ function headlineCard(res: OptimizeResult, current: OptSuit, suit: OptSuit, prof
   const gate = todo.length ? bridgeActionReason("grab", todo[0]!) : null;
   const grab = button({ label: todo.length ? `Grab all ${todo.length}` : "Grab all", icon: "grab", variant: "primary", disabled: !!gate || !todo.length, onClick: () => grabAll(fetchItems, name), attrs: { id: "b-grab-all" } });
   const grabCtl = gate || !todo.length ? tipWrap(grab, gate || `Nothing to grab: every piece is already with ${name} or worn.`) : grab;
-  const tiles = RESIST_KEYS.map((k) => resistTile(k, (after[k] || 0) + rsb, prof.floors[k] != null ? prof.floors[k]! + rsb : null, (prof.caps[k] ?? 70) + rsb, (before[k] || 0) + rsb));
+  const caps = profileResistCaps(prof);
+  const tiles = RESIST_KEYS.map((k) => resistTile(k, (after[k] || 0) + rsb, prof.floors[k] != null ? prof.floors[k]! + rsb : null, caps[k]!, (before[k] || 0) + rsb));
   const other = otherChanges([...Object.keys(prof.floors), ...Object.keys(prof.weights)], before, after, prof.caps, prof.floors);
   const unreachable = (res.unreachableFloors || []).length ? message({ tone: "warn", text: `No suit in the pool can reach these requirements: ${res.unreachableFloors!.map((k) => propName(k)).join(", ")}.` }) : null;
   return box("section", { class: "card b-head-card", "aria-label": view == null ? "Best suit" : `Suit ${view + 2}` },
@@ -280,7 +280,7 @@ function otherSuitsCard(res: OptimizeResult, view: number | null): HTMLElement {
 }
 
 // ---- 5. <name> after the change: only the values that move
-function afterCard(name: string, current: OptSuit, suit: OptSuit): HTMLElement {
+function afterCard(name: string, current: OptSuit, suit: OptSuit, prof: EffectiveProfile): HTMLElement {
   const c = state.inv!.characters[name];
   const rows = afterChange((c?.stats || {}) as Record<string, unknown>, (c?.maxes || {}) as Record<string, unknown>, totalsOf(current), totalsOf(suit));
   const tiles = rows.map((r) => box("div", { class: "b-stat" }, txt(r.label, "t-sm muted"),
@@ -293,7 +293,7 @@ function afterCard(name: string, current: OptSuit, suit: OptSuit): HTMLElement {
     box("div", { class: "card-head" }, el("h2", {}, `${name} after the change`), txt("Only values that move", "t-sm muted"), el("span", { class: "spacer" }), full),
     box("div", { class: "b-after" }, ...tiles),
     el("p", { class: "t-sm muted b-after-note" }, txt("Hits, Stamina and Mana after are estimates: current max plus the change in STR/2, DEX, INT and the +HP/+Stam/+Mana properties.")),
-    sheetOpen ? el("div", { class: "b-sheet-wrap" }, sheetNode(name, current, suit)) : null);
+    sheetOpen ? el("div", { class: "b-sheet-wrap" }, sheetNode(name, current, suit, { resistCaps: profileResistCaps(prof) })) : null);
 }
 
 // ---- 6. solver details: collapsed; the score lives here, not in the headline
@@ -373,9 +373,10 @@ function paperdoll(totals: PropMap, rsb: number): PropMap {
   for (const k of RESIST_KEYS) t[k] = (t[k] || 0) + rsb;
   return t;
 }
-function paperdollCaps(race: string | null | undefined): Record<string, number> {
+// The shard's caps with the build's resist caps (overrides included) in place of its resist ones.
+function paperdollCaps(resists: Record<string, ResistCap>): Record<string, number> {
   const caps = { ...(getRules().caps as Record<string, number>) };
-  for (const k of RESIST_KEYS) caps[k] = raceCap(k, race);
+  for (const k of RESIST_KEYS) caps[k] = resists[k]!.cap;
   return caps;
 }
 function compareKeys(cols: Array<{ totals: PropMap }>, prof: { floors?: Record<string, number>; weights?: Record<string, number> }): string[] {
@@ -402,7 +403,10 @@ function openSuitCompare(indices: number[]): void {
       return { assignment: s.best, totals: paperdoll(totalsOf(s.best), prof.resistBonus || 0), head, token: i === 0 ? "Best" : `#${i + 1} · ${Math.abs(d) < 1e-6 ? "ties" : `${d < 0 ? "−" : "+"}${fmtN(Math.abs(Math.round(d)))}`}`,
         removeLabel: i === 0 ? "Remove Best from comparison" : `Remove suit ${i + 1} from comparison`, outcome: [i === 0 ? "—" : Math.abs(d) < 1e-6 ? "0" : `${d < 0 ? "−" : "+"}${fmtN(Math.abs(Math.round(d)))}`], action };
     });
-    return { title: "Compare suits", noun: "suits", columns, outcomeRows: ["Points vs best"], keys: compareKeys(columns, prof), caps: paperdollCaps(state.builder.profile?.race),
+    // Every suit of one result was built with the same caps; an override is named on each column's outcome.
+    const resists = profileResistCaps(prof), capped = anyOverridden(resists);
+    if (capped) for (const c of columns) c.outcome.push(capsLine(resists));
+    return { title: "Compare suits", noun: "suits", columns, outcomeRows: ["Points vs best", ...(capped ? ["Resist caps"] : [])], keys: compareKeys(columns, prof), caps: paperdollCaps(resists),
       onRemove: (i) => { idx = idx.filter((_, j) => j !== i); picked = new Set(idx.map(String)); if (idx.length < 2) { closeCompare(); rerender(); } else showCompare(openSpec!); } };
   });
   void name;
@@ -413,20 +417,24 @@ export function openRunCompare(runs: SavedRunLike[], titleOf: (r: SavedRunLike) 
   const name = state.builder.character || "";
   const rsb = resistSkillBonus(state.inv!.characters[name]?.skills);
   showCompare(() => {
-    const columns: CompareColumn[] = list.map((r) => {
+    // Each run is judged by the resist caps it was built with (its best values, and a "Resist caps" outcome row
+    // when any of them overrode one).
+    const views = list.map((r) => resistCapsFor(r.settings.race, r.settings.resistCaps));
+    const capped = views.some(anyOverridden);
+    const columns: CompareColumn[] = list.map((r, i) => {
       const floors = r.settings.floors || {};
       const totals = paperdoll(totalsOf(r.result.best), rsb);
       const met = Object.keys(floors).filter((k) => (totals[k] || 0) >= floors[k]!).length;
       const v = verdict(r.result);
       const head = box("span", { class: "b-cmp-col" }, box("span", { class: "b-row" }, txt(titleOf(r), "strong"), badge(v.text, v.tone === "bad" ? "bad" : v.tone)), txt(`${fmtRunTime(r.createdAt)} · ${fmtSecs(r.ms || 0)}`, "t-sm"));
       const action = r.id === state.builder.openRun ? txt("Showing in the result", "t-sm muted") : button({ label: "Open this run", size: "sm", onClick: () => { closeCompare(); open(r.id); } });
-      return { assignment: r.result.best, totals, head, token: r.label || fmtRunTime(r.createdAt), removeLabel: `Remove the run from ${fmtRunTime(r.createdAt)} from comparison`,
-        outcome: [plural((r.result.perSlotChanges || []).length, "change"), Object.keys(floors).length ? `${met} of ${Object.keys(floors).length}` : "none set", v.text], action };
+      return { assignment: r.result.best, totals, caps: paperdollCaps(views[i]!), head, token: r.label || fmtRunTime(r.createdAt), removeLabel: `Remove the run from ${fmtRunTime(r.createdAt)} from comparison`,
+        outcome: [plural((r.result.perSlotChanges || []).length, "change"), Object.keys(floors).length ? `${met} of ${Object.keys(floors).length}` : "none set", v.text, ...(capped ? [capsLine(views[i]!)] : [])], action };
     });
     const first = list[0]!;
     const settingsRow = list.map((r, i) => (i === 0 ? "—" : settingsDiff(first.settings, r.settings).join(" · ") || "same settings"));
     const keys = compareKeys(columns, { floors: Object.assign({}, ...list.map((r) => r.settings.floors || {})), weights: Object.assign({}, ...list.map((r) => r.settings.weights || {})) });
-    return { title: "Compare runs", noun: "runs", columns, outcomeRows: ["Changes", "Requirements met", "Verdict"], settingsRow, keys, caps: paperdollCaps(state.builder.profile?.race),
+    return { title: "Compare runs", noun: "runs", columns, outcomeRows: ["Changes", "Requirements met", "Verdict", ...(capped ? ["Resist caps"] : [])], settingsRow, keys, caps: paperdollCaps(views[0]!),
       onRemove: (i) => { const gone = list[i]!; list = list.filter((_, j) => j !== i); onRemove(gone.id); if (list.length < 2) closeCompare(); else showCompare(openSpec!); } };
   });
 }

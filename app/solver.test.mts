@@ -283,6 +283,37 @@ test("[fast] a negative weight on a capped property: HiGHS proves the brute-forc
   assert.ok(Math.abs(r.score - oracle) < 1e-6, `HiGHS ${r.score} vs brute force ${oracle}`);
 });
 
+// Resist cap overrides (issue #44): a player building a suit for Reaper Form (−25 Fire) raises the Fire cap to
+// 95, and both solvers must then value Fire past the shard's 70. Two Fire pieces make 95 Fire; one Fire piece and
+// an HCI piece make 50 Fire + 30 HCI. At the shard's 70 the second Fire piece is worth only 20, so the HCI suit
+// wins with Fire 50; at 95 it is worth 45 and the two Fire pieces win with Fire 95.
+test("[fast] a raised Fire cap: both solvers take Fire past 70 when the cap is 95, and not at the shard's cap", async (t) => {
+  const pools = {
+    helmet: [{ serial: 90501, name: "Fire Helm", slot: "helmet", props: { fireResist: 50 } }],
+    chest: [{ serial: 90502, name: "Fire Tunic", slot: "chest", props: { fireResist: 45 } }, { serial: 90503, name: "Keen Tunic", slot: "chest", props: { hci: 30 } }],
+  };
+  const slots = ["helmet", "chest"], optionalSlots = ["helmet", "chest"];
+  const opts = { exact: true, timeBudgetMs: 5000, restarts: 5, seed: 1, slots, optionalSlots };
+  for (const [resistCaps, fire, chest] of [[undefined, 50, 90503], [{ fireResist: 95 }, 95, 90502]] as const) {
+    const profile = effectiveProfile({ weights: { fireResist: 1, hci: 1 }, resistCaps }, null) as OptProfile;
+    const { r, ref } = await runBoth(t, { pools: pools as unknown as OptPools, current: {}, profile }, opts);
+    assert.equal(r.proven && ref.proven, true);
+    const fireOf = (a: OptAssignment): number => Object.values(a).reduce((n, it) => n + (it?.props.fireResist || 0), 0);
+    assert.equal(fireOf(r.best), fire, `HiGHS: Fire ${fire} with caps ${JSON.stringify(resistCaps)}`);
+    assert.equal(fireOf(ref.best), fire, `core: Fire ${fire} with caps ${JSON.stringify(resistCaps)}`);
+    assert.equal(r.best.chest?.serial, chest);
+    assert.equal(r.score, bruteMax({ helmet: [null, ...pools.helmet], chest: [null, ...pools.chest] }, profile), "and it is the brute-force best");
+  }
+});
+
+// The equivalence on the real fixture, with overrides: every default template with Fire raised to 95 and Cold
+// lowered to 60 proves through HiGHS to the core's own optimum.
+test("[fast] resist cap overrides: HiGHS equals the core's proven optimum on each default template", async (t) => {
+  for (const name of templateNames) {
+    await t.test(name, async (t2) => { await runBoth(t2, cell(name, { overrides: { resistCaps: { fireResist: 95, coldResist: 60 } } }), BASE_OPTS); });
+  }
+});
+
 // Review M1: opts.slots narrowed the heuristic but not the MIP, which modelled every default slot —
 // here the neck, which the core then refused to score, so the job failed on "re-score mismatch".
 test("[fast] opts.slots narrows the MIP like the heuristic", async () => {
