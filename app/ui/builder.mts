@@ -10,7 +10,7 @@ import { state, invStamp } from "./store.mts";
 import type { BuilderProfile, BuilderJob, BuilderJobUi, FinishedBuild, BuildMeta } from "./store.mts";
 import { $, el, label, full, fmtN, fmtSecs, slotLabel, toast } from "./dom.mts";
 import { promptText } from "./dialog.mts";
-import { box, txt, button, icon, kbd, badge, message, select, input, field, switchControl, check, segmented, filterChip, pill, popover, closePopover, menu, searchInput, stepper, progress, tooltip, confirmDialog } from "./components.mts";
+import { box, txt, button, icon, kbd, badge, message, select, input, field, switchControl, check, segmented, filterChip, pill, popover, closePopover, menu, searchInput, stepper, progress, tooltip, confirmDialog, modalOpen } from "./components.mts";
 import { api, CLIENT_ID } from "./api.mts";
 import { optimizeErrorMessage } from "./messages.mts";
 import { parseRoute, routeFor } from "./app.mts";
@@ -38,9 +38,16 @@ export function initBuilder(): void {
   $<HTMLButtonElement>("#b-run")!.onclick = runBuild;
   $<HTMLButtonElement>("#b-save")!.onclick = saveProfile;
   $<HTMLButtonElement>("#b-runs-open")!.onclick = openRunsDrawer;
-  // ⌘↵ (Ctrl+Enter off the Mac) builds from anywhere on the screen.
-  $<HTMLElement>("#tab-builder")!.addEventListener("keydown", (e) => {
-    if ((e.metaKey || e.ctrlKey) && e.key === "Enter" && !state.builder.job) { e.preventDefault(); runBuild(); }
+  // ⌘↵ (Ctrl+Enter off the Mac) builds from anywhere on the screen. Listened for on the document, not the
+  // screen: after a click on blank space focus is on <body>, outside #tab-builder, so a listener there never
+  // heard the key. It does what pressing Build would, and nothing while the button is disabled (no character,
+  // a build running), not showing (another screen, the compare view) or behind a drawer or dialog.
+  document.addEventListener("keydown", (e) => {
+    if (!(e.metaKey || e.ctrlKey) || e.altKey || e.shiftKey || e.key !== "Enter") return;
+    const run = $<HTMLButtonElement>("#b-run")!;
+    if (run.disabled || state.builder.job || !run.getClientRects().length || run.closest("[inert]") || modalOpen()) return;
+    e.preventDefault();
+    runBuild();
   });
   const toggle = $<HTMLButtonElement>("#b-panel-toggle")!;
   toggle.onclick = () => {
