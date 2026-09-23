@@ -101,7 +101,7 @@ import { parsePastedScan, writeScanToInbox } from "./import.mts";
 import { writeFileAtomic } from "./atomic-write.mts";
 import {
   listAdapters, candidateClientRoots, validateScriptsDir, installedVersion, installScripts,
-  importScans, repoFromPackage, checkForUpdates, checkScriptsDataDir, type DataDirCheck,
+  importScans, repoFromPackage, checkForUpdates, checkScriptsDataDir, type DataDirCheck, type AdapterInfo,
 } from "./installer.mts";
 import { dataDirNotice } from "./ui/messages.mts";
 import { homedir } from "node:os";
@@ -394,8 +394,23 @@ export interface JobTimings {
   runGraceMs?: number | undefined;
 }
 
+// Where the server looks for the player's game client: `home` (the scripts' ~ and ~/.pack-rat default)
+// and the auto-detected scripts folders per adapter (GET /api/setup's `candidates`, and the data-folder
+// check's fallback when no client is configured). The default is this machine's real home and
+// installer.mts's candidateClientRoots — which, on win32, also probes a fixed C:\TazUO — so a test
+// passes its own to never reach a real client folder on any OS.
+export interface ClientSearch {
+  home: string;
+  candidates: (adapter: AdapterInfo) => string[];
+}
+export function defaultClientSearch(): ClientSearch {
+  const home = homedir();
+  return { home, candidates: (a) => candidateClientRoots({ adapter: a.id, home, platform: process.platform, env: process.env, adapterPlatform: a.platform }) };
+}
+
 export interface StartServerOptions {
   host?: HostBridge | undefined;
+  clientSearch?: ClientSearch | undefined;
   watcherOptions?: Partial<StartWatcherOptions> | undefined;
   jobTimings?: JobTimings | undefined;
 }
@@ -424,7 +439,7 @@ export interface ServerHandle {
 // the same lever for the route-level equivalent instead of relying on a wide timeout margin to absorb
 // real wall-clock retry delay plus whatever scheduling/fs-watch jitter a loaded machine adds on top.
 // `jobTimings` (JobTimings above) shortens the job clocks for a test in the same way.
-export async function startServer(config: Config = ensureLayout(resolveConfig()), { host, watcherOptions = {}, jobTimings = {} }: StartServerOptions = {}): Promise<ServerHandle> {
+export async function startServer(config: Config = ensureLayout(resolveConfig()), { host, clientSearch = defaultClientSearch(), watcherOptions = {}, jobTimings = {} }: StartServerOptions = {}): Promise<ServerHandle> {
   const CONFIG = config;
   const SCANS = CONFIG.paths.scans, PROFILES = CONFIG.paths.profiles, DEFAULT_PROFILES = CONFIG.paths.defaultProfiles;
   const RUNS = CONFIG.paths.runs, SETTINGS = CONFIG.paths.settings, USER_RULES_DIR = CONFIG.paths.rules;
@@ -569,7 +584,8 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
   // fixtures don't come from any client. The sentence is the page's own (ui/messages.mts).
   function dataDirCheck(): DataDirCheck {
     if (CONFIG.demo) return { status: "none" };
-    return checkScriptsDataDir({ dataDir: CONFIG.dataDir, client: currentSettings.client, adapters: listAdapters(ADAPTERS_DIR), home: homedir(), platform: process.platform, env: process.env });
+    const candidates = currentSettings.client ? [] : listAdapters(ADAPTERS_DIR).flatMap((a) => clientSearch.candidates(a));
+    return checkScriptsDataDir({ dataDir: CONFIG.dataDir, client: currentSettings.client, candidates, home: clientSearch.home, platform: process.platform });
   }
   const dataDirWarning = dataDirNotice(dataDirCheck());
   if (dataDirWarning) console.warn(dataDirWarning);
@@ -1069,7 +1085,7 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
         const adapters = listAdapters(ADAPTERS_DIR);
         const candidates: Record<string, string[]> = {}, available: Record<string, string | null> = {};
         for (const a of adapters) {
-          candidates[a.id] = candidateClientRoots({ adapter: a.id, home: homedir(), platform: process.platform, env: process.env, adapterPlatform: a.platform });
+          candidates[a.id] = clientSearch.candidates(a);
           available[a.id] = installedVersion(join(ADAPTERS_DIR, a.id), a.id).version;
         }
         // installedVersion() runs against whatever path settings.json names, on every wizard/Settings
