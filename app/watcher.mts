@@ -46,6 +46,7 @@ import {
 } from "node:fs";
 import { basename, join } from "node:path";
 import { upgradeScan, validateScan, type UnvalidatedScan } from "./scan-schema.mts";
+import { jsonErrorReason } from "./paste-scan.mts";
 import { writeFileAtomic } from "./atomic-write.mts";
 import { DATA_DIR_MODE, DATA_FILE_MODE } from "./config.mts";
 import type { ScanV2 } from "./schema/types.d.mts";
@@ -77,19 +78,9 @@ function dirIdentity(path: string): string | null {
   try { const st = statSync(path, { bigint: true }); return `${st.dev}:${st.ino}:${st.birthtimeNs}`; } catch { return null; }
 }
 
-// V8's JSON parse error embeds a short excerpt of the bytes it was handed ("Unexpected token 'o',
-// \"not json\" is not valid JSON"), and this string is written to rejected/<name>.reason.txt and
-// pushed to the page over SSE — a file-content-into-a-displayed-string channel, which matters most
-// for exactly the inbox entries we should not have read in the first place. Keep the shape of the
-// failure, never the bytes (Phase 7 security review, Area 2, Note 1).
-// Exported for app/import.mts: a pasted scan reaches the page the same way (POST /api/import/paste's
-// own `error`), so the two answer a bad document with one rule rather than two.
-export function jsonErrorReason(e: unknown): string {
-  const msg = errMessage(e);
-  if (/unexpected end of json input/i.test(msg)) return "invalid JSON: unexpected end of input (the file looks truncated)";
-  const at = /position (\d+)/i.exec(msg);
-  return at ? `invalid JSON: syntax error at position ${at[1]}` : "invalid JSON: syntax error";
-}
+// Keep the shape of a JSON parse failure, never the bytes: the rule lives in app/paste-scan.mts (shared
+// with the pasted-scan path and the page) and is re-exported here for app/vault-server.mts.
+export { jsonErrorReason };
 
 function stampFor(scannedAt: unknown): string {
   const m = SCANNED_AT_RE.exec(String(scannedAt));

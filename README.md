@@ -204,7 +204,7 @@ The rest of this page is for people working on Pack Rat itself.
 
 **Adapters and contracts.** Each client's scripts live in `adapters/<id>/`, and each adapter's README has a player section followed by its own "For developers" section (contract, what the bridge refuses, data-directory resolution, limits, what is still unverified): [TazUO](adapters/tazuo/README.md), [Razor Enhanced](adapters/razor-enhanced/README.md), [ClassicUO web client](adapters/classicuo-web/README.md). The contracts themselves are in `docs/`: [writing an adapter](docs/adapter-guide.md), [the scan file format](docs/scan-schema.md), [the bridge protocol](docs/bridge-protocol.md), [shard rules](docs/shard-rules.md), and [the threat model](docs/threat-model.md).
 
-**The setup wizard, in detail.** For TazUO it proposes candidate folders it finds automatically; Razor Enhanced has no single well-known install location, so its folder is always picked by hand; the ClassicUO web client (paste transport) has no folder to locate at all and sends the player to the Import tab instead. Install and Reinstall refuse while `<dataDir>/bridge/<adapter>/status.json` says a script is still alive in the client. `docs/architecture.md` has the full install path.
+**The setup wizard, in detail.** For TazUO it proposes candidate folders it finds automatically; Razor Enhanced has no single well-known install location, so its folder is always picked by hand; the ClassicUO web client (paste transport) has no folder to locate at all and sends the player to the Import drawer instead. Install and Reinstall refuse while `<dataDir>/bridge/<adapter>/status.json` says a script is still alive in the client. `docs/architecture.md` has the full install path.
 
 ## License
 

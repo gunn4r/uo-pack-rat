@@ -63,10 +63,10 @@ test("[slow] the packaged UI renders, switches tabs and lists the demo inventory
 
     // A fresh --data dir has no settings.json, so /api/setup reports firstRun and app.mts's load()
     // opens the first-run wizard (a <dialog>) on top of everything — real behavior for a new user,
-    // not a test artifact, so it's dismissed the way a user would (ui/wizard.mts's Skip button)
+    // not a test artifact, so it's dismissed the way a user would (ui/wizard.mts's Set up later button)
     // rather than worked around.
     await page.waitForSelector("#wizard[open]", { timeout: 10_000 });
-    await page.locator("#wizard").getByRole("button", { name: "Skip" }).click();
+    await page.locator("#wizard").getByRole("button", { name: "Set up later" }).click();
     await page.waitForSelector("#wizard", { state: "hidden", timeout: 10_000 });
 
     // Switching tabs is the one interaction every session starts with.

@@ -148,6 +148,7 @@ export interface SetupApiResponse {
   platform: string;
   bridgeAdapter: string | null;
   dataDirCheck: DataDirCheckInfo;
+  version?: string | undefined;   // package.json's version (Settings › Updates)
 }
 export interface LocateApiResponse {
   ok: boolean;
