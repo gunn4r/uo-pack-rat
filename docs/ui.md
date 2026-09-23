@@ -80,7 +80,7 @@ What exists:
 - **Bridge gating.** Row actions are always drawn and disabled with a reason (`bridge.mts`'s `bridgeActionReason`: worn, client can't, no position for Go to, bridge offline); `pollBridge` dispatches `bridgechange` on `document` when the bridge's state changes, and the table redraws its rows.
 - **Preferences.** The chosen columns (`cols`) and the row density (`density`: `dense` 32 px or `regular` 40 px) are ui-prefs fields.
 - **Item peek** (`ui/peek.mts`): a row click, Enter or Space opens the selected item in a panel docked beside the table (400 px, 360 below 1280, laid over the table below 1180); ↑/↓ from the table or the panel step through rows with the peek following, Esc closes it and focus goes back to the row. Its footer's Highlight, Grab and Go to are gated like the row actions.
-- **Item tooltip** (`dom.mts` `tipNode`, `installTooltip`, `showItemTip`): the one `#tip`, always dark, 280 px, shown 400 ms after the pointer settles on anything with `data-serial` (Inventory rows, Suit Builder pieces) or after a row has had keyboard focus for 400 ms; `pointer-events: none`.
+- **Item tooltip** (`dom.mts` `tipNode`, `installTooltip`, `showItemTip`): the one `#tip`, always dark, 280 px, shown 400 ms after the pointer settles on anything with `data-serial` (Inventory rows, the Suit Builder's current suit, Plan and Fetch list pieces) or after a row has had keyboard focus for 400 ms; `pointer-events: none`.
 - **Responsive.** Below 1180 px the unset facet chips fold into "+ Filter" and List | Grouped moves into the table settings popover, so the toolbar never wraps.
 
 ## The Britannia theme and adding a theme family

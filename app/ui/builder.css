@@ -127,3 +127,6 @@
   .b-resists, .b-stats { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 }
 .b-no-char { padding: var(--space-4); }   /* the panel with no character: why Build and Save are off */
+/* A worn or fetched piece that shows the item tooltip on hover and on keyboard focus; a table row takes the
+   focus ring as an inset outline (a box-shadow does not draw on a <tr>). */
+.pr tr.b-tip:focus-visible { box-shadow: none; outline: 2px solid var(--color-focus); outline-offset: -2px; }
