@@ -151,6 +151,7 @@ export interface SetupApiResponse {
   bridgeAdapter: string | null;
   dataDirCheck: DataDirCheckInfo;
   version?: string | undefined;   // package.json's version (Settings › Updates)
+  canOpenFolders?: boolean | undefined;   // the desktop shell can open a folder (POST /api/host/open-path)
 }
 export interface LocateApiResponse {
   ok: boolean;
