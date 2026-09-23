@@ -33,3 +33,6 @@ body { height: 100vh; overflow: hidden; }
 .screen { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; }
 .screen[hidden] { display: none; }
 .screen > .page { overflow: auto; width: 100%; max-width: var(--page-max); margin: 0 auto; }
+
+/* ---- builder: the busy dot on a nav item while a build runs */
+.nav-item .nav-busy { margin-left: auto; }

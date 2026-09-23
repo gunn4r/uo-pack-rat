@@ -96,3 +96,14 @@ export function initShell(): void {
     if ((e.metaKey || e.ctrlKey) && !e.altKey && !e.shiftKey && e.key.toLowerCase() === "i") { e.preventDefault(); location.hash = "#/import"; }
   });
 }
+
+// ---- builder
+// A busy dot on a nav item (the Suit Builder's, while a build runs), so work going on in a screen you left
+// stays visible from the others.
+export function setNavBusy(nav: string, busy: boolean, label = "Build running"): void {
+  const item = document.querySelector<HTMLElement>(`#sidebar [data-nav="${nav}"]`);
+  if (!item) return;
+  const dot = item.querySelector(".nav-busy");
+  if (busy && !dot) item.append(el("span", { class: "dot busy nav-busy", role: "img", "aria-label": label }));
+  if (!busy) dot?.remove();
+}

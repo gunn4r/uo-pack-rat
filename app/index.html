@@ -111,57 +111,25 @@
 
     <!-- ========================================================== Suit Builder (ui/builder.mts, ui/runs.mts, ui/builder.css) -->
     <main class="screen" id="tab-builder" aria-labelledby="h-builder" hidden>
-      <header class="topbar">
+      <header class="topbar" id="b-topbar">
         <h1 id="h-builder">Suit Builder</h1>
+        <label class="sr" for="b-char">Character</label>
+        <select id="b-char" class="select input-sm b-topbar-char"></select>
         <span class="spacer"></span>
         <button class="btn btn-sm" type="button" id="b-runs-open"><svg class="i i-sm" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"></circle><path d="M12 7v5l3 2"></path></svg><span>Saved runs</span><span class="badge" id="b-runs-count">0</span></button>
       </header>
-      <div class="page">
-        <div class="layout">
-          <aside class="stack">
-            <div class="panel stack">
-              <h3>Character</h3>
-              <select id="b-char"></select>
-              <div class="field" title="a template is a saved set of builder settings (floors, weights, locks, pool filters) with no character in it; the pill says whether this character's settings still match the one it was applied from">
-                <label>Template</label>
-                <div class="row"><select id="b-tpl"></select><span class="pill" id="b-tpl-state"></span></div>
-                <div class="tpl-actions"><button class="small" id="b-tpl-apply" title="copy the selected template into the sidebar (Save profile keeps it)">Apply</button><button class="small" id="b-tpl-saveas" title="store the sidebar's settings as a new template">Save as…</button><button class="small" id="b-tpl-update" title="overwrite the selected template with the sidebar's settings">Update</button><button class="small" id="b-tpl-delete" title="delete the selected template; characters made from it keep their settings">Delete</button></div>
-              </div>
-              <div class="field"><label>Race</label><select id="b-race" title="an Elf's Energy resist cap is 75"><option value="human">Human</option><option value="elf">Elf</option><option value="gargoyle">Gargoyle</option></select></div>
-            </div>
-            <div class="panel stack">
-              <h3>Requirements (floors)</h3>
-              <div class="small muted">Hard by default: the suit must reach these. Tick <em>soft</em> to make one a preference instead.</div>
-              <div class="small muted" id="b-resist-note"></div>
-              <div class="grid2" id="b-floors"></div>
-              <div class="row"><select id="b-addfloor"></select><button id="b-addfloor-btn">+ floor</button></div>
-            </div>
-            <div class="panel stack">
-              <h3>Weights</h3>
-              <div class="grid2" id="b-weights"></div>
-              <div class="row"><select id="b-addweight"></select><button id="b-addweight-btn">+ weight</button></div>
-            </div>
-            <div class="panel stack">
-              <h3>Locked slots</h3>
-              <div class="chips" id="b-locked"></div>
-            </div>
-            <div class="panel stack">
-              <h3>Candidate pool</h3>
-              <label class="row small"><input type="checkbox" id="b-others"> allow gear worn by other characters</label>
-              <label class="row small"><input type="checkbox" id="b-garg"> allow gargoyle-only gear (Gargish …)</label>
-              <label class="row small" title="only leather/hide/leaf/cloth armour, pieces with Mage Armor, and Spell Channeling weapons/shields"><input type="checkbox" id="b-med"> meditation-safe gear only</label>
-              <div class="field" title="only weapons of this skill in the hands (plus a shield, except for archery)"><label>Weapons</label><select id="b-weapon"><option value="">any</option></select></div>
-              <div class="field"><label>Exclude tags</label><div class="chips" id="b-extags"></div></div>
-              <div class="field" title="leave out every piece carrying a bonus to these skills (the Summoner must have zero Necromancy and Spirit Speak)"><label>Forbid skill bonuses</label><div class="chips" id="b-exskills"></div></div>
-              <div class="field"><label>Skip containers</label><div class="chips" id="b-exroots"></div></div>
-              <div class="row"><div class="field"><label>STR limit</label><input type="number" id="b-str"></div><div class="field"><label>Restarts</label><input type="number" id="b-restarts" value="200"></div></div>
-              <div class="row"><label class="row small"><input type="checkbox" id="b-exact" checked> exact search (prove the best)</label><div class="field"><label>Time budget (s)</label><input type="number" id="b-budget" value="300"></div></div>
-              <div class="row" title="Also list other suits whose score is within this many points of the best, so you can pick between near-equal options. 0 = only exact ties. Needs exact search."><div class="field"><label>Other suits</label><input type="number" id="b-altcount" value="5" min="0" max="20"></div><div class="field"><label>Within points</label><input type="number" id="b-alttol" value="0" min="0"></div></div>
-            </div>
-            <div class="row"><button class="primary" id="b-run">Build best suit</button><button id="b-save">Save profile</button></div>
-          </aside>
-          <div class="stack scrollcol"><div id="b-msg"></div><div class="stack" id="b-result"><div class="panel empty">Pick a character and press <strong>Build best suit</strong>.</div></div></div>
-        </div>
+      <header class="topbar" id="b-cmp-topbar" hidden></header>
+      <div class="page b-page">
+        <aside class="card b-panel" id="b-panel" aria-label="Build settings">
+          <button class="btn btn-ghost b-panel-toggle" type="button" id="b-panel-toggle" aria-expanded="true" aria-controls="b-panel-body"><span>Build settings</span><svg class="i i-sm" viewBox="0 0 24 24" aria-hidden="true"><path d="m6 15 6-6 6 6"></path></svg></button>
+          <div class="b-panel-scroll" id="b-panel-body"></div>
+          <footer class="overlay-foot b-panel-foot">
+            <button class="btn btn-primary btn-lg" type="button" id="b-run"><span>Build best suit</span><kbd class="kbd" aria-hidden="true">⌘↵</kbd></button>
+            <button class="btn btn-lg" type="button" id="b-save"><span>Save profile</span></button>
+          </footer>
+        </aside>
+        <div class="b-results" id="b-results"><div id="b-msg"></div><div id="b-result"></div></div>
+        <div class="b-compare-view" id="b-compare-view" hidden></div>
       </div>
     </main>
 
@@ -195,18 +163,22 @@
 <!-- Saved runs drawer (ui/runs.mts, ui/runs.css) -->
 <div class="drawer-root" id="runs-drawer" hidden inert>
   <div class="scrim" data-drawer-close></div>
-  <aside class="drawer" role="dialog" aria-modal="true" aria-labelledby="runs-drawer-title">
+  <aside class="drawer runs-drawer" role="dialog" aria-modal="true" aria-labelledby="runs-drawer-title">
     <header class="overlay-head">
       <span class="overlay-titles"><h2 id="runs-drawer-title">Saved runs</h2><span class="t-sm muted" id="b-runs-who"></span></span>
       <span class="spacer"></span>
-      <button class="btn btn-ghost btn-icon" type="button" id="b-runs-close" data-drawer-close aria-label="Close saved runs"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"></path></svg></button>
+      <button class="btn btn-ghost btn-icon" type="button" id="b-runs-close" data-drawer-close aria-label="Close saved runs (Esc)"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"></path></svg></button>
     </header>
-    <div class="drawer-body">
-      <label class="sr" for="b-runs-filter">Filter saved runs</label>
-      <input id="b-runs-filter" class="input" type="search" placeholder="Filter by name or change, e.g. DI floor">
-      <div class="row"><button id="b-compare" disabled>Compare selected</button><span class="small muted">tick two runs</span></div>
-      <div class="runs" id="b-runs"><div class="small muted">No runs yet for this character.</div></div>
+    <div class="runs-filter">
+      <div class="search"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"></circle><path d="m20 20-3.5-3.5"></path></svg><label class="sr" for="b-runs-filter">Filter runs</label><input id="b-runs-filter" class="input" type="search" placeholder="Filter by name or change, e.g. DI floor"></div>
     </div>
+    <div class="drawer-body runs-body"><ul class="runs" id="b-runs" aria-label="Runs"></ul></div>
+    <footer class="overlay-foot">
+      <span class="t-sm muted" id="b-runs-sel" aria-live="polite"></span>
+      <button class="btn btn-ghost btn-sm" type="button" id="b-runs-clear"><span>Clear</span></button>
+      <span class="spacer"></span>
+      <button class="btn btn-primary" type="button" id="b-runs-compare" disabled><span>Compare runs</span></button>
+    </footer>
   </aside>
 </div>
 

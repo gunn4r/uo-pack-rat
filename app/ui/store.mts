@@ -3,7 +3,7 @@
 import type { CharacterEntryRaw, ProfilesFile, Item, EffectiveProfile } from "../vault-lib.mts";
 import type { ItemQuery, Facets, ItemQueryGroups } from "../item-query.mts";
 import type { RulesV1 } from "../schema/types.d.mts";
-import type { InventoryData, SettingsData, ShardOption, SetupApiResponse, OptSuit, OptimizeResult, OptimizeProgress, RunSummaryLike } from "./api-types.mts";
+import type { InventoryData, SettingsData, ShardOption, SetupApiResponse, OptSuit, OptimizeResult, OptimizeProgress, RunSummaryLike, SavedRunLike } from "./api-types.mts";
 
 // The suit builder's own working copy of a character's settings: CharacterEntryRaw (vault-lib.mts)
 // minus `caps` (a legacy v1 field the page never reads or writes — see migrateProfiles; keeping it
@@ -60,6 +60,15 @@ export interface FinishedBuild {
   current: OptSuit;
   profile: EffectiveProfile;
   runId: string | null;
+  meta?: BuildMeta | undefined;   // what the result's Solver details disclosure reports
+}
+// How a result was found, for its Solver details: time, pool size, what the pool left out, and the saved
+// run it reused when the server answered from one.
+export interface BuildMeta {
+  ms: number;
+  poolSize: number | null;
+  skipped: Record<string, unknown> | undefined;
+  reused: SavedRunLike | null;
 }
 export interface BuilderState {
   character: string | null;
