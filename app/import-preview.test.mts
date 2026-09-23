@@ -10,7 +10,7 @@ import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { parsePastedScan, PASTE_BEGIN, PASTE_END } from "./paste-scan.mts";
-import { importActionLabel, listText, plural, scanPreview, sizeText } from "./ui/import-preview.mts";
+import { importActionLabel, listText, plural, scanPreview, sizeText, sendEach } from "./ui/import-preview.mts";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const KESTREL = readFileSync(join(HERE, "fixtures", "demo-Kestrel.json"), "utf8");
@@ -66,4 +66,23 @@ test("[fast] a broken paste reports the same error the server would", () => {
   assert.equal(cut.ok, false);
   assert.match(cut.error!, /^invalid JSON: /);
   assert.doesNotMatch(cut.error!, /Kestrel/, "the error keeps the shape of the failure, never the pasted bytes");
+});
+
+test("[fast] sendEach: after a failure, what landed is known by identity, so the rest are still to send", async () => {
+  // Ten scans of one character; the fifth is refused.
+  const files = Array.from({ length: 10 }, (_, i) => ({ name: `Dorran-${i}.json`, character: "Dorran" }));
+  const sent: string[] = [];
+  const { landed, error } = await sendEach(files, async (f) => {
+    sent.push(f.name);
+    if (f.name === "Dorran-4.json") throw new Error("the inbox is full");
+    return { character: f.character };
+  });
+  assert.deepEqual(sent, files.slice(0, 5).map((f) => f.name), "stops at the first refusal");
+  assert.equal((error as Error).message, "the inbox is full");
+  assert.deepEqual(landed.map((l) => l.item), files.slice(0, 4));
+  const done = new Set(landed.map((l) => l.item));
+  assert.deepEqual(files.filter((f) => !done.has(f)).map((f) => f.name), files.slice(4).map((f) => f.name), "the failed one and the six never sent stay");
+  const all = await sendEach(files, async (f) => f.character);
+  assert.equal(all.error, null);
+  assert.equal(all.landed.length, 10);
 });

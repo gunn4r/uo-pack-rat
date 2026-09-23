@@ -68,3 +68,14 @@ export function importActionLabel(previews: Array<Pick<ScanPreview, "character" 
   const total = previews.reduce((n, p) => n + p.total, 0);
   return `Import ${plural(previews.length, "scan")} · ${plural(total, "stack")}`;
 }
+
+// Sends each item in order until one fails, and says which landed — by identity, never by what they hold: ten
+// scans of one character where the fifth fails landed four, and the other six are still to send.
+export async function sendEach<T, R>(items: readonly T[], send: (item: T) => Promise<R>): Promise<{ landed: Array<{ item: T; result: R }>; error: unknown }> {
+  const landed: Array<{ item: T; result: R }> = [];
+  for (const item of items) {
+    try { landed.push({ item, result: await send(item) }); }
+    catch (error) { return { landed, error }; }
+  }
+  return { landed, error: null };
+}
