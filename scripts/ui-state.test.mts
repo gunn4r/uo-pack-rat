@@ -108,7 +108,7 @@ test("[slow] refresh, Clear all, the virtual table and Forget keep the page's st
     await page.getByRole("switch", { name: "Hide gargoyle-only gear" }).click();
     await page.keyboard.press("Escape");
     await page.fill("#f-text", "bracelet");
-    await waitCount(page, /^\d+ of 160 stacks/);
+    await page.waitForFunction(() => /Search: bracelet/.test(document.querySelector("#inv-active")?.textContent || ""), undefined, { timeout: 10_000 });
     assert.match(await page.locator("#inv-active").innerText(), /No gargoyle-only/);
     await page.click("#f-clear");
     await waitCount(page, /^160 stacks · /);
