@@ -22,6 +22,9 @@ import type { HostRequestMessage, HostResultMessage, ListeningMessage, ServerErr
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const SERVER_ENTRY = join(HERE, "server-entry.mts");
+// The window's own icon (Linux, and the Windows taskbar in a dev run; macOS uses the bundle's .icns).
+// It lives under app/assets/ because build/, where the installers' master icon is, does not ship.
+const WINDOW_ICON = join(HERE, "..", "app", "assets", "icon.png");
 
 function flag(argv: string[], name: string): string | null {
   const i = argv.indexOf(name);
@@ -135,6 +138,7 @@ if (!app.requestSingleInstanceLock()) {
     const w = new BrowserWindow({
       width: 1280,
       height: 860,
+      icon: WINDOW_ICON,
       show: false,
       // spellcheck: Electron's builtin spellchecker is on by default and, on Windows and Linux,
       // downloads a Hunspell dictionary from Chromium's CDN the first time any text field is focused
