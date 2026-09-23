@@ -21,9 +21,9 @@ import { propName, weightsSummary, requirementsSummary, poolSummary, advancedSum
 import type { OptimizeResult, OptimizeProgress, SavedRunLike, OptimizeStartApiResponse, OptimizeCancelApiResponse, JobSnapshotEvent, JobDoneEvent, JobFailedEvent, JobCancelledEvent } from "./api-types.mts";
 
 // ---------------------------------------------------------------- panel state
-// The Advanced fields as typed (strings, so a bad value can sit in its field with its error until fixed) and
-// which sections are open. STR limit lives on the profile too (it is saved with it); the others are search
-// options a profile never carried.
+// The solver knobs as typed (strings, so a bad value can sit in its field with its error until fixed): STR
+// limit, beside Race, and the Advanced fields. STR limit lives on the profile too (it is saved with it); the
+// others are search options a profile never carried. And which sections are open.
 export const knobs: Knobs = { strLimit: "", restarts: "200", exact: true, budgetS: "300", altCount: "5", altTol: "0" };
 const open: Record<string, boolean> = { req: true, weights: false, pool: true, adv: false };
 // A requirement or weight row's property name: up to two lines, the full name in its title.
@@ -168,9 +168,13 @@ function templateSection(): HTMLElement {
   const race = segmented({ label: "Race", options: [{ value: "human", label: "Human" }, { value: "elf", label: "Elf" }, { value: "gargoyle", label: "Gargoyle" }], value: p.race || "human",
     onChange: (v) => { p.race = v; redraw("req"); } });
   race.id = "b-race";
+  // STR limit sits beside Race, always in view: like race it is the character's, saved with the profile,
+  // and it decides which pieces are candidates at all (the rest of Advanced only tunes the search).
+  const str = knobField("strLimit", "STR limit");
+  str.classList.add("b-str");
   return box("section", { class: "b-sec b-sec-top", "aria-label": "Template" },
     box("div", { class: "field" }, el("label", { class: "label", for: "b-tpl" }, "Template"), box("div", { class: "b-tpl-row" }, tpl, el("span", { id: "b-tpl-state", class: "badge" }), menuBtn)),
-    box("div", { class: "field" }, el("span", { class: "label", id: "b-race-l" }, "Race"), race));
+    box("div", { class: "b-race-row" }, box("div", { class: "field" }, el("span", { class: "label", id: "b-race-l" }, "Race"), race), str));
 }
 // A template is a saved set of builder settings with no character in it; the badge says whether the panel
 // still matches the one it was applied from.
@@ -414,19 +418,21 @@ function listChip(id: string, title: string, get: () => string[], set: (v: strin
 }
 
 // ---- Advanced: the solver knobs
+// A knob's number field, typed into knobs[f] with its error shown in place (STR limit's beside Race, the
+// others under Advanced).
+function knobField(f: KnobField, text: string): HTMLDivElement {
+  const i = input({ type: "number", value: knobs[f], size: f === "strLimit" ? "sm" : undefined, attrs: { id: KNOB_IDS[f] } });   // STR limit's matches Race's height
+  if (!knobs.exact && (f === "budgetS" || f === "altCount" || f === "altTol")) i.disabled = true;
+  const err = knobError(f, knobs[f]);
+  const fl = field({ label: text, control: i, error: err && !i.disabled ? err : undefined });
+  i.addEventListener("input", () => { knobs[f] = i.value; setFieldError(i, knobError(f, i.value)); if (f === "strLimit") updateTemplateBadge(); });
+  return fl;
+}
 function advancedSection(): HTMLElement {
   return section("adv", "Advanced", { inline: true, summary: () => advancedSummary(knobs), body: () => {
-    const num = (f: KnobField, text: string): HTMLDivElement => {
-      const i = input({ type: "number", value: knobs[f], attrs: { id: KNOB_IDS[f] } });
-      if (!knobs.exact && (f === "budgetS" || f === "altCount" || f === "altTol")) i.disabled = true;
-      const err = knobError(f, knobs[f]);
-      const fl = field({ label: text, control: i, error: err && !i.disabled ? err : undefined });
-      i.addEventListener("input", () => { knobs[f] = i.value; setFieldError(i, knobError(f, i.value)); if (f === "strLimit") updateTemplateBadge(); });
-      return fl;
-    };
     const exact = switchControl({ label: "Exact search (prove the best)", checked: knobs.exact, attrs: { id: "b-exact" }, onChange: (v) => { knobs.exact = v; redraw("adv"); document.getElementById("b-exact")?.focus(); } });
     return [box("div", { class: "b-adv" }, box("div", { class: "b-adv-wide" }, exact.root),
-      num("strLimit", "STR limit"), num("restarts", "Restarts"), num("budgetS", "Time budget (s)"), num("altCount", "Other suits"), num("altTol", "Within points"),
+      knobField("restarts", "Restarts"), knobField("budgetS", "Time budget (s)"), knobField("altCount", "Other suits"), knobField("altTol", "Within points"),
       el("p", { class: "help b-adv-wide" }, txt(knobs.exact ? "Other suits lists the next best suits scoring within that many points of the best." : "Time budget and other suits need exact search.")))];
   } });
 }
@@ -442,7 +448,7 @@ function setFieldError(control: HTMLInputElement, err: string | null): void {
 }
 // Build with a bad field: open Advanced if the field is in it, show the error and put focus there.
 function focusKnob(f: KnobField, err: string): void {
-  if (!open.adv) { open.adv = true; redraw("adv"); }
+  if (f !== "strLimit" && !open.adv) { open.adv = true; redraw("adv"); }
   const i = document.getElementById(KNOB_IDS[f]) as HTMLInputElement | null;
   if (!i) return;
   setFieldError(i, err);
