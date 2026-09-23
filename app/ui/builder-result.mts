@@ -211,9 +211,11 @@ function fetchCard(items: Item[], name: string): HTMLElement | null {
     const grabGate = mine.length ? bridgeActionReason("grab", mine[0]!) : `Nothing to grab here: it is already with ${name} or worn.`;
     const go = button({ label: "Go to", size: "sm", icon: "goto", disabled: !!goGate, onClick: () => runBridgeAction("goto", first) });
     const grab = button({ label: `Grab ${mine.length || list.length}`, size: "sm", icon: "grab", disabled: !!grabGate, onClick: () => grabAll(list, name) });
+    const pieces = el("ul", { class: "b-fetch-pieces", "aria-label": `${plural(list.length, "piece")} to fetch` },
+      ...list.map((it) => el("li", {}, tipTarget(txt(it.name, "b-fetch-piece"), it.serial))));
     return box("div", { class: "b-fetch" },
       box("span", { class: "b-fetch-where" }, txt(where, "strong ellip"), txt(`${cont && !where.includes(serialHex(+cont.serial)) ? serialHex(+cont.serial) + " · " : ""}${plural(list.length, "piece")}`, "t-sm faint")),
-      el("p", { class: "muted" }, txt(list.map((i) => i.name).join(", "))),
+      pieces,
       box("span", { class: "b-fetch-acts" }, goGate ? tipWrap(go, goGate) : go, grabGate ? tipWrap(grab, grabGate) : grab));
   });
   return el("section", { class: "card", "aria-label": "Fetch list" },
