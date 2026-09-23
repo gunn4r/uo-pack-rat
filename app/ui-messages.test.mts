@@ -68,6 +68,14 @@ test("[fast] an unreadable packrat-paths.json is reported with the reason; a mat
   assert.equal(dataDirNotice(undefined), null, "an older server sends no check at all");
 });
 
+test("[fast] control characters in a data-folder notice are dropped before it reaches a terminal", () => {
+  const esc = "\u001b[2J\u001b]0;pwned\u0007";
+  const mismatch = dataDirNotice({ status: "mismatch", scriptsDir: "/a", scriptsDataDir: `/b${esc}\nFAKE LINE`, dataDir: "/c" })!;
+  const unreadable = dataDirNotice({ status: "unreadable", scriptsDir: "/a", error: `bad${esc}\r\n` })!;
+  for (const text of [mismatch, unreadable]) assert.doesNotMatch(text, /[\u0000-\u001f\u007f-\u009f]/, JSON.stringify(text));
+  assert.match(mismatch, /\/b\[2J\]0;pwnedFAKE LINE/, "the printable rest is kept");
+});
+
 test("[fast] the offline bridge pill says why only when the cause is a data-folder mismatch", () => {
   assert.equal(bridgeOfflineText({ status: "mismatch", scriptsDir: "/a", scriptsDataDir: "/b", dataDir: "/c" }), "bridge: offline — your game scripts write to another folder");
   assert.equal(bridgeOfflineText({ status: "match", scriptsDir: "/a" }), "bridge: offline");
