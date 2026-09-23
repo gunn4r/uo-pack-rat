@@ -16,7 +16,12 @@ const ROOT = dirname(dirname(fileURLToPath(import.meta.url)));
 
 test("[fast] a SIGTERM to npm start stops the server too, and the exit is not reported as success", { skip: process.platform === "win32" ? "no POSIX signals on Windows" : false, timeout: 60_000 }, async () => {
   const dir = mkdtempSync(join(tmpdir(), "packrat-start-"));
-  const start = spawn(process.execPath, [join(ROOT, "scripts", "start.mts"), "--port", "0", "--data", dir], { stdio: ["ignore", "pipe", "pipe"] });
+  // An empty temp home: the server looks for a game client's scripts under the home folder at startup
+  // (installer.mts's checkScriptsDataDir), and a test must never read a real one.
+  const home = mkdtempSync(join(tmpdir(), "packrat-start-home-"));
+  const env: NodeJS.ProcessEnv = { ...process.env, HOME: home, USERPROFILE: home };
+  delete env.LOCALAPPDATA;
+  const start = spawn(process.execPath, [join(ROOT, "scripts", "start.mts"), "--port", "0", "--data", dir], { stdio: ["ignore", "pipe", "pipe"], env });
   try {
     let out = "";
     const url = await new Promise<string>((resolve, reject) => {

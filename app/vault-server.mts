@@ -47,7 +47,7 @@
 //         paths.scans; --demo starts none (paths.scans there is the committed app/fixtures/, which
 //         must never be written to).
 //         Setup wizard (app/installer.mts backs all of these): GET /api/setup {firstRun, settings,
-//         adapters, candidates, installed, available, dataDir} · POST /api/setup/locate {adapter, dir}
+//         adapters, candidates, installed, available, dataDir, dataDirCheck} · POST /api/setup/locate {adapter, dir}
 //         · POST /api/setup/install {adapter, scriptsDir} (409 while a Legion script is running in the
 //         client, per installer.mts's bridge-status guard) · POST /api/import {dir, adapter?} (copies
 //         top-level *.json into an adapter's inbox, tazuo when adapter is omitted — the watcher above
@@ -101,8 +101,9 @@ import { parsePastedScan, writeScanToInbox } from "./import.mts";
 import { writeFileAtomic } from "./atomic-write.mts";
 import {
   listAdapters, candidateClientRoots, validateScriptsDir, installedVersion, installScripts,
-  importScans, repoFromPackage, checkForUpdates,
+  importScans, repoFromPackage, checkForUpdates, checkScriptsDataDir, type DataDirCheck,
 } from "./installer.mts";
+import { dataDirNotice } from "./ui/messages.mts";
 import { homedir } from "node:os";
 
 import { resolveConfig, ensureLayout, APP_DIR, DATA_DIR_MODE, DATA_FILE_MODE, type Config } from "./config.mts";
@@ -560,6 +561,18 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
     rulesFallback = true;
     currentSettings = effectiveSettings();
   }
+
+  // Whether the client's installed scripts write to this data folder (installer.mts's
+  // checkScriptsDataDir). Run on every GET /api/setup, so a reinstall clears the page's banner with no
+  // restart, and once here, so a plain `npm start` on the default folder against scripts pointed at a
+  // dev folder says so in the terminal instead of just showing nothing. Never under --demo: its
+  // fixtures don't come from any client. The sentence is the page's own (ui/messages.mts).
+  function dataDirCheck(): DataDirCheck {
+    if (CONFIG.demo) return { status: "none" };
+    return checkScriptsDataDir({ dataDir: CONFIG.dataDir, client: currentSettings.client, adapters: listAdapters(ADAPTERS_DIR), home: homedir(), platform: process.platform, env: process.env });
+  }
+  const dataDirWarning = dataDirNotice(dataDirCheck());
+  if (dataDirWarning) console.warn(dataDirWarning);
 
   // ---- /api/events: one shared SSE stream, fed by one app/watcher.mts per adapter ------------------
   // Non-demo only — --demo's paths.scans is the committed app/fixtures/, which a watcher must never
@@ -1081,6 +1094,7 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
           // app/ui/bridge.mts's currentAdapter() falls back to this when settings.client is unset (a
           // hand-installed or Skip-through-the-wizard player) — see the bridgeAdapter() comment above.
           bridgeAdapter: bridgeAdapterField,
+          dataDirCheck: dataDirCheck(),
         });
       }
       if (req.method === "POST" && url.pathname === "/api/setup/locate") {

@@ -1,5 +1,5 @@
 // server.test.mts — HTTP route tests against a real listening server (ephemeral port, tmp data dir).
-import { test, before, after } from "node:test";
+import { test, before, after, type TestContext } from "node:test";
 import assert from "node:assert/strict";
 import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, readdirSync, existsSync, renameSync, rmSync, cpSync, statSync } from "node:fs";
 import { join, dirname } from "node:path";
@@ -17,7 +17,15 @@ import { buildSchemaTypes } from "../scripts/build-schema-types.mts";
 import { validate, type ValidatorSchema } from "./schema/validate.mts";
 import type { Item, Inventory, ProfilesFile } from "./vault-lib.mts";
 import type { RulesV1, ScanV2 } from "./schema/types.d.mts";
-import type { AdapterInfo, InstallScriptsResult } from "./installer.mts";
+import type { AdapterInfo, InstallScriptsResult, DataDirCheck } from "./installer.mts";
+
+// The server looks for the game client's scripts under the home folder, at startup and on every GET
+// /api/setup (installer.mts's checkScriptsDataDir), and reads the packrat-paths.json it finds there. No
+// test may read a real client folder, so this whole file (its own process under the runner) runs with
+// an empty temp home.
+const FAKE_HOME = mkdtempSync(join(tmpdir(), "qm-home-"));
+process.env.HOME = process.env.USERPROFILE = FAKE_HOME;
+delete process.env.LOCALAPPDATA;
 
 // ---------------------------------------------------------------------------------------------
 // HTTP responses are unknown provenance — every route is reachable by any local caller, trusted
@@ -86,6 +94,7 @@ interface SetupResponse {
   platform: string;
   settings: { client?: ClientSetting };
   bridgeAdapter: string | null;
+  dataDirCheck: DataDirCheck;
 }
 interface LocateResponse {
   scriptsDir?: string;
@@ -1283,6 +1292,76 @@ test("[fast] GET /api/setup lists the tazuo adapter, its available (repo-shipped
     assert.equal(j.platform, process.platform);
   } finally {
     await s2.close();
+  }
+});
+
+// ---- the scripts' data folder versus the app's (issue #39) ----------------------------------------
+// A scripts folder holding one Pack Rat script and a packrat-paths.json naming `dataDir`.
+function installedScripts(scriptsDir: string, dataDir: string): string {
+  mkdirSync(scriptsDir, { recursive: true });
+  writeFileSync(join(scriptsDir, "packrat-scanner.py"), `ADAPTER_VERSION = "${TAZUO_VERSION}"\n`);
+  writeFileSync(join(scriptsDir, "packrat-paths.json"), `${JSON.stringify({ dataDir }, null, 1)}\n`);
+  return scriptsDir;
+}
+function warnings(t: TestContext): () => string[] {
+  const warn = t.mock.method(console, "warn", () => {});
+  return () => warn.mock.calls.map((c) => String(c.arguments[0]));
+}
+
+test("[fast] a configured client whose scripts write to another data folder is warned about at startup and reported by GET /api/setup", async (t) => {
+  const dir = mkdtempSync(join(tmpdir(), "qm-dd-server-")), other = mkdtempSync(join(tmpdir(), "qm-dd-other-"));
+  const scriptsDir = installedScripts(mkdtempSync(join(tmpdir(), "qm-dd-scripts-")), other);
+  const config = ensureLayout(resolveConfig(["--port", "0", "--data", dir], {}));
+  writeFileSync(config.paths.settings, JSON.stringify({ schemaVersion: 1, shard: "uoalive", setupDone: true, client: { adapter: "tazuo", scriptsDir } }));
+  const warned = warnings(t);
+  const s2 = await startServer(config);
+  try {
+    const startup = warned().filter((w) => w.includes("--data"));
+    assert.equal(startup.length, 1, JSON.stringify(warned()));
+    assert.ok(startup[0]!.includes(other) && startup[0]!.includes(dir) && startup[0]!.includes(`npm start -- --data ${other}`), startup[0]);
+    const j = asJson<SetupResponse>(await (await fetch(s2.url + "/api/setup")).json());
+    assert.deepEqual(j.dataDirCheck, { status: "mismatch", scriptsDir, scriptsDataDir: other, dataDir: dir });
+    // Recomputed per request: fixing the file (a reinstall does) clears it without a restart.
+    installedScripts(scriptsDir, dir);
+    const fixed = asJson<SetupResponse>(await (await fetch(s2.url + "/api/setup")).json());
+    assert.deepEqual(fixed.dataDirCheck, { status: "match", scriptsDir });
+    writeFileSync(join(scriptsDir, "packrat-paths.json"), "{not json");
+    const broken = asJson<SetupResponse>(await (await fetch(s2.url + "/api/setup")).json());
+    assert.equal(broken.dataDirCheck.status, "unreadable", "a malformed file is reported, not a 500");
+  } finally {
+    await s2.close();
+  }
+});
+
+test("[fast] a matching client, no client at all, and --demo start without a data-folder warning", async (t) => {
+  const warned = warnings(t);
+  const dir = mkdtempSync(join(tmpdir(), "qm-dd-quiet-"));
+  const scriptsDir = installedScripts(mkdtempSync(join(tmpdir(), "qm-dd-scripts-")), dir);
+  const config = ensureLayout(resolveConfig(["--port", "0", "--data", dir], {}));
+  writeFileSync(config.paths.settings, JSON.stringify({ schemaVersion: 1, shard: "uoalive", setupDone: true, client: { adapter: "tazuo", scriptsDir } }));
+  for (const cfg of [config, ensureLayout(resolveConfig(["--port", "0", "--data", mkdtempSync(join(tmpdir(), "qm-dd-none-"))], {})), ensureLayout(resolveConfig(["--demo", "--port", "0", "--data", mkdtempSync(join(tmpdir(), "qm-dd-demo-"))], {}))]) {
+    const s2 = await startServer(cfg);
+    try {
+      const j = asJson<SetupResponse>(await (await fetch(s2.url + "/api/setup")).json());
+      assert.notEqual(j.dataDirCheck.status, "mismatch", cfg.dataDir);
+    } finally {
+      await s2.close();
+    }
+  }
+  assert.deepEqual(warned().filter((w) => w.includes("--data")), []);
+});
+
+test("[fast] with no client configured, GET /api/setup checks the auto-detected client folder", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "qm-dd-detect-")), other = mkdtempSync(join(tmpdir(), "qm-dd-other-"));
+  const root = join(FAKE_HOME, "Desktop", "TazUO");
+  const legion = installedScripts(join(root, "TazUO", "LegionScripts"), other);
+  const s2 = await startServer(ensureLayout(resolveConfig(["--port", "0", "--data", dir], {})));
+  try {
+    const j = asJson<SetupResponse>(await (await fetch(s2.url + "/api/setup")).json());
+    assert.deepEqual(j.dataDirCheck, { status: "mismatch", scriptsDir: legion, scriptsDataDir: other, dataDir: dir });
+  } finally {
+    await s2.close();
+    rmSync(root, { recursive: true, force: true });
   }
 });
 
