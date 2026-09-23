@@ -43,6 +43,10 @@ const tokensNow = (): FilterToken[] => activeFilters(state.query, filterContext(
 // Every filter control lands here: the new state, the toolbar's chips and the strip redrawn, and the
 // table refetched from its first row.
 function setQuery(next: ItemQuery): void {
+  // A search keystroke still waiting out its debounce is superseded by any other change (Clear all above
+  // all): left to fire, it would re-apply the search box's text over the new state and throw the table
+  // back to its first row.
+  clearTimeout(searchTimer);
   state.query = { ...next, offset: 0 };
   syncToolbar();
   requery(true);
@@ -103,7 +107,10 @@ function buildToolbar(): void {
   s.root.classList.add("inv-search");
   search.addEventListener("input", () => {
     clearTimeout(searchTimer);
-    searchTimer = setTimeout(() => setQuery({ ...state.query, q: search.value.trim().toLowerCase() }), 150) as unknown as number;
+    searchTimer = setTimeout(() => {
+      const q = search.value.trim().toLowerCase();
+      if (q !== state.query.q) setQuery({ ...state.query, q });
+    }, 150) as unknown as number;
   });
   search.addEventListener("keydown", (e) => { if (e.key === "Escape" && search.value) { e.stopPropagation(); search.value = ""; setQuery({ ...state.query, q: "" }); } });
   for (const id of [...FACETS, "slayer", "seen"] as ChipId[]) {
