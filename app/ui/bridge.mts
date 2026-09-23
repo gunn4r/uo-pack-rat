@@ -4,6 +4,7 @@
 import { state, bridge } from "./store.mts";
 import { $, el, toast } from "./dom.mts";
 import { api } from "./api.mts";
+import { bridgeOfflineText, dataDirNotice } from "./messages.mts";
 import type { Item } from "../vault-lib.mts";
 import type { BridgeQueueApiResponse, BridgeStatusApiResponse } from "./api-types.mts";
 
@@ -182,12 +183,17 @@ export function grabAllState(btn: HTMLButtonElement | null = $<HTMLButtonElement
   btn.disabled = !bridge.online || !count;
   btn.title = !bridge.online ? BRIDGE_OFFLINE : !count ? `nothing to grab: every piece is already with ${state.builder.character} or worn` : "queue a Grab for every piece on the fetch list, one after another";
 }
+const PILL_TITLE = "packrat-bridge.py running in game?";
 export async function pollBridge(): Promise<void> {
   try {
     const st = await api<BridgeStatusApiResponse>("/api/bridge/status");
     bridge.online = !!st.online; bridge.character = st.character || null;
     const b = $<HTMLElement>("#bridge")!;
-    if (!st.online) { b.className = "status"; b.textContent = "bridge: offline"; }
+    // An offline pill whose cause is known (the scripts write to another data folder) says so, and its
+    // hover carries the banner's full sentence; otherwise the hover is the pill's own question.
+    const check = state.setup?.dataDirCheck;
+    b.title = (!st.online && check?.status === "mismatch" && dataDirNotice(check)) || PILL_TITLE;
+    if (!st.online) { b.className = "status"; b.textContent = bridgeOfflineText(check); }
     else if (st.current) { b.className = "status busy"; b.textContent = `bridge: ${st.character} · ${st.current.action} ${st.current.name || ""}`; }
     else { b.className = "status on"; b.textContent = `bridge: ${st.character} ready`; }
     grabAllState();
@@ -202,4 +208,23 @@ export async function pollBridge(): Promise<void> {
       }
     }
   } catch { /* server down; leave the pill as is */ }
+}
+
+// ---------------------------------------------------------------- data-folder banner (#notice)
+// GET /api/setup's dataDirCheck as a banner under the header: the client's scripts writing to another
+// data folder than the app reads (or a packrat-paths.json the app can't read) is otherwise invisible —
+// an empty inventory and an offline bridge. Called wherever state.setup is refreshed (renderSettings),
+// so a reinstall clears it. Dismissing hides that exact sentence for the life of the page; a different
+// one (another folder, say) is news and shows again.
+let dismissedNotice: string | null = null;
+export function renderDataDirNotice(): void {
+  const box = $<HTMLElement>("#notice");
+  if (!box) return;
+  const text = dataDirNotice(state.setup?.dataDirCheck);
+  box.hidden = !text || text === dismissedNotice;
+  if (box.hidden) { box.replaceChildren(); return; }
+  box.replaceChildren(
+    el("span", {}, text),
+    el("button", { class: "small", onclick: () => { dismissedNotice = text; renderDataDirNotice(); } }, "Dismiss"),
+  );
 }

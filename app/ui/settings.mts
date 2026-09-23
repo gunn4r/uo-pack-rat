@@ -7,7 +7,7 @@ import { state } from "./store.mts";
 import { $, el, noteEl, toast } from "./dom.mts";
 import { api } from "./api.mts";
 import { openWizard } from "./wizard.mts";
-import { bridgeNoteEl } from "./bridge.mts";
+import { bridgeNoteEl, renderDataDirNotice } from "./bridge.mts";
 import { clientErrorMessage, hostErrorMessage, installedIntoNote, pathsFileNote } from "./messages.mts";
 import type { ApiError, SetupApiResponse, AdapterSummary, InstallApiResponse, UpdateCheckApiResponse } from "./api-types.mts";
 
@@ -29,6 +29,7 @@ export async function renderSettings(setup?: SetupApiResponse): Promise<void> {
     catch (e) { root.replaceChildren(el("div", { class: "panel empty" }, `Could not load setup info: ${(e as Error).message}`)); return; }
   }
   state.setup = setup;
+  renderDataDirNotice();
   root.replaceChildren(storagePanel(setup), clientPanel(setup), importPointer(), updatePanel());
 }
 
