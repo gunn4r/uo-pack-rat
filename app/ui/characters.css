@@ -49,8 +49,6 @@
 .sheet-slots { display: flex; flex-direction: column; gap: var(--space-4); padding: var(--space-4); }
 .slot-group { display: flex; flex-direction: column; gap: var(--space-2); }
 .slot-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--space-2); }
-.slot-grid.slot-grid-5 { grid-template-columns: repeat(5, minmax(0, 1fr)); }
-.slot.slot-sm { min-height: 52px; }
 .pr .sheet button.slot { cursor: pointer; font: inherit; font-weight: var(--weight-regular); }
 .sheet .slot.empty { padding: var(--space-2) var(--space-3); text-align: left; }   /* not the old page-level .empty (styles.css) */
 .pr .sheet button.slot:hover { background: var(--color-surface-subtle); color: var(--color-text); }
