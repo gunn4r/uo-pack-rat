@@ -58,8 +58,8 @@
 //         files at all) · POST /api/import/rescan {} (scanOnce() on every running watcher, for a scan
 //         file the folder watcher missed; {adapters: [ids swept]}, empty under --demo; 503 with
 //         {failed: [ids]} when an inbox could not be swept) ·
-//         GET /api/update-check (a GitHub releases/latest check; {configured: false} when package.json
-//         names no GitHub repo) ·
+//         GET /api/update-check (a GitHub releases/latest check, 10 s timeout, a success cached for an
+//         hour; {configured: false} when package.json names no GitHub repo) ·
 //         POST /api/host/pick-folder {title} and POST /api/host/open-path {which: "data"|"logs"} — both
 //         need the optional `host` startServer({..}, {host}) was given (a folder-picker/opener the
 //         Electron shell supplies); 501 on the bare server. GET/PUT /api/settings additionally carries
@@ -102,7 +102,7 @@ import { parsePastedScan, writeScanToInbox } from "./import.mts";
 import { writeFileAtomic } from "./atomic-write.mts";
 import {
   listAdapters, candidateClientRoots, validateScriptsDir, installedVersion, installScripts,
-  repoFromPackage, checkForUpdates, checkScriptsDataDir, type DataDirCheck, type AdapterInfo,
+  repoFromPackage, checkForUpdates, type CheckForUpdatesResult, checkScriptsDataDir, type DataDirCheck, type AdapterInfo,
 } from "./installer.mts";
 import { dataDirNotice } from "./ui/messages.mts";
 import { homedir } from "node:os";
@@ -694,6 +694,10 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
   // switch changes parseTooltip/classify via rules) and vault-lib.mts's own mtime (the same value lib()
   // already tracks for its dev-reload). /api/forget's tombstone is just another file landing in the scans
   // directory, so it invalidates the cache the same way — no separate invalidation path needed.
+  // GET /api/update-check's last successful answer (see that route).
+  const UPDATE_CHECK_TTL_MS = 60 * 60 * 1000;
+  let updateCheckCache: { at: number; result: CheckForUpdatesResult } | null = null;
+
   let invCache: { sig: string | null; value: { inv: Inventory; snapshotCount: number; stamp: string } | null } = { sig: null, value: null };
   function scansSignature(): string {
     if (!existsSync(SCANS)) return "no-scans-dir";
@@ -1289,8 +1293,14 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
         return send(res, 200, { ok: true, adapters });
       }
       if (req.method === "GET" && url.pathname === "/api/update-check") {
-        const result = await checkForUpdates({ current: PACKAGE_JSON.version, repo: repoFromPackage(PACKAGE_JSON) });
-        return send(res, 200, { ok: true, ...result });
+        // Cached for an hour so every page load doesn't cost a GitHub round trip (and its unauthenticated
+        // rate limit); a failed check is not cached, so the next request simply tries again.
+        if (!updateCheckCache || Date.now() - updateCheckCache.at > UPDATE_CHECK_TTL_MS) {
+          const result = await checkForUpdates({ current: PACKAGE_JSON.version, repo: repoFromPackage(PACKAGE_JSON) });
+          if (result.error) return send(res, 200, { ok: true, ...result });
+          updateCheckCache = { at: Date.now(), result };
+        }
+        return send(res, 200, { ok: true, ...updateCheckCache.result });
       }
       if (req.method === "POST" && url.pathname === "/api/host/pick-folder") {
         if (!host || typeof host.pickFolder !== "function") return send(res, 501, { ok: false, error: "not available outside the desktop app" });
