@@ -59,7 +59,7 @@ try {
   const onProgress = (p: SolveProgress) => port.postMessage({ type: "progress", progress: { ...p, at: p.at ?? Date.now() } } satisfies WorkerProgressMessage);
   const result: OptResult | ExactSolveResult = opts.exact
     ? await solveExact({ core, pools, current, profile, opts, onProgress, onWarn: (m) => port.postMessage({ type: "warn", message: m } satisfies WorkerWarnMessage) })
-    : core.optimizeSuit(pools, current, profile, { ...opts, onProgress });
+    : core.optimizeSuit(pools, current, profile, { ...opts, heuristicBudgetMs: opts.timeBudgetMs ?? 15000, onProgress });   // the same default budget as solveExact and the server's job timer   // the same default budget as solveExact and the server's job timer
   port.postMessage({ type: "done", result, ms: Date.now() - t0 } satisfies WorkerDoneMessage);
 } catch (e) {
   const errObj = e as Error;
