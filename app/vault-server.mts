@@ -35,7 +35,7 @@
 //         409 under --demo, which must never write into the committed app/fixtures/) ·
 //         POST /api/forget-character {character} (drop a character's card, worn set, backpack and bank:
 //         a `_vault` tombstone carrying forgetCharacter; 409 under --demo) ·
-//         GET|PUT /api/ui-prefs (<data>/ui-prefs.json: {cols?, colsVersion?, theme?, appearance?, sidebar?, density?}, the page's view choices)
+//         GET|PUT /api/ui-prefs (<data>/ui-prefs.json: {cols?, colsVersion?, sheetProps?, theme?, appearance?, sidebar?, density?}, the page's view choices)
 //         POST /api/bridge {action, serial, name, chain: [root…parent], pos|null} (queue for packrat-bridge.py) · GET /api/bridge/status
 //         GET /api/events — SSE, one stream shared by every connected client (not per-job like the
 //         optimize events above): hello {ok, watching: [adapter ids]} on connect, inventory
@@ -141,7 +141,9 @@ const UI_PREF_CHOICES = {
   density: ["dense", "regular"],   // the Inventory table's row height
   colsVersion: ["2"],              // the column set `cols` was saved against (app/ui/view-state.mts's COLS_VERSION)
 } as const satisfies Record<string, readonly string[]>;
-type UiPrefsFile = { cols?: string[] } & { -readonly [K in keyof typeof UI_PREF_CHOICES]?: string };
+// The list fields: the Inventory tab's columns and the character sheet's shown properties (absent = the default set).
+const UI_PREF_LISTS = ["cols", "sheetProps"] as const;
+type UiPrefsFile = { -readonly [K in typeof UI_PREF_LISTS[number]]?: string[] } & { -readonly [K in keyof typeof UI_PREF_CHOICES]?: string };
 // Localhost security (spec §4.5): a request's Host must name this server, an Origin (when present)
 // must be this same origin, and — with a token configured — every /api/* route except the SSE
 // events stream (EventSource cannot carry an Authorization header; see below) must present it. None
@@ -711,7 +713,10 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
     try { raw = JSON.parse(readFileSync(UI_PREFS, "utf8")) as Record<string, unknown>; } catch { return {}; }
     if (!raw || typeof raw !== "object") return {};
     const out: UiPrefsFile = {};
-    if (Array.isArray(raw.cols) && raw.cols.every((c) => typeof c === "string")) out.cols = raw.cols as string[];
+    for (const key of UI_PREF_LISTS) {
+      const v = raw[key];
+      if (Array.isArray(v) && v.every((c) => typeof c === "string")) out[key] = v as string[];
+    }
     for (const [key, allowed] of Object.entries(UI_PREF_CHOICES)) {
       const v = raw[key];
       if (typeof v === "string" && (allowed as readonly string[]).includes(v)) out[key as keyof typeof UI_PREF_CHOICES] = v;
@@ -1042,10 +1047,11 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
         // origin, on every launch. Only known fields, each checked, are written.
         const body = asObject(await readBody(req, { limit: 16e3 }));
         const next = readUiPrefs();
-        if (Object.prototype.hasOwnProperty.call(body, "cols")) {
-          const cols = body.cols;
-          if (!Array.isArray(cols) || cols.length > 200 || !cols.every((c) => isBoundedString(c, 64))) return send(res, 400, { ok: false, error: "cols must be a list of at most 200 column keys" });
-          next.cols = cols as string[];
+        for (const key of UI_PREF_LISTS) {
+          if (!Object.prototype.hasOwnProperty.call(body, key)) continue;
+          const v = body[key];
+          if (!Array.isArray(v) || v.length > 200 || !v.every((c) => isBoundedString(c, 64))) return send(res, 400, { ok: false, error: `${key} must be a list of at most 200 keys` });
+          next[key] = v as string[];
         }
         for (const [key, allowed] of Object.entries(UI_PREF_CHOICES)) {
           if (!Object.prototype.hasOwnProperty.call(body, key)) continue;

@@ -230,6 +230,11 @@ const SCENES: Scene[] = [
     await p.waitForSelector(".pop-menu");
   }, leave: (p) => p.keyboard.press("Escape") },
   { name: "character sheet", enter: (p) => route(p, "#/characters/Dorran", "#tab-characters .sheet") },
+  { name: "character properties popover", enter: async (p) => {
+    await route(p, "#/characters/Dorran", "#tab-characters .sheet");
+    await p.getByRole("button", { name: "Properties shown" }).click();
+    await p.waitForSelector(".pop #sheet-prop-opts");
+  }, leave: (p) => p.keyboard.press("Escape") },
   { name: "character slot detail", enter: async (p) => {
     await route(p, "#/characters/Dorran", "#tab-characters .sheet");
     await p.locator("#tab-characters .sheet button.slot").first().click();
