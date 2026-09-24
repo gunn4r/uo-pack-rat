@@ -99,6 +99,48 @@ test("[slow] the packaged UI renders, switches tabs and lists the demo inventory
   }
 });
 
+test("[slow] the rows' actions follow the client the wizard just set up, without a reload", async (t) => {
+  const why = unavailable();
+  if (why) return t.skip(why);
+
+  const { _electron } = await import("playwright");
+  const dataDir = mkdtempSync(join(tmpdir(), "packrat-ui-wizard-"));
+  const app = await _electron.launch({ args: [ROOT, "--demo", "--data", dataDir], cwd: ROOT, timeout: 60_000, env: testEnv() });
+  try {
+    const page = await app.firstWindow();
+    await page.locator("#inv-table tbody tr.item").first().waitFor({ timeout: 30_000 });
+    // Behind the first-run wizard the rows act for the default client (TazUO). Pick the paste client, which has
+    // no bridge, and finish.
+    await page.waitForSelector("#wizard[open]", { timeout: 10_000 });
+    await page.click("#wiz-primary");
+    await page.locator("#wizard input[value=classicuo-web]").check();
+    await page.click("#wiz-primary");
+    await page.click("#wiz-primary");
+    // PUT /api/settings does not keep a paste client yet (an empty scriptsDir reads as "forget the client"), so
+    // the setup the page reads back after Finish is answered in the page with the client the wizard picked
+    // (in the page, not page.route: a routed fetch loses the bearer token the server requires).
+    await page.evaluate(() => {
+      const real = window.fetch;
+      window.fetch = async (input, init) => {
+        const res = await real(input, init);
+        if (String(input) !== "/api/setup" || !res.ok) return res;
+        const body = await res.json() as { settings: { client: unknown } };
+        body.settings.client = { adapter: "classicuo-web", scriptsDir: "" };
+        return new Response(JSON.stringify(body), { status: res.status, headers: res.headers });
+      };
+    });
+    await page.locator("#wizard").getByRole("button", { name: "Finish", exact: true }).click();
+    await page.waitForSelector("#wizard", { state: "hidden", timeout: 10_000 });
+    const until = Date.now() + 10_000;
+    let reason = await actionReason(page, "Grab to backpack");
+    while (!/can't Grab/.test(reason) && Date.now() < until) reason = await actionReason(page, "Grab to backpack");
+    assert.match(reason, /can't Grab from Pack Rat/);
+  } finally {
+    await app.close();
+    rmSync(dataDir, { recursive: true, force: true });
+  }
+});
+
 // Post-review fix (Task 2, Phase 6, round 1): the no-bridge case above was covered at the DOM level,
 // but "TazUO shows all three buttons and no note" and "a partial-bridge adapter offers only its
 // declared action" were only exercised through GET /api/setup's JSON (app/server.test.mts) — a
