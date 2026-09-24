@@ -1348,6 +1348,45 @@ test("[fast] resist cap overrides: profiles and saved runs keep them, and a bad 
   }
 });
 
+// Weapon exclusions (issue #45): a bad list is refused, a build leaves the excluded skills' weapons out, and a run
+// saved with the old single weapon choice reopens with the exclusions it means.
+test("[fast] weapon exclusions: a bad list is 400, excluded weapons stay out of the build, an old run reopens converted", async () => {
+  const character = Object.keys(asJson<InventoryResponse>(await (await get("/api/inventory")).json()).inventory.characters)[0]!;
+  const profiles = asJson<ProfilesResponse>(await (await get("/api/profiles")).json()).profiles;
+  const rules = asJson<RulesResponse>(await (await get("/api/rules")).json());
+  const profile = { ...Object.values(profiles.templates!)[0], caps: rules.rules.caps };
+  const post = (settings: Record<string, unknown>): Promise<Response> => fetch(srv.url + "/api/optimize", {
+    method: "POST", headers: JSON_HEADERS, body: JSON.stringify({ character, settings, profile, opts: { exact: false, restarts: 3 }, meta: { character, settings } }) });
+  const bad = await post({ excludeWeapons: ["bows"] });
+  assert.equal(bad.status, 400);
+  assert.match(asJson<ErrorBody>(await bad.json()).error, /settings\.excludeWeapons\[0\] is not a weapon skill/);
+
+  const inv = foldFixtures(join(HERE, "fixtures"));
+  const skillOf = (serial: number): string => String(inv.items[serial]?.skillReq || "").toLowerCase();
+  const excluded = [...new Set(Object.values(inv.items).map((it) => skillOf(it.serial)).filter(Boolean))].slice(0, 2);
+  const j = asJson<OptimizeJobResponse>(await (await post({ excludeWeapons: excluded })).json());
+  assert.ok((j.skipped as Record<string, number>).weapon! > 0, JSON.stringify(j.skipped));
+  let status: OptimizeJobResponse = j;
+  for (let i = 0; i < 200 && status.state !== "done" && !j.cached; i++) {
+    await new Promise((res) => setTimeout(res, 20));
+    status = asJson<OptimizeJobResponse>(await (await fetch(srv.url + `/api/optimize/${j.id}/status`)).json());
+  }
+  const best = (status.result as { best: Record<string, { serial: number } | null> }).best;
+  for (const slot of ["oneHanded", "twoHanded"]) if (best[slot]) assert.ok(!excluded.includes(skillOf(best[slot]!.serial)), `${slot} holds an excluded skill`);
+
+  const dir = mkdtempSync(join(tmpdir(), "qm-weapons-"));
+  const s2 = await startServer(ensureLayout(resolveConfig(["--demo", "--port", "0", "--data", dir], {})));
+  try {
+    const id = "0b5c1a4e-0000-4000-8000-000000000045";
+    writeFileSync(join(dir, "runs", `${id}.json`), JSON.stringify({ id, character, settings: { weaponSkill: "archery" }, result: { method: "heuristic", best: {} } }));
+    const run = asJson<{ run: { settings: Record<string, unknown> } }>(await (await fetch(s2.url + `/api/runs/${id}`)).json()).run;
+    assert.deepEqual(run.settings, { excludeWeapons: ["swordsmanship", "fencing", "mace fighting", "throwing"] });
+  } finally {
+    await s2.close();
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 // Post-review fix: `null` in an optional settings field (strLimit/excludeTags/excludeRoots/
 // excludeSkills/lockedSlots) passed the `!= null` validation gate untouched, but the destructuring
 // defaults below it only fire on `undefined` — so `strLimit: null` reached buildPools as a literal

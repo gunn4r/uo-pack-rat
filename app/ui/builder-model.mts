@@ -3,7 +3,7 @@
 // "other changes" badges and "after the change" values, the compare table's differing rows and best values,
 // and a saved run's label and badges. No DOM and no page state, so app/builder-model.test.mts can check it
 // all directly; ui/builder.mts, ui/builder-result.mts and ui/runs.mts draw what it returns.
-import { labelOf, fullOf, RESIST_KEYS, RESIST_CAP_LIMITS, SLOT_LABELS, settingsDiff, shardResistCap } from "../vault-lib.mts";
+import { labelOf, fullOf, RESIST_KEYS, RESIST_CAP_LIMITS, SLOT_LABELS, settingsDiff, shardResistCap, WEAPON_SKILLS } from "../vault-lib.mts";
 import type { PropMap, ResistCap, RunSettings } from "../vault-lib.mts";
 
 export const plural = (n: number, word: string, many = `${word}s`): string => `${n.toLocaleString("en-US")} ${n === 1 ? word : many}`;
@@ -48,7 +48,7 @@ export function requirementsSummary(floors: Record<string, number> = {}, soft: s
     return `${l} ${num(v)}${isSoft ? " soft" : ""}`;
   }).join(" · ");
 }
-export interface PoolSettings { allowOthersWorn?: boolean | undefined; allowGargoyle?: boolean | undefined; medOnly?: boolean | undefined; weaponSkill?: string | null | undefined;
+export interface PoolSettings { allowOthersWorn?: boolean | undefined; allowGargoyle?: boolean | undefined; medOnly?: boolean | undefined; excludeWeapons?: string[] | undefined;
   lockedSlots?: string[] | undefined; excludeTags?: string[] | undefined; excludeSkills?: string[] | undefined; excludeRoots?: unknown[] | undefined }
 // "Own gear and unworn gear · no gargoyle-only · any weapon"
 export function poolSummary(p: PoolSettings): string {
@@ -56,13 +56,30 @@ export function poolSummary(p: PoolSettings): string {
     p.allowOthersWorn ? "Includes gear worn by others" : "Own gear and unworn gear",
     p.allowGargoyle ? "gargoyle-only allowed" : "no gargoyle-only",
     p.medOnly ? "meditation-safe only" : "",
-    p.weaponSkill ? `${p.weaponSkill} weapons only` : "any weapon",
+    weaponsSummary(p.excludeWeapons),
     p.lockedSlots?.length ? `${plural(p.lockedSlots.length, "slot")} locked` : "",
     p.excludeTags?.length ? `no ${p.excludeTags.join(", ")}` : "",
     p.excludeSkills?.length ? `${plural(p.excludeSkills.length, "skill bonus", "skill bonuses")} forbidden` : "",
     p.excludeRoots?.length ? `${plural(p.excludeRoots.length, "container")} skipped` : "",
   ].filter(Boolean).join(" · ");
 }
+
+// ---------------------------------------------------------------- weapons
+// The Weapons control holds the weapon skills left out of the pool. The summary says them ("no archery or throwing
+// weapons", "fencing weapons only"); the chip counts them ("Weapons: 2 excluded").
+const orList = (xs: string[]): string => (xs.length < 2 ? xs.join("") : `${xs.slice(0, -1).join(", ")} or ${xs[xs.length - 1]}`);
+export const weaponName = (w: string): string => w[0]!.toUpperCase() + w.slice(1);
+interface WeaponWords { any: string; none: string; only: (w: string) => string; some: (excluded: string[]) => string }
+function weaponsText(excluded: string[], t: WeaponWords): string {
+  const allowed = WEAPON_SKILLS.filter((w) => !excluded.includes(w));
+  return !excluded.length ? t.any : !allowed.length ? t.none : allowed.length === 1 ? t.only(allowed[0]!) : t.some(WEAPON_SKILLS.filter((w) => excluded.includes(w)));
+}
+export const weaponsSummary = (excluded: string[] = []): string =>
+  weaponsText(excluded, { any: "any weapon", none: "no weapons", only: (w) => `${w} weapons only`, some: (ex) => `no ${orList(ex)} weapons` });
+export const weaponsChipText = (excluded: string[] = []): string =>
+  weaponsText(excluded, { any: "Weapons: any", none: "Weapons: none", only: (w) => `Weapons: ${weaponName(w)} only`, some: (ex) => `Weapons: ${ex.length} excluded` });
+// Ticking or unticking a skill; the list stays in WEAPON_SKILLS order, so the same exclusions always read the same.
+export const toggleWeapon = (excluded: string[], w: string, on: boolean): string[] => WEAPON_SKILLS.filter((x) => (x === w ? on : excluded.includes(x)));
 
 // ---------------------------------------------------------------- resist caps
 // A resist's cap for a build is the shard's (race-aware) unless the player overrode it. The field takes a whole

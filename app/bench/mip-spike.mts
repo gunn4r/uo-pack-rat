@@ -42,7 +42,7 @@ if (!existsSync(config.paths.profiles)) {
 // eventually needs for lib.effectiveProfile's Profile parameter, and this spike never reads `caps`
 // off a character entry at all) plus excludeRoots, which CharacterEntryRaw doesn't declare.
 interface SpikeCharacterEntry {
-  weaponSkill?: string | null | undefined;
+  excludeWeapons?: string[] | undefined;
   softFloors?: string[] | undefined;
   floors?: Record<string, number> | undefined;
   weights?: Record<string, number> | undefined;
@@ -59,7 +59,7 @@ interface SpikeCharacterEntry {
 interface SpikeProfilesFile {
   characters?: Record<string, SpikeCharacterEntry> | undefined;
 }
-const profiles = JSON.parse(readFileSync(config.paths.profiles, "utf8")) as SpikeProfilesFile;
+const profiles = lib.migrateProfiles(JSON.parse(readFileSync(config.paths.profiles, "utf8"))).profiles as SpikeProfilesFile;   // an older file's weaponSkill becomes excludeWeapons
 const characters = profiles.characters || {};
 const characterNames = Object.keys(characters);
 if (!whoArg && !characterNames.length) {
@@ -73,11 +73,11 @@ if (!p0) {
   console.error(`no character "${base}" in profiles.json — have: ${characterNames.join(", ") || "(none)"}`);
   process.exit(1);
 }
-const p = who.endsWith("-anyweapon") ? { ...p0, weaponSkill: null } : { ...p0 };
+const p = who.endsWith("-anyweapon") ? { ...p0, excludeWeapons: [] } : { ...p0 };
 if (process.env.SOFT) p.softFloors = process.env.SOFT.split(",");
 const c = inv.characters[base];
 const { pools, current, blocked = [] } = lib.buildPools(inv, base, { allowOthersWorn: false, strength: p.strLimit ?? (c ? (c.stats.str as number) : 125), excludeTags: p.excludeTags || [],   // Character.stats is Record<string, unknown> — str is always numeric at runtime
-  excludeRoots: p.excludeRoots || [], excludeGargoyle: !p.allowGargoyle, medOnly: !!p.medOnly, weaponSkill: p.weaponSkill || null, excludeSkills: p.excludeSkills || [] });
+  excludeRoots: p.excludeRoots || [], excludeGargoyle: !p.allowGargoyle, medOnly: !!p.medOnly, excludeWeapons: p.excludeWeapons || [], excludeSkills: p.excludeSkills || [] });
 for (const s of p.lockedSlots || []) pools[s] = [];
 const cur = { ...current }; for (const s of blocked) delete cur[s];
 const optional = new Set(["cloak", "talisman", "ring", "bracelet", "neck", "oneHanded", "twoHanded"].filter((s) => !(p.lockedSlots || []).includes(s)));

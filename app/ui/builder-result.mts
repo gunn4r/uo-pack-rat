@@ -301,7 +301,7 @@ function afterCard(name: string, current: OptSuit, suit: OptSuit, prof: Effectiv
 function detailsCard(res: OptimizeResult, meta: BuildMeta | undefined, view: number | null): HTMLElement {
   const skipped = meta?.skipped;
   const cnt = (k: string): number => (Array.isArray(skipped?.[k]) ? (skipped![k] as unknown[]).length : +((skipped?.[k] as number) || 0));   // live arrays, or a saved run's counts
-  const skips = ([["worn by others", cnt("worn")], ["too heavy", cnt("str")], ["tagged", cnt("tags")], ["gargoyle-only", cnt("gargoyle")], ["not meditation-safe", cnt("nonMed")], ["other weapon types", cnt("weapon")], ["in skipped containers", cnt("roots")]] as Array<[string, number]>)
+  const skips = ([["worn by others", cnt("worn")], ["too heavy", cnt("str")], ["tagged", cnt("tags")], ["gargoyle-only", cnt("gargoyle")], ["not meditation-safe", cnt("nonMed")], ["by the Weapons filter", cnt("weapon")], ["in skipped containers", cnt("roots")]] as Array<[string, number]>)
     .filter(([, c]) => c).map(([l, c]) => `${fmtN(c)} ${l}`).join(", ");
   const solver = res.floorsConflict ? "HiGHS (requirements infeasible)" : res.solver === "highs" ? "HiGHS" : res.solver === "fallback" ? "heuristic (exact solver unavailable)" : res.solver === "none" ? "none needed" : res.method === "exact" ? "branch-and-bound" : "heuristic";
   const time = !meta ? "" : meta.reused ? `instant · first run took ${fmtSecs(meta.ms)}` : res.heuristicMs != null && res.mipMs != null ? `${fmtSecs(meta.ms)} (heuristic ${fmtSecs(res.heuristicMs)}, HiGHS ${fmtSecs(res.mipMs)})` : fmtSecs(meta.ms);

@@ -9,9 +9,10 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import { dirname, join } from "node:path";
 import {
   parseTooltip, classify, foldSnapshots, buildPools, requirementReport, totalsOf, propertyKeys, bagLabel, kindOf, groupByName, slayersOf, medableOf, weaponAllowed, settingsDiff, PROP_LABELS, LAYER_TO_SLOT, effectiveProfile, resistSkillBonus, toOptItem, labelOf, builderKeys, migrateProfiles, templateFrom, TEMPLATE_KEYS, setRules, getRules, tagUnits, tagInfo,
+  WEAPON_SKILLS, migrateWeaponSetting, excludeWeaponsError,
   shardResistCap, resistCapsFor, resistCapsError, profileResistCaps, RESIST_CAP_LIMITS,
 } from "./vault-lib.mts";
-import type { Item, Inventory, ItemLocation, ProfilesFile } from "./vault-lib.mts";
+import type { Item, Inventory, ItemLocation, ProfilesFile, CharacterEntryRaw } from "./vault-lib.mts";
 import { upgradeScan, TAZUO_V1_CAPS } from "./scan-schema.mts";
 import { runKey, reusableRun, runSummary, normalizeRun } from "./runs-lib.mts";
 import type { SavedRun } from "./runs-lib.mts";
@@ -674,47 +675,62 @@ test("[fast] propertyKeys lists the modeled properties present", () => {
 });
 
 // ---- suit builder: weapon filter, saved runs ---------------------------------------------------
-test("[fast] weapon filter: archery keeps only bows in the hands; melee keeps shields and drops spellbooks", () => {
+const OTHERS = (skill: string): string[] => WEAPON_SKILLS.filter((w) => w !== skill);
+test("[fast] weapon filter: an excluded skill's weapons leave the pool, and nothing else in the hands does", () => {
   // buildPools reads a handful of Item fields (see its own body) — mk() deliberately builds a
   // PARTIAL fixture, cast once at the call site, same idiom as toOptItem's above and item-query.test.mts's mk().
   const mk = (serial: number, slot: string, extra: Record<string, unknown> = {}): Item => ({ serial, name: `i${serial}`, slot, gear: true, props: { hci: 1 }, tags: [], strReq: 0, root: 1, equippedBy: null, gargoyle: false, medable: true, ...extra } as unknown as Item);
   const inv = { items: {
     1: mk(1, "twoHanded", { twoHanded: true, skillReq: "archery" }),
-    2: mk(2, "oneHanded", { skillReq: "swordsmanship" }),
+    2: mk(2, "oneHanded", { skillReq: "Swordsmanship" }),
     3: mk(3, "twoHanded", {}),                                                                   // a shield
     4: mk(4, "oneHanded", {}),                                                                   // a spellbook
     5: mk(5, "twoHanded", { twoHanded: true, skillReq: "swordsmanship", equippedBy: "Kestrel", root: null }),
     6: mk(6, "helmet", {}),
+    7: mk(7, "oneHanded", { skillReq: "fencing" }),
+    8: mk(8, "oneHanded", { skillReq: "mace fighting" }),
   } } as unknown as Inventory;
-  const a = buildPools(inv, "Kestrel", { weaponSkill: "archery" });
-  assert.deepEqual((a.pools.twoHanded || []).map((i) => i.serial), [1]);
-  assert.equal((a.pools.oneHanded || []).length, 0);
-  assert.deepEqual(a.pools.helmet!.map((i) => i.serial), [6]);
-  assert.deepEqual(a.blocked, ["twoHanded"], "the worn greatsword may not stay a candidate");
-  assert.equal(a.skipped.weapon.length, 4);
-  const sw = buildPools(inv, "Kestrel", { weaponSkill: "swordsmanship" });
-  assert.deepEqual(sw.pools.oneHanded!.map((i) => i.serial), [2]);
-  assert.deepEqual(sw.pools.twoHanded!.map((i) => i.serial).sort(), [3, 5]);
-  assert.deepEqual(sw.blocked, []);
-  assert.equal(buildPools(inv, "Kestrel", {}).pools.oneHanded!.length, 2);
-  assert.ok(weaponAllowed({ slot: "ring" } as unknown as Item, "archery"));
+  const hands = (r: ReturnType<typeof buildPools>): number[] => [...(r.pools.oneHanded || []), ...(r.pools.twoHanded || [])].map((i) => i.serial).sort((a, b) => a - b);
+  const fm = buildPools(inv, "Kestrel", { excludeWeapons: ["archery", "swordsmanship", "throwing"] });
+  assert.deepEqual(hands(fm), [3, 4, 7, 8], "fencing and mace fighting, plus the shield and spellbook");
+  assert.deepEqual(fm.blocked, ["twoHanded"], "the worn greatsword may not stay a candidate");
+  assert.equal(fm.skipped.weapon.length, 3);
+  assert.deepEqual(fm.pools.helmet!.map((i) => i.serial), [6]);
+  assert.deepEqual(hands(buildPools(inv, "Kestrel", {})), [1, 2, 3, 4, 5, 7, 8], "no exclusions: everything");
+  assert.ok(weaponAllowed({ slot: "ring" } as unknown as Item, [...WEAPON_SKILLS]));
+});
+
+test("[fast] weapon exclusions: the old single choice converts to every other skill; the list holds known skills", () => {
+  const old = { floors: { hci: 45 }, weaponSkill: "Fencing" };
+  const m = migrateWeaponSetting(old);
+  assert.deepEqual(m, { floors: { hci: 45 }, excludeWeapons: ["archery", "swordsmanship", "mace fighting", "throwing"] });
+  assert.equal(old.weaponSkill, "Fencing", "pure");
+  assert.equal(migrateWeaponSetting(m), m, "nothing to convert: the same object back");
+  assert.deepEqual(migrateWeaponSetting({ weaponSkill: null }), { excludeWeapons: [] }, "null was any weapon");
+  assert.equal(excludeWeaponsError(undefined), null);
+  assert.equal(excludeWeaponsError(["archery", "mace fighting"]), null);
+  assert.equal(excludeWeaponsError("archery"), "excludeWeapons must be an array");
+  assert.match(excludeWeaponsError(["archery", "wrestling"], "settings.excludeWeapons")!, /^settings\.excludeWeapons\[1\] is not a weapon skill/);
+  const schema = JSON.parse(readFileSync(join(HERE, "schema", "profiles.v2.schema.json"), "utf8")) as { properties: Record<string, { additionalProperties: { properties: { excludeWeapons: { items: { enum: string[] } } } } }> };
+  for (const g of ["characters", "templates"]) assert.deepEqual(schema.properties[g]!.additionalProperties.properties.excludeWeapons.items.enum, WEAPON_SKILLS, `the ${g} schema knows the same skills`);
 });
 
 test("[fast] settingsDiff names what changed between two runs", () => {
-  const a = { floors: { di: 40, hci: 35 }, softFloors: [] as string[], weights: { ssi: 10 }, lockedSlots: [] as string[], weaponSkill: "", exact: true, budgetMs: 300000, strLimit: 73 };
-  const b = { floors: { di: 80 }, softFloors: ["di"], weights: { ssi: 5, dci: 8 }, lockedSlots: ["twoHanded"], weaponSkill: "archery", exact: true, budgetMs: 60000, strLimit: 73 };
+  const a = { floors: { di: 40, hci: 35 }, softFloors: [] as string[], weights: { ssi: 10 }, lockedSlots: [] as string[], excludeWeapons: [] as string[], exact: true, budgetMs: 300000, strLimit: 73 };
+  const b = { floors: { di: 80 }, softFloors: ["di"], weights: { ssi: 5, dci: 8 }, lockedSlots: ["twoHanded"], excludeWeapons: ["archery", "throwing"], exact: true, budgetMs: 60000, strLimit: 73 };
   const d = settingsDiff(a, b);
   const L = (k: string) => PROP_LABELS[k] || k;
-  for (const want of [`${L("di")} floor 40 → 80`, `${L("hci")} floor 35 removed`, `${L("ssi")} weight 10 → 5`, `${L("dci")} weight 8 added`, `${L("di")} floor made soft`, "weapons any → archery", "budget 300 s → 60 s"])
+  for (const want of [`${L("di")} floor 40 → 80`, `${L("hci")} floor 35 removed`, `${L("ssi")} weight 10 → 5`, `${L("dci")} weight 8 added`, `${L("di")} floor made soft`, "excluding archery, throwing weapons", "budget 300 s → 60 s"])
     assert.ok(d.includes(want), `missing "${want}" in ${JSON.stringify(d)}`);
   assert.ok(d.some((x) => x.startsWith("locked ")));
   assert.deepEqual(settingsDiff(a, a), []);
+  assert.deepEqual(settingsDiff({ excludeWeapons: ["archery", "throwing"] }, { excludeWeapons: ["throwing", "fencing"] }), ["excluding fencing weapons", "allowing archery weapons"]);
 });
 
 // ---- templates ----------------------------------------------------------------------------
 const OLD_PROFILES: ProfilesFile = {
   _comment: "x", caps: { hci: 45 },
-  characters: { Dorran: { archetype: "melee", weights: { hci: 10 }, floors: { hci: 35 }, race: "human", weaponSkill: "swordsmanship" }, Kestrel: { archetype: "caster", weights: {}, floors: {}, medOnly: true } },
+  characters: { Dorran: { archetype: "melee", weights: { hci: 10 }, floors: { hci: 35 }, race: "human", weaponSkill: "swordsmanship" } as CharacterEntryRaw, Kestrel: { archetype: "caster", weights: {}, floors: {}, medOnly: true } },
   archetypes: { melee: { weights: { hci: 10, dci: 10 }, floors: { physResist: 65 } }, caster: { weights: { fc: 60 }, floors: { lrc: 100 } } },
 };
 test("[smoke] migrateProfiles: archetypes become templates with defaulted fields, characters gain template from their archetype", () => {
@@ -730,10 +746,24 @@ test("[smoke] migrateProfiles: archetypes become templates with defaulted fields
   assert.equal(profiles.characters!.Dorran!.template, "melee");
   assert.equal(profiles.characters!.Kestrel!.template, "caster");
   assert.ok(!("archetype" in profiles.characters!.Dorran!));
-  assert.equal(profiles.characters!.Dorran!.weaponSkill, "swordsmanship", "the character's own settings survive");
+  assert.deepEqual(profiles.characters!.Dorran!.excludeWeapons, OTHERS("swordsmanship"), "the character's own weapon choice survives as the exclusions it means");
+  assert.ok(!("weaponSkill" in profiles.characters!.Dorran!));
+  assert.ok(!("excludeWeapons" in profiles.characters!.Kestrel!), "a character that never chose keeps its shape");
   assert.ok(!("caps" in profiles), "caps moved out of profiles.json into the shard's rules file (schemaVersion 2)");
   assert.equal(profiles.schemaVersion, 2);
   assert.equal(OLD_PROFILES.characters!.Dorran!.archetype, "melee", "pure: the input is untouched");
+});
+
+test("[fast] migrateProfiles: a v2 file's single weapon choices become exclusion lists, once", () => {
+  const v2 = { schemaVersion: 2, characters: { Kestrel: { template: "caster", weaponSkill: null } },
+    templates: { melee: { weights: { hci: 10 }, weaponSkill: "swordsmanship" } } } as unknown as ProfilesFile;
+  const { profiles, changed } = migrateProfiles(v2);
+  assert.equal(changed, true);
+  assert.deepEqual(profiles.characters!.Kestrel, { template: "caster", excludeWeapons: [] }, "null was any weapon");
+  assert.deepEqual(profiles.templates!.melee, { weights: { hci: 10 }, excludeWeapons: OTHERS("swordsmanship") });
+  assert.equal(migrateProfiles(profiles).changed, false, "idempotent");
+  const shipped = JSON.parse(readFileSync(join(HERE, "data", "profiles.default.json"), "utf8")) as ProfilesFile;
+  assert.equal(migrateProfiles(shipped).changed, false, "the shipped defaults are already in the new shape");
 });
 
 test("[fast] migrateProfiles is idempotent on the new shape", () => {
@@ -757,18 +787,18 @@ test("[fast] profiles: migrateProfiles stamps schemaVersion 2 and drops a v1 cap
 
 test("[fast] templateFrom snapshots the builder settings without race, STR limit or skipped containers", () => {
   const t = templateFrom({ floors: { hci: 45 }, weights: { di: 6 }, softFloors: ["hci"], lockedSlots: ["twoHanded"], excludeTags: ["cursed"], excludeSkills: ["necromancy"],
-    allowOthersWorn: true, allowGargoyle: false, medOnly: true, weaponSkill: "archery", race: "elf", strLimit: 95, excludeRoots: [123], template: "archer", floorBonus: 500 } as never);
+    allowOthersWorn: true, allowGargoyle: false, medOnly: true, excludeWeapons: ["throwing"], race: "elf", strLimit: 95, excludeRoots: [123], template: "archer", floorBonus: 500 } as never);
   assert.deepEqual(Object.keys(t).sort(), [...TEMPLATE_KEYS].sort());
   assert.ok(!("race" in t) && !("strLimit" in t) && !("excludeRoots" in t) && !("template" in t));
-  assert.equal(t.weaponSkill, "archery");
+  assert.deepEqual(t.excludeWeapons, ["throwing"]);
   assert.equal(t.floorBonus, 500);
   assert.equal(t.allowOthersWorn, true);
   assert.deepEqual(templateFrom({}).excludeTags, []);
-  assert.equal(templateFrom({ weaponSkill: "" }).weaponSkill, null);
+  assert.deepEqual(templateFrom({}).excludeWeapons, []);
 });
 
 test("[fast] template drift: settingsDiff between a template and a profile ignores race and STR, names real changes", () => {
-  const tpl = templateFrom({ floors: { hci: 45 }, weights: { di: 6 }, lockedSlots: ["twoHanded"], weaponSkill: "archery" });
+  const tpl = templateFrom({ floors: { hci: 45 }, weights: { di: 6 }, lockedSlots: ["twoHanded"], excludeWeapons: OTHERS("archery") });
   const same = { ...tpl, race: "elf", strLimit: 95, excludeRoots: [1], template: "archer" };
   assert.deepEqual(settingsDiff(tpl, templateFrom(same)), []);
   const drift = settingsDiff(tpl, templateFrom({ ...same, floors: { hci: 40 }, allowOthersWorn: true, medOnly: true, lockedSlots: [] }));
@@ -951,6 +981,12 @@ test("[fast] runs: normalizeRun upgrades allowOthers/budgetS and stamps schemaVe
   assert.equal(r.settings!.budgetMs, 30000);
   assert.equal("budgetS" in r.settings!, false);
   assert.deepEqual(normalizeRun(r), r);   // idempotent
+});
+test("[fast] runs: normalizeRun turns a run's single weapon choice into the exclusions it was built with", () => {
+  const r = normalizeRun({ id: "w", settings: { weaponSkill: "archery", allowOthers: true }, result: {} });
+  assert.deepEqual(r.settings!.excludeWeapons, OTHERS("archery"));
+  assert.equal("weaponSkill" in r.settings!, false);
+  assert.deepEqual(normalizeRun(r), r, "idempotent");
 });
 test("[fast] settingsDiff: budgets compare in ms and print seconds", () => {
   const d = settingsDiff({ budgetMs: 30000, exact: true }, { budgetMs: 60000, exact: true });
