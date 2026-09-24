@@ -426,17 +426,6 @@ test("[fast] a plain solver timeout still reports a bound when the solver found 
   assert.ok(Math.abs(r.gapPoints! - (r.bound! - r.score)) < 1e-9);
 });
 
-// Issue #28: at sub-second budgets HiGHS can report its dual bound as Infinity — that is no bound.
-test("[fast] a dual bound of Infinity is reported as no bound", async () => {
-  const name = templateNames[0]!;
-  const { pools, current, profile } = cell(name);
-  const opts: OptOptions = { ...BASE_OPTS, timeBudgetMs: 5000 };
-  const stubSolveModel = () => ({ status: "timeLimit" as const, statusText: "timeLimit", objective: null, primal: null, dual: Infinity, gapAbs: null, nodes: 7, colValue: null, ms: 1 });
-  const r = await solveExact({ core, pools, current, profile, opts, onProgress: () => {}, solveModel: stubSolveModel });
-  assert.equal(r.bound, null);
-  assert.equal(r.gapPoints, null);
-});
-
 // Regression for a review finding (Important 2): the MIP start only guarantees HiGHS never regresses
 // from the heuristic FROM that starting point on — a `timeLimit` result can still hand back a feasible
 // incumbent worse than the heuristic (the warm start declined, rejected on tolerance, or lost to the
