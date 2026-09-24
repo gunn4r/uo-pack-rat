@@ -327,7 +327,7 @@ function footer(): HTMLElement {
     primary = button({ label: "Finish", variant: "primary", size: "lg", kbd: "↵", onClick: () => void finish(), attrs: { id: "wiz-primary" } });
   } else {
     // The install is this step's one primary; Finish appears only once it succeeds.
-    primary = button({ label: wiz!.installed?.version ? "Reinstall scanner" : "Install scanner", variant: "primary", size: "lg", kbd: "↵",
+    primary = button({ label: wiz!.busy ? "Installing…" : wiz!.installed?.version ? "Reinstall scanner" : "Install scanner", variant: "primary", size: "lg", kbd: "↵",
       disabled: !wiz!.noRunningChecked || wiz!.busy, onClick: () => void doInstall(), attrs: { id: "wiz-primary" } });
   }
   return box("footer", { class: "overlay-foot wiz-foot" },

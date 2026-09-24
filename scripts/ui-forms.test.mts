@@ -161,8 +161,16 @@ test("[slow] Wizard: named stepper with branch-aware labels, radio cards, kept t
     assert.equal(await page.locator("#wiz-primary").isDisabled(), true);
     assert.equal(await page.locator("#wizard").getByRole("button", { name: "Finish" }).count(), 0);
     await page.check("#wiz-stopall");
+    // While the install runs, the button says so and cannot be pressed again.
+    let release = (): void => {};
+    const held = new Promise<void>((r) => { release = r; });
+    await page.route("**/api/setup/install", async (r) => { await held; await r.continue(); });
     await page.click("#wiz-primary");
+    await page.waitForFunction(() => document.querySelector<HTMLElement>("#wiz-primary")?.innerText.split("\n")[0] === "Installing…");
+    assert.equal(await page.locator("#wiz-primary").isDisabled(), true);
+    release();
     await page.waitForSelector("#wizard .wiz-press");
+    await page.unroute("**/api/setup/install");
     assert.match(await page.locator("#wizard .wiz-press").innerText(), /packrat-scanner\.py/);
     assert.equal(await page.locator("#wiz-primary").innerText().then((s) => s.split("\n")[0]), "Finish");
     await page.click("#wiz-primary");
