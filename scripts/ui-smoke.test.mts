@@ -27,17 +27,25 @@ async function rowActionLabels(page: Page): Promise<string[]> {
   await page.waitForSelector("#inv-table tbody tr.item .rowact button", { state: "attached", timeout: 10_000 });
   return page.locator("#inv-table tbody tr.item").first().locator(".rowact button").evaluateAll((bs) => bs.map((b) => b.getAttribute("aria-label") || ""));
 }
+// The reason is read from the wrapper's own tooltip (its aria-describedby id), not "the last tooltip on the
+// page": a tooltip shown for a row the table then redraws never hears the pointer leave, so it can outlive
+// the row. The tooltip shows 400 ms after a mouseenter on that exact element and nothing else brings it back,
+// so a try whose tooltip does not show starts over with the pointer off the row (a fresh mouseenter) instead
+// of waiting longer on a hover that was lost.
 async function actionReason(page: Page, action: string): Promise<string> {
   const row = page.locator("#inv-table tbody tr.item").first();
-  await row.hover();
   const wrap = row.locator(".rowact .tipwrap", { has: page.locator(`button[aria-label="${action}"]`) });
-  if (!await wrap.count()) return "";
-  await wrap.hover();
-  const tip = page.locator(".tip[role=tooltip]").last();
-  await tip.waitFor({ timeout: 5_000 });
-  const text = await tip.innerText();
-  await page.mouse.move(0, 0);
-  return text;
+  for (let attempt = 1; ; attempt++) {
+    await page.mouse.move(0, 0);
+    await row.hover();
+    if (!await wrap.count()) return "";
+    await wrap.hover();
+    const tip = page.locator(`[id="${await wrap.getAttribute("aria-describedby")}"]`);
+    try { await tip.waitFor({ timeout: 2_000 }); } catch (e) { if (attempt < 3) continue; throw e; }
+    const text = await tip.innerText();
+    await page.mouse.move(0, 0);
+    return text;
+  }
 }
 
 test("[slow] the packaged UI renders, switches tabs and lists the demo inventory", async (t) => {
