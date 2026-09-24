@@ -314,6 +314,18 @@ test("[fast] mip: the same fixture with the slot made OPTIONAL is reachable (lea
   assert.equal(typeof built.hardRows.fc, "number", "a genuine hard row: the floor really is reachable once the ring slot may be left empty");
 });
 
+// Issue #28: reach used to add the one-hand and two-hand maxima, counting a one-hander plus a
+// two-hander, a suit the hands row forbids — a hard floor only that suit reaches cost an infeasible solve.
+test("[fast] mip: reach respects the hands row — a one-hander plus a two-hander never reaches a floor, a one-hander plus a shield does", () => {
+  const sword = mkItem(401, "oneHanded", { lrc: 60 }), bow = mkItem(402, "twoHanded", { lrc: 60 }, { twoHanded: true }), shield = mkItem(403, "twoHanded", { lrc: 50 });
+  const floorProfile = { weights: {}, caps: {}, floors: { lrc: 100 }, hardFloors: ["lrc"], floorBonus: 1000, floorPartial: 0.5 };
+  const handsOnly = (twoHanded: OptItem[]): BuiltMip => buildSuitMip({ pools: { oneHanded: [sword], twoHanded }, current: {}, profile: floorProfile, slots: ["oneHanded", "twoHanded"], optionalSlots: ["oneHanded", "twoHanded"] });
+  assert.deepEqual(handsOnly([bow]).unreachableFloors, ["lrc"]);
+  const withShield = handsOnly([bow, shield]);
+  assert.deepEqual(withShield.unreachableFloors, []);
+  assert.equal(typeof withShield.hardRows.lrc, "number");
+});
+
 test("[fast] mip: hardAsSoft models every hard floor as soft, with no hard rows and scoreOffset 0", () => {
   const built = build({ hardAsSoft: true });
   assertWellFormed(built);
