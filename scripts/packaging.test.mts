@@ -220,7 +220,7 @@ test("[fast] every packaging script builds the page first", () => {
   }
 });
 
-const workflow = (name: string): string => readFileSync(join(root, ".github/workflows", name), "utf8");
+const workflow = (name: string): string => readFileSync(join(root, ".github/workflows", name), "utf8").replace(/\r\n/g, "\n"); // Windows checkouts get CRLF
 
 function filesUnder(dir: string): string[] {
   const out: string[] = [];
