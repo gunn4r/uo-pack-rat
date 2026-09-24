@@ -42,7 +42,9 @@
 //         GET /api/events — SSE, one stream shared by every connected client (not per-job like the
 //         optimize events above): hello {ok, watching: [adapter ids]} on connect, inventory
 //         {file, character, scannedAt, at} once an inbox file is accepted into paths.scans, rejected
-//         {file, reason, at} once one is moved to its adapter's rejected/ folder, ping every 15s. A
+//         {file, reason, at} once one is moved to its adapter's rejected/ folder, changed {what:
+//         "inventory"|"runs", at} after a forget, forget-character or run deletion (so other open tabs
+//         reload), ping every 15s. A
 //         normal token-protected /api/* route (no SSE exemption — unlike /api/optimize/<id>/events,
 //         this stream carries no per-job secret an EventSource couldn't send anyway). Non-demo mode
 //         starts one app/watcher.mts per adapters/<id>/ directory that ships a capabilities.json
@@ -1485,7 +1487,7 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
           const run = readRun();
           return run ? send(res, 200, { ok: true, run }) : send(res, 404, { ok: false, error: DAMAGED_RUN });
         }
-        if (req.method === "DELETE") { unlinkSync(f); return send(res, 200, { ok: true }); }
+        if (req.method === "DELETE") { unlinkSync(f); broadcastEvent("changed", { what: "runs", at: Date.now() }); return send(res, 200, { ok: true }); }
         if (req.method === "PUT") {
           const { label = "" } = asObject(await readBody(req, { limit: 8e3 }));
           // String() throws on an object with a null prototype or a throwing toString — a 500 plus a
@@ -1616,6 +1618,7 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
         // exactly what the fold wants anyway (newest scan of a root wins, by parseStamp — the file
         // name has never been what orders them).
         writeFileAtomic(join(SCANS, `_forget-${serial.toString(16)}.json`), JSON.stringify(snap), DATA_FILE_MODE);
+        broadcastEvent("changed", { what: "inventory", at: Date.now() });
         return send(res, 200, { ok: true });
       }
       if (req.method === "GET" && url.pathname === "/api/blacklist") return send(res, 200, { ok: true, containers: readBlacklist() });
@@ -1657,6 +1660,7 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
         // One file per forgotten character (hex of the name: any name is a safe file name that way),
         // replaced with a newer stamp if the character is forgotten again.
         writeFileAtomic(join(SCANS, `_forget-char-${Buffer.from(character).toString("hex")}.json`), JSON.stringify(snap), DATA_FILE_MODE);
+        broadcastEvent("changed", { what: "inventory", at: Date.now() });
         return send(res, 200, { ok: true });
       }
       send(res, 404, { ok: false, error: "not found" });

@@ -5,7 +5,8 @@
 // button. EventSource reconnects on its own (the browser's default behaviour) — no retry logic needed.
 import { toast } from "./dom.mts";
 import { reload } from "./app.mts";
-import type { InventoryEvent, RejectedEvent } from "./api-types.mts";
+import { loadRuns } from "./runs.mts";
+import type { InventoryEvent, RejectedEvent, ChangedEvent } from "./api-types.mts";
 
 let source: EventSource | null = null;
 
@@ -58,6 +59,11 @@ export function connectEvents(): EventSource {
   source.addEventListener("rejected", (e: MessageEvent<string>) => {
     const data = parse(e.data) as Partial<RejectedEvent>;
     toast(`${data.file || "a scan"} was rejected: ${data.reason || "unknown reason"}`, "bad");
+  });
+  source.addEventListener("changed", (e: MessageEvent<string>) => {
+    const data = parse(e.data) as Partial<ChangedEvent>;
+    if (data.what === "inventory") scheduleReload();
+    else if (data.what === "runs") void loadRuns();
   });
   return source;
 }

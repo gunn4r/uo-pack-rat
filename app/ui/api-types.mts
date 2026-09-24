@@ -416,6 +416,12 @@ export interface RejectedEvent {
   reason: string;
   at: number;
 }
+// broadcastEvent("changed", …): a forget / forget-character ("inventory") or a run deletion ("runs")
+// made in some tab — every tab reloads that data.
+export interface ChangedEvent {
+  what: "inventory" | "runs";
+  at: number;
+}
 
 // ---------------------------------------------------------------- errors
 

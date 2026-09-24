@@ -341,6 +341,25 @@ test("[fast] POST /api/forget rejects a non-integer or non-positive root before 
     await s2.close();
   }
 });
+// Forget and run deletion used to push nothing on /api/events, so every other open tab kept showing the
+// forgotten container or the deleted run until a manual reload.
+test("[fast] POST /api/forget and DELETE /api/runs/<id> stream a changed event to open tabs", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "qm-changed-"));
+  const s2 = await startServer(ensureLayout(resolveConfig(["--port", "0", "--data", dir], {})));
+  const sse = sseReader(await fetch(s2.url + "/api/events"));
+  try {
+    await sse.readUntil((b) => b.includes("event: hello"));
+    assert.equal((await fetch(s2.url + "/api/forget", { method: "POST", headers: JSON_HEADERS, body: JSON.stringify({ root: 12345 }) })).status, 200);
+    await sse.readUntil((b) => b.includes('event: changed\ndata: {"what":"inventory"'));
+    const id = "0b5c1a4e-0000-4000-8000-000000000002";
+    writeFileSync(join(dir, "runs", `${id}.json`), "{}");
+    assert.equal((await fetch(s2.url + `/api/runs/${id}`, { method: "DELETE" })).status, 200);
+    await sse.readUntil((b) => b.includes('event: changed\ndata: {"what":"runs"'));
+  } finally {
+    await sse.cancel();
+    await s2.close();
+  }
+});
 // Post-review fix: POST /api/bridge only checked action/serial were truthy, so a page bug or any
 // other local caller could queue a line violating BRIDGE_SCHEMA.command on several counts (unknown
 // action, non-integer serial, missing name) at once. Validates the LINE THE ROUTE ACTUALLY WROTE
