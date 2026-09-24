@@ -530,6 +530,7 @@ test("[fast] mip-solve: gapFromEvents computes the absolute gap from the last ev
   assert.equal(gapFromEvents("timeLimit", { dual: null, primal: 100 }), null, "missing dual: gap unknown");
   assert.equal(gapFromEvents("timeLimit", { dual: 100, primal: null }), null, "missing primal: gap unknown");
   assert.equal(gapFromEvents("timeLimit", null), null, "no event carried both bounds: gap unknown");
+  assert.equal(gapFromEvents("timeLimit", { dual: Infinity, primal: 100 }), null, "a dual bound not established yet (Infinity): gap unknown");
   assert.equal(gapFromEvents("infeasible", null), null);
 });
 

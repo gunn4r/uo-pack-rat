@@ -162,7 +162,8 @@ export async function solveExact({
     // one budget. A limit of 0 still returns the MIP start as the incumbent.
     const remaining = () => Math.max(0, (budget - (now() - t0)) / 1000);
     let lastEmit = 0;
-    const toScore = (v: number | null | undefined): number | null => (v == null ? null : v + active.scoreOffset);
+    // HiGHS reports ±Infinity for a bound it has not established yet (seen at sub-second budgets): no bound.
+    const toScore = (v: number | null | undefined): number | null => (v == null || !Number.isFinite(v) ? null : v + active.scoreOffset);
     const onEvent = (ev: { kind: string; primal: number | undefined; dual: number | undefined; nodes: number }) => {
       const at = now();
       if (lastEmit !== 0 && at - lastEmit < 250) return;
