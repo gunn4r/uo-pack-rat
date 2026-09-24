@@ -59,6 +59,7 @@ export async function load(): Promise<void> {
   state.setup = setupRes;
   setRules(state.rules);
   applyUiPrefs(prefs ? prefs.prefs : null);
+  state.sheetProps = prefs?.prefs.sheetProps ?? null;
   applyLook(prefs ? prefs.prefs : null);
   applyShellPrefs(prefs ? prefs.prefs : null);
   // Settings, Import, the live-scan stream and the first-run wizard need nothing from the inventory,

@@ -129,6 +129,7 @@ export interface AppState {
   itemCache: Map<number, Item>;
   cols: string[];
   density: "dense" | "regular";   // the Inventory table's rows, 32 or 40 px (ui-prefs `density`)
+  sheetProps: string[] | null;    // the character sheet's shown properties (ui-prefs `sheetProps`); null = the default set
   builder: BuilderState;
   // Set only once app.mts's load()/reload() has fetched the inventory at least once — absent (not
   // null) before that, exactly as it is at runtime today (nothing in the initial object literal below
@@ -150,6 +151,7 @@ export const state: AppState = {
   query: { q: "", chars: [], slot: [], loc: [], roots: [], rarity: "", rarityMin: "", kind: [], seenDays: 0, slayer: "", nogarg: false, med: false, hideTags: [], props: [], group: false, sort: "name", dir: 1, offset: 0, limit: 500 },
   page: { rows: [], groups: null, total: 0, stacks: 0, pieces: 0 },   // what the Inventory table has loaded
   density: "dense",
+  sheetProps: null,
   // The full-item-by-serial cache (Task 5's item-lookup fix): GET /api/inventory no longer carries
   // the whole item map, so anything that needs to enrich a bare serial into a full record (the suit
   // builder's result panel, the hover tooltip) goes through ui/items.mts's resolveItems(), which

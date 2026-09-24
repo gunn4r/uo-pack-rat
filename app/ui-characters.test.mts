@@ -5,7 +5,7 @@
 import "../scripts/localstorage-shim-for-tests.mts";   // app/ui/store.mts reads localStorage at module scope
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { capOver, capBadgeText, atCap, bonusBreakdown, moveText, keyNumbers, tagTone, plural } from "./ui/sheet.mts";
+import { capOver, capBadgeText, atCap, bonusBreakdown, moveText, keyNumbers, tagTone, plural, SHEET_CATALOGUE, DEFAULT_SHEET_PROPS } from "./ui/sheet.mts";
 import { rosterView, triple, type RosterRow } from "./ui/roster.mts";
 
 test("[fast] sheet: the cap badge says how far the raw value is past the cap, and nothing at or under it", () => {
@@ -50,6 +50,13 @@ test("[fast] sheet: a slot tile shows the two properties nearest their cap, in t
   // bookkeeping keys, zeros and non-numbers never show; fewer than two is fine
   assert.deepEqual(keyNumbers({ tagPenalty: 4, hitsPool: 10, dci: 0, lmc: Number.NaN, fireResist: 5 }, caps), ["Fire 5"]);
   assert.deepEqual(keyNumbers({}, caps), []);
+});
+
+test("[fast] sheet: the Properties card lists each property once, shows today's set plus the three leeches by default", () => {
+  const listed = SHEET_CATALOGUE.flatMap(([, rows]) => rows.map(([k]) => k));
+  assert.equal(new Set(listed).size, listed.length, "no property is listed twice");
+  for (const k of ["fc", "sdi", "hci", "reflectPhys", "hpRegen", "luck", "hitLifeLeech", "hitManaLeech", "hitStamLeech"]) assert.ok(DEFAULT_SHEET_PROPS.includes(k), `${k} is shown by default`);
+  for (const k of ["hitFireball", "selfRepair", "strBonus"]) assert.ok(!DEFAULT_SHEET_PROPS.includes(k) && listed.includes(k), `${k} is listed but off`);
 });
 
 test("[fast] sheet: tags take the danger or warning tone the inventory uses", () => {

@@ -2889,7 +2889,7 @@ test("[fast] GET/PUT /api/ui-prefs keeps the column choice across a restart on a
 // The look (theme family, light/system/dark) and the pinned-collapsed sidebar are view choices like the
 // columns, and live in the same file for the same reason: the desktop app's origin changes every launch.
 // Each field is written only when valid, and a PUT of one field keeps the others.
-test("[fast] PUT /api/ui-prefs keeps theme, appearance, sidebar, density and the column set version, each checked, next to the columns", async () => {
+test("[fast] PUT /api/ui-prefs keeps theme, appearance, sidebar, density, the column set version and the sheet's properties, each checked, next to the columns", async () => {
   const dir = mkdtempSync(join(tmpdir(), "qm-uiprefs-look-"));
   const put = (url: string, body: unknown): Promise<Response> => fetch(url + "/api/ui-prefs", { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
   const s = await startServer(ensureLayout(resolveConfig(["--port", "0", "--data", dir], {})));
@@ -2899,12 +2899,14 @@ test("[fast] PUT /api/ui-prefs keeps theme, appearance, sidebar, density and the
     assert.equal((await put(s.url, { theme: "default", sidebar: "collapsed" })).status, 200);
     assert.equal((await put(s.url, { density: "regular" })).status, 200);
     assert.equal((await put(s.url, { cols: ["hci"], colsVersion: "2" })).status, 200);
-    assert.deepEqual(asJson(await (await fetch(s.url + "/api/ui-prefs")).json()), { ok: true, prefs: { cols: ["hci"], colsVersion: "2", appearance: "dark", theme: "default", sidebar: "collapsed", density: "regular" } });
-    for (const bad of [{ appearance: "sepia" }, { appearance: 1 }, { theme: "neon" }, { theme: "" }, { sidebar: "wide" }, { sidebar: true }, { density: "comfy" }, { colsVersion: 2 }, { colsVersion: "9" }]) {
+    assert.equal((await put(s.url, { sheetProps: ["fc", "hitLifeLeech"] })).status, 200);
+    assert.deepEqual(asJson(await (await fetch(s.url + "/api/ui-prefs")).json()), { ok: true, prefs: { cols: ["hci"], sheetProps: ["fc", "hitLifeLeech"], colsVersion: "2", appearance: "dark", theme: "default", sidebar: "collapsed", density: "regular" } });
+    for (const bad of [{ appearance: "sepia" }, { appearance: 1 }, { theme: "neon" }, { theme: "" }, { sidebar: "wide" }, { sidebar: true }, { density: "comfy" }, { colsVersion: 2 }, { colsVersion: "9" },
+      { sheetProps: "fc" }, { sheetProps: [5] }]) {
       assert.equal((await put(s.url, bad)).status, 400, `${JSON.stringify(bad)} should be refused`);
     }
     // A hand-edited file with a bad value reads as "never chosen" for that field only.
-    writeFileSync(join(dir, "ui-prefs.json"), JSON.stringify({ cols: ["dci"], appearance: "sepia", theme: "default", sidebar: 3 }));
+    writeFileSync(join(dir, "ui-prefs.json"), JSON.stringify({ cols: ["dci"], sheetProps: [1], appearance: "sepia", theme: "default", sidebar: 3 }));
     assert.deepEqual(asJson(await (await fetch(s.url + "/api/ui-prefs")).json()), { ok: true, prefs: { cols: ["dci"], theme: "default" } });
   } finally {
     await s.close();

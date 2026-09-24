@@ -118,7 +118,7 @@
 .inv-pills { display: flex; flex-wrap: wrap; gap: 6px; }
 .inv-settings-pop .pop-body { padding: 0; gap: 0; }
 .inv-settings-pop .inv-pop-sec { padding: var(--space-3) var(--space-3) var(--space-2); }
-.inv-settings-pop #inv-cols { padding: var(--space-1) var(--space-3) var(--space-2); margin: 0; max-height: 300px; }
+.inv-settings-pop .inv-opts { padding: var(--space-1) var(--space-3) var(--space-2); margin: 0; max-height: 300px; }
 .inv-pop-foot { padding: var(--space-2) var(--space-3); border-radius: 0 0 var(--radius-lg) var(--radius-lg); }
 
 /* ---------------------------------------------------------------- Containers view */
