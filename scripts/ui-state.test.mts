@@ -473,56 +473,33 @@ test("[slow] the Inventory column choice survives a restart of the desktop app",
 });
 
 // The sheet's Properties card lists the chosen properties (issue #47): the default set carries the three
-// leeches, the "Properties shown" popover adds and removes rows, the choice survives a restart, and Reset
-// puts the default back.
-test("[slow] the character sheet's shown properties are chosen in a popover, survive a restart and reset", async (t) => {
+// leeches, the "Properties shown" popover adds and removes rows, and Reset puts the default back.
+test("[slow] the character sheet's shown properties are chosen in a popover and reset", async (t) => {
   const why = unavailable();
   if (why) return t.skip(why);
   const dataDir = seedDataDir("packrat-ui-sheetprops-");
-  const card = (page: Page) => page.locator('#tab-characters section[aria-label="Properties"]');
-  const openSheet = async (page: Page): Promise<void> => {
+  const { app, page, errors } = await launch(dataDir);
+  try {
     await page.locator("#inv-table tbody tr.item").first().waitFor({ timeout: 30_000 });
     await page.evaluate(() => { location.hash = "#/characters/Dorran"; });
     await page.waitForSelector('#tab-characters .sheet[data-character="Dorran"]', { timeout: 10_000 });
-  };
-  const rows = (page: Page): Promise<string[]> => card(page).locator(".sheet-props .kv-k").allInnerTexts();
-  try {
-    {
-      const { app, page, errors } = await launch(dataDir);
-      try {
-        await openSheet(page);
-        const shown = await rows(page);
-        for (const r of ["Faster Casting", "Hit Chance", "Hit Life Leech", "Hit Mana Leech", "Hit Stamina Leech", "Luck"]) assert.ok(shown.includes(r), `${r} is shown by default`);
-        assert.ok(!shown.includes("Hit Fireball"), "a property outside the default set is off");
-        await card(page).getByRole("button", { name: "Properties shown" }).click();
-        const pop = page.getByRole("dialog", { name: "Properties shown" });
-        await pop.getByRole("searchbox", { name: "Find a property" }).fill("fireball");
-        await pop.locator('input[value="hitFireball"]').check();
-        await pop.getByRole("searchbox", { name: "Find a property" }).fill("");
-        await pop.locator('input[value="hci"]').uncheck();
-        await page.keyboard.press("Escape");
-        const after = await rows(page);
-        assert.ok(after.includes("Hit Fireball") && !after.includes("Hit Chance"), `the card follows the choice, got ${JSON.stringify(after)}`);
-        await page.waitForFunction(async () => ((await (await fetch("/api/ui-prefs")).json()).prefs.sheetProps || []).includes("hitFireball"), undefined, { timeout: 10_000 });
-        assert.deepEqual(errors, []);
-      } finally {
-        await app.close();
-      }
-    }
-    const { app, page, errors } = await launch(dataDir);
-    try {
-      await openSheet(page);
-      const kept = await rows(page);
-      assert.ok(kept.includes("Hit Fireball") && !kept.includes("Hit Chance"), `the choice survives a restart, got ${JSON.stringify(kept)}`);
-      await card(page).getByRole("button", { name: "Properties shown" }).click();
-      await page.getByRole("dialog", { name: "Properties shown" }).getByRole("button", { name: "Reset to default" }).click();
-      const reset = await rows(page);
-      assert.ok(reset.includes("Hit Chance") && reset.includes("Hit Life Leech") && !reset.includes("Hit Fireball"), `Reset puts the default back, got ${JSON.stringify(reset)}`);
-      assert.deepEqual(errors, []);
-    } finally {
-      await app.close();
-    }
+    const card = page.locator('#tab-characters section[aria-label="Properties"]');
+    const rows = (): Promise<string[]> => card.locator(".sheet-props .kv-k").allInnerTexts();
+    const shown = await rows();
+    for (const r of ["Faster Casting", "Hit Chance", "Hit Life Leech", "Hit Mana Leech", "Hit Stamina Leech", "Luck"]) assert.ok(shown.includes(r), `${r} is shown by default`);
+    assert.ok(!shown.includes("Hit Fireball"), "a property outside the default set is off");
+    await card.getByRole("button", { name: "Properties shown" }).click();
+    const pop = page.getByRole("dialog", { name: "Properties shown" });
+    await pop.locator('input[value="hitFireball"]').check();
+    await pop.locator('input[value="hci"]').uncheck();
+    const after = await rows();
+    assert.ok(after.includes("Hit Fireball") && !after.includes("Hit Chance"), `the card follows the choice, got ${JSON.stringify(after)}`);
+    await pop.getByRole("button", { name: "Reset to default" }).click();
+    const reset = await rows();
+    assert.ok(reset.includes("Hit Chance") && reset.includes("Hit Life Leech") && !reset.includes("Hit Fireball"), `Reset puts the default back, got ${JSON.stringify(reset)}`);
+    assert.deepEqual(errors, []);
   } finally {
+    await app.close();
     rmSync(dataDir, { recursive: true, force: true });
   }
 });

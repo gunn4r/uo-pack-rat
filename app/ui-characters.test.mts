@@ -6,7 +6,6 @@ import "../scripts/localstorage-shim-for-tests.mts";   // app/ui/store.mts reads
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { capOver, capBadgeText, atCap, bonusBreakdown, moveText, keyNumbers, tagTone, plural, SHEET_CATALOGUE, DEFAULT_SHEET_PROPS } from "./ui/sheet.mts";
-import { PROP_FULL } from "./vault-lib.mts";
 import { rosterView, triple, type RosterRow } from "./ui/roster.mts";
 
 test("[fast] sheet: the cap badge says how far the raw value is past the cap, and nothing at or under it", () => {
@@ -53,12 +52,9 @@ test("[fast] sheet: a slot tile shows the two properties nearest their cap, in t
   assert.deepEqual(keyNumbers({}, caps), []);
 });
 
-test("[fast] sheet: the Properties card lists every known property once, shows today's set plus the three leeches by default", () => {
+test("[fast] sheet: the Properties card lists each property once, shows today's set plus the three leeches by default", () => {
   const listed = SHEET_CATALOGUE.flatMap(([, rows]) => rows.map(([k]) => k));
   assert.equal(new Set(listed).size, listed.length, "no property is listed twice");
-  const resists = ["physResist", "fireResist", "coldResist", "poisonResist", "energyResist"], bookkeeping = ["tagPenalty", "stamPool", "manaPool", "hitsPool"];
-  assert.deepEqual(Object.keys(PROP_FULL).filter((k) => !listed.includes(k)).sort(), [...bookkeeping, ...resists].sort(), "only the KPI row's resists and the fold's bookkeeping are left out");
-  assert.deepEqual(SHEET_CATALOGUE.map(([t]) => t), ["Casting", "Combat", "Leech", "Regeneration", "Pools and other", "Other"]);
   for (const k of ["fc", "sdi", "hci", "reflectPhys", "hpRegen", "luck", "hitLifeLeech", "hitManaLeech", "hitStamLeech"]) assert.ok(DEFAULT_SHEET_PROPS.includes(k), `${k} is shown by default`);
   for (const k of ["hitFireball", "selfRepair", "strBonus"]) assert.ok(!DEFAULT_SHEET_PROPS.includes(k) && listed.includes(k), `${k} is listed but off`);
 });

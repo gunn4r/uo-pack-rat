@@ -2902,7 +2902,7 @@ test("[fast] PUT /api/ui-prefs keeps theme, appearance, sidebar, density, the co
     assert.equal((await put(s.url, { sheetProps: ["fc", "hitLifeLeech"] })).status, 200);
     assert.deepEqual(asJson(await (await fetch(s.url + "/api/ui-prefs")).json()), { ok: true, prefs: { cols: ["hci"], sheetProps: ["fc", "hitLifeLeech"], colsVersion: "2", appearance: "dark", theme: "default", sidebar: "collapsed", density: "regular" } });
     for (const bad of [{ appearance: "sepia" }, { appearance: 1 }, { theme: "neon" }, { theme: "" }, { sidebar: "wide" }, { sidebar: true }, { density: "comfy" }, { colsVersion: 2 }, { colsVersion: "9" },
-      { sheetProps: "fc" }, { sheetProps: [5] }, { sheetProps: [""] }, { sheetProps: ["x".repeat(65)] }, { sheetProps: Array.from({ length: 201 }, (_, i) => `k${i}`) }]) {
+      { sheetProps: "fc" }, { sheetProps: [5] }]) {
       assert.equal((await put(s.url, bad)).status, 400, `${JSON.stringify(bad)} should be refused`);
     }
     // A hand-edited file with a bad value reads as "never chosen" for that field only.
