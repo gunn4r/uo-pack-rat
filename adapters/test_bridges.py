@@ -186,6 +186,13 @@ class BridgeCase(object):
         self.assertIn("expired", final["results"]["old"]["msg"])
         self.assertEqual(self.moved(w), [])
 
+    def test_a_deleted_queue_file_reads_as_empty_and_the_next_command_still_runs(self):
+        w = home()
+        w.clock.at(0.5, lambda: os.remove(os.path.join(self.dir, "queue.jsonl")))
+        final, _ = self.run_bridge(w, 5, [self.cmd("q1", "grab", RING, [PACK, POUCH])])
+        self.assertTrue(final["results"]["q1"]["ok"], final["results"]["q1"])
+        self.assertEqual([m for m in w.messages if "queue read failed" in m], [])
+
     def test_a_duplicate_line_in_one_read_runs_once(self):
         w = home()
         c = self.cmd("d1", "grab", AMULET, [CHEST, BAG])

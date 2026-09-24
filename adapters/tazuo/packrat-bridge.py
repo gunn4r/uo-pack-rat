@@ -564,6 +564,8 @@ def run(cmd):
 
 def read_queue(offset):
     """Consume at most MAX_READ_BYTES of new queue bytes. Returns (offset, line texts)."""
+    if not os.path.isfile(QUEUE):
+        return 0, []                     # deleted: empty until the app writes the next command
     size = os.path.getsize(QUEUE)
     if size < offset:
         offset = 0                       # file was truncated/reset by the server
