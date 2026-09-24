@@ -550,6 +550,9 @@ test("[smoke] fold: a quick refresh (backpack as the only root) replaces the wor
   // A root listed in roots but missing from containers still keeps the items filed directly in it.
   const noRootEntry = foldSnapshots([{ ...quick, containers: {} }]);
   assert.equal(noRootEntry.items[1]!.location!.text, "Dorran's backpack");
+  // ...and one holding only a bag is rebuilt too, so the bag has a location.
+  const onlyBag = foldSnapshots([{ ...quick, containers: { 30: { serial: 30, root: 10, parent: 10, kind: "container", name: "Pouch" } }, items: [] }]);
+  assert.equal(onlyBag.items[30]!.location!.text, "Dorran's backpack");
 });
 
 test("[fast] fold: a root listed with opened:false keeps its previous contents; opened:true empties it", () => {
