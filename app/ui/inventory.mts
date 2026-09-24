@@ -383,6 +383,10 @@ function saveCols(): void {
   api("/api/ui-prefs", { method: "PUT", body: { cols: state.cols, colsVersion: COLS_VERSION } }).catch((e: Error) => toast(`Could not save the column choice: ${e.message}`, "bad"));
 }
 function setCols(cols: string[]): void { state.cols = cols; saveCols(); rebuildTable(); }
+function setColWidths(widths: Record<string, number>): void {
+  state.colWidths = widths;
+  api("/api/ui-prefs", { method: "PUT", body: { colWidths: widths } }).catch((e: Error) => toast(`Could not save the column widths: ${e.message}`, "bad"));
+}
 function openSettings(): void {
   const all = allCols();
   const count = txt("", "t-sm muted");
@@ -432,7 +436,8 @@ function openSettings(): void {
     view ? box("div", { class: "inv-pop-sec" }, txt("View", "caps"), view) : null,
     box("div", { class: "inv-pop-sec" }, txt("Density", "caps"), density),
     el("div", { class: "divider" }),
-    box("div", { class: "inv-pop-sec" }, box("div", { class: "inv-pop-head" }, txt("Columns", "caps"), el("span", { class: "spacer" }), count), find.root),
+    box("div", { class: "inv-pop-sec" }, box("div", { class: "inv-pop-head" }, txt("Columns", "caps"), el("span", { class: "spacer" }), count), find.root,
+      button({ label: "Reset column widths", size: "sm", onClick: () => { setColWidths({}); rebuildTable(); } })),
     list,
     box("div", { class: "overlay-foot inv-pop-foot" },
       button({ label: "Reset to default", variant: "ghost", size: "sm", onClick: () => { setCols([...DEFAULT_COLS]); paintCount(); draw(); } }),
@@ -450,6 +455,7 @@ export function applyUiPrefs(prefs: UiPrefs | null): void {
   if (cols) state.cols = cols;
   if (save) saveCols();
   if (prefs?.density) state.density = prefs.density;
+  if (prefs?.colWidths) state.colWidths = prefs.colWidths;
   if (search) rebuildTable();
 }
 
@@ -460,7 +466,7 @@ const RESISTS = ["physResist", "fireResist", "coldResist", "poisonResist", "ener
 // chunk lands, so the header changes with the data, not with the click.
 const grouped = (): boolean => (loadedOnce ? !!state.page.groups : state.query.group);
 function columns(): ColDef[] {
-  const c = (key: string, text: string, width: number, num = false, title = ""): ColDef => ({ key, label: text, title, num, width, sortable: true });
+  const c = (key: string, text: string, width: number, num = false, title = ""): ColDef => ({ key, label: text, title, num, width: Object.hasOwn(state.colWidths, key) ? state.colWidths[key]! : width, sortable: true });
   if (grouped()) return [c("name", "Name", 300), c("kind", "Kind", 120), c("amount", "Total", 88, true), c("stacks", "Stacks", 80, true), { ...c("where", "Where", 480), sortable: false }];
   const width = (k: string): number => (k === "seen" ? 112 : k === "kind" ? 96 : RESISTS.includes(k) ? 52 : Math.max(52, colShort(k, label).length * 8 + 28));
   // Tags, when shown, sits right after Name wherever the saved list names it; it has nothing to sort on.
@@ -638,9 +644,10 @@ function rebuildTable(): void {
   t.classList.toggle("tbl-regular", state.density === "regular");
   rowH = state.density === "regular" ? 40 : 32;
   t.setAttribute("aria-colcount", String(cols.length));
-  t.style.minWidth = `${cols.reduce((a, c) => a + c.width, 0)}px`;
-  t.querySelector("colgroup")!.replaceChildren(...cols.map((c) => el("col", { style: `width:${c.width}px` })), ...(isGrouped ? [] : [el("col", { class: "act-col" })]));
-  t.querySelector("thead")!.replaceChildren(el("tr", { "aria-rowindex": 1 }, ...cols.map((c) => {
+  const widths = cols.map((c) => c.width), colEls = cols.map((c) => el("col", { style: `width:${c.width}px` }));
+  t.style.minWidth = `${widths.reduce((a, w) => a + w, 0)}px`;
+  t.querySelector("colgroup")!.replaceChildren(...colEls, ...(isGrouped ? [] : [el("col", { class: "act-col" })]));
+  t.querySelector("thead")!.replaceChildren(el("tr", { "aria-rowindex": 1 }, ...cols.map((c, i) => {
     const sort = c.sortable ? sortState(c) : null;
     const inner = c.sortable
       ? box("button", { type: "button", ...(c.title ? { title: c.title } : {}), onclick: () => {
@@ -648,7 +655,12 @@ function rebuildTable(): void {
         setQuery(q.sort === c.key ? { ...q, dir: q.dir > 0 ? -1 : 1 } : { ...q, sort: c.key, dir: 1 });
       } }, txt(c.label), sort && sort !== "none" ? icon(sort === "ascending" ? "arrow-up" : "arrow-down", { size: "sm" }) : null)
       : txt(c.label);
-    return el("th", { class: c.num ? "num" : "", scope: "col", ...(sort ? { "aria-sort": sort } : {}) }, inner);
+    return el("th", { class: c.num ? "num" : "", scope: "col", ...(sort ? { "aria-sort": sort } : {}) }, inner, resizeHandle(c, (w) => {
+      widths[i] = w;
+      colEls[i]!.style.width = `${w}px`;
+      t.style.minWidth = `${widths.reduce((a, x) => a + x, 0)}px`;
+      scheduleRender();   // the footer's "more columns" count and the right-edge fade
+    }));
   }), isGrouped ? null : el("th", { class: "act-cell", scope: "col" }, txt("Actions", "sr"))));
   // A focused row is about to be detached (focus would drop to <body>): the redrawn active row takes it.
   const rowHadFocus = !!document.activeElement?.matches("#inv-table tbody tr.item");
@@ -656,6 +668,22 @@ function rebuildTable(): void {
   t.querySelector("tbody")!.replaceChildren();
   renderTable();
   if (rowHadFocus) rowEl(activeIndex)?.focus();
+}
+// A column's resize handle, on the right edge of its header: dragged, or ←/→ while focused. The width is
+// drawn as it changes and saved once, when the drag or key ends.
+function resizeHandle(c: ColDef, draw: (w: number) => void): HTMLElement {
+  const h = el("span", { class: "col-resize", role: "separator", "aria-orientation": "vertical", "aria-label": `Resize ${c.title || c.label}`,
+    "aria-valuemin": 40, "aria-valuemax": 1200, "aria-valuenow": c.width, tabindex: "0" });
+  let w = c.width, saved = c.width, startX = 0, startW = 0;
+  const set = (next: number): void => { w = Math.round(Math.min(1200, Math.max(40, next))); h.setAttribute("aria-valuenow", String(w)); draw(w); };
+  const save = (): void => { if (w !== saved) { saved = w; setColWidths({ ...state.colWidths, [c.key]: w }); } };
+  h.addEventListener("pointerdown", (e) => { if (e.button !== 0) return; e.preventDefault(); h.setPointerCapture(e.pointerId); startX = e.clientX; startW = w; h.classList.add("dragging"); });
+  h.addEventListener("pointermove", (e) => { if (h.hasPointerCapture(e.pointerId)) set(startW + e.clientX - startX); });
+  // after a normal pointerup, and after a pointercancel or the window losing focus mid-drag
+  h.addEventListener("lostpointercapture", () => { h.classList.remove("dragging"); save(); });
+  h.addEventListener("keydown", (e) => { if (e.key !== "ArrowLeft" && e.key !== "ArrowRight") return; e.preventDefault(); set(w + (e.key === "ArrowLeft" ? -16 : 16)); });
+  h.addEventListener("keyup", (e) => { if (e.key === "ArrowLeft" || e.key === "ArrowRight") save(); });
+  return h;
 }
 // A timer rather than requestAnimationFrame: a window in the background gets no animation frames, and the
 // table must still catch up with a scroll or resize made while it was hidden.
@@ -848,6 +876,13 @@ function wireTable(): void {
     for (const r of body.querySelectorAll<HTMLTableRowElement>("tr.item")) r.tabIndex = r === tr ? 0 : -1;
   });
   body.addEventListener("focusout", () => hideItemTip());
+  // A cut-off cell shows its whole text as a native tooltip, set on the first hover; a list row's name and
+  // location are left to the item tooltip, which already shows both in full.
+  body.addEventListener("mouseover", (e) => {
+    const td = (e.target as HTMLElement).closest("td");
+    if (!td || td.title || td.classList.contains("act-cell") || (td.parentElement!.dataset.serial && ["name", "location"].includes(columns()[td.cellIndex]?.key ?? ""))) return;
+    if ([td, ...td.querySelectorAll<HTMLElement>(".ellip")].some((n) => n.scrollWidth > n.clientWidth)) td.title = td.innerText.replace(/\s+/g, " ").trim();
+  });
   // From a column header, ↓ goes into the rows (the header comes first in the tab order); ↑ from the first
   // row comes back up to the Name header.
   $el<HTMLTableElement>("#inv-table").tHead!.addEventListener("keydown", (e) => {

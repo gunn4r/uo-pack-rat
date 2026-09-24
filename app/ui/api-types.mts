@@ -51,6 +51,7 @@ export interface SettingsApiResponse {
 export interface UiPrefs {
   cols?: string[] | undefined;
   colsVersion?: "2" | undefined;                       // the column set `cols` was saved against (view-state.mts)
+  colWidths?: Record<string, number> | undefined;      // the Inventory columns' dragged widths in px, by column key
   sheetProps?: string[] | undefined;                   // the character sheet's shown properties (absent = sheet.mts's default set)
   theme?: string | undefined;                          // a theme family ("default" or "britannia")
   appearance?: "light" | "system" | "dark" | undefined;
