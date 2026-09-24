@@ -1116,8 +1116,9 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
           return send(res, 400, { ok: false, error: "settings.setupDone must be a boolean" });
         }
         // undefined = the body said nothing about the client and the persisted one is left alone;
-        // null = clear it (an explicit null, or an empty scriptsDir — what the Settings tab sends to
-        // forget a client); an object = a validated, RESOLVED {adapter, scriptsDir}.
+        // null = clear it (an explicit null, or a folder-transport client with an empty scriptsDir); an
+        // object = a validated, RESOLVED {adapter, scriptsDir}. A paste-transport client has no scripts
+        // folder, so it is kept with scriptsDir "" — what the wizard's finish() sends for one.
         let nextClient: ClientSettings | null | undefined;
         if (Object.prototype.hasOwnProperty.call(body, "client")) {
           const c = body.client;
@@ -1130,10 +1131,12 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
             const adapter = rec.adapter;
             // Security (post-review fix): client.adapter must be a real, known adapter id before it can
             // ever reach installer.mts's path.join calls — see the /api/setup/install note below.
-            if (!listAdapters(ADAPTERS_DIR).some((a) => a.id === adapter)) {
+            const info = listAdapters(ADAPTERS_DIR).find((a) => a.id === adapter);
+            if (!info) {
               return send(res, 400, { ok: false, error: `settings.client.adapter: unknown adapter "${adapter}"` });
             }
-            if (!rec.scriptsDir.trim()) nextClient = null;
+            if (info.transport === "paste") nextClient = { adapter, scriptsDir: "" };
+            else if (!rec.scriptsDir.trim()) nextClient = null;
             else {
               // The same acceptance POST /api/setup/locate applies, so the wizard and a hand-written
               // settings PUT can never disagree about what a scripts folder is — and the RESOLVED

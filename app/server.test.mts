@@ -2261,6 +2261,25 @@ test("[fast] PUT /api/settings validates client.scriptsDir (absolute, non-UNC, a
   }
 });
 
+test("[fast] PUT /api/settings keeps a paste client (no scripts folder), and client: null still forgets it", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "qm-settings-paste-"));
+  const s2 = await startServer(ensureLayout(resolveConfig(["--port", "0", "--data", dir], {})));
+  const put = (client: unknown): Promise<Response> => fetch(s2.url + "/api/settings", {
+    method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify({ client }),
+  });
+  try {
+    const kept = await put({ adapter: "classicuo-web", scriptsDir: "" });
+    assert.equal(kept.status, 200);
+    assert.deepEqual(asJson<SettingsResponse>(await kept.json()).settings.client, { adapter: "classicuo-web", scriptsDir: "" });
+    assert.deepEqual(JSON.parse(readFileSync(join(dir, "settings.json"), "utf8")).client, { adapter: "classicuo-web", scriptsDir: "" });
+    const cleared = await put(null);
+    assert.equal(cleared.status, 200);
+    assert.equal(asJson<SettingsResponse>(await cleared.json()).settings.client, null);
+  } finally {
+    await s2.close();
+  }
+});
+
 test("[fast] PUT /api/settings type-checks shard before it reaches loadRules", async () => {
   const dir = mkdtempSync(join(tmpdir(), "qm-settings-shardtype-"));
   const s2 = await startServer(ensureLayout(resolveConfig(["--port", "0", "--data", dir], {})));
