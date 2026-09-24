@@ -41,7 +41,7 @@
 // 'error' from it is logged and the watch re-armed, a deleted inbox is recreated (and watched again)
 // by the next sweep, and scanOnce() returns false when it could not sweep at all.
 import {
-  existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync, renameSync, unlinkSync, lstatSync, statSync,
+  existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync, renameSync, unlinkSync, lstatSync, statSync, realpathSync,
   watch as fsWatch, type WatchListener,
 } from "node:fs";
 import { basename, join } from "node:path";
@@ -397,7 +397,10 @@ export function startWatcher(
     watcher = null; armedOn = null;
     if (closed) return false;
     try {
-      const w = watch(inboxDir, onWatchEvent);
+      // The real path, not the given one: on Windows a path with an 8.3 short component (GitHub's
+      // runners put the temp folder under C:\Users\RUNNER~1) aborts the whole process inside libuv
+      // on the first event, which reports the file under its long form.
+      const w = watch(realpathSync.native(inboxDir), onWatchEvent);
       w.on("error", (e) => {
         if (watcher === w) { try { w.close(); } catch { /* already closed */ } watcher = null; }
         watchFailed(`watch error on ${inboxDir}: ${errMessage(e)}`);

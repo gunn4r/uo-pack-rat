@@ -2,7 +2,7 @@
 // and startWatcher's debounce/retry/reject/scanOnce/close behavior against an injected fake `watch`.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, writeFileSync, readFileSync, existsSync, readdirSync, renameSync, chmodSync, symlinkSync, statSync, rmSync, mkdirSync, type WatchListener } from "node:fs";
+import { mkdtempSync, writeFileSync, readFileSync, existsSync, readdirSync, renameSync, chmodSync, symlinkSync, statSync, realpathSync, rmSync, mkdirSync, type WatchListener } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import {
@@ -453,6 +453,21 @@ test("[fast] startWatcher: an 'error' from the watch is logged and the watch is 
   watch.fire("rename", "after.json");   // reaches the re-armed watch's listener
   await waitFor(() => accepted.length === 1);
   handle.close();
+});
+
+// libuv aborts the process on Windows when the watched path and the path it reports an event under
+// are spelled differently (an 8.3 short component such as RUNNER~1); a link stands in for that here.
+test("[fast] startWatcher: the watch is armed on the inbox's real path", () => {
+  const real = tmp("qm-inbox-real-"), scansDir = tmp("qm-scans-real-");
+  const inboxDir = join(tmp("qm-inbox-alias-"), "inbox");
+  symlinkSync(real, inboxDir, "junction");   // a junction needs no elevation on Windows
+  const dirs: string[] = [];
+  const handle = startWatcher({
+    inboxDir, adapter: "tazuo", scansDir, getShard: () => SHARD,
+    watch: (dir) => { dirs.push(dir); return { close: () => {}, on: () => {} }; },
+  });
+  handle.close();
+  assert.deepEqual(dirs, [realpathSync.native(real)]);
 });
 
 test("[fast] startWatcher: scanOnce() recreates a deleted inbox, re-arms the watch and reports success", async () => {

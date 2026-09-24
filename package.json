@@ -67,6 +67,9 @@
       "!docs/**",
       "!app/bench/**",
       "!**/__pycache__/**",
+      "!adapters/**/test_*.py",
+      "!adapters/fake_clients.py",
+      "!adapters/**/fixture.scan.json",
       "!app/data/profiles.json",
       "!app/data/runs/**",
       "!app/ui/**/*.mts"

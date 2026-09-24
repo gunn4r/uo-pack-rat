@@ -112,6 +112,13 @@ test("[fast] the bundle never ships a developer's own local data, even though ap
   assert.ok(files.includes("!app/data/runs/**"), "nor their saved optimizer runs");
 });
 
+test("[fast] the bundle leaves out the adapters' tests and fixtures", () => {
+  // The installer copies only packrat-*.py out of adapters/; the tests, the fake clients they run
+  // against and the committed fixture are dead weight in a player's install.
+  const files = build.files ?? [];
+  for (const p of ["!adapters/**/test_*.py", "!adapters/fake_clients.py", "!adapters/**/fixture.scan.json"]) assert.ok(files.includes(p), `missing ${p}`);
+});
+
 test("[fast] the bundle excludes the page's TypeScript sources (the compiled app/dist/ui/ is what runs) but still ships its stylesheet", () => {
   // Once app/ui/**/*.mts is compiled to app/dist/ui/ (npm run build:ui, part of predist), the .mts
   // sources are redundant weight in the packaged app — the packaged server (vault-server.mts, run
@@ -213,7 +220,7 @@ test("[fast] every packaging script builds the page first", () => {
   }
 });
 
-const workflow = (name: string): string => readFileSync(join(root, ".github/workflows", name), "utf8");
+const workflow = (name: string): string => readFileSync(join(root, ".github/workflows", name), "utf8").replace(/\r\n/g, "\n"); // Windows checkouts get CRLF
 
 function filesUnder(dir: string): string[] {
   const out: string[] = [];
@@ -296,6 +303,14 @@ test("[fast] no step that runs npm in the release workflow carries a write-scope
   }
 });
 
+test("[fast] the release build job as a whole holds no token and no write scope", () => {
+  // The step check above only sees a token set on an npm step; one set at job level (env: or
+  // permissions:) reaches every step of the job that runs the dependency tree.
+  const job = workflow("release.yml").match(/\n {2}build:\n([\s\S]*?)\n {2}\S/)?.[1] ?? "";
+  assert.match(job, /\n {4}permissions:\n {6}contents: read\n/, "the build job is contents: read");
+  assert.doesNotMatch(job, /GH_TOKEN|GITHUB_TOKEN|secrets\.|: write/, "the build job never sees a token or a write scope");
+});
+
 test("[fast] every action both workflows use is pinned to a full commit sha, and says which tag that was", () => {
   // A mutable tag (`@v4`) is whatever that tag points at on the day CI runs, in a job that can build
   // the installers players download. The trailing `# vX.Y.Z` comment is what makes a pin reviewable
@@ -325,6 +340,11 @@ test("[fast] exactly one job creates the draft release, ahead of the platform ma
   assert.match(rel, /needs:\s*create-release/, "the build matrix must wait on that job");
 });
 
+test("[fast] publishing clears the draft's earlier uploads before uploading this run's files", () => {
+  // A re-run after a partial failure must not leave a file on the draft that this run did not build.
+  assert.match(workflow("release.yml"), /gh release delete-asset[^\n]*\n *gh release upload /, "delete the old assets, then upload");
+});
+
 test("[fast] the release workflow refuses to create a release when the tag doesn't match package.json's version", () => {
   const rel = workflow("release.yml");
   // electron-builder's own publish step matches a release by VERSION, not by tag -- a tag pushed
@@ -332,5 +352,5 @@ test("[fast] the release workflow refuses to create a release when the tag doesn
   // SECOND draft from electron-builder once the matrix builds, splitting artifacts across both.
   assert.match(rel, /require\(['"]\.\/package\.json['"]\)\.version/, "reads the version with node, not a shell JSON parse");
   assert.match(rel, /\$TAG.*!=.*pkg_version/, "compares the tag against package.json's version");
-  assert.match(rel, /exit 1/, "fails the job outright rather than only warning");
+  assert.match(rel, /if \[ "\$TAG" != "v\$pkg_version" \]; then\n(?:.*\n)*? *exit 1\n *fi/, "fails the job outright, inside the mismatch branch, rather than only warning");
 });
