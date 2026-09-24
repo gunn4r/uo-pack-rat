@@ -5,12 +5,11 @@
 // comment). Unlike the optimizer core (a single paste-able file Node runs from source with no build
 // step at all), this needs the real tsc: module resolution across app/ui/*.mts.
 //
-// Always runs — no mtime freshness check. tsc itself already skips unchanged files internally
-// (it's a project build, not a from-scratch one every time), and a from-scratch mtime comparison
-// here would have to track 20+ input files against 20+ outputs and would drift the moment either
-// side gains a file; simpler and safer to let the compiler decide.
+// Always runs, from an empty app/dist/ — no mtime freshness check. tsc re-emits every file on each
+// run (no incremental build is configured) and never deletes an output whose source is gone, so the
+// folder is cleared first: a deleted app/ui file would otherwise stay servable from app/dist/.
 import { spawnSync } from "node:child_process";
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync, rmSync } from "node:fs";
 import { dirname, join, relative } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
@@ -75,6 +74,7 @@ export function buildUi({ tsconfig = TSCONFIG }: { tsconfig?: string } = {}): st
     }
     throw new Error("the TypeScript compiler isn't installed (no `typescript` package found) and app/dist/ui/app.mjs doesn't exist yet — run `npm install`");
   }
+  rmSync(join(ROOT, "app", "dist"), { recursive: true, force: true });
   // TypeScript 7 is the native compiler: bin/tsc is a small JS launcher that finds and runs a
   // platform-specific binary from one of typescript's optionalDependencies. Spawning the launcher
   // under process.execPath keeps this free of any PATH or shebang dependency; if the native binary
