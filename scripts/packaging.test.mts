@@ -228,7 +228,7 @@ function filesUnder(dir: string): string[] {
 test("[fast] CI runs the suite on all three desktop platforms", () => {
   const ci = workflow("ci.yml");
   for (const os of ["macos-latest", "windows-latest", "ubuntu-latest"]) assert.match(ci, new RegExp(os));
-  assert.match(ci, /node-version: *["']?22/, "Node 22 matches the engines floor");
+  assert.match(ci, /node-version: *["']?24/, "Node 24 matches the engines floor");
   assert.match(ci, /xvfb-run/, "Linux needs a virtual display to launch Electron");
   assert.match(ci, /py_compile/, "the Python adapters get compiled in the same run");
   assert.doesNotMatch(ci, /TEST_SKIP_ELECTRON/, "CI must not skip the shell tests");
