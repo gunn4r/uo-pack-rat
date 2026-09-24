@@ -203,6 +203,9 @@ test("[slow] Settings: sections with the client warning, theme and appearance, R
     assert.deepEqual(await page.locator("#settings-body .set-section h2").allInnerTexts(), ["General", "Game client", "Data", "Updates"]);
     assert.equal(await page.locator("#set-client .set-section-head .dot.warn[aria-label='needs attention']").count(), 1, "no client set up: a warning dot on Game client");
     assert.equal(await page.locator("#settings-body .dot.warn").count(), 1, "and on no other section");
+    // The Logs path is the data folder's logs folder in the platform's own separators (Windows is where it matters).
+    const [dataPath, logsPath] = await page.locator("#set-data .set-path .mono").allInnerTexts();
+    assert.equal(logsPath, join(dataPath!, "logs"));
 
     // General: the Theme applies at once, is saved as a ui-pref and comes back on the next load; Appearance
     // likewise.

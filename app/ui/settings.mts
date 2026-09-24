@@ -187,7 +187,7 @@ function dataSection(setup: SetupApiResponse): HTMLElement {
   return section("set-data", "Data",
     box("div", { class: "card set-card" },
       pathRow("Data folder", "data", setup.dataDir, setup.canOpenFolders === true),
-      pathRow("Logs", "logs", `${setup.dataDir}/logs`, setup.canOpenFolders === true),
+      pathRow("Logs", "logs", `${setup.dataDir}${setup.platform === "win32" ? "\\" : "/"}logs`, setup.canOpenFolders === true),
       mismatch ? box("div", { class: "set-row-below set-pad" }, message({ tone: "warn", text: mismatch })) : null),
     blacklistCard([]),
     box("div", { class: "card set-card set-danger", "aria-labelledby": "set-danger-h" },
