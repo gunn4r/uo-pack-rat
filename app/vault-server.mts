@@ -43,7 +43,7 @@
 //         optimize events above): hello {ok, watching: [adapter ids]} on connect, inventory
 //         {file, character, scannedAt, at} once an inbox file is accepted into paths.scans, rejected
 //         {file, reason, at} once one is moved to its adapter's rejected/ folder, changed {what:
-//         "inventory"|"runs", at} after a forget, forget-character or run deletion (so other open tabs
+//         "inventory"|"runs", by?, at} (by: the forgetting tab's x-client-id) after a forget, forget-character or run deletion (so other open tabs
 //         reload), ping every 15s. A
 //         normal token-protected /api/* route (no SSE exemption — unlike /api/optimize/<id>/events,
 //         this stream carries no per-job secret an EventSource couldn't send anyway). Non-demo mode
@@ -1618,7 +1618,7 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
         // exactly what the fold wants anyway (newest scan of a root wins, by parseStamp — the file
         // name has never been what orders them).
         writeFileAtomic(join(SCANS, `_forget-${serial.toString(16)}.json`), JSON.stringify(snap), DATA_FILE_MODE);
-        broadcastEvent("changed", { what: "inventory", at: Date.now() });
+        broadcastEvent("changed", { what: "inventory", by: req.headers["x-client-id"], at: Date.now() });
         return send(res, 200, { ok: true });
       }
       if (req.method === "GET" && url.pathname === "/api/blacklist") return send(res, 200, { ok: true, containers: readBlacklist() });
@@ -1660,7 +1660,7 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
         // One file per forgotten character (hex of the name: any name is a safe file name that way),
         // replaced with a newer stamp if the character is forgotten again.
         writeFileAtomic(join(SCANS, `_forget-char-${Buffer.from(character).toString("hex")}.json`), JSON.stringify(snap), DATA_FILE_MODE);
-        broadcastEvent("changed", { what: "inventory", at: Date.now() });
+        broadcastEvent("changed", { what: "inventory", by: req.headers["x-client-id"], at: Date.now() });
         return send(res, 200, { ok: true });
       }
       send(res, 404, { ok: false, error: "not found" });

@@ -6,6 +6,7 @@
 import { toast } from "./dom.mts";
 import { reload } from "./app.mts";
 import { loadRuns } from "./runs.mts";
+import { CLIENT_ID } from "./api.mts";
 import type { InventoryEvent, RejectedEvent, ChangedEvent } from "./api-types.mts";
 
 let source: EventSource | null = null;
@@ -62,6 +63,7 @@ export function connectEvents(): EventSource {
   });
   source.addEventListener("changed", (e: MessageEvent<string>) => {
     const data = parse(e.data) as Partial<ChangedEvent>;
+    if (data.by === CLIENT_ID) return;   // this tab made the change and reloads on its own
     if (data.what === "inventory") scheduleReload();
     else if (data.what === "runs") void loadRuns();
   });

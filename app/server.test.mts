@@ -349,8 +349,8 @@ test("[fast] POST /api/forget and DELETE /api/runs/<id> stream a changed event t
   const sse = sseReader(await fetch(s2.url + "/api/events"));
   try {
     await sse.readUntil((b) => b.includes("event: hello"));
-    assert.equal((await fetch(s2.url + "/api/forget", { method: "POST", headers: JSON_HEADERS, body: JSON.stringify({ root: 12345 }) })).status, 200);
-    await sse.readUntil((b) => b.includes('event: changed\ndata: {"what":"inventory"'));
+    assert.equal((await fetch(s2.url + "/api/forget", { method: "POST", headers: { ...JSON_HEADERS, "x-client-id": "tab-a" }, body: JSON.stringify({ root: 12345 }) })).status, 200);
+    await sse.readUntil((b) => b.includes('event: changed\ndata: {"what":"inventory","by":"tab-a"'));
     const id = "0b5c1a4e-0000-4000-8000-000000000002";
     writeFileSync(join(dir, "runs", `${id}.json`), "{}");
     assert.equal((await fetch(s2.url + `/api/runs/${id}`, { method: "DELETE" })).status, 200);
