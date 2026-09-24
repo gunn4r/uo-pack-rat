@@ -1316,6 +1316,28 @@ test("[fast] /api/optimize by character: the saved run keeps the page's settings
   assert.equal(run.settings.strLimit, 120, "the pool settings the run actually used win over the snapshot's");
 });
 
+// Issue #28: the heuristic-only path ran every requested restart whatever the time budget said.
+test("[fast] /api/optimize heuristic-only: the time budget caps the random restarts", async () => {
+  const inv = asJson<InventoryResponse>(await (await get("/api/inventory")).json());
+  const profiles = asJson<ProfilesResponse>(await (await get("/api/profiles")).json());
+  const rules = asJson<RulesResponse>(await (await get("/api/rules")).json());
+  const character = Object.keys(inv.inventory.characters)[0]!;
+  const templateName = Object.keys(profiles.profiles.templates!)[0]!;
+  const profile = { ...profiles.profiles.templates![templateName], caps: rules.rules.caps };
+  const j = asJson<OptimizeJobResponse>(await (await fetch(srv.url + "/api/optimize", {
+    method: "POST", headers: { "content-type": "application/json" },
+    body: JSON.stringify({ character, settings: {}, profile, opts: { exact: false, restarts: 10000, timeBudgetMs: 0 } }),
+  })).json());
+  let status: OptimizeJobResponse = j;
+  for (let i = 0; i < 500 && status.state !== "done"; i++) {
+    await new Promise((res) => setTimeout(res, 20));
+    status = asJson<OptimizeJobResponse>(await (await fetch(srv.url + `/api/optimize/${j.id}/status`)).json());
+  }
+  assert.equal(status.state, "done", JSON.stringify(status));
+  // Every restart is a local search of at least one evaluation, so running them all would pass 10000.
+  assert.ok((status.result as { evaluations: number }).evaluations < 10000, "a zero budget runs no random restarts, however many were asked for");
+});
+
 // Resist cap overrides (issue #44) persist with a profile or template and with each saved run, and the server
 // holds them to one rule everywhere: the five resist keys only, whole numbers from 0 to 150.
 test("[fast] resist cap overrides: profiles and saved runs keep them, and a bad one is refused with 400", async () => {

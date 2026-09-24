@@ -130,6 +130,9 @@ export function buildSuitMip({ pools = {}, current = {}, profile, optionalSlots 
     const curItem = current[s];
     return !optional.has(s) && !!curItem && curItem.slot === s;
   };
+  // The hands row (added after the floors): a two-hander in the twoHanded slot excludes the one-hand slot.
+  const twoH = (xIndex.twoHanded || []).filter((j) => cols[j]!.item!.twoHanded === true), oneH = xIndex.oneHanded || [];
+  const hands = twoH.length > 0 && oneH.length > 0;
 
   // ---- rows (CSR) ----
   const rowLower: number[] = [], rowUpper: number[] = [], starts: number[] = [0], indices: number[] = [], values: number[] = [];
@@ -143,12 +146,21 @@ export function buildSuitMip({ pools = {}, current = {}, profile, optionalSlots 
     const xs: Term[] = allX.map((j): Term => [j, cols[j]!.item!.props[d] || 0]).filter(([, v]) => v !== 0);
     // The range any suit's total can take: per-slot maxima summed (see "per-slot maxima" below for
     // why a required slot folds in no phantom 0) and per-slot minima summed (a valid lower bound,
-    // with 0 folded in everywhere, and the two-hander rule ignored — both only loosen it).
+    // with 0 folded in everywhere, and the two-hander rule ignored — both only loosen it). The maxima
+    // respect the hands row: the two hand slots add up to the better of "a two-hander, one hand empty"
+    // and "no two-hander in twoHanded, plus the best one-hander" (summing both maxima would count a
+    // suit the hands row forbids, and a hard floor only that suit reaches would cost an infeasible solve).
+    const val = (j: number): number => cols[j]!.item!.props[d] || 0;
+    const best = (s: string, js: number[]): number => isRequired(s) ? Math.max(...js.map(val)) : Math.max(0, ...js.map(val));
     let reach = 0, minReach = 0;
     for (const s of Object.keys(xIndex)) {
-      const vals = xIndex[s]!.map((j) => cols[j]!.item!.props[d] || 0);
-      reach += isRequired(s) ? Math.max(...vals) : Math.max(0, ...vals);
-      minReach += Math.min(0, ...vals);
+      if (!hands || (s !== "oneHanded" && s !== "twoHanded")) reach += best(s, xIndex[s]!);
+      minReach += Math.min(0, ...xIndex[s]!.map(val));
+    }
+    if (hands) {
+      const noTwoHander = best("twoHanded", xIndex.twoHanded!.filter((j) => !twoH.includes(j))) + best("oneHanded", oneH);
+      const twoHander = Math.max(...twoH.map(val)) + (isRequired("oneHanded") ? -INF : 0);
+      reach += Math.max(noTwoHander, twoHander);
     }
     if (w !== 0) {
       if (Number.isFinite(cap)) {                                 // w·min(t, cap): c ≤ t, c ≤ cap, objective w·c; c may go negative like t
@@ -209,8 +221,7 @@ export function buildSuitMip({ pools = {}, current = {}, profile, optionalSlots 
     floorCols[d] = { f, k, sMax, y, s: sv, u };
   }
   for (const s of Object.keys(xIndex)) addRow(xIndex[s]!.map((j) => [j, 1]), isRequired(s) ? 1 : -INF, 1);   // one per slot: = 1 when required and worn, else ≤ 1
-  const twoH = (xIndex.twoHanded || []).filter((j) => cols[j]!.item!.twoHanded === true), oneH = xIndex.oneHanded || [];
-  if (twoH.length && oneH.length) addRow([...twoH, ...oneH].map((j) => [j, 1]), -INF, 1);   // a two-hander forbids the one-hand slot
+  if (hands) addRow([...twoH, ...oneH].map((j) => [j, 1]), -INF, 1);   // a two-hander forbids the one-hand slot
 
   const model: MipModel = { numCols: cols.length, numRows: rowLower.length, sense: "maximize", offset: 0, colCost, colLower, colUpper, rowLower, rowUpper,
     matrix: { format: "csr", numRows: rowLower.length, numCols: cols.length, starts, indices, values }, integrality };

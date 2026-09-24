@@ -44,7 +44,7 @@ HiGHS reports its own progress through callbacks (`mipImprovingSolution`, `mipLo
 
 ## The time budget
 
-`timeBudgetMs` is wall-clock time for the whole job. The heuristic's seeded-random restarts stop once half of it is spent (the core's `heuristicBudgetMs` option; the fixed starts — the worn suit, the greedy seed, the gradient seed, the warm start — always run), so HiGHS always keeps at least the other half. Every HiGHS call — the first solve, the `hardAsSoft` retry, each alternative — gets only what is left (a limit of 0 still returns the MIP start as the incumbent), and the alternatives loop stops once the budget is spent.
+`timeBudgetMs` is wall-clock time for the whole job. The heuristic's seeded-random restarts stop once half of it is spent (the core's `heuristicBudgetMs` option; the fixed starts — the worn suit, the greedy seed, the gradient seed, the warm start — always run), so HiGHS always keeps at least the other half. Every HiGHS call — the first solve, the `hardAsSoft` retry, each alternative — gets only what is left (a limit of 0 still returns the MIP start as the incumbent), and the alternatives loop stops once the budget is spent. A heuristic-only run (Exact off) honours `timeBudgetMs` too: its random restarts stop once the whole budget is spent (15 s when none is given, which is what the page sends with Exact off).
 
 ## When the model and the core disagree
 

@@ -36,7 +36,8 @@ export interface RunKeyInput {
 // model (app/mip.mts), the orchestration (app/exact-solver.mts) or the core's scoring and search
 // (scripts/optimizer-core.mts) that can change a result, so runs saved before it stop matching and
 // are never served as "reused". 2: soft floors allow negative totals, negative capped weights.
-export const SOLVER_VERSION = 2;
+// 3: the reach estimate respects the hands row; heuristic-only runs honour the time budget.
+export const SOLVER_VERSION = 3;
 
 // Everything that shapes the answer: the candidate pools, the worn suit, the scoring profile, the
 // search options, and the solver version.
