@@ -65,32 +65,21 @@ export function poolSummary(p: PoolSettings): string {
 }
 
 // ---------------------------------------------------------------- weapons
-// The Weapons control holds the weapon skills left out of the pool. In words: "any weapon", "fencing weapons only"
-// (every other skill excluded, what the old single choice said), "no archery or throwing weapons", "no weapons".
+// The Weapons control holds the weapon skills left out of the pool. The summary says them ("no archery or throwing
+// weapons", "fencing weapons only"); the chip counts them ("Weapons: 2 excluded").
 const orList = (xs: string[]): string => (xs.length < 2 ? xs.join("") : `${xs.slice(0, -1).join(", ")} or ${xs[xs.length - 1]}`);
-const allowedWeapons = (excluded: string[]): string[] => WEAPON_SKILLS.filter((w) => !excluded.includes(w));
 export const weaponName = (w: string): string => w[0]!.toUpperCase() + w.slice(1);
-export function weaponsSummary(excluded: string[] = []): string {
-  const allowed = allowedWeapons(excluded);
-  if (!excluded.length) return "any weapon";
-  if (!allowed.length) return "no weapons";
-  if (allowed.length === 1) return `${allowed[0]} weapons only`;
-  return `no ${orList(WEAPON_SKILLS.filter((w) => excluded.includes(w)))} weapons`;
+interface WeaponWords { any: string; none: string; only: (w: string) => string; some: (excluded: string[]) => string }
+function weaponsText(excluded: string[], t: WeaponWords): string {
+  const allowed = WEAPON_SKILLS.filter((w) => !excluded.includes(w));
+  return !excluded.length ? t.any : !allowed.length ? t.none : allowed.length === 1 ? t.only(allowed[0]!) : t.some(WEAPON_SKILLS.filter((w) => excluded.includes(w)));
 }
-// The chip's label: "Weapons: any", "Weapons: no Archery", "Weapons: Fencing only", "Weapons: 2 excluded", "Weapons: none".
-export function weaponsChipText(excluded: string[] = []): string {
-  const allowed = allowedWeapons(excluded);
-  if (!excluded.length) return "Weapons: any";
-  if (!allowed.length) return "Weapons: none";
-  if (allowed.length === 1) return `Weapons: ${weaponName(allowed[0]!)} only`;
-  if (excluded.length === 1) return `Weapons: no ${weaponName(excluded[0]!)}`;
-  return `Weapons: ${excluded.length} excluded`;
-}
-// Ticking or unticking a skill in the popover; the list stays in WEAPON_SKILLS order, so the same exclusions always
-// read (and compare) the same.
-export function toggleWeapon(excluded: string[], w: string, on: boolean): string[] {
-  return WEAPON_SKILLS.filter((x) => (x === w ? on : excluded.includes(x)));
-}
+export const weaponsSummary = (excluded: string[] = []): string =>
+  weaponsText(excluded, { any: "any weapon", none: "no weapons", only: (w) => `${w} weapons only`, some: (ex) => `no ${orList(ex)} weapons` });
+export const weaponsChipText = (excluded: string[] = []): string =>
+  weaponsText(excluded, { any: "Weapons: any", none: "Weapons: none", only: (w) => `Weapons: ${weaponName(w)} only`, some: (ex) => `Weapons: ${ex.length} excluded` });
+// Ticking or unticking a skill; the list stays in WEAPON_SKILLS order, so the same exclusions always read the same.
+export const toggleWeapon = (excluded: string[], w: string, on: boolean): string[] => WEAPON_SKILLS.filter((x) => (x === w ? on : excluded.includes(x)));
 
 // ---------------------------------------------------------------- resist caps
 // A resist's cap for a build is the shard's (race-aware) unless the player overrode it. The field takes a whole

@@ -273,13 +273,14 @@ const SCENES: Scene[] = [
   { name: "builder template menu", enter: async (p) => { await p.click("#b-tpl-menu"); await p.waitForSelector(".pop[role=menu]"); }, leave: (p) => p.keyboard.press("Escape") },
   { name: "builder property picker", enter: async (p) => { await p.click("#b-addfloor"); await p.waitForSelector(".pop .b-pick-list"); }, leave: (p) => p.keyboard.press("Escape") },
   { name: "builder chip checklist", enter: async (p) => { await p.click("#b-locked"); await p.waitForSelector(".pop .b-checks"); }, leave: (p) => p.keyboard.press("Escape") },
-  // The Weapons popover (issue #45) with two skills excluded: its heading, Clear, ticked and unticked rows, the notes.
+  // The Weapons popover (issue #45) with two skills excluded: ticked and unticked rows.
   { name: "builder weapons exclusions", enter: async (p) => {
     await p.click("#b-weapon");
-    await p.waitForSelector(".pop .b-pop-head");
     for (const w of ["archery", "throwing"]) await p.locator(`.pop input[value="${w}"]`).check();
-    await p.waitForSelector(".pop #b-weapon-clear:not([hidden])");
-  }, leave: async (p) => { await p.click(".pop #b-weapon-clear"); await p.keyboard.press("Escape"); } },
+  }, leave: async (p) => {
+    for (const w of ["archery", "throwing"]) await p.locator(`.pop input[value="${w}"]`).uncheck();
+    await p.keyboard.press("Escape");
+  } },
   { name: "builder advanced field error", enter: async (p) => {
     await p.click("#b-sec-weights .b-sec-head button");   // the weights' rule rows too
     await p.click("#b-sec-adv .b-sec-head button");

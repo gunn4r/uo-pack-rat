@@ -1319,9 +1319,6 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
         // the run was built with), held to the rule profiles.json's are.
         const badCaps = (await lib()).resistCapsError((meta.settings as Record<string, unknown> | undefined)?.resistCaps, "meta.settings.resistCaps");
         if (badCaps) return send(res, 400, { ok: false, error: badCaps });
-        // …and the weapon exclusions it is labelled, compared and re-applied with.
-        const badWeapons = (await lib()).excludeWeaponsError((meta.settings as Record<string, unknown> | undefined)?.excludeWeapons, "meta.settings.excludeWeapons");
-        if (badWeapons) return send(res, 400, { ok: false, error: badWeapons });
         let skipped: Record<string, number> = {}, blocked: string[] = [];
         // The by-character form: the caller sends {character, settings} instead of building pools/current
         // itself, and the server runs buildPools() against the cached inventory — the same function and
@@ -1338,13 +1335,9 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
           // destructuring defaults treat null and undefined alike (post-review fix — null used to slip
           // past `!= null` and then either reach buildPools as a literal `strLimit: null` or throw when
           // an array field's null hit code expecting an array).
-          let s = Object.fromEntries(Object.entries(settings || {}).filter(([, v]) => v != null));
-          if (s.weaponSkill != null && typeof s.weaponSkill !== "string") return send(res, 400, { ok: false, error: "settings.weaponSkill must be a string" });
-          const badExcludeWeapons = (await lib()).excludeWeaponsError(s.excludeWeapons, "settings.excludeWeapons");
-          if (badExcludeWeapons) return send(res, 400, { ok: false, error: badExcludeWeapons });
-          // A caller still sending the single weapon choice (a pre-exclusion saved run re-posted as is) gets the
-          // exclusion list that choice means, and the saved run records that list.
-          s = (await lib()).migrateWeaponSetting(s as { weaponSkill?: string } & Record<string, unknown>);
+          const s = Object.fromEntries(Object.entries(settings || {}).filter(([, v]) => v != null));
+          const badWeapons = (await lib()).excludeWeaponsError(s.excludeWeapons, "settings.excludeWeapons");
+          if (badWeapons) return send(res, 400, { ok: false, error: badWeapons });
           for (const f of ["excludeTags", "excludeRoots", "excludeSkills", "lockedSlots"] as const) {
             if (s[f] != null && !Array.isArray(s[f])) return send(res, 400, { ok: false, error: `settings.${f} must be an array` });
           }

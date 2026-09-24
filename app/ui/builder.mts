@@ -438,21 +438,14 @@ function paintChip(chip: HTMLButtonElement, text: string, set: boolean): void {
 // The Weapons chip: a checklist of the weapon skills, where a tick EXCLUDES that skill's weapons from the pool.
 function weaponChip(): HTMLButtonElement {
   const p = state.builder.profile!;
-  const get = (): string[] => p.excludeWeapons || [];
-  const chip = filterChip({ label: weaponsChipText(get()), set: !!get().length, attrs: { id: "b-weapon" } });
+  const chip = filterChip({ label: weaponsChipText(p.excludeWeapons), set: !!p.excludeWeapons?.length, attrs: { id: "b-weapon" } });
   chip.onclick = () => {
-    const checks = WEAPON_SKILLS.map((w) => check({ label: weaponName(w), checked: get().includes(w), attrs: { value: w }, onChange: (on) => { set(toggleWeapon(get(), w, on)); } }));
-    const clear = button({ label: "Clear", variant: "ghost", size: "sm", attrs: { id: "b-weapon-clear" }, onClick: () => { for (const c of checks) c.input.checked = false; set([]); checks[0]!.input.focus(); } });
-    function set(v: string[]): void {
-      p.excludeWeapons = v;
-      clear.hidden = !v.length;
-      paintChip(chip, weaponsChipText(v), !!v.length); updateTemplateBadge();
-    }
-    clear.hidden = !get().length;
-    popover(chip, [box("div", { class: "b-pop-head" }, txt("Exclude weapon skills", "caps"), el("span", { class: "spacer" }), clear),
-      el("p", { class: "help" }, txt("A ticked skill's weapons never enter the pool. Nothing ticked allows any weapon.")),
-      box("div", { class: "b-checks", role: "group", "aria-label": "Exclude weapon skills" }, ...checks.map((c) => c.root)),
-      el("p", { class: "help" }, txt("Shields stay unless Archery is the only skill left. Spellbooks stay only when every skill is excluded."))], { label: "Exclude weapon skills", width: 300 });
+    const checks = WEAPON_SKILLS.map((w) => check({ label: weaponName(w), checked: !!p.excludeWeapons?.includes(w), attrs: { value: w }, onChange: (on) => {
+      p.excludeWeapons = toggleWeapon(p.excludeWeapons || [], w, on);
+      paintChip(chip, weaponsChipText(p.excludeWeapons), !!p.excludeWeapons.length); updateTemplateBadge();
+    } }).root);
+    popover(chip, [el("p", { class: "help" }, txt("Exclude weapon skills: a ticked skill's weapons never enter the pool.")),
+      box("div", { class: "b-checks", role: "group", "aria-label": "Exclude weapon skills" }, ...checks)], { label: "Exclude weapon skills" });
   };
   return chip;
 }

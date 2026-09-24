@@ -866,48 +866,27 @@ export function builderKeys(inv: ItemsLike): string[] {
   return ["stamPool", "manaPool", "hitsPool", ...gearSkills(inv).map((k) => `sk:${k}`)];
 }
 
-// Weapon-type filter for the suit builder: the weapon skills the player excluded (profile `excludeWeapons`, in
-// WEAPON_SKILLS order). A weapon whose Skill Required line names an excluded skill never enters the pool. A held piece
-// with no known weapon skill (a shield, a spellbook, a weapon whose tooltip lacks the line or names a skill not listed
-// here) follows the rule the single "X only" choice had: while some skill is still allowed, a shield stays unless
-// archery is the only one left (every bow and crossbow is two-handed) and everything else drops out, so the hands
-// hold a weapon of an allowed skill; with every skill excluded the hands hold no weapon, and all of them stay.
+// Weapon-type filter for the suit builder: the weapon skills the player excluded (profile `excludeWeapons`). A weapon
+// whose Skill Required line names an excluded skill never enters the pool; nothing else in the hands is touched.
 export const WEAPON_SKILLS: string[] = ["archery", "swordsmanship", "fencing", "mace fighting", "throwing"];
 export function weaponAllowed(it: Item, excluded: string[] = []): boolean {
   if (!excluded.length || (it.slot !== "oneHanded" && it.slot !== "twoHanded")) return true;
-  const req = String(it.skillReq || "").toLowerCase();
-  if (WEAPON_SKILLS.includes(req)) return !excluded.includes(req);
-  const allowed = WEAPON_SKILLS.filter((w) => !excluded.includes(w));
-  if (!allowed.length) return true;
-  return !req && it.slot === "twoHanded" && !it.twoHanded && !(allowed.length === 1 && allowed[0] === "archery");
+  return !excluded.includes(String(it.skillReq || "").toLowerCase());
 }
-// A settings object's weapon exclusions, whatever its age. Profiles, templates and runs saved before the exclusion
-// list held one choice, `weaponSkill` ("archery", or null/"" for any weapon); that choice means "exclude every other
-// known weapon skill" (a skill this list does not know excludes all of them). An `excludeWeapons` array wins.
-export interface WeaponSetting { excludeWeapons?: string[] | undefined; weaponSkill?: string | null | undefined }
-export function excludedWeapons(s: WeaponSetting = {}): string[] {
-  if (Array.isArray(s.excludeWeapons)) return [...s.excludeWeapons];
-  const skill = typeof s.weaponSkill === "string" ? s.weaponSkill.trim().toLowerCase() : "";
-  return skill ? WEAPON_SKILLS.filter((w) => w !== skill) : [];
-}
-// The same object with `weaponSkill` turned into `excludeWeapons`; an object without `weaponSkill` comes back as it
-// was (same reference), so migrateProfiles and normalizeRun stay idempotent.
-export function migrateWeaponSetting<T extends WeaponSetting>(s: T): T {
+// Profiles, templates and runs saved before the exclusion list held one choice, `weaponSkill` ("archery", or null/""
+// for any weapon), which means "exclude every other weapon skill". Returns `s` itself when there is nothing to convert.
+export function migrateWeaponSetting<T extends object>(s: T): T {
   if (!("weaponSkill" in s)) return s;
-  const out: T = { ...s, excludeWeapons: excludedWeapons(s) };
-  delete out.weaponSkill;
-  return out;
+  const { weaponSkill, ...rest } = s as T & { weaponSkill?: unknown; excludeWeapons?: string[] };
+  const skill = typeof weaponSkill === "string" ? weaponSkill.toLowerCase() : "";
+  return { ...rest, excludeWeapons: rest.excludeWeapons || (skill ? WEAPON_SKILLS.filter((w) => w !== skill) : []) } as T;
 }
-// The one rule excludeWeapons is held to wherever it arrives (profiles.v2.schema.json says the same): a list of
-// known weapon skills, each at most once. Returns the first problem, or null.
+// The rule excludeWeapons is held to at POST /api/optimize (profiles.v2.schema.json says the same): known weapon skills.
 export function excludeWeaponsError(v: unknown, path = "excludeWeapons"): string | null {
   if (v == null) return null;
   if (!Array.isArray(v)) return `${path} must be an array`;
-  for (const [i, w] of v.entries()) {
-    if (typeof w !== "string" || !WEAPON_SKILLS.includes(w)) return `${path}[${i}] is not a weapon skill (${WEAPON_SKILLS.join(", ")})`;
-    if (v.indexOf(w) !== i) return `${path} names ${w} twice`;
-  }
-  return null;
+  const i = v.findIndex((w) => typeof w !== "string" || !WEAPON_SKILLS.includes(w));
+  return i < 0 ? null : `${path}[${i}] is not a weapon skill (${WEAPON_SKILLS.join(", ")})`;
 }
 
 // Templates: a full set of builder settings with no character in them (no race, STR limit or skipped containers).
@@ -926,7 +905,6 @@ export interface TemplateSource {
   allowGargoyle?: boolean | undefined;
   medOnly?: boolean | undefined;
   excludeWeapons?: string[] | undefined;   // weapon skills left out of the pool
-  weaponSkill?: string | null | undefined;   // the single choice excludeWeapons replaced; read (converted) by templateFrom, never written
   resistCaps?: Record<string, number> | undefined;   // the player's per-resist cap overrides, paperdoll terms
 }
 export interface Template {
@@ -946,7 +924,7 @@ export interface Template {
 export function templateFrom(s: TemplateSource = {}): Template {
   return { floors: { ...(s.floors || {}) }, softFloors: [...(s.softFloors || [])], weights: { ...(s.weights || {}) }, floorBonus: s.floorBonus ?? 1000,
     lockedSlots: [...(s.lockedSlots || [])], excludeTags: [...(s.excludeTags || [])], excludeSkills: [...(s.excludeSkills || [])],
-    allowOthersWorn: !!s.allowOthersWorn, allowGargoyle: !!s.allowGargoyle, medOnly: !!s.medOnly, excludeWeapons: excludedWeapons(s), resistCaps: { ...(s.resistCaps || {}) } };
+    allowOthersWorn: !!s.allowOthersWorn, allowGargoyle: !!s.allowGargoyle, medOnly: !!s.medOnly, excludeWeapons: [...(s.excludeWeapons || [])], resistCaps: { ...(s.resistCaps || {}) } };
 }
 
 // A profiles.json character entry, loosely — every field optional, TemplateSource's builder settings
@@ -990,7 +968,7 @@ export function migrateProfiles(file: ProfilesFile = {}): { profiles: ProfilesFi
     changed = true;
   }
   // The single weapon choice became an exclusion list: "archery only" is "exclude every other weapon skill".
-  const weapons = <T extends WeaponSetting>(m: Record<string, T>): Record<string, T> => {
+  const weapons = <T extends object>(m: Record<string, T>): Record<string, T> => {
     if (!Object.values(m).some((e) => e && typeof e === "object" && "weaponSkill" in e)) return m;
     changed = true;
     return Object.fromEntries(Object.entries(m).map(([n, e]) => [n, e && typeof e === "object" ? migrateWeaponSetting(e) : e]));
@@ -1021,7 +999,6 @@ export interface RunSettings {
   allowOthersWorn?: boolean | undefined;
   exact?: boolean | undefined;
   excludeWeapons?: string[] | undefined;
-  weaponSkill?: string | null | undefined;   // a pre-exclusion run's single choice; settingsDiff reads it through excludedWeapons
   strLimit?: number | undefined;
   restarts?: number | undefined;
   budgetMs?: number | undefined;
@@ -1070,7 +1047,7 @@ export function settingsDiff(a: RunSettings = {}, b: RunSettings = {}): string[]
   const others = (s: RunSettings) => !!s.allowOthersWorn;   // a saved run is normalized to allowOthersWorn before it ever reaches here
   if (others(a) !== others(b)) out.push(others(b) ? "others' worn gear allowed" : "others' worn gear excluded");
   flag("exact", "exact search on", "exact search off");
-  const [wOn, wOff] = setDiff(excludedWeapons(a), excludedWeapons(b));
+  const [wOn, wOff] = setDiff(a.excludeWeapons, b.excludeWeapons);
   if (wOn.length) out.push(`excluding ${wOn.join(", ")} weapons`);
   if (wOff.length) out.push(`allowing ${wOff.join(", ")} weapons`);
   if (a.strLimit !== b.strLimit && b.strLimit != null) out.push(`STR limit ${a.strLimit ?? "?"} → ${b.strLimit}`);

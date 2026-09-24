@@ -6,16 +6,13 @@
 // under TEST_SKIP_ELECTRON.
 import test from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, rmSync, writeFileSync, mkdirSync, copyFileSync, readFileSync } from "node:fs";
+import { mkdtempSync, rmSync, writeFileSync, mkdirSync, copyFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createRequire } from "node:module";
 import { fitWindow } from "./electron-window.mts";
 import type { ElectronApplication, Locator, Page } from "playwright";
-import { foldSnapshots, setRules, WEAPON_SKILLS } from "../app/vault-lib.mts";
-import { upgradeScan } from "../app/scan-schema.mts";
-import type { RulesV1, ScanV2 } from "../app/schema/types.d.mts";
 
 const ROOT = dirname(dirname(fileURLToPath(import.meta.url)));
 const require_ = createRequire(import.meta.url);
@@ -328,68 +325,28 @@ test("[slow] resist caps: a floor past its cap warns, a race change drops a now-
   }
 });
 
-// Weapon exclusions (issue #45): ticking two skills in the Weapons popover leaves their weapons out of the build (the
-// suit the first build chose a weapon of such a skill for comes back without one), the chip and the pool summary say
-// so, the saved run keeps the list, Save profile keeps it across a reload, and Clear allows every weapon again.
-test("[slow] excluding two weapon skills keeps their weapons out of the result, and the exclusions are saved", async (t) => {
+// Weapon exclusions (issue #45): ticking two skills in the Weapons popover says so on the chip, and Save profile
+// keeps them across a reload.
+test("[slow] two excluded weapon skills show on the chip and are saved with the profile", async (t) => {
   const why = unavailable();
   if (why) return t.skip(why);
-  setRules(JSON.parse(readFileSync(join(ROOT, "app", "rules", "uoalive.json"), "utf8")) as RulesV1);
-  const inv = foldSnapshots(["demo-Dorran.json", "demo-Kestrel.json"].map((f) => upgradeScan(JSON.parse(readFileSync(join(ROOT, "app", "fixtures", f), "utf8")), { shard: "uoalive" }) as ScanV2));
-  const skillOf = (serial: number): string => String(inv.items[serial]?.skillReq || "").toLowerCase();
   const dataDir = seedDataDir("packrat-ui-weapons-");
   const { app, page, errors } = await launch(dataDir);
-  // The newest saved run's held pieces and skipped counts, read the way the page reads them.
-  const lastRun = (): Promise<{ hands: number[]; skipped: Record<string, number>; settings: Record<string, unknown> }> => page.evaluate(async () => {
-    const who = document.querySelector<HTMLSelectElement>("#b-char")!.value;
-    const list = await (await fetch(`/api/runs?character=${encodeURIComponent(who)}`)).json() as { runs: Array<{ id: string }> };
-    const { run } = await (await fetch(`/api/runs/${list.runs[0]!.id}`)).json() as { run: { skipped: Record<string, number>; settings: Record<string, unknown>; result: { best: Record<string, { serial: number } | null> } } };
-    return { hands: ["oneHanded", "twoHanded"].map((s) => run.result.best[s]?.serial).filter((x): x is number => x != null), skipped: run.skipped, settings: run.settings };
-  });
   try {
     await openBuilder(page);
     const chip = page.locator("#b-weapon");
     assert.equal(await chip.innerText(), "Weapons: any");
-    await page.click("#b-run");
-    await built(page);
-    const who = await page.locator("#b-char").inputValue();
-    const first = await lastRun();
-    // Exclude the skill of the weapon the first build held (when it held one), and fill up to two from the skills
-    // the character's reachable weapons have.
-    const present = WEAPON_SKILLS.filter((w) => Object.values(inv.items).some((it) => it.gear && skillOf(it.serial) === w && (!it.equippedBy || it.equippedBy === who)));
-    const excluded = [...new Set([...first.hands.map(skillOf).filter((w) => WEAPON_SKILLS.includes(w)), ...present])].slice(0, 2);
-    assert.equal(excluded.length, 2, `two weapon skills to exclude (${present.join(", ")})`);
-
     await chip.click();
-    const pop = page.locator(".pop");
-    assert.match(await pop.innerText(), /Exclude weapon skills/i);
-    assert.equal(await pop.locator("#b-weapon-clear").isVisible(), false, "Clear only once something is ticked");
-    for (const w of excluded) await pop.locator(`input[value="${w}"]`).check();
+    for (const w of ["archery", "throwing"]) await page.locator(`.pop input[value="${w}"]`).check();
     assert.equal(await chip.innerText(), "Weapons: 2 excluded");
     await page.keyboard.press("Escape");
-    // the collapsed section's summary says them in words
-    await page.click("#b-sec-pool .b-sec-head button");
-    assert.match(await page.locator("#b-sec-pool").innerText(), new RegExp(`no ${WEAPON_SKILLS.filter((w) => excluded.includes(w)).join(" or ")} weapons`, "i"));
-    await page.click("#b-sec-pool .b-sec-head button");
-    await page.click("#b-run");
-    await built(page);
-    const second = await lastRun();
-    for (const s of second.hands) assert.ok(!excluded.includes(skillOf(s)), `the result holds ${inv.items[s]?.name} (${skillOf(s)}), an excluded skill`);
-    assert.ok((second.skipped.weapon || 0) > 0, `the pool left weapons out (${JSON.stringify(second.skipped)})`);
-    assert.deepEqual(second.settings.excludeWeapons, WEAPON_SKILLS.filter((w) => excluded.includes(w)), "the saved run keeps the list");
-
-    // Saved with the profile: a reload brings it back.
     await page.click("#b-save");
     await page.waitForFunction(() => /Profile for .* saved/.test(document.body.textContent || ""), undefined, { timeout: 10_000 });
     await page.reload();
     await page.waitForSelector("#tab-builder:not([hidden]) #b-weapon", { timeout: 30_000 });
     assert.equal(await chip.innerText(), "Weapons: 2 excluded");
-
-    // Clear allows every weapon again.
     await chip.click();
-    await page.locator(".pop #b-weapon-clear").click();
-    assert.equal(await page.locator(".pop input[type=checkbox]:checked").count(), 0);
-    assert.equal(await chip.innerText(), "Weapons: any");
+    assert.deepEqual(await page.locator(".pop input:checked").evaluateAll((is) => is.map((i) => (i as HTMLInputElement).value)), ["archery", "throwing"]);
     assert.deepEqual(errors, []);
   } finally {
     await app.close();

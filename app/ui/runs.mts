@@ -2,7 +2,7 @@
 // meta line and summary badges, a ⋯ menu (Open, Rename inline, Delete with a confirm dialog), a filter, and a
 // footer that ticks up to three runs for the compare view (ui/builder-result.mts's openRunCompare). Also the
 // settings snapshot a run is saved with, and putting a saved run's settings back into the panel.
-import { OPTIMIZER_SLOTS, RESIST_KEYS, resistSkillBonus, effectiveProfile, totalsOf, settingsDiff, resistCapsFor, excludedWeapons } from "../vault-lib.mts";
+import { OPTIMIZER_SLOTS, RESIST_KEYS, resistSkillBonus, effectiveProfile, totalsOf, settingsDiff, resistCapsFor } from "../vault-lib.mts";
 import type { RunSettings, OptItem, PropMap, Character } from "../vault-lib.mts";
 import { state, invStamp } from "./store.mts";
 import { $, el, fmtSecs, fmtRunTime, toast } from "./dom.mts";
@@ -28,7 +28,7 @@ export function settingsSnapshot(): RunSettings {
 export function applySettings(st: RunSettings): void {
   const p = state.builder.profile!;
   Object.assign(p, { floors: { ...(st.floors || {}) }, softFloors: [...(st.softFloors || [])], weights: { ...(st.weights || {}) }, lockedSlots: [...(st.lockedSlots || [])],
-    excludeTags: [...(st.excludeTags || [])], excludeRoots: [...(st.excludeRoots || [])], strLimit: st.strLimit, allowGargoyle: !!st.allowGargoyle, medOnly: !!st.medOnly, excludeWeapons: excludedWeapons(st),
+    excludeTags: [...(st.excludeTags || [])], excludeRoots: [...(st.excludeRoots || [])], strLimit: st.strLimit, allowGargoyle: !!st.allowGargoyle, medOnly: !!st.medOnly, excludeWeapons: [...(st.excludeWeapons || [])],
     race: st.race || p.race || "human", excludeSkills: [...(st.excludeSkills || [])], allowOthersWorn: !!st.allowOthersWorn, resistCaps: { ...(st.resistCaps || {}) } });
   applyKnobs(st);
   clearCapDrafts();

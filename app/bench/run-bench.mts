@@ -26,6 +26,7 @@ import { learnModel, generateScan, readRealSnapshots, ROOT, BENCH_SHARD, type Mo
 import { resolveConfig, corePath } from "../config.mts";
 import { upgradeScan } from "../scan-schema.mts";
 import { loadRules } from "../rules.mts";
+import { migrateProfiles } from "../vault-lib.mts";
 import type * as VaultLib from "../vault-lib.mts";
 import type * as Core from "../../scripts/optimizer-core.mts";
 import type { OptPools, OptAssignment, OptProfile, OptResult, SolveProgress, ExactSolveResult } from "../exact-solver.mts";
@@ -58,7 +59,6 @@ if (has("render")) {
 // off a character entry at all) plus excludeRoots, which CharacterEntryRaw doesn't declare.
 interface BenchCharacterEntry {
   excludeWeapons?: string[] | undefined;
-  weaponSkill?: string | null | undefined;   // a profiles.json from before excludeWeapons (lib.excludedWeapons reads either)
   softFloors?: string[] | undefined;
   floors?: Record<string, number> | undefined;
   weights?: Record<string, number> | undefined;
@@ -84,7 +84,7 @@ if (!existsSync(BENCH_CONFIG.paths.profiles)) {
   console.error(`no profiles.json at ${BENCH_CONFIG.paths.profiles} — point PACKRAT_DATA (or --data) at a directory that has one, or create one first (the app writes it from app/data/profiles.default.json on first run)`);
   process.exit(1);
 }
-const PROFILES_FILE = JSON.parse(readFileSync(BENCH_CONFIG.paths.profiles, "utf8")) as BenchProfilesFile;
+const PROFILES_FILE = migrateProfiles(JSON.parse(readFileSync(BENCH_CONFIG.paths.profiles, "utf8"))).profiles as BenchProfilesFile;   // an older file's weaponSkill becomes excludeWeapons
 const PROFILE_CHARACTERS = PROFILES_FILE.characters || {};
 const CHARACTER_NAMES = Object.keys(PROFILE_CHARACTERS);
 if (!has("profiles") && !CHARACTER_NAMES.length) {
@@ -157,7 +157,7 @@ function buildCell(inv: VaultLib.Inventory, who: string, patch: Partial<BenchCha
   const p = { ...p0, ...patch, floors: { ...(p0.floors || {}), ...(patch.floors || {}) }, weights: { ...(p0.weights || {}), ...(patch.weights || {}) } };
   const c = inv.characters[who];
   const { pools, current, blocked = [] } = lib.buildPools(inv, who, { allowOthersWorn: false, strength: p.strLimit ?? (c ? (c.stats.str as number) : 125), excludeTags: p.excludeTags || [],   // Character.stats is Record<string, unknown> — str is always numeric at runtime
-    excludeRoots: p.excludeRoots || [], excludeGargoyle: !p.allowGargoyle, medOnly: !!p.medOnly, excludeWeapons: lib.excludedWeapons(p), excludeSkills: p.excludeSkills || [] });
+    excludeRoots: p.excludeRoots || [], excludeGargoyle: !p.allowGargoyle, medOnly: !!p.medOnly, excludeWeapons: p.excludeWeapons || [], excludeSkills: p.excludeSkills || [] });
   for (const s of p.lockedSlots || []) pools[s] = [];
   const optCurrent = { ...current };
   for (const s of blocked) delete optCurrent[s];
@@ -165,7 +165,7 @@ function buildCell(inv: VaultLib.Inventory, who: string, patch: Partial<BenchCha
   const profile = lib.effectiveProfile(p, c);
   const poolSizes: Record<string, number> = Object.fromEntries(lib.OPTIMIZER_SLOTS.map((s): [string, number] => [s, (pools[s] || []).length]));
   return { pools: pools as unknown as OptPools, current: optCurrent as unknown as OptAssignment, profile, optionalSlots, poolSizes, poolTotal: Object.values(poolSizes).reduce((a, b) => a + b, 0),
-    shape: { locked: p.lockedSlots || [], hardFloors: profile.hardFloors.length, weights: Object.keys(profile.weights).length, excludeWeapons: lib.excludedWeapons(p), medOnly: !!p.medOnly } };
+    shape: { locked: p.lockedSlots || [], hardFloors: profile.hardFloors.length, weights: Object.keys(profile.weights).length, excludeWeapons: p.excludeWeapons || [], medOnly: !!p.medOnly } };
 }
 
 interface RunWorkerLast { phase: string; nodes: number | undefined; explored: number | undefined; candidates: number | undefined; bestScore: number | null | undefined; restartsDone: number | undefined }

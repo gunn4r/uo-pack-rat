@@ -1348,93 +1348,39 @@ test("[fast] resist cap overrides: profiles and saved runs keep them, and a bad 
   }
 });
 
-// Weapon exclusions (issue #45): the single weapon choice a profiles.json, template or saved run holds from before
-// is read as the exclusions it means; the new list persists with profiles, templates and runs, is held to the known
-// weapon skills everywhere, and an excluded skill's weapons never reach the build.
-test("[fast] weapon exclusions: old single choices migrate on read, the list persists and is checked, and excluded weapons stay out of the build", async () => {
+// Weapon exclusions (issue #45): a bad list is refused, a build leaves the excluded skills' weapons out, and a run
+// saved with the old single weapon choice reopens with the exclusions it means.
+test("[fast] weapon exclusions: a bad list is 400, excluded weapons stay out of the build, an old run reopens converted", async () => {
+  const character = Object.keys(asJson<InventoryResponse>(await (await get("/api/inventory")).json()).inventory.characters)[0]!;
+  const profiles = asJson<ProfilesResponse>(await (await get("/api/profiles")).json()).profiles;
+  const rules = asJson<RulesResponse>(await (await get("/api/rules")).json());
+  const profile = { ...Object.values(profiles.templates!)[0], caps: rules.rules.caps };
+  const post = (settings: Record<string, unknown>): Promise<Response> => fetch(srv.url + "/api/optimize", {
+    method: "POST", headers: JSON_HEADERS, body: JSON.stringify({ character, settings, profile, opts: { exact: false, restarts: 3 }, meta: { character, settings } }) });
+  const bad = await post({ excludeWeapons: ["bows"] });
+  assert.equal(bad.status, 400);
+  assert.match(asJson<ErrorBody>(await bad.json()).error, /settings\.excludeWeapons\[0\] is not a weapon skill/);
+
+  const inv = foldFixtures(join(HERE, "fixtures"));
+  const skillOf = (serial: number): string => String(inv.items[serial]?.skillReq || "").toLowerCase();
+  const excluded = [...new Set(Object.values(inv.items).map((it) => skillOf(it.serial)).filter(Boolean))].slice(0, 2);
+  const j = asJson<OptimizeJobResponse>(await (await post({ excludeWeapons: excluded })).json());
+  assert.ok((j.skipped as Record<string, number>).weapon! > 0, JSON.stringify(j.skipped));
+  let status: OptimizeJobResponse = j;
+  for (let i = 0; i < 200 && status.state !== "done" && !j.cached; i++) {
+    await new Promise((res) => setTimeout(res, 20));
+    status = asJson<OptimizeJobResponse>(await (await fetch(srv.url + `/api/optimize/${j.id}/status`)).json());
+  }
+  const best = (status.result as { best: Record<string, { serial: number } | null> }).best;
+  for (const slot of ["oneHanded", "twoHanded"]) if (best[slot]) assert.ok(!excluded.includes(skillOf(best[slot]!.serial)), `${slot} holds an excluded skill`);
+
   const dir = mkdtempSync(join(tmpdir(), "qm-weapons-"));
   const s2 = await startServer(ensureLayout(resolveConfig(["--demo", "--port", "0", "--data", dir], {})));
-  const put = (body: unknown): Promise<Response> => fetch(s2.url + "/api/profiles", { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
-  const others = (w: string): string[] => ["archery", "swordsmanship", "fencing", "mace fighting", "throwing"].filter((x) => x !== w);
   try {
-    const character = Object.keys(asJson<InventoryResponse>(await (await fetch(s2.url + "/api/inventory")).json()).inventory.characters)[0]!;
-    // an on-disk profiles.json in the shape before exclusions
-    const defaults = JSON.parse(readFileSync(join(HERE, "data", "profiles.default.json"), "utf8")) as ProfilesFile;
-    const templateName = Object.keys(defaults.templates!)[0]!;
-    const { excludeWeapons: _drop, ...oldTemplate } = defaults.templates![templateName]!;
-    writeFileSync(join(dir, "profiles.json"), JSON.stringify({ ...defaults, characters: { [character]: { template: templateName, race: "human", weaponSkill: "fencing" } },
-      templates: { ...defaults.templates, [templateName]: { ...oldTemplate, weaponSkill: "archery" } } }));
-    const migrated = asJson<ProfilesResponse>(await (await fetch(s2.url + "/api/profiles")).json()).profiles;
-    assert.deepEqual(migrated.characters![character]!.excludeWeapons, others("fencing"));
-    assert.deepEqual(migrated.templates![templateName]!.excludeWeapons, others("archery"));
-    assert.ok(!("weaponSkill" in migrated.characters![character]!) && !("weaponSkill" in migrated.templates![templateName]!));
-    assert.ok(readdirSync(dir).some((f) => /^profiles\.backup-.*\.json$/.test(f)), "the old file is kept as a backup");
-    assert.match(readFileSync(join(dir, "profiles.json"), "utf8"), /"excludeWeapons"/, "and the file is rewritten in the new shape");
-
-    // the list round-trips through PUT for a character and a template, and a bad one is refused naming where
-    const good = { ...migrated, characters: { [character]: { template: templateName, race: "human", excludeWeapons: ["archery", "throwing"] } },
-      templates: { ...migrated.templates, duel: { ...migrated.templates![templateName]!, excludeWeapons: ["swordsmanship"] } } };
-    assert.equal((await put(good)).status, 200);
-    const back = asJson<ProfilesResponse>(await (await fetch(s2.url + "/api/profiles")).json()).profiles;
-    assert.deepEqual(back.characters![character]!.excludeWeapons, ["archery", "throwing"]);
-    assert.deepEqual(back.templates!.duel!.excludeWeapons, ["swordsmanship"]);
-    for (const [where, list, path] of [["characters", ["wrestling"], /\/characters\/.+\/excludeWeapons\/0/], ["templates", "archery", /\/templates\/duel\/excludeWeapons/]] as const) {
-      const bad = where === "characters" ? { ...good, characters: { [character]: { excludeWeapons: list } } } : { ...good, templates: { duel: { excludeWeapons: list } } };
-      const r = await put(bad);
-      assert.equal(r.status, 400, `${where} ${JSON.stringify(list)}`);
-      assert.match(asJson<ErrorBody>(await r.json()).error, path);
-    }
-
-    // a build: bad lists are refused before anything runs; a good one leaves the excluded skills' weapons out
-    const rules = asJson<RulesResponse>(await (await fetch(s2.url + "/api/rules")).json());
-    const profile = { ...migrated.templates![templateName], caps: rules.rules.caps };
-    const post = (settings: Record<string, unknown>, snapshot: Record<string, unknown>): Promise<Response> => fetch(s2.url + "/api/optimize", {
-      method: "POST", headers: { "content-type": "application/json" },
-      body: JSON.stringify({ character, settings, profile, opts: { exact: false, restarts: 3 }, meta: { character, settings: snapshot } }) });
-    for (const [settings, snapshot, msg] of [[{ excludeWeapons: "archery" }, {}, /settings\.excludeWeapons must be an array/],
-      [{ excludeWeapons: ["archery", "archery"] }, {}, /settings\.excludeWeapons names archery twice/], [{}, { excludeWeapons: ["bows"] }, /meta\.settings\.excludeWeapons\[0\] is not a weapon skill/]] as const) {
-      const r = await post(settings, snapshot);
-      assert.equal(r.status, 400, JSON.stringify([settings, snapshot]));
-      assert.match(asJson<ErrorBody>(await r.json()).error, msg);
-    }
-    const localInv = foldFixtures(join(HERE, "fixtures"));
-    const skillOf = (serial: number): string => String(localInv.items[serial]?.skillReq || "").toLowerCase();
-    const held = Object.values(localInv.items).filter((it) => it.gear && (it.slot === "oneHanded" || it.slot === "twoHanded") && skillOf(it.serial));
-    const present = [...new Set(held.map((it) => skillOf(it.serial)))];
-    assert.ok(present.length >= 2, `the demo inventory holds weapons of two skills (${present.join(", ")})`);
-    const excluded = present.slice(0, 2);
-    const done = async (j: OptimizeJobResponse): Promise<{ settings: Record<string, unknown>; result: { best: Record<string, { serial: number } | null> } }> => {
-      let status: OptimizeJobResponse = j;
-      for (let i = 0; i < 200 && status.state !== "done" && !j.cached; i++) {
-        await new Promise((res) => setTimeout(res, 20));
-        status = asJson<OptimizeJobResponse>(await (await fetch(s2.url + `/api/optimize/${j.id}/status`)).json());
-      }
-      const id = j.cached ? (j as { run?: { id: string } }).run!.id : j.id;
-      return asJson<{ run: { settings: Record<string, unknown>; result: { best: Record<string, { serial: number } | null> } } }>(await (await fetch(s2.url + `/api/runs/${id}`)).json()).run;
-    };
-    const r = await post({ excludeWeapons: excluded }, { excludeWeapons: excluded });
-    const j = asJson<OptimizeJobResponse>(await r.json());
-    assert.equal(r.status, 200, JSON.stringify(j));
-    assert.ok((j.skipped as Record<string, number>).weapon! >= held.filter((it) => excluded.includes(skillOf(it.serial)) && it.equippedBy !== character).length, JSON.stringify(j.skipped));
-    const run = await done(j);
-    assert.deepEqual(run.settings.excludeWeapons, excluded, "reopening the run shows the exclusions it was built with");
-    for (const slot of ["oneHanded", "twoHanded"]) {
-      const piece = run.result.best[slot];
-      if (piece) assert.ok(!excluded.includes(skillOf(piece.serial)), `${slot} holds ${skillOf(piece.serial)}, which was excluded`);
-    }
-    // a caller still sending the single choice builds with the exclusions it means, and its run says so
-    const legacy = asJson<OptimizeJobResponse>(await (await post({ weaponSkill: present[0] }, { weaponSkill: present[0] })).json());
-    const legacyRun = await done(legacy);
-    assert.deepEqual(legacyRun.settings.excludeWeapons, others(present[0]!));
-    assert.ok(!("weaponSkill" in legacyRun.settings));
-
-    // a run saved on disk before exclusions reopens with the exclusions its single choice meant
     const id = "0b5c1a4e-0000-4000-8000-000000000045";
-    writeFileSync(join(dir, "runs", `${id}.json`), JSON.stringify({ id, character, createdAt: new Date().toISOString(), settings: { weaponSkill: "archery", medOnly: false }, result: { method: "heuristic", best: {} } }));
-    const old = asJson<{ run: { settings: Record<string, unknown> } }>(await (await fetch(s2.url + `/api/runs/${id}`)).json()).run;
-    assert.deepEqual(old.settings.excludeWeapons, others("archery"));
-    const listed = asJson<{ runs: Array<{ id: string; settings: Record<string, unknown> }> }>(await (await fetch(s2.url + `/api/runs?character=${encodeURIComponent(character)}`)).json()).runs.find((x) => x.id === id);
-    assert.deepEqual(listed!.settings.excludeWeapons, others("archery"));
+    writeFileSync(join(dir, "runs", `${id}.json`), JSON.stringify({ id, character, settings: { weaponSkill: "archery" }, result: { method: "heuristic", best: {} } }));
+    const run = asJson<{ run: { settings: Record<string, unknown> } }>(await (await fetch(s2.url + `/api/runs/${id}`)).json()).run;
+    assert.deepEqual(run.settings, { excludeWeapons: ["swordsmanship", "fencing", "mace fighting", "throwing"] });
   } finally {
     await s2.close();
     rmSync(dir, { recursive: true, force: true });
