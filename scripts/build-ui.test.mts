@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync, existsSync } from "node:fs";
+import { readFileSync, existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { buildUi, tscSpawnEnv } from "./build-ui.mts";
@@ -9,10 +9,14 @@ const ROOT = dirname(dirname(fileURLToPath(import.meta.url)));
 
 // Builds into the REAL app/dist (not a temp copy) — other test files (app/server.test.mts among
 // them) read app/dist later in the same run, and the runner drives everything at concurrency: 1,
-// so leaving the real build in place is required, not just convenient. buildUi() always recompiles
-// (no freshness check of its own), so this is safe to run alongside those other buildUi() callers.
+// so leaving the real build in place is required, not just convenient. buildUi() always clears
+// app/dist and recompiles in full, so this is safe to run alongside those other buildUi() callers.
 test("[fast] buildUi compiles the page into app/dist/ui, with extensions rewritten and no stray .css", () => {
+  const stale = join(ROOT, "app", "dist", "ui", "deleted-source.mjs");   // the output of an app/ui file since removed
+  mkdirSync(dirname(stale), { recursive: true });
+  writeFileSync(stale, "");
   buildUi();
+  assert.ok(!existsSync(stale), "an output whose source is gone must not survive a build");
   const appOut = join(ROOT, "app", "dist", "ui", "app.mjs");
   const shellOut = join(ROOT, "app", "dist", "ui", "shell.mjs");
   assert.ok(existsSync(appOut), "app/dist/ui/app.mjs was not produced");

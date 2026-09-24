@@ -362,11 +362,12 @@ test("[slow] a switch's on state stands apart from its off state in each theme a
   const dataDir = seedDataDir("packrat-ui-switch-");
   const { app, page, errors } = await launch(dataDir);
   try {
+    // reduced motion: a slow runner can otherwise read the track's colour half-way through its transition
+    await page.emulateMedia({ reducedMotion: "reduce" });
     await openBuilder(page);
     await page.getByRole("switch", { name: "Allow gargoyle-only gear" }).check();
     for (const theme of ["default", "britannia"]) for (const mode of ["light", "dark"]) {
       await page.evaluate(([th, md]) => { document.documentElement.dataset.theme = th!; document.documentElement.dataset.mode = md!; }, [theme, mode]);
-      await page.waitForTimeout(400);   // the track's colour transition
       const got = await page.evaluate(() => {
         const rgb = (c: string): number[] => c.match(/[\d.]+/g)!.slice(0, 3).map(Number);
         const lum = (c: string): number => { const [r, g, b] = rgb(c).map((v) => { v /= 255; return v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4; }); return 0.2126 * r! + 0.7152 * g! + 0.0722 * b!; };

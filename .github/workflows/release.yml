@@ -49,6 +49,7 @@ jobs:
         # (RELEASING.md step 9) -- nothing here ever makes a release public.
         run: |
           if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            [ "$(gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json isDraft -q .isDraft)" = true ] || { echo "::error::$TAG is already published; not touching its assets"; exit 1; }
             echo "release $TAG already exists, reusing it"
           else
             gh release create "$TAG" --repo "$GITHUB_REPOSITORY" --draft --title "$TAG" \
@@ -147,9 +148,16 @@ jobs:
           sha256sum -- * > "$RUNNER_TEMP/SHA256SUMS"
           cat "$RUNNER_TEMP/SHA256SUMS"
       - name: Upload the installers and the checksums to the draft release
-        # --clobber so re-running a partly-failed release replaces files rather than erroring. The
-        # release stays a draft; a human publishes it (RELEASING.md step 9).
-        run: gh release upload "$TAG" "$RUNNER_TEMP/SHA256SUMS" dist/* --repo "$GITHUB_REPOSITORY" --clobber
+        # Whatever an earlier run of this release uploaded is removed first, so a re-run leaves exactly
+        # this run's files on the draft (--clobber alone replaced same-named files but kept any whose
+        # name this run no longer produces). The release stays a draft; a human publishes it
+        # (RELEASING.md step 9). A release already published is never touched.
+        shell: bash
+        run: |
+          [ "$(gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json isDraft -q .isDraft)" = true ] || { echo "::error::$TAG is already published; not touching its assets"; exit 1; }
+          gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json assets -q '.assets[].name' |
+            while read -r name; do gh release delete-asset "$TAG" "$name" --repo "$GITHUB_REPOSITORY" --yes; done
+          gh release upload "$TAG" "$RUNNER_TEMP/SHA256SUMS" dist/* --repo "$GITHUB_REPOSITORY"
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAG: ${{ github.ref_name }}

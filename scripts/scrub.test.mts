@@ -4,7 +4,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 
@@ -29,10 +29,17 @@ const BANNED: [RegExp, string, string[]][] = [
   [/quartermaster/i, "the retired product name", ["scripts/scrub.test.mts"]],
 ];
 
-const tracked = execFileSync("git", ["ls-files"], { cwd: root, encoding: "utf8" })
-  .split("\n").filter((f) => f && !BINARY.test(f));
+// Listed inside the tests, not at load: outside a git checkout (a source archive) git fails, and a
+// tracked file deleted in the working tree is not there to read.
+function trackedFiles(): string[] | null {
+  let out: string;
+  try { out = execFileSync("git", ["ls-files"], { cwd: root, encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }); } catch { return null; }
+  return out.split("\n").filter((f) => f && !BINARY.test(f) && existsSync(join(root, f)));
+}
 
-test("[smoke] no tracked file carries private data or a retired name", () => {
+test("[smoke] no tracked file carries private data or a retired name", (t) => {
+  const tracked = trackedFiles();
+  if (!tracked) return t.skip("not a git checkout");
   const found: string[] = [];
   for (const file of tracked) {
     const body = readFileSync(join(root, file), "utf8");
@@ -45,6 +52,8 @@ test("[smoke] no tracked file carries private data or a retired name", () => {
   assert.deepEqual(found, [], `private data in tracked files:\n${found.join("\n")}`);
 });
 
-test("[smoke] the guard actually sees tracked files", () => {
+test("[smoke] the guard actually sees tracked files", (t) => {
+  const tracked = trackedFiles();
+  if (!tracked) return t.skip("not a git checkout");
   assert.ok(tracked.length > 40, `expected the repo's files, got ${tracked.length}`);
 });
