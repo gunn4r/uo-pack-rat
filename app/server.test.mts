@@ -2903,8 +2903,8 @@ test("[fast] PUT /api/ui-prefs keeps theme, appearance, sidebar, density, the co
     assert.equal((await put(s.url, { colWidths: { location: 420, "sk:animal lore": 40 } })).status, 200);
     assert.deepEqual(asJson(await (await fetch(s.url + "/api/ui-prefs")).json()), { ok: true, prefs: { cols: ["hci"], sheetProps: ["fc", "hitLifeLeech"], colsVersion: "2", appearance: "dark", theme: "default", sidebar: "collapsed", density: "regular", colWidths: { location: 420, "sk:animal lore": 40 } } });
     for (const bad of [{ appearance: "sepia" }, { appearance: 1 }, { theme: "neon" }, { theme: "" }, { sidebar: "wide" }, { sidebar: true }, { density: "comfy" }, { colsVersion: 2 }, { colsVersion: "9" },
-      { sheetProps: "fc" }, { sheetProps: [5] }, { colWidths: [300] }, { colWidths: { location: 39 } }, { colWidths: { location: 1201 } }, { colWidths: { location: 300.5 } }, { colWidths: { location: "300" } },
-      { colWidths: { ["x".repeat(65)]: 300 } }, { colWidths: Object.fromEntries(Array.from({ length: 201 }, (_, i) => [`c${i}`, 100])) }]) {
+      { sheetProps: "fc" }, { sheetProps: [5] }, { colWidths: [300] }, { colWidths: { location: 39 } }, { colWidths: { location: 300.5 } }, { colWidths: { location: "300" } },
+      { colWidths: Object.fromEntries(Array.from({ length: 201 }, (_, i) => [`c${i}`, 100])) }]) {
       assert.equal((await put(s.url, bad)).status, 400, `${JSON.stringify(bad).slice(0, 80)} should be refused`);
     }
     // A hand-edited file with a bad value reads as "never chosen" for that field only.

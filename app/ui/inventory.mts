@@ -434,10 +434,10 @@ function openSettings(): void {
   const view = narrow() ? segmented({ label: "Rows", options: [{ value: "list", label: "List" }, { value: "grouped", label: "Grouped" }], value: state.query.group ? "grouped" : "list", onChange: (v) => setView(v === "grouped") }) : null;
   h = popover(settingsBtn, [
     view ? box("div", { class: "inv-pop-sec" }, txt("View", "caps"), view) : null,
-    box("div", { class: "inv-pop-sec" }, txt("Density", "caps"), density,
-      button({ label: "Reset column widths", size: "sm", onClick: () => { setColWidths({}); rebuildTable(); } })),
+    box("div", { class: "inv-pop-sec" }, txt("Density", "caps"), density),
     el("div", { class: "divider" }),
-    box("div", { class: "inv-pop-sec" }, box("div", { class: "inv-pop-head" }, txt("Columns", "caps"), el("span", { class: "spacer" }), count), find.root),
+    box("div", { class: "inv-pop-sec" }, box("div", { class: "inv-pop-head" }, txt("Columns", "caps"), el("span", { class: "spacer" }), count), find.root,
+      button({ label: "Reset column widths", size: "sm", onClick: () => { setColWidths({}); rebuildTable(); } })),
     list,
     box("div", { class: "overlay-foot inv-pop-foot" },
       button({ label: "Reset to default", variant: "ghost", size: "sm", onClick: () => { setCols([...DEFAULT_COLS]); paintCount(); draw(); } }),
@@ -466,7 +466,7 @@ const RESISTS = ["physResist", "fireResist", "coldResist", "poisonResist", "ener
 // chunk lands, so the header changes with the data, not with the click.
 const grouped = (): boolean => (loadedOnce ? !!state.page.groups : state.query.group);
 function columns(): ColDef[] {
-  const c = (key: string, text: string, width: number, num = false, title = ""): ColDef => ({ key, label: text, title, num, width: state.colWidths[key] ?? width, sortable: true });
+  const c = (key: string, text: string, width: number, num = false, title = ""): ColDef => ({ key, label: text, title, num, width: Object.hasOwn(state.colWidths, key) ? state.colWidths[key]! : width, sortable: true });
   if (grouped()) return [c("name", "Name", 300), c("kind", "Kind", 120), c("amount", "Total", 88, true), c("stacks", "Stacks", 80, true), { ...c("where", "Where", 480), sortable: false }];
   const width = (k: string): number => (k === "seen" ? 112 : k === "kind" ? 96 : RESISTS.includes(k) ? 52 : Math.max(52, colShort(k, label).length * 8 + 28));
   // Tags, when shown, sits right after Name wherever the saved list names it; it has nothing to sort on.
@@ -677,9 +677,10 @@ function resizeHandle(c: ColDef, draw: (w: number) => void): HTMLElement {
   let w = c.width, saved = c.width, startX = 0, startW = 0;
   const set = (next: number): void => { w = Math.round(Math.min(1200, Math.max(40, next))); h.setAttribute("aria-valuenow", String(w)); draw(w); };
   const save = (): void => { if (w !== saved) { saved = w; setColWidths({ ...state.colWidths, [c.key]: w }); } };
-  h.addEventListener("pointerdown", (e) => { e.preventDefault(); h.setPointerCapture(e.pointerId); startX = e.clientX; startW = w; h.classList.add("dragging"); });
+  h.addEventListener("pointerdown", (e) => { if (e.button !== 0) return; e.preventDefault(); h.setPointerCapture(e.pointerId); startX = e.clientX; startW = w; h.classList.add("dragging"); });
   h.addEventListener("pointermove", (e) => { if (h.hasPointerCapture(e.pointerId)) set(startW + e.clientX - startX); });
-  h.addEventListener("pointerup", () => { h.classList.remove("dragging"); save(); });
+  // after a normal pointerup, and after a pointercancel or the window losing focus mid-drag
+  h.addEventListener("lostpointercapture", () => { h.classList.remove("dragging"); save(); });
   h.addEventListener("keydown", (e) => { if (e.key !== "ArrowLeft" && e.key !== "ArrowRight") return; e.preventDefault(); set(w + (e.key === "ArrowLeft" ? -16 : 16)); });
   h.addEventListener("keyup", (e) => { if (e.key === "ArrowLeft" || e.key === "ArrowRight") save(); });
   return h;
@@ -879,7 +880,7 @@ function wireTable(): void {
   // location are left to the item tooltip, which already shows both in full.
   body.addEventListener("mouseover", (e) => {
     const td = (e.target as HTMLElement).closest("td");
-    if (!td || td.title || (td.parentElement!.dataset.serial && ["name", "location"].includes(columns()[td.cellIndex]?.key ?? ""))) return;
+    if (!td || td.title || td.classList.contains("act-cell") || (td.parentElement!.dataset.serial && ["name", "location"].includes(columns()[td.cellIndex]?.key ?? ""))) return;
     if ([td, ...td.querySelectorAll<HTMLElement>(".ellip")].some((n) => n.scrollWidth > n.clientWidth)) td.title = td.innerText.replace(/\s+/g, " ").trim();
   });
   // From a column header, ↓ goes into the rows (the header comes first in the tab order); ↑ from the first

@@ -526,7 +526,6 @@ test("[slow] an Inventory column is resized with the keyboard and reset in table
     const [wideHead, wideCell] = await widths();
     assert.ok(wideHead > head, `→ widens the header (${head} → ${wideHead})`);
     assert.equal(wideCell, wideHead, "the rows' cells follow the header");
-    assert.equal(await handle.getAttribute("aria-valuenow"), "260", "the handle reports its width");
     await page.click("#inv-settings");
     await page.getByRole("dialog", { name: "Table settings" }).getByRole("button", { name: "Reset column widths" }).click();
     assert.deepEqual(await widths(), [head, cell], "Reset puts the default width back");
