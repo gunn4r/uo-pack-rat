@@ -133,7 +133,7 @@ function openPropsPicker(anchor: HTMLElement, redraw: () => void): void {
 export const SLOT_GROUPS: Array<[string, string[]]> = [
   ["Armour", ["helmet", "neck", "chest", "arms", "hands", "legs"]],
   ["Weapons and jewellery", ["oneHanded", "twoHanded", "ring", "bracelet", "earrings", "talisman"]],
-  ["Clothing", ["cloak", "robe", "shirt", "waist", "feet"]],
+  ["Clothing", ["cloak", "robe", "tunic", "shirt", "waist", "feet"]],
 ];
 const FIXED_SLOTS = new Set(SLOT_GROUPS.flatMap(([, s]) => s));
 
@@ -227,13 +227,13 @@ export function sheetNode(name: string, before: SheetAssignment, after: SheetAss
     if (it.slot && FIXED_SLOTS.has(it.slot) && !bySlot.has(it.slot)) bySlot.set(it.slot, it); else other.push(it);
   }
   const caps = (state.rules?.caps || {}) as Record<string, number>;
-  const tile = (slot: string | null, it: SheetItem | undefined, small: boolean): HTMLElement => {
+  const tile = (slot: string | null, it: SheetItem | undefined): HTMLElement => {
     const head = txt(slot ? slotLabel(slot) : "Other", "t-sm muted");
-    if (!it) return box("div", { class: `slot empty${small ? " slot-sm" : ""}` }, head, txt("Empty", "faint"));
+    if (!it) return box("div", { class: "slot empty" }, head, txt("Empty", "faint"));
     const token = rarityToken(it.rarity);
     const nums = keyNumbers(it.props || {}, caps), tags = (it.tags || []).slice(0, 2);
     const isNew = !single && !nowSerials.has(it.serial);
-    const t = box("button", { type: "button", class: `slot${small ? " slot-sm" : ""}`, "data-serial": it.serial, ...(token ? { style: `border-color:var(${token})` } : {}) },
+    const t = box("button", { type: "button", class: "slot", "data-serial": it.serial, ...(token ? { style: `border-color:var(${token})` } : {}) },
       isNew ? box("span", { class: "slot-head" }, head, badge("New", "accent")) : head,
       txt(it.name, "nm"),
       tags.length || nums.length ? box("span", { class: "slot-meta t-sm" }, ...tags.map((x) => tag(x, tagTone(x))), nums.length ? txt(nums.join(" · "), "muted") : null) : null);
@@ -241,8 +241,8 @@ export function sheetNode(name: string, before: SheetAssignment, after: SheetAss
     return t;
   };
   const groups = SLOT_GROUPS.map(([title, slots]) => box("div", { class: "slot-group" }, txt(title, "caps"),
-    box("div", { class: `slot-grid${slots.length === 5 ? " slot-grid-5" : ""}` }, ...slots.map((s) => tile(s, bySlot.get(s), slots.length === 5)))));
-  if (other.length) groups.push(box("div", { class: "slot-group" }, txt("Other", "caps"), box("div", { class: "slot-grid" }, ...other.map((it) => tile(it.slot, it, false)))));
+    box("div", { class: "slot-grid" }, ...slots.map((s) => tile(s, bySlot.get(s))))));
+  if (other.length) groups.push(box("div", { class: "slot-group" }, txt("Other", "caps"), box("div", { class: "slot-grid" }, ...other.map((it) => tile(it.slot, it)))));
   const gear = el("section", { class: "card", "aria-label": "Worn gear" },
     box("div", { class: "card-head" }, el("h2", {}, "Worn gear"), txt(`${bySlot.size} of ${FIXED_SLOTS.size} slots`, "t-sm muted"), el("span", { class: "spacer" }), opts.onSlot ? txt("Click a slot for the item detail", "t-sm muted") : null),
     box("div", { class: "sheet-slots" }, ...groups));

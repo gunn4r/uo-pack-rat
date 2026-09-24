@@ -4,7 +4,7 @@
 // suit). The result, the compare view and the Solver details are ui/builder-result.mts; the saved-runs drawer
 // is ui/runs.mts. The panel is drawn from state.builder.profile plus the Advanced knobs below, so what a
 // build sends, what a profile saves and what a run snapshots are read from state, never from the DOM.
-import { PROP_LABELS, OPTIMIZER_SLOTS, tagUnits, WEAPON_SKILLS, resistSkillBonus, effectiveProfile, getRules, RESIST_KEYS, RESIST_CAP_LIMITS, resistCapsFor, templateFrom, settingsDiff, bagLabel } from "../vault-lib.mts";
+import { PROP_LABELS, NOT_BUILDER_KEYS, OPTIMIZER_SLOTS, tagUnits, WEAPON_SKILLS, resistSkillBonus, effectiveProfile, getRules, RESIST_KEYS, RESIST_CAP_LIMITS, resistCapsFor, templateFrom, settingsDiff, bagLabel } from "../vault-lib.mts";
 import type { EffectiveProfile, ResistCap, RunSettings, Character } from "../vault-lib.mts";
 import { state, invStamp } from "./store.mts";
 import type { BuilderProfile, BuilderJob, BuilderJobUi, FinishedBuild, BuildMeta } from "./store.mts";
@@ -252,7 +252,7 @@ async function deleteTemplate(): Promise<void> {
 // pools, and the skill bonuses gear carries.
 function allPropKeys(): string[] {
   return [...new Set([...Object.keys(PROP_LABELS), ...state.propKeys, "stamPool", "manaPool", "hitsPool", ...(state.facets?.gearSkills || []).map((k) => `sk:${k}`)])]
-    .filter((k) => k !== "tagPenalty").sort((a, b) => propName(a).localeCompare(propName(b)));
+    .filter((k) => !NOT_BUILDER_KEYS.has(k)).sort((a, b) => propName(a).localeCompare(propName(b)));
 }
 // The panel's resist caps: the player's override, else the shard's cap for this character's race (an Elf's
 // Energy is 75 on uoalive).
@@ -287,7 +287,7 @@ function setInlineError(control: HTMLElement, err: string | null): void {
 }
 function requirementsSection(): HTMLElement {
   const p = state.builder.profile!, name = state.builder.character!;
-  const keys = Object.keys(p.floors!).filter((k) => k !== "tagPenalty");
+  const keys = Object.keys(p.floors!).filter((k) => !NOT_BUILDER_KEYS.has(k));
   return section("req", "Requirements", { count: keys.length, summary: () => requirementsSummary(p.floors, p.softFloors), body: () => {
     const rsb = resistSkillBonus(state.inv!.characters[name]?.skills);
     const help = el("p", { class: "help" }, txt(`The suit must reach every hard requirement. Soft ones are preferences. Resisting Spells gives ${name} +${rsb}, ${gearCapsText(panelResistCaps(), rsb)}.`));
@@ -365,7 +365,7 @@ function capRow(p: NonNullable<typeof state.builder.profile>, k: string): HTMLEl
 }
 function weightsSection(): HTMLElement {
   const p = state.builder.profile!;
-  const keys = Object.keys(p.weights!).filter((k) => k !== "tagPenalty");
+  const keys = Object.keys(p.weights!).filter((k) => !NOT_BUILDER_KEYS.has(k));
   return section("weights", "Weights", { count: keys.length, summary: () => weightsSummary(p.weights), body: () => {
     const rows = keys.map((k) => {
       const nm = propName(k);

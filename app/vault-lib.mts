@@ -106,7 +106,6 @@ export interface Character {
   name: string;
   stats: Record<string, unknown>;
   scannedAt: string;
-  equipped: number[];
   position: Record<string, unknown> | null;
   maxes: Record<string, unknown> | null;
   resists: Record<string, unknown> | null;
@@ -170,6 +169,7 @@ export const PROP_PATTERNS: Array<[string, RegExp]> = [
   ["hitDispel", /hit dispel[^-\d]*(-?\d+)/], ["hitPoisonArea", /hit poison area[^-\d]*(-?\d+)/],
   ["hitFireArea", /hit fire area[^-\d]*(-?\d+)/], ["hitColdArea", /hit cold area[^-\d]*(-?\d+)/],
   ["hitEnergyArea", /hit energy area[^-\d]*(-?\d+)/], ["hitPhysArea", /hit physical area[^-\d]*(-?\d+)/],
+  ["mageWeapon", /mage weapon[^-\d]*(-?\d+)/],
 ];
 
 export const PROP_LABELS: Record<string, string> = {
@@ -181,9 +181,13 @@ export const PROP_LABELS: Record<string, string> = {
   enhancePotions: "EP", selfRepair: "Self Rep", hitFireball: "Hit Fireball", hitLightning: "Hit Lightning",
   hitHarm: "Hit Harm", hitMagicArrow: "Hit MA", hitDispel: "Hit Dispel", hitPoisonArea: "Poison Area",
   hitFireArea: "Fire Area", hitColdArea: "Cold Area", hitEnergyArea: "Energy Area", hitPhysArea: "Phys Area",
-  tagPenalty: "Tag penalty",
+  mageWeapon: "Mage Wpn", tagPenalty: "Tag penalty",
   stamPool: "Stam pool", manaPool: "Mana pool", hitsPool: "Hits pool",
 };
+// Properties the builder's weight and requirement rows never offer: tagPenalty carries a fixed weight
+// from the profile, and an item without a Mage Weapon line reads mageWeapon 0, which beats every mage
+// weapon's negative, so weighting it would reward not being one. Both stay filterable in the Inventory.
+export const NOT_BUILDER_KEYS = new Set(["tagPenalty", "mageWeapon"]);
 
 // Full names for the abbreviations, shown as hover tooltips in the app.
 export const PROP_FULL: Record<string, string> = {
@@ -196,7 +200,7 @@ export const PROP_FULL: Record<string, string> = {
   hitLifeLeech: "Hit Life Leech", hitStamLeech: "Hit Stamina Leech", hitManaLeech: "Hit Mana Leech", hitLowerDef: "Hit Lower Defense", hitLowerAttack: "Hit Lower Attack",
   enhancePotions: "Enhance Potions", selfRepair: "Self Repair", hitFireball: "Hit Fireball", hitLightning: "Hit Lightning", hitHarm: "Hit Harm",
   hitMagicArrow: "Hit Magic Arrow", hitDispel: "Hit Dispel", hitPoisonArea: "Hit Poison Area", hitFireArea: "Hit Fire Area", hitColdArea: "Hit Cold Area",
-  hitEnergyArea: "Hit Energy Area", hitPhysArea: "Hit Physical Area", tagPenalty: "Penalty for Cursed / Brittle / Antique / Prized tags",
+  hitEnergyArea: "Hit Energy Area", hitPhysArea: "Hit Physical Area", mageWeapon: "Mage Weapon", tagPenalty: "Penalty for Cursed / Brittle / Antique / Prized tags",
   stamPool: "Stamina from gear: DEX bonus + Stamina Increase", manaPool: "Mana from gear: INT bonus + Mana Increase",
   hitsPool: "Hit points from gear: STR bonus ÷ 2 + Hit Point Increase",
 };
@@ -334,7 +338,17 @@ export function tagInfo(tag: string): string | null {
   if (!lower) TAG_INFO_CACHE.set(raw, lower = Object.fromEntries(Object.entries(raw).map(([k, v]) => [k.toLowerCase(), v])));
   return lower[tag.toLowerCase()] ?? null;
 }
-const RARITY_RE = /^(minor|lesser|greater|major|legendary) (magic item|artifact)$|^reforged|artifact$/i;
+// A rarity line: one of the shard's rarity ladder names (rules `rarity`), optionally "Reforged ...".
+const RARITY_RE_CACHE = new WeakMap<object, RegExp>();
+function rarityRe(): RegExp {
+  const ladder = getRules().rarity;
+  let re = RARITY_RE_CACHE.get(ladder);
+  if (!re) {
+    const names = ladder.map((r) => r.name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("|");
+    RARITY_RE_CACHE.set(ladder, re = new RegExp(`^(?:reforged\\s+)?(?:${names})$`, "i"));
+  }
+  return re;
+}
 
 // The longest line any real tooltip carries is ~54 characters; the scan schema caps one at 512
 // (scan.v2.schema.json's tooltip items), so a validated scan is never truncated here. The cap is
@@ -371,10 +385,12 @@ const SET_TOTAL_LINE_RE = /\(total\)$|^mastery bonus cooldown\b/;
 //   flags    : non-numeric lines (lowercased), e.g. "spell channeling", "mage armor", "orc slayer";
 //              a set-block line no pattern models, and every "(total)" line of a worn full set,
 //              is kept as "set: <line>"
-export function parseTooltip(rawLines?: Array<string | undefined> | undefined): ParsedTooltip {
-  const TU = tagUnits();
+// A stack's name line starts with its amount ("2 Greater Heal"); that number is stripped only when it
+// equals `amount`, so a name that really starts with a number ("10 Potions" on one item) keeps it.
+export function parseTooltip(rawLines?: Array<string | undefined> | undefined, amount?: number | undefined): ParsedTooltip {
+  const TU = tagUnits(), rarityLine = rarityRe();
   const lines = (rawLines || []).map(stripHtml).filter(Boolean);
-  const name = (lines[0] || "").replace(/^\d+\s+(?=\S)/, "");
+  const name = (lines[0] || "").replace(/^(\d+)\s+(?=\S)/, (all, n: string) => (+n === amount ? "" : all));
   const props: PropMap = {}, setBonus: PropMap = {}, extras: ExtrasMap = {}, flags: string[] = [], tags: string[] = [];
   let strReq = 0, rarity: string | null = null, twoHanded: boolean | null = null, weight: number | null = null, skillReq: string | null = null;
   let inSet = false, inSetTotals = false;
@@ -393,7 +409,7 @@ export function parseTooltip(rawLines?: Array<string | undefined> | undefined): 
       continue;
     }
     if (Object.prototype.hasOwnProperty.call(TU, line)) { tags.push(line); continue; }
-    if (RARITY_RE.test(raw)) { rarity = raw; continue; }
+    if (rarityLine.test(raw)) { rarity = raw; continue; }
     let m;
     if ((m = line.match(/strength requirement\D*(\d+)/))) { strReq = +m[1]!; continue; }
     if ((m = line.match(/^weight\D*(\d+)/))) { weight = +m[1]!; continue; }
@@ -401,6 +417,7 @@ export function parseTooltip(rawLines?: Array<string | undefined> | undefined): 
     if (/^one-handed weapon/.test(line)) { twoHanded = false; continue; }
     if ((m = line.match(/^skill required\W*(.+)$/))) { skillReq = m[1]!.trim(); continue; }
     if ((m = line.match(/^durability\D*(\d+)\D+(\d+)/))) { extras.durability = [+m[1]!, +m[2]!]; continue; }
+    if (/^(crafted by|engraved)\b/.test(line)) { flags.push(line); continue; }   // free text: "Engraved: Bag 2" is not a number
     let matched = false;
     for (const [key, pat] of PROP_PATTERNS) {
       const mm = line.match(pat);
@@ -664,7 +681,15 @@ export function foldSnapshots(snapshots: ScanV2[]): Inventory {
     // that didn't match cost items x containers (2.3 s for 20,000 items across 2,000 containers,
     // every fold and every restart). Strictly faster for an honest scan too.
     const bySerial = new Map<number, ScanContainerRaw>(Object.values(snapContainers).map((c) => [+c.serial, c]));
-    for (const c of Object.values(snapContainers)) {
+    // A root the scan lists but left out of `containers` is built from its roots entry when anything
+    // sits in it (an item filed directly in it, or a bag under it), or those items would have no
+    // container to resolve their root through and be dropped, and the bags' location would read
+    // "unknown". One holding nothing stays absent: that is how a Forget tombstone clears a root.
+    const occupied = new Set([...(snap.items || []).map((it) => +it.container), ...Object.values(snapContainers).map((c) => +c.root)]);
+    for (const r of snap.roots || []) {
+      if (roots.has(+r.serial) && !bySerial.has(+r.serial) && occupied.has(+r.serial)) bySerial.set(+r.serial, { serial: +r.serial, root: +r.serial, parent: null, kind: r.kind, name: r.name });
+    }
+    for (const c of bySerial.values()) {
       if (!roots.has(+c.root)) continue;
       inv.containers[c.serial] = { ...c, scannedBy: char, scannedAt: snap.scannedAt };
     }
@@ -688,8 +713,7 @@ export function foldSnapshots(snapshots: ScanV2[]): Inventory {
       inv.items[raw.serial] = enrich(raw, { root: null, container: null, equippedBy: char, layer: raw.layer || null, seenAt: snap.scannedAt, scannedBy: char });
     }
     if (!String(char).startsWith("_")) {   // "_vault" tombstones are not characters
-      inv.characters[char] = { name: char, stats: snap.stats || {}, scannedAt: snap.scannedAt,
-        equipped: (snap.equipped || []).map((e) => +e.serial), position: snap.position || null,
+      inv.characters[char] = { name: char, stats: snap.stats || {}, scannedAt: snap.scannedAt, position: snap.position || null,
         maxes: snap.maxes || null, resists: snap.resists || null, skills: snap.skills || {}, adapter: snap.adapter || null };
     }
     inv.scans.push({ character: char, scannedAt: snap.scannedAt, items: (snap.items || []).length, roots: [...roots] });
@@ -735,7 +759,7 @@ function labelContainers(inv: Inventory): void {
 }
 
 function enrich(raw: EnrichRaw, loc: EnrichLoc): Item {
-  const parsed = parseTooltip(raw.tooltip && raw.tooltip.length ? raw.tooltip : [raw.name]);
+  const parsed = parseTooltip(raw.tooltip && raw.tooltip.length ? raw.tooltip : [raw.name], raw.amount);
   const cls = classify(parsed.name || raw.name, parsed, loc.layer, raw.graphic);
   return {
     serial: +raw.serial, name: parsed.name || raw.name || "", graphic: raw.graphic, hue: raw.hue, amount: raw.amount || 1,

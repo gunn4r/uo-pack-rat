@@ -3,7 +3,7 @@
 // "other changes" badges and "after the change" values, the compare table's differing rows and best values,
 // and a saved run's label and badges. No DOM and no page state, so app/builder-model.test.mts can check it
 // all directly; ui/builder.mts, ui/builder-result.mts and ui/runs.mts draw what it returns.
-import { labelOf, fullOf, RESIST_KEYS, RESIST_CAP_LIMITS, SLOT_LABELS, settingsDiff, shardResistCap, WEAPON_SKILLS } from "../vault-lib.mts";
+import { labelOf, fullOf, NOT_BUILDER_KEYS, RESIST_KEYS, RESIST_CAP_LIMITS, SLOT_LABELS, settingsDiff, shardResistCap, WEAPON_SKILLS } from "../vault-lib.mts";
 import type { PropMap, ResistCap, RunSettings } from "../vault-lib.mts";
 
 export const plural = (n: number, word: string, many = `${word}s`): string => `${n.toLocaleString("en-US")} ${n === 1 ? word : many}`;
@@ -23,7 +23,7 @@ export function propName(k: string): string {
 // ---------------------------------------------------------------- panel summaries
 // "each resist 6" when all five resists carry the same value, else each one on its own.
 function groupedEntries(values: Record<string, number>): Array<[string, number]> {
-  const entries = Object.entries(values).filter(([k]) => k !== "tagPenalty");
+  const entries = Object.entries(values).filter(([k]) => !NOT_BUILDER_KEYS.has(k));
   const resists = RESIST_KEYS.map((k) => values[k]);
   const same = resists.every((v) => v != null && v === resists[0]);
   if (!same) return entries.map(([k, v]) => [labelOf(k), v]);
@@ -38,7 +38,7 @@ export function weightsSummary(weights: Record<string, number> = {}, shown = 6):
 }
 // "each resist 65 · HCI 35 soft"
 export function requirementsSummary(floors: Record<string, number> = {}, soft: string[] = []): string {
-  const keys = Object.keys(floors).filter((k) => k !== "tagPenalty");
+  const keys = Object.keys(floors).filter((k) => !NOT_BUILDER_KEYS.has(k));
   if (!keys.length) return "No requirements";
   const resistsSoft = RESIST_KEYS.filter((k) => soft.includes(k));
   const grouped = groupedEntries(floors);
