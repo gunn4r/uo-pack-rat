@@ -170,6 +170,7 @@ export const PROP_PATTERNS: Array<[string, RegExp]> = [
   ["hitDispel", /hit dispel[^-\d]*(-?\d+)/], ["hitPoisonArea", /hit poison area[^-\d]*(-?\d+)/],
   ["hitFireArea", /hit fire area[^-\d]*(-?\d+)/], ["hitColdArea", /hit cold area[^-\d]*(-?\d+)/],
   ["hitEnergyArea", /hit energy area[^-\d]*(-?\d+)/], ["hitPhysArea", /hit physical area[^-\d]*(-?\d+)/],
+  ["mageWeapon", /mage weapon[^-\d]*(-?\d+)/],
 ];
 
 export const PROP_LABELS: Record<string, string> = {
@@ -181,7 +182,7 @@ export const PROP_LABELS: Record<string, string> = {
   enhancePotions: "EP", selfRepair: "Self Rep", hitFireball: "Hit Fireball", hitLightning: "Hit Lightning",
   hitHarm: "Hit Harm", hitMagicArrow: "Hit MA", hitDispel: "Hit Dispel", hitPoisonArea: "Poison Area",
   hitFireArea: "Fire Area", hitColdArea: "Cold Area", hitEnergyArea: "Energy Area", hitPhysArea: "Phys Area",
-  tagPenalty: "Tag penalty",
+  mageWeapon: "Mage Wpn", tagPenalty: "Tag penalty",
   stamPool: "Stam pool", manaPool: "Mana pool", hitsPool: "Hits pool",
 };
 
@@ -196,7 +197,7 @@ export const PROP_FULL: Record<string, string> = {
   hitLifeLeech: "Hit Life Leech", hitStamLeech: "Hit Stamina Leech", hitManaLeech: "Hit Mana Leech", hitLowerDef: "Hit Lower Defense", hitLowerAttack: "Hit Lower Attack",
   enhancePotions: "Enhance Potions", selfRepair: "Self Repair", hitFireball: "Hit Fireball", hitLightning: "Hit Lightning", hitHarm: "Hit Harm",
   hitMagicArrow: "Hit Magic Arrow", hitDispel: "Hit Dispel", hitPoisonArea: "Hit Poison Area", hitFireArea: "Hit Fire Area", hitColdArea: "Hit Cold Area",
-  hitEnergyArea: "Hit Energy Area", hitPhysArea: "Hit Physical Area", tagPenalty: "Penalty for Cursed / Brittle / Antique / Prized tags",
+  hitEnergyArea: "Hit Energy Area", hitPhysArea: "Hit Physical Area", mageWeapon: "Mage Weapon", tagPenalty: "Penalty for Cursed / Brittle / Antique / Prized tags",
   stamPool: "Stamina from gear: DEX bonus + Stamina Increase", manaPool: "Mana from gear: INT bonus + Mana Increase",
   hitsPool: "Hit points from gear: STR bonus ÷ 2 + Hit Point Increase",
 };

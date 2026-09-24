@@ -88,6 +88,12 @@ test("[fast] a Crafted By or Engraved line with a number in it is a flag, not a 
   assert.deepEqual(p.flags, ["crafted by dorran 2", "engraved: bag 2"]);
 });
 
+test("[fast] Mage Weapon -N Skill is a numeric property, not a flag", () => {
+  const p = parseTooltip(["Katana", "Mage Weapon -20 Skill"]);
+  assert.equal(p.props.mageWeapon, -20);
+  assert.deepEqual(p.flags, []);
+});
+
 test("[fast] a weapon damage range is unaffected by the negative-value fix — the low end is not misread as negative", () => {
   const p = parseTooltip(["Sword", "Weapon Damage 13 - 16"]);
   assert.deepEqual(p.extras["weapon damage"], [13, 16]);
