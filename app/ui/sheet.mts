@@ -5,12 +5,13 @@
 // Built as DOM nodes, never an HTML string (Phase 7 security review, Area 2, Important 1): a scan file
 // is attacker-controlled text, and a pasted "here's my suit" scan once turned into persistent
 // HTML/CSS injection inside the app window through this builder.
-import { totalsOf, resistSkillBonus } from "../vault-lib.mts";
+import { totalsOf, resistSkillBonus, PROP_FULL } from "../vault-lib.mts";
 import type { OptItem, ResistCap } from "../vault-lib.mts";
 import { state } from "./store.mts";
-import { el, label, slotLabel } from "./dom.mts";
+import { el, label, slotLabel, toast } from "./dom.mts";
+import { api } from "./api.mts";
 import { rarityToken } from "./items.mts";
-import { txt, box, badge, tag, meter, message } from "./components.mts";
+import { txt, box, badge, tag, meter, message, button, check, searchInput, popover } from "./components.mts";
 import type { SkillEntry } from "./api-types.mts";
 import { capNote } from "./builder-model.mts";
 
@@ -69,13 +70,65 @@ const numOrNull = (v: unknown): number | null => (Number.isFinite(Number(v)) ? N
 
 // [key, label, the --res-* token's suffix]
 export const RESISTS: Array<[string, string, string]> = [["physResist", "Physical", "phys"], ["fireResist", "Fire", "fire"], ["coldResist", "Cold", "cold"], ["poisonResist", "Poison", "poison"], ["energyResist", "Energy", "energy"]];
-// The Properties card: shard-capped figures in four groups (spec 4.5). [key, label, suffix].
-export const SHEET_GROUPS: Array<[string, Array<[string, string, string?]>]> = [
+// The Properties card's groups (spec 4.5), every row shown until the player picks otherwise. [key, label, suffix].
+type SheetRow = [string, string, string?];
+export const SHEET_GROUPS: Array<[string, SheetRow[]]> = [
   ["Casting", [["fc", "Faster Casting"], ["fcr", "Faster Cast Recovery"], ["sdi", "Spell Damage", "%"], ["lmc", "Lower Mana Cost", "%"], ["lrc", "Lower Reagent Cost", "%"], ["castingFocus", "Casting Focus", "%"]]],
   ["Combat", [["hci", "Hit Chance", "%"], ["dci", "Defense Chance", "%"], ["ssi", "Swing Speed", "%"], ["di", "Damage Increase", "%"], ["reflectPhys", "Reflect Damage", "%"]]],
+  ["Leech", [["hitLifeLeech", "Hit Life Leech", "%"], ["hitManaLeech", "Hit Mana Leech", "%"], ["hitStamLeech", "Hit Stamina Leech", "%"]]],
   ["Regeneration", [["hpRegen", "Hits Regen"], ["stamRegen", "Stam Regen"], ["manaRegen", "Mana Regen"]]],
   ["Pools and other", [["hpi", "HP Increase"], ["stamInc", "Stam Increase"], ["manaInc", "Mana Increase"], ["enhancePotions", "Enhance Potions", "%"], ["luck", "Luck"]]],
 ];
+export const DEFAULT_SHEET_PROPS = SHEET_GROUPS.flatMap(([, rows]) => rows.map(([k]) => k));
+// Everything the card can list: the groups above, then under "Other" each further property the tooltip
+// reader knows (vault-lib's PROP_FULL), less the resists (the KPI row) and the fold's bookkeeping keys.
+export const SHEET_CATALOGUE: Array<[string, SheetRow[]]> = [...SHEET_GROUPS, ["Other", Object.keys(PROP_FULL)
+  .filter((k) => !DEFAULT_SHEET_PROPS.includes(k) && !NOT_SHOWN.has(k) && !RESISTS.some(([r]) => r === k))
+  .map((k): SheetRow => [k, PROP_FULL[k]!, k.startsWith("hit") ? "%" : ""])]];
+const CATALOGUE_KEYS = SHEET_CATALOGUE.flatMap(([, rows]) => rows.map(([k]) => k));
+// The rows shown: the saved choice (ui-prefs `sheetProps`, set by app.mts's load) or the default set.
+const shownProps = (): Set<string> => new Set(state.sheetProps ?? DEFAULT_SHEET_PROPS);
+// The "Properties shown" popover: the catalogue as grouped checkboxes with a search box. A change is
+// saved to ui-prefs (only catalogue keys, so an unknown saved key is dropped) and redraws the card.
+function openPropsPicker(anchor: HTMLElement, redraw: () => void): void {
+  const count = txt("", "t-sm muted");
+  const paintCount = (): void => { count.textContent = `${CATALOGUE_KEYS.filter((k) => shownProps().has(k)).length} of ${CATALOGUE_KEYS.length}`; };
+  const choose = (keys: string[]): void => {
+    state.sheetProps = keys;
+    api("/api/ui-prefs", { method: "PUT", body: { sheetProps: keys } }).catch((e: Error) => toast(`Could not save the properties shown: ${e.message}`, "bad"));
+    redraw(); paintCount();
+  };
+  const find = searchInput({ label: "Find a property", placeholder: "Find a property" });
+  find.input.classList.add("input-sm");
+  const list = box("div", { class: "inv-opts", id: "sheet-prop-opts" });
+  const draw = (): void => {
+    const shown = shownProps(), q = find.input.value.trim().toLowerCase();
+    const kids = SHEET_CATALOGUE.flatMap(([title, rows]) => {
+      const hits = rows.filter(([, lbl]) => lbl.toLowerCase().includes(q));
+      return hits.length ? [txt(title, "inv-opt-group t-sm muted"), ...hits.map(([k, lbl]) => {
+        const c = check({ label: lbl, checked: shown.has(k), attrs: { value: k }, onChange: (on) => {
+          const next = shownProps();
+          if (on) next.add(k); else next.delete(k);
+          choose(CATALOGUE_KEYS.filter((x) => next.has(x)));
+        } });
+        c.root.classList.add("inv-opt");
+        return c.root;
+      })] : [];
+    });
+    list.replaceChildren(...(kids.length ? kids : [txt("No property matches.", "t-sm muted")]));
+  };
+  find.input.addEventListener("input", draw);
+  paintCount(); draw();
+  const h = popover(anchor, [
+    box("div", { class: "inv-pop-sec" }, box("div", { class: "inv-pop-head" }, txt("Properties shown", "caps"), el("span", { class: "spacer" }), count), find.root),
+    list,
+    box("div", { class: "overlay-foot inv-pop-foot" },
+      button({ label: "Reset to default", variant: "ghost", size: "sm", onClick: () => { choose([...DEFAULT_SHEET_PROPS]); draw(); } }),
+      el("span", { class: "spacer" }),
+      button({ label: "Done", size: "sm", onClick: () => h.close() })),
+  ], { label: "Properties shown", width: 288 });
+  h.root.classList.add("inv-pop", "inv-settings-pop");
+}
 // The worn-gear tiles, in fixed groups so every row has equal height and nothing is orphaned.
 export const SLOT_GROUPS: Array<[string, string[]]> = [
   ["Armour", ["helmet", "neck", "chest", "arms", "hands", "legs"]],
@@ -195,11 +248,18 @@ export function sheetNode(name: string, before: SheetAssignment, after: SheetAss
     box("div", { class: "sheet-slots" }, ...groups));
 
   // properties: value / shard cap, the caps muted
-  const propGroups = SHEET_GROUPS.map(([title, keys]) => box("div", { class: "prop-group" }, txt(title, "caps"),
-    kvList(keys.map(([k, lbl, suf = ""]): [string, Node] => {
-      const bv = b[k] || 0, av = a[k] || 0, cap = capOf(k);
-      return [lbl, el("span", { class: dirCls(av - bv) }, moveText(bv, av, suf), cap != null ? " " : "", cap != null ? txt(`/ ${cap}`, "muted") : null)];
-    }))));
+  const propGroups = (): HTMLElement[] => {
+    const shown = shownProps();
+    const groups = SHEET_CATALOGUE.map(([title, rows]) => [title, rows.filter(([k]) => shown.has(k))] as const).filter(([, rows]) => rows.length);
+    return groups.length ? groups.map(([title, rows]) => box("div", { class: "prop-group" }, txt(title, "caps"),
+      kvList(rows.map(([k, lbl, suf = ""]): [string, Node] => {
+        const bv = b[k] || 0, av = a[k] || 0, cap = capOf(k);
+        return [lbl, el("span", { class: dirCls(av - bv) }, moveText(bv, av, suf), cap != null ? " " : "", cap != null ? txt(`/ ${cap}`, "muted") : null)];
+      })))) : [txt("No properties shown.", "t-sm muted")];
+  };
+  const propBody = box("div", { class: "sheet-props" }, ...propGroups());
+  const drawProps = (): void => propBody.replaceChildren(...propGroups());
+  const picker = button({ label: "Properties shown", icon: "sliders", iconOnly: true, size: "sm", variant: "ghost", attrs: { "aria-haspopup": "dialog", "aria-expanded": "false" }, onClick: () => openPropsPicker(picker, drawProps) });
   // skills: c.skills is Record<string, unknown> (a scan written before the {value, cap} bound is still
   // folded), sorted and rendered through numOr0, so a wrong-typed entry costs that one number. The
   // shard's free skills (outside the skill cap, rules.freeSkills) this character has are named below.
@@ -218,8 +278,8 @@ export function sheetNode(name: string, before: SheetAssignment, after: SheetAss
     (moved.length ? ` This build caps ${moved.join(", ")}.` : "") +
     (single ? "" : " Hits, Stamina and Mana after = the current max plus the change in STR/2, DEX, INT and the HP, Stamina and Mana Increase properties (an estimate).");
   const props = el("section", { class: "card", "aria-label": "Properties" },
-    box("div", { class: "card-head" }, el("h2", {}, "Properties"), el("span", { class: "spacer" }), txt(`${single ? "value" : "now → after"} / ${RESISTS.some(([k]) => override(k)) ? "build cap" : "shard cap"}`, "t-sm muted")),
-    box("div", { class: "sheet-props" }, ...propGroups),
+    box("div", { class: "card-head" }, el("h2", {}, "Properties"), el("span", { class: "spacer" }), txt(`${single ? "value" : "now → after"} / ${RESISTS.some(([k]) => override(k)) ? "build cap" : "shard cap"}`, "t-sm muted"), picker),
+    propBody,
     box("div", { class: "sheet-foot" }, skillBlock, el("p", { class: "t-sm muted" }, txt(note))));
 
   return box("div", { class: `sheet${single ? "" : " sheet-diff"}`, "data-character": name }, kpis, box("div", { class: "sheet-cols" }, gear, props));

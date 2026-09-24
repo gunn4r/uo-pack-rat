@@ -37,7 +37,7 @@ One directory holds everything, resolved the same way for the bare server and th
     rejected/          a file that failed to parse/validate after retries, plus a .reason.txt
   profiles.json        per-character suit-builder profiles and templates
   settings.json        {shard, setupDone, client: {adapter, scriptsDir} | null}
-  ui-prefs.json        the page's view choices ({cols, colsVersion, theme, appearance, sidebar, density}: the Inventory columns, the look, a pinned-collapsed sidebar)
+  ui-prefs.json        the page's view choices ({cols, colsVersion, sheetProps, theme, appearance, sidebar, density}: the Inventory columns, the character sheet's properties, the look, a pinned-collapsed sidebar)
   rules/                user-defined or overriding shard rules files
   runs/                 one file per finished suit-build job
   bridge/<adapter>/     queue.jsonl (commands) and status.json (the bridge script's heartbeat); the CONFIGURED client's own directory, not a fixed "tazuo"
