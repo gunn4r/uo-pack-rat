@@ -545,7 +545,7 @@ async function runBuild(): Promise<void> {
   const settings: RunSettings = { allowOthersWorn: p.allowOthersWorn, strLimit: p.strLimit, excludeTags: p.excludeTags, excludeRoots: p.excludeRoots, allowGargoyle: p.allowGargoyle, medOnly: p.medOnly, excludeWeapons: p.excludeWeapons || [], excludeSkills: p.excludeSkills || [], lockedSlots: p.lockedSlots };
   const exact = knobs.exact, budgetMs = 1000 * Number(knobs.budgetS);
   const altCount = Number(knobs.altCount), altTol = Number(knobs.altTol);
-  const opts = { restarts: Number(knobs.restarts), exact, timeBudgetMs: budgetMs, ...(exact && altCount > 0 ? { alternatives: { count: altCount, tolerance: altTol } } : {}) };
+  const opts = { restarts: Number(knobs.restarts), exact, ...(exact ? { timeBudgetMs: budgetMs } : {}), ...(exact && altCount > 0 ? { alternatives: { count: altCount, tolerance: altTol } } : {}) };   // the budget field is disabled without exact search: the server's default applies
   closeCompare();
   // Pools/current/skipped are the server's job (buildPools against its own cached inventory, POST
   // /api/optimize's by-character form): the page sends the character + settings and reads poolSize/skipped/
