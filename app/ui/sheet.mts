@@ -218,7 +218,7 @@ export function sheetNode(name: string, before: SheetAssignment, after: SheetAss
     (moved.length ? ` This build caps ${moved.join(", ")}.` : "") +
     (single ? "" : " Hits, Stamina and Mana after = the current max plus the change in STR/2, DEX, INT and the HP, Stamina and Mana Increase properties (an estimate).");
   const props = el("section", { class: "card", "aria-label": "Properties" },
-    box("div", { class: "card-head" }, el("h2", {}, "Properties"), el("span", { class: "spacer" }), txt(single ? "value / shard cap" : "now → after / shard cap", "t-sm muted")),
+    box("div", { class: "card-head" }, el("h2", {}, "Properties"), el("span", { class: "spacer" }), txt(`${single ? "value" : "now → after"} / ${RESISTS.some(([k]) => override(k)) ? "build cap" : "shard cap"}`, "t-sm muted")),
     box("div", { class: "sheet-props" }, ...propGroups),
     box("div", { class: "sheet-foot" }, skillBlock, el("p", { class: "t-sm muted" }, txt(note))));
 

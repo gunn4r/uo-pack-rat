@@ -42,7 +42,7 @@
 .rule-row { display: grid; grid-template-columns: minmax(0, 1fr) 16px 56px auto var(--control-sm); gap: var(--space-1-5); align-items: center; }
 .rule-row.weight { grid-template-columns: minmax(0, 1fr) 64px var(--control-sm); }
 .pr .rule-row .input.num { width: 100%; }
-.rule-row .field-error { grid-column: 1 / -1; }
+.rule-row .field-error, .rule-row .field-warn { grid-column: 1 / -1; }
 /* a resist cap: name · number · "shard cap" or the override's note · reset; an overridden number is outlined in
    the accent, and its note says what it was raised or lowered from (the outline is never the only signal) */
 .rule-row.cap { grid-template-columns: minmax(0, 1fr) 56px auto var(--control-sm); }

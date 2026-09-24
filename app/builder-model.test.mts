@@ -11,7 +11,7 @@ import type { RulesV1 } from "./schema/types.d.mts";
 import {
   propName, weightsSummary, requirementsSummary, poolSummary, advancedSummary, knobError, firstKnobError, knobFromServerError, ruleValueError,
   resistOutcome, locationCrumbs, otherChanges, afterChange, compareModel, hiddenRowsNote, toggleCompare, runAutoLabel, runBadges, plural, SOLVER_LIMITS,
-  resistCapError, withResistCap, capNote, resistCapsSummary, gearCapsText, capsLine, anyOverridden,
+  resistCapError, withResistCap, capNote, resistCapsSummary, gearCapsText, capsLine, anyOverridden, effectiveFloor, floorCapWarning, pruneResistCaps,
   type Knobs,
 } from "./ui/builder-model.mts";
 import { OPTS_LIMITS } from "./vault-server.mts";
@@ -199,4 +199,22 @@ test("[fast] resist caps: a run's badges say its overridden cap, and compare jud
   // Fire 90 in a run built for a cap of 95 beats Fire 86 in one built for 70 (worth 70 there).
   const m = compareModel([{ assignment: {}, totals: { fireResist: 86 } }, { assignment: {}, totals: { fireResist: 90 }, caps: { fireResist: 95 } }], [], ["fireResist"], { fireResist: 70 });
   assert.deepEqual(m.totals[0]!.best, [false, true]);
+});
+
+// Review of #48: a requirement above its resist's cap counts only up to the cap (the solver clamps it), so every
+// "met" view agrees with the solver, the row warns, and a race change drops an override that became the shard's.
+test("[fast] resist caps: a floor above its cap counts only up to it, warns, and a race change drops a now-default override", () => {
+  const caps = { physResist: 70, fireResist: 70, coldResist: 70, poisonResist: 70, energyResist: 70 };
+  assert.equal(effectiveFloor("fireResist", 90, caps), 70);
+  assert.equal(effectiveFloor("fireResist", 60, caps), 60);
+  assert.equal(effectiveFloor("hci", 90, caps), 90, "only resists are clamped");
+  assert.equal(floorCapWarning("fireResist", 90, 70), "Counts only up to the Fire cap, 70");
+  assert.equal(floorCapWarning("fireResist", 70, 70), null);
+  assert.equal(floorCapWarning("hci", 90, 45), null);
+  // Fire 90 required, cap back at 70, suit Fire 86: met, as the headline and the solver say.
+  const badges = runBadges(1, { physResist: 70, fireResist: 86, coldResist: 70, poisonResist: 70, energyResist: 70 }, { physResist: 65, fireResist: 90, coldResist: 65, poisonResist: 65, energyResist: 65 }, 0, caps).map((b) => b.text);
+  assert.ok(badges.includes("5 of 5 met"), JSON.stringify(badges));
+  assert.deepEqual(pruneResistCaps({ energyResist: 75, fireResist: 95 }, "elf"), { fireResist: 95 });
+  assert.deepEqual(pruneResistCaps({ energyResist: 75 }, "human"), { energyResist: 75 });
+  assert.deepEqual(pruneResistCaps(undefined, "elf"), {});
 });

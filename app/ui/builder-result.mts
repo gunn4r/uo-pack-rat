@@ -14,7 +14,7 @@ import { bridgeActionReason, runBridgeAction, grabAll, grabbable } from "./bridg
 import { resolveItems } from "./items.mts";
 import { renderPanel } from "./builder.mts";
 import { splitSerial } from "./inventory.mts";
-import { afterChange, compareModel, hiddenRowsNote, locationCrumbs, otherChanges, plural, resistOutcome, toggleCompare, propName, capNote, capsLine, anyOverridden, type CompareMember } from "./builder-model.mts";
+import { afterChange, compareModel, hiddenRowsNote, locationCrumbs, otherChanges, plural, resistOutcome, toggleCompare, propName, capNote, capsLine, anyOverridden, effectiveFloor, type CompareMember } from "./builder-model.mts";
 import type { OptSuit, OptimizeResult, SavedRunLike } from "./api-types.mts";
 
 const RESIST_NAMES: Record<string, [string, string]> = { physResist: ["Physical", "--res-phys"], fireResist: ["Fire", "--res-fire"], coldResist: ["Cold", "--res-cold"], poisonResist: ["Poison", "--res-poison"], energyResist: ["Energy", "--res-energy"] };
@@ -66,7 +66,8 @@ function currentSuitCard(name: string): HTMLElement {
   const rsb = resistSkillBonus(state.inv!.characters[name]?.skills);
   const totals = totalsOf(Object.fromEntries(worn.map((i) => [String(i.serial), i as unknown as OptItem])));
   const caps = resistCapsFor(p?.race, p?.resistCaps);
-  const tiles = RESIST_KEYS.map((k) => resistTile(k, (totals[k] || 0) + rsb, p?.floors?.[k] ?? null, caps[k]!));
+  // a requirement set above its cap counts only up to it, as the solver scores it
+  const tiles = RESIST_KEYS.map((k) => resistTile(k, (totals[k] || 0) + rsb, p?.floors?.[k] != null ? Math.min(p.floors[k]!, caps[k]!.cap) : null, caps[k]!));
   const order = (it: Item): number => { const i = OPTIMIZER_SLOTS.indexOf(it.slot || ""); return i < 0 ? 99 : i; };
   const sorted = [...worn].sort((a, b) => order(a) - order(b));
   const rows = sorted.map((it) => ({ cells: [slotLabel(it.slot), txt(it.name), rarCell(it), txt(keyProps(it.props) || "no properties", keyProps(it.props) ? "muted" : "faint")] }));
@@ -424,7 +425,7 @@ export function openRunCompare(runs: SavedRunLike[], titleOf: (r: SavedRunLike) 
     const columns: CompareColumn[] = list.map((r, i) => {
       const floors = r.settings.floors || {};
       const totals = paperdoll(totalsOf(r.result.best), rsb);
-      const met = Object.keys(floors).filter((k) => (totals[k] || 0) >= floors[k]!).length;
+      const met = Object.keys(floors).filter((k) => (totals[k] || 0) >= effectiveFloor(k, floors[k]!, paperdollCaps(views[i]!))).length;
       const v = verdict(r.result);
       const head = box("span", { class: "b-cmp-col" }, box("span", { class: "b-row" }, txt(titleOf(r), "strong"), badge(v.text, v.tone === "bad" ? "bad" : v.tone)), txt(`${fmtRunTime(r.createdAt)} · ${fmtSecs(r.ms || 0)}`, "t-sm"));
       const action = r.id === state.builder.openRun ? txt("Showing in the result", "t-sm muted") : button({ label: "Open this run", size: "sm", onClick: () => { closeCompare(); open(r.id); } });

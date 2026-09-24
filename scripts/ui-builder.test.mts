@@ -276,6 +276,55 @@ test("[slow] a raised resist cap is marked, built with, shown in the result and 
   }
 });
 
+// Review of #48: a requirement above its resist's cap warns on its row; a race change drops an override that is now
+// the race's own cap, so Save does not store it; and an out-of-range cap stops Build with the section closed.
+test("[slow] resist caps: a floor past its cap warns, a race change drops a now-default override, a closed section still blocks Build", async (t) => {
+  const why = unavailable();
+  if (why) return t.skip(why);
+  const dataDir = seedDataDir("packrat-ui-rescaps2-");
+  const { app, page, errors } = await launch(dataDir);
+  try {
+    await openBuilder(page);
+    await page.click("#b-sec-caps .b-sec-head button");
+    const fireReq = page.locator("#b-sec-req .rule-row[data-key=fireResist]");
+    await page.fill("#b-cap-fireResist", "60");
+    assert.match(await fireReq.innerText(), /Counts only up to the Fire cap, 60/);
+    await page.fill("#b-cap-fireResist", "70");
+    assert.doesNotMatch(await fireReq.innerText(), /Counts only up to/);
+    await fireReq.locator("input[type=number]").fill("90");
+    assert.match(await fireReq.innerText(), /Counts only up to the Fire cap, 70/, "and it follows the floor as it is typed");
+    await fireReq.locator("input[type=number]").fill("65");
+
+    // Human with Energy 75 (raised), then Elf: 75 is the Elf's own cap, so nothing is overridden or saved.
+    await page.fill("#b-cap-energyResist", "75");
+    assert.match(await page.locator("#b-sec-caps .rule-row[data-key=energyResist]").innerText(), /raised from 70/);
+    await page.locator("#b-race").getByRole("radio", { name: "Elf" }).click();
+    assert.match(await page.locator("#b-sec-caps .rule-row[data-key=energyResist]").innerText(), /shard cap/);
+    await page.click("#b-save");
+    await page.waitForFunction(() => /Profile for .* saved/.test(document.body.textContent || ""), undefined, { timeout: 10_000 });
+    const saved = await page.evaluate(async () => {
+      const r = await (await import("/ui/api.mjs" as string)).api("/api/profiles");
+      const who = (document.querySelector("#b-char") as HTMLSelectElement).value;
+      return r.profiles.characters[who].resistCaps;
+    });
+    assert.deepEqual(saved, {}, "no override stored for the Elf's own Energy cap");
+
+    // Out of range, section closed: Build opens it on the field instead of building.
+    await page.fill("#b-cap-coldResist", "200");
+    await page.click("#b-sec-caps .b-sec-head button");
+    assert.equal(await page.locator("#b-cap-coldResist").count(), 0, "the section is closed");
+    await page.click("#b-run");
+    await page.waitForSelector("#b-cap-coldResist-err");
+    assert.equal(await page.evaluate(() => document.activeElement?.id), "b-cap-coldResist");
+    assert.equal(await page.locator("#b-cap-coldResist").inputValue(), "200", "the typed value is kept");
+    assert.equal(await page.locator("#b-run").isDisabled(), false, "no build started");
+    assert.deepEqual(errors, []);
+  } finally {
+    await app.close();
+    rmSync(dataDir, { recursive: true, force: true });
+  }
+});
+
 // A switch's off and on states read apart at a glance: the on track's fill is at least 3:1 against the off
 // track's (hollow, the surface's own colour), and the knob moves from left to right.
 test("[slow] a switch's on state stands apart from its off state in each theme and mode", async (t) => {

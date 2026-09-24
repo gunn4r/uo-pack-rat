@@ -161,8 +161,10 @@ const SCENES: Scene[] = [
     await p.waitForFunction(() => !document.querySelector<HTMLButtonElement>("#b-run")?.disabled && /raised from 70/.test(document.querySelector("#b-result .b-head-card")?.textContent || ""), undefined, { timeout: 60_000 });
     await p.fill("#b-cap-coldResist", "200");
     await p.waitForSelector("#b-cap-coldResist-err");
+    await p.fill("#b-cap-poisonResist", "60");   // below the Poison requirement: its row warns
+    await p.waitForSelector("#b-sec-req .field-warn");
     await p.locator("#b-sec-caps").scrollIntoViewIfNeeded();
-  }, leave: async (p) => { await p.fill("#b-cap-coldResist", "70"); } },
+  }, leave: async (p) => { await p.fill("#b-cap-coldResist", "70"); await p.fill("#b-cap-poisonResist", "70"); } },
   { name: "import drawer", enter: (p) => route(p, "#/import", "#import-drawer:not([hidden]) #imp-mode"), leave: (p) => p.keyboard.press("Escape") },
   { name: "runs drawer", enter: (p) => route(p, "#/runs", "#runs-drawer:not([hidden]) .run-card"), leave: (p) => p.keyboard.press("Escape") },
   { name: "bridge popover", enter: async (p) => { await p.click("#bridge"); await p.waitForSelector(".pop"); }, leave: (p) => p.keyboard.press("Escape") },

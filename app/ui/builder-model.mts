@@ -3,7 +3,7 @@
 // "other changes" badges and "after the change" values, the compare table's differing rows and best values,
 // and a saved run's label and badges. No DOM and no page state, so app/builder-model.test.mts can check it
 // all directly; ui/builder.mts, ui/builder-result.mts and ui/runs.mts draw what it returns.
-import { labelOf, fullOf, RESIST_KEYS, RESIST_CAP_LIMITS, SLOT_LABELS, settingsDiff } from "../vault-lib.mts";
+import { labelOf, fullOf, RESIST_KEYS, RESIST_CAP_LIMITS, SLOT_LABELS, settingsDiff, shardResistCap } from "../vault-lib.mts";
 import type { PropMap, ResistCap, RunSettings } from "../vault-lib.mts";
 
 export const plural = (n: number, word: string, many = `${word}s`): string => `${n.toLocaleString("en-US")} ${n === 1 ? word : many}`;
@@ -73,6 +73,20 @@ export function withResistCap(overrides: Record<string, number> = {}, k: string,
   const next = { ...overrides };
   if (value === shard) delete next[k]; else next[k] = value;
   return next;
+}
+// After a race change: an override that now equals the new race's shard cap is no override (a human's Energy 75
+// becomes an Elf's own cap), so it is dropped rather than saved and reported as template drift.
+export function pruneResistCaps(overrides: Record<string, number> = {}, race: string | null | undefined): Record<string, number> {
+  return Object.fromEntries(Object.entries(overrides).filter(([k, v]) => v !== shardResistCap(k, race)));
+}
+// A resist requirement counts only up to that resist's cap (effectiveProfile clamps it for the solver), so every
+// view that says whether one is met compares against min(floor, cap). Anything else is its floor as set.
+export function effectiveFloor(k: string, floor: number, caps: Record<string, number>): number {
+  return RESIST_KEYS.includes(k) && caps[k] != null ? Math.min(floor, caps[k]!) : floor;
+}
+// The requirement row's warning when its floor is past its resist's cap: "Counts only up to the Fire cap, 70".
+export function floorCapWarning(k: string, floor: number, cap: number | null): string | null {
+  return RESIST_KEYS.includes(k) && cap != null && floor > cap ? `Counts only up to the ${labelOf(k)} cap, ${cap}` : null;
 }
 // "raised from 70" / "lowered from 70", or null when the cap is the shard's.
 export function capNote(c: ResistCap): string | null {
@@ -272,7 +286,8 @@ export function runAutoLabel(prev: RunSettings | null, settings: RunSettings): {
   return { text: head[0]!.toUpperCase() + head.slice(1), diff };
 }
 // A run's badges: its change count, how many requirements its suit meets, and the five resists in
-// paperdoll values (item totals + the character's Resisting Spells bonus, clipped at each cap). A resist whose cap
+// paperdoll values (item totals + the character's Resisting Spells bonus, clipped at each cap); a resist requirement
+// is met at its cap when set above it, as the solver scored it. A resist whose cap
 // the run overrode says so: "Fire 90 · cap 95".
 export function runBadges(changes: number | null | undefined, totals: PropMap | null | undefined, floors: Record<string, number>, rsb: number, caps: Record<string, number>, shardCaps: Record<string, number> = caps): Array<{ text: string; tone?: "ok" | "warn" | undefined }> {
   const out: Array<{ text: string; tone?: "ok" | "warn" | undefined }> = [];
@@ -281,7 +296,7 @@ export function runBadges(changes: number | null | undefined, totals: PropMap | 
   const pd = (k: string, v: number): number => (RESIST_KEYS.includes(k) ? v + rsb : v);
   const floorKeys = Object.keys(floors);
   if (floorKeys.length) {
-    const met = floorKeys.filter((k) => pd(k, totals[k] || 0) >= floors[k]!).length;
+    const met = floorKeys.filter((k) => pd(k, totals[k] || 0) >= effectiveFloor(k, floors[k]!, caps)).length;
     out.push({ text: `${met} of ${floorKeys.length} met`, tone: met === floorKeys.length ? "ok" : "warn" });
   }
   for (const k of RESIST_KEYS) {

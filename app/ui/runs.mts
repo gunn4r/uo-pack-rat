@@ -10,7 +10,7 @@ import { api } from "./api.mts";
 import { bindDrawer, box, txt, button, badge, message, input, confirmDialog, menu, type DrawerHandle } from "./components.mts";
 import { renderNavCounts } from "./shell.mts";
 import { resolveItems } from "./items.mts";
-import { renderPanel, readControls, knobs, applyKnobs } from "./builder.mts";
+import { renderPanel, readControls, knobs, applyKnobs, clearCapDrafts } from "./builder.mts";
 import { renderResult, openRunCompare, closeCompare } from "./builder-result.mts";
 import { runAutoLabel, runBadges, toggleCompare, plural } from "./builder-model.mts";
 import type { RunsListApiResponse, RunApiResponse, RunPutApiResponse, RunSummaryLike, SavedRunLike } from "./api-types.mts";
@@ -31,6 +31,7 @@ export function applySettings(st: RunSettings): void {
     excludeTags: [...(st.excludeTags || [])], excludeRoots: [...(st.excludeRoots || [])], strLimit: st.strLimit, allowGargoyle: !!st.allowGargoyle, medOnly: !!st.medOnly, weaponSkill: st.weaponSkill || null,
     race: st.race || p.race || "human", excludeSkills: [...(st.excludeSkills || [])], allowOthersWorn: !!st.allowOthersWorn, resistCaps: { ...(st.resistCaps || {}) } });
   applyKnobs(st);
+  clearCapDrafts();
   renderPanel();
   toast("Settings loaded into the panel. Save profile to keep them.", "good");
 }
