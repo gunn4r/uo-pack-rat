@@ -401,6 +401,7 @@ export function parseTooltip(rawLines?: Array<string | undefined> | undefined): 
     if (/^one-handed weapon/.test(line)) { twoHanded = false; continue; }
     if ((m = line.match(/^skill required\W*(.+)$/))) { skillReq = m[1]!.trim(); continue; }
     if ((m = line.match(/^durability\D*(\d+)\D+(\d+)/))) { extras.durability = [+m[1]!, +m[2]!]; continue; }
+    if (/^(crafted by|engraved)\b/.test(line)) { flags.push(line); continue; }   // free text: "Engraved: Bag 2" is not a number
     let matched = false;
     for (const [key, pat] of PROP_PATTERNS) {
       const mm = line.match(pat);

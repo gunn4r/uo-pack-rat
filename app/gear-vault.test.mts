@@ -82,6 +82,12 @@ test("[fast] a percent property is unaffected by the negative-value fix", () => 
   assert.equal(p.props.lmc, 8);
 });
 
+test("[fast] a Crafted By or Engraved line with a number in it is a flag, not a numeric extra", () => {
+  const p = parseTooltip(["Bag", "Crafted By Dorran 2", "Engraved: Bag 2"]);
+  assert.deepEqual(p.extras, {});
+  assert.deepEqual(p.flags, ["crafted by dorran 2", "engraved: bag 2"]);
+});
+
 test("[fast] a weapon damage range is unaffected by the negative-value fix — the low end is not misread as negative", () => {
   const p = parseTooltip(["Sword", "Weapon Damage 13 - 16"]);
   assert.deepEqual(p.extras["weapon damage"], [13, 16]);
