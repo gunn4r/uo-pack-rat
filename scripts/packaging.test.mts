@@ -112,6 +112,13 @@ test("[fast] the bundle never ships a developer's own local data, even though ap
   assert.ok(files.includes("!app/data/runs/**"), "nor their saved optimizer runs");
 });
 
+test("[fast] the bundle leaves out the adapters' tests and fixtures", () => {
+  // The installer copies only packrat-*.py out of adapters/; the tests, the fake clients they run
+  // against and the committed fixture are dead weight in a player's install.
+  const files = build.files ?? [];
+  for (const p of ["!adapters/**/test_*.py", "!adapters/fake_clients.py", "!adapters/**/fixture.scan.json"]) assert.ok(files.includes(p), `missing ${p}`);
+});
+
 test("[fast] the bundle excludes the page's TypeScript sources (the compiled app/dist/ui/ is what runs) but still ships its stylesheet", () => {
   // Once app/ui/**/*.mts is compiled to app/dist/ui/ (npm run build:ui, part of predist), the .mts
   // sources are redundant weight in the packaged app — the packaged server (vault-server.mts, run
