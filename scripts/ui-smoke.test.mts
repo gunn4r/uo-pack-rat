@@ -124,19 +124,6 @@ test("[slow] the rows' actions follow the client the wizard just set up, without
     await page.locator("#wizard input[value=classicuo-web]").check();
     await page.click("#wiz-primary");
     await page.click("#wiz-primary");
-    // PUT /api/settings does not keep a paste client yet (an empty scriptsDir reads as "forget the client"), so
-    // the setup the page reads back after Finish is answered in the page with the client the wizard picked
-    // (in the page, not page.route: a routed fetch loses the bearer token the server requires).
-    await page.evaluate(() => {
-      const real = window.fetch;
-      window.fetch = async (input, init) => {
-        const res = await real(input, init);
-        if (String(input) !== "/api/setup" || !res.ok) return res;
-        const body = await res.json() as { settings: { client: unknown } };
-        body.settings.client = { adapter: "classicuo-web", scriptsDir: "" };
-        return new Response(JSON.stringify(body), { status: res.status, headers: res.headers });
-      };
-    });
     await page.locator("#wizard").getByRole("button", { name: "Finish", exact: true }).click();
     await page.waitForSelector("#wizard", { state: "hidden", timeout: 10_000 });
     const until = Date.now() + 10_000;
