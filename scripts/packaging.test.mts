@@ -296,6 +296,14 @@ test("[fast] no step that runs npm in the release workflow carries a write-scope
   }
 });
 
+test("[fast] the release build job as a whole holds no token and no write scope", () => {
+  // The step check above only sees a token set on an npm step; one set at job level (env: or
+  // permissions:) reaches every step of the job that runs the dependency tree.
+  const job = workflow("release.yml").match(/\n {2}build:\n([\s\S]*?)\n {2}\S/)?.[1] ?? "";
+  assert.match(job, /\n {4}permissions:\n {6}contents: read\n/, "the build job is contents: read");
+  assert.doesNotMatch(job, /GH_TOKEN|GITHUB_TOKEN|secrets\.|: write/, "the build job never sees a token or a write scope");
+});
+
 test("[fast] every action both workflows use is pinned to a full commit sha, and says which tag that was", () => {
   // A mutable tag (`@v4`) is whatever that tag points at on the day CI runs, in a job that can build
   // the installers players download. The trailing `# vX.Y.Z` comment is what makes a pin reviewable
@@ -332,5 +340,5 @@ test("[fast] the release workflow refuses to create a release when the tag doesn
   // SECOND draft from electron-builder once the matrix builds, splitting artifacts across both.
   assert.match(rel, /require\(['"]\.\/package\.json['"]\)\.version/, "reads the version with node, not a shell JSON parse");
   assert.match(rel, /\$TAG.*!=.*pkg_version/, "compares the tag against package.json's version");
-  assert.match(rel, /exit 1/, "fails the job outright rather than only warning");
+  assert.match(rel, /if \[ "\$TAG" != "v\$pkg_version" \]; then\n(?:.*\n)*? *exit 1\n *fi/, "fails the job outright, inside the mismatch branch, rather than only warning");
 });
