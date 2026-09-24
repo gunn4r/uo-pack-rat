@@ -333,6 +333,11 @@ test("[fast] exactly one job creates the draft release, ahead of the platform ma
   assert.match(rel, /needs:\s*create-release/, "the build matrix must wait on that job");
 });
 
+test("[fast] publishing clears the draft's earlier uploads before uploading this run's files", () => {
+  // A re-run after a partial failure must not leave a file on the draft that this run did not build.
+  assert.match(workflow("release.yml"), /gh release delete-asset[^\n]*\n *gh release upload /, "delete the old assets, then upload");
+});
+
 test("[fast] the release workflow refuses to create a release when the tag doesn't match package.json's version", () => {
   const rel = workflow("release.yml");
   // electron-builder's own publish step matches a release by VERSION, not by tag -- a tag pushed
