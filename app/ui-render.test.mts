@@ -70,7 +70,7 @@ const PAYLOAD = '<img src=x onerror="alert(1)">';
 
 // A folded inventory with exactly one character, whose scan-derived fields the caller chooses.
 function withCharacter(name: string, c: Record<string, unknown>): void {
-  state.inv = { characters: { [name]: { name, scannedAt: "2026-01-01T12:00:00Z", equipped: [], position: null, resists: null, adapter: null, stats: {}, maxes: null, skills: {}, ...c } }, worn: { [name]: [] } } as never;
+  state.inv = { characters: { [name]: { name, scannedAt: "2026-01-01T12:00:00Z", position: null, resists: null, adapter: null, stats: {}, maxes: null, skills: {}, ...c } }, worn: { [name]: [] } } as never;
   state.profiles = { schemaVersion: 2, characters: {}, templates: {} } as never;
 }
 

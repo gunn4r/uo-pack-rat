@@ -541,7 +541,7 @@ test("[smoke] fold: a quick refresh (backpack as the only root) replaces the wor
   assert.equal(inv.items[1]!.location!.text, "Dorran's backpack");   // the piece just taken off is relocated, not lost
   assert.equal(inv.items[3]!.location!.text, "Dorran's bank");       // an unlisted root keeps its last scan
   assert.ok(inv.containers[20]);
-  assert.deepEqual(inv.characters.Dorran!.equipped, [4]);
+  assert.deepEqual(Object.values(inv.items).filter((it) => it.equippedBy === "Dorran").map((it) => it.serial), [4]);
   assert.equal(inv.characters.Dorran!.stats.str, 105);
   assert.deepEqual(inv.scans[1]!.roots, [10]);
   const bare = foldSnapshots([full, { ...quick, roots: [], containers: {}, items: [] }]);

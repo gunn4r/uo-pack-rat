@@ -106,7 +106,6 @@ export interface Character {
   name: string;
   stats: Record<string, unknown>;
   scannedAt: string;
-  equipped: number[];
   position: Record<string, unknown> | null;
   maxes: Record<string, unknown> | null;
   resists: Record<string, unknown> | null;
@@ -702,8 +701,7 @@ export function foldSnapshots(snapshots: ScanV2[]): Inventory {
       inv.items[raw.serial] = enrich(raw, { root: null, container: null, equippedBy: char, layer: raw.layer || null, seenAt: snap.scannedAt, scannedBy: char });
     }
     if (!String(char).startsWith("_")) {   // "_vault" tombstones are not characters
-      inv.characters[char] = { name: char, stats: snap.stats || {}, scannedAt: snap.scannedAt,
-        equipped: (snap.equipped || []).map((e) => +e.serial), position: snap.position || null,
+      inv.characters[char] = { name: char, stats: snap.stats || {}, scannedAt: snap.scannedAt, position: snap.position || null,
         maxes: snap.maxes || null, resists: snap.resists || null, skills: snap.skills || {}, adapter: snap.adapter || null };
     }
     inv.scans.push({ character: char, scannedAt: snap.scannedAt, items: (snap.items || []).length, roots: [...roots] });
