@@ -372,10 +372,12 @@ const SET_TOTAL_LINE_RE = /\(total\)$|^mastery bonus cooldown\b/;
 //   flags    : non-numeric lines (lowercased), e.g. "spell channeling", "mage armor", "orc slayer";
 //              a set-block line no pattern models, and every "(total)" line of a worn full set,
 //              is kept as "set: <line>"
-export function parseTooltip(rawLines?: Array<string | undefined> | undefined): ParsedTooltip {
+// A stack's name line starts with its amount ("2 Greater Heal"); that number is stripped only when it
+// equals `amount`, so a name that really starts with a number ("10 Potions" on one item) keeps it.
+export function parseTooltip(rawLines?: Array<string | undefined> | undefined, amount?: number | undefined): ParsedTooltip {
   const TU = tagUnits();
   const lines = (rawLines || []).map(stripHtml).filter(Boolean);
-  const name = (lines[0] || "").replace(/^\d+\s+(?=\S)/, "");
+  const name = (lines[0] || "").replace(/^(\d+)\s+(?=\S)/, (all, n: string) => (+n === amount ? "" : all));
   const props: PropMap = {}, setBonus: PropMap = {}, extras: ExtrasMap = {}, flags: string[] = [], tags: string[] = [];
   let strReq = 0, rarity: string | null = null, twoHanded: boolean | null = null, weight: number | null = null, skillReq: string | null = null;
   let inSet = false, inSetTotals = false;
@@ -737,7 +739,7 @@ function labelContainers(inv: Inventory): void {
 }
 
 function enrich(raw: EnrichRaw, loc: EnrichLoc): Item {
-  const parsed = parseTooltip(raw.tooltip && raw.tooltip.length ? raw.tooltip : [raw.name]);
+  const parsed = parseTooltip(raw.tooltip && raw.tooltip.length ? raw.tooltip : [raw.name], raw.amount);
   const cls = classify(parsed.name || raw.name, parsed, loc.layer, raw.graphic);
   return {
     serial: +raw.serial, name: parsed.name || raw.name || "", graphic: raw.graphic, hue: raw.hue, amount: raw.amount || 1,
