@@ -66,6 +66,11 @@ test("[smoke] config: --demo points scans at app/fixtures, --open sets open", ()
 test("[smoke] config: a non-numeric --port throws with a message naming the bad value", () => {
   assert.throws(() => resolveConfig(["--port", "abc"], {}, "/h"), /invalid port/);
 });
+test("[smoke] config: a value-taking flag with no value (last, or followed by another flag) throws", () => {
+  assert.throws(() => resolveConfig(["--data", "--demo"], {}, "/h"), /--data needs a value/);
+  assert.throws(() => resolveConfig(["--demo", "--data"], {}, "/h"), /--data needs a value/);
+  assert.throws(() => resolveConfig(["--port", "--open"], {}, "/h"), /--port needs a value/);
+});
 test("[smoke] config: paths.core defaults to the source module under scripts/, PACKRAT_CORE wins", () => {
   const c = resolveConfig([], {}, "/h");
   assert.ok(c.paths.core.endsWith(join("scripts", "optimizer-core.mts")));

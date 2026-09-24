@@ -48,7 +48,16 @@ export interface Config {
   paths: ConfigPaths;
 }
 
-function flag(argv: string[], name: string): string | null { const i = argv.indexOf(name); return i >= 0 && i + 1 < argv.length ? argv[i + 1]! : null; }
+// A flag with no value after it (the last argument, or followed by another --flag) is an error: taking
+// the next flag as the value made `--data --demo` a data folder named "--demo", and a trailing `--data`
+// silently fell back to the default folder.
+function flag(argv: string[], name: string): string | null {
+  const i = argv.indexOf(name);
+  if (i < 0) return null;
+  const value = argv[i + 1];
+  if (value === undefined || value.startsWith("--")) throw new Error(`${name} needs a value`);
+  return value;
+}
 
 // corePath: where the optimizer core module lives — scripts/optimizer-core.mts by default (Node runs
 // it straight from source, no build step; see CONTRIBUTING.md), or PACKRAT_CORE when a caller wants

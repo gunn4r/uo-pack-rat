@@ -42,7 +42,9 @@
 //         GET /api/events — SSE, one stream shared by every connected client (not per-job like the
 //         optimize events above): hello {ok, watching: [adapter ids]} on connect, inventory
 //         {file, character, scannedAt, at} once an inbox file is accepted into paths.scans, rejected
-//         {file, reason, at} once one is moved to its adapter's rejected/ folder, ping every 15s. A
+//         {file, reason, at} once one is moved to its adapter's rejected/ folder, changed {what:
+//         "inventory"|"runs", by?, at} (by: the forgetting tab's x-client-id) after a forget, forget-character or run deletion (so other open tabs
+//         reload), ping every 15s. A
 //         normal token-protected /api/* route (no SSE exemption — unlike /api/optimize/<id>/events,
 //         this stream carries no per-job secret an EventSource couldn't send anyway). Non-demo mode
 //         starts one app/watcher.mts per adapters/<id>/ directory that ships a capabilities.json
@@ -52,14 +54,14 @@
 //         Setup wizard (app/installer.mts backs all of these): GET /api/setup {firstRun, settings,
 //         adapters, candidates, installed, available, dataDir, dataDirCheck} · POST /api/setup/locate {adapter, dir}
 //         · POST /api/setup/install {adapter, scriptsDir} (409 while a Legion script is running in the
-//         client, per installer.mts's bridge-status guard) · POST /api/import/paste {text, adapter} (app/import.mts's parsePastedScan:
+//         client, per installer.mts's bridge-status guard) · POST /api/import/paste {text, adapter} (413 past watcher.mts's MAX_INBOX_BYTES; app/import.mts's parsePastedScan:
 //         what the ClassicUO web-client scanner prints, marker block or bare JSON, upgraded/validated
 //         and written straight into that adapter's inbox — for a client whose sandbox can't write
 //         files at all) · POST /api/import/rescan {} (scanOnce() on every running watcher, for a scan
 //         file the folder watcher missed; {adapters: [ids swept]}, empty under --demo; 503 with
 //         {failed: [ids]} when an inbox could not be swept) ·
-//         GET /api/update-check (a GitHub releases/latest check; {configured: false} when package.json
-//         names no GitHub repo) ·
+//         GET /api/update-check (a GitHub releases/latest check, 10 s timeout, a success cached for an
+//         hour; {configured: false} when package.json names no GitHub repo) ·
 //         POST /api/host/pick-folder {title} and POST /api/host/open-path {which: "data"|"logs"} — both
 //         need the optional `host` startServer({..}, {host}) was given (a folder-picker/opener the
 //         Electron shell supplies); 501 on the bare server. GET/PUT /api/settings additionally carries
@@ -97,12 +99,12 @@ import { loadRules, listRules, DEFAULT_SHARD } from "./rules.mts";
 import { validate, type ValidatorSchema } from "./schema/validate.mts";
 import { parseItemQuery, applyItemQuery, facetsOf, type ItemQueryRows, type ItemQueryGroups } from "./item-query.mts";
 import { DEFAULT_OPTIONAL_SLOTS } from "./mip.mts";
-import { startWatcher, jsonErrorReason, type StartWatcherOptions, type WatcherHandle } from "./watcher.mts";
+import { startWatcher, jsonErrorReason, MAX_INBOX_BYTES, type StartWatcherOptions, type WatcherHandle } from "./watcher.mts";
 import { parsePastedScan, writeScanToInbox } from "./import.mts";
 import { writeFileAtomic } from "./atomic-write.mts";
 import {
   listAdapters, candidateClientRoots, validateScriptsDir, installedVersion, installScripts,
-  repoFromPackage, checkForUpdates, checkScriptsDataDir, type DataDirCheck, type AdapterInfo,
+  repoFromPackage, checkForUpdates, type CheckForUpdatesResult, checkScriptsDataDir, type DataDirCheck, type AdapterInfo,
 } from "./installer.mts";
 import { dataDirNotice } from "./ui/messages.mts";
 import { homedir } from "node:os";
@@ -694,6 +696,10 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
   // switch changes parseTooltip/classify via rules) and vault-lib.mts's own mtime (the same value lib()
   // already tracks for its dev-reload). /api/forget's tombstone is just another file landing in the scans
   // directory, so it invalidates the cache the same way — no separate invalidation path needed.
+  // GET /api/update-check's last successful answer (see that route).
+  const UPDATE_CHECK_TTL_MS = 60 * 60 * 1000;
+  let updateCheckCache: { at: number; result: CheckForUpdatesResult } | null = null;
+
   let invCache: { sig: string | null; value: { inv: Inventory; snapshotCount: number; stamp: string } | null } = { sig: null, value: null };
   function scansSignature(): string {
     if (!existsSync(SCANS)) return "no-scans-dir";
@@ -1246,7 +1252,9 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
         return send(res, 200, { ok: true, installed: result.installed, version: result.version, scriptsDir: destDir, pathsFile: result.pathsFile });
       }
       if (req.method === "POST" && url.pathname === "/api/import/paste") {
-        const { text, adapter } = asObject(await readBody(req));
+        // Capped at the watcher's own inbox limit: a bigger paste would be written, answered 200, and
+        // then rejected by the watcher, so it is refused here instead.
+        const { text, adapter } = asObject(await readBody(req, { limit: MAX_INBOX_BYTES, tooLargeMsg: "paste too large" }));
         // Same allowlist as every other adapter-taking route — adapter reaches
         // CONFIG.paths.inboxFor -> path.join, so it must be a real, known id before that.
         if (!listAdapters(ADAPTERS_DIR).some((a) => a.id === adapter)) return send(res, 400, { ok: false, error: `unknown adapter: ${short(adapter)}` });
@@ -1287,8 +1295,14 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
         return send(res, 200, { ok: true, adapters });
       }
       if (req.method === "GET" && url.pathname === "/api/update-check") {
-        const result = await checkForUpdates({ current: PACKAGE_JSON.version, repo: repoFromPackage(PACKAGE_JSON) });
-        return send(res, 200, { ok: true, ...result });
+        // Cached for an hour so every page load doesn't cost a GitHub round trip (and its unauthenticated
+        // rate limit); a failed check is not cached, so the next request simply tries again.
+        if (!updateCheckCache || Date.now() - updateCheckCache.at > UPDATE_CHECK_TTL_MS) {
+          const result = await checkForUpdates({ current: PACKAGE_JSON.version, repo: repoFromPackage(PACKAGE_JSON) });
+          if (result.error) return send(res, 200, { ok: true, ...result });
+          updateCheckCache = { at: Date.now(), result };
+        }
+        return send(res, 200, { ok: true, ...updateCheckCache.result });
       }
       if (req.method === "POST" && url.pathname === "/api/host/pick-folder") {
         if (!host || typeof host.pickFolder !== "function") return send(res, 501, { ok: false, error: "not available outside the desktop app" });
@@ -1473,7 +1487,7 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
           const run = readRun();
           return run ? send(res, 200, { ok: true, run }) : send(res, 404, { ok: false, error: DAMAGED_RUN });
         }
-        if (req.method === "DELETE") { unlinkSync(f); return send(res, 200, { ok: true }); }
+        if (req.method === "DELETE") { unlinkSync(f); broadcastEvent("changed", { what: "runs", at: Date.now() }); return send(res, 200, { ok: true }); }
         if (req.method === "PUT") {
           const { label = "" } = asObject(await readBody(req, { limit: 8e3 }));
           // String() throws on an object with a null prototype or a throwing toString — a 500 plus a
@@ -1515,7 +1529,7 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
         // now that app/schema/validate.mts implements both keywords.
         if (!isBoundedString(cmd.name, 200)) return send(res, 400, { ok: false, error: "name must be a string of at most 200 characters" });
         if (cmd.chain != null && (!Array.isArray(cmd.chain) || cmd.chain.length > 16)) return send(res, 400, { ok: false, error: "chain must be an array of at most 16 serials" });
-        const id = `${Date.now()}-${Math.floor(Math.random() * 1e4)}`;
+        const id = randomUUID();
         // Copy exactly the documented fields into the queue line — the page may send extras (e.g. a
         // human-readable location string) that the bridge does not need and should not carry forward.
         const line = { id, action: cmd.action, serial: cmd.serial, name: cmd.name, chain: cmd.chain || [], pos: cmd.pos ?? null, queuedAt: new Date().toISOString() };
@@ -1604,6 +1618,7 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
         // exactly what the fold wants anyway (newest scan of a root wins, by parseStamp — the file
         // name has never been what orders them).
         writeFileAtomic(join(SCANS, `_forget-${serial.toString(16)}.json`), JSON.stringify(snap), DATA_FILE_MODE);
+        broadcastEvent("changed", { what: "inventory", by: req.headers["x-client-id"], at: Date.now() });
         return send(res, 200, { ok: true });
       }
       if (req.method === "GET" && url.pathname === "/api/blacklist") return send(res, 200, { ok: true, containers: readBlacklist() });
@@ -1645,6 +1660,7 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
         // One file per forgotten character (hex of the name: any name is a safe file name that way),
         // replaced with a newer stamp if the character is forgotten again.
         writeFileAtomic(join(SCANS, `_forget-char-${Buffer.from(character).toString("hex")}.json`), JSON.stringify(snap), DATA_FILE_MODE);
+        broadcastEvent("changed", { what: "inventory", by: req.headers["x-client-id"], at: Date.now() });
         return send(res, 200, { ok: true });
       }
       send(res, 404, { ok: false, error: "not found" });
