@@ -17,6 +17,7 @@ import { buildSchemaTypes } from "../scripts/build-schema-types.mts";
 import { validate, type ValidatorSchema } from "./schema/validate.mts";
 import type { Item, Inventory, ProfilesFile } from "./vault-lib.mts";
 import type { RulesV1, ScanV2 } from "./schema/types.d.mts";
+import { MAX_INBOX_BYTES } from "./watcher.mts";
 import { candidateClientRoots, type AdapterInfo, type InstallScriptsResult, type DataDirCheck } from "./installer.mts";
 
 // The server looks for the game client's scripts (GET /api/setup's candidates, and the data-folder
@@ -1893,6 +1894,23 @@ test("[fast] POST /api/import/paste: a bad paste is 400 with the parse error and
 
     const after = existsSync(inboxDir) ? readdirSync(inboxDir) : [];
     assert.deepEqual(after, before, "a rejected paste must not write into the inbox");
+  } finally {
+    await s2.close();
+  }
+});
+
+// The paste cap used to be readBody's 50 MB default while the watcher refuses an inbox file over
+// MAX_INBOX_BYTES (32 MB), so a paste in between was answered 200 and then rejected. It is refused up
+// front now, and nothing is written.
+test("[fast] POST /api/import/paste: a paste over the watcher's inbox limit is 413 and writes nothing", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "qm-paste-big-"));
+  const s2 = await startServer(ensureLayout(resolveConfig(["--port", "0", "--data", dir], {})));
+  try {
+    const r = await fetch(s2.url + "/api/import/paste", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ text: "x".repeat(MAX_INBOX_BYTES), adapter: "tazuo" }) });
+    assert.equal(r.status, 413);
+    assert.match(asJson<ErrorBody>(await r.json()).error, /paste too large/);
+    const inboxDir = join(dir, "inbox", "tazuo");
+    assert.deepEqual(existsSync(inboxDir) ? readdirSync(inboxDir) : [], []);
   } finally {
     await s2.close();
   }

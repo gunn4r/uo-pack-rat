@@ -52,7 +52,7 @@
 //         Setup wizard (app/installer.mts backs all of these): GET /api/setup {firstRun, settings,
 //         adapters, candidates, installed, available, dataDir, dataDirCheck} · POST /api/setup/locate {adapter, dir}
 //         · POST /api/setup/install {adapter, scriptsDir} (409 while a Legion script is running in the
-//         client, per installer.mts's bridge-status guard) · POST /api/import/paste {text, adapter} (app/import.mts's parsePastedScan:
+//         client, per installer.mts's bridge-status guard) · POST /api/import/paste {text, adapter} (413 past watcher.mts's MAX_INBOX_BYTES; app/import.mts's parsePastedScan:
 //         what the ClassicUO web-client scanner prints, marker block or bare JSON, upgraded/validated
 //         and written straight into that adapter's inbox — for a client whose sandbox can't write
 //         files at all) · POST /api/import/rescan {} (scanOnce() on every running watcher, for a scan
@@ -97,7 +97,7 @@ import { loadRules, listRules, DEFAULT_SHARD } from "./rules.mts";
 import { validate, type ValidatorSchema } from "./schema/validate.mts";
 import { parseItemQuery, applyItemQuery, facetsOf, type ItemQueryRows, type ItemQueryGroups } from "./item-query.mts";
 import { DEFAULT_OPTIONAL_SLOTS } from "./mip.mts";
-import { startWatcher, jsonErrorReason, type StartWatcherOptions, type WatcherHandle } from "./watcher.mts";
+import { startWatcher, jsonErrorReason, MAX_INBOX_BYTES, type StartWatcherOptions, type WatcherHandle } from "./watcher.mts";
 import { parsePastedScan, writeScanToInbox } from "./import.mts";
 import { writeFileAtomic } from "./atomic-write.mts";
 import {
@@ -1246,7 +1246,9 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
         return send(res, 200, { ok: true, installed: result.installed, version: result.version, scriptsDir: destDir, pathsFile: result.pathsFile });
       }
       if (req.method === "POST" && url.pathname === "/api/import/paste") {
-        const { text, adapter } = asObject(await readBody(req));
+        // Capped at the watcher's own inbox limit: a bigger paste would be written, answered 200, and
+        // then rejected by the watcher, so it is refused here instead.
+        const { text, adapter } = asObject(await readBody(req, { limit: MAX_INBOX_BYTES, tooLargeMsg: "paste too large" }));
         // Same allowlist as every other adapter-taking route — adapter reaches
         // CONFIG.paths.inboxFor -> path.join, so it must be a real, known id before that.
         if (!listAdapters(ADAPTERS_DIR).some((a) => a.id === adapter)) return send(res, 400, { ok: false, error: `unknown adapter: ${short(adapter)}` });
