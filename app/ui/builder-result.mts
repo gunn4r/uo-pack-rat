@@ -254,7 +254,7 @@ function otherSuitsCard(res: OptimizeResult, view: number | null): HTMLElement {
   const tb = totalsOf(res.best), shownIdx = view == null ? 0 : view + 1;
   const title = `Other suits within ${fmtN(res.altTolerance)} points`;
   if (all.length === 1) return el("section", { class: "card", "aria-label": "Other suits" }, box("div", { class: "card-head" }, el("h2", {}, title)),
-    box("div", { class: "card-pad" }, el("p", { class: "muted" }, txt(`No other suit scores within ${fmtN(res.altTolerance)} points of the best.`))));
+    box("div", { class: "card-pad" }, el("p", { class: "muted" }, txt(res.altShortfall === "budget" ? `The time budget ran out before another suit within ${fmtN(res.altTolerance)} points was found.` : `No other suit scores within ${fmtN(res.altTolerance)} points of the best.`))));
   const rows = all.map((s, i) => {
     const ta = totalsOf(s.best), d = s.score - res.score;
     const slotsDiff = OPTIMIZER_SLOTS.filter((sl) => (s.best[sl]?.serial || 0) !== (res.best[sl]?.serial || 0));
@@ -316,7 +316,7 @@ function detailsCard(res: OptimizeResult, meta: BuildMeta | undefined, view: num
   if (skips) pairs.push(["Left out", skips]);
   pairs.push(["Score", `${fmtN(Math.round(res.currentScore))} → ${fmtN(Math.round(score))}`]);
   if (res.gapPoints != null) pairs.push(["Gap to the bound", `${fmtN(res.gapPoints)} points`]);
-  if (res.altTolerance != null) pairs.push(["Other suits", `${fmtN((res.alternatives || []).length)} within ${fmtN(res.altTolerance)} points`]);
+  if (res.altTolerance != null) pairs.push(["Other suits", `${fmtN((res.alternatives || []).length)} within ${fmtN(res.altTolerance)} points${res.altShortfall === "budget" ? " · the time budget ran out before more were found" : ""}`]);
   if (meta?.reused) pairs.push(["Reused", `the run from ${fmtRunTime(meta.reused.createdAt)} (same inventory, settings and options)`]);
   return el("section", { class: "card", "aria-label": "Solver details" }, t, detailsOpen ? el("div", { class: "b-details", id: "b-details" }, keyValue(pairs)) : null);
 }

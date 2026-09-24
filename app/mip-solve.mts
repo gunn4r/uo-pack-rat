@@ -138,11 +138,13 @@ export interface GapEvent {
 
 // The absolute gap this module reports (HiGHS's own `mip_gap` is relative): 0 once the solve is
 // proven optimal, else |dual - primal| from the last event that carried both bounds, or null when
-// no event ever carried both (e.g. the time limit hit before HiGHS's first improving/log callback).
+// no event ever carried both (e.g. the time limit hit before HiGHS's first improving/log callback)
+// or a bound was still ±Infinity (not established yet, seen at sub-second budgets).
 // Pure and deterministic so it can be tested without a real solve.
 export function gapFromEvents(status: HighsStatus | string, lastEvent: GapEvent | null | undefined): number | null {
   if (status === "optimal") return 0;
-  return lastEvent && lastEvent.dual != null && lastEvent.primal != null ? Math.abs(lastEvent.dual - lastEvent.primal) : null;
+  const gap = lastEvent && lastEvent.dual != null && lastEvent.primal != null ? Math.abs(lastEvent.dual - lastEvent.primal) : null;
+  return gap != null && Number.isFinite(gap) ? gap : null;
 }
 
 interface SolveEventData {

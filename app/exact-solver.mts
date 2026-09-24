@@ -83,8 +83,12 @@ export interface ExactSolveResult extends OptResult {
   unreachableFloors: string[];
   fallbackReason?: string | undefined;
   floorsConflict?: boolean | undefined;
+  altShortfall?: AltShortfall | undefined;
   workers?: undefined;
 }
+// Why the k-best search returned fewer alternatives than asked: the time budget ran out, the next
+// suit scored outside the tolerance, or no other suit exists.
+export type AltShortfall = "budget" | "tolerance" | "exhausted";
 
 export interface SolveExactArgs {
   core: CoreModule;
@@ -158,7 +162,8 @@ export async function solveExact({
     // one budget. A limit of 0 still returns the MIP start as the incumbent.
     const remaining = () => Math.max(0, (budget - (now() - t0)) / 1000);
     let lastEmit = 0;
-    const toScore = (v: number | null | undefined): number | null => (v == null ? null : v + active.scoreOffset);
+    // HiGHS reports ±Infinity for a bound it has not established yet (seen at sub-second budgets): no bound.
+    const toScore = (v: number | null | undefined): number | null => (v == null || !Number.isFinite(v) ? null : v + active.scoreOffset);
     const onEvent = (ev: { kind: string; primal: number | undefined; dual: number | undefined; nodes: number }) => {
       const at = now();
       if (lastEmit !== 0 && at - lastEmit < 250) return;
@@ -224,19 +229,22 @@ export async function solveExact({
     const altTolerance = alt ? Math.max(0, alt.tolerance || 0) : undefined;
     const alternatives: { best: OptAssignment; score: number }[] = [];
     let lastPicked = picked;
+    // Why fewer alternatives came back than were asked for (unset when the count was met).
+    let altShortfall: AltShortfall | undefined;
     if (alt) {
       for (let k = 0; k < alt.count && now() - t0 < budget; k++) {
         addNoGood(handle, active, lastPicked);
         onProgress({ phase: "alternatives", found: alternatives.length, wanted: alt.count, elapsedMs: now() - t0, budgetMs: budget, bestScore: mipScore, at: now() });
         const sk = solveModel(handle, { timeLimitS: remaining() });
-        if (sk.status !== "optimal") break;
+        if (sk.status !== "optimal") { altShortfall = sk.status === "infeasible" ? "exhausted" : "budget"; break; }
         const score = sk.objective! + active.scoreOffset;
-        if (score < mipScore - altTolerance! - 1e-9) break;
+        if (score < mipScore - altTolerance! - 1e-9) { altShortfall = "tolerance"; break; }
         const skPicked = pickedOf(active, sk.colValue!);
         const assignment = assignmentOf(skPicked, slots);
         alternatives.push({ best: assignment, score: core.scoreSet(assignment, profile) });
         lastPicked = skPicked;
       }
+      if (alternatives.length < alt.count) altShortfall ??= "budget";   // the loop's own time check ended it
     }
 
     // ---- step 5: hand the winning suit back to the core for the full report ----------------
@@ -289,6 +297,7 @@ export async function solveExact({
       evaluations: heur.evaluations + final.evaluations,
       alternatives: alt ? alternatives : undefined,
       altTolerance,
+      altShortfall,
       mipMs, heuristicMs,
       floorsConflict,
       unreachableFloors: active.unreachableFloors,
