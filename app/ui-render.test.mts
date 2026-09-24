@@ -129,9 +129,11 @@ test("[fast] sheetNode: a build's raised resist cap is used and named; without o
   assert.ok(built.textContent.includes("cap raised from 70"));
   assert.ok(built.textContent.includes("This build caps Fire at 95 (the shard's is 70)."));
   assert.ok(!built.textContent.includes("cap +"), "90 is under the raised cap: no over-cap badge");
+  assert.ok(built.textContent.includes("now → after / build cap"), "the Properties header names the build's caps");
   const plain = sheetNode("Kestrel", { "1": piece as never }, null) as unknown as Node;
   assert.ok(plain.textContent.includes("70/ 70") && plain.textContent.includes("cap +20"), "the Characters screen keeps the shard's 70");
   assert.ok(!plain.textContent.includes("raised from"));
+  assert.ok(plain.textContent.includes("value / shard cap"));
 });
 
 test("[fast] safeColor accepts only #rgb / #rrggbb and drops everything else", () => {
