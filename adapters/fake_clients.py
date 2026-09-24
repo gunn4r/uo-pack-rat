@@ -125,7 +125,6 @@ class World(object):
         self.calls = []
         self.messages = []
         self.px, self.py = 10, 10
-        self.facet = 0
 
     def add(self, serial, container=0, **kw):
         self.items[serial] = Item(serial, container, **kw)
@@ -226,7 +225,6 @@ def tazuo_api(world, backpack, bank=0, skills=None):
     api.Pathfind = lambda x, y, z=0, distance=1, wait=False, timeout=10, *a: walk_to(int(x), int(y), wait, timeout)
     api.PathfindEntity = lambda s, distance=1, wait=False, timeout=10, *a: walk_to(world.items[int(s)].X, world.items[int(s)].Y, wait, timeout)
     api.Pathfinding = lambda: api.walking[0]
-    api.GetMap = lambda: world.facet
     api.CancelPathfinding = lambda: api.walking.__setitem__(0, False)
     return api
 
@@ -311,10 +309,6 @@ def razor_globals(world, backpack, bank=None, skills=None):
         @property
         def Position(cls):
             return Pos(world.px, world.py)
-
-        @property
-        def Map(cls):
-            return world.facet
 
     class Player(object, metaclass=PlayerMeta):
         Name = "Tester"
