@@ -61,8 +61,22 @@ def rfc3339_now():
     return time.strftime("%Y-%m-%dT%H:%M:%S", t) + tz
 
 
+def read_blacklist(path):
+    """The valid entries of <data directory>/scan-blacklist.json, the containers the player blacklisted
+    ({serial, name, addedAt, where?}). A bad entry is dropped, and a missing, unreadable or oversized
+    file reads as none: the list can only ever make a scan skip containers."""
+    try:
+        if os.path.getsize(path) > 256 * 1024:
+            return []
+        with open(path, "r", encoding="utf-8") as f:
+            doc = json.load(f)
+        return [e for e in doc if isinstance(e, dict) and type(e.get("serial")) is int and 0 < e["serial"] <= 0xFFFFFFFF]
+    except Exception:
+        return []
+
+
 ADAPTER_ID = "tazuo"
-ADAPTER_VERSION = "2.4.0"
+ADAPTER_VERSION = "2.5.0"
 CAPABILITIES = {
     "layers": ["OneHanded", "TwoHanded", "Shoes", "Pants", "Shirt", "Helmet", "Gloves",
                "Ring", "Talisman", "Necklace", "Waist", "Torso", "Bracelet", "Tunic",
@@ -75,6 +89,8 @@ CAPABILITIES = {
 PAUSE_OPEN = 1.2         # after UseObject on a container (raise on laggy connections)
 MAX_NEST = 4             # bags in bags in bags
 OPENED_HERE = []         # container windows this run opened itself, in opening order (close_opened)
+BLACKLIST = set(e["serial"] for e in read_blacklist(os.path.join(data_dir(), "scan-blacklist.json")))
+SKIPPED = set()          # blacklisted containers this run never opened
 STOP_CLOSE_S = 1.5       # after a Stop, stop closing windows after this long: the client gives a stopped script 2 s
 OUT_DIR = os.path.join(data_dir(), "inbox", "tazuo")
 ALARM_HUE, OK_HUE, INFO_HUE = 33, 68, 88
@@ -220,8 +236,10 @@ def scan_root(root_serial, kind, label, containers, items, seen):
             except Exception:
                 nm = ""
             s = int(it.Serial)
-            if is_container(it, nm) and s not in opened and s not in to_open:
+            if is_container(it, nm) and s not in opened and s not in to_open and s not in BLACKLIST:
                 to_open.append(s)
+    if BLACKLIST:
+        listing = without_blacklisted(listing)
     if API.StopRequested:
         return -1
     if not listing:
@@ -237,6 +255,9 @@ def scan_root(root_serial, kind, label, containers, items, seen):
     parents = set(int(getattr(it, "Container", 0) or 0) for it in listing)
     unopened = set(c for c in opened if c != root_serial and c not in parents and not was_opened(c))
     unopened.update(c for c in to_open if c not in opened)
+    listed = set(int(it.Serial) for it in listing if int(it.Serial) in BLACKLIST)
+    SKIPPED.update(listed)
+    unopened.update(listed)       # never opened: the fold keeps what it last knew inside a blacklisted bag
     try:
         API.RequestOPLData([int(it.Serial) for it in listing])
         API.Pause(0.5)
@@ -258,11 +279,28 @@ def scan_root(root_serial, kind, label, containers, items, seen):
                              "kind": "container", "tooltip": lines}
             if s in unopened:
                 containers[s]["opened"] = False
+            if s in unopened and s not in BLACKLIST:
                 sysmsg(f"  {cname or 'a bag'} in {label} was not opened — its contents are kept from the last scan", ALARM_HUE)
             continue
         items.append(item_dict(it, lines, parent))
         n += 1
     return n
+
+
+def without_blacklisted(listing):
+    """A root's listing minus everything inside a blacklisted bag: the client may still hold its contents
+    from an earlier open. The bag itself stays, and scan_root records it unopened."""
+    parent = dict((int(it.Serial), int(getattr(it, "Container", 0) or 0)) for it in listing)
+    out = []
+    for it in listing:
+        s = parent.get(int(it.Serial))
+        for _ in range(MAX_NEST + 2):
+            if s is None or s in BLACKLIST:
+                break
+            s = parent.get(s)
+        if s not in BLACKLIST:
+            out.append(it)
+    return out
 
 
 def close_opened():
@@ -387,6 +425,8 @@ def main():
     sysmsg(f"Pack Rat refresh ({char}) done in {time.time() - t0:.0f}s: {len(snap['equipped'])} worn, "
            f"{n} backpack items in {bags} bags, {len(snap['skills'])} skills -> {fname}")
     sysmsg(f"  bank and ground containers untouched (app keeps its last scan of them)", INFO_HUE)
+    if SKIPPED:
+        sysmsg(f"  skipped {len(SKIPPED)} blacklisted container{'s' if len(SKIPPED) != 1 else ''}", INFO_HUE)
 
 
 try:

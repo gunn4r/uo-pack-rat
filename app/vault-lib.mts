@@ -599,6 +599,10 @@ interface EnrichLoc {
   scannedBy: string;
 }
 
+// A container the player blacklisted: one entry of <data>/scan-blacklist.json, which the app (POST
+// /api/blacklist) and the TazUO script packrat-blacklist.py both write. Scanners never open one.
+export interface BlacklistEntry { serial: number; name: string; addedAt: string; where?: string | undefined }
+
 export function foldSnapshots(snapshots: ScanV2[]): Inventory {
   // Null-prototype dictionaries, not `{}`: every key below comes from the scan (a container's own
   // serial, the character's name), and `obj["__proto__"] = value` on an ordinary object invokes the

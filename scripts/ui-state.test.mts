@@ -8,7 +8,7 @@
 // playwright is absent, or under TEST_SKIP_ELECTRON.
 import test from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, rmSync, writeFileSync, mkdirSync, copyFileSync } from "node:fs";
+import { mkdtempSync, rmSync, writeFileSync, mkdirSync, copyFileSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -628,5 +628,40 @@ test("[slow] the data-folder banner is one line above every screen, which fits b
     await app.close();
     rmSync(dataDir, { recursive: true, force: true });
     rmSync(home, { recursive: true, force: true });
+  }
+});
+
+// Issue #38: a ground container blacklisted from its ⋯ menu in Containers (Remove also forgets what was
+// scanned in it), listed in Settings › Data, and unblacklisted there.
+test("[slow] a ground container is blacklisted from Containers and unblacklisted in Settings", async (t) => {
+  const why = unavailable();
+  if (why) return t.skip(why);
+  const dataDir = seedDataDir("packrat-ui-blacklist-");
+  const { app, page, errors } = await launch(dataDir);
+  try {
+    await openTab(page, "containers");
+    const rows = page.locator("#cont-table tbody tr[data-root]");
+    await rows.first().waitFor({ timeout: 15_000 });
+    const before = await rows.count();
+    const ground = rows.last();   // the demo's roots are all ground containers
+    const serial = await ground.getAttribute("data-root");
+    await ground.getByRole("button", { name: /^Actions for / }).click();
+    await page.getByRole("menuitem", { name: "Blacklist…" }).click();
+    await confirmYes(page, /^Also remove .+ and its \d+ items? from Pack Rat\?$/);
+    await page.waitForFunction((n) => document.querySelectorAll("#cont-table tbody tr[data-root]").length === n - 1, before, { timeout: 15_000 });
+    assert.equal(await page.locator(`#cont-table tr[data-root="${serial}"]`).count(), 0, "Remove forgot what was scanned in it");
+
+    await openTab(page, "settings");
+    const card = page.locator("#set-blacklist");
+    const unlist = card.getByRole("button", { name: /^Unblacklist / });
+    await unlist.waitFor({ timeout: 15_000 });
+    assert.equal(await unlist.count(), 1);
+    await unlist.click();
+    await page.waitForFunction(() => /None\./.test(document.querySelector("#set-blacklist")?.textContent || ""), undefined, { timeout: 15_000 });
+    assert.deepEqual(JSON.parse(readFileSync(join(dataDir, "scan-blacklist.json"), "utf8")), []);
+    assert.deepEqual(errors, []);
+  } finally {
+    await app.close();
+    rmSync(dataDir, { recursive: true, force: true });
   }
 });

@@ -49,7 +49,7 @@ class Clock(object):
 class Item(object):
     def __init__(self, serial, container=0, name="bag", container_like=True, **kw):
         self.Serial = serial
-        self.Container = container
+        self.Container = container or 0xFFFFFFFF   # TazUO's "no container" for an item on the ground
         self.Name = name
         self.X, self.Y, self.Z = 10, 10, 0
         self.Graphic = 0x0E75 if container_like else 0x1086

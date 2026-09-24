@@ -1,8 +1,8 @@
 // ui/settings.mts — the Settings screen (design spec 4.11): four sections (General, Game client, Data,
 // Updates) in a 720px column of cards made of setting rows — title and help on the left, the control
 // on the right. General holds the look (theme family, appearance) and the shard rules; Game client its
-// status, Run setup and Reinstall; Data the data folder and logs with Open, and the danger zone (forget a
-// character, forget a container); Updates the version and the update check. Always re-fetches GET
+// status, Run setup and Reinstall; Data the data folder and logs with Open, the blacklisted containers,
+// and the danger zone (forget a character, forget a container); Updates the version and the update check. Always re-fetches GET
 // /api/setup on render (a cheap directory listing) so it reflects whatever the wizard, or this screen's
 // own actions, just changed.
 import { state } from "./store.mts";
@@ -15,8 +15,9 @@ import { openWizard } from "./wizard.mts";
 import { forgetCharacter } from "./characters.mts";
 import { bridgeNote, renderDataDirNotice } from "./bridge.mts";
 import { adapterCopy } from "./adapter-copy.mts";
-import { clientErrorMessage, dataDirNotice, errorText, hostErrorMessage, installedIntoNote, pathsFileNote } from "./messages.mts";
-import type { SetupApiResponse, InstallApiResponse, UpdateCheckApiResponse } from "./api-types.mts";
+import { clientErrorMessage, dataDirNotice, errorText, hostErrorMessage, installedIntoNote, pathsFileNote, relativeWhen } from "./messages.mts";
+import type { SetupApiResponse, InstallApiResponse, UpdateCheckApiResponse, BlacklistApiResponse } from "./api-types.mts";
+import type { BlacklistEntry } from "../vault-lib.mts";
 
 // Reinstall's own confirmation and result — separate from the wizard's, since this row acts on the client
 // that is already set up (no need to re-walk shard/client/folder).
@@ -39,6 +40,7 @@ export async function renderSettings(setup?: SetupApiResponse): Promise<void> {
   state.setup = setup;
   renderDataDirNotice();
   root.replaceChildren(generalSection(), clientSection(setup), dataSection(setup), updatesSection(setup));
+  void syncSettingsBlacklist();
 }
 
 // ---------------------------------------------------------------- building blocks
@@ -153,6 +155,22 @@ function knownCharacters(): string[] {
   return [...new Set([...Object.keys(state.inv?.characters || {}), ...Object.keys(state.profiles?.characters || {})])]
     .filter((n) => !n.startsWith("_")).sort((a, b) => a.localeCompare(b));
 }
+// The containers scans never open, newest first, each with Unblacklist. Containers and the in-game
+// packrat-blacklist.py both change the list, so this card alone is fetched again on every visit (app.mts).
+export async function syncSettingsBlacklist(): Promise<void> {
+  if (!$("#set-blacklist")) return;
+  try { $<HTMLElement>("#set-blacklist")?.replaceWith(blacklistCard((await api<BlacklistApiResponse>("/api/blacklist")).containers)); } catch { /* the card keeps what it showed */ }
+}
+function blacklistCard(list: BlacklistEntry[]): HTMLElement {
+  return box("div", { class: "card set-card", id: "set-blacklist" },
+    row({ title: "Blacklisted containers", help: list.length ? "Scans never open these." : "None. Blacklist a ground container from its ⋯ menu in Containers, or in game with packrat-blacklist.py (TazUO)." }),
+    ...[...list].reverse().map((e) => row({ title: e.name, help: [e.where, `added ${relativeWhen(e.addedAt)}`].filter(Boolean).join(" · "),
+      control: button({ label: "Unblacklist", size: "sm", attrs: { "aria-label": `Unblacklist ${e.name}` }, onClick: async () => {
+        try { await api(`/api/blacklist/${e.serial}`, { method: "DELETE" }); showToast(`Unblacklisted ${e.name}: the next scan reads it again.`, "ok"); }
+        catch (err) { showToast(errorText(err), "bad"); }
+        void syncSettingsBlacklist();
+      } }) })));
+}
 function dataSection(setup: SetupApiResponse): HTMLElement {
   // The data-folder mismatch (#39): the client's scripts write somewhere this app doesn't read. The banner
   // over every screen says so in one short line and links here, where the full sentence with both paths
@@ -171,6 +189,7 @@ function dataSection(setup: SetupApiResponse): HTMLElement {
       pathRow("Data folder", "data", setup.dataDir, setup.canOpenFolders === true),
       pathRow("Logs", "logs", `${setup.dataDir}/logs`, setup.canOpenFolders === true),
       mismatch ? box("div", { class: "set-row-below set-pad" }, message({ tone: "warn", text: mismatch })) : null),
+    blacklistCard([]),
     box("div", { class: "card set-card set-danger", "aria-labelledby": "set-danger-h" },
       el("h3", { class: "t-md strong set-danger-title", id: "set-danger-h" }, "Danger zone"),
       row({ title: "Forget a character", label: "set-forget-who", control: box("div", { class: "set-inline" }, who, forget),
