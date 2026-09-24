@@ -1744,7 +1744,7 @@ test("[fast] POST /api/setup/install installs the scripts, saves settings.client
     });
     const installBody = asJson<InstallScriptsResult>(await install.json());
     assert.equal(install.status, 200, JSON.stringify(installBody));
-    assert.deepEqual(installBody.installed!.sort(), ["packrat-bridge.py", "packrat-refresh.py", "packrat-scanner.py"]);
+    assert.deepEqual(installBody.installed!.sort(), ["packrat-blacklist.py", "packrat-bridge.py", "packrat-refresh.py", "packrat-scanner.py"]);
     assert.equal(installBody.version, TAZUO_VERSION);
     assert.ok(existsSync(join(scriptsDir, "packrat-scanner.py")));
     assert.ok(existsSync(join(scriptsDir, "packrat-paths.json")));
@@ -2091,6 +2091,7 @@ const OBJECT_BODY_ROUTES: Array<[string, string]> = [
   ["POST", "/api/import/paste"], ["POST", "/api/import/rescan"],
   ["POST", "/api/host/pick-folder"], ["POST", "/api/host/open-path"], ["POST", "/api/optimize"],
   ["POST", "/api/bridge"], ["POST", "/api/forget"], ["POST", "/api/forget-character"], ["PUT", "/api/ui-prefs"],
+  ["POST", "/api/blacklist"],
 ];
 test("[fast] a null/array/scalar JSON body is a clean 400 on every body-reading route, and the log does not grow", async () => {
   const dir = mkdtempSync(join(tmpdir(), "qm-nullbody-"));
@@ -2960,6 +2961,56 @@ test("[fast] POST /api/forget-character drops the character, its worn set, backp
 test("[fast] POST /api/forget-character is refused under --demo", async () => {
   const r = await fetch(srv.url + "/api/forget-character", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ character: "Dorran" }) });
   assert.equal(r.status, 409);
+});
+
+// Issue #38: <data>/scan-blacklist.json, written by these routes and by the TazUO packrat-blacklist.py.
+test("[fast] /api/blacklist adds, lists and removes a container, validates what it writes, and the fold honours the list", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "qm-blacklist-"));
+  const s2 = await startServer(ensureLayout(resolveConfig(["--port", "0", "--data", dir], {})));
+  const file = join(dir, "scan-blacklist.json");
+  const add = (body: unknown): Promise<Response> => fetch(s2.url + "/api/blacklist", { method: "POST", headers: JSON_HEADERS, body: JSON.stringify(body) });
+  const list = async (): Promise<{ containers: Array<Record<string, unknown>>; problem?: string }> => asJson(await (await fetch(s2.url + "/api/blacklist")).json());
+  const grounds = async (): Promise<string[]> => Object.keys(asJson<InventoryResponse>(await (await fetch(s2.url + "/api/inventory")).json()).inventory.containers);
+  // A scan dated after the blacklisting, holding the listed chest: an older scanner, or a hand import.
+  mkdirSync(join(dir, "scans"), { recursive: true });
+  writeFileSync(join(dir, "scans", "later.json"), JSON.stringify({
+    schemaVersion: 2, character: "Dorran", scannedAt: new Date(Date.now() + 3600_000).toISOString(), stats: {}, equipped: [],
+    adapter: { id: "tazuo", version: "2.5.0", client: "TazUO", clientVersion: null, capabilities: { layers: [], arms: true, bank: true, ground: true, nested: true, tooltips: "opl", bridge: [] } },
+    roots: [{ serial: 4660, kind: "ground", name: "Trash Barrel", opened: true }], containers: { 4660: { serial: 4660, kind: "ground", name: "Trash Barrel", parent: null, root: 4660 } },
+    items: [{ serial: 4661, container: 4660, name: "Ring", nameSource: "opl", tooltip: ["Ring"] }] }));
+  try {
+    assert.deepEqual(await grounds(), ["4660"]);
+    for (const bad of [{}, { serial: 0, name: "x" }, { serial: "4660", name: "x" }, { serial: true, name: "x" }, { serial: 2 ** 33, name: "x" }, { serial: 1, name: 5 }, { serial: 1, name: "x", where: 3 }]) {
+      assert.equal((await add(bad)).status, 400, `${JSON.stringify(bad)} should be refused`);
+    }
+    assert.equal(existsSync(file), false, "nothing was written for a refused body");
+    assert.equal((await add({ serial: 4660, name: "Trash Barrel".repeat(10), where: "1, 2" })).status, 200);
+    assert.equal((await add({ serial: 4660, name: "again" })).status, 200, "adding a listed container again is fine");
+    const [entry] = (await list()).containers;
+    assert.equal((await list()).containers.length, 1);
+    assert.equal(entry!.serial, 4660);
+    assert.equal((entry!.name as string).length, 64, "the name is bounded");
+    assert.equal(entry!.where, "1, 2");
+    assert.ok(Number.isFinite(Date.parse(entry!.addedAt as string)));
+    assert.deepEqual(await grounds(), [], "the fold ignores the listed chest in a scan dated after it was listed");
+    assert.equal((await fetch(s2.url + "/api/blacklist/4660", { method: "DELETE" })).status, 200);
+    assert.deepEqual((await list()).containers, []);
+    assert.deepEqual(await grounds(), ["4660"], "unblacklisted, it is back");
+
+    // An invalid file (a bad hand edit, or anything else that wrote it) is ignored whole, with the reason.
+    for (const bad of ["{not json", JSON.stringify([{ serial: 4660, name: "x" }]), JSON.stringify([{ serial: -1, name: "x", addedAt: "2026-09-24T10:00:00Z" }])]) {
+      writeFileSync(file, bad);
+      assert.match((await list()).problem ?? "", /./, bad);
+      assert.deepEqual(await grounds(), ["4660"], "an invalid list skips nothing");
+    }
+    assert.match(logText(dir), /scan-blacklist\.json ignored: /);
+    assert.equal((await fetch(s2.url + "/api/blacklist/4660", { method: "DELETE" })).status, 409, "and is not rewritten by a removal");
+    assert.equal((await add({ serial: 4660, name: "Trash Barrel" })).status, 200);
+    assert.equal(existsSync(`${file}.corrupt`), true, "an add keeps the invalid file aside");
+    assert.equal((await list()).containers.length, 1);
+  } finally {
+    await s2.close();
+  }
 });
 
 // PACKRAT_CLIENT_HOME (what the Electron UI tests set) confines the client search to one folder: a client

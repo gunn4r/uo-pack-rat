@@ -1,10 +1,11 @@
 # TazUO adapter scripts
 
-Three small scripts that run inside the TazUO game client and send what your character owns to the Pack Rat app. You only run them when you are at the keyboard (see [The AFK rule](#the-afk-rule)).
+Four small scripts that run inside the TazUO game client and send what your character owns to the Pack Rat app. You only run them when you are at the keyboard (see [The AFK rule](#the-afk-rule)).
 
 - **`packrat-scanner.py` — the full scan.** Reads everything you are wearing, your backpack, your bank box if it is open, and every chest and bag you can reach, including bags inside chests.
 - **`packrat-refresh.py` — the quick refresh.** Reads just your stats, skills, what you are wearing and your backpack.
 - **`packrat-bridge.py` — the bridge.** Makes the app's **Highlight**, **Grab** and **Go to** buttons work.
+- **`packrat-blacklist.py` — blacklist a container.** Click a chest or bag, and scans never open or record it again.
 
 ## Install
 
@@ -14,13 +15,14 @@ Before installing or reinstalling, if the game is running: type `-stopall` in th
 
 To install by hand instead:
 
-1. Copy the three `packrat-….py` files into the folder where TazUO keeps its scripts (the `LegionScripts` folder inside your TazUO folder).
+1. Copy the four `packrat-….py` files into the folder where TazUO keeps its scripts (the `LegionScripts` folder inside your TazUO folder).
 2. Tell the scripts where Pack Rat keeps its data. In the Pack Rat app, open the **Settings** tab and note the folder shown next to **Data directory**. Copy `packrat-paths.example.json` into the same folder as the scripts, rename the copy to `packrat-paths.json`, open it in a text editor, and replace `~/.pack-rat` with that folder. On Windows, write the folder with forward slashes (`C:/Users/example/AppData/Roaming/Pack Rat`) so the file stays valid. (You can skip this step only if you run Pack Rat from source with its default data folder, `~/.pack-rat`.)
 
 ## What to press
 
 - **The first time you scan a character, or whenever your chests or bags change:** walk to a group of chests and run `packrat-scanner.py`. Walk to the next group and run it again. To include your bank, open your bank box first.
 - **After gearing up or training a character:** run `packrat-refresh.py`. It works anywhere.
+- **To stop scans opening a container** (a trash barrel, a guild chest): run `packrat-blacklist.py` and click it. Esc cancels. The app's **Settings** lists what you blacklisted, with **Unblacklist**.
 - **When you want to use the app's Highlight, Grab or Go to buttons:** start `packrat-bridge.py` and leave it running. The app shows **bridge: *your character* ready** at the top while it is running.
 
 ## Starting a script
@@ -67,6 +69,7 @@ The scanner and refresh scripts write scan files as **schema v2** (`schemaVersio
 
 - **`packrat-scanner.py`** — full inventory scan. Reads every equipped layer, the backpack (nested bags included), the bank box if it is open, and every openable container within reach (recursively — bags in chests in chests). Dumps raw tooltips; the app does all the parsing. Run it standing next to a chest cluster, once per cluster, once per character. Takes anywhere from a few seconds to a couple of minutes depending on how much there is to open.
 - **`packrat-refresh.py`** — quick refresh. Reads this character's stats, skills, maxes, resists, position, every equipped layer, and the backpack only — nothing else is opened. Takes a few seconds. Run it after gearing up or training, without needing to stand anywhere special.
+- **`packrat-blacklist.py`** — one target cursor: the container clicked (not your backpack or bank) is added to `<dataDir>/scan-blacklist.json` with its name and, on the ground, its position, the same list the app's Blacklist action writes. Opens and moves nothing; Esc writes nothing, and an unreadable list is left alone. The scanner and refresh read the list when they start, never open a listed container or record it or anything inside it, and say how many they skipped.
 - **`packrat-bridge.py`** — the bridge. Leave it running while you use the app's Highlight, Grab, and Go to buttons on the Suit Builder or Inventory tab. It executes one command at a time: highlight flashes an item's name and marks its container's tile for a few seconds, grab walks to the item, opens its container chain, and moves it into your backpack, and go to just walks there. Bounded to 8 hours; Stop ends it cleanly.
 
 ### What the bridge refuses

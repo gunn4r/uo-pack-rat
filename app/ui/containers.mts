@@ -1,6 +1,7 @@
 // ui/containers.mts — the Inventory screen's Containers view (design spec 4.2): every scanned root
 // container in the same dense table the Items view uses, grouped by character with the ground
-// containers last, and a row "⋯" menu with "Show these items" and "Forget…". The Forget handler calls
+// containers last, and a row "⋯" menu with "Show these items", "Blacklist…" (ground containers) and
+// "Forget…". The Forget and Blacklist handlers call
 // `reload` from app.mts — a module cycle (containers ↔ app) that is fine here since both are function
 // declarations only called after bootstrap. reload(), not load(): a Forget changes the inventory and
 // nothing else, and must keep the filters and the builder as they are.
@@ -22,6 +23,19 @@ const COLS: Array<[string, number, boolean]> = [["Container", 320, false], ["Kin
 async function forget(r: Container, name: string, n: number): Promise<void> {
   if (!await confirmDialog({ title: `Forget ${name}?`, body: `${name} and the ${plural(n, "item")} in it leave the inventory. It comes back the next time it is scanned.`, confirmLabel: `Forget ${name}` })) return;
   try { await api<ForgetApiResponse>("/api/forget", { method: "POST", body: { root: r.serial, name: bagLabel(r) } }); await reload(); } catch (e) { toast((e as Error).message, "bad"); }
+}
+
+// Scans skip a blacklisted container from now on (POST /api/blacklist). What was last scanned in it is
+// then either forgotten the way Forget does it, or kept (Keep, Cancel and Esc all keep it).
+async function blacklist(r: Container, name: string, n: number): Promise<void> {
+  try {
+    await api("/api/blacklist", { method: "POST", body: { serial: +r.serial, name: bagLabel(r), ...(r.pos ? { where: `${r.pos.x}, ${r.pos.y}` } : {}) } });
+    if (n && await confirmDialog({ title: `Also remove ${name} and its ${plural(n, "item")} from Pack Rat?`, body: `Scans skip ${name} from now on either way. Keep leaves what was last scanned in the inventory.`, confirmLabel: "Remove", cancelLabel: "Keep" })) {
+      await api<ForgetApiResponse>("/api/forget", { method: "POST", body: { root: r.serial, name: bagLabel(r) } });
+    }
+    await reload();
+    toast(`${name} is blacklisted. Unblacklist it in Settings.`, "good");
+  } catch (e) { toast((e as Error).message, "bad"); }
 }
 
 export function renderContainers(): void {
@@ -58,6 +72,7 @@ export function renderContainers(): void {
       const bags = Object.values(inv.containers).filter((c) => c.root === r.serial && c.parent != null).length;
       const more = button({ label: `Actions for ${label}`, icon: "more", iconOnly: true, variant: "ghost", size: "sm", onClick: () => menu(more, [
         { label: "Show these items", icon: "inventory", onSelect: () => showContainer(+r.serial) },
+        ...(r.kind === "ground" ? [{ label: "Blacklist…", onSelect: () => { void blacklist(r, label, n); } }] : []),
         { label: "Forget…", danger: true, onSelect: () => { forget(r, label, n); } },
       ], { label: `Actions for ${label}` }) });
       rows.push(el("tr", { "data-root": r.serial },

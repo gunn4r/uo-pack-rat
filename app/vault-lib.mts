@@ -599,7 +599,34 @@ interface EnrichLoc {
   scannedBy: string;
 }
 
-export function foldSnapshots(snapshots: ScanV2[]): Inventory {
+// A container the player blacklisted: one entry of <data>/scan-blacklist.json, which the app (POST
+// /api/blacklist) and the TazUO script packrat-blacklist.py both write. Scanners never open one.
+export interface BlacklistEntry { serial: number; name: string; addedAt: string; where?: string | undefined }
+
+// A scan dated after a container was blacklisted (an older scanner, a hand-imported file) reads as if
+// the scanner had honoured the list: a listed root as not opened, so the fold keeps what it knew from
+// before, and a listed bag with everything inside it as absent. Scans from before the blacklisting
+// are left alone, which is what keeps a container's existing data when the player chose to keep it.
+function withoutBlacklisted(snap: ScanV2, blacklist: BlacklistEntry[]): ScanV2 {
+  const at = parseStamp(snap.scannedAt);
+  const listed = new Set(blacklist.filter((e) => parseStamp(e.addedAt) <= at).map((e) => +e.serial));
+  if (!listed.size) return snap;
+  const containers = Object.values((snap.containers || {}) as Record<string, ScanContainerRaw>);
+  const parentOf = new Map(containers.map((c) => [+c.serial, c.parent == null ? null : +c.parent]));
+  const inListed = (serial: number | null | undefined): boolean => {
+    for (let cur = serial, guard = 0; cur != null && guard < 64; guard++) {
+      if (listed.has(+cur)) return true;
+      cur = parentOf.get(+cur);
+    }
+    return false;
+  };
+  return { ...snap,
+    roots: (snap.roots || []).map((r) => (listed.has(+r.serial) ? { ...r, opened: false } : r)),
+    containers: Object.fromEntries(Object.entries(snap.containers || {}).filter(([, c]) => !inListed(+(c as ScanContainerRaw).serial))),
+    items: (snap.items || []).filter((it) => !listed.has(+it.serial) && !inListed(+it.container)) };
+}
+
+export function foldSnapshots(snapshots: ScanV2[], blacklist: BlacklistEntry[] = []): Inventory {
   // Null-prototype dictionaries, not `{}`: every key below comes from the scan (a container's own
   // serial, the character's name), and `obj["__proto__"] = value` on an ordinary object invokes the
   // inherited setter and REPLACES that object's prototype — the entry silently disappears and an
@@ -612,8 +639,10 @@ export function foldSnapshots(snapshots: ScanV2[]): Inventory {
   // would let an older scan of a root fold after a newer one.
   const stampOf = (s: string): number => { const t = parseStamp(s); return Number.isFinite(t) ? t : -Infinity; };
   const sorted = [...snapshots].sort((a, b) => stampOf(a.scannedAt) - stampOf(b.scannedAt));
-  for (const snap of sorted) {
-    if (snap.schemaVersion !== 2) throw new Error("foldSnapshots needs v2 scans — call upgradeScan first");
+  for (const scanned of sorted) {
+    if (scanned.schemaVersion !== 2) throw new Error("foldSnapshots needs v2 scans — call upgradeScan first");
+    // The app's own tombstones ("_vault") are never filtered: Forget on a blacklisted container must still land.
+    const snap = scanned.character.startsWith("_") ? scanned : withoutBlacklisted(scanned, blacklist);
     const char = snap.character;
     if (char === "_vault") forgetCharacter(inv, (snap as ScanV2 & { forgetCharacter?: unknown }).forgetCharacter);
     // A root with opened:false (open failed — too far, locked) is still listed in snap.roots, but

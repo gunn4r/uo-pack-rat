@@ -37,6 +37,7 @@ One directory holds everything, resolved the same way for the bare server and th
     rejected/          a file that failed to parse/validate after retries, plus a .reason.txt
   profiles.json        per-character suit-builder profiles and templates
   settings.json        {shard, setupDone, client: {adapter, scriptsDir} | null}
+  scan-blacklist.json  the containers scans skip: [{serial, name, addedAt, where?}], written by the app and by the TazUO packrat-blacklist.py
   ui-prefs.json        the page's view choices ({cols, colsVersion, colWidths, sheetProps, theme, appearance, sidebar, density}: the Inventory columns and their widths, the character sheet's properties, the look, a pinned-collapsed sidebar)
   rules/                user-defined or overriding shard rules files
   runs/                 one file per finished suit-build job

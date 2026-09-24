@@ -7,6 +7,8 @@ Two small scripts that run inside [Razor Enhanced](https://razorenhanced.readthe
 
 There is no quick-refresh script for Razor Enhanced. Run the full scan instead.
 
+The scanner skips every container you blacklisted in the app (a chest's ⋯ menu in **Containers**; **Settings** lists them). There is no in-game blacklist script for Razor Enhanced yet (TazUO has `packrat-blacklist.py`).
+
 **Not tested with a real game yet.** These scripts were written from Razor Enhanced's documentation, without a Windows computer to try them on. If you try them, please [open an issue](../../README.md#help-something-isnt-working) and say what happened, good or bad.
 
 ## Install

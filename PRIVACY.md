@@ -33,6 +33,7 @@ Everything lives under one data directory:
 - **Saved runs** — the results of past suit-builder searches, so you can revisit or compare them without rerunning the solver.
 - **Settings** — which shard's rules you're using, which game-client folder is linked, and whether you've been through first-run setup.
 - **View choices** — which columns the Inventory tab shows (`ui-prefs.json`).
+- **Blacklisted containers** — the containers your scans skip, with a name, when you added each one and, for a chest on the ground, its position (`scan-blacklist.json`).
 - **The bridge queue** — commands waiting for the in-game bridge script (Highlight / Grab / Go to) to pick up and act on, and its own status file.
 - **Logs** — see below.
 - **The desktop app's browser profile.** Because everything belongs in one folder, the desktop app also points Electron's own Chromium storage here — caches, `Local Storage`, `Cookies`, and a handful of similar files. The page sets no cookies and stores nothing about you in them; they are browser-engine bookkeeping. They are listed because the Settings tab's "Open" button shows you this whole folder, and it is better to know what those files are than to wonder.

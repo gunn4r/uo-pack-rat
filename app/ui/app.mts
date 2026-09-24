@@ -14,7 +14,7 @@ import { initBuilder, syncBuilderCharacters, selectCharacter } from "./builder.m
 import { renderContainers } from "./containers.mts";
 import { connectEvents } from "./events.mts";
 import { openWizard } from "./wizard.mts";
-import { renderSettings, syncSettingsCharacters } from "./settings.mts";
+import { renderSettings, syncSettingsCharacters, syncSettingsBlacklist } from "./settings.mts";
 import { renderImport } from "./import.mts";
 import { applyLook } from "./theme.mts";
 import { initShell, applyShellPrefs, renderNavCounts, setCurrentNav } from "./shell.mts";
@@ -86,6 +86,7 @@ export async function reload(): Promise<void> {
   renderNavCounts();
   buildFilters(); fetchItems(); renderCharacters(); renderContainers(); syncBuilderCharacters();
   syncSettingsCharacters();
+  void syncSettingsBlacklist();
 }
 
 // ---------------------------------------------------------------- screens + hash routes
@@ -131,6 +132,7 @@ function showTab(tab: string): void {
 function applyRoute(): void {
   const r = parseRoute();
   showTab(r.tab);
+  if (r.tab === "settings") void syncSettingsBlacklist();
   if (r.tab === "characters") showCharacter(r.sheet);
   if (r.tab === "builder" && state.inv) {
     if (r.character && r.character !== state.builder.character && state.inv.characters[r.character]) selectCharacter(r.character);

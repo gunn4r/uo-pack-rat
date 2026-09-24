@@ -15,7 +15,7 @@
 // change on one side has somewhere obvious to update on the other; nothing here is validated against
 // the wire (HTTP responses are unvalidated network input, same trust level server.test.mts's own
 // per-route interfaces document), it just gives the page's own reads a name instead of `unknown`.
-import type { Item, Container, Character, ScanSummary, OptItem, RunSettings, ProfilesFile } from "../vault-lib.mts";
+import type { Item, Container, Character, ScanSummary, OptItem, RunSettings, ProfilesFile, BlacklistEntry } from "../vault-lib.mts";
 import type { Facets, ItemQueryRows, ItemQueryGroups } from "../item-query.mts";
 import type { RulesV1 } from "../schema/types.d.mts";
 
@@ -209,6 +209,12 @@ export interface RescanApiResponse {
 }
 export interface ForgetApiResponse {
   ok: boolean;
+}
+// GET /api/blacklist: `problem` says why scan-blacklist.json is being ignored, when it is.
+export interface BlacklistApiResponse {
+  ok: boolean;
+  containers: BlacklistEntry[];
+  problem?: string | undefined;
 }
 
 // ---------------------------------------------------------------- suit builder: optimize / runs
