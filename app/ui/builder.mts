@@ -17,7 +17,7 @@ import { parseRoute, routeFor } from "./app.mts";
 import { setNavBusy } from "./shell.mts";
 import { loadRuns, settingsSnapshot, openRunsDrawer } from "./runs.mts";
 import { renderResult, renderCurrentSuit, refreshCurrentSuit, resultLoadError, closeCompare, resetResultView } from "./builder-result.mts";
-import { propName, weightsSummary, requirementsSummary, poolSummary, advancedSummary, knobError, firstKnobError, knobFromServerError, ruleValueError, resistCapError, withResistCap, capNote, resistCapsSummary, gearCapsText, type Knobs, type KnobField } from "./builder-model.mts";
+import { propName, weightsSummary, requirementsSummary, poolSummary, advancedSummary, knobError, firstKnobError, knobFromServerError, ruleValueError, resistCapError, withResistCap, capNote, resistCapsSummary, gearCapsText, pruneResistCaps, floorCapWarning, type Knobs, type KnobField } from "./builder-model.mts";
 import type { OptimizeResult, OptimizeProgress, SavedRunLike, OptimizeStartApiResponse, OptimizeCancelApiResponse, JobSnapshotEvent, JobDoneEvent, JobFailedEvent, JobCancelledEvent } from "./api-types.mts";
 
 // ---------------------------------------------------------------- panel state
@@ -28,6 +28,11 @@ export const knobs: Knobs = { strLimit: "", restarts: "200", exact: true, budget
 const open: Record<string, boolean> = { req: true, caps: false, weights: false, pool: true, adv: false };
 // A requirement or weight row's property name: up to two lines, the full name in its title.
 const ruleName = (nm: string): HTMLSpanElement => { const t = txt(nm, "rule-name"); t.title = nm; return t; };
+// A resist cap typed out of range, as typed (the profile keeps the last good cap): kept here rather than read back
+// from the field so the section can close and reopen, and Build still refuses it with the section closed.
+const capDrafts: Record<string, string> = {};
+// A new set of caps (another character, a template or a saved run's settings applied) replaces anything typed.
+export function clearCapDrafts(): void { for (const k of Object.keys(capDrafts)) delete capDrafts[k]; }
 const KNOB_IDS: Record<KnobField, string> = { strLimit: "b-str", restarts: "b-restarts", budgetS: "b-budget", altCount: "b-altcount", altTol: "b-alttol" };
 
 // ---------------------------------------------------------------- wiring
@@ -97,6 +102,7 @@ export function selectCharacter(name: string): void {
   const [firstTpl] = Object.keys(profiles.templates || {});
   state.builder.profile = saved ? JSON.parse(JSON.stringify(saved)) : { ...templateFrom(profiles.templates?.[firstTpl as string]), template: firstTpl, race: "human" };
   state.builder.profile!.excludeRoots ??= [];
+  clearCapDrafts();
   $<HTMLSelectElement>("#b-char")!.value = name;
   const c = state.inv!.characters[name];
   knobs.strLimit = String(state.builder.profile!.strLimit ?? (c ? (c.stats as Record<string, number>).str ?? 125 : 125));
@@ -166,7 +172,7 @@ function templateSection(): HTMLElement {
   const menuBtn = button({ label: "Template actions: apply, save as, update, delete", icon: "more", iconOnly: true, variant: "ghost", attrs: { id: "b-tpl-menu", "aria-haspopup": "menu", "aria-expanded": "false" } });
   menuBtn.onclick = () => templateMenu(menuBtn);
   const race = segmented({ label: "Race", options: [{ value: "human", label: "Human" }, { value: "elf", label: "Elf" }, { value: "gargoyle", label: "Gargoyle" }], value: p.race || "human",
-    onChange: (v) => { p.race = v; redraw("req"); redraw("caps"); } });
+    onChange: (v) => { p.race = v; p.resistCaps = pruneResistCaps(p.resistCaps, v); redraw("req"); redraw("caps"); } });
   race.id = "b-race";
   // STR limit sits beside Race, always in view: like race it is the character's, saved with the profile,
   // and it decides which pieces are candidates at all (the rest of Advanced only tunes the search).
@@ -213,6 +219,7 @@ function applyTemplate(): void {
   const name = selectedTemplate(), t = state.profiles!.templates![name];
   if (!t) return;
   Object.assign(state.builder.profile!, templateFrom(t), { template: name });
+  clearCapDrafts();
   renderPanel();
   toast(`${name} applied. Save profile to keep it.`, "good");
 }
@@ -288,13 +295,30 @@ function requirementsSection(): HTMLElement {
       const nm = propName(k);
       const hard = segmented({ label: `${nm}: hard or soft`, options: [{ value: "hard", label: "Hard" }, { value: "soft", label: "Soft" }], value: p.softFloors!.includes(k) ? "soft" : "hard",
         onChange: (v) => { p.softFloors = p.softFloors!.filter((x) => x !== k); if (v === "soft") p.softFloors.push(k); updateTemplateBadge(); } });
-      return box("div", { class: "rule-row", "data-key": k }, ruleName(nm), txt("≥", "muted"), boundNumber(p.floors!, k, `${nm} minimum`, k), hard,
+      const num = boundNumber(p.floors!, k, `${nm} minimum`, k);
+      const row = box("div", { class: "rule-row", "data-key": k }, ruleName(nm), txt("≥", "muted"), num, hard,
         button({ label: `Remove requirement: ${nm}`, icon: "close", iconOnly: true, variant: "ghost", size: "sm", onClick: () => { delete p.floors![k]; p.softFloors = p.softFloors!.filter((x) => x !== k); redraw("req"); focusIn("req", ".b-add"); } }));
+      floorWarning(row, num, k);
+      return row;
     });
     const add = filterChip({ label: "Add requirement", add: true, attrs: { class: "fchip add b-add", id: "b-addfloor" } });
     add.onclick = () => propertyPicker(add, "Add requirement", Object.keys(p.floors!), (k) => { p.floors![k] = capFor(k) ?? 1; redraw("req"); focusIn("req", `.rule-row[data-key="${CSS.escape(k)}"] input`, true); });
     return [help, rows.length ? box("div", { class: "b-rules" }, ...rows) : null, add];
   } });
+}
+// A resist requirement above its resist's cap is kept (a saved profile may carry one) but counts only up to the
+// cap, as the solver scores it: the row says so, and keeps saying so as the floor is typed.
+function floorWarning(row: HTMLElement, num: HTMLInputElement, k: string): void {
+  const p = state.builder.profile!, id = `${num.id || (num.id = `b-in-${Math.random().toString(36).slice(2, 8)}`)}-warn`;
+  const paint = (): void => {
+    row.querySelector(`#${CSS.escape(id)}`)?.remove();
+    const w = floorCapWarning(k, p.floors![k]!, capFor(k));
+    if (w) row.append(el("span", { class: "field-warn t-sm tone-warn", id }, w));
+    if (w && !num.hasAttribute("aria-invalid")) num.setAttribute("aria-describedby", id);
+    else if (num.getAttribute("aria-describedby") === id) num.removeAttribute("aria-describedby");
+  };
+  num.addEventListener("input", paint);
+  paint();
 }
 // ---- resist caps: the highest paperdoll value each resist counts for in this build
 // Each row is the resist, its cap (the shard's for the race until the player types another) and, once overridden,
@@ -308,7 +332,7 @@ function capsSection(): HTMLElement {
 }
 function capRow(p: NonNullable<typeof state.builder.profile>, k: string): HTMLElement {
   const nm = propName(k), c = panelResistCaps()[k]!;
-  const i = input({ type: "number", size: "sm", value: c.cap, attrs: { id: `b-cap-${k}`, "aria-label": `${nm} cap`, "data-key": k } });
+  const i = input({ type: "number", size: "sm", value: capDrafts[k] ?? c.cap, attrs: { id: `b-cap-${k}`, "aria-label": `${nm} cap`, "data-key": k } });
   const row = box("div", { class: "rule-row cap", "data-key": k }, ruleName(nm), i);
   // The row's end: "shard cap", or the override's note and its reset. Repainted in place as the value changes, so
   // typing keeps its focus and caret.
@@ -319,6 +343,7 @@ function capRow(p: NonNullable<typeof state.builder.profile>, k: string): HTMLEl
     const next = note
       ? [badge(note, "accent"), button({ label: `Reset ${nm} cap to the shard's ${now.shard}`, icon: "undo", iconOnly: true, variant: "ghost", size: "sm", onClick: () => {
         p.resistCaps = withResistCap(p.resistCaps, k, now.shard, now.shard);
+        delete capDrafts[k];
         redraw("caps"); redraw("req");
         focusIn("caps", `.rule-row[data-key="${CSS.escape(k)}"] input`, true);
       } })]
@@ -329,11 +354,13 @@ function capRow(p: NonNullable<typeof state.builder.profile>, k: string): HTMLEl
   i.addEventListener("input", () => {
     const err = resistCapError(i.value);
     setInlineError(i, err);
-    if (err) return;
+    if (err) { capDrafts[k] = i.value; return; }
+    delete capDrafts[k];
     p.resistCaps = withResistCap(p.resistCaps, k, Number(i.value), c.shard);
     paint(); redraw("req");   // its note names what gear supplies under each cap; redraw() also updates the template badge
   });
   paint();
+  if (capDrafts[k] != null) setInlineError(i, resistCapError(capDrafts[k]!));
   return row;
 }
 function weightsSection(): HTMLElement {
@@ -507,6 +534,14 @@ async function runBuild(): Promise<void> {
   // A bad field stops the build and takes focus, with its reason under it; the button itself stays enabled.
   const bad = firstKnobError(knobs);
   if (bad) { focusKnob(bad.field, bad.error); return; }
+  // A resist cap out of range stops the build from the panel's state, open or closed: the section opens on it.
+  const badCap = RESIST_KEYS.find((k) => capDrafts[k] != null);
+  if (badCap) {
+    if (!open.caps) { open.caps = true; redraw("caps"); }
+    focusIn("caps", `#b-cap-${badCap}`, true);
+    document.getElementById(`b-cap-${badCap}`)?.closest(".rule-row")?.scrollIntoView({ block: "nearest" });
+    return;
+  }
   const badRule = document.querySelector<HTMLInputElement>("#b-panel-body .rule-row input[aria-invalid='true']");
   if (badRule) { badRule.focus(); return; }
   const name = state.builder.character, p = readControls();
