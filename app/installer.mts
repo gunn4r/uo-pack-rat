@@ -591,12 +591,13 @@ function compareSemver(a: string, b: string): number {
 // fetchImpl's declared shape is only the bit of Response this function actually reads (status, json())
 // — narrower than the real global fetch's Promise<Response>, so both the real fetch (the default) and
 // a test's plain {status, json} fake satisfy it.
-type FetchLike = (url: string, init?: { headers?: Record<string, string> }) => Promise<{ status: number; json: () => Promise<unknown> }>;
+type FetchLike = (url: string, init?: { headers?: Record<string, string>; signal?: AbortSignal }) => Promise<{ status: number; json: () => Promise<unknown> }>;
 
 export interface CheckForUpdatesParams {
   current: string;
   repo: string | null;
   fetchImpl?: FetchLike;
+  timeoutMs?: number;
 }
 
 // The undefined-typed siblings on each branch let a caller (see app/installer.test.mts) read any field
@@ -608,13 +609,16 @@ export type CheckForUpdatesResult =
   | { configured: true; current: string; latest: string; url: unknown; upToDate: boolean; error?: undefined };
 
 export async function checkForUpdates(
-  { current, repo, fetchImpl = fetch }: CheckForUpdatesParams = {} as CheckForUpdatesParams,   // every real call site supplies current/repo (see app/installer.test.mts, app/vault-server.mts); this cast is compiler-only, matching config.mts's rawPort pattern
+  { current, repo, fetchImpl = fetch, timeoutMs = 10_000 }: CheckForUpdatesParams = {} as CheckForUpdatesParams,   // every real call site supplies current/repo (see app/installer.test.mts, app/vault-server.mts); this cast is compiler-only, matching config.mts's rawPort pattern
 ): Promise<CheckForUpdatesResult> {
   if (!repo) return { configured: false };
   let res: { status: number; json: () => Promise<unknown> };
   try {
     res = await fetchImpl(`https://api.github.com/repos/${repo}/releases/latest`, {
       headers: { accept: "application/vnd.github+json", "user-agent": "pack-rat" },
+      // A stalled connection would otherwise hold GET /api/update-check open indefinitely; the signal
+      // also covers reading the body in res.json() below.
+      signal: AbortSignal.timeout(timeoutMs),
     });
   } catch (e) {
     return { configured: true, error: (e as Error).message };

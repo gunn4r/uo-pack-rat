@@ -783,6 +783,15 @@ test("[fast] checkForUpdates falls back to the repo's releases page for an html_
   }
 });
 
+test("[fast] checkForUpdates: a request that never answers times out with an error, not a hang", async () => {
+  const fetchImpl = (_url: string, init?: { signal?: AbortSignal }) => new Promise<never>((_resolve, reject) => {
+    init?.signal?.addEventListener("abort", () => reject(init.signal!.reason));
+  });
+  const result = await checkForUpdates({ current: "0.1.0", repo: "owner/name", fetchImpl, timeoutMs: 20 });
+  assert.equal(result.configured, true);
+  assert.equal(typeof result.error, "string");
+});
+
 test("[fast] checkForUpdates: a non-200 response reports configured:true with an error, not a throw", async () => {
   const fetchImpl = async () => ({ status: 404, json: async () => ({}) });
   const result = await checkForUpdates({ current: "0.1.0", repo: "owner/name", fetchImpl });
