@@ -12,6 +12,7 @@ What you can do with it:
 - See what each character is wearing.
 - Ask for the best suit your items allow, with the stats you care about.
 - Build a suit for a form that lowers a resist: raise that resist's cap in the Suit Builder (Fire 95 for Reaper Form, which takes 25 Fire) and the suit is built to reach it.
+- Leave out the weapon skills you don't fight with: exclude Swordsmanship, Archery and Throwing, and the Suit Builder picks among Fencing and Mace Fighting weapons.
 - Press a button in the app to make the game show you where an item is, walk you to its chest, or put it in your backpack.
 - Dress the app up like the game: pick the **Britannia** theme in **Settings** for parchment, brass frames and a dark-wood night mode.
 

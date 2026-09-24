@@ -21,14 +21,14 @@ export function settingsSnapshot(): RunSettings {
   const p = readControls();
   return { floors: { ...(p.floors || {}) }, softFloors: [...(p.softFloors || [])], weights: { ...(p.weights || {}) }, lockedSlots: [...(p.lockedSlots || [])],
     excludeTags: [...(p.excludeTags || [])], excludeRoots: [...(p.excludeRoots || [])], strLimit: p.strLimit, allowGargoyle: !!p.allowGargoyle,
-    medOnly: !!p.medOnly, weaponSkill: p.weaponSkill || "", allowOthersWorn: !!p.allowOthersWorn,
+    medOnly: !!p.medOnly, excludeWeapons: [...(p.excludeWeapons || [])], allowOthersWorn: !!p.allowOthersWorn,
     restarts: Number(knobs.restarts) || 200, exact: knobs.exact, budgetMs: 1000 * (Number(knobs.budgetS) || 300),
     altCount: Number(knobs.altCount) || 0, altTol: Number(knobs.altTol) || 0, race: p.race || "human", excludeSkills: [...(p.excludeSkills || [])], resistCaps: { ...(p.resistCaps || {}) } };
 }
 export function applySettings(st: RunSettings): void {
   const p = state.builder.profile!;
   Object.assign(p, { floors: { ...(st.floors || {}) }, softFloors: [...(st.softFloors || [])], weights: { ...(st.weights || {}) }, lockedSlots: [...(st.lockedSlots || [])],
-    excludeTags: [...(st.excludeTags || [])], excludeRoots: [...(st.excludeRoots || [])], strLimit: st.strLimit, allowGargoyle: !!st.allowGargoyle, medOnly: !!st.medOnly, weaponSkill: st.weaponSkill || null,
+    excludeTags: [...(st.excludeTags || [])], excludeRoots: [...(st.excludeRoots || [])], strLimit: st.strLimit, allowGargoyle: !!st.allowGargoyle, medOnly: !!st.medOnly, excludeWeapons: [...(st.excludeWeapons || [])],
     race: st.race || p.race || "human", excludeSkills: [...(st.excludeSkills || [])], allowOthersWorn: !!st.allowOthersWorn, resistCaps: { ...(st.resistCaps || {}) } });
   applyKnobs(st);
   clearCapDrafts();

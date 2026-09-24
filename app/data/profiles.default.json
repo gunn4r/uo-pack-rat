@@ -39,7 +39,7 @@
       "allowOthersWorn": false,
       "allowGargoyle": false,
       "medOnly": false,
-      "weaponSkill": null
+      "excludeWeapons": []
     },
     "caster": {
       "floors": {
@@ -80,7 +80,7 @@
       "allowOthersWorn": false,
       "allowGargoyle": false,
       "medOnly": false,
-      "weaponSkill": null
+      "excludeWeapons": []
     },
     "archer": {
       "floors": {
@@ -122,7 +122,7 @@
       "allowOthersWorn": false,
       "allowGargoyle": false,
       "medOnly": false,
-      "weaponSkill": null
+      "excludeWeapons": []
     },
     "tank": {
       "floors": {
@@ -155,7 +155,7 @@
       "allowOthersWorn": false,
       "allowGargoyle": false,
       "medOnly": false,
-      "weaponSkill": null
+      "excludeWeapons": []
     }
   }
 }

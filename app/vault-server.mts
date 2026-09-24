@@ -1336,7 +1336,8 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
           // past `!= null` and then either reach buildPools as a literal `strLimit: null` or throw when
           // an array field's null hit code expecting an array).
           const s = Object.fromEntries(Object.entries(settings || {}).filter(([, v]) => v != null));
-          if (s.weaponSkill != null && typeof s.weaponSkill !== "string") return send(res, 400, { ok: false, error: "settings.weaponSkill must be a string" });
+          const badWeapons = (await lib()).excludeWeaponsError(s.excludeWeapons, "settings.excludeWeapons");
+          if (badWeapons) return send(res, 400, { ok: false, error: badWeapons });
           for (const f of ["excludeTags", "excludeRoots", "excludeSkills", "lockedSlots"] as const) {
             if (s[f] != null && !Array.isArray(s[f])) return send(res, 400, { ok: false, error: `settings.${f} must be an array` });
           }
@@ -1350,9 +1351,9 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
           // migration recipe describes — placed AFTER those checks, not instead of them. The four list
           // fields are `unknown[]` because Array.isArray() is all that ran on them: nothing looked at
           // their elements.
-          const { allowOthersWorn = false, strLimit = Infinity, excludeTags = [], excludeRoots = [], allowGargoyle = false, medOnly = false, weaponSkill = null, excludeSkills = [], lockedSlots = [] } = s as {
+          const { allowOthersWorn = false, strLimit = Infinity, excludeTags = [], excludeRoots = [], allowGargoyle = false, medOnly = false, excludeWeapons = [], excludeSkills = [], lockedSlots = [] } = s as {
             allowOthersWorn?: boolean; strLimit?: number; excludeTags?: unknown[]; excludeRoots?: unknown[];
-            allowGargoyle?: boolean; medOnly?: boolean; weaponSkill?: string | null; excludeSkills?: unknown[]; lockedSlots?: unknown[];
+            allowGargoyle?: boolean; medOnly?: boolean; excludeWeapons?: string[]; excludeSkills?: unknown[]; lockedSlots?: unknown[];
           };
           // The hand-off to buildPools() and the slot loops below need element types, and nothing above
           // established any. These casts are that gap, written down in one place: today it is harmless
@@ -1363,7 +1364,7 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
           // buildPools would happily build pools from every other character's gear and save the run
           // under a name the inventory has never seen.
           if (!Object.hasOwn(inv.characters, character)) return send(res, 404, { ok: false, error: `no scans for character ${JSON.stringify(character)}` });
-          const built = (await lib()).buildPools(inv, character, { allowOthersWorn, strength: strLimit, excludeTags: tagList, excludeRoots: rootList, excludeGargoyle: !allowGargoyle, medOnly, weaponSkill, excludeSkills: skillList });
+          const built = (await lib()).buildPools(inv, character, { allowOthersWorn, strength: strLimit, excludeTags: tagList, excludeRoots: rootList, excludeGargoyle: !allowGargoyle, medOnly, excludeWeapons, excludeSkills: skillList });
           pools = built.pools; current = built.current; blocked = built.blocked;
           skipped = Object.fromEntries(Object.entries(built.skipped).map(([k, v]) => [k, v.length]));
           for (const slot of blocked) delete current[slot];       // a worn piece the filters now rule out must not stay "current"

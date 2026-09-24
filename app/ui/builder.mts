@@ -17,7 +17,7 @@ import { parseRoute, routeFor } from "./app.mts";
 import { setNavBusy } from "./shell.mts";
 import { loadRuns, settingsSnapshot, openRunsDrawer } from "./runs.mts";
 import { renderResult, renderCurrentSuit, refreshCurrentSuit, resultLoadError, closeCompare, resetResultView } from "./builder-result.mts";
-import { propName, weightsSummary, requirementsSummary, poolSummary, advancedSummary, knobError, firstKnobError, knobFromServerError, ruleValueError, resistCapError, withResistCap, capNote, resistCapsSummary, gearCapsText, pruneResistCaps, floorCapWarning, type Knobs, type KnobField } from "./builder-model.mts";
+import { propName, weightsSummary, requirementsSummary, poolSummary, advancedSummary, knobError, firstKnobError, knobFromServerError, ruleValueError, resistCapError, withResistCap, capNote, resistCapsSummary, gearCapsText, pruneResistCaps, floorCapWarning, weaponsChipText, weaponName, toggleWeapon, type Knobs, type KnobField } from "./builder-model.mts";
 import type { OptimizeResult, OptimizeProgress, SavedRunLike, OptimizeStartApiResponse, OptimizeCancelApiResponse, JobSnapshotEvent, JobDoneEvent, JobFailedEvent, JobCancelledEvent } from "./api-types.mts";
 
 // ---------------------------------------------------------------- panel state
@@ -435,20 +435,17 @@ function paintChip(chip: HTMLButtonElement, text: string, set: boolean): void {
   chip.classList.toggle("set", set);
   chip.querySelector("span")!.textContent = text;
 }
+// The Weapons chip: a checklist of the weapon skills, where a tick EXCLUDES that skill's weapons from the pool.
 function weaponChip(): HTMLButtonElement {
   const p = state.builder.profile!;
-  const text = (): string => `Weapons: ${p.weaponSkill || "any"}`;
-  const chip = filterChip({ label: text(), set: !!p.weaponSkill, attrs: { id: "b-weapon" } });
+  const chip = filterChip({ label: weaponsChipText(p.excludeWeapons), set: !!p.excludeWeapons?.length, attrs: { id: "b-weapon" } });
   chip.onclick = () => {
-    const name = `b-weapon-${Date.now()}`;
-    const opts = [{ value: "", label: "Any weapon" }, ...WEAPON_SKILLS.map((w) => ({ value: w, label: `${w[0]!.toUpperCase()}${w.slice(1)} only` }))];
-    const rows = opts.map((o) => {
-      const r = el("input", { type: "radio", name, value: o.value });
-      r.checked = (p.weaponSkill || "") === o.value;
-      r.addEventListener("change", () => { p.weaponSkill = o.value || null; paintChip(chip, text(), !!p.weaponSkill); updateTemplateBadge(); });
-      return box("label", { class: "check" }, r, txt(o.label));
-    });
-    popover(chip, [el("p", { class: "help" }, txt("Only weapons of this skill in the hands, plus a shield except for archery.")), box("div", { class: "b-checks", role: "radiogroup", "aria-label": "Weapons" }, ...rows)], { label: "Weapons" });
+    const checks = WEAPON_SKILLS.map((w) => check({ label: weaponName(w), checked: !!p.excludeWeapons?.includes(w), attrs: { value: w }, onChange: (on) => {
+      p.excludeWeapons = toggleWeapon(p.excludeWeapons || [], w, on);
+      paintChip(chip, weaponsChipText(p.excludeWeapons), !!p.excludeWeapons.length); updateTemplateBadge();
+    } }).root);
+    popover(chip, [el("p", { class: "help" }, txt("Exclude weapon skills: a ticked skill's weapons never enter the pool.")),
+      box("div", { class: "b-checks", role: "group", "aria-label": "Exclude weapon skills" }, ...checks)], { label: "Exclude weapon skills" });
   };
   return chip;
 }
@@ -545,7 +542,7 @@ async function runBuild(): Promise<void> {
   const badRule = document.querySelector<HTMLInputElement>("#b-panel-body .rule-row input[aria-invalid='true']");
   if (badRule) { badRule.focus(); return; }
   const name = state.builder.character, p = readControls();
-  const settings: RunSettings = { allowOthersWorn: p.allowOthersWorn, strLimit: p.strLimit, excludeTags: p.excludeTags, excludeRoots: p.excludeRoots, allowGargoyle: p.allowGargoyle, medOnly: p.medOnly, weaponSkill: p.weaponSkill, excludeSkills: p.excludeSkills || [], lockedSlots: p.lockedSlots };
+  const settings: RunSettings = { allowOthersWorn: p.allowOthersWorn, strLimit: p.strLimit, excludeTags: p.excludeTags, excludeRoots: p.excludeRoots, allowGargoyle: p.allowGargoyle, medOnly: p.medOnly, excludeWeapons: p.excludeWeapons || [], excludeSkills: p.excludeSkills || [], lockedSlots: p.lockedSlots };
   const exact = knobs.exact, budgetMs = 1000 * Number(knobs.budgetS);
   const altCount = Number(knobs.altCount), altTol = Number(knobs.altTol);
   const opts = { restarts: Number(knobs.restarts), exact, timeBudgetMs: budgetMs, ...(exact && altCount > 0 ? { alternatives: { count: altCount, tolerance: altTol } } : {}) };

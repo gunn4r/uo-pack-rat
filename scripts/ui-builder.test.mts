@@ -2,7 +2,7 @@
 // Electron window with Playwright (the launch scripts/ui-state.test.mts uses). Each case is maintainer feedback
 // on the redesign (PR #43): ⌘↵ building from anywhere on the screen, not only with focus inside it; the item
 // tooltip on the current suit's and the Fetch list's pieces; a Fetch list place shown whole; STR limit out of
-// Advanced; a switch whose off and on states read apart. And the resist cap overrides (issue #44). Skipped when electron or playwright is absent, or
+// Advanced; a switch whose off and on states read apart. And the resist cap overrides (issue #44) and the weapon exclusions (issue #45). Skipped when electron or playwright is absent, or
 // under TEST_SKIP_ELECTRON.
 import test from "node:test";
 import assert from "node:assert/strict";
@@ -318,6 +318,35 @@ test("[slow] resist caps: a floor past its cap warns, a race change drops a now-
     assert.equal(await page.evaluate(() => document.activeElement?.id), "b-cap-coldResist");
     assert.equal(await page.locator("#b-cap-coldResist").inputValue(), "200", "the typed value is kept");
     assert.equal(await page.locator("#b-run").isDisabled(), false, "no build started");
+    assert.deepEqual(errors, []);
+  } finally {
+    await app.close();
+    rmSync(dataDir, { recursive: true, force: true });
+  }
+});
+
+// Weapon exclusions (issue #45): ticking two skills in the Weapons popover says so on the chip, and Save profile
+// keeps them across a reload.
+test("[slow] two excluded weapon skills show on the chip and are saved with the profile", async (t) => {
+  const why = unavailable();
+  if (why) return t.skip(why);
+  const dataDir = seedDataDir("packrat-ui-weapons-");
+  const { app, page, errors } = await launch(dataDir);
+  try {
+    await openBuilder(page);
+    const chip = page.locator("#b-weapon");
+    assert.equal(await chip.innerText(), "Weapons: any");
+    await chip.click();
+    for (const w of ["archery", "throwing"]) await page.locator(`.pop input[value="${w}"]`).check();
+    assert.equal(await chip.innerText(), "Weapons: 2 excluded");
+    await page.keyboard.press("Escape");
+    await page.click("#b-save");
+    await page.waitForFunction(() => /Profile for .* saved/.test(document.body.textContent || ""), undefined, { timeout: 10_000 });
+    await page.reload();
+    await page.waitForSelector("#tab-builder:not([hidden]) #b-weapon", { timeout: 30_000 });
+    assert.equal(await chip.innerText(), "Weapons: 2 excluded");
+    await chip.click();
+    assert.deepEqual(await page.locator(".pop input:checked").evaluateAll((is) => is.map((i) => (i as HTMLInputElement).value)), ["archery", "throwing"]);
     assert.deepEqual(errors, []);
   } finally {
     await app.close();
