@@ -405,6 +405,16 @@ def in_reach_of_item(it):
         return False
 
 
+def beside(x, y):
+    """The tile next to (x, y) on the player's side, which is within REACH of it. Player.PathFindTo
+    onto the container's own tile fails whenever the container blocks it (a crate, a barrel). Whether
+    this neighbour is walkable is not checked: a blocked one fails the walk the same way."""
+    p = Player.Position
+    def step(d):
+        return (d > 0) - (d < 0)
+    return as_int(x) + step(as_int(p.X) - as_int(x)), as_int(y) + step(as_int(p.Y) - as_int(y))
+
+
 def walk_to(pos, root_serial):
     """Get within REACH of the container. Prefers the live Item (current position, via
     Player.DistanceTo) when the client already knows it; falls back to the scanned pos dict
@@ -422,7 +432,8 @@ def walk_to(pos, root_serial):
             p = it.Position
             if not within_walk(Player.Position.X, Player.Position.Y, p.X, p.Y):
                 return False
-            Player.PathFindTo(as_int(p.X), as_int(p.Y), as_int(getattr(p, "Z", 0)))
+            bx, by = beside(p.X, p.Y)
+            Player.PathFindTo(bx, by, as_int(getattr(p, "Z", 0)))
         except Exception:
             return False
         deadline = time.time() + WALK_TIMEOUT_S
@@ -438,7 +449,8 @@ def walk_to(pos, root_serial):
         if not within_walk(Player.Position.X, Player.Position.Y, pos["x"], pos["y"]):
             return False
         try:
-            Player.PathFindTo(as_int(pos["x"]), as_int(pos["y"]), as_int(pos.get("z", 0)))
+            bx, by = beside(pos["x"], pos["y"])
+            Player.PathFindTo(bx, by, as_int(pos.get("z", 0)))
         except Exception:
             return False
         deadline = time.time() + WALK_TIMEOUT_S

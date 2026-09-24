@@ -229,6 +229,12 @@ class RazorBridge(BridgeCase, unittest.TestCase):
         world.clock.at(RUN_S, lambda: setattr(g["Player"], "Connected", False))
         run_script(adapter_path("razor-enhanced", "packrat-bridge.py"), world, extra_globals=g)
 
+    def test_a_walk_heads_for_the_tile_beside_the_container_not_onto_it(self):
+        w = home()
+        final, _ = self.run_bridge(w, 1, [self.cmd("w1", "goto", FAR_RING, [FAR])])
+        self.assertTrue(final["results"]["w1"]["ok"], final["results"]["w1"])
+        self.assertEqual([c for c in w.calls if c[0] == "walk"], [("walk", 19, 10)])
+
 
 if __name__ == "__main__":
     unittest.main()
