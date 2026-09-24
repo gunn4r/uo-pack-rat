@@ -12,6 +12,7 @@ import {
   propName, weightsSummary, requirementsSummary, poolSummary, advancedSummary, knobError, firstKnobError, knobFromServerError, ruleValueError,
   resistOutcome, locationCrumbs, otherChanges, afterChange, compareModel, hiddenRowsNote, toggleCompare, runAutoLabel, runBadges, plural, SOLVER_LIMITS,
   resistCapError, withResistCap, capNote, resistCapsSummary, gearCapsText, capsLine, anyOverridden, effectiveFloor, floorCapWarning, pruneResistCaps,
+  weaponsSummary, weaponsChipText, toggleWeapon, weaponName,
   type Knobs,
 } from "./ui/builder-model.mts";
 import { OPTS_LIMITS } from "./vault-server.mts";
@@ -41,8 +42,28 @@ test("[fast] builder model: the requirements summary folds equal resists and mar
 
 test("[fast] builder model: the candidate pool summary says what is in and out", () => {
   assert.equal(poolSummary({}), "Own gear and unworn gear · no gargoyle-only · any weapon");
-  assert.equal(poolSummary({ allowOthersWorn: true, allowGargoyle: true, medOnly: true, weaponSkill: "archery", lockedSlots: ["ring"], excludeTags: ["cursed"], excludeSkills: ["necromancy", "spirit speak"], excludeRoots: [1, 2] }),
+  assert.equal(poolSummary({ allowOthersWorn: true, allowGargoyle: true, medOnly: true, excludeWeapons: ["swordsmanship", "fencing", "mace fighting", "throwing"], lockedSlots: ["ring"], excludeTags: ["cursed"], excludeSkills: ["necromancy", "spirit speak"], excludeRoots: [1, 2] }),
     "Includes gear worn by others · gargoyle-only allowed · meditation-safe only · archery weapons only · 1 slot locked · no cursed · 2 skill bonuses forbidden · 2 containers skipped");
+});
+
+test("[fast] builder model: the Weapons chip and summary say the exclusions in words", () => {
+  assert.equal(weaponsChipText([]), "Weapons: any");
+  assert.equal(weaponsChipText(["archery"]), "Weapons: no Archery");
+  assert.equal(weaponsChipText(["archery", "throwing"]), "Weapons: 2 excluded");
+  assert.equal(weaponsChipText(["archery", "swordsmanship", "throwing"]), "Weapons: 3 excluded");
+  assert.equal(weaponsChipText(["archery", "swordsmanship", "mace fighting", "throwing"]), "Weapons: Fencing only", "what a migrated single choice reads as");
+  assert.equal(weaponsChipText(["archery", "swordsmanship", "fencing", "mace fighting", "throwing"]), "Weapons: none");
+  assert.equal(weaponsSummary(), "any weapon");
+  assert.equal(weaponsSummary(["throwing"]), "no throwing weapons");
+  assert.equal(weaponsSummary(["throwing", "archery"]), "no archery or throwing weapons", "in the skills' own order");
+  assert.equal(weaponsSummary(["archery", "swordsmanship", "throwing"]), "no archery, swordsmanship or throwing weapons");
+  assert.equal(weaponsSummary(["archery", "swordsmanship", "fencing", "throwing"]), "mace fighting weapons only");
+  assert.equal(weaponsSummary(["archery", "swordsmanship", "fencing", "mace fighting", "throwing"]), "no weapons");
+  assert.deepEqual(toggleWeapon([], "throwing", true), ["throwing"]);
+  assert.deepEqual(toggleWeapon(["throwing"], "archery", true), ["archery", "throwing"], "kept in the skills' order");
+  assert.deepEqual(toggleWeapon(["archery", "throwing"], "archery", false), ["throwing"]);
+  assert.deepEqual(toggleWeapon(["archery"], "archery", true), ["archery"], "ticking twice is still one");
+  assert.equal(weaponName("mace fighting"), "Mace fighting");
 });
 
 const knobs = (over: Partial<Knobs> = {}): Knobs => ({ strLimit: "110", restarts: "10000", exact: true, budgetS: "300", altCount: "5", altTol: "40", ...over });

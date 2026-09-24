@@ -57,7 +57,8 @@ if (has("render")) {
 // eventually needs for lib.effectiveProfile's Profile parameter, and this bench never reads `caps`
 // off a character entry at all) plus excludeRoots, which CharacterEntryRaw doesn't declare.
 interface BenchCharacterEntry {
-  weaponSkill?: string | null | undefined;
+  excludeWeapons?: string[] | undefined;
+  weaponSkill?: string | null | undefined;   // a profiles.json from before excludeWeapons (lib.excludedWeapons reads either)
   softFloors?: string[] | undefined;
   floors?: Record<string, number> | undefined;
   weights?: Record<string, number> | undefined;
@@ -117,7 +118,7 @@ function resolveProfileDef(pname: string): { who: string; patch: Partial<BenchCh
   if (PROFILE_CHARACTERS[pname]) return { who: pname, patch: {} };
   if (pname.endsWith("-anyweapon")) {
     const base = pname.slice(0, -"-anyweapon".length);
-    if (PROFILE_CHARACTERS[base]) return { who: base, patch: { weaponSkill: null } };
+    if (PROFILE_CHARACTERS[base]) return { who: base, patch: { excludeWeapons: [] } };
   }
   return null;
 }
@@ -139,7 +140,7 @@ const real = readRealSnapshots();
 const model: Model = learnModel(real, lib);
 const log = (...a: unknown[]): void => console.error(new Date().toISOString().slice(11, 19), ...a);
 
-interface CellShape { locked: string[]; hardFloors: number; weights: number; weaponSkill: string | null; medOnly: boolean }
+interface CellShape { locked: string[]; hardFloors: number; weights: number; excludeWeapons: string[]; medOnly: boolean }
 interface Cell {
   pools: OptPools;
   current: OptAssignment;
@@ -156,7 +157,7 @@ function buildCell(inv: VaultLib.Inventory, who: string, patch: Partial<BenchCha
   const p = { ...p0, ...patch, floors: { ...(p0.floors || {}), ...(patch.floors || {}) }, weights: { ...(p0.weights || {}), ...(patch.weights || {}) } };
   const c = inv.characters[who];
   const { pools, current, blocked = [] } = lib.buildPools(inv, who, { allowOthersWorn: false, strength: p.strLimit ?? (c ? (c.stats.str as number) : 125), excludeTags: p.excludeTags || [],   // Character.stats is Record<string, unknown> — str is always numeric at runtime
-    excludeRoots: p.excludeRoots || [], excludeGargoyle: !p.allowGargoyle, medOnly: !!p.medOnly, weaponSkill: p.weaponSkill || null, excludeSkills: p.excludeSkills || [] });
+    excludeRoots: p.excludeRoots || [], excludeGargoyle: !p.allowGargoyle, medOnly: !!p.medOnly, excludeWeapons: lib.excludedWeapons(p), excludeSkills: p.excludeSkills || [] });
   for (const s of p.lockedSlots || []) pools[s] = [];
   const optCurrent = { ...current };
   for (const s of blocked) delete optCurrent[s];
@@ -164,7 +165,7 @@ function buildCell(inv: VaultLib.Inventory, who: string, patch: Partial<BenchCha
   const profile = lib.effectiveProfile(p, c);
   const poolSizes: Record<string, number> = Object.fromEntries(lib.OPTIMIZER_SLOTS.map((s): [string, number] => [s, (pools[s] || []).length]));
   return { pools: pools as unknown as OptPools, current: optCurrent as unknown as OptAssignment, profile, optionalSlots, poolSizes, poolTotal: Object.values(poolSizes).reduce((a, b) => a + b, 0),
-    shape: { locked: p.lockedSlots || [], hardFloors: profile.hardFloors.length, weights: Object.keys(profile.weights).length, weaponSkill: p.weaponSkill || null, medOnly: !!p.medOnly } };
+    shape: { locked: p.lockedSlots || [], hardFloors: profile.hardFloors.length, weights: Object.keys(profile.weights).length, excludeWeapons: lib.excludedWeapons(p), medOnly: !!p.medOnly } };
 }
 
 interface RunWorkerLast { phase: string; nodes: number | undefined; explored: number | undefined; candidates: number | undefined; bestScore: number | null | undefined; restartsDone: number | undefined }
@@ -390,7 +391,7 @@ function renderTables(res: Results): string {
     const rows = res.cells.filter((c) => c.profile === pname);
     if (!rows.length) continue;
     const shape = rows[0]!.shape;
-    out.push(`### ${pname} (locked ${shape.locked.join(", ") || "none"}; ${shape.hardFloors} hard floors; weapons ${shape.weaponSkill || "any"}${shape.medOnly ? "; meditation-safe only" : ""})`, "");
+    out.push(`### ${pname} (locked ${shape.locked.join(", ") || "none"}; ${shape.hardFloors} hard floors; weapons ${shape.excludeWeapons?.length ? `excluding ${shape.excludeWeapons.join(", ")}` : "any"}${shape.medOnly ? "; meditation-safe only" : ""})`, "");
     out.push("| N | gear frac | pool total | largest slot | cands before → after prune | heuristic | prune | exact | nodes | proven | heur = optimum | mode |");
     out.push("|---:|---:|---:|---|---|---:|---:|---:|---:|---|---|---|");
     for (const c of rows) {

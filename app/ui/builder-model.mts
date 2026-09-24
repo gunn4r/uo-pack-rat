@@ -3,7 +3,7 @@
 // "other changes" badges and "after the change" values, the compare table's differing rows and best values,
 // and a saved run's label and badges. No DOM and no page state, so app/builder-model.test.mts can check it
 // all directly; ui/builder.mts, ui/builder-result.mts and ui/runs.mts draw what it returns.
-import { labelOf, fullOf, RESIST_KEYS, RESIST_CAP_LIMITS, SLOT_LABELS, settingsDiff, shardResistCap } from "../vault-lib.mts";
+import { labelOf, fullOf, RESIST_KEYS, RESIST_CAP_LIMITS, SLOT_LABELS, settingsDiff, shardResistCap, WEAPON_SKILLS } from "../vault-lib.mts";
 import type { PropMap, ResistCap, RunSettings } from "../vault-lib.mts";
 
 export const plural = (n: number, word: string, many = `${word}s`): string => `${n.toLocaleString("en-US")} ${n === 1 ? word : many}`;
@@ -48,7 +48,7 @@ export function requirementsSummary(floors: Record<string, number> = {}, soft: s
     return `${l} ${num(v)}${isSoft ? " soft" : ""}`;
   }).join(" · ");
 }
-export interface PoolSettings { allowOthersWorn?: boolean | undefined; allowGargoyle?: boolean | undefined; medOnly?: boolean | undefined; weaponSkill?: string | null | undefined;
+export interface PoolSettings { allowOthersWorn?: boolean | undefined; allowGargoyle?: boolean | undefined; medOnly?: boolean | undefined; excludeWeapons?: string[] | undefined;
   lockedSlots?: string[] | undefined; excludeTags?: string[] | undefined; excludeSkills?: string[] | undefined; excludeRoots?: unknown[] | undefined }
 // "Own gear and unworn gear · no gargoyle-only · any weapon"
 export function poolSummary(p: PoolSettings): string {
@@ -56,12 +56,40 @@ export function poolSummary(p: PoolSettings): string {
     p.allowOthersWorn ? "Includes gear worn by others" : "Own gear and unworn gear",
     p.allowGargoyle ? "gargoyle-only allowed" : "no gargoyle-only",
     p.medOnly ? "meditation-safe only" : "",
-    p.weaponSkill ? `${p.weaponSkill} weapons only` : "any weapon",
+    weaponsSummary(p.excludeWeapons),
     p.lockedSlots?.length ? `${plural(p.lockedSlots.length, "slot")} locked` : "",
     p.excludeTags?.length ? `no ${p.excludeTags.join(", ")}` : "",
     p.excludeSkills?.length ? `${plural(p.excludeSkills.length, "skill bonus", "skill bonuses")} forbidden` : "",
     p.excludeRoots?.length ? `${plural(p.excludeRoots.length, "container")} skipped` : "",
   ].filter(Boolean).join(" · ");
+}
+
+// ---------------------------------------------------------------- weapons
+// The Weapons control holds the weapon skills left out of the pool. In words: "any weapon", "fencing weapons only"
+// (every other skill excluded, what the old single choice said), "no archery or throwing weapons", "no weapons".
+const orList = (xs: string[]): string => (xs.length < 2 ? xs.join("") : `${xs.slice(0, -1).join(", ")} or ${xs[xs.length - 1]}`);
+const allowedWeapons = (excluded: string[]): string[] => WEAPON_SKILLS.filter((w) => !excluded.includes(w));
+export const weaponName = (w: string): string => w[0]!.toUpperCase() + w.slice(1);
+export function weaponsSummary(excluded: string[] = []): string {
+  const allowed = allowedWeapons(excluded);
+  if (!excluded.length) return "any weapon";
+  if (!allowed.length) return "no weapons";
+  if (allowed.length === 1) return `${allowed[0]} weapons only`;
+  return `no ${orList(WEAPON_SKILLS.filter((w) => excluded.includes(w)))} weapons`;
+}
+// The chip's label: "Weapons: any", "Weapons: no Archery", "Weapons: Fencing only", "Weapons: 2 excluded", "Weapons: none".
+export function weaponsChipText(excluded: string[] = []): string {
+  const allowed = allowedWeapons(excluded);
+  if (!excluded.length) return "Weapons: any";
+  if (!allowed.length) return "Weapons: none";
+  if (allowed.length === 1) return `Weapons: ${weaponName(allowed[0]!)} only`;
+  if (excluded.length === 1) return `Weapons: no ${weaponName(excluded[0]!)}`;
+  return `Weapons: ${excluded.length} excluded`;
+}
+// Ticking or unticking a skill in the popover; the list stays in WEAPON_SKILLS order, so the same exclusions always
+// read (and compare) the same.
+export function toggleWeapon(excluded: string[], w: string, on: boolean): string[] {
+  return WEAPON_SKILLS.filter((x) => (x === w ? on : excluded.includes(x)));
 }
 
 // ---------------------------------------------------------------- resist caps

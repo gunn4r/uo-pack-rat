@@ -138,7 +138,7 @@ test("[slow] refresh, Clear all, the virtual table and Forget keep the page's st
     const weaponChoices = async (): Promise<number> => {
       assert.equal(await page.locator("#b-weapon").count(), 1, "one Weapons chip");
       await page.click("#b-weapon");
-      const n = await page.locator(".pop input[type=radio]").count();
+      const n = await page.locator(".pop input[type=checkbox]").count();
       await page.keyboard.press("Escape");
       return n;
     };

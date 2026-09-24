@@ -1,6 +1,7 @@
 // runs-lib.mts — saved suit-builder runs: the cache key, the reuse rule, and the list summary.
 // Server-side only (uses node:crypto); the page never imports it.
 import { createHash } from "node:crypto";
+import { migrateWeaponSetting } from "./vault-lib.mts";
 
 // The optimizer search options a saved run was made with. Loosely shaped (an index signature) because
 // this module only ever serializes opts wholesale (runKey) or reads the few named fields below — the
@@ -127,11 +128,14 @@ export function runSummary(r: SavedRun): RunSummary {
 
 // A run saved before the contract settled (2026-09-13) may carry `settings.allowOthers` (now
 // `allowOthersWorn`) and `settings.budgetS` (now `settings.budgetMs`, milliseconds like every other
-// stored/transmitted budget) and may be missing `schemaVersion`. Apply wherever a run is read from
+// stored/transmitted budget) and may be missing `schemaVersion`. A run saved before the weapon
+// exclusion list carries `settings.weaponSkill` (one skill, or none for any weapon), now
+// `settings.excludeWeapons` (every other known weapon skill, vault-lib.mts's migrateWeaponSetting), so
+// reopening or re-applying it builds the pool it was built from. Apply wherever a run is read from
 // disk so every run the server hands out — fresh or old — matches the current shape. Pure and
 // idempotent: normalizeRun(normalizeRun(r)) deep-equals normalizeRun(r).
 export function normalizeRun(run: SavedRun): SavedRun {
-  const s: RunSettingsRaw = { ...(run.settings || {}) };
+  const s = migrateWeaponSetting({ ...(run.settings || {}) } as RunSettingsRaw & { weaponSkill?: string | null | undefined; excludeWeapons?: string[] | undefined });
   if ("allowOthers" in s) { s.allowOthersWorn = !!s.allowOthers; delete s.allowOthers; }
   if ("budgetS" in s) { s.budgetMs = 1000 * s.budgetS!; delete s.budgetS; }
   return { ...run, schemaVersion: run.schemaVersion ?? 1, settings: s };
