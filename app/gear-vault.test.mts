@@ -413,6 +413,7 @@ test("[fast] fold: tombstone scans (pseudo character) do not create a character"
   const inv = foldSnapshots([kestrel, tomb]);
   assert.ok(!inv.characters._vault);
   assert.ok(!Object.values(inv.items).some((i) => i.root === root));
+  assert.equal(inv.containers[root], undefined);   // the forgotten root itself is gone, not rebuilt from roots
 });
 
 test("[fast] fold: a Forget tombstone (v2, stamped toISOString()) one wall-clock second after a v1 scan (upgraded, naive-local stamp) still wins", () => {

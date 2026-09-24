@@ -677,10 +677,12 @@ export function foldSnapshots(snapshots: ScanV2[]): Inventory {
     // that didn't match cost items x containers (2.3 s for 20,000 items across 2,000 containers,
     // every fold and every restart). Strictly faster for an honest scan too.
     const bySerial = new Map<number, ScanContainerRaw>(Object.values(snapContainers).map((c) => [+c.serial, c]));
-    // A root the scan lists but left out of `containers` is built from its roots entry, or the items
-    // filed directly in it would have no container to resolve their root through and be dropped.
+    // A root the scan lists but left out of `containers` is built from its roots entry when items are
+    // filed directly in it, or they would have no container to resolve their root through and be
+    // dropped. One holding nothing stays absent: that is how a Forget tombstone clears a root.
+    const itemHomes = new Set((snap.items || []).map((it) => +it.container));
     for (const r of snap.roots || []) {
-      if (roots.has(+r.serial) && !bySerial.has(+r.serial)) bySerial.set(+r.serial, { serial: +r.serial, root: +r.serial, parent: null, kind: r.kind, name: r.name });
+      if (roots.has(+r.serial) && !bySerial.has(+r.serial) && itemHomes.has(+r.serial)) bySerial.set(+r.serial, { serial: +r.serial, root: +r.serial, parent: null, kind: r.kind, name: r.name });
     }
     for (const c of bySerial.values()) {
       if (!roots.has(+c.root)) continue;
