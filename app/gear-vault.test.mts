@@ -909,6 +909,18 @@ test("[fast] tag-unit keys match whatever case the rules file wrote them in", ()
   }
 });
 
+test("[fast] a rarity line is one of the shard's rarity ladder names, optionally Reforged", () => {
+  const uoalive = getRules();
+  try {
+    assert.equal(parseTooltip(["Ring", "Reforged Lesser Artifact"]).rarity, "Reforged Lesser Artifact");
+    setRules({ ...uoalive, rarity: [{ name: "Mythic Relic", colour: "#123456" }] });
+    assert.equal(parseTooltip(["Ring", "<BASEFONT COLOR=#123456>Mythic Relic"]).rarity, "Mythic Relic");
+    assert.equal(parseTooltip(["Ring", "Lesser Artifact"]).rarity, null);   // not on this shard's ladder
+  } finally {
+    setRules(uoalive);
+  }
+});
+
 // A tag's plain-words meaning comes from the shard's rules file too (the peek shows it on hover); a shard
 // that writes none, or none for that tag, gives no description rather than a made-up one.
 test("[fast] tagInfo reads a tag's meaning from the shard's rules, in any case, and is empty without one", () => {

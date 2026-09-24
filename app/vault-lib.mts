@@ -335,7 +335,17 @@ export function tagInfo(tag: string): string | null {
   if (!lower) TAG_INFO_CACHE.set(raw, lower = Object.fromEntries(Object.entries(raw).map(([k, v]) => [k.toLowerCase(), v])));
   return lower[tag.toLowerCase()] ?? null;
 }
-const RARITY_RE = /^(minor|lesser|greater|major|legendary) (magic item|artifact)$|^reforged|artifact$/i;
+// A rarity line: one of the shard's rarity ladder names (rules `rarity`), optionally "Reforged ...".
+const RARITY_RE_CACHE = new WeakMap<object, RegExp>();
+function rarityRe(): RegExp {
+  const ladder = getRules().rarity;
+  let re = RARITY_RE_CACHE.get(ladder);
+  if (!re) {
+    const names = ladder.map((r) => r.name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("|");
+    RARITY_RE_CACHE.set(ladder, re = new RegExp(`^(?:reforged\\s+)?(?:${names})$`, "i"));
+  }
+  return re;
+}
 
 // The longest line any real tooltip carries is ~54 characters; the scan schema caps one at 512
 // (scan.v2.schema.json's tooltip items), so a validated scan is never truncated here. The cap is
@@ -375,7 +385,7 @@ const SET_TOTAL_LINE_RE = /\(total\)$|^mastery bonus cooldown\b/;
 // A stack's name line starts with its amount ("2 Greater Heal"); that number is stripped only when it
 // equals `amount`, so a name that really starts with a number ("10 Potions" on one item) keeps it.
 export function parseTooltip(rawLines?: Array<string | undefined> | undefined, amount?: number | undefined): ParsedTooltip {
-  const TU = tagUnits();
+  const TU = tagUnits(), rarityLine = rarityRe();
   const lines = (rawLines || []).map(stripHtml).filter(Boolean);
   const name = (lines[0] || "").replace(/^(\d+)\s+(?=\S)/, (all, n: string) => (+n === amount ? "" : all));
   const props: PropMap = {}, setBonus: PropMap = {}, extras: ExtrasMap = {}, flags: string[] = [], tags: string[] = [];
@@ -396,7 +406,7 @@ export function parseTooltip(rawLines?: Array<string | undefined> | undefined, a
       continue;
     }
     if (Object.prototype.hasOwnProperty.call(TU, line)) { tags.push(line); continue; }
-    if (RARITY_RE.test(raw)) { rarity = raw; continue; }
+    if (rarityLine.test(raw)) { rarity = raw; continue; }
     let m;
     if ((m = line.match(/strength requirement\D*(\d+)/))) { strReq = +m[1]!; continue; }
     if ((m = line.match(/^weight\D*(\d+)/))) { weight = +m[1]!; continue; }
