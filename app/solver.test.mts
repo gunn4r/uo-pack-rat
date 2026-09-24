@@ -363,6 +363,16 @@ test("[fast] HiGHS calls and alternatives share the remaining budget", async () 
   for (const { at, limitS } of limits) assert.ok(limitS <= (1000 - at) / 1000 + 1e-9, `a call at ${at} ms got ${limitS} s`);
   assert.equal(limits.length, 3, "the first solve at 0 ms plus alternatives at 400 and 800 ms; none once 1000 ms are spent");
   assert.equal(r.alternatives!.length, 2);
+  assert.equal(r.altShortfall, "budget", "the result says why there are fewer than the 10 asked for");
+});
+
+test("[fast] alternatives: a met count carries no shortfall; running out of suits or tolerance says so", async () => {
+  const rings = [1, 2].map((i) => ({ serial: 90600 + i, name: `Ring ${i}`, slot: "ring", props: { hci: 10 * i } }));
+  const run = (count: number, tolerance: number) => solveExact({ core, pools: { ring: rings }, current: {}, profile: { weights: { hci: 1 }, caps: {} },
+    opts: { exact: true, timeBudgetMs: 60000, restarts: 0, seed: 1, slots: ["ring"], optionalSlots: ["ring"], alternatives: { count, tolerance } }, onProgress: () => {} });
+  assert.equal((await run(1, 1e9)).altShortfall, undefined);
+  assert.equal((await run(10, 1e9)).altShortfall, "exhausted", "only three suits exist: either ring, or none");
+  assert.equal((await run(10, 5)).altShortfall, "tolerance");
 });
 
 test("[fast] HiGHS unavailable → the heuristic result, flagged", async () => {
