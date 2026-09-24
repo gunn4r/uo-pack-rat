@@ -7,7 +7,7 @@
 // scripts/optimizer-core.mts straight from source, via Node's native TypeScript type stripping, by the
 // path config.mts's corePath()/paths.core resolves (PACKRAT_CORE overrides it). The source stays
 // paste-able into the game client (no imports of its own, no top-level exports beyond its one trailing
-// `export { ... }` line) while this harness exercises the exact file that ships. Requires Node >= 22.18
+// `export { ... }` line) while this harness exercises the exact file that ships. Requires Node >= 24
 // (stable type stripping); verified on v24. If a future runtime drops native stripping, the fallback is
 // `npx tsx` on this same file.
 //
