@@ -677,7 +677,12 @@ export function foldSnapshots(snapshots: ScanV2[]): Inventory {
     // that didn't match cost items x containers (2.3 s for 20,000 items across 2,000 containers,
     // every fold and every restart). Strictly faster for an honest scan too.
     const bySerial = new Map<number, ScanContainerRaw>(Object.values(snapContainers).map((c) => [+c.serial, c]));
-    for (const c of Object.values(snapContainers)) {
+    // A root the scan lists but left out of `containers` is built from its roots entry, or the items
+    // filed directly in it would have no container to resolve their root through and be dropped.
+    for (const r of snap.roots || []) {
+      if (roots.has(+r.serial) && !bySerial.has(+r.serial)) bySerial.set(+r.serial, { serial: +r.serial, root: +r.serial, parent: null, kind: r.kind, name: r.name });
+    }
+    for (const c of bySerial.values()) {
       if (!roots.has(+c.root)) continue;
       inv.containers[c.serial] = { ...c, scannedBy: char, scannedAt: snap.scannedAt };
     }

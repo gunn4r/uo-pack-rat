@@ -546,6 +546,9 @@ test("[smoke] fold: a quick refresh (backpack as the only root) replaces the wor
   assert.deepEqual(inv.scans[1]!.roots, [10]);
   const bare = foldSnapshots([full, { ...quick, roots: [], containers: {}, items: [] }]);
   assert.equal(bare.items[1], undefined);                        // why the backpack root is mandatory
+  // A root listed in roots but missing from containers still keeps the items filed directly in it.
+  const noRootEntry = foldSnapshots([{ ...quick, containers: {} }]);
+  assert.equal(noRootEntry.items[1]!.location!.text, "Dorran's backpack");
 });
 
 test("[fast] fold: a root listed with opened:false keeps its previous contents; opened:true empties it", () => {
