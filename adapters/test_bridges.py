@@ -186,6 +186,16 @@ class BridgeCase(object):
         self.assertIn("expired", final["results"]["old"]["msg"])
         self.assertEqual(self.moved(w), [])
 
+    def test_a_container_on_another_facet_is_refused_before_any_walk(self):
+        w = home(); w.facet = 1
+        cmds = [self.cmd("f0", "goto", FAR_RING, [FAR], pos={"x": 20, "y": 10, "z": 0, "facet": 0}),
+                self.cmd("f1", "goto", FAR_RING, [FAR], pos={"x": 20, "y": 10, "z": 0, "facet": 1})]
+        final, _ = self.run_bridge(w, 1, cmds)
+        self.assertFalse(final["results"]["f0"]["ok"])
+        self.assertIn("another facet", final["results"]["f0"]["msg"])
+        self.assertTrue(final["results"]["f1"]["ok"], final["results"]["f1"])
+        self.assertEqual(len([c for c in w.calls if c[0] == "walk"]), 1)
+
     def test_a_deleted_queue_file_reads_as_empty_and_the_next_command_still_runs(self):
         w = home()
         w.clock.at(0.5, lambda: os.remove(os.path.join(self.dir, "queue.jsonl")))

@@ -434,6 +434,19 @@ def wait_for_walk(started, arrived):
     return arrived()
 
 
+def facet_problem(pos):
+    """A reason to refuse a walk to a pos on another facet than the player's, else "". A Legion build
+    without API.GetMap skips the check."""
+    facet = (pos or {}).get("facet")
+    try:
+        here = int(API.GetMap())
+    except Exception:
+        return ""
+    if facet is None or here == facet:
+        return ""
+    return f"the container is on another facet (map {facet}, you are on map {here}) — travel there first"
+
+
 def walk_to(pos, root_serial):
     """Get within REACH of the container. Uses the live item if the client knows it, else the scanned
     position. A destination further than MAX_WALK_TILES is refused rather than walked to. Your own
@@ -546,6 +559,9 @@ def run(cmd):
         why = chain_problem(chain, 0, root, own_roots([])) if root is not None else ""
         if why:
             return False, why                # never walk toward a container someone else carries
+        why = facet_problem(cmd.get("pos"))
+        if why:
+            return False, why
         if not walk_to(cmd.get("pos"), chain[0]):
             return False, "could not reach the container (not in view / too far / no path) — walk closer and retry"
         if action == "goto":

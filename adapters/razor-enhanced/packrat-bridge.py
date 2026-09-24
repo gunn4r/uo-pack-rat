@@ -405,6 +405,19 @@ def in_reach_of_item(it):
         return False
 
 
+def facet_problem(pos):
+    """A reason to refuse a walk to a pos on another facet than the player's, else "". A Razor
+    Enhanced build without Player.Map skips the check."""
+    facet = (pos or {}).get("facet")
+    try:
+        here = as_int(getattr(Player, "Map", None), -1)
+    except Exception:
+        here = -1
+    if facet is None or here < 0 or here == facet:
+        return ""
+    return "the container is on another facet (map {0}, you are on map {1}) -- travel there first".format(facet, here)
+
+
 def beside(x, y):
     """The tile next to (x, y) on the player's side, which is within REACH of it. Player.PathFindTo
     onto the container's own tile fails whenever the container blocks it (a crate, a barrel). Whether
@@ -566,6 +579,9 @@ def run(cmd):
         why = chain_problem(chain, 0, root, own_roots([])) if root is not None else ""
         if why:
             return False, why                # never walk toward a container someone else carries
+        why = facet_problem(cmd.get("pos"))
+        if why:
+            return False, why
         if not walk_to(cmd.get("pos"), chain[0]):
             return False, "could not reach the container (not in view / too far / no path) -- walk closer and retry"
         if action == "goto":
