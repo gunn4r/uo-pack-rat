@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- **The TazUO scripts now require TazUO v26.0923.64 or later.** That release lets a script find a container's window while its name plate shows ([PlayTazUO/TazUO#1088](https://github.com/PlayTazUO/TazUO/pull/1088)), so ground containers close after a scan with name plates on.
+
 ### Security
 
 An adversarial review went over the app in seven areas — the local server, the scan and bridge parsers, the script installer, the Electron shell, the adapter scripts, the supply chain, and the privacy claims themselves — and everything below came out of it. `docs/threat-model.md` is new and is the long form: what each boundary is holding, which defence is load-bearing against which attack, and the handful of findings deliberately left standing with the reason for each.
