@@ -84,6 +84,17 @@ class DataDir(object):
     def closed(self, world):
         return [c[1] for c in world.calls if c[0] == "close"]
 
+    def blacklist(self, doc):
+        """Write <data>/scan-blacklist.json: a list of serials becomes valid entries, anything else is
+        written as it is."""
+        if isinstance(doc, list):
+            doc = json.dumps([{"serial": s, "name": "Listed", "addedAt": "2026-09-24T10:00:00Z"} for s in doc])
+        with open(os.path.join(self.data, "scan-blacklist.json"), "w", encoding="utf-8") as f:
+            f.write(doc)
+
+    def opened(self, world):
+        return [c[1] for c in world.calls if c[0] == "open"]
+
 
 class TazUOScanner(DataDir, unittest.TestCase):
     SCRIPT = adapter_path("tazuo", "packrat-scanner.py")
@@ -305,6 +316,30 @@ class TazUOScanner(DataDir, unittest.TestCase):
         self.assertEqual(len(self.scans("tazuo")), 1)
 
 
+    def test_a_blacklisted_ground_chest_is_left_out_and_a_blacklisted_bag_is_recorded_unopened(self):
+        w = World(); home(w)
+        w.add(CHEST + 0x100, 0, name="Trash Barrel", X=11, Y=11)
+        w.items[BAG].Opened = True      # the client already holds the bag's contents from an earlier open
+        self.blacklist([CHEST + 0x100, BAG])
+        self.scan(w)
+        [s] = self.scans("tazuo")
+        self.assertNotIn(CHEST + 0x100, self.opened(w))
+        self.assertNotIn(BAG, self.opened(w))
+        self.assertEqual([r["serial"] for r in s["roots"]], [PACK, CHEST], "a listed root is not recorded, so the fold keeps it")
+        self.assertIs(s["containers"][str(BAG)]["opened"], False, "a listed bag is recorded unopened, so the fold keeps its contents")
+        self.assertEqual(sorted(i["serial"] for i in s["items"]), [RING2], "nothing inside the listed bag is recorded")
+        self.assertIn("  skipped 2 blacklisted containers", w.messages)
+
+    def test_a_corrupt_or_oversized_blacklist_skips_nothing(self):
+        for doc in ("{not json", json.dumps([{"serial": BAG, "name": "x" * 300 * 1024}])):
+            w = World(); home(w)
+            self.blacklist(doc)
+            self.scan(w)
+            [s] = self.scans("tazuo")
+            self.assertEqual(sorted(i["serial"] for i in s["items"]), [RING, RING2], doc[:40])
+            shutil.rmtree(os.path.join(self.data, "inbox"))
+
+
 class TazUORefresh(DataDir, unittest.TestCase):
     SCRIPT = adapter_path("tazuo", "packrat-refresh.py")
 
@@ -315,7 +350,7 @@ class TazUORefresh(DataDir, unittest.TestCase):
             m = re.search(r"^def %s\(.*?(?=^def |^[A-Z_]+ = )" % name, t, re.S | re.M)
             self.assertIsNotNone(m, "%s lacks %s" % (path, name))
             return m.group(0)
-        for name in ("is_container", "was_opened", "note_if_closed", "scan_root", "close_opened"):
+        for name in ("is_container", "was_opened", "note_if_closed", "scan_root", "close_opened", "read_blacklist", "without_blacklisted"):
             self.assertEqual(body(self.SCRIPT, name), body(TazUOScanner.SCRIPT, name), name)
 
     def test_a_bag_in_the_backpack_that_did_not_open_is_marked_unopened(self):
@@ -336,6 +371,39 @@ class TazUORefresh(DataDir, unittest.TestCase):
         self.assertEqual(len(self.scans("tazuo")), 1)
         self.assertEqual(self.closed(w), [BAG + 0x100])
         self.assertTrue(w.items[PACK].Opened)
+
+
+
+class TazUOBlacklist(DataDir, unittest.TestCase):
+    SCRIPT = adapter_path("tazuo", "packrat-blacklist.py")
+
+    def pick(self, world, serial):
+        api = tazuo_api(world, PACK)
+        api.RequestTarget = lambda timeout: serial
+        run_script(self.SCRIPT, world, api=api)
+
+    def listed(self):
+        with open(os.path.join(self.data, "scan-blacklist.json"), encoding="utf-8") as f:
+            return json.load(f)
+
+    def test_a_targeted_container_is_added_and_a_second_target_appends(self):
+        w = World(); home(w)
+        w.items[CHEST].Opened = True    # the player opened it to click the bag inside
+        self.pick(w, CHEST)
+        self.pick(w, BAG)
+        self.pick(w, CHEST)
+        [chest, bag] = self.listed()
+        self.assertEqual((chest["serial"], chest["name"], chest["where"]), (CHEST, "Wooden Chest", "11, 10"))
+        self.assertEqual((bag["serial"], bag["where"]), (BAG, "in Wooden Chest"))
+        self.assertRegex(chest["addedAt"], r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}([+-]\d{2}:\d{2}|Z)$")
+        self.assertEqual(w.calls, [], "nothing in the world is opened or moved")
+
+    def test_a_cancelled_cursor_the_backpack_or_a_non_container_writes_nothing(self):
+        w = World(); home(w)
+        w.items[PACK].Opened = True
+        for target in (0, PACK, RING2):
+            self.pick(w, target)
+        self.assertFalse(os.path.exists(os.path.join(self.data, "scan-blacklist.json")))
 
 
 class RazorScanner(DataDir, unittest.TestCase):
@@ -469,6 +537,19 @@ class RazorScanner(DataDir, unittest.TestCase):
         w = World(); home(w)
         self.scan(w, with_file=False)
         self.assertEqual(len(self.scans("razor-enhanced")), 1)
+
+    def test_a_blacklisted_ground_chest_is_left_out_and_a_blacklisted_bag_is_recorded_unopened(self):
+        w = World(); home(w)
+        w.add(CHEST + 0x100, 0, name="Trash Barrel", X=11, Y=11)
+        self.blacklist([CHEST + 0x100, BAG])
+        self.scan(w)
+        [s] = self.scans("razor-enhanced")
+        self.assertNotIn(CHEST + 0x100, self.opened(w))
+        self.assertNotIn(BAG, self.opened(w))
+        self.assertEqual([r["serial"] for r in s["roots"]], [PACK, CHEST])
+        self.assertIs(s["containers"][str(BAG)]["opened"], False)
+        self.assertEqual(sorted(i["serial"] for i in s["items"]), [RING2])
+        self.assertIn("  skipped 2 blacklisted containers", w.messages)
 
 
 if __name__ == "__main__":

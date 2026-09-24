@@ -1,10 +1,11 @@
 # TazUO adapter scripts
 
-Three small scripts that run inside the TazUO game client and send what your character owns to the Pack Rat app. You only run them when you are at the keyboard (see [The AFK rule](#the-afk-rule)).
+Four small scripts that run inside the TazUO game client and send what your character owns to the Pack Rat app. You only run them when you are at the keyboard (see [The AFK rule](#the-afk-rule)).
 
 - **`packrat-scanner.py` — the full scan.** Reads everything you are wearing, your backpack, your bank box if it is open, and every chest and bag you can reach, including bags inside chests.
 - **`packrat-refresh.py` — the quick refresh.** Reads just your stats, skills, what you are wearing and your backpack.
 - **`packrat-bridge.py` — the bridge.** Makes the app's **Highlight**, **Grab** and **Go to** buttons work.
+- **`packrat-blacklist.py` — blacklist a container.** Click a chest or bag, and scans never open or record it again.
 
 ## Install
 
@@ -14,13 +15,14 @@ Before installing or reinstalling, if the game is running: type `-stopall` in th
 
 To install by hand instead:
 
-1. Copy the three `packrat-….py` files into the folder where TazUO keeps its scripts (the `LegionScripts` folder inside your TazUO folder).
+1. Copy the four `packrat-….py` files into the folder where TazUO keeps its scripts (the `LegionScripts` folder inside your TazUO folder).
 2. Tell the scripts where Pack Rat keeps its data. In the Pack Rat app, open the **Settings** tab and note the folder shown next to **Data directory**. Copy `packrat-paths.example.json` into the same folder as the scripts, rename the copy to `packrat-paths.json`, open it in a text editor, and replace `~/.pack-rat` with that folder. On Windows, write the folder with forward slashes (`C:/Users/example/AppData/Roaming/Pack Rat`) so the file stays valid. (You can skip this step only if you run Pack Rat from source with its default data folder, `~/.pack-rat`.)
 
 ## What to press
 
 - **The first time you scan a character, or whenever your chests or bags change:** walk to a group of chests and run `packrat-scanner.py`. Walk to the next group and run it again. To include your bank, open your bank box first.
 - **After gearing up or training a character:** run `packrat-refresh.py`. It works anywhere.
+- **To stop scans opening a container** (a trash barrel, a guild chest): run `packrat-blacklist.py` and click it. Esc cancels. The app's **Settings** lists what you blacklisted, with **Unblacklist**.
 - **When you want to use the app's Highlight, Grab or Go to buttons:** start `packrat-bridge.py` and leave it running. The app shows **bridge: *your character* ready** at the top while it is running.
 
 ## Starting a script

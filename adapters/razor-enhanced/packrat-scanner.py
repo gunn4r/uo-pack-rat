@@ -54,8 +54,22 @@ def rfc3339_now():
     return time.strftime("%Y-%m-%dT%H:%M:%S", t) + tz
 
 
+def read_blacklist(path):
+    """The valid entries of <data directory>/scan-blacklist.json, the containers the player blacklisted
+    ({serial, name, addedAt, where?}). A bad entry is dropped, and a missing, unreadable or oversized
+    file reads as none: the list can only ever make a scan skip containers."""
+    try:
+        if os.path.getsize(path) > 256 * 1024:
+            return []
+        with open(path, "r", encoding="utf-8") as f:
+            doc = json.load(f)
+        return [e for e in doc if isinstance(e, dict) and type(e.get("serial")) is int and 0 < e["serial"] <= 0xFFFFFFFF]
+    except Exception:
+        return []
+
+
 ADAPTER_ID = "razor-enhanced"
-ADAPTER_VERSION = "1.4.0"
+ADAPTER_VERSION = "1.5.0"
 # Keep this literal in sync with capabilities.json -- a test enforces the two never drift apart
 # for the TazUO adapter (test_paths.py) and the same discipline applies here by hand until this
 # adapter has its own test.
@@ -80,6 +94,8 @@ GROUND_ONLY_AT_HOME = True    # when the bank box is already open (you are at a 
 CONTENTS_WAIT_MS = 1500   # Items.WaitForContents' own open-and-wait timeout, per container
 PROPS_WAIT_MS = 800       # Items.WaitForProps' own request-and-wait timeout, per item
 MAX_NEST = 4              # bags in bags in bags
+BLACKLIST = set(e["serial"] for e in read_blacklist(os.path.join(data_dir(), "scan-blacklist.json")))
+SKIPPED = set()           # blacklisted containers this run never opened
 OPENED_HERE = []          # containers this run opened itself, in opening order (close_opened)
 OUT_DIR = os.path.join(data_dir(), "inbox", "razor-enhanced")
 ALARM_HUE, OK_HUE, INFO_HUE = 33, 68, 88
@@ -242,6 +258,10 @@ def scan_root(root_item, kind, label, containers, items, seen):
                 if ks in seen:
                     continue
                 seen.add(ks)
+                if ks in BLACKLIST:       # recorded unopened, never opened: the fold keeps what it knew inside
+                    SKIPPED.add(ks)
+                    containers[ks] = container_entry(kid, root_serial, False)
+                    continue
                 if is_container(kid):
                     next_queue.append(kid)
                 else:
@@ -393,6 +413,9 @@ def main():
         except Exception:
             ground = []
         for g in ground:
+            if as_int(getattr(g, "Serial", 0)) in BLACKLIST:
+                SKIPPED.add(as_int(getattr(g, "Serial", 0)))
+                continue
             roots.append((g, "ground", str(getattr(g, "Name", "") or "container")))
 
     counts = []
@@ -413,6 +436,8 @@ def main():
         time.time() - t0, len(snap["items"]), len(snap["roots"]), fname))
     for c in counts:
         sysmsg("  " + c, INFO_HUE)
+    if SKIPPED:
+        sysmsg("  skipped {0} blacklisted container{1}".format(len(SKIPPED), "s" if len(SKIPPED) != 1 else ""), INFO_HUE)
 
 
 try:

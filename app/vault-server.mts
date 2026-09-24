@@ -35,6 +35,8 @@
 //         409 under --demo, which must never write into the committed app/fixtures/) ·
 //         POST /api/forget-character {character} (drop a character's card, worn set, backpack and bank:
 //         a `_vault` tombstone carrying forgetCharacter; 409 under --demo) ·
+//         GET|POST {serial, name, where?} /api/blacklist · DELETE /api/blacklist/<serial>
+//         (<data>/scan-blacklist.json, the containers scans never open) ·
 //         GET|PUT /api/ui-prefs (<data>/ui-prefs.json: {cols?, colsVersion?, colWidths?, sheetProps?, theme?, appearance?, sidebar?, density?}, the page's view choices)
 //         POST /api/bridge {action, serial, name, chain: [root…parent], pos|null} (queue for packrat-bridge.py) · GET /api/bridge/status
 //         GET /api/events — SSE, one stream shared by every connected client (not per-job like the
@@ -84,7 +86,7 @@ import { readFileSync, appendFileSync, readdirSync, existsSync, mkdirSync, copyF
 import { pathToFileURL } from "node:url";
 import { dirname, join, resolve } from "node:path";
 import { spawn } from "node:child_process";
-import { statSync } from "node:fs";
+import { statSync, lstatSync } from "node:fs";
 import { Worker } from "node:worker_threads";
 import { unlinkSync } from "node:fs";
 import { randomUUID, timingSafeEqual } from "node:crypto";
@@ -106,7 +108,7 @@ import { dataDirNotice } from "./ui/messages.mts";
 import { homedir } from "node:os";
 
 import { resolveConfig, ensureLayout, APP_DIR, DATA_DIR_MODE, DATA_FILE_MODE, type Config } from "./config.mts";
-import type { Item, Inventory, ProfilesFile } from "./vault-lib.mts";
+import type { Item, Inventory, ProfilesFile, BlacklistEntry } from "./vault-lib.mts";
 import type * as VaultLib from "./vault-lib.mts";
 import type { ScanV2, RulesV1 } from "./schema/types.d.mts";
 import type { WorkerMessage, WorkerDoneMessage } from "./optimize-worker.mts";
@@ -729,6 +731,17 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
     }
     if (isColWidths(raw.colWidths)) out.colWidths = raw.colWidths;
     return out;
+  }
+  // <data>/scan-blacklist.json: the containers scans never open, a JSON list of {serial, name, addedAt,
+  // where?} that TazUO's packrat-blacklist.py writes too. Only valid entries are read; anything else in
+  // the file (or a file too big or unparseable) is dropped, and the next write leaves it out.
+  const BLACKLIST = join(CONFIG.dataDir, "scan-blacklist.json");
+  function readBlacklist(): BlacklistEntry[] {
+    let raw: unknown;
+    try { raw = lstatSync(BLACKLIST).size <= 256 * 1024 ? JSON.parse(readFileSync(BLACKLIST, "utf8")) : null; } catch { return []; }
+    return (Array.isArray(raw) ? raw : []).filter((e): e is BlacklistEntry => !!e && typeof e === "object" && isBoundedInt(e.serial, 1, MAX_SERIAL)
+      && isBoundedString(e.name, 64) && isBoundedString(e.addedAt, 40) && (e.where === undefined || isBoundedString(e.where, 64)))
+      .slice(0, 1000).map(({ serial, name, addedAt, where }) => ({ serial, name, addedAt, ...(where ? { where } : {}) }));
   }
   // A profiles.json that does not parse (a write cut short before writes were atomic, or a bad hand
   // edit) used to answer every GET /api/profiles with a 500 until someone fixed the file by hand. It
@@ -1591,6 +1604,24 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
         // exactly what the fold wants anyway (newest scan of a root wins, by parseStamp — the file
         // name has never been what orders them).
         writeFileAtomic(join(SCANS, `_forget-${serial.toString(16)}.json`), JSON.stringify(snap), DATA_FILE_MODE);
+        return send(res, 200, { ok: true });
+      }
+      if (req.method === "GET" && url.pathname === "/api/blacklist") return send(res, 200, { ok: true, containers: readBlacklist() });
+      if (req.method === "POST" && url.pathname === "/api/blacklist") {
+        const { serial, name, where } = asObject(await readBody(req, { limit: 8e3 }));
+        if (!isBoundedInt(serial, 1, MAX_SERIAL)) return send(res, 400, { ok: false, error: "serial required (positive integer)" });
+        if (typeof name !== "string" || (where !== undefined && typeof where !== "string")) return send(res, 400, { ok: false, error: "name and where must be strings" });
+        const entries = readBlacklist();
+        if (entries.some((e) => e.serial === serial)) return send(res, 200, { ok: true });
+        if (entries.length >= 1000) return send(res, 409, { ok: false, error: "the blacklist is full (1000 containers)" });
+        const place = where?.slice(0, 64).trim();
+        entries.push({ serial, name: name.slice(0, 64).trim() || "container", addedAt: new Date().toISOString(), ...(place ? { where: place } : {}) });
+        writeFileAtomic(BLACKLIST, JSON.stringify(entries, null, 1) + "\n", DATA_FILE_MODE);
+        return send(res, 200, { ok: true });
+      }
+      const unlist = req.method === "DELETE" ? /^\/api\/blacklist\/(\d{1,10})$/.exec(url.pathname) : null;
+      if (unlist) {
+        writeFileAtomic(BLACKLIST, JSON.stringify(readBlacklist().filter((e) => e.serial !== Number(unlist[1])), null, 1) + "\n", DATA_FILE_MODE);
         return send(res, 200, { ok: true });
       }
       if (req.method === "POST" && url.pathname === "/api/forget-character") {
