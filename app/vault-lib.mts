@@ -184,6 +184,10 @@ export const PROP_LABELS: Record<string, string> = {
   mageWeapon: "Mage Wpn", tagPenalty: "Tag penalty",
   stamPool: "Stam pool", manaPool: "Mana pool", hitsPool: "Hits pool",
 };
+// Properties the builder's weight and requirement rows never offer: tagPenalty carries a fixed weight
+// from the profile, and an item without a Mage Weapon line reads mageWeapon 0, which beats every mage
+// weapon's negative, so weighting it would reward not being one. Both stay filterable in the Inventory.
+export const NOT_BUILDER_KEYS = new Set(["tagPenalty", "mageWeapon"]);
 
 // Full names for the abbreviations, shown as hover tooltips in the app.
 export const PROP_FULL: Record<string, string> = {
