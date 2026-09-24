@@ -82,6 +82,18 @@ test("[fast] a percent property is unaffected by the negative-value fix", () => 
   assert.equal(p.props.lmc, 8);
 });
 
+test("[fast] a Crafted By or Engraved line with a number in it is a flag, not a numeric extra", () => {
+  const p = parseTooltip(["Bag", "Crafted By Dorran 2", "Engraved: Bag 2"]);
+  assert.deepEqual(p.extras, {});
+  assert.deepEqual(p.flags, ["crafted by dorran 2", "engraved: bag 2"]);
+});
+
+test("[fast] Mage Weapon -N Skill is a numeric property, not a flag", () => {
+  const p = parseTooltip(["Katana", "Mage Weapon -20 Skill"]);
+  assert.equal(p.props.mageWeapon, -20);
+  assert.deepEqual(p.flags, []);
+});
+
 test("[fast] a weapon damage range is unaffected by the negative-value fix — the low end is not misread as negative", () => {
   const p = parseTooltip(["Sword", "Weapon Damage 13 - 16"]);
   assert.deepEqual(p.extras["weapon damage"], [13, 16]);
@@ -281,7 +293,8 @@ test("[smoke] kindOf: non-gear names get a kind, unknown names with props are ge
   assert.equal(kindOf("Greater Heal"), "scroll");
   assert.equal(kindOf("Vengeful Spirit"), "scroll");
   assert.equal(kindOf("Varnish Of Fortification"), "refinement");
-  assert.equal(parseTooltip(["2 Greater Heal"]).name, "Greater Heal");
+  assert.equal(parseTooltip(["2 Greater Heal"], 2).name, "Greater Heal");
+  assert.equal(parseTooltip(["10 Potions"], 1).name, "10 Potions");   // a name that starts with a number keeps it
   assert.equal(classify("Elven Glasses Of Restoration").slot, "helmet");
 });
 
@@ -400,6 +413,7 @@ test("[fast] fold: tombstone scans (pseudo character) do not create a character"
   const inv = foldSnapshots([kestrel, tomb]);
   assert.ok(!inv.characters._vault);
   assert.ok(!Object.values(inv.items).some((i) => i.root === root));
+  assert.equal(inv.containers[root], undefined);   // the forgotten root itself is gone, not rebuilt from roots
 });
 
 test("[fast] fold: a Forget tombstone (v2, stamped toISOString()) one wall-clock second after a v1 scan (upgraded, naive-local stamp) still wins", () => {
@@ -528,11 +542,17 @@ test("[smoke] fold: a quick refresh (backpack as the only root) replaces the wor
   assert.equal(inv.items[1]!.location!.text, "Dorran's backpack");   // the piece just taken off is relocated, not lost
   assert.equal(inv.items[3]!.location!.text, "Dorran's bank");       // an unlisted root keeps its last scan
   assert.ok(inv.containers[20]);
-  assert.deepEqual(inv.characters.Dorran!.equipped, [4]);
+  assert.deepEqual(Object.values(inv.items).filter((it) => it.equippedBy === "Dorran").map((it) => it.serial), [4]);
   assert.equal(inv.characters.Dorran!.stats.str, 105);
   assert.deepEqual(inv.scans[1]!.roots, [10]);
   const bare = foldSnapshots([full, { ...quick, roots: [], containers: {}, items: [] }]);
   assert.equal(bare.items[1], undefined);                        // why the backpack root is mandatory
+  // A root listed in roots but missing from containers still keeps the items filed directly in it.
+  const noRootEntry = foldSnapshots([{ ...quick, containers: {} }]);
+  assert.equal(noRootEntry.items[1]!.location!.text, "Dorran's backpack");
+  // ...and one holding only a bag is rebuilt too, so the bag has a location.
+  const onlyBag = foldSnapshots([{ ...quick, containers: { 30: { serial: 30, root: 10, parent: 10, kind: "container", name: "Pouch" } }, items: [] }]);
+  assert.equal(onlyBag.items[30]!.location!.text, "Dorran's backpack");
 });
 
 test("[fast] fold: a root listed with opened:false keeps its previous contents; opened:true empties it", () => {
@@ -891,6 +911,18 @@ test("[fast] tag-unit keys match whatever case the rules file wrote them in", ()
     assert.deepEqual(p.tags, ["cursed", "brittle"]);
     assert.equal(p.props.tagPenalty, 14);
     assert.deepEqual(tagUnits(), { cursed: 10, brittle: 4 });
+  } finally {
+    setRules(uoalive);
+  }
+});
+
+test("[fast] a rarity line is one of the shard's rarity ladder names, optionally Reforged", () => {
+  const uoalive = getRules();
+  try {
+    assert.equal(parseTooltip(["Ring", "Reforged Lesser Artifact"]).rarity, "Reforged Lesser Artifact");
+    setRules({ ...uoalive, rarity: [{ name: "Mythic Relic", colour: "#123456" }] });
+    assert.equal(parseTooltip(["Ring", "<BASEFONT COLOR=#123456>Mythic Relic"]).rarity, "Mythic Relic");
+    assert.equal(parseTooltip(["Ring", "Lesser Artifact"]).rarity, null);   // not on this shard's ladder
   } finally {
     setRules(uoalive);
   }
