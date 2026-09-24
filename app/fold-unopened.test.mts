@@ -76,22 +76,3 @@ for (const character of ["Tester", "Other"]) {
     assert.ok(inv.items[RING] && inv.items[PEARL] && inv.items[POUCH], "a later scan of the old chest leaves them alone");
   });
 }
-
-// A blacklisted container (<data>/scan-blacklist.json) in a scan dated after it was listed reads as the
-// scanners now write it: a listed root as not opened, a listed bag as absent with everything inside it.
-// Scans from before the listing still fold, which is how the player keeps a container's last contents.
-const listed = (serial: number) => [{ serial, name: "Listed", addedAt: "2026-09-20T12:00:00Z" }];
-test("[fast] the fold ignores a blacklisted root or bag in scans dated after the blacklisting", () => {
-  const second = scan("2026-09-21T10:00:00Z", { [CHEST]: chest, [BAG]: bag(), [POUCH]: pouch },
-    [item(RING, BAG, "Ring"), item(PEARL, POUCH, "Pearl"), item(NEWGEM, CHEST, "New Gem")]);
-  let inv = foldSnapshots([first, second], listed(CHEST));
-  assert.ok(inv.items[GEM] && inv.items[RING], "the root keeps what the scan before the blacklisting said");
-  assert.equal(inv.items[NEWGEM], undefined, "and nothing from the scan after it");
-  inv = foldSnapshots([first, second], listed(BAG));
-  for (const s of [BAG, POUCH, RING, PEARL]) assert.equal(inv.items[s], undefined, `item ${s} under the listed bag is gone`);
-  assert.equal(inv.containers[BAG], undefined);
-  assert.ok(inv.items[NEWGEM], "the rest of the root updates");
-  assert.ok(foldSnapshots([first], listed(BAG)).items[RING], "a scan from before the blacklisting folds as usual");
-  const tombstone = scan("2026-09-22T10:00:00Z", {}, [], [CHEST], "_vault");
-  assert.equal(foldSnapshots([first, tombstone], listed(CHEST)).items[GEM], undefined, "Forget still removes a blacklisted root");
-});

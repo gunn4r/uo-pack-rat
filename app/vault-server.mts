@@ -36,8 +36,7 @@
 //         POST /api/forget-character {character} (drop a character's card, worn set, backpack and bank:
 //         a `_vault` tombstone carrying forgetCharacter; 409 under --demo) ·
 //         GET|POST {serial, name, where?} /api/blacklist · DELETE /api/blacklist/<serial>
-//         (<data>/scan-blacklist.json, the containers scans skip; the fold also ignores a listed
-//         container in any scan dated after it was listed — readBlacklist, foldSnapshots) ·
+//         (<data>/scan-blacklist.json, the containers scans never open) ·
 //         GET|PUT /api/ui-prefs (<data>/ui-prefs.json: {cols?, colsVersion?, colWidths?, sheetProps?, theme?, appearance?, sidebar?, density?}, the page's view choices)
 //         POST /api/bridge {action, serial, name, chain: [root…parent], pos|null} (queue for packrat-bridge.py) · GET /api/bridge/status
 //         GET /api/events — SSE, one stream shared by every connected client (not per-job like the
@@ -292,8 +291,6 @@ function short(v: unknown): string { return String(v).slice(0, 64); }
 const MAX_PATH_LEN = 4096;
 // The largest serial the scan contract accepts (app/schema/scan.v2.schema.json: a 32-bit unsigned).
 const MAX_SERIAL = 0xFFFFFFFF;
-// <data>/scan-blacklist.json's bounds (readBlacklist); the adapters' read_blacklist applies the same ones.
-const BLACKLIST_MAX = 1000, BLACKLIST_MAX_BYTES = 256 * 1024;
 // What a failed locate/install tells the caller. Deliberately says nothing about the path it probed:
 // echoing the resolved path back made these routes a clean existence oracle for any absolute path on
 // the machine — "existing directory" vs "file or absent", for free, from an unauthenticated route in
@@ -703,19 +700,12 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
     return readdirSync(SCANS).filter((f) => f.endsWith(".json")).sort()
       .map((f) => { const st = statSync(join(SCANS, f)); return `${f}:${st.mtimeMs}:${st.size}`; }).join("|");
   }
-  // The blacklist is in the signature too: packrat-blacklist.py writes it from inside the game, and the
-  // next request folds with the new list.
-  function blacklistSignature(): string {
-    try { const st = lstatSync(BLACKLIST); return `${st.mtimeMs}:${st.size}`; } catch { return "none"; }
-  }
   async function getInventory(): Promise<{ inv: Inventory; snapshotCount: number; stamp: string }> {
     const libMod = await lib();   // also refreshes libCache.mtime, which the signature below reads
-    const sig = `${scansSignature()}::${blacklistSignature()}::${currentSettings.shard}::${libCache.mtime}`;
+    const sig = `${scansSignature()}::${currentSettings.shard}::${libCache.mtime}`;
     if (invCache.sig === sig) return invCache.value!;   // sig and value are only ever set together, below
     const snaps = readScans();
-    const blacklist = readBlacklist();
-    if (blacklist.problem) safeAppendLog(CONFIG.paths.log, `${new Date().toISOString()} scan-blacklist.json ignored: ${blacklist.problem}\n`);
-    const value = { inv: libMod.foldSnapshots(snaps, blacklist.entries), snapshotCount: snaps.length, stamp: sig };
+    const value = { inv: libMod.foldSnapshots(snaps), snapshotCount: snaps.length, stamp: sig };
     invCache = { sig, value };
     return value;
   }
@@ -742,31 +732,16 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
     if (isColWidths(raw.colWidths)) out.colWidths = raw.colWidths;
     return out;
   }
-  // <data>/scan-blacklist.json: the containers scans skip (GET/POST/DELETE /api/blacklist, and the
-  // TazUO packrat-blacklist.py). A JSON list of {serial, name, addedAt, where?}. The in-game script
-  // writes it too, so it is checked on every read; an invalid file is ignored whole, with the reason,
-  // and can only ever make scans skip containers.
+  // <data>/scan-blacklist.json: the containers scans never open, a JSON list of {serial, name, addedAt,
+  // where?} that TazUO's packrat-blacklist.py writes too. Only valid entries are read; anything else in
+  // the file (or a file too big or unparseable) is dropped, and the next write leaves it out.
   const BLACKLIST = join(CONFIG.dataDir, "scan-blacklist.json");
-  function readBlacklist(): { entries: BlacklistEntry[]; problem: string | null } {
+  function readBlacklist(): BlacklistEntry[] {
     let raw: unknown;
-    try {
-      const st = lstatSync(BLACKLIST);
-      if (!st.isFile()) return { entries: [], problem: "not a regular file" };
-      if (st.size > BLACKLIST_MAX_BYTES) return { entries: [], problem: `larger than ${BLACKLIST_MAX_BYTES / 1024} KB` };
-      raw = JSON.parse(readFileSync(BLACKLIST, "utf8"));
-    } catch (e) {
-      if ((e as NodeJS.ErrnoException).code === "ENOENT") return { entries: [], problem: null };
-      return { entries: [], problem: e instanceof SyntaxError ? jsonErrorReason(e) : "unreadable" };
-    }
-    if (!Array.isArray(raw) || raw.length > BLACKLIST_MAX) return { entries: [], problem: `not a list of at most ${BLACKLIST_MAX} containers` };
-    const entries: BlacklistEntry[] = [];
-    for (const [i, e] of raw.entries()) {
-      const o = (e && typeof e === "object" ? e : {}) as Record<string, unknown>;
-      if (!isBoundedInt(o.serial, 1, MAX_SERIAL) || !isBoundedString(o.name, 64) || !isBoundedString(o.addedAt, 40) || !Number.isFinite(Date.parse(o.addedAt))
-        || (o.where !== undefined && !(typeof o.where === "string" && o.where.length <= 64))) return { entries: [], problem: `entry ${i} is not {serial, name, addedAt, where?}` };
-      entries.push({ serial: o.serial, name: o.name, addedAt: o.addedAt, ...(o.where ? { where: o.where } : {}) });
-    }
-    return { entries, problem: null };
+    try { raw = lstatSync(BLACKLIST).size <= 256 * 1024 ? JSON.parse(readFileSync(BLACKLIST, "utf8")) : null; } catch { return []; }
+    return (Array.isArray(raw) ? raw : []).filter((e): e is BlacklistEntry => !!e && typeof e === "object" && isBoundedInt(e.serial, 1, MAX_SERIAL)
+      && isBoundedString(e.name, 64) && isBoundedString(e.addedAt, 40) && (e.where === undefined || isBoundedString(e.where, 64)))
+      .slice(0, 1000).map(({ serial, name, addedAt, where }) => ({ serial, name, addedAt, ...(where ? { where } : {}) }));
   }
   // A profiles.json that does not parse (a write cut short before writes were atomic, or a bad hand
   // edit) used to answer every GET /api/profiles with a 500 until someone fixed the file by hand. It
@@ -1631,30 +1606,22 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
         writeFileAtomic(join(SCANS, `_forget-${serial.toString(16)}.json`), JSON.stringify(snap), DATA_FILE_MODE);
         return send(res, 200, { ok: true });
       }
-      if (req.method === "GET" && url.pathname === "/api/blacklist") {
-        const { entries, problem } = readBlacklist();
-        return send(res, 200, { ok: true, containers: entries, ...(problem ? { problem } : {}) });
-      }
+      if (req.method === "GET" && url.pathname === "/api/blacklist") return send(res, 200, { ok: true, containers: readBlacklist() });
       if (req.method === "POST" && url.pathname === "/api/blacklist") {
-        // Adds one container; adding a listed one again changes nothing. A file that is not a valid list
-        // is moved aside (and logged) rather than written over.
         const { serial, name, where } = asObject(await readBody(req, { limit: 8e3 }));
         if (!isBoundedInt(serial, 1, MAX_SERIAL)) return send(res, 400, { ok: false, error: "serial required (positive integer)" });
         if (typeof name !== "string" || (where !== undefined && typeof where !== "string")) return send(res, 400, { ok: false, error: "name and where must be strings" });
-        const { entries, problem } = readBlacklist();
+        const entries = readBlacklist();
         if (entries.some((e) => e.serial === serial)) return send(res, 200, { ok: true });
-        if (entries.length >= BLACKLIST_MAX) return send(res, 409, { ok: false, error: `the blacklist is full (${BLACKLIST_MAX} containers)` });
-        if (problem && existsSync(BLACKLIST)) safeAppendLog(CONFIG.paths.log, `${new Date().toISOString()} scan-blacklist.json (${problem}) was kept as ${moveAside(BLACKLIST)}\n`);
-        const trimmed = where?.slice(0, 64).trim();
-        entries.push({ serial, name: name.slice(0, 64).trim() || "container", addedAt: new Date().toISOString(), ...(trimmed ? { where: trimmed } : {}) });
+        if (entries.length >= 1000) return send(res, 409, { ok: false, error: "the blacklist is full (1000 containers)" });
+        const place = where?.slice(0, 64).trim();
+        entries.push({ serial, name: name.slice(0, 64).trim() || "container", addedAt: new Date().toISOString(), ...(place ? { where: place } : {}) });
         writeFileAtomic(BLACKLIST, JSON.stringify(entries, null, 1) + "\n", DATA_FILE_MODE);
         return send(res, 200, { ok: true });
       }
       const unlist = req.method === "DELETE" ? /^\/api\/blacklist\/(\d{1,10})$/.exec(url.pathname) : null;
       if (unlist) {
-        const { entries, problem } = readBlacklist();
-        if (problem) return send(res, 409, { ok: false, error: `scan-blacklist.json is ignored (${problem}); fix or delete it` });
-        writeFileAtomic(BLACKLIST, JSON.stringify(entries.filter((e) => e.serial !== Number(unlist[1])), null, 1) + "\n", DATA_FILE_MODE);
+        writeFileAtomic(BLACKLIST, JSON.stringify(readBlacklist().filter((e) => e.serial !== Number(unlist[1])), null, 1) + "\n", DATA_FILE_MODE);
         return send(res, 200, { ok: true });
       }
       if (req.method === "POST" && url.pathname === "/api/forget-character") {

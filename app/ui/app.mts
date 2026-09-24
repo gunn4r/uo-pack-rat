@@ -86,7 +86,6 @@ export async function reload(): Promise<void> {
   renderNavCounts();
   buildFilters(); fetchItems(); renderCharacters(); renderContainers(); syncBuilderCharacters();
   syncSettingsCharacters();
-  void syncSettingsBlacklist();
 }
 
 // ---------------------------------------------------------------- screens + hash routes

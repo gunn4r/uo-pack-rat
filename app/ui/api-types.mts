@@ -210,11 +210,9 @@ export interface RescanApiResponse {
 export interface ForgetApiResponse {
   ok: boolean;
 }
-// GET /api/blacklist: `problem` says why scan-blacklist.json is being ignored, when it is.
 export interface BlacklistApiResponse {
   ok: boolean;
   containers: BlacklistEntry[];
-  problem?: string | undefined;
 }
 
 // ---------------------------------------------------------------- suit builder: optimize / runs

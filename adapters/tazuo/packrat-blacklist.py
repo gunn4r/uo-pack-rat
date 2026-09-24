@@ -1,12 +1,7 @@
-# packrat-blacklist.py — ATTENDED one-shot: blacklist a container so Pack Rat's scans never open or
-# record it again (a trash barrel, a guild chest, a vendor's stock). Press Play, then click the
-# container with the target cursor: a chest on the ground or a bag inside one. Esc cancels and
-# changes nothing. Unblacklist it in the app's Settings; the next scan reads it again.
-#
-# Output: adds {serial, name, addedAt, where} to <data directory>/scan-blacklist.json, the same list
-# the app's Blacklist action writes. The app reads it on its next request; packrat-scanner.py and
-# packrat-refresh.py read it when they start. The data directory is `packrat-paths.json` beside
-# this script, else $PACKRAT_DATA, else ~/.pack-rat. Opens nothing, moves nothing.
+# packrat-blacklist.py — ATTENDED one-shot: click a container (a chest on the ground or a bag inside
+# one) and Pack Rat's scans never open it again. Esc cancels. It adds {serial, name, addedAt, where} to
+# <data directory>/scan-blacklist.json, the list the app's Blacklist action and Settings use; the
+# scanner and refresh read it when they start. Opens nothing, moves nothing.
 
 import API
 import json
@@ -48,29 +43,17 @@ def rfc3339_now():
 
 
 def read_blacklist(path):
-    """<data directory>/scan-blacklist.json, the containers the player blacklisted (the app's
-    Containers view, or packrat-blacklist.py): a list of {serial, name, addedAt, where?}, at most
-    1000 of them in 256 KB. [] when there is no file; None when it is unreadable or not that shape,
-    which a scan reads as an empty list -- the file can only ever make a scan skip containers."""
+    """The valid entries of <data directory>/scan-blacklist.json, the containers the player blacklisted
+    ({serial, name, addedAt, where?}). A bad entry is dropped, and a missing, unreadable or oversized
+    file reads as none: the list can only ever make a scan skip containers."""
     try:
-        if not os.path.exists(path):
-            return []
         if os.path.getsize(path) > 256 * 1024:
-            return None
+            return []
         with open(path, "r", encoding="utf-8") as f:
             doc = json.load(f)
+        return [e for e in doc if isinstance(e, dict) and type(e.get("serial")) is int and 0 < e["serial"] <= 0xFFFFFFFF]
     except Exception:
-        return None
-    def ok_str(v, n):
-        return isinstance(v, str) and 0 < len(v) <= n
-    if not isinstance(doc, list) or len(doc) > 1000:
-        return None
-    for e in doc:
-        if not (isinstance(e, dict) and type(e.get("serial")) is int and 0 < e["serial"] <= 0xFFFFFFFF
-                and ok_str(e.get("name"), 64) and ok_str(e.get("addedAt"), 40)
-                and ("where" not in e or (isinstance(e["where"], str) and len(e["where"]) <= 64))):
-            return None
-    return doc
+        return []
 
 
 TARGET_S = 30            # how long the target cursor waits for a click
@@ -88,9 +71,6 @@ def name_of(serial):
 def main():
     path = os.path.join(data_dir(), "scan-blacklist.json")
     listed = read_blacklist(path)
-    if listed is None:
-        API.SysMsg("Pack Rat: scan-blacklist.json cannot be read - fix or delete it first. Nothing changed.", ALARM_HUE)
-        return
     API.SysMsg("Pack Rat: click a container to blacklist it (Esc cancels).", INFO_HUE)
     serial = int(API.RequestTarget(TARGET_S) or 0)
     if not serial:
@@ -103,22 +83,19 @@ def main():
             own.add(int(getattr(API, root) or 0))
         except Exception:
             pass
-    if it is None or serial in own:
+    if it is None or serial in own or not bool(getattr(it, "IsContainer", False)) or bool(getattr(it, "IsCorpse", False)):
         API.SysMsg("Pack Rat: that is not a container a scan can skip (your backpack and bank are always read).", ALARM_HUE)
         return
-    name = (name_of(serial) or str(getattr(it, "Name", "") or "") or "container")[:64]
+    # 60, not 64: the app bounds names in UTF-16 units, and this keeps any name inside the bound.
+    name = (name_of(serial) or str(getattr(it, "Name", "") or "") or "container")[:60]
     if any(e["serial"] == serial for e in listed):
         API.SysMsg(f"Pack Rat: {name} is already blacklisted.", INFO_HUE)
         return
-    if len(listed) >= 1000:
-        API.SysMsg("Pack Rat: the blacklist is full (1000 containers). Unblacklist some in the app first.", ALARM_HUE)
-        return
-    parent = int(getattr(it, "Container", 0) or 0)
-    if not parent:
+    if bool(getattr(it, "OnGround", False)):
         where = f"{int(it.X)}, {int(it.Y)}"
     else:
-        pname = name_of(parent)
-        where = ("in " + pname)[:64] if pname else ""
+        pname = name_of(int(getattr(it, "Container", 0) or 0))
+        where = ("in " + pname)[:60] if pname else ""
     entry = {"serial": serial, "name": name, "addedAt": rfc3339_now()}
     if where:
         entry["where"] = where

@@ -55,29 +55,17 @@ def rfc3339_now():
 
 
 def read_blacklist(path):
-    """<data directory>/scan-blacklist.json, the containers the player blacklisted (the app's
-    Containers view, or packrat-blacklist.py): a list of {serial, name, addedAt, where?}, at most
-    1000 of them in 256 KB. [] when there is no file; None when it is unreadable or not that shape,
-    which a scan reads as an empty list -- the file can only ever make a scan skip containers."""
+    """The valid entries of <data directory>/scan-blacklist.json, the containers the player blacklisted
+    ({serial, name, addedAt, where?}). A bad entry is dropped, and a missing, unreadable or oversized
+    file reads as none: the list can only ever make a scan skip containers."""
     try:
-        if not os.path.exists(path):
-            return []
         if os.path.getsize(path) > 256 * 1024:
-            return None
+            return []
         with open(path, "r", encoding="utf-8") as f:
             doc = json.load(f)
+        return [e for e in doc if isinstance(e, dict) and type(e.get("serial")) is int and 0 < e["serial"] <= 0xFFFFFFFF]
     except Exception:
-        return None
-    def ok_str(v, n):
-        return isinstance(v, str) and 0 < len(v) <= n
-    if not isinstance(doc, list) or len(doc) > 1000:
-        return None
-    for e in doc:
-        if not (isinstance(e, dict) and type(e.get("serial")) is int and 0 < e["serial"] <= 0xFFFFFFFF
-                and ok_str(e.get("name"), 64) and ok_str(e.get("addedAt"), 40)
-                and ("where" not in e or (isinstance(e["where"], str) and len(e["where"]) <= 64))):
-            return None
-    return doc
+        return []
 
 
 ADAPTER_ID = "razor-enhanced"
@@ -106,8 +94,8 @@ GROUND_ONLY_AT_HOME = True    # when the bank box is already open (you are at a 
 CONTENTS_WAIT_MS = 1500   # Items.WaitForContents' own open-and-wait timeout, per container
 PROPS_WAIT_MS = 800       # Items.WaitForProps' own request-and-wait timeout, per item
 MAX_NEST = 4              # bags in bags in bags
-BLACKLIST = set(e["serial"] for e in read_blacklist(os.path.join(data_dir(), "scan-blacklist.json")) or [])
-SKIPPED = set()           # blacklisted containers this run left alone (never opened, never recorded)
+BLACKLIST = set(e["serial"] for e in read_blacklist(os.path.join(data_dir(), "scan-blacklist.json")))
+SKIPPED = set()           # blacklisted containers this run never opened
 OPENED_HERE = []          # containers this run opened itself, in opening order (close_opened)
 OUT_DIR = os.path.join(data_dir(), "inbox", "razor-enhanced")
 ALARM_HUE, OK_HUE, INFO_HUE = 33, 68, 88
@@ -270,8 +258,9 @@ def scan_root(root_item, kind, label, containers, items, seen):
                 if ks in seen:
                     continue
                 seen.add(ks)
-                if ks in BLACKLIST:
+                if ks in BLACKLIST:       # recorded unopened, never opened: the fold keeps what it knew inside
                     SKIPPED.add(ks)
+                    containers[ks] = container_entry(kid, root_serial, False)
                     continue
                 if is_container(kid):
                     next_queue.append(kid)

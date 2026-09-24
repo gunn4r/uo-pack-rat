@@ -1,10 +1,10 @@
 // ui/containers.mts — the Inventory screen's Containers view (design spec 4.2): every scanned root
 // container in the same dense table the Items view uses, grouped by character with the ground
 // containers last, and a row "⋯" menu with "Show these items", "Blacklist…" (ground containers) and
-// "Forget…". The Forget and Blacklist handlers call
-// `reload` from app.mts — a module cycle (containers ↔ app) that is fine here since both are function
-// declarations only called after bootstrap. reload(), not load(): a Forget changes the inventory and
-// nothing else, and must keep the filters and the builder as they are.
+// "Forget…". The Forget and Blacklist handlers call `reload` from app.mts — a module cycle (containers
+// ↔ app) that is fine here since both are function declarations only called after bootstrap. reload(),
+// not load(): a Forget changes the inventory and nothing else, and must keep the filters and the builder
+// as they are.
 import { bagLabel } from "../vault-lib.mts";
 import type { Container } from "../vault-lib.mts";
 import { state } from "./store.mts";
