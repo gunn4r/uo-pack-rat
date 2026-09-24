@@ -1515,7 +1515,7 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
         // now that app/schema/validate.mts implements both keywords.
         if (!isBoundedString(cmd.name, 200)) return send(res, 400, { ok: false, error: "name must be a string of at most 200 characters" });
         if (cmd.chain != null && (!Array.isArray(cmd.chain) || cmd.chain.length > 16)) return send(res, 400, { ok: false, error: "chain must be an array of at most 16 serials" });
-        const id = `${Date.now()}-${Math.floor(Math.random() * 1e4)}`;
+        const id = randomUUID();
         // Copy exactly the documented fields into the queue line — the page may send extras (e.g. a
         // human-readable location string) that the bridge does not need and should not carry forward.
         const line = { id, action: cmd.action, serial: cmd.serial, name: cmd.name, chain: cmd.chain || [], pos: cmd.pos ?? null, queuedAt: new Date().toISOString() };

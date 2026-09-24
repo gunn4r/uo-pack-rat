@@ -101,7 +101,7 @@ ALARM_HUE, OK_HUE, INFO_HUE = 33, 68, 88
 # this file's own em dashes and f-strings: Razor Enhanced's IronPython carries the same text.
 MAX_CHAIN = 8              # containers one command may open (app/ui/bridge.mts's own chainOf guard)
 MAX_NAME = 120             # a name is only ever printed on screen
-MAX_ID = 64                # the app's ids are ~18 characters; a result is keyed by one
+MAX_ID = 64                # the app's ids are 36-character UUIDs; a result is keyed by one
 MAX_AGE_S = 60             # a command is a click: anything older is a replayed backlog
 CLOCK_SKEW_S = 5           # same machine, but the clocks still tick apart
 BUDGET_WINDOW_S = 60       # rolling window for MAX_CMDS_PER_WINDOW

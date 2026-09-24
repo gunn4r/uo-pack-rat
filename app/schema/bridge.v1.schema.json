@@ -5,7 +5,7 @@
     "additionalProperties": false,
     "required": ["id", "action", "serial", "name", "chain", "pos", "queuedAt"],
     "properties": {
-      "id": { "type": "string", "minLength": 1, "maxLength": 64, "$comment": "The app writes ~18 characters (Date.now()-random). 64 matches MAX_ID in every packrat-bridge.py, which refuses a longer id: results are keyed by id, so an unbounded one would grow status.json." },
+      "id": { "type": "string", "minLength": 1, "maxLength": 64, "$comment": "The app writes a 36-character randomUUID(). 64 matches MAX_ID in every packrat-bridge.py, which refuses a longer id: results are keyed by id, so an unbounded one would grow status.json." },
       "action": { "type": "string", "enum": ["highlight", "grab", "goto"] },
       "serial": { "type": "integer", "minimum": 1 },
       "name": { "type": "string", "maxLength": 120, "$comment": "Only ever printed on screen. 120 matches MAX_NAME in every packrat-bridge.py, which truncates to it. POST /api/bridge validates every queue line against this schema (app/schema/validate.mts implements maxLength), so an over-long name is refused at the route with a 400 as well as truncated by the adapters." },
