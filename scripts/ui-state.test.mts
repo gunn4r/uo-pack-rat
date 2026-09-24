@@ -504,6 +504,38 @@ test("[slow] the character sheet's shown properties are chosen in a popover and 
   }
 });
 
+// Inventory columns resize from the keyboard (issue #46): → on a header's resize handle widens the header
+// and the rows' cells with it, and table settings' "Reset column widths" puts the default back.
+test("[slow] an Inventory column is resized with the keyboard and reset in table settings", async (t) => {
+  const why = unavailable();
+  if (why) return t.skip(why);
+  const dataDir = seedDataDir("packrat-ui-colwidths-");
+  const { app, page, errors } = await launch(dataDir);
+  try {
+    await page.locator("#inv-table tbody tr.item").first().waitFor({ timeout: 30_000 });
+    const widths = (): Promise<[number, number]> => page.evaluate(() => {
+      const i = [...document.querySelectorAll("#inv-table thead th")].findIndex((th) => th.textContent?.startsWith("Location"));
+      const w = (e: Element | null | undefined): number => e?.getBoundingClientRect().width ?? 0;
+      return [w(document.querySelectorAll("#inv-table thead th")[i]), w(document.querySelector("#inv-table tbody tr.item")?.children[i])];
+    });
+    const [head, cell] = await widths();
+    assert.equal(cell, head, "a row cell is as wide as its header");
+    const handle = page.getByRole("separator", { name: "Resize Location" });
+    await handle.focus();
+    for (let i = 0; i < 5; i++) await handle.press("ArrowRight");
+    const [wideHead, wideCell] = await widths();
+    assert.ok(wideHead > head, `→ widens the header (${head} → ${wideHead})`);
+    assert.equal(wideCell, wideHead, "the rows' cells follow the header");
+    await page.click("#inv-settings");
+    await page.getByRole("dialog", { name: "Table settings" }).getByRole("button", { name: "Reset column widths" }).click();
+    assert.deepEqual(await widths(), [head, cell], "Reset puts the default width back");
+    assert.deepEqual(errors, []);
+  } finally {
+    await app.close();
+    rmSync(dataDir, { recursive: true, force: true });
+  }
+});
+
 // The saved-runs path has its own awaits: openRun fetches the run and resolves its pieces before
 // drawing, and loadRuns fetches the list. A character switch during either must not draw one
 // character's run (or list) under another.

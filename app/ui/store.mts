@@ -128,6 +128,7 @@ export interface AppState {
   // inventory (a rescan can move or drop a piece).
   itemCache: Map<number, Item>;
   cols: string[];
+  colWidths: Record<string, number>;   // the Inventory columns' dragged widths, by column key (ui-prefs `colWidths`)
   density: "dense" | "regular";   // the Inventory table's rows, 32 or 40 px (ui-prefs `density`)
   sheetProps: string[] | null;    // the character sheet's shown properties (ui-prefs `sheetProps`); null = the default set
   builder: BuilderState;
@@ -150,6 +151,7 @@ export const state: AppState = {
   // form; nothing hidden by default: power scrolls are Cursed.
   query: { q: "", chars: [], slot: [], loc: [], roots: [], rarity: "", rarityMin: "", kind: [], seenDays: 0, slayer: "", nogarg: false, med: false, hideTags: [], props: [], group: false, sort: "name", dir: 1, offset: 0, limit: 500 },
   page: { rows: [], groups: null, total: 0, stacks: 0, pieces: 0 },   // what the Inventory table has loaded
+  colWidths: {},
   density: "dense",
   sheetProps: null,
   // The full-item-by-serial cache (Task 5's item-lookup fix): GET /api/inventory no longer carries
