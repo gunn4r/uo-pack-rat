@@ -111,6 +111,7 @@
 .pr .b-disclose:hover { background: var(--color-surface-subtle); color: var(--color-text); }
 .b-disclose .t-sm { flex: 1 1 auto; min-width: 0; }
 .b-details { padding: 0 var(--space-4) var(--space-4); }
+.b-details .kv { grid-template-columns: auto minmax(0, 1fr); }   /* a long value wraps instead of running over its label */
 
 /* ---------------------------------------------------------------- compare */
 .b-cmp-bar { display: flex; align-items: center; gap: var(--space-2); flex-wrap: wrap; }
