@@ -2,7 +2,7 @@
 
 ## Unreleased
 
-- **TazUO: an in-game Pack Rat window — re-install the scripts (TazUO 2.7.0)** (issue #13): `packrat-panel.py` opens a small window with **Scan here**, **Quick refresh**, **Start bridge** / **Stop bridge** and **Blacklist a container** buttons, and shows which Pack Rat scripts are running, what the bridge is doing and when you last scanned. Tick its **Autostart** in the Script Manager to have it open at every login, or type `-playlscript packrat-panel.py` in chat.
+- **TazUO: an in-game Pack Rat window — re-install the scripts (TazUO 2.7.0)** (issue #13): `packrat-panel.py` opens a small window with **Scan here**, **Quick refresh**, **Start bridge** / **Stop bridge** and **Blacklist a container** buttons, and shows which Pack Rat scripts are running, what the bridge is doing and when you last scanned. It opens at every login and **Ctrl+Shift+P** shows or hides it; change either in **Settings › Game client** or the setup wizard. Opening at login adds the panel to TazUO's own autostart list (`Data/lscript.json`), which Pack Rat edits only while TazUO is closed, keeping everything else in it.
 - **The TazUO scripts now require TazUO v26.0923.64 or later.** That release lets a script find a container's window while its name plate shows ([PlayTazUO/TazUO#1088](https://github.com/PlayTazUO/TazUO/pull/1088)), so ground containers close after a scan with name plates on.
 
 ### Security

@@ -152,7 +152,9 @@ The honest limit: `publish` uploads bytes built on three other runners without r
 
 ### 11. The TazUO panel → the other scripts
 
-**Trusted:** nothing it reads. `packrat-panel.py` reads the bridge's `status.json` and the names and times of scan files, both writable by anything on the machine, as untrusted: at most 64 KB, parsed in `try`, and only a cleaned 40-character line is ever shown. It starts and stops only the four Pack Rat scripts it names itself, in its own folder; nothing read from a file becomes a script name or a path. It takes no action in the world: every world action still comes from a click, on its buttons or in the app. Its heartbeat `panel.json` joins the bridge's `status.json` in the installer's running-script guard, so a forged heartbeat can only make an install refuse for 30 seconds.
+**Trusted:** nothing it reads. `packrat-panel.py` starts and stops only the four Pack Rat scripts it names itself, in its own folder; nothing read from a file becomes a script name or a path. The one file it acts on, the hotkey in `<data>/tazuo-panel.json`, is size-capped and must be a known modifier set plus A–Z, 0–9 or F1–F12, else the default is used. It takes no action in the world: every world action still comes from a click, on its buttons or in the app. Its heartbeat `panel.json` joins the bridge's `status.json` in the installer's running-script guard, so a forged heartbeat can only make an install refuse for 30 seconds.
+
+**The one TazUO file the app edits.** "Open the panel at login" adds or removes `packrat-panel.py` in `GlobalAutoStartScripts` in `<TazUO>/Data/lscript.json` (`<TazUO>` is the folder holding the configured LegionScripts folder). The edit only happens while no TazUO process is running (`pgrep -x TazUO`, or `tasklist` for `TazUO.exe` on Windows; an unclear answer counts as running), because a running client saves its own copy at logout. It merges: every other key and entry is kept, an existing BOM is kept, a file that is not the expected shape is left alone, and the replaced file is copied to `lscript.json.bak` first. The only name it ever adds is the fixed `packrat-panel.py`.
 
 ## Rulings
 

@@ -8,7 +8,7 @@ Five small scripts that run inside the TazUO game client and send what your char
 - **`packrat-refresh.py` — the quick refresh.** Reads just your stats, skills, what you are wearing and your backpack.
 - **`packrat-bridge.py` — the bridge.** Makes the app's **Highlight**, **Grab** and **Go to** buttons work.
 - **`packrat-blacklist.py` — blacklist a container.** Click a chest or bag, and scans never open or record it again.
-- **`packrat-panel.py` — the Pack Rat window.** A small in-game window with a button for each script above, and whether each is running, what the bridge is doing and when you last scanned.
+- **`packrat-panel.py` — the Pack Rat window.** A small in-game window with a button for each script above, showing which are running and when you last scanned.
 
 ## Install
 
@@ -23,7 +23,7 @@ To install by hand instead:
 
 ## What to press
 
-- **The easy way: open the Pack Rat window and use its buttons** (**Scan here**, **Quick refresh**, **Start bridge** / **Stop bridge**, **Blacklist a container**). To open it, either run `packrat-panel.py` once from the Script Manager (see below) and tick its **Autostart** so the window opens every time you log in, or type `-playlscript packrat-panel.py` in the game's chat. Type it: TazUO's chat does not accept a paste. The Script Manager's Play button is a toggle, so a double click (easy on a Mac, where the first click only focuses the window) starts the script and stops it again at once. Right after an install or reinstall, if a button says **Not loaded yet**, open the Script Manager once or relog: TazUO only notices new script files then.
+- **The easy way: the Pack Rat window.** Its buttons run the scripts: **Scan here**, **Quick refresh**, **Start bridge** / **Stop bridge**, **Blacklist a container**. It opens every time you log in, and **Ctrl+Shift+P** shows or hides it. Change either in the app's **Settings** under **Game client**. If you turned opening at login off, type `-playlscript packrat-panel.py` in the game's chat to open it (type it: TazUO's chat does not accept a paste). If a button says **Didn't start** right after an install, open the Script Manager once or relog, because TazUO only notices new script files then.
 
 Or run each script yourself:
 
@@ -35,9 +35,9 @@ Or run each script yourself:
 ## Starting a script
 
 1. In the game, open the Script Manager from TazUO's top menu: **Legion Script**.
-2. Find the script in the list and press its **Play** button.
+2. Find the script in the list and press its **Play** button once. It is a toggle, so a double click (easy on a Mac, where the first click only focuses the window) starts the script and stops it again at once.
 
-To start a script with one key, right-click it in the Script Manager, choose **Set Hotkey**, and press the key you want. Pressing the key again stops it. The Script Manager's **Create Macro Button** is another way to get a one-click button for a script. Pack Rat's installer only copies files; setting up hotkeys is up to you, once per script.
+To start a script with one key, right-click it in the Script Manager, choose **Set Hotkey**, and press the key you want. Pressing the key again stops it. The Script Manager's **Create Macro Button** is another way to get a one-click button for a script. Pack Rat's installer copies files, and adds the panel to TazUO's autostart list if you chose that; any other hotkeys are up to you, once per script.
 
 ## Good to know
 
@@ -78,7 +78,7 @@ The scanner and refresh scripts write scan files as **schema v2** (`schemaVersio
 - **`packrat-refresh.py`** — quick refresh. Reads this character's stats, skills, maxes, resists, position, every equipped layer, and the backpack only — nothing else is opened. Takes a few seconds. Run it after gearing up or training, without needing to stand anywhere special.
 - **`packrat-bridge.py`** — the bridge. Leave it running while you use the app's Highlight, Grab, and Go to buttons on the Suit Builder or Inventory tab. It executes one command at a time: highlight flashes an item's name and marks its container's tile for a few seconds, grab walks to the item, opens its container chain, and moves it into your backpack, and go to just walks there. Bounded to 8 hours; Stop ends it cleanly.
 
-- **`packrat-panel.py`** — the in-game window. Its buttons call `API.PlayScript` / `API.StopScript` on the four scripts above by fixed name, under the folder the panel itself runs from (read off its own entry in `API.ListRunningScripts()`, so an install inside a Script Manager group folder works). `PlayScript` does nothing, silently, for a file the Script Manager has not loaded yet, so a script not seen running 1.5 seconds after its button shows **Not loaded yet**. Every 2 seconds it refreshes its status lines from `API.IsScriptRunning`, the bridge's `status.json` (read as untrusted: at most 64 KB, parsed in `try`, only a cleaned 40-character line shown) and the modification time of this character's newest file in `inbox/tazuo/` or `scans/` (names only, never opened), and rewrites its heartbeat `<dataDir>/bridge/tazuo/panel.json` (`{alive, character}`, `stopped: true` when it ends) for the installer's running-script guard. It takes no action in the world. Bounded to 8 hours; Stop, logout or closing the window ends it.
+- **`packrat-panel.py`** — the in-game window. Its buttons call `API.PlayScript` / `API.StopScript` on the four scripts above by fixed name, in the folder the panel runs from, and it rewrites a heartbeat, `<dataDir>/bridge/tazuo/panel.json`, for the installer's running-script guard. Its hotkey comes from `<dataDir>/tazuo-panel.json`, which the app writes and the panel re-reads every 3 seconds; opening it at login is the app adding `packrat-panel.py` to `GlobalAutoStartScripts` in TazUO's `Data/lscript.json`, which it only edits while TazUO is closed.
 
 ### What the bridge refuses
 
