@@ -27,17 +27,25 @@ async function rowActionLabels(page: Page): Promise<string[]> {
   await page.waitForSelector("#inv-table tbody tr.item .rowact button", { state: "attached", timeout: 10_000 });
   return page.locator("#inv-table tbody tr.item").first().locator(".rowact button").evaluateAll((bs) => bs.map((b) => b.getAttribute("aria-label") || ""));
 }
+// The reason is read from the wrapper's own tooltip (its aria-describedby id), not "the last tooltip on the
+// page": a tooltip shown for a row the table then redraws never hears the pointer leave, so it can outlive
+// the row. The tooltip shows 400 ms after a mouseenter on that exact element and nothing else brings it back,
+// so a try whose tooltip does not show starts over with the pointer off the row (a fresh mouseenter) instead
+// of waiting longer on a hover that was lost.
 async function actionReason(page: Page, action: string): Promise<string> {
   const row = page.locator("#inv-table tbody tr.item").first();
-  await row.hover();
   const wrap = row.locator(".rowact .tipwrap", { has: page.locator(`button[aria-label="${action}"]`) });
-  if (!await wrap.count()) return "";
-  await wrap.hover();
-  const tip = page.locator(".tip[role=tooltip]").last();
-  await tip.waitFor({ timeout: 5_000 });
-  const text = await tip.innerText();
-  await page.mouse.move(0, 0);
-  return text;
+  for (let attempt = 1; ; attempt++) {
+    await page.mouse.move(0, 0);
+    await row.hover();
+    if (!await wrap.count()) return "";
+    await wrap.hover();
+    const tip = page.locator(`[id="${await wrap.getAttribute("aria-describedby")}"]`);
+    try { await tip.waitFor({ timeout: 2_000 }); } catch (e) { if (attempt < 3) continue; throw e; }
+    const text = await tip.innerText();
+    await page.mouse.move(0, 0);
+    return text;
+  }
 }
 
 test("[slow] the packaged UI renders, switches tabs and lists the demo inventory", async (t) => {
@@ -93,6 +101,35 @@ test("[slow] the packaged UI renders, switches tabs and lists the demo inventory
     await page.waitForSelector("#tab-characters:not([hidden])", { timeout: 10_000 });
 
     assert.deepEqual(errors, [], "no uncaught page errors during load and tab switch");
+  } finally {
+    await app.close();
+    rmSync(dataDir, { recursive: true, force: true });
+  }
+});
+
+test("[slow] the rows' actions follow the client the wizard just set up, without a reload", async (t) => {
+  const why = unavailable();
+  if (why) return t.skip(why);
+
+  const { _electron } = await import("playwright");
+  const dataDir = mkdtempSync(join(tmpdir(), "packrat-ui-wizard-"));
+  const app = await _electron.launch({ args: [ROOT, "--demo", "--data", dataDir], cwd: ROOT, timeout: 60_000, env: testEnv() });
+  try {
+    const page = await app.firstWindow();
+    await page.locator("#inv-table tbody tr.item").first().waitFor({ timeout: 30_000 });
+    // Behind the first-run wizard the rows act for the default client (TazUO). Pick the paste client, which has
+    // no bridge, and finish.
+    await page.waitForSelector("#wizard[open]", { timeout: 10_000 });
+    await page.click("#wiz-primary");
+    await page.locator("#wizard input[value=classicuo-web]").check();
+    await page.click("#wiz-primary");
+    await page.click("#wiz-primary");
+    await page.locator("#wizard").getByRole("button", { name: "Finish", exact: true }).click();
+    await page.waitForSelector("#wizard", { state: "hidden", timeout: 10_000 });
+    const until = Date.now() + 10_000;
+    let reason = await actionReason(page, "Grab to backpack");
+    while (!/can't Grab/.test(reason) && Date.now() < until) reason = await actionReason(page, "Grab to backpack");
+    assert.match(reason, /can't Grab from Pack Rat/);
   } finally {
     await app.close();
     rmSync(dataDir, { recursive: true, force: true });

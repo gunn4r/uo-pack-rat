@@ -186,6 +186,13 @@ class BridgeCase(object):
         self.assertIn("expired", final["results"]["old"]["msg"])
         self.assertEqual(self.moved(w), [])
 
+    def test_a_deleted_queue_file_reads_as_empty_and_the_next_command_still_runs(self):
+        w = home()
+        w.clock.at(0.5, lambda: os.remove(os.path.join(self.dir, "queue.jsonl")))
+        final, _ = self.run_bridge(w, 5, [self.cmd("q1", "grab", RING, [PACK, POUCH])])
+        self.assertTrue(final["results"]["q1"]["ok"], final["results"]["q1"])
+        self.assertEqual([m for m in w.messages if "queue read failed" in m], [])
+
     def test_a_duplicate_line_in_one_read_runs_once(self):
         w = home()
         c = self.cmd("d1", "grab", AMULET, [CHEST, BAG])
@@ -221,6 +228,12 @@ class RazorBridge(BridgeCase, unittest.TestCase):
         g = razor_globals(world, PACK)
         world.clock.at(RUN_S, lambda: setattr(g["Player"], "Connected", False))
         run_script(adapter_path("razor-enhanced", "packrat-bridge.py"), world, extra_globals=g)
+
+    def test_a_walk_heads_for_the_tile_beside_the_container_not_onto_it(self):
+        w = home()
+        final, _ = self.run_bridge(w, 1, [self.cmd("w1", "goto", FAR_RING, [FAR])])
+        self.assertTrue(final["results"]["w1"]["ok"], final["results"]["w1"])
+        self.assertEqual([c for c in w.calls if c[0] == "walk"], [("walk", 19, 10)])
 
 
 if __name__ == "__main__":
