@@ -6,70 +6,43 @@
 // is TazUO's own global autostart list, GlobalAutoStartScripts in <TazUO>/Data/lscript.json (the
 // client's LScriptSettings, which it loads at login and saves at logout). That one file is edited here,
 // and only while no TazUO process is running: a running client saves its own copy over it at logout
-// (or asks the player which copy to keep). While one runs, the choice waits in tazuo-panel.json and is
-// applied the next time the app looks and finds no client (an install, a Settings save, app start).
+// (or asks the player which copy to keep). The list is only ever changed because the player just chose
+// something here (a Settings switch, the wizard's install): if TazUO was running then, that one choice
+// waits in tazuo-panel.json (pendingOpenAtLogin) and is retried at app start, when Settings is opened and
+// on the next install or save, until it lands. Nothing else re-applies it, so a player who later unticks
+// Autostart in the Script Manager keeps that.
 // The edit merges — every other key and entry is kept, an existing UTF-8 BOM is kept, and the file it
 // replaces is copied to lscript.json.bak first.
 import { constants, copyFileSync, existsSync, lstatSync, readFileSync } from "node:fs";
 import { spawnSync } from "node:child_process";
-import { dirname, join } from "node:path";
+import { basename, dirname, join } from "node:path";
 import { atomicReplace, writeFileAtomic } from "./atomic-write.mts";
+import { panelPrefsOf, type AutostartOutcome, type PanelPrefs } from "./tazuo-panel-prefs.mts";
 
 export const PANEL_SCRIPT = "packrat-panel.py";
-export const HOTKEY_MODS = ["CTRL", "ALT", "SHIFT"] as const;
-export const HOTKEY_KEYS: readonly string[] = [
-  ..."ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789".split(""),
-  ...Array.from({ length: 12 }, (_, i) => `F${i + 1}`),
-];
-export interface Hotkey { mods: string[]; key: string }
-export interface PanelPrefs { hotkey: Hotkey; openAtLogin: boolean }
-export const PANEL_DEFAULTS: PanelPrefs = { hotkey: { mods: ["CTRL", "SHIFT"], key: "P" }, openAtLogin: true };
 const MAX_LSCRIPT_BYTES = 1024 * 1024;
+export { HOTKEY_KEYS, HOTKEY_MODS, PANEL_DEFAULTS, panelPrefsError, panelPrefsOf, type AutostartOutcome, type Hotkey, type PanelPrefs } from "./tazuo-panel-prefs.mts";
 
-// TazUO's OnHotKey matches modifiers exactly and fires even while the chat box has focus, so a letter or
-// digit with no modifier would fire on every chat line that contains it; an F-key alone is fine.
-function hotkeyError(v: unknown): string | null {
-  const h = v as Record<string, unknown> | null;
-  if (!h || typeof h !== "object" || Array.isArray(h)) return "hotkey must be {mods, key}";
-  const { mods, key } = h;
-  if (!Array.isArray(mods) || !mods.every((m) => (HOTKEY_MODS as readonly unknown[]).includes(m)) || new Set(mods).size !== mods.length) {
-    return "hotkey.mods must be a list of CTRL, ALT and SHIFT (each at most once)";
+// tazuo-panel.json: the prefs, plus whether an open-at-login choice is still waiting on a running client.
+export interface PanelFile extends PanelPrefs { pendingOpenAtLogin: boolean }
+export function readPanelFile(path: string): PanelFile {
+  let raw: unknown = null;
+  try { raw = JSON.parse(readFileSync(path, "utf8")); } catch { /* missing or unreadable: the defaults */ }
+  return { ...panelPrefsOf(raw), pendingOpenAtLogin: (raw as Record<string, unknown> | null)?.pendingOpenAtLogin === true };
+}
+export function writePanelFile(path: string, { pendingOpenAtLogin, ...prefs }: PanelFile, mode?: number): void {
+  writeFileAtomic(path, JSON.stringify({ ...panelPrefsOf(prefs), ...(pendingOpenAtLogin ? { pendingOpenAtLogin } : {}) }, null, 2) + "\n", mode);
+}
+
+// <TazUO>/Data/lscript.json, where <TazUO> is the parent of the nearest folder named LegionScripts at or
+// above the scripts folder (a Script Manager group folder sits inside it). null when there is none, so
+// nothing is ever created beside a folder that is not TazUO's.
+export function lscriptPathFor(scriptsDir: string, platform: NodeJS.Platform = process.platform): string | null {
+  const same = (name: string): boolean => platform === "win32" ? name.toLowerCase() === "legionscripts" : name === "LegionScripts";
+  for (let dir = scriptsDir; dirname(dir) !== dir; dir = dirname(dir)) {
+    if (same(basename(dir))) return join(dirname(dir), "Data", "lscript.json");
   }
-  if (typeof key !== "string" || !HOTKEY_KEYS.includes(key)) return "hotkey.key must be A–Z, 0–9 or F1–F12";
-  if (key.length === 1 && mods.length === 0) return "A letter or digit needs Ctrl, Alt or Shift: on its own it would fire while you type in chat";
   return null;
-}
-
-// PUT /api/tazuo-panel's body: any subset of {hotkey, openAtLogin}.
-export function panelPrefsError(v: unknown): string | null {
-  if (!v || typeof v !== "object" || Array.isArray(v)) return "expected {hotkey?, openAtLogin?}";
-  const o = v as Record<string, unknown>;
-  if ("hotkey" in o) { const e = hotkeyError(o.hotkey); if (e) return e; }
-  if ("openAtLogin" in o && typeof o.openAtLogin !== "boolean") return "openAtLogin must be true or false";
-  return null;
-}
-
-// What tazuo-panel.json holds, with each field that is missing or invalid read as its default.
-export function panelPrefsOf(v: unknown): PanelPrefs {
-  const o = (v && typeof v === "object" && !Array.isArray(v)) ? v as Record<string, unknown> : {};
-  const hotkey = hotkeyError(o.hotkey) ? PANEL_DEFAULTS.hotkey : o.hotkey as Hotkey;
-  return {
-    hotkey: { mods: HOTKEY_MODS.filter((m) => hotkey.mods.includes(m)), key: hotkey.key },
-    openAtLogin: typeof o.openAtLogin === "boolean" ? o.openAtLogin : PANEL_DEFAULTS.openAtLogin,
-  };
-}
-
-export function readPanelPrefs(path: string): PanelPrefs {
-  try { return panelPrefsOf(JSON.parse(readFileSync(path, "utf8"))); } catch { return panelPrefsOf(null); }
-}
-
-export function writePanelPrefs(path: string, prefs: PanelPrefs, mode?: number): void {
-  writeFileAtomic(path, JSON.stringify(prefs, null, 2) + "\n", mode);
-}
-
-// <TazUO>/Data/lscript.json, where <TazUO> is the folder holding the LegionScripts folder.
-export function lscriptPathFor(scriptsDir: string): string {
-  return join(dirname(scriptsDir), "Data", "lscript.json");
 }
 
 // Is a TazUO client running? Anything that fails to answer counts as running: the safe side is to wait.
@@ -82,7 +55,7 @@ export function tazuoRunning(platform: NodeJS.Platform = process.platform, run: 
     if (r.error || r.status !== 0) return true;
     return String(r.stdout ?? "").toLowerCase().includes('"tazuo.exe"');
   }
-  const r = run("pgrep", ["-x", "TazUO"]);
+  const r = run("pgrep", ["-x", "TazUO(\\.exe)?"]);   // TazUO.exe too: the Windows build under Wine
   if (r.error) return true;
   return r.status !== 1;          // pgrep: 0 found, 1 none, anything else an error
 }
@@ -108,7 +81,8 @@ function readLscript(path: string): Lscript {
 
 // Whether TazUO's global autostart list holds the panel today; null when it cannot be read.
 export function autostartOn(scriptsDir: string): boolean | null {
-  try { return readLscript(lscriptPathFor(scriptsDir)).list.includes(PANEL_SCRIPT); } catch { return null; }
+  const path = lscriptPathFor(scriptsDir);
+  try { return path ? readLscript(path).list.includes(PANEL_SCRIPT) : null; } catch { return null; }
 }
 
 // Add the panel to, or remove it from, GlobalAutoStartScripts. Merge only: the rest of the document is
@@ -119,15 +93,15 @@ export function setGlobalAutostart(path: string, on: boolean): "unchanged" | "wr
   if (cur.list.includes(PANEL_SCRIPT) === on) return "unchanged";
   const list = on ? [...cur.list, PANEL_SCRIPT] : cur.list.filter((s) => s !== PANEL_SCRIPT);
   if (cur.exists) atomicReplace(`${path}.bak`, (tmp) => copyFileSync(path, tmp, constants.COPYFILE_EXCL));
-  writeFileAtomic(path, (cur.bom ? "﻿" : "") + JSON.stringify({ ...cur.doc, GlobalAutoStartScripts: list }, null, 2));
+  writeFileAtomic(path, (cur.bom ? "\ufeff" : "") + JSON.stringify({ ...cur.doc, GlobalAutoStartScripts: list }, null, 2));
   return "written";
 }
 
-export type AutostartOutcome = { status: "applied" | "unchanged" | "pending" } | { status: "error"; error: string };
 
 // Bring lscript.json in line with the player's choice, unless a client is running (then "pending").
 export function syncOpenAtLogin(scriptsDir: string, on: boolean, running: () => boolean): AutostartOutcome {
   const path = lscriptPathFor(scriptsDir);
+  if (!path) return { status: "error", error: "The scripts folder is not inside a LegionScripts folder, so Pack Rat cannot find TazUO's settings" };
   if (!existsSync(dirname(path))) return { status: "error", error: "No Data folder beside LegionScripts, so this does not look like a TazUO folder" };
   if (on && !existsSync(join(scriptsDir, PANEL_SCRIPT))) return { status: "error", error: `${PANEL_SCRIPT} is not installed yet: reinstall the scripts first` };
   try {

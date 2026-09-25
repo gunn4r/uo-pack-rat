@@ -17,7 +17,7 @@ import { forgetCharacter } from "./characters.mts";
 import { bridgeNote, renderDataDirNotice } from "./bridge.mts";
 import { adapterCopy } from "./adapter-copy.mts";
 import { clientErrorMessage, dataDirNotice, errorText, hostErrorMessage, installedIntoNote, pathsFileNote, relativeWhen } from "./messages.mts";
-import { autostartNote, panelControls } from "./tazuo-panel.mts";
+import { autostartNote, panelControls, shownPanelPrefs } from "./tazuo-panel.mts";
 import type { SetupApiResponse, InstallApiResponse, UpdateCheckApiResponse, BlacklistApiResponse, CleanupApiResponse, RetentionSetting, SettingsApiResponse, PanelPrefs, TazuoPanelApiResponse } from "./api-types.mts";
 import type { BlacklistEntry } from "../vault-lib.mts";
 
@@ -153,10 +153,9 @@ function panelCard(r: TazuoPanelApiResponse): HTMLElement {
     catch (e) { panelNote = { tone: "bad", text: errorText(e), row: at }; }
     void syncPanelCard();
   };
-  const c = panelControls(r.prefs, (change) => void save(change), "set-panel");
-  // A choice not yet in TazUO's list (saved while TazUO ran, or never saved at all) says so.
-  const note = panelNote ?? (r.autostartOn != null && r.autostartOn !== r.prefs.openAtLogin
-    ? { tone: "warn" as const, text: "Not in TazUO's autostart list yet. Pack Rat changes that list only while TazUO is closed.", row: "login" as const } : null);
+  const c = panelControls(shownPanelPrefs(r), (change) => void save(change), "set-panel");
+  const waiting = autostartNote(r.autostart) ?? (r.pending ? autostartNote({ status: "pending" }) : null);
+  const note = panelNote ?? (waiting && { ...waiting, row: "login" as const });
   panelNote = null;
   const noteFor = (at: "login" | "hotkey") => note?.row === at ? message({ tone: note.tone, text: note.text }) : null;
   return box("div", { class: "card set-card", id: "set-panel" },

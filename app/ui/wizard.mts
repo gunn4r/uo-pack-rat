@@ -14,11 +14,11 @@ import { box, button, check, field, input, message, select, stepper, txt, badge,
 import { clientErrorMessage, errorText, hostErrorMessage, installedIntoNote, pathsFileNote } from "./messages.mts";
 import { renderSettings } from "./settings.mts";
 import { changeShard } from "./shard.mts";
-import { autostartNote, panelControls, PANEL_DEFAULTS } from "./tazuo-panel.mts";
+import { autostartNote, panelControls, shownPanelPrefs, PANEL_DEFAULTS } from "./tazuo-panel.mts";
 import { defaultAdapterId, availableAdapters, platformCompatible } from "./adapters.mts";
 import { adapterCopy, clientCard, wizardSteps } from "./adapter-copy.mts";
 export { defaultAdapterId, availableAdapters, platformCompatible };
-import type { SetupApiResponse, AdapterSummary, InstalledVersionInfo, LocateApiResponse, InstallApiResponse, HostPickFolderApiResponse, PanelPrefs, ApiError, SettingsApiResponse } from "./api-types.mts";
+import type { SetupApiResponse, AdapterSummary, InstalledVersionInfo, LocateApiResponse, InstallApiResponse, HostPickFolderApiResponse, PanelPrefs, TazuoPanelApiResponse, ApiError, SettingsApiResponse } from "./api-types.mts";
 
 // The shard's AFK rule, shown verbatim on step 1 only for shards that need it (uoalive today).
 const AFK_NOTICE = "UO Alive allows AFK skill training, but bans unattended resource, combat and loot gathering. Pack Rat's scripts are attended tools: they read what you can see and move an item only when you click.";
@@ -96,6 +96,13 @@ export async function openWizard({ firstRun = false }: { firstRun?: boolean } = 
   render();
   if (!dialog.open) dialog.showModal();
   focusStep();
+  // A client already set up keeps its panel options: the install step starts from them, not the defaults.
+  if (client?.adapter === "tazuo") {
+    try {
+      const r = await api<TazuoPanelApiResponse>("/api/tazuo-panel");
+      if (wiz) wiz.panel = shownPanelPrefs(r);
+    } catch { /* the defaults stand */ }
+  }
 }
 
 // The adapter object (listAdapters' shape) currently selected — looked up fresh each call, since the

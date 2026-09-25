@@ -18,6 +18,7 @@
 import type { Item, Container, Character, ScanSummary, OptItem, RunSettings, ProfilesFile, BlacklistEntry } from "../vault-lib.mts";
 import type { Facets, ItemQueryRows, ItemQueryGroups } from "../item-query.mts";
 import type { RulesV1 } from "../schema/types.d.mts";
+import type { AutostartOutcome, Hotkey as PanelHotkey, PanelPrefs } from "../tazuo-panel-prefs.mts";
 
 // ---------------------------------------------------------------- shared fragments
 
@@ -190,11 +191,10 @@ export interface InstallApiResponse {
   pathsFile?: string | undefined;
   autostart?: AutostartOutcome | null | undefined;
 }
-// The TazUO panel (app/tazuo-panel.mts): GET/PUT /api/tazuo-panel, and POST /api/setup/install's `panel`.
-export interface PanelHotkey { mods: string[]; key: string }
-export interface PanelPrefs { hotkey: PanelHotkey; openAtLogin: boolean }
-export type AutostartOutcome = { status: "applied" | "unchanged" | "pending" } | { status: "error"; error: string };
-export interface TazuoPanelApiResponse { ok: boolean; prefs: PanelPrefs; autostartOn?: boolean | null; autostart?: AutostartOutcome | null }
+// The TazUO panel (app/tazuo-panel-prefs.mts): GET/PUT /api/tazuo-panel, and POST /api/setup/install's `panel`.
+export type { AutostartOutcome, PanelHotkey, PanelPrefs };
+// pending: an open-at-login choice still waiting for TazUO to close. autostartOn: what TazUO's list says now.
+export interface TazuoPanelApiResponse { ok: boolean; prefs: PanelPrefs; pending?: boolean; autostartOn?: boolean | null; autostart?: AutostartOutcome | null }
 export interface HostPickFolderApiResponse {
   ok: boolean;
   path: string | null;

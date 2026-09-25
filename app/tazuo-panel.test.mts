@@ -7,7 +7,7 @@ import assert from "node:assert/strict";
 import { mkdirSync, mkdtempSync, readFileSync, writeFileSync, existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { panelPrefsError, panelPrefsOf, PANEL_DEFAULTS, setGlobalAutostart, syncOpenAtLogin, tazuoRunning, lscriptPathFor, type Run } from "./tazuo-panel.mts";
+import { panelPrefsError, panelPrefsOf, PANEL_DEFAULTS, readPanelFile, writePanelFile, setGlobalAutostart, syncOpenAtLogin, tazuoRunning, lscriptPathFor, type Run } from "./tazuo-panel.mts";
 
 const BOM = Buffer.from([0xef, 0xbb, 0xbf]);
 
@@ -18,7 +18,7 @@ function client({ panel = true }: { panel?: boolean } = {}): { scriptsDir: strin
   mkdirSync(scriptsDir, { recursive: true });
   mkdirSync(join(root, "TazUO", "Data"));
   if (panel) writeFileSync(join(scriptsDir, "packrat-panel.py"), "# panel\n");
-  return { scriptsDir, lscript: lscriptPathFor(scriptsDir) };
+  return { scriptsDir, lscript: lscriptPathFor(scriptsDir)! };
 }
 
 test("[fast] panelPrefsError takes a modified letter or a bare F-key and refuses a bare letter, unknown modifiers and keys", () => {
@@ -50,7 +50,29 @@ test("[fast] tazuoRunning: pgrep's and tasklist's answers, with anything unclear
   assert.equal(tazuoRunning("win32", answer({ status: 1, stdout: "" })), true);
   let asked: string[] = [];
   tazuoRunning("darwin", (cmd, args) => { asked = [cmd, ...args]; return { status: 1 }; });
-  assert.deepEqual(asked, ["pgrep", "-x", "TazUO"], "the exact name, so TazUOLauncher is not the client");
+  assert.deepEqual(asked, ["pgrep", "-x", "TazUO(\\.exe)?"], "the exact name (or TazUO.exe under Wine), so TazUOLauncher is not the client");
+});
+
+test("[fast] lscriptPathFor finds TazUO beside the nearest LegionScripts folder, through a group folder, and nowhere else", () => {
+  assert.equal(lscriptPathFor(join("/g", "TazUO", "LegionScripts"), "darwin"), join("/g", "TazUO", "Data", "lscript.json"));
+  assert.equal(lscriptPathFor(join("/g", "TazUO", "LegionScripts", "PackRat"), "linux"), join("/g", "TazUO", "Data", "lscript.json"));
+  assert.equal(lscriptPathFor(join("/g", "TazUO", "legionscripts"), "win32"), join("/g", "TazUO", "Data", "lscript.json"));
+  assert.equal(lscriptPathFor(join("/g", "TazUO", "legionscripts"), "darwin"), null, "case matters off Windows");
+  assert.equal(lscriptPathFor(join("/g", "Scripts"), "darwin"), null);
+  const elsewhere = mkdtempSync(join(tmpdir(), "qm-tazuo-panel-elsewhere-"));
+  mkdirSync(join(elsewhere, "Data"));
+  assert.equal(syncOpenAtLogin(join(elsewhere, "Scripts"), true, () => false).status, "error");
+  assert.equal(existsSync(join(elsewhere, "Data", "lscript.json")), false, "nothing created beside a folder that is not TazUO's");
+});
+
+test("[fast] tazuo-panel.json keeps a pending open-at-login flag only while it is true", () => {
+  const dir = mkdtempSync(join(tmpdir(), "qm-tazuo-panel-file-"));
+  const path = join(dir, "tazuo-panel.json");
+  assert.deepEqual(readPanelFile(path), { ...PANEL_DEFAULTS, pendingOpenAtLogin: false });
+  writePanelFile(path, { ...PANEL_DEFAULTS, openAtLogin: false, pendingOpenAtLogin: true });
+  assert.deepEqual(readPanelFile(path), { ...PANEL_DEFAULTS, openAtLogin: false, pendingOpenAtLogin: true });
+  writePanelFile(path, { ...PANEL_DEFAULTS, pendingOpenAtLogin: false });
+  assert.deepEqual(JSON.parse(readFileSync(path, "utf8")), PANEL_DEFAULTS);
 });
 
 test("[fast] setGlobalAutostart merges into lscript.json: other keys and entries kept, one BOM kept, a .bak of the original, idempotent both ways", () => {

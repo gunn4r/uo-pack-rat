@@ -2,7 +2,7 @@
 // login, and its show/hide hotkey. Settings › Game client saves each change as it is made; the wizard's
 // install step shows the same controls and sends the choices with the install.
 import { box, check, select } from "./components.mts";
-import type { AutostartOutcome, PanelPrefs } from "./api-types.mts";
+import type { AutostartOutcome, PanelPrefs, TazuoPanelApiResponse } from "./api-types.mts";
 
 export const PANEL_DEFAULTS: PanelPrefs = { hotkey: { mods: ["CTRL", "SHIFT"], key: "P" }, openAtLogin: true };
 const MODS = [["CTRL", "SHIFT"], ["CTRL", "ALT"], ["ALT", "SHIFT"], ["CTRL", "ALT", "SHIFT"], ["CTRL"], ["ALT"], ["SHIFT"], []];
@@ -19,6 +19,12 @@ export function panelControls(prefs: PanelPrefs, onChange: (change: Partial<Pane
   mods.addEventListener("change", changed);
   key.addEventListener("change", changed);
   return { login: login.root, hotkey: box("div", { class: "set-inline" }, mods, key) };
+}
+
+// The options as the player should see them: open-at-login follows TazUO's own list (Autostart may have
+// been changed in game), except while a choice made in the app is still waiting for TazUO to close.
+export function shownPanelPrefs(r: TazuoPanelApiResponse): PanelPrefs {
+  return { ...r.prefs, openAtLogin: r.pending ? r.prefs.openAtLogin : r.autostartOn ?? r.prefs.openAtLogin };
 }
 
 // What became of "open at login" after a save, for a note under the control; null when there is nothing to say.
