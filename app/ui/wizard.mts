@@ -327,7 +327,7 @@ function footer(): HTMLElement {
     primary = button({ label: "Finish", variant: "primary", size: "lg", kbd: "↵", onClick: () => void finish(), attrs: { id: "wiz-primary" } });
   } else {
     // The install is this step's one primary; Finish appears only once it succeeds.
-    primary = button({ label: wiz!.installed?.version ? "Reinstall scanner" : "Install scanner", variant: "primary", size: "lg", kbd: "↵",
+    primary = button({ label: wiz!.busy ? "Installing…" : wiz!.installed?.version ? "Reinstall scanner" : "Install scanner", variant: "primary", size: "lg", kbd: "↵",
       disabled: !wiz!.noRunningChecked || wiz!.busy, onClick: () => void doInstall(), attrs: { id: "wiz-primary" } });
   }
   return box("footer", { class: "overlay-foot wiz-foot" },
@@ -352,7 +352,9 @@ async function persistSetupDone(): Promise<void> {
     const r = await api<SettingsApiResponse>("/api/settings", { method: "PUT", body: { setupDone: true } });
     state.settings = r.settings;
   } catch (e) { showToast(errorText(e), "bad"); }
-  void renderSettings();
+  // The Inventory's row actions and the peek read the client from state.setup, which renderSettings
+  // refreshes; they redraw on "bridgechange" (bridge.mts), so the client set up here reaches them at once.
+  void renderSettings().then(() => document.dispatchEvent(new Event("bridgechange")));
 }
 function closeAs(kind: string): void {
   const dialog = $<HTMLDialogElement>("#wizard")!;

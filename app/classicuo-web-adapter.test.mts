@@ -190,6 +190,13 @@ test("[fast] classicuo-web: the real scan records a ground chest reading [] or t
   }
 });
 
+test("[fast] classicuo-web: a nested bag reading [] is recorded as not opened, like a ground root", async () => {
+  const doc = await runScanner(homeWorld());
+  const opened = (s: number): unknown => (doc.containers[String(s)] as { opened?: boolean }).opened;
+  assert.equal(opened(0x40000005), false, "the empty bag");
+  assert.equal(opened(0x40000002), undefined, "the pouch holding a ring");
+});
+
 test("[fast] classicuo-web: every root (opened or not) has a matching containers entry, a ground one with its pos", async () => {
   const doc = await runScanner(homeWorld());
   for (const root of doc.roots) {

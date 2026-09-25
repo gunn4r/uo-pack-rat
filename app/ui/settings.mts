@@ -113,7 +113,7 @@ function clientSection(setup: SetupApiResponse): HTMLElement {
         note ? message({ tone: "warn", text: note }) : null] });
     const confirm = check({ label: "I typed -stopall in game and nothing is running", checked: reinstall.checked, attrs: { id: "set-stopall" },
       onChange: (on) => { reinstall.checked = on; void renderSettings(setup); } });
-    const btn = button({ label: "Reinstall", disabled: !reinstall.checked || reinstall.busy, attrs: { id: "set-reinstall" }, onClick: async () => {
+    const btn = button({ label: reinstall.busy ? "Reinstalling…" : "Reinstall", disabled: !reinstall.checked || reinstall.busy, attrs: { id: "set-reinstall" }, onClick: async () => {
       reinstall.error = null; reinstall.busy = true; void renderSettings(setup);
       try { reinstall.result = await api<InstallApiResponse>("/api/setup/install", { method: "POST", body: { adapter: client.adapter, scriptsDir: client.scriptsDir } }); }
       // The 409 "-stopall" text comes through verbatim; the one failure worth rewording is the folder this
@@ -187,7 +187,7 @@ function dataSection(setup: SetupApiResponse): HTMLElement {
   return section("set-data", "Data",
     box("div", { class: "card set-card" },
       pathRow("Data folder", "data", setup.dataDir, setup.canOpenFolders === true),
-      pathRow("Logs", "logs", `${setup.dataDir}/logs`, setup.canOpenFolders === true),
+      pathRow("Logs", "logs", `${setup.dataDir}${setup.platform === "win32" ? "\\" : "/"}logs`, setup.canOpenFolders === true),
       mismatch ? box("div", { class: "set-row-below set-pad" }, message({ tone: "warn", text: mismatch })) : null),
     blacklistCard([]),
     box("div", { class: "card set-card set-danger", "aria-labelledby": "set-danger-h" },

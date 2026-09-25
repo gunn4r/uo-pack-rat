@@ -19,7 +19,7 @@
           "x": { "type": "integer", "minimum": 0, "maximum": 7168 },
           "y": { "type": "integer", "minimum": 0, "maximum": 4096 },
           "z": { "type": "integer", "minimum": -128, "maximum": 127 },
-          "facet": { "type": "integer", "enum": [0, 1, 2, 3, 4, 5], "$comment": "0 Felucca, 1 Trammel, 2 Ilshenar, 3 Malas, 4 Tokuno, 5 Ter Mur. Optional, and nothing writes it today — the fold never carries a container's pos, so POST /api/bridge sends pos:null in practice, and a scan's own root pos is {x, y, z}. A writer that starts carrying the facet has a typed place for it." }
+          "facet": { "type": "integer", "enum": [0, 1, 2, 3, 4, 5], "$comment": "0 Felucca, 1 Trammel, 2 Ilshenar, 3 Malas, 4 Tokuno, 5 Ter Mur. Optional, and nothing writes it today; the bridges validate it but do not act on it until a writer exists — the fold never carries a container's pos, so POST /api/bridge sends pos:null in practice, and a scan's own root pos is {x, y, z}. A writer that starts carrying the facet has a typed place for it." }
         }
       },
       "queuedAt": { "type": "string", "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d+)?([+-]\\d{2}:\\d{2}|Z)$", "$comment": "RFC 3339, same pattern as result.t — POST /api/bridge writes new Date().toISOString(). Each bridge parses it and refuses a command older than 60 s (a replayed backlog) or more than 5 s in the future." }

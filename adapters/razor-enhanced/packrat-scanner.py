@@ -69,7 +69,7 @@ def read_blacklist(path):
 
 
 ADAPTER_ID = "razor-enhanced"
-ADAPTER_VERSION = "1.5.0"
+ADAPTER_VERSION = "1.6.0"
 # Keep this literal in sync with capabilities.json -- a test enforces the two never drift apart
 # for the TazUO adapter (test_paths.py) and the same discipline applies here by hand until this
 # adapter has its own test.

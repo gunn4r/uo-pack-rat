@@ -49,7 +49,8 @@
 //   NESTED item, the script has no way to tell "this is a container I can't read" apart from "this
 //   isn't a container at all", and a build may give every item an empty `contents` array — so a
 //   nested item counts as a container only when it holds something or carries a known container
-//   graphic (`isContainer()`); anything else is recorded as an ordinary item, not left out.
+//   graphic (`isContainer()`); anything else is recorded as an ordinary item, not left out. A nested
+//   container whose contents read as an empty array is recorded as not opened, like a ground root.
 // - DEEPLY NESTED BAGS STOP RECURSING AFTER `MAX_NEST` LEVELS (4). A bag past that depth is recorded
 //   as a container with `opened: false` (its own contents are never read), so the app keeps whatever
 //   it last knew inside it — a deliberate cap (mirroring `adapters/tazuo/packrat-scanner.py`'s own
@@ -297,8 +298,9 @@ function walk(rootSerial: number, containerItem: any, containers: Record<string,
     if (seen.has(s)) continue;
     seen.add(s);
     if (isContainer(kid)) {
-      // A nested container: record it in `containers`, then recurse into it — or, past MAX_NEST,
-      // mark it not opened, so the app keeps what it last knew inside it.
+      // A nested container: record it in `containers`, then recurse into it — or, past MAX_NEST or
+      // when its contents read as an empty array (the ground-root rule: never loaded is likelier than
+      // empty), mark it not opened, so the app keeps what it last knew inside it.
       const t = tooltipOf(s);
       const entry: any = {
         serial: s,
@@ -309,7 +311,7 @@ function walk(rootSerial: number, containerItem: any, containers: Record<string,
         tooltip: t.lines,
       };
       containers[String(s)] = entry;
-      if (depth < MAX_NEST) walk(rootSerial, kid, containers, items, seen, depth + 1);
+      if (depth < MAX_NEST && safeContents(kid)!.length > 0) walk(rootSerial, kid, containers, items, seen, depth + 1);
       else entry.opened = false;
       continue;
     }

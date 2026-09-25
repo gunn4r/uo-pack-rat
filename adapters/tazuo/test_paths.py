@@ -63,7 +63,7 @@ class Paths(unittest.TestCase):
         for s in SCRIPTS:
             t = read_text(os.path.join(HERE, s))
             self.assertIn('ADAPTER_ID = "tazuo"', t, s)
-            self.assertIn('ADAPTER_VERSION = "2.5.0"', t, s)
+            self.assertIn('ADAPTER_VERSION = "2.6.0"', t, s)
             self.assertNotIn('"version": 1', t, s)
         for s in ("packrat-scanner.py", "packrat-refresh.py"):
             t = read_text(os.path.join(HERE, s))
