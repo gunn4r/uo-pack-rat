@@ -188,7 +188,13 @@ export interface InstallApiResponse {
   version: string | null;
   scriptsDir?: string | undefined;
   pathsFile?: string | undefined;
+  autostart?: AutostartOutcome | null | undefined;
 }
+// The TazUO panel (app/tazuo-panel.mts): GET/PUT /api/tazuo-panel, and POST /api/setup/install's `panel`.
+export interface PanelHotkey { mods: string[]; key: string }
+export interface PanelPrefs { hotkey: PanelHotkey; openAtLogin: boolean }
+export type AutostartOutcome = { status: "applied" | "unchanged" | "pending" } | { status: "error"; error: string };
+export interface TazuoPanelApiResponse { ok: boolean; prefs: PanelPrefs; autostartOn?: boolean | null; autostart?: AutostartOutcome | null }
 export interface HostPickFolderApiResponse {
   ok: boolean;
   path: string | null;

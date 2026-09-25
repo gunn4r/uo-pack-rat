@@ -14,10 +14,11 @@ import { box, button, check, field, input, message, select, stepper, txt, badge,
 import { clientErrorMessage, errorText, hostErrorMessage, installedIntoNote, pathsFileNote } from "./messages.mts";
 import { renderSettings } from "./settings.mts";
 import { changeShard } from "./shard.mts";
+import { autostartNote, panelControls, PANEL_DEFAULTS } from "./tazuo-panel.mts";
 import { defaultAdapterId, availableAdapters, platformCompatible } from "./adapters.mts";
 import { adapterCopy, clientCard, wizardSteps } from "./adapter-copy.mts";
 export { defaultAdapterId, availableAdapters, platformCompatible };
-import type { SetupApiResponse, AdapterSummary, InstalledVersionInfo, LocateApiResponse, InstallApiResponse, HostPickFolderApiResponse, ApiError, SettingsApiResponse } from "./api-types.mts";
+import type { SetupApiResponse, AdapterSummary, InstalledVersionInfo, LocateApiResponse, InstallApiResponse, HostPickFolderApiResponse, PanelPrefs, ApiError, SettingsApiResponse } from "./api-types.mts";
 
 // The shard's AFK rule, shown verbatim on step 1 only for shards that need it (uoalive today).
 const AFK_NOTICE = "UO Alive allows AFK skill training, but bans unattended resource, combat and loot gathering. Pack Rat's scripts are attended tools: they read what you can see and move an item only when you click.";
@@ -34,7 +35,7 @@ function whatToPress(installedNames: string[]): HTMLElement[] {
   const line = (before: string, name: string, after: string): HTMLElement => el("li", {}, el("span", {}, before, el("code", {}, name), after));
   const lines: HTMLElement[] = [];
   const panel = has("panel");
-  if (panel) lines.push(el("li", {}, el("span", {}, "Easiest: open the Pack Rat window, whose buttons run the scripts below. Run ", el("code", {}, panel), " once from Legion Script's Script Manager and tick Autostart so it opens at every login, or type (don't paste) ", el("code", {}, `-playlscript ${panel}`), " in the game's chat. The Script Manager's Play button is a toggle: click it once.")));
+  if (panel) lines.push(el("li", {}, el("span", {}, "Easiest: the Pack Rat panel, whose buttons run the scripts below. It opens when you log in if you chose that above; otherwise type (don't paste) ", el("code", {}, `-playlscript ${panel}`), " in the game's chat.")));
   const refresh = has("refresh");
   if (refresh) lines.push(line("After a gearing or skill-training session on a character: run ", refresh, "."));
   const scanner = has("scanner");
@@ -57,6 +58,7 @@ interface WizState {
   hostPicker: boolean;         // false once POST /api/host/pick-folder answers 501 (no desktop shell)
   installed: InstalledVersionInfo | null;
   noRunningChecked: boolean;
+  panel: PanelPrefs;           // the TazUO panel's options, sent with the install
   installResult: InstallApiResponse | null;
   installError: string | null;
   busy: boolean;
@@ -84,6 +86,7 @@ export async function openWizard({ firstRun = false }: { firstRun?: boolean } = 
     locateError: null, hostPicker: true,
     installed: client ? setup.installed : null,   // {version, files} for the already-configured client, if any
     noRunningChecked: false,
+    panel: { ...PANEL_DEFAULTS, hotkey: { ...PANEL_DEFAULTS.hotkey } },
     installResult: null, installError: null, busy: false,
   };
   // Reset from any previous session: returnValue sticks across showModal() calls, and the "close"
@@ -263,6 +266,7 @@ function step4(): StepContent {
         message({ tone: "ok", title: `Installed ${r.installed.length === 1 ? "1 script" : `${r.installed.length} scripts`}`, text: r.installed.join(", ") }),
         noteEl(installedIntoNote(r.scriptsDir)),
         noteEl(pathsFileNote(r.pathsFile)),
+        ...(() => { const n = autostartNote(r.autostart); return n ? [message({ tone: n.tone, text: n.text })] : []; })(),
         box("div", { class: "wiz-press" }, txt("What to press in game", "label"), el("ul", { class: "wiz-press-list" }, ...whatToPress(r.installed))),
       ],
     };
@@ -274,14 +278,19 @@ function step4(): StepContent {
     body: [
       already ? message({ tone: "info", text: el("span", {}, `Scanner ${already} is already installed in `, el("span", { class: "mono" }, wiz!.scriptsDir || ""), ". Installing again updates it.") }) : null,
       wiz!.installError ? message({ tone: "bad", title: "Could not install", text: wiz!.installError }) : null,
+      wiz!.adapter === "tazuo" ? panelOptions() : null,
       box("div", { class: "wiz-confirm" }, confirm.root),
     ],
   };
 }
+function panelOptions(): HTMLElement {
+  const c = panelControls(wiz!.panel, (change) => { wiz!.panel = { ...wiz!.panel, ...change }; }, "wiz-panel");
+  return box("div", { class: "wiz-panel" }, txt("In-game panel", "label"), c.login, box("div", { class: "set-inline" }, txt("Show/hide hotkey"), c.hotkey));
+}
 async function doInstall(): Promise<void> {
   wiz!.installError = null; wiz!.busy = true; render();
   try {
-    const r = await api<InstallApiResponse>("/api/setup/install", { method: "POST", body: { adapter: wiz!.adapter, scriptsDir: wiz!.scriptsDir } });
+    const r = await api<InstallApiResponse>("/api/setup/install", { method: "POST", body: { adapter: wiz!.adapter, scriptsDir: wiz!.scriptsDir, ...(wiz!.adapter === "tazuo" ? { panel: wiz!.panel } : {}) } });
     wiz!.installResult = r;
     // The server's own resolved folder, not the one this step sent: POST /api/setup/install turns a
     // picked client root into its nested scripts folder, and that is what it persisted as the client.

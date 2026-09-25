@@ -27,6 +27,7 @@ import { candidateClientRoots, type AdapterInfo, type InstallScriptsResult, type
 const FAKE_HOME = mkdtempSync(join(tmpdir(), "qm-home-"));
 const startServer = (config: Parameters<typeof startRealServer>[0], opts: StartServerOptions = {}): Promise<ServerHandle> => startRealServer(config, {
   clientSearch: { home: FAKE_HOME, candidates: (a) => candidateClientRoots({ adapter: a.id, home: FAKE_HOME, platform: "linux", env: {}, adapterPlatform: a.platform }) },
+  clientRunning: () => false,   // never shell out to pgrep/tasklist from a test
   ...opts,
 });
 
@@ -1771,6 +1772,45 @@ test("[fast] POST /api/setup/locate resolves a nested X/TazUO/LegionScripts fold
       method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ adapter: "tazuo", dir: join(clientRoot, "does-not-exist") }),
     });
     assert.equal(bad.status, 400);
+  } finally {
+    await s2.close();
+  }
+});
+
+test("[fast] the TazUO panel's hotkey and open-at-login: saved with an install, applied to lscript.json only once no client runs, and a bad hotkey refused with its reason", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "qm-panel-prefs-"));
+  let running = true;
+  const s2 = await startServer(ensureLayout(resolveConfig(["--port", "0", "--data", dir], {})), { clientRunning: () => running });
+  try {
+    const tazuo = join(mkdtempSync(join(tmpdir(), "qm-panel-client-")), "TazUO");
+    const scriptsDir = join(tazuo, "LegionScripts");
+    mkdirSync(scriptsDir, { recursive: true });
+    mkdirSync(join(tazuo, "Data"));
+    const lscript = join(tazuo, "Data", "lscript.json");
+    const call = async (method: string, path: string, body?: unknown) => {
+      const r = await fetch(s2.url + path, { method, headers: { "content-type": "application/json" }, ...(body === undefined ? {} : { body: JSON.stringify(body) }) });
+      return { status: r.status, body: await r.json() as Record<string, unknown> };
+    };
+    const install = await call("POST", "/api/setup/install", { adapter: "tazuo", scriptsDir, panel: { openAtLogin: true, hotkey: { mods: ["ALT"], key: "F3" } } });
+    assert.equal(install.status, 200, JSON.stringify(install.body));
+    assert.deepEqual(install.body.autostart, { status: "pending" }, "TazUO is running: the choice waits");
+    assert.equal(existsSync(lscript), false);
+    assert.deepEqual(JSON.parse(readFileSync(join(dir, "tazuo-panel.json"), "utf8")), { hotkey: { mods: ["ALT"], key: "F3" }, openAtLogin: true });
+
+    const bad = await call("PUT", "/api/tazuo-panel", { hotkey: { mods: [], key: "P" } });
+    assert.equal(bad.status, 400);
+    assert.match(String(bad.body.error), /needs Ctrl, Alt or Shift/);
+
+    running = false;
+    const saved = await call("PUT", "/api/tazuo-panel", {});
+    assert.deepEqual(saved.body.autostart, { status: "applied" });
+    assert.deepEqual(JSON.parse(readFileSync(lscript, "utf8")).GlobalAutoStartScripts, ["packrat-panel.py"]);
+    const got = await call("GET", "/api/tazuo-panel");
+    assert.deepEqual(got.body, { ok: true, prefs: { hotkey: { mods: ["ALT"], key: "F3" }, openAtLogin: true }, autostartOn: true });
+
+    const off = await call("PUT", "/api/tazuo-panel", { openAtLogin: false });
+    assert.deepEqual(off.body.autostart, { status: "applied" });
+    assert.deepEqual(JSON.parse(readFileSync(lscript, "utf8")).GlobalAutoStartScripts, []);
   } finally {
     await s2.close();
   }
