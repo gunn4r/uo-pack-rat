@@ -23,9 +23,9 @@ function unavailable(): string | null {
   }
   return null;
 }
-async function launch(dataDir: string): Promise<{ app: ElectronApplication; page: Page; errors: string[] }> {
+async function launch(dataDir: string, { demo = true } = {}): Promise<{ app: ElectronApplication; page: Page; errors: string[] }> {
   const { _electron } = await import("playwright");
-  const app = await _electron.launch({ args: [ROOT, "--demo", "--data", dataDir], cwd: ROOT, timeout: 60_000, env: testEnv() });
+  const app = await _electron.launch({ args: [ROOT, ...(demo ? ["--demo"] : []), "--data", dataDir], cwd: ROOT, timeout: 60_000, env: testEnv() });
   const page = await app.firstWindow();
   const errors: string[] = [];
   page.on("pageerror", (e) => errors.push(String(e)));
@@ -260,45 +260,43 @@ test("[slow] Settings: sections with the client warning, theme and appearance, R
   }
 });
 
-test("[slow] Settings › Data retention: a bad value stays with its range, Clean up now counts, confirms and removes, Keep everything disables it", async (t) => {
+test("[slow] Settings › Data retention: Clean up now counts, confirms and removes; Keep everything disables it", async (t) => {
   const why = unavailable();
   if (why) return t.skip(why);
+  // Not --demo, which prunes nothing: the demo scans plus an older copy of Dorran's, and three saved runs.
+  // Keep everything is on at launch so the startup prune leaves them for the button.
   const dataDir = mkdtempSync(join(tmpdir(), "packrat-forms-retention-"));
-  setupDone(dataDir);
-  // Under --demo the scans are the committed fixtures and never pruned, so the saved runs carry this test.
+  mkdirSync(join(dataDir, "scans"));
   mkdirSync(join(dataDir, "runs"));
+  for (const name of ["Dorran", "Kestrel"]) writeFileSync(join(dataDir, "scans", `demo-${name}.json`), readFileSync(join(ROOT, "app", "fixtures", `demo-${name}.json`)));
+  writeFileSync(join(dataDir, "scans", "old-Dorran.json"), JSON.stringify({ ...JSON.parse(readFileSync(join(ROOT, "app", "fixtures", "demo-Dorran.json"), "utf8")), scannedAt: "2025-01-01T12:00:00" }));
   for (const d of [20, 21, 22]) writeFileSync(join(dataDir, "runs", `r${d}.json`), JSON.stringify({ id: `r${d}`, key: `r${d}`, character: "Dorran", createdAt: `2026-09-${d}T10:00:00Z`, label: "", settings: {}, result: null }));
-  const { app, page, errors } = await launch(dataDir);
-  const settingsFile = (): { retention?: Record<string, unknown> } => JSON.parse(readFileSync(join(dataDir, "settings.json"), "utf8"));
+  writeFileSync(join(dataDir, "settings.json"), JSON.stringify({ schemaVersion: 1, shard: "uoalive", setupDone: true, retention: { keepAll: true, scanDays: 30, runsPerCharacter: 1 } }));
+  const { app, page, errors } = await launch(dataDir, { demo: false });
+  const retention = (): unknown => JSON.parse(readFileSync(join(dataDir, "settings.json"), "utf8")).retention;
   try {
     await page.locator("#inv-table tbody tr.item").first().waitFor({ timeout: 30_000 });
     await page.evaluate(() => { location.hash = "#/settings"; });
     await page.locator("#set-retention").scrollIntoViewIfNeeded();
-    assert.equal(await page.locator("#set-ret-scanDays").inputValue(), "30");
-    assert.equal(await page.locator("#set-ret-runsPerCharacter").inputValue(), "50");
+    assert.equal(await page.locator("#set-ret-clean").isDisabled(), true, "Keep everything is on");
+    await page.locator("#set-retention label.check").click();
+    await page.waitForFunction(() => !(document.querySelector("#set-ret-clean") as HTMLButtonElement).disabled);
+    assert.deepEqual(retention(), { keepAll: false, scanDays: 30, runsPerCharacter: 1 });
 
-    await page.fill("#set-ret-scanDays", "0");
-    await page.press("#set-ret-scanDays", "Tab");
-    assert.equal(await page.locator("#set-ret-scanDays-err").innerText(), "Enter a whole number from 1 to 3,650.");
-    assert.equal(await page.locator("#set-ret-scanDays").getAttribute("aria-invalid"), "true");
-    assert.equal(settingsFile().retention, undefined, "an out-of-range value is not saved");
-
-    await page.fill("#set-ret-runsPerCharacter", "1");
-    await page.press("#set-ret-runsPerCharacter", "Tab");
-    await page.waitForFunction(async () => (await (await fetch("/api/settings")).json()).settings.retention.runsPerCharacter === 1);
     await page.click("#set-ret-clean");
     await page.waitForSelector("dialog.dialog[open]");
     assert.equal(await page.locator("dialog.dialog[open] h2").innerText(), "Clean up old data?");
-    assert.match(await page.locator("dialog.dialog[open]").innerText(), /This removes 2 runs from the data folder\. The inventory stays the same\./);
-    await page.getByRole("button", { name: "Remove 2 runs" }).click();
+    assert.match(await page.locator("dialog.dialog[open]").innerText(), /This removes 1 scan and 2 runs from the data folder for good\. The inventory stays the same\./);
+    await page.getByRole("button", { name: "Remove 1 scan and 2 runs" }).click();
     await page.waitForSelector(".toast.ok");
-    assert.match(await page.locator(".toast.ok").last().innerText(), /Removed 2 runs\./);
+    assert.match(await page.locator(".toast.ok").last().innerText(), /Removed 1 scan and 2 runs\./);
+    assert.deepEqual(readdirSync(join(dataDir, "scans")).sort(), ["demo-Dorran.json", "demo-Kestrel.json"]);
     assert.deepEqual(readdirSync(join(dataDir, "runs")), ["r22.json"], "the newest run stays");
 
     await page.locator("#set-retention label.check").click();
     await page.waitForFunction(() => (document.querySelector("#set-ret-clean") as HTMLButtonElement).disabled);
     assert.equal(await page.locator("#set-ret-runsPerCharacter").isDisabled(), true);
-    assert.deepEqual(settingsFile().retention, { keepAll: true, scanDays: 30, runsPerCharacter: 1 });
+    assert.deepEqual(retention(), { keepAll: true, scanDays: 30, runsPerCharacter: 1 });
     assert.deepEqual(errors, []);
   } finally {
     await app.close();

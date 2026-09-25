@@ -40,14 +40,12 @@ One directory holds everything, resolved the same way for the bare server and th
   scan-blacklist.json  the containers scans skip: [{serial, name, addedAt, where?}], written by the app and by the TazUO packrat-blacklist.py
   ui-prefs.json        the page's view choices ({cols, colsVersion, colWidths, sheetProps, theme, appearance, sidebar, density}: the Inventory columns and their widths, the character sheet's properties, the look, a pinned-collapsed sidebar)
   rules/                user-defined or overriding shard rules files
-  runs/                 one file per finished suit-build job
+  runs/                 one file per finished suit-build job (scans/ and runs/ are pruned by settings.json's retention on startup and on Clean up now: app/retention.mts)
   bridge/<adapter>/     queue.jsonl (commands) and status.json (the bridge script's heartbeat); the CONFIGURED client's own directory, not a fixed "tazuo"
   logs/
     server.log           the server's own request/error log (ref-keyed stack traces)
     shell.log             the shell's own lifecycle log (desktop only — see Logs, below)
 ```
-
-`scans/` and `runs/` are pruned by `settings.json`'s `retention` (Settings › Data; default: scans from the last 30 days plus whatever the fold still needs, and each character's newest 50 runs) on startup, 5 s after scans stop landing, and on Clean up now (`POST /api/retention/cleanup`). `app/retention.mts` picks the files, keeping every `_vault` tombstone and the newest scan of each root and character, and prunes no scan at all unless the fold of what is left equals the fold of everything; the server removes only plain `.json` files by bare name inside those two folders (never a symlink, never a file it would skip reading) and logs each removal to `server.log`. Under `--demo` only runs are pruned.
 
 `app/config.mts`'s `resolveConfig()`/`ensureLayout()` computes and creates every one of these paths; the shell adds nothing to that function, it just supplies `--data`/`PACKRAT_DATA` before the child ever calls it. Under `--demo`, `scans` points at the committed `app/fixtures/` instead of `<data>/scans`, and no inbox watcher starts at all — the demo fold must never be written to. Legacy scans a player already has on disk from before the inbox existed are not moved automatically; they come in through the Import drawer's Scan files mode, which reads each file in the page and sends it through `POST /api/import/paste` like a pasted scan (validated and written to `inbox/<adapter>/` for that adapter's watcher). There is no route that copies a whole folder server-side any more. The Import tab (`app/ui/import.mts`, Task 1, Phase 6) is the one place in the UI this lives — the Settings tab used to duplicate it with its own adapter-unaware copy (Task 5, Phase 6 removed that and left a pointer instead).
 

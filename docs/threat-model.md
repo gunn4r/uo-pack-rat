@@ -148,7 +148,7 @@ The honest limit: `publish` uploads bytes built on three other runners without r
 
 ### 10. Retention → files in the data folder
 
-**Trusted:** nothing in `settings.json`'s `retention` beyond its bounds. Pruning is the one place the server deletes files no request named, so it is narrow on purpose: only names it listed itself inside `<data>/scans/` and `<data>/runs/`, only files that parsed and validated as a scan or a run, only regular files (`lstat`, so a symlink is never followed or removed), and never a scan unless the inventory folded without it is identical. A forged `retention` can at most remove old runs and scans the inventory no longer needs; a malformed one reads as the defaults.
+**Trusted:** nothing in `settings.json`'s `retention` beyond its bounds. Pruning is the one place the server deletes files no request named, so it is narrow on purpose: only names it listed itself inside `<data>/scans/` and `<data>/runs/`, only files that parsed and validated as a scan or a run, never a saved run the player named, only regular files (`lstat`, so a symlink is never followed or removed), and never a scan unless the inventory folded without it is identical. A forged `retention` can at most remove old runs and scans the inventory no longer needs; a malformed one reads as the defaults. Two limits: the proof that the inventory is unchanged holds for the scans on disk when the prune runs, so a scan pasted or imported later with a stamp older than the pruned ones folds against less history than it would have; and a removed file is deleted outright, not moved aside, so it cannot be recovered. Nothing is pruned under `--demo`.
 
 ## Rulings
 

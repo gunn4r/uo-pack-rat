@@ -4,12 +4,11 @@
 //
 // Scans are pruned so the inventory never changes: every scan newer than the cutoff stays, and so,
 // whatever its age, does the newest scan that opened each root container (it decides that root's
-// contents, even when it found the root empty), the newest scan of each character (their card and
-// worn set), every `_vault` tombstone (a Forget or Forget character still in force; they are one file
-// per root or character, so they never pile up) and every scan something in the fold still carries
-// the timestamp of (a bag a later scan could not open keeps what an older one saw in it). Then the
-// fold of what is left is compared with the fold of everything, and when they differ nothing is
-// pruned at all.
+// contents, even when it found the root empty), every `_vault` tombstone (a Forget or Forget character
+// still in force; they are one file per root or character, so they never pile up) and every scan
+// something in the fold still carries the timestamp of (a character's card and worn set, a bag a later
+// scan could not open, which keeps what an older one saw in it). Then the fold of what is left is
+// compared with the fold of everything, and when they differ nothing is pruned at all.
 import { parseStamp } from "./scan-schema.mts";
 import type { Inventory } from "./vault-lib.mts";
 import type { ScanV2 } from "./schema/types.d.mts";
@@ -28,9 +27,9 @@ export function retentionError(v: unknown): string | null {
   const r = v as Record<string, unknown>;
   for (const k of Object.keys(r)) if (!(k in RETENTION_DEFAULTS)) return `settings.retention.${k} is not a setting`;
   if ("keepAll" in r && typeof r.keepAll !== "boolean") return "settings.retention.keepAll must be a boolean";
-  for (const k of ["scanDays", "runsPerCharacter"] as const) {
+  for (const [k, what] of [["scanDays", "Days to keep scans"], ["runsPerCharacter", "Saved runs per character"]] as const) {
     const { min, max } = RETENTION_LIMITS[k];
-    if (k in r && !isWhole(r[k], RETENTION_LIMITS[k])) return `settings.retention.${k} must be a whole number from ${min} to ${max}`;
+    if (k in r && !isWhole(r[k], RETENTION_LIMITS[k])) return `${what} must be a whole number from ${min} to ${max}.`;
   }
   return null;
 }
@@ -48,22 +47,23 @@ export function retentionOf(v: unknown): Retention {
 
 export interface ScanFile { file: string; doc: ScanV2 }
 
-// The scan files to delete, oldest first. `scans` are the files the server reads (valid, upgraded),
-// in the order it folds ties; `fold` is vault-lib.mts's foldSnapshots.
-export function scansToPrune(scans: ScanFile[], fold: (s: ScanV2[]) => Inventory, r: Retention, now: number): string[] {
-  if (r.keepAll) return [];
+// The scan files to delete, oldest first, and `refused` when some were old enough to go but the fold
+// without them differed, so none go. `scans` are the files the server reads (valid, upgraded), in the
+// order it folds ties; `fold` is vault-lib.mts's foldSnapshots.
+export function scansToPrune(scans: ScanFile[], fold: (s: ScanV2[]) => Inventory, r: Retention, now: number): { files: string[]; refused: boolean } {
+  const none = { files: [], refused: false };
+  if (r.keepAll) return none;
   const cutoff = now - r.scanDays * DAY_MS;
   const stamp = (s: ScanFile): number => { const t = parseStamp(s.doc.scannedAt); return Number.isFinite(t) ? t : -Infinity; };
   const keep = new Set<string>();
-  const newest = new Map<string, ScanFile>();
+  const newest = new Map<string, ScanFile>();   // by root serial
   const claim = (key: string, s: ScanFile): void => { const cur = newest.get(key); if (!cur || stamp(s) >= stamp(cur)) newest.set(key, s); };
   for (const s of scans) {
     if (stamp(s) >= cutoff || s.doc.character === "_vault") keep.add(s.file);
-    claim(`c:${s.doc.character}`, s);
-    for (const root of s.doc.roots || []) if (root.opened !== false) claim(`r:${+root.serial}`, s);
+    for (const root of s.doc.roots || []) if (root.opened !== false) claim(`${+root.serial}`, s);
   }
   for (const s of newest.values()) keep.add(s.file);
-  if (keep.size === scans.length) return [];
+  if (keep.size === scans.length) return none;
   const all = fold(scans.map((s) => s.doc));
   const live = new Set<string>([
     ...Object.values(all.items).map((it) => it.seenAt),
@@ -72,8 +72,9 @@ export function scansToPrune(scans: ScanFile[], fold: (s: ScanV2[]) => Inventory
   ]);
   for (const s of scans) if (live.has(s.doc.scannedAt)) keep.add(s.file);
   const kept = scans.filter((s) => keep.has(s.file));
-  if (kept.length === scans.length || !sameFold(all, fold(kept.map((s) => s.doc)))) return [];
-  return scans.filter((s) => !keep.has(s.file)).sort((a, b) => stamp(a) - stamp(b)).map((s) => s.file);
+  if (kept.length === scans.length) return none;
+  if (!sameFold(all, fold(kept.map((s) => s.doc)))) return { files: [], refused: true };
+  return { files: scans.filter((s) => !keep.has(s.file)).sort((a, b) => stamp(a) - stamp(b)).map((s) => s.file), refused: false };
 }
 
 // Two folds describe the same inventory: the same characters, containers and items, each equal. The
@@ -86,13 +87,15 @@ export function sameFold(a: Inventory, b: Inventory): boolean {
   return same(a.characters, b.characters) && same(a.containers, b.containers) && same(a.items, b.items);
 }
 
-export interface RunFile { file: string; character: string; createdAt: string }
+export interface RunFile { file: string; character: string; createdAt: string; label: string }
 
-// The saved-run files to delete: each character keeps its newest runsPerCharacter.
+// The saved-run files to delete: each character keeps its newest runsPerCharacter unnamed runs. A run
+// the player named (PUT /api/runs/<id> {label}) is always kept and does not count toward the limit.
 export function runsToPrune(runs: RunFile[], r: Retention): string[] {
   if (r.keepAll) return [];
   const byChar = new Map<string, RunFile[]>();
   for (const run of runs) {
+    if (run.label) continue;
     const list = byChar.get(run.character);
     if (list) list.push(run); else byChar.set(run.character, [run]);
   }

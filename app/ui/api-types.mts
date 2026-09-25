@@ -36,7 +36,7 @@ export interface ClientSetting {
   adapter: string;
   scriptsDir: string;
 }
-// settings.retention (app/retention.mts): the server always answers with all three fields.
+// settings.retention (app/retention.mts): the server answers with all three fields.
 export interface RetentionSetting {
   keepAll: boolean;
   scanDays: number;
@@ -48,11 +48,13 @@ export interface SettingsData {
   client?: ClientSetting | null | undefined;
   retention?: RetentionSetting | undefined;
 }
-// POST /api/retention/cleanup: what a dry run would remove, or what a real run removed.
+// POST /api/retention/cleanup: what a dry run would remove, or what a real run removed; refused when
+// old scans were kept because the inventory would have changed without them.
 export interface CleanupApiResponse {
   ok: boolean;
   scans: number;
   runs: number;
+  refused: boolean;
 }
 export interface SettingsApiResponse {
   ok: boolean;

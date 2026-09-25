@@ -9,13 +9,14 @@ import { state } from "./store.mts";
 import { $, el, noteEl } from "./dom.mts";
 import { api } from "./api.mts";
 import { badge, box, button, check, confirmDialog, copyText, input, message, segmented, select, switchControl, txt, showToast, type Kids } from "./components.mts";
+import { plural } from "./builder-model.mts";
 import { applyLook, currentLook, resolveTheme, BUILT_THEMES, type Appearance } from "./theme.mts";
 import { changeShard } from "./shard.mts";
 import { openWizard } from "./wizard.mts";
 import { forgetCharacter } from "./characters.mts";
 import { bridgeNote, renderDataDirNotice } from "./bridge.mts";
 import { adapterCopy } from "./adapter-copy.mts";
-import { cleanupText, clientErrorMessage, dataDirNotice, errorText, hostErrorMessage, installedIntoNote, pathsFileNote, relativeWhen } from "./messages.mts";
+import { clientErrorMessage, dataDirNotice, errorText, hostErrorMessage, installedIntoNote, pathsFileNote, relativeWhen } from "./messages.mts";
 import type { SetupApiResponse, InstallApiResponse, UpdateCheckApiResponse, BlacklistApiResponse, CleanupApiResponse, RetentionSetting, SettingsApiResponse } from "./api-types.mts";
 import type { BlacklistEntry } from "../vault-lib.mts";
 
@@ -174,49 +175,53 @@ function blacklistCard(list: BlacklistEntry[]): HTMLElement {
 // Data retention (issue #28): how long old scans and saved runs are kept, saved to settings.json as
 // each control changes, and Clean up now, which asks the server for a count first (a dry run) and
 // says what it will remove before removing it.
-function retentionCard(): HTMLElement {
-  const r: RetentionSetting = state.settings?.retention ?? { keepAll: false, scanDays: 30, runsPerCharacter: 50 };
-  const save = async (change: Partial<RetentionSetting>): Promise<boolean> => {
-    try { state.settings = (await api<SettingsApiResponse>("/api/settings", { method: "PUT", body: { retention: change } })).settings; return true; }
-    catch (e) { showToast(`Could not save: ${errorText(e)}`, "bad"); return false; }
+function retentionCard(): HTMLElement | null {
+  const r = state.settings?.retention;
+  if (!r) return null;
+  // Saves one change; the server's refusal (its limits, in its words) comes back as the error text.
+  const save = async (change: Partial<RetentionSetting>): Promise<string | null> => {
+    try { state.settings = (await api<SettingsApiResponse>("/api/settings", { method: "PUT", body: { retention: change } })).settings; return null; }
+    catch (e) { return errorText(e); }
   };
-  // A number field with its unit. min and max are the server's RETENTION_LIMITS; a value outside them
-  // stays in the field, marked, with the range under it, and is not saved.
-  const numberRow = (key: "scanDays" | "runsPerCharacter", title: string, unit: string, max: number, help: string) => {
+  // A number field with its unit; a value the server refuses stays in the field, marked, with its reason under it.
+  const numberRow = (key: "scanDays" | "runsPerCharacter", title: string, unit: string, help: string) => {
     const id = `set-ret-${key}`;
-    const f = input({ type: "number", value: r[key], size: "sm", attrs: { id, min: 1, max, step: 1, class: "input input-sm num set-ret-num", "aria-describedby": `${id}-err` } });
+    const f = input({ type: "number", value: r[key], size: "sm", attrs: { id, "aria-describedby": `${id}-err` } });
     f.disabled = r.keepAll;
     const err = txt("", "field-error");
     err.id = `${id}-err`;
     err.hidden = true;
     f.addEventListener("change", async () => {
-      const v = Number(f.value), ok = f.value.trim() !== "" && Number.isInteger(v) && v >= 1 && v <= max;
-      f.classList.toggle("invalid", !ok);
-      if (ok) f.removeAttribute("aria-invalid"); else f.setAttribute("aria-invalid", "true");
-      err.hidden = ok;
-      err.textContent = ok ? "" : `Enter a whole number from 1 to ${max.toLocaleString("en-US")}.`;
-      if (ok) await save({ [key]: v });
+      const bad = await save({ [key]: Number(f.value) });
+      f.classList.toggle("invalid", !!bad);
+      if (bad) f.setAttribute("aria-invalid", "true"); else f.removeAttribute("aria-invalid");
+      err.hidden = !bad;
+      err.textContent = bad || "";
     });
     return { f, row: row({ title, label: id, control: box("div", { class: "set-inline" }, f, txt(unit, "t-sm muted")), help, below: [err] }) };
   };
-  const days = numberRow("scanDays", "Keep scans for", "days", 3650, "Older scans are removed, except the newest scan of each container and of each character, so the inventory never changes.");
-  const runs = numberRow("runsPerCharacter", "Saved runs per character", "runs", 1000, "Each character keeps their newest saved Suit Builder runs.");
+  const days = numberRow("scanDays", "Keep scans for", "days", "Older scans are removed, except the ones the inventory still needs, so it never changes.");
+  const runs = numberRow("runsPerCharacter", "Saved runs per character", "runs", "Each character keeps their newest saved Suit Builder runs. Named runs are always kept.");
+  const counts = ({ scans, runs: n }: CleanupApiResponse): string => [scans ? plural(scans, "scan") : "", n ? plural(n, "run") : ""].filter(Boolean).join(" and ");
+  const keptScans = "Every scan was kept: removing the old ones would change the inventory.";
   const clean = button({ label: "Clean up now", disabled: r.keepAll, attrs: { id: "set-ret-clean" }, onClick: async () => {
     try {
       const plan = await api<CleanupApiResponse>("/api/retention/cleanup", { method: "POST", body: { dryRun: true } });
-      if (!plan.scans && !plan.runs) { showToast("Nothing to clean up: everything is inside the limits.", "ok"); return; }
-      if (!await confirmDialog({ title: "Clean up old data?", body: `This removes ${cleanupText(plan)} from the data folder. The inventory stays the same. It can't be undone.`, confirmLabel: `Remove ${cleanupText(plan)}` })) return;
-      showToast(`Removed ${cleanupText(await api<CleanupApiResponse>("/api/retention/cleanup", { method: "POST", body: { dryRun: false } }))}.`, "ok");
+      if (!plan.scans && !plan.runs) { showToast(plan.refused ? keptScans : "Nothing to clean up: everything is inside the limits.", plan.refused ? "info" : "ok"); return; }
+      if (!await confirmDialog({ title: "Clean up old data?", body: `This removes ${counts(plan)} from the data folder for good. The inventory stays the same.`, confirmLabel: `Remove ${counts(plan)}` })) return;
+      const done = await api<CleanupApiResponse>("/api/retention/cleanup", { method: "POST", body: { dryRun: false } });
+      showToast([done.scans || done.runs ? `Removed ${counts(done)}.` : "Nothing was removed.", done.refused ? keptScans : ""].filter(Boolean).join(" "), done.refused ? "info" : "ok");
     } catch (e) { showToast(`Could not clean up: ${errorText(e)}`, "bad"); }
   } });
   const keep = switchControl({ label: "Keep everything", checked: r.keepAll, attrs: { id: "set-ret-keep" }, onChange: async (on) => {
-    if (!await save({ keepAll: on })) { keep.input.checked = !on; return; }
+    const bad = await save({ keepAll: on });
+    if (bad) { keep.input.checked = !on; showToast(`Could not save: ${bad}`, "bad"); return; }
     days.f.disabled = runs.f.disabled = clean.disabled = on;
   } });
   return box("div", { class: "card set-card", id: "set-retention" },
-    row({ title: "Data retention", control: keep.root, help: "Pack Rat removes old scans and saved runs when it starts and after each scan. Keep everything turns that off." }),
+    row({ title: "Data retention", control: keep.root, help: "Pack Rat removes old scans and saved runs when it starts. Keep everything turns that off." }),
     days.row, runs.row,
-    row({ title: "Clean up now", control: clean, help: "Removes what the limits above let go, without waiting for the next scan." }));
+    row({ title: "Clean up now", control: clean, help: "Removes what the limits above let go, without waiting for the next start." }));
 }
 function dataSection(setup: SetupApiResponse): HTMLElement {
   // The data-folder mismatch (#39): the client's scripts write somewhere this app doesn't read. The banner

@@ -23,8 +23,8 @@
 //         serial, 1-200 at a time (400 otherwise); a serial with no item is simply absent from the
 //         response · GET|PUT /api/profiles (<data>/profiles.json)
 //         GET|PUT /api/settings (<data>/settings.json: {shard, setupDone?, client?, retention?}) ·
-//         POST /api/retention/cleanup {dryRun} -> {scans, runs} (prune old scans and saved runs now, or
-//         count what that would remove; app/retention.mts) · GET /api/rules (the current shard's
+//         POST /api/retention/cleanup {dryRun} -> {scans, runs, refused} (prune old scans and saved runs
+//         now, or count what that would remove; app/retention.mts; 409 under --demo) · GET /api/rules (the current shard's
 //         rules object plus every {id,name,source} listRules() finds — builtin and <data>/rules/*.json)
 //         POST /api/optimize {pools,current,profile,opts} -> {id}, or {character,settings,profile,opts}
 //         to have the server build the pools itself (buildPools, per-slot lockedSlots/blocked handling —
@@ -651,7 +651,7 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
         // PUT /api/settings shard switch takes effect on the very next dropped file (app/watcher.mts).
         inboxDir: CONFIG.paths.inboxFor(id), adapter: id, scansDir: SCANS, getShard: () => currentSettings.shard,
         log: (msg) => safeAppendLog(CONFIG.paths.log, `${new Date().toISOString()} watcher[${id}] ${msg}\n`),
-        onAccepted: ({ file, character, scannedAt }) => { broadcastEvent("inventory", { file, character, scannedAt, at: Date.now() }); schedulePrune(); },
+        onAccepted: ({ file, character, scannedAt }) => broadcastEvent("inventory", { file, character, scannedAt, at: Date.now() }),
         onRejected: ({ file, reason }) => broadcastEvent("rejected", { file, reason, at: Date.now() }),
         ...watcherOptions,
       });
@@ -968,13 +968,16 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
   // ---- retention (issue #28): old scans and saved runs, per settings.json's `retention` ----------------
   // Only files readScanFiles()/readRunFiles() read are ever candidates (a scan that fails validation or
   // a run that does not parse stays), only by their bare name inside scans/ or runs/, and only a
-  // regular file: lstat, so a symlink is left alone rather than followed. Under --demo the scans are the
-  // committed fixtures, so only runs are pruned.
-  async function planPrune(): Promise<{ scans: string[]; runs: string[] }> {
+  // regular file: lstat, so a symlink is left alone rather than followed. Nothing is pruned under
+  // --demo: its scans are the committed fixtures and its runs folder is still the player's own.
+  // `refused`: old scans were due to go, but the fold without them differed, so every scan was kept.
+  interface PrunePlan { scans: string[]; runs: string[]; refused: boolean }
+  async function planPrune(): Promise<PrunePlan> {
+    if (CONFIG.demo) return { scans: [], runs: [], refused: false };
     const r = retentionOf(savedSettings.retention);
-    const scans = CONFIG.demo ? [] : scansToPrune(readScanFiles(), (await lib()).foldSnapshots, r, Date.now());
-    const runs = runsToPrune(readRunFiles().map(({ file, run }) => ({ file, character: String(run.character), createdAt: String(run.createdAt) })), r);
-    return { scans, runs };
+    const scans = scansToPrune(readScanFiles(), (await lib()).foldSnapshots, r, Date.now());
+    const runs = runsToPrune(readRunFiles().map(({ file, run }) => ({ file, character: String(run.character), createdAt: String(run.createdAt), label: String(run.label || "") })), r);
+    return { scans: scans.files, runs, refused: scans.refused };
   }
   function removeFiles(dir: string, files: string[]): string[] {
     const removed: string[] = [];
@@ -988,26 +991,21 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
     }
     return removed;
   }
-  async function pruneData(why: string): Promise<{ scans: number; runs: number }> {
-    const plan = await planPrune();
-    const scans = removeFiles(SCANS, plan.scans), runs = removeFiles(RUNS, plan.runs);
-    if (scans.length || runs.length) {
-      safeAppendLog(CONFIG.paths.log, `${new Date().toISOString()} retention (${why}) removed ${scans.length} scans ${JSON.stringify(scans)} and ${runs.length} runs ${JSON.stringify(runs)}\n`);
-    }
-    if (scans.length) broadcastEvent("changed", { what: "inventory", at: Date.now() });
-    if (runs.length) broadcastEvent("changed", { what: "runs", at: Date.now() });
-    return { scans: scans.length, runs: runs.length };
-  }
-  // Automatic pruning: once at startup and a few seconds after scans stop landing.
-  const PRUNE_DEBOUNCE_MS = 5000;
-  let pruneTimer: NodeJS.Timeout | null = null;
-  function autoPrune(why: string): void {
-    pruneData(why).catch((e: Error) => safeAppendLog(CONFIG.paths.log, `${new Date().toISOString()} retention (${why}) failed: ${e.stack || e.message}\n`));
-  }
-  function schedulePrune(): void {
-    if (pruneTimer) { clearTimeout(pruneTimer); timers.delete(pruneTimer); }
-    const t = setTimeout(() => { timers.delete(t); pruneTimer = null; autoPrune("after a scan"); }, PRUNE_DEBOUNCE_MS);
-    t.unref(); timers.add(t); pruneTimer = t;
+  // One prune at a time: each call waits for the one before it to finish.
+  let pruning: Promise<unknown> = Promise.resolve();
+  function pruneData(why: string): Promise<{ scans: number; runs: number; refused: boolean }> {
+    const next = pruning.catch(() => {}).then(async () => {
+      const plan = await planPrune();
+      const scans = removeFiles(SCANS, plan.scans), runs = removeFiles(RUNS, plan.runs);
+      const at = new Date().toISOString();
+      if (plan.refused) safeAppendLog(CONFIG.paths.log, `${at} retention (${why}) kept every scan: the inventory folded without the old ones differed\n`);
+      if (scans.length || runs.length) safeAppendLog(CONFIG.paths.log, `${at} retention (${why}) removed ${scans.length} scans ${JSON.stringify(scans)} and ${runs.length} runs ${JSON.stringify(runs)}\n`);
+      if (scans.length) broadcastEvent("changed", { what: "inventory", at: Date.now() });
+      if (runs.length) broadcastEvent("changed", { what: "runs", at: Date.now() });
+      return { scans: scans.length, runs: runs.length, refused: plan.refused };
+    });
+    pruning = next;
+    return next;
   }
   function saveRun(job: Job) {
     mkdirSync(RUNS, { recursive: true, mode: DATA_DIR_MODE });
@@ -1217,9 +1215,11 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
       if (req.method === "POST" && url.pathname === "/api/retention/cleanup") {
         // Settings › Data's Clean up now: {dryRun: true} counts what the pruning would remove (the
         // confirm dialog's sentence), {dryRun: false} removes it and says what went.
+        // `refused`: old scans were kept because the inventory would have changed without them.
         const { dryRun } = asObject(await readBody(req, { limit: 8e3 }));
         if (typeof dryRun !== "boolean") return send(res, 400, { ok: false, error: "dryRun must be a boolean" });
-        if (dryRun) { const plan = await planPrune(); return send(res, 200, { ok: true, scans: plan.scans.length, runs: plan.runs.length }); }
+        if (CONFIG.demo) return send(res, 409, { ok: false, error: "demo data is read-only" });
+        if (dryRun) { const plan = await planPrune(); return send(res, 200, { ok: true, scans: plan.scans.length, runs: plan.runs.length, refused: plan.refused }); }
         return send(res, 200, { ok: true, ...await pruneData("clean up now") });
       }
       if (req.method === "GET" && url.pathname === "/api/rules") {
@@ -1766,7 +1766,7 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
     server.listen(CONFIG.port, "127.0.0.1");
   });
   startWatchers();
-  autoPrune("startup");
+  pruneData("startup").catch((e: Error) => safeAppendLog(CONFIG.paths.log, `${new Date().toISOString()} retention (startup) failed: ${e.stack || e.message}\n`));
   const port = (server.address() as AddressInfo).port;
   const url = `http://localhost:${port}`;
   console.log(`Pack Rat: ${url}  (data: ${CONFIG.dataDir})  token: ${CONFIG.token ? "set" : "none (dev)"}`);

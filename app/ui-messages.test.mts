@@ -6,7 +6,7 @@
 // All [fast]. Run: node --test app/ui-messages.test.mts
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { pathsFileNote, installedIntoNote, clientFolderGone, clientErrorMessage, hostErrorMessage, optimizeErrorMessage, errorText, dataDirNotice, dataDirBanner, bridgeOfflineText, bridgeView, relativeWhen, cleanupText } from "./ui/messages.mts";
+import { pathsFileNote, installedIntoNote, clientFolderGone, clientErrorMessage, hostErrorMessage, optimizeErrorMessage, errorText, dataDirNotice, dataDirBanner, bridgeOfflineText, bridgeView, relativeWhen } from "./ui/messages.mts";
 import type { ApiError } from "./ui/api-types.mts";
 
 function apiError(message: string, extra: { status?: number; code?: unknown } = {}): ApiError {
@@ -134,11 +134,4 @@ test("[fast] relativeWhen: relative under a day, then month day and time, with t
   assert.equal(relativeWhen(new Date(2025, 11, 31, 9, 5).toISOString(), now), "Dec 31, 2025, 09:05");
   assert.equal(relativeWhen("not a date", now), "");
   assert.equal(relativeWhen(null, now), "");
-});
-
-test("[fast] Clean up now's counts: both kinds, one kind, singular, and nothing", () => {
-  assert.equal(cleanupText({ scans: 1042, runs: 7 }), "1,042 scans and 7 runs");
-  assert.equal(cleanupText({ scans: 1, runs: 0 }), "1 scan");
-  assert.equal(cleanupText({ scans: 0, runs: 1 }), "1 run");
-  assert.equal(cleanupText({ scans: 0, runs: 0 }), "nothing");
 });

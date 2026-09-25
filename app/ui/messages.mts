@@ -132,9 +132,3 @@ export function optimizeErrorMessage(e: unknown): string {
     ? "Too many builds are already running — another tab (or an earlier run) still has one going. Wait for it to finish and try again."
     : errorText(e);
 }
-
-// Settings › Data's Clean up now: "42 scans and 7 runs", leaving out a kind with none.
-export function cleanupText({ scans, runs }: { scans: number; runs: number }): string {
-  const n = (count: number, one: string): string => `${count.toLocaleString("en-US")} ${one}${count === 1 ? "" : "s"}`;
-  return [scans ? n(scans, "scan") : "", runs ? n(runs, "run") : ""].filter(Boolean).join(" and ") || "nothing";
-}

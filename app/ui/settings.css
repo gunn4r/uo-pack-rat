@@ -25,6 +25,3 @@
 .pr .set-danger { border-color: var(--color-danger); border-image: none; }   /* a theme's frame image would hide the colour */
 .set-danger-title { padding: 14px var(--space-5) 0; color: var(--color-danger); }
 .set-danger > .set-row:first-of-type { padding-top: var(--space-3); }
-
-/* data retention: a short number field and its unit */
-.pr .set-ret-num { width: 88px; }

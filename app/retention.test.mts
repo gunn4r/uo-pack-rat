@@ -55,7 +55,7 @@ const history: ScanFile[] = [
 const docs = (files: ScanFile[]): ScanV2[] => files.map((s) => s.doc);
 
 test("[fast] pruning old scans leaves the folded inventory exactly as it was", () => {
-  const pruned = scansToPrune(history, foldSnapshots, RETENTION_DEFAULTS, NOW);
+  const pruned = scansToPrune(history, foldSnapshots, RETENTION_DEFAULTS, NOW).files;
   assert.ok(pruned.length > 0, "something old was pruned");
   const kept = history.filter((s) => !pruned.includes(s.file));
   assert.ok(sameFold(foldSnapshots(docs(history)), foldSnapshots(docs(kept))));
@@ -66,8 +66,8 @@ test("[fast] pruning old scans leaves the folded inventory exactly as it was", (
   assert.ok(inv.characters.Brin && inv.items[51], "a character scanned once long ago keeps their card and worn set");
 });
 
-test("[fast] kept: recent scans, the newest per root and per character, what the fold still shows, and tombstones", () => {
-  const pruned = scansToPrune(history, foldSnapshots, RETENTION_DEFAULTS, NOW);
+test("[fast] kept: recent scans, the newest per root, what the fold still shows, and tombstones", () => {
+  const pruned = scansToPrune(history, foldSnapshots, RETENTION_DEFAULTS, NOW).files;
   // a-40 and a-35 are old and everything they said was overwritten by a-10; a-60 is the newest scan
   // of the old chest and what the unopened bag still shows; a-45 the newest (empty) scan of EMPTIED.
   assert.deepEqual(pruned, ["a-90.json", "a-40.json", "a-35.json"]);
@@ -75,27 +75,27 @@ test("[fast] kept: recent scans, the newest per root and per character, what the
 
 test("[fast] a shorter window prunes more, still without changing the fold", () => {
   const extra = [...history, scan("a-80.json", daysAgo(80), "Aldo", [{ serial: CHEST }], { [CHEST]: box(CHEST) }, [item(1, CHEST, "Gem")])];
-  const pruned = scansToPrune(extra, foldSnapshots, { ...RETENTION_DEFAULTS, scanDays: 1 }, NOW);
+  const pruned = scansToPrune(extra, foldSnapshots, { ...RETENTION_DEFAULTS, scanDays: 1 }, NOW).files;
   assert.deepEqual(pruned, ["a-90.json", "a-80.json", "a-40.json", "a-35.json"], "oldest first");
   assert.ok(sameFold(foldSnapshots(docs(extra)), foldSnapshots(docs(extra.filter((s) => !pruned.includes(s.file))))));
 });
 
 test("[fast] Keep everything prunes nothing, and neither does a window that covers every scan", () => {
-  assert.deepEqual(scansToPrune(history, foldSnapshots, { ...RETENTION_DEFAULTS, keepAll: true }, NOW), []);
-  assert.deepEqual(scansToPrune(history, foldSnapshots, { ...RETENTION_DEFAULTS, scanDays: 365 }, NOW), []);
+  assert.deepEqual(scansToPrune(history, foldSnapshots, { ...RETENTION_DEFAULTS, keepAll: true }, NOW), { files: [], refused: false });
+  assert.deepEqual(scansToPrune(history, foldSnapshots, { ...RETENTION_DEFAULTS, scanDays: 365 }, NOW), { files: [], refused: false });
 });
 
-test("[fast] when the pruned fold would differ, nothing is pruned", () => {
+test("[fast] when the pruned fold would differ, nothing is pruned and the refusal is reported", () => {
   const countingFold = (d: ScanV2[]) => ({ characters: {}, containers: {}, items: { n: d.length } as never, scans: [] });
-  assert.deepEqual(scansToPrune(history, countingFold, RETENTION_DEFAULTS, NOW), []);
+  assert.deepEqual(scansToPrune(history, countingFold, RETENTION_DEFAULTS, NOW), { files: [], refused: true });
 });
 
-test("[fast] saved runs: each character keeps its newest N", () => {
+test("[fast] saved runs: each character keeps its newest N unnamed runs, and every named one", () => {
   const runs = [
-    ...[1, 2, 3, 4].map((d) => ({ file: `a${d}.json`, character: "Aldo", createdAt: daysAgo(d) })),
-    { file: "b1.json", character: "Brin", createdAt: daysAgo(100) },
+    ...[1, 2, 3, 4, 5].map((d) => ({ file: `a${d}.json`, character: "Aldo", createdAt: daysAgo(d), label: d === 2 || d === 5 ? "keeper" : "" })),
+    { file: "b1.json", character: "Brin", createdAt: daysAgo(100), label: "" },
   ];
-  assert.deepEqual(runsToPrune(runs, { ...RETENTION_DEFAULTS, runsPerCharacter: 2 }).sort(), ["a3.json", "a4.json"]);
+  assert.deepEqual(runsToPrune(runs, { ...RETENTION_DEFAULTS, runsPerCharacter: 2 }).sort(), ["a4.json"]);
   assert.deepEqual(runsToPrune(runs, RETENTION_DEFAULTS), []);
   assert.deepEqual(runsToPrune(runs, { keepAll: true, scanDays: 1, runsPerCharacter: 1 }), []);
 });
@@ -103,8 +103,8 @@ test("[fast] saved runs: each character keeps its newest N", () => {
 test("[fast] retention settings are validated with their bounds, and a bad stored value reads as its default", () => {
   assert.equal(retentionError({ keepAll: true }), null);
   assert.equal(retentionError({ scanDays: 7, runsPerCharacter: 10 }), null);
-  assert.match(retentionError({ scanDays: 0 })!, /scanDays must be a whole number from 1 to 3650/);
-  assert.match(retentionError({ runsPerCharacter: 2.5 })!, /runsPerCharacter must be a whole number from 1 to 1000/);
+  assert.match(retentionError({ scanDays: 0 })!, /Days to keep scans must be a whole number from 1 to 3650\./);
+  assert.match(retentionError({ runsPerCharacter: 2.5 })!, /Saved runs per character must be a whole number from 1 to 1000\./);
   assert.match(retentionError({ keepAll: "yes" })!, /keepAll must be a boolean/);
   assert.match(retentionError({ days: 3 })!, /days is not a setting/);
   assert.match(retentionError([1])!, /must be an object/);
