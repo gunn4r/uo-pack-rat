@@ -14,7 +14,7 @@ import {
 } from "./vault-lib.mts";
 import type { Item, Inventory, ItemLocation, ProfilesFile, CharacterEntryRaw } from "./vault-lib.mts";
 import { upgradeScan, TAZUO_V1_CAPS } from "./scan-schema.mts";
-import { runKey, reusableRun, runSummary, normalizeRun } from "./runs-lib.mts";
+import { runKey, reusableRun, runSummary, normalizeRun, SOLVER_VERSION } from "./runs-lib.mts";
 import type { SavedRun } from "./runs-lib.mts";
 import { corePath } from "./config.mts";
 import type { RulesV1, ScanV2 } from "./schema/types.d.mts";
@@ -1004,6 +1004,16 @@ test("[fast] saved runs: the key carries the solver version, so runs saved befor
   const input = { pools: {}, current: {}, profile: { weights: { hci: 1 } }, opts: { exact: true } };
   const unversioned = createHash("sha1").update(JSON.stringify(input)).digest("hex");
   assert.notEqual(runKey(input), unversioned);
+});
+// Issue #28: a run saved before the soft-floor fix (PROOF_SOUND_SINCE) may have proved a worse suit optimal, so
+// its claim is withdrawn — no verdict at all, not relabelled "best within budget".
+test("[fast] runs: normalizeRun withdraws the proof of a run saved before the soft-floor fix", () => {
+  const old = normalizeRun({ id: "o", result: { method: "exact", proven: true } });
+  assert.equal(old.result!.proven, undefined);
+  assert.equal(runSummary(old).proven, null);
+  assert.deepEqual(normalizeRun(old), old, "idempotent");
+  assert.equal(normalizeRun({ id: "n", solverVersion: SOLVER_VERSION, result: { method: "exact", proven: true } }).result!.proven, true);
+  assert.equal(normalizeRun({ id: "u", result: { method: "exact", proven: false } }).result!.proven, false, "an unproven run keeps its verdict");
 });
 test("[fast] runs: normalizeRun upgrades allowOthers/budgetS and stamps schemaVersion", () => {
   const r = normalizeRun({ id: "x", settings: { allowOthers: true, budgetS: 30 }, result: {} });

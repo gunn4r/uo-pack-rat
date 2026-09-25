@@ -103,8 +103,10 @@ export function renderRuns(): void {
   }).filter((x): x is HTMLLIElement => !!x);
   box_.replaceChildren(...(kept.length ? kept : [el("li", { class: "runs-empty" }, el("p", { class: "muted" }, txt("No saved run matches the filter.")))]));
 }
-function verdictOf(run: RunSummaryLike): { text: string; cls: string } {
+// null: an exact run whose proof the server withdrew (saved before the soft-floor fix, normalizeRun) shows no verdict.
+function verdictOf(run: RunSummaryLike): { text: string; cls: string } | null {
   if (run.method !== "exact") return { text: "heuristic", cls: "muted" };
+  if (run.proven == null) return null;
   return run.proven ? { text: "proven optimal", cls: "tone-ok" } : { text: "best within budget", cls: "tone-warn" };
 }
 function runCard(run: RunSummaryLike, title: string, diff: string[], badges: Array<{ text: string; tone?: "ok" | "warn" | undefined }>, stale: boolean): HTMLLIElement {
@@ -120,7 +122,7 @@ function runCard(run: RunSummaryLike, title: string, diff: string[], badges: Arr
   });
   const v = verdictOf(run);
   const titleRow = box("div", { class: "run-title" }, txt(title, "strong ellip"), showing ? badge("Showing", "accent") : null, stale ? badge("Inventory changed", "warn") : null);
-  const main = box("div", { class: "run-main" }, titleRow, el("span", { class: "t-sm muted" }, txt(`${when} · ${fmtSecs(run.ms || 0)} · `), txt(v.text, v.cls)),
+  const main = box("div", { class: "run-main" }, titleRow, el("span", { class: "t-sm muted" }, txt(`${when} · ${fmtSecs(run.ms || 0)}${v ? " · " : ""}`), v ? txt(v.text, v.cls) : null),
     diff.length && run.label ? el("span", { class: "t-sm muted run-diff" }, txt(`vs the run before: ${diff.join(" · ")}`)) : null);
   const more = button({ label: `Run actions: open, rename, delete`, icon: "more", iconOnly: true, variant: "ghost", size: "sm", attrs: { "aria-haspopup": "menu", "aria-expanded": "false" } });
   const li = box("li", { class: `card run-card${showing ? " showing" : ""}`, "data-run": run.id }, tick, main, more,

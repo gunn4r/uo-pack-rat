@@ -130,6 +130,8 @@ function verdict(res: OptimizeResult): { text: string; tone?: "ok" | "warn" | "b
   if (res.floorsConflict) return { text: "Requirements can't all be met", tone: "bad", detail: "No suit in the pool meets every hard requirement; this is the best partial suit." };
   if (res.solver === "fallback") return { text: "Heuristic fallback", tone: "warn", detail: res.fallbackReason || "The exact solver was unavailable, so this is the heuristic's answer." };
   if (res.method === "exact" && res.proven) return { text: "Proven optimal", tone: "ok" };
+  // A saved run whose proof the server withdrew (normalizeRun): no verdict, rather than a different one.
+  if (res.method === "exact" && res.proven == null) return { text: "" };
   if (res.method === "exact") return { text: "Best within budget", tone: "warn", detail: res.gapPoints == null ? "No bound was established: raise the time budget to finish the proof." : `At most ${fmtN(res.gapPoints)} points from the bound: raise the time budget to finish the proof.` };
   return { text: "Heuristic" };
 }
@@ -139,7 +141,7 @@ function headlineCard(res: OptimizeResult, current: OptSuit, suit: OptSuit, prof
   const report = requirementReport(after, prof);
   const unmet = report.filter((r) => r.met === false).length, floors = report.filter((r) => r.met != null).length;
   const v = verdict(res);
-  const vb = box("span", { class: `badge${v.tone ? " " + v.tone : ""}` }, v.tone === "ok" ? icon("check", { size: "sm" }) : null, txt(v.text));
+  const vb = v.text ? box("span", { class: `badge${v.tone ? " " + v.tone : ""}` }, v.tone === "ok" ? icon("check", { size: "sm" }) : null, txt(v.text)) : null;
   const line = [plural(nChanges, "change"), floors ? (unmet ? `${plural(unmet, "requirement")} not met` : "every requirement met") : "",
     meta ? (meta.reused ? `reused the run from ${fmtRunTime(meta.reused.createdAt)}` : `found in ${fmtSecs(meta.ms)}`) : ""].filter(Boolean).join(" · ");
   const todo = grabbable(fetchItems, name);
@@ -309,7 +311,8 @@ function detailsCard(res: OptimizeResult, meta: BuildMeta | undefined, view: num
   const score = view == null ? res.score : res.alternatives![view]!.score;
   const t = box("button", { class: "b-disclose", type: "button", "aria-expanded": String(detailsOpen), "aria-controls": "b-details", onclick: () => { detailsOpen = !detailsOpen; rerender(); } },
     txt("Solver details", "t-md strong"), txt(summary, "t-sm muted"), icon(detailsOpen ? "chevron-up" : "chevron-down", { size: "sm" }));
-  const pairs: Array<[string, string]> = [["Verdict", verdict(res).text], ["Solver", solver]];
+  const pairs: Array<[string, string]> = [["Solver", solver]];
+  if (verdict(res).text) pairs.unshift(["Verdict", verdict(res).text]);
   if (meta?.poolSize != null) pairs.push(["Candidates", fmtN(meta.poolSize)]);
   if (res.nodes != null) pairs.push(["Search nodes", fmtN(res.nodes)]);
   if (time) pairs.push(["Time", time]);
@@ -427,7 +430,7 @@ export function openRunCompare(runs: SavedRunLike[], titleOf: (r: SavedRunLike) 
       const totals = paperdoll(totalsOf(r.result.best), rsb);
       const met = Object.keys(floors).filter((k) => (totals[k] || 0) >= effectiveFloor(k, floors[k]!, paperdollCaps(views[i]!))).length;
       const v = verdict(r.result);
-      const head = box("span", { class: "b-cmp-col" }, box("span", { class: "b-row" }, txt(titleOf(r), "strong"), badge(v.text, v.tone === "bad" ? "bad" : v.tone)), txt(`${fmtRunTime(r.createdAt)} · ${fmtSecs(r.ms || 0)}`, "t-sm"));
+      const head = box("span", { class: "b-cmp-col" }, box("span", { class: "b-row" }, txt(titleOf(r), "strong"), v.text ? badge(v.text, v.tone === "bad" ? "bad" : v.tone) : null), txt(`${fmtRunTime(r.createdAt)} · ${fmtSecs(r.ms || 0)}`, "t-sm"));
       const action = r.id === state.builder.openRun ? txt("Showing in the result", "t-sm muted") : button({ label: "Open this run", size: "sm", onClick: () => { closeCompare(); open(r.id); } });
       return { assignment: r.result.best, totals, caps: paperdollCaps(views[i]!), head, token: r.label || fmtRunTime(r.createdAt), removeLabel: `Remove the run from ${fmtRunTime(r.createdAt)} from comparison`,
         outcome: [plural((r.result.perSlotChanges || []).length, "change"), Object.keys(floors).length ? `${met} of ${Object.keys(floors).length}` : "none set", v.text, ...(capped ? [capsLine(views[i]!)] : [])], action };
