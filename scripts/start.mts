@@ -7,6 +7,7 @@ import { constants } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { resolveConfig } from "../app/config.mts";
+import { acquireDataLock } from "../app/data-lock.mts";
 import { buildUi } from "./build-ui.mts";
 import { buildSchemaTypes } from "./build-schema-types.mts";
 
@@ -19,9 +20,9 @@ buildSchemaTypes();
 buildUi();
 const ROOT = dirname(dirname(fileURLToPath(import.meta.url)));
 const args = process.argv.slice(2);
-let port: number;
+let port: number, dataDir: string;
 try {
-  ({ port } = resolveConfig(args));
+  ({ port, dataDir } = resolveConfig(args));
 } catch (e) {
   const err = e as { message?: unknown };
   console.error(err.message);
@@ -30,6 +31,8 @@ try {
 
 const free = await new Promise<boolean>((ok) => { const s = createServer(); s.once("error", () => ok(false)); s.listen(port, "127.0.0.1", () => s.close(() => ok(true))); });
 if (!free) { console.error(`port ${port} is in use — stop the other server or pass --port`); process.exit(2); }
+const lock = acquireDataLock(dataDir);
+if ("heldBy" in lock) { console.error(`Pack Rat (process ${lock.heldBy}) is already using the data folder ${dataDir} — close it, or pass --data <another folder>`); process.exit(2); }
 const child = spawn(process.execPath, [join(ROOT, "app", "vault-server.mts"), ...args], { stdio: "inherit" });
 // A signal to this wrapper (`kill <pid>`, a process manager's SIGTERM) is passed on to the server, and
 // this process exits when the server does. Without the handlers the wrapper dies alone and leaves the
