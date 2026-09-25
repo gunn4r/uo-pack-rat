@@ -150,6 +150,10 @@ The honest limit: `publish` uploads bytes built on three other runners without r
 
 **Trusted:** nothing in `settings.json`'s `retention` beyond its bounds. Pruning is the one place the server deletes files no request named, so it is narrow on purpose: only names it listed itself inside `<data>/scans/` and `<data>/runs/`, only files that parsed and validated as a scan or a run, never a saved run the player named, only regular files (`lstat`, so a symlink is never followed or removed), and never a scan unless the inventory folded without it is identical. A forged `retention` can at most remove old runs and scans the inventory no longer needs; a malformed one reads as the defaults. Two limits: the proof that the inventory is unchanged holds for the scans on disk when the prune runs, so a scan pasted or imported later with a stamp older than the pruned ones folds against less history than it would have; and a removed file is deleted outright, not moved aside, so it cannot be recovered. Nothing is pruned under `--demo`.
 
+### 11. The TazUO panel → the other scripts
+
+**Trusted:** nothing it reads. `packrat-panel.py` reads the bridge's `status.json` and the names and times of scan files, both writable by anything on the machine, as untrusted: at most 64 KB, parsed in `try`, and only a cleaned 40-character line is ever shown. It starts and stops only the four Pack Rat scripts it names itself, in its own folder; nothing read from a file becomes a script name or a path. It takes no action in the world: every world action still comes from a click, on its buttons or in the app. Its heartbeat `panel.json` joins the bridge's `status.json` in the installer's running-script guard, so a forged heartbeat can only make an install refuse for 30 seconds.
+
 ## Rulings
 
 Findings deliberately left standing, with the reason. Each is a decision, not an oversight; re-litigating one should start here.

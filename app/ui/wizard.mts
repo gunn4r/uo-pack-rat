@@ -25,14 +25,16 @@ const AFK_NOTICE = "UO Alive allows AFK skill training, but bans unattended reso
 // "What to press in game" is built from the script NAMES the install just reported, not copied from
 // one adapter's README — adapters/tazuo/ ships packrat-refresh.py and adapters/razor-enhanced/
 // doesn't, so a fixed TazUO-shaped list would be wrong (or incomplete) for any other folder-transport
-// adapter. Every adapter that ships a script matching one of these three follows the same
-// packrat-scanner.py / packrat-refresh.py / packrat-bridge.py naming convention (docs/adapter-guide.md);
+// adapter. Every adapter that ships a script matching one of these follows the same
+// packrat-panel.py / packrat-scanner.py / packrat-refresh.py / packrat-bridge.py naming convention (docs/adapter-guide.md);
 // a script whose name matches none of them is a future kind of script this list doesn't know how to
 // describe yet, so it's simply left out rather than guessed at.
 function whatToPress(installedNames: string[]): HTMLElement[] {
   const has = (key: string): string | undefined => installedNames.find((n) => n.includes(key));
   const line = (before: string, name: string, after: string): HTMLElement => el("li", {}, el("span", {}, before, el("code", {}, name), after));
   const lines: HTMLElement[] = [];
+  const panel = has("panel");
+  if (panel) lines.push(el("li", {}, el("span", {}, "Easiest: open the Pack Rat window, whose buttons run the scripts below. Run ", el("code", {}, panel), " once from Legion Script's Script Manager and tick Autostart so it opens at every login, or type (don't paste) ", el("code", {}, `-playlscript ${panel}`), " in the game's chat. The Script Manager's Play button is a toggle: click it once.")));
   const refresh = has("refresh");
   if (refresh) lines.push(line("After a gearing or skill-training session on a character: run ", refresh, "."));
   const scanner = has("scanner");

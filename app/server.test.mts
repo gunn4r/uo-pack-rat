@@ -1786,7 +1786,7 @@ test("[fast] POST /api/setup/install installs the scripts, saves settings.client
     });
     const installBody = asJson<InstallScriptsResult>(await install.json());
     assert.equal(install.status, 200, JSON.stringify(installBody));
-    assert.deepEqual(installBody.installed!.sort(), ["packrat-blacklist.py", "packrat-bridge.py", "packrat-refresh.py", "packrat-scanner.py"]);
+    assert.deepEqual(installBody.installed!.sort(), ["packrat-blacklist.py", "packrat-bridge.py", "packrat-panel.py", "packrat-refresh.py", "packrat-scanner.py"]);
     assert.equal(installBody.version, TAZUO_VERSION);
     assert.ok(existsSync(join(scriptsDir, "packrat-scanner.py")));
     assert.ok(existsSync(join(scriptsDir, "packrat-paths.json")));

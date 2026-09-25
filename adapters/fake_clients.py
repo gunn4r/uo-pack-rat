@@ -229,6 +229,65 @@ def tazuo_api(world, backpack, bank=0, skills=None):
     return api
 
 
+class Control(object):
+    """A script-built window or control: its text, children, and click / close callbacks."""
+    def __init__(self, text=""):
+        self.Text, self.children, self.IsDisposed = text, [], False
+        self.on_click = self.on_disposed = None
+
+    def SetText(self, text):
+        self.Text = text
+
+    def SetPos(self, x, y):
+        pass
+
+    def Add(self, child):
+        self.children.append(child)
+
+    def Dispose(self):
+        self.IsDisposed = True
+
+
+def tazuo_panel_api(world, loaded=(), prefix=""):
+    """tazuo_api plus the gump and script-control calls packrat-panel.py uses. The panel runs as
+    `prefix`packrat-panel.py; PlayScript starts a script only when its relative path is in `loaded`
+    (the client's silent no-op otherwise). click() queues a control's callback, which runs on the
+    script's next ProcessCallbacks, as in the client. api.log records every PlayScript / StopScript."""
+    api = tazuo_api(world, 0)
+    api.running, api.windows, api.queue, api.log = [prefix + "packrat-panel.py"], [], [], []
+
+    def play(path):
+        api.log.append(("play", path))
+        if path in loaded and path not in api.running:
+            api.running.append(path)
+
+    def stop(path):
+        api.log.append(("stop", path))
+        if path in api.running:
+            api.running.remove(path)
+
+    def process():
+        while api.queue:
+            api.queue.pop(0)()
+
+    def window(*args):
+        api.windows.append(Control())
+        return api.windows[-1]
+
+    api.PlayScript, api.StopScript, api.ProcessCallbacks = play, stop, process
+    api.IsScriptRunning = lambda path: path in api.running
+    api.ListRunningScripts = lambda: list(api.running)
+    api.OnStop = lambda fn: setattr(api, "on_stop", fn)
+    api.Gumps = types.SimpleNamespace(
+        CreateModernGump=window, CreateGumpLabel=lambda text, hue=0: Control(text),
+        CreateSimpleButton=lambda text, w, h: Control(text),
+        AddControlOnClick=lambda c, fn, *a: setattr(c, "on_click", fn),
+        AddControlOnDisposed=lambda c, fn: setattr(c, "on_disposed", fn),
+        AddGump=lambda g: None)
+    api.click = lambda c: api.queue.append(c.on_click)
+    return api
+
+
 class Pos(object):
     def __init__(self, x, y, z=0):
         self.X, self.Y, self.Z = x, y, z
