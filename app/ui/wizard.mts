@@ -142,12 +142,9 @@ function go(step: number): void { wiz!.step = step; render(); focusStep(); }
 // ---------------------------------------------------------------- step 1: shard
 function step1(): StepContent {
   const sel = select(state.availableShards.map((r) => ({ value: r.id, label: r.name })), wiz!.shard, { size: "lg", attrs: { id: "wiz-shard" } });
-  sel.addEventListener("change", async () => {
-    // Same path the Settings picker uses (ui/shard.mts): PUT then reload the whole page, so the new
-    // shard's rules apply everywhere at once (Phase 4 final review, Important 3).
-    if (!await changeShard(sel.value)) { sel.value = wiz!.shard; return; }
-    wiz!.shard = sel.value;
-  });
+  // The pick is only remembered here: changeShard reloads the page, which would close the wizard, so
+  // finish() applies it (Set up later and Esc leave the saved shard alone).
+  sel.addEventListener("change", () => { wiz!.shard = sel.value; render(); $<HTMLSelectElement>("#wiz-shard")?.focus(); });
   return {
     question: "Which shard do you play on?",
     help: "Pack Rat reads item property caps, rarity colours and the Resisting Spells bonus from the shard's rules.",
@@ -380,6 +377,9 @@ async function finish(then?: string): Promise<void> {
   await persistSetupDone();
   closeAs("done");
   if (then) location.hash = then;
+  // Same path the Settings picker uses (ui/shard.mts): PUT then reload the whole page, so the new
+  // shard's rules apply everywhere at once (Phase 4 final review, Important 3).
+  if (wiz!.shard !== state.settings?.shard) await changeShard(wiz!.shard);
 }
 
 // Esc fires the dialog's native "cancel" then "close" with no returnValue set — treat that exactly
