@@ -119,6 +119,11 @@ test("[slow] Wizard: named stepper with branch-aware labels, radio cards, kept t
     assert.equal(await page.locator("#wiz-title").innerText(), "Set up Pack Rat");
     assert.deepEqual(await steps(), ["Shard", "Client", "Client folder", "Install scanner"]);
     assert.equal(await page.locator("#wizard [aria-current=step]").innerText(), "1\nShard");
+    // Changing the shard keeps the wizard open (it is applied at Finish) and the AFK notice follows the pick.
+    assert.match(await page.locator("#wizard .wiz-body").innerText(), /UO Alive allows AFK/);
+    await page.selectOption("#wiz-shard", "generic-osi");
+    assert.equal(await page.locator("#wizard[open]").count(), 1);
+    assert.doesNotMatch(await page.locator("#wizard .wiz-body").innerText(), /UO Alive allows AFK/);
     await page.keyboard.press("Enter");   // ↵ is Continue
 
     // Step 2: radio cards, installable first; a client this machine can't run is shown disabled with the reason.
@@ -173,9 +178,12 @@ test("[slow] Wizard: named stepper with branch-aware labels, radio cards, kept t
     await page.unroute("**/api/setup/install");
     assert.match(await page.locator("#wizard .wiz-press").innerText(), /packrat-scanner\.py/);
     assert.equal(await page.locator("#wiz-primary").innerText().then((s) => s.split("\n")[0]), "Finish");
+    const reloaded = page.waitForEvent("load");   // Finish applies the new shard, which reloads the page
     await page.click("#wiz-primary");
     await page.waitForSelector("#wizard", { state: "hidden" });
-    const settings = JSON.parse(readFileSync(join(dataDir, "settings.json"), "utf8")) as { setupDone: boolean; client: { adapter: string; scriptsDir: string } };
+    await reloaded;
+    const settings = JSON.parse(readFileSync(join(dataDir, "settings.json"), "utf8")) as { shard: string; setupDone: boolean; client: { adapter: string; scriptsDir: string } };
+    assert.equal(settings.shard, "generic-osi");
     assert.equal(settings.setupDone, true);
     assert.equal(settings.client.adapter, "tazuo");
     assert.match(settings.client.scriptsDir, /LegionScripts$/);
