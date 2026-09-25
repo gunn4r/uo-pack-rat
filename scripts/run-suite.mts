@@ -8,9 +8,9 @@ import type { test as NodeTest } from "node:test";
 import { realpathSync } from "node:fs";
 import { resolve, relative, sep } from "node:path";
 
-export type Mode = "smoke" | "fast" | "full";
+export type Mode = "smoke" | "fast" | "full" | "changed";
 export interface Failure { file: string; line: number; test_name: string; error: string }
-export interface Summary { timestamp: string; mode: Mode; total: number; passed: number; failed: number; skipped: number; failures: Failure[] }
+export interface Summary { timestamp: string; mode: Mode; total: number; passed: number; failed: number; skipped: number; failures: Failure[]; note?: string }
 
 export interface SuiteOptions {
   root: string;
@@ -146,9 +146,9 @@ export async function runSuite({ root, mode, prepare, timeout, watchdogMs = 10_0
         // summary, and often nothing else either: the tests that had already passed, the one that
         // exited and every one after it just never report.
         fail(posixRelative(root, file), 0, "file stopped before its tests finished", "no end-of-file summary from node:test: the process exited part-way (a process.exit() in a test or in a module it imports?), so some of its tests never reported");
-      } else if (mode === "full" && finished.get(file) === 0) {
-        // --smoke/--fast can filter out every test in a file, but a full run applies no pattern, so a
-        // file that registered nothing is a mistake: a test file with no tests in it.
+      } else if (!patternsFor(mode) && finished.get(file) === 0) {
+        // --smoke/--fast can filter out every test in a file, but a full or --changed run applies no
+        // pattern, so a file that registered nothing is a mistake: a test file with no tests in it.
         fail(posixRelative(root, file), 0, "file registered no tests", "the file ran to the end without registering a single test");
       }
     }

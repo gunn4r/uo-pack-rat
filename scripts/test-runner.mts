@@ -1,10 +1,12 @@
 #!/usr/bin/env node
 // test-runner.mts — the project's standard test interface.
-//   node scripts/test-runner.mts [--smoke|--fast]      (full when no flag)
+//   node scripts/test-runner.mts [--smoke|--fast|--changed[=<ref>]]      (full when no flag)
 // Drives node:test's run() over every **/*.test.mts found by a recursive walk of app/ + scripts/
 // (node_modules/dist/fixtures excluded) and writes test_logs/latest_summary.json. Tags are name
 // prefixes: [smoke] [fast] [slow]. TEST_SKIP_SLOW=1 skips the [slow] cases (see individual files).
 // The counting itself lives in scripts/run-suite.mts, where scripts/run-suite.test.mts can prove it.
+// --changed runs only the test files scripts/select-tests.mts maps this branch's changes to (every
+// test in them, [slow] included), against the merge base with origin/main or with <ref>.
 //
 // The adapters' Python tests are not spawned from here any more. This file used to run
 // adapters/tazuo/test_paths.py by name; app/adapters.test.mts now walks adapters/ for every
@@ -12,15 +14,18 @@
 // same probe for python3-then-python), skipping with a note when neither is on PATH. That covers the
 // same file in the same modes, counts into the same summary, and picks up a new adapter's tests with
 // no edit here — so the copy that lived in this file was doing nothing the suite wasn't.
-import { writeFileSync, mkdirSync, readdirSync } from "node:fs";
-import { dirname, join } from "node:path";
+import { writeFileSync, mkdirSync, readdirSync, readFileSync } from "node:fs";
+import { execFileSync } from "node:child_process";
+import { dirname, join, relative, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { buildUi } from "./build-ui.mts";
 import { buildSchemaTypes } from "./build-schema-types.mts";
-import { runSuite, type Mode } from "./run-suite.mts";
+import { runSuite, type Mode, type Summary } from "./run-suite.mts";
+import { selectTests } from "./select-tests.mts";
 
 const ROOT = dirname(dirname(fileURLToPath(import.meta.url)));
-const mode: Mode = process.argv.includes("--smoke") ? "smoke" : process.argv.includes("--fast") ? "fast" : "full";
+const changedArg = process.argv.find((a) => a === "--changed" || a.startsWith("--changed="));
+const mode: Mode = changedArg ? "changed" : process.argv.includes("--smoke") ? "smoke" : process.argv.includes("--fast") ? "fast" : "full";
 // Node 24 applies it to each test and Node 22 to each file as a whole. It sits well below CI's
 // 20-minute job timeout, so a hang in CI still ends in a written summary naming the hung test or file
 // (the job being killed would write nothing), and far above anything the suite needs: the whole full
@@ -32,16 +37,43 @@ const TEST_TIMEOUT_MS = 12 * 60 * 1000;
 // created that hole, and would only postpone the next one. node_modules is a defensive exclusion
 // (none exists under app/ or scripts/ today); dist is generated build output that must never be
 // walked; fixtures holds test INPUT data (JSON fixtures consumed by tests), never tests themselves.
-const walk = (dir: string): string[] => readdirSync(dir, { withFileTypes: true }).flatMap((e): string[] => {
+const walk = (dir: string, suffix = ".test.mts"): string[] => readdirSync(dir, { withFileTypes: true }).flatMap((e): string[] => {
   const p = join(dir, e.name);
-  if (e.isDirectory()) return e.name === "node_modules" || e.name === "dist" || e.name === "fixtures" ? [] : walk(p);
-  return e.name.endsWith(".test.mts") ? [p] : [];
+  if (e.isDirectory()) return e.name === "node_modules" || e.name === "dist" || e.name === "fixtures" ? [] : walk(p, suffix);
+  return e.name.endsWith(suffix) ? [p] : [];
 });
+const repoPath = (p: string): string => relative(ROOT, p).split(sep).join("/");
+
+// --changed: the test files to run (repo-relative), or undefined for all of them, and why. Changed
+// means changed since the merge base: committed, staged, unstaged or untracked. A git failure falls
+// back to the full suite rather than to a run that proves nothing.
+function changedSelection(ref: string): { files: string[] | undefined; note: string } {
+  const git = (...args: string[]): string[] => execFileSync("git", args, { cwd: ROOT, encoding: "utf8" }).split("\n").filter(Boolean);
+  let changed: string[];
+  try {
+    const [base] = git("merge-base", ref, "HEAD");
+    changed = [...git("diff", "--name-only", "--no-renames", base!), ...git("ls-files", "--others", "--exclude-standard")];
+  } catch (e) {
+    return { files: undefined, note: `full suite: could not list the changes against ${ref} (${String((e as Error).message).split("\n")[0]})` };
+  }
+  const sources = Object.fromEntries(["app", "scripts", "electron"].flatMap((d) => walk(join(ROOT, d), ".mts"))
+    .map((p) => [repoPath(p), readFileSync(p, "utf8")]));
+  const s = selectTests(changed, sources);
+  if ("full" in s) return { files: undefined, note: `full suite: ${s.full}` };
+  const files = Object.keys(s.tests);
+  for (const f of files) console.log(`  ${f}  <- ${s.tests[f]!.join(", ")}`);
+  return { files, note: `${files.length} test file(s) for ${changed.length} changed path(s) against ${ref}` };
+}
+const selection = changedArg ? changedSelection(changedArg.split("=")[1] ?? "origin/main") : { files: undefined, note: undefined };
+if (selection.note) console.log(`changed: ${selection.note}`);
 
 // The house rule is to read test_logs/latest_summary.json for results, never raw console output — so
 // every failure, the builds included, has to end up in a freshly written summary rather than leave
 // the previous (possibly green) one on disk. That is why the builds run inside runSuite's `prepare`.
-const summary = await runSuite({
+// A --changed run that selected nothing runs nothing and still writes one, empty, with its note.
+const summary: Summary = selection.files?.length === 0
+  ? { timestamp: new Date().toISOString(), mode, total: 0, passed: 0, failed: 0, skipped: 0, failures: [] }
+  : await runSuite({
   root: ROOT,
   mode,
   timeout: TEST_TIMEOUT_MS,
@@ -52,9 +84,11 @@ const summary = await runSuite({
     // build step — every caller imports scripts/optimizer-core.mts straight from source.
     buildSchemaTypes();
     buildUi();   // app/server.test.mts's [smoke] cases fetch app/dist/item-query.mjs and the page itself
-    return ["app", "scripts"].flatMap((d) => walk(join(ROOT, d)));
+    const all = ["app", "scripts"].flatMap((d) => walk(join(ROOT, d)));
+    return selection.files ? all.filter((p) => selection.files!.includes(repoPath(p))) : all;
   },
 });
+if (selection.note) summary.note = selection.note;
 mkdirSync(join(ROOT, "test_logs"), { recursive: true });
 writeFileSync(join(ROOT, "test_logs", "latest_summary.json"), JSON.stringify(summary, null, 2) + "\n");
 console.log(`${mode}: ${summary.passed}/${summary.total} passed, ${summary.failed} failed, ${summary.skipped} skipped`);
