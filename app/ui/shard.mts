@@ -2,7 +2,7 @@
 // /api/settings then reloads the whole page — the simplest way to re-apply the new shard's rules
 // everywhere (caps, rarity, tag units, pools) at once, since state.rules and everything folded under
 // it (state.inv, the suit builder's pools) live server-side and are only ever (re-)fetched on load().
-// Shared by the Settings picker (ui/settings.mts) and the setup wizard's shard step (ui/wizard.mts) so both
+// Shared by the Settings picker (ui/settings.mts) and the setup wizard's Finish (ui/wizard.mts) so both
 // paths behave identically. Before this module existed the wizard duplicated the PUT and only synced
 // the header <select>'s displayed value, leaving state.rules (and everything folded under it) on the
 // old shard until a manual reload — Phase 4 final review, Important 3.
