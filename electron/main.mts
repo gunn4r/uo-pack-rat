@@ -15,7 +15,6 @@ import { randomUUID } from "node:crypto";
 import { appendFileSync, mkdirSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { acquireDataLock } from "../app/data-lock.mts";
 import { dialogTitle, openPathTarget } from "./host-args.mts";
 import { externalOpenDecision, navigationDecision } from "./navigation.mts";
 import { shouldRestart } from "./restart-policy.mts";
@@ -71,11 +70,7 @@ function logLine(line: string): void {
 
 const token = randomUUID();
 
-// Electron's lock (in userData, which is dataDir) stops a second desktop app, whose launch focuses this
-// window instead (second-instance below); the data lock also stops a browser-mode server on the same folder.
-const dataLock = app.requestSingleInstanceLock() ? acquireDataLock(dataDir) : null;
-if (!dataLock || "heldBy" in dataLock) {
-  if (dataLock) dialog.showErrorBox("Pack Rat", `Pack Rat (process ${dataLock.heldBy}) is already using the data folder ${dataDir}. Close it first.`);
+if (!app.requestSingleInstanceLock()) {
   app.quit();
 } else {
   let win: BrowserWindow | null = null;
@@ -419,8 +414,6 @@ if (!dataLock || "heldBy" in dataLock) {
       win.focus();
     }
   });
-
-  app.on("will-quit", dataLock.release);
 
   app.on("window-all-closed", () => {
     app.quit();
