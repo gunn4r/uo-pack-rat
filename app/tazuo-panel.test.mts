@@ -73,6 +73,11 @@ test("[fast] tazuo-panel.json keeps a pending open-at-login flag only while it i
   assert.deepEqual(readPanelFile(path), { ...PANEL_DEFAULTS, openAtLogin: false, pendingOpenAtLogin: true });
   writePanelFile(path, { ...PANEL_DEFAULTS, pendingOpenAtLogin: false });
   assert.deepEqual(JSON.parse(readFileSync(path, "utf8")), PANEL_DEFAULTS);
+  // The in-game panel writes this file too: a pending flag counts only beside a real choice, and an oversized file is not read.
+  writeFileSync(path, JSON.stringify({ openAtLogin: "yes", pendingOpenAtLogin: true, hotkey: { mods: [], key: "P" } }));
+  assert.deepEqual(readPanelFile(path), { ...PANEL_DEFAULTS, pendingOpenAtLogin: false });
+  writeFileSync(path, JSON.stringify({ openAtLogin: false, pendingOpenAtLogin: true, pad: "x".repeat(70 * 1024) }));
+  assert.deepEqual(readPanelFile(path), { ...PANEL_DEFAULTS, pendingOpenAtLogin: false });
 });
 
 test("[fast] setGlobalAutostart merges into lscript.json: other keys and entries kept, one BOM kept, a .bak of the original, idempotent both ways", () => {

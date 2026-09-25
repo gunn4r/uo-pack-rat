@@ -35,7 +35,7 @@ function whatToPress(installedNames: string[]): HTMLElement[] {
   const line = (before: string, name: string, after: string): HTMLElement => el("li", {}, el("span", {}, before, el("code", {}, name), after));
   const lines: HTMLElement[] = [];
   const panel = has("panel");
-  if (panel) lines.push(el("li", {}, el("span", {}, "Easiest: the Pack Rat panel, whose buttons run the scripts below. It opens when you log in if you chose that above; otherwise type (don't paste) ", el("code", {}, `-playlscript ${panel}`), " in the game's chat.")));
+  if (panel) lines.push(el("li", {}, el("span", {}, "Easiest: the Pack Rat panel (", el("code", {}, panel), "), whose buttons run the scripts below. It opens when you log in if you chose that above.")));
   const refresh = has("refresh");
   if (refresh) lines.push(line("After a gearing or skill-training session on a character: run ", refresh, "."));
   const scanner = has("scanner");

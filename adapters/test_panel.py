@@ -109,6 +109,28 @@ class Panel(unittest.TestCase):
         self.assertFalse(api.windows[1].IsVisible, "the old window's close did not orphan the new one")
         self.assertIn("Ctrl+Shift+P shows/hides this window.", self.labels(api))
 
+    def test_the_login_toggle_writes_a_pending_choice_and_shows_what_the_app_writes_back(self):
+        path = os.path.join(self.data, "tazuo-panel.json")
+        with open(path, "w", encoding="utf-8") as f:
+            json.dump({"hotkey": {"mods": ["ALT"], "key": "F5"}, "openAtLogin": True, "junk": "x" * 50}, f)
+        w = World()
+        api = tazuo_panel_api(w)
+        seen = {}
+
+        def read():
+            with open(path, encoding="utf-8") as f:
+                return json.load(f)
+        w.clock.at(1, lambda: api.click(self.control(api, "Open at login: On")))
+        w.clock.at(2, lambda: seen.update(written=read(), labels=self.labels(api)))
+        # the app applies it and writes back what it applied
+        w.clock.at(3, lambda: open(path, "w").write(json.dumps({"hotkey": {"mods": ["ALT"], "key": "F5"}, "openAtLogin": True})))
+        w.clock.at(8, lambda: seen.update(after=self.labels(api)))
+        self.run_panel(w, api, until_s=9)
+        self.assertEqual(seen["written"], {"hotkey": {"mods": ["ALT"], "key": "F5"}, "openAtLogin": False, "pendingOpenAtLogin": True})
+        self.assertIn("Open at login: Off", seen["labels"])
+        self.assertIn("Saved. Takes effect the next time", seen["labels"])
+        self.assertIn("Open at login: On", seen["after"])
+
     def test_the_heartbeat_runs_while_open_and_ends_stopped(self):
         inbox = os.path.join(self.data, "inbox", "tazuo")
         os.makedirs(inbox)

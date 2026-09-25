@@ -734,19 +734,27 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
   // Each field is read on its own: one bad value (a hand edit) drops that field, not the whole file.
   const UI_PREFS = join(CONFIG.dataDir, "ui-prefs.json");
   // The TazUO panel's hotkey and open-at-login choice (app/tazuo-panel.mts). TazUO's lscript.json is only
-  // changed for a choice the player just made (`explicit`: a request that carried openAtLogin). If a client
-  // was running then, that choice is marked pending and retried, and only it: at startup, when Settings asks
-  // (GET), and on the next save or install. A plain reinstall never re-adds a panel the player unticked in game.
+  // changed for a choice the player just made (`explicit`: a request that carried openAtLogin), or one
+  // still pending: made while a client was running, here or with the in-game panel's toggle (which writes
+  // tazuo-panel.json itself). Pending choices are retried at startup, when Settings asks (GET), on the next
+  // save or install, and by a 30 s check of the file while the app runs. A plain reinstall never re-adds
+  // a panel the player unticked in game. What was applied is written back as openAtLogin, and GET mirrors
+  // TazUO's own list there when nothing is pending, so the panel's toggle shows the truth.
   const PANEL_PREFS = join(CONFIG.dataDir, "tazuo-panel.json");
   const tazuoScriptsDir = (): string | null => currentSettings.client?.adapter === "tazuo" && currentSettings.client.scriptsDir ? currentSettings.client.scriptsDir : null;
-  function applyOpenAtLogin(explicit: boolean): AutostartOutcome | null {
+  function applyOpenAtLogin(explicit: boolean, mirror = false): AutostartOutcome | null {
     const dir = tazuoScriptsDir();
     if (CONFIG.demo || !dir) return null;
     const f = readPanelFile(PANEL_PREFS);
-    if (!explicit && !f.pendingOpenAtLogin) return null;
+    if (!explicit && !f.pendingOpenAtLogin) {
+      const on = mirror ? autostartOn(dir) : null;
+      if (on != null && on !== f.openAtLogin && existsSync(PANEL_PREFS)) writePanelFile(PANEL_PREFS, { ...f, openAtLogin: on }, DATA_FILE_MODE);
+      return null;
+    }
     const r = syncOpenAtLogin(dir, f.openAtLogin, clientRunning);
     const pending = r.status === "pending";
-    if (pending !== f.pendingOpenAtLogin) writePanelFile(PANEL_PREFS, { ...f, pendingOpenAtLogin: pending }, DATA_FILE_MODE);
+    const openAtLogin = r.status === "error" ? autostartOn(dir) ?? f.openAtLogin : f.openAtLogin;
+    if (pending !== f.pendingOpenAtLogin || openAtLogin !== f.openAtLogin) writePanelFile(PANEL_PREFS, { ...f, openAtLogin, pendingOpenAtLogin: pending }, DATA_FILE_MODE);
     return r;
   }
   // Save a subset of {hotkey, openAtLogin}, keeping the rest and any pending flag.
@@ -1240,7 +1248,7 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
         return send(res, 200, { ok: true, settings: currentSettings });
       }
       if (req.method === "GET" && url.pathname === "/api/tazuo-panel") {
-        const autostart = applyOpenAtLogin(false);    // Settings opened: a waiting choice may land now
+        const autostart = applyOpenAtLogin(false, true);    // Settings opened: a waiting choice may land now
         const dir = tazuoScriptsDir(), f = readPanelFile(PANEL_PREFS);
         return send(res, 200, { ok: true, prefs: panelPrefsOf(f), pending: f.pendingOpenAtLogin, autostartOn: dir ? autostartOn(dir) : null, autostart });
       }
@@ -1816,6 +1824,11 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
   // A choice that was waiting on a running client when the app last saved it.
   const pendingPanel = applyOpenAtLogin(false);
   if (pendingPanel?.status === "error") safeAppendLog(CONFIG.paths.log, `${new Date().toISOString()} tazuo-panel (startup): ${pendingPanel.error}\n`);
+  // The player usually quits TazUO with the app open, and the panel's toggle writes a pending choice
+  // behind the app's back: a cheap read of tazuo-panel.json every 30 s, which acts only on a pending one.
+  const panelRetry = setInterval(() => { try { applyOpenAtLogin(false); } catch { /* next time */ } }, 30_000);
+  panelRetry.unref();
+  timers.add(panelRetry);
   pruneData("startup").catch((e: Error) => safeAppendLog(CONFIG.paths.log, `${new Date().toISOString()} retention (startup) failed: ${e.stack || e.message}\n`));
   const port = (server.address() as AddressInfo).port;
   const url = `http://localhost:${port}`;

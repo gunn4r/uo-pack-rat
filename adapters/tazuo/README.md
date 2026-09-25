@@ -23,7 +23,7 @@ To install by hand instead:
 
 ## What to press
 
-- **The easy way: the Pack Rat window.** Its buttons run the scripts: **Scan here**, **Quick refresh**, **Start bridge** / **Stop bridge**, **Blacklist a container**. It opens every time you log in, and **Ctrl+Shift+P** shows or hides it. Change either in the app's **Settings** under **Game client**. If you turned opening at login off, type `-playlscript packrat-panel.py` in the game's chat to open it (type it: TazUO's chat does not accept a paste). If a button says **Didn't start** right after an install, open the Script Manager once or relog, because TazUO only notices new script files then.
+- **The easy way: the Pack Rat window.** Its buttons run the scripts: **Scan here**, **Quick refresh**, **Start bridge** / **Stop bridge**, **Blacklist a container**. It opens every time you log in, and **Ctrl+Shift+P** shows or hides it. Change either in the app's **Settings** under **Game client**; the window's own **Open at login** button changes the first too, from the next time you start TazUO. If you turned opening at login off, type `-playlscript packrat-panel.py` in the game's chat to open it (type it: TazUO's chat does not accept a paste). If a button says **Didn't start** right after an install, open the Script Manager once or relog, because TazUO only notices new script files then.
 
 Or run each script yourself:
 

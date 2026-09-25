@@ -15,7 +15,9 @@
 #
 # The show/hide hotkey (default Ctrl+Shift+P) is set in the Pack Rat app, which writes it to
 # <data directory>/tazuo-panel.json; the panel re-reads that file every few seconds, validates it and
-# falls back to the default on anything it does not accept.
+# falls back to the default on anything it does not accept. The same file carries "open at login": the
+# panel's toggle writes the player's choice there as pending, and the app puts it into TazUO's autostart
+# list once no TazUO client is running (TazUO rewrites that list itself at logout).
 #
 # While it runs it rewrites <data directory>/bridge/tazuo/panel.json every 2 s, the heartbeat the
 # app's installer checks before replacing scripts. Bounded by MAX_HOURS; Stop, -stopall or logout
@@ -85,11 +87,11 @@ MAX_DIR_ENTRIES = 5000    # names looked at per folder per refresh
 DEFAULT_HOTKEY = "CTRL+SHIFT+P"
 HOTKEY_MODS = ("CTRL", "ALT", "SHIFT")
 HOTKEY_KEY_RE = re.compile(r"[A-Z0-9]|F[1-9]|F1[0-2]")    # used with fullmatch
-W, H = 380, 272
+W, H = 380, 308
 TITLE_HUE, TEXT_HUE, OK_HUE = 1153, 996, 68
 
 state = {"done": False, "prefix": "", "character": "", "pending": {}, "was_running": set(),
-         "hotkey": None, "window": None}
+         "hotkey": None, "window": None, "open_at_login": True}
 ui = {}
 shown = {}
 
@@ -196,14 +198,23 @@ def toggle():
         pass
 
 
-def read_hotkey():
-    """<data>/tazuo-panel.json's hotkey as "CTRL+SHIFT+P", or the default for anything not accepted.
-    A letter or digit needs a modifier: a bare one would fire whenever it is typed in chat."""
+def read_prefs():
+    """<data>/tazuo-panel.json as a dict, {} when missing, oversized or not a JSON object."""
     try:
         if os.path.getsize(PREFS) > MAX_PREFS_BYTES:
-            return DEFAULT_HOTKEY
+            return {}
         with open(PREFS, "r", encoding="utf-8") as f:
-            hk = json.load(f).get("hotkey")
+            doc = json.load(f)
+        return doc if isinstance(doc, dict) else {}
+    except Exception:
+        return {}
+
+
+def read_hotkey(doc):
+    """The file's hotkey as "CTRL+SHIFT+P", or the default for anything not accepted. A letter or digit
+    needs a modifier: a bare one would fire whenever it is typed in chat."""
+    try:
+        hk = doc.get("hotkey")
         mods, key = hk.get("mods"), hk.get("key")
         if not isinstance(mods, list) or not all(m in HOTKEY_MODS for m in mods) or len(set(mods)) != len(mods):
             return DEFAULT_HOTKEY
@@ -214,8 +225,12 @@ def read_hotkey():
         return DEFAULT_HOTKEY
 
 
-def bind_hotkey():
-    hk = read_hotkey()
+def load_prefs():
+    doc = read_prefs()
+    on = doc.get("openAtLogin")
+    state["open_at_login"] = on if isinstance(on, bool) else True
+    set_text("login_btn", login_text())
+    hk = read_hotkey(doc)
     if hk == state["hotkey"]:
         return
     on_hotkey = getattr(API, "OnHotKey", None)
@@ -224,6 +239,26 @@ def bind_hotkey():
     call(on_hotkey, hk, toggle)
     state["hotkey"] = hk
     set_text("hotkey", hotkey_text(hk))
+
+
+def login_text():
+    return "Open at login: " + ("On" if state["open_at_login"] else "Off")
+
+
+def on_login():
+    """The player's choice goes to tazuo-panel.json as pending, with the hotkey kept. The app applies it
+    to TazUO's autostart list once TazUO is not running, and writes back what it applied."""
+    doc = read_prefs()
+    out = {"hotkey": doc["hotkey"]} if isinstance(doc.get("hotkey"), dict) else {}
+    out.update({"openAtLogin": not state["open_at_login"], "pendingOpenAtLogin": True})
+    try:
+        write_json_atomic(PREFS, out)
+    except Exception:
+        say("Could not save that choice.")
+        return
+    state["open_at_login"] = out["openAtLogin"]
+    set_text("login_btn", login_text())
+    say("Saved. Takes effect the next time", "you start TazUO.")
 
 
 def hotkey_text(hk):
@@ -310,9 +345,9 @@ def build_window():
     g = create_window()
     if g is None:
         return None
-    rows = [("title", "Pack Rat", TITLE_HUE, 14), ("running", "", TEXT_HUE, 124),
-            ("bridge", "", TEXT_HUE, 144), ("scan", "", TEXT_HUE, 164),
-            ("msg", "", OK_HUE, 186), ("msg2", "", OK_HUE, 204), ("hotkey", "", TEXT_HUE, 240)]
+    rows = [("title", "Pack Rat", TITLE_HUE, 14), ("running", "", TEXT_HUE, 160),
+            ("bridge", "", TEXT_HUE, 180), ("scan", "", TEXT_HUE, 200),
+            ("msg", "", OK_HUE, 222), ("msg2", "", OK_HUE, 240), ("hotkey", "", TEXT_HUE, 276)]
     for key, text, hue, y in rows:
         lbl = call(gumps("CreateGumpLabel"), text, hue)
         if lbl is None:
@@ -326,7 +361,8 @@ def build_window():
                ("refresh_btn", "Quick refresh", lambda: start(REFRESH), 196, 44),
                ("bridge_btn", "Start bridge", on_bridge, 16, 80),
                ("blacklist_btn", "Blacklist a container", lambda: start(BLACKLIST), 196, 80),
-               ("close_btn", "Close", on_close, 276, 232)]
+               ("login_btn", login_text(), on_login, 16, 116),
+               ("close_btn", "Close", on_close, 276, 268)]
     for key, text, fn, x, y in buttons:
         b = call(gumps("CreateSimpleButton"), text, 88 if key == "close_btn" else 168, 28)
         if b is None:
@@ -349,7 +385,7 @@ def build_window():
 def main():
     state["prefix"] = own_prefix()
     call(getattr(API, "OnStop", None), on_stop)
-    bind_hotkey()
+    load_prefs()
     if build_window() is None:
         if not API.StopRequested:
             API.SysMsg("Pack Rat panel: the window could not be opened. Start packrat-panel.py again.", 33)
@@ -363,7 +399,7 @@ def main():
         try:
             watch_pending()
             if time.time() >= next_prefs:
-                bind_hotkey()
+                load_prefs()
                 next_prefs = time.time() + PREFS_EVERY_S
             if time.time() >= next_status:
                 refresh()

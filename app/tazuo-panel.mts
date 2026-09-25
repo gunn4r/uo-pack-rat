@@ -25,10 +25,16 @@ export { HOTKEY_KEYS, HOTKEY_MODS, PANEL_DEFAULTS, panelPrefsError, panelPrefsOf
 
 // tazuo-panel.json: the prefs, plus whether an open-at-login choice is still waiting on a running client.
 export interface PanelFile extends PanelPrefs { pendingOpenAtLogin: boolean }
+// The in-game panel writes this file too (its open-at-login toggle), so it is read as untrusted: capped,
+// each field validated, and a pending flag honoured only beside a real true/false choice.
+const MAX_PANEL_FILE_BYTES = 64 * 1024;
 export function readPanelFile(path: string): PanelFile {
-  let raw: unknown = null;
-  try { raw = JSON.parse(readFileSync(path, "utf8")); } catch { /* missing or unreadable: the defaults */ }
-  return { ...panelPrefsOf(raw), pendingOpenAtLogin: (raw as Record<string, unknown> | null)?.pendingOpenAtLogin === true };
+  let raw: Record<string, unknown> | null = null;
+  try {
+    if (lstatSync(path).size <= MAX_PANEL_FILE_BYTES) raw = JSON.parse(readFileSync(path, "utf8")) as Record<string, unknown>;
+  } catch { /* missing or unreadable: the defaults */ }
+  const pending = raw?.pendingOpenAtLogin === true && typeof raw?.openAtLogin === "boolean";
+  return { ...panelPrefsOf(raw), pendingOpenAtLogin: pending };
 }
 export function writePanelFile(path: string, { pendingOpenAtLogin, ...prefs }: PanelFile, mode?: number): void {
   writeFileAtomic(path, JSON.stringify({ ...panelPrefsOf(prefs), ...(pendingOpenAtLogin ? { pendingOpenAtLogin } : {}) }, null, 2) + "\n", mode);

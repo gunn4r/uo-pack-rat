@@ -1815,6 +1815,24 @@ test("[fast] the TazUO panel's open-at-login: only a choice the player made chan
     assert.deepEqual(list(), []);
     assert.equal((await call("GET", "/api/tazuo-panel")).body.autostartOn, false);
 
+    // The in-game panel's toggle writes a pending choice into tazuo-panel.json itself: it waits while TazUO
+    // runs and lands once it does not; a hostile file (a pending flag without a real choice) does nothing.
+    const panelFile = join(dir, "tazuo-panel.json");
+    writeFileSync(panelFile, JSON.stringify({ openAtLogin: "yes", pendingOpenAtLogin: true }));
+    assert.equal((await call("GET", "/api/tazuo-panel")).body.autostart, null);
+    assert.deepEqual(list(), []);
+    running = true;
+    writeFileSync(panelFile, JSON.stringify({ hotkey: { mods: ["ALT"], key: "F3" }, openAtLogin: true, pendingOpenAtLogin: true }));
+    assert.deepEqual((await call("GET", "/api/tazuo-panel")).body.autostart, { status: "pending" });
+    assert.deepEqual(list(), []);
+    running = false;
+    assert.deepEqual((await call("GET", "/api/tazuo-panel")).body.autostart, { status: "applied" });
+    assert.deepEqual(list(), ["packrat-panel.py"]);
+    assert.deepEqual(JSON.parse(readFileSync(panelFile, "utf8")), { hotkey: { mods: ["ALT"], key: "F3" }, openAtLogin: true }, "applied and written back, nothing pending");
+    writeFileSync(lscript, JSON.stringify({ GlobalAutoStartScripts: [] }));
+    await call("GET", "/api/tazuo-panel");   // nothing pending: TazUO's own list is mirrored back for the panel
+    assert.equal(JSON.parse(readFileSync(panelFile, "utf8")).openAtLogin, false);
+
     // A choice made while TazUO runs survives an app restart and lands at startup.
     running = true;
     assert.deepEqual((await call("PUT", "/api/tazuo-panel", { openAtLogin: true })).body.autostart, { status: "pending" });
