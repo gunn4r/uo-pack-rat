@@ -6,9 +6,14 @@ Standard interface (`npm test` and its variants are the same runner as `./script
 ./scripts/test_runner.sh --smoke   # or: npm run test:smoke   — Pack Rat parser/fold/pool smoke tests (<5 s)
 ./scripts/test_runner.sh --fast    # or: npm run test:fast    — + the rest of the vault/config/optimizer-core [fast] tests
 ./scripts/test_runner.sh           # or: npm test             — + the [slow] exhaustive-search proofs and the Electron shell smoke test
+./scripts/test_runner.sh --changed # only the test files for this branch's changes (--changed=<ref> for another base than origin/main)
 ```
 
 Results land in `test_logs/latest_summary.json`. Read that, not the console output.
+
+`--changed` takes every path changed since the merge base (committed, staged, unstaged and untracked), maps it with `scripts/select-tests.mts` and runs every test in the selected files, `[slow]` and Electron included; the summary's `mode` is `"changed"` and its `note` says what was chosen. A changed test file runs itself; `adapters/**` runs `app/adapters.test.mts`; any other path runs the test files that reach it through relative string literals (imports, `new URL("./x.css")`) or, for a data file, name it in quotes; an `app/ui` file also adds the Electron test for its screen (all of them for shared UI code, plus `ui-contrast` for CSS). Docs select nothing, and if nothing is left the run writes an empty summary. The runner itself, its helpers (`electron-window.mts`, the builds), `package.json`, `tsconfig*`, `app/schema/**`, `electron/**` and any path no test reaches run the full suite instead. It prints each selected file with the paths that picked it.
+
+When to run what: while iterating, `--changed` plus `npm run typecheck`; before a PR's first push, `--fast` plus the Electron test files for the screens touched (or `--changed`, which picks them); follow-up commits after review, `--changed`. Run the full suite locally only when touching test infrastructure, the Electron shell or shared helpers, or to reproduce a CI failure — CI's full run on three OSes is the merge gate.
 
 Everything runs on Node's built-in test runner (`node:test`); `scripts/test-runner.mts` drives it with the programmatic `run()` API over every `*.test.mts` file found by a **recursive** walk of `app/` and `scripts/` (excluding `node_modules/`, `dist/`, and `fixtures/`), then writes the summary. Discovery is recursive specifically so a test file in a new subdirectory — `app/schema/validate.test.mts` was the one this missed for a while — is picked up automatically, with no runner edit needed.
 
