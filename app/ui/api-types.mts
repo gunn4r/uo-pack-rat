@@ -36,10 +36,23 @@ export interface ClientSetting {
   adapter: string;
   scriptsDir: string;
 }
+// settings.retention (app/retention.mts): the server always answers with all three fields.
+export interface RetentionSetting {
+  keepAll: boolean;
+  scanDays: number;
+  runsPerCharacter: number;
+}
 export interface SettingsData {
   shard: string;
   setupDone?: boolean | undefined;
   client?: ClientSetting | null | undefined;
+  retention?: RetentionSetting | undefined;
+}
+// POST /api/retention/cleanup: what a dry run would remove, or what a real run removed.
+export interface CleanupApiResponse {
+  ok: boolean;
+  scans: number;
+  runs: number;
 }
 export interface SettingsApiResponse {
   ok: boolean;

@@ -19,6 +19,7 @@ An adversarial review went over the app in seven areas — the local server, the
 
 ### Everything else
 
+- **Old scans and saved runs no longer pile up** (issue #28). Pack Rat keeps every scan from the last 30 days, the newest scan of each container and character forever, and each character's newest 50 saved runs, and removes the rest on start and after each scan without changing the inventory; Settings › Data › Data retention sets both limits, turns pruning off (Keep everything), or cleans up now.
 - **Choosing the ClassicUO web client in the setup wizard now sticks** (issue #28). It has no scripts folder, and the app used to read that as "no client", so the choice was dropped when the wizard finished.
 - **The bridge copes with a deleted queue file, and Razor Enhanced's walks stop beside a container — re-install the scripts (TazUO 2.6.0, Razor Enhanced 1.6.0)** (issue #28): a deleted `queue.jsonl` no longer prints "queue read failed" every half second, and Razor Enhanced walks to the tile next to a container instead of onto it.
 - **The ClassicUO web scanner records a bag inside a container that reads as empty as not opened** (issue #28), like a ground container, so the app keeps that bag's last-known contents: an item used up while the bag reads empty stays listed until the bag is scanned with items in it again.
