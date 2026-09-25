@@ -232,11 +232,8 @@ def tazuo_api(world, backpack, bank=0, skills=None):
 class Control(object):
     """A script-built window or control: its text, children, and click / close callbacks."""
     def __init__(self, text=""):
-        self.Text, self.children, self.IsDisposed = text, [], False
+        self.Text, self.children, self.IsDisposed, self.IsVisible = text, [], False, True
         self.on_click = self.on_disposed = None
-
-    def SetText(self, text):
-        self.Text = text
 
     def SetPos(self, x, y):
         pass
@@ -252,9 +249,10 @@ def tazuo_panel_api(world, loaded=(), prefix=""):
     """tazuo_api plus the gump and script-control calls packrat-panel.py uses. The panel runs as
     `prefix`packrat-panel.py; PlayScript starts a script only when its relative path is in `loaded`
     (the client's silent no-op otherwise). click() queues a control's callback, which runs on the
-    script's next ProcessCallbacks, as in the client. api.log records every PlayScript / StopScript."""
+    script's next ProcessCallbacks, as in the client; so does press() for a key bound with OnHotKey
+    (api.hotkeys). api.log records every PlayScript / StopScript and OnHotKey."""
     api = tazuo_api(world, 0)
-    api.running, api.windows, api.queue, api.log = [prefix + "packrat-panel.py"], [], [], []
+    api.running, api.windows, api.queue, api.log, api.hotkeys = [prefix + "packrat-panel.py"], [], [], [], {}
 
     def play(path):
         api.log.append(("play", path))
@@ -278,6 +276,16 @@ def tazuo_panel_api(world, loaded=(), prefix=""):
     api.IsScriptRunning = lambda path: path in api.running
     api.ListRunningScripts = lambda: list(api.running)
     api.OnStop = lambda fn: setattr(api, "on_stop", fn)
+
+    def on_hotkey(key, fn=None):
+        api.log.append(("hotkey", key, fn is not None))
+        if fn is None:
+            api.hotkeys.pop(key, None)
+        else:
+            api.hotkeys[key] = fn
+
+    api.OnHotKey = on_hotkey
+    api.press = lambda key: api.hotkeys.get(key) and api.queue.append(api.hotkeys[key])
     api.Gumps = types.SimpleNamespace(
         CreateModernGump=window, CreateGumpLabel=lambda text, hue=0: Control(text),
         CreateSimpleButton=lambda text, w, h: Control(text),
