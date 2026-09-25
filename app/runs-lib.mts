@@ -38,6 +38,9 @@ export interface RunKeyInput {
 // are never served as "reused". 2: soft floors allow negative totals, negative capped weights.
 // 3: the reach estimate respects the hands row; heuristic-only runs honour the time budget.
 export const SOLVER_VERSION = 3;
+// The first SOLVER_VERSION whose "proven optimal" holds: before 2 a soft floor ruled out every suit with a
+// negative total, so HiGHS could prove a worse suit optimal.
+export const PROOF_SOUND_SINCE = 2;
 
 // Everything that shapes the answer: the candidate pools, the worn suit, the scoring profile, the
 // search options, and the solver version.
@@ -71,6 +74,7 @@ export interface SavedRun {
   label?: string | undefined;
   settings?: RunSettingsRaw | undefined;
   schemaVersion?: number | undefined;
+  solverVersion?: number | undefined;           // SOLVER_VERSION when saved; missing on runs saved before it was stamped
   inventoryStamp?: unknown;
   poolSize?: number | null | undefined;
   skipped?: unknown;
@@ -130,12 +134,15 @@ export function runSummary(r: SavedRun): RunSummary {
 // A run saved before the contract settled (2026-09-13) may carry `settings.allowOthers` (now
 // `allowOthersWorn`) and `settings.budgetS` (now `settings.budgetMs`, milliseconds like every other
 // stored/transmitted budget) and may be missing `schemaVersion`; one saved before the weapon exclusion
-// list carries `settings.weaponSkill`, now `settings.excludeWeapons` (migrateWeaponSetting). Apply wherever a run is read from
+// list carries `settings.weaponSkill`, now `settings.excludeWeapons` (migrateWeaponSetting). A run without a
+// solverVersion of at least PROOF_SOUND_SINCE loses its `proven` claim (undefined, which the page shows as no
+// verdict at all rather than as "best within budget"). Apply wherever a run is read from
 // disk so every run the server hands out — fresh or old — matches the current shape. Pure and
 // idempotent: normalizeRun(normalizeRun(r)) deep-equals normalizeRun(r).
 export function normalizeRun(run: SavedRun): SavedRun {
   const s: RunSettingsRaw = migrateWeaponSetting({ ...(run.settings || {}) });
   if ("allowOthers" in s) { s.allowOthersWorn = !!s.allowOthers; delete s.allowOthers; }
   if ("budgetS" in s) { s.budgetMs = 1000 * s.budgetS!; delete s.budgetS; }
-  return { ...run, schemaVersion: run.schemaVersion ?? 1, settings: s };
+  const result = run.result?.proven && (run.solverVersion ?? 1) < PROOF_SOUND_SINCE ? { ...run.result, proven: undefined } : run.result;
+  return { ...run, schemaVersion: run.schemaVersion ?? 1, settings: s, result };
 }

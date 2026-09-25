@@ -28,7 +28,7 @@ Two things only the OS can do — show a native folder picker, open a path in Fi
 
 ## Data directory layout
 
-One directory holds everything, resolved the same way for the bare server and the shell: `--data <dir>`, else `PACKRAT_DATA`, else (desktop only) `app.getPath("userData")`, else (bare server) `~/.pack-rat`.
+One directory holds everything, resolved the same way for the bare server and the shell: `--data <dir>`, else `PACKRAT_DATA`, else (desktop only) `app.getPath("userData")`, else (bare server) `~/.pack-rat`. Run one Pack Rat per data folder: the desktop app already allows only one window per folder, but two servers pointed at the same folder can race scan writes.
 
 ```
 <data>/

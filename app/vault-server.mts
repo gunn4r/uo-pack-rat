@@ -93,7 +93,7 @@ import { Worker } from "node:worker_threads";
 import { unlinkSync } from "node:fs";
 import { randomUUID, timingSafeEqual } from "node:crypto";
 import type { AddressInfo } from "node:net";
-import { runKey, reusableRun, runSummary, stripOpts, normalizeRun, type RunOpts, type SavedRun } from "./runs-lib.mts";
+import { runKey, reusableRun, runSummary, stripOpts, normalizeRun, SOLVER_VERSION, type RunOpts, type SavedRun } from "./runs-lib.mts";
 import { upgradeScan, validateScan } from "./scan-schema.mts";
 import { loadRules, listRules, DEFAULT_SHARD } from "./rules.mts";
 import { validate, type ValidatorSchema } from "./schema/validate.mts";
@@ -962,7 +962,7 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
     mkdirSync(RUNS, { recursive: true, mode: DATA_DIR_MODE });
     const meta = job.meta || {};
     const run = { id: job.id, key: job.key, character: meta.character || "?", createdAt: new Date().toISOString(), label: "",
-      schemaVersion: 1,
+      schemaVersion: 1, solverVersion: SOLVER_VERSION,
       settings: meta.settings || {}, inventoryStamp: meta.inventoryStamp || null, poolSize: meta.poolSize ?? null, skipped: meta.skipped || {},
       opts: stripOpts(job.input.opts), budgetMs: job.input.opts.timeBudgetMs ?? null, explored: job.progress?.explored ?? null,
       result: job.result, ms: job.ms };
