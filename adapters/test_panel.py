@@ -94,8 +94,11 @@ class Panel(unittest.TestCase):
             api.queue.append(api.windows[0].on_disposed)
         w.clock.at(9, close_with_x)
         w.clock.at(10, lambda: api.press("ALT+SHIFT+F5"))
-        w.clock.at(11, lambda: self.prefs({"mods": [], "key": "P"}))     # a bare letter is refused
-        self.run_panel(w, api, until_s=16)
+        w.clock.at(11, lambda: self.prefs({"mods": ["CTRL"], "key": "P\n"}))   # not exactly a key: refused
+        w.clock.at(12, lambda: self.prefs({"mods": [], "key": "P"}))     # a bare letter is refused too
+        w.clock.at(13, lambda: api.queue.append(api.windows[0].on_disposed))   # a late close of the OLD window
+        w.clock.at(15, lambda: api.press("CTRL+SHIFT+P"))
+        self.run_panel(w, api, until_s=17)
         self.assertIs(seen["hidden"], False)
         self.assertIn("Alt+Shift+F5 shows/hides this window.", seen["label"])
         self.assertEqual([c for c in api.log if c[0] == "hotkey"],
@@ -103,6 +106,7 @@ class Panel(unittest.TestCase):
                           ("hotkey", "ALT+SHIFT+F5", True), ("hotkey", "ALT+SHIFT+F5", False),
                           ("hotkey", "CTRL+SHIFT+P", True), ("hotkey", "CTRL+SHIFT+P", False)])
         self.assertEqual(len(api.windows), 2, "the hotkey rebuilt the window closed with its X")
+        self.assertFalse(api.windows[1].IsVisible, "the old window's close did not orphan the new one")
         self.assertIn("Ctrl+Shift+P shows/hides this window.", self.labels(api))
 
     def test_the_heartbeat_runs_while_open_and_ends_stopped(self):
@@ -125,7 +129,7 @@ class Panel(unittest.TestCase):
     def test_the_loop_is_bounded(self):
         with open(SCRIPT, encoding="utf-8") as f:
             src = f.read()
-        self.assertRegex(src, r"(?m)^MAX_HOURS = 8$")
+        self.assertRegex(src, r"(?m)^MAX_HOURS = 24\b")
         self.assertRegex(src, r"(?m)^\s*deadline = time\.time\(\) \+ MAX_HOURS \* 3600$")
         self.assertRegex(src, r"(?m)^\s*while not API\.StopRequested and .*time\.time\(\) < deadline:$")
 

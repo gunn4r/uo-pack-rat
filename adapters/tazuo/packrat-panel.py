@@ -74,7 +74,7 @@ HEARTBEAT = os.path.join(DATA, "bridge", "tazuo", "panel.json")
 PREFS = os.path.join(DATA, "tazuo-panel.json")
 SCAN_DIRS = (os.path.join(DATA, "inbox", "tazuo"), os.path.join(DATA, "scans"))
 
-MAX_HOURS = 8
+MAX_HOURS = 24            # idle UI: a whole play session, then it says how to reopen it
 POLL_S = 0.1              # callbacks only run inside ProcessCallbacks, so the loop stays quick
 STATUS_EVERY_S = 2.0      # status lines and the heartbeat
 PREFS_EVERY_S = 3.0       # the hotkey file
@@ -84,7 +84,7 @@ MAX_PREFS_BYTES = 4096
 MAX_DIR_ENTRIES = 5000    # names looked at per folder per refresh
 DEFAULT_HOTKEY = "CTRL+SHIFT+P"
 HOTKEY_MODS = ("CTRL", "ALT", "SHIFT")
-HOTKEY_KEY_RE = re.compile(r"^([A-Z0-9]|F[1-9]|F1[0-2])$")
+HOTKEY_KEY_RE = re.compile(r"[A-Z0-9]|F[1-9]|F1[0-2]")    # used with fullmatch
 W, H = 380, 272
 TITLE_HUE, TEXT_HUE, OK_HUE = 1153, 996, 68
 
@@ -180,8 +180,9 @@ def on_close():
         pass
 
 
-def on_disposed():
-    state["window"] = None     # closed with its own X: the hotkey builds a new one
+def on_disposed(g):
+    if state["window"] is g:   # closed with its own X: the hotkey builds a new one
+        state["window"] = None
 
 
 def toggle():
@@ -206,7 +207,7 @@ def read_hotkey():
         mods, key = hk.get("mods"), hk.get("key")
         if not isinstance(mods, list) or not all(m in HOTKEY_MODS for m in mods) or len(set(mods)) != len(mods):
             return DEFAULT_HOTKEY
-        if not isinstance(key, str) or not HOTKEY_KEY_RE.match(key) or (len(key) == 1 and not mods):
+        if not isinstance(key, str) or not HOTKEY_KEY_RE.fullmatch(key) or (len(key) == 1 and not mods):
             return DEFAULT_HOTKEY
         return "+".join([m for m in HOTKEY_MODS if m in mods] + [key])
     except Exception:
@@ -336,7 +337,7 @@ def build_window():
         g.Add(b)
         call(gumps("AddControlOnClick"), b, fn)
         ui[key] = b
-    call(gumps("AddControlOnDisposed"), g, on_disposed)
+    call(gumps("AddControlOnDisposed"), g, lambda: on_disposed(g))
     call(gumps("AddGump"), g)
     state["window"] = g
     if state["hotkey"]:
@@ -372,6 +373,8 @@ def main():
                 API.SysMsg("Pack Rat panel: status update failed: %s" % str(e)[:80], 33)
                 failed = True
         API.Pause(POLL_S)
+    if not API.StopRequested and not state["done"]:
+        API.SysMsg("Pack Rat panel closed; type -playlscript packrat-panel.py to reopen", 88)
     call(getattr(API, "OnHotKey", None), state["hotkey"], None)
     g = state["window"]
     try:
