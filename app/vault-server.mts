@@ -22,7 +22,9 @@
 //         GET /api/items/by-serial?serials=1,2,3 — full item records (location/tags/equippedBy…) by
 //         serial, 1-200 at a time (400 otherwise); a serial with no item is simply absent from the
 //         response · GET|PUT /api/profiles (<data>/profiles.json)
-//         GET|PUT /api/settings (<data>/settings.json: {shard, setupDone?, client?}) · GET /api/rules (the current shard's
+//         GET|PUT /api/settings (<data>/settings.json: {shard, setupDone?, client?, retention?}) ·
+//         POST /api/retention/cleanup {dryRun} -> {scans, runs, refused} (prune old scans and saved runs
+//         now, or count what that would remove; app/retention.mts; 409 under --demo) · GET /api/rules (the current shard's
 //         rules object plus every {id,name,source} listRules() finds — builtin and <data>/rules/*.json)
 //         POST /api/optimize {pools,current,profile,opts} -> {id}, or {character,settings,profile,opts}
 //         to have the server build the pools itself (buildPools, per-slot lockedSlots/blocked handling —
@@ -43,7 +45,7 @@
 //         optimize events above): hello {ok, watching: [adapter ids]} on connect, inventory
 //         {file, character, scannedAt, at} once an inbox file is accepted into paths.scans, rejected
 //         {file, reason, at} once one is moved to its adapter's rejected/ folder, changed {what:
-//         "inventory"|"runs", by?, at} (by: the forgetting tab's x-client-id) after a forget, forget-character or run deletion (so other open tabs
+//         "inventory"|"runs", by?, at} (by: the forgetting tab's x-client-id) after a forget, forget-character, run deletion or retention prune (so other open tabs
 //         reload), ping every 15s. A
 //         normal token-protected /api/* route (no SSE exemption — unlike /api/optimize/<id>/events,
 //         this stream carries no per-job secret an EventSource couldn't send anyway). Non-demo mode
@@ -86,7 +88,7 @@
 import http from "node:http";
 import { readFileSync, appendFileSync, readdirSync, existsSync, mkdirSync, copyFileSync, renameSync } from "node:fs";
 import { pathToFileURL } from "node:url";
-import { dirname, join, resolve } from "node:path";
+import { basename, dirname, join, resolve } from "node:path";
 import { spawn } from "node:child_process";
 import { statSync, lstatSync } from "node:fs";
 import { Worker } from "node:worker_threads";
@@ -102,6 +104,7 @@ import { DEFAULT_OPTIONAL_SLOTS } from "./mip.mts";
 import { startWatcher, jsonErrorReason, MAX_INBOX_BYTES, type StartWatcherOptions, type WatcherHandle } from "./watcher.mts";
 import { parsePastedScan, writeScanToInbox } from "./import.mts";
 import { writeFileAtomic } from "./atomic-write.mts";
+import { retentionError, retentionOf, runsToPrune, scansToPrune, type ScanFile } from "./retention.mts";
 import {
   listAdapters, candidateClientRoots, validateScriptsDir, installedVersion, installScripts,
   repoFromPackage, checkForUpdates, type CheckForUpdatesResult, checkScriptsDataDir, type DataDirCheck, type AdapterInfo,
@@ -499,6 +502,7 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
     shard: string;
     setupDone?: boolean;
     client?: ClientSettings | null;
+    retention?: unknown;
     [key: string]: unknown;
   }
   // The shard picker: <data>/settings.json ({schemaVersion, shard}) names which app/rules/<shard>.json
@@ -567,7 +571,7 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
   // The shard fallback below sets this; declared here so effectiveSettings() can read it.
   let rulesFallback = false;
   function effectiveSettings(): SettingsDoc {
-    return { ...savedSettings, ...(clientIgnored ? { client: null } : {}), ...(rulesFallback ? { shard: DEFAULT_SHARD } : {}) };
+    return { ...savedSettings, retention: retentionOf(savedSettings.retention), ...(clientIgnored ? { client: null } : {}), ...(rulesFallback ? { shard: DEFAULT_SHARD } : {}) };
   }
   let currentSettings = effectiveSettings();
   function saveSettings(changes: Partial<SettingsDoc>): void {
@@ -673,9 +677,10 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
   // v2 and throws otherwise). A file that doesn't parse, doesn't upgrade (neither v1 nor v2 shaped)
   // or fails validation is logged and skipped — never thrown, so one bad scan can't take the whole
   // inventory down.
-  function readScans(): ScanV2[] {
+  function readScans(): ScanV2[] { return readScanFiles().map((s) => s.doc); }
+  function readScanFiles(): ScanFile[] {
     if (!existsSync(SCANS)) return [];
-    const out: ScanV2[] = [];
+    const out: ScanFile[] = [];
     for (const f of readdirSync(SCANS).filter((f) => f.endsWith(".json")).sort()) {
       try {
         const raw: unknown = JSON.parse(readFileSync(join(SCANS, f), "utf8"));
@@ -684,7 +689,7 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
         if (!ok) { console.warn(`skipping ${f}: ${errors.map((e) => `${e.path} ${e.msg}`).join("; ")}`); continue; }
         // doc passed validateScan — this is the one place a v2-shaped document earns the ScanV2 cast
         // (the ScanV2 rule: upgradeScan alone only proves UnvalidatedScan).
-        out.push(doc as ScanV2);
+        out.push({ file: f, doc: doc as ScanV2 });
       } catch (e) { console.warn(`skipping ${f}: ${(e as Error).message}`); }
     }
     return out;
@@ -948,15 +953,59 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
   }
 
   // ---- saved runs: one JSON file per finished build in app/data/runs/ -------------------------------
-  function readRuns(): SavedRun[] {
+  function readRuns(): SavedRun[] { return readRunFiles().map((r) => r.run); }
+  function readRunFiles(): { file: string; run: SavedRun }[] {
     if (!existsSync(RUNS)) return [];
-    const out: SavedRun[] = [];
+    const out: { file: string; run: SavedRun }[] = [];
     for (const f of readdirSync(RUNS).filter((f) => f.endsWith(".json"))) {
       // A run file is this app's own prior output, not third-party input, but it still gets the same
       // "trusted, cast at the read boundary" treatment as every other on-disk JSON file in this app.
-      try { out.push(normalizeRun(JSON.parse(readFileSync(join(RUNS, f), "utf8")) as SavedRun)); } catch (e) { console.error(`skipping run ${f}: ${(e as Error).message}`); }
+      try { out.push({ file: f, run: normalizeRun(JSON.parse(readFileSync(join(RUNS, f), "utf8")) as SavedRun) }); } catch (e) { console.error(`skipping run ${f}: ${(e as Error).message}`); }
     }
-    return out.sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt)));
+    return out.sort((a, b) => String(b.run.createdAt).localeCompare(String(a.run.createdAt)));
+  }
+
+  // ---- retention (issue #28): old scans and saved runs, per settings.json's `retention` ----------------
+  // Only files readScanFiles()/readRunFiles() read are ever candidates (a scan that fails validation or
+  // a run that does not parse stays), only by their bare name inside scans/ or runs/, and only a
+  // regular file: lstat, so a symlink is left alone rather than followed. Nothing is pruned under
+  // --demo: its scans are the committed fixtures and its runs folder is still the player's own.
+  // `refused`: old scans were due to go, but the fold without them differed, so every scan was kept.
+  interface PrunePlan { scans: string[]; runs: string[]; refused: boolean }
+  async function planPrune(): Promise<PrunePlan> {
+    if (CONFIG.demo) return { scans: [], runs: [], refused: false };
+    const r = retentionOf(savedSettings.retention);
+    const scans = scansToPrune(readScanFiles(), (await lib()).foldSnapshots, r, Date.now());
+    const runs = runsToPrune(readRunFiles().map(({ file, run }) => ({ file, character: String(run.character), createdAt: String(run.createdAt), label: String(run.label || "") })), r);
+    return { scans: scans.files, runs, refused: scans.refused };
+  }
+  function removeFiles(dir: string, files: string[]): string[] {
+    const removed: string[] = [];
+    for (const f of files) {
+      const p = join(dir, f);
+      try {
+        if (basename(f) !== f || !f.endsWith(".json") || !lstatSync(p).isFile()) continue;
+        unlinkSync(p);
+        removed.push(f);
+      } catch (e) { safeAppendLog(CONFIG.paths.log, `${new Date().toISOString()} retention could not remove ${JSON.stringify(f)}: ${(e as Error).message}\n`); }
+    }
+    return removed;
+  }
+  // One prune at a time: each call waits for the one before it to finish.
+  let pruning: Promise<unknown> = Promise.resolve();
+  function pruneData(why: string): Promise<{ scans: number; runs: number; refused: boolean }> {
+    const next = pruning.catch(() => {}).then(async () => {
+      const plan = await planPrune();
+      const scans = removeFiles(SCANS, plan.scans), runs = removeFiles(RUNS, plan.runs);
+      const at = new Date().toISOString();
+      if (plan.refused) safeAppendLog(CONFIG.paths.log, `${at} retention (${why}) kept every scan: the inventory folded without the old ones differed\n`);
+      if (scans.length || runs.length) safeAppendLog(CONFIG.paths.log, `${at} retention (${why}) removed ${scans.length} scans ${JSON.stringify(scans)} and ${runs.length} runs ${JSON.stringify(runs)}\n`);
+      if (scans.length) broadcastEvent("changed", { what: "inventory", at: Date.now() });
+      if (runs.length) broadcastEvent("changed", { what: "runs", at: Date.now() });
+      return { scans: scans.length, runs: runs.length, refused: plan.refused };
+    });
+    pruning = next;
+    return next;
   }
   function saveRun(job: Job) {
     mkdirSync(RUNS, { recursive: true, mode: DATA_DIR_MODE });
@@ -1115,6 +1164,9 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
         if (Object.prototype.hasOwnProperty.call(body, "setupDone") && typeof body.setupDone !== "boolean") {
           return send(res, 400, { ok: false, error: "settings.setupDone must be a boolean" });
         }
+        const hasRetention = Object.prototype.hasOwnProperty.call(body, "retention");
+        const retentionBad = hasRetention ? retentionError(body.retention) : null;
+        if (retentionBad) return send(res, 400, { ok: false, error: retentionBad });
         // undefined = the body said nothing about the client and the persisted one is left alone;
         // null = clear it (an explicit null, or a folder-transport client with an empty scriptsDir); an
         // object = a validated, RESOLVED {adapter, scriptsDir}. A paste-transport client has no scripts
@@ -1153,11 +1205,22 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
         if (hasShard) changes.shard = body.shard as string;
         if (Object.prototype.hasOwnProperty.call(body, "setupDone")) changes.setupDone = body.setupDone as boolean;
         if (nextClient !== undefined) changes.client = nextClient;
+        if (hasRetention) changes.retention = { ...retentionOf(savedSettings.retention), ...(body.retention as object) };
         saveSettings(changes);
         currentRules = nextRules;
         rulesFallback = nextFallback;
         currentSettings = effectiveSettings();
         return send(res, 200, { ok: true, settings: currentSettings });
+      }
+      if (req.method === "POST" && url.pathname === "/api/retention/cleanup") {
+        // Settings › Data's Clean up now: {dryRun: true} counts what the pruning would remove (the
+        // confirm dialog's sentence), {dryRun: false} removes it and says what went.
+        // `refused`: old scans were kept because the inventory would have changed without them.
+        const { dryRun } = asObject(await readBody(req, { limit: 8e3 }));
+        if (typeof dryRun !== "boolean") return send(res, 400, { ok: false, error: "dryRun must be a boolean" });
+        if (CONFIG.demo) return send(res, 409, { ok: false, error: "demo data is read-only" });
+        if (dryRun) { const plan = await planPrune(); return send(res, 200, { ok: true, scans: plan.scans.length, runs: plan.runs.length, refused: plan.refused }); }
+        return send(res, 200, { ok: true, ...await pruneData("clean up now") });
       }
       if (req.method === "GET" && url.pathname === "/api/rules") {
         return send(res, 200, { ok: true, shard: currentSettings.shard, rules: currentRules, available: listRules({ userRulesDir: USER_RULES_DIR }), fallback: rulesFallback });
@@ -1703,6 +1766,7 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
     server.listen(CONFIG.port, "127.0.0.1");
   });
   startWatchers();
+  pruneData("startup").catch((e: Error) => safeAppendLog(CONFIG.paths.log, `${new Date().toISOString()} retention (startup) failed: ${e.stack || e.message}\n`));
   const port = (server.address() as AddressInfo).port;
   const url = `http://localhost:${port}`;
   console.log(`Pack Rat: ${url}  (data: ${CONFIG.dataDir})  token: ${CONFIG.token ? "set" : "none (dev)"}`);

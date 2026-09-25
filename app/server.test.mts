@@ -1,7 +1,7 @@
 // server.test.mts — HTTP route tests against a real listening server (ephemeral port, tmp data dir).
 import { test, before, after, type TestContext } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, readdirSync, existsSync, renameSync, rmSync, cpSync, statSync } from "node:fs";
+import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, readdirSync, existsSync, renameSync, rmSync, cpSync, statSync, symlinkSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
@@ -2150,7 +2150,7 @@ const OBJECT_BODY_ROUTES: Array<[string, string]> = [
   ["POST", "/api/import/paste"], ["POST", "/api/import/rescan"],
   ["POST", "/api/host/pick-folder"], ["POST", "/api/host/open-path"], ["POST", "/api/optimize"],
   ["POST", "/api/bridge"], ["POST", "/api/forget"], ["POST", "/api/forget-character"], ["PUT", "/api/ui-prefs"],
-  ["POST", "/api/blacklist"],
+  ["POST", "/api/blacklist"], ["POST", "/api/retention/cleanup"],
 ];
 test("[fast] a null/array/scalar JSON body is a clean 400 on every body-reading route, and the log does not grow", async () => {
   const dir = mkdtempSync(join(tmpdir(), "qm-nullbody-"));
@@ -3107,4 +3107,80 @@ test("[fast] PACKRAT_CLIENT_HOME confines the client search to that folder", () 
   } finally {
     rmSync(home, { recursive: true, force: true });
   }
+});
+
+// ---- retention (issue #28): old scans and saved runs pruned without changing the inventory ------------
+// A data folder with an older scan of Dorran's (superseded by the demo one) and saved runs of one
+// character: three plain ones, an older named one, and an older symlink to a file outside the folder.
+const OLD_DORRAN = (() => { const d = JSON.parse(readFileSync(join(HERE, "fixtures", "demo-Dorran.json"), "utf8")); d.scannedAt = "2025-01-01T12:00:00"; return JSON.stringify(d); })();
+function retentionData(settings: Record<string, unknown>): { dir: string; outside: string } {
+  const dir = mkdtempSync(join(tmpdir(), "qm-retention-"));
+  mkdirSync(join(dir, "scans"), { recursive: true });
+  mkdirSync(join(dir, "runs"), { recursive: true });
+  cpSync(join(HERE, "fixtures", "demo-Dorran.json"), join(dir, "scans", "demo-Dorran.json"));
+  cpSync(join(HERE, "fixtures", "demo-Kestrel.json"), join(dir, "scans", "demo-Kestrel.json"));
+  writeFileSync(join(dir, "scans", "old-Dorran.json"), OLD_DORRAN);
+  const run = (id: string, createdAt: string, label = "") => JSON.stringify({ id, key: id, character: "Dorran", createdAt, label, settings: {}, result: null });
+  for (const [i, day] of ["2026-09-20", "2026-09-21", "2026-09-22"].entries()) writeFileSync(join(dir, "runs", `r${i}.json`), run(`r${i}`, `${day}T10:00:00Z`));
+  writeFileSync(join(dir, "runs", "named.json"), run("named", "2026-08-01T10:00:00Z", "Tank suit"));
+  const outside = join(mkdtempSync(join(tmpdir(), "qm-retention-out-")), "linked.json");
+  writeFileSync(outside, run("linked", "2026-09-01T10:00:00Z"));
+  try { symlinkSync(outside, join(dir, "runs", "linked.json")); } catch { /* no symlinks here (Windows without the privilege): the rest still runs */ }
+  writeFileSync(join(dir, "settings.json"), JSON.stringify({ schemaVersion: 1, shard: "uoalive", ...settings }));
+  return { dir, outside };
+}
+const putJson = (url: string, method: string, body: unknown): Promise<Response> => fetch(url, { method, headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
+
+test("[fast] PUT /api/settings validates retention with its bounds and keeps the fields it did not name", async () => {
+  const { dir } = retentionData({});
+  const s2 = await startServer(ensureLayout(resolveConfig(["--port", "0", "--data", dir], {})));
+  try {
+    const got = asJson<{ settings: { retention: unknown } }>(await (await fetch(s2.url + "/api/settings")).json());
+    assert.deepEqual(got.settings.retention, { keepAll: false, scanDays: 30, runsPerCharacter: 50 }, "defaults when settings.json has none");
+    for (const bad of [{ scanDays: 0 }, { scanDays: 3651 }, { runsPerCharacter: 1.5 }, { keepAll: 1 }, { other: 1 }, [], "30"]) {
+      const r = await putJson(s2.url + "/api/settings", "PUT", { retention: bad });
+      assert.equal(r.status, 400, `${JSON.stringify(bad)} should be refused`);
+    }
+    assert.equal((await putJson(s2.url + "/api/settings", "PUT", { retention: { scanDays: 7 } })).status, 200);
+    assert.equal((await putJson(s2.url + "/api/settings", "PUT", { retention: { keepAll: true } })).status, 200);
+    assert.deepEqual(JSON.parse(readFileSync(join(dir, "settings.json"), "utf8")).retention, { keepAll: true, scanDays: 7, runsPerCharacter: 50 });
+  } finally {
+    await s2.close();
+  }
+});
+
+test("[fast] POST /api/retention/cleanup counts first, then removes old scans and unnamed runs without changing the inventory; startup prunes too", async () => {
+  const { dir, outside } = retentionData({ retention: { keepAll: true } });   // nothing pruned at startup
+  let s2 = await startServer(ensureLayout(resolveConfig(["--port", "0", "--data", dir], {})));
+  const cleanup = async (dryRun: boolean) => asJson<{ ok: boolean; scans: number; runs: number; refused: boolean }>(await (await putJson(s2.url + "/api/retention/cleanup", "POST", { dryRun })).json());
+  // Everything but the list of scans folded, which is what pruning shortens.
+  const inventory = async () => { const { scans: _scans, ...rest } = asJson<InventoryResponse>(await (await fetch(s2.url + "/api/inventory")).json()).inventory as InventorySummary & { scans?: unknown }; return rest; };
+  const linked = existsSync(join(dir, "runs", "linked.json"));
+  try {
+    assert.equal((await putJson(s2.url + "/api/retention/cleanup", "POST", { dryRun: "no" })).status, 400);
+    assert.deepEqual(await cleanup(true), { ok: true, scans: 0, runs: 0, refused: false }, "Keep everything prunes nothing");
+    assert.equal((await putJson(s2.url + "/api/settings", "PUT", { retention: { keepAll: false, runsPerCharacter: 2 } })).status, 200);
+    const before = await inventory();
+    assert.deepEqual(await cleanup(true), { ok: true, scans: 1, runs: linked ? 2 : 1, refused: false });
+    assert.equal(readdirSync(join(dir, "scans")).length, 3, "a dry run removes nothing");
+    assert.deepEqual(await cleanup(false), { ok: true, scans: 1, runs: 1, refused: false }, "the symlinked run is never removed");
+    assert.deepEqual(readdirSync(join(dir, "scans")).sort(), ["demo-Dorran.json", "demo-Kestrel.json"]);
+    assert.deepEqual(readdirSync(join(dir, "runs")).sort(), [...(linked ? ["linked.json"] : []), "named.json", "r1.json", "r2.json"], "a named run is kept and not counted");
+    assert.ok(existsSync(outside), "nor what the symlink points at");
+    assert.deepEqual(await inventory(), before, "the inventory is the same");
+    assert.match(readFileSync(join(dir, "logs", "server.log"), "utf8"), /retention \(clean up now\) removed 1 scans \["old-Dorran\.json"\] and 1 runs \["r0\.json"\]/);
+
+    // A restart prunes on its own.
+    await s2.close();
+    writeFileSync(join(dir, "scans", "old-Dorran.json"), OLD_DORRAN);
+    s2 = await startServer(ensureLayout(resolveConfig(["--port", "0", "--data", dir], {})));
+    for (let i = 0; i < 100 && existsSync(join(dir, "scans", "old-Dorran.json")); i++) await new Promise((r) => setTimeout(r, 20));
+    assert.equal(existsSync(join(dir, "scans", "old-Dorran.json")), false, "startup removed the old scan");
+  } finally {
+    await s2.close();
+  }
+});
+
+test("[fast] POST /api/retention/cleanup is refused under --demo, whose runs folder is still the player's", async () => {
+  assert.equal((await putJson(srv.url + "/api/retention/cleanup", "POST", { dryRun: true })).status, 409);
 });

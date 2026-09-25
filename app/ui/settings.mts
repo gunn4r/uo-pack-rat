@@ -2,13 +2,14 @@
 // Updates) in a 720px column of cards made of setting rows — title and help on the left, the control
 // on the right. General holds the look (theme family, appearance) and the shard rules; Game client its
 // status, Run setup and Reinstall; Data the data folder and logs with Open, the blacklisted containers,
-// and the danger zone (forget a character, forget a container); Updates the version and the update check. Always re-fetches GET
+// how long old scans and saved runs are kept, and the danger zone (forget a character, forget a container); Updates the version and the update check. Always re-fetches GET
 // /api/setup on render (a cheap directory listing) so it reflects whatever the wizard, or this screen's
 // own actions, just changed.
 import { state } from "./store.mts";
 import { $, el, noteEl } from "./dom.mts";
 import { api } from "./api.mts";
-import { badge, box, button, check, copyText, message, segmented, select, txt, showToast, type Kids } from "./components.mts";
+import { badge, box, button, check, confirmDialog, copyText, input, message, segmented, select, switchControl, txt, showToast, type Kids } from "./components.mts";
+import { plural } from "./builder-model.mts";
 import { applyLook, currentLook, resolveTheme, BUILT_THEMES, type Appearance } from "./theme.mts";
 import { changeShard } from "./shard.mts";
 import { openWizard } from "./wizard.mts";
@@ -16,7 +17,7 @@ import { forgetCharacter } from "./characters.mts";
 import { bridgeNote, renderDataDirNotice } from "./bridge.mts";
 import { adapterCopy } from "./adapter-copy.mts";
 import { clientErrorMessage, dataDirNotice, errorText, hostErrorMessage, installedIntoNote, pathsFileNote, relativeWhen } from "./messages.mts";
-import type { SetupApiResponse, InstallApiResponse, UpdateCheckApiResponse, BlacklistApiResponse } from "./api-types.mts";
+import type { SetupApiResponse, InstallApiResponse, UpdateCheckApiResponse, BlacklistApiResponse, CleanupApiResponse, RetentionSetting, SettingsApiResponse } from "./api-types.mts";
 import type { BlacklistEntry } from "../vault-lib.mts";
 
 // Reinstall's own confirmation and result — separate from the wizard's, since this row acts on the client
@@ -171,6 +172,57 @@ function blacklistCard(list: BlacklistEntry[]): HTMLElement {
         void syncSettingsBlacklist();
       } }) })));
 }
+// Data retention (issue #28): how long old scans and saved runs are kept, saved to settings.json as
+// each control changes, and Clean up now, which asks the server for a count first (a dry run) and
+// says what it will remove before removing it.
+function retentionCard(): HTMLElement | null {
+  const r = state.settings?.retention;
+  if (!r) return null;
+  // Saves one change; the server's refusal (its limits, in its words) comes back as the error text.
+  const save = async (change: Partial<RetentionSetting>): Promise<string | null> => {
+    try { state.settings = (await api<SettingsApiResponse>("/api/settings", { method: "PUT", body: { retention: change } })).settings; return null; }
+    catch (e) { return errorText(e); }
+  };
+  // A number field with its unit; a value the server refuses stays in the field, marked, with its reason under it.
+  const numberRow = (key: "scanDays" | "runsPerCharacter", title: string, unit: string, help: string) => {
+    const id = `set-ret-${key}`;
+    const f = input({ type: "number", value: r[key], size: "sm", attrs: { id, "aria-describedby": `${id}-err` } });
+    f.disabled = r.keepAll;
+    const err = txt("", "field-error");
+    err.id = `${id}-err`;
+    err.hidden = true;
+    f.addEventListener("change", async () => {
+      const bad = await save({ [key]: Number(f.value) });
+      f.classList.toggle("invalid", !!bad);
+      if (bad) f.setAttribute("aria-invalid", "true"); else f.removeAttribute("aria-invalid");
+      err.hidden = !bad;
+      err.textContent = bad || "";
+    });
+    return { f, row: row({ title, label: id, control: box("div", { class: "set-inline" }, f, txt(unit, "t-sm muted")), help, below: [err] }) };
+  };
+  const days = numberRow("scanDays", "Keep scans for", "days", "Older scans are removed, except the ones the inventory still needs, so it never changes.");
+  const runs = numberRow("runsPerCharacter", "Saved runs per character", "runs", "Each character keeps their newest saved Suit Builder runs. Named runs are always kept.");
+  const counts = ({ scans, runs: n }: CleanupApiResponse): string => [scans ? plural(scans, "scan") : "", n ? plural(n, "run") : ""].filter(Boolean).join(" and ");
+  const keptScans = "Every scan was kept: removing the old ones would change the inventory.";
+  const clean = button({ label: "Clean up now", disabled: r.keepAll, attrs: { id: "set-ret-clean" }, onClick: async () => {
+    try {
+      const plan = await api<CleanupApiResponse>("/api/retention/cleanup", { method: "POST", body: { dryRun: true } });
+      if (!plan.scans && !plan.runs) { showToast(plan.refused ? keptScans : "Nothing to clean up: everything is inside the limits.", plan.refused ? "info" : "ok"); return; }
+      if (!await confirmDialog({ title: "Clean up old data?", body: `This removes ${counts(plan)} from the data folder for good. The inventory stays the same.`, confirmLabel: `Remove ${counts(plan)}` })) return;
+      const done = await api<CleanupApiResponse>("/api/retention/cleanup", { method: "POST", body: { dryRun: false } });
+      showToast([done.scans || done.runs ? `Removed ${counts(done)}.` : "Nothing was removed.", done.refused ? keptScans : ""].filter(Boolean).join(" "), done.refused ? "info" : "ok");
+    } catch (e) { showToast(`Could not clean up: ${errorText(e)}`, "bad"); }
+  } });
+  const keep = switchControl({ label: "Keep everything", checked: r.keepAll, attrs: { id: "set-ret-keep" }, onChange: async (on) => {
+    const bad = await save({ keepAll: on });
+    if (bad) { keep.input.checked = !on; showToast(`Could not save: ${bad}`, "bad"); return; }
+    days.f.disabled = runs.f.disabled = clean.disabled = on;
+  } });
+  return box("div", { class: "card set-card", id: "set-retention" },
+    row({ title: "Data retention", control: keep.root, help: "Pack Rat removes old scans and saved runs when it starts. Keep everything turns that off." }),
+    days.row, runs.row,
+    row({ title: "Clean up now", control: clean, help: "Removes what the limits above let go, without waiting for the next start." }));
+}
 function dataSection(setup: SetupApiResponse): HTMLElement {
   // The data-folder mismatch (#39): the client's scripts write somewhere this app doesn't read. The banner
   // over every screen says so in one short line and links here, where the full sentence with both paths
@@ -189,6 +241,7 @@ function dataSection(setup: SetupApiResponse): HTMLElement {
       pathRow("Data folder", "data", setup.dataDir, setup.canOpenFolders === true),
       pathRow("Logs", "logs", `${setup.dataDir}${setup.platform === "win32" ? "\\" : "/"}logs`, setup.canOpenFolders === true),
       mismatch ? box("div", { class: "set-row-below set-pad" }, message({ tone: "warn", text: mismatch })) : null),
+    retentionCard(),
     blacklistCard([]),
     box("div", { class: "card set-card set-danger", "aria-labelledby": "set-danger-h" },
       el("h3", { class: "t-md strong set-danger-title", id: "set-danger-h" }, "Danger zone"),
