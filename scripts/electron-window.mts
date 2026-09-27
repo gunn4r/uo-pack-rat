@@ -4,10 +4,11 @@
 // that size clamped to the screen's work area, and the test reads back the width it really got and drives the
 // layout that width shows (a collapsed sidebar, facet chips folded into "+ Filter" below 1180 px). An assertion
 // only reachable above the real width is skipped with that reason, and still runs where the screen allows.
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { ElectronApplication, Page } from "playwright";
+import { DEFAULT_SHARD } from "../app/rules.mts";
 
 export interface RealSize { width: number; height: number }
 
@@ -78,4 +79,16 @@ export function testEnv(extra: Record<string, string> = {}, home?: string): Reco
   }
   // Playwright's `env` wants plain strings; process.env's entries are, at runtime.
   return { ...(process.env as Record<string, string>), PACKRAT_CLIENT_HOME: home, ...extra };
+}
+
+// The data folder every Electron UI test launches the app with, passed through this first: it turns the
+// automatic update check (#67, on by default) off in that folder's settings.json, keeping whatever the test
+// wrote there, so no launch asks GitHub for the latest release. A test of the check turns it back on itself,
+// with GET /api/update-check mocked.
+export function noUpdateCheck(dataDir: string): string {
+  const file = join(dataDir, "settings.json");
+  let doc: Record<string, unknown> = { schemaVersion: 1, shard: DEFAULT_SHARD };
+  try { doc = JSON.parse(readFileSync(file, "utf8")) as Record<string, unknown>; } catch { /* none yet: the app's own default */ }
+  writeFileSync(file, JSON.stringify({ ...doc, autoUpdateCheck: false }));
+  return dataDir;
 }

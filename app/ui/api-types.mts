@@ -48,6 +48,7 @@ export interface SettingsData {
   setupDone?: boolean | undefined;
   client?: ClientSetting | null | undefined;
   retention?: RetentionSetting | undefined;
+  autoUpdateCheck?: boolean | undefined;   // Settings › Updates' automatic check (the server answers true unless it was turned off)
 }
 // POST /api/retention/cleanup: what a dry run would remove, or what a real run removed; refused when
 // old scans were kept because the inventory would have changed without them.
@@ -73,6 +74,7 @@ export interface UiPrefs {
   appearance?: "light" | "system" | "dark" | undefined;
   sidebar?: "auto" | "collapsed" | undefined;          // "collapsed" = pinned to icons at any width
   density?: "dense" | "regular" | undefined;           // the Inventory table's rows: 32 or 40 px
+  dismissedUpdate?: string | undefined;                // the release whose update notice was dismissed (settings.mts)
 }
 export interface UiPrefsApiResponse {
   ok: boolean;

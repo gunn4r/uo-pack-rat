@@ -14,7 +14,7 @@ import { initBuilder, syncBuilderCharacters, selectCharacter } from "./builder.m
 import { renderContainers } from "./containers.mts";
 import { connectEvents } from "./events.mts";
 import { openWizard } from "./wizard.mts";
-import { renderSettings, syncSettingsCharacters, syncSettingsBlacklist } from "./settings.mts";
+import { renderSettings, startUpdateChecks, syncSettingsCharacters, syncSettingsBlacklist } from "./settings.mts";
 import { renderImport } from "./import.mts";
 import { applyLook } from "./theme.mts";
 import { initShell, applyShellPrefs, renderNavCounts, setCurrentNav } from "./shell.mts";
@@ -66,6 +66,7 @@ export async function load(): Promise<void> {
   // so they come up before it: a failed inventory or profiles fetch must not take the Settings tab
   // (the page's way to the data folder) down with it.
   renderSettings(setupRes);
+  startUpdateChecks(prefs?.prefs.dismissedUpdate);
   renderImport();
   connectEvents();
   if (setupRes.firstRun && !state.wizardShown) { state.wizardShown = true; openWizard({ firstRun: true }); }

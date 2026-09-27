@@ -8,7 +8,7 @@ Two things to know before reading. First, every defence named here is described 
 
 ## What the app is
 
-Pack Rat reads a player's Ultima Online inventory — every item, on every character, in every container — through small adapter scripts that run inside their own game client, and builds the best suit that inventory allows. Everything runs on the player's own machine. There is no back end, no account and no hosted component of any kind — the HTTP server below is a loopback one inside the app itself — and the single outbound request the app can make is a manual update check, which `PRIVACY.md` covers.
+Pack Rat reads a player's Ultima Online inventory — every item, on every character, in every container — through small adapter scripts that run inside their own game client, and builds the best suit that inventory allows. Everything runs on the player's own machine. There is no back end, no account and no hosted component of any kind — the HTTP server below is a loopback one inside the app itself — and the single outbound request the app can make is the update check (on launch and every 6 hours unless the player turns it off, or on demand), which `PRIVACY.md` covers.
 
 ### Processes
 

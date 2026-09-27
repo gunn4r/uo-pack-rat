@@ -10,7 +10,7 @@ import { tmpdir } from "node:os";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createRequire } from "node:module";
-import { fitWindow, testEnv } from "./electron-window.mts";
+import { fitWindow, noUpdateCheck, testEnv } from "./electron-window.mts";
 import type { ElectronApplication, Page } from "playwright";
 
 const ROOT = dirname(dirname(fileURLToPath(import.meta.url)));
@@ -25,7 +25,7 @@ function unavailable(): string | null {
 }
 async function launch(dataDir: string, { demo = true } = {}): Promise<{ app: ElectronApplication; page: Page; errors: string[] }> {
   const { _electron } = await import("playwright");
-  const app = await _electron.launch({ args: [ROOT, ...(demo ? ["--demo"] : []), "--data", dataDir], cwd: ROOT, timeout: 60_000, env: testEnv() });
+  const app = await _electron.launch({ args: [ROOT, ...(demo ? ["--demo"] : []), "--data", noUpdateCheck(dataDir)], cwd: ROOT, timeout: 60_000, env: testEnv() });
   const page = await app.firstWindow();
   const errors: string[] = [];
   page.on("pageerror", (e) => errors.push(String(e)));
@@ -261,6 +261,52 @@ test("[slow] Settings: sections with the client warning, theme and appearance, R
     await page.click("#set-check-updates");
     await page.waitForSelector("#set-updates .msg.ok");
     assert.equal(await page.locator("#set-updates .msg.ok").innerText(), "You have the latest version, 0.1.0.");
+    assert.deepEqual(errors, []);
+  } finally {
+    await app.close();
+    rmSync(dataDir, { recursive: true, force: true });
+  }
+});
+
+// Issue #67: with the check turned on (every test launch starts with it off, electron-window.mts's
+// noUpdateCheck), a newer release shows a notice above the screen until dismissed, the dismissal is saved, and
+// only a later release shows again.
+test("[slow] Settings › Updates: the automatic check shows a dismissible notice for a newer release", async (t) => {
+  const why = unavailable();
+  if (why) return t.skip(why);
+  const dataDir = mkdtempSync(join(tmpdir(), "packrat-forms-autoupdate-"));
+  setupDone(dataDir);
+  const { app, page, errors } = await launch(dataDir);
+  let latest = "9.9.9", checks = 0;
+  await page.route("**/api/update-check", (r) => { checks++; return r.fulfill({ contentType: "application/json",
+    body: JSON.stringify({ ok: true, configured: true, current: "0.1.0", latest, url: `https://github.com/example/pack-rat/releases/tag/v${latest}`, upToDate: false }) }); });
+  try {
+    await page.evaluate(() => { location.hash = "#/settings"; });
+    await page.locator("#set-auto-update").waitFor();
+    assert.equal(await page.locator("#set-auto-update").isChecked(), false, "off in the test launch's settings");
+    await page.locator("#set-auto-update").check();
+    await page.waitForFunction(async () => (await (await fetch("/api/settings")).json()).settings.autoUpdateCheck === true);
+    await page.waitForSelector("#update-notice:not([hidden])", { timeout: 20_000 });
+    assert.equal(await page.locator("#update-notice > span").innerText(), "Pack Rat 9.9.9 is available.");
+    assert.equal(await page.locator("#update-notice").getByRole("link", { name: "View release" }).getAttribute("href"), "https://github.com/example/pack-rat/releases/tag/v9.9.9");
+    await page.locator("#update-notice").getByRole("button", { name: "Dismiss" }).click();
+    await page.waitForSelector("#update-notice", { state: "hidden" });
+    await page.waitForFunction(async () => (await (await fetch("/api/ui-prefs")).json()).prefs.dismissedUpdate === "9.9.9");
+
+    // After a reload the page checks again on its own, and the same release stays dismissed.
+    const before = checks;
+    await page.reload();
+    for (const until = Date.now() + 20_000; checks === before && Date.now() < until;) await page.waitForTimeout(200);
+    assert.ok(checks > before, "the reloaded page checked again");
+    assert.equal(await page.locator("#update-notice").isHidden(), true, "a dismissed release does not show again");
+
+    // Turning the check off is saved; turning it back on checks again, and a later release shows.
+    await page.locator("#set-auto-update").uncheck();
+    await page.waitForFunction(async () => (await (await fetch("/api/settings")).json()).settings.autoUpdateCheck === false);
+    latest = "9.9.10";
+    await page.locator("#set-auto-update").check();
+    await page.waitForSelector("#update-notice:not([hidden])", { timeout: 20_000 });
+    assert.equal(await page.locator("#update-notice > span").innerText(), "Pack Rat 9.9.10 is available.");
     assert.deepEqual(errors, []);
   } finally {
     await app.close();
