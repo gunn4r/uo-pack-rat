@@ -18,6 +18,7 @@
 import type { Item, Container, Character, ScanSummary, OptItem, RunSettings, ProfilesFile, BlacklistEntry } from "../vault-lib.mts";
 import type { Facets, ItemQueryRows, ItemQueryGroups } from "../item-query.mts";
 import type { RulesV1 } from "../schema/types.d.mts";
+import type { AutostartOutcome, Hotkey as PanelHotkey, PanelPrefs } from "../tazuo-panel-prefs.mts";
 
 // ---------------------------------------------------------------- shared fragments
 
@@ -188,7 +189,11 @@ export interface InstallApiResponse {
   version: string | null;
   scriptsDir?: string | undefined;
   pathsFile?: string | undefined;
+  autostart?: AutostartOutcome | null | undefined;
 }
+// The TazUO panel (app/tazuo-panel-prefs.mts): GET/PUT /api/tazuo-panel, and POST /api/setup/install's `panel`.
+export type { AutostartOutcome, PanelHotkey, PanelPrefs };
+export interface TazuoPanelApiResponse { ok: boolean; prefs: PanelPrefs }
 export interface HostPickFolderApiResponse {
   ok: boolean;
   path: string | null;
