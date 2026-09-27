@@ -268,6 +268,49 @@ test("[slow] Settings: sections with the client warning, theme and appearance, R
   }
 });
 
+// Issue #67: the automatic check runs shortly after load; a newer release shows a notice above the screen
+// until dismissed, the dismissal is saved, and only a later release (or turning the check off) changes that.
+test("[slow] Settings › Updates: the automatic check shows a dismissible notice for a newer release", async (t) => {
+  const why = unavailable();
+  if (why) return t.skip(why);
+  const dataDir = mkdtempSync(join(tmpdir(), "packrat-forms-autoupdate-"));
+  setupDone(dataDir);
+  const { app, page, errors } = await launch(dataDir);
+  let latest = "9.9.9", checks = 0;
+  await page.route("**/api/update-check", (r) => { checks++; return r.fulfill({ contentType: "application/json",
+    body: JSON.stringify({ ok: true, configured: true, current: "0.1.0", latest, url: `https://github.com/example/pack-rat/releases/tag/v${latest}`, upToDate: false }) }); });
+  try {
+    await page.waitForSelector("#update-notice:not([hidden])", { timeout: 20_000 });
+    assert.equal(await page.locator("#update-notice > span").innerText(), "Pack Rat 9.9.9 is available.");
+    assert.equal(await page.locator("#update-notice").getByRole("link", { name: "View release" }).getAttribute("href"), "https://github.com/example/pack-rat/releases/tag/v9.9.9");
+    await page.locator("#update-notice").getByRole("button", { name: "Dismiss" }).click();
+    await page.waitForSelector("#update-notice", { state: "hidden" });
+    await page.waitForFunction(async () => (await (await fetch("/api/ui-prefs")).json()).prefs.dismissedUpdate === "9.9.9");
+
+    // After a reload the same release stays dismissed.
+    const before = checks;
+    await page.reload();
+    for (const until = Date.now() + 20_000; checks === before && Date.now() < until;) await page.waitForTimeout(200);
+    assert.ok(checks > before, "the reloaded page checked again");
+    assert.equal(await page.locator("#update-notice").isHidden(), true, "a dismissed release does not show again");
+
+    // Turning the check off is saved; turning it back on checks again, and a later release shows.
+    await page.evaluate(() => { location.hash = "#/settings"; });
+    await page.locator("#set-auto-update").waitFor();
+    assert.equal(await page.locator("#set-auto-update").isChecked(), true, "on by default");
+    await page.locator("#set-auto-update").uncheck();
+    await page.waitForFunction(async () => (await (await fetch("/api/settings")).json()).settings.autoUpdateCheck === false);
+    latest = "9.9.10";
+    await page.locator("#set-auto-update").check();
+    await page.waitForSelector("#update-notice:not([hidden])", { timeout: 20_000 });
+    assert.equal(await page.locator("#update-notice > span").innerText(), "Pack Rat 9.9.10 is available.");
+    assert.deepEqual(errors, []);
+  } finally {
+    await app.close();
+    rmSync(dataDir, { recursive: true, force: true });
+  }
+});
+
 test("[slow] Settings › Data retention: Clean up now counts, confirms and removes; Keep everything disables it", async (t) => {
   const why = unavailable();
   if (why) return t.skip(why);

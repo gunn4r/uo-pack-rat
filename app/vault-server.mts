@@ -22,7 +22,7 @@
 //         GET /api/items/by-serial?serials=1,2,3 — full item records (location/tags/equippedBy…) by
 //         serial, 1-200 at a time (400 otherwise); a serial with no item is simply absent from the
 //         response · GET|PUT /api/profiles (<data>/profiles.json)
-//         GET|PUT /api/settings (<data>/settings.json: {shard, setupDone?, client?, retention?}) ·
+//         GET|PUT /api/settings (<data>/settings.json: {shard, setupDone?, client?, retention?, autoUpdateCheck?}) ·
 //         GET|PUT /api/tazuo-panel ({hotkey?, showAtLogin?} -> {prefs}: the TazUO panel's hotkey and whether it
 //         shows its window at login, <data>/tazuo-panel.json, app/tazuo-panel.mts) ·
 //         POST /api/retention/cleanup {dryRun} -> {scans, runs, refused} (prune old scans and saved runs
@@ -41,7 +41,7 @@
 //         a `_vault` tombstone carrying forgetCharacter; 409 under --demo) ·
 //         GET|POST {serial, name, where?} /api/blacklist · DELETE /api/blacklist/<serial>
 //         (<data>/scan-blacklist.json, the containers scans never open) ·
-//         GET|PUT /api/ui-prefs (<data>/ui-prefs.json: {cols?, colsVersion?, colWidths?, sheetProps?, theme?, appearance?, sidebar?, density?}, the page's view choices)
+//         GET|PUT /api/ui-prefs (<data>/ui-prefs.json: {cols?, colsVersion?, colWidths?, sheetProps?, theme?, appearance?, sidebar?, density?, dismissedUpdate?}, the page's view choices)
 //         POST /api/bridge {action, serial, name, chain: [root…parent], pos|null} (queue for packrat-bridge.py) · GET /api/bridge/status
 //         GET /api/events — SSE, one stream shared by every connected client (not per-job like the
 //         optimize events above): hello {ok, watching: [adapter ids]} on connect, inventory
@@ -153,7 +153,7 @@ const UI_PREF_CHOICES = {
 } as const satisfies Record<string, readonly string[]>;
 // The list fields: the Inventory tab's columns and the character sheet's shown properties (absent = the default set).
 const UI_PREF_LISTS = ["cols", "sheetProps"] as const;
-type UiPrefsFile = { -readonly [K in typeof UI_PREF_LISTS[number]]?: string[] } & { -readonly [K in keyof typeof UI_PREF_CHOICES]?: string } & { colWidths?: Record<string, number> };
+type UiPrefsFile = { -readonly [K in typeof UI_PREF_LISTS[number]]?: string[] } & { -readonly [K in keyof typeof UI_PREF_CHOICES]?: string } & { colWidths?: Record<string, number>; dismissedUpdate?: string };
 // The Inventory columns' dragged widths ({colKey: px}): at most 200 column keys (the same keys `cols` holds), each a whole 40 to 1200 px.
 function isColWidths(v: unknown): v is Record<string, number> {
   if (!v || typeof v !== "object" || Array.isArray(v)) return false;
@@ -508,6 +508,7 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
     setupDone?: boolean;
     client?: ClientSettings | null;
     retention?: unknown;
+    autoUpdateCheck?: boolean;
     [key: string]: unknown;
   }
   // The shard picker: <data>/settings.json ({schemaVersion, shard}) names which app/rules/<shard>.json
@@ -576,7 +577,7 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
   // The shard fallback below sets this; declared here so effectiveSettings() can read it.
   let rulesFallback = false;
   function effectiveSettings(): SettingsDoc {
-    return { ...savedSettings, retention: retentionOf(savedSettings.retention), ...(clientIgnored ? { client: null } : {}), ...(rulesFallback ? { shard: DEFAULT_SHARD } : {}) };
+    return { ...savedSettings, retention: retentionOf(savedSettings.retention), autoUpdateCheck: savedSettings.autoUpdateCheck !== false, ...(clientIgnored ? { client: null } : {}), ...(rulesFallback ? { shard: DEFAULT_SHARD } : {}) };
   }
   let currentSettings = effectiveSettings();
   function saveSettings(changes: Partial<SettingsDoc>): void {
@@ -749,6 +750,7 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
       if (typeof v === "string" && (allowed as readonly string[]).includes(v)) out[key as keyof typeof UI_PREF_CHOICES] = v;
     }
     if (isColWidths(raw.colWidths)) out.colWidths = raw.colWidths;
+    if (isBoundedString(raw.dismissedUpdate, 64)) out.dismissedUpdate = raw.dismissedUpdate;
     return out;
   }
   // <data>/scan-blacklist.json: the containers scans never open, a JSON list of {serial, name, addedAt,
@@ -1146,6 +1148,11 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
           if (!isColWidths(body.colWidths)) return send(res, 400, { ok: false, error: "colWidths must map at most 200 column keys to whole widths from 40 to 1200 px" });
           next.colWidths = body.colWidths;
         }
+        // The release whose in-app notice was dismissed (ui/settings.mts's automatic update check).
+        if (Object.prototype.hasOwnProperty.call(body, "dismissedUpdate")) {
+          if (!isBoundedString(body.dismissedUpdate, 64)) return send(res, 400, { ok: false, error: "dismissedUpdate must be a version of at most 64 characters" });
+          next.dismissedUpdate = body.dismissedUpdate;
+        }
         writeFileAtomic(UI_PREFS, JSON.stringify(next, null, 2) + "\n", DATA_FILE_MODE);
         return send(res, 200, { ok: true });
       }
@@ -1171,6 +1178,9 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
         }
         if (Object.prototype.hasOwnProperty.call(body, "setupDone") && typeof body.setupDone !== "boolean") {
           return send(res, 400, { ok: false, error: "settings.setupDone must be a boolean" });
+        }
+        if (Object.prototype.hasOwnProperty.call(body, "autoUpdateCheck") && typeof body.autoUpdateCheck !== "boolean") {
+          return send(res, 400, { ok: false, error: "settings.autoUpdateCheck must be a boolean" });
         }
         const hasRetention = Object.prototype.hasOwnProperty.call(body, "retention");
         const retentionBad = hasRetention ? retentionError(body.retention) : null;
@@ -1212,6 +1222,7 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
         const changes: Partial<SettingsDoc> = {};
         if (hasShard) changes.shard = body.shard as string;
         if (Object.prototype.hasOwnProperty.call(body, "setupDone")) changes.setupDone = body.setupDone as boolean;
+        if (Object.prototype.hasOwnProperty.call(body, "autoUpdateCheck")) changes.autoUpdateCheck = body.autoUpdateCheck as boolean;
         if (nextClient !== undefined) changes.client = nextClient;
         if (hasRetention) changes.retention = { ...retentionOf(savedSettings.retention), ...(body.retention as object) };
         saveSettings(changes);

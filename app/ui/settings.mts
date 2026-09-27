@@ -2,11 +2,11 @@
 // Updates) in a 720px column of cards made of setting rows — title and help on the left, the control
 // on the right. General holds the look (theme family, appearance) and the shard rules; Game client its
 // status, Run setup and Reinstall; Data the data folder and logs with Open, the blacklisted containers,
-// how long old scans and saved runs are kept, and the danger zone (forget a character, forget a container); Updates the version and the update check. Always re-fetches GET
+// how long old scans and saved runs are kept, and the danger zone (forget a character, forget a container); Updates the version, the update check and its automatic switch. Always re-fetches GET
 // /api/setup on render (a cheap directory listing) so it reflects whatever the wizard, or this screen's
 // own actions, just changed.
 import { state } from "./store.mts";
-import { $, el, noteEl } from "./dom.mts";
+import { $, compactChildren, el, noteEl } from "./dom.mts";
 import { api } from "./api.mts";
 import { badge, box, button, check, confirmDialog, copyText, input, message, segmented, select, switchControl, txt, showToast, type Kids } from "./components.mts";
 import { plural } from "./builder-model.mts";
@@ -304,7 +304,53 @@ function updatesSection(setup: SetupApiResponse): HTMLElement {
     catch (e) { lastUpdateCheck = { configured: true, error: errorText(e) }; }
     checking = false; void renderSettings(setup);
   } });
+  const auto = switchControl({ label: "Check for updates automatically", checked: state.settings?.autoUpdateCheck !== false, attrs: { id: "set-auto-update" }, onChange: async (on) => {
+    try { state.settings = (await api<SettingsApiResponse>("/api/settings", { method: "PUT", body: { autoUpdateCheck: on } })).settings; }
+    catch (e) { auto.input.checked = !on; showToast(`Could not save: ${errorText(e)}`, "bad"); return; }
+    scheduleUpdateChecks();
+  } });
   return section("set-updates", "Updates", box("div", { class: "card set-card" },
     row({ title: setup.version ? `Pack Rat ${setup.version}` : "Pack Rat", control: btn, help: "Checks GitHub for a newer release. Nothing downloads without asking.",
-      below: [lastUpdateCheck ? updateMessage(lastUpdateCheck, setup.version) : null] })));
+      below: [lastUpdateCheck ? updateMessage(lastUpdateCheck, setup.version) : null] }),
+    row({ title: "Automatic check", control: auto.root, help: "Looks for a newer release shortly after Pack Rat opens and every 6 hours while it stays open, and says so above the screen. Nothing downloads." })));
+}
+// The automatic check (#67): with the switch above on, GET /api/update-check shortly after load and every
+// 6 hours after that. A release newer than this one shows #update-notice above the screen with a link to
+// it and Dismiss, which saves that version (ui-prefs dismissedUpdate) so only a later release shows again.
+// A failed check or a build with no update source says nothing here; the button above is where that shows.
+const AUTO_CHECK_DELAY_MS = 5_000, AUTO_CHECK_EVERY_MS = 6 * 60 * 60 * 1000;
+let autoTimer: ReturnType<typeof setTimeout> | undefined;
+let autoFound: UpdateCheckApiResponse | null = null;
+let dismissedUpdate: string | undefined;
+export function startUpdateChecks(dismissed: string | undefined): void {
+  dismissedUpdate = dismissed;
+  scheduleUpdateChecks();
+}
+function scheduleUpdateChecks(): void {
+  clearTimeout(autoTimer);
+  renderUpdateNotice();
+  if (state.settings?.autoUpdateCheck === false) return;
+  const tick = async (): Promise<void> => {
+    autoTimer = setTimeout(tick, AUTO_CHECK_EVERY_MS);
+    try { autoFound = await api<UpdateCheckApiResponse>("/api/update-check"); } catch { return; }
+    renderUpdateNotice();
+  };
+  autoTimer = setTimeout(tick, AUTO_CHECK_DELAY_MS);
+}
+function renderUpdateNotice(): void {
+  const n = $<HTMLElement>("#update-notice");
+  if (!n) return;
+  const r = autoFound;
+  n.hidden = !r?.configured || !!r.error || r.upToDate !== false || !r.latest || r.latest === dismissedUpdate || state.settings?.autoUpdateCheck === false;
+  if (n.hidden || !r) { n.replaceChildren(); return; }
+  const latest = r.latest!;
+  // r.url is vetted by the server exactly as updateMessage's is (installer.mts's releaseUrl).
+  n.replaceChildren(...compactChildren([
+    el("span", {}, `Pack Rat ${latest} is available.`),
+    r.url ? el("a", { class: "btn btn-sm", href: r.url, target: "_blank", rel: "noopener noreferrer" }, "View release") : null,
+    el("button", { type: "button", class: "btn btn-ghost btn-sm", onclick: () => {
+      dismissedUpdate = latest; renderUpdateNotice();
+      api("/api/ui-prefs", { method: "PUT", body: { dismissedUpdate: latest } }).catch(() => { /* a view choice; it just shows again next launch */ });
+    } }, "Dismiss"),
+  ]));
 }

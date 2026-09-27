@@ -26,12 +26,13 @@ body { height: 100vh; overflow: hidden; }
 .shell.collapsed .topbar { padding: 0 var(--space-4); }
 .shell.collapsed .page { padding: var(--space-4); }
 
-/* the data-folder banner (ui/bridge.mts's renderDataDirNotice): one short line, Show details, Dismiss. It takes
-   its own height above the screen, and the screen (flex 1, min-height 0) shrinks to what is left. */
-.main > #notice { flex: none; margin: var(--space-3) var(--gutter) 0; align-items: center; padding-block: var(--space-1-5); }
-#notice[hidden] { display: none; }
-#notice > span { flex: 1; min-width: 0; }
-#notice > .btn { flex: none; }
+/* the data-folder banner (ui/bridge.mts's renderDataDirNotice): one short line, Show details, Dismiss; the
+   update notice (ui/settings.mts's renderUpdateNotice) is built the same way. Each takes its own height above
+   the screen, and the screen (flex 1, min-height 0) shrinks to what is left. */
+.main > :is(#notice, #update-notice) { flex: none; margin: var(--space-3) var(--gutter) 0; align-items: center; padding-block: var(--space-1-5); }
+:is(#notice, #update-notice)[hidden] { display: none; }
+:is(#notice, #update-notice) > span { flex: 1; min-width: 0; }
+:is(#notice, #update-notice) > .btn { flex: none; }
 
 /* one screen at a time; its page scrolls unless the screen scrolls inner boxes itself (inventory, builder) */
 .screen { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; }

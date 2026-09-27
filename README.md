@@ -4,7 +4,7 @@
 
 Pack Rat is a free app for Ultima Online players. It keeps a list of every item you own, on every character, in every bag, chest and bank box, and it can work out the best suit of gear you could put together from them.
 
-It gets that list from small scripts that you run yourself, inside your own game client. Everything stays on your own computer. The app never sends anything anywhere on its own (the one exception is the "Check for updates" button, and only when you press it — see [PRIVACY.md](PRIVACY.md)).
+It gets that list from small scripts that you run yourself, inside your own game client. Everything stays on your own computer. The app never sends anything anywhere (the one exception is the update check, which asks GitHub for the latest version number when the app opens and every 6 hours, and you can turn off in Settings — see [PRIVACY.md](PRIVACY.md)).
 
 What you can do with it:
 
@@ -178,7 +178,7 @@ When you update Pack Rat, update the scripts too: type `-stopall` in the game, t
 In the **Settings** tab, next to **Data directory**, click **Open**. Everything Pack Rat knows is in that one folder. To back it up, copy the folder. Deleting it deletes everything; there is no other copy. See [Your data](#your-data) below.
 
 **Is there a newer version of Pack Rat?**
-In the **Settings** tab, click **Check for updates**. If there is one, a **View release** link takes you to it.
+Pack Rat checks on its own a few seconds after it opens and every 6 hours while it stays open, and says so above the screen when there is one, with a **View release** link to it (**Dismiss** hides that version until a later one comes out). To check now, click **Check for updates** in the **Settings** tab; turn **Check for updates automatically** off there to check only when you ask.
 
 Still stuck? [Open an issue](https://github.com/gunn4r/uo-pack-rat/issues) and describe what you did and what you saw (but see [Keep your scan files to yourself](#keep-your-scan-files-to-yourself) before attaching anything).
 
