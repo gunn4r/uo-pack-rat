@@ -133,7 +133,7 @@
       "perMachine": false
     },
     "portable": {
-      "artifactName": "${productName}-${version}-portable-${os}-${arch}.${ext}"
+      "artifactName": "PackRat-${version}-portable-${os}-${arch}.${ext}"
     },
     "linux": {
       "category": "Utility",
@@ -141,6 +141,6 @@
         "AppImage"
       ]
     },
-    "artifactName": "${productName}-${version}-${os}-${arch}.${ext}"
+    "artifactName": "PackRat-${version}-${os}-${arch}.${ext}"
   }
 }
