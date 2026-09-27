@@ -1777,70 +1777,39 @@ test("[fast] POST /api/setup/locate resolves a nested X/TazUO/LegionScripts fold
   }
 });
 
-test("[fast] the TazUO panel's open-at-login: only a choice the player made changes lscript.json, a choice made while TazUO runs waits (across a restart), and a bad hotkey is refused with its reason", async () => {
+test("[fast] the TazUO panel: an install adds it to TazUO's autostart list only while TazUO is closed, PUT saves showAtLogin, an old openAtLogin migrates, a bad hotkey is refused", async () => {
   const dir = mkdtempSync(join(tmpdir(), "qm-panel-prefs-"));
   let running = true;
-  const boot = () => startServer(ensureLayout(resolveConfig(["--port", "0", "--data", dir], {})), { clientRunning: () => running });
-  let s2 = await boot();
+  const s2 = await startServer(ensureLayout(resolveConfig(["--port", "0", "--data", dir], {})), { clientRunning: () => running });
   try {
     const tazuo = join(mkdtempSync(join(tmpdir(), "qm-panel-client-")), "TazUO");
     const scriptsDir = join(tazuo, "LegionScripts");
     mkdirSync(scriptsDir, { recursive: true });
     mkdirSync(join(tazuo, "Data"));
     const lscript = join(tazuo, "Data", "lscript.json");
-    const list = () => JSON.parse(readFileSync(lscript, "utf8")).GlobalAutoStartScripts as string[];
+    const panelFile = join(dir, "tazuo-panel.json");
     const call = async (method: string, path: string, body?: unknown) => {
       const r = await fetch(s2.url + path, { method, headers: { "content-type": "application/json" }, ...(body === undefined ? {} : { body: JSON.stringify(body) }) });
       return { status: r.status, body: await r.json() as Record<string, unknown> };
     };
-    const install = await call("POST", "/api/setup/install", { adapter: "tazuo", scriptsDir, panel: { openAtLogin: true, hotkey: { mods: ["ALT"], key: "F3" } } });
+    const install = await call("POST", "/api/setup/install", { adapter: "tazuo", scriptsDir, panel: { showAtLogin: false, hotkey: { mods: ["ALT"], key: "F3" } } });
     assert.equal(install.status, 200, JSON.stringify(install.body));
-    assert.deepEqual(install.body.autostart, { status: "pending" }, "TazUO is running: the choice waits");
+    assert.deepEqual(install.body.autostart, { status: "running" }, "TazUO is open: its list is left alone");
     assert.equal(existsSync(lscript), false);
-    assert.deepEqual(JSON.parse(readFileSync(join(dir, "tazuo-panel.json"), "utf8")), { hotkey: { mods: ["ALT"], key: "F3" }, openAtLogin: true, pendingOpenAtLogin: true });
+    assert.deepEqual(JSON.parse(readFileSync(panelFile, "utf8")), { hotkey: { mods: ["ALT"], key: "F3" }, showAtLogin: false });
+
+    running = false;
+    const reinstall = await call("POST", "/api/setup/install", { adapter: "tazuo", scriptsDir });
+    assert.deepEqual(reinstall.body.autostart, { status: "applied" });
+    assert.deepEqual(JSON.parse(readFileSync(lscript, "utf8")).GlobalAutoStartScripts, ["packrat-panel.py"]);
 
     const bad = await call("PUT", "/api/tazuo-panel", { hotkey: { mods: [], key: "P" } });
     assert.equal(bad.status, 400);
     assert.match(String(bad.body.error), /needs Ctrl, Alt or Shift/);
+    assert.deepEqual((await call("PUT", "/api/tazuo-panel", { showAtLogin: true })).body, { ok: true, prefs: { hotkey: { mods: ["ALT"], key: "F3" }, showAtLogin: true } });
 
-    running = false;   // TazUO quit; opening Settings retries the waiting choice
-    const got = await call("GET", "/api/tazuo-panel");
-    assert.deepEqual(got.body, { ok: true, prefs: { hotkey: { mods: ["ALT"], key: "F3" }, openAtLogin: true }, pending: false, autostartOn: true, autostart: { status: "applied" } });
-    assert.deepEqual(list(), ["packrat-panel.py"]);
-
-    // The player unticks Autostart in game; a plain Settings reinstall does not put it back.
-    writeFileSync(lscript, JSON.stringify({ GlobalAutoStartScripts: [] }));
-    const reinstall = await call("POST", "/api/setup/install", { adapter: "tazuo", scriptsDir });
-    assert.equal(reinstall.body.autostart, null);
-    assert.deepEqual(list(), []);
-    assert.equal((await call("GET", "/api/tazuo-panel")).body.autostartOn, false);
-
-    // The in-game panel's toggle writes a pending choice into tazuo-panel.json itself: it waits while TazUO
-    // runs and lands once it does not; a hostile file (a pending flag without a real choice) does nothing.
-    const panelFile = join(dir, "tazuo-panel.json");
-    writeFileSync(panelFile, JSON.stringify({ openAtLogin: "yes", pendingOpenAtLogin: true }));
-    assert.equal((await call("GET", "/api/tazuo-panel")).body.autostart, null);
-    assert.deepEqual(list(), []);
-    running = true;
-    writeFileSync(panelFile, JSON.stringify({ hotkey: { mods: ["ALT"], key: "F3" }, openAtLogin: true, pendingOpenAtLogin: true }));
-    assert.deepEqual((await call("GET", "/api/tazuo-panel")).body.autostart, { status: "pending" });
-    assert.deepEqual(list(), []);
-    running = false;
-    assert.deepEqual((await call("GET", "/api/tazuo-panel")).body.autostart, { status: "applied" });
-    assert.deepEqual(list(), ["packrat-panel.py"]);
-    assert.deepEqual(JSON.parse(readFileSync(panelFile, "utf8")), { hotkey: { mods: ["ALT"], key: "F3" }, openAtLogin: true }, "applied and written back, nothing pending");
-    writeFileSync(lscript, JSON.stringify({ GlobalAutoStartScripts: [] }));
-    await call("GET", "/api/tazuo-panel");   // nothing pending: TazUO's own list is mirrored back for the panel
-    assert.equal(JSON.parse(readFileSync(panelFile, "utf8")).openAtLogin, false);
-
-    // A choice made while TazUO runs survives an app restart and lands at startup.
-    running = true;
-    assert.deepEqual((await call("PUT", "/api/tazuo-panel", { openAtLogin: true })).body.autostart, { status: "pending" });
-    await s2.close();
-    running = false;
-    s2 = await boot();
-    assert.deepEqual(list(), ["packrat-panel.py"]);
-    assert.equal(JSON.parse(readFileSync(join(dir, "tazuo-panel.json"), "utf8")).pendingOpenAtLogin, undefined);
+    writeFileSync(panelFile, JSON.stringify({ openAtLogin: false, pendingOpenAtLogin: true }));   // written by an older version
+    assert.deepEqual((await call("GET", "/api/tazuo-panel")).body, { ok: true, prefs: { hotkey: { mods: ["CTRL", "SHIFT"], key: "P" }, showAtLogin: false } });
   } finally {
     await s2.close();
   }

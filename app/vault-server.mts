@@ -23,9 +23,8 @@
 //         serial, 1-200 at a time (400 otherwise); a serial with no item is simply absent from the
 //         response · GET|PUT /api/profiles (<data>/profiles.json)
 //         GET|PUT /api/settings (<data>/settings.json: {shard, setupDone?, client?, retention?}) ·
-//         GET|PUT /api/tazuo-panel ({hotkey?, openAtLogin?} -> {prefs, autostart}: the TazUO panel's hotkey and
-//         open-at-login, app/tazuo-panel.mts; the latter edits <TazUO>/Data/lscript.json only for a choice the player
-//         made, and only while no client runs, else it waits as pendingOpenAtLogin) ·
+//         GET|PUT /api/tazuo-panel ({hotkey?, showAtLogin?} -> {prefs}: the TazUO panel's hotkey and whether it
+//         shows its window at login, <data>/tazuo-panel.json, app/tazuo-panel.mts) ·
 //         POST /api/retention/cleanup {dryRun} -> {scans, runs, refused} (prune old scans and saved runs
 //         now, or count what that would remove; app/retention.mts; 409 under --demo) · GET /api/rules (the current shard's
 //         rules object plus every {id,name,source} listRules() finds — builtin and <data>/rules/*.json)
@@ -107,7 +106,7 @@ import { DEFAULT_OPTIONAL_SLOTS } from "./mip.mts";
 import { startWatcher, jsonErrorReason, MAX_INBOX_BYTES, type StartWatcherOptions, type WatcherHandle } from "./watcher.mts";
 import { parsePastedScan, writeScanToInbox } from "./import.mts";
 import { writeFileAtomic } from "./atomic-write.mts";
-import { autostartOn, panelPrefsError, panelPrefsOf, readPanelFile, syncOpenAtLogin, tazuoRunning, writePanelFile, type AutostartOutcome } from "./tazuo-panel.mts";
+import { addPanelAutostart, panelPrefsError, readPanelPrefs, tazuoRunning, writePanelPrefs } from "./tazuo-panel.mts";
 import { retentionError, retentionOf, runsToPrune, scansToPrune, type ScanFile } from "./retention.mts";
 import {
   listAdapters, candidateClientRoots, validateScriptsDir, installedVersion, installScripts,
@@ -733,35 +732,9 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
   // malformed file reads as "nothing chosen", and the page keeps its defaults.
   // Each field is read on its own: one bad value (a hand edit) drops that field, not the whole file.
   const UI_PREFS = join(CONFIG.dataDir, "ui-prefs.json");
-  // The TazUO panel's hotkey and open-at-login choice (app/tazuo-panel.mts). TazUO's lscript.json is only
-  // changed for a choice the player just made (`explicit`: a request that carried openAtLogin), or one
-  // still pending: made while a client was running, here or with the in-game panel's toggle (which writes
-  // tazuo-panel.json itself). Pending choices are retried at startup, when Settings asks (GET), on the next
-  // save or install, and by a 30 s check of the file while the app runs. A plain reinstall never re-adds
-  // a panel the player unticked in game. What was applied is written back as openAtLogin, and GET mirrors
-  // TazUO's own list there when nothing is pending, so the panel's toggle shows the truth.
+  // The TazUO panel's hotkey and show-at-login choice (app/tazuo-panel.mts); the in-game panel writes it too.
   const PANEL_PREFS = join(CONFIG.dataDir, "tazuo-panel.json");
-  const tazuoScriptsDir = (): string | null => currentSettings.client?.adapter === "tazuo" && currentSettings.client.scriptsDir ? currentSettings.client.scriptsDir : null;
-  function applyOpenAtLogin(explicit: boolean, mirror = false): AutostartOutcome | null {
-    const dir = tazuoScriptsDir();
-    if (CONFIG.demo || !dir) return null;
-    const f = readPanelFile(PANEL_PREFS);
-    if (!explicit && !f.pendingOpenAtLogin) {
-      const on = mirror ? autostartOn(dir) : null;
-      if (on != null && on !== f.openAtLogin && existsSync(PANEL_PREFS)) writePanelFile(PANEL_PREFS, { ...f, openAtLogin: on }, DATA_FILE_MODE);
-      return null;
-    }
-    const r = syncOpenAtLogin(dir, f.openAtLogin, clientRunning);
-    const pending = r.status === "pending";
-    const openAtLogin = r.status === "error" ? autostartOn(dir) ?? f.openAtLogin : f.openAtLogin;
-    if (pending !== f.pendingOpenAtLogin || openAtLogin !== f.openAtLogin) writePanelFile(PANEL_PREFS, { ...f, openAtLogin, pendingOpenAtLogin: pending }, DATA_FILE_MODE);
-    return r;
-  }
-  // Save a subset of {hotkey, openAtLogin}, keeping the rest and any pending flag.
-  function savePanel(change: object): void {
-    const f = readPanelFile(PANEL_PREFS);
-    writePanelFile(PANEL_PREFS, { ...f, ...panelPrefsOf({ ...f, ...change }) }, DATA_FILE_MODE);
-  }
+  const savePanel = (change: object): void => writePanelPrefs(PANEL_PREFS, { ...readPanelPrefs(PANEL_PREFS), ...change }, DATA_FILE_MODE);
   function readUiPrefs(): UiPrefsFile {
     let raw: Record<string, unknown>;
     try { raw = JSON.parse(readFileSync(UI_PREFS, "utf8")) as Record<string, unknown>; } catch { return {}; }
@@ -1248,9 +1221,7 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
         return send(res, 200, { ok: true, settings: currentSettings });
       }
       if (req.method === "GET" && url.pathname === "/api/tazuo-panel") {
-        const autostart = applyOpenAtLogin(false, true);    // Settings opened: a waiting choice may land now
-        const dir = tazuoScriptsDir(), f = readPanelFile(PANEL_PREFS);
-        return send(res, 200, { ok: true, prefs: panelPrefsOf(f), pending: f.pendingOpenAtLogin, autostartOn: dir ? autostartOn(dir) : null, autostart });
+        return send(res, 200, { ok: true, prefs: readPanelPrefs(PANEL_PREFS) });
       }
       if (req.method === "PUT" && url.pathname === "/api/tazuo-panel") {
         const body = asObject(await readBody(req, { limit: 8e3 }));
@@ -1258,8 +1229,7 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
         if (bad) return send(res, 400, { ok: false, error: bad });
         if (CONFIG.demo) return send(res, 409, { ok: false, error: "demo data is read-only" });
         savePanel(body);
-        const autostart = applyOpenAtLogin("openAtLogin" in body);
-        return send(res, 200, { ok: true, prefs: panelPrefsOf(readPanelFile(PANEL_PREFS)), autostart });
+        return send(res, 200, { ok: true, prefs: readPanelPrefs(PANEL_PREFS) });
       }
       if (req.method === "POST" && url.pathname === "/api/retention/cleanup") {
         // Settings › Data's Clean up now: {dryRun: true} counts what the pruning would remove (the
@@ -1364,9 +1334,10 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
           return send(res, result.code === "running" ? 409 : 400, { ok: false, error: result.error, code: result.code, installed: result.installed });
         }
         saveSettings({ client: { adapter: adapter as string, scriptsDir: destDir } });
-        // Only the wizard sends `panel`; a Settings reinstall does not, and then only a pending choice is retried.
+        // The wizard sends its panel options; either install puts the panel in TazUO's autostart list, which
+        // it can only do while TazUO is closed (app/tazuo-panel.mts's addPanelAutostart).
         if (panel !== undefined && !CONFIG.demo) savePanel(panel as object);
-        const autostart = applyOpenAtLogin(panel !== undefined && "openAtLogin" in (panel as object));
+        const autostart = adapter === "tazuo" && !CONFIG.demo ? addPanelAutostart(destDir, clientRunning) : null;
         // pathsFile: what happened to packrat-paths.json on the way in (written/unchanged/kept/
         // backed-up) — installScripts no longer silently clobbers a hand-authored one, and the page
         // can say so.
@@ -1821,14 +1792,6 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
     server.listen(CONFIG.port, "127.0.0.1");
   });
   startWatchers();
-  // A choice that was waiting on a running client when the app last saved it.
-  const pendingPanel = applyOpenAtLogin(false);
-  if (pendingPanel?.status === "error") safeAppendLog(CONFIG.paths.log, `${new Date().toISOString()} tazuo-panel (startup): ${pendingPanel.error}\n`);
-  // The player usually quits TazUO with the app open, and the panel's toggle writes a pending choice
-  // behind the app's back: a cheap read of tazuo-panel.json every 30 s, which acts only on a pending one.
-  const panelRetry = setInterval(() => { try { applyOpenAtLogin(false); } catch { /* next time */ } }, 30_000);
-  panelRetry.unref();
-  timers.add(panelRetry);
   pruneData("startup").catch((e: Error) => safeAppendLog(CONFIG.paths.log, `${new Date().toISOString()} retention (startup) failed: ${e.stack || e.message}\n`));
   const port = (server.address() as AddressInfo).port;
   const url = `http://localhost:${port}`;

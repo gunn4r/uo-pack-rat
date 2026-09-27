@@ -14,7 +14,7 @@ import { box, button, check, field, input, message, select, stepper, txt, badge,
 import { clientErrorMessage, errorText, hostErrorMessage, installedIntoNote, pathsFileNote } from "./messages.mts";
 import { renderSettings } from "./settings.mts";
 import { changeShard } from "./shard.mts";
-import { autostartNote, panelControls, shownPanelPrefs, PANEL_DEFAULTS } from "./tazuo-panel.mts";
+import { autostartNote, hotkeyLabel, panelControls, PANEL_DEFAULTS } from "./tazuo-panel.mts";
 import { defaultAdapterId, availableAdapters, platformCompatible } from "./adapters.mts";
 import { adapterCopy, clientCard, wizardSteps } from "./adapter-copy.mts";
 export { defaultAdapterId, availableAdapters, platformCompatible };
@@ -35,7 +35,7 @@ function whatToPress(installedNames: string[]): HTMLElement[] {
   const line = (before: string, name: string, after: string): HTMLElement => el("li", {}, el("span", {}, before, el("code", {}, name), after));
   const lines: HTMLElement[] = [];
   const panel = has("panel");
-  if (panel) lines.push(el("li", {}, el("span", {}, "Easiest: the Pack Rat panel (", el("code", {}, panel), "), whose buttons run the scripts below. It opens when you log in if you chose that above.")));
+  if (panel) lines.push(el("li", {}, el("span", {}, "Easiest: the Pack Rat panel (", el("code", {}, panel), `), whose buttons run the scripts below. It starts with TazUO; ${hotkeyLabel(wiz!.panel.hotkey)} shows or hides it.`)));
   const refresh = has("refresh");
   if (refresh) lines.push(line("After a gearing or skill-training session on a character: run ", refresh, "."));
   const scanner = has("scanner");
@@ -100,7 +100,7 @@ export async function openWizard({ firstRun = false }: { firstRun?: boolean } = 
   if (client?.adapter === "tazuo") {
     try {
       const r = await api<TazuoPanelApiResponse>("/api/tazuo-panel");
-      if (wiz) wiz.panel = shownPanelPrefs(r);
+      if (wiz) wiz.panel = r.prefs;
     } catch { /* the defaults stand */ }
   }
 }

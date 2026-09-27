@@ -193,8 +193,7 @@ export interface InstallApiResponse {
 }
 // The TazUO panel (app/tazuo-panel-prefs.mts): GET/PUT /api/tazuo-panel, and POST /api/setup/install's `panel`.
 export type { AutostartOutcome, PanelHotkey, PanelPrefs };
-// pending: an open-at-login choice still waiting for TazUO to close. autostartOn: what TazUO's list says now.
-export interface TazuoPanelApiResponse { ok: boolean; prefs: PanelPrefs; pending?: boolean; autostartOn?: boolean | null; autostart?: AutostartOutcome | null }
+export interface TazuoPanelApiResponse { ok: boolean; prefs: PanelPrefs }
 export interface HostPickFolderApiResponse {
   ok: boolean;
   path: string | null;

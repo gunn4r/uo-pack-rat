@@ -17,7 +17,7 @@ import { forgetCharacter } from "./characters.mts";
 import { bridgeNote, renderDataDirNotice } from "./bridge.mts";
 import { adapterCopy } from "./adapter-copy.mts";
 import { clientErrorMessage, dataDirNotice, errorText, hostErrorMessage, installedIntoNote, pathsFileNote, relativeWhen } from "./messages.mts";
-import { autostartNote, panelControls, shownPanelPrefs } from "./tazuo-panel.mts";
+import { autostartNote, hotkeyLabel, panelControls } from "./tazuo-panel.mts";
 import type { SetupApiResponse, InstallApiResponse, UpdateCheckApiResponse, BlacklistApiResponse, CleanupApiResponse, RetentionSetting, SettingsApiResponse, PanelPrefs, TazuoPanelApiResponse } from "./api-types.mts";
 import type { BlacklistEntry } from "../vault-lib.mts";
 
@@ -133,35 +133,35 @@ function clientSection(setup: SetupApiResponse): HTMLElement {
         // a "kept" file is the whole reason scans then stop arriving (app/installer.mts's writePathsFile).
         r ? message({ tone: "ok", title: "Reinstalled", text: r.installed.join(", ") }) : null,
         r ? noteEl(installedIntoNote(r.scriptsDir)) : null,
-        r ? noteEl(pathsFileNote(r.pathsFile)) : null] });
+        r ? noteEl(pathsFileNote(r.pathsFile)) : null,
+        ...(() => { const n = r && autostartNote(r.autostart); return n ? [message({ tone: n.tone, text: n.text })] : []; })()] });
   }
   return sectionFlagged("set-client", "Game client", !setup.settings.client, box("div", { class: "card set-card" }, status, reinstallRow),
     client?.adapter === "tazuo" && client.scriptsDir ? box("div", { class: "card set-card", id: "set-panel" }) : null);
 }
 
 // The TazUO in-game panel's options (app/ui/tazuo-panel.mts), filled in once GET /api/tazuo-panel answers.
-// Each change saves at once; what became of it (or the server's refusal) shows under the controls.
-let panelNote: { tone: "ok" | "warn" | "bad"; text: string; row: "login" | "hotkey" } | null = null;
+// Each change saves at once; the server's refusal shows under the row it came from.
+let panelError: { text: string; row: "login" | "hotkey" } | null = null;
 async function syncPanelCard(): Promise<void> {
   if (!$("#set-panel")) return;
   try { $<HTMLElement>("#set-panel")?.replaceWith(panelCard(await api<TazuoPanelApiResponse>("/api/tazuo-panel"))); } catch { /* the card keeps what it showed */ }
 }
 function panelCard(r: TazuoPanelApiResponse): HTMLElement {
   const save = async (change: Partial<PanelPrefs>): Promise<void> => {
-    const at = "hotkey" in change ? "hotkey" : "login";
-    try { const n = autostartNote((await api<TazuoPanelApiResponse>("/api/tazuo-panel", { method: "PUT", body: change })).autostart); panelNote = n && { ...n, row: "login" }; }
-    catch (e) { panelNote = { tone: "bad", text: errorText(e), row: at }; }
+    try { await api("/api/tazuo-panel", { method: "PUT", body: change }); }
+    catch (e) { panelError = { text: errorText(e), row: "hotkey" in change ? "hotkey" : "login" }; }
     void syncPanelCard();
   };
-  const c = panelControls(shownPanelPrefs(r), (change) => void save(change), "set-panel");
-  const waiting = autostartNote(r.autostart) ?? (r.pending ? autostartNote({ status: "pending" }) : null);
-  const note = panelNote ?? (waiting && { ...waiting, row: "login" as const });
-  panelNote = null;
-  const noteFor = (at: "login" | "hotkey") => note?.row === at ? message({ tone: note.tone, text: note.text }) : null;
+  const c = panelControls(r.prefs, (change) => void save(change), "set-panel");
+  const err = panelError;
+  panelError = null;
+  const errFor = (at: "login" | "hotkey") => err?.row === at ? message({ tone: "bad", text: err.text }) : null;
   return box("div", { class: "card set-card", id: "set-panel" },
-    row({ title: "In-game panel", control: c.login, help: "Adds packrat-panel.py to TazUO's autostart list, so its window opens every time you log in.", below: [noteFor("login")] }),
-    row({ title: "Panel hotkey", control: c.hotkey, help: "Shows or hides the panel in game. A letter or digit needs a modifier, since the hotkey also fires while you type in chat.", below: [noteFor("hotkey")] }));
+    row({ title: "In-game panel", control: c.login, help: `The panel always starts with TazUO (hidden if off); ${hotkeyLabel(r.prefs.hotkey)} shows it.`, below: [errFor("login")] }),
+    row({ title: "Panel hotkey", control: c.hotkey, help: "Shows or hides the panel in game. A letter or digit needs a modifier, since the hotkey also fires while you type in chat.", below: [errFor("hotkey")] }));
 }
+
 
 // ---------------------------------------------------------------- Data: folders, danger zone
 function pathRow(label: string, which: string, path: string, canOpen: boolean): HTMLElement {

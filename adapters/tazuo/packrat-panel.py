@@ -15,9 +15,10 @@
 #
 # The show/hide hotkey (default Ctrl+Shift+P) is set in the Pack Rat app, which writes it to
 # <data directory>/tazuo-panel.json; the panel re-reads that file every few seconds, validates it and
-# falls back to the default on anything it does not accept. The same file carries "open at login": the
-# panel's toggle writes the player's choice there as pending, and the app puts it into TazUO's autostart
-# list once no TazUO client is running (TazUO rewrites that list itself at logout).
+# falls back to the default on anything it does not accept. The same file carries showAtLogin, written by
+# the app and by this panel's own button: the app's install puts this script in TazUO's autostart list,
+# so it always starts at login, and showAtLogin decides whether its window shows then or waits hidden
+# for the hotkey.
 #
 # While it runs it rewrites <data directory>/bridge/tazuo/panel.json every 2 s, the heartbeat the
 # app's installer checks before replacing scripts. Bounded by MAX_HOURS; Stop, -stopall or logout
@@ -91,7 +92,7 @@ W, H = 380, 308
 TITLE_HUE, TEXT_HUE, OK_HUE = 1153, 996, 68
 
 state = {"done": False, "prefix": "", "character": "", "pending": {}, "was_running": set(),
-         "hotkey": None, "window": None, "open_at_login": True}
+         "hotkey": None, "window": None, "show_at_login": True}
 ui = {}
 shown = {}
 
@@ -227,8 +228,8 @@ def read_hotkey(doc):
 
 def load_prefs():
     doc = read_prefs()
-    on = doc.get("openAtLogin")
-    state["open_at_login"] = on if isinstance(on, bool) else True
+    on = doc.get("showAtLogin", doc.get("openAtLogin"))     # openAtLogin: the name an older app wrote
+    state["show_at_login"] = on if isinstance(on, bool) else True
     set_text("login_btn", login_text())
     hk = read_hotkey(doc)
     if hk == state["hotkey"]:
@@ -242,27 +243,30 @@ def load_prefs():
 
 
 def login_text():
-    return "Open at login: " + ("On" if state["open_at_login"] else "Off")
+    return "Show at login: " + ("On" if state["show_at_login"] else "Off")
 
 
 def on_login():
-    """The player's choice goes to tazuo-panel.json as pending, with the hotkey kept. The app applies it
-    to TazUO's autostart list once TazUO is not running, and writes back what it applied."""
+    """Save whether the window shows at the next login, keeping the hotkey."""
     doc = read_prefs()
     out = {"hotkey": doc["hotkey"]} if isinstance(doc.get("hotkey"), dict) else {}
-    out.update({"openAtLogin": not state["open_at_login"], "pendingOpenAtLogin": True})
+    out["showAtLogin"] = not state["show_at_login"]
     try:
         write_json_atomic(PREFS, out)
     except Exception:
         say("Could not save that choice.")
         return
-    state["open_at_login"] = out["openAtLogin"]
+    state["show_at_login"] = out["showAtLogin"]
     set_text("login_btn", login_text())
-    say("Saved. Takes effect the next time", "you start TazUO.")
+    say("Saved. Applies from your next login.")
+
+
+def hotkey_name(hk):
+    return "+".join(p.capitalize() for p in hk.split("+"))
 
 
 def hotkey_text(hk):
-    return "%s shows/hides this window." % "+".join(p.capitalize() for p in hk.split("+"))
+    return "%s shows/hides this window." % hotkey_name(hk)
 
 
 def last_scan():
@@ -386,10 +390,17 @@ def main():
     state["prefix"] = own_prefix()
     call(getattr(API, "OnStop", None), on_stop)
     load_prefs()
-    if build_window() is None:
+    g = build_window()
+    if g is None:
         if not API.StopRequested:
             API.SysMsg("Pack Rat panel: the window could not be opened. Start packrat-panel.py again.", 33)
         return
+    if not state["show_at_login"]:
+        try:
+            g.IsVisible = False
+        except Exception:
+            pass
+        API.SysMsg("Pack Rat panel ready - %s to show" % hotkey_name(state["hotkey"]), 88)
     process = getattr(API, "ProcessCallbacks", None)
     deadline = time.time() + MAX_HOURS * 3600
     next_status, next_prefs = time.time() + STATUS_EVERY_S, time.time() + PREFS_EVERY_S
