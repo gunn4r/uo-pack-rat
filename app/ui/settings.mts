@@ -304,7 +304,7 @@ function updatesSection(setup: SetupApiResponse): HTMLElement {
     catch (e) { lastUpdateCheck = { configured: true, error: errorText(e) }; }
     checking = false; void renderSettings(setup);
   } });
-  const auto = switchControl({ label: "Check for updates automatically", checked: state.settings?.autoUpdateCheck !== false, attrs: { id: "set-auto-update" }, onChange: async (on) => {
+  const auto = switchControl({ label: "Check automatically", checked: state.settings?.autoUpdateCheck !== false, attrs: { id: "set-auto-update" }, onChange: async (on) => {
     try { state.settings = (await api<SettingsApiResponse>("/api/settings", { method: "PUT", body: { autoUpdateCheck: on } })).settings; }
     catch (e) { auto.input.checked = !on; showToast(`Could not save: ${errorText(e)}`, "bad"); return; }
     scheduleUpdateChecks();
@@ -312,7 +312,7 @@ function updatesSection(setup: SetupApiResponse): HTMLElement {
   return section("set-updates", "Updates", box("div", { class: "card set-card" },
     row({ title: setup.version ? `Pack Rat ${setup.version}` : "Pack Rat", control: btn, help: "Checks GitHub for a newer release. Nothing downloads without asking.",
       below: [lastUpdateCheck ? updateMessage(lastUpdateCheck, setup.version) : null] }),
-    row({ title: "Automatic check", control: auto.root, help: "Looks for a newer release shortly after Pack Rat opens and every 6 hours while it stays open, and says so above the screen. Nothing downloads." })));
+    row({ title: "Check for updates automatically", control: auto.root, help: "Looks for a newer release shortly after Pack Rat opens and every 6 hours while it stays open, and says so above the screen. Nothing downloads." })));
 }
 // The automatic check (#67): with the switch above on, GET /api/update-check shortly after load and every
 // 6 hours after that. A release newer than this one shows #update-notice above the screen with a link to
