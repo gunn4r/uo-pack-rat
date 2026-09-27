@@ -11,7 +11,7 @@ import { tmpdir } from "node:os";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createRequire } from "node:module";
-import { fitWindow } from "./electron-window.mts";
+import { fitWindow, noUpdateCheck } from "./electron-window.mts";
 import type { ElectronApplication, Locator, Page } from "playwright";
 
 const ROOT = dirname(dirname(fileURLToPath(import.meta.url)));
@@ -33,7 +33,7 @@ function seedDataDir(prefix: string): string {
 }
 async function launch(dataDir: string): Promise<{ app: ElectronApplication; page: Page; errors: string[] }> {
   const { _electron } = await import("playwright");
-  const app = await _electron.launch({ args: [ROOT, "--data", dataDir], cwd: ROOT, timeout: 60_000 });
+  const app = await _electron.launch({ args: [ROOT, "--data", noUpdateCheck(dataDir)], cwd: ROOT, timeout: 60_000 });
   const page = await app.firstWindow();
   const errors: string[] = [];
   page.on("pageerror", (e) => errors.push(String(e)));
