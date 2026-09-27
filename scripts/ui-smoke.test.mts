@@ -9,7 +9,7 @@ import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createRequire } from "node:module";
 import type { Page } from "playwright";
-import { testEnv } from "./electron-window.mts";
+import { testEnv, noUpdateCheck } from "./electron-window.mts";
 
 const ROOT = dirname(dirname(fileURLToPath(import.meta.url)));
 const require_ = createRequire(import.meta.url);
@@ -57,7 +57,7 @@ test("[slow] the packaged UI renders, switches tabs and lists the demo inventory
   // Same shape as shell-smoke.test.mts's runSmoke: the absolute ROOT (not ".") as args[0] is what
   // main.mts expects in dev (process.argv.slice(2) skips the electron binary and this project path),
   // and cwd: ROOT keeps that resolution independent of wherever `node --test` was invoked from.
-  const app = await _electron.launch({ args: [ROOT, "--demo", "--data", dataDir], cwd: ROOT, timeout: 60_000, env: testEnv() });
+  const app = await _electron.launch({ args: [ROOT, "--demo", "--data", noUpdateCheck(dataDir)], cwd: ROOT, timeout: 60_000, env: testEnv() });
   try {
     const page = await app.firstWindow();
     const errors: string[] = [];
@@ -113,7 +113,7 @@ test("[slow] the rows' actions follow the client the wizard just set up, without
 
   const { _electron } = await import("playwright");
   const dataDir = mkdtempSync(join(tmpdir(), "packrat-ui-wizard-"));
-  const app = await _electron.launch({ args: [ROOT, "--demo", "--data", dataDir], cwd: ROOT, timeout: 60_000, env: testEnv() });
+  const app = await _electron.launch({ args: [ROOT, "--demo", "--data", noUpdateCheck(dataDir)], cwd: ROOT, timeout: 60_000, env: testEnv() });
   try {
     const page = await app.firstWindow();
     await page.locator("#inv-table tbody tr.item").first().waitFor({ timeout: 30_000 });
@@ -154,7 +154,7 @@ test("[slow] with tazuo configured, the demo inventory shows all three bridge bu
   writeFileSync(join(dataDir, "settings.json"), JSON.stringify({
     schemaVersion: 1, shard: "uoalive", setupDone: true, client: { adapter: "tazuo", scriptsDir: dataDir },
   }));
-  const app = await _electron.launch({ args: [ROOT, "--demo", "--data", dataDir], cwd: ROOT, timeout: 60_000, env: testEnv() });
+  const app = await _electron.launch({ args: [ROOT, "--demo", "--data", noUpdateCheck(dataDir)], cwd: ROOT, timeout: 60_000, env: testEnv() });
   try {
     const page = await app.firstWindow();
     await page.waitForSelector("#status", { state: "attached", timeout: 30_000 });   // attached, not visible: a narrow window collapses the sidebar, which hides the status line
@@ -194,7 +194,7 @@ test("[slow] a partial-bridge adapter only offers its declared action, and the n
   // app — main process and the forked server child, which inherits main's process.env — at this
   // throwaway adapter instead of the repo's real adapters/, without touching electron/main.mts.
   const app = await _electron.launch({
-    args: [ROOT, "--demo", "--data", dataDir], cwd: ROOT, timeout: 60_000,
+    args: [ROOT, "--demo", "--data", noUpdateCheck(dataDir)], cwd: ROOT, timeout: 60_000,
     env: testEnv({ PACKRAT_ADAPTERS_DIR: adaptersDir }),
   });
   try {
@@ -231,7 +231,7 @@ test("[slow] Save as… in the suit builder opens an in-page dialog and saves th
   // setupDone:true skips the first-run wizard (already covered above) — this test is about the
   // Save as… dialog, not the wizard flow.
   writeFileSync(join(dataDir, "settings.json"), JSON.stringify({ schemaVersion: 1, shard: "uoalive", setupDone: true }));
-  const app = await _electron.launch({ args: [ROOT, "--demo", "--data", dataDir], cwd: ROOT, timeout: 60_000, env: testEnv() });
+  const app = await _electron.launch({ args: [ROOT, "--demo", "--data", noUpdateCheck(dataDir)], cwd: ROOT, timeout: 60_000, env: testEnv() });
   try {
     const page = await app.firstWindow();
     await page.waitForSelector("#status", { state: "attached", timeout: 30_000 });   // attached, not visible: a narrow window collapses the sidebar, which hides the status line
@@ -280,7 +280,7 @@ test("[slow] an Electron test launch searches only its own temp home for game cl
   writeFileSync(join(scripts, "packrat-paths.json"), JSON.stringify({ dataDir: join(home, "elsewhere") }));
   writeFileSync(join(dataDir, "settings.json"), JSON.stringify({ schemaVersion: 1, shard: "uoalive", setupDone: true }));
   // Not --demo: the data-folder check (the banner's source) only runs on a real data folder.
-  const app = await _electron.launch({ args: [ROOT, "--data", dataDir], cwd: ROOT, timeout: 60_000, env: testEnv({}, home) });
+  const app = await _electron.launch({ args: [ROOT, "--data", noUpdateCheck(dataDir)], cwd: ROOT, timeout: 60_000, env: testEnv({}, home) });
   try {
     const page = await app.firstWindow();
     await page.waitForSelector("#status", { state: "attached", timeout: 30_000 });

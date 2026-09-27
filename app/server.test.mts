@@ -82,7 +82,7 @@ interface RulesResponse {
 interface ClientSetting { adapter: string; scriptsDir: string; }
 interface SettingsResponse {
   ok?: boolean;
-  settings: { shard: string; setupDone?: boolean; client?: ClientSetting };
+  settings: { shard: string; setupDone?: boolean; client?: ClientSetting; autoUpdateCheck?: boolean };
 }
 interface SetupAdapter extends Omit<AdapterInfo, "capabilities"> {
   capabilities: { bridge: string[]; [key: string]: unknown };
@@ -788,6 +788,27 @@ test("[fast] GET /api/settings reads back the persisted shard", async () => {
     const after = asJson<SettingsResponse>(await (await fetch(s2.url + "/api/settings")).json());
     assert.equal(after.settings.shard, "generic-osi");
     assert.equal(JSON.parse(readFileSync(join(dir, "settings.json"), "utf8")).shard, "generic-osi", "the switch is persisted to settings.json");
+  } finally {
+    await s2.close();
+  }
+});
+
+// Issue #67: the automatic update check is on unless the player turned it off, and only a boolean is kept.
+test("[fast] PUT /api/settings keeps autoUpdateCheck (on by default) across a restart and refuses a non-boolean", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "qm-autoupdate-"));
+  const put = (url: string, body: unknown): Promise<Response> => fetch(url + "/api/settings", { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
+  const s1 = await startServer(ensureLayout(resolveConfig(["--port", "0", "--data", dir], {})));
+  try {
+    assert.equal(asJson<SettingsResponse>(await (await fetch(s1.url + "/api/settings")).json()).settings.autoUpdateCheck, true, "on by default");
+    assert.equal((await put(s1.url, { autoUpdateCheck: "no" })).status, 400);
+    assert.equal(asJson<SettingsResponse>(await (await put(s1.url, { autoUpdateCheck: false })).json()).settings.autoUpdateCheck, false);
+  } finally {
+    await s1.close();
+  }
+  assert.equal(JSON.parse(readFileSync(join(dir, "settings.json"), "utf8")).autoUpdateCheck, false);
+  const s2 = await startServer(ensureLayout(resolveConfig(["--port", "0", "--data", dir], {})));
+  try {
+    assert.equal(asJson<SettingsResponse>(await (await fetch(s2.url + "/api/settings")).json()).settings.autoUpdateCheck, false, "the choice survives a restart");
   } finally {
     await s2.close();
   }
@@ -3007,7 +3028,7 @@ test("[fast] GET/PUT /api/ui-prefs keeps the column choice across a restart on a
 // The look (theme family, light/system/dark) and the pinned-collapsed sidebar are view choices like the
 // columns, and live in the same file for the same reason: the desktop app's origin changes every launch.
 // Each field is written only when valid, and a PUT of one field keeps the others.
-test("[fast] PUT /api/ui-prefs keeps theme, appearance, sidebar, density, the column set version, the column widths and the sheet's properties, each checked, next to the columns", async () => {
+test("[fast] PUT /api/ui-prefs keeps theme, appearance, sidebar, density, the column set version, the column widths, the sheet's properties and the dismissed update, each checked, next to the columns", async () => {
   const dir = mkdtempSync(join(tmpdir(), "qm-uiprefs-look-"));
   const put = (url: string, body: unknown): Promise<Response> => fetch(url + "/api/ui-prefs", { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
   const s = await startServer(ensureLayout(resolveConfig(["--port", "0", "--data", dir], {})));
@@ -3019,9 +3040,11 @@ test("[fast] PUT /api/ui-prefs keeps theme, appearance, sidebar, density, the co
     assert.equal((await put(s.url, { cols: ["hci"], colsVersion: "2" })).status, 200);
     assert.equal((await put(s.url, { sheetProps: ["fc", "hitLifeLeech"] })).status, 200);
     assert.equal((await put(s.url, { colWidths: { location: 420, "sk:animal lore": 40 } })).status, 200);
-    assert.deepEqual(asJson(await (await fetch(s.url + "/api/ui-prefs")).json()), { ok: true, prefs: { cols: ["hci"], sheetProps: ["fc", "hitLifeLeech"], colsVersion: "2", appearance: "dark", theme: "default", sidebar: "collapsed", density: "regular", colWidths: { location: 420, "sk:animal lore": 40 } } });
+    assert.equal((await put(s.url, { dismissedUpdate: "1.2.3" })).status, 200);
+    assert.deepEqual(asJson(await (await fetch(s.url + "/api/ui-prefs")).json()), { ok: true, prefs: { cols: ["hci"], sheetProps: ["fc", "hitLifeLeech"], colsVersion: "2", appearance: "dark", theme: "default", sidebar: "collapsed", density: "regular", colWidths: { location: 420, "sk:animal lore": 40 }, dismissedUpdate: "1.2.3" } });
     for (const bad of [{ appearance: "sepia" }, { appearance: 1 }, { theme: "neon" }, { theme: "" }, { sidebar: "wide" }, { sidebar: true }, { density: "comfy" }, { colsVersion: 2 }, { colsVersion: "9" },
       { sheetProps: "fc" }, { sheetProps: [5] }, { colWidths: [300] }, { colWidths: { location: 39 } }, { colWidths: { location: 300.5 } }, { colWidths: { location: "300" } },
+      { dismissedUpdate: "" }, { dismissedUpdate: 3 }, { dismissedUpdate: "9".repeat(65) },
       { colWidths: Object.fromEntries(Array.from({ length: 201 }, (_, i) => [`c${i}`, 100])) }]) {
       assert.equal((await put(s.url, bad)).status, 400, `${JSON.stringify(bad).slice(0, 80)} should be refused`);
     }
