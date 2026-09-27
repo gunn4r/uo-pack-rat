@@ -6,7 +6,7 @@ import {
   existsSync, statSync, lstatSync, readdirSync, readFileSync, copyFileSync, realpathSync,
   mkdirSync, openSync, readSync, closeSync, fstatSync, constants, type Dirent, type Stats,
 } from "node:fs";
-import { join, resolve, dirname, isAbsolute } from "node:path";
+import { basename, join, resolve, dirname, isAbsolute } from "node:path";
 import { atomicReplace, writeFileAtomic } from "./atomic-write.mts";
 import { DATA_DIR_MODE } from "./config.mts";
 
@@ -410,19 +410,22 @@ function adapterTransport(srcDir: string): "folder" | "paste" {
   } catch { return "folder"; }
 }
 
-function bridgeAlive(bridgeStatusPath: string, now: number, log: (msg: string) => void = () => {}): boolean {
+// A heartbeat file a running script rewrites every couple of seconds: the bridge's status.json, and the
+// in-game panel's panel.json beside it (adapters/tazuo/packrat-panel.py), which has the same
+// alive/stopped shape. Either one fresh means a script is running against the folder about to change.
+function heartbeatAlive(heartbeatPath: string, now: number, log: (msg: string) => void = () => {}): boolean {
   let st: Record<string, unknown>;
-  try { st = JSON.parse(readFileSync(bridgeStatusPath, "utf8")) as Record<string, unknown>; }
+  try { st = JSON.parse(readFileSync(heartbeatPath, "utf8")) as Record<string, unknown>; }
   catch { return false; }
   if (st.stopped === true || st.alive == null) return false;
-  // st.alive is whatever status.json's own "alive" field held (a Legion-script-written file — see
-  // adapters/tazuo's bridge script) — Date.parse ToStrings a non-string argument regardless of what
+  // st.alive is whatever the file's own "alive" field held (a Legion-script-written file — see
+  // adapters/tazuo's bridge and panel scripts) — Date.parse ToStrings a non-string argument regardless of what
   // TS is told its type is here, so this cast describes the existing (unvalidated) trust, not a change.
   const aliveMs = typeof st.alive === "number" ? st.alive * 1000 : Date.parse(st.alive as string);
   if (Number.isNaN(aliveMs)) return false;
   const ageS = (now - aliveMs) / 1000;
   if (ageS < -FUTURE_SKEW_TOLERANCE_S) {
-    log(`bridge status.json's alive timestamp is ${Math.round(-ageS)}s in the future — treating as stale (clock skew?), not indefinitely running`);
+    log(`${basename(heartbeatPath)}'s alive timestamp is ${Math.round(-ageS)}s in the future — treating as stale (clock skew?), not indefinitely running`);
     return false;
   }
   return ageS < 30;
@@ -495,7 +498,7 @@ export function installScripts(
   if (adapterTransport(srcDir) === "paste") {
     return { ok: false, code: "noInstall", error: `adapter "${adapter}" has nothing to install — it has no scripts folder; use the Import tab instead` };
   }
-  if (bridgeStatusPath && bridgeAlive(bridgeStatusPath, now(), log)) {
+  if (bridgeStatusPath && [bridgeStatusPath, join(dirname(bridgeStatusPath), "panel.json")].some((p) => heartbeatAlive(p, now(), log))) {
     return { ok: false, code: "running", error: RUNNING_MESSAGE };
   }
   let destStat: Stats | null = null;

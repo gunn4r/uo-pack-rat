@@ -1,0 +1,121 @@
+// tazuo-panel.test.mts — app/tazuo-panel.mts: the panel hotkey's validation, the TazUO-is-running
+// decision, and the merge-only edit of TazUO's lscript.json (every test in a temp folder).
+//
+// Run: node --test app/tazuo-panel.test.mts
+import { test } from "node:test";
+import assert from "node:assert/strict";
+import { mkdirSync, mkdtempSync, readFileSync, writeFileSync, existsSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { panelPrefsError, panelPrefsOf, PANEL_DEFAULTS, readPanelPrefs, writePanelPrefs, addToGlobalAutostart, addPanelAutostart, tazuoRunning, lscriptPathFor, type Run } from "./tazuo-panel.mts";
+
+const BOM = Buffer.from([0xef, 0xbb, 0xbf]);
+
+// <tmp>/TazUO/LegionScripts (with the panel installed) and <tmp>/TazUO/Data.
+function client({ panel = true }: { panel?: boolean } = {}): { scriptsDir: string; lscript: string } {
+  const root = mkdtempSync(join(tmpdir(), "qm-tazuo-panel-"));
+  const scriptsDir = join(root, "TazUO", "LegionScripts");
+  mkdirSync(scriptsDir, { recursive: true });
+  mkdirSync(join(root, "TazUO", "Data"));
+  if (panel) writeFileSync(join(scriptsDir, "packrat-panel.py"), "# panel\n");
+  return { scriptsDir, lscript: lscriptPathFor(scriptsDir)! };
+}
+
+test("[fast] panelPrefsError takes a modified letter or a bare F-key and refuses a bare letter, unknown modifiers and keys", () => {
+  assert.equal(panelPrefsError({ hotkey: { mods: ["CTRL", "SHIFT"], key: "P" } }), null);
+  assert.equal(panelPrefsError({ hotkey: { mods: [], key: "F5" }, showAtLogin: false }), null);
+  assert.match(panelPrefsError({ hotkey: { mods: [], key: "P" } })!, /needs Ctrl, Alt or Shift/);
+  assert.match(panelPrefsError({ hotkey: { mods: [], key: "7" } })!, /needs Ctrl, Alt or Shift/);
+  for (const bad of [{ mods: ["CMD"], key: "P" }, { mods: ["CTRL", "CTRL"], key: "P" }, { mods: ["CTRL"], key: "F13" }, { mods: ["CTRL"], key: "p" }, "CTRL+P"]) {
+    assert.ok(panelPrefsError({ hotkey: bad }), JSON.stringify(bad));
+  }
+  assert.ok(panelPrefsError({ showAtLogin: "yes" }));
+  assert.ok(panelPrefsError([]));
+});
+
+test("[fast] panelPrefsOf reads a missing or invalid field as its default and orders the modifiers", () => {
+  assert.deepEqual(panelPrefsOf(null), PANEL_DEFAULTS);
+  assert.deepEqual(panelPrefsOf({ hotkey: { mods: [], key: "Q" }, showAtLogin: 1 }), PANEL_DEFAULTS);
+  assert.deepEqual(panelPrefsOf({ hotkey: { mods: ["SHIFT", "ALT"], key: "F2" }, showAtLogin: false }), { hotkey: { mods: ["ALT", "SHIFT"], key: "F2" }, showAtLogin: false });
+  // An older file's openAtLogin stands in for showAtLogin; its pending flag is dropped.
+  assert.deepEqual(panelPrefsOf({ openAtLogin: false, pendingOpenAtLogin: true }), { ...PANEL_DEFAULTS, showAtLogin: false });
+  assert.deepEqual(panelPrefsOf({ openAtLogin: false, showAtLogin: true }), PANEL_DEFAULTS);
+});
+
+test("[fast] tazuoRunning: pgrep's and tasklist's answers, with anything unclear counted as running", () => {
+  const answer = (r: ReturnType<Run>): Run => () => r;
+  assert.equal(tazuoRunning("darwin", answer({ status: 0, stdout: "123\n" })), true);
+  assert.equal(tazuoRunning("linux", answer({ status: 1, stdout: "" })), false);
+  assert.equal(tazuoRunning("darwin", answer({ status: 2, stdout: "" })), true);
+  assert.equal(tazuoRunning("darwin", answer({ status: null, error: new Error("ENOENT") })), true);
+  assert.equal(tazuoRunning("win32", answer({ status: 0, stdout: '"TazUO.exe","4242","Console","1","250,000 K"\r\n' })), true);
+  assert.equal(tazuoRunning("win32", answer({ status: 0, stdout: "INFO: No tasks are running which match the specified criteria.\r\n" })), false);
+  assert.equal(tazuoRunning("win32", answer({ status: 1, stdout: "" })), true);
+  let asked: string[] = [];
+  tazuoRunning("darwin", (cmd, args) => { asked = [cmd, ...args]; return { status: 1 }; });
+  assert.deepEqual(asked, ["pgrep", "-x", "TazUO(\\.exe)?"], "the exact name (or TazUO.exe under Wine), so TazUOLauncher is not the client");
+});
+
+test("[fast] lscriptPathFor finds TazUO beside the nearest LegionScripts folder, through a group folder, and nowhere else", () => {
+  assert.equal(lscriptPathFor(join("/g", "TazUO", "LegionScripts"), "darwin"), join("/g", "TazUO", "Data", "lscript.json"));
+  assert.equal(lscriptPathFor(join("/g", "TazUO", "LegionScripts", "PackRat"), "linux"), join("/g", "TazUO", "Data", "lscript.json"));
+  assert.equal(lscriptPathFor(join("/g", "TazUO", "legionscripts"), "win32"), join("/g", "TazUO", "Data", "lscript.json"));
+  assert.equal(lscriptPathFor(join("/g", "TazUO", "legionscripts"), "darwin"), null, "case matters off Windows");
+  assert.equal(lscriptPathFor(join("/g", "Scripts"), "darwin"), null);
+  const elsewhere = mkdtempSync(join(tmpdir(), "qm-tazuo-panel-elsewhere-"));
+  mkdirSync(join(elsewhere, "Data"));
+  assert.equal(addPanelAutostart(join(elsewhere, "Scripts"), () => false).status, "error");
+  assert.equal(existsSync(join(elsewhere, "Data", "lscript.json")), false, "nothing created beside a folder that is not TazUO's");
+});
+
+test("[fast] tazuo-panel.json is read as untrusted (capped, each field checked) and written with only hotkey and showAtLogin", () => {
+  const dir = mkdtempSync(join(tmpdir(), "qm-tazuo-panel-file-"));
+  const path = join(dir, "tazuo-panel.json");
+  assert.deepEqual(readPanelPrefs(path), PANEL_DEFAULTS);
+  writePanelPrefs(path, { ...PANEL_DEFAULTS, showAtLogin: false, pendingOpenAtLogin: true, junk: 1 });
+  assert.deepEqual(JSON.parse(readFileSync(path, "utf8")), { ...PANEL_DEFAULTS, showAtLogin: false });
+  writeFileSync(path, JSON.stringify({ showAtLogin: "yes", hotkey: { mods: [], key: "P" } }));
+  assert.deepEqual(readPanelPrefs(path), PANEL_DEFAULTS);
+  writeFileSync(path, JSON.stringify({ showAtLogin: false, pad: "x".repeat(70 * 1024) }));
+  assert.deepEqual(readPanelPrefs(path), PANEL_DEFAULTS);
+});
+
+test("[fast] addToGlobalAutostart merges into lscript.json: other keys and entries kept, one BOM kept, a .bak of the original, idempotent", () => {
+  const { lscript } = client();
+  const original = Buffer.concat([BOM, Buffer.from(JSON.stringify({ GlobalAutoStartScripts: ["other.py"], CharAutoStartScripts: { "acctDorran": ["x.py"] }, GroupCollapsed: {}, DisableModuleCache: true, FutureKey: 7 }))]);
+  writeFileSync(lscript, original);
+  assert.equal(addToGlobalAutostart(lscript), "written");
+  const after = readFileSync(lscript);
+  assert.deepEqual([...after.subarray(0, 4)], [0xef, 0xbb, 0xbf, 0x7b], "exactly one BOM, then the document");
+  const doc = JSON.parse(after.subarray(3).toString("utf8"));
+  assert.deepEqual(doc, { GlobalAutoStartScripts: ["other.py", "packrat-panel.py"], CharAutoStartScripts: { acctDorran: ["x.py"] }, GroupCollapsed: {}, DisableModuleCache: true, FutureKey: 7 });
+  assert.deepEqual(readFileSync(lscript + ".bak"), original);
+  assert.equal(addToGlobalAutostart(lscript), "unchanged");
+});
+
+test("[fast] addToGlobalAutostart creates a missing lscript.json with just the list, adds no BOM to a file without one, and never rewrites a file it cannot read", () => {
+  const { lscript } = client();
+  assert.equal(addToGlobalAutostart(lscript), "written");
+  assert.deepEqual(JSON.parse(readFileSync(lscript, "utf8")), { GlobalAutoStartScripts: ["packrat-panel.py"] });
+  assert.notEqual(readFileSync(lscript)[0], 0xef);
+  for (const bad of ["{not json", "[]", JSON.stringify({ GlobalAutoStartScripts: [1] })]) {
+    writeFileSync(lscript, bad);
+    assert.throws(() => addToGlobalAutostart(lscript), /left it alone/);
+    assert.equal(readFileSync(lscript, "utf8"), bad);
+  }
+});
+
+test("[fast] addPanelAutostart writes only while no client runs, asks only when the entry is missing, and says why it cannot", () => {
+  const { scriptsDir, lscript } = client();
+  let asked = 0;
+  const running = (v: boolean) => () => { asked++; return v; };
+  assert.deepEqual(addPanelAutostart(scriptsDir, running(true)), { status: "running" });
+  assert.equal(existsSync(lscript), false, "nothing written while TazUO runs");
+  assert.deepEqual(addPanelAutostart(scriptsDir, running(false)), { status: "applied" });
+  asked = 0;
+  assert.deepEqual(addPanelAutostart(scriptsDir, running(true)), { status: "unchanged" });
+  assert.equal(asked, 0, "already in place: no process check at all");
+  assert.equal(addPanelAutostart(client({ panel: false }).scriptsDir, running(false)).status, "error");
+  const noData = mkdtempSync(join(tmpdir(), "qm-tazuo-panel-nodata-"));
+  assert.equal(addPanelAutostart(noData, running(false)).status, "error");
+});

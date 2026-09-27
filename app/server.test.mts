@@ -27,6 +27,7 @@ import { candidateClientRoots, type AdapterInfo, type InstallScriptsResult, type
 const FAKE_HOME = mkdtempSync(join(tmpdir(), "qm-home-"));
 const startServer = (config: Parameters<typeof startRealServer>[0], opts: StartServerOptions = {}): Promise<ServerHandle> => startRealServer(config, {
   clientSearch: { home: FAKE_HOME, candidates: (a) => candidateClientRoots({ adapter: a.id, home: FAKE_HOME, platform: "linux", env: {}, adapterPlatform: a.platform }) },
+  clientRunning: () => false,   // never shell out to pgrep/tasklist from a test
   ...opts,
 });
 
@@ -1776,6 +1777,44 @@ test("[fast] POST /api/setup/locate resolves a nested X/TazUO/LegionScripts fold
   }
 });
 
+test("[fast] the TazUO panel: an install adds it to TazUO's autostart list only while TazUO is closed, PUT saves showAtLogin, an old openAtLogin migrates, a bad hotkey is refused", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "qm-panel-prefs-"));
+  let running = true;
+  const s2 = await startServer(ensureLayout(resolveConfig(["--port", "0", "--data", dir], {})), { clientRunning: () => running });
+  try {
+    const tazuo = join(mkdtempSync(join(tmpdir(), "qm-panel-client-")), "TazUO");
+    const scriptsDir = join(tazuo, "LegionScripts");
+    mkdirSync(scriptsDir, { recursive: true });
+    mkdirSync(join(tazuo, "Data"));
+    const lscript = join(tazuo, "Data", "lscript.json");
+    const panelFile = join(dir, "tazuo-panel.json");
+    const call = async (method: string, path: string, body?: unknown) => {
+      const r = await fetch(s2.url + path, { method, headers: { "content-type": "application/json" }, ...(body === undefined ? {} : { body: JSON.stringify(body) }) });
+      return { status: r.status, body: await r.json() as Record<string, unknown> };
+    };
+    const install = await call("POST", "/api/setup/install", { adapter: "tazuo", scriptsDir, panel: { showAtLogin: false, hotkey: { mods: ["ALT"], key: "F3" } } });
+    assert.equal(install.status, 200, JSON.stringify(install.body));
+    assert.deepEqual(install.body.autostart, { status: "running" }, "TazUO is open: its list is left alone");
+    assert.equal(existsSync(lscript), false);
+    assert.deepEqual(JSON.parse(readFileSync(panelFile, "utf8")), { hotkey: { mods: ["ALT"], key: "F3" }, showAtLogin: false });
+
+    running = false;
+    const reinstall = await call("POST", "/api/setup/install", { adapter: "tazuo", scriptsDir });
+    assert.deepEqual(reinstall.body.autostart, { status: "applied" });
+    assert.deepEqual(JSON.parse(readFileSync(lscript, "utf8")).GlobalAutoStartScripts, ["packrat-panel.py"]);
+
+    const bad = await call("PUT", "/api/tazuo-panel", { hotkey: { mods: [], key: "P" } });
+    assert.equal(bad.status, 400);
+    assert.match(String(bad.body.error), /needs Ctrl, Alt or Shift/);
+    assert.deepEqual((await call("PUT", "/api/tazuo-panel", { showAtLogin: true })).body, { ok: true, prefs: { hotkey: { mods: ["ALT"], key: "F3" }, showAtLogin: true } });
+
+    writeFileSync(panelFile, JSON.stringify({ openAtLogin: false, pendingOpenAtLogin: true }));   // written by an older version
+    assert.deepEqual((await call("GET", "/api/tazuo-panel")).body, { ok: true, prefs: { hotkey: { mods: ["CTRL", "SHIFT"], key: "P" }, showAtLogin: false } });
+  } finally {
+    await s2.close();
+  }
+});
+
 test("[fast] POST /api/setup/install installs the scripts, saves settings.client, and PUT /api/settings {setupDone:true} is what clears firstRun", async () => {
   const dir = mkdtempSync(join(tmpdir(), "qm-setup-install-"));
   const s2 = await startServer(ensureLayout(resolveConfig(["--port", "0", "--data", dir], {})));
@@ -1786,7 +1825,7 @@ test("[fast] POST /api/setup/install installs the scripts, saves settings.client
     });
     const installBody = asJson<InstallScriptsResult>(await install.json());
     assert.equal(install.status, 200, JSON.stringify(installBody));
-    assert.deepEqual(installBody.installed!.sort(), ["packrat-blacklist.py", "packrat-bridge.py", "packrat-refresh.py", "packrat-scanner.py"]);
+    assert.deepEqual(installBody.installed!.sort(), ["packrat-blacklist.py", "packrat-bridge.py", "packrat-panel.py", "packrat-refresh.py", "packrat-scanner.py"]);
     assert.equal(installBody.version, TAZUO_VERSION);
     assert.ok(existsSync(join(scriptsDir, "packrat-scanner.py")));
     assert.ok(existsSync(join(scriptsDir, "packrat-paths.json")));

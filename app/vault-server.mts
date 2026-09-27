@@ -23,6 +23,8 @@
 //         serial, 1-200 at a time (400 otherwise); a serial with no item is simply absent from the
 //         response · GET|PUT /api/profiles (<data>/profiles.json)
 //         GET|PUT /api/settings (<data>/settings.json: {shard, setupDone?, client?, retention?}) ·
+//         GET|PUT /api/tazuo-panel ({hotkey?, showAtLogin?} -> {prefs}: the TazUO panel's hotkey and whether it
+//         shows its window at login, <data>/tazuo-panel.json, app/tazuo-panel.mts) ·
 //         POST /api/retention/cleanup {dryRun} -> {scans, runs, refused} (prune old scans and saved runs
 //         now, or count what that would remove; app/retention.mts; 409 under --demo) · GET /api/rules (the current shard's
 //         rules object plus every {id,name,source} listRules() finds — builtin and <data>/rules/*.json)
@@ -104,6 +106,7 @@ import { DEFAULT_OPTIONAL_SLOTS } from "./mip.mts";
 import { startWatcher, jsonErrorReason, MAX_INBOX_BYTES, type StartWatcherOptions, type WatcherHandle } from "./watcher.mts";
 import { parsePastedScan, writeScanToInbox } from "./import.mts";
 import { writeFileAtomic } from "./atomic-write.mts";
+import { addPanelAutostart, panelPrefsError, readPanelPrefs, tazuoRunning, writePanelPrefs } from "./tazuo-panel.mts";
 import { retentionError, retentionOf, runsToPrune, scansToPrune, type ScanFile } from "./retention.mts";
 import {
   listAdapters, candidateClientRoots, validateScriptsDir, installedVersion, installScripts,
@@ -447,6 +450,8 @@ export interface StartServerOptions {
   clientSearch?: ClientSearch | undefined;
   watcherOptions?: Partial<StartWatcherOptions> | undefined;
   jobTimings?: JobTimings | undefined;
+  // Whether a TazUO client is running (app/tazuo-panel.mts's tazuoRunning); a test supplies its own.
+  clientRunning?: (() => boolean) | undefined;
 }
 
 export interface ServerHandle {
@@ -473,7 +478,7 @@ export interface ServerHandle {
 // the same lever for the route-level equivalent instead of relying on a wide timeout margin to absorb
 // real wall-clock retry delay plus whatever scheduling/fs-watch jitter a loaded machine adds on top.
 // `jobTimings` (JobTimings above) shortens the job clocks for a test in the same way.
-export async function startServer(config: Config = ensureLayout(resolveConfig()), { host, clientSearch = defaultClientSearch(), watcherOptions = {}, jobTimings = {} }: StartServerOptions = {}): Promise<ServerHandle> {
+export async function startServer(config: Config = ensureLayout(resolveConfig()), { host, clientSearch = defaultClientSearch(), watcherOptions = {}, jobTimings = {}, clientRunning = () => tazuoRunning() }: StartServerOptions = {}): Promise<ServerHandle> {
   const CONFIG = config;
   const SCANS = CONFIG.paths.scans, PROFILES = CONFIG.paths.profiles, DEFAULT_PROFILES = CONFIG.paths.defaultProfiles;
   const RUNS = CONFIG.paths.runs, SETTINGS = CONFIG.paths.settings, USER_RULES_DIR = CONFIG.paths.rules;
@@ -727,6 +732,9 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
   // malformed file reads as "nothing chosen", and the page keeps its defaults.
   // Each field is read on its own: one bad value (a hand edit) drops that field, not the whole file.
   const UI_PREFS = join(CONFIG.dataDir, "ui-prefs.json");
+  // The TazUO panel's hotkey and show-at-login choice (app/tazuo-panel.mts); the in-game panel writes it too.
+  const PANEL_PREFS = join(CONFIG.dataDir, "tazuo-panel.json");
+  const savePanel = (change: object): void => writePanelPrefs(PANEL_PREFS, { ...readPanelPrefs(PANEL_PREFS), ...change }, DATA_FILE_MODE);
   function readUiPrefs(): UiPrefsFile {
     let raw: Record<string, unknown>;
     try { raw = JSON.parse(readFileSync(UI_PREFS, "utf8")) as Record<string, unknown>; } catch { return {}; }
@@ -1212,6 +1220,17 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
         currentSettings = effectiveSettings();
         return send(res, 200, { ok: true, settings: currentSettings });
       }
+      if (req.method === "GET" && url.pathname === "/api/tazuo-panel") {
+        return send(res, 200, { ok: true, prefs: readPanelPrefs(PANEL_PREFS) });
+      }
+      if (req.method === "PUT" && url.pathname === "/api/tazuo-panel") {
+        const body = asObject(await readBody(req, { limit: 8e3 }));
+        const bad = panelPrefsError(body);
+        if (bad) return send(res, 400, { ok: false, error: bad });
+        if (CONFIG.demo) return send(res, 409, { ok: false, error: "demo data is read-only" });
+        savePanel(body);
+        return send(res, 200, { ok: true, prefs: readPanelPrefs(PANEL_PREFS) });
+      }
       if (req.method === "POST" && url.pathname === "/api/retention/cleanup") {
         // Settings › Data's Clean up now: {dryRun: true} counts what the pruning would remove (the
         // confirm dialog's sentence), {dryRun: false} removes it and says what went.
@@ -1279,7 +1298,10 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
         return send(res, 200, { ok: true, scriptsDir: result.scriptsDir, installed: installedVersion(result.scriptsDir, adapter) });
       }
       if (req.method === "POST" && url.pathname === "/api/setup/install") {
-        const { adapter, scriptsDir } = asObject(await readBody(req, { limit: 8e3 }));
+        const { adapter, scriptsDir, panel } = asObject(await readBody(req, { limit: 8e3 }));
+        // The wizard's panel choices ride along (app/tazuo-panel.mts), checked before anything is written.
+        const panelBad = panel === undefined ? null : panelPrefsError(panel);
+        if (panelBad) return send(res, 400, { ok: false, error: panelBad });
         // Security (post-review fix): adapter must be one of listAdapters()'s real ids before it can
         // reach installScripts, which joins it onto adaptersDir to find the scripts to copy — an
         // unchecked adapter (e.g. "../../../../tmp/evil") would otherwise let this route copy an
@@ -1312,10 +1334,14 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
           return send(res, result.code === "running" ? 409 : 400, { ok: false, error: result.error, code: result.code, installed: result.installed });
         }
         saveSettings({ client: { adapter: adapter as string, scriptsDir: destDir } });
+        // The wizard sends its panel options; either install puts the panel in TazUO's autostart list, which
+        // it can only do while TazUO is closed (app/tazuo-panel.mts's addPanelAutostart).
+        if (panel !== undefined && !CONFIG.demo) savePanel(panel as object);
+        const autostart = adapter === "tazuo" && !CONFIG.demo ? addPanelAutostart(destDir, clientRunning) : null;
         // pathsFile: what happened to packrat-paths.json on the way in (written/unchanged/kept/
         // backed-up) — installScripts no longer silently clobbers a hand-authored one, and the page
         // can say so.
-        return send(res, 200, { ok: true, installed: result.installed, version: result.version, scriptsDir: destDir, pathsFile: result.pathsFile });
+        return send(res, 200, { ok: true, installed: result.installed, version: result.version, scriptsDir: destDir, pathsFile: result.pathsFile, autostart });
       }
       if (req.method === "POST" && url.pathname === "/api/import/paste") {
         // Capped at the watcher's own inbox limit: a bigger paste would be written, answered 200, and
