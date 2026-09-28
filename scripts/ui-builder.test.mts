@@ -151,6 +151,45 @@ test("[slow] the Fetch list's pieces show the item tooltip on hover and on keybo
   }
 });
 
+// Issue #75: a Plan row's two names each show their own piece's tooltip; the rest of the row shows none.
+test("[slow] the Plan's worn and replacement names each show their own piece's tooltip", async (t) => {
+  const why = unavailable();
+  if (why) return t.skip(why);
+  const dataDir = seedDataDir("packrat-ui-plantip-");
+  const { app, page, errors } = await launch(dataDir);
+  try {
+    await openBuilder(page);
+    await page.click("#b-run");
+    await built(page);
+    const plan = page.locator(".b-plan tbody");
+    assert.equal(await plan.locator("tr[data-serial]").count(), 0, "the rows carry no serial of their own");
+    const row = plan.locator("tr", { has: page.locator("td:nth-child(2) .b-tip") }).filter({ has: page.locator("td:nth-child(3) .b-tip") }).first();
+    await row.scrollIntoViewIfNeeded();
+    const [now, next] = [row.locator("td").nth(1).locator(".b-tip"), row.locator("td").nth(2).locator(".b-tip")];
+    assert.equal(await hoverTip(page, now), await now.innerText());
+    assert.equal(await hoverTip(page, next), await next.innerText());
+    assert.notEqual(await now.getAttribute("data-serial"), await next.getAttribute("data-serial"));
+    // The Slot cell is not a piece: no tooltip after the delay.
+    await page.mouse.move(2, 2);
+    await row.locator("td").nth(0).hover();
+    await page.waitForTimeout(700);
+    assert.equal(await page.evaluate(() => getComputedStyle(document.querySelector("#tip")!).display), "none");
+    // Keyboard focus shows it too: Tab from the worn name reaches the replacement.
+    await now.focus();
+    await page.keyboard.press("Tab");
+    assert.equal(await tipName(page), await next.innerText());
+    // An unchanged ("keep") row still shows the worn piece's tooltip.
+    await page.getByRole("switch", { name: "Show unchanged slots" }).click();
+    const kept = plan.locator("tr", { hasText: "keep" }).locator("td").nth(1).locator(".b-tip").first();
+    await kept.scrollIntoViewIfNeeded();
+    assert.equal(await hoverTip(page, kept), await kept.innerText());
+    assert.deepEqual(errors, []);
+  } finally {
+    await app.close();
+    rmSync(dataDir, { recursive: true, force: true });
+  }
+});
+
 test("[slow] a Fetch list row shows its whole place, wrapped not cut, and copies the container serial", async (t) => {
   const why = unavailable();
   if (why) return t.skip(why);

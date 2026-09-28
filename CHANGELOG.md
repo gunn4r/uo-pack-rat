@@ -2,7 +2,8 @@
 
 ## Unreleased
 
-- **Hovering a row's action buttons no longer shows the item tooltip** (issue #69): on the Inventory and the Suit Builder's Plan, the tooltip no longer covers the row you are acting on or overlaps the button's own tooltip; it comes back when the pointer returns to the rest of the row.
+- **The Suit Builder's Plan shows each piece's own tooltip** (issue #75): hover (or Tab to) the name under Wearing now for the piece being replaced, and the name under Wear instead for its replacement; the rest of the row no longer shows the new piece's tooltip.
+- **Hovering a row's action buttons no longer shows the item tooltip** (issue #69): on the Inventory, the tooltip no longer covers the row you are acting on or overlaps the button's own tooltip; it comes back when the pointer returns to the rest of the row.
 
 ## 0.1.0 — 2026-09-27
 

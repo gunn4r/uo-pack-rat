@@ -183,10 +183,10 @@ function planCard(current: OptSuit, suit: OptSuit, name: string, changes: string
     const ra = rowActions(acts);
     if (locked) ra.querySelector(".btn")?.classList.add("on");
     const where = !changed ? txt("") : item ? txt(item.equippedBy ? `worn by ${item.equippedBy}` : item.location?.text || "", "t-sm muted") : next ? txt("not in the current inventory", "t-sm faint") : txt("");
-    return { cells: [slotLabel(slot), now ? txt(now.name, changed ? "muted" : "") : txt("Empty", "faint"),
-      !changed ? txt("keep", "muted") : next ? txt(next.name, "strong") : txt("nothing", "faint"),
-      where, next && changed ? txt(keyProps(next.props) || "no properties", keyProps(next.props) ? "muted" : "faint") : txt(""), ra],
-      attrs: next ? { "data-serial": next.serial } : {} };
+    // each piece's name answers for its own tooltip, the worn one and its replacement
+    return { cells: [slotLabel(slot), now ? tipTarget(txt(now.name, changed ? "muted" : ""), now.serial) : txt("Empty", "faint"),
+      !changed ? txt("keep", "muted") : next ? tipTarget(txt(next.name, "strong"), next.serial) : txt("nothing", "faint"),
+      where, next && changed ? txt(keyProps(next.props) || "no properties", keyProps(next.props) ? "muted" : "faint") : txt(""), ra] };
   });
   const sw = switchControl({ label: "Show unchanged slots", checked: showUnchanged, onChange: (v) => { showUnchanged = v; rerender(); } });
   sw.root.classList.add("t-sm");
@@ -194,7 +194,7 @@ function planCard(current: OptSuit, suit: OptSuit, name: string, changes: string
   if (tbl) {
     tbl.classList.add("b-plan");
     tbl.querySelector("thead th:last-child")!.replaceChildren(el("span", { class: "sr" }, "Actions"));
-    for (const td of tbl.querySelectorAll("tbody td:last-child")) { td.classList.add("b-act"); td.setAttribute("data-no-tip", ""); }
+    for (const td of tbl.querySelectorAll("tbody td:last-child")) td.classList.add("b-act");
   }
   const unchangedNames = unchanged.map((sl) => (current[sl] ? `${slotLabel(sl)} (${current[sl]!.name})` : slotLabel(sl)));
   return el("section", { class: "card b-flush", "aria-label": "Plan" },
