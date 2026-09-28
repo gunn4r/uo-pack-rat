@@ -12,7 +12,7 @@ Five small scripts that run inside the TazUO game client and send what your char
 
 ## Install
 
-The easy way is the setup window in the Pack Rat app: pick **TazUO** as your client, let it find (or pick) your TazUO folder, choose whether the in-game panel shows at login and its show/hide hotkey, tick **I typed -stopall in game and nothing is running**, and click **Install scanner**. The main [README](../../README.md#3-the-setup-window) walks through it. To get new versions of the scripts later, use **Reinstall scanner scripts** in the app's **Settings**, under **Game client**.
+The easy way is the setup window in the Pack Rat app: pick **TazUO** as your client, let it find (or pick) your TazUO folder, choose whether the in-game panel shows at login and its show/hide hotkey, tick **I typed -stopall in game and nothing is running**, and click **Install scanner**. The main [README](../../README.md#first-run) walks through it. To get new versions of the scripts later, use **Reinstall scanner scripts** in the app's **Settings**, under **Game client**.
 
 Before installing or reinstalling, if the game is running: type `-stopall` in the game's chat and wait for **"No scripts are currently running"**. Pack Rat refuses to replace the scripts while the bridge or the Pack Rat window is running, and tells you to do exactly this.
 
@@ -47,7 +47,7 @@ To start a script with one key, right-click it in the Script Manager, choose **S
 - A scan takes from a few seconds to a couple of minutes, depending on how many bags it has to open. If you stop it part way, it saves nothing, and you can simply run it again.
 - The bridge stops by itself after 8 hours, or when you press Stop. Start it again when you need it.
 - The bridge only walks up to 24 tiles. If an item is further away, it tells you to walk closer and try again.
-- A scan file shows where your house and chests are. Don't share one publicly without reading the main README's [privacy note](../../README.md#keep-your-scan-files-to-yourself).
+- A scan file shows where your house and chests are. Don't share one publicly without reading the main README's [privacy note](../../README.md#your-data-and-privacy).
 
 ## The AFK rule
 

@@ -7,11 +7,11 @@ Two small scripts that run inside [Razor Enhanced](https://razorenhanced.readthe
 
 There is no quick-refresh script for Razor Enhanced. Run the full scan instead.
 
-**Not tested with a real game yet.** These scripts were written from Razor Enhanced's documentation, without a Windows computer to try them on. If you try them, please [open an issue](../../README.md#help-something-isnt-working) and say what happened, good or bad.
+**Not tested with a real game yet.** These scripts were written from Razor Enhanced's documentation, without a Windows computer to try them on. If you try them, please [open an issue](../../README.md#help) and say what happened, good or bad.
 
 ## Install
 
-The easy way is the setup window in the Pack Rat app: pick **Razor Enhanced** as your client, click **Choose a folder…**, and pick the folder you unpacked Razor Enhanced into (or the `Scripts` folder inside it). Pack Rat can't find this folder by itself, because Razor Enhanced can live anywhere. Then click **Install scripts**. The main [README](../../README.md#3-the-setup-window) walks through it.
+The easy way is the setup window in the Pack Rat app: pick **Razor Enhanced** as your client, click **Choose a folder…**, and pick the folder you unpacked Razor Enhanced into (or the `Scripts` folder inside it). Pack Rat can't find this folder by itself, because Razor Enhanced can live anywhere. Then click **Install scripts**. The main [README](../../README.md#first-run) walks through it.
 
 To install by hand instead:
 
@@ -31,7 +31,7 @@ When to run which:
 
 **Highlight** changes the colour of the item and the bag it is in for a few seconds, on your screen only. **Grab** puts the item in your backpack. **Go to** walks you to the chest.
 
-A scan file shows where your house and chests are. Don't share one publicly without reading the main README's [privacy note](../../README.md#keep-your-scan-files-to-yourself).
+A scan file shows where your house and chests are. Don't share one publicly without reading the main README's [privacy note](../../README.md#your-data-and-privacy).
 
 ## The AFK rule
 
