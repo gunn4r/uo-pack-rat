@@ -162,6 +162,13 @@ def is_container(item, name):
     return bool(CONTAINER_RE.search(name or ""))
 
 
+def is_trash(serial, name):
+    """A container is trash by its tooltip name ("A Trash Barrel"): the client's own cached name for the
+    art may be just "barrel". The cached name is the fallback when the tooltip reads nothing."""
+    lines = tooltip_lines(serial)
+    return bool(TRASH_RE.search(lines[0] if lines else name or ""))
+
+
 def dist(item):
     try:
         return max(abs(int(item.X) - int(API.Player.X)), abs(int(item.Y) - int(API.Player.Y)))
@@ -243,7 +250,7 @@ def scan_root(root_serial, kind, label, containers, items, seen):
             except Exception:
                 nm = ""
             s = int(it.Serial)
-            if is_container(it, nm) and s not in opened and s not in to_open and s not in BLACKLIST and not TRASH_RE.search(nm):
+            if is_container(it, nm) and s not in opened and s not in to_open and s not in BLACKLIST and not is_trash(s, nm):
                 to_open.append(s)
     listing = without_skipped(listing)
     if API.StopRequested:
@@ -301,7 +308,7 @@ def without_skipped(listing):
     trash = set()
     for it in listing:
         nm = str(getattr(it, "Name", "") or "")
-        if TRASH_RE.search(nm) and is_container(it, nm):
+        if is_container(it, nm) and is_trash(int(it.Serial), nm):
             trash.add(int(it.Serial))
     TRASHED.update(trash)
     skip = BLACKLIST | trash

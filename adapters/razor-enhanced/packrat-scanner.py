@@ -147,6 +147,13 @@ def tooltip_lines(it):
     return lines
 
 
+def name_of(it):
+    """An item's tooltip name ("A Trash Barrel"), which the client's own cached Name may not carry
+    (just "barrel" for that art); the cached Name is the fallback when the tooltip reads nothing."""
+    lines = tooltip_lines(it)
+    return lines[0] if lines else str(getattr(it, "Name", "") or "")
+
+
 def item_dict(it, lines, container_serial, layer=None):
     d = {
         "serial": as_int(getattr(it, "Serial", 0)),
@@ -268,7 +275,7 @@ def scan_root(root_item, kind, label, containers, items, seen):
                     containers[ks] = container_entry(kid, root_serial, False)
                     continue
                 if is_container(kid):
-                    if TRASH_RE.search(str(getattr(kid, "Name", "") or "")):
+                    if TRASH_RE.search(name_of(kid)):
                         TRASHED.add(ks)   # not recorded, never opened
                     else:
                         next_queue.append(kid)
@@ -424,10 +431,11 @@ def main():
             if as_int(getattr(g, "Serial", 0)) in BLACKLIST:
                 SKIPPED.add(as_int(getattr(g, "Serial", 0)))
                 continue
-            if TRASH_RE.search(str(getattr(g, "Name", "") or "")):
+            gname = name_of(g)
+            if TRASH_RE.search(gname):
                 TRASHED.add(as_int(getattr(g, "Serial", 0)))
                 continue
-            roots.append((g, "ground", str(getattr(g, "Name", "") or "container")))
+            roots.append((g, "ground", gname or "container"))
 
     counts = []
     for root_item, kind, label in roots:
