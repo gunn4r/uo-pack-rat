@@ -2,18 +2,15 @@
 
 ## Repository setup (settings that live on GitHub, not in this repository)
 
-Some of what this project's documents promise is a checkbox in the repository's own settings rather than a file anyone can review in a pull request. None of these turn themselves on, and nothing in CI can turn them on either — so they are listed here, with their state, and a maintainer has to go and flip the ones still off.
+Some of what this project's documents promise is a checkbox in the repository's own settings rather than a file anyone can review in a pull request. None of these turn themselves on, and nothing in CI can turn them on either — so they are listed here, with their state. Check them with `gh api repos/gunn4r/uo-pack-rat/vulnerability-alerts` (204 = on), `gh api repos/gunn4r/uo-pack-rat/automated-security-fixes` and `gh api repos/gunn4r/uo-pack-rat/actions/permissions` (`sha_pinning_required`).
 
 Done:
 
 - **Private vulnerability reporting** — *Settings → Advanced Security → Private vulnerability reporting*. Enabled. This is what makes the Security tab's **Report a vulnerability** button in `SECURITY.md` actually exist.
 - **Discussions** — *Settings → General → Features → Discussions*. Enabled. This is what `.github/ISSUE_TEMPLATE/config.yml`'s "Questions and discussion" contact link points at, and where the issue templates route anything that isn't a bug or a feature request.
 - **Secret scanning and push protection** — *Settings → Advanced Security*. Enabled.
-
-Still to do:
-
-- **Dependabot alerts** and **Dependabot security updates** — *Settings → Advanced Security → Dependabot* (`https://github.com/gunn4r/uo-pack-rat/settings/security_analysis`). Both are currently **off**. `.github/dependabot.yml` is committed and configures *version* updates — the weekly npm and github-actions pull requests — but alerts and security updates are a separate switch that a config file cannot set. Until they are on, an advisory against a transitive dependency of `electron-builder`, or against Electron itself, notifies nobody: this project's lockfile is fully pinned by design and never moves on its own, and CI does not run `npm audit`, so nothing would ever go red.
-- **Require actions to be pinned to a full-length commit SHA** — *Settings → Actions → General → Actions permissions* (`https://github.com/gunn4r/uo-pack-rat/settings/actions`). Currently **off**. Every `uses:` in both workflows is already pinned to a SHA by hand (see below); this setting is what stops a future workflow, or a careless edit to an existing one, from quietly going back to a mutable `@v4` tag.
+- **Dependabot alerts** and **Dependabot security updates** — *Settings → Advanced Security → Dependabot*. Both enabled. `.github/dependabot.yml` configures the weekly *version* updates; alerts and security updates are the separate switch that makes an advisory against a pinned dependency (a transitive one of `electron-builder`, or Electron itself) notify someone, since the lockfile never moves on its own and CI does not run `npm audit`.
+- **Require actions to be pinned to a full-length commit SHA** — *Settings → Actions → General → Actions permissions*. Enabled. Every `uses:` in both workflows is pinned to a SHA by hand (see below); this setting stops a future workflow, or a careless edit, from going back to a mutable `@v4` tag.
 
 ## How the release workflow is put together
 
@@ -91,4 +88,4 @@ Deliberately outstanding, tracked here rather than hidden in an issue nobody see
 
 - **README screenshots.** None ship this phase. The shot list, once there's a stable UI to capture: the inventory tab, a character sheet, a suit-builder result, the setup wizard, and the macOS Gatekeeper dialog a player will meet on first launch.
 - **Code signing on macOS and Windows.** Every build is unsigned (see `SECURITY.md`) — `identity: null` in `package.json`'s `build.mac` and `CSC_IDENTITY_AUTO_DISCOVERY: "false"` in the release workflow are both explicit opt-outs, not defaults. Signing removes the Gatekeeper/SmartScreen warnings this README currently has to explain, and it is also what would let the `publish` job verify the artifacts it uploads rather than trusting the runners that produced them.
-- **Automatic updates via `electron-updater`.** Today "Check for updates" only reports whether a newer version exists and links to the release page — it doesn't download or install anything. Do not add it before Dependabot alerts and SHA-pinning enforcement are switched on above: an auto-updater turns a compromised release into code that installs itself on every player's machine, instead of something each player has to choose to download.
+- **Automatic updates via `electron-updater`.** Today "Check for updates" only reports whether a newer version exists and links to the release page — it doesn't download or install anything. Dependabot alerts and SHA-pinning enforcement are on (above), which this waited on, but signing still comes first: an auto-updater turns a compromised release into code that installs itself on every player's machine, instead of something each player has to choose to download.
