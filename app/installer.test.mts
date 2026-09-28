@@ -581,8 +581,8 @@ test("[fast] installScripts for one adapter never copies another adapter's scrip
   const scriptsDir = tmp("qm-is-isolation-dest-");
   const result = installScripts({ adapter: "razor-enhanced", adaptersDir, scriptsDir, dataDir: tmp("qm-is-data-"), bridgeStatusPath: join(scriptsDir, "no-status.json") });
   assert.equal(result.ok, true, JSON.stringify(result));
-  assert.deepEqual(result.installed.sort(), ["packrat-bridge.py", "packrat-scanner.py"]);
-  assert.equal(existsSync(join(scriptsDir, "packrat-refresh.py")), false, "tazuo's refresh script (razor-enhanced ships none) was not copied");
+  assert.deepEqual(result.installed.sort(), ["packrat-blacklist.py", "packrat-bridge.py", "packrat-refresh.py", "packrat-scanner.py"]);
+  assert.equal(existsSync(join(scriptsDir, "packrat-panel.py")), false, "tazuo's panel script (razor-enhanced ships none) was not copied");
   for (const name of result.installed) {
     const srcBuf = readFileSync(join(adaptersDir, "razor-enhanced", name));
     const destBuf = readFileSync(join(scriptsDir, name));

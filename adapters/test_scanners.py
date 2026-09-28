@@ -71,6 +71,14 @@ def nest(world, parent, depth):
     return bags
 
 
+def helper_body(path, name):
+    """The source of one top-level function, for the copied-verbatim checks."""
+    with open(path, encoding="utf-8") as f:
+        t = f.read()
+    m = re.search(r"^def %s\(.*?(?=^def |^[A-Z_]+ = |^# -)" % name, t, re.S | re.M)
+    return m.group(0) if m else None
+
+
 class DataDir(object):
     def setUp(self):
         self.data = tempfile.mkdtemp()
@@ -614,6 +622,107 @@ class RazorScanner(DataDir, unittest.TestCase):
         self.assertEqual([c for c in (TRASH_BARREL, TRASH_CHEST) if str(c) in s["containers"]], [])
         self.assertEqual(sorted(i["serial"] for i in s["items"]), [RING, RING2], "nothing in or of the trash is recorded")
         self.assertIn("  skipped 2 trash containers", w.messages)
+
+
+class RazorRefresh(DataDir, unittest.TestCase):
+    SCRIPT = adapter_path("razor-enhanced", "packrat-refresh.py")
+
+    def refresh(self, world):
+        run_script(self.SCRIPT, world, extra_globals=razor_globals(world, PACK))
+
+    def test_it_walks_the_backpack_with_the_scanners_own_code(self):
+        for script, names in ((self.SCRIPT, ("tooltip_lines", "name_of", "item_dict", "is_container", "root_pos",
+                                             "container_entry", "scan_root", "note_if_closed", "close_opened",
+                                             "note_unopened", "read_skills", "read_blacklist", "sysmsg", "as_int")),
+                              (RazorBlacklist.SCRIPT, ("read_blacklist", "as_int", "tooltip_lines", "name_of"))):
+            for name in names:
+                body = helper_body(RazorScanner.SCRIPT, name)
+                self.assertIsNotNone(body, name)
+                self.assertEqual(helper_body(script, name), body, "%s %s" % (os.path.basename(script), name))
+
+    def test_it_writes_the_backpack_as_the_only_root_and_opens_nothing_on_the_ground(self):
+        w = World(); home(w)
+        self.refresh(w)
+        [s] = self.scans("razor-enhanced")
+        self.assertEqual([r["serial"] for r in s["roots"]], [PACK])
+        self.assertEqual([i["serial"] for i in s["items"]], [RING2])
+        self.assertNotIn(CHEST, self.opened(w))
+        self.assertEqual(s["meta"]["mode"], "quick")
+        self.assertTrue(glob.glob(os.path.join(self.data, "inbox", "razor-enhanced", "Tester-*-quick.json")))
+
+    def test_a_backpack_that_did_not_open_writes_nothing(self):
+        w = World(); home(w); w.locked.add(PACK)
+        self.refresh(w)
+        self.assertEqual(self.scans("razor-enhanced"), [])
+        self.assertTrue(any("nothing written" in m for m in w.messages), w.messages)
+
+    def test_a_bag_in_the_backpack_that_did_not_open_is_marked_unopened(self):
+        w = World(); home(w)
+        w.add(BAG + 0x100, PACK, name="Pouch", OnGround=False)
+        w.add(RING + 0x100, BAG + 0x100, name="Ring", container_like=False, OnGround=False)
+        w.locked.add(BAG + 0x100)
+        self.refresh(w)
+        [s] = self.scans("razor-enhanced")
+        self.assertIs(s["containers"][str(BAG + 0x100)]["opened"], False)
+        self.assertIn(RING2, [i["serial"] for i in s["items"]])
+
+    def test_a_blacklisted_bag_and_a_trash_chest_in_the_backpack_are_never_opened(self):
+        w = World(); home(w); trash(w)
+        w.add(BAG + 0x100, PACK, name="Pouch", OnGround=False)
+        self.blacklist([BAG + 0x100])
+        self.refresh(w)
+        [s] = self.scans("razor-enhanced")
+        self.assertEqual([c for c in (BAG + 0x100, TRASH_CHEST) if c in self.opened(w)], [])
+        self.assertIs(s["containers"][str(BAG + 0x100)]["opened"], False)
+        self.assertEqual([i["serial"] for i in s["items"]], [RING2])
+        self.assertIn("  skipped 1 blacklisted container", w.messages)
+        self.assertIn("  skipped 1 trash container", w.messages)
+
+    def test_it_closes_the_bags_it_opened_and_leaves_the_open_backpack_open(self):
+        w = World(); home(w)
+        w.items[PACK].Opened = w.items[PACK].EverOpened = True
+        w.add(BAG + 0x100, PACK, name="Pouch", OnGround=False)
+        self.refresh(w)
+        self.assertEqual(len(self.scans("razor-enhanced")), 1)
+        self.assertEqual(self.closed(w), [BAG + 0x100])
+
+    def test_it_runs_where_the_host_defines_no___file__(self):
+        w = World(); home(w)
+        run_script(self.SCRIPT, w, extra_globals=razor_globals(w, PACK), with_file=False)
+        self.assertEqual(len(self.scans("razor-enhanced")), 1)
+
+
+class RazorBlacklist(DataDir, unittest.TestCase):
+    SCRIPT = adapter_path("razor-enhanced", "packrat-blacklist.py")
+
+    def pick(self, world, serial):
+        world.target = serial
+        run_script(self.SCRIPT, world, extra_globals=razor_globals(world, PACK))
+
+    def listed(self):
+        with open(os.path.join(self.data, "scan-blacklist.json"), encoding="utf-8") as f:
+            return json.load(f)
+
+    def test_a_targeted_container_is_added_and_a_second_target_appends(self):
+        w = World(); home(w)
+        w.items[CHEST].Opened = True    # the player opened it to click the bag inside
+        self.pick(w, CHEST)
+        self.pick(w, BAG)
+        self.pick(w, CHEST)
+        [chest, bag] = self.listed()
+        self.assertEqual((chest["serial"], chest["name"], chest["where"]), (CHEST, "Wooden Chest", "11, 10"))
+        self.assertEqual((bag["serial"], bag["where"]), (BAG, "in Wooden Chest"))
+        self.assertRegex(chest["addedAt"], r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}([+-]\d{2}:\d{2}|Z)$")
+        self.assertEqual(w.calls, [], "nothing in the world is opened or moved")
+        self.assertIn("Pack Rat: Wooden Chest is already blacklisted.", w.messages)
+
+    def test_a_cancelled_cursor_the_backpack_or_a_non_container_writes_nothing(self):
+        w = World(); home(w)
+        w.items[PACK].Opened = True
+        for target in (-1, 0, PACK, RING2):
+            self.pick(w, target)
+        self.assertFalse(os.path.exists(os.path.join(self.data, "scan-blacklist.json")))
+        self.assertEqual(w.messages.count("Pack Rat: cancelled, nothing blacklisted."), 2)
 
 
 if __name__ == "__main__":

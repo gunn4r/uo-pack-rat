@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- **Razor Enhanced gets the quick refresh and the blacklist script — re-install the scripts (Razor Enhanced 1.8.0)** (issue #80): `packrat-refresh.py` reads just your stats, skills, what you are wearing and your backpack, and `packrat-blacklist.py` stops scans opening a container you click, the same as TazUO's. Not yet tried in a live Razor Enhanced client.
+
 ## 0.1.1 — 2026-09-28
 
 - **Scans skip trash barrels and chests — re-install the scripts (TazUO 2.8.0, Razor Enhanced 1.7.0; ClassicUO web scanner 1.2.0)** (issue #74): a container whose name contains "trash" is never opened or recorded, on the ground, in the bank or in a bag, since the server empties it on a timer; the scan summary says how many were skipped, and there is no need to blacklist one any more. Trash containers and their contents recorded by earlier scans drop out of the app.
