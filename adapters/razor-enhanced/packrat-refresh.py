@@ -1,26 +1,27 @@
-# packrat-scanner.py -- ATTENDED one-shot: snapshot everything this character can see for the
-# Pack Rat app. Reads every equipped layer, the backpack (nested bags included), the bank box if
-# it is already open, and every openable ground container within SCAN_RANGE tiles (recursively:
-# bags in chests in chests). Dumps RAW tooltip lines -- the app does all the parsing, so this
-# script stays dumb and never needs updating when a new item property shows up.
+# packrat-refresh.py -- ATTENDED one-shot: QUICK character refresh for the Pack Rat app without a
+# full scan. Reads this character's stats, skills, maxes, resists, position, every equipped layer and
+# the BACKPACK (nested bags included) -- nothing else. Bank and ground containers are never opened,
+# so the app keeps whatever it last knew about them.
 #
-# Output: <data directory>/inbox/razor-enhanced/<Character>-<YYYYmmdd-HHMMSS>.json (one file per
-# run). The app's inbox watcher (app/watcher.mjs) picks it up, normalises it and moves it into
-# <data directory>/scans/ -- the app folds every scan on disk, newest wins per container, so
-# re-scan any chest any time. The data directory is `packrat-paths.json` beside this script, else
-# $PACKRAT_DATA, else ~/.pack-rat.
-# RUN: stand next to a chest cluster (containers must be within reach to open), start this script
-# from the Scripts tab. Repeat at each cluster / on each character. Inventory-only, nothing
-# rule-sensitive -- stay attended throughout.
+# Why the backpack is walked at all: the app's fold (app/vault-lib.mjs foldSnapshots) replaces a
+# character's worn set whole and everything under each root the snapshot lists. A snapshot with no
+# roots would delete a piece you just took off (it was "worn") without putting it anywhere -- listing
+# the backpack as the one root makes that piece reappear in the backpack instead of vanishing.
 #
-# Unverified against a live client -- see README.md's "Status" section for exactly what that
-# means and what to check on the first real run.
+# Helpers below are copied VERBATIM from packrat-scanner.py rather than imported, as
+# adapters/tazuo/packrat-refresh.py does (adapters/test_scanners.py keeps the copies identical).
+#
+# Output: <data directory>/inbox/razor-enhanced/<Character>-<YYYYmmdd-HHMMSS>-quick.json. The app's
+# inbox watcher (app/watcher.mjs) picks it up like any scan. The data directory is
+# `packrat-paths.json` beside this script, else $PACKRAT_DATA, else ~/.pack-rat.
+# RUN: start it from the Scripts tab anywhere. Inventory-only, nothing rule-sensitive -- stay attended.
+#
+# Unverified against a live client, like the rest of this adapter (README.md's "Status" section).
 
 import json
 import os
 import re
 import time
-
 
 def data_dir():
     """<script folder>/packrat-paths.json {"dataDir": "..."} -> $PACKRAT_DATA -> ~/.pack-rat"""
@@ -70,9 +71,6 @@ def read_blacklist(path):
 
 ADAPTER_ID = "razor-enhanced"
 ADAPTER_VERSION = "1.8.0"
-# Keep this literal in sync with capabilities.json -- a test enforces the two never drift apart
-# for the TazUO adapter (test_paths.py) and the same discipline applies here by hand until this
-# adapter has its own test.
 CAPABILITIES = {
     "layers": ["RightHand", "LeftHand", "Shoes", "Pants", "Shirt", "Head", "Gloves", "Ring",
                "Talisman", "Neck", "Waist", "InnerTorso", "Bracelet", "MiddleTorso", "Earrings",
@@ -88,9 +86,6 @@ CAPABILITIES = {
 # reason. See README.md "What this adapter reads" for the full citation.
 GEAR_LAYERS = CAPABILITIES["layers"]
 
-SCAN_RANGE = 3            # tiles: ground containers within reach (house chests open only when close)
-SCAN_GROUND = True        # False = backpack/bank only, never touch containers on the ground
-GROUND_ONLY_AT_HOME = True    # when the bank box is already open (you are at a bank) skip ground containers
 CONTENTS_WAIT_MS = 1500   # Items.WaitForContents' own open-and-wait timeout, per container
 PROPS_WAIT_MS = 800       # Items.WaitForProps' own request-and-wait timeout, per item
 MAX_NEST = 4              # bags in bags in bags
@@ -372,6 +367,7 @@ def read_skills():
     return out
 
 
+# ---------------- the refresh itself ----------------
 def main():
     t0 = time.time()
     char = str(Player.Name)
@@ -380,6 +376,7 @@ def main():
         "scannedAt": rfc3339_now(),
         "adapter": {"id": ADAPTER_ID, "version": ADAPTER_VERSION, "client": "Razor Enhanced",
                     "clientVersion": None, "capabilities": CAPABILITIES},
+        "meta": {"mode": "quick", "name": str(__name__), "roots": ["backpack"]},
         "stats": {"str": as_int(Player.Str), "dex": as_int(Player.Dex), "int": as_int(Player.Int)},
         "position": {"x": as_int(Player.Position.X), "y": as_int(Player.Position.Y)},
         "maxes": {"hits": as_int(Player.HitsMax), "stam": as_int(Player.StamMax), "mana": as_int(Player.ManaMax)},
@@ -401,60 +398,25 @@ def main():
             continue
         seen.add(s)
         snap["equipped"].append(item_dict(it, tooltip_lines(it), None, layer))
-    sysmsg("Pack Rat scan ({0}): {1} equipped pieces read.".format(char, len(snap["equipped"])))
 
-    # 2) roots: backpack, bank (only if already open this session), ground containers in reach
-    roots = [(Player.Backpack, "backpack", "Backpack")]
-    bank_has_items = False
-    try:
-        bank_item = Player.Bank
-        bank_has_items = bank_item is not None and len(list(bank_item.Contains or [])) > 0
-    except Exception:
-        bank_item = None
-    if bank_has_items:
-        roots.append((bank_item, "bank", "Bank box"))
-    scan_ground = SCAN_GROUND and not (GROUND_ONLY_AT_HOME and bank_has_items)
-    if SCAN_GROUND and bank_has_items and GROUND_ONLY_AT_HOME:
-        sysmsg("Bank is open: ground containers skipped (backpack + bank only).", INFO_HUE)
-    if scan_ground:
-        try:
-            f = Items.Filter()
-            f.Enabled = True
-            f.OnGround = 1
-            f.IsContainer = 1
-            f.IsCorpse = 0
-            f.RangeMax = SCAN_RANGE
-            ground = Items.ApplyFilter(f) or []
-        except Exception:
-            ground = []
-        for g in ground:
-            if as_int(getattr(g, "Serial", 0)) in BLACKLIST:
-                SKIPPED.add(as_int(getattr(g, "Serial", 0)))
-                continue
-            gname = name_of(g)
-            if TRASH_RE.search(gname):
-                TRASHED.add(as_int(getattr(g, "Serial", 0)))
-                continue
-            roots.append((g, "ground", gname or "container"))
-
-    counts = []
-    for root_item, kind, label in roots:
-        n, opened = scan_root(root_item, kind, label, snap["containers"], snap["items"], seen)
-        serial = as_int(getattr(root_item, "Serial", 0))
-        snap["roots"].append({"serial": serial, "kind": kind, "name": label, "opened": opened})
-        if not opened:
-            counts.append("{0}: not opened (skipped)".format(label))
-            continue
-        counts.append("{0}: {1}".format(label, n) + (" (empty)" if n == 0 else ""))
+    # 2) the ONE root: the backpack (nested bags walked exactly like the full scanner does)
+    backpack = Player.Backpack
+    n, opened = scan_root(backpack, "backpack", "Backpack", snap["containers"], snap["items"], seen)
+    if not opened:
+        # The backpack could not be listed: writing a snapshot now would still replace the worn set,
+        # so a taken-off piece would vanish. Write nothing and say so.
+        sysmsg("Pack Rat refresh ({0}): backpack could not be read -- nothing written.".format(char), ALARM_HUE)
+        return
+    snap["roots"].append({"serial": as_int(getattr(backpack, "Serial", 0)), "kind": "backpack",
+                          "name": "Backpack", "opened": True})
 
     safe_char = "".join(c if (c.isalnum() or c in "_-") else "_" for c in char)
-    fname = safe_char + time.strftime("-%Y%m%d-%H%M%S") + ".json"
-    path = os.path.join(OUT_DIR, fname)
-    write_json_atomic(path, snap)
-    sysmsg("Pack Rat scan done in {0:.0f}s: {1} items in {2} containers -> {3}".format(
-        time.time() - t0, len(snap["items"]), len(snap["roots"]), fname))
-    for c in counts:
-        sysmsg("  " + c, INFO_HUE)
+    fname = safe_char + time.strftime("-%Y%m%d-%H%M%S") + "-quick.json"
+    write_json_atomic(os.path.join(OUT_DIR, fname), snap)
+    bags = sum(1 for c in snap["containers"].values() if c.get("kind") == "container")
+    sysmsg("Pack Rat refresh ({0}) done in {1:.0f}s: {2} worn, {3} backpack items in {4} bags, {5} skills -> {6}".format(
+        char, time.time() - t0, len(snap["equipped"]), n, bags, len(snap["skills"]), fname))
+    sysmsg("  bank and ground containers untouched (app keeps its last scan of them)", INFO_HUE)
     if SKIPPED:
         sysmsg("  skipped {0} blacklisted container{1}".format(len(SKIPPED), "s" if len(SKIPPED) != 1 else ""), INFO_HUE)
     if TRASHED:

@@ -425,7 +425,13 @@ def razor_globals(world, backpack, bank=None, skills=None):
         def SendMessage(msg, hue, wait):
             world.messages.append(str(msg))
 
-    return {"Items": Items, "Player": Player, "Misc": Misc}
+    class Target(object):
+        @staticmethod
+        def PromptTarget(msg, color):
+            world.messages.append(str(msg))
+            return getattr(world, "target", -1)     # a world with no target set models Esc
+
+    return {"Items": Items, "Player": Player, "Misc": Misc, "Target": Target}
 
 
 def run_script(path, world, api=None, extra_globals=None, with_file=True):
