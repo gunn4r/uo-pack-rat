@@ -1,6 +1,6 @@
 // ui/wizard.mts — the first-run / "Run setup" wizard (design spec 4.10): shard → client → client folder →
-// install scanner for a folder-transport client (see docs/adapter-guide.md), or shard → client → nothing
-// to install → paste your first scan for a paste-transport one, like the ClassicUO web client. The
+// install scanner for a folder-transport client (see docs/adapter-guide.md), or shard → client → copy
+// scanner → paste your first scan for a paste-transport one, like the ClassicUO web client. The
 // stepper names the steps, and picking a paste client renames steps 3 and 4 at once, so the branch shows
 // up front. A <dialog id="wizard"> (index.html ships it empty) that this module fills and drives with
 // showModal()/close(). Each step has one primary action; every close path (Finish, Set up later, Esc)
@@ -17,6 +17,7 @@ import { changeShard } from "./shard.mts";
 import { autostartNote, hotkeyLabel, panelControls, PANEL_DEFAULTS } from "./tazuo-panel.mts";
 import { defaultAdapterId, availableAdapters, platformCompatible } from "./adapters.mts";
 import { adapterCopy, clientCard, wizardSteps } from "./adapter-copy.mts";
+import { scannerCopy } from "./paste-scanner.mts";
 export { defaultAdapterId, availableAdapters, platformCompatible };
 import type { SetupApiResponse, AdapterSummary, InstalledVersionInfo, LocateApiResponse, InstallApiResponse, HostPickFolderApiResponse, PanelPrefs, TazuoPanelApiResponse, ApiError, SettingsApiResponse } from "./api-types.mts";
 
@@ -308,11 +309,21 @@ async function doInstall(): Promise<void> {
 }
 
 // ---------------------------------------------------------------- steps 3/4, paste-transport branch
-// Nothing to locate and nothing to install (docs/adapter-guide.md's "paste" transport). finish() is what
-// persists settings.client for this branch; "Open Import" finishes and opens the Import drawer.
+// Nothing to locate and nothing to install (docs/adapter-guide.md's "paste" transport): the player copies
+// the app's bundled scanner into the client (ui/paste-scanner.mts). finish() is what persists
+// settings.client for this branch; "Open Import" finishes and opens the Import drawer.
 function pasteStep3(): StepContent {
   const c = copy();
-  return { question: `Nothing to install for the ${c.short}`, help: c.pasteHelp, body: [] };
+  const s = scannerCopy(wiz!.adapter as string, { id: "wiz-copy-scanner", size: "lg" });
+  const li = (text: string): HTMLElement => el("li", {}, el("span", {}, text));
+  return {
+    question: `Copy the scanner into the ${c.short}`, help: c.pasteHelp,
+    body: [
+      el("ol", { class: "wiz-press-list" }, li("Copy the scanner script with the button below."), li(`In the ${c.short}, open the scripting window and add a new script.`), li("Paste the script in and save it.")),
+      box("div", { class: "wiz-copy" }, s.button),
+      s.fallback,
+    ],
+  };
 }
 function pasteStep4(): StepContent {
   const c = copy();

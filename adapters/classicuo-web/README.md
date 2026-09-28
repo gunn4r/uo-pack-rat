@@ -6,12 +6,12 @@ One script for people who play on the [ClassicUO web client](https://play.classi
 
 ## Install
 
-There is nothing to install and no folder to pick.
+There is no folder to pick. Pack Rat carries the script and copies it for you.
 
-1. Open [`packrat-scanner.ts`](packrat-scanner.ts) (in this folder) and copy all of it.
+1. In the Pack Rat setup window, pick **ClassicUO web client** as your client. Step 3 has a **Copy scanner script** button: click it.
 2. In the web client, open the scripting window and paste it in as a new script.
 
-In the Pack Rat setup window, pick **ClassicUO web client** as your client. Steps 3 and 4 then say there is nothing to install, and step 4 has a **Go to Import tab** button.
+Step 4 then has an **Open Import** button. After a Pack Rat update, copy the script again from **Settings › Game client** (the same button, with the script's version) and replace the old one; Settings says when the app ships a newer scanner than the one you last copied.
 
 ## Running a scan
 
@@ -48,7 +48,7 @@ This adapter is for players on the [ClassicUO web client](https://play.classicuo
 
 ### Running a scan, in detail
 
-There's nothing to install in the usual sense — no folder to copy files into, no `packrat-paths.json`. Open `packrat-scanner.ts` in this folder, copy its whole contents, and paste it into the ClassicUO web client's scripting panel as a new script.
+There's nothing to install in the usual sense — no folder to copy files into, no `packrat-paths.json`. The app serves its own bundled copy of `packrat-scanner.ts` (`GET /api/setup/scanner?adapter=classicuo-web`, read-only) to the **Copy scanner script** button in the setup wizard and in Settings › Game client; the player pastes it into the ClassicUO web client's scripting panel as a new script. The version Settings shows is the script's `ADAPTER_VERSION`, and the one last copied is kept in `ui-prefs.json` as `copiedScanner`.
 
 1. Log in and stand where your character can see what you want scanned (your equipped gear and backpack are always read; ground containers only within a few tiles — see below).
 2. Run the script from the scripting panel.

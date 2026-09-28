@@ -2,7 +2,7 @@
 // scripts/ui-shell.test.mts) over the demo data: the Import drawer (design spec 4.9 — the paste default,
 // the instant preview and its error, the primary button that says what will happen, ⌘↵, success closing
 // the drawer with a toast, files dropped anywhere opening it in Scan files mode), the setup wizard (4.10)
-// and Settings (4.11), with its Data retention card. Skipped when electron or playwright is absent, or under TEST_SKIP_ELECTRON.
+// and Settings (4.11), with its Data retention card and the web client's scanner copy. Skipped when electron or playwright is absent, or under TEST_SKIP_ELECTRON.
 import test from "node:test";
 import assert from "node:assert/strict";
 import { mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
@@ -140,7 +140,7 @@ test("[slow] Wizard: named stepper with branch-aware labels, radio cards, kept t
     }
     // Picking the paste client renames steps 3 and 4 in the stepper at once.
     await page.locator("#wizard input[value=classicuo-web]").check();
-    assert.deepEqual(await steps(), ["Shard", "Client", "Nothing to install", "Paste your first scan"]);
+    assert.deepEqual(await steps(), ["Shard", "Client", "Copy scanner", "Paste your first scan"]);
     await page.locator("#wizard input[value=tazuo]").check();
     assert.deepEqual(await steps(), ["Shard", "Client", "Client folder", "Install scanner"]);
     await page.click("#wiz-primary");
@@ -192,6 +192,53 @@ test("[slow] Wizard: named stepper with branch-aware labels, radio cards, kept t
     await app.close();
     rmSync(dataDir, { recursive: true, force: true });
     rmSync(client, { recursive: true, force: true });
+  }
+});
+
+test("[slow] ClassicUO web client: Settings copies the bundled scanner and says when it is newer than the one copied; the wizard's copy step, and its fallback box", async (t) => {
+  const why = unavailable();
+  if (why) return t.skip(why);
+  const dataDir = mkdtempSync(join(tmpdir(), "packrat-forms-webscanner-"));
+  writeFileSync(join(dataDir, "settings.json"), JSON.stringify({ schemaVersion: 1, shard: "uoalive", setupDone: true, client: { adapter: "classicuo-web", scriptsDir: "" } }));
+  writeFileSync(join(dataDir, "ui-prefs.json"), JSON.stringify({ copiedScanner: "0.9.0" }));
+  const script = readFileSync(join(ROOT, "adapters", "classicuo-web", "packrat-scanner.ts"), "utf8");
+  const version = /ADAPTER_VERSION\s*=\s*"([^"]+)"/.exec(script)![1]!;
+  const { app, page, errors } = await launch(dataDir);
+  try {
+    await page.locator("#inv-table tbody tr.item").first().waitFor({ timeout: 30_000 });
+    await page.evaluate(() => { location.hash = "#/settings"; });
+    await page.waitForSelector("#set-scanner-version .badge");
+    assert.match(await page.locator("#set-scanner-version").innerText(), new RegExp(`${version} available[\\s\\S]*You copied 0\\.9\\.0`));
+    await app.evaluate(({ clipboard }) => clipboard.clear());
+    await page.click("#set-copy-scanner");
+    await page.waitForSelector(".toast.ok");
+    assert.match(await page.locator(".toast.ok").innerText(), /Copied — paste it into the web client's scripting window as a new script\./);
+    assert.equal(await app.evaluate(({ clipboard }) => clipboard.readText()), script, "the whole bundled script");
+    await page.waitForFunction((v) => document.querySelector("#set-scanner-version")?.textContent === `Scanner ${v}.`, version);
+    assert.equal((JSON.parse(readFileSync(join(dataDir, "ui-prefs.json"), "utf8")) as { copiedScanner: string }).copiedScanner, version);
+
+    // Run setup on the web client: step 3 is the copy step, with numbered steps. A refused clipboard leaves the
+    // script selected in a read-only box instead.
+    await page.click("#set-run-setup");
+    await page.waitForSelector("#wizard[open]");
+    await page.click("#wiz-primary");
+    await page.click("#wiz-primary");
+    await page.waitForSelector("#wiz-copy-scanner");
+    assert.equal(await page.locator("#wiz-q").innerText(), "Copy the scanner into the ClassicUO web client");
+    assert.equal(await page.locator("#wizard .wiz-body ol li").count(), 3);
+    await page.evaluate(() => {
+      navigator.clipboard.writeText = () => Promise.reject(new Error("denied"));
+      document.execCommand = () => false;
+    });
+    await page.click("#wiz-copy-scanner");
+    await page.waitForSelector("#wiz-copy-scanner-text");
+    assert.equal(await page.locator("#wiz-copy-scanner-text").inputValue(), script);
+    assert.equal(await page.locator("#wiz-copy-scanner-text").getAttribute("readonly"), "");
+    assert.equal(await page.evaluate(() => { const ta = document.querySelector<HTMLTextAreaElement>("#wiz-copy-scanner-text")!; return document.activeElement === ta && ta.selectionEnd - ta.selectionStart === ta.value.length; }), true, "focused and all selected");
+    assert.deepEqual(errors, []);
+  } finally {
+    await app.close();
+    rmSync(dataDir, { recursive: true, force: true });
   }
 });
 

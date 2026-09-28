@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- **Copy the ClassicUO web scanner from the app** (issue #79): the setup wizard's web-client step and Settings › Game client have a **Copy scanner script** button that copies the app's own bundled script, so there is no file to find; Settings shows its version and says when the app ships a newer one than you last copied.
+
 ## 0.1.1 — 2026-09-28
 
 - **Scans skip trash barrels and chests — re-install the scripts (TazUO 2.8.0, Razor Enhanced 1.7.0; ClassicUO web scanner 1.2.0)** (issue #74): a container whose name contains "trash" is never opened or recorded, on the ground, in the bank or in a bag, since the server empties it on a timer; the scan summary says how many were skipped, and there is no need to blacklist one any more. Trash containers and their contents recorded by earlier scans drop out of the app.

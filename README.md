@@ -134,7 +134,7 @@ This one has not been tried with a real game yet. If something goes wrong, pleas
 
 The web client can't save files, so it works differently: you copy and paste.
 
-1. Open [adapters/classicuo-web/packrat-scanner.ts](adapters/classicuo-web/packrat-scanner.ts), copy all of it, and paste it into the web client's scripting window as a new script.
+1. In Pack Rat's setup (or **Settings › Game client** once the web client is chosen), click **Copy scanner script**, then paste it into the web client's scripting window as a new script. Copy it again from Settings after a Pack Rat update; Settings says when a newer one ships.
 2. Stand near what you want scanned and run the script.
 3. It prints a block of text below the scripting window, starting with `-----BEGIN PACK RAT SCAN-----` and ending with `-----END PACK RAT SCAN-----`. Select all of it and copy it.
 4. In Pack Rat, open **Import** in the sidebar (or press ⌘I, Ctrl+I on Windows and Linux), paste into the box under **Paste a scan**, and click **Paste scan**.

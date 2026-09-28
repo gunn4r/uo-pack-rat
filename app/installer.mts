@@ -307,6 +307,17 @@ export function installedVersion(scriptsDir: string, adapter: unknown): Installe
   return { version, files };
 }
 
+// ---- pasteScanner ------------------------------------------------------------------------------------
+// A paste-transport adapter's scanner (adapters/classicuo-web/packrat-scanner.ts): the whole script and
+// its version, from the app's own bundled copy, for the page's Copy button (GET /api/setup/scanner).
+// Nothing is installed from it; the player pastes it into the client's scripting window. The caller
+// checks the adapter id against listAdapters first. null when the adapter ships no such script.
+export function pasteScanner(adaptersDir: string, adapter: string): { version: string | null; script: string } | null {
+  const script = readHead(join(adaptersDir, adapter, "packrat-scanner.ts"), 1 << 20);
+  if (script === null) return null;
+  return { version: VERSION_RE.exec(script)?.[1] ?? null, script };
+}
+
 // ---- checkScriptsDataDir -----------------------------------------------------------------------------
 // Does the game client's installed scripts' data folder match the app's own? When it doesn't, scans and
 // bridge files land somewhere the app never looks: an empty inventory and an "offline" bridge with no
