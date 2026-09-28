@@ -24,7 +24,7 @@ import type { SetupApiResponse, AdapterSummary, InstalledVersionInfo, LocateApiR
 const AFK_NOTICE = "UO Alive allows AFK skill training, but bans unattended resource, combat and loot gathering. Pack Rat's scripts are attended tools: they read what you can see and move an item only when you click.";
 
 // "What to press in game" is built from the script NAMES the install just reported, not copied from
-// one adapter's README — adapters/tazuo/ ships packrat-refresh.py and adapters/razor-enhanced/
+// one adapter's README — adapters/tazuo/ ships packrat-panel.py and adapters/razor-enhanced/
 // doesn't, so a fixed TazUO-shaped list would be wrong (or incomplete) for any other folder-transport
 // adapter. Every adapter that ships a script matching one of these follows the same
 // packrat-panel.py / packrat-scanner.py / packrat-refresh.py / packrat-bridge.py naming convention (docs/adapter-guide.md);
