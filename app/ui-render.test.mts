@@ -188,9 +188,6 @@ test("[fast] tipNode: name and tags on top, element-coloured resists, muted dura
   assert.equal(byClass("tip-where")[0]!.textContent, "Metal Chest (0x700b0000)");
 });
 
-// The item peek's Properties section: the lines the Where and Resists sections do not already show, as
-// name/value pairs; a requirement muted, and a set piece's full-set block kept whole (its resist lines are
-// the set's bonus) and muted.
 // Issue #69: a row's action buttons sit inside the row's data-serial host but are not the item, so
 // hovering them asks for no item tooltip; the rest of the row still does.
 test("[fast] tipHostOf: a row's cells ask for its item tooltip, its data-no-tip actions cell does not", () => {
@@ -206,6 +203,9 @@ test("[fast] tipHostOf: a row's cells ask for its item tooltip, its data-no-tip 
   assert.equal(t(null), null);
 });
 
+// The item peek's Properties section: the lines the Where and Resists sections do not already show, as
+// name/value pairs; a requirement muted, and a set piece's full-set block kept whole (its resist lines are
+// the set's bonus) and muted.
 test("[fast] propertyLines splits the peek's remaining lines into name and value", async () => {
   const { propertyLines } = await import("./ui/peek.mts");
   const it = { name: "Leather Shorts", lines: ["Leather Shorts", "Prized", "Weight: 3 Stones", "Cold Eater 10%", "Night Sight", "Physical Resist 23%", "Strength Requirement 20", "Durability 37 / 37", "Only When Full Set Is Present:", "Physical Resist 2%", "Greater Artifact"] } as never;
