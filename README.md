@@ -54,7 +54,7 @@ The first time Pack Rat opens, a setup window walks you through four steps:
 1. **Shard.** Pick the shard you play on.
 2. **Client.** Pick your game client: **TazUO**, **Razor Enhanced** (Windows only) or the **ClassicUO web client** (the one you play in a browser).
 3. **Client folder.** Pick the folder your client is installed in. Pack Rat finds TazUO on its own when it can; otherwise click **Choose a folder…** (for TazUO, the `TazUO` folder or the `LegionScripts` folder inside it; for Razor Enhanced, the folder `Razor.exe` is in).
-4. **Install scanner.** If the game is running, type `-stopall` in the game's chat first, so no script is replaced while it runs. Tick **I typed -stopall in game and nothing is running**, click **Install scanner**, then **Finish**. The last screen lists what to press in game, and when.
+4. **Install scanner.** If the game is running, stop any running Pack Rat scripts first, so none is replaced while it runs (TazUO: type `-stopall` in the game's chat; Razor Enhanced: press Stop on each in its Scripting tab). Tick the box that says you did, click **Install scanner**, then **Finish**. The last screen lists what to press in game, and when.
 
 The ClassicUO web client can't save files, so there is nothing to install for it: step 3 gives you a **Copy scanner script** button instead, to paste into the web client, and **Settings › Game client** has the same button for later updates (see [below](#the-classicuo-web-client)).
 
@@ -96,7 +96,7 @@ The Razor Enhanced and ClassicUO web client scripts have not been tried against 
 
 Pack Rat checks for a newer release shortly after it opens and every 6 hours while it stays open, and shows a notice with a **View release** link when there is one. Nothing downloads or installs on its own: download the new version from the Releases page and install it over the old one. You can check by hand, or turn the automatic check off, in **Settings › Updates**.
 
-After updating the app, update the game scripts too: type `-stopall` in game, then in **Settings** click **Reinstall** under **Reinstall scanner scripts**.
+After updating the app, update the game scripts too: stop any running Pack Rat scripts (TazUO: `-stopall`; Razor Enhanced: Stop in its Scripting tab), then in **Settings** click **Reinstall** under **Reinstall scanner scripts**.
 
 ## Your data and privacy
 
@@ -118,8 +118,8 @@ Optional. Each release has a `SHA256SUMS` file for checking that a download is e
 
 - **The setup window can't find my client folder.** Click **Choose a folder…** and pick it by hand; if Pack Rat says the folder isn't right, try one level up or down.
 - **I ran the scanner but nothing showed up.** Check **Settings**: the client should show as installed. If you moved your game client, click **Run setup** again. A scan file Pack Rat can't read is put aside in a `rejected` folder in the data folder, with a note saying why.
-- **Pack Rat says my game scripts write to another folder.** Type `-stopall` in game and reinstall the scripts from **Settings**; they will then write to the folder Pack Rat reads.
-- **Pack Rat says a script is still running.** Type `-stopall` in the game's chat, wait for **"No scripts are currently running"**, then try again.
+- **Pack Rat says my game scripts write to another folder.** Stop any running Pack Rat scripts and reinstall the scripts from **Settings**; they will then write to the folder Pack Rat reads.
+- **Pack Rat says a script is still running.** Stop it, then try again. TazUO: type `-stopall` in the game's chat and wait for **"No scripts are currently running"**. Razor Enhanced: in its Scripting tab, select each running Pack Rat script and press Stop.
 - **The buttons say the bridge is offline.** Start `packrat-bridge.py` in game and wait until the app shows **Bridge ready** with your character's name.
 - **A chest didn't get scanned.** The scanner only reads chests close to you that it can open; stand closer and run it again. A container that won't open keeps what was last scanned in it.
 

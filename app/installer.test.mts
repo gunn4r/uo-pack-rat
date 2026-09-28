@@ -10,7 +10,7 @@ import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
 import {
   listAdapters, candidateClientRoots, validateScriptsDir, installedVersion, installScripts,
-  repoFromPackage, checkForUpdates, checkScriptsDataDir, pasteScanner, RUNNING_MESSAGE,
+  repoFromPackage, checkForUpdates, checkScriptsDataDir, pasteScanner, RUNNING_MESSAGE, RUNNING_MESSAGE_OTHER,
 } from "./installer.mts";
 import { MAX_INBOX_BYTES } from "./watcher.mts";
 
@@ -470,6 +470,16 @@ test("[fast] installScripts' running refusal names Razor Enhanced's own stop ste
   assert.equal(result.ok, false);
   assert.match((result as { error: string }).error, /Razor Enhanced's Scripting tab/);
   assert.doesNotMatch((result as { error: string }).error, /-stopall/);
+});
+
+test("[fast] installScripts' running refusal for a client it has no wording for names no client's command", () => {
+  const adaptersDir = tmp("qm-is-running-other-adapters-");
+  cpSync(join(REAL_ADAPTERS_DIR, "tazuo"), join(adaptersDir, "orion"), { recursive: true });
+  const sp = statusPath(tmp("qm-is-running-other-"));
+  writeFileSync(sp, JSON.stringify({ alive: new Date(Date.now() - 10_000).toISOString() }));
+  const result = installScripts({ adapter: "orion", adaptersDir, scriptsDir: tmp("qm-is-running-other-dest-"), dataDir: tmp("qm-is-data-"), bridgeStatusPath: sp });
+  assert.deepEqual(result, { ok: false, code: "running", error: RUNNING_MESSAGE_OTHER });
+  assert.doesNotMatch(RUNNING_MESSAGE_OTHER, /-stopall|Razor/);
 });
 
 test("[fast] installScripts proceeds when status.json says stopped: true", () => {
