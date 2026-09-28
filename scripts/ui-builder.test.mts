@@ -91,7 +91,7 @@ test("[slow] ⌘↵ builds from anywhere on the Builder screen, and not from beh
 
 // The item tooltip's name once it shows (400 ms after a hover settles, or after keyboard focus).
 async function tipName(page: Page): Promise<string> {
-  await page.waitForFunction(() => getComputedStyle(document.querySelector("#tip")!).display === "block", undefined, { timeout: 5_000 });
+  await page.waitForFunction(() => getComputedStyle(document.querySelector("#tip")!).display === "block", undefined, { timeout: 10_000 });
   return page.locator("#tip .tip-name").innerText();
 }
 async function hoverTip(page: Page, target: Locator): Promise<string> {

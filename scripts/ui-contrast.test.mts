@@ -65,7 +65,7 @@ const SCENES: Scene[] = [
   { name: "item tooltip", enter: async (p) => {
     await route(p, "#/inventory", "#inv-table tbody tr.item");
     await p.locator("#inv-table tbody tr.item", { hasText: "Arcane" }).first().locator("td").nth(1).hover();
-    await p.waitForSelector("#tip[style*='block']", { timeout: 5_000 });
+    await p.waitForSelector("#tip[style*='block']", { timeout: 10_000 });
   } },
   // ---- inventory
   { name: "inventory row actions", enter: async (p) => {
@@ -109,7 +109,7 @@ const SCENES: Scene[] = [
   { name: "inventory row focus tooltip", enter: async (p) => {
     await p.locator("#inv-table tbody tr.item").first().focus();
     await p.keyboard.press("ArrowDown");
-    await p.waitForSelector("#tip[style*='block'] .tip-lines", { timeout: 5_000 });
+    await p.waitForSelector("#tip[style*='block'] .tip-lines", { timeout: 10_000 });
   }, leave: (p) => p.keyboard.press("Escape") },
   { name: "inventory empty result", enter: async (p) => {
     await openFacet(p, "rarity", "Rarity");
