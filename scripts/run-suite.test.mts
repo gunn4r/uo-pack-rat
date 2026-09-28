@@ -9,7 +9,7 @@ import { spawnSync } from "node:child_process";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import { runSuite, type Mode, type Summary } from "./run-suite.mts";
+import { runSuite, type Mode, type SuiteResult } from "./run-suite.mts";
 
 const PASSING = `import { test } from "node:test";
 test("[fast] ok one", () => {});
@@ -25,7 +25,7 @@ const RUN_SUITE_URL = new URL("./run-suite.mts", import.meta.url).href;
 
 // `timeout` and `watchdogMs` are runSuite's own options, shortened so a hung file costs well under a
 // second here instead of the real runner's minutes.
-function suiteOver(sources: Record<string, string>, mode: Mode = "full", { timeout, watchdogMs = 500 }: { timeout?: number; watchdogMs?: number } = {}): Summary {
+function suiteOver(sources: Record<string, string>, mode: Mode = "full", { timeout, watchdogMs = 500, concurrency = 1 }: { timeout?: number; watchdogMs?: number; concurrency?: number } = {}): SuiteResult {
   const dir = mkdtempSync(join(tmpdir(), "packrat-run-suite-"));
   try {
     const files = Object.entries(sources).map(([name, source]) => {
@@ -34,7 +34,7 @@ function suiteOver(sources: Record<string, string>, mode: Mode = "full", { timeo
       return p;
     });
     const driver = `import { runSuite } from ${JSON.stringify(RUN_SUITE_URL)};
-const s = await runSuite({ root: ${JSON.stringify(dir)}, mode: ${JSON.stringify(mode)}, timeout: ${JSON.stringify(timeout ?? null)} ?? undefined, watchdogMs: ${watchdogMs}, prepare: () => ${JSON.stringify(files)} });
+const s = await runSuite({ root: ${JSON.stringify(dir)}, mode: ${JSON.stringify(mode)}, timeout: ${JSON.stringify(timeout ?? null)} ?? undefined, watchdogMs: ${watchdogMs}, concurrency: ${concurrency}, prepare: () => ${JSON.stringify(files)} });
 console.log(JSON.stringify(s));`;
     const env = { ...process.env };
     delete env.NODE_TEST_CONTEXT;
@@ -45,11 +45,28 @@ console.log(JSON.stringify(s));`;
     const r = spawnSync(process.execPath, [driverPath], { encoding: "utf8", env, timeout: 60_000 });
     const last = r.stdout.trim().split("\n").pop() ?? "";
     assert.ok(last.startsWith("{"), `the driver printed no summary (status ${r.status}): ${r.stderr.slice(-600)}`);
-    return JSON.parse(last) as Summary;
+    return JSON.parse(last) as SuiteResult;
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
 }
+
+test("[fast] files run in parallel are each counted once, with a duration each", () => {
+  const s = suiteOver({
+    "a.test.mts": PASSING,
+    "b.test.mts": PASSING,
+    "c.test.mts": `import { test } from "node:test";
+test("[fast] fine", () => {});
+test("[fast] broken", () => { throw new Error("nope"); });
+`,
+  }, "full", { concurrency: 3 });
+  assert.equal(s.total, 6);
+  assert.equal(s.passed, 5);
+  assert.equal(s.failed, 1);
+  assert.deepEqual(s.failures.map((f) => [f.file, f.test_name]), [["c.test.mts", "[fast] broken"]]);
+  assert.deepEqual(Object.keys(s.durations).sort(), ["a.test.mts", "b.test.mts", "c.test.mts"]);
+  for (const ms of Object.values(s.durations)) assert.ok(Number.isInteger(ms) && ms >= 0, `duration ${ms}`);
+});
 
 test("[fast] a file that exits with code 0 part-way through is a failure, not a file that vanished", () => {
   // The review's own probe: node:test reports nothing at all for this file except a synthetic pass
