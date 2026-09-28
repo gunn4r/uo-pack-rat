@@ -15,6 +15,7 @@ import { renderContainers } from "./containers.mts";
 import { connectEvents } from "./events.mts";
 import { openWizard } from "./wizard.mts";
 import { renderSettings, startUpdateChecks, syncSettingsCharacters, syncSettingsBlacklist } from "./settings.mts";
+import { setCopiedScanner } from "./paste-scanner.mts";
 import { renderImport } from "./import.mts";
 import { applyLook } from "./theme.mts";
 import { initShell, applyShellPrefs, renderNavCounts, setCurrentNav } from "./shell.mts";
@@ -65,6 +66,7 @@ export async function load(): Promise<void> {
   // Settings, Import, the live-scan stream and the first-run wizard need nothing from the inventory,
   // so they come up before it: a failed inventory or profiles fetch must not take the Settings tab
   // (the page's way to the data folder) down with it.
+  setCopiedScanner(prefs?.prefs.copiedScanner);
   renderSettings(setupRes);
   startUpdateChecks(prefs?.prefs.dismissedUpdate);
   renderImport();

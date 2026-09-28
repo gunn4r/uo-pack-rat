@@ -75,6 +75,7 @@ export interface UiPrefs {
   sidebar?: "auto" | "collapsed" | undefined;          // "collapsed" = pinned to icons at any width
   density?: "dense" | "regular" | undefined;           // the Inventory table's rows: 32 or 40 px
   dismissedUpdate?: string | undefined;                // the release whose update notice was dismissed (settings.mts)
+  copiedScanner?: string | undefined;                  // the ClassicUO web scanner version last copied (paste-scanner.mts)
 }
 export interface UiPrefsApiResponse {
   ok: boolean;
@@ -172,6 +173,12 @@ export interface SetupApiResponse {
   dataDirCheck: DataDirCheckInfo;
   version?: string | undefined;   // package.json's version (Settings › Updates)
   canOpenFolders?: boolean | undefined;   // the desktop shell can open a folder (POST /api/host/open-path)
+}
+// GET /api/setup/scanner?adapter=<id> — a paste-transport adapter's bundled scanner (installer.mts's pasteScanner).
+export interface PasteScannerApiResponse {
+  ok: boolean;
+  version: string | null;
+  script: string;
 }
 export interface LocateApiResponse {
   ok: boolean;
