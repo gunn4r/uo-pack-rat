@@ -218,6 +218,8 @@ test("[slow] ClassicUO web client: Settings copies the bundled scanner and says 
     assert.match(await page.locator(".toast.ok").innerText(), /Copied — paste it into the web client's scripting window as a new script\./);
     assert.equal(await clipboardText(), script, "the whole bundled script");
     await page.waitForFunction((v) => document.querySelector("#set-scanner-version")?.textContent === `Scanner ${v}.`, version);
+    // The app saves copiedScanner with a fire-and-forget PUT, so wait for it to land.
+    await page.waitForFunction(async (v) => (await (await fetch("/api/ui-prefs")).json()).prefs.copiedScanner === v, version, { timeout: 5_000 });
     assert.equal((JSON.parse(readFileSync(join(dataDir, "ui-prefs.json"), "utf8")) as { copiedScanner: string }).copiedScanner, version);
 
     // Run setup on the web client: step 3 is the copy step, with numbered steps. A refused clipboard leaves the
