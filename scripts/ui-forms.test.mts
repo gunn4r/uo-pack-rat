@@ -204,6 +204,8 @@ test("[slow] ClassicUO web client: Settings copies the bundled scanner and says 
   const script = readFileSync(join(ROOT, "adapters", "classicuo-web", "packrat-scanner.ts"), "utf8");
   const version = /ADAPTER_VERSION\s*=\s*"([^"]+)"/.exec(script)![1]!;
   const { app, page, errors } = await launch(dataDir);
+  // The Windows clipboard stores CRLF, so line endings are compared as LF.
+  const clipboardText = async (): Promise<string> => (await app.evaluate(({ clipboard }) => clipboard.readText())).replace(/\r\n/g, "\n");
   try {
     await page.locator("#inv-table tbody tr.item").first().waitFor({ timeout: 30_000 });
     await page.evaluate(() => { location.hash = "#/settings"; });
@@ -213,7 +215,7 @@ test("[slow] ClassicUO web client: Settings copies the bundled scanner and says 
     await page.click("#set-copy-scanner");
     await page.waitForSelector(".toast.ok");
     assert.match(await page.locator(".toast.ok").innerText(), /Copied — paste it into the web client's scripting window as a new script\./);
-    assert.equal(await app.evaluate(({ clipboard }) => clipboard.readText()), script, "the whole bundled script");
+    assert.equal(await clipboardText(), script, "the whole bundled script");
     await page.waitForFunction((v) => document.querySelector("#set-scanner-version")?.textContent === `Scanner ${v}.`, version);
     assert.equal((JSON.parse(readFileSync(join(dataDir, "ui-prefs.json"), "utf8")) as { copiedScanner: string }).copiedScanner, version);
 
@@ -230,7 +232,7 @@ test("[slow] ClassicUO web client: Settings copies the bundled scanner and says 
     await app.evaluate(({ clipboard }) => clipboard.clear());
     await page.click("#wiz-copy-scanner");
     let got = "";
-    for (const until = Date.now() + 5_000; !got && Date.now() < until; await page.waitForTimeout(100)) got = await app.evaluate(({ clipboard }) => clipboard.readText());
+    for (const until = Date.now() + 5_000; !got && Date.now() < until; await page.waitForTimeout(100)) got = await clipboardText();
     assert.equal(got, script, "copied from inside the wizard");
     await page.evaluate(() => {
       navigator.clipboard.writeText = () => Promise.reject(new Error("denied"));
