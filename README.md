@@ -102,9 +102,9 @@ If you already have scan files from before, open **Import** in the sidebar, choo
 Pack Rat comes with a few small scripts. The setup window already put them in your client's scripts folder.
 
 - **`packrat-scanner.py` — the full scan.** Reads everything your character is wearing, your backpack, your bank box if it is open, and every chest and bag near you, including bags inside chests.
-- **`packrat-refresh.py` — the quick refresh.** Reads just your stats, skills, what you are wearing and your backpack. Takes a few seconds and works anywhere. (TazUO only.)
+- **`packrat-refresh.py` — the quick refresh.** Reads just your stats, skills, what you are wearing and your backpack. Takes a few seconds and works anywhere. (TazUO and Razor Enhanced.)
 - **`packrat-bridge.py` — the bridge.** Makes the **Highlight**, **Grab** and **Go to** buttons in the app work. Start it and leave it running while you use those buttons.
-- **`packrat-blacklist.py` — blacklist a container.** Click a chest or bag and scans never open it again: a guild chest, a vendor's stock. (TazUO only; with any client you can blacklist a chest in the app's **Containers** view, and unblacklist it in **Settings**.)
+- **`packrat-blacklist.py` — blacklist a container.** Click a chest or bag and scans never open it again: a guild chest, a vendor's stock. (TazUO and Razor Enhanced; with any client you can blacklist a chest in the app's **Containers** view, and unblacklist it in **Settings**.)
 
 ### What to press, and when
 
@@ -122,10 +122,10 @@ To start a script with one key instead, right-click it in the Script Manager, ch
 
 ### Starting a script in Razor Enhanced
 
-Razor Enhanced runs only on Windows. It has the scanner and the bridge, but no quick refresh.
+Razor Enhanced runs only on Windows. It has the scanner, the quick refresh, the blacklist script and the bridge; only TazUO's in-game panel is missing.
 
 1. In Razor Enhanced, open the **Scripts** tab.
-2. If `packrat-scanner.py` and `packrat-bridge.py` are not in the list yet, add them.
+2. If `packrat-scanner.py`, `packrat-refresh.py`, `packrat-blacklist.py` and `packrat-bridge.py` are not in the list yet, add them.
 3. Pick the script and start it, the same way as any other Razor Enhanced script. You can give it a hotkey there too.
 
 This one has not been tried with a real game yet. If something goes wrong, please [open an issue](https://github.com/gunn4r/uo-pack-rat/issues) and say what you saw. More in [adapters/razor-enhanced/README.md](adapters/razor-enhanced/README.md).
