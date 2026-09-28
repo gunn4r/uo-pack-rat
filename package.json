@@ -72,7 +72,8 @@
       "!adapters/**/fixture.scan.json",
       "!app/data/profiles.json",
       "!app/data/runs/**",
-      "!app/ui/**/*.mts"
+      "!app/ui/**/*.mts",
+      "app/ui/messages.mts"
     ],
     "asar": true,
     "asarUnpack": [
