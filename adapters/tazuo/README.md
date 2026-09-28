@@ -29,7 +29,7 @@ Or run each script yourself:
 
 - **The first time you scan a character, or whenever your chests or bags change:** walk to a group of chests and run `packrat-scanner.py`. Walk to the next group and run it again. To include your bank, open your bank box first.
 - **After gearing up or training a character:** run `packrat-refresh.py`. It works anywhere.
-- **To stop scans opening a container** (a trash barrel, a guild chest): run `packrat-blacklist.py` and click it. Esc cancels. The app's **Settings** lists what you blacklisted, with **Unblacklist**.
+- **To stop scans opening a container** (a guild chest, a vendor's stock): run `packrat-blacklist.py` and click it. Esc cancels. The app's **Settings** lists what you blacklisted, with **Unblacklist**.
 - **When you want to use the app's Highlight, Grab or Go to buttons:** start `packrat-bridge.py` and leave it running. The app shows **bridge: *your character* ready** at the top while it is running.
 
 ## Starting a script
@@ -43,6 +43,7 @@ To start a script with one key, right-click it in the Script Manager, choose **S
 
 - The scanner only reads chests close enough to open. A chest it can't open is kept as it was in your last scan, not emptied.
 - The bank is only read while your bank box is open.
+- Trash barrels and chests (anything with "trash" in its name) are never opened or recorded: the server empties them on a timer. The scan says how many it skipped. You don't need to blacklist them.
 - A scan takes from a few seconds to a couple of minutes, depending on how many bags it has to open. If you stop it part way, it saves nothing, and you can simply run it again.
 - The bridge stops by itself after 8 hours, or when you press Stop. Start it again when you need it.
 - The bridge only walks up to 24 tiles. If an item is further away, it tells you to walk closer and try again.

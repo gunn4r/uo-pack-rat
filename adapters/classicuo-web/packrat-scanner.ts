@@ -97,7 +97,7 @@ const PASTE_END = "-----END PACK RAT SCAN-----";
 // contract test (app/contracts.test.mjs, once this adapter ships a fixture) compares them.
 // ---------------------------------------------------------------------------------------------
 const ADAPTER_ID = "classicuo-web";
-const ADAPTER_VERSION = "1.1.0";
+const ADAPTER_VERSION = "1.2.0";
 const CAPABILITIES = {
   layers: ["OneHanded", "TwoHanded", "Shoes", "Pants", "Shirt", "Helmet", "Gloves",
     "Ring", "Talisman", "Necklace", "Waist", "Torso", "Bracelet", "Tunic",
@@ -159,6 +159,12 @@ const CONTAINER_GRAPHICS = [
   0x0e3c, 0x0e3d, 0x0e3e, 0x0e3f, 0x0e40, 0x0e41, 0x0e42, 0x0e43,
   0x0e7c, 0x0e7e, 0x0e7f, 0xa32f, 0xa333,
 ];
+
+// A trash barrel or chest is a real container, but the server deletes its contents on a timer, so
+// nothing in one is worth recording: it and its contents are left out of the scan. By name only: a
+// trash barrel has the same graphic as an ordinary barrel.
+const TRASH_RE = /\btrash\b/i;
+let trashed = 0;
 
 const SKILL_NAMES = ["Alchemy", "Anatomy", "Animal Lore", "Animal Taming", "Arms Lore", "Archery",
   "Begging", "Blacksmithy", "Bowcraft/Fletching", "Bushido", "Camping", "Carpentry", "Cartography",
@@ -302,10 +308,12 @@ function walk(rootSerial: number, containerItem: any, containers: Record<string,
       // when its contents read as an empty array (the ground-root rule: never loaded is likelier than
       // empty), mark it not opened, so the app keeps what it last knew inside it.
       const t = tooltipOf(s);
+      const name = t.name || String(kid.name || "");
+      if (TRASH_RE.test(name)) { trashed++; continue; }
       const entry: any = {
         serial: s,
         kind: "container",
-        name: t.name || String(kid.name || ""),
+        name,
         parent: Number(containerItem.serial),
         root: rootSerial,
         tooltip: t.lines,
@@ -388,6 +396,7 @@ function main(): void {
     seen.add(s);
     const t = tooltipOf(s);
     const name = t.name || String(g.name || "container");
+    if (TRASH_RE.test(name)) { trashed++; continue; }
     containers[String(s)] = { serial: s, kind: "ground", name, parent: null, root: s,
       pos: { x: Number(g.x || 0), y: Number(g.y || 0), z: Number(g.z || 0) }, tooltip: t.lines };
     const n = walk(s, g, containers, items, seen, 0);
@@ -397,6 +406,7 @@ function main(): void {
   }
   client.sysMsg(`  ground: ${roots.filter((r) => r.kind === "ground").length} container(s) found ` +
     `within ${SCAN_RANGE} tiles`, 88);
+  if (trashed) client.sysMsg(`  skipped ${trashed} trash container${trashed !== 1 ? "s" : ""}`, 88);
 
   // 4) Skills — player.getAllSkills() values are ×10 (74.6 skill reads as 746), per the published
   // Player.getSkill()/getAllSkills() docs.

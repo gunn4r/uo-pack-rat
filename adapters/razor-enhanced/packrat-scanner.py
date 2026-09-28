@@ -69,7 +69,7 @@ def read_blacklist(path):
 
 
 ADAPTER_ID = "razor-enhanced"
-ADAPTER_VERSION = "1.6.0"
+ADAPTER_VERSION = "1.7.0"
 # Keep this literal in sync with capabilities.json -- a test enforces the two never drift apart
 # for the TazUO adapter (test_paths.py) and the same discipline applies here by hand until this
 # adapter has its own test.
@@ -96,6 +96,7 @@ PROPS_WAIT_MS = 800       # Items.WaitForProps' own request-and-wait timeout, pe
 MAX_NEST = 4              # bags in bags in bags
 BLACKLIST = set(e["serial"] for e in read_blacklist(os.path.join(data_dir(), "scan-blacklist.json")))
 SKIPPED = set()           # blacklisted containers this run never opened
+TRASHED = set()           # trash containers this run never opened (TRASH_RE)
 OPENED_HERE = []          # containers this run opened itself, in opening order (close_opened)
 OUT_DIR = os.path.join(data_dir(), "inbox", "razor-enhanced")
 ALARM_HUE, OK_HUE, INFO_HUE = 33, 68, 88
@@ -146,6 +147,13 @@ def tooltip_lines(it):
     return lines
 
 
+def name_of(it):
+    """An item's tooltip name ("A Trash Barrel"), which the client's own cached Name may not carry
+    (just "barrel" for that art); the cached Name is the fallback when the tooltip reads nothing."""
+    lines = tooltip_lines(it)
+    return lines[0] if lines else str(getattr(it, "Name", "") or "")
+
+
 def item_dict(it, lines, container_serial, layer=None):
     d = {
         "serial": as_int(getattr(it, "Serial", 0)),
@@ -169,6 +177,10 @@ def item_dict(it, lines, container_serial, layer=None):
 NOT_A_CONTAINER_RE = re.compile(r"\b(deed(?!\s+box)|sending|music box|\w*book|tome|atlas|compendium)\b", re.I)   # a "Commodity Deed Box" IS one
 # The books by graphic too, whatever they are called (ServUO's item classes; the first three seen live).
 NOT_A_CONTAINER_GRAPHICS = {0x0EFA, 0x2D50, 0x2D9D, 0x2252, 0x2253, 0x225A, 0x225B, 0x238C, 0x23A0, 0x22C5, 0x9C16}
+# A trash barrel or chest is a real container, but the server deletes its contents on a timer, so
+# nothing in one is worth recording. Never opened, never recorded, contents included. By name only:
+# a trash barrel has the same graphic as an ordinary barrel.
+TRASH_RE = re.compile(r"\btrash\b", re.I)
 
 
 def is_container(it):
@@ -263,7 +275,10 @@ def scan_root(root_item, kind, label, containers, items, seen):
                     containers[ks] = container_entry(kid, root_serial, False)
                     continue
                 if is_container(kid):
-                    next_queue.append(kid)
+                    if TRASH_RE.search(name_of(kid)):
+                        TRASHED.add(ks)   # not recorded, never opened
+                    else:
+                        next_queue.append(kid)
                 else:
                     items.append(item_dict(kid, tooltip_lines(kid), cserial))
                     n_items += 1
@@ -416,7 +431,11 @@ def main():
             if as_int(getattr(g, "Serial", 0)) in BLACKLIST:
                 SKIPPED.add(as_int(getattr(g, "Serial", 0)))
                 continue
-            roots.append((g, "ground", str(getattr(g, "Name", "") or "container")))
+            gname = name_of(g)
+            if TRASH_RE.search(gname):
+                TRASHED.add(as_int(getattr(g, "Serial", 0)))
+                continue
+            roots.append((g, "ground", gname or "container"))
 
     counts = []
     for root_item, kind, label in roots:
@@ -438,6 +457,8 @@ def main():
         sysmsg("  " + c, INFO_HUE)
     if SKIPPED:
         sysmsg("  skipped {0} blacklisted container{1}".format(len(SKIPPED), "s" if len(SKIPPED) != 1 else ""), INFO_HUE)
+    if TRASHED:
+        sysmsg("  skipped {0} trash container{1}".format(len(TRASHED), "s" if len(TRASHED) != 1 else ""), INFO_HUE)
 
 
 try:
