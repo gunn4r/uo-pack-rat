@@ -53,7 +53,7 @@ Unbounded on purpose: the number of `items`, `containers`, `roots` and `equipped
 
 | Field | Type | Meaning |
 |---|---|---|
-| `id` | string, non-empty | Which adapter wrote this file, e.g. `"tazuo"`. The app's own Forget tombstone writer uses `"app"`. |
+| `id` | string, 1–64 characters of `a-z`, `0-9` and `-` | Which adapter wrote this file, e.g. `"tazuo"`. The app's own Forget tombstone writer uses `"app"`. |
 | `version` | string | The adapter's own version string (not the schema version). |
 | `client` | string | The game client the adapter runs inside, e.g. `"TazUO"`. |
 | `clientVersion` | string or `null` | The client's own version, when the adapter can read it. |
@@ -71,7 +71,7 @@ Unbounded on purpose: the number of `items`, `containers`, `roots` and `equipped
 | `tooltips` | string, `"opl"` or `"label"` | Whether item text comes from the client's full on-paperdoll-line tooltip (`"opl"`, every property line readable) or just the bare name label (`"label"`, no properties). |
 | `bridge` | array of strings | Which bridge actions (`"highlight"`, `"grab"`, `"goto"`) this adapter's bridge script can execute — see `docs/bridge-protocol.md`. Empty for an adapter that ships no bridge. |
 
-The page uses a character's latest scan's `adapter.capabilities.bridge` list to decide which Highlight/Grab/Go-to buttons to offer for that character (`app/ui/bridge.mts`'s `actButtons`); the bridge script itself is still the final word on what it will actually do.
+The page does not read this per scan: which Highlight/Grab/Go-to buttons are enabled is one global decision taken from the configured client's own `capabilities.json` (`app/ui/bridge.mts`'s `currentAdapter` and `bridgeActionReason`; `docs/architecture.md`'s "Capability-driven bridge controls"), since only one client is connected at a time. The bridge script itself is still the final word on what it will actually do.
 
 ## `roots`
 
@@ -88,13 +88,13 @@ One entry per top-level container the scan attempted to open: the backpack, the 
 
 Keyed by serial (as a string). Every container the scan saw, root or nested. An entry **must** carry `serial` and `root` (which root this container ultimately sits under); it generally also carries `kind`, `name` and `parent` (the containing serial, or `null` for a root). An adapter may include more — `tooltip`, and `pos` for a ground container's coordinates, which the bridge's Go-to action uses.
 
-A nested container the scan saw but could not read — it did not open (locked, its contents lagged), or it sits deeper than the adapter opens — carries `"opened": false`. Nothing is listed inside it, and that does **not** mean it is empty: the fold keeps what it last knew inside it (see the fold rules). Absent means opened; `opened: true` is never written. Roots record their own opened state in `roots[]` instead.
+A nested container the scan saw but could not read — it did not open (locked, its contents lagged), it sits deeper than the adapter opens, or it is on the player's scan blacklist (`<data>/scan-blacklist.json`) — carries `"opened": false`. Nothing is listed inside it, and that does **not** mean it is empty: the fold keeps what it last knew inside it (see the fold rules). Absent means opened; `opened: true` is never written. Roots record their own opened state in `roots[]` instead. A blacklisted ground container is not listed as a root at all, so the fold leaves what it knew under it alone. A trash container (`docs/adapter-guide.md`, "Containers a scanner never opens") is left out of `containers` entirely, with nothing inside it.
 
 The map's key does not have to equal the entry's own `serial` (nothing could enforce that portably), and the fold no longer cares: it indexes each snapshot's containers by serial once, rather than falling back to a scan of every container per item.
 
 ## `items`
 
-Every item in an opened container, not equipped.
+Every item in an opened container, not equipped. `serial`, `container` and `nameSource` are required; the rest are optional.
 
 | Field | Type | Meaning |
 |---|---|---|
@@ -109,7 +109,7 @@ Every item in an opened container, not equipped.
 
 ## `equipped`
 
-Every item on the character's paperdoll. Same fields as `items`, plus `layer` (string or `null`) — the equip-layer name (`"OneHanded"`, `"Helmet"`, …), used to classify which optimizer slot the item occupies (`LAYER_TO_SLOT` in `app/vault-lib.mts`) even when the name alone wouldn't say. `Tunic` (middle torso: doublet, cloth tunic, surcoat, body sash) is its own `tunic` slot, worn over the `Torso` layer's chest armour rather than competing with it; like robe, shirt, feet, waist and earrings, it is not one of the slots the optimizer fills. `equipped` entries have no `container` field — they aren't in any container.
+Every item on the character's paperdoll. Same fields as `items` (only `serial` and `nameSource` required), plus `layer` (string or `null`) — the equip-layer name (`"OneHanded"`, `"Helmet"`, …), used to classify which optimizer slot the item occupies (`LAYER_TO_SLOT` in `app/vault-lib.mts`) even when the name alone wouldn't say. `Tunic` (middle torso: doublet, cloth tunic, surcoat, body sash) is its own `tunic` slot, worn over the `Torso` layer's chest armour rather than competing with it; like robe, shirt, feet, waist and earrings, it is not one of the slots the optimizer fills. `equipped` entries have no `container` field — they aren't in any container.
 
 ## v1 → v2 upgrade
 
