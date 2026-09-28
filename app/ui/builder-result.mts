@@ -194,7 +194,7 @@ function planCard(current: OptSuit, suit: OptSuit, name: string, changes: string
   if (tbl) {
     tbl.classList.add("b-plan");
     tbl.querySelector("thead th:last-child")!.replaceChildren(el("span", { class: "sr" }, "Actions"));
-    for (const td of tbl.querySelectorAll("tbody td:last-child")) td.classList.add("b-act");
+    for (const td of tbl.querySelectorAll("tbody td:last-child")) { td.classList.add("b-act"); td.setAttribute("data-no-tip", ""); }
   }
   const unchangedNames = unchanged.map((sl) => (current[sl] ? `${slotLabel(sl)} (${current[sl]!.name})` : slotLabel(sl)));
   return el("section", { class: "card b-flush", "aria-label": "Plan" },

@@ -30,11 +30,18 @@ class FakeElement {
   className = "";
   attrs: Record<string, string> = {};
   childNodes: Array<FakeElement | FakeText> = [];
+  parentElement: FakeElement | null = null;
   tagName: string;
   constructor(tagName: string) { this.tagName = tagName; }
   setAttribute(k: string, v: unknown): void { this.attrs[k] = String(v); }
+  hasAttribute(k: string): boolean { return k in this.attrs; }
+  // attribute selectors only ("[a], [b]"), the form tipHostOf asks with
+  closest(sel: string): FakeElement | null {
+    const names = sel.split(",").map((s) => s.trim().slice(1, -1));
+    return names.some((k) => this.hasAttribute(k)) ? this : this.parentElement?.closest(sel) ?? null;
+  }
   addEventListener(): void {}
-  append(...kids: Array<FakeElement | FakeText>): void { for (const k of kids) this.childNodes.push(k); }
+  append(...kids: Array<FakeElement | FakeText>): void { for (const k of kids) { this.childNodes.push(k); if (k instanceof FakeElement) k.parentElement = this; } }
   get textContent(): string { return this.childNodes.map((c) => c.textContent).join(""); }
 }
 const escText = (s: string): string => s.replace(/[&<>]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[c]!));
@@ -55,7 +62,7 @@ function elements(n: FakeElement): FakeElement[] {
 };
 
 const { sheetNode } = await import("./ui/sheet.mts");
-const { safeColor, tipNode } = await import("./ui/dom.mts");
+const { safeColor, tipNode, tipHostOf, el } = await import("./ui/dom.mts");
 const { state } = await import("./ui/store.mts");
 const { setRules } = await import("./vault-lib.mts");
 type Node = FakeElement;
@@ -184,6 +191,21 @@ test("[fast] tipNode: name and tags on top, element-coloured resists, muted dura
 // The item peek's Properties section: the lines the Where and Resists sections do not already show, as
 // name/value pairs; a requirement muted, and a set piece's full-set block kept whole (its resist lines are
 // the set's bonus) and muted.
+// Issue #69: a row's action buttons sit inside the row's data-serial host but are not the item, so
+// hovering them asks for no item tooltip; the rest of the row still does.
+test("[fast] tipHostOf: a row's cells ask for its item tooltip, its data-no-tip actions cell does not", () => {
+  const name = el("span", {}, "Radiant Scimitar"), action = el("button", {}, "Grab");
+  const acts = el("td", { "data-no-tip": "" }, action);
+  const row = el("tr", { "data-serial": 42 }, el("td", {}, name), acts);
+  const t = (n: unknown): HTMLElement | null => tipHostOf(n as Element);
+  assert.equal(t(name), row);
+  assert.equal(t(row), row);
+  assert.equal(t(action), null);
+  assert.equal(t(acts), null);
+  assert.equal(t(el("div", {}, "elsewhere")), null);
+  assert.equal(t(null), null);
+});
+
 test("[fast] propertyLines splits the peek's remaining lines into name and value", async () => {
   const { propertyLines } = await import("./ui/peek.mts");
   const it = { name: "Leather Shorts", lines: ["Leather Shorts", "Prized", "Weight: 3 Stones", "Cold Eater 10%", "Night Sight", "Physical Resist 23%", "Strength Requirement 20", "Durability 37 / 37", "Only When Full Set Is Present:", "Physical Resist 2%", "Greater Artifact"] } as never;

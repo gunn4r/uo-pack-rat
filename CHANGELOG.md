@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- **Hovering a row's action buttons no longer shows the item tooltip** (issue #69): on the Inventory and the Suit Builder's Plan, the tooltip no longer covers the row you are acting on or overlaps the button's own tooltip; it comes back when the pointer returns to the rest of the row.
+
 ## 0.1.0 — 2026-09-27
 
 - **TazUO: an in-game Pack Rat window — re-install the scripts (TazUO 2.7.0)** (issue #13): `packrat-panel.py` opens a small window with **Scan here**, **Quick refresh**, **Start bridge** / **Stop bridge** and **Blacklist a container** buttons, and shows which Pack Rat scripts are running and when you last scanned. The install adds it to TazUO's own autostart list (`Data/lscript.json`, edited only while TazUO is closed, keeping everything else in it), so it starts at every login; **Ctrl+Shift+P** shows or hides it, and **Settings › Game client** chooses whether it shows at login or waits hidden.
