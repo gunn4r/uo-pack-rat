@@ -595,17 +595,20 @@ export function menu(anchor: HTMLElement, items: Array<MenuItem | "divider">, { 
 // app's session denies every permission (electron/main.mts), clipboard writes included, so there the copy
 // goes through a selected off-screen textarea and execCommand("copy"), which the click's user activation
 // allows without a permission. Focus goes back where it was. The textarea keeps its whitespace as is
-// (.sr's nowrap would collapse a script's indentation in the copy).
+// (.sr's nowrap would collapse a script's indentation in the copy). Inside a modal <dialog> (the setup wizard)
+// the textarea goes into the dialog: everything outside it is inert, so a textarea on <body> takes no
+// selection, and execCommand("copy") then copies nothing yet still returns true. A textarea that did not get
+// focus is reported as a failed copy.
 export async function copyText(text: string): Promise<boolean> {
   try { await navigator.clipboard.writeText(text); return true; } catch { /* denied or absent: the fallback below */ }
   const back = document.activeElement as HTMLElement | null;
   const ta = el("textarea", { class: "sr", readonly: "", "aria-hidden": "true", tabindex: "-1" });
   ta.style.whiteSpace = "pre";
   ta.value = text;
-  document.body.append(ta);
+  (back?.closest("dialog[open]") || document.body).append(ta);
   ta.select();
-  let ok = false;
-  try { ok = document.execCommand("copy"); } catch { ok = false; }
+  let ok = document.activeElement === ta;
+  try { ok = ok && document.execCommand("copy"); } catch { ok = false; }
   ta.remove();
   back?.focus?.();
   return ok;

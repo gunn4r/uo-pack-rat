@@ -226,6 +226,12 @@ test("[slow] ClassicUO web client: Settings copies the bundled scanner and says 
     await page.waitForSelector("#wiz-copy-scanner");
     assert.equal(await page.locator("#wiz-q").innerText(), "Copy the scanner into the ClassicUO web client");
     assert.equal(await page.locator("#wizard .wiz-body ol li").count(), 3);
+    // The real copy, from inside the modal wizard (everything outside it is inert): the clipboard gets the script.
+    await app.evaluate(({ clipboard }) => clipboard.clear());
+    await page.click("#wiz-copy-scanner");
+    let got = "";
+    for (const until = Date.now() + 5_000; !got && Date.now() < until; await page.waitForTimeout(100)) got = await app.evaluate(({ clipboard }) => clipboard.readText());
+    assert.equal(got, script, "copied from inside the wizard");
     await page.evaluate(() => {
       navigator.clipboard.writeText = () => Promise.reject(new Error("denied"));
       document.execCommand = () => false;
