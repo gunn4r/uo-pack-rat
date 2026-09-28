@@ -2,7 +2,7 @@
 
 Four small scripts that run inside [Razor Enhanced](https://razorenhanced.readthedocs.io/) and send what your character owns to the Pack Rat app. Razor Enhanced only runs on Windows. You only run these scripts when you are at the keyboard (see [The AFK rule](#the-afk-rule)).
 
-- **`packrat-scanner.py` — the full scan.** Reads everything you are wearing, your backpack, your bank box if it is already open, and every chest and bag near you, including bags inside chests.
+- **`packrat-scanner.py` — the full scan.** Reads everything you are wearing, your backpack, your bank box if it is already open, and every chest and bag near you, including bags inside chests. It never opens a container you blacklisted or one named trash (the server empties those on a timer).
 - **`packrat-refresh.py` — the quick refresh.** Reads just your stats, skills, what you are wearing and your backpack.
 - **`packrat-bridge.py` — the bridge.** Makes the app's **Highlight**, **Grab** and **Go to** buttons work.
 - **`packrat-blacklist.py` — blacklist a container.** Click a chest or bag, and scans never open or record it again.
@@ -11,17 +11,19 @@ Four small scripts that run inside [Razor Enhanced](https://razorenhanced.readth
 
 ## Install
 
-The easy way is the setup window in the Pack Rat app: pick **Razor Enhanced** as your client, click **Choose a folder…**, and pick the folder you unpacked Razor Enhanced into (or the `Scripts` folder inside it). Pack Rat can't find this folder by itself, because Razor Enhanced can live anywhere. Then click **Install scripts**. The main [README](../../README.md#3-the-setup-window) walks through it.
+The easy way is the setup window in the Pack Rat app: pick **Razor Enhanced** as your client, click **Choose a folder…**, and pick the folder you unpacked Razor Enhanced into (or the `Scripts` folder inside it). Pack Rat can't find this folder by itself, because Razor Enhanced can live anywhere. Then click **Install scanner**. The main [README](../../README.md#3-the-setup-window) walks through it.
+
+Pack Rat won't replace a script that is still running. Before installing again (Settings › **Reinstall**), open Razor Enhanced's **Scripting** tab, select each running Pack Rat script and press **Stop**.
 
 To install by hand instead:
 
 1. Copy all four `packrat-….py` files into Razor Enhanced's `Scripts` folder (inside the folder you unpacked Razor Enhanced into).
 2. Tell the scripts where Pack Rat keeps its data. In the Pack Rat app, open the **Settings** tab and note the folder shown next to **Data directory**. Copy `packrat-paths.example.json` into the same folder as the scripts, rename the copy to `packrat-paths.json`, open it in a text editor, and replace `~/.pack-rat` with that folder, written with forward slashes (`C:/Users/example/AppData/Roaming/Pack Rat`) so the file stays valid.
-3. In Razor Enhanced's **Scripts** tab, add all four files so they show up in the list.
+3. In Razor Enhanced's **Scripting** tab, add all four files so they show up in the list.
 
 ## What to press
 
-1. In Razor Enhanced, open the **Scripts** tab.
+1. In Razor Enhanced, open the **Scripting** tab.
 2. Pick a script and start it, the same way as any other Razor Enhanced script. You can give each one a hotkey there too.
 
 When to run which:
@@ -51,13 +53,13 @@ Four IronPython 3.4 scripts that run inside [Razor Enhanced](https://razorenhanc
 
 ### Install, in detail
 
-1. Copy the four `.py` files into Razor Enhanced's Scripts folder (the folder its in-client Scripts tab reads from — a `Scripts` subfolder directly under wherever you unpacked Razor Enhanced itself; its own official install docs say only "unpack the archive in your own folder, run Razor.exe" (see Sources) — there is no fixed install location the way TazUO has, so **this adapter has no auto-detected candidate path in the setup wizard.** Point the wizard's folder picker at your Razor Enhanced folder, or its `Scripts` subfolder, by hand — `validateScriptsDir` accepts either shape, or copy the files in yourself).
+1. Copy the four `.py` files into Razor Enhanced's Scripts folder (the folder its in-client Scripting tab reads from — a `Scripts` subfolder directly under wherever you unpacked Razor Enhanced itself; its own official install docs say only "unpack the archive in your own folder, run Razor.exe" (see Sources) — there is no fixed install location the way TazUO has, so **this adapter has no auto-detected candidate path in the setup wizard.** Point the wizard's folder picker at your Razor Enhanced folder, or its `Scripts` subfolder, by hand — `validateScriptsDir` accepts either shape, or copy the files in yourself).
 2. If the app's data directory is not the default (`~/.pack-rat` — on the Windows machine running Razor Enhanced this is your Windows user profile, not the machine running Pack Rat itself, unless they're the same computer), copy `packrat-paths.example.json` to `packrat-paths.json` in that same folder, next to the scripts, and set `dataDir` to wherever Pack Rat's data directory actually is reachable from this machine.
-3. In Razor Enhanced's Scripts tab, add all four files so they show up in the script list; each can be started with a click or bound to a hotkey the same way any other Razor Enhanced script is.
+3. In Razor Enhanced's Scripting tab, add all four files so they show up in the script list; each can be started with a click or bound to a hotkey the same way any other Razor Enhanced script is.
 
 ### What each script does
 
-- **`packrat-scanner.py`** — full inventory scan. Reads every equipped layer, the backpack (nested bags included), the bank box if it's already open this session, and every openable container on the ground within reach (recursively — bags in chests in chests). Dumps raw tooltip lines; the app does all the parsing. Run it standing next to a chest cluster, once per cluster, once per character.
+- **`packrat-scanner.py`** — full inventory scan. Reads every equipped layer, the backpack (nested bags included), the bank box if it's already open this session, and every openable container on the ground within reach (recursively — bags in chests in chests). Skips every container in `<dataDir>/scan-blacklist.json` (recorded unopened, so the app keeps what it knew inside) and every trash container (see Limits). Dumps raw tooltip lines; the app does all the parsing. Run it standing next to a chest cluster, once per cluster, once per character.
 - **`packrat-refresh.py`** — quick refresh, the same snapshot as `adapters/tazuo/packrat-refresh.py`: stats, skills, maxes, resists, position, every equipped layer, and the backpack (nested bags included) as the only root. Bank and ground containers are never opened, so the app keeps what it last knew about them. The backpack is listed as a root so a piece you just took off lands there instead of vanishing from the fold; if the backpack itself does not open, nothing is written. Writes `<dataDir>/inbox/razor-enhanced/<Character>-<YYYYmmdd-HHMMSS>-quick.json`. Its helpers are copied verbatim from the scanner, and `adapters/test_scanners.py` fails if a copy drifts.
 - **`packrat-blacklist.py`** — one-shot blacklist, the same as `adapters/tazuo/packrat-blacklist.py`: `Target.PromptTarget` raises a cursor, and a clicked container (never your backpack, bank or a corpse) is appended to `<dataDir>/scan-blacklist.json` as `{serial, name, addedAt, where?}`, the file the app's Blacklist action and Settings use. Opens nothing, moves nothing.
 - **`packrat-bridge.py`** — the bridge. Leave it running while you use the app's Highlight, Grab, and Go to buttons on the Suit Builder or Inventory tab. Highlight recolors the item (and its containing chest) for a few seconds and prints a local message; grab does the same walk/open steps then moves the item into your backpack; go to just walks there. Bounded to 8 hours.
@@ -142,4 +144,5 @@ The scanner writes to `<dataDir>/inbox/razor-enhanced/<Character>-<YYYYmmdd-HHMM
 - https://razorenhanced.github.io/doc/api/Target.html — the generated API reference (fetched 2026-09-28), for `Target.PromptTarget(message, color)`, which returns the serial of the selected object; the blacklist script's only call not already used by the scanner or bridge.
 - https://razorenhanced.github.io/doc/api/Items.html and https://razorenhanced.github.io/doc/api/Item.html — the generated API reference (fetched 2026-09-22), for `Items.Close(serial)` ("Close opened container window") and `Item.ContainerOpened` ("True when the container was opened"); that the flag is never cleared on close is from Razor Enhanced's own source (`Razor/Network/Handlers.cs` sets it, nothing resets it).
 - https://uoeventine.net/wiki/index.php/Razor_Enhanced_Basics — a community wiki, not official documentation, cited for exactly two conventions the official reference doesn't state: that `Items.WaitForContents` "should always be used when opening a container with a script before having it look through the contents" (the basis for this adapter's open-before-read discipline), and that `while Player.Connected:` is the idiomatic replacement for `while True:` in a long-running Razor Enhanced script (the basis for the bridge's main loop condition). Both are presented there as established community practice, not as a claim this adapter's own behavior has been tested.
+- https://github.com/RazorEnhanced/RazorEnhanced/blob/release/1.0/Razor/UI/Razor.cs — Razor Enhanced's own main-window source (fetched 2026-09-28), for the names in the stop and install steps above: the scripts tab is titled "Scripting" (`AllScripts.Text`), with a Stop button beside Play and a Stop item in the script list's right-click menu.
 - http://razorenhanced.net/dokuwiki/doku.php?id=install_configure — Razor Enhanced's own official "Install & Configure" wiki page (fetched 2026-09-17), cited for the install location statement above: "unpack archive in your own folder, run Razor.exe," with no fixed default location. This is the basis for shipping no auto-detected candidate path for this adapter (see "What's still outstanding," above). **Correction:** an earlier version of this file, and of `app/installer.mts`'s `candidateClientRoots`, cited `https://www.razorce.com/install/windows/` for a `<launcher root>/ClassicUO/Data/Plugins/Razor/Scripts` candidate path. That site (razorce.com) documents **Razor Community Edition** ("UO Razor"), a different, unrelated assistant — a revival of the original 2D Razor — that has no Python scripting API and is not Razor Enhanced; every other citation in this adapter correctly points at Razor Enhanced's own docs, but that one didn't, and the guessed candidate path built from it has been removed rather than replaced with another unconfirmed one.

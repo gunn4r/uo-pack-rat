@@ -13,6 +13,10 @@ import { DATA_DIR_MODE } from "./config.mts";
 const VERSION_RE = /ADAPTER_VERSION\s*=\s*"([^"]+)"/;
 const ADAPTER_ID_RE = /^[a-z0-9-]+$/;
 export const RUNNING_MESSAGE = 'a Pack Rat script is running in the client — type -stopall in game, wait for "No scripts are currently running", then retry';
+// -stopall is TazUO's chat command; a client that stops scripts some other way names its own step.
+const RUNNING_MESSAGES: Record<string, string> = {
+  "razor-enhanced": "a Pack Rat script is running in the client — stop it in Razor Enhanced's Scripting tab (select it and press Stop), then retry",
+};
 
 // Per-adapter shape of "the folder inside a candidate/picked root that actually holds the scripts",
 // most-specific form first. Shared by candidateClientRoots (known install locations) and
@@ -515,7 +519,7 @@ export function installScripts(
     return { ok: false, code: "noInstall", error: `adapter "${adapter}" has nothing to install — it has no scripts folder; use the Import tab instead` };
   }
   if (bridgeStatusPath && [bridgeStatusPath, join(dirname(bridgeStatusPath), "panel.json")].some((p) => heartbeatAlive(p, now(), log))) {
-    return { ok: false, code: "running", error: RUNNING_MESSAGE };
+    return { ok: false, code: "running", error: RUNNING_MESSAGES[adapter] ?? RUNNING_MESSAGE };
   }
   let destStat: Stats | null = null;
   // The cast is compiler-only: statSync() throws ERR_INVALID_ARG_TYPE on anything that is not a path,

@@ -95,12 +95,11 @@ function clientSection(setup: SetupApiResponse): HTMLElement {
   const client = setup.settings.client;
   const adapter = client ? setup.adapters.find((a) => a.id === client.adapter) : undefined;
   const setupBtn = button({ label: "Run setup", variant: client ? "secondary" : "primary", onClick: () => void openWizard({ firstRun: false }), attrs: { id: "set-run-setup" } });
-  const stopall = "Type -stopall in game first so no script is running.";
   let status: HTMLElement;
   let reinstallRow: HTMLElement;
   if (!client) {
     status = row({ title: "Client", control: setupBtn, help: "No client set up yet. In-game Highlight, Grab and Go to need one." });
-    reinstallRow = row({ title: "Reinstall scanner scripts", muted: true, control: button({ label: "Reinstall", disabled: true }), help: `Available once a client is set up. ${stopall}` });
+    reinstallRow = row({ title: "Reinstall scanner scripts", muted: true, control: button({ label: "Reinstall", disabled: true }), help: "Available once a client is set up." });
   } else if (adapter?.transport === "paste") {
     // A paste-transport client has no scripts folder and nothing to reinstall (settings.client.scriptsDir is ""):
     // its scanner is copied from here into the client (ui/paste-scanner.mts), again after an update.
@@ -111,7 +110,8 @@ function clientSection(setup: SetupApiResponse): HTMLElement {
       below: [box("div", { class: "set-inline", id: "set-scanner-version" }), s.fallback] });
     void loadScanner(adapter.id).then((r) => scannerVersion(r.version)).catch(() => { /* the button says why on click */ });
   } else {
-    const name = adapter ? adapterCopy(adapter).short : client.adapter;
+    const c = adapterCopy(adapter || { id: client.adapter });
+    const name = c.short;
     const installed = setup.installed?.version;
     const available = setup.available?.[client.adapter];
     const statusHelp = el("span", {}, installed ? `Scanner ${installed} installed in ` : "No scanner installed yet in ", el("span", { class: "mono" }, client.scriptsDir), ".");
@@ -119,19 +119,19 @@ function clientSection(setup: SetupApiResponse): HTMLElement {
     status = row({ title: name, control: setupBtn, help: statusHelp,
       below: [available && available !== installed ? box("div", { class: "set-inline" }, badge(`${available} available`, "accent"), txt("Reinstall to update the scanner.", "t-sm muted")) : null,
         note ? message({ tone: "warn", text: note }) : null] });
-    const confirm = check({ label: "I typed -stopall in game and nothing is running", checked: reinstall.checked, attrs: { id: "set-stopall" },
+    const confirm = check({ label: c.stopConfirm!, checked: reinstall.checked, attrs: { id: "set-stopall" },
       onChange: (on) => { reinstall.checked = on; void renderSettings(setup); } });
     const btn = button({ label: reinstall.busy ? "Reinstalling…" : "Reinstall", disabled: !reinstall.checked || reinstall.busy, attrs: { id: "set-reinstall" }, onClick: async () => {
       reinstall.error = null; reinstall.busy = true; void renderSettings(setup);
       try { reinstall.result = await api<InstallApiResponse>("/api/setup/install", { method: "POST", body: { adapter: client.adapter, scriptsDir: client.scriptsDir } }); }
-      // The 409 "-stopall" text comes through verbatim; the one failure worth rewording is the folder this
+      // The 409 "stop the scripts" text comes through verbatim; the one failure worth rewording is the folder this
       // row just sent being gone since it was persisted (messages.mts's clientFolderGone).
       catch (e) { reinstall.error = clientErrorMessage(e); }
       reinstall.busy = false; reinstall.checked = false;
       void renderSettings();
     } });
     const r = reinstall.result;
-    reinstallRow = row({ title: "Reinstall scanner scripts", control: btn, help: `Puts a fresh copy of the scanner in the scripts folder. ${stopall}`,
+    reinstallRow = row({ title: "Reinstall scanner scripts", control: btn, help: `Puts a fresh copy of the scanner in the scripts folder. ${c.stopHelp}`,
       below: [box("div", { class: "set-inline" }, confirm.root),
         reinstall.error ? message({ tone: "bad", title: "Could not reinstall", text: reinstall.error }) : null,
         // Where the scripts actually went (the server resolves it), and what became of packrat-paths.json —

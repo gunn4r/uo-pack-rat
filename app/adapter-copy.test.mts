@@ -43,8 +43,11 @@ test("[fast] the wizard's steps are named, and the paste branch renames steps 3 
 });
 
 test("[fast] per-adapter wizard copy exists for every shipped client, and an unknown adapter still reads plainly", () => {
-  for (const a of [TAZUO, RAZOR]) for (const k of ["folderQuestion", "folderHelp", "folderPick", "installQuestion", "installHelp"] as const) assert.ok(adapterCopy(a)[k], `${a.id}.${k}`);
+  for (const a of [TAZUO, RAZOR]) for (const k of ["folderQuestion", "folderHelp", "folderPick", "installQuestion", "installHelp", "stopHelp", "stopConfirm"] as const) assert.ok(adapterCopy(a)[k], `${a.id}.${k}`);
   assert.ok(adapterCopy(WEB).pasteHelp);
+  assert.equal(adapterCopy(TAZUO).stopConfirm, "I typed -stopall in game and nothing is running");
+  assert.equal(adapterCopy(RAZOR).stopConfirm, "I stopped the Pack Rat scripts in Razor Enhanced's Scripting tab");
+  assert.doesNotMatch(adapterCopy(RAZOR).stopHelp!, /-stopall/, "-stopall is TazUO's command");
   const other = adapterCopy({ id: "orion", name: "Orion", transport: "folder", summary: "Scans worn gear." });
   assert.deepEqual({ short: other.short, blurb: other.blurb, q: other.folderQuestion }, { short: "Orion", blurb: "Scans worn gear.", q: "Where is Orion?" });
 });

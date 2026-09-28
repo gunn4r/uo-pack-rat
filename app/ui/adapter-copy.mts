@@ -16,6 +16,8 @@ export interface AdapterCopy {
   folderPick?: string;           // the native folder picker's title
   installQuestion?: string;      // wizard step 4 (folder transport)
   installHelp?: string;
+  stopHelp?: string;             // how to stop the running scripts before an install (folder transport)
+  stopConfirm?: string;          // the checkbox that gates Install / Reinstall
   pasteHelp?: string;            // wizard step 3 (paste transport)
 }
 
@@ -30,6 +32,8 @@ const KNOWN: Record<string, AdapterCopy> = {
     folderPick: "Choose your TazUO folder",
     installQuestion: "Install the scanner into TazUO",
     installHelp: "Pack Rat copies its scripts into LegionScripts. A script that is running can't be replaced, so stop them in game first.",
+    stopHelp: "Type -stopall in game first so no script is running.",
+    stopConfirm: "I typed -stopall in game and nothing is running",
   },
   "razor-enhanced": {
     short: "Razor Enhanced",
@@ -41,6 +45,8 @@ const KNOWN: Record<string, AdapterCopy> = {
     folderPick: "Choose your Razor Enhanced folder",
     installQuestion: "Install the scanner into Razor Enhanced",
     installHelp: "Pack Rat copies its scripts into the Scripts folder. A script that is running can't be replaced, so stop them in game first.",
+    stopHelp: "First stop the Pack Rat scripts in Razor Enhanced's Scripting tab: select each running one and press Stop.",
+    stopConfirm: "I stopped the Pack Rat scripts in Razor Enhanced's Scripting tab",
   },
   "classicuo-web": {
     short: "ClassicUO web client",
@@ -72,6 +78,8 @@ export function adapterCopy(a: AdapterForCopy): AdapterCopy {
     folderPick: `Choose your ${short} folder`,
     installQuestion: `Install the scanner into ${short}`,
     installHelp: "Pack Rat copies its scripts into the client's scripts folder. A script that is running can't be replaced, so stop them in game first.",
+    stopHelp: `Stop the Pack Rat scripts in ${short} first.`,
+    stopConfirm: `I stopped the Pack Rat scripts in ${short}`,
     pasteHelp: "This client can't save files, so there is no folder to find. Its scanner is one script you paste into the client once.",
   };
 }

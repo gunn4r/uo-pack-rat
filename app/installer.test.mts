@@ -463,6 +463,15 @@ test("[fast] installScripts refuses with code: \"running\" when status.json is a
   assert.deepEqual(readdirSync(scriptsDir), [], "nothing was written while refused");
 });
 
+test("[fast] installScripts' running refusal names Razor Enhanced's own stop step, not -stopall", () => {
+  const sp = statusPath(tmp("qm-is-running-re-"));
+  writeFileSync(sp, JSON.stringify({ alive: new Date(Date.now() - 10_000).toISOString() }));
+  const result = installScripts({ adapter: "razor-enhanced", adaptersDir: fakeMultiAdaptersDir(), scriptsDir: tmp("qm-is-running-re-dest-"), dataDir: tmp("qm-is-data-"), bridgeStatusPath: sp });
+  assert.equal(result.ok, false);
+  assert.match((result as { error: string }).error, /Razor Enhanced's Scripting tab/);
+  assert.doesNotMatch((result as { error: string }).error, /-stopall/);
+});
+
 test("[fast] installScripts proceeds when status.json says stopped: true", () => {
   const bridgeDir = tmp("qm-is-stopped-");
   const sp = statusPath(bridgeDir);

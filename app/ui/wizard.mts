@@ -276,7 +276,7 @@ function step4(): StepContent {
       ],
     };
   }
-  const confirm = check({ label: "I typed -stopall in game and nothing is running", checked: wiz!.noRunningChecked, attrs: { id: "wiz-stopall" },
+  const confirm = check({ label: c.stopConfirm!, checked: wiz!.noRunningChecked, attrs: { id: "wiz-stopall" },
     onChange: (on) => { wiz!.noRunningChecked = on; render(); $<HTMLInputElement>("#wiz-stopall")?.focus(); } });
   return {
     question: c.installQuestion!, help: c.installHelp,
@@ -300,7 +300,7 @@ async function doInstall(): Promise<void> {
     // The server's own resolved folder, not the one this step sent: POST /api/setup/install turns a
     // picked client root into its nested scripts folder, and that is what it persisted as the client.
     state.settings = { ...state.settings!, client: { adapter: wiz!.adapter as string, scriptsDir: r.scriptsDir || (wiz!.scriptsDir as string) } };
-    // The 409 "-stopall" text comes through verbatim; a folder that has gone missing since it was
+    // The 409 "stop the scripts" text comes through verbatim; a folder that has gone missing since it was
     // located gets the one sentence that says what to do about it (messages.mts's clientFolderGone).
   } catch (e) { wiz!.installError = clientErrorMessage(e); }
   wiz!.busy = false; render();
