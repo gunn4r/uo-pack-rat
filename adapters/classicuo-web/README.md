@@ -19,7 +19,7 @@ Step 4 then has an **Open Import** button. After a Pack Rat update, copy the scr
 2. Run the script from the scripting window.
 3. It prints a block of text in the area below the scripting window, starting with `-----BEGIN PACK RAT SCAN-----` and ending with `-----END PACK RAT SCAN-----`.
 4. Select all the text in that area and copy it. Extra lines around the block are fine; Pack Rat finds the start and end lines itself.
-5. In Pack Rat, open the **Import** tab, paste into the box under **Paste a scan**, and click **Paste scan**.
+5. In Pack Rat, open **Import** in the sidebar (or press ⌘I, Ctrl+I on Windows and Linux) to open the Import drawer, paste into the box under **Paste a scan**, and click the **Import** button (it names what it will import).
 
 The script runs once and stops. Nothing keeps running, and it never does anything in the game. It only reads.
 
@@ -29,8 +29,9 @@ The script runs once and stops. Nothing keeps running, and it never does anythin
 - **What you wear on your arms**, most likely. The script tries, but expect that slot to be missing.
 - **Unusual chests.** It only finds common kinds of chests, bags and crates. A custom or rare container is not scanned.
 - **Locked or trapped chests**, and bags inside other bags that it can't read. These keep what your last scan saw, or show up as a plain item.
-- **Bags more than four levels deep** show up as a plain item, without their contents.
+- **Bags more than four levels deep** are listed, but their contents are not read: Pack Rat keeps what your last scan saw inside them.
 - **Trash barrels and chests** (anything with "trash" in its name) are left out on purpose, with everything in them: the server empties them on a timer.
+- **Blacklisted containers are still scanned.** The web client's script can't read Pack Rat's blacklist (Settings › Data, or a container's ⋯ menu), so it reads every container it finds.
 
 There is also no bridge for the web client, so the **Highlight**, **Grab** and **Go to** buttons don't appear for characters scanned with it.
 
@@ -42,7 +43,7 @@ Everything below is for people working on the adapter itself.
 
 ### Status
 
-This adapter is for players on the [ClassicUO web client](https://play.classicuo.org)'s TypeScript scripting panel. That sandbox has no filesystem access at all — it can't write scan files the way `adapters/tazuo/` does — so instead of a folder full of scripts and an inbox, this adapter is one script that prints its scan to the console area below the scripting window, and a paste into Pack Rat's own Import tab is how the data gets in.
+This adapter is for players on the [ClassicUO web client](https://play.classicuo.org)'s TypeScript scripting panel. That sandbox has no filesystem access at all — it can't write scan files the way `adapters/tazuo/` does — so instead of a folder full of scripts and an inbox, this adapter is one script that prints its scan to the console area below the scripting window, and a paste into Pack Rat's own Import drawer is how the data gets in.
 
 **Unverified against a live client.** This adapter was written by researching the client's own published scripting API (https://www.classicuo.org/scripting/, namespaces `Player`/`Item`/`Client`/`Skill`, fetched 2026-09-17) — no game client was available to actually run `packrat-scanner.ts` while writing it. Everything below is either sourced from that documentation, carried over from a related project's own live testing of the same client family on a different shard, or marked as an assumption. It ships without `fixture.scan.json` for exactly this reason — see "What's still outstanding" below.
 
@@ -54,7 +55,7 @@ There's nothing to install in the usual sense — no folder to copy files into, 
 2. Run the script from the scripting panel.
 3. It reads everything in one pass and prints a block to the console area below the scripting window, starting with `-----BEGIN PACK RAT SCAN-----` and ending with `-----END PACK RAT SCAN-----`.
 4. Select all the text in the console area (the whole block, markers included — the app finds the markers itself, so surrounding log noise is fine) and copy it.
-5. Open Pack Rat, go to the Import tab, and paste. The app validates and folds it exactly like a scan a folder-based adapter dropped into its inbox.
+5. Open Pack Rat's Import drawer (**Import** in the sidebar, ⌘I / Ctrl+I, or **Open Import** at the end of setup), paste, and click the **Import** button. The app validates and folds it exactly like a scan a folder-based adapter dropped into its inbox.
 
 The script runs once and stops — nothing keeps running in the background, and it never acts on anything in the world. It's read-only and attended-only, the same as every Pack Rat adapter (see `docs/adapter-guide.md`'s "attended-only statement").
 
@@ -66,7 +67,8 @@ The script runs once and stops — nothing keeps running in the background, and 
 - **Nothing to close after a scan.** The TazUO and Razor Enhanced scanners close the container windows they opened; this one opens none (the sandbox has no open call), so it leaves the screen as it found it. The sandbox's only window-closing calls (`closeAllGumps`, `closeCorpses`) would close the player's own windows too, so it never calls them.
 - **No bridge, and nothing done in the world at all.** This adapter has no way to highlight an item, walk to it, or move it for you — `capabilities.json` declares `bridge: []`, and Pack Rat's UI hides the Highlight/Grab/Go-to buttons for any character whose latest scan came from an adapter with no bridge. It also declares `actions: []` beside it, the manifest field every adapter uses to state what it does in the world rather than what it reads (`open-container`, `move-to-own-backpack`, `pathfind-local`, `client-local-highlight` — see `adapters/tazuo/README.md`): this adapter's list is empty, and `app/adapters.test.mts` fails the build if the script ever starts calling one of those primitives without declaring it. Everything this script does is read a snapshot and print it; nothing more.
 - **Locked or trapped containers.** Reading a container's contents can, per the same related project's testing, throw instead of just coming back empty. For a root (the backpack, a ground container), the script catches that and reports the root as `opened: false`, with no items listed under it. For a bag nested inside another container, the script has no way to tell "this is a container I couldn't read" apart from "this was never a container to begin with" — both cases look identical from here — so a nested bag that can't be read is recorded as an ordinary item instead, not flagged and not left out. A nested item counts as a container only when its contents hold something or its graphic is a known container graphic, so a client build that gives every item an empty `contents` array still reads items as items. And since this script never opens anything, a ground container whose contents read as an empty array is recorded `opened: false` (more likely never loaded than empty), so it cannot wipe an older scan of that chest.
-- **Bags nested more than four levels deep.** A bag past that depth is recorded as a plain item too (its own contents are never read) — a deliberate cap (`MAX_NEST` in the script), mirroring `adapters/tazuo/packrat-scanner.py`'s own limit, not something this particular client imposes.
+- **Bags nested more than four levels deep.** A bag past that depth is recorded as a container with `opened: false` (its own contents are never read), so the app keeps what an earlier scan saw inside it — a deliberate cap (`MAX_NEST` in the script), mirroring `adapters/tazuo/packrat-scanner.py`'s own limit, not something this particular client imposes.
+- **Trash containers are skipped, the blacklist is not.** A container whose name matches `TRASH_RE` (the word "trash") is left out with its contents, on the ground or nested, and counted in the closing summary. The scan blacklist (`<data>/scan-blacklist.json`) lives in Pack Rat's data folder, which this sandbox can't read, so the web scanner reads blacklisted containers like any other.
 
 ### What's still outstanding
 
