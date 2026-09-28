@@ -12,7 +12,7 @@ Expect a first reply within a week. This is a one-person project with no on-call
 
 ## Supported versions
 
-Pre-release: no version has been tagged yet, so the supported version is the current `main` branch. Once releases start, only the most recent one is supported — there are no backports to older tags. `CHANGELOG.md` is where a security fix is described in user terms.
+Only the latest release on the [Releases page](https://github.com/gunn4r/uo-pack-rat/releases) is supported — there are no backports to older tags. A fix ships in the next release, and the app's update check (on by default) is how a player hears about it. `CHANGELOG.md` is where a security fix is described in user terms.
 
 ## Scope
 
@@ -21,7 +21,8 @@ Pre-release: no version has been tagged yet, so the supported version is the cur
 In scope:
 
 - The localhost HTTP server (`app/vault-server.mts`) and its token, `Host`/`Origin`/content-type checks, and request handling.
-- The setup wizard's script installer (`app/installer.mts`) — path handling when copying adapter scripts into a game-client folder, the atomic-write helper, and the running-script guard.
+- The setup wizard's script installer (`app/installer.mts`) — path handling when copying adapter scripts into a game-client folder, the atomic-write helper, and the running-script guard — and the one game-client file the app edits, TazUO's `Data/lscript.json`, to start the in-game panel at login (`app/tazuo-panel.mts`).
+- The update check (`checkForUpdates` in `app/installer.mts`) — the one request that leaves the machine, and how the page treats the answer that comes back from GitHub.
 - The scan and bridge file parsers (`app/scan-schema.mts`, `app/schema/validate.mts`, `app/watcher.mts`, `app/vault-lib.mts`) — anything that reads a file an adapter script or a player produced — and the page code that renders what comes out of them.
 - The Electron shell (`electron/main.mts`, `electron/host-args.mts`) — window settings, navigation and permission restrictions, the fuses on a packaged build, and how the per-launch token is attached to requests.
 - `POST /api/bridge` and the adapter bridge scripts. This is the one path whose input crosses into the player's running game client and moves their character, so it gets its own treatment in the threat model.
