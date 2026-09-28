@@ -136,13 +136,16 @@ function fakeItem(serial: number, name: string, graphic: number, kids: FakeItem[
   };
 }
 let runs = 0;
-async function runScanner(world: { backpack: FakeItem; ground?: FakeItem[]; equipped?: Record<string, FakeItem> }): Promise<WebDoc> {
+const sysMsgs: string[] = [];
+// `names` gives an item's tooltip name by serial; any other item's tooltip reads "item <serial>".
+async function runScanner(world: { backpack: FakeItem; ground?: FakeItem[]; equipped?: Record<string, FakeItem>; names?: Record<number, string> }): Promise<WebDoc> {
   const printed: string[] = [];
   const g = globalThis as Record<string, unknown>;
+  sysMsgs.length = 0;
   g.player = { name: "Tester", equippedItems: world.equipped || {}, backpack: world.backpack, getAllSkills: () => [] };
   g.client = {
-    sysMsg() {},
-    queryItemOPL: (s: number) => ({ name: "item " + s, properties: [{ text: "item " + s }] }),
+    sysMsg: (s: string) => sysMsgs.push(s),
+    queryItemOPL: (s: number) => { const name = world.names?.[s] ?? "item " + s; return { name, properties: [{ text: name }] }; },
     findAllOfType: (graphic: number) => (world.ground || []).filter((it) => it.graphic === graphic),
   };
   g.log = (s: string) => printed.push(s);
@@ -217,4 +220,19 @@ test("[fast] classicuo-web: a bag nested past MAX_NEST is recorded as a containe
   assert.equal(unopened.length, 1, JSON.stringify(doc.containers));
   assert.ok(bags.includes(unopened[0]!));
   assert.deepEqual(doc.items.filter((i) => bags.includes(i.serial)), [], "no bag is recorded as a plain item");
+});
+
+test("[fast] classicuo-web: a trash container on the ground or in the backpack is left out with its contents; an ordinary barrel is not", async () => {
+  const BARREL_GRAPHIC = 0x0e7f;
+  const trashBarrel = fakeItem(0x40000400, "A Trash Barrel", BARREL_GRAPHIC, [fakeItem(0x40000401, "Old Ring", RING_GRAPHIC, undefined)]);
+  const barrel = fakeItem(0x40000402, "Barrel", BARREL_GRAPHIC, [fakeItem(0x40000403, "Apple", RING_GRAPHIC, undefined)]);
+  const trashChest = fakeItem(0x40000404, "Trash Chest", BAG_GRAPHIC, [fakeItem(0x40000405, "Tossed Ring", RING_GRAPHIC, undefined)]);
+  const doc = await runScanner({
+    backpack: fakeItem(0x40000001, "Backpack", BAG_GRAPHIC, [trashChest]), ground: [trashBarrel, barrel],
+    names: { 0x40000400: "A Trash Barrel", 0x40000402: "Barrel", 0x40000404: "Trash Chest" },
+  });
+  assert.deepEqual(doc.roots.map((r) => r.serial), [0x40000001, 0x40000402]);
+  assert.deepEqual(Object.keys(doc.containers).map(Number).sort(), [0x40000001, 0x40000402]);
+  assert.deepEqual(doc.items.map((i) => i.serial), [0x40000403], "nothing in or of the trash is recorded");
+  assert.ok(sysMsgs.includes("  skipped 2 trash containers"), JSON.stringify(sysMsgs));
 });

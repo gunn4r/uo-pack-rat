@@ -104,7 +104,7 @@ Pack Rat comes with a few small scripts. The setup window already put them in yo
 - **`packrat-scanner.py` — the full scan.** Reads everything your character is wearing, your backpack, your bank box if it is open, and every chest and bag near you, including bags inside chests.
 - **`packrat-refresh.py` — the quick refresh.** Reads just your stats, skills, what you are wearing and your backpack. Takes a few seconds and works anywhere. (TazUO only.)
 - **`packrat-bridge.py` — the bridge.** Makes the **Highlight**, **Grab** and **Go to** buttons in the app work. Start it and leave it running while you use those buttons.
-- **`packrat-blacklist.py` — blacklist a container.** Click a chest or bag and scans never open it again: a trash barrel, a guild chest, a vendor's stock. (TazUO only; with any client you can blacklist a chest in the app's **Containers** view, and unblacklist it in **Settings**.)
+- **`packrat-blacklist.py` — blacklist a container.** Click a chest or bag and scans never open it again: a guild chest, a vendor's stock. (TazUO only; with any client you can blacklist a chest in the app's **Containers** view, and unblacklist it in **Settings**.)
 
 ### What to press, and when
 

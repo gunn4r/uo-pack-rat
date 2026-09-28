@@ -195,7 +195,7 @@ def tazuo_api(world, backpack, bank=0, skills=None):
     api.UseObject = lambda s, *a: world.open(int(s))
     api.ItemsInContainer = lambda s, recursive=False: world.kids(int(s), recursive)
     api.GetItemsOnGround = lambda r: [it for it in world.items.values() if it.OnGround and world.dist(it.X, it.Y) <= r]
-    api.ItemNameAndProps = lambda s, b=False: world.items[int(s)].Name
+    api.ItemNameAndProps = lambda s, b=False: getattr(world.items[int(s)], "Tooltip", None) or world.items[int(s)].Name
     api.RequestOPLData = lambda serials: None
 
     def get_skill(name):
@@ -317,7 +317,7 @@ def razor_globals(world, backpack, bank=None, skills=None):
             if name == "Contains":
                 return [REItem(k) for k in world.kids(it.Serial, False)]
             if name == "Properties":
-                return [it.Name]
+                return [getattr(it, "Tooltip", None) or it.Name]
             if name == "ContainerOpened":
                 return it.EverOpened     # RE sets it when contents first arrive and never clears it
             return getattr(it, name)

@@ -68,7 +68,7 @@ def read_blacklist(path):
 
 
 ADAPTER_ID = "tazuo"
-ADAPTER_VERSION = "2.7.0"
+ADAPTER_VERSION = "2.8.0"
 CAPABILITIES = {
     "layers": ["OneHanded", "TwoHanded", "Shoes", "Pants", "Shirt", "Helmet", "Gloves",
                "Ring", "Talisman", "Necklace", "Waist", "Torso", "Bracelet", "Tunic",
@@ -86,6 +86,7 @@ MAX_NEST = 4             # bags in bags in bags
 OPENED_HERE = []         # container windows this run opened itself, in opening order (close_opened)
 BLACKLIST = set(e["serial"] for e in read_blacklist(os.path.join(data_dir(), "scan-blacklist.json")))
 SKIPPED = set()          # blacklisted containers this run never opened
+TRASHED = set()          # trash containers this run never opened (TRASH_RE)
 STOP_CLOSE_S = 1.5       # after a Stop, stop closing windows after this long: the client gives a stopped script 2 s
 OUT_DIR = os.path.join(data_dir(), "inbox", "tazuo")
 ALARM_HUE, OK_HUE, INFO_HUE = 33, 68, 88
@@ -101,6 +102,10 @@ CONTAINER_RE = re.compile(r"\b(chest|box|toolbox|crate|bag|pouch|basket|trunk|ar
 NOT_A_CONTAINER_RE = re.compile(r"\b(deed(?!\s+box)|sending|music box|\w*book|tome|atlas|compendium)\b", re.I)   # a "Commodity Deed Box" IS one
 # The books by graphic too, whatever they are called (ServUO's item classes; the first three seen live).
 NOT_A_CONTAINER_GRAPHICS = {0x0EFA, 0x2D50, 0x2D9D, 0x2252, 0x2253, 0x225A, 0x225B, 0x238C, 0x23A0, 0x22C5, 0x9C16}
+# A trash barrel or chest is a real container, but the server deletes its contents on a timer, so
+# nothing in one is worth recording. Never opened, never recorded, contents included. By name only:
+# a trash barrel has the same graphic as an ordinary barrel.
+TRASH_RE = re.compile(r"\btrash\b", re.I)
 # A piece of armour or clothing is never a container, however its name reads ("Platemail Chest"). No
 # "gargish" here: a Gargish Chest is a real container; gargoyle armour is caught by the client's
 # own wearable flag instead.
@@ -155,6 +160,13 @@ def is_container(item, name):
     except Exception:
         pass
     return bool(CONTAINER_RE.search(name or ""))
+
+
+def is_trash(serial, name):
+    """A container is trash by its tooltip name ("A Trash Barrel"): the client's own cached name for the
+    art may be just "barrel". The cached name is the fallback when the tooltip reads nothing."""
+    lines = tooltip_lines(serial)
+    return bool(TRASH_RE.search(lines[0] if lines else name or ""))
 
 
 def dist(item):
@@ -238,10 +250,9 @@ def scan_root(root_serial, kind, label, containers, items, seen):
             except Exception:
                 nm = ""
             s = int(it.Serial)
-            if is_container(it, nm) and s not in opened and s not in to_open and s not in BLACKLIST:
+            if is_container(it, nm) and s not in opened and s not in to_open and s not in BLACKLIST and not is_trash(s, nm):
                 to_open.append(s)
-    if BLACKLIST:
-        listing = without_blacklisted(listing)
+    listing = without_skipped(listing)
     if API.StopRequested:
         return -1
     if not listing:
@@ -289,18 +300,28 @@ def scan_root(root_serial, kind, label, containers, items, seen):
     return n
 
 
-def without_blacklisted(listing):
-    """A root's listing minus everything inside a blacklisted bag: the client may still hold its contents
-    from an earlier open. The bag itself stays, and scan_root records it unopened."""
+def without_skipped(listing):
+    """A root's listing minus everything inside a blacklisted bag or a trash container: the client may
+    still hold their contents from an earlier open. A blacklisted bag itself stays, and scan_root
+    records it unopened; a trash container is left out too."""
     parent = dict((int(it.Serial), int(getattr(it, "Container", 0) or 0)) for it in listing)
+    trash = set()
+    for it in listing:
+        nm = str(getattr(it, "Name", "") or "")
+        if is_container(it, nm) and is_trash(int(it.Serial), nm):
+            trash.add(int(it.Serial))
+    TRASHED.update(trash)
+    skip = BLACKLIST | trash
     out = []
     for it in listing:
+        if int(it.Serial) in trash:
+            continue
         s = parent.get(int(it.Serial))
         for _ in range(MAX_NEST + 2):
-            if s is None or s in BLACKLIST:
+            if s is None or s in skip:
                 break
             s = parent.get(s)
-        if s not in BLACKLIST:
+        if s not in skip:
             out.append(it)
     return out
 
@@ -429,7 +450,10 @@ def main():
             lines = tooltip_lines(g.Serial)
             gname = lines[0] if lines else str(getattr(g, "Name", "") or "")
             if is_container(g, gname):
-                roots.append((int(g.Serial), "ground", gname or "container"))
+                if TRASH_RE.search(gname):
+                    TRASHED.add(int(g.Serial))
+                else:
+                    roots.append((int(g.Serial), "ground", gname or "container"))
         except Exception:
             continue
 
@@ -462,6 +486,8 @@ def main():
         sysmsg("  " + c, INFO_HUE)
     if SKIPPED:
         sysmsg(f"  skipped {len(SKIPPED)} blacklisted container{'s' if len(SKIPPED) != 1 else ''}", INFO_HUE)
+    if TRASHED:
+        sysmsg(f"  skipped {len(TRASHED)} trash container{'s' if len(TRASHED) != 1 else ''}", INFO_HUE)
 
 
 try:

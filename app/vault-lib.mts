@@ -718,9 +718,28 @@ export function foldSnapshots(snapshots: ScanV2[]): Inventory {
     }
     inv.scans.push({ character: char, scannedAt: snap.scannedAt, items: (snap.items || []).length, roots: [...roots] });
   }
+  dropTrash(inv);
   labelContainers(inv);
   for (const it of Object.values(inv.items)) it.location = locationOf(it, inv);
   return inv;
+}
+
+// A trash barrel or chest: the server deletes what is put in one on a timer, so whatever an older scan
+// recorded inside one is long gone. Scanners never open one (TRASH_RE in each adapter); what they
+// recorded before that is dropped here, the container itself and everything under it included.
+const TRASH_RE = /\btrash\b/i;
+function dropTrash(inv: Inventory): void {
+  const trash = new Set(Object.values(inv.containers).filter((c) => TRASH_RE.test(c.name || "")).map((c) => +c.serial));
+  if (!trash.size) return;
+  const inTrash = (serial: number | null | undefined): boolean => {
+    for (let cur = serial, guard = 0; cur != null && guard < 64; guard++) {
+      if (trash.has(+cur)) return true;
+      cur = inv.containers[cur]?.parent;
+    }
+    return false;
+  };
+  for (const [serial, it] of Object.entries(inv.items)) if (inTrash(+serial) || inTrash(it.container)) delete inv.items[serial];
+  for (const serial of Object.keys(inv.containers).filter((s) => inTrash(+s))) delete inv.containers[serial];
 }
 
 // A character tombstone (POST /api/forget-character: a `_vault` scan carrying `forgetCharacter`)

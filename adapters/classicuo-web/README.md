@@ -30,6 +30,7 @@ The script runs once and stops. Nothing keeps running, and it never does anythin
 - **Unusual chests.** It only finds common kinds of chests, bags and crates. A custom or rare container is not scanned.
 - **Locked or trapped chests**, and bags inside other bags that it can't read. These keep what your last scan saw, or show up as a plain item.
 - **Bags more than four levels deep** show up as a plain item, without their contents.
+- **Trash barrels and chests** (anything with "trash" in its name) are left out on purpose, with everything in them: the server empties them on a timer.
 
 There is also no bridge for the web client, so the **Highlight**, **Grab** and **Go to** buttons don't appear for characters scanned with it.
 

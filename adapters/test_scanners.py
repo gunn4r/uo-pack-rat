@@ -11,6 +11,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from fake_clients import PLAYER, World, adapter_path, razor_globals, run_script, tazuo_api  # noqa: E402
 
 PACK, CHEST, BAG, RING, RING2, EMPTY = 0x40000001, 0x40000002, 0x40000003, 0x40000010, 0x40000011, 0x40000004
+TRASH_BARREL, BARREL, TRASH_CHEST = 0x40000300, 0x40000301, 0x40000302
 
 
 def home(world):
@@ -44,6 +45,18 @@ def books_and_armour(world, parent, first=0x40000500):
         world.add(out[-1], parent, name=name, container_like=False, Graphic=0x1415,
                   Wearable=(name in ("Gargish Stone Chest", "Chest")), OnGround=False)
     return out
+
+
+def trash(world, cached=False):
+    """A trash barrel on the ground and a trash chest in the backpack, each holding a ring the client
+    still holds from an earlier open, and an ordinary barrel on the trash barrel's graphic. `cached`:
+    the client's own name for both is the generic "barrel", and only the tooltip says trash."""
+    names = lambda n: dict(name="barrel", Tooltip=n) if cached else dict(name=n)
+    world.add(TRASH_BARREL, 0, Graphic=0x0E77, X=11, Y=11, Opened=True, **names("A Trash Barrel"))
+    world.add(RING + 0x200, TRASH_BARREL, name="Old Ring", container_like=False, OnGround=False)
+    world.add(TRASH_CHEST, PACK, OnGround=False, Opened=True, **names("Trash Chest"))
+    world.add(RING + 0x201, TRASH_CHEST, name="Tossed Ring", container_like=False, OnGround=False)
+    world.add(BARREL, 0, name="Barrel", Graphic=0x0E77, X=10, Y=11)
 
 
 def nest(world, parent, depth):
@@ -339,6 +352,24 @@ class TazUOScanner(DataDir, unittest.TestCase):
             self.assertEqual(sorted(i["serial"] for i in s["items"]), [RING, RING2], doc[:40])
             shutil.rmtree(os.path.join(self.data, "inbox"))
 
+    def test_a_trash_container_is_never_opened_or_recorded_and_an_ordinary_barrel_is(self):
+        for cached in (False, True):
+            with self.subTest(cached=cached):
+                shutil.rmtree(os.path.join(self.data, "inbox"), ignore_errors=True)
+                self.trash_scan(cached)
+
+    def trash_scan(self, cached):
+        w = World(); home(w); trash(w, cached)
+        self.scan(w)
+        [s] = self.scans("tazuo")
+        self.assertNotIn(TRASH_BARREL, self.opened(w))
+        self.assertNotIn(TRASH_CHEST, self.opened(w))
+        self.assertIn(BARREL, self.opened(w), "an ordinary barrel on the same graphic is still scanned")
+        self.assertEqual([r["serial"] for r in s["roots"]], [PACK, CHEST, BARREL])
+        self.assertEqual([c for c in (TRASH_BARREL, TRASH_CHEST) if str(c) in s["containers"]], [])
+        self.assertEqual(sorted(i["serial"] for i in s["items"]), [RING, RING2], "nothing in or of the trash is recorded")
+        self.assertIn("  skipped 2 trash containers", w.messages)
+
 
 class TazUORefresh(DataDir, unittest.TestCase):
     SCRIPT = adapter_path("tazuo", "packrat-refresh.py")
@@ -350,7 +381,7 @@ class TazUORefresh(DataDir, unittest.TestCase):
             m = re.search(r"^def %s\(.*?(?=^def |^[A-Z_]+ = )" % name, t, re.S | re.M)
             self.assertIsNotNone(m, "%s lacks %s" % (path, name))
             return m.group(0)
-        for name in ("is_container", "was_opened", "note_if_closed", "scan_root", "close_opened", "read_blacklist", "without_blacklisted"):
+        for name in ("is_container", "was_opened", "note_if_closed", "scan_root", "close_opened", "read_blacklist", "without_skipped", "is_trash"):
             self.assertEqual(body(self.SCRIPT, name), body(TazUOScanner.SCRIPT, name), name)
 
     def test_a_bag_in_the_backpack_that_did_not_open_is_marked_unopened(self):
@@ -371,6 +402,21 @@ class TazUORefresh(DataDir, unittest.TestCase):
         self.assertEqual(len(self.scans("tazuo")), 1)
         self.assertEqual(self.closed(w), [BAG + 0x100])
         self.assertTrue(w.items[PACK].Opened)
+
+    def test_a_trash_container_in_the_backpack_is_never_opened_or_recorded(self):
+        for cached in (False, True):
+            with self.subTest(cached=cached):
+                shutil.rmtree(os.path.join(self.data, "inbox"), ignore_errors=True)
+                w = World(); home(w); trash(w, cached)
+                run_script(self.SCRIPT, w, api=tazuo_api(w, PACK))
+                self.trash_refresh(w)
+
+    def trash_refresh(self, w):
+        [s] = self.scans("tazuo")
+        self.assertNotIn(TRASH_CHEST, self.opened(w))
+        self.assertNotIn(str(TRASH_CHEST), s["containers"])
+        self.assertEqual(sorted(i["serial"] for i in s["items"]), [RING2])
+        self.assertIn("  skipped 1 trash container", w.messages)
 
 
 
@@ -550,6 +596,24 @@ class RazorScanner(DataDir, unittest.TestCase):
         self.assertIs(s["containers"][str(BAG)]["opened"], False)
         self.assertEqual(sorted(i["serial"] for i in s["items"]), [RING2])
         self.assertIn("  skipped 2 blacklisted containers", w.messages)
+
+    def test_a_trash_container_is_never_opened_or_recorded_and_an_ordinary_barrel_is(self):
+        for cached in (False, True):
+            with self.subTest(cached=cached):
+                shutil.rmtree(os.path.join(self.data, "inbox"), ignore_errors=True)
+                self.trash_scan(cached)
+
+    def trash_scan(self, cached):
+        w = World(); home(w); trash(w, cached)
+        self.scan(w)
+        [s] = self.scans("razor-enhanced")
+        self.assertNotIn(TRASH_BARREL, self.opened(w))
+        self.assertNotIn(TRASH_CHEST, self.opened(w))
+        self.assertIn(BARREL, self.opened(w), "an ordinary barrel on the same graphic is still scanned")
+        self.assertEqual([r["serial"] for r in s["roots"]], [PACK, CHEST, BARREL])
+        self.assertEqual([c for c in (TRASH_BARREL, TRASH_CHEST) if str(c) in s["containers"]], [])
+        self.assertEqual(sorted(i["serial"] for i in s["items"]), [RING, RING2], "nothing in or of the trash is recorded")
+        self.assertIn("  skipped 2 trash containers", w.messages)
 
 
 if __name__ == "__main__":
