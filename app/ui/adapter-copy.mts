@@ -16,7 +16,7 @@ export interface AdapterCopy {
   folderPick?: string;           // the native folder picker's title
   installQuestion?: string;      // wizard step 4 (folder transport)
   installHelp?: string;
-  pasteHelp?: string;            // wizard steps 3-4 (paste transport)
+  pasteHelp?: string;            // wizard step 3 (paste transport)
 }
 
 const KNOWN: Record<string, AdapterCopy> = {
@@ -45,9 +45,9 @@ const KNOWN: Record<string, AdapterCopy> = {
   "classicuo-web": {
     short: "ClassicUO web client",
     badge: { text: "Paste scans" },
-    blurb: "Scans every layer, ground containers and nested bags. Nothing to install: you paste what its scanner prints into Import.",
+    blurb: "Scans every layer, ground containers and nested bags. You copy its scanner into the client and paste what it prints into Import.",
     blurbUnavailable: "Scans every layer, ground containers and nested bags. You paste what its scanner prints into Import.",
-    pasteHelp: "The web client runs in your browser and can't save files, so there is no folder to find and nothing to copy into it. Its scanner prints your scan in the game window instead.",
+    pasteHelp: "The web client runs in your browser and can't save files, so there is no folder to find. Its scanner is one script you paste into the client once; it prints your scan in the game window.",
   },
 };
 
@@ -72,7 +72,7 @@ export function adapterCopy(a: AdapterForCopy): AdapterCopy {
     folderPick: `Choose your ${short} folder`,
     installQuestion: `Install the scanner into ${short}`,
     installHelp: "Pack Rat copies its scripts into the client's scripts folder. A script that is running can't be replaced, so stop them in game first.",
-    pasteHelp: "This client can't save files, so there is no folder to find and nothing to copy into it.",
+    pasteHelp: "This client can't save files, so there is no folder to find. Its scanner is one script you paste into the client once.",
   };
 }
 export const shortName = (a: AdapterForCopy): string => adapterCopy(a).short;
@@ -91,7 +91,7 @@ export function importOptionLabel(a: AdapterForCopy, platform: string | null | u
 }
 
 // The wizard's named steps. The paste branch renames steps 3 and 4 the moment a paste client is picked,
-// so the stepper shows up front that there is nothing to install.
+// so the stepper shows up front that there is no folder and nothing to install.
 export function wizardSteps(paste: boolean): string[] {
-  return paste ? ["Shard", "Client", "Nothing to install", "Paste your first scan"] : ["Shard", "Client", "Client folder", "Install scanner"];
+  return paste ? ["Shard", "Client", "Copy scanner", "Paste your first scan"] : ["Shard", "Client", "Client folder", "Install scanner"];
 }

@@ -1645,6 +1645,19 @@ test("[fast] GET /api/setup reports each real adapter's transport; POST /api/set
   }
 });
 
+test("[fast] GET /api/setup/scanner serves the bundled web scanner and its version, only for a known paste-transport adapter", async () => {
+  const shipped = readFileSync(join(HERE, "..", "adapters", "classicuo-web", "packrat-scanner.ts"), "utf8");
+  const r = await fetch(srv.url + "/api/setup/scanner?adapter=classicuo-web");
+  assert.equal(r.status, 200);
+  const body = asJson<{ version: string; script: string }>(await r.json());
+  assert.equal(body.script, shipped, "the whole script, byte for byte");
+  assert.equal(body.version, /ADAPTER_VERSION\s*=\s*"([^"]+)"/.exec(shipped)![1]);
+  // No path input: a folder adapter, an unknown id, a traversal and no id at all are all refused.
+  for (const q of ["?adapter=tazuo", "?adapter=nope", "?adapter=..%2Ftazuo", "?adapter=classicuo-web%2F..%2Ftazuo", ""]) {
+    assert.equal((await fetch(srv.url + "/api/setup/scanner" + q)).status, 400, q);
+  }
+});
+
 test("[fast] POST /api/setup/locate resolves a nested .../ClassicUO/Data/Plugins/Razor/Scripts folder for the razor-enhanced adapter", async () => {
   const s2 = await startServer(ensureLayout(resolveConfig(["--port", "0", "--data", mkdtempSync(join(tmpdir(), "qm-setup-locate-razor-"))], {})));
   try {
@@ -3028,7 +3041,7 @@ test("[fast] GET/PUT /api/ui-prefs keeps the column choice across a restart on a
 // The look (theme family, light/system/dark) and the pinned-collapsed sidebar are view choices like the
 // columns, and live in the same file for the same reason: the desktop app's origin changes every launch.
 // Each field is written only when valid, and a PUT of one field keeps the others.
-test("[fast] PUT /api/ui-prefs keeps theme, appearance, sidebar, density, the column set version, the column widths, the sheet's properties and the dismissed update, each checked, next to the columns", async () => {
+test("[fast] PUT /api/ui-prefs keeps theme, appearance, sidebar, density, the column set version, the column widths, the sheet's properties, the dismissed update and the copied scanner, each checked, next to the columns", async () => {
   const dir = mkdtempSync(join(tmpdir(), "qm-uiprefs-look-"));
   const put = (url: string, body: unknown): Promise<Response> => fetch(url + "/api/ui-prefs", { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
   const s = await startServer(ensureLayout(resolveConfig(["--port", "0", "--data", dir], {})));
@@ -3041,10 +3054,11 @@ test("[fast] PUT /api/ui-prefs keeps theme, appearance, sidebar, density, the co
     assert.equal((await put(s.url, { sheetProps: ["fc", "hitLifeLeech"] })).status, 200);
     assert.equal((await put(s.url, { colWidths: { location: 420, "sk:animal lore": 40 } })).status, 200);
     assert.equal((await put(s.url, { dismissedUpdate: "1.2.3" })).status, 200);
-    assert.deepEqual(asJson(await (await fetch(s.url + "/api/ui-prefs")).json()), { ok: true, prefs: { cols: ["hci"], sheetProps: ["fc", "hitLifeLeech"], colsVersion: "2", appearance: "dark", theme: "default", sidebar: "collapsed", density: "regular", colWidths: { location: 420, "sk:animal lore": 40 }, dismissedUpdate: "1.2.3" } });
+    assert.equal((await put(s.url, { copiedScanner: "1.2.0" })).status, 200);
+    assert.deepEqual(asJson(await (await fetch(s.url + "/api/ui-prefs")).json()), { ok: true, prefs: { cols: ["hci"], sheetProps: ["fc", "hitLifeLeech"], colsVersion: "2", appearance: "dark", theme: "default", sidebar: "collapsed", density: "regular", colWidths: { location: 420, "sk:animal lore": 40 }, dismissedUpdate: "1.2.3", copiedScanner: "1.2.0" } });
     for (const bad of [{ appearance: "sepia" }, { appearance: 1 }, { theme: "neon" }, { theme: "" }, { sidebar: "wide" }, { sidebar: true }, { density: "comfy" }, { colsVersion: 2 }, { colsVersion: "9" },
       { sheetProps: "fc" }, { sheetProps: [5] }, { colWidths: [300] }, { colWidths: { location: 39 } }, { colWidths: { location: 300.5 } }, { colWidths: { location: "300" } },
-      { dismissedUpdate: "" }, { dismissedUpdate: 3 }, { dismissedUpdate: "9".repeat(65) },
+      { dismissedUpdate: "" }, { dismissedUpdate: 3 }, { dismissedUpdate: "9".repeat(65) }, { copiedScanner: "" }, { copiedScanner: 1.2 },
       { colWidths: Object.fromEntries(Array.from({ length: 201 }, (_, i) => [`c${i}`, 100])) }]) {
       assert.equal((await put(s.url, bad)).status, 400, `${JSON.stringify(bad).slice(0, 80)} should be refused`);
     }

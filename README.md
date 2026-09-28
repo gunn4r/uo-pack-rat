@@ -122,10 +122,10 @@ To start a script with one key instead, right-click it in the Script Manager, ch
 
 ### Starting a script in Razor Enhanced
 
-Razor Enhanced runs only on Windows. It has the scanner and the bridge, but no quick refresh.
+Razor Enhanced runs only on Windows. It has the scanner, the quick refresh, the blacklist script and the bridge; only TazUO's in-game panel is missing.
 
 1. In Razor Enhanced, open the **Scripts** tab.
-2. If `packrat-scanner.py` and `packrat-bridge.py` are not in the list yet, add them.
+2. If `packrat-scanner.py`, `packrat-refresh.py`, `packrat-blacklist.py` and `packrat-bridge.py` are not in the list yet, add them.
 3. Pick the script and start it, the same way as any other Razor Enhanced script. You can give it a hotkey there too.
 
 This one has not been tried with a real game yet. If something goes wrong, please [open an issue](https://github.com/gunn4r/uo-pack-rat/issues) and say what you saw. More in [adapters/razor-enhanced/README.md](adapters/razor-enhanced/README.md).
@@ -134,7 +134,7 @@ This one has not been tried with a real game yet. If something goes wrong, pleas
 
 The web client can't save files, so it works differently: you copy and paste.
 
-1. Open [adapters/classicuo-web/packrat-scanner.ts](adapters/classicuo-web/packrat-scanner.ts), copy all of it, and paste it into the web client's scripting window as a new script.
+1. In Pack Rat's setup (or **Settings › Game client** once the web client is chosen), click **Copy scanner script**, then paste it into the web client's scripting window as a new script. Copy it again from Settings after a Pack Rat update; Settings says when a newer one ships.
 2. Stand near what you want scanned and run the script.
 3. It prints a block of text below the scripting window, starting with `-----BEGIN PACK RAT SCAN-----` and ending with `-----END PACK RAT SCAN-----`. Select all of it and copy it.
 4. In Pack Rat, open **Import** in the sidebar (or press ⌘I, Ctrl+I on Windows and Linux), paste into the box under **Paste a scan**, and click **Paste scan**.
