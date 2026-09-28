@@ -1,6 +1,6 @@
 # Bridge protocol
 
-The bridge is how the app reaches back into the game client: the Suit Builder and Containers tabs' Highlight, Grab, and Go-to buttons don't move anything themselves — they queue a command, and an adapter script running inside the game client (attended, one command at a time) carries it out. This document describes protocol v1: the file layout, the three message shapes, the actions, and the rules that keep it safe to leave running.
+The bridge is how the app reaches back into the game client: the Highlight, Grab, and Go-to buttons on Inventory rows, the item peek and the Suit Builder's result panel don't move anything themselves — they queue a command, and an adapter script running inside the game client (attended, one command at a time) carries it out. This document describes protocol v1: the file layout, the three message shapes, the actions, and the rules that keep it safe to leave running.
 
 Ground truth: `app/schema/bridge.v1.schema.json` (validated by `app/contracts.test.mts`), `app/vault-server.mts` (`POST /api/bridge`, `GET /api/bridge/status`), `adapters/tazuo/packrat-bridge.py` (the reference adapter implementation), and `app/ui/bridge.mts` (the page's side).
 
@@ -15,6 +15,8 @@ That fallback used to be a server-only fact the page couldn't see: a player with
 | `queue.jsonl` | `POST /api/bridge` (append-only) | the bridge script | One JSON **command** object per line. |
 | `status.json` | the bridge script (whole-file, atomic replace) | `GET /api/bridge/status` | One JSON **status** object: is the bridge alive, what is it doing, and the last ~30 **results**. |
 
+On TazUO the same directory also holds `panel.json`, the in-game panel's heartbeat (`adapters/tazuo/packrat-panel.py`, the same `alive`/`stopped` shape). It is not part of this protocol: nothing reads it but the installer's running-script guard (`docs/architecture.md`, The installer's guard).
+
 `queue.jsonl` is append-only from the server's side — every `POST /api/bridge` call appends one line and never rewrites the file. The bridge script tracks its own read offset into the file (see The offset rule, below); nothing ever truncates or rewrites lines that were already written.
 
 ## Command
@@ -22,12 +24,12 @@ That fallback used to be a server-only fact the page couldn't see: a player with
 One line of `queue.jsonl`, one JSON object per line:
 
 ```json
-{"id": "1757800000000-4213", "action": "grab", "serial": 1234567890, "name": "Leather Gorget", "chain": [1073741825, 1073741826], "pos": {"x": 1520, "y": 1631, "z": 0}, "queuedAt": "2026-09-13T14:20:44.123Z"}
+{"id": "0b6f3c1e-2a4d-4e8f-9c3a-5d7e1f2a3b4c", "action": "grab", "serial": 1234567890, "name": "Leather Gorget", "chain": [1073741825, 1073741826], "pos": {"x": 1520, "y": 1631, "z": 0}, "queuedAt": "2026-09-13T14:20:44.123Z"}
 ```
 
 | Field | Type | Meaning |
 |---|---|---|
-| `id` | string, non-empty | Identifies this command — the page uses it to match a later result back to the button that queued it. |
+| `id` | string, 1–64 characters | Identifies this command (the app writes a `randomUUID()`) — the page uses it to match a later result back to the button that queued it. |
 | `action` | string, one of `"highlight"`, `"grab"`, `"goto"` | What to do — see Actions below. |
 | `serial` | integer ≥ 1 | The target item's serial. |
 | `name` | string, ≤ 120 characters | The item's display name (so the bridge script's on-screen messages don't have to look it up itself). It is only ever printed on screen. Each bridge truncates to the same 120. |
@@ -61,7 +63,7 @@ The whole of `status.json`, replaced atomically (temp file + rename) roughly eve
   "character": "Dorran",
   "current": null,
   "results": {
-    "1757800000000-4213": {"ok": true, "msg": "grabbed Leather Gorget — it is in your backpack", "t": "2026-09-13T14:20:46+00:00"}
+    "0b6f3c1e-2a4d-4e8f-9c3a-5d7e1f2a3b4c": {"ok": true, "msg": "grabbed Leather Gorget — it is in your backpack", "t": "2026-09-13T14:20:46+00:00"}
   },
   "counts": {"done": 4, "failed": 1}
 }
@@ -99,9 +101,9 @@ The bridge script only ever acts on commands queued **after it started**. On lau
 `queue.jsonl` is an ordinary file in the data directory. The app writes it, but so can anything else on the machine, and a line in it moves a real character in a live game. So a bridge script trusts nothing in that file and re-checks every line itself rather than assuming the server validated it — the server's check is real, but the file is not the server's to guard. The block of checks below is byte-identical in both bridge scripts, and a test asserts it stays that way. An adapter that ships a bridge is expected to implement all of it.
 
 - **Freshness.** `queuedAt` is parsed, not ignored. A command older than **60 seconds**, more than **5 seconds** in the future, or carrying a missing or unparseable stamp is recorded as expired and never executed. This is what makes a replayed backlog inert, and the offset rule above is still the first line of that.
-- **Duplicates.** An id the bridge has already accepted in this session is skipped — checked when the line is read, so two copies in one read, or a copy arriving while the first is still waiting its turn, run once. The last 500 are remembered. An id longer than 64 characters is refused (the app's own are about 18).
+- **Duplicates.** An id the bridge has already accepted in this session is skipped — checked when the line is read, so two copies in one read, or a copy arriving while the first is still waiting its turn, run once. The last 500 are remembered. An id longer than 64 characters is refused (the app's own are 36-character UUIDs).
 - **Rate.** At most **4 commands per poll** and **40 per rolling minute**. The excess is *deferred*, never dropped, and reading pauses while 64 are already pending, so nothing is lost to backpressure. Exceeding the minute budget is treated as a signal rather than a nuisance: the bridge records the refusal, says plainly in-game that the queue is being written faster than a person clicks, and **stops**. Forty a minute is comfortably above the largest burst the app itself produces (a twenty-piece "Grab all", sent a few hundred milliseconds apart).
-- **Container-ness.** Every entry of `chain` must pass the same container test the scanner uses — corpses refused by both flag and graphic, and nothing named a deed, a bag of sending or a music box — before it is opened. Double-click is UO's universal "use" verb: a potion drinks, a rune opens its gump, a deed places. A chain longer than 8 is refused outright.
+- **Container-ness.** Every entry of `chain` must pass the same container test the scanner uses — corpses refused by both flag and graphic, and nothing named a deed, a bag of sending or a music box, nor any book, tome or atlas (by name or by graphic: double-clicking one opens a spellbook or runebook, not a container) — before it is opened. Double-click is UO's universal "use" verb: a potion drinks, a rune opens its gump, a deed places. A chain longer than 8 is refused outright.
 - **Chain ownership.** Each entry is checked against the live client just before it is opened. `chain[0]` must lie on the ground or be the player's own backpack or open bank box — never a container another mobile carries — and every later entry must sit directly inside the entry opened before it. So a chain can only lead down into its own root: naming a stranger's pack, whether as the root or tucked in after a chest in reach, is refused without a double-click (a snoop attempt). A root the client knows to be someone else's is refused before any walk. A chain whose bags no longer nest the way the scan said (something was moved) is refused with "rescan and try again".
 - **Distance.** A destination further than **24 tiles** (the client's own view range) from where the character is standing, or outside the map's bounds, is refused with "walk closer and retry" rather than pathfound. Still one pathfind attempt per command, bounded by the existing 20-second timeout. A chain rooted in the player's own backpack or bank needs no walk at all: a worn container's position says nothing about where the player stands.
 - **Grab source.** The *destination* has always been hard-coded to the player's own backpack and is deliberately **not** a protocol field — keep it that way. The *source* is now checked too: the item's root must resolve to the player's backpack, their bank, or a container in the chain that same command just opened. A guild chest someone left open nearby, a stranger's pack, or something lying on the ground is refused.
@@ -116,11 +118,11 @@ The page calls the bridge offline once `alive` is 8 seconds old and then refuses
 
 ## The wrong-character confirm
 
-Every grab lands the item in **whichever character's client the bridge is currently running on** — not necessarily the character the Suit Builder tab is showing. Grab All (`app/ui/bridge.mts`) checks this before queuing anything: if the bridge's reported `character` doesn't match the builder's currently selected character, it asks first —
+Every grab lands the item in **whichever character's client the bridge is currently running on** — not necessarily the character the Suit Builder tab is showing. Grab All (`app/ui/bridge.mts`'s `grabAll`) checks this before queuing anything: if the bridge's reported `character` doesn't match the character the suit was built for, it asks first, in a dialog titled "Grab into `<bridge character>`'s backpack?" —
 
-> "The bridge is running on `<bridge character>`, not `<builder character>`: the pieces would land in `<bridge character>`'s backpack. Grab them anyway?"
+> "The bridge is running on `<bridge character>`, not `<builder character>`: the pieces would land in `<bridge character>`'s backpack."
 
-— and only proceeds on confirmation. A single per-item Grab button carries the same risk (the piece always lands wherever the bridge is running) but is not gated behind a confirm, since one item is a much smaller mistake to walk back than a whole suit's worth of Grab-alls landing on the wrong character.
+— and only proceeds on "Grab anyway". It then sends one Grab per piece, 300 ms apart, stopping at the first refusal, and leaves out pieces already in that character's backpack or worn by anyone. A single per-item Grab button carries the same risk (the piece always lands wherever the bridge is running) but is not gated behind a confirm, since one item is a much smaller mistake to walk back than a whole suit's worth of Grab-alls landing on the wrong character.
 
 ## "Adapters never speak publicly"
 

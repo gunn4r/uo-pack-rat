@@ -2,7 +2,7 @@
 
 One script for people who play on the [ClassicUO web client](https://play.classicuo.org) (the one you play in a web browser). The web client can't save files, so this works by copy and paste: the script prints what your character owns, and you paste that into the Pack Rat app.
 
-**Not tested with a real game yet.** This script was written from the web client's documentation. If you try it, please [open an issue](../../README.md#help-something-isnt-working) and say what happened, good or bad.
+**Not tested with a real game yet.** This script was written from the web client's documentation. If you try it, please [open an issue](../../README.md#help) and say what happened, good or bad.
 
 ## Install
 
@@ -35,7 +35,7 @@ The script runs once and stops. Nothing keeps running, and it never does anythin
 
 There is also no bridge for the web client, so the **Highlight**, **Grab** and **Go to** buttons don't appear for characters scanned with it.
 
-A scan shows where your house and chests are. Don't share the pasted text publicly without reading the main README's [privacy note](../../README.md#keep-your-scan-files-to-yourself).
+A scan shows where your house and chests are. Don't share the pasted text publicly without reading the main README's [privacy note](../../README.md#your-data-and-privacy).
 
 ## For developers
 

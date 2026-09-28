@@ -31,13 +31,13 @@ A `workflow_dispatch` run is **build-only**. Both `create-release` and `publish`
 Every `uses:` in `.github/workflows/*.yml` names a full 40-character commit SHA with the human-readable tag in a trailing comment:
 
 ```yaml
-- uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+- uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 ```
 
 `@v4` is a git tag, and a tag is a mutable pointer — whoever controls the repository it lives in can retarget it at a different commit, and every workflow run picks that up immediately with no lockfile, no integrity hash and no review. A SHA cannot move. The trailing comment is not decoration: it is what makes the pin readable, and it is what Dependabot's `github-actions` updater rewrites when it opens a pull request to move a pin forward. Keep both parts when adding or updating an action, and resolve the SHA from GitHub rather than copying one from memory:
 
 ```
-gh api repos/actions/checkout/git/ref/tags/v4.4.0 --jq '.object.sha'
+gh api repos/actions/checkout/git/ref/tags/v7.0.1 --jq '.object.sha'
 ```
 
 (If that returns an annotated tag object rather than a commit, follow it: `gh api repos/actions/checkout/git/tags/<sha> --jq '.object.sha'`.)
@@ -46,9 +46,9 @@ gh api repos/actions/checkout/git/ref/tags/v4.4.0 --jq '.object.sha'
 
 Both workflows install with `npm ci --ignore-scripts`. The only package in the tree with an install script is `electron-winstaller`, which arrives solely as a dependency of the peer `electron-builder-squirrel-windows`, and `app-builder-lib` requires that lazily inside its Squirrel target branch — this project builds `nsis` and `portable`, never Squirrel. Electron's own binary does not come from an install script in the version pinned here (`node_modules/electron/index.js` fetches it on first `require`), and TypeScript's native compiler arrives as platform-gated `optionalDependencies` that are integrity-pinned in the lockfile. If a Squirrel target is ever added, that install step has to be run back explicitly.
 
-## Rehearsing a release before the first tag
+## Rehearsing a release
 
-`.github/workflows/release.yml` can be triggered by hand from the Actions tab (`workflow_dispatch`), with no tag needed. A dispatched run builds installers on all three platforms exactly the way a tagged run would, but creates no release and uploads nothing to one — the installers land as workflow artifacts on the run itself, where they can be downloaded and launched. Run it by hand at least once before the first tag: it's the first real exercise of the NSIS, AppImage and DMG builders, it's the first exercise of `npm ci --ignore-scripts` on a real Windows build and of the icon conversion from `build/icon.png`, so it's worth seeing what a build actually looks like before it's also the public first impression.
+`.github/workflows/release.yml` can be triggered by hand from the Actions tab (`workflow_dispatch`), with no tag needed. A dispatched run builds installers on all three platforms exactly the way a tagged run would, but creates no release and uploads nothing to one — the installers land as workflow artifacts on the run itself, where they can be downloaded and launched. Run it by hand before tagging a release that changes anything about the build — `package.json`'s `build` block, the Electron or electron-builder version, `.github/workflows/release.yml`, what ships in the app (`build.files`, `asarUnpack`) or the icon: a tagged run's installers go straight into a draft that players will download from, so it's worth seeing what a build actually looks like first.
 
 ## Cutting a release
 
@@ -65,20 +65,21 @@ The checklist, in order:
    - Linux: confirm the AppImage needs `chmod +x` first, then runs.
 
    This is the one step that catches "it builds" not being the same as "a player can actually get past the warning and open it."
-7. **Check "Check for updates" against the new release.** From a build of the *previous* version, open Settings and press Check for updates — it should report the new version as available. From the new build itself, the same button should report up to date.
+7. **Check the update check against the new release — after step 9, since GitHub's "latest release" API does not return a draft.** From a build of the *previous* version, open Settings › Updates and press **Check for updates** — it should report the new version as available, and with **Check for updates automatically** on, the in-app notice should appear above the screen a few seconds after launch. From the new build itself, the same button should report up to date. (The answer is cached for an hour while the app stays open, so restart the app between tries.)
 8. **Check `SHA256SUMS` against what you downloaded.** In the folder you downloaded everything into, run the verification command from the next section. Every file you have should say `OK`. If one doesn't, stop — do not publish the draft, and work out which of the build and the upload went wrong before anything goes public.
-9. **Publish the draft.** Once every artifact has been launched, the update check confirmed and the checksums verified, publish the draft release on GitHub so it becomes the public `latest` release.
+9. **Publish the draft.** Once every artifact has been launched and the checksums verified, publish the draft release on GitHub so it becomes the public `latest` release, then do step 7.
 10. **Announce.** Post wherever this project's users will see it.
 
 ## Verifying a download
 
-Every release carries a `SHA256SUMS` file listing the SHA-256 hash of each installer by filename. Anyone — a maintainer at step 8, or a player who got a link from somewhere — can check a downloaded file against it. Download `SHA256SUMS` from the release into the same folder as the installer, then:
+Every release carries a `SHA256SUMS` file listing the SHA-256 hash of every other file on the release by filename: `PackRat-<version>-mac-arm64.dmg` and `PackRat-<version>-mac-x64.dmg` with a `.zip` of each, the Windows installer `PackRat-<version>-win-x64.exe`, the portable `PackRat-<version>-portable-win-x64.exe`, `PackRat-<version>-linux-x86_64.AppImage`, and electron-builder's `latest*.yml` and `.blockmap` files. Anyone — a maintainer at step 8, or a player who got a link from somewhere — can check a downloaded file against it. Download `SHA256SUMS` from the release into the same folder as the installer, then:
 
 - **macOS:** `shasum -a 256 -c SHA256SUMS --ignore-missing`
 - **Linux, or Windows under WSL or Git Bash:** `sha256sum -c SHA256SUMS --ignore-missing`
-- **Windows PowerShell:** `Get-FileHash .\PackRat-0.1.0-win-x64.exe -Algorithm SHA256` and compare the hash it prints against the matching line in `SHA256SUMS` (PowerShell has no `-c` equivalent, so this one is a read-and-compare).
+- **Windows PowerShell:** `Get-FileHash .\PackRat-<version>-win-x64.exe -Algorithm SHA256` (with your file's real name) and compare the hash it prints against the matching line in `SHA256SUMS` (PowerShell has no `-c` equivalent, so this one is a read-and-compare; the case of the letters does not matter).
+- **Windows Command Prompt:** `certutil -hashfile PackRat-<version>-win-x64.exe SHA256`, compared the same way.
 
-`--ignore-missing` is what lets a player who downloaded only their own platform's installer get an `OK` instead of a wall of "No such file" for the other five.
+`--ignore-missing` is what lets a player who downloaded only their own platform's installer get an `OK` for it instead of a wall of "No such file" for every other file on the release.
 
 Be clear about what this does and does not prove. `SHA256SUMS` is generated by the same workflow that built the files, so it is no defence at all against a compromised release token or a poisoned build dependency — the same run would simply publish matching hashes for the tampered file. What it does prove is that the copy in your hands is byte-for-byte the copy this project uploaded, which is exactly the question worth asking when a build arrives from anywhere other than the Releases page: a Discord repost, a shard forum mirror, an "easier installer" someone rehosted, or a download that silently truncated. `SECURITY.md` says a copy from anywhere else has no way to be verified against what this project actually built; `SHA256SUMS` is how that stops being true.
 
@@ -86,6 +87,6 @@ Be clear about what this does and does not prove. `SHA256SUMS` is generated by t
 
 Deliberately outstanding, tracked here rather than hidden in an issue nobody sees before shipping:
 
-- **README screenshots.** None ship this phase. The shot list, once there's a stable UI to capture: the inventory tab, a character sheet, a suit-builder result, the setup wizard, and the macOS Gatekeeper dialog a player will meet on first launch.
+- **README screenshots.** None ship yet. The shot list, once there's a stable UI to capture: the inventory tab, a character sheet, a suit-builder result, the setup wizard, and the macOS Gatekeeper dialog a player will meet on first launch.
 - **Code signing on macOS and Windows.** Every build is unsigned (see `SECURITY.md`) — `identity: null` in `package.json`'s `build.mac` and `CSC_IDENTITY_AUTO_DISCOVERY: "false"` in the release workflow are both explicit opt-outs, not defaults. Signing removes the Gatekeeper/SmartScreen warnings this README currently has to explain, and it is also what would let the `publish` job verify the artifacts it uploads rather than trusting the runners that produced them.
-- **Automatic updates via `electron-updater`.** Today "Check for updates" only reports whether a newer version exists and links to the release page — it doesn't download or install anything. Dependabot alerts and SHA-pinning enforcement are on (above), which this waited on, but signing still comes first: an auto-updater turns a compromised release into code that installs itself on every player's machine, instead of something each player has to choose to download.
+- **Automatic updates via `electron-updater`.** Today the update check (on by default, shortly after launch and every 6 hours, or on demand from Settings) only reports whether a newer version exists, as a notice with a link to the release page — it doesn't download or install anything. Dependabot alerts and SHA-pinning enforcement are on (above), which this waited on, but signing still comes first: an auto-updater turns a compromised release into code that installs itself on every player's machine, instead of something each player has to choose to download.
