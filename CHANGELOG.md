@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.1.1 — 2026-09-28
+
 - **Scans skip trash barrels and chests — re-install the scripts (TazUO 2.8.0, Razor Enhanced 1.7.0; ClassicUO web scanner 1.2.0)** (issue #74): a container whose name contains "trash" is never opened or recorded, on the ground, in the bank or in a bag, since the server empties it on a timer; the scan summary says how many were skipped, and there is no need to blacklist one any more. Trash containers and their contents recorded by earlier scans drop out of the app.
 - **The Suit Builder's Plan shows each piece's own tooltip** (issue #75): hover (or Tab to) the name under Wearing now for the piece being replaced, and the name under Wear instead for its replacement; the rest of the row no longer shows the new piece's tooltip.
 - **Hovering a row's action buttons no longer shows the item tooltip** (issue #69): on the Inventory, the tooltip no longer covers the row you are acting on or overlaps the button's own tooltip; it comes back when the pointer returns to the rest of the row.
