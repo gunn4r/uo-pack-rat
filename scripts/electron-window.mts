@@ -4,11 +4,38 @@
 // that size clamped to the screen's work area, and the test reads back the width it really got and drives the
 // layout that width shows (a collapsed sidebar, facet chips folded into "+ Filter" below 1180 px). An assertion
 // only reachable above the real width is skipped with that reason, and still runs where the screen allows.
+import { spawn } from "node:child_process";
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import type { Readable } from "node:stream";
 import type { ElectronApplication, Page } from "playwright";
 import { DEFAULT_SHARD } from "../app/rules.mts";
+
+// On Linux each test file that imports this gets an X display of its own. The runner runs the Electron files
+// in parallel, and under one shared display (CI's `xvfb-run`, which has no window manager) every window opens
+// at the same spot and the X input focus moves to whichever window was shown last: the others lose focus, so
+// their focus and hover tooltips close or never open. Without Xvfb installed the shared display is kept.
+// Launches that pass no `env` inherit process.env, and testEnv() copies it, so both pick the new DISPLAY.
+async function ownDisplay(): Promise<void> {
+  const xvfb = spawn("Xvfb", ["-displayfd", "3", "-screen", "0", "1280x1024x24", "-nolisten", "tcp"], { stdio: ["ignore", "ignore", "ignore", "pipe"] });
+  const fd = xvfb.stdio[3] as Readable;
+  const display = await new Promise<string | null>((resolve) => {
+    let out = "";
+    fd.on("data", (d: Buffer) => { out += String(d); if (out.includes("\n")) resolve(out.trim()); });
+    xvfb.on("error", () => resolve(null));
+    xvfb.on("exit", () => resolve(null));
+  });
+  fd.destroy();
+  if (!display) {
+    console.warn("electron-window: could not start Xvfb, so this file shares the display with the others");
+    return;
+  }
+  process.env.DISPLAY = `:${display}`;
+  xvfb.unref();
+  process.on("exit", () => xvfb.kill());
+}
+if (process.platform === "linux") await ownDisplay();
 
 export interface RealSize { width: number; height: number }
 
