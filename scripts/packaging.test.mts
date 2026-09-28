@@ -5,7 +5,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync, readdirSync } from "node:fs";
 import { fileURLToPath } from "node:url";
-import { dirname, join } from "node:path";
+import { dirname, join, matchesGlob, relative, sep } from "node:path";
 
 // Only the electron-builder + package.json fields these tests actually read — package.json's own
 // full shape (dependencies, devDependencies, engines, …) isn't this file's concern.
@@ -119,11 +119,40 @@ test("[fast] the bundle leaves out the adapters' tests and fixtures", () => {
   for (const p of ["!adapters/**/test_*.py", "!adapters/fake_clients.py", "!adapters/**/fixture.scan.json"]) assert.ok(files.includes(p), `missing ${p}`);
 });
 
+test("[fast] every module the shell, the server and the workers load at run time ships", () => {
+  // The packaged app runs its main process, server and workers straight from .mts source, so a source
+  // file one of them imports that build.files leaves out is a server that cannot start on a player's
+  // machine while every source-tree test passes (v0.1.0's first draft: vault-server.mts imports
+  // app/ui/messages.mts, which "!app/ui/**/*.mts" dropped). Walks the static imports and
+  // `new URL("./x.mts", import.meta.url)` worker references from each entry point, skipping type-only
+  // imports (erased at run time), and applies build.files the way electron-builder does: the last
+  // pattern that matches a path decides it.
+  const files = build.files ?? [];
+  const ships = (rel: string): boolean => {
+    let shipped = false;
+    for (const p of files) if (matchesGlob(rel, p.replace(/^!/, ""))) shipped = !p.startsWith("!");
+    return shipped;
+  };
+  const seen = new Set<string>();
+  const queue = ["electron/main.mts", "electron/server-entry.mts", "app/optimize-worker.mts", "scripts/optimizer-core.mts"];
+  while (queue.length) {
+    const rel = queue.pop()!;
+    if (seen.has(rel)) continue;
+    seen.add(rel);
+    assert.ok(ships(rel), `${rel} is loaded at run time but build.files leaves it out of the package`);
+    const text = readFileSync(join(root, rel), "utf8");
+    const refs = [...text.matchAll(/^(?:import|export)\s+(?!type\b)[^;]*?from\s+"(\.{1,2}\/[^"]+)"/gm), ...text.matchAll(/new URL\("(\.{1,2}\/[^"]+\.mts)", import\.meta\.url\)/g)];
+    for (const [, spec] of refs) queue.push(relative(root, join(root, dirname(rel), spec!)).split(sep).join("/"));
+  }
+  assert.ok(seen.has("app/vault-server.mts") && seen.has("app/ui/messages.mts"), "the walk must reach the server and what it imports from app/ui/");
+});
+
 test("[fast] the bundle excludes the page's TypeScript sources (the compiled app/dist/ui/ is what runs) but still ships its stylesheet", () => {
   // Once app/ui/**/*.mts is compiled to app/dist/ui/ (npm run build:ui, part of predist), the .mts
-  // sources are redundant weight in the packaged app — the packaged server (vault-server.mts, run
-  // from app/** source directly) never reads them, only the browser-served /ui/<name>.mjs route does,
-  // and that's served from app/dist/. Only this ONE pattern is excluded, not a broader "!app/**/*.mts"
+  // sources are redundant weight in the packaged app — only the browser-served /ui/<name>.mjs route
+  // reads them, and that's served from app/dist/. The one exception is app/ui/messages.mts, which the
+  // server imports too, so build.files re-includes it after the exclusion (see the run-time module
+  // test above). Only this ONE pattern is excluded, not a broader "!app/**/*.mts"
   // — the server itself still runs from app/*.mts source, so excluding all .mts under app/ would break it.
   const files = build.files ?? [];
   assert.ok(files.includes("!app/ui/**/*.mts"), "app/ui/**/*.mts (the page's TS sources) must be excluded — only the compiled app/dist/ui/ output is served");
