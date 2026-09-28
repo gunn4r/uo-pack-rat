@@ -1,13 +1,10 @@
 # Changelog
 
-## Unreleased
+## 0.1.1 — 2026-09-28
 
 - **Copy the ClassicUO web scanner from the app** (issue #79): the setup wizard's web-client step and Settings › Game client have a **Copy scanner script** button that copies the app's own bundled script, so there is no file to find; Settings shows its version and says when the app ships a newer one than you last copied.
 - **Razor Enhanced gets the quick refresh and the blacklist script — re-install the scripts (Razor Enhanced 1.8.0)** (issue #80): `packrat-refresh.py` reads just your stats, skills, what you are wearing and your backpack, and `packrat-blacklist.py` stops scans opening a container you click, the same as TazUO's. Not yet tried in a live Razor Enhanced client.
 - **Razor Enhanced's setup says how to stop its scripts** (issue #84): the setup wizard and Settings › Reinstall no longer ask a Razor Enhanced player to type `-stopall` (a TazUO command); they say to stop the Pack Rat scripts in Razor Enhanced's Scripting tab, and so does the message when an install is refused because a script is still running.
-
-## 0.1.1 — 2026-09-28
-
 - **Scans skip trash barrels and chests — re-install the scripts (TazUO 2.8.0, Razor Enhanced 1.7.0; ClassicUO web scanner 1.2.0)** (issue #74): a container whose name contains "trash" is never opened or recorded, on the ground, in the bank or in a bag, since the server empties it on a timer; the scan summary says how many were skipped, and there is no need to blacklist one any more. Trash containers and their contents recorded by earlier scans drop out of the app.
 - **The Suit Builder's Plan shows each piece's own tooltip** (issue #75): hover (or Tab to) the name under Wearing now for the piece being replaced, and the name under Wear instead for its replacement; the rest of the row no longer shows the new piece's tooltip.
 - **Hovering a row's action buttons no longer shows the item tooltip** (issue #69): on the Inventory, the tooltip no longer covers the row you are acting on or overlaps the button's own tooltip; it comes back when the pointer returns to the rest of the row.
