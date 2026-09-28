@@ -16,6 +16,7 @@
 // no edit here — so the copy that lived in this file was doing nothing the suite wasn't.
 import { writeFileSync, mkdirSync, readdirSync, readFileSync } from "node:fs";
 import { execFileSync } from "node:child_process";
+import { availableParallelism } from "node:os";
 import { dirname, join, relative, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { buildUi } from "./build-ui.mts";
@@ -28,9 +29,13 @@ const changedArg = process.argv.find((a) => a === "--changed" || a.startsWith("-
 const mode: Mode = changedArg ? "changed" : process.argv.includes("--smoke") ? "smoke" : process.argv.includes("--fast") ? "fast" : "full";
 // Node 24 applies it to each test and Node 22 to each file as a whole. It sits well below CI's
 // 20-minute job timeout, so a hang in CI still ends in a written summary naming the hung test or file
-// (the job being killed would write nothing), and far above anything the suite needs: the whole full
-// run takes a few minutes, its slowest file well under one.
+// (the job being killed would write nothing), and far above anything the suite needs: its slowest
+// file, app/solver-large.test.mts, takes a minute or two.
 const TEST_TIMEOUT_MS = 12 * 60 * 1000;
+// Test files run in parallel, one process each, as many at once as the machine has cores. Every file
+// keeps its own temp folders and ports, and the Electron files their own data folder (which is also
+// Electron's userData and single-instance lock). TEST_CONCURRENCY=1 runs them one at a time.
+const CONCURRENCY = Number(process.env.TEST_CONCURRENCY) || availableParallelism();
 
 // Recursive so a test file in a new subdirectory (app/schema/validate.test.mts was the one this
 // missed) is picked up automatically — a hard-coded third/fourth top-level directory is what
@@ -77,6 +82,7 @@ const { durations, ...summary }: SuiteResult = selection.files?.length === 0
   root: ROOT,
   mode,
   timeout: TEST_TIMEOUT_MS,
+  concurrency: CONCURRENCY,
   prepare: () => {
     // Build the schema types before buildUi() — this call, not tsconfig.browser.json's `include` (a
     // missing literal entry there is silently dropped, not an error), is what actually guarantees
@@ -84,6 +90,9 @@ const { durations, ...summary }: SuiteResult = selection.files?.length === 0
     // build step — every caller imports scripts/optimizer-core.mts straight from source.
     buildSchemaTypes();
     buildUi();   // app/server.test.mts's [smoke] cases fetch app/dist/item-query.mjs and the page itself
+    // Built once for the whole run: the files run in parallel, so none of them may rebuild it under
+    // the others (see scripts/build-ui.mts). Every test file's process inherits this.
+    process.env.PACKRAT_UI_BUILT = "1";
     const all = ["app", "scripts"].flatMap((d) => walk(join(ROOT, d)));
     return selection.files ? all.filter((p) => selection.files!.includes(repoPath(p))) : all;
   },
