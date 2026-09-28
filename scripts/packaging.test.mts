@@ -183,12 +183,20 @@ test("[fast] the two Windows targets cannot resolve to the same artifact filenam
   // the top-level config.artifactName). nsis and portable are the same NsisTarget class under two
   // different target names, both reading build[targetName] as their target-specific options — so with
   // no override, both fall through to the same global pattern and collide on
-  // "Pack Rat-<version>-win-x64.exe", and whichever electron-builder writes second overwrites the first.
+  // "PackRat-<version>-win-x64.exe", and whichever electron-builder writes second overwrites the first.
   const effectivePattern = (targetName: "nsis" | "portable"): string | undefined => build[targetName]?.artifactName || build.win?.artifactName || build.artifactName;
   const nsisPattern = effectivePattern("nsis");
   const portablePattern = effectivePattern("portable");
   assert.notEqual(nsisPattern, portablePattern, "nsis and portable would resolve to the same artifact filename");
   assert.ok(portablePattern, "portable needs its own artifactName override to avoid the collision");
+});
+
+test("[fast] artifact file names have no spaces, so SHA256SUMS matches what GitHub serves", () => {
+  // GitHub rewrites a space in an uploaded asset's name to a dot, but the publish job writes SHA256SUMS
+  // from the names on disk, so a spaced name makes `shasum -c SHA256SUMS` find no file to verify.
+  for (const pattern of [build.artifactName, build.nsis?.artifactName, build.portable?.artifactName, build.win?.artifactName]) {
+    if (pattern) assert.doesNotMatch(pattern, /\s|\$\{productName\}/, `artifactName ${pattern} can produce a space`);
+  }
 });
 
 test("[fast] the release always publishes as a draft, explicitly, not by relying on electron-builder's default", () => {

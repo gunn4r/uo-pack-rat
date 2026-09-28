@@ -79,7 +79,7 @@ Every release carries a `SHA256SUMS` file listing the SHA-256 hash of each insta
 
 - **macOS:** `shasum -a 256 -c SHA256SUMS --ignore-missing`
 - **Linux, or Windows under WSL or Git Bash:** `sha256sum -c SHA256SUMS --ignore-missing`
-- **Windows PowerShell:** `Get-FileHash '.\Pack Rat-0.1.0-win-x64.exe' -Algorithm SHA256` and compare the hash it prints against the matching line in `SHA256SUMS` (PowerShell has no `-c` equivalent, so this one is a read-and-compare).
+- **Windows PowerShell:** `Get-FileHash .\PackRat-0.1.0-win-x64.exe -Algorithm SHA256` and compare the hash it prints against the matching line in `SHA256SUMS` (PowerShell has no `-c` equivalent, so this one is a read-and-compare).
 
 `--ignore-missing` is what lets a player who downloaded only their own platform's installer get an `OK` instead of a wall of "No such file" for the other five.
 
