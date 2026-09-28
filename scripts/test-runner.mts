@@ -20,7 +20,7 @@ import { dirname, join, relative, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { buildUi } from "./build-ui.mts";
 import { buildSchemaTypes } from "./build-schema-types.mts";
-import { runSuite, type Mode, type Summary } from "./run-suite.mts";
+import { runSuite, type Mode, type SuiteResult } from "./run-suite.mts";
 import { selectTests } from "./select-tests.mts";
 
 const ROOT = dirname(dirname(fileURLToPath(import.meta.url)));
@@ -71,8 +71,8 @@ if (selection.note) console.log(`changed: ${selection.note}`);
 // every failure, the builds included, has to end up in a freshly written summary rather than leave
 // the previous (possibly green) one on disk. That is why the builds run inside runSuite's `prepare`.
 // A --changed run that selected nothing runs nothing and still writes one, empty, with its note.
-const summary: Summary = selection.files?.length === 0
-  ? { timestamp: new Date().toISOString(), mode, total: 0, passed: 0, failed: 0, skipped: 0, failures: [] }
+const { durations, ...summary }: SuiteResult = selection.files?.length === 0
+  ? { timestamp: new Date().toISOString(), mode, total: 0, passed: 0, failed: 0, skipped: 0, failures: [], durations: {} }
   : await runSuite({
   root: ROOT,
   mode,
@@ -91,6 +91,9 @@ const summary: Summary = selection.files?.length === 0
 if (selection.note) summary.note = selection.note;
 mkdirSync(join(ROOT, "test_logs"), { recursive: true });
 writeFileSync(join(ROOT, "test_logs", "latest_summary.json"), JSON.stringify(summary, null, 2) + "\n");
+// The slowest files, so a run (a CI log included) shows where its time went.
+const slowest = Object.entries(durations).sort((a, b) => b[1] - a[1]).slice(0, 10);
+if (slowest.length) console.log(`slowest files:\n${slowest.map(([f, ms]) => `  ${(ms / 1000).toFixed(1).padStart(6)} s  ${f}`).join("\n")}`);
 console.log(`${mode}: ${summary.passed}/${summary.total} passed, ${summary.failed} failed, ${summary.skipped} skipped`);
 for (const f of summary.failures) console.log(`  FAIL ${f.file} ${f.test_name}: ${f.error}`);
 process.exit(summary.failed ? 1 : 0);

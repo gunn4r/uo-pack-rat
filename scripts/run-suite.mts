@@ -11,6 +11,9 @@ import { resolve, relative, sep } from "node:path";
 export type Mode = "smoke" | "fast" | "full" | "changed";
 export interface Failure { file: string; line: number; test_name: string; error: string }
 export interface Summary { timestamp: string; mode: Mode; total: number; passed: number; failed: number; skipped: number; failures: Failure[]; note?: string }
+// What runSuite returns: the summary, plus each finished file's wall time in ms (repo-relative path ->
+// ms), which the entry point prints rather than writing into the summary.
+export type SuiteResult = Summary & { durations: Record<string, number> };
 
 export interface SuiteOptions {
   root: string;
@@ -26,6 +29,8 @@ export interface SuiteOptions {
   // How long a file's process may keep running after its tests have finished before
   // scripts/test-file-watchdog.mts stops it. Default 10 s.
   watchdogMs?: number | undefined;
+  // How many test files run at once, each in its own process. Default 1.
+  concurrency?: number | undefined;
 }
 
 export const patternsFor = (mode: Mode): RegExp[] | undefined =>
@@ -58,9 +63,10 @@ const WATCHDOG_URL = new URL("./test-file-watchdog.mts", import.meta.url);
 // The text scripts/test-file-watchdog.mts writes to a file's stderr when it stops the file.
 const WATCHDOG_MARKER = "[pack-rat test watchdog]";
 
-export async function runSuite({ root, mode, prepare, timeout, watchdogMs = 10_000 }: SuiteOptions): Promise<Summary> {
+export async function runSuite({ root, mode, prepare, timeout, watchdogMs = 10_000, concurrency = 1 }: SuiteOptions): Promise<SuiteResult> {
   let total = 0, passed = 0, failed = 0, skipped = 0;
   const failures: Failure[] = [];
+  const durations: Record<string, number> = {};
   const fail = (file: string, line: number, test_name: string, error: string): void => {
     total++; failed++;
     failures.push({ file, line, test_name, error: error.slice(0, ERROR_CAP) });
@@ -86,7 +92,7 @@ export async function runSuite({ root, mode, prepare, timeout, watchdogMs = 10_0
       tails.set(file, ((tails.get(file) ?? "") + text).slice(-ERROR_CAP));
     };
     const stream = run({
-      files, testNamePatterns: patternsFor(mode), concurrency: 1, timeout,
+      files, testNamePatterns: patternsFor(mode), concurrency, timeout,
       execArgv: ["--import", `${WATCHDOG_URL.href}?ms=${watchdogMs}`],
     });
     stream.on("test:pass", (t: NodeTest.EventData.TestPass) => {
@@ -132,7 +138,13 @@ export async function runSuite({ root, mode, prepare, timeout, watchdogMs = 10_0
       keepTail(stderrTail, canonical(m.file), m.message);
     });
     stream.on("test:diagnostic", (d: NodeTest.EventData.TestDiagnostic) => { if (d.file) keepTail(diagnostics, canonical(d.file), d.message + "\n"); });
-    stream.on("test:summary", (s: NodeTest.EventData.TestSummary) => { if (s.file) finished.set(canonical(s.file), s.counts.topLevel); });
+    stream.on("test:summary", (s: NodeTest.EventData.TestSummary) => {
+      if (!s.file) return;
+      const file = canonical(s.file);
+      finished.set(file, s.counts.topLevel);
+      // Only the files it was given: a worker a test starts can send a summary of its own.
+      if (files.includes(file)) durations[posixRelative(root, file)] = Math.round(s.duration_ms);
+    });
     // The TestsStream must actually be drained for its events to flow — awaiting only a terminal
     // "end"/"summary" event without consuming the stream leaves run() stalled.
     for await (const _chunk of stream) { /* events are handled by the listeners above */ }
@@ -160,5 +172,5 @@ export async function runSuite({ root, mode, prepare, timeout, watchdogMs = 10_0
     const err = e as { stack?: unknown };
     fail("scripts/test-runner.mts", 0, "test runner", String((e && err.stack) || e));
   }
-  return { timestamp: new Date().toISOString(), mode, total, passed, failed, skipped, failures };
+  return { timestamp: new Date().toISOString(), mode, total, passed, failed, skipped, failures, durations };
 }
