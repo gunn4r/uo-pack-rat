@@ -544,7 +544,7 @@ export function itemMenu(anchor: HTMLElement, it: Item): void {
   menu(anchor, entries, { label: `More actions for ${it.name}` });
 }
 function actionsCell(it: Item): HTMLTableCellElement {
-  return el("td", { class: "act-cell" }, rowActions([
+  return el("td", { class: "act-cell", "data-no-tip": "" }, rowActions([
     ...ACTIONS.map(([action, text]) => ({ label: text, icon: action, disabled: bridgeActionReason(action, it), onClick: () => { runBridgeAction(action, it); } })),
     { label: "More actions", icon: "more" as const, onClick: (e: MouseEvent) => itemMenu(e.currentTarget as HTMLElement, it) },
   ]));

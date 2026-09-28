@@ -186,6 +186,7 @@ export function tipNode(it: TooltipItem): HTMLDivElement {
 // The one item tooltip (#tip, always a dark subtree): shown 400 ms after the pointer settles on anything
 // carrying data-serial (the Inventory's rows, the Suit Builder's pieces), or after a row has had keyboard
 // focus for 400 ms (showItemTip). pointer-events: none, so it never takes the pointer from the table.
+// A region inside a host marked data-no-tip (a row's action buttons) counts as off the item.
 const TIP_DELAY = 400;
 // tipAnchor is the focused row a keyboard tooltip belongs to (set as soon as focus asks for one, so a
 // stray pointer event while it waits cannot cancel it); null for a pointer tooltip.
@@ -229,10 +230,15 @@ export function showItemTip(serial: number, anchor: HTMLElement): void {
     showSerial(serial, () => { const r = anchor.getBoundingClientRect(); placeAt(r.left + 240, r.top - 6); });
   }, TIP_DELAY) as unknown as number;
 }
+// The data-serial host whose tooltip the pointer over `target` asks for, or null.
+export function tipHostOf(target: Element | null): HTMLElement | null {
+  const t = target?.closest?.("[data-no-tip], [data-serial]") as HTMLElement | null | undefined;
+  return t?.hasAttribute("data-serial") ? t : null;
+}
 export function installTooltip(): void {
   let lastX = 0, lastY = 0;
   document.addEventListener("mouseover", (e) => {
-    const host = (e.target as Element).closest("[data-serial]") as HTMLElement | null;
+    const host = tipHostOf(e.target as Element);
     if (!host) { if (tipSerial != null && !tipAnchor) hideItemTip(); return; }
     const serial = +host.dataset.serial!;
     if (serial === tipSerial) return;
@@ -241,6 +247,6 @@ export function installTooltip(): void {
     tipTimer = setTimeout(() => showSerial(serial, () => placeAt(lastX, lastY)), TIP_DELAY) as unknown as number;
   });
   document.addEventListener("mousemove", (e) => { lastX = e.clientX; lastY = e.clientY; if (tipEl().style.display === "block" && !tipAnchor) placeAt(lastX, lastY); });
-  document.addEventListener("mouseout", (e) => { if (!tipAnchor && (!e.relatedTarget || !(e.relatedTarget as Element).closest?.("[data-serial]"))) hideItemTip(); });
+  document.addEventListener("mouseout", (e) => { if (!tipAnchor && !tipHostOf(e.relatedTarget as Element | null)) hideItemTip(); });
   document.addEventListener("keydown", (e) => { if (e.key === "Escape") hideItemTip(); }, true);
 }

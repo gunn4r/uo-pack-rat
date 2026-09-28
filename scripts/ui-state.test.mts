@@ -204,6 +204,20 @@ test("[slow] the item peek opens from a row, follows the arrow keys and closes w
     await page.waitForSelector("#tip[style*='block']", { timeout: 5_000 });
     await page.locator("#f-text").focus();
     await page.waitForFunction(() => document.querySelector<HTMLElement>("#tip")?.style.display === "none");
+    // Hovering a row shows its tooltip; moving onto the row's action buttons hides it (#69), one still pending
+    // on its delay never opens there, and moving back onto the row shows it again.
+    await rows.nth(1).locator(".inv-name").hover();
+    await page.waitForSelector("#tip[style*='block']", { timeout: 5_000 });
+    await rows.nth(1).getByRole("button", { name: "More actions" }).hover();
+    await page.waitForFunction(() => document.querySelector<HTMLElement>("#tip")?.style.display === "none");
+    await rows.nth(2).locator(".inv-name").hover();
+    await rows.nth(2).getByRole("button", { name: "More actions" }).hover();
+    await page.waitForTimeout(700);
+    assert.equal(await page.evaluate(() => document.querySelector<HTMLElement>("#tip")!.style.display), "none", "no item tooltip over the action buttons");
+    await rows.nth(2).locator(".inv-name").hover();
+    await page.waitForSelector("#tip[style*='block']", { timeout: 5_000 });
+    await page.mouse.move(0, 0);
+    await page.waitForFunction(() => document.querySelector<HTMLElement>("#tip")?.style.display === "none");
     // The way a player uses it: a click on a row, a click on the peek's text (focus drops to <body>), then
     // the keys. ↑/↓ still step and Esc still closes; typing in the search box keeps its arrows.
     await rows.nth(2).click();
