@@ -31,6 +31,9 @@ export interface SuiteOptions {
   watchdogMs?: number | undefined;
   // How many test files run at once, each in its own process. Default 1.
   concurrency?: number | undefined;
+  // Files (repo-relative, `/`-separated) that must not run alongside each other: they run one at a time,
+  // in parallel with the others. Default none.
+  serial?: ((file: string) => boolean) | undefined;
 }
 
 export const patternsFor = (mode: Mode): RegExp[] | undefined =>
@@ -63,7 +66,7 @@ const WATCHDOG_URL = new URL("./test-file-watchdog.mts", import.meta.url);
 // The text scripts/test-file-watchdog.mts writes to a file's stderr when it stops the file.
 const WATCHDOG_MARKER = "[pack-rat test watchdog]";
 
-export async function runSuite({ root, mode, prepare, timeout, watchdogMs = 10_000, concurrency = 1 }: SuiteOptions): Promise<SuiteResult> {
+export async function runSuite({ root, mode, prepare, timeout, watchdogMs = 10_000, concurrency = 1, serial = () => false }: SuiteOptions): Promise<SuiteResult> {
   let total = 0, passed = 0, failed = 0, skipped = 0;
   const failures: Failure[] = [];
   const durations: Record<string, number> = {};
@@ -91,63 +94,71 @@ export async function runSuite({ root, mode, prepare, timeout, watchdogMs = 10_0
     const keepTail = (tails: Map<string, string>, file: string, text: string): void => {
       tails.set(file, ((tails.get(file) ?? "") + text).slice(-ERROR_CAP));
     };
-    const stream = run({
-      files, testNamePatterns: patternsFor(mode), concurrency, timeout,
-      execArgv: ["--import", `${WATCHDOG_URL.href}?ms=${watchdogMs}`],
-    });
-    stream.on("test:pass", (t: NodeTest.EventData.TestPass) => {
-      if (t.nesting > 0 || isFileWrapper(t)) return;
-      if (t.file) reported.add(canonical(t.file));
-      total++; if (t.skip || t.todo) skipped++; else passed++;
-    });
-    stream.on("test:fail", (t: NodeTest.EventData.TestFail) => {
-      if (t.nesting > 0) return;
-      const file = t.file ? canonical(t.file) : "";
-      // A `{ todo: "..." }` test reports through test:fail when it throws (unlike the CLI reporter,
-      // which buckets it as "todo" and never fails the run) — fold it into skipped so a todo case can
-      // neither pass nor block the suite.
-      if (t.todo && !isFileWrapper(t)) { reported.add(file); total++; skipped++; return; }
-      const eventError = String(t.details?.error?.message || t.details?.error || "failed");
-      if (!isFileWrapper(t)) {
-        reported.add(file);
-        return fail(posixRelative(root, file), t.line || 0, t.name, eventError);
-      }
-      // The file itself failed; how decides what the summary calls it.
-      fileFailed.add(file);
-      const stderr = stderrTail.get(file)?.trim() ?? "";
-      const error = t.details?.error as { failureType?: unknown; exitCode?: unknown } | undefined;
-      const failureType = error?.failureType;
-      let name: string;
-      // Node 22 applies run()'s `timeout` to each file as a whole, so a hung test shows up as its file
-      // timing out rather than as the test itself (Node 24 reports the test).
-      if (failureType === "testTimeoutFailure") name = "file timed out";
-      else if (stderr.includes(WATCHDOG_MARKER)) name = "file kept running after its tests finished";
-      // Its end-of-file summary already arrived, so every test ran: an error thrown or a promise
-      // rejected after a test returned, or a failing process.exitCode.
-      else if (finished.has(file)) name = "file failed after its tests finished";
-      // Nothing to explain it on stderr is a process.exit(<non-zero>) part-way: the tests it had
-      // already passed are lost with it, exactly as with a process.exit(0).
-      else if (reported.has(file) || !stderr) name = "file stopped before its tests finished";
-      else name = "file failed to load";
-      const exitCode = typeof error?.exitCode === "number" && error.exitCode !== 0 ? `exit code ${error.exitCode}` : "";
-      const detail = [diagnostics.get(file)?.trim(), stderr, exitCode].filter(Boolean).join("\n");
-      fail(posixRelative(root, file), t.line || 0, name, detail || eventError);
-    });
-    stream.on("test:stderr", (m: NodeTest.EventData.TestStderr) => {
-      process.stderr.write(m.message);
-      keepTail(stderrTail, canonical(m.file), m.message);
-    });
-    stream.on("test:diagnostic", (d: NodeTest.EventData.TestDiagnostic) => { if (d.file) keepTail(diagnostics, canonical(d.file), d.message + "\n"); });
-    stream.on("test:summary", (s: NodeTest.EventData.TestSummary) => {
-      if (!s.file) return;
-      const file = canonical(s.file);
-      finished.set(file, s.counts.topLevel);
-      // Only the files it was given: a worker a test starts can send a summary of its own.
-      if (files.includes(file)) durations[posixRelative(root, file)] = Math.round(s.duration_ms);
-    });
-    // The TestsStream must actually be drained for its events to flow — awaiting only a terminal
-    // "end"/"summary" event without consuming the stream leaves run() stalled.
-    for await (const _chunk of stream) { /* events are handled by the listeners above */ }
+    // Runs one group of files through node:test, folding its events into the counts above. A file
+    // `serial` picks runs in a second group, one file at a time, alongside the rest.
+    const drive = async (group: string[], groupConcurrency: number): Promise<void> => {
+      const stream = run({
+        files: group, testNamePatterns: patternsFor(mode), concurrency: groupConcurrency, timeout,
+        execArgv: ["--import", `${WATCHDOG_URL.href}?ms=${watchdogMs}`],
+      });
+      stream.on("test:pass", (t: NodeTest.EventData.TestPass) => {
+        if (t.nesting > 0 || isFileWrapper(t)) return;
+        if (t.file) reported.add(canonical(t.file));
+        total++; if (t.skip || t.todo) skipped++; else passed++;
+      });
+      stream.on("test:fail", (t: NodeTest.EventData.TestFail) => {
+        if (t.nesting > 0) return;
+        const file = t.file ? canonical(t.file) : "";
+        // A `{ todo: "..." }` test reports through test:fail when it throws (unlike the CLI reporter,
+        // which buckets it as "todo" and never fails the run) — fold it into skipped so a todo case can
+        // neither pass nor block the suite.
+        if (t.todo && !isFileWrapper(t)) { reported.add(file); total++; skipped++; return; }
+        const eventError = String(t.details?.error?.message || t.details?.error || "failed");
+        if (!isFileWrapper(t)) {
+          reported.add(file);
+          return fail(posixRelative(root, file), t.line || 0, t.name, eventError);
+        }
+        // The file itself failed; how decides what the summary calls it.
+        fileFailed.add(file);
+        const stderr = stderrTail.get(file)?.trim() ?? "";
+        const error = t.details?.error as { failureType?: unknown; exitCode?: unknown } | undefined;
+        const failureType = error?.failureType;
+        let name: string;
+        // Node 22 applies run()'s `timeout` to each file as a whole, so a hung test shows up as its file
+        // timing out rather than as the test itself (Node 24 reports the test).
+        if (failureType === "testTimeoutFailure") name = "file timed out";
+        else if (stderr.includes(WATCHDOG_MARKER)) name = "file kept running after its tests finished";
+        // Its end-of-file summary already arrived, so every test ran: an error thrown or a promise
+        // rejected after a test returned, or a failing process.exitCode.
+        else if (finished.has(file)) name = "file failed after its tests finished";
+        // Nothing to explain it on stderr is a process.exit(<non-zero>) part-way: the tests it had
+        // already passed are lost with it, exactly as with a process.exit(0).
+        else if (reported.has(file) || !stderr) name = "file stopped before its tests finished";
+        else name = "file failed to load";
+        const exitCode = typeof error?.exitCode === "number" && error.exitCode !== 0 ? `exit code ${error.exitCode}` : "";
+        const detail = [diagnostics.get(file)?.trim(), stderr, exitCode].filter(Boolean).join("\n");
+        fail(posixRelative(root, file), t.line || 0, name, detail || eventError);
+      });
+      stream.on("test:stderr", (m: NodeTest.EventData.TestStderr) => {
+        process.stderr.write(m.message);
+        keepTail(stderrTail, canonical(m.file), m.message);
+      });
+      stream.on("test:diagnostic", (d: NodeTest.EventData.TestDiagnostic) => { if (d.file) keepTail(diagnostics, canonical(d.file), d.message + "\n"); });
+      stream.on("test:summary", (s: NodeTest.EventData.TestSummary) => {
+        if (!s.file) return;
+        const file = canonical(s.file);
+        finished.set(file, s.counts.topLevel);
+        // Only the files it was given: a worker a test starts can send a summary of its own.
+        if (files.includes(file)) durations[posixRelative(root, file)] = Math.round(s.duration_ms);
+      });
+      // The TestsStream must actually be drained for its events to flow — awaiting only a terminal
+      // "end"/"summary" event without consuming the stream leaves run() stalled.
+      for await (const _chunk of stream) { /* events are handled by the listeners above */ }
+    };
+    const serialFiles = files.filter((f) => serial(posixRelative(root, f)));
+    const groups: [string[], number][] = [[files.filter((f) => !serialFiles.includes(f)), concurrency], [serialFiles, 1]];
+    // run() given no files discovers its own, so an empty group is not run at all.
+    await Promise.all(groups.filter(([group]) => group.length).map(([group, n]) => drive(group, n)));
     for (const file of files) {
       if (fileFailed.has(file)) continue;
       const stderr = stderrTail.get(file)?.trim() ?? "";

@@ -36,6 +36,12 @@ const TEST_TIMEOUT_MS = 12 * 60 * 1000;
 // keeps its own temp folders and ports, and the Electron files their own data folder (which is also
 // Electron's userData and single-instance lock). TEST_CONCURRENCY=1 runs them one at a time.
 const CONCURRENCY = Number(process.env.TEST_CONCURRENCY) || availableParallelism();
+// Except the files that open an Electron window, which run one at a time (alongside the rest): windows on
+// one desktop share its pointer and keyboard focus, so a window shown by one file closes another file's
+// hover and focus tooltips (seen on Windows CI). On Linux each of them has an X display of its own
+// (scripts/electron-window.mts), so they run in parallel there.
+const OPENS_A_WINDOW = /^scripts\/(ui-[^/]+|shell-smoke)\.test\.mts$/;
+const serial = (file: string): boolean => process.platform !== "linux" && OPENS_A_WINDOW.test(file);
 
 // Recursive so a test file in a new subdirectory (app/schema/validate.test.mts was the one this
 // missed) is picked up automatically — a hard-coded third/fourth top-level directory is what
@@ -83,6 +89,7 @@ const { durations, ...summary }: SuiteResult = selection.files?.length === 0
   mode,
   timeout: TEST_TIMEOUT_MS,
   concurrency: CONCURRENCY,
+  serial,
   prepare: () => {
     // Build the schema types before buildUi() — this call, not tsconfig.browser.json's `include` (a
     // missing literal entry there is silently dropped, not an error), is what actually guarantees

@@ -6,8 +6,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { dirname, join } from "node:path";
 import { tmpdir } from "node:os";
 import { runSuite, type Mode, type SuiteResult } from "./run-suite.mts";
 
@@ -25,7 +25,7 @@ const RUN_SUITE_URL = new URL("./run-suite.mts", import.meta.url).href;
 
 // `timeout` and `watchdogMs` are runSuite's own options, shortened so a hung file costs well under a
 // second here instead of the real runner's minutes.
-function suiteOver(sources: Record<string, string>, mode: Mode = "full", { timeout, watchdogMs = 500, concurrency = 1 }: { timeout?: number; watchdogMs?: number; concurrency?: number } = {}): SuiteResult {
+function suiteOver(sources: Record<string, string>, mode: Mode = "full", { timeout, watchdogMs = 500, concurrency = 1, serial = "" }: { timeout?: number; watchdogMs?: number; concurrency?: number; serial?: string } = {}): SuiteResult {
   const dir = mkdtempSync(join(tmpdir(), "packrat-run-suite-"));
   try {
     const files = Object.entries(sources).map(([name, source]) => {
@@ -34,7 +34,7 @@ function suiteOver(sources: Record<string, string>, mode: Mode = "full", { timeo
       return p;
     });
     const driver = `import { runSuite } from ${JSON.stringify(RUN_SUITE_URL)};
-const s = await runSuite({ root: ${JSON.stringify(dir)}, mode: ${JSON.stringify(mode)}, timeout: ${JSON.stringify(timeout ?? null)} ?? undefined, watchdogMs: ${watchdogMs}, concurrency: ${concurrency}, prepare: () => ${JSON.stringify(files)} });
+const s = await runSuite({ root: ${JSON.stringify(dir)}, mode: ${JSON.stringify(mode)}, timeout: ${JSON.stringify(timeout ?? null)} ?? undefined, watchdogMs: ${watchdogMs}, concurrency: ${concurrency}, serial: (f) => ${JSON.stringify(serial)} !== "" && f.startsWith(${JSON.stringify(serial)}), prepare: () => ${JSON.stringify(files)} });
 console.log(JSON.stringify(s));`;
     const env = { ...process.env };
     delete env.NODE_TEST_CONTEXT;
@@ -66,6 +66,27 @@ test("[fast] broken", () => { throw new Error("nope"); });
   assert.deepEqual(s.failures.map((f) => [f.file, f.test_name]), [["c.test.mts", "[fast] broken"]]);
   assert.deepEqual(Object.keys(s.durations).sort(), ["a.test.mts", "b.test.mts", "c.test.mts"]);
   for (const ms of Object.values(s.durations)) assert.ok(Number.isInteger(ms) && ms >= 0, `duration ${ms}`);
+});
+
+test("[fast] the files serial picks run one at a time, alongside the others", () => {
+  const log = join(mkdtempSync(join(tmpdir(), "packrat-serial-")), "spans.txt");
+  const span = (name: string) => `import { test } from "node:test";
+import { appendFileSync } from "node:fs";
+import { setTimeout as sleep } from "node:timers/promises";
+test("[fast] ${name}", async () => { const start = Date.now(); await sleep(300); appendFileSync(${JSON.stringify(log)}, \`${name} \${start} \${Date.now()}\\n\`); });
+`;
+  try {
+    const s = suiteOver({ "win-a.test.mts": span("win-a"), "win-b.test.mts": span("win-b"), "other.test.mts": span("other") }, "full", { concurrency: 3, serial: "win-" });
+    assert.equal(s.passed, 3);
+    assert.equal(s.failed, 0);
+    const spans = Object.fromEntries(readFileSync(log, "utf8").trim().split("\n").map((l) => { const [n, a, b] = l.split(" "); return [n!, [Number(a), Number(b)]]; }));
+    const [a, b] = [spans["win-a"]!, spans["win-b"]!].sort((x, y) => x[0]! - y[0]!);
+    assert.ok(a![1]! <= b![0]!, `the serial files overlapped: ${JSON.stringify(spans)}`);
+    const other = spans["other"]!;
+    assert.ok(other[0]! < a![1]!, `the other file waited for the serial ones: ${JSON.stringify(spans)}`);
+  } finally {
+    rmSync(dirname(log), { recursive: true, force: true });
+  }
 });
 
 test("[fast] a file that exits with code 0 part-way through is a failure, not a file that vanished", () => {
