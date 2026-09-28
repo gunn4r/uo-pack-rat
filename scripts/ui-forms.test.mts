@@ -162,6 +162,7 @@ test("[slow] Wizard: named stepper with branch-aware labels, radio cards, kept t
 
     // Step 4: the install is the one primary, gated on the -stopall line; Finish appears only after it succeeds.
     await page.waitForSelector("#wiz-stopall");
+    assert.match(await page.locator("#wizard .wiz-confirm").innerText(), /I typed -stopall in game/, "TazUO's own stop step");
     assert.equal(await page.locator("#wiz-primary").innerText().then((s) => s.split("\n")[0]), "Install scanner");
     assert.equal(await page.locator("#wiz-primary").isDisabled(), true);
     assert.equal(await page.locator("#wizard").getByRole("button", { name: "Finish" }).count(), 0);
@@ -293,7 +294,7 @@ test("[slow] Settings: sections with the client warning, theme and appearance, R
     // Game client: Run setup is the primary while no client exists; Reinstall waits for one.
     assert.match(await page.locator("#set-run-setup").getAttribute("class") || "", /btn-primary/);
     assert.equal(await page.locator("#set-client").getByRole("button", { name: "Reinstall" }).isDisabled(), true);
-    assert.match(await page.locator("#set-client").innerText(), /-stopall/);
+    assert.match(await page.locator("#set-client").innerText(), /Available once a client is set up/);
 
     // Data's danger zone asks before forgetting, with the existing copy.
     await page.locator("#set-data").scrollIntoViewIfNeeded();

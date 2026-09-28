@@ -4,6 +4,7 @@
 
 - **Copy the ClassicUO web scanner from the app** (issue #79): the setup wizard's web-client step and Settings › Game client have a **Copy scanner script** button that copies the app's own bundled script, so there is no file to find; Settings shows its version and says when the app ships a newer one than you last copied.
 - **Razor Enhanced gets the quick refresh and the blacklist script — re-install the scripts (Razor Enhanced 1.8.0)** (issue #80): `packrat-refresh.py` reads just your stats, skills, what you are wearing and your backpack, and `packrat-blacklist.py` stops scans opening a container you click, the same as TazUO's. Not yet tried in a live Razor Enhanced client.
+- **Razor Enhanced's setup says how to stop its scripts** (issue #84): the setup wizard and Settings › Reinstall no longer ask a Razor Enhanced player to type `-stopall` (a TazUO command); they say to stop the Pack Rat scripts in Razor Enhanced's Scripting tab, and so does the message when an install is refused because a script is still running.
 
 ## 0.1.1 — 2026-09-28
 
