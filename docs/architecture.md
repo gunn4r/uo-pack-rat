@@ -37,7 +37,7 @@ One directory holds everything, resolved the same way for the bare server and th
     rejected/          a file that failed to parse/validate after retries, plus a .reason.txt
   profiles.json        per-character suit-builder profiles and templates
   settings.json        {schemaVersion, shard, setupDone, client: {adapter, scriptsDir} | null, retention: {keepAll, scanDays, runsPerCharacter}, autoUpdateCheck}
-  scan-blacklist.json  the containers scans skip: [{serial, name, addedAt, where?}], written by the app and by the TazUO packrat-blacklist.py
+  scan-blacklist.json  the containers scans skip: [{serial, name, addedAt, where?}], written by the app and by the TazUO and Razor Enhanced packrat-blacklist.py
   ui-prefs.json        the page's view choices ({cols, colsVersion, colWidths, sheetProps, theme, appearance, sidebar, density, dismissedUpdate}: the Inventory columns and their widths, the character sheet's properties, the look, a pinned-collapsed sidebar, the update notice last dismissed)
   tazuo-panel.json     the TazUO in-game panel's hotkey and showAtLogin ({hotkey: {mods, key}, showAtLogin}), written by Settings, the wizard and the panel itself (app/tazuo-panel.mts)
   rules/                user-defined or overriding shard rules files

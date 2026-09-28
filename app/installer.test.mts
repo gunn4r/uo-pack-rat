@@ -10,7 +10,7 @@ import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
 import {
   listAdapters, candidateClientRoots, validateScriptsDir, installedVersion, installScripts,
-  repoFromPackage, checkForUpdates, checkScriptsDataDir, RUNNING_MESSAGE,
+  repoFromPackage, checkForUpdates, checkScriptsDataDir, pasteScanner, RUNNING_MESSAGE,
 } from "./installer.mts";
 import { MAX_INBOX_BYTES } from "./watcher.mts";
 
@@ -96,6 +96,19 @@ test("[fast] listAdapters reports transport:\"paste\" and no scripts for the cla
   assert.equal(web.id, "classicuo-web");
   assert.equal(web.transport, "paste");
   assert.deepEqual(web.scripts, [], "a paste-transport adapter ships no packrat-*.py scripts to install");
+});
+
+test("[fast] pasteScanner reads the real web scanner with its version, and refuses an id that is not a plain adapter id", () => {
+  const web = pasteScanner(REAL_ADAPTERS_DIR, "classicuo-web");
+  assert.ok(web && web.script.includes("ADAPTER_VERSION"));
+  assert.match(web.version!, /^\d+\.\d+\.\d+$/);
+  // <root>/x/packrat-scanner.ts is what "../x" would reach from <root>/adapters: it must stay out of reach.
+  const root = tmp("qm-paste-scanner-");
+  mkdirSync(join(root, "adapters"));
+  mkdirSync(join(root, "x"));
+  writeFileSync(join(root, "x", "packrat-scanner.ts"), 'const ADAPTER_VERSION = "9.9.9";');
+  for (const bad of ["../x", "..", "", "Classicuo-web", "a/b"]) assert.equal(pasteScanner(join(root, "adapters"), bad), null, bad);
+  assert.equal(pasteScanner(join(root, "adapters"), "tazuo"), null, "no such script");
 });
 
 test("[fast] listAdapters ignores a subdirectory with no capabilities.json and returns [] for a missing adaptersDir", () => {
@@ -581,8 +594,8 @@ test("[fast] installScripts for one adapter never copies another adapter's scrip
   const scriptsDir = tmp("qm-is-isolation-dest-");
   const result = installScripts({ adapter: "razor-enhanced", adaptersDir, scriptsDir, dataDir: tmp("qm-is-data-"), bridgeStatusPath: join(scriptsDir, "no-status.json") });
   assert.equal(result.ok, true, JSON.stringify(result));
-  assert.deepEqual(result.installed.sort(), ["packrat-bridge.py", "packrat-scanner.py"]);
-  assert.equal(existsSync(join(scriptsDir, "packrat-refresh.py")), false, "tazuo's refresh script (razor-enhanced ships none) was not copied");
+  assert.deepEqual(result.installed.sort(), ["packrat-blacklist.py", "packrat-bridge.py", "packrat-refresh.py", "packrat-scanner.py"]);
+  assert.equal(existsSync(join(scriptsDir, "packrat-panel.py")), false, "tazuo's panel script (razor-enhanced ships none) was not copied");
   for (const name of result.installed) {
     const srcBuf = readFileSync(join(adaptersDir, "razor-enhanced", name));
     const destBuf = readFileSync(join(scriptsDir, name));

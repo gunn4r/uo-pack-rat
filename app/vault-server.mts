@@ -41,7 +41,7 @@
 //         a `_vault` tombstone carrying forgetCharacter; 409 under --demo) ·
 //         GET|POST {serial, name, where?} /api/blacklist · DELETE /api/blacklist/<serial>
 //         (<data>/scan-blacklist.json, the containers scans never open) ·
-//         GET|PUT /api/ui-prefs (<data>/ui-prefs.json: {cols?, colsVersion?, colWidths?, sheetProps?, theme?, appearance?, sidebar?, density?, dismissedUpdate?}, the page's view choices)
+//         GET|PUT /api/ui-prefs (<data>/ui-prefs.json: {cols?, colsVersion?, colWidths?, sheetProps?, theme?, appearance?, sidebar?, density?, dismissedUpdate?, copiedScanner?}, the page's view choices)
 //         POST /api/bridge {action, serial, name, chain: [root…parent], pos|null} (queue for packrat-bridge.py) · GET /api/bridge/status
 //         GET /api/events — SSE, one stream shared by every connected client (not per-job like the
 //         optimize events above): hello {ok, watching: [adapter ids]} on connect, inventory
@@ -56,7 +56,8 @@
 //         paths.scans; --demo starts none (paths.scans there is the committed app/fixtures/, which
 //         must never be written to).
 //         Setup wizard (app/installer.mts backs all of these): GET /api/setup {firstRun, settings,
-//         adapters, candidates, installed, available, dataDir, dataDirCheck} · POST /api/setup/locate {adapter, dir}
+//         adapters, candidates, installed, available, dataDir, dataDirCheck} · GET /api/setup/scanner?adapter=<id> {version, script}
+//         (a paste-transport adapter's bundled scanner, for the page's Copy button) · POST /api/setup/locate {adapter, dir}
 //         · POST /api/setup/install {adapter, scriptsDir} (409 while a Legion script is running in the
 //         client, per installer.mts's bridge-status guard) · POST /api/import/paste {text, adapter} (413 past watcher.mts's MAX_INBOX_BYTES; app/import.mts's parsePastedScan:
 //         what the ClassicUO web-client scanner prints, marker block or bare JSON, upgraded/validated
@@ -109,7 +110,7 @@ import { writeFileAtomic } from "./atomic-write.mts";
 import { addPanelAutostart, panelPrefsError, readPanelPrefs, tazuoRunning, writePanelPrefs } from "./tazuo-panel.mts";
 import { retentionError, retentionOf, runsToPrune, scansToPrune, type ScanFile } from "./retention.mts";
 import {
-  listAdapters, candidateClientRoots, validateScriptsDir, installedVersion, installScripts,
+  listAdapters, candidateClientRoots, validateScriptsDir, installedVersion, installScripts, pasteScanner,
   repoFromPackage, checkForUpdates, type CheckForUpdatesResult, checkScriptsDataDir, type DataDirCheck, type AdapterInfo,
 } from "./installer.mts";
 import { dataDirNotice } from "./ui/messages.mts";
@@ -153,7 +154,10 @@ const UI_PREF_CHOICES = {
 } as const satisfies Record<string, readonly string[]>;
 // The list fields: the Inventory tab's columns and the character sheet's shown properties (absent = the default set).
 const UI_PREF_LISTS = ["cols", "sheetProps"] as const;
-type UiPrefsFile = { -readonly [K in typeof UI_PREF_LISTS[number]]?: string[] } & { -readonly [K in keyof typeof UI_PREF_CHOICES]?: string } & { colWidths?: Record<string, number>; dismissedUpdate?: string };
+// The version fields: the release whose in-app update notice was dismissed (ui/settings.mts's automatic
+// update check), and the ClassicUO web scanner last copied into the client (ui/paste-scanner.mts).
+const UI_PREF_VERSIONS = ["dismissedUpdate", "copiedScanner"] as const;
+type UiPrefsFile = { -readonly [K in typeof UI_PREF_LISTS[number]]?: string[] } & { -readonly [K in keyof typeof UI_PREF_CHOICES]?: string } & { -readonly [K in typeof UI_PREF_VERSIONS[number]]?: string } & { colWidths?: Record<string, number> };
 // The Inventory columns' dragged widths ({colKey: px}): at most 200 column keys (the same keys `cols` holds), each a whole 40 to 1200 px.
 function isColWidths(v: unknown): v is Record<string, number> {
   if (!v || typeof v !== "object" || Array.isArray(v)) return false;
@@ -750,7 +754,7 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
       if (typeof v === "string" && (allowed as readonly string[]).includes(v)) out[key as keyof typeof UI_PREF_CHOICES] = v;
     }
     if (isColWidths(raw.colWidths)) out.colWidths = raw.colWidths;
-    if (isBoundedString(raw.dismissedUpdate, 64)) out.dismissedUpdate = raw.dismissedUpdate;
+    for (const key of UI_PREF_VERSIONS) if (isBoundedString(raw[key], 64)) out[key] = raw[key];
     return out;
   }
   // <data>/scan-blacklist.json: the containers scans never open, a JSON list of {serial, name, addedAt,
@@ -1148,10 +1152,10 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
           if (!isColWidths(body.colWidths)) return send(res, 400, { ok: false, error: "colWidths must map at most 200 column keys to whole widths from 40 to 1200 px" });
           next.colWidths = body.colWidths;
         }
-        // The release whose in-app notice was dismissed (ui/settings.mts's automatic update check).
-        if (Object.prototype.hasOwnProperty.call(body, "dismissedUpdate")) {
-          if (!isBoundedString(body.dismissedUpdate, 64)) return send(res, 400, { ok: false, error: "dismissedUpdate must be a version of at most 64 characters" });
-          next.dismissedUpdate = body.dismissedUpdate;
+        for (const key of UI_PREF_VERSIONS) {
+          if (!Object.prototype.hasOwnProperty.call(body, key)) continue;
+          if (!isBoundedString(body[key], 64)) return send(res, 400, { ok: false, error: `${key} must be a version of at most 64 characters` });
+          next[key] = body[key];
         }
         writeFileAtomic(UI_PREFS, JSON.stringify(next, null, 2) + "\n", DATA_FILE_MODE);
         return send(res, 200, { ok: true });
@@ -1293,6 +1297,15 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
           // answers 501 and vanishes.
           canOpenFolders: typeof host?.openPath === "function",
         });
+      }
+      if (req.method === "GET" && url.pathname === "/api/setup/scanner") {
+        // Read-only and path-free: the id must name a known paste-transport adapter, and the script is that
+        // adapter's own bundled packrat-scanner.ts (installer.mts's pasteScanner).
+        const adapter = url.searchParams.get("adapter");
+        if (!listAdapters(ADAPTERS_DIR).some((a) => a.id === adapter && a.transport === "paste")) return send(res, 400, { ok: false, error: `unknown paste adapter: ${short(adapter)}` });
+        const scanner = pasteScanner(ADAPTERS_DIR, adapter as string);
+        if (!scanner) return send(res, 404, { ok: false, error: "this build ships no scanner for that client" });
+        return send(res, 200, { ok: true, ...scanner });
       }
       if (req.method === "POST" && url.pathname === "/api/setup/locate") {
         const { adapter, dir } = asObject(await readBody(req, { limit: 8e3 }));

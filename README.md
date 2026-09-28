@@ -12,6 +12,7 @@ What you can do with it:
 - See what each character is wearing, on an in-game-style character sheet.
 - Ask for the best suit your items allow, with the stats, floors and caps you care about.
 - Press a button in the app to make the game show you where an item is, walk you to its chest, or put it in your backpack.
+- Pick the **Britannia** theme in **Settings › Theme** for parchment, brass frames and a dark-wood night mode.
 
 ## Download and install
 
@@ -55,7 +56,7 @@ The first time Pack Rat opens, a setup window walks you through four steps:
 3. **Client folder.** Pick the folder your client is installed in. Pack Rat finds TazUO on its own when it can; otherwise click **Choose a folder…** (for TazUO, the `TazUO` folder or the `LegionScripts` folder inside it; for Razor Enhanced, the folder `Razor.exe` is in).
 4. **Install scanner.** If the game is running, type `-stopall` in the game's chat first, so no script is replaced while it runs. Tick **I typed -stopall in game and nothing is running**, click **Install scanner**, then **Finish**. The last screen lists what to press in game, and when.
 
-The ClassicUO web client can't save files, so there is nothing to install for it: its steps 3 and 4 send you to **Import** instead (see [below](#the-classicuo-web-client)).
+The ClassicUO web client can't save files, so there is nothing to install for it: step 3 gives you a **Copy scanner script** button instead, to paste into the web client, and **Settings › Game client** has the same button for later updates (see [below](#the-classicuo-web-client)).
 
 **Set up later** is always safe. You can run setup again from **Settings › Run setup**.
 
@@ -79,11 +80,11 @@ The routine:
 
 Scans show up in **Inventory** within a few seconds; you don't have to press anything in the app. **Characters** shows each character's sheet and paperdoll, and **Suit Builder** finds the best suit for a character from everything you own, with saved runs you can reopen and compare.
 
-In TazUO, start a script from the in-game panel, or from the Script Manager (**Legion Script** in TazUO's top menu) with its **Play** button. In Razor Enhanced, add the Pack Rat scripts on the **Scripts** tab and start them like any other script; more in [adapters/razor-enhanced/README.md](adapters/razor-enhanced/README.md).
+In TazUO, start a script from the in-game panel, or from the Script Manager (**Legion Script** in TazUO's top menu) with its **Play** button. In Razor Enhanced (Windows only), add the Pack Rat scripts on the **Scripts** tab and start them like any other script; it has every script but the in-game panel. More in [adapters/razor-enhanced/README.md](adapters/razor-enhanced/README.md).
 
 ### The ClassicUO web client
 
-The setup wizard gives you the script to paste into the web client's scripting window as a new script; run it near what you want scanned. Copy the block it prints (from `-----BEGIN PACK RAT SCAN-----` to `-----END PACK RAT SCAN-----`), open **Import** in Pack Rat (⌘I, or Ctrl+I on Windows and Linux) and paste it. The web client can't see your bank box and has no bridge, so the Highlight, Grab and Go to buttons don't appear for it. More in [adapters/classicuo-web/README.md](adapters/classicuo-web/README.md).
+Click **Copy scanner script** (in setup, or later in **Settings › Game client**, which also says when a newer scanner ships) and paste it into the web client's scripting window as a new script; run it near what you want scanned. Copy the block it prints (from `-----BEGIN PACK RAT SCAN-----` to `-----END PACK RAT SCAN-----`), open **Import** in Pack Rat (⌘I, or Ctrl+I on Windows and Linux) and paste it. The web client can't see your bank box and has no bridge, so Highlight, Grab and Go to don't work for it. More in [adapters/classicuo-web/README.md](adapters/classicuo-web/README.md).
 
 ### Play attended
 

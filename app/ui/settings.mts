@@ -16,6 +16,7 @@ import { openWizard } from "./wizard.mts";
 import { forgetCharacter } from "./characters.mts";
 import { bridgeNote, renderDataDirNotice } from "./bridge.mts";
 import { adapterCopy } from "./adapter-copy.mts";
+import { copiedScanner, loadScanner, scannerCopy } from "./paste-scanner.mts";
 import { clientErrorMessage, dataDirNotice, errorText, hostErrorMessage, installedIntoNote, pathsFileNote, relativeWhen } from "./messages.mts";
 import { autostartNote, hotkeyLabel, panelControls } from "./tazuo-panel.mts";
 import type { SetupApiResponse, InstallApiResponse, UpdateCheckApiResponse, BlacklistApiResponse, CleanupApiResponse, RetentionSetting, SettingsApiResponse, PanelPrefs, TazuoPanelApiResponse } from "./api-types.mts";
@@ -101,10 +102,14 @@ function clientSection(setup: SetupApiResponse): HTMLElement {
     status = row({ title: "Client", control: setupBtn, help: "No client set up yet. In-game Highlight, Grab and Go to need one." });
     reinstallRow = row({ title: "Reinstall scanner scripts", muted: true, control: button({ label: "Reinstall", disabled: true }), help: `Available once a client is set up. ${stopall}` });
   } else if (adapter?.transport === "paste") {
-    // A paste-transport client has no scripts folder and nothing to reinstall (settings.client.scriptsDir is "").
+    // A paste-transport client has no scripts folder and nothing to reinstall (settings.client.scriptsDir is ""):
+    // its scanner is copied from here into the client (ui/paste-scanner.mts), again after an update.
     const c = adapterCopy(adapter);
-    status = row({ title: c.short, control: setupBtn, help: "Nothing to install: paste what its scanner prints into Import (⌘I)." });
-    reinstallRow = row({ title: "Reinstall scanner scripts", muted: true, control: button({ label: "Reinstall", disabled: true }), help: `Nothing to install for the ${c.short}.` });
+    status = row({ title: c.short, control: setupBtn, help: "Paste what its scanner prints into Import (⌘I)." });
+    const s = scannerCopy(adapter.id, { id: "set-copy-scanner", onCopied: () => void renderSettings(setup) });
+    reinstallRow = row({ title: "Scanner script", control: s.button, help: `Copy it into the ${c.short}'s scripting window as a new script, and again after a Pack Rat update.`,
+      below: [box("div", { class: "set-inline", id: "set-scanner-version" }), s.fallback] });
+    void loadScanner(adapter.id).then((r) => scannerVersion(r.version)).catch(() => { /* the button says why on click */ });
   } else {
     const name = adapter ? adapterCopy(adapter).short : client.adapter;
     const installed = setup.installed?.version;
@@ -138,6 +143,17 @@ function clientSection(setup: SetupApiResponse): HTMLElement {
   }
   return sectionFlagged("set-client", "Game client", !setup.settings.client, box("div", { class: "card set-card" }, status, reinstallRow),
     client?.adapter === "tazuo" && client.scriptsDir ? box("div", { class: "card set-card", id: "set-panel" }) : null);
+}
+
+// The bundled web scanner's version beside its Copy button, and a newer-than-copied hint the way the
+// installed-script check does it for a folder client.
+function scannerVersion(version: string | null): void {
+  const at = $<HTMLElement>("#set-scanner-version");
+  if (!at || !version) return;
+  const last = copiedScanner();
+  at.replaceChildren(...(last && last !== version
+    ? [badge(`${version} available`, "accent"), txt(`You copied ${last}. Copy again and replace the old script.`, "t-sm muted")]
+    : [txt(`Scanner ${version}.`, "t-sm muted")]));
 }
 
 // The TazUO in-game panel's options (app/ui/tazuo-panel.mts), filled in once GET /api/tazuo-panel answers.
@@ -191,7 +207,7 @@ export async function syncSettingsBlacklist(): Promise<void> {
 }
 function blacklistCard(list: BlacklistEntry[]): HTMLElement {
   return box("div", { class: "card set-card", id: "set-blacklist" },
-    row({ title: "Blacklisted containers", help: list.length ? "Scans never open these." : "None. Blacklist a ground container from its ⋯ menu in Containers, or in game with packrat-blacklist.py (TazUO)." }),
+    row({ title: "Blacklisted containers", help: list.length ? "Scans never open these." : "None. Blacklist a ground container from its ⋯ menu in Containers, or in game with packrat-blacklist.py (TazUO, Razor Enhanced)." }),
     ...[...list].reverse().map((e) => row({ title: e.name, help: [e.where, `added ${relativeWhen(e.addedAt)}`].filter(Boolean).join(" · "),
       control: button({ label: "Unblacklist", size: "sm", attrs: { "aria-label": `Unblacklist ${e.name}` }, onClick: async () => {
         try { await api(`/api/blacklist/${e.serial}`, { method: "DELETE" }); showToast(`Unblacklisted ${e.name}: the next scan reads it again.`, "ok"); }

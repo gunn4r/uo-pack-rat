@@ -24,7 +24,7 @@ test("[fast] client cards: a badge and one plain sentence; a client this machine
   assert.match(t.sentence, /^Scans every layer, the bank, ground containers and nested bags\. Highlight, Grab and Go to work from Pack Rat\.$/);
   const w = clientCard(WEB, "darwin");
   assert.equal(w.badge.text, "Paste scans");
-  assert.match(w.sentence, /Nothing to install: you paste what its scanner prints into Import\./);
+  assert.match(w.sentence, /You copy its scanner into the client and paste what it prints into Import\./);
   const r = clientCard(RAZOR, "darwin");
   assert.deepEqual({ badge: r.badge.text, available: r.available }, { badge: "Windows only", available: false });
   assert.equal(r.sentence, "Not available on this Mac. Scans every layer, the bank, ground containers and nested bags, with in-game actions.");
@@ -39,7 +39,7 @@ test("[fast] the Import drawer's client options", () => {
 
 test("[fast] the wizard's steps are named, and the paste branch renames steps 3 and 4", () => {
   assert.deepEqual(wizardSteps(false), ["Shard", "Client", "Client folder", "Install scanner"]);
-  assert.deepEqual(wizardSteps(true), ["Shard", "Client", "Nothing to install", "Paste your first scan"]);
+  assert.deepEqual(wizardSteps(true), ["Shard", "Client", "Copy scanner", "Paste your first scan"]);
 });
 
 test("[fast] per-adapter wizard copy exists for every shipped client, and an unknown adapter still reads plainly", () => {
