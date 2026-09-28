@@ -6740,12 +6740,6 @@
    "serial": 1073741830,
    "name": "Backpack",
    "opened": true
-  },
-  {
-   "kind": "ground",
-   "serial": 1073741831,
-   "name": "A Trash Barrel",
-   "opened": true
   }
  ],
  "containers": {
@@ -6823,18 +6817,6 @@
    "parent": null,
    "name": "Backpack",
    "root": 1073741830,
-   "pos": {
-    "x": 1,
-    "y": 1,
-    "z": 0
-   }
-  },
-  "1073741831": {
-   "kind": "ground",
-   "serial": 1073741831,
-   "parent": null,
-   "name": "A Trash Barrel",
-   "root": 1073741831,
    "pos": {
     "x": 1,
     "y": 1,

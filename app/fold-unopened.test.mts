@@ -76,3 +76,17 @@ for (const character of ["Tester", "Other"]) {
     assert.ok(inv.items[RING] && inv.items[PEARL] && inv.items[POUCH], "a later scan of the old chest leaves them alone");
   });
 }
+
+// A trash container's contents are deleted by the server on a timer, so what an older scan recorded
+// inside one is long gone. Scanners skip trash now and never list it again, which the fold would read
+// as "keep what you knew": instead it drops the trash container and everything under it.
+test("[fast] a trash container recorded by an older scan drops out of the fold, with everything in it", () => {
+  const TRASH = 120, TRASH_BAG = 121, TOSSED = 204;
+  const trashRoot = { serial: TRASH, kind: "ground", name: "A Trash Barrel", parent: null, root: TRASH };
+  const trashBag = { serial: TRASH_BAG, kind: "container", name: "Trash Chest", parent: CHEST, root: CHEST };
+  const old = scan("2026-09-20T10:00:00Z", { [CHEST]: chest, [BAG]: bag(), [TRASH]: trashRoot, [TRASH_BAG]: trashBag },
+    [item(RING, BAG, "Ring"), item(TOSSED, TRASH, "Tossed Ring"), item(PEARL, TRASH_BAG, "Pearl")], [CHEST, TRASH]);
+  const inv = foldSnapshots([old]);
+  assert.deepEqual(Object.keys(inv.containers).map(Number).sort((a, b) => a - b), [CHEST, BAG]);
+  assert.deepEqual(Object.keys(inv.items).map(Number).sort((a, b) => a - b), [BAG, RING]);
+});

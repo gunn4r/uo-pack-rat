@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- **Scans skip trash barrels and chests — re-install the scripts (TazUO 2.8.0, Razor Enhanced 1.7.0; ClassicUO web scanner 1.2.0)** (issue #74): a container whose name contains "trash" is never opened or recorded, on the ground, in the bank or in a bag, since the server empties it on a timer; the scan summary says how many were skipped, and there is no need to blacklist one any more. Trash containers and their contents recorded by earlier scans drop out of the app.
+
 ## 0.1.0 — 2026-09-27
 
 - **TazUO: an in-game Pack Rat window — re-install the scripts (TazUO 2.7.0)** (issue #13): `packrat-panel.py` opens a small window with **Scan here**, **Quick refresh**, **Start bridge** / **Stop bridge** and **Blacklist a container** buttons, and shows which Pack Rat scripts are running and when you last scanned. The install adds it to TazUO's own autostart list (`Data/lscript.json`, edited only while TazUO is closed, keeping everything else in it), so it starts at every login; **Ctrl+Shift+P** shows or hides it, and **Settings › Game client** chooses whether it shows at login or waits hidden.
