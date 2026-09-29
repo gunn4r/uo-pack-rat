@@ -98,7 +98,7 @@ async function showMissing(r: Container, name: string): Promise<void> {
     el("tbody", {}, ...rows));
   const dlg = openDialog({
     title: `Missing from ${name}`, width: "md", initialFocus: close,
-    body: [el("p", { class: "muted" }, items.length ? "In this container at its previous scan, gone at its latest, and not seen in any other scanned container since. Rescan where you moved them and they leave this list. A stack that could have been added to a stack of the same kind scanned since counts as moved, so while you keep more of something elsewhere, a sold stack of it may not show here." : "Nothing is missing any more."), ...(items.length ? [table] : [])],
+    body: [el("p", { class: "muted" }, items.length ? "In this container at its previous scan, gone at its latest, and not seen in any other scanned container since. Rescan where you moved them and they leave this list. A stack could have been added to a same-kind stack seen since, so it may not show while you keep more of it elsewhere." : "Nothing is missing any more."), ...(items.length ? [table] : [])],
     actions: [close],
   });
 }
