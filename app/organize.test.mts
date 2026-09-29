@@ -316,12 +316,28 @@ test("[fast] every trip's queue line fits tripBytes", () => {
   assert.equal(plan.moves.length, 20);
 });
 
+test("[fast] two full chests trade contents: each trip takes for both rules, so the takes make the room", () => {
+  const garlic: ThingSpec[] = Array.from({ length: 20 }, (_, i) => ({ serial: 0x40002000 + i, name: "Garlic", in: A, hue: i }));
+  const rubies: ThingSpec[] = Array.from({ length: 20 }, (_, i) => ({ serial: 0x40003000 + i, name: "Ruby", in: B, hue: i }));
+  const inv = fold([{ serial: A, max: 20 }, { serial: B, max: 20, pos: at(104) }], [...garlic, ...rubies]);
+  const plan = planOrganize(inv, config({ labels: labels(A, B), rules: [reagents([B]), gems([A])] }), [], { now: NOW });
+  assert.deepEqual(plan.rules.map((r) => [r.ruleId, r.toMove, r.noRoom]), [["reagents", 20, 0], ["gems", 20, 0]]);
+  assert.deepEqual(plan.trips.map((t) => [t.takes.length, t.puts.length]), [[20, 20], [20, 20]]);
+});
+
 test("[fast] items a trip carried and did not put are planned as puts with nothing to take", () => {
   const inv = fold([{ serial: A }, { serial: B, pos: at(104) }], [{ serial: PEARL, name: "Black Pearl", in: B }]);
   const plan = planOrganize(inv, config({ labels: labels(A, B), rules: [reagents([A])] }), [step(PEARL, "Black Pearl", B, null)], { now: NOW });
   assert.deepEqual(plan.carried, [{ serial: PEARL, name: "Black Pearl" }]);
   assert.deepEqual(moved(plan), [[PEARL, null, A, 1]]);
   assert.deepEqual(plan.trips, [{ index: 1, site: 0, takes: [], puts: [PEARL] }]);
+});
+
+test("[fast] a carried item pinned since (a put the server refused) is not planned again", () => {
+  const inv = fold([{ serial: A }, { serial: B, pos: at(104) }], [{ serial: PEARL, name: "Black Pearl", in: B }]);
+  const plan = planOrganize(inv, config({ labels: labels(A, B), rules: [reagents([A])], pinnedItems: [PEARL] }), [step(PEARL, "Black Pearl", B, null)], { now: NOW });
+  assert.deepEqual(plan.carried, [{ serial: PEARL, name: "Black Pearl" }]);
+  assert.deepEqual(plan.moves, []);
 });
 
 test("[fast] a finished trip in the overlay is not planned again", () => {

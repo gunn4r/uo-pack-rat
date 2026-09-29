@@ -463,7 +463,9 @@ export function planOrganize(inv: Inventory, cfg: OrganizeConfig, overlay: Overl
   const carried = new Set(placed.carried.map((c) => c.serial));
   const wants = new Map<number, Want[]>();
   let unclaimed = 0;
-  const candidates = [...new Set([...scope.movable, ...[...carried].filter((s) => view.items[s])])].sort(bySerial);
+  // A carried item is put away unless it has been pinned since (the page's answer to a put the server refuses).
+  const pinnedItems = new Set(cfg.pinnedItems);
+  const candidates = [...new Set([...scope.movable, ...[...carried].filter((s) => view.items[s] && !pinnedItems.has(s))])].sort(bySerial);
   for (const serial of candidates) {
     const it = view.items[serial]!;
     const claim = claimOf(it, cfg, rarity);
@@ -488,8 +490,14 @@ export function planOrganize(inv: Inventory, cfg: OrganizeConfig, overlay: Overl
   const sim = newSim(view, placed.counts);
   const moves: PlanMove[] = [], trips: PlanTrip[] = [], merged = new Set<number>();
   for (const site of [...wants.keys()].sort(bySerial)) {
-    // Carried items first (they are already in the pack), then rule order, then serial.
-    const list = wants.get(site)!.sort((a, b) => Number(b.from == null) - Number(a.from == null) || rank.get(a.ruleId)! - rank.get(b.ruleId)! || a.it.serial - b.it.serial);
+    // Carried items first (they are already in the pack), then the rules take turns, each in serial order: a trip
+    // that takes for several rules at once frees room in each other's chests (two full chests trading contents),
+    // where a trip of one rule's items alone could not start.
+    const sorted = wants.get(site)!.sort((a, b) => rank.get(a.ruleId)! - rank.get(b.ruleId)! || a.it.serial - b.it.serial);
+    const turns = new Map<string, Want[]>();
+    for (const w of sorted) if (w.from != null) turns.set(w.ruleId, [...(turns.get(w.ruleId) ?? []), w]);
+    const list = sorted.filter((w) => w.from == null);
+    for (let i = 0; list.length < sorted.length; i++) for (const g of turns.values()) if (g[i]) list.push(g[i]!);
     const packed = packSite(view, sim, site, list, lim, trips.length + 1);
     trips.push(...packed.trips);
     moves.push(...packed.moves);
