@@ -379,7 +379,8 @@ def check_steps(entries, key, limit, roots, what):
 
 def check_trip(cmd, now_s):
     """Validate one parsed trip line (app/schema/bridge-trip.v1.schema.json). Returns (trip, reason);
-    roots come back keyed by int serial and every name cut to MAX_TRIP_NAME."""
+    roots come back keyed by int serial, every name cut to MAX_TRIP_NAME, and queuedAt as `queued`
+    (epoch seconds, fraction dropped) for the stop flag's age check."""
     if not isinstance(cmd, dict):
         return None, "queue line is not a JSON object"
     cid, why = check_id(cmd)
@@ -420,7 +421,7 @@ def check_trip(cmd, now_s):
     if why:
         return None, why
     return {"id": cid, "action": "trip", "index": index, "stamp": stamp, "name": "#{0}".format(index),
-            "roots": roots, "takes": takes, "puts": puts}, ""
+            "queued": parse_rfc3339(cmd.get("queuedAt")), "roots": roots, "takes": takes, "puts": puts}, ""
 
 
 def check_line(cmd, actions, now_s):
@@ -704,7 +705,7 @@ def do_grab(cmd):
 
 def stop_requested():
     """The Script Manager's Stop, or Organize's Stop button (the flag POST /api/bridge/stop writes)."""
-    return bool(API.StopRequested) or os.path.exists(STOP_FLAG)
+    return bool(API.StopRequested) or os.path.isfile(STOP_FLAG)   # a directory there cannot be cleared: ignored
 
 
 def clear_stop():
@@ -759,13 +760,16 @@ def room_for(it, pack):
 def refuse_dest(dest, i, it, blacklist):
     """Why a put must not open or fill dest[i], beyond open_chain's own checks: blacklisted (the player
     told Pack Rat to leave it alone), not a container (a corpse), or trash (the server deletes what
-    goes in)."""
+    goes in). A trash barrel's cached name can be plain "barrel", so a tooltip that reads nothing is
+    refused too rather than trusted."""
     c = dest[i]
     name = str(getattr(it, "Name", "") or "")
     if c in blacklist:
         return f"refused: 0x{c:x} is blacklisted — Pack Rat never opens it"
     if not is_container(it, name):
         return f"refused: 0x{c:x} is not a container — the bridge only ever opens containers"
+    if not tooltip_lines(c):
+        return f"refused: 0x{c:x}'s name did not load, so it may be a trash container — try again"
     if is_trash(c, name):
         return f"refused: 0x{c:x} is a trash container — the server deletes what goes in"
     return ""
@@ -795,13 +799,15 @@ def do_take(t, roots, blacklist):
     for c in chain:
         if c in blacklist:
             return False, f"refused: 0x{c:x} is blacklisted — Pack Rat never opens it", False
+    # A take starts on the ground, never in your own backpack or bank: an item taken there joins the
+    # carried set, and a put could then move anything you carry into any chest in reach.
     root = find(chain[0])
-    why = chain_problem(chain, 0, root, own_roots([])) if root is not None else ""
+    why = chain_problem(chain, 0, root, set()) if root is not None else ""
     if why:
         return False, why, False
     if not walk_to(roots.get(chain[0]), chain[0]):
         return False, "could not reach the container (not in view / too far / no path) — walk closer and retry", False
-    ok, msg = open_chain(chain)
+    ok, msg = open_chain(chain, own=set())
     if not ok:
         return False, msg, False
     it = find(serial)
@@ -868,15 +874,22 @@ def do_trip(cmd):
     """Organize: every take, then every put, one step at a time, the stop flag checked before each.
     A take the backpack cannot hold ends the takes (partial), and a put of an item this trip meant to
     take but did not is skipped. Returns (ok, msg, {"steps", "partial", "stopped"})."""
+    # A flag written after this trip was queued is a Stop pressed while the trip waited its turn, and
+    # is honoured; an older one is left over from before and only cleared. `queued` is whole seconds,
+    # so a Stop pressed up to a second before the trip was queued also counts: the safe side.
+    try:
+        stopped = os.path.isfile(STOP_FLAG) and os.path.getmtime(STOP_FLAG) >= cmd["queued"]
+    except OSError:
+        stopped = False
     clear_stop()
     blacklist = set(e["serial"] for e in read_blacklist(BLACKLIST_PATH))
     serials = set(t["serial"] for t in cmd["takes"]) | set(p["serial"] for p in cmd["puts"])
     sysmsg(f"Pack Rat organize: trip {cmd['index']}, {len(serials)} items", INFO_HUE)
     roots = cmd["roots"]
     steps, took = [], set()
-    partial = stopped = False
+    partial = False
     for t in cmd["takes"]:
-        if stop_requested():
+        if stopped or stop_requested():
             stopped = True
             break
         ok, msg, full = do_take(t, roots, blacklist)

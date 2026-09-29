@@ -83,6 +83,16 @@ class BridgeCase(object):
         c.update(kw)
         return c
 
+    def enqueue_at(self, world, at_s, cmds):
+        """Append `cmds` to the queue `at_s` fake seconds in, each stamped `age_s` before then."""
+        def enqueue():
+            with open(os.path.join(self.dir, "queue.jsonl"), "a", encoding="utf-8") as f:
+                for c in cmds:
+                    c = dict(c)
+                    c["queuedAt"] = stamp(world.clock.now - c.pop("age_s"))
+                    f.write(json.dumps(c) + "\n")
+        world.clock.at(at_s, enqueue)
+
     def run_bridge(self, world, at_s, cmds):
         """Start the bridge, append `cmds` to its queue `at_s` fake seconds in, stop it at RUN_S.
         Returns (final status, [(fake second, status) for every status write seen])."""
@@ -97,13 +107,7 @@ class BridgeCase(object):
                     writes.append((world.clock.now - world.clock.start, json.load(f)))
             real_replace(src, dst)
 
-        def enqueue():
-            with open(os.path.join(self.dir, "queue.jsonl"), "a", encoding="utf-8") as f:
-                for c in cmds:
-                    c = dict(c)
-                    c["queuedAt"] = stamp(world.clock.now - c.pop("age_s"))
-                    f.write(json.dumps(c) + "\n")
-        world.clock.at(at_s, enqueue)
+        self.enqueue_at(world, at_s, cmds)
         os.replace = replace
         try:
             self.start(world)
@@ -238,6 +242,13 @@ class TazUOBridge(BridgeCase, unittest.TestCase):
     def stop_flag(self):
         return os.path.join(self.data, "bridge", "stop")
 
+    def press_stop(self, world, ago_s=0):
+        """Organize's Stop, `ago_s` fake seconds before now: the bridge compares the flag's mtime with
+        a trip's queuedAt, both on the fake clock here."""
+        open(self.stop_flag(), "w").close()
+        t = world.clock.now - ago_s
+        os.utime(self.stop_flag(), (t, t))
+
     def steps(self, final, cid):
         return [(s["op"], s["serial"], s["ok"]) for s in final["results"][cid]["steps"]]
 
@@ -267,10 +278,10 @@ class TazUOBridge(BridgeCase, unittest.TestCase):
         self.assertEqual(call[1:], (AMULET, PACK, 0, 60, 90))
         self.assertEqual(w.items[AMULET].Container, PACK)
 
-    def test_the_stop_flag_halts_a_trip_between_steps_and_the_taken_item_can_still_be_put_away(self):
+    def test_the_stop_flag_halts_a_trip_between_steps_and_one_queued_before_it_and_the_taken_item_can_still_be_put_away(self):
         w = trip_home()
-        flag = self.stop_flag()
-        w.on_move = lambda s, dst: open(flag, "w").close() if (s, dst) == (AMULET, PACK) else None
+        w.on_move = lambda s, dst: self.press_stop(w) if (s, dst) == (AMULET, PACK) else None
+        self.enqueue_at(w, 60, [self.trip("t3", puts=[(AMULET, [DEST])], index=5)])
         final, _ = self.run_bridge(w, 1, [
             self.trip("t1", takes=[(AMULET, [CHEST, BAG]), (BRACELET, [CHEST, BAG])], puts=[(AMULET, [DEST]), (BRACELET, [DEST])]),
             self.trip("t2", puts=[(AMULET, [DEST])], index=4)])
@@ -278,15 +289,47 @@ class TazUOBridge(BridgeCase, unittest.TestCase):
         self.assertFalse(r["ok"])
         self.assertTrue(r["stopped"])
         self.assertEqual(self.steps(final, "t1"), [("take", AMULET, True)])
-        self.assertTrue(final["results"]["t2"]["ok"], final["results"]["t2"])
+        # t2 was already waiting when Stop was pressed: it stops before its first step.
+        self.assertTrue(final["results"]["t2"]["stopped"], final["results"]["t2"])
+        self.assertEqual(self.steps(final, "t2"), [])
+        self.assertTrue(final["results"]["t3"]["ok"], final["results"]["t3"])
         self.assertEqual(self.moves(w), [(AMULET, PACK), (AMULET, DEST)])
+        self.assertFalse(os.path.exists(self.stop_flag()))
 
     def test_a_stop_flag_left_over_from_before_is_cleared_when_a_trip_starts(self):
         w = trip_home()
-        w.clock.at(0.5, lambda: open(self.stop_flag(), "w").close())
+        w.clock.at(0.5, lambda: self.press_stop(w, ago_s=30))
         final, _ = self.run_bridge(w, 1, [self.trip("t1", takes=[(AMULET, [CHEST, BAG])], puts=[(AMULET, [DEST])])])
         self.assertTrue(final["results"]["t1"]["ok"], final["results"]["t1"])
         self.assertFalse(os.path.exists(self.stop_flag()))
+
+    def test_a_directory_where_the_stop_flag_goes_does_not_wedge_trips(self):
+        w = trip_home()
+        os.makedirs(self.stop_flag())
+        final, _ = self.run_bridge(w, 1, [self.trip("t1", takes=[(AMULET, [CHEST, BAG])], puts=[(AMULET, [DEST])])])
+        self.assertTrue(final["results"]["t1"]["ok"], final["results"]["t1"])
+
+    def test_a_take_never_starts_in_your_own_backpack_or_bank_so_nothing_you_carry_joins_the_carried_set(self):
+        w = trip_home()
+        final, _ = self.run_bridge(w, 1, [
+            self.trip("t1", takes=[(LOOSE, [PACK])], puts=[(LOOSE, [DEST])]),
+            self.trip("t2", takes=[(AMULET, [CHEST, BAG])], index=4),
+            self.trip("t3", takes=[(RING, [PACK, POUCH])], puts=[(RING, [DEST])], index=5),
+            self.trip("t4", puts=[(LOOSE, [DEST]), (RING, [DEST])], index=6)])
+        self.assertEqual(self.steps(final, "t1"), [("take", LOOSE, False), ("put", LOOSE, False)])
+        self.assertIn("refused", final["results"]["t1"]["steps"][0]["msg"])
+        self.assertEqual(self.steps(final, "t3"), [("take", RING, False), ("put", RING, False)])
+        self.assertEqual(self.steps(final, "t4"), [("put", LOOSE, False), ("put", RING, False)])
+        self.assertEqual(self.moves(w), [(AMULET, PACK)])
+        self.assertNotIn(POUCH, self.opened(w))
+
+    def test_a_put_into_a_container_whose_name_has_not_loaded_is_refused(self):
+        w = trip_home()
+        w.items[DEST].Name = ""
+        final, _ = self.run_bridge(w, 1, [self.trip("t1", takes=[(AMULET, [CHEST, BAG])], puts=[(AMULET, [DEST])])])
+        self.assertEqual(self.steps(final, "t1"), [("take", AMULET, True), ("put", AMULET, False)])
+        self.assertIn("did not load", final["results"]["t1"]["steps"][1]["msg"])
+        self.assertEqual(w.items[AMULET].Container, PACK)
 
     def test_a_backpack_the_character_cannot_carry_more_in_cuts_the_takes_short_and_skips_their_puts(self):
         w = trip_home()

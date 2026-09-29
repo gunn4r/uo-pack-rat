@@ -364,7 +364,8 @@ def check_steps(entries, key, limit, roots, what):
 
 def check_trip(cmd, now_s):
     """Validate one parsed trip line (app/schema/bridge-trip.v1.schema.json). Returns (trip, reason);
-    roots come back keyed by int serial and every name cut to MAX_TRIP_NAME."""
+    roots come back keyed by int serial, every name cut to MAX_TRIP_NAME, and queuedAt as `queued`
+    (epoch seconds, fraction dropped) for the stop flag's age check."""
     if not isinstance(cmd, dict):
         return None, "queue line is not a JSON object"
     cid, why = check_id(cmd)
@@ -405,7 +406,7 @@ def check_trip(cmd, now_s):
     if why:
         return None, why
     return {"id": cid, "action": "trip", "index": index, "stamp": stamp, "name": "#{0}".format(index),
-            "roots": roots, "takes": takes, "puts": puts}, ""
+            "queued": parse_rfc3339(cmd.get("queuedAt")), "roots": roots, "takes": takes, "puts": puts}, ""
 
 
 def check_line(cmd, actions, now_s):
