@@ -652,9 +652,13 @@ def open_chain(chain, own=None, check=None):
 def do_highlight(cmd):
     it = find(cmd["serial"])
     if it is None:
+        if not cmd.get("chain"):         # a container highlighted as itself: nothing was walked to or opened
+            return False, f"{cmd.get('name', 'item')} is not in view — stand where you can see it and try again"
         return False, f"{cmd.get('name', 'item')} is not known to the client here — is this the right place?"
     name = cmd.get("name") or str(getattr(it, "Name", "") or "item")
-    root = find(cmd["chain"][0]) if cmd.get("chain") else None
+    # The tile to mark: the root's live one when the client sees it on the ground (the target itself when
+    # there is no chain), else the scanned one.
+    root = find(cmd["chain"][0]) if cmd.get("chain") else it
     pos = cmd.get("pos")
     if root is not None and getattr(root, "OnGround", False):
         pos = {"x": int(root.X), "y": int(root.Y), "z": int(getattr(root, "Z", 0) or 0)}
@@ -663,21 +667,23 @@ def do_highlight(cmd):
             API.MarkTile(int(pos["x"]), int(pos["y"]), MARK_HUE)
         except Exception:
             pass
-    t_end = time.time() + HIGHLIGHT_S
-    while time.time() < t_end and not API.StopRequested:
-        try:
-            API.HeadMsg(f">>> {name} <<<", int(cmd["serial"]), HIGHLIGHT_HUE)
-            if cmd.get("chain"):
-                API.HeadMsg(f"[ {name} is in here ]", int(cmd["chain"][-1]), HIGHLIGHT_HUE)
-        except Exception:
-            pass
-        API.Pause(1.5)
-        heartbeat()
-    if pos:
-        try:
-            API.RemoveMarkedTile(int(pos["x"]), int(pos["y"]))
-        except Exception:
-            pass
+    try:
+        t_end = time.time() + HIGHLIGHT_S
+        while time.time() < t_end and not API.StopRequested:
+            try:
+                API.HeadMsg(f">>> {name} <<<", int(cmd["serial"]), HIGHLIGHT_HUE)
+                if cmd.get("chain"):
+                    API.HeadMsg(f"[ {name} is in here ]", int(cmd["chain"][-1]), HIGHLIGHT_HUE)
+            except Exception:
+                pass
+            API.Pause(1.5)
+            heartbeat()
+    finally:
+        if pos:
+            try:
+                API.RemoveMarkedTile(int(pos["x"]), int(pos["y"]))
+            except Exception:
+                pass
     return True, f"highlighted {name}"
 
 

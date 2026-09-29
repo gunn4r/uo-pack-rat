@@ -610,6 +610,8 @@ def open_chain(chain):
 def do_highlight(cmd):
     it = find(cmd["serial"])
     if it is None:
+        if not cmd.get("chain"):         # a container highlighted as itself: nothing was walked to or opened
+            return False, "{0} is not in view -- stand where you can see it and try again".format(cmd.get("name", "item"))
         return False, "{0} is not known to the client here -- is this the right place?".format(cmd.get("name", "item"))
     name = cmd.get("name") or str(getattr(it, "Name", "") or "item")
     targets = [it]
@@ -631,22 +633,25 @@ def do_highlight(cmd):
         Player.HeadMessage(HIGHLIGHT_HUE, "Pack Rat: {0}".format(name))
     except Exception:
         pass
-    t_end = time.time() + HIGHLIGHT_MS / 1000.0
-    while time.time() < t_end and Player.Connected:
-        Misc.Pause(HIGHLIGHT_POLL_MS)
-        heartbeat()
-    for t in targets:
-        s = as_int(getattr(t, "Serial", 0))
-        try:
-            # -1 is Items.SetColor's own documented sentinel for "reset original color" (razorenhanced
-            # readthedocs, Items.SetColor: "color: Int32 Color as number. (default: -1, reset original
-            # color)") -- restoring this way, instead of reading Hue before the highlight and setting
-            # it back by hand, means the client's own true original color always wins, including a
-            # case a captured `Hue` read could get wrong (e.g. an unreadable Hue defaulting to 0 and
-            # then being written back as if 0 -- no hue -- really were the item's original color).
-            Items.SetColor(s, -1)
-        except Exception:
-            pass
+    # finally: the recolour must not outlive an exception, or a Stop that aborts the thread mid-pause (README).
+    try:
+        t_end = time.time() + HIGHLIGHT_MS / 1000.0
+        while time.time() < t_end and Player.Connected:
+            Misc.Pause(HIGHLIGHT_POLL_MS)
+            heartbeat()
+    finally:
+        for t in targets:
+            s = as_int(getattr(t, "Serial", 0))
+            try:
+                # -1 is Items.SetColor's own documented sentinel for "reset original color" (razorenhanced
+                # readthedocs, Items.SetColor: "color: Int32 Color as number. (default: -1, reset original
+                # color)") -- restoring this way, instead of reading Hue before the highlight and setting
+                # it back by hand, means the client's own true original color always wins, including a
+                # case a captured `Hue` read could get wrong (e.g. an unreadable Hue defaulting to 0 and
+                # then being written back as if 0 -- no hue -- really were the item's original color).
+                Items.SetColor(s, -1)
+            except Exception:
+                pass
     return True, "highlighted {0}".format(name)
 
 

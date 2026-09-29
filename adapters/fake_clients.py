@@ -190,8 +190,8 @@ def tazuo_api(world, backpack, bank=0, skills=None):
     api.ProcessCallbacks = lambda: None
     api.SysMsg = lambda m, h=0: world.messages.append(str(m))
     api.HeadMsg = lambda *a: world.calls.append(("headmsg", a[1] if len(a) > 1 else None))
-    api.MarkTile = lambda *a: None
-    api.RemoveMarkedTile = lambda *a: None
+    api.MarkTile = lambda x, y, *a: world.calls.append(("mark", int(x), int(y)))
+    api.RemoveMarkedTile = lambda x, y, *a: world.calls.append(("unmark", int(x), int(y)))
     api.FindItem = lambda s: world.known(int(s))
     api.FindLayer = lambda layer: None
     api.UseObject = lambda s, *a: world.open(int(s))
