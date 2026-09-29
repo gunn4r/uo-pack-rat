@@ -3,7 +3,8 @@
 // Pure: no server. Tags: [fast], one [smoke]. Run: node --test app/organize.test.mts
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { readFileSync, mkdtempSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { foldSnapshots, setRules, type Inventory } from "./vault-lib.mts";
@@ -11,7 +12,13 @@ import { houseScan, AT, type BoxSpec, type ThingSpec } from "./organize-fixture.
 import { emptyRuleQuery, emptyOrganizeConfig, CATCH_ALL_ID, type OrganizeConfig, type OrganizeRule, type ContainerLabel } from "./organize-config.mts";
 import type { RuleQuery } from "./item-query.mts";
 import type { RulesV1 } from "./schema/types.d.mts";
-import { ancestry, scopeOf, ruleMatches, claimOf, baseName, applyOverlay, homeOf, newSim, simTake, simPut, mark, rollback, MAX_STACK, type OverlayMove, type Sim } from "./organize.mts";
+import { resolveConfig } from "./config.mts";
+import { queueTrip } from "./bridge-trip.mts";
+import type { ScanV2 } from "./schema/types.d.mts";
+import {
+  ancestry, scopeOf, ruleMatches, claimOf, baseName, applyOverlay, homeOf, newSim, simTake, simPut, mark, rollback, MAX_STACK,
+  sitesOf, planOrganize, tripCommand, lineBytes, type OverlayMove, type Sim, type Plan,
+} from "./organize.mts";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const RULES = JSON.parse(readFileSync(join(HERE, "rules", "uoalive.json"), "utf8")) as RulesV1;
@@ -221,4 +228,165 @@ test("[fast] weight is checked only where the container has a stone cap", () => 
   assert.equal(simPut(s, inv.items[GARLIC]!, [A], new Set()), null);
   assert.deepEqual(simPut(s, inv.items[RUBY]!, [A], new Set()), { to: A, merged: false });
   assert.deepEqual(simPut(s, inv.items[GARLIC]!, [B], new Set()), { to: B, merged: false }, "no cap on B");
+});
+
+const reagents = (targets: number[]) => rule("reagents", { kind: ["reagent"] }, targets);
+const gems = (targets: number[]) => rule("gems", { kind: ["gem"] }, targets);
+const moved = (p: Plan): (number | null)[][] => p.moves.map((m) => [m.serial, m.from, m.to, m.trip]).sort((x, y) => x[0]! - y[0]!);
+const pearls = (n: number, inside: number, weight = 1): ThingSpec[] => Array.from({ length: n }, (_, i) => ({ serial: 0x40002000 + i, name: "Black Pearl", in: inside, weight }));
+
+test("[fast] items move into their rule's target; unclaimed items stay; unlabelled chests are never touched", () => {
+  const inv = fold([{ serial: A, pos: at(100) }, { serial: B, pos: at(104) }, { serial: STRANGER, pos: at(102) }],
+    [{ serial: PEARL, name: "Black Pearl", in: B }, { serial: RUBY, name: "Ruby", in: A }, { serial: KATANA, name: "Katana", in: A },
+      { serial: ASH, name: "Sulfurous Ash", in: STRANGER }, { serial: GARLIC, name: "Garlic", in: A }]);
+  const plan = planOrganize(inv, config({ labels: labels(A, B), rules: [reagents([A]), gems([B])] }), [], { now: NOW });
+  assert.deepEqual(moved(plan), [[PEARL, B, A, 1], [RUBY, A, B, 1]]);
+  assert.deepEqual(plan.trips, [{ index: 1, site: 0, takes: [RUBY, PEARL], puts: [RUBY, PEARL] }]);
+  assert.deepEqual(plan.rules, [{ ruleId: "reagents", matched: 2, inPlace: 1, toMove: 1, noRoom: 0 }, { ruleId: "gems", matched: 1, inPlace: 0, toMove: 1, noRoom: 0 }]);
+  assert.equal(plan.unclaimed, 1);
+  assert.deepEqual(plan.sites, [{ index: 0, roots: [A, B] }]);
+});
+
+test("[fast] a chest that is both source and target in one trip: its takes free the room its puts use", () => {
+  const inv = fold([{ serial: A, max: 1 }, { serial: B, max: 1, pos: at(104) }], [{ serial: RUBY, name: "Ruby", in: A }, { serial: PEARL, name: "Black Pearl", in: B }]);
+  const plan = planOrganize(inv, config({ labels: labels(A, B), rules: [reagents([A]), gems([B])] }), [], { now: NOW });
+  assert.deepEqual(moved(plan), [[PEARL, B, A, 1], [RUBY, A, B, 1]]);
+  assert.deepEqual(plan.room.map((r) => r.shortfall), [0, 0]);
+});
+
+test("[fast] a slot freed by one trip is used by the next, never the other way round", () => {
+  const inv = fold([{ serial: A, max: 1 }, { serial: B, max: 5, pos: at(104) }], [{ serial: RUBY, name: "Ruby", in: A }, { serial: PEARL, name: "Black Pearl", in: B }]);
+  const plan = planOrganize(inv, config({ labels: labels(A, B), rules: [reagents([A]), gems([B])] }), [], { now: NOW, tripItems: 1 });
+  assert.deepEqual(moved(plan), [[PEARL, B, A, 2], [RUBY, A, B, 1]]);
+});
+
+test("[fast] a full chain leaves the rest where they are, counted as no room", () => {
+  const inv = fold([{ serial: A, max: 1 }, { serial: C, max: 1, pos: at(106) }, { serial: B, pos: at(104) }],
+    [{ serial: PEARL, name: "Black Pearl", in: B }, { serial: PEARL2, name: "Black Pearl", in: B }, { serial: PEARL3, name: "Black Pearl", in: B }]);
+  const plan = planOrganize(inv, config({ labels: labels(A, B, C), rules: [reagents([A, C])] }), [], { now: NOW });
+  assert.deepEqual(moved(plan), [[PEARL, B, A, 1], [PEARL2, B, C, 1]]);
+  assert.deepEqual(plan.rules, [{ ruleId: "reagents", matched: 3, inPlace: 0, toMove: 2, noRoom: 1 }]);
+  assert.deepEqual(plan.room, [{ ruleId: "reagents", needSlots: 3, freeSlots: 2, shortfall: 1 }]);
+});
+
+test("[fast] a rule targeting a chest at another house plans no move and reports it", () => {
+  const OTHER_FACET = 0x40000009;
+  const inv = fold([{ serial: A, pos: at(100) }, { serial: FAR, pos: at(400) }, { serial: OTHER_FACET, pos: at(100, 2) }], [{ serial: RUBY, name: "Ruby", in: A }]);
+  for (const target of [FAR, OTHER_FACET]) {
+    const plan = planOrganize(inv, config({ labels: labels(A, target), rules: [gems([target])] }), [], { now: NOW });
+    assert.deepEqual(plan.moves, []);
+    assert.deepEqual(plan.crossSite, [{ ruleId: "gems", count: 1 }]);
+    assert.equal(plan.sites.length, 2);
+  }
+});
+
+test("[fast] sites join chests single-link within 24 tiles on the same facet", () => {
+  const D = 0x40000010;
+  const inv = fold([{ serial: A, pos: at(100) }, { serial: B, pos: at(120) }, { serial: C, pos: at(140) }, { serial: D, pos: at(110, 2) }]);
+  assert.deepEqual(sitesOf(inv, [D, C, B, A]), [[A, B, C], [D]]);
+});
+
+test("[fast] with a catch-all, unclaimed items go there; without one they stay", () => {
+  const inv = fold([{ serial: A }, { serial: C, pos: at(106) }], [{ serial: KATANA, name: "Katana", in: A }]);
+  const plan = planOrganize(inv, config({ labels: labels(A, C), catchAll: C }), [], { now: NOW });
+  assert.deepEqual(plan.moves.map((m) => [m.serial, m.to, m.ruleId]), [[KATANA, C, CATCH_ALL_ID]]);
+  assert.equal(planOrganize(inv, config({ labels: labels(A, C) }), [], { now: NOW }).unclaimed, 1);
+});
+
+test("[fast] a rule naming a container no scan has seen moves nothing, even into its other targets", () => {
+  const inv = fold([{ serial: A }, { serial: B, pos: at(104) }], [{ serial: PEARL, name: "Black Pearl", in: B }]);
+  const plan = planOrganize(inv, config({ labels: { ...labels(A, B), ...labels(0x4000ffff) }, rules: [reagents([0x4000ffff, A])] }), [], { now: NOW });
+  assert.deepEqual(plan.moves, []);
+  assert.ok(plan.warnings.some((w) => w.kind === "missing-target" && w.serial === 0x4000ffff));
+});
+
+test("[fast] trips hold at most tripItems items and tripStones stones", () => {
+  const light = fold([{ serial: A }, { serial: B, pos: at(104) }], pearls(25, B));
+  const cfg = config({ labels: labels(A, B), rules: [reagents([A])] });
+  assert.deepEqual(planOrganize(light, cfg, [], { now: NOW }).trips.map((t) => t.takes.length), [20, 5]);
+  const heavy = fold([{ serial: A }, { serial: B, pos: at(104) }], pearls(25, B, 10));
+  assert.deepEqual(planOrganize(heavy, cfg, [], { now: NOW }).trips.map((t) => t.takes.length), [15, 10]);
+});
+
+test("[fast] every trip's queue line fits tripBytes", () => {
+  const inv = fold([{ serial: A }, { serial: B, pos: at(104) }], pearls(20, B));
+  const plan = planOrganize(inv, config({ labels: labels(A, B), rules: [reagents([A])] }), [], { now: NOW, tripBytes: 1024 });
+  assert.ok(plan.trips.length > 1);
+  for (const t of plan.trips) assert.ok(lineBytes(tripCommand(inv, plan, t.index)!) <= 1024, `trip ${t.index}`);
+  assert.equal(plan.moves.length, 20);
+});
+
+test("[fast] items a trip carried and did not put are planned as puts with nothing to take", () => {
+  const inv = fold([{ serial: A }, { serial: B, pos: at(104) }], [{ serial: PEARL, name: "Black Pearl", in: B }]);
+  const plan = planOrganize(inv, config({ labels: labels(A, B), rules: [reagents([A])] }), [step(PEARL, "Black Pearl", B, null)], { now: NOW });
+  assert.deepEqual(plan.carried, [{ serial: PEARL, name: "Black Pearl" }]);
+  assert.deepEqual(moved(plan), [[PEARL, null, A, 1]]);
+  assert.deepEqual(plan.trips, [{ index: 1, site: 0, takes: [], puts: [PEARL] }]);
+});
+
+test("[fast] a finished trip in the overlay is not planned again", () => {
+  const inv = fold([{ serial: A }, { serial: B, pos: at(104) }], [{ serial: PEARL, name: "Black Pearl", in: B }]);
+  const plan = planOrganize(inv, config({ labels: labels(A, B), rules: [reagents([A])] }), [step(PEARL, "Black Pearl", B, A)], { now: NOW });
+  assert.deepEqual(plan.moves, []);
+  assert.deepEqual(plan.rules, [{ ruleId: "reagents", matched: 1, inPlace: 1, toMove: 0, noRoom: 0 }]);
+});
+
+test("[fast] the same inputs in any order give the same plan", () => {
+  const boxes: BoxSpec[] = [{ serial: A, max: 3 }, { serial: BAG, parent: A }, { serial: B, pos: at(104) }, { serial: C, pos: at(110) }];
+  const things: ThingSpec[] = [...pearls(6, B), { serial: RUBY, name: "Ruby", in: BAG }, { serial: KATANA, name: "Katana", in: B }, { serial: GARLIC, name: "Garlic", in: C }];
+  const cfg = config({ labels: labels(A, B, C), rules: [reagents([A, C]), gems([B])], catchAll: C });
+  const shuffled = { ...cfg, labels: Object.fromEntries(Object.entries(cfg.labels).reverse()) };
+  const one = planOrganize(fold(boxes, things), cfg, [], { now: NOW });
+  const two = planOrganize(fold([...boxes].reverse(), [...things].reverse()), shuffled, [], { now: NOW });
+  assert.equal(JSON.stringify(two), JSON.stringify(one));
+});
+
+test("[fast] the stamp changes when the plan changes, and only then", () => {
+  const inv = fold([{ serial: A }, { serial: B, pos: at(104) }], [{ serial: PEARL, name: "Black Pearl", in: B }]);
+  const cfg = config({ labels: labels(A, B), rules: [reagents([A])] });
+  const stamp = planOrganize(inv, cfg, [], { now: NOW }).stamp;
+  assert.match(stamp, /^[0-9a-f]{8}$/);
+  assert.equal(planOrganize(inv, cfg, [], { now: NOW + 1000 }).stamp, stamp);
+  assert.notEqual(planOrganize(inv, { ...cfg, rules: [reagents([B])] }, [], { now: NOW }).stamp, stamp);
+  assert.notEqual(planOrganize(inv, cfg, [step(PEARL, "Black Pearl", B, A)], { now: NOW }).stamp, stamp);
+});
+
+test("[fast] tripCommand builds the line queueTrip writes: every root placed once, chains root first, the plan's stamp", () => {
+  const inv = fold([{ serial: A }, { serial: BAG, parent: A }, { serial: B, pos: { x: 104, y: 100, z: 5, facet: 1 } }],
+    [{ serial: PEARL, name: "Black Pearl", in: B }, { serial: RUBY, name: "Ruby", in: BAG }]);
+  const plan = planOrganize(inv, config({ labels: { ...labels(A, B), ...labels(BAG) }, rules: [reagents([BAG]), gems([B])] }), [], { now: NOW });
+  const trip = tripCommand(inv, plan, 1)!;
+  assert.deepEqual(trip, {
+    index: 1, stamp: plan.stamp,
+    roots: { [String(A)]: { x: 100, y: 100, z: 0, facet: 1 }, [String(B)]: { x: 104, y: 100, z: 5, facet: 1 } },
+    takes: [{ serial: RUBY, name: "Ruby", chain: [A, BAG] }, { serial: PEARL, name: "Black Pearl", chain: [B] }],
+    puts: [{ serial: RUBY, name: "Ruby", dest: [B] }, { serial: PEARL, name: "Black Pearl", dest: [A, BAG] }],
+  });
+  assert.equal(tripCommand(inv, plan, 2), null);
+  const paths = resolveConfig(["--port", "0", "--data", mkdtempSync(join(tmpdir(), "qm-organize-trip-"))], {}).paths;
+  const queued = queueTrip(paths, "tazuo", trip);
+  assert.equal(queued.ok, true, JSON.stringify(queued));
+});
+
+test("[smoke] the TazUO fixture: every put fits when the trips are replayed in order", () => {
+  const raw = JSON.parse(readFileSync(join(HERE, "..", "adapters", "tazuo", "fixture.scan.json"), "utf8")) as ScanV2;
+  const inv = foldSnapshots([raw]);
+  const grounds = Object.values(inv.containers).filter((c) => c.parent == null && c.kind === "ground").map((c) => +c.serial).sort((a, b) => a - b);
+  const cfg = config({ labels: labels(...grounds), rules: [rule("gear", { kind: ["gear"] }, [grounds[2]!, grounds[3]!])] });
+  const now = Date.parse(raw.scannedAt) + 3600e3;
+  const plan = planOrganize(inv, cfg, [], { now });
+  assert.ok(plan.moves.length > 0);
+  for (const m of plan.moves) assert.ok(cfg.labels[String(ancestry(inv, m.to)!.at(-1))], `move ${m.serial} lands in a labelled root`);
+  const counts = new Map(Object.values(inv.containers).filter((c) => c.capacity).map((c) => [+c.serial, c.capacity!.items]));
+  const bump = (serial: number | null, d: number): void => { for (const s of ancestry(inv, serial) ?? []) if (counts.has(s)) counts.set(s, counts.get(s)! + d); };
+  for (const trip of plan.trips) {
+    for (const s of trip.takes) bump(plan.moves.find((m) => m.serial === s)!.from, -1);
+    for (const s of trip.puts) {
+      const m = plan.moves.find((x) => x.serial === s)!;
+      bump(m.to, 1);
+      for (const c of ancestry(inv, m.to)!) assert.ok(counts.get(c)! <= inv.containers[c]!.capacity!.maxItems, `trip ${trip.index} overfills ${c}`);
+    }
+  }
+  const reordered = foldSnapshots([{ ...raw, items: [...raw.items].reverse() }]);
+  assert.equal(JSON.stringify(planOrganize(reordered, cfg, [], { now })), JSON.stringify(plan));
 });
