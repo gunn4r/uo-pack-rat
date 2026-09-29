@@ -11,7 +11,7 @@ import { houseScan, AT, type BoxSpec, type ThingSpec } from "./organize-fixture.
 import { emptyRuleQuery, emptyOrganizeConfig, CATCH_ALL_ID, type OrganizeConfig, type OrganizeRule, type ContainerLabel } from "./organize-config.mts";
 import type { RuleQuery } from "./item-query.mts";
 import type { RulesV1 } from "./schema/types.d.mts";
-import { ancestry, scopeOf, ruleMatches, claimOf, baseName, applyOverlay, homeOf, type OverlayMove } from "./organize.mts";
+import { ancestry, scopeOf, ruleMatches, claimOf, baseName, applyOverlay, homeOf, newSim, simTake, simPut, mark, rollback, MAX_STACK, type OverlayMove, type Sim } from "./organize.mts";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const RULES = JSON.parse(readFileSync(join(HERE, "rules", "uoalive.json"), "utf8")) as RulesV1;
@@ -162,4 +162,63 @@ test("[fast] an item taken and not yet put is carried, in no container", () => {
   assert.equal(placed.inv.items[PEARL]!.root, null);
   assert.deepEqual(placed.carried, [{ serial: PEARL, name: "Black Pearl" }]);
   assert.equal(placed.counts.get(A)!.items, 0);
+});
+
+const simOf = (inv: Inventory): Sim => newSim(inv, applyOverlay(inv, []).counts);
+const fill = (s: Sim, serial: number) => [s.counts.get(serial)!.items, s.counts.get(serial)!.stones];
+
+test("[fast] a take frees a slot in its container and every container around it, and rollback puts it back", () => {
+  const inv = fold([{ serial: A }, { serial: BAG, parent: A }], [{ serial: PEARL, name: "Black Pearl", in: BAG, weight: 2 }]);
+  const s = simOf(inv);
+  const m = mark(s);
+  simTake(s, inv.items[PEARL]!);
+  assert.deepEqual([fill(s, A), fill(s, BAG)], [[1, 0], [0, 0]]);
+  rollback(s, m);
+  assert.deepEqual([fill(s, A), fill(s, BAG)], [[2, 2], [1, 2]]);
+});
+
+test("[fast] a put needs room in the target and in every container around it", () => {
+  const inv = fold([{ serial: A, max: 2 }, { serial: BAG, parent: A, max: 10 }, { serial: C, pos: at(106) }],
+    [{ serial: RUBY, name: "Ruby", in: A }, { serial: GARLIC, name: "Garlic", in: C }]);
+  const s = simOf(inv);
+  assert.equal(simPut(s, inv.items[GARLIC]!, [BAG], new Set()), null, "the bag has room, the chest around it does not");
+  simTake(s, inv.items[RUBY]!);
+  assert.deepEqual(simPut(s, inv.items[GARLIC]!, [BAG], new Set()), { to: BAG, merged: false });
+  assert.deepEqual([fill(s, A)[0], fill(s, BAG)[0]], [2, 1]);
+});
+
+test("[fast] the chain overflows into its next target when the first is full", () => {
+  const inv = fold([{ serial: A, max: 1 }, { serial: C, pos: at(106) }, { serial: B, pos: at(104) }],
+    [{ serial: RUBY, name: "Ruby", in: A }, { serial: GARLIC, name: "Garlic", in: B }]);
+  assert.deepEqual(simPut(simOf(inv), inv.items[GARLIC]!, [A, C], new Set()), { to: C, merged: false });
+});
+
+test("[fast] a put merges into a same-name, same-hue, same-graphic stack already in that exact container, using no slot", () => {
+  const inv = fold([{ serial: A, max: 1 }, { serial: B, pos: at(104) }],
+    [{ serial: PEARL, name: "Black Pearl", amount: 10, weight: 10, in: A }, { serial: PEARL2, name: "Black Pearl", amount: 5, weight: 5, in: B }]);
+  const s = simOf(inv);
+  assert.deepEqual(simPut(s, inv.items[PEARL2]!, [A], new Set()), { to: A, merged: true });
+  assert.deepEqual(fill(s, A), [1, 15]);
+});
+
+test("[fast] single items never merge, nor stacks past 60,000, nor other hues, nor into a stack that is itself moving", () => {
+  const cases: [string, ThingSpec, ThingSpec, Set<number>][] = [
+    ["two single items", { serial: KATANA, name: "Katana", in: A }, { serial: PEARL2, name: "Katana", in: B }, new Set()],
+    ["past the stack cap", { serial: PEARL, name: "Black Pearl", amount: MAX_STACK - 2, in: A }, { serial: PEARL2, name: "Black Pearl", amount: 5, in: B }, new Set()],
+    ["another hue", { serial: PEARL, name: "Black Pearl", amount: 10, in: A }, { serial: PEARL2, name: "Black Pearl", amount: 5, hue: 1150, in: B }, new Set()],
+    ["a stack that is moving", { serial: PEARL, name: "Black Pearl", amount: 10, in: A }, { serial: PEARL2, name: "Black Pearl", amount: 5, in: B }, new Set([PEARL])],
+  ];
+  for (const [what, there, incoming, movers] of cases) {
+    const inv = fold([{ serial: A, max: 1 }, { serial: B, pos: at(104) }], [there, incoming]);
+    assert.equal(simPut(simOf(inv), inv.items[incoming.serial]!, [A], movers), null, what);
+  }
+});
+
+test("[fast] weight is checked only where the container has a stone cap", () => {
+  const inv = fold([{ serial: A, maxStones: 10 }, { serial: B, pos: at(104) }, { serial: C, pos: at(106) }],
+    [{ serial: PEARL, name: "Black Pearl", in: A, weight: 9 }, { serial: GARLIC, name: "Garlic", in: C, weight: 2 }, { serial: RUBY, name: "Ruby", in: C, weight: 1 }]);
+  const s = simOf(inv);
+  assert.equal(simPut(s, inv.items[GARLIC]!, [A], new Set()), null);
+  assert.deepEqual(simPut(s, inv.items[RUBY]!, [A], new Set()), { to: A, merged: false });
+  assert.deepEqual(simPut(s, inv.items[GARLIC]!, [B], new Set()), { to: B, merged: false }, "no cap on B");
 });

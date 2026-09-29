@@ -155,3 +155,92 @@ export function homeOf(inv: Inventory, it: Item, homes: Set<number>): number | n
   for (const s of ancestry(inv, it.container) ?? []) if (homes.has(s)) return s;
   return null;
 }
+
+// Spec §2.6, capacity by simulation: every container's fill as the trips will find it, changed take by take and
+// put by put, with an undo log so a trip that does not work out can be taken back. A take frees one slot in its
+// container and every container around it; a put uses one in the target and every container around it, unless it
+// merges into a stack: a same name + hue + graphic item already in that exact container, where either side is a
+// stack (amount > 1) and the sum stays within MAX_STACK. Weight is checked only where a container has a stone cap.
+export const MAX_STACK = 60000;
+interface Stack { key: string; amount: number }
+export interface Sim { inv: Inventory; counts: Map<number, ContainerCapacity>; stacks: Map<number, Map<number, Stack>>; undo: (() => void)[] }
+export interface PutResult { to: number; merged: boolean }
+
+const stackKey = (it: Item): string => `${baseName(it.name)}\u0000${it.hue ?? 0}\u0000${it.graphic ?? 0}`;
+// Scans record no weight for some items; one stone is the planner's guess, for the trip budget and stone caps alike.
+export const weightOf = (it: Item): number => it.weight ?? 1;
+
+export function newSim(inv: Inventory, counts: Map<number, ContainerCapacity>): Sim {
+  const stacks = new Map<number, Map<number, Stack>>();
+  for (const it of Object.values(inv.items).sort((a, b) => a.serial - b.serial)) {
+    if (it.container == null || inv.containers[it.serial]) continue;
+    const here = stacks.get(+it.container) ?? new Map<number, Stack>();
+    here.set(+it.serial, { key: stackKey(it), amount: it.amount || 1 });
+    stacks.set(+it.container, here);
+  }
+  return { inv, counts, stacks, undo: [] };
+}
+export const mark = (sim: Sim): number => sim.undo.length;
+export function rollback(sim: Sim, to: number): void { while (sim.undo.length > to) sim.undo.pop()!(); }
+
+function adjust(sim: Sim, container: number, items: number, stones: number): void {
+  for (const s of ancestry(sim.inv, container) ?? []) {
+    const cap = sim.counts.get(s);
+    if (!cap) continue;
+    cap.items += items;
+    if (cap.stones != null) cap.stones += stones;
+    sim.undo.push(() => { cap.items -= items; if (cap.stones != null) cap.stones -= stones; });
+  }
+}
+
+// An item carried in the backpack (container null) is taken already: nothing to free.
+export function simTake(sim: Sim, it: Item): void {
+  if (it.container == null) return;
+  const from = +it.container;
+  adjust(sim, from, -1, -weightOf(it));
+  const here = sim.stacks.get(from), mine = here?.get(+it.serial);
+  if (here && mine) { here.delete(+it.serial); sim.undo.push(() => { here.set(+it.serial, mine); }); }
+}
+
+function fits(sim: Sim, target: number, items: number, stones: number): boolean {
+  const chain = ancestry(sim.inv, target);
+  return !!chain && chain.every((s) => {
+    const cap = sim.counts.get(s);
+    return !!cap && cap.items + items <= cap.maxItems && (cap.maxStones == null || (cap.stones ?? 0) + stones <= cap.maxStones);
+  });
+}
+
+// `movers` are items still waiting for their own move: merging into one would count on a stack that may be gone
+// by the time the put runs.
+function mergeInto(sim: Sim, target: number, it: Item, movers: Set<number>): number | null {
+  const here = sim.stacks.get(target);
+  if (!here) return null;
+  const key = stackKey(it), amount = it.amount || 1;
+  for (const serial of [...here.keys()].sort(bySerial)) {
+    const s = here.get(serial)!;
+    if (!movers.has(serial) && s.key === key && (amount > 1 || s.amount > 1) && s.amount + amount <= MAX_STACK) return serial;
+  }
+  return null;
+}
+
+// Tries the chain's targets in fill order and puts the item in the first with room. Null when none has any.
+export function simPut(sim: Sim, it: Item, chain: number[], movers: Set<number>): PutResult | null {
+  const w = weightOf(it), amount = it.amount || 1;
+  for (const target of chain) {
+    const into = mergeInto(sim, target, it, movers);
+    if (!fits(sim, target, into == null ? 1 : 0, w)) continue;
+    adjust(sim, target, into == null ? 1 : 0, w);
+    const here = sim.stacks.get(target) ?? new Map<number, Stack>();
+    sim.stacks.set(target, here);
+    if (into != null) {
+      const s = here.get(into)!;
+      s.amount += amount;
+      sim.undo.push(() => { s.amount -= amount; });
+    } else {
+      here.set(+it.serial, { key: stackKey(it), amount });
+      sim.undo.push(() => { here.delete(+it.serial); });
+    }
+    return { to: target, merged: into != null };
+  }
+  return null;
+}
