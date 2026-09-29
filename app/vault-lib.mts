@@ -97,6 +97,9 @@ export interface Container {
   pos?: Record<string, number> | null | undefined;
   // Its fill from the tooltip's Contents line (capacityOf), or null when the tooltip has none. Set by every fold.
   capacity?: ContainerCapacity | null | undefined;
+  // false when the newest scan saw this bag but could not open it: what the fold keeps under it is from an
+  // older scan (see foldSnapshots). Organize never moves anything out of one.
+  opened?: boolean | undefined;
   // The container's segment in location text: its bagLabel, plus a distinguishing suffix when another
   // container with the same label sits beside it (labelContainers). Set by every fold.
   label?: string | undefined;
@@ -607,6 +610,7 @@ interface ScanContainerRaw {
   parent?: number | null | undefined;
   root: number;
   tooltip?: string[] | undefined;
+  opened?: boolean | undefined;
 }
 
 // The minimal shape enrich()'s `raw` argument needs — satisfied by a ScanV2ItemsItem, a
