@@ -1190,6 +1190,12 @@ export function propertyKeys(inv: ItemsLike): string[] {
   return [...set].sort((a, b) => (PROP_LABELS[a] || a).localeCompare(PROP_LABELS[b] || b));
 }
 
+// The item's own words (name, tooltip lines, rarity, kind), never where it sits: what an Organize rule's free
+// text is matched against (item-query.mts's matchesItem, issue #11).
+export function itemOwnBlob(it: Item): string {
+  return [it.name, ...(it.lines || []), it.rarity || "", it.kind || ""].join(" \n ").toLowerCase();
+}
+
 export function itemSearchBlob(it: Item): string {
   return [it.name, ...(it.lines || []), it.location?.text || "", it.rarity || "", it.kind || ""].join(" \n ").toLowerCase();
 }
