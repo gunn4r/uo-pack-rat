@@ -103,7 +103,7 @@ test("[slow] the packaged UI renders, switches tabs and lists the demo inventory
     assert.deepEqual(errors, [], "no uncaught page errors during load and tab switch");
   } finally {
     await app.close();
-    rmSync(dataDir, { recursive: true, force: true });
+    rmSync(dataDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
   }
 });
 
@@ -132,7 +132,7 @@ test("[slow] the rows' actions follow the client the wizard just set up, without
     assert.match(reason, /can't Grab from Pack Rat/);
   } finally {
     await app.close();
-    rmSync(dataDir, { recursive: true, force: true });
+    rmSync(dataDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
   }
 });
 
@@ -170,7 +170,7 @@ test("[slow] with tazuo configured, the demo inventory shows all three bridge bu
     assert.equal(await page.locator("#wizard[open]").count(), 0, "setupDone:true should skip the first-run wizard");
   } finally {
     await app.close();
-    rmSync(dataDir, { recursive: true, force: true });
+    rmSync(dataDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
   }
 });
 
@@ -211,8 +211,8 @@ test("[slow] a partial-bridge adapter only offers its declared action, and the n
     assert.match(await actionReason(page, "Highlight in game"), /Bridge offline/, "Highlight is supported, so only the bridge being off holds it back");
   } finally {
     await app.close();
-    rmSync(dataDir, { recursive: true, force: true });
-    rmSync(adaptersDir, { recursive: true, force: true });
+    rmSync(dataDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
+    rmSync(adaptersDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
   }
 });
 
@@ -260,7 +260,7 @@ test("[slow] Save as… in the suit builder opens an in-page dialog and saves th
     assert.ok(names.includes(templateName), `expected "${templateName}" among the saved templates, got ${JSON.stringify(names)}`);
   } finally {
     await app.close();
-    rmSync(dataDir, { recursive: true, force: true });
+    rmSync(dataDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
   }
 });
 // A test launch must never read a real game-client folder (it once found the maintainer's own TazUO
@@ -291,8 +291,8 @@ test("[slow] an Electron test launch searches only its own temp home for game cl
     assert.equal(realpathSync(setup.dataDirCheck!.scriptsDir!), realpathSync(scripts));
   } finally {
     await app.close();
-    rmSync(dataDir, { recursive: true, force: true });
-    rmSync(home, { recursive: true, force: true });
+    rmSync(dataDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
+    rmSync(home, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
   }
 });
 // Small helper: assert the given locator's element is the page's activeElement — Playwright has no

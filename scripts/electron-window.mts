@@ -99,7 +99,7 @@ export function testEnv(extra: Record<string, string> = {}, home?: string): Reco
   if (!home) {
     if (!sharedHome) {
       const made = mkdtempSync(join(tmpdir(), "packrat-client-home-"));
-      process.on("exit", () => rmSync(made, { recursive: true, force: true }));
+      process.on("exit", () => rmSync(made, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 }));
       sharedHome = made;
     }
     home = sharedHome;

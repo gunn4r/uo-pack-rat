@@ -85,7 +85,7 @@ test("[slow] ⌘↵ builds from anywhere on the Builder screen, and not from beh
     assert.deepEqual(errors, []);
   } finally {
     await app.close();
-    rmSync(dataDir, { recursive: true, force: true });
+    rmSync(dataDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
   }
 });
 
@@ -121,7 +121,7 @@ test("[slow] the current suit's pieces show the item tooltip on hover and on key
     assert.deepEqual(errors, []);
   } finally {
     await app.close();
-    rmSync(dataDir, { recursive: true, force: true });
+    rmSync(dataDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
   }
 });
 
@@ -147,7 +147,7 @@ test("[slow] the Fetch list's pieces show the item tooltip on hover and on keybo
     assert.deepEqual(errors, []);
   } finally {
     await app.close();
-    rmSync(dataDir, { recursive: true, force: true });
+    rmSync(dataDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
   }
 });
 
@@ -186,7 +186,7 @@ test("[slow] the Plan's worn and replacement names each show their own piece's t
     assert.deepEqual(errors, []);
   } finally {
     await app.close();
-    rmSync(dataDir, { recursive: true, force: true });
+    rmSync(dataDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
   }
 });
 
@@ -230,7 +230,7 @@ test("[slow] a Fetch list row shows its whole place, wrapped not cut, and copies
     assert.deepEqual(errors, []);
   } finally {
     await app.close();
-    rmSync(dataDir, { recursive: true, force: true });
+    rmSync(dataDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
   }
 });
 
@@ -256,7 +256,7 @@ test("[slow] STR limit sits beside Race, in view with Advanced closed, and a bad
     assert.deepEqual(errors, []);
   } finally {
     await app.close();
-    rmSync(dataDir, { recursive: true, force: true });
+    rmSync(dataDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
   }
 });
 
@@ -311,7 +311,7 @@ test("[slow] a raised resist cap is marked, built with, shown in the result and 
     assert.deepEqual(errors, []);
   } finally {
     await app.close();
-    rmSync(dataDir, { recursive: true, force: true });
+    rmSync(dataDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
   }
 });
 
@@ -360,7 +360,7 @@ test("[slow] resist caps: a floor past its cap warns, a race change drops a now-
     assert.deepEqual(errors, []);
   } finally {
     await app.close();
-    rmSync(dataDir, { recursive: true, force: true });
+    rmSync(dataDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
   }
 });
 
@@ -389,7 +389,7 @@ test("[slow] two excluded weapon skills show on the chip and are saved with the 
     assert.deepEqual(errors, []);
   } finally {
     await app.close();
-    rmSync(dataDir, { recursive: true, force: true });
+    rmSync(dataDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
   }
 });
 
@@ -423,6 +423,6 @@ test("[slow] a switch's on state stands apart from its off state in each theme a
     assert.deepEqual(errors, []);
   } finally {
     await app.close();
-    rmSync(dataDir, { recursive: true, force: true });
+    rmSync(dataDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
   }
 });

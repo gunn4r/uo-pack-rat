@@ -165,7 +165,7 @@ test("[slow] refresh, Clear all, the virtual table and Forget keep the page's st
     assert.deepEqual(errors, []);
   } finally {
     await app.close();
-    rmSync(dataDir, { recursive: true, force: true });
+    rmSync(dataDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
   }
 });
 
@@ -244,7 +244,7 @@ test("[slow] the item peek opens from a row, follows the arrow keys and closes w
     assert.deepEqual(errors, []);
   } finally {
     await app.close();
-    rmSync(dataDir, { recursive: true, force: true });
+    rmSync(dataDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
   }
 });
 
@@ -280,7 +280,7 @@ test("[slow] a build finished for one character is never shown under another", a
     assert.deepEqual(errors, []);
   } finally {
     await app.close();
-    rmSync(dataDir, { recursive: true, force: true });
+    rmSync(dataDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
   }
 });
 
@@ -324,7 +324,7 @@ test("[slow] focus moves on, not to the page body, when a build finishes, is can
     assert.deepEqual(errors, []);
   } finally {
     await app.close();
-    rmSync(dataDir, { recursive: true, force: true });
+    rmSync(dataDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
   }
 });
 
@@ -347,7 +347,7 @@ test("[slow] with no character, Build best suit and Save profile are disabled wi
     assert.deepEqual(errors, []);
   } finally {
     await app.close();
-    rmSync(dataDir, { recursive: true, force: true });
+    rmSync(dataDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
   }
 });
 
@@ -417,7 +417,7 @@ test("[slow] a character's sheet opens from the roster, and a character can be f
     assert.deepEqual(errors, []);
   } finally {
     await app.close();
-    rmSync(dataDir, { recursive: true, force: true });
+    rmSync(dataDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
   }
 });
 
@@ -441,7 +441,7 @@ test("[slow] a failed request during load shows an error, renders Settings and s
     assert.match(await page.locator("#b-result").innerText(), /\/api\/profiles/, "the Suit Builder names the request that failed");
   } finally {
     await app.close();
-    rmSync(dataDir, { recursive: true, force: true });
+    rmSync(dataDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
   }
 });
 
@@ -482,7 +482,7 @@ test("[slow] the Inventory column choice survives a restart of the desktop app",
       await app.close();
     }
   } finally {
-    rmSync(dataDir, { recursive: true, force: true });
+    rmSync(dataDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
   }
 });
 
@@ -514,7 +514,7 @@ test("[slow] the character sheet's shown properties are chosen in a popover and 
     assert.deepEqual(errors, []);
   } finally {
     await app.close();
-    rmSync(dataDir, { recursive: true, force: true });
+    rmSync(dataDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
   }
 });
 
@@ -546,7 +546,7 @@ test("[slow] an Inventory column is resized with the keyboard and reset in table
     assert.deepEqual(errors, []);
   } finally {
     await app.close();
-    rmSync(dataDir, { recursive: true, force: true });
+    rmSync(dataDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
   }
 });
 
@@ -590,7 +590,7 @@ test("[slow] a saved run or run list that lands after a character switch is not 
     assert.deepEqual(errors, []);
   } finally {
     await app.close();
-    rmSync(dataDir, { recursive: true, force: true });
+    rmSync(dataDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
   }
 });
 
@@ -640,8 +640,8 @@ test("[slow] the data-folder banner is one line above every screen, which fits b
     assert.deepEqual(errors, []);
   } finally {
     await app.close();
-    rmSync(dataDir, { recursive: true, force: true });
-    rmSync(home, { recursive: true, force: true });
+    rmSync(dataDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
+    rmSync(home, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
   }
 });
 
@@ -676,7 +676,7 @@ test("[slow] a ground container is blacklisted from Containers and unblacklisted
     assert.deepEqual(errors, []);
   } finally {
     await app.close();
-    rmSync(dataDir, { recursive: true, force: true });
+    rmSync(dataDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
   }
 });
 
@@ -700,6 +700,6 @@ test("[slow] Rarity at most keeps the tier picked and the ones below it", async 
     assert.deepEqual(errors, []);
   } finally {
     await app.close();
-    rmSync(dataDir, { recursive: true, force: true });
+    rmSync(dataDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
   }
 });

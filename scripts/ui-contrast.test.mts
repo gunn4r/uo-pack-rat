@@ -368,6 +368,6 @@ test("[slow] every text, control edge, icon and status dot on the real page pass
     assert.equal(canary.length, 1, "a #bbb on white label is a failing pair");
   } finally {
     await app.close();
-    rmSync(dataDir, { recursive: true, force: true });
+    rmSync(dataDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
   }
 });
