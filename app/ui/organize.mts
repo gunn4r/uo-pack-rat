@@ -16,8 +16,8 @@ import { filterContext } from "./inventory.mts";
 import { loadOrganize, refreshPlaces, saveConfig } from "./organize-data.mts";
 import { targetChip, deleteRule, openRuleEditor } from "./rule-editor.mts";
 import { openAutoOrganize } from "./auto-organize.mts";
-import { CATCH_ALL_ID, organizeStage, moveRule, matchSummary, targetView, targetOptions, ruleCountParts, ruleNameOf, containerNameOf, planHeadline, unclaimedNote, roomLines, crossSiteLines, warningGroups, tripRows, moveName, moveWhere, tripGate, carriedView, pinnedWith, stepWatch, failedSteps, outcomeText, runAllNext, tripRefusal, type TripRow, type TripWatch, type FailedStep } from "./organize-model.mts";
-import type { BridgeStatusApiResponse, OrganizeConfig, OrganizePlan, OrganizePlanApiResponse, OrganizeRule, OrganizeTripApiResponse, PlanRuleReport } from "./api-types.mts";
+import { CATCH_ALL_ID, organizeStage, moveRule, matchSummary, targetView, targetOptions, ruleCountParts, ruleNameOf, containerNameOf, planHeadline, unclaimedNote, roomLines, crossSiteLines, warningGroups, tripRows, moveName, moveWhere, tripGate, carriedView, pinnedWith, stepWatch, failedSteps, outcomeText, runAllNext, tripRefusal, adoptWatch, resumedNote, type TripRow, type TripWatch, type FailedStep } from "./organize-model.mts";
+import type { BridgeStatusApiResponse, OrganizeConfig, OrganizePlan, OrganizePlanApiResponse, OrganizeRunningTrip, OrganizeRule, OrganizeTripApiResponse, PlanRuleReport } from "./api-types.mts";
 
 const body = (): HTMLElement => $<HTMLElement>("#org-body")!;
 const containers = () => state.inv?.containers || {};
@@ -31,6 +31,9 @@ let notice: { tone: "info" | "warn" | "bad"; text: string } | null = null;
 // names for the failed-step list.
 interface Run { watch: TripWatch; all: boolean; before: number; names: Map<number, string>; stopping: boolean }
 let run: Run | null = null;
+// Trips the page gave up on: the plan may still name one in flight (a started trip the server holds while its
+// bridge answers), and it is not followed again.
+const givenUp = new Set<string>();
 // True while POST /api/organize/trip is out: a second click then queues nothing.
 let queueing = false;
 let runTimer = 0;
@@ -164,15 +167,22 @@ const toastBad = (text: string): void => toast(text, "bad");
 
 // ---------------------------------------------------------------- the plan
 // Fetched after every render of a ready setup and after every trip. Only the Plan card and the rule counts are
-// repainted, so a focused rule handle keeps its focus.
+// repainted, so a focused rule handle keeps its focus. A trip in flight the page is not following (it was
+// reloaded, or the trip came from another window) is followed from here on, Stop included; Run all is not resumed.
 async function refreshPlan(): Promise<void> {
   const cfg = state.organize.config;
   if (!cfg || !state.inv || organizeStage(cfg, groundRoots()) !== "ready") return;
   loadingPlan = true;
   paintPlan();
-  try { state.organize.plan = (await api<OrganizePlanApiResponse>("/api/organize/plan")).plan; planError = null; }
+  let running: OrganizeRunningTrip | null = null;
+  try { ({ plan: state.organize.plan, running } = await api<OrganizePlanApiResponse>("/api/organize/plan")); planError = null; }
   catch (e) { planError = errorText(e); }
   loadingPlan = false;
+  const adopted = adoptWatch(running, !!run || queueing, givenUp, Date.now());
+  if (adopted) {
+    notice = { tone: "info", text: resumedNote(adopted.index) };
+    follow(adopted, false, 0, new Map((state.organize.plan?.moves || []).map((m) => [m.serial, m.name] as const)));
+  }
   paintPlan();
   paintCounts();
 }
@@ -281,13 +291,16 @@ async function startTrip(index: number, all: boolean): Promise<void> {
   try { r = await api<OrganizeTripApiResponse>("/api/organize/trip", { method: "POST", body: { index, stamp: plan.stamp } }); }
   catch (e) { queueing = false; notice = { tone: "bad", text: tripRefusal(errorText(e)) }; await refreshPlan(); return; }
   queueing = false;
-  bridge.pending.set(r.id, `Trip ${index}`);   // bridge.mts's poll toasts the bridge's own summary of it
-  lastTrip = index;
   const now = Date.now();
-  run = { watch: { id: r.id, index, queuedAt: now, picked: false, heard: now }, all, before: plan.moves.length, names, stopping: false };
+  follow({ id: r.id, index, queuedAt: now, picked: false, heard: now }, all, plan.moves.length, names);
+  paintControls();
+}
+function follow(watch: TripWatch, all: boolean, before: number, names: Map<number, string>): void {
+  bridge.pending.set(watch.id, `Trip ${watch.index}`);   // bridge.mts's poll toasts the bridge's own summary of it
+  lastTrip = watch.index;
+  run = { watch, all, before, names, stopping: false };
   setNavBusy("organize", true, "Organize trip running");
   runTimer = setInterval(() => { void check(); }, 5000) as unknown as number;   // also when the status poll goes quiet
-  paintControls();
 }
 // On every bridge status and every 5 s: still waiting, reported (then the plan again, and Run all's next trip),
 // or given up on (organize-model.mts's stepWatch).
@@ -298,7 +311,8 @@ async function check(): Promise<void> {
   const step = stepWatch(r.watch, { currentId: st?.current?.id ?? null, result: st?.results?.[r.watch.id] ?? null, online: !!st?.online && Date.now() - lastStatusAt < 10_000 }, Date.now());
   if (step.kind === "wait") { r.watch = step.watch; return; }
   finishRun();
-  if (step.kind === "lost") { notice = { tone: "bad", text: step.message }; await refreshPlan(); return; }
+  notice = null;
+  if (step.kind === "lost") { givenUp.add(r.watch.id); notice = { tone: "bad", text: step.message }; await refreshPlan(); return; }
   const fails = failedSteps(step.result, r.names);
   if (fails.length) failed = { index: r.watch.index, steps: fails };
   const text = outcomeText(step.outcome, r.watch.index, step.result);

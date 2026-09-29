@@ -128,6 +128,25 @@ test("[fast] GET /api/organize/plan plans the moves; POST /api/organize/trip que
   }
 });
 
+test("[fast] GET /api/organize/plan names the trip in flight, and whether its bridge has picked it up, so a reloaded page can follow it", async () => {
+  const { s, dir } = await serve();
+  try {
+    await call(s, "/api/organize", body("PUT", CONFIG_DOC));
+    const first = (await call<{ plan: Plan; running: unknown }>(s, "/api/organize/plan")).body;
+    assert.equal(first.running, null);
+    const id = String((await call(s, "/api/organize/trip", body("POST", { index: 1, stamp: first.plan.stamp }))).body.id);
+    const queuedAt = (JSON.parse(readFileSync(join(dir, "organize-state.json"), "utf8")) as { pending: { queuedAt: string }[] }).pending[0]!.queuedAt;
+    assert.deepEqual((await call(s, "/api/organize/plan")).body.running, { id, index: 1, queuedAt, picked: false });
+    const status = (current: unknown, results: unknown = {}) => writeFileSync(join(dir, "bridge", "tazuo", "status.json"), JSON.stringify({ alive: new Date().toISOString(), character: "Tester", current, results, counts: {} }));
+    status({ id, action: "trip" });
+    assert.deepEqual((await call(s, "/api/organize/plan")).body.running, { id, index: 1, queuedAt, picked: true });
+    status(null, { [id]: { ok: true, msg: "trip 1: stopped", t: new Date().toISOString(), stopped: true, steps: [] } });
+    assert.equal((await call(s, "/api/organize/plan")).body.running, null);
+  } finally {
+    await s.close();
+  }
+});
+
 test("[fast] a trip's reported steps go into the overlay, and the next plan no longer carries them", async () => {
   const { s, dir } = await serve();
   try {

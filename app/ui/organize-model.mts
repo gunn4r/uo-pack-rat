@@ -11,7 +11,7 @@ import { parseItemQuery } from "../item-query.mts";
 import type { ItemQuery, RuleQuery } from "../item-query.mts";
 import { activeFilters, plural } from "./inv-model.mts";
 import type { FilterContext } from "./inv-model.mts";
-import type { BridgeResultEntry, ContainerLabel, OrganizeConfig, OrganizeMatchApiResponse, OrganizePlan, OrganizeRule, PlanMove, PlanRuleReport, PlanWarning, PlanWarningKind, RuleMatch, AutoStrategy, OrganizeProposal, ProposalCandidate, ProposalGroup } from "./api-types.mts";
+import type { BridgeResultEntry, ContainerLabel, OrganizeConfig, OrganizeMatchApiResponse, OrganizePlan, OrganizeRule, PlanMove, PlanRuleReport, PlanWarning, PlanWarningKind, RuleMatch, AutoStrategy, OrganizeProposal, OrganizeRunningTrip, ProposalCandidate, ProposalGroup } from "./api-types.mts";
 
 // The ruleId the plan reports the catch-all under (app/organize-config.mts's CATCH_ALL_ID; a value import from
 // there would add a second server module to the page for one string, so the test pins the two together).
@@ -308,6 +308,16 @@ export const GRACE_MS = 95_000;
 export const TRIP_MS = 15 * 60_000;
 // `heard` = when the bridge last answered as online.
 export interface TripWatch { id: string; index: number; queuedAt: number; picked: boolean; heard: number }
+// A trip the server says is in flight that this page is not watching (it was reloaded, or the trip came from
+// another window), watched from when it was queued, like one this page started. Null when there is none, when the
+// page is already watching or queueing one, or when the page gave up on this one: the server holds a started trip
+// for as long as its bridge answers, so one let go after 15 minutes must not be taken back.
+export function adoptWatch(t: OrganizeRunningTrip | null, busy: boolean, givenUp: ReadonlySet<string>, now: number): TripWatch | null {
+  const queuedAt = t ? Date.parse(t.queuedAt) : NaN;
+  if (!t || busy || givenUp.has(t.id) || !Number.isFinite(queuedAt)) return null;
+  return { id: t.id, index: t.index, queuedAt, picked: t.picked, heard: now };
+}
+export const resumedNote = (index: number): string => `Trip ${index} was already running when this page opened (after a reload, or from another window), so it is followed here. Run all does not go on after it: once it reports back, press Run all again to continue.`;
 export type TripOutcome = "done" | "partial" | "stopped" | "failed";
 export type WatchStep = { kind: "wait"; watch: TripWatch } | { kind: "reported"; outcome: TripOutcome; result: BridgeResultEntry } | { kind: "lost"; message: string };
 export function stepWatch(w: TripWatch, s: { currentId: string | null; result: BridgeResultEntry | null; online: boolean }, now: number): WatchStep {
@@ -396,6 +406,17 @@ export function proposalNotes(p: OrganizeProposal): string[] {
     ...p.refused.map((r) => `Container 0x${r.serial.toString(16)} could not be used: ${r.reason}.`),
     ...(p.addContainers ? [`Place ${plural(p.addContainers, "more container")}, scan them, and run Auto organize again to fit everything.`] : []),
     ...(p.plan.crossSite ? [`${plural(p.plan.crossSite, "item")} ${p.plan.crossSite === 1 ? "belongs" : "belong"} at another house: carry ${p.plan.crossSite === 1 ? "it" : "them"} over by hand.`] : []),
+  ];
+}
+// What the proposal leaves where it is, under its headline in the Plan card's words (unclaimedNote); nothing
+// while no container is ticked, when the headline asks for one.
+export function proposalStays(p: OrganizeProposal): string[] {
+  const { noRoom, unclaimed } = p.plan;
+  if (!p.containers.length) return [];
+  const stay = (k: number): string => (k === 1 ? "stays where it is" : "stay where they are");
+  return [
+    ...(noRoom ? [`${plural(noRoom, "item")} ${noRoom === 1 ? "has" : "have"} no room and ${stay(noRoom)}.`] : []),
+    ...(unclaimed ? [`${plural(unclaimed, "item")} no rule takes ${stay(unclaimed)}.`] : []),
   ];
 }
 // Detailed left groups without a chest: Simple needs fewer (no automatic merging, spec §5).

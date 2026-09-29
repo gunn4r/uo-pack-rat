@@ -466,7 +466,9 @@ export interface OrganizePlan {
 }
 export interface OrganizePreset { id: string; name: string; match: RuleMatch }
 export interface OrganizeApiResponse { ok: boolean; config: OrganizeConfig; problems: string[] }
-export interface OrganizePlanApiResponse { ok: boolean; plan: OrganizePlan }
+// `running`: the trip the server has queued and not heard back about (`picked` = its bridge is running it now).
+export interface OrganizeRunningTrip { id: string; index: number; queuedAt: string; picked: boolean }
+export interface OrganizePlanApiResponse { ok: boolean; plan: OrganizePlan; running: OrganizeRunningTrip | null }
 export interface OrganizePresetsApiResponse { ok: boolean; presets: OrganizePreset[] }
 export interface OrganizeTripApiResponse { ok: boolean; id: string; index: number }
 // POST /api/organize/match: what one rule filter takes of the movable items in labelled roots (app/organize.mts's matchCount).
