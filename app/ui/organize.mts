@@ -9,12 +9,13 @@ import { $, el, toast, compactChildren } from "./dom.mts";
 import { api } from "./api.mts";
 import { box, txt, button, badge, card, message, menu, select, tipWrap, table, type Kids } from "./components.mts";
 import { currentAdapter, BRIDGE_OFFLINE } from "./bridge.mts";
+import { setNavBusy } from "./shell.mts";
 import { errorText } from "./messages.mts";
 import { filterContext } from "./inventory.mts";
 import { loadOrganize, refreshPlaces, saveConfig } from "./organize-data.mts";
 import { targetChip, deleteRule, openRuleEditor } from "./rule-editor.mts";
-import { CATCH_ALL_ID, organizeStage, moveRule, matchSummary, targetView, targetOptions, ruleCountParts, ruleNameOf, containerNameOf, planHeadline, unclaimedNote, roomLines, crossSiteLines, warningGroups, tripRows, moveName, moveWhere, tripGate, type TripRow } from "./organize-model.mts";
-import type { OrganizeConfig, OrganizePlan, OrganizePlanApiResponse, OrganizeRule, PlanRuleReport } from "./api-types.mts";
+import { CATCH_ALL_ID, organizeStage, moveRule, matchSummary, targetView, targetOptions, ruleCountParts, ruleNameOf, containerNameOf, planHeadline, unclaimedNote, roomLines, crossSiteLines, warningGroups, tripRows, moveName, moveWhere, tripGate, carriedView, pinnedWith, stepWatch, failedSteps, outcomeText, runAllNext, tripRefusal, type TripRow, type TripWatch, type FailedStep } from "./organize-model.mts";
+import type { BridgeStatusApiResponse, OrganizeConfig, OrganizePlan, OrganizePlanApiResponse, OrganizeRule, OrganizeTripApiResponse, PlanRuleReport } from "./api-types.mts";
 
 const body = (): HTMLElement => $<HTMLElement>("#org-body")!;
 const containers = () => state.inv?.containers || {};
@@ -23,6 +24,15 @@ let planError: string | null = null;
 let loadingPlan = false;
 let dragFrom: number | null = null;
 let notice: { tone: "info" | "warn" | "bad"; text: string } | null = null;
+// The trip in flight: what the page waits on (organize-model.mts's stepWatch), whether Run all goes on after it,
+// the plan's move count before it (Run all stops if a clean trip does not shorten the plan), and its items'
+// names for the failed-step list.
+interface Run { watch: TripWatch; all: boolean; before: number; names: Map<number, string>; stopping: boolean }
+let run: Run | null = null;
+let runTimer = 0;
+let lastTrip: number | null = null;
+let failed: { index: number; steps: FailedStep[] } | null = null;
+let lastStatus: BridgeStatusApiResponse | null = null;
 
 // The route's entry: the setup (fetched here too when reload() could not), then the screen and its plan. Before
 // the inventory's first load it does nothing; reload() calls it again once the data is in.
@@ -170,7 +180,7 @@ const canTrip = (): boolean => (currentAdapter()?.capabilities?.bridge || []).in
 // Why no trip can start now (organize-model.mts's tripGate), or null.
 function gate(): string | null {
   const a = currentAdapter();
-  return tripGate({ client: a ? a.name || a.id : null, canTrip: canTrip(), online: bridge.online, running: false }, BRIDGE_OFFLINE);
+  return tripGate({ client: a ? a.name || a.id : null, canTrip: canTrip(), online: bridge.online, running: !!run }, BRIDGE_OFFLINE);
 }
 // A disabled control carries its reason on a wrapper (components.mts's tipWrap), never a dead button alone.
 function gated(b: HTMLButtonElement, reason: string | null): HTMLElement {
@@ -196,17 +206,22 @@ function planBody(cfg: OrganizeConfig, plan: OrganizePlan): HTMLElement[] {
     ...roomLines(plan, ruleName).map((text) => message({ tone: "warn", text })),
     ...crossSiteLines(plan, ruleName).map((text) => message({ tone: "info", text })),
     ...warningGroups(plan.warnings, nameOf).map((g) => message({ tone: "warn", title: g.title, text: g.text })),
+    carriedEl(plan),
+    failed ? failedEl(failed) : null,
     box("div", { class: "org-summary" }, el("h3", { class: "t-md", id: "org-headline" }, planHeadline(plan)), note ? txt(note, "t-sm muted") : null),
-    canTrip() && plan.trips.length ? controls(plan) : null,
+    canTrip() && (plan.trips.length || run) ? controls(plan) : null,
     plan.trips.length ? tripList(plan, nameOf, ruleName) : null,
   ]);
 }
 function controls(plan: OrganizePlan): HTMLElement {
-  const first = plan.trips[0]!, why = gate();
-  const one = button({ label: `Run trip ${first.index}`, variant: "primary", attrs: { id: "org-run" } });
-  const all = button({ label: "Run all", attrs: { id: "org-run-all" } });
-  return box("div", { class: "org-controls", id: "org-controls" }, gated(one, why), gated(all, why), box("span", { class: "t-sm muted", id: "org-status", role: "status" }, txt("")));
+  const first = plan.trips[0], why = gate();
+  const one = first ? gated(button({ label: `Run trip ${first.index}`, variant: "primary", attrs: { id: "org-run" }, onClick: () => { void startTrip(first.index, false); } }), why) : null;
+  const all = first ? gated(button({ label: "Run all", attrs: { id: "org-run-all" }, onClick: () => { void startTrip(first.index, true); } }), why) : null;
+  const stop = run ? button({ label: run.stopping ? "Stopping…" : "Stop", variant: "danger-outline", disabled: run.stopping, attrs: { id: "org-stop" }, onClick: () => { void stopTrips(); } }) : null;
+  const status = run ? `Trip ${run.watch.index} running${run.all ? ", then the rest" : ""}…` : "";
+  return box("div", { class: "org-controls", id: "org-controls" }, one, all, stop, box("span", { class: "t-sm muted", id: "org-status", role: "status" }, txt(status)));
 }
+function paintControls(): void { const plan = state.organize.plan, c = $<HTMLElement>("#org-controls"); if (plan && c) c.replaceWith(controls(plan)); }
 // One collapsed row per trip; the move table is built the first time a row is opened, so a plan of hundreds of
 // moves draws thirty rows, not six hundred.
 function tripList(plan: OrganizePlan, nameOf: (s: number) => string, ruleName: (id: string) => string): HTMLElement {
@@ -222,7 +237,85 @@ function tripEl(r: TripRow, nameOf: (s: number) => string, ruleName: (id: string
   return d;
 }
 
+// ---------------------------------------------------------------- running trips
+// What a stopped or failed trip left in the backpack (the bridge's carried set), with Put them away: the trip
+// that holds their puts (organize-model.mts's carriedView).
+function carriedEl(plan: OrganizePlan): HTMLElement | null {
+  const c = carriedView(plan, lastTrip);
+  if (!c) return null;
+  const put = c.putAway == null ? null : button({ label: "Put them away", size: "sm", attrs: { id: "org-put-away" }, onClick: () => { void startTrip(c.putAway!, false); } });
+  return message({ tone: "warn", title: c.text, text: c.reason ? `${c.names}. ${c.reason}` : c.names, actions: put && canTrip() ? [gated(put, gate())] : [] });
+}
+// A trip's failed steps, each with Pin this item: for things the server refuses to move (a locked-down item), so
+// the plan stops asking for them.
+function failedEl(f: { index: number; steps: FailedStep[] }): HTMLElement {
+  return message({ tone: "bad", title: `Trip ${f.index}: ${f.steps.length === 1 ? "1 item" : `${f.steps.length} items`} could not be moved`,
+    text: box("span", { class: "org-failed" }, ...f.steps.map((s) => box("span", { class: "org-failed-row", "data-serial": s.serial },
+      txt(`${s.name}: ${s.msg}`), button({ label: "Pin this item", size: "sm", variant: "ghost", onClick: () => { void pinItem(s); } })))) });
+}
+async function pinItem(s: FailedStep): Promise<void> {
+  const err = await saveConfig(pinnedWith(state.organize.config!, s.serial));
+  if (err) { toastBad(err); return; }
+  if (failed) failed = failed.steps.length > 1 ? { ...failed, steps: failed.steps.filter((x) => x.serial !== s.serial) } : null;
+  toast(`${s.name} is pinned: Organize leaves it where it is.`, "good");
+}
+// One trip of the plan the player is looking at (its stamp): the server rebuilds it from its own current plan
+// and refuses a stale one, which is then fetched again with a sentence saying why.
+async function startTrip(index: number, all: boolean): Promise<void> {
+  const plan = state.organize.plan;
+  if (!plan || run) return;
+  notice = null;
+  failed = null;
+  const names = new Map(plan.moves.filter((m) => m.trip === index).map((m) => [m.serial, m.name] as const));
+  let r: OrganizeTripApiResponse;
+  try { r = await api<OrganizeTripApiResponse>("/api/organize/trip", { method: "POST", body: { index, stamp: plan.stamp } }); }
+  catch (e) { notice = { tone: "bad", text: tripRefusal(errorText(e)) }; await refreshPlan(); return; }
+  bridge.pending.set(r.id, `Trip ${index}`);   // bridge.mts's poll toasts the bridge's own summary of it
+  lastTrip = index;
+  run = { watch: { id: r.id, index, queuedAt: Date.now(), picked: false }, all, before: plan.moves.length, names, stopping: false };
+  setNavBusy("organize", true, "Organize trip running");
+  runTimer = setInterval(() => { void check(); }, 5000) as unknown as number;   // also when the status poll goes quiet
+  paintControls();
+}
+// On every bridge status and every 5 s: still waiting, reported (then the plan again, and Run all's next trip),
+// or given up on (organize-model.mts's stepWatch).
+async function check(): Promise<void> {
+  const r = run;
+  if (!r) return;
+  const st = lastStatus;
+  const step = stepWatch(r.watch, { currentId: st?.current?.id ?? null, result: st?.results?.[r.watch.id] ?? null }, Date.now());
+  if (step.kind === "wait") { r.watch = step.watch; return; }
+  finishRun();
+  if (step.kind === "lost") { notice = { tone: "bad", text: step.message }; await refreshPlan(); return; }
+  const fails = failedSteps(step.result, r.names);
+  if (fails.length) failed = { index: r.watch.index, steps: fails };
+  const text = outcomeText(step.outcome, r.watch.index, step.result);
+  if (text) notice = { tone: step.outcome === "stopped" ? "info" : "warn", text };
+  await refreshPlan();
+  const plan = state.organize.plan;
+  if (step.outcome !== "done" || !r.all || !plan) return;
+  const next = runAllNext(r.before, plan);
+  if ("index" in next) await startTrip(next.index, true);
+  else if (next.stop) { notice = { tone: "warn", text: next.stop }; paintPlan(); }
+}
+function finishRun(): void {
+  clearInterval(runTimer);
+  run = null;
+  setNavBusy("organize", false);
+}
+// Stop: the bridge halts after its current step (the stop flag); Run all does not go on.
+async function stopTrips(): Promise<void> {
+  const r = run;
+  if (!r) return;
+  r.all = false;
+  r.stopping = true;
+  paintControls();
+  try { await api("/api/bridge/stop", { method: "POST", body: {} }); }
+  catch (e) { r.stopping = false; toastBad(errorText(e)); paintControls(); }
+}
+document.addEventListener("bridgestatus", (e) => { lastStatus = (e as CustomEvent<BridgeStatusApiResponse>).detail; void check(); });
+
 // A saved setup: redraw (focus is put back by whoever saved) and work the plan out again.
 document.addEventListener("organizechange", () => { if ($<HTMLElement>("#tab-organize")!.hidden) { state.organize.plan = null; return; } render(); void refreshPlan(); });
 // The bridge came or went: the Run controls gate on it.
-document.addEventListener("bridgechange", () => { const plan = state.organize.plan, c = $<HTMLElement>("#org-controls"); if (plan && c && plan.trips.length) c.replaceWith(controls(plan)); });
+document.addEventListener("bridgechange", paintControls);

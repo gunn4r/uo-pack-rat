@@ -7,7 +7,7 @@
 // absent, or under TEST_SKIP_ELECTRON.
 import test from "node:test";
 import assert from "node:assert/strict";
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -334,6 +334,60 @@ test("[slow] the plan puts its reports first and keeps a 600-move trip list coll
     assert.match(await page.locator("#org-plan").innerText(), /can't carry out Organize trips\. Move the items by hand, then rescan\./);
     assert.deepEqual(errors, []);
   } finally {
+    await app.close();
+    rmSync(dataDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
+  }
+});
+
+test("[slow] Run trip queues one trip; Stop writes the stop flag; a failed put leaves the item in the backpack and offers Pin this item", async (t) => {
+  const why = unavailable();
+  if (why) return t.skip(why);
+  // Kestrel's Sulfurous Ash belongs in Dorran's chest, so the plan has one trip.
+  const dataDir = dataDirWith([{ id: "rule-1", name: "Magery reagents", names: ["sulfurous ash"], targets: [DORRAN] }]);
+  const bridgeDir = join(dataDir, "bridge", "tazuo");
+  mkdirSync(bridgeDir, { recursive: true });
+  // The bridge, as far as the page can tell: a status file refreshed every second (online = answered within 8 s).
+  let results: Record<string, unknown> = {};
+  const writeStatus = (): void => writeFileSync(join(bridgeDir, "status.json"), JSON.stringify({ alive: new Date().toISOString(), character: "Tester", current: null, counts: { done: 0, failed: 0 }, results }));
+  writeStatus();
+  const alive = setInterval(writeStatus, 1000);
+  const { app, page, errors } = await launch(dataDir);
+  try {
+    await go(page, "#/organize", "#org-plan #org-headline");
+    assert.match(await page.locator("#org-headline").innerText(), /^\d+ items? to move in 1 trip$/);
+    await page.waitForSelector("#org-run:not([disabled])", { timeout: 15_000 });
+    await page.click("#org-run");
+    const queue = join(bridgeDir, "queue.jsonl");
+    const lines = await until(() => (existsSync(queue) ? readFileSync(queue, "utf8").trim().split("\n") : []), (l) => l.length === 1, "one queued trip");
+    const cmd = JSON.parse(lines[0]!) as { id: string; action: string; index: number; takes: { serial: number }[] };
+    assert.deepEqual([cmd.action, cmd.index], ["trip", 1]);
+    await page.waitForSelector("#org-stop");
+    assert.match(await page.locator("#org-status").innerText(), /^Trip 1 running/);
+    assert.ok(await page.locator("#org-run").isDisabled(), "no second trip while one runs");
+
+    await page.click("#org-stop");
+    await until(() => existsSync(join(dataDir, "bridge", "stop")), (v) => v, "the stop flag");
+
+    // The bridge reports: every take worked, the first put bounced.
+    const [first, ...rest] = cmd.takes.map((x) => x.serial);
+    const t0 = new Date().toISOString();
+    results = { [cmd.id]: { ok: true, msg: "trip 1: 1 put failed", t: t0, partial: false, stopped: false, steps: [
+      ...cmd.takes.map((x) => ({ op: "take", serial: x.serial, ok: true, msg: "took it" })),
+      { op: "put", serial: first, ok: false, msg: "bounced (full, or refused)" },
+      ...rest.map((s) => ({ op: "put", serial: s, ok: true, msg: "put away" })),
+    ] } };
+    writeStatus();
+    await page.waitForSelector("text=Pin this item", { timeout: 20_000 });
+    assert.equal(await page.locator("#org-stop").count(), 0, "the trip is over");
+    assert.match(await page.locator("#org-plan").innerText(), /Trip 1: 1 step failed\./);
+    assert.match(await page.locator("#org-plan").innerText(), /1 item from trip 1 is in your backpack\./);
+    assert.equal(await page.locator("#org-put-away").count(), 1);
+
+    await page.getByRole("button", { name: "Pin this item" }).click();
+    await until(() => readOrganize(dataDir), (f) => !!f?.pinnedItems.includes(first!), "the item pinned");
+    assert.deepEqual(errors, []);
+  } finally {
+    clearInterval(alive);
     await app.close();
     rmSync(dataDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
   }
