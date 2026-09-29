@@ -3,14 +3,14 @@
 // #/characters/<Name> (the sheet itself is sheet.mts's sheetNode, shared with the Suit Builder).
 import { state } from "./store.mts";
 import { $, el, toast, tipNode, hideItemTip, compactChildren } from "./dom.mts";
-import { txt, box, button, meter, table, searchInput, message, popover, menu, confirmDialog, type Column } from "./components.mts";
+import { txt, box, badge, button, meter, table, searchInput, message, popover, menu, confirmDialog, tooltip, type Column } from "./components.mts";
 import { api } from "./api.mts";
 import { reload } from "./app.mts";
 import { selectCharacter } from "./builder.mts";
 import { showCharacterItems, showItem } from "./inventory.mts";
 import { openWizard } from "./wizard.mts";
 import { relativeWhen } from "./messages.mts";
-import { sheetNode, wornSet, resistFigures, atCap, plural, type ResistFigure, type SheetItem } from "./sheet.mts";
+import { sheetNode, wornSet, resistFigures, atCap, plural, lowDurabilityCount, lowDurabilitySummary, type ResistFigure, type SheetItem } from "./sheet.mts";
 import type { Item } from "../vault-lib.mts";
 import type { RunsListApiResponse } from "./api-types.mts";
 import { rosterView, triple, type RosterRow, type RosterSort } from "./roster.mts";
@@ -31,6 +31,7 @@ function rosterRows(): RosterRow[] {
       pools: [num(mx.hits), num(mx.stam), num(mx.mana)],
       resists: c ? resistFigures(name, wornSet(name)) : null,
       worn: (state.inv!.worn[name] || []).length,
+      lowDurability: lowDurabilityCount(state.inv!.worn[name] || []),
     };
   });
 }
@@ -83,11 +84,18 @@ const moreButton = (name: string, onSheet: boolean): HTMLButtonElement => {
 const ROSTER_COLS: Array<[RosterSort["key"] | null, string, boolean, string]> = [
   ["name", "Character", false, ""], ["scan", "Last scan", false, "112px"], [null, "STR · DEX · INT", false, "112px"], [null, "Hits · Stam · Mana", false, "124px"],
   ["physResist", "Phys", true, "64px"], ["fireResist", "Fire", true, "64px"], ["coldResist", "Cold", true, "64px"], ["poisonResist", "Poison", true, "64px"], ["energyResist", "Energy", true, "64px"],
-  [null, "Worn", true, "56px"], [null, "Actions", false, "124px"],
+  [null, "Worn", true, "104px"], [null, "Actions", false, "124px"],
 ];
 function resistCell(f: ResistFigure): HTMLElement {
   const full = atCap(f.value, f.cap);
   return box("span", { class: "res-cell" }, txt(f.value, full ? "strong at-cap" : ""), meter(f.value, f.cap, { tone: full ? "ok" : undefined, label: `${f.label} resist ${f.value} of ${f.cap}` }));
+}
+// Pieces worn, and how many of them are low on durability ("2 low", its sentence as the badge's tooltip).
+function wornCell(r: RosterRow): HTMLElement {
+  if (!r.lowDurability) return txt(r.worn);
+  const low = badge(`${r.lowDurability} low`, "warn");
+  low.tabIndex = 0;
+  return box("span", { class: "worn-cell" }, tooltip(low, lowDurabilitySummary(r.lowDurability)!), txt(r.worn));
 }
 function renderRoster(): void {
   const all = rosterRows();
@@ -111,7 +119,7 @@ function renderRoster(): void {
       r.scannedAt ? txt(relativeWhen(r.scannedAt)) : txt("Not scanned", "muted"),
       txt(triple(r.stats)), txt(triple(r.pools)),
       ...(r.resists ? r.resists.map(resistCell) : [null, null, null, null, null]),
-      txt(r.worn),
+      wornCell(r),
       box("span", { class: "row-btns" }, r.scannedAt ? button({ label: "Build suit", size: "sm", onClick: () => buildSuit(r.name) }) : null, moreButton(r.name, false)),
     ],
   })) });
@@ -171,7 +179,9 @@ function renderSheet(name: string): void {
     body().replaceChildren(message({ tone: "info", text: `${name} has a saved Suit Builder profile but hasn't been scanned. Scan ${name} in game to fill in the sheet.` }));
     return;
   }
-  body().replaceChildren(metaLine(name), sheetNode(name, wornSet(name), null, { onSlot: slotDetail }));
+  const low = lowDurabilitySummary(lowDurabilityCount(state.inv!.worn[name] || []));
+  body().replaceChildren(...compactChildren([metaLine(name), low ? message({ tone: "warn", text: low }) : null,
+    sheetNode(name, wornSet(name), null, { onSlot: slotDetail })]));
 }
 
 // A character deleted, renamed or moved off the account would otherwise keep its row and its worn set

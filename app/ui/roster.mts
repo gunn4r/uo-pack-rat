@@ -9,6 +9,7 @@ export interface RosterRow {
   pools: [number | null, number | null, number | null];
   resists: ResistFigure[] | null;
   worn: number;
+  lowDurability: number;   // worn pieces low on durability (sheet.mts's lowDurability)
 }
 export type RosterSort = { key: "name" | "scan" | "physResist" | "fireResist" | "coldResist" | "poisonResist" | "energyResist"; dir: 1 | -1 };
 // Filter by the top-bar search (case-insensitive, anywhere in the name), then sort. Names break ties;
