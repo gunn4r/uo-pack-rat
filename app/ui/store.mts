@@ -4,7 +4,7 @@ import type { CharacterEntryRaw, ProfilesFile, Item, EffectiveProfile } from "..
 import type { ItemQuery, Facets, ItemQueryGroups } from "../item-query.mts";
 import type { RulesV1 } from "../schema/types.d.mts";
 import { DEFAULT_COLS } from "./inv-model.mts";
-import type { InventoryData, SettingsData, ShardOption, SetupApiResponse, OptSuit, OptimizeResult, OptimizeProgress, RunSummaryLike, SavedRunLike } from "./api-types.mts";
+import type { InventoryData, SettingsData, ShardOption, SetupApiResponse, OptSuit, OptimizeResult, OptimizeProgress, RunSummaryLike, SavedRunLike, OrganizeConfig, OrganizePlan, OrganizePreset } from "./api-types.mts";
 
 // The suit builder's own working copy of a character's settings: CharacterEntryRaw (vault-lib.mts)
 // minus `caps` (a legacy v1 field the page never reads or writes — see migrateProfiles; keeping it
@@ -101,6 +101,18 @@ export interface BridgeState {
   seen: Set<string>;
   pending: Map<string, string>;
 }
+// The page's copy of the Organize setup (issue #11; ui/organize-data.mts keeps it): GET /api/organize's config
+// and the problems its salvage reported, the blacklisted serials (never labelled), every location text inside a
+// labelled container mapped to the same path by label (dom.mts's whereText), the last plan, and the presets
+// (fetched once, when the rule editor first opens).
+export interface OrganizePage {
+  config: OrganizeConfig | null;
+  problems: string[];
+  blacklist: number[];
+  places: Map<string, string>;
+  plan: OrganizePlan | null;
+  presets: OrganizePreset[] | null;
+}
 
 export interface AppState {
   inv: InventoryData | null;
@@ -132,6 +144,7 @@ export interface AppState {
   density: "dense" | "regular";   // the Inventory table's rows, 32 or 40 px (ui-prefs `density`)
   sheetProps: string[] | null;    // the character sheet's shown properties (ui-prefs `sheetProps`); null = the default set
   builder: BuilderState;
+  organize: OrganizePage;
   // Set only once app.mts's load()/reload() has fetched the inventory at least once — absent (not
   // null) before that, exactly as it is at runtime today (nothing in the initial object literal below
   // ever assigned it; app.mts's `state.newestScan = …` is the only place that creates the property).
@@ -166,6 +179,7 @@ export const state: AppState = {
   // launch, and localStorage is scoped to the origin; these are the defaults until that answer lands.
   cols: [...DEFAULT_COLS],
   builder: { character: null, profile: null, result: null, job: null, runs: [], compare: new Set(), openRun: null, altView: null, parked: null },
+  organize: { config: null, problems: [], blacklist: [], places: new Map(), plan: null, presets: null },
 };
 
 // ---------------------------------------------------------------- bridge (Highlight / Grab / Go to)

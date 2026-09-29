@@ -11,7 +11,7 @@ import { SLOT_LABELS, tagUnits } from "../vault-lib.mts";
 import type { Item } from "../vault-lib.mts";
 import type { ItemQuery, Place } from "../item-query.mts";
 import { state } from "./store.mts";
-import { $, el, label, full, slotLabel, rarityColor, safeColor, toast } from "./dom.mts";
+import { $, el, label, full, slotLabel, rarityColor, safeColor, toast, whereText } from "./dom.mts";
 import { rarityToken } from "./items.mts";
 import { api } from "./api.mts";
 import { bridgeActionReason, runBridgeAction } from "./bridge.mts";
@@ -23,6 +23,7 @@ import { plural, queryParams, activeFilters, clearAll, matchLine, countFact, emp
 import type { FilterToken } from "./inv-model.mts";
 import type { ItemsApiResponse, UiPrefs } from "./api-types.mts";
 import { initPeek, openPeek, closePeek, peekOpen, peekSerial, peekRefresh } from "./peek.mts";
+import { openRuleEditor } from "./rule-editor.mts";
 import { showItemTip, hideItemTip, tagChip } from "./dom.mts";
 
 const CHUNK = 500;              // rows per GET /api/items request (the server's own cap)
@@ -31,7 +32,7 @@ const narrow = (): boolean => matchMedia(NARROW).matches;
 const $el = <E extends HTMLElement = HTMLElement>(sel: string): E => $<E>(sel)!;
 
 // ---------------------------------------------------------------- the filter state
-function filterContext() {
+export function filterContext() {
   return {
     slotLabel: (s: string) => slotLabel(s),
     propLabel: (k: string) => label(k),
@@ -374,6 +375,7 @@ function renderActive(): void {
   strip.replaceChildren(
     txt(matchLine({ shown: p.stacks, total: state.facets?.itemCount || 0, grouped: !!p.groups, names: p.total }), "t-sm muted inv-match"),
     ...tokenEls(tokens),
+    button({ label: "Save as rule…", variant: "ghost", size: "sm", attrs: { id: "f-save-rule" }, onClick: () => { closePopover(); void openRuleEditor({ fromQuery: state.query }); } }),
     button({ label: "Clear all", variant: "ghost", size: "sm", attrs: { id: "f-clear" }, onClick: () => { closePopover(); setQuery(clearAll(state.query)); search.focus(); } }));
 }
 const tokenEls = (tokens: FilterToken[]): HTMLElement[] => tokens.map((t) => token({ label: t.label, removeLabel: t.removeLabel, onRemove: () => setQuery(t.remove(state.query)) }));
@@ -506,7 +508,7 @@ export function rarityEl(rarity: string | null | undefined, cls = ""): HTMLEleme
   return box("span", { class: `rar-tier${cls ? " " + cls : ""}`, "data-theme": "default", "data-mode": "dark", style: raw ? `color:${safeColor(raw) || raw}` : "" }, txt(rarity));
 }
 export function locationEl(it: Item): HTMLElement {
-  const { name, serial } = splitSerial(it.location?.text || "");
+  const { name, serial } = splitSerial(whereText(it.location?.text));
   return serial ? box("span", { class: "inv-loc" }, txt(name, "ellip"), txt(serial, "mono faint")) : txt(name, "ellip");
 }
 function cell(col: ColDef, it: Item): HTMLTableCellElement {
@@ -532,7 +534,7 @@ type Group = NonNullable<typeof state.page.groups>[number];
 function groupCell(col: ColDef, g: Group): HTMLTableCellElement {
   const td = el("td", col.num ? { class: "num" } : {});
   const text = col.key === "name" ? g.name : col.key === "kind" ? g.kind : col.key === "amount" ? g.amount.toLocaleString("en-US") : col.key === "stacks" ? String(g.stacks)
-    : g.locations.map(([l, n]) => `${l} (${n.toLocaleString("en-US")})`).join(" · ");
+    : g.locations.map(([l, n]) => `${whereText(l)} (${n.toLocaleString("en-US")})`).join(" · ");
   td.append(txt(text, col.key === "where" || col.key === "name" ? "ellip" : ""));
   return td;
 }

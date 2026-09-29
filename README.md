@@ -82,6 +82,14 @@ Scans show up in **Inventory** within a few seconds; you don't have to press any
 
 In TazUO, start a script from the in-game panel, or from the Script Manager (**Legion Script** in TazUO's top menu) with its **Play** button. In Razor Enhanced (Windows only), add the Pack Rat scripts on the **Scripts** tab and start them like any other script; it has every script but the in-game panel. More in [adapters/razor-enhanced/README.md](adapters/razor-enhanced/README.md).
 
+### Organize
+
+Organize gives every item in your house a home. Label the chests that are yours (Inventory › Containers, ⋯ › Label…), then add rules on the **Organize** screen: start from a preset such as Magery reagents or Rings, or save the Inventory's current filters as a rule, and pick the containers each rule fills, in order: your labelled chests, or a bag inside one. While you edit a rule it says how many of your items it matches. Items go to the first rule they match; anything no rule takes stays put, or goes to the container you pick for everything else.
+
+Pack Rat then shows the plan before anything moves: what does not fit and how many slots are missing, what belongs at another house, and the trips. With the TazUO client, **Run trip** carries one trip out in game while you watch (**Run all** goes on trip by trip, **Stop** halts after the current step); with other clients the plan tells you what to move by hand. Only labelled containers are ever touched, a pinned container is never emptied or filled, and an item the server refuses to move can be pinned where it is.
+
+Organize reads each container's fill from its tooltip. If the plan says a container's fill is unknown, or that it was scanned with older scripts, reinstall the scripts (**Settings › Game client › Reinstall**) and rescan your house.
+
 ### The ClassicUO web client
 
 Click **Copy scanner script** (in setup, or later in **Settings › Game client**, which also says when a newer scanner ships) and paste it into the web client's scripting window as a new script; run it near what you want scanned. Copy the block it prints (from `-----BEGIN PACK RAT SCAN-----` to `-----END PACK RAT SCAN-----`), open **Import** in Pack Rat (⌘I, or Ctrl+I on Windows and Linux) and paste it. The web client can't see your bank box and has no bridge, so Highlight, Grab and Go to don't work for it. More in [adapters/classicuo-web/README.md](adapters/classicuo-web/README.md).

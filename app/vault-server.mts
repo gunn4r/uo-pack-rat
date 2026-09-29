@@ -43,6 +43,10 @@
 //         (<data>/scan-blacklist.json, the containers scans never open) ·
 //         GET|PUT /api/organize (<data>/organize.json, Organize's labels, rules, catch-all and pinned items: app/organize-config.mts;
 //         GET salvages a hand-edited file and lists what it dropped in `problems`) ·
+//         GET /api/organize/presets (app/organize-presets.mts's PRESETS, the rule filters the Organize page offers
+//         to start a rule from; read-only) ·
+//         POST /api/organize/match {match} -> {count, pieces, sample} (the movable items in labelled roots that one
+//         rule filter takes, ignoring the other rules: the rule editor's live count; read-only) ·
 //         GET /api/organize/plan (app/organize.mts's planOrganize over the fold, organize.json, the blacklist and the
 //         results overlay <data>/organize-state.json, after reading finished trips out of the bridge's status.json) ·
 //         POST /api/organize/trip {index, stamp} (queues that trip of the CURRENT plan with app/bridge-trip.mts's
@@ -116,8 +120,9 @@ import { parsePastedScan, writeScanToInbox } from "./import.mts";
 import { writeFileAtomic } from "./atomic-write.mts";
 import { addPanelAutostart, panelPrefsError, readPanelPrefs, tazuoRunning, writePanelPrefs } from "./tazuo-panel.mts";
 import { queueTrip, writeBridgeStop } from "./bridge-trip.mts";
-import { checkOrganizeConfig, emptyOrganizeConfig, salvageOrganizeConfig, MAX_SETUP_BYTES, type OrganizeConfig } from "./organize-config.mts";
-import { planOrganize, tripCommand, type Plan } from "./organize.mts";
+import { checkOrganizeConfig, emptyOrganizeConfig, matchProblem, salvageOrganizeConfig, MAX_SETUP_BYTES, type OrganizeConfig, type RuleMatch } from "./organize-config.mts";
+import { planOrganize, tripCommand, matchCount, type Plan } from "./organize.mts";
+import { PRESETS } from "./organize-presets.mts";
 import { emptyOrganizeState, harvestTrips, noteSeen, pruneOverlay, salvageOrganizeState, PENDING_GRACE_MS, type BridgeView, type OrganizeState } from "./organize-state.mts";
 import { retentionError, retentionOf, runsToPrune, scansToPrune, type ScanFile } from "./retention.mts";
 import {
@@ -1844,6 +1849,16 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
         mkdirSync(dirname(ORGANIZE), { recursive: true, mode: DATA_DIR_MODE });
         writeFileAtomic(ORGANIZE, JSON.stringify(checked.config, null, 2) + "\n", DATA_FILE_MODE);
         return send(res, 200, { ok: true });
+      }
+      if (req.method === "GET" && url.pathname === "/api/organize/presets") return send(res, 200, { ok: true, presets: PRESETS });
+      if (req.method === "POST" && url.pathname === "/api/organize/match") {
+        // Room for the largest filter a rule may carry (100 names, three 50-name lists, 20 property rules).
+        const { match } = asObject(await readBody(req, { limit: 64e3 }));
+        const problem = matchProblem(match);
+        if (problem) return send(res, 400, { ok: false, error: problem });
+        const { inv } = await getInventory();
+        const counted = matchCount(inv, readOrganize().config, match as RuleMatch, { now: Date.now(), rarity: currentRules.rarity, blacklist: readBlacklist().map((e) => e.serial) });
+        return send(res, 200, { ok: true, ...counted });
       }
       if (req.method === "GET" && url.pathname === "/api/organize/plan") return send(res, 200, { ok: true, plan: (await organizeNow()).plan });
       if (req.method === "POST" && url.pathname === "/api/organize/trip") {

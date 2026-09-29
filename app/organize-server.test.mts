@@ -1,6 +1,6 @@
 // organize-server.test.mts — the Organize routes (issue #11) against a real listening server on a temp data
 // folder: GET/PUT /api/organize (organize.json), GET /api/organize/plan and POST /api/organize/trip with the
-// results overlay (organize-state.json). Tags: [fast]. Run: node --test app/organize-server.test.mts
+// results overlay (organize-state.json), GET /api/organize/presets and POST /api/organize/match. Tags: [fast]. Run: node --test app/organize-server.test.mts
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { mkdtempSync, writeFileSync, readFileSync, existsSync } from "node:fs";
@@ -12,6 +12,7 @@ import { candidateClientRoots } from "./installer.mts";
 import { houseScan, maxOrganizeConfig, type ThingSpec } from "./organize-fixture.mts";
 import { emptyRuleQuery, emptyOrganizeConfig, type OrganizeConfig } from "./organize-config.mts";
 import type { Plan } from "./organize.mts";
+import { PRESETS } from "./organize-presets.mts";
 
 const FAKE_HOME = mkdtempSync(join(tmpdir(), "qm-home-"));
 const A = 0x40000001, B = 0x40000002, PEARL = 0x40001001, RUBY = 0x40001002;
@@ -224,6 +225,49 @@ test("[fast] PUT /api/organize takes the largest setup the check allows, and GET
     const got = await call<{ config: OrganizeConfig; problems: string[] }>(s, "/api/organize");
     assert.deepEqual(got.body.problems, []);
     assert.deepEqual(got.body.config, max);
+  } finally {
+    await s.close();
+  }
+});
+
+test("[fast] GET /api/organize/presets lists the preset rule filters for the page", async () => {
+  const { s } = await serve();
+  try {
+    const r = await call<{ presets: { id: string; name: string; match: { query: Record<string, unknown>; names?: string[] } }[] }>(s, "/api/organize/presets");
+    assert.equal(r.status, 200);
+    assert.deepEqual(r.body.presets.map((p) => p.id), PRESETS.map((p) => p.id));
+    const magery = r.body.presets.find((p) => p.id === "magery-reagents");
+    assert.equal(magery?.name, "Magery reagents");
+    assert.deepEqual(magery?.match.names?.slice(0, 2), ["black pearl", "bloodmoss"]);
+    assert.deepEqual(Object.keys(magery!.match.query).sort(), ["hideTags", "kind", "med", "nogarg", "props", "q", "rarity", "rarityMax", "rarityMin", "slayer", "slot"]);
+  } finally {
+    await s.close();
+  }
+});
+
+test("[fast] POST /api/organize/match counts the movable items in labelled roots a rule filter takes, ignoring rule order", async () => {
+  const GARLIC = 0x40001003, ASH = 0x40001004;
+  const { s } = await serve([{ serial: GARLIC, name: "Garlic", in: A, amount: 30 }, { serial: ASH, name: "Sulfurous Ash", in: B, amount: 12 }]);
+  const match = (m: unknown) => call<{ count: number; pieces: number; sample: string[]; error?: string }>(s, "/api/organize/match", body("POST", { match: m }));
+  try {
+    const reagents = { query: { ...emptyRuleQuery(), kind: ["reagent"] } };
+    assert.deepEqual((await match(reagents)).body, { ok: true, count: 0, pieces: 0, sample: [] }, "nothing is labelled yet: nothing is in reach");
+    assert.equal((await call(s, "/api/organize", body("PUT", CONFIG_DOC))).status, 200);
+    // The Reagents rule already claims these; a second rule's count still includes them (a higher rule may claim some).
+    assert.deepEqual((await match(reagents)).body, { ok: true, count: 3, pieces: 43, sample: ["Black Pearl", "Garlic", "Sulfurous Ash"] });
+    assert.deepEqual((await match({ query: emptyRuleQuery(), names: ["ruby", "garlic"] })).body, { ok: true, count: 2, pieces: 31, sample: ["Garlic", "Ruby"] });
+    // An unlabelled root is out of reach, whatever it holds.
+    const cfg = structuredClone(CONFIG_DOC);
+    delete cfg.labels[String(B)];
+    cfg.rules = cfg.rules.filter((r) => !r.targets.includes(B));
+    assert.equal((await call(s, "/api/organize", body("PUT", cfg))).status, 200);
+    assert.deepEqual((await match(reagents)).body.sample, ["Garlic"]);
+    // The same strict check PUT uses: a location filter is refused, and so is a match that is not one.
+    const loc = await match({ query: { ...emptyRuleQuery(), loc: ["Chest"] } });
+    assert.equal(loc.status, 400);
+    assert.match(String(loc.body.error), /loc is not a rule filter/);
+    assert.equal((await match("reagents")).status, 400);
+    assert.equal((await call(s, "/api/organize/match", body("POST", { match: reagents, extra: "x".repeat(70e3) }))).status, 413);
   } finally {
     await s.close();
   }

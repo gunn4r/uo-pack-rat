@@ -76,6 +76,18 @@ function queryProblem(q: unknown, at: string): string | null {
   return null;
 }
 
+// A rule's filter on its own: what PUT /api/organize checks inside every rule, and POST /api/organize/match
+// checks before counting what a filter being edited would take.
+export function matchProblem(m: unknown, at = "match"): string | null {
+  if (!isObj(m)) return `${at} must be an object`;
+  const badM = extra(m, ["query", "names"]);
+  if (badM) return `${at}.${badM} is not a match field`;
+  const qp = queryProblem(m.query, `${at}.query`);
+  if (qp) return qp;
+  if (m.names !== undefined && !textList(m.names, LIMITS.names)) return `${at}.names must be a list of at most ${LIMITS.names} names, each 1 to 64 characters`;
+  return null;
+}
+
 function containerProblem(v: unknown, labels: Record<string, ContainerLabel>, at: string): string | null {
   if (!isSerial(v) || !labels[String(v)]) return `${at}: ${short(v)} is not a labelled container`;
   if (labels[String(v)]!.pinned) return `${at}: ${v} is pinned, and nothing is put into a pinned container`;
@@ -91,13 +103,8 @@ function ruleProblem(r: unknown, i: number, labels: Record<string, ContainerLabe
   if (r.id === CATCH_ALL_ID) return `${at}.id "${CATCH_ALL_ID}" is reserved for the catch-all`;
   if (!isText(r.name)) return `${at}.name must be 1 to 64 characters`;
   if (!isOrigin(r.origin)) return `${at}.origin must be "manual" or "strategy:<id>"`;
-  const m = r.match;
-  if (!isObj(m)) return `${at}.match must be an object`;
-  const badM = extra(m, ["query", "names"]);
-  if (badM) return `${at}.match.${badM} is not a match field`;
-  const qp = queryProblem(m.query, `${at}.match.query`);
-  if (qp) return qp;
-  if (m.names !== undefined && !textList(m.names, LIMITS.names)) return `${at}.match.names must be a list of at most ${LIMITS.names} names, each 1 to 64 characters`;
+  const mp = matchProblem(r.match, `${at}.match`);
+  if (mp) return mp;
   if (!Array.isArray(r.targets) || r.targets.length > LIMITS.targets) return `${at}.targets must be a list of at most ${LIMITS.targets} containers`;
   for (const t of r.targets) {
     const p = containerProblem(t, labels, `${at}.targets`);

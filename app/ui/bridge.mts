@@ -174,6 +174,9 @@ export async function pollBridge(): Promise<void> {
     if (was !== `${bridge.online}|${bridge.character}`) document.dispatchEvent?.(new Event("bridgechange"));
     if (st.online) lastAnswered = Date.now();
     renderBridgeControl(bridgeView(st, { clientSet: !!state.setup?.settings?.client, clientName: currentAdapter()?.name || null, check: state.setup?.dataDirCheck }));
+    // Every answer goes to the page as it came: the Organize screen follows a running trip from it (current.id,
+    // then results[id] with its steps; ui/organize.mts).
+    document.dispatchEvent?.(new CustomEvent("bridgestatus", { detail: st }));
     // A refused command (expired, a chain that does not check out, the bridge stopping first) comes
     // back under its own id like any other result, so it is toasted here too — named, since a refusal
     // message alone does not say which of several queued clicks it was.

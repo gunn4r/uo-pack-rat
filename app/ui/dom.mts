@@ -61,6 +61,9 @@ export function compactChildren<T>(kids: readonly (T | null | undefined)[]): T[]
 // row. Returns null, which is what compactChildren/el()'s own kid filter already handle.
 export const noteEl = (text: string | null): HTMLDivElement | null => text ? el("div", { class: "small muted" }, text) : null;
 export const fmtWhen = (s: string | null | undefined): string => s ? String(s).replace("T", " ").slice(0, 16) : "";
+// A location as the page shows it: inside a container labelled for Organize (issue #11) the path reads by the
+// label (store.mts's organize.places, built by organize-model.mts's labelledPlaces); any other text as it is.
+export const whereText = (text: string | null | undefined): string => (text ? state.organize.places.get(text) ?? text : "");
 export const ago = (s: string): string => { const d = (Date.now() - Date.parse(s)) / 864e5; return !isFinite(d) ? "" : d < 1 / 24 ? "just now" : d < 1 ? `${Math.round(d * 24)}h ago` : d < 30 ? `${Math.round(d)}d ago` : fmtWhen(s).slice(0, 10); };
 // stale = last seen more than 7 days before the newest scan we have at all
 // The return type is whatever `state.newestScan && …` naturally produces (its own left-hand type
@@ -174,7 +177,7 @@ export function tipNode(it: TooltipItem): HTMLDivElement {
   const tagEls = [...tags].map((t) => tagChip(t));
   // The tier and where the item is, each on a line of its own: a location is often long, and sharing a line
   // with the tier cut it off.
-  const foot = [tier ? el("span", tierColor ? { style: `color:${tierColor}` } : {}, tier) : null, it.location ? el("span", { class: "muted tip-where" }, it.location.text) : null].filter((x): x is HTMLSpanElement => !!x);
+  const foot = [tier ? el("span", tierColor ? { style: `color:${tierColor}` } : {}, tier) : null, it.location ? el("span", { class: "muted tip-where" }, whereText(it.location.text)) : null].filter((x): x is HTMLSpanElement => !!x);
   return el("div", { class: "tipcard" },
     el("div", { class: "tip-head" }, el("span", { class: "strong tip-name", ...(tierColor ? { style: `color:${tierColor}` } : {}) }, qty + it.name), ...tagEls),
     body.length ? el("div", { class: "divider" }) : null,
