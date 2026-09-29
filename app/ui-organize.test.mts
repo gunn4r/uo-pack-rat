@@ -330,7 +330,7 @@ test("[fast] adoptWatch follows a trip the server says is in flight from when it
   assert.deepEqual(adoptWatch(t, false, new Set(), now), { id: "t-7", index: 3, queuedAt: Date.parse(t.queuedAt), picked: true, heard: now });
   assert.equal(adoptWatch(null, false, new Set(), now), null);
   assert.equal(adoptWatch(t, true, new Set(), now), null, "a trip this page runs or is queueing is watched already");
-  assert.equal(adoptWatch(t, false, new Set(["t-7"]), now), null, "a trip the page gave up on is not taken back");
+  assert.equal(adoptWatch(t, false, new Set(["t-7"]), now), null, "a trip the page stopped following (reported, or given up on) is not taken back");
   assert.equal(adoptWatch({ ...t, queuedAt: "soon" }, false, new Set(), now), null);
   // Queued two minutes ago and not picked up: the same rules as a trip this page queued, so it is given up at once.
   assert.equal(stepWatch(adoptWatch({ ...t, picked: false }, false, new Set(), now)!, { currentId: null, result: null, online: true }, now).kind, "lost");
@@ -366,7 +366,7 @@ test("[fast] runAllNext runs the new plan's first trip, and stops when a reporte
 test("[fast] a refused trip reads as what to do next, and a hand-edited setup asks to be saved first", () => {
   assert.equal(tripRefusal("the plan has changed since it was shown; reload it"), "The plan changed since it was shown: a scan arrived, a rule changed or a trip reported back. Here is the new plan; check it and press Run again.");
   assert.equal(tripRefusal("organize.json was hand-edited and parts of it were dropped (rules[0] x); open Organize and save the setup first"), "Part of organize.json could not be read and was left out, so no trip runs until you have checked the setup and pressed Save setup (above).");
-  assert.equal(tripRefusal("trip 1 has not reported back yet"), "Trip 1 is still running, started before this page was reloaded or from another window. Let it finish in game, then press Reload plan.");
+  assert.equal(tripRefusal("trip 1 has not reported back yet"), "Trip 1 has not reported back yet: it is still running in game. Let it finish, then press Reload plan.");
   assert.equal(tripRefusal("the plan has no trip 4"), "the plan has no trip 4");
 });
 

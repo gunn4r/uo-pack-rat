@@ -31,9 +31,9 @@ let notice: { tone: "info" | "warn" | "bad"; text: string } | null = null;
 // names for the failed-step list.
 interface Run { watch: TripWatch; all: boolean; before: number; names: Map<number, string>; stopping: boolean }
 let run: Run | null = null;
-// Trips the page gave up on: the plan may still name one in flight (a started trip the server holds while its
-// bridge answers), and it is not followed again.
-const givenUp = new Set<string>();
+// Trips the page stopped following (reported back or given up on): a plan fetched before one ended can still name
+// it, and a trip given up on can stay in flight on the server while its bridge answers; neither is followed again.
+const ended = new Set<string>();
 // True while POST /api/organize/trip is out: a second click then queues nothing.
 let queueing = false;
 let runTimer = 0;
@@ -178,7 +178,7 @@ async function refreshPlan(): Promise<void> {
   try { ({ plan: state.organize.plan, running } = await api<OrganizePlanApiResponse>("/api/organize/plan")); planError = null; }
   catch (e) { planError = errorText(e); }
   loadingPlan = false;
-  const adopted = adoptWatch(running, !!run || queueing, givenUp, Date.now());
+  const adopted = adoptWatch(running, !!run || queueing, ended, Date.now());
   if (adopted) {
     notice = { tone: "info", text: resumedNote(adopted.index) };
     follow(adopted, false, 0, new Map((state.organize.plan?.moves || []).map((m) => [m.serial, m.name] as const)));
@@ -312,7 +312,7 @@ async function check(): Promise<void> {
   if (step.kind === "wait") { r.watch = step.watch; return; }
   finishRun();
   notice = null;
-  if (step.kind === "lost") { givenUp.add(r.watch.id); notice = { tone: "bad", text: step.message }; await refreshPlan(); return; }
+  if (step.kind === "lost") { notice = { tone: "bad", text: step.message }; await refreshPlan(); return; }
   const fails = failedSteps(step.result, r.names);
   if (fails.length) failed = { index: r.watch.index, steps: fails };
   const text = outcomeText(step.outcome, r.watch.index, step.result);
@@ -326,6 +326,7 @@ async function check(): Promise<void> {
 }
 function finishRun(): void {
   clearInterval(runTimer);
+  if (run) ended.add(run.watch.id);
   run = null;
   setNavBusy("organize", false);
 }
