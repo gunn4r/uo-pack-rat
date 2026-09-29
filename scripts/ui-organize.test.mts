@@ -113,3 +113,42 @@ test("[slow] Organize teaches labelling until a container is labelled, and Label
     rmSync(dataDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
   }
 });
+
+test("[slow] the Rules card: each rule's filter, targets with their fill and counts, the catch-all, and reordering by keyboard and by drag", async (t) => {
+  const why = unavailable();
+  if (why) return t.skip(why);
+  const dataDir = dataDirWith([
+    { id: "rule-1", name: "Magery reagents", names: ["sulfurous ash", "mandrake root"], targets: [DORRAN] },
+    { id: "rule-2", name: "Rings", kind: ["gear"], targets: [KESTREL, DORRAN] },
+  ]);
+  const { app, page, errors } = await launch(dataDir);
+  try {
+    await go(page, "#/organize", '.org-rule[data-rule="rule-2"]');
+    const one = page.locator('.org-rule[data-rule="rule-1"]'), two = page.locator('.org-rule[data-rule="rule-2"]');
+    assert.match(await one.innerText(), /Name: sulfurous ash, mandrake root/);
+    assert.match(await one.innerText(), /Reagents[\s\S]*40\/125/);
+    assert.match(await two.innerText(), /Kind: gear/);
+    assert.match(await two.innerText(), /Jewellery[\s\S]*120\/125[\s\S]*Reagents[\s\S]*40\/125/, "the chain in fill order");
+    await page.waitForFunction(() => /in place/.test(document.querySelector('.org-rule[data-rule="rule-1"] .org-counts')?.textContent || ""), undefined, { timeout: 15_000 });
+    assert.equal(await page.locator("#org-catchall").inputValue(), "", "no catch-all: unclaimed items stay put");
+
+    // The catch-all takes any labelled, unpinned container.
+    await page.selectOption("#org-catchall", String(DORRAN));
+    await until(() => readOrganize(dataDir), (f) => f?.catchAll === DORRAN, "the catch-all saved");
+
+    // Keyboard: ↑ on a rule's handle moves it up, says so, and keeps focus on the handle.
+    await page.locator('.org-rule[data-rule="rule-2"] .org-grip').focus();
+    await page.keyboard.press("ArrowUp");
+    await until(() => readOrganize(dataDir), (f) => f?.rules[0]?.id === "rule-2", "rule-2 first");
+    await page.waitForFunction(() => document.querySelector("#org-live")?.textContent === "Rings moved to position 1 of 2.");
+    assert.equal(await page.evaluate(() => (document.activeElement?.closest(".org-rule") as HTMLElement | null)?.dataset.rule), "rule-2");
+
+    // Drag: rule-1's handle dropped on rule-2 puts rule-1 first again.
+    await page.locator('.org-rule[data-rule="rule-1"] .org-grip').dragTo(page.locator('.org-rule[data-rule="rule-2"]'));
+    await until(() => readOrganize(dataDir), (f) => f?.rules.map((r) => r.id).join() === "rule-1,rule-2", "rule-1 first after the drag");
+    assert.deepEqual(errors, []);
+  } finally {
+    await app.close();
+    rmSync(dataDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
+  }
+});
