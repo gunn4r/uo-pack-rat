@@ -235,6 +235,16 @@ class RazorBridge(BridgeCase, unittest.TestCase):
         self.assertTrue(final["results"]["w1"]["ok"], final["results"]["w1"])
         self.assertEqual([c for c in w.calls if c[0] == "walk"], [("walk", 19, 10)])
 
+    def test_a_trip_is_refused_as_an_unknown_action(self):
+        w = home()
+        trip = {"id": "t1", "action": "trip", "index": 1, "stamp": "2026-09-28T12:00:00.000Z",
+                "roots": {str(CHEST): {"x": 11, "y": 10, "z": 0}},
+                "takes": [{"serial": AMULET, "name": "Jewel", "chain": [CHEST, BAG]}], "puts": [], "age_s": 0}
+        final, _ = self.run_bridge(w, 1, [trip])
+        self.assertEqual(final["results"]["t1"]["msg"], "unknown action")
+        self.assertEqual(self.moved(w), [])
+        self.assertEqual(self.opened(w), [])
+
 
 if __name__ == "__main__":
     unittest.main()

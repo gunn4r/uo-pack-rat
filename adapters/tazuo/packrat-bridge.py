@@ -110,6 +110,10 @@ MAP_MAX_Y = 4096
 MAP_MIN_Z = -128
 MAP_MAX_Z = 127
 MAX_FACET = 5              # 0 Felucca, 1 Trammel, 2 Ilshenar, 3 Malas, 4 Tokuno, 5 Ter Mur
+MAX_TRIP_TAKES = 20        # app/organize.mts's tripItems default: one trip is one click
+MAX_TRIP_PUTS = 40         # this trip's own puts plus leftovers from a stopped one ("Put them away")
+MAX_TRIP_NAME = 40         # app/bridge-trip.mts cuts every name in a trip to this
+MAX_TRIP_INDEX = 10000     # the trip's number in its plan, only ever printed on screen
 
 
 def days_from_civil(y, m, d):
@@ -181,15 +185,36 @@ def check_pos(pos):
     return out, ""
 
 
-def check_command(cmd, actions, now_s):
-    """Validate one parsed queue line against the bridge v1 contract. Returns (command, reason)."""
-    if not isinstance(cmd, dict):
-        return None, "queue line is not a JSON object"
+def check_id(cmd):
+    """The command's id, or why it has none the page could match a result to. Returns (id, reason)."""
     cid = cmd.get("id")
     if not isinstance(cid, str) or not cid:
         return None, "command has no id"
     if len(cid) > MAX_ID:
         return None, "command id is longer than {0} characters".format(MAX_ID)
+    return cid, ""
+
+
+def check_age(queued_at, now_s):
+    """"" when a queuedAt stamp is fresh enough to run, else why not."""
+    queued = parse_rfc3339(queued_at)
+    if queued is None:
+        return "queuedAt is missing or unreadable"
+    age = now_s - queued
+    if age > MAX_AGE_S:
+        return "expired: queued {0}s ago, not run".format(int(age))
+    if age < -CLOCK_SKEW_S:
+        return "expired: queued in the future, not run"
+    return ""
+
+
+def check_command(cmd, actions, now_s):
+    """Validate one parsed queue line against the bridge v1 contract. Returns (command, reason)."""
+    if not isinstance(cmd, dict):
+        return None, "queue line is not a JSON object"
+    cid, why = check_id(cmd)
+    if why:
+        return None, why
     if cmd.get("action") not in actions:
         return None, "unknown action"
     if not is_serial(cmd.get("serial")):
@@ -212,14 +237,9 @@ def check_command(cmd, actions, now_s):
         name = ""
     if not isinstance(name, str):
         return None, "name is not a string"
-    queued = parse_rfc3339(cmd.get("queuedAt"))
-    if queued is None:
-        return None, "queuedAt is missing or unreadable"
-    age = now_s - queued
-    if age > MAX_AGE_S:
-        return None, "expired: queued {0}s ago, not run".format(int(age))
-    if age < -CLOCK_SKEW_S:
-        return None, "expired: queued in the future, not run"
+    why = check_age(cmd.get("queuedAt"), now_s)
+    if why:
+        return None, why
     return {"id": cid, "action": cmd["action"], "serial": int(cmd["serial"]),
             "name": name[:MAX_NAME], "chain": [int(c) for c in chain], "pos": pos}, ""
 
@@ -288,6 +308,104 @@ def chain_problem(chain, i, it, own):
     if parent != int(chain[i - 1]):
         return "refused: 0x{0:x} is not inside 0x{1:x} -- rescan and try again".format(c, int(chain[i - 1]))
     return ""
+
+
+def check_path(path, what):
+    """A container path [root, ...bags]: 1 to MAX_CHAIN serials. Returns (path, reason)."""
+    if not isinstance(path, list) or not path:
+        return None, what + " is not a list of containers"
+    if len(path) > MAX_CHAIN:
+        return None, "{0} is longer than {1} containers".format(what, MAX_CHAIN)
+    for c in path:
+        if not is_serial(c):
+            return None, what + " holds something that is not a container serial"
+    return [int(c) for c in path], ""
+
+
+def check_steps(entries, key, limit, roots, what):
+    """A trip's takes (key "chain") or puts (key "dest"): at most `limit` objects {serial, name, key},
+    no serial twice, each path starting at a container `roots` places. Returns (steps, reason)."""
+    if not isinstance(entries, list):
+        return None, what + " is not a list"
+    if len(entries) > limit:
+        return None, "{0} has more than {1} entries".format(what, limit)
+    out = []
+    seen = set()
+    for e in entries:
+        if not isinstance(e, dict):
+            return None, what + " holds something that is not an object"
+        if not is_serial(e.get("serial")):
+            return None, what + " holds a serial that is not an item serial"
+        serial = int(e["serial"])
+        if serial in seen:
+            return None, "{0} names 0x{1:x} twice".format(what, serial)
+        seen.add(serial)
+        path, why = check_path(e.get(key), what + " " + key)
+        if why:
+            return None, why
+        if path[0] not in roots:
+            return None, "{0} {1} starts at 0x{2:x}, which roots does not place".format(what, key, path[0])
+        name = e.get("name")
+        if name is None:
+            name = ""
+        if not isinstance(name, str):
+            return None, what + " holds a name that is not a string"
+        out.append({"serial": serial, "name": name[:MAX_TRIP_NAME], key: path})
+    return out, ""
+
+
+def check_trip(cmd, now_s):
+    """Validate one parsed trip line (app/schema/bridge-trip.v1.schema.json). Returns (trip, reason);
+    roots come back keyed by int serial and every name cut to MAX_TRIP_NAME."""
+    if not isinstance(cmd, dict):
+        return None, "queue line is not a JSON object"
+    cid, why = check_id(cmd)
+    if why:
+        return None, why
+    if cmd.get("action") != "trip":
+        return None, "unknown action"
+    index = cmd.get("index")
+    if not isinstance(index, int) or isinstance(index, bool) or index < 1 or index > MAX_TRIP_INDEX:
+        return None, "index is not a trip number"
+    stamp = cmd.get("stamp")
+    if not isinstance(stamp, str) or not stamp or len(stamp) > MAX_ID:
+        return None, "stamp is not a plan stamp"
+    raw = cmd.get("roots")
+    if not isinstance(raw, dict) or len(raw) > MAX_TRIP_TAKES + MAX_TRIP_PUTS:
+        return None, "roots is not an object of at most {0} containers".format(MAX_TRIP_TAKES + MAX_TRIP_PUTS)
+    roots = {}
+    for key in raw:
+        if not isinstance(key, str) or not key or len(key) > 10 or [ch for ch in key if ch not in "0123456789"]:
+            return None, "roots has a key that is not a container serial"
+        if not is_serial(int(key)):
+            return None, "roots has a key that is not a container serial"
+        pos, why = check_pos(raw[key])
+        if why:
+            return None, "roots: " + why
+        if pos is None:
+            return None, "roots gives 0x{0:x} no position".format(int(key))
+        roots[int(key)] = pos
+    takes, why = check_steps(cmd.get("takes"), "chain", MAX_TRIP_TAKES, roots, "takes")
+    if why:
+        return None, why
+    puts, why = check_steps(cmd.get("puts"), "dest", MAX_TRIP_PUTS, roots, "puts")
+    if why:
+        return None, why
+    if not takes and not puts:
+        return None, "trip has nothing to do"
+    why = check_age(cmd.get("queuedAt"), now_s)
+    if why:
+        return None, why
+    return {"id": cid, "action": "trip", "index": index, "stamp": stamp, "name": "#{0}".format(index),
+            "roots": roots, "takes": takes, "puts": puts}, ""
+
+
+def check_line(cmd, actions, now_s):
+    """A trip goes to check_trip on a bridge that runs trips; everything else, and a trip on a bridge
+    that does not, goes to check_command, which refuses an action the bridge lacks."""
+    if isinstance(cmd, dict) and cmd.get("action") == "trip" and "trip" in actions:
+        return check_trip(cmd, now_s)
+    return check_command(cmd, actions, now_s)
 
 
 # ---- end of the untrusted-input section --------------------------------------------------------
@@ -608,7 +726,7 @@ def main():
                         except Exception:
                             bad += 1
                             continue
-                        cmd, why = check_command(parsed, CAPABILITIES["bridge"], time.time())
+                        cmd, why = check_line(parsed, CAPABILITIES["bridge"], time.time())
                         cid = parsed.get("id") if isinstance(parsed, dict) else None
                         if not isinstance(cid, str) or not cid or len(cid) > MAX_ID:
                             bad += 1                     # no id the page could match a result to

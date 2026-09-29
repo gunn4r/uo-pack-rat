@@ -220,3 +220,14 @@ test("[fast] bridge.v1.schema.json's result carries a trip's steps, partial and 
 test("[fast] bridge.v1.schema.json's command has no trip action: only queueTrip writes one", () => {
   assert.equal(validate(BRIDGE_SCHEMA.command.properties!.action!, "trip").ok, false);
 });
+
+test("[fast] bridge-trip.v1.schema.json declares the limits every bridge enforces", () => {
+  const p = TRIP_SCHEMA.properties!;
+  const take = p.takes!.items!.properties!;
+  const py = readFileSync(join(ROOT, "adapters", "tazuo", "packrat-bridge.py"), "utf8");
+  assert.match(py, new RegExp(`^MAX_TRIP_TAKES = ${p.takes!.maxItems}\\b`, "m"));
+  assert.match(py, new RegExp(`^MAX_TRIP_PUTS = ${p.puts!.maxItems}\\b`, "m"));
+  assert.match(py, new RegExp(`^MAX_TRIP_NAME = ${take.name!.maxLength}\\b`, "m"));
+  assert.match(py, new RegExp(`^MAX_TRIP_INDEX = ${p.index!.maximum}\\b`, "m"));
+  assert.match(py, new RegExp(`^MAX_CHAIN = ${take.chain!.maxItems}\\b`, "m"));
+});
