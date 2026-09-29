@@ -8,7 +8,7 @@ import { createHash } from "node:crypto";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { dirname, join } from "node:path";
 import {
-  parseTooltip, classify, foldSnapshots, buildPools, requirementReport, totalsOf, propertyKeys, bagLabel, capacityOf, kindOf, groupByName, slayersOf, medableOf, weaponAllowed, settingsDiff, PROP_LABELS, LAYER_TO_SLOT, effectiveProfile, resistSkillBonus, toOptItem, labelOf, builderKeys, migrateProfiles, templateFrom, TEMPLATE_KEYS, setRules, getRules, tagUnits, tagInfo,
+  parseTooltip, classify, foldSnapshots, buildPools, requirementReport, totalsOf, propertyKeys, bagLabel, capacityOf, NOT_BUILDER_KEYS, kindOf, groupByName, slayersOf, medableOf, weaponAllowed, settingsDiff, PROP_LABELS, LAYER_TO_SLOT, effectiveProfile, resistSkillBonus, toOptItem, labelOf, builderKeys, migrateProfiles, templateFrom, TEMPLATE_KEYS, setRules, getRules, tagUnits, tagInfo,
   WEAPON_SKILLS, migrateWeaponSetting, excludeWeaponsError,
   shardResistCap, resistCapsFor, resistCapsError, profileResistCaps, RESIST_CAP_LIMITS,
 } from "./vault-lib.mts";
@@ -125,6 +125,16 @@ test("[fast] skill bonuses and slayers land in extras/flags for searching", () =
   assert.equal(p.extras.healing, 20);
   assert.ok(p.flags.includes("orc slayer"));
   assert.ok(p.flags.includes("night sight"));
+});
+
+// Organize's power scroll presets (issue #11) file scrolls by level: UO Alive names it, "(110 Skill)".
+test("[smoke] parseTooltip reads a power scroll's level from its name as psLevel", () => {
+  assert.equal(parseTooltip(["An Exalted Scroll Of Mysticism (110 Skill)"]).props.psLevel, 110);
+  assert.equal(parseTooltip(["2 A Wondrous Scroll Of Magery (105 Skill)"], 2).props.psLevel, 105, "a stack's amount is not the level");
+  assert.equal(parseTooltip(["a legendary scroll of imbuing (120 skill)"]).props.psLevel, 120);
+  assert.equal(parseTooltip(["Scroll Of Transcendence", "Spirit Speak 0.5 Skill"]).props.psLevel, undefined);
+  assert.equal(parseTooltip(["Ring Of The Magi (110 Skill)"]).props.psLevel, undefined, "only a scroll, so nothing else gains a property and with it a claim to be gear");
+  assert.equal(parseTooltip(["A Scroll Of Something (95 Skill)"]).props.psLevel, undefined, "a level has three digits");
 });
 
 // ServUO prints a set piece's full-set bonus after a header line; those lines only apply while all
@@ -746,6 +756,19 @@ test("[fast] propertyKeys lists the modeled properties present", () => {
   const inv = foldSnapshots([kestrel, dorran]);
   const keys = propertyKeys(inv);
   assert.ok(keys.includes("hci") && keys.includes("lrc") && !keys.includes("tagPenalty"));
+});
+
+test("[fast] fold: power scrolls carry psLevel, stay scrolls, and the level is filterable but never a builder key", () => {
+  const inv = foldSnapshots([dorran]);
+  const scrolls = Object.values(inv.items).filter((it) => /\(\d{3} Skill\)/.test(it.name));
+  assert.ok(scrolls.length > 0);
+  for (const it of scrolls) {
+    assert.equal(it.props.psLevel, 110, it.name);
+    assert.equal(it.kind, "scroll", it.name);
+    assert.equal(it.gear, false, it.name);
+  }
+  assert.ok(propertyKeys(inv).includes("psLevel"));
+  assert.ok(NOT_BUILDER_KEYS.has("psLevel"));
 });
 
 // ---- suit builder: weapon filter, saved runs ---------------------------------------------------

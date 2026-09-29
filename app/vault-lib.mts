@@ -187,13 +187,14 @@ export const PROP_LABELS: Record<string, string> = {
   enhancePotions: "EP", selfRepair: "Self Rep", hitFireball: "Hit Fireball", hitLightning: "Hit Lightning",
   hitHarm: "Hit Harm", hitMagicArrow: "Hit MA", hitDispel: "Hit Dispel", hitPoisonArea: "Poison Area",
   hitFireArea: "Fire Area", hitColdArea: "Cold Area", hitEnergyArea: "Energy Area", hitPhysArea: "Phys Area",
-  mageWeapon: "Mage Wpn", tagPenalty: "Tag penalty",
+  mageWeapon: "Mage Wpn", psLevel: "PS level", tagPenalty: "Tag penalty",
   stamPool: "Stam pool", manaPool: "Mana pool", hitsPool: "Hits pool",
 };
 // Properties the builder's weight and requirement rows never offer: tagPenalty carries a fixed weight
 // from the profile, and an item without a Mage Weapon line reads mageWeapon 0, which beats every mage
-// weapon's negative, so weighting it would reward not being one. Both stay filterable in the Inventory.
-export const NOT_BUILDER_KEYS = new Set(["tagPenalty", "mageWeapon"]);
+// weapon's negative, so weighting it would reward not being one; psLevel is a power scroll's, never gear's.
+// All stay filterable in the Inventory.
+export const NOT_BUILDER_KEYS = new Set(["tagPenalty", "mageWeapon", "psLevel"]);
 
 // Full names for the abbreviations, shown as hover tooltips in the app.
 export const PROP_FULL: Record<string, string> = {
@@ -206,7 +207,7 @@ export const PROP_FULL: Record<string, string> = {
   hitLifeLeech: "Hit Life Leech", hitStamLeech: "Hit Stamina Leech", hitManaLeech: "Hit Mana Leech", hitLowerDef: "Hit Lower Defense", hitLowerAttack: "Hit Lower Attack",
   enhancePotions: "Enhance Potions", selfRepair: "Self Repair", hitFireball: "Hit Fireball", hitLightning: "Hit Lightning", hitHarm: "Hit Harm",
   hitMagicArrow: "Hit Magic Arrow", hitDispel: "Hit Dispel", hitPoisonArea: "Hit Poison Area", hitFireArea: "Hit Fire Area", hitColdArea: "Hit Cold Area",
-  hitEnergyArea: "Hit Energy Area", hitPhysArea: "Hit Physical Area", mageWeapon: "Mage Weapon", tagPenalty: "Penalty for Cursed / Brittle / Antique / Prized tags",
+  hitEnergyArea: "Hit Energy Area", hitPhysArea: "Hit Physical Area", mageWeapon: "Mage Weapon", psLevel: "Power scroll level (the skill cap it raises to)", tagPenalty: "Penalty for Cursed / Brittle / Antique / Prized tags",
   stamPool: "Stamina from gear: DEX bonus + Stamina Increase", manaPool: "Mana from gear: INT bonus + Mana Increase",
   hitsPool: "Hit points from gear: STR bonus ÷ 2 + Hit Point Increase",
 };
@@ -382,6 +383,9 @@ const NUMERIC_TAIL_RE = /(-?\d+(?:\.\d+)?)\s*(%|s)?\s*(?:-\s*(\d+))?$/;
 const SET_INCOMPLETE_RE = /^only when full set is present\b/;
 const SET_WORN_RE = /^full (weapon\/)?armor set present\b/;
 const SET_TOTAL_LINE_RE = /\(total\)$|^mastery bonus cooldown\b/;
+// A power scroll names its level: "An Exalted Scroll Of Mysticism (110 Skill)" (UO Alive, from real scans).
+// Only a scroll's name counts, so no other item with a number in brackets gains a property.
+const PS_LEVEL_RE = /\bscroll\b.*\((\d{3}) skill\)/i;
 
 // Returns { name, props, setBonus, tags, strReq, rarity, extras, flags, lines }.
 //   props    : modeled numeric properties (optimizer keys) of the piece itself
@@ -439,6 +443,8 @@ export function parseTooltip(rawLines?: Array<string | undefined> | undefined, a
       flags.push(line);
     }
   }
+  const ps = name.match(PS_LEVEL_RE);
+  if (ps) props.psLevel = +ps[1]!;
   if (tags.length) props.tagPenalty = tags.reduce((a, t) => a + TU[t]!, 0);
   return { name, props, setBonus, tags, strReq, rarity, extras, flags, twoHanded, weight, skillReq, lines };
 }
