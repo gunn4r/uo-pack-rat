@@ -66,7 +66,7 @@ def rfc3339_now():
 
 
 ADAPTER_ID = "tazuo"
-ADAPTER_VERSION = "2.8.0"
+ADAPTER_VERSION = "2.9.0"
 
 SELF = "packrat-panel.py"
 SCANNER, REFRESH, BRIDGE, BLACKLIST = "packrat-scanner.py", "packrat-refresh.py", "packrat-bridge.py", "packrat-blacklist.py"

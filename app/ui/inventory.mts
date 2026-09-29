@@ -67,7 +67,8 @@ function chipText(id: ChipId): string {
     case "char": return many(q.chars);
     case "slot": return many(q.slot.map((s) => (s === "?" ? "no slot" : slotLabel(s))));
     case "loc": return many([...q.roots.map((r) => splitSerial(rootName(r, state.facets?.places || [])).name), ...q.loc]);
-    case "rarity": return q.rarityMin ? `Rarity ≥ ${shortTier(q.rarityMin)}` : name;
+    case "rarity": return q.rarityMin && q.rarityMax ? `Rarity: ${shortTier(q.rarityMin)} – ${shortTier(q.rarityMax)}`
+      : q.rarityMin ? `Rarity ≥ ${shortTier(q.rarityMin)}` : q.rarityMax ? `Rarity ≤ ${shortTier(q.rarityMax)}` : name;
     case "kind": return many(q.kind);
     case "slayer": return q.slayer === "*" ? "Any slayer" : `Slayer: ${q.slayer}`;
     case "seen": return `Seen: ${q.seenDays === 1 ? "24 h" : `${q.seenDays} days`}`;
@@ -79,7 +80,7 @@ function chipSet(id: ChipId): boolean {
     case "char": return q.chars.length > 0;
     case "slot": return q.slot.length > 0;
     case "loc": return q.loc.length + q.roots.length > 0;
-    case "rarity": return !!q.rarityMin;
+    case "rarity": return !!(q.rarityMin || q.rarityMax);
     case "kind": return q.kind.length > 0;
     case "slayer": return !!q.slayer;
     case "seen": return !!q.seenDays;
@@ -259,11 +260,15 @@ function radioList(title: string, rows: Array<{ value: string; label: HTMLElemen
     return box("label", { class: "check inv-opt" }, r, row.label, row.count != null ? txt(row.count.toLocaleString("en-US"), "inv-opt-count") : null);
   }));
 }
+// A floor and a ceiling on the shard's ladder, each a single-choice list; picking either sets that bound and
+// closes the popover. Each list draws its own tier labels (a DOM node lives in one place).
 function rarityPanel(close: () => void): Kids {
   const ladder = state.rules?.rarity || [];
+  const tiers = () => [{ value: "", label: txt("Any rarity") }, ...ladder.map((t) => ({ value: t.name, label: rarityEl(t.name) ?? txt(t.name) }))];
   return [box("div", { class: "inv-pop-head" }, txt("Rarity at least", "caps")),
-    radioList("Rarity at least", [{ value: "", label: txt("Any rarity") }, ...ladder.map((t) => ({ value: t.name, label: rarityEl(t.name) ?? txt(t.name) }))],
-      state.query.rarityMin, (v) => { setQuery({ ...state.query, rarityMin: v }); close(); })];
+    radioList("Rarity at least", tiers(), state.query.rarityMin, (v) => { setQuery({ ...state.query, rarityMin: v }); close(); }),
+    box("div", { class: "inv-pop-head" }, txt("Rarity at most", "caps")),
+    radioList("Rarity at most", tiers(), state.query.rarityMax, (v) => { setQuery({ ...state.query, rarityMax: v }); close(); })];
 }
 function slayerPanel(close: () => void): Kids {
   const f = state.facets;

@@ -3,8 +3,8 @@
 // rarityRank. Hand-built fixture items (no scan files, no server) so this stays fast and pure.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { EXTRA_COLS, colVal, rarityRank, parseItemQuery, applyItemQuery, facetsOf } from "./item-query.mts";
-import type { ItemQueryRows, ItemQueryGroups } from "./item-query.mts";
+import { EXTRA_COLS, colVal, rarityRank, parseItemQuery, applyItemQuery, facetsOf, matchesItem } from "./item-query.mts";
+import type { ItemQueryRows, ItemQueryGroups, RuleQuery } from "./item-query.mts";
 import { KINDS } from "./vault-lib.mts";
 import type { Item } from "./vault-lib.mts";
 
@@ -56,7 +56,7 @@ const names = (r: Item[]): string[] => r.map((it) => it.name);
 
 test("[fast] parseItemQuery: defaults with no params", () => {
   const q = parseItemQuery(new URLSearchParams());
-  assert.deepEqual(q, { q: "", chars: [], slot: [], loc: [], roots: [], rarity: "", rarityMin: "", kind: [], seenDays: 0, slayer: "", nogarg: false, med: false, hideTags: [], props: [], group: false, sort: "name", dir: 1, offset: 0, limit: 200 });
+  assert.deepEqual(q, { q: "", chars: [], slot: [], loc: [], roots: [], rarity: "", rarityMin: "", rarityMax: "", kind: [], seenDays: 0, slayer: "", nogarg: false, med: false, hideTags: [], props: [], group: false, sort: "name", dir: 1, offset: 0, limit: 200 });
 });
 
 test("[fast] parseItemQuery: clamps limit to [1, 500], offset to >= 0", () => {
@@ -235,6 +235,54 @@ test("[fast] applyItemQuery: a root filter matches everything inside that contai
 test("[fast] applyItemQuery: rarityMin keeps that tier and every tier above it on the ladder", () => {
   const { rows } = applyItemQuery(ITEMS, parseItemQuery(new URLSearchParams("rarityMin=" + encodeURIComponent("Greater Artifact"))), ctx) as ItemQueryRows;
   assert.deepEqual(names(rows).sort(), ["Composite Bow", "Orc Slayer Cutlass", "Talisman of Mercy"]);
+});
+
+test("[fast] applyItemQuery: rarityMax keeps that tier, the tiers below it and items with no tier", () => {
+  const rows = (s: string, items = ITEMS): string[] => names((applyItemQuery(items, parseItemQuery(new URLSearchParams(s)), ctx) as ItemQueryRows).rows).sort();
+  const max = (t: string): string => "kind=gear&rarityMax=" + encodeURIComponent(t);
+  assert.deepEqual(rows(max("Lesser Artifact")), ["Chainmail Tunic", "Cloth Robe", "Gargish Kilt", "Leather Gloves", "Silver Katana", "Vile Ring"]);
+  assert.deepEqual(rows(`${max("Greater Artifact")}&rarityMin=${encodeURIComponent("Lesser Artifact")}`), ["Composite Bow", "Silver Katana", "Vile Ring"], "a band");
+  assert.deepEqual(rows(`${max("Lesser Artifact")}&rarityMin=${encodeURIComponent("Greater Artifact")}`), [], "a floor above the ceiling matches nothing");
+  assert.equal(rows(max("Not A Tier")).length, ITEMS.filter((i) => i.kind === "gear").length, "an unknown ceiling filters nothing");
+  assert.deepEqual(rows(max("Minor Magic Item"), [mk({ name: "Reforged Blade", rarity: "Reforged Lesser Artifact" })]), ["Reforged Blade"], "a tier off the ladder ranks with no tier");
+});
+
+test("[fast] parseItemQuery reads rarityMax", () => {
+  assert.equal(parseItemQuery(new URLSearchParams("rarityMax=Lesser%20Artifact")).rarityMax, "Lesser Artifact");
+});
+
+// A rule query from the Inventory's own wire form, minus what a rule never keeps (Organize, issue #11).
+function rule(s: string): RuleQuery {
+  const { loc, roots, chars, seenDays, group, sort, dir, offset, limit, ...rq } = parseItemQuery(new URLSearchParams(s));
+  return rq;
+}
+const ruleNames = (s: string, items = ITEMS): string[] => names(items.filter((it) => matchesItem(it, rule(s), { rarity: RARITY_LADDER }))).sort();
+
+test("[fast] matchesItem agrees with applyItemQuery on every filter a rule keeps", () => {
+  for (const s of ["", "kind=gear", "slot=ring,?", "rarity=Lesser%20Artifact", "rarityMin=Greater%20Artifact", "rarityMax=Lesser%20Artifact", "slayer=*", "slayer=Orc", "nogarg=1", "med=1", "hide=cursed", "prop=hci:ge:12", "prop=dci:le:5&kind=gear", "q=orc"]) {
+    assert.deepEqual(ruleNames(s), names((applyItemQuery(ITEMS, parseItemQuery(new URLSearchParams(s)), ctx) as ItemQueryRows).rows).sort(), s);
+  }
+});
+
+test("[fast] matchesItem: free text matches the item, never where it sits", () => {
+  const sword = mk({ name: "Katana", location: { text: "Reagents", character: "Dorran" } });
+  assert.equal(matchesItem(sword, rule("q=reagents")), false, "a rule for reagents must not claim a sword in a chest labelled Reagents");
+  assert.equal((applyItemQuery([sword], parseItemQuery(new URLSearchParams("q=reagents")), ctx) as ItemQueryRows).total, 1, "the Inventory search still finds it by place");
+  assert.equal(matchesItem(mk({ name: "Mandrake Root", kind: "reagent", slot: null }), rule("q=reagent")), true, "kind is the item's own");
+  assert.equal(matchesItem(ITEMS.find((i) => i.name === "Orc Slayer Cutlass")!, rule("q=legendary")), true, "rarity is the item's own");
+  assert.equal(matchesItem(mk({ name: "Garlic", lines: ["Garlic", "Crafted By Nobody"] }), rule("q=crafted")), true, "tooltip lines count");
+  assert.equal(matchesItem(ITEMS[0]!, { ...rule(""), q: "  VILE " }), true, "rule text read from a file is trimmed and lower-cased here");
+});
+
+test("[fast] matchesItem: location, character and age never filter a rule", () => {
+  const far = mk({ name: "Old Ring", seenAt: daysAgo(400), location: { text: "Somewhere else", character: "Nobody" } });
+  assert.equal(matchesItem(far, rule("")), true);
+});
+
+test("[fast] matchesItem: a power scroll rule by level", () => {
+  const scroll = mk({ name: "An Exalted Scroll Of Magery (110 Skill)", kind: "scroll", slot: null, props: { psLevel: 110 } });
+  assert.equal(matchesItem(scroll, rule("kind=scroll&prop=psLevel:eq:110")), true);
+  assert.equal(matchesItem(scroll, rule("kind=scroll&prop=psLevel:eq:115")), false);
 });
 
 test("[fast] applyItemQuery: prop rules at most and exactly", () => {

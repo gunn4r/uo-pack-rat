@@ -71,6 +71,19 @@ test("[fast] emptyCause names the one filter that excludes everything by itself"
   assert.equal(emptyCause(activeFilters({ ...BASE, q: "zzz" }, CTX), [], 3), 'Nothing matches the search "zzz".');
 });
 
+test("[fast] rarityMax has a token of its own, round-trips, and says why a result is empty", () => {
+  const q: ItemQuery = { ...BASE, rarityMin: "Lesser Magic Item", rarityMax: "Lesser Artifact" };
+  assert.deepEqual(parseItemQuery(queryParams(q)), q);
+  const tokens = activeFilters(q, CTX);
+  assert.deepEqual(tokens.map((t) => t.label), ["Rarity ≥ Lesser Magic Item", "Rarity ≤ Lesser Artifact"]);
+  assert.deepEqual(tokens.map((t) => t.removeLabel), ["Remove filter: Rarity", "Remove filter: Rarity at most"]);
+  const left = tokens[1]!.remove(q);
+  assert.equal(left.rarityMax, "");
+  assert.equal(left.rarityMin, "Lesser Magic Item", "removing the ceiling keeps the floor");
+  assert.equal(emptyCause(activeFilters({ ...BASE, rarityMax: "Lesser Artifact" }, CTX), [], 160), "None of the 160 stacks is a Lesser Artifact or lower.");
+  assert.equal(emptyCause(activeFilters({ ...BASE, rarityMax: "Minor Magic Item" }, CTX), [], 160), "None of the 160 stacks is a Minor Magic Item.");
+});
+
 test("[fast] tier and rule labels", () => {
   assert.equal(shortTier("Greater Magic Item"), "Greater Magic");
   assert.equal(shortTier("Major Artifact"), "Major Artifact");

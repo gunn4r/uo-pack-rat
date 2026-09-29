@@ -75,7 +75,7 @@ const SCENES: Scene[] = [
   }, leave: (p) => p.mouse.move(0, 0) },
   { name: "inventory filters and strip", enter: async (p) => {
     await openFacet(p, "rarity", "Rarity");
-    await p.locator(".pop input[value='Greater Magic Item']").click();
+    await p.locator(".pop [aria-label='Rarity at least'] input[value='Greater Magic Item']").click();
     await openFacet(p, "kind", "Kind");
     await p.locator(".pop input[value=gear]").click();
     await p.waitForSelector("#inv-active:not([hidden]) .token");
@@ -113,7 +113,7 @@ const SCENES: Scene[] = [
   }, leave: (p) => p.keyboard.press("Escape") },
   { name: "inventory empty result", enter: async (p) => {
     await openFacet(p, "rarity", "Rarity");
-    await p.locator(".pop input[value='Legendary Artifact']").click();
+    await p.locator(".pop [aria-label='Rarity at least'] input[value='Legendary Artifact']").click();
     await p.waitForSelector("#inv-empty");
   } },
   { name: "inventory grouped", enter: async (p) => {

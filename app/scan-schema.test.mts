@@ -220,3 +220,18 @@ test("[fast] validateScan: a scannedAt that is not a real date/time is rejected"
     assert.equal(v.ok, true, `${good}: ${JSON.stringify(v.errors)}`);
   }
 });
+
+// Organize (issue #11) groups chests by facet: a container's pos may carry one, and only a real map index.
+test("[fast] validateScan: a container's pos may carry a facet, a whole number 0 to 5", () => {
+  const base = {
+    schemaVersion: 2, character: "Kestrel", scannedAt: new Date().toISOString(),
+    adapter: { id: "tazuo", version: "1", client: "TazUO", clientVersion: null, capabilities: TAZUO_V1_CAPS },
+    stats: {}, equipped: [], roots: [{ serial: 1, kind: "ground", name: "Metal Chest", opened: true }], items: [],
+  };
+  const withPos = (pos: unknown) => validateScan({ ...base, containers: { "1": { serial: 1, root: 1, parent: null, kind: "ground", pos } } });
+  assert.equal(withPos({ x: 1, y: 2, z: 0, facet: 1 }).ok, true);
+  assert.equal(withPos({ x: 1, y: 2, z: 0, facet: 0 }).ok, true, "Felucca is 0, not missing");
+  assert.equal(withPos({ x: 1, y: 2, z: 0 }).ok, true, "still optional");
+  assert.equal(withPos(null).ok, true);
+  for (const facet of [6, -1, 1.5, "1", null]) assert.equal(withPos({ x: 1, y: 2, z: 0, facet }).ok, false, `facet ${JSON.stringify(facet)}`);
+});

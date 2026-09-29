@@ -95,12 +95,18 @@ export interface Container {
   root: number;
   tooltip?: string[] | undefined;
   pos?: Record<string, number> | null | undefined;
+  // Its fill from the tooltip's Contents line (capacityOf), or null when the tooltip has none. Set by every fold.
+  capacity?: ContainerCapacity | null | undefined;
   // The container's segment in location text: its bagLabel, plus a distinguishing suffix when another
   // container with the same label sits beside it (labelContainers). Set by every fold.
   label?: string | undefined;
   scannedBy: string;
   scannedAt: string;
 }
+
+// A container's fill as its tooltip states it. `stones` is null when the line gives no weight, `maxStones`
+// when the container has no weight cap (house containers have none).
+export interface ContainerCapacity { items: number; maxItems: number; stones: number | null; maxStones: number | null }
 
 export interface Character {
   name: string;
@@ -181,13 +187,14 @@ export const PROP_LABELS: Record<string, string> = {
   enhancePotions: "EP", selfRepair: "Self Rep", hitFireball: "Hit Fireball", hitLightning: "Hit Lightning",
   hitHarm: "Hit Harm", hitMagicArrow: "Hit MA", hitDispel: "Hit Dispel", hitPoisonArea: "Poison Area",
   hitFireArea: "Fire Area", hitColdArea: "Cold Area", hitEnergyArea: "Energy Area", hitPhysArea: "Phys Area",
-  mageWeapon: "Mage Wpn", tagPenalty: "Tag penalty",
+  mageWeapon: "Mage Wpn", psLevel: "PS level", tagPenalty: "Tag penalty",
   stamPool: "Stam pool", manaPool: "Mana pool", hitsPool: "Hits pool",
 };
 // Properties the builder's weight and requirement rows never offer: tagPenalty carries a fixed weight
 // from the profile, and an item without a Mage Weapon line reads mageWeapon 0, which beats every mage
-// weapon's negative, so weighting it would reward not being one. Both stay filterable in the Inventory.
-export const NOT_BUILDER_KEYS = new Set(["tagPenalty", "mageWeapon"]);
+// weapon's negative, so weighting it would reward not being one; psLevel is a power scroll's, never gear's.
+// All stay filterable in the Inventory.
+export const NOT_BUILDER_KEYS = new Set(["tagPenalty", "mageWeapon", "psLevel"]);
 
 // Full names for the abbreviations, shown as hover tooltips in the app.
 export const PROP_FULL: Record<string, string> = {
@@ -200,7 +207,7 @@ export const PROP_FULL: Record<string, string> = {
   hitLifeLeech: "Hit Life Leech", hitStamLeech: "Hit Stamina Leech", hitManaLeech: "Hit Mana Leech", hitLowerDef: "Hit Lower Defense", hitLowerAttack: "Hit Lower Attack",
   enhancePotions: "Enhance Potions", selfRepair: "Self Repair", hitFireball: "Hit Fireball", hitLightning: "Hit Lightning", hitHarm: "Hit Harm",
   hitMagicArrow: "Hit Magic Arrow", hitDispel: "Hit Dispel", hitPoisonArea: "Hit Poison Area", hitFireArea: "Hit Fire Area", hitColdArea: "Hit Cold Area",
-  hitEnergyArea: "Hit Energy Area", hitPhysArea: "Hit Physical Area", mageWeapon: "Mage Weapon", tagPenalty: "Penalty for Cursed / Brittle / Antique / Prized tags",
+  hitEnergyArea: "Hit Energy Area", hitPhysArea: "Hit Physical Area", mageWeapon: "Mage Weapon", psLevel: "Power scroll level (the skill cap it raises to)", tagPenalty: "Penalty for Cursed / Brittle / Antique / Prized tags",
   stamPool: "Stamina from gear: DEX bonus + Stamina Increase", manaPool: "Mana from gear: INT bonus + Mana Increase",
   hitsPool: "Hit points from gear: STR bonus ÷ 2 + Hit Point Increase",
 };
@@ -376,6 +383,9 @@ const NUMERIC_TAIL_RE = /(-?\d+(?:\.\d+)?)\s*(%|s)?\s*(?:-\s*(\d+))?$/;
 const SET_INCOMPLETE_RE = /^only when full set is present\b/;
 const SET_WORN_RE = /^full (weapon\/)?armor set present\b/;
 const SET_TOTAL_LINE_RE = /\(total\)$|^mastery bonus cooldown\b/;
+// A power scroll names its level: "An Exalted Scroll Of Mysticism (110 Skill)" (UO Alive, from real scans).
+// Only a scroll's name counts, so no other item with a number in brackets gains a property.
+const PS_LEVEL_RE = /\bscroll\b.*\((\d{3}) skill\)/i;
 
 // Returns { name, props, setBonus, tags, strReq, rarity, extras, flags, lines }.
 //   props    : modeled numeric properties (optimizer keys) of the piece itself
@@ -433,6 +443,8 @@ export function parseTooltip(rawLines?: Array<string | undefined> | undefined, a
       flags.push(line);
     }
   }
+  const ps = name.match(PS_LEVEL_RE);
+  if (ps) props.psLevel = +ps[1]!;
   if (tags.length) props.tagPenalty = tags.reduce((a, t) => a + TU[t]!, 0);
   return { name, props, setBonus, tags, strReq, rarity, extras, flags, twoHanded, weight, skillReq, lines };
 }
@@ -691,7 +703,7 @@ export function foldSnapshots(snapshots: ScanV2[]): Inventory {
     }
     for (const c of bySerial.values()) {
       if (!roots.has(+c.root)) continue;
-      inv.containers[c.serial] = { ...c, scannedBy: char, scannedAt: snap.scannedAt };
+      inv.containers[c.serial] = { ...c, capacity: capacityOf(c.tooltip), scannedBy: char, scannedAt: snap.scannedAt };
     }
     for (const c of Object.values(snapContainers)) {
       if (c.parent == null || !roots.has(+c.root)) continue;   // roots (chests, backpack, bank) are places, not things
@@ -813,6 +825,21 @@ export function bagLabel(c: BagLabelSource): string {
   const eng = (c.tooltip || []).map(stripHtml).find((l) => /engraved|^\[.*\]$/i.test(l));
   if (eng) return eng.replace(/^engraved:?\s*/i, "").trim();
   return c.name || `0x${(+c.serial).toString(16)}`;
+}
+
+// A container's fill from its tooltip's Contents line (ServUO's clilocs): "Contents: 13/125 Items, 95 Stones" on
+// a house container, "Contents: 1/1 Items, 49/50 Stones" on one with a weight cap. Null when no line reads that
+// way: a backpack or bank root, a ground root from a scan older than root tooltips (TazUO 2.9.0, Razor Enhanced
+// 1.9.0), or a line with no maximum. Organize (issue #11) never plans a put into a container whose capacity is null.
+const CONTENTS_RE = /^contents:\s*(\d[\d,]*)\s*\/\s*(\d[\d,]*)\s*items?\b(?:\s*,\s*(\d[\d,]*)(?:\s*\/\s*(\d[\d,]*))?\s*stones?\b)?/i;
+export function capacityOf(tooltip: string[] | null | undefined): ContainerCapacity | null {
+  for (const line of (tooltip || []).map(stripHtml)) {
+    const m = line.match(CONTENTS_RE);
+    if (!m) continue;
+    const n = (s: string | undefined): number | null => (s == null ? null : +s.replace(/,/g, ""));
+    return { items: n(m[1])!, maxItems: n(m[2])!, stones: n(m[3]), maxStones: n(m[4]) };
+  }
+  return null;
 }
 
 export function locationOf(it: Item, inv: Inventory): ItemLocation {
@@ -1161,6 +1188,12 @@ export function propertyKeys(inv: ItemsLike): string[] {
   }
   set.delete("tagPenalty");
   return [...set].sort((a, b) => (PROP_LABELS[a] || a).localeCompare(PROP_LABELS[b] || b));
+}
+
+// The item's own words (name, tooltip lines, rarity, kind), never where it sits: what an Organize rule's free
+// text is matched against (item-query.mts's matchesItem, issue #11).
+export function itemOwnBlob(it: Item): string {
+  return [it.name, ...(it.lines || []), it.rarity || "", it.kind || ""].join(" \n ").toLowerCase();
 }
 
 export function itemSearchBlob(it: Item): string {

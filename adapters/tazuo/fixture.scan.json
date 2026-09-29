@@ -6760,8 +6760,13 @@
    "pos": {
     "x": 1,
     "y": 1,
-    "z": 0
-   }
+    "z": 0,
+    "facet": 1
+   },
+   "tooltip": [
+    "Metal Chest",
+    "Contents: 106/125 Items, 435 Stones"
+   ]
   },
   "1073741826": {
    "kind": "ground",
@@ -6772,8 +6777,13 @@
    "pos": {
     "x": 1,
     "y": 1,
-    "z": 0
-   }
+    "z": 0,
+    "facet": 1
+   },
+   "tooltip": [
+    "Metal Chest",
+    "Contents: 98/125 Items, 261 Stones"
+   ]
   },
   "1073741827": {
    "kind": "ground",
@@ -6784,8 +6794,13 @@
    "pos": {
     "x": 1,
     "y": 1,
-    "z": 0
-   }
+    "z": 0,
+    "facet": 1
+   },
+   "tooltip": [
+    "Metal Chest",
+    "Contents: 3/125 Items, 9 Stones"
+   ]
   },
   "1073741828": {
    "kind": "ground",
@@ -6796,8 +6811,13 @@
    "pos": {
     "x": 1,
     "y": 1,
-    "z": 0
-   }
+    "z": 0,
+    "facet": 1
+   },
+   "tooltip": [
+    "Backpack",
+    "Contents: 12/125 Items, 560 Stones"
+   ]
   },
   "1073741829": {
    "kind": "ground",
@@ -6808,8 +6828,13 @@
    "pos": {
     "x": 1,
     "y": 1,
-    "z": 0
-   }
+    "z": 0,
+    "facet": 1
+   },
+   "tooltip": [
+    "Metal Chest",
+    "Contents: 77/125 Items, 231 Stones"
+   ]
   },
   "1073741830": {
    "kind": "ground",
@@ -6820,8 +6845,13 @@
    "pos": {
     "x": 1,
     "y": 1,
-    "z": 0
-   }
+    "z": 0,
+    "facet": 1
+   },
+   "tooltip": [
+    "Backpack",
+    "Contents: 7/125 Items, 17 Stones"
+   ]
   },
   "1073741832": {
    "kind": "bag",
@@ -7281,7 +7311,7 @@
  "schemaVersion": 2,
  "adapter": {
   "id": "tazuo",
-  "version": "2.4.0",
+  "version": "2.9.0",
   "client": "TazUO",
   "clientVersion": null,
   "capabilities": {

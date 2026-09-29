@@ -76,7 +76,7 @@ def read_blacklist(path):
 
 
 ADAPTER_ID = "tazuo"
-ADAPTER_VERSION = "2.8.0"
+ADAPTER_VERSION = "2.9.0"
 CAPABILITIES = {
     "layers": ["OneHanded", "TwoHanded", "Shoes", "Pants", "Shirt", "Helmet", "Gloves",
                "Ring", "Talisman", "Necklace", "Waist", "Torso", "Bracelet", "Tunic",
@@ -184,17 +184,44 @@ def item_dict(it, lines, container, layer=None):
     return d
 
 
+def facet():
+    """The map the player stands on (0 Felucca .. 5 Ter Mur), and so every ground root's: they are all
+    within reach. None when the client cannot say. GetMap() is looked up with getattr, since the Legion
+    stub is sometimes ahead of the running build; anything but 0-5 is left out."""
+    get_map = getattr(API, "GetMap", None)
+    try:
+        m = int(get_map())
+    except Exception:
+        return None
+    return m if 0 <= m <= 5 else None
+
+
 def root_pos(serial, kind):
-    """World position of a ground container (so the bridge can walk to it later); None for pack/bank."""
+    """World position of a ground container (so the bridge can walk to it later), with its facet when
+    the client says; None for pack/bank."""
     if kind != "ground":
         return None
     try:
         it = API.FindItem(int(serial))
         if it is None:
             return None
-        return {"x": int(it.X), "y": int(it.Y), "z": int(getattr(it, "Z", 0) or 0)}
+        pos = {"x": int(it.X), "y": int(it.Y), "z": int(getattr(it, "Z", 0) or 0)}
     except Exception:
         return None
+    f = facet()
+    if f is not None:
+        pos["facet"] = f
+    return pos
+
+
+def root_entry(serial, kind, label):
+    """A root's containers entry. A ground root carries its tooltip too, as a nested bag does: its
+    Contents line ("Contents: 13/125 Items, 95 Stones") is how the app knows the room left in it, and
+    an engraving on it names it."""
+    entry = {"serial": serial, "name": label, "parent": None, "root": serial, "kind": kind, "pos": root_pos(serial, kind)}
+    if kind == "ground":
+        entry["tooltip"] = tooltip_lines(serial)
+    return entry
 
 
 def was_opened(serial):
@@ -257,8 +284,7 @@ def scan_root(root_serial, kind, label, containers, items, seen):
         # Opened-but-empty is a fact worth recording (the app then clears whatever it last knew about
         # this container). Not opened (too far, locked) is not: return -1 so the app keeps its memory.
         if was_opened(root_serial):
-            containers[root_serial] = {"serial": root_serial, "name": label, "parent": None,
-                                       "root": root_serial, "kind": kind, "pos": root_pos(root_serial, kind)}
+            containers[root_serial] = root_entry(root_serial, kind, label)
             return 0
         return -1
     # The same test for every bag inside: one that lists nothing and never opened (locked, or its
@@ -274,8 +300,7 @@ def scan_root(root_serial, kind, label, containers, items, seen):
         API.Pause(0.5)
     except Exception:
         pass
-    containers[root_serial] = {"serial": root_serial, "name": label, "parent": None,
-                               "root": root_serial, "kind": kind, "pos": root_pos(root_serial, kind)}
+    containers[root_serial] = root_entry(root_serial, kind, label)
     n = 0
     for it in listing:
         s = int(it.Serial)

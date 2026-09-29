@@ -80,6 +80,7 @@ interface EditableScan {
   adapter: Record<string, unknown>;
   roots: { name: string }[];
   items: { name: string }[];
+  containers: Record<string, { pos?: Record<string, number> | null }>;
 }
 
 // The shipped TazUO fixture, reworked by `edit` into the "real scan" a case needs.
@@ -152,5 +153,19 @@ test("[fast] each word of a multi-word character name is refused on its own, sho
     assert.match(r.stderr, /\/items\/0\/name/);
     assert.doesNotMatch(r.stderr, /\/items\/1\/name/);
     assert.ok(!existsSync(outPath), "no output file may be written");
+  });
+});
+
+// Organize (issue #11) groups chests by facet: which map a house is on names nobody, so it survives anonymising.
+test("[fast] a ground container's facet survives anonymising; its tile does not", () => {
+  withScan((scan) => {
+    for (const c of Object.values(scan.containers)) if (c.pos) c.pos = { x: 1520, y: 1631, z: 5, facet: 3 };
+  }, (inPath, outPath) => {
+    const r = run(inPath, outPath);
+    assert.equal(r.status, 0, `expected exit 0, stderr: ${r.stderr}`);
+    const out = JSON.parse(readFileSync(outPath, "utf8")) as { containers: Record<string, { pos?: unknown }> };
+    const placed = Object.values(out.containers).filter((c) => c.pos);
+    assert.ok(placed.length > 0, "the fixture has ground containers");
+    for (const c of placed) assert.deepEqual(c.pos, { x: 1, y: 1, z: 0, facet: 3 });
   });
 });

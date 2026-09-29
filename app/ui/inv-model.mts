@@ -63,6 +63,7 @@ export function queryParams(q: ItemQuery): URLSearchParams {
   for (const r of q.roots) p.append("root", String(r));
   if (q.rarity) p.set("rarity", q.rarity);
   if (q.rarityMin) p.set("rarityMin", q.rarityMin);
+  if (q.rarityMax) p.set("rarityMax", q.rarityMax);
   for (const k of q.kind) p.append("kind", k);
   if (q.seenDays) p.set("seenDays", String(q.seenDays));
   if (q.slayer) p.set("slayer", q.slayer);
@@ -124,6 +125,10 @@ export function activeFilters(q: ItemQuery, ctx: FilterContext): FilterToken[] {
   if (q.rarityMin) {
     const top = ctx.ladder[ctx.ladder.length - 1] === q.rarityMin;
     out.push({ id: "rarityMin", label: `Rarity ≥ ${q.rarityMin}`, removeLabel: "Remove filter: Rarity", remove: (x) => ({ ...x, rarityMin: "" }), cause: (t) => `${none(t)} is ${a(q.rarityMin)}${top ? "" : " or better"}.` });
+  }
+  if (q.rarityMax) {
+    const bottom = ctx.ladder[0] === q.rarityMax;
+    out.push({ id: "rarityMax", label: `Rarity ≤ ${q.rarityMax}`, removeLabel: "Remove filter: Rarity at most", remove: (x) => ({ ...x, rarityMax: "" }), cause: (t) => `${none(t)} is ${a(q.rarityMax)}${bottom ? "" : " or lower"}.` });
   }
   if (q.rarity) out.push({ id: "rarity", label: `Rarity: ${q.rarity}`, removeLabel: "Remove filter: Rarity", remove: (x) => ({ ...x, rarity: "" }), cause: (t) => `${none(t)} is ${a(q.rarity)}.` });
   for (const k of q.kind) out.push({ id: `kind:${k}`, label: `Kind: ${k}`, removeLabel: `Remove filter: Kind ${k}`, remove: (x) => ({ ...x, kind: without(x.kind, k) }), cause: (t) => `${none(t)} is of the kind ${k}.` });

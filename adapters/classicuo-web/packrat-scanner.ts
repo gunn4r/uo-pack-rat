@@ -97,7 +97,7 @@ const PASTE_END = "-----END PACK RAT SCAN-----";
 // contract test (app/contracts.test.mjs, once this adapter ships a fixture) compares them.
 // ---------------------------------------------------------------------------------------------
 const ADAPTER_ID = "classicuo-web";
-const ADAPTER_VERSION = "1.2.0";
+const ADAPTER_VERSION = "1.3.0";
 const CAPABILITIES = {
   layers: ["OneHanded", "TwoHanded", "Shoes", "Pants", "Shirt", "Helmet", "Gloves",
     "Ring", "Talisman", "Necklace", "Waist", "Torso", "Bracelet", "Tunic",
@@ -288,6 +288,13 @@ function itemEntry(it: any, container: number | null, layer?: string): any {
   return entry;
 }
 
+// The facet the player stands on (Player.map: 0 Felucca .. 5 Ter Mur), and so every ground root's: they
+// are all within SCAN_RANGE. Anything but a whole number 0-5 (a build without the field, null) is left out.
+function facetOf(p: any): number | undefined {
+  const m = p?.map;
+  return typeof m === "number" && Number.isInteger(m) && m >= 0 && m <= 5 ? m : undefined;
+}
+
 // ---------------------------------------------------------------------------------------------
 // Container walk — no explicit "open" call exists in the published API (contents just populates,
 // or throws/comes back undefined; see header comment), so this only ever reads, never clicks.
@@ -373,6 +380,7 @@ function main(): void {
   }
 
   // 3) Ground containers within SCAN_RANGE tiles, by known graphic only — see header comment.
+  const facet = facetOf(p);
   const groundCandidates: any[] = [];
   const groundSeen = new Set<number>();
   for (const graphic of CONTAINER_GRAPHICS) {
@@ -397,8 +405,9 @@ function main(): void {
     const t = tooltipOf(s);
     const name = t.name || String(g.name || "container");
     if (TRASH_RE.test(name)) { trashed++; continue; }
-    containers[String(s)] = { serial: s, kind: "ground", name, parent: null, root: s,
-      pos: { x: Number(g.x || 0), y: Number(g.y || 0), z: Number(g.z || 0) }, tooltip: t.lines };
+    const pos: any = { x: Number(g.x || 0), y: Number(g.y || 0), z: Number(g.z || 0) };
+    if (facet !== undefined) pos.facet = facet;
+    containers[String(s)] = { serial: s, kind: "ground", name, parent: null, root: s, pos, tooltip: t.lines };
     const n = walk(s, g, containers, items, seen, 0);
     // This script never opens anything, so a ground chest reading [] is more likely one the client
     // never loaded than an empty one: record it unopened, so the app keeps what it last knew.

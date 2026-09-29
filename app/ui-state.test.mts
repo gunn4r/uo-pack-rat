@@ -19,11 +19,11 @@ test("[fast] optionsKeeping adds back a value the query still filters on after i
 
 test("[fast] clearedQuery resets every filter and keeps the view", () => {
   const q: ItemQuery = {
-    q: "ring", chars: ["Dorran"], slot: ["ring"], loc: ["Bank"], roots: [7], rarity: "Greater Artifact", rarityMin: "Lesser Artifact", kind: ["gear"], seenDays: 7, slayer: "*",
+    q: "ring", chars: ["Dorran"], slot: ["ring"], loc: ["Bank"], roots: [7], rarity: "Greater Artifact", rarityMin: "Lesser Artifact", rarityMax: "Greater Artifact", kind: ["gear"], seenDays: 7, slayer: "*",
     nogarg: true, med: true, hideTags: ["cursed"], props: [{ key: "hci", min: 5 }], group: true, sort: "hci", dir: -1, offset: 400, limit: 100,
   };
   assert.deepEqual(clearedQuery(q), {
-    q: "", chars: [], slot: [], loc: [], roots: [], rarity: "", rarityMin: "", kind: [], seenDays: 0, slayer: "",
+    q: "", chars: [], slot: [], loc: [], roots: [], rarity: "", rarityMin: "", rarityMax: "", kind: [], seenDays: 0, slayer: "",
     nogarg: false, med: false, hideTags: [], props: [], group: true, sort: "hci", dir: -1, offset: 0, limit: 100,
   });
   assert.deepEqual(q.hideTags, ["cursed"], "the query passed in is not mutated");
