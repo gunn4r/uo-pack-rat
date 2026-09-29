@@ -16,6 +16,7 @@ import type { SetupApiResponse } from "./ui/api-types.mts";
 
 interface FakeEl { nodeType: 1; className: string; textContent: string; title?: string; hidden?: boolean; kids: unknown[]; listeners: Record<string, () => void>; setAttribute(): void; addEventListener(type: string, fn: () => void): void; append(...k: unknown[]): void; replaceChildren(...k: unknown[]): void; remove(): void }
 const toasts: { text: string; cls: string }[] = [];
+const events: Event[] = [];
 function fakeEl(): FakeEl {
   return {
     nodeType: 1, className: "", textContent: "", kids: [], listeners: {},
@@ -41,6 +42,7 @@ g.document = {
   createElement: () => fakeEl(),
   createElementNS: () => fakeEl(),
   createTextNode: (text: string) => ({ text }),
+  dispatchEvent: (e: Event) => { events.push(e); return true; },
 };
 let status: unknown = null;
 g.fetch = async () => ({ ok: true, json: async () => status });
@@ -107,4 +109,13 @@ test("[fast] the data-folder banner shows the mismatch, stays dismissed, and com
   renderDataDirNotice();
   assert.equal(notice.hidden, true, "nothing to say, nothing shown");
   state.setup = null;
+});
+
+test("[fast] pollBridge hands every status to the page as a bridgestatus event (Organize follows running trips from it)", async () => {
+  events.length = 0;
+  status = { ok: true, online: true, character: "Tester", current: { id: "trip-1", action: "trip", name: "trip 1" }, results: {} };
+  await pollBridge();
+  const got = events.filter((e) => e.type === "bridgestatus");
+  assert.equal(got.length, 1);
+  assert.deepEqual((got[0] as CustomEvent).detail, status);
 });
