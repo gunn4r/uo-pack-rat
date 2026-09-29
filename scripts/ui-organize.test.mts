@@ -267,6 +267,8 @@ test("[slow] Save as rule… keeps the Inventory's item filters and leaves the l
   const { app, page, errors } = await launch(dataDir);
   try {
     await page.fill("#f-text", "ring");
+    // The search applies after its debounce; a filter picked before then would supersede it.
+    await page.waitForFunction(() => /Search: ring/.test(document.querySelector("#inv-active")?.textContent || ""));
     await pickOption(page, "loc", "Location", `root:${KESTREL}`);
     await page.click("#f-save-rule");
     await page.waitForSelector("#rule-drawer:not([hidden]) #rule-q");
