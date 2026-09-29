@@ -9,8 +9,8 @@ import { parseItemQuery } from "./item-query.mts";
 import type { ItemQuery } from "./item-query.mts";
 import type { Container } from "./vault-lib.mts";
 import { PENDING_GRACE_MS } from "./organize-state.mts";
-import type { BridgeResultEntry, OrganizeConfig, OrganizePlan, OrganizeRule, PlanMove } from "./ui/api-types.mts";
-import { CATCH_ALL_ID, moveRule, withLabel, withoutLabel, pinnedWith, upsertRule, withoutRule, newRuleId, ruleQueryFrom, blankQuery, droppedNote, ruleNameFrom, checkDraft, matchSummary, extraFilters, targetView, fillText, fillTone, targetOptions, withTargetLabels, matchLine, debounced, MATCH_DEBOUNCE_MS, organizeStage, labelledPlaces, ruleNameOf, containerNameOf, ruleCountParts, planHeadline, unclaimedNote, roomLines, crossSiteLines, warningGroups, tripRows, moveName, moveWhere, carriedView, tripGate, stepWatch, outcomeOf, outcomeText, failedSteps, runAllNext, tripRefusal, GRACE_MS, TRIP_MS } from "./ui/organize-model.mts";
+import type { BridgeResultEntry, OrganizeConfig, OrganizePlan, OrganizeProposal, OrganizeRule, PlanMove, ProposalCandidate, ProposalGroup } from "./ui/api-types.mts";
+import { CATCH_ALL_ID, moveRule, withLabel, withoutLabel, pinnedWith, upsertRule, withoutRule, newRuleId, ruleQueryFrom, blankQuery, droppedNote, ruleNameFrom, checkDraft, matchSummary, extraFilters, targetView, fillText, fillTone, targetOptions, withTargetLabels, matchLine, debounced, MATCH_DEBOUNCE_MS, organizeStage, labelledPlaces, ruleNameOf, containerNameOf, ruleCountParts, planHeadline, unclaimedNote, roomLines, crossSiteLines, warningGroups, tripRows, moveName, moveWhere, carriedView, tripGate, stepWatch, outcomeOf, outcomeText, failedSteps, runAllNext, tripRefusal, GRACE_MS, TRIP_MS, STRATEGY_TEXT, candidateGroups, candidateNote, proposalHeadline, groupStatus, groupAway, intoText, proposalNotes, canTrySimple, acceptGate } from "./ui/organize-model.mts";
 
 const A = 0x40000001, B = 0x40000002, C = 0x40000003, GONE = 0x40000009;
 const chest = (serial: number, over: Partial<Container> = {}): Container => ({ serial, root: serial, parent: null, kind: "ground", name: "Metal Chest", tooltip: ["Metal Chest"], label: `Metal Chest (0x${serial.toString(16)})`, capacity: { items: 61, maxItems: 125, stones: null, maxStones: null }, scannedBy: "Tester", scannedAt: "2026-09-28T10:00:00Z", ...over });
@@ -355,4 +355,45 @@ test("[fast] a refused trip reads as what to do next, and a hand-edited setup as
   assert.equal(tripRefusal("organize.json was hand-edited and parts of it were dropped (rules[0] x); open Organize and save the setup first"), "Part of organize.json could not be read and was left out, so no trip runs until you have checked the setup and pressed Save setup (above).");
   assert.equal(tripRefusal("trip 1 has not reported back yet"), "Trip 1 is still running, started before this page was reloaded or from another window. Let it finish in game, then press Reload plan.");
   assert.equal(tripRefusal("the plan has no trip 4"), "the plan has no trip 4");
+});
+
+test("[fast] Auto organize: the proposal's headline, each group's status, the notes, the chests by house, and when Accept and Try Simple are offered", () => {
+  const cand = (serial: number, over: Partial<ProposalCandidate> = {}): ProposalCandidate => ({ serial, name: `Chest ${serial.toString(16)}`, site: 0, fill: { items: 10, max: 125 }, label: null, mine: false, ticked: true, ...over });
+  const group = (over: Partial<ProposalGroup> = {}): ProposalGroup => ({ key: "reagents", name: "Reagents", family: "reagents", ruleIds: ["auto-reagents"], items: 40, needSlots: 40, targets: [A], roomSlots: 125, shortfall: 0, addContainers: 0, crossSite: 0, ...over });
+  const P = (over: Partial<OrganizeProposal> = {}): OrganizeProposal => ({ strategy: "simple", candidates: [cand(A), cand(B)], unusable: [], containers: [A, B], refused: [], groups: [group()], unassigned: 0, addContainers: 0, manualRules: 0, config: CFG, changed: true, plan: { moves: 12, trips: 1, noRoom: 0, crossSite: 0, unclaimed: 0 }, ...over });
+  assert.equal(proposalHeadline(P()), "Labels 2 containers and writes 1 rule. 12 items to move in 1 trip.");
+  assert.equal(proposalHeadline(P({ plan: { moves: 0, trips: 0, noRoom: 0, crossSite: 0, unclaimed: 0 } })), "Labels 2 containers and writes 1 rule. Nothing needs to move.");
+  assert.equal(proposalHeadline(P({ changed: false })), "This is already your setup: nothing to change.");
+  assert.equal(proposalHeadline(P({ containers: [] })), "Tick at least one container for Auto organize to use.");
+
+  assert.deepEqual(groupStatus(group()), { badge: "Fits", tone: undefined, text: null });
+  assert.deepEqual(groupStatus(group({ shortfall: 8, addContainers: 1 })), { badge: "Short", tone: "warn", text: "8 slots short: add 1 container." });
+  assert.deepEqual(groupStatus(group({ targets: [], roomSlots: 0, shortfall: 40, addContainers: 1 })), { badge: "No container", tone: "warn", text: "Add 1 container. Its items stay where they are." });
+  assert.equal(groupAway(group({ crossSite: 3 })), "3 items at another house stay there.");
+  assert.equal(groupAway(group()), null);
+  assert.equal(intoText(group({ targets: [A, B] }), [cand(A), cand(B)]), "Chest 40000001, then Chest 40000002");
+  assert.equal(intoText(group({ targets: [] }), []), "—");
+
+  assert.deepEqual(proposalNotes(P({ manualRules: 2, refused: [{ serial: C, reason: "blacklisted" }], addContainers: 3, plan: { moves: 1, trips: 1, noRoom: 0, crossSite: 4, unclaimed: 0 } })), [
+    "Your 2 rules stay above these and take their items first.",
+    "Container 0x40000003 could not be used: blacklisted.",
+    "Place 3 more containers, scan them, and run Auto organize again to fit everything.",
+    "4 items belong at another house: carry them over by hand.",
+  ]);
+  assert.deepEqual(proposalNotes(P()), []);
+
+  assert.deepEqual(candidateGroups([cand(A), cand(B, { site: 1 }), cand(C)]).map((g) => [g.title, g.rows.map((r) => r.serial)]), [["House 1", [A, C]], ["House 2", [B]]]);
+  assert.deepEqual(candidateGroups([cand(A), cand(C)]).map((g) => g.title), [null], "one house needs no heading");
+  assert.equal(candidateNote(cand(A)), null);
+  assert.equal(candidateNote(cand(A, { mine: true, ticked: false, label: { name: "Reagents", origin: "manual" } })), "Your own label: tick it to let Auto organize fill it (its name stays).");
+  assert.equal(candidateNote(cand(A, { mine: true, ticked: false })), "One of your rules fills it: tick it to let Auto organize use it too.");
+
+  assert.equal(canTrySimple(P({ strategy: "detailed", unassigned: 2 })), true);
+  assert.equal(canTrySimple(P({ strategy: "simple", unassigned: 2 })), false);
+  assert.equal(acceptGate(P(), false), null);
+  assert.equal(acceptGate(P(), true), "Working out the proposal…");
+  assert.equal(acceptGate(null, false), "Working out the proposal…");
+  assert.equal(acceptGate(P({ containers: [] }), false), "Tick at least one container first.");
+  assert.equal(acceptGate(P({ changed: false }), false), "Nothing to change: this is already your setup.");
+  assert.deepEqual(Object.keys(STRATEGY_TEXT), ["simple", "detailed"]);
 });
