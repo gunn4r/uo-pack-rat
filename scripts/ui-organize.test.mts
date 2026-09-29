@@ -445,3 +445,34 @@ test("[slow] Organize fits a 1000 × 700 window: rows reflow, nothing scrolls si
     rmSync(dataDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
   }
 });
+
+test("[slow] a hand-edited organize.json that lost a rule says so, refuses trips, and Save setup clears it", async (t) => {
+  const why = unavailable();
+  if (why) return t.skip(why);
+  const dataDir = dataDirWith([{ id: "rule-1", name: "Magery reagents", names: ["sulfurous ash"], targets: [DORRAN] }, { id: "rule-2", name: "Rings", targets: [KESTREL] }]);
+  const doc = readOrganize(dataDir)!;
+  doc.rules[1]!.match.query.loc = ["Metal Chest"];   // not a rule filter: the read drops rule-2
+  writeFileSync(join(dataDir, "organize.json"), JSON.stringify(doc));
+  const bridgeDir = join(dataDir, "bridge", "tazuo");
+  mkdirSync(bridgeDir, { recursive: true });
+  const writeStatus = (): void => writeFileSync(join(bridgeDir, "status.json"), JSON.stringify({ alive: new Date().toISOString(), character: "Tester", current: null, counts: { done: 0, failed: 0 }, results: {} }));
+  writeStatus();
+  const alive = setInterval(writeStatus, 1000);
+  const { app, page, errors } = await launch(dataDir);
+  try {
+    await go(page, "#/organize", "#org-save-setup");
+    assert.match(await page.locator("#org-body").innerText(), /Part of organize\.json could not be read[\s\S]*rules\[1\]\.match\.query\.loc is not a rule filter/);
+    await page.waitForSelector("#org-run:not([disabled])", { timeout: 15_000 });
+    await page.click("#org-run");
+    await page.waitForFunction(() => /no trip runs until you have checked the setup and pressed Save setup/.test(document.querySelector("#org-plan")?.textContent || ""), undefined, { timeout: 10_000 });
+    assert.equal(existsSync(join(bridgeDir, "queue.jsonl")), false, "nothing was queued");
+    await page.click("#org-save-setup");
+    await until(() => readOrganize(dataDir), (f) => f?.rules.length === 1, "the setup saved as it now reads");
+    await page.waitForSelector("#org-save-setup", { state: "detached" });
+    assert.deepEqual(errors, []);
+  } finally {
+    clearInterval(alive);
+    await app.close();
+    rmSync(dataDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
+  }
+});
