@@ -75,6 +75,14 @@ test("[fast] pruneOverlay drops what a newer scan has settled and keeps the rest
   assert.deepEqual(pruneOverlay(state({ moves: [entry(PEARL, B)] }), rescanOfB, now).moves, [], "B rescanned after the step");
 });
 
+test("[fast] pruneOverlay keeps a step whose destination a newer scan saw but could not open", () => {
+  const first = houseScan({ boxes: [{ serial: A }, { serial: B, parent: A }], things: [{ serial: RUBY, name: "Ruby", in: A }] });
+  const closed = houseScan({ scannedAt: "2026-09-28T12:00:00Z", boxes: [{ serial: A }, { serial: B, parent: A, opened: false }], things: [{ serial: RUBY, name: "Ruby", in: A }] });
+  const inv = foldSnapshots([first, closed]);
+  assert.equal(inv.containers[B]!.opened, false);
+  assert.deepEqual(pruneOverlay(state({ moves: [entry(PEARL, B)] }), inv, Date.parse(T1) + 3600e3).moves.map((m) => m.serial), [PEARL]);
+});
+
 test("[fast] noteSeen remembers when each labelled container was last in a scan, and forgets unlabelled ones", () => {
   const inv = foldSnapshots([houseScan({ boxes: [{ serial: A }] })]);
   const cfg = { ...emptyOrganizeConfig(), labels: { [String(A)]: { serial: A, name: "A", origin: "manual" as const }, [String(B)]: { serial: B, name: "B", origin: "manual" as const } } };

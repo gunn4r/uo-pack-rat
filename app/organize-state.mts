@@ -5,9 +5,9 @@
 // writes the result back. Everything read from the file or from the bridge's status.json is checked field by
 // field: both are plain files any local process can write.
 import { parseStamp } from "./scan-schema.mts";
+import { stampMs, type OverlayMove } from "./organize.mts";
 import type { Inventory } from "./vault-lib.mts";
 import type { OrganizeConfig } from "./organize-config.mts";
-import type { OverlayMove } from "./organize.mts";
 
 export interface PendingStep { serial: number; name: string; from: number | null; to: number }
 export interface PendingTrip { id: string; adapter: string; index: number; stamp: string; queuedAt: string; steps: PendingStep[] }
@@ -25,7 +25,6 @@ const isObj = (v: unknown): v is Record<string, unknown> => !!v && typeof v === 
 const isSerial = (v: unknown): v is number => typeof v === "number" && Number.isInteger(v) && v >= 1 && v <= MAX_SERIAL;
 const isStamp = (v: unknown): v is string => typeof v === "string" && v.length <= 64 && Number.isFinite(parseStamp(v));
 const isText = (v: unknown, max: number): v is string => typeof v === "string" && v.length > 0 && v.length <= max;
-const stampMs = (s: string): number => { const t = parseStamp(s); return Number.isFinite(t) ? t : -Infinity; };
 
 export function emptyOrganizeState(): OrganizeState { return { version: 1, pending: [], moves: [], seen: {} }; }
 
@@ -88,9 +87,9 @@ export function harvestTrips(state: OrganizeState, bridges: Record<string, Bridg
 }
 
 // Spec §4: an entry is dropped once a scan newer than the step settles it — the item seen anywhere since, or its
-// destination rescanned since (which also covers an item that has since vanished from every scan) — or when its
-// destination is in no scan at all, or when it is older than a week. An item in the backpack stays until a scan
-// finds it.
+// destination opened by a scan since (which also covers an item that has since vanished from every scan) — or when
+// its destination is in no scan at all, or when it is older than a week. A destination the newer scan saw but could
+// not open says nothing about the item. An item in the backpack stays until a scan finds it.
 export function pruneOverlay(state: OrganizeState, inv: Inventory, now: number): OrganizeState {
   const moves = state.moves.filter((m) => {
     const at = stampMs(m.at);
@@ -99,7 +98,7 @@ export function pruneOverlay(state: OrganizeState, inv: Inventory, now: number):
     if (it && stampMs(it.seenAt) >= at) return false;
     if (m.to == null) return true;
     const to = inv.containers[m.to];
-    return !!to && stampMs(to.scannedAt) < at;
+    return !!to && (stampMs(to.scannedAt) < at || to.opened === false);
   });
   return moves.length === state.moves.length ? state : { ...state, moves };
 }
