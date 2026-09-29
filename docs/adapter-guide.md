@@ -20,7 +20,7 @@ Ship all four and the contract test (`app/contracts.test.mts`) picks the adapter
 A fixture is a real scan, scrubbed, not a hand-written one — real data exercises real edge cases a synthetic fixture would miss. Anonymise it before it goes anywhere near the repo:
 
 - Character name → `"Fixture"`.
-- Every position (`{x, y, z}`, including containers' `pos`) → `{x: 1, y: 1, z: 0}` (or `{x:1,y:1}` where `z` isn't present).
+- Every position (`{x, y, z}`, including containers' `pos`) → `{x: 1, y: 1, z: 0}` (or `{x:1,y:1}` where `z` isn't present); a container's `facet` is kept, since which map a house is on names nobody.
 - Every serial remapped, in order of first appearance, to `0x40000000 + n` — consistently across `roots`, `containers` (both the dict keys and every `serial`/`parent`/`root` field), `items`, and `equipped`, so the remapped document is still internally consistent.
 - Tooltip lines matching `^Crafted By .*` → `Crafted By Nobody`; engraving-like lines (`^Engraved: `) → `Engraved: Fixture`.
 - `scannedAt` → a fixed, unremarkable timestamp (`"2026-01-01T12:00:00+00:00"`).

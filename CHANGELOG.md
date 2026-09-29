@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+- **Scans record each chest's fill and facet — re-install the scripts (TazUO 2.9.0, Razor Enhanced 1.9.0; ClassicUO web scanner 1.3.0)** (issue #11): a chest on the ground is recorded with its tooltip, as the bags inside it already were, so Pack Rat knows how full it is from its "Contents: 61/125 Items" line and an engraved chest is named by its engraving; its position also says which facet it is on. Groundwork for Organize.
+- **The Rarity filter takes a ceiling** (issue #11): the Inventory's Rarity popover has a "Rarity at most" list under "Rarity at least", so "Lesser Artifact and below" is one filter. An item with no tier counts as below every tier.
+- **Power scrolls carry their level** (issue #11): "An Exalted Scroll Of Mysticism (110 Skill)" gets the property PS level 110, so a property rule (PS level = 110) finds every 110 scroll.
+
 ## 0.1.1 — 2026-09-28
 
 - **Copy the ClassicUO web scanner from the app** (issue #79): the setup wizard's web-client step and Settings › Game client have a **Copy scanner script** button that copies the app's own bundled script, so there is no file to find; Settings shows its version and says when the app ships a newer one than you last copied.
