@@ -648,6 +648,30 @@ class RazorScanner(DataDir, unittest.TestCase):
         self.assertEqual(sorted(i["serial"] for i in s["items"]), [RING, RING2], "nothing in or of the trash is recorded")
         self.assertIn("  skipped 2 trash containers", w.messages)
 
+    def test_a_ground_root_records_its_tooltip_and_its_facet(self):
+        w = World(); home(w); w.facet = 3
+        w.items[CHEST].Tooltip = "Wooden Chest\nContents: 1/125 Items, 3 Stones"
+        w.add(0x40000030, 0, name="Metal Chest", X=10, Y=11, Tooltip="Metal Chest\nContents: 0/125 Items, 0 Stones")
+        self.scan(w)
+        [s] = self.scans("razor-enhanced")
+        chest, empty, pack = (s["containers"][str(x)] for x in (CHEST, 0x40000030, PACK))
+        self.assertEqual(chest["tooltip"], ["Wooden Chest", "Contents: 1/125 Items, 3 Stones"])
+        self.assertEqual(chest["pos"], {"x": 11, "y": 10, "z": 0, "facet": 3})
+        self.assertEqual(empty["tooltip"], ["Metal Chest", "Contents: 0/125 Items, 0 Stones"], "a chest that opened empty")
+        self.assertNotIn("tooltip", pack)
+        self.assertIsNone(pack["pos"])
+
+    def test_the_facet_is_left_out_when_the_client_cannot_say(self):
+        def build_without_it():
+            raise RuntimeError("Player.Map failed")
+        for facet in (None, -1, 6, "Trammel", build_without_it):
+            with self.subTest(facet=facet):
+                shutil.rmtree(os.path.join(self.data, "inbox"), ignore_errors=True)
+                w = World(); home(w); w.facet = facet
+                self.scan(w)
+                [s] = self.scans("razor-enhanced")
+                self.assertEqual(s["containers"][str(CHEST)]["pos"], {"x": 11, "y": 10, "z": 0})
+
 
 class RazorRefresh(DataDir, unittest.TestCase):
     SCRIPT = adapter_path("razor-enhanced", "packrat-refresh.py")
@@ -656,7 +680,7 @@ class RazorRefresh(DataDir, unittest.TestCase):
         run_script(self.SCRIPT, world, extra_globals=razor_globals(world, PACK))
 
     def test_it_walks_the_backpack_with_the_scanners_own_code(self):
-        for script, names in ((self.SCRIPT, ("tooltip_lines", "name_of", "item_dict", "is_container", "root_pos",
+        for script, names in ((self.SCRIPT, ("tooltip_lines", "name_of", "item_dict", "is_container", "root_pos", "facet", "root_entry",
                                              "container_entry", "scan_root", "note_if_closed", "close_opened",
                                              "note_unopened", "read_skills", "read_blacklist", "sysmsg", "as_int")),
                               (RazorBlacklist.SCRIPT, ("read_blacklist", "as_int", "tooltip_lines", "name_of"))):

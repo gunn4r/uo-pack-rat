@@ -69,7 +69,7 @@ def read_blacklist(path):
 
 
 ADAPTER_ID = "razor-enhanced"
-ADAPTER_VERSION = "1.8.0"
+ADAPTER_VERSION = "1.9.0"
 # Keep this literal in sync with capabilities.json -- a test enforces the two never drift apart
 # for the TazUO adapter (test_paths.py) and the same discipline applies here by hand until this
 # adapter has its own test.
@@ -201,15 +201,41 @@ def is_container(it):
         return False
 
 
+def facet():
+    """The map the player stands on (Player.Map: 0 Felucca .. 5 Ter Mur), and so every ground root's:
+    they are all within reach. None when this build cannot say, or says anything but 0-5."""
+    try:
+        m = int(getattr(Player, "Map"))
+    except Exception:
+        return None
+    return m if 0 <= m <= 5 else None
+
+
 def root_pos(it, kind):
-    """World position of a ground container (so the bridge can walk to it later); None for pack/bank."""
+    """World position of a ground container (so the bridge can walk to it later), with its facet when
+    the client says; None for pack/bank."""
     if kind != "ground":
         return None
     try:
-        pos = it.Position
-        return {"x": as_int(pos.X), "y": as_int(pos.Y), "z": as_int(pos.Z)}
+        p = it.Position
+        pos = {"x": as_int(p.X), "y": as_int(p.Y), "z": as_int(p.Z)}
     except Exception:
         return None
+    f = facet()
+    if f is not None:
+        pos["facet"] = f
+    return pos
+
+
+def root_entry(it, kind, label):
+    """A root's containers entry. A ground root carries its tooltip too, as a nested bag does: its
+    Contents line ("Contents: 13/125 Items, 95 Stones") is how the app knows the room left in it, and
+    an engraving on it names it."""
+    serial = as_int(getattr(it, "Serial", 0))
+    entry = {"serial": serial, "name": label, "parent": None, "root": serial, "kind": kind, "pos": root_pos(it, kind)}
+    if kind == "ground":
+        entry["tooltip"] = tooltip_lines(it)
+    return entry
 
 
 def container_entry(cont, root_serial, opened):
@@ -259,8 +285,7 @@ def scan_root(root_item, kind, label, containers, items, seen):
             if cserial == root_serial:
                 if unopened:
                     return 0, False
-                containers[root_serial] = {"serial": root_serial, "name": label, "parent": None,
-                                           "root": root_serial, "kind": kind, "pos": root_pos(root_item, kind)}
+                containers[root_serial] = root_entry(root_item, kind, label)
             else:
                 containers[cserial] = container_entry(cont, root_serial, not unopened)
                 if unopened:

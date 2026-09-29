@@ -320,7 +320,7 @@ def razor_globals(world, backpack, bank=None, skills=None):
             if name == "Contains":
                 return [REItem(k) for k in world.kids(it.Serial, False)]
             if name == "Properties":
-                return [getattr(it, "Tooltip", None) or it.Name]
+                return (getattr(it, "Tooltip", None) or it.Name).split("\n")
             if name == "ContainerOpened":
                 return it.EverOpened     # RE sets it when contents first arrive and never clears it
             return getattr(it, name)
@@ -379,6 +379,13 @@ def razor_globals(world, backpack, bank=None, skills=None):
         @property
         def Position(cls):
             return Pos(world.px, world.py)
+
+        @property
+        def Map(cls):
+            f = world.facet
+            if f is None:
+                raise AttributeError("Map")      # a Razor Enhanced build without Player.Map
+            return f() if callable(f) else f
 
     class Player(object, metaclass=PlayerMeta):
         Name = "Tester"
