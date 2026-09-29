@@ -138,11 +138,11 @@ function fakeItem(serial: number, name: string, graphic: number, kids: FakeItem[
 let runs = 0;
 const sysMsgs: string[] = [];
 // `names` gives an item's tooltip name by serial; any other item's tooltip reads "item <serial>".
-async function runScanner(world: { backpack: FakeItem; ground?: FakeItem[]; equipped?: Record<string, FakeItem>; names?: Record<number, string> }): Promise<WebDoc> {
+async function runScanner(world: { backpack: FakeItem; ground?: FakeItem[]; equipped?: Record<string, FakeItem>; names?: Record<number, string>; map?: unknown }): Promise<WebDoc> {
   const printed: string[] = [];
   const g = globalThis as Record<string, unknown>;
   sysMsgs.length = 0;
-  g.player = { name: "Tester", equippedItems: world.equipped || {}, backpack: world.backpack, getAllSkills: () => [] };
+  g.player = { name: "Tester", equippedItems: world.equipped || {}, backpack: world.backpack, getAllSkills: () => [], map: world.map };
   g.client = {
     sysMsg: (s: string) => sysMsgs.push(s),
     queryItemOPL: (s: number) => { const name = world.names?.[s] ?? "item " + s; return { name, properties: [{ text: name }] }; },
@@ -235,4 +235,14 @@ test("[fast] classicuo-web: a trash container on the ground or in the backpack i
   assert.deepEqual(Object.keys(doc.containers).map(Number).sort(), [0x40000001, 0x40000402]);
   assert.deepEqual(doc.items.map((i) => i.serial), [0x40000403], "nothing in or of the trash is recorded");
   assert.ok(sysMsgs.includes("  skipped 2 trash containers"), JSON.stringify(sysMsgs));
+});
+
+// Organize (issue #11) groups chests by facet: a ground root's pos carries player.map, and nothing else passes for one.
+test("[fast] classicuo-web: a ground root's pos carries player.map as its facet, and only a whole number 0-5", async () => {
+  const cases: Array<[unknown, number | undefined]> = [[1, 1], [0, 0], [5, 5], [undefined, undefined], [null, undefined], [6, undefined], [-1, undefined], [1.5, undefined], ["1", undefined]];
+  for (const [map, want] of cases) {
+    const doc = await runScanner({ ...homeWorld(), map });
+    const pos = doc.containers[String(0x40000007)]!.pos as { facet?: number };
+    assert.equal(pos.facet, want, `player.map ${JSON.stringify(map)}`);
+  }
 });

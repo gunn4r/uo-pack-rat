@@ -2,7 +2,7 @@
 // make-adapter-fixture.mts <real-scan.json> <out.json> — turns one real scan file (v1 or v2, from
 // local/scans/, never committed) into an anonymised fixture safe to commit and fold in tests.
 // Upgrades to v2 via upgradeScan, then: character -> "Fixture", position -> {x:1,y:1}, every
-// container pos -> {x:1,y:1,z:0}, every serial remapped in order of first appearance to
+// container pos -> {x:1,y:1,z:0} (its facet kept: which map a house is on names nobody), every serial remapped in order of first appearance to
 // 0x40000000+n (consistent across roots/containers/items/equipped), "Crafted By ..." tooltip lines
 // -> "Crafted By Nobody", "Engraved: ..." lines -> "Engraved: Fixture", scannedAt pinned to a fixed
 // stamp, account dropped, and adapter.version/capabilities replaced from the capabilities.json of the
@@ -95,7 +95,7 @@ for (const c of Object.values(scan.containers || {})) {
     parent: c.parent == null ? null : remap(c.parent),
     root: remap(c.root),
   };
-  if ("pos" in c && c.pos != null) next_.pos = { x: 1, y: 1, z: 0 };
+  if ("pos" in c && c.pos != null) next_.pos = { x: 1, y: 1, z: 0, ...(c.pos.facet != null ? { facet: c.pos.facet } : {}) };
   if (c.tooltip) next_.tooltip = scrubTooltip(c.tooltip);
   containers[String(serial)] = next_;
 }

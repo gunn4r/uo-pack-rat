@@ -2,6 +2,7 @@
 // re-exports EXTRA_COLS/colVal; ui/inventory.mts's filtered()/renderInventory() logic will move here in a
 // later task) and the server (vault-server.mts's GET /api/items, GET /api/inventory's facets). No DOM, no
 // node: imports — this file is served to the browser byte-for-byte, the same way vault-lib.mts is.
+// matchesItem runs the same per-item checks for an Organize rule, without the location, character and seen filters.
 //
 // parseItemQuery/applyItemQuery reproduce, field for field, the predicate in app/ui/inventory.mts's
 // filtered() (~lines 42-58) and the sort in renderInventory() (~lines 59-66) as of Task 4: state.hideTags
@@ -11,7 +12,7 @@
 // string columns (name, kind, slot label, location) sort A-to-Z when dir is +1 (av.localeCompare(bv) *
 // dir) — that asymmetry is the page's existing behavior (best-stat-first is the useful default for a
 // property column; alphabetical is the useful default for a name column), reproduced exactly, not fixed.
-import { itemSearchBlob, groupByName, KINDS, SLOT_LABELS, propertyKeys, gearSkills } from "./vault-lib.mts";
+import { itemSearchBlob, itemOwnBlob, groupByName, KINDS, SLOT_LABELS, propertyKeys, gearSkills } from "./vault-lib.mts";
 import type { Item, ItemGroup } from "./vault-lib.mts";
 import type { RulesV1RarityItem } from "./schema/types.d.mts";
 
@@ -34,12 +35,17 @@ const CLAMP_LIMIT = (n: number): number => Math.max(1, Math.min(500, n));
 export type PropOp = "le" | "eq";
 export interface PropFilter { key: string; min: number; op?: PropOp | undefined; }
 // The list filters (chars, slot, loc, roots, kind) match ANY of their values; an empty list is no filter.
-// `rarity` matches one tier exactly, `rarityMin` that tier or any above it on the shard's ladder.
+// `rarity` matches one tier exactly, `rarityMin` that tier or any above it on the shard's ladder, `rarityMax` that tier or any below it (an item with no tier, or one off the ladder, counts as below every tier).
 export interface ItemQuery {
-  q: string; chars: string[]; slot: string[]; loc: string[]; roots: number[]; rarity: string; rarityMin: string; kind: string[];
+  q: string; chars: string[]; slot: string[]; loc: string[]; roots: number[]; rarity: string; rarityMin: string; rarityMax: string; kind: string[];
   seenDays: number; slayer: string; nogarg: boolean; med: boolean; hideTags: string[]; props: PropFilter[]; group: boolean;
   sort: string; dir: 1 | -1; offset: number; limit: number;
 }
+
+// An Organize rule's query (issue #11): the Inventory's filters on the item itself. Location, character and
+// seen filters are left out, and so are the view and paging, because a rule must keep matching an item after
+// it moves.
+export type RuleQuery = Omit<ItemQuery, "loc" | "roots" | "chars" | "seenDays" | "group" | "sort" | "dir" | "offset" | "limit">;
 
 // Reads every filter/sort/paging knob off a URLSearchParams (GET /api/items' query string, or the page's
 // own future use of the same parser). `hide`, `prop`, `slot` and `kind` accept either a single
@@ -74,6 +80,7 @@ export function parseItemQuery(searchParams: URLSearchParams): ItemQuery {
     roots: listOf("root").map(Number).filter(Number.isFinite),
     rarity: sp.get("rarity") || "",
     rarityMin: sp.get("rarityMin") || "",
+    rarityMax: sp.get("rarityMax") || "",
     kind: splitAll("kind"),
     seenDays: Number.isFinite(seenDaysN) ? seenDaysN : 0,
     slayer: sp.get("slayer") || "",
@@ -92,23 +99,40 @@ export function parseItemQuery(searchParams: URLSearchParams): ItemQuery {
 function passes(v: number, f: PropFilter): boolean {
   return f.op === "le" ? v <= f.min : f.op === "eq" ? v === f.min : v >= f.min;
 }
-function matches(it: Item, q: ItemQuery, seenCut: number, minRank: number, ladder: RulesV1RarityItem[]): boolean {
+// The checks on the item itself, shared by the Inventory's query (matches) and an Organize rule (matchesItem).
+// `needle` is the free text, trimmed and lower-cased; `blob` gives the text it is looked for in, built only
+// when there is a needle.
+function itemPasses(it: Item, q: RuleQuery, needle: string, blob: (it: Item) => string, minRank: number, maxRank: number, ladder: RulesV1RarityItem[]): boolean {
   if (q.kind.length && !q.kind.includes(it.kind)) return false;
-  if (q.chars.length && !q.chars.includes(it.location?.character as string)) return false;
   if (q.nogarg && it.gargoyle) return false;
   if (q.med && !it.medable) return false;
-  if (seenCut && Date.parse(it.seenAt) < seenCut) return false;
   // "?" is the unknown slot: an item with none.
   if (q.slot.length && !q.slot.includes(it.slot || "?")) return false;
-  // A location matches by its exact text or by the root container it sits in (every bag inside it).
-  if ((q.loc.length || q.roots.length) && !(q.loc.includes(it.location?.text as string) || (it.root != null && q.roots.includes(+it.root)))) return false;
   if (q.rarity && it.rarity !== q.rarity) return false;
   if (minRank && rarityRank(ladder, it.rarity) < minRank) return false;
+  if (maxRank && rarityRank(ladder, it.rarity) > maxRank) return false;
   if (q.slayer === "*" ? !it.slayers?.length : q.slayer && !it.slayers?.includes(q.slayer)) return false;
   if (it.tags.some((t) => q.hideTags.includes(t))) return false;
   for (const f of q.props) if (!passes(colVal(it, f.key), f)) return false;
-  if (q.q && !itemSearchBlob(it).includes(q.q)) return false;
+  if (needle && !blob(it).includes(needle)) return false;
   return true;
+}
+function matches(it: Item, q: ItemQuery, seenCut: number, minRank: number, maxRank: number, ladder: RulesV1RarityItem[]): boolean {
+  if (q.chars.length && !q.chars.includes(it.location?.character as string)) return false;
+  if (seenCut && Date.parse(it.seenAt) < seenCut) return false;
+  // A location matches by its exact text or by the root container it sits in (every bag inside it).
+  if ((q.loc.length || q.roots.length) && !(q.loc.includes(it.location?.text as string) || (it.root != null && q.roots.includes(+it.root)))) return false;
+  return itemPasses(it, q, q.q, itemSearchBlob, minRank, maxRank, ladder);
+}
+
+// Whether an item passes an Organize rule's query (issue #11): the Inventory's per-item checks, with the free
+// text matched against the item only (itemOwnBlob: name, tooltip lines, kind, rarity), never its location, so a
+// "reag" rule never claims a sword in a chest labelled Reagents. `rarity` is the shard's ladder, as for
+// applyItemQuery; without it rarityMin and rarityMax filter nothing.
+export function matchesItem(it: Item, rq: RuleQuery, { rarity = [] }: { rarity?: RulesV1RarityItem[] } = {}): boolean {
+  const minRank = rq.rarityMin ? rarityRank(rarity, rq.rarityMin) : 0;
+  const maxRank = rq.rarityMax ? rarityRank(rarity, rq.rarityMax) : 0;
+  return itemPasses(it, rq, rq.q.trim().toLowerCase(), itemOwnBlob, minRank, maxRank, rarity);
 }
 
 function sortValue(it: Item, key: string, ladder: RulesV1RarityItem[] | undefined): string | number {
@@ -135,7 +159,8 @@ export interface ItemQueryGroups { groups: ItemGroupJson[]; total: number; stack
 export function applyItemQuery(items: Item[], query: ItemQuery, { rarity = [], now = Date.now() }: { rarity?: RulesV1RarityItem[]; now?: number } = {}): ItemQueryRows | ItemQueryGroups {
   const seenCut = query.seenDays ? now - query.seenDays * 864e5 : 0;
   const minRank = query.rarityMin ? rarityRank(rarity, query.rarityMin) : 0;
-  const found = items.filter((it) => matches(it, query, seenCut, minRank, rarity));
+  const maxRank = query.rarityMax ? rarityRank(rarity, query.rarityMax) : 0;
+  const found = items.filter((it) => matches(it, query, seenCut, minRank, maxRank, rarity));
   const pieces = found.reduce((a, i) => a + (i.amount || 1), 0);
   const k = query.sort, d = query.dir;
   const sorted = [...found].sort((a, b) => {

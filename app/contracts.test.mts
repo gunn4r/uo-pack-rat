@@ -85,6 +85,19 @@ for (const name of adapterDirs) {
     assert.ok(ok, JSON.stringify(errors));
   });
 
+  // Organize (issue #11) reads a chest's room from its tooltip's Contents line and groups chests by
+  // facet: a fixture from a current scanner carries both on every ground root.
+  test(`[fast] adapters/${name}: every ground root in the fixture carries its tooltip and a facet`, () => {
+    const fixture = JSON.parse(readFileSync(fixturePath, "utf8")) as ScanV2;   // known-good fixture: the cast stands in for the validateScan() a real caller runs
+    const grounds = fixture.roots.filter((r) => r.kind === "ground");
+    assert.ok(grounds.length > 0);
+    for (const r of grounds) {
+      const c = fixture.containers[String(r.serial)];
+      assert.ok(c?.tooltip?.some((l) => /^Contents: /.test(l)), `root ${r.serial} has no Contents line`);
+      assert.equal(typeof c?.pos?.facet, "number", `root ${r.serial} has no facet`);
+    }
+  });
+
   test(`[smoke] adapters/${name}: fixture folds into a character with a nested container and worn items located on it`, () => {
     const caps = JSON.parse(readFileSync(capsPath, "utf8")) as CapabilitiesFile;
     const fixture = JSON.parse(readFileSync(fixturePath, "utf8")) as ScanV2;   // known-good fixture: the cast stands in for the validateScan() a real caller runs
