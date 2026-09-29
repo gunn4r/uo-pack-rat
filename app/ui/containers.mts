@@ -125,8 +125,8 @@ export function renderContainers(): void {
       const swatch = lab?.color ? el("span", { class: "org-swatch", style: `background:${safeColor(lab.color)}`, "aria-hidden": "true" }) : null;
       const bags = Object.values(inv.containers).filter((c) => c.root === r.serial && c.parent != null).length;
       const canLabel = r.kind === "ground" && !state.organize.blacklist.includes(+r.serial);
-      // The container is the target: overhead in game it reads as its Organize label, else its own name.
-      const target = { serial: +r.serial, name: lab?.name ?? bagLabel(r), container: r.parent ?? null, root: r.root };
+      // The container is the target, named in game as this row names it (no chain: a root has no parent).
+      const target = { serial: +r.serial, name, container: null, root: r.root };
       const more = button({ label: `Actions for ${label}`, icon: "more", iconOnly: true, variant: "ghost", size: "sm", onClick: () => menu(more, [
         { label: "Show these items", icon: "inventory", onSelect: () => showContainer(+r.serial) },
         ...(r.kind === "ground" ? [{ label: "Highlight in game", icon: "highlight" as const, disabled: bridgeActionReason("highlight", target), onSelect: () => { void runBridgeAction("highlight", target); } }] : []),
