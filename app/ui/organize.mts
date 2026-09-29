@@ -3,7 +3,8 @@
 // catch-all) and the Plan card (room, cross-site and warnings first, then the trip list and Run trip / Run all /
 // Stop). The words and every decision come from ui/organize-model.mts; this file draws them and talks to the
 // server (GET /api/organize/plan, POST /api/organize/trip, POST /api/bridge/stop; saves go through
-// ui/organize-data.mts). The rule editor drawer is ui/rule-editor.mts; Containers' Label… is ui/containers.mts.
+// ui/organize-data.mts). The rule editor drawer is ui/rule-editor.mts, Auto organize's ui/auto-organize.mts;
+// Containers' Label… is ui/containers.mts.
 import { state, bridge } from "./store.mts";
 import { $, el, toast, compactChildren } from "./dom.mts";
 import { api } from "./api.mts";
@@ -14,6 +15,7 @@ import { errorText } from "./messages.mts";
 import { filterContext } from "./inventory.mts";
 import { loadOrganize, refreshPlaces, saveConfig } from "./organize-data.mts";
 import { targetChip, deleteRule, openRuleEditor } from "./rule-editor.mts";
+import { openAutoOrganize } from "./auto-organize.mts";
 import { CATCH_ALL_ID, organizeStage, moveRule, matchSummary, targetView, targetOptions, ruleCountParts, ruleNameOf, containerNameOf, planHeadline, unclaimedNote, roomLines, crossSiteLines, warningGroups, tripRows, moveName, moveWhere, tripGate, carriedView, pinnedWith, stepWatch, failedSteps, outcomeText, runAllNext, tripRefusal, type TripRow, type TripWatch, type FailedStep } from "./organize-model.mts";
 import type { BridgeStatusApiResponse, OrganizeConfig, OrganizePlan, OrganizePlanApiResponse, OrganizeRule, OrganizeTripApiResponse, PlanRuleReport } from "./api-types.mts";
 
@@ -55,8 +57,10 @@ function render(): void {
   const stage = organizeStage(cfg, groundRoots());
   if (stage === "no-scans") { body().replaceChildren(emptyState("Nothing to organise yet", "Organize moves items between containers on the ground, such as the chests in your house. Scan them in game first.", null)); return; }
   if (stage === "no-labels") {
-    body().replaceChildren(emptyState("Label your storage first", "Organize only takes items from, and puts items into, containers you have labelled, so a friend's chest or a vendor is never touched. In Inventory › Containers, choose Label… from a chest's ⋯ menu.",
-      button({ label: "Open Containers", variant: "primary", attrs: { id: "org-open-containers" }, onClick: () => { location.hash = "#/containers"; } })));
+    const auto = button({ label: "Auto organize…", attrs: { id: "org-auto" }, onClick: () => { void openAutoOrganize(auto); } });
+    body().replaceChildren(emptyState("Label your storage first", "Organize only takes items from, and puts items into, containers you have labelled, so a friend's chest or a vendor is never touched. In Inventory › Containers, choose Label… from a chest's ⋯ menu, or let Auto organize label your chests and write the rules for you.",
+      box("div", { class: "org-empty-actions" },
+        button({ label: "Open Containers", variant: "primary", attrs: { id: "org-open-containers" }, onClick: () => { location.hash = "#/containers"; } }), auto)));
     return;
   }
   body().replaceChildren(...compactChildren([problemsEl(cfg), rulesCard(cfg), stage === "ready" ? planCard(cfg) : null]));
@@ -81,11 +85,12 @@ function rulesCard(cfg: OrganizeConfig): HTMLElement {
       { label: "Blank rule", onSelect: () => { void openRuleEditor({}); } },
     ], { label: "New rule" });
   } });
+  const auto = button({ label: "Auto organize…", size: "sm", attrs: { id: "org-auto" }, onClick: () => { void openAutoOrganize(auto); } });
   const report = new Map((state.organize.plan?.rules || []).map((r) => [r.ruleId, r] as const));
   const list = cfg.rules.length
     ? box("ol", { class: "org-rules", "aria-label": "Rules, first match wins" }, ...cfg.rules.map((r, i) => ruleRow(cfg, r, i, report.get(r.id))))
     : box("div", { class: "empty-state" }, el("h3", { class: "t-lg" }, "No rules yet"), el("p", { class: "muted" }, "A rule says which items go where: reagents into the reagent chest, rings into the jewellery box. Start from a preset."));
-  return card({ title: "Rules", actions: [add], attrs: { id: "org-rules" }, body: [
+  return card({ title: "Rules", actions: [auto, add], attrs: { id: "org-rules" }, body: [
     txt("Each item goes to the first rule it matches. Put narrow rules above broad ones.", "t-sm muted"),
     list, catchAllRow(cfg, report.get(CATCH_ALL_ID)),
     el("div", { class: "sr", id: "org-live", "aria-live": "polite" }),

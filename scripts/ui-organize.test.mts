@@ -40,7 +40,7 @@ function dataDirWith(rules: SeedRule[] | null): string {
   }));
   return dir;
 }
-interface OrganizeFile { labels: Record<string, { name: string; color?: string; pinned?: boolean; origin: string }>; rules: Array<{ id: string; name: string; targets: number[]; match: { query: Record<string, unknown>; names?: string[] } }>; catchAll: number | null; pinnedItems: number[] }
+interface OrganizeFile { labels: Record<string, { name: string; color?: string; pinned?: boolean; origin: string }>; rules: Array<{ id: string; name: string; targets: number[]; origin: string; match: { query: Record<string, unknown>; names?: string[] } }>; catchAll: number | null; pinnedItems: number[] }
 const readOrganize = (dir: string): OrganizeFile | null => { try { return JSON.parse(readFileSync(join(dir, "organize.json"), "utf8")) as OrganizeFile; } catch { return null; } };
 // Poll a file-backed fact until it holds (a save is a PUT the page sends after the click).
 async function until<T>(read: () => T, ok: (v: T) => boolean, what: string): Promise<T> {
@@ -474,6 +474,53 @@ test("[slow] a hand-edited organize.json that lost a rule says so, refuses trips
     assert.deepEqual(errors, []);
   } finally {
     clearInterval(alive);
+    await app.close();
+    rmSync(dataDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
+  }
+});
+
+test("[slow] Auto organize: Simple proposes groups for the ticked chests, Accept saves strategy labels and rules, and running it again changes nothing", async (t) => {
+  const why = unavailable();
+  if (why) return t.skip(why);
+  const dataDir = dataDirWith(null);
+  const { app, page, errors } = await launch(dataDir);
+  const ready = '#auto-drawer:not([hidden]) #auto-proposal[aria-busy="false"] #auto-headline';
+  try {
+    // Nothing labelled yet: the empty state offers Auto organize next to Open Containers.
+    await go(page, "#/organize", "#tab-organize .org-empty #org-auto");
+    await page.click("#org-auto");
+    await page.waitForSelector(ready);
+    assert.equal(await page.locator("#auto-containers input[type=checkbox]:checked").count(), 2, "both demo chests are offered and ticked");
+    assert.ok(await page.locator("#auto-proposal tr[data-group]").count() > 0, "the proposal lists its groups");
+    assert.match(await page.locator("#auto-headline").innerText(), /^Labels 2 containers and writes \d+ rules?\./);
+
+    await page.click("#auto-accept");
+    const saved = await until(() => readOrganize(dataDir), (o) => !!o && Object.keys(o.labels).length === 2, "the accepted setup");
+    assert.deepEqual(Object.values(saved!.labels).map((l) => l.origin), ["strategy:simple", "strategy:simple"]);
+    assert.ok(saved!.rules.length > 0 && saved!.rules.every((r) => r.origin === "strategy:simple"));
+    await page.waitForSelector("#auto-drawer[hidden]", { state: "attached" });
+    await page.waitForSelector("#org-rules .org-rule");
+    assert.ok(await page.locator(".org-rule", { hasText: "Auto" }).count() > 0, "Auto rules carry the badge");
+
+    // Straight away again: the proposal is the setup just saved, so there is nothing to accept.
+    await page.click("#org-auto");
+    await page.waitForSelector(ready);
+    assert.match(await page.locator("#auto-headline").innerText(), /already your setup/);
+    assert.equal(await page.locator("#auto-accept").isDisabled(), true);
+
+    // Detailed, then one chest unticked: each works the proposal out again. Try Simple goes back when offered.
+    await page.getByRole("radio", { name: "Detailed" }).click();
+    await page.waitForFunction(() => document.querySelector("#auto-proposal")?.getAttribute("aria-busy") === "false" && document.querySelector('#auto-strategy [data-value="detailed"]')?.getAttribute("aria-checked") === "true");
+    await page.locator("#auto-containers input[type=checkbox]").first().uncheck();
+    await page.waitForFunction(() => document.querySelectorAll("#auto-containers input:checked").length === 1 && document.querySelector("#auto-proposal")?.getAttribute("aria-busy") === "false", undefined, { timeout: 10_000 });
+    if (await page.locator("#auto-try-simple").count()) {
+      await page.click("#auto-try-simple");
+      await page.waitForFunction(() => document.querySelector('#auto-strategy [data-value="simple"]')?.getAttribute("aria-checked") === "true");
+    }
+    await page.keyboard.press("Escape");
+    assert.deepEqual(readOrganize(dataDir), saved, "closing without Accept saves nothing");
+    assert.deepEqual(errors, []);
+  } finally {
     await app.close();
     rmSync(dataDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
   }
