@@ -5,7 +5,7 @@
 import { matchesItem } from "./item-query.mts";
 import { parseStamp } from "./scan-schema.mts";
 import { CATCH_ALL_ID, type OrganizeConfig, type RuleMatch } from "./organize-config.mts";
-import type { Inventory, Item } from "./vault-lib.mts";
+import type { ContainerCapacity, Inventory, Item } from "./vault-lib.mts";
 import type { RulesV1RarityItem } from "./schema/types.d.mts";
 
 export type WarningKind = "stale-container" | "missing-target" | "missing-label" | "unknown-capacity" | "old-scripts" | "blacklisted" | "no-position" | "not-ground";
@@ -108,4 +108,50 @@ export function claimOf(it: Item, cfg: OrganizeConfig, rarity: RulesV1RarityItem
   const hits = cfg.rules.filter((r) => ruleMatches(it, r.match, rarity)).map((r) => r.id);
   if (hits.length) return { ruleId: hits[0]!, alsoMatched: hits.slice(1) };
   return cfg.catchAll != null ? { ruleId: CATCH_ALL_ID, alsoMatched: [] } : null;
+}
+
+// One confirmed step of a trip, from the results overlay (organize-state.json, app/organize-state.mts): the item
+// left `from` and is now in `to`, or in the backpack of the character that ran the trip when `to` is null (taken,
+// not yet put). `at` is the bridge's clock when the trip reported back.
+export interface OverlayMove { serial: number; name: string; from: number | null; to: number | null; at: string; trip: string }
+export interface Carried { serial: number; name: string }
+// The inventory as the overlay says it stands: moved items re-homed, and every container's fill (a copy of its
+// Contents line) adjusted for the steps it does not yet include.
+export interface Placed { inv: Inventory; counts: Map<number, ContainerCapacity>; carried: Carried[] }
+
+// Spec §2.2: confirmed moves are applied before planning, so a finished trip is not planned again before the next
+// scan. A step the item's own scan has seen since is over; a container's line read after the step already counts it.
+export function applyOverlay(inv: Inventory, overlay: OverlayMove[]): Placed {
+  const items: Record<string, Item> = Object.assign(Object.create(null) as Record<string, Item>, inv.items);
+  const counts = new Map<number, ContainerCapacity>();
+  for (const c of Object.values(inv.containers)) if (c.capacity) counts.set(+c.serial, { ...c.capacity });
+  const carried: Carried[] = [];
+  const bump = (serial: number | null, at: number, d: number, w: number): void => {
+    for (const s of ancestry(inv, serial) ?? []) {
+      const cap = counts.get(s);
+      if (!cap || stampMs(inv.containers[s]!.scannedAt) >= at) continue;
+      cap.items += d;
+      if (cap.stones != null) cap.stones += d * w;
+    }
+  };
+  for (const m of [...overlay].sort((a, b) => a.serial - b.serial)) {
+    const at = stampMs(m.at);
+    const it = items[m.serial];
+    if (it && stampMs(it.seenAt) >= at) continue;
+    const w = it?.weight ?? 1;
+    if (it) bump(it.container, at, -1, w);
+    if (m.to != null) bump(m.to, at, 1, w);
+    else carried.push({ serial: m.serial, name: m.name });
+    if (!it) continue;
+    const chain = m.to == null ? null : ancestry(inv, m.to);
+    items[m.serial] = { ...it, container: chain ? m.to : null, root: chain ? chain.at(-1)! : null };
+  }
+  return { inv: { ...inv, items }, counts, carried };
+}
+
+// Spec §2.4: the container an item already counts as filed in — the nearest one above it that is any rule's
+// target (or the catch-all). An item in a bag that is itself a target belongs to that bag, not to its chest.
+export function homeOf(inv: Inventory, it: Item, homes: Set<number>): number | null {
+  for (const s of ancestry(inv, it.container) ?? []) if (homes.has(s)) return s;
+  return null;
 }

@@ -11,7 +11,7 @@ import { houseScan, AT, type BoxSpec, type ThingSpec } from "./organize-fixture.
 import { emptyRuleQuery, emptyOrganizeConfig, CATCH_ALL_ID, type OrganizeConfig, type OrganizeRule, type ContainerLabel } from "./organize-config.mts";
 import type { RuleQuery } from "./item-query.mts";
 import type { RulesV1 } from "./schema/types.d.mts";
-import { ancestry, scopeOf, ruleMatches, claimOf, baseName } from "./organize.mts";
+import { ancestry, scopeOf, ruleMatches, claimOf, baseName, applyOverlay, homeOf, type OverlayMove } from "./organize.mts";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const RULES = JSON.parse(readFileSync(join(HERE, "rules", "uoalive.json"), "utf8")) as RulesV1;
@@ -113,4 +113,53 @@ test("[fast] a rule's free text never matches where the item sits", () => {
   const m = { query: { ...emptyRuleQuery(), q: "reagent" } };
   assert.equal(ruleMatches(inv.items[KATANA]!, m), false, "a sword in a chest called Reagents is not a reagent");
   assert.equal(ruleMatches(inv.items[GARLIC]!, m), true);
+});
+
+const T1 = "2026-09-28T11:00:00Z";
+const step = (serial: number, name: string, from: number | null, to: number | null, when = T1): OverlayMove => ({ serial, name, from, to, at: when, trip: "t-1" });
+
+test("[fast] homeOf: the nearest container above an item that is some rule's target", () => {
+  const inv = fold([{ serial: A }, { serial: BAG, parent: A }, { serial: POUCH, parent: BAG }], [{ serial: PEARL, name: "Black Pearl", in: POUCH }]);
+  const pearl = inv.items[PEARL]!;
+  assert.equal(homeOf(inv, pearl, new Set([A])), A, "a sub-bag of a target counts as the target");
+  assert.equal(homeOf(inv, pearl, new Set([A, BAG])), BAG, "a sub-bag that is itself a target is the item's home");
+  assert.equal(homeOf(inv, pearl, new Set()), null);
+});
+
+test("[fast] the overlay puts a moved item where the bridge put it and adjusts both containers' counts", () => {
+  const inv = fold([{ serial: A }, { serial: B, pos: at(104) }], [{ serial: PEARL, name: "Black Pearl", in: A, weight: 3 }]);
+  const before = JSON.stringify(inv);
+  const placed = applyOverlay(inv, [step(PEARL, "Black Pearl", A, B)]);
+  assert.equal(placed.inv.items[PEARL]!.container, B);
+  assert.equal(placed.inv.items[PEARL]!.root, B);
+  assert.deepEqual(placed.counts.get(A), { items: 0, maxItems: 125, stones: 0, maxStones: null });
+  assert.deepEqual(placed.counts.get(B), { items: 1, maxItems: 125, stones: 3, maxStones: null });
+  assert.deepEqual(placed.carried, []);
+  assert.equal(JSON.stringify(inv), before, "the inventory handed in is not changed");
+});
+
+test("[fast] an overlay step the scans have seen since is ignored", () => {
+  const inv = fold([{ serial: A }, { serial: B, pos: at(104) }], [{ serial: PEARL, name: "Black Pearl", in: A }]);
+  const placed = applyOverlay(inv, [step(PEARL, "Black Pearl", A, B, "2026-09-28T09:00:00Z")]);
+  assert.equal(placed.inv.items[PEARL]!.container, A);
+  assert.equal(placed.counts.get(B)!.items, 0);
+});
+
+test("[fast] an overlay step for an item gone from the scans still counts in its destination until that is rescanned", () => {
+  const first = houseScan({ boxes: [{ serial: A }, { serial: B, pos: at(104) }], things: [{ serial: PEARL, name: "Black Pearl", in: A }] });
+  const rescanOfA = houseScan({ scannedAt: "2026-09-28T12:00:00Z", boxes: [{ serial: A }] });
+  const inv = foldSnapshots([first, rescanOfA]);
+  assert.equal(inv.items[PEARL], undefined, "A was rescanned without it");
+  const placed = applyOverlay(inv, [step(PEARL, "Black Pearl", A, B)]);
+  assert.equal(placed.counts.get(A)!.items, 0, "A's Contents line was read after the step: it already leaves the pearl out");
+  assert.equal(placed.counts.get(B)!.items, 1, "B's line predates the step");
+});
+
+test("[fast] an item taken and not yet put is carried, in no container", () => {
+  const inv = fold([{ serial: A }], [{ serial: PEARL, name: "Black Pearl", in: A }]);
+  const placed = applyOverlay(inv, [step(PEARL, "Black Pearl", A, null)]);
+  assert.equal(placed.inv.items[PEARL]!.container, null);
+  assert.equal(placed.inv.items[PEARL]!.root, null);
+  assert.deepEqual(placed.carried, [{ serial: PEARL, name: "Black Pearl" }]);
+  assert.equal(placed.counts.get(A)!.items, 0);
 });
