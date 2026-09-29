@@ -278,7 +278,7 @@ if (!app.requestSingleInstanceLock()) {
       clearTimeout(smokeTimer as NodeJS.Timeout | undefined);
       logLine(`server: exited unexpectedly (code ${code})`);
       console.log(`SMOKE FAIL server exited unexpectedly (code ${code})`);
-      app.exit(1);
+      smokeExit(1);
       return;
     }
     logLine(`server: exited unexpectedly (code ${code})`);
@@ -345,6 +345,31 @@ if (!app.requestSingleInstanceLock()) {
     }
   })()`;
 
+  // How a --smoke run ends once it has printed its result line: stop the server child, then leave through
+  // Node's direct exit rather than app.exit(). On a busy macOS machine Chromium's native teardown after
+  // app.exit() can take 10-30s with everything JavaScript can see already finished, and it ignores SIGTERM
+  // meanwhile, so the smoke test timed out on CI (issue #106). The smoke run checks boot, page load, the
+  // API and the optimize job, not that teardown. Electron routes process.exit() to app.exit(), which is
+  // why this is Node's reallyExit — undocumented and absent from the typings, so a build without it falls
+  // back to app.exit(). reallyExit drops whatever stdout/stderr still has queued (writes to a pipe are
+  // asynchronous on macOS), so it waits for both to drain first, the result line included; the 2s timer
+  // covers a stream whose callback never comes. Only the first call counts: the 30s timer and a check
+  // still in flight can both get here.
+  let smokeExiting = false;
+  function smokeExit(code: number): void {
+    if (smokeExiting) return;
+    smokeExiting = true;
+    child?.kill();
+    const reallyExit = (process as NodeJS.Process & { reallyExit?: (code: number) => never }).reallyExit;
+    if (typeof reallyExit !== "function") {
+      app.exit(code);
+      return;
+    }
+    const leave = () => reallyExit.call(process, code);
+    setTimeout(leave, 2000);
+    process.stdout.write("", () => process.stderr.write("", leave));
+  }
+
   async function runSmokeCheck(w: BrowserWindow): Promise<void> {
     try {
       const status = await pollStatus(w, Date.now() + 15000);
@@ -352,8 +377,7 @@ if (!app.requestSingleInstanceLock()) {
         clearTimeout(smokeTimer as NodeJS.Timeout | undefined);
         smokeDone = true;
         console.log(`SMOKE FAIL #status did not finish loading: ${JSON.stringify(status)}`);
-        child?.kill();
-        app.exit(1);
+        smokeExit(1);
         return;
       }
       const apiStatus = await w.webContents.executeJavaScript('fetch("/api/setup").then((r) => r.status).catch(() => -1)');
@@ -361,8 +385,7 @@ if (!app.requestSingleInstanceLock()) {
         clearTimeout(smokeTimer as NodeJS.Timeout | undefined);
         smokeDone = true;
         console.log(`SMOKE FAIL authenticated GET /api/setup returned ${apiStatus}`);
-        child?.kill();
-        app.exit(1);
+        smokeExit(1);
         return;
       }
       const optimize = await w.webContents.executeJavaScript(OPTIMIZE_CHECK_JS);
@@ -370,19 +393,16 @@ if (!app.requestSingleInstanceLock()) {
       smokeDone = true;
       if (optimize === "ok" || (typeof optimize === "string" && optimize.startsWith("skipped"))) {
         console.log(`SMOKE OK ${currentPort}${optimize === "ok" ? "" : ` (optimize ${optimize})`}`);
-        child?.kill();
-        app.exit(0);
+        smokeExit(0);
       } else {
         console.log(`SMOKE FAIL optimize job: ${typeof optimize === "string" ? optimize : JSON.stringify(optimize)}`);
-        child?.kill();
-        app.exit(1);
+        smokeExit(1);
       }
     } catch (e) {
       clearTimeout(smokeTimer as NodeJS.Timeout | undefined);
       smokeDone = true;
       console.log(`SMOKE FAIL ${(e as Error)?.message || e}`);
-      child?.kill();
-      app.exit(1);
+      smokeExit(1);
     }
   }
 
@@ -465,7 +485,7 @@ if (!app.requestSingleInstanceLock()) {
         // give-up branch).
         if (smoke) {
           console.log(`SMOKE FAIL build failed: ${message}`);
-          app.exit(1);
+          smokeExit(1);
         } else {
           dialog.showErrorBox("Pack Rat", `Failed to build the app before launch. See the log at ${logPath}.\n\n${message}`);
           app.quit();
@@ -477,8 +497,7 @@ if (!app.requestSingleInstanceLock()) {
       smokeTimer = setTimeout(() => {
         smokeDone = true;
         console.log("SMOKE FAIL timeout after 30s");
-        child?.kill();
-        app.exit(1);
+        smokeExit(1);
       }, 30000);
     }
     child = spawnChild();
