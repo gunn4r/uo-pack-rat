@@ -2,7 +2,7 @@
 
 ## Unreleased
 
-- **Scans record each chest's fill and facet — re-install the scripts (TazUO 2.9.0, Razor Enhanced 1.9.0; ClassicUO web scanner 1.3.0)** (issue #11): a chest on the ground is recorded with its tooltip, as the bags inside it already were, so Pack Rat knows how full it is from its "Contents: 61/125 Items" line and an engraved chest is named by its engraving; its position also says which facet it is on. Groundwork for Organize.
+- **Scans record each chest's fill and facet — re-install the scripts (TazUO 2.9.0, Razor Enhanced 1.9.0; ClassicUO web scanner 1.3.0)** (issue #11): a chest on the ground is recorded with its tooltip, as the bags inside it already were, so Pack Rat knows how full it is from its "Contents: 61/125 Items" line; its position also says which facet it is on. Groundwork for Organize. **After the rescan an engraved chest is named by its engraving** wherever its name shows (the location text, the Location filter, the Containers tab, the Suit Builder's fetch list): a Metal Chest engraved "Reagents" reads Reagents, so a Location filter picked under the old name finds nothing until it is picked again.
 - **The Rarity filter takes a ceiling** (issue #11): the Inventory's Rarity popover has a "Rarity at most" list under "Rarity at least", so "Lesser Artifact and below" is one filter. An item with no tier counts as below every tier.
 - **Power scrolls carry their level** (issue #11): "An Exalted Scroll Of Mysticism (110 Skill)" gets the property PS level 110, so a property rule (PS level = 110) finds every 110 scroll.
 
