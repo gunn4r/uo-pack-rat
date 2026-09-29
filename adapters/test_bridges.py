@@ -16,6 +16,8 @@ PACK, POUCH, CHEST, BAG, FAR = 0x40000001, 0x40000002, 0x40000003, 0x40000004, 0
 RING, AMULET, BRACELET, FAR_RING = 0x40000010, 0x40000011, 0x40000012, 0x40000013
 OTHER_CHEST, OTHER_BAG, STRANGER_PACK, STRANGER_RING = 0x40000020, 0x40000021, 0x40000030, 0x40000031
 BOOK, RUNEBOOK, ARMOUR = 0x40000040, 0x40000041, 0x40000042
+DEST, DEST_BAG, TRASH_BIN, CORPSE, LOOSE, STACK, OTHER_GEM = (0x40000050, 0x40000051, 0x40000052, 0x40000053,
+                                                               0x40000054, 0x40000055, 0x40000056)
 RUN_S = 120                      # every scenario stops the bridge after this many fake seconds
 
 
@@ -40,6 +42,18 @@ def home():
     w.add(BOOK, PACK, name="Mysticism Spellbook", Graphic=0x2D9D, OnGround=False)
     w.add(RUNEBOOK, PACK, name="Runebook", Graphic=0x22C5, OnGround=False)
     w.add(ARMOUR, PACK, name="Gargish Stone Chest", container_like=False, Graphic=0x1415, Wearable=True, OnGround=False)
+    return w
+
+
+def trip_home():
+    """home() plus what Organize needs: a destination chest in reach with a bag in it, a trash barrel,
+    a corpse, and a ring loose in the backpack that no trip ever took (same graphic as the jewels)."""
+    w = home()
+    w.add(DEST, 0, name="Metal Chest", X=11, Y=11)
+    w.add(DEST_BAG, DEST, name="Bag", OnGround=False)
+    w.add(TRASH_BIN, 0, name="barrel", Tooltip="A Trash Barrel", Graphic=0x0E77, X=9, Y=11)
+    w.add(CORPSE, 0, name="a corpse", Graphic=0x2006, IsCorpse=True, X=9, Y=9)
+    w.add(LOOSE, PACK, name="Ring", container_like=False, OnGround=False)
     return w
 
 
@@ -209,6 +223,153 @@ class TazUOBridge(BridgeCase, unittest.TestCase):
             del api.CancelPathfinding
         world.clock.at(RUN_S, lambda: setattr(api, "StopRequested", True))
         run_script(adapter_path("tazuo", "packrat-bridge.py"), world, api=api)
+
+    def trip(self, cid, takes=(), puts=(), index=3, age_s=0):
+        """One trip line as app/bridge-trip.mts writes it. Every root is placed on the player's tile:
+        walk_to prefers the live item's own position whenever the client knows it."""
+        roots = {}
+        for _, path in list(takes) + list(puts):
+            roots[str(path[0])] = {"x": 10, "y": 10, "z": 0}
+        return {"id": cid, "action": "trip", "index": index, "stamp": "2026-09-28T12:00:00.000Z", "roots": roots,
+                "takes": [{"serial": s, "name": "piece %x" % s, "chain": list(c)} for s, c in takes],
+                "puts": [{"serial": s, "name": "piece %x" % s, "dest": list(d)} for s, d in puts],
+                "age_s": age_s}
+
+    def stop_flag(self):
+        return os.path.join(self.data, "bridge", "stop")
+
+    def steps(self, final, cid):
+        return [(s["op"], s["serial"], s["ok"]) for s in final["results"][cid]["steps"]]
+
+    def moves(self, world):
+        return [(c[1], c[2]) for c in world.calls if c[0] == "move"]
+
+    def test_a_trip_takes_then_puts_and_reports_every_step(self):
+        w = trip_home()
+        final, writes = self.run_bridge(w, 1, [self.trip("t1", takes=[(AMULET, [CHEST, BAG]), (BRACELET, [CHEST, BAG])],
+                                                         puts=[(AMULET, [DEST, DEST_BAG]), (BRACELET, [DEST, DEST_BAG])])])
+        r = final["results"]["t1"]
+        self.assertTrue(r["ok"], r)
+        self.assertEqual((r["partial"], r["stopped"]), (False, False))
+        self.assertEqual(self.steps(final, "t1"), [("take", AMULET, True), ("take", BRACELET, True),
+                                                   ("put", AMULET, True), ("put", BRACELET, True)])
+        self.assertEqual(sorted(set(k for s in r["steps"] for k in s)), ["msg", "ok", "op", "serial"])
+        self.assertEqual(self.moves(w), [(AMULET, PACK), (BRACELET, PACK), (AMULET, DEST_BAG), (BRACELET, DEST_BAG)])
+        self.assertIn("Pack Rat organize: trip 3, 2 items", w.messages)
+        self.assert_heartbeat(writes)
+
+    def test_a_take_drops_at_an_explicit_spot_so_a_stack_keeps_its_serial(self):
+        w = trip_home()
+        w.merges = True                          # LOOSE, in the pack, has the amulet's graphic and hue
+        final, _ = self.run_bridge(w, 1, [self.trip("t1", takes=[(AMULET, [CHEST, BAG])])])
+        self.assertTrue(final["results"]["t1"]["ok"], final["results"]["t1"])
+        [call] = [c for c in w.calls if c[0] == "move"]
+        self.assertEqual(call[1:], (AMULET, PACK, 0, 60, 90))
+        self.assertEqual(w.items[AMULET].Container, PACK)
+
+    def test_the_stop_flag_halts_a_trip_between_steps_and_the_taken_item_can_still_be_put_away(self):
+        w = trip_home()
+        flag = self.stop_flag()
+        w.on_move = lambda s, dst: open(flag, "w").close() if (s, dst) == (AMULET, PACK) else None
+        final, _ = self.run_bridge(w, 1, [
+            self.trip("t1", takes=[(AMULET, [CHEST, BAG]), (BRACELET, [CHEST, BAG])], puts=[(AMULET, [DEST]), (BRACELET, [DEST])]),
+            self.trip("t2", puts=[(AMULET, [DEST])], index=4)])
+        r = final["results"]["t1"]
+        self.assertFalse(r["ok"])
+        self.assertTrue(r["stopped"])
+        self.assertEqual(self.steps(final, "t1"), [("take", AMULET, True)])
+        self.assertTrue(final["results"]["t2"]["ok"], final["results"]["t2"])
+        self.assertEqual(self.moves(w), [(AMULET, PACK), (AMULET, DEST)])
+
+    def test_a_stop_flag_left_over_from_before_is_cleared_when_a_trip_starts(self):
+        w = trip_home()
+        w.clock.at(0.5, lambda: open(self.stop_flag(), "w").close())
+        final, _ = self.run_bridge(w, 1, [self.trip("t1", takes=[(AMULET, [CHEST, BAG])], puts=[(AMULET, [DEST])])])
+        self.assertTrue(final["results"]["t1"]["ok"], final["results"]["t1"])
+        self.assertFalse(os.path.exists(self.stop_flag()))
+
+    def test_a_backpack_the_character_cannot_carry_more_in_cuts_the_takes_short_and_skips_their_puts(self):
+        w = trip_home()
+        w.weight_max = 1
+        final, _ = self.run_bridge(w, 1, [self.trip("t1", takes=[(AMULET, [CHEST, BAG]), (BRACELET, [CHEST, BAG])],
+                                                    puts=[(AMULET, [DEST]), (BRACELET, [DEST])])])
+        r = final["results"]["t1"]
+        self.assertFalse(r["ok"])
+        self.assertTrue(r["partial"])
+        self.assertEqual(self.steps(final, "t1"), [("take", AMULET, True), ("take", BRACELET, False),
+                                                   ("put", AMULET, True), ("put", BRACELET, False)])
+        self.assertIn("skipped", r["steps"][3]["msg"])
+        self.assertEqual(w.items[BRACELET].Container, BAG)
+
+    def test_a_backpack_at_its_item_cap_takes_nothing(self):
+        w = trip_home()
+        for i in range(120):                     # with the five pieces trip_home() leaves in the pack: 125, the cap
+            w.add(0x40002000 + i, PACK, name="Gem", container_like=False, OnGround=False)
+        final, _ = self.run_bridge(w, 1, [self.trip("t1", takes=[(AMULET, [CHEST, BAG])], puts=[(AMULET, [DEST])])])
+        r = final["results"]["t1"]
+        self.assertTrue(r["partial"])
+        self.assertEqual(self.steps(final, "t1"), [("take", AMULET, False), ("put", AMULET, False)])
+        self.assertEqual(self.moved(w), [])
+
+    def test_an_item_gone_since_the_plan_fails_its_take_and_its_put_is_skipped(self):
+        w = trip_home()
+        gone = 0x40000099
+        final, _ = self.run_bridge(w, 1, [
+            self.trip("t1", takes=[(gone, [CHEST, BAG]), (AMULET, [CHEST, BAG])], puts=[(gone, [DEST]), (AMULET, [DEST])]),
+            self.trip("t2", takes=[(BRACELET, [CHEST])], index=4)])
+        r = final["results"]["t1"]
+        self.assertFalse(r["ok"])
+        self.assertFalse(r["partial"])
+        self.assertEqual(self.steps(final, "t1"), [("take", gone, False), ("take", AMULET, True),
+                                                   ("put", gone, False), ("put", AMULET, True)])
+        self.assertIn("rescan", r["steps"][0]["msg"])
+        self.assertIn("refused", final["results"]["t2"]["steps"][0]["msg"])
+        self.assertEqual(w.items[BRACELET].Container, BAG)
+
+    def test_a_put_of_something_no_trip_took_is_refused_and_nothing_moves(self):
+        w = trip_home()
+        w.items[AMULET].Container = PACK         # taken by a bridge that has since restarted
+        final, _ = self.run_bridge(w, 1, [self.trip("h1", puts=[(LOOSE, [DEST])]),
+                                          self.trip("h2", puts=[(AMULET, [DEST])], index=4)])
+        for cid in ("h1", "h2"):
+            self.assertFalse(final["results"][cid]["ok"], cid)
+            self.assertIn("not taken by this bridge", final["results"][cid]["steps"][0]["msg"])
+        self.assertEqual(self.moved(w), [])
+        self.assertNotIn(DEST, self.opened(w))
+
+    def test_a_put_the_container_bounces_keeps_the_item_carried_for_put_them_away(self):
+        w = trip_home()
+        w.refuse = {DEST}
+        final, _ = self.run_bridge(w, 1, [
+            self.trip("t1", takes=[(AMULET, [CHEST, BAG])], puts=[(AMULET, [DEST])]),
+            self.trip("t2", puts=[(AMULET, [DEST, DEST_BAG])], index=4)])
+        self.assertEqual(self.steps(final, "t1"), [("take", AMULET, True), ("put", AMULET, False)])
+        self.assertIn("bounced", final["results"]["t1"]["steps"][1]["msg"])
+        self.assertTrue(final["results"]["t2"]["ok"], final["results"]["t2"])
+        self.assertEqual(w.items[AMULET].Container, DEST_BAG)
+
+    def test_a_put_never_goes_into_your_own_pack_a_strangers_pack_or_a_corpse(self):
+        w = trip_home()
+        final, _ = self.run_bridge(w, 1, [
+            self.trip("t1", takes=[(AMULET, [CHEST, BAG])], puts=[(AMULET, [PACK, POUCH])]),
+            self.trip("t2", puts=[(AMULET, [STRANGER_PACK])], index=4),
+            self.trip("t3", puts=[(AMULET, [CORPSE])], index=5)])
+        self.assertEqual(self.steps(final, "t1"), [("take", AMULET, True), ("put", AMULET, False)])
+        for cid in ("t2", "t3"):
+            self.assertEqual(self.steps(final, cid), [("put", AMULET, False)], cid)
+        self.assertEqual(self.moved(w), [AMULET])
+        for s in (STRANGER_PACK, CORPSE, POUCH):
+            self.assertNotIn(s, self.opened(w))
+        self.assertEqual(w.items[AMULET].Container, PACK)
+
+    def test_a_trip_line_over_the_line_limit_is_refused_unread(self):
+        w = trip_home()
+        big = self.trip("big", takes=[(AMULET, [CHEST, BAG])], puts=[(AMULET, [DEST])])
+        big["takes"][0]["name"] = "N" * 17000
+        final, _ = self.run_bridge(w, 1, [big])
+        self.assertNotIn("big", final["results"])
+        self.assertTrue([k for k in final["results"] if k.startswith("rejected-")], final["results"])
+        self.assertEqual(self.moved(w), [])
 
 
     def test_a_timed_out_walk_is_reported_failed_even_where_pathfinding_cannot_be_cancelled(self):

@@ -59,6 +59,12 @@ for (const name of adapterDirs) {
     const caps = JSON.parse(readFileSync(capsPath, "utf8")) as CapabilitiesFile;
     const declared = caps.capabilities.bridge;
     for (const action of declared) {
+      // trip is Organize's own command, with its own schema; the Organize view that queues it gates
+      // on this same capability list.
+      if (action === "trip") {
+        assert.ok(validate(TRIP_SCHEMA.properties!.action!, action).ok, "trip is not bridge-trip.v1.schema.json's action");
+        continue;
+      }
       assert.ok(ALL_BRIDGE_ACTIONS.includes(action), `unknown bridge action ${JSON.stringify(action)} — app/ui/bridge.mts renders no button for it, so nothing would ever queue it`);
       assert.ok(validate(BRIDGE_SCHEMA.command.properties!.action!, action).ok, `${action} is not in bridge.v1.schema.json's action enum`);
     }

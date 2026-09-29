@@ -7315,7 +7315,8 @@
    "bridge": [
     "highlight",
     "grab",
-    "goto"
+    "goto",
+    "trip"
    ]
   }
  }
