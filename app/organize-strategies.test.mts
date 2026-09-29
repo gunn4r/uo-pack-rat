@@ -116,6 +116,8 @@ test("[fast] switching strategy replaces the earlier strategy's rules and labels
   assert.deepEqual(build.rules[1]!.match, { query: { ...emptyRuleQuery(), kind: ["gear"] }, build: "caster" });
   assert.ok(Object.values(build.labels).every((l) => l.origin === "strategy:build"), "no Simple label is left");
   assert.equal(checkOrganizeConfig(build).ok, true);
+  const back = ok(proposeOrganize(inv, build, [], OPTS())).config;
+  assert.deepEqual(back, cfg, "and back to Simple leaves no By build label or rule");
 });
 
 test("[fast] groupItems leaves out a skipped group and every empty one", () => {

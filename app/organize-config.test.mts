@@ -103,6 +103,14 @@ test("[fast] salvage: a label dropped costs the rules that name it that target o
   assert.equal(again.ok, true, again.ok ? "" : again.error);
 });
 
+test("[fast] salvage: a rule with an unknown build is dropped like any other broken rule", () => {
+  const doc = full();
+  (doc.rules[0]!.match as { build?: string }).build = "wizard";
+  const { config, problems } = salvageOrganizeConfig(doc);
+  assert.deepEqual(config.rules.map((r) => r.id), ["r2"]);
+  assert.match(problems.join("\n"), /rules\[0\]\.match\.build must be one of .*; rule dropped/);
+});
+
 test("[fast] salvage: anything that is not a version 1 Organize file starts empty", () => {
   for (const raw of [null, [], "x", { version: 2 }, {}]) {
     const { config, problems } = salvageOrganizeConfig(raw);
