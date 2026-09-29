@@ -471,8 +471,10 @@ carried = set()           # serials this bridge took on a trip and has not yet p
 # Opening a container once is enough: the client keeps the contents it has been sent after the window
 # closes, and the server checks only reach when an item is lifted or dropped (walk_to sees to that). A
 # walk empties the set, since a container left behind can fall out of the client's view and forget its
-# contents; so does the start of every trip.
+# contents; so does the start of every trip, and so does finding the character on another tile than
+# when the set was last filled (the player walked by hand mid-trip, out of range and back perhaps).
 trip_opened = set()
+trip_spot = {"at": None}  # the character's tile when trip_opened was last added to
 last_move = {"at": 0.0}
 
 
@@ -644,6 +646,11 @@ def open_chain(chain, own=None, check=None, opened=None):
     reason of the caller's own. A trip passes `opened` (trip_opened): an entry already in it passes the
     same checks but is not double-clicked again, and every entry opened is added to it."""
     own = own_roots([]) if own is None else own
+    if opened is not None:
+        here = (int(API.Player.X), int(API.Player.Y))
+        if trip_spot["at"] != here:
+            opened.clear()
+            trip_spot["at"] = here
     for i, c in enumerate(chain):
         it = find(c)
         if it is None:

@@ -222,7 +222,7 @@ class TazUOBridge(BridgeCase, unittest.TestCase):
     ADAPTER = "tazuo"
 
     def start(self, world):
-        api = tazuo_api(world, PACK)
+        api = world.api = tazuo_api(world, PACK)
         if getattr(self, "drop_cancel", False):
             del api.CancelPathfinding
         world.clock.at(RUN_S, lambda: setattr(api, "StopRequested", True))
@@ -292,6 +292,19 @@ class TazUOBridge(BridgeCase, unittest.TestCase):
             self.trip("t1", takes=[(AMULET, [CHEST, BAG]), (FAR_RING, [FAR]), (OTHER_GEM, [CHEST, BAG])])])
         self.assertTrue(final["results"]["t1"]["ok"], final["results"]["t1"])
         self.assertEqual([c[1:] for c in w.calls if c[0] == "walk"], [(20, 10), (11, 10)])
+        opened = self.opened(w)
+        self.assertEqual([opened.count(s) for s in (CHEST, BAG)], [2, 2])
+
+    def test_a_player_who_steps_by_hand_mid_trip_gets_the_containers_opened_again(self):
+        w = trip_home()
+
+        def step(s, dst):
+            if (s, dst) == (AMULET, PACK):
+                w.px = w.api.Player.X = 12           # the player steps a tile; the chest stays in reach
+        w.on_move = step
+        final, _ = self.run_bridge(w, 1, [self.trip("t1", takes=[(AMULET, [CHEST, BAG]), (BRACELET, [CHEST, BAG])])])
+        self.assertTrue(final["results"]["t1"]["ok"], final["results"]["t1"])
+        self.assertEqual([c for c in w.calls if c[0] == "walk"], [])
         opened = self.opened(w)
         self.assertEqual([opened.count(s) for s in (CHEST, BAG)], [2, 2])
 
