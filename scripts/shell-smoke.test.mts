@@ -37,7 +37,7 @@ test("[slow] the Electron shell boots, loads the page and exits clean (--smoke)"
     assert.equal(code, 0, `expected exit 0, got ${code}\nstdout:\n${stdout}`);
     assert.match(stdout, /SMOKE OK \d+/, `expected "SMOKE OK <port>" in stdout\nstdout:\n${stdout}`);
   } finally {
-    rmSync(dataDir, { recursive: true, force: true });
+    rmSync(dataDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
   }
 });
 

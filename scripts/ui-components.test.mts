@@ -158,6 +158,6 @@ test("[slow] components: confirm dialog, drawer, popover, toasts and tooltip beh
     assert.deepEqual(errors, []);
   } finally {
     await app.close();
-    rmSync(dataDir, { recursive: true, force: true });
+    rmSync(dataDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
   }
 });
