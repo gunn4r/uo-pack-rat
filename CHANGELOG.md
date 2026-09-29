@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- **Organize trips in the TazUO bridge — re-install the scripts (TazUO 2.9.0, Razor Enhanced 1.9.0)** (issue #11): `packrat-bridge.py` can now carry out an Organize trip — take up to 20 items from your labelled containers into your backpack, then put each one into the container it belongs in — reporting every step. A trip only ever puts away items the bridge itself took, never into your own pack, a corpse, another player's pack, a trash container or a blacklisted one; it ends its takes early when your backpack is full, and a Stop halts it between steps. Nothing in the app starts a trip yet: the Organize view arrives in a later release. Razor Enhanced refuses trips; its bridge only picked up the shared input checks.
+
 ## 0.1.1 — 2026-09-28
 
 - **Copy the ClassicUO web scanner from the app** (issue #79): the setup wizard's web-client step and Settings › Game client have a **Copy scanner script** button that copies the app's own bundled script, so there is no file to find; Settings shows its version and says when the app ships a newer one than you last copied.
