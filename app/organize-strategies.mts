@@ -92,6 +92,10 @@ const DETAILED: readonly GroupDef[] = [
   def("other", "Other", "other", EVERYTHING),
 ];
 export const STRATEGIES: Record<StrategyId, readonly GroupDef[]> = { simple: SIMPLE, detailed: DETAILED };
+// The id a group's i-th filter's rule gets (proposeOrganize adds _2, _3… when a manual rule already has it), and
+// back from an id to its group, for either strategy (a key both have means the same things).
+const ruleIdOf = (key: string, i: number): string => `auto-${key}${i ? `-${i + 1}` : ""}`;
+const RULE_GROUP = new Map(Object.values(STRATEGIES).flatMap((defs) => defs.flatMap((d) => d.matches.map((_, i) => [ruleIdOf(d.key, i), d.key] as const))));
 
 // Each item to the first group whose filters take it, in the table's order (the order its rules get, so the group
 // an item lands in is the rule that will claim it). Groups nobody lands in are left out, and so are the `skip`
@@ -107,14 +111,16 @@ export function groupItems(defs: readonly GroupDef[], items: readonly Item[], ra
 }
 
 // Spec §5 assignment. `need` = the group's items at its home site (one slot each), `room` = how many group items a
-// chest takes, `held` = how many of each group's items it holds now.
-export interface GroupNeed { key: string; site: number; need: number }
+// chest takes, `held` = how many of each group's items it holds now, `prev` = the chests an earlier strategy rule of
+// this group fills, in fill order.
+export interface GroupNeed { key: string; site: number; need: number; prev?: readonly number[] | undefined }
 export interface Offer { serial: number; site: number; room: number; held: Record<string, number> }
-// Largest group first (ties by key). Each takes, from the chests at its site nobody has taken, the one already
-// holding most of it (ties: more room, then the lower serial), then the next best until it fits, at most LIMITS.targets.
-// Then every other chest there holding this group's items and no other group's joins the chain: once a house is
-// sorted, a chain whose first chest is full could otherwise read [second] alone next time and move the first's
-// items, so re-running on its own result would not move nothing. A group that finds no chest gets an empty chain.
+// Largest group first (ties by key). Each keeps, first, the chests its earlier rule filled that are still offered
+// and nobody has taken: counts alone would not hold a sorted house still, since after its trips two chests can hold
+// a group equally and the tie would go the other way. Then, until it fits, the chest already holding most of it
+// (ties: more room, then the lower serial), then the next best, at most LIMITS.targets. Then every other chest there
+// holding this group's items and no other group's joins the chain: a chain whose first chest is full could
+// otherwise read [second] alone next time and move the first's items. A group that finds no chest gets an empty chain.
 export function assignGroups(groups: readonly GroupNeed[], offers: readonly Offer[]): Map<string, number[]> {
   const taken = new Set<number>();
   const out = new Map<string, number[]>();
@@ -125,8 +131,9 @@ export function assignGroups(groups: readonly GroupNeed[], offers: readonly Offe
       .sort((a, b) => held(b) - held(a) || b.room - a.room || a.serial - b.serial);
     const chain: number[] = [];
     let cover = 0;
-    for (const o of ranked) {
-      if (cover >= g.need || chain.length >= LIMITS.targets) break;
+    const kept = (g.prev ?? []).flatMap((s) => ranked.filter((o) => o.serial === s));
+    for (const o of [...kept, ...ranked.filter((o) => !kept.includes(o))]) {
+      if (chain.length >= LIMITS.targets || (cover >= g.need && !kept.includes(o))) break;
       chain.push(o.serial);
       cover += o.room;
     }
@@ -146,7 +153,8 @@ export const CONTAINER_SLOTS = 125;
 
 // A ground chest Auto organize may use: its name as the player knows it (its label, else its engraving or name),
 // its house (site), its fill, its label, and whether the player's own setup uses it (a manual label, or a target
-// of a manual rule or of the catch-all), which leaves it unticked by default.
+// of a manual rule or of the catch-all), which leaves it unticked by default unless an earlier strategy rule fills
+// it (the player ticked it last time, and unticking it now would move its items out on a re-run).
 export interface Candidate { serial: number; name: string; site: number; fill: { items: number; max: number }; label: { name: string; origin: Origin } | null; mine: boolean; ticked: boolean }
 export interface Unusable { serial: number; name: string; reason: string }
 // One group of the proposal. needSlots = its items at its home site (one slot each: merges are the plan's to find),
@@ -175,7 +183,7 @@ const plainName = (c: Container): string => ((c.label || bagLabel(c)) || `0x${(+
 // Every ground root a character of the player's scanned (never a `_vault` tombstone's, never a trash container),
 // usable or with the reason it is not. Usable = what a rule target needs (scopeOf): not blacklisted or pinned,
 // opened by its newest scan, with a position and a Contents line.
-function candidatesOf(inv: Inventory, cfg: OrganizeConfig, counts: Map<number, ContainerCapacity>, black: Set<number>, mine: Set<number>): { candidates: Candidate[]; unusable: Unusable[] } {
+function candidatesOf(inv: Inventory, cfg: OrganizeConfig, counts: Map<number, ContainerCapacity>, black: Set<number>, mine: Set<number>, filled: Set<number>): { candidates: Candidate[]; unusable: Unusable[] } {
   const roots = Object.values(inv.containers).filter((c) => c.parent == null && c.kind === "ground" && !String(c.scannedBy).startsWith("_") && !TRASH_RE.test(c.name ?? ""))
     .sort((a, b) => a.serial - b.serial);
   const usable: { serial: number; name: string; cap: ContainerCapacity; l: ContainerLabel | undefined }[] = [];
@@ -190,7 +198,7 @@ function candidatesOf(inv: Inventory, cfg: OrganizeConfig, counts: Map<number, C
   const siteOf = new Map(sitesOf(inv, usable.map((u) => u.serial)).flatMap((g, i) => g.map((s) => [s, i] as const)));
   const candidates = usable.map(({ serial, name, cap, l }) => {
     const own = l?.origin === "manual" || mine.has(serial);
-    return { serial, name, site: siteOf.get(serial)!, fill: { items: cap.items, max: cap.maxItems }, label: l ? { name: l.name, origin: l.origin } : null, mine: own, ticked: !own };
+    return { serial, name, site: siteOf.get(serial)!, fill: { items: cap.items, max: cap.maxItems }, label: l ? { name: l.name, origin: l.origin } : null, mine: own, ticked: !own || filled.has(serial) };
   });
   return { candidates, unusable };
 }
@@ -210,7 +218,8 @@ export function proposeOrganize(inv: Inventory, cfg: OrganizeConfig, overlay: Ov
   const origin: Origin = `strategy:${opts.strategy}`;
   const manualRules = cfg.rules.filter((r) => r.origin === "manual");
   const mine = new Set([...manualRules.flatMap((r) => r.targets), ...(cfg.catchAll != null ? [cfg.catchAll] : [])]);
-  const { candidates, unusable } = candidatesOf(view, cfg, placed.counts, black, mine);
+  const filled = new Set(cfg.rules.filter((r) => r.origin !== "manual").flatMap((r) => r.targets));
+  const { candidates, unusable } = candidatesOf(view, cfg, placed.counts, black, mine, filled);
   const offered = new Set(candidates.map((c) => c.serial));
   const refused: { serial: number; reason: string }[] = [];
   const containers: number[] = [];
@@ -223,7 +232,7 @@ export function proposeOrganize(inv: Inventory, cfg: OrganizeConfig, overlay: Ov
 
   const labels: Record<string, ContainerLabel> = {};
   for (const l of Object.values(cfg.labels).sort((a, b) => a.serial - b.serial)) {
-    if (l.origin === "manual" || (mine.has(l.serial) && !black.has(l.serial))) labels[String(l.serial)] = l;
+    if (l.origin === "manual" || mine.has(l.serial)) labels[String(l.serial)] = l;
   }
   for (const s of containers) if (labels[String(s)]?.origin !== "manual") labels[String(s)] = { serial: s, name: plainName(view.containers[s]!), origin };
   const catchAll = cfg.catchAll != null && labels[String(cfg.catchAll)] ? cfg.catchAll : null;
@@ -256,7 +265,13 @@ export function proposeOrganize(inv: Inventory, cfg: OrganizeConfig, overlay: Ov
     const cap = placed.counts.get(s)!;
     return { serial: s, site: siteOfRoot.get(s)!, room: Math.max(0, cap.maxItems - (cap.items - (inGroups.get(s) ?? 0))), held: held.get(s) ?? {} };
   });
-  const chains = assignGroups(groups.map((g) => ({ key: g.key, ...home.get(g.key)! })), offers);
+  // The chests each group's earlier strategy rule fills, found by the rule ids the strategies write.
+  const prev = new Map<string, number[]>();
+  for (const r of cfg.rules) {
+    const key = r.origin !== "manual" ? RULE_GROUP.get(r.id.replace(/_\d+$/, "")) : undefined;
+    if (key && !prev.has(key)) prev.set(key, r.targets);
+  }
+  const chains = assignGroups(groups.map((g) => ({ key: g.key, ...home.get(g.key)!, prev: prev.get(g.key) })), offers);
   for (const g of groups) for (const s of chains.get(g.key)!) if (labels[String(s)]!.origin !== "manual") labels[String(s)] = { serial: s, name: g.name, origin };
 
   const used = new Set(manualRules.map((r) => r.id));
@@ -270,7 +285,7 @@ export function proposeOrganize(inv: Inventory, cfg: OrganizeConfig, overlay: Ov
   const reports: GroupReport[] = groups.map((g) => {
     const targets = chains.get(g.key)!;
     const ruleIds = g.matches.map((m, i) => {
-      const id = ruleId(`auto-${g.key}${i ? `-${i + 1}` : ""}`);
+      const id = ruleId(ruleIdOf(g.key, i));
       autoRules.push({ id, name: g.name, match: structuredClone(m), targets: [...targets], origin });
       return id;
     });

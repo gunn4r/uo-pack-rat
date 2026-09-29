@@ -369,7 +369,7 @@ export function candidateGroups(cands: readonly ProposalCandidate[]): Array<{ si
 }
 // Why a chest starts unticked: the player's own setup uses it.
 export function candidateNote(c: ProposalCandidate): string | null {
-  if (!c.mine) return null;
+  if (!c.mine || c.ticked) return null;
   return c.label?.origin === "manual" ? "Your own label: tick it to let Auto organize fill it (its name stays)." : "One of your rules fills it: tick it to let Auto organize use it too.";
 }
 export function proposalHeadline(p: OrganizeProposal): string {

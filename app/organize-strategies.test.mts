@@ -186,7 +186,7 @@ test("[fast] re-running after manual edits: the player's rules stay first and ke
       first.rules[0]!, first.rules[2]!,
     ] };
   const byDefault = ok(proposeOrganize(inv, edited, [], OPTS()));
-  assert.deepEqual(byDefault.candidates.filter((c) => c.ticked).map((c) => c.serial), [], "every chest here is used by the player's own setup: none is ticked");
+  assert.deepEqual(byDefault.candidates.filter((c) => c.ticked).map((c) => c.serial), [B, C], "every chest here is used by the player's own setup: only the ones an earlier Auto rule still fills are ticked");
   const again = ok(proposeOrganize(inv, edited, [], OPTS({ containers: [A, B] })));
   assert.deepEqual(again.config.rules.map((r) => [r.id, r.name, r.targets, r.origin]), [
     ["auto-reagents", "Pearls", [A], "manual"],
@@ -215,6 +215,34 @@ test("[fast] running Auto again on its own accepted setup proposes the same setu
     const after = ok(proposeOrganize(inv, p.config, done, OPTS({ strategy })));
     assert.equal(after.plan.moves, 0, `${strategy}: re-running on its own result moves nothing`);
   }
+});
+
+test("[fast] a chest with the player's own label, ticked last time, is ticked again by default, so re-running moves nothing", () => {
+  const inv = fold([{ serial: A }, { serial: B, pos: at(102) }, { serial: C, pos: at(104) }], [...things(A, ["Black Pearl"]), ...things(B, ["Ruby", "Emerald"], 2)]);
+  const cfg: OrganizeConfig = { ...emptyOrganizeConfig(), labels: { [B]: manual(B, "My gems") } };
+  const p = ok(proposeOrganize(inv, cfg, [], OPTS({ containers: [A, B, C] })));
+  assert.deepEqual(p.groups.map((g) => [g.key, g.targets]), [["reagents", [A]], ["gems", [B]]]);
+  const again = ok(proposeOrganize(inv, p.config, [], OPTS()));
+  assert.deepEqual(again.containers, [A, B, C]);
+  assert.equal(again.changed, false);
+});
+
+test("[fast] re-running after the trips keeps each group in the chests its rule already fills, even when the trips leave two chests holding it equally", () => {
+  // Found by a property check: grave dust in all three chests; C is full of things whose groups get no chest, so
+  // the trip fills A, and after it A and C hold two each. Counts alone would then hand the group A first and C to
+  // Magery reagents, moving C's grave dust out on the next run.
+  const inv = fold([{ serial: A, pos: at(100), max: 7 }, { serial: B, pos: at(102), max: 14 }, { serial: C, pos: at(104), max: 8 }, { serial: BAG, parent: C }], [
+    { serial: ITEM + 1, name: "Grave Dust", in: A },
+    ...["Grave Dust", "Platemail Gorget", "Gold Necklace", "Greater Heal", "Greater Heal", "Iron Ingot", "Iron Ingot"].map((name, i) => ({ serial: ITEM + 10 + i, name, in: B, hue: i + 1 })),
+    ...["Greater Heal Potion", "Grave Dust", "Grave Dust", "Recall Rune", "Nightshade"].map((name, i) => ({ serial: ITEM + 20 + i, name, in: C, hue: i + 1 })),
+    { serial: ITEM + 30, name: "Spellbook", in: BAG }, { serial: ITEM + 31, name: "Black Pearl", in: BAG },
+  ]);
+  const p = ok(proposeOrganize(inv, emptyOrganizeConfig(), [], OPTS({ strategy: "detailed" })));
+  assert.deepEqual(p.groups.find((g) => g.key === "necromancy-reagents")!.targets, [C, A]);
+  const plan = planOrganize(inv, p.config, [], { now: NOW });
+  const done: OverlayMove[] = plan.moves.map((m) => ({ serial: m.serial, name: m.name, from: m.from, to: m.to, at: new Date(NOW).toISOString(), trip: "t1" }));
+  const after = ok(proposeOrganize(inv, p.config, done, OPTS({ strategy: "detailed" })));
+  assert.deepEqual([after.changed, after.plan.moves], [false, 0]);
 });
 
 test("[fast] Detailed with too few containers says how many are missing; the same scans in any order give the same proposal", () => {

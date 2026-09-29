@@ -387,6 +387,7 @@ test("[fast] Auto organize: the proposal's headline, each group's status, the no
   assert.equal(candidateNote(cand(A)), null);
   assert.equal(candidateNote(cand(A, { mine: true, ticked: false, label: { name: "Reagents", origin: "manual" } })), "Your own label: tick it to let Auto organize fill it (its name stays).");
   assert.equal(candidateNote(cand(A, { mine: true, ticked: false })), "One of your rules fills it: tick it to let Auto organize use it too.");
+  assert.equal(candidateNote(cand(A, { mine: true, ticked: true, label: { name: "Reagents", origin: "manual" } })), null, "ticked because an earlier Auto rule fills it: nothing to explain");
 
   assert.equal(canTrySimple(P({ strategy: "detailed", unassigned: 2 })), true);
   assert.equal(canTrySimple(P({ strategy: "simple", unassigned: 2 })), false);
