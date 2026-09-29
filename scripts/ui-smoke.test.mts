@@ -29,9 +29,11 @@ async function rowActionLabels(page: Page): Promise<string[]> {
 }
 // The reason is read from the wrapper's own tooltip (its aria-describedby id), not "the last tooltip on the
 // page": a tooltip shown for a row the table then redraws never hears the pointer leave, so it can outlive
-// the row. The tooltip shows 400 ms after a mouseenter on that exact element and nothing else brings it back,
-// so a try whose tooltip does not show starts over with the pointer off the row (a fresh mouseenter) instead
-// of waiting longer on a hover that was lost.
+// the row. The tooltip shows 400 ms after a mouseenter on that exact element and hides on its mouseleave. The
+// window shares the desktop's real pointer: one real pointer event reaching it (a mouse over the window, or
+// another window opening or closing under the resting cursor) moves the page's pointer off the wrapper, and
+// then the tooltip never shows however long the wait (#104). So a try waits for the tooltip or for the wrapper
+// to lose the hover (a redrawn row loses it too), and a lost hover starts over with a fresh mouseenter.
 async function actionReason(page: Page, action: string): Promise<string> {
   const row = page.locator("#inv-table tbody tr.item").first();
   const wrap = row.locator(".rowact .tipwrap", { has: page.locator(`button[aria-label="${action}"]`) });
@@ -40,9 +42,11 @@ async function actionReason(page: Page, action: string): Promise<string> {
     await row.hover();
     if (!await wrap.count()) return "";
     await wrap.hover();
-    const tip = page.locator(`[id="${await wrap.getAttribute("aria-describedby")}"]`);
-    try { await tip.waitFor({ timeout: 2_000 }); } catch (e) { if (attempt < 3) continue; throw e; }
-    const text = await tip.innerText();
+    const id = await wrap.getAttribute("aria-describedby");
+    const shown = await page.waitForFunction(({ w, id }) => !!document.getElementById(id!) || (w.matches(":hover") ? false : "lost"),
+      { w: await wrap.elementHandle(), id }, { timeout: 5_000 });
+    if (await shown.jsonValue() === "lost") { if (attempt < 5) continue; throw new Error(`the pointer left "${action}" before its tooltip showed, ${attempt} times`); }
+    const text = await page.locator(`[id="${id}"]`).innerText();
     await page.mouse.move(0, 0);
     return text;
   }
