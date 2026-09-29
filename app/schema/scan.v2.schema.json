@@ -74,7 +74,7 @@
           "parent": { "type": ["integer", "null"], "minimum": 0, "maximum": 4294967295 },
           "kind": { "type": "string", "maxLength": 64 },
           "name": { "type": "string", "maxLength": 256 },
-          "pos": { "type": ["object", "null"], "additionalProperties": { "type": "number" } },
+          "pos": { "type": ["object", "null"], "additionalProperties": { "type": "number" }, "properties": { "facet": { "type": "integer", "enum": [0, 1, 2, 3, 4, 5], "$comment": "The facet the container is on: 0 Felucca, 1 Trammel, 2 Ilshenar, 3 Malas, 4 Tokuno, 5 Ter Mur. Scanners write it on a ground root's pos (TazUO 2.9.0, Razor Enhanced 1.9.0, ClassicUO web 1.3.0) and leave it out when the client cannot say." } } },
           "tooltip": { "type": "array", "maxItems": 256, "items": { "type": "string", "maxLength": 512 } },
           "opened": { "type": "boolean" }
         }

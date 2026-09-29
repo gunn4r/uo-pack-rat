@@ -59,6 +59,10 @@ test("[fast] sheet: the Properties card lists each property once, shows today's 
   for (const k of ["hitFireball", "selfRepair", "strBonus"]) assert.ok(!DEFAULT_SHEET_PROPS.includes(k) && listed.includes(k), `${k} is listed but off`);
 });
 
+test("[fast] sheet: a power scroll's level is never offered on the Properties card", () => {
+  assert.ok(!SHEET_CATALOGUE.flatMap(([, rows]) => rows.map(([k]) => k)).includes("psLevel"));
+});
+
 test("[fast] sheet: tags take the danger or warning tone the inventory uses", () => {
   assert.equal(tagTone("cursed"), "bad");
   assert.equal(tagTone("brittle"), "warn");
