@@ -151,7 +151,7 @@ test("[slow] components: confirm dialog, drawer, popover, toasts and tooltip beh
     // --- tooltip: keyboard focus shows it, and the control is described by it
     await page.focus("#tipped");
     const tip = page.locator(".tip[role=tooltip]");
-    await tip.waitFor({ timeout: 2_000 });
+    await tip.waitFor({ timeout: 10_000 });
     assert.equal(await tip.innerText(), "Bridge offline. Press Play on packrat-bridge.py in game.");
     assert.equal(await page.getAttribute("#tipped", "aria-describedby"), await tip.getAttribute("id"));
 

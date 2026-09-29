@@ -16,11 +16,12 @@
 // no edit here — so the copy that lived in this file was doing nothing the suite wasn't.
 import { writeFileSync, mkdirSync, readdirSync, readFileSync } from "node:fs";
 import { execFileSync } from "node:child_process";
+import { availableParallelism } from "node:os";
 import { dirname, join, relative, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { buildUi } from "./build-ui.mts";
 import { buildSchemaTypes } from "./build-schema-types.mts";
-import { runSuite, type Mode, type Summary } from "./run-suite.mts";
+import { runSuite, type Mode, type SuiteResult } from "./run-suite.mts";
 import { selectTests } from "./select-tests.mts";
 
 const ROOT = dirname(dirname(fileURLToPath(import.meta.url)));
@@ -28,9 +29,19 @@ const changedArg = process.argv.find((a) => a === "--changed" || a.startsWith("-
 const mode: Mode = changedArg ? "changed" : process.argv.includes("--smoke") ? "smoke" : process.argv.includes("--fast") ? "fast" : "full";
 // Node 24 applies it to each test and Node 22 to each file as a whole. It sits well below CI's
 // 20-minute job timeout, so a hang in CI still ends in a written summary naming the hung test or file
-// (the job being killed would write nothing), and far above anything the suite needs: the whole full
-// run takes a few minutes, its slowest file well under one.
+// (the job being killed would write nothing), and far above anything the suite needs: its slowest
+// file, app/solver-large.test.mts, takes a minute or two.
 const TEST_TIMEOUT_MS = 12 * 60 * 1000;
+// Test files run in parallel, one process each, as many at once as the machine has cores. Every file
+// keeps its own temp folders and ports, and the Electron files their own data folder (which is also
+// Electron's userData and single-instance lock). TEST_CONCURRENCY=1 runs them one at a time.
+const CONCURRENCY = Number(process.env.TEST_CONCURRENCY) || availableParallelism();
+// Except the files that open an Electron window, which run one at a time (alongside the rest): windows on
+// one desktop share its pointer and keyboard focus, so a window shown by one file closes another file's
+// hover and focus tooltips (seen on Windows CI). On Linux each of them has an X display of its own
+// (scripts/electron-window.mts), so they run in parallel there.
+const OPENS_A_WINDOW = /^scripts\/(ui-[^/]+|shell-smoke)\.test\.mts$/;
+const serial = (file: string): boolean => process.platform !== "linux" && OPENS_A_WINDOW.test(file);
 
 // Recursive so a test file in a new subdirectory (app/schema/validate.test.mts was the one this
 // missed) is picked up automatically — a hard-coded third/fourth top-level directory is what
@@ -71,12 +82,14 @@ if (selection.note) console.log(`changed: ${selection.note}`);
 // every failure, the builds included, has to end up in a freshly written summary rather than leave
 // the previous (possibly green) one on disk. That is why the builds run inside runSuite's `prepare`.
 // A --changed run that selected nothing runs nothing and still writes one, empty, with its note.
-const summary: Summary = selection.files?.length === 0
-  ? { timestamp: new Date().toISOString(), mode, total: 0, passed: 0, failed: 0, skipped: 0, failures: [] }
+const { durations, ...summary }: SuiteResult = selection.files?.length === 0
+  ? { timestamp: new Date().toISOString(), mode, total: 0, passed: 0, failed: 0, skipped: 0, failures: [], durations: {} }
   : await runSuite({
   root: ROOT,
   mode,
   timeout: TEST_TIMEOUT_MS,
+  concurrency: CONCURRENCY,
+  serial,
   prepare: () => {
     // Build the schema types before buildUi() — this call, not tsconfig.browser.json's `include` (a
     // missing literal entry there is silently dropped, not an error), is what actually guarantees
@@ -84,6 +97,9 @@ const summary: Summary = selection.files?.length === 0
     // build step — every caller imports scripts/optimizer-core.mts straight from source.
     buildSchemaTypes();
     buildUi();   // app/server.test.mts's [smoke] cases fetch app/dist/item-query.mjs and the page itself
+    // Built once for the whole run: the files run in parallel, so none of them may rebuild it under
+    // the others (see scripts/build-ui.mts). Every test file's process inherits this.
+    process.env.PACKRAT_UI_BUILT = "1";
     const all = ["app", "scripts"].flatMap((d) => walk(join(ROOT, d)));
     return selection.files ? all.filter((p) => selection.files!.includes(repoPath(p))) : all;
   },
@@ -91,6 +107,9 @@ const summary: Summary = selection.files?.length === 0
 if (selection.note) summary.note = selection.note;
 mkdirSync(join(ROOT, "test_logs"), { recursive: true });
 writeFileSync(join(ROOT, "test_logs", "latest_summary.json"), JSON.stringify(summary, null, 2) + "\n");
+// The slowest files, so a run (a CI log included) shows where its time went.
+const slowest = Object.entries(durations).sort((a, b) => b[1] - a[1]).slice(0, 10);
+if (slowest.length) console.log(`slowest files:\n${slowest.map(([f, ms]) => `  ${(ms / 1000).toFixed(1).padStart(6)} s  ${f}`).join("\n")}`);
 console.log(`${mode}: ${summary.passed}/${summary.total} passed, ${summary.failed} failed, ${summary.skipped} skipped`);
 for (const f of summary.failures) console.log(`  FAIL ${f.file} ${f.test_name}: ${f.error}`);
 process.exit(summary.failed ? 1 : 0);
