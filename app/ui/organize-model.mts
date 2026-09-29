@@ -402,7 +402,7 @@ export function intoText(g: ProposalGroup, cands: readonly ProposalCandidate[]):
 }
 export function proposalNotes(p: OrganizeProposal): string[] {
   return [
-    ...(p.manualRules ? [`Your ${plural(p.manualRules, "rule")} stay above these and take their items first.`] : []),
+    ...(p.manualRules ? [p.manualRules === 1 ? "Your 1 rule stays above these and takes its items first." : `Your ${plural(p.manualRules, "rule")} stay above these and take their items first.`] : []),
     ...p.refused.map((r) => `Container 0x${r.serial.toString(16)} could not be used: ${r.reason}.`),
     ...(p.addContainers ? [`Place ${plural(p.addContainers, "more container")}, scan them, and run Auto organize again to fit everything.`] : []),
     ...(p.plan.crossSite ? [`${plural(p.plan.crossSite, "item")} ${p.plan.crossSite === 1 ? "belongs" : "belong"} at another house: carry ${p.plan.crossSite === 1 ? "it" : "them"} over by hand.`] : []),

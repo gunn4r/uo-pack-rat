@@ -387,6 +387,7 @@ test("[fast] Auto organize: the proposal's headline, each group's status, the no
   assert.equal(intoText(group({ targets: [A, B] }), [cand(A), cand(B)]), "Chest 40000001, then Chest 40000002");
   assert.equal(intoText(group({ targets: [] }), []), "—");
 
+  assert.equal(proposalNotes(P({ manualRules: 1, plan: { moves: 0, trips: 0, noRoom: 0, crossSite: 0, unclaimed: 0 } }))[0], "Your 1 rule stays above these and takes its items first.");
   assert.deepEqual(proposalNotes(P({ manualRules: 2, refused: [{ serial: C, reason: "blacklisted" }], addContainers: 3, plan: { moves: 1, trips: 1, noRoom: 0, crossSite: 4, unclaimed: 0 } })), [
     "Your 2 rules stay above these and take their items first.",
     "Container 0x40000003 could not be used: blacklisted.",
