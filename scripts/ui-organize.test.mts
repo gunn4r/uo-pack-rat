@@ -515,6 +515,11 @@ test("[slow] Auto organize: Simple proposes groups for the ticked chests, Accept
     assert.match(await page.locator("#auto-headline").innerText(), /already your setup/);
     assert.equal(await page.locator("#auto-accept").isDisabled(), true);
 
+    // By build: the gear groups by build, the rest as Simple has them.
+    await page.getByRole("radio", { name: "By build" }).click();
+    await page.waitForFunction(() => document.querySelector("#auto-proposal")?.getAttribute("aria-busy") === "false" && document.querySelector('#auto-strategy [data-value="build"]')?.getAttribute("aria-checked") === "true");
+    const keys = await page.locator("#auto-proposal tr[data-group]").evaluateAll((rows) => rows.map((r) => r.getAttribute("data-group")));
+    assert.ok(keys.some((k) => /^(caster|melee|hybrid|tank|plain)-gear$/.test(k!)) && !keys.includes("armour"), keys.join(", "));
     // Detailed, then one chest unticked: each works the proposal out again. Try Simple goes back when offered.
     await page.getByRole("radio", { name: "Detailed" }).click();
     await page.waitForFunction(() => document.querySelector("#auto-proposal")?.getAttribute("aria-busy") === "false" && document.querySelector('#auto-strategy [data-value="detailed"]')?.getAttribute("aria-checked") === "true");

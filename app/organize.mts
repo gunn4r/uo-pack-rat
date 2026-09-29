@@ -4,8 +4,8 @@
 // (GET /api/organize/plan, POST /api/organize/trip) hands everything in.
 import { matchesItem } from "./item-query.mts";
 import { parseStamp } from "./scan-schema.mts";
-import { CATCH_ALL_ID, type OrganizeConfig, type RuleMatch } from "./organize-config.mts";
-import { TRASH_RE, type ContainerCapacity, type Inventory, type Item } from "./vault-lib.mts";
+import { CATCH_ALL_ID, type Build, type OrganizeConfig, type RuleMatch } from "./organize-config.mts";
+import { RESIST_KEYS, TRASH_RE, type ContainerCapacity, type Inventory, type Item } from "./vault-lib.mts";
 import type { RulesV1RarityItem } from "./schema/types.d.mts";
 import type { TripInput } from "./bridge-trip.mts";
 
@@ -92,8 +92,30 @@ const STACK_COUNT = /^\d[\d,]*\s+/;
 // stack merges compare.
 export const baseName = (name: string): string => name.replace(STACK_COUNT, "").trim().toLowerCase();
 
-// A rule's filter: the item query (location-free, item-query.mts's matchesItem) and, when given, any of the names.
+// By build's markers (issue #91): vault-lib's property keys, and the skills (lower-cased, as `extras` keys them)
+// whose bonus marks a piece. Spell Channeling has no number, so it is read from the flags; Mage Weapon reads as a
+// negative skill penalty, so any value marks it.
+export const CASTER_PROPS = ["lmc", "lrc", "sdi", "fc", "fcr", "mageWeapon"];
+export const CASTER_SKILLS = ["magery", "evaluating intelligence", "evaluate intelligence", "meditation", "mysticism", "spellweaving", "necromancy", "focus"];
+export const MELEE_PROPS = ["hci", "di", "ssi", "hitLifeLeech", "hitManaLeech", "hitStamLeech", "hitLowerDef", "hitLowerAttack", "hitFireball", "hitLightning",
+  "hitHarm", "hitMagicArrow", "hitDispel", "hitPoisonArea", "hitFireArea", "hitColdArea", "hitEnergyArea", "hitPhysArea"];
+export const MELEE_SKILLS = ["swordsmanship", "tactics", "anatomy", "archery", "fencing", "mace fighting", "wrestling", "bushido", "chivalry", "parrying"];
+// A piece's summed resists at least this, with no caster or melee marker, is Tank gear.
+export const TANK_RESISTS = 20;
+// Which build a piece of gear is: the side with more distinct markers, Hybrid on a tie, and a piece with none is Tank
+// when its resists add up to TANK_RESISTS, else Other.
+export function buildOf(it: Item): Build {
+  const n = (keys: string[], skills: string[]): number => keys.filter((k) => (k === "mageWeapon" ? !!it.props[k] : (it.props[k] ?? 0) > 0)).length
+    + skills.filter((k) => { const v = it.extras[k]; return typeof v === "number" && v > 0; }).length;
+  const caster = n(CASTER_PROPS, CASTER_SKILLS) + (it.flags.includes("spell channeling") ? 1 : 0), melee = n(MELEE_PROPS, MELEE_SKILLS);
+  if (caster || melee) return caster > melee ? "caster" : melee > caster ? "melee" : "hybrid";
+  return RESIST_KEYS.reduce((sum, k) => sum + (it.props[k] ?? 0), 0) >= TANK_RESISTS ? "tank" : "other";
+}
+
+// A rule's filter: the item query (location-free, item-query.mts's matchesItem) and, when given, any of the names
+// and the build (gear only).
 export function ruleMatches(it: Item, m: RuleMatch, rarity: RulesV1RarityItem[] = []): boolean {
+  if (m.build && (!it.gear || buildOf(it) !== m.build)) return false;
   const names = m.names ?? [];
   if (names.length) {
     const n = baseName(it.name);

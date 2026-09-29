@@ -12,7 +12,7 @@ import { houseScan, AT, type BoxSpec, type ThingSpec } from "./organize-fixture.
 import { checkOrganizeConfig, emptyOrganizeConfig, emptyRuleQuery, type OrganizeConfig, type OrganizeRule } from "./organize-config.mts";
 import { planOrganize, type OverlayMove } from "./organize.mts";
 import type { RulesV1 } from "./schema/types.d.mts";
-import { STRATEGIES, groupItems, assignGroups, proposeOrganize, type Offer, type Proposal, type ProposeOptions } from "./organize-strategies.mts";
+import { STRATEGIES, STRATEGY_IDS, groupItems, assignGroups, proposeOrganize, type Offer, type Proposal, type ProposeOptions } from "./organize-strategies.mts";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 setRules(JSON.parse(readFileSync(join(HERE, "rules", "uoalive.json"), "utf8")) as RulesV1);
@@ -30,7 +30,7 @@ const things = (inBox: number, names: readonly string[] = NAMES, from = 1): Thin
 const grouped = (strategy: keyof typeof STRATEGIES): [string, string, string[]][] =>
   groupItems(STRATEGIES[strategy], Object.values(fold([{ serial: A }], things(A)).items)).map((g) => [g.key, g.name, g.items.map((it) => it.name)]);
 
-test("[fast] every Simple and Detailed group is made of valid rule filters, under unique keys", () => {
+test("[fast] every Simple, Detailed and By build group is made of valid rule filters, under unique keys", () => {
   for (const [id, defs] of Object.entries(STRATEGIES)) {
     const keys = defs.map((d) => d.key);
     assert.equal(new Set(keys).size, keys.length, `${id}: group keys are unique`);
@@ -78,6 +78,44 @@ test("[fast] Detailed: gear by slot, reagents by school, power scrolls by level,
     ["tools", ["Scissors"]],
     ["other", ["Apple"]],
   ]);
+});
+
+// Gear for By build, one piece of each build, each written as its tooltip reads.
+const BUILD_GEAR: ThingSpec[] = [
+  { name: "Gold Ring", lines: ["Faster Casting 1", "Lower Mana Cost 8"] },
+  { name: "Katana", lines: ["Hit Chance Increase 15", "Swing Speed Increase 10"] },
+  { name: "Gold Bracelet", lines: ["Faster Casting 1", "Damage Increase 10"] },
+  { name: "Platemail Gorget", lines: ["Physical Resist 10", "Fire Resist 10"] },
+  { name: "Leather Gloves", lines: ["Physical Resist 5"] },
+].map((t, i) => ({ serial: ITEM + 100 + i, in: A, ...t }));
+
+test("[fast] By build: gear by caster and melee markers into Caster, Melee, Hybrid, Tank and Other gear; everything else as Simple groups it", () => {
+  const items = Object.values(fold([{ serial: A }], [...things(A, ["Black Pearl", "Spellbook", "Ruby", "Apple"]), ...BUILD_GEAR]).items);
+  assert.deepEqual(groupItems(STRATEGIES.build, items).map((g) => [g.key, g.name, g.items.map((it) => it.name)]), [
+    ["caster-gear", "Caster gear", ["Gold Ring"]],
+    ["melee-gear", "Melee gear", ["Katana"]],
+    ["hybrid-gear", "Hybrid gear", ["Gold Bracelet"]],
+    ["tank-gear", "Tank gear", ["Platemail Gorget"]],
+    ["plain-gear", "Other gear", ["Spellbook", "Leather Gloves"]],
+    ["reagents", "Reagents", ["Black Pearl"]],
+    ["gems", "Gems", ["Ruby"]],
+    ["other", "Other", ["Apple"]],
+  ]);
+  assert.deepEqual(STRATEGIES.build.slice(5), STRATEGIES.simple.filter((d) => !["armour", "jewelry", "weapons", "other-gear"].includes(d.key)), "the groups after the gear are Simple's own");
+});
+
+test("[fast] switching strategy replaces the earlier strategy's rules and labels and keeps the player's own", () => {
+  const inv = fold([{ serial: A }, { serial: B, pos: at(102) }, { serial: C, pos: at(104) }], [...things(A, ["Black Pearl"]), ...things(B, ["Ruby"], 2), ...BUILD_GEAR.map((t) => ({ ...t, in: C }))]);
+  const simple = ok(proposeOrganize(inv, emptyOrganizeConfig(), [], OPTS())).config;
+  const cfg: OrganizeConfig = { ...simple, rules: [{ id: "rule-1", name: "Apples", match: { query: emptyRuleQuery(), names: ["apple"] }, targets: [B], origin: "manual" }, ...simple.rules] };
+  const build = ok(proposeOrganize(inv, cfg, [], OPTS({ strategy: "build" }))).config;
+  assert.deepEqual(build.rules.map((r) => [r.id, r.origin]), [
+    ["rule-1", "manual"], ["auto-caster-gear", "strategy:build"], ["auto-melee-gear", "strategy:build"], ["auto-hybrid-gear", "strategy:build"], ["auto-tank-gear", "strategy:build"],
+    ["auto-plain-gear", "strategy:build"], ["auto-reagents", "strategy:build"], ["auto-gems", "strategy:build"],
+  ]);
+  assert.deepEqual(build.rules[1]!.match, { query: { ...emptyRuleQuery(), kind: ["gear"] }, build: "caster" });
+  assert.ok(Object.values(build.labels).every((l) => l.origin === "strategy:build"), "no Simple label is left");
+  assert.equal(checkOrganizeConfig(build).ok, true);
 });
 
 test("[fast] groupItems leaves out a skipped group and every empty one", () => {
@@ -203,8 +241,8 @@ test("[fast] re-running after manual edits: the player's rules stay first and ke
 test("[fast] running Auto again on its own accepted setup proposes the same setup, and after its trips nothing moves", () => {
   // A messy house: reagents and gems mixed in two chests, a third chest empty, twelve slots each.
   const inv = fold([{ serial: A, max: 12 }, { serial: B, pos: at(102), max: 12 }, { serial: C, pos: at(104), max: 12 }],
-    [...things(A, ["Black Pearl", "Ruby", "Garlic", "Iron Ingot"]), ...things(B, ["Emerald", "Ginseng", "Katana", "Sapphire"], 5)]);
-  for (const strategy of ["simple", "detailed"] as const) {
+    [...things(A, ["Black Pearl", "Ruby", "Garlic", "Iron Ingot"]), ...things(B, ["Emerald", "Ginseng", "Katana", "Sapphire"], 5), ...BUILD_GEAR.map((t, i) => ({ ...t, in: i < 2 ? A : B }))]);
+  for (const strategy of STRATEGY_IDS) {
     const p = ok(proposeOrganize(inv, emptyOrganizeConfig(), [], OPTS({ strategy })));
     const again = ok(proposeOrganize(inv, p.config, [], OPTS({ strategy })));
     assert.equal(again.changed, false, `${strategy}: accepting, then running again, changes nothing`);

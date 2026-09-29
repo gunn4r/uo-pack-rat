@@ -9,14 +9,14 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { foldSnapshots, setRules, type Inventory } from "./vault-lib.mts";
 import { houseScan, AT, type BoxSpec, type ThingSpec } from "./organize-fixture.mts";
-import { emptyRuleQuery, emptyOrganizeConfig, CATCH_ALL_ID, type OrganizeConfig, type OrganizeRule, type ContainerLabel } from "./organize-config.mts";
+import { emptyRuleQuery, emptyOrganizeConfig, CATCH_ALL_ID, type OrganizeConfig, type OrganizeRule, type ContainerLabel, type RuleMatch } from "./organize-config.mts";
 import type { RuleQuery } from "./item-query.mts";
 import type { RulesV1 } from "./schema/types.d.mts";
 import { resolveConfig } from "./config.mts";
 import { queueTrip } from "./bridge-trip.mts";
 import type { ScanV2 } from "./schema/types.d.mts";
 import {
-  ancestry, scopeOf, ruleMatches, claimOf, baseName, applyOverlay, homeOf, newSim, simTake, simPut, mark, rollback, MAX_STACK,
+  ancestry, scopeOf, ruleMatches, buildOf, claimOf, baseName, applyOverlay, homeOf, newSim, simTake, simPut, mark, rollback, MAX_STACK,
   sitesOf, planOrganize, tripCommand, lineBytes, type OverlayMove, type Sim, type Plan,
 } from "./organize.mts";
 
@@ -113,6 +113,35 @@ test("[fast] rule names match the item's own name, stack count stripped, case-in
   assert.equal(ruleMatches(dust, { query: emptyRuleQuery(), names: ["GRAVE"] }), true);
   assert.equal(ruleMatches(inv.items[PEARL]!, { query: emptyRuleQuery(), names: ["grave dust"] }), false);
   assert.equal(ruleMatches(dust, { query: { ...emptyRuleQuery(), kind: ["gem"] }, names: ["grave dust"] }), false);
+});
+
+test("[fast] a rule's build takes gear by its caster and melee markers, then its resists, and never takes anything else", () => {
+  const gear = (serial: number, name: string, lines: string[]): ThingSpec => ({ serial, name, in: A, lines });
+  const inv = fold([{ serial: A }], [
+    gear(0x40002001, "Gold Ring", ["Faster Casting 1", "Lower Mana Cost 8"]),
+    gear(0x40002002, "Quarter Staff", ["Spell Channeling", "Mage Weapon -25 Skill", "Damage Increase 20"]),
+    gear(0x40002003, "Katana", ["Hit Chance Increase 15", "Hit Fireball 30"]),
+    gear(0x40002004, "Gold Earrings", ["Magery +10", "Swordsmanship +5", "Tactics +5"]),
+    gear(0x40002005, "Gold Bracelet", ["Faster Casting 1", "Damage Increase 10"]),
+    gear(0x40002006, "Platemail Gorget", ["Physical Resist 10", "Fire Resist 10"]),
+    gear(0x40002007, "Leather Gloves", ["Physical Resist 5", "Faster Casting 0"]),
+    { serial: PEARL, name: "Black Pearl", in: A },
+  ]);
+  const items = Object.values(inv.items).sort((a, b) => a.serial - b.serial);
+  assert.deepEqual(items.map((it) => [it.name, it.gear ? buildOf(it) : null]), [
+    ["Black Pearl", null],
+    ["Gold Ring", "caster"],
+    ["Quarter Staff", "caster"],
+    ["Katana", "melee"],
+    ["Gold Earrings", "melee"],
+    ["Gold Bracelet", "hybrid"],
+    ["Platemail Gorget", "tank"],
+    ["Leather Gloves", "other"],
+  ]);
+  const takes = (build: RuleMatch["build"]): string[] => items.filter((it) => ruleMatches(it, { query: emptyRuleQuery(), build })).map((it) => it.name);
+  assert.deepEqual(takes("caster"), ["Gold Ring", "Quarter Staff"]);
+  assert.deepEqual(takes("other"), ["Leather Gloves"], "a build never takes what is not gear");
+  assert.equal(takes(undefined).length, items.length);
 });
 
 test("[fast] a rule's free text never matches where the item sits", () => {
