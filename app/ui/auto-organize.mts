@@ -116,7 +116,7 @@ function paintProposal(): void {
     for (const text of proposalNotes(p)) kids.push(message({ tone: "info", text }));
     if (canTrySimple(p)) kids.push(message({ tone: "warn", text: `${plural(p.unassigned, "group")} got no container. Simple needs fewer.`, actions: [button({ label: "Try Simple instead", size: "sm", attrs: { id: "auto-try-simple" }, onClick: () => { setStrategy("simple"); } })] }));
     if (p.groups.length) {
-      kids.push(table({ label: "Proposed groups", columns: [{ label: "Group" }, { label: "Into" }, { label: "Items" }, { label: "Status" }], rows: p.groups.map((g) => {
+      kids.push(table({ label: "Proposed groups", columns: [{ label: "Group", width: "22%" }, { label: "Into", width: "28%" }, { label: "Items", width: "18%" }, { label: "Status", width: "32%" }], rows: p.groups.map((g) => {
         const s = groupStatus(g), away = groupAway(g);
         return { attrs: { "data-group": g.key }, cells: [g.name, intoText(g, p.candidates),
           away ? box("span", { class: "auto-stack" }, txt(plural(g.needSlots, "item")), txt(away, "t-sm muted")) : plural(g.needSlots, "item"),

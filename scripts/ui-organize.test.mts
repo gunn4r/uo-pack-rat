@@ -525,3 +525,34 @@ test("[slow] Auto organize: Simple proposes groups for the ticked chests, Accept
     rmSync(dataDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
   }
 });
+
+test("[slow] the Auto organize drawer fits a 1000 × 700 window: nothing scrolls sideways and Accept stays reachable", async (t) => {
+  const why = unavailable();
+  if (why) return t.skip(why);
+  const dataDir = dataDirWith(null);
+  const { app, page, errors, size } = await launch(dataDir, { width: 1000, height: 700 });
+  t.diagnostic(`window ${size.width} × ${size.height}`);
+  try {
+    await go(page, "#/organize", "#org-auto");
+    await page.click("#org-auto");
+    await page.waitForSelector('#auto-drawer:not([hidden]) #auto-proposal[aria-busy="false"] #auto-headline');
+    // The drawer slides in: measure it once the slide has finished.
+    await page.waitForFunction(() => document.querySelector("#auto-drawer .drawer")!.getAnimations().length === 0);
+    const fit = await page.evaluate(() => {
+      const b = document.querySelector("#auto-drawer .drawer-body") as HTMLElement;
+      const d = document.querySelector("#auto-drawer .drawer")!.getBoundingClientRect();
+      const rows = [...document.querySelectorAll<HTMLElement>("#auto-drawer .auto-cand, #auto-drawer .auto-status")].filter((r) => r.scrollWidth > r.clientWidth + 1).map((r) => r.className);
+      return { sideways: b.scrollWidth - b.clientWidth, left: d.left, right: d.right, rows };
+    });
+    assert.equal(fit.sideways, 0, "the drawer body does not scroll sideways");
+    assert.deepEqual(fit.rows, [], "no row is wider than the drawer");
+    assert.ok(fit.left >= 0 && fit.right <= size.width + 1, "the drawer fits the window");
+    await page.locator("#auto-accept").scrollIntoViewIfNeeded();
+    assert.ok(await page.locator("#auto-accept").isVisible());
+    await page.keyboard.press("Escape");
+    assert.deepEqual(errors, []);
+  } finally {
+    await app.close();
+    rmSync(dataDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
+  }
+});

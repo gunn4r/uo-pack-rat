@@ -54,9 +54,12 @@
 .org-empty-actions { display: flex; flex-wrap: wrap; justify-content: center; gap: var(--space-2); }
 #auto-drawer .drawer-body { gap: var(--space-6); }
 .auto-section { display: flex; flex-direction: column; gap: var(--space-2); min-width: 0; }
+.auto-section > .seg { align-self: flex-start; }
 .auto-site { display: flex; flex-direction: column; gap: var(--space-1); }
 .auto-cands { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--space-1); }
 .auto-cand { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-0-5) var(--space-3); min-width: 0; }
 .auto-unusable-list { margin: var(--space-1) 0 0; padding-left: var(--space-5); }
 .auto-stack { display: flex; flex-direction: column; gap: var(--space-0-5); }
 .auto-status { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-1) var(--space-2); }
+/* The proposal table's cells hold sentences (the chests a group gets, why it is short): they wrap, not clip. */
+#auto-proposal .tbl td { white-space: normal; padding-block: var(--space-1-5); }

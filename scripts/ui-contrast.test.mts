@@ -179,6 +179,11 @@ const SCENES: Scene[] = [
     await p.getByRole("menuitem", { name: /^(Label|Edit label)…$/ }).click();
     await p.waitForSelector("dialog[open] #lbl-name");
   }, leave: (p) => p.keyboard.press("Escape") },
+  { name: "auto organize", enter: async (p) => {
+    await route(p, "#/organize", "#org-auto");
+    await p.click("#org-auto");
+    await p.waitForSelector('#auto-drawer:not([hidden]) #auto-proposal[aria-busy="false"] #auto-headline');
+  }, leave: (p) => p.keyboard.press("Escape") },
   { name: "import drawer", enter: (p) => route(p, "#/import", "#import-drawer:not([hidden]) #imp-mode"), leave: (p) => p.keyboard.press("Escape") },
   { name: "runs drawer", enter: (p) => route(p, "#/runs", "#runs-drawer:not([hidden]) .run-card"), leave: (p) => p.keyboard.press("Escape") },
   { name: "bridge popover", enter: async (p) => { await p.click("#bridge"); await p.waitForSelector(".pop"); }, leave: (p) => p.keyboard.press("Escape") },
