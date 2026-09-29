@@ -19,6 +19,7 @@ import type { Item, Container, Character, ScanSummary, OptItem, RunSettings, Pro
 import type { Facets, ItemQueryRows, ItemQueryGroups } from "../item-query.mts";
 import type { RulesV1 } from "../schema/types.d.mts";
 import type { AutostartOutcome, Hotkey as PanelHotkey, PanelPrefs } from "../tazuo-panel-prefs.mts";
+import type { OrganizeConfig, RuleMatch } from "../organize-config.mts";
 
 // ---------------------------------------------------------------- shared fragments
 
@@ -413,12 +414,19 @@ export interface JobCancelledEvent {
 // narrowing them here, at the one place the response is parsed, is what lets bridge.mts read those
 // fields without its own casts.
 export interface BridgeCurrentCommand {
+  id?: string | undefined;           // the running command's id (a trip's, while Organize waits on it)
   action?: string | undefined;
   name?: string | undefined;
 }
+// One step of a trip's result (the bridge's trip action: every take and put it tried, in order).
+export interface TripStepResult { op: "take" | "put"; serial: number; ok: boolean; msg: string }
 export interface BridgeResultEntry {
   ok: boolean;
   msg: string;
+  t?: string | undefined;
+  partial?: boolean | undefined;     // a trip whose take phase ended early (too heavy or too full)
+  stopped?: boolean | undefined;     // a trip halted by the stop flag (POST /api/bridge/stop)
+  steps?: TripStepResult[] | undefined;
 }
 export interface BridgeStatusApiResponse {
   ok: boolean;
@@ -431,6 +439,38 @@ export interface BridgeQueueApiResponse {
   ok: boolean;
   id: string;
 }
+
+// ---------------------------------------------------------------- organize (issue #11)
+// The setup's types come straight from app/organize-config.mts: unlike the modules listed at the top of this
+// file it is pure and imports only item-query.mts's types, so the browser build type-checks it. The plan's
+// types are mirrored from app/organize.mts, which imports server-only code (bridge-trip.mts).
+export type { OrganizeConfig, ContainerLabel, OrganizeRule, RuleMatch, Origin } from "../organize-config.mts";
+export type PlanWarningKind = "stale-container" | "missing-target" | "missing-label" | "unknown-capacity" | "old-scripts" | "blacklisted" | "no-position" | "not-ground";
+export interface PlanWarning { kind: PlanWarningKind; serial: number; detail: string }
+export interface PlanMove { serial: number; name: string; amount: number; from: number | null; to: number; ruleId: string; alsoMatched: string[]; trip: number }
+export interface PlanTrip { index: number; site: number; takes: number[]; puts: number[] }
+export interface PlanRuleReport { ruleId: string; matched: number; inPlace: number; toMove: number; noRoom: number }
+export interface PlanRoomReport { ruleId: string; needSlots: number; freeSlots: number; shortfall: number }
+export interface OrganizePlan {
+  inventoryStamp: string;
+  stamp: string;                     // the plan's identity; POST /api/organize/trip refuses any other
+  sites: { index: number; roots: number[] }[];
+  moves: PlanMove[];                 // in trip order; from null = carried in the backpack
+  trips: PlanTrip[];                 // index 1-based; the first trip of each site is the only one the server runs
+  rules: PlanRuleReport[];           // one per rule in rule order, then "catch-all" when set
+  room: PlanRoomReport[];
+  crossSite: { ruleId: string; count: number }[];
+  warnings: PlanWarning[];
+  carried: { serial: number; name: string }[];
+  unclaimed: number;
+}
+export interface OrganizePreset { id: string; name: string; match: RuleMatch }
+export interface OrganizeApiResponse { ok: boolean; config: OrganizeConfig; problems: string[] }
+export interface OrganizePlanApiResponse { ok: boolean; plan: OrganizePlan }
+export interface OrganizePresetsApiResponse { ok: boolean; presets: OrganizePreset[] }
+export interface OrganizeTripApiResponse { ok: boolean; id: string; index: number }
+// POST /api/organize/match: what one rule filter takes of the movable items in labelled roots (app/organize.mts's matchCount).
+export interface OrganizeMatchApiResponse { ok: boolean; count: number; pieces: number; sample: string[] }
 
 // SSE payloads on the shared /api/events stream (ui/events.mts) — mirror vault-server.mts's
 // broadcastEvent("inventory", …) / broadcastEvent("rejected", …) literals (app/watcher.mts's
