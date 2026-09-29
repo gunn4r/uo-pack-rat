@@ -629,6 +629,10 @@ test("[fast] /api/inventory counts missing items per root and /api/missing lists
     const none = asJson<{ items: unknown[] }>(await (await fetch(s2.url + "/api/missing?root=12345")).json());
     assert.deepEqual(none.items, []);
     assert.equal((await fetch(s2.url + "/api/missing?root=abc")).status, 400);
+    // A blacklisted root is never opened again: what its stale scans differ by is not reported.
+    writeFileSync(join(dir, "scan-blacklist.json"), JSON.stringify([{ serial: +root, name: "Chest", addedAt: day(0) }]));
+    assert.deepEqual(asJson<InventoryResponse>(await (await fetch(s2.url + "/api/inventory")).json()).inventory.missingCounts, {});
+    assert.deepEqual(asJson<{ items: unknown[] }>(await (await fetch(s2.url + "/api/missing?root=" + root)).json()).items, []);
   } finally {
     await s2.close();
   }

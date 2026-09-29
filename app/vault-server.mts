@@ -1172,17 +1172,20 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
           if (it.root != null) rootCounts[it.root] = (rootCounts[it.root] || 0) + 1;
         }
         const facets = facetsOf(itemsArr, { rarity: currentRules.rarity });
-        const missingCounts = Object.fromEntries(Object.entries(missing).map(([root, list]) => [root, list.length]));
+        // A blacklisted container is never opened again, so its last two scans are stale: it reports nothing.
+        const listed = new Set(readBlacklist().map((e) => String(e.serial)));
+        const missingCounts = Object.fromEntries(Object.entries(missing).filter(([root]) => !listed.has(root)).map(([root, list]) => [root, list.length]));
         const inventory = { scans: inv.scans, characters: inv.characters, containers: inv.containers, worn, rootCounts, missingCounts, itemCount: itemsArr.length, facets, propKeys: facets.propKeys };
         return send(res, 200, { ok: true, snapshotCount, demo: CONFIG.demo, inventory });
       }
       // GET /api/missing?root=<serial> — the items missing from that root since its last scan (app/missing.mts,
-      // issue #99); /api/inventory carries only the counts. A root with nothing missing answers an empty list.
+      // issue #99); /api/inventory carries only the counts. A root with nothing missing, or blacklisted, answers an empty list.
       if (req.method === "GET" && url.pathname === "/api/missing") {
         const root = url.searchParams.get("root") || "";
         if (!/^\d{1,10}$/.test(root)) return send(res, 400, { ok: false, error: "root must be a container serial" });
         const { missing } = await getInventory();
-        return send(res, 200, { ok: true, items: missing[String(+root)] || [] });
+        const listed = readBlacklist().some((e) => e.serial === +root);
+        return send(res, 200, { ok: true, items: (!listed && missing[String(+root)]) || [] });
       }
       if (req.method === "GET" && url.pathname === "/api/items") {
         const { inv } = await getInventory();
