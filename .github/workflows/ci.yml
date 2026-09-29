@@ -1,9 +1,16 @@
 name: CI
 
+# Pushes to main, and pull requests. A push to a PR branch is covered by its pull_request run; a
+# `push` trigger on every branch ran the whole matrix a second time for each one.
 on:
   push:
-    branches: ["**"]
+    branches: [main]
   pull_request:
+
+# A newer push to the same pull request cancels the run it supersedes. Runs on main are never cancelled.
+concurrency:
+  group: ci-${{ github.event.pull_request.number || github.sha }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 # Stated rather than inherited. The repository default is read-only today, so this changes nothing
 # now -- it is here so that raising that default later cannot silently hand a fork's pull request a
@@ -15,7 +22,7 @@ jobs:
   test:
     name: Test on ${{ matrix.os }}
     runs-on: ${{ matrix.os }}
-    # The whole job takes about three minutes; a hang must fail, not sit for the six-hour default.
+    # The whole job takes a few minutes; a hang must fail, not sit for the six-hour default.
     timeout-minutes: 20
     strategy:
       fail-fast: false
@@ -37,6 +44,10 @@ jobs:
         # optionalDependencies) comes from an install script. The Electron smoke test in this job is
         # what proves it -- it launches a real Electron, so a missing binary would fail here.
         run: npm ci --ignore-scripts
+      - name: Fetch Electron's binary
+        # With install scripts off, Electron downloads its binary the first time it is required. The
+        # test files run in parallel, so do it once here rather than in several of them at the same time.
+        run: node -e "require('electron')"
       - name: Type-check
         run: npm run typecheck
       - name: Compile every adapter's Python scripts

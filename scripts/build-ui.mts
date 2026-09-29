@@ -8,6 +8,11 @@
 // Always runs, from an empty app/dist/ — no mtime freshness check. tsc re-emits every file on each
 // run (no incremental build is configured) and never deletes an output whose source is gone, so the
 // folder is cleared first: a deleted app/ui file would otherwise stay servable from app/dist/.
+//
+// Except under the test runner, which builds once before any test file starts and then sets
+// PACKRAT_UI_BUILT=1 for the files it runs: they run in parallel, and a rebuild of app/dist by one of
+// them (the Electron shell's self-heal, `npm start`, app/server.test.mts) would clear the page out
+// from under another one loading it. A build into another folder (`outDir`) always runs.
 import { spawnSync } from "node:child_process";
 import { existsSync, readFileSync, rmSync } from "node:fs";
 import { dirname, join, relative } from "node:path";
@@ -15,9 +20,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 
 const ROOT = dirname(dirname(fileURLToPath(import.meta.url)));
 export const TSCONFIG = join(ROOT, "tsconfig.browser.json");
-// tsc emits app/ui/app.mts (the page's entry module) last among the files that matter here — its
-// presence is what "app/dist already has a built page" means, for the no-compiler fallback below.
-const UI_ENTRY_OUT = join(ROOT, "app", "dist", "ui", "app.mjs");
+const DIST = join(ROOT, "app", "dist");
 
 // The one shape this file reads off the installed `typescript` package's own package.json — its
 // `bin` field, which npm's own package.json spec allows as either a bare string (one binary, named
@@ -57,7 +60,11 @@ export function tscSpawnEnv(
   return versions.electron ? { ...env, ELECTRON_RUN_AS_NODE: "1" } : env;
 }
 
-export function buildUi({ tsconfig = TSCONFIG }: { tsconfig?: string } = {}): string {
+export function buildUi({ tsconfig = TSCONFIG, outDir = DIST }: { tsconfig?: string; outDir?: string } = {}): string {
+  // tsc emits app/ui/app.mts (the page's entry module) last among the files that matter here — its
+  // presence is what "app/dist already has a built page" means, for the no-compiler fallback below.
+  const entry = join(outDir, "ui", "app.mjs");
+  if (outDir === DIST && process.env.PACKRAT_UI_BUILT === "1" && existsSync(entry)) return entry;
   const tscEntry = resolveTscEntry();
   if (!tscEntry || !existsSync(tscEntry)) {
     // The packaged Electron app ships no devDependencies (electron-builder's `files` list excludes
@@ -68,26 +75,26 @@ export function buildUi({ tsconfig = TSCONFIG }: { tsconfig?: string } = {}): st
     // does no building — so this is always a source checkout): it means the page
     // being served is whatever was last built, not the sources on disk (`npm ci --omit=dev` followed
     // by a branch switch is the way to get here), and that must not pass silently.
-    if (existsSync(UI_ENTRY_OUT)) {
+    if (existsSync(entry)) {
       console.warn("build-ui: no TypeScript compiler installed — serving the existing app/dist/ as-is, which may be stale. Run `npm install` to rebuild the page from source.");
-      return UI_ENTRY_OUT;
+      return entry;
     }
     throw new Error("the TypeScript compiler isn't installed (no `typescript` package found) and app/dist/ui/app.mjs doesn't exist yet — run `npm install`");
   }
-  rmSync(join(ROOT, "app", "dist"), { recursive: true, force: true });
+  rmSync(outDir, { recursive: true, force: true });
   // TypeScript 7 is the native compiler: bin/tsc is a small JS launcher that finds and runs a
   // platform-specific binary from one of typescript's optionalDependencies. Spawning the launcher
   // under process.execPath keeps this free of any PATH or shebang dependency; if the native binary
   // is missing (`npm ci --omit=optional`, an unlisted platform) the launcher exits non-zero and the
   // throw below surfaces its message rather than serving a stale page.
-  const result = spawnSync(process.execPath, [tscEntry, "-p", tsconfig], {
+  const result = spawnSync(process.execPath, [tscEntry, "-p", tsconfig, "--outDir", outDir], {
     cwd: ROOT, encoding: "utf8", env: tscSpawnEnv(), timeout: TSC_TIMEOUT_MS,
   });
   if (result.error) throw result.error;
   if (result.status !== 0) {
     throw new Error(`tsc -p ${relative(ROOT, tsconfig)} failed (exit ${result.status}):\n${result.stdout || ""}${result.stderr || ""}`);
   }
-  return UI_ENTRY_OUT;
+  return entry;
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) console.log(buildUi());

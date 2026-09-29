@@ -3,118 +3,15 @@
 // (scripts/optimizer-core.mts) about what the best suit is worth, only ever get there faster (or, on
 // a real-sized inventory where neither proves in budget, no worse). Every "equal" assertion in this
 // file compares HiGHS's re-scored result against the CORE's OWN numbers — never against the MIP's
-// internal objective, which is on a different (offset) scale.
-import { test, type TestContext } from "node:test";
+// internal objective, which is on a different (offset) scale. The shared fixture and helpers are
+// app/solver-fixture.mts; the default-template checks (app/solver-templates.test.mts) and the 3,000-item
+// generated cell (app/solver-large.test.mts) have files of their own, so the runner runs them in parallel.
+import { test } from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
-import { fileURLToPath, pathToFileURL } from "node:url";
-import { dirname, join } from "node:path";
-import { buildPools, effectiveProfile, setRules, foldSnapshots, type ProfilesFile, type Template, type BuildPoolsResult } from "./vault-lib.mts";
-import * as VaultLib from "./vault-lib.mts";
-import { upgradeScan } from "./scan-schema.mts";
-import type { ScanV2 } from "./schema/types.d.mts";
-import { corePath } from "./config.mts";
+import { effectiveProfile } from "./vault-lib.mts";
 import { solveExact, type OptPools, type OptAssignment, type OptProfile } from "./exact-solver.mts";
-import { DEFAULT_SLOTS } from "./mip.mts";
 import { solveModel as realSolveModel, type Handle, type SolveModelOptions } from "./mip-solve.mts";
-import { learnModel, generateScan } from "./bench/gen-inventory.mts";
-import type * as Core from "../scripts/optimizer-core.mts";
-
-// solveExact's own `opts` field type (the core's real OptOptions, derived rather than restated —
-// see app/exact-solver.mts's header note and scripts/optimizer-core.test.mts for the pattern).
-type OptOptions = Parameters<typeof solveExact>[0]["opts"];
-
-const HERE = dirname(fileURLToPath(import.meta.url));
-// This file's own vault-lib.mts import is a separate module instance from the one the server
-// dynamically re-imports per request — a direct call to a rules-aware function (buildPools,
-// effectiveProfile) needs its own setRules(), same as gear-vault.test.mts / server.test.mts.
-setRules(JSON.parse(readFileSync(join(HERE, "rules", "uoalive.json"), "utf8")));
-
-const core = (await import(pathToFileURL(corePath()).href)) as typeof Core;
-
-// The TazUO fixture (Task 1's adapter fixture): 319 real items, character "Fixture". Already
-// schemaVersion 2 — upgradeScan just stamps the shard.
-const fixtureRaw = JSON.parse(readFileSync(join(HERE, "..", "adapters", "tazuo", "fixture.scan.json"), "utf8"));
-const fixture = upgradeScan(fixtureRaw, { shard: "uoalive" }) as ScanV2;   // known-good fixture: the cast stands in for the validateScan() a real caller runs
-const inv = foldSnapshots([fixture]);
-const { pools: fixturePools, current: fixtureCurrent } = buildPools(inv, "Fixture", { excludeGargoyle: true });
-const defaultProfiles = JSON.parse(readFileSync(join(HERE, "data", "profiles.default.json"), "utf8")) as ProfilesFile;
-const templateNames = Object.keys(defaultProfiles.templates!);
-
-// cell(profileName, {soft, overrides}) — the fixture's pools/current, plus a profile built from one
-// of the shipped default templates: `overrides` land on the template (before effectiveProfile), so
-// e.g. `{ overrides: { floors: { ...template.floors, luck: 5000 } } }` adds an extra hard floor.
-//
-// fixturePools/fixtureCurrent are vault-lib.mts's PooledOptItem-based shapes (buildPools's own return
-// type, honestly typed with a required, non-null `slot` — see vault-lib.mts's own comment on
-// PooledOptItem). The cast below is still needed, but for a narrower reason now: OptPools/OptAssignment
-// (derived via Parameters<> on Core.optimizeSuit — see app/exact-solver.mts's header note) are plain
-// `Record`s, while buildPools's own return type is a `Partial<Record<...>>` (a slot with no candidates
-// is simply absent, not present with an empty array) — that optional-vs-required container shape is
-// what the cast crosses now, not an item-level mismatch. The guard below asserts the item level stays
-// aligned on its own.
-function cell(profileName: string, { soft = [], overrides = {} }: { soft?: string[] | undefined; overrides?: Partial<Template> | undefined } = {}): { pools: OptPools; current: OptAssignment; profile: OptProfile } {
-  const template = defaultProfiles.templates![profileName]!;
-  const p = { ...template, softFloors: [...soft], ...overrides };
-  const profile = effectiveProfile(p, inv.characters.Fixture!);
-  return { pools: fixturePools as unknown as OptPools, current: fixtureCurrent as unknown as OptAssignment, profile };
-}
-
-// Compile-time-only guard (review follow-up): scripts/optimizer-core.mts declares its own OptItem
-// (unexported, no import from vault-lib.mts — the core is a paste-able file with no imports at all,
-// see its own header comment) and vault-lib.mts declares its own, independently. A reviewer proved
-// with `tsc` they had ALREADY drifted once (vault-lib's plain OptItem had `slot: string | null`; the
-// core's has always required a non-null `slot`) with nothing to catch it but a human reading a `tsc`
-// diff by hand — harmless only because every caller of toOptItem happened to filter out slotless
-// items before building pools. buildPools's PooledOptItem now types that filtering honestly; this
-// line asserts, at compile time only (no runtime check, no value ever read — see `void` below), that
-// a pooled item's `slot` is assignable to the core's own item's `slot`. If the two drift again,
-// `npm run typecheck` fails exactly here instead of staying silent. (The item's OTHER fields aren't
-// checked here on purpose: `twoHanded`'s `true | undefined` vs the core's plain `boolean` is a
-// separate, already-accepted structural difference — see app/exact-solver.mts's header note — not a
-// drift this guard is for.)
-type CorePooledItem = NonNullable<OptPools[string]>[number];
-type VaultPooledItem = NonNullable<BuildPoolsResult["pools"][string]>[number];
-const _pooledSlotAssignable: CorePooledItem["slot"] = null as unknown as VaultPooledItem["slot"];
-void _pooledSlotAssignable;
-
-const sig = (assignment: OptAssignment | null | undefined): string => DEFAULT_SLOTS.map((s) => (assignment && assignment[s] ? assignment[s]!.serial : null)).join(",");
-
-// Runs both solvers on the same inputs and checks the shared invariants: HiGHS reports itself as
-// the solver, and its returned score is the core's own re-score of its own suit (never a value
-// computed only inside the MIP). When both sides prove, their scores must agree to the decimal; on
-// the real 319-item fixture a template is not guaranteed to prove in budget, so an unproven side
-// only has to be no worse than the core (never a regression) — noted via t.diagnostic rather than
-// failed, since that outcome is a timing fact about the machine, not a bug.
-async function runBoth(t: TestContext, { pools, current, profile }: { pools: OptPools; current: OptAssignment; profile: OptProfile }, opts: OptOptions) {
-  const r = await solveExact({ core, pools, current, profile, opts, onProgress: () => {} });
-  const ref = core.optimizeSuit(pools, current, profile, opts);
-  assert.equal(r.solver, "highs");
-  assert.ok(Math.abs(core.scoreSet(r.best, profile) - r.score) < 1e-6, "returned score must be the core's own re-score of its own suit");
-  if (r.proven && ref.proven) {
-    assert.ok(Math.abs(r.score - ref.score) < 1e-3, `HiGHS ${r.score} != core ${ref.score}`);
-  } else {
-    t.diagnostic(`not both proven (highs proven=${r.proven}, core proven=${ref.proven}) — checking no-regression instead of equality`);
-    assert.ok(r.score >= ref.score - 1e-6, `HiGHS ${r.score} worse than the core's ${ref.score}`);
-  }
-  return { r, ref };
-}
-
-const BASE_OPTS: OptOptions = { exact: true, timeBudgetMs: 20000, restarts: 50, seed: 2026 };
-
-test("[fast] each default template: HiGHS equals the core's proven optimum on the fixture", async (t) => {
-  for (const name of templateNames) {
-    await t.test(name, async (t2) => { await runBoth(t2, cell(name), BASE_OPTS); });
-  }
-});
-
-test("[fast] soft floors match", async (t) => {
-  const name = templateNames[0]!;
-  const floorKeys = Object.keys(defaultProfiles.templates![name]!.floors);
-  const soft = floorKeys.slice(0, 2);
-  assert.ok(soft.length === 2, `template ${name} needs at least two floors for this test`);
-  await runBoth(t, cell(name, { soft }), BASE_OPTS);
-});
+import { BASE_OPTS, cell, core, defaultProfiles, runBoth, sig, templateNames, type OptOptions } from "./solver-fixture.mts";
 
 // Like runBoth: the core's alternatives are only exact when its search proved within the time budget
 // (about 10 s for this cell on a laptop, more on a CI runner), so an unproven core is checked for
@@ -463,22 +360,3 @@ test("[fast] progress reports the exact phase with a finite bound or none", asyn
     assert.equal(e.solver, "highs");
   }
 });
-
-test("[slow] a 3,000-item generated cell: HiGHS proves and the core agrees where it proves",
-  { skip: process.env.TEST_SKIP_SLOW === "1" }, async () => {
-    const model = learnModel([fixture], VaultLib);
-    const genRaw = generateScan(model, { n: 3000, gearFraction: 1, seed: 7, lib: VaultLib });
-    const genScan = upgradeScan(genRaw, { shard: "uoalive" }) as ScanV2;   // known-good generated scan: same cast as `fixture` above
-    const bigInv = foldSnapshots([fixture, genScan]);
-    const { pools, current } = buildPools(bigInv, "Fixture", { excludeGargoyle: true });
-    const name = templateNames[0]!;
-    const profile = effectiveProfile(defaultProfiles.templates![name], bigInv.characters.Fixture!);
-    const opts: OptOptions = { exact: true, timeBudgetMs: 60000, restarts: 50, seed: 2026 };
-    const r = await solveExact({ core, pools: pools as unknown as OptPools, current: current as unknown as OptAssignment, profile, opts, onProgress: () => {} });
-    assert.equal(r.solver, "highs");
-    assert.ok(r.proven, "HiGHS should prove within the 60s budget on a 3,000-item pool");
-    assert.ok(r.mipMs < 20000, `mipMs was ${r.mipMs}, expected under 20000`);
-    const ref = core.optimizeSuit(pools as unknown as OptPools, current as unknown as OptAssignment, profile, opts);
-    if (ref.proven) assert.ok(Math.abs(r.score - ref.score) < 1e-3, `${r.score} vs ${ref.score}`);
-    else assert.ok(r.score >= ref.score - 1e-6, `HiGHS ${r.score} worse than the core's ${ref.score}`);
-  });
