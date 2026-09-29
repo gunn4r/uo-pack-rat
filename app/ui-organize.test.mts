@@ -8,8 +8,9 @@ import assert from "node:assert/strict";
 import { parseItemQuery } from "./item-query.mts";
 import type { ItemQuery } from "./item-query.mts";
 import type { Container } from "./vault-lib.mts";
+import { PENDING_GRACE_MS } from "./organize-state.mts";
 import type { BridgeResultEntry, OrganizeConfig, OrganizePlan, OrganizeRule, PlanMove } from "./ui/api-types.mts";
-import { CATCH_ALL_ID, moveRule, withLabel, withoutLabel, pinnedWith, upsertRule, withoutRule, newRuleId, ruleQueryFrom, blankQuery, droppedNote, ruleNameFrom, checkDraft, matchSummary, extraFilters, targetView, fillText, fillTone, targetOptions, withTargetLabels, matchLine, debounced, MATCH_DEBOUNCE_MS, organizeStage, labelledPlaces, ruleNameOf, containerNameOf, ruleCountParts, planHeadline, unclaimedNote, roomLines, crossSiteLines, warningGroups, tripRows, moveName, moveWhere, carriedView, tripGate, stepWatch, outcomeOf, outcomeText, failedSteps, runAllNext, tripRefusal, PICKUP_MS, TRIP_MS } from "./ui/organize-model.mts";
+import { CATCH_ALL_ID, moveRule, withLabel, withoutLabel, pinnedWith, upsertRule, withoutRule, newRuleId, ruleQueryFrom, blankQuery, droppedNote, ruleNameFrom, checkDraft, matchSummary, extraFilters, targetView, fillText, fillTone, targetOptions, withTargetLabels, matchLine, debounced, MATCH_DEBOUNCE_MS, organizeStage, labelledPlaces, ruleNameOf, containerNameOf, ruleCountParts, planHeadline, unclaimedNote, roomLines, crossSiteLines, warningGroups, tripRows, moveName, moveWhere, carriedView, tripGate, stepWatch, outcomeOf, outcomeText, failedSteps, runAllNext, tripRefusal, GRACE_MS, TRIP_MS } from "./ui/organize-model.mts";
 
 const A = 0x40000001, B = 0x40000002, C = 0x40000003, GONE = 0x40000009;
 const chest = (serial: number, over: Partial<Container> = {}): Container => ({ serial, root: serial, parent: null, kind: "ground", name: "Metal Chest", tooltip: ["Metal Chest"], label: `Metal Chest (0x${serial.toString(16)})`, capacity: { items: 61, maxItems: 125, stones: null, maxStones: null }, scannedBy: "Tester", scannedAt: "2026-09-28T10:00:00Z", ...over });
@@ -303,19 +304,24 @@ test("[fast] tripGate says why no trip can run, most basic reason first", () => 
   assert.equal(tripGate({ ...ok, online: false }, OFF), OFF);
 });
 
-test("[fast] stepWatch gives up on a trip nobody picked up after 75 s, and on any trip after 15 minutes", () => {
-  const w = { id: "t-1", index: 2, queuedAt: 0, picked: false };
-  assert.deepEqual(stepWatch(w, { currentId: null, result: null }, 10_000), { kind: "wait", watch: w });
-  const picked = stepWatch(w, { currentId: "t-1", result: null }, 20_000);
-  assert.deepEqual(picked, { kind: "wait", watch: { ...w, picked: true } });
-  const lost = stepWatch(w, { currentId: null, result: null }, PICKUP_MS + 1);
+test("[fast] stepWatch gives up on a trip nobody picked up, on one whose bridge went quiet, and on any trip after 15 minutes", () => {
+  const w = { id: "t-1", index: 2, queuedAt: 0, picked: false, heard: 0 };
+  const on = { currentId: null, result: null, online: true }, off = { ...on, online: false };
+  assert.deepEqual(stepWatch(w, off, 10_000), { kind: "wait", watch: w });
+  const picked = stepWatch(w, { ...on, currentId: "t-1" }, 20_000);
+  assert.deepEqual(picked, { kind: "wait", watch: { ...w, picked: true, heard: 20_000 } });
+  const lost = stepWatch(w, on, GRACE_MS + 1);
   assert.equal(lost.kind, "lost");
   assert.match((lost as { message: string }).message, /^The bridge did not pick up trip 2\. Nothing was moved\./);
-  assert.equal(stepWatch({ ...w, picked: true }, { currentId: null, result: null }, PICKUP_MS + 1).kind, "wait", "a trip the bridge started may take minutes");
-  const late = stepWatch({ ...w, picked: true }, { currentId: "t-1", result: null }, TRIP_MS + 1);
+  assert.ok(GRACE_MS > PENDING_GRACE_MS, "the page waits longer than the server holds the trip");
+  assert.equal(stepWatch({ ...w, picked: true }, on, GRACE_MS + 1).kind, "wait", "a started trip may take minutes while its bridge answers");
+  const quiet = stepWatch({ ...w, picked: true, heard: 60_000 }, off, 60_000 + GRACE_MS + 1);
+  assert.deepEqual(quiet, { kind: "lost", message: "The bridge stopped answering during trip 2. Items it took may still be in your backpack: check the game, rescan, then press Reload plan." });
+  assert.equal(stepWatch({ ...w, picked: true, heard: 60_000 }, off, 60_000 + GRACE_MS).kind, "wait");
+  const late = stepWatch({ ...w, picked: true }, { ...on, currentId: "t-1" }, TRIP_MS + 1);
   assert.deepEqual(late, { kind: "lost", message: "Trip 2 has not reported back after 15 minutes. Check the game, then press Reload plan." });
   const result: BridgeResultEntry = { ok: true, msg: "trip 2: 3 put away", steps: [{ op: "take", serial: 1, ok: true, msg: "" }] };
-  assert.deepEqual(stepWatch(w, { currentId: null, result }, 99 * 60_000), { kind: "reported", outcome: "done", result });
+  assert.deepEqual(stepWatch(w, { ...off, result }, 99 * 60_000), { kind: "reported", outcome: "done", result });
 });
 
 test("[fast] a trip's outcome: stopped, partial and failed each stop Run all with their own sentence", () => {
@@ -347,5 +353,6 @@ test("[fast] runAllNext runs the new plan's first trip, and stops when a reporte
 test("[fast] a refused trip reads as what to do next, and a hand-edited setup asks to be saved first", () => {
   assert.equal(tripRefusal("the plan has changed since it was shown; reload it"), "The plan changed since it was shown: a scan arrived, a rule changed or a trip reported back. Here is the new plan; check it and press Run again.");
   assert.equal(tripRefusal("organize.json was hand-edited and parts of it were dropped (rules[0] x); open Organize and save the setup first"), "Part of organize.json could not be read and was left out, so no trip runs until you have checked the setup and pressed Save setup (above).");
-  assert.equal(tripRefusal("trip 1 has not reported back yet"), "trip 1 has not reported back yet");
+  assert.equal(tripRefusal("trip 1 has not reported back yet"), "Trip 1 is still running, started before this page was reloaded or from another window. Let it finish in game, then press Reload plan.");
+  assert.equal(tripRefusal("the plan has no trip 4"), "the plan has no trip 4");
 });

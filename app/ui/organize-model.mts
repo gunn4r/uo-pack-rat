@@ -300,20 +300,24 @@ export function tripGate(g: { client: string | null; canTrip: boolean; online: b
   if (!g.online) return offline;
   return null;
 }
-// The bridge refuses a command older than 60 s, so one it has not started by 75 s never will be (it is not
-// running); a trip it did start gets 15 minutes before the page stops waiting (a stuck client, a dead bridge).
-export const PICKUP_MS = 75_000;
+// The bridge refuses a command older than 60 s, so one it has not started by GRACE_MS never will be (it is not
+// running), and a started trip whose bridge has not answered for GRACE_MS died with it. The server lets go of
+// either after 90 s (organize-state.mts's PENDING_GRACE_MS), so the page gives up a little later: a trip run again
+// from its message is never refused as "not reported back yet". Any trip gets 15 minutes (a stuck client).
+export const GRACE_MS = 95_000;
 export const TRIP_MS = 15 * 60_000;
-export interface TripWatch { id: string; index: number; queuedAt: number; picked: boolean }
+// `heard` = when the bridge last answered as online.
+export interface TripWatch { id: string; index: number; queuedAt: number; picked: boolean; heard: number }
 export type TripOutcome = "done" | "partial" | "stopped" | "failed";
 export type WatchStep = { kind: "wait"; watch: TripWatch } | { kind: "reported"; outcome: TripOutcome; result: BridgeResultEntry } | { kind: "lost"; message: string };
-export function stepWatch(w: TripWatch, s: { currentId: string | null; result: BridgeResultEntry | null }, now: number): WatchStep {
+export function stepWatch(w: TripWatch, s: { currentId: string | null; result: BridgeResultEntry | null; online: boolean }, now: number): WatchStep {
   if (s.result) return { kind: "reported", outcome: outcomeOf(s.result), result: s.result };
   const picked = w.picked || s.currentId === w.id;
-  const age = now - w.queuedAt;
-  if (!picked && age > PICKUP_MS) return { kind: "lost", message: `The bridge did not pick up trip ${w.index}. Nothing was moved. Check that packrat-bridge.py is running in game, then run the trip again.` };
-  if (age > TRIP_MS) return { kind: "lost", message: `Trip ${w.index} has not reported back after 15 minutes. Check the game, then press Reload plan.` };
-  return { kind: "wait", watch: picked === w.picked ? w : { ...w, picked } };
+  const heard = s.online ? now : w.heard;
+  if (!picked && now - w.queuedAt > GRACE_MS) return { kind: "lost", message: `The bridge did not pick up trip ${w.index}. Nothing was moved. Check that packrat-bridge.py is running in game, then run the trip again.` };
+  if (picked && now - heard > GRACE_MS) return { kind: "lost", message: `The bridge stopped answering during trip ${w.index}. Items it took may still be in your backpack: check the game, rescan, then press Reload plan.` };
+  if (now - w.queuedAt > TRIP_MS) return { kind: "lost", message: `Trip ${w.index} has not reported back after 15 minutes. Check the game, then press Reload plan.` };
+  return { kind: "wait", watch: picked === w.picked && heard === w.heard ? w : { ...w, picked, heard } };
 }
 export function outcomeOf(r: BridgeResultEntry): TripOutcome {
   if (r.stopped) return "stopped";
@@ -348,5 +352,7 @@ export function runAllNext(movesBefore: number, plan: OrganizePlan): { index: nu
 export function tripRefusal(msg: string): string {
   if (/plan has changed/i.test(msg)) return "The plan changed since it was shown: a scan arrived, a rule changed or a trip reported back. Here is the new plan; check it and press Run again.";
   if (/save the setup first/i.test(msg)) return "Part of organize.json could not be read and was left out, so no trip runs until you have checked the setup and pressed Save setup (above).";
+  const busy = /^trip (\d+) has not reported back yet$/.exec(msg);
+  if (busy) return `Trip ${busy[1]} is still running, started before this page was reloaded or from another window. Let it finish in game, then press Reload plan.`;
   return msg;
 }

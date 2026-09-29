@@ -29,10 +29,13 @@ let notice: { tone: "info" | "warn" | "bad"; text: string } | null = null;
 // names for the failed-step list.
 interface Run { watch: TripWatch; all: boolean; before: number; names: Map<number, string>; stopping: boolean }
 let run: Run | null = null;
+// True while POST /api/organize/trip is out: a second click then queues nothing.
+let queueing = false;
 let runTimer = 0;
 let lastTrip: number | null = null;
 let failed: { index: number; steps: FailedStep[] } | null = null;
 let lastStatus: BridgeStatusApiResponse | null = null;
+let lastStatusAt = 0;   // when it came: a status the poll has not refreshed for 10 s (the server gone) is not "online"
 
 // The route's entry: the setup (fetched here too when reload() could not), then the screen and its plan. Before
 // the inventory's first load it does nothing; reload() calls it again once the data is in.
@@ -89,7 +92,7 @@ function rulesCard(cfg: OrganizeConfig): HTMLElement {
   ] });
 }
 function ruleRow(cfg: OrganizeConfig, r: OrganizeRule, i: number, rep: PlanRuleReport | undefined): HTMLElement {
-  const handle = button({ label: `Move ${r.name}`, icon: "grip", iconOnly: true, variant: "ghost", size: "sm", cls: "org-grip", attrs: { title: "Drag, or press ↑ or ↓" } });
+  const handle = button({ label: `Move ${r.name}`, icon: "grip", iconOnly: true, variant: "ghost", size: "sm", cls: "org-grip", attrs: { title: "Drag, or press ↑ or ↓", "aria-keyshortcuts": "ArrowUp ArrowDown" } });
   handle.addEventListener("keydown", (e) => {
     const to = e.key === "ArrowUp" ? i - 1 : e.key === "ArrowDown" ? i + 1 : -1;
     if (to < 0 || to >= cfg.rules.length) return;
@@ -180,7 +183,7 @@ const canTrip = (): boolean => (currentAdapter()?.capabilities?.bridge || []).in
 // Why no trip can start now (organize-model.mts's tripGate), or null.
 function gate(): string | null {
   const a = currentAdapter();
-  return tripGate({ client: a ? a.name || a.id : null, canTrip: canTrip(), online: bridge.online, running: !!run }, BRIDGE_OFFLINE);
+  return tripGate({ client: a ? a.name || a.id : null, canTrip: canTrip(), online: bridge.online, running: !!run || queueing }, BRIDGE_OFFLINE);
 }
 // A disabled control carries its reason on a wrapper (components.mts's tipWrap), never a dead button alone.
 function gated(b: HTMLButtonElement, reason: string | null): HTMLElement {
@@ -263,16 +266,20 @@ async function pinItem(s: FailedStep): Promise<void> {
 // and refuses a stale one, which is then fetched again with a sentence saying why.
 async function startTrip(index: number, all: boolean): Promise<void> {
   const plan = state.organize.plan;
-  if (!plan || run) return;
+  if (!plan || run || queueing) return;
   notice = null;
   failed = null;
   const names = new Map(plan.moves.filter((m) => m.trip === index).map((m) => [m.serial, m.name] as const));
   let r: OrganizeTripApiResponse;
+  queueing = true;
+  paintControls();
   try { r = await api<OrganizeTripApiResponse>("/api/organize/trip", { method: "POST", body: { index, stamp: plan.stamp } }); }
-  catch (e) { notice = { tone: "bad", text: tripRefusal(errorText(e)) }; await refreshPlan(); return; }
+  catch (e) { queueing = false; notice = { tone: "bad", text: tripRefusal(errorText(e)) }; await refreshPlan(); return; }
+  queueing = false;
   bridge.pending.set(r.id, `Trip ${index}`);   // bridge.mts's poll toasts the bridge's own summary of it
   lastTrip = index;
-  run = { watch: { id: r.id, index, queuedAt: Date.now(), picked: false }, all, before: plan.moves.length, names, stopping: false };
+  const now = Date.now();
+  run = { watch: { id: r.id, index, queuedAt: now, picked: false, heard: now }, all, before: plan.moves.length, names, stopping: false };
   setNavBusy("organize", true, "Organize trip running");
   runTimer = setInterval(() => { void check(); }, 5000) as unknown as number;   // also when the status poll goes quiet
   paintControls();
@@ -283,7 +290,7 @@ async function check(): Promise<void> {
   const r = run;
   if (!r) return;
   const st = lastStatus;
-  const step = stepWatch(r.watch, { currentId: st?.current?.id ?? null, result: st?.results?.[r.watch.id] ?? null }, Date.now());
+  const step = stepWatch(r.watch, { currentId: st?.current?.id ?? null, result: st?.results?.[r.watch.id] ?? null, online: !!st?.online && Date.now() - lastStatusAt < 10_000 }, Date.now());
   if (step.kind === "wait") { r.watch = step.watch; return; }
   finishRun();
   if (step.kind === "lost") { notice = { tone: "bad", text: step.message }; await refreshPlan(); return; }
@@ -313,7 +320,7 @@ async function stopTrips(): Promise<void> {
   try { await api("/api/bridge/stop", { method: "POST", body: {} }); }
   catch (e) { r.stopping = false; toastBad(errorText(e)); paintControls(); }
 }
-document.addEventListener("bridgestatus", (e) => { lastStatus = (e as CustomEvent<BridgeStatusApiResponse>).detail; void check(); });
+document.addEventListener("bridgestatus", (e) => { lastStatus = (e as CustomEvent<BridgeStatusApiResponse>).detail; lastStatusAt = Date.now(); void check(); });
 
 // A saved setup: redraw (focus is put back by whoever saved) and work the plan out again.
 document.addEventListener("organizechange", () => { if ($<HTMLElement>("#tab-organize")!.hidden) { state.organize.plan = null; return; } render(); void refreshPlan(); });
