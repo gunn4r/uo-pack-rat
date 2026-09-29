@@ -21,7 +21,8 @@ import { showContainer, splitSerial } from "./inventory.mts";
 import type { ForgetApiResponse } from "./api-types.mts";
 
 const KIND_NAMES: Record<string, string> = { backpack: "Backpack", bank: "Bank", ground: "On the ground" };
-const COLS: Array<[string, number, boolean]> = [["Container", 320, false], ["Kind", 140, false], ["Scanned by", 140, false], ["When", 150, false], ["Items", 80, true], ["Fill", 150, false]];
+// Same total width as before the Fill column, so the table still fits a 1000 px window without scrolling.
+const COLS: Array<[string, number, boolean]> = [["Container", 270, false], ["Kind", 120, false], ["Scanned by", 120, false], ["When", 120, false], ["Items", 70, true], ["Fill", 130, false]];
 
 async function forget(r: Container, name: string, n: number): Promise<void> {
   if (!await confirmDialog({ title: `Forget ${name}?`, body: `${name} and the ${plural(n, "item")} in it leave the inventory. It comes back the next time it is scanned.`, confirmLabel: `Forget ${name}` })) return;

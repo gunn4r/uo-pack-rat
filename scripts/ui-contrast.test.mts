@@ -165,6 +165,20 @@ const SCENES: Scene[] = [
     await p.waitForSelector("#b-sec-req .field-warn");
     await p.locator("#b-sec-caps").scrollIntoViewIfNeeded();
   }, leave: async (p) => { await p.fill("#b-cap-coldResist", "70"); await p.fill("#b-cap-poisonResist", "70"); } },
+  // ---- Organize (issue #11): the screen with its plan, the rule drawer, and Label… on a container
+  { name: "organize", enter: (p) => route(p, "#/organize", "#org-plan #org-headline") },
+  { name: "organize rule editor", enter: async (p) => {
+    await route(p, "#/organize", ".org-rule");
+    await p.locator(".org-rule").first().getByRole("button", { name: /^Actions for / }).click();
+    await p.getByRole("menuitem", { name: "Edit…" }).click();
+    await p.waitForSelector("#rule-drawer:not([hidden]) #rule-name");
+  }, leave: (p) => p.keyboard.press("Escape") },
+  { name: "label dialog", enter: async (p) => {
+    await route(p, "#/containers", "#cont-table tbody tr[data-root]");
+    await p.locator("#cont-table tbody tr[data-root]").first().getByRole("button", { name: /^Actions for / }).click();
+    await p.getByRole("menuitem", { name: /^(Label|Edit label)…$/ }).click();
+    await p.waitForSelector("dialog[open] #lbl-name");
+  }, leave: (p) => p.keyboard.press("Escape") },
   { name: "import drawer", enter: (p) => route(p, "#/import", "#import-drawer:not([hidden]) #imp-mode"), leave: (p) => p.keyboard.press("Escape") },
   { name: "runs drawer", enter: (p) => route(p, "#/runs", "#runs-drawer:not([hidden]) .run-card"), leave: (p) => p.keyboard.press("Escape") },
   { name: "bridge popover", enter: async (p) => { await p.click("#bridge"); await p.waitForSelector(".pop"); }, leave: (p) => p.keyboard.press("Escape") },
@@ -327,6 +341,11 @@ test("[slow] every text, control edge, icon and status dot on the real page pass
   const dataDir = mkdtempSync(join(tmpdir(), "packrat-contrast-"));
   // setupDone skips the first-run wizard; --demo reads the committed demo scans.
   writeFileSync(join(dataDir, "settings.json"), JSON.stringify({ schemaVersion: 1, shard: "uoalive", setupDone: true }));
+  // Organize (issue #11): both demo chests labelled and one rule, so its screen, rule drawer and Label… have
+  // something to draw.
+  writeFileSync(join(dataDir, "organize.json"), JSON.stringify({ version: 1, catchAll: null, pinnedItems: [],
+    labels: { [0x700c0000]: { serial: 0x700c0000, name: "Reagents", color: "#2f7f7f", origin: "manual" }, [0x700b0000]: { serial: 0x700b0000, name: "Jewellery", pinned: true, origin: "manual" } },
+    rules: [{ id: "rule-1", name: "Magery reagents", match: { query: { q: "", slot: [], rarity: "", rarityMin: "", rarityMax: "", kind: [], slayer: "", nogarg: false, med: false, hideTags: [], props: [] }, names: ["sulfurous ash"] }, targets: [0x700c0000], origin: "manual" }] }));
   const { app, page, errors, size } = await launch(dataDir);
   t.diagnostic(`window ${size.width} × ${size.height}`);
   try {

@@ -136,4 +136,4 @@
 
 /* Containers view: a container's fill (Organize, issue #11) as a short meter and "61/125". */
 .cont-fill { display: inline-flex; align-items: center; gap: var(--space-2); }
-.cont-fill .meter { width: 64px; flex: none; }
+.cont-fill .meter { width: 48px; flex: none; }

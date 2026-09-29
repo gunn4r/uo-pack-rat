@@ -258,11 +258,13 @@ const WARNING_TITLES: Record<PlanWarningKind, string> = {
   "no-position": "No position scanned, so the bridge cannot walk to it",
   "not-ground": "Not a container on the ground",
 };
-// The plan's warnings (sorted by kind, then serial, by the planner) as one message per kind.
+// The plan's warnings (sorted by kind, then serial, by the planner) as one message per kind; the scan times the
+// planner writes into a detail ("last scanned 2026-01-01T12:00:00-07:00") read as dates.
+const STAMP = /\b(\d{4}-\d{2}-\d{2})T[\d:.]+(?:Z|[+-]\d{2}:?\d{2})?/g;
 export function warningGroups(warnings: readonly PlanWarning[], nameOf: (serial: number) => string): Array<{ kind: PlanWarningKind; title: string; text: string }> {
   const by = new Map<PlanWarningKind, PlanWarning[]>();
   for (const w of warnings) by.set(w.kind, [...(by.get(w.kind) || []), w]);
-  return [...by].map(([kind, ws]) => ({ kind, title: ws.length > 1 ? `${WARNING_TITLES[kind]} (${ws.length})` : WARNING_TITLES[kind], text: ws.map((w) => `${nameOf(w.serial)}: ${w.detail}`).join(" · ") }));
+  return [...by].map(([kind, ws]) => ({ kind, title: ws.length > 1 ? `${WARNING_TITLES[kind]} (${ws.length})` : WARNING_TITLES[kind], text: ws.map((w) => `${nameOf(w.serial)}: ${w.detail.replace(STAMP, "$1")}`).join(" · ") }));
 }
 // One row per trip for the collapsed trip list; its moves go into a table only when the row is opened.
 export interface TripRow { index: number; site: number; moves: PlanMove[]; text: string }

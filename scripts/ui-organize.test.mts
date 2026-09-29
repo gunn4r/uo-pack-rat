@@ -392,3 +392,56 @@ test("[slow] Run trip queues one trip; Stop writes the stop flag; a failed put l
     rmSync(dataDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
   }
 });
+
+test("[slow] Organize fits a 1000 × 700 window: rows reflow, nothing scrolls sideways, Run and the drawer stay reachable", async (t) => {
+  const why = unavailable();
+  if (why) return t.skip(why);
+  const dataDir = dataDirWith([
+    { id: "rule-1", name: "Magery reagents", names: ["sulfurous ash", "mandrake root", "black pearl", "bloodmoss"], targets: [DORRAN, KESTREL] },
+    { id: "rule-2", name: "Rings", kind: ["gear"], targets: [KESTREL] },
+  ]);
+  const bridgeDir = join(dataDir, "bridge", "tazuo");
+  mkdirSync(bridgeDir, { recursive: true });
+  const writeStatus = (): void => writeFileSync(join(bridgeDir, "status.json"), JSON.stringify({ alive: new Date().toISOString(), character: "Tester", current: null, counts: { done: 0, failed: 0 }, results: {} }));
+  writeStatus();
+  const alive = setInterval(writeStatus, 1000);
+  const { app, page, errors, size } = await launch(dataDir, { width: 1000, height: 700 });
+  t.diagnostic(`window ${size.width} × ${size.height}`);
+  try {
+    await go(page, "#/organize", "#org-plan #org-headline");
+    const overflow = await page.evaluate(() => {
+      const page_ = document.querySelector("#org-body") as HTMLElement;
+      const rows = [...document.querySelectorAll<HTMLElement>(".org-rule, .org-catchall, #org-plan .card-body > *")];
+      return { page: page_.scrollWidth - page_.clientWidth, rows: rows.filter((r) => r.scrollWidth > r.clientWidth + 1).map((r) => r.className || r.id) };
+    });
+    assert.equal(overflow.page, 0, "no sideways scroll");
+    assert.deepEqual(overflow.rows, [], "no row is wider than its card");
+    // The rows reflow (chain and counts under the name) exactly when the rule list is 900 px or narrower, which a
+    // 1000 px window makes it even with the sidebar collapsed to icons.
+    const layout = await page.evaluate(() => {
+      const r = document.querySelector('.org-rule[data-rule="rule-1"]')!;
+      return { width: document.querySelector(".org-rules")!.clientWidth, below: r.querySelector(".org-chain")!.getBoundingClientRect().top > r.querySelector(".org-rule-main")!.getBoundingClientRect().bottom - 1 };
+    });
+    t.diagnostic(`rule list ${layout.width} px`);
+    assert.equal(layout.below, layout.width <= 900, "the chain drops under the name on a narrow card, and only there");
+    if (size.width <= 1000) assert.ok(layout.below, "a 1000 px window reflows the rows");
+    const run = page.locator("#org-run");
+    await run.scrollIntoViewIfNeeded();
+    assert.ok(await run.isVisible());
+    await page.locator('.org-rule[data-rule="rule-1"]').getByRole("button", { name: /^Actions for / }).click();
+    await page.getByRole("menuitem", { name: "Edit…" }).click();
+    await page.waitForSelector("#rule-drawer:not([hidden]) #rule-save");
+    // The drawer slides in: measure it once it has come to rest.
+    await page.waitForFunction(() => { const r = document.querySelector("#rule-drawer .drawer")!.getBoundingClientRect(); return r.right <= innerWidth + 1; }, undefined, { timeout: 5_000 }).catch(() => undefined);
+    const box_ = await page.locator("#rule-drawer .drawer").boundingBox();
+    assert.ok(box_ && box_.x >= 0 && box_.x + box_.width <= size.width + 1, "the drawer fits the window");
+    await page.locator("#rule-save").scrollIntoViewIfNeeded();
+    assert.ok(await page.locator("#rule-save").isVisible());
+    await page.keyboard.press("Escape");
+    assert.deepEqual(errors, []);
+  } finally {
+    clearInterval(alive);
+    await app.close();
+    rmSync(dataDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
+  }
+});

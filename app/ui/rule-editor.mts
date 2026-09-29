@@ -86,7 +86,8 @@ function draw(focus?: string): void {
   namesIn.addEventListener("input", () => { d.namesText = namesIn.value; countSoon(); });
   const qIn = input({ value: d.query.q, placeholder: "Words in the name or tooltip", attrs: { id: "rule-q" } });
   qIn.addEventListener("input", () => { d.query = { ...d.query, q: qIn.value }; countSoon(); });
-  const kinds = [...new Set([...(state.facets?.kinds || []).map((k) => k.name), ...d.query.kind])].sort();
+  // Bags never move (they are places), so "container" is not offered as a kind a rule could take.
+  const kinds = [...new Set([...(state.facets?.kinds || []).map((k) => k.name).filter((k) => k !== "container"), ...d.query.kind])].sort();
   const kindPills = box("div", { class: "rule-kinds", role: "group", "aria-label": "Kind" }, ...kinds.map((k) => pill({ label: k, pressed: d.query.kind.includes(k), onToggle: (on) => { d.query = { ...d.query, kind: on ? [...d.query.kind, k] : d.query.kind.filter((x) => x !== k) }; countSoon(); } })));
   const ladder = [{ value: "", label: "Any" }, ...(state.rules?.rarity || []).map((r) => ({ value: r.name, label: r.name }))];
   const rMin = select(ladder, d.query.rarityMin, { attrs: { id: "rule-rmin" } });

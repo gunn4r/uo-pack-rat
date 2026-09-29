@@ -263,6 +263,7 @@ test("[fast] warnings are grouped by kind with each container named by its label
     { kind: "stale-container", title: "Not scanned for over a week", text: "Display: last scanned 9 days ago" },
     { kind: "unknown-capacity", title: "Fill unknown: reinstall the scripts and rescan (2)", text: "Display: its tooltip has no Contents line · 0x40000009: not in any scan" },
   ]);
+  assert.equal(warningGroups([{ kind: "stale-container", serial: A, detail: "last scanned 2026-01-01T12:00:00-07:00" }], nameOf)[0]!.text, "Reagents: last scanned 2026-01-01", "the planner's timestamps read as dates");
 });
 
 test("[fast] tripRows sums each trip in one line and keeps its moves for the table", () => {
