@@ -172,3 +172,45 @@ test("[fast] POST /api/organize/trip refuses a bad body, a trip that is not its 
     await s.close();
   }
 });
+
+test("[fast] a trip whose bridge went quiet mid-run stops holding the queue once its heartbeat is stale", async () => {
+  const { s, dir } = await serve();
+  try {
+    await call(s, "/api/organize", body("PUT", CONFIG_DOC));
+    const plan = (await call<{ plan: Plan }>(s, "/api/organize/plan")).body.plan;
+    const id = String((await call(s, "/api/organize/trip", body("POST", { index: 1, stamp: plan.stamp }))).body.id);
+    const old = new Date(Date.now() - 600e3).toISOString();
+    const st = JSON.parse(readFileSync(join(dir, "organize-state.json"), "utf8"));
+    st.pending[0].queuedAt = old;
+    writeFileSync(join(dir, "organize-state.json"), JSON.stringify(st));
+    const status = (alive: string) => writeFileSync(join(dir, "bridge", "tazuo", "status.json"), JSON.stringify({ alive, character: "Tester", current: { id, action: "trip" }, results: {}, counts: {} }));
+    status(new Date().toISOString());
+    assert.match(String((await call(s, "/api/organize/trip", body("POST", { index: 1, stamp: plan.stamp }))).body.error), /has not reported back/);
+    status(old);
+    const retry = await call(s, "/api/organize/trip", body("POST", { index: 1, stamp: plan.stamp }));
+    assert.equal(retry.status, 200, JSON.stringify(retry.body));
+  } finally {
+    await s.close();
+  }
+});
+
+test("[fast] no trip runs off a salvaged organize.json, and a file that is not a version 1 setup is moved aside, not overwritten", async () => {
+  const { s, dir } = await serve();
+  try {
+    const edited = structuredClone(CONFIG_DOC);
+    Object.assign(edited.rules[0]!.match.query, { loc: [] });
+    writeFileSync(join(dir, "organize.json"), JSON.stringify(edited));
+    const plan = (await call<{ plan: Plan }>(s, "/api/organize/plan")).body.plan;
+    const refused = await call(s, "/api/organize/trip", body("POST", { index: 1, stamp: plan.stamp }));
+    assert.equal(refused.status, 409);
+    assert.match(String(refused.body.error), /save the setup first/);
+    assert.deepEqual(queued(dir), []);
+    writeFileSync(join(dir, "organize.json"), JSON.stringify({ version: 2, future: true }));
+    const got = await call<{ config: OrganizeConfig; problems: string[] }>(s, "/api/organize");
+    assert.deepEqual(got.body.config, emptyOrganizeConfig());
+    assert.match(got.body.problems.join("\n"), /not a version 1 Organize setup; it was moved to organize\.json\.corrupt/);
+    assert.deepEqual(JSON.parse(readFileSync(join(dir, "organize.json.corrupt"), "utf8")), { version: 2, future: true });
+  } finally {
+    await s.close();
+  }
+});
