@@ -194,6 +194,23 @@ class Conventions(unittest.TestCase):
             self.assertIsNotNone(b, "%s bridge lacks is_container" % name)
             self.assertEqual(a, b, "%s: the bridge's is_container has drifted from the scanner's" % name)
 
+    def test_the_bridge_reads_trash_and_the_blacklist_with_the_scanners_own_code(self):
+        # A trip's put refuses trash and blacklisted containers by the scanner's own tests, not a
+        # second, drifting copy. Only bridges that run trips carry them; TazUO's must.
+        carriers = 0
+        for name, d in bridge_dirs():
+            bridge = read_text(os.path.join(d, "packrat-bridge.py"))
+            if "def is_trash(" not in bridge:
+                continue
+            carriers += 1
+            scanner = read_text(os.path.join(d, "packrat-scanner.py"))
+            for helper in ("read_blacklist", "tooltip_lines", "is_trash"):
+                self.assertEqual(helper_source(bridge, helper), helper_source(scanner, helper),
+                                 "%s: the bridge's %s has drifted from the scanner's" % (name, helper))
+            trash = re.compile(r"^TRASH_RE = .*$", re.M)
+            self.assertEqual(trash.search(bridge).group(0), trash.search(scanner).group(0), name)
+        self.assertGreaterEqual(carriers, 1, "no bridge carries the trash test")
+
     def test_the_never_a_container_names_are_the_same_everywhere(self):
         # A deed, a bag of sending or a music box is never double-clicked, but a "Commodity Deed Box"
         # is a real container: every scanner and bridge carries the same rule.

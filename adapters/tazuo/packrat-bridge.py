@@ -63,6 +63,20 @@ def rfc3339_now():
     return time.strftime("%Y-%m-%dT%H:%M:%S", t) + tz
 
 
+def read_blacklist(path):
+    """The valid entries of <data directory>/scan-blacklist.json, the containers the player blacklisted
+    ({serial, name, addedAt, where?}). A bad entry is dropped, and a missing, unreadable or oversized
+    file reads as none: the list can only ever make a scan skip containers."""
+    try:
+        if os.path.getsize(path) > 256 * 1024:
+            return []
+        with open(path, "r", encoding="utf-8") as f:
+            doc = json.load(f)
+        return [e for e in doc if isinstance(e, dict) and type(e.get("serial")) is int and 0 < e["serial"] <= 0xFFFFFFFF]
+    except Exception:
+        return []
+
+
 ADAPTER_ID = "tazuo"
 ADAPTER_VERSION = "2.8.0"
 CAPABILITIES = {
@@ -78,6 +92,7 @@ BRIDGE_DIR = os.path.join(data_dir(), "bridge", "tazuo")
 QUEUE = os.path.join(BRIDGE_DIR, "queue.jsonl")
 STATUS = os.path.join(BRIDGE_DIR, "status.json")
 STOP_FLAG = os.path.join(data_dir(), "bridge", "stop")   # POST /api/bridge/stop writes it; every trip clears it first
+BLACKLIST_PATH = os.path.join(data_dir(), "scan-blacklist.json")   # read at the start of every trip
 POLL_S = 0.5
 MAX_HOURS = 8
 REACH = 2                 # tiles: containers open only when this close
@@ -430,6 +445,10 @@ CONTAINER_RE = re.compile(r"\b(chest|box|toolbox|crate|bag|pouch|basket|trunk|ar
 NOT_A_CONTAINER_RE = re.compile(r"\b(deed(?!\s+box)|sending|music box|\w*book|tome|atlas|compendium)\b", re.I)   # a "Commodity Deed Box" IS one
 # The books by graphic too, whatever they are called (ServUO's item classes; the first three seen live).
 NOT_A_CONTAINER_GRAPHICS = {0x0EFA, 0x2D50, 0x2D9D, 0x2252, 0x2253, 0x225A, 0x225B, 0x238C, 0x23A0, 0x22C5, 0x9C16}
+# A trash barrel or chest is a real container, but the server deletes its contents on a timer, so
+# nothing in one is worth recording. Never opened, never recorded, contents included. By name only:
+# a trash barrel has the same graphic as an ordinary barrel.
+TRASH_RE = re.compile(r"\btrash\b", re.I)
 # A piece of armour or clothing is never a container, however its name reads ("Platemail Chest"). No
 # "gargish" here: a Gargish Chest is a real container; gargoyle armour is caught by the client's
 # own wearable flag instead.
@@ -477,6 +496,21 @@ def is_container(item, name):
     except Exception:
         pass
     return bool(CONTAINER_RE.search(name or ""))
+
+
+def tooltip_lines(serial):
+    try:
+        data = API.ItemNameAndProps(int(serial), True)
+    except Exception:
+        data = None
+    return [ln.strip() for ln in str(data or "").splitlines() if ln.strip()]
+
+
+def is_trash(serial, name):
+    """A container is trash by its tooltip name ("A Trash Barrel"): the client's own cached name for the
+    art may be just "barrel". The cached name is the fallback when the tooltip reads nothing."""
+    lines = tooltip_lines(serial)
+    return bool(TRASH_RE.search(lines[0] if lines else name or ""))
 
 
 def sysmsg(msg, hue=OK_HUE):
@@ -722,11 +756,45 @@ def room_for(it, pack):
     return most <= 0 or stones_of(it) <= most - now
 
 
-def do_take(t, roots):
+def refuse_dest(dest, i, it, blacklist):
+    """Why a put must not open or fill dest[i], beyond open_chain's own checks: blacklisted (the player
+    told Pack Rat to leave it alone), not a container (a corpse), or trash (the server deletes what
+    goes in)."""
+    c = dest[i]
+    name = str(getattr(it, "Name", "") or "")
+    if c in blacklist:
+        return f"refused: 0x{c:x} is blacklisted — Pack Rat never opens it"
+    if not is_container(it, name):
+        return f"refused: 0x{c:x} is not a container — the bridge only ever opens containers"
+    if is_trash(c, name):
+        return f"refused: 0x{c:x} is a trash container — the server deletes what goes in"
+    return ""
+
+
+def merged_into(container, graphic, hue):
+    """Whether `container` holds a stack the dropped item could have merged onto (same graphic and hue):
+    a drop with no spot stacks, and the dropped item's own serial then disappears."""
+    try:
+        kids = API.ItemsInContainer(int(container), False) or []
+    except Exception:
+        return False
+    for k in kids:
+        try:
+            if int(k.Graphic) == graphic and int(getattr(k, "Hue", 0) or 0) == hue:
+                return True
+        except Exception:
+            pass
+    return False
+
+
+def do_take(t, roots, blacklist):
     """One take: the grab path, but dropped at an explicit spot in the backpack. Returns (ok, msg, full),
     full meaning the backpack or the character cannot take it, which ends the trip's takes."""
     serial, chain = t["serial"], t["chain"]
     name = t["name"] or "item"
+    for c in chain:
+        if c in blacklist:
+            return False, f"refused: 0x{c:x} is blacklisted — Pack Rat never opens it", False
     root = find(chain[0])
     why = chain_problem(chain, 0, root, own_roots([])) if root is not None else ""
     if why:
@@ -755,11 +823,12 @@ def do_take(t, roots):
     return False, f"move bounced for {name} (too far, or backpack full?)", False
 
 
-def do_put(p, roots):
+def do_put(p, roots, blacklist):
     """One put, the only step that moves an item somewhere other than your backpack, so it is fenced:
     only an item this bridge took (the carried set), from the top of your backpack, into a container
     chain whose root lies on the ground (open_chain with no own roots: never your pack, never a pack a
-    mobile carries) and whose every entry is a real container (never a corpse)."""
+    mobile carries), none of it blacklisted, a corpse or trash (refuse_dest), checked before any walk
+    where the client already knows the root."""
     serial, dest = p["serial"], p["dest"]
     name = p["name"] or "item"
     if serial not in carried:
@@ -769,17 +838,29 @@ def do_put(p, roots):
     if it is None or int(getattr(it, "Container", 0) or 0) != pack:
         carried.discard(serial)
         return False, f"{name} is no longer at the top of your backpack"
+    for c in dest:
+        if c in blacklist:
+            return False, f"refused: 0x{c:x} is blacklisted — Pack Rat never opens it"
+    root = find(dest[0])
+    if root is not None:
+        why = chain_problem(dest, 0, root, set()) or refuse_dest(dest, 0, root, blacklist)
+        if why:
+            return False, why
     if not walk_to(roots.get(dest[0]), dest[0]):
         return False, "could not reach the container (not in view / too far / no path) — walk closer and retry"
-    ok, msg = open_chain(dest, own=set())
+    ok, msg = open_chain(dest, own=set(), check=lambda i, x: refuse_dest(dest, i, x, blacklist))
     if not ok:
         return False, msg
+    graphic, hue = int(getattr(it, "Graphic", 0) or 0), int(getattr(it, "Hue", 0) or 0)
     API.MoveItem(serial, dest[-1])
     API.Pause(1.2)
     it2 = find(serial)
     if it2 is not None and int(getattr(it2, "Container", 0) or 0) == dest[-1]:
         carried.discard(serial)
         return True, f"put {name} away"
+    if it2 is None and merged_into(dest[-1], graphic, hue):
+        carried.discard(serial)
+        return True, f"put {name} away (onto a stack)"
     return False, f"{name} bounced (full, or refused) — it is still in your backpack"
 
 
@@ -788,6 +869,7 @@ def do_trip(cmd):
     A take the backpack cannot hold ends the takes (partial), and a put of an item this trip meant to
     take but did not is skipped. Returns (ok, msg, {"steps", "partial", "stopped"})."""
     clear_stop()
+    blacklist = set(e["serial"] for e in read_blacklist(BLACKLIST_PATH))
     serials = set(t["serial"] for t in cmd["takes"]) | set(p["serial"] for p in cmd["puts"])
     sysmsg(f"Pack Rat organize: trip {cmd['index']}, {len(serials)} items", INFO_HUE)
     roots = cmd["roots"]
@@ -797,7 +879,7 @@ def do_trip(cmd):
         if stop_requested():
             stopped = True
             break
-        ok, msg, full = do_take(t, roots)
+        ok, msg, full = do_take(t, roots, blacklist)
         steps.append({"op": "take", "serial": t["serial"], "ok": bool(ok), "msg": msg})
         heartbeat()
         if ok:
@@ -813,7 +895,7 @@ def do_trip(cmd):
         if p["serial"] in planned and p["serial"] not in took:
             steps.append({"op": "put", "serial": p["serial"], "ok": False, "msg": "skipped: not taken on this trip"})
             continue
-        ok, msg = do_put(p, roots)
+        ok, msg = do_put(p, roots, blacklist)
         steps.append({"op": "put", "serial": p["serial"], "ok": bool(ok), "msg": msg})
         heartbeat()
     put_away = sum(1 for s in steps if s["op"] == "put" and s["ok"])

@@ -362,6 +362,39 @@ class TazUOBridge(BridgeCase, unittest.TestCase):
             self.assertNotIn(s, self.opened(w))
         self.assertEqual(w.items[AMULET].Container, PACK)
 
+    def test_a_trip_never_opens_or_fills_a_blacklisted_container(self):
+        w = trip_home()
+        w.add(OTHER_GEM, OTHER_BAG, name="Gem", container_like=False, OnGround=False)
+        with open(os.path.join(self.data, "scan-blacklist.json"), "w", encoding="utf-8") as f:
+            json.dump([{"serial": DEST_BAG, "name": "Bag", "addedAt": "2026-09-28T12:00:00Z"},
+                       {"serial": OTHER_CHEST, "name": "Other Chest", "addedAt": "2026-09-28T12:00:00Z"}], f)
+        final, _ = self.run_bridge(w, 1, [
+            self.trip("t1", takes=[(AMULET, [CHEST, BAG])], puts=[(AMULET, [DEST, DEST_BAG])]),
+            self.trip("t2", takes=[(OTHER_GEM, [OTHER_CHEST, OTHER_BAG])], index=4)])
+        self.assertEqual(self.steps(final, "t1"), [("take", AMULET, True), ("put", AMULET, False)])
+        self.assertIn("blacklisted", final["results"]["t1"]["steps"][1]["msg"])
+        self.assertEqual(self.steps(final, "t2"), [("take", OTHER_GEM, False)])
+        self.assertIn("blacklisted", final["results"]["t2"]["steps"][0]["msg"])
+        for s in (DEST, DEST_BAG, OTHER_CHEST, OTHER_BAG):
+            self.assertNotIn(s, self.opened(w))
+        self.assertEqual(self.moved(w), [AMULET])
+
+    def test_a_put_never_goes_into_a_trash_container(self):
+        w = trip_home()
+        final, _ = self.run_bridge(w, 1, [self.trip("t1", takes=[(AMULET, [CHEST, BAG])], puts=[(AMULET, [TRASH_BIN])])])
+        self.assertIn("trash", final["results"]["t1"]["steps"][1]["msg"])
+        self.assertNotIn(TRASH_BIN, self.opened(w))
+        self.assertEqual(w.items[AMULET].Container, PACK)
+
+    def test_a_put_that_merges_onto_a_stack_counts_as_put_away(self):
+        w = trip_home()
+        w.merges = True
+        w.add(STACK, DEST_BAG, name="Jewel", container_like=False, OnGround=False)
+        final, _ = self.run_bridge(w, 1, [self.trip("t1", takes=[(AMULET, [CHEST, BAG])], puts=[(AMULET, [DEST, DEST_BAG])])])
+        self.assertTrue(final["results"]["t1"]["ok"], final["results"]["t1"])
+        self.assertNotIn(AMULET, w.items)
+        self.assertEqual(w.items[STACK].Amount, 2)
+
     def test_a_trip_line_over_the_line_limit_is_refused_unread(self):
         w = trip_home()
         big = self.trip("big", takes=[(AMULET, [CHEST, BAG])], puts=[(AMULET, [DEST])])
