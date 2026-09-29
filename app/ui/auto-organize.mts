@@ -36,7 +36,8 @@ export async function openAutoOrganize(opener: HTMLElement | null = null): Promi
   drawer().body.replaceChildren(
     box("section", { class: "auto-section", id: "auto-strategy" }, el("h3", { class: "t-md" }, "1. Strategy"), seg, txt(STRATEGY_TEXT[strategy].text, "t-sm muted auto-strategy-text")),
     box("section", { class: "auto-section", id: "auto-containers" }),
-    box("section", { class: "auto-section", id: "auto-proposal", "aria-live": "polite" }));
+    box("section", { class: "auto-section", id: "auto-proposal" }),
+    el("div", { class: "sr", id: "auto-live", "aria-live": "polite" }));
   paint();
   drawer().open(opener);
   await propose();
@@ -125,6 +126,8 @@ function paintProposal(): void {
     }
   }
   host.replaceChildren(...compactChildren(kids));
+  // A screen reader hears the headline (or the error) once each proposal lands, not the whole table redrawn.
+  if (!d.busy) part("auto-live").textContent = d.error ? `Could not work out a proposal: ${d.error}` : p ? proposalHeadline(p) : "";
 }
 function paintAccept(): void {
   const d = draft!, why = acceptGate(d.proposal, d.busy);
