@@ -41,6 +41,13 @@
 //         a `_vault` tombstone carrying forgetCharacter; 409 under --demo) ·
 //         GET|POST {serial, name, where?} /api/blacklist · DELETE /api/blacklist/<serial>
 //         (<data>/scan-blacklist.json, the containers scans never open) ·
+//         GET|PUT /api/organize (<data>/organize.json, Organize's labels, rules, catch-all and pinned items: app/organize-config.mts;
+//         GET salvages a hand-edited file and lists what it dropped in `problems`) ·
+//         GET /api/organize/plan (app/organize.mts's planOrganize over the fold, organize.json, the blacklist and the
+//         results overlay <data>/organize-state.json, after reading finished trips out of the bridge's status.json) ·
+//         POST /api/organize/trip {index, stamp} (queues that trip of the CURRENT plan with app/bridge-trip.mts's
+//         queueTrip; 409 when the client's bridge has no "trip", organize.json needed salvage, a trip has not reported
+//         back (while its bridge's heartbeat is fresh), stamp is not the plan's, or the trip is not its site's first) ·
 //         GET|PUT /api/ui-prefs (<data>/ui-prefs.json: {cols?, colsVersion?, colWidths?, sheetProps?, theme?, appearance?, sidebar?, density?, dismissedUpdate?, copiedScanner?}, the page's view choices)
 //         POST /api/bridge {action, serial, name, chain: [root…parent], pos|null} (queue for packrat-bridge.py) · GET /api/bridge/status · POST /api/bridge/stop {} (Organize's Stop: writes <data>/bridge/stop, which packrat-bridge.py checks between a trip's steps)
 //         GET /api/events — SSE, one stream shared by every connected client (not per-job like the
@@ -108,7 +115,10 @@ import { startWatcher, jsonErrorReason, MAX_INBOX_BYTES, type StartWatcherOption
 import { parsePastedScan, writeScanToInbox } from "./import.mts";
 import { writeFileAtomic } from "./atomic-write.mts";
 import { addPanelAutostart, panelPrefsError, readPanelPrefs, tazuoRunning, writePanelPrefs } from "./tazuo-panel.mts";
-import { writeBridgeStop } from "./bridge-trip.mts";
+import { queueTrip, writeBridgeStop } from "./bridge-trip.mts";
+import { checkOrganizeConfig, emptyOrganizeConfig, salvageOrganizeConfig, MAX_SETUP_BYTES, type OrganizeConfig } from "./organize-config.mts";
+import { planOrganize, tripCommand, type Plan } from "./organize.mts";
+import { emptyOrganizeState, harvestTrips, noteSeen, pruneOverlay, salvageOrganizeState, PENDING_GRACE_MS, type BridgeView, type OrganizeState } from "./organize-state.mts";
 import { retentionError, retentionOf, runsToPrune, scansToPrune, type ScanFile } from "./retention.mts";
 import {
   listAdapters, candidateClientRoots, validateScriptsDir, installedVersion, installScripts, pasteScanner,
@@ -768,6 +778,66 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
     return (Array.isArray(raw) ? raw : []).filter((e): e is BlacklistEntry => !!e && typeof e === "object" && isBoundedInt(e.serial, 1, MAX_SERIAL)
       && isBoundedString(e.name, 64) && isBoundedString(e.addedAt, 40) && (e.where === undefined || isBoundedString(e.where, 64)))
       .slice(0, 1000).map(({ serial, name, addedAt, where }) => ({ serial, name, addedAt, ...(where ? { where } : {}) }));
+  }
+  // <data>/organize.json: Organize's setup (issue #11, app/organize-config.mts). Read through the salvage, so a
+  // hand edit that breaks one rule drops that rule, not the whole setup, and `problems` says what went; a file
+  // that does not parse is moved aside (the way loadSettings() treats settings.json) and Organize starts empty.
+  // Written only by PUT /api/organize, whole.
+  const ORGANIZE = join(CONFIG.dataDir, "organize.json");
+  function readOrganize(): { config: OrganizeConfig; problems: string[] } {
+    if (!existsSync(ORGANIZE)) return { config: emptyOrganizeConfig(), problems: [] };
+    // A file that is too big, does not parse or is not a version 1 setup is moved aside rather than read as empty:
+    // the next PUT would otherwise overwrite it.
+    let why: string | null = null, raw: unknown = null;
+    if (lstatSync(ORGANIZE).size > MAX_SETUP_BYTES) why = `is over ${MAX_SETUP_BYTES / 1e6} MB`;
+    else {
+      try { raw = JSON.parse(readFileSync(ORGANIZE, "utf8")); }
+      catch (e) {
+        if (!(e instanceof SyntaxError)) throw e;
+        why = `did not parse (${jsonErrorReason(e)})`;
+      }
+      if (!why && (!raw || typeof raw !== "object" || (raw as { version?: unknown }).version !== 1)) why = "is not a version 1 Organize setup";
+    }
+    if (!why) return salvageOrganizeConfig(raw);
+    const aside = moveAside(ORGANIZE);
+    return { config: emptyOrganizeConfig(), problems: [`organize.json ${why}; it was moved to ${basename(aside)} and Organize starts empty`] };
+  }
+  // <data>/organize-state.json: Organize's results overlay (app/organize-state.mts). Only this server writes it;
+  // a damaged one reads as empty, which at worst plans a finished move again (the bridge then finds the item
+  // gone and says so).
+  const ORGANIZE_STATE = join(CONFIG.dataDir, "organize-state.json");
+  function readOrganizeState(): OrganizeState {
+    try { return salvageOrganizeState(lstatSync(ORGANIZE_STATE).size <= 4e6 ? JSON.parse(readFileSync(ORGANIZE_STATE, "utf8")) : null); }
+    catch { return emptyOrganizeState(); }
+  }
+  const writeOrganizeState = (state: OrganizeState): void => writeFileAtomic(ORGANIZE_STATE, JSON.stringify(state, null, 1) + "\n", DATA_FILE_MODE);
+  // What harvestTrips needs of one adapter's status.json (GET /api/bridge/status reads the same file for the page).
+  // `current` counts only while the bridge's heartbeat is recent: a client that quit mid-trip leaves its last
+  // `current` in the file for good, which would otherwise hold Organize's one trip in flight forever.
+  function bridgeView(adapter: string, now: number): BridgeView {
+    try {
+      const st: unknown = JSON.parse(readFileSync(CONFIG.paths.bridgeStatusFor(adapter), "utf8"));
+      if (!st || typeof st !== "object" || Array.isArray(st)) return { results: {}, current: null };
+      const { results, current, alive } = st as Record<string, unknown>;
+      const aliveMs = typeof alive === "number" ? alive * 1000 : typeof alive === "string" ? Date.parse(alive) : NaN;
+      const live = Math.abs(now - aliveMs) <= PENDING_GRACE_MS;
+      const id = live && current && typeof current === "object" ? (current as { id?: unknown }).id : null;
+      return { results: results && typeof results === "object" && !Array.isArray(results) ? results as Record<string, unknown> : {}, current: typeof id === "string" ? id : null };
+    } catch { return { results: {}, current: null }; }
+  }
+  // The plan as it stands now: finished trips read out of their bridges' status files into the overlay, entries a
+  // newer scan has settled dropped, labels' last-seen times refreshed (the state file is rewritten only when that
+  // changed something), then planOrganize.
+  async function organizeNow(): Promise<{ inv: Inventory; state: OrganizeState; plan: Plan; problems: string[] }> {
+    const { inv } = await getInventory();
+    const { config, problems } = readOrganize();
+    const before = readOrganizeState();
+    const now = Date.now();
+    const bridges = Object.fromEntries([...new Set(before.pending.map((p) => p.adapter))].map((a) => [a, bridgeView(a, now)]));
+    const state = noteSeen(pruneOverlay(harvestTrips(before, bridges, now), inv, now), config, inv);
+    if (JSON.stringify(state) !== JSON.stringify(before)) writeOrganizeState(state);
+    const plan = planOrganize(inv, config, state.moves, { now, rarity: currentRules.rarity, blacklist: readBlacklist().map((e) => e.serial), seen: state.seen });
+    return { inv, state, plan, problems };
   }
   // A profiles.json that does not parse (a write cut short before writes were atomic, or a bad hand
   // edit) used to answer every GET /api/profiles with a 500 until someone fixed the file by hand. It
@@ -1762,6 +1832,49 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
       if (unlist) {
         writeFileAtomic(BLACKLIST, JSON.stringify(readBlacklist().filter((e) => e.serial !== Number(unlist[1])), null, 1) + "\n", DATA_FILE_MODE);
         return send(res, 200, { ok: true });
+      }
+      if (req.method === "GET" && url.pathname === "/api/organize") return send(res, 200, { ok: true, ...readOrganize() });
+      if (req.method === "PUT" && url.pathname === "/api/organize") {
+        const checked = checkOrganizeConfig(await readBody(req, { limit: MAX_SETUP_BYTES, tooLargeMsg: "the Organize setup is too large" }));
+        if (!checked.ok) return send(res, 400, { ok: false, error: checked.error });
+        // A blacklisted container is never opened by a scan, so a label on one could only plan from stale contents.
+        const black = new Set(readBlacklist().map((e) => e.serial));
+        const listed = Object.values(checked.config.labels).find((l) => black.has(l.serial));
+        if (listed) return send(res, 400, { ok: false, error: `container ${listed.serial} is blacklisted and cannot be labelled` });
+        mkdirSync(dirname(ORGANIZE), { recursive: true, mode: DATA_DIR_MODE });
+        writeFileAtomic(ORGANIZE, JSON.stringify(checked.config, null, 2) + "\n", DATA_FILE_MODE);
+        return send(res, 200, { ok: true });
+      }
+      if (req.method === "GET" && url.pathname === "/api/organize/plan") return send(res, 200, { ok: true, plan: (await organizeNow()).plan });
+      if (req.method === "POST" && url.pathname === "/api/organize/trip") {
+        // One trip of the CURRENT plan, built here and queued with queueTrip: the page names the trip and the plan it
+        // was shown (stamp), never the moves. A plan that changed since — a new scan, an edited rule, a trip that
+        // reported back and renumbered the rest — is refused, and so is any trip but its site's first, which may
+        // count on room an earlier trip makes.
+        const { index, stamp } = asObject(await readBody(req, { limit: 8e3 }));
+        if (!isBoundedInt(index, 1, 10000) || !isBoundedString(stamp, 64)) return send(res, 400, { ok: false, error: "index (a trip number) and stamp (the plan's) are required" });
+        const adapter = bridgeAdapter();
+        const caps = listAdapters(ADAPTERS_DIR).find((a) => a.id === adapter)?.capabilities as { bridge?: unknown } | undefined;
+        if (!Array.isArray(caps?.bridge) || !caps.bridge.includes("trip")) return send(res, 409, { ok: false, error: `the ${adapter} bridge cannot run Organize trips` });
+        const { inv, state, plan, problems } = await organizeNow();
+        // A salvaged setup lost rules or targets, and their items may now fall through to another rule or the
+        // catch-all: nothing moves until the player has seen that and saved the setup again.
+        if (problems.length) return send(res, 409, { ok: false, error: `organize.json was hand-edited and parts of it were dropped (${problems[0]}); open Organize and save the setup first` });
+        const waiting = state.pending[0];
+        if (waiting) return send(res, 409, { ok: false, error: `trip ${waiting.index} has not reported back yet` });
+        if (stamp !== plan.stamp) return send(res, 409, { ok: false, error: "the plan has changed since it was shown; reload it", stamp: plan.stamp });
+        const trip = plan.trips.find((t) => t.index === index);
+        if (!trip) return send(res, 404, { ok: false, error: `the plan has no trip ${index}` });
+        const first = plan.trips.find((t) => t.site === trip.site)!;
+        if (first.index !== index) return send(res, 409, { ok: false, error: `run trip ${first.index} first: this trip counts on the room it makes` });
+        const input = tripCommand(inv, plan, index);
+        if (!input) return send(res, 409, { ok: false, error: `trip ${index} cannot be built from the current scans` });
+        const now = new Date();
+        const queued = queueTrip(CONFIG.paths, adapter, input, now);
+        if (!queued.ok) return send(res, 409, { ok: false, error: queued.error });
+        const steps = plan.moves.filter((m) => m.trip === index).map(({ serial, name, from, to }) => ({ serial, name, from, to }));
+        writeOrganizeState({ ...state, pending: [...state.pending, { id: queued.id, adapter, index, stamp: plan.stamp, queuedAt: now.toISOString(), steps }] });
+        return send(res, 200, { ok: true, id: queued.id, index });
       }
       if (req.method === "POST" && url.pathname === "/api/forget-character") {
         // A character tombstone: a `_vault` scan naming the character in `forgetCharacter`, which the
