@@ -119,7 +119,7 @@ export const SCAN_V2_SCHEMA = {
           parent: SERIAL_OR_NULL,
           kind: { type: "string", maxLength: 64 },
           name: NAME,
-          pos: NUMBER_MAP_OR_NULL,
+          pos: { ...NUMBER_MAP_OR_NULL, properties: { facet: { type: "integer", enum: [0, 1, 2, 3, 4, 5], "$comment": "The facet the container is on: 0 Felucca, 1 Trammel, 2 Ilshenar, 3 Malas, 4 Tokuno, 5 Ter Mur. Scanners write it on a ground root's pos (TazUO 2.9.0, Razor Enhanced 1.9.0, ClassicUO web 1.3.0) and leave it out when the client cannot say." } } },
           tooltip: TOOLTIP,
           opened: { type: "boolean" },
         },
