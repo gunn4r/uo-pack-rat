@@ -63,8 +63,10 @@ function runSmoke(dataDir: string): Promise<SmokeResult> {
     // stdout/stderr are only `| null` in the type for the configurations that turn piping off.
     child.stdout!.on("data", (b) => { stdout += b.toString(); });
     child.stderr!.on("data", (b) => { stderr += b.toString(); });
+    // SIGKILL, not the default SIGTERM: a shell stuck in Chromium's native teardown ignores SIGTERM, and the
+    // survivor would keep this file running past its test for the watchdog to report a second time (#106).
     const timer = setTimeout(() => {
-      child.kill();
+      child.kill("SIGKILL");
       reject(new Error(`electron --smoke did not exit within 60s\nstdout:\n${stdout}\nstderr:\n${stderr}`));
     }, 60000);
     child.on("error", (e) => {
