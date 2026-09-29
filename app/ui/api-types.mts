@@ -444,7 +444,7 @@ export interface BridgeQueueApiResponse {
 // The setup's types come straight from app/organize-config.mts: unlike the modules listed at the top of this
 // file it is pure and imports only item-query.mts's types, so the browser build type-checks it. The plan's
 // types are mirrored from app/organize.mts, which imports server-only code (bridge-trip.mts).
-export type { OrganizeConfig, ContainerLabel, OrganizeRule, RuleMatch, Origin } from "../organize-config.mts";
+export type { OrganizeConfig, ContainerLabel, OrganizeRule, RuleMatch, Origin, Build } from "../organize-config.mts";
 export type PlanWarningKind = "stale-container" | "missing-target" | "missing-label" | "unknown-capacity" | "old-scripts" | "blacklisted" | "no-position" | "not-ground";
 export interface PlanWarning { kind: PlanWarningKind; serial: number; detail: string }
 export interface PlanMove { serial: number; name: string; amount: number; from: number | null; to: number; ruleId: string; alsoMatched: string[]; trip: number }
@@ -474,7 +474,7 @@ export interface OrganizeTripApiResponse { ok: boolean; id: string; index: numbe
 // POST /api/organize/match: what one rule filter takes of the movable items in labelled roots (app/organize.mts's matchCount).
 export interface OrganizeMatchApiResponse { ok: boolean; count: number; pieces: number; sample: string[] }
 // POST /api/organize/propose (Auto organize): mirrored from app/organize-strategies.mts, which is server-only.
-export type AutoStrategy = "simple" | "detailed";
+export type AutoStrategy = "simple" | "detailed" | "build";
 export interface ProposalCandidate { serial: number; name: string; site: number; fill: { items: number; max: number }; label: { name: string; origin: Origin } | null; mine: boolean; ticked: boolean }
 export interface ProposalGroup { key: string; name: string; family: string; ruleIds: string[]; items: number; needSlots: number; targets: number[]; roomSlots: number; shortfall: number; addContainers: number; crossSite: number }
 export interface OrganizeProposal {

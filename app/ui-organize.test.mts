@@ -109,6 +109,7 @@ test("[fast] a rule's one-line summary: its names first, then the Inventory's fi
   const match = { query: { ...blankQuery(), kind: ["reagent"] }, names: ["black pearl", "bloodmoss", "garlic", "ginseng"] };
   assert.equal(matchSummary(match, CTX), "Name: black pearl, bloodmoss, garlic +1 more · Kind: reagent");
   assert.equal(matchSummary({ query: blankQuery() }, CTX), "Every item (no filter yet)");
+  assert.equal(matchSummary({ query: { ...blankQuery(), kind: ["gear"] }, build: "hybrid" }, CTX), "Build: Hybrid · Kind: gear");
 });
 
 test("[fast] extraFilters lists the filters the editor has no control for, and removes one at a time", () => {
@@ -414,5 +415,5 @@ test("[fast] Auto organize: the proposal's headline, each group's status, the no
   assert.equal(acceptGate(null, false), "Working out the proposal…");
   assert.equal(acceptGate(P({ containers: [] }), false), "Tick at least one container first.");
   assert.equal(acceptGate(P({ changed: false }), false), "Nothing to change: this is already your setup.");
-  assert.deepEqual(Object.keys(STRATEGY_TEXT), ["simple", "detailed"]);
+  assert.deepEqual(Object.keys(STRATEGY_TEXT), ["simple", "detailed", "build"]);
 });

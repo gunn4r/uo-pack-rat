@@ -1,19 +1,19 @@
-// organize-strategies.mts — Organize's Auto mode (issue #11, spec §5): the Simple and Detailed strategies (which
-// items form a group, each group written as ordinary rule filters, mostly the presets), assignGroups (which of the
-// ticked chests each group gets) and proposeOrganize (the whole setup Accept saves). Pure and deterministic (node:util
-// only for a deep compare): every walk runs in serial or table order. POST /api/organize/propose hands everything
-// in; the page saves the proposal's config with the ordinary PUT /api/organize.
+// organize-strategies.mts — Organize's Auto mode (issue #11, spec §5): the Simple, Detailed and By build (#91)
+// strategies (which items form a group, each group written as ordinary rule filters, mostly the presets), assignGroups
+// (which of the ticked chests each group gets) and proposeOrganize (the whole setup Accept saves). Pure and
+// deterministic (node:util only for a deep compare): every walk runs in serial or table order. POST
+// /api/organize/propose hands everything in; the page saves the proposal's config with the ordinary PUT /api/organize.
 import { isDeepStrictEqual } from "node:util";
-import { checkOrganizeConfig, emptyRuleQuery, LIMITS, type ContainerLabel, type OrganizeConfig, type OrganizeRule, type Origin, type RuleMatch } from "./organize-config.mts";
+import { checkOrganizeConfig, emptyRuleQuery, LIMITS, type Build, type ContainerLabel, type OrganizeConfig, type OrganizeRule, type Origin, type RuleMatch } from "./organize-config.mts";
 import { PRESETS } from "./organize-presets.mts";
 import { applyOverlay, claimOf, planOrganize, posOk, ruleMatches, scopeOf, sitesOf, type OverlayMove, type ScopeOptions } from "./organize.mts";
 import { bagLabel, TRASH_RE, type Container, type ContainerCapacity, type Inventory, type Item } from "./vault-lib.mts";
 import type { RuleQuery } from "./item-query.mts";
 import type { RulesV1RarityItem } from "./schema/types.d.mts";
 
-export type StrategyId = "simple" | "detailed";
-export const STRATEGY_IDS: readonly StrategyId[] = ["simple", "detailed"];
-export type Family = "armour" | "jewelry" | "weapons" | "other-gear" | "reagents" | "scrolls" | "resources" | "potions" | "runes-books" | "deeds" | "gems" | "tools" | "clothing" | "other";
+export type StrategyId = "simple" | "detailed" | "build";
+export const STRATEGY_IDS: readonly StrategyId[] = ["simple", "detailed", "build"];
+export type Family = "armour" | "jewelry" | "weapons" | "other-gear" | "gear" | "reagents" | "scrolls" | "resources" | "potions" | "runes-books" | "deeds" | "gems" | "tools" | "clothing" | "other";
 // One group of a strategy: the name its chests are labelled with and its rules carry, and the filters that make it
 // (an item is in the group when any passes). Each filter becomes one rule, in this order, all filling the group's
 // chests: Armour needs two, since one filter cannot say "these slots, or the neck slot named gorget".
@@ -91,7 +91,18 @@ const DETAILED: readonly GroupDef[] = [
   def("clothing", "Clothing", "clothing", kinds("clothing")),
   def("other", "Other", "other", EVERYTHING),
 ];
-export const STRATEGIES: Record<StrategyId, readonly GroupDef[]> = { simple: SIMPLE, detailed: DETAILED };
+// Issue #91: gear (jewelry and talismans too) by the build its properties serve (organize.mts's buildOf, which each
+// rule's `build` asks), then everything else as Simple groups it.
+const build = (b: Build): RuleMatch => ({ query: q({ kind: ["gear"] }), build: b });
+const BY_BUILD: readonly GroupDef[] = [
+  def("caster-gear", "Caster gear", "gear", build("caster")),
+  def("melee-gear", "Melee gear", "gear", build("melee")),
+  def("hybrid-gear", "Hybrid gear", "gear", build("hybrid")),
+  def("tank-gear", "Tank gear", "gear", build("tank")),
+  def("plain-gear", "Other gear", "gear", build("other")),
+  ...SIMPLE.filter((d) => !["armour", "jewelry", "weapons", "other-gear"].includes(d.family)),
+];
+export const STRATEGIES: Record<StrategyId, readonly GroupDef[]> = { simple: SIMPLE, detailed: DETAILED, build: BY_BUILD };
 // The id a group's i-th filter's rule gets (proposeOrganize adds _2, _3… when a manual rule already has it), and
 // back from an id to its group, for either strategy (a key both have means the same things).
 const ruleIdOf = (key: string, i: number): string => `auto-${key}${i ? `-${i + 1}` : ""}`;
