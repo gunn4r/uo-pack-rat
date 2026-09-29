@@ -98,7 +98,10 @@ MAX_HOURS = 8
 REACH = 2                 # tiles: containers open only when this close
 WALK_TIMEOUT_S = 20
 WALK_POLL_S = 0.5
-PAUSE_OPEN = 1.0
+PAUSE_OPEN = 1.0          # after double-clicking a container, for its contents to arrive
+MOVE_WAIT_S = 1.5         # a trip's move that has not landed by then bounced
+MOVE_POLL_S = 0.05        # how often a trip looks whether its move landed
+MOVE_GAP_S = 0.35         # least time between two of a trip's moves, in case the shard throttles drag and drop
 STATUS_EVERY_S = 2.0      # heartbeat: the app calls the bridge offline once `alive` is 8 s old
 HIGHLIGHT_S = 8
 HIGHLIGHT_HUE = 53        # bright yellow-green
@@ -464,6 +467,13 @@ results = {}              # id -> {ok, msg}
 counts = {"done": 0, "failed": 0}
 last_status = {"current": None, "at": 0.0}
 carried = set()           # serials this bridge took on a trip and has not yet put away: a put may only name one
+# Containers the running trip has double-clicked since its last walk, and when its last move went out.
+# Opening a container once is enough: the client keeps the contents it has been sent after the window
+# closes, and the server checks only reach when an item is lifted or dropped (walk_to sees to that). A
+# walk empties the set, since a container left behind can fall out of the client's view and forget its
+# contents; so does the start of every trip.
+trip_opened = set()
+last_move = {"at": 0.0}
 
 
 def is_container(item, name):
@@ -612,6 +622,7 @@ def walk_to(pos, root_serial):
             return True
         if not within_walk(API.Player.X, API.Player.Y, it.X, it.Y):
             return False
+        trip_opened.clear()
         started = API.PathfindEntity(int(root_serial), REACH, False, WALK_TIMEOUT_S)
         return wait_for_walk(started, lambda: dist_to(it.X, it.Y) <= REACH)
     if pos:
@@ -619,17 +630,19 @@ def walk_to(pos, root_serial):
             return True
         if not within_walk(API.Player.X, API.Player.Y, pos["x"], pos["y"]):
             return False
+        trip_opened.clear()
         started = API.Pathfind(int(pos["x"]), int(pos["y"]), int(pos.get("z", 0)), REACH, False, WALK_TIMEOUT_S)
         return wait_for_walk(started, lambda: dist_to(pos["x"], pos["y"]) <= REACH)
     return it is not None and dist_to(it.X, it.Y) <= REACH
 
 
-def open_chain(chain, own=None, check=None):
+def open_chain(chain, own=None, check=None, opened=None):
     """Open root, then each nested bag in order. Returns (ok, message). Each entry is checked against
     the live client before it is double-clicked: the root must be on the ground or one of `own` (your
     backpack and bank unless the caller says otherwise; a trip's put passes none), each bag must really
     sit inside the one opened before it (chain_problem), and `check(i, item)` may refuse an entry for a
-    reason of the caller's own."""
+    reason of the caller's own. A trip passes `opened` (trip_opened): an entry already in it passes the
+    same checks but is not double-clicked again, and every entry opened is added to it."""
     own = own_roots([]) if own is None else own
     for i, c in enumerate(chain):
         it = find(c)
@@ -640,12 +653,16 @@ def open_chain(chain, own=None, check=None):
             return False, why
         if not is_container(it, str(getattr(it, "Name", "") or "")):
             return False, f"refused: 0x{int(c):x} is not a container — the bridge only ever opens containers"
+        if opened is not None and int(c) in opened:
+            continue
         try:
             API.UseObject(int(c))
         except Exception as e:
             return False, f"could not open container: {e}"
         API.Pause(PAUSE_OPEN)
         heartbeat()
+        if opened is not None:
+            opened.add(int(c))
     return True, "opened"
 
 
@@ -777,20 +794,46 @@ def refuse_dest(dest, i, it, blacklist):
     return ""
 
 
-def merged_into(container, graphic, hue):
-    """Whether `container` holds a stack the dropped item could have merged onto (same graphic and hue):
-    a drop with no spot stacks, and the dropped item's own serial then disappears."""
+def stack_total(container, graphic, hue):
+    """The summed amount of the stacks in `container` a dropped item could merge onto (same graphic and
+    hue), 0 when there is none: a drop with no spot stacks, and the dropped item's own serial then
+    disappears."""
     try:
         kids = API.ItemsInContainer(int(container), False) or []
     except Exception:
-        return False
+        return 0
+    total = 0
     for k in kids:
         try:
             if int(k.Graphic) == graphic and int(getattr(k, "Hue", 0) or 0) == hue:
-                return True
+                total += max(1, int(getattr(k, "Amount", 1) or 1))
         except Exception:
             pass
-    return False
+    return total
+
+
+def inside(it, container):
+    """Whether the live item `it` (None when the client does not know it) sits directly in `container`."""
+    return it is not None and int(getattr(it, "Container", 0) or 0) == int(container)
+
+
+def trip_move(serial, dest, landed, *spot):
+    """A trip's MoveItem: sent at least MOVE_GAP_S after the trip's previous one, then the live item is
+    looked up every MOVE_POLL_S until `landed(item)` says it arrived, for at most MOVE_WAIT_S. Returns the
+    item as last seen (None once the client no longer knows it), for the caller's own verdict."""
+    gap = MOVE_GAP_S - (time.time() - last_move["at"])
+    if gap > 0:
+        API.Pause(gap)
+    API.MoveItem(serial, dest, *spot)
+    last_move["at"] = time.time()
+    deadline = last_move["at"] + MOVE_WAIT_S
+    it = find(serial)
+    for _ in range(int(MOVE_WAIT_S / MOVE_POLL_S) + 1):
+        if landed(it) or time.time() >= deadline:
+            break
+        API.Pause(MOVE_POLL_S)
+        it = find(serial)
+    return it
 
 
 def do_take(t, roots, blacklist):
@@ -809,7 +852,7 @@ def do_take(t, roots, blacklist):
         return False, why, False
     if not walk_to(roots.get(chain[0]), chain[0]):
         return False, "could not reach the container (not in view / too far / no path) — walk closer and retry", False
-    ok, msg = open_chain(chain, own=set())
+    ok, msg = open_chain(chain, own=set(), opened=trip_opened)
     if not ok:
         return False, msg, False
     it = find(serial)
@@ -822,10 +865,8 @@ def do_take(t, roots, blacklist):
         return False, f"your backpack cannot take {name} — trip cut short", True
     # Dropped at a spot, a stack never merges into a matching stack already in the pack, so it keeps
     # the serial this trip's put names.
-    API.MoveItem(serial, pack, 0, TAKE_DROP[0], TAKE_DROP[1])
-    API.Pause(1.2)
-    it2 = find(serial)
-    if it2 is not None and int(getattr(it2, "Container", 0) or 0) == pack:
+    it2 = trip_move(serial, pack, lambda x: inside(x, pack), 0, TAKE_DROP[0], TAKE_DROP[1])
+    if inside(it2, pack):
         carried.add(serial)
         return True, f"took {name}", False
     return False, f"move bounced for {name} (too far, or backpack full?)", False
@@ -856,26 +897,34 @@ def do_put(p, roots, blacklist):
             return False, why
     if not walk_to(roots.get(dest[0]), dest[0]):
         return False, "could not reach the container (not in view / too far / no path) — walk closer and retry"
-    ok, msg = open_chain(dest, own=set(), check=lambda i, x: refuse_dest(dest, i, x, blacklist))
+    ok, msg = open_chain(dest, own=set(), check=lambda i, x: refuse_dest(dest, i, x, blacklist), opened=trip_opened)
     if not ok:
         return False, msg
     graphic, hue = int(getattr(it, "Graphic", 0) or 0), int(getattr(it, "Hue", 0) or 0)
-    API.MoveItem(serial, dest[-1])
-    API.Pause(1.2)
-    it2 = find(serial)
-    if it2 is not None and int(getattr(it2, "Container", 0) or 0) == dest[-1]:
+    # Landed: in the container, or gone onto a stack there that grew. Only the verdict below decides, as
+    # before; the stack's growth only ends the wait early.
+    before = stack_total(dest[-1], graphic, hue)
+    it2 = trip_move(serial, dest[-1], lambda x: inside(x, dest[-1]) or (x is None and stack_total(dest[-1], graphic, hue) > before))
+    if inside(it2, dest[-1]):
         carried.discard(serial)
         return True, f"put {name} away"
-    if it2 is None and merged_into(dest[-1], graphic, hue):
+    if it2 is None and stack_total(dest[-1], graphic, hue) > 0:
         carried.discard(serial)
         return True, f"put {name} away (onto a stack)"
     return False, f"{name} bounced (full, or refused) — it is still in your backpack"
 
 
+def ms_since(t0):
+    return max(0, int(round((time.time() - t0) * 1000)))
+
+
 def do_trip(cmd):
     """Organize: every take, then every put, one step at a time, the stop flag checked before each.
     A take the backpack cannot hold ends the takes (partial), and a put of an item this trip meant to
-    take but did not is skipped. Returns (ok, msg, {"steps", "partial", "stopped"})."""
+    take but did not is skipped. Every step and the trip carry `ms`, the milliseconds they took. Returns
+    (ok, msg, {"steps", "partial", "stopped", "ms"})."""
+    started = time.time()
+    trip_opened.clear()
     # A flag written after this trip was queued is a Stop pressed while the trip waited its turn, and
     # is honoured; an older one is left over from before and only cleared. `queued` is whole seconds,
     # so a Stop pressed up to a second before the trip was queued also counts: the safe side.
@@ -894,8 +943,9 @@ def do_trip(cmd):
         if stopped or stop_requested():
             stopped = True
             break
+        t0 = time.time()
         ok, msg, full = do_take(t, roots, blacklist)
-        steps.append({"op": "take", "serial": t["serial"], "ok": bool(ok), "msg": msg})
+        steps.append({"op": "take", "serial": t["serial"], "ok": bool(ok), "msg": msg, "ms": ms_since(t0)})
         heartbeat()
         if ok:
             took.add(t["serial"])
@@ -908,10 +958,11 @@ def do_trip(cmd):
             stopped = True
             break
         if p["serial"] in planned and p["serial"] not in took:
-            steps.append({"op": "put", "serial": p["serial"], "ok": False, "msg": "skipped: not taken on this trip"})
+            steps.append({"op": "put", "serial": p["serial"], "ok": False, "msg": "skipped: not taken on this trip", "ms": 0})
             continue
+        t0 = time.time()
         ok, msg = do_put(p, roots, blacklist)
-        steps.append({"op": "put", "serial": p["serial"], "ok": bool(ok), "msg": msg})
+        steps.append({"op": "put", "serial": p["serial"], "ok": bool(ok), "msg": msg, "ms": ms_since(t0)})
         heartbeat()
     put_away = sum(1 for s in steps if s["op"] == "put" and s["ok"])
     failed = sum(1 for s in steps if not s["ok"])
@@ -920,7 +971,7 @@ def do_trip(cmd):
         msg += " — backpack full, trip cut short"
     if stopped:
         msg += " — stopped"
-    return failed == 0 and not partial and not stopped, msg, {"steps": steps, "partial": partial, "stopped": stopped}
+    return failed == 0 and not partial and not stopped, msg, {"steps": steps, "partial": partial, "stopped": stopped, "ms": ms_since(started)}
 
 
 def run(cmd):
