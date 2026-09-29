@@ -73,7 +73,9 @@ function runSmoke(dataDir: string): Promise<SmokeResult> {
       clearTimeout(timer);
       reject(e);
     });
-    child.on("exit", (code) => {
+    // "close", not "exit": the shell now leaves the moment its result line is written, and "exit" can
+    // arrive before the last stdout chunk has been read, which would drop the SMOKE OK line (#106).
+    child.on("close", (code) => {
       clearTimeout(timer);
       resolve({ code, stdout, stderr });
     });

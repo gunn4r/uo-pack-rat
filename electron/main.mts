@@ -279,6 +279,7 @@ if (!app.requestSingleInstanceLock()) {
       logLine(`server: exited unexpectedly (code ${code})`);
       console.log(`SMOKE FAIL server exited unexpectedly (code ${code})`);
       smokeExit(1);
+      return;
     }
     logLine(`server: exited unexpectedly (code ${code})`);
     // electron/restart-policy.mts: every crash is restarted unless the last restart was only minutes
@@ -349,10 +350,24 @@ if (!app.requestSingleInstanceLock()) {
   // app.exit() can take 10-30s with everything JavaScript can see already finished, and it ignores SIGTERM
   // meanwhile, so the smoke test timed out on CI (issue #106). The smoke run checks boot, page load, the
   // API and the optimize job, not that teardown. Electron routes process.exit() to app.exit(), which is
-  // why this is Node's reallyExit.
-  function smokeExit(code: number): never {
+  // why this is Node's reallyExit — undocumented and absent from the typings, so a build without it falls
+  // back to app.exit(). reallyExit drops whatever stdout/stderr still has queued (writes to a pipe are
+  // asynchronous on macOS), so it waits for both to drain first, the result line included; the 2s timer
+  // covers a stream whose callback never comes. Only the first call counts: the 30s timer and a check
+  // still in flight can both get here.
+  let smokeExiting = false;
+  function smokeExit(code: number): void {
+    if (smokeExiting) return;
+    smokeExiting = true;
     child?.kill();
-    return (process as NodeJS.Process & { reallyExit(code: number): never }).reallyExit(code);
+    const reallyExit = (process as NodeJS.Process & { reallyExit?: (code: number) => never }).reallyExit;
+    if (typeof reallyExit !== "function") {
+      app.exit(code);
+      return;
+    }
+    const leave = () => reallyExit.call(process, code);
+    setTimeout(leave, 2000);
+    process.stdout.write("", () => process.stderr.write("", leave));
   }
 
   async function runSmokeCheck(w: BrowserWindow): Promise<void> {
@@ -363,6 +378,7 @@ if (!app.requestSingleInstanceLock()) {
         smokeDone = true;
         console.log(`SMOKE FAIL #status did not finish loading: ${JSON.stringify(status)}`);
         smokeExit(1);
+        return;
       }
       const apiStatus = await w.webContents.executeJavaScript('fetch("/api/setup").then((r) => r.status).catch(() => -1)');
       if (apiStatus !== 200) {
@@ -370,6 +386,7 @@ if (!app.requestSingleInstanceLock()) {
         smokeDone = true;
         console.log(`SMOKE FAIL authenticated GET /api/setup returned ${apiStatus}`);
         smokeExit(1);
+        return;
       }
       const optimize = await w.webContents.executeJavaScript(OPTIMIZE_CHECK_JS);
       clearTimeout(smokeTimer as NodeJS.Timeout | undefined);
