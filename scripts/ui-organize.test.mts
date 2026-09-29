@@ -7,12 +7,12 @@
 // absent, or under TEST_SKIP_ELECTRON.
 import test from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createRequire } from "node:module";
-import { fitWindow, type RealSize, testEnv, noUpdateCheck } from "./electron-window.mts";
+import { fitWindow, openFacet, type RealSize, testEnv, noUpdateCheck } from "./electron-window.mts";
 import type { ElectronApplication, Page } from "playwright";
 
 const ROOT = dirname(dirname(fileURLToPath(import.meta.url)));
@@ -146,6 +146,142 @@ test("[slow] the Rules card: each rule's filter, targets with their fill and cou
     // Drag: rule-1's handle dropped on rule-2 puts rule-1 first again.
     await page.locator('.org-rule[data-rule="rule-1"] .org-grip').dragTo(page.locator('.org-rule[data-rule="rule-2"]'));
     await until(() => readOrganize(dataDir), (f) => f?.rules.map((r) => r.id).join() === "rule-1,rule-2", "rule-1 first after the drag");
+    assert.deepEqual(errors, []);
+  } finally {
+    await app.close();
+    rmSync(dataDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
+  }
+});
+
+// A checklist facet's popover: tick one option by its value and close it (as scripts/ui-state.test.mts does).
+async function pickOption(page: Page, id: string, name: string, value: string): Promise<void> {
+  await openFacet(page, id, name);
+  await page.locator(`.pop input[value="${value}"]`).click();
+  await page.keyboard.press("Escape");
+  await page.waitForSelector(".pop", { state: "detached" });
+}
+
+test("[slow] + Rule from a preset, then targets in fill order; the editor lists a target no scan has", async (t) => {
+  const why = unavailable();
+  if (why) return t.skip(why);
+  const GONE = 0x40000099;
+  const dataDir = dataDirWith([]);
+  const doc = readOrganize(dataDir)!;
+  (doc.labels as Record<string, unknown>)[String(GONE)] = { serial: GONE, name: "Old chest", origin: "manual" };
+  writeFileSync(join(dataDir, "organize.json"), JSON.stringify(doc));
+  const { app, page, errors } = await launch(dataDir);
+  try {
+    await go(page, "#/organize", "#org-add");
+    await page.click("#org-add");
+    await page.getByRole("menuitem", { name: "From a preset…" }).click();
+    await page.waitForSelector("#rule-drawer:not([hidden]) #rule-preset");
+    assert.equal(await page.evaluate(() => document.activeElement?.id), "rule-preset", "the preset picker has focus");
+    await page.selectOption("#rule-preset", "magery-reagents");
+    assert.equal(await page.locator("#rule-name").inputValue(), "Magery reagents");
+    assert.match(await page.locator("#rule-names").inputValue(), /^black pearl\nbloodmoss/);
+    await page.selectOption("#rule-add-target", String(DORRAN));
+    await page.selectOption("#rule-add-target", String(GONE));
+    assert.match(await page.locator("#rule-targets").innerText(), /Reagents[\s\S]*40\/125[\s\S]*Old chest[\s\S]*not in any scan/);
+    // Fill order: Old chest up to first.
+    await page.getByRole("button", { name: "Fill Old chest earlier" }).click();
+    await page.click("#rule-save");
+    await page.waitForSelector("#rule-drawer", { state: "hidden" });
+    const saved = await until(() => readOrganize(dataDir), (f) => f?.rules.length === 1, "the rule saved");
+    assert.deepEqual([saved!.rules[0]!.id, saved!.rules[0]!.name, saved!.rules[0]!.targets], ["rule-1", "Magery reagents", [GONE, DORRAN]]);
+    assert.deepEqual(saved!.rules[0]!.match.query.kind, ["reagent"]);
+
+    // Edit…: the forgotten target is still listed and can be removed.
+    await page.locator('.org-rule[data-rule="rule-1"]').getByRole("button", { name: /^Actions for / }).click();
+    await page.getByRole("menuitem", { name: "Edit…" }).click();
+    await page.waitForSelector("#rule-drawer:not([hidden]) #rule-targets");
+    await page.getByRole("button", { name: "Remove Old chest" }).click();
+    await page.click("#rule-save");
+    await until(() => readOrganize(dataDir), (f) => f?.rules[0]?.targets.join() === String(DORRAN), "the forgotten target removed");
+
+    // A name the rule cannot have keeps the drawer open with the reason under the field.
+    await page.click("#org-add");
+    await page.getByRole("menuitem", { name: "Blank rule" }).click();
+    await page.waitForSelector("#rule-drawer:not([hidden]) #rule-name");
+    await page.click("#rule-save");
+    assert.match(await page.locator("#rule-drawer").innerText(), /Give the rule a name, up to 64 characters\./);
+    await page.keyboard.press("Escape");
+    assert.deepEqual(errors, []);
+  } finally {
+    await app.close();
+    rmSync(dataDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
+  }
+});
+
+test("[slow] a bag inside a labelled chest can be picked as a target, is labelled on save, and the editor counts what the rule would take", async (t) => {
+  const why = unavailable();
+  if (why) return t.skip(why);
+  // The demo scans as the player's own, with a pouch inside Dorran's chest holding its Ring.
+  const POUCH = 0x700c0100;
+  const dataDir = dataDirWith([{ id: "rule-1", name: "Magery reagents", names: ["sulfurous ash"], targets: [DORRAN] }]);
+  mkdirSync(join(dataDir, "scans"));
+  for (const name of ["Dorran", "Kestrel"]) {
+    const scan = JSON.parse(readFileSync(join(ROOT, "app", "fixtures", `demo-${name}.json`), "utf8")) as { containers: Record<string, unknown>; items: Array<{ name: string; container: number }> };
+    if (name === "Dorran") {
+      scan.containers[String(POUCH)] = { serial: POUCH, name: "Pouch", kind: "container", root: DORRAN, parent: DORRAN, tooltip: ["Pouch", "Contents: 1/125 Items, 1 Stones"] };
+      scan.items.find((it) => it.name === "Ring")!.container = POUCH;
+    }
+    writeFileSync(join(dataDir, "scans", `demo-${name}.json`), JSON.stringify(scan));
+  }
+  const { app, page, errors } = await launch(dataDir, undefined, false);
+  try {
+    await go(page, "#/organize", "#org-add");
+    await page.click("#org-add");
+    await page.getByRole("menuitem", { name: "Blank rule" }).click();
+    await page.waitForSelector("#rule-drawer:not([hidden]) #rule-name");
+    await page.fill("#rule-name", "Rings");
+
+    // The live count: what the filter alone takes from the labelled chests, and a word about the rule above.
+    await page.fill("#rule-names", "ring");
+    await page.waitForFunction(() => /^Matches \d+ items? \(e\.g\. [^)]*Ring/.test(document.querySelector("#rule-match")?.textContent || ""), undefined, { timeout: 10_000 });
+    assert.match(await page.locator("#rule-match").innerText(), /Rules above this one may claim some of them first\./);
+
+    // The picker: each labelled chest, the bag inside it indented under it.
+    const opts = await page.locator("#rule-add-target option").evaluateAll((os) => os.map((o) => [(o as HTMLOptionElement).value, o.textContent || ""]));
+    const at = (v: number): number => opts.findIndex(([value]) => value === String(v));
+    assert.ok(at(DORRAN) >= 0 && at(POUCH) === at(DORRAN) + 1, `the pouch sits right under its chest: ${JSON.stringify(opts)}`);
+    assert.match(opts[at(POUCH)]![1]!, /^\s+Pouch · 1\/125$/, "indented under the chest, with its fill");
+    await page.selectOption("#rule-add-target", String(POUCH));
+    assert.match(await page.locator("#rule-targets").innerText(), /Pouch[\s\S]*1\/125/);
+    await page.click("#rule-save");
+    await page.waitForSelector("#rule-drawer", { state: "hidden" });
+    const saved = await until(() => readOrganize(dataDir), (f) => f?.rules.length === 2, "the rule saved");
+    assert.deepEqual(saved!.rules[1]!.targets, [POUCH]);
+    assert.deepEqual(saved!.labels[String(POUCH)], { serial: POUCH, name: "Pouch", origin: "manual" }, "the bag was labelled with the rule");
+    assert.match(await page.locator('.org-rule[data-rule="rule-2"]').innerText(), /Pouch[\s\S]*1\/125/);
+    assert.deepEqual(errors, []);
+  } finally {
+    await app.close();
+    rmSync(dataDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
+  }
+});
+
+test("[slow] Save as rule… keeps the Inventory's item filters and leaves the location out, saying so", async (t) => {
+  const why = unavailable();
+  if (why) return t.skip(why);
+  const dataDir = dataDirWith([]);
+  const { app, page, errors } = await launch(dataDir);
+  try {
+    await page.fill("#f-text", "ring");
+    await pickOption(page, "loc", "Location", `root:${KESTREL}`);
+    await page.click("#f-save-rule");
+    await page.waitForSelector("#rule-drawer:not([hidden]) #rule-q");
+    assert.equal(await page.locator("#rule-q").inputValue(), "ring");
+    assert.match(await page.locator("#rule-drawer").innerText(), /Location filter is left out: a rule matches items wherever they are/);
+    assert.equal(await page.locator("#rule-name").inputValue(), "Search: ring");
+    await page.selectOption("#rule-add-target", String(KESTREL));
+    await page.click("#rule-save");
+    await page.waitForSelector("#rule-drawer", { state: "hidden" });
+    const saved = await until(() => readOrganize(dataDir), (f) => f?.rules.length === 1, "the rule saved");
+    const q = saved!.rules[0]!.match.query;
+    assert.equal(q.q, "ring");
+    assert.ok(!("loc" in q) && !("roots" in q) && !("chars" in q), "no location, root or character filter in a rule");
+    await page.getByRole("button", { name: "Open Organize" }).click();
+    await page.waitForSelector('.org-rule[data-rule="rule-1"]');
     assert.deepEqual(errors, []);
   } finally {
     await app.close();

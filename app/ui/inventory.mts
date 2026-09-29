@@ -23,6 +23,7 @@ import { plural, queryParams, activeFilters, clearAll, matchLine, countFact, emp
 import type { FilterToken } from "./inv-model.mts";
 import type { ItemsApiResponse, UiPrefs } from "./api-types.mts";
 import { initPeek, openPeek, closePeek, peekOpen, peekSerial, peekRefresh } from "./peek.mts";
+import { openRuleEditor } from "./rule-editor.mts";
 import { showItemTip, hideItemTip, tagChip } from "./dom.mts";
 
 const CHUNK = 500;              // rows per GET /api/items request (the server's own cap)
@@ -374,6 +375,7 @@ function renderActive(): void {
   strip.replaceChildren(
     txt(matchLine({ shown: p.stacks, total: state.facets?.itemCount || 0, grouped: !!p.groups, names: p.total }), "t-sm muted inv-match"),
     ...tokenEls(tokens),
+    button({ label: "Save as rule…", variant: "ghost", size: "sm", attrs: { id: "f-save-rule" }, onClick: () => { closePopover(); void openRuleEditor({ fromQuery: state.query }); } }),
     button({ label: "Clear all", variant: "ghost", size: "sm", attrs: { id: "f-clear" }, onClick: () => { closePopover(); setQuery(clearAll(state.query)); search.focus(); } }));
 }
 const tokenEls = (tokens: FilterToken[]): HTMLElement[] => tokens.map((t) => token({ label: t.label, removeLabel: t.removeLabel, onRemove: () => setQuery(t.remove(state.query)) }));

@@ -29,3 +29,12 @@
 .org-target.gone { text-decoration: line-through; text-decoration-color: var(--color-text-muted); }
 .org-catchall { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2) var(--space-3); padding: var(--space-2) var(--space-3); border-top: var(--border-width) solid var(--color-border); }
 .org-catchall .org-counts { margin-left: auto; }
+
+/* ---- the rule drawer */
+.rule-kinds, .rule-extras { display: flex; flex-wrap: wrap; gap: var(--space-1-5); }
+.rule-rarity { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-3); }
+.rule-match { display: flex; flex-direction: column; gap: var(--space-0-5); }
+.rule-match:empty { display: none; }
+.rule-targets { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--space-1); }
+.rule-target { display: grid; grid-template-columns: 2em minmax(0, 1fr) auto; align-items: center; gap: var(--space-2); }
+.rule-target-act { display: inline-flex; gap: var(--space-0-5); }

@@ -1,13 +1,14 @@
 // ui/organize-data.mts — the page's copy of the Organize setup (issue #11): loading it with the blacklist
 // (GET /api/organize, GET /api/blacklist), saving it whole (PUT /api/organize), the presets (GET
-// /api/organize/presets, fetched once) and the location texts relabelled from it. Every screen that shows or
-// edits labels and rules goes through here; a save announces itself with an "organizechange" event on document,
-// on which the Organize screen, the Containers view and the Items rows redraw.
+// /api/organize/presets, fetched once), the rule editor's live count (POST /api/organize/match) and the location
+// texts relabelled from it. Every screen that shows or edits labels and rules goes through here; a save announces
+// itself with an "organizechange" event on document, on which the Organize screen, the Containers view and the
+// Items rows redraw.
 import { state } from "./store.mts";
 import { api } from "./api.mts";
 import { errorText } from "./messages.mts";
 import { labelledPlaces } from "./organize-model.mts";
-import type { BlacklistApiResponse, OrganizeApiResponse, OrganizeConfig, OrganizePresetsApiResponse } from "./api-types.mts";
+import type { BlacklistApiResponse, OrganizeApiResponse, OrganizeConfig, OrganizeMatchApiResponse, OrganizePresetsApiResponse, RuleMatch } from "./api-types.mts";
 
 export function refreshPlaces(): void {
   state.organize.places = labelledPlaces(state.inv?.containers || {}, state.organize.config?.labels || {});
@@ -31,3 +32,5 @@ export async function saveConfig(next: OrganizeConfig): Promise<string | null> {
 export async function loadPresets(): Promise<void> {
   state.organize.presets ??= (await api<OrganizePresetsApiResponse>("/api/organize/presets")).presets;
 }
+// What one rule filter takes of the movable items in labelled roots, ignoring the other rules.
+export const matchCount = (match: RuleMatch): Promise<OrganizeMatchApiResponse> => api<OrganizeMatchApiResponse>("/api/organize/match", { method: "POST", body: { match } });
