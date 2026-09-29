@@ -99,16 +99,18 @@ export const CASTER_PROPS = ["lmc", "lrc", "sdi", "fc", "fcr", "mageWeapon"];
 export const CASTER_SKILLS = ["magery", "evaluating intelligence", "evaluate intelligence", "meditation", "mysticism", "spellweaving", "necromancy", "focus"];
 export const MELEE_PROPS = ["hci", "di", "ssi", "hitLifeLeech", "hitManaLeech", "hitStamLeech", "hitLowerDef", "hitLowerAttack", "hitFireball", "hitLightning",
   "hitHarm", "hitMagicArrow", "hitDispel", "hitPoisonArea", "hitFireArea", "hitColdArea", "hitEnergyArea", "hitPhysArea"];
-export const MELEE_SKILLS = ["swordsmanship", "tactics", "anatomy", "archery", "fencing", "mace fighting", "wrestling", "bushido", "chivalry", "parrying"];
+export const MELEE_SKILLS = ["swordsmanship", "tactics", "anatomy", "archery", "fencing", "mace fighting", "wrestling", "throwing", "bushido", "ninjitsu",
+  "chivalry", "parrying"];
 // A piece's summed resists at least this, with no caster or melee marker, is Tank gear.
-export const TANK_RESISTS = 20;
-// Which build a piece of gear is: the side with more distinct markers, Hybrid on a tie, and a piece with none is Tank
-// when its resists add up to TANK_RESISTS, else Other.
+const TANK_RESISTS = 20;
+// Which build a piece of gear is: the side with more distinct markers, Hybrid on a tie. A piece with none is Melee when
+// it is a weapon (it has a damage range), else Tank when its resists add up to TANK_RESISTS, else Other.
 export function buildOf(it: Item): Build {
   const n = (keys: string[], skills: string[]): number => keys.filter((k) => (k === "mageWeapon" ? !!it.props[k] : (it.props[k] ?? 0) > 0)).length
     + skills.filter((k) => { const v = it.extras[k]; return typeof v === "number" && v > 0; }).length;
   const caster = n(CASTER_PROPS, CASTER_SKILLS) + (it.flags.includes("spell channeling") ? 1 : 0), melee = n(MELEE_PROPS, MELEE_SKILLS);
   if (caster || melee) return caster > melee ? "caster" : melee > caster ? "melee" : "hybrid";
+  if (Array.isArray(it.extras["weapon damage"])) return "melee";
   return RESIST_KEYS.reduce((sum, k) => sum + (it.props[k] ?? 0), 0) >= TANK_RESISTS ? "tank" : "other";
 }
 

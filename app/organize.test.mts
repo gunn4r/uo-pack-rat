@@ -7,16 +7,16 @@ import { readFileSync, mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { foldSnapshots, setRules, type Inventory } from "./vault-lib.mts";
+import { foldSnapshots, setRules, PROP_PATTERNS, SKILL_NAMES, type Inventory } from "./vault-lib.mts";
 import { houseScan, AT, type BoxSpec, type ThingSpec } from "./organize-fixture.mts";
-import { emptyRuleQuery, emptyOrganizeConfig, CATCH_ALL_ID, type OrganizeConfig, type OrganizeRule, type ContainerLabel, type RuleMatch } from "./organize-config.mts";
+import { emptyRuleQuery, emptyOrganizeConfig, BUILDS, CATCH_ALL_ID, type OrganizeConfig, type OrganizeRule, type ContainerLabel, type RuleMatch } from "./organize-config.mts";
 import type { RuleQuery } from "./item-query.mts";
 import type { RulesV1 } from "./schema/types.d.mts";
 import { resolveConfig } from "./config.mts";
 import { queueTrip } from "./bridge-trip.mts";
 import type { ScanV2 } from "./schema/types.d.mts";
 import {
-  ancestry, scopeOf, ruleMatches, buildOf, claimOf, baseName, applyOverlay, homeOf, newSim, simTake, simPut, mark, rollback, MAX_STACK,
+  ancestry, scopeOf, ruleMatches, buildOf, matchCount, CASTER_PROPS, CASTER_SKILLS, MELEE_PROPS, MELEE_SKILLS, claimOf, baseName, applyOverlay, homeOf, newSim, simTake, simPut, mark, rollback, MAX_STACK,
   sitesOf, planOrganize, tripCommand, lineBytes, type OverlayMove, type Sim, type Plan,
 } from "./organize.mts";
 
@@ -125,6 +125,8 @@ test("[fast] a rule's build takes gear by its caster and melee markers, then its
     gear(0x40002005, "Gold Bracelet", ["Faster Casting 1", "Damage Increase 10"]),
     gear(0x40002006, "Platemail Gorget", ["Physical Resist 10", "Fire Resist 10"]),
     gear(0x40002007, "Leather Gloves", ["Physical Resist 5", "Faster Casting 0"]),
+    gear(0x40002008, "Katana", ["Weapon Damage 11 - 13", "Physical Resist 25"]),
+    gear(0x40002009, "Gargish Talwar", ["Spell Channeling", "Faster Casting -1", "Throwing +10", "Tactics +5"]),
     { serial: PEARL, name: "Black Pearl", in: A },
   ]);
   const items = Object.values(inv.items).sort((a, b) => a.serial - b.serial);
@@ -137,11 +139,25 @@ test("[fast] a rule's build takes gear by its caster and melee markers, then its
     ["Gold Bracelet", "hybrid"],
     ["Platemail Gorget", "tank"],
     ["Leather Gloves", "other"],
+    ["Katana", "melee"],
+    ["Gargish Talwar", "melee"],
   ]);
   const takes = (build: RuleMatch["build"]): string[] => items.filter((it) => ruleMatches(it, { query: emptyRuleQuery(), build })).map((it) => it.name);
   assert.deepEqual(takes("caster"), ["Gold Ring", "Quarter Staff"]);
   assert.deepEqual(takes("other"), ["Leather Gloves"], "a build never takes what is not gear");
   assert.equal(takes(undefined).length, items.length);
+  // The rule editor's live count and the plan agree on what a build rule takes.
+  for (const build of BUILDS) {
+    const cfg = config({ labels: labels(A), rules: [{ id: "r", name: "r", match: { query: emptyRuleQuery(), build }, targets: [A], origin: "manual" }] });
+    const counted = matchCount(inv, cfg, cfg.rules[0]!.match, { now: NOW }).count;
+    assert.deepEqual([counted, planOrganize(inv, cfg, [], { now: NOW }).rules.find((r) => r.ruleId === "r")?.matched], [takes(build).length, takes(build).length], build);
+  }
+});
+
+test("[fast] every By build marker is a property key or skill the tooltip parser really produces", () => {
+  const keys = new Set(PROP_PATTERNS.map(([k]) => k)), skills = new Set(SKILL_NAMES);
+  assert.deepEqual([...CASTER_PROPS, ...MELEE_PROPS].filter((k) => !keys.has(k)), []);
+  assert.deepEqual([...CASTER_SKILLS, ...MELEE_SKILLS].filter((k) => !skills.has(k)), []);
 });
 
 test("[fast] a rule's free text never matches where the item sits", () => {
