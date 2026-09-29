@@ -102,6 +102,15 @@ export function ruleMatches(it: Item, m: RuleMatch, rarity: RulesV1RarityItem[] 
   return matchesItem(it, m.query, { rarity });
 }
 
+// What a rule filter would take if it were the only rule (the rule editor's live count, POST
+// /api/organize/match): the movable items in labelled roots it matches, their pieces (stack amounts) and up to
+// five of their names, stack counts stripped, distinct and in name order.
+export function matchCount(inv: Inventory, cfg: OrganizeConfig, m: RuleMatch, opts: ScopeOptions & { rarity?: RulesV1RarityItem[] | undefined }): { count: number; pieces: number; sample: string[] } {
+  const hits = scopeOf(inv, cfg, opts).movable.map((s) => inv.items[s]!).filter((it) => ruleMatches(it, m, opts.rarity));
+  const names = [...new Set(hits.map((it) => it.name.replace(STACK_COUNT, "").trim()))].sort((a, b) => a.localeCompare(b, "en"));
+  return { count: hits.length, pieces: hits.reduce((n, it) => n + (it.amount ?? 1), 0), sample: names.slice(0, 5) };
+}
+
 export interface Claim { ruleId: string; alsoMatched: string[] }
 // First match wins (spec §1): the first rule whose filter passes claims the item and the others that pass are
 // only recorded. An item no rule claims goes to the catch-all, or stays put (null) when there is none.
