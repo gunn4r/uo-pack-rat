@@ -288,3 +288,53 @@ test("[slow] Save as rule… keeps the Inventory's item filters and leaves the l
     rmSync(dataDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
   }
 });
+
+// A 600-move plan in 30 trips with a room shortfall and a warning, served in place of the real one.
+function bigPlan(): unknown {
+  const moves = Array.from({ length: 600 }, (_, i) => ({ serial: 0x41000000 + i, name: "Black Pearl", amount: 1, from: KESTREL, to: DORRAN, ruleId: "rule-1", alsoMatched: [], trip: Math.floor(i / 20) + 1 }));
+  const trips = Array.from({ length: 30 }, (_, i) => ({ index: i + 1, site: 0, takes: moves.slice(i * 20, i * 20 + 20).map((m) => m.serial), puts: moves.slice(i * 20, i * 20 + 20).map((m) => m.serial) }));
+  return { ok: true, plan: { inventoryStamp: "2026-09-28T10:00:00Z", stamp: "big00001", sites: [{ index: 0, roots: [DORRAN, KESTREL] }], moves, trips,
+    rules: [{ ruleId: "rule-1", matched: 640, inPlace: 30, toMove: 600, noRoom: 10 }], room: [{ ruleId: "rule-1", needSlots: 95, freeSlots: 85, shortfall: 10 }],
+    crossSite: [], warnings: [{ kind: "unknown-capacity", serial: KESTREL, detail: "rescan with the current scripts to read its fill" }], carried: [], unclaimed: 0 } };
+}
+
+test("[slow] the plan puts its reports first and keeps a 600-move trip list collapsed; a client without trips gets no Run buttons", async (t) => {
+  const why = unavailable();
+  if (why) return t.skip(why);
+  const dataDir = dataDirWith([{ id: "rule-1", name: "Magery reagents", names: ["black pearl"], targets: [DORRAN] }]);
+  const { app, page, errors } = await launch(dataDir);
+  try {
+    await page.route("**/api/organize/plan", (r) => r.fulfill({ contentType: "application/json", body: JSON.stringify(bigPlan()) }));
+    await go(page, "#/organize", "#org-plan #org-headline");
+    assert.equal(await page.locator("#org-headline").innerText(), "600 items to move in 30 trips");
+    const order = await page.evaluate(() => {
+      const plan = document.querySelector("#org-plan")!;
+      const room = [...plan.querySelectorAll(".msg")].find((m) => /no room/.test(m.textContent || ""))!;
+      const warn = [...plan.querySelectorAll(".msg")].find((m) => /Fill unknown/.test(m.textContent || ""))!;
+      const head = plan.querySelector("#org-headline")!;
+      const before = (a: Element, b: Element): boolean => !!(a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING);
+      return { room: before(room, head), warn: before(warn, head), roomText: room.textContent };
+    });
+    assert.deepEqual([order.room, order.warn], [true, true], "the room report and warnings sit above the trip list");
+    assert.match(order.roomText!, /Magery reagents: 10 items have no room \(95 slots needed, 85 free\)/);
+    assert.equal(await page.locator(".org-trip").count(), 30);
+    assert.equal(await page.locator(".org-move").count(), 0, "no move row is built until its trip is opened");
+    await page.locator('.org-trip[data-trip="1"] > summary').click();
+    await page.waitForFunction(() => document.querySelectorAll(".org-move").length === 20, undefined, { timeout: 5_000 });
+    assert.match(await page.locator('.org-trip[data-trip="1"] .org-move').first().innerText(), /Black Pearl[\s\S]*Jewellery → Reagents/);
+    assert.equal(await page.locator("#org-run").count(), 1, "TazUO can run trips");
+
+    // A client whose bridge cannot run trips: the plan still shows, with a sentence instead of Run buttons.
+    const put = await page.evaluate(async () => (await fetch("/api/settings", { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify({ client: { adapter: "classicuo-web", scriptsDir: "" } }) })).status);
+    assert.equal(put, 200);
+    await page.reload();
+    await page.locator("#inv-table tbody tr.item").first().waitFor({ state: "attached", timeout: 30_000 });
+    await go(page, "#/organize", "#org-plan #org-headline");
+    assert.equal(await page.locator("#org-run").count(), 0);
+    assert.match(await page.locator("#org-plan").innerText(), /can't carry out Organize trips\. Move the items by hand, then rescan\./);
+    assert.deepEqual(errors, []);
+  } finally {
+    await app.close();
+    rmSync(dataDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
+  }
+});

@@ -4,16 +4,17 @@
 // Stop). The words and every decision come from ui/organize-model.mts; this file draws them and talks to the
 // server (GET /api/organize/plan, POST /api/organize/trip, POST /api/bridge/stop; saves go through
 // ui/organize-data.mts). The rule editor drawer is ui/rule-editor.mts; Containers' Label… is ui/containers.mts.
-import { state } from "./store.mts";
+import { state, bridge } from "./store.mts";
 import { $, el, toast, compactChildren } from "./dom.mts";
 import { api } from "./api.mts";
-import { box, txt, button, badge, card, message, menu, select } from "./components.mts";
+import { box, txt, button, badge, card, message, menu, select, tipWrap, table, type Kids } from "./components.mts";
+import { currentAdapter, BRIDGE_OFFLINE } from "./bridge.mts";
 import { errorText } from "./messages.mts";
 import { filterContext } from "./inventory.mts";
 import { loadOrganize, refreshPlaces, saveConfig } from "./organize-data.mts";
 import { targetChip, deleteRule, openRuleEditor } from "./rule-editor.mts";
-import { CATCH_ALL_ID, organizeStage, moveRule, matchSummary, targetView, targetOptions, ruleCountParts } from "./organize-model.mts";
-import type { OrganizeConfig, OrganizePlanApiResponse, OrganizeRule, PlanRuleReport } from "./api-types.mts";
+import { CATCH_ALL_ID, organizeStage, moveRule, matchSummary, targetView, targetOptions, ruleCountParts, ruleNameOf, containerNameOf, planHeadline, unclaimedNote, roomLines, crossSiteLines, warningGroups, tripRows, moveName, moveWhere, tripGate, type TripRow } from "./organize-model.mts";
+import type { OrganizeConfig, OrganizePlan, OrganizePlanApiResponse, OrganizeRule, PlanRuleReport } from "./api-types.mts";
 
 const body = (): HTMLElement => $<HTMLElement>("#org-body")!;
 const containers = () => state.inv?.containers || {};
@@ -21,6 +22,7 @@ const groundRoots = (): number => Object.values(containers()).filter((c) => c.pa
 let planError: string | null = null;
 let loadingPlan = false;
 let dragFrom: number | null = null;
+let notice: { tone: "info" | "warn" | "bad"; text: string } | null = null;
 
 // The route's entry: the setup (fetched here too when reload() could not), then the screen and its plan. Before
 // the inventory's first load it does nothing; reload() calls it again once the data is in.
@@ -44,7 +46,7 @@ function render(): void {
       button({ label: "Open Containers", variant: "primary", attrs: { id: "org-open-containers" }, onClick: () => { location.hash = "#/containers"; } })));
     return;
   }
-  body().replaceChildren(...compactChildren([problemsEl(cfg), rulesCard(cfg)]));
+  body().replaceChildren(...compactChildren([problemsEl(cfg), rulesCard(cfg), stage === "ready" ? planCard(cfg) : null]));
 }
 function emptyState(title: string, text: string, action: HTMLElement | null): HTMLElement {
   return box("section", { class: "card org-empty" }, box("div", { class: "empty-state" }, el("h2", { class: "t-lg" }, title), el("p", { class: "muted" }, text), action));
@@ -160,8 +162,67 @@ function paintCounts(): void {
   const report = new Map((state.organize.plan?.rules || []).map((r) => [r.ruleId, r] as const));
   for (const row of document.querySelectorAll<HTMLElement>("#org-rules [data-rule]")) row.querySelector(".org-counts")?.replaceWith(countsEl(report.get(row.dataset.rule!)));
 }
-// Task 8 draws the Plan card.
-function paintPlan(): void { /* the Plan card arrives in Task 8 */ }
+function paintPlan(): void {
+  const cfg = state.organize.config, old = $<HTMLElement>("#org-plan");
+  if (cfg && old) old.replaceWith(planCard(cfg));
+}
+const canTrip = (): boolean => (currentAdapter()?.capabilities?.bridge || []).includes("trip");
+// Why no trip can start now (organize-model.mts's tripGate), or null.
+function gate(): string | null {
+  const a = currentAdapter();
+  return tripGate({ client: a ? a.name || a.id : null, canTrip: canTrip(), online: bridge.online, running: false }, BRIDGE_OFFLINE);
+}
+// A disabled control carries its reason on a wrapper (components.mts's tipWrap), never a dead button alone.
+function gated(b: HTMLButtonElement, reason: string | null): HTMLElement {
+  if (!reason) return b;
+  b.disabled = true;
+  return tipWrap(b, reason);
+}
+function planCard(cfg: OrganizeConfig): HTMLElement {
+  const reload = button({ label: "Reload plan", icon: "refresh", size: "sm", attrs: { id: "org-reload" }, onClick: () => { notice = null; void refreshPlan(); } });
+  const plan = state.organize.plan;
+  const kids: Kids = planError ? [message({ tone: "bad", title: "Could not work out the plan", text: planError })]
+    : plan ? planBody(cfg, plan) : [txt(loadingPlan ? "Working out the plan…" : "", "muted")];
+  return card({ title: "Plan", actions: [reload], attrs: { id: "org-plan", "aria-busy": String(loadingPlan) }, body: kids });
+}
+// Reports first (spec §3): what does not fit, what belongs at another house, what the scans could not say; then
+// the headline, the Run controls and the trip list.
+function planBody(cfg: OrganizeConfig, plan: OrganizePlan): HTMLElement[] {
+  const nameOf = containerNameOf(cfg, containers()), ruleName = ruleNameOf(cfg);
+  const note = unclaimedNote(plan);
+  return compactChildren([
+    notice ? message({ tone: notice.tone, text: notice.text }) : null,
+    canTrip() ? null : message({ tone: "info", text: gate()! }),
+    ...roomLines(plan, ruleName).map((text) => message({ tone: "warn", text })),
+    ...crossSiteLines(plan, ruleName).map((text) => message({ tone: "info", text })),
+    ...warningGroups(plan.warnings, nameOf).map((g) => message({ tone: "warn", title: g.title, text: g.text })),
+    box("div", { class: "org-summary" }, el("h3", { class: "t-md", id: "org-headline" }, planHeadline(plan)), note ? txt(note, "t-sm muted") : null),
+    canTrip() && plan.trips.length ? controls(plan) : null,
+    plan.trips.length ? tripList(plan, nameOf, ruleName) : null,
+  ]);
+}
+function controls(plan: OrganizePlan): HTMLElement {
+  const first = plan.trips[0]!, why = gate();
+  const one = button({ label: `Run trip ${first.index}`, variant: "primary", attrs: { id: "org-run" } });
+  const all = button({ label: "Run all", attrs: { id: "org-run-all" } });
+  return box("div", { class: "org-controls", id: "org-controls" }, gated(one, why), gated(all, why), box("span", { class: "t-sm muted", id: "org-status", role: "status" }, txt("")));
+}
+// One collapsed row per trip; the move table is built the first time a row is opened, so a plan of hundreds of
+// moves draws thirty rows, not six hundred.
+function tripList(plan: OrganizePlan, nameOf: (s: number) => string, ruleName: (id: string) => string): HTMLElement {
+  return box("div", { class: "org-trips", id: "org-trips" }, ...tripRows(plan, nameOf).map((r) => tripEl(r, nameOf, ruleName)));
+}
+function tripEl(r: TripRow, nameOf: (s: number) => string, ruleName: (id: string) => string): HTMLElement {
+  const d = el("details", { class: "org-trip", "data-trip": r.index }, el("summary", {}, txt(r.text)));
+  d.addEventListener("toggle", () => {
+    if (!d.open || d.querySelector("table")) return;
+    d.append(table({ label: `Trip ${r.index}`, columns: [{ label: "Item" }, { label: "From → to" }, { label: "Rule" }],
+      rows: r.moves.map((m) => ({ attrs: { class: "org-move", "data-serial": m.serial }, cells: [moveName(m), moveWhere(m, nameOf), ruleName(m.ruleId)] })) }));
+  });
+  return d;
+}
 
 // A saved setup: redraw (focus is put back by whoever saved) and work the plan out again.
 document.addEventListener("organizechange", () => { if ($<HTMLElement>("#tab-organize")!.hidden) { state.organize.plan = null; return; } render(); void refreshPlan(); });
+// The bridge came or went: the Run controls gate on it.
+document.addEventListener("bridgechange", () => { const plan = state.organize.plan, c = $<HTMLElement>("#org-controls"); if (plan && c && plan.trips.length) c.replaceWith(controls(plan)); });
