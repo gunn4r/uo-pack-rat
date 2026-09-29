@@ -1,0 +1,56 @@
+{
+  "$comment": "Pack Rat bridge trip v1 (Organize, issue #11): one line of <dataDir>/bridge/<adapter-id>/queue.jsonl whose action is \"trip\". Written only by app/bridge-trip.mts's queueTrip (never by POST /api/bridge, whose command schema has no trip action), read by an adapter bridge that declares \"trip\" in capabilities.bridge (TazUO only) and re-checked field by field by check_trip in the shared untrusted-input block of every packrat-bridge.py. Draft-07 style within app/schema/validate.mts's keyword subset: roots is a map keyed by container serial, and the validator cannot check keys, so queueTrip and check_trip both check them (decimal serial). Result: bridge.v1.schema.json's result, with steps/partial/stopped. See docs/bridge-protocol.md, Trip.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["id", "action", "index", "stamp", "queuedAt", "roots", "takes", "puts"],
+  "properties": {
+    "id": { "type": "string", "minLength": 1, "maxLength": 64 },
+    "action": { "type": "string", "enum": ["trip"] },
+    "index": { "type": "integer", "minimum": 1, "maximum": 10000, "$comment": "The trip's number in its plan, printed in game. MAX_TRIP_INDEX in every packrat-bridge.py." },
+    "stamp": { "type": "string", "minLength": 1, "maxLength": 64, "$comment": "The plan's inventoryStamp. The Organize endpoint refuses a trip whose stamp is not the current plan's; the bridge only echoes it." },
+    "queuedAt": { "type": "string", "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d+)?([+-]\\d{2}:\\d{2}|Z)$" },
+    "roots": {
+      "type": "object",
+      "$comment": "Container serial (decimal string) -> that ground root's scanned position, sent once per root. Every step's first container must be here, and every entry must be used by a step (queueTrip).",
+      "additionalProperties": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["x", "y", "z"],
+        "properties": {
+          "x": { "type": "integer", "minimum": 0, "maximum": 7168 },
+          "y": { "type": "integer", "minimum": 0, "maximum": 4096 },
+          "z": { "type": "integer", "minimum": -128, "maximum": 127 },
+          "facet": { "type": "integer", "enum": [0, 1, 2, 3, 4, 5] }
+        }
+      }
+    },
+    "takes": {
+      "type": "array", "maxItems": 20,
+      "$comment": "MAX_TRIP_TAKES in every packrat-bridge.py. Run first, in order: each moves one item from its chain's last container into the backpack at an explicit drop spot.",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["serial", "name", "chain"],
+        "properties": {
+          "serial": { "type": "integer", "minimum": 1, "maximum": 4294967295 },
+          "name": { "type": "string", "maxLength": 40 },
+          "chain": { "type": "array", "minItems": 1, "maxItems": 8, "items": { "type": "integer", "minimum": 1, "maximum": 4294967295 } }
+        }
+      }
+    },
+    "puts": {
+      "type": "array", "maxItems": 40,
+      "$comment": "MAX_TRIP_PUTS in every packrat-bridge.py. Each moves one item the bridge itself took (its carried set) into dest's last container.",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["serial", "name", "dest"],
+        "properties": {
+          "serial": { "type": "integer", "minimum": 1, "maximum": 4294967295 },
+          "name": { "type": "string", "maxLength": 40 },
+          "dest": { "type": "array", "minItems": 1, "maxItems": 8, "items": { "type": "integer", "minimum": 1, "maximum": 4294967295 } }
+        }
+      }
+    }
+  }
+}
