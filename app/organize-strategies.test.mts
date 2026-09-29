@@ -8,14 +8,20 @@ import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { foldSnapshots, setRules, type Inventory } from "./vault-lib.mts";
-import { houseScan, type BoxSpec, type ThingSpec } from "./organize-fixture.mts";
-import { checkOrganizeConfig, emptyOrganizeConfig, type OrganizeRule } from "./organize-config.mts";
+import { houseScan, AT, type BoxSpec, type ThingSpec } from "./organize-fixture.mts";
+import { checkOrganizeConfig, emptyOrganizeConfig, emptyRuleQuery, type OrganizeConfig, type OrganizeRule } from "./organize-config.mts";
+import { planOrganize, type OverlayMove } from "./organize.mts";
 import type { RulesV1 } from "./schema/types.d.mts";
-import { STRATEGIES, groupItems, assignGroups, type Offer } from "./organize-strategies.mts";
+import { STRATEGIES, groupItems, assignGroups, proposeOrganize, type Offer, type Proposal, type ProposeOptions } from "./organize-strategies.mts";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 setRules(JSON.parse(readFileSync(join(HERE, "rules", "uoalive.json"), "utf8")) as RulesV1);
-const A = 0x40000001;
+const NOW = Date.parse(AT) + 3600e3;
+const A = 0x40000001, B = 0x40000002, C = 0x40000003, D = 0x40000004, E = 0x40000005, FAR = 0x40000006, BAG = 0x40000007, S = 0x40000008;
+const at = (x: number, facet = 1) => ({ x, y: 100, z: 0, facet });
+const OPTS = (over: Partial<ProposeOptions> = {}): ProposeOptions => ({ strategy: "simple", now: NOW, ...over });
+const ok = (r: ReturnType<typeof proposeOrganize>): Proposal => { assert.ok(r.ok, r.ok ? "" : r.error); return (r as { ok: true; proposal: Proposal }).proposal; };
+const manual = (serial: number, name: string, pinned = false) => ({ serial, name, origin: "manual" as const, ...(pinned ? { pinned: true } : {}) });
 const fold = (boxes: BoxSpec[], things: ThingSpec[] = []): Inventory => foldSnapshots([houseScan({ boxes, things })]);
 // One of each thing the strategies sort (Task 0 checked how each classifies), in serial order.
 const NAMES = ["Black Pearl", "Ruby", "Katana", "Platemail Gorget", "Gold Necklace", "Gold Ring", "Bone Armor", "Heater Shield", "Spellbook", "Greater Heal Potion", "Bandage", "Iron Ingot", "Recall Rune", "Scissors", "Greater Heal", "An Exalted Scroll Of Mysticism (110 Skill)", "Apple", "Grave Dust", "Board"];
@@ -112,4 +118,123 @@ test("[fast] assignGroups keeps every chest that holds only this group's items i
     { serial: 9, site: 0, room: 50, held: {} },
   ]);
   assert.deepEqual(out.get("reagents"), [5, 3], "3 holds only reagents and stays; 7 also holds gems and 9 holds nothing");
+});
+
+test("[fast] offered containers: every usable ground chest the player's characters scanned, ticked unless the player's own setup uses it", () => {
+  const inv = fold([{ serial: A }, { serial: B, pos: at(102) }, { serial: C, pos: at(104) }, { serial: D, pos: at(106) }, { serial: E, pos: at(108), tooltip: null },
+    { serial: FAR, pos: null }, { serial: S, pos: at(112) }, { serial: BAG, parent: A }]);
+  const cfg: OrganizeConfig = { ...emptyOrganizeConfig(),
+    labels: { [B]: manual(B, "Mine"), [C]: manual(C, "Display", true), [S]: { serial: S, name: "Reagents", origin: "strategy:simple" } },
+    rules: [{ id: "keep", name: "Keep", match: { query: emptyRuleQuery() }, targets: [S], origin: "manual" }] };
+  const p = ok(proposeOrganize(inv, cfg, [], OPTS({ blacklist: [D] })));
+  assert.deepEqual(p.candidates.map((c) => [c.serial, c.mine, c.ticked]), [[A, false, true], [B, true, false], [S, true, false]], "never a bag, only roots");
+  assert.deepEqual(p.unusable.map((u) => [u.serial, u.reason]), [[C, "pinned"], [D, "blacklisted"], [E, "its fill is unknown: reinstall the scripts and rescan"], [FAR, "its scan has no position"]]);
+  assert.deepEqual(p.containers, [A]);
+  const asked = ok(proposeOrganize(inv, cfg, [], OPTS({ blacklist: [D], containers: [B, D, 0x4000ffff] })));
+  assert.deepEqual(asked.containers, [B]);
+  assert.deepEqual(asked.refused, [{ serial: D, reason: "blacklisted" }, { serial: 0x4000ffff, reason: "it is not a container on the ground in your scans" }]);
+  assert.deepEqual(asked.config.labels[String(B)], manual(B, "Mine"), "a ticked chest keeps the player's own label");
+});
+
+test("[fast] more groups than containers: the largest groups get them, the rest get a rule with no container and stay put, with how many containers to add", () => {
+  const inv = fold([{ serial: A }, { serial: B, pos: at(102) }], things(B, ["Black Pearl", "Ruby", "Katana", "Iron Ingot", "Garlic"]));
+  const cfg: OrganizeConfig = { ...emptyOrganizeConfig(), labels: { [B]: manual(B, "Loot") } };
+  const p = ok(proposeOrganize(inv, cfg, [], OPTS()));
+  assert.deepEqual(p.containers, [A]);
+  assert.deepEqual(p.groups.map((g) => [g.key, g.targets, g.addContainers]), [["weapons", [], 1], ["reagents", [A], 0], ["resources", [], 1], ["gems", [], 1]]);
+  assert.deepEqual([p.unassigned, p.addContainers], [3, 3]);
+  const plan = planOrganize(inv, p.config, [], { now: NOW });
+  assert.deepEqual(plan.moves.map((m) => m.name).sort(), ["Black Pearl", "Garlic"], "only the group with a container moves");
+  assert.equal(plan.unclaimed, 0, "the others are claimed by their rules and stay where they are");
+  // Zero containers ticked: every group is left without one, and nothing moves.
+  const none = ok(proposeOrganize(inv, cfg, [], OPTS({ containers: [] })));
+  assert.deepEqual(none.containers, []);
+  assert.ok(none.groups.length > 0 && none.groups.every((g) => !g.targets.length));
+  assert.equal(planOrganize(inv, none.config, [], { now: NOW }).moves.length, 0);
+});
+
+test("[fast] a group too big for one chest gets a chain of chests in fill order, and the plan fits it with no shortfall", () => {
+  const pearls: ThingSpec[] = Array.from({ length: 30 }, (_, i) => ({ serial: ITEM + 1 + i, name: "Black Pearl", in: A, hue: i + 1 }));
+  const inv = fold([{ serial: A, max: 40 }, { serial: B, pos: at(102), max: 12 }, { serial: C, pos: at(104), max: 12 }, { serial: D, pos: at(106), max: 12 }], pearls);
+  const p = ok(proposeOrganize(inv, { ...emptyOrganizeConfig(), labels: { [A]: manual(A, "Old") } }, [], OPTS()));
+  assert.deepEqual(p.groups.map((g) => [g.key, g.targets, g.needSlots, g.roomSlots, g.shortfall]), [["reagents", [B, C, D], 30, 36, 0]]);
+  assert.deepEqual(p.config.rules.map((r) => [r.id, r.targets]), [["auto-reagents", [B, C, D]]]);
+  const plan = planOrganize(inv, p.config, [], { now: NOW });
+  assert.equal(plan.moves.length, 30);
+  assert.equal(plan.rules[0]!.noRoom, 0);
+  assert.equal(p.plan.moves, 30, "the proposal carries the plan's own count");
+});
+
+test("[fast] a group spread over two houses goes to a chest where most of it is; the rest is reported as at another house", () => {
+  const inv = fold([{ serial: A }, { serial: FAR, pos: at(500) }], [...things(A, ["Black Pearl", "Garlic", "Ginseng"]), ...things(FAR, ["Nightshade", "Ruby"], 4)]);
+  const p = ok(proposeOrganize(inv, emptyOrganizeConfig(), [], OPTS()));
+  assert.deepEqual(p.groups.map((g) => [g.key, g.targets, g.needSlots, g.crossSite]), [["reagents", [A], 3, 1], ["gems", [FAR], 1, 0]]);
+  assert.deepEqual([p.plan.crossSite, p.plan.moves], [1, 0]);
+});
+
+test("[fast] re-running after manual edits: the player's rules stay first and keep their items, their labels stay, and an earlier strategy's rules and labels are replaced", () => {
+  const inv = fold([{ serial: A }, { serial: B, pos: at(102) }, { serial: C, pos: at(104) }], [...things(A, ["Black Pearl", "Garlic"]), ...things(B, ["Ruby"], 3), ...things(C, ["Katana"], 4)]);
+  const first = ok(proposeOrganize(inv, emptyOrganizeConfig(), [], OPTS())).config;
+  assert.deepEqual(first.rules.map((r) => [r.id, r.targets]), [["auto-weapons", [C]], ["auto-reagents", [A]], ["auto-gems", [B]]]);
+  // The player narrows the reagent rule (the rule editor makes it theirs and keeps its id), renames the gem chest,
+  // and adds a rule of their own into the weapons chest.
+  const edited: OrganizeConfig = { ...first,
+    labels: { ...first.labels, [B]: manual(B, "My gems") },
+    rules: [
+      { ...first.rules[1]!, name: "Pearls", match: { query: { ...emptyRuleQuery(), kind: ["reagent"] }, names: ["black pearl"] }, origin: "manual" },
+      { id: "rule-1", name: "Swords", match: { query: { ...emptyRuleQuery(), kind: ["gear"] } }, targets: [C], origin: "manual" },
+      first.rules[0]!, first.rules[2]!,
+    ] };
+  const byDefault = ok(proposeOrganize(inv, edited, [], OPTS()));
+  assert.deepEqual(byDefault.candidates.filter((c) => c.ticked).map((c) => c.serial), [], "every chest here is used by the player's own setup: none is ticked");
+  const again = ok(proposeOrganize(inv, edited, [], OPTS({ containers: [A, B] })));
+  assert.deepEqual(again.config.rules.map((r) => [r.id, r.name, r.targets, r.origin]), [
+    ["auto-reagents", "Pearls", [A], "manual"],
+    ["rule-1", "Swords", [C], "manual"],
+    ["auto-reagents_2", "Reagents", [A], "strategy:simple"],
+    ["auto-gems", "Gems", [B], "strategy:simple"],
+  ]);
+  assert.deepEqual(again.config.labels[String(B)], manual(B, "My gems"), "a manual label is never renamed");
+  assert.deepEqual(again.config.labels[String(C)], first.labels[String(C)], "an earlier strategy's label a manual rule fills is kept");
+  assert.equal(again.config.labels[String(A)]!.name, "Reagents");
+  assert.equal(checkOrganizeConfig(again.config).ok, true);
+});
+
+test("[fast] running Auto again on its own accepted setup proposes the same setup, and after its trips nothing moves", () => {
+  // A messy house: reagents and gems mixed in two chests, a third chest empty, twelve slots each.
+  const inv = fold([{ serial: A, max: 12 }, { serial: B, pos: at(102), max: 12 }, { serial: C, pos: at(104), max: 12 }],
+    [...things(A, ["Black Pearl", "Ruby", "Garlic", "Iron Ingot"]), ...things(B, ["Emerald", "Ginseng", "Katana", "Sapphire"], 5)]);
+  for (const strategy of ["simple", "detailed"] as const) {
+    const p = ok(proposeOrganize(inv, emptyOrganizeConfig(), [], OPTS({ strategy })));
+    const again = ok(proposeOrganize(inv, p.config, [], OPTS({ strategy })));
+    assert.equal(again.changed, false, `${strategy}: accepting, then running again, changes nothing`);
+    assert.deepEqual(again.config, p.config);
+    const plan = planOrganize(inv, p.config, [], { now: NOW });
+    assert.ok(plan.moves.length > 0);
+    const done: OverlayMove[] = plan.moves.map((m) => ({ serial: m.serial, name: m.name, from: m.from, to: m.to, at: new Date(NOW).toISOString(), trip: "t1" }));
+    const after = ok(proposeOrganize(inv, p.config, done, OPTS({ strategy })));
+    assert.equal(after.plan.moves, 0, `${strategy}: re-running on its own result moves nothing`);
+  }
+});
+
+test("[fast] Detailed with too few containers says how many are missing; the same scans in any order give the same proposal", () => {
+  const list = things(A);
+  const inv = fold([{ serial: A }, { serial: B, pos: at(102) }], list);
+  const shuffled = fold([{ serial: B, pos: at(102) }, { serial: A }], [...list].reverse());
+  const p = ok(proposeOrganize(inv, emptyOrganizeConfig(), [], OPTS({ strategy: "detailed" })));
+  assert.equal(p.unassigned, p.groups.length - 2);
+  assert.equal(p.addContainers, p.groups.length - 2);
+  assert.deepEqual(ok(proposeOrganize(shuffled, emptyOrganizeConfig(), [], OPTS({ strategy: "detailed" }))), p);
+});
+
+test("[fast] the player's catch-all takes what no group does, so there is no Other group; a setup past the rule limit is refused, not proposed", () => {
+  const inv = fold([{ serial: A }, { serial: B, pos: at(102) }], things(A, ["Black Pearl", "Apple"]));
+  const cfg: OrganizeConfig = { ...emptyOrganizeConfig(), labels: { [B]: manual(B, "Junk") }, catchAll: B };
+  const p = ok(proposeOrganize(inv, cfg, [], OPTS()));
+  assert.deepEqual(p.groups.map((g) => g.key), ["reagents"]);
+  assert.equal(p.config.catchAll, B);
+  const many: OrganizeConfig = { ...cfg, rules: Array.from({ length: 200 }, (_, i) => ({ id: `rule-${i + 1}`, name: `Rule ${i + 1}`, match: { query: { ...emptyRuleQuery(), q: "nothing matches this" } }, targets: [], origin: "manual" as const })) };
+  const r = proposeOrganize(inv, many, [], OPTS());
+  assert.equal(r.ok, false);
+  assert.match((r as { error: string }).error, /at most 200 rules/);
 });

@@ -1,13 +1,14 @@
 // organize-strategies.mts — Organize's Auto mode (issue #11, spec §5): the Simple and Detailed strategies (which
 // items form a group, each group written as ordinary rule filters, mostly the presets), assignGroups (which of the
-// ticked chests each group gets) and proposeOrganize (the whole setup Accept saves). Pure and deterministic: every
-// walk runs in serial or table order. POST /api/organize/propose hands everything in; the page saves the
-// proposal's config with the ordinary PUT /api/organize.
-import { emptyRuleQuery, LIMITS, type RuleMatch } from "./organize-config.mts";
+// ticked chests each group gets) and proposeOrganize (the whole setup Accept saves). Pure and deterministic (node:util
+// only for a deep compare): every walk runs in serial or table order. POST /api/organize/propose hands everything
+// in; the page saves the proposal's config with the ordinary PUT /api/organize.
+import { isDeepStrictEqual } from "node:util";
+import { checkOrganizeConfig, emptyRuleQuery, LIMITS, type ContainerLabel, type OrganizeConfig, type OrganizeRule, type Origin, type RuleMatch } from "./organize-config.mts";
 import { PRESETS } from "./organize-presets.mts";
-import { ruleMatches } from "./organize.mts";
+import { applyOverlay, claimOf, planOrganize, posOk, ruleMatches, scopeOf, sitesOf, type OverlayMove, type ScopeOptions } from "./organize.mts";
+import { bagLabel, TRASH_RE, type Container, type ContainerCapacity, type Inventory, type Item } from "./vault-lib.mts";
 import type { RuleQuery } from "./item-query.mts";
-import type { Item } from "./vault-lib.mts";
 import type { RulesV1RarityItem } from "./schema/types.d.mts";
 
 export type StrategyId = "simple" | "detailed";
@@ -138,4 +139,156 @@ export function assignGroups(groups: readonly GroupNeed[], offers: readonly Offe
     out.set(g.key, chain);
   }
   return out;
+}
+
+// A house chest holds 125 items (ServUO's default): how the proposal turns missing slots into chests to add.
+export const CONTAINER_SLOTS = 125;
+
+// A ground chest Auto organize may use: its name as the player knows it (its label, else its engraving or name),
+// its house (site), its fill, its label, and whether the player's own setup uses it (a manual label, or a target
+// of a manual rule or of the catch-all), which leaves it unticked by default.
+export interface Candidate { serial: number; name: string; site: number; fill: { items: number; max: number }; label: { name: string; origin: Origin } | null; mine: boolean; ticked: boolean }
+export interface Unusable { serial: number; name: string; reason: string }
+// One group of the proposal. needSlots = its items at its home site (one slot each: merges are the plan's to find),
+// roomSlots = what its chests take, crossSite = its items at other houses (never moved).
+export interface GroupReport { key: string; name: string; family: Family; ruleIds: string[]; items: number; needSlots: number; targets: number[]; roomSlots: number; shortfall: number; addContainers: number; crossSite: number }
+export interface Proposal {
+  strategy: StrategyId;
+  candidates: Candidate[];
+  unusable: Unusable[];
+  containers: number[];                         // the ticked chests it used, ascending
+  refused: { serial: number; reason: string }[];   // asked for, but not usable
+  groups: GroupReport[];                        // in rule order
+  unassigned: number;                           // groups that got no chest
+  addContainers: number;
+  manualRules: number;
+  config: OrganizeConfig;                       // the whole setup Accept saves (PUT /api/organize)
+  changed: boolean;                             // false when config is the current setup
+  plan: { moves: number; trips: number; noRoom: number; crossSite: number; unclaimed: number };   // planOrganize on config
+}
+export interface ProposeOptions extends ScopeOptions { strategy: StrategyId; containers?: readonly number[] | undefined; rarity?: RulesV1RarityItem[] | undefined }
+export type ProposeResult = { ok: true; proposal: Proposal } | { ok: false; error: string };
+
+const bySerial = (a: number, b: number): number => a - b;
+const plainName = (c: Container): string => ((c.label || bagLabel(c)) || `0x${(+c.serial).toString(16)}`).slice(0, 64);
+
+// Every ground root a character of the player's scanned (never a `_vault` tombstone's, never a trash container),
+// usable or with the reason it is not. Usable = what a rule target needs (scopeOf): not blacklisted or pinned,
+// opened by its newest scan, with a position and a Contents line.
+function candidatesOf(inv: Inventory, cfg: OrganizeConfig, counts: Map<number, ContainerCapacity>, black: Set<number>, mine: Set<number>): { candidates: Candidate[]; unusable: Unusable[] } {
+  const roots = Object.values(inv.containers).filter((c) => c.parent == null && c.kind === "ground" && !String(c.scannedBy).startsWith("_") && !TRASH_RE.test(c.name ?? ""))
+    .sort((a, b) => a.serial - b.serial);
+  const usable: { serial: number; name: string; cap: ContainerCapacity; l: ContainerLabel | undefined }[] = [];
+  const unusable: Unusable[] = [];
+  for (const c of roots) {
+    const serial = +c.serial, l = cfg.labels[String(serial)], cap = counts.get(serial);
+    const name = l?.name ?? plainName(c);
+    const reason = black.has(serial) ? "blacklisted" : l?.pinned ? "pinned" : c.opened === false ? "the last scan could not open it"
+      : !posOk(c.pos) ? "its scan has no position" : !cap ? "its fill is unknown: reinstall the scripts and rescan" : null;
+    if (reason) unusable.push({ serial, name, reason }); else usable.push({ serial, name, cap: cap!, l });
+  }
+  const siteOf = new Map(sitesOf(inv, usable.map((u) => u.serial)).flatMap((g, i) => g.map((s) => [s, i] as const)));
+  const candidates = usable.map(({ serial, name, cap, l }) => {
+    const own = l?.origin === "manual" || mine.has(serial);
+    return { serial, name, site: siteOf.get(serial)!, fill: { items: cap.items, max: cap.maxItems }, label: l ? { name: l.name, origin: l.origin } : null, mine: own, ticked: !own };
+  });
+  return { candidates, unusable };
+}
+
+// Spec §5: the setup a strategy proposes over the ticked chests (`containers`, else every candidate ticked by
+// default), as the whole next organize.json. Manual rules come first and keep what they claim; manual labels are
+// never renamed; every earlier strategy label and rule is replaced, except a strategy label a manual rule or the
+// catch-all still fills (dropping it would make the setup unsaveable). The groups are the movable items (scopeOf,
+// over the labels the proposal writes, after the overlay) that no manual rule claims; each group's home site is the
+// one holding most of it, and its items elsewhere are reported, never assigned. A group with no chest still gets its
+// rules, with no targets, so its items are claimed and stay put rather than fall through to Other.
+export function proposeOrganize(inv: Inventory, cfg: OrganizeConfig, overlay: OverlayMove[], opts: ProposeOptions): ProposeResult {
+  const placed = applyOverlay(inv, overlay);
+  const view = placed.inv;
+  const rarity = opts.rarity ?? [];
+  const black = new Set(opts.blacklist ?? []);
+  const origin: Origin = `strategy:${opts.strategy}`;
+  const manualRules = cfg.rules.filter((r) => r.origin === "manual");
+  const mine = new Set([...manualRules.flatMap((r) => r.targets), ...(cfg.catchAll != null ? [cfg.catchAll] : [])]);
+  const { candidates, unusable } = candidatesOf(view, cfg, placed.counts, black, mine);
+  const offered = new Set(candidates.map((c) => c.serial));
+  const refused: { serial: number; reason: string }[] = [];
+  const containers: number[] = [];
+  if (opts.containers) {
+    for (const s of [...new Set(opts.containers)].sort(bySerial)) {
+      if (offered.has(s)) containers.push(s);
+      else refused.push({ serial: s, reason: unusable.find((u) => u.serial === s)?.reason ?? "it is not a container on the ground in your scans" });
+    }
+  } else containers.push(...candidates.filter((c) => c.ticked).map((c) => c.serial));
+
+  const labels: Record<string, ContainerLabel> = {};
+  for (const l of Object.values(cfg.labels).sort((a, b) => a.serial - b.serial)) {
+    if (l.origin === "manual" || (mine.has(l.serial) && !black.has(l.serial))) labels[String(l.serial)] = l;
+  }
+  for (const s of containers) if (labels[String(s)]?.origin !== "manual") labels[String(s)] = { serial: s, name: plainName(view.containers[s]!), origin };
+  const catchAll = cfg.catchAll != null && labels[String(cfg.catchAll)] ? cfg.catchAll : null;
+  const draft: OrganizeConfig = { version: 1, labels, rules: manualRules, catchAll: null, pinnedItems: cfg.pinnedItems };
+  const scope = scopeOf(view, draft, opts);
+  const items = scope.movable.map((s) => view.items[s]!).filter((it) => !claimOf(it, draft, rarity));
+  const groups = groupItems(STRATEGIES[opts.strategy], items, rarity, new Set(catchAll != null ? ["other"] : []));
+
+  const siteOfRoot = new Map(sitesOf(view, scope.siteRoots).flatMap((g, i) => g.map((r) => [r, i] as const)));
+  const home = new Map(groups.map((g) => {
+    const per = new Map<number, number>();
+    for (const it of g.items) { const s = siteOfRoot.get(+it.root!)!; per.set(s, (per.get(s) ?? 0) + 1); }
+    const [site, need] = [...per].sort((a, b) => b[1] - a[1] || a[0] - b[0])[0]!;
+    return [g.key, { site, need }] as const;
+  }));
+  const inGroups = new Map<number, number>();
+  const held = new Map<number, Record<string, number>>();
+  for (const g of groups) {
+    for (const it of g.items) {
+      const r = +it.root!;
+      inGroups.set(r, (inGroups.get(r) ?? 0) + 1);
+      const h = held.get(r) ?? {};
+      h[g.key] = (h[g.key] ?? 0) + 1;
+      held.set(r, h);
+    }
+  }
+  // A chest's room for its group: its size less what stays in it whatever happens (bags, pinned items, items a
+  // manual rule claims); every group item in it either leaves or is the group's own.
+  const offers: Offer[] = containers.filter((s) => scope.usable.has(s) && siteOfRoot.has(s)).map((s) => {
+    const cap = placed.counts.get(s)!;
+    return { serial: s, site: siteOfRoot.get(s)!, room: Math.max(0, cap.maxItems - (cap.items - (inGroups.get(s) ?? 0))), held: held.get(s) ?? {} };
+  });
+  const chains = assignGroups(groups.map((g) => ({ key: g.key, ...home.get(g.key)! })), offers);
+  for (const g of groups) for (const s of chains.get(g.key)!) if (labels[String(s)]!.origin !== "manual") labels[String(s)] = { serial: s, name: g.name, origin };
+
+  const used = new Set(manualRules.map((r) => r.id));
+  const ruleId = (base: string): string => {
+    let id = base;
+    for (let n = 2; used.has(id); n++) id = `${base}_${n}`;
+    used.add(id);
+    return id;
+  };
+  const autoRules: OrganizeRule[] = [];
+  const reports: GroupReport[] = groups.map((g) => {
+    const targets = chains.get(g.key)!;
+    const ruleIds = g.matches.map((m, i) => {
+      const id = ruleId(`auto-${g.key}${i ? `-${i + 1}` : ""}`);
+      autoRules.push({ id, name: g.name, match: structuredClone(m), targets: [...targets], origin });
+      return id;
+    });
+    const { need } = home.get(g.key)!;
+    const roomSlots = targets.reduce((n, s) => n + offers.find((o) => o.serial === s)!.room, 0);
+    const shortfall = Math.max(0, need - roomSlots);
+    return { key: g.key, name: g.name, family: g.family, ruleIds, items: g.items.length, needSlots: need, targets, roomSlots, shortfall, addContainers: Math.ceil(shortfall / CONTAINER_SLOTS), crossSite: g.items.length - need };
+  });
+
+  const config: OrganizeConfig = { version: 1, labels, rules: [...manualRules, ...autoRules], catchAll, pinnedItems: [...cfg.pinnedItems] };
+  const checked = checkOrganizeConfig(config);
+  if (!checked.ok) return { ok: false, error: `Auto organize cannot save this setup: ${checked.error}` };
+  const plan = planOrganize(inv, config, overlay, opts);
+  return { ok: true, proposal: {
+    strategy: opts.strategy, candidates, unusable, containers, refused, groups: reports,
+    unassigned: reports.filter((r) => !r.targets.length).length,
+    addContainers: reports.reduce((n, r) => n + r.addContainers, 0),
+    manualRules: manualRules.length, config, changed: !isDeepStrictEqual(config, cfg),
+    plan: { moves: plan.moves.length, trips: plan.trips.length, noRoom: plan.rules.reduce((n, r) => n + r.noRoom, 0), crossSite: plan.crossSite.reduce((n, c) => n + c.count, 0), unclaimed: plan.unclaimed },
+  } };
 }
