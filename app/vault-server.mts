@@ -14,8 +14,9 @@
 //         the scans directory + shard + vault-lib.mts mtime, so an edited/added/removed scan file is
 //         picked up on the next request with no restart; each scan file is upgraded v1→v2 and schema-
 //         validated on read — readScans() — an invalid or unparsable file is logged and skipped) — the
-//         response carries facets/worn/rootCounts/itemCount/propKeys — never the full item map
-//         (that stopped shipping in Task 5, once the page moved to paging GET /api/items instead)
+//         response carries facets/worn/rootCounts/missingCounts/itemCount/propKeys — never the full item map
+//         (that stopped shipping in Task 5, once the page moved to paging GET /api/items instead) ·
+//         GET /api/missing?root= — what left that root since its last scan (app/missing.mts, issue #99)
 //         GET /api/items?q=&slot=&loc=&rarity=&kind=&seenDays=&slayer=&nogarg=&med=&hide=&prop=&group=
 //         &sort=&dir=&offset=&limit= — a paged, server-side search/sort over the same folded inventory
 //         (parseItemQuery/applyItemQuery, app/item-query.mts) ·
@@ -125,6 +126,7 @@ import { planOrganize, tripCommand, matchCount, type Plan } from "./organize.mts
 import { PRESETS } from "./organize-presets.mts";
 import { emptyOrganizeState, harvestTrips, noteSeen, pruneOverlay, salvageOrganizeState, PENDING_GRACE_MS, type BridgeView, type OrganizeState } from "./organize-state.mts";
 import { retentionError, retentionOf, runsToPrune, scansToPrune, type ScanFile } from "./retention.mts";
+import { missingSinceLastScan, type MissingItem } from "./missing.mts";
 import {
   listAdapters, candidateClientRoots, validateScriptsDir, installedVersion, installScripts, pasteScanner,
   repoFromPackage, checkForUpdates, type CheckForUpdatesResult, checkScriptsDataDir, type DataDirCheck, type AdapterInfo,
@@ -731,18 +733,20 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
   const UPDATE_CHECK_TTL_MS = 60 * 60 * 1000;
   let updateCheckCache: { at: number; result: CheckForUpdatesResult } | null = null;
 
-  let invCache: { sig: string | null; value: { inv: Inventory; snapshotCount: number; stamp: string } | null } = { sig: null, value: null };
+  type InvValue = { inv: Inventory; missing: Record<string, MissingItem[]>; snapshotCount: number; stamp: string };
+  let invCache: { sig: string | null; value: InvValue | null } = { sig: null, value: null };
   function scansSignature(): string {
     if (!existsSync(SCANS)) return "no-scans-dir";
     return readdirSync(SCANS).filter((f) => f.endsWith(".json")).sort()
       .map((f) => { const st = statSync(join(SCANS, f)); return `${f}:${st.mtimeMs}:${st.size}`; }).join("|");
   }
-  async function getInventory(): Promise<{ inv: Inventory; snapshotCount: number; stamp: string }> {
+  async function getInventory(): Promise<InvValue> {
     const libMod = await lib();   // also refreshes libCache.mtime, which the signature below reads
     const sig = `${scansSignature()}::${currentSettings.shard}::${libCache.mtime}`;
     if (invCache.sig === sig) return invCache.value!;   // sig and value are only ever set together, below
     const snaps = readScans();
-    const value = { inv: libMod.foldSnapshots(snaps), snapshotCount: snaps.length, stamp: sig };
+    const inv = libMod.foldSnapshots(snaps);
+    const value = { inv, missing: missingSinceLastScan(snaps, inv), snapshotCount: snaps.length, stamp: sig };
     invCache = { sig, value };
     return value;
   }
@@ -1160,7 +1164,7 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
         return send(res, 200, readFileSync(f, "utf8"), name.endsWith(".css") ? "text/css" : "text/javascript");
       }
       if (req.method === "GET" && url.pathname === "/api/inventory") {
-        const { inv, snapshotCount } = await getInventory();
+        const { inv, missing, snapshotCount } = await getInventory();
         const itemsArr = Object.values(inv.items);
         const worn: Record<string, Item[]> = {}, rootCounts: Record<string, number> = {};
         for (const it of itemsArr) {
@@ -1168,8 +1172,17 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
           if (it.root != null) rootCounts[it.root] = (rootCounts[it.root] || 0) + 1;
         }
         const facets = facetsOf(itemsArr, { rarity: currentRules.rarity });
-        const inventory = { scans: inv.scans, characters: inv.characters, containers: inv.containers, worn, rootCounts, itemCount: itemsArr.length, facets, propKeys: facets.propKeys };
+        const missingCounts = Object.fromEntries(Object.entries(missing).map(([root, list]) => [root, list.length]));
+        const inventory = { scans: inv.scans, characters: inv.characters, containers: inv.containers, worn, rootCounts, missingCounts, itemCount: itemsArr.length, facets, propKeys: facets.propKeys };
         return send(res, 200, { ok: true, snapshotCount, demo: CONFIG.demo, inventory });
+      }
+      // GET /api/missing?root=<serial> — the items missing from that root since its last scan (app/missing.mts,
+      // issue #99); /api/inventory carries only the counts. A root with nothing missing answers an empty list.
+      if (req.method === "GET" && url.pathname === "/api/missing") {
+        const root = url.searchParams.get("root") || "";
+        if (!/^\d{1,10}$/.test(root)) return send(res, 400, { ok: false, error: "root must be a container serial" });
+        const { missing } = await getInventory();
+        return send(res, 200, { ok: true, items: missing[String(+root)] || [] });
       }
       if (req.method === "GET" && url.pathname === "/api/items") {
         const { inv } = await getInventory();

@@ -680,6 +680,48 @@ test("[slow] a ground container is blacklisted from Containers and unblacklisted
   }
 });
 
+// Missing since last scan (issue #99): Kestrel's chest scanned twice, the second time without its Runebook and Drum
+// and with 64 fewer gold. Its row carries a "3 missing" badge and its menu Show missing items, whose dialog lists
+// them; Dorran's chest, scanned once, has neither. Recent stamps, or retention prunes the older scan at startup.
+test("[slow] a container with items missing since its last scan shows a badge and lists them", async (t) => {
+  const why = unavailable();
+  if (why) return t.skip(why);
+  const dataDir = seedDataDir("packrat-ui-missing-");
+  const kestrel = JSON.parse(readFileSync(join(ROOT, "app", "fixtures", "demo-Kestrel.json"), "utf8")) as { items: Array<{ name: string; amount: number; tooltip: string[] }> };
+  const day = (n: number): string => new Date(Date.now() - n * 86_400_000).toISOString().slice(0, 19);   // v1 stamps are naive local time
+  const later = kestrel.items.filter((it) => it.name !== "Runebook" && it.name !== "Drum")
+    .map((it) => (it.name === "Gold Coin" ? { ...it, amount: it.amount - 64, tooltip: [`${it.amount - 64} Gold Coin`] } : it));
+  writeFileSync(join(dataDir, "scans", "demo-Kestrel.json"), JSON.stringify({ ...kestrel, scannedAt: day(2) }));
+  writeFileSync(join(dataDir, "scans", "demo-Kestrel-2.json"), JSON.stringify({ ...kestrel, scannedAt: day(1), items: later }));
+  const { app, page, errors } = await launch(dataDir);
+  try {
+    await openTab(page, "containers");
+    const row = page.locator('#cont-table tr[data-root="1879769088"]');   // Kestrel's chest, 0x700b0000
+    await row.waitFor({ timeout: 15_000 });
+    assert.equal(await row.locator(".tag.warn").textContent(), "3 missing");
+    const other = page.locator('#cont-table tr[data-root="1879834624"]');   // Dorran's chest, 0x700c0000
+    assert.equal(await other.locator(".tag.warn").count(), 0);
+    await other.getByRole("button", { name: /^Actions for / }).click();
+    assert.equal(await page.getByRole("menuitem", { name: "Show missing items" }).count(), 0, "nothing missing, no menu entry");
+    await page.keyboard.press("Escape");
+
+    await row.getByRole("button", { name: /^Actions for / }).click();
+    await page.getByRole("menuitem", { name: "Show missing items" }).click();
+    const dialog = page.locator("dialog.dialog[open]");
+    await dialog.waitFor({ timeout: 10_000 });
+    assert.match(await dialog.locator("h2").innerText(), /^Missing from /);
+    const cells = await dialog.locator("tbody tr").evaluateAll((trs) => trs.map((tr) => [...tr.querySelectorAll("td")].slice(0, 2).map((td) => td.textContent)));
+    assert.deepEqual(cells, [["Drum", "1"], ["Gold Coin", "64 fewer"], ["Runebook", "1"]]);
+    assert.match(await dialog.locator("tbody tr").first().locator("td").nth(2).innerText(), /h ago|\d/);
+    await page.keyboard.press("Escape");
+    await dialog.waitFor({ state: "detached", timeout: 10_000 });
+    assert.deepEqual(errors, []);
+  } finally {
+    await app.close();
+    rmSync(dataDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
+  }
+});
+
 // Rarity at most (issue #11): the Rarity popover's second list caps the tier. The strip and the chip say
 // so, and every tier left in the table is the one picked or a lower one.
 test("[slow] Rarity at most keeps the tier picked and the ones below it", async (t) => {

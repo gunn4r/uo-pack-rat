@@ -20,6 +20,7 @@ import type { Facets, ItemQueryRows, ItemQueryGroups } from "../item-query.mts";
 import type { RulesV1 } from "../schema/types.d.mts";
 import type { AutostartOutcome, Hotkey as PanelHotkey, PanelPrefs } from "../tazuo-panel-prefs.mts";
 import type { OrganizeConfig, RuleMatch } from "../organize-config.mts";
+import type { MissingItem } from "../missing.mts";
 
 // ---------------------------------------------------------------- shared fragments
 
@@ -109,6 +110,8 @@ export interface InventoryData {
   containers: Record<string, Container>;
   worn: Record<string, Item[]>;
   rootCounts: Record<string, number>;
+  // How many items each root has missing since its last scan (app/missing.mts); a root with none is absent.
+  missingCounts: Record<string, number>;
   itemCount: number;
   facets: Facets;
   propKeys: string[];
@@ -237,6 +240,8 @@ export interface RescanApiResponse {
   ok: boolean;
   adapters: string[];
 }
+// GET /api/missing?root= (issue #99).
+export interface MissingApiResponse { ok: boolean; items: MissingItem[] }
 export interface ForgetApiResponse {
   ok: boolean;
 }
