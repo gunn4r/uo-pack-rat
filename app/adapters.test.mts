@@ -43,9 +43,13 @@ const readCaps = (name: string): CapabilitiesFile =>
 const ACTION_PRIMITIVES: Record<string, RegExp> = {
   // double-clicking a container to open it (both scanners and both bridges)
   "open-container": /(API\.UseObject|Items\.WaitForContents)\(/,
-  // moving an item into the player's OWN backpack — the destination is hard-coded in every adapter
-  // and is deliberately not a protocol field (docs/bridge-protocol.md)
+  // moving an item into the player's OWN backpack — grab's destination is hard-coded in every adapter
+  // and is not a protocol field (docs/bridge-protocol.md); a trip's take lands there too
   "move-to-own-backpack": /(API\.MoveItem|Items\.Move)\(/,
+  // a trip's put: moving an item the bridge itself took on a trip (its carried set) into a labelled
+  // container on the ground. The one MoveItem whose destination comes from the queue (the trip's
+  // `dest`), so the pattern is that call; docs/bridge-protocol.md's Trip section bounds it.
+  "move-into-ground-container": /API\.MoveItem\([^)\n]*\bdest\[/,
   // walking the character, bounded by the bridge's own MAX_WALK_TILES and pathfind timeout
   "pathfind-local": /(API\.PathfindEntity|API\.Pathfind|Player\.PathFindTo)\(/,
   // client-local only: overhead text, a marked tile, a recolor. Never a speech packet.

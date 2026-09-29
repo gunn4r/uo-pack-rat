@@ -29,6 +29,8 @@ const adapterDirs = existsSync(ADAPTERS_DIR)
 // ---- bridge v1 protocol schema (its own cases are at the bottom of this file; declared here
 // because the per-adapter loop below checks each declared action against its `action` enum) -------
 const BRIDGE_SCHEMA = JSON.parse(readFileSync(join(HERE, "schema", "bridge.v1.schema.json"), "utf8")) as { command: ValidatorSchema; result: ValidatorSchema; status: ValidatorSchema };
+// The Organize trip (issue #11): its own shape, written only by app/bridge-trip.mts's queueTrip.
+const TRIP_SCHEMA = JSON.parse(readFileSync(join(HERE, "schema", "bridge-trip.v1.schema.json"), "utf8")) as ValidatorSchema;
 
 // capabilities.json's own shape (app/installer.mts's AdapterInfo reads more of it; this file only ever
 // reads .capabilities off it).
@@ -57,6 +59,12 @@ for (const name of adapterDirs) {
     const caps = JSON.parse(readFileSync(capsPath, "utf8")) as CapabilitiesFile;
     const declared = caps.capabilities.bridge;
     for (const action of declared) {
+      // trip is Organize's own command, with its own schema; the Organize view that queues it gates
+      // on this same capability list.
+      if (action === "trip") {
+        assert.ok(validate(TRIP_SCHEMA.properties!.action!, action).ok, "trip is not bridge-trip.v1.schema.json's action");
+        continue;
+      }
       assert.ok(ALL_BRIDGE_ACTIONS.includes(action), `unknown bridge action ${JSON.stringify(action)} — app/ui/bridge.mts renders no button for it, so nothing would ever queue it`);
       assert.ok(validate(BRIDGE_SCHEMA.command.properties!.action!, action).ok, `${action} is not in bridge.v1.schema.json's action enum`);
     }
@@ -194,4 +202,51 @@ test("[fast] bridge.v1.schema.json declares the chain cap the bridges enforce", 
   assert.equal(chain.items?.minimum, 1, "a chain entry must be a positive serial");
   const pyBounds = readFileSync(join(ROOT, "adapters", "tazuo", "packrat-bridge.py"), "utf8");
   assert.match(pyBounds, new RegExp(`^MAX_CHAIN = ${chain.maxItems}\\b`, "m"), "the bridge's MAX_CHAIN has drifted from the schema's maxItems");
+});
+
+// ---- bridge trip schema (Organize, issue #11) ---------------------------------------------------
+const tripLine = (over: Record<string, unknown> = {}) => ({
+  id: "0b6f3c1e-2a4d-4e8f-9c3a-5d7e1f2a3b4c", action: "trip", index: 3, stamp: "2026-09-28T12:00:00.000Z",
+  queuedAt: "2026-09-28T12:05:00.000Z",
+  roots: { "1073741825": { x: 1520, y: 1631, z: 0, facet: 1 }, "1073741904": { x: 1522, y: 1631, z: 0 } },
+  takes: [{ serial: 1073741840, name: "Black Pearl", chain: [1073741825, 1073741826] }],
+  puts: [{ serial: 1073741840, name: "Black Pearl", dest: [1073741904, 1073741905] }],
+  ...over,
+});
+
+test("[fast] bridge-trip.v1.schema.json accepts the documented trip and refuses anything else", () => {
+  const { ok, errors } = validate(TRIP_SCHEMA, tripLine());
+  assert.ok(ok, JSON.stringify(errors));
+  const many = (n: number, key: string) => Array.from({ length: n }, (_, i) => ({ serial: 0x40001000 + i, name: "x", [key]: [1073741825] }));
+  for (const bad of [{ action: "grab" }, { index: 0 }, { index: 1.5 }, { stamp: "" }, { takes: many(21, "chain") }, { puts: many(41, "dest") },
+    { takes: [{ serial: 1, name: "x", chain: [] }] }, { takes: [{ serial: 1, name: "x", chain: Array(9).fill(1) }] },
+    { puts: [{ serial: 1, name: "x".repeat(41), dest: [1] }] }, { roots: { "1": { x: 1, y: 2 } } }, { roots: { "1": null } },
+    { takes: [{ serial: 1, name: "x", chain: [1], extra: true }] }, { serial: 1 }]) {
+    assert.equal(validate(TRIP_SCHEMA, tripLine(bad)).ok, false, `accepted ${JSON.stringify(bad)}`);
+  }
+});
+
+test("[fast] bridge.v1.schema.json's result carries a trip's steps, partial and stopped", () => {
+  const result = { ok: false, msg: "trip 3: 1 put away, 1 step failed — backpack full, trip cut short", t: "2026-09-28T12:05:09-06:00",
+    partial: true, stopped: false,
+    steps: [{ op: "take", serial: 1073741840, ok: true, msg: "took Black Pearl" }, { op: "put", serial: 1073741841, ok: false, msg: "skipped: not taken on this trip" }] };
+  const { ok, errors } = validate(BRIDGE_SCHEMA.result, result);
+  assert.ok(ok, JSON.stringify(errors));
+  assert.equal(validate(BRIDGE_SCHEMA.result, { ...result, steps: [{ op: "drop", serial: 1, ok: true, msg: "" }] }).ok, false);
+  assert.equal(validate(BRIDGE_SCHEMA.result, { ...result, steps: [{ serial: 1, ok: true, msg: "" }] }).ok, false);
+});
+
+test("[fast] bridge.v1.schema.json's command has no trip action: only queueTrip writes one", () => {
+  assert.equal(validate(BRIDGE_SCHEMA.command.properties!.action!, "trip").ok, false);
+});
+
+test("[fast] bridge-trip.v1.schema.json declares the limits every bridge enforces", () => {
+  const p = TRIP_SCHEMA.properties!;
+  const take = p.takes!.items!.properties!;
+  const py = readFileSync(join(ROOT, "adapters", "tazuo", "packrat-bridge.py"), "utf8");
+  assert.match(py, new RegExp(`^MAX_TRIP_TAKES = ${p.takes!.maxItems}\\b`, "m"));
+  assert.match(py, new RegExp(`^MAX_TRIP_PUTS = ${p.puts!.maxItems}\\b`, "m"));
+  assert.match(py, new RegExp(`^MAX_TRIP_NAME = ${take.name!.maxLength}\\b`, "m"));
+  assert.match(py, new RegExp(`^MAX_TRIP_INDEX = ${p.index!.maximum}\\b`, "m"));
+  assert.match(py, new RegExp(`^MAX_CHAIN = ${take.chain!.maxItems}\\b`, "m"));
 });

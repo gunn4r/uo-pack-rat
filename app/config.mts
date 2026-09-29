@@ -31,6 +31,7 @@ export interface ConfigPaths {
   bridgeFor: (adapter: string) => string;
   bridgeQueueFor: (adapter: string) => string;
   bridgeStatusFor: (adapter: string) => string;
+  bridgeStop: string;
   logs: string;
   log: string;
   core: string;
@@ -117,6 +118,9 @@ export function resolveConfig(argv: string[] = process.argv.slice(2), env: NodeJ
       bridgeFor: (adapter: string) => join(bridgeRoot, adapter),
       bridgeQueueFor: (adapter: string) => join(bridgeRoot, adapter, "queue.jsonl"),
       bridgeStatusFor: (adapter: string) => join(bridgeRoot, adapter, "status.json"),
+      // bridgeStop: Organize's Stop (POST /api/bridge/stop, app/bridge-trip.mts). One flag for every
+      // adapter — only one bridge runs at a time — checked by packrat-bridge.py between a trip's steps.
+      bridgeStop: join(bridgeRoot, "stop"),
       logs, log: join(logs, "server.log"),   // logs = the directory (ensureLayout creates it); log = the one file 500s append to
       core: corePath(env),
       adaptersDir,

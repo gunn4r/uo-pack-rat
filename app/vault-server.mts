@@ -42,7 +42,7 @@
 //         GET|POST {serial, name, where?} /api/blacklist · DELETE /api/blacklist/<serial>
 //         (<data>/scan-blacklist.json, the containers scans never open) ·
 //         GET|PUT /api/ui-prefs (<data>/ui-prefs.json: {cols?, colsVersion?, colWidths?, sheetProps?, theme?, appearance?, sidebar?, density?, dismissedUpdate?, copiedScanner?}, the page's view choices)
-//         POST /api/bridge {action, serial, name, chain: [root…parent], pos|null} (queue for packrat-bridge.py) · GET /api/bridge/status
+//         POST /api/bridge {action, serial, name, chain: [root…parent], pos|null} (queue for packrat-bridge.py) · GET /api/bridge/status · POST /api/bridge/stop {} (Organize's Stop: writes <data>/bridge/stop, which packrat-bridge.py checks between a trip's steps)
 //         GET /api/events — SSE, one stream shared by every connected client (not per-job like the
 //         optimize events above): hello {ok, watching: [adapter ids]} on connect, inventory
 //         {file, character, scannedAt, at} once an inbox file is accepted into paths.scans, rejected
@@ -108,6 +108,7 @@ import { startWatcher, jsonErrorReason, MAX_INBOX_BYTES, type StartWatcherOption
 import { parsePastedScan, writeScanToInbox } from "./import.mts";
 import { writeFileAtomic } from "./atomic-write.mts";
 import { addPanelAutostart, panelPrefsError, readPanelPrefs, tazuoRunning, writePanelPrefs } from "./tazuo-panel.mts";
+import { writeBridgeStop } from "./bridge-trip.mts";
 import { retentionError, retentionOf, runsToPrune, scansToPrune, type ScanFile } from "./retention.mts";
 import {
   listAdapters, candidateClientRoots, validateScriptsDir, installedVersion, installScripts, pasteScanner,
@@ -1667,6 +1668,13 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
         mkdirSync(CONFIG.paths.bridgeFor(adapter), { recursive: true, mode: DATA_DIR_MODE });
         appendFileSync(CONFIG.paths.bridgeQueueFor(adapter), text, { mode: DATA_FILE_MODE });
         return send(res, 200, { ok: true, id });
+      }
+      if (req.method === "POST" && url.pathname === "/api/bridge/stop") {
+        // Organize's Stop: the flag packrat-bridge.py checks between the steps of a trip. No fields;
+        // the body is still read so the content-type and shape checks apply like every other POST.
+        asObject(await readBody(req, { limit: 8e3 }));
+        writeBridgeStop(CONFIG.paths);
+        return send(res, 200, { ok: true });
       }
       if (req.method === "GET" && url.pathname === "/api/bridge/status") {
         const f = CONFIG.paths.bridgeStatusFor(bridgeAdapter());

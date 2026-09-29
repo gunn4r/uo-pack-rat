@@ -393,6 +393,23 @@ test("[fast] POST /api/bridge validates the assembled line against BRIDGE_SCHEMA
   }
 });
 
+test("[fast] POST /api/bridge/stop writes the bridge's stop flag, and POST /api/bridge still refuses a trip", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "qm-bridge-stop-"));
+  const s2 = await startServer(ensureLayout(resolveConfig(["--demo", "--port", "0", "--data", dir], {})));
+  try {
+    const stop = await fetch(s2.url + "/api/bridge/stop", { method: "POST", headers: { "content-type": "application/json" }, body: "{}" });
+    assert.equal(stop.status, 200, JSON.stringify(await stop.json().catch(() => null)));
+    assert.ok(existsSync(join(dir, "bridge", "stop")));
+    // The page can never queue a trip: only app/bridge-trip.mts's queueTrip writes one.
+    const trip = await fetch(s2.url + "/api/bridge", { method: "POST", headers: { "content-type": "application/json" },
+      body: JSON.stringify({ action: "trip", serial: 1, name: "n", chain: [], pos: null, index: 1, stamp: "s", roots: {}, takes: [], puts: [{ serial: 1, name: "x", dest: [2] }] }) });
+    assert.equal(trip.status, 400);
+    assert.equal(existsSync(join(dir, "bridge", "tazuo", "queue.jsonl")), false);
+  } finally {
+    await s2.close();
+  }
+});
+
 // ---- Per-adapter bridge routing (Phase 6 final review follow-up) ----------------------------------
 // The bridge queue/status routes and the installer's running-bridge guard used to be hard-coded to
 // <data>/bridge/tazuo/ regardless of which client was actually configured — a Razor Enhanced player
@@ -1683,7 +1700,7 @@ test("[fast] POST /api/setup/locate resolves a nested .../ClassicUO/Data/Plugins
 // the whole server at a throwaway folder holding a copy of the real tazuo adapter (full bridge) next
 // to a minimal fixture adapter that declares no bridge at all, standing in for a client like the
 // ClassicUO web adapter that can't run one.
-test("[fast] GET /api/setup: an adapter with no bridge reports capabilities.bridge:[]; tazuo still reports the three actions", async () => {
+test("[fast] GET /api/setup: an adapter with no bridge reports capabilities.bridge:[]; tazuo still reports its four actions", async () => {
   const adaptersDir = mkdtempSync(join(tmpdir(), "qm-adapters-"));
   cpSync(join(HERE, "..", "adapters", "tazuo"), join(adaptersDir, "tazuo"), { recursive: true });
   const noBridgeDir = join(adaptersDir, "nobridge");
@@ -1699,7 +1716,7 @@ test("[fast] GET /api/setup: an adapter with no bridge reports capabilities.brid
     const setup = asJson<SetupResponse>(await (await fetch(s2.url + "/api/setup")).json());
     assert.deepEqual(setup.adapters.map((a) => a.id).sort(), ["nobridge", "tazuo"]);
     assert.deepEqual(setup.adapters.find((a) => a.id === "nobridge")!.capabilities.bridge, []);
-    assert.deepEqual(setup.adapters.find((a) => a.id === "tazuo")!.capabilities.bridge, ["highlight", "grab", "goto"]);
+    assert.deepEqual(setup.adapters.find((a) => a.id === "tazuo")!.capabilities.bridge, ["highlight", "grab", "goto", "trip"]);
 
     // settings.client names which of those is active — PUT it at the no-bridge adapter first.
     const putNoBridge = await fetch(s2.url + "/api/settings", {
@@ -1711,7 +1728,7 @@ test("[fast] GET /api/setup: an adapter with no bridge reports capabilities.brid
     assert.equal(after.settings.client!.adapter, "nobridge");
     assert.deepEqual(after.adapters.find((a) => a.id === after.settings.client!.adapter)!.capabilities.bridge, []);
 
-    // Switching to tazuo flips the same lookup back to the three actions — same shape, no restart.
+    // Switching to tazuo flips the same lookup back to the four actions — same shape, no restart.
     const putTazuo = await fetch(s2.url + "/api/settings", {
       method: "PUT", headers: { "content-type": "application/json" },
       body: JSON.stringify({ client: { adapter: "tazuo", scriptsDir } }),
@@ -1719,7 +1736,7 @@ test("[fast] GET /api/setup: an adapter with no bridge reports capabilities.brid
     assert.equal(putTazuo.status, 200);
     after = asJson<SetupResponse>(await (await fetch(s2.url + "/api/setup")).json());
     assert.equal(after.settings.client!.adapter, "tazuo");
-    assert.deepEqual(after.adapters.find((a) => a.id === after.settings.client!.adapter)!.capabilities.bridge, ["highlight", "grab", "goto"]);
+    assert.deepEqual(after.adapters.find((a) => a.id === after.settings.client!.adapter)!.capabilities.bridge, ["highlight", "grab", "goto", "trip"]);
   } finally {
     await s2.close();
   }

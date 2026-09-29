@@ -24,11 +24,12 @@
 // constrain values, not shapes, so they're consumed and ignored for the same reason the metadata
 // keyword $comment is.
 //
-// buildSchemaTypes() reads the four schema files and writes app/schema/types.d.mts, only rewriting
+// buildSchemaTypes() reads the five schema files and writes app/schema/types.d.mts, only rewriting
 // it when the generated content actually changed. bridge.v1.schema.json is not itself one schema —
 // per its own header comment it holds three independent schemas (command, result, status),
 // validated separately — so it produces three root types (BridgeV1Command, BridgeV1Result,
-// BridgeV1Status) rather than a single combined BridgeV1.
+// BridgeV1Status) rather than a single combined BridgeV1. bridge-trip.v1.schema.json is one schema,
+// the Organize trip command (BridgeTripV1).
 import { readFileSync, writeFileSync, mkdirSync, existsSync } from "node:fs";
 import { dirname, join, relative } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
@@ -271,6 +272,7 @@ export function buildSchemaTypes({ out = TYPES_OUT }: { out?: string } = {}): st
   const files = {
     scan: join(SCHEMA_DIR, "scan.v2.schema.json"),
     bridge: join(SCHEMA_DIR, "bridge.v1.schema.json"),
+    bridgeTrip: join(SCHEMA_DIR, "bridge-trip.v1.schema.json"),
     rules: join(SCHEMA_DIR, "rules.v1.schema.json"),
     profiles: join(SCHEMA_DIR, "profiles.v2.schema.json"),
   };
@@ -282,6 +284,7 @@ export function buildSchemaTypes({ out = TYPES_OUT }: { out?: string } = {}): st
     schemaToTypeSource("BridgeV1Command", bridgeDoc.command),
     schemaToTypeSource("BridgeV1Result", bridgeDoc.result),
     schemaToTypeSource("BridgeV1Status", bridgeDoc.status),
+    schemaToTypeSource("BridgeTripV1", readJson(files.bridgeTrip)),
     schemaToTypeSource("RulesV1", readJson(files.rules)),
     schemaToTypeSource("ProfilesV2", readJson(files.profiles)),
   ];

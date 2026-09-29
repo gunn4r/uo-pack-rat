@@ -6,6 +6,8 @@
 #               above it (local-only overhead text) and mark the chest's tile for a few seconds
 #   grab      : same, then move the item into your backpack and verify it landed
 #   goto      : walk to the container
+#   trip      : Organize. Take up to 20 items from your labelled containers into your backpack, then
+#               put each one into the container it belongs in, reporting every step
 # Status (alive timestamp + last results) goes to bridge/tazuo/status.json for the app's indicator.
 # The data directory is `packrat-paths.json` beside this script, else $PACKRAT_DATA, else
 # ~/.pack-rat.
@@ -17,6 +19,9 @@
 # are refused, only containers are ever opened, grabs only ever pull from your own backpack/bank or
 # from the container chain the same command just opened, and a queue being written faster than a
 # person clicks stops the bridge outright.
+# A trip may only put away items this bridge took itself, never into your own pack, a corpse, a pack
+# a mobile carries, a trash container or a blacklisted one, and it halts between steps when the app
+# writes the stop flag.
 
 import API
 import json
@@ -58,6 +63,20 @@ def rfc3339_now():
     return time.strftime("%Y-%m-%dT%H:%M:%S", t) + tz
 
 
+def read_blacklist(path):
+    """The valid entries of <data directory>/scan-blacklist.json, the containers the player blacklisted
+    ({serial, name, addedAt, where?}). A bad entry is dropped, and a missing, unreadable or oversized
+    file reads as none: the list can only ever make a scan skip containers."""
+    try:
+        if os.path.getsize(path) > 256 * 1024:
+            return []
+        with open(path, "r", encoding="utf-8") as f:
+            doc = json.load(f)
+        return [e for e in doc if isinstance(e, dict) and type(e.get("serial")) is int and 0 < e["serial"] <= 0xFFFFFFFF]
+    except Exception:
+        return []
+
+
 ADAPTER_ID = "tazuo"
 ADAPTER_VERSION = "2.9.0"
 CAPABILITIES = {
@@ -65,13 +84,15 @@ CAPABILITIES = {
                "Ring", "Talisman", "Necklace", "Waist", "Torso", "Bracelet", "Tunic",
                "Earrings", "Arms", "Cloak", "Robe", "Skirt", "Legs"],
     "arms": True, "bank": True, "ground": True, "nested": True, "tooltips": "opl",
-    "bridge": ["highlight", "grab", "goto"],
+    "bridge": ["highlight", "grab", "goto", "trip"],
 }
 
 
 BRIDGE_DIR = os.path.join(data_dir(), "bridge", "tazuo")
 QUEUE = os.path.join(BRIDGE_DIR, "queue.jsonl")
 STATUS = os.path.join(BRIDGE_DIR, "status.json")
+STOP_FLAG = os.path.join(data_dir(), "bridge", "stop")   # POST /api/bridge/stop writes it; every trip clears it first
+BLACKLIST_PATH = os.path.join(data_dir(), "scan-blacklist.json")   # read at the start of every trip
 POLL_S = 0.5
 MAX_HOURS = 8
 REACH = 2                 # tiles: containers open only when this close
@@ -83,6 +104,8 @@ HIGHLIGHT_S = 8
 HIGHLIGHT_HUE = 53        # bright yellow-green
 MARK_HUE = 53
 ALARM_HUE, OK_HUE, INFO_HUE = 33, 68, 88
+PACK_MAX_ITEMS = 125      # a backpack's item cap (ServUO's Container default MaxItems)
+TAKE_DROP = (60, 90)      # where a trip drops what it takes, inside the backpack window: a drop at a spot never stacks
 
 # ---- untrusted input ---------------------------------------------------------------------------
 # <dataDir>/bridge/<adapter>/queue.jsonl is an ordinary file: the app writes it, but so can any
@@ -110,6 +133,10 @@ MAP_MAX_Y = 4096
 MAP_MIN_Z = -128
 MAP_MAX_Z = 127
 MAX_FACET = 5              # 0 Felucca, 1 Trammel, 2 Ilshenar, 3 Malas, 4 Tokuno, 5 Ter Mur
+MAX_TRIP_TAKES = 20        # app/organize.mts's tripItems default: one trip is one click
+MAX_TRIP_PUTS = 40         # this trip's own puts plus leftovers from a stopped one ("Put them away")
+MAX_TRIP_NAME = 40         # app/bridge-trip.mts cuts every name in a trip to this
+MAX_TRIP_INDEX = 10000     # the trip's number in its plan, only ever printed on screen
 
 
 def days_from_civil(y, m, d):
@@ -181,15 +208,36 @@ def check_pos(pos):
     return out, ""
 
 
-def check_command(cmd, actions, now_s):
-    """Validate one parsed queue line against the bridge v1 contract. Returns (command, reason)."""
-    if not isinstance(cmd, dict):
-        return None, "queue line is not a JSON object"
+def check_id(cmd):
+    """The command's id, or why it has none the page could match a result to. Returns (id, reason)."""
     cid = cmd.get("id")
     if not isinstance(cid, str) or not cid:
         return None, "command has no id"
     if len(cid) > MAX_ID:
         return None, "command id is longer than {0} characters".format(MAX_ID)
+    return cid, ""
+
+
+def check_age(queued_at, now_s):
+    """"" when a queuedAt stamp is fresh enough to run, else why not."""
+    queued = parse_rfc3339(queued_at)
+    if queued is None:
+        return "queuedAt is missing or unreadable"
+    age = now_s - queued
+    if age > MAX_AGE_S:
+        return "expired: queued {0}s ago, not run".format(int(age))
+    if age < -CLOCK_SKEW_S:
+        return "expired: queued in the future, not run"
+    return ""
+
+
+def check_command(cmd, actions, now_s):
+    """Validate one parsed queue line against the bridge v1 contract. Returns (command, reason)."""
+    if not isinstance(cmd, dict):
+        return None, "queue line is not a JSON object"
+    cid, why = check_id(cmd)
+    if why:
+        return None, why
     if cmd.get("action") not in actions:
         return None, "unknown action"
     if not is_serial(cmd.get("serial")):
@@ -212,14 +260,9 @@ def check_command(cmd, actions, now_s):
         name = ""
     if not isinstance(name, str):
         return None, "name is not a string"
-    queued = parse_rfc3339(cmd.get("queuedAt"))
-    if queued is None:
-        return None, "queuedAt is missing or unreadable"
-    age = now_s - queued
-    if age > MAX_AGE_S:
-        return None, "expired: queued {0}s ago, not run".format(int(age))
-    if age < -CLOCK_SKEW_S:
-        return None, "expired: queued in the future, not run"
+    why = check_age(cmd.get("queuedAt"), now_s)
+    if why:
+        return None, why
     return {"id": cid, "action": cmd["action"], "serial": int(cmd["serial"]),
             "name": name[:MAX_NAME], "chain": [int(c) for c in chain], "pos": pos}, ""
 
@@ -290,6 +333,105 @@ def chain_problem(chain, i, it, own):
     return ""
 
 
+def check_path(path, what):
+    """A container path [root, ...bags]: 1 to MAX_CHAIN serials. Returns (path, reason)."""
+    if not isinstance(path, list) or not path:
+        return None, what + " is not a list of containers"
+    if len(path) > MAX_CHAIN:
+        return None, "{0} is longer than {1} containers".format(what, MAX_CHAIN)
+    for c in path:
+        if not is_serial(c):
+            return None, what + " holds something that is not a container serial"
+    return [int(c) for c in path], ""
+
+
+def check_steps(entries, key, limit, roots, what):
+    """A trip's takes (key "chain") or puts (key "dest"): at most `limit` objects {serial, name, key},
+    no serial twice, each path starting at a container `roots` places. Returns (steps, reason)."""
+    if not isinstance(entries, list):
+        return None, what + " is not a list"
+    if len(entries) > limit:
+        return None, "{0} has more than {1} entries".format(what, limit)
+    out = []
+    seen = set()
+    for e in entries:
+        if not isinstance(e, dict):
+            return None, what + " holds something that is not an object"
+        if not is_serial(e.get("serial")):
+            return None, what + " holds a serial that is not an item serial"
+        serial = int(e["serial"])
+        if serial in seen:
+            return None, "{0} names 0x{1:x} twice".format(what, serial)
+        seen.add(serial)
+        path, why = check_path(e.get(key), what + " " + key)
+        if why:
+            return None, why
+        if path[0] not in roots:
+            return None, "{0} {1} starts at 0x{2:x}, which roots does not place".format(what, key, path[0])
+        name = e.get("name")
+        if name is None:
+            name = ""
+        if not isinstance(name, str):
+            return None, what + " holds a name that is not a string"
+        out.append({"serial": serial, "name": name[:MAX_TRIP_NAME], key: path})
+    return out, ""
+
+
+def check_trip(cmd, now_s):
+    """Validate one parsed trip line (app/schema/bridge-trip.v1.schema.json). Returns (trip, reason);
+    roots come back keyed by int serial, every name cut to MAX_TRIP_NAME, and queuedAt as `queued`
+    (epoch seconds, fraction dropped) for the stop flag's age check."""
+    if not isinstance(cmd, dict):
+        return None, "queue line is not a JSON object"
+    cid, why = check_id(cmd)
+    if why:
+        return None, why
+    if cmd.get("action") != "trip":
+        return None, "unknown action"
+    index = cmd.get("index")
+    if not isinstance(index, int) or isinstance(index, bool) or index < 1 or index > MAX_TRIP_INDEX:
+        return None, "index is not a trip number"
+    stamp = cmd.get("stamp")
+    if not isinstance(stamp, str) or not stamp or len(stamp) > MAX_ID:
+        return None, "stamp is not a plan stamp"
+    raw = cmd.get("roots")
+    if not isinstance(raw, dict) or len(raw) > MAX_TRIP_TAKES + MAX_TRIP_PUTS:
+        return None, "roots is not an object of at most {0} containers".format(MAX_TRIP_TAKES + MAX_TRIP_PUTS)
+    roots = {}
+    for key in raw:
+        if not isinstance(key, str) or not key or len(key) > 10 or [ch for ch in key if ch not in "0123456789"]:
+            return None, "roots has a key that is not a container serial"
+        if not is_serial(int(key)):
+            return None, "roots has a key that is not a container serial"
+        pos, why = check_pos(raw[key])
+        if why:
+            return None, "roots: " + why
+        if pos is None:
+            return None, "roots gives 0x{0:x} no position".format(int(key))
+        roots[int(key)] = pos
+    takes, why = check_steps(cmd.get("takes"), "chain", MAX_TRIP_TAKES, roots, "takes")
+    if why:
+        return None, why
+    puts, why = check_steps(cmd.get("puts"), "dest", MAX_TRIP_PUTS, roots, "puts")
+    if why:
+        return None, why
+    if not takes and not puts:
+        return None, "trip has nothing to do"
+    why = check_age(cmd.get("queuedAt"), now_s)
+    if why:
+        return None, why
+    return {"id": cid, "action": "trip", "index": index, "stamp": stamp, "name": "#{0}".format(index),
+            "queued": parse_rfc3339(cmd.get("queuedAt")), "roots": roots, "takes": takes, "puts": puts}, ""
+
+
+def check_line(cmd, actions, now_s):
+    """A trip goes to check_trip on a bridge that runs trips; everything else, and a trip on a bridge
+    that does not, goes to check_command, which refuses an action the bridge lacks."""
+    if isinstance(cmd, dict) and cmd.get("action") == "trip" and "trip" in actions:
+        return check_trip(cmd, now_s)
+    return check_command(cmd, actions, now_s)
+
+
 # ---- end of the untrusted-input section --------------------------------------------------------
 
 # Container detection, copied verbatim from packrat-scanner.py (adapters/test_adapters.py asserts
@@ -304,6 +446,10 @@ CONTAINER_RE = re.compile(r"\b(chest|box|toolbox|crate|bag|pouch|basket|trunk|ar
 NOT_A_CONTAINER_RE = re.compile(r"\b(deed(?!\s+box)|sending|music box|\w*book|tome|atlas|compendium)\b", re.I)   # a "Commodity Deed Box" IS one
 # The books by graphic too, whatever they are called (ServUO's item classes; the first three seen live).
 NOT_A_CONTAINER_GRAPHICS = {0x0EFA, 0x2D50, 0x2D9D, 0x2252, 0x2253, 0x225A, 0x225B, 0x238C, 0x23A0, 0x22C5, 0x9C16}
+# A trash barrel or chest is a real container, but the server deletes its contents on a timer, so
+# nothing in one is worth recording. Never opened, never recorded, contents included. By name only:
+# a trash barrel has the same graphic as an ordinary barrel.
+TRASH_RE = re.compile(r"\btrash\b", re.I)
 # A piece of armour or clothing is never a container, however its name reads ("Platemail Chest"). No
 # "gargish" here: a Gargish Chest is a real container; gargoyle armour is caught by the client's
 # own wearable flag instead.
@@ -317,6 +463,7 @@ CONTAINER_GRAPHICS = {0x0E75, 0x0E76, 0x0E79, 0x0E7D, 0x09AA, 0x09A8, 0x09A9, 0x
 results = {}              # id -> {ok, msg}
 counts = {"done": 0, "failed": 0}
 last_status = {"current": None, "at": 0.0}
+carried = set()           # serials this bridge took on a trip and has not yet put away: a put may only name one
 
 
 def is_container(item, name):
@@ -352,6 +499,21 @@ def is_container(item, name):
     return bool(CONTAINER_RE.search(name or ""))
 
 
+def tooltip_lines(serial):
+    try:
+        data = API.ItemNameAndProps(int(serial), True)
+    except Exception:
+        data = None
+    return [ln.strip() for ln in str(data or "").splitlines() if ln.strip()]
+
+
+def is_trash(serial, name):
+    """A container is trash by its tooltip name ("A Trash Barrel"): the client's own cached name for the
+    art may be just "barrel". The cached name is the fallback when the tooltip reads nothing."""
+    lines = tooltip_lines(serial)
+    return bool(TRASH_RE.search(lines[0] if lines else name or ""))
+
+
 def sysmsg(msg, hue=OK_HUE):
     API.SysMsg(msg, hue)
 
@@ -374,9 +536,12 @@ def heartbeat():
         write_status(last_status["current"])
 
 
-def record(cid, ok, msg):
-    """One result, trimmed in memory so the final whole-dict status write is bounded too."""
+def record(cid, ok, msg, extra=None):
+    """One result, trimmed in memory so the final whole-dict status write is bounded too. A trip adds
+    `extra` ({steps, partial, stopped})."""
     results[cid] = {"ok": bool(ok), "msg": str(msg), "t": rfc3339_now()}
+    if extra:
+        results[cid].update(extra)
     for old in list(results.keys())[:-MAX_RESULTS]:
         results.pop(old, None)
     counts["done" if ok else "failed"] += 1
@@ -459,16 +624,18 @@ def walk_to(pos, root_serial):
     return it is not None and dist_to(it.X, it.Y) <= REACH
 
 
-def open_chain(chain):
+def open_chain(chain, own=None, check=None):
     """Open root, then each nested bag in order. Returns (ok, message). Each entry is checked against
-    the live client before it is double-clicked: the root must be on the ground or your own backpack
-    or bank, and each bag must really sit inside the one opened before it (chain_problem)."""
-    own = own_roots([])
+    the live client before it is double-clicked: the root must be on the ground or one of `own` (your
+    backpack and bank unless the caller says otherwise; a trip's put passes none), each bag must really
+    sit inside the one opened before it (chain_problem), and `check(i, item)` may refuse an entry for a
+    reason of the caller's own."""
+    own = own_roots([]) if own is None else own
     for i, c in enumerate(chain):
         it = find(c)
         if it is None:
             return False, f"container {i + 1}/{len(chain)} (0x{int(c):x}) is not in view — walk there and try again"
-        why = chain_problem(chain, i, it, own)
+        why = chain_problem(chain, i, it, own) or (check(i, it) if check else "")
         if why:
             return False, why
         if not is_container(it, str(getattr(it, "Name", "") or "")):
@@ -536,11 +703,231 @@ def do_grab(cmd):
     return False, f"move bounced for {name} (too far, or backpack full?)"
 
 
+def stop_requested():
+    """The Script Manager's Stop, or Organize's Stop button (the flag POST /api/bridge/stop writes)."""
+    return bool(API.StopRequested) or os.path.isfile(STOP_FLAG)   # a directory there cannot be cleared: ignored
+
+
+def clear_stop():
+    try:
+        os.remove(STOP_FLAG)
+    except OSError:
+        pass
+
+
+def pack_count(pack):
+    """Items in the backpack, nested ones included, the way the server counts them toward its cap."""
+    count = getattr(API, "Contents", None)       # the Legion stub can be ahead of the running client
+    if count is not None:
+        try:
+            return int(count(pack))
+        except Exception:
+            pass
+    try:
+        return len(API.ItemsInContainer(pack, True) or [])
+    except Exception:
+        return 0
+
+
+def stones_of(it):
+    """What taking `it` adds to the character's load: tiledata weight times amount, 1 a unit when unknown."""
+    try:
+        per = int(getattr(it.GetItemData(), "Weight", 0) or 0)
+    except Exception:
+        per = 0
+    if per <= 0 or per >= 255:
+        per = 1
+    try:
+        amount = max(1, int(getattr(it, "Amount", 1) or 1))
+    except Exception:
+        amount = 1
+    return per * amount
+
+
+def room_for(it, pack):
+    """Whether the backpack takes one more item and the character one more load, read live. A client
+    that reports no weight leaves only the item cap."""
+    if pack_count(pack) + 1 > PACK_MAX_ITEMS:
+        return False
+    try:
+        most = int(API.Player.WeightMax)
+        now = int(API.Player.Weight)
+    except Exception:
+        return True
+    return most <= 0 or stones_of(it) <= most - now
+
+
+def refuse_dest(dest, i, it, blacklist):
+    """Why a put must not open or fill dest[i], beyond open_chain's own checks: blacklisted (the player
+    told Pack Rat to leave it alone), not a container (a corpse), or trash (the server deletes what
+    goes in). A trash barrel's cached name can be plain "barrel", so a tooltip that reads nothing is
+    refused too rather than trusted."""
+    c = dest[i]
+    name = str(getattr(it, "Name", "") or "")
+    if c in blacklist:
+        return f"refused: 0x{c:x} is blacklisted — Pack Rat never opens it"
+    if not is_container(it, name):
+        return f"refused: 0x{c:x} is not a container — the bridge only ever opens containers"
+    if not tooltip_lines(c):
+        return f"refused: 0x{c:x}'s name did not load, so it may be a trash container — try again"
+    if is_trash(c, name):
+        return f"refused: 0x{c:x} is a trash container — the server deletes what goes in"
+    return ""
+
+
+def merged_into(container, graphic, hue):
+    """Whether `container` holds a stack the dropped item could have merged onto (same graphic and hue):
+    a drop with no spot stacks, and the dropped item's own serial then disappears."""
+    try:
+        kids = API.ItemsInContainer(int(container), False) or []
+    except Exception:
+        return False
+    for k in kids:
+        try:
+            if int(k.Graphic) == graphic and int(getattr(k, "Hue", 0) or 0) == hue:
+                return True
+        except Exception:
+            pass
+    return False
+
+
+def do_take(t, roots, blacklist):
+    """One take: the grab path, but dropped at an explicit spot in the backpack. Returns (ok, msg, full),
+    full meaning the backpack or the character cannot take it, which ends the trip's takes."""
+    serial, chain = t["serial"], t["chain"]
+    name = t["name"] or "item"
+    for c in chain:
+        if c in blacklist:
+            return False, f"refused: 0x{c:x} is blacklisted — Pack Rat never opens it", False
+    # A take starts on the ground, never in your own backpack or bank: an item taken there joins the
+    # carried set, and a put could then move anything you carry into any chest in reach.
+    root = find(chain[0])
+    why = chain_problem(chain, 0, root, set()) if root is not None else ""
+    if why:
+        return False, why, False
+    if not walk_to(roots.get(chain[0]), chain[0]):
+        return False, "could not reach the container (not in view / too far / no path) — walk closer and retry", False
+    ok, msg = open_chain(chain, own=set())
+    if not ok:
+        return False, msg, False
+    it = find(serial)
+    if it is None:
+        return False, f"{name} is not in that container any more — rescan", False
+    if int(getattr(it, "Container", 0) or 0) != chain[-1]:
+        return False, f"refused: {name} is not inside the container the plan named — rescan", False
+    pack = int(API.Backpack)
+    if not room_for(it, pack):
+        return False, f"your backpack cannot take {name} — trip cut short", True
+    # Dropped at a spot, a stack never merges into a matching stack already in the pack, so it keeps
+    # the serial this trip's put names.
+    API.MoveItem(serial, pack, 0, TAKE_DROP[0], TAKE_DROP[1])
+    API.Pause(1.2)
+    it2 = find(serial)
+    if it2 is not None and int(getattr(it2, "Container", 0) or 0) == pack:
+        carried.add(serial)
+        return True, f"took {name}", False
+    return False, f"move bounced for {name} (too far, or backpack full?)", False
+
+
+def do_put(p, roots, blacklist):
+    """One put, the only step that moves an item somewhere other than your backpack, so it is fenced:
+    only an item this bridge took (the carried set), from the top of your backpack, into a container
+    chain whose root lies on the ground (open_chain with no own roots: never your pack, never a pack a
+    mobile carries), none of it blacklisted, a corpse or trash (refuse_dest), checked before any walk
+    where the client already knows the root."""
+    serial, dest = p["serial"], p["dest"]
+    name = p["name"] or "item"
+    if serial not in carried:
+        return False, f"refused: {name} was not taken by this bridge — put it away by hand"
+    pack = int(API.Backpack)
+    it = find(serial)
+    if it is None or int(getattr(it, "Container", 0) or 0) != pack:
+        carried.discard(serial)
+        return False, f"{name} is no longer at the top of your backpack"
+    for c in dest:
+        if c in blacklist:
+            return False, f"refused: 0x{c:x} is blacklisted — Pack Rat never opens it"
+    root = find(dest[0])
+    if root is not None:
+        why = chain_problem(dest, 0, root, set()) or refuse_dest(dest, 0, root, blacklist)
+        if why:
+            return False, why
+    if not walk_to(roots.get(dest[0]), dest[0]):
+        return False, "could not reach the container (not in view / too far / no path) — walk closer and retry"
+    ok, msg = open_chain(dest, own=set(), check=lambda i, x: refuse_dest(dest, i, x, blacklist))
+    if not ok:
+        return False, msg
+    graphic, hue = int(getattr(it, "Graphic", 0) or 0), int(getattr(it, "Hue", 0) or 0)
+    API.MoveItem(serial, dest[-1])
+    API.Pause(1.2)
+    it2 = find(serial)
+    if it2 is not None and int(getattr(it2, "Container", 0) or 0) == dest[-1]:
+        carried.discard(serial)
+        return True, f"put {name} away"
+    if it2 is None and merged_into(dest[-1], graphic, hue):
+        carried.discard(serial)
+        return True, f"put {name} away (onto a stack)"
+    return False, f"{name} bounced (full, or refused) — it is still in your backpack"
+
+
+def do_trip(cmd):
+    """Organize: every take, then every put, one step at a time, the stop flag checked before each.
+    A take the backpack cannot hold ends the takes (partial), and a put of an item this trip meant to
+    take but did not is skipped. Returns (ok, msg, {"steps", "partial", "stopped"})."""
+    # A flag written after this trip was queued is a Stop pressed while the trip waited its turn, and
+    # is honoured; an older one is left over from before and only cleared. `queued` is whole seconds,
+    # so a Stop pressed up to a second before the trip was queued also counts: the safe side.
+    try:
+        stopped = os.path.isfile(STOP_FLAG) and os.path.getmtime(STOP_FLAG) >= cmd["queued"]
+    except OSError:
+        stopped = False
+    clear_stop()
+    blacklist = set(e["serial"] for e in read_blacklist(BLACKLIST_PATH))
+    serials = set(t["serial"] for t in cmd["takes"]) | set(p["serial"] for p in cmd["puts"])
+    sysmsg(f"Pack Rat organize: trip {cmd['index']}, {len(serials)} items", INFO_HUE)
+    roots = cmd["roots"]
+    steps, took = [], set()
+    partial = False
+    for t in cmd["takes"]:
+        if stopped or stop_requested():
+            stopped = True
+            break
+        ok, msg, full = do_take(t, roots, blacklist)
+        steps.append({"op": "take", "serial": t["serial"], "ok": bool(ok), "msg": msg})
+        heartbeat()
+        if ok:
+            took.add(t["serial"])
+        if full:
+            partial = True
+            break
+    planned = set(t["serial"] for t in cmd["takes"])
+    for p in cmd["puts"]:
+        if stopped or stop_requested():
+            stopped = True
+            break
+        if p["serial"] in planned and p["serial"] not in took:
+            steps.append({"op": "put", "serial": p["serial"], "ok": False, "msg": "skipped: not taken on this trip"})
+            continue
+        ok, msg = do_put(p, roots, blacklist)
+        steps.append({"op": "put", "serial": p["serial"], "ok": bool(ok), "msg": msg})
+        heartbeat()
+    put_away = sum(1 for s in steps if s["op"] == "put" and s["ok"])
+    failed = sum(1 for s in steps if not s["ok"])
+    msg = f"trip {cmd['index']}: {put_away} put away, {failed} step{'' if failed == 1 else 's'} failed"
+    if partial:
+        msg += " — backpack full, trip cut short"
+    if stopped:
+        msg += " — stopped"
+    return failed == 0 and not partial and not stopped, msg, {"steps": steps, "partial": partial, "stopped": stopped}
+
+
 def run(cmd):
     action = cmd["action"]
-    chain = cmd["chain"]
     if action not in CAPABILITIES["bridge"]:
         return False, "unknown action"
+    if action == "trip":
+        return do_trip(cmd)
+    chain = cmd["chain"]
     if chain:
         root = find(chain[0])
         why = chain_problem(chain, 0, root, own_roots([])) if root is not None else ""
@@ -608,7 +995,7 @@ def main():
                         except Exception:
                             bad += 1
                             continue
-                        cmd, why = check_command(parsed, CAPABILITIES["bridge"], time.time())
+                        cmd, why = check_line(parsed, CAPABILITIES["bridge"], time.time())
                         cid = parsed.get("id") if isinstance(parsed, dict) else None
                         if not isinstance(cid, str) or not cid or len(cid) > MAX_ID:
                             bad += 1                     # no id the page could match a result to
@@ -645,10 +1032,10 @@ def main():
                 sysmsg(f"bridge: {cmd['action']} {cmd['name']}", INFO_HUE)
                 write_status({"id": cmd["id"], "action": cmd["action"], "name": cmd["name"]})
                 try:
-                    ok, msg = run(cmd)
+                    out = run(cmd)
                 except Exception as e:
-                    ok, msg = False, f"error: {e}"
-                record(cmd["id"], ok, msg)
+                    out = (False, f"error: {e}")
+                record(cmd["id"], *out)
                 write_status(None)
             except Exception as e:
                 sysmsg(f"bridge: {cmd['action']} failed: {e}", ALARM_HUE)

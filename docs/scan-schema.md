@@ -69,7 +69,7 @@ Unbounded on purpose: the number of `items`, `containers`, `roots` and `equipped
 | `ground` | boolean | Can this adapter read containers sitting on the ground? |
 | `nested` | boolean | Can this adapter recurse into bags inside bags? |
 | `tooltips` | string, `"opl"` or `"label"` | Whether item text comes from the client's full on-paperdoll-line tooltip (`"opl"`, every property line readable) or just the bare name label (`"label"`, no properties). |
-| `bridge` | array of strings | Which bridge actions (`"highlight"`, `"grab"`, `"goto"`) this adapter's bridge script can execute — see `docs/bridge-protocol.md`. Empty for an adapter that ships no bridge. |
+| `bridge` | array of strings | Which bridge actions (`"highlight"`, `"grab"`, `"goto"`, and `"trip"` for Organize) this adapter's bridge script can execute — see `docs/bridge-protocol.md`. Empty for an adapter that ships no bridge. |
 
 The page does not read this per scan: which Highlight/Grab/Go-to buttons are enabled is one global decision taken from the configured client's own `capabilities.json` (`app/ui/bridge.mts`'s `currentAdapter` and `bridgeActionReason`; `docs/architecture.md`'s "Capability-driven bridge controls"), since only one client is connected at a time. The bridge script itself is still the final word on what it will actually do.
 

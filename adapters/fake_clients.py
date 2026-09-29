@@ -84,8 +84,8 @@ class Item(object):
         return ContainerGump(w, self) if self.Opened else None
 
     def GetItemData(self):
-        """TazUO's ApiItem.GetItemData(): the item's tiledata flags (only IsWearable is modelled)."""
-        return types.SimpleNamespace(IsWearable=bool(getattr(self, "Wearable", False)))
+        """TazUO's ApiItem.GetItemData(): the item's tiledata flags and per-unit weight (`Stones`, 1 when unset)."""
+        return types.SimpleNamespace(IsWearable=bool(getattr(self, "Wearable", False)), Weight=getattr(self, "Stones", 1))
 
 
 class ContainerGump(object):
@@ -171,7 +171,8 @@ class World(object):
 def tazuo_api(world, backpack, bank=0, skills=None):
     api = types.ModuleType("API")
     player = types.SimpleNamespace(Name="Tester", X=world.px, Y=world.py, Strength=50, Dexterity=50,
-                                   Intelligence=50, HitsMax=1, StaminaMax=1, ManaMax=1)
+                                   Intelligence=50, HitsMax=1, StaminaMax=1, ManaMax=1,
+                                   Weight=0, WeightMax=getattr(world, "weight_max", 400))
     api.Player = player
     api.Backpack = backpack
     api.Bank = bank
@@ -195,6 +196,7 @@ def tazuo_api(world, backpack, bank=0, skills=None):
     api.FindLayer = lambda layer: None
     api.UseObject = lambda s, *a: world.open(int(s))
     api.ItemsInContainer = lambda s, recursive=False: world.kids(int(s), recursive)
+    api.Contents = lambda s: len(world.kids(int(s), True))
     api.GetItemsOnGround = lambda r: [it for it in world.items.values() if it.OnGround and world.dist(it.X, it.Y) <= r]
     api.ItemNameAndProps = lambda s, b=False: getattr(world.items[int(s)], "Tooltip", None) or world.items[int(s)].Name
     api.RequestOPLData = lambda serials: None
@@ -207,8 +209,30 @@ def tazuo_api(world, backpack, bank=0, skills=None):
     api.GetSkill = get_skill
 
     def move(s, dst, *a):
-        world.calls.append(("move", int(s), int(dst)))
-        world.items[int(s)].Container = int(dst)
+        """The server's drop: `refuse` bounces it (a full or locked container), a drop with no spot
+        stacks onto a matching stack when `merges` is set, and the player's weight follows the pack.
+        `on_move(serial, dst)` runs first, like a click the player makes mid-trip."""
+        s, dst = int(s), int(dst)
+        world.calls.append(("move", s, dst) + tuple(a))
+        hook = getattr(world, "on_move", None)
+        if hook is not None:
+            hook(s, dst)
+        if dst in getattr(world, "refuse", ()):
+            return
+        it = world.items[s]
+        stones = getattr(it, "Stones", 1) * max(1, it.Amount)
+        if it.Container == backpack:
+            player.Weight -= stones
+        if dst == backpack:
+            player.Weight += stones
+        if getattr(world, "merges", False) and not a:
+            same = [k for k in world.items.values()
+                    if k.Container == dst and k.Serial != s and (k.Graphic, k.Hue) == (it.Graphic, it.Hue)]
+            if same:
+                same[0].Amount += it.Amount
+                del world.items[s]
+                return
+        it.Container = dst
     api.MoveItem = move
 
     def walk_to(x, y, wait, timeout):
