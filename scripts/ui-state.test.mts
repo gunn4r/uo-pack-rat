@@ -679,3 +679,27 @@ test("[slow] a ground container is blacklisted from Containers and unblacklisted
     rmSync(dataDir, { recursive: true, force: true });
   }
 });
+
+// Rarity at most (issue #11): the Rarity popover's second list caps the tier. The strip and the chip say
+// so, and every tier left in the table is the one picked or a lower one.
+test("[slow] Rarity at most keeps the tier picked and the ones below it", async (t) => {
+  const why = unavailable();
+  if (why) return t.skip(why);
+  const dataDir = seedDataDir("packrat-ui-raritymax-");
+  const { app, page, errors } = await launch(dataDir);
+  try {
+    await page.locator("#inv-table tbody tr.item").first().waitFor({ timeout: 30_000 });
+    await openFacet(page, "rarity", "Rarity");
+    await page.locator(".pop").getByRole("radiogroup", { name: "Rarity at most" }).locator('input[value="Lesser Magic Item"]').click();
+    await waitCount(page, / of /);
+    assert.ok((await page.locator("#inv-active .token").allInnerTexts()).some((s) => s.includes("Rarity ≤ Lesser Magic Item")), "the strip names the ceiling");
+    if (await page.locator("#f-rarity").isVisible()) assert.match(await page.locator("#f-rarity").innerText(), /Rarity ≤ Lesser Magic/);
+    for (const tier of await page.locator("#inv-table tbody tr.item .rar-tier").allInnerTexts()) {
+      assert.ok(["Minor Magic Item", "Lesser Magic Item"].includes(tier.trim()), `a ${tier} row is above the ceiling`);
+    }
+    assert.deepEqual(errors, []);
+  } finally {
+    await app.close();
+    rmSync(dataDir, { recursive: true, force: true });
+  }
+});
