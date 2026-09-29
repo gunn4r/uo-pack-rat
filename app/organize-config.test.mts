@@ -84,14 +84,17 @@ test("[fast] salvageOrganizeConfig keeps what still makes sense in a hand-edited
   assert.equal(again.ok, true, again.ok ? "" : again.error);
 });
 
-test("[fast] salvage: a label dropped takes the rules that name it with it", () => {
+test("[fast] salvage: a label dropped costs the rules that name it that target only, so their items never fall through to the catch-all", () => {
   const doc = full();
   doc.labels[String(A)]!.color = "blue";
   const { config, problems } = salvageOrganizeConfig(doc);
   assert.deepEqual(Object.keys(config.labels).map(Number).sort((a, b) => a - b), [B, P]);
-  assert.deepEqual(config.rules, [], "r1 fills A; r2's chain names A");
+  assert.deepEqual(config.rules.map((r) => [r.id, r.targets]), [["r1", []], ["r2", [B]]]);
   assert.equal(config.catchAll, B);
   assert.equal(problems.length, 3, problems.join("\n"));
+  assert.match(problems.join("\n"), /rules\[0\]\.targets: \d+ is not a labelled container; target dropped/);
+  const again = checkOrganizeConfig(config);
+  assert.equal(again.ok, true, again.ok ? "" : again.error);
 });
 
 test("[fast] salvage: anything that is not a version 1 Organize file starts empty", () => {

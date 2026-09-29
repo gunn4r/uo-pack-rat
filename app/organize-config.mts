@@ -145,9 +145,18 @@ export function salvageOrganizeConfig(raw: unknown): { config: OrganizeConfig; p
       const p = labelProblem(key, v);
       if (p) problems.push(`${p}; label dropped`); else config.labels[key] = v as ContainerLabel;
     }
+    if (Object.keys(raw.labels).length > LIMITS.labels) problems.push(`labels past the first ${LIMITS.labels} dropped`);
   } else if (raw.labels !== undefined) problems.push("labels must be an object; every label dropped");
   if (Array.isArray(raw.rules)) {
-    for (const [i, r] of raw.rules.slice(0, LIMITS.rules).entries()) {
+    for (const [i, entry] of raw.rules.slice(0, LIMITS.rules).entries()) {
+      // A target that is no longer a usable label (its label was dropped above, say) costs the rule that target,
+      // not the whole rule.
+      let r = entry;
+      if (isObj(r) && Array.isArray(r.targets)) {
+        const bad = r.targets.map((t) => containerProblem(t, config.labels, `rules[${i}].targets`)).filter((p): p is string => p !== null);
+        for (const p of bad) problems.push(`${p}; target dropped`);
+        if (bad.length) r = { ...r, targets: r.targets.filter((t) => !containerProblem(t, config.labels, "")) };
+      }
       const p = ruleProblem(r, i, config.labels) ?? (config.rules.some((x) => x.id === (r as OrganizeRule).id) ? `rules[${i}].id is used twice` : null);
       if (p) problems.push(`${p}; rule dropped`); else config.rules.push(r as OrganizeRule);
     }
