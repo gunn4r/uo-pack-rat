@@ -76,7 +76,7 @@ The routine:
 
 - **First time on a character, or when your chests change:** stand next to a group of chests and run the scanner; repeat at each group. For your bank, open the bank box and run it there.
 - **After gearing up or training:** run the quick refresh.
-- **To find or fetch an item:** start the bridge, then use the buttons on the item in **Inventory** or **Suit Builder**. **Highlight** marks it and its container in game, **Go to** walks you to its chest, **Grab** walks there and puts it in your backpack.
+- **To find or fetch an item:** start the bridge, then use the buttons on the item in **Inventory** or **Suit Builder**. **Highlight** marks it and its container in game, **Go to** walks you to its chest, **Grab** walks there and puts it in your backpack. To find a chest itself, use **Highlight in game** in its ⋯ menu under Inventory › Containers.
 
 Scans show up in **Inventory** within a few seconds; you don't have to press anything in the app. **Characters** shows each character's sheet and paperdoll, and **Suit Builder** finds the best suit for a character from everything you own, with saved runs you can reopen and compare.
 

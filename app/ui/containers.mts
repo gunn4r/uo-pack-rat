@@ -1,6 +1,7 @@
 // ui/containers.mts — the Inventory screen's Containers view (design spec 4.2): every scanned root
 // container in the same dense table the Items view uses, grouped by character with the ground
 // containers last, a Fill column (each container's Contents line), and a row "⋯" menu with "Show these items",
+// "Highlight in game" (ground containers; the bridge's highlight with the container as its target, issue #10),
 // "Label…" / "Edit label…" (ground containers not blacklisted; Organize, issue #11), "Blacklist…" (ground
 // containers) and "Forget…". A container labelled for Organize shows its label, colour and Pinned. The Forget and Blacklist handlers call `reload` from app.mts — a module cycle (containers
 // ↔ app) that is fine here since both are function declarations only called after bootstrap. reload(),
@@ -18,6 +19,7 @@ import { withLabel, withoutLabel, LABEL_COLOURS, fillTone } from "./organize-mod
 import { plural } from "./inv-model.mts";
 import { reload } from "./app.mts";
 import { showContainer, splitSerial } from "./inventory.mts";
+import { bridgeActionReason, runBridgeAction } from "./bridge.mts";
 import type { ForgetApiResponse } from "./api-types.mts";
 
 const KIND_NAMES: Record<string, string> = { backpack: "Backpack", bank: "Bank", ground: "On the ground" };
@@ -123,8 +125,11 @@ export function renderContainers(): void {
       const swatch = lab?.color ? el("span", { class: "org-swatch", style: `background:${safeColor(lab.color)}`, "aria-hidden": "true" }) : null;
       const bags = Object.values(inv.containers).filter((c) => c.root === r.serial && c.parent != null).length;
       const canLabel = r.kind === "ground" && !state.organize.blacklist.includes(+r.serial);
+      // The container is the target: overhead in game it reads as its Organize label, else its own name.
+      const target = { serial: +r.serial, name: lab?.name ?? bagLabel(r), container: r.parent ?? null, root: r.root };
       const more = button({ label: `Actions for ${label}`, icon: "more", iconOnly: true, variant: "ghost", size: "sm", onClick: () => menu(more, [
         { label: "Show these items", icon: "inventory", onSelect: () => showContainer(+r.serial) },
+        ...(r.kind === "ground" ? [{ label: "Highlight in game", icon: "highlight" as const, disabled: bridgeActionReason("highlight", target), onSelect: () => { void runBridgeAction("highlight", target); } }] : []),
         ...(canLabel ? [{ label: lab ? "Edit label…" : "Label…", onSelect: () => { void labelContainer(r); } }] : []),
         ...(r.kind === "ground" ? [{ label: "Blacklist…", onSelect: () => { void blacklist(r, label, n); } }] : []),
         { label: "Forget…", danger: true, onSelect: () => { forget(r, label, n); } },

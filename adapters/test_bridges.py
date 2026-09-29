@@ -147,6 +147,14 @@ class BridgeCase(object):
         self.assertFalse(final["results"]["g1"]["ok"])
         self.assert_heartbeat(writes)
 
+    def test_a_ground_container_highlighted_as_itself_is_marked_without_a_walk_or_an_open(self):
+        # The Containers view's Highlight in game (issue #10): the container is the serial, its chain empty.
+        w = home()
+        final, _ = self.run_bridge(w, 1, [self.cmd("c1", "highlight", CHEST, [], pos={"x": 11, "y": 10, "z": 0})])
+        self.assertTrue(final["results"]["c1"]["ok"], final["results"]["c1"])
+        self.assertEqual([c for c in w.calls if c[0] in ("walk", "open")], [])
+        self.assertEqual({c[1] for c in w.calls if c[0] in ("headmsg", "color") and c[1] is not None}, {CHEST})
+
     # ---- own backpack / bank ---------------------------------------------------------------------
 
     def test_a_grab_from_a_bag_in_the_backpack_needs_no_walk(self):
