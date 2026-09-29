@@ -61,13 +61,14 @@ export const tagTone = (t: string): "bad" | "warn" | undefined => (t === "cursed
 export const plural = (n: number, one: string, many = one + "s"): string => `${n} ${n === 1 ? one : many}`;
 // Durability watch (issue #98): a worn piece is low once its durability is at 20% of its max or at 10
 // points, so it can be repaired before it breaks mid-fight. The scan's "Durability 12 / 255" line is
-// extras.durability; no line, or a max of 0, is never low. Returns the tile's badge text, or null.
+// extras.durability; no line, a max of 0, or a piece at (or past) its max, which no repair would raise, is
+// never low. Returns the tile's badge text, or null.
 export const LOW_DURABILITY_SHARE = 0.2, LOW_DURABILITY_POINTS = 10;
 export function lowDurability(it: { extras?: ExtrasMap | undefined }): string | null {
   const d = it.extras?.durability;
   if (!Array.isArray(d)) return null;
   const [current, max] = d;
-  return max > 0 && (current / max <= LOW_DURABILITY_SHARE || current <= LOW_DURABILITY_POINTS) ? `Low durability ${current}/${max}` : null;
+  return current < max && (current / max <= LOW_DURABILITY_SHARE || current <= LOW_DURABILITY_POINTS) ? `Low durability ${current}/${max}` : null;
 }
 export const lowDurabilityCount = (worn: Array<{ extras?: ExtrasMap | undefined }>): number => worn.filter((it) => lowDurability(it)).length;
 export const lowDurabilitySummary = (n: number): string | null => (n ? `${plural(n, "worn piece")} ${n === 1 ? "is" : "are"} low on durability` : null);

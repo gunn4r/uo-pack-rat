@@ -76,7 +76,7 @@ test("[fast] sheet: counts pluralise", () => {
   assert.equal(plural(0, "item"), "0 items");
 });
 
-test("[fast] sheet: a worn piece is low on durability at 20% of its max or at 10 points, never with no max or no line", () => {
+test("[fast] sheet: a worn piece is low on durability at 20% of its max or at 10 points, never at its max, with no max or with no line", () => {
   const dur = (current: number, max: number): { extras: { durability: [number, number] } } => ({ extras: { durability: [current, max] } });
   assert.equal(lowDurability(dur(12, 255)), "Low durability 12/255");
   assert.equal(lowDurability(dur(51, 255)), "Low durability 51/255", "exactly 20% is low");
@@ -84,6 +84,9 @@ test("[fast] sheet: a worn piece is low on durability at 20% of its max or at 10
   assert.equal(lowDurability(dur(10, 26)), "Low durability 10/26", "10 points is low even above 20% of a small max");
   assert.equal(lowDurability(dur(11, 26)), null);
   assert.equal(lowDurability(dur(0, 0)), null, "a max of 0 is never low");
+  assert.equal(lowDurability(dur(8, 8)), null, "a piece at its own small max is not low, however few its points");
+  assert.equal(lowDurability(dur(9, 8)), null, "nor one past its max");
+  assert.equal(lowDurability(dur(7, 8)), "Low durability 7/8");
   assert.equal(lowDurability({ extras: {} }), null, "no durability line");
   assert.equal(lowDurability({}), null, "no extras at all");
   assert.equal(lowDurability({ extras: { durability: 5 } }), null, "a lone number is not a current/max pair");
