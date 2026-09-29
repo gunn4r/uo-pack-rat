@@ -8,8 +8,8 @@ import assert from "node:assert/strict";
 import { parseItemQuery } from "./item-query.mts";
 import type { ItemQuery } from "./item-query.mts";
 import type { Container } from "./vault-lib.mts";
-import type { OrganizeConfig, OrganizeRule } from "./ui/api-types.mts";
-import { CATCH_ALL_ID, moveRule, withLabel, withoutLabel, pinnedWith, upsertRule, withoutRule, newRuleId, ruleQueryFrom, blankQuery, droppedNote, ruleNameFrom, checkDraft, matchSummary, extraFilters, targetView, fillText, fillTone, targetOptions, withTargetLabels, matchLine, debounced, MATCH_DEBOUNCE_MS, organizeStage, labelledPlaces } from "./ui/organize-model.mts";
+import type { BridgeResultEntry, OrganizeConfig, OrganizePlan, OrganizeRule, PlanMove } from "./ui/api-types.mts";
+import { CATCH_ALL_ID, moveRule, withLabel, withoutLabel, pinnedWith, upsertRule, withoutRule, newRuleId, ruleQueryFrom, blankQuery, droppedNote, ruleNameFrom, checkDraft, matchSummary, extraFilters, targetView, fillText, fillTone, targetOptions, withTargetLabels, matchLine, debounced, MATCH_DEBOUNCE_MS, organizeStage, labelledPlaces, ruleNameOf, containerNameOf, ruleCountParts, planHeadline, unclaimedNote, roomLines, crossSiteLines, warningGroups, tripRows, moveName, moveWhere, carriedView, tripGate, stepWatch, outcomeOf, outcomeText, failedSteps, runAllNext, tripRefusal, PICKUP_MS, TRIP_MS } from "./ui/organize-model.mts";
 
 const A = 0x40000001, B = 0x40000002, C = 0x40000003, GONE = 0x40000009;
 const chest = (serial: number, over: Partial<Container> = {}): Container => ({ serial, root: serial, parent: null, kind: "ground", name: "Metal Chest", tooltip: ["Metal Chest"], label: `Metal Chest (0x${serial.toString(16)})`, capacity: { items: 61, maxItems: 125, stones: null, maxStones: null }, scannedBy: "Tester", scannedAt: "2026-09-28T10:00:00Z", ...over });
@@ -223,4 +223,128 @@ test("[fast] labelledPlaces maps each location text inside a labelled container 
 
 test("[fast] the catch-all's plan id matches the planner's", () => {
   assert.equal(CATCH_ALL_ID, "catch-all");
+});
+
+const move = (serial: number, name: string, from: number | null, to: number, ruleId: string, trip: number, amount = 1): PlanMove => ({ serial, name, amount, from, to, ruleId, alsoMatched: [], trip });
+const PLAN: OrganizePlan = {
+  inventoryStamp: "2026-09-28T10:00:00Z", stamp: "abcd1234", sites: [{ index: 0, roots: [A, B] }],
+  moves: [move(11, "Black Pearl", B, A, "rule-1", 1, 40), move(12, "Ruby", null, C, "rule-2", 1), move(13, "Garlic", B, A, "rule-1", 2)],
+  trips: [{ index: 1, site: 0, takes: [11], puts: [12, 11] }, { index: 2, site: 0, takes: [13], puts: [13] }],
+  rules: [{ ruleId: "rule-1", matched: 50, inPlace: 40, toMove: 2, noRoom: 8 }, { ruleId: "rule-2", matched: 1, inPlace: 0, toMove: 1, noRoom: 0 }],
+  room: [{ ruleId: "rule-1", needSlots: 10, freeSlots: 2, shortfall: 8 }, { ruleId: "rule-2", needSlots: 1, freeSlots: 7, shortfall: 0 }],
+  crossSite: [{ ruleId: "rule-2", count: 1 }, { ruleId: CATCH_ALL_ID, count: 12 }],
+  warnings: [{ kind: "stale-container", serial: B, detail: "last scanned 9 days ago" }, { kind: "unknown-capacity", serial: B, detail: "its tooltip has no Contents line" }, { kind: "unknown-capacity", serial: GONE, detail: "not in any scan" }],
+  carried: [{ serial: 12, name: "Ruby" }], unclaimed: 3,
+};
+const nameOf = containerNameOf(CFG, CONTAINERS), ruleName = ruleNameOf(CFG);
+
+test("[fast] the plan's headline, counts and unclaimed note", () => {
+  assert.equal(planHeadline(PLAN), "3 items to move in 2 trips");
+  assert.equal(planHeadline({ ...PLAN, moves: [], trips: [] }), "Everything is where it belongs.");
+  assert.equal(unclaimedNote(PLAN), "3 items no rule takes stay where they are.");
+  assert.equal(unclaimedNote({ ...PLAN, unclaimed: 1 }), "1 item no rule takes stays where it is.");
+  assert.equal(unclaimedNote({ ...PLAN, unclaimed: 0 }), null);
+  assert.deepEqual(ruleCountParts(PLAN.rules[0]!), [{ text: "2 to move", warn: false }, { text: "40 in place", warn: false }, { text: "8 no room", warn: true }]);
+  assert.deepEqual(ruleCountParts(PLAN.rules[1]!).map((p) => p.text), ["1 to move", "0 in place"]);
+  assert.equal(ruleName(CATCH_ALL_ID), "Everything else");
+  assert.equal(ruleName("rule-9"), "rule-9");
+});
+
+test("[fast] the room and cross-site reports name the rule and say what to do", () => {
+  assert.deepEqual(roomLines(PLAN, ruleName), ["Reagents: 8 items have no room (10 slots needed, 2 free). Add a container to its targets, or make room."]);
+  assert.deepEqual(crossSiteLines(PLAN, ruleName), [
+    "Gems: 1 item belongs in a container at another house. Carry it over by hand.",
+    "Everything else: 12 items belong in a container at another house. Carry them over by hand.",
+  ]);
+});
+
+test("[fast] warnings are grouped by kind with each container named by its label", () => {
+  assert.deepEqual(warningGroups(PLAN.warnings, nameOf), [
+    { kind: "stale-container", title: "Not scanned for over a week", text: "Display: last scanned 9 days ago" },
+    { kind: "unknown-capacity", title: "Fill unknown: reinstall the scripts and rescan (2)", text: "Display: its tooltip has no Contents line · 0x40000009: not in any scan" },
+  ]);
+});
+
+test("[fast] tripRows sums each trip in one line and keeps its moves for the table", () => {
+  const rows = tripRows(PLAN, nameOf);
+  assert.deepEqual(rows.map((r) => [r.index, r.text, r.moves.map((m) => m.serial)]), [[1, "Trip 1 · 2 items · into Reagents, Gems", [11, 12]], [2, "Trip 2 · 1 item · into Reagents", [13]]]);
+  const two = tripRows({ ...PLAN, sites: [{ index: 0, roots: [A] }, { index: 1, roots: [B] }] }, nameOf);
+  assert.equal(two[0]!.text, "Trip 1 · 2 items · site 1 · into Reagents, Gems");
+  assert.equal(moveName(PLAN.moves[0]!), "40 Black Pearl");
+  assert.equal(moveWhere(PLAN.moves[0]!, nameOf), "Display → Reagents");
+  assert.equal(moveWhere(PLAN.moves[1]!, nameOf), "your backpack → Gems");
+});
+
+test("[fast] tripRows groups a 1,000-move plan into one row per trip without losing a move", () => {
+  const moves = Array.from({ length: 1000 }, (_, i) => move(0x41000000 + i, "Black Pearl", B, A, "rule-1", Math.floor(i / 20) + 1));
+  const trips = Array.from({ length: 50 }, (_, i) => ({ index: i + 1, site: 0, takes: [], puts: [] }));
+  const rows = tripRows({ ...PLAN, moves, trips }, nameOf);
+  assert.equal(rows.length, 50);
+  assert.ok(rows.every((r, i) => r.index === i + 1 && r.moves.length === 20 && r.text === `Trip ${i + 1} · 20 items · into Reagents`));
+  assert.equal(rows.reduce((n, r) => n + r.moves.length, 0), 1000);
+});
+
+test("[fast] carriedView names what a stopped trip left in the backpack and which trip puts it away", () => {
+  assert.deepEqual(carriedView(PLAN, 3), { text: "1 item from trip 3 is in your backpack.", names: "Ruby", putAway: 1, reason: null });
+  assert.equal(carriedView(PLAN, null)!.text, "1 item from an earlier trip is in your backpack.");
+  const stuck = carriedView({ ...PLAN, moves: PLAN.moves.filter((m) => m.from != null), carried: Array.from({ length: 7 }, (_, i) => ({ serial: i, name: `Gem ${i}` })) }, 2)!;
+  assert.deepEqual(stuck, { text: "7 items from trip 2 are in your backpack.", names: "Gem 0, Gem 1, Gem 2, Gem 3, Gem 4 and 2 more", putAway: null, reason: "None of them has a place with room at this house. Put them away by hand." });
+  assert.equal(carriedView({ ...PLAN, carried: [] }, 1), null);
+});
+
+test("[fast] tripGate says why no trip can run, most basic reason first", () => {
+  const OFF = "Bridge offline. Press Play on packrat-bridge.py in game.";
+  const ok = { client: "TazUO", canTrip: true, online: true, running: false };
+  assert.equal(tripGate(ok, OFF), null);
+  assert.equal(tripGate({ ...ok, client: null }, OFF), "No game client is set up. Choose one in Settings.");
+  assert.equal(tripGate({ ...ok, client: "ClassicUO Web", canTrip: false }, OFF), "ClassicUO Web can't carry out Organize trips. Move the items by hand, then rescan.");
+  assert.equal(tripGate({ ...ok, running: true, online: false }, OFF), "A trip is running. Wait for it to report back, or stop it.");
+  assert.equal(tripGate({ ...ok, online: false }, OFF), OFF);
+});
+
+test("[fast] stepWatch gives up on a trip nobody picked up after 75 s, and on any trip after 15 minutes", () => {
+  const w = { id: "t-1", index: 2, queuedAt: 0, picked: false };
+  assert.deepEqual(stepWatch(w, { currentId: null, result: null }, 10_000), { kind: "wait", watch: w });
+  const picked = stepWatch(w, { currentId: "t-1", result: null }, 20_000);
+  assert.deepEqual(picked, { kind: "wait", watch: { ...w, picked: true } });
+  const lost = stepWatch(w, { currentId: null, result: null }, PICKUP_MS + 1);
+  assert.equal(lost.kind, "lost");
+  assert.match((lost as { message: string }).message, /^The bridge did not pick up trip 2\. Nothing was moved\./);
+  assert.equal(stepWatch({ ...w, picked: true }, { currentId: null, result: null }, PICKUP_MS + 1).kind, "wait", "a trip the bridge started may take minutes");
+  const late = stepWatch({ ...w, picked: true }, { currentId: "t-1", result: null }, TRIP_MS + 1);
+  assert.deepEqual(late, { kind: "lost", message: "Trip 2 has not reported back after 15 minutes. Check the game, then press Reload plan." });
+  const result: BridgeResultEntry = { ok: true, msg: "trip 2: 3 put away", steps: [{ op: "take", serial: 1, ok: true, msg: "" }] };
+  assert.deepEqual(stepWatch(w, { currentId: null, result }, 99 * 60_000), { kind: "reported", outcome: "done", result });
+});
+
+test("[fast] a trip's outcome: stopped, partial and failed each stop Run all with their own sentence", () => {
+  const step = (ok: boolean) => ({ op: "put" as const, serial: 5, ok, msg: ok ? "put away" : "bounced (full, or refused)" });
+  assert.equal(outcomeOf({ ok: true, msg: "", steps: [step(true)] }), "done");
+  assert.equal(outcomeOf({ ok: true, msg: "", stopped: true, steps: [step(true)] }), "stopped");
+  assert.equal(outcomeOf({ ok: true, msg: "", partial: true }), "partial");
+  assert.equal(outcomeOf({ ok: true, msg: "", steps: [step(true), step(false)] }), "failed");
+  assert.equal(outcomeOf({ ok: false, msg: "expired: queued 73s ago, not run" }), "failed");
+  assert.equal(outcomeText("done", 1, { ok: true, msg: "" }), null);
+  assert.equal(outcomeText("stopped", 1, { ok: true, msg: "" }), "Trip 1 was stopped. Anything it took and had not put away is listed above.");
+  assert.equal(outcomeText("partial", 2, { ok: true, msg: "" }), "Trip 2 ended early: the backpack could not carry more, so it only put away what it took. The plan was worked out again.");
+  assert.equal(outcomeText("failed", 3, { ok: true, msg: "", steps: [step(false), step(false)] }), "Trip 3: 2 steps failed.");
+  assert.equal(outcomeText("failed", 3, { ok: false, msg: "expired: queued 73s ago, not run" }), "Trip 3 failed: expired: queued 73s ago, not run");
+});
+
+test("[fast] failedSteps names each failed item once, from the trip's own moves", () => {
+  const r: BridgeResultEntry = { ok: true, msg: "", steps: [{ op: "take", serial: 11, ok: false, msg: "not there" }, { op: "put", serial: 11, ok: false, msg: "not carried" }, { op: "put", serial: 99, ok: false, msg: "bounced (full, or refused)" }, { op: "put", serial: 12, ok: true, msg: "" }] };
+  assert.deepEqual(failedSteps(r, new Map([[11, "Black Pearl"]])), [{ serial: 11, name: "Black Pearl", msg: "not there" }, { serial: 99, name: "0x63", msg: "bounced (full, or refused)" }]);
+  assert.deepEqual(failedSteps({ ok: true, msg: "" }, new Map()), []);
+});
+
+test("[fast] runAllNext runs the new plan's first trip, and stops when a reported trip did not shorten the plan", () => {
+  assert.deepEqual(runAllNext(4, PLAN), { index: 1 });
+  assert.deepEqual(runAllNext(3, PLAN), { stop: "The plan did not get shorter after the last trip, so Run all stopped. Check the trip's results, then press Reload plan." });
+  assert.deepEqual(runAllNext(3, { ...PLAN, moves: [], trips: [] }), { stop: null });
+});
+
+test("[fast] a refused trip reads as what to do next, and a hand-edited setup asks to be saved first", () => {
+  assert.equal(tripRefusal("the plan has changed since it was shown; reload it"), "The plan changed since it was shown: a scan arrived, a rule changed or a trip reported back. Here is the new plan; check it and press Run again.");
+  assert.equal(tripRefusal("organize.json was hand-edited and parts of it were dropped (rules[0] x); open Organize and save the setup first"), "Part of organize.json could not be read and was left out, so no trip runs until you have checked the setup and pressed Save setup (above).");
+  assert.equal(tripRefusal("trip 1 has not reported back yet"), "trip 1 has not reported back yet");
 });

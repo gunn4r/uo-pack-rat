@@ -11,7 +11,7 @@ import { parseItemQuery } from "../item-query.mts";
 import type { ItemQuery, RuleQuery } from "../item-query.mts";
 import { activeFilters, plural } from "./inv-model.mts";
 import type { FilterContext } from "./inv-model.mts";
-import type { ContainerLabel, OrganizeConfig, OrganizeMatchApiResponse, OrganizeRule, RuleMatch } from "./api-types.mts";
+import type { BridgeResultEntry, ContainerLabel, OrganizeConfig, OrganizeMatchApiResponse, OrganizePlan, OrganizeRule, PlanMove, PlanRuleReport, PlanWarning, PlanWarningKind, RuleMatch } from "./api-types.mts";
 
 // The ruleId the plan reports the catch-all under (app/organize-config.mts's CATCH_ALL_ID; a value import from
 // there would add a second server module to the page for one string, so the test pins the two together).
@@ -226,4 +226,125 @@ export function labelledPlaces(containers: Readonly<Record<string, ContainerLike
     out.set(chain.map((x, i) => seg(x, i, false)).join(" › "), chain.map((x, i) => seg(x, i, true)).join(" › "));
   }
   return out;
+}
+
+// ---------------------------------------------------------------- the plan
+export const ruleNameOf = (cfg: OrganizeConfig) => (id: string): string => (id === CATCH_ALL_ID ? "Everything else" : cfg.rules.find((r) => r.id === id)?.name ?? id);
+export const containerNameOf = (cfg: OrganizeConfig, containers: Readonly<Record<string, ContainerLike>>) => (serial: number): string => targetView(serial, cfg, containers).name;
+const n = (x: number): string => x.toLocaleString("en-US");
+export function ruleCountParts(rep: PlanRuleReport): Array<{ text: string; warn: boolean }> {
+  return [{ text: `${n(rep.toMove)} to move`, warn: false }, { text: `${n(rep.inPlace)} in place`, warn: false }, ...(rep.noRoom ? [{ text: `${n(rep.noRoom)} no room`, warn: true }] : [])];
+}
+export function planHeadline(plan: OrganizePlan): string {
+  return plan.moves.length ? `${plural(plan.moves.length, "item")} to move in ${plural(plan.trips.length, "trip")}` : "Everything is where it belongs.";
+}
+export function unclaimedNote(plan: OrganizePlan): string | null {
+  const k = plan.unclaimed;
+  return k ? `${plural(k, "item")} no rule takes ${k === 1 ? "stays where it is" : "stay where they are"}.` : null;
+}
+export function roomLines(plan: OrganizePlan, ruleName: (id: string) => string): string[] {
+  return plan.room.filter((r) => r.shortfall > 0).map((r) => `${ruleName(r.ruleId)}: ${plural(r.shortfall, "item")} ${r.shortfall === 1 ? "has" : "have"} no room (${plural(r.needSlots, "slot")} needed, ${n(r.freeSlots)} free). Add a container to its targets, or make room.`);
+}
+export function crossSiteLines(plan: OrganizePlan, ruleName: (id: string) => string): string[] {
+  return plan.crossSite.filter((c) => c.count > 0).map((c) => `${ruleName(c.ruleId)}: ${plural(c.count, "item")} ${c.count === 1 ? "belongs" : "belong"} in a container at another house. Carry ${c.count === 1 ? "it" : "them"} over by hand.`);
+}
+const WARNING_TITLES: Record<PlanWarningKind, string> = {
+  "stale-container": "Not scanned for over a week",
+  "missing-target": "A rule's container is in no scan",
+  "missing-label": "A labelled container is in no scan",
+  "unknown-capacity": "Fill unknown: reinstall the scripts and rescan",
+  "old-scripts": "Scanned with older scripts: reinstall the scripts and rescan",
+  "blacklisted": "Blacklisted: nothing is taken from it or put into it",
+  "no-position": "No position scanned, so the bridge cannot walk to it",
+  "not-ground": "Not a container on the ground",
+};
+// The plan's warnings (sorted by kind, then serial, by the planner) as one message per kind.
+export function warningGroups(warnings: readonly PlanWarning[], nameOf: (serial: number) => string): Array<{ kind: PlanWarningKind; title: string; text: string }> {
+  const by = new Map<PlanWarningKind, PlanWarning[]>();
+  for (const w of warnings) by.set(w.kind, [...(by.get(w.kind) || []), w]);
+  return [...by].map(([kind, ws]) => ({ kind, title: ws.length > 1 ? `${WARNING_TITLES[kind]} (${ws.length})` : WARNING_TITLES[kind], text: ws.map((w) => `${nameOf(w.serial)}: ${w.detail}`).join(" · ") }));
+}
+// One row per trip for the collapsed trip list; its moves go into a table only when the row is opened.
+export interface TripRow { index: number; site: number; moves: PlanMove[]; text: string }
+export function tripRows(plan: OrganizePlan, nameOf: (serial: number) => string): TripRow[] {
+  const by = new Map<number, PlanMove[]>();
+  for (const m of plan.moves) { const l = by.get(m.trip); if (l) l.push(m); else by.set(m.trip, [m]); }
+  const multi = plan.sites.length > 1;
+  return plan.trips.map((t) => {
+    const moves = by.get(t.index) || [];
+    const dests = [...new Set(moves.map((m) => nameOf(m.to)))];
+    const into = dests.length ? `into ${dests.slice(0, 3).join(", ")}${dests.length > 3 ? ` +${dests.length - 3} more` : ""}` : null;
+    return { index: t.index, site: t.site, moves, text: [`Trip ${t.index}`, plural(moves.length, "item"), multi ? `site ${t.site + 1}` : null, into].filter(Boolean).join(" · ") };
+  });
+}
+export const moveName = (m: PlanMove): string => (m.amount > 1 ? `${n(m.amount)} ${m.name}` : m.name);
+export const moveWhere = (m: PlanMove, nameOf: (serial: number) => string): string => `${m.from == null ? "your backpack" : nameOf(m.from)} → ${nameOf(m.to)}`;
+// Items a trip took and has not put away (the bridge's carried set). Their puts are planned as from-null moves in
+// the first trips, so Put them away runs that trip; with none planned there is nowhere with room for them here.
+export function carriedView(plan: OrganizePlan, lastTrip: number | null): { text: string; names: string; putAway: number | null; reason: string | null } | null {
+  const k = plan.carried.length;
+  if (!k) return null;
+  const putAway = plan.moves.find((m) => m.from == null)?.trip ?? null;
+  const names = plan.carried.slice(0, 5).map((c) => c.name).join(", ") + (k > 5 ? ` and ${k - 5} more` : "");
+  return { text: `${plural(k, "item")} from ${lastTrip ? `trip ${lastTrip}` : "an earlier trip"} ${k === 1 ? "is" : "are"} in your backpack.`, names, putAway, reason: putAway == null ? "None of them has a place with room at this house. Put them away by hand." : null };
+}
+
+// ---------------------------------------------------------------- running trips
+// Why no trip can be started right now, or null. `offline` is bridge.mts's BRIDGE_OFFLINE sentence.
+export function tripGate(g: { client: string | null; canTrip: boolean; online: boolean; running: boolean }, offline: string): string | null {
+  if (!g.client) return "No game client is set up. Choose one in Settings.";
+  if (!g.canTrip) return `${g.client} can't carry out Organize trips. Move the items by hand, then rescan.`;
+  if (g.running) return "A trip is running. Wait for it to report back, or stop it.";
+  if (!g.online) return offline;
+  return null;
+}
+// The bridge refuses a command older than 60 s, so one it has not started by 75 s never will be (it is not
+// running); a trip it did start gets 15 minutes before the page stops waiting (a stuck client, a dead bridge).
+export const PICKUP_MS = 75_000;
+export const TRIP_MS = 15 * 60_000;
+export interface TripWatch { id: string; index: number; queuedAt: number; picked: boolean }
+export type TripOutcome = "done" | "partial" | "stopped" | "failed";
+export type WatchStep = { kind: "wait"; watch: TripWatch } | { kind: "reported"; outcome: TripOutcome; result: BridgeResultEntry } | { kind: "lost"; message: string };
+export function stepWatch(w: TripWatch, s: { currentId: string | null; result: BridgeResultEntry | null }, now: number): WatchStep {
+  if (s.result) return { kind: "reported", outcome: outcomeOf(s.result), result: s.result };
+  const picked = w.picked || s.currentId === w.id;
+  const age = now - w.queuedAt;
+  if (!picked && age > PICKUP_MS) return { kind: "lost", message: `The bridge did not pick up trip ${w.index}. Nothing was moved. Check that packrat-bridge.py is running in game, then run the trip again.` };
+  if (age > TRIP_MS) return { kind: "lost", message: `Trip ${w.index} has not reported back after 15 minutes. Check the game, then press Reload plan.` };
+  return { kind: "wait", watch: picked === w.picked ? w : { ...w, picked } };
+}
+export function outcomeOf(r: BridgeResultEntry): TripOutcome {
+  if (r.stopped) return "stopped";
+  if (r.partial) return "partial";
+  return !r.ok || (r.steps || []).some((s) => !s.ok) ? "failed" : "done";
+}
+export function outcomeText(outcome: TripOutcome, index: number, r: BridgeResultEntry): string | null {
+  if (outcome === "stopped") return `Trip ${index} was stopped. Anything it took and had not put away is listed above.`;
+  if (outcome === "partial") return `Trip ${index} ended early: the backpack could not carry more, so it only put away what it took. The plan was worked out again.`;
+  if (outcome === "failed") {
+    const k = (r.steps || []).filter((s) => !s.ok).length;
+    return k ? `Trip ${index}: ${plural(k, "step")} failed.` : `Trip ${index} failed: ${r.msg}`;
+  }
+  return null;
+}
+export interface FailedStep { serial: number; name: string; msg: string }
+export function failedSteps(r: BridgeResultEntry, names: ReadonlyMap<number, string>): FailedStep[] {
+  const out: FailedStep[] = [];
+  for (const s of r.steps || []) if (!s.ok && !out.some((f) => f.serial === s.serial)) out.push({ serial: s.serial, name: names.get(s.serial) ?? `0x${s.serial.toString(16)}`, msg: s.msg });
+  return out;
+}
+// After a trip reported back cleanly and the plan was fetched again: the next trip to run, a reason to stop (a
+// plan that did not shrink would otherwise run the same trip for ever), or {stop: null} when all is done.
+export function runAllNext(movesBefore: number, plan: OrganizePlan): { index: number } | { stop: string | null } {
+  const next = plan.trips[0];
+  if (!next) return { stop: null };
+  if (plan.moves.length >= movesBefore) return { stop: "The plan did not get shorter after the last trip, so Run all stopped. Check the trip's results, then press Reload plan." };
+  return { index: next.index };
+}
+// POST /api/organize/trip's refusals, as what to do next: a stale plan (fetched again), and a hand-edited
+// organize.json the server salvaged, which runs no trip until the player has saved the setup as it now reads.
+export function tripRefusal(msg: string): string {
+  if (/plan has changed/i.test(msg)) return "The plan changed since it was shown: a scan arrived, a rule changed or a trip reported back. Here is the new plan; check it and press Run again.";
+  if (/save the setup first/i.test(msg)) return "Part of organize.json could not be read and was left out, so no trip runs until you have checked the setup and pressed Save setup (above).";
+  return msg;
 }
