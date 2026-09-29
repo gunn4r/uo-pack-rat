@@ -41,6 +41,8 @@
 //         a `_vault` tombstone carrying forgetCharacter; 409 under --demo) ·
 //         GET|POST {serial, name, where?} /api/blacklist · DELETE /api/blacklist/<serial>
 //         (<data>/scan-blacklist.json, the containers scans never open) ·
+//         GET|PUT /api/organize (<data>/organize.json, Organize's labels, rules, catch-all and pinned items: app/organize-config.mts;
+//         GET salvages a hand-edited file and lists what it dropped in `problems`) ·
 //         GET|PUT /api/ui-prefs (<data>/ui-prefs.json: {cols?, colsVersion?, colWidths?, sheetProps?, theme?, appearance?, sidebar?, density?, dismissedUpdate?, copiedScanner?}, the page's view choices)
 //         POST /api/bridge {action, serial, name, chain: [root…parent], pos|null} (queue for packrat-bridge.py) · GET /api/bridge/status · POST /api/bridge/stop {} (Organize's Stop: writes <data>/bridge/stop, which packrat-bridge.py checks between a trip's steps)
 //         GET /api/events — SSE, one stream shared by every connected client (not per-job like the
@@ -109,6 +111,7 @@ import { parsePastedScan, writeScanToInbox } from "./import.mts";
 import { writeFileAtomic } from "./atomic-write.mts";
 import { addPanelAutostart, panelPrefsError, readPanelPrefs, tazuoRunning, writePanelPrefs } from "./tazuo-panel.mts";
 import { writeBridgeStop } from "./bridge-trip.mts";
+import { checkOrganizeConfig, emptyOrganizeConfig, salvageOrganizeConfig, type OrganizeConfig } from "./organize-config.mts";
 import { retentionError, retentionOf, runsToPrune, scansToPrune, type ScanFile } from "./retention.mts";
 import {
   listAdapters, candidateClientRoots, validateScriptsDir, installedVersion, installScripts, pasteScanner,
@@ -768,6 +771,22 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
     return (Array.isArray(raw) ? raw : []).filter((e): e is BlacklistEntry => !!e && typeof e === "object" && isBoundedInt(e.serial, 1, MAX_SERIAL)
       && isBoundedString(e.name, 64) && isBoundedString(e.addedAt, 40) && (e.where === undefined || isBoundedString(e.where, 64)))
       .slice(0, 1000).map(({ serial, name, addedAt, where }) => ({ serial, name, addedAt, ...(where ? { where } : {}) }));
+  }
+  // <data>/organize.json: Organize's setup (issue #11, app/organize-config.mts). Read through the salvage, so a
+  // hand edit that breaks one rule drops that rule, not the whole setup, and `problems` says what went; a file
+  // that does not parse is moved aside (the way loadSettings() treats settings.json) and Organize starts empty.
+  // Written only by PUT /api/organize, whole.
+  const ORGANIZE = join(CONFIG.dataDir, "organize.json");
+  function readOrganize(): { config: OrganizeConfig; problems: string[] } {
+    if (!existsSync(ORGANIZE)) return { config: emptyOrganizeConfig(), problems: [] };
+    let raw: unknown = null;
+    try { raw = lstatSync(ORGANIZE).size <= 2e6 ? JSON.parse(readFileSync(ORGANIZE, "utf8")) : null; }
+    catch (e) {
+      if (!(e instanceof SyntaxError)) throw e;
+      const aside = moveAside(ORGANIZE);
+      return { config: emptyOrganizeConfig(), problems: [`organize.json did not parse (${jsonErrorReason(e)}); it was moved to ${basename(aside)} and Organize starts empty`] };
+    }
+    return salvageOrganizeConfig(raw);
   }
   // A profiles.json that does not parse (a write cut short before writes were atomic, or a bad hand
   // edit) used to answer every GET /api/profiles with a 500 until someone fixed the file by hand. It
@@ -1761,6 +1780,18 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
       const unlist = req.method === "DELETE" ? /^\/api\/blacklist\/(\d{1,10})$/.exec(url.pathname) : null;
       if (unlist) {
         writeFileAtomic(BLACKLIST, JSON.stringify(readBlacklist().filter((e) => e.serial !== Number(unlist[1])), null, 1) + "\n", DATA_FILE_MODE);
+        return send(res, 200, { ok: true });
+      }
+      if (req.method === "GET" && url.pathname === "/api/organize") return send(res, 200, { ok: true, ...readOrganize() });
+      if (req.method === "PUT" && url.pathname === "/api/organize") {
+        const checked = checkOrganizeConfig(await readBody(req, { limit: 1e6, tooLargeMsg: "the Organize setup is too large" }));
+        if (!checked.ok) return send(res, 400, { ok: false, error: checked.error });
+        // A blacklisted container is never opened by a scan, so a label on one could only plan from stale contents.
+        const black = new Set(readBlacklist().map((e) => e.serial));
+        const listed = Object.values(checked.config.labels).find((l) => black.has(l.serial));
+        if (listed) return send(res, 400, { ok: false, error: `container ${listed.serial} is blacklisted and cannot be labelled` });
+        mkdirSync(dirname(ORGANIZE), { recursive: true, mode: DATA_DIR_MODE });
+        writeFileAtomic(ORGANIZE, JSON.stringify(checked.config, null, 2) + "\n", DATA_FILE_MODE);
         return send(res, 200, { ok: true });
       }
       if (req.method === "POST" && url.pathname === "/api/forget-character") {
