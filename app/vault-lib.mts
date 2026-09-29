@@ -743,7 +743,7 @@ export function foldSnapshots(snapshots: ScanV2[]): Inventory {
 // A trash barrel or chest: the server deletes what is put in one on a timer, so whatever an older scan
 // recorded inside one is long gone. Scanners never open one (TRASH_RE in each adapter); what they
 // recorded before that is dropped here, the container itself and everything under it included.
-const TRASH_RE = /\btrash\b/i;
+export const TRASH_RE = /\btrash\b/i;
 function dropTrash(inv: Inventory): void {
   const trash = new Set(Object.values(inv.containers).filter((c) => TRASH_RE.test(c.name || "")).map((c) => +c.serial));
   if (!trash.size) return;

@@ -5,7 +5,7 @@
 import { matchesItem } from "./item-query.mts";
 import { parseStamp } from "./scan-schema.mts";
 import { CATCH_ALL_ID, type OrganizeConfig, type RuleMatch } from "./organize-config.mts";
-import type { ContainerCapacity, Inventory, Item } from "./vault-lib.mts";
+import { TRASH_RE, type ContainerCapacity, type Inventory, type Item } from "./vault-lib.mts";
 import type { RulesV1RarityItem } from "./schema/types.d.mts";
 import type { TripInput } from "./bridge-trip.mts";
 
@@ -49,8 +49,8 @@ export interface Scope {
 
 // Labels define the playing field (spec §1): items move only out of labelled ground roots, and only into
 // labelled containers. Never out of or into a pinned or blacklisted container (or one inside one), never out
-// of a bag the newest scan could not open (the fold keeps older contents there), never a bag itself, and
-// never into a container whose fill (or whose surroundings' fill) the scans do not state.
+// of a bag the newest scan could not open (the fold keeps older contents there), never a bag or a trash container
+// itself (scanners record a trash barrel as a plain item, since they never open one), and never into a container whose fill (or whose surroundings' fill) the scans do not state.
 export function scopeOf(inv: Inventory, cfg: OrganizeConfig, { now, blacklist = [], seen = {} }: ScopeOptions): Scope {
   const black = new Set(blacklist);
   const pinned = new Set(Object.values(cfg.labels).filter((l) => l.pinned).map((l) => l.serial));
@@ -80,7 +80,7 @@ export function scopeOf(inv: Inventory, cfg: OrganizeConfig, { now, blacklist = 
     else warn("unknown-capacity", unknown, "its tooltip has no Contents line, so nothing is put into it");
   }
   const movable = Object.values(inv.items).filter((it) => {
-    if (it.root == null || !roots.has(+it.root) || it.equippedBy || it.kind === "container" || inv.containers[it.serial] || pinnedItems.has(+it.serial)) return false;
+    if (it.root == null || !roots.has(+it.root) || it.equippedBy || it.kind === "container" || inv.containers[it.serial] || TRASH_RE.test(it.name) || pinnedItems.has(+it.serial)) return false;
     const chain = ancestry(inv, it.container);
     return !!chain && chain.at(-1) === +it.root && !chain.some((s) => pinned.has(s) || black.has(s) || inv.containers[s]!.opened === false);
   }).map((it) => +it.serial).sort(bySerial);
@@ -487,6 +487,19 @@ export function planOrganize(inv: Inventory, cfg: OrganizeConfig, overlay: Overl
     wants.set(site!, [...(wants.get(site!) ?? []), { it, ...claim, chain, from: inPack ? null : +it.container! }]);
   }
   const freeAtStart = new Map([...placed.counts].map(([s, c]) => [s, c.maxItems - c.items]));
+  // How many more items a chain takes before any move: each target in turn takes what it and every container
+  // around it still have room for, so a bag and the chest it sits in are not counted twice.
+  const freeIn = (chain: number[]): number => {
+    const left = new Map(freeAtStart);
+    let n = 0;
+    for (const t of chain) {
+      const around = ancestry(view, t) ?? [];
+      const room = around.length ? Math.max(0, Math.min(...around.map((s) => left.get(s) ?? 0))) : 0;
+      for (const s of around) left.set(s, (left.get(s) ?? 0) - room);
+      n += room;
+    }
+    return n;
+  };
   const sim = newSim(view, placed.counts);
   const moves: PlanMove[] = [], trips: PlanTrip[] = [], merged = new Set<number>();
   for (const site of [...wants.keys()].sort(bySerial)) {
@@ -508,7 +521,7 @@ export function planOrganize(inv: Inventory, cfg: OrganizeConfig, overlay: Overl
   const room = ids.map((id) => {
     const r = report.get(id)!;
     const needSlots = moves.filter((m) => m.ruleId === id && !merged.has(m.serial)).length + r.noRoom;
-    const freeSlots = [...new Set(chains.get(id)!.filter((t) => scope.usable.has(t)))].reduce((a, t) => a + Math.max(0, freeAtStart.get(t) ?? 0), 0);
+    const freeSlots = freeIn(chains.get(id)!.filter((t) => scope.usable.has(t)));
     return { ruleId: id, needSlots, freeSlots, shortfall: r.noRoom };
   });
   const inventoryStamp = inv.scans.reduce((best, s) => (stampMs(s.scannedAt) > stampMs(best) ? s.scannedAt : best), "");

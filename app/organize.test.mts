@@ -316,6 +316,19 @@ test("[fast] every trip's queue line fits tripBytes", () => {
   assert.equal(plan.moves.length, 20);
 });
 
+test("[fast] a trash container is never moved, even by the catch-all", () => {
+  const inv = fold([{ serial: A }, { serial: B, pos: at(104) }], [{ serial: RUBY, name: "Trash Barrel", in: A }, { serial: KATANA, name: "Katana", in: A }]);
+  const plan = planOrganize(inv, config({ labels: labels(A, B), catchAll: B }), [], { now: NOW });
+  assert.deepEqual(plan.moves.map((m) => m.serial), [KATANA]);
+});
+
+test("[fast] the room report counts a bag and the chest it sits in once: free room is how many more items fit", () => {
+  const things: ThingSpec[] = Array.from({ length: 3 }, (_, i) => ({ serial: 0x40002000 + i, name: "Katana", in: A }));
+  const inv = fold([{ serial: A, max: 10 }, { serial: BAG, parent: A, max: 10 }], things);
+  const plan = planOrganize(inv, config({ labels: { ...labels(A), ...labels(BAG) }, rules: [reagents([A, BAG])] }), [], { now: NOW });
+  assert.deepEqual(plan.room.map((r) => [r.ruleId, r.freeSlots]), [["reagents", 6]], "A holds the bag and 3 katanas: 6 more items fit, in A or in the bag");
+});
+
 test("[fast] two full chests trade contents: each trip takes for both rules, so the takes make the room", () => {
   const garlic: ThingSpec[] = Array.from({ length: 20 }, (_, i) => ({ serial: 0x40002000 + i, name: "Garlic", in: A, hue: i }));
   const rubies: ThingSpec[] = Array.from({ length: 20 }, (_, i) => ({ serial: 0x40003000 + i, name: "Ruby", in: B, hue: i }));
