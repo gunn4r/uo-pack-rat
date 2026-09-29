@@ -84,18 +84,23 @@ const moreButton = (name: string, onSheet: boolean): HTMLButtonElement => {
 const ROSTER_COLS: Array<[RosterSort["key"] | null, string, boolean, string]> = [
   ["name", "Character", false, ""], ["scan", "Last scan", false, "112px"], [null, "STR · DEX · INT", false, "112px"], [null, "Hits · Stam · Mana", false, "124px"],
   ["physResist", "Phys", true, "64px"], ["fireResist", "Fire", true, "64px"], ["coldResist", "Cold", true, "64px"], ["poisonResist", "Poison", true, "64px"], ["energyResist", "Energy", true, "64px"],
-  [null, "Worn", true, "104px"], [null, "Actions", false, "124px"],
+  [null, "Worn", true, "56px"], [null, "Actions", false, "124px"],
 ];
 function resistCell(f: ResistFigure): HTMLElement {
   const full = atCap(f.value, f.cap);
   return box("span", { class: "res-cell" }, txt(f.value, full ? "strong at-cap" : ""), meter(f.value, f.cap, { tone: full ? "ok" : undefined, label: `${f.label} resist ${f.value} of ${f.cap}` }));
 }
-// Pieces worn, and how many of them are low on durability ("2 low", its sentence as the badge's tooltip).
-function wornCell(r: RosterRow): HTMLElement {
-  if (!r.lowDurability) return txt(r.worn);
+// The Character cell: the name, and a "2 low" badge beside it when worn pieces are low on durability, so the
+// warning stays in the sticky column however far the table scrolls. Its sentence is the badge's name and tooltip.
+function nameCell(r: RosterRow): HTMLElement {
+  const link = el("a", { class: "char-link strong", href: sheetHash(r.name) }, r.name);
+  const summary = lowDurabilitySummary(r.lowDurability);
+  if (!summary) return link;
   const low = badge(`${r.lowDurability} low`, "warn");
   low.tabIndex = 0;
-  return box("span", { class: "worn-cell" }, tooltip(low, lowDurabilitySummary(r.lowDurability)!), txt(r.worn));
+  low.setAttribute("role", "img");
+  low.setAttribute("aria-label", summary);
+  return box("span", { class: "char-name" }, link, tooltip(low, summary));
 }
 function renderRoster(): void {
   const all = rosterRows();
@@ -115,11 +120,11 @@ function renderRoster(): void {
   const t = table({ label: "Characters", columns, rows: rows.map((r) => ({
     attrs: { "data-name": r.name },
     cells: [
-      el("a", { class: "char-link strong", href: sheetHash(r.name) }, r.name),
+      nameCell(r),
       r.scannedAt ? txt(relativeWhen(r.scannedAt)) : txt("Not scanned", "muted"),
       txt(triple(r.stats)), txt(triple(r.pools)),
       ...(r.resists ? r.resists.map(resistCell) : [null, null, null, null, null]),
-      wornCell(r),
+      txt(r.worn),
       box("span", { class: "row-btns" }, r.scannedAt ? button({ label: "Build suit", size: "sm", onClick: () => buildSuit(r.name) }) : null, moreButton(r.name, false)),
     ],
   })) });

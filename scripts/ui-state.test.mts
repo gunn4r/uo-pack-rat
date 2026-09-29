@@ -520,8 +520,8 @@ test("[slow] the character sheet's shown properties are chosen in a popover and 
 
 // Durability watch (issue #98): Dorran's Armor Of Initiation scanned at 12 of 150 durability gets a "Low
 // durability 12/150" badge on its slot tile, inside the tile, and the sheet a one-line summary; Kestrel, with nothing
-// low, gets neither; the roster counts it in Dorran's Worn cell.
-test("[slow] a worn piece low on durability is badged on the sheet and counted on the roster", async (t) => {
+// low, gets neither; the roster badges "1 low" beside Dorran's name, in the sticky Character column.
+test("[slow] a worn piece low on durability is badged on the sheet and beside its character's name on the roster", async (t) => {
   const why = unavailable();
   if (why) return t.skip(why);
   const dataDir = seedDataDir("packrat-ui-durability-");
@@ -545,11 +545,16 @@ test("[slow] a worn piece low on durability is badged on the sheet and counted o
     assert.equal(await page.locator("#char-body > .msg.warn").count(), 0, "nothing low, no summary");
     await page.evaluate(() => { location.hash = "#/characters"; });
     await page.waitForSelector("#char-table", { timeout: 10_000 });
-    const worn = page.locator('#char-table tr[data-name="Dorran"] .worn-cell');
-    assert.match(await worn.innerText(), /^1 low\s+\d+$/);
-    await worn.locator(".badge").focus();
+    const nameCell = page.locator('#char-table tr[data-name="Dorran"] td:first-child');
+    const low = nameCell.getByRole("img", { name: "1 worn piece is low on durability" });
+    assert.equal(await low.innerText(), "1 low", "the badge sits beside the name");
+    const [cb, lb] = [await nameCell.boundingBox(), await low.boundingBox()];
+    const viewport = page.viewportSize() ?? await page.evaluate(() => ({ width: innerWidth, height: innerHeight }));
+    assert.ok(cb && lb && lb.x >= cb.x && lb.x + lb.width <= cb.x + cb.width + 0.5 && lb.x + lb.width <= viewport.width,
+      `the badge is inside the sticky Character cell and on screen without scrolling (cell ${JSON.stringify(cb)}, badge ${JSON.stringify(lb)}, viewport ${JSON.stringify(viewport)})`);
+    await low.focus();
     assert.equal(await page.getByRole("tooltip").innerText(), "1 worn piece is low on durability");
-    assert.equal(await page.locator('#char-table tr[data-name="Kestrel"] .worn-cell').count(), 0);
+    assert.equal(await page.locator('#char-table tr[data-name="Kestrel"] .badge').count(), 0, "nothing low, no badge");
     assert.deepEqual(errors, []);
   } finally {
     await app.close();

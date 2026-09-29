@@ -7,14 +7,18 @@
 .char-search { width: 240px; }
 .roster { overflow: hidden; }
 .roster-scroll { overflow-x: auto; }
-/* The Character column takes what the fixed columns leave, never less than 160 px (916 px of fixed columns +
+/* The Character column takes what the fixed columns leave, never less than 160 px (868 px of fixed columns +
    160): narrower than that the table scrolls sideways under a sticky Character column, as Inventory's Name does. */
-#char-table { min-width: 1076px; }
+#char-table { min-width: 1028px; }
 #char-table th:first-child, #char-table td:first-child { position: sticky; left: 0; z-index: 1; background: var(--color-surface); color: var(--color-text); }
 #char-table th:first-child { z-index: calc(var(--z-sticky) + 1); background: var(--color-surface-subtle); color: var(--color-text-muted); }
 #char-table tr:hover td:first-child { background: var(--color-row-hover); color: var(--color-on-row-hover); }
 .roster-scroll.scrolled-x #char-table :is(th, td):first-child { box-shadow: 1px 0 0 var(--color-border); }
 #char-table td:first-child .char-link { display: block; overflow: hidden; text-overflow: ellipsis; }
+/* a name with its low-durability badge (issue #98): the name ellipsises, the badge keeps its width */
+#char-table .char-name { display: flex; align-items: center; gap: var(--space-2); min-width: 0; }
+#char-table .char-name .char-link { min-width: 0; }
+#char-table .char-name .badge { flex: none; }
 #char-table td { height: var(--row-comfortable); }
 #char-table td.no-match { height: auto; white-space: normal; }
 .pr a.char-link { color: var(--color-text); text-decoration: none; }
@@ -22,7 +26,6 @@
 .res-cell { display: inline-flex; flex-direction: column; align-items: flex-end; gap: 3px; width: 100%; }
 .res-cell .meter { width: 100%; max-width: 48px; }
 .res-cell .at-cap { color: var(--color-success); }
-.worn-cell { display: inline-flex; align-items: center; gap: var(--space-2); }
 .row-btns { display: flex; gap: var(--space-1); justify-content: flex-end; }
 
 /* ---------------------------------------------------------------- sheet page (spec 4.5) */
