@@ -21,6 +21,7 @@ import { applyLook } from "./theme.mts";
 import { initShell, applyShellPrefs, renderNavCounts, setCurrentNav } from "./shell.mts";
 import { bindDrawer, segmented, clearToasts, closePopover } from "./components.mts";
 import { openRunsDrawer, closeRunsDrawer } from "./runs.mts";
+import { loadOrganize, refreshPlaces } from "./organize-data.mts";
 import type { SettingsApiResponse, RulesApiResponse, SetupApiResponse, InventoryApiResponse, ProfilesApiResponse, UiPrefsApiResponse } from "./api-types.mts";
 
 // ---------------------------------------------------------------- data
@@ -80,11 +81,14 @@ export async function load(): Promise<void> {
 // (events.mts, the "inventory" SSE event) and Forget run just this; rules/settings/setup don't change
 // from a scan. It keeps the visible tab, the filters, the page and the builder's character and sidebar.
 export async function reload(): Promise<void> {
-  const [inv, prof] = await Promise.all([get<InventoryApiResponse>("/api/inventory"), get<ProfilesApiResponse>("/api/profiles")]);
+  // The Organize setup comes with the inventory (labels change how locations read); a failed one leaves the
+  // locations unlabelled, and the Organize screen says why when it is opened.
+  const [inv, prof] = await Promise.all([get<InventoryApiResponse>("/api/inventory"), get<ProfilesApiResponse>("/api/profiles"), loadOrganize().catch(() => undefined)]);
   state.inv = inv.inventory; state.profiles = migrateProfiles(prof.profiles).profiles;
   state.itemCache.clear();   // a rescan can move or drop a piece — stale by-serial lookups must not survive it
   state.facets = state.inv.facets;
   state.propKeys = state.inv.propKeys;
+  refreshPlaces();
   state.newestScan = newestStamp(state.inv.scans);
   renderNavCounts();
   buildFilters(); fetchItems(); renderCharacters(); renderContainers(); syncBuilderCharacters();
@@ -151,6 +155,8 @@ for (const a of document.querySelectorAll<HTMLAnchorElement>("#sidebar [data-nav
   if (location.hash === next) showTab(a.dataset.nav as string); else location.hash = next;
 });
 window.addEventListener("hashchange", applyRoute);
+// A saved Organize setup changes how locations read: the Containers view and the Items rows redraw.
+document.addEventListener("organizechange", () => { if (state.inv) { renderContainers(); fetchItems(); } });
 initShell();
 initFilters();   // the Inventory's toolbar and loading skeleton, before any data arrives
 showTab(parseRoute().tab);   // before the inventory loads, so a reload never flashes the wrong screen

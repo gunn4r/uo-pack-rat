@@ -7,7 +7,7 @@ import { OPTIMIZER_SLOTS, RESIST_KEYS, getRules, resistSkillBonus, totalsOf, req
 import type { EffectiveProfile, Item, OptItem, PropMap, ResistCap } from "../vault-lib.mts";
 import { state } from "./store.mts";
 import type { BuildMeta } from "./store.mts";
-import { $, el, label, fmtN, fmtSecs, fmtRunTime, slotLabel, rarCell, showItemTip, hideItemTip, toast } from "./dom.mts";
+import { $, el, label, fmtN, fmtSecs, fmtRunTime, slotLabel, rarCell, showItemTip, hideItemTip, toast, whereText } from "./dom.mts";
 import { box, txt, button, icon, badge, message, meter, switchControl, check, table, tableFoot, rowActions, tipWrap, tooltip, keyValue, token, copyText } from "./components.mts";
 import { sheetNode } from "./sheet.mts";
 import { bridgeActionReason, runBridgeAction, grabAll, grabbable } from "./bridge.mts";
@@ -182,7 +182,7 @@ function planCard(current: OptSuit, suit: OptSuit, name: string, changes: string
     }
     const ra = rowActions(acts);
     if (locked) ra.querySelector(".btn")?.classList.add("on");
-    const where = !changed ? txt("") : item ? txt(item.equippedBy ? `worn by ${item.equippedBy}` : item.location?.text || "", "t-sm muted") : next ? txt("not in the current inventory", "t-sm faint") : txt("");
+    const where = !changed ? txt("") : item ? txt(item.equippedBy ? `worn by ${item.equippedBy}` : whereText(item.location?.text), "t-sm muted") : next ? txt("not in the current inventory", "t-sm faint") : txt("");
     // each piece's name answers for its own tooltip, the worn one and its replacement
     return { cells: [slotLabel(slot), now ? tipTarget(txt(now.name, changed ? "muted" : ""), now.serial) : txt("Empty", "faint"),
       !changed ? txt("keep", "muted") : next ? tipTarget(txt(next.name, "strong"), next.serial) : txt("nothing", "faint"),
@@ -229,7 +229,7 @@ function fetchCard(items: Item[], name: string): HTMLElement | null {
   for (const it of items) { const k = `${it.container ?? it.location?.text}`; groups.set(k, [...(groups.get(k) || []), it]); }
   const rows = [...groups.values()].map((list) => {
     const first = list[0]!, cont = first.container != null ? state.inv!.containers[first.container] : null;
-    const where = first.equippedBy ? `Worn by ${first.equippedBy}` : first.location?.text || "Unknown place";
+    const where = first.equippedBy ? `Worn by ${first.equippedBy}` : whereText(first.location?.text) || "Unknown place";
     const mine = grabbable(list, name);
     const goGate = bridgeActionReason("goto", first);
     const grabGate = mine.length ? bridgeActionReason("grab", mine[0]!) : `Nothing to grab here: it is already with ${name} or worn.`;
