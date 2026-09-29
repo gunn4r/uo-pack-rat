@@ -8,7 +8,7 @@ import { createHash } from "node:crypto";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { dirname, join } from "node:path";
 import {
-  parseTooltip, classify, foldSnapshots, buildPools, requirementReport, totalsOf, propertyKeys, bagLabel, kindOf, groupByName, slayersOf, medableOf, weaponAllowed, settingsDiff, PROP_LABELS, LAYER_TO_SLOT, effectiveProfile, resistSkillBonus, toOptItem, labelOf, builderKeys, migrateProfiles, templateFrom, TEMPLATE_KEYS, setRules, getRules, tagUnits, tagInfo,
+  parseTooltip, classify, foldSnapshots, buildPools, requirementReport, totalsOf, propertyKeys, bagLabel, capacityOf, kindOf, groupByName, slayersOf, medableOf, weaponAllowed, settingsDiff, PROP_LABELS, LAYER_TO_SLOT, effectiveProfile, resistSkillBonus, toOptItem, labelOf, builderKeys, migrateProfiles, templateFrom, TEMPLATE_KEYS, setRules, getRules, tagUnits, tagInfo,
   WEAPON_SKILLS, migrateWeaponSetting, excludeWeaponsError,
   shardResistCap, resistCapsFor, resistCapsError, profileResistCaps, RESIST_CAP_LIMITS,
 } from "./vault-lib.mts";
@@ -587,6 +587,60 @@ test("[fast] fold: a character's adapter identity is exposed on inv.characters f
 test("[fast] bagLabel prefers the engraving", () => {
   assert.equal(bagLabel({ serial: 1, name: "Bag", tooltip: ["Bag", "Engraved: DEXXER armor"] }), "DEXXER armor");
   assert.equal(bagLabel({ serial: 1, name: "Metal Chest", tooltip: ["Metal Chest"] }), "Metal Chest");
+});
+
+// Organize (issue #11) reads a container's room from its tooltip's Contents line.
+test("[fast] capacityOf reads a Contents line in every form the server writes", () => {
+  assert.deepEqual(capacityOf(["Metal Chest", "Contents: 13/125 Items, 95 Stones"]), { items: 13, maxItems: 125, stones: 95, maxStones: null });
+  assert.deepEqual(capacityOf(["Keg", "Contents: 1/1 Items, 49/50 Stones"]), { items: 1, maxItems: 1, stones: 49, maxStones: 50 });
+  assert.deepEqual(capacityOf(["Bag", "Weight: 3 Stones", "Contents: 0/125 Items, 0 Stones"]), { items: 0, maxItems: 125, stones: 0, maxStones: null }, "the bag's own Weight line is not its contents");
+  assert.deepEqual(capacityOf(["Box", "<BASEFONT COLOR=#FFFFFF>Contents: 4/125 Items, 44 Stones</BASEFONT>"]), { items: 4, maxItems: 125, stones: 44, maxStones: null });
+  assert.deepEqual(capacityOf(["Crate", "contents: 1/125 item, 1 stone"]), { items: 1, maxItems: 125, stones: 1, maxStones: null });
+  assert.deepEqual(capacityOf(["Vault", "Contents: 1,204/1,500 Items, 2,310 Stones"]), { items: 1204, maxItems: 1500, stones: 2310, maxStones: null });
+  assert.deepEqual(capacityOf(["Pouch", "Contents: 3/125 Items"]), { items: 3, maxItems: 125, stones: null, maxStones: null });
+});
+
+test("[fast] capacityOf is null without a Contents line", () => {
+  assert.equal(capacityOf(undefined), null);
+  assert.equal(capacityOf([]), null);
+  assert.equal(capacityOf(["Metal Chest"]), null);
+  assert.equal(capacityOf(["Chest", "Contents may shift in transit"]), null);
+  assert.equal(capacityOf(["Chest", "Contents: 13 Items, 95 Stones"]), null, "no maximum, no capacity");
+  assert.equal(capacityOf(["Chest", "Contents: ,/125 Items"]), null);
+});
+
+test("[fast] fold: every container carries its capacity and a ground root keeps its facet", () => {
+  const fixture = JSON.parse(readFileSync(join(HERE, "..", "adapters", "tazuo", "fixture.scan.json"), "utf8")) as ScanV2;
+  const inv = foldSnapshots([fixture]);
+  const roots = Object.values(inv.containers).filter((c) => c.parent == null);
+  const grounds = roots.filter((c) => c.kind === "ground");
+  assert.ok(grounds.length > 0);
+  for (const c of grounds) {
+    assert.equal(c.capacity?.maxItems, 125, c.label);
+    assert.equal(c.pos?.facet, 1, c.label);
+  }
+  assert.equal(roots.find((c) => c.kind === "backpack")!.capacity, null, "a backpack root has no tooltip");
+  assert.deepEqual(Object.values(inv.containers).find((c) => c.name === "Reagents")!.capacity, { items: 13, maxItems: 125, stones: 95, maxStones: null });
+  const demo = Object.values(foldSnapshots([kestrel]).containers).find((c) => c.parent == null)!;
+  assert.deepEqual(demo.capacity, { items: 120, maxItems: 125, stones: 100, maxStones: null });
+});
+
+// A ground root as a scanner before TazUO 2.9.0 / Razor Enhanced 1.9.0 wrote it (no tooltip), or with one.
+const chestScan = (tooltip?: string[]): ScanV2 => ({
+  schemaVersion: 2, character: "Tester", scannedAt: "2026-09-01T10:00:00Z", stats: {},
+  adapter: { id: "tazuo", version: "2.8.0", client: "TazUO", clientVersion: null, capabilities: TAZUO_V1_CAPS },
+  roots: [{ serial: 100, kind: "ground", name: "Metal Chest", opened: true }],
+  containers: { "100": { serial: 100, kind: "ground", name: "Metal Chest", parent: null, root: 100, pos: { x: 1, y: 1, z: 0 }, ...(tooltip ? { tooltip } : {}) } },
+  items: [{ serial: 200, container: 100, name: "Ruby", nameSource: "opl", tooltip: ["Ruby"] }], equipped: [],
+}) as unknown as ScanV2;
+
+test("[fast] fold: a ground root from a scan before root tooltips has capacity null; an engraved one is named by its engraving", () => {
+  const old = foldSnapshots([chestScan()]);
+  assert.equal(old.containers["100"]!.capacity, null);
+  assert.equal(old.containers["100"]!.label, "Metal Chest");
+  const engraved = foldSnapshots([chestScan(["Metal Chest", "Engraved: Reagents", "Contents: 1/125 Items, 1 Stones"])]);
+  assert.equal(engraved.containers["100"]!.label, "Reagents");
+  assert.equal(foldedItems(engraved)[0]!.location.text, "Reagents");
 });
 
 // ---- the shipped corpus: every adapter fixture and the demo data ---------------------------

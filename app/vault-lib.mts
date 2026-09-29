@@ -95,12 +95,18 @@ export interface Container {
   root: number;
   tooltip?: string[] | undefined;
   pos?: Record<string, number> | null | undefined;
+  // Its fill from the tooltip's Contents line (capacityOf), or null when the tooltip has none. Set by every fold.
+  capacity?: ContainerCapacity | null | undefined;
   // The container's segment in location text: its bagLabel, plus a distinguishing suffix when another
   // container with the same label sits beside it (labelContainers). Set by every fold.
   label?: string | undefined;
   scannedBy: string;
   scannedAt: string;
 }
+
+// A container's fill as its tooltip states it. `stones` is null when the line gives no weight, `maxStones`
+// when the container has no weight cap (house containers have none).
+export interface ContainerCapacity { items: number; maxItems: number; stones: number | null; maxStones: number | null }
 
 export interface Character {
   name: string;
@@ -691,7 +697,7 @@ export function foldSnapshots(snapshots: ScanV2[]): Inventory {
     }
     for (const c of bySerial.values()) {
       if (!roots.has(+c.root)) continue;
-      inv.containers[c.serial] = { ...c, scannedBy: char, scannedAt: snap.scannedAt };
+      inv.containers[c.serial] = { ...c, capacity: capacityOf(c.tooltip), scannedBy: char, scannedAt: snap.scannedAt };
     }
     for (const c of Object.values(snapContainers)) {
       if (c.parent == null || !roots.has(+c.root)) continue;   // roots (chests, backpack, bank) are places, not things
@@ -813,6 +819,21 @@ export function bagLabel(c: BagLabelSource): string {
   const eng = (c.tooltip || []).map(stripHtml).find((l) => /engraved|^\[.*\]$/i.test(l));
   if (eng) return eng.replace(/^engraved:?\s*/i, "").trim();
   return c.name || `0x${(+c.serial).toString(16)}`;
+}
+
+// A container's fill from its tooltip's Contents line (ServUO's clilocs): "Contents: 13/125 Items, 95 Stones" on
+// a house container, "Contents: 1/1 Items, 49/50 Stones" on one with a weight cap. Null when no line reads that
+// way: a backpack or bank root, a ground root from a scan older than root tooltips (TazUO 2.9.0, Razor Enhanced
+// 1.9.0), or a line with no maximum. Organize (issue #11) never plans a put into a container whose capacity is null.
+const CONTENTS_RE = /^contents:\s*(\d[\d,]*)\s*\/\s*(\d[\d,]*)\s*items?\b(?:\s*,\s*(\d[\d,]*)(?:\s*\/\s*(\d[\d,]*))?\s*stones?\b)?/i;
+export function capacityOf(tooltip: string[] | null | undefined): ContainerCapacity | null {
+  for (const line of (tooltip || []).map(stripHtml)) {
+    const m = line.match(CONTENTS_RE);
+    if (!m) continue;
+    const n = (s: string | undefined): number | null => (s == null ? null : +s.replace(/,/g, ""));
+    return { items: n(m[1])!, maxItems: n(m[2])!, stones: n(m[3]), maxStones: n(m[4]) };
+  }
+  return null;
 }
 
 export function locationOf(it: Item, inv: Inventory): ItemLocation {
