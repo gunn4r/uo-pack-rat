@@ -88,6 +88,21 @@ def fresh(**over):
 NOW = 1000000.0   # matches the queuedAt above, so a `fresh()` command is 0 seconds old
 
 
+def fresh_trip(**over):
+    """A legitimate trip exactly as app/bridge-trip.mts's queueTrip writes it, at t=1000000."""
+    cmd = {"id": "0b6f3c1e-2a4d-4e8f-9c3a-5d7e1f2a3b4c", "action": "trip", "index": 3,
+           "stamp": "2026-09-28T12:00:00.000Z", "queuedAt": "1970-01-12T13:46:40Z",
+           "roots": {"1073741825": {"x": 10, "y": 10, "z": 0, "facet": 1},
+                     "1073741904": {"x": 12, "y": 10, "z": 0}},
+           "takes": [{"serial": 0x40000010, "name": "Black Pearl", "chain": [0x40000001, 0x40000002]}],
+           "puts": [{"serial": 0x40000010, "name": "Black Pearl", "dest": [0x40000050, 0x40000051]}]}
+    cmd.update(over)
+    return cmd
+
+
+TRIPS = ["highlight", "grab", "goto", "trip"]
+
+
 class Conventions(unittest.TestCase):
     def test_at_least_the_three_shipped_adapters_are_seen(self):
         names = [n for n, _ in adapter_dirs()]
@@ -178,6 +193,23 @@ class Conventions(unittest.TestCase):
             self.assertIsNotNone(a, "%s scanner lacks is_container" % name)
             self.assertIsNotNone(b, "%s bridge lacks is_container" % name)
             self.assertEqual(a, b, "%s: the bridge's is_container has drifted from the scanner's" % name)
+
+    def test_the_bridge_reads_trash_and_the_blacklist_with_the_scanners_own_code(self):
+        # A trip's put refuses trash and blacklisted containers by the scanner's own tests, not a
+        # second, drifting copy. Only bridges that run trips carry them; TazUO's must.
+        carriers = 0
+        for name, d in bridge_dirs():
+            bridge = read_text(os.path.join(d, "packrat-bridge.py"))
+            if "def is_trash(" not in bridge:
+                continue
+            carriers += 1
+            scanner = read_text(os.path.join(d, "packrat-scanner.py"))
+            for helper in ("read_blacklist", "tooltip_lines", "is_trash"):
+                self.assertEqual(helper_source(bridge, helper), helper_source(scanner, helper),
+                                 "%s: the bridge's %s has drifted from the scanner's" % (name, helper))
+            trash = re.compile(r"^TRASH_RE = .*$", re.M)
+            self.assertEqual(trash.search(bridge).group(0), trash.search(scanner).group(0), name)
+        self.assertGreaterEqual(carriers, 1, "no bridge carries the trash test")
 
     def test_the_never_a_container_names_are_the_same_everywhere(self):
         # A deed, a bag of sending or a music box is never double-clicked, but a "Commodity Deed Box"
@@ -478,6 +510,95 @@ class UntrustedInput(unittest.TestCase):
             self.assertIn("refused", why, name)
             why = ns["chain_problem"]([chest, stranger_pack], 1, Item(container=0x222), own)
             self.assertIn("refused", why, name)
+
+    # ---- trip (Organize) -----------------------------------------------------------------------
+    def test_a_legitimate_trip_passes_with_roots_keyed_by_serial(self):
+        for name, ns in self.each():
+            trip, why = ns["check_line"](fresh_trip(), TRIPS, NOW)
+            self.assertIsNotNone(trip, "%s: %s" % (name, why))
+            self.assertEqual(trip["name"], "#3", name)
+            self.assertEqual(sorted(trip["roots"]), [0x40000001, 0x40000050], name)
+            self.assertEqual(trip["roots"][0x40000001], {"x": 10, "y": 10, "z": 0, "facet": 1}, name)
+            self.assertEqual(trip["takes"], [{"serial": 0x40000010, "name": "Black Pearl", "chain": [0x40000001, 0x40000002]}], name)
+            self.assertEqual(trip["puts"], [{"serial": 0x40000010, "name": "Black Pearl", "dest": [0x40000050, 0x40000051]}], name)
+
+    def test_a_trip_on_a_bridge_that_does_not_run_trips_is_an_unknown_action(self):
+        for name, ns in self.each():
+            trip, why = ns["check_line"](fresh_trip(), ["highlight", "grab", "goto"], NOW)
+            self.assertIsNone(trip, name)
+            self.assertEqual(why, "unknown action", name)
+
+    def test_check_line_sends_every_other_command_to_check_command(self):
+        for name, ns in self.each():
+            cmd, why = ns["check_line"](fresh(), TRIPS, NOW)
+            self.assertIsNotNone(cmd, "%s: %s" % (name, why))
+            self.assertEqual(cmd["action"], "grab", name)
+
+    def test_a_trip_over_the_step_limits_is_refused_and_one_at_them_passes(self):
+        for name, ns in self.each():
+            roots = {"1073741825": {"x": 10, "y": 10, "z": 0}}
+            many = lambda n, key: [{"serial": 0x40001000 + i, "name": "x", key: [0x40000001]} for i in range(n)]
+            trip, why = ns["check_trip"](fresh_trip(roots=roots, takes=many(ns["MAX_TRIP_TAKES"], "chain"), puts=many(ns["MAX_TRIP_PUTS"], "dest")), NOW)
+            self.assertIsNotNone(trip, "%s refused a full-size trip: %s" % (name, why))
+            trip, why = ns["check_trip"](fresh_trip(roots=roots, takes=many(ns["MAX_TRIP_TAKES"] + 1, "chain"), puts=[]), NOW)
+            self.assertIsNone(trip, name)
+            self.assertIn("more than", why, name)
+            trip, why = ns["check_trip"](fresh_trip(roots=roots, takes=[], puts=many(ns["MAX_TRIP_PUTS"] + 1, "dest")), NOW)
+            self.assertIsNone(trip, name)
+            self.assertIn("more than", why, name)
+
+    def test_a_trip_path_is_one_to_eight_serials_starting_at_a_placed_root(self):
+        for name, ns in self.each():
+            for bad in ([], [0x40000001] + [0x40000100 + i for i in range(8)], [0x40000001, "x"], [0x40000001, True],
+                        None, "0x40000001", [0x40000099]):
+                trip, _ = ns["check_trip"](fresh_trip(takes=[{"serial": 0x40000010, "name": "x", "chain": bad}]), NOW)
+                self.assertIsNone(trip, "%s accepted chain=%r" % (name, bad))
+                trip, _ = ns["check_trip"](fresh_trip(puts=[{"serial": 0x40000010, "name": "x", "dest": bad}]), NOW)
+                self.assertIsNone(trip, "%s accepted dest=%r" % (name, bad))
+
+    def test_roots_keys_are_serials_and_every_root_has_a_position(self):
+        for name, ns in self.each():
+            pos = {"x": 10, "y": 10, "z": 0}
+            for key in ("0x40000001", "-1", "0", "", "\uff11", "12345678901"):
+                roots = dict(fresh_trip()["roots"])
+                roots[key] = pos
+                trip, _ = ns["check_trip"](fresh_trip(roots=roots), NOW)
+                self.assertIsNone(trip, "%s accepted roots key %r" % (name, key))
+            for bad in (None, {}, {"x": 1, "y": 2}, {"x": 99999, "y": 2, "z": 0}, "here"):
+                roots = dict(fresh_trip()["roots"])
+                roots["1073741825"] = bad
+                trip, _ = ns["check_trip"](fresh_trip(roots=roots), NOW)
+                self.assertIsNone(trip, "%s accepted roots position %r" % (name, bad))
+            trip, _ = ns["check_trip"](fresh_trip(roots=[1, 2]), NOW)
+            self.assertIsNone(trip, name)
+
+    def test_a_serial_named_twice_in_the_takes_is_refused(self):
+        for name, ns in self.each():
+            t = {"serial": 0x40000010, "name": "x", "chain": [0x40000001]}
+            trip, why = ns["check_trip"](fresh_trip(takes=[t, dict(t)]), NOW)
+            self.assertIsNone(trip, name)
+            self.assertIn("twice", why, name)
+
+    def test_trip_names_are_cut_to_the_trip_limit_and_must_be_strings(self):
+        for name, ns in self.each():
+            trip, _ = ns["check_trip"](fresh_trip(takes=[{"serial": 0x40000010, "name": "N" * 500, "chain": [0x40000001]}]), NOW)
+            self.assertEqual(len(trip["takes"][0]["name"]), ns["MAX_TRIP_NAME"], name)
+            trip, _ = ns["check_trip"](fresh_trip(takes=[{"serial": 0x40000010, "name": {"x": 1}, "chain": [0x40000001]}]), NOW)
+            self.assertIsNone(trip, name)
+
+    def test_a_trip_needs_an_id_a_number_a_stamp_something_to_do_and_a_fresh_queuedAt(self):
+        for name, ns in self.each():
+            for over in ({"id": ""}, {"id": "x" * (ns["MAX_ID"] + 1)}, {"index": 0}, {"index": True}, {"index": "3"},
+                         {"index": ns["MAX_TRIP_INDEX"] + 1}, {"stamp": ""}, {"stamp": 5}, {"takes": [], "puts": []},
+                         {"takes": "all"}, {"puts": [5]}, {"queuedAt": None}):
+                trip, _ = ns["check_trip"](fresh_trip(**over), NOW)
+                self.assertIsNone(trip, "%s accepted %r" % (name, over))
+            trip, why = ns["check_trip"](fresh_trip(), NOW + 3600)
+            self.assertIn("expired", why, name)
+            for payload in (None, 17, "trip", [1]):
+                trip, why = ns["check_trip"](payload, NOW)
+                self.assertIn("not a JSON object", why, name)
+
 
 if __name__ == "__main__":
     unittest.main()

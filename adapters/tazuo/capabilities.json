@@ -2,7 +2,7 @@
   "adapter": "tazuo",
   "version": "2.9.0",
   "transport": "folder",
-  "actions": ["open-container", "move-to-own-backpack", "pathfind-local", "client-local-highlight"],
+  "actions": ["open-container", "move-to-own-backpack", "move-into-ground-container", "pathfind-local", "client-local-highlight"],
   "capabilities": {
     "layers": ["OneHanded", "TwoHanded", "Shoes", "Pants", "Shirt", "Helmet", "Gloves",
       "Ring", "Talisman", "Necklace", "Waist", "Torso", "Bracelet", "Tunic",
@@ -12,6 +12,6 @@
     "ground": true,
     "nested": true,
     "tooltips": "opl",
-    "bridge": ["highlight", "grab", "goto"]
+    "bridge": ["highlight", "grab", "goto", "trip"]
   }
 }

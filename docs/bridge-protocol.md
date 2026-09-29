@@ -1,6 +1,6 @@
 # Bridge protocol
 
-The bridge is how the app reaches back into the game client: the Highlight, Grab, and Go-to buttons on Inventory rows, the item peek and the Suit Builder's result panel don't move anything themselves — they queue a command, and an adapter script running inside the game client (attended, one command at a time) carries it out. This document describes protocol v1: the file layout, the three message shapes, the actions, and the rules that keep it safe to leave running.
+The bridge is how the app reaches back into the game client: the Highlight, Grab, and Go-to buttons on Inventory rows, the item peek and the Suit Builder's result panel don't move anything themselves — they queue a command, and an adapter script running inside the game client (attended, one command at a time) carries it out. This document describes protocol v1: the file layout, the three message shapes plus Organize's trip, the actions, and the rules that keep it safe to leave running.
 
 Ground truth: `app/schema/bridge.v1.schema.json` (validated by `app/contracts.test.mts`), `app/vault-server.mts` (`POST /api/bridge`, `GET /api/bridge/status`), `adapters/tazuo/packrat-bridge.py` (the reference adapter implementation), and `app/ui/bridge.mts` (the page's side).
 
@@ -30,7 +30,7 @@ One line of `queue.jsonl`, one JSON object per line:
 | Field | Type | Meaning |
 |---|---|---|
 | `id` | string, 1–64 characters | Identifies this command (the app writes a `randomUUID()`) — the page uses it to match a later result back to the button that queued it. |
-| `action` | string, one of `"highlight"`, `"grab"`, `"goto"` | What to do — see Actions below. |
+| `action` | string, one of `"highlight"`, `"grab"`, `"goto"` | What to do — see Actions below (`trip` is its own shape, below). |
 | `serial` | integer ≥ 1 | The target item's serial. |
 | `name` | string, ≤ 120 characters | The item's display name (so the bridge script's on-screen messages don't have to look it up itself). It is only ever printed on screen. Each bridge truncates to the same 120. |
 | `chain` | array of integers ≥ 1, at most 8 | The container chain from the root down to the item's immediate parent, outermost first (`[root, …, parent]`) — what the bridge needs to open, in order, to reach the item. Empty for an item sitting directly in a root already open (rare in practice). The cap is 8 because the page walks at most 8 parents and the scanner's own nesting limit is 4, so nothing legitimate is longer. |
@@ -52,6 +52,9 @@ Not a separate file — one entry of `status.json`'s `results` object, keyed by 
 | `ok` | boolean | Whether the command succeeded. |
 | `msg` | string | A human-readable outcome — shown to the player in-game (`API.SysMsg`) and toasted on the page once the status poll picks it up. |
 | `t` | string, RFC 3339 | When this result was recorded. |
+| `partial` | boolean, optional | A trip only: the backpack or the character's carry weight ended the takes early. |
+| `stopped` | boolean, optional | A trip only: the stop flag or the Script Manager's Stop ended it between steps. |
+| `steps` | array, optional | A trip only: `{op: "take"\|"put", serial, ok, msg}` per step, in execution order, at most 60. |
 
 ## Status
 
@@ -87,8 +90,9 @@ The whole of `status.json`, replaced atomically (temp file + rename) roughly eve
 | `highlight` | Walk within reach of the item's container if not already there, open the container chain, then for a few seconds flash the item's name above it and mark the containing chest's tile — both local-only overhead text (see "adapters never speak publicly," below), so nothing is visible to other players. Nothing is moved. |
 | `grab` | Same reach/open steps, then move the item into the character's own backpack and verify it landed there (`API.MoveItem` followed by a re-read of the item's container) before reporting success. |
 | `goto` | Walk within reach of the root container (from `chain[0]`, or straight to `pos` when there's no chain) and stop — no opening, no moving. Requires either a `chain` or a `pos`; an item with neither reports failure ("no container position known for this item"). |
+| `trip` | Organize (TazUO only). Takes, then puts, one step at a time — see Trip, below. |
 
-An `action` the adapter's own `capabilities.bridge` list doesn't include (see `docs/scan-schema.md`'s `adapter.capabilities.bridge`) is refused with `"unknown action"` rather than attempted — the reference TazUO adapter supports all three (`CAPABILITIES["bridge"] = ["highlight", "grab", "goto"]`).
+An `action` the adapter's own `capabilities.bridge` list doesn't include (see `docs/scan-schema.md`'s `adapter.capabilities.bridge`) is refused with `"unknown action"` rather than attempted — the reference TazUO adapter supports all three, plus `trip` (`CAPABILITIES["bridge"] = ["highlight", "grab", "goto", "trip"]`).
 
 ## The offset rule
 
@@ -106,11 +110,34 @@ The bridge script only ever acts on commands queued **after it started**. On lau
 - **Container-ness.** Every entry of `chain` must pass the same container test the scanner uses — corpses refused by both flag and graphic, and nothing named a deed, a bag of sending or a music box, nor any book, tome or atlas (by name or by graphic: double-clicking one opens a spellbook or runebook, not a container) — before it is opened. Double-click is UO's universal "use" verb: a potion drinks, a rune opens its gump, a deed places. A chain longer than 8 is refused outright.
 - **Chain ownership.** Each entry is checked against the live client just before it is opened. `chain[0]` must lie on the ground or be the player's own backpack or open bank box — never a container another mobile carries — and every later entry must sit directly inside the entry opened before it. So a chain can only lead down into its own root: naming a stranger's pack, whether as the root or tucked in after a chest in reach, is refused without a double-click (a snoop attempt). A root the client knows to be someone else's is refused before any walk. A chain whose bags no longer nest the way the scan said (something was moved) is refused with "rescan and try again".
 - **Distance.** A destination further than **24 tiles** (the client's own view range) from where the character is standing, or outside the map's bounds, is refused with "walk closer and retry" rather than pathfound. Still one pathfind attempt per command, bounded by the existing 20-second timeout. A chain rooted in the player's own backpack or bank needs no walk at all: a worn container's position says nothing about where the player stands.
-- **Grab source.** The *destination* has always been hard-coded to the player's own backpack and is deliberately **not** a protocol field — keep it that way. The *source* is now checked too: the item's root must resolve to the player's backpack, their bank, or a container in the chain that same command just opened. A guild chest someone left open nearby, a stranger's pack, or something lying on the ground is refused.
+- **Grab source.** For `grab`, the *destination* is hard-coded to the player's own backpack and is deliberately **not** a protocol field — keep it that way. A `trip`'s put is the one exception, made openly: its `dest` is a protocol field, bounded by the carried set, the destination checks and the rate budget (Trip, below). The *source* is now checked too: the item's root must resolve to the player's backpack, their bank, or a container in the chain that same command just opened. A guild chest someone left open nearby, a stranger's pack, or something lying on the ground is refused.
 - **Per-line containment.** Every line is handled in its own `try`, and a payload that is not a JSON object is rejected by type rather than reaching a field access. A junk line no longer takes the rest of its read with it. A refused line that still carries a usable `id` (an expired command, say) is recorded under that id with its reason, and counts against the rate budget like any other line; only lines with no usable id — unreadable, not an object, no id — are reported together as one aggregated `rejected-…` result, so a flood of garbage cannot itself flood the status file.
 - **Bounded reads.** At most 256 KB per poll and 16 KB per line; a longer line is a counted refusal, never a silent drop. A partial trailing line waits for the next poll. `results` is trimmed to the last 30 in memory as well as at write time, so `status.json` cannot be made to grow without bound.
 
 A refusal is always *recorded*, never silent: it becomes a `result` with `ok: false` and a readable message under the command's own id, which the page toasts (named after the piece, `app/ui/bridge.mts`'s `pollBridge`) and the player sees in game. Commands still waiting when the bridge stops — Stop, the time limit, or the rate stop — are recorded as "not run" the same way.
+
+## Trip (Organize)
+
+One line of the same queue, with its own shape (ground truth: `app/schema/bridge-trip.v1.schema.json`):
+
+```json
+{"id": "0b6f3c1e-2a4d-4e8f-9c3a-5d7e1f2a3b4c", "action": "trip", "index": 3, "stamp": "2026-09-28T12:00:00.000Z", "queuedAt": "2026-09-28T12:05:00.000Z",
+ "roots": {"1073741825": {"x": 1520, "y": 1631, "z": 0, "facet": 1}, "1073741904": {"x": 1522, "y": 1631, "z": 0}},
+ "takes": [{"serial": 1073741840, "name": "Black Pearl", "chain": [1073741825, 1073741826]}],
+ "puts":  [{"serial": 1073741840, "name": "Black Pearl", "dest":  [1073741904, 1073741905]}]}
+```
+
+A trip is written only by `app/bridge-trip.mts`'s `queueTrip`, which the Organize endpoint calls with a trip built from the current plan. `POST /api/bridge` refuses `action: "trip"` (its command enum has no such action), so the page cannot hand the bridge a trip. The limits, checked by `check_trip` in the shared untrusted-input block: at most 20 takes and 40 puts, no serial twice in either, each `chain`/`dest` 1–8 serials whose root is in `roots`, `roots` keyed by decimal serial with a full position each, names cut to 40 characters, `index` 1–10000, and the usual freshness and duplicate-id rules. The whole line counts once against the rate budget (one click, one command), and a line over 16 KB is refused unread, which is why `queueTrip` never writes one.
+
+Only an adapter that lists `trip` in `capabilities.bridge` runs one (TazUO from 2.9.0). `check_line` hands every other bridge's trip to `check_command`, which refuses it as `unknown action`.
+
+Execution: `<data>/bridge/stop` is cleared (a flag written at or after the trip's `queuedAt` is a Stop pressed while the trip waited, and ends it before its first step; an older one is left over and only cleared), the blacklist is read, and the game shows "Pack Rat organize: trip N, M items". Every take runs first, then every put, with the stop flag and the Script Manager's Stop checked before each step. A take is the grab path (walk, open the chain, the item must sit directly in the chain's last container), except that its root must lie on the ground: never your own backpack or bank, whose contents would otherwise join the carried set, with an explicit drop spot in the backpack, so a stack keeps its serial. Before each take the live item count (cap 125) and carry weight (`Player.Weight`/`WeightMax`; an unknown per-unit weight counts 1) are checked, and a take that would pass either ends the takes with `partial`. A put of an item the trip meant to take but did not is skipped.
+
+The carried set: the serials this bridge took and has not put, kept in memory for the bridge's lifetime. A put may only name one, so nothing else in the backpack can be put anywhere from the queue. It survives across commands, which is how "Put them away" works after a stopped trip; a restarted bridge starts with it empty and refuses such puts ("put it away by hand").
+
+Put checks: the item is at the top of the backpack; no container in `dest` is in `scan-blacklist.json`; the root lies on the ground (never your own pack or bank, never a pack a mobile carries); every bag sits inside the one before it; each is a container by the scanner's own test (never a corpse); none is trash by `TRASH_RE` on its tooltip name, and one whose tooltip reads nothing is refused rather than judged by the client's cached name (a trash barrel's can be plain "barrel"). Then a plain drop (which may stack), and a check that the item is in `dest`'s last container or merged onto a stack there; otherwise the put reports "bounced (full, or refused)" and the item stays carried.
+
+`POST /api/bridge/stop` (`{}`) writes the flag; the bridge halts after its current step.
 
 ## The heartbeat
 

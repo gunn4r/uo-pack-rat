@@ -32,7 +32,24 @@
     "properties": {
       "ok": { "type": "boolean" },
       "msg": { "type": "string" },
-      "t": { "type": "string", "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d+)?([+-]\\d{2}:\\d{2}|Z)$" }
+      "t": { "type": "string", "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d+)?([+-]\\d{2}:\\d{2}|Z)$" },
+      "partial": { "type": "boolean", "$comment": "A trip only: the backpack or the character's carry weight ended the take phase early." },
+      "stopped": { "type": "boolean", "$comment": "A trip only: the stop flag (POST /api/bridge/stop) or the Script Manager's Stop ended it between steps." },
+      "steps": {
+        "type": "array", "maxItems": 60,
+        "$comment": "A trip only (bridge-trip.v1.schema.json): one entry per step carried out or skipped, in execution order.",
+        "items": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["op", "serial", "ok", "msg"],
+          "properties": {
+            "op": { "type": "string", "enum": ["take", "put"] },
+            "serial": { "type": "integer", "minimum": 1 },
+            "ok": { "type": "boolean" },
+            "msg": { "type": "string" }
+          }
+        }
+      }
     }
   },
   "status": {

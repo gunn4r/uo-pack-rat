@@ -194,14 +194,15 @@ test("[fast] two different schema locations that derive the same name collide ev
   );
 });
 
-test("[fast] buildSchemaTypes against the real four schema files exports the 17 expected type names", () => {
+test("[fast] buildSchemaTypes against the real five schema files exports the 22 expected type names", () => {
   const out = join(mkdtempSync(join(tmpdir(), "schema-types-")), "types.d.mts");
   buildSchemaTypes({ out });
   const src = readFileSync(out, "utf8");
   const expected = [
     "ScanV2", "ScanV2Adapter", "ScanV2AdapterCapabilities", "ScanV2RootsItem", "ScanV2ItemsItem", "ScanV2EquippedItem",
     "ScanV2SkillsValue", "ScanV2ContainersValue",
-    "BridgeV1Command", "BridgeV1Result", "BridgeV1Status", "BridgeV1StatusCounts",
+    "BridgeV1Command", "BridgeV1Result", "BridgeV1ResultStepsItem", "BridgeV1Status", "BridgeV1StatusCounts",
+    "BridgeTripV1", "BridgeTripV1RootsValue", "BridgeTripV1TakesItem", "BridgeTripV1PutsItem",
     "RulesV1", "RulesV1ResistSkillBonus", "RulesV1RarityItem", "RulesV1RaceLock",
     "ProfilesV2",
   ];

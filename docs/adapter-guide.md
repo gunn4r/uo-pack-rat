@@ -67,6 +67,7 @@ Whichever transport an adapter uses, the scan and bridge **schemas themselves do
 |---|---|---|
 | `open-container` | Double-clicking a container to open it, so its contents reach the client. | `API.UseObject`, `Items.WaitForContents` |
 | `move-to-own-backpack` | Moving one item into the player's own backpack. The destination is hard-coded in every adapter and is deliberately **not** a protocol field (`docs/bridge-protocol.md`) — keep it that way. | `API.MoveItem`, `Items.Move` |
+| `move-into-ground-container` | A trip's put: moving an item the bridge itself took on a trip into a labelled container on the ground. The one move whose destination comes from the queue; bounded by the carried set and the destination checks (`docs/bridge-protocol.md`, Trip). | `API.MoveItem` with the trip's `dest` |
 | `pathfind-local` | Walking the character, bounded by the bridge's own distance cap and pathfind timeout. | `API.Pathfind`, `API.PathfindEntity`, `Player.PathFindTo` |
 | `client-local-highlight` | Overhead text, a marked tile, a recolour — visible to the player and nobody else. Never a speech packet (see "adapters never speak publicly" in `docs/bridge-protocol.md`). | `API.HeadMsg`, `API.MarkTile`, `Player.HeadMessage`, `Items.SetColor` |
 
