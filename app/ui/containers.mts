@@ -82,7 +82,8 @@ async function labelContainer(r: Container): Promise<void> {
   });
 }
 // Show missing items (issue #99): what the root's previous scan saw in it that its latest did not, and that no
-// scan has seen anywhere else since. A stack that shrank in place is listed by how many fewer.
+// scan has seen anywhere else since. A stack that shrank in place is listed by how many fewer, and so is one that
+// vanished but only partly fits into the same-kind stacks scanned since (app/missing.mts).
 async function showMissing(r: Container, name: string): Promise<void> {
   let items: MissingApiResponse["items"];
   try { ({ items } = await api<MissingApiResponse>(`/api/missing?root=${+r.serial}`)); } catch (e) { toast(errorText(e), "bad"); return; }
@@ -97,7 +98,7 @@ async function showMissing(r: Container, name: string): Promise<void> {
     el("tbody", {}, ...rows));
   const dlg = openDialog({
     title: `Missing from ${name}`, width: "md", initialFocus: close,
-    body: [el("p", { class: "muted" }, items.length ? "In this container at its previous scan, gone at its latest, and not seen in any other scanned container since. Rescan where you moved them and they leave this list." : "Nothing is missing any more."), ...(items.length ? [table] : [])],
+    body: [el("p", { class: "muted" }, items.length ? "In this container at its previous scan, gone at its latest, and not seen in any other scanned container since. Rescan where you moved them and they leave this list. A stack that could have been added to a stack of the same kind scanned since counts as moved, so while you keep more of something elsewhere, a sold stack of it may not show here." : "Nothing is missing any more."), ...(items.length ? [table] : [])],
     actions: [close],
   });
 }

@@ -12,9 +12,9 @@ import type { RulesV1, ScanV2 } from "./schema/types.d.mts";
 
 setRules(JSON.parse(readFileSync(join(dirname(fileURLToPath(import.meta.url)), "rules", "uoalive.json"), "utf8")) as RulesV1);
 
-const CHEST = 100, CHEST2 = 110, BAG = 101, TRASH = 102, RING = 200, GEM = 201, PEARL = 202, BANDAGES = 203, SWORD = 204;
+const CHEST = 100, CHEST2 = 110, BAG = 101, TRASH = 102, RING = 200, GEM = 201, PEARL = 202, BANDAGES = 203, SWORD = 204, PEARL2 = 205;
 const T1 = "2026-09-20T10:00:00Z", T2 = "2026-09-21T10:00:00Z", T3 = "2026-09-22T10:00:00Z";
-const item = (serial: number, container: number, name: string, amount = 1) => ({ serial, container, name, nameSource: "opl", amount, tooltip: [amount > 1 ? `${amount} ${name}` : name] });
+const item = (serial: number, container: number, name: string, amount = 1, hue = 0) => ({ serial, container, name, nameSource: "opl", amount, graphic: 0x0f7a, hue, tooltip: [amount > 1 ? `${amount} ${name}` : name] });
 const chestOf = (serial: number) => ({ serial, kind: "ground", name: "Chest", parent: null, root: serial });
 const bag = { serial: BAG, kind: "container", name: "Bag", parent: CHEST, root: CHEST };
 const trash = { serial: TRASH, kind: "container", name: "Trash Barrel", parent: CHEST, root: CHEST };
@@ -84,4 +84,42 @@ test("[fast] a root the newest scan could not open compares its two last opened 
   closed.containers = {};
   const got = missing([scan(T1, [item(RING, CHEST, "Ring")]), scan(T2, []), closed]);
   assert.deepEqual(got[CHEST]!.map((m) => m.serial), [RING]);
+});
+
+// Stacks (Organize drops an item onto a matching stack, and only that stack's serial lives on).
+test("[fast] a stack merged into a same-kind stack in another scanned chest is not missing", () => {
+  const got = missing([scan(T1, [item(PEARL, CHEST, "Black Pearl", 50), item(PEARL2, CHEST2, "Black Pearl", 100)], { roots: [CHEST, CHEST2] }),
+    scan(T2, [item(PEARL2, CHEST2, "Black Pearl", 150)], { roots: [CHEST, CHEST2] })]);
+  assert.deepEqual(got, {});
+});
+
+test("[fast] two stacks combined in the same chest are not missing", () => {
+  const got = missing([scan(T1, [item(PEARL, CHEST, "Black Pearl", 50), item(PEARL2, CHEST, "Black Pearl", 20)]), scan(T2, [item(PEARL2, CHEST, "Black Pearl", 70)])]);
+  assert.deepEqual(got, {});
+});
+
+test("[fast] a stack sold outright is missing: no same-kind stack took it in", () => {
+  const got = missing([scan(T1, [item(PEARL, CHEST, "Black Pearl", 50), item(PEARL2, CHEST2, "Black Pearl", 100, 0x455)], { roots: [CHEST, CHEST2] }),
+    scan(T2, [item(PEARL2, CHEST2, "Black Pearl", 100, 0x455)], { roots: [CHEST, CHEST2] })]);
+  assert.deepEqual(got, { [CHEST]: [{ serial: PEARL, name: "Black Pearl", amount: 50, lastSeen: T1 }] });
+});
+
+test("[fast] a same-kind stack last seen before the chest's previous scan explains nothing", () => {
+  const got = missing([scan(T1, [item(PEARL2, CHEST2, "Black Pearl", 100)], { roots: [CHEST2] }), scan(T2, [item(PEARL, CHEST, "Black Pearl", 50)]), scan(T3, [])]);
+  assert.deepEqual(got, { [CHEST]: [{ serial: PEARL, name: "Black Pearl", amount: 50, lastSeen: T2 }] });
+});
+
+test("[fast] only what a same-kind stack could hold is taken as moved; the rest reads as fewer", () => {
+  const got = missing([scan(T1, [item(PEARL, CHEST, "Black Pearl", 50)]), scan(T2, [item(PEARL2, CHEST2, "Black Pearl", 20)], { roots: [CHEST, CHEST2] })]);
+  assert.deepEqual(got, { [CHEST]: [{ serial: PEARL, name: "Black Pearl", amount: 50, fewer: 30, lastSeen: T1 }] });
+});
+
+test("[fast] a stack partly used in place reads as fewer even with a same-kind stack elsewhere", () => {
+  const got = missing([scan(T1, [item(PEARL, CHEST, "Black Pearl", 50)]), scan(T2, [item(PEARL, CHEST, "Black Pearl", 36), item(PEARL2, CHEST2, "Black Pearl", 100)], { roots: [CHEST, CHEST2] })]);
+  assert.deepEqual(got, { [CHEST]: [{ serial: PEARL, name: "Black Pearl", amount: 50, fewer: 14, lastSeen: T1 }] });
+});
+
+test("[fast] a single item is not taken as merged into a same-named single item", () => {
+  const got = missing([scan(T1, [item(RING, CHEST, "Ring")]), scan(T2, [item(GEM, CHEST2, "Ring")], { roots: [CHEST, CHEST2] })]);
+  assert.deepEqual(got, { [CHEST]: [{ serial: RING, name: "Ring", amount: 1, lastSeen: T1 }] });
 });
