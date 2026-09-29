@@ -119,7 +119,7 @@ test("[slow] the shell: screens, routes, drawers, the bridge popover and Setting
     assert.deepEqual(errors, []);
   } finally {
     await app.close();
-    rmSync(dataDir, { recursive: true, force: true });
+    rmSync(dataDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
   }
 });
 
@@ -169,6 +169,6 @@ test("[slow] the sidebar collapses to icons below 1180 px, and pinning it collap
     });
   } finally {
     await run.app.close();
-    rmSync(dataDir, { recursive: true, force: true });
+    rmSync(dataDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
   }
 });
