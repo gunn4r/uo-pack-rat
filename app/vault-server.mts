@@ -839,7 +839,7 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
   // The plan as it stands now: finished trips read out of their bridges' status files into the overlay, entries a
   // newer scan has settled dropped, labels' last-seen times refreshed (the state file is rewritten only when that
   // changed something), then planOrganize.
-  async function organizeNow(): Promise<{ inv: Inventory; config: OrganizeConfig; state: OrganizeState; plan: Plan; problems: string[] }> {
+  async function organizeNow(): Promise<{ inv: Inventory; config: OrganizeConfig; state: OrganizeState; plan: Plan; problems: string[]; bridges: Record<string, BridgeView> }> {
     const { inv } = await getInventory();
     const { config, problems } = readOrganize();
     const before = readOrganizeState();
@@ -848,7 +848,7 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
     const state = noteSeen(pruneOverlay(harvestTrips(before, bridges, now), inv, now), config, inv);
     if (JSON.stringify(state) !== JSON.stringify(before)) writeOrganizeState(state);
     const plan = planOrganize(inv, config, state.moves, { now, rarity: currentRules.rarity, blacklist: readBlacklist().map((e) => e.serial), seen: state.seen });
-    return { inv, config, state, plan, problems };
+    return { inv, config, state, plan, problems, bridges };
   }
   // A profiles.json that does not parse (a write cut short before writes were atomic, or a bad hand
   // edit) used to answer every GET /api/profiles with a 500 until someone fixed the file by hand. It
@@ -1882,9 +1882,9 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
       }
       if (req.method === "GET" && url.pathname === "/api/organize/plan") {
         // `running`: the trip in flight, if any, so a page reloaded (or opened in a second window) mid-trip follows it.
-        const { state, plan } = await organizeNow();
+        const { state, plan, bridges } = await organizeNow();
         const p = state.pending[0];
-        return send(res, 200, { ok: true, plan, running: p ? { id: p.id, index: p.index, queuedAt: p.queuedAt, picked: bridgeView(p.adapter, Date.now()).current === p.id } : null });
+        return send(res, 200, { ok: true, plan, running: p ? { id: p.id, index: p.index, queuedAt: p.queuedAt, picked: bridges[p.adapter]?.current === p.id } : null });
       }
       if (req.method === "POST" && url.pathname === "/api/organize/trip") {
         // One trip of the CURRENT plan, built here and queued with queueTrip: the page names the trip and the plan it
