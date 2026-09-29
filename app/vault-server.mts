@@ -43,6 +43,11 @@
 //         (<data>/scan-blacklist.json, the containers scans never open) ·
 //         GET|PUT /api/organize (<data>/organize.json, Organize's labels, rules, catch-all and pinned items: app/organize-config.mts;
 //         GET salvages a hand-edited file and lists what it dropped in `problems`) ·
+//         GET /api/organize/plan (app/organize.mts's planOrganize over the fold, organize.json, the blacklist and the
+//         results overlay <data>/organize-state.json, after reading finished trips out of the bridge's status.json) ·
+//         POST /api/organize/trip {index, stamp} (queues that trip of the CURRENT plan with app/bridge-trip.mts's
+//         queueTrip; 409 when the client's bridge has no "trip", a trip has not reported back, stamp is not the
+//         plan's, or the trip is not its site's first) ·
 //         GET|PUT /api/ui-prefs (<data>/ui-prefs.json: {cols?, colsVersion?, colWidths?, sheetProps?, theme?, appearance?, sidebar?, density?, dismissedUpdate?, copiedScanner?}, the page's view choices)
 //         POST /api/bridge {action, serial, name, chain: [root…parent], pos|null} (queue for packrat-bridge.py) · GET /api/bridge/status · POST /api/bridge/stop {} (Organize's Stop: writes <data>/bridge/stop, which packrat-bridge.py checks between a trip's steps)
 //         GET /api/events — SSE, one stream shared by every connected client (not per-job like the
@@ -110,8 +115,10 @@ import { startWatcher, jsonErrorReason, MAX_INBOX_BYTES, type StartWatcherOption
 import { parsePastedScan, writeScanToInbox } from "./import.mts";
 import { writeFileAtomic } from "./atomic-write.mts";
 import { addPanelAutostart, panelPrefsError, readPanelPrefs, tazuoRunning, writePanelPrefs } from "./tazuo-panel.mts";
-import { writeBridgeStop } from "./bridge-trip.mts";
+import { queueTrip, writeBridgeStop } from "./bridge-trip.mts";
 import { checkOrganizeConfig, emptyOrganizeConfig, salvageOrganizeConfig, type OrganizeConfig } from "./organize-config.mts";
+import { planOrganize, tripCommand, type Plan } from "./organize.mts";
+import { emptyOrganizeState, harvestTrips, noteSeen, pruneOverlay, salvageOrganizeState, type BridgeView, type OrganizeState } from "./organize-state.mts";
 import { retentionError, retentionOf, runsToPrune, scansToPrune, type ScanFile } from "./retention.mts";
 import {
   listAdapters, candidateClientRoots, validateScriptsDir, installedVersion, installScripts, pasteScanner,
@@ -787,6 +794,39 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
       return { config: emptyOrganizeConfig(), problems: [`organize.json did not parse (${jsonErrorReason(e)}); it was moved to ${basename(aside)} and Organize starts empty`] };
     }
     return salvageOrganizeConfig(raw);
+  }
+  // <data>/organize-state.json: Organize's results overlay (app/organize-state.mts). Only this server writes it;
+  // a damaged one reads as empty, which at worst plans a finished move again (the bridge then finds the item
+  // gone and says so).
+  const ORGANIZE_STATE = join(CONFIG.dataDir, "organize-state.json");
+  function readOrganizeState(): OrganizeState {
+    try { return salvageOrganizeState(lstatSync(ORGANIZE_STATE).size <= 4e6 ? JSON.parse(readFileSync(ORGANIZE_STATE, "utf8")) : null); }
+    catch { return emptyOrganizeState(); }
+  }
+  const writeOrganizeState = (state: OrganizeState): void => writeFileAtomic(ORGANIZE_STATE, JSON.stringify(state, null, 1) + "\n", DATA_FILE_MODE);
+  // What harvestTrips needs of one adapter's status.json (GET /api/bridge/status reads the same file for the page).
+  function bridgeView(adapter: string): BridgeView {
+    try {
+      const st: unknown = JSON.parse(readFileSync(CONFIG.paths.bridgeStatusFor(adapter), "utf8"));
+      if (!st || typeof st !== "object" || Array.isArray(st)) return { results: {}, current: null };
+      const { results, current } = st as Record<string, unknown>;
+      const id = current && typeof current === "object" ? (current as { id?: unknown }).id : null;
+      return { results: results && typeof results === "object" && !Array.isArray(results) ? results as Record<string, unknown> : {}, current: typeof id === "string" ? id : null };
+    } catch { return { results: {}, current: null }; }
+  }
+  // The plan as it stands now: finished trips read out of their bridges' status files into the overlay, entries a
+  // newer scan has settled dropped, labels' last-seen times refreshed (the state file is rewritten only when that
+  // changed something), then planOrganize.
+  async function organizeNow(): Promise<{ inv: Inventory; state: OrganizeState; plan: Plan }> {
+    const { inv } = await getInventory();
+    const { config } = readOrganize();
+    const before = readOrganizeState();
+    const now = Date.now();
+    const bridges = Object.fromEntries([...new Set(before.pending.map((p) => p.adapter))].map((a) => [a, bridgeView(a)]));
+    const state = noteSeen(pruneOverlay(harvestTrips(before, bridges, now), inv, now), config, inv);
+    if (JSON.stringify(state) !== JSON.stringify(before)) writeOrganizeState(state);
+    const plan = planOrganize(inv, config, state.moves, { now, rarity: currentRules.rarity, blacklist: readBlacklist().map((e) => e.serial), seen: state.seen });
+    return { inv, state, plan };
   }
   // A profiles.json that does not parse (a write cut short before writes were atomic, or a bad hand
   // edit) used to answer every GET /api/profiles with a 500 until someone fixed the file by hand. It
@@ -1793,6 +1833,34 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
         mkdirSync(dirname(ORGANIZE), { recursive: true, mode: DATA_DIR_MODE });
         writeFileAtomic(ORGANIZE, JSON.stringify(checked.config, null, 2) + "\n", DATA_FILE_MODE);
         return send(res, 200, { ok: true });
+      }
+      if (req.method === "GET" && url.pathname === "/api/organize/plan") return send(res, 200, { ok: true, plan: (await organizeNow()).plan });
+      if (req.method === "POST" && url.pathname === "/api/organize/trip") {
+        // One trip of the CURRENT plan, built here and queued with queueTrip: the page names the trip and the plan it
+        // was shown (stamp), never the moves. A plan that changed since — a new scan, an edited rule, a trip that
+        // reported back and renumbered the rest — is refused, and so is any trip but its site's first, which may
+        // count on room an earlier trip makes.
+        const { index, stamp } = asObject(await readBody(req, { limit: 8e3 }));
+        if (!isBoundedInt(index, 1, 10000) || !isBoundedString(stamp, 64)) return send(res, 400, { ok: false, error: "index (a trip number) and stamp (the plan's) are required" });
+        const adapter = bridgeAdapter();
+        const caps = listAdapters(ADAPTERS_DIR).find((a) => a.id === adapter)?.capabilities as { bridge?: unknown } | undefined;
+        if (!Array.isArray(caps?.bridge) || !caps.bridge.includes("trip")) return send(res, 409, { ok: false, error: `the ${adapter} bridge cannot run Organize trips` });
+        const { inv, state, plan } = await organizeNow();
+        const waiting = state.pending[0];
+        if (waiting) return send(res, 409, { ok: false, error: `trip ${waiting.index} has not reported back yet` });
+        if (stamp !== plan.stamp) return send(res, 409, { ok: false, error: "the plan has changed since it was shown; reload it", stamp: plan.stamp });
+        const trip = plan.trips.find((t) => t.index === index);
+        if (!trip) return send(res, 404, { ok: false, error: `the plan has no trip ${index}` });
+        const first = plan.trips.find((t) => t.site === trip.site)!;
+        if (first.index !== index) return send(res, 409, { ok: false, error: `run trip ${first.index} first: this trip counts on the room it makes` });
+        const input = tripCommand(inv, plan, index);
+        if (!input) return send(res, 409, { ok: false, error: `trip ${index} cannot be built from the current scans` });
+        const now = new Date();
+        const queued = queueTrip(CONFIG.paths, adapter, input, now);
+        if (!queued.ok) return send(res, 409, { ok: false, error: queued.error });
+        const steps = plan.moves.filter((m) => m.trip === index).map(({ serial, name, from, to }) => ({ serial, name, from, to }));
+        writeOrganizeState({ ...state, pending: [...state.pending, { id: queued.id, adapter, index, stamp: plan.stamp, queuedAt: now.toISOString(), steps }] });
+        return send(res, 200, { ok: true, id: queued.id, index });
       }
       if (req.method === "POST" && url.pathname === "/api/forget-character") {
         // A character tombstone: a `_vault` scan naming the character in `forgetCharacter`, which the

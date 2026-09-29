@@ -11,6 +11,7 @@ import { startServer, type ServerHandle } from "./vault-server.mts";
 import { candidateClientRoots } from "./installer.mts";
 import { houseScan, type ThingSpec } from "./organize-fixture.mts";
 import { emptyRuleQuery, emptyOrganizeConfig, type OrganizeConfig } from "./organize-config.mts";
+import type { Plan } from "./organize.mts";
 
 const FAKE_HOME = mkdtempSync(join(tmpdir(), "qm-home-"));
 const A = 0x40000001, B = 0x40000002, PEARL = 0x40001001, RUBY = 0x40001002;
@@ -89,6 +90,84 @@ test("[fast] a hand-edited organize.json is salvaged on read, and one that does 
     assert.match(broken.body.problems.join("\n"), /did not parse/);
     assert.equal(existsSync(join(dir, "organize.json.corrupt")), true);
     assert.equal(existsSync(join(dir, "organize.json")), false);
+  } finally {
+    await s.close();
+  }
+});
+
+const queued = (dir: string): Record<string, unknown>[] => {
+  const f = join(dir, "bridge", "tazuo", "queue.jsonl");
+  return existsSync(f) ? readFileSync(f, "utf8").trim().split("\n").map((l) => JSON.parse(l) as Record<string, unknown>) : [];
+};
+const stateOf = (dir: string): { pending: { id: string }[]; moves: { serial: number; to: number | null }[] } => JSON.parse(readFileSync(join(dir, "organize-state.json"), "utf8"));
+
+test("[fast] GET /api/organize/plan plans the moves; POST /api/organize/trip queues the current trip once", async () => {
+  const { s, dir } = await serve();
+  try {
+    assert.equal((await call(s, "/api/organize", body("PUT", CONFIG_DOC))).status, 200);
+    const plan = (await call<{ plan: Plan }>(s, "/api/organize/plan")).body.plan;
+    assert.deepEqual(plan.moves.map((m) => [m.serial, m.to, m.trip]).sort((a, b) => a[0]! - b[0]!), [[PEARL, A, 1], [RUBY, B, 1]]);
+    const stale = await call(s, "/api/organize/trip", body("POST", { index: 1, stamp: "00000000" }));
+    assert.equal(stale.status, 409);
+    assert.equal(stale.body.stamp, plan.stamp);
+    assert.deepEqual(queued(dir), []);
+    const ok = await call(s, "/api/organize/trip", body("POST", { index: 1, stamp: plan.stamp }));
+    assert.equal(ok.status, 200, JSON.stringify(ok.body));
+    const [line] = queued(dir);
+    assert.deepEqual([line!.id, line!.action, line!.index, line!.stamp], [ok.body.id, "trip", 1, plan.stamp]);
+    assert.deepEqual((line!.takes as { serial: number }[]).map((t) => t.serial).sort(), [PEARL, RUBY].sort());
+    assert.deepEqual(stateOf(dir).pending.map((p) => p.id), [ok.body.id]);
+    const again = await call(s, "/api/organize/trip", body("POST", { index: 1, stamp: plan.stamp }));
+    assert.equal(again.status, 409);
+    assert.match(String(again.body.error), /has not reported back/);
+    assert.equal(queued(dir).length, 1);
+  } finally {
+    await s.close();
+  }
+});
+
+test("[fast] a trip's reported steps go into the overlay, and the next plan no longer carries them", async () => {
+  const { s, dir } = await serve();
+  try {
+    await call(s, "/api/organize", body("PUT", CONFIG_DOC));
+    const plan = (await call<{ plan: Plan }>(s, "/api/organize/plan")).body.plan;
+    const id = String((await call(s, "/api/organize/trip", body("POST", { index: 1, stamp: plan.stamp }))).body.id);
+    const t = new Date().toISOString();
+    writeFileSync(join(dir, "bridge", "tazuo", "status.json"), JSON.stringify({ alive: t, character: "Tester", current: null, counts: { done: 1, failed: 0 },
+      results: { [id]: { ok: true, msg: "trip 1: 2 put away, 0 steps failed", t, partial: false, stopped: false, steps: [
+        { op: "take", serial: RUBY, ok: true, msg: "took Ruby" }, { op: "take", serial: PEARL, ok: true, msg: "took Black Pearl" },
+        { op: "put", serial: RUBY, ok: true, msg: "put Ruby away" }, { op: "put", serial: PEARL, ok: true, msg: "put Black Pearl away" }] } } }));
+    const next = (await call<{ plan: Plan }>(s, "/api/organize/plan")).body.plan;
+    assert.deepEqual(next.moves, []);
+    assert.deepEqual(next.rules.map((r) => [r.ruleId, r.inPlace]), [["reagents", 1], ["gems", 1]]);
+    assert.notEqual(next.stamp, plan.stamp);
+    const st = stateOf(dir);
+    assert.deepEqual(st.pending, []);
+    assert.deepEqual(st.moves.map((m) => [m.serial, m.to]), [[PEARL, A], [RUBY, B]]);
+    const gone = await call(s, "/api/organize/trip", body("POST", { index: 1, stamp: next.stamp }));
+    assert.equal(gone.status, 404);
+  } finally {
+    await s.close();
+  }
+});
+
+test("[fast] POST /api/organize/trip refuses a bad body, a trip that is not its site's next, and a client whose bridge cannot run trips", async () => {
+  const garlic: ThingSpec[] = Array.from({ length: 21 }, (_, i) => ({ serial: 0x40002000 + i, name: "Garlic", in: B }));
+  const { s, dir } = await serve(garlic);
+  try {
+    await call(s, "/api/organize", body("PUT", CONFIG_DOC));
+    assert.equal((await call(s, "/api/organize/trip", body("POST", { index: 0, stamp: "x" }))).status, 400);
+    const plan = (await call<{ plan: Plan }>(s, "/api/organize/plan")).body.plan;
+    assert.deepEqual(plan.trips.map((t) => [t.index, t.site]), [[1, 0], [2, 0]]);
+    const second = await call(s, "/api/organize/trip", body("POST", { index: 2, stamp: plan.stamp }));
+    assert.equal(second.status, 409);
+    assert.match(String(second.body.error), /run trip 1 first/);
+    const web = await call(s, "/api/settings", body("PUT", { client: { adapter: "classicuo-web", scriptsDir: "" } }));
+    assert.equal(web.status, 200, JSON.stringify(web.body));
+    const noTrip = await call(s, "/api/organize/trip", body("POST", { index: 1, stamp: plan.stamp }));
+    assert.equal(noTrip.status, 409);
+    assert.match(String(noTrip.body.error), /cannot run Organize trips/);
+    assert.deepEqual(queued(dir), []);
   } finally {
     await s.close();
   }
