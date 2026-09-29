@@ -56,7 +56,7 @@ const names = (r: Item[]): string[] => r.map((it) => it.name);
 
 test("[fast] parseItemQuery: defaults with no params", () => {
   const q = parseItemQuery(new URLSearchParams());
-  assert.deepEqual(q, { q: "", chars: [], slot: [], loc: [], roots: [], rarity: "", rarityMin: "", kind: [], seenDays: 0, slayer: "", nogarg: false, med: false, hideTags: [], props: [], group: false, sort: "name", dir: 1, offset: 0, limit: 200 });
+  assert.deepEqual(q, { q: "", chars: [], slot: [], loc: [], roots: [], rarity: "", rarityMin: "", rarityMax: "", kind: [], seenDays: 0, slayer: "", nogarg: false, med: false, hideTags: [], props: [], group: false, sort: "name", dir: 1, offset: 0, limit: 200 });
 });
 
 test("[fast] parseItemQuery: clamps limit to [1, 500], offset to >= 0", () => {
@@ -235,6 +235,20 @@ test("[fast] applyItemQuery: a root filter matches everything inside that contai
 test("[fast] applyItemQuery: rarityMin keeps that tier and every tier above it on the ladder", () => {
   const { rows } = applyItemQuery(ITEMS, parseItemQuery(new URLSearchParams("rarityMin=" + encodeURIComponent("Greater Artifact"))), ctx) as ItemQueryRows;
   assert.deepEqual(names(rows).sort(), ["Composite Bow", "Orc Slayer Cutlass", "Talisman of Mercy"]);
+});
+
+test("[fast] applyItemQuery: rarityMax keeps that tier, the tiers below it and items with no tier", () => {
+  const rows = (s: string, items = ITEMS): string[] => names((applyItemQuery(items, parseItemQuery(new URLSearchParams(s)), ctx) as ItemQueryRows).rows).sort();
+  const max = (t: string): string => "kind=gear&rarityMax=" + encodeURIComponent(t);
+  assert.deepEqual(rows(max("Lesser Artifact")), ["Chainmail Tunic", "Cloth Robe", "Gargish Kilt", "Leather Gloves", "Silver Katana", "Vile Ring"]);
+  assert.deepEqual(rows(`${max("Greater Artifact")}&rarityMin=${encodeURIComponent("Lesser Artifact")}`), ["Composite Bow", "Silver Katana", "Vile Ring"], "a band");
+  assert.deepEqual(rows(`${max("Lesser Artifact")}&rarityMin=${encodeURIComponent("Greater Artifact")}`), [], "a floor above the ceiling matches nothing");
+  assert.equal(rows(max("Not A Tier")).length, ITEMS.filter((i) => i.kind === "gear").length, "an unknown ceiling filters nothing");
+  assert.deepEqual(rows(max("Minor Magic Item"), [mk({ name: "Reforged Blade", rarity: "Reforged Lesser Artifact" })]), ["Reforged Blade"], "a tier off the ladder ranks with no tier");
+});
+
+test("[fast] parseItemQuery reads rarityMax", () => {
+  assert.equal(parseItemQuery(new URLSearchParams("rarityMax=Lesser%20Artifact")).rarityMax, "Lesser Artifact");
 });
 
 test("[fast] applyItemQuery: prop rules at most and exactly", () => {

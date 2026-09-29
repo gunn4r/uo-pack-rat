@@ -34,9 +34,9 @@ const CLAMP_LIMIT = (n: number): number => Math.max(1, Math.min(500, n));
 export type PropOp = "le" | "eq";
 export interface PropFilter { key: string; min: number; op?: PropOp | undefined; }
 // The list filters (chars, slot, loc, roots, kind) match ANY of their values; an empty list is no filter.
-// `rarity` matches one tier exactly, `rarityMin` that tier or any above it on the shard's ladder.
+// `rarity` matches one tier exactly, `rarityMin` that tier or any above it on the shard's ladder, `rarityMax` that tier or any below it (an item with no tier, or one off the ladder, counts as below every tier).
 export interface ItemQuery {
-  q: string; chars: string[]; slot: string[]; loc: string[]; roots: number[]; rarity: string; rarityMin: string; kind: string[];
+  q: string; chars: string[]; slot: string[]; loc: string[]; roots: number[]; rarity: string; rarityMin: string; rarityMax: string; kind: string[];
   seenDays: number; slayer: string; nogarg: boolean; med: boolean; hideTags: string[]; props: PropFilter[]; group: boolean;
   sort: string; dir: 1 | -1; offset: number; limit: number;
 }
@@ -74,6 +74,7 @@ export function parseItemQuery(searchParams: URLSearchParams): ItemQuery {
     roots: listOf("root").map(Number).filter(Number.isFinite),
     rarity: sp.get("rarity") || "",
     rarityMin: sp.get("rarityMin") || "",
+    rarityMax: sp.get("rarityMax") || "",
     kind: splitAll("kind"),
     seenDays: Number.isFinite(seenDaysN) ? seenDaysN : 0,
     slayer: sp.get("slayer") || "",
@@ -92,7 +93,7 @@ export function parseItemQuery(searchParams: URLSearchParams): ItemQuery {
 function passes(v: number, f: PropFilter): boolean {
   return f.op === "le" ? v <= f.min : f.op === "eq" ? v === f.min : v >= f.min;
 }
-function matches(it: Item, q: ItemQuery, seenCut: number, minRank: number, ladder: RulesV1RarityItem[]): boolean {
+function matches(it: Item, q: ItemQuery, seenCut: number, minRank: number, maxRank: number, ladder: RulesV1RarityItem[]): boolean {
   if (q.kind.length && !q.kind.includes(it.kind)) return false;
   if (q.chars.length && !q.chars.includes(it.location?.character as string)) return false;
   if (q.nogarg && it.gargoyle) return false;
@@ -104,6 +105,7 @@ function matches(it: Item, q: ItemQuery, seenCut: number, minRank: number, ladde
   if ((q.loc.length || q.roots.length) && !(q.loc.includes(it.location?.text as string) || (it.root != null && q.roots.includes(+it.root)))) return false;
   if (q.rarity && it.rarity !== q.rarity) return false;
   if (minRank && rarityRank(ladder, it.rarity) < minRank) return false;
+  if (maxRank && rarityRank(ladder, it.rarity) > maxRank) return false;
   if (q.slayer === "*" ? !it.slayers?.length : q.slayer && !it.slayers?.includes(q.slayer)) return false;
   if (it.tags.some((t) => q.hideTags.includes(t))) return false;
   for (const f of q.props) if (!passes(colVal(it, f.key), f)) return false;
@@ -135,7 +137,8 @@ export interface ItemQueryGroups { groups: ItemGroupJson[]; total: number; stack
 export function applyItemQuery(items: Item[], query: ItemQuery, { rarity = [], now = Date.now() }: { rarity?: RulesV1RarityItem[]; now?: number } = {}): ItemQueryRows | ItemQueryGroups {
   const seenCut = query.seenDays ? now - query.seenDays * 864e5 : 0;
   const minRank = query.rarityMin ? rarityRank(rarity, query.rarityMin) : 0;
-  const found = items.filter((it) => matches(it, query, seenCut, minRank, rarity));
+  const maxRank = query.rarityMax ? rarityRank(rarity, query.rarityMax) : 0;
+  const found = items.filter((it) => matches(it, query, seenCut, minRank, maxRank, rarity));
   const pieces = found.reduce((a, i) => a + (i.amount || 1), 0);
   const k = query.sort, d = query.dir;
   const sorted = [...found].sort((a, b) => {
