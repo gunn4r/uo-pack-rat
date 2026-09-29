@@ -23,6 +23,20 @@ function fileKind(st: Stats): string {
   return "not a regular file";
 }
 
+// Windows refuses a rename onto a file another process has open at that moment (EPERM, EACCES or
+// EBUSY): an antivirus or search indexer looking at it, or anything reading it. The hold lasts
+// milliseconds, so the rename is tried again for about a second before the write fails; elsewhere a
+// rename onto an open file just works, and the first error is final.
+const RENAME_WAITS_MS = [10, 20, 40, 80, 160, 320, 400];
+export function renameRetrying(from: string, to: string, rename: (from: string, to: string) => void = renameSync, platform: NodeJS.Platform = process.platform): void {
+  for (const wait of platform === "win32" ? [...RENAME_WAITS_MS, -1] : [-1]) {
+    try { rename(from, to); return; }
+    catch (e) {
+      if (wait < 0 || !["EPERM", "EACCES", "EBUSY"].includes((e as NodeJS.ErrnoException).code ?? "")) throw e;
+      Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, wait);
+    }
+  }
+}
 // writeTemp is handed the temp path and must create it with O_EXCL (see tempNameFor). Throws on a
 // refusal or a failed write; the temp is removed either way, so a failure leaves nothing behind.
 export function atomicReplace(dest: string, writeTemp: (tmp: string) => void): void {
@@ -34,7 +48,7 @@ export function atomicReplace(dest: string, writeTemp: (tmp: string) => void): v
   const tmp = tempNameFor(dest);
   try {
     writeTemp(tmp);
-    renameSync(tmp, dest);
+    renameRetrying(tmp, dest);
   } catch (e) {
     try { unlinkSync(tmp); } catch { /* never created, or already gone */ }
     throw e;

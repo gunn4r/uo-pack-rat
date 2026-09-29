@@ -56,12 +56,19 @@ async function until<T>(read: () => T, ok: (v: T) => boolean, what: string): Pro
 async function launch(dataDir: string, want: RealSize = { width: 1440, height: 900 }, demo = true): Promise<{ app: ElectronApplication; page: Page; errors: string[]; size: RealSize }> {
   const { _electron } = await import("playwright");
   const app = await _electron.launch({ args: [ROOT, ...(demo ? ["--demo"] : []), "--data", noUpdateCheck(dataDir)], cwd: ROOT, timeout: 60_000, env: testEnv() });
-  const page = await app.firstWindow();
-  const errors: string[] = [];
-  page.on("pageerror", (e) => errors.push(String(e)));
-  const size = await fitWindow(app, page, want);
-  await page.locator("#inv-table tbody tr.item").first().waitFor({ timeout: 30_000 });
-  return { app, page, errors, size };
+  // A launch that fails here happens before the caller's try, so its finally never closes the app: close it
+  // here, or the Electron process keeps the test file running long after its tests have finished.
+  try {
+    const page = await app.firstWindow();
+    const errors: string[] = [];
+    page.on("pageerror", (e) => errors.push(String(e)));
+    const size = await fitWindow(app, page, want);
+    await page.locator("#inv-table tbody tr.item").first().waitFor({ timeout: 30_000 });
+    return { app, page, errors, size };
+  } catch (e) {
+    await app.close();
+    throw e;
+  }
 }
 async function go(page: Page, hash: string, ready: string): Promise<void> {
   await page.evaluate((h) => { location.hash = h; }, hash);
@@ -352,7 +359,7 @@ test("[slow] Run trip queues one trip; Stop writes the stop flag; a failed put l
   let results: Record<string, unknown> = {};
   const writeStatus = (): void => writeFileSync(join(bridgeDir, "status.json"), JSON.stringify({ alive: new Date().toISOString(), character: "Tester", current: null, counts: { done: 0, failed: 0 }, results }));
   writeStatus();
-  const alive = setInterval(writeStatus, 1000);
+  const alive = setInterval(writeStatus, 1000).unref();   // unref: a failed launch (before the try) must not keep the file running
   const { app, page, errors } = await launch(dataDir);
   try {
     await go(page, "#/organize", "#org-plan #org-headline");
@@ -406,7 +413,7 @@ test("[slow] Organize fits a 1000 × 700 window: rows reflow, nothing scrolls si
   mkdirSync(bridgeDir, { recursive: true });
   const writeStatus = (): void => writeFileSync(join(bridgeDir, "status.json"), JSON.stringify({ alive: new Date().toISOString(), character: "Tester", current: null, counts: { done: 0, failed: 0 }, results: {} }));
   writeStatus();
-  const alive = setInterval(writeStatus, 1000);
+  const alive = setInterval(writeStatus, 1000).unref();   // unref: a failed launch (before the try) must not keep the file running
   const { app, page, errors, size } = await launch(dataDir, { width: 1000, height: 700 });
   t.diagnostic(`window ${size.width} × ${size.height}`);
   try {
@@ -459,7 +466,7 @@ test("[slow] a hand-edited organize.json that lost a rule says so, refuses trips
   mkdirSync(bridgeDir, { recursive: true });
   const writeStatus = (): void => writeFileSync(join(bridgeDir, "status.json"), JSON.stringify({ alive: new Date().toISOString(), character: "Tester", current: null, counts: { done: 0, failed: 0 }, results: {} }));
   writeStatus();
-  const alive = setInterval(writeStatus, 1000);
+  const alive = setInterval(writeStatus, 1000).unref();   // unref: a failed launch (before the try) must not keep the file running
   const { app, page, errors } = await launch(dataDir);
   try {
     await go(page, "#/organize", "#org-save-setup");
