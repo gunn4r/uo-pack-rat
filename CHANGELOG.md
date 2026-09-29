@@ -6,6 +6,7 @@
 - **The Rarity filter takes a ceiling** (issue #11): the Inventory's Rarity popover has a "Rarity at most" list under "Rarity at least", so "Lesser Artifact and below" is one filter. An item with no tier counts as below every tier.
 - **Power scrolls carry their level** (issue #11): "An Exalted Scroll Of Mysticism (110 Skill)" gets the property PS level 110, so a property rule (PS level = 110) finds every 110 scroll.
 - **Organize trips in the TazUO bridge — re-install the scripts (TazUO 2.9.0, Razor Enhanced 1.9.0)** (issue #11): `packrat-bridge.py` can now carry out an Organize trip — take up to 20 items from your labelled containers into your backpack, then put each one into the container it belongs in — reporting every step. A trip only ever puts away items the bridge itself took, never into your own pack, a corpse, another player's pack, a trash container or a blacklisted one; it ends its takes early when your backpack is full, and a Stop halts it between steps. Nothing in the app starts a trip yet: the Organize view arrives in a later release. Razor Enhanced refuses trips; its bridge only picked up the shared input checks.
+- **Organize can plan** (issue #11): Pack Rat keeps container labels, ordered rules, a catch-all and pinned items in `organize.json` in your data folder, and works out from your scans which item goes where, in trips the TazUO bridge can carry out, with a report of what does not fit and why. There is no Organize screen yet; it comes next.
 
 ## 0.1.1 — 2026-09-28
 
