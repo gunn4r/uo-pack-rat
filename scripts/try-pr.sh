@@ -29,8 +29,11 @@ else
   git -C "$root" worktree add -q --detach "$wt" "refs/try/${prs[0]}"
 fi
 [ -e "$wt/node_modules" ] || ln -s "$root/node_modules" "$wt/node_modules"
+# Every PR adds its own line at the top of the changelog, so those always collide; keep both sides there.
+attrs="$(mktemp)"; trap 'rm -f "$attrs"' EXIT
+echo "CHANGELOG.md merge=union" > "$attrs"
 for p in "${prs[@]:1}"; do
-  if ! git -C "$wt" merge -q --no-edit "refs/try/$p" >/dev/null 2>&1; then
+  if ! git -C "$wt" -c core.attributesFile="$attrs" merge -q --no-edit "refs/try/$p" >/dev/null 2>&1; then
     files=$(git -C "$wt" diff --name-only --diff-filter=U | tr "\n" " ")
     git -C "$wt" merge --abort
     echo "PR #$p conflicts with the PRs before it (${files% }); try it on its own, or ask for the PRs to be stacked." >&2; exit 1
@@ -47,4 +50,5 @@ case " ${flags[*]-} " in
   *) echo "Using your real Pack Rat data: quit the installed Pack Rat first (one app per data folder). Add --demo for sample data." ;;
 esac
 cd "$wt"
+rm -f "$attrs"; trap - EXIT
 exec npm run desktop -- ${flags[@]+"${flags[@]}"}
