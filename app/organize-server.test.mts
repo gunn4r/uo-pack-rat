@@ -9,7 +9,7 @@ import { tmpdir } from "node:os";
 import { resolveConfig, ensureLayout } from "./config.mts";
 import { startServer, type ServerHandle } from "./vault-server.mts";
 import { candidateClientRoots } from "./installer.mts";
-import { houseScan, type ThingSpec } from "./organize-fixture.mts";
+import { houseScan, maxOrganizeConfig, type ThingSpec } from "./organize-fixture.mts";
 import { emptyRuleQuery, emptyOrganizeConfig, type OrganizeConfig } from "./organize-config.mts";
 import type { Plan } from "./organize.mts";
 
@@ -210,6 +210,20 @@ test("[fast] no trip runs off a salvaged organize.json, and a file that is not a
     assert.deepEqual(got.body.config, emptyOrganizeConfig());
     assert.match(got.body.problems.join("\n"), /not a version 1 Organize setup; it was moved to organize\.json\.corrupt/);
     assert.deepEqual(JSON.parse(readFileSync(join(dir, "organize.json.corrupt"), "utf8")), { version: 2, future: true });
+  } finally {
+    await s.close();
+  }
+});
+
+test("[fast] PUT /api/organize takes the largest setup the check allows, and GET reads it back whole", async () => {
+  const { s } = await serve();
+  try {
+    const max = maxOrganizeConfig();
+    const put = await call(s, "/api/organize", body("PUT", max));
+    assert.equal(put.status, 200, JSON.stringify(put.body).slice(0, 300));
+    const got = await call<{ config: OrganizeConfig; problems: string[] }>(s, "/api/organize");
+    assert.deepEqual(got.body.problems, []);
+    assert.deepEqual(got.body.config, max);
   } finally {
     await s.close();
   }

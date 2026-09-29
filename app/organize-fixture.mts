@@ -5,6 +5,7 @@
 import assert from "node:assert/strict";
 import { validateScan } from "./scan-schema.mts";
 import type { ScanV2 } from "./schema/types.d.mts";
+import { LIMITS, type OrganizeConfig } from "./organize-config.mts";
 
 export const AT = "2026-09-28T10:00:00Z";
 export interface BoxSpec {
@@ -64,4 +65,22 @@ export function houseScan({ character = "Tester", scannedAt = AT, boxes, things 
   const v = validateScan(doc);
   assert.equal(v.ok, true, JSON.stringify(v.errors));
   return doc as unknown as ScanV2;
+}
+
+// The largest setup checkOrganizeConfig accepts: every list at its cap and every text at its longest. The body
+// limit of PUT /api/organize and the size a saved organize.json may have must both take it.
+export function maxOrganizeConfig(): OrganizeConfig {
+  const t = (n: number): string => "x".repeat(n);
+  const serials = Array.from({ length: LIMITS.labels }, (_, i) => 0xFFFFFFFF - i);
+  const labels = Object.fromEntries(serials.map((s) => [String(s), { serial: s, name: t(LIMITS.text), color: "#aabbcc", pinned: false, origin: `strategy:${t(32)}` as const }]));
+  const list = (): string[] => Array(LIMITS.list).fill(t(LIMITS.text));
+  const rules = Array.from({ length: LIMITS.rules }, (_, i) => ({
+    id: String(i).padEnd(64, "r"), name: t(LIMITS.text), origin: `strategy:${t(32)}` as const, targets: serials.slice(i, i + LIMITS.targets),
+    match: {
+      query: { q: t(LIMITS.q), slot: list(), rarity: t(LIMITS.text), rarityMin: t(LIMITS.text), rarityMax: t(LIMITS.text), kind: list(), slayer: t(LIMITS.text),
+        nogarg: false, med: false, hideTags: list(), props: Array(LIMITS.props).fill({ key: t(LIMITS.text), min: -1.2345678901234567e-300, op: "le" }) },
+      names: Array(LIMITS.names).fill(t(LIMITS.text)),
+    },
+  }));
+  return { version: 1, labels, rules, catchAll: serials[0]!, pinnedItems: serials.slice(0, LIMITS.pinnedItems).concat(Array.from({ length: LIMITS.pinnedItems - LIMITS.labels }, (_, i) => 1 + i)) };
 }

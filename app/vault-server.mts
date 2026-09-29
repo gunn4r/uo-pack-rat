@@ -116,7 +116,7 @@ import { parsePastedScan, writeScanToInbox } from "./import.mts";
 import { writeFileAtomic } from "./atomic-write.mts";
 import { addPanelAutostart, panelPrefsError, readPanelPrefs, tazuoRunning, writePanelPrefs } from "./tazuo-panel.mts";
 import { queueTrip, writeBridgeStop } from "./bridge-trip.mts";
-import { checkOrganizeConfig, emptyOrganizeConfig, salvageOrganizeConfig, type OrganizeConfig } from "./organize-config.mts";
+import { checkOrganizeConfig, emptyOrganizeConfig, salvageOrganizeConfig, MAX_SETUP_BYTES, type OrganizeConfig } from "./organize-config.mts";
 import { planOrganize, tripCommand, type Plan } from "./organize.mts";
 import { emptyOrganizeState, harvestTrips, noteSeen, pruneOverlay, salvageOrganizeState, PENDING_GRACE_MS, type BridgeView, type OrganizeState } from "./organize-state.mts";
 import { retentionError, retentionOf, runsToPrune, scansToPrune, type ScanFile } from "./retention.mts";
@@ -789,7 +789,7 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
     // A file that is too big, does not parse or is not a version 1 setup is moved aside rather than read as empty:
     // the next PUT would otherwise overwrite it.
     let why: string | null = null, raw: unknown = null;
-    if (lstatSync(ORGANIZE).size > 2e6) why = "is over 2 MB";
+    if (lstatSync(ORGANIZE).size > MAX_SETUP_BYTES) why = `is over ${MAX_SETUP_BYTES / 1e6} MB`;
     else {
       try { raw = JSON.parse(readFileSync(ORGANIZE, "utf8")); }
       catch (e) {
@@ -1835,7 +1835,7 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
       }
       if (req.method === "GET" && url.pathname === "/api/organize") return send(res, 200, { ok: true, ...readOrganize() });
       if (req.method === "PUT" && url.pathname === "/api/organize") {
-        const checked = checkOrganizeConfig(await readBody(req, { limit: 1e6, tooLargeMsg: "the Organize setup is too large" }));
+        const checked = checkOrganizeConfig(await readBody(req, { limit: MAX_SETUP_BYTES, tooLargeMsg: "the Organize setup is too large" }));
         if (!checked.ok) return send(res, 400, { ok: false, error: checked.error });
         // A blacklisted container is never opened by a scan, so a label on one could only plan from stale contents.
         const black = new Set(readBlacklist().map((e) => e.serial));

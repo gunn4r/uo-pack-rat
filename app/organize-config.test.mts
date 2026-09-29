@@ -3,7 +3,8 @@
 // Tags: [fast]. Run: node --test app/organize-config.test.mts
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { checkOrganizeConfig, salvageOrganizeConfig, emptyOrganizeConfig, emptyRuleQuery, CATCH_ALL_ID, type OrganizeConfig } from "./organize-config.mts";
+import { checkOrganizeConfig, salvageOrganizeConfig, emptyOrganizeConfig, emptyRuleQuery, CATCH_ALL_ID, MAX_SETUP_BYTES, type OrganizeConfig } from "./organize-config.mts";
+import { maxOrganizeConfig } from "./organize-fixture.mts";
 import type { RuleQuery } from "./item-query.mts";
 
 const A = 0x40000001, B = 0x40000002, P = 0x40000003;
@@ -109,4 +110,10 @@ test("[fast] emptyRuleQuery hands out a fresh object every time", () => {
   const a = emptyRuleQuery();
   a.kind.push("gem");
   assert.deepEqual(emptyRuleQuery().kind, []);
+});
+
+test("[fast] the largest setup the check allows fits MAX_SETUP_BYTES as the server saves it", () => {
+  const max = maxOrganizeConfig();
+  assert.equal(checkOrganizeConfig(max).ok, true);
+  assert.ok(Buffer.byteLength(JSON.stringify(max, null, 2) + "\n") <= MAX_SETUP_BYTES);
 });

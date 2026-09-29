@@ -18,6 +18,9 @@ export interface OrganizeConfig { version: 1; labels: Record<string, ContainerLa
 // The ruleId the plan reports the catch-all's moves under; no rule may take it.
 export const CATCH_ALL_ID = "catch-all";
 export const LIMITS = { labels: 2000, rules: 200, targets: 20, names: 100, pinnedItems: 5000, text: 64, q: 200, list: 50, props: 20 } as const;
+// Room for the largest setup LIMITS allows as the server saves it (pretty-printed, about 5.6 MB): the body limit of
+// PUT /api/organize and the largest organize.json a read accepts.
+export const MAX_SETUP_BYTES = 6e6;
 const MAX_SERIAL = 0xFFFFFFFF;
 const SERIAL_KEY = /^[1-9]\d{0,9}$/;
 const RULE_ID = /^[A-Za-z0-9_-]{1,64}$/;
