@@ -378,6 +378,31 @@ class TazUOScanner(DataDir, unittest.TestCase):
         self.assertEqual(sorted(i["serial"] for i in s["items"]), [RING, RING2], "nothing in or of the trash is recorded")
         self.assertIn("  skipped 2 trash containers", w.messages)
 
+    def test_a_ground_root_records_its_tooltip_and_its_facet(self):
+        w = World(); home(w); w.facet = 3
+        w.items[CHEST].Tooltip = "Wooden Chest\nContents: 1/125 Items, 3 Stones"
+        w.add(0x40000030, 0, name="Metal Chest", X=10, Y=11, Tooltip="Metal Chest\nContents: 0/125 Items, 0 Stones")
+        self.scan(w)
+        [s] = self.scans("tazuo")
+        chest, empty, pack = (s["containers"][str(x)] for x in (CHEST, 0x40000030, PACK))
+        self.assertEqual(chest["tooltip"], ["Wooden Chest", "Contents: 1/125 Items, 3 Stones"])
+        self.assertEqual(chest["pos"], {"x": 11, "y": 10, "z": 0, "facet": 3})
+        self.assertEqual(empty["tooltip"], ["Metal Chest", "Contents: 0/125 Items, 0 Stones"], "a chest that opened empty")
+        self.assertEqual(empty["pos"]["facet"], 3)
+        self.assertNotIn("tooltip", pack)
+        self.assertIsNone(pack["pos"])
+
+    def test_the_facet_is_left_out_when_the_client_cannot_say(self):
+        def stub_ahead_of_build():
+            raise RuntimeError("GetMap is in the stub, not in this build")
+        for facet in (None, -1, 6, "Trammel", stub_ahead_of_build):
+            with self.subTest(facet=facet):
+                shutil.rmtree(os.path.join(self.data, "inbox"), ignore_errors=True)
+                w = World(); home(w); w.facet = facet
+                self.scan(w)
+                [s] = self.scans("tazuo")
+                self.assertEqual(s["containers"][str(CHEST)]["pos"], {"x": 11, "y": 10, "z": 0})
+
 
 class TazUORefresh(DataDir, unittest.TestCase):
     SCRIPT = adapter_path("tazuo", "packrat-refresh.py")
@@ -389,7 +414,7 @@ class TazUORefresh(DataDir, unittest.TestCase):
             m = re.search(r"^def %s\(.*?(?=^def |^[A-Z_]+ = )" % name, t, re.S | re.M)
             self.assertIsNotNone(m, "%s lacks %s" % (path, name))
             return m.group(0)
-        for name in ("is_container", "was_opened", "note_if_closed", "scan_root", "close_opened", "read_blacklist", "without_skipped", "is_trash"):
+        for name in ("is_container", "was_opened", "note_if_closed", "scan_root", "close_opened", "read_blacklist", "without_skipped", "is_trash", "facet", "root_pos", "root_entry"):
             self.assertEqual(body(self.SCRIPT, name), body(TazUOScanner.SCRIPT, name), name)
 
     def test_a_bag_in_the_backpack_that_did_not_open_is_marked_unopened(self):

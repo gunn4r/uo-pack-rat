@@ -125,6 +125,7 @@ class World(object):
         self.calls = []
         self.messages = []
         self.px, self.py = 10, 10
+        self.facet = None          # what the client's map call answers: an int, a callable, or None for a build without the call
 
     def add(self, serial, container=0, **kw):
         self.items[serial] = Item(serial, container, **kw)
@@ -197,6 +198,8 @@ def tazuo_api(world, backpack, bank=0, skills=None):
     api.GetItemsOnGround = lambda r: [it for it in world.items.values() if it.OnGround and world.dist(it.X, it.Y) <= r]
     api.ItemNameAndProps = lambda s, b=False: getattr(world.items[int(s)], "Tooltip", None) or world.items[int(s)].Name
     api.RequestOPLData = lambda serials: None
+    if world.facet is not None:    # a build without GetMap() has no attribute at all
+        api.GetMap = lambda: world.facet() if callable(world.facet) else world.facet
 
     def get_skill(name):
         v = (skills or {}).get(name)
