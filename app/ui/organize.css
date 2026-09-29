@@ -1,0 +1,7 @@
+/* ui/organize.css — the Organize screen (ui/organize.mts), its rule drawer (ui/rule-editor.mts) and the Label…
+   dialog's swatch (ui/containers.mts); issue #11. Two stacked cards at the page's width. Tokens only
+   (docs/ui.md); no text element sets its own width. */
+.org-page .card-body { display: flex; flex-direction: column; gap: var(--space-3); }
+.org-empty .empty-state { padding: var(--space-10) var(--space-6); }
+/* a label's colour: a dot beside its name, never the text's colour */
+.org-swatch { width: 10px; height: 10px; flex: none; border-radius: var(--radius-full); border: var(--border-width) solid var(--color-border-strong); }
