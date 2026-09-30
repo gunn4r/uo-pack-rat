@@ -15,6 +15,10 @@
 #char-table tr:hover td:first-child { background: var(--color-row-hover); color: var(--color-on-row-hover); }
 .roster-scroll.scrolled-x #char-table :is(th, td):first-child { box-shadow: 1px 0 0 var(--color-border); }
 #char-table td:first-child .char-link { display: block; overflow: hidden; text-overflow: ellipsis; }
+/* a name with its low-durability badge (issue #98): the name ellipsises, the badge keeps its width */
+#char-table .char-name { display: flex; align-items: center; gap: var(--space-2); min-width: 0; }
+#char-table .char-name .char-link { min-width: 0; }
+#char-table .char-name .badge { flex: none; }
 #char-table td { height: var(--row-comfortable); }
 #char-table td.no-match { height: auto; white-space: normal; }
 .pr a.char-link { color: var(--color-text); text-decoration: none; }
@@ -56,6 +60,7 @@
 .slot-head { display: flex; align-items: center; gap: var(--space-1-5); }
 .slot-meta { display: flex; align-items: center; gap: var(--space-1-5); min-width: 0; }
 .slot-meta > .muted { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sheet .slot > .badge { align-self: flex-start; }   /* "Low durability 12/255" (issue #98), its own width */
 
 .sheet-props { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: var(--space-3) var(--space-5); padding: var(--space-3) var(--space-4); }
 .prop-group { display: flex; flex-direction: column; gap: var(--space-1); min-width: 0; }
