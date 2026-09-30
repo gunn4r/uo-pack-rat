@@ -10,8 +10,9 @@
 //         GET /schema/validate.mjs (scan-schema.mts's own import, same reason) ·
 //         GET /ui/<name> (name matching /^[a-z0-9-]+\.(mjs|css)$/, served from app/ui/, else 404) ·
 //         GET /ui/fonts/<name>.woff2 (the bundled IBM Plex faces, app/ui/fonts/, as binary font/woff2) ·
-//         GET /api/inventory (the cached fold of every scan — getInventory(), keyed by a signature of
-//         the scans directory + shard + vault-lib.mts mtime, so an edited/added/removed scan file is
+//         GET /api/inventory (the cached fold of every scan, with Organize's results overlay applied —
+//         getInventory(), keyed by a signature of the scans directory + shard + vault-lib.mts mtime, and of
+//         organize-state.json for the overlay, so an edited/added/removed scan file or a finished trip is
 //         picked up on the next request with no restart; each scan file is upgraded v1→v2 and schema-
 //         validated on read — readScans() — an invalid or unparsable file is logged and skipped) — the
 //         response carries facets/worn/rootCounts/missingCounts/itemCount/propKeys — never the full item map
@@ -127,7 +128,7 @@ import { writeFileAtomic } from "./atomic-write.mts";
 import { addPanelAutostart, panelPrefsError, readPanelPrefs, tazuoRunning, writePanelPrefs } from "./tazuo-panel.mts";
 import { queueTrip, writeBridgeStop } from "./bridge-trip.mts";
 import { checkOrganizeConfig, emptyOrganizeConfig, LIMITS, matchProblem, salvageOrganizeConfig, MAX_SETUP_BYTES, type OrganizeConfig, type RuleMatch } from "./organize-config.mts";
-import { planOrganize, tripCommand, matchCount, type Plan } from "./organize.mts";
+import { planOrganize, tripCommand, matchCount, overlaidInventory, type Plan } from "./organize.mts";
 import { PRESETS } from "./organize-presets.mts";
 import { proposeOrganize, STRATEGY_IDS, type StrategyId } from "./organize-strategies.mts";
 import { emptyOrganizeState, harvestTrips, noteSeen, pruneOverlay, salvageOrganizeState, PENDING_GRACE_MS, type BridgeView, type OrganizeState } from "./organize-state.mts";
@@ -737,11 +738,19 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
   // switch changes parseTooltip/classify via rules) and vault-lib.mts's own mtime (the same value lib()
   // already tracks for its dev-reload). /api/forget's tombstone is just another file landing in the scans
   // directory, so it invalidates the cache the same way — no separate invalidation path needed.
+  // What it serves is that fold with Organize's results overlay applied (issue #127, overlaidInventory): every
+  // view and bridge command sees where a trip put an item, not where the last scan saw it. The overlay is cached
+  // on its own, keyed by the fold's signature and organize-state.json's inode, mtime and size (every write
+  // replaces the file), so a finished trip re-applies the overlay without folding the scans again. `fold` is the
+  // scans alone: only Organize's own routes read it, since the planner applies the overlay itself (with the
+  // counts it needs for capacity).
   // GET /api/update-check's last successful answer (see that route).
   const UPDATE_CHECK_TTL_MS = 60 * 60 * 1000;
   let updateCheckCache: { at: number; result: CheckForUpdatesResult } | null = null;
 
-  type InvValue = { inv: Inventory; missing: Record<string, MissingItem[]>; snapshotCount: number; stamp: string };
+  type FoldValue = { fold: Inventory; missing: Record<string, MissingItem[]>; snapshotCount: number };
+  type InvValue = FoldValue & { inv: Inventory };
+  let foldCache: { sig: string | null; value: FoldValue | null } = { sig: null, value: null };
   let invCache: { sig: string | null; value: InvValue | null } = { sig: null, value: null };
   function scansSignature(): string {
     if (!existsSync(SCANS)) return "no-scans-dir";
@@ -751,12 +760,19 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
   async function getInventory(): Promise<InvValue> {
     const libMod = await lib();   // also refreshes libCache.mtime, which the signature below reads
     const sig = `${scansSignature()}::${currentSettings.shard}::${libCache.mtime}`;
-    if (invCache.sig === sig) return invCache.value!;   // sig and value are only ever set together, below
-    const snaps = readScans();
-    const inv = libMod.foldSnapshots(snaps);
-    const value = { inv, missing: missingSinceLastScan(snaps, inv), snapshotCount: snaps.length, stamp: sig };
-    invCache = { sig, value };
-    return value;
+    if (foldCache.sig !== sig) {   // sig and value are only ever set together
+      const snaps = readScans();
+      const fold = libMod.foldSnapshots(snaps);
+      foldCache = { sig, value: { fold, missing: missingSinceLastScan(snaps, fold), snapshotCount: snaps.length } };
+    }
+    const folded = foldCache.value!;
+    let stateSig = "no-state";
+    try { const st = statSync(ORGANIZE_STATE); stateSig = `${st.ino}:${st.mtimeMs}:${st.size}`; } catch { /* no overlay yet */ }
+    const invSig = `${sig}::${stateSig}`;
+    if (invCache.sig === invSig) return invCache.value!;
+    const { moves } = pruneOverlay(readOrganizeState(), folded.fold, Date.now());
+    invCache = { sig: invSig, value: { ...folded, inv: overlaidInventory(folded.fold, moves) } };
+    return invCache.value!;
   }
 
   // Seeds profiles.json from the default on first run and migrates an old-shape file (archetypes → templates) in
@@ -835,24 +851,28 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
     try {
       const st: unknown = JSON.parse(readFileSync(CONFIG.paths.bridgeStatusFor(adapter), "utf8"));
       if (!st || typeof st !== "object" || Array.isArray(st)) return { results: {}, current: null };
-      const { results, current, alive } = st as Record<string, unknown>;
+      const { results, current, alive, character } = st as Record<string, unknown>;
       const aliveMs = typeof alive === "number" ? alive * 1000 : typeof alive === "string" ? Date.parse(alive) : NaN;
       const live = Math.abs(now - aliveMs) <= PENDING_GRACE_MS;
       const id = live && current && typeof current === "object" ? (current as { id?: unknown }).id : null;
-      return { results: results && typeof results === "object" && !Array.isArray(results) ? results as Record<string, unknown> : {}, current: typeof id === "string" ? id : null };
+      return { results: results && typeof results === "object" && !Array.isArray(results) ? results as Record<string, unknown> : {}, current: typeof id === "string" ? id : null,
+        character: isBoundedString(character, 64) ? character : null };
     } catch { return { results: {}, current: null }; }
   }
   // The plan as it stands now: finished trips read out of their bridges' status files into the overlay, entries a
   // newer scan has settled dropped, labels' last-seen times refreshed (the state file is rewritten only when that
-  // changed something), then planOrganize.
+  // changed something, and every open page reloads its inventory when a trip's moves came in), then planOrganize.
+  // Organize works on the fold alone and applies the overlay itself.
   async function organizeNow(): Promise<{ inv: Inventory; config: OrganizeConfig; state: OrganizeState; plan: Plan; problems: string[]; bridges: Record<string, BridgeView> }> {
-    const { inv } = await getInventory();
+    const { fold: inv } = await getInventory();
     const { config, problems } = readOrganize();
     const before = readOrganizeState();
     const now = Date.now();
     const bridges = Object.fromEntries([...new Set(before.pending.map((p) => p.adapter))].map((a) => [a, bridgeView(a, now)]));
-    const state = noteSeen(pruneOverlay(harvestTrips(before, bridges, now), inv, now), config, inv);
+    const harvested = harvestTrips(before, bridges, now);
+    const state = noteSeen(pruneOverlay(harvested, inv, now), config, inv);
     if (JSON.stringify(state) !== JSON.stringify(before)) writeOrganizeState(state);
+    if (JSON.stringify(harvested.moves) !== JSON.stringify(before.moves)) broadcastEvent("changed", { what: "inventory", at: now });
     const plan = planOrganize(inv, config, state.moves, { now, rarity: currentRules.rarity, blacklist: readBlacklist().map((e) => e.serial), seen: state.seen });
     return { inv, config, state, plan, problems, bridges };
   }
