@@ -1247,6 +1247,7 @@ export function itemSearchBlob(it: Item): string {
 // ---------------------------------------------------------------------------
 export const KINDS: string[] = ["gear", "reagent", "potion", "scroll", "refinement", "resource", "gem", "ammo", "food", "crafting", "tool", "bandage", "currency", "map", "book", "rune", "deed", "container", "key", "clothing", "decor", "quest", "other"];
 const CONTAINER_RE = /\b(bag|pouch|box|chest|crate|backpack|basket|trunk|armoire|cabinet|quiver)\b/i;
+const notContainer = (rx: RegExp): RegExp => new RegExp(`^(?!.*${CONTAINER_RE.source}).*${rx.source}`, "i");
 const KIND_RULES: Array<[string, RegExp]> = [
   ["reagent", /\b(black pearl|bloodmoss|blood moss|garlic|ginseng|mandrake|nightshade|spiders?'? ?silk|sulfurous ash|bat ?wing|grave dust|daemon blood|nox crystal|pig iron|dragon'?s blood|fertile dirt|reagent)\b/i],
   ["potion", /\b(potion|keg|elixir|balm|salve|lotion)\b/i],
@@ -1261,9 +1262,9 @@ const KIND_RULES: Array<[string, RegExp]> = [
   ["deed", /\b(deed|commodity|certificate|voucher|ticket)\b/i],
   ["key", /\b(key|keyring|key ring)\b/i],
   // Issue #150: ahead of the resources ("fragment"), food (Easter egg, flour sifter), gems (crystal vase) and tools;
-  // a container stays one (Trick Or Treat Bag), and an ethereal mount's statuette is decor.
-  ["quest", new RegExp(`^(?!.*${CONTAINER_RE.source}).*\\b(mysterious fragment|quest|keepsakes?|memento|souvenir|halloween|christmas|easter|valentine'?s?|thanksgiving|holiday|trick or treat|anniversary|commemorative)\\b`, "i")],
-  ["decor", /\b(statuettes?|statues?|figurines?|sculptures?|bust|paintings?|portraits?|picture|tapestry|banners?|flags?|trophy|mounted|rugs?|carpets?|potted plant|flower ?pot|bonsai|vases?|urns?|lamps?(?! oil)|lanterns?|candles?|candelabrum|candelabra|chandelier|sconce|brazier|decorative|ornaments?|wreath|garland|globe|fountain|mirror|wall hanging)\b/i],
+  // a container stays one (Trick Or Treat Bag, Trophy Chest), and an ethereal mount's statuette is decor.
+  ["quest", notContainer(/\b(mysterious fragment|quest|keepsakes?|memento|souvenir|halloween|christmas|easter|valentine'?s?|thanksgiving|holiday|trick or treat|anniversary|commemorative)\b/)],
+  ["decor", notContainer(/\b(statuettes?|statues?|figurines?|sculptures?|bust|paintings?|portraits?|picture|tapestry|banners?|flags?|trophy|mounted|rugs?|carpets?|potted plant|flower ?pot|bonsai|vases?|urns?|lamps?(?! oil)|lanterns?|candles?|candelabrum|candelabra|chandelier|sconce|brazier|decorative|ornaments?|wreath|garland|globe|fountain|mirror|wall hanging)\b/)],
   // The tools a crafting menu opens from, and the stations; gathering tools, scissors and instruments stay tools.
   ["crafting", /\b(hammer|tongs|sewing kit|tinker'?s tools|tool kit|mortar|pestle|fletcher'?s tools|saw|jointing plane|moulding planes?|smoothing plane|draw knife|froe|inshave|scorp|pen|rolling pin|flour sifter|skillet|blowpipe|mallet and chisel|loom|spinning wheel|anvil|forge)\b/i],
   ["gem", /\b(diamond|ruby|sapphire|star sapphire|emerald|amethyst|citrine|tourmaline|amber|gem|gems|jewel)\b/i],

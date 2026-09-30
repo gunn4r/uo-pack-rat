@@ -4,7 +4,7 @@
 // (GET /api/organize/plan, POST /api/organize/trip) hands everything in.
 import { matchesItem } from "./item-query.mts";
 import { parseStamp } from "./scan-schema.mts";
-import { CATCH_ALL_ID, EMPTY_BAGS_ID, type Build, type OrganizeConfig, type OrganizeRule, type RuleMatch } from "./organize-config.mts";
+import { CATCH_ALL_ID, EMPTY_BAGS_ID, ruleMatchOf, type Build, type OrganizeConfig, type RuleMatch } from "./organize-config.mts";
 import { RESIST_KEYS, spellSchoolOf, TRASH_RE, locationOf, type Character, type Container, type ContainerCapacity, type Inventory, type Item } from "./vault-lib.mts";
 import type { RulesV1RarityItem } from "./schema/types.d.mts";
 import type { TripInput } from "./bridge-trip.mts";
@@ -180,13 +180,9 @@ export function matchCount(inv: Inventory, cfg: OrganizeConfig, m: RuleMatch, op
 export interface Claim { ruleId: string; alsoMatched: string[] }
 // First match wins (spec §1): the first rule whose filter passes claims the item and the others that pass are
 // only recorded. An item no rule claims goes to the catch-all, or stays put (null) when there is none.
-// Issue #150: crafting tools were tools until they got a kind of their own, so an Auto setup saved before that (no
-// rule asks for the Crafting kind) still files them by its rules for tools, until Auto organize runs again. The
-// setup itself is read as saved, so a re-run compares against it. A player's own rule means what its filter says.
+// An Auto setup saved before crafting tools had a kind files them by its rules for tools (ruleMatchOf, issue #150).
 export function claimOf(it: Item, cfg: OrganizeConfig, rarity: RulesV1RarityItem[] = [], suits: ReadonlySet<number> = NO_SUITS): Claim | null {
-  const legacy = it.kind === "crafting" && !cfg.rules.some((r) => r.match.query.kind.includes("crafting"));
-  const matchOf = (r: OrganizeRule): RuleMatch => (legacy && r.origin !== "manual" && r.match.query.kind.includes("tool") ? { ...r.match, query: { ...r.match.query, kind: [...r.match.query.kind, "crafting"] } } : r.match);
-  const hits = cfg.rules.filter((r) => ruleMatches(it, matchOf(r), rarity, suits)).map((r) => r.id);
+  const hits = cfg.rules.filter((r) => ruleMatches(it, it.kind === "crafting" ? ruleMatchOf(r, cfg.rules) : r.match, rarity, suits)).map((r) => r.id);
   if (hits.length) return { ruleId: hits[0]!, alsoMatched: hits.slice(1) };
   return cfg.catchAll != null ? { ruleId: CATCH_ALL_ID, alsoMatched: [] } : null;
 }
