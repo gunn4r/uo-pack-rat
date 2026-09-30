@@ -5,7 +5,7 @@
 import { matchesItem } from "./item-query.mts";
 import { parseStamp } from "./scan-schema.mts";
 import { CATCH_ALL_ID, type Build, type OrganizeConfig, type RuleMatch } from "./organize-config.mts";
-import { RESIST_KEYS, TRASH_RE, type ContainerCapacity, type Inventory, type Item } from "./vault-lib.mts";
+import { RESIST_KEYS, spellSchoolOf, TRASH_RE, type ContainerCapacity, type Inventory, type Item } from "./vault-lib.mts";
 import type { RulesV1RarityItem } from "./schema/types.d.mts";
 import type { TripInput } from "./bridge-trip.mts";
 
@@ -122,9 +122,11 @@ export function buildOf(it: Item): Build {
 }
 
 // A rule's filter: the item query (location-free, item-query.mts's matchesItem) and, when given, any of the names
-// (compared as nameKeys; a name with no letter or digit matches nothing) and the build (gear only).
+// (compared as nameKeys; a name with no letter or digit matches nothing), the build (gear only) and the spell school
+// (spell scrolls only).
 export function ruleMatches(it: Item, m: RuleMatch, rarity: RulesV1RarityItem[] = []): boolean {
   if (m.build && (!it.gear || buildOf(it) !== m.build)) return false;
+  if (m.school && spellSchoolOf(baseName(it.name), it.graphic) !== m.school) return false;
   const names = m.names ?? [];
   if (names.length) {
     const n = nameKey(it.name);
