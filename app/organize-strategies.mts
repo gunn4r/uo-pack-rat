@@ -234,11 +234,9 @@ export function assignGroups(groups: readonly GroupNeed[], offers: readonly Offe
 
 // A house chest holds 125 items (ServUO's default): how the proposal turns missing slots into chests to add.
 export const CONTAINER_SLOTS = 125;
-// What a chest shared by a family's groups is labelled.
-export const FAMILY_NAMES: Record<Family, string> = {
-  armour: "Armour", jewelry: "Jewelry", weapons: "Weapons", "other-gear": "Other gear", gear: "Gear", reagents: "Reagents", scrolls: "Scrolls",
-  resources: "Resources", potions: "Potions & bandages", "runes-books": "Runes & books", deeds: "Deeds", gems: "Gems", tools: "Tools", clothing: "Clothing", other: "Other",
-};
+// What a chest shared by a family's groups is labelled: Simple's group of that family (Simple has one per family, but
+// for By build's gear).
+const FAMILY_NAMES = new Map<Family, string>([...SIMPLE.map((d) => [d.family, d.name] as const), ["gear", "Gear"]]);
 // The chests to add, counted after sharing: a family's groups at one house could share the new chests too, so each
 // family there needs its summed shortfall in whole chests.
 function addContainersOf(reports: readonly GroupReport[], home: ReadonlyMap<string, { site: number }>): number {
@@ -371,7 +369,7 @@ export function proposeOrganize(inv: Inventory, cfg: OrganizeConfig, overlay: Ov
   // A chest two groups share is labelled with their family's name, any other with its group's.
   const sharing = new Map<number, Group[]>();
   for (const g of groups) for (const s of chains.get(g.key)!) sharing.set(s, [...sharing.get(s) ?? [], g]);
-  for (const [s, gs] of sharing) if (labels[String(s)]!.origin !== "manual") labels[String(s)] = { serial: s, name: gs.length > 1 ? FAMILY_NAMES[gs[0]!.family] : gs[0]!.name, origin };
+  for (const [s, gs] of sharing) if (labels[String(s)]!.origin !== "manual") labels[String(s)] = { serial: s, name: gs.length > 1 ? FAMILY_NAMES.get(gs[0]!.family)! : gs[0]!.name, origin };
 
   const used = new Set(manualRules.map((r) => r.id));
   const ruleId = (base: string): string => {
