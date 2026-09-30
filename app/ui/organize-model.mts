@@ -246,7 +246,15 @@ export function ruleCountParts(rep: PlanRuleReport): Array<{ text: string; warn:
   return [{ text: `${n(rep.toMove)} to move`, warn: false }, { text: `${n(rep.inPlace)} in place`, warn: false }, ...(rep.noRoom ? [{ text: `${n(rep.noRoom)} no room`, warn: true }] : [])];
 }
 export function planHeadline(plan: OrganizePlan): string {
-  return plan.moves.length ? `${plural(plan.moves.length, "item")} to move in ${plural(plan.trips.length, "trip")}` : "Everything is where it belongs.";
+  return plan.moves.length ? `${plural(plan.moves.length, "item")} to move in ${plural(plan.trips.length, "trip")}, ${aboutTime(plan.seconds)}` : "Everything is where it belongs.";
+}
+// The planner's estimate (app/organize.mts's tripSeconds) in words: minutes, and past an hour, hours and tens of minutes.
+export function aboutTime(seconds: number): string {
+  const min = Math.round(seconds / 60);
+  if (min < 1) return "under a minute";
+  if (min < 60) return `about ${plural(min, "minute")}`;
+  const h = Math.floor(min / 60), m = Math.round((min % 60) / 10) * 10;
+  return m === 60 ? `about ${plural(h + 1, "hour")}` : `about ${plural(h, "hour")}${m ? ` ${m} minutes` : ""}`;
 }
 export function unclaimedNote(plan: Pick<OrganizePlan, "unclaimed">): string | null {
   const k = plan.unclaimed;
@@ -400,7 +408,7 @@ export function proposalHeadline(p: OrganizeProposal): string {
   if (!p.containers.length) return "Tick at least one container for Auto organize to use.";
   if (!p.changed) return "This is already your setup: nothing to change.";
   const rules = p.groups.reduce((k, g) => k + g.ruleIds.length, 0);
-  const moves = p.plan.moves ? `${plural(p.plan.moves, "item")} to move in ${plural(p.plan.trips, "trip")}.` : "Nothing needs to move.";
+  const moves = p.plan.moves ? `${plural(p.plan.moves, "item")} to move in ${plural(p.plan.trips, "trip")}, ${aboutTime(p.plan.seconds)}.` : "Nothing needs to move.";
   return `Labels ${plural(p.containers.length, "container")} and writes ${plural(rules, "rule")}. ${moves}`;
 }
 export function groupStatus(g: ProposalGroup): { badge: string; tone: "warn" | undefined; text: string | null } {

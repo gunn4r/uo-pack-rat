@@ -469,6 +469,7 @@ export interface OrganizePlan {
   warnings: PlanWarning[];
   carried: { serial: number; name: string }[];
   unclaimed: number;
+  seconds: number;                   // about how long the trips take (app/organize.mts's tripSeconds), whole seconds
 }
 export interface OrganizePreset { id: string; name: string; match: RuleMatch }
 export interface OrganizeApiResponse { ok: boolean; config: OrganizeConfig; problems: string[] }
@@ -495,7 +496,7 @@ export interface OrganizeProposal {
   manualRules: number;
   config: OrganizeConfig;            // the whole setup Accept saves with PUT /api/organize
   changed: boolean;
-  plan: { moves: number; trips: number; noRoom: number; crossSite: number; unclaimed: number };
+  plan: { moves: number; trips: number; noRoom: number; crossSite: number; unclaimed: number; seconds: number };
 }
 export interface OrganizeProposeApiResponse { ok: boolean; proposal: OrganizeProposal }
 

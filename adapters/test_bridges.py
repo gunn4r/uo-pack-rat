@@ -342,8 +342,14 @@ class TazUOBridge(BridgeCase, unittest.TestCase):
     def moves(self, world):
         return [(c[1], c[2]) for c in world.calls if c[0] == "move"]
 
+    def far_dest(self, w):
+        """Move the destination chest (and the bag in it) 6 tiles from the chest the takes come from:
+        no tile reaches both, so every item goes by way of the backpack."""
+        w.items[DEST].X = 17
+        return w
+
     def test_a_trip_takes_then_puts_and_reports_every_step(self):
-        w = trip_home()
+        w = self.far_dest(trip_home())
         final, writes = self.run_bridge(w, 1, [self.trip("t1", takes=[(AMULET, [CHEST, BAG]), (BRACELET, [CHEST, BAG])],
                                                          puts=[(AMULET, [DEST, DEST_BAG]), (BRACELET, [DEST, DEST_BAG])])])
         r = final["results"]["t1"]
@@ -359,6 +365,84 @@ class TazUOBridge(BridgeCase, unittest.TestCase):
         self.assertEqual(self.moves(w), [(AMULET, PACK), (BRACELET, PACK), (AMULET, DEST_BAG), (BRACELET, DEST_BAG)])
         self.assertIn("Pack Rat organize: trip 3, 2 items", w.messages)
         self.assert_heartbeat(writes)
+
+    # ---- direct moves (#130) -----------------------------------------------------------------------
+
+    def test_an_item_whose_destination_is_in_reach_goes_straight_there(self):
+        w = trip_home()
+        final, writes = self.run_bridge(w, 1, [
+            self.trip("t1", takes=[(AMULET, [CHEST, BAG]), (BRACELET, [CHEST, BAG])],
+                      puts=[(AMULET, [DEST, DEST_BAG]), (BRACELET, [DEST, DEST_BAG])]),
+            self.trip("t2", puts=[(AMULET, [DEST])], index=4)])
+        r = final["results"]["t1"]
+        self.assertTrue(r["ok"], r)
+        self.assertEqual(self.steps(final, "t1"), [("take", AMULET, True), ("put", AMULET, True),
+                                                   ("take", BRACELET, True), ("put", BRACELET, True)])
+        self.assertIn("straight", r["steps"][1]["msg"])
+        self.assertEqual(self.moves(w), [(AMULET, DEST_BAG), (BRACELET, DEST_BAG)])
+        self.assertEqual([c for c in w.calls if c[0] == "walk"], [])
+        opened = self.opened(w)
+        self.assertEqual([opened.count(s) for s in (CHEST, BAG, DEST, DEST_BAG)], [1, 1, 1, 1])
+        # Nothing joined the carried set: a put naming the amulet afterwards is refused.
+        self.assertIn("not taken by this bridge", final["results"]["t2"]["steps"][0]["msg"])
+        self.assert_heartbeat(writes)
+
+    def test_a_direct_move_steps_to_the_nearest_tile_in_reach_of_both_and_keeps_what_it_opened_there(self):
+        w = trip_home()
+        w.add(EMPTY, 0, name="Metal Chest", X=14, Y=10)      # 4 tiles off: out of reach, 3 from the chest
+        w.blocked = {(12, 9)}                                # a tile a chest or a wall stands on
+        final, _ = self.run_bridge(w, 1, [self.trip("t1", takes=[(AMULET, [CHEST, BAG]), (BRACELET, [CHEST, BAG])],
+                                                    puts=[(AMULET, [DEST]), (BRACELET, [EMPTY])])])
+        self.assertTrue(final["results"]["t1"]["ok"], final["results"]["t1"])
+        self.assertEqual(self.steps(final, "t1"), [("take", AMULET, True), ("put", AMULET, True),
+                                                   ("take", BRACELET, True), ("put", BRACELET, True)])
+        self.assertEqual(self.moves(w), [(AMULET, DEST), (BRACELET, EMPTY)])
+        # Nearest the player first, then nearest the two chests: (12, 9) has no path, (12, 10) does.
+        self.assertEqual([c[1:] for c in w.calls if c[0] == "walk"], [(12, 9), (12, 10)])
+        opened = self.opened(w)
+        self.assertEqual([opened.count(s) for s in (CHEST, BAG, DEST, EMPTY)], [1, 1, 1, 1])
+
+    def test_with_no_tile_in_reach_of_both_the_item_goes_by_way_of_the_backpack(self):
+        w = trip_home()
+        w.add(EMPTY, 0, name="Metal Chest", X=14, Y=10)
+        w.blocked = {(x, y) for x in (12, 13) for y in range(8, 13)}
+        final, _ = self.run_bridge(w, 1, [self.trip("t1", takes=[(AMULET, [CHEST, BAG])], puts=[(AMULET, [EMPTY])])])
+        self.assertTrue(final["results"]["t1"]["ok"], final["results"]["t1"])
+        self.assertEqual(self.moves(w), [(AMULET, PACK), (AMULET, EMPTY)])
+        walks = [c[1:] for c in w.calls if c[0] == "walk"]
+        self.assertEqual(len(walks), 6 + 1, walks)          # DIRECT_TRIES tiles without a path, then the put's walk
+        self.assertEqual(walks[-1], (14, 10))
+
+    def test_a_direct_drop_the_server_refuses_leaves_the_item_carried_for_a_normal_put(self):
+        w = trip_home()
+        w.refuse = {DEST}
+        final, _ = self.run_bridge(w, 1, [
+            self.trip("t1", takes=[(AMULET, [CHEST, BAG])], puts=[(AMULET, [DEST])]),
+            self.trip("t2", puts=[(AMULET, [DEST, DEST_BAG])], index=4)])
+        self.assertEqual(self.steps(final, "t1"), [("take", AMULET, True), ("put", AMULET, False)])
+        self.assertIn("bounced", final["results"]["t1"]["steps"][1]["msg"])
+        self.assertEqual(self.moves(w), [(AMULET, DEST), (AMULET, PACK), (AMULET, DEST), (AMULET, DEST_BAG)])
+        self.assertTrue(final["results"]["t2"]["ok"], final["results"]["t2"])
+
+    def test_a_direct_drop_that_leaves_the_item_somewhere_unknown_fails_the_take_and_skips_the_put(self):
+        w = trip_home()
+        w.refuse = {DEST}
+        w.on_move = lambda s, dst: setattr(w.items[s], "Container", CORPSE) if dst == DEST else None
+        final, _ = self.run_bridge(w, 1, [self.trip("t1", takes=[(AMULET, [CHEST, BAG])], puts=[(AMULET, [DEST])])])
+        self.assertEqual(self.steps(final, "t1"), [("take", AMULET, False), ("put", AMULET, False)])
+        self.assertIn("not back where it was", final["results"]["t1"]["steps"][0]["msg"])
+        self.assertEqual(self.moves(w), [(AMULET, DEST)])
+
+    def test_a_put_into_a_container_a_later_take_frees_room_in_waits_for_the_backpack(self):
+        # The planner fits every put after every take, so a put may not go ahead of a take from its container.
+        w = trip_home()
+        w.add(STACK, DEST, name="Jewel", container_like=False, OnGround=False)
+        final, _ = self.run_bridge(w, 1, [self.trip("t1", takes=[(AMULET, [CHEST, BAG]), (STACK, [DEST])],
+                                                    puts=[(AMULET, [DEST]), (STACK, [CHEST])])])
+        self.assertTrue(final["results"]["t1"]["ok"], final["results"]["t1"])
+        self.assertEqual(self.steps(final, "t1"), [("take", AMULET, True), ("take", STACK, True), ("put", STACK, True),
+                                                   ("put", AMULET, True)])
+        self.assertEqual(self.moves(w), [(AMULET, PACK), (STACK, CHEST), (AMULET, DEST)])
 
     def test_a_trip_opens_each_container_once_and_the_next_trip_opens_it_again(self):
         w = trip_home()
@@ -422,7 +506,7 @@ class TazUOBridge(BridgeCase, unittest.TestCase):
         return times
 
     def test_a_move_that_lands_at_once_waits_only_the_minimum_gap_before_the_next(self):
-        w = trip_home()
+        w = self.far_dest(trip_home())
         times = self.move_times(w)
         final, _ = self.run_bridge(w, 1, [self.trip("t1", takes=[(AMULET, [CHEST, BAG]), (BRACELET, [CHEST, BAG])],
                                                     puts=[(AMULET, [DEST]), (BRACELET, [DEST])])])
@@ -433,7 +517,7 @@ class TazUOBridge(BridgeCase, unittest.TestCase):
         self.assertLess(final["results"]["t1"]["steps"][1]["ms"], 500)
 
     def test_a_move_that_never_lands_is_reported_bounced_after_the_cap(self):
-        w = trip_home()
+        w = self.far_dest(trip_home())
         w.refuse = {DEST}
         times = self.move_times(w)
         final, writes = self.run_bridge(w, 1, [self.trip("t1", takes=[(AMULET, [CHEST, BAG])], puts=[(AMULET, [DEST])])])
@@ -521,7 +605,7 @@ class TazUOBridge(BridgeCase, unittest.TestCase):
         self.assertEqual(w.items[AMULET].Container, PACK)
 
     def test_the_stop_flag_halts_a_trip_between_steps_and_one_queued_before_it_and_the_taken_item_can_still_be_put_away(self):
-        w = trip_home()
+        w = self.far_dest(trip_home())
         w.on_move = lambda s, dst: self.press_stop(w) if (s, dst) == (AMULET, PACK) else None
         self.enqueue_at(w, 60, [self.trip("t3", puts=[(AMULET, [DEST])], index=5)])
         final, _ = self.run_bridge(w, 1, [
@@ -574,7 +658,7 @@ class TazUOBridge(BridgeCase, unittest.TestCase):
         self.assertEqual(w.items[AMULET].Container, PACK)
 
     def test_a_backpack_the_character_cannot_carry_more_in_cuts_the_takes_short_and_skips_their_puts(self):
-        w = trip_home()
+        w = self.far_dest(trip_home())
         w.weight_max = 1
         final, _ = self.run_bridge(w, 1, [self.trip("t1", takes=[(AMULET, [CHEST, BAG]), (BRACELET, [CHEST, BAG])],
                                                     puts=[(AMULET, [DEST]), (BRACELET, [DEST])])])
@@ -595,7 +679,7 @@ class TazUOBridge(BridgeCase, unittest.TestCase):
         self.assertEqual(self.steps(final, "t1"), [("take", AMULET, True), ("put", AMULET, True)])
 
     def test_a_backpack_at_its_item_cap_takes_nothing(self):
-        w = trip_home()
+        w = self.far_dest(trip_home())
         for i in range(120):                     # with the five pieces trip_home() leaves in the pack: 125, the cap
             w.add(0x40002000 + i, PACK, name="Gem", container_like=False, OnGround=False)
         final, _ = self.run_bridge(w, 1, [self.trip("t1", takes=[(AMULET, [CHEST, BAG])], puts=[(AMULET, [DEST])])])
@@ -613,8 +697,9 @@ class TazUOBridge(BridgeCase, unittest.TestCase):
         r = final["results"]["t1"]
         self.assertFalse(r["ok"])
         self.assertFalse(r["partial"])
+        # The amulet's destination is in reach, so it goes there directly; the gone item's put is still skipped.
         self.assertEqual(self.steps(final, "t1"), [("take", gone, False), ("take", AMULET, True),
-                                                   ("put", gone, False), ("put", AMULET, True)])
+                                                   ("put", AMULET, True), ("put", gone, False)])
         self.assertIn("rescan", r["steps"][0]["msg"])
         self.assertIn("refused", final["results"]["t2"]["steps"][0]["msg"])
         self.assertEqual(w.items[BRACELET].Container, BAG)
@@ -705,7 +790,7 @@ class TazUOBridge(BridgeCase, unittest.TestCase):
         self.assertEqual([c for c in w.calls if c[0] in ("items_in", "find_type_all") and c[1] != PACK], [])
 
     def test_a_put_of_an_item_that_cannot_stack_and_vanishes_is_not_put_away(self):
-        w = trip_home()
+        w = self.far_dest(trip_home())
         w.items[AMULET].Stackable = False
         w.add(STACK, DEST_BAG, name="Jewel", container_like=False, OnGround=False, Stackable=False)
         w.refuse = {DEST_BAG}
@@ -715,7 +800,7 @@ class TazUOBridge(BridgeCase, unittest.TestCase):
 
     def test_a_merge_counts_only_stacks_directly_in_the_container_not_in_a_bag_inside_it(self):
         # FindTypeAll matches an item whose container OR root container is the one asked for.
-        w = trip_home()
+        w = self.far_dest(trip_home())
         w.add(STACK, DEST_BAG, name="Jewel", container_like=False, OnGround=False)
         w.refuse = {DEST}
         w.on_move = lambda s, dst: w.items.pop(s) if dst == DEST else None

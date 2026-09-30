@@ -288,8 +288,11 @@ def tazuo_api(world, backpack, bank=0, skills=None):
 
     def walk_to(x, y, wait, timeout):
         """The fake pathfinder: gets there at once, or never when world.no_path is set -- and then a
-        waiting call blocks for its whole timeout, the way the client's does."""
+        waiting call blocks for its whole timeout, the way the client's does. A tile in world.blocked
+        (a chest, a wall) has no path at all: the call says so at once."""
         world.calls.append(("walk", x, y))
+        if (x, y) in getattr(world, "blocked", ()):
+            return False
         if getattr(world, "no_path", False):
             if wait:
                 world.clock.advance(float(timeout))

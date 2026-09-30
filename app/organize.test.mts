@@ -17,7 +17,7 @@ import { queueTrip } from "./bridge-trip.mts";
 import type { ScanV2 } from "./schema/types.d.mts";
 import {
   ancestry, scopeOf, ruleMatches, buildOf, matchCount, CASTER_PROPS, CASTER_SKILLS, MELEE_PROPS, MELEE_SKILLS, claimOf, baseName, nameKey, applyOverlay, homeOf, newSim, simTake, simPut, mark, rollback, MAX_STACK,
-  sitesOf, planOrganize, tripCommand, lineBytes, type OverlayMove, type Sim, type Plan,
+  sitesOf, planOrganize, tripCommand, lineBytes, directSerials, tripSeconds, STEP_S, type OverlayMove, type Sim, type Plan,
 } from "./organize.mts";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -466,6 +466,21 @@ test("[fast] tripCommand builds the line queueTrip writes: every root placed onc
   const paths = resolveConfig(["--port", "0", "--data", mkdtempSync(join(tmpdir(), "qm-organize-trip-"))], {}).paths;
   const queued = queueTrip(paths, "tazuo", trip);
   assert.equal(queued.ok, true, JSON.stringify(queued));
+  // Issue #130: the chests are 4 tiles apart, so a tile reaches both. The ruby's put waits for the backpack (the
+  // pearl's take, after it, frees room in B); the pearl goes straight into the bag. Three containers are opened.
+  assert.deepEqual([...directSerials(trip)], [PEARL]);
+  assert.equal(tripSeconds(trip), STEP_S.trip + 3 * STEP_S.open + STEP_S.direct + STEP_S.take + STEP_S.put);
+  assert.equal(plan.seconds, Math.round(tripSeconds(trip)));
+});
+
+test("[fast] a trip's takes at one stop run grouped by where they go, and only chests close enough move directly", () => {
+  const inv = fold([{ serial: A }, { serial: B, pos: at(104) }, { serial: C, pos: at(105) }],
+    [{ serial: PEARL, name: "Black Pearl", in: A }, { serial: RUBY, name: "Ruby", in: A }, { serial: PEARL2, name: "Black Pearl", in: A }]);
+  const plan = planOrganize(inv, config({ labels: labels(A, B, C), rules: [reagents([B]), gems([C])] }), [], { now: NOW });
+  const trip = tripCommand(inv, plan, 1)!;
+  assert.deepEqual(trip.takes.map((t) => t.serial), [PEARL, PEARL2, RUBY], "both pearls, then the ruby");
+  assert.deepEqual([...directSerials(trip)], [PEARL, PEARL2], "B is 4 tiles from A, C is 5");
+  assert.equal(plan.seconds, Math.round(STEP_S.trip + 3 * STEP_S.open + 2 * STEP_S.direct + STEP_S.take + STEP_S.put));
 });
 
 test("[smoke] the TazUO fixture: every put fits when the trips are replayed in order", () => {

@@ -326,7 +326,8 @@ function nearestOrder(inv: Inventory, roots: number[], from: Pos | null): number
 
 export interface TripStep { serial: number; name: string; from: number | null; to: number }
 // The trip command for app/bridge-trip.mts's queueTrip: takes first, ordered by nearest stop from the lowest-serial
-// root; then puts, by nearest stop from the last take. Chains and destinations run root first. Null when a
+// root and, at one stop, by where they go (so the bridge's direct moves, issue #130, step between tiles as seldom
+// as it can); then puts, by nearest stop from the last take. Chains and destinations run root first. Null when a
 // container on the way is missing from the fold or nested past eight.
 export function tripInputFrom(inv: Inventory, index: number, stamp: string, steps: TripStep[]): TripInput | null {
   const takes = new Map<number, number[]>(), puts = new Map<number, number[]>();
@@ -343,8 +344,9 @@ export function tripInputFrom(inv: Inventory, index: number, stamp: string, step
   const takeStops = nearestOrder(inv, [...takes.values()].map((c) => c[0]!), null);
   const last = takeStops.at(-1);
   const putStops = nearestOrder(inv, [...puts.values()].map((c) => c[0]!), last == null ? null : posOf(inv, last));
-  const ordered = (stops: number[], paths: Map<number, number[]>): number[] =>
-    [...paths.keys()].sort((a, b) => stops.indexOf(paths.get(a)![0]!) - stops.indexOf(paths.get(b)![0]!) || a - b);
+  const ordered = (stops: number[], paths: Map<number, number[]>, then: (s: number) => number = () => 0): number[] =>
+    [...paths.keys()].sort((a, b) => stops.indexOf(paths.get(a)![0]!) - stops.indexOf(paths.get(b)![0]!) || then(a) - then(b) || a - b);
+  const putStop = (s: number): number => putStops.indexOf(puts.get(s)![0]!);
   const name = new Map(steps.map((s) => [s.serial, s.name.slice(0, 40)]));
   const roots: TripInput["roots"] = {};
   for (const r of [...takeStops, ...putStops]) {
@@ -353,7 +355,7 @@ export function tripInputFrom(inv: Inventory, index: number, stamp: string, step
   }
   return {
     index, stamp, roots,
-    takes: ordered(takeStops, takes).map((serial) => ({ serial, name: name.get(serial)!, chain: takes.get(serial)! })),
+    takes: ordered(takeStops, takes, putStop).map((serial) => ({ serial, name: name.get(serial)!, chain: takes.get(serial)! })),
     puts: ordered(putStops, puts).map((serial) => ({ serial, name: name.get(serial)!, dest: puts.get(serial)! })),
   };
 }
@@ -364,6 +366,36 @@ const ENCODER = new TextEncoder();
 export function lineBytes(input: TripInput): number {
   const line = { id: "00000000-0000-0000-0000-000000000000", action: "trip", index: input.index, stamp: "x".repeat(64), queuedAt: "2026-01-01T00:00:00.000Z", roots: input.roots, takes: input.takes, puts: input.puts };
   return ENCODER.encode(JSON.stringify(line)).length;
+}
+
+// How long trips take (issue #130), from 1,058 bridge steps measured live on a real house (ServUO shard, TazUO 2.9.0
+// before direct moves): a take (chest to backpack) median 0.47 s, a put (backpack to chest) median 0.55 s, walking
+// close to nothing. Each is a server round trip held to the shard's action delay (about 0.5 s between moves). A direct
+// move is one lift and one drop, like a put, and costs one. Each container a trip uses is opened once (packrat-bridge.py
+// waits at least 0.6 s after a double-click), and a trip spends a couple of seconds between being queued and being
+// heard back (the bridge reads its queue every 0.5 s, the page its status every 2.5 s).
+export const STEP_S = { take: 0.47, put: 0.55, direct: 0.55, open: 0.6, trip: 2 } as const;
+// packrat-bridge.py's REACH: containers at most twice this apart have a tile in reach of both.
+const REACH = 2;
+
+// The items of a trip the bridge will move straight into their put's container (packrat-bridge.py's direct_put and
+// stand_by_both): their two roots have tiles in reach of both (whether one can be stood on is only the client's to
+// know, so here it is assumed), and no later take frees room in a container on the put's way.
+export function directSerials(input: TripInput): Set<number> {
+  const dests = new Map(input.puts.map((p) => [p.serial, p.dest]));
+  const out = new Set<number>();
+  input.takes.forEach((t, k) => {
+    const dest = dests.get(t.serial);
+    if (!dest || input.takes.slice(k + 1).some((l) => l.chain.some((c) => dest.includes(c)))) return;
+    const a = input.roots[String(t.chain[0])]!, b = input.roots[String(dest[0])]!;
+    if ((a.facet ?? -1) === (b.facet ?? -1) && tiles(a, b) <= 2 * REACH) out.add(t.serial);
+  });
+  return out;
+}
+export function tripSeconds(input: TripInput): number {
+  const direct = directSerials(input).size;
+  const opened = new Set([...input.takes.flatMap((t) => t.chain), ...input.puts.flatMap((p) => p.dest)]).size;
+  return STEP_S.trip + opened * STEP_S.open + direct * STEP_S.direct + (input.takes.length - direct) * STEP_S.take + (input.puts.length - direct) * STEP_S.put;
 }
 
 export interface PlanMove { serial: number; name: string; amount: number; from: number | null; to: number; ruleId: string; alsoMatched: string[]; trip: number }
@@ -382,6 +414,7 @@ export interface Plan {
   warnings: PlanWarning[];
   carried: Carried[];
   unclaimed: number;
+  seconds: number;          // about how long the trips take (tripSeconds), whole seconds
 }
 export interface PlanOptions extends ScopeOptions {
   rarity?: RulesV1RarityItem[] | undefined;
@@ -417,11 +450,12 @@ const stepsOf = (set: Want[], placed: Map<number, PutResult>): TripStep[] =>
 // drops any whose put has no room (and, one at a time from the end, any past the byte budget) until the rest work
 // together, and commits them; an item that fits nowhere is retried after the next trip frees room, and is no
 // room once nothing more can move.
-function packSite(inv: Inventory, sim: Sim, site: number, wants: Want[], lim: Limits, firstIndex: number): { trips: PlanTrip[]; moves: PlanMove[]; merged: Set<number>; noRoom: Want[] } {
+function packSite(inv: Inventory, sim: Sim, site: number, wants: Want[], lim: Limits, firstIndex: number): { trips: PlanTrip[]; moves: PlanMove[]; merged: Set<number>; noRoom: Want[]; seconds: number } {
   let pending = wants;
   const movers = new Set(wants.map((w) => +w.it.serial));
   const blocked = new Set<number>();
   const trips: PlanTrip[] = [], moves: PlanMove[] = [], merged = new Set<number>();
+  let seconds = 0;
   for (;;) {
     const window: Want[] = [];
     let stones = 0;
@@ -448,6 +482,7 @@ function packSite(inv: Inventory, sim: Sim, site: number, wants: Want[], lim: Li
     const { placed, input } = done;
     sim.undo.length = 0;
     trips.push({ index, site, takes: input.takes.map((t) => t.serial), puts: input.puts.map((p) => p.serial) });
+    seconds += tripSeconds(input);
     for (const w of set) {
       const p = placed.get(+w.it.serial)!;
       movers.delete(+w.it.serial);
@@ -457,7 +492,7 @@ function packSite(inv: Inventory, sim: Sim, site: number, wants: Want[], lim: Li
     blocked.clear();
     pending = pending.filter((w) => !placed.has(+w.it.serial));
   }
-  return { trips, moves, merged, noRoom: pending };
+  return { trips, moves, merged, noRoom: pending, seconds };
 }
 
 // The plan's identity: FNV-1a over the latest scan time and every move. Anything that changes a trip changes it.
@@ -542,6 +577,7 @@ export function planOrganize(inv: Inventory, cfg: OrganizeConfig, overlay: Overl
   };
   const sim = newSim(view, placed.counts);
   const moves: PlanMove[] = [], trips: PlanTrip[] = [], merged = new Set<number>();
+  let seconds = 0;
   for (const site of [...wants.keys()].sort(bySerial)) {
     // Carried items first (they are already in the pack), then the rules take turns, each in serial order: a trip
     // that takes for several rules at once frees room in each other's chests (two full chests trading contents),
@@ -555,6 +591,7 @@ export function planOrganize(inv: Inventory, cfg: OrganizeConfig, overlay: Overl
     trips.push(...packed.trips);
     moves.push(...packed.moves);
     for (const s of packed.merged) merged.add(s);
+    seconds += packed.seconds;
     for (const w of packed.noRoom) report.get(w.ruleId)!.noRoom++;
   }
   for (const m of moves) report.get(m.ruleId)!.toMove++;
@@ -579,6 +616,7 @@ export function planOrganize(inv: Inventory, cfg: OrganizeConfig, overlay: Overl
       .sort((a, b) => (a.kind < b.kind ? -1 : a.kind > b.kind ? 1 : a.serial - b.serial)),
     carried: [...placed.carried].sort((a, b) => a.serial - b.serial),
     unclaimed,
+    seconds: Math.round(seconds),
   };
 }
 

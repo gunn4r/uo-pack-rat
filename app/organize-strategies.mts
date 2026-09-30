@@ -266,7 +266,7 @@ export interface Proposal {
   manualRules: number;
   config: OrganizeConfig;                       // the whole setup Accept saves (PUT /api/organize)
   changed: boolean;                             // false when config is the current setup
-  plan: { moves: number; trips: number; noRoom: number; crossSite: number; unclaimed: number };   // planOrganize on config
+  plan: { moves: number; trips: number; noRoom: number; crossSite: number; unclaimed: number; seconds: number };   // planOrganize on config
 }
 export interface ProposeOptions extends ScopeOptions { strategy: StrategyId; containers?: readonly number[] | undefined; rarity?: RulesV1RarityItem[] | undefined }
 export type ProposeResult = { ok: true; proposal: Proposal } | { ok: false; error: string };
@@ -401,6 +401,6 @@ export function proposeOrganize(inv: Inventory, cfg: OrganizeConfig, overlay: Ov
     unassigned: reports.filter((r) => !r.targets.length).length,
     addContainers: addContainersOf(reports, home),
     manualRules: manualRules.length, config, changed: !isDeepStrictEqual(config, cfg),
-    plan: { moves: plan.moves.length, trips: plan.trips.length, noRoom: plan.rules.reduce((n, r) => n + r.noRoom, 0), crossSite: plan.crossSite.reduce((n, c) => n + c.count, 0), unclaimed: plan.unclaimed },
+    plan: { moves: plan.moves.length, trips: plan.trips.length, noRoom: plan.rules.reduce((n, r) => n + r.noRoom, 0), crossSite: plan.crossSite.reduce((n, c) => n + c.count, 0), unclaimed: plan.unclaimed, seconds: plan.seconds },
   } };
 }
