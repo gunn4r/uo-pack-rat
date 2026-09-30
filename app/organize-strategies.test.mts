@@ -165,20 +165,20 @@ test("[fast] assignGroups: largest group first, each to the chest already holdin
     { serial: 4, site: 1, room: 125, held: {} },
   ];
   const out = assignGroups([{ key: "gems", site: 0, need: 5 }, { key: "reagents", site: 0, need: 30 }, { key: "tools", site: 0, need: 3 }], offers);
-  assert.deepEqual(Object.fromEntries(out), { reagents: [3], gems: [1], tools: [2] }, "never a chest at another site");
+  assert.deepEqual(Object.fromEntries(out.chains), { reagents: [3], gems: [1], tools: [2] }, "never a chest at another site");
   const tie = assignGroups([{ key: "gems", site: 0, need: 1 }], [{ serial: 9, site: 0, room: 10, held: {} }, { serial: 8, site: 0, room: 10, held: {} }, { serial: 7, site: 0, room: 5, held: {} }]);
-  assert.deepEqual(tie.get("gems"), [8]);
+  assert.deepEqual(tie.chains.get("gems"), [8]);
   const full = assignGroups([{ key: "gems", site: 0, need: 1 }], [{ serial: 1, site: 0, room: 0, held: { gems: 1 } }]);
-  assert.deepEqual(full.get("gems"), [], "a chest with no room is never picked");
+  assert.deepEqual(full.chains.get("gems"), [], "a chest with no room is never picked");
 });
 
 test("[fast] assignGroups chains chests until the group fits, and a group that finds none left gets an empty chain", () => {
   const rooms = (n: number, room: number): Offer[] => Array.from({ length: n }, (_, i) => ({ serial: i + 1, site: 0, room, held: {} }));
-  assert.deepEqual(assignGroups([{ key: "reagents", site: 0, need: 25 }], rooms(4, 10)).get("reagents"), [1, 2, 3]);
-  assert.deepEqual(assignGroups([{ key: "reagents", site: 0, need: 40 }], rooms(2, 10)).get("reagents"), [1, 2], "short: every chest, and the rest is the shortfall");
+  assert.deepEqual(assignGroups([{ key: "reagents", site: 0, need: 25 }], rooms(4, 10)).chains.get("reagents"), [1, 2, 3]);
+  assert.deepEqual(assignGroups([{ key: "reagents", site: 0, need: 40 }], rooms(2, 10)).chains.get("reagents"), [1, 2], "short: every chest, and the rest is the shortfall");
   const more = assignGroups([{ key: "gems", site: 0, need: 1 }, { key: "reagents", site: 0, need: 2 }, { key: "tools", site: 0, need: 1 }], rooms(1, 10));
-  assert.deepEqual(Object.fromEntries(more), { reagents: [1], gems: [], tools: [] }, "more groups than containers: the largest gets it");
-  assert.equal(assignGroups([{ key: "reagents", site: 0, need: 500 }], rooms(25, 10)).get("reagents")!.length, 20, "a chain stops at the rule's 20 targets");
+  assert.deepEqual(Object.fromEntries(more.chains), { reagents: [1], gems: [], tools: [] }, "more groups than containers: the largest gets it");
+  assert.equal(assignGroups([{ key: "reagents", site: 0, need: 500 }], rooms(25, 10)).chains.get("reagents")!.length, 20, "a chain stops at the rule's 20 targets");
 });
 
 test("[fast] assignGroups keeps every chest that holds only this group's items in its chain, so a sorted house stays put", () => {
@@ -188,7 +188,37 @@ test("[fast] assignGroups keeps every chest that holds only this group's items i
     { serial: 7, site: 0, room: 50, held: { reagents: 1, gems: 4 } },
     { serial: 9, site: 0, room: 50, held: {} },
   ]);
-  assert.deepEqual(out.get("reagents"), [5, 3], "3 holds only reagents and stays; 7 also holds gems and 9 holds nothing");
+  assert.deepEqual(out.chains.get("reagents"), [5, 3], "3 holds only reagents and stays; 7 also holds gems and 9 holds nothing");
+});
+
+test("[fast] assignGroups: when chests run short, a family's small groups share one chest, spilling to the next (issue #123)", () => {
+  const rooms = (n: number, room: number): Offer[] => Array.from({ length: n }, (_, i) => ({ serial: i + 1, site: 0, room, held: {} }));
+  const groups = [
+    { key: "rings", family: "jewelry", site: 0, need: 8 }, { key: "necklaces", family: "jewelry", site: 0, need: 2 }, { key: "earrings", family: "jewelry", site: 0, need: 1 },
+    { key: "ingots", family: "resources", site: 0, need: 2 }, { key: "boards", family: "resources", site: 0, need: 1 },
+  ];
+  const out = assignGroups(groups, rooms(3, 10));
+  assert.deepEqual(Object.fromEntries(out.chains), { rings: [1], ingots: [2], necklaces: [3], boards: [2], earrings: [3] },
+    "Rings takes a chest of its own while that still leaves one for each family left; the rest share by family, largest first");
+  assert.deepEqual(Object.fromEntries(out.room), { rings: 10, ingots: 2, necklaces: 2, boards: 1, earrings: 1 }, "a sharer is given its own items' room");
+  assert.deepEqual(Object.fromEntries(assignGroups(groups, rooms(9, 10)).chains), { rings: [1], ingots: [2], necklaces: [3], boards: [4], earrings: [5] }, "enough chests: nobody shares");
+  const spill = assignGroups([{ key: "a", family: "f", site: 0, need: 6 }, { key: "b", family: "f", site: 0, need: 5 }, { key: "c", family: "f", site: 0, need: 3 }, { key: "x", family: "g", site: 0, need: 9 }], rooms(2, 10));
+  assert.deepEqual(Object.fromEntries(spill.chains), { x: [1], a: [2], b: [], c: [2] }, "first fit: B finds no room left and no free chest; C still fits");
+  const none = assignGroups([{ key: "a", family: "f", site: 0, need: 12 }, { key: "b", family: "f", site: 0, need: 5 }, { key: "x", family: "g", site: 0, need: 20 }], rooms(2, 10));
+  assert.deepEqual([Object.fromEntries(none.chains), Object.fromEntries(none.room)], [{ x: [1], a: [2], b: [] }, { x: 10, a: 10, b: 0 }]);
+});
+
+test("[fast] assignGroups opens a family's shared chest where that family's items already are, and keeps the one its rule fills", () => {
+  const groups = [
+    { key: "rings", family: "jewelry", site: 0, need: 8 }, { key: "necklaces", family: "jewelry", site: 0, need: 2 }, { key: "earrings", family: "jewelry", site: 0, need: 1 },
+    { key: "ingots", family: "resources", site: 0, need: 2 }, { key: "boards", family: "resources", site: 0, need: 1 },
+  ];
+  const offers = (held3: Record<string, number>, held2: Record<string, number> = {}): Offer[] =>
+    [{ serial: 1, site: 0, room: 10, held: {} }, { serial: 2, site: 0, room: 10, held: held2 }, { serial: 3, site: 0, room: 10, held: held3 }];
+  const want = { rings: [1], ingots: [3], necklaces: [2], boards: [3], earrings: [2] };
+  assert.deepEqual(Object.fromEntries(assignGroups(groups, offers({ boards: 1 })).chains), want, "chest 3 holds a board, so Resources opens there");
+  const kept = groups.map((g) => (g.key === "ingots" ? { ...g, prev: [3] } : g));
+  assert.deepEqual(Object.fromEntries(assignGroups(kept, offers({}, { boards: 1 })).chains), want, "the chest the rule already fills wins over where the items are");
 });
 
 test("[fast] offered containers: every usable ground chest the player's characters scanned, ticked unless the player's own setup uses it", () => {
@@ -309,11 +339,33 @@ test("[fast] re-running after the trips keeps each group in the chests its rule 
     { serial: ITEM + 30, name: "Spellbook", in: BAG }, { serial: ITEM + 31, name: "Black Pearl", in: BAG },
   ]);
   const p = ok(proposeOrganize(inv, emptyOrganizeConfig(), [], OPTS({ strategy: "detailed" })));
-  assert.deepEqual(p.groups.find((g) => g.key === "necromancy-reagents")!.targets, [C, A]);
+  assert.deepEqual(["magery-reagents", "necromancy-reagents"].map((k) => p.groups.find((g) => g.key === k)!.targets), [[C], [C]], "three chests for eight families: the reagents share C");
   const plan = planOrganize(inv, p.config, [], { now: NOW });
   const done: OverlayMove[] = plan.moves.map((m) => ({ serial: m.serial, name: m.name, from: m.from, to: m.to, at: new Date(NOW).toISOString(), trip: "t1" }));
   const after = ok(proposeOrganize(inv, p.config, done, OPTS({ strategy: "detailed" })));
   assert.deepEqual([after.changed, after.plan.moves], [false, 0]);
+});
+
+test("[fast] with too few chests a family's small groups share one, labelled with the family's name, each keeping its own rule; re-running moves nothing (issue #123)", () => {
+  const inv = fold([{ serial: A, max: 20 }, { serial: B, pos: at(102), max: 20 }, { serial: C, pos: at(104), max: 20 }], [
+    ...things(A, ["Katana", "Katana", "Gold Ring", "Iron Ingot"]),
+    ...things(B, ["Katana", "Katana", "Katana", "Gold Necklace", "Gold Bracelet", "Board"], 10),
+  ]);
+  const p = ok(proposeOrganize(inv, emptyOrganizeConfig(), [], OPTS({ strategy: "detailed" })));
+  assert.deepEqual(p.groups.map((g) => [g.key, g.targets, g.roomSlots, g.shortfall]), [
+    ["rings", [C], 1, 0], ["bracelets", [C], 1, 0], ["necklaces", [C], 1, 0], ["weapons", [B], 20, 0], ["ingots", [A], 1, 0], ["boards", [A], 1, 0],
+  ]);
+  assert.deepEqual(Object.fromEntries(Object.values(p.config.labels).map((l) => [l.serial, l.name])), { [A]: "Resources", [B]: "Weapons", [C]: "Jewelry" });
+  assert.deepEqual(p.config.rules.map((r) => [r.id, r.name, r.targets]), [
+    ["auto-rings", "Rings", [C]], ["auto-bracelets", "Bracelets", [C]], ["auto-necklaces", "Necklaces", [C]], ["auto-weapons", "Weapons", [B]], ["auto-ingots", "Ingots", [A]], ["auto-boards", "Boards", [A]],
+  ]);
+  assert.deepEqual([p.unassigned, p.addContainers], [0, 0]);
+  const again = ok(proposeOrganize(inv, p.config, [], OPTS({ strategy: "detailed" })));
+  assert.equal(again.changed, false);
+  const plan = planOrganize(inv, p.config, [], { now: NOW });
+  const done: OverlayMove[] = plan.moves.map((m) => ({ serial: m.serial, name: m.name, from: m.from, to: m.to, at: new Date(NOW).toISOString(), trip: "t1" }));
+  const after = ok(proposeOrganize(inv, p.config, done, OPTS({ strategy: "detailed" })));
+  assert.deepEqual([after.changed, after.plan.moves], [false, 0], "after the trips, the shared chests stay as they are");
 });
 
 test("[fast] Detailed with too few containers says how many are missing; the same scans in any order give the same proposal", () => {
@@ -321,8 +373,11 @@ test("[fast] Detailed with too few containers says how many are missing; the sam
   const inv = fold([{ serial: A }, { serial: B, pos: at(102) }], list);
   const shuffled = fold([{ serial: B, pos: at(102) }, { serial: A }], [...list].reverse());
   const p = ok(proposeOrganize(inv, emptyOrganizeConfig(), [], OPTS({ strategy: "detailed" })));
-  assert.equal(p.unassigned, p.groups.length - 2);
-  assert.equal(p.addContainers, p.groups.length - 2);
+  // Two chests: the two armour groups share one, Potions and Bandages the other; the other nine families are short a
+  // chest each, which their groups could share.
+  assert.deepEqual(Object.values(p.config.labels).map((l) => l.name), ["Armour", "Potions & bandages"]);
+  assert.equal(p.unassigned, p.groups.length - 4);
+  assert.equal(p.addContainers, 9);
   assert.deepEqual(ok(proposeOrganize(shuffled, emptyOrganizeConfig(), [], OPTS({ strategy: "detailed" }))), p);
 });
 
