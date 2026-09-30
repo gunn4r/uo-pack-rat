@@ -135,7 +135,7 @@ import { packKept, planOrganize, tripCommand, matchCount, overlaidInventory, typ
 import { checkPutAwayRequest, nothingDetail, requestId, tripMsg, FRESH_MARGIN_MS, MAX_REQUEST_BYTES, PUT_AWAY_REPLY, PUT_AWAY_REQUEST, type PutAwayReply, type PutAwayRequest } from "./put-away.mts";
 import { PRESETS } from "./organize-presets.mts";
 import { proposeOrganize, STRATEGY_IDS, type StrategyId } from "./organize-strategies.mts";
-import { emptyOrganizeState, harvestTrips, noteSeen, pruneOverlay, salvageOrganizeState, PENDING_GRACE_MS, type BridgeView, type OrganizeState } from "./organize-state.mts";
+import { addGrab, emptyOrganizeState, harvestTrips, noteSeen, pruneOverlay, salvageOrganizeState, PENDING_GRACE_MS, type BridgeView, type OrganizeState } from "./organize-state.mts";
 import { retentionError, retentionOf, runsToPrune, scansToPrune, type ScanFile } from "./retention.mts";
 import { missingSinceLastScan, type MissingItem } from "./missing.mts";
 import {
@@ -1888,7 +1888,7 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
         // and the container it left has that slot free again (harvestTrips), until a scan says otherwise.
         if (line.action === "grab") {
           const state = readOrganizeState();
-          writeOrganizeState({ ...state, grabs: [...state.grabs, { id, adapter, serial: line.serial as number, name: line.name as string, from: (line.chain as number[]).at(-1) ?? null, queuedAt: line.queuedAt }] });
+          writeOrganizeState(addGrab(state, { id, adapter, serial: line.serial as number, name: line.name as string, from: (line.chain as number[]).at(-1) ?? null, queuedAt: line.queuedAt }));
         }
         return send(res, 200, { ok: true, id });
       }

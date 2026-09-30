@@ -9,7 +9,7 @@ import { fileURLToPath } from "node:url";
 import { foldSnapshots, setRules } from "./vault-lib.mts";
 import { houseScan, AT } from "./organize-fixture.mts";
 import { emptyOrganizeConfig } from "./organize-config.mts";
-import { emptyOrganizeState, harvestTrips, pruneOverlay, noteSeen, salvageOrganizeState, PENDING_GRACE_MS, type OrganizeState, type PendingGrab, type PendingTrip } from "./organize-state.mts";
+import { addGrab, emptyOrganizeState, harvestTrips, pruneOverlay, noteSeen, salvageOrganizeState, PENDING_GRACE_MS, type OrganizeState, type PendingGrab, type PendingTrip } from "./organize-state.mts";
 import type { OverlayMove } from "./organize.mts";
 import type { RulesV1 } from "./schema/types.d.mts";
 
@@ -77,19 +77,29 @@ test("[fast] harvestTrips ignores a malformed result and steps for items the tri
 });
 
 test("[fast] harvestTrips reads a Grab that worked in as a take marked grab, drops one that failed and keeps one still waiting", () => {
-  // Issue #148: the grab left B; a pending overlay move of the ruby keeps the container it first came from.
+  // Issue #148: each grab left B, except that a ruby an earlier trip left carried keeps the container it came from;
+  // a garnet a trip put into B left B.
   const grab = (id: string, serial: number): PendingGrab => ({ id, adapter: "tazuo", serial, name: "x", from: B, queuedAt: QUEUED });
-  const before = state({ moves: [{ serial: RUBY, name: "Ruby", from: A, to: B, at: "2026-09-28T10:59:30Z", trip: "t-1" }],
-    grabs: [grab("g-1", PEARL), grab("g-2", RUBY), grab("g-3", GARLIC), grab("g-4", 0x40001009)] });
-  const results = { "g-1": { ok: true, msg: "grabbed x — it is in your backpack", t: T1 }, "g-2": { ok: true, msg: "", t: T1 }, "g-3": { ok: false, msg: "not reachable", t: T1 } };
+  const GARNET = 0x4000100b;
+  const before = state({ moves: [{ serial: RUBY, name: "Ruby", from: A, to: null, at: "2026-09-28T10:59:30Z", trip: "t-1" }, { serial: GARNET, name: "Garnet", from: A, to: B, at: "2026-09-28T10:59:30Z", trip: "t-1" }],
+    grabs: [grab("g-1", PEARL), grab("g-2", RUBY), grab("g-3", GARLIC), grab("g-4", 0x40001009), grab("g-5", GARNET)] });
+  const results = { "g-1": { ok: true, msg: "grabbed x — it is in your backpack", t: T1 }, "g-2": { ok: true, msg: "", t: T1 }, "g-3": { ok: false, msg: "not reachable", t: T1 }, "g-5": { ok: true, msg: "", t: T1 } };
   const next = harvestTrips(before, { tazuo: { results, current: null, character: "Tester" } }, Date.parse(QUEUED) + 30_000);
   assert.deepEqual(next.grabs.map((g) => g.id), ["g-4"]);
   assert.deepEqual(next.moves, [
     { serial: PEARL, name: "x", from: B, to: null, at: T1, trip: "g-1", character: "Tester", grab: true },
     { serial: RUBY, name: "x", from: A, to: null, at: T1, trip: "g-2", character: "Tester", grab: true },
+    { serial: GARNET, name: "x", from: B, to: null, at: T1, trip: "g-5", character: "Tester", grab: true },
   ]);
   assert.deepEqual(salvageOrganizeState(JSON.parse(JSON.stringify(next))), next, "salvage keeps grabs and the grab mark");
   assert.deepEqual(harvestTrips(next, { tazuo: { results: {}, current: null } }, Date.parse(QUEUED) + PENDING_GRACE_MS + 1000).grabs, [], "never picked up");
+});
+
+test("[fast] a Grab all of many pieces keeps every grab through the state file, and the list stays bounded", () => {
+  let s = state();
+  for (let i = 0; i < 600; i++) s = addGrab(s, { id: `g-${i}`, adapter: "tazuo", serial: 0x40002000 + i, name: "x", from: B, queuedAt: QUEUED });
+  const read = salvageOrganizeState(JSON.parse(JSON.stringify(s)));
+  assert.deepEqual([read.grabs.length, read.grabs[0]!.id, read.grabs.at(-1)!.id], [500, "g-100", "g-599"], "salvage reads back exactly what was written");
 });
 
 test("[fast] pruneOverlay drops what a newer scan has settled and keeps the rest", () => {

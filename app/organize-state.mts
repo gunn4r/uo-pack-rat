@@ -22,7 +22,8 @@ export interface BridgeView { results: Record<string, unknown>; current: string 
 export const PENDING_GRACE_MS = 90_000;
 // An entry no scan has settled in a week is dropped: by then its containers are stale anyway.
 export const OVERLAY_MAX_AGE_MS = 7 * 864e5;
-const MAX_PENDING = 50, MAX_MOVES = 5000, MAX_SERIAL = 0xFFFFFFFF;
+// Grabs: well above a Grab all of every piece a suit can have, queued at once.
+const MAX_PENDING = 50, MAX_GRABS = 500, MAX_MOVES = 5000, MAX_SERIAL = 0xFFFFFFFF;
 
 const isObj = (v: unknown): v is Record<string, unknown> => !!v && typeof v === "object" && !Array.isArray(v);
 const isSerial = (v: unknown): v is number => typeof v === "number" && Number.isInteger(v) && v >= 1 && v <= MAX_SERIAL;
@@ -46,6 +47,8 @@ function asGrab(v: unknown): PendingGrab | null {
     || typeof v.name !== "string" || v.name.length > 200 || !(v.from === null || isSerial(v.from)) || !isStamp(v.queuedAt)) return null;
   return { id: v.id, adapter: v.adapter, serial: v.serial, name: v.name, from: v.from, queuedAt: v.queuedAt };
 }
+// A Grab just queued, added under the same bound salvage reads the list with.
+export function addGrab(state: OrganizeState, grab: PendingGrab): OrganizeState { return { ...state, grabs: [...state.grabs, grab].slice(-MAX_GRABS) }; }
 function asMove(v: unknown): OverlayMove | null {
   if (!isObj(v) || !isSerial(v.serial) || typeof v.name !== "string" || v.name.length > 200 || !(v.from === null || isSerial(v.from))
     || !(v.to === null || isSerial(v.to)) || !isStamp(v.at) || !isText(v.trip, 64)) return null;
@@ -56,7 +59,7 @@ const present = <T,>(v: T | null): v is T => v !== null;
 export function salvageOrganizeState(raw: unknown): OrganizeState {
   if (!isObj(raw) || raw.version !== 1) return emptyOrganizeState();
   const pending = (Array.isArray(raw.pending) ? raw.pending : []).map(asPending).filter(present).slice(-MAX_PENDING);
-  const grabs = (Array.isArray(raw.grabs) ? raw.grabs : []).map(asGrab).filter(present).slice(-MAX_PENDING);
+  const grabs = (Array.isArray(raw.grabs) ? raw.grabs : []).map(asGrab).filter(present).slice(-MAX_GRABS);
   const moves = (Array.isArray(raw.moves) ? raw.moves : []).map(asMove).filter(present).slice(-MAX_MOVES);
   const seen: Record<string, string> = {};
   if (isObj(raw.seen)) for (const [k, v] of Object.entries(raw.seen)) if (/^[1-9]\d{0,9}$/.test(k) && isStamp(v)) seen[k] = v;
@@ -75,7 +78,7 @@ function asTripResult(v: unknown): TripResult | null {
 // that worked puts the item in the backpack (to: null), a put that worked puts it in the step's destination. A
 // step for an item the trip did not carry is ignored. Each move names the character the bridge ran in, when known.
 // A Grab that worked is a take (issue #148), marked `grab` so Organize leaves the item with the player; it left
-// the container a move still pending in the overlay took it from, else the one it was grabbed from. With no result
+// the container it was grabbed from, or, when an earlier move left the item carried, the one that move took it from. With no result
 // yet, a trip or a grab is kept while the bridge is running it or while it may still be picked up.
 export function harvestTrips(state: OrganizeState, bridges: Record<string, BridgeView>, now: number): OrganizeState {
   const moves = new Map(state.moves.map((m) => [m.serial, m]));
@@ -102,7 +105,8 @@ export function harvestTrips(state: OrganizeState, bridges: Record<string, Bridg
     const result = bridge && Object.hasOwn(bridge.results, g.id) ? bridge.results[g.id] : undefined;
     if (result === undefined) { if (waiting(bridge, g.id, g.queuedAt)) grabs.push(g); continue; }
     if (!isObj(result) || result.ok !== true || !isStamp(result.t)) continue;
-    const from = moves.get(g.serial)?.from ?? g.from;
+    const prev = moves.get(g.serial);
+    const from = prev && prev.to == null ? prev.from : g.from;
     moves.set(g.serial, { serial: g.serial, name: g.name, from, to: null, at: result.t, trip: g.id, ...(bridge?.character ? { character: bridge.character } : {}), grab: true });
   }
   return { ...state, pending, grabs, moves: [...moves.values()].sort((a, b) => a.serial - b.serial) };
