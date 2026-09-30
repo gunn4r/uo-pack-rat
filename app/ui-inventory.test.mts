@@ -25,16 +25,18 @@ test("[fast] plural agrees with its count and groups thousands", () => {
 });
 
 test("[fast] queryParams round-trips through the server's parser", () => {
-  const q: ItemQuery = { ...BASE, q: "ring", chars: ["Dorran", "Kestrel"], slot: ["ring", "?"], loc: ["Metal Chest, left"], roots: [12], rarityMin: "Greater Magic Item", kind: ["gear"], seenDays: 7, slayer: "*", nogarg: true, med: true, hideTags: ["cursed"], props: [{ key: "lmc", min: 8 }, { key: "hci", min: 5, op: "le" }], group: true, sort: "hci", dir: -1, offset: 500, limit: 500 };
+  const q: ItemQuery = { ...BASE, q: "ring", chars: ["Dorran", "Kestrel"], slot: ["ring", "?"], loc: ["Metal Chest, left"], roots: [12], rarityMin: "Greater Magic Item", kind: ["gear"], seenDays: 7, slayer: "*", nogarg: true, med: true, hideTags: ["cursed"], tags: ["brittle", "antique"], props: [{ key: "lmc", min: 8 }, { key: "hci", min: 5, op: "le" }], group: true, sort: "hci", dir: -1, offset: 500, limit: 500 };
   assert.deepEqual(parseItemQuery(queryParams(q)), q);
   assert.deepEqual(parseItemQuery(queryParams(BASE)), BASE);
 });
 
 test("[fast] activeFilters words each filter as its token and removes only itself", () => {
-  const q: ItemQuery = { ...BASE, rarityMin: "Greater Magic Item", kind: ["gear"], hideTags: ["cursed"], props: [{ key: "lmc", min: 8 }], roots: [0x700b0000], chars: ["Dorran"] };
+  const q: ItemQuery = { ...BASE, rarityMin: "Greater Magic Item", kind: ["gear"], hideTags: ["cursed"], tags: ["brittle"], props: [{ key: "lmc", min: 8 }], roots: [0x700b0000], chars: ["Dorran"] };
   const tokens = activeFilters(q, CTX);
-  assert.deepEqual(tokens.map((t) => t.label), ["Character: Dorran", "Location: Metal Chest (0x700b0000)", "Rarity ≥ Greater Magic Item", "Kind: gear", "LMC ≥ 8", "Hiding: cursed"]);
-  assert.deepEqual(tokens.map((t) => t.removeLabel).slice(2), ["Remove filter: Rarity", "Remove filter: Kind gear", "Remove filter: LMC ≥ 8", "Remove filter: Hiding cursed"]);
+  assert.deepEqual(tokens.map((t) => t.label), ["Character: Dorran", "Location: Metal Chest (0x700b0000)", "Rarity ≥ Greater Magic Item", "Kind: gear", "LMC ≥ 8", "Hiding: cursed", "Tagged: brittle"]);
+  assert.deepEqual(tokens.map((t) => t.removeLabel).slice(2), ["Remove filter: Rarity", "Remove filter: Kind gear", "Remove filter: LMC ≥ 8", "Remove filter: Hiding cursed", "Remove filter: Tagged brittle"]);
+  assert.deepEqual(tokens.find((t) => t.id === "tags")!.remove(q).tags, []);
+  assert.equal(tokens.find((t) => t.id === "tags")!.cause(3), "None of the 3 stacks is tagged brittle.");
   const noKind = tokens.find((t) => t.id === "kind:gear")!.remove(q);
   assert.deepEqual(noKind.kind, []);
   assert.equal(noKind.rarityMin, "Greater Magic Item", "removing one filter leaves the others");

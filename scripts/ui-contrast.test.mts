@@ -87,10 +87,11 @@ const SCENES: Scene[] = [
     await p.getByRole("menuitem", { name: "Property rule…" }).click();
     await p.locator(".pop .inv-prop").first().click();
   }, leave: (p) => p.keyboard.press("Escape") },
-  { name: "inventory hide tags", enter: async (p) => {
+  { name: "inventory tags", enter: async (p) => {
     await p.click("#f-add");
-    await p.getByRole("menuitem", { name: "Hide tags…" }).click();
+    await p.getByRole("menuitem", { name: "Tags…" }).click();
     await p.locator(".pop .pill").first().click();
+    await p.locator(".pop .pill").last().click();
   }, leave: (p) => p.keyboard.press("Escape") },
   { name: "inventory table settings", enter: async (p) => { await p.click("#inv-settings"); await p.waitForSelector("#inv-cols"); }, leave: (p) => p.keyboard.press("Escape") },
   { name: "inventory item peek", enter: async (p) => {

@@ -279,7 +279,7 @@ export interface Proposal {
   changed: boolean;                             // false when config is the current setup
   plan: { moves: number; trips: number; noRoom: number; crossSite: number; unclaimed: number };   // planOrganize on config
 }
-export interface ProposeOptions extends ScopeOptions { strategy: StrategyId; containers?: readonly number[] | undefined; rarity?: RulesV1RarityItem[] | undefined }
+export interface ProposeOptions extends ScopeOptions { strategy: StrategyId; containers?: readonly number[] | undefined; rarity?: RulesV1RarityItem[] | undefined; suitPieces?: ReadonlySet<number> | undefined }
 export type ProposeResult = { ok: true; proposal: Proposal } | { ok: false; error: string };
 
 const bySerial = (a: number, b: number): number => a - b;
@@ -343,7 +343,7 @@ export function proposeOrganize(inv: Inventory, cfg: OrganizeConfig, overlay: Ov
   const catchAll = cfg.catchAll != null && labels[String(cfg.catchAll)] ? cfg.catchAll : null;
   const draft: OrganizeConfig = { version: 1, labels, rules: manualRules, catchAll: null, pinnedItems: cfg.pinnedItems };
   const scope = scopeOf(view, draft, opts);
-  const items = scope.movable.map((s) => view.items[s]!).filter((it) => !claimOf(it, draft, rarity));
+  const items = scope.movable.map((s) => view.items[s]!).filter((it) => !claimOf(it, draft, rarity, opts.suitPieces));
   const groups = groupItems(STRATEGIES[opts.strategy], items, rarity, new Set(catchAll != null ? ["other"] : []));
 
   const siteOfRoot = new Map(sitesOf(view, scope.siteRoots).flatMap((g, i) => g.map((r) => [r, i] as const)));

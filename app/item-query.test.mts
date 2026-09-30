@@ -56,7 +56,7 @@ const names = (r: Item[]): string[] => r.map((it) => it.name);
 
 test("[fast] parseItemQuery: defaults with no params", () => {
   const q = parseItemQuery(new URLSearchParams());
-  assert.deepEqual(q, { q: "", chars: [], slot: [], loc: [], roots: [], rarity: "", rarityMin: "", rarityMax: "", kind: [], seenDays: 0, slayer: "", nogarg: false, med: false, hideTags: [], props: [], group: false, sort: "name", dir: 1, offset: 0, limit: 200 });
+  assert.deepEqual(q, { q: "", chars: [], slot: [], loc: [], roots: [], rarity: "", rarityMin: "", rarityMax: "", kind: [], seenDays: 0, slayer: "", nogarg: false, med: false, hideTags: [], tags: [], props: [], group: false, sort: "name", dir: 1, offset: 0, limit: 200 });
 });
 
 test("[fast] parseItemQuery: clamps limit to [1, 500], offset to >= 0", () => {
@@ -259,7 +259,7 @@ function rule(s: string): RuleQuery {
 const ruleNames = (s: string, items = ITEMS): string[] => names(items.filter((it) => matchesItem(it, rule(s), { rarity: RARITY_LADDER }))).sort();
 
 test("[fast] matchesItem agrees with applyItemQuery on every filter a rule keeps", () => {
-  for (const s of ["", "kind=gear", "slot=ring,?", "rarity=Lesser%20Artifact", "rarityMin=Greater%20Artifact", "rarityMax=Lesser%20Artifact", "slayer=*", "slayer=Orc", "nogarg=1", "med=1", "hide=cursed", "prop=hci:ge:12", "prop=dci:le:5&kind=gear", "q=orc"]) {
+  for (const s of ["", "kind=gear", "slot=ring,?", "rarity=Lesser%20Artifact", "rarityMin=Greater%20Artifact", "rarityMax=Lesser%20Artifact", "slayer=*", "slayer=Orc", "nogarg=1", "med=1", "hide=cursed", "tag=cursed,brittle", "prop=hci:ge:12", "prop=dci:le:5&kind=gear", "q=orc"]) {
     assert.deepEqual(ruleNames(s), names((applyItemQuery(ITEMS, parseItemQuery(new URLSearchParams(s)), ctx) as ItemQueryRows).rows).sort(), s);
   }
 });
@@ -283,6 +283,30 @@ test("[fast] matchesItem: a power scroll rule by level", () => {
   const scroll = mk({ name: "An Exalted Scroll Of Magery (110 Skill)", kind: "scroll", slot: null, props: { psLevel: 110 } });
   assert.equal(matchesItem(scroll, rule("kind=scroll&prop=psLevel:eq:110")), true);
   assert.equal(matchesItem(scroll, rule("kind=scroll&prop=psLevel:eq:115")), false);
+});
+
+// Issue #133: an Undesirables rule's filters, a threshold on a line no property models and a tag the item must have.
+const SPLINTERS = [
+  mk({ name: "Splintering Axe", slot: "twoHanded", tags: ["brittle"], extras: { "splintering weapon": 20, "weapon speed": 3.25, durability: [5, 40] } }),
+  mk({ name: "Splintering Kryss", slot: "oneHanded", tags: ["antique"], extras: { "splintering weapon": 10, swordsmanship: 5 } }),
+  mk({ name: "Plain Axe", slot: "twoHanded", tags: ["brittle"], extras: { "weapon speed": 3.5 } }),
+];
+test("[fast] matchesItem: a numeric extra takes a threshold, and tags keeps only items with any of its tags (issue #133)", () => {
+  assert.equal(colVal(SPLINTERS[0]!, "splintering weapon"), 20);
+  assert.equal(colVal(SPLINTERS[0]!, "durability"), 0, "a range is no number to compare");
+  assert.deepEqual(ruleNames("prop=splintering%20weapon:ge:15", SPLINTERS), ["Splintering Axe"]);
+  assert.deepEqual(ruleNames("prop=splintering%20weapon:1&tag=brittle", SPLINTERS), ["Splintering Axe"]);
+  assert.deepEqual(ruleNames("tag=brittle,antique", SPLINTERS), ["Plain Axe", "Splintering Axe", "Splintering Kryss"]);
+  assert.deepEqual(ruleNames("tag=cursed", SPLINTERS), []);
+  assert.deepEqual(parseItemQuery(new URLSearchParams("tag=brittle&tag=cursed")).tags, ["brittle", "cursed"]);
+  const { tags, ...old } = rule("prop=splintering%20weapon:1");
+  assert.equal(matchesItem(SPLINTERS[1]!, old), true, "a rule saved before tags existed has none, and requires none");
+  assert.deepEqual(names((applyItemQuery(SPLINTERS, parseItemQuery(new URLSearchParams("tag=brittle&prop=splintering%20weapon:1")), ctx) as ItemQueryRows).rows), ["Splintering Axe"]);
+});
+test("[fast] facetsOf: extraKeys lists the numeric extras, never a skill bonus or a range, and propKeys stays the modelled properties", () => {
+  const f = facetsOf(SPLINTERS);
+  assert.deepEqual(f.extraKeys, ["splintering weapon", "weapon speed"]);
+  assert.deepEqual(f.propKeys, []);
 });
 
 test("[fast] applyItemQuery: prop rules at most and exactly", () => {

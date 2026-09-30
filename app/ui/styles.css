@@ -3,6 +3,9 @@
    The shell is ui/shell.css, components are ui/components.css, and each screen has its own file. */
 
 html, body { margin: 0; height: 100%; }
+/* The hidden attribute always hides: a component's own display (.btn's inline-flex, a view's flex) would otherwise beat
+   the browser's default and leave a hidden element on screen. */
+[hidden] { display: none !important; }
 h1, h2, h3 { text-wrap: balance; font-weight: var(--weight-semibold); }
 h1 { font-family: var(--font-display); font-size: var(--text-lg); line-height: var(--lh-lg); }
 h2 { font-size: var(--text-md); line-height: var(--lh-md); }

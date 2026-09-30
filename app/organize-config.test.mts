@@ -36,6 +36,9 @@ test("[fast] checkOrganizeConfig accepts an empty setup and a full one", () => {
   assert.equal(r.ok, true, r.ok ? "" : r.error);
   const built = full();
   built.rules[1]!.match.build = "hybrid";
+  // Issue #133: a rule may require tags and skip saved suits; one saved before either (r1 here) still reads.
+  built.rules[1]!.match.query.tags = ["brittle"];
+  built.rules[1]!.match.skipSuits = true;
   const b = checkOrganizeConfig(built);
   assert.equal(b.ok, true, b.ok ? "" : b.error);
 });
@@ -57,6 +60,8 @@ test("[fast] checkOrganizeConfig refuses each broken part and names it", () => {
     ["an empty name in names", (c) => { c.rules[0]!.match.names = [""]; }, /names/],
     ["an unknown build", (c) => { c.rules[0]!.match.build = "wizard" as "caster"; }, /rules\[0\]\.match\.build must be one of caster, melee, hybrid, tank, other/],
     ["an unknown school", (c) => { c.rules[0]!.match.school = "pyromancy" as "magery"; }, /rules\[0\]\.match\.school must be one of magery, necromancy, mysticism, spellweaving/],
+    ["too many required tags", (c) => { c.rules[0]!.match.query.tags = Array(11).fill("brittle"); }, /rules\[0\]\.match\.query\.tags must be a list of at most 10 tags/],
+    ["a skipSuits that is not true or false", (c) => { c.rules[0]!.match.skipSuits = "yes" as unknown as boolean; }, /rules\[0\]\.match\.skipSuits must be true or false/],
     ["a target that is not labelled", (c) => { c.rules[0]!.targets = [0x40000009]; }, /not a labelled container/],
     ["a pinned target, naming the rule and the container", (c) => { c.rules[0]!.targets = [P]; }, /^The rule "Reagents" puts items into Display, which is pinned: nothing is put into a pinned container\. Take it off the rule, or unpin it\.$/],
     ["a target listed twice", (c) => { c.rules[0]!.targets = [A, A]; }, /twice/],

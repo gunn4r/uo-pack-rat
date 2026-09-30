@@ -7,7 +7,7 @@
 // card shares with it.
 import { state } from "./store.mts";
 import { $, el, toast, safeColor, compactChildren } from "./dom.mts";
-import { box, txt, button, meter, message, field, input, select, textarea, pill, token, createDrawer, confirmDialog, showToast, type DrawerHandle } from "./components.mts";
+import { box, txt, button, meter, message, field, input, select, textarea, pill, check, token, createDrawer, confirmDialog, showToast, type DrawerHandle } from "./components.mts";
 import { errorText } from "./messages.mts";
 import { filterContext } from "./inventory.mts";
 import { loadOrganize, loadPresets, matchCount, refreshPlaces, saveConfig } from "./organize-data.mts";
@@ -35,7 +35,7 @@ export async function deleteRule(r: OrganizeRule): Promise<boolean> {
 // ---------------------------------------------------------------- the drawer
 // The rule being edited, as typed: nothing is read back from the DOM, so a redraw (adding a target, removing a
 // filter) keeps everything the player typed. `match` is the last live count (POST /api/organize/match).
-interface Draft { id: string; isNew: boolean; name: string; query: RuleQuery; namesText: string; build: Build | undefined; school: SpellSchool | undefined; targets: number[]; origin: Origin; note: string | null; errors: { name?: string; names?: string }; serverError: string | null; match: OrganizeMatchApiResponse | null }
+interface Draft { id: string; isNew: boolean; name: string; query: RuleQuery; namesText: string; build: Build | undefined; school: SpellSchool | undefined; skipSuits: boolean; targets: number[]; origin: Origin; note: string | null; errors: { name?: string; names?: string }; serverError: string | null; match: OrganizeMatchApiResponse | null }
 let draft: Draft | null = null;
 let handle: DrawerHandle | null = null;
 function drawer(): DrawerHandle {
@@ -58,9 +58,9 @@ export async function openRuleEditor(o: { rule?: OrganizeRule; preset?: boolean;
   const cfg = state.organize.config!;
   const from = o.fromQuery ? ruleQueryFrom(o.fromQuery) : null;
   draft = o.rule
-    ? { id: o.rule.id, isNew: false, name: o.rule.name, query: structuredClone(o.rule.match.query), namesText: (o.rule.match.names || []).join("\n"), build: o.rule.match.build, school: o.rule.match.school, targets: [...o.rule.targets], origin: o.rule.origin,
+    ? { id: o.rule.id, isNew: false, name: o.rule.name, query: structuredClone(o.rule.match.query), namesText: (o.rule.match.names || []).join("\n"), build: o.rule.match.build, school: o.rule.match.school, skipSuits: !!o.rule.match.skipSuits, targets: [...o.rule.targets], origin: o.rule.origin,
         note: o.rule.origin !== "manual" ? "Auto organize made this rule. Saving your changes makes it yours: Auto organize leaves it alone from then on." : null, errors: {}, serverError: null, match: null }
-    : { id: newRuleId(cfg.rules), isNew: true, name: o.fromQuery ? ruleNameFrom(o.fromQuery, filterContext()) : "", query: from ? from.query : blankQuery(), namesText: "", build: undefined, school: undefined, targets: [], origin: "manual",
+    : { id: newRuleId(cfg.rules), isNew: true, name: o.fromQuery ? ruleNameFrom(o.fromQuery, filterContext()) : "", query: from ? from.query : blankQuery(), namesText: "", build: undefined, school: undefined, skipSuits: false, targets: [], origin: "manual",
         note: from ? droppedNote(from.dropped) : null, errors: {}, serverError: null, match: null };
   $<HTMLElement>("#rule-drawer-title", drawer().root)!.textContent = draft.isNew ? "New rule" : "Edit rule";
   $<HTMLElement>("#rule-delete", drawer().root)!.hidden = draft.isNew;
@@ -80,6 +80,7 @@ function draw(focus?: string): void {
     d.namesText = (p.match.names || []).join("\n");
     d.build = p.match.build;
     d.school = p.match.school;
+    d.skipSuits = !!p.match.skipSuits;
     if (!d.name.trim()) d.name = p.name;
     d.note = `Filled in from the preset ${p.name}. Editing the rule never changes the preset.`;
     draw("#rule-preset");
@@ -100,6 +101,8 @@ function draw(focus?: string): void {
   // shows as a token, and removing it drops it.
   const extras = [...(d.build ? [{ label: `Build: ${BUILD_TEXT[d.build]}`, removeLabel: "Remove the build filter", remove: (q: RuleQuery) => { d.build = undefined; return q; } }] : []),
     ...(d.school ? [{ label: `School: ${SCHOOL_TEXT[d.school]}`, removeLabel: "Remove the school filter", remove: (q: RuleQuery) => { d.school = undefined; return q; } }] : []), ...extraFilters(d.query, ctx)];
+  // Issue #133: an Undesirables rule never takes a piece a saved Suit Builder run counts on.
+  const suits = check({ label: "Skip pieces of saved suits", checked: d.skipSuits, attrs: { id: "rule-skip-suits" }, onChange: (on) => { d.skipSuits = on; countSoon(); } });
   const chosen = d.targets.map((s) => targetView(s, cfg, where));
   const list = box("ol", { class: "rule-targets", id: "rule-targets", "aria-label": "Containers, in fill order" }, ...chosen.map((t, i) => box("li", { class: "rule-target" },
     txt(`${i + 1}.`, "t-sm muted num"), targetChip(t),
@@ -123,6 +126,7 @@ function draw(focus?: string): void {
     box("div", { class: "field" }, el("span", { class: "label" }, "Kind"), kindPills),
     box("div", { class: "rule-rarity" }, field({ label: "Rarity at least", control: rMin }), field({ label: "Rarity at most", control: rMax })),
     extras.length ? box("div", { class: "field" }, el("span", { class: "label" }, "Also filtered by"), box("span", { class: "rule-extras" }, ...extras.map((x) => token({ label: x.label, removeLabel: x.removeLabel, onRemove: () => { d.query = x.remove(d.query); draw(); } })))) : null,
+    box("div", { class: "field" }, suits.root, txt("A piece of any suit the Suit Builder saved is left to the rules below, however well it fits this one.", "t-sm muted")),
     matchEl(),
     el("h3", { class: "t-md" }, "Where they go"),
     el("p", { class: "t-sm muted" }, "The first container fills up, then the next. Pick labelled chests or the bags inside them: label more chests in Inventory › Containers."),
@@ -154,7 +158,7 @@ async function countNow(): Promise<void> {
   d.match = r;
   drawer().body.querySelector("#rule-match")?.replaceWith(matchEl());
 }
-const draftMatch = (d: Draft, names: string[]): RuleMatch => ({ query: d.query, ...(names.length ? { names } : {}), ...(d.build ? { build: d.build } : {}), ...(d.school ? { school: d.school } : {}) });
+const draftMatch = (d: Draft, names: string[]): RuleMatch => ({ query: d.query, ...(names.length ? { names } : {}), ...(d.build ? { build: d.build } : {}), ...(d.school ? { school: d.school } : {}), ...(d.skipSuits ? { skipSuits: true } : {}) });
 const countSoon = debounced(() => { void countNow(); }, MATCH_DEBOUNCE_MS);
 async function save(): Promise<void> {
   const d = draft!;

@@ -21,7 +21,6 @@
 .pr .b-crumb a { color: var(--color-text-muted); text-decoration: none; font-size: var(--text-md); white-space: nowrap; }
 .pr .b-crumb a:hover { color: var(--color-text); text-decoration: underline; }
 .pr .topbar .b-topbar-char { width: 160px; }
-#tab-builder .topbar[hidden], .b-compare-view[hidden] { display: none; }
 
 /* ---------------------------------------------------------------- panel sections */
 .b-sec { display: flex; flex-direction: column; gap: var(--space-2); padding: var(--space-3) var(--space-4); border-bottom: var(--border-width) solid var(--color-border); }
@@ -31,7 +30,6 @@
 .b-sec-head h3 { white-space: nowrap; }
 .b-sec-head .ellip { flex: 1 1 auto; }
 .b-sec-body { display: flex; flex-direction: column; gap: var(--space-2); }
-.b-sec-body[hidden] { display: none; }
 .b-tpl-row { display: flex; align-items: center; gap: var(--space-1-5); min-width: 0; }
 .b-tpl-row .select { flex: 1 1 auto; }
 .b-race-row { display: flex; flex-wrap: wrap; align-items: flex-start; gap: var(--space-3) var(--space-4); }

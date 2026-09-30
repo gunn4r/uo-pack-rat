@@ -40,7 +40,7 @@ function dataDirWith(rules: SeedRule[] | null): string {
   }));
   return dir;
 }
-interface OrganizeFile { labels: Record<string, { name: string; color?: string; pinned?: boolean; origin: string }>; rules: Array<{ id: string; name: string; targets: number[]; origin: string; match: { query: Record<string, unknown>; names?: string[]; build?: string } }>; catchAll: number | null; pinnedItems: number[] }
+interface OrganizeFile { labels: Record<string, { name: string; color?: string; pinned?: boolean; origin: string }>; rules: Array<{ id: string; name: string; targets: number[]; origin: string; match: { query: Record<string, unknown>; names?: string[]; build?: string; skipSuits?: boolean } }>; catchAll: number | null; pinnedItems: number[] }
 const readOrganize = (dir: string): OrganizeFile | null => { try { return JSON.parse(readFileSync(join(dir, "organize.json"), "utf8")) as OrganizeFile; } catch { return null; } };
 // Poll a file-backed fact until it holds (a save is a PUT the page sends after the click).
 async function until<T>(read: () => T, ok: (v: T) => boolean, what: string): Promise<T> {
@@ -238,6 +238,19 @@ test("[slow] + Rule from a preset, then targets in fill order; the editor lists 
     await page.getByRole("button", { name: "Remove Old chest" }).click();
     await page.click("#rule-save");
     await until(() => readOrganize(dataDir), (f) => f?.rules[0]?.targets.join() === String(DORRAN), "the forgotten target removed");
+
+    // Issue #133: an Undesirables preset fills in its required tag and threshold as tokens, and ticks the saved-suit guard.
+    await page.click("#org-add");
+    await page.getByRole("menuitem", { name: "From a preset…" }).click();
+    await page.waitForSelector("#rule-drawer:not([hidden]) #rule-preset");
+    await page.selectOption("#rule-preset", "splintering-brittle");
+    assert.equal(await page.locator("#rule-skip-suits").isChecked(), true);
+    assert.equal(await page.locator("#rule-delete").isVisible(), false, "a new rule has nothing to delete");
+    assert.match(await page.locator("#rule-drawer").innerText(), /splintering weapon ≥ 1[\s\S]*Tagged: brittle/);
+    await page.selectOption("#rule-add-target", String(DORRAN));
+    await page.click("#rule-save");
+    const fodder = await until(() => readOrganize(dataDir), (f) => f?.rules.length === 2, "the Undesirables rule saved");
+    assert.deepEqual([fodder!.rules[1]!.match.skipSuits, fodder!.rules[1]!.match.query.tags], [true, ["brittle"]]);
 
     // A name the rule cannot have keeps the drawer open with the reason under the field.
     await page.click("#org-add");
