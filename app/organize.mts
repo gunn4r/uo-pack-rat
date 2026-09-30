@@ -91,6 +91,10 @@ const STACK_COUNT = /^\d[\d,]*\s+/;
 // An item's name without its stack count ("75 Grave Dust" → "grave dust"), lower-cased: what rule names and
 // stack merges compare.
 export const baseName = (name: string): string => name.replace(STACK_COUNT, "").trim().toLowerCase();
+// What a rule's names and an item's name compare as (issue #123): the base name with everything that is not a letter
+// or a digit removed, so the shard's "Blood Moss", "Batwing" and "Spiders' Silk" meet "bloodmoss", "bat wing" and
+// "spiders silk".
+export const nameKey = (name: string): string => baseName(name).replace(/[^\p{L}\p{N}]/gu, "");
 
 // By build's markers (issue #91): vault-lib's property keys, and the skills (lower-cased, as `extras` keys them)
 // whose bonus marks a piece. Spell Channeling has no number, so it is read from the flags; Mage Weapon reads as a
@@ -115,13 +119,13 @@ export function buildOf(it: Item): Build {
 }
 
 // A rule's filter: the item query (location-free, item-query.mts's matchesItem) and, when given, any of the names
-// and the build (gear only).
+// (compared as nameKeys; a name with no letter or digit matches nothing) and the build (gear only).
 export function ruleMatches(it: Item, m: RuleMatch, rarity: RulesV1RarityItem[] = []): boolean {
   if (m.build && (!it.gear || buildOf(it) !== m.build)) return false;
   const names = m.names ?? [];
   if (names.length) {
-    const n = baseName(it.name);
-    if (!names.some((w) => n.includes(w.trim().toLowerCase()))) return false;
+    const n = nameKey(it.name);
+    if (!names.some((w) => { const k = nameKey(w); return !!k && n.includes(k); })) return false;
   }
   return matchesItem(it, m.query, { rarity });
 }

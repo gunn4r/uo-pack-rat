@@ -16,7 +16,7 @@ import { resolveConfig } from "./config.mts";
 import { queueTrip } from "./bridge-trip.mts";
 import type { ScanV2 } from "./schema/types.d.mts";
 import {
-  ancestry, scopeOf, ruleMatches, buildOf, matchCount, CASTER_PROPS, CASTER_SKILLS, MELEE_PROPS, MELEE_SKILLS, claimOf, baseName, applyOverlay, homeOf, newSim, simTake, simPut, mark, rollback, MAX_STACK,
+  ancestry, scopeOf, ruleMatches, buildOf, matchCount, CASTER_PROPS, CASTER_SKILLS, MELEE_PROPS, MELEE_SKILLS, claimOf, baseName, nameKey, applyOverlay, homeOf, newSim, simTake, simPut, mark, rollback, MAX_STACK,
   sitesOf, planOrganize, tripCommand, lineBytes, type OverlayMove, type Sim, type Plan,
 } from "./organize.mts";
 
@@ -113,6 +113,18 @@ test("[fast] rule names match the item's own name, stack count stripped, case-in
   assert.equal(ruleMatches(dust, { query: emptyRuleQuery(), names: ["GRAVE"] }), true);
   assert.equal(ruleMatches(inv.items[PEARL]!, { query: emptyRuleQuery(), names: ["grave dust"] }), false);
   assert.equal(ruleMatches(dust, { query: { ...emptyRuleQuery(), kind: ["gem"] }, names: ["grave dust"] }), false);
+});
+
+test("[fast] rule names and item names compare with spaces and punctuation removed on both sides (issue #123)", () => {
+  const inv = fold([{ serial: A }], [
+    { serial: 0x40002001, name: "Blood Moss", amount: 20, in: A }, { serial: 0x40002002, name: "Batwing", in: A }, { serial: 0x40002003, name: "Spiders' Silk", in: A },
+  ]);
+  const takes = (name: string): string[] => Object.values(inv.items).filter((it) => ruleMatches(it, { query: emptyRuleQuery(), names: [name] })).map((it) => it.name);
+  assert.equal(nameKey("20 Spiders' Silk"), "spiderssilk");
+  assert.deepEqual(takes("bloodmoss"), ["Blood Moss"]);
+  assert.deepEqual(takes("bat wing"), ["Batwing"]);
+  assert.deepEqual(takes("spiders silk"), ["Spiders' Silk"]);
+  assert.deepEqual(takes("'"), [], "a name that is only punctuation matches nothing");
 });
 
 test("[fast] a rule's build takes gear by its caster and melee markers, then its resists, and never takes anything else", () => {
