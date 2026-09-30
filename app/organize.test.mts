@@ -296,6 +296,53 @@ test("[fast] overlaidInventory: a carried item is in its character's backpack, o
   assert.equal(overlaidInventory(inv, [step(PEARL, "Black Pearl", A, null)]).items[PEARL]!.location?.text, "Carried by Organize");
 });
 
+// Issue #153: a bag, a pouch in it, and a gem in each, in chest A. The Contents lines count every item nested under
+// a container, bags included, and a bag's own weight (one stone here, as the scans give none) with its contents'.
+const bagBoxes = (inA = 4): BoxSpec[] => [{ serial: A, tooltip: [`Box ${A}`, `Contents: ${inA}/125 Items, ${inA + 1} Stones`] }, { serial: B, pos: at(104) },
+  { serial: BAG, parent: A, tooltip: [`Box ${BAG}`, "Contents: 3/125 Items, 4 Stones"] }, { serial: POUCH, parent: BAG }];
+const bagThings: ThingSpec[] = [{ serial: RUBY, name: "Ruby", in: BAG, weight: 2 }, { serial: PEARL, name: "Black Pearl", in: POUCH }];
+
+test("[fast] a bag the overlay moves takes its new place in the container tree, with everything in it and its whole fill (issue #153)", () => {
+  const inv = fold(bagBoxes(), bagThings);
+  const before = JSON.stringify(inv);
+  const placed = applyOverlay(inv, [step(BAG, "Bag", A, B)]);
+  const c = placed.inv.containers;
+  assert.deepEqual([c[BAG]!.parent, c[BAG]!.root, c[POUCH]!.parent, c[POUCH]!.root], [B, B, BAG, B]);
+  assert.deepEqual(ancestry(placed.inv, POUCH), [POUCH, BAG, B]);
+  assert.deepEqual([placed.inv.items[RUBY]!.root, placed.inv.items[PEARL]!.root, placed.inv.items[PEARL]!.container], [B, B, POUCH]);
+  assert.deepEqual([placed.counts.get(A)!.items, placed.counts.get(A)!.stones], [0, 0], "the old chest loses the bag and all it holds");
+  assert.deepEqual([placed.counts.get(B)!.items, placed.counts.get(B)!.stones], [4, 5], "the new chest gains them");
+  assert.equal(JSON.stringify(inv), before, "the inventory handed in is not changed");
+  const view = overlaidInventory(inv, [step(BAG, "Bag", A, B)]);
+  assert.deepEqual([view.containers[BAG]!.parent, view.items[PEARL]!.root, view.items[PEARL]!.location?.text], [B, B, `Box ${B} › Box ${BAG} › Box ${POUCH}`]);
+  assert.deepEqual([view.containers[A]!.capacity!.items, view.containers[B]!.capacity!.items], [0, 4]);
+});
+
+test("[fast] after the overlay moves a bag, a put into it is planned and sent through the chest it is in now (issue #153)", () => {
+  const inv = fold([{ serial: A }, { serial: B, pos: at(104) }, { serial: BAG, parent: A }], [{ serial: RUBY, name: "Ruby", in: A }]);
+  const overlay = [step(BAG, "Bag", A, B)];
+  const plan = planOrganize(inv, config({ labels: { ...labels(A, B), ...labels(BAG) }, rules: [gems([BAG])] }), overlay, { now: NOW });
+  assert.deepEqual(moved(plan), [[RUBY, A, BAG, 1]]);
+  assert.deepEqual(tripCommand(applyOverlay(inv, overlay).inv, plan, 1)!.puts, [{ serial: RUBY, name: "Ruby", dest: [B, BAG] }]);
+});
+
+test("[fast] overlay steps run oldest first, so a step into a bag counts wherever the bag stood at the time (issue #153)", () => {
+  // B's line was read between the garlic going into the bag and the bag going into B: it counts neither.
+  const inv = foldSnapshots([houseScan({ boxes: bagBoxes(5), things: [...bagThings, { serial: GARLIC, name: "Garlic", in: A }] }), houseScan({ scannedAt: "2026-09-28T10:45:00Z", boxes: [{ serial: B, pos: at(104) }] })]);
+  const placed = applyOverlay(inv, [step(BAG, "Bag", A, B), step(GARLIC, "Garlic", A, BAG, "2026-09-28T10:30:00Z")]);
+  assert.deepEqual([placed.counts.get(A)!.items, placed.counts.get(B)!.items, placed.counts.get(BAG)!.items], [0, 5, 4], "the garlic went into the bag in A, then left with it");
+  assert.equal(placed.inv.items[GARLIC]!.root, B);
+  const later = applyOverlay(fold(bagBoxes(), bagThings), [step(BAG, "Bag", A, B), step(GARLIC, "Garlic", null, BAG, "2026-09-28T12:00:00Z")]);
+  assert.equal(later.counts.get(B)!.items, 5, "a step into the bag after its move counts in its new chest");
+});
+
+test("[fast] a scan of a moved bag newer than its move wins over the overlay (issue #153)", () => {
+  const inv = foldSnapshots([houseScan({ boxes: bagBoxes(), things: bagThings }), houseScan({ scannedAt: "2026-09-28T12:00:00Z", boxes: bagBoxes(), things: bagThings })]);
+  const placed = applyOverlay(inv, [step(BAG, "Bag", A, B)]);
+  assert.deepEqual([placed.inv.containers[BAG]!.parent, placed.inv.items[PEARL]!.root], [A, A]);
+  assert.deepEqual([placed.counts.get(A)!.items, placed.counts.get(B)!.items], [4, 0]);
+});
+
 const simOf = (inv: Inventory): Sim => newSim(inv, applyOverlay(inv, []).counts);
 const fill = (s: Sim, serial: number) => [s.counts.get(serial)!.items, s.counts.get(serial)!.stones];
 
