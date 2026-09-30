@@ -58,7 +58,7 @@ export function pinNote(name: string, dropped: readonly string[]): string {
   const q = dropped.map((d) => `"${d}"`);
   const list = q.length > 1 ? `${q.slice(0, -1).join(", ")} and ${q.at(-1)!}` : q[0]!;
   const one = dropped.length === 1;
-  return `${name} is where the rule${one ? "" : "s"} ${list} put${one ? "s" : ""} items. Nothing is put into a pinned container, so pinning it takes it off ${one ? "that rule" : "those rules"}.`;
+  return `${name} is where the rule${one ? "" : "s"} ${list} put${one ? "s" : ""} items. Nothing is put into a pinned container, so pinning it takes it off ${one ? "that rule" : "those rules"}. Unpinning it later does not put it back: add it to ${one ? "the rule" : "them"} again, or run Auto organize again.`;
 }
 export function withoutLabel(cfg: OrganizeConfig, serial: number): { config: OrganizeConfig; dropped: string[] } {
   const labels = { ...cfg.labels };

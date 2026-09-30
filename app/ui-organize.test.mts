@@ -58,9 +58,9 @@ test("[fast] pinning a label takes it off every rule's targets and the catch-all
 });
 
 test("[fast] pinning a chest a rule fills says so in the player's words, naming the rule (issue #123)", () => {
-  assert.equal(pinNote("Gems", ["Gems"]), 'Gems is where the rule "Gems" puts items. Nothing is put into a pinned container, so pinning it takes it off that rule.');
+  assert.equal(pinNote("Gems", ["Gems"]), 'Gems is where the rule "Gems" puts items. Nothing is put into a pinned container, so pinning it takes it off that rule. Unpinning it later does not put it back: add it to the rule again, or run Auto organize again.');
   assert.equal(pinNote("Reagents", ["Reagents", "Gems", "Everything else"]),
-    'Reagents is where the rules "Reagents", "Gems" and "Everything else" put items. Nothing is put into a pinned container, so pinning it takes it off those rules.');
+    'Reagents is where the rules "Reagents", "Gems" and "Everything else" put items. Nothing is put into a pinned container, so pinning it takes it off those rules. Unpinning it later does not put it back: add it to them again, or run Auto organize again.');
 });
 
 test("[fast] removing a label removes it from the rules that fill it", () => {

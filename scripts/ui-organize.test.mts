@@ -144,7 +144,7 @@ test("[slow] Label… pinning a chest a rule fills names the rule and takes the 
     await page.locator("#lbl-pin").check();
     await page.click("#lbl-save");
     await page.waitForSelector("[data-confirm]");
-    await page.getByText('Jewellery is where the rule "Gems" puts items. Nothing is put into a pinned container, so pinning it takes it off that rule.').waitFor();
+    await page.getByText('Jewellery is where the rule "Gems" puts items. Nothing is put into a pinned container, so pinning it takes it off that rule. Unpinning it later does not put it back: add it to the rule again, or run Auto organize again.').waitFor();
     await page.click("[data-confirm]");
     const saved = await until(() => readOrganize(dataDir), (f) => !!f?.labels[String(KESTREL)]?.pinned, "the pin in organize.json");
     assert.deepEqual(saved!.rules.map((r) => [r.id, r.targets]), [["rule-1", [DORRAN]], ["auto-gems", []]]);
