@@ -1,6 +1,7 @@
 // ui/containers.mts — the Inventory screen's Containers view (design spec 4.2): every scanned root
 // container in the same dense table the Items view uses, grouped by character with the ground
 // containers last, a Fill column (each container's Contents line), and a row "⋯" menu with "Show these items",
+// "Show missing items" (a root with items missing since its last scan, which also shows a badge; issue #99),
 // "Highlight in game" (ground containers; the bridge's highlight with the container as its target, issue #10),
 // "Label…" / "Edit label…" (ground containers not blacklisted; Organize, issue #11), "Blacklist…" (ground
 // containers) and "Forget…". A container labelled for Organize shows its label, colour and Pinned. The Forget and Blacklist handlers call `reload` from app.mts — a module cycle (containers
@@ -20,7 +21,7 @@ import { plural } from "./inv-model.mts";
 import { reload } from "./app.mts";
 import { showContainer, splitSerial } from "./inventory.mts";
 import { bridgeActionReason, runBridgeAction } from "./bridge.mts";
-import type { ForgetApiResponse, OrganizeConfig } from "./api-types.mts";
+import type { ForgetApiResponse, MissingApiResponse, OrganizeConfig } from "./api-types.mts";
 
 const KIND_NAMES: Record<string, string> = { backpack: "Backpack", bank: "Bank", ground: "On the ground" };
 // Same total width as before the Fill column, so the table still fits a 1000 px window without scrolling.
@@ -88,6 +89,27 @@ async function labelContainer(r: Container): Promise<void> {
     actions: [...(had ? [button({ label: "Remove label", variant: "danger-outline", onClick: () => { void remove(); } })] : []), button({ label: "Cancel", onClick: () => dlg?.close() }), button({ label: "Save label", variant: "primary", attrs: { id: "lbl-save" }, onClick: () => { void save(); } })],
   });
 }
+// Show missing items (issue #99): what the root's previous scan saw in it that its latest did not, and that no
+// scan has seen anywhere else since. A stack that shrank in place is listed by how many fewer, and so is one that
+// vanished but only partly fits into the same-kind stacks scanned since (app/missing.mts).
+async function showMissing(r: Container, name: string): Promise<void> {
+  let items: MissingApiResponse["items"];
+  try { ({ items } = await api<MissingApiResponse>(`/api/missing?root=${+r.serial}`)); } catch (e) { toast(errorText(e), "bad"); return; }
+  const close = button({ label: "Close", variant: "primary", onClick: () => dlg.close() });
+  const rows = [...items].sort((a, b) => a.name.localeCompare(b.name)).map((m) => el("tr", {},
+    el("td", {}, txt(m.name || `0x${m.serial.toString(16)}`)),
+    el("td", { class: "num" }, txt(m.fewer ? `${m.fewer.toLocaleString("en-US")} fewer` : m.amount.toLocaleString("en-US"))),
+    el("td", {}, txt(relativeWhen(m.lastSeen)))));
+  const table = el("table", { class: "tbl", "aria-label": `Missing from ${name}` },
+    el("colgroup", {}, el("col"), el("col", { style: "width:110px" }), el("col", { style: "width:140px" })),
+    el("thead", {}, el("tr", {}, el("th", { scope: "col" }, txt("Item")), el("th", { scope: "col", class: "num" }, txt("Amount")), el("th", { scope: "col" }, txt("Last seen there")))),
+    el("tbody", {}, ...rows));
+  const dlg = openDialog({
+    title: `Missing from ${name}`, width: "md", initialFocus: close,
+    body: [el("p", { class: "muted" }, items.length ? "In this container at its previous scan, gone at its latest, and not seen in any other scanned container since. Rescan where you moved them and they leave this list. A stack could have been added to a same-kind stack seen since, so it may not show while you keep more of it elsewhere." : "Nothing is missing any more."), ...(items.length ? [table] : [])],
+    actions: [close],
+  });
+}
 // A container's fill from its Contents line, or "unknown" for a ground container whose scan had none.
 function fillCell(r: Container): HTMLElement {
   const c = r.capacity;
@@ -131,17 +153,19 @@ export function renderContainers(): void {
       const swatch = lab?.color ? el("span", { class: "org-swatch", style: `background:${safeColor(lab.color)}`, "aria-hidden": "true" }) : null;
       const bags = Object.values(inv.containers).filter((c) => c.root === r.serial && c.parent != null).length;
       const canLabel = r.kind === "ground" && !state.organize.blacklist.includes(+r.serial);
+      const missing = inv.missingCounts[r.serial] || 0;
       // The container is the target, named in game as this row names it (no chain: a root has no parent).
       const target = { serial: +r.serial, name, container: null, root: r.root };
       const more = button({ label: `Actions for ${label}`, icon: "more", iconOnly: true, variant: "ghost", size: "sm", onClick: () => menu(more, [
         { label: "Show these items", icon: "inventory", onSelect: () => showContainer(+r.serial) },
         ...(r.kind === "ground" ? [{ label: "Highlight in game", icon: "highlight" as const, disabled: bridgeActionReason("highlight", target), onSelect: () => { void runBridgeAction("highlight", target); } }] : []),
+        ...(missing ? [{ label: "Show missing items", onSelect: () => { void showMissing(r, label); } }] : []),
         ...(canLabel ? [{ label: lab ? "Edit label…" : "Label…", onSelect: () => { void labelContainer(r); } }] : []),
         ...(r.kind === "ground" ? [{ label: "Blacklist…", onSelect: () => { void blacklist(r, label, n); } }] : []),
         { label: "Forget…", danger: true, onSelect: () => { forget(r, label, n); } },
       ], { label: `Actions for ${label}` }) });
       rows.push(el("tr", { "data-root": r.serial },
-        el("td", {}, box("span", { class: "inv-loc" }, swatch, txt(name, "ellip"), txt(serial || `0x${(+r.serial).toString(16)}`, "mono faint"), lab?.pinned ? tag("Pinned") : null, bags ? txt(plural(bags, "bag"), "t-sm muted") : null)),
+        el("td", {}, box("span", { class: "inv-loc" }, swatch, txt(name, "ellip"), txt(serial || `0x${(+r.serial).toString(16)}`, "mono faint"), lab?.pinned ? tag("Pinned") : null, bags ? txt(plural(bags, "bag"), "t-sm muted") : null, missing ? tag(`${missing} missing`, "warn") : null)),
         el("td", {}, txt(KIND_NAMES[String(r.kind)] || String(r.kind || "Unknown"))),
         el("td", {}, txt(r.scannedBy)),
         el("td", {}, txt(relativeWhen(r.scannedAt))),

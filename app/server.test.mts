@@ -59,6 +59,7 @@ interface InventorySummary {
   worn: Record<string, unknown>;
   containers: Record<string, unknown>;
   rootCounts: Record<string, unknown>;
+  missingCounts: Record<string, number>;
   characters: Record<string, Record<string, unknown>>;
   propKeys: string[];
 }
@@ -601,6 +602,37 @@ test("[fast] readScans() skips invalid scan files (bad JSON, schema-invalid) ins
     const j2 = asJson<InventoryResponse>(await (await fetch(s2.url + "/api/inventory")).json());
     assert.equal(j2.ok, true);
     assert.equal(j2.snapshotCount, 1);
+  } finally {
+    await s2.close();
+  }
+});
+
+// Missing since last scan (issue #99): /api/inventory counts what left each root between its last two scans,
+// and GET /api/missing lists it for one root.
+test("[fast] /api/inventory counts missing items per root and /api/missing lists them", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "qm-"));
+  const scansDir = join(dir, "scans");
+  mkdirSync(scansDir, { recursive: true });
+  const first = JSON.parse(readFileSync(join(HERE, "fixtures", "demo-Kestrel.json"), "utf8")) as { scannedAt: string; roots: Array<{ serial: number }>; items: Array<{ serial: number; name: string }> };
+  const gone = first.items.find((it) => !first.items.some((o) => o !== it && o.serial === it.serial))!;
+  // Recent stamps: retention prunes a scan older than its window that the fold no longer needs.
+  const day = (n: number): string => new Date(Date.now() - n * 86_400_000).toISOString().slice(0, 19);   // v1 stamps are naive local time
+  writeFileSync(join(scansDir, "a.json"), JSON.stringify({ ...first, scannedAt: day(2) }));
+  writeFileSync(join(scansDir, "b.json"), JSON.stringify({ ...first, scannedAt: day(1), items: first.items.filter((it) => it !== gone) }));
+  const s2 = await startServer(ensureLayout(resolveConfig(["--port", "0", "--data", dir], {})));
+  try {
+    const root = String(first.roots[0]!.serial);
+    const inv = asJson<InventoryResponse>(await (await fetch(s2.url + "/api/inventory")).json());
+    assert.deepEqual(inv.inventory.missingCounts, { [root]: 1 });
+    const m = asJson<{ ok: boolean; items: Array<{ serial: number; name: string }> }>(await (await fetch(s2.url + "/api/missing?root=" + root)).json());
+    assert.deepEqual(m.items.map((it) => [it.serial, it.name]), [[gone.serial, gone.name]]);
+    const none = asJson<{ items: unknown[] }>(await (await fetch(s2.url + "/api/missing?root=12345")).json());
+    assert.deepEqual(none.items, []);
+    assert.equal((await fetch(s2.url + "/api/missing?root=abc")).status, 400);
+    // A blacklisted root is never opened again: what its stale scans differ by is not reported.
+    writeFileSync(join(dir, "scan-blacklist.json"), JSON.stringify([{ serial: +root, name: "Chest", addedAt: day(0) }]));
+    assert.deepEqual(asJson<InventoryResponse>(await (await fetch(s2.url + "/api/inventory")).json()).inventory.missingCounts, {});
+    assert.deepEqual(asJson<{ items: unknown[] }>(await (await fetch(s2.url + "/api/missing?root=" + root)).json()).items, []);
   } finally {
     await s2.close();
   }

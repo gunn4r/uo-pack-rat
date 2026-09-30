@@ -400,10 +400,13 @@ const PS_LEVEL_RE = /\bscroll\b.*\((\d{3}) skill\)/i;
 //              is kept as "set: <line>"
 // A stack's name line starts with its amount ("2 Greater Heal"); that number is stripped only when it
 // equals `amount`, so a name that really starts with a number ("10 Potions" on one item) keeps it.
+export function stackName(line: string | undefined, amount?: number | undefined): string {
+  return stripHtml(line).replace(/^(\d+)\s+(?=\S)/, (all, n: string) => (+n === amount ? "" : all));
+}
 export function parseTooltip(rawLines?: Array<string | undefined> | undefined, amount?: number | undefined): ParsedTooltip {
   const TU = tagUnits(), rarityLine = rarityRe();
   const lines = (rawLines || []).map(stripHtml).filter(Boolean);
-  const name = (lines[0] || "").replace(/^(\d+)\s+(?=\S)/, (all, n: string) => (+n === amount ? "" : all));
+  const name = stackName(lines[0], amount);
   const props: PropMap = {}, setBonus: PropMap = {}, extras: ExtrasMap = {}, flags: string[] = [], tags: string[] = [];
   let strReq = 0, rarity: string | null = null, twoHanded: boolean | null = null, weight: number | null = null, skillReq: string | null = null;
   let inSet = false, inSetTotals = false;
