@@ -487,6 +487,38 @@ test("[fast] the full layout fills each chest to FILL: a group it fits there tak
   assert.equal(t.layout.chests, 1);
 });
 
+test("[fast] assignGroups releases a group's chests beyond its need when keeping them leaves another group without room, and keeps them otherwise (issue #146)", () => {
+  const groups = [{ key: "jewelry", site: 0, need: 6, prev: [1, 2] }, { key: "skill", family: "scrolls", site: 0, need: 6 }, { key: "spell", family: "scrolls", site: 0, need: 5 }];
+  const offers: Offer[] = [{ serial: 1, site: 0, room: 10, held: { jewelry: 4 } }, { serial: 2, site: 0, room: 10, held: { jewelry: 2 } }, { serial: 3, site: 0, room: 10, held: { skill: 6, spell: 5 } }];
+  const out = assignGroups(groups, offers);
+  assert.deepEqual([Object.fromEntries(out.chains), Object.fromEntries(out.room)], [{ jewelry: [1], skill: [3], spell: [2] }, { jewelry: 10, skill: 10, spell: 10 }]);
+  const fits = assignGroups(groups.map((g) => (g.key === "spell" ? { ...g, need: 4 } : g)), offers);
+  assert.deepEqual(Object.fromEntries(fits.chains), { jewelry: [1, 2], skill: [3], spell: [3] }, "the scrolls fit their shared chest: Jewelry keeps both of its chests");
+});
+
+test("[fast] a group's extra chests from an earlier setup go to the groups left without room; re-running after the trips moves nothing (issue #146)", () => {
+  // An earlier setup gave Jewelry two chests (rings in A, bracelets in B), and the scrolls share C, one over its cap.
+  const inv = fold([{ serial: A, max: 10 }, { serial: B, pos: at(102), max: 10 }, { serial: C, pos: at(104), max: 10 }], [
+    ...Array.from({ length: 4 }, (_, i) => ({ serial: ITEM + 1 + i, name: "Gold Ring", in: A, hue: i + 1 })),
+    ...Array.from({ length: 2 }, (_, i) => ({ serial: ITEM + 10 + i, name: "Gold Bracelet", in: B, hue: i + 1 })),
+    { serial: ITEM + 19, name: "Greater Heal", in: B, hue: 9, graphic: 0x1F49 },
+    ...Array.from({ length: 6 }, (_, i) => ({ serial: ITEM + 20 + i, name: "An Exalted Scroll Of Mysticism (110 Skill)", in: C, hue: i + 1 })),
+    ...Array.from({ length: 4 }, (_, i) => ({ serial: ITEM + 30 + i, name: "Greater Heal", in: C, hue: i + 1, graphic: 0x1F49 })),
+  ]);
+  const first = ok(proposeOrganize(inv, emptyOrganizeConfig(), [], OPTS()));
+  const targets: Record<string, number[]> = { jewelry: [A, B], "skill-scrolls": [C], scrolls: [C] };
+  const old: OrganizeConfig = { ...first.config, rules: first.config.rules.map((r) => ({ ...r, targets: targets[r.id.replace(/^auto-/, "")]! })) };
+  const before = planOrganize(inv, old, [], { now: NOW });
+  assert.equal(before.rules.reduce((n, r) => n + r.noRoom, 0), 1, "the earlier setup leaves a spell scroll with no room");
+  const p = ok(proposeOrganize(inv, old, [], OPTS()));
+  assert.deepEqual(p.groups.map((g) => [g.key, g.targets, g.shortfall]), [["jewelry", [A], 0], ["skill-scrolls", [C], 0], ["scrolls", [B], 0]]);
+  assert.deepEqual([p.changed, p.plan.noRoom], [true, 0]);
+  const plan = planOrganize(inv, p.config, [], { now: NOW });
+  const done: OverlayMove[] = plan.moves.map((m) => ({ serial: m.serial, name: m.name, from: m.from, to: m.to, at: new Date(NOW).toISOString(), trip: "t1" }));
+  const after = ok(proposeOrganize(inv, p.config, done, OPTS()));
+  assert.deepEqual([after.changed, after.plan.moves, after.plan.noRoom], [false, 0, 0], "the new setup is sorted and fits: it stays");
+});
+
 test("[fast] scroll groups sharing a chest label it Scrolls, whichever group comes last (issue #134)", () => {
   const inv = fold([{ serial: A, max: 20 }, { serial: B, pos: at(102), max: 20 }], [...things(A, ["Katana", "Katana", "Katana"]), ...things(B, ["An Exalted Scroll Of Mysticism (110 Skill)", "Greater Heal", "Scroll Of Transcendence"], 10)]);
   const p = ok(proposeOrganize(inv, emptyOrganizeConfig(), [], OPTS({ strategy: "detailed" })));
