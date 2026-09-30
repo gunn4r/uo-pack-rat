@@ -392,12 +392,14 @@ test("[fast] Put away: a request dropped after a refresh plans the fresh backpac
   const drop = (name: string, doc: unknown): void => { writeFileSync(join(inbox, `${name}.tmp`), JSON.stringify(doc)); renameSync(join(inbox, `${name}.tmp`), join(inbox, name)); };
   const ask = async (id: string, over: Record<string, unknown> = {}): Promise<Record<string, unknown>> => {
     drop("putaway-request.json", { id, source: "backpack", character: "Tester", requestedAt: new Date().toISOString(), clickedAt, at: { x: 101, y: 100, facet: 1 }, ...over });
-    for (let i = 0; i < 100; i++) {
+    // Up to 20 s: a drop whose fs.watch notification the OS never delivers (seen under the parallel suite) is found
+    // by the watcher's 5 s sweep instead, and the fold and plan then run on a loaded machine.
+    for (let i = 0; i < 400; i++) {
       const reply = existsSync(replyPath) ? JSON.parse(readFileSync(replyPath, "utf8")) as Record<string, unknown> : null;
       if (reply && reply.id === (over.id === undefined ? id : null) && !existsSync(join(inbox, "putaway-request.json"))) return reply;
       await new Promise((r) => setTimeout(r, 50));
     }
-    throw new Error("no answer");
+    throw new Error(`no answer to ${id}`);
   };
   try {
     assert.equal((await call(s, "/api/organize", body("PUT", CONFIG_DOC))).status, 200);
