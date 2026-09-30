@@ -170,10 +170,10 @@ test("[fast] Simple and By build: refinements are Resources by the group's secon
   ]);
 });
 
-test("[fast] every strategy files decor and quest and event items in groups of one family; crafting tools are Tools by a second rule in Simple and By build, their own group in Detailed (issue #150)", () => {
+test("[fast] every strategy files decor and quest and event items in groups of their own in Other's family; crafting tools are Tools by a second rule in Simple and By build, their own group in Detailed (issue #150)", () => {
   const names = ["Ethereal Horse Statuette", "Mysterious Fragment", "Smith's Hammer", "Scissors", "Drum", "Apple"];
   const items = Object.values(fold([{ serial: A }], things(A, names)).items);
-  const decor = [["decor", "Decor", "decor", ["Ethereal Horse Statuette"]], ["quest", "Quest & event items", "decor", ["Mysterious Fragment"]], ["other", "Other", "other", ["Apple"]]];
+  const decor = [["decor", "Decor", "other", ["Ethereal Horse Statuette"]], ["quest", "Quest & event items", "other", ["Mysterious Fragment"]], ["other", "Other", "other", ["Apple"]]];
   const of = (id: keyof typeof STRATEGIES) => groupItems(STRATEGIES[id], items).map((g) => [g.key, g.name, g.family, g.items.map((it) => it.name)]);
   for (const id of ["simple", "build"] as const) assert.deepEqual(of(id), [["tools", "Tools", "tools", ["Smith's Hammer", "Scissors", "Drum"]], ...decor], id);
   assert.deepEqual(of("detailed"), [["instruments", "Instruments", "tools", ["Drum"]], ["crafting-tools", "Crafting tools", "tools", ["Smith's Hammer"]], ["tools", "Tools", "tools", ["Scissors"]], ...decor]);
@@ -181,6 +181,25 @@ test("[fast] every strategy files decor and quest and event items in groups of o
   const inv = fold([{ serial: A }, { serial: B, pos: at(102) }, { serial: C, pos: at(104) }], things(A, names));
   const rules = ok(proposeOrganize(inv, emptyOrganizeConfig(), [], OPTS())).config.rules;
   assert.deepEqual(rules.filter((r) => /tools|decor|quest/.test(r.id)).map((r) => [r.id, r.match.query.kind]), [["auto-tools", ["tool"]], ["auto-tools-2", ["crafting"]], ["auto-decor", ["decor"]], ["auto-quest", ["quest"]]]);
+});
+
+// The live regression the first cut of #150 had: Decor and Quest & event items in a family of their own made a house
+// whose chests fit its groups exactly send Spell scrolls to share the Skill scrolls chest, short of room, so a Quest
+// group could have a chest to itself. In Other's family, they double up with Other instead.
+test("[fast] Decor and Quest & event items share Other's chest when chests run short, never taking one from another group (issue #150)", () => {
+  const specs: [string, number, number?][] = [["Black Pearl", 40], ["Scroll Of Alacrity", 70], ["Greater Heal", 60, 0x1F49], ["Apple", 12], ["Mysterious Fragment", 9], ["Ethereal Horse Statuette", 1]];
+  const box = [A, B, C, D];
+  const spread: ThingSpec[] = specs.flatMap(([name, n, graphic]) => Array.from({ length: n }, () => ({ name, ...(graphic ? { graphic } : {}) })))
+    .map((t, i) => ({ serial: ITEM + i, in: box[i % box.length]!, ...t }));
+  const inv = fold([{ serial: A }, { serial: B, pos: at(102) }, { serial: C, pos: at(104) }, { serial: D, pos: at(106) }], spread);
+  for (const strategy of STRATEGY_IDS) {
+    const p = ok(proposeOrganize(inv, emptyOrganizeConfig(), [], OPTS({ strategy })));
+    assert.deepEqual(p.groups.filter((g) => g.shortfall).map((g) => g.key), [], `${strategy}: every group has room`);
+    assert.equal(p.plan.noRoom, 0, strategy);
+    const target = (key: string): number[] => p.groups.find((g) => g.key === key)!.targets;
+    assert.deepEqual(new Set([target("other"), target("quest"), target("decor")].map(String)).size, 1, `${strategy}: Decor and Quest share Other's chest`);
+    for (const g of p.groups) assert.ok(p.groups.every((h) => h.family === g.family || !h.targets.some((t) => g.targets.includes(t))), `${strategy}: ${g.key} shares only with its family`);
+  }
 });
 
 test("[fast] Simple and Detailed: neck armour goes with the armour, necklaces with the jewelry", () => {

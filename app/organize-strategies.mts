@@ -13,7 +13,7 @@ import type { RulesV1RarityItem } from "./schema/types.d.mts";
 
 export type StrategyId = "simple" | "detailed" | "build";
 export const STRATEGY_IDS: readonly StrategyId[] = ["simple", "detailed", "build"];
-export type Family = "armour" | "jewelry" | "weapons" | "other-gear" | "gear" | "reagents" | "scrolls" | "maps" | "resources" | "potions" | "runes-books" | "deeds" | "gems" | "tools" | "clothing" | "decor" | "other";
+export type Family = "armour" | "jewelry" | "weapons" | "other-gear" | "gear" | "reagents" | "scrolls" | "maps" | "resources" | "potions" | "runes-books" | "deeds" | "gems" | "tools" | "clothing" | "other";
 // One group of a strategy: the name its chests are labelled with and its rules carry, and the filters that make it
 // (an item is in the group when any passes). Each filter becomes one rule, in this order, all filling the group's
 // chests: Armour needs two, since one filter cannot say "these slots, or the neck slot named gorget".
@@ -42,8 +42,8 @@ const SKILL_SCROLLS: RuleMatch = { query: q({ kind: ["scroll"] }), names: ["scro
 // Detailed a spellbook is in the books' family, so when chests run short it shares theirs, not the Weapons chest.
 // Simple's Resources takes refinements by a second filter (issue #129), as Detailed's Refinements does, so its first
 // rule keeps the id an earlier proposal gave it; instruments are tools (vault-lib's kindOf), so Tools needs none, and
-// crafting tools come in by a second filter the same way (issue #150). Decor and Quest & event items are one family,
-// the keepsakes, so short of chests they share one.
+// crafting tools come in by a second filter the same way (issue #150). Decor and Quest & event items are in Other's
+// family: what they hold used to be Other, so short of chests they share its chest rather than take one from a group.
 const SIMPLE: readonly GroupDef[] = [
   def("armour", "Armour", "armour", gear(["helmet", "chest", "arms", "hands", "legs"]), preset("armour-neck")),
   def("jewelry", "Jewelry", "jewelry", gear(["ring", "bracelet", "neck", "earrings", "talisman"])),
@@ -60,8 +60,8 @@ const SIMPLE: readonly GroupDef[] = [
   def("treasure-maps", "Treasure maps & SOS", "maps", preset("treasure-maps")),
   def("tools", "Tools", "tools", kinds("tool"), kinds("crafting")),
   def("clothing", "Clothing", "clothing", kinds("clothing")),
-  def("decor", "Decor", "decor", kinds("decor")),
-  def("quest", "Quest & event items", "decor", kinds("quest")),
+  def("decor", "Decor", "other", kinds("decor")),
+  def("quest", "Quest & event items", "other", kinds("quest")),
   def("other", "Other", "other", EVERYTHING),
 ];
 // Other scrolls (stat and Alacrity scrolls, Scroll Binders) takes the skill scrolls the power scroll and Transcendence
@@ -113,8 +113,8 @@ const DETAILED: readonly GroupDef[] = [
   def("crafting-tools", "Crafting tools", "tools", kinds("crafting")),
   def("tools", "Tools", "tools", kinds("tool")),
   def("clothing", "Clothing", "clothing", kinds("clothing")),
-  def("decor", "Decor", "decor", kinds("decor")),
-  def("quest", "Quest & event items", "decor", kinds("quest")),
+  def("decor", "Decor", "other", kinds("decor")),
+  def("quest", "Quest & event items", "other", kinds("quest")),
   def("other", "Other", "other", EVERYTHING),
 ];
 // Issue #91: gear (jewelry and talismans too) by the build its properties serve (organize.mts's buildOf, which each
@@ -271,7 +271,7 @@ const NEW_CHEST = 2 ** 31;
 // What a chest shared by a family's groups is labelled.
 const FAMILY_NAMES: Record<Family, string> = { armour: "Armour", jewelry: "Jewelry", weapons: "Weapons", "other-gear": "Other gear", gear: "Gear", reagents: "Reagents",
   scrolls: "Scrolls", maps: "Treasure maps & SOS", resources: "Resources", potions: "Potions & bandages", "runes-books": "Runes & books", deeds: "Deeds", gems: "Gems",
-  tools: "Tools", clothing: "Clothing", decor: "Decor & quest items", other: "Other" };
+  tools: "Tools", clothing: "Clothing", other: "Other" };
 // The chests two or more groups share, each with their keys in the order the groups come (table order).
 function sharedChests(groups: readonly { key: string }[], chains: ReadonlyMap<string, number[]>): Map<number, string[]> {
   const by = new Map<number, string[]>();
