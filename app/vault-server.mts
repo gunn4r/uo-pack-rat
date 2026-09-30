@@ -43,6 +43,8 @@
 //         a `_vault` tombstone carrying forgetCharacter; 409 under --demo) ·
 //         GET|POST {serial, name, where?} /api/blacklist · DELETE /api/blacklist/<serial>
 //         (<data>/scan-blacklist.json, the containers scans never open) ·
+//         GET|POST {name?, graphic?, kind} /api/item-kinds · POST /api/item-kinds/import {names?, graphics?}
+//         (<data>/item-kinds.json, the player's own item kinds: app/item-kinds.mts; kind null resets, an import merges) ·
 //         GET|PUT /api/organize (<data>/organize.json, Organize's labels, rules, catch-all and pinned items: app/organize-config.mts;
 //         GET salvages a hand-edited file and lists what it dropped in `problems`) ·
 //         GET /api/organize/presets (app/organize-presets.mts's PRESETS, the rule filters the Organize page offers
@@ -134,6 +136,7 @@ import { checkOrganizeConfig, emptyOrganizeConfig, LIMITS, matchProblem, salvage
 import { ancestry, packKept, planOrganize, stampMs, tripCommand, matchCount, overlaidInventory, type Plan, type PutAway } from "./organize.mts";
 import { checkPutAwayRequest, nothingDetail, requestId, tripMsg, FRESH_MARGIN_MS, MAX_REQUEST_BYTES, PUT_AWAY_REPLY, PUT_AWAY_REQUEST, type PutAwayReply, type PutAwayRequest } from "./put-away.mts";
 import { PRESETS } from "./organize-presets.mts";
+import { emptyKindOverrides, kindCount, kindsDocument, kindsFor, salvageKindOverrides, withKinds, withoutKinds, KIND_LIMITS, MAX_KINDS_BYTES, OVERRIDE_KINDS } from "./item-kinds.mts";
 import { proposeOrganize, STRATEGY_IDS, type StrategyId } from "./organize-strategies.mts";
 import { addGrab, emptyOrganizeState, harvestTrips, noteSeen, pruneOverlay, salvageOrganizeState, PENDING_GRACE_MS, type BridgeView, type OrganizeState } from "./organize-state.mts";
 import { retentionError, retentionOf, runsToPrune, scansToPrune, type ScanFile } from "./retention.mts";
@@ -146,7 +149,7 @@ import { dataDirNotice } from "./ui/messages.mts";
 import { homedir } from "node:os";
 
 import { resolveConfig, ensureLayout, APP_DIR, DATA_DIR_MODE, DATA_FILE_MODE, type Config } from "./config.mts";
-import type { Item, Inventory, ProfilesFile, BlacklistEntry } from "./vault-lib.mts";
+import type { Item, Inventory, ProfilesFile, BlacklistEntry, KindOverrides } from "./vault-lib.mts";
 import type * as VaultLib from "./vault-lib.mts";
 import type { ScanV2, RulesV1 } from "./schema/types.d.mts";
 import type { WorkerMessage, WorkerDoneMessage } from "./optimize-worker.mts";
@@ -742,7 +745,9 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
   // and size, so an add/edit/delete/rename is caught with no restart), the current shard id (a shard
   // switch changes parseTooltip/classify via rules) and vault-lib.mts's own mtime (the same value lib()
   // already tracks for its dev-reload). /api/forget's tombstone is just another file landing in the scans
-  // directory, so it invalidates the cache the same way — no separate invalidation path needed.
+  // directory, so it invalidates the cache the same way — no separate invalidation path needed. item-kinds.json's
+  // inode, mtime and size are in it too (issue #150): a changed override re-kinds the inventory by folding the same
+  // scans again, and the Organize plan, worked out from the fold on every request, follows.
   // What it serves is that fold with Organize's results overlay applied (issue #127, overlaidInventory): every
   // view and bridge command sees where a trip put an item, not where the last scan saw it. The overlay is cached
   // on its own, keyed by the fold's signature, organize-state.json's inode, mtime and size (every write replaces
@@ -765,10 +770,12 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
   async function getInventory(): Promise<InvValue> {
     harvestNow(Date.now());   // a trip that finished since is part of what every view shows
     const libMod = await lib();   // also refreshes libCache.mtime, which the signature below reads
-    const sig = `${scansSignature()}::${currentSettings.shard}::${libCache.mtime}`;
+    let kindsSig = "no-kinds";
+    try { const st = statSync(ITEM_KINDS); kindsSig = `${st.ino}:${st.mtimeMs}:${st.size}`; } catch { /* no overrides */ }
+    const sig = `${scansSignature()}::${currentSettings.shard}::${libCache.mtime}::${kindsSig}`;
     if (foldCache.sig !== sig) {   // sig and value are only ever set together
       const snaps = readScans();
-      const fold = libMod.foldSnapshots(snaps);
+      const fold = libMod.foldSnapshots(snaps, readKindOverrides());
       foldCache = { sig, value: { fold, missing: missingSinceLastScan(snaps, fold), snapshotCount: snaps.length } };
     }
     const folded = foldCache.value!;
@@ -819,6 +826,28 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
       && isBoundedString(e.name, 64) && isBoundedString(e.addedAt, 40) && (e.where === undefined || isBoundedString(e.where, 64)))
       .slice(0, 1000).map(({ serial, name, addedAt, where }) => ({ serial, name, addedAt, ...(where ? { where } : {}) }));
   }
+  // <data>/item-kinds.json: the player's own item kinds (issue #150, app/item-kinds.mts). Missing reads as none; a file
+  // too big or that does not parse is moved aside (the next write would otherwise overwrite it) and one with entries
+  // that make no sense loses those entries, each with a logged warning, never an error. Written only by the
+  // /api/item-kinds routes, whole.
+  const ITEM_KINDS = join(CONFIG.dataDir, "item-kinds.json");
+  function readKindOverrides(): KindOverrides {
+    let raw: unknown;
+    try {
+      if (lstatSync(ITEM_KINDS).size > MAX_KINDS_BYTES) throw new Error(`it is over ${MAX_KINDS_BYTES / 1e6} MB`);
+      raw = JSON.parse(readFileSync(ITEM_KINDS, "utf8"));
+    } catch (e) {
+      if ((e as NodeJS.ErrnoException).code === "ENOENT") return emptyKindOverrides();
+      let kept = "";
+      try { kept = `; it was moved to ${basename(moveAside(ITEM_KINDS))}`; } catch { /* left where it is */ }
+      console.warn(`item-kinds.json was ignored (${e instanceof SyntaxError ? jsonErrorReason(e) : (e as Error).message})${kept}`);
+      return emptyKindOverrides();
+    }
+    const { overrides, problems } = salvageKindOverrides(raw);
+    if (problems.length) console.warn(`item-kinds.json: left out ${problems.slice(0, 5).join("; ")}${problems.length > 5 ? ` and ${problems.length - 5} more` : ""}`);
+    return overrides;
+  }
+  const writeKindOverrides = (o: KindOverrides): void => writeFileAtomic(ITEM_KINDS, JSON.stringify(kindsDocument(o), null, 2) + "\n", DATA_FILE_MODE);
   // <data>/organize.json: Organize's setup (issue #11, app/organize-config.mts). Read through the salvage, so a
   // hand edit that breaks one rule drops that rule, not the whole setup, and `problems` says what went; a file
   // that does not parse is moved aside (the way loadSettings() treats settings.json) and Organize starts empty.
@@ -1990,6 +2019,34 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
       if (unlist) {
         writeFileAtomic(BLACKLIST, JSON.stringify(readBlacklist().filter((e) => e.serial !== Number(unlist[1])), null, 1) + "\n", DATA_FILE_MODE);
         return send(res, 200, { ok: true });
+      }
+      // The player's item kinds (issue #150): GET the whole document (the page's Classify this… and Export read it);
+      // POST {name?, graphic?, kind} sets the kind for an exact item name and/or a graphic, and kind null takes those
+      // entries away (Reset to automatic); POST /api/item-kinds/import {names?, graphics?} merges a file in, its
+      // entries winning, and says what it left out. Every change re-kinds the inventory with no rescan (getInventory).
+      if (req.method === "GET" && url.pathname === "/api/item-kinds") return send(res, 200, { ok: true, ...kindsDocument(readKindOverrides()) });
+      if (req.method === "POST" && url.pathname === "/api/item-kinds") {
+        const { name, graphic, kind } = asObject(await readBody(req, { limit: 8e3 }));
+        if (name !== undefined && !(isBoundedString(name, KIND_LIMITS.name) && name.trim())) return send(res, 400, { ok: false, error: `name must be an item name of at most ${KIND_LIMITS.name} characters` });
+        if (graphic !== undefined && !isBoundedInt(graphic, 0, 0xFFFF)) return send(res, 400, { ok: false, error: "graphic must be an item graphic (0 to 65535)" });
+        if (name === undefined && graphic === undefined) return send(res, 400, { ok: false, error: "name or graphic is required" });
+        if (kind !== null && !OVERRIDE_KINDS.includes(kind as string)) return send(res, 400, { ok: false, error: `kind must be null or one of ${OVERRIDE_KINDS.join(", ")}` });
+        const base = readKindOverrides(), at = { name: name as string | undefined, graphic: graphic as number | undefined };
+        const next = kind === null ? withoutKinds(base, at) : withKinds(base, kindsFor(at, kind as string));
+        if (!next) return send(res, 409, { ok: false, error: `you already have ${KIND_LIMITS.entries} item kinds; reset some first` });
+        writeKindOverrides(next);
+        broadcastEvent("changed", { what: "inventory", by: req.headers["x-client-id"], at: Date.now() });
+        return send(res, 200, { ok: true, ...kindsDocument(next) });
+      }
+      if (req.method === "POST" && url.pathname === "/api/item-kinds/import") {
+        const body = asObject(await readBody(req, { limit: MAX_KINDS_BYTES, tooLargeMsg: "the item kinds file is too large" }));
+        const { overrides, problems } = salvageKindOverrides(body);
+        if (!kindCount(overrides)) return send(res, 400, { ok: false, error: `the file holds no item kinds to import${problems.length ? ` (${problems[0]})` : ""}` });
+        const next = withKinds(readKindOverrides(), overrides);
+        if (!next) return send(res, 409, { ok: false, error: `the import would make more than ${KIND_LIMITS.entries} item kinds` });
+        writeKindOverrides(next);
+        broadcastEvent("changed", { what: "inventory", by: req.headers["x-client-id"], at: Date.now() });
+        return send(res, 200, { ok: true, ...kindsDocument(next), skipped: problems.length, problems: problems.slice(0, 5) });
       }
       if (req.method === "GET" && url.pathname === "/api/organize") return send(res, 200, { ok: true, ...readOrganize() });
       if (req.method === "PUT" && url.pathname === "/api/organize") {
