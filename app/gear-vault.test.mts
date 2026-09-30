@@ -8,13 +8,13 @@ import { createHash } from "node:crypto";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { dirname, join } from "node:path";
 import {
-  parseTooltip, classify, foldSnapshots, buildPools, requirementReport, totalsOf, propertyKeys, bagLabel, capacityOf, NOT_BUILDER_KEYS, kindOf, groupByName, slayersOf, medableOf, weaponAllowed, settingsDiff, PROP_LABELS, LAYER_TO_SLOT, effectiveProfile, resistSkillBonus, toOptItem, labelOf, builderKeys, migrateProfiles, templateFrom, TEMPLATE_KEYS, setRules, getRules, tagUnits, tagInfo,
+  parseTooltip, classify, foldSnapshots, spellSchoolOf, buildPools, requirementReport, totalsOf, propertyKeys, bagLabel, capacityOf, NOT_BUILDER_KEYS, kindOf, groupByName, slayersOf, medableOf, weaponAllowed, settingsDiff, PROP_LABELS, LAYER_TO_SLOT, effectiveProfile, resistSkillBonus, toOptItem, labelOf, builderKeys, migrateProfiles, templateFrom, TEMPLATE_KEYS, setRules, getRules, tagUnits, tagInfo,
   WEAPON_SKILLS, migrateWeaponSetting, excludeWeaponsError,
   shardResistCap, resistCapsFor, resistCapsError, profileResistCaps, RESIST_CAP_LIMITS,
 } from "./vault-lib.mts";
 import type { Item, Inventory, ItemLocation, ProfilesFile, CharacterEntryRaw } from "./vault-lib.mts";
 import { upgradeScan, TAZUO_V1_CAPS } from "./scan-schema.mts";
-import { runKey, reusableRun, runSummary, normalizeRun, SOLVER_VERSION } from "./runs-lib.mts";
+import { runKey, reusableRun, runSummary, normalizeRun, suitPieces, SOLVER_VERSION } from "./runs-lib.mts";
 import type { SavedRun } from "./runs-lib.mts";
 import { corePath } from "./config.mts";
 import type { RulesV1, ScanV2 } from "./schema/types.d.mts";
@@ -315,6 +315,20 @@ test("[smoke] kindOf: non-gear names get a kind, unknown names with props are ge
   assert.equal(parseTooltip(["2 Greater Heal"], 2).name, "Greater Heal");
   assert.equal(parseTooltip(["10 Potions"], 1).name, "10 Potions");   // a name that starts with a number keeps it
   assert.equal(classify("Elven Glasses Of Restoration").slot, "helmet");
+});
+
+test("[fast] a spell's name is a scroll only on a scroll graphic or none, and its school is the exact name on that school's graphic (issue #134)", () => {
+  assert.equal(kindOf("Healing Stone", null, 0x4078), "other");   // Mysticism's conjured stone
+  assert.equal(kindOf("Healing Stone", null, 0x2D9F), "scroll");
+  assert.deepEqual([["Curse", 0x1F46], ["Curse Weapon", 0x2263], ["Healing Stone", 0x2D9F], ["Word Of Death", 0x2D5B], ["curse weapon", null]].map(([n, g]) => spellSchoolOf(n as string, g as number | null)),
+    ["magery", "necromancy", "mysticism", "spellweaving", "necromancy"]);
+  assert.equal(spellSchoolOf("Curse", 0x2263), null);   // Magery's name on a Necromancy graphic
+  assert.equal(spellSchoolOf("Remove Curse", null), null);   // Chivalry has no scrolls, so no school
+  assert.equal(spellSchoolOf("Healing Stone", 0x4078), null);
+});
+
+test("[fast] kindOf: a message in a bottle and an SOS are maps, not a resource (issue #134)", () => {
+  assert.deepEqual(["A Message In A Bottle", "A SOS", "A Waterstained SOS", "Empty Bottle"].map((n) => kindOf(n)), ["map", "map", "map", "resource"]);
 });
 
 // ---- fold ---------------------------------------------------------------------------------
@@ -1100,6 +1114,10 @@ test("[fast] runs: normalizeRun withdraws the proof of a run saved before the so
   assert.deepEqual(normalizeRun(old), old, "idempotent");
   assert.equal(normalizeRun({ id: "n", solverVersion: SOLVER_VERSION, result: { method: "exact", proven: true } }).result!.proven, true);
   assert.equal(normalizeRun({ id: "u", result: { method: "exact", proven: false } }).result!.proven, false, "an unproven run keeps its verdict");
+});
+test("[fast] runs: suitPieces is every piece of every saved suit, empty slots and runs with no result skipped (issue #133)", () => {
+  const runs: SavedRun[] = [{ id: "a", result: { best: { ring: { serial: 1 }, arms: null, chest: { serial: 2 } } } }, { id: "b", result: { best: { ring: { serial: 1 }, legs: { serial: 3 } } } }, { id: "c" }, { id: "d", result: {} }];
+  assert.deepEqual([...suitPieces(runs)].sort(), [1, 2, 3]);
 });
 test("[fast] runs: normalizeRun upgrades allowOthers/budgetS and stamps schemaVersion", () => {
   const r = normalizeRun({ id: "x", settings: { allowOthers: true, budgetS: 30 }, result: {} });

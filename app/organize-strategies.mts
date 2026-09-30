@@ -13,7 +13,7 @@ import type { RulesV1RarityItem } from "./schema/types.d.mts";
 
 export type StrategyId = "simple" | "detailed" | "build";
 export const STRATEGY_IDS: readonly StrategyId[] = ["simple", "detailed", "build"];
-export type Family = "armour" | "jewelry" | "weapons" | "other-gear" | "gear" | "reagents" | "scrolls" | "resources" | "potions" | "runes-books" | "deeds" | "gems" | "tools" | "clothing" | "other";
+export type Family = "armour" | "jewelry" | "weapons" | "other-gear" | "gear" | "reagents" | "scrolls" | "maps" | "resources" | "potions" | "runes-books" | "deeds" | "gems" | "tools" | "clothing" | "other";
 // One group of a strategy: the name its chests are labelled with and its rules carry, and the filters that make it
 // (an item is in the group when any passes). Each filter becomes one rule, in this order, all filling the group's
 // chests: Armour needs two, since one filter cannot say "these slots, or the neck slot named gorget".
@@ -31,6 +31,11 @@ const preset = (id: string): RuleMatch => {
 const def = (key: string, name: string, family: Family, ...matches: RuleMatch[]): GroupDef => ({ key, name, family, matches });
 // Every item: the last group, so a group table claims everything its rules will.
 const EVERYTHING: RuleMatch = { query: q({}) };
+// Issue #134: the scrolls that raise a skill or a stat, as Simple's Skill scrolls takes them: power scrolls by their
+// level, then the rest by name (stat scrolls read "…Maximum Stats…" or "a scroll of power…"); no spell's name
+// holds any of these words.
+const POWER_SCROLLS: RuleMatch = { query: q({ kind: ["scroll"], props: [{ key: "psLevel", min: 105 }] }) };
+const SKILL_SCROLLS: RuleMatch = { query: q({ kind: ["scroll"] }), names: ["scroll of transcendence", "scroll of alacrity", "scroll binder", "maximum stats", "scroll of power"] };
 
 // Order matters only where filters overlap, and there it is first match wins, as for rules: gear is split by slot
 // (every gear item has kind "gear", so no name pattern reaches it), the armour neck filter sits above Jewelry's neck
@@ -43,20 +48,22 @@ const SIMPLE: readonly GroupDef[] = [
   def("weapons", "Weapons", "weapons", preset("weapons")),
   def("other-gear", "Other gear", "other-gear", kinds("gear")),
   def("reagents", "Reagents", "reagents", kinds("reagent")),
-  def("scrolls", "Scrolls", "scrolls", kinds("scroll")),
+  def("skill-scrolls", "Skill scrolls", "scrolls", POWER_SCROLLS, SKILL_SCROLLS),
+  def("scrolls", "Spell scrolls", "scrolls", preset("spell-scrolls")),
   def("resources", "Resources", "resources", kinds("resource")),
   def("potions", "Potions & bandages", "potions", kinds("potion", "bandage")),
   def("runes-books", "Runes & books", "runes-books", kinds("rune", "book")),
   def("deeds", "Deeds", "deeds", preset("deeds")),
   def("gems", "Gems", "gems", preset("gems")),
+  def("treasure-maps", "Treasure maps & SOS", "maps", preset("treasure-maps")),
   def("tools", "Tools", "tools", kinds("tool")),
   def("clothing", "Clothing", "clothing", kinds("clothing")),
   def("other", "Other", "other", EVERYTHING),
 ];
-// Spell scrolls stay one group: a scroll's school cannot be told by a name substring (Magery's "curse" is inside
-// Remove Curse and Curse Weapon, "heal" inside Healing Stone and a Scroll of Alacrity: Healing). A spell scroll is
-// named after its spell alone, and every other scroll (vault-lib's kindOf) has "scroll" in its name, so Other scrolls
-// takes those by name above Spell scrolls, which then holds only the spells.
+// A spell scroll is named after its spell alone, and every other scroll (vault-lib's kindOf) has "scroll" in its
+// name, so Other scrolls (stat scrolls, Alacrity, Scroll Binders, blank scrolls) takes those by name above the spells.
+// Those go by school (issue #134: the rule's `school`, an exact spell name, since a name substring cannot tell them:
+// Magery's "curse" is inside Remove Curse and Curse Weapon), and Spell scrolls keeps any of no known school.
 const DETAILED: readonly GroupDef[] = [
   def("armour-head", "Armour: head", "armour", preset("armour-head")),
   def("armour-neck", "Armour: neck", "armour", preset("armour-neck")),
@@ -81,6 +88,10 @@ const DETAILED: readonly GroupDef[] = [
   ...[105, 110, 115, 120].map((n) => def(`power-scrolls-${n}`, `Power scrolls ${n}`, "scrolls", preset(`power-scrolls-${n}`))),
   def("transcendence-scrolls", "Transcendence scrolls", "scrolls", preset("transcendence-scrolls")),
   def("other-scrolls", "Other scrolls", "scrolls", { query: q({ kind: ["scroll"] }), names: ["scroll"] }),
+  def("magery-scrolls", "Magery scrolls", "scrolls", preset("magery-scrolls")),
+  def("necromancy-scrolls", "Necromancy scrolls", "scrolls", preset("necromancy-scrolls")),
+  def("mysticism-scrolls", "Mysticism scrolls", "scrolls", preset("mysticism-scrolls")),
+  def("spellweaving-scrolls", "Spellweaving scrolls", "scrolls", preset("spellweaving-scrolls")),
   def("scrolls", "Spell scrolls", "scrolls", preset("spell-scrolls")),
   def("ingots", "Ingots", "resources", preset("ingots")),
   def("boards", "Boards", "resources", preset("boards")),
@@ -94,7 +105,7 @@ const DETAILED: readonly GroupDef[] = [
   def("books", "Books", "runes-books", kinds("book")),
   def("deeds", "Deeds", "deeds", preset("deeds")),
   def("gems", "Gems", "gems", preset("gems")),
-  def("treasure-maps", "Treasure maps", "other", preset("treasure-maps")),
+  def("treasure-maps", "Treasure maps & SOS", "maps", preset("treasure-maps")),
   def("instruments", "Instruments", "tools", preset("instruments")),
   def("tools", "Tools", "tools", kinds("tool")),
   def("clothing", "Clothing", "clothing", kinds("clothing")),
@@ -268,7 +279,7 @@ export interface Proposal {
   changed: boolean;                             // false when config is the current setup
   plan: { moves: number; trips: number; noRoom: number; crossSite: number; unclaimed: number };   // planOrganize on config
 }
-export interface ProposeOptions extends ScopeOptions { strategy: StrategyId; containers?: readonly number[] | undefined; rarity?: RulesV1RarityItem[] | undefined }
+export interface ProposeOptions extends ScopeOptions { strategy: StrategyId; containers?: readonly number[] | undefined; rarity?: RulesV1RarityItem[] | undefined; suitPieces?: ReadonlySet<number> | undefined }
 export type ProposeResult = { ok: true; proposal: Proposal } | { ok: false; error: string };
 
 const bySerial = (a: number, b: number): number => a - b;
@@ -332,7 +343,7 @@ export function proposeOrganize(inv: Inventory, cfg: OrganizeConfig, overlay: Ov
   const catchAll = cfg.catchAll != null && labels[String(cfg.catchAll)] ? cfg.catchAll : null;
   const draft: OrganizeConfig = { version: 1, labels, rules: manualRules, catchAll: null, pinnedItems: cfg.pinnedItems };
   const scope = scopeOf(view, draft, opts);
-  const items = scope.movable.map((s) => view.items[s]!).filter((it) => !claimOf(it, draft, rarity));
+  const items = scope.movable.map((s) => view.items[s]!).filter((it) => !claimOf(it, draft, rarity, opts.suitPieces));
   const groups = groupItems(STRATEGIES[opts.strategy], items, rarity, new Set(catchAll != null ? ["other"] : []));
 
   const siteOfRoot = new Map(sitesOf(view, scope.siteRoots).flatMap((g, i) => g.map((r) => [r, i] as const)));

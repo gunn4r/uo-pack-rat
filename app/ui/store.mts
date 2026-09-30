@@ -162,7 +162,7 @@ export const state: AppState = {
   // parseItemQuery (item-query.mts) reads off a URLSearchParams (inv-model.mts's queryParams builds the
   // query string from it; offset/limit are set per chunk). hideTags/props are arrays here (not a Set), matching the wire
   // form; nothing hidden by default: power scrolls are Cursed.
-  query: { q: "", chars: [], slot: [], loc: [], roots: [], rarity: "", rarityMin: "", rarityMax: "", kind: [], seenDays: 0, slayer: "", nogarg: false, med: false, hideTags: [], props: [], group: false, sort: "name", dir: 1, offset: 0, limit: 500 },
+  query: { q: "", chars: [], slot: [], loc: [], roots: [], rarity: "", rarityMin: "", rarityMax: "", kind: [], seenDays: 0, slayer: "", nogarg: false, med: false, hideTags: [], tags: [], props: [], group: false, sort: "name", dir: 1, offset: 0, limit: 500 },
   page: { rows: [], groups: null, total: 0, stacks: 0, pieces: 0 },   // what the Inventory table has loaded
   colWidths: {},
   density: "dense",

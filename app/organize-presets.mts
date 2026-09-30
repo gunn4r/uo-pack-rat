@@ -1,9 +1,10 @@
 // organize-presets.mts — ready-made rule filters for Organize (issue #11). A preset is copied into a rule
 // (ruleFromPreset), and editing the rule never changes the preset. Where two presets overlap, the rule placed
-// higher wins (first match): put Shields above Weapons, Armour: neck above Necklaces, the power scroll and
-// Transcendence scroll presets above Spell scrolls, and a rule for spellbooks above Weapons (a spellbook sits in the one-handed slot). Pure,
-// so the page can list them too.
-import { emptyRuleQuery, type OrganizeRule, type RuleMatch } from "./organize-config.mts";
+// higher wins (first match): put Shields above Weapons, Armour: neck above Necklaces, the power scroll,
+// Transcendence scroll and school scroll presets above Spell scrolls, and a rule for spellbooks above Weapons (a spellbook sits in the one-handed slot). Pure,
+// so the page can list them too. The undesirables at the end (issue #133) belong at the top of the rules, so they claim
+// first; they skip every piece of a saved suit, and Auto organize never uses them.
+import { emptyRuleQuery, SCHOOLS, type OrganizeRule, type RuleMatch } from "./organize-config.mts";
 import type { RuleQuery } from "./item-query.mts";
 
 export interface OrganizePreset { id: string; name: string; match: RuleMatch }
@@ -30,8 +31,9 @@ export const PRESETS: readonly OrganizePreset[] = [
   { id: "potions", name: "Potions", match: kinds("potion") },
   { id: "bandages", name: "Bandages", match: kinds("bandage") },
   { id: "transcendence-scrolls", name: "Transcendence scrolls", match: named(["scroll"], ["scroll of transcendence"]) },
+  ...SCHOOLS.map((s) => ({ id: `${s}-scrolls`, name: `${s[0]!.toUpperCase()}${s.slice(1)} scrolls`, match: { query: q({ kind: ["scroll"] }), school: s } })),
   { id: "spell-scrolls", name: "Spell scrolls", match: kinds("scroll") },
-  { id: "treasure-maps", name: "Treasure maps", match: named(["map"], ["treasure map"]) },
+  { id: "treasure-maps", name: "Treasure maps & SOS", match: named(["map"], ["treasure map", "message in a bottle", "sos"]) },
   { id: "refinements", name: "Refinements", match: kinds("refinement") },
   { id: "instruments", name: "Instruments", match: named(["other", "tool"], ["drum", "tambourine", "harp", "lute", "flute", "fire horn"]) },
   { id: "ammo", name: "Ammo", match: kinds("ammo") },
@@ -55,6 +57,8 @@ export const PRESETS: readonly OrganizePreset[] = [
   { id: "major-artifacts", name: "Major artifacts", match: tier("Major Artifact") },
   { id: "greater-artifacts", name: "Greater artifacts", match: tier("Greater Artifact") },
   { id: "lesser-artifacts-and-below", name: "Lesser artifacts and below", match: { query: q({ kind: ["gear"], rarityMax: "Lesser Artifact" }) } },
+  { id: "splintering-weapons", name: "Splintering weapons", match: { query: q({ kind: ["gear"], props: [{ key: "splintering weapon", min: 1 }] }), skipSuits: true } },
+  { id: "splintering-brittle", name: "Splintering and brittle", match: { query: q({ kind: ["gear"], tags: ["brittle"], props: [{ key: "splintering weapon", min: 1 }] }), skipSuits: true } },
 ];
 
 export function ruleFromPreset(preset: OrganizePreset, id: string): OrganizeRule {

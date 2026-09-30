@@ -196,6 +196,21 @@ test("[fast] a rule's free text never matches where the item sits", () => {
 const T1 = "2026-09-28T11:00:00Z";
 const step = (serial: number, name: string, from: number | null, to: number | null, when = T1): OverlayMove => ({ serial, name, from, to, at: when, trip: "t-1" });
 
+test("[fast] an Undesirables rule with skipSuits leaves a saved suit's piece to the rules below (issue #133)", () => {
+  const AXE = 0x40001010, AXE2 = 0x40001011, lines = ["Splintering Weapon 20%", "Brittle"];
+  const inv = fold([{ serial: A, pos: at(100) }, { serial: B, pos: at(102) }, { serial: C, pos: at(104) }],
+    [{ serial: AXE, name: "Axe", in: C, lines }, { serial: AXE2, name: "Axe", in: C, lines }, { serial: KATANA, name: "Katana", in: C, lines: ["Splintering Weapon 5%"] }]);
+  const fodder: OrganizeRule = { id: "fodder", name: "Fodder", match: { query: { ...emptyRuleQuery(), tags: ["brittle"], props: [{ key: "splintering weapon", min: 10 }] }, skipSuits: true }, targets: [A], origin: "manual" };
+  const cfg = config({ labels: labels(A, B, C), rules: [fodder, rule("gear", { kind: ["gear"] }, [B])] });
+  const suits = new Set([AXE2]);
+  assert.deepEqual(claimOf(inv.items[AXE]!, cfg, [], suits), { ruleId: "fodder", alsoMatched: ["gear"] });
+  assert.deepEqual(claimOf(inv.items[AXE2]!, cfg, [], suits), { ruleId: "gear", alsoMatched: [] });
+  assert.deepEqual(claimOf(inv.items[KATANA]!, cfg, [], suits), { ruleId: "gear", alsoMatched: [] }, "below the threshold");
+  assert.equal(claimOf(inv.items[AXE2]!, { ...cfg, rules: [{ ...fodder, match: { ...fodder.match, skipSuits: false } }, ...cfg.rules.slice(1)] }, [], suits)?.ruleId, "fodder", "only a skipSuits rule looks at the suits");
+  assert.equal(matchCount(inv, cfg, fodder.match, { now: NOW, suitPieces: suits }).count, 1);
+  assert.deepEqual(moved(planOrganize(inv, cfg, [], { now: NOW, suitPieces: suits })).map(([s, , to]) => [s, to]), [[AXE, A], [KATANA, B], [AXE2, B]].sort((x, y) => x[0]! - y[0]!));
+});
+
 test("[fast] homeOf: the nearest container above an item that is some rule's target", () => {
   const inv = fold([{ serial: A }, { serial: BAG, parent: A }, { serial: POUCH, parent: BAG }], [{ serial: PEARL, name: "Black Pearl", in: POUCH }]);
   const pearl = inv.items[PEARL]!;

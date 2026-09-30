@@ -5,7 +5,7 @@
 import { matchesItem } from "./item-query.mts";
 import { parseStamp } from "./scan-schema.mts";
 import { CATCH_ALL_ID, type Build, type OrganizeConfig, type RuleMatch } from "./organize-config.mts";
-import { RESIST_KEYS, TRASH_RE, locationOf, type Container, type ContainerCapacity, type Inventory, type Item } from "./vault-lib.mts";
+import { RESIST_KEYS, spellSchoolOf, TRASH_RE, locationOf, type Container, type ContainerCapacity, type Inventory, type Item } from "./vault-lib.mts";
 import type { RulesV1RarityItem } from "./schema/types.d.mts";
 import type { TripInput } from "./bridge-trip.mts";
 
@@ -122,9 +122,14 @@ export function buildOf(it: Item): Build {
 }
 
 // A rule's filter: the item query (location-free, item-query.mts's matchesItem) and, when given, any of the names
-// (compared as nameKeys; a name with no letter or digit matches nothing) and the build (gear only).
-export function ruleMatches(it: Item, m: RuleMatch, rarity: RulesV1RarityItem[] = []): boolean {
+// (compared as nameKeys; a name with no letter or digit matches nothing), the build (gear only) and the spell school
+// (spell scrolls only). `suits` holds the serials of every saved Suit Builder run's pieces (issue #133: the server
+// reads them from <data>/runs), which a rule with skipSuits leaves alone.
+const NO_SUITS: ReadonlySet<number> = new Set();
+export function ruleMatches(it: Item, m: RuleMatch, rarity: RulesV1RarityItem[] = [], suits: ReadonlySet<number> = NO_SUITS): boolean {
+  if (m.skipSuits && suits.has(it.serial)) return false;
   if (m.build && (!it.gear || buildOf(it) !== m.build)) return false;
+  if (m.school && spellSchoolOf(baseName(it.name), it.graphic) !== m.school) return false;
   const names = m.names ?? [];
   if (names.length) {
     const n = nameKey(it.name);
@@ -136,8 +141,8 @@ export function ruleMatches(it: Item, m: RuleMatch, rarity: RulesV1RarityItem[] 
 // What a rule filter would take if it were the only rule (the rule editor's live count, POST
 // /api/organize/match): the movable items in labelled roots it matches, their pieces (stack amounts) and up to
 // five of their names, stack counts stripped, distinct and in name order.
-export function matchCount(inv: Inventory, cfg: OrganizeConfig, m: RuleMatch, opts: ScopeOptions & { rarity?: RulesV1RarityItem[] | undefined }): { count: number; pieces: number; sample: string[] } {
-  const hits = scopeOf(inv, cfg, opts).movable.map((s) => inv.items[s]!).filter((it) => ruleMatches(it, m, opts.rarity));
+export function matchCount(inv: Inventory, cfg: OrganizeConfig, m: RuleMatch, opts: ScopeOptions & { rarity?: RulesV1RarityItem[] | undefined; suitPieces?: ReadonlySet<number> | undefined }): { count: number; pieces: number; sample: string[] } {
+  const hits = scopeOf(inv, cfg, opts).movable.map((s) => inv.items[s]!).filter((it) => ruleMatches(it, m, opts.rarity, opts.suitPieces));
   const names = [...new Set(hits.map((it) => it.name.replace(STACK_COUNT, "").trim()))].sort((a, b) => a.localeCompare(b, "en"));
   return { count: hits.length, pieces: hits.reduce((n, it) => n + (it.amount ?? 1), 0), sample: names.slice(0, 5) };
 }
@@ -145,8 +150,8 @@ export function matchCount(inv: Inventory, cfg: OrganizeConfig, m: RuleMatch, op
 export interface Claim { ruleId: string; alsoMatched: string[] }
 // First match wins (spec §1): the first rule whose filter passes claims the item and the others that pass are
 // only recorded. An item no rule claims goes to the catch-all, or stays put (null) when there is none.
-export function claimOf(it: Item, cfg: OrganizeConfig, rarity: RulesV1RarityItem[] = []): Claim | null {
-  const hits = cfg.rules.filter((r) => ruleMatches(it, r.match, rarity)).map((r) => r.id);
+export function claimOf(it: Item, cfg: OrganizeConfig, rarity: RulesV1RarityItem[] = [], suits: ReadonlySet<number> = NO_SUITS): Claim | null {
+  const hits = cfg.rules.filter((r) => ruleMatches(it, r.match, rarity, suits)).map((r) => r.id);
   if (hits.length) return { ruleId: hits[0]!, alsoMatched: hits.slice(1) };
   return cfg.catchAll != null ? { ruleId: CATCH_ALL_ID, alsoMatched: [] } : null;
 }
@@ -424,6 +429,7 @@ export interface Plan {
 }
 export interface PlanOptions extends ScopeOptions {
   rarity?: RulesV1RarityItem[] | undefined;
+  suitPieces?: ReadonlySet<number> | undefined;
   tripItems?: number | undefined;
   tripStones?: number | undefined;
   tripBytes?: number | undefined;
@@ -547,7 +553,7 @@ export function planOrganize(inv: Inventory, cfg: OrganizeConfig, overlay: Overl
   const candidates = [...new Set([...scope.movable, ...[...carried].filter((s) => view.items[s] && !pinnedItems.has(s))])].sort(bySerial);
   for (const serial of candidates) {
     const it = view.items[serial]!;
-    const claim = claimOf(it, cfg, rarity);
+    const claim = claimOf(it, cfg, rarity, opts.suitPieces);
     if (!claim) { unclaimed++; continue; }
     const rep = report.get(claim.ruleId)!;
     rep.matched++;

@@ -11,7 +11,7 @@ import { parseItemQuery } from "../item-query.mts";
 import type { ItemQuery, RuleQuery } from "../item-query.mts";
 import { activeFilters, plural } from "./inv-model.mts";
 import type { FilterContext } from "./inv-model.mts";
-import type { BridgeResultEntry, Build, ContainerLabel, OrganizeConfig, OrganizeMatchApiResponse, OrganizePlan, OrganizeRule, PlanMove, PlanRuleReport, PlanWarning, PlanWarningKind, RuleMatch, AutoStrategy, OrganizeProposal, ProposalCandidate, ProposalGroup, OrganizeRunningTrip } from "./api-types.mts";
+import type { BridgeResultEntry, Build, SpellSchool, ContainerLabel, OrganizeConfig, OrganizeMatchApiResponse, OrganizePlan, OrganizeRule, PlanMove, PlanRuleReport, PlanWarning, PlanWarningKind, RuleMatch, AutoStrategy, OrganizeProposal, ProposalCandidate, ProposalGroup, OrganizeRunningTrip } from "./api-types.mts";
 
 // The ruleId the plan reports the catch-all under (app/organize-config.mts's CATCH_ALL_ID; a value import from
 // there would add a second server module to the page for one string, so the test pins the two together).
@@ -79,10 +79,10 @@ export function newRuleId(rules: ReadonlyArray<{ id: string }>): string {
 }
 
 // ---------------------------------------------------------------- a rule's filter
-// The Inventory's filters as a rule query: the eleven item fields only. Location, character and seen filters
+// The Inventory's filters as a rule query: the twelve item fields only. Location, character and seen filters
 // are dropped (spec §1: a rule must keep matching an item after it moves); `dropped` names them for the note.
 export function ruleQueryFrom(q: ItemQuery): { query: RuleQuery; dropped: string[] } {
-  const query: RuleQuery = { q: q.q, slot: [...q.slot], rarity: q.rarity, rarityMin: q.rarityMin, rarityMax: q.rarityMax, kind: [...q.kind], slayer: q.slayer, nogarg: q.nogarg, med: q.med, hideTags: [...q.hideTags], props: q.props.map((p) => ({ ...p })) };
+  const query: RuleQuery = { q: q.q, slot: [...q.slot], rarity: q.rarity, rarityMin: q.rarityMin, rarityMax: q.rarityMax, kind: [...q.kind], slayer: q.slayer, nogarg: q.nogarg, med: q.med, hideTags: [...q.hideTags], tags: [...q.tags], props: q.props.map((p) => ({ ...p })) };
   const dropped = [...(q.loc.length || q.roots.length ? ["Location"] : []), ...(q.chars.length ? ["Character"] : []), ...(q.seenDays ? ["Seen"] : [])];
   return { query, dropped };
 }
@@ -111,8 +111,12 @@ export function checkDraft(name: string, namesText: string): { name: string; nam
 // One line for a rule row: "Name: black pearl, bloodmoss, garlic +1 more · Kind: reagent".
 // A rule's build (issue #91), as the rule editor and the summary name it.
 export const BUILD_TEXT: Record<Build, string> = { caster: "Caster", melee: "Melee", hybrid: "Hybrid", tank: "Tank", other: "Other" };
+// A rule's spell school (issue #134), likewise.
+export const SCHOOL_TEXT: Record<SpellSchool, string> = { magery: "Magery", necromancy: "Necromancy", mysticism: "Mysticism", spellweaving: "Spellweaving" };
 export function matchSummary(match: RuleMatch, ctx: FilterContext): string {
   const parts = activeFilters({ ...BASE, ...match.query }, ctx).map((t) => t.label);
+  if (match.school) parts.unshift(`School: ${SCHOOL_TEXT[match.school]}`);
+  if (match.skipSuits) parts.push("Not in a saved suit");
   if (match.build) parts.unshift(`Build: ${BUILD_TEXT[match.build]}`);
   const names = match.names || [];
   if (names.length) parts.unshift(`Name: ${names.slice(0, 3).join(", ")}${names.length > 3 ? ` +${names.length - 3} more` : ""}`);
@@ -380,8 +384,8 @@ export function tripRefusal(msg: string): string {
 
 // ---------------------------------------------------------------- Auto organize
 export const STRATEGY_TEXT: Record<AutoStrategy, { label: string; text: string }> = {
-  simple: { label: "Simple", text: "One container for each kind of thing: armour, weapons, jewelry, reagents, scrolls, resources and so on." },
-  detailed: { label: "Detailed", text: "Splits each kind further: armour by slot, jewelry by type, reagents by school, scrolls by kind, resources by type. Short of containers, a kind's small groups share one." },
+  simple: { label: "Simple", text: "One container for each kind of thing: armour, weapons, jewelry, reagents, skill scrolls, spell scrolls, treasure maps and SOS, resources and so on." },
+  detailed: { label: "Detailed", text: "Splits each kind further: armour by slot, jewelry by type, reagents by school, scrolls by kind and spell scrolls by school, resources by type. Short of containers, a kind's small groups share one." },
   build: { label: "By build", text: "Sorts gear by what it is for: caster, melee, hybrid (both equally), tank (shields and resist pieces with neither) and other gear. Everything else is grouped as in Simple." },
 };
 // Under the chests (issue #123): an unticked chest leaves the scope, so its items are neither moved nor short of room.
