@@ -435,3 +435,46 @@ test("[fast] Put away: a request dropped after a refresh plans the fresh backpac
     await s.close();
   }
 });
+
+// Issue #148: a Grab from the bridge goes into the overlay like a trip's take, so the container it left has room
+// again and Put away files the item back there, although only the backpack has been scanned since.
+test("[fast] a Grab that worked frees its slot in the full container it left, and Put away then files the item back there", async () => {
+  const C = 0x40000003, PACK = 0x40000008, GEM = 0x40001004;
+  const { s, dir } = await serve([{ serial: GEM, name: "Sapphire", in: C }], [{ serial: C, pos: { x: 102, y: 100, z: 0, facet: 1 }, max: 1 }, { serial: PACK, kind: "backpack" }]);
+  const inbox = join(dir, "inbox", "tazuo"), replyPath = join(dir, "bridge", "tazuo", "putaway.json");
+  const drop = (name: string, doc: unknown): void => { writeFileSync(join(inbox, `${name}.tmp`), JSON.stringify(doc)); renameSync(join(inbox, `${name}.tmp`), join(inbox, name)); };
+  try {
+    const cfg = structuredClone(CONFIG_DOC);
+    cfg.labels[String(C)] = { serial: C, name: "Sapphires", origin: "manual" };
+    cfg.rules[1]!.targets = [C];
+    assert.equal((await call(s, "/api/organize", body("PUT", cfg))).status, 200);
+    const grab = await call(s, "/api/bridge", body("POST", { action: "grab", serial: GEM, name: "Sapphire", chain: [C], pos: null }));
+    assert.equal(grab.status, 200, JSON.stringify(grab.body));
+    assert.deepEqual((JSON.parse(readFileSync(join(dir, "organize-state.json"), "utf8")) as { grabs: { id: string; from: number }[] }).grabs.map((g) => [g.id, g.from]), [[grab.body.id, C]]);
+    const t = new Date().toISOString();
+    writeFileSync(join(dir, "bridge", "tazuo", "status.json"), JSON.stringify({ alive: t, character: "Tester", current: null, counts: {},
+      results: { [String(grab.body.id)]: { ok: true, msg: "grabbed Sapphire — it is in your backpack", t } } }));
+    const inv = (await call<{ inventory: { containers: Record<string, Container> } }>(s, "/api/inventory")).body.inventory;
+    assert.deepEqual([inv.containers[C]!.capacity?.items, inv.containers[PACK]!.capacity?.items], [0, 1]);
+    const gem = (await call<{ items: Record<string, Item> }>(s, `/api/items/by-serial?serials=${GEM}`)).body.items[GEM]!;
+    assert.deepEqual([gem.container, gem.location?.text], [PACK, "Tester's backpack"]);
+    assert.deepEqual(stateOf(dir).moves.map((m) => [m.serial, m.to]), [[GEM, null]]);
+    // Organize leaves a grabbed item with the player: it is not carried by a trip.
+    const plan = (await call<{ plan: Plan }>(s, "/api/organize/plan")).body.plan;
+    assert.deepEqual([plan.carried, plan.moves.filter((m) => m.serial === GEM)], [[], []]);
+    // Put away's refresh scans only the backpack: the container the grab left still reads 1/1 in the scans.
+    const clickedAt = new Date().toISOString();
+    drop("Tester-20260930-120000-quick.json", houseScan({ scannedAt: new Date(Date.now() + 1000).toISOString(), boxes: [{ serial: PACK, kind: "backpack" }], things: [{ serial: GEM, name: "Sapphire", in: PACK }] }));
+    drop("putaway-request.json", { id: "r-1", source: "backpack", character: "Tester", requestedAt: new Date().toISOString(), clickedAt, at: { x: 101, y: 100, facet: 1 } });
+    let reply: Record<string, unknown> | null = null;
+    for (let i = 0; i < 400 && !(reply && reply.id === "r-1"); i++) {
+      await new Promise((r) => setTimeout(r, 50));
+      reply = existsSync(replyPath) ? JSON.parse(readFileSync(replyPath, "utf8")) as Record<string, unknown> : null;
+    }
+    assert.equal(reply?.ok, true, JSON.stringify(reply));
+    const line = queued(dir).find((l) => l.action === "trip")!;
+    assert.deepEqual((line.puts as { serial: number; dest: number[] }[]).map((p) => [p.serial, p.dest]), [[GEM, [C]]]);
+  } finally {
+    await s.close();
+  }
+});

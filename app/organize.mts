@@ -189,15 +189,17 @@ export function claimOf(it: Item, cfg: OrganizeConfig, rarity: RulesV1RarityItem
 // One confirmed step of a trip, from the results overlay (organize-state.json, app/organize-state.mts): the item
 // left `from` and is now in `to`, or in the backpack of the character that ran the trip when `to` is null (taken,
 // not yet put). `at` is the bridge's clock when the trip reported back; `character` is whose client the bridge ran
-// the trip in, when its status file said (issue #127: where a carried item reads as being).
-export interface OverlayMove { serial: number; name: string; from: number | null; to: number | null; at: string; trip: string; character?: string | undefined }
+// the trip in, when its status file said (issue #127: where a carried item reads as being). `grab`: a bridge Grab
+// (issue #148; `trip` is its command id), a take the player asked for, so Organize does not put the item away.
+export interface OverlayMove { serial: number; name: string; from: number | null; to: number | null; at: string; trip: string; character?: string | undefined; grab?: true | undefined }
 export interface Carried { serial: number; name: string }
 // The inventory as the overlay says it stands: moved items re-homed, and every container's fill (a copy of its
 // Contents line) adjusted for the steps it does not yet include.
 export interface Placed { inv: Inventory; counts: Map<number, ContainerCapacity>; carried: Carried[] }
 
 // Spec §2.2: confirmed moves are applied before planning, so a finished trip is not planned again before the next
-// scan. A step the item's own scan has seen since is over; a container's line read after the step already counts it.
+// scan. A step the item's own scan has seen since is over, except that the container it left still counts it until
+// that container's scan is newer too; a container's line read after the step already counts it.
 export function applyOverlay(inv: Inventory, overlay: OverlayMove[]): Placed {
   const items: Record<string, Item> = Object.assign(Object.create(null) as Record<string, Item>, inv.items);
   const counts = new Map<number, ContainerCapacity>();
@@ -214,8 +216,8 @@ export function applyOverlay(inv: Inventory, overlay: OverlayMove[]): Placed {
   for (const m of [...overlay].sort((a, b) => a.serial - b.serial)) {
     const at = stampMs(m.at);
     const it = items[m.serial];
-    if (it && stampMs(it.seenAt) >= at) continue;
     const w = it?.weight ?? 1;
+    if (it && stampMs(it.seenAt) >= at) { bump(m.from, at, -1, w); continue; }
     if (it) bump(it.container, at, -1, w);
     if (m.to != null) bump(m.to, at, 1, w);
     else carried.push({ serial: m.serial, name: m.name });
@@ -661,7 +663,10 @@ export function planOrganize(inv: Inventory, cfg: OrganizeConfig, overlay: Overl
   const siteOfRoot = new Map<number, number>();
   groups.forEach((g, i) => { for (const r of g) siteOfRoot.set(r, i); });
   const siteOf = (serial: number): number | undefined => { const ch = ancestry(view, serial); return ch ? siteOfRoot.get(ch.at(-1)!) : undefined; };
-  const carried = new Set(placed.carried.map((c) => c.serial));
+  // What a trip took and did not put: a Grab's item (issue #148) stays with the player.
+  const grabbed = new Set(overlay.filter((m) => m.grab).map((m) => m.serial));
+  const taken = placed.carried.filter((c) => !grabbed.has(c.serial));
+  const carried = new Set(taken.map((c) => c.serial));
   const wants = new Map<number, Want[]>();
   let unclaimed = 0;
   // A carried item is put away unless it has been pinned since (the page's answer to a put the server refuses).
@@ -779,7 +784,7 @@ export function planOrganize(inv: Inventory, cfg: OrganizeConfig, overlay: Overl
     crossSite: ids.filter((id) => cross.has(id)).map((id) => ({ ruleId: id, count: cross.get(id)! })),
     warnings: warnings.filter((w) => { const k = `${w.kind}:${w.serial}`; if (seenWarning.has(k)) return false; seenWarning.add(k); return true; })
       .sort((a, b) => (a.kind < b.kind ? -1 : a.kind > b.kind ? 1 : a.serial - b.serial)),
-    carried: [...placed.carried].sort((a, b) => a.serial - b.serial),
+    carried: taken.sort((a, b) => a.serial - b.serial),
     unclaimed,
     seconds: Math.round(seconds),
     emptyBags: bags.filter((b) => gather == null || homeOf(view, view.items[b.serial]!, homes) !== gather),

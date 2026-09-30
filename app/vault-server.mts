@@ -869,11 +869,11 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
   // Finished trips read out of their bridges' status files into the overlay. Runs on every getInventory() and on the
   // page's bridge status poll (every 2.5 s while any page is open), so a trip that reports back moves its items in
   // every view even with Organize closed; when it brought moves in, the state file is rewritten and every open page
-  // told to reload its inventory. With no trip pending it only reads the state file.
+  // told to reload its inventory. A Grab is harvested the same way. With nothing pending it only reads the state file.
   function harvestNow(now: number): { state: OrganizeState; bridges: Record<string, BridgeView> } {
     const before = readOrganizeState();
-    if (!before.pending.length) return { state: before, bridges: {} };
-    const bridges = Object.fromEntries([...new Set(before.pending.map((p) => p.adapter))].map((a) => [a, bridgeView(a, now)]));
+    if (!before.pending.length && !before.grabs.length) return { state: before, bridges: {} };
+    const bridges = Object.fromEntries([...new Set([...before.pending, ...before.grabs].map((p) => p.adapter))].map((a) => [a, bridgeView(a, now)]));
     const state = harvestTrips(before, bridges, now);
     if (JSON.stringify(state) !== JSON.stringify(before)) writeOrganizeState(state);
     if (JSON.stringify(state.moves) !== JSON.stringify(before.moves)) broadcastEvent("changed", { what: "inventory", at: now });
@@ -1884,6 +1884,12 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
         const adapter = bridgeAdapter();
         mkdirSync(CONFIG.paths.bridgeFor(adapter), { recursive: true, mode: DATA_DIR_MODE });
         appendFileSync(CONFIG.paths.bridgeQueueFor(adapter), text, { mode: DATA_FILE_MODE });
+        // A Grab is remembered like a trip (issue #148), so when it reports back the item reads as in the backpack
+        // and the container it left has that slot free again (harvestTrips), until a scan says otherwise.
+        if (line.action === "grab") {
+          const state = readOrganizeState();
+          writeOrganizeState({ ...state, grabs: [...state.grabs, { id, adapter, serial: line.serial as number, name: line.name as string, from: (line.chain as number[]).at(-1) ?? null, queuedAt: line.queuedAt }] });
+        }
         return send(res, 200, { ok: true, id });
       }
       if (req.method === "POST" && url.pathname === "/api/bridge/stop") {
