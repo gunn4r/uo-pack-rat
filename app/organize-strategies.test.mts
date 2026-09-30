@@ -11,7 +11,6 @@ import { foldSnapshots, setRules, type Inventory } from "./vault-lib.mts";
 import { houseScan, AT, type BoxSpec, type ThingSpec } from "./organize-fixture.mts";
 import { checkOrganizeConfig, emptyOrganizeConfig, emptyRuleQuery, type OrganizeConfig, type OrganizeRule } from "./organize-config.mts";
 import { planOrganize, type OverlayMove } from "./organize.mts";
-import { PRESETS } from "./organize-presets.mts";
 import type { RulesV1 } from "./schema/types.d.mts";
 import { STRATEGIES, STRATEGY_IDS, groupItems, assignGroups, proposeOrganize, type Offer, type Proposal, type ProposeOptions } from "./organize-strategies.mts";
 
@@ -149,22 +148,23 @@ test("[fast] Detailed: Spellbooks share a chest with the books, not the weapons 
 
 // Issue #123: the neck slot holds armour and necklaces alike; both strategies split them with the one Armour: neck
 // filter, which knows the Armor Of Initiation piece (a gorget graphic under the set's name) too.
-test("[fast] Simple and By build: refinements are Resources and instruments Tools, each by the group's second rule (issue #129)", () => {
-  const names = ["Varnish Of Defense", "Gloss Of Protection", "Drum", "Tambourine", "Standing Harp", "Fire Horn", "Iron Ingot", "Scissors", "Apple"];
+test("[fast] Simple and By build: refinements are Resources by the group's second rule, instruments are Tools by their kind, and no word merely holding an instrument's name is one (issue #129)", () => {
+  const names = ["Varnish Of Defense", "Gloss Of Protection", "Drum", "Tambourine", "Standing Harp", "Fire Horn", "Iron Ingot", "Scissors", "Apple", "Harpy Wing", "Hard Rum", "Absolute Zero"];
   const items = Object.values(fold([{ serial: A }], things(A, names)).items);
   for (const strategy of ["simple", "build"] as const) {
     assert.deepEqual(groupItems(STRATEGIES[strategy], items).map((g) => [g.key, g.items.map((it) => it.name)]), [
       ["resources", ["Varnish Of Defense", "Gloss Of Protection", "Iron Ingot"]],
       ["tools", ["Drum", "Tambourine", "Standing Harp", "Fire Horn", "Scissors"]],
-      ["other", ["Apple"]],
+      ["other", ["Apple", "Harpy Wing", "Hard Rum", "Absolute Zero"]],
     ], strategy);
   }
-  // The groups' first rules keep their ids, so a setup an earlier proposal saved still matches them.
+  assert.deepEqual(groupItems(STRATEGIES.detailed, items).find((g) => g.key === "instruments")?.items.map((it) => it.name), ["Drum", "Tambourine", "Standing Harp", "Fire Horn"]);
+  // The Resources group's first rule keeps its id, so a setup an earlier proposal saved still matches it.
   const inv = fold([{ serial: A }, { serial: B, pos: at(102) }, { serial: C, pos: at(104) }], things(A, names));
   const rules = ok(proposeOrganize(inv, emptyOrganizeConfig(), [], OPTS())).config.rules;
   assert.deepEqual(rules.filter((r) => /resources|tools/.test(r.id)).map((r) => [r.id, r.match]), [
     ["auto-resources", { query: { ...emptyRuleQuery(), kind: ["resource"] } }], ["auto-resources-2", { query: { ...emptyRuleQuery(), kind: ["refinement"] } }],
-    ["auto-tools", { query: { ...emptyRuleQuery(), kind: ["tool"] } }], ["auto-tools-2", PRESETS.find((p) => p.id === "instruments")!.match],
+    ["auto-tools", { query: { ...emptyRuleQuery(), kind: ["tool"] } }],
   ]);
 });
 

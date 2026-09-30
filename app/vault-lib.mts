@@ -1259,11 +1259,16 @@ const KIND_RULES: Array<[string, RegExp]> = [
   ["clothing", /\b(shirt|doublet|surcoat|tunic|dress|gown|kilt|skirt|sash|apron|robe|cloak|hat|cap|bandana|bonnet|boots|sandals|shoes|thigh boots|gloves|half apron|body sash|obi|kimono|hakama|jin-?baori)\b/i],
 ];
 const REFINEMENT_RE = /\b(wash|varnish|polish|cure|gloss|scour|lacquer|resin) of (defense|protection|hardening|fortification|invulnerability)\b/i;
+// The bard's instruments are tools (issue #129), told by whole words so Harpy Wing, Absolute… or Hard Rum never are one;
+// Organize's Instruments preset names the same words.
+export const INSTRUMENTS: readonly string[] = ["drum", "tambourine", "harp", "lute", "flute", "fire horn", "cello", "trumpet", "cowbell"];
+const INSTRUMENT_RE = new RegExp(`\\b(${INSTRUMENTS.join("|")})s?\\b`, "i");
 export function kindOf(name: string | null | undefined, parsed?: ParsedTooltip | null | undefined, graphic?: number | null | undefined): string {
   const n = name || "";
   if (isSpellScroll(n, graphic)) return "scroll";
   if (PRIMER_RE.test(n)) return "book";
   if (REFINEMENT_RE.test(n)) return "refinement";
+  if (INSTRUMENT_RE.test(n)) return "tool";
   for (const [kind, rx] of KIND_RULES) if (rx.test(n)) return kind;
   const hasProps = parsed && Object.keys(parsed.props || {}).some((k) => k !== "tagPenalty");
   return hasProps ? "gear" : "other";

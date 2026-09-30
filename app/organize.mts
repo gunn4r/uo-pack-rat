@@ -112,9 +112,9 @@ const TANK_RESISTS = 20;
 // Detailed's Spellbooks group and By build (issue #129) read it the same way.
 export const SPELLBOOK_NAMES: readonly string[] = ["spellbook", "book of", "tome"];
 // Which build a piece of gear is: the side with more distinct markers, Hybrid on a tie. A piece with none is Caster when
-// it is a spellbook (issue #129), Melee when it is a weapon (it has a damage range), else Tank when it is a shield (issue
-// #123: held in the two-handed slot and not a two-handed weapon, as vault-lib classifies shields) or its resists add up
-// to TANK_RESISTS, else Other.
+// it is a spellbook (issue #129: every one, a Book Of Chivalry or Bushido too), Melee when it is a weapon (it has a
+// damage range), else Tank when it is a shield (issue #123: held in the two-handed slot and not a two-handed weapon, as
+// vault-lib classifies shields) or its resists add up to TANK_RESISTS, else Other.
 export function buildOf(it: Item): Build {
   const n = (keys: string[], skills: string[]): number => keys.filter((k) => (k === "mageWeapon" ? !!it.props[k] : (it.props[k] ?? 0) > 0)).length
     + skills.filter((k) => { const v = it.extras[k]; return typeof v === "number" && v > 0; }).length;

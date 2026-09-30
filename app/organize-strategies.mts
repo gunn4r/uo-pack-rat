@@ -42,8 +42,8 @@ const SKILL_SCROLLS: RuleMatch = { query: q({ kind: ["scroll"] }), names: ["scro
 // slot, Shields and Spellbooks above Weapons (both are held), power scrolls above the other scrolls, and each school
 // of reagents and each resource type above the rest of its kind. Shields and spellbooks are Weapons in Simple; in
 // Detailed a spellbook is in the books' family, so when chests run short it shares theirs, not the Weapons chest.
-// Simple's Resources and Tools take refinements and instruments by a second filter (issue #129), as Detailed's
-// Refinements and Instruments do, so each group's first rule keeps the id an earlier proposal gave it.
+// Simple's Resources takes refinements by a second filter (issue #129), as Detailed's Refinements does, so its first
+// rule keeps the id an earlier proposal gave it; instruments are tools (vault-lib's kindOf), so Tools needs none.
 const SIMPLE: readonly GroupDef[] = [
   def("armour", "Armour", "armour", gear(["helmet", "chest", "arms", "hands", "legs"]), preset("armour-neck")),
   def("jewelry", "Jewelry", "jewelry", gear(["ring", "bracelet", "neck", "earrings", "talisman"])),
@@ -58,7 +58,7 @@ const SIMPLE: readonly GroupDef[] = [
   def("deeds", "Deeds", "deeds", preset("deeds")),
   def("gems", "Gems", "gems", preset("gems")),
   def("treasure-maps", "Treasure maps & SOS", "maps", preset("treasure-maps")),
-  def("tools", "Tools", "tools", kinds("tool"), preset("instruments")),
+  def("tools", "Tools", "tools", kinds("tool")),
   def("clothing", "Clothing", "clothing", kinds("clothing")),
   def("other", "Other", "other", EVERYTHING),
 ];

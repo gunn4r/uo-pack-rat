@@ -5,6 +5,7 @@
 // so the page can list them too.
 import { emptyRuleQuery, SCHOOLS, type OrganizeRule, type RuleMatch } from "./organize-config.mts";
 import type { RuleQuery } from "./item-query.mts";
+import { INSTRUMENTS } from "./vault-lib.mts";
 
 export interface OrganizePreset { id: string; name: string; match: RuleMatch }
 
@@ -34,7 +35,8 @@ export const PRESETS: readonly OrganizePreset[] = [
   { id: "spell-scrolls", name: "Spell scrolls", match: kinds("scroll") },
   { id: "treasure-maps", name: "Treasure maps & SOS", match: named(["map"], ["treasure map", "message in a bottle", "sos"]) },
   { id: "refinements", name: "Refinements", match: kinds("refinement") },
-  { id: "instruments", name: "Instruments", match: named(["other", "tool"], ["drum", "tambourine", "harp", "lute", "flute", "fire horn"]) },
+  // Instruments are tools by whole-word name (vault-lib's kindOf), so these names only ever meet a tool's.
+  { id: "instruments", name: "Instruments", match: named(["tool"], [...INSTRUMENTS]) },
   { id: "ammo", name: "Ammo", match: kinds("ammo") },
   { id: "runes", name: "Runes and runebooks", match: kinds("rune") },
   { id: "deeds", name: "Deeds", match: kinds("deed") },

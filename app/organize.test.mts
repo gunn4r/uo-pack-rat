@@ -169,15 +169,17 @@ test("[fast] a rule's build takes gear by its caster and melee markers, then its
   }
 });
 
-test("[fast] a spellbook with no caster or melee marker is Caster gear, and one with markers goes by them (issue #129)", () => {
+test("[fast] a spellbook with no caster or melee marker is Caster gear, a Book Of Chivalry included, and one with markers goes by them (issue #129)", () => {
   const inv = fold([{ serial: A }], [
     { serial: 0x40002001, name: "Spellbook", in: A },
     { serial: 0x40002002, name: "Necromancer Spellbook", in: A },
     { serial: 0x40002003, name: "Spellweaving Spellbook", in: A },
-    { serial: 0x40002004, name: "Book Of Bushido", in: A, lines: ["Swordsmanship +5", "Tactics +5"] },
+    { serial: 0x40002004, name: "Book Of Chivalry", in: A },
+    { serial: 0x40002005, name: "Book Of Bushido", in: A, lines: ["Swordsmanship +5", "Tactics +5"] },
   ]);
   assert.deepEqual(Object.values(inv.items).sort((a, b) => a.serial - b.serial).map((it) => [it.name, it.slot, buildOf(it)]), [
-    ["Spellbook", "oneHanded", "caster"], ["Necromancer Spellbook", "oneHanded", "caster"], ["Spellweaving Spellbook", "oneHanded", "caster"], ["Book Of Bushido", "oneHanded", "melee"],
+    ["Spellbook", "oneHanded", "caster"], ["Necromancer Spellbook", "oneHanded", "caster"], ["Spellweaving Spellbook", "oneHanded", "caster"],
+    ["Book Of Chivalry", "oneHanded", "caster"], ["Book Of Bushido", "oneHanded", "melee"],
   ]);
 });
 
