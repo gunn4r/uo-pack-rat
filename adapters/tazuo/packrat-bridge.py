@@ -653,9 +653,11 @@ def wait_opened(serial):
     started = time.time()
     API.Pause(OPEN_FLOOR_S)
     while time.time() - started < PAUSE_OPEN and not API.StopRequested:
-        it = find(serial)
-        if it is not None and bool(getattr(it, "Opened", False)):
-            return
+        try:                  # a build without Opened reads False: the old flat PAUSE_OPEN
+            if bool(getattr(find(serial), "Opened", False)):
+                return
+        except Exception:
+            pass
         API.Pause(OPEN_POLL_S)
 
 
@@ -1131,11 +1133,11 @@ def write_stopped():
     stops waiting out the 30 s heartbeat. Called from a finally because the client's Stop interrupts
     the script at its next API.Pause, so nothing after main()'s loop runs then. Every client call
     here is guarded: after that interrupt any of them may fail, and the file must still be written."""
-    try:
-        for cmd in pending:
+    for cmd in pending:
+        try:                  # one at a time: record's SysMsg failing must not skip the rest
             record(cmd["id"], False, "not run — the bridge stopped first")
-    except Exception:
-        pass
+        except Exception:
+            pass
     try:
         write_json_atomic(STATUS, {"alive": rfc3339_now(), "character": last_status["character"],
                                     "current": None, "results": results, "counts": counts,

@@ -421,7 +421,7 @@ def check_line(cmd, actions, now_s):
 
 results = {}                # id -> {ok, msg, t}
 counts = {"done": 0, "failed": 0}
-last_status = {"current": None, "at": 0.0}
+last_status = {"current": None, "at": 0.0, "character": ""}
 pending = []              # validated commands waiting their turn (module-level so write_stopped sees them)
 
 
@@ -471,7 +471,8 @@ def write_status(current=None):
     try:
         items = list(results.items())
         keep = dict(items[-MAX_RESULTS:])
-        write_json_atomic(STATUS, {"alive": rfc3339_now(), "character": str(Player.Name),
+        last_status["character"] = str(Player.Name)
+        write_json_atomic(STATUS, {"alive": rfc3339_now(), "character": last_status["character"],
                                     "current": current, "results": keep, "counts": counts})
     except Exception as e:
         sysmsg("bridge: status write failed: {0}".format(e), ALARM_HUE)
@@ -729,7 +730,8 @@ def main():
     seen = []                                 # ids already executed, oldest first
     spent = []                                # when each accepted command was accepted
     flooded = False
-    sysmsg("Pack Rat bridge up on {0}. Use Highlight / Grab / Go to in the app. Stop the script to end.".format(Player.Name))
+    last_status["character"] = str(Player.Name)
+    sysmsg("Pack Rat bridge up on {0}. Use Highlight / Grab / Go to in the app. Stop the script to end.".format(last_status["character"]))
     # Player.Connected (not a literal True) bounds the loop -- it ends on logout even without an
     # explicit Stop; see README.md's "Stopping the bridge" for what this does and doesn't cover.
     while Player.Connected and time.time() < deadline and not flooded:
@@ -804,13 +806,13 @@ def write_stopped():
     """The last status write, `stopped: true`: the app shows the bridge offline and the installer
     stops waiting out the 30 s heartbeat. Called from a finally so a Stop that aborts the script
     mid-pause still writes it; every step is guarded so the file is written whatever else fails."""
-    try:
-        for cmd in pending:
+    for cmd in pending:
+        try:                  # one at a time: record's SysMsg failing must not skip the rest
             record(cmd["id"], False, "not run -- the bridge stopped first")
-    except Exception:
-        pass
+        except Exception:
+            pass
     try:
-        write_json_atomic(STATUS, {"alive": rfc3339_now(), "character": str(Player.Name),
+        write_json_atomic(STATUS, {"alive": rfc3339_now(), "character": last_status["character"],
                                     "current": None, "results": results, "counts": counts,
                                     "stopped": True})
     except Exception:

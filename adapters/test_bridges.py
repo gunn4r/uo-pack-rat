@@ -238,9 +238,38 @@ class BridgeCase(object):
         self.assertNotIn("stopped", writes[0][1], "a running bridge's heartbeat never says stopped")
         self.assertIs(final.get("stopped"), True, "and an ordinary stop says it again")
 
+    def test_a_stop_that_breaks_the_client_still_writes_the_marker_and_every_queued_result(self):
+        """After the interrupt any client call may fail; the name, the messages and each queued
+        command's result are guarded one by one so none of them costs the stopped marker."""
+        class Interrupted(Exception):
+            pass
+
+        def interrupt():
+            self.break_client(w)
+            raise Interrupted()
+
+        w = home()
+        w.clock.at(3, interrupt)
+        ids = ["h%d" % i for i in range(6)]
+        with self.assertRaises(Exception):
+            self.run_bridge(w, 1, [self.cmd(i, "highlight", AMULET, [CHEST, BAG]) for i in ids])
+        with open(os.path.join(self.dir, "status.json"), encoding="utf-8") as f:
+            final = json.load(f)
+        self.assertIs(final.get("stopped"), True)
+        self.assertEqual(final["character"], "Tester")
+        self.assertEqual(sorted(final["results"]), ids)
+        self.assertGreaterEqual([r["msg"] for r in final["results"].values()].count(
+            "not run — the bridge stopped first" if self.ADAPTER == "tazuo" else "not run -- the bridge stopped first"), 2)
+
 
 class TazUOBridge(BridgeCase, unittest.TestCase):
     ADAPTER = "tazuo"
+
+    def break_client(self, world):
+        def fail(*a):
+            raise RuntimeError("client gone")
+        world.api.SysMsg = fail
+        world.api.Player = None                  # every API.Player read fails
 
     def start(self, world):
         api = world.api = tazuo_api(world, PACK)
@@ -422,6 +451,17 @@ class TazUOBridge(BridgeCase, unittest.TestCase):
         self.assertFalse(step["ok"], step)
         self.assertGreaterEqual(step["ms"], 1000)
         self.assertLess(step["ms"], 1100)
+
+    def test_a_client_without_a_readable_opened_waits_the_old_flat_second(self):
+        for err in (AttributeError, RuntimeError):
+            w = trip_home()
+            w.opened_error = err
+            times = self.open_and_move_times(w)
+            final, _ = self.run_bridge(w, 1, [self.trip("t1", takes=[(AMULET, [CHEST, BAG])])])
+            self.assertTrue(final["results"]["t1"]["ok"], (err, final["results"]["t1"]))
+            for gap in self.gaps(times):
+                self.assertGreaterEqual(gap, 1.0, err)
+                self.assertLess(gap, 1.06, err)
 
     def test_an_empty_container_does_not_hold_up_a_put(self):
         w = trip_home()
@@ -635,8 +675,14 @@ class TazUOBridge(BridgeCase, unittest.TestCase):
 class RazorBridge(BridgeCase, unittest.TestCase):
     ADAPTER = "razor-enhanced"
 
+    def break_client(self, world):
+        def fail(*a):
+            raise RuntimeError("client gone")
+        world.g["Misc"].SendMessage = staticmethod(fail)
+        type(world.g["Player"]).Name = property(fail)
+
     def start(self, world):
-        g = razor_globals(world, PACK)
+        g = world.g = razor_globals(world, PACK)
         world.clock.at(RUN_S, lambda: setattr(g["Player"], "Connected", False))
         run_script(adapter_path("razor-enhanced", "packrat-bridge.py"), world, extra_globals=g)
 

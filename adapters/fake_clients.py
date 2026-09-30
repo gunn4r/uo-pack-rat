@@ -199,6 +199,21 @@ def tazuo_api(world, backpack, bank=0, skills=None):
     api.MarkTile = lambda *a: None
     api.RemoveMarkedTile = lambda *a: None
     api.FindItem = lambda s: world.known(int(s))
+    err = getattr(world, "opened_error", None)
+    if err is not None:
+        # A client build whose item has no Opened (AttributeError) or whose Opened read fails.
+        class NoOpened(object):
+            def __init__(self, it):
+                object.__setattr__(self, "_it", it)
+
+            def __getattr__(self, name):
+                if name == "Opened":
+                    raise err("Opened")
+                return getattr(self._it, name)
+
+            def __setattr__(self, name, v):
+                setattr(self._it, name, v)
+        api.FindItem = lambda s: (lambda it: None if it is None else NoOpened(it))(world.known(int(s)))
     api.FindLayer = lambda layer: None
     api.UseObject = lambda s, *a: world.open(int(s))
     api.ItemsInContainer = lambda s, recursive=False: world.kids(int(s), recursive)
