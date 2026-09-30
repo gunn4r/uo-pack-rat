@@ -570,14 +570,14 @@ test("[fast] Put away from the backpack puts only what lies directly in it, into
       { serial: UNCLAIMED, name: "Katana", in: PACK }, { serial: PEARL3, name: "Black Pearl", in: B }]);
   const cfg = config({ labels: labels(A, B, FAR), rules: [rule("pearls", {}, [A], ["pearl"]), rule("rubies", {}, [FAR], ["ruby"])], pinnedItems: [PEARL2] });
   const plan = planOrganize(inv, cfg, [], { now: NOW, putAway: { from: "pack", container: PACK, at: HOME } });
-  assert.deepEqual(plan.moves.map((m) => [m.serial, m.from, m.to]), [[PEARL, null, A]], "never the pinned pearl, the pouch's, the blessed one, nor the chest's");
-  assert.deepEqual(plan.trips.map((t) => [t.takes, t.puts]), [[[], [PEARL]]]);
+  assert.deepEqual(plan.moves.map((m) => [m.serial, m.from, m.to]), [[PEARL, null, A], [BLESSED, null, A]], "the blessed pearl too, never the pinned pearl, the pouch's, nor the chest's");
+  assert.deepEqual(plan.trips.map((t) => [t.takes, t.puts]), [[[], [PEARL, BLESSED]]]);
   assert.deepEqual(tripCommand(inv, plan, 1)!.takes, []);
   assert.deepEqual(plan.crossSite, [{ ruleId: "rubies", count: 1 }], "the ruby's chest is at another house");
   assert.equal(plan.unclaimed, 1);
-  assert.deepEqual(packKept(inv, PACK, new Set([PEARL2])), { bags: 1, own: 1, pinned: 1 }, "what stays, for the answer: the pouch, the blessed pearl, the pinned one");
+  assert.deepEqual(packKept(inv, PACK, new Set([PEARL2])), { bags: 1, pinned: 1 }, "what stays, for the answer: the pouch and the pinned pearl");
   const withCatchAll = planOrganize(inv, { ...cfg, catchAll: A }, [], { now: NOW, putAway: { from: "pack", container: PACK, at: HOME } });
-  assert.deepEqual([withCatchAll.moves.map((m) => m.serial), withCatchAll.unclaimed], [[PEARL], 1], "the catch-all takes nothing from the pack");
+  assert.deepEqual([withCatchAll.moves.map((m) => m.serial).sort(), withCatchAll.unclaimed], [[PEARL, BLESSED, UNCLAIMED].sort(), 0], "the catch-all takes the unclaimed katana");
   const there = planOrganize(inv, cfg, [], { now: NOW, putAway: { from: "pack", container: PACK, at: { x: 301, y: 100, facet: 1 } } });
   assert.deepEqual(there.moves.map((m) => [m.serial, m.to]), [[RUBY, FAR]], "standing at the other house");
   const elsewhere = planOrganize(inv, cfg, [], { now: NOW, putAway: { from: "pack", container: PACK, at: { x: 101, y: 100, facet: 2 } } });
