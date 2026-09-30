@@ -40,8 +40,8 @@
     "highs": "1.15.3"
   },
   "devDependencies": {
-    "@types/node": "24.13.6",
-    "electron": "44.4.3",
+    "@types/node": "24.19.0",
+    "electron": "44.4.5",
     "electron-builder": "26.15.3",
     "playwright": "1.63.0",
     "typescript": "7.0.2"
