@@ -44,6 +44,14 @@ test("[fast] a put of an item an earlier trip left in the backpack keeps where i
   assert.deepEqual(next.moves, [{ serial: RUBY, name: "Ruby", from: A, to: B, at: T2, trip: "t-2" }]);
 });
 
+test("[fast] harvestTrips names the character whose bridge ran the trip, and salvage keeps it", () => {
+  const result = { ok: true, msg: "", t: T1, steps: [{ op: "take", serial: PEARL, ok: true, msg: "" }] };
+  const next = harvestTrips(state({ pending: [trip()] }), { tazuo: { results: { "t-1": result }, current: null, character: "Tester" } }, Date.parse(T1));
+  assert.deepEqual(next.moves, [{ serial: PEARL, name: "Black Pearl", from: B, to: null, at: T1, trip: "t-1", character: "Tester" }]);
+  assert.deepEqual(salvageOrganizeState(JSON.parse(JSON.stringify(next))).moves, next.moves);
+  assert.equal(salvageOrganizeState({ ...next, moves: [{ ...next.moves[0], character: 5 }] }).moves[0]!.character, undefined, "a bad name is dropped, not the move");
+});
+
 test("[fast] harvestTrips keeps a trip the bridge is running or may still pick up, and drops one nobody will run", () => {
   const now = Date.parse(QUEUED) + PENDING_GRACE_MS + 1000;
   const running = trip({ id: "t-run" }), fresh = trip({ id: "t-new", queuedAt: new Date(now - 10_000).toISOString() }), old = trip({ id: "t-old" });

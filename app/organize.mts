@@ -5,7 +5,7 @@
 import { matchesItem } from "./item-query.mts";
 import { parseStamp } from "./scan-schema.mts";
 import { CATCH_ALL_ID, type Build, type OrganizeConfig, type RuleMatch } from "./organize-config.mts";
-import { RESIST_KEYS, spellSchoolOf, TRASH_RE, type ContainerCapacity, type Inventory, type Item } from "./vault-lib.mts";
+import { RESIST_KEYS, spellSchoolOf, TRASH_RE, locationOf, type Container, type ContainerCapacity, type Inventory, type Item } from "./vault-lib.mts";
 import type { RulesV1RarityItem } from "./schema/types.d.mts";
 import type { TripInput } from "./bridge-trip.mts";
 
@@ -164,8 +164,9 @@ export function claimOf(it: Item, cfg: OrganizeConfig, rarity: RulesV1RarityItem
 
 // One confirmed step of a trip, from the results overlay (organize-state.json, app/organize-state.mts): the item
 // left `from` and is now in `to`, or in the backpack of the character that ran the trip when `to` is null (taken,
-// not yet put). `at` is the bridge's clock when the trip reported back.
-export interface OverlayMove { serial: number; name: string; from: number | null; to: number | null; at: string; trip: string }
+// not yet put). `at` is the bridge's clock when the trip reported back; `character` is whose client the bridge ran
+// the trip in, when its status file said (issue #127: where a carried item reads as being).
+export interface OverlayMove { serial: number; name: string; from: number | null; to: number | null; at: string; trip: string; character?: string | undefined }
 export interface Carried { serial: number; name: string }
 // The inventory as the overlay says it stands: moved items re-homed, and every container's fill (a copy of its
 // Contents line) adjusted for the steps it does not yet include.
@@ -199,6 +200,44 @@ export function applyOverlay(inv: Inventory, overlay: OverlayMove[]): Placed {
     items[m.serial] = { ...it, container: chain ? m.to : null, root: chain ? chain.at(-1)! : null };
   }
   return { inv: { ...inv, items }, counts, carried };
+}
+
+// Issue #127: the inventory every view and bridge command reads (the server's getInventory): the fold with the
+// overlay applied exactly as the planner applies it, so after a trip the app points at the chest an item went into,
+// not the one it came out of, until a scan catches up. A moved item's location is read again from its new container
+// (so its text, root, container and the chain Highlight walks agree), and a container's fill is the overlay's count.
+// A carried item sits at the top of the backpack of the character whose bridge took it (whose fill, when it states
+// one, counts it); with no such backpack in the scans (or a move recorded before moves named their character) it is
+// in no container and says it is carried. The planner takes the fold itself and applies the overlay on its own:
+// handed this, it would apply every move twice. Work beyond applyOverlay's is per move, not per item.
+export function overlaidInventory(inv: Inventory, overlay: OverlayMove[]): Inventory {
+  const placed = applyOverlay(inv, overlay);
+  const items = placed.inv.items;
+  const containers: Record<string, Container> = Object.assign(Object.create(null) as Record<string, Container>, inv.containers);
+  for (const [serial, cap] of placed.counts) {
+    const c = inv.containers[serial]!;
+    if (cap.items !== c.capacity!.items || cap.stones !== c.capacity!.stones) containers[serial] = { ...c, capacity: cap };
+  }
+  const packs = new Map<string, Container>();
+  for (const c of Object.values(inv.containers)) if (c.parent == null && c.kind === "backpack") packs.set(c.scannedBy, c);
+  const who = new Map(overlay.map((m) => [m.serial, m.character]));
+  const carried = new Set<number>();
+  for (const { serial } of placed.carried) {
+    const it = items[serial], character = who.get(serial);
+    const pack = character == null ? undefined : packs.get(character);
+    if (!it) continue;
+    if (!pack) { carried.add(serial); continue; }
+    items[serial] = { ...it, container: +pack.serial, root: +pack.root };
+    const cur = containers[pack.serial]!, cap = cur.capacity;
+    if (cap) containers[pack.serial] = { ...cur, capacity: { ...cap, items: cap.items + 1, stones: cap.stones == null ? null : cap.stones + weightOf(it) } };
+  }
+  const view = { ...inv, containers, items };
+  for (const [serial, character] of who) {
+    const it = items[serial];
+    if (!it || it === inv.items[serial]) continue;
+    it.location = carried.has(serial) ? { kind: "unknown", character: character ?? "?", text: `Carried by Organize${character ? ` (${character})` : ""}`, root: null, rootName: "?" } : locationOf(it, view);
+  }
+  return view;
 }
 
 // Spec §2.4: the container an item already counts as filed in — the nearest one above it that is any rule's

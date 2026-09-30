@@ -12,8 +12,9 @@ import type { OrganizeConfig } from "./organize-config.mts";
 export interface PendingStep { serial: number; name: string; from: number | null; to: number }
 export interface PendingTrip { id: string; adapter: string; index: number; stamp: string; queuedAt: string; steps: PendingStep[] }
 export interface OrganizeState { version: 1; pending: PendingTrip[]; moves: OverlayMove[]; seen: Record<string, string> }
-// What harvestTrips reads of one adapter's status.json: its results by command id, and the id it is running now.
-export interface BridgeView { results: Record<string, unknown>; current: string | null }
+// What harvestTrips reads of one adapter's status.json: its results by command id, the id it is running now, and
+// whose client it runs in (null when the file does not say).
+export interface BridgeView { results: Record<string, unknown>; current: string | null; character?: string | null | undefined }
 
 // The bridge refuses a command older than 60 s, so a trip nobody has picked up after this never will be.
 export const PENDING_GRACE_MS = 90_000;
@@ -41,7 +42,7 @@ function asPending(v: unknown): PendingTrip | null {
 function asMove(v: unknown): OverlayMove | null {
   if (!isObj(v) || !isSerial(v.serial) || typeof v.name !== "string" || v.name.length > 200 || !(v.from === null || isSerial(v.from))
     || !(v.to === null || isSerial(v.to)) || !isStamp(v.at) || !isText(v.trip, 64)) return null;
-  return { serial: v.serial, name: v.name, from: v.from, to: v.to, at: v.at, trip: v.trip };
+  return { serial: v.serial, name: v.name, from: v.from, to: v.to, at: v.at, trip: v.trip, ...(isText(v.character, 64) ? { character: v.character } : {}) };
 }
 const present = <T,>(v: T | null): v is T => v !== null;
 
@@ -64,8 +65,8 @@ function asTripResult(v: unknown): TripResult | null {
 
 // A pending trip whose result is in its bridge's status.json is read into the overlay and forgotten: a take
 // that worked puts the item in the backpack (to: null), a put that worked puts it in the step's destination. A
-// step for an item the trip did not carry is ignored. With no result yet, a trip is kept while the bridge is
-// running it or while it may still be picked up.
+// step for an item the trip did not carry is ignored. Each move names the character the bridge ran in, when known.
+// With no result yet, a trip is kept while the bridge is running it or while it may still be picked up.
 export function harvestTrips(state: OrganizeState, bridges: Record<string, BridgeView>, now: number): OrganizeState {
   const moves = new Map(state.moves.map((m) => [m.serial, m]));
   const pending: PendingTrip[] = [];
@@ -77,7 +78,7 @@ export function harvestTrips(state: OrganizeState, bridges: Record<string, Bridg
         const step = p.steps.find((x) => x.serial === s.serial);
         if (!s.ok || !step) continue;
         const from = step.from ?? moves.get(s.serial)?.from ?? null;
-        moves.set(s.serial, { serial: s.serial, name: step.name, from, to: s.op === "put" ? step.to : null, at: result.t, trip: p.id });
+        moves.set(s.serial, { serial: s.serial, name: step.name, from, to: s.op === "put" ? step.to : null, at: result.t, trip: p.id, ...(bridge?.character ? { character: bridge.character } : {}) });
       }
       continue;
     }
