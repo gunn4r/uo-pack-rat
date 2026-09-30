@@ -20,10 +20,14 @@ export const SCHOOLS: readonly SpellSchool[] = ["magery", "necromancy", "mystici
 export interface RuleMatch { query: RuleQuery; names?: string[] | undefined; build?: Build | undefined; school?: SpellSchool | undefined; skipSuits?: boolean | undefined }
 // targets: labelled containers in fill order; when the first is full the next takes the overflow.
 export interface OrganizeRule { id: string; name: string; match: RuleMatch; targets: number[]; origin: Origin }
-export interface OrganizeConfig { version: 1; labels: Record<string, ContainerLabel>; rules: OrganizeRule[]; catchAll: number | null; pinnedItems: number[] }
+// emptyBagsTo (issue #128, optional so every older organize.json still reads): the labelled container the plan
+// gathers empty bags into, like a rule's one target; absent or null leaves them where they are.
+export interface OrganizeConfig { version: 1; labels: Record<string, ContainerLabel>; rules: OrganizeRule[]; catchAll: number | null; emptyBagsTo?: number | null | undefined; pinnedItems: number[] }
 
-// The ruleId the plan reports the catch-all's moves under; no rule may take it.
+// The ruleId the plan reports the catch-all's moves under, and the gathered empty bags' (issue #128); no rule may
+// take either.
 export const CATCH_ALL_ID = "catch-all";
+export const EMPTY_BAGS_ID = "empty-bags";
 export const LIMITS = { labels: 2000, rules: 200, targets: 20, names: 100, pinnedItems: 5000, text: 64, q: 200, list: 50, tags: 10, props: 20 } as const;
 // Room for the largest setup LIMITS allows as the server saves it (pretty-printed, about 5.8 MB): the body limit of
 // PUT /api/organize and the largest organize.json a read accepts.
@@ -119,7 +123,7 @@ function ruleProblem(r: unknown, i: number, labels: Record<string, ContainerLabe
   const bad = extra(r, ["id", "name", "match", "targets", "origin"]);
   if (bad) return `${at}.${bad} is not a rule field`;
   if (typeof r.id !== "string" || !RULE_ID.test(r.id)) return `${at}.id must be 1 to 64 letters, digits, - or _`;
-  if (r.id === CATCH_ALL_ID) return `${at}.id "${CATCH_ALL_ID}" is reserved for the catch-all`;
+  if (r.id === CATCH_ALL_ID || r.id === EMPTY_BAGS_ID) return `${at}.id "${r.id}" is reserved for the ${r.id === CATCH_ALL_ID ? "catch-all" : "empty bags"}`;
   if (!isText(r.name)) return `${at}.name must be 1 to 64 characters`;
   if (!isOrigin(r.origin)) return `${at}.origin must be "manual" or "strategy:<id>"`;
   const mp = matchProblem(r.match, `${at}.match`);
@@ -133,12 +137,12 @@ function ruleProblem(r: unknown, i: number, labels: Record<string, ContainerLabe
   return null;
 }
 
-const catchAllProblem = (v: unknown, labels: Record<string, ContainerLabel>): string | null => (v === null ? null : containerProblem(v, labels, "catchAll"));
+const catchAllProblem = (v: unknown, labels: Record<string, ContainerLabel>, at = "catchAll"): string | null => (v === null ? null : containerProblem(v, labels, at));
 
 export function checkOrganizeConfig(doc: unknown): { ok: true; config: OrganizeConfig } | { ok: false; error: string } {
   const fail = (error: string): { ok: false; error: string } => ({ ok: false, error });
   if (!isObj(doc)) return fail("an Organize setup must be an object");
-  const bad = extra(doc, ["version", "labels", "rules", "catchAll", "pinnedItems"]);
+  const bad = extra(doc, ["version", "labels", "rules", "catchAll", "emptyBagsTo", "pinnedItems"]);
   if (bad) return fail(`${bad} is not an Organize field`);
   if (doc.version !== 1) return fail("version must be 1");
   if (!isObj(doc.labels) || Object.keys(doc.labels).length > LIMITS.labels) return fail(`labels must be an object of at most ${LIMITS.labels} labels`);
@@ -156,7 +160,7 @@ export function checkOrganizeConfig(doc: unknown): { ok: true; config: OrganizeC
     if (ids.has(id)) return fail(`rules[${i}].id "${id}" is used twice`);
     ids.add(id);
   }
-  const cp = catchAllProblem(doc.catchAll, labels);
+  const cp = catchAllProblem(doc.catchAll, labels) ?? (doc.emptyBagsTo === undefined ? null : catchAllProblem(doc.emptyBagsTo, labels, "emptyBagsTo"));
   if (cp) return fail(cp);
   const pinned = doc.pinnedItems;
   if (!Array.isArray(pinned) || pinned.length > LIMITS.pinnedItems || !pinned.every(isSerial) || new Set(pinned).size !== pinned.length) {
@@ -193,6 +197,10 @@ export function salvageOrganizeConfig(raw: unknown): { config: OrganizeConfig; p
   } else if (raw.rules !== undefined) problems.push("rules must be a list; every rule dropped");
   const cp = raw.catchAll === undefined ? null : catchAllProblem(raw.catchAll, config.labels);
   if (cp) problems.push(`${cp}; catch-all cleared`); else config.catchAll = (raw.catchAll ?? null) as number | null;
+  if (raw.emptyBagsTo !== undefined) {
+    const bp = catchAllProblem(raw.emptyBagsTo, config.labels, "emptyBagsTo");
+    if (bp) problems.push(`${bp}; empty bags left where they are`); else config.emptyBagsTo = raw.emptyBagsTo as number | null;
+  }
   if (Array.isArray(raw.pinnedItems)) {
     config.pinnedItems = [...new Set(raw.pinnedItems.filter(isSerial))].slice(0, LIMITS.pinnedItems);
     const dropped = raw.pinnedItems.length - config.pinnedItems.length;

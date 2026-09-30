@@ -40,7 +40,7 @@ function dataDirWith(rules: SeedRule[] | null): string {
   }));
   return dir;
 }
-interface OrganizeFile { labels: Record<string, { name: string; color?: string; pinned?: boolean; origin: string }>; rules: Array<{ id: string; name: string; targets: number[]; origin: string; match: { query: Record<string, unknown>; names?: string[]; build?: string; skipSuits?: boolean } }>; catchAll: number | null; pinnedItems: number[] }
+interface OrganizeFile { labels: Record<string, { name: string; color?: string; pinned?: boolean; origin: string }>; rules: Array<{ id: string; name: string; targets: number[]; origin: string; match: { query: Record<string, unknown>; names?: string[]; build?: string; skipSuits?: boolean } }>; catchAll: number | null; emptyBagsTo?: number | null; pinnedItems: number[] }
 const readOrganize = (dir: string): OrganizeFile | null => { try { return JSON.parse(readFileSync(join(dir, "organize.json"), "utf8")) as OrganizeFile; } catch { return null; } };
 // Poll a file-backed fact until it holds (a save is a PUT the page sends after the click).
 async function until<T>(read: () => T, ok: (v: T) => boolean, what: string): Promise<T> {
@@ -176,6 +176,9 @@ test("[slow] the Rules card: each rule's filter, targets with their fill and cou
     // The catch-all takes any labelled, unpinned container.
     await page.selectOption("#org-catchall", String(DORRAN));
     await until(() => readOrganize(dataDir), (f) => f?.catchAll === DORRAN, "the catch-all saved");
+    // Empty bags (issue #128) are gathered into any labelled, unpinned container too.
+    await page.selectOption("#org-emptybags", String(KESTREL));
+    await until(() => readOrganize(dataDir), (f) => f?.emptyBagsTo === KESTREL, "the gather container saved");
 
     // Keyboard: ↑ on a rule's handle moves it up, says so, and keeps focus on the handle.
     await page.locator('.org-rule[data-rule="rule-2"] .org-grip').focus();
@@ -351,7 +354,8 @@ function bigPlan(): unknown {
   const trips = Array.from({ length: 30 }, (_, i) => ({ index: i + 1, site: 0, takes: moves.slice(i * 20, i * 20 + 20).map((m) => m.serial), puts: moves.slice(i * 20, i * 20 + 20).map((m) => m.serial) }));
   return { ok: true, plan: { inventoryStamp: "2026-09-28T10:00:00Z", stamp: "big00001", sites: [{ index: 0, roots: [DORRAN, KESTREL] }], moves, trips,
     rules: [{ ruleId: "rule-1", matched: 640, inPlace: 30, toMove: 600, noRoom: 10 }], room: [{ ruleId: "rule-1", needSlots: 95, freeSlots: 85, shortfall: 10 }],
-    crossSite: [], warnings: [{ kind: "unknown-capacity", serial: KESTREL, detail: "rescan with the current scripts to read its fill" }], carried: [], unclaimed: 0 } };
+    crossSite: [], warnings: [{ kind: "unknown-capacity", serial: KESTREL, detail: "rescan with the current scripts to read its fill" }], carried: [], unclaimed: 0,
+    emptyBags: [{ serial: 0x700c0f01, name: "Weapons", container: KESTREL }] } };
 }
 
 test("[slow] the plan puts its reports first and keeps a 600-move trip list collapsed; a client without trips gets no Run buttons", async (t) => {
@@ -367,11 +371,13 @@ test("[slow] the plan puts its reports first and keeps a 600-move trip list coll
       const plan = document.querySelector("#org-plan")!;
       const room = [...plan.querySelectorAll(".msg")].find((m) => /no room/.test(m.textContent || ""))!;
       const warn = [...plan.querySelectorAll(".msg")].find((m) => /Fill unknown/.test(m.textContent || ""))!;
+      const bags = [...plan.querySelectorAll(".msg")].find((m) => /empty bag/.test(m.textContent || ""))!;
       const head = plan.querySelector("#org-headline")!;
       const before = (a: Element, b: Element): boolean => !!(a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING);
-      return { room: before(room, head), warn: before(warn, head), roomText: room.textContent };
+      return { room: before(room, head), warn: before(warn, head), bags: before(bags, head), roomText: room.textContent, bagsText: bags.textContent };
     });
-    assert.deepEqual([order.room, order.warn], [true, true], "the room report and warnings sit above the trip list");
+    assert.deepEqual([order.room, order.warn, order.bags], [true, true, true], "the room report, warnings and empty bags sit above the trip list");
+    assert.match(order.bagsText!, /1 empty bag in your labelled containers[\s\S]*Weapons \(in Jewellery\)/);
     assert.match(order.roomText!, /Magery reagents: 10 items have no room \(95 slots needed, 85 free\)/);
     assert.equal(await page.locator(".org-trip").count(), 30);
     assert.equal(await page.locator(".org-move").count(), 0, "no move row is built until its trip is opened");

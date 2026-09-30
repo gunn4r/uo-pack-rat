@@ -3,7 +3,7 @@
 // Tags: [fast]. Run: node --test app/organize-config.test.mts
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { checkOrganizeConfig, salvageOrganizeConfig, emptyOrganizeConfig, emptyRuleQuery, CATCH_ALL_ID, MAX_SETUP_BYTES, type OrganizeConfig } from "./organize-config.mts";
+import { checkOrganizeConfig, salvageOrganizeConfig, emptyOrganizeConfig, emptyRuleQuery, CATCH_ALL_ID, EMPTY_BAGS_ID, MAX_SETUP_BYTES, type OrganizeConfig } from "./organize-config.mts";
 import { maxOrganizeConfig } from "./organize-fixture.mts";
 import type { RuleQuery } from "./item-query.mts";
 
@@ -34,6 +34,8 @@ test("[fast] checkOrganizeConfig accepts an empty setup and a full one", () => {
   assert.deepEqual(checkOrganizeConfig(emptyOrganizeConfig()), { ok: true, config: emptyOrganizeConfig() });
   const r = checkOrganizeConfig(full());
   assert.equal(r.ok, true, r.ok ? "" : r.error);
+  const gather = checkOrganizeConfig({ ...full(), emptyBagsTo: A });
+  assert.equal(gather.ok, true, gather.ok ? "" : gather.error);
   const built = full();
   built.rules[1]!.match.build = "hybrid";
   // Issue #133: a rule may require tags and skip saved suits; one saved before either (r1 here) still reads.
@@ -54,6 +56,7 @@ test("[fast] checkOrganizeConfig refuses each broken part and names it", () => {
     ["an unknown origin", (c) => { c.labels[String(A)]!.origin = "auto" as "manual"; }, /origin/],
     ["a rule id used twice", (c) => { c.rules[1]!.id = "r1"; }, /used twice/],
     ["a rule id that is the catch-all's", (c) => { c.rules[0]!.id = CATCH_ALL_ID; }, /reserved/],
+    ["a rule id that is the empty bags'", (c) => { c.rules[0]!.id = EMPTY_BAGS_ID; }, /reserved for the empty bags/],
     ["a rule query with a location filter", (c) => { Object.assign(c.rules[0]!.match.query, { loc: ["Chest"] }); }, /loc is not a rule filter/],
     ["a rule query missing a field", (c) => { delete (c.rules[0]!.match.query as Partial<RuleQuery>).kind; }, /kind is missing/],
     ["a property filter with a bad operator", (c) => { c.rules[1]!.match.query.props = [{ key: "psLevel", min: 110, op: "ge" as "le" }]; }, /props\[0\]/],
@@ -67,6 +70,8 @@ test("[fast] checkOrganizeConfig refuses each broken part and names it", () => {
     ["a target listed twice", (c) => { c.rules[0]!.targets = [A, A]; }, /twice/],
     ["a pinned catch-all", (c) => { c.catchAll = P; }, /catchAll.*pinned/],
     ["an unlabelled catch-all", (c) => { c.catchAll = 0x40000009; }, /catchAll/],
+    ["a pinned gather container", (c) => { c.emptyBagsTo = P; }, /emptyBagsTo.*pinned/],
+    ["an unlabelled gather container", (c) => { c.emptyBagsTo = 0x40000009; }, /emptyBagsTo: \d+ is not a labelled container/],
     ["a pinned item listed twice", (c) => { c.pinnedItems = [5, 5]; }, /pinnedItems/],
     ["too many rules", (c) => { c.rules = Array.from({ length: 201 }, (_, i) => ({ ...c.rules[0]!, id: `r${i}` })); }, /at most 200/],
   ];
@@ -107,6 +112,13 @@ test("[fast] salvage: a label dropped costs the rules that name it that target o
   assert.match(problems.join("\n"), /rules\[0\]\.targets: \d+ is not a labelled container; target dropped/);
   const again = checkOrganizeConfig(config);
   assert.equal(again.ok, true, again.ok ? "" : again.error);
+});
+
+test("[fast] salvage: a gather container that lost its label is cleared, and a good one kept (issue #128)", () => {
+  const { config, problems } = salvageOrganizeConfig({ ...full(), emptyBagsTo: 0x40000009 });
+  assert.equal(config.emptyBagsTo, undefined);
+  assert.match(problems.join("\n"), /emptyBagsTo: \d+ is not a labelled container; empty bags left where they are/);
+  assert.equal(salvageOrganizeConfig({ ...full(), emptyBagsTo: A }).config.emptyBagsTo, A);
 });
 
 test("[fast] salvage: a rule with an unknown build is dropped like any other broken rule", () => {
