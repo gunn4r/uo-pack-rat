@@ -336,6 +336,28 @@ test("[fast] overlay steps run oldest first, so a step into a bag counts whereve
   assert.equal(later.counts.get(B)!.items, 5, "a step into the bag after its move counts in its new chest");
 });
 
+test("[fast] a bag seen in its new chest does not carry off the old chest what steps into it had moved already (issue #153)", () => {
+  // A's line counts the garlic, the bag and the ruby in it. The garlic went into the bag, then the bag to B, and a
+  // scan of B has seen both since: A counted the garlic once, so it loses it once.
+  const first = houseScan({ boxes: [{ serial: A, tooltip: [`Box ${A}`, "Contents: 3/125 Items, 3 Stones"] }, { serial: B, pos: at(104) }, { serial: BAG, parent: A }],
+    things: [{ serial: GARLIC, name: "Garlic", in: A }, { serial: RUBY, name: "Ruby", in: BAG }] });
+  const ofB = houseScan({ scannedAt: "2026-09-28T12:00:00Z", boxes: [{ serial: B, pos: at(104) }, { serial: BAG, parent: B }],
+    things: [{ serial: GARLIC, name: "Garlic", in: BAG }, { serial: RUBY, name: "Ruby", in: BAG }] });
+  const placed = applyOverlay(foldSnapshots([first, ofB]), [step(GARLIC, "Garlic", A, BAG, "2026-09-28T10:30:00Z"), step(BAG, "Bag", A, B)]);
+  assert.deepEqual([placed.counts.get(A)!.items, placed.counts.get(A)!.stones], [0, 0]);
+  assert.equal(placed.counts.get(B)!.items, 3, "B's line is newer than both steps");
+});
+
+test("[fast] a bag taken and not yet put leaves its contents where they were; the container it left loses only the bag (issue #153)", () => {
+  const inv = fold([...bagBoxes(), { serial: PACK, kind: "backpack", name: "Backpack", tooltip: ["Backpack", "Contents: 0/125 Items, 0/550 Stones"] }], bagThings);
+  const taken = { ...step(BAG, "Bag", A, null), character: "Tester" };
+  const placed = applyOverlay(inv, [taken]);
+  assert.deepEqual([placed.counts.get(A)!.items, placed.counts.get(A)!.stones], [3, 4]);
+  assert.deepEqual([placed.inv.containers[BAG]!.parent, placed.inv.items[PEARL]!.root], [A, A]);
+  assert.deepEqual(placed.carried, [{ serial: BAG, name: "Bag" }]);
+  assert.equal(overlaidInventory(inv, [taken]).containers[PACK]!.capacity!.items, 1, "the backpack gains the one the chest lost");
+});
+
 test("[fast] a scan of a moved bag newer than its move wins over the overlay (issue #153)", () => {
   const inv = foldSnapshots([houseScan({ boxes: bagBoxes(), things: bagThings }), houseScan({ scannedAt: "2026-09-28T12:00:00Z", boxes: bagBoxes(), things: bagThings })]);
   const placed = applyOverlay(inv, [step(BAG, "Bag", A, B)]);
