@@ -234,6 +234,10 @@ test("[fast] bridge.v1.schema.json's result carries a trip's steps, partial and 
   assert.ok(ok, JSON.stringify(errors));
   assert.equal(validate(BRIDGE_SCHEMA.result, { ...result, steps: [{ op: "drop", serial: 1, ok: true, msg: "" }] }).ok, false);
   assert.equal(validate(BRIDGE_SCHEMA.result, { ...result, steps: [{ serial: 1, ok: true, msg: "" }] }).ok, false);
+  // `ms` is optional on the trip and on each step (#119): a bridge before 2.9.0 sends none.
+  const timed = { ...result, ms: 4210, steps: result.steps.map((s, i) => ({ ...s, ms: i ? 0 : 3860 })) };
+  assert.ok(validate(BRIDGE_SCHEMA.result, timed).ok, JSON.stringify(validate(BRIDGE_SCHEMA.result, timed).errors));
+  assert.equal(validate(BRIDGE_SCHEMA.result, { ...timed, ms: 1.5 }).ok, false);
 });
 
 test("[fast] bridge.v1.schema.json's command has no trip action: only queueTrip writes one", () => {
