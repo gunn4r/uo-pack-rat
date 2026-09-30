@@ -189,8 +189,8 @@ test("[fast] after a trip the served inventory shows where it put each item, a c
       results: { [id]: { ok: true, msg: "trip 1: 1 put away, 1 step failed", t, partial: false, stopped: false, steps: [
         { op: "take", serial: RUBY, ok: true, msg: "took Ruby" }, { op: "take", serial: PEARL, ok: true, msg: "took Black Pearl" },
         { op: "put", serial: RUBY, ok: true, msg: "put Ruby away" }, { op: "put", serial: PEARL, ok: false, msg: "no room" }] } } }));
-    await call(s, "/api/organize/plan");   // reads the trip's result into the overlay
-    // An open page hears that the inventory changed, and reloads it.
+    // No Organize route runs: the next inventory read harvests the trip, and an open page hears that it changed.
+    const inv = (await call<{ inventory: { containers: Record<string, Container>; rootCounts: Record<string, number> } }>(s, "/api/inventory")).body.inventory;
     const decoder = new TextDecoder();
     let heard = "";
     while (!heard.includes('event: changed\ndata: {"what":"inventory"')) {
@@ -198,7 +198,6 @@ test("[fast] after a trip the served inventory shows where it put each item, a c
       assert.equal(done, false, heard);
       heard += decoder.decode(value, { stream: true });
     }
-    const inv = (await call<{ inventory: { containers: Record<string, Container>; rootCounts: Record<string, number> } }>(s, "/api/inventory")).body.inventory;
     const byName = async (q: string): Promise<Item> => (await call<{ rows: Item[] }>(s, `/api/items?q=${encodeURIComponent(q)}`)).body.rows[0]!;
     // The page's chainOf (app/ui/bridge.mts): the containers around the item, root first.
     const chainOf = (it: Item): number[] => { const out: number[] = []; for (let c = inv.containers[String(it.container)]; c; c = c.parent != null ? inv.containers[String(c.parent)] : undefined) out.unshift(c.serial); return out; };

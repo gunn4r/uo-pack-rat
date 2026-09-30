@@ -195,9 +195,10 @@ export function applyOverlay(inv: Inventory, overlay: OverlayMove[]): Placed {
 // overlay applied exactly as the planner applies it, so after a trip the app points at the chest an item went into,
 // not the one it came out of, until a scan catches up. A moved item's location is read again from its new container
 // (so its text, root, container and the chain Highlight walks agree), and a container's fill is the overlay's count.
-// A carried item sits at the top of the backpack of the character whose bridge took it; with no such backpack in the
-// scans (or a move recorded before moves named their character) it is in no container and says it is carried. The
-// planner takes the fold itself and applies the overlay on its own: handed this, it would apply every move twice.
+// A carried item sits at the top of the backpack of the character whose bridge took it (whose fill, when it states
+// one, counts it); with no such backpack in the scans (or a move recorded before moves named their character) it is
+// in no container and says it is carried. The planner takes the fold itself and applies the overlay on its own:
+// handed this, it would apply every move twice. Work beyond applyOverlay's is per move, not per item.
 export function overlaidInventory(inv: Inventory, overlay: OverlayMove[]): Inventory {
   const placed = applyOverlay(inv, overlay);
   const items = placed.inv.items;
@@ -206,20 +207,24 @@ export function overlaidInventory(inv: Inventory, overlay: OverlayMove[]): Inven
     const c = inv.containers[serial]!;
     if (cap.items !== c.capacity!.items || cap.stones !== c.capacity!.stones) containers[serial] = { ...c, capacity: cap };
   }
+  const packs = new Map<string, Container>();
+  for (const c of Object.values(inv.containers)) if (c.parent == null && c.kind === "backpack") packs.set(c.scannedBy, c);
   const who = new Map(overlay.map((m) => [m.serial, m.character]));
   const carried = new Set<number>();
   for (const { serial } of placed.carried) {
     const it = items[serial], character = who.get(serial);
+    const pack = character == null ? undefined : packs.get(character);
     if (!it) continue;
-    const pack = Object.values(inv.containers).find((c) => c.parent == null && c.kind === "backpack" && c.scannedBy === character);
-    if (pack) items[serial] = { ...it, container: +pack.serial, root: +pack.root };
-    else carried.add(serial);
+    if (!pack) { carried.add(serial); continue; }
+    items[serial] = { ...it, container: +pack.serial, root: +pack.root };
+    const cur = containers[pack.serial]!, cap = cur.capacity;
+    if (cap) containers[pack.serial] = { ...cur, capacity: { ...cap, items: cap.items + 1, stones: cap.stones == null ? null : cap.stones + weightOf(it) } };
   }
   const view = { ...inv, containers, items };
-  for (const [serial, it] of Object.entries(items)) {
-    if (it === inv.items[serial]) continue;
-    const character = who.get(+serial);
-    it.location = carried.has(+serial) ? { kind: "unknown", character: character ?? "?", text: `Carried by Organize${character ? ` (${character})` : ""}`, root: null, rootName: "?" } : locationOf(it, view);
+  for (const [serial, character] of who) {
+    const it = items[serial];
+    if (!it || it === inv.items[serial]) continue;
+    it.location = carried.has(serial) ? { kind: "unknown", character: character ?? "?", text: `Carried by Organize${character ? ` (${character})` : ""}`, root: null, rootName: "?" } : locationOf(it, view);
   }
   return view;
 }

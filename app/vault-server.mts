@@ -740,10 +740,10 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
   // directory, so it invalidates the cache the same way — no separate invalidation path needed.
   // What it serves is that fold with Organize's results overlay applied (issue #127, overlaidInventory): every
   // view and bridge command sees where a trip put an item, not where the last scan saw it. The overlay is cached
-  // on its own, keyed by the fold's signature and organize-state.json's inode, mtime and size (every write
-  // replaces the file), so a finished trip re-applies the overlay without folding the scans again. `fold` is the
-  // scans alone: only Organize's own routes read it, since the planner applies the overlay itself (with the
-  // counts it needs for capacity).
+  // on its own, keyed by the fold's signature, organize-state.json's inode, mtime and size (every write replaces
+  // the file) and the hour, so a finished trip re-applies the overlay without folding the scans again. `fold` is
+  // the scans alone: only organizeNow reads it, since the planner applies the overlay itself (with the counts it
+  // needs for capacity), and it hands it on as `fold` too, so no Organize route has an `inv` to pass by habit.
   // GET /api/update-check's last successful answer (see that route).
   const UPDATE_CHECK_TTL_MS = 60 * 60 * 1000;
   let updateCheckCache: { at: number; result: CheckForUpdatesResult } | null = null;
@@ -758,6 +758,7 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
       .map((f) => { const st = statSync(join(SCANS, f)); return `${f}:${st.mtimeMs}:${st.size}`; }).join("|");
   }
   async function getInventory(): Promise<InvValue> {
+    harvestNow(Date.now());   // a trip that finished since is part of what every view shows
     const libMod = await lib();   // also refreshes libCache.mtime, which the signature below reads
     const sig = `${scansSignature()}::${currentSettings.shard}::${libCache.mtime}`;
     if (foldCache.sig !== sig) {   // sig and value are only ever set together
@@ -768,7 +769,8 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
     const folded = foldCache.value!;
     let stateSig = "no-state";
     try { const st = statSync(ORGANIZE_STATE); stateSig = `${st.ino}:${st.mtimeMs}:${st.size}`; } catch { /* no overlay yet */ }
-    const invSig = `${sig}::${stateSig}`;
+    // The hour, so a move the week-old cut in pruneOverlay has retired leaves the view of a long-running server.
+    const invSig = `${sig}::${stateSig}::${Math.floor(Date.now() / 3600e3)}`;
     if (invCache.sig === invSig) return invCache.value!;
     const { moves } = pruneOverlay(readOrganizeState(), folded.fold, Date.now());
     invCache = { sig: invSig, value: { ...folded, inv: overlaidInventory(folded.fold, moves) } };
@@ -859,22 +861,31 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
         character: isBoundedString(character, 64) ? character : null };
     } catch { return { results: {}, current: null }; }
   }
-  // The plan as it stands now: finished trips read out of their bridges' status files into the overlay, entries a
-  // newer scan has settled dropped, labels' last-seen times refreshed (the state file is rewritten only when that
-  // changed something, and every open page reloads its inventory when a trip's moves came in), then planOrganize.
-  // Organize works on the fold alone and applies the overlay itself.
-  async function organizeNow(): Promise<{ inv: Inventory; config: OrganizeConfig; state: OrganizeState; plan: Plan; problems: string[]; bridges: Record<string, BridgeView> }> {
-    const { fold: inv } = await getInventory();
-    const { config, problems } = readOrganize();
+  // Finished trips read out of their bridges' status files into the overlay. Runs on every getInventory() and on the
+  // page's bridge status poll (every 2.5 s while any page is open), so a trip that reports back moves its items in
+  // every view even with Organize closed; when it brought moves in, the state file is rewritten and every open page
+  // told to reload its inventory. With no trip pending it only reads the state file.
+  function harvestNow(now: number): { state: OrganizeState; bridges: Record<string, BridgeView> } {
     const before = readOrganizeState();
-    const now = Date.now();
+    if (!before.pending.length) return { state: before, bridges: {} };
     const bridges = Object.fromEntries([...new Set(before.pending.map((p) => p.adapter))].map((a) => [a, bridgeView(a, now)]));
-    const harvested = harvestTrips(before, bridges, now);
-    const state = noteSeen(pruneOverlay(harvested, inv, now), config, inv);
+    const state = harvestTrips(before, bridges, now);
     if (JSON.stringify(state) !== JSON.stringify(before)) writeOrganizeState(state);
-    if (JSON.stringify(harvested.moves) !== JSON.stringify(before.moves)) broadcastEvent("changed", { what: "inventory", at: now });
-    const plan = planOrganize(inv, config, state.moves, { now, rarity: currentRules.rarity, blacklist: readBlacklist().map((e) => e.serial), seen: state.seen });
-    return { inv, config, state, plan, problems, bridges };
+    if (JSON.stringify(state.moves) !== JSON.stringify(before.moves)) broadcastEvent("changed", { what: "inventory", at: now });
+    return { state, bridges };
+  }
+  // The plan as it stands now: finished trips harvested, entries a newer scan has settled dropped, labels' last-seen
+  // times refreshed (the state file is rewritten only when that changed something), then planOrganize. Organize
+  // works on the fold alone and applies the overlay itself.
+  async function organizeNow(): Promise<{ fold: Inventory; config: OrganizeConfig; state: OrganizeState; plan: Plan; problems: string[]; bridges: Record<string, BridgeView> }> {
+    const { fold } = await getInventory();
+    const { config, problems } = readOrganize();
+    const now = Date.now();
+    const { state: harvested, bridges } = harvestNow(now);
+    const state = noteSeen(pruneOverlay(harvested, fold, now), config, fold);
+    if (JSON.stringify(state) !== JSON.stringify(harvested)) writeOrganizeState(state);
+    const plan = planOrganize(fold, config, state.moves, { now, rarity: currentRules.rarity, blacklist: readBlacklist().map((e) => e.serial), seen: state.seen });
+    return { fold, config, state, plan, problems, bridges };
   }
   // A profiles.json that does not parse (a write cut short before writes were atomic, or a bad hand
   // edit) used to answer every GET /api/profiles with a 500 until someone fixed the file by hand. It
@@ -1796,6 +1807,7 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
         return send(res, 200, { ok: true });
       }
       if (req.method === "GET" && url.pathname === "/api/bridge/status") {
+        harvestNow(Date.now());
         const f = CONFIG.paths.bridgeStatusFor(bridgeAdapter());
         if (!existsSync(f)) return send(res, 200, { ok: true, online: false });
         try {
@@ -1913,9 +1925,9 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
         if (containers !== undefined && !(Array.isArray(containers) && containers.length <= LIMITS.labels && containers.every((v) => isBoundedInt(v, 1, MAX_SERIAL)))) {
           return send(res, 400, { ok: false, error: "containers must be a list of container serials" });
         }
-        const { inv, config, state, problems } = await organizeNow();
+        const { fold, config, state, problems } = await organizeNow();
         if (problems.length) return send(res, 409, { ok: false, error: `organize.json was hand-edited and parts of it were dropped (${problems[0]}); open Organize and save the setup first` });
-        const r = proposeOrganize(inv, config, state.moves, { strategy: strategy as StrategyId, containers: containers as number[] | undefined, now: Date.now(), rarity: currentRules.rarity, blacklist: readBlacklist().map((e) => e.serial), seen: state.seen });
+        const r = proposeOrganize(fold, config, state.moves, { strategy: strategy as StrategyId, containers: containers as number[] | undefined, now: Date.now(), rarity: currentRules.rarity, blacklist: readBlacklist().map((e) => e.serial), seen: state.seen });
         return send(res, r.ok ? 200 : 409, r);
       }
       if (req.method === "GET" && url.pathname === "/api/organize/plan") {
@@ -1934,7 +1946,7 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
         const adapter = bridgeAdapter();
         const caps = listAdapters(ADAPTERS_DIR).find((a) => a.id === adapter)?.capabilities as { bridge?: unknown } | undefined;
         if (!Array.isArray(caps?.bridge) || !caps.bridge.includes("trip")) return send(res, 409, { ok: false, error: `the ${adapter} bridge cannot run Organize trips` });
-        const { inv, state, plan, problems } = await organizeNow();
+        const { fold, state, plan, problems } = await organizeNow();
         // A salvaged setup lost rules or targets, and their items may now fall through to another rule or the
         // catch-all: nothing moves until the player has seen that and saved the setup again.
         if (problems.length) return send(res, 409, { ok: false, error: `organize.json was hand-edited and parts of it were dropped (${problems[0]}); open Organize and save the setup first` });
@@ -1945,7 +1957,7 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
         if (!trip) return send(res, 404, { ok: false, error: `the plan has no trip ${index}` });
         const first = plan.trips.find((t) => t.site === trip.site)!;
         if (first.index !== index) return send(res, 409, { ok: false, error: `run trip ${first.index} first: this trip counts on the room it makes` });
-        const input = tripCommand(inv, plan, index);
+        const input = tripCommand(fold, plan, index);
         if (!input) return send(res, 409, { ok: false, error: `trip ${index} cannot be built from the current scans` });
         const now = new Date();
         const queued = queueTrip(CONFIG.paths, adapter, input, now);

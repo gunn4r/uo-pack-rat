@@ -259,6 +259,8 @@ test("[fast] overlaidInventory: a carried item is in its character's backpack, o
   const inv = fold([{ serial: A }, { serial: PACK, kind: "backpack", name: "Backpack" }], [{ serial: PEARL, name: "Black Pearl", in: A }]);
   const mine = overlaidInventory(inv, [{ ...step(PEARL, "Black Pearl", A, null), character: "Tester" }]).items[PEARL]!;
   assert.deepEqual([mine.container, mine.root, mine.location?.kind, mine.location?.character, mine.location?.text], [PACK, PACK, "backpack", "Tester", "Tester's backpack"]);
+  const counted = fold([{ serial: A }, { serial: PACK, kind: "backpack", name: "Backpack", tooltip: ["Backpack", "Contents: 3/125 Items, 10/550 Stones"] }], [{ serial: PEARL, name: "Black Pearl", in: A, weight: 2 }]);
+  assert.deepEqual(overlaidInventory(counted, [{ ...step(PEARL, "Black Pearl", A, null), character: "Tester" }]).containers[PACK]!.capacity, { items: 4, maxItems: 125, stones: 12, maxStones: 550 }, "a backpack that states its fill counts what it carries");
   const other = overlaidInventory(inv, [{ ...step(PEARL, "Black Pearl", A, null), character: "Someone" }]).items[PEARL]!;
   assert.deepEqual([other.container, other.root, other.location?.character, other.location?.text], [null, null, "Someone", "Carried by Organize (Someone)"]);
   assert.equal(overlaidInventory(inv, [step(PEARL, "Black Pearl", A, null)]).items[PEARL]!.location?.text, "Carried by Organize");
