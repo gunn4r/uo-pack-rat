@@ -120,7 +120,7 @@ import { unlinkSync } from "node:fs";
 import { randomUUID, timingSafeEqual } from "node:crypto";
 import type { AddressInfo } from "node:net";
 import { runKey, reusableRun, runSummary, stripOpts, normalizeRun, suitPieces, SOLVER_VERSION, type RunOpts, type SavedRun } from "./runs-lib.mts";
-import { parseStamp, upgradeScan, validateScan } from "./scan-schema.mts";
+import { upgradeScan, validateScan } from "./scan-schema.mts";
 import { loadRules, listRules, DEFAULT_SHARD } from "./rules.mts";
 import { validate, type ValidatorSchema } from "./schema/validate.mts";
 import { parseItemQuery, applyItemQuery, facetsOf, type ItemQueryRows, type ItemQueryGroups } from "./item-query.mts";
@@ -131,7 +131,7 @@ import { writeFileAtomic } from "./atomic-write.mts";
 import { addPanelAutostart, panelPrefsError, readPanelPrefs, tazuoRunning, writePanelPrefs } from "./tazuo-panel.mts";
 import { queueTrip, writeBridgeStop } from "./bridge-trip.mts";
 import { checkOrganizeConfig, emptyOrganizeConfig, LIMITS, matchProblem, salvageOrganizeConfig, MAX_SETUP_BYTES, type OrganizeConfig, type RuleMatch } from "./organize-config.mts";
-import { ancestry, packKept, planOrganize, tripCommand, matchCount, overlaidInventory, type Plan, type PutAway } from "./organize.mts";
+import { ancestry, packKept, planOrganize, stampMs, tripCommand, matchCount, overlaidInventory, type Plan, type PutAway } from "./organize.mts";
 import { checkPutAwayRequest, nothingDetail, requestId, tripMsg, FRESH_MARGIN_MS, MAX_REQUEST_BYTES, PUT_AWAY_REPLY, PUT_AWAY_REQUEST, type PutAwayReply, type PutAwayRequest } from "./put-away.mts";
 import { PRESETS } from "./organize-presets.mts";
 import { proposeOrganize, STRATEGY_IDS, type StrategyId } from "./organize-strategies.mts";
@@ -952,7 +952,7 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
     const root = chain ? fold.containers[String(chain.at(-1))] : undefined;
     // Planned only from a scan made for this run (the panel's refresh or scan), never from an older one, and never from
     // a bag that scan could not open (the fold keeps older contents there).
-    if (!picked || !chain || !root || picked.opened === false || parseStamp(picked.scannedAt) < parseStamp(req.clickedAt) - FRESH_MARGIN_MS) {
+    if (!picked || !chain || !root || picked.opened === false || stampMs(picked.scannedAt) < stampMs(req.clickedAt) - FRESH_MARGIN_MS) {
       return { ok: false, msg: "Pack Rat has not read that container yet.", detail: "Stand next to it and try again." };
     }
     let source: PutAway;

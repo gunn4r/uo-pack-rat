@@ -878,6 +878,21 @@ class TazUOBridge(BridgeCase, unittest.TestCase):
         self.assertEqual(self.steps(final, "p1"), [("put", RING, True), ("put", LOOSE, False)])
         self.assertEqual(w.items[RING].Container, DEST)
 
+    def test_a_bag_dragged_out_of_the_pack_mid_trip_stops_the_remaining_puts(self):
+        w = trip_home()
+        w.items[POUCH].Opened = True
+        w.add(OTHER_GEM, POUCH, name="Gem", container_like=False, OnGround=False)
+        self.consent(w, picked=POUCH)
+
+        def drag_out(serial, dst):
+            if serial == RING:                   # the player drops the pouch on the floor as the first put goes
+                w.items[POUCH].Container, w.items[POUCH].OnGround = 0xFFFFFFFF, True
+        w.on_move = drag_out
+        final, _ = self.run_bridge(w, 1, [self.put_away("p1", [(RING, [DEST]), (OTHER_GEM, [DEST])], picked=POUCH)])
+        self.assertEqual(self.steps(final, "p1"), [("put", RING, True), ("put", OTHER_GEM, False)])
+        self.assertIn("no longer in your backpack", final["results"]["p1"]["steps"][1]["msg"])
+        self.assertEqual(w.items[OTHER_GEM].Container, POUCH)
+
     def test_a_put_away_trip_never_puts_a_bag_or_a_blessed_or_insured_item(self):
         w = trip_home()
         w.add(OTHER_GEM, PACK, name="Gem", container_like=False, OnGround=False, Tooltip="Gem\n<b>Insured</b>")

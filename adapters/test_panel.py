@@ -278,6 +278,20 @@ class Panel(unittest.TestCase):
         self.assertEqual(self.read("inbox", "tazuo", "putaway-request.json")["container"], CHEST)
         self.assertIn("Pack Rat did not answer.", self.labels(api))
 
+    def test_a_trip_that_never_reports_back_ends_the_run_and_writes_the_stop_flag(self):
+        w, api = self.house([PACK])
+
+        def answer():
+            req = self.read("inbox", "tazuo", "putaway-request.json")
+            self.write({"id": req["id"], "ok": True, "msg": "Putting away 1 item...", "trip": "trip-1"}, "bridge", "tazuo", "putaway.json")
+        w.clock.at(1, lambda: api.click(self.control(api, "Put away...")))
+        w.clock.at(3, lambda: (api.running.remove("packrat-refresh.py"), self.write({}, "inbox", "tazuo", "Tester-20260930-120000-quick.json")))
+        w.clock.at(5, answer)
+        self.run_panel(w, api, until_s=200)
+        self.assertIn("The trip did not report back.", self.labels(api))
+        self.assertTrue(os.path.isfile(self.path("bridge", "stop")), "a slow trip never goes on unattended")
+        self.assertEqual(api.shared["packrat_putaway"], "")
+
     def test_put_away_can_be_cancelled_and_ends_at_once_on_a_client_without_shared_variables(self):
         w, api = self.house([PACK, PACK])
         seen = {}
