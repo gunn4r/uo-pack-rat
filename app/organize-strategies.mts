@@ -31,11 +31,9 @@ const preset = (id: string): RuleMatch => {
 const def = (key: string, name: string, family: Family, ...matches: RuleMatch[]): GroupDef => ({ key, name, family, matches });
 // Every item: the last group, so a group table claims everything its rules will.
 const EVERYTHING: RuleMatch = { query: q({}) };
-// Issue #134: the scrolls that raise a skill or a stat, as Simple's Skill scrolls takes them: power scrolls by their
-// level, then the rest by name (stat scrolls read "…Maximum Stats…" or "a scroll of power…"); no spell's name
-// holds any of these words.
-const POWER_SCROLLS: RuleMatch = { query: q({ kind: ["scroll"], props: [{ key: "psLevel", min: 105 }] }) };
-const SKILL_SCROLLS: RuleMatch = { query: q({ kind: ["scroll"] }), names: ["scroll of transcendence", "scroll of alacrity", "scroll binder", "maximum stats", "scroll of power"] };
+// A spell scroll is named after its spell alone, and every other scroll (vault-lib's kindOf; a blank scroll is a
+// resource) has "scroll" in its name: power, stat, Transcendence and Alacrity scrolls, Scroll Binders (issue #134).
+const SKILL_SCROLLS: RuleMatch = { query: q({ kind: ["scroll"] }), names: ["scroll"] };
 
 // Order matters only where filters overlap, and there it is first match wins, as for rules: gear is split by slot
 // (every gear item has kind "gear", so no name pattern reaches it), the armour neck filter sits above Jewelry's neck
@@ -50,7 +48,7 @@ const SIMPLE: readonly GroupDef[] = [
   def("weapons", "Weapons", "weapons", preset("weapons")),
   def("other-gear", "Other gear", "other-gear", kinds("gear")),
   def("reagents", "Reagents", "reagents", kinds("reagent")),
-  def("skill-scrolls", "Skill scrolls", "scrolls", POWER_SCROLLS, SKILL_SCROLLS),
+  def("skill-scrolls", "Skill scrolls", "scrolls", SKILL_SCROLLS),
   def("scrolls", "Spell scrolls", "scrolls", preset("spell-scrolls")),
   def("resources", "Resources", "resources", kinds("resource"), preset("refinements")),
   def("potions", "Potions & bandages", "potions", kinds("potion", "bandage")),
@@ -62,9 +60,8 @@ const SIMPLE: readonly GroupDef[] = [
   def("clothing", "Clothing", "clothing", kinds("clothing")),
   def("other", "Other", "other", EVERYTHING),
 ];
-// A spell scroll is named after its spell alone, and every other scroll (vault-lib's kindOf) has "scroll" in its
-// name, so Other scrolls (stat scrolls, Alacrity, Scroll Binders, blank scrolls) takes those by name above the spells.
-// Those go by school (issue #134: the rule's `school`, an exact spell name, since a name substring cannot tell them:
+// Other scrolls (stat and Alacrity scrolls, Scroll Binders) takes the skill scrolls the power scroll and Transcendence
+// groups leave, by name, above the spells. Those go by school (issue #134: the rule's `school`, an exact spell name, since a name substring cannot tell them:
 // Magery's "curse" is inside Remove Curse and Curse Weapon), and Spell scrolls keeps any of no known school.
 const DETAILED: readonly GroupDef[] = [
   def("armour-head", "Armour: head", "armour", preset("armour-head")),
@@ -89,7 +86,7 @@ const DETAILED: readonly GroupDef[] = [
   def("reagents", "Other reagents", "reagents", kinds("reagent")),
   ...[105, 110, 115, 120].map((n) => def(`power-scrolls-${n}`, `Power scrolls ${n}`, "scrolls", preset(`power-scrolls-${n}`))),
   def("transcendence-scrolls", "Transcendence scrolls", "scrolls", preset("transcendence-scrolls")),
-  def("other-scrolls", "Other scrolls", "scrolls", { query: q({ kind: ["scroll"] }), names: ["scroll"] }),
+  def("other-scrolls", "Other scrolls", "scrolls", SKILL_SCROLLS),
   def("magery-scrolls", "Magery scrolls", "scrolls", preset("magery-scrolls")),
   def("necromancy-scrolls", "Necromancy scrolls", "scrolls", preset("necromancy-scrolls")),
   def("mysticism-scrolls", "Mysticism scrolls", "scrolls", preset("mysticism-scrolls")),
@@ -254,9 +251,10 @@ const FILL = 0.8;
 const NEW_CHEST_ROOM = Math.floor(FILL * CONTAINER_SLOTS);
 // Stand-ins for the chests still to add, above every real serial (a serial is 31 bits), so a tie goes to a real one.
 const NEW_CHEST = 2 ** 31;
-// What a chest shared by a family's groups is labelled: Simple's group of that family (Simple has one per family, but
-// for By build's gear).
-const FAMILY_NAMES = new Map<Family, string>([...SIMPLE.map((d) => [d.family, d.name] as const), ["gear", "Gear"]]);
+// What a chest shared by a family's groups is labelled.
+const FAMILY_NAMES: Record<Family, string> = { armour: "Armour", jewelry: "Jewelry", weapons: "Weapons", "other-gear": "Other gear", gear: "Gear", reagents: "Reagents",
+  scrolls: "Scrolls", maps: "Treasure maps & SOS", resources: "Resources", potions: "Potions & bandages", "runes-books": "Runes & books", deeds: "Deeds", gems: "Gems",
+  tools: "Tools", clothing: "Clothing", other: "Other" };
 // The chests two or more groups share, each with their keys in the order the groups come (table order).
 function sharedChests(groups: readonly { key: string }[], chains: ReadonlyMap<string, number[]>): Map<number, string[]> {
   const by = new Map<number, string[]>();
@@ -448,12 +446,12 @@ export function proposeOrganize(inv: Inventory, cfg: OrganizeConfig, overlay: Ov
   // with the group's.
   const sharing = new Map<number, Group[]>();
   for (const g of groups) for (const s of chains.get(g.key)!) sharing.set(s, [...sharing.get(s) ?? [], g]);
-  for (const [s, gs] of sharing) if (labels[String(s)]!.origin !== "manual") labels[String(s)] = { serial: s, name: gs.length > 1 ? FAMILY_NAMES.get(gs[0]!.family)! : gs[0]!.name, origin };
+  for (const [s, gs] of sharing) if (labels[String(s)]!.origin !== "manual") labels[String(s)] = { serial: s, name: gs.length > 1 ? FAMILY_NAMES[gs[0]!.family] : gs[0]!.name, origin };
   for (const g of groups) { const b = bagOf.get(g.key); if (b != null) labels[String(b)] = { serial: b, name: g.name, origin }; }
   // What the full layout still needs: its chests to add, and the bags its shared chests lack (counting the empty
   // bags there). Spare bags: the empty ones in the ticked chests no group was given.
   const given = new Set(bagOf.values());
-  const familyOf = new Map(groups.map((g) => [g.key, FAMILY_NAMES.get(g.family)!]));
+  const familyOf = new Map(groups.map((g) => [g.key, FAMILY_NAMES[g.family]]));
   const layout: Layout = { chests: 0, bags: [], spareBags: emptyBags.filter((b) => !given.has(b.serial) && ticked.has(ancestry(view, b.container)?.at(-1) ?? -1)).length, roomy };
   // A house that needs no chest added counts the bags of the layout proposed there (a stable house keeps its own).
   for (const [site, { add, a }] of ideal) {
