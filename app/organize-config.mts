@@ -92,9 +92,14 @@ export function matchProblem(m: unknown, at = "match"): string | null {
   return null;
 }
 
-function containerProblem(v: unknown, labels: Record<string, ContainerLabel>, at: string): string | null {
+// A rule's target is named with the rule (issue #123: pinning a chest an Auto rule fills is the usual way here, and
+// the player knows the rule by its name, not its place in the list).
+function containerProblem(v: unknown, labels: Record<string, ContainerLabel>, at: string, rule?: string): string | null {
   if (!isSerial(v) || !labels[String(v)]) return `${at}: ${short(v)} is not a labelled container`;
-  if (labels[String(v)]!.pinned) return `${at}: ${v} is pinned, and nothing is put into a pinned container`;
+  if (labels[String(v)]!.pinned) {
+    return rule != null ? `The rule "${rule}" puts items into ${labels[String(v)]!.name}, which is pinned: nothing is put into a pinned container. Take it off the rule, or unpin it.`
+      : `${at}: ${v} is pinned, and nothing is put into a pinned container`;
+  }
   return null;
 }
 
@@ -111,7 +116,7 @@ function ruleProblem(r: unknown, i: number, labels: Record<string, ContainerLabe
   if (mp) return mp;
   if (!Array.isArray(r.targets) || r.targets.length > LIMITS.targets) return `${at}.targets must be a list of at most ${LIMITS.targets} containers`;
   for (const t of r.targets) {
-    const p = containerProblem(t, labels, `${at}.targets`);
+    const p = containerProblem(t, labels, `${at}.targets`, r.name);
     if (p) return p;
   }
   if (new Set(r.targets).size !== r.targets.length) return `${at}.targets lists a container twice`;

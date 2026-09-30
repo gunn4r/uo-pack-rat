@@ -16,7 +16,7 @@ import { resolveConfig } from "./config.mts";
 import { queueTrip } from "./bridge-trip.mts";
 import type { ScanV2 } from "./schema/types.d.mts";
 import {
-  ancestry, scopeOf, ruleMatches, buildOf, matchCount, CASTER_PROPS, CASTER_SKILLS, MELEE_PROPS, MELEE_SKILLS, claimOf, baseName, applyOverlay, homeOf, newSim, simTake, simPut, mark, rollback, MAX_STACK,
+  ancestry, scopeOf, ruleMatches, buildOf, matchCount, CASTER_PROPS, CASTER_SKILLS, MELEE_PROPS, MELEE_SKILLS, claimOf, baseName, nameKey, applyOverlay, homeOf, newSim, simTake, simPut, mark, rollback, MAX_STACK,
   sitesOf, planOrganize, tripCommand, lineBytes, type OverlayMove, type Sim, type Plan,
 } from "./organize.mts";
 
@@ -115,6 +115,20 @@ test("[fast] rule names match the item's own name, stack count stripped, case-in
   assert.equal(ruleMatches(dust, { query: { ...emptyRuleQuery(), kind: ["gem"] }, names: ["grave dust"] }), false);
 });
 
+test("[fast] rule names and item names compare with spaces and punctuation removed on both sides (issue #123)", () => {
+  const inv = fold([{ serial: A }], [
+    { serial: 0x40002001, name: "Blood Moss", amount: 20, in: A }, { serial: 0x40002002, name: "Batwing", in: A }, { serial: 0x40002003, name: "Spiders' Silk", in: A },
+    { serial: 0x40002004, name: "A Wondrous Scroll Of Magery (105 Skill)", in: A }, { serial: 0x40002005, name: "A Legendary Scroll Of Magery (120 Skill)", in: A },
+  ]);
+  const takes = (name: string): string[] => Object.values(inv.items).filter((it) => ruleMatches(it, { query: emptyRuleQuery(), names: [name] })).map((it) => it.name);
+  assert.equal(nameKey("20 Spiders' Silk"), "spiderssilk");
+  assert.deepEqual(takes("bloodmoss"), ["Blood Moss"]);
+  assert.deepEqual(takes("bat wing"), ["Batwing"]);
+  assert.deepEqual(takes("spiders silk"), ["Spiders' Silk"]);
+  assert.deepEqual(takes("'"), [], "a name that is only punctuation matches nothing");
+  assert.deepEqual(takes("120 Skill"), ["A Legendary Scroll Of Magery (120 Skill)"], "a rule name's leading number is not a stack count");
+});
+
 test("[fast] a rule's build takes gear by its caster and melee markers, then its resists, and never takes anything else", () => {
   const gear = (serial: number, name: string, lines: string[]): ThingSpec => ({ serial, name, in: A, lines });
   const inv = fold([{ serial: A }], [
@@ -152,6 +166,18 @@ test("[fast] a rule's build takes gear by its caster and melee markers, then its
     const counted = matchCount(inv, cfg, cfg.rules[0]!.match, { now: NOW }).count;
     assert.deepEqual([counted, planOrganize(inv, cfg, [], { now: NOW }).rules.find((r) => r.ruleId === "r")?.matched], [takes(build).length, takes(build).length], build);
   }
+});
+
+test("[fast] a shield with no caster or melee marker is Tank gear, whatever its resists (issue #123)", () => {
+  const inv = fold([{ serial: A }], [
+    { serial: 0x40002001, name: "Wooden Shield", in: A },
+    { serial: 0x40002002, name: "Heater Shield", in: A, lines: ["Physical Resist 1%"] },
+    { serial: 0x40002003, name: "Metal Kite Shield", in: A, lines: ["Spell Channeling", "Faster Casting -1"] },
+    { serial: 0x40002004, name: "Order Shield", in: A, lines: ["Hit Chance Increase 10"] },
+  ]);
+  assert.deepEqual(Object.values(inv.items).sort((a, b) => a.serial - b.serial).map((it) => [it.name, buildOf(it)]), [
+    ["Wooden Shield", "tank"], ["Heater Shield", "tank"], ["Metal Kite Shield", "caster"], ["Order Shield", "melee"],
+  ]);
 });
 
 test("[fast] every By build marker is a property key or skill the tooltip parser really produces", () => {

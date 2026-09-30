@@ -10,7 +10,7 @@ import { box, txt, button, badge, message, segmented, check, table, tipWrap, cre
 import { errorText } from "./messages.mts";
 import { plural } from "./inv-model.mts";
 import { saveConfig } from "./organize-data.mts";
-import { STRATEGY_TEXT, candidateGroups, candidateNote, proposalHeadline, groupStatus, groupAway, intoText, proposalNotes, proposalStays, canTrySimple, acceptGate, debounced, MATCH_DEBOUNCE_MS } from "./organize-model.mts";
+import { STRATEGY_TEXT, TICK_SCOPE_TEXT, candidateGroups, candidateNote, proposalHeadline, groupStatus, groupAway, intoText, proposalNotes, proposalStays, canTrySimple, acceptGate, debounced, MATCH_DEBOUNCE_MS } from "./organize-model.mts";
 import type { AutoStrategy, OrganizeProposal, OrganizeProposeApiResponse } from "./api-types.mts";
 
 // The drawer's state: the strategy, the ticked chests (null until the first proposal says which it ticks by
@@ -102,7 +102,7 @@ function paintContainers(): void {
     ? el("details", { class: "auto-unusable" }, el("summary", {}, txt(`${plural(p.unusable.length, "container")} can't be used`, "t-sm")),
       box("ul", { class: "auto-unusable-list" }, ...p.unusable.map((u) => box("li", {}, txt(`${u.name}: ${u.reason}`, "t-sm muted")))))
     : null;
-  host.replaceChildren(...head, ...(p.candidates.length ? sites : [txt("No container on the ground can be used yet. Scan your house in game first.", "muted")]), ...compactChildren([out]));
+  host.replaceChildren(...head, ...(p.candidates.length ? [...sites, txt(TICK_SCOPE_TEXT, "t-sm muted auto-scope")] : [txt("No container on the ground can be used yet. Scan your house in game first.", "muted")]), ...compactChildren([out]));
   if (focused) host.querySelector<HTMLElement>(`input[data-serial="${CSS.escape(focused)}"]`)?.focus();
 }
 function paintProposal(): void {

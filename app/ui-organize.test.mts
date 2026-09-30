@@ -10,7 +10,7 @@ import type { ItemQuery } from "./item-query.mts";
 import type { Container } from "./vault-lib.mts";
 import { PENDING_GRACE_MS } from "./organize-state.mts";
 import type { BridgeResultEntry, OrganizeConfig, OrganizePlan, OrganizeProposal, OrganizeRule, PlanMove, ProposalCandidate, ProposalGroup } from "./ui/api-types.mts";
-import { CATCH_ALL_ID, moveRule, withLabel, withoutLabel, pinnedWith, upsertRule, withoutRule, newRuleId, ruleQueryFrom, blankQuery, droppedNote, ruleNameFrom, checkDraft, matchSummary, extraFilters, targetView, fillText, fillTone, targetOptions, withTargetLabels, matchLine, debounced, MATCH_DEBOUNCE_MS, organizeStage, labelledPlaces, ruleNameOf, containerNameOf, ruleCountParts, planHeadline, unclaimedNote, roomLines, crossSiteLines, warningGroups, tripRows, moveName, moveWhere, carriedView, tripGate, stepWatch, outcomeOf, outcomeText, failedSteps, runAllNext, tripRefusal, adoptWatch, resumedNote, GRACE_MS, TRIP_MS, STRATEGY_TEXT, candidateGroups, candidateNote, proposalHeadline, groupStatus, groupAway, intoText, proposalNotes, proposalStays, canTrySimple, acceptGate } from "./ui/organize-model.mts";
+import { CATCH_ALL_ID, moveRule, withLabel, withoutLabel, pinNote, pinnedWith, upsertRule, withoutRule, newRuleId, ruleQueryFrom, blankQuery, droppedNote, ruleNameFrom, checkDraft, matchSummary, extraFilters, targetView, fillText, fillTone, targetOptions, withTargetLabels, matchLine, debounced, MATCH_DEBOUNCE_MS, organizeStage, labelledPlaces, ruleNameOf, containerNameOf, ruleCountParts, planHeadline, unclaimedNote, roomLines, crossSiteLines, warningGroups, tripRows, moveName, moveWhere, carriedView, tripGate, stepWatch, outcomeOf, outcomeText, failedSteps, runAllNext, tripRefusal, adoptWatch, resumedNote, GRACE_MS, TRIP_MS, STRATEGY_TEXT, candidateGroups, candidateNote, proposalHeadline, groupStatus, groupAway, intoText, proposalNotes, proposalStays, canTrySimple, acceptGate } from "./ui/organize-model.mts";
 
 const A = 0x40000001, B = 0x40000002, C = 0x40000003, GONE = 0x40000009;
 const chest = (serial: number, over: Partial<Container> = {}): Container => ({ serial, root: serial, parent: null, kind: "ground", name: "Metal Chest", tooltip: ["Metal Chest"], label: `Metal Chest (0x${serial.toString(16)})`, capacity: { items: 61, maxItems: 125, stones: null, maxStones: null }, scannedBy: "Tester", scannedAt: "2026-09-28T10:00:00Z", ...over });
@@ -55,6 +55,12 @@ test("[fast] pinning a label takes it off every rule's targets and the catch-all
   assert.equal(renamed.config.labels[String(A)]!.name, "Regs");
   assert.deepEqual(renamed.config.rules, CFG.rules);
   assert.equal(CFG.labels[String(A)]!.name, "Reagents", "the input is untouched");
+});
+
+test("[fast] pinning a chest a rule fills says so in the player's words, naming the rule (issue #123)", () => {
+  assert.equal(pinNote("Gems", ["Gems"]), 'Gems is where the rule "Gems" puts items. Nothing is put into a pinned container, so pinning it takes it off that rule. Unpinning it later does not put it back: add it to the rule again, or run Auto organize again.');
+  assert.equal(pinNote("Reagents", ["Reagents", "Gems", "Everything else"]),
+    'Reagents is where the rules "Reagents", "Gems" and "Everything else" put items. Nothing is put into a pinned container, so pinning it takes it off those rules. Unpinning it later does not put it back: add it to them again, or run Auto organize again.');
 });
 
 test("[fast] removing a label removes it from the rules that fill it", () => {
