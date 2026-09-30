@@ -80,6 +80,20 @@ test("[fast] Detailed: gear by slot, reagents by school, power scrolls by level,
   ]);
 });
 
+// Issue #123: the neck slot holds armour and necklaces alike; both strategies split them with the one Armour: neck
+// filter, which knows the Armor Of Initiation piece (a gorget graphic under the set's name) too.
+test("[fast] Simple and Detailed: neck armour goes with the armour, necklaces with the jewelry", () => {
+  const neck: ThingSpec[] = [
+    { serial: ITEM + 1, name: "Leather Gorget", in: A }, { serial: ITEM + 2, name: "Studded Gorget", in: A },
+    { serial: ITEM + 3, name: "Armor Of Initiation", in: A, graphic: 5063, lines: ["Physical Resist 7%"] },
+    { serial: ITEM + 4, name: "Gold Necklace", in: A }, { serial: ITEM + 5, name: "Gold Beads", in: A },
+  ];
+  const items = Object.values(fold([{ serial: A }], neck).items);
+  const of = (id: keyof typeof STRATEGIES) => groupItems(STRATEGIES[id], items).map((g) => [g.key, g.items.map((it) => it.name)]);
+  assert.deepEqual(of("simple"), [["armour", ["Leather Gorget", "Studded Gorget", "Armor Of Initiation"]], ["jewelry", ["Gold Necklace", "Gold Beads"]]]);
+  assert.deepEqual(of("detailed"), [["armour-neck", ["Leather Gorget", "Studded Gorget", "Armor Of Initiation"]], ["necklaces", ["Gold Necklace", "Gold Beads"]]]);
+});
+
 // Gear for By build, one piece of each build, each written as its tooltip reads.
 const BUILD_GEAR: ThingSpec[] = [
   { name: "Gold Ring", lines: ["Faster Casting 1", "Lower Mana Cost 8"] },

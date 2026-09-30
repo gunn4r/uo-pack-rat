@@ -40,7 +40,8 @@ export const PRESETS: readonly OrganizePreset[] = [
   { id: "shields", name: "Shields", match: slots(["twoHanded"], ["shield", "buckler"]) },
   { id: "weapons", name: "Weapons", match: slots(["oneHanded", "twoHanded"]) },
   { id: "armour-head", name: "Armour: head", match: slots(["helmet"]) },
-  { id: "armour-neck", name: "Armour: neck", match: slots(["neck"], ["gorget"]) },
+  // The neck slot holds necklaces too: armour is a gorget, a mempo, or a set piece named Armor (Armor Of Initiation).
+  { id: "armour-neck", name: "Armour: neck", match: slots(["neck"], ["gorget", "mempo", "armor", "armour"]) },
   { id: "armour-chest", name: "Armour: chest", match: slots(["chest"]) },
   { id: "armour-arms", name: "Armour: arms", match: slots(["arms"]) },
   { id: "armour-hands", name: "Armour: hands", match: slots(["hands"]) },
