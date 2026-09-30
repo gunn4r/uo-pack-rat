@@ -16,8 +16,8 @@ PACK, POUCH, CHEST, BAG, FAR = 0x40000001, 0x40000002, 0x40000003, 0x40000004, 0
 RING, AMULET, BRACELET, FAR_RING = 0x40000010, 0x40000011, 0x40000012, 0x40000013
 OTHER_CHEST, OTHER_BAG, STRANGER_PACK, STRANGER_RING = 0x40000020, 0x40000021, 0x40000030, 0x40000031
 BOOK, RUNEBOOK, ARMOUR = 0x40000040, 0x40000041, 0x40000042
-DEST, DEST_BAG, TRASH_BIN, CORPSE, LOOSE, STACK, OTHER_GEM = (0x40000050, 0x40000051, 0x40000052, 0x40000053,
-                                                               0x40000054, 0x40000055, 0x40000056)
+DEST, DEST_BAG, TRASH_BIN, CORPSE, LOOSE, STACK, OTHER_GEM, EMPTY = (0x40000050, 0x40000051, 0x40000052, 0x40000053,
+                                                                      0x40000054, 0x40000055, 0x40000056, 0x40000057)
 RUN_S = 120                      # every scenario stops the bridge after this many fake seconds
 
 
@@ -245,12 +245,62 @@ class BridgeCase(object):
         self.run_bridge(w, 1, [c, c])
         self.assertEqual(self.moved(w), [AMULET])
 
+    # ---- the stop marker ---------------------------------------------------------------------------
+
+    def test_a_stop_that_interrupts_a_pause_still_marks_the_status_stopped_and_the_next_start_clears_it(self):
+        """The client's Stop interrupts the script at its next pause, so nothing after the main loop
+        runs: the stopped marker must come from a finally, or the installer waits out the heartbeat."""
+        class Interrupted(Exception):
+            pass
+
+        def interrupt():
+            raise Interrupted()
+
+        w = home()
+        w.clock.at(5, interrupt)
+        with self.assertRaises(Interrupted):
+            self.run_bridge(w, 60, [])
+        with open(os.path.join(self.dir, "status.json"), encoding="utf-8") as f:
+            self.assertIs(json.load(f).get("stopped"), True)
+        final, writes = self.run_bridge(home(), 1, [])
+        self.assertNotIn("stopped", writes[0][1], "a running bridge's heartbeat never says stopped")
+        self.assertIs(final.get("stopped"), True, "and an ordinary stop says it again")
+
+    def test_a_stop_that_breaks_the_client_still_writes_the_marker_and_every_queued_result(self):
+        """After the interrupt any client call may fail; the name, the messages and each queued
+        command's result are guarded one by one so none of them costs the stopped marker."""
+        class Interrupted(Exception):
+            pass
+
+        def interrupt():
+            self.break_client(w)
+            raise Interrupted()
+
+        w = home()
+        w.clock.at(3, interrupt)
+        ids = ["h%d" % i for i in range(6)]
+        with self.assertRaises(Exception):
+            self.run_bridge(w, 1, [self.cmd(i, "highlight", AMULET, [CHEST, BAG]) for i in ids])
+        with open(os.path.join(self.dir, "status.json"), encoding="utf-8") as f:
+            final = json.load(f)
+        self.assertIs(final.get("stopped"), True)
+        self.assertEqual(final["character"], "Tester")
+        self.assertEqual(sorted(final["results"]), ids)
+        self.assertGreaterEqual([r["msg"] for r in final["results"].values()].count(
+            "not run — the bridge stopped first" if self.ADAPTER == "tazuo" else "not run -- the bridge stopped first"), 2)
+
 
 class TazUOBridge(BridgeCase, unittest.TestCase):
     ADAPTER = "tazuo"
 
+    def break_client(self, world):
+        def fail(*a):
+            raise RuntimeError("client gone")
+        world.api.SysMsg = fail
+        world.api.Player = None                  # every API.Player read fails
+
     def start(self, world):
-        api = tazuo_api(world, PACK)
+        api = world.api = tazuo_api(world, PACK)
         if getattr(self, "drop_cancel", False):
             del api.CancelPathfinding
         world.clock.at(RUN_S, lambda: setattr(api, "StopRequested", True))
@@ -301,10 +351,165 @@ class TazUOBridge(BridgeCase, unittest.TestCase):
         self.assertEqual((r["partial"], r["stopped"]), (False, False))
         self.assertEqual(self.steps(final, "t1"), [("take", AMULET, True), ("take", BRACELET, True),
                                                    ("put", AMULET, True), ("put", BRACELET, True)])
-        self.assertEqual(sorted(set(k for s in r["steps"] for k in s)), ["msg", "ok", "op", "serial"])
+        self.assertEqual(sorted(set(k for s in r["steps"] for k in s)), ["ms", "msg", "ok", "op", "serial"])
+        for s in r["steps"]:
+            self.assertIs(type(s["ms"]), int)
+        self.assertIs(type(r["ms"]), int)
+        self.assertGreaterEqual(r["ms"], sum(s["ms"] for s in r["steps"]))
         self.assertEqual(self.moves(w), [(AMULET, PACK), (BRACELET, PACK), (AMULET, DEST_BAG), (BRACELET, DEST_BAG)])
         self.assertIn("Pack Rat organize: trip 3, 2 items", w.messages)
         self.assert_heartbeat(writes)
+
+    def test_a_trip_opens_each_container_once_and_the_next_trip_opens_it_again(self):
+        w = trip_home()
+        w.add(OTHER_GEM, BAG, name="Jewel", container_like=False, OnGround=False)
+        final, _ = self.run_bridge(w, 1, [
+            self.trip("t1", takes=[(AMULET, [CHEST, BAG]), (BRACELET, [CHEST, BAG])],
+                      puts=[(AMULET, [DEST, DEST_BAG]), (BRACELET, [DEST, DEST_BAG])]),
+            self.trip("t2", takes=[(OTHER_GEM, [CHEST, BAG])], puts=[(OTHER_GEM, [DEST, DEST_BAG])], index=4)])
+        for cid in ("t1", "t2"):
+            self.assertTrue(final["results"][cid]["ok"], final["results"][cid])
+        opened = self.opened(w)
+        self.assertEqual([opened.count(s) for s in (CHEST, BAG, DEST, DEST_BAG)], [2, 2, 2, 2])
+
+    def test_a_walk_during_a_trip_opens_the_containers_again(self):
+        w = trip_home()
+        w.add(OTHER_GEM, BAG, name="Jewel", container_like=False, OnGround=False)
+        final, _ = self.run_bridge(w, 1, [
+            self.trip("t1", takes=[(AMULET, [CHEST, BAG]), (FAR_RING, [FAR]), (OTHER_GEM, [CHEST, BAG])])])
+        self.assertTrue(final["results"]["t1"]["ok"], final["results"]["t1"])
+        self.assertEqual([c[1:] for c in w.calls if c[0] == "walk"], [(20, 10), (11, 10)])
+        opened = self.opened(w)
+        self.assertEqual([opened.count(s) for s in (CHEST, BAG)], [2, 2])
+
+    def test_a_player_who_steps_by_hand_mid_trip_gets_the_containers_opened_again(self):
+        w = trip_home()
+
+        def step(s, dst):
+            if (s, dst) == (AMULET, PACK):
+                w.px = w.api.Player.X = 12           # the player steps a tile; the chest stays in reach
+        w.on_move = step
+        final, _ = self.run_bridge(w, 1, [self.trip("t1", takes=[(AMULET, [CHEST, BAG]), (BRACELET, [CHEST, BAG])])])
+        self.assertTrue(final["results"]["t1"]["ok"], final["results"]["t1"])
+        self.assertEqual([c for c in w.calls if c[0] == "walk"], [])
+        opened = self.opened(w)
+        self.assertEqual([opened.count(s) for s in (CHEST, BAG)], [2, 2])
+
+    def test_a_container_opened_earlier_in_the_trip_is_still_checked_on_every_step(self):
+        w = trip_home()
+        w.add(OTHER_GEM, BAG, name="Jewel", container_like=False, OnGround=False)
+
+        def swap(s, dst):
+            if (s, dst) == (AMULET, PACK):
+                w.items[BAG].Container = OTHER_CHEST        # the bag moved to another chest mid-trip
+            if (s, dst) == (BRACELET, DEST):
+                w.items[DEST].Tooltip = "A Trash Barrel"    # and the destination turned out to be trash
+        w.on_move = swap
+        final, _ = self.run_bridge(w, 1, [
+            self.trip("t1", takes=[(AMULET, [CHEST, BAG]), (OTHER_GEM, [CHEST, BAG])]),
+            self.trip("t2", takes=[(BRACELET, [OTHER_CHEST, BAG])], index=4),
+            self.trip("t3", puts=[(BRACELET, [DEST]), (AMULET, [DEST])], index=5)])
+        self.assertEqual(self.steps(final, "t1"), [("take", AMULET, True), ("take", OTHER_GEM, False)])
+        self.assertIn("is not inside", final["results"]["t1"]["steps"][1]["msg"])
+        self.assertEqual(self.steps(final, "t3"), [("put", BRACELET, True), ("put", AMULET, False)])
+        self.assertIn("trash", final["results"]["t3"]["steps"][1]["msg"])
+        self.assertEqual(w.items[AMULET].Container, PACK)
+
+    def move_times(self, w):
+        """Record the fake second of every MoveItem call."""
+        times = []
+        w.on_move = lambda s, dst: times.append(w.clock.now)
+        return times
+
+    def test_a_move_that_lands_at_once_waits_only_the_minimum_gap_before_the_next(self):
+        w = trip_home()
+        times = self.move_times(w)
+        final, _ = self.run_bridge(w, 1, [self.trip("t1", takes=[(AMULET, [CHEST, BAG]), (BRACELET, [CHEST, BAG])],
+                                                    puts=[(AMULET, [DEST]), (BRACELET, [DEST])])])
+        self.assertTrue(final["results"]["t1"]["ok"], final["results"]["t1"])
+        gaps = [b - a for a, b in zip(times, times[1:])]
+        self.assertAlmostEqual(gaps[0], 0.35, places=3)    # second take: chest already open, first move landed at once
+        self.assertAlmostEqual(gaps[2], 0.35, places=3)    # second put likewise
+        self.assertLess(final["results"]["t1"]["steps"][1]["ms"], 500)
+
+    def test_a_move_that_never_lands_is_reported_bounced_after_the_cap(self):
+        w = trip_home()
+        w.refuse = {DEST}
+        times = self.move_times(w)
+        final, writes = self.run_bridge(w, 1, [self.trip("t1", takes=[(AMULET, [CHEST, BAG])], puts=[(AMULET, [DEST])])])
+        r = final["results"]["t1"]
+        self.assertEqual(self.steps(final, "t1"), [("take", AMULET, True), ("put", AMULET, False)])
+        self.assertIn("bounced", r["steps"][1]["msg"])
+        done = [t for t, s in writes if "t1" in s.get("results", {})][0]
+        self.assertGreaterEqual(done - (times[1] - w.clock.start), 1.5)
+        self.assertLess(done - (times[1] - w.clock.start), 1.6)
+
+    # ---- the wait after opening a container --------------------------------------------------------
+
+    def open_and_move_times(self, w):
+        """[(kind, serial, fake second)] for every UseObject and MoveItem, in order."""
+        times, real_open = [], w.open
+
+        def use(s):
+            times.append(("open", s, w.clock.now))
+            return real_open(s)
+        w.open = use
+        w.on_move = lambda s, dst: times.append(("move", s, w.clock.now))
+        return times
+
+    def gaps(self, times):
+        return [b[2] - a[2] for a, b in zip(times, times[1:])]
+
+    def test_an_open_whose_contents_arrive_at_once_waits_only_the_floor(self):
+        w = trip_home()
+        times = self.open_and_move_times(w)
+        final, _ = self.run_bridge(w, 1, [self.trip("t1", takes=[(AMULET, [CHEST, BAG])])])
+        self.assertTrue(final["results"]["t1"]["ok"], final["results"]["t1"])
+        self.assertEqual([t[:2] for t in times], [("open", CHEST), ("open", BAG), ("move", AMULET)])
+        for gap in self.gaps(times):
+            self.assertAlmostEqual(gap, 0.6, places=3)
+
+    def test_an_open_whose_contents_lag_waits_until_they_arrive(self):
+        w = trip_home()
+        w.open_lag = 0.8
+        times = self.open_and_move_times(w)
+        final, _ = self.run_bridge(w, 1, [self.trip("t1", takes=[(AMULET, [CHEST, BAG])])])
+        self.assertTrue(final["results"]["t1"]["ok"], final["results"]["t1"])
+        for gap in self.gaps(times):
+            self.assertGreaterEqual(gap, 0.8)
+            self.assertLess(gap, 0.86)
+
+    def test_an_open_whose_contents_never_arrive_gives_up_at_the_cap(self):
+        w = trip_home()
+        w.add(OTHER_GEM, CHEST, name="Jewel", container_like=False, OnGround=False)
+        w.open_lag = 30
+        final, _ = self.run_bridge(w, 1, [self.trip("t1", takes=[(OTHER_GEM, [CHEST])])])
+        step = final["results"]["t1"]["steps"][0]
+        self.assertFalse(step["ok"], step)
+        self.assertGreaterEqual(step["ms"], 1000)
+        self.assertLess(step["ms"], 1100)
+
+    def test_a_client_without_a_readable_opened_waits_the_old_flat_second(self):
+        for err in (AttributeError, RuntimeError):
+            w = trip_home()
+            w.opened_error = err
+            times = self.open_and_move_times(w)
+            final, _ = self.run_bridge(w, 1, [self.trip("t1", takes=[(AMULET, [CHEST, BAG])])])
+            self.assertTrue(final["results"]["t1"]["ok"], (err, final["results"]["t1"]))
+            for gap in self.gaps(times):
+                self.assertGreaterEqual(gap, 1.0, err)
+                self.assertLess(gap, 1.06, err)
+
+    def test_an_empty_container_does_not_hold_up_a_put(self):
+        w = trip_home()
+        w.add(EMPTY, 0, name="Metal Chest", X=11, Y=11)
+        times = self.open_and_move_times(w)
+        final, _ = self.run_bridge(w, 1, [self.trip("t1", takes=[(AMULET, [CHEST, BAG])], puts=[(AMULET, [EMPTY])])])
+        self.assertTrue(final["results"]["t1"]["ok"], final["results"]["t1"])
+        opened = [t for t in times if t[:2] == ("open", EMPTY)][0]
+        put = times[times.index(opened) + 1]
+        self.assertEqual(put[:2], ("move", AMULET))
+        self.assertAlmostEqual(put[2] - opened[2], 0.6, places=3)
 
     def test_a_take_drops_at_an_explicit_spot_so_a_stack_keeps_its_serial(self):
         w = trip_home()
@@ -380,6 +585,14 @@ class TazUOBridge(BridgeCase, unittest.TestCase):
                                                    ("put", AMULET, True), ("put", BRACELET, False)])
         self.assertIn("skipped", r["steps"][3]["msg"])
         self.assertEqual(w.items[BRACELET].Container, BAG)
+
+    def test_a_stack_whose_tiledata_weight_is_zero_is_taken_not_counted_a_stone_a_unit(self):
+        # Arrows and reagents weigh a fraction of a stone, which tiledata stores as 0 (#117).
+        w = trip_home()
+        w.weight_max = 100
+        w.items[AMULET].Stones, w.items[AMULET].Amount = 0, 300
+        final, _ = self.run_bridge(w, 1, [self.trip("t1", takes=[(AMULET, [CHEST, BAG])], puts=[(AMULET, [DEST])])])
+        self.assertEqual(self.steps(final, "t1"), [("take", AMULET, True), ("put", AMULET, True)])
 
     def test_a_backpack_at_its_item_cap_takes_nothing(self):
         w = trip_home()
@@ -474,6 +687,59 @@ class TazUOBridge(BridgeCase, unittest.TestCase):
         self.assertTrue(final["results"]["t1"]["ok"], final["results"]["t1"])
         self.assertNotIn(AMULET, w.items)
         self.assertEqual(w.items[STACK].Amount, 2)
+        self.assertLess(final["results"]["t1"]["steps"][1]["ms"], 2500)   # two opens, then the merge counts at once
+        # The stack is looked up by type, not by reading every child of the bag.
+        self.assertIn(("find_type_all", 0x1086, DEST_BAG, 0), w.calls)
+        self.assertNotIn(("items_in", DEST_BAG), w.calls)
+
+    def test_a_put_of_an_item_that_cannot_stack_reads_none_of_the_containers_contents(self):
+        # 50 power scrolls into one chest got ~50 ms slower per scroll already there, live (#122): every
+        # put summed the chest's matching stacks, one client round trip per child.
+        w = trip_home()
+        w.items[AMULET].Stackable = False
+        for i in range(50):
+            w.add(0x40001000 + i, DEST_BAG, name="Jewel", container_like=False, OnGround=False, Stackable=False)
+        final, _ = self.run_bridge(w, 1, [self.trip("t1", takes=[(AMULET, [CHEST, BAG])], puts=[(AMULET, [DEST, DEST_BAG])])])
+        self.assertTrue(final["results"]["t1"]["ok"], final["results"]["t1"])
+        self.assertEqual(w.items[AMULET].Container, DEST_BAG)
+        self.assertEqual([c for c in w.calls if c[0] in ("items_in", "find_type_all") and c[1] != PACK], [])
+
+    def test_a_put_of_an_item_that_cannot_stack_and_vanishes_is_not_put_away(self):
+        w = trip_home()
+        w.items[AMULET].Stackable = False
+        w.add(STACK, DEST_BAG, name="Jewel", container_like=False, OnGround=False, Stackable=False)
+        w.refuse = {DEST_BAG}
+        w.on_move = lambda s, dst: w.items.pop(s) if dst == DEST_BAG else None
+        final, _ = self.run_bridge(w, 1, [self.trip("t1", takes=[(AMULET, [CHEST, BAG])], puts=[(AMULET, [DEST, DEST_BAG])])])
+        self.assertEqual(self.steps(final, "t1"), [("take", AMULET, True), ("put", AMULET, False)])
+
+    def test_a_merge_counts_only_stacks_directly_in_the_container_not_in_a_bag_inside_it(self):
+        # FindTypeAll matches an item whose container OR root container is the one asked for.
+        w = trip_home()
+        w.add(STACK, DEST_BAG, name="Jewel", container_like=False, OnGround=False)
+        w.refuse = {DEST}
+        w.on_move = lambda s, dst: w.items.pop(s) if dst == DEST else None
+        final, _ = self.run_bridge(w, 1, [self.trip("t1", takes=[(AMULET, [CHEST, BAG])], puts=[(AMULET, [DEST])])])
+        self.assertEqual(self.steps(final, "t1"), [("take", AMULET, True), ("put", AMULET, False)])
+
+    def assert_merge_counts(self, **world):
+        w = trip_home()
+        w.merges = True
+        for k, v in world.items():
+            setattr(w, k, v)
+        w.add(STACK, DEST_BAG, name="Jewel", container_like=False, OnGround=False)
+        final, _ = self.run_bridge(w, 1, [self.trip("t1", takes=[(AMULET, [CHEST, BAG])], puts=[(AMULET, [DEST, DEST_BAG])])])
+        self.assertTrue(final["results"]["t1"]["ok"], final["results"]["t1"])
+        self.assertEqual(w.items[STACK].Amount, 2)
+        return w
+
+    def test_a_merge_still_counts_on_a_client_without_find_type_all_or_whose_call_fails(self):
+        self.assertIn(("items_in", DEST_BAG), self.assert_merge_counts(find_type_all="missing").calls)
+        self.assertIn(("items_in", DEST_BAG), self.assert_merge_counts(find_type_all="raise").calls)
+
+    def test_an_item_whose_stackable_flag_cannot_be_read_is_treated_as_stackable(self):
+        self.assert_merge_counts(no_stackable_flag=True)
+        self.assert_merge_counts(data_error=RuntimeError)
 
     def test_a_trip_line_over_the_line_limit_is_refused_unread(self):
         w = trip_home()
@@ -498,8 +764,14 @@ class TazUOBridge(BridgeCase, unittest.TestCase):
 class RazorBridge(BridgeCase, unittest.TestCase):
     ADAPTER = "razor-enhanced"
 
+    def break_client(self, world):
+        def fail(*a):
+            raise RuntimeError("client gone")
+        world.g["Misc"].SendMessage = staticmethod(fail)
+        type(world.g["Player"]).Name = property(fail)
+
     def start(self, world):
-        g = razor_globals(world, PACK)
+        g = world.g = razor_globals(world, PACK)
         world.clock.at(RUN_S, lambda: setattr(g["Player"], "Connected", False))
         run_script(adapter_path("razor-enhanced", "packrat-bridge.py"), world, extra_globals=g)
 

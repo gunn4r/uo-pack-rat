@@ -3,8 +3,8 @@
 // shown wherever an item's place is listed, rules from presets and from the Inventory's Save as rule…, a bag
 // inside a chest picked as a target, the live match count, reordering by keyboard and by drag, the plan's
 // reports and collapsed trip list, a client that cannot run trips, running a trip through the bridge's queue
-// (Stop, a failed step, Pin this item), and the screen at 1000 × 700. Skipped when electron or playwright is
-// absent, or under TEST_SKIP_ELECTRON.
+// (Stop, a failed step, Pin this item), a page reloaded mid-trip picking the trip back up, and the screen at
+// 1000 × 700. Skipped when electron or playwright is absent, or under TEST_SKIP_ELECTRON.
 import test from "node:test";
 import assert from "node:assert/strict";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
@@ -40,7 +40,7 @@ function dataDirWith(rules: SeedRule[] | null): string {
   }));
   return dir;
 }
-interface OrganizeFile { labels: Record<string, { name: string; color?: string; pinned?: boolean; origin: string }>; rules: Array<{ id: string; name: string; targets: number[]; match: { query: Record<string, unknown>; names?: string[] } }>; catchAll: number | null; pinnedItems: number[] }
+interface OrganizeFile { labels: Record<string, { name: string; color?: string; pinned?: boolean; origin: string }>; rules: Array<{ id: string; name: string; targets: number[]; origin: string; match: { query: Record<string, unknown>; names?: string[]; build?: string } }>; catchAll: number | null; pinnedItems: number[] }
 const readOrganize = (dir: string): OrganizeFile | null => { try { return JSON.parse(readFileSync(join(dir, "organize.json"), "utf8")) as OrganizeFile; } catch { return null; } };
 // Poll a file-backed fact until it holds (a save is a PUT the page sends after the click).
 async function until<T>(read: () => T, ok: (v: T) => boolean, what: string): Promise<T> {
@@ -56,12 +56,19 @@ async function until<T>(read: () => T, ok: (v: T) => boolean, what: string): Pro
 async function launch(dataDir: string, want: RealSize = { width: 1440, height: 900 }, demo = true): Promise<{ app: ElectronApplication; page: Page; errors: string[]; size: RealSize }> {
   const { _electron } = await import("playwright");
   const app = await _electron.launch({ args: [ROOT, ...(demo ? ["--demo"] : []), "--data", noUpdateCheck(dataDir)], cwd: ROOT, timeout: 60_000, env: testEnv() });
-  const page = await app.firstWindow();
-  const errors: string[] = [];
-  page.on("pageerror", (e) => errors.push(String(e)));
-  const size = await fitWindow(app, page, want);
-  await page.locator("#inv-table tbody tr.item").first().waitFor({ timeout: 30_000 });
-  return { app, page, errors, size };
+  // A launch that fails here happens before the caller's try, so its finally never closes the app: close it
+  // here, or the Electron process keeps the test file running long after its tests have finished.
+  try {
+    const page = await app.firstWindow();
+    const errors: string[] = [];
+    page.on("pageerror", (e) => errors.push(String(e)));
+    const size = await fitWindow(app, page, want);
+    await page.locator("#inv-table tbody tr.item").first().waitFor({ timeout: 30_000 });
+    return { app, page, errors, size };
+  } catch (e) {
+    await app.close();
+    throw e;
+  }
 }
 async function go(page: Page, hash: string, ready: string): Promise<void> {
   await page.evaluate((h) => { location.hash = h; }, hash);
@@ -107,6 +114,40 @@ test("[slow] Organize teaches labelling until a container is labelled, and Label
     await go(page, "#/organize", "#org-rules");
     assert.match(await page.locator("#org-rules").innerText(), /No rules yet/);
     assert.equal(await page.locator("#org-plan").count(), 0);
+    assert.deepEqual(errors, []);
+  } finally {
+    await app.close();
+    rmSync(dataDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
+  }
+});
+
+test("[slow] Label… pinning a chest a rule fills names the rule and takes the chest off it, even when the rule came after the page loaded the setup (issue #123)", async (t) => {
+  const why = unavailable();
+  if (why) return t.skip(why);
+  const dataDir = dataDirWith([{ id: "rule-1", name: "Reagents", kind: ["reagent"], targets: [DORRAN] }]);
+  const { app, page, errors } = await launch(dataDir);
+  try {
+    await go(page, "#/containers", `#cont-table tr[data-root="${KESTREL}"]`);
+    await rowActions(page, KESTREL).click();
+    await page.getByRole("menuitem", { name: "Edit label…" }).click();
+    await page.waitForSelector("dialog[open] #lbl-name");
+    await page.getByRole("button", { name: "Cancel" }).click();
+    await page.waitForFunction(() => !document.querySelector("dialog[open]"));
+    // Auto organize (another window) adds a rule filling the Jewellery chest after the page read the setup.
+    const disk = readOrganize(dataDir)!;
+    disk.rules.push({ id: "auto-gems", name: "Gems", match: { query: { ...EMPTY_QUERY, kind: ["gem"] } }, targets: [KESTREL], origin: "strategy:simple" });
+    writeFileSync(join(dataDir, "organize.json"), JSON.stringify(disk));
+
+    await rowActions(page, KESTREL).click();
+    await page.getByRole("menuitem", { name: "Edit label…" }).click();
+    await page.waitForSelector("dialog[open] #lbl-name");
+    await page.locator("#lbl-pin").check();
+    await page.click("#lbl-save");
+    await page.waitForSelector("[data-confirm]");
+    await page.getByText('Jewellery is where the rule "Gems" puts items. Nothing is put into a pinned container, so pinning it takes it off that rule. Unpinning it later does not put it back: add it to the rule again, or run Auto organize again.').waitFor();
+    await page.click("[data-confirm]");
+    const saved = await until(() => readOrganize(dataDir), (f) => !!f?.labels[String(KESTREL)]?.pinned, "the pin in organize.json");
+    assert.deepEqual(saved!.rules.map((r) => [r.id, r.targets]), [["rule-1", [DORRAN]], ["auto-gems", []]]);
     assert.deepEqual(errors, []);
   } finally {
     await app.close();
@@ -352,7 +393,7 @@ test("[slow] Run trip queues one trip; Stop writes the stop flag; a failed put l
   let results: Record<string, unknown> = {};
   const writeStatus = (): void => writeFileSync(join(bridgeDir, "status.json"), JSON.stringify({ alive: new Date().toISOString(), character: "Tester", current: null, counts: { done: 0, failed: 0 }, results }));
   writeStatus();
-  const alive = setInterval(writeStatus, 1000);
+  const alive = setInterval(writeStatus, 1000).unref();   // unref: a failed launch (before the try) must not keep the file running
   const { app, page, errors } = await launch(dataDir);
   try {
     await go(page, "#/organize", "#org-plan #org-headline");
@@ -395,6 +436,50 @@ test("[slow] Run trip queues one trip; Stop writes the stop flag; a failed put l
   }
 });
 
+test("[slow] a page reloaded mid-trip picks the trip back up: shown as running, Stop works, and its report is read", async (t) => {
+  const why = unavailable();
+  if (why) return t.skip(why);
+  const dataDir = dataDirWith([{ id: "rule-1", name: "Magery reagents", names: ["sulfurous ash"], targets: [DORRAN] }]);
+  const bridgeDir = join(dataDir, "bridge", "tazuo");
+  mkdirSync(bridgeDir, { recursive: true });
+  let current: unknown = null, results: Record<string, unknown> = {};
+  const writeStatus = (): void => writeFileSync(join(bridgeDir, "status.json"), JSON.stringify({ alive: new Date().toISOString(), character: "Tester", current, counts: { done: 0, failed: 0 }, results }));
+  writeStatus();
+  const alive = setInterval(writeStatus, 1000).unref();   // unref: a failed launch (before the try) must not keep the file running
+  const { app, page, errors } = await launch(dataDir);
+  try {
+    await go(page, "#/organize", "#org-plan #org-headline");
+    await page.waitForSelector("#org-run:not([disabled])", { timeout: 15_000 });
+    await page.click("#org-run");
+    const queue = join(bridgeDir, "queue.jsonl");
+    const [line] = await until(() => (existsSync(queue) ? readFileSync(queue, "utf8").trim().split("\n") : []), (l) => l.length === 1, "one queued trip");
+    const cmd = JSON.parse(line!) as { id: string };
+    current = { id: cmd.id, action: "trip" };
+    writeStatus();
+
+    // The reloaded page knows nothing of the trip until the plan names it.
+    await page.reload();
+    await page.locator("#inv-table tbody tr.item").first().waitFor({ state: "attached", timeout: 30_000 });
+    await go(page, "#/organize", "#org-stop");
+    assert.match(await page.locator("#org-status").innerText(), /^Trip 1 running…$/);
+    assert.match(await page.locator("#org-plan").innerText(), /Trip 1 was already running when this page opened[\s\S]*press Run all again to continue\./);
+    assert.ok(await page.locator("#org-run").isDisabled(), "no second trip while the picked-up one runs");
+
+    await page.click("#org-stop");
+    await until(() => existsSync(join(dataDir, "bridge", "stop")), (v) => v, "the stop flag");
+    current = null;
+    results = { [cmd.id]: { ok: true, msg: "trip 1: stopped", t: new Date().toISOString(), partial: false, stopped: true, steps: [] } };
+    writeStatus();
+    await page.waitForSelector("#org-stop", { state: "detached", timeout: 20_000 });
+    assert.match(await page.locator("#org-plan").innerText(), /Trip 1 was stopped\./);
+    assert.deepEqual(errors, []);
+  } finally {
+    clearInterval(alive);
+    await app.close();
+    rmSync(dataDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
+  }
+});
+
 test("[slow] Organize fits a 1000 × 700 window: rows reflow, nothing scrolls sideways, Run and the drawer stay reachable", async (t) => {
   const why = unavailable();
   if (why) return t.skip(why);
@@ -406,7 +491,7 @@ test("[slow] Organize fits a 1000 × 700 window: rows reflow, nothing scrolls si
   mkdirSync(bridgeDir, { recursive: true });
   const writeStatus = (): void => writeFileSync(join(bridgeDir, "status.json"), JSON.stringify({ alive: new Date().toISOString(), character: "Tester", current: null, counts: { done: 0, failed: 0 }, results: {} }));
   writeStatus();
-  const alive = setInterval(writeStatus, 1000);
+  const alive = setInterval(writeStatus, 1000).unref();   // unref: a failed launch (before the try) must not keep the file running
   const { app, page, errors, size } = await launch(dataDir, { width: 1000, height: 700 });
   t.diagnostic(`window ${size.width} × ${size.height}`);
   try {
@@ -459,7 +544,7 @@ test("[slow] a hand-edited organize.json that lost a rule says so, refuses trips
   mkdirSync(bridgeDir, { recursive: true });
   const writeStatus = (): void => writeFileSync(join(bridgeDir, "status.json"), JSON.stringify({ alive: new Date().toISOString(), character: "Tester", current: null, counts: { done: 0, failed: 0 }, results: {} }));
   writeStatus();
-  const alive = setInterval(writeStatus, 1000);
+  const alive = setInterval(writeStatus, 1000).unref();   // unref: a failed launch (before the try) must not keep the file running
   const { app, page, errors } = await launch(dataDir);
   try {
     await go(page, "#/organize", "#org-save-setup");
@@ -474,6 +559,106 @@ test("[slow] a hand-edited organize.json that lost a rule says so, refuses trips
     assert.deepEqual(errors, []);
   } finally {
     clearInterval(alive);
+    await app.close();
+    rmSync(dataDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
+  }
+});
+
+test("[slow] Auto organize: Simple proposes groups for the ticked chests, Accept saves strategy labels and rules, and running it again changes nothing", async (t) => {
+  const why = unavailable();
+  if (why) return t.skip(why);
+  const dataDir = dataDirWith(null);
+  const { app, page, errors } = await launch(dataDir);
+  const ready = '#auto-drawer:not([hidden]) #auto-proposal[aria-busy="false"] #auto-headline';
+  try {
+    // Nothing labelled yet: the empty state offers Auto organize next to Open Containers.
+    await go(page, "#/organize", "#tab-organize .org-empty #org-auto");
+    await page.click("#org-auto");
+    await page.waitForSelector(ready);
+    assert.equal(await page.locator("#auto-containers input[type=checkbox]:checked").count(), 2, "both demo chests are offered and ticked");
+    assert.equal(await page.locator("#auto-containers .auto-scope").innerText(), "Only items in the chests you tick are organized; the rest are left where they are.", "under the chests, what ticking means");
+    assert.ok(await page.locator("#auto-proposal tr[data-group]").count() > 0, "the proposal lists its groups");
+    assert.match(await page.locator("#auto-headline").innerText(), /^Labels 2 containers and writes \d+ rules?\./);
+
+    await page.click("#auto-accept");
+    const saved = await until(() => readOrganize(dataDir), (o) => !!o && Object.keys(o.labels).length === 2, "the accepted setup");
+    assert.deepEqual(Object.values(saved!.labels).map((l) => l.origin), ["strategy:simple", "strategy:simple"]);
+    assert.ok(saved!.rules.length > 0 && saved!.rules.every((r) => r.origin === "strategy:simple"));
+    await page.waitForSelector("#auto-drawer[hidden]", { state: "attached" });
+    await page.waitForSelector("#org-rules .org-rule");
+    assert.ok(await page.locator(".org-rule", { hasText: "Auto" }).count() > 0, "Auto rules carry the badge");
+
+    // Straight away again: the proposal is the setup just saved, so there is nothing to accept.
+    await page.click("#org-auto");
+    await page.waitForSelector(ready);
+    assert.match(await page.locator("#auto-headline").innerText(), /already your setup/);
+    assert.equal(await page.locator("#auto-accept").isDisabled(), true);
+
+    // By build: the gear groups by build, the rest as Simple has them.
+    await page.getByRole("radio", { name: "By build" }).click();
+    await page.waitForFunction(() => document.querySelector("#auto-proposal")?.getAttribute("aria-busy") === "false" && document.querySelector('#auto-strategy [data-value="build"]')?.getAttribute("aria-checked") === "true");
+    const keys = await page.locator("#auto-proposal tr[data-group]").evaluateAll((rows) => rows.map((r) => r.getAttribute("data-group")));
+    assert.ok(keys.some((k) => /^(caster|melee|hybrid|tank|plain)-gear$/.test(k!)) && !keys.includes("armour"), keys.join(", "));
+    // Accepted, its rules carry the build; the rule editor shows it as a token, and removing it makes the rule plain.
+    await page.click("#auto-accept");
+    const built = (await until(() => readOrganize(dataDir), (o) => !!o?.rules.some((r) => r.match.build), "the By build setup"))!.rules.find((r) => r.match.build)!;
+    await page.waitForSelector("#auto-drawer[hidden]", { state: "attached" });
+    await page.locator(`.org-rule[data-rule="${built.id}"]`).getByRole("button", { name: /^Actions for / }).click();
+    await page.getByRole("menuitem", { name: "Edit…" }).click();
+    await page.waitForSelector("#rule-drawer:not([hidden]) #rule-save");
+    const dropBuild = page.getByRole("button", { name: "Remove the build filter" });
+    await dropBuild.click();
+    assert.equal(await dropBuild.count(), 0);
+    await page.click("#rule-save");
+    const edited = await until(() => readOrganize(dataDir), (o) => o?.rules.find((r) => r.id === built.id)?.origin === "manual", "the edited rule");
+    assert.deepEqual(edited!.rules.find((r) => r.id === built.id)!.match, { query: built.match.query });
+    await page.waitForSelector("#rule-drawer[hidden]", { state: "attached" });
+    await page.click("#org-auto");
+    await page.waitForSelector(ready);
+    // Detailed, then one chest unticked: each works the proposal out again. Try Simple goes back when offered.
+    await page.getByRole("radio", { name: "Detailed" }).click();
+    await page.waitForFunction(() => document.querySelector("#auto-proposal")?.getAttribute("aria-busy") === "false" && document.querySelector('#auto-strategy [data-value="detailed"]')?.getAttribute("aria-checked") === "true");
+    await page.locator("#auto-containers input[type=checkbox]").first().uncheck();
+    await page.waitForFunction(() => document.querySelectorAll("#auto-containers input:checked").length === 1 && document.querySelector("#auto-proposal")?.getAttribute("aria-busy") === "false", undefined, { timeout: 10_000 });
+    if (await page.locator("#auto-try-simple").count()) {
+      await page.click("#auto-try-simple");
+      await page.waitForFunction(() => document.querySelector('#auto-strategy [data-value="simple"]')?.getAttribute("aria-checked") === "true");
+    }
+    await page.keyboard.press("Escape");
+    assert.deepEqual(readOrganize(dataDir), edited, "closing without Accept saves nothing");
+    assert.deepEqual(errors, []);
+  } finally {
+    await app.close();
+    rmSync(dataDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
+  }
+});
+
+test("[slow] the Auto organize drawer fits a 1000 × 700 window: nothing scrolls sideways and Accept stays reachable", async (t) => {
+  const why = unavailable();
+  if (why) return t.skip(why);
+  const dataDir = dataDirWith(null);
+  const { app, page, errors, size } = await launch(dataDir, { width: 1000, height: 700 });
+  t.diagnostic(`window ${size.width} × ${size.height}`);
+  try {
+    await go(page, "#/organize", "#org-auto");
+    await page.click("#org-auto");
+    await page.waitForSelector('#auto-drawer:not([hidden]) #auto-proposal[aria-busy="false"] #auto-headline');
+    // The drawer slides in: measure it once the slide has finished.
+    await page.waitForFunction(() => document.querySelector("#auto-drawer .drawer")!.getAnimations().length === 0);
+    const fit = await page.evaluate(() => {
+      const b = document.querySelector("#auto-drawer .drawer-body") as HTMLElement;
+      const d = document.querySelector("#auto-drawer .drawer")!.getBoundingClientRect();
+      const rows = [...document.querySelectorAll<HTMLElement>("#auto-drawer .auto-cand, #auto-drawer .auto-status")].filter((r) => r.scrollWidth > r.clientWidth + 1).map((r) => r.className);
+      return { sideways: b.scrollWidth - b.clientWidth, left: d.left, right: d.right, rows };
+    });
+    assert.equal(fit.sideways, 0, "the drawer body does not scroll sideways");
+    assert.deepEqual(fit.rows, [], "no row is wider than the drawer");
+    assert.ok(fit.left >= 0 && fit.right <= size.width + 1, "the drawer fits the window");
+    await page.locator("#auto-accept").scrollIntoViewIfNeeded();
+    assert.ok(await page.locator("#auto-accept").isVisible());
+    await page.keyboard.press("Escape");
+    assert.deepEqual(errors, []);
+  } finally {
     await app.close();
     rmSync(dataDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
   }
