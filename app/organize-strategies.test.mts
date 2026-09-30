@@ -208,7 +208,8 @@ test("[fast] assignGroups: when chests run short, a family's small groups share 
   assert.deepEqual(Object.fromEntries(out.room), { rings: 10, ingots: 2, necklaces: 2, boards: 1, earrings: 1 }, "a sharer is given its own items' room");
   assert.deepEqual(Object.fromEntries(assignGroups(groups, rooms(9, 10)).chains), { rings: [1], ingots: [2], necklaces: [3], boards: [4], earrings: [5] }, "enough chests: nobody shares");
   const spill = assignGroups([{ key: "a", family: "f", site: 0, need: 6 }, { key: "b", family: "f", site: 0, need: 5 }, { key: "c", family: "f", site: 0, need: 3 }, { key: "x", family: "g", site: 0, need: 9 }], rooms(2, 10));
-  assert.deepEqual(Object.fromEntries(spill.chains), { x: [1], a: [2], b: [], c: [2] }, "first fit: B finds no room left and no free chest; C still fits");
+  assert.deepEqual([Object.fromEntries(spill.chains), Object.fromEntries(spill.room)], [{ x: [1], a: [2], b: [2], c: [2] }, { x: 10, a: 6, c: 3, b: 1 }],
+    "first fit: B does not fit and finds no free chest; C still fits, and B then takes the room left");
   const none = assignGroups([{ key: "a", family: "f", site: 0, need: 12 }, { key: "b", family: "f", site: 0, need: 5 }, { key: "x", family: "g", site: 0, need: 20 }], rooms(2, 10));
   assert.deepEqual([Object.fromEntries(none.chains), Object.fromEntries(none.room)], [{ x: [1], a: [2], b: [] }, { x: 10, a: 10, b: 0 }]);
 });

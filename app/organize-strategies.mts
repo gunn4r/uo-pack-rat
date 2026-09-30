@@ -151,7 +151,8 @@ const byNeed = (a: GroupNeed, b: GroupNeed): number => b.need - a.need || (a.key
 // Shared chests (issue #123), first fit decreasing within a family: a sharer goes into the first chest its family
 // opened that still has room for all of it, else opens the next free chest (its earlier rule's chests first, then the
 // one holding most of its family's items, then more room, then the lower serial), more until it fits, leaving one
-// free chest for each family still to open one (it always gets one while any is free). A group that finds none gets
+// free chest for each family still to open one (it always gets one while any is free). A sharer that finds no free
+// chest then takes what room its family's chests have left (the most first), and one whose family has none left gets
 // an empty chain. Nothing here depends on the order the groups or chests come in.
 export function assignGroups(groups: readonly GroupNeed[], offers: readonly Offer[]): Assignment {
   const taken = new Set<number>();
@@ -219,6 +220,15 @@ export function assignGroups(groups: readonly GroupNeed[], offers: readonly Offe
     chains.set(g.key, chain);
     room.set(g.key, Math.min(g.need, cover));
   });
+  for (const g of sharers) {
+    if (chains.get(g.key)!.length) continue;
+    const c = (open.get(`${g.site}\u0000${familyOf(g)}`) ?? []).filter((c) => c.left > 0).sort((a, b) => b.left - a.left)[0];
+    if (!c) continue;
+    const n = Math.min(g.need, c.left);
+    c.left -= n;
+    chains.set(g.key, [c.serial]);
+    room.set(g.key, n);
+  }
   return { chains, room };
 }
 
