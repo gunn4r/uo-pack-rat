@@ -369,6 +369,30 @@ class TazUOBridge(BridgeCase, unittest.TestCase):
         self.assertIn(SPARE, self.opened(w))
         self.assertEqual(self.moves(w), [(SPARE, PACK), (SPARE, DEST)])
 
+    def test_a_bag_whose_contents_arrive_after_its_window_opens_is_never_taken(self):
+        w = trip_home()
+        w.contents_lag = 0.7         # after the first empty read (0.6 s after Opened), before the second (0.9 s)
+        final, _ = self.run_bridge(w, 1, [self.trip("t1", takes=[(BAG, [CHEST])], puts=[(BAG, [DEST])])])
+        self.assertEqual(self.steps(final, "t1"), [("take", BAG, False), ("put", BAG, False)])
+        self.assertIn("not empty", final["results"]["t1"]["steps"][0]["msg"])
+        self.assertEqual(self.moves(w), [])
+
+    def test_a_bag_is_never_taken_when_its_contents_read_nothing_at_all_or_its_tooltip_counts_items(self):
+        for kw in ({"items_in_none": True}, {"tooltip": "Bag\nContents: 2/125 Items, 2 Stones"}):
+            w = trip_home()
+            w.add(SPARE, CHEST, name="Bag", OnGround=False, Tooltip=kw.get("tooltip"))
+            w.items_in_none = kw.get("items_in_none", False)
+            final, _ = self.run_bridge(w, 1, [self.trip("t1", takes=[(SPARE, [CHEST])], puts=[(SPARE, [DEST])])])
+            self.assertEqual(self.steps(final, "t1"), [("take", SPARE, False), ("put", SPARE, False)], kw)
+            self.assertIn("not empty", final["results"]["t1"]["steps"][0]["msg"], kw)
+            self.assertEqual(self.moves(w), [], kw)
+
+    def test_trip_bags_is_a_capability_not_an_action(self):
+        w = trip_home()
+        final, _ = self.run_bridge(w, 1, [self.cmd("c1", "trip-bags", AMULET, [CHEST, BAG])])
+        self.assertEqual((final["results"]["c1"]["ok"], final["results"]["c1"]["msg"]), (False, "unknown action"))
+        self.assertEqual(self.opened(w), [])
+
     def test_a_bag_with_anything_in_it_is_never_taken(self):
         w = trip_home()
         final, _ = self.run_bridge(w, 1, [self.trip("t1", takes=[(BAG, [CHEST])], puts=[(BAG, [DEST])])])

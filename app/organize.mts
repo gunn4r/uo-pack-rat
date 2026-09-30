@@ -5,7 +5,7 @@
 import { matchesItem } from "./item-query.mts";
 import { parseStamp } from "./scan-schema.mts";
 import { CATCH_ALL_ID, EMPTY_BAGS_ID, type Build, type OrganizeConfig, type RuleMatch } from "./organize-config.mts";
-import { RESIST_KEYS, spellSchoolOf, TRASH_RE, type ContainerCapacity, type Inventory, type Item } from "./vault-lib.mts";
+import { RESIST_KEYS, spellSchoolOf, TRASH_RE, type Character, type ContainerCapacity, type Inventory, type Item } from "./vault-lib.mts";
 import type { RulesV1RarityItem } from "./schema/types.d.mts";
 import type { TripInput } from "./bridge-trip.mts";
 
@@ -426,6 +426,8 @@ export interface PlanOptions extends ScopeOptions {
 export const TRIP_DEFAULTS = { items: 20, stones: 150, bytes: 12 * 1024 } as const;
 // A target past this share of its item or stone cap after the plan is warned about (issue #128).
 export const NEARLY_FULL = 0.9;
+// The bridge capability that says its trips take a container only once it has read it empty (issue #128).
+export const BAG_TAKES = "trip-bags";
 
 interface Want { it: Item; ruleId: string; alsoMatched: string[]; chain: number[]; from: number | null }
 interface Limits { items: number; stones: number; bytes: number }
@@ -545,8 +547,13 @@ export function planOrganize(inv: Inventory, cfg: OrganizeConfig, overlay: Overl
   const candidates = [...new Set([...scope.movable, ...[...carried].filter((s) => view.items[s] && !pinnedItems.has(s))])].sort(bySerial);
   // Empty bags go to the gather container like one rule's items (issue #128); so does a bag a trip took and did
   // not put away. Without a gather container they stay where they are.
+  // Only a bridge that checks live that a bag is empty before lifting it is sent one: the newest scan's scripts
+  // (installed with the bridge) must declare "trip-bags", else the bags stay put with a warning to reinstall.
   const bags = emptyBagsOf(view, placed.counts, cfg, scope.roots, opts.blacklist);
-  const bagClaim: Claim | null = gather != null ? { ruleId: EMPTY_BAGS_ID, alsoMatched: [] } : null;
+  const newest = Object.values(view.characters).reduce<Character | null>((b, c) => (!b || stampMs(c.scannedAt) > stampMs(b.scannedAt) ? c : b), null);
+  const bagTakes = !!newest?.adapter?.capabilities.bridge.includes(BAG_TAKES);
+  if (gather != null && !bagTakes && bags.length) warnings.push({ kind: "old-scripts", serial: gather, detail: "empty bags are not gathered here until you reinstall the TazUO scripts from Settings and rescan: the installed bridge does not check that a bag is empty before taking it" });
+  const bagClaim: Claim | null = gather != null && bagTakes ? { ruleId: EMPTY_BAGS_ID, alsoMatched: [] } : null;
   const claims: [number, Claim | null][] = candidates.map((s) => [s, view.containers[s] && bagClaim ? bagClaim : claimOf(view.items[s]!, cfg, rarity)]);
   if (bagClaim) claims.push(...bags.map((b): [number, Claim] => [b.serial, bagClaim]));
   for (const [serial, claim] of claims) {
@@ -600,15 +607,17 @@ export function planOrganize(inv: Inventory, cfg: OrganizeConfig, overlay: Overl
     for (const w of packed.noRoom) report.get(w.ruleId)!.noRoom++;
   }
   for (const m of moves) report.get(m.ruleId)!.toMove++;
-  // Issue #128: a target over NEARLY_FULL of its item or stone cap once the plan has run, with no later target of
-  // the same rule under it to take the overflow, is warned about before the next loot fills it; the empty bags
-  // left in it are counted, since gathering them frees their slots.
+  // Issue #128: a target that is, or sits in, a container over NEARLY_FULL of its item or stone cap once the plan
+  // has run, with no later target of the same rule under it to take the overflow, is warned about before the next
+  // loot fills it, on that container (a bag target in a 95% chest names the chest); the empty bags left in it are
+  // counted, since gathering them frees their slots.
   const moved = new Set(moves.map((m) => m.serial));
-  const over = (t: number): boolean => { const c = sim.counts.get(t); return !!c && (c.items > NEARLY_FULL * c.maxItems || (c.maxStones != null && (c.stones ?? 0) > NEARLY_FULL * c.maxStones)); };
+  const full = (s: number): boolean => { const c = sim.counts.get(s); return !!c && (c.items > NEARLY_FULL * c.maxItems || (c.maxStones != null && (c.stones ?? 0) > NEARLY_FULL * c.maxStones)); };
+  const hot = (t: number): number | undefined => ancestry(view, t)?.find(full);
   const fillers = new Map<number, string[]>();
   for (const [id, targets] of chains) {
     const usable = targets.filter((t) => scope.usable.has(t));
-    for (let i = usable.length - 1; i >= 0 && over(usable[i]!); i--) fillers.set(usable[i]!, [...(fillers.get(usable[i]!) ?? []), id]);
+    for (let i = usable.length - 1, h; i >= 0 && (h = hot(usable[i]!)) != null; i--) fillers.set(h, [...new Set([...(fillers.get(h) ?? []), id])]);
   }
   for (const [t, by] of fillers) {
     const c = sim.counts.get(t)!, who = [...new Set(by.map(nameOf))];

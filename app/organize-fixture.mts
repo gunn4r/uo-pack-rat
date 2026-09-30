@@ -22,7 +22,8 @@ export interface BoxSpec {
 }
 export interface ThingSpec { serial: number; name: string; in: number; amount?: number | undefined; hue?: number | undefined; graphic?: number | undefined; weight?: number | undefined; lines?: string[] | undefined }
 
-export function houseScan({ character = "Tester", scannedAt = AT, boxes, things = [] }: { character?: string; scannedAt?: string; boxes: BoxSpec[]; things?: ThingSpec[] }): ScanV2 {
+// `bridge`: the scripts' declared bridge capabilities (TazUO's today by default; a shorter list stands for older scripts).
+export function houseScan({ character = "Tester", scannedAt = AT, boxes, things = [], bridge = ["highlight", "grab", "goto", "trip", "trip-bags"] }: { character?: string; scannedAt?: string; boxes: BoxSpec[]; things?: ThingSpec[]; bridge?: string[] }): ScanV2 {
   const byId = new Map(boxes.map((b) => [b.serial, b]));
   const chainOf = (serial: number): number[] => {
     const out: number[] = [];
@@ -52,7 +53,7 @@ export function houseScan({ character = "Tester", scannedAt = AT, boxes, things 
   const doc = {
     schemaVersion: 2, character, scannedAt, stats: {},
     adapter: { id: "tazuo", version: "2.9.0", client: "TazUO", clientVersion: null,
-      capabilities: { layers: [], arms: true, bank: true, ground: true, nested: true, tooltips: "opl", bridge: [] } },
+      capabilities: { layers: [], arms: true, bank: true, ground: true, nested: true, tooltips: "opl", bridge } },
     roots: boxes.filter((b) => b.parent == null).map((b) => ({ serial: b.serial, kind: b.kind ?? "ground", name: b.name ?? `Box ${b.serial}`, opened: true })),
     containers,
     items: things.map((t) => ({

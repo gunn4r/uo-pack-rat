@@ -12,6 +12,6 @@
     "ground": true,
     "nested": true,
     "tooltips": "opl",
-    "bridge": ["highlight", "grab", "goto", "trip"]
+    "bridge": ["highlight", "grab", "goto", "trip", "trip-bags"]
   }
 }

@@ -284,12 +284,14 @@ export function warningGroups(warnings: readonly PlanWarning[], nameOf: (serial:
   return [...by].map(([kind, ws]) => ({ kind, title: ws.length > 1 ? `${WARNING_TITLES[kind]} (${ws.length})` : WARNING_TITLES[kind], text: ws.map((w) => `${nameOf(w.serial)}: ${w.detail.replace(STAMP, "$1")}`).join(" · ") }));
 }
 // The empty bags in labelled containers (issue #128), each still taking one of its container's item slots: how
-// many, a few by name and place, and what gathering them does. Null when there are none.
-export function emptyBagsNote(plan: Pick<OrganizePlan, "emptyBags">, gathering: boolean, nameOf: (serial: number) => string): { title: string; text: string } | null {
+// many, a few by name and place, and what gathering them does (`picked`: a container is set for Empty bags). Null
+// when there are none.
+export function emptyBagsNote(plan: Pick<OrganizePlan, "emptyBags" | "moves">, picked: boolean, nameOf: (serial: number) => string): { title: string; text: string } | null {
   const bags = plan.emptyBags, k = bags.length;
   if (!k) return null;
   const some = bags.slice(0, 5).map((b) => `${b.name} (in ${nameOf(b.container)})`).join(", ") + (k > 5 ? ` and ${k - 5} more` : "");
-  const what = gathering ? `The trips below gather ${k === 1 ? "it" : "them"} into the container picked for Empty bags under Rules.` : "To free those slots, pick a container for Empty bags under Rules, and the plan gathers them there.";
+  const what = plan.moves.some((m) => m.ruleId === EMPTY_BAGS_ID) ? "The trips below gather them into the container picked for Empty bags under Rules."
+    : picked ? "They are not being gathered yet: the reports above say why." : "To free those slots, pick a container for Empty bags under Rules, and the plan gathers them there.";
   return { title: `${plural(k, "empty bag")} in your labelled containers`, text: `${some}. Each takes one of its container's item slots. ${what}` };
 }
 // One row per trip for the collapsed trip list; its moves go into a table only when the row is opened.

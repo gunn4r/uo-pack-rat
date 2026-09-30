@@ -284,11 +284,13 @@ test("[fast] warnings are grouped by kind with each container named by its label
 test("[fast] the empty bags note counts them, names a few with their place, and says how to gather them (issue #128)", () => {
   assert.equal(emptyBagsNote(PLAN, false, nameOf), null);
   const bags = Array.from({ length: 7 }, (_, i) => ({ serial: 0x42000000 + i, name: i ? "Bag" : "Weapons", container: i % 2 ? C : A }));
-  assert.deepEqual(emptyBagsNote({ emptyBags: bags }, false, nameOf), {
+  assert.deepEqual(emptyBagsNote({ emptyBags: bags, moves: [] }, false, nameOf), {
     title: "7 empty bags in your labelled containers",
     text: "Weapons (in Reagents), Bag (in Gems), Bag (in Reagents), Bag (in Gems), Bag (in Reagents) and 2 more. Each takes one of its container's item slots. To free those slots, pick a container for Empty bags under Rules, and the plan gathers them there.",
   });
-  assert.equal(emptyBagsNote({ emptyBags: bags.slice(0, 1) }, true, nameOf)!.text, "Weapons (in Reagents). Each takes one of its container's item slots. The trips below gather it into the container picked for Empty bags under Rules.");
+  const one = bags.slice(0, 1);
+  assert.equal(emptyBagsNote({ emptyBags: one, moves: [move(one[0]!.serial, "Weapons", A, C, EMPTY_BAGS_ID, 1)] }, true, nameOf)!.text, "Weapons (in Reagents). Each takes one of its container's item slots. The trips below gather them into the container picked for Empty bags under Rules.");
+  assert.match(emptyBagsNote({ emptyBags: one, moves: [] }, true, nameOf)!.text, /not being gathered yet: the reports above say why\.$/, "picked, but no bag moves (old scripts, no room)");
 });
 
 test("[fast] tripRows sums each trip in one line and keeps its moves for the table", () => {

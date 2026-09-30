@@ -535,6 +535,10 @@ test("[fast] the plan lists empty bags, and with a gather container moves them t
   const after = planOrganize(inv, cfg, [step(BAG, "Weapons", A, C)], { now: NOW });
   assert.deepEqual([after.moves, after.emptyBags], [[], []], "a gathered bag is in place and no longer listed");
   assert.equal(after.rules.at(-1)!.inPlace, 1);
+  const old = foldSnapshots([houseScan({ boxes: [{ serial: A }, { serial: BAG, parent: A, name: "Weapons" }, { serial: C, pos: at(106) }], bridge: ["highlight", "grab", "goto", "trip"] })]);
+  const stale = planOrganize(old, cfg, [], { now: NOW });
+  assert.deepEqual([stale.moves, stale.emptyBags.length], [[], 1], "scripts whose bridge does not declare trip-bags are never sent a bag");
+  assert.deepEqual(stale.warnings.map((w) => [w.kind, w.serial]), [["old-scripts", C]]);
 });
 
 test("[fast] a target past 90% after the plan, with no later target to overflow into, is warned about, empty bags counted", () => {
@@ -547,4 +551,7 @@ test("[fast] a target past 90% after the plan, with no later target to overflow 
   assert.deepEqual(overflow.warnings.filter((w) => w.kind === "nearly-full"), [], "C still takes the overflow");
   const gathered = planOrganize(inv, config({ labels: labels(A, B, C), rules: [reagents([A])], emptyBagsTo: C }), [], { now: NOW });
   assert.deepEqual(gathered.warnings.filter((w) => w.kind === "nearly-full"), [], "gathering the bag out leaves it at 9/10, not past 90%");
+  const nested = fold([{ serial: A, max: 10 }, { serial: POUCH, parent: A }, { serial: B, pos: at(104) }], [...pearls(8, A), { serial: ASH, name: "Sulfurous Ash", in: B }]);
+  assert.deepEqual(planOrganize(nested, config({ labels: labels(A, POUCH, B), rules: [reagents([POUCH])] }), [], { now: NOW }).warnings.filter((w) => w.kind === "nearly-full").map((w) => w.serial), [A],
+    "a bag target in a chest past 90% names the chest");
 });

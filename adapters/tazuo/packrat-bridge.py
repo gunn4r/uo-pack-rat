@@ -84,8 +84,11 @@ CAPABILITIES = {
                "Ring", "Talisman", "Necklace", "Waist", "Torso", "Bracelet", "Tunic",
                "Earrings", "Arms", "Cloak", "Robe", "Skirt", "Legs"],
     "arms": True, "bank": True, "ground": True, "nested": True, "tooltips": "opl",
-    "bridge": ["highlight", "grab", "goto", "trip"],
+    "bridge": ["highlight", "grab", "goto", "trip", "trip-bags"],
 }
+# The actions a queue line may name. "trip-bags" is not one: it tells the app this bridge's trips check a bag
+# is empty before taking it (issue #128), so an older bridge is never sent one.
+ACTIONS = [a for a in CAPABILITIES["bridge"] if a != "trip-bags"]
 
 
 BRIDGE_DIR = os.path.join(data_dir(), "bridge", "tazuo")
@@ -103,6 +106,8 @@ OPEN_FLOOR_S = 0.6        # ...and the least: the server refuses a use or lift w
 OPEN_POLL_S = 0.05        # how often it looks whether the window opened
 MOVE_WAIT_S = 1.5         # a trip's move that has not landed by then bounced
 MOVE_POLL_S = 0.05        # how often a trip looks whether its move landed
+EMPTY_RECHECK_S = 0.3     # between the two reads that must both find a bag empty before a trip takes it
+CONTENTS_RE = re.compile(r"contents:\s*(\d+)", re.I)   # a container tooltip's "Contents: 3/125 Items, ..." line
 MOVE_GAP_S = 0.35         # least time between two of a trip's moves, in case the shard throttles drag and drop
 STATUS_EVERY_S = 2.0      # heartbeat: the app calls the bridge offline once `alive` is 8 s old
 HIGHLIGHT_S = 8
@@ -892,6 +897,30 @@ def trip_move(serial, dest, landed, *spot):
     return it
 
 
+def bag_is_empty(serial):
+    """Whether an opened bag holds nothing, on every sign the client gives. Opened comes with the server's
+    open-container packet and the contents packet follows it, so the contents are read only after another
+    OPEN_FLOOR_S, twice EMPTY_RECHECK_S apart, and a read that answers nothing at all (None, or a failed
+    call) counts as not empty. A tooltip Contents line, when the bag has one, must read 0 items too."""
+    if not bool(getattr(find(serial), "Opened", False)):
+        return False
+    API.Pause(OPEN_FLOOR_S)
+    for i in range(2):
+        if i:
+            API.Pause(EMPTY_RECHECK_S)
+        try:
+            kids = API.ItemsInContainer(int(serial), False)
+            if kids is None or len(list(kids)):
+                return False
+        except Exception:
+            return False
+    for ln in tooltip_lines(serial):
+        m = CONTENTS_RE.search(ln)
+        if m and int(m.group(1)) != 0:
+            return False
+    return True
+
+
 def do_take(t, roots, blacklist):
     """One take: the grab path, but dropped at an explicit spot in the backpack. Returns (ok, msg, full),
     full meaning the backpack or the character cannot take it, which ends the trip's takes."""
@@ -918,12 +947,12 @@ def do_take(t, roots, blacklist):
         return False, f"refused: {name} is not inside the container the plan named — rescan", False
     # A container is taken only when it is empty (Organize gathering empty bags, issue #128), read live: it
     # is opened like the chain above it (a bag's contents reach the client only once it opens, so an unopened
-    # one proves nothing), and must then read open and hold nothing.
+    # one proves nothing), and must then pass bag_is_empty.
     if is_container(it, str(getattr(it, "Name", "") or "")):
         ok, msg = open_chain(chain + [serial], own=set(), opened=trip_opened)
         if not ok:
             return False, msg, False
-        if not bool(getattr(find(serial), "Opened", False)) or (API.ItemsInContainer(serial, False) or []):
+        if not bag_is_empty(serial):
             return False, f"refused: {name} did not open or is not empty — Pack Rat only moves empty bags", False
     pack = int(API.Backpack)
     if not room_for(it, pack):
@@ -1049,7 +1078,7 @@ def do_trip(cmd):
 
 def run(cmd):
     action = cmd["action"]
-    if action not in CAPABILITIES["bridge"]:
+    if action not in ACTIONS:
         return False, "unknown action"
     if action == "trip":
         return do_trip(cmd)
@@ -1121,7 +1150,7 @@ def main():
                         except Exception:
                             bad += 1
                             continue
-                        cmd, why = check_line(parsed, CAPABILITIES["bridge"], time.time())
+                        cmd, why = check_line(parsed, ACTIONS, time.time())
                         cid = parsed.get("id") if isinstance(parsed, dict) else None
                         if not isinstance(cid, str) or not cid or len(cid) > MAX_ID:
                             bad += 1                     # no id the page could match a result to

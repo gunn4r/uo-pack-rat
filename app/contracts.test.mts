@@ -65,6 +65,12 @@ for (const name of adapterDirs) {
         assert.ok(validate(TRIP_SCHEMA.properties!.action!, action).ok, "trip is not bridge-trip.v1.schema.json's action");
         continue;
       }
+      // trip-bags is a flag, not a command (issue #128): its trips take a bag only once they have read it empty.
+      // The planner reads it off the newest scan; the bridge refuses it as an action.
+      if (action === "trip-bags") {
+        assert.ok(declared.includes("trip"), "trip-bags without trip");
+        continue;
+      }
       assert.ok(ALL_BRIDGE_ACTIONS.includes(action), `unknown bridge action ${JSON.stringify(action)} — app/ui/bridge.mts renders no button for it, so nothing would ever queue it`);
       assert.ok(validate(BRIDGE_SCHEMA.command.properties!.action!, action).ok, `${action} is not in bridge.v1.schema.json's action enum`);
     }
