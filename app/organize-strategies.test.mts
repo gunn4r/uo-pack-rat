@@ -107,12 +107,12 @@ const SCROLLS: ThingSpec[] = ([
   ["Word Of Death", 0x2D5B], ["Remove Curse", 0], ["Confidence", 0], ["Healing Stone", 0x4078],
 ] as const).map(([name, graphic], i) => ({ serial: ITEM + 100 + i, name, graphic, in: A }));
 
-test("[fast] Simple: skill scrolls apart from spell scrolls (a Chivalry or Bushido name with no graphic among them), blank scrolls with the resources, and a conjured Healing Stone is no scroll (issue #134)", () => {
+test("[fast] Simple: skill scrolls apart from spell scrolls (a Chivalry or Bushido name with no graphic among them), blank scrolls with the resources, and a conjured Healing Stone is no scroll (issue #134) but a tool (issue #150)", () => {
   assert.deepEqual(groupItems(STRATEGIES.simple, Object.values(fold([{ serial: A }], SCROLLS).items)).map((g) => [g.key, g.name, g.items.map((it) => it.name)]), [
     ["skill-scrolls", "Skill scrolls", ["A Legendary Scroll Of Fencing (120 Skill)", "Scroll Of Transcendence", "Scroll Of Alacrity", "Scroll Binder", "A Wondrous Scroll Of Power (+5 Maximum Stats)"]],
     ["scrolls", "Spell scrolls", ["Curse", "Curse Weapon", "Healing Stone", "Word Of Death", "Remove Curse", "Confidence"]],
     ["resources", "Resources", ["Blank Scroll"]],
-    ["other", "Other", ["Healing Stone"]],
+    ["tools", "Tools", ["Healing Stone"]],
   ]);
 });
 
@@ -127,7 +127,7 @@ test("[fast] Detailed: spell scrolls by school, by exact name on the school's gr
     ["spellweaving-scrolls", "Spellweaving scrolls", ["Word Of Death"]],
     ["scrolls", "Spell scrolls", ["Remove Curse", "Confidence"]],
     ["resources", "Other resources", ["Blank Scroll"]],
-    ["other", "Other", ["Healing Stone"]],
+    ["tools", "Tools", ["Healing Stone"]],
   ]);
 });
 
@@ -166,8 +166,21 @@ test("[fast] Simple and By build: refinements are Resources by the group's secon
   const rules = ok(proposeOrganize(inv, emptyOrganizeConfig(), [], OPTS())).config.rules;
   assert.deepEqual(rules.filter((r) => /resources|tools/.test(r.id)).map((r) => [r.id, r.match]), [
     ["auto-resources", { query: { ...emptyRuleQuery(), kind: ["resource"] } }], ["auto-resources-2", { query: { ...emptyRuleQuery(), kind: ["refinement"] } }],
-    ["auto-tools", { query: { ...emptyRuleQuery(), kind: ["tool"] } }],
+    ["auto-tools", { query: { ...emptyRuleQuery(), kind: ["tool"] } }], ["auto-tools-2", { query: { ...emptyRuleQuery(), kind: ["crafting"] } }],
   ]);
+});
+
+test("[fast] every strategy files decor and quest and event items in groups of one family; crafting tools are Tools by a second rule in Simple and By build, their own group in Detailed (issue #150)", () => {
+  const names = ["Ethereal Horse Statuette", "Mysterious Fragment", "Smith's Hammer", "Scissors", "Drum", "Apple"];
+  const items = Object.values(fold([{ serial: A }], things(A, names)).items);
+  const decor = [["decor", "Decor", "decor", ["Ethereal Horse Statuette"]], ["quest", "Quest & event items", "decor", ["Mysterious Fragment"]], ["other", "Other", "other", ["Apple"]]];
+  const of = (id: keyof typeof STRATEGIES) => groupItems(STRATEGIES[id], items).map((g) => [g.key, g.name, g.family, g.items.map((it) => it.name)]);
+  for (const id of ["simple", "build"] as const) assert.deepEqual(of(id), [["tools", "Tools", "tools", ["Smith's Hammer", "Scissors", "Drum"]], ...decor], id);
+  assert.deepEqual(of("detailed"), [["instruments", "Instruments", "tools", ["Drum"]], ["crafting-tools", "Crafting tools", "tools", ["Smith's Hammer"]], ["tools", "Tools", "tools", ["Scissors"]], ...decor]);
+  // Tools' first rule keeps its id and filter, so a setup an earlier proposal saved still matches it.
+  const inv = fold([{ serial: A }, { serial: B, pos: at(102) }, { serial: C, pos: at(104) }], things(A, names));
+  const rules = ok(proposeOrganize(inv, emptyOrganizeConfig(), [], OPTS())).config.rules;
+  assert.deepEqual(rules.filter((r) => /tools|decor|quest/.test(r.id)).map((r) => [r.id, r.match.query.kind]), [["auto-tools", ["tool"]], ["auto-tools-2", ["crafting"]], ["auto-decor", ["decor"]], ["auto-quest", ["quest"]]]);
 });
 
 test("[fast] Simple and Detailed: neck armour goes with the armour, necklaces with the jewelry", () => {
