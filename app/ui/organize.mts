@@ -1,9 +1,9 @@
 // ui/organize.mts — the Organize screen (#/organize, issue #11, spec §3): the Rules card (ordered rules with a
 // drag handle, a one-line filter summary, the target chain with each container's fill, the plan's counts, the
-// catch-all) and the Plan card (room, cross-site and warnings first, then the trip list and Run trip / Run all /
-// Stop). The words and every decision come from ui/organize-model.mts; this file draws them and talks to the
-// server (GET /api/organize/plan, POST /api/organize/trip, POST /api/bridge/stop; saves go through
-// ui/organize-data.mts). The rule editor drawer is ui/rule-editor.mts, Auto organize's ui/auto-organize.mts;
+// catch-all, where empty bags are gathered) and the Plan card (room, cross-site, warnings and empty bags first,
+// then the trip list and Run trip / Run all / Stop). The words and every decision come from ui/organize-model.mts;
+// this file draws them and talks to the server (GET /api/organize/plan, POST /api/organize/trip, POST
+// /api/bridge/stop; saves go through ui/organize-data.mts). The rule editor drawer is ui/rule-editor.mts, Auto organize's ui/auto-organize.mts;
 // Containers' Label… is ui/containers.mts.
 import { state, bridge } from "./store.mts";
 import { $, el, toast, compactChildren } from "./dom.mts";
@@ -16,7 +16,7 @@ import { filterContext } from "./inventory.mts";
 import { loadOrganize, refreshPlaces, saveConfig } from "./organize-data.mts";
 import { targetChip, deleteRule, openRuleEditor } from "./rule-editor.mts";
 import { openAutoOrganize } from "./auto-organize.mts";
-import { CATCH_ALL_ID, organizeStage, moveRule, matchSummary, targetView, targetOptions, ruleCountParts, ruleNameOf, containerNameOf, planHeadline, unclaimedNote, roomLines, crossSiteLines, warningGroups, tripRows, moveName, moveWhere, tripGate, carriedView, pinnedWith, stepWatch, failedSteps, outcomeText, runAllNext, tripRefusal, adoptWatch, resumedNote, type TripRow, type TripWatch, type FailedStep } from "./organize-model.mts";
+import { CATCH_ALL_ID, EMPTY_BAGS_ID, emptyBagsNote, organizeStage, moveRule, matchSummary, targetView, targetOptions, ruleCountParts, ruleNameOf, containerNameOf, planHeadline, unclaimedNote, roomLines, crossSiteLines, warningGroups, tripRows, moveName, moveWhere, tripGate, carriedView, pinnedWith, stepWatch, failedSteps, outcomeText, runAllNext, tripRefusal, adoptWatch, resumedNote, type TripRow, type TripWatch, type FailedStep } from "./organize-model.mts";
 import type { BridgeStatusApiResponse, OrganizeConfig, OrganizePlan, OrganizePlanApiResponse, OrganizeRunningTrip, OrganizeRule, OrganizeTripApiResponse, PlanRuleReport } from "./api-types.mts";
 
 const body = (): HTMLElement => $<HTMLElement>("#org-body")!;
@@ -95,7 +95,9 @@ function rulesCard(cfg: OrganizeConfig): HTMLElement {
     : box("div", { class: "empty-state" }, el("h3", { class: "t-lg" }, "No rules yet"), el("p", { class: "muted" }, "A rule says which items go where: reagents into the reagent chest, rings into the jewellery box. Start from a preset."));
   return card({ title: "Rules", actions: [auto, add], attrs: { id: "org-rules" }, body: [
     txt("Each item goes to the first rule it matches. Put narrow rules above broad ones.", "t-sm muted"),
-    list, catchAllRow(cfg, report.get(CATCH_ALL_ID)),
+    list,
+    pickRow(cfg, "catchAll", CATCH_ALL_ID, "Everything no rule takes", "Stays where it is", report.get(CATCH_ALL_ID)),
+    pickRow(cfg, "emptyBagsTo", EMPTY_BAGS_ID, "Empty bags", "Stay where they are", report.get(EMPTY_BAGS_ID)),
     el("div", { class: "sr", id: "org-live", "aria-live": "polite" }),
   ] });
 }
@@ -134,10 +136,12 @@ function countsEl(rep: PlanRuleReport | undefined): HTMLElement {
   if (!rep) return box("span", { class: "org-counts" }, txt(state.organize.plan ? "" : "…", "t-sm muted"));
   return box("span", { class: "org-counts" }, ...ruleCountParts(rep).map((p) => (p.warn ? badge(p.text, "warn") : txt(p.text, "t-sm muted"))));
 }
-function catchAllRow(cfg: OrganizeConfig, rep: PlanRuleReport | undefined): HTMLElement {
-  const s = select([{ value: "", label: "Stays where it is" }, ...targetOptions(cfg, containers(), [], { bags: false })], cfg.catchAll == null ? "" : String(cfg.catchAll), { size: "sm", attrs: { id: "org-catchall" } });
-  s.addEventListener("change", () => { void saveConfig({ ...cfg, catchAll: s.value ? +s.value : null }).then((err) => { if (err) { s.value = cfg.catchAll == null ? "" : String(cfg.catchAll); toastBad(err); } }); });
-  return box("div", { class: "org-catchall", "data-rule": CATCH_ALL_ID }, el("label", { for: "org-catchall", class: "t-sm strong" }, "Everything no rule takes"), s, countsEl(rep));
+// The catch-all, and the container empty bags are gathered into (issue #128): each one labelled container or none.
+function pickRow(cfg: OrganizeConfig, key: "catchAll" | "emptyBagsTo", id: string, label: string, none: string, rep: PlanRuleReport | undefined): HTMLElement {
+  const now = cfg[key] ?? null, domId = `org-${id.replace("-", "")}`;
+  const s = select([{ value: "", label: none }, ...targetOptions(cfg, containers(), [], { bags: false })], now == null ? "" : String(now), { size: "sm", attrs: { id: domId } });
+  s.addEventListener("change", () => { void saveConfig({ ...cfg, [key]: s.value ? +s.value : null }).then((err) => { if (err) { s.value = now == null ? "" : String(now); toastBad(err); } }); });
+  return box("div", { class: "org-catchall", "data-rule": id }, el("label", { for: domId, class: "t-sm strong" }, label), s, countsEl(rep));
 }
 // Drag by the handle: the row is draggable only while its handle is held, so text in a row stays selectable.
 function wireDrag(row: HTMLElement, handle: HTMLElement, i: number): void {
@@ -224,12 +228,17 @@ function planBody(cfg: OrganizeConfig, plan: OrganizePlan): HTMLElement[] {
     ...roomLines(plan, ruleName).map((text) => message({ tone: "warn", text })),
     ...crossSiteLines(plan, ruleName).map((text) => message({ tone: "info", text })),
     ...warningGroups(plan.warnings, nameOf).map((g) => message({ tone: "warn", title: g.title, text: g.text })),
+    emptyBagsEl(plan, cfg, nameOf),
     carriedEl(plan),
     failed ? failedEl(failed) : null,
     box("div", { class: "org-summary" }, el("h3", { class: "t-md", id: "org-headline" }, planHeadline(plan)), note ? txt(note, "t-sm muted") : null),
     canTrip() && (plan.trips.length || run) ? controls(plan) : null,
     plan.trips.length ? tripList(plan, nameOf, ruleName) : null,
   ]);
+}
+function emptyBagsEl(plan: OrganizePlan, cfg: OrganizeConfig, nameOf: (s: number) => string): HTMLElement | null {
+  const note = emptyBagsNote(plan, cfg.emptyBagsTo != null, nameOf);
+  return note ? message({ tone: "info", title: note.title, text: note.text }) : null;
 }
 function controls(plan: OrganizePlan): HTMLElement {
   const first = plan.trips[0], why = gate();

@@ -210,7 +210,7 @@ These are the invariants the phase-7 review turned into commitments. Breaking on
 ## Gotchas learned building it (don't relearn)
 
 - Tooltip name line carries the stack count ("2 Greater Heal"): stripped in `parseTooltip`; `amount` is separate.
-- Spell scrolls are named after the spell ("Recall", "Blade Spirits"): `SPELL_NAMES` set gates both `classify` (not gear — "blade" would match the weapon regex) and `kindOf` (scroll).
+- Spell scrolls are named after the spell ("Recall", "Blade Spirits"): `SPELL_NAMES` set gates both `classify` (not gear — "blade" would match the weapon regex) and `kindOf` (scroll, but only on a scroll graphic or none: the conjured Healing Stone is named after its spell). The names are kept school by school with each school's scroll graphics, and `spellSchoolOf` gives a scroll's school from its exact name (Magery's "Curse" is not Necromancy's "Curse Weapon"), which an Organize rule's `school` asks.
 - Don't put bare words like `mystic`, `leather`, `rune`, `chest`, `scale` in the skip/spellbook regexes: "Mystic Ring", "Leather Gorget", "Rune Blade", "Woodland Chest" all broke that way.
 - Engraved bags are named by their engraving (e.g. "DEXXER Armor") — force kind `container` for nested containers (except spellbooks/runebooks) or they classify as armour.
 - Gargoyle gear: name `Gargish …` OR tooltip flag `gargoyles only` (throwing weapons only have the flag).

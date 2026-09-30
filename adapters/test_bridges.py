@@ -18,6 +18,7 @@ OTHER_CHEST, OTHER_BAG, STRANGER_PACK, STRANGER_RING = 0x40000020, 0x40000021, 0
 BOOK, RUNEBOOK, ARMOUR = 0x40000040, 0x40000041, 0x40000042
 DEST, DEST_BAG, TRASH_BIN, CORPSE, LOOSE, STACK, OTHER_GEM, EMPTY = (0x40000050, 0x40000051, 0x40000052, 0x40000053,
                                                                       0x40000054, 0x40000055, 0x40000056, 0x40000057)
+SPARE = 0x40000058               # an empty bag, for gathering (issue #128)
 RUN_S = 120                      # every scenario stops the bridge after this many fake seconds
 
 
@@ -239,6 +240,31 @@ class BridgeCase(object):
         self.assertTrue(final["results"]["q1"]["ok"], final["results"]["q1"])
         self.assertEqual([m for m in w.messages if "queue read failed" in m], [])
 
+    def test_the_newest_results_survive_the_trim_whatever_order_the_dict_keeps(self):
+        """Issue #140: the client's Python keeps a dict in hash order, so a trim by dict order dropped
+        the newest result. A dict that iterates newest first stands in for it."""
+        class NewestFirst(dict):
+            def __iter__(self):
+                return iter(list(dict.keys(self))[::-1])
+
+            def keys(self):
+                return list(self.__iter__())
+
+            def items(self):
+                return [(k, self[k]) for k in self.__iter__()]
+
+        def scramble():
+            f = sys._getframe()
+            while f is not None and "record" not in f.f_globals:
+                f = f.f_back
+            f.f_globals["results"] = NewestFirst(f.f_globals["results"])
+
+        w = home()
+        w.clock.at(0.2, scramble)
+        ids = ["e%02d" % i for i in range(35)]
+        final, _ = self.run_bridge(w, 1, [self.cmd(i, "grab", AMULET, [CHEST, BAG], age_s=90) for i in ids])
+        self.assertEqual(sorted(final["results"]), ids[-30:])
+
     def test_a_duplicate_line_in_one_read_runs_once(self):
         w = home()
         c = self.cmd("d1", "grab", AMULET, [CHEST, BAG])
@@ -433,6 +459,58 @@ class TazUOBridge(BridgeCase, unittest.TestCase):
         self.assertIn("not back where it was", final["results"]["t1"]["steps"][0]["msg"])
         self.assertEqual(self.moves(w), [(AMULET, DEST)])
 
+    def test_a_direct_drop_the_client_shows_late_counts_as_landed_and_is_not_lifted_again(self):
+        w = trip_home()
+        w.move_lag = 1.7                         # past MOVE_WAIT_S, within the late look
+        final, _ = self.run_bridge(w, 1, [self.trip("t1", takes=[(AMULET, [CHEST, BAG])], puts=[(AMULET, [DEST])])])
+        self.assertTrue(final["results"]["t1"]["ok"], final["results"]["t1"])
+        self.assertEqual(self.steps(final, "t1"), [("take", AMULET, True), ("put", AMULET, True)])
+        self.assertEqual(self.moves(w), [(AMULET, DEST)])
+        self.assertEqual(w.items[AMULET].Container, DEST)
+
+    # ---- a trip cut short keeps what it did -----------------------------------------------------------
+
+    def interrupt(self, w):
+        """The client's Stop: it sets StopRequested and throws out of the script's next client call."""
+        w.api.StopRequested = True
+        raise KeyboardInterrupt("stop")
+
+    def test_a_stop_thrown_mid_move_still_reports_the_steps_already_done(self):
+        w = trip_home()
+        w.on_move = lambda s, dst: self.interrupt(w) if s == BRACELET else None
+        final, _ = self.run_bridge(w, 1, [self.trip("t1", takes=[(AMULET, [CHEST, BAG]), (BRACELET, [CHEST, BAG])],
+                                                    puts=[(AMULET, [DEST]), (BRACELET, [DEST])])])
+        r = final["results"]["t1"]
+        self.assertTrue(r["stopped"], r)
+        self.assertEqual(self.steps(final, "t1"), [("take", AMULET, True), ("put", AMULET, True), ("take", BRACELET, False)])
+        self.assertIn("check the game", r["steps"][2]["msg"])
+        self.assertEqual(w.items[BRACELET].Container, BAG)
+
+    def test_a_take_the_stop_cut_short_after_it_landed_is_reported_taken(self):
+        w = self.far_dest(trip_home())
+
+        def landed_then_stopped(s, dst):
+            if (s, dst) == (AMULET, PACK):
+                w.items[AMULET].Container = PACK         # the server applied the move before the Stop hit
+                self.interrupt(w)
+        w.on_move = landed_then_stopped
+        final, _ = self.run_bridge(w, 1, [self.trip("t1", takes=[(AMULET, [CHEST, BAG])], puts=[(AMULET, [DEST])])])
+        r = final["results"]["t1"]
+        self.assertTrue(r["stopped"], r)
+        self.assertEqual(self.steps(final, "t1"), [("take", AMULET, True)])
+
+    def test_a_client_error_mid_trip_reports_the_steps_already_done_and_the_error(self):
+        w = trip_home()
+        w.add(EMPTY, 0, name="Metal Chest", X=14, Y=10)      # the bracelet's put needs a step: the walk fails
+        w.walk_error = RuntimeError("pathfinder gone")
+        final, _ = self.run_bridge(w, 1, [self.trip("t1", takes=[(AMULET, [CHEST, BAG]), (BRACELET, [CHEST, BAG])],
+                                                    puts=[(AMULET, [DEST]), (BRACELET, [EMPTY])])])
+        r = final["results"]["t1"]
+        self.assertFalse(r["ok"])
+        self.assertFalse(r["stopped"])
+        self.assertIn("error: pathfinder gone", r["msg"])
+        self.assertEqual(self.steps(final, "t1"), [("take", AMULET, True), ("put", AMULET, True), ("take", BRACELET, False)])
+
     def test_a_put_into_a_container_a_later_take_frees_room_in_waits_for_the_backpack(self):
         # The planner fits every put after every take, so a put may not go ahead of a take from its container.
         w = trip_home()
@@ -443,6 +521,47 @@ class TazUOBridge(BridgeCase, unittest.TestCase):
         self.assertEqual(self.steps(final, "t1"), [("take", AMULET, True), ("take", STACK, True), ("put", STACK, True),
                                                    ("put", AMULET, True)])
         self.assertEqual(self.moves(w), [(AMULET, PACK), (STACK, CHEST), (AMULET, DEST)])
+
+    # ---- empty bags (#128) ---------------------------------------------------------------------------
+
+    def test_an_empty_bag_is_opened_read_live_and_gathered(self):
+        w = trip_home()
+        w.add(SPARE, CHEST, name="Bag", OnGround=False)
+        final, _ = self.run_bridge(w, 1, [self.trip("t1", takes=[(SPARE, [CHEST])], puts=[(SPARE, [DEST])])])
+        self.assertEqual(self.steps(final, "t1"), [("take", SPARE, True), ("put", SPARE, True)])
+        self.assertIn(SPARE, self.opened(w))
+        self.assertEqual(self.moves(w), [(SPARE, DEST)])     # checked empty, then moved straight there (#130)
+
+    def test_a_bag_whose_contents_arrive_after_its_window_opens_is_never_taken(self):
+        w = trip_home()
+        w.contents_lag = 0.7         # after the first empty read (0.6 s after Opened), before the second (0.9 s)
+        final, _ = self.run_bridge(w, 1, [self.trip("t1", takes=[(BAG, [CHEST])], puts=[(BAG, [DEST])])])
+        self.assertEqual(self.steps(final, "t1"), [("take", BAG, False), ("put", BAG, False)])
+        self.assertIn("not empty", final["results"]["t1"]["steps"][0]["msg"])
+        self.assertEqual(self.moves(w), [])
+
+    def test_a_bag_is_never_taken_when_its_contents_read_nothing_at_all_or_its_tooltip_counts_items(self):
+        for kw in ({"items_in_none": True}, {"tooltip": "Bag\nContents: 2/125 Items, 2 Stones"}):
+            w = trip_home()
+            w.add(SPARE, CHEST, name="Bag", OnGround=False, Tooltip=kw.get("tooltip"))
+            w.items_in_none = kw.get("items_in_none", False)
+            final, _ = self.run_bridge(w, 1, [self.trip("t1", takes=[(SPARE, [CHEST])], puts=[(SPARE, [DEST])])])
+            self.assertEqual(self.steps(final, "t1"), [("take", SPARE, False), ("put", SPARE, False)], kw)
+            self.assertIn("not empty", final["results"]["t1"]["steps"][0]["msg"], kw)
+            self.assertEqual(self.moves(w), [], kw)
+
+    def test_trip_bags_is_a_capability_not_an_action(self):
+        w = trip_home()
+        final, _ = self.run_bridge(w, 1, [self.cmd("c1", "trip-bags", AMULET, [CHEST, BAG])])
+        self.assertEqual((final["results"]["c1"]["ok"], final["results"]["c1"]["msg"]), (False, "unknown action"))
+        self.assertEqual(self.opened(w), [])
+
+    def test_a_bag_with_anything_in_it_is_never_taken(self):
+        w = trip_home()
+        final, _ = self.run_bridge(w, 1, [self.trip("t1", takes=[(BAG, [CHEST])], puts=[(BAG, [DEST])])])
+        self.assertEqual(self.steps(final, "t1"), [("take", BAG, False), ("put", BAG, False)])
+        self.assertIn("not empty", final["results"]["t1"]["steps"][0]["msg"])
+        self.assertEqual(self.moves(w), [])
 
     def test_a_trip_opens_each_container_once_and_the_next_trip_opens_it_again(self):
         w = trip_home()
@@ -525,8 +644,8 @@ class TazUOBridge(BridgeCase, unittest.TestCase):
         self.assertEqual(self.steps(final, "t1"), [("take", AMULET, True), ("put", AMULET, False)])
         self.assertIn("bounced", r["steps"][1]["msg"])
         done = [t for t, s in writes if "t1" in s.get("results", {})][0]
-        self.assertGreaterEqual(done - (times[1] - w.clock.start), 1.5)
-        self.assertLess(done - (times[1] - w.clock.start), 1.6)
+        self.assertGreaterEqual(done - (times[1] - w.clock.start), 1.5 + 0.5)    # MOVE_WAIT_S, then the late look (LATE_LOOK_S)
+        self.assertLess(done - (times[1] - w.clock.start), 2.1)
 
     # ---- the wait after opening a container --------------------------------------------------------
 

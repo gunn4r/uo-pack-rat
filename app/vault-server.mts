@@ -10,8 +10,9 @@
 //         GET /schema/validate.mjs (scan-schema.mts's own import, same reason) ·
 //         GET /ui/<name> (name matching /^[a-z0-9-]+\.(mjs|css)$/, served from app/ui/, else 404) ·
 //         GET /ui/fonts/<name>.woff2 (the bundled IBM Plex faces, app/ui/fonts/, as binary font/woff2) ·
-//         GET /api/inventory (the cached fold of every scan — getInventory(), keyed by a signature of
-//         the scans directory + shard + vault-lib.mts mtime, so an edited/added/removed scan file is
+//         GET /api/inventory (the cached fold of every scan, with Organize's results overlay applied —
+//         getInventory(), keyed by a signature of the scans directory + shard + vault-lib.mts mtime, and of
+//         organize-state.json for the overlay, so an edited/added/removed scan file or a finished trip is
 //         picked up on the next request with no restart; each scan file is upgraded v1→v2 and schema-
 //         validated on read — readScans() — an invalid or unparsable file is logged and skipped) — the
 //         response carries facets/worn/rootCounts/missingCounts/itemCount/propKeys — never the full item map
@@ -118,7 +119,7 @@ import { Worker } from "node:worker_threads";
 import { unlinkSync } from "node:fs";
 import { randomUUID, timingSafeEqual } from "node:crypto";
 import type { AddressInfo } from "node:net";
-import { runKey, reusableRun, runSummary, stripOpts, normalizeRun, SOLVER_VERSION, type RunOpts, type SavedRun } from "./runs-lib.mts";
+import { runKey, reusableRun, runSummary, stripOpts, normalizeRun, suitPieces, SOLVER_VERSION, type RunOpts, type SavedRun } from "./runs-lib.mts";
 import { parseStamp, upgradeScan, validateScan } from "./scan-schema.mts";
 import { loadRules, listRules, DEFAULT_SHARD } from "./rules.mts";
 import { validate, type ValidatorSchema } from "./schema/validate.mts";
@@ -130,7 +131,7 @@ import { writeFileAtomic } from "./atomic-write.mts";
 import { addPanelAutostart, panelPrefsError, readPanelPrefs, tazuoRunning, writePanelPrefs } from "./tazuo-panel.mts";
 import { queueTrip, writeBridgeStop } from "./bridge-trip.mts";
 import { checkOrganizeConfig, emptyOrganizeConfig, LIMITS, matchProblem, salvageOrganizeConfig, MAX_SETUP_BYTES, type OrganizeConfig, type RuleMatch } from "./organize-config.mts";
-import { planOrganize, tripCommand, matchCount, type Plan, type PutAway } from "./organize.mts";
+import { planOrganize, tripCommand, matchCount, overlaidInventory, type Plan, type PutAway } from "./organize.mts";
 import { checkPutAwayRequest, nothingDetail, requestId, tripMsg, FRESH_MARGIN_MS, MAX_REQUEST_BYTES, PUT_AWAY_REPLY, PUT_AWAY_REQUEST, type PutAwayReply, type PutAwayRequest } from "./put-away.mts";
 import { PRESETS } from "./organize-presets.mts";
 import { proposeOrganize, STRATEGY_IDS, type StrategyId } from "./organize-strategies.mts";
@@ -742,11 +743,19 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
   // switch changes parseTooltip/classify via rules) and vault-lib.mts's own mtime (the same value lib()
   // already tracks for its dev-reload). /api/forget's tombstone is just another file landing in the scans
   // directory, so it invalidates the cache the same way — no separate invalidation path needed.
+  // What it serves is that fold with Organize's results overlay applied (issue #127, overlaidInventory): every
+  // view and bridge command sees where a trip put an item, not where the last scan saw it. The overlay is cached
+  // on its own, keyed by the fold's signature, organize-state.json's inode, mtime and size (every write replaces
+  // the file) and the hour, so a finished trip re-applies the overlay without folding the scans again. `fold` is
+  // the scans alone: only organizeNow reads it, since the planner applies the overlay itself (with the counts it
+  // needs for capacity), and it hands it on as `fold` too, so no Organize route has an `inv` to pass by habit.
   // GET /api/update-check's last successful answer (see that route).
   const UPDATE_CHECK_TTL_MS = 60 * 60 * 1000;
   let updateCheckCache: { at: number; result: CheckForUpdatesResult } | null = null;
 
-  type InvValue = { inv: Inventory; missing: Record<string, MissingItem[]>; snapshotCount: number; stamp: string };
+  type FoldValue = { fold: Inventory; missing: Record<string, MissingItem[]>; snapshotCount: number };
+  type InvValue = FoldValue & { inv: Inventory };
+  let foldCache: { sig: string | null; value: FoldValue | null } = { sig: null, value: null };
   let invCache: { sig: string | null; value: InvValue | null } = { sig: null, value: null };
   function scansSignature(): string {
     if (!existsSync(SCANS)) return "no-scans-dir";
@@ -754,14 +763,23 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
       .map((f) => { const st = statSync(join(SCANS, f)); return `${f}:${st.mtimeMs}:${st.size}`; }).join("|");
   }
   async function getInventory(): Promise<InvValue> {
+    harvestNow(Date.now());   // a trip that finished since is part of what every view shows
     const libMod = await lib();   // also refreshes libCache.mtime, which the signature below reads
     const sig = `${scansSignature()}::${currentSettings.shard}::${libCache.mtime}`;
-    if (invCache.sig === sig) return invCache.value!;   // sig and value are only ever set together, below
-    const snaps = readScans();
-    const inv = libMod.foldSnapshots(snaps);
-    const value = { inv, missing: missingSinceLastScan(snaps, inv), snapshotCount: snaps.length, stamp: sig };
-    invCache = { sig, value };
-    return value;
+    if (foldCache.sig !== sig) {   // sig and value are only ever set together
+      const snaps = readScans();
+      const fold = libMod.foldSnapshots(snaps);
+      foldCache = { sig, value: { fold, missing: missingSinceLastScan(snaps, fold), snapshotCount: snaps.length } };
+    }
+    const folded = foldCache.value!;
+    let stateSig = "no-state";
+    try { const st = statSync(ORGANIZE_STATE); stateSig = `${st.ino}:${st.mtimeMs}:${st.size}`; } catch { /* no overlay yet */ }
+    // The hour, so a move the week-old cut in pruneOverlay has retired leaves the view of a long-running server.
+    const invSig = `${sig}::${stateSig}::${Math.floor(Date.now() / 3600e3)}`;
+    if (invCache.sig === invSig) return invCache.value!;
+    const { moves } = pruneOverlay(readOrganizeState(), folded.fold, Date.now());
+    invCache = { sig: invSig, value: { ...folded, inv: overlaidInventory(folded.fold, moves) } };
+    return invCache.value!;
   }
 
   // Seeds profiles.json from the default on first run and migrates an old-shape file (archetypes → templates) in
@@ -840,31 +858,44 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
     try {
       const st: unknown = JSON.parse(readFileSync(CONFIG.paths.bridgeStatusFor(adapter), "utf8"));
       if (!st || typeof st !== "object" || Array.isArray(st)) return { results: {}, current: null };
-      const { results, current, alive } = st as Record<string, unknown>;
+      const { results, current, alive, character } = st as Record<string, unknown>;
       const aliveMs = typeof alive === "number" ? alive * 1000 : typeof alive === "string" ? Date.parse(alive) : NaN;
       const live = Math.abs(now - aliveMs) <= PENDING_GRACE_MS;
       const id = live && current && typeof current === "object" ? (current as { id?: unknown }).id : null;
-      return { results: results && typeof results === "object" && !Array.isArray(results) ? results as Record<string, unknown> : {}, current: typeof id === "string" ? id : null };
+      return { results: results && typeof results === "object" && !Array.isArray(results) ? results as Record<string, unknown> : {}, current: typeof id === "string" ? id : null,
+        character: isBoundedString(character, 64) ? character : null };
     } catch { return { results: {}, current: null }; }
   }
-  // What a plan starts from now: finished trips read out of their bridges' status files into the overlay, entries a
-  // newer scan has settled dropped, labels' last-seen times refreshed (the state file is rewritten only when that
-  // changed something). organizeNow adds the plan; Put away plans its own (planOf with a source).
-  async function organizeInputs(): Promise<{ inv: Inventory; config: OrganizeConfig; state: OrganizeState; problems: string[]; bridges: Record<string, BridgeView> }> {
-    const { inv } = await getInventory();
-    const { config, problems } = readOrganize();
+  // Finished trips read out of their bridges' status files into the overlay. Runs on every getInventory() and on the
+  // page's bridge status poll (every 2.5 s while any page is open), so a trip that reports back moves its items in
+  // every view even with Organize closed; when it brought moves in, the state file is rewritten and every open page
+  // told to reload its inventory. With no trip pending it only reads the state file.
+  function harvestNow(now: number): { state: OrganizeState; bridges: Record<string, BridgeView> } {
     const before = readOrganizeState();
-    const now = Date.now();
+    if (!before.pending.length) return { state: before, bridges: {} };
     const bridges = Object.fromEntries([...new Set(before.pending.map((p) => p.adapter))].map((a) => [a, bridgeView(a, now)]));
-    const state = noteSeen(pruneOverlay(harvestTrips(before, bridges, now), inv, now), config, inv);
+    const state = harvestTrips(before, bridges, now);
     if (JSON.stringify(state) !== JSON.stringify(before)) writeOrganizeState(state);
-    return { inv, config, state, problems, bridges };
+    if (JSON.stringify(state.moves) !== JSON.stringify(before.moves)) broadcastEvent("changed", { what: "inventory", at: now });
+    return { state, bridges };
   }
-  const planOf = (inv: Inventory, config: OrganizeConfig, state: OrganizeState, putAway?: PutAway): Plan =>
-    planOrganize(inv, config, state.moves, { now: Date.now(), rarity: currentRules.rarity, blacklist: readBlacklist().map((e) => e.serial), seen: state.seen, putAway });
-  async function organizeNow(): Promise<{ inv: Inventory; config: OrganizeConfig; state: OrganizeState; plan: Plan; problems: string[]; bridges: Record<string, BridgeView> }> {
+  // What a plan starts from now: finished trips harvested, entries a newer scan has settled dropped, labels' last-seen
+  // times refreshed (the state file is rewritten only when that changed something). Organize works on the fold alone
+  // and applies the overlay itself. organizeNow adds the plan; Put away plans its own (planOf with a source).
+  async function organizeInputs(): Promise<{ fold: Inventory; config: OrganizeConfig; state: OrganizeState; problems: string[]; bridges: Record<string, BridgeView> }> {
+    const { fold } = await getInventory();
+    const { config, problems } = readOrganize();
+    const now = Date.now();
+    const { state: harvested, bridges } = harvestNow(now);
+    const state = noteSeen(pruneOverlay(harvested, fold, now), config, fold);
+    if (JSON.stringify(state) !== JSON.stringify(harvested)) writeOrganizeState(state);
+    return { fold, config, state, problems, bridges };
+  }
+  const planOf = (fold: Inventory, config: OrganizeConfig, state: OrganizeState, putAway?: PutAway): Plan =>
+    planOrganize(fold, config, state.moves, { now: Date.now(), rarity: currentRules.rarity, suitPieces: suitsFor(config.rules.map((r) => r.match)), blacklist: readBlacklist().map((e) => e.serial), seen: state.seen, putAway });
+  async function organizeNow(): Promise<{ fold: Inventory; config: OrganizeConfig; state: OrganizeState; plan: Plan; problems: string[]; bridges: Record<string, BridgeView> }> {
     const got = await organizeInputs();
-    return { ...got, plan: planOf(got.inv, got.config, got.state) };
+    return { ...got, plan: planOf(got.fold, got.config, got.state) };
   }
   const runsTrips = (adapter: string): boolean => {
     const caps = listAdapters(ADAPTERS_DIR).find((a) => a.id === adapter)?.capabilities as { bridge?: unknown } | undefined;
@@ -872,8 +903,8 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
   };
   // Trip `index` of `plan` queued with queueTrip and recorded as pending, so its result is read back into the
   // overlay (harvestTrips). A Put away trip from the backpack carries putAway (docs/bridge-protocol.md, Trip).
-  function queuePlanTrip(adapter: string, inv: Inventory, state: OrganizeState, plan: Plan, index: number, putAway = false): { ok: true; id: string } | { ok: false; error: string } {
-    const input = tripCommand(inv, plan, index);
+  function queuePlanTrip(adapter: string, fold: Inventory, state: OrganizeState, plan: Plan, index: number, putAway = false): { ok: true; id: string } | { ok: false; error: string } {
+    const input = tripCommand(fold, plan, index);
     if (!input) return { ok: false, error: `trip ${index} cannot be built from the current scans` };
     const now = new Date();
     const queued = queueTrip(CONFIG.paths, adapter, putAway ? { ...input, putAway } : input, now);
@@ -910,7 +941,7 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
   // character stands in) or the Inbox. The panel asks again after each trip until nothing is left.
   async function putAwayRun(adapter: string, req: PutAwayRequest): Promise<Omit<PutAwayReply, "id" | "t">> {
     if (!runsTrips(adapter)) return { ok: false, msg: "This client's bridge cannot run Put away." };
-    const { inv, config, state, problems } = await organizeInputs();
+    const { fold, config, state, problems } = await organizeInputs();
     if (problems.length) return { ok: false, msg: "Organize's setup was hand-edited.", detail: "Open Organize in the app and save it." };
     if (state.pending[0]) return { ok: false, msg: `Trip ${state.pending[0].index} has not reported back yet.` };
     let source: PutAway;
@@ -919,23 +950,23 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
       if (!label) return { ok: false, msg: "No Inbox is set.", detail: "In the app, Label... a chest and turn on Inbox." };
       source = { from: "inbox", inbox: label.serial };
     } else {
-      const pack = Object.values(inv.containers).find((c) => c.kind === "backpack" && c.parent == null && c.scannedBy === req.character);
+      const pack = Object.values(fold.containers).find((c) => c.kind === "backpack" && c.parent == null && c.scannedBy === req.character);
       if (!pack) return { ok: false, msg: "Pack Rat has no scan of your backpack." };
       source = { from: "backpack", backpack: +pack.serial, at: req.at };
     }
     // Planned only from a scan made for this run (the panel's refresh or scan), never from an older one.
-    const read = inv.containers[String(source.from === "inbox" ? source.inbox : source.backpack)];
+    const read = fold.containers[String(source.from === "inbox" ? source.inbox : source.backpack)];
     if (!read || parseStamp(read.scannedAt) < parseStamp(req.clickedAt) - FRESH_MARGIN_MS) {
       return { ok: false, msg: `Pack Rat has not read your ${source.from === "inbox" ? "Inbox" : "backpack"} yet.`, detail: "Try again." };
     }
-    const plan = planOf(inv, config, state, source);
+    const plan = planOf(fold, config, state, source);
     if (source.from === "inbox" && !plan.sites.some((s) => s.roots.includes(source.inbox))) {
       const why = plan.warnings.find((w) => w.serial === source.inbox);
       return { ok: false, msg: "The Inbox cannot be used.", detail: why?.detail ?? "It must be a labelled chest on the ground." };
     }
     const trip = plan.trips[0];
     if (!trip) return { ok: true, msg: "Nothing to put away.", detail: nothingDetail(plan, req.source) };
-    const queued = queuePlanTrip(adapter, inv, state, plan, trip.index, source.from === "backpack");
+    const queued = queuePlanTrip(adapter, fold, state, plan, trip.index, source.from === "backpack");
     if (!queued.ok) return { ok: false, msg: "The trip could not be queued.", detail: queued.error };
     return { ok: true, msg: tripMsg(trip.puts.length, plan.moves.length - trip.puts.length), trip: queued.id };
   }
@@ -1139,6 +1170,9 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
 
   // ---- saved runs: one JSON file per finished build in app/data/runs/ -------------------------------
   function readRuns(): SavedRun[] { return readRunFiles().map((r) => r.run); }
+  // Every saved suit's pieces, for Organize (issue #133), read only when a rule asks to skip them: the live count
+  // asks on every pause in typing, and few setups have such a rule.
+  function suitsFor(matches: RuleMatch[]): Set<number> | undefined { return matches.some((m) => m.skipSuits) ? suitPieces(readRuns()) : undefined; }
   function readRunFiles(): { file: string; run: SavedRun }[] {
     if (!existsSync(RUNS)) return [];
     const out: { file: string; run: SavedRun }[] = [];
@@ -1859,6 +1893,7 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
         return send(res, 200, { ok: true });
       }
       if (req.method === "GET" && url.pathname === "/api/bridge/status") {
+        harvestNow(Date.now());
         const f = CONFIG.paths.bridgeStatusFor(bridgeAdapter());
         if (!existsSync(f)) return send(res, 200, { ok: true, online: false });
         try {
@@ -1959,12 +1994,12 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
       }
       if (req.method === "GET" && url.pathname === "/api/organize/presets") return send(res, 200, { ok: true, presets: PRESETS });
       if (req.method === "POST" && url.pathname === "/api/organize/match") {
-        // Room for the largest filter a rule may carry (100 names, three 50-name lists, 20 property rules).
+        // Room for the largest filter a rule may carry (100 names, three 50-name lists, 10 tags, 20 property rules).
         const { match } = asObject(await readBody(req, { limit: 64e3 }));
         const problem = matchProblem(match);
         if (problem) return send(res, 400, { ok: false, error: problem });
         const { inv } = await getInventory();
-        const counted = matchCount(inv, readOrganize().config, match as RuleMatch, { now: Date.now(), rarity: currentRules.rarity, blacklist: readBlacklist().map((e) => e.serial) });
+        const counted = matchCount(inv, readOrganize().config, match as RuleMatch, { now: Date.now(), rarity: currentRules.rarity, suitPieces: suitsFor([match as RuleMatch]), blacklist: readBlacklist().map((e) => e.serial) });
         return send(res, 200, { ok: true, ...counted });
       }
       if (req.method === "POST" && url.pathname === "/api/organize/propose") {
@@ -1976,9 +2011,9 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
         if (containers !== undefined && !(Array.isArray(containers) && containers.length <= LIMITS.labels && containers.every((v) => isBoundedInt(v, 1, MAX_SERIAL)))) {
           return send(res, 400, { ok: false, error: "containers must be a list of container serials" });
         }
-        const { inv, config, state, problems } = await organizeNow();
+        const { fold, config, state, problems } = await organizeNow();
         if (problems.length) return send(res, 409, { ok: false, error: `organize.json was hand-edited and parts of it were dropped (${problems[0]}); open Organize and save the setup first` });
-        const r = proposeOrganize(inv, config, state.moves, { strategy: strategy as StrategyId, containers: containers as number[] | undefined, now: Date.now(), rarity: currentRules.rarity, blacklist: readBlacklist().map((e) => e.serial), seen: state.seen });
+        const r = proposeOrganize(fold, config, state.moves, { strategy: strategy as StrategyId, containers: containers as number[] | undefined, now: Date.now(), rarity: currentRules.rarity, suitPieces: suitsFor(config.rules.map((r) => r.match)), blacklist: readBlacklist().map((e) => e.serial), seen: state.seen });
         return send(res, r.ok ? 200 : 409, r);
       }
       if (req.method === "GET" && url.pathname === "/api/organize/plan") {
@@ -1996,7 +2031,7 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
         if (!isBoundedInt(index, 1, 10000) || !isBoundedString(stamp, 64)) return send(res, 400, { ok: false, error: "index (a trip number) and stamp (the plan's) are required" });
         const adapter = bridgeAdapter();
         if (!runsTrips(adapter)) return send(res, 409, { ok: false, error: `the ${adapter} bridge cannot run Organize trips` });
-        const { inv, state, plan, problems } = await organizeNow();
+        const { fold, state, plan, problems } = await organizeNow();
         // A salvaged setup lost rules or targets, and their items may now fall through to another rule or the
         // catch-all: nothing moves until the player has seen that and saved the setup again.
         if (problems.length) return send(res, 409, { ok: false, error: `organize.json was hand-edited and parts of it were dropped (${problems[0]}); open Organize and save the setup first` });
@@ -2007,7 +2042,7 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
         if (!trip) return send(res, 404, { ok: false, error: `the plan has no trip ${index}` });
         const first = plan.trips.find((t) => t.site === trip.site)!;
         if (first.index !== index) return send(res, 409, { ok: false, error: `run trip ${first.index} first: this trip counts on the room it makes` });
-        const queued = queuePlanTrip(adapter, inv, state, plan, index);
+        const queued = queuePlanTrip(adapter, fold, state, plan, index);
         if (!queued.ok) return send(res, 409, { ok: false, error: queued.error });
         return send(res, 200, { ok: true, id: queued.id, index });
       }
