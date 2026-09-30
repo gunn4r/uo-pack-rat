@@ -118,6 +118,7 @@ test("[fast] rule names match the item's own name, stack count stripped, case-in
 test("[fast] rule names and item names compare with spaces and punctuation removed on both sides (issue #123)", () => {
   const inv = fold([{ serial: A }], [
     { serial: 0x40002001, name: "Blood Moss", amount: 20, in: A }, { serial: 0x40002002, name: "Batwing", in: A }, { serial: 0x40002003, name: "Spiders' Silk", in: A },
+    { serial: 0x40002004, name: "A Wondrous Scroll Of Magery (105 Skill)", in: A }, { serial: 0x40002005, name: "A Legendary Scroll Of Magery (120 Skill)", in: A },
   ]);
   const takes = (name: string): string[] => Object.values(inv.items).filter((it) => ruleMatches(it, { query: emptyRuleQuery(), names: [name] })).map((it) => it.name);
   assert.equal(nameKey("20 Spiders' Silk"), "spiderssilk");
@@ -125,6 +126,7 @@ test("[fast] rule names and item names compare with spaces and punctuation remov
   assert.deepEqual(takes("bat wing"), ["Batwing"]);
   assert.deepEqual(takes("spiders silk"), ["Spiders' Silk"]);
   assert.deepEqual(takes("'"), [], "a name that is only punctuation matches nothing");
+  assert.deepEqual(takes("120 Skill"), ["A Legendary Scroll Of Magery (120 Skill)"], "a rule name's leading number is not a stack count");
 });
 
 test("[fast] a rule's build takes gear by its caster and melee markers, then its resists, and never takes anything else", () => {
