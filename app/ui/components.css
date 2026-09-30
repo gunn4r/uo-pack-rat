@@ -205,7 +205,6 @@
 @keyframes pop-in { from { opacity: 0; transform: scale(0.98); } }
 .tip { position: fixed; width: max-content; max-width: var(--tooltip-w); padding: var(--space-1-5) var(--space-2); background: var(--color-surface-inverse); color: var(--color-on-inverse); border-radius: var(--radius-md); box-shadow: var(--shadow-2); z-index: var(--z-tooltip); font-size: var(--text-sm); line-height: var(--lh-sm); pointer-events: none; }
 .drawer-root { position: fixed; inset: 0; z-index: var(--z-drawer); }
-.drawer-root[hidden] { display: none; }
 .scrim { position: absolute; inset: 0; background: var(--color-scrim); }
 .drawer { position: absolute; top: 0; right: 0; bottom: 0; width: min(var(--drawer-w), 100vw); background: var(--color-surface-raised); color: var(--color-text); box-shadow: var(--shadow-3); display: flex; flex-direction: column; border-left: var(--border-width-frame) solid var(--color-border); border-image: var(--frame-image); }
 .drawer.drawer-wide { width: min(var(--drawer-w-wide), 100vw); }
