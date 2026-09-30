@@ -11,11 +11,13 @@ import { parseItemQuery } from "../item-query.mts";
 import type { ItemQuery, RuleQuery } from "../item-query.mts";
 import { activeFilters, plural } from "./inv-model.mts";
 import type { FilterContext } from "./inv-model.mts";
-import type { BridgeResultEntry, Build, ContainerLabel, OrganizeConfig, OrganizeMatchApiResponse, OrganizePlan, OrganizeRule, PlanMove, PlanRuleReport, PlanWarning, PlanWarningKind, RuleMatch, AutoStrategy, OrganizeProposal, ProposalCandidate, ProposalGroup, OrganizeRunningTrip } from "./api-types.mts";
+import type { BridgeResultEntry, Build, SpellSchool, ContainerLabel, OrganizeConfig, OrganizeMatchApiResponse, OrganizePlan, OrganizeRule, PlanMove, PlanRuleReport, PlanWarning, PlanWarningKind, RuleMatch, AutoStrategy, OrganizeProposal, ProposalCandidate, ProposalGroup, ProposalLayout, OrganizeRunningTrip } from "./api-types.mts";
 
-// The ruleId the plan reports the catch-all under (app/organize-config.mts's CATCH_ALL_ID; a value import from
-// there would add a second server module to the page for one string, so the test pins the two together).
+// The ruleIds the plan reports the catch-all and the gathered empty bags under (app/organize-config.mts's
+// CATCH_ALL_ID and EMPTY_BAGS_ID; a value import from there would add a second server module to the page for two
+// strings, so the test pins them together).
 export const CATCH_ALL_ID = "catch-all";
+export const EMPTY_BAGS_ID = "empty-bags";
 const BASE: ItemQuery = parseItemQuery(new URLSearchParams());
 
 // Label colours offered by Label…: a swatch beside the label, never text colour, so contrast is not at stake.
@@ -37,7 +39,7 @@ export function moveRule(cfg: OrganizeConfig, from: number, to: number): Organiz
   const rules = moveIn(cfg.rules, from, to);
   return rules === cfg.rules ? cfg : { ...cfg, rules: [...rules] };
 }
-// A container off every rule's targets and off the catch-all: what unlabelling or pinning it needs, since the
+// A container off every rule's targets, the catch-all and the gather container: what unlabelling or pinning it needs, since the
 // server refuses a target that is unlabelled or pinned. `dropped` names what it came off, for the confirmation.
 function dropTarget(cfg: OrganizeConfig, serial: number): { config: OrganizeConfig; dropped: string[] } {
   const dropped: string[] = [];
@@ -47,7 +49,8 @@ function dropTarget(cfg: OrganizeConfig, serial: number): { config: OrganizeConf
     return { ...r, targets: r.targets.filter((t) => t !== serial) };
   });
   if (cfg.catchAll === serial) dropped.push("Everything else");
-  return { config: { ...cfg, rules, catchAll: cfg.catchAll === serial ? null : cfg.catchAll }, dropped };
+  if (cfg.emptyBagsTo === serial) dropped.push("Empty bags");
+  return { config: { ...cfg, rules, catchAll: cfg.catchAll === serial ? null : cfg.catchAll, ...(cfg.emptyBagsTo === serial ? { emptyBagsTo: null } : {}) }, dropped };
 }
 export function withLabel(cfg: OrganizeConfig, label: ContainerLabel): { config: OrganizeConfig; dropped: string[] } {
   const next = { ...cfg, labels: { ...cfg.labels, [String(label.serial)]: label } };
@@ -79,10 +82,10 @@ export function newRuleId(rules: ReadonlyArray<{ id: string }>): string {
 }
 
 // ---------------------------------------------------------------- a rule's filter
-// The Inventory's filters as a rule query: the eleven item fields only. Location, character and seen filters
+// The Inventory's filters as a rule query: the twelve item fields only. Location, character and seen filters
 // are dropped (spec §1: a rule must keep matching an item after it moves); `dropped` names them for the note.
 export function ruleQueryFrom(q: ItemQuery): { query: RuleQuery; dropped: string[] } {
-  const query: RuleQuery = { q: q.q, slot: [...q.slot], rarity: q.rarity, rarityMin: q.rarityMin, rarityMax: q.rarityMax, kind: [...q.kind], slayer: q.slayer, nogarg: q.nogarg, med: q.med, hideTags: [...q.hideTags], props: q.props.map((p) => ({ ...p })) };
+  const query: RuleQuery = { q: q.q, slot: [...q.slot], rarity: q.rarity, rarityMin: q.rarityMin, rarityMax: q.rarityMax, kind: [...q.kind], slayer: q.slayer, nogarg: q.nogarg, med: q.med, hideTags: [...q.hideTags], tags: [...q.tags], props: q.props.map((p) => ({ ...p })) };
   const dropped = [...(q.loc.length || q.roots.length ? ["Location"] : []), ...(q.chars.length ? ["Character"] : []), ...(q.seenDays ? ["Seen"] : [])];
   return { query, dropped };
 }
@@ -111,8 +114,12 @@ export function checkDraft(name: string, namesText: string): { name: string; nam
 // One line for a rule row: "Name: black pearl, bloodmoss, garlic +1 more · Kind: reagent".
 // A rule's build (issue #91), as the rule editor and the summary name it.
 export const BUILD_TEXT: Record<Build, string> = { caster: "Caster", melee: "Melee", hybrid: "Hybrid", tank: "Tank", other: "Other" };
+// A rule's spell school (issue #134), likewise.
+export const SCHOOL_TEXT: Record<SpellSchool, string> = { magery: "Magery", necromancy: "Necromancy", mysticism: "Mysticism", spellweaving: "Spellweaving" };
 export function matchSummary(match: RuleMatch, ctx: FilterContext): string {
   const parts = activeFilters({ ...BASE, ...match.query }, ctx).map((t) => t.label);
+  if (match.school) parts.unshift(`School: ${SCHOOL_TEXT[match.school]}`);
+  if (match.skipSuits) parts.push("Not in a saved suit");
   if (match.build) parts.unshift(`Build: ${BUILD_TEXT[match.build]}`);
   const names = match.names || [];
   if (names.length) parts.unshift(`Name: ${names.slice(0, 3).join(", ")}${names.length > 3 ? ` +${names.length - 3} more` : ""}`);
@@ -239,7 +246,7 @@ export function labelledPlaces(containers: Readonly<Record<string, ContainerLike
 }
 
 // ---------------------------------------------------------------- the plan
-export const ruleNameOf = (cfg: OrganizeConfig) => (id: string): string => (id === CATCH_ALL_ID ? "Everything else" : cfg.rules.find((r) => r.id === id)?.name ?? id);
+export const ruleNameOf = (cfg: OrganizeConfig) => (id: string): string => (id === CATCH_ALL_ID ? "Everything else" : id === EMPTY_BAGS_ID ? "Empty bags" : cfg.rules.find((r) => r.id === id)?.name ?? id);
 export const containerNameOf = (cfg: OrganizeConfig, containers: Readonly<Record<string, ContainerLike>>) => (serial: number): string => targetView(serial, cfg, containers).name;
 const n = (x: number): string => x.toLocaleString("en-US");
 export function ruleCountParts(rep: PlanRuleReport): Array<{ text: string; warn: boolean }> {
@@ -275,6 +282,7 @@ const WARNING_TITLES: Record<PlanWarningKind, string> = {
   "blacklisted": "Blacklisted: nothing is taken from it or put into it",
   "no-position": "No position scanned, so the bridge cannot walk to it",
   "not-ground": "Not a container on the ground",
+  "nearly-full": "Nearly full: add another container before the next loot run",
 };
 // The plan's warnings (sorted by kind, then serial, by the planner) as one message per kind; the scan times the
 // planner writes into a detail ("last scanned 2026-01-01T12:00:00-07:00") read as dates.
@@ -283,6 +291,17 @@ export function warningGroups(warnings: readonly PlanWarning[], nameOf: (serial:
   const by = new Map<PlanWarningKind, PlanWarning[]>();
   for (const w of warnings) by.set(w.kind, [...(by.get(w.kind) || []), w]);
   return [...by].map(([kind, ws]) => ({ kind, title: ws.length > 1 ? `${WARNING_TITLES[kind]} (${ws.length})` : WARNING_TITLES[kind], text: ws.map((w) => `${nameOf(w.serial)}: ${w.detail.replace(STAMP, "$1")}`).join(" · ") }));
+}
+// The empty bags in labelled containers (issue #128), each still taking one of its container's item slots: how
+// many, a few by name and place, and what gathering them does (`picked`: a container is set for Empty bags). Null
+// when there are none.
+export function emptyBagsNote(plan: Pick<OrganizePlan, "emptyBags" | "moves">, picked: boolean, nameOf: (serial: number) => string): { title: string; text: string } | null {
+  const bags = plan.emptyBags, k = bags.length;
+  if (!k) return null;
+  const some = bags.slice(0, 5).map((b) => `${b.name} (in ${nameOf(b.container)})`).join(", ") + (k > 5 ? ` and ${k - 5} more` : "");
+  const what = plan.moves.some((m) => m.ruleId === EMPTY_BAGS_ID) ? "The trips below gather them into the container picked for Empty bags under Rules."
+    : picked ? "They are not being gathered yet: the reports above say why." : "To free those slots, pick a container for Empty bags under Rules, and the plan gathers them there.";
+  return { title: `${plural(k, "empty bag")} in your labelled containers`, text: `${some}. Each takes one of its container's item slots. ${what}` };
 }
 // One row per trip for the collapsed trip list; its moves go into a table only when the row is opened.
 export interface TripRow { index: number; site: number; moves: PlanMove[]; text: string }
@@ -388,8 +407,8 @@ export function tripRefusal(msg: string): string {
 
 // ---------------------------------------------------------------- Auto organize
 export const STRATEGY_TEXT: Record<AutoStrategy, { label: string; text: string }> = {
-  simple: { label: "Simple", text: "One container for each kind of thing: armour, weapons, jewelry, reagents, scrolls, resources and so on." },
-  detailed: { label: "Detailed", text: "Splits each kind further: armour by slot, jewelry by type, reagents by school, scrolls by kind, resources by type. Short of containers, a kind's small groups share one." },
+  simple: { label: "Simple", text: "One container for each kind of thing: armour, weapons, jewelry, reagents, skill scrolls, spell scrolls, treasure maps and SOS, resources and so on." },
+  detailed: { label: "Detailed", text: "Splits each kind further: armour by slot, jewelry by type, reagents by school, scrolls by kind and spell scrolls by school, resources by type. Short of containers, a kind's small groups share one." },
   build: { label: "By build", text: "Sorts gear by what it is for: caster, melee, hybrid (both equally), tank (shields and resist pieces with neither) and other gear. Everything else is grouped as in Simple." },
 };
 // Under the chests (issue #123): an unticked chest leaves the scope, so its items are neither moved nor short of room.
@@ -414,19 +433,41 @@ export function proposalHeadline(p: OrganizeProposal): string {
 export function groupStatus(g: ProposalGroup): { badge: string; tone: "warn" | undefined; text: string | null } {
   if (!g.targets.length) return { badge: "No container", tone: "warn", text: `Add ${plural(g.addContainers, "container")}. Its items stay where they are.` };
   if (g.shortfall) return { badge: "Short", tone: "warn", text: `${plural(g.shortfall, "slot")} short: add ${plural(g.addContainers, "container")}.` };
+  if (g.needsBag) return { badge: "No bag", tone: undefined, text: "Loose in the chest it shares: an empty bag there keeps it apart." };
   return { badge: "Fits", tone: undefined, text: null };
 }
 export const groupAway = (g: ProposalGroup): string | null => (g.crossSite ? `${plural(g.crossSite, "item")} at another house ${g.crossSite === 1 ? "stays" : "stay"} there.` : null);
-// The chests a group gets, in fill order, by the names the player knows them by.
+// The chests a group gets, in fill order, by the names the player knows them by; a group given a bag in a shared
+// chest (issue #132), that chest.
+const candName = (s: number, cands: readonly ProposalCandidate[]): string => cands.find((c) => c.serial === s)?.name ?? `0x${s.toString(16)}`;
 export function intoText(g: ProposalGroup, cands: readonly ProposalCandidate[]): string {
+  if (g.bagIn != null) return `${candName(g.bagIn, cands)}, in a bag of its own`;
   if (!g.targets.length) return "—";
-  return g.targets.map((s) => cands.find((c) => c.serial === s)?.name ?? `0x${s.toString(16)}`).join(", then ");
+  return g.targets.map((s) => candName(s, cands)).join(", then ");
+}
+// Issue #132: what the strategy's full layout needs beyond what the player has, and where the bags go (a chest by
+// its name, with the family it holds when that differs), then a rescan and another run. 80% is organize-strategies'
+// FILL (server-only).
+function layoutNote(p: OrganizeProposal): string | null {
+  const { chests, bags, spareBags } = p.layout;
+  const count = bags.reduce((n, b) => n + b.bags, 0);
+  if (!chests && !count) return null;
+  const into = (b: ProposalLayout["bags"][number]): string => {
+    if (b.chest == null) return `${b.bags} in a new ${b.family} chest`;
+    const name = candName(b.chest, p.candidates);
+    return `${b.bags} in ${name}${name === b.family ? "" : ` (${b.family})`}`;
+  };
+  const what = [chests ? plural(chests, "more chest") : "", count ? plural(count, "bag") : ""].filter(Boolean).join(" and ");
+  const spare = count && spareBags ? ` ${plural(spareBags, "empty bag")} already in your chests can be moved in first.` : "";
+  return `For the full ${STRATEGY_TEXT[p.strategy].label} layout (no chest over 80% full, a bag for each group sharing one), add ${what}${count ? `: ${bags.map(into).join(", ")}` : ""}.${spare} Then rescan and run Auto organize again.`;
 }
 export function proposalNotes(p: OrganizeProposal): string[] {
+  const layout = layoutNote(p);
   return [
     ...(p.manualRules ? [p.manualRules === 1 ? "Your 1 rule stays above these and takes its items first." : `Your ${plural(p.manualRules, "rule")} stay above these and take their items first.`] : []),
     ...p.refused.map((r) => `Container 0x${r.serial.toString(16)} could not be used: ${r.reason}.`),
-    ...(p.addContainers ? [`Place ${plural(p.addContainers, "more container")}, scan them, and run Auto organize again to fit everything.`] : []),
+    ...(p.layout.roomy ? ["No chest is filled past 80%, so new loot has room: some groups spread into a second chest."] : []),
+    ...(layout ? [layout] : []),
     ...(p.plan.crossSite ? [`${plural(p.plan.crossSite, "item")} ${p.plan.crossSite === 1 ? "belongs" : "belong"} at another house: carry ${p.plan.crossSite === 1 ? "it" : "them"} over by hand.`] : []),
   ];
 }

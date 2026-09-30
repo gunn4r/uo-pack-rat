@@ -9,15 +9,15 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { foldSnapshots, setRules, PROP_PATTERNS, SKILL_NAMES, type Inventory } from "./vault-lib.mts";
 import { houseScan, AT, type BoxSpec, type ThingSpec } from "./organize-fixture.mts";
-import { emptyRuleQuery, emptyOrganizeConfig, BUILDS, CATCH_ALL_ID, type OrganizeConfig, type OrganizeRule, type ContainerLabel, type RuleMatch } from "./organize-config.mts";
+import { emptyRuleQuery, emptyOrganizeConfig, BUILDS, CATCH_ALL_ID, EMPTY_BAGS_ID, type OrganizeConfig, type OrganizeRule, type ContainerLabel, type RuleMatch } from "./organize-config.mts";
 import type { RuleQuery } from "./item-query.mts";
 import type { RulesV1 } from "./schema/types.d.mts";
 import { resolveConfig } from "./config.mts";
 import { queueTrip } from "./bridge-trip.mts";
 import type { ScanV2 } from "./schema/types.d.mts";
 import {
-  ancestry, scopeOf, ruleMatches, buildOf, matchCount, CASTER_PROPS, CASTER_SKILLS, MELEE_PROPS, MELEE_SKILLS, claimOf, baseName, nameKey, applyOverlay, homeOf, newSim, simTake, simPut, mark, rollback, MAX_STACK,
-  sitesOf, planOrganize, tripCommand, lineBytes, directSerials, tripSeconds, STEP_S, type OverlayMove, type Sim, type Plan,
+  ancestry, scopeOf, ruleMatches, buildOf, matchCount, CASTER_PROPS, CASTER_SKILLS, MELEE_PROPS, MELEE_SKILLS, claimOf, baseName, nameKey, applyOverlay, overlaidInventory, homeOf, newSim, simTake, simPut, mark, rollback, MAX_STACK,
+  sitesOf, planOrganize, tripCommand, lineBytes, emptyBagsOf, directSerials, tripSeconds, STEP_S, type OverlayMove, type Sim, type Plan,
 } from "./organize.mts";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -109,6 +109,7 @@ test("[fast] rule names match the item's own name, stack count stripped, case-in
   const inv = fold([{ serial: A }], [{ serial: ASH, name: "Grave Dust", amount: 75, in: A }, { serial: PEARL, name: "Black Pearl", in: A }]);
   const dust = inv.items[ASH]!;
   assert.equal(baseName(dust.name), "grave dust");
+  assert.equal(baseName(fold([{ serial: A }], [{ serial: PEARL, name: "21025908 Of Wizardry", graphic: 0x1714, in: A }]).items[PEARL]!.name), "of wizardry", "an unresolved cliloc number is no stack count (issue #129)");
   assert.equal(ruleMatches(dust, { query: emptyRuleQuery(), names: ["grave dust"] }), true);
   assert.equal(ruleMatches(dust, { query: emptyRuleQuery(), names: ["GRAVE"] }), true);
   assert.equal(ruleMatches(inv.items[PEARL]!, { query: emptyRuleQuery(), names: ["grave dust"] }), false);
@@ -168,6 +169,20 @@ test("[fast] a rule's build takes gear by its caster and melee markers, then its
   }
 });
 
+test("[fast] a spellbook with no caster or melee marker is Caster gear, a Book Of Chivalry included, and one with markers goes by them (issue #129)", () => {
+  const inv = fold([{ serial: A }], [
+    { serial: 0x40002001, name: "Spellbook", in: A },
+    { serial: 0x40002002, name: "Necromancer Spellbook", in: A },
+    { serial: 0x40002003, name: "Spellweaving Spellbook", in: A },
+    { serial: 0x40002004, name: "Book Of Chivalry", in: A },
+    { serial: 0x40002005, name: "Book Of Bushido", in: A, lines: ["Swordsmanship +5", "Tactics +5"] },
+  ]);
+  assert.deepEqual(Object.values(inv.items).sort((a, b) => a.serial - b.serial).map((it) => [it.name, it.slot, buildOf(it)]), [
+    ["Spellbook", "oneHanded", "caster"], ["Necromancer Spellbook", "oneHanded", "caster"], ["Spellweaving Spellbook", "oneHanded", "caster"],
+    ["Book Of Chivalry", "oneHanded", "caster"], ["Book Of Bushido", "oneHanded", "melee"],
+  ]);
+});
+
 test("[fast] a shield with no caster or melee marker is Tank gear, whatever its resists (issue #123)", () => {
   const inv = fold([{ serial: A }], [
     { serial: 0x40002001, name: "Wooden Shield", in: A },
@@ -195,6 +210,21 @@ test("[fast] a rule's free text never matches where the item sits", () => {
 
 const T1 = "2026-09-28T11:00:00Z";
 const step = (serial: number, name: string, from: number | null, to: number | null, when = T1): OverlayMove => ({ serial, name, from, to, at: when, trip: "t-1" });
+
+test("[fast] an Undesirables rule with skipSuits leaves a saved suit's piece to the rules below (issue #133)", () => {
+  const AXE = 0x40001010, AXE2 = 0x40001011, lines = ["Splintering Weapon 20%", "Brittle"];
+  const inv = fold([{ serial: A, pos: at(100) }, { serial: B, pos: at(102) }, { serial: C, pos: at(104) }],
+    [{ serial: AXE, name: "Axe", in: C, lines }, { serial: AXE2, name: "Axe", in: C, lines }, { serial: KATANA, name: "Katana", in: C, lines: ["Splintering Weapon 5%"] }]);
+  const fodder: OrganizeRule = { id: "fodder", name: "Fodder", match: { query: { ...emptyRuleQuery(), tags: ["brittle"], props: [{ key: "splintering weapon", min: 10 }] }, skipSuits: true }, targets: [A], origin: "manual" };
+  const cfg = config({ labels: labels(A, B, C), rules: [fodder, rule("gear", { kind: ["gear"] }, [B])] });
+  const suits = new Set([AXE2]);
+  assert.deepEqual(claimOf(inv.items[AXE]!, cfg, [], suits), { ruleId: "fodder", alsoMatched: ["gear"] });
+  assert.deepEqual(claimOf(inv.items[AXE2]!, cfg, [], suits), { ruleId: "gear", alsoMatched: [] });
+  assert.deepEqual(claimOf(inv.items[KATANA]!, cfg, [], suits), { ruleId: "gear", alsoMatched: [] }, "below the threshold");
+  assert.equal(claimOf(inv.items[AXE2]!, { ...cfg, rules: [{ ...fodder, match: { ...fodder.match, skipSuits: false } }, ...cfg.rules.slice(1)] }, [], suits)?.ruleId, "fodder", "only a skipSuits rule looks at the suits");
+  assert.equal(matchCount(inv, cfg, fodder.match, { now: NOW, suitPieces: suits }).count, 1);
+  assert.deepEqual(moved(planOrganize(inv, cfg, [], { now: NOW, suitPieces: suits })).map(([s, , to]) => [s, to]), [[AXE, A], [KATANA, B], [AXE2, B]].sort((x, y) => x[0]! - y[0]!));
+});
 
 test("[fast] homeOf: the nearest container above an item that is some rule's target", () => {
   const inv = fold([{ serial: A }, { serial: BAG, parent: A }, { serial: POUCH, parent: BAG }], [{ serial: PEARL, name: "Black Pearl", in: POUCH }]);
@@ -240,6 +270,30 @@ test("[fast] an item taken and not yet put is carried, in no container", () => {
   assert.equal(placed.inv.items[PEARL]!.root, null);
   assert.deepEqual(placed.carried, [{ serial: PEARL, name: "Black Pearl" }]);
   assert.equal(placed.counts.get(A)!.items, 0);
+});
+
+test("[fast] overlaidInventory: a moved item's location, root and container all read its destination, and fills are the overlay's", () => {
+  const inv = fold([{ serial: A }, { serial: B, pos: at(104) }, { serial: BAG, parent: B }], [{ serial: PEARL, name: "Black Pearl", in: A }, { serial: RUBY, name: "Ruby", in: A }]);
+  const before = JSON.stringify(inv);
+  const view = overlaidInventory(inv, [step(PEARL, "Black Pearl", A, BAG)]);
+  const pearl = view.items[PEARL]!;
+  assert.deepEqual([pearl.container, pearl.root, pearl.location?.text, pearl.location?.root], [BAG, B, `Box ${B} › Box ${BAG}`, B]);
+  assert.equal(view.items[RUBY], inv.items[RUBY], "an item the overlay does not move is the fold's own");
+  assert.deepEqual([view.containers[A]!.capacity!.items, view.containers[B]!.capacity!.items, view.containers[BAG]!.capacity!.items], [1, 2, 1]);
+  assert.equal(view.containers[A]!.serial, A);
+  assert.equal(JSON.stringify(inv), before, "the fold handed in is not changed");
+  assert.equal(overlaidInventory(inv, [step(PEARL, "Black Pearl", A, BAG, "2026-09-28T09:00:00Z")]).items[PEARL]!.location?.text, `Box ${A}`, "a step its scan has seen since is over");
+});
+
+test("[fast] overlaidInventory: a carried item is in its character's backpack, or says it is carried when that backpack is not in the scans", () => {
+  const inv = fold([{ serial: A }, { serial: PACK, kind: "backpack", name: "Backpack" }], [{ serial: PEARL, name: "Black Pearl", in: A }]);
+  const mine = overlaidInventory(inv, [{ ...step(PEARL, "Black Pearl", A, null), character: "Tester" }]).items[PEARL]!;
+  assert.deepEqual([mine.container, mine.root, mine.location?.kind, mine.location?.character, mine.location?.text], [PACK, PACK, "backpack", "Tester", "Tester's backpack"]);
+  const counted = fold([{ serial: A }, { serial: PACK, kind: "backpack", name: "Backpack", tooltip: ["Backpack", "Contents: 3/125 Items, 10/550 Stones"] }], [{ serial: PEARL, name: "Black Pearl", in: A, weight: 2 }]);
+  assert.deepEqual(overlaidInventory(counted, [{ ...step(PEARL, "Black Pearl", A, null), character: "Tester" }]).containers[PACK]!.capacity, { items: 4, maxItems: 125, stones: 12, maxStones: 550 }, "a backpack that states its fill counts what it carries");
+  const other = overlaidInventory(inv, [{ ...step(PEARL, "Black Pearl", A, null), character: "Someone" }]).items[PEARL]!;
+  assert.deepEqual([other.container, other.root, other.location?.character, other.location?.text], [null, null, "Someone", "Carried by Organize (Someone)"]);
+  assert.equal(overlaidInventory(inv, [step(PEARL, "Black Pearl", A, null)]).items[PEARL]!.location?.text, "Carried by Organize");
 });
 
 const simOf = (inv: Inventory): Sim => newSim(inv, applyOverlay(inv, []).counts);
@@ -504,4 +558,54 @@ test("[smoke] the TazUO fixture: every put fits when the trips are replayed in o
   }
   const reordered = foldSnapshots([{ ...raw, items: [...raw.items].reverse() }]);
   assert.equal(JSON.stringify(planOrganize(reordered, cfg, [], { now })), JSON.stringify(plan));
+});
+
+// Issue #128: the bags trips leave behind, gathered on request, and targets about to fill up.
+const BAG2 = 0x40000011, BAG3 = 0x40000012, BAG4 = 0x40000013, BAG5 = 0x40000014, BAG6 = 0x40000015;
+test("[fast] emptyBagsOf lists unlabelled bags holding nothing in labelled roots, never an unopened, pinned or blacklisted one", () => {
+  const inv = fold([{ serial: A }, { serial: BAG, parent: A, name: "Weapons" }, { serial: BAG2, parent: A }, { serial: BAG3, parent: A, opened: false },
+    { serial: BAG4, parent: A }, { serial: BAG5, parent: A }, { serial: POUCH, parent: A }, { serial: B, pos: at(104) }, { serial: BAG6, parent: B },
+    { serial: C, pos: at(106) }, { serial: 0x40000016, parent: C }],
+  [{ serial: RUBY, name: "Ruby", in: BAG2 }, { serial: PEARL, name: "Black Pearl", in: POUCH }]);
+  const cfg = config({ labels: { ...labels(A, BAG4), [String(C)]: { serial: C, name: "Display", pinned: true, origin: "manual" } }, pinnedItems: [BAG5] });
+  const roots = scopeOf(inv, cfg, { now: NOW }).roots;
+  assert.deepEqual(emptyBagsOf(inv, applyOverlay(inv, []).counts, cfg, roots), [{ serial: BAG, name: "Weapons", container: A }],
+    "not one with a ruby, an unopened one, a labelled one, a pinned item, one in an unlabelled chest or one in a pinned chest");
+  assert.deepEqual(emptyBagsOf(inv, applyOverlay(inv, []).counts, cfg, roots, [BAG]), [], "nor a blacklisted one");
+  const placed = applyOverlay(inv, [step(PEARL, "Black Pearl", POUCH, A)]);
+  assert.deepEqual(emptyBagsOf(placed.inv, placed.counts, cfg, roots).map((b) => b.serial), [BAG, POUCH], "a bag a trip emptied is empty");
+});
+
+test("[fast] the plan lists empty bags, and with a gather container moves them there in ordinary trips", () => {
+  const inv = fold([{ serial: A }, { serial: BAG, parent: A, name: "Weapons" }, { serial: C, pos: at(106) }]);
+  const bare = planOrganize(inv, config({ labels: labels(A, C), rules: [gems([A])] }), [], { now: NOW });
+  assert.deepEqual(bare.emptyBags, [{ serial: BAG, name: "Weapons", container: A }]);
+  assert.deepEqual(bare.moves, [], "without a gather container nothing moves");
+  const cfg = config({ labels: labels(A, C), rules: [gems([A])], emptyBagsTo: C });
+  const plan = planOrganize(inv, cfg, [], { now: NOW });
+  assert.deepEqual(plan.moves.map((m) => [m.serial, m.from, m.to, m.ruleId]), [[BAG, A, C, EMPTY_BAGS_ID]]);
+  assert.deepEqual(plan.rules.at(-1), { ruleId: EMPTY_BAGS_ID, matched: 1, inPlace: 0, toMove: 1, noRoom: 0 });
+  assert.deepEqual(tripCommand(inv, plan, 1)!.takes, [{ serial: BAG, name: "Weapons", chain: [A] }]);
+  const after = planOrganize(inv, cfg, [step(BAG, "Weapons", A, C)], { now: NOW });
+  assert.deepEqual([after.moves, after.emptyBags], [[], []], "a gathered bag is in place and no longer listed");
+  assert.equal(after.rules.at(-1)!.inPlace, 1);
+  const old = foldSnapshots([houseScan({ boxes: [{ serial: A }, { serial: BAG, parent: A, name: "Weapons" }, { serial: C, pos: at(106) }], bridge: ["highlight", "grab", "goto", "trip"] })]);
+  const stale = planOrganize(old, cfg, [], { now: NOW });
+  assert.deepEqual([stale.moves, stale.emptyBags.length], [[], 1], "scripts whose bridge does not declare trip-bags are never sent a bag");
+  assert.deepEqual(stale.warnings.map((w) => [w.kind, w.serial]), [["old-scripts", C]]);
+});
+
+test("[fast] a target past 90% after the plan, with no later target to overflow into, is warned about, empty bags counted", () => {
+  const inv = fold([{ serial: A, max: 10 }, { serial: BAG, parent: A }, { serial: B, pos: at(104) }, { serial: C, pos: at(106) }],
+    [...pearls(7, A), { serial: ASH, name: "Sulfurous Ash", in: B }, { serial: GARLIC, name: "Garlic", in: B }]);
+  const plan = planOrganize(inv, config({ labels: labels(A, B, C), rules: [reagents([A])] }), [], { now: NOW });
+  assert.deepEqual(plan.warnings.filter((w) => w.kind === "nearly-full"), [{ kind: "nearly-full", serial: A,
+    detail: 'Rule "reagents" fills it to 10/10 items after this plan (1 of them is an empty bag). Add another container to its targets, or make room.' }]);
+  const overflow = planOrganize(inv, config({ labels: labels(A, B, C), rules: [reagents([A, C])] }), [], { now: NOW });
+  assert.deepEqual(overflow.warnings.filter((w) => w.kind === "nearly-full"), [], "C still takes the overflow");
+  const gathered = planOrganize(inv, config({ labels: labels(A, B, C), rules: [reagents([A])], emptyBagsTo: C }), [], { now: NOW });
+  assert.deepEqual(gathered.warnings.filter((w) => w.kind === "nearly-full"), [], "gathering the bag out leaves it at 9/10, not past 90%");
+  const nested = fold([{ serial: A, max: 10 }, { serial: POUCH, parent: A }, { serial: B, pos: at(104) }], [...pearls(8, A), { serial: ASH, name: "Sulfurous Ash", in: B }]);
+  assert.deepEqual(planOrganize(nested, config({ labels: labels(A, POUCH, B), rules: [reagents([POUCH])] }), [], { now: NOW }).warnings.filter((w) => w.kind === "nearly-full").map((w) => w.serial), [A],
+    "a bag target in a chest past 90% names the chest");
 });

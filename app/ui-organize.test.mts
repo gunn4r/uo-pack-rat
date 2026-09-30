@@ -10,7 +10,7 @@ import type { ItemQuery } from "./item-query.mts";
 import type { Container } from "./vault-lib.mts";
 import { PENDING_GRACE_MS } from "./organize-state.mts";
 import type { BridgeResultEntry, OrganizeConfig, OrganizePlan, OrganizeProposal, OrganizeRule, PlanMove, ProposalCandidate, ProposalGroup } from "./ui/api-types.mts";
-import { CATCH_ALL_ID, moveRule, withLabel, withoutLabel, pinNote, pinnedWith, upsertRule, withoutRule, newRuleId, ruleQueryFrom, blankQuery, droppedNote, ruleNameFrom, checkDraft, matchSummary, extraFilters, targetView, fillText, fillTone, targetOptions, withTargetLabels, matchLine, debounced, MATCH_DEBOUNCE_MS, organizeStage, labelledPlaces, ruleNameOf, containerNameOf, ruleCountParts, planHeadline, aboutTime, unclaimedNote, roomLines, crossSiteLines, warningGroups, tripRows, moveName, moveWhere, carriedView, tripGate, stepWatch, outcomeOf, outcomeText, failedSteps, runAllNext, tripRefusal, adoptWatch, resumedNote, GRACE_MS, TRIP_MS, STRATEGY_TEXT, candidateGroups, candidateNote, proposalHeadline, groupStatus, groupAway, intoText, proposalNotes, proposalStays, canTrySimple, acceptGate } from "./ui/organize-model.mts";
+import { CATCH_ALL_ID, EMPTY_BAGS_ID, emptyBagsNote, moveRule, withLabel, withoutLabel, pinNote, pinnedWith, upsertRule, withoutRule, newRuleId, ruleQueryFrom, blankQuery, droppedNote, ruleNameFrom, checkDraft, matchSummary, extraFilters, targetView, fillText, fillTone, targetOptions, withTargetLabels, matchLine, debounced, MATCH_DEBOUNCE_MS, organizeStage, labelledPlaces, ruleNameOf, containerNameOf, ruleCountParts, planHeadline, aboutTime, unclaimedNote, roomLines, crossSiteLines, warningGroups, tripRows, moveName, moveWhere, carriedView, tripGate, stepWatch, outcomeOf, outcomeText, failedSteps, runAllNext, tripRefusal, adoptWatch, resumedNote, GRACE_MS, TRIP_MS, STRATEGY_TEXT, candidateGroups, candidateNote, proposalHeadline, groupStatus, groupAway, intoText, proposalNotes, proposalStays, canTrySimple, acceptGate } from "./ui/organize-model.mts";
 
 const A = 0x40000001, B = 0x40000002, C = 0x40000003, GONE = 0x40000009;
 const chest = (serial: number, over: Partial<Container> = {}): Container => ({ serial, root: serial, parent: null, kind: "ground", name: "Metal Chest", tooltip: ["Metal Chest"], label: `Metal Chest (0x${serial.toString(16)})`, capacity: { items: 61, maxItems: 125, stones: null, maxStones: null }, scannedBy: "Tester", scannedAt: "2026-09-28T10:00:00Z", ...over });
@@ -69,6 +69,10 @@ test("[fast] removing a label removes it from the rules that fill it", () => {
   assert.deepEqual(config.rules.map((r) => r.targets), [[A], [A]]);
   assert.deepEqual(dropped, ["Gems"]);
   assert.equal(config.catchAll, A);
+  const gather = withoutLabel({ ...CFG, emptyBagsTo: C }, C);
+  assert.deepEqual(gather.dropped, ["Gems", "Empty bags"], "the gather container comes off too (issue #128)");
+  assert.equal(gather.config.emptyBagsTo, null);
+  assert.equal(withoutLabel({ ...CFG, emptyBagsTo: A }, C).config.emptyBagsTo, A);
 });
 
 test("[fast] rules are added, replaced, deleted and pinned items added without touching the input", () => {
@@ -89,10 +93,10 @@ test("[fast] newRuleId takes the lowest free rule-N", () => {
 });
 
 test("[fast] a rule saved from the Inventory keeps the item filters and names the location, character and seen filters it left out", () => {
-  const q: ItemQuery = { ...BASE, q: "ring", chars: ["Tester"], loc: ["Metal Chest"], roots: [A], seenDays: 7, slot: ["ring"], kind: ["gear"], rarityMin: "Lesser Artifact", props: [{ key: "lmc", min: 8 }], group: true, sort: "lmc", dir: -1 };
+  const q: ItemQuery = { ...BASE, q: "ring", chars: ["Tester"], loc: ["Metal Chest"], roots: [A], seenDays: 7, slot: ["ring"], kind: ["gear"], rarityMin: "Lesser Artifact", tags: ["brittle"], props: [{ key: "lmc", min: 8 }], group: true, sort: "lmc", dir: -1 };
   const { query, dropped } = ruleQueryFrom(q);
-  assert.deepEqual(Object.keys(query).sort(), ["hideTags", "kind", "med", "nogarg", "props", "q", "rarity", "rarityMax", "rarityMin", "slayer", "slot"]);
-  assert.deepEqual([query.q, query.slot, query.kind, query.rarityMin, query.props], ["ring", ["ring"], ["gear"], "Lesser Artifact", [{ key: "lmc", min: 8 }]]);
+  assert.deepEqual(Object.keys(query).sort(), ["hideTags", "kind", "med", "nogarg", "props", "q", "rarity", "rarityMax", "rarityMin", "slayer", "slot", "tags"]);
+  assert.deepEqual([query.q, query.slot, query.kind, query.rarityMin, query.tags, query.props], ["ring", ["ring"], ["gear"], "Lesser Artifact", ["brittle"], [{ key: "lmc", min: 8 }]]);
   assert.notEqual(query.props, q.props, "a copy, so editing the rule never edits the Inventory's filters");
   assert.deepEqual(dropped, ["Location", "Character", "Seen"]);
   assert.equal(droppedNote(dropped), "Location, Character and Seen filters are left out: a rule matches items wherever they are, so it keeps matching after they move.");
@@ -116,6 +120,8 @@ test("[fast] a rule's one-line summary: its names first, then the Inventory's fi
   assert.equal(matchSummary(match, CTX), "Name: black pearl, bloodmoss, garlic +1 more · Kind: reagent");
   assert.equal(matchSummary({ query: blankQuery() }, CTX), "Every item (no filter yet)");
   assert.equal(matchSummary({ query: { ...blankQuery(), kind: ["gear"] }, build: "hybrid" }, CTX), "Build: Hybrid · Kind: gear");
+  assert.equal(matchSummary({ query: { ...blankQuery(), kind: ["scroll"] }, school: "necromancy" }, CTX), "School: Necromancy · Kind: scroll");
+  assert.equal(matchSummary({ query: { ...blankQuery(), kind: ["gear"], tags: ["brittle"] }, skipSuits: true }, CTX), "Kind: gear · Tagged: brittle · Not in a saved suit");
 });
 
 test("[fast] extraFilters lists the filters the editor has no control for, and removes one at a time", () => {
@@ -229,8 +235,9 @@ test("[fast] labelledPlaces maps each location text inside a labelled container 
   assert.equal(labelledPlaces(all, {}).size, 0);
 });
 
-test("[fast] the catch-all's plan id matches the planner's", () => {
+test("[fast] the catch-all's and the empty bags' plan ids match the planner's", () => {
   assert.equal(CATCH_ALL_ID, "catch-all");
+  assert.equal(EMPTY_BAGS_ID, "empty-bags");
 });
 
 const move = (serial: number, name: string, from: number | null, to: number, ruleId: string, trip: number, amount = 1): PlanMove => ({ serial, name, amount, from, to, ruleId, alsoMatched: [], trip });
@@ -242,7 +249,7 @@ const PLAN: OrganizePlan = {
   room: [{ ruleId: "rule-1", needSlots: 10, freeSlots: 2, shortfall: 8 }, { ruleId: "rule-2", needSlots: 1, freeSlots: 7, shortfall: 0 }],
   crossSite: [{ ruleId: "rule-2", count: 1 }, { ruleId: CATCH_ALL_ID, count: 12 }],
   warnings: [{ kind: "stale-container", serial: B, detail: "last scanned 9 days ago" }, { kind: "unknown-capacity", serial: B, detail: "its tooltip has no Contents line" }, { kind: "unknown-capacity", serial: GONE, detail: "not in any scan" }],
-  carried: [{ serial: 12, name: "Ruby" }], unclaimed: 3, seconds: 480,
+  carried: [{ serial: 12, name: "Ruby" }], unclaimed: 3, seconds: 480, emptyBags: [],
 };
 const nameOf = containerNameOf(CFG, CONTAINERS), ruleName = ruleNameOf(CFG);
 
@@ -260,6 +267,7 @@ test("[fast] the plan's headline, counts and unclaimed note", () => {
   assert.deepEqual(ruleCountParts(PLAN.rules[0]!), [{ text: "2 to move", warn: false }, { text: "40 in place", warn: false }, { text: "8 no room", warn: true }]);
   assert.deepEqual(ruleCountParts(PLAN.rules[1]!).map((p) => p.text), ["1 to move", "0 in place"]);
   assert.equal(ruleName(CATCH_ALL_ID), "Everything else");
+  assert.equal(ruleName(EMPTY_BAGS_ID), "Empty bags");
   assert.equal(ruleName("rule-9"), "rule-9");
 });
 
@@ -277,6 +285,18 @@ test("[fast] warnings are grouped by kind with each container named by its label
     { kind: "unknown-capacity", title: "Fill unknown: reinstall the scripts and rescan (2)", text: "Display: its tooltip has no Contents line · 0x40000009: not in any scan" },
   ]);
   assert.equal(warningGroups([{ kind: "stale-container", serial: A, detail: "last scanned 2026-01-01T12:00:00-07:00" }], nameOf)[0]!.text, "Reagents: last scanned 2026-01-01", "the planner's timestamps read as dates");
+});
+
+test("[fast] the empty bags note counts them, names a few with their place, and says how to gather them (issue #128)", () => {
+  assert.equal(emptyBagsNote(PLAN, false, nameOf), null);
+  const bags = Array.from({ length: 7 }, (_, i) => ({ serial: 0x42000000 + i, name: i ? "Bag" : "Weapons", container: i % 2 ? C : A }));
+  assert.deepEqual(emptyBagsNote({ emptyBags: bags, moves: [] }, false, nameOf), {
+    title: "7 empty bags in your labelled containers",
+    text: "Weapons (in Reagents), Bag (in Gems), Bag (in Reagents), Bag (in Gems), Bag (in Reagents) and 2 more. Each takes one of its container's item slots. To free those slots, pick a container for Empty bags under Rules, and the plan gathers them there.",
+  });
+  const one = bags.slice(0, 1);
+  assert.equal(emptyBagsNote({ emptyBags: one, moves: [move(one[0]!.serial, "Weapons", A, C, EMPTY_BAGS_ID, 1)] }, true, nameOf)!.text, "Weapons (in Reagents). Each takes one of its container's item slots. The trips below gather them into the container picked for Empty bags under Rules.");
+  assert.match(emptyBagsNote({ emptyBags: one, moves: [] }, true, nameOf)!.text, /not being gathered yet: the reports above say why\.$/, "picked, but no bag moves (old scripts, no room)");
 });
 
 test("[fast] tripRows sums each trip in one line and keeps its moves for the table", () => {
@@ -384,8 +404,8 @@ test("[fast] a refused trip reads as what to do next, and a hand-edited setup as
 
 test("[fast] Auto organize: the proposal's headline, each group's status, the notes, the chests by house, and when Accept and Try Simple are offered", () => {
   const cand = (serial: number, over: Partial<ProposalCandidate> = {}): ProposalCandidate => ({ serial, name: `Chest ${serial.toString(16)}`, site: 0, fill: { items: 10, max: 125 }, label: null, mine: false, ticked: true, ...over });
-  const group = (over: Partial<ProposalGroup> = {}): ProposalGroup => ({ key: "reagents", name: "Reagents", family: "reagents", ruleIds: ["auto-reagents"], items: 40, needSlots: 40, targets: [A], roomSlots: 125, shortfall: 0, addContainers: 0, crossSite: 0, ...over });
-  const P = (over: Partial<OrganizeProposal> = {}): OrganizeProposal => ({ strategy: "simple", candidates: [cand(A), cand(B)], unusable: [], containers: [A, B], refused: [], groups: [group()], unassigned: 0, addContainers: 0, manualRules: 0, config: CFG, changed: true, plan: { moves: 12, trips: 1, noRoom: 0, crossSite: 0, unclaimed: 0, seconds: 30 }, ...over });
+  const group = (over: Partial<ProposalGroup> = {}): ProposalGroup => ({ key: "reagents", name: "Reagents", family: "reagents", ruleIds: ["auto-reagents"], items: 40, needSlots: 40, targets: [A], bagIn: null, needsBag: false, roomSlots: 125, shortfall: 0, addContainers: 0, crossSite: 0, ...over });
+  const P = (over: Partial<OrganizeProposal> = {}): OrganizeProposal => ({ strategy: "simple", candidates: [cand(A), cand(B)], unusable: [], containers: [A, B], refused: [], groups: [group()], unassigned: 0, layout: { chests: 0, bags: [], spareBags: 0, roomy: false }, manualRules: 0, config: CFG, changed: true, plan: { moves: 12, trips: 1, noRoom: 0, crossSite: 0, unclaimed: 0, seconds: 30 }, ...over });
   assert.equal(proposalHeadline(P()), "Labels 2 containers and writes 1 rule. 12 items to move in 1 trip, about 1 minute.");
   assert.equal(proposalHeadline(P({ plan: { moves: 0, trips: 0, noRoom: 0, crossSite: 0, unclaimed: 0, seconds: 30 } })), "Labels 2 containers and writes 1 rule. Nothing needs to move.");
   assert.equal(proposalHeadline(P({ changed: false })), "This is already your setup: nothing to change.");
@@ -394,19 +414,26 @@ test("[fast] Auto organize: the proposal's headline, each group's status, the no
   assert.deepEqual(groupStatus(group()), { badge: "Fits", tone: undefined, text: null });
   assert.deepEqual(groupStatus(group({ shortfall: 8, addContainers: 1 })), { badge: "Short", tone: "warn", text: "8 slots short: add 1 container." });
   assert.deepEqual(groupStatus(group({ targets: [], roomSlots: 0, shortfall: 40, addContainers: 1 })), { badge: "No container", tone: "warn", text: "Add 1 container. Its items stay where they are." });
+  assert.deepEqual(groupStatus(group({ needsBag: true })), { badge: "No bag", tone: undefined, text: "Loose in the chest it shares: an empty bag there keeps it apart." });
   assert.equal(groupAway(group({ crossSite: 3 })), "3 items at another house stay there.");
   assert.equal(groupAway(group()), null);
   assert.equal(intoText(group({ targets: [A, B] }), [cand(A), cand(B)]), "Chest 40000001, then Chest 40000002");
   assert.equal(intoText(group({ targets: [] }), []), "—");
+  assert.equal(intoText(group({ targets: [0x40000009], bagIn: A }), [cand(A)]), "Chest 40000001, in a bag of its own");
 
   assert.equal(proposalNotes(P({ manualRules: 1, plan: { moves: 0, trips: 0, noRoom: 0, crossSite: 0, unclaimed: 0, seconds: 30 } }))[0], "Your 1 rule stays above these and takes its items first.");
-  assert.deepEqual(proposalNotes(P({ manualRules: 2, refused: [{ serial: C, reason: "blacklisted" }], addContainers: 3, plan: { moves: 1, trips: 1, noRoom: 0, crossSite: 4, unclaimed: 0, seconds: 30 } })), [
+  assert.deepEqual(proposalNotes(P({ manualRules: 2, refused: [{ serial: C, reason: "blacklisted" }], layout: { chests: 3, bags: [], spareBags: 2, roomy: false }, plan: { moves: 1, trips: 1, noRoom: 0, crossSite: 4, unclaimed: 0, seconds: 30 } })), [
     "Your 2 rules stay above these and take their items first.",
     "Container 0x40000003 could not be used: blacklisted.",
-    "Place 3 more containers, scan them, and run Auto organize again to fit everything.",
+    "For the full Simple layout (no chest over 80% full, a bag for each group sharing one), add 3 more chests. Then rescan and run Auto organize again.",
     "4 items belong at another house: carry them over by hand.",
   ]);
   assert.deepEqual(proposalNotes(P()), []);
+  assert.deepEqual(proposalNotes(P({ layout: { chests: 0, bags: [], spareBags: 0, roomy: true } })), ["No chest is filled past 80%, so new loot has room: some groups spread into a second chest."]);
+  const bags = [{ chest: A, family: "Armour", bags: 5 }, { chest: B, family: "Chest 40000002", bags: 1 }, { chest: null, family: "Scrolls", bags: 2 }];
+  assert.deepEqual(proposalNotes(P({ strategy: "detailed", layout: { chests: 1, bags, spareBags: 3, roomy: false } })), [
+    "For the full Detailed layout (no chest over 80% full, a bag for each group sharing one), add 1 more chest and 8 bags: 5 in Chest 40000001 (Armour), 1 in Chest 40000002, 2 in a new Scrolls chest. 3 empty bags already in your chests can be moved in first. Then rescan and run Auto organize again.",
+  ]);
   assert.deepEqual(proposalStays(P({ plan: { moves: 30, trips: 2, noRoom: 12, crossSite: 0, unclaimed: 5, seconds: 30 } })), ["12 items have no room and stay where they are.", "5 items no rule takes stay where they are."]);
   assert.deepEqual(proposalStays(P({ plan: { moves: 30, trips: 2, noRoom: 1, crossSite: 0, unclaimed: 1, seconds: 30 } })), ["1 item has no room and stays where it is.", "1 item no rule takes stays where it is."]);
   assert.deepEqual(proposalStays(P()), []);

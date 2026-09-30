@@ -131,6 +131,14 @@ export function runSummary(r: SavedRun): RunSummary {
   };
 }
 
+// Every piece of every saved run's suit (issue #133): what an Organize rule with skipSuits leaves alone. A run's
+// result.best is the suit it found, slot -> {serial} or null for an empty slot.
+export function suitPieces(runs: SavedRun[]): Set<number> {
+  const out = new Set<number>();
+  for (const r of runs) for (const it of Object.values((r.result?.best ?? {}) as Record<string, { serial?: unknown } | null>)) if (typeof it?.serial === "number") out.add(it.serial);
+  return out;
+}
+
 // A run saved before the contract settled (2026-09-13) may carry `settings.allowOthers` (now
 // `allowOthersWorn`) and `settings.budgetS` (now `settings.budgetMs`, milliseconds like every other
 // stored/transmitted budget) and may be missing `schemaVersion`; one saved before the weapon exclusion

@@ -151,6 +151,8 @@ class World(object):
                 self.clock.at(self.clock.now - self.clock.start + lag, lambda: setattr(it, "Opened", True))
             else:
                 it.Opened = True
+            # `contents_lag` (fake seconds): the contents packet arrives that long after the window opened.
+            it.contents_at = self.clock.now + lag + getattr(self, "contents_lag", 0)
             it.EverOpened = True
             return True
         return False
@@ -168,7 +170,7 @@ class World(object):
 
     def kids(self, serial, recursive):
         parent = self.items.get(serial)
-        if parent is None or not parent.Opened:
+        if parent is None or not parent.Opened or self.clock.now < getattr(parent, "contents_at", 0):
             return []
         out = []
         for it in list(self.items.values()):
@@ -226,7 +228,7 @@ def tazuo_api(world, backpack, bank=0, skills=None):
     api.UseObject = lambda s, *a: world.open(int(s))
     def items_in(s, recursive=False):
         world.calls.append(("items_in", int(s)))
-        return world.kids(int(s), recursive)
+        return None if getattr(world, "items_in_none", False) else world.kids(int(s), recursive)
     api.ItemsInContainer = items_in
     fta = getattr(world, "find_type_all", "ok")     # "ok", "missing" (a build without the call) or "raise"
     if fta != "missing":

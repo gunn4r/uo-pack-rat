@@ -400,8 +400,12 @@ const PS_LEVEL_RE = /\bscroll\b.*\((\d{3}) skill\)/i;
 //              is kept as "set: <line>"
 // A stack's name line starts with its amount ("2 Greater Heal"); that number is stripped only when it
 // equals `amount`, so a name that really starts with a number ("10 Potions" on one item) keeps it.
+// A word of seven or more digits is dropped first: it is a cliloc number the client could not turn into text (issue
+// #129: a hat's name line read "21025908 Of Wizardry", 1025908 being the item-name cliloc of its graphic 0x1714), and
+// never a stack's amount, which is at most 65,535.
+const UNRESOLVED_CLILOC = /(^|\s)\d{7,}(?=\s|$)/g;
 export function stackName(line: string | undefined, amount?: number | undefined): string {
-  return stripHtml(line).replace(/^(\d+)\s+(?=\S)/, (all, n: string) => (+n === amount ? "" : all));
+  return stripHtml(line).replace(UNRESOLVED_CLILOC, "").trim().replace(/^(\d+)\s+(?=\S)/, (all, n: string) => (+n === amount ? "" : all));
 }
 export function parseTooltip(rawLines?: Array<string | undefined> | undefined, amount?: number | undefined): ParsedTooltip {
   const TU = tagUnits(), rarityLine = rarityRe();
@@ -506,12 +510,31 @@ export const SLOT_LABELS: Record<string, string> = {
   feet: "Feet", robe: "Robe", tunic: "Middle Torso", earrings: "Earrings", waist: "Waist", shirt: "Shirt", spellbook: "Spellbook",
 };
 
-const SPELL_NAMES = new Set(("clumsy,create food,feeblemind,heal,magic arrow,night sight,reactive armor,weaken,agility,cunning,cure,harm,magic trap,magic untrap,protection,strength,bless,fireball,magic lock,poison,telekinesis,teleport,unlock,wall of stone,arch cure,arch protection,curse,fire field,greater heal,lightning,mana drain,recall,blade spirits,dispel field,incognito,magic reflection,mind blast,paralyze,poison field,summon creature,dispel,energy bolt,explosion,invisibility,mark,mass curse,paralyze field,reveal,chain lightning,energy field,flamestrike,gate travel,mana vampire,mass dispel,meteor swarm,polymorph,earthquake,energy vortex,resurrection,air elemental,summon daemon,earth elemental,fire elemental,water elemental,summon air elemental,summon earth elemental,summon fire elemental,summon water elemental,"
-  + "animate dead,blood oath,corpse skin,curse weapon,evil omen,horrific beast,lich form,mind rot,pain spike,poison strike,strangle,summon familiar,vampiric embrace,vengeful spirit,wither,wraith form,exorcism,"
-  + "nether bolt,healing stone,purge magic,enchant,sleep,eagle strike,animated weapon,stone form,spell trigger,mass sleep,cleansing winds,bombard,spell plague,hail storm,nether cyclone,rising colossus,"
-  + "cleanse by fire,close wounds,consecrate weapon,divine fury,dispel evil,enemy of one,holy light,noble sacrifice,remove curse,sacred journey,"
-  + "honorable execution,confidence,evasion,counter attack,lightning strike,momentum strike,focus attack,death strike,animal form,ki attack,surprise attack,backstab,shadowjump,mirror image,"
-  + "arcane circle,gift of renewal,immolating weapon,attune weapon,thunderstorm,nature's fury,summon fey,summon fiend,reaper form,wildfire,essence of wind,dryad allure,ethereal voyage,word of death,gift of life,arcane empowerment").split(","));
+// The spells a scroll is named after (exact, lower-cased names, so Magery's "curse" is not Necromancy's "curse
+// weapon"), school by school with each school's scroll graphics (issue #134). Chivalry, Bushido and Ninjitsu have no
+// scrolls; their names count as spell scrolls of no school only where a scan has no graphic to say otherwise.
+export type SpellSchool = "magery" | "necromancy" | "mysticism" | "spellweaving";
+const spells = (s: string): Set<string> => new Set(s.split(","));
+const SCHOOL_SPELLS: Record<SpellSchool, { names: Set<string>; graphics: [number, number] }> = {
+  magery: { names: spells("clumsy,create food,feeblemind,heal,magic arrow,night sight,reactive armor,weaken,agility,cunning,cure,harm,magic trap,magic untrap,protection,strength,bless,fireball,magic lock,poison,telekinesis,teleport,unlock,wall of stone,arch cure,arch protection,curse,fire field,greater heal,lightning,mana drain,recall,blade spirits,dispel field,incognito,magic reflection,mind blast,paralyze,poison field,summon creature,dispel,energy bolt,explosion,invisibility,mark,mass curse,paralyze field,reveal,chain lightning,energy field,flamestrike,gate travel,mana vampire,mass dispel,meteor swarm,polymorph,earthquake,energy vortex,resurrection,air elemental,summon daemon,earth elemental,fire elemental,water elemental,summon air elemental,summon earth elemental,summon fire elemental,summon water elemental"), graphics: [0x1F2D, 0x1F6C] },
+  necromancy: { names: spells("animate dead,blood oath,corpse skin,curse weapon,evil omen,horrific beast,lich form,mind rot,pain spike,poison strike,strangle,summon familiar,vampiric embrace,vengeful spirit,wither,wraith form,exorcism"), graphics: [0x2260, 0x2270] },
+  mysticism: { names: spells("nether bolt,healing stone,purge magic,enchant,sleep,eagle strike,animated weapon,stone form,spell trigger,mass sleep,cleansing winds,bombard,spell plague,hail storm,nether cyclone,rising colossus"), graphics: [0x2D9E, 0x2DAD] },
+  spellweaving: { names: spells("arcane circle,gift of renewal,immolating weapon,attune weapon,thunderstorm,nature's fury,summon fey,summon fiend,reaper form,wildfire,essence of wind,dryad allure,ethereal voyage,word of death,gift of life,arcane empowerment"), graphics: [0x2D51, 0x2D60] },
+};
+const SCHOOLS = Object.entries(SCHOOL_SPELLS) as [SpellSchool, { names: Set<string>; graphics: [number, number] }][];
+const SPELL_NAMES = new Set([...SCHOOLS.flatMap(([, s]) => [...s.names]), ...spells("cleanse by fire,close wounds,consecrate weapon,divine fury,dispel evil,enemy of one,holy light,noble sacrifice,remove curse,sacred journey,"
+  + "honorable execution,confidence,evasion,counter attack,lightning strike,momentum strike,focus attack,death strike,animal form,ki attack,surprise attack,backstab,shadowjump,mirror image")]);
+const inRange = (g: number, [lo, hi]: [number, number]): boolean => g >= lo && g <= hi;
+// A spell's name makes an item a scroll only on a scroll graphic or an unknown one: Mysticism's conjured Healing Stone
+// (0x4078) is named after its spell.
+const isSpellScroll = (name: string, graphic: number | null | undefined): boolean =>
+  SPELL_NAMES.has(name.toLowerCase().trim()) && (!graphic || SCHOOLS.some(([, s]) => inRange(graphic, s.graphics)));
+// A spell scroll's school: its exact name, on that school's scroll graphic when the scan has one. Null for anything
+// else, a spell of no school, or a name on another school's graphic.
+export function spellSchoolOf(name: string, graphic: number | null | undefined): SpellSchool | null {
+  const hit = SCHOOLS.find(([, s]) => s.names.has(name.toLowerCase().trim()));
+  return hit && (!graphic || inRange(graphic, hit[1].graphics)) ? hit[0] : null;
+}
 // The paperdoll layer each tiledata layer number stands for (TazUO's Layer enum names, the same names
 // an adapter reports for a worn item's layer).
 const TILEDATA_LAYERS: Record<number, string> = { 1: "OneHanded", 2: "TwoHanded", 3: "Shoes", 4: "Pants", 5: "Shirt", 6: "Helmet", 7: "Gloves",
@@ -810,7 +833,7 @@ function enrich(raw: EnrichRaw, loc: EnrichLoc): Item {
     gargoyle: /\bgargish\b/i.test(parsed.name || raw.name || "") || parsed.flags.includes("gargoyles only"),
     slayers: slayersOf(parsed.flags),
     medable: medableOf(parsed.name || raw.name || "", cls.slot, cls.gear, parsed.flags),
-    slot: cls.slot, twoHanded: cls.twoHanded, gear: cls.gear, kind: cls.gear ? "gear" : kindOf(parsed.name || raw.name, parsed), ...loc,
+    slot: cls.slot, twoHanded: cls.twoHanded, gear: cls.gear, kind: cls.gear ? "gear" : kindOf(parsed.name || raw.name, parsed, raw.graphic), ...loc,
   };
 }
 
@@ -1200,6 +1223,14 @@ export function propertyKeys(inv: ItemsLike): string[] {
   set.delete("tagPenalty");
   return [...set].sort((a, b) => (PROP_LABELS[a] || a).localeCompare(PROP_LABELS[b] || b));
 }
+// Issue #133: the numeric tooltip lines no property models (parseTooltip's extras: "splintering weapon", "hit fatigue",
+// "weapon speed"), skill bonuses and ranges left out, so a property filter can put a threshold on them
+// (item-query.mts's colVal reads them). Apart from propertyKeys, which the Suit Builder's weights and floors list too.
+export function extraKeys(inv: ItemsLike): string[] {
+  const set = new Set<string>();
+  for (const it of Object.values(inv.items)) for (const [k, v] of Object.entries(it.extras || {})) if (typeof v === "number" && !SKILL_SET.has(k)) set.add(k);
+  return [...set].sort();
+}
 
 // The item's own words (name, tooltip lines, rarity, kind), never where it sits: what an Organize rule's free
 // text is matched against (item-query.mts's matchesItem, issue #11).
@@ -1220,26 +1251,33 @@ const KIND_RULES: Array<[string, RegExp]> = [
   ["potion", /\b(potion|keg|elixir|balm|salve|lotion)\b/i],
   ["bandage", /\bbandage/i],
   ["currency", /\b(gold coin|gold|doubloon|silver|token|coin|check|bank check)\b/i],
+  ["resource", /\bblank scrolls?\b/i],   // Inscription's and Cartography's material, not a scroll to file
   ["scroll", /\b(scroll|powerscroll|scroll of)\b/i],
-  ["map", /\bmap\b/i],
+  // A message in a bottle and the SOS inside it go with the treasure maps (ahead of "bottle", a resource).
+  ["map", /\b(map|message in a bottle|sos)\b/i],
   ["rune", /\b(rune|runebook|runic atlas|moonstone)\b/i],
   ["book", /\b(book|tome|journal|primer|compendium)\b/i],
   ["deed", /\b(deed|commodity|certificate|voucher|ticket)\b/i],
   ["key", /\b(key|keyring|key ring)\b/i],
   ["gem", /\b(diamond|ruby|sapphire|star sapphire|emerald|amethyst|citrine|tourmaline|amber|gem|gems|jewel)\b/i],
   ["ammo", /\b(arrow|arrows|bolt|bolts|crossbow bolt|shuriken|fukiya dart|throwing)\b/i],
-  ["resource", /\b(ingot|ingots|ore|log|logs|board|boards|leather|hides|hide|cloth|bolt of cloth|yarn|thread|feather|feathers|shaft|shafts|cotton|wool|flax|kindling|granite|sand|bone|bones|scale|scales|blank scroll|blank map|fabric|silk|pelt|fur|resin|sap|bark|wood|essence|powder|dust|crystal|shard|fragment|ectoplasm|glass|bottle|bottles|empty bottle|jar|nails|hinge|gear|axle|spring|clock parts|sextant parts|barrel|pile of|stack of|bundle)\b/i],
+  ["resource", /\b(ingot|ingots|ore|log|logs|board|boards|leather|hides|hide|cloth|bolt of cloth|yarn|thread|feather|feathers|shaft|shafts|cotton|wool|flax|kindling|granite|sand|bone|bones|scale|scales|blank map|fabric|silk|pelt|fur|resin|sap|bark|wood|essence|powder|dust|crystal|shard|fragment|ectoplasm|glass|bottle|bottles|empty bottle|jar|nails|hinge|gear|axle|spring|clock parts|sextant parts|barrel|pile of|stack of|bundle)\b/i],
   ["food", /\b(fish|steak|steaks|bread|cheese|apple|apples|meat|ham|egg|eggs|cake|pie|ribs|sausage|bacon|wine|ale|beer|liquor|milk|water|pitcher|cookie|cookies|grapes|pear|peach|banana|carrot|onion|cabbage|lettuce|pumpkin|squash|watermelon|honey|cooked|raw|muffin|chicken|lamb|bird|turkey|fruit|vegetable|dough|flour|jerky|stew|soup|candy|pretzel)\b/i],
   ["tool", /\b(pickaxe|shovel|tongs|smith'?s hammer|sewing kit|tinker'?s tools|mortar|pestle|fletcher'?s tools|scissors|skinning knife|lockpick|lockpicks|mapmaker'?s pen|saw|dovetail|jointing plane|moulding plane|draw knife|froe|inshave|scorp|rolling pin|flour sifter|skillet|pen|ink|fishing pole|hammer|loom|spinning wheel|anvil|forge|tool|tools|axe|pick)\b/i],
   ["container", /\b(bag|pouch|box|chest|crate|backpack|basket|trunk|armoire|cabinet|quiver)\b/i],
   ["clothing", /\b(shirt|doublet|surcoat|tunic|dress|gown|kilt|skirt|sash|apron|robe|cloak|hat|cap|bandana|bonnet|boots|sandals|shoes|thigh boots|gloves|half apron|body sash|obi|kimono|hakama|jin-?baori)\b/i],
 ];
 const REFINEMENT_RE = /\b(wash|varnish|polish|cure|gloss|scour|lacquer|resin) of (defense|protection|hardening|fortification|invulnerability)\b/i;
-export function kindOf(name: string | null | undefined, parsed?: ParsedTooltip | null | undefined): string {
+// The bard's instruments are tools (issue #129), told by whole words so Harpy Wing, Absolute… or Hard Rum never are one;
+// Organize's Instruments preset names the same words.
+export const INSTRUMENTS: readonly string[] = ["drum", "tambourine", "harp", "lute", "flute", "fire horn", "cello", "trumpet", "cowbell"];
+const INSTRUMENT_RE = new RegExp(`\\b(${INSTRUMENTS.join("|")})s?\\b`, "i");
+export function kindOf(name: string | null | undefined, parsed?: ParsedTooltip | null | undefined, graphic?: number | null | undefined): string {
   const n = name || "";
-  if (SPELL_NAMES.has(n.toLowerCase().trim())) return "scroll";
+  if (isSpellScroll(n, graphic)) return "scroll";
   if (PRIMER_RE.test(n)) return "book";
   if (REFINEMENT_RE.test(n)) return "refinement";
+  if (INSTRUMENT_RE.test(n)) return "tool";
   for (const [kind, rx] of KIND_RULES) if (rx.test(n)) return kind;
   const hasProps = parsed && Object.keys(parsed.props || {}).some((k) => k !== "tagPenalty");
   return hasProps ? "gear" : "other";
