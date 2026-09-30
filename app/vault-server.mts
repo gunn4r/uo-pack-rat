@@ -136,7 +136,7 @@ import { checkOrganizeConfig, emptyOrganizeConfig, LIMITS, matchProblem, salvage
 import { ancestry, packKept, planOrganize, stampMs, tripCommand, matchCount, overlaidInventory, type Plan, type PutAway } from "./organize.mts";
 import { checkPutAwayRequest, nothingDetail, requestId, tripMsg, FRESH_MARGIN_MS, MAX_REQUEST_BYTES, PUT_AWAY_REPLY, PUT_AWAY_REQUEST, type PutAwayReply, type PutAwayRequest } from "./put-away.mts";
 import { PRESETS } from "./organize-presets.mts";
-import { emptyKindOverrides, kindCount, kindsDocument, kindsFor, salvageKindOverrides, withKinds, withoutKinds, KIND_LIMITS, MAX_KINDS_BYTES, OVERRIDE_KINDS } from "./item-kinds.mts";
+import { emptyKindOverrides, isKindName, kindCount, kindsDocument, kindsFor, kindsText, salvageKindOverrides, withKinds, withoutKinds, KIND_LIMITS, MAX_KINDS_BYTES, OVERRIDE_KINDS } from "./item-kinds.mts";
 import { proposeOrganize, STRATEGY_IDS, type StrategyId } from "./organize-strategies.mts";
 import { addGrab, emptyOrganizeState, harvestTrips, noteSeen, pruneOverlay, salvageOrganizeState, PENDING_GRACE_MS, type BridgeView, type OrganizeState } from "./organize-state.mts";
 import { retentionError, retentionOf, runsToPrune, scansToPrune, type ScanFile } from "./retention.mts";
@@ -847,7 +847,15 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
     if (problems.length) console.warn(`item-kinds.json: left out ${problems.slice(0, 5).join("; ")}${problems.length > 5 ? ` and ${problems.length - 5} more` : ""}`);
     return overrides;
   }
-  const writeKindOverrides = (o: KindOverrides): void => writeFileAtomic(ITEM_KINDS, JSON.stringify(kindsDocument(o), null, 2) + "\n", DATA_FILE_MODE);
+  // Writes the next document, or says why not: past the entry cap (withKinds' null), or a file larger than the read
+  // above accepts, which would set every kind aside at the next read.
+  function saveKindOverrides(next: KindOverrides | null): string | null {
+    const text = next && kindsText(next);
+    if (!text) return `that would make more than ${KIND_LIMITS.entries} item kinds; reset some first`;
+    if (Buffer.byteLength(text) > MAX_KINDS_BYTES) return `that would make item-kinds.json larger than ${MAX_KINDS_BYTES / 1e6} MB; reset some first`;
+    writeFileAtomic(ITEM_KINDS, text, DATA_FILE_MODE);
+    return null;
+  }
   // <data>/organize.json: Organize's setup (issue #11, app/organize-config.mts). Read through the salvage, so a
   // hand edit that breaks one rule drops that rule, not the whole setup, and `problems` says what went; a file
   // that does not parse is moved aside (the way loadSettings() treats settings.json) and Organize starts empty.
@@ -2027,26 +2035,26 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
       if (req.method === "GET" && url.pathname === "/api/item-kinds") return send(res, 200, { ok: true, ...kindsDocument(readKindOverrides()) });
       if (req.method === "POST" && url.pathname === "/api/item-kinds") {
         const { name, graphic, kind } = asObject(await readBody(req, { limit: 8e3 }));
-        if (name !== undefined && !(isBoundedString(name, KIND_LIMITS.name) && name.trim())) return send(res, 400, { ok: false, error: `name must be an item name of at most ${KIND_LIMITS.name} characters` });
+        if (name !== undefined && !(typeof name === "string" && isKindName(name))) return send(res, 400, { ok: false, error: `name must be an item name of at most ${KIND_LIMITS.name} characters` });
         if (graphic !== undefined && !isBoundedInt(graphic, 0, 0xFFFF)) return send(res, 400, { ok: false, error: "graphic must be an item graphic (0 to 65535)" });
         if (name === undefined && graphic === undefined) return send(res, 400, { ok: false, error: "name or graphic is required" });
         if (kind !== null && !OVERRIDE_KINDS.includes(kind as string)) return send(res, 400, { ok: false, error: `kind must be null or one of ${OVERRIDE_KINDS.join(", ")}` });
         const base = readKindOverrides(), at = { name: name as string | undefined, graphic: graphic as number | undefined };
         const next = kind === null ? withoutKinds(base, at) : withKinds(base, kindsFor(at, kind as string));
-        if (!next) return send(res, 409, { ok: false, error: `you already have ${KIND_LIMITS.entries} item kinds; reset some first` });
-        writeKindOverrides(next);
+        const refused = saveKindOverrides(next);
+        if (refused) return send(res, 409, { ok: false, error: refused });
         broadcastEvent("changed", { what: "inventory", by: req.headers["x-client-id"], at: Date.now() });
-        return send(res, 200, { ok: true, ...kindsDocument(next) });
+        return send(res, 200, { ok: true, ...kindsDocument(next!) });
       }
       if (req.method === "POST" && url.pathname === "/api/item-kinds/import") {
         const body = asObject(await readBody(req, { limit: MAX_KINDS_BYTES, tooLargeMsg: "the item kinds file is too large" }));
         const { overrides, problems } = salvageKindOverrides(body);
         if (!kindCount(overrides)) return send(res, 400, { ok: false, error: `the file holds no item kinds to import${problems.length ? ` (${problems[0]})` : ""}` });
         const next = withKinds(readKindOverrides(), overrides);
-        if (!next) return send(res, 409, { ok: false, error: `the import would make more than ${KIND_LIMITS.entries} item kinds` });
-        writeKindOverrides(next);
+        const refused = saveKindOverrides(next);
+        if (refused) return send(res, 409, { ok: false, error: `the import was refused: ${refused}` });
         broadcastEvent("changed", { what: "inventory", by: req.headers["x-client-id"], at: Date.now() });
-        return send(res, 200, { ok: true, ...kindsDocument(next), skipped: problems.length, problems: problems.slice(0, 5) });
+        return send(res, 200, { ok: true, ...kindsDocument(next!), skipped: problems.length, problems: problems.slice(0, 5) });
       }
       if (req.method === "GET" && url.pathname === "/api/organize") return send(res, 200, { ok: true, ...readOrganize() });
       if (req.method === "PUT" && url.pathname === "/api/organize") {

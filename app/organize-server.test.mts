@@ -517,6 +517,8 @@ test("[fast] POST /api/item-kinds refuses gear, an unknown kind, a bad name or g
   try {
     for (const [sent, error] of [
       [{ name: "Ruby", kind: "gear" }, /kind must be null or one of/],
+      [{ name: "Ruby", kind: "container" }, /kind must be null or one of/],
+      [{ name: "Ruby\u0000", kind: "decor" }, /name must be an item name/],
       [{ name: "Ruby", kind: "boulder" }, /kind must be/],
       [{ name: "Ruby" }, /kind must be/],
       [{ name: "  ", kind: "decor" }, /name must be an item name/],
@@ -580,6 +582,23 @@ test("[fast] an item-kinds.json that does not parse is moved aside with a warnin
     assert.match(String(warn.mock.calls.at(-1)?.arguments[0]), /item-kinds\.json: left out names "ruby": "gear" is not a kind/);
   } finally {
     warn.mock.restore();
+    await s.close();
+  }
+});
+
+test("[fast] POST /api/item-kinds/import refuses a change whose item-kinds.json would be larger than a read accepts, and keeps the file", async () => {
+  const { s, dir } = await serve();
+  try {
+    // 256 Chinese characters are 768 bytes a name: 2000 of them fit, 1000 more would pass MAX_KINDS_BYTES.
+    const names = (from: number, n: number): Record<string, string> => Object.fromEntries(Array.from({ length: n }, (_, i) => [`${from + i} ${"龍".repeat(250)}`, "decor"]));
+    assert.equal((await call(s, "/api/item-kinds/import", body("POST", { names: names(0, 2000) }))).status, 200);
+    const before = readFileSync(join(dir, "item-kinds.json"), "utf8");
+    const r = await call(s, "/api/item-kinds/import", body("POST", { names: names(2000, 1000) }));
+    assert.equal(r.status, 409);
+    assert.match(String(r.body.error), /larger than 2 MB/);
+    assert.equal(readFileSync(join(dir, "item-kinds.json"), "utf8"), before);
+    assert.equal(Object.keys((await call<{ names: object }>(s, "/api/item-kinds")).body.names).length, 2000, "the file still reads");
+  } finally {
     await s.close();
   }
 });

@@ -6,7 +6,7 @@
 // Import reads one with a file input and merges it in, its entries winning (Settings › Data). reload() is imported
 // when it is needed: app.mts wires the page up as it loads, and this module is reached from inventory.mts, which the
 // DOM-less unit tests import.
-import { KINDS, kindNameKey, kindGraphicKey, type Item } from "../vault-lib.mts";
+import { OVERRIDE_KINDS, kindNameKey, kindGraphicKey, ownKind, type Item } from "../vault-lib.mts";
 import { el, toast } from "./dom.mts";
 import { api } from "./api.mts";
 import { box, button, field, openDialog, select, txt } from "./components.mts";
@@ -14,15 +14,13 @@ import { errorText } from "./messages.mts";
 import { plural } from "./inv-model.mts";
 import type { ItemKindsApiResponse } from "./api-types.mts";
 
-// Every kind but gear: the server refuses gear as a player's kind (app/item-kinds.mts).
-const CHOICES = KINDS.filter((k) => k !== "gear");
-const own = (map: Record<string, string>, key: string): string | null => (Object.hasOwn(map, key) ? map[key]! : null);
 
 export async function openClassify(it: Item): Promise<void> {
   let doc: ItemKindsApiResponse;
   try { doc = await api<ItemKindsApiResponse>("/api/item-kinds"); } catch (e) { toast(errorText(e), "bad"); return; }
-  const byName = own(doc.names, kindNameKey(it.name)), byGraphic = it.graphic != null ? own(doc.graphics, kindGraphicKey(it.graphic)) : null;
-  const kind = select(CHOICES.map((k) => ({ value: k, label: k })), byName ?? byGraphic ?? it.kind, { attrs: { id: "kind-pick" } });
+  const byName = ownKind(doc.names, kindNameKey(it.name)), byGraphic = it.graphic != null ? ownKind(doc.graphics, kindGraphicKey(it.graphic)) : null;
+  const now = byName ?? byGraphic ?? it.kind;
+  const kind = select(OVERRIDE_KINDS.map((k) => ({ value: k, label: k })), OVERRIDE_KINDS.includes(now) ? now : "other", { attrs: { id: "kind-pick" } });
   const scope = (value: "name" | "graphic", label: string, on: boolean, disabled = false): HTMLLabelElement => {
     const r = el("input", { type: "radio", name: "kind-scope", value });
     r.checked = on; r.disabled = disabled;
@@ -51,7 +49,7 @@ export async function openClassify(it: Item): Promise<void> {
     title: `Classify ${it.name}`, width: "md", initialFocus: kind,
     body: [field({ label: "Kind", control: kind, help: set ?? `Now ${it.kind}, from Pack Rat's own list.` }), scopes],
     actions: [
-      ...(set ? [button({ label: "Reset to automatic", variant: "danger-outline", attrs: { id: "kind-reset" }, onClick: () => { void send([{ ...(byName ? { name: it.name } : {}), ...(byGraphic ? { graphic: it.graphic } : {}), kind: null }], `"${it.name}" is classified automatically again.`); } })] : []),
+      ...(set ? [button({ label: "Reset to automatic", variant: "danger-outline", attrs: { id: "kind-reset" }, onClick: () => { void send([byName ? { name: it.name, kind: null } : { graphic: it.graphic, kind: null }], byName ? `Every item named "${it.name}" is classified automatically again.` : `Every item with graphic ${kindGraphicKey(it.graphic!)} is classified automatically again.`); } })] : []),
       button({ label: "Cancel", onClick: () => d?.close() }),
       button({ label: "Save", variant: "primary", attrs: { id: "kind-save" }, onClick: () => { void save(); } }),
     ],

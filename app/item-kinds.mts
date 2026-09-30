@@ -4,20 +4,24 @@
 // changes the file's document. Pure (no node: imports). salvageKindOverrides keeps every entry that still makes sense
 // and names what it left out: every read of the file and every imported file go through it, so a hand edit, or a
 // shared file with a kind this version does not know, loses that entry and not the rest.
-import { KINDS, kindNameKey, kindGraphicKey, type KindOverrides } from "./vault-lib.mts";
+import { OVERRIDE_KINDS, kindNameKey, kindGraphicKey, type KindOverrides } from "./vault-lib.mts";
+export { OVERRIDE_KINDS };
 
 // Entries across both maps, and an item name's length (a scan's own limit on a name); the largest file a read
-// accepts and the body limit of an import (5000 entries of the longest names come to about 1.4 MB).
+// accepts and the body limit of an import. 5000 entries of the longest names in plain letters come to about 1.4 MB,
+// but not in every script (three bytes a character for Chinese, six for an escaped lone surrogate), so the routes
+// also refuse a change whose file would come out larger than a read accepts (kindsText).
 export const KIND_LIMITS = { entries: 5000, name: 256 } as const;
 export const MAX_KINDS_BYTES = 2e6;
-// Every kind but gear: an override never makes an item gear (and never applies to gear, vault-lib's enrich).
-export const OVERRIDE_KINDS: readonly string[] = KINDS.filter((k) => k !== "gear");
 const GRAPHIC_KEY = /^0x[0-9a-f]{1,4}$/i;
+// No item name holds a control character; refusing them keeps a name to what it reads as.
+const CONTROL = /[\u0000-\u001f\u007f]/;
+export const isKindName = (s: string): boolean => { const key = kindNameKey(s); return !!key && key.length <= KIND_LIMITS.name && !CONTROL.test(key); };
 
 export const emptyKindOverrides = (): KindOverrides => ({ names: {}, graphics: {} });
 export const kindCount = (o: KindOverrides): number => Object.keys(o.names).length + Object.keys(o.graphics).length;
 // The map key an item name or a graphic key from a file is kept under, or null when it is not one.
-const nameKeyOf = (k: string): string | null => { const key = kindNameKey(k); return key && key.length <= KIND_LIMITS.name ? key : null; };
+const nameKeyOf = (k: string): string | null => (isKindName(k) ? kindNameKey(k) : null);
 const graphicKeyOf = (k: string): string | null => (GRAPHIC_KEY.test(k) ? kindGraphicKey(parseInt(k, 16)) : null);
 const isObj = (v: unknown): v is Record<string, unknown> => !!v && typeof v === "object" && !Array.isArray(v);
 
@@ -62,5 +66,6 @@ export function withoutKinds(base: KindOverrides, { name, graphic }: KindTarget)
   const nameKey = name != null ? kindNameKey(name) : null, graphicKey = graphic != null ? kindGraphicKey(graphic) : null;
   return { names: Object.fromEntries(Object.entries(base.names).filter(([k]) => k !== nameKey)), graphics: Object.fromEntries(Object.entries(base.graphics).filter(([k]) => k !== graphicKey)) };
 }
-// The file's document, as written and as exported.
+// The file's document, as read back and exported, and as the text the server writes.
 export const kindsDocument = (o: KindOverrides): { version: 1 } & KindOverrides => ({ version: 1, names: o.names, graphics: o.graphics });
+export const kindsText = (o: KindOverrides): string => JSON.stringify(kindsDocument(o), null, 2) + "\n";

@@ -41,12 +41,14 @@ test("[fast] item kinds: a name compares trimmed and case-insensitively, and an 
 
 test("[fast] salvageKindOverrides keeps what makes sense, normalises keys and names each entry it left out", () => {
   const { overrides, problems } = salvageKindOverrides({ version: 1,
-    names: { " Clock FRAME ": "decor", "": "tool", "Katana": "gear", "Rock": "boulder", "Odd": 3, ["x".repeat(300)]: "tool", ...JSON.parse('{"__proto__": "quest"}') },
+    names: { " Clock FRAME ": "decor", "": "tool", "Katana": "gear", "Rock": "boulder", "Odd": 3, "Wooden Box": "container", "Bell\u0007": "decor", ["x".repeat(300)]: "tool", ...JSON.parse('{"__proto__": "quest"}') },
     graphics: { "0x1F14": "crafting", "7956": "tool", "0x12345": "tool" } });
   assert.deepEqual(Object.entries(overrides.names), [["clock frame", "decor"], ["__proto__", "quest"]]);
   assert.deepEqual(overrides.graphics, { "0x1f14": "crafting" });
-  assert.equal(problems.length, 7, problems.join(" | "));
+  assert.equal(problems.length, 9, problems.join(" | "));
   assert.match(problems.join(" | "), /"Katana": "gear" is not a kind/);
+  assert.match(problems.join(" | "), /"Wooden Box": "container" is not a kind/, "Organize never moves a container, so it is no one's pick");
+  assert.match(problems.join(" | "), /names "Bell\\u0007" is not an item name/);
   assert.match(problems.join(" | "), /graphics "7956" is not a graphic/);
 });
 

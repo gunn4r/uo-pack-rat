@@ -1299,13 +1299,16 @@ export function kindOf(name: string | null | undefined, parsed?: ParsedTooltip |
 // table above rather than copy it, so a better shipped table still reaches a player who has some. A name beats a graphic,
 // and neither ever applies to gear (enrich asks only for a non-gear kind, and "gear" is never an override's kind).
 export interface KindOverrides { names: Record<string, string>; graphics: Record<string, string> }
+// The kinds a player may pick: never gear, and never container, which Organize leaves out of every move (organize.mts),
+// so an item made one would leave Organize for good.
+export const OVERRIDE_KINDS: readonly string[] = KINDS.filter((k) => k !== "gear" && k !== "container");
 export const NO_KIND_OVERRIDES: KindOverrides = { names: {}, graphics: {} };
 export const kindNameKey = (name: string): string => name.trim().toLowerCase();
 export const kindGraphicKey = (graphic: number): string => `0x${graphic.toString(16)}`;
-// Own properties only: the maps come from a file, and "constructor" must not read Object's.
-const own = (map: Record<string, string>, key: string): string | null => (Object.hasOwn(map, key) ? map[key]! : null);
+// One map's entry, own properties only: the maps come from a file, and "constructor" must not read Object's.
+export const ownKind = (map: Record<string, string>, key: string): string | null => (Object.hasOwn(map, key) ? map[key]! : null);
 export function overriddenKind(o: KindOverrides, name: string | null | undefined, graphic: number | null | undefined): string | null {
-  return own(o.names, kindNameKey(name || "")) ?? (graphic != null ? own(o.graphics, kindGraphicKey(graphic)) : null);
+  return ownKind(o.names, kindNameKey(name || "")) ?? (graphic != null ? ownKind(o.graphics, kindGraphicKey(graphic)) : null);
 }
 
 // Slayer lines are plain flags: "Orc Slayer", "Silver" (= undead), the super slayers "Repond" (humanoid),
