@@ -147,6 +147,34 @@ class BridgeCase(object):
         self.assertFalse(final["results"]["g1"]["ok"])
         self.assert_heartbeat(writes)
 
+    def test_a_ground_container_highlighted_as_itself_is_marked_without_a_walk_or_an_open(self):
+        # The Containers view's Highlight in game (issue #10): the container is the serial, its chain empty.
+        # The far chest is in view but out of reach, so a highlight that walked or opened would show here.
+        w = home()
+        final, _ = self.run_bridge(w, 1, [self.cmd("c1", "highlight", FAR, [], pos={"x": 20, "y": 10, "z": 0})])
+        self.assertTrue(final["results"]["c1"]["ok"], final["results"]["c1"])
+        self.assertEqual([c for c in w.calls if c[0] in ("walk", "open")], [])
+        self.assertEqual({c[1] for c in w.calls if c[0] in ("headmsg", "color") and c[1] is not None}, {FAR})
+        self.assert_marked_then_cleared(w, FAR, 20, 10)
+
+    def test_a_highlight_cut_short_still_clears_its_mark(self):
+        # An exception out of the pause: an error, or a Razor Enhanced Stop that aborts the script's thread.
+        w = home()
+
+        def interrupt():
+            raise RuntimeError("interrupted")
+        w.clock.at(4, interrupt)
+        final, _ = self.run_bridge(w, 1, [self.cmd("c1", "highlight", CHEST, [], pos={"x": 11, "y": 10, "z": 0})])
+        self.assertFalse(final["results"]["c1"]["ok"])
+        self.assert_marked_then_cleared(w, CHEST, 11, 10)
+
+    def test_a_ground_container_out_of_view_is_refused_with_a_reason(self):
+        w = home()
+        final, _ = self.run_bridge(w, 1, [self.cmd("c1", "highlight", 0x40000099, [], pos={"x": 11, "y": 10, "z": 0})])
+        self.assertFalse(final["results"]["c1"]["ok"])
+        self.assertIn("not in view", final["results"]["c1"]["msg"])
+        self.assertEqual([c for c in w.calls if c[0] in ("walk", "open")], [])
+
     # ---- own backpack / bank ---------------------------------------------------------------------
 
     def test_a_grab_from_a_bag_in_the_backpack_needs_no_walk(self):
@@ -277,6 +305,15 @@ class TazUOBridge(BridgeCase, unittest.TestCase):
             del api.CancelPathfinding
         world.clock.at(RUN_S, lambda: setattr(api, "StopRequested", True))
         run_script(adapter_path("tazuo", "packrat-bridge.py"), world, api=api)
+
+    def assert_marked_then_cleared(self, world, serial, x, y):
+        """The chest's live tile marked once, and the same tile cleared after it."""
+        self.assertEqual([c for c in world.calls if c[0] in ("mark", "unmark")], [("mark", x, y), ("unmark", x, y)])
+
+    def test_a_ground_container_is_marked_where_the_client_sees_it_not_where_it_was_scanned(self):
+        w = home()
+        self.run_bridge(w, 1, [self.cmd("c1", "highlight", CHEST, [], pos={"x": 30, "y": 30, "z": 0})])
+        self.assert_marked_then_cleared(w, CHEST, 11, 10)
 
     def trip(self, cid, takes=(), puts=(), index=3, age_s=0):
         """One trip line as app/bridge-trip.mts writes it. Every root is placed on the player's tile:
@@ -737,6 +774,12 @@ class RazorBridge(BridgeCase, unittest.TestCase):
         g = world.g = razor_globals(world, PACK)
         world.clock.at(RUN_S, lambda: setattr(g["Player"], "Connected", False))
         run_script(adapter_path("razor-enhanced", "packrat-bridge.py"), world, extra_globals=g)
+
+    def assert_marked_then_cleared(self, world, serial, x, y):
+        """The chest recoloured once, and its own colour restored after it (-1)."""
+        colours = [c for c in world.calls if c[0] == "color"]
+        self.assertEqual([c[1] for c in colours], [serial, serial])
+        self.assertEqual(colours[1][2], -1)
 
     def test_a_walk_heads_for_the_tile_beside_the_container_not_onto_it(self):
         w = home()
