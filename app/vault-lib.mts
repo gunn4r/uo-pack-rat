@@ -400,8 +400,12 @@ const PS_LEVEL_RE = /\bscroll\b.*\((\d{3}) skill\)/i;
 //              is kept as "set: <line>"
 // A stack's name line starts with its amount ("2 Greater Heal"); that number is stripped only when it
 // equals `amount`, so a name that really starts with a number ("10 Potions" on one item) keeps it.
+// A word of seven or more digits is dropped first: it is a cliloc number the client could not turn into text (issue
+// #129: a hat's name line read "21025908 Of Wizardry", 1025908 being the item-name cliloc of its graphic 0x1714), and
+// never a stack's amount, which is at most 65,535.
+const UNRESOLVED_CLILOC = /(^|\s)\d{7,}(?=\s|$)/g;
 export function stackName(line: string | undefined, amount?: number | undefined): string {
-  return stripHtml(line).replace(/^(\d+)\s+(?=\S)/, (all, n: string) => (+n === amount ? "" : all));
+  return stripHtml(line).replace(UNRESOLVED_CLILOC, "").trim().replace(/^(\d+)\s+(?=\S)/, (all, n: string) => (+n === amount ? "" : all));
 }
 export function parseTooltip(rawLines?: Array<string | undefined> | undefined, amount?: number | undefined): ParsedTooltip {
   const TU = tagUnits(), rarityLine = rarityRe();
@@ -1264,11 +1268,16 @@ const KIND_RULES: Array<[string, RegExp]> = [
   ["clothing", /\b(shirt|doublet|surcoat|tunic|dress|gown|kilt|skirt|sash|apron|robe|cloak|hat|cap|bandana|bonnet|boots|sandals|shoes|thigh boots|gloves|half apron|body sash|obi|kimono|hakama|jin-?baori)\b/i],
 ];
 const REFINEMENT_RE = /\b(wash|varnish|polish|cure|gloss|scour|lacquer|resin) of (defense|protection|hardening|fortification|invulnerability)\b/i;
+// The bard's instruments are tools (issue #129), told by whole words so Harpy Wing, Absolute… or Hard Rum never are one;
+// Organize's Instruments preset names the same words.
+export const INSTRUMENTS: readonly string[] = ["drum", "tambourine", "harp", "lute", "flute", "fire horn", "cello", "trumpet", "cowbell"];
+const INSTRUMENT_RE = new RegExp(`\\b(${INSTRUMENTS.join("|")})s?\\b`, "i");
 export function kindOf(name: string | null | undefined, parsed?: ParsedTooltip | null | undefined, graphic?: number | null | undefined): string {
   const n = name || "";
   if (isSpellScroll(n, graphic)) return "scroll";
   if (PRIMER_RE.test(n)) return "book";
   if (REFINEMENT_RE.test(n)) return "refinement";
+  if (INSTRUMENT_RE.test(n)) return "tool";
   for (const [kind, rx] of KIND_RULES) if (rx.test(n)) return kind;
   const hasProps = parsed && Object.keys(parsed.props || {}).some((k) => k !== "tagPenalty");
   return hasProps ? "gear" : "other";
