@@ -8,6 +8,7 @@
     "action": { "type": "string", "enum": ["trip"] },
     "index": { "type": "integer", "minimum": 1, "maximum": 10000, "$comment": "The trip's number in its plan, printed in game. MAX_TRIP_INDEX in every packrat-bridge.py." },
     "stamp": { "type": "string", "minLength": 1, "maxLength": 64, "$comment": "The plan's inventoryStamp. The Organize endpoint refuses a trip whose stamp is not the current plan's; the bridge only echoes it." },
+    "putAway": { "type": "integer", "minimum": 1, "maximum": 4294967295, "$comment": "Put away from the pack (issue #131): the container the player picked in game (their backpack or a bag in it). The trip takes nothing, and its puts may name items lying directly in that container as well as the carried set, while the in-game panel's consent names the same container (packrat-bridge.py). Only the server's Put away handler sets it." },
     "queuedAt": { "type": "string", "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d+)?([+-]\\d{2}:\\d{2}|Z)$" },
     "roots": {
       "type": "object",
@@ -40,7 +41,7 @@
     },
     "puts": {
       "type": "array", "maxItems": 40,
-      "$comment": "MAX_TRIP_PUTS in every packrat-bridge.py. Each moves one item the bridge itself took (its carried set) into dest's last container.",
+      "$comment": "MAX_TRIP_PUTS in every packrat-bridge.py. Each moves one item the bridge itself took (its carried set; on a putAway trip, also one lying directly in the picked container) into dest's last container.",
       "items": {
         "type": "object",
         "additionalProperties": false,

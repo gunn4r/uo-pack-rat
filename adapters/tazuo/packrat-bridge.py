@@ -119,6 +119,7 @@ HIGHLIGHT_HUE = 53        # bright yellow-green
 MARK_HUE = 53
 ALARM_HUE, OK_HUE, INFO_HUE = 33, 68, 88
 PACK_MAX_ITEMS = 125      # a backpack's item cap (ServUO's Container default MaxItems)
+PUT_AWAY_VAR = "packrat_putaway"   # set by packrat-panel.py's Put away (put_away_asked)
 TAKE_DROP = (60, 90)      # where a trip drops what it takes, inside the backpack window: a drop at a spot never stacks
 
 # ---- untrusted input ---------------------------------------------------------------------------
@@ -394,7 +395,8 @@ def check_steps(entries, key, limit, roots, what):
 def check_trip(cmd, now_s):
     """Validate one parsed trip line (app/schema/bridge-trip.v1.schema.json). Returns (trip, reason);
     roots come back keyed by int serial, every name cut to MAX_TRIP_NAME, and queuedAt as `queued`
-    (epoch seconds, fraction dropped) for the stop flag's age check."""
+    (epoch seconds, fraction dropped) for the stop flag's age check. putAway (Put away from the pack) comes
+    back as the picked container's serial or None, and a putAway trip takes nothing."""
     if not isinstance(cmd, dict):
         return None, "queue line is not a JSON object"
     cid, why = check_id(cmd)
@@ -431,11 +433,17 @@ def check_trip(cmd, now_s):
         return None, why
     if not takes and not puts:
         return None, "trip has nothing to do"
+    put_away = cmd.get("putAway")
+    if put_away is not None and not is_serial(put_away):
+        return None, "putAway is not a container serial"
+    if put_away and takes:
+        return None, "a Put away trip takes nothing"
     why = check_age(cmd.get("queuedAt"), now_s)
     if why:
         return None, why
     return {"id": cid, "action": "trip", "index": index, "stamp": stamp, "name": "#{0}".format(index),
-            "queued": parse_rfc3339(cmd.get("queuedAt")), "roots": roots, "takes": takes, "puts": puts}, ""
+            "queued": parse_rfc3339(cmd.get("queuedAt")), "roots": roots, "takes": takes, "puts": puts,
+            "putAway": put_away}, ""
 
 
 def check_line(cmd, actions, now_s):
@@ -988,21 +996,32 @@ def do_take(t, it):
     return False, f"move bounced for {name} (too far, or backpack full?)", False
 
 
-def do_put(p, roots, blacklist):
+def do_put(p, roots, blacklist, loose=None):
     """One put, the only step that moves an item somewhere other than your backpack, so it is fenced:
-    only an item this bridge took (the carried set), from the top of your backpack, into a container
+    only an item this bridge took (the carried set), from the top of your backpack, or on a Put away trip
+    one lying directly in the container the player picked (`loose`, checked by do_trip against the
+    panel's consent) that is no bag (loose_problem), into a container
     chain whose root lies on the ground (open_chain with no own roots: never your pack, never a pack a
     mobile carries), none of it blacklisted, a corpse or trash (refuse_dest), checked before any walk
     where the client already knows the root."""
     serial, dest = p["serial"], p["dest"]
     name = p["name"] or "item"
-    if serial not in carried:
+    if serial not in carried and not loose:
         return False, f"refused: {name} was not taken by this bridge — put it away by hand"
     pack = int(API.Backpack)
     it = find(serial)
-    if it is None or int(getattr(it, "Container", 0) or 0) != pack:
+    if serial not in carried:
+        if it is None or int(getattr(it, "Container", 0) or 0) != loose:
+            return False, f"{name} is no longer directly in the container you picked"
+        if not in_own_pack(loose):          # checked on every put: a bag dragged out mid-trip stops the rest
+            return False, "refused: the container you picked is no longer in your backpack"
+    elif it is None or int(getattr(it, "Container", 0) or 0) != pack:
         carried.discard(serial)
         return False, f"{name} is no longer at the top of your backpack"
+    if serial not in carried:
+        why = loose_problem(it, name)
+        if why:
+            return False, why
     for c in dest:
         if c in blacklist:
             return False, f"refused: 0x{c:x} is blacklisted — Pack Rat never opens it"
@@ -1171,6 +1190,39 @@ def direct_put(cmd, k, puts, blacklist):
     return p
 
 
+def loose_problem(it, name):
+    """What a Put away trip may not put of what lies in the container you picked, as the app's planner leaves it
+    out too (app/organize.mts's packItems): a bag, with whatever is in it. Returns the refusal, or ''."""
+    if is_container(it, str(getattr(it, "Name", "") or "")):
+        return f"refused: {name} is a container — Put away leaves bags in your backpack"
+    return ""
+
+
+def put_away_asked(container):
+    """Whether Put away was clicked on the Pack Rat panel in this client lately, on this container: the
+    panel sets the shared variable PUT_AWAY_VAR to "<container serial>:<epoch seconds the run may last
+    until>". A shared variable lives in the client's memory, so a line written into the queue file alone
+    can never make the bridge put away what you carry (docs/threat-model.md, boundary 13)."""
+    try:
+        serial, until = str(API.GetSharedVar(PUT_AWAY_VAR)).split(":")
+        return int(serial) == container and float(until) > time.time()
+    except Exception:
+        return False
+
+
+def in_own_pack(container):
+    """Whether the container is your backpack or a bag at any depth inside it, by the live client."""
+    pack, c = int(API.Backpack), int(container)
+    for _ in range(MAX_CHAIN + 2):
+        if c == pack:
+            return True
+        it = find(c)
+        if it is None or bool(getattr(it, "OnGround", False)):
+            return False
+        c = int(getattr(it, "Container", 0) or 0)
+    return False
+
+
 def do_trip(cmd):
     """Organize: every take, then every put, one step at a time, the stop flag checked before each. A
     take whose put's destination is in reach, or can be brought in reach with a step (stand_by_both),
@@ -1179,6 +1231,8 @@ def do_trip(cmd):
     meant to take but did not is skipped. Every step and the trip carry `ms`, the milliseconds they took.
     Returns (ok, msg, {"steps", "partial", "stopped", "ms"})."""
     started = time.time()
+    if cmd["putAway"] and not (put_away_asked(cmd["putAway"]) and in_own_pack(cmd["putAway"])):
+        return False, "refused: click Put away on the Pack Rat panel", {"steps": [], "partial": False, "stopped": False, "ms": 0}
     trip_opened.clear()
     # A flag written after this trip was queued is a Stop pressed while the trip waited its turn, and
     # is honoured; an older one is left over from before and only cleared. `queued` is whole seconds,
@@ -1243,7 +1297,7 @@ def do_trip(cmd):
                 continue
             t0 = time.time()
             doing = ("put", p, None, t0)
-            ok, msg = do_put(p, roots, blacklist)
+            ok, msg = do_put(p, roots, blacklist, cmd["putAway"])
             steps.append({"op": "put", "serial": p["serial"], "ok": bool(ok), "msg": msg, "ms": ms_since(t0)})
             doing = None
             heartbeat()
