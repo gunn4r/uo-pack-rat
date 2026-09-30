@@ -436,7 +436,9 @@ export function proposeOrganize(inv: Inventory, cfg: OrganizeConfig, overlay: Ov
   // of its own lying in that chest: the bag its earlier rule fills, else an earlier strategy's bag holding only this
   // group's items, else the next by serial of its empty bags (emptyBagsOf, over the labels this proposal keeps, so an
   // earlier strategy's empty bag is one). An earlier strategy's bag with other items in it goes to no other group,
-  // which would move them out. Groups left without one share the chest itself, loose.
+  // which would move them out. Groups left without one share the chest itself, loose. Issue #150: so does the group
+  // whose earlier rule filled the chest itself (the first, in table order), so a group joining a chest never moves
+  // the one already there into a bag: the rest of the chest's groups are in bags, which is what keeps them apart.
   const emptyBags = emptyBagsOf(view, placed.counts, draft, scope.roots, opts.blacklist).filter((b) => placed.counts.has(b.serial));
   const ticked = new Set(containers);
   const byGroup = new Map(groups.flatMap((g) => g.items.map((it) => [+it.serial, g.key] as const)));
@@ -451,8 +453,12 @@ export function proposeOrganize(inv: Inventory, cfg: OrganizeConfig, overlay: Ov
   const empty = new Set(emptyBags.map((b) => b.serial));
   const bagOf = new Map<string, number>();
   const needsBag = new Set<string>();
+  const bagged = (chest: number, keys: readonly string[]): string[] => {
+    const loose = keys.find((k) => (prev.get(k) ?? []).includes(chest));
+    return keys.filter((k) => k !== loose);
+  };
   for (const [chest, all] of sharedChests(groups, chains)) {
-    const keys = all.filter((k) => chains.get(k)!.length === 1);
+    const keys = bagged(chest, all.filter((k) => chains.get(k)!.length === 1));
     const free = [...bagsIn.get(chest) ?? []];
     const give = (key: string, bag: number): void => { bagOf.set(key, bag); free.splice(free.indexOf(bag), 1); };
     for (const k of keys) { const b = (prev.get(k) ?? []).find((s) => free.includes(s)); if (b != null) give(k, b); }
@@ -475,8 +481,7 @@ export function proposeOrganize(inv: Inventory, cfg: OrganizeConfig, overlay: Ov
     layout.chests += add;
     const at = add ? a.chains : chains;
     for (const [chest, all] of sharedChests(groups.filter((g) => home.get(g.key)!.site === site), at)) {
-      const keys = all.filter((k) => at.get(k)!.length === 1);
-      const real = chest < NEW_CHEST, bags = keys.length - (real ? (bagsIn.get(chest) ?? []).filter((b) => empty.has(b) || given.has(b)).length : 0);
+      const real = chest < NEW_CHEST, keys = bagged(chest, all.filter((k) => at.get(k)!.length === 1)), bags = keys.length - (real ? (bagsIn.get(chest) ?? []).filter((b) => empty.has(b) || given.has(b)).length : 0);
       if (bags > 0) layout.bags.push({ chest: real ? chest : null, family: familyOf.get(keys[0]!)!, bags });
     }
   }

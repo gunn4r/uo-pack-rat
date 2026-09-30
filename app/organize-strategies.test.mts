@@ -202,6 +202,25 @@ test("[fast] Decor and Quest & event items share Other's chest when chests run s
   }
 });
 
+// Live: a house sorted by Simple, re-proposed once Mysterious Fragments became a Quest group of their own. Quest
+// shared Other's chest and took one of its empty bags, but Other was moved from the chest into the other bag, 2 of
+// its items with it, for nothing.
+test("[fast] a group joining a sorted house's chest takes a bag there and leaves the group already in the chest where it is, every earlier rule unchanged (issue #150)", () => {
+  // Other's chest holds two empty bags (it is where the empty bags gather), so a bag is there for either group.
+  const BAG2 = 0x40000009;
+  const boxes: BoxSpec[] = [{ serial: A }, { serial: B, pos: at(102) }, { serial: BAG, parent: B }, { serial: BAG2, parent: B }, { serial: C, pos: at(104) }];
+  const sorted: ThingSpec[] = [...things(A, ["Black Pearl", "Black Pearl"]), ...things(B, ["Apple", "Weird Trinket"], 3), ...things(C, ["Iron Ingot"], 5)];
+  const before = ok(proposeOrganize(fold(boxes, sorted), emptyOrganizeConfig(), [], OPTS()));
+  assert.deepEqual([before.plan.moves, before.groups.map((g) => [g.key, g.targets])], [0, [["reagents", [A]], ["resources", [C]], ["other", [B]]]]);
+  const p = ok(proposeOrganize(fold(boxes, [...sorted, ...things(C, ["Mysterious Fragment", "Mysterious Fragment"], 6)]), before.config, [], OPTS()));
+  const targets = (cfg: OrganizeConfig) => new Map(cfg.rules.map((r) => [r.id, r.targets]));
+  const now = targets(p.config);
+  for (const [id, t] of targets(before.config)) assert.deepEqual(now.get(id), t, id);
+  assert.deepEqual(p.groups.filter((g) => g.family === "other").map((g) => [g.key, g.targets, g.bagIn]), [["quest", [BAG], B], ["other", [B], null]]);
+  assert.equal(p.config.labels[String(B)]!.name, "Other");
+  assert.equal(p.plan.moves, 2, "only the fragments move, into Quest's bag");
+});
+
 test("[fast] Simple and Detailed: neck armour goes with the armour, necklaces with the jewelry", () => {
   const neck: ThingSpec[] = [
     { serial: ITEM + 1, name: "Leather Gorget", in: A }, { serial: ITEM + 2, name: "Studded Gorget", in: A },
