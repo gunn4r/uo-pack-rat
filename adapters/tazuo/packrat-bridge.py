@@ -466,6 +466,9 @@ CONTAINER_GRAPHICS = {0x0E75, 0x0E76, 0x0E79, 0x0E7D, 0x09AA, 0x09A8, 0x09A9, 0x
                       0x4025, 0x4026}   # Gargish Chest: UO Alive's tiledata does not flag it
 
 results = {}              # id -> {ok, msg}
+# The ids in the order they were recorded: the client's Python does not keep a dict in insertion order
+# (issue #140), so trimming or writing by dict order could drop the newest result.
+result_order = []
 counts = {"done": 0, "failed": 0}
 last_status = {"current": None, "at": 0.0, "character": ""}
 pending = []              # validated commands waiting their turn (module-level so write_stopped sees them)
@@ -536,7 +539,7 @@ def sysmsg(msg, hue=OK_HUE):
 def write_status(current=None):
     last_status["current"], last_status["at"] = current, time.time()
     try:
-        keep = dict(list(results.items())[-MAX_RESULTS:])
+        keep = {cid: results[cid] for cid in result_order}
         last_status["character"] = str(API.Player.Name)
         write_json_atomic(STATUS, {"alive": rfc3339_now(),
                                     "character": last_status["character"], "current": current,
@@ -558,8 +561,11 @@ def record(cid, ok, msg, extra=None):
     results[cid] = {"ok": bool(ok), "msg": str(msg), "t": rfc3339_now()}
     if extra:
         results[cid].update(extra)
-    for old in list(results.keys())[:-MAX_RESULTS]:
-        results.pop(old, None)
+    if cid in result_order:
+        result_order.remove(cid)
+    result_order.append(cid)
+    while len(result_order) > MAX_RESULTS:
+        results.pop(result_order.pop(0), None)
     counts["done" if ok else "failed"] += 1
     sysmsg(f"bridge: {msg}", OK_HUE if ok else ALARM_HUE)
 

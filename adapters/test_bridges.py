@@ -239,6 +239,31 @@ class BridgeCase(object):
         self.assertTrue(final["results"]["q1"]["ok"], final["results"]["q1"])
         self.assertEqual([m for m in w.messages if "queue read failed" in m], [])
 
+    def test_the_newest_results_survive_the_trim_whatever_order_the_dict_keeps(self):
+        """Issue #140: the client's Python keeps a dict in hash order, so a trim by dict order dropped
+        the newest result. A dict that iterates newest first stands in for it."""
+        class NewestFirst(dict):
+            def __iter__(self):
+                return iter(list(dict.keys(self))[::-1])
+
+            def keys(self):
+                return list(self.__iter__())
+
+            def items(self):
+                return [(k, self[k]) for k in self.__iter__()]
+
+        def scramble():
+            f = sys._getframe()
+            while f is not None and "record" not in f.f_globals:
+                f = f.f_back
+            f.f_globals["results"] = NewestFirst(f.f_globals["results"])
+
+        w = home()
+        w.clock.at(0.2, scramble)
+        ids = ["e%02d" % i for i in range(35)]
+        final, _ = self.run_bridge(w, 1, [self.cmd(i, "grab", AMULET, [CHEST, BAG], age_s=90) for i in ids])
+        self.assertEqual(sorted(final["results"]), ids[-30:])
+
     def test_a_duplicate_line_in_one_read_runs_once(self):
         w = home()
         c = self.cmd("d1", "grab", AMULET, [CHEST, BAG])
