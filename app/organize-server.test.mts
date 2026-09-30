@@ -13,6 +13,7 @@ import { houseScan, maxOrganizeConfig, type ThingSpec } from "./organize-fixture
 import { emptyRuleQuery, emptyOrganizeConfig, type OrganizeConfig } from "./organize-config.mts";
 import type { Plan } from "./organize.mts";
 import { PRESETS } from "./organize-presets.mts";
+import type { Proposal } from "./organize-strategies.mts";
 
 const FAKE_HOME = mkdtempSync(join(tmpdir(), "qm-home-"));
 const A = 0x40000001, B = 0x40000002, PEARL = 0x40001001, RUBY = 0x40001002;
@@ -268,6 +269,47 @@ test("[fast] POST /api/organize/match counts the movable items in labelled roots
     assert.match(String(loc.body.error), /loc is not a rule filter/);
     assert.equal((await match("reagents")).status, 400);
     assert.equal((await call(s, "/api/organize/match", body("POST", { match: reagents, extra: "x".repeat(70e3) }))).status, 413);
+  } finally {
+    await s.close();
+  }
+});
+
+test("[fast] POST /api/organize/propose: Simple over every offered chest; PUT saves the proposal as it is; proposing again changes nothing", async () => {
+  const { s, dir } = await serve();
+  try {
+    const first = await call<{ ok: boolean; proposal: Proposal }>(s, "/api/organize/propose", body("POST", { strategy: "simple" }));
+    assert.equal(first.status, 200, JSON.stringify(first.body));
+    const p = first.body.proposal;
+    assert.deepEqual(p.containers, [A, B]);
+    assert.deepEqual(p.config.rules.map((r) => [r.id, r.name, r.targets, r.origin]), [["auto-reagents", "Reagents", [B], "strategy:simple"], ["auto-gems", "Gems", [A], "strategy:simple"]]);
+    assert.deepEqual(Object.values(p.config.labels).map((l) => [l.serial, l.name, l.origin]), [[A, "Gems", "strategy:simple"], [B, "Reagents", "strategy:simple"]]);
+    assert.deepEqual([p.plan.moves, p.changed], [0, true]);
+    assert.equal(existsSync(join(dir, "organize.json")), false, "proposing writes nothing");
+    const put = await call(s, "/api/organize", body("PUT", p.config));
+    assert.equal(put.status, 200, JSON.stringify(put.body));
+    const again = await call<{ ok: boolean; proposal: Proposal }>(s, "/api/organize/propose", body("POST", { strategy: "simple" }));
+    assert.equal(again.body.proposal.changed, false);
+    assert.deepEqual(again.body.proposal.config, p.config);
+    assert.equal((await call<{ ok: boolean; plan: Plan }>(s, "/api/organize/plan")).body.plan.moves.length, 0);
+  } finally {
+    await s.close();
+  }
+});
+
+test("[fast] POST /api/organize/propose refuses an unknown strategy, a bad container list and a salvaged setup, and reports a container it cannot use", async () => {
+  const { s, dir } = await serve();
+  try {
+    const bad = await call(s, "/api/organize/propose", body("POST", { strategy: "by-build" }));
+    assert.equal(bad.status, 400);
+    assert.match(String(bad.body.error), /strategy must be/);
+    assert.equal((await call(s, "/api/organize/propose", body("POST", { strategy: "simple", containers: ["x"] }))).status, 400);
+    const odd = await call<{ ok: boolean; proposal: Proposal }>(s, "/api/organize/propose", body("POST", { strategy: "detailed", containers: [A, 0x4000ffff] }));
+    assert.equal(odd.status, 200, JSON.stringify(odd.body));
+    assert.deepEqual([odd.body.proposal.containers, odd.body.proposal.refused], [[A], [{ serial: 0x4000ffff, reason: "it is not a container on the ground in your scans" }]]);
+    writeFileSync(join(dir, "organize.json"), JSON.stringify({ ...emptyOrganizeConfig(), rules: [{ id: "broken" }] }));
+    const salvaged = await call(s, "/api/organize/propose", body("POST", { strategy: "simple" }));
+    assert.equal(salvaged.status, 409);
+    assert.match(String(salvaged.body.error), /save the setup first/);
   } finally {
     await s.close();
   }

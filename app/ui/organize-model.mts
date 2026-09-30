@@ -11,7 +11,7 @@ import { parseItemQuery } from "../item-query.mts";
 import type { ItemQuery, RuleQuery } from "../item-query.mts";
 import { activeFilters, plural } from "./inv-model.mts";
 import type { FilterContext } from "./inv-model.mts";
-import type { BridgeResultEntry, ContainerLabel, OrganizeConfig, OrganizeMatchApiResponse, OrganizePlan, OrganizeRule, PlanMove, PlanRuleReport, PlanWarning, PlanWarningKind, RuleMatch } from "./api-types.mts";
+import type { BridgeResultEntry, ContainerLabel, OrganizeConfig, OrganizeMatchApiResponse, OrganizePlan, OrganizeRule, PlanMove, PlanRuleReport, PlanWarning, PlanWarningKind, RuleMatch, AutoStrategy, OrganizeProposal, ProposalCandidate, ProposalGroup } from "./api-types.mts";
 
 // The ruleId the plan reports the catch-all under (app/organize-config.mts's CATCH_ALL_ID; a value import from
 // there would add a second server module to the page for one string, so the test pins the two together).
@@ -355,4 +355,55 @@ export function tripRefusal(msg: string): string {
   const busy = /^trip (\d+) has not reported back yet$/.exec(msg);
   if (busy) return `Trip ${busy[1]} is still running, started before this page was reloaded or from another window. Let it finish in game, then press Reload plan.`;
   return msg;
+}
+
+// ---------------------------------------------------------------- Auto organize
+export const STRATEGY_TEXT: Record<AutoStrategy, { label: string; text: string }> = {
+  simple: { label: "Simple", text: "One container for each kind of thing: armour, weapons, jewelry, reagents, scrolls, resources and so on." },
+  detailed: { label: "Detailed", text: "Splits each kind further: armour by slot, jewelry by type, reagents by school, power scrolls by level, resources by type. Needs more containers." },
+};
+// The chests Auto organize may use, by house (a heading only when there is more than one).
+export function candidateGroups(cands: readonly ProposalCandidate[]): Array<{ site: number; title: string | null; rows: ProposalCandidate[] }> {
+  const sites = [...new Set(cands.map((c) => c.site))].sort((a, b) => a - b);
+  return sites.map((site) => ({ site, title: sites.length > 1 ? `House ${site + 1}` : null, rows: cands.filter((c) => c.site === site) }));
+}
+// Why a chest starts unticked: the player's own setup uses it.
+export function candidateNote(c: ProposalCandidate): string | null {
+  if (!c.mine || c.ticked) return null;
+  return c.label?.origin === "manual" ? "Your own label: tick it to let Auto organize fill it (its name stays)." : "One of your rules fills it: tick it to let Auto organize use it too.";
+}
+export function proposalHeadline(p: OrganizeProposal): string {
+  if (!p.containers.length) return "Tick at least one container for Auto organize to use.";
+  if (!p.changed) return "This is already your setup: nothing to change.";
+  const rules = p.groups.reduce((k, g) => k + g.ruleIds.length, 0);
+  const moves = p.plan.moves ? `${plural(p.plan.moves, "item")} to move in ${plural(p.plan.trips, "trip")}.` : "Nothing needs to move.";
+  return `Labels ${plural(p.containers.length, "container")} and writes ${plural(rules, "rule")}. ${moves}`;
+}
+export function groupStatus(g: ProposalGroup): { badge: string; tone: "warn" | undefined; text: string | null } {
+  if (!g.targets.length) return { badge: "No container", tone: "warn", text: `Add ${plural(g.addContainers, "container")}. Its items stay where they are.` };
+  if (g.shortfall) return { badge: "Short", tone: "warn", text: `${plural(g.shortfall, "slot")} short: add ${plural(g.addContainers, "container")}.` };
+  return { badge: "Fits", tone: undefined, text: null };
+}
+export const groupAway = (g: ProposalGroup): string | null => (g.crossSite ? `${plural(g.crossSite, "item")} at another house ${g.crossSite === 1 ? "stays" : "stay"} there.` : null);
+// The chests a group gets, in fill order, by the names the player knows them by.
+export function intoText(g: ProposalGroup, cands: readonly ProposalCandidate[]): string {
+  if (!g.targets.length) return "—";
+  return g.targets.map((s) => cands.find((c) => c.serial === s)?.name ?? `0x${s.toString(16)}`).join(", then ");
+}
+export function proposalNotes(p: OrganizeProposal): string[] {
+  return [
+    ...(p.manualRules ? [`Your ${plural(p.manualRules, "rule")} stay above these and take their items first.`] : []),
+    ...p.refused.map((r) => `Container 0x${r.serial.toString(16)} could not be used: ${r.reason}.`),
+    ...(p.addContainers ? [`Place ${plural(p.addContainers, "more container")}, scan them, and run Auto organize again to fit everything.`] : []),
+    ...(p.plan.crossSite ? [`${plural(p.plan.crossSite, "item")} ${p.plan.crossSite === 1 ? "belongs" : "belong"} at another house: carry ${p.plan.crossSite === 1 ? "it" : "them"} over by hand.`] : []),
+  ];
+}
+// Detailed left groups without a chest: Simple needs fewer (no automatic merging, spec §5).
+export const canTrySimple = (p: OrganizeProposal): boolean => p.strategy === "detailed" && p.unassigned > 0;
+// Why Accept is disabled, or null.
+export function acceptGate(p: OrganizeProposal | null, busy: boolean): string | null {
+  if (busy || !p) return "Working out the proposal…";
+  if (!p.containers.length) return "Tick at least one container first.";
+  if (!p.changed) return "Nothing to change: this is already your setup.";
+  return null;
 }
