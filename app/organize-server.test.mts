@@ -465,7 +465,7 @@ test("[fast] a Grab that worked frees its slot in the full container it left, an
     // Put away's refresh scans only the backpack: the container the grab left still reads 1/1 in the scans.
     const clickedAt = new Date().toISOString();
     drop("Tester-20260930-120000-quick.json", houseScan({ scannedAt: new Date(Date.now() + 1000).toISOString(), boxes: [{ serial: PACK, kind: "backpack" }], things: [{ serial: GEM, name: "Sapphire", in: PACK }] }));
-    drop("putaway-request.json", { id: "r-1", source: "backpack", character: "Tester", requestedAt: new Date().toISOString(), clickedAt, at: { x: 101, y: 100, facet: 1 } });
+    drop("putaway-request.json", { id: "r-1", container: PACK, character: "Tester", requestedAt: new Date().toISOString(), clickedAt, at: { x: 101, y: 100, facet: 1 } });
     let reply: Record<string, unknown> | null = null;
     for (let i = 0; i < 400 && !(reply && reply.id === "r-1"); i++) {
       await new Promise((r) => setTimeout(r, 50));
