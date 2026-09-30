@@ -9,9 +9,10 @@ import { tmpdir } from "node:os";
 import { resolveConfig, ensureLayout } from "./config.mts";
 import { startServer, type ServerHandle } from "./vault-server.mts";
 import { candidateClientRoots } from "./installer.mts";
-import { houseScan, maxOrganizeConfig, type ThingSpec } from "./organize-fixture.mts";
+import { houseScan, maxOrganizeConfig, type BoxSpec, type ThingSpec } from "./organize-fixture.mts";
 import { emptyRuleQuery, emptyOrganizeConfig, type OrganizeConfig } from "./organize-config.mts";
 import type { Plan } from "./organize.mts";
+import type { Container, Item } from "./vault-lib.mts";
 import { PRESETS } from "./organize-presets.mts";
 import type { Proposal } from "./organize-strategies.mts";
 
@@ -26,12 +27,12 @@ const CONFIG_DOC: OrganizeConfig = {
   ],
 };
 
-async function serve(extra: ThingSpec[] = []): Promise<{ s: ServerHandle; dir: string }> {
+async function serve(extra: ThingSpec[] = [], extraBoxes: BoxSpec[] = []): Promise<{ s: ServerHandle; dir: string }> {
   const dir = mkdtempSync(join(tmpdir(), "qm-organize-"));
   const config = ensureLayout(resolveConfig(["--port", "0", "--data", dir], {}));
   const scannedAt = new Date(Date.now() - 3600e3).toISOString();
   writeFileSync(join(dir, "scans", "house.json"), JSON.stringify(houseScan({ scannedAt,
-    boxes: [{ serial: A, pos: { x: 100, y: 100, z: 0, facet: 1 } }, { serial: B, pos: { x: 104, y: 100, z: 0, facet: 1 } }],
+    boxes: [{ serial: A, pos: { x: 100, y: 100, z: 0, facet: 1 } }, { serial: B, pos: { x: 104, y: 100, z: 0, facet: 1 } }, ...extraBoxes],
     things: [{ serial: PEARL, name: "Black Pearl", in: B }, { serial: RUBY, name: "Ruby", in: A }, ...extra] })));
   const s = await startServer(config, {
     clientSearch: { home: FAKE_HOME, candidates: (a) => candidateClientRoots({ adapter: a.id, home: FAKE_HOME, platform: "linux", env: {}, adapterPlatform: a.platform }) },
@@ -168,6 +169,54 @@ test("[fast] a trip's reported steps go into the overlay, and the next plan no l
     const gone = await call(s, "/api/organize/trip", body("POST", { index: 1, stamp: next.stamp }));
     assert.equal(gone.status, 404);
   } finally {
+    await s.close();
+  }
+});
+
+// Issue #127: every view and bridge command reads the inventory the server serves, and that is the fold with the
+// overlay applied, so after a trip Inventory, Find and Highlight point where the trip put an item.
+test("[fast] after a trip the served inventory shows where it put each item, a carried item in the backpack, until a newer scan says otherwise", { timeout: 10e3 }, async () => {
+  const PACK = 0x40000009;
+  const { s, dir } = await serve([], [{ serial: PACK, kind: "backpack", name: "Backpack" }]);
+  const events = await fetch(s.url + "/api/events");
+  const reader = events.body!.getReader();
+  try {
+    await call(s, "/api/organize", body("PUT", CONFIG_DOC));
+    const plan = (await call<{ plan: Plan }>(s, "/api/organize/plan")).body.plan;
+    const id = String((await call(s, "/api/organize/trip", body("POST", { index: 1, stamp: plan.stamp }))).body.id);
+    const t = new Date().toISOString();
+    writeFileSync(join(dir, "bridge", "tazuo", "status.json"), JSON.stringify({ alive: t, character: "Tester", current: null, counts: { done: 1, failed: 0 },
+      results: { [id]: { ok: true, msg: "trip 1: 1 put away, 1 step failed", t, partial: false, stopped: false, steps: [
+        { op: "take", serial: RUBY, ok: true, msg: "took Ruby" }, { op: "take", serial: PEARL, ok: true, msg: "took Black Pearl" },
+        { op: "put", serial: RUBY, ok: true, msg: "put Ruby away" }, { op: "put", serial: PEARL, ok: false, msg: "no room" }] } } }));
+    // No Organize route runs: the next inventory read harvests the trip, and an open page hears that it changed.
+    const inv = (await call<{ inventory: { containers: Record<string, Container>; rootCounts: Record<string, number> } }>(s, "/api/inventory")).body.inventory;
+    const decoder = new TextDecoder();
+    let heard = "";
+    while (!heard.includes('event: changed\ndata: {"what":"inventory"')) {
+      const { value, done } = await reader.read();
+      assert.equal(done, false, heard);
+      heard += decoder.decode(value, { stream: true });
+    }
+    const byName = async (q: string): Promise<Item> => (await call<{ rows: Item[] }>(s, `/api/items?q=${encodeURIComponent(q)}`)).body.rows[0]!;
+    // The page's chainOf (app/ui/bridge.mts): the containers around the item, root first.
+    const chainOf = (it: Item): number[] => { const out: number[] = []; for (let c = inv.containers[String(it.container)]; c; c = c.parent != null ? inv.containers[String(c.parent)] : undefined) out.unshift(c.serial); return out; };
+    const ruby = await byName("Ruby");
+    assert.deepEqual([ruby.container, ruby.root, ruby.location?.text, ruby.location?.root, chainOf(ruby)], [B, B, `Box ${B}`, B, [B]]);
+    const pearl = await byName("Black Pearl");
+    assert.deepEqual([pearl.container, pearl.root, pearl.location?.kind, pearl.location?.character, pearl.location?.text, chainOf(pearl)], [PACK, PACK, "backpack", "Tester", "Tester's backpack", [PACK]]);
+    assert.deepEqual((await call<{ items: Record<string, Item> }>(s, `/api/items/by-serial?serials=${RUBY}`)).body.items[RUBY]!.location?.text, `Box ${B}`);
+    assert.deepEqual([inv.containers[A]!.capacity?.items, inv.containers[B]!.capacity?.items, inv.rootCounts[A], inv.rootCounts[B], inv.rootCounts[PACK]], [0, 1, undefined, 1, 1]);
+    // The planner applies the overlay itself, once: nothing is planned again, the carried pearl is put away.
+    const next = (await call<{ plan: Plan }>(s, "/api/organize/plan")).body.plan;
+    assert.deepEqual(next.moves.map((m) => [m.serial, m.from, m.to]), [[PEARL, null, A]]);
+    // A scan of the house newer than the trip wins over the overlay.
+    writeFileSync(join(dir, "scans", "house-later.json"), JSON.stringify(houseScan({ scannedAt: new Date(Date.now() + 60e3).toISOString(),
+      boxes: [{ serial: A }, { serial: B, pos: { x: 104, y: 100, z: 0, facet: 1 } }, { serial: PACK, kind: "backpack", name: "Backpack" }],
+      things: [{ serial: PEARL, name: "Black Pearl", in: B }, { serial: RUBY, name: "Ruby", in: A }] })));
+    assert.deepEqual([(await byName("Ruby")).location?.text, (await byName("Black Pearl")).location?.text], [`Box ${A}`, `Box ${B}`]);
+  } finally {
+    await reader.cancel().catch(() => {});
     await s.close();
   }
 });
