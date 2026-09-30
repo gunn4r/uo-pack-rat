@@ -593,6 +593,17 @@ test("[fast] Put away from the Inbox takes only what the Inbox holds", () => {
   assert.equal(plan.unclaimed, 1);
 });
 
+test("[fast] Put away gathers no empty bags, which the house plan does", () => {
+  const IN = 0x40000009;
+  const inv = fold([{ serial: A }, { serial: BAG, parent: A }, { serial: B, pos: at(104) }, { serial: IN, pos: at(102) }, { serial: PACK, kind: "backpack" }],
+    [{ serial: PEARL, name: "Black Pearl", in: IN }, { serial: PEARL2, name: "Black Pearl", in: PACK }]);
+  const cfg = config({ labels: { ...labels(A, B), [String(IN)]: { serial: IN, name: "Inbox", inbox: true, origin: "manual" } }, rules: [rule("pearls", {}, [A], ["pearl"])], emptyBagsTo: B });
+  assert.deepEqual(planOrganize(inv, cfg, [], { now: NOW }).moves.map((m) => m.serial).sort(), [BAG, PEARL].sort());
+  assert.deepEqual(planOrganize(inv, cfg, [], { now: NOW, putAway: { from: "inbox", inbox: IN } }).moves.map((m) => m.serial), [PEARL]);
+  assert.deepEqual(planOrganize(inv, cfg, [], { now: NOW, putAway: { from: "backpack", backpack: PACK, at: { x: 101, y: 100, facet: 1 } } }).moves.map((m) => m.serial), [PEARL2],
+    "a backpack Put away trip takes nothing, so a bag in it would get the trip refused");
+});
+
 // Issue #128: the bags trips leave behind, gathered on request, and targets about to fill up.
 const BAG2 = 0x40000011, BAG3 = 0x40000012, BAG4 = 0x40000013, BAG5 = 0x40000014, BAG6 = 0x40000015;
 test("[fast] emptyBagsOf lists unlabelled bags holding nothing in labelled roots, never an unopened, pinned or blacklisted one", () => {
