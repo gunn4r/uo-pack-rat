@@ -278,8 +278,9 @@ export interface GroupReport { key: string; name: string; family: Family; ruleId
 // What the full layout (FILL, a bag for each group sharing a chest) needs beyond what the player has: `chests` more
 // house chests, and bags: for each shared chest (null: one of the chests to add, by its family's name) how many more
 // bags it needs. `spareBags`: empty bags already in the ticked chests that no group was given, to move in first.
+// `roomy`: the proposal fills to FILL where filling to the top would have given other chests.
 export interface BagGap { chest: number | null; family: string; bags: number }
-export interface Layout { chests: number; bags: BagGap[]; spareBags: number }
+export interface Layout { chests: number; bags: BagGap[]; spareBags: number; roomy: boolean }
 export interface Proposal {
   strategy: StrategyId;
   candidates: Candidate[];
@@ -407,26 +408,41 @@ export function proposeOrganize(inv: Inventory, cfg: OrganizeConfig, overlay: Ov
       if (add >= most || ns.every((n) => a.room.get(n.key)! >= n.need)) { ideal.set(site, { add, a }); break; }
     }
   }
+  // A house its earlier rules already sort, into the same chests, with room at the top of them, stays as it is
+  // (no rebalancing moves on a re-run); `roomy` tells the drawer when the FILL layout moves anything elsewhere.
   const toTop = assignGroups(needs, offersAt(1));
-  const layoutOf = (key: string): { a: Assignment; bagSlot: number } => { const i = ideal.get(home.get(key)!.site)!; return i.add ? { a: toTop, bagSlot: 0 } : { a: i.a, bagSlot: 1 }; };
+  const same = (a: readonly number[], b: readonly number[]): boolean => a.length === b.length && a.every((s, i) => s === b[i]);
+  const stable = (site: number): boolean => needs.filter((n) => n.site === site).every((n) => n.prev!.length > 0 && same(toTop.chains.get(n.key)!, n.prev!) && toTop.room.get(n.key)! >= n.need);
+  const useFill = new Map([...ideal].map(([site, i]) => [site, !i.add && !stable(site)]));
+  const layoutOf = (key: string): { a: Assignment; bagSlot: number } => { const site = home.get(key)!.site; return useFill.get(site) ? { a: ideal.get(site)!.a, bagSlot: 1 } : { a: toTop, bagSlot: 0 }; };
   const chains = new Map(groups.map((g) => [g.key, layoutOf(g.key).a.chains.get(g.key)!]));
-  // Issue #132: each group sharing a chest gets a bag of its own there: the bag its earlier rule fills, else the next
-  // by serial of the bags lying in that chest that are empty (emptyBagsOf) or an earlier strategy's, opened, not
-  // pinned or blacklisted, with their fill known. Groups left without one share the chest itself, loose.
-  const emptyBags = emptyBagsOf(view, placed.counts, draft, scope.roots, opts.blacklist);
+  const roomy = groups.some((g) => !same(chains.get(g.key)!, toTop.chains.get(g.key)!));
+  // Issue #132: each group sharing a chest (and only that one: a group chaining several keeps its chain) gets a bag
+  // of its own lying in that chest: the bag its earlier rule fills, else an earlier strategy's bag holding only this
+  // group's items, else the next by serial of its empty bags (emptyBagsOf, over the labels this proposal keeps, so an
+  // earlier strategy's empty bag is one). An earlier strategy's bag with other items in it goes to no other group,
+  // which would move them out. Groups left without one share the chest itself, loose.
+  const emptyBags = emptyBagsOf(view, placed.counts, draft, scope.roots, opts.blacklist).filter((b) => placed.counts.has(b.serial));
+  const ticked = new Set(containers);
+  const byGroup = new Map(groups.flatMap((g) => g.items.map((it) => [+it.serial, g.key] as const)));
   const oldBags = Object.values(cfg.labels).filter((l) => l.origin !== "manual" && !labels[String(l.serial)] && !l.pinned).flatMap((l) => {
     const it = view.items[l.serial];
-    return it?.container != null && view.containers[l.serial]?.opened !== false && !cfg.pinnedItems.includes(l.serial) && !black.has(l.serial) ? [{ serial: l.serial, container: +it.container }] : [];
+    return it?.container != null && view.containers[l.serial]?.opened !== false && placed.counts.has(l.serial) && !cfg.pinnedItems.includes(l.serial) && !black.has(l.serial) ? [{ serial: l.serial, container: +it.container }] : [];
   });
+  const inBag = (bag: number): number[] => Object.values(view.items).filter((it) => it.container != null && +it.container === bag).map((it) => +it.serial);
+  const onlyOf = (bag: number, key: string): boolean => { const kids = inBag(bag); return kids.length > 0 && kids.every((s) => byGroup.get(s) === key); };
   const bagsIn = new Map<number, number[]>();
-  for (const b of [...emptyBags, ...oldBags]) if (placed.counts.has(b.serial)) bagsIn.set(b.container, [...new Set([...bagsIn.get(b.container) ?? [], b.serial])].sort(bySerial));
+  for (const b of [...emptyBags, ...oldBags]) bagsIn.set(b.container, [...new Set([...bagsIn.get(b.container) ?? [], b.serial])].sort(bySerial));
+  const empty = new Set(emptyBags.map((b) => b.serial));
   const bagOf = new Map<string, number>();
   const needsBag = new Set<string>();
-  for (const [chest, keys] of sharedChests(groups, chains)) {
+  for (const [chest, all] of sharedChests(groups, chains)) {
+    const keys = all.filter((k) => chains.get(k)!.length === 1);
     const free = [...bagsIn.get(chest) ?? []];
     const give = (key: string, bag: number): void => { bagOf.set(key, bag); free.splice(free.indexOf(bag), 1); };
     for (const k of keys) { const b = (prev.get(k) ?? []).find((s) => free.includes(s)); if (b != null) give(k, b); }
-    for (const k of keys) if (!bagOf.has(k)) { if (free.length) give(k, free[0]!); else needsBag.add(k); }
+    for (const k of keys) { const b = bagOf.has(k) ? undefined : free.find((s) => !empty.has(s) && onlyOf(s, k)); if (b != null) give(k, b); }
+    for (const k of keys) if (!bagOf.has(k)) { const b = free.find((s) => empty.has(s)); if (b != null) give(k, b); else needsBag.add(k); }
   }
   // A chest two groups share is labelled with their family's name, any other with its group's, and a group's bag
   // with the group's.
@@ -434,13 +450,18 @@ export function proposeOrganize(inv: Inventory, cfg: OrganizeConfig, overlay: Ov
   for (const g of groups) for (const s of chains.get(g.key)!) sharing.set(s, [...sharing.get(s) ?? [], g]);
   for (const [s, gs] of sharing) if (labels[String(s)]!.origin !== "manual") labels[String(s)] = { serial: s, name: gs.length > 1 ? FAMILY_NAMES.get(gs[0]!.family)! : gs[0]!.name, origin };
   for (const g of groups) { const b = bagOf.get(g.key); if (b != null) labels[String(b)] = { serial: b, name: g.name, origin }; }
-  // What the full layout still needs: its chests to add, and the bags its shared chests lack.
+  // What the full layout still needs: its chests to add, and the bags its shared chests lack (counting the empty
+  // bags there). Spare bags: the empty ones in the ticked chests no group was given.
+  const given = new Set(bagOf.values());
   const familyOf = new Map(groups.map((g) => [g.key, FAMILY_NAMES.get(g.family)!]));
-  const layout: Layout = { chests: 0, bags: [], spareBags: emptyBags.filter((b) => ![...bagOf.values()].includes(b.serial)).length };
-  for (const { add, a } of ideal.values()) {
+  const layout: Layout = { chests: 0, bags: [], spareBags: emptyBags.filter((b) => !given.has(b.serial) && ticked.has(ancestry(view, b.container)?.at(-1) ?? -1)).length, roomy };
+  // A house that needs no chest added counts the bags of the layout proposed there (a stable house keeps its own).
+  for (const [site, { add, a }] of ideal) {
     layout.chests += add;
-    for (const [chest, keys] of sharedChests(groups, a.chains)) {
-      const real = chest < NEW_CHEST, bags = keys.length - (real ? bagsIn.get(chest)?.length ?? 0 : 0);
+    const at = add ? a.chains : chains;
+    for (const [chest, all] of sharedChests(groups.filter((g) => home.get(g.key)!.site === site), at)) {
+      const keys = all.filter((k) => at.get(k)!.length === 1);
+      const real = chest < NEW_CHEST, bags = keys.length - (real ? (bagsIn.get(chest) ?? []).filter((b) => empty.has(b) || given.has(b)).length : 0);
       if (bags > 0) layout.bags.push({ chest: real ? chest : null, family: familyOf.get(keys[0]!)!, bags });
     }
   }
@@ -465,7 +486,7 @@ export function proposeOrganize(inv: Inventory, cfg: OrganizeConfig, overlay: Ov
     const { a, bagSlot } = layoutOf(g.key);
     const roomSlots = a.room.get(g.key)! - bagSlot;
     const shortfall = Math.max(0, need - roomSlots);
-    return { key: g.key, name: g.name, family: g.family, ruleIds, items: g.items.length, needSlots: need, targets, bagIn: bag != null ? chains.get(g.key)![0]! : null, needsBag: needsBag.has(g.key),
+    return { key: g.key, name: g.name, family: g.family, ruleIds, items: g.items.length, needSlots: need, targets, bagIn: bag != null ? +view.items[bag]!.container! : null, needsBag: needsBag.has(g.key),
       roomSlots, shortfall, addContainers: Math.ceil(shortfall / CONTAINER_SLOTS), crossSite: g.items.length - need };
   });
 

@@ -457,6 +457,7 @@ export function proposalNotes(p: OrganizeProposal): string[] {
   return [
     ...(p.manualRules ? [p.manualRules === 1 ? "Your 1 rule stays above these and takes its items first." : `Your ${plural(p.manualRules, "rule")} stay above these and take their items first.`] : []),
     ...p.refused.map((r) => `Container 0x${r.serial.toString(16)} could not be used: ${r.reason}.`),
+    ...(p.layout.roomy ? ["No chest is filled past 80%, so new loot has room: some groups spread into a second chest."] : []),
     ...(layout ? [layout] : []),
     ...(p.plan.crossSite ? [`${plural(p.plan.crossSite, "item")} ${p.plan.crossSite === 1 ? "belongs" : "belong"} at another house: carry ${p.plan.crossSite === 1 ? "it" : "them"} over by hand.`] : []),
   ];
