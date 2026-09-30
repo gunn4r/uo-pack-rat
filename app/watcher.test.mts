@@ -209,6 +209,21 @@ test("[fast] startWatcher: the request file goes to its handler after the scan d
   handle.close();
 });
 
+test("[fast] startWatcher: a sweep handles the request file after every scan beside it, whatever their names (issue #131)", async () => {
+  const inboxDir = tmp("qm-inbox-req-sweep-"), scansDir = tmp("qm-scans-req-sweep-");
+  writeFileSync(join(inboxDir, "putaway-request.json"), "{}");
+  writeFileSync(join(inboxDir, "zed.json"), JSON.stringify(validDoc({ character: "Zed" })));
+  const seen: string[] = [];
+  const handle = startWatcher({
+    inboxDir, adapter: "tazuo", scansDir, getShard: () => SHARD, watch: fakeWatch(), debounceMs: 20, retries: 3, retryDelayMs: 20,
+    onAccepted: (a) => seen.push(`scan ${a.character}`),
+    request: { name: "putaway-request.json", handle: (path) => { seen.push("request"); rmSync(path); } },
+  });
+  await waitFor(() => seen.length === 2);
+  assert.deepEqual(seen, ["scan Zed", "request"]);
+  handle.close();
+});
+
 test("[fast] startWatcher: close() stops processing — a fire() afterward does nothing", async () => {
   const inboxDir = tmp("qm-inbox-close-"), scansDir = tmp("qm-scans-close-");
   const watch = fakeWatch();

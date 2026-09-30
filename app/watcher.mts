@@ -357,7 +357,8 @@ export function startWatcher(
       const recreated = mkdirSync(inboxDir, { recursive: true, mode: DATA_DIR_MODE }) !== undefined;
       if (recreated) safeLog(`inbox ${inboxDir} was missing; recreated it`);
       if ((recreated || !watcher || dirIdentity(inboxDir) !== armedOn) && !arm()) return false;
-      names = readdirSync(inboxDir).filter((f) => f.endsWith(".json"));
+      // The request file last, so a sweep (at startup, after a recovery) ingests every scan before it too.
+      names = readdirSync(inboxDir).filter((f) => f.endsWith(".json")).sort((a, b) => Number(a === request?.name) - Number(b === request?.name));
     } catch (e) { watchFailed(`watcher scanOnce error: ${errMessage(e)}`); return false; }
     for (const name of names) enqueue(name);
     return true;

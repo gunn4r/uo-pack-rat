@@ -89,6 +89,7 @@ HEARTBEAT = os.path.join(DATA, "bridge", "tazuo", "panel.json")
 PUT_AWAY_REQUEST = os.path.join(DATA, "inbox", "tazuo", "putaway-request.json")   # app/put-away.mts
 PUT_AWAY_REPLY = os.path.join(DATA, "bridge", "tazuo", "putaway.json")
 BRIDGE_STATUS = os.path.join(DATA, "bridge", "tazuo", "status.json")
+STOP_FLAG = os.path.join(DATA, "bridge", "stop")    # Organize's Stop: the bridge halts a trip after its current step
 PREFS = os.path.join(DATA, "tazuo-panel.json")
 SCAN_DIRS = (os.path.join(DATA, "inbox", "tazuo"), os.path.join(DATA, "scans"))
 
@@ -114,7 +115,7 @@ W, H = 380, 344
 TITLE_HUE, TEXT_HUE, OK_HUE = 1153, 996, 68
 
 state = {"done": False, "prefix": "", "character": "", "pending": {}, "was_running": set(),
-         "hotkey": None, "window": None, "show_at_login": True, "run": None}
+         "hotkey": None, "window": None, "show_at_login": True, "run": None, "quiet": set()}
 ui = {}
 shown = {}
 
@@ -337,14 +338,16 @@ def refresh():
     set_text("title", "Pack Rat - " + "".join(ch for ch in state["character"] if ch.isprintable())[:30])
     running = [n for n in (SCANNER, REFRESH, BRIDGE, BLACKLIST) if is_running(n)]
     for name in state["was_running"] - set(running) - set(state["pending"]):
-        if state["run"] is None:           # a Put away says what it is doing itself
+        if state["run"] is None and name not in state["quiet"]:   # a Put away says what it is doing itself
             say("The %s finished." % LABELS[name])
+        state["quiet"].discard(name)
     state["was_running"] = set(running)
     set_text("running", "Running: " + (", ".join(LABELS[n] for n in running) or "nothing"))
     set_text("bridge_btn", "Stop bridge" if BRIDGE in running else "Start bridge")
     set_text("bridge", "Bridge: " + ("on" if BRIDGE in running else "off"))
     t = last_scan()
     set_text("scan", "Last scan: " + ("none yet" if t is None else ago(t)))
+    away_buttons()
     write_json_atomic(HEARTBEAT, {"alive": rfc3339_now(), "character": state["character"]})
 
 
@@ -364,11 +367,32 @@ def consent(until):
     call(getattr(API, "SetSharedVar", None), PUT_AWAY_VAR, float(until))
 
 
+def away_buttons():
+    """The running Put away's button reads Cancel put away; both read their own names otherwise."""
+    run = state["run"]
+    set_text("away_btn", "Cancel put away" if run and run["source"] == "backpack" else "Put away backpack")
+    set_text("inbox_btn", "Cancel put away" if run and run["source"] == "inbox" else "Put away Inbox")
+
+
+def cancel_put_away():
+    """Ends the run, withdraws the bridge's consent (a trip not started yet is refused) and writes the
+    stop flag, so a trip under way halts after its current step."""
+    trip = state["run"]["phase"] == "trip"
+    try:
+        os.makedirs(os.path.dirname(STOP_FLAG), exist_ok=True)
+        with open(STOP_FLAG, "w", encoding="utf-8") as f:
+            f.write(rfc3339_now() + "\n")
+    except Exception:
+        pass
+    end_put_away("Put away cancelled.", "The bridge stops after its current step." if trip else "")
+
+
 def on_put_away(source):
     """Put away's click: the scan first (the backpack's quick refresh, or Scan here for the Inbox),
-    then watch_put_away takes it from there. The bridge must be on: it carries the trips."""
+    then watch_put_away takes it from there. The bridge must be on: it carries the trips. While a run
+    goes on, either button cancels it."""
     if state["run"] is not None:
-        say("Put away is already running.")
+        cancel_put_away()
         return
     if not is_running(BRIDGE):
         say("Start the bridge first: Put away", "moves the items through it.")
@@ -379,14 +403,17 @@ def on_put_away(source):
         return
     # The scan it waits for is one newer than this character's newest now: file times, never the clock.
     state["run"] = {"source": source, "script": script, "phase": "scan", "since": time.time(), "before": last_scan(),
-                    "put": 0, "failed": 0, "rounds": 0}
+                    "clicked": rfc3339_now(), "put": 0, "failed": 0, "rounds": 0}
+    away_buttons()
     start(script)
+    state["quiet"].add(script)
     say("Put away: reading your %s..." % ("backpack" if source == "backpack" else "Inbox"))
 
 
 def end_put_away(line1, line2=""):
     consent(0)
     state["run"] = None
+    away_buttons()
     say(line1, line2)
 
 
@@ -401,8 +428,15 @@ def ask(run):
         at["facet"] = f
     consent(time.time() + REPLY_WAIT_S + TRIP_WAIT_S)
     try:
+        took = float(call(getattr(API, "GetSharedVar", None), PUT_AWAY_VAR)) > time.time()
+    except Exception:
+        took = False
+    if not took:       # the bridge would refuse every trip: say why now
+        end_put_away("Put away needs shared variables,", "which this TazUO build lacks.")
+        return
+    try:
         write_json_atomic(PUT_AWAY_REQUEST, {"id": run["id"], "source": run["source"], "character": state["character"],
-                                             "requestedAt": rfc3339_now(), "at": at})
+                                             "requestedAt": rfc3339_now(), "clickedAt": run["clicked"], "at": at})
     except Exception:
         end_put_away("Put away could not write its request.")
         return
@@ -457,6 +491,9 @@ def watch_put_away():
 
 
 def write_stopped():
+    """The last heartbeat, `stopped: true`, and the bridge's Put away consent withdrawn: called on Stop and
+    from main()'s finally, however the panel ends."""
+    consent(0)
     try:
         write_json_atomic(HEARTBEAT, {"alive": rfc3339_now(), "character": state["character"], "stopped": True})
     except Exception:
@@ -465,7 +502,6 @@ def write_stopped():
 
 def on_stop():
     state["done"] = True
-    consent(0)
     write_stopped()
 
 
@@ -561,6 +597,8 @@ def main():
             if not failed:
                 API.SysMsg("Pack Rat panel: status update failed: %s" % str(e)[:80], 33)
                 failed = True
+            if state["run"] is not None:
+                end_put_away("Put away stopped: %s" % str(e)[:40])
         API.Pause(POLL_S)
     if not API.StopRequested and not state["done"]:
         API.SysMsg("Pack Rat panel closed; type -playlscript packrat-panel.py to reopen", 88)

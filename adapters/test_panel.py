@@ -236,6 +236,27 @@ class Panel(unittest.TestCase):
         self.assertEqual(self.read("inbox", "tazuo", "putaway-request.json")["source"], "inbox")
         self.assertIn("Pack Rat did not answer.", self.labels(api))
 
+    def test_put_away_can_be_cancelled_and_ends_at_once_on_a_client_without_shared_variables(self):
+        w = World()
+        api = tazuo_panel_api(w, loaded=list(ALL))
+        api.running.append("packrat-bridge.py")
+        seen = {}
+        w.clock.at(1, lambda: api.click(self.control(api, "Put away backpack")))
+        w.clock.at(2, lambda: seen.setdefault("running", self.labels(api)))
+        w.clock.at(3, lambda: api.click(self.control(api, "Cancel put away")))
+        w.clock.at(4, lambda: seen.setdefault("cancelled", self.labels(api)))
+        # A build whose shared variables do not hold a value: the run ends before any request.
+        w.clock.at(5, lambda: (setattr(api, "SetSharedVar", lambda name, v: None), api.running.remove("packrat-refresh.py")))
+        w.clock.at(6, lambda: api.click(self.control(api, "Put away backpack")))
+        w.clock.at(8, lambda: (api.running.remove("packrat-refresh.py"), self.write({}, "inbox", "tazuo", "Tester-20260930-120000-quick.json")))
+        self.run_panel(w, api, until_s=12)
+        self.assertIn("Cancel put away", seen["running"])
+        self.assertIn("Put away cancelled.", seen["cancelled"])
+        self.assertIn("Put away backpack", seen["cancelled"])
+        self.assertTrue(os.path.isfile(self.path("bridge", "stop")), "a trip under way halts after its step")
+        self.assertIn("Put away needs shared variables,", self.labels(api))
+        self.assertFalse(os.path.exists(self.path("inbox", "tazuo", "putaway-request.json")))
+
     def test_the_loop_is_bounded(self):
         with open(SCRIPT, encoding="utf-8") as f:
             src = f.read()

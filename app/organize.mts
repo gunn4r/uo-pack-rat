@@ -441,8 +441,9 @@ export interface Plan {
   seconds: number;          // about how long the trips take (tripSeconds), whole seconds
 }
 // Put away (issue #131, the TazUO panel's button): the one source a run takes from, instead of every labelled
-// root. `backpack`: what lies loose at the top of that backpack (packItems) and anything carried, put only into
-// the site the character stands in (`at`, where the panel was clicked); `inbox`: what the Inbox label holds.
+// root. `backpack`: what lies loose at the top of that backpack (packItems) and anything carried, claimed by a rule
+// (never the catch-all), put only into the site the character stands in (`at`, where the panel was clicked);
+// `inbox`: what the Inbox label holds.
 export type PutAway = { from: "backpack"; backpack: number; at: Spot } | { from: "inbox"; inbox: number };
 export interface PlanOptions extends ScopeOptions {
   putAway?: PutAway | undefined;
@@ -579,7 +580,9 @@ export function planOrganize(inv: Inventory, cfg: OrganizeConfig, overlay: Overl
   for (const serial of candidates) {
     const it = view.items[serial]!;
     const claim = claimOf(it, cfg, rarity);
-    if (!claim) { unclaimed++; continue; }
+    // Put away from the backpack moves only what a rule names: the catch-all would sweep up everything a player
+    // carries on purpose (bandages, reagents, keys, runes), so there it counts as no claim.
+    if (!claim || (put?.from === "backpack" && claim.ruleId === CATCH_ALL_ID)) { unclaimed++; continue; }
     const rep = report.get(claim.ruleId)!;
     rep.matched++;
     const targets = chains.get(claim.ruleId)!;

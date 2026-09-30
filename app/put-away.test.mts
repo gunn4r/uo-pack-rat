@@ -6,7 +6,7 @@ import { checkPutAwayRequest, nothingDetail, requestId } from "./put-away.mts";
 
 const NOW = Date.parse("2026-09-30T12:00:00Z");
 const good = (over: Record<string, unknown> = {}): Record<string, unknown> =>
-  ({ id: "1727697600000-1", source: "backpack", character: "Tester", requestedAt: "2026-09-30T13:59:58+02:00", at: { x: 1520, y: 1631, facet: 1 }, ...over });
+  ({ id: "1727697600000-1", source: "backpack", character: "Tester", requestedAt: "2026-09-30T13:59:58+02:00", clickedAt: "2026-09-30T11:55:00Z", at: { x: 1520, y: 1631, facet: 1 }, ...over });
 const refused = (raw: unknown): string => {
   const r = checkPutAwayRequest(raw, NOW);
   assert.equal(r.ok, false, `accepted ${JSON.stringify(raw)}`);
@@ -27,6 +27,7 @@ test("[fast] anything else is refused: extra fields, a bad id, source, character
   for (const source of [undefined, "bank", "BACKPACK"]) assert.match(refused(good({ source })), /no source/);
   for (const character of [undefined, "", "x".repeat(65), "Tes\nter", 3]) assert.match(refused(good({ character })), /no character/);
   for (const requestedAt of ["2026-09-30T11:58:59Z", "2026-09-30T12:00:06Z", "yesterday", undefined]) assert.match(refused(good({ requestedAt })), /too old/);
+  for (const clickedAt of [undefined, "later", "2026-09-30T12:00:04Z", "2026-09-30T10:59:57Z"]) assert.match(refused(good({ clickedAt })), /when Put away was clicked/);
   for (const at of [undefined, {}, { x: 1, y: 1, z: 0 }, { x: -1, y: 1 }, { x: 1.5, y: 1 }, { x: 1, y: 5000 }, { x: 1, y: 1, facet: 6 }, [1, 1]]) {
     assert.match(refused(good({ at })), /where you stand/);
   }
@@ -36,6 +37,7 @@ test("[fast] anything else is refused: extra fields, a bad id, source, character
 
 test("[fast] a plan that moves nothing says why in one short line", () => {
   const rules = [{ ruleId: "a", matched: 3, inPlace: 1, toMove: 0, noRoom: 2 }, { ruleId: "b", matched: 1, inPlace: 0, toMove: 0, noRoom: 0 }];
-  assert.equal(nothingDetail({ unclaimed: 4, crossSite: [{ ruleId: "b", count: 1 }], rules }), "4 no rule takes, 1 for another house, 2 with no room, 1 already filed");
-  assert.equal(nothingDetail({ unclaimed: 0, crossSite: [], rules: [] }), "");
+  assert.equal(nothingDetail({ unclaimed: 4, crossSite: [{ ruleId: "b", count: 1 }], rules }, "backpack"), "4 no rule takes stay in your pack, 1 for another house, 2 with no room, 1 already filed");
+  assert.equal(nothingDetail({ unclaimed: 1, crossSite: [], rules: [] }, "inbox"), "1 no rule takes stay in your Inbox");
+  assert.equal(nothingDetail({ unclaimed: 0, crossSite: [], rules: [] }, "backpack"), "");
 });

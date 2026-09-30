@@ -338,11 +338,11 @@ test("[fast] POST /api/organize/propose refuses an unknown strategy, a bad conta
 // bridge/tazuo/putaway.json with the first trip of the backpack's plan queued.
 test("[fast] Put away: a request dropped after a refresh plans the fresh backpack, queues one putAway trip and answers the panel", async () => {
   const { s, dir } = await serve();
-  const PACK = 0x40000008, LOOT = 0x40001003;
+  const PACK = 0x40000008, LOOT = 0x40001003, clickedAt = new Date().toISOString();
   const inbox = join(dir, "inbox", "tazuo"), replyPath = join(dir, "bridge", "tazuo", "putaway.json");
   const drop = (name: string, doc: unknown): void => { writeFileSync(join(inbox, `${name}.tmp`), JSON.stringify(doc)); renameSync(join(inbox, `${name}.tmp`), join(inbox, name)); };
   const ask = async (id: string, over: Record<string, unknown> = {}): Promise<Record<string, unknown>> => {
-    drop("putaway-request.json", { id, source: "backpack", character: "Tester", requestedAt: new Date().toISOString(), at: { x: 101, y: 100, facet: 1 }, ...over });
+    drop("putaway-request.json", { id, source: "backpack", character: "Tester", requestedAt: new Date().toISOString(), clickedAt, at: { x: 101, y: 100, facet: 1 }, ...over });
     for (let i = 0; i < 100; i++) {
       const reply = existsSync(replyPath) ? JSON.parse(readFileSync(replyPath, "utf8")) as Record<string, unknown> : null;
       if (reply && reply.id === (over.id === undefined ? id : null) && !existsSync(join(inbox, "putaway-request.json"))) return reply;
@@ -372,6 +372,11 @@ test("[fast] Put away: a request dropped after a refresh plans the fresh backpac
     assert.deepEqual([done.ok, done.msg, done.trip], [true, "Nothing to put away.", undefined]);
     const inboxAsk = await ask("r-4", { source: "inbox" });
     assert.deepEqual([inboxAsk.ok, inboxAsk.msg], [false, "No Inbox is set."]);
+    const withInbox = structuredClone(CONFIG_DOC);
+    withInbox.labels[String(B)]!.inbox = true;
+    assert.equal((await call(s, "/api/organize", body("PUT", withInbox))).status, 200);
+    const unread = await ask("r-6", { source: "inbox" });
+    assert.deepEqual([unread.ok, unread.msg], [false, "Pack Rat has not read your Inbox yet."], "its last scan is from before the click");
     const stale = await ask("r-5", { id: "../../x", requestedAt: "2020-01-01T00:00:00Z" });
     assert.equal(stale.ok, false);
     assert.equal(queued(dir).length, 1, "nothing more was queued");

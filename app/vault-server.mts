@@ -119,7 +119,7 @@ import { unlinkSync } from "node:fs";
 import { randomUUID, timingSafeEqual } from "node:crypto";
 import type { AddressInfo } from "node:net";
 import { runKey, reusableRun, runSummary, stripOpts, normalizeRun, SOLVER_VERSION, type RunOpts, type SavedRun } from "./runs-lib.mts";
-import { upgradeScan, validateScan } from "./scan-schema.mts";
+import { parseStamp, upgradeScan, validateScan } from "./scan-schema.mts";
 import { loadRules, listRules, DEFAULT_SHARD } from "./rules.mts";
 import { validate, type ValidatorSchema } from "./schema/validate.mts";
 import { parseItemQuery, applyItemQuery, facetsOf, type ItemQueryRows, type ItemQueryGroups } from "./item-query.mts";
@@ -131,7 +131,7 @@ import { addPanelAutostart, panelPrefsError, readPanelPrefs, tazuoRunning, write
 import { queueTrip, writeBridgeStop } from "./bridge-trip.mts";
 import { checkOrganizeConfig, emptyOrganizeConfig, LIMITS, matchProblem, salvageOrganizeConfig, MAX_SETUP_BYTES, type OrganizeConfig, type RuleMatch } from "./organize-config.mts";
 import { planOrganize, tripCommand, matchCount, type Plan, type PutAway } from "./organize.mts";
-import { checkPutAwayRequest, nothingDetail, requestId, tripMsg, MAX_REQUEST_BYTES, PUT_AWAY_REPLY, PUT_AWAY_REQUEST, type PutAwayReply, type PutAwayRequest } from "./put-away.mts";
+import { checkPutAwayRequest, nothingDetail, requestId, tripMsg, FRESH_MARGIN_MS, MAX_REQUEST_BYTES, PUT_AWAY_REPLY, PUT_AWAY_REQUEST, type PutAwayReply, type PutAwayRequest } from "./put-away.mts";
 import { PRESETS } from "./organize-presets.mts";
 import { proposeOrganize, STRATEGY_IDS, type StrategyId } from "./organize-strategies.mts";
 import { emptyOrganizeState, harvestTrips, noteSeen, pruneOverlay, salvageOrganizeState, PENDING_GRACE_MS, type BridgeView, type OrganizeState } from "./organize-state.mts";
@@ -923,13 +923,18 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
       if (!pack) return { ok: false, msg: "Pack Rat has no scan of your backpack." };
       source = { from: "backpack", backpack: +pack.serial, at: req.at };
     }
+    // Planned only from a scan made for this run (the panel's refresh or scan), never from an older one.
+    const read = inv.containers[String(source.from === "inbox" ? source.inbox : source.backpack)];
+    if (!read || parseStamp(read.scannedAt) < parseStamp(req.clickedAt) - FRESH_MARGIN_MS) {
+      return { ok: false, msg: `Pack Rat has not read your ${source.from === "inbox" ? "Inbox" : "backpack"} yet.`, detail: "Try again." };
+    }
     const plan = planOf(inv, config, state, source);
     if (source.from === "inbox" && !plan.sites.some((s) => s.roots.includes(source.inbox))) {
       const why = plan.warnings.find((w) => w.serial === source.inbox);
       return { ok: false, msg: "The Inbox cannot be used.", detail: why?.detail ?? "It must be a labelled chest on the ground." };
     }
     const trip = plan.trips[0];
-    if (!trip) return { ok: true, msg: "Nothing to put away.", detail: nothingDetail(plan) };
+    if (!trip) return { ok: true, msg: "Nothing to put away.", detail: nothingDetail(plan, req.source) };
     const queued = queuePlanTrip(adapter, inv, state, plan, trip.index, source.from === "backpack");
     if (!queued.ok) return { ok: false, msg: "The trip could not be queued.", detail: queued.error };
     return { ok: true, msg: tripMsg(trip.puts.length, plan.moves.length - trip.puts.length), trip: queued.id };

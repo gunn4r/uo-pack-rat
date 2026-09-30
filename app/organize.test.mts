@@ -520,6 +520,8 @@ test("[fast] Put away from the backpack puts only what lies loose at its top, in
   assert.deepEqual(tripCommand(inv, plan, 1)!.takes, []);
   assert.deepEqual(plan.crossSite, [{ ruleId: "rubies", count: 1 }], "the ruby's chest is at another house");
   assert.equal(plan.unclaimed, 1);
+  const withCatchAll = planOrganize(inv, { ...cfg, catchAll: A }, [], { now: NOW, putAway: { from: "backpack", backpack: PACK, at: { x: 101, y: 100, facet: 1 } } });
+  assert.deepEqual([withCatchAll.moves.map((m) => m.serial), withCatchAll.unclaimed], [[PEARL], 1], "the catch-all takes nothing from the backpack");
   const there = planOrganize(inv, cfg, [], { now: NOW, putAway: { from: "backpack", backpack: PACK, at: { x: 301, y: 100, facet: 1 } } });
   assert.deepEqual(there.moves.map((m) => [m.serial, m.to]), [[RUBY, FAR]], "standing at the other house");
   const elsewhere = planOrganize(inv, cfg, [], { now: NOW, putAway: { from: "backpack", backpack: PACK, at: { x: 101, y: 100, facet: 2 } } });
