@@ -6,7 +6,7 @@
 import { isDeepStrictEqual } from "node:util";
 import { checkOrganizeConfig, emptyRuleQuery, LIMITS, type Build, type ContainerLabel, type OrganizeConfig, type OrganizeRule, type Origin, type RuleMatch } from "./organize-config.mts";
 import { PRESETS } from "./organize-presets.mts";
-import { applyOverlay, claimOf, planOrganize, posOk, ruleMatches, scopeOf, sitesOf, SPELLBOOK_NAMES, type OverlayMove, type ScopeOptions } from "./organize.mts";
+import { ancestry, applyOverlay, claimOf, emptyBagsOf, planOrganize, posOk, ruleMatches, scopeOf, sitesOf, SPELLBOOK_NAMES, type OverlayMove, type ScopeOptions } from "./organize.mts";
 import { bagLabel, TRASH_RE, type Container, type ContainerCapacity, type Inventory, type Item } from "./vault-lib.mts";
 import type { RuleQuery } from "./item-query.mts";
 import type { RulesV1RarityItem } from "./schema/types.d.mts";
@@ -244,16 +244,22 @@ export function assignGroups(groups: readonly GroupNeed[], offers: readonly Offe
 
 // A house chest holds 125 items (ServUO's default): how the proposal turns missing slots into chests to add.
 export const CONTAINER_SLOTS = 125;
+// Issue #132, the layout a strategy wants: every chest filled to at most FILL of its item cap, so loot has room, and
+// every group that shares a chest in a bag of its own there (one of the chest's slots). A chest still to add is
+// counted as an empty house chest's FILL.
+const FILL = 0.8;
+const NEW_CHEST_ROOM = Math.floor(FILL * CONTAINER_SLOTS);
+// Stand-ins for the chests still to add, above every real serial (a serial is 31 bits), so a tie goes to a real one.
+const NEW_CHEST = 2 ** 31;
 // What a chest shared by a family's groups is labelled.
 const FAMILY_NAMES: Record<Family, string> = { armour: "Armour", jewelry: "Jewelry", weapons: "Weapons", "other-gear": "Other gear", gear: "Gear", reagents: "Reagents",
   scrolls: "Scrolls", maps: "Treasure maps & SOS", resources: "Resources", potions: "Potions & bandages", "runes-books": "Runes & books", deeds: "Deeds", gems: "Gems",
   tools: "Tools", clothing: "Clothing", other: "Other" };
-// The chests to add, counted after sharing: a family's groups at one house could share the new chests too, so each
-// family there needs its summed shortfall in whole chests.
-function addContainersOf(reports: readonly GroupReport[], home: ReadonlyMap<string, { site: number }>): number {
-  const short = new Map<string, number>();
-  for (const r of reports) if (r.shortfall) { const k = `${home.get(r.key)!.site}\u0000${r.family}`; short.set(k, (short.get(k) ?? 0) + r.shortfall); }
-  return [...short.values()].reduce((n, v) => n + Math.ceil(v / CONTAINER_SLOTS), 0);
+// The chests two or more groups share, each with their keys in the order the groups come (table order).
+function sharedChests(groups: readonly { key: string }[], chains: ReadonlyMap<string, number[]>): Map<number, string[]> {
+  const by = new Map<number, string[]>();
+  for (const g of groups) for (const s of chains.get(g.key) ?? []) by.set(s, [...by.get(s) ?? [], g.key]);
+  return new Map([...by].filter(([, keys]) => keys.length > 1));
 }
 
 // A ground chest Auto organize may use: its name as the player knows it (its label, else its engraving or name),
@@ -263,8 +269,16 @@ function addContainersOf(reports: readonly GroupReport[], home: ReadonlyMap<stri
 export interface Candidate { serial: number; name: string; site: number; fill: { items: number; max: number }; label: { name: string; origin: Origin } | null; mine: boolean; ticked: boolean }
 export interface Unusable { serial: number; name: string; reason: string }
 // One group of the proposal. needSlots = its items at its home site (one slot each: merges are the plan's to find),
-// roomSlots = what its chests take, crossSite = its items at other houses (never moved).
-export interface GroupReport { key: string; name: string; family: Family; ruleIds: string[]; items: number; needSlots: number; targets: number[]; roomSlots: number; shortfall: number; addContainers: number; crossSite: number }
+// roomSlots = what its chests take, crossSite = its items at other houses (never moved). A group sharing a chest
+// fills its own bag there (targets = [the bag], bagIn = the chest), or, with no bag left for it, the chest itself
+// among the other groups' bags (needsBag).
+export interface GroupReport { key: string; name: string; family: Family; ruleIds: string[]; items: number; needSlots: number; targets: number[]; bagIn: number | null; needsBag: boolean; roomSlots: number; shortfall: number; addContainers: number; crossSite: number }
+// What the full layout (FILL, a bag for each group sharing a chest) needs beyond what the player has: `chests` more
+// house chests, and bags: for each shared chest (null: one of the chests to add, by its family's name) how many more
+// bags it needs. `spareBags`: empty bags already in the ticked chests that no group was given, to move in first.
+// `roomy`: the proposal fills to FILL where filling to the top would have given other chests.
+export interface BagGap { chest: number | null; family: string; bags: number }
+export interface Layout { chests: number; bags: BagGap[]; spareBags: number; roomy: boolean }
 export interface Proposal {
   strategy: StrategyId;
   candidates: Candidate[];
@@ -273,7 +287,7 @@ export interface Proposal {
   refused: { serial: number; reason: string }[];   // asked for, but not usable
   groups: GroupReport[];                        // in rule order
   unassigned: number;                           // groups that got no chest
-  addContainers: number;
+  layout: Layout;
   manualRules: number;
   config: OrganizeConfig;                       // the whole setup Accept saves (PUT /api/organize)
   changed: boolean;                             // false when config is the current setup
@@ -364,23 +378,91 @@ export function proposeOrganize(inv: Inventory, cfg: OrganizeConfig, overlay: Ov
       held.set(r, h);
     }
   }
-  // A chest's room for its group: its size less what stays in it whatever happens (bags, pinned items, items a
-  // manual rule claims); every group item in it either leaves or is the group's own.
-  const offers: Offer[] = containers.filter((s) => scope.usable.has(s) && siteOfRoot.has(s)).map((s) => {
+  // A chest's room for its group, filled to `fill` of its cap: that less what stays in it whatever happens (bags,
+  // pinned items, items a manual rule claims); every group item in it either leaves or is the group's own.
+  const offersAt = (fill: number): Offer[] => containers.filter((s) => scope.usable.has(s) && siteOfRoot.has(s)).map((s) => {
     const cap = placed.counts.get(s)!;
-    return { serial: s, site: siteOfRoot.get(s)!, room: Math.max(0, cap.maxItems - (cap.items - (inGroups.get(s) ?? 0))), held: held.get(s) ?? {} };
+    return { serial: s, site: siteOfRoot.get(s)!, room: Math.max(0, Math.floor(fill * cap.maxItems) - (cap.items - (inGroups.get(s) ?? 0))), held: held.get(s) ?? {} };
   });
-  // The chests each group's earlier strategy rule fills, found by the rule ids the strategies write.
+  // The containers each group's earlier strategy rule fills, found by the rule ids the strategies write; a bag
+  // (issue #132) stands for the chest it sits in.
   const prev = new Map<string, number[]>();
   for (const r of cfg.rules) {
     const key = r.origin !== "manual" ? RULE_GROUP.get(r.id.replace(/_\d+$/, "")) : undefined;
     if (key && !prev.has(key)) prev.set(key, r.targets);
   }
-  const { chains, room } = assignGroups(groups.map((g) => ({ key: g.key, family: g.family, ...home.get(g.key)!, prev: prev.get(g.key) })), offers);
-  // A chest two groups share is labelled with their family's name, any other with its group's.
+  const needs: GroupNeed[] = groups.map((g) => ({ key: g.key, family: g.family, ...home.get(g.key)!, prev: [...new Set((prev.get(g.key) ?? []).map((t) => ancestry(view, t)?.at(-1) ?? t))] }));
+  // Issue #132: at each house, the fewest chests to add for the full layout (each group a slot more for its bag, the
+  // chests at FILL; `most` gives every group chests of its own, the most it could want). Where it adds none, that
+  // layout is the proposal; elsewhere the chests there are filled to the top, as before.
+  const fillAt = offersAt(FILL);
+  const ideal = new Map<number, { add: number; a: Assignment }>();
+  for (const site of [...new Set(needs.map((n) => n.site))].sort(bySerial)) {
+    const ns = needs.filter((n) => n.site === site).map((n) => ({ ...n, need: n.need + 1 }));
+    const most = ns.reduce((k, n) => k + Math.ceil(n.need / NEW_CHEST_ROOM), 0);
+    for (let add = 0; ; add++) {
+      const fresh = Array.from({ length: add }, (_, i): Offer => ({ serial: NEW_CHEST + i, site, room: NEW_CHEST_ROOM, held: {} }));
+      const a = assignGroups(ns, [...fillAt.filter((o) => o.site === site), ...fresh]);
+      if (add >= most || ns.every((n) => a.room.get(n.key)! >= n.need)) { ideal.set(site, { add, a }); break; }
+    }
+  }
+  // A house its earlier rules already sort, into the same chests, with room at the top of them, stays as it is
+  // (no rebalancing moves on a re-run); `roomy` tells the drawer when the FILL layout moves anything elsewhere.
+  const toTop = assignGroups(needs, offersAt(1));
+  const same = (a: readonly number[], b: readonly number[]): boolean => a.length === b.length && a.every((s, i) => s === b[i]);
+  const stable = (site: number): boolean => needs.filter((n) => n.site === site).every((n) => n.prev!.length > 0 && same(toTop.chains.get(n.key)!, n.prev!) && toTop.room.get(n.key)! >= n.need);
+  const useFill = new Map([...ideal].map(([site, i]) => [site, !i.add && !stable(site)]));
+  const layoutOf = (key: string): { a: Assignment; bagSlot: number } => { const site = home.get(key)!.site; return useFill.get(site) ? { a: ideal.get(site)!.a, bagSlot: 1 } : { a: toTop, bagSlot: 0 }; };
+  const chains = new Map(groups.map((g) => [g.key, layoutOf(g.key).a.chains.get(g.key)!]));
+  const roomy = groups.some((g) => !same(chains.get(g.key)!, toTop.chains.get(g.key)!));
+  // Issue #132: each group sharing a chest (and only that one: a group chaining several keeps its chain) gets a bag
+  // of its own lying in that chest: the bag its earlier rule fills, else an earlier strategy's bag holding only this
+  // group's items, else the next by serial of its empty bags (emptyBagsOf, over the labels this proposal keeps, so an
+  // earlier strategy's empty bag is one). An earlier strategy's bag with other items in it goes to no other group,
+  // which would move them out. Groups left without one share the chest itself, loose.
+  const emptyBags = emptyBagsOf(view, placed.counts, draft, scope.roots, opts.blacklist).filter((b) => placed.counts.has(b.serial));
+  const ticked = new Set(containers);
+  const byGroup = new Map(groups.flatMap((g) => g.items.map((it) => [+it.serial, g.key] as const)));
+  const oldBags = Object.values(cfg.labels).filter((l) => l.origin !== "manual" && !labels[String(l.serial)] && !l.pinned).flatMap((l) => {
+    const it = view.items[l.serial];
+    return it?.container != null && view.containers[l.serial]?.opened !== false && placed.counts.has(l.serial) && !cfg.pinnedItems.includes(l.serial) && !black.has(l.serial) ? [{ serial: l.serial, container: +it.container }] : [];
+  });
+  const inBag = (bag: number): number[] => Object.values(view.items).filter((it) => it.container != null && +it.container === bag).map((it) => +it.serial);
+  const onlyOf = (bag: number, key: string): boolean => { const kids = inBag(bag); return kids.length > 0 && kids.every((s) => byGroup.get(s) === key); };
+  const bagsIn = new Map<number, number[]>();
+  for (const b of [...emptyBags, ...oldBags]) bagsIn.set(b.container, [...new Set([...bagsIn.get(b.container) ?? [], b.serial])].sort(bySerial));
+  const empty = new Set(emptyBags.map((b) => b.serial));
+  const bagOf = new Map<string, number>();
+  const needsBag = new Set<string>();
+  for (const [chest, all] of sharedChests(groups, chains)) {
+    const keys = all.filter((k) => chains.get(k)!.length === 1);
+    const free = [...bagsIn.get(chest) ?? []];
+    const give = (key: string, bag: number): void => { bagOf.set(key, bag); free.splice(free.indexOf(bag), 1); };
+    for (const k of keys) { const b = (prev.get(k) ?? []).find((s) => free.includes(s)); if (b != null) give(k, b); }
+    for (const k of keys) { const b = bagOf.has(k) ? undefined : free.find((s) => !empty.has(s) && onlyOf(s, k)); if (b != null) give(k, b); }
+    for (const k of keys) if (!bagOf.has(k)) { const b = free.find((s) => empty.has(s)); if (b != null) give(k, b); else needsBag.add(k); }
+  }
+  // A chest two groups share is labelled with their family's name, any other with its group's, and a group's bag
+  // with the group's.
   const sharing = new Map<number, Group[]>();
   for (const g of groups) for (const s of chains.get(g.key)!) sharing.set(s, [...sharing.get(s) ?? [], g]);
   for (const [s, gs] of sharing) if (labels[String(s)]!.origin !== "manual") labels[String(s)] = { serial: s, name: gs.length > 1 ? FAMILY_NAMES[gs[0]!.family] : gs[0]!.name, origin };
+  for (const g of groups) { const b = bagOf.get(g.key); if (b != null) labels[String(b)] = { serial: b, name: g.name, origin }; }
+  // What the full layout still needs: its chests to add, and the bags its shared chests lack (counting the empty
+  // bags there). Spare bags: the empty ones in the ticked chests no group was given.
+  const given = new Set(bagOf.values());
+  const familyOf = new Map(groups.map((g) => [g.key, FAMILY_NAMES[g.family]]));
+  const layout: Layout = { chests: 0, bags: [], spareBags: emptyBags.filter((b) => !given.has(b.serial) && ticked.has(ancestry(view, b.container)?.at(-1) ?? -1)).length, roomy };
+  // A house that needs no chest added counts the bags of the layout proposed there (a stable house keeps its own).
+  for (const [site, { add, a }] of ideal) {
+    layout.chests += add;
+    const at = add ? a.chains : chains;
+    for (const [chest, all] of sharedChests(groups.filter((g) => home.get(g.key)!.site === site), at)) {
+      const keys = all.filter((k) => at.get(k)!.length === 1);
+      const real = chest < NEW_CHEST, bags = keys.length - (real ? (bagsIn.get(chest) ?? []).filter((b) => empty.has(b) || given.has(b)).length : 0);
+      if (bags > 0) layout.bags.push({ chest: real ? chest : null, family: familyOf.get(keys[0]!)!, bags });
+    }
+  }
 
   const used = new Set(manualRules.map((r) => r.id));
   const ruleId = (base: string): string => {
@@ -391,16 +473,19 @@ export function proposeOrganize(inv: Inventory, cfg: OrganizeConfig, overlay: Ov
   };
   const autoRules: OrganizeRule[] = [];
   const reports: GroupReport[] = groups.map((g) => {
-    const targets = chains.get(g.key)!;
+    const bag = bagOf.get(g.key);
+    const targets = bag != null ? [bag] : chains.get(g.key)!;
     const ruleIds = g.matches.map((m, i) => {
       const id = ruleId(ruleIdOf(g.key, i));
       autoRules.push({ id, name: g.name, match: structuredClone(m), targets: [...targets], origin });
       return id;
     });
     const { need } = home.get(g.key)!;
-    const roomSlots = room.get(g.key)!;
+    const { a, bagSlot } = layoutOf(g.key);
+    const roomSlots = a.room.get(g.key)! - bagSlot;
     const shortfall = Math.max(0, need - roomSlots);
-    return { key: g.key, name: g.name, family: g.family, ruleIds, items: g.items.length, needSlots: need, targets, roomSlots, shortfall, addContainers: Math.ceil(shortfall / CONTAINER_SLOTS), crossSite: g.items.length - need };
+    return { key: g.key, name: g.name, family: g.family, ruleIds, items: g.items.length, needSlots: need, targets, bagIn: bag != null ? +view.items[bag]!.container! : null, needsBag: needsBag.has(g.key),
+      roomSlots, shortfall, addContainers: Math.ceil(shortfall / CONTAINER_SLOTS), crossSite: g.items.length - need };
   });
 
   // The gather container (issue #128) is the player's own, like the catch-all: its label is kept above, so it stays.
@@ -411,7 +496,7 @@ export function proposeOrganize(inv: Inventory, cfg: OrganizeConfig, overlay: Ov
   return { ok: true, proposal: {
     strategy: opts.strategy, candidates, unusable, containers, refused, groups: reports,
     unassigned: reports.filter((r) => !r.targets.length).length,
-    addContainers: addContainersOf(reports, home),
+    layout,
     manualRules: manualRules.length, config, changed: !isDeepStrictEqual(config, cfg),
     plan: { moves: plan.moves.length, trips: plan.trips.length, noRoom: plan.rules.reduce((n, r) => n + r.noRoom, 0), crossSite: plan.crossSite.reduce((n, c) => n + c.count, 0), unclaimed: plan.unclaimed },
   } };
