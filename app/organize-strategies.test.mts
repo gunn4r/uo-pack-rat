@@ -228,6 +228,10 @@ test("[fast] an Auto setup saved before crafting tools had a kind still files th
   const saved: OrganizeConfig = { ...now, rules: now.rules.filter((r) => r.id !== "auto-tools-2") };   // as this PR's parent wrote it
   assert.deepEqual(saved.rules.map((r) => [r.id, r.match.query.kind]), [["auto-tools", ["tool"]], ["auto-other", []]]);
   assert.equal(planOrganize(inv, saved, [], { now: NOW }).moves.length, 0, "the crafting tools stay in the Tools chest");
+  // A rule of the player's own asking for crafting (as the release notes advise) leaves the saved Auto setup's reading be.
+  const runics: OrganizeRule = { id: "runics", name: "Runics", match: { query: { ...emptyRuleQuery(), kind: ["tool", "crafting"] }, names: ["runic"] }, targets: [C], origin: "manual" };
+  const withC = fold([{ serial: A }, { serial: B, pos: at(102) }, { serial: C, pos: at(104) }], [...things(A, ["Scissors", "Smith's Hammer", "Sewing Kit"]), ...things(B, ["Apple"], 4)]);
+  assert.equal(planOrganize(withC, { ...saved, labels: { ...saved.labels, [C]: { serial: C, name: "Runics", origin: "manual" } }, rules: [runics, ...saved.rules] }, [], { now: NOW }).moves.length, 0);
   const mine: OrganizeConfig = { ...saved, rules: saved.rules.map((r) => (r.id === "auto-tools" ? { ...r, origin: "manual" as const } : r)) };
   assert.deepEqual(planOrganize(inv, mine, [], { now: NOW }).moves.map((m) => [m.name, m.to]), [["Smith's Hammer", B], ["Sewing Kit", B]], "a player's own Tool rule takes tools only");
 });

@@ -7,7 +7,7 @@
 //         shared by the browser and GET /api/items below — no DOM, no node: imports, servable byte for
 //         byte like vault-lib.mts) · GET /scan-schema.mjs (vault-lib.mts imports it for parseStamp, so
 //         it must be servable to the browser the same way) ·
-//         GET /schema/validate.mjs (scan-schema.mts's own import, same reason) ·
+//         GET /schema/validate.mjs (scan-schema.mts's own import, same reason) · GET /organize-config.mjs (the rule editor's import, same reason) ·
 //         GET /ui/<name> (name matching /^[a-z0-9-]+\.(mjs|css)$/, served from app/ui/, else 404) ·
 //         GET /ui/fonts/<name>.woff2 (the bundled IBM Plex faces, app/ui/fonts/, as binary font/woff2) ·
 //         GET /api/inventory (the cached fold of every scan, with Organize's results overlay applied —
@@ -1306,6 +1306,8 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
       if (req.method === "GET" && url.pathname === "/logo-mark.png") return send(res, 200, readFileSync(join(HERE, "assets", "logo-mark.png")), "image/png");
       if (req.method === "GET" && url.pathname === "/vault-lib.mjs") return send(res, 200, readFileSync(join(WEB, "vault-lib.mjs"), "utf8"), "text/javascript");
       if (req.method === "GET" && url.pathname === "/item-query.mjs") return send(res, 200, readFileSync(join(WEB, "item-query.mjs"), "utf8"), "text/javascript");
+      // The rule editor opens an Auto rule as the planner reads it (organize-config.mts's ruleMatchOf, issue #150).
+      if (req.method === "GET" && url.pathname === "/organize-config.mjs") return send(res, 200, readFileSync(join(WEB, "organize-config.mjs"), "utf8"), "text/javascript");
       if (req.method === "GET" && url.pathname === "/scan-schema.mjs") return send(res, 200, readFileSync(join(WEB, "scan-schema.mjs"), "utf8"), "text/javascript");
       // The Import drawer's instant preview parses a paste with the server's own rule (app/paste-scan.mts).
       if (req.method === "GET" && url.pathname === "/paste-scan.mjs") return send(res, 200, readFileSync(join(WEB, "paste-scan.mjs"), "utf8"), "text/javascript");

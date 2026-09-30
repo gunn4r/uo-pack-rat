@@ -41,6 +41,15 @@ const RULE_QUERY_KEYS = ["q", "slot", "rarity", "rarityMin", "rarityMax", "kind"
 // Filters added after rules were first saved, so a rule from before may leave them out.
 const OPTIONAL_QUERY_KEYS = ["tags"] as const;
 
+// Issue #150: crafting tools were tools until they got a kind of their own. An Auto setup saved before that (none of
+// Auto's rules asks for the crafting kind) reads its rules for tools as taking crafting tools too, until Auto organize
+// runs again; organize.json stays as saved, so a re-run compares against it. A player's own rule means what it says.
+// The planner claims by this, and the rule editor opens an Auto rule with it, so its count and its save agree.
+export function ruleMatchOf(r: OrganizeRule, rules: readonly OrganizeRule[]): RuleMatch {
+  const kind = r.match.query.kind;
+  if (r.origin === "manual" || !kind.includes("tool") || rules.some((x) => x.origin !== "manual" && x.match.query.kind.includes("crafting"))) return r.match;
+  return { ...r.match, query: { ...r.match.query, kind: [...kind, "crafting"] } };
+}
 export function emptyOrganizeConfig(): OrganizeConfig { return { version: 1, labels: {}, rules: [], catchAll: null, pinnedItems: [] }; }
 export function emptyRuleQuery(): RuleQuery {
   return { q: "", slot: [], rarity: "", rarityMin: "", rarityMax: "", kind: [], slayer: "", nogarg: false, med: false, hideTags: [], props: [] };

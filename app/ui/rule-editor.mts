@@ -13,6 +13,7 @@ import { filterContext } from "./inventory.mts";
 import { loadOrganize, loadPresets, matchCount, refreshPlaces, saveConfig } from "./organize-data.mts";
 import { BUILD_TEXT, SCHOOL_TEXT, fillText, fillTone, withoutRule, newRuleId, ruleQueryFrom, blankQuery, droppedNote, ruleNameFrom, checkDraft, extraFilters, targetView, targetOptions, withTargetLabels, moveIn, upsertRule, matchLine, debounced, MATCH_DEBOUNCE_MS, type TargetView } from "./organize-model.mts";
 import type { ItemQuery, RuleQuery } from "../item-query.mts";
+import { ruleMatchOf } from "../organize-config.mts";
 import type { Build, SpellSchool, OrganizeMatchApiResponse, OrganizeRule, Origin, RuleMatch } from "./api-types.mts";
 
 // A container in a rule's chain: its label's colour, its name, its fill as a meter and "61/125", or why not.
@@ -58,7 +59,7 @@ export async function openRuleEditor(o: { rule?: OrganizeRule; preset?: boolean;
   const cfg = state.organize.config!;
   const from = o.fromQuery ? ruleQueryFrom(o.fromQuery) : null;
   draft = o.rule
-    ? { id: o.rule.id, isNew: false, name: o.rule.name, query: structuredClone(o.rule.match.query), namesText: (o.rule.match.names || []).join("\n"), build: o.rule.match.build, school: o.rule.match.school, skipSuits: !!o.rule.match.skipSuits, targets: [...o.rule.targets], origin: o.rule.origin,
+    ? { id: o.rule.id, isNew: false, name: o.rule.name, query: structuredClone(ruleMatchOf(o.rule, cfg.rules).query), namesText: (o.rule.match.names || []).join("\n"), build: o.rule.match.build, school: o.rule.match.school, skipSuits: !!o.rule.match.skipSuits, targets: [...o.rule.targets], origin: o.rule.origin,
         note: o.rule.origin !== "manual" ? "Auto organize made this rule. Saving your changes makes it yours: Auto organize leaves it alone from then on." : null, errors: {}, serverError: null, match: null }
     : { id: newRuleId(cfg.rules), isNew: true, name: o.fromQuery ? ruleNameFrom(o.fromQuery, filterContext()) : "", query: from ? from.query : blankQuery(), namesText: "", build: undefined, school: undefined, skipSuits: false, targets: [], origin: "manual",
         note: from ? droppedNote(from.dropped) : null, errors: {}, serverError: null, match: null };
