@@ -60,7 +60,7 @@
 //         queueTrip; 409 when the client's bridge has no "trip", organize.json needed salvage, a trip has not reported
 //         back (while its bridge's heartbeat is fresh), stamp is not the plan's, or the trip is not its site's first) ·
 //         Put away (issue #131; no route: the TazUO panel drops inbox/<adapter>/putaway-request.json, the watcher hands it
-//         to putAway, which queues the first trip of the backpack's or the Inbox's plan like POST /api/organize/trip
+//         to putAway, which queues the first trip of the plan for the container the player picked like POST /api/organize/trip
 //         and answers in bridge/<adapter>/putaway.json; app/put-away.mts) ·
 //         GET|PUT /api/ui-prefs (<data>/ui-prefs.json: {cols?, colsVersion?, colWidths?, sheetProps?, theme?, appearance?, sidebar?, density?, dismissedUpdate?, copiedScanner?}, the page's view choices)
 //         POST /api/bridge {action, serial, name, chain: [root…parent], pos|null} (queue for packrat-bridge.py) · GET /api/bridge/status · POST /api/bridge/stop {} (Organize's Stop: writes <data>/bridge/stop, which packrat-bridge.py checks between a trip's steps)
@@ -131,7 +131,7 @@ import { writeFileAtomic } from "./atomic-write.mts";
 import { addPanelAutostart, panelPrefsError, readPanelPrefs, tazuoRunning, writePanelPrefs } from "./tazuo-panel.mts";
 import { queueTrip, writeBridgeStop } from "./bridge-trip.mts";
 import { checkOrganizeConfig, emptyOrganizeConfig, LIMITS, matchProblem, salvageOrganizeConfig, MAX_SETUP_BYTES, type OrganizeConfig, type RuleMatch } from "./organize-config.mts";
-import { packKept, planOrganize, tripCommand, matchCount, overlaidInventory, type Plan, type PutAway } from "./organize.mts";
+import { ancestry, packKept, planOrganize, tripCommand, matchCount, overlaidInventory, type Plan, type PutAway } from "./organize.mts";
 import { checkPutAwayRequest, nothingDetail, requestId, tripMsg, FRESH_MARGIN_MS, MAX_REQUEST_BYTES, PUT_AWAY_REPLY, PUT_AWAY_REQUEST, type PutAwayReply, type PutAwayRequest } from "./put-away.mts";
 import { PRESETS } from "./organize-presets.mts";
 import { proposeOrganize, STRATEGY_IDS, type StrategyId } from "./organize-strategies.mts";
@@ -902,8 +902,8 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
     return Array.isArray(caps?.bridge) && caps.bridge.includes("trip");
   };
   // Trip `index` of `plan` queued with queueTrip and recorded as pending, so its result is read back into the
-  // overlay (harvestTrips). A Put away trip from the backpack carries putAway (docs/bridge-protocol.md, Trip).
-  function queuePlanTrip(adapter: string, fold: Inventory, state: OrganizeState, plan: Plan, index: number, putAway = false): { ok: true; id: string } | { ok: false; error: string } {
+  // overlay (harvestTrips). A Put away trip from the pack carries putAway, the picked container (docs/bridge-protocol.md, Put away).
+  function queuePlanTrip(adapter: string, fold: Inventory, state: OrganizeState, plan: Plan, index: number, putAway?: number): { ok: true; id: string } | { ok: false; error: string } {
     const input = tripCommand(fold, plan, index);
     if (!input) return { ok: false, error: `trip ${index} cannot be built from the current scans` };
     const now = new Date();
@@ -937,37 +937,41 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
       writeFileAtomic(join(CONFIG.paths.bridgeFor(adapter), PUT_AWAY_REPLY), JSON.stringify(reply) + "\n", DATA_FILE_MODE);
     } catch (e) { safeAppendLog(CONFIG.paths.log, `${reply.t} put away: could not write the answer: ${(e as Error).message}\n`); }
   }
-  // One Put away step: the first trip of a plan whose only source is the backpack (its loose items, into the house the
-  // character stands in) or the Inbox. The panel asks again after each trip until nothing is left.
+  // One Put away step: the first trip of a plan whose only source is what lies directly in the container the player
+  // picked (their backpack or a bag in it, put into the house they stand in, or a container in a labelled chest).
+  // The panel asks again after each trip until nothing is left.
   async function putAwayRun(adapter: string, req: PutAwayRequest): Promise<Omit<PutAwayReply, "id" | "t">> {
     if (!runsTrips(adapter)) return { ok: false, msg: "This client's bridge cannot run Put away." };
     const { fold, config, state, problems } = await organizeInputs();
     if (problems.length) return { ok: false, msg: "Organize's setup was hand-edited.", detail: "Open Organize in the app and save it." };
     if (state.pending[0]) return { ok: false, msg: `Trip ${state.pending[0].index} has not reported back yet.` };
+    // The picked container: the character's backpack or a bag at any depth in it, or a container in a labelled ground
+    // chest (the chest itself included). Only what lies directly in it moves.
+    const picked = fold.containers[String(req.container)];
+    const chain = picked ? ancestry(fold, +picked.serial) : null;
+    const root = chain ? fold.containers[String(chain.at(-1))] : undefined;
+    // Planned only from a scan made for this run (the panel's refresh or scan), never from an older one, and never from
+    // a bag that scan could not open (the fold keeps older contents there).
+    if (!picked || !chain || !root || picked.opened === false || parseStamp(picked.scannedAt) < parseStamp(req.clickedAt) - FRESH_MARGIN_MS) {
+      return { ok: false, msg: "Pack Rat has not read that container yet.", detail: "Stand next to it and try again." };
+    }
     let source: PutAway;
-    if (req.source === "inbox") {
-      const label = Object.values(config.labels).find((l) => l.inbox);
-      if (!label) return { ok: false, msg: "No Inbox is set.", detail: "In the app, Label... a chest and turn on Inbox." };
-      source = { from: "inbox", inbox: label.serial };
-    } else {
-      const pack = Object.values(fold.containers).find((c) => c.kind === "backpack" && c.parent == null && c.scannedBy === req.character);
-      if (!pack) return { ok: false, msg: "Pack Rat has no scan of your backpack." };
-      source = { from: "backpack", backpack: +pack.serial, at: req.at };
-    }
-    // Planned only from a scan made for this run (the panel's refresh or scan), never from an older one.
-    const read = fold.containers[String(source.from === "inbox" ? source.inbox : source.backpack)];
-    if (!read || parseStamp(read.scannedAt) < parseStamp(req.clickedAt) - FRESH_MARGIN_MS) {
-      return { ok: false, msg: `Pack Rat has not read your ${source.from === "inbox" ? "Inbox" : "backpack"} yet.`, detail: "Try again." };
-    }
+    if (root.kind === "backpack" && root.scannedBy === req.character) source = { from: "pack", container: +picked.serial, at: req.at };
+    else if (root.kind === "ground" && config.labels[String(root.serial)]) source = { from: "ground", container: +picked.serial };
+    else return { ok: false, msg: root.kind === "ground" ? "That chest is not labelled for Organize." : "Pick your backpack, a bag in it,", detail: root.kind === "ground" ? "Label it in the app first." : "or a container in a labelled chest." };
+    const black = new Set(readBlacklist().map((e) => e.serial));
+    if (chain.some((s) => black.has(s))) return { ok: false, msg: "That container is blacklisted.", detail: "Pack Rat never opens it." };
+    if (chain.some((s) => config.labels[String(s)]?.pinned)) return { ok: false, msg: "That container is pinned.", detail: "Organize never takes items out of it." };
     const plan = planOf(fold, config, state, source);
-    if (source.from === "inbox" && !plan.sites.some((s) => s.roots.includes(source.inbox))) {
-      const why = plan.warnings.find((w) => w.serial === source.inbox);
-      return { ok: false, msg: "The Inbox cannot be used.", detail: why?.detail ?? "It must be a labelled chest on the ground." };
+    if (source.from === "ground" && !plan.sites.some((s) => s.roots.includes(+root.serial))) {
+      const why = plan.warnings.find((w) => w.serial === +root.serial);
+      return { ok: false, msg: "That chest cannot be used.", detail: why?.detail ?? "It needs a scan with its position." };
     }
     const trip = plan.trips[0];
-    const kept = source.from === "backpack" ? packKept(fold, source.backpack, new Set(config.pinnedItems)) : undefined;
-    if (!trip) return { ok: true, msg: "Nothing to put away.", detail: nothingDetail(plan, req.source, kept) };
-    const queued = queuePlanTrip(adapter, fold, state, plan, trip.index, source.from === "backpack");
+    const kept = source.from === "pack" ? packKept(fold, source.container, new Set(config.pinnedItems)) : undefined;
+    const where = +picked.serial === +root.serial && source.from === "pack" ? "your pack" : source.from === "pack" ? "that bag" : "that container";
+    if (!trip) return { ok: true, msg: "Nothing to put away.", detail: nothingDetail(plan, where, kept) };
+    const queued = queuePlanTrip(adapter, fold, state, plan, trip.index, source.from === "pack" ? source.container : undefined);
     if (!queued.ok) return { ok: false, msg: "The trip could not be queued.", detail: queued.error };
     return { ok: true, msg: tripMsg(trip.puts.length, plan.moves.length - trip.puts.length), trip: queued.id };
   }
