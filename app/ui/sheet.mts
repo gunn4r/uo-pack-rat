@@ -6,7 +6,7 @@
 // is attacker-controlled text, and a pasted "here's my suit" scan once turned into persistent
 // HTML/CSS injection inside the app window through this builder.
 import { totalsOf, resistSkillBonus, PROP_FULL } from "../vault-lib.mts";
-import type { OptItem, ResistCap } from "../vault-lib.mts";
+import type { ExtrasMap, OptItem, ResistCap } from "../vault-lib.mts";
 import { state } from "./store.mts";
 import { el, label, slotLabel, toast } from "./dom.mts";
 import { api } from "./api.mts";
@@ -20,9 +20,9 @@ import { capNote } from "./builder-model.mts";
 // so this is what `before`/`after` accept rather than either concrete type: Item's own
 // `twoHanded: boolean` (required) isn't assignable to OptItem's `twoHanded?: true | undefined`, so a type
 // naming both callers' real shapes has to omit it. `rarity` and `tags` are only on a scanned Item; a
-// piece without them draws a plain tile. Assignable to totalsOf's parameter, since every field OptItem
+// piece without them draws a plain tile. `extras` (a scanned Item's durability) drives the low-durability badge. Assignable to totalsOf's parameter, since every field OptItem
 // requires is present here.
-export type SheetItem = Pick<OptItem, "serial" | "name" | "slot" | "props"> & { rarity?: string | null | undefined; tags?: string[] | undefined };
+export type SheetItem = Pick<OptItem, "serial" | "name" | "slot" | "props"> & { rarity?: string | null | undefined; tags?: string[] | undefined; extras?: ExtrasMap | undefined };
 export type SheetAssignment = Partial<Record<string, SheetItem | null | undefined>>;
 export interface SheetOptions {
   // A filled slot tile was clicked (or pressed from the keyboard): show that piece. Without it the tiles
@@ -59,6 +59,19 @@ export function keyNumbers(props: Record<string, number>, caps: Record<string, n
 // Item flags as tags: cursed in danger, brittle and antique in warning, the rest neutral.
 export const tagTone = (t: string): "bad" | "warn" | undefined => (t === "cursed" ? "bad" : t === "brittle" || t === "antique" ? "warn" : undefined);
 export const plural = (n: number, one: string, many = one + "s"): string => `${n} ${n === 1 ? one : many}`;
+// Durability watch (issue #98): a worn piece is low once its durability is at 20% of its max or at 10
+// points, so it can be repaired before it breaks mid-fight. The scan's "Durability 12 / 255" line is
+// extras.durability; no line, a max of 0, or a piece at (or past) its max, which no repair would raise, is
+// never low. Returns the tile's badge text, or null.
+export const LOW_DURABILITY_SHARE = 0.2, LOW_DURABILITY_POINTS = 10;
+export function lowDurability(it: { extras?: ExtrasMap | undefined }): string | null {
+  const d = it.extras?.durability;
+  if (!Array.isArray(d)) return null;
+  const [current, max] = d;
+  return current < max && (current / max <= LOW_DURABILITY_SHARE || current <= LOW_DURABILITY_POINTS) ? `Low durability ${current}/${max}` : null;
+}
+export const lowDurabilityCount = (worn: Array<{ extras?: ExtrasMap | undefined }>): number => worn.filter((it) => lowDurability(it)).length;
+export const lowDurabilitySummary = (n: number): string | null => (n ? `${plural(n, "worn piece")} ${n === 1 ? "is" : "are"} low on durability` : null);
 
 // ---------------------------------------------------------------- the numbers
 // The scan's own numbers, read defensively. The v2 schema types stats/maxes/skills (numbers, and a
@@ -233,10 +246,13 @@ export function sheetNode(name: string, before: SheetAssignment, after: SheetAss
     const token = rarityToken(it.rarity);
     const nums = keyNumbers(it.props || {}, caps), tags = (it.tags || []).slice(0, 2);
     const isNew = !single && !nowSerials.has(it.serial);
+    // only the one-suit sheet: an optimizer piece carries no durability, so a before/after sheet would badge some pieces and not others
+    const low = single ? lowDurability(it) : null;
     const t = box("button", { type: "button", class: "slot", "data-serial": it.serial, ...(token ? { style: `border-color:var(${token})` } : {}) },
       isNew ? box("span", { class: "slot-head" }, head, badge("New", "accent")) : head,
       txt(it.name, "nm"),
-      tags.length || nums.length ? box("span", { class: "slot-meta t-sm" }, ...tags.map((x) => tag(x, tagTone(x))), nums.length ? txt(nums.join(" · "), "muted") : null) : null);
+      tags.length || nums.length ? box("span", { class: "slot-meta t-sm" }, ...tags.map((x) => tag(x, tagTone(x))), nums.length ? txt(nums.join(" · "), "muted") : null) : null,
+      low ? badge(low, "warn") : null);
     if (opts.onSlot) t.addEventListener("click", () => opts.onSlot!(it, t));
     return t;
   };

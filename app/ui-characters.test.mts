@@ -5,7 +5,7 @@
 import "../scripts/localstorage-shim-for-tests.mts";   // app/ui/store.mts reads localStorage at module scope
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { capOver, capBadgeText, atCap, bonusBreakdown, moveText, keyNumbers, tagTone, plural, SHEET_CATALOGUE, DEFAULT_SHEET_PROPS } from "./ui/sheet.mts";
+import { capOver, capBadgeText, atCap, bonusBreakdown, moveText, keyNumbers, tagTone, plural, lowDurability, lowDurabilityCount, lowDurabilitySummary, SHEET_CATALOGUE, DEFAULT_SHEET_PROPS } from "./ui/sheet.mts";
 import { rosterView, triple, type RosterRow } from "./ui/roster.mts";
 
 test("[fast] sheet: the cap badge says how far the raw value is past the cap, and nothing at or under it", () => {
@@ -76,12 +76,37 @@ test("[fast] sheet: counts pluralise", () => {
   assert.equal(plural(0, "item"), "0 items");
 });
 
+test("[fast] sheet: a worn piece is low on durability at 20% of its max or at 10 points, never at its max, with no max or with no line", () => {
+  const dur = (current: number, max: number): { extras: { durability: [number, number] } } => ({ extras: { durability: [current, max] } });
+  assert.equal(lowDurability(dur(12, 255)), "Low durability 12/255");
+  assert.equal(lowDurability(dur(51, 255)), "Low durability 51/255", "exactly 20% is low");
+  assert.equal(lowDurability(dur(52, 255)), null);
+  assert.equal(lowDurability(dur(10, 26)), "Low durability 10/26", "10 points is low even above 20% of a small max");
+  assert.equal(lowDurability(dur(11, 26)), null);
+  assert.equal(lowDurability(dur(0, 0)), null, "a max of 0 is never low");
+  assert.equal(lowDurability(dur(8, 8)), null, "a piece at its own small max is not low, however few its points");
+  assert.equal(lowDurability(dur(9, 8)), null, "nor one past its max");
+  assert.equal(lowDurability(dur(7, 8)), "Low durability 7/8");
+  assert.equal(lowDurability({ extras: {} }), null, "no durability line");
+  assert.equal(lowDurability({}), null, "no extras at all");
+  assert.equal(lowDurability({ extras: { durability: 5 } }), null, "a lone number is not a current/max pair");
+});
+
+test("[fast] sheet: the low-durability count and its summary sentence, nothing when nothing is low", () => {
+  const worn = [{ extras: { durability: [3, 150] as [number, number] } }, { extras: { durability: [150, 150] as [number, number] } }, { extras: {} }, { extras: { durability: [9, 40] as [number, number] } }];
+  assert.equal(lowDurabilityCount(worn), 2);
+  assert.equal(lowDurabilityCount([]), 0);
+  assert.equal(lowDurabilitySummary(2), "2 worn pieces are low on durability");
+  assert.equal(lowDurabilitySummary(1), "1 worn piece is low on durability");
+  assert.equal(lowDurabilitySummary(0), null);
+});
+
 const res = (vals: number[]): RosterRow["resists"] =>
   ["physResist", "fireResist", "coldResist", "poisonResist", "energyResist"].map((key, i) => ({ key, label: key, cls: key, cap: 70, raw: vals[i]!, value: Math.min(70, vals[i]!) }));
 const ROWS: RosterRow[] = [
-  { name: "Kestrel", scannedAt: "2026-01-02T12:00:00Z", stats: [70, 100, 40], pools: [100, 100, 100], resists: res([18, 55, 12, 44, 29]), worn: 8 },
-  { name: "Dorran", scannedAt: "2026-01-01T12:00:00Z", stats: [110, 60, 20], pools: [100, 100, 100], resists: res([18, 72, 41, 32, 60]), worn: 7 },
-  { name: "Aldo", scannedAt: null, stats: [null, null, null], pools: [null, null, null], resists: null, worn: 0 },
+  { name: "Kestrel", scannedAt: "2026-01-02T12:00:00Z", stats: [70, 100, 40], pools: [100, 100, 100], resists: res([18, 55, 12, 44, 29]), worn: 8, lowDurability: 0 },
+  { name: "Dorran", scannedAt: "2026-01-01T12:00:00Z", stats: [110, 60, 20], pools: [100, 100, 100], resists: res([18, 72, 41, 32, 60]), worn: 7, lowDurability: 2 },
+  { name: "Aldo", scannedAt: null, stats: [null, null, null], pools: [null, null, null], resists: null, worn: 0, lowDurability: 0 },
 ];
 const names = (rows: RosterRow[]): string[] => rows.map((r) => r.name);
 
