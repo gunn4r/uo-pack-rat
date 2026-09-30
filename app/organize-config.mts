@@ -4,24 +4,32 @@
 // document with any fault (PUT /api/organize replaces the whole file); salvageOrganizeConfig keeps every part
 // of a hand-edited file that still makes sense and names what it dropped (every read).
 import type { RuleQuery } from "./item-query.mts";
+import type { SpellSchool } from "./vault-lib.mts";
 
 export type Origin = "manual" | `strategy:${string}`;
 export interface ContainerLabel { serial: number; name: string; color?: string | undefined; pinned?: boolean | undefined; origin: Origin }
 // A rule's filter: the Inventory's item filters (never location, character or age: a rule must keep matching
 // an item after it moves) and, optionally, "name is any of" (a substring of the item's name, stack count
 // stripped, case-insensitive), and optionally a build (issue #91: the gear By build sorts into it, organize.mts's
-// buildOf; never an item that is not gear). All must pass.
+// buildOf; never an item that is not gear), and optionally a spell school (issue #134: a spell scroll's, vault-lib's
+// spellSchoolOf). All must pass. `skipSuits` (issue #133) leaves out every piece of a saved Suit Builder run, so a
+// rule for gear the player never wants (an Undesirables rule) never takes a piece a suit counts on.
 export type Build = "caster" | "melee" | "hybrid" | "tank" | "other";
 export const BUILDS: readonly Build[] = ["caster", "melee", "hybrid", "tank", "other"];
-export interface RuleMatch { query: RuleQuery; names?: string[] | undefined; build?: Build | undefined }
+export const SCHOOLS: readonly SpellSchool[] = ["magery", "necromancy", "mysticism", "spellweaving"];
+export interface RuleMatch { query: RuleQuery; names?: string[] | undefined; build?: Build | undefined; school?: SpellSchool | undefined; skipSuits?: boolean | undefined }
 // targets: labelled containers in fill order; when the first is full the next takes the overflow.
 export interface OrganizeRule { id: string; name: string; match: RuleMatch; targets: number[]; origin: Origin }
-export interface OrganizeConfig { version: 1; labels: Record<string, ContainerLabel>; rules: OrganizeRule[]; catchAll: number | null; pinnedItems: number[] }
+// emptyBagsTo (issue #128, optional so every older organize.json still reads): the labelled container the plan
+// gathers empty bags into, like a rule's one target; absent or null leaves them where they are.
+export interface OrganizeConfig { version: 1; labels: Record<string, ContainerLabel>; rules: OrganizeRule[]; catchAll: number | null; emptyBagsTo?: number | null | undefined; pinnedItems: number[] }
 
-// The ruleId the plan reports the catch-all's moves under; no rule may take it.
+// The ruleId the plan reports the catch-all's moves under, and the gathered empty bags' (issue #128); no rule may
+// take either.
 export const CATCH_ALL_ID = "catch-all";
-export const LIMITS = { labels: 2000, rules: 200, targets: 20, names: 100, pinnedItems: 5000, text: 64, q: 200, list: 50, props: 20 } as const;
-// Room for the largest setup LIMITS allows as the server saves it (pretty-printed, about 5.6 MB): the body limit of
+export const EMPTY_BAGS_ID = "empty-bags";
+export const LIMITS = { labels: 2000, rules: 200, targets: 20, names: 100, pinnedItems: 5000, text: 64, q: 200, list: 50, tags: 10, props: 20 } as const;
+// Room for the largest setup LIMITS allows as the server saves it (pretty-printed, about 5.8 MB): the body limit of
 // PUT /api/organize and the largest organize.json a read accepts.
 export const MAX_SETUP_BYTES = 6e6;
 const MAX_SERIAL = 0xFFFFFFFF;
@@ -30,6 +38,8 @@ const RULE_ID = /^[A-Za-z0-9_-]{1,64}$/;
 const COLOR = /^#[0-9a-fA-F]{6}$/;
 const STRATEGY = /^strategy:[a-z0-9-]{1,32}$/;
 const RULE_QUERY_KEYS = ["q", "slot", "rarity", "rarityMin", "rarityMax", "kind", "slayer", "nogarg", "med", "hideTags", "props"] as const;
+// Filters added after rules were first saved, so a rule from before may leave them out.
+const OPTIONAL_QUERY_KEYS = ["tags"] as const;
 
 export function emptyOrganizeConfig(): OrganizeConfig { return { version: 1, labels: {}, rules: [], catchAll: null, pinnedItems: [] }; }
 export function emptyRuleQuery(): RuleQuery {
@@ -60,7 +70,7 @@ function labelProblem(key: string, v: unknown): string | null {
 
 function queryProblem(q: unknown, at: string): string | null {
   if (!isObj(q)) return `${at} must be an object`;
-  const bad = extra(q, RULE_QUERY_KEYS);
+  const bad = extra(q, [...RULE_QUERY_KEYS, ...OPTIONAL_QUERY_KEYS]);
   if (bad) return `${at}.${bad} is not a rule filter (location, character and age filters never belong in a rule)`;
   const missing = RULE_QUERY_KEYS.find((k) => !(k in q));
   if (missing) return `${at}.${missing} is missing`;
@@ -70,6 +80,8 @@ function queryProblem(q: unknown, at: string): string | null {
     if (typeof v !== "string" || v.length > LIMITS.text) return `${at}.${k} must be a string of at most 64 characters`;
   }
   for (const k of ["slot", "kind", "hideTags"] as const) if (!textList(q[k], LIMITS.list)) return `${at}.${k} must be a list of at most 50 names`;
+  // A shard has a handful of tags (rules' tagUnits), so the list is capped well below the others.
+  if (q.tags !== undefined && !textList(q.tags, LIMITS.tags)) return `${at}.tags must be a list of at most ${LIMITS.tags} tags`;
   for (const k of ["nogarg", "med"] as const) if (typeof q[k] !== "boolean") return `${at}.${k} must be true or false`;
   if (!Array.isArray(q.props) || q.props.length > LIMITS.props) return `${at}.props must be a list of at most ${LIMITS.props} property filters`;
   for (const [i, p] of q.props.entries()) {
@@ -83,12 +95,14 @@ function queryProblem(q: unknown, at: string): string | null {
 // checks before counting what a filter being edited would take.
 export function matchProblem(m: unknown, at = "match"): string | null {
   if (!isObj(m)) return `${at} must be an object`;
-  const badM = extra(m, ["query", "names", "build"]);
+  const badM = extra(m, ["query", "names", "build", "school", "skipSuits"]);
   if (badM) return `${at}.${badM} is not a match field`;
   const qp = queryProblem(m.query, `${at}.query`);
   if (qp) return qp;
   if (m.names !== undefined && !textList(m.names, LIMITS.names)) return `${at}.names must be a list of at most ${LIMITS.names} names, each 1 to 64 characters`;
   if (m.build !== undefined && !BUILDS.includes(m.build as Build)) return `${at}.build must be one of ${BUILDS.join(", ")}`;
+  if (m.school !== undefined && !SCHOOLS.includes(m.school as SpellSchool)) return `${at}.school must be one of ${SCHOOLS.join(", ")}`;
+  if (m.skipSuits !== undefined && typeof m.skipSuits !== "boolean") return `${at}.skipSuits must be true or false`;
   return null;
 }
 
@@ -109,7 +123,7 @@ function ruleProblem(r: unknown, i: number, labels: Record<string, ContainerLabe
   const bad = extra(r, ["id", "name", "match", "targets", "origin"]);
   if (bad) return `${at}.${bad} is not a rule field`;
   if (typeof r.id !== "string" || !RULE_ID.test(r.id)) return `${at}.id must be 1 to 64 letters, digits, - or _`;
-  if (r.id === CATCH_ALL_ID) return `${at}.id "${CATCH_ALL_ID}" is reserved for the catch-all`;
+  if (r.id === CATCH_ALL_ID || r.id === EMPTY_BAGS_ID) return `${at}.id "${r.id}" is reserved for the ${r.id === CATCH_ALL_ID ? "catch-all" : "empty bags"}`;
   if (!isText(r.name)) return `${at}.name must be 1 to 64 characters`;
   if (!isOrigin(r.origin)) return `${at}.origin must be "manual" or "strategy:<id>"`;
   const mp = matchProblem(r.match, `${at}.match`);
@@ -123,12 +137,12 @@ function ruleProblem(r: unknown, i: number, labels: Record<string, ContainerLabe
   return null;
 }
 
-const catchAllProblem = (v: unknown, labels: Record<string, ContainerLabel>): string | null => (v === null ? null : containerProblem(v, labels, "catchAll"));
+const catchAllProblem = (v: unknown, labels: Record<string, ContainerLabel>, at = "catchAll"): string | null => (v === null ? null : containerProblem(v, labels, at));
 
 export function checkOrganizeConfig(doc: unknown): { ok: true; config: OrganizeConfig } | { ok: false; error: string } {
   const fail = (error: string): { ok: false; error: string } => ({ ok: false, error });
   if (!isObj(doc)) return fail("an Organize setup must be an object");
-  const bad = extra(doc, ["version", "labels", "rules", "catchAll", "pinnedItems"]);
+  const bad = extra(doc, ["version", "labels", "rules", "catchAll", "emptyBagsTo", "pinnedItems"]);
   if (bad) return fail(`${bad} is not an Organize field`);
   if (doc.version !== 1) return fail("version must be 1");
   if (!isObj(doc.labels) || Object.keys(doc.labels).length > LIMITS.labels) return fail(`labels must be an object of at most ${LIMITS.labels} labels`);
@@ -146,7 +160,7 @@ export function checkOrganizeConfig(doc: unknown): { ok: true; config: OrganizeC
     if (ids.has(id)) return fail(`rules[${i}].id "${id}" is used twice`);
     ids.add(id);
   }
-  const cp = catchAllProblem(doc.catchAll, labels);
+  const cp = catchAllProblem(doc.catchAll, labels) ?? (doc.emptyBagsTo === undefined ? null : catchAllProblem(doc.emptyBagsTo, labels, "emptyBagsTo"));
   if (cp) return fail(cp);
   const pinned = doc.pinnedItems;
   if (!Array.isArray(pinned) || pinned.length > LIMITS.pinnedItems || !pinned.every(isSerial) || new Set(pinned).size !== pinned.length) {
@@ -183,6 +197,10 @@ export function salvageOrganizeConfig(raw: unknown): { config: OrganizeConfig; p
   } else if (raw.rules !== undefined) problems.push("rules must be a list; every rule dropped");
   const cp = raw.catchAll === undefined ? null : catchAllProblem(raw.catchAll, config.labels);
   if (cp) problems.push(`${cp}; catch-all cleared`); else config.catchAll = (raw.catchAll ?? null) as number | null;
+  if (raw.emptyBagsTo !== undefined) {
+    const bp = catchAllProblem(raw.emptyBagsTo, config.labels, "emptyBagsTo");
+    if (bp) problems.push(`${bp}; empty bags left where they are`); else config.emptyBagsTo = raw.emptyBagsTo as number | null;
+  }
   if (Array.isArray(raw.pinnedItems)) {
     config.pinnedItems = [...new Set(raw.pinnedItems.filter(isSerial))].slice(0, LIMITS.pinnedItems);
     const dropped = raw.pinnedItems.length - config.pinnedItems.length;

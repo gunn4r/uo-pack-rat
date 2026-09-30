@@ -4,12 +4,12 @@
 // (GET /api/organize/plan, POST /api/organize/trip) hands everything in.
 import { matchesItem } from "./item-query.mts";
 import { parseStamp } from "./scan-schema.mts";
-import { CATCH_ALL_ID, type Build, type OrganizeConfig, type RuleMatch } from "./organize-config.mts";
-import { RESIST_KEYS, TRASH_RE, type ContainerCapacity, type Inventory, type Item } from "./vault-lib.mts";
+import { CATCH_ALL_ID, EMPTY_BAGS_ID, type Build, type OrganizeConfig, type RuleMatch } from "./organize-config.mts";
+import { RESIST_KEYS, spellSchoolOf, TRASH_RE, locationOf, type Character, type Container, type ContainerCapacity, type Inventory, type Item } from "./vault-lib.mts";
 import type { RulesV1RarityItem } from "./schema/types.d.mts";
 import type { TripInput } from "./bridge-trip.mts";
 
-export type WarningKind = "stale-container" | "missing-target" | "missing-label" | "unknown-capacity" | "old-scripts" | "blacklisted" | "no-position" | "not-ground";
+export type WarningKind = "stale-container" | "missing-target" | "missing-label" | "unknown-capacity" | "old-scripts" | "blacklisted" | "no-position" | "not-ground" | "nearly-full";
 export interface PlanWarning { kind: WarningKind; serial: number; detail: string }
 
 // A container last scanned longer ago than this is warned about, and still planned: the bridge rechecks live
@@ -87,6 +87,30 @@ export function scopeOf(inv: Inventory, cfg: OrganizeConfig, { now, blacklist = 
   return { roots: [...roots].sort(bySerial), siteRoots: [...siteRoots].sort(bySerial), movable, usable, warnings };
 }
 
+// Issue #128: the bags trips leave behind. Organize moves items out of the bags inside a chest into their rule's
+// chest, never the bag itself, and each empty bag still takes one of the chest's item slots. An empty bag is an
+// unlabelled bag (so never a rule's target, the catch-all or the gather container) that is not a pinned item or
+// blacklisted, holds nothing as the view stands (`inv` and `counts` after applyOverlay: nothing is filed in it and
+// its Contents line, when it has one, reads 0), and sits in one of `roots` (scopeOf's labelled ground roots) with
+// nothing pinned, blacklisted or unopened around it. A bag the newest scan could not open is never one: its
+// contents are unknown, not nothing. `container` is the bag's place as the overlay has it. Serial order.
+export interface EmptyBag { serial: number; name: string; container: number }
+export function emptyBagsOf(inv: Inventory, counts: Map<number, ContainerCapacity>, cfg: OrganizeConfig, roots: readonly number[], blacklist: readonly number[] = []): EmptyBag[] {
+  const inRoots = new Set(roots), black = new Set(blacklist), pinnedItems = new Set(cfg.pinnedItems);
+  const pinned = new Set(Object.values(cfg.labels).filter((l) => l.pinned).map((l) => l.serial));
+  const holding = new Set(Object.values(inv.items).flatMap((it) => (it.container == null ? [] : [+it.container])));
+  const out: EmptyBag[] = [];
+  for (const it of Object.values(inv.items)) {
+    const s = +it.serial, c = inv.containers[s];
+    if (!c || it.kind !== "container" || it.container == null || it.root == null || !inRoots.has(+it.root) || cfg.labels[String(s)] || pinnedItems.has(s) || black.has(s)
+      || c.opened === false || holding.has(s) || (counts.get(s)?.items ?? 0) > 0) continue;
+    const chain = ancestry(inv, it.container);
+    if (!chain || chain.at(-1) !== +it.root || chain.some((a) => pinned.has(a) || black.has(a) || inv.containers[a]!.opened === false)) continue;
+    out.push({ serial: s, name: it.name, container: +it.container });
+  }
+  return out.sort((a, b) => a.serial - b.serial);
+}
+
 const STACK_COUNT = /^\d[\d,]*\s+/;
 // An item's name without its stack count ("75 Grave Dust" → "grave dust"), lower-cased: what rule names and
 // stack merges compare.
@@ -108,36 +132,47 @@ export const MELEE_SKILLS = ["swordsmanship", "tactics", "anatomy", "archery", "
   "chivalry", "parrying"];
 // A piece's summed resists at least this, with no caster or melee marker, is Tank gear.
 const TANK_RESISTS = 20;
-// Which build a piece of gear is: the side with more distinct markers, Hybrid on a tie. A piece with none is Melee when
-// it is a weapon (it has a damage range), else Tank when it is a shield (issue #123: held in the two-handed slot and not
-// a two-handed weapon, as vault-lib classifies shields) or its resists add up to TANK_RESISTS, else Other.
+// What makes a one-handed piece a spellbook (Spellbook, Necromancer Spellbook, Book Of Bushido…):
+// Detailed's Spellbooks group and By build (issue #129) read it the same way.
+export const SPELLBOOK_NAMES: readonly string[] = ["spellbook", "book of", "tome"];
+// Which build a piece of gear is: the side with more distinct markers, Hybrid on a tie. A piece with none is Caster when
+// it is a spellbook (issue #129: every one, a Book Of Chivalry or Bushido too), Melee when it is a weapon (it has a
+// damage range), else Tank when it is a shield (issue #123: held in the two-handed slot and not a two-handed weapon, as
+// vault-lib classifies shields) or its resists add up to TANK_RESISTS, else Other.
 export function buildOf(it: Item): Build {
   const n = (keys: string[], skills: string[]): number => keys.filter((k) => (k === "mageWeapon" ? !!it.props[k] : (it.props[k] ?? 0) > 0)).length
     + skills.filter((k) => { const v = it.extras[k]; return typeof v === "number" && v > 0; }).length;
   const caster = n(CASTER_PROPS, CASTER_SKILLS) + (it.flags.includes("spell channeling") ? 1 : 0), melee = n(MELEE_PROPS, MELEE_SKILLS);
   if (caster || melee) return caster > melee ? "caster" : melee > caster ? "melee" : "hybrid";
+  if (it.slot === "oneHanded" && hasName(it, SPELLBOOK_NAMES)) return "caster";
   if (Array.isArray(it.extras["weapon damage"])) return "melee";
   if (it.slot === "twoHanded" && !it.twoHanded) return "tank";
   return RESIST_KEYS.reduce((sum, k) => sum + (it.props[k] ?? 0), 0) >= TANK_RESISTS ? "tank" : "other";
 }
 
 // A rule's filter: the item query (location-free, item-query.mts's matchesItem) and, when given, any of the names
-// (compared as nameKeys; a name with no letter or digit matches nothing) and the build (gear only).
-export function ruleMatches(it: Item, m: RuleMatch, rarity: RulesV1RarityItem[] = []): boolean {
+// (compared as nameKeys; a name with no letter or digit matches nothing), the build (gear only) and the spell school
+// (spell scrolls only). `suits` holds the serials of every saved Suit Builder run's pieces (issue #133: the server
+// reads them from <data>/runs), which a rule with skipSuits leaves alone.
+const NO_SUITS: ReadonlySet<number> = new Set();
+export function ruleMatches(it: Item, m: RuleMatch, rarity: RulesV1RarityItem[] = [], suits: ReadonlySet<number> = NO_SUITS): boolean {
+  if (m.skipSuits && suits.has(it.serial)) return false;
   if (m.build && (!it.gear || buildOf(it) !== m.build)) return false;
-  const names = m.names ?? [];
-  if (names.length) {
-    const n = nameKey(it.name);
-    if (!names.some((w) => { const k = squash(w); return !!k && n.includes(k); })) return false;
-  }
+  if (m.school && spellSchoolOf(baseName(it.name), it.graphic) !== m.school) return false;
+  if (m.names?.length && !hasName(it, m.names)) return false;
   return matchesItem(it, m.query, { rarity });
+}
+// Whether an item's name holds any of the names, compared as ruleMatches says.
+function hasName(it: Item, names: readonly string[]): boolean {
+  const n = nameKey(it.name);
+  return names.some((w) => { const k = squash(w); return !!k && n.includes(k); });
 }
 
 // What a rule filter would take if it were the only rule (the rule editor's live count, POST
 // /api/organize/match): the movable items in labelled roots it matches, their pieces (stack amounts) and up to
 // five of their names, stack counts stripped, distinct and in name order.
-export function matchCount(inv: Inventory, cfg: OrganizeConfig, m: RuleMatch, opts: ScopeOptions & { rarity?: RulesV1RarityItem[] | undefined }): { count: number; pieces: number; sample: string[] } {
-  const hits = scopeOf(inv, cfg, opts).movable.map((s) => inv.items[s]!).filter((it) => ruleMatches(it, m, opts.rarity));
+export function matchCount(inv: Inventory, cfg: OrganizeConfig, m: RuleMatch, opts: ScopeOptions & { rarity?: RulesV1RarityItem[] | undefined; suitPieces?: ReadonlySet<number> | undefined }): { count: number; pieces: number; sample: string[] } {
+  const hits = scopeOf(inv, cfg, opts).movable.map((s) => inv.items[s]!).filter((it) => ruleMatches(it, m, opts.rarity, opts.suitPieces));
   const names = [...new Set(hits.map((it) => it.name.replace(STACK_COUNT, "").trim()))].sort((a, b) => a.localeCompare(b, "en"));
   return { count: hits.length, pieces: hits.reduce((n, it) => n + (it.amount ?? 1), 0), sample: names.slice(0, 5) };
 }
@@ -145,16 +180,17 @@ export function matchCount(inv: Inventory, cfg: OrganizeConfig, m: RuleMatch, op
 export interface Claim { ruleId: string; alsoMatched: string[] }
 // First match wins (spec §1): the first rule whose filter passes claims the item and the others that pass are
 // only recorded. An item no rule claims goes to the catch-all, or stays put (null) when there is none.
-export function claimOf(it: Item, cfg: OrganizeConfig, rarity: RulesV1RarityItem[] = []): Claim | null {
-  const hits = cfg.rules.filter((r) => ruleMatches(it, r.match, rarity)).map((r) => r.id);
+export function claimOf(it: Item, cfg: OrganizeConfig, rarity: RulesV1RarityItem[] = [], suits: ReadonlySet<number> = NO_SUITS): Claim | null {
+  const hits = cfg.rules.filter((r) => ruleMatches(it, r.match, rarity, suits)).map((r) => r.id);
   if (hits.length) return { ruleId: hits[0]!, alsoMatched: hits.slice(1) };
   return cfg.catchAll != null ? { ruleId: CATCH_ALL_ID, alsoMatched: [] } : null;
 }
 
 // One confirmed step of a trip, from the results overlay (organize-state.json, app/organize-state.mts): the item
 // left `from` and is now in `to`, or in the backpack of the character that ran the trip when `to` is null (taken,
-// not yet put). `at` is the bridge's clock when the trip reported back.
-export interface OverlayMove { serial: number; name: string; from: number | null; to: number | null; at: string; trip: string }
+// not yet put). `at` is the bridge's clock when the trip reported back; `character` is whose client the bridge ran
+// the trip in, when its status file said (issue #127: where a carried item reads as being).
+export interface OverlayMove { serial: number; name: string; from: number | null; to: number | null; at: string; trip: string; character?: string | undefined }
 export interface Carried { serial: number; name: string }
 // The inventory as the overlay says it stands: moved items re-homed, and every container's fill (a copy of its
 // Contents line) adjusted for the steps it does not yet include.
@@ -188,6 +224,44 @@ export function applyOverlay(inv: Inventory, overlay: OverlayMove[]): Placed {
     items[m.serial] = { ...it, container: chain ? m.to : null, root: chain ? chain.at(-1)! : null };
   }
   return { inv: { ...inv, items }, counts, carried };
+}
+
+// Issue #127: the inventory every view and bridge command reads (the server's getInventory): the fold with the
+// overlay applied exactly as the planner applies it, so after a trip the app points at the chest an item went into,
+// not the one it came out of, until a scan catches up. A moved item's location is read again from its new container
+// (so its text, root, container and the chain Highlight walks agree), and a container's fill is the overlay's count.
+// A carried item sits at the top of the backpack of the character whose bridge took it (whose fill, when it states
+// one, counts it); with no such backpack in the scans (or a move recorded before moves named their character) it is
+// in no container and says it is carried. The planner takes the fold itself and applies the overlay on its own:
+// handed this, it would apply every move twice. Work beyond applyOverlay's is per move, not per item.
+export function overlaidInventory(inv: Inventory, overlay: OverlayMove[]): Inventory {
+  const placed = applyOverlay(inv, overlay);
+  const items = placed.inv.items;
+  const containers: Record<string, Container> = Object.assign(Object.create(null) as Record<string, Container>, inv.containers);
+  for (const [serial, cap] of placed.counts) {
+    const c = inv.containers[serial]!;
+    if (cap.items !== c.capacity!.items || cap.stones !== c.capacity!.stones) containers[serial] = { ...c, capacity: cap };
+  }
+  const packs = new Map<string, Container>();
+  for (const c of Object.values(inv.containers)) if (c.parent == null && c.kind === "backpack") packs.set(c.scannedBy, c);
+  const who = new Map(overlay.map((m) => [m.serial, m.character]));
+  const carried = new Set<number>();
+  for (const { serial } of placed.carried) {
+    const it = items[serial], character = who.get(serial);
+    const pack = character == null ? undefined : packs.get(character);
+    if (!it) continue;
+    if (!pack) { carried.add(serial); continue; }
+    items[serial] = { ...it, container: +pack.serial, root: +pack.root };
+    const cur = containers[pack.serial]!, cap = cur.capacity;
+    if (cap) containers[pack.serial] = { ...cur, capacity: { ...cap, items: cap.items + 1, stones: cap.stones == null ? null : cap.stones + weightOf(it) } };
+  }
+  const view = { ...inv, containers, items };
+  for (const [serial, character] of who) {
+    const it = items[serial];
+    if (!it || it === inv.items[serial]) continue;
+    it.location = carried.has(serial) ? { kind: "unknown", character: character ?? "?", text: `Carried by Organize${character ? ` (${character})` : ""}`, root: null, rootName: "?" } : locationOf(it, view);
+  }
+  return view;
 }
 
 // Spec §2.4: the container an item already counts as filed in — the nearest one above it that is any rule's
@@ -382,15 +456,21 @@ export interface Plan {
   warnings: PlanWarning[];
   carried: Carried[];
   unclaimed: number;
+  emptyBags: EmptyBag[];   // emptyBagsOf's, less those already in the gather container
 }
 export interface PlanOptions extends ScopeOptions {
   rarity?: RulesV1RarityItem[] | undefined;
+  suitPieces?: ReadonlySet<number> | undefined;
   tripItems?: number | undefined;
   tripStones?: number | undefined;
   tripBytes?: number | undefined;
 }
 // tripStones is conservative: scans record no carry weight. tripBytes stays under the bridge's 16 KB line limit.
 export const TRIP_DEFAULTS = { items: 20, stones: 150, bytes: 12 * 1024 } as const;
+// A target past this share of its item or stone cap after the plan is warned about (issue #128).
+export const NEARLY_FULL = 0.9;
+// The bridge capability that says its trips take a container only once it has read it empty (issue #128).
+export const BAG_TAKES = "trip-bags";
 
 interface Want { it: Item; ruleId: string; alsoMatched: string[]; chain: number[]; from: number | null }
 interface Limits { items: number; stones: number; bytes: number }
@@ -482,9 +562,11 @@ export function planOrganize(inv: Inventory, cfg: OrganizeConfig, overlay: Overl
   const rarity = opts.rarity ?? [];
   const chains = new Map<string, number[]>(cfg.rules.map((r) => [r.id, r.targets]));
   if (cfg.catchAll != null) chains.set(CATCH_ALL_ID, [cfg.catchAll]);
+  const gather = cfg.emptyBagsTo ?? null;
+  if (gather != null) chains.set(EMPTY_BAGS_ID, [gather]);
   const ids = [...chains.keys()];
   const rank = new Map(ids.map((id, i) => [id, i]));
-  const nameOf = (id: string): string => (id === CATCH_ALL_ID ? "The catch-all" : `Rule "${cfg.rules.find((r) => r.id === id)!.name}"`);
+  const nameOf = (id: string): string => (id === CATCH_ALL_ID ? "The catch-all" : id === EMPTY_BAGS_ID ? "Gathering empty bags" : `Rule "${cfg.rules.find((r) => r.id === id)!.name}"`);
   const blocked = new Set<string>();
   for (const [id, targets] of chains) {
     for (const t of targets) {
@@ -506,9 +588,19 @@ export function planOrganize(inv: Inventory, cfg: OrganizeConfig, overlay: Overl
   // A carried item is put away unless it has been pinned since (the page's answer to a put the server refuses).
   const pinnedItems = new Set(cfg.pinnedItems);
   const candidates = [...new Set([...scope.movable, ...[...carried].filter((s) => view.items[s] && !pinnedItems.has(s))])].sort(bySerial);
-  for (const serial of candidates) {
+  // Empty bags go to the gather container like one rule's items (issue #128); so does a bag a trip took and did
+  // not put away. Without a gather container they stay where they are.
+  // Only a bridge that checks live that a bag is empty before lifting it is sent one: the newest scan's scripts
+  // (installed with the bridge) must declare "trip-bags", else the bags stay put with a warning to reinstall.
+  const bags = emptyBagsOf(view, placed.counts, cfg, scope.roots, opts.blacklist);
+  const newest = Object.values(view.characters).reduce<Character | null>((b, c) => (!b || stampMs(c.scannedAt) > stampMs(b.scannedAt) ? c : b), null);
+  const bagTakes = !!newest?.adapter?.capabilities.bridge.includes(BAG_TAKES);
+  if (gather != null && !bagTakes && bags.length) warnings.push({ kind: "old-scripts", serial: gather, detail: "empty bags are not gathered here until you reinstall the TazUO scripts from Settings and rescan: the installed bridge does not check that a bag is empty before taking it" });
+  const bagClaim: Claim | null = gather != null && bagTakes ? { ruleId: EMPTY_BAGS_ID, alsoMatched: [] } : null;
+  const claims: [number, Claim | null][] = candidates.map((s) => [s, view.containers[s] && bagClaim ? bagClaim : claimOf(view.items[s]!, cfg, rarity, opts.suitPieces)]);
+  if (bagClaim) claims.push(...bags.map((b): [number, Claim] => [b.serial, bagClaim]));
+  for (const [serial, claim] of claims) {
     const it = view.items[serial]!;
-    const claim = claimOf(it, cfg, rarity);
     if (!claim) { unclaimed++; continue; }
     const rep = report.get(claim.ruleId)!;
     rep.matched++;
@@ -558,6 +650,25 @@ export function planOrganize(inv: Inventory, cfg: OrganizeConfig, overlay: Overl
     for (const w of packed.noRoom) report.get(w.ruleId)!.noRoom++;
   }
   for (const m of moves) report.get(m.ruleId)!.toMove++;
+  // Issue #128: a target that is, or sits in, a container over NEARLY_FULL of its item or stone cap once the plan
+  // has run, with no later target of the same rule under it to take the overflow, is warned about before the next
+  // loot fills it, on that container (a bag target in a 95% chest names the chest); the empty bags left in it are
+  // counted, since gathering them frees their slots.
+  const moved = new Set(moves.map((m) => m.serial));
+  const full = (s: number): boolean => { const c = sim.counts.get(s); return !!c && (c.items > NEARLY_FULL * c.maxItems || (c.maxStones != null && (c.stones ?? 0) > NEARLY_FULL * c.maxStones)); };
+  const hot = (t: number): number | undefined => ancestry(view, t)?.find(full);
+  const fillers = new Map<number, string[]>();
+  for (const [id, targets] of chains) {
+    const usable = targets.filter((t) => scope.usable.has(t));
+    for (let i = usable.length - 1, h; i >= 0 && (h = hot(usable[i]!)) != null; i--) fillers.set(h, [...new Set([...(fillers.get(h) ?? []), id])]);
+  }
+  for (const [t, by] of fillers) {
+    const c = sim.counts.get(t)!, who = [...new Set(by.map(nameOf))];
+    const idle = bags.filter((b) => !moved.has(b.serial) && ancestry(view, b.container)?.includes(t)).length;
+    const stones = c.maxStones != null && (c.stones ?? 0) > NEARLY_FULL * c.maxStones ? ` and ${Math.round(c.stones!)}/${c.maxStones} stones` : "";
+    const note = idle ? ` (${idle === 1 ? "1 of them is an empty bag" : `${idle} of them are empty bags`})` : "";
+    warnings.push({ kind: "nearly-full", serial: t, detail: `${who.join(" and ")} ${who.length === 1 ? "fills" : "fill"} it to ${c.items}/${c.maxItems} items${stones} after this plan${note}. Add another container to ${who.length === 1 ? "its" : "their"} targets, or make room.` });
+  }
   const room = ids.map((id) => {
     const r = report.get(id)!;
     const needSlots = moves.filter((m) => m.ruleId === id && !merged.has(m.serial)).length + r.noRoom;
@@ -579,6 +690,7 @@ export function planOrganize(inv: Inventory, cfg: OrganizeConfig, overlay: Overl
       .sort((a, b) => (a.kind < b.kind ? -1 : a.kind > b.kind ? 1 : a.serial - b.serial)),
     carried: [...placed.carried].sort((a, b) => a.serial - b.serial),
     unclaimed,
+    emptyBags: bags.filter((b) => gather == null || homeOf(view, view.items[b.serial]!, homes) !== gather),
   };
 }
 

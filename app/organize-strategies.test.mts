@@ -26,7 +26,9 @@ const fold = (boxes: BoxSpec[], things: ThingSpec[] = []): Inventory => foldSnap
 // One of each thing the strategies sort (Task 0 checked how each classifies), in serial order.
 const NAMES = ["Black Pearl", "Ruby", "Katana", "Platemail Gorget", "Gold Necklace", "Gold Ring", "Bone Armor", "Heater Shield", "Spellbook", "Greater Heal Potion", "Bandage", "Iron Ingot", "Recall Rune", "Scissors", "Greater Heal", "An Exalted Scroll Of Mysticism (110 Skill)", "Apple", "Grave Dust", "Board"];
 const ITEM = 0x40001000;
-const things = (inBox: number, names: readonly string[] = NAMES, from = 1): ThingSpec[] => names.map((name, i) => ({ serial: ITEM + from + i, name, in: inBox }));
+// A spell's name is a scroll only on a scroll graphic (issue #134), and the fixture's default graphic is a reagent's.
+const gfx = (name: string): { graphic?: number } => (name === "Greater Heal" ? { graphic: 0x1F49 } : {});
+const things = (inBox: number, names: readonly string[] = NAMES, from = 1): ThingSpec[] => names.map((name, i) => ({ serial: ITEM + from + i, name, in: inBox, ...gfx(name) }));
 const grouped = (strategy: keyof typeof STRATEGIES): [string, string, string[]][] =>
   groupItems(STRATEGIES[strategy], Object.values(fold([{ serial: A }], things(A)).items)).map((g) => [g.key, g.name, g.items.map((it) => it.name)]);
 
@@ -46,7 +48,8 @@ test("[fast] Simple: one group per family, gear sorted by slot before any name p
     ["jewelry", "Jewelry", ["Gold Necklace", "Gold Ring"]],
     ["weapons", "Weapons", ["Katana", "Heater Shield", "Spellbook"]],
     ["reagents", "Reagents", ["Black Pearl", "Grave Dust"]],
-    ["scrolls", "Scrolls", ["Greater Heal", "An Exalted Scroll Of Mysticism (110 Skill)"]],
+    ["skill-scrolls", "Skill scrolls", ["An Exalted Scroll Of Mysticism (110 Skill)"]],
+    ["scrolls", "Spell scrolls", ["Greater Heal"]],
     ["resources", "Resources", ["Iron Ingot", "Board"]],
     ["potions", "Potions & bandages", ["Greater Heal Potion", "Bandage"]],
     ["runes-books", "Runes & books", ["Recall Rune"]],
@@ -57,23 +60,23 @@ test("[fast] Simple: one group per family, gear sorted by slot before any name p
 });
 
 test("[fast] Detailed: transcendence, spell and other scrolls, treasure maps, refinements, instruments and ammo each have a group (issue #123)", () => {
-  const names = ["Scroll Of Transcendence", "Greater Heal", "Blank Scroll", "A Tattered Treasure Map Leading To A Mage's Cache", "Varnish Of Defense", "Cure Of Protection",
+  const names = ["Scroll Of Transcendence", "Greater Heal", "Scroll Of Alacrity", "A Tattered Treasure Map Leading To A Mage's Cache", "Varnish Of Defense", "Cure Of Protection",
     "Drum", "Tambourine", "Lap Harp", "Bamboo Flute", "Lute", "Fire Horn", "Arrow", "Crossbow Bolt", "Apple", "Katana"];
   const groups = groupItems(STRATEGIES.detailed, Object.values(fold([{ serial: A }], things(A, names)).items));
   assert.deepEqual(groups.map((g) => [g.key, g.name, g.family, g.items.map((it) => it.name)]), [
     ["weapons", "Weapons", "weapons", ["Katana"]],
     ["ammo", "Ammo", "weapons", ["Arrow", "Crossbow Bolt"]],
     ["transcendence-scrolls", "Transcendence scrolls", "scrolls", ["Scroll Of Transcendence"]],
-    ["other-scrolls", "Other scrolls", "scrolls", ["Blank Scroll"]],
-    ["scrolls", "Spell scrolls", "scrolls", ["Greater Heal"]],
+    ["other-scrolls", "Other scrolls", "scrolls", ["Scroll Of Alacrity"]],
+    ["magery-scrolls", "Magery scrolls", "scrolls", ["Greater Heal"]],
     ["refinements", "Refinements", "resources", ["Varnish Of Defense", "Cure Of Protection"]],
-    ["treasure-maps", "Treasure maps", "other", ["A Tattered Treasure Map Leading To A Mage's Cache"]],
+    ["treasure-maps", "Treasure maps & SOS", "maps", ["A Tattered Treasure Map Leading To A Mage's Cache"]],
     ["instruments", "Instruments", "tools", ["Drum", "Tambourine", "Lap Harp", "Bamboo Flute", "Lute", "Fire Horn"]],
     ["other", "Other", "other", ["Apple"]],
   ]);
 });
 
-test("[fast] Detailed: gear by slot, reagents by school, power scrolls by level, resources by type; spell scrolls stay one group", () => {
+test("[fast] Detailed: gear by slot, reagents by school, power scrolls by level, spell scrolls by school, resources by type", () => {
   assert.deepEqual(grouped("detailed").map(([key, , names]) => [key, names]), [
     ["armour-neck", ["Platemail Gorget"]],
     ["armour-chest", ["Bone Armor"]],
@@ -85,7 +88,7 @@ test("[fast] Detailed: gear by slot, reagents by school, power scrolls by level,
     ["magery-reagents", ["Black Pearl"]],
     ["necromancy-reagents", ["Grave Dust"]],
     ["power-scrolls-110", ["An Exalted Scroll Of Mysticism (110 Skill)"]],
-    ["scrolls", ["Greater Heal"]],
+    ["magery-scrolls", ["Greater Heal"]],
     ["ingots", ["Iron Ingot"]],
     ["boards", ["Board"]],
     ["potions", ["Greater Heal Potion"]],
@@ -97,6 +100,49 @@ test("[fast] Detailed: gear by slot, reagents by school, power scrolls by level,
   ]);
 });
 
+// Issue #134: the scrolls a house holds, as the shard names them. A graphic of 0 is a scan that has none.
+const SCROLLS: ThingSpec[] = ([
+  ["A Legendary Scroll Of Fencing (120 Skill)", 0x14F0], ["Scroll Of Transcendence", 0x14EF], ["Scroll Of Alacrity", 0x14EF], ["Scroll Binder", 0x14F0],
+  ["A Wondrous Scroll Of Power (+5 Maximum Stats)", 0x14F0], ["Blank Scroll", 0x0EF3], ["Curse", 0x1F46], ["Curse Weapon", 0x2263], ["Healing Stone", 0x2D9F],
+  ["Word Of Death", 0x2D5B], ["Remove Curse", 0], ["Confidence", 0], ["Healing Stone", 0x4078],
+] as const).map(([name, graphic], i) => ({ serial: ITEM + 100 + i, name, graphic, in: A }));
+
+test("[fast] Simple: skill scrolls apart from spell scrolls (a Chivalry or Bushido name with no graphic among them), blank scrolls with the resources, and a conjured Healing Stone is no scroll (issue #134)", () => {
+  assert.deepEqual(groupItems(STRATEGIES.simple, Object.values(fold([{ serial: A }], SCROLLS).items)).map((g) => [g.key, g.name, g.items.map((it) => it.name)]), [
+    ["skill-scrolls", "Skill scrolls", ["A Legendary Scroll Of Fencing (120 Skill)", "Scroll Of Transcendence", "Scroll Of Alacrity", "Scroll Binder", "A Wondrous Scroll Of Power (+5 Maximum Stats)"]],
+    ["scrolls", "Spell scrolls", ["Curse", "Curse Weapon", "Healing Stone", "Word Of Death", "Remove Curse", "Confidence"]],
+    ["resources", "Resources", ["Blank Scroll"]],
+    ["other", "Other", ["Healing Stone"]],
+  ]);
+});
+
+test("[fast] Detailed: spell scrolls by school, by exact name on the school's graphic; one of no school stays in Spell scrolls (issue #134)", () => {
+  assert.deepEqual(groupItems(STRATEGIES.detailed, Object.values(fold([{ serial: A }], SCROLLS).items)).map((g) => [g.key, g.name, g.items.map((it) => it.name)]), [
+    ["power-scrolls-120", "Power scrolls 120", ["A Legendary Scroll Of Fencing (120 Skill)"]],
+    ["transcendence-scrolls", "Transcendence scrolls", ["Scroll Of Transcendence"]],
+    ["other-scrolls", "Other scrolls", ["Scroll Of Alacrity", "Scroll Binder", "A Wondrous Scroll Of Power (+5 Maximum Stats)"]],
+    ["magery-scrolls", "Magery scrolls", ["Curse"]],
+    ["necromancy-scrolls", "Necromancy scrolls", ["Curse Weapon"]],
+    ["mysticism-scrolls", "Mysticism scrolls", ["Healing Stone"]],
+    ["spellweaving-scrolls", "Spellweaving scrolls", ["Word Of Death"]],
+    ["scrolls", "Spell scrolls", ["Remove Curse", "Confidence"]],
+    ["resources", "Other resources", ["Blank Scroll"]],
+    ["other", "Other", ["Healing Stone"]],
+  ]);
+});
+
+test("[fast] every strategy gives treasure maps, messages in a bottle and SOS a group of their own kind, so their chest is never shared (issue #134)", () => {
+  const names = ["A Tattered Treasure Map Leading To A Mage's Hoard", "A Message In A Bottle", "A Waterstained SOS", "Local Map", "Apple"];
+  for (const id of STRATEGY_IDS) {
+    assert.deepEqual(STRATEGIES[id].filter((d) => d.family === "maps").map((d) => d.key), ["treasure-maps"], id);
+    const groups = groupItems(STRATEGIES[id], Object.values(fold([{ serial: A }], things(A, names)).items));
+    assert.deepEqual(groups.map((g) => [g.key, g.name, g.items.map((it) => it.name)]), [
+      ["treasure-maps", "Treasure maps & SOS", ["A Tattered Treasure Map Leading To A Mage's Hoard", "A Message In A Bottle", "A Waterstained SOS"]],
+      ["other", "Other", ["Local Map", "Apple"]],
+    ], id);
+  }
+});
+
 test("[fast] Detailed: Spellbooks share a chest with the books, not the weapons (issue #123)", () => {
   const family = (key: string): string => STRATEGIES.detailed.find((d) => d.key === key)!.family;
   assert.deepEqual(["spellbooks", "books", "runes"].map(family), ["runes-books", "runes-books", "runes-books"]);
@@ -104,6 +150,26 @@ test("[fast] Detailed: Spellbooks share a chest with the books, not the weapons 
 
 // Issue #123: the neck slot holds armour and necklaces alike; both strategies split them with the one Armour: neck
 // filter, which knows the Armor Of Initiation piece (a gorget graphic under the set's name) too.
+test("[fast] Simple and By build: refinements are Resources by the group's second rule, instruments are Tools by their kind, and no word merely holding an instrument's name is one (issue #129)", () => {
+  const names = ["Varnish Of Defense", "Gloss Of Protection", "Drum", "Tambourine", "Standing Harp", "Fire Horn", "Iron Ingot", "Scissors", "Apple", "Harpy Wing", "Hard Rum", "Absolute Zero"];
+  const items = Object.values(fold([{ serial: A }], things(A, names)).items);
+  for (const strategy of ["simple", "build"] as const) {
+    assert.deepEqual(groupItems(STRATEGIES[strategy], items).map((g) => [g.key, g.items.map((it) => it.name)]), [
+      ["resources", ["Varnish Of Defense", "Gloss Of Protection", "Iron Ingot"]],
+      ["tools", ["Drum", "Tambourine", "Standing Harp", "Fire Horn", "Scissors"]],
+      ["other", ["Apple", "Harpy Wing", "Hard Rum", "Absolute Zero"]],
+    ], strategy);
+  }
+  assert.deepEqual(groupItems(STRATEGIES.detailed, items).find((g) => g.key === "instruments")?.items.map((it) => it.name), ["Drum", "Tambourine", "Standing Harp", "Fire Horn"]);
+  // The Resources group's first rule keeps its id, so a setup an earlier proposal saved still matches it.
+  const inv = fold([{ serial: A }, { serial: B, pos: at(102) }, { serial: C, pos: at(104) }], things(A, names));
+  const rules = ok(proposeOrganize(inv, emptyOrganizeConfig(), [], OPTS())).config.rules;
+  assert.deepEqual(rules.filter((r) => /resources|tools/.test(r.id)).map((r) => [r.id, r.match]), [
+    ["auto-resources", { query: { ...emptyRuleQuery(), kind: ["resource"] } }], ["auto-resources-2", { query: { ...emptyRuleQuery(), kind: ["refinement"] } }],
+    ["auto-tools", { query: { ...emptyRuleQuery(), kind: ["tool"] } }],
+  ]);
+});
+
 test("[fast] Simple and Detailed: neck armour goes with the armour, necklaces with the jewelry", () => {
   const neck: ThingSpec[] = [
     { serial: ITEM + 1, name: "Leather Gorget", in: A }, { serial: ITEM + 2, name: "Studded Gorget", in: A },
@@ -128,11 +194,11 @@ const BUILD_GEAR: ThingSpec[] = [
 test("[fast] By build: gear by caster and melee markers into Caster, Melee, Hybrid, Tank and Other gear; everything else as Simple groups it", () => {
   const items = Object.values(fold([{ serial: A }], [...things(A, ["Black Pearl", "Spellbook", "Ruby", "Apple"]), ...BUILD_GEAR]).items);
   assert.deepEqual(groupItems(STRATEGIES.build, items).map((g) => [g.key, g.name, g.items.map((it) => it.name)]), [
-    ["caster-gear", "Caster gear", ["Gold Ring"]],
+    ["caster-gear", "Caster gear", ["Spellbook", "Gold Ring"]],
     ["melee-gear", "Melee gear", ["Katana"]],
     ["hybrid-gear", "Hybrid gear", ["Gold Bracelet"]],
     ["tank-gear", "Tank gear", ["Platemail Gorget"]],
-    ["plain-gear", "Other gear", ["Spellbook", "Leather Gloves"]],
+    ["plain-gear", "Other gear", ["Leather Gloves"]],
     ["reagents", "Reagents", ["Black Pearl"]],
     ["gems", "Gems", ["Ruby"]],
     ["other", "Other", ["Apple"]],
@@ -249,7 +315,7 @@ test("[fast] more groups than containers: the largest groups get them, the rest 
   const p = ok(proposeOrganize(inv, cfg, [], OPTS()));
   assert.deepEqual(p.containers, [A]);
   assert.deepEqual(p.groups.map((g) => [g.key, g.targets, g.addContainers]), [["weapons", [], 1], ["reagents", [A], 0], ["resources", [], 1], ["gems", [], 1]]);
-  assert.deepEqual([p.unassigned, p.addContainers], [3, 3]);
+  assert.deepEqual([p.unassigned, p.layout], [3, { chests: 3, bags: [], spareBags: 0, roomy: false }]);
   const plan = planOrganize(inv, p.config, [], { now: NOW });
   assert.deepEqual(plan.moves.map((m) => m.name).sort(), ["Black Pearl", "Garlic"], "only the group with a container moves");
   assert.equal(plan.unclaimed, 0, "the others are claimed by their rules and stay where they are");
@@ -340,7 +406,7 @@ test("[fast] re-running after the trips keeps each group in the chests its rule 
   // Magery reagents, moving C's grave dust out on the next run.
   const inv = fold([{ serial: A, pos: at(100), max: 7 }, { serial: B, pos: at(102), max: 14 }, { serial: C, pos: at(104), max: 8 }, { serial: BAG, parent: C }], [
     { serial: ITEM + 1, name: "Grave Dust", in: A },
-    ...["Grave Dust", "Platemail Gorget", "Gold Necklace", "Greater Heal", "Greater Heal", "Iron Ingot", "Iron Ingot"].map((name, i) => ({ serial: ITEM + 10 + i, name, in: B, hue: i + 1 })),
+    ...["Grave Dust", "Platemail Gorget", "Gold Necklace", "Greater Heal", "Greater Heal", "Iron Ingot", "Iron Ingot"].map((name, i) => ({ serial: ITEM + 10 + i, name, in: B, hue: i + 1, ...gfx(name) })),
     ...["Greater Heal Potion", "Grave Dust", "Grave Dust", "Recall Rune", "Nightshade"].map((name, i) => ({ serial: ITEM + 20 + i, name, in: C, hue: i + 1 })),
     { serial: ITEM + 30, name: "Spellbook", in: BAG }, { serial: ITEM + 31, name: "Black Pearl", in: BAG },
   ]);
@@ -359,19 +425,72 @@ test("[fast] with too few chests a family's small groups share one, labelled wit
   ]);
   const p = ok(proposeOrganize(inv, emptyOrganizeConfig(), [], OPTS({ strategy: "detailed" })));
   assert.deepEqual(p.groups.map((g) => [g.key, g.targets, g.roomSlots, g.shortfall]), [
-    ["rings", [C], 1, 0], ["bracelets", [C], 1, 0], ["necklaces", [C], 1, 0], ["weapons", [B], 20, 0], ["ingots", [A], 1, 0], ["boards", [A], 1, 0],
+    ["rings", [C], 1, 0], ["bracelets", [C], 1, 0], ["necklaces", [C], 1, 0], ["weapons", [B], 15, 0], ["ingots", [A], 1, 0], ["boards", [A], 1, 0],
   ]);
   assert.deepEqual(Object.fromEntries(Object.values(p.config.labels).map((l) => [l.serial, l.name])), { [A]: "Resources", [B]: "Weapons", [C]: "Jewelry" });
   assert.deepEqual(p.config.rules.map((r) => [r.id, r.name, r.targets]), [
     ["auto-rings", "Rings", [C]], ["auto-bracelets", "Bracelets", [C]], ["auto-necklaces", "Necklaces", [C]], ["auto-weapons", "Weapons", [B]], ["auto-ingots", "Ingots", [A]], ["auto-boards", "Boards", [A]],
   ]);
-  assert.deepEqual([p.unassigned, p.addContainers], [0, 0]);
+  assert.deepEqual(p.groups.map((g) => [g.key, g.needsBag]).filter(([, n]) => n).map(([k]) => k), ["rings", "bracelets", "necklaces", "ingots", "boards"], "no bags in the shared chests: those groups share them loose");
+  assert.deepEqual([p.unassigned, p.layout], [0, { chests: 0, bags: [{ chest: C, family: "Jewelry", bags: 3 }, { chest: A, family: "Resources", bags: 2 }], spareBags: 0, roomy: false }]);
   const again = ok(proposeOrganize(inv, p.config, [], OPTS({ strategy: "detailed" })));
   assert.equal(again.changed, false);
   const plan = planOrganize(inv, p.config, [], { now: NOW });
   const done: OverlayMove[] = plan.moves.map((m) => ({ serial: m.serial, name: m.name, from: m.from, to: m.to, at: new Date(NOW).toISOString(), trip: "t1" }));
   const after = ok(proposeOrganize(inv, p.config, done, OPTS({ strategy: "detailed" })));
   assert.deepEqual([after.changed, after.plan.moves], [false, 0], "after the trips, the shared chests stay as they are");
+});
+
+test("[fast] groups sharing a chest each get one of its empty bags, labelled for the group; one left without a bag shares the chest loose, and the layout asks for its bag; re-running after the trips moves nothing (issue #132)", () => {
+  const BAG2 = 0x40000009, BAG3 = 0x4000000a, BAG4 = 0x4000000b;
+  const inv = fold([{ serial: A }, { serial: BAG, parent: A }, { serial: BAG2, parent: A }, { serial: B, pos: at(102) }, { serial: BAG3, parent: B }, { serial: C, pos: at(104) }, { serial: BAG4, parent: C }],
+    [...things(A, ["Plate Helm", "Platemail Gorget", "Bone Armor"]), ...things(B, ["Gold Ring"], 4)]);
+  const p = ok(proposeOrganize(inv, emptyOrganizeConfig(), [], OPTS({ strategy: "detailed", containers: [A, B] })));
+  assert.deepEqual(p.groups.map((g) => [g.key, g.targets, g.bagIn, g.needsBag]), [
+    ["armour-head", [BAG], A, false], ["armour-neck", [BAG2], A, false], ["armour-chest", [A], null, true], ["rings", [B], null, false],
+  ]);
+  assert.deepEqual(Object.values(p.config.labels).map((l) => [l.serial, l.name]), [[A, "Armour"], [B, "Rings"], [BAG, "Armour: head"], [BAG2, "Armour: neck"]]);
+  assert.deepEqual(p.layout, { chests: 0, bags: [{ chest: A, family: "Armour", bags: 1 }], spareBags: 1, roomy: false }, "B's empty bag is spare: move it into the Armour chest; the one in the unticked chest C is not counted");
+  const plan = planOrganize(inv, p.config, [], { now: NOW });
+  assert.deepEqual(plan.moves.map((m) => [m.name, m.to]), [["Plate Helm", BAG], ["Platemail Gorget", BAG2]], "the ring stays in its chest, the chest piece loose in the shared one");
+  const done: OverlayMove[] = plan.moves.map((m) => ({ serial: m.serial, name: m.name, from: m.from, to: m.to, at: new Date(NOW).toISOString(), trip: "t1" }));
+  const after = ok(proposeOrganize(inv, p.config, done, OPTS({ strategy: "detailed", containers: [A, B] })));
+  assert.deepEqual([after.changed, after.plan.moves], [false, 0], "each group keeps its bag once its items are in it");
+});
+
+test("[fast] an earlier strategy's bag still holding items goes only to the group they all belong to, never to another that would move them out (issue #132)", () => {
+  const BAG2 = 0x40000009;
+  const inv = fold([{ serial: A }, { serial: BAG, parent: A }, { serial: BAG2, parent: A }, { serial: B, pos: at(102) }],
+    [{ serial: ITEM + 1, name: "Plate Helm", in: BAG }, { serial: ITEM + 2, name: "Platemail Gorget", in: A }, { serial: ITEM + 3, name: "Bone Armor", in: A }, { serial: ITEM + 4, name: "Gold Ring", in: B }]);
+  const old: OrganizeConfig = { ...emptyOrganizeConfig(), labels: { [BAG]: { serial: BAG, name: "Armour", origin: "strategy:simple" } } };
+  const p = ok(proposeOrganize(inv, old, [], OPTS({ strategy: "detailed" })));
+  assert.deepEqual(p.groups.filter((g) => g.family === "armour").map((g) => [g.key, g.targets]), [["armour-head", [BAG]], ["armour-neck", [BAG2]], ["armour-chest", [A]]], "the helm's bag goes to the helms");
+  const mixed = fold([{ serial: A }, { serial: BAG, parent: A }, { serial: BAG2, parent: A }, { serial: B, pos: at(102) }],
+    [{ serial: ITEM + 1, name: "Plate Helm", in: BAG }, { serial: ITEM + 2, name: "Platemail Gorget", in: BAG }, { serial: ITEM + 3, name: "Bone Armor", in: A }, { serial: ITEM + 4, name: "Gold Ring", in: B }]);
+  const m = ok(proposeOrganize(mixed, old, [], OPTS({ strategy: "detailed" })));
+  assert.deepEqual(m.groups.filter((g) => g.family === "armour").map((g) => [g.key, g.targets]), [["armour-head", [BAG2]], ["armour-neck", [A]], ["armour-chest", [A]]], "a bag of mixed groups is given to none");
+  assert.equal(m.config.labels[String(BAG)], undefined);
+});
+
+test("[fast] the full layout fills each chest to FILL: a group it fits there takes a second chest before the first is full; where it does not fit, the chests fill to the top and the layout counts the chests to add (issue #132)", () => {
+  const pearls = (n: number): ThingSpec[] => Array.from({ length: n }, (_, i) => ({ serial: ITEM + 1 + i, name: "Black Pearl", in: A, hue: i + 1 }));
+  const roomy = fold([{ serial: A }, { serial: B, pos: at(102) }], pearls(110));
+  const p = ok(proposeOrganize(roomy, emptyOrganizeConfig(), [], OPTS()));
+  assert.deepEqual(p.groups.map((g) => [g.targets, g.roomSlots, g.shortfall]), [[[A, B], 199, 0]], "110 items: 100 in A, room for their loot in B");
+  assert.deepEqual([p.layout, p.plan.moves], [{ chests: 0, bags: [], spareBags: 0, roomy: true }, 0], "roomy: the drawer says why B is used");
+  // A house an earlier run sorted to the top of A, which still fits, stays as it is: no rebalancing into B.
+  const sorted = ok(proposeOrganize(roomy, { ...p.config, rules: p.config.rules.map((r) => ({ ...r, targets: [A] })) }, [], OPTS()));
+  assert.deepEqual([sorted.groups[0]!.targets, sorted.layout.roomy, sorted.plan.moves], [[A], false, 0]);
+  const tight = fold([{ serial: A }], pearls(110));
+  const t = ok(proposeOrganize(tight, emptyOrganizeConfig(), [], OPTS()));
+  assert.deepEqual(t.groups.map((g) => [g.targets, g.roomSlots, g.shortfall]), [[[A], 125, 0]], "one chest: it fits to the top");
+  assert.equal(t.layout.chests, 1);
+});
+
+test("[fast] scroll groups sharing a chest label it Scrolls, whichever group comes last (issue #134)", () => {
+  const inv = fold([{ serial: A, max: 20 }, { serial: B, pos: at(102), max: 20 }], [...things(A, ["Katana", "Katana", "Katana"]), ...things(B, ["An Exalted Scroll Of Mysticism (110 Skill)", "Greater Heal", "Scroll Of Transcendence"], 10)]);
+  const p = ok(proposeOrganize(inv, emptyOrganizeConfig(), [], OPTS({ strategy: "detailed" })));
+  assert.deepEqual(Object.fromEntries(Object.values(p.config.labels).map((l) => [l.serial, l.name])), { [A]: "Weapons", [B]: "Scrolls" });
 });
 
 test("[fast] Detailed with too few containers says how many are missing; the same scans in any order give the same proposal", () => {
@@ -383,7 +502,8 @@ test("[fast] Detailed with too few containers says how many are missing; the sam
   // chest each, which their groups could share.
   assert.deepEqual(Object.values(p.config.labels).map((l) => l.name), ["Armour", "Potions & bandages"]);
   assert.equal(p.unassigned, p.groups.length - 4);
-  assert.equal(p.addContainers, 9);
+  assert.equal(p.layout.chests, 9);
+  assert.deepEqual(p.layout.bags.map((b) => [b.chest, b.family, b.bags]).slice(0, 2), [[null, "Armour", 2], [null, "Jewelry", 2]], "the full layout's family chests, each group in a bag");
   assert.deepEqual(ok(proposeOrganize(shuffled, emptyOrganizeConfig(), [], OPTS({ strategy: "detailed" }))), p);
 });
 
@@ -397,4 +517,13 @@ test("[fast] the player's catch-all takes what no group does, so there is no Oth
   const r = proposeOrganize(inv, many, [], OPTS());
   assert.equal(r.ok, false);
   assert.match((r as { error: string }).error, /at most 200 rules/);
+});
+
+test("[fast] the gather container for empty bags is kept, labelled and unticked by default, like the catch-all (issue #128)", () => {
+  const inv = fold([{ serial: A }, { serial: B, pos: at(102) }], things(A, ["Black Pearl"]));
+  const cfg: OrganizeConfig = { ...emptyOrganizeConfig(), labels: { [B]: manual(B, "Spare bags") }, emptyBagsTo: B };
+  const p = ok(proposeOrganize(inv, cfg, [], OPTS()));
+  assert.equal(p.config.emptyBagsTo, B);
+  assert.equal(p.config.labels[String(B)]!.name, "Spare bags");
+  assert.equal(p.candidates.find((c) => c.serial === B)!.ticked, false);
 });

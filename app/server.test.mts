@@ -1758,7 +1758,7 @@ test("[fast] GET /api/setup: an adapter with no bridge reports capabilities.brid
     const setup = asJson<SetupResponse>(await (await fetch(s2.url + "/api/setup")).json());
     assert.deepEqual(setup.adapters.map((a) => a.id).sort(), ["nobridge", "tazuo"]);
     assert.deepEqual(setup.adapters.find((a) => a.id === "nobridge")!.capabilities.bridge, []);
-    assert.deepEqual(setup.adapters.find((a) => a.id === "tazuo")!.capabilities.bridge, ["highlight", "grab", "goto", "trip"]);
+    assert.deepEqual(setup.adapters.find((a) => a.id === "tazuo")!.capabilities.bridge, ["highlight", "grab", "goto", "trip", "trip-bags"]);
 
     // settings.client names which of those is active — PUT it at the no-bridge adapter first.
     const putNoBridge = await fetch(s2.url + "/api/settings", {
@@ -1778,7 +1778,7 @@ test("[fast] GET /api/setup: an adapter with no bridge reports capabilities.brid
     assert.equal(putTazuo.status, 200);
     after = asJson<SetupResponse>(await (await fetch(s2.url + "/api/setup")).json());
     assert.equal(after.settings.client!.adapter, "tazuo");
-    assert.deepEqual(after.adapters.find((a) => a.id === after.settings.client!.adapter)!.capabilities.bridge, ["highlight", "grab", "goto", "trip"]);
+    assert.deepEqual(after.adapters.find((a) => a.id === after.settings.client!.adapter)!.capabilities.bridge, ["highlight", "grab", "goto", "trip", "trip-bags"]);
   } finally {
     await s2.close();
   }

@@ -448,10 +448,11 @@ export interface BridgeQueueApiResponse {
 
 // ---------------------------------------------------------------- organize (issue #11)
 // The setup's types come straight from app/organize-config.mts: unlike the modules listed at the top of this
-// file it is pure and imports only item-query.mts's types, so the browser build type-checks it. The plan's
-// types are mirrored from app/organize.mts, which imports server-only code (bridge-trip.mts).
+// file it is pure and imports only item-query.mts's and vault-lib.mts's types, so the browser build type-checks
+// it. The plan's types are mirrored from app/organize.mts, which imports server-only code (bridge-trip.mts).
 export type { OrganizeConfig, ContainerLabel, OrganizeRule, RuleMatch, Origin, Build } from "../organize-config.mts";
-export type PlanWarningKind = "stale-container" | "missing-target" | "missing-label" | "unknown-capacity" | "old-scripts" | "blacklisted" | "no-position" | "not-ground";
+export type { SpellSchool } from "../vault-lib.mts";
+export type PlanWarningKind = "stale-container" | "missing-target" | "missing-label" | "unknown-capacity" | "old-scripts" | "blacklisted" | "no-position" | "not-ground" | "nearly-full";
 export interface PlanWarning { kind: PlanWarningKind; serial: number; detail: string }
 export interface PlanMove { serial: number; name: string; amount: number; from: number | null; to: number; ruleId: string; alsoMatched: string[]; trip: number }
 export interface PlanTrip { index: number; site: number; takes: number[]; puts: number[] }
@@ -463,12 +464,13 @@ export interface OrganizePlan {
   sites: { index: number; roots: number[] }[];
   moves: PlanMove[];                 // in trip order; from null = carried in the backpack
   trips: PlanTrip[];                 // index 1-based; the first trip of each site is the only one the server runs
-  rules: PlanRuleReport[];           // one per rule in rule order, then "catch-all" when set
+  rules: PlanRuleReport[];           // one per rule in rule order, then "catch-all" and "empty-bags" when set
   room: PlanRoomReport[];
   crossSite: { ruleId: string; count: number }[];
   warnings: PlanWarning[];
   carried: { serial: number; name: string }[];
   unclaimed: number;
+  emptyBags: { serial: number; name: string; container: number }[];   // not yet in the gather container
 }
 export interface OrganizePreset { id: string; name: string; match: RuleMatch }
 export interface OrganizeApiResponse { ok: boolean; config: OrganizeConfig; problems: string[] }
@@ -482,7 +484,10 @@ export interface OrganizeMatchApiResponse { ok: boolean; count: number; pieces: 
 // POST /api/organize/propose (Auto organize): mirrored from app/organize-strategies.mts, which is server-only.
 export type AutoStrategy = "simple" | "detailed" | "build";
 export interface ProposalCandidate { serial: number; name: string; site: number; fill: { items: number; max: number }; label: { name: string; origin: Origin } | null; mine: boolean; ticked: boolean }
-export interface ProposalGroup { key: string; name: string; family: string; ruleIds: string[]; items: number; needSlots: number; targets: number[]; roomSlots: number; shortfall: number; addContainers: number; crossSite: number }
+export interface ProposalGroup { key: string; name: string; family: string; ruleIds: string[]; items: number; needSlots: number; targets: number[]; bagIn: number | null; needsBag: boolean; roomSlots: number; shortfall: number; addContainers: number; crossSite: number }
+// Issue #132: what the full layout needs beyond what the player has (chest null: one of the chests to add); roomy:
+// the proposal leaves chests 20% free where filling them to the top would have used other chests.
+export interface ProposalLayout { chests: number; bags: { chest: number | null; family: string; bags: number }[]; spareBags: number; roomy: boolean }
 export interface OrganizeProposal {
   strategy: AutoStrategy;
   candidates: ProposalCandidate[];
@@ -491,7 +496,7 @@ export interface OrganizeProposal {
   refused: { serial: number; reason: string }[];
   groups: ProposalGroup[];
   unassigned: number;
-  addContainers: number;
+  layout: ProposalLayout;
   manualRules: number;
   config: OrganizeConfig;            // the whole setup Accept saves with PUT /api/organize
   changed: boolean;
@@ -513,8 +518,8 @@ export interface RejectedEvent {
   reason: string;
   at: number;
 }
-// broadcastEvent("changed", …): a forget / forget-character ("inventory") or a run deletion ("runs")
-// made in some tab — every tab reloads that data.
+// broadcastEvent("changed", …): a forget / forget-character or an Organize trip reporting back ("inventory"), or a
+// run deletion ("runs") — every tab reloads that data.
 export interface ChangedEvent {
   what: "inventory" | "runs";
   by?: string;   // an inventory change's x-client-id: the tab that made it has already reloaded
