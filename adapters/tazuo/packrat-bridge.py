@@ -730,13 +730,15 @@ def pack_count(pack):
 
 
 def stones_of(it):
-    """What taking `it` adds to the character's load: tiledata weight times amount, 1 a unit when unknown."""
+    """What taking `it` adds to the character's load: tiledata weight times amount. Tiledata stores a
+    fraction of a stone (arrows, reagents) as 0 and an unknown weight as 255; neither is guessed, so
+    such a take is left to the server, whose refusal the landed-in-the-pack check still catches (#117)."""
     try:
         per = int(getattr(it.GetItemData(), "Weight", 0) or 0)
     except Exception:
         per = 0
     if per <= 0 or per >= 255:
-        per = 1
+        return 0
     try:
         amount = max(1, int(getattr(it, "Amount", 1) or 1))
     except Exception:
