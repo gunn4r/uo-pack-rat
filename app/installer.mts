@@ -617,7 +617,7 @@ function compareSemver(a: string, b: string): number {
 // fetchImpl's declared shape is only the bit of Response this function actually reads (status, json())
 // — narrower than the real global fetch's Promise<Response>, so both the real fetch (the default) and
 // a test's plain {status, json} fake satisfy it.
-type FetchLike = (url: string, init?: { headers?: Record<string, string>; signal?: AbortSignal }) => Promise<{ status: number; json: () => Promise<unknown> }>;
+export type FetchLike = (url: string, init?: { headers?: Record<string, string>; signal?: AbortSignal }) => Promise<{ status: number; json: () => Promise<unknown> }>;
 
 export interface CheckForUpdatesParams {
   current: string;
