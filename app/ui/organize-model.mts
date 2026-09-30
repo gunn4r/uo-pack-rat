@@ -49,8 +49,16 @@ function dropTarget(cfg: OrganizeConfig, serial: number): { config: OrganizeConf
   if (cfg.catchAll === serial) dropped.push("Everything else");
   return { config: { ...cfg, rules, catchAll: cfg.catchAll === serial ? null : cfg.catchAll }, dropped };
 }
+// A label saved as the Inbox (issue #131) takes the Inbox off whichever container had it: there is only one.
 export function withLabel(cfg: OrganizeConfig, label: ContainerLabel): { config: OrganizeConfig; dropped: string[] } {
-  const next = { ...cfg, labels: { ...cfg.labels, [String(label.serial)]: label } };
+  const labels = { ...cfg.labels, [String(label.serial)]: label };
+  for (const [key, l] of Object.entries(labels)) {
+    if (!label.inbox || !l.inbox || l.serial === label.serial) continue;
+    const moved = { ...l };
+    delete moved.inbox;
+    labels[key] = moved;
+  }
+  const next = { ...cfg, labels };
   return label.pinned ? dropTarget(next, label.serial) : { config: next, dropped: [] };
 }
 // The Label… pin confirmation (issue #123): the chest is where these rules put items, so pinning takes it off them.

@@ -45,9 +45,9 @@ async function blacklist(r: Container, name: string, n: number): Promise<void> {
   } catch (e) { toast((e as Error).message, "bad"); }
 }
 
-// Label… (Organize, issue #11): the container's name for Organize, an optional colour and Pinned. Labelling a
-// ground container is what puts it in Organize's reach; pinning keeps it out of every rule's targets, so a
-// pin or a removal that takes it off rules says which, first.
+// Label… (Organize, issue #11): the container's name for Organize, an optional colour, Pinned and Inbox (issue #131:
+// one container at most, so withLabel moves it). Labelling a ground container is what puts it in Organize's reach;
+// pinning keeps it out of every rule's targets, so a pin or a removal that takes it off rules says which, first.
 async function labelContainer(r: Container): Promise<void> {
   if (!state.organize.config) { try { await loadOrganize(); } catch (e) { toast(errorText(e), "bad"); return; } }
   const cfg = state.organize.config!, had = cfg.labels[String(r.serial)];
@@ -55,6 +55,7 @@ async function labelContainer(r: Container): Promise<void> {
   const name = input({ value: had?.name ?? bagLabel(r), attrs: { id: "lbl-name", maxlength: "64" } });
   const colour = select([{ value: "", label: "No colour" }, ...LABEL_COLOURS.map((c) => ({ value: c.value, label: c.name }))], had?.color ?? "", { attrs: { id: "lbl-colour" } });
   const pin = switchControl({ label: "Pinned: Organize never takes items out or puts items in", checked: !!had?.pinned, attrs: { id: "lbl-pin" } });
+  const inbox = switchControl({ label: "Inbox: the game panel's Put away Inbox files what is in it", checked: !!had?.inbox, attrs: { id: "lbl-inbox" } });
   const problem = el("div", {});
   let dlg: { close: () => void } | null = null;
   const fail = (text: string): void => { problem.replaceChildren(message({ tone: "bad", text })); };
@@ -67,7 +68,7 @@ async function labelContainer(r: Container): Promise<void> {
   const save = async (): Promise<void> => {
     const n = name.value.trim();
     if (!n || n.length > 64) { fail("Give the label a name, up to 64 characters."); name.focus(); return; }
-    const { config, dropped } = withLabel(await current(), { serial: +r.serial, name: n, ...(colour.value ? { color: colour.value } : {}), ...(pin.input.checked ? { pinned: true } : {}), origin: "manual" });
+    const { config, dropped } = withLabel(await current(), { serial: +r.serial, name: n, ...(colour.value ? { color: colour.value } : {}), ...(pin.input.checked ? { pinned: true } : {}), ...(inbox.input.checked ? { inbox: true } : {}), origin: "manual" });
     if (dropped.length && !await confirmDialog({ title: `Pin ${n}?`, body: pinNote(n, dropped), confirmLabel: `Pin ${n}`, danger: false })) return;
     const err = await saveConfig(config);
     if (err) { fail(err); return; }
@@ -85,7 +86,7 @@ async function labelContainer(r: Container): Promise<void> {
   name.addEventListener("keydown", (e) => { if (e.key === "Enter") void save(); });
   dlg = openDialog({
     title: had ? `Edit label: ${shown}` : `Label ${shown}`, width: "md", initialFocus: name,
-    body: [el("p", { class: "muted" }, "Organize only takes items from, and puts items into, labelled containers. The label is shown wherever this container is."), field({ label: "Label", control: name }), field({ label: "Colour", control: colour }), pin.root, problem],
+    body: [el("p", { class: "muted" }, "Organize only takes items from, and puts items into, labelled containers. The label is shown wherever this container is."), field({ label: "Label", control: name }), field({ label: "Colour", control: colour }), pin.root, inbox.root, problem],
     actions: [...(had ? [button({ label: "Remove label", variant: "danger-outline", onClick: () => { void remove(); } })] : []), button({ label: "Cancel", onClick: () => dlg?.close() }), button({ label: "Save label", variant: "primary", attrs: { id: "lbl-save" }, onClick: () => { void save(); } })],
   });
 }
@@ -165,7 +166,7 @@ export function renderContainers(): void {
         { label: "Forget…", danger: true, onSelect: () => { forget(r, label, n); } },
       ], { label: `Actions for ${label}` }) });
       rows.push(el("tr", { "data-root": r.serial },
-        el("td", {}, box("span", { class: "inv-loc" }, swatch, txt(name, "ellip"), txt(serial || `0x${(+r.serial).toString(16)}`, "mono faint"), lab?.pinned ? tag("Pinned") : null, bags ? txt(plural(bags, "bag"), "t-sm muted") : null, missing ? tag(`${missing} missing`, "warn") : null)),
+        el("td", {}, box("span", { class: "inv-loc" }, swatch, txt(name, "ellip"), txt(serial || `0x${(+r.serial).toString(16)}`, "mono faint"), lab?.pinned ? tag("Pinned") : null, lab?.inbox ? tag("Inbox") : null, bags ? txt(plural(bags, "bag"), "t-sm muted") : null, missing ? tag(`${missing} missing`, "warn") : null)),
         el("td", {}, txt(KIND_NAMES[String(r.kind)] || String(r.kind || "Unknown"))),
         el("td", {}, txt(r.scannedBy)),
         el("td", {}, txt(relativeWhen(r.scannedAt))),

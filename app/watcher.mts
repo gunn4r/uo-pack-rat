@@ -27,7 +27,7 @@
 // collision-avoided name, which is exactly what the idempotency check above prevents on the next call.
 //
 // startWatcher({inboxDir, adapter, scansDir, getShard, log, onAccepted, onRejected, debounceMs,
-// retries, retryDelayMs, watch}) — creates inboxDir, watches it (non-recursive) for *.json changes
+// retries, retryDelayMs, watch, request}) — creates inboxDir, watches it (non-recursive) for *.json changes
 // (debounced per filename), and runs scanOnce() once immediately so files dropped while the app was
 // closed are picked up. getShard() is called fresh right before each ingestFile() call (not once at
 // startup) so a shard switch via /api/settings takes effect on the very next file, not just after a
@@ -259,6 +259,9 @@ export interface StartWatcherOptions {
   retries?: number;
   retryDelayMs?: number;
   watch?: WatchFn;
+  // A file of this name is not a scan: it goes to `handle` in its turn in the chain, so a scan dropped before it
+  // is ingested first (Put away, issue #131: the panel's refresh, then its request). `handle` removes the file.
+  request?: { name: string; handle: (path: string) => Promise<void> | void } | undefined;
 }
 
 // scanOnce() answers whether the sweep actually ran: false means the inbox could not be read or
@@ -273,7 +276,7 @@ export function startWatcher(
   {
     inboxDir, adapter, scansDir, getShard = () => undefined,
     log = () => {}, onAccepted = () => {}, onRejected = () => {},
-    debounceMs = 300, retries = 3, retryDelayMs = 700, watch = fsWatch,
+    debounceMs = 300, retries = 3, retryDelayMs = 700, watch = fsWatch, request,
   }: StartWatcherOptions = {} as StartWatcherOptions,   // every real call site supplies inboxDir/adapter/scansDir (see app/watcher.test.mts, app/vault-server.mts); this cast is compiler-only, matching config.mts's rawPort pattern
 ): WatcherHandle {
   mkdirSync(inboxDir, { recursive: true, mode: DATA_DIR_MODE });
@@ -308,6 +311,10 @@ export function startWatcher(
   }
 
   async function processFile(name: string): Promise<void> {
+    if (name === request?.name) {
+      if (!closed && existsSync(join(inboxDir, name))) await request.handle(join(inboxDir, name));
+      return;
+    }
     for (let attempt = 1; attempt <= retries; attempt++) {
       if (closed) return;
       const path = join(inboxDir, name);

@@ -290,7 +290,8 @@ export function simPut(sim: Sim, it: Item, chain: number[], movers: Set<number>)
 // others whose facet is unknown) and single-link within SITE_TILES, the bridge's walk limit. A move never crosses
 // sites. Each site's roots ascending, sites ordered by their lowest serial.
 export const SITE_TILES = 24;
-const tiles = (a: Pos, b: Pos): number => Math.max(Math.abs(a.x - b.x), Math.abs(a.y - b.y));
+type Spot = Pick<Pos, "x" | "y" | "facet">;
+const tiles = (a: Spot, b: Spot): number => Math.max(Math.abs(a.x - b.x), Math.abs(a.y - b.y));
 export function sitesOf(inv: Inventory, roots: number[]): number[][] {
   const list = [...new Set(roots)].sort(bySerial);
   const parent = list.map((_, i) => i);
@@ -307,6 +308,29 @@ export function sitesOf(inv: Inventory, roots: number[]): number[][] {
   const groups = new Map<number, number[]>();
   list.forEach((s, i) => { const g = find(i); groups.set(g, [...(groups.get(g) ?? []), s]); });
   return [...groups.values()].sort((a, b) => a[0]! - b[0]!);
+}
+
+// The site (index into sitesOf's groups) a character standing at `at` is in: the one with a root nearest it, on the
+// same facet and within SITE_TILES, as sitesOf links roots. Undefined when none is.
+export function siteAt(inv: Inventory, groups: number[][], at: Spot): number | undefined {
+  let best: number | undefined, near = SITE_TILES + 1;
+  groups.forEach((g, i) => {
+    for (const r of g) {
+      const p = posOf(inv, r), d = tiles(at, p);
+      if ((p.facet ?? -1) === (at.facet ?? -1) && d < near) { best = i; near = d; }
+    }
+  });
+  return best;
+}
+
+// Put away's backpack (issue #131): the items at its top level, since the bridge puts only from there. Never a bag
+// or anything in one (where a player keeps what they carry on purpose: reagents, tools, books), never a blessed or
+// insured item (the character's own things: loot is neither), a pinned item or one named like trash.
+const OWN_LINE = /^(blessed|insured)$/i;
+export function packItems(inv: Inventory, backpack: number, pinned: Set<number>): number[] {
+  return Object.values(inv.items).filter((it) => it.container != null && +it.container === backpack && !it.equippedBy && it.kind !== "container"
+    && !inv.containers[it.serial] && !TRASH_RE.test(it.name) && !pinned.has(+it.serial) && !it.lines.some((l) => OWN_LINE.test(l.replace(/<[^>]*>/g, "").trim())))
+    .map((it) => +it.serial);
 }
 
 // Stops in nearest-neighbour order from `from` (the lowest serial first when there is no starting point).
@@ -416,7 +440,12 @@ export interface Plan {
   unclaimed: number;
   seconds: number;          // about how long the trips take (tripSeconds), whole seconds
 }
+// Put away (issue #131, the TazUO panel's button): the one source a run takes from, instead of every labelled
+// root. `backpack`: what lies loose at the top of that backpack (packItems) and anything carried, put only into
+// the site the character stands in (`at`, where the panel was clicked); `inbox`: what the Inbox label holds.
+export type PutAway = { from: "backpack"; backpack: number; at: Spot } | { from: "inbox"; inbox: number };
 export interface PlanOptions extends ScopeOptions {
+  putAway?: PutAway | undefined;
   rarity?: RulesV1RarityItem[] | undefined;
   tripItems?: number | undefined;
   tripStones?: number | undefined;
@@ -540,7 +569,13 @@ export function planOrganize(inv: Inventory, cfg: OrganizeConfig, overlay: Overl
   let unclaimed = 0;
   // A carried item is put away unless it has been pinned since (the page's answer to a put the server refuses).
   const pinnedItems = new Set(cfg.pinnedItems);
-  const candidates = [...new Set([...scope.movable, ...[...carried].filter((s) => view.items[s] && !pinnedItems.has(s))])].sort(bySerial);
+  const put = opts.putAway;
+  // Put away's backpack items are in the pack already, like carried ones: put without a take.
+  if (put?.from === "backpack") for (const s of packItems(view, put.backpack, pinnedItems)) carried.add(s);
+  const here = put?.from === "backpack" ? siteAt(view, groups, put.at) : undefined;
+  const loose = [...carried].filter((s) => view.items[s] && !pinnedItems.has(s));
+  const candidates = (put?.from === "backpack" ? loose : put?.from === "inbox" ? scope.movable.filter((s) => +view.items[s]!.root! === put.inbox)
+    : [...new Set([...scope.movable, ...loose])]).sort(bySerial);
   for (const serial of candidates) {
     const it = view.items[serial]!;
     const claim = claimOf(it, cfg, rarity);
@@ -556,7 +591,7 @@ export function planOrganize(inv: Inventory, cfg: OrganizeConfig, overlay: Overl
     if (blocked.has(claim.ruleId)) continue;
     const usable = targets.filter((t) => scope.usable.has(t));
     if (!usable.length) continue;
-    const site = inPack ? siteOf(usable[0]!) : siteOfRoot.get(+it.root!);
+    const site = !inPack ? siteOfRoot.get(+it.root!) : put?.from === "backpack" ? here : siteOf(usable[0]!);
     const chain = site === undefined ? [] : usable.filter((t) => siteOf(t) === site);
     if (!chain.length) { cross.set(claim.ruleId, (cross.get(claim.ruleId) ?? 0) + 1); continue; }
     wants.set(site!, [...(wants.get(site!) ?? []), { it, ...claim, chain, from: inPack ? null : +it.container! }]);

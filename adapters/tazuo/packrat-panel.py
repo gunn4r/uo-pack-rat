@@ -4,10 +4,22 @@
 #   Quick refresh           packrat-refresh.py
 #   Start / Stop bridge     packrat-bridge.py (the label follows whether it is running)
 #   Blacklist a container   packrat-blacklist.py
+#   Put away backpack       Put away (issue #131): files what lies loose in your backpack by the app's
+#   Put away Inbox          Organize rules, or what is in the chest labelled Inbox (see below)
 #   Close                   hides the window; the hotkey shows it again
 # Below the buttons: which Pack Rat scripts are running, whether the bridge is on, and how long ago this
 # character's last scan file was saved. The panel reads only local files and the client's own script
 # list; it never touches the world. Every world action still comes from a click.
+#
+# Put away is one click, one run: it runs the quick refresh (backpack) or Scan here (Inbox: stand by it)
+# and waits for its scan file, then drops a request into <data>/inbox/tazuo/putaway-request.json that
+# names only the source, this character and where it stands. The app (it must be running) plans the
+# first trip with its Organize rules, queues it for the bridge and answers in
+# <data>/bridge/tazuo/putaway.json; the panel follows that trip's result in the bridge's status.json and
+# asks again after each trip that put everything it tried, until the app says nothing is left, a step
+# fails or PUT_AWAY_ROUNDS trips have run. The click also sets the shared variable PUT_AWAY_VAR for the
+# length of the run: the bridge puts items loose in your backpack only while it is set, so a line
+# written into the queue file alone cannot (docs/threat-model.md, boundary 13).
 #
 # The script names are fixed siblings of this file. Their folder (top level, or a group folder in the
 # Script Manager) is read off this script's own entry in API.ListRunningScripts(); nothing read from
@@ -74,6 +86,9 @@ LABELS = {SCANNER: "scan", REFRESH: "quick refresh", BRIDGE: "bridge", BLACKLIST
 
 DATA = data_dir()
 HEARTBEAT = os.path.join(DATA, "bridge", "tazuo", "panel.json")
+PUT_AWAY_REQUEST = os.path.join(DATA, "inbox", "tazuo", "putaway-request.json")   # app/put-away.mts
+PUT_AWAY_REPLY = os.path.join(DATA, "bridge", "tazuo", "putaway.json")
+BRIDGE_STATUS = os.path.join(DATA, "bridge", "tazuo", "status.json")
 PREFS = os.path.join(DATA, "tazuo-panel.json")
 SCAN_DIRS = (os.path.join(DATA, "inbox", "tazuo"), os.path.join(DATA, "scans"))
 
@@ -84,15 +99,22 @@ PREFS_EVERY_S = 3.0       # the hotkey file
 START_CHECK_S = 1.5       # a started script not seen running by then did not start
 WINDOW_TRIES = 3
 MAX_PREFS_BYTES = 4096
+MAX_STATUS_BYTES = 1 << 20  # the bridge's status.json: 30 results of at most 60 steps each
+PUT_AWAY_VAR = "packrat_putaway"   # packrat-bridge.py's put_away_asked reads it
+PUT_AWAY_EVERY_S = 0.5    # how often a running Put away looks at its files
+PUT_AWAY_ROUNDS = 10      # trips one click runs at most
+SCAN_WAIT_S = 300         # the refresh or scan a Put away runs first
+REPLY_WAIT_S = 30         # the app's answer: it folds every scan first
+TRIP_WAIT_S = 180         # one trip, at most 40 puts
 MAX_DIR_ENTRIES = 5000    # names looked at per folder per refresh
 DEFAULT_HOTKEY = "CTRL+SHIFT+P"
 HOTKEY_MODS = ("CTRL", "ALT", "SHIFT")
 HOTKEY_KEY_RE = re.compile(r"[A-Z0-9]|F[1-9]|F1[0-2]")    # used with fullmatch
-W, H = 380, 308
+W, H = 380, 344
 TITLE_HUE, TEXT_HUE, OK_HUE = 1153, 996, 68
 
 state = {"done": False, "prefix": "", "character": "", "pending": {}, "was_running": set(),
-         "hotkey": None, "window": None, "show_at_login": True}
+         "hotkey": None, "window": None, "show_at_login": True, "run": None}
 ui = {}
 shown = {}
 
@@ -199,16 +221,21 @@ def toggle():
         pass
 
 
-def read_prefs():
-    """<data>/tazuo-panel.json as a dict, {} when missing, oversized or not a JSON object."""
+def read_json(path, limit=MAX_PREFS_BYTES):
+    """A JSON file as a dict, {} when missing, over `limit` bytes or not a JSON object."""
     try:
-        if os.path.getsize(PREFS) > MAX_PREFS_BYTES:
+        if os.path.getsize(path) > limit:
             return {}
-        with open(PREFS, "r", encoding="utf-8") as f:
+        with open(path, "r", encoding="utf-8") as f:
             doc = json.load(f)
         return doc if isinstance(doc, dict) else {}
     except Exception:
         return {}
+
+
+def read_prefs():
+    """<data>/tazuo-panel.json (the hotkey and showAtLogin)."""
+    return read_json(PREFS)
 
 
 def read_hotkey(doc):
@@ -310,7 +337,8 @@ def refresh():
     set_text("title", "Pack Rat - " + "".join(ch for ch in state["character"] if ch.isprintable())[:30])
     running = [n for n in (SCANNER, REFRESH, BRIDGE, BLACKLIST) if is_running(n)]
     for name in state["was_running"] - set(running) - set(state["pending"]):
-        say("The %s finished." % LABELS[name])
+        if state["run"] is None:           # a Put away says what it is doing itself
+            say("The %s finished." % LABELS[name])
     state["was_running"] = set(running)
     set_text("running", "Running: " + (", ".join(LABELS[n] for n in running) or "nothing"))
     set_text("bridge_btn", "Stop bridge" if BRIDGE in running else "Start bridge")
@@ -318,6 +346,114 @@ def refresh():
     t = last_scan()
     set_text("scan", "Last scan: " + ("none yet" if t is None else ago(t)))
     write_json_atomic(HEARTBEAT, {"alive": rfc3339_now(), "character": state["character"]})
+
+
+def facet():
+    """The map the player stands on (0 Felucca .. 5 Ter Mur), as packrat-refresh.py reads it. None when
+    the client cannot say."""
+    get_map = getattr(API, "GetMap", None)
+    try:
+        m = int(get_map())
+    except Exception:
+        return None
+    return m if 0 <= m <= 5 else None
+
+
+def consent(until):
+    """Sets PUT_AWAY_VAR, which the bridge reads before a Put away trip; 0 withdraws it."""
+    call(getattr(API, "SetSharedVar", None), PUT_AWAY_VAR, float(until))
+
+
+def on_put_away(source):
+    """Put away's click: the scan first (the backpack's quick refresh, or Scan here for the Inbox),
+    then watch_put_away takes it from there. The bridge must be on: it carries the trips."""
+    if state["run"] is not None:
+        say("Put away is already running.")
+        return
+    if not is_running(BRIDGE):
+        say("Start the bridge first: Put away", "moves the items through it.")
+        return
+    script = REFRESH if source == "backpack" else SCANNER
+    if is_running(script) or script in state["pending"]:
+        say("The %s is running; try again after it." % LABELS[script])
+        return
+    # The scan it waits for is one newer than this character's newest now: file times, never the clock.
+    state["run"] = {"source": source, "script": script, "phase": "scan", "since": time.time(), "before": last_scan(),
+                    "put": 0, "failed": 0, "rounds": 0}
+    start(script)
+    say("Put away: reading your %s..." % ("backpack" if source == "backpack" else "Inbox"))
+
+
+def end_put_away(line1, line2=""):
+    consent(0)
+    state["run"] = None
+    say(line1, line2)
+
+
+def ask(run):
+    """One request to the app: a fresh id, where the character stands, and the bridge's consent for the
+    length of one answer and one trip."""
+    run["rounds"] += 1
+    run["id"] = "%d-%d" % (int(time.time() * 1000), run["rounds"])
+    at = {"x": int(API.Player.X), "y": int(API.Player.Y)}
+    f = facet()
+    if f is not None:
+        at["facet"] = f
+    consent(time.time() + REPLY_WAIT_S + TRIP_WAIT_S)
+    try:
+        write_json_atomic(PUT_AWAY_REQUEST, {"id": run["id"], "source": run["source"], "character": state["character"],
+                                             "requestedAt": rfc3339_now(), "at": at})
+    except Exception:
+        end_put_away("Put away could not write its request.")
+        return
+    run["phase"], run["since"] = "reply", time.time()
+
+
+def text_of(v, n=48):
+    return "".join(ch for ch in v if ch.isprintable())[:n] if isinstance(v, str) else ""
+
+
+def watch_put_away():
+    """Put away's next step, from its files: the scan file, the app's answer, the trip's result."""
+    run = state["run"]
+    if run is None:
+        return
+    waited = time.time() - run["since"]
+    if run["phase"] == "scan":
+        t = last_scan()
+        if t is not None and (run["before"] is None or t > run["before"]):
+            ask(run)
+        elif waited > SCAN_WAIT_S or (waited > START_CHECK_S and not is_running(run["script"]) and run["script"] not in state["pending"]):
+            end_put_away("Put away stopped: the %s saved nothing." % LABELS[run["script"]])
+    elif run["phase"] == "reply":
+        reply = read_json(PUT_AWAY_REPLY)
+        if reply.get("id") != run["id"]:
+            if waited > REPLY_WAIT_S:
+                end_put_away("Pack Rat did not answer.", "Is the app running?")
+            return
+        trip = reply.get("trip")
+        if reply.get("ok") is True and isinstance(trip, str) and trip:
+            run["trip"], run["phase"], run["since"] = trip, "trip", time.time()
+            say(text_of(reply.get("msg")), "%d put away so far." % run["put"] if run["put"] else "")
+        elif run["put"] and reply.get("ok") is True:
+            end_put_away("Put away done: %d put away." % run["put"], text_of(reply.get("detail")))
+        else:
+            end_put_away(text_of(reply.get("msg")) or "Put away was refused.", text_of(reply.get("detail")))
+    elif run["phase"] == "trip":
+        result = (read_json(BRIDGE_STATUS, MAX_STATUS_BYTES).get("results") or {}).get(run["trip"])
+        if not isinstance(result, dict):
+            if waited > TRIP_WAIT_S:
+                end_put_away("The trip did not report back.", "%d put away." % run["put"])
+            return
+        steps = [x for x in result.get("steps") or [] if isinstance(x, dict)]
+        put = sum(1 for x in steps if x.get("op") == "put" and x.get("ok") is True)
+        failed = sum(1 for x in steps if x.get("ok") is not True)
+        run["put"] += put
+        run["failed"] += failed
+        if put and not failed and not result.get("stopped") and run["rounds"] < PUT_AWAY_ROUNDS:
+            ask(run)
+        else:
+            end_put_away("Put away: %d put away, %d failed." % (run["put"], run["failed"]), text_of(result.get("msg")))
 
 
 def write_stopped():
@@ -329,6 +465,7 @@ def write_stopped():
 
 def on_stop():
     state["done"] = True
+    consent(0)
     write_stopped()
 
 
@@ -349,9 +486,9 @@ def build_window():
     g = create_window()
     if g is None:
         return None
-    rows = [("title", "Pack Rat", TITLE_HUE, 14), ("running", "", TEXT_HUE, 160),
-            ("bridge", "", TEXT_HUE, 180), ("scan", "", TEXT_HUE, 200),
-            ("msg", "", OK_HUE, 222), ("msg2", "", OK_HUE, 240), ("hotkey", "", TEXT_HUE, 276)]
+    rows = [("title", "Pack Rat", TITLE_HUE, 14), ("running", "", TEXT_HUE, 196),
+            ("bridge", "", TEXT_HUE, 216), ("scan", "", TEXT_HUE, 236),
+            ("msg", "", OK_HUE, 258), ("msg2", "", OK_HUE, 276), ("hotkey", "", TEXT_HUE, 312)]
     for key, text, hue, y in rows:
         lbl = call(gumps("CreateGumpLabel"), text, hue)
         if lbl is None:
@@ -365,8 +502,10 @@ def build_window():
                ("refresh_btn", "Quick refresh", lambda: start(REFRESH), 196, 44),
                ("bridge_btn", "Start bridge", on_bridge, 16, 80),
                ("blacklist_btn", "Blacklist a container", lambda: start(BLACKLIST), 196, 80),
-               ("login_btn", login_text(), on_login, 16, 116),
-               ("close_btn", "Close", on_close, 276, 268)]
+               ("away_btn", "Put away backpack", lambda: on_put_away("backpack"), 16, 116),
+               ("inbox_btn", "Put away Inbox", lambda: on_put_away("inbox"), 196, 116),
+               ("login_btn", login_text(), on_login, 16, 152),
+               ("close_btn", "Close", on_close, 276, 304)]
     for key, text, fn, x, y in buttons:
         b = call(gumps("CreateSimpleButton"), text, 88 if key == "close_btn" else 168, 28)
         if b is None:
@@ -403,12 +542,15 @@ def main():
         API.SysMsg("Pack Rat panel ready - %s to show" % hotkey_name(state["hotkey"]), 88)
     process = getattr(API, "ProcessCallbacks", None)
     deadline = time.time() + MAX_HOURS * 3600
-    next_status, next_prefs = time.time() + STATUS_EVERY_S, time.time() + PREFS_EVERY_S
+    next_status, next_prefs, next_away = time.time() + STATUS_EVERY_S, time.time() + PREFS_EVERY_S, 0
     failed = False
     while not API.StopRequested and not state["done"] and time.time() < deadline:
         call(process)
         try:
             watch_pending()
+            if time.time() >= next_away:
+                watch_put_away()
+                next_away = time.time() + PUT_AWAY_EVERY_S
             if time.time() >= next_prefs:
                 load_prefs()
                 next_prefs = time.time() + PREFS_EVERY_S

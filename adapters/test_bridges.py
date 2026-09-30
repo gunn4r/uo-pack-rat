@@ -715,6 +715,31 @@ class TazUOBridge(BridgeCase, unittest.TestCase):
         self.assertEqual(self.moved(w), [])
         self.assertNotIn(DEST, self.opened(w))
 
+    def put_away(self, cid, puts, index=3):
+        return dict(self.trip(cid, puts=puts, index=index), putAway=True)
+
+    def test_a_put_away_trip_without_the_panels_click_is_refused_and_nothing_moves(self):
+        for shared in ({}, {"packrat_putaway": "soon"}, "expired"):
+            w = trip_home()
+            w.shared = {"packrat_putaway": w.clock.start - 1} if shared == "expired" else shared
+            final, _ = self.run_bridge(w, 1, [self.put_away("p1", [(LOOSE, [DEST])])])
+            self.assertFalse(final["results"]["p1"]["ok"], shared)
+            self.assertIn("panel", final["results"]["p1"]["msg"], shared)
+            self.assertEqual(self.moved(w), [], shared)
+
+    def test_a_put_away_trip_puts_what_lies_loose_in_the_backpack_and_nothing_in_a_bag(self):
+        w = trip_home()
+        w.shared = {"packrat_putaway": w.clock.start + 600}     # the panel's Put away, clicked just now
+        final, _ = self.run_bridge(w, 1, [self.put_away("p1", [(LOOSE, [DEST, DEST_BAG]), (RING, [DEST])]),
+                                          self.trip("p2", puts=[(BOOK, [DEST])], index=4)])
+        self.assertEqual(self.steps(final, "p1"), [("put", LOOSE, True), ("put", RING, False)])
+        self.assertIn("top of your backpack", final["results"]["p1"]["steps"][1]["msg"])
+        self.assertEqual(w.items[LOOSE].Container, DEST_BAG)
+        self.assertEqual(w.items[RING].Container, POUCH)
+        # Nothing joined the carried set: an ordinary trip still puts only what the bridge took.
+        self.assertIn("not taken by this bridge", final["results"]["p2"]["steps"][0]["msg"])
+        self.assertEqual(self.moved(w), [LOOSE])
+
     def test_a_put_the_container_bounces_keeps_the_item_carried_for_put_them_away(self):
         w = trip_home()
         w.refuse = {DEST}

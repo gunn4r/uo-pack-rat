@@ -170,6 +170,72 @@ class Panel(unittest.TestCase):
         self.assertIn("Pack Rat - Tester", self.labels(api))
         self.assertIn("Last scan: just now", self.labels(api))
 
+    # ---- Put away (issue #131) ------------------------------------------------------------------
+    def path(self, *parts):
+        return os.path.join(self.data, *parts)
+
+    def read(self, *parts):
+        with open(self.path(*parts), encoding="utf-8") as f:
+            return json.load(f)
+
+    def write(self, doc, *parts):
+        os.makedirs(os.path.dirname(self.path(*parts)), exist_ok=True)
+        with open(self.path(*parts), "w", encoding="utf-8") as f:
+            json.dump(doc, f)
+
+    def test_put_away_refreshes_asks_the_app_follows_each_trip_and_asks_again_until_nothing_is_left(self):
+        w = World()
+        w.facet = 1
+        api = tazuo_panel_api(w, loaded=list(ALL))
+        api.running.append("packrat-bridge.py")
+        seen, reqs = {}, []
+
+        def refreshed():
+            api.running.remove("packrat-refresh.py")
+            self.write({}, "inbox", "tazuo", "Tester-20260930-120000-quick.json")
+
+        def answer(trip):
+            reqs.append(self.read("inbox", "tazuo", "putaway-request.json"))
+            seen.setdefault("consent", api.shared.get("packrat_putaway"))
+            reply = {"id": reqs[-1]["id"], "ok": True, "msg": "Nothing to put away.", "detail": "1 no rule takes"}
+            self.write(dict(reply, trip=trip, msg="Putting away 2 items...") if trip else reply, "bridge", "tazuo", "putaway.json")
+
+        steps = [{"op": "put", "serial": 1, "ok": True, "msg": "put"}, {"op": "put", "serial": 2, "ok": True, "msg": "put"}]
+        w.clock.at(1, lambda: api.click(self.control(api, "Put away backpack")))
+        w.clock.at(3, refreshed)
+        w.clock.at(5, lambda: answer("trip-1"))
+        w.clock.at(6, lambda: seen.setdefault("trip", self.labels(api)))
+        w.clock.at(7, lambda: self.write({"results": {"trip-1": {"ok": True, "msg": "trip 1: 2 put away", "steps": steps}}}, "bridge", "tazuo", "status.json"))
+        w.clock.at(9, lambda: answer(None))
+        self.run_panel(w, api, until_s=12)
+        self.assertEqual([c for c in api.log if c[0] == "play"], [("play", "packrat-refresh.py")])
+        self.assertEqual(len(reqs), 2, "a second request after the trip that put everything")
+        self.assertEqual(reqs[0]["source"], "backpack")
+        self.assertEqual(reqs[0]["character"], "Tester")
+        self.assertEqual(reqs[0]["at"], {"x": w.px, "y": w.py, "facet": 1})
+        self.assertNotEqual(reqs[0]["id"], reqs[1]["id"])
+        self.assertGreater(seen["consent"], w.clock.start, "the bridge may put backpack items while the run lasts")
+        self.assertIn("Putting away 2 items...", seen["trip"])
+        self.assertIn("Put away done: 2 put away.", self.labels(api))
+        self.assertIn("1 no rule takes", self.labels(api))
+        self.assertEqual(api.shared["packrat_putaway"], 0, "and not after it")
+        self.assertEqual(w.calls, [], "the panel takes no action in the world")
+
+    def test_put_away_needs_the_bridge_and_says_when_the_app_does_not_answer(self):
+        w = World()
+        api = tazuo_panel_api(w, loaded=list(ALL))
+        seen = {}
+        w.clock.at(1, lambda: api.click(self.control(api, "Put away Inbox")))
+        w.clock.at(2, lambda: seen.setdefault("off", self.labels(api)))
+        w.clock.at(3, lambda: api.running.append("packrat-bridge.py"))
+        w.clock.at(4, lambda: api.click(self.control(api, "Put away Inbox")))
+        w.clock.at(6, lambda: (api.running.remove("packrat-scanner.py"), self.write({}, "inbox", "tazuo", "Tester-20260930-120000.json")))
+        self.run_panel(w, api, until_s=60)
+        self.assertIn("Start the bridge first: Put away", seen["off"])
+        self.assertEqual([c for c in api.log if c[0] == "play"], [("play", "packrat-scanner.py")])
+        self.assertEqual(self.read("inbox", "tazuo", "putaway-request.json")["source"], "inbox")
+        self.assertIn("Pack Rat did not answer.", self.labels(api))
+
     def test_the_loop_is_bounded(self):
         with open(SCRIPT, encoding="utf-8") as f:
             src = f.read()

@@ -223,6 +223,9 @@ def tazuo_api(world, backpack, bank=0, skills=None):
                 setattr(self._it, name, v)
         api.FindItem = lambda s: (lambda it: None if it is None else NoOpened(it))(world.known(int(s)))
     api.FindLayer = lambda layer: None
+    api.shared = getattr(world, "shared", {})   # Legion's shared variables, one dict per client
+    api.SetSharedVar = lambda name, v: api.shared.__setitem__(name, v)
+    api.GetSharedVar = lambda name: api.shared.get(name)
     api.UseObject = lambda s, *a: world.open(int(s))
     def items_in(s, recursive=False):
         world.calls.append(("items_in", int(s)))
