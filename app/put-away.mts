@@ -6,7 +6,7 @@
 // character and where the character stands; the server builds the trip itself from the setup with the ordinary
 // planner (organize.mts, PlanOptions.putAway) and queues it with queueTrip.
 import { parseStamp } from "./scan-schema.mts";
-import type { Plan } from "./organize.mts";
+import type { PackKept, Plan } from "./organize.mts";
 
 export const PUT_AWAY_REQUEST = "putaway-request.json";
 export const PUT_AWAY_REPLY = "putaway.json";
@@ -57,18 +57,24 @@ export function checkPutAwayRequest(raw: unknown, now: number): { ok: true; requ
 
 const plural = (n: number, word: string): string => `${n} ${word}${n === 1 ? "" : "s"}`;
 
-// Why a Put away plan moves nothing, in a line short enough for the panel: what no rule claims (from the backpack,
-// the catch-all claims nothing), what belongs at
-// another house than the one you stand in, what has no room, and (the Inbox) what is already home there.
-export function nothingDetail(plan: Pick<Plan, "unclaimed" | "crossSite" | "rules">, source: PutAwaySource): string {
+// What a Put away plan leaves and why, in a line short enough for the panel, never empty: what stays in the pack (bags,
+// blessed or insured and pinned items, `kept`; what no rule claims, the catch-all claiming nothing from the backpack)
+// or the Inbox, what belongs at another house than the one you stand in, what has no room, and (the Inbox) what is
+// already home there.
+export function nothingDetail(plan: Pick<Plan, "unclaimed" | "crossSite" | "rules">, source: PutAwaySource, kept: PackKept = { bags: 0, own: 0, pinned: 0 }): string {
   const cross = plan.crossSite.reduce((n, c) => n + c.count, 0);
   const noRoom = plan.rules.reduce((n, r) => n + r.noRoom, 0), home = plan.rules.reduce((n, r) => n + r.inPlace, 0);
-  return [
-    plan.unclaimed ? `${plan.unclaimed} no rule takes stay in your ${source === "inbox" ? "Inbox" : "pack"}` : "",
+  const stay = [[kept.own, `${kept.own} blessed/insured`], [kept.bags, plural(kept.bags, "bag")], [kept.pinned, `${kept.pinned} pinned`],
+    [plan.unclaimed, `${plan.unclaimed} with no rule`]].filter(([n]) => n) as [number, string][];
+  const one = stay.length === 1 && stay[0]![0] === 1;
+  const where = source === "inbox" ? "Inbox" : "pack";
+  const line = [
+    stay.length ? `${stay.map(([, t]) => t).join(", ")} ${one ? "stays" : "stay"} in your ${where}` : "",
     cross ? `${cross} for another house` : "",
     noRoom ? `${noRoom} with no room` : "",
     home ? `${home} already filed` : "",
   ].filter(Boolean).join(", ");
+  return line || (source === "inbox" ? "The Inbox is empty." : "Nothing lies loose in your backpack.");
 }
 
 export const tripMsg = (items: number, left: number): string => `Putting away ${plural(items, "item")}${left ? `, ${left} more after` : ""}...`;

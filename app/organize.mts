@@ -401,10 +401,24 @@ export function siteAt(inv: Inventory, groups: number[][], at: Spot): number | u
 // or anything in one (where a player keeps what they carry on purpose: reagents, tools, books), never a blessed or
 // insured item (the character's own things: loot is neither), a pinned item or one named like trash.
 const OWN_LINE = /^(blessed|insured)$/i;
+const isOwn = (it: Item): boolean => it.lines.some((l) => OWN_LINE.test(l.replace(/<[^>]*>/g, "").trim()));
+// A non-bag item lying at the top of the backpack.
+const onTop = (inv: Inventory, it: Item, backpack: number): boolean =>
+  it.container != null && +it.container === backpack && !it.equippedBy && it.kind !== "container" && !inv.containers[it.serial];
 export function packItems(inv: Inventory, backpack: number, pinned: Set<number>): number[] {
-  return Object.values(inv.items).filter((it) => it.container != null && +it.container === backpack && !it.equippedBy && it.kind !== "container"
-    && !inv.containers[it.serial] && !TRASH_RE.test(it.name) && !pinned.has(+it.serial) && !it.lines.some((l) => OWN_LINE.test(l.replace(/<[^>]*>/g, "").trim())))
+  return Object.values(inv.items).filter((it) => onTop(inv, it, backpack) && !TRASH_RE.test(it.name) && !pinned.has(+it.serial) && !isOwn(it))
     .map((it) => +it.serial);
+}
+// What packItems leaves at the top of the backpack, and why, for Put away's answer: bags, blessed or insured items,
+// pinned items.
+export interface PackKept { bags: number; own: number; pinned: number }
+export function packKept(inv: Inventory, backpack: number, pinned: Set<number>): PackKept {
+  const top = Object.values(inv.items).filter((it) => onTop(inv, it, backpack));
+  return {
+    bags: Object.values(inv.containers).filter((c) => c.parent != null && +c.parent === backpack).length,
+    own: top.filter(isOwn).length,
+    pinned: top.filter((it) => !isOwn(it) && pinned.has(+it.serial)).length,
+  };
 }
 
 // Stops in nearest-neighbour order from `from` (the lowest serial first when there is no starting point).

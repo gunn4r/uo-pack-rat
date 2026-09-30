@@ -131,7 +131,7 @@ import { writeFileAtomic } from "./atomic-write.mts";
 import { addPanelAutostart, panelPrefsError, readPanelPrefs, tazuoRunning, writePanelPrefs } from "./tazuo-panel.mts";
 import { queueTrip, writeBridgeStop } from "./bridge-trip.mts";
 import { checkOrganizeConfig, emptyOrganizeConfig, LIMITS, matchProblem, salvageOrganizeConfig, MAX_SETUP_BYTES, type OrganizeConfig, type RuleMatch } from "./organize-config.mts";
-import { planOrganize, tripCommand, matchCount, overlaidInventory, type Plan, type PutAway } from "./organize.mts";
+import { packKept, planOrganize, tripCommand, matchCount, overlaidInventory, type Plan, type PutAway } from "./organize.mts";
 import { checkPutAwayRequest, nothingDetail, requestId, tripMsg, FRESH_MARGIN_MS, MAX_REQUEST_BYTES, PUT_AWAY_REPLY, PUT_AWAY_REQUEST, type PutAwayReply, type PutAwayRequest } from "./put-away.mts";
 import { PRESETS } from "./organize-presets.mts";
 import { proposeOrganize, STRATEGY_IDS, type StrategyId } from "./organize-strategies.mts";
@@ -965,7 +965,8 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
       return { ok: false, msg: "The Inbox cannot be used.", detail: why?.detail ?? "It must be a labelled chest on the ground." };
     }
     const trip = plan.trips[0];
-    if (!trip) return { ok: true, msg: "Nothing to put away.", detail: nothingDetail(plan, req.source) };
+    const kept = source.from === "backpack" ? packKept(fold, source.backpack, new Set(config.pinnedItems)) : undefined;
+    if (!trip) return { ok: true, msg: "Nothing to put away.", detail: nothingDetail(plan, req.source, kept) };
     const queued = queuePlanTrip(adapter, fold, state, plan, trip.index, source.from === "backpack");
     if (!queued.ok) return { ok: false, msg: "The trip could not be queued.", detail: queued.error };
     return { ok: true, msg: tripMsg(trip.puts.length, plan.moves.length - trip.puts.length), trip: queued.id };
