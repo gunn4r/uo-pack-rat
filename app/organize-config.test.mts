@@ -148,20 +148,3 @@ test("[fast] the largest setup the check allows fits MAX_SETUP_BYTES as the serv
   assert.equal(checkOrganizeConfig(max).ok, true);
   assert.ok(Buffer.byteLength(JSON.stringify(max, null, 2) + "\n") <= MAX_SETUP_BYTES);
 });
-
-test("[fast] one Inbox at most, never a pinned one; the salvage clears a broken Inbox and keeps the labels (issue #131)", () => {
-  const withInbox = (...serials: number[]): OrganizeConfig => {
-    const cfg = full();
-    for (const s of serials) cfg.labels[String(s)] = { ...cfg.labels[String(s)]!, inbox: true };
-    return cfg;
-  };
-  assert.equal(checkOrganizeConfig(withInbox(A)).ok, true);
-  assert.match(refused(withInbox(A, B)), /only one container can be the Inbox/);
-  assert.match(refused(withInbox(P)), /pinned/);
-  assert.match(refused({ ...full(), labels: { [String(A)]: { serial: A, name: "In", inbox: "yes", origin: "manual" } } }), /inbox must be true or false/);
-  const { config, problems } = salvageOrganizeConfig(withInbox(A, B));
-  assert.deepEqual(Object.values(config.labels).filter((l) => l.inbox), []);
-  assert.equal(Object.keys(config.labels).length, 3);
-  assert.equal(problems.length, 1);
-  assert.equal(checkOrganizeConfig(config).ok, true);
-});

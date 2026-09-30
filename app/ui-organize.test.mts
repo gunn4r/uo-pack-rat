@@ -57,15 +57,6 @@ test("[fast] pinning a label takes it off every rule's targets and the catch-all
   assert.equal(CFG.labels[String(A)]!.name, "Reagents", "the input is untouched");
 });
 
-test("[fast] a label saved as the Inbox takes the Inbox off the container that had it (issue #131)", () => {
-  const first = withLabel(CFG, { serial: A, name: "Reagents", inbox: true, origin: "manual" }).config;
-  const { config, dropped } = withLabel(first, { serial: B, name: "Gems", inbox: true, origin: "manual" });
-  assert.deepEqual(dropped, []);
-  assert.deepEqual(Object.values(config.labels).filter((l) => l.inbox).map((l) => l.serial), [B]);
-  assert.equal("inbox" in config.labels[String(A)]!, false);
-  assert.equal(first.labels[String(A)]!.inbox, true, "the input is untouched");
-});
-
 test("[fast] pinning a chest a rule fills says so in the player's words, naming the rule (issue #123)", () => {
   assert.equal(pinNote("Gems", ["Gems"]), 'Gems is where the rule "Gems" puts items. Nothing is put into a pinned container, so pinning it takes it off that rule. Unpinning it later does not put it back: add it to the rule again, or run Auto organize again.');
   assert.equal(pinNote("Reagents", ["Reagents", "Gems", "Everything else"]),

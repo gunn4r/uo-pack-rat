@@ -7,9 +7,7 @@ import type { RuleQuery } from "./item-query.mts";
 import type { SpellSchool } from "./vault-lib.mts";
 
 export type Origin = "manual" | `strategy:${string}`;
-// inbox (issue #131): the one labelled chest Put away (the TazUO panel's button) empties by the rules, as the
-// backpack's other source. Never pinned: Put away takes items out of it.
-export interface ContainerLabel { serial: number; name: string; color?: string | undefined; pinned?: boolean | undefined; inbox?: boolean | undefined; origin: Origin }
+export interface ContainerLabel { serial: number; name: string; color?: string | undefined; pinned?: boolean | undefined; origin: Origin }
 // A rule's filter: the Inventory's item filters (never location, character or age: a rule must keep matching
 // an item after it moves) and, optionally, "name is any of" (a substring of the item's name, stack count
 // stripped, case-insensitive), and optionally a build (issue #91: the gear By build sorts into it, organize.mts's
@@ -60,13 +58,12 @@ function labelProblem(key: string, v: unknown): string | null {
   if (!SERIAL_KEY.test(key) || Number(key) > MAX_SERIAL) return `labels key ${JSON.stringify(key.slice(0, 20))} is not a container serial`;
   const at = `labels.${key}`;
   if (!isObj(v)) return `${at} must be an object`;
-  const bad = extra(v, ["serial", "name", "color", "pinned", "inbox", "origin"]);
+  const bad = extra(v, ["serial", "name", "color", "pinned", "origin"]);
   if (bad) return `${at}.${bad} is not a label field`;
   if (v.serial !== Number(key)) return `${at}.serial must be ${key}`;
   if (!isText(v.name)) return `${at}.name must be 1 to 64 characters`;
   if (v.color !== undefined && !(typeof v.color === "string" && COLOR.test(v.color))) return `${at}.color must be a #rrggbb colour`;
   if (v.pinned !== undefined && typeof v.pinned !== "boolean") return `${at}.pinned must be true or false`;
-  if (v.inbox !== undefined && typeof v.inbox !== "boolean") return `${at}.inbox must be true or false`;
   if (!isOrigin(v.origin)) return `${at}.origin must be "manual" or "strategy:<id>"`;
   return null;
 }
@@ -140,14 +137,6 @@ function ruleProblem(r: unknown, i: number, labels: Record<string, ContainerLabe
   return null;
 }
 
-// Put away's Inbox (issue #131): one container at most, and never a pinned one, since Put away takes items out of it.
-function inboxProblem(labels: Record<string, ContainerLabel>): string | null {
-  const inboxes = Object.values(labels).filter((l) => l.inbox);
-  if (inboxes.length > 1) return `only one container can be the Inbox, and ${inboxes.map((l) => l.name).join(", ")} are`;
-  if (inboxes[0]?.pinned) return `${inboxes[0].name} is pinned, and Put away takes items out of the Inbox`;
-  return null;
-}
-
 const catchAllProblem = (v: unknown, labels: Record<string, ContainerLabel>, at = "catchAll"): string | null => (v === null ? null : containerProblem(v, labels, at));
 
 export function checkOrganizeConfig(doc: unknown): { ok: true; config: OrganizeConfig } | { ok: false; error: string } {
@@ -162,8 +151,6 @@ export function checkOrganizeConfig(doc: unknown): { ok: true; config: OrganizeC
     if (p) return fail(p);
   }
   const labels = doc.labels as Record<string, ContainerLabel>;
-  const ip = inboxProblem(labels);
-  if (ip) return fail(ip);
   if (!Array.isArray(doc.rules) || doc.rules.length > LIMITS.rules) return fail(`rules must be a list of at most ${LIMITS.rules} rules`);
   const ids = new Set<string>();
   for (const [i, r] of doc.rules.entries()) {
@@ -193,16 +180,6 @@ export function salvageOrganizeConfig(raw: unknown): { config: OrganizeConfig; p
     }
     if (Object.keys(raw.labels).length > LIMITS.labels) problems.push(`labels past the first ${LIMITS.labels} dropped`);
   } else if (raw.labels !== undefined) problems.push("labels must be an object; every label dropped");
-  const ip = inboxProblem(config.labels);
-  if (ip) {
-    problems.push(`${ip}; Inbox cleared`);
-    for (const [key, l] of Object.entries(config.labels)) {
-      if (!l.inbox) continue;
-      const next = { ...l };
-      delete next.inbox;
-      config.labels[key] = next;
-    }
-  }
   if (Array.isArray(raw.rules)) {
     for (const [i, entry] of raw.rules.slice(0, LIMITS.rules).entries()) {
       // A target that is no longer a usable label (its label was dropped above, say) costs the rule that target,

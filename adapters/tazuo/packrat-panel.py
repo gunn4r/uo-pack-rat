@@ -4,22 +4,25 @@
 #   Quick refresh           packrat-refresh.py
 #   Start / Stop bridge     packrat-bridge.py (the label follows whether it is running)
 #   Blacklist a container   packrat-blacklist.py
-#   Put away backpack       Put away (issue #131): files what lies loose in your backpack by the app's
-#   Put away Inbox          Organize rules, or what is in the chest labelled Inbox (see below)
+#   Put away...             Put away (issue #131): files what lies directly in a container you pick with
+#                           a target cursor by the app's Organize rules (see below)
 #   Close                   hides the window; the hotkey shows it again
 # Below the buttons: which Pack Rat scripts are running, whether the bridge is on, and how long ago this
 # character's last scan file was saved. The panel reads only local files and the client's own script
 # list; it never touches the world. Every world action still comes from a click.
 #
-# Put away is one click, one run: it runs the quick refresh (backpack) or Scan here (Inbox: stand by it)
-# and waits for its scan file, then drops a request into <data>/inbox/tazuo/putaway-request.json that
-# names only the source, this character and where it stands. The app (it must be running) plans the
-# first trip with its Organize rules, queues it for the bridge and answers in
-# <data>/bridge/tazuo/putaway.json; the panel follows that trip's result in the bridge's status.json and
-# asks again after each trip that put everything it tried, until the app says nothing is left, a step
-# fails or PUT_AWAY_ROUNDS trips have run. The click also sets the shared variable PUT_AWAY_VAR for the
-# length of the run: the bridge puts items loose in your backpack only while it is set, so a line
-# written into the queue file alone cannot (docs/threat-model.md, boundary 13).
+# Put away is one click, one run: it raises a target cursor, and the container picked (your backpack, a
+# bag at any depth in it, or a container in a chest on the ground within reach, which the app must have
+# labelled) is the run's only source; only what lies directly in it moves, never a bag in it or what the
+# bag holds (pick that bag next). The panel runs the quick refresh (your pack) or Scan here (a chest) and
+# waits for its scan file, then drops a request into <data>/inbox/tazuo/putaway-request.json that names
+# only the container, this character and where it stands. The app (it must be running) plans the first
+# trip with its Organize rules, queues it for the bridge and answers in <data>/bridge/tazuo/putaway.json;
+# the panel follows that trip's result in the bridge's status.json and asks again after each trip that
+# put everything it tried, until the app says nothing is left, a step fails or PUT_AWAY_ROUNDS trips have
+# run. The click also sets the shared variable PUT_AWAY_VAR to the picked container and the run's end:
+# the bridge puts what you carry only from that container and only while it is set, so a line written
+# into the queue file alone cannot (docs/threat-model.md, boundary 13).
 #
 # The script names are fixed siblings of this file. Their folder (top level, or a group folder in the
 # Script Manager) is read off this script's own entry in API.ListRunningScripts(); nothing read from
@@ -89,7 +92,8 @@ HEARTBEAT = os.path.join(DATA, "bridge", "tazuo", "panel.json")
 PUT_AWAY_REQUEST = os.path.join(DATA, "inbox", "tazuo", "putaway-request.json")   # app/put-away.mts
 PUT_AWAY_REPLY = os.path.join(DATA, "bridge", "tazuo", "putaway.json")
 BRIDGE_STATUS = os.path.join(DATA, "bridge", "tazuo", "status.json")
-STOP_FLAG = os.path.join(DATA, "bridge", "stop")    # Organize's Stop: the bridge halts a trip after its current step
+STOP_FLAG = os.path.join(DATA, "bridge", "stop")
+BLACKLIST_PATH = os.path.join(DATA, "scan-blacklist.json")    # Organize's Stop: the bridge halts a trip after its current step
 PREFS = os.path.join(DATA, "tazuo-panel.json")
 SCAN_DIRS = (os.path.join(DATA, "inbox", "tazuo"), os.path.join(DATA, "scans"))
 
@@ -107,11 +111,18 @@ PUT_AWAY_ROUNDS = 10      # trips one click runs at most
 SCAN_WAIT_S = 300         # the refresh or scan a Put away runs first
 REPLY_WAIT_S = 30         # the app's answer: it folds every scan first
 TRIP_WAIT_S = 180         # one trip, at most 40 puts
+TARGET_S = 30             # how long Put away's target cursor waits for a click
+SCAN_RANGE = 3            # packrat-scanner.py's reach: a chest must be this close to be scanned first
+MAX_NEST = 4              # bags in bags in bags, as the scanners walk them
+# What the scanners never take for a container (a book is one to the client) and what they never read.
+NOT_A_CONTAINER_RE = re.compile(r"\b(deed(?!\s+box)|sending|music box|\w*book|tome|atlas|compendium)\b", re.I)   # a "Commodity Deed Box" IS one
+NOT_A_CONTAINER_GRAPHICS = {0x0EFA, 0x2D50, 0x2D9D, 0x2252, 0x2253, 0x225A, 0x225B, 0x238C, 0x23A0, 0x22C5, 0x9C16}
+TRASH_RE = re.compile(r"\btrash\b", re.I)
 MAX_DIR_ENTRIES = 5000    # names looked at per folder per refresh
 DEFAULT_HOTKEY = "CTRL+SHIFT+P"
 HOTKEY_MODS = ("CTRL", "ALT", "SHIFT")
 HOTKEY_KEY_RE = re.compile(r"[A-Z0-9]|F[1-9]|F1[0-2]")    # used with fullmatch
-W, H = 380, 344
+W, H = 380, 308
 TITLE_HUE, TEXT_HUE, OK_HUE = 1153, 996, 68
 
 state = {"done": False, "prefix": "", "character": "", "pending": {}, "was_running": set(),
@@ -185,7 +196,8 @@ def watch_pending():
         if is_running(name):
             del state["pending"][name]
             state["was_running"].add(name)
-            say("The %s is running." % LABELS[name])
+            if name not in state["quiet"]:       # a Put away says what it is doing itself
+                say("The %s is running." % LABELS[name])
         elif time.time() >= until:
             del state["pending"][name]
             say("Didn't start. Try again in a moment;", "if it persists, open Script Manager or relog.")
@@ -362,16 +374,67 @@ def facet():
     return m if 0 <= m <= 5 else None
 
 
-def consent(until):
-    """Sets PUT_AWAY_VAR, which the bridge reads before a Put away trip; 0 withdraws it."""
-    call(getattr(API, "SetSharedVar", None), PUT_AWAY_VAR, float(until))
+def consent(value):
+    """Sets PUT_AWAY_VAR, which the bridge reads before a Put away trip ("<container>:<until>"); "" withdraws it."""
+    call(getattr(API, "SetSharedVar", None), PUT_AWAY_VAR, value)
 
 
 def away_buttons():
-    """The running Put away's button reads Cancel put away; both read their own names otherwise."""
-    run = state["run"]
-    set_text("away_btn", "Cancel put away" if run and run["source"] == "backpack" else "Put away backpack")
-    set_text("inbox_btn", "Cancel put away" if run and run["source"] == "inbox" else "Put away Inbox")
+    """Put away's button reads Cancel put away while a run goes on."""
+    set_text("away_btn", "Cancel put away" if state["run"] else "Put away...")
+
+
+def read_blacklist(path):
+    """The valid entries of <data directory>/scan-blacklist.json, the containers the player blacklisted
+    ({serial, name, addedAt, where?}). A bad entry is dropped, and a missing, unreadable or oversized
+    file reads as none: the list can only ever make a scan skip containers."""
+    try:
+        if os.path.getsize(path) > 256 * 1024:
+            return []
+        with open(path, "r", encoding="utf-8") as f:
+            doc = json.load(f)
+        return [e for e in doc if isinstance(e, dict) and type(e.get("serial")) is int and 0 < e["serial"] <= 0xFFFFFFFF]
+    except Exception:
+        return []
+
+
+def picked_source(serial):
+    """What Put away's cursor picked: ("pack", "") for your backpack or a bag at any depth in it, ("ground", "")
+    for a container on the ground (or in a chest there) within SCAN_RANGE, else (None, why not). The app
+    then checks the chest is labelled."""
+    it = call(getattr(API, "FindItem", None), serial)
+    try:
+        name = str(it.Name or "") if it is not None else ""
+        graphic = int(getattr(it, "Graphic", 0) or 0) if it is not None else 0
+        box = it is not None and bool(it.IsContainer) and not bool(getattr(it, "IsCorpse", False))
+    except Exception:
+        name, graphic, box = "", 0, False
+    if not box or NOT_A_CONTAINER_RE.search(name) or graphic in NOT_A_CONTAINER_GRAPHICS:
+        return None, "That is not a container."
+    try:
+        first = str(API.ItemNameAndProps(int(serial), True) or "").strip().splitlines()[0]
+    except Exception:
+        first = name
+    if TRASH_RE.search(first or name):
+        return None, "That is a trash container."
+    black = set(e["serial"] for e in read_blacklist(BLACKLIST_PATH))
+    pack, c = int(API.Backpack), int(serial)
+    for _ in range(MAX_NEST + 2):
+        if c in black:
+            return None, "That container is blacklisted."
+        if c == pack:
+            return "pack", ""
+        if it is None:
+            break
+        try:
+            if bool(getattr(it, "OnGround", False)):
+                near = max(abs(int(it.X) - int(API.Player.X)), abs(int(it.Y) - int(API.Player.Y))) <= SCAN_RANGE
+                return ("ground", "") if near else (None, "Stand next to it first.")
+            c = int(getattr(it, "Container", 0) or 0)
+        except Exception:
+            break
+        it = call(getattr(API, "FindItem", None), c)
+    return None, "Pick your pack, a bag in it, or a chest."
 
 
 def cancel_put_away():
@@ -387,31 +450,43 @@ def cancel_put_away():
     end_put_away("Put away cancelled.", "The bridge stops after its current step." if trip else "")
 
 
-def on_put_away(source):
-    """Put away's click: the scan first (the backpack's quick refresh, or Scan here for the Inbox),
-    then watch_put_away takes it from there. The bridge must be on: it carries the trips. While a run
-    goes on, either button cancels it."""
+def on_put_away():
+    """Put away's click: a target cursor for the container, then the scan (the quick refresh for your
+    pack, Scan here for a chest), then watch_put_away takes it from there. The bridge must be on: it
+    carries the trips. While a run goes on, the button cancels it."""
     if state["run"] is not None:
         cancel_put_away()
         return
     if not is_running(BRIDGE):
         say("Start the bridge first: Put away", "moves the items through it.")
         return
-    script = REFRESH if source == "backpack" else SCANNER
+    say("Put away: click the container (Esc cancels).")
+    try:
+        serial = int(API.RequestTarget(TARGET_S) or 0)
+    except Exception:
+        serial = 0
+    if not serial:
+        say("Put away: nothing picked.")
+        return
+    source, why = picked_source(serial)
+    if source is None:
+        say(why)
+        return
+    script = REFRESH if source == "pack" else SCANNER
     if is_running(script) or script in state["pending"]:
         say("The %s is running; try again after it." % LABELS[script])
         return
     # The scan it waits for is one newer than this character's newest now: file times, never the clock.
-    state["run"] = {"source": source, "script": script, "phase": "scan", "since": time.time(), "before": last_scan(),
+    state["run"] = {"container": serial, "script": script, "phase": "scan", "since": time.time(), "before": last_scan(),
                     "clicked": rfc3339_now(), "put": 0, "failed": 0, "rounds": 0}
     away_buttons()
     start(script)
     state["quiet"].add(script)
-    say("Put away: reading your %s..." % ("backpack" if source == "backpack" else "Inbox"))
+    say("Put away: reading %s..." % ("your pack" if source == "pack" else "the chest"))
 
 
 def end_put_away(line1, line2=""):
-    consent(0)
+    consent("")
     state["run"] = None
     away_buttons()
     say(line1, line2)
@@ -426,16 +501,14 @@ def ask(run):
     f = facet()
     if f is not None:
         at["facet"] = f
-    consent(time.time() + REPLY_WAIT_S + TRIP_WAIT_S)
-    try:
-        took = float(call(getattr(API, "GetSharedVar", None), PUT_AWAY_VAR)) > time.time()
-    except Exception:
-        took = False
+    value = "%d:%f" % (run["container"], time.time() + REPLY_WAIT_S + TRIP_WAIT_S)
+    consent(value)
+    took = str(call(getattr(API, "GetSharedVar", None), PUT_AWAY_VAR)) == value
     if not took:       # the bridge would refuse every trip: say why now
         end_put_away("Put away needs shared variables,", "which this TazUO build lacks.")
         return
     try:
-        write_json_atomic(PUT_AWAY_REQUEST, {"id": run["id"], "source": run["source"], "character": state["character"],
+        write_json_atomic(PUT_AWAY_REQUEST, {"id": run["id"], "container": run["container"], "character": state["character"],
                                              "requestedAt": rfc3339_now(), "clickedAt": run["clicked"], "at": at})
     except Exception:
         end_put_away("Put away could not write its request.")
@@ -493,7 +566,7 @@ def watch_put_away():
 def write_stopped():
     """The last heartbeat, `stopped: true`, and the bridge's Put away consent withdrawn: called on Stop and
     from main()'s finally, however the panel ends."""
-    consent(0)
+    consent("")
     try:
         write_json_atomic(HEARTBEAT, {"alive": rfc3339_now(), "character": state["character"], "stopped": True})
     except Exception:
@@ -522,9 +595,9 @@ def build_window():
     g = create_window()
     if g is None:
         return None
-    rows = [("title", "Pack Rat", TITLE_HUE, 14), ("running", "", TEXT_HUE, 196),
-            ("bridge", "", TEXT_HUE, 216), ("scan", "", TEXT_HUE, 236),
-            ("msg", "", OK_HUE, 258), ("msg2", "", OK_HUE, 276), ("hotkey", "", TEXT_HUE, 312)]
+    rows = [("title", "Pack Rat", TITLE_HUE, 14), ("running", "", TEXT_HUE, 160),
+            ("bridge", "", TEXT_HUE, 180), ("scan", "", TEXT_HUE, 200),
+            ("msg", "", OK_HUE, 222), ("msg2", "", OK_HUE, 240), ("hotkey", "", TEXT_HUE, 276)]
     for key, text, hue, y in rows:
         lbl = call(gumps("CreateGumpLabel"), text, hue)
         if lbl is None:
@@ -538,10 +611,9 @@ def build_window():
                ("refresh_btn", "Quick refresh", lambda: start(REFRESH), 196, 44),
                ("bridge_btn", "Start bridge", on_bridge, 16, 80),
                ("blacklist_btn", "Blacklist a container", lambda: start(BLACKLIST), 196, 80),
-               ("away_btn", "Put away backpack", lambda: on_put_away("backpack"), 16, 116),
-               ("inbox_btn", "Put away Inbox", lambda: on_put_away("inbox"), 196, 116),
-               ("login_btn", login_text(), on_login, 16, 152),
-               ("close_btn", "Close", on_close, 276, 304)]
+               ("away_btn", "Put away...", on_put_away, 16, 116),
+               ("login_btn", login_text(), on_login, 196, 116),
+               ("close_btn", "Close", on_close, 276, 268)]
     for key, text, fn, x, y in buttons:
         b = call(gumps("CreateSimpleButton"), text, 88 if key == "close_btn" else 168, 28)
         if b is None:

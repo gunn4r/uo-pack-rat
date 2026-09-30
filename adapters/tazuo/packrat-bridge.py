@@ -396,8 +396,8 @@ def check_steps(entries, key, limit, roots, what):
 def check_trip(cmd, now_s):
     """Validate one parsed trip line (app/schema/bridge-trip.v1.schema.json). Returns (trip, reason);
     roots come back keyed by int serial, every name cut to MAX_TRIP_NAME, and queuedAt as `queued`
-    (epoch seconds, fraction dropped) for the stop flag's age check. putAway (Put away from the backpack)
-    comes back True or False, and a putAway trip takes nothing."""
+    (epoch seconds, fraction dropped) for the stop flag's age check. putAway (Put away from the pack) comes
+    back as the picked container's serial or None, and a putAway trip takes nothing."""
     if not isinstance(cmd, dict):
         return None, "queue line is not a JSON object"
     cid, why = check_id(cmd)
@@ -434,9 +434,9 @@ def check_trip(cmd, now_s):
         return None, why
     if not takes and not puts:
         return None, "trip has nothing to do"
-    put_away = cmd.get("putAway", False)
-    if not isinstance(put_away, bool):
-        return None, "putAway is not true or false"
+    put_away = cmd.get("putAway")
+    if put_away is not None and not is_serial(put_away):
+        return None, "putAway is not a container serial"
     if put_away and takes:
         return None, "a Put away trip takes nothing"
     why = check_age(cmd.get("queuedAt"), now_s)
@@ -997,11 +997,11 @@ def do_take(t, it):
     return False, f"move bounced for {name} (too far, or backpack full?)", False
 
 
-def do_put(p, roots, blacklist, loose=False):
+def do_put(p, roots, blacklist, loose=None):
     """One put, the only step that moves an item somewhere other than your backpack, so it is fenced:
-    only an item this bridge took (the carried set) or, on a Put away trip (`loose`, put_away_asked), one
-    lying loose there that is no bag and neither blessed nor insured (loose_problem), from the top of
-    your backpack, into a container
+    only an item this bridge took (the carried set), from the top of your backpack, or on a Put away trip
+    one lying directly in the container the player picked (`loose`, checked by do_trip against the
+    panel's consent) that is no bag and neither blessed nor insured (loose_problem), into a container
     chain whose root lies on the ground (open_chain with no own roots: never your pack, never a pack a
     mobile carries), none of it blacklisted, a corpse or trash (refuse_dest), checked before any walk
     where the client already knows the root."""
@@ -1011,7 +1011,10 @@ def do_put(p, roots, blacklist, loose=False):
         return False, f"refused: {name} was not taken by this bridge — put it away by hand"
     pack = int(API.Backpack)
     it = find(serial)
-    if it is None or int(getattr(it, "Container", 0) or 0) != pack:
+    if serial not in carried:
+        if it is None or int(getattr(it, "Container", 0) or 0) != loose:
+            return False, f"{name} is no longer directly in the container you picked"
+    elif it is None or int(getattr(it, "Container", 0) or 0) != pack:
         carried.discard(serial)
         return False, f"{name} is no longer at the top of your backpack"
     if serial not in carried:
@@ -1187,7 +1190,7 @@ def direct_put(cmd, k, puts, blacklist):
 
 
 def loose_problem(serial, it, name):
-    """What a Put away trip may not put of what lies loose in your backpack, as the app's planner leaves it
+    """What a Put away trip may not put of what lies in the container you picked, as the app's planner leaves it
     out too (app/organize.mts's packItems): a bag (with whatever is in it), or a blessed or insured item.
     A tooltip that reads nothing is refused rather than guessed. Returns the refusal, or ''."""
     if is_container(it, str(getattr(it, "Name", "") or "")):
@@ -1200,15 +1203,29 @@ def loose_problem(serial, it, name):
     return ""
 
 
-def put_away_asked():
-    """Whether Put away was clicked on the Pack Rat panel in this client lately: the panel sets the shared
-    variable PUT_AWAY_VAR to the time its run may last until (epoch seconds). A shared variable lives in
-    the client's memory, so a line written into the queue file alone can never make the bridge put away
-    what lies loose in your backpack (docs/threat-model.md, boundary 13)."""
+def put_away_asked(container):
+    """Whether Put away was clicked on the Pack Rat panel in this client lately, on this container: the
+    panel sets the shared variable PUT_AWAY_VAR to "<container serial>:<epoch seconds the run may last
+    until>". A shared variable lives in the client's memory, so a line written into the queue file alone
+    can never make the bridge put away what you carry (docs/threat-model.md, boundary 13)."""
     try:
-        return float(API.GetSharedVar(PUT_AWAY_VAR)) > time.time()
+        serial, until = str(API.GetSharedVar(PUT_AWAY_VAR)).split(":")
+        return int(serial) == container and float(until) > time.time()
     except Exception:
         return False
+
+
+def in_own_pack(container):
+    """Whether the container is your backpack or a bag at any depth inside it, by the live client."""
+    pack, c = int(API.Backpack), int(container)
+    for _ in range(MAX_CHAIN + 2):
+        if c == pack:
+            return True
+        it = find(c)
+        if it is None or bool(getattr(it, "OnGround", False)):
+            return False
+        c = int(getattr(it, "Container", 0) or 0)
+    return False
 
 
 def do_trip(cmd):
@@ -1219,7 +1236,7 @@ def do_trip(cmd):
     meant to take but did not is skipped. Every step and the trip carry `ms`, the milliseconds they took.
     Returns (ok, msg, {"steps", "partial", "stopped", "ms"})."""
     started = time.time()
-    if cmd["putAway"] and not put_away_asked():
+    if cmd["putAway"] and not (put_away_asked(cmd["putAway"]) and in_own_pack(cmd["putAway"])):
         return False, "refused: click Put away on the Pack Rat panel", {"steps": [], "partial": False, "stopped": False, "ms": 0}
     trip_opened.clear()
     # A flag written after this trip was queued is a Stop pressed while the trip waited its turn, and

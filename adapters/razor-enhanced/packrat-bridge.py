@@ -365,8 +365,8 @@ def check_steps(entries, key, limit, roots, what):
 def check_trip(cmd, now_s):
     """Validate one parsed trip line (app/schema/bridge-trip.v1.schema.json). Returns (trip, reason);
     roots come back keyed by int serial, every name cut to MAX_TRIP_NAME, and queuedAt as `queued`
-    (epoch seconds, fraction dropped) for the stop flag's age check. putAway (Put away from the backpack)
-    comes back True or False, and a putAway trip takes nothing."""
+    (epoch seconds, fraction dropped) for the stop flag's age check. putAway (Put away from the pack) comes
+    back as the picked container's serial or None, and a putAway trip takes nothing."""
     if not isinstance(cmd, dict):
         return None, "queue line is not a JSON object"
     cid, why = check_id(cmd)
@@ -403,9 +403,9 @@ def check_trip(cmd, now_s):
         return None, why
     if not takes and not puts:
         return None, "trip has nothing to do"
-    put_away = cmd.get("putAway", False)
-    if not isinstance(put_away, bool):
-        return None, "putAway is not true or false"
+    put_away = cmd.get("putAway")
+    if put_away is not None and not is_serial(put_away):
+        return None, "putAway is not a container serial"
     if put_away and takes:
         return None, "a Put away trip takes nothing"
     why = check_age(cmd.get("queuedAt"), now_s)
