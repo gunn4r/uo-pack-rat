@@ -166,6 +166,18 @@ test("[fast] a rule's build takes gear by its caster and melee markers, then its
   }
 });
 
+test("[fast] a shield with no caster or melee marker is Tank gear, whatever its resists (issue #123)", () => {
+  const inv = fold([{ serial: A }], [
+    { serial: 0x40002001, name: "Wooden Shield", in: A },
+    { serial: 0x40002002, name: "Heater Shield", in: A, lines: ["Physical Resist 1%"] },
+    { serial: 0x40002003, name: "Metal Kite Shield", in: A, lines: ["Spell Channeling", "Faster Casting -1"] },
+    { serial: 0x40002004, name: "Order Shield", in: A, lines: ["Hit Chance Increase 10"] },
+  ]);
+  assert.deepEqual(Object.values(inv.items).sort((a, b) => a.serial - b.serial).map((it) => [it.name, buildOf(it)]), [
+    ["Wooden Shield", "tank"], ["Heater Shield", "tank"], ["Metal Kite Shield", "caster"], ["Order Shield", "melee"],
+  ]);
+});
+
 test("[fast] every By build marker is a property key or skill the tooltip parser really produces", () => {
   const keys = new Set(PROP_PATTERNS.map(([k]) => k)), skills = new Set(SKILL_NAMES);
   assert.deepEqual([...CASTER_PROPS, ...MELEE_PROPS].filter((k) => !keys.has(k)), []);

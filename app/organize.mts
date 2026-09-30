@@ -108,13 +108,15 @@ export const MELEE_SKILLS = ["swordsmanship", "tactics", "anatomy", "archery", "
 // A piece's summed resists at least this, with no caster or melee marker, is Tank gear.
 const TANK_RESISTS = 20;
 // Which build a piece of gear is: the side with more distinct markers, Hybrid on a tie. A piece with none is Melee when
-// it is a weapon (it has a damage range), else Tank when its resists add up to TANK_RESISTS, else Other.
+// it is a weapon (it has a damage range), else Tank when it is a shield (issue #123: held in the two-handed slot and not
+// a two-handed weapon, as vault-lib classifies shields) or its resists add up to TANK_RESISTS, else Other.
 export function buildOf(it: Item): Build {
   const n = (keys: string[], skills: string[]): number => keys.filter((k) => (k === "mageWeapon" ? !!it.props[k] : (it.props[k] ?? 0) > 0)).length
     + skills.filter((k) => { const v = it.extras[k]; return typeof v === "number" && v > 0; }).length;
   const caster = n(CASTER_PROPS, CASTER_SKILLS) + (it.flags.includes("spell channeling") ? 1 : 0), melee = n(MELEE_PROPS, MELEE_SKILLS);
   if (caster || melee) return caster > melee ? "caster" : melee > caster ? "melee" : "hybrid";
   if (Array.isArray(it.extras["weapon damage"])) return "melee";
+  if (it.slot === "twoHanded" && !it.twoHanded) return "tank";
   return RESIST_KEYS.reduce((sum, k) => sum + (it.props[k] ?? 0), 0) >= TANK_RESISTS ? "tank" : "other";
 }
 

@@ -375,7 +375,7 @@ export function tripRefusal(msg: string): string {
 export const STRATEGY_TEXT: Record<AutoStrategy, { label: string; text: string }> = {
   simple: { label: "Simple", text: "One container for each kind of thing: armour, weapons, jewelry, reagents, scrolls, resources and so on." },
   detailed: { label: "Detailed", text: "Splits each kind further: armour by slot, jewelry by type, reagents by school, power scrolls by level, resources by type. Needs more containers." },
-  build: { label: "By build", text: "Sorts gear by what it is for: caster, melee, hybrid (both equally), tank (resists and neither) and other gear. Everything else is grouped as in Simple." },
+  build: { label: "By build", text: "Sorts gear by what it is for: caster, melee, hybrid (both equally), tank (shields and resist pieces with neither) and other gear. Everything else is grouped as in Simple." },
 };
 // The chests Auto organize may use, by house (a heading only when there is more than one).
 export function candidateGroups(cands: readonly ProposalCandidate[]): Array<{ site: number; title: string | null; rows: ProposalCandidate[] }> {
