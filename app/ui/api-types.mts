@@ -19,7 +19,7 @@ import type { Item, Container, Character, ScanSummary, OptItem, RunSettings, Pro
 import type { Facets, ItemQueryRows, ItemQueryGroups } from "../item-query.mts";
 import type { RulesV1 } from "../schema/types.d.mts";
 import type { AutostartOutcome, Hotkey as PanelHotkey, PanelPrefs } from "../tazuo-panel-prefs.mts";
-import type { OrganizeConfig, RuleMatch } from "../organize-config.mts";
+import type { OrganizeConfig, Origin, RuleMatch } from "../organize-config.mts";
 import type { MissingItem } from "../missing.mts";
 
 // ---------------------------------------------------------------- shared fragments
@@ -424,7 +424,7 @@ export interface BridgeCurrentCommand {
   name?: string | undefined;
 }
 // One step of a trip's result (the bridge's trip action: every take and put it tried, in order).
-export interface TripStepResult { op: "take" | "put"; serial: number; ok: boolean; msg: string }
+export interface TripStepResult { op: "take" | "put"; serial: number; ok: boolean; msg: string; ms?: number | undefined }
 export interface BridgeResultEntry {
   ok: boolean;
   msg: string;
@@ -432,6 +432,7 @@ export interface BridgeResultEntry {
   partial?: boolean | undefined;     // a trip whose take phase ended early (too heavy or too full)
   stopped?: boolean | undefined;     // a trip halted by the stop flag (POST /api/bridge/stop)
   steps?: TripStepResult[] | undefined;
+  ms?: number | undefined;           // how long a trip took, in milliseconds (TazUO 2.9.0 onward)
 }
 export interface BridgeStatusApiResponse {
   ok: boolean;
@@ -449,7 +450,7 @@ export interface BridgeQueueApiResponse {
 // The setup's types come straight from app/organize-config.mts: unlike the modules listed at the top of this
 // file it is pure and imports only item-query.mts's types, so the browser build type-checks it. The plan's
 // types are mirrored from app/organize.mts, which imports server-only code (bridge-trip.mts).
-export type { OrganizeConfig, ContainerLabel, OrganizeRule, RuleMatch, Origin } from "../organize-config.mts";
+export type { OrganizeConfig, ContainerLabel, OrganizeRule, RuleMatch, Origin, Build } from "../organize-config.mts";
 export type PlanWarningKind = "stale-container" | "missing-target" | "missing-label" | "unknown-capacity" | "old-scripts" | "blacklisted" | "no-position" | "not-ground";
 export interface PlanWarning { kind: PlanWarningKind; serial: number; detail: string }
 export interface PlanMove { serial: number; name: string; amount: number; from: number | null; to: number; ruleId: string; alsoMatched: string[]; trip: number }
@@ -471,11 +472,32 @@ export interface OrganizePlan {
 }
 export interface OrganizePreset { id: string; name: string; match: RuleMatch }
 export interface OrganizeApiResponse { ok: boolean; config: OrganizeConfig; problems: string[] }
-export interface OrganizePlanApiResponse { ok: boolean; plan: OrganizePlan }
+// `running`: the trip the server has queued and not heard back about (`picked` = its bridge is running it now).
+export interface OrganizeRunningTrip { id: string; index: number; queuedAt: string; picked: boolean }
+export interface OrganizePlanApiResponse { ok: boolean; plan: OrganizePlan; running: OrganizeRunningTrip | null }
 export interface OrganizePresetsApiResponse { ok: boolean; presets: OrganizePreset[] }
 export interface OrganizeTripApiResponse { ok: boolean; id: string; index: number }
 // POST /api/organize/match: what one rule filter takes of the movable items in labelled roots (app/organize.mts's matchCount).
 export interface OrganizeMatchApiResponse { ok: boolean; count: number; pieces: number; sample: string[] }
+// POST /api/organize/propose (Auto organize): mirrored from app/organize-strategies.mts, which is server-only.
+export type AutoStrategy = "simple" | "detailed" | "build";
+export interface ProposalCandidate { serial: number; name: string; site: number; fill: { items: number; max: number }; label: { name: string; origin: Origin } | null; mine: boolean; ticked: boolean }
+export interface ProposalGroup { key: string; name: string; family: string; ruleIds: string[]; items: number; needSlots: number; targets: number[]; roomSlots: number; shortfall: number; addContainers: number; crossSite: number }
+export interface OrganizeProposal {
+  strategy: AutoStrategy;
+  candidates: ProposalCandidate[];
+  unusable: { serial: number; name: string; reason: string }[];
+  containers: number[];
+  refused: { serial: number; reason: string }[];
+  groups: ProposalGroup[];
+  unassigned: number;
+  addContainers: number;
+  manualRules: number;
+  config: OrganizeConfig;            // the whole setup Accept saves with PUT /api/organize
+  changed: boolean;
+  plan: { moves: number; trips: number; noRoom: number; crossSite: number; unclaimed: number };
+}
+export interface OrganizeProposeApiResponse { ok: boolean; proposal: OrganizeProposal }
 
 // SSE payloads on the shared /api/events stream (ui/events.mts) — mirror vault-server.mts's
 // broadcastEvent("inventory", …) / broadcastEvent("rejected", …) literals (app/watcher.mts's

@@ -421,7 +421,8 @@ def check_line(cmd, actions, now_s):
 
 results = {}                # id -> {ok, msg, t}
 counts = {"done": 0, "failed": 0}
-last_status = {"current": None, "at": 0.0}
+last_status = {"current": None, "at": 0.0, "character": ""}
+pending = []              # validated commands waiting their turn (module-level so write_stopped sees them)
 
 
 # Named like a container (or carrying a bag graphic) but never one: a deed places an addon, a bag of
@@ -470,7 +471,8 @@ def write_status(current=None):
     try:
         items = list(results.items())
         keep = dict(items[-MAX_RESULTS:])
-        write_json_atomic(STATUS, {"alive": rfc3339_now(), "character": str(Player.Name),
+        last_status["character"] = str(Player.Name)
+        write_json_atomic(STATUS, {"alive": rfc3339_now(), "character": last_status["character"],
                                     "current": current, "results": keep, "counts": counts})
     except Exception as e:
         sysmsg("bridge: status write failed: {0}".format(e), ALARM_HUE)
@@ -610,6 +612,8 @@ def open_chain(chain):
 def do_highlight(cmd):
     it = find(cmd["serial"])
     if it is None:
+        if not cmd.get("chain"):         # a container highlighted as itself: nothing was walked to or opened
+            return False, "{0} is not in view -- stand where you can see it and try again".format(cmd.get("name", "item"))
         return False, "{0} is not known to the client here -- is this the right place?".format(cmd.get("name", "item"))
     name = cmd.get("name") or str(getattr(it, "Name", "") or "item")
     targets = [it]
@@ -631,22 +635,25 @@ def do_highlight(cmd):
         Player.HeadMessage(HIGHLIGHT_HUE, "Pack Rat: {0}".format(name))
     except Exception:
         pass
-    t_end = time.time() + HIGHLIGHT_MS / 1000.0
-    while time.time() < t_end and Player.Connected:
-        Misc.Pause(HIGHLIGHT_POLL_MS)
-        heartbeat()
-    for t in targets:
-        s = as_int(getattr(t, "Serial", 0))
-        try:
-            # -1 is Items.SetColor's own documented sentinel for "reset original color" (razorenhanced
-            # readthedocs, Items.SetColor: "color: Int32 Color as number. (default: -1, reset original
-            # color)") -- restoring this way, instead of reading Hue before the highlight and setting
-            # it back by hand, means the client's own true original color always wins, including a
-            # case a captured `Hue` read could get wrong (e.g. an unreadable Hue defaulting to 0 and
-            # then being written back as if 0 -- no hue -- really were the item's original color).
-            Items.SetColor(s, -1)
-        except Exception:
-            pass
+    # finally: the recolour must not outlive an exception, or a Stop that aborts the thread mid-pause (README).
+    try:
+        t_end = time.time() + HIGHLIGHT_MS / 1000.0
+        while time.time() < t_end and Player.Connected:
+            Misc.Pause(HIGHLIGHT_POLL_MS)
+            heartbeat()
+    finally:
+        for t in targets:
+            s = as_int(getattr(t, "Serial", 0))
+            try:
+                # -1 is Items.SetColor's own documented sentinel for "reset original color" (razorenhanced
+                # readthedocs, Items.SetColor: "color: Int32 Color as number. (default: -1, reset original
+                # color)") -- restoring this way, instead of reading Hue before the highlight and setting
+                # it back by hand, means the client's own true original color always wins, including a
+                # case a captured `Hue` read could get wrong (e.g. an unreadable Hue defaulting to 0 and
+                # then being written back as if 0 -- no hue -- really were the item's original color).
+                Items.SetColor(s, -1)
+            except Exception:
+                pass
     return True, "highlighted {0}".format(name)
 
 
@@ -725,11 +732,11 @@ def main():
     offset = os.path.getsize(QUEUE)           # ignore anything queued before we started
     deadline = time.time() + MAX_HOURS * 3600
     next_status = 0
-    pending = []                              # validated commands waiting their turn
     seen = []                                 # ids already executed, oldest first
     spent = []                                # when each accepted command was accepted
     flooded = False
-    sysmsg("Pack Rat bridge up on {0}. Use Highlight / Grab / Go to in the app. Stop the script to end.".format(Player.Name))
+    last_status["character"] = str(Player.Name)
+    sysmsg("Pack Rat bridge up on {0}. Use Highlight / Grab / Go to in the app. Stop the script to end.".format(last_status["character"]))
     # Player.Connected (not a literal True) bounds the loop -- it ends on logout even without an
     # explicit Stop; see README.md's "Stopping the bridge" for what this does and doesn't cover.
     while Player.Connected and time.time() < deadline and not flooded:
@@ -798,15 +805,30 @@ def main():
             write_status(None)
             next_status = time.time() + 2.0
         Misc.Pause(POLL_MS)
+
+
+def write_stopped():
+    """The last status write, `stopped: true`: the app shows the bridge offline and the installer
+    stops waiting out the 30 s heartbeat. Called from a finally so a Stop that aborts the script
+    mid-pause still writes it; every step is guarded so the file is written whatever else fails."""
     for cmd in pending:
-        record(cmd["id"], False, "not run -- the bridge stopped first")
+        try:                  # one at a time: record's SysMsg failing must not skip the rest
+            record(cmd["id"], False, "not run -- the bridge stopped first")
+        except Exception:
+            pass
     try:
-        write_json_atomic(STATUS, {"alive": rfc3339_now(), "character": str(Player.Name),
+        write_json_atomic(STATUS, {"alive": rfc3339_now(), "character": last_status["character"],
                                     "current": None, "results": results, "counts": counts,
                                     "stopped": True})
     except Exception:
         pass
-    sysmsg("Pack Rat bridge stopped.")
+    try:
+        sysmsg("Pack Rat bridge stopped.")
+    except Exception:
+        pass
 
 
-main()
+try:
+    main()
+finally:
+    write_stopped()

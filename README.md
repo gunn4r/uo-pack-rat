@@ -76,7 +76,7 @@ The routine:
 
 - **First time on a character, or when your chests change:** stand next to a group of chests and run the scanner; repeat at each group. For your bank, open the bank box and run it there.
 - **After gearing up or training:** run the quick refresh.
-- **To find or fetch an item:** start the bridge, then use the buttons on the item in **Inventory** or **Suit Builder**. **Highlight** marks it and its container in game, **Go to** walks you to its chest, **Grab** walks there and puts it in your backpack.
+- **To find or fetch an item:** start the bridge, then use the buttons on the item in **Inventory** or **Suit Builder**. **Highlight** marks it and its container in game, **Go to** walks you to its chest, **Grab** walks there and puts it in your backpack. To find a chest itself, use **Highlight in game** in its ⋯ menu under Inventory › Containers.
 
 Scans show up in **Inventory** within a few seconds; you don't have to press anything in the app. **Characters** shows each character's sheet and paperdoll, and **Suit Builder** finds the best suit for a character from everything you own, with saved runs you can reopen and compare.
 
@@ -85,6 +85,8 @@ In TazUO, start a script from the in-game panel, or from the Script Manager (**L
 ### Organize
 
 Organize gives every item in your house a home. Label the chests that are yours (Inventory › Containers, ⋯ › Label…), then add rules on the **Organize** screen: start from a preset such as Magery reagents or Rings, or save the Inventory's current filters as a rule, and pick the containers each rule fills, in order: your labelled chests, or a bag inside one. While you edit a rule it says how many of your items it matches. Items go to the first rule they match; anything no rule takes stays put, or goes to the container you pick for everything else.
+
+**Auto organize** does the setting up for you. Press **Auto organize…** on the Organize screen, choose **Simple** (one container for each kind of thing: armour, weapons, jewelry, reagents, scrolls, resources and so on), **Detailed** (armour by slot, reagents by school, power scrolls by level, resources by type) or **By build** (gear sorted into Caster, Melee, Hybrid, Tank and Other gear by its properties, everything else as in Simple), and tick the chests it may use. It gives each group the chest that already holds most of it, adds more chests when a group is too big for one, lets the small groups of one kind share a chest when there are fewer chests than groups, and shows the proposal before anything is saved: which chest each group gets, what does not fit and how many more chests to place, and how many items will move. **Accept** labels the ticked chests and writes ordinary rules marked Auto, which you can edit like any other (an edited rule is yours from then on). Your own rules stay above Auto's, your own labels are never renamed, and running Auto organize again on a house it has already sorted changes nothing.
 
 Pack Rat then shows the plan before anything moves: what does not fit and how many slots are missing, what belongs at another house, and the trips. With the TazUO client, **Run trip** carries one trip out in game while you watch (**Run all** goes on trip by trip, **Stop** halts after the current step); with other clients the plan tells you what to move by hand. Only labelled containers are ever touched, a pinned container is never emptied or filled, and an item the server refuses to move can be pinned where it is.
 

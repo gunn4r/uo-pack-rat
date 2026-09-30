@@ -2,6 +2,7 @@
 // container in the same dense table the Items view uses, grouped by character with the ground
 // containers last, a Fill column (each container's Contents line), and a row "⋯" menu with "Show these items",
 // "Show missing items" (a root with items missing since its last scan, which also shows a badge; issue #99),
+// "Highlight in game" (ground containers; the bridge's highlight with the container as its target, issue #10),
 // "Label…" / "Edit label…" (ground containers not blacklisted; Organize, issue #11), "Blacklist…" (ground
 // containers) and "Forget…". A container labelled for Organize shows its label, colour and Pinned. The Forget and Blacklist handlers call `reload` from app.mts — a module cycle (containers
 // ↔ app) that is fine here since both are function declarations only called after bootstrap. reload(),
@@ -15,11 +16,12 @@ import { api } from "./api.mts";
 import { txt, box, button, confirmDialog, menu, tableFoot, input, select, switchControl, field, message, openDialog, meter, tag } from "./components.mts";
 import { relativeWhen, errorText } from "./messages.mts";
 import { loadOrganize, saveConfig } from "./organize-data.mts";
-import { withLabel, withoutLabel, LABEL_COLOURS, fillTone } from "./organize-model.mts";
+import { withLabel, withoutLabel, pinNote, LABEL_COLOURS, fillTone } from "./organize-model.mts";
 import { plural } from "./inv-model.mts";
 import { reload } from "./app.mts";
 import { showContainer, splitSerial } from "./inventory.mts";
-import type { ForgetApiResponse, MissingApiResponse } from "./api-types.mts";
+import { bridgeActionReason, runBridgeAction } from "./bridge.mts";
+import type { ForgetApiResponse, MissingApiResponse, OrganizeConfig } from "./api-types.mts";
 
 const KIND_NAMES: Record<string, string> = { backpack: "Backpack", bank: "Bank", ground: "On the ground" };
 // Same total width as before the Fill column, so the table still fits a 1000 px window without scrolling.
@@ -56,18 +58,24 @@ async function labelContainer(r: Container): Promise<void> {
   const problem = el("div", {});
   let dlg: { close: () => void } | null = null;
   const fail = (text: string): void => { problem.replaceChildren(message({ tone: "bad", text })); };
+  // The setup as saved now, not as it was when the dialog opened (Auto organize or another window may have added a
+  // rule that fills this chest since): what a pin or a removal takes the chest off (issue #123).
+  const current = async (): Promise<OrganizeConfig> => {
+    try { await loadOrganize(); } catch { /* the setup the dialog opened with */ }
+    return state.organize.config ?? cfg;
+  };
   const save = async (): Promise<void> => {
     const n = name.value.trim();
     if (!n || n.length > 64) { fail("Give the label a name, up to 64 characters."); name.focus(); return; }
-    const { config, dropped } = withLabel(cfg, { serial: +r.serial, name: n, ...(colour.value ? { color: colour.value } : {}), ...(pin.input.checked ? { pinned: true } : {}), origin: "manual" });
-    if (dropped.length && !await confirmDialog({ title: `Pin ${n}?`, body: `Nothing is ever put into a pinned container, so it comes off ${dropped.join(", ")}.`, confirmLabel: `Pin ${n}`, danger: false })) return;
+    const { config, dropped } = withLabel(await current(), { serial: +r.serial, name: n, ...(colour.value ? { color: colour.value } : {}), ...(pin.input.checked ? { pinned: true } : {}), origin: "manual" });
+    if (dropped.length && !await confirmDialog({ title: `Pin ${n}?`, body: pinNote(n, dropped), confirmLabel: `Pin ${n}`, danger: false })) return;
     const err = await saveConfig(config);
     if (err) { fail(err); return; }
     dlg?.close();
     toast(`${n} is labelled for Organize.`, "good");
   };
   const remove = async (): Promise<void> => {
-    const { config, dropped } = withoutLabel(cfg, +r.serial);
+    const { config, dropped } = withoutLabel(await current(), +r.serial);
     if (!await confirmDialog({ title: `Remove the label from ${shown}?`, body: dropped.length ? `Organize stops using it, and it comes off ${dropped.join(", ")}.` : "Organize stops using it: nothing is taken from it or put into it.", confirmLabel: "Remove label" })) return;
     const err = await saveConfig(config);
     if (err) { fail(err); return; }
@@ -146,8 +154,11 @@ export function renderContainers(): void {
       const bags = Object.values(inv.containers).filter((c) => c.root === r.serial && c.parent != null).length;
       const canLabel = r.kind === "ground" && !state.organize.blacklist.includes(+r.serial);
       const missing = inv.missingCounts[r.serial] || 0;
+      // The container is the target, named in game as this row names it (no chain: a root has no parent).
+      const target = { serial: +r.serial, name, container: null, root: r.root };
       const more = button({ label: `Actions for ${label}`, icon: "more", iconOnly: true, variant: "ghost", size: "sm", onClick: () => menu(more, [
         { label: "Show these items", icon: "inventory", onSelect: () => showContainer(+r.serial) },
+        ...(r.kind === "ground" ? [{ label: "Highlight in game", icon: "highlight" as const, disabled: bridgeActionReason("highlight", target), onSelect: () => { void runBridgeAction("highlight", target); } }] : []),
         ...(missing ? [{ label: "Show missing items", onSelect: () => { void showMissing(r, label); } }] : []),
         ...(canLabel ? [{ label: lab ? "Edit label…" : "Label…", onSelect: () => { void labelContainer(r); } }] : []),
         ...(r.kind === "ground" ? [{ label: "Blacklist…", onSelect: () => { void blacklist(r, label, n); } }] : []),

@@ -518,6 +518,50 @@ test("[slow] the character sheet's shown properties are chosen in a popover and 
   }
 });
 
+// Durability watch (issue #98): Dorran's Armor Of Initiation scanned at 12 of 150 durability gets a "Low
+// durability 12/150" badge on its slot tile, inside the tile, and the sheet a one-line summary; Kestrel, with nothing
+// low, gets neither; the roster badges "1 low" beside Dorran's name, in the sticky Character column.
+test("[slow] a worn piece low on durability is badged on the sheet and beside its character's name on the roster", async (t) => {
+  const why = unavailable();
+  if (why) return t.skip(why);
+  const dataDir = seedDataDir("packrat-ui-durability-");
+  const scan = join(dataDir, "scans", "demo-Dorran.json");
+  writeFileSync(scan, readFileSync(scan, "utf8").replace('"Durability 150 / 150"', '"Durability 12 / 150"'));
+  const { app, page, errors } = await launch(dataDir);
+  try {
+    await page.locator("#inv-table tbody tr.item").first().waitFor({ timeout: 30_000 });
+    await page.evaluate(() => { location.hash = "#/characters/Dorran"; });
+    await page.waitForSelector('#tab-characters .sheet[data-character="Dorran"]', { timeout: 10_000 });
+    const badges = page.locator("#tab-characters .sheet .slot > .badge.warn");
+    assert.deepEqual(await badges.allInnerTexts(), ["Low durability 12/150"]);
+    const tile = page.locator('#tab-characters .slot[data-serial="1879834625"]');
+    assert.equal(await tile.locator(".badge.warn").innerText(), "Low durability 12/150", "the badge is on the low piece's own tile");
+    const [tb, bb] = [await tile.boundingBox(), await tile.locator(".badge.warn").boundingBox()];
+    assert.ok(tb && bb && bb.x >= tb.x && bb.x + bb.width <= tb.x + tb.width + 0.5, `the badge fits inside its tile (tile ${JSON.stringify(tb)}, badge ${JSON.stringify(bb)})`);
+    assert.equal(await page.locator("#char-body > .msg.warn").innerText(), "1 worn piece is low on durability");
+    await page.evaluate(() => { location.hash = "#/characters/Kestrel"; });
+    await page.waitForSelector('#tab-characters .sheet[data-character="Kestrel"]', { timeout: 10_000 });
+    assert.equal(await badges.count(), 0, "nothing low, no badge");
+    assert.equal(await page.locator("#char-body > .msg.warn").count(), 0, "nothing low, no summary");
+    await page.evaluate(() => { location.hash = "#/characters"; });
+    await page.waitForSelector("#char-table", { timeout: 10_000 });
+    const nameCell = page.locator('#char-table tr[data-name="Dorran"] td:first-child');
+    const low = nameCell.getByRole("img", { name: "1 worn piece is low on durability" });
+    assert.equal(await low.innerText(), "1 low", "the badge sits beside the name");
+    const [cb, lb] = [await nameCell.boundingBox(), await low.boundingBox()];
+    const viewport = page.viewportSize() ?? await page.evaluate(() => ({ width: innerWidth, height: innerHeight }));
+    assert.ok(cb && lb && lb.x >= cb.x && lb.x + lb.width <= cb.x + cb.width + 0.5 && lb.x + lb.width <= viewport.width,
+      `the badge is inside the sticky Character cell and on screen without scrolling (cell ${JSON.stringify(cb)}, badge ${JSON.stringify(lb)}, viewport ${JSON.stringify(viewport)})`);
+    await low.focus();
+    assert.equal(await page.getByRole("tooltip").innerText(), "1 worn piece is low on durability");
+    assert.equal(await page.locator('#char-table tr[data-name="Kestrel"] .badge').count(), 0, "nothing low, no badge");
+    assert.deepEqual(errors, []);
+  } finally {
+    await app.close();
+    rmSync(dataDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
+  }
+});
+
 // Inventory columns resize from the keyboard (issue #46): → on a header's resize handle widens the header
 // and the rows' cells with it, and table settings' "Reset column widths" puts the default back.
 test("[slow] an Inventory column is resized with the keyboard and reset in table settings", async (t) => {
@@ -717,6 +761,54 @@ test("[slow] a container with items missing since its last scan shows a badge an
     await dialog.waitFor({ state: "detached", timeout: 10_000 });
     assert.deepEqual(errors, []);
   } finally {
+    await app.close();
+    rmSync(dataDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
+  }
+});
+
+// Highlight in game (issue #10): a ground container's row menu queues the bridge's highlight for the container
+// itself, with no chain (nothing to open) and its scanned tile; offline, the item is disabled with the reason.
+test("[slow] Highlight in game queues a highlight for a ground container, and is disabled while the bridge is offline", async (t) => {
+  const why = unavailable();
+  if (why) return t.skip(why);
+  const dataDir = seedDataDir("packrat-ui-highlight-");
+  const bridgeDir = join(dataDir, "bridge", "tazuo");
+  mkdirSync(bridgeDir, { recursive: true });
+  const { app, page, errors } = await launch(dataDir);
+  let alive: NodeJS.Timeout | undefined;
+  try {
+    await openTab(page, "containers");
+    const row = page.locator("#cont-table tbody tr[data-root]").last();   // the demo's roots are all ground containers
+    await row.waitFor({ timeout: 15_000 });
+    const serial = Number(await row.getAttribute("data-root"));
+    const item = page.getByRole("menuitem", { name: "Highlight in game" });
+    await row.getByRole("button", { name: /^Actions for / }).click();
+    assert.equal(await item.getAttribute("aria-disabled"), "true");
+    assert.match(await item.getAttribute("title") || "", /^Bridge offline/);
+    await page.keyboard.press("Escape");
+
+    // The bridge, as far as the page can tell: a status file refreshed every second.
+    const writeStatus = (): void => writeFileSync(join(bridgeDir, "status.json"), JSON.stringify({ alive: new Date().toISOString(), character: "Tester", current: null, counts: { done: 0, failed: 0 }, results: {} }));
+    writeStatus();
+    alive = setInterval(writeStatus, 1000);
+    await page.waitForFunction(() => document.querySelector("#bridge")?.getAttribute("data-state") === "ready", undefined, { timeout: 15_000 });
+    await row.getByRole("button", { name: /^Actions for / }).click();
+    await item.click();
+    const queue = join(bridgeDir, "queue.jsonl");
+    const end = Date.now() + 10_000;
+    let lines: string[] = [];
+    while (!lines.length && Date.now() < end) {
+      await page.waitForTimeout(100);
+      try { lines = readFileSync(queue, "utf8").trim().split("\n").filter(Boolean); } catch { /* not written yet */ }
+    }
+    assert.equal(lines.length, 1, "one command queued");
+    const cmd = JSON.parse(lines[0]!) as { action: string; serial: number; name: string; chain: number[]; pos: { x: number; y: number } | null };
+    assert.deepEqual([cmd.action, cmd.serial, cmd.chain], ["highlight", serial, []]);
+    assert.equal(cmd.name, "Metal Chest");
+    assert.deepEqual([cmd.pos?.x, cmd.pos?.y], [1000, 1000]);
+    assert.deepEqual(errors, []);
+  } finally {
+    clearInterval(alive);
     await app.close();
     rmSync(dataDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
   }

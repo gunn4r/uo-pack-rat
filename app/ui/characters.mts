@@ -3,14 +3,14 @@
 // #/characters/<Name> (the sheet itself is sheet.mts's sheetNode, shared with the Suit Builder).
 import { state } from "./store.mts";
 import { $, el, toast, tipNode, hideItemTip, compactChildren } from "./dom.mts";
-import { txt, box, button, meter, table, searchInput, message, popover, menu, confirmDialog, type Column } from "./components.mts";
+import { txt, box, badge, button, meter, table, searchInput, message, popover, menu, confirmDialog, tooltip, type Column } from "./components.mts";
 import { api } from "./api.mts";
 import { reload } from "./app.mts";
 import { selectCharacter } from "./builder.mts";
 import { showCharacterItems, showItem } from "./inventory.mts";
 import { openWizard } from "./wizard.mts";
 import { relativeWhen } from "./messages.mts";
-import { sheetNode, wornSet, resistFigures, atCap, plural, type ResistFigure, type SheetItem } from "./sheet.mts";
+import { sheetNode, wornSet, resistFigures, atCap, plural, lowDurabilityCount, lowDurabilitySummary, type ResistFigure, type SheetItem } from "./sheet.mts";
 import type { Item } from "../vault-lib.mts";
 import type { RunsListApiResponse } from "./api-types.mts";
 import { rosterView, triple, type RosterRow, type RosterSort } from "./roster.mts";
@@ -31,6 +31,7 @@ function rosterRows(): RosterRow[] {
       pools: [num(mx.hits), num(mx.stam), num(mx.mana)],
       resists: c ? resistFigures(name, wornSet(name)) : null,
       worn: (state.inv!.worn[name] || []).length,
+      lowDurability: lowDurabilityCount(state.inv!.worn[name] || []),
     };
   });
 }
@@ -89,6 +90,18 @@ function resistCell(f: ResistFigure): HTMLElement {
   const full = atCap(f.value, f.cap);
   return box("span", { class: "res-cell" }, txt(f.value, full ? "strong at-cap" : ""), meter(f.value, f.cap, { tone: full ? "ok" : undefined, label: `${f.label} resist ${f.value} of ${f.cap}` }));
 }
+// The Character cell: the name, and a "2 low" badge beside it when worn pieces are low on durability, so the
+// warning stays in the sticky column however far the table scrolls. Its sentence is the badge's name and tooltip.
+function nameCell(r: RosterRow): HTMLElement {
+  const link = el("a", { class: "char-link strong", href: sheetHash(r.name) }, r.name);
+  const summary = lowDurabilitySummary(r.lowDurability);
+  if (!summary) return link;
+  const low = badge(`${r.lowDurability} low`, "warn");
+  low.tabIndex = 0;
+  low.setAttribute("role", "img");
+  low.setAttribute("aria-label", summary);
+  return box("span", { class: "char-name" }, link, tooltip(low, summary));
+}
 function renderRoster(): void {
   const all = rosterRows();
   topbar().replaceChildren(el("h1", { id: "h-characters" }, "Characters"), txt(`${Object.keys(state.inv!.characters).length} scanned`, "t-sm muted"), el("span", { class: "spacer" }), search.root);
@@ -107,7 +120,7 @@ function renderRoster(): void {
   const t = table({ label: "Characters", columns, rows: rows.map((r) => ({
     attrs: { "data-name": r.name },
     cells: [
-      el("a", { class: "char-link strong", href: sheetHash(r.name) }, r.name),
+      nameCell(r),
       r.scannedAt ? txt(relativeWhen(r.scannedAt)) : txt("Not scanned", "muted"),
       txt(triple(r.stats)), txt(triple(r.pools)),
       ...(r.resists ? r.resists.map(resistCell) : [null, null, null, null, null]),
@@ -171,7 +184,9 @@ function renderSheet(name: string): void {
     body().replaceChildren(message({ tone: "info", text: `${name} has a saved Suit Builder profile but hasn't been scanned. Scan ${name} in game to fill in the sheet.` }));
     return;
   }
-  body().replaceChildren(metaLine(name), sheetNode(name, wornSet(name), null, { onSlot: slotDetail }));
+  const low = lowDurabilitySummary(lowDurabilityCount(state.inv!.worn[name] || []));
+  body().replaceChildren(...compactChildren([metaLine(name), low ? message({ tone: "warn", text: low }) : null,
+    sheetNode(name, wornSet(name), null, { onSlot: slotDetail })]));
 }
 
 // A character deleted, renamed or moved off the account would otherwise keep its row and its worn set

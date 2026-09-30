@@ -1128,7 +1128,8 @@ test("[fast] a job that throws inside the optimizer logs its stack with a ref; t
     });
     const { id } = asJson<OptimizeJobResponse>(await r.json());
     let status: OptimizeJobResponse | undefined;
-    for (let i = 0; i < 50; i++) {
+    // A deadline, not a fixed count: the worker thread can take over a second to start on a slow CI runner (#112).
+    for (const end = Date.now() + 10_000; Date.now() < end;) {
       status = asJson<OptimizeJobResponse>(await (await fetch(s2.url + `/api/optimize/${id}/status`)).json());
       if (status.state !== "running") break;
       await new Promise((res) => setTimeout(res, 20));
