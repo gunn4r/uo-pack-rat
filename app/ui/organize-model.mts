@@ -13,9 +13,11 @@ import { activeFilters, plural } from "./inv-model.mts";
 import type { FilterContext } from "./inv-model.mts";
 import type { BridgeResultEntry, Build, SpellSchool, ContainerLabel, OrganizeConfig, OrganizeMatchApiResponse, OrganizePlan, OrganizeRule, PlanMove, PlanRuleReport, PlanWarning, PlanWarningKind, RuleMatch, AutoStrategy, OrganizeProposal, ProposalCandidate, ProposalGroup, OrganizeRunningTrip } from "./api-types.mts";
 
-// The ruleId the plan reports the catch-all under (app/organize-config.mts's CATCH_ALL_ID; a value import from
-// there would add a second server module to the page for one string, so the test pins the two together).
+// The ruleIds the plan reports the catch-all and the gathered empty bags under (app/organize-config.mts's
+// CATCH_ALL_ID and EMPTY_BAGS_ID; a value import from there would add a second server module to the page for two
+// strings, so the test pins them together).
 export const CATCH_ALL_ID = "catch-all";
+export const EMPTY_BAGS_ID = "empty-bags";
 const BASE: ItemQuery = parseItemQuery(new URLSearchParams());
 
 // Label colours offered by Label…: a swatch beside the label, never text colour, so contrast is not at stake.
@@ -37,7 +39,7 @@ export function moveRule(cfg: OrganizeConfig, from: number, to: number): Organiz
   const rules = moveIn(cfg.rules, from, to);
   return rules === cfg.rules ? cfg : { ...cfg, rules: [...rules] };
 }
-// A container off every rule's targets and off the catch-all: what unlabelling or pinning it needs, since the
+// A container off every rule's targets, the catch-all and the gather container: what unlabelling or pinning it needs, since the
 // server refuses a target that is unlabelled or pinned. `dropped` names what it came off, for the confirmation.
 function dropTarget(cfg: OrganizeConfig, serial: number): { config: OrganizeConfig; dropped: string[] } {
   const dropped: string[] = [];
@@ -47,7 +49,8 @@ function dropTarget(cfg: OrganizeConfig, serial: number): { config: OrganizeConf
     return { ...r, targets: r.targets.filter((t) => t !== serial) };
   });
   if (cfg.catchAll === serial) dropped.push("Everything else");
-  return { config: { ...cfg, rules, catchAll: cfg.catchAll === serial ? null : cfg.catchAll }, dropped };
+  if (cfg.emptyBagsTo === serial) dropped.push("Empty bags");
+  return { config: { ...cfg, rules, catchAll: cfg.catchAll === serial ? null : cfg.catchAll, ...(cfg.emptyBagsTo === serial ? { emptyBagsTo: null } : {}) }, dropped };
 }
 export function withLabel(cfg: OrganizeConfig, label: ContainerLabel): { config: OrganizeConfig; dropped: string[] } {
   const next = { ...cfg, labels: { ...cfg.labels, [String(label.serial)]: label } };
@@ -242,7 +245,7 @@ export function labelledPlaces(containers: Readonly<Record<string, ContainerLike
 }
 
 // ---------------------------------------------------------------- the plan
-export const ruleNameOf = (cfg: OrganizeConfig) => (id: string): string => (id === CATCH_ALL_ID ? "Everything else" : cfg.rules.find((r) => r.id === id)?.name ?? id);
+export const ruleNameOf = (cfg: OrganizeConfig) => (id: string): string => (id === CATCH_ALL_ID ? "Everything else" : id === EMPTY_BAGS_ID ? "Empty bags" : cfg.rules.find((r) => r.id === id)?.name ?? id);
 export const containerNameOf = (cfg: OrganizeConfig, containers: Readonly<Record<string, ContainerLike>>) => (serial: number): string => targetView(serial, cfg, containers).name;
 const n = (x: number): string => x.toLocaleString("en-US");
 export function ruleCountParts(rep: PlanRuleReport): Array<{ text: string; warn: boolean }> {
@@ -270,6 +273,7 @@ const WARNING_TITLES: Record<PlanWarningKind, string> = {
   "blacklisted": "Blacklisted: nothing is taken from it or put into it",
   "no-position": "No position scanned, so the bridge cannot walk to it",
   "not-ground": "Not a container on the ground",
+  "nearly-full": "Nearly full: add another container before the next loot run",
 };
 // The plan's warnings (sorted by kind, then serial, by the planner) as one message per kind; the scan times the
 // planner writes into a detail ("last scanned 2026-01-01T12:00:00-07:00") read as dates.
@@ -278,6 +282,15 @@ export function warningGroups(warnings: readonly PlanWarning[], nameOf: (serial:
   const by = new Map<PlanWarningKind, PlanWarning[]>();
   for (const w of warnings) by.set(w.kind, [...(by.get(w.kind) || []), w]);
   return [...by].map(([kind, ws]) => ({ kind, title: ws.length > 1 ? `${WARNING_TITLES[kind]} (${ws.length})` : WARNING_TITLES[kind], text: ws.map((w) => `${nameOf(w.serial)}: ${w.detail.replace(STAMP, "$1")}`).join(" · ") }));
+}
+// The empty bags in labelled containers (issue #128), each still taking one of its container's item slots: how
+// many, a few by name and place, and what gathering them does. Null when there are none.
+export function emptyBagsNote(plan: Pick<OrganizePlan, "emptyBags">, gathering: boolean, nameOf: (serial: number) => string): { title: string; text: string } | null {
+  const bags = plan.emptyBags, k = bags.length;
+  if (!k) return null;
+  const some = bags.slice(0, 5).map((b) => `${b.name} (in ${nameOf(b.container)})`).join(", ") + (k > 5 ? ` and ${k - 5} more` : "");
+  const what = gathering ? `The trips below gather ${k === 1 ? "it" : "them"} into the container picked for Empty bags under Rules.` : "To free those slots, pick a container for Empty bags under Rules, and the plan gathers them there.";
+  return { title: `${plural(k, "empty bag")} in your labelled containers`, text: `${some}. Each takes one of its container's item slots. ${what}` };
 }
 // One row per trip for the collapsed trip list; its moves go into a table only when the row is opened.
 export interface TripRow { index: number; site: number; moves: PlanMove[]; text: string }

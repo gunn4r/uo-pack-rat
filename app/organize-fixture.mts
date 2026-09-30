@@ -83,5 +83,5 @@ export function maxOrganizeConfig(): OrganizeConfig {
       build: "hybrid" as const,
     },
   }));
-  return { version: 1, labels, rules, catchAll: serials[0]!, pinnedItems: serials.slice(0, LIMITS.pinnedItems).concat(Array.from({ length: LIMITS.pinnedItems - LIMITS.labels }, (_, i) => 1 + i)) };
+  return { version: 1, labels, rules, catchAll: serials[0]!, emptyBagsTo: serials[1]!, pinnedItems: serials.slice(0, LIMITS.pinnedItems).concat(Array.from({ length: LIMITS.pinnedItems - LIMITS.labels }, (_, i) => 1 + i)) };
 }

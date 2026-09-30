@@ -4,12 +4,12 @@
 // (GET /api/organize/plan, POST /api/organize/trip) hands everything in.
 import { matchesItem } from "./item-query.mts";
 import { parseStamp } from "./scan-schema.mts";
-import { CATCH_ALL_ID, type Build, type OrganizeConfig, type RuleMatch } from "./organize-config.mts";
+import { CATCH_ALL_ID, EMPTY_BAGS_ID, type Build, type OrganizeConfig, type RuleMatch } from "./organize-config.mts";
 import { RESIST_KEYS, spellSchoolOf, TRASH_RE, type ContainerCapacity, type Inventory, type Item } from "./vault-lib.mts";
 import type { RulesV1RarityItem } from "./schema/types.d.mts";
 import type { TripInput } from "./bridge-trip.mts";
 
-export type WarningKind = "stale-container" | "missing-target" | "missing-label" | "unknown-capacity" | "old-scripts" | "blacklisted" | "no-position" | "not-ground";
+export type WarningKind = "stale-container" | "missing-target" | "missing-label" | "unknown-capacity" | "old-scripts" | "blacklisted" | "no-position" | "not-ground" | "nearly-full";
 export interface PlanWarning { kind: WarningKind; serial: number; detail: string }
 
 // A container last scanned longer ago than this is warned about, and still planned: the bridge rechecks live
@@ -85,6 +85,30 @@ export function scopeOf(inv: Inventory, cfg: OrganizeConfig, { now, blacklist = 
     return !!chain && chain.at(-1) === +it.root && !chain.some((s) => pinned.has(s) || black.has(s) || inv.containers[s]!.opened === false);
   }).map((it) => +it.serial).sort(bySerial);
   return { roots: [...roots].sort(bySerial), siteRoots: [...siteRoots].sort(bySerial), movable, usable, warnings };
+}
+
+// Issue #128: the bags trips leave behind. Organize moves items out of the bags inside a chest into their rule's
+// chest, never the bag itself, and each empty bag still takes one of the chest's item slots. An empty bag is an
+// unlabelled bag (so never a rule's target, the catch-all or the gather container) that is not a pinned item or
+// blacklisted, holds nothing as the view stands (`inv` and `counts` after applyOverlay: nothing is filed in it and
+// its Contents line, when it has one, reads 0), and sits in one of `roots` (scopeOf's labelled ground roots) with
+// nothing pinned, blacklisted or unopened around it. A bag the newest scan could not open is never one: its
+// contents are unknown, not nothing. `container` is the bag's place as the overlay has it. Serial order.
+export interface EmptyBag { serial: number; name: string; container: number }
+export function emptyBagsOf(inv: Inventory, counts: Map<number, ContainerCapacity>, cfg: OrganizeConfig, roots: readonly number[], blacklist: readonly number[] = []): EmptyBag[] {
+  const inRoots = new Set(roots), black = new Set(blacklist), pinnedItems = new Set(cfg.pinnedItems);
+  const pinned = new Set(Object.values(cfg.labels).filter((l) => l.pinned).map((l) => l.serial));
+  const holding = new Set(Object.values(inv.items).flatMap((it) => (it.container == null ? [] : [+it.container])));
+  const out: EmptyBag[] = [];
+  for (const it of Object.values(inv.items)) {
+    const s = +it.serial, c = inv.containers[s];
+    if (!c || it.kind !== "container" || it.container == null || it.root == null || !inRoots.has(+it.root) || cfg.labels[String(s)] || pinnedItems.has(s) || black.has(s)
+      || c.opened === false || holding.has(s) || (counts.get(s)?.items ?? 0) > 0) continue;
+    const chain = ancestry(inv, it.container);
+    if (!chain || chain.at(-1) !== +it.root || chain.some((a) => pinned.has(a) || black.has(a) || inv.containers[a]!.opened === false)) continue;
+    out.push({ serial: s, name: it.name, container: +it.container });
+  }
+  return out.sort((a, b) => a.serial - b.serial);
 }
 
 const STACK_COUNT = /^\d[\d,]*\s+/;
@@ -390,6 +414,7 @@ export interface Plan {
   warnings: PlanWarning[];
   carried: Carried[];
   unclaimed: number;
+  emptyBags: EmptyBag[];   // emptyBagsOf's, less those already in the gather container
 }
 export interface PlanOptions extends ScopeOptions {
   rarity?: RulesV1RarityItem[] | undefined;
@@ -399,6 +424,8 @@ export interface PlanOptions extends ScopeOptions {
 }
 // tripStones is conservative: scans record no carry weight. tripBytes stays under the bridge's 16 KB line limit.
 export const TRIP_DEFAULTS = { items: 20, stones: 150, bytes: 12 * 1024 } as const;
+// A target past this share of its item or stone cap after the plan is warned about (issue #128).
+export const NEARLY_FULL = 0.9;
 
 interface Want { it: Item; ruleId: string; alsoMatched: string[]; chain: number[]; from: number | null }
 interface Limits { items: number; stones: number; bytes: number }
@@ -490,9 +517,11 @@ export function planOrganize(inv: Inventory, cfg: OrganizeConfig, overlay: Overl
   const rarity = opts.rarity ?? [];
   const chains = new Map<string, number[]>(cfg.rules.map((r) => [r.id, r.targets]));
   if (cfg.catchAll != null) chains.set(CATCH_ALL_ID, [cfg.catchAll]);
+  const gather = cfg.emptyBagsTo ?? null;
+  if (gather != null) chains.set(EMPTY_BAGS_ID, [gather]);
   const ids = [...chains.keys()];
   const rank = new Map(ids.map((id, i) => [id, i]));
-  const nameOf = (id: string): string => (id === CATCH_ALL_ID ? "The catch-all" : `Rule "${cfg.rules.find((r) => r.id === id)!.name}"`);
+  const nameOf = (id: string): string => (id === CATCH_ALL_ID ? "The catch-all" : id === EMPTY_BAGS_ID ? "Gathering empty bags" : `Rule "${cfg.rules.find((r) => r.id === id)!.name}"`);
   const blocked = new Set<string>();
   for (const [id, targets] of chains) {
     for (const t of targets) {
@@ -514,9 +543,14 @@ export function planOrganize(inv: Inventory, cfg: OrganizeConfig, overlay: Overl
   // A carried item is put away unless it has been pinned since (the page's answer to a put the server refuses).
   const pinnedItems = new Set(cfg.pinnedItems);
   const candidates = [...new Set([...scope.movable, ...[...carried].filter((s) => view.items[s] && !pinnedItems.has(s))])].sort(bySerial);
-  for (const serial of candidates) {
+  // Empty bags go to the gather container like one rule's items (issue #128); so does a bag a trip took and did
+  // not put away. Without a gather container they stay where they are.
+  const bags = emptyBagsOf(view, placed.counts, cfg, scope.roots, opts.blacklist);
+  const bagClaim: Claim | null = gather != null ? { ruleId: EMPTY_BAGS_ID, alsoMatched: [] } : null;
+  const claims: [number, Claim | null][] = candidates.map((s) => [s, view.containers[s] && bagClaim ? bagClaim : claimOf(view.items[s]!, cfg, rarity)]);
+  if (bagClaim) claims.push(...bags.map((b): [number, Claim] => [b.serial, bagClaim]));
+  for (const [serial, claim] of claims) {
     const it = view.items[serial]!;
-    const claim = claimOf(it, cfg, rarity);
     if (!claim) { unclaimed++; continue; }
     const rep = report.get(claim.ruleId)!;
     rep.matched++;
@@ -566,6 +600,23 @@ export function planOrganize(inv: Inventory, cfg: OrganizeConfig, overlay: Overl
     for (const w of packed.noRoom) report.get(w.ruleId)!.noRoom++;
   }
   for (const m of moves) report.get(m.ruleId)!.toMove++;
+  // Issue #128: a target over NEARLY_FULL of its item or stone cap once the plan has run, with no later target of
+  // the same rule under it to take the overflow, is warned about before the next loot fills it; the empty bags
+  // left in it are counted, since gathering them frees their slots.
+  const moved = new Set(moves.map((m) => m.serial));
+  const over = (t: number): boolean => { const c = sim.counts.get(t); return !!c && (c.items > NEARLY_FULL * c.maxItems || (c.maxStones != null && (c.stones ?? 0) > NEARLY_FULL * c.maxStones)); };
+  const fillers = new Map<number, string[]>();
+  for (const [id, targets] of chains) {
+    const usable = targets.filter((t) => scope.usable.has(t));
+    for (let i = usable.length - 1; i >= 0 && over(usable[i]!); i--) fillers.set(usable[i]!, [...(fillers.get(usable[i]!) ?? []), id]);
+  }
+  for (const [t, by] of fillers) {
+    const c = sim.counts.get(t)!, who = [...new Set(by.map(nameOf))];
+    const idle = bags.filter((b) => !moved.has(b.serial) && ancestry(view, b.container)?.includes(t)).length;
+    const stones = c.maxStones != null && (c.stones ?? 0) > NEARLY_FULL * c.maxStones ? ` and ${Math.round(c.stones!)}/${c.maxStones} stones` : "";
+    const note = idle ? ` (${idle === 1 ? "1 of them is an empty bag" : `${idle} of them are empty bags`})` : "";
+    warnings.push({ kind: "nearly-full", serial: t, detail: `${who.join(" and ")} ${who.length === 1 ? "fills" : "fill"} it to ${c.items}/${c.maxItems} items${stones} after this plan${note}. Add another container to ${who.length === 1 ? "its" : "their"} targets, or make room.` });
+  }
   const room = ids.map((id) => {
     const r = report.get(id)!;
     const needSlots = moves.filter((m) => m.ruleId === id && !merged.has(m.serial)).length + r.noRoom;
@@ -587,6 +638,7 @@ export function planOrganize(inv: Inventory, cfg: OrganizeConfig, overlay: Overl
       .sort((a, b) => (a.kind < b.kind ? -1 : a.kind > b.kind ? 1 : a.serial - b.serial)),
     carried: [...placed.carried].sort((a, b) => a.serial - b.serial),
     unclaimed,
+    emptyBags: bags.filter((b) => gather == null || homeOf(view, view.items[b.serial]!, homes) !== gather),
   };
 }
 

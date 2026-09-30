@@ -18,6 +18,7 @@ OTHER_CHEST, OTHER_BAG, STRANGER_PACK, STRANGER_RING = 0x40000020, 0x40000021, 0
 BOOK, RUNEBOOK, ARMOUR = 0x40000040, 0x40000041, 0x40000042
 DEST, DEST_BAG, TRASH_BIN, CORPSE, LOOSE, STACK, OTHER_GEM, EMPTY = (0x40000050, 0x40000051, 0x40000052, 0x40000053,
                                                                       0x40000054, 0x40000055, 0x40000056, 0x40000057)
+SPARE = 0x40000058               # an empty bag, for gathering (issue #128)
 RUN_S = 120                      # every scenario stops the bridge after this many fake seconds
 
 
@@ -359,6 +360,21 @@ class TazUOBridge(BridgeCase, unittest.TestCase):
         self.assertEqual(self.moves(w), [(AMULET, PACK), (BRACELET, PACK), (AMULET, DEST_BAG), (BRACELET, DEST_BAG)])
         self.assertIn("Pack Rat organize: trip 3, 2 items", w.messages)
         self.assert_heartbeat(writes)
+
+    def test_an_empty_bag_is_opened_read_live_and_gathered(self):
+        w = trip_home()
+        w.add(SPARE, CHEST, name="Bag", OnGround=False)
+        final, _ = self.run_bridge(w, 1, [self.trip("t1", takes=[(SPARE, [CHEST])], puts=[(SPARE, [DEST])])])
+        self.assertEqual(self.steps(final, "t1"), [("take", SPARE, True), ("put", SPARE, True)])
+        self.assertIn(SPARE, self.opened(w))
+        self.assertEqual(self.moves(w), [(SPARE, PACK), (SPARE, DEST)])
+
+    def test_a_bag_with_anything_in_it_is_never_taken(self):
+        w = trip_home()
+        final, _ = self.run_bridge(w, 1, [self.trip("t1", takes=[(BAG, [CHEST])], puts=[(BAG, [DEST])])])
+        self.assertEqual(self.steps(final, "t1"), [("take", BAG, False), ("put", BAG, False)])
+        self.assertIn("not empty", final["results"]["t1"]["steps"][0]["msg"])
+        self.assertEqual(self.moves(w), [])
 
     def test_a_trip_opens_each_container_once_and_the_next_trip_opens_it_again(self):
         w = trip_home()

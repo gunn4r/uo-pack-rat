@@ -916,6 +916,15 @@ def do_take(t, roots, blacklist):
         return False, f"{name} is not in that container any more — rescan", False
     if int(getattr(it, "Container", 0) or 0) != chain[-1]:
         return False, f"refused: {name} is not inside the container the plan named — rescan", False
+    # A container is taken only when it is empty (Organize gathering empty bags, issue #128), read live: it
+    # is opened like the chain above it (a bag's contents reach the client only once it opens, so an unopened
+    # one proves nothing), and must then read open and hold nothing.
+    if is_container(it, str(getattr(it, "Name", "") or "")):
+        ok, msg = open_chain(chain + [serial], own=set(), opened=trip_opened)
+        if not ok:
+            return False, msg, False
+        if not bool(getattr(find(serial), "Opened", False)) or (API.ItemsInContainer(serial, False) or []):
+            return False, f"refused: {name} did not open or is not empty — Pack Rat only moves empty bags", False
     pack = int(API.Backpack)
     if not room_for(it, pack):
         return False, f"your backpack cannot take {name} — trip cut short", True
