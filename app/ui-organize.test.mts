@@ -116,6 +116,7 @@ test("[fast] a rule's one-line summary: its names first, then the Inventory's fi
   assert.equal(matchSummary(match, CTX), "Name: black pearl, bloodmoss, garlic +1 more · Kind: reagent");
   assert.equal(matchSummary({ query: blankQuery() }, CTX), "Every item (no filter yet)");
   assert.equal(matchSummary({ query: { ...blankQuery(), kind: ["gear"] }, build: "hybrid" }, CTX), "Build: Hybrid · Kind: gear");
+  assert.equal(matchSummary({ query: { ...blankQuery(), kind: ["scroll"] }, school: "necromancy" }, CTX), "School: Necromancy · Kind: scroll");
 });
 
 test("[fast] extraFilters lists the filters the editor has no control for, and removes one at a time", () => {
