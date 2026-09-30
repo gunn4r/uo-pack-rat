@@ -348,6 +348,28 @@ test("[fast] a bag seen in its new chest does not carry off the old chest what s
   assert.equal(placed.counts.get(B)!.items, 3, "B's line is newer than both steps");
 });
 
+test("[fast] a pouch stepped into or out of a seen bag before its move counts with its whole fill (issue #153)", () => {
+  const LATER = "2026-09-28T12:00:00Z";
+  const inPouch: ThingSpec[] = [{ serial: KATANA, name: "Katana", in: POUCH }, { serial: ASH, name: "Sulfurous Ash", in: POUCH }, { serial: GARLIC, name: "Garlic", in: POUCH }];
+  const three: ThingSpec[] = [PEARL, PEARL2, PEARL3].map((serial) => ({ serial, name: "Black Pearl", in: A }));
+  // The pouch went from C into the bag, then the bag from A to B; B and C were scanned since. A keeps its three pearls.
+  const into = foldSnapshots([
+    houseScan({ boxes: [{ serial: A, tooltip: [`Box ${A}`, "Contents: 5/125 Items, 5 Stones"] }, { serial: B, pos: at(104) }, { serial: C, pos: at(108) }, { serial: BAG, parent: A }, { serial: POUCH, parent: C }],
+      things: [...three, { serial: RUBY, name: "Ruby", in: BAG }, ...inPouch] }),
+    houseScan({ scannedAt: LATER, boxes: [{ serial: B, pos: at(104) }, { serial: C, pos: at(108) }, { serial: BAG, parent: B, tooltip: [`Box ${BAG}`, "Contents: 5/125 Items, 5 Stones"] }, { serial: POUCH, parent: BAG }],
+      things: [{ serial: RUBY, name: "Ruby", in: BAG }, ...inPouch] })]);
+  const a = applyOverlay(into, [step(POUCH, "Pouch", C, BAG, "2026-09-28T10:30:00Z"), step(BAG, "Bag", A, B)]).counts.get(A)!;
+  assert.deepEqual([a.items, a.stones], [3, 3], "into the bag");
+  // The pouch went from the bag back to C, then the bag from A to B.
+  const out = foldSnapshots([
+    houseScan({ boxes: [{ serial: A, tooltip: [`Box ${A}`, "Contents: 9/125 Items, 9 Stones"] }, { serial: B, pos: at(104) }, { serial: C, pos: at(108) }, { serial: BAG, parent: A }, { serial: POUCH, parent: BAG }],
+      things: [...three, { serial: RUBY, name: "Ruby", in: BAG }, ...inPouch] }),
+    houseScan({ scannedAt: LATER, boxes: [{ serial: B, pos: at(104) }, { serial: C, pos: at(108) }, { serial: BAG, parent: B }, { serial: POUCH, parent: C }],
+      things: [{ serial: RUBY, name: "Ruby", in: BAG }, ...inPouch] })]);
+  const b = applyOverlay(out, [step(POUCH, "Pouch", BAG, C, "2026-09-28T10:30:00Z"), step(BAG, "Bag", A, B)]).counts.get(A)!;
+  assert.deepEqual([b.items, b.stones], [3, 3], "out of the bag");
+});
+
 test("[fast] a bag taken and not yet put leaves its contents where they were; the container it left loses only the bag (issue #153)", () => {
   const inv = fold([...bagBoxes(), { serial: PACK, kind: "backpack", name: "Backpack", tooltip: ["Backpack", "Contents: 0/125 Items, 0/550 Stones"] }], bagThings);
   const taken = { ...step(BAG, "Bag", A, null), character: "Tester" };

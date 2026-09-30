@@ -239,8 +239,9 @@ export function applyOverlay(inv: Inventory, overlay: OverlayMove[]): Placed {
           const t = stampMs(o.at);
           if (o.serial === m.serial || t <= since || t > upTo) continue;
           const d = (ancestry(view, o.to)?.includes(m.serial) ? 1 : 0) - (ancestry(view, o.from)?.includes(m.serial) ? 1 : 0);
-          n -= d;
-          w -= d * (items[o.serial] ? weightOf(items[o.serial]!) : 1);
+          const fill = counts.get(o.serial);   // a bag stepped in or out carries its own fill, as its own step does
+          n -= d * (1 + (fill?.items ?? 0));
+          w -= d * ((items[o.serial] ? weightOf(items[o.serial]!) : 1) + (fill?.stones ?? 0));
         }
       }
       bump(m.from, at, -n, -w);
