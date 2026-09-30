@@ -79,10 +79,10 @@ export function newRuleId(rules: ReadonlyArray<{ id: string }>): string {
 }
 
 // ---------------------------------------------------------------- a rule's filter
-// The Inventory's filters as a rule query: the eleven item fields only. Location, character and seen filters
+// The Inventory's filters as a rule query: the twelve item fields only. Location, character and seen filters
 // are dropped (spec §1: a rule must keep matching an item after it moves); `dropped` names them for the note.
 export function ruleQueryFrom(q: ItemQuery): { query: RuleQuery; dropped: string[] } {
-  const query: RuleQuery = { q: q.q, slot: [...q.slot], rarity: q.rarity, rarityMin: q.rarityMin, rarityMax: q.rarityMax, kind: [...q.kind], slayer: q.slayer, nogarg: q.nogarg, med: q.med, hideTags: [...q.hideTags], props: q.props.map((p) => ({ ...p })) };
+  const query: RuleQuery = { q: q.q, slot: [...q.slot], rarity: q.rarity, rarityMin: q.rarityMin, rarityMax: q.rarityMax, kind: [...q.kind], slayer: q.slayer, nogarg: q.nogarg, med: q.med, hideTags: [...q.hideTags], tags: [...q.tags], props: q.props.map((p) => ({ ...p })) };
   const dropped = [...(q.loc.length || q.roots.length ? ["Location"] : []), ...(q.chars.length ? ["Character"] : []), ...(q.seenDays ? ["Seen"] : [])];
   return { query, dropped };
 }
@@ -116,6 +116,7 @@ export const SCHOOL_TEXT: Record<SpellSchool, string> = { magery: "Magery", necr
 export function matchSummary(match: RuleMatch, ctx: FilterContext): string {
   const parts = activeFilters({ ...BASE, ...match.query }, ctx).map((t) => t.label);
   if (match.school) parts.unshift(`School: ${SCHOOL_TEXT[match.school]}`);
+  if (match.skipSuits) parts.push("Not in a saved suit");
   if (match.build) parts.unshift(`Build: ${BUILD_TEXT[match.build]}`);
   const names = match.names || [];
   if (names.length) parts.unshift(`Name: ${names.slice(0, 3).join(", ")}${names.length > 3 ? ` +${names.length - 3} more` : ""}`);

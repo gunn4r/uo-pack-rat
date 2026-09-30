@@ -2,7 +2,8 @@
 // (ruleFromPreset), and editing the rule never changes the preset. Where two presets overlap, the rule placed
 // higher wins (first match): put Shields above Weapons, Armour: neck above Necklaces, the power scroll,
 // Transcendence scroll and school scroll presets above Spell scrolls, and a rule for spellbooks above Weapons (a spellbook sits in the one-handed slot). Pure,
-// so the page can list them too.
+// so the page can list them too. The undesirables at the end (issue #133) belong at the top of the rules, so they claim
+// first; they skip every piece of a saved suit, and Auto organize never uses them.
 import { emptyRuleQuery, SCHOOLS, type OrganizeRule, type RuleMatch } from "./organize-config.mts";
 import type { RuleQuery } from "./item-query.mts";
 
@@ -56,6 +57,8 @@ export const PRESETS: readonly OrganizePreset[] = [
   { id: "major-artifacts", name: "Major artifacts", match: tier("Major Artifact") },
   { id: "greater-artifacts", name: "Greater artifacts", match: tier("Greater Artifact") },
   { id: "lesser-artifacts-and-below", name: "Lesser artifacts and below", match: { query: q({ kind: ["gear"], rarityMax: "Lesser Artifact" }) } },
+  { id: "splintering-weapons", name: "Splintering weapons", match: { query: q({ kind: ["gear"], props: [{ key: "splintering weapon", min: 1 }] }), skipSuits: true } },
+  { id: "splintering-brittle", name: "Splintering and brittle", match: { query: q({ kind: ["gear"], tags: ["brittle"], props: [{ key: "splintering weapon", min: 1 }] }), skipSuits: true } },
 ];
 
 export function ruleFromPreset(preset: OrganizePreset, id: string): OrganizeRule {

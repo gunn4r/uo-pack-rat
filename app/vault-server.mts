@@ -115,7 +115,7 @@ import { Worker } from "node:worker_threads";
 import { unlinkSync } from "node:fs";
 import { randomUUID, timingSafeEqual } from "node:crypto";
 import type { AddressInfo } from "node:net";
-import { runKey, reusableRun, runSummary, stripOpts, normalizeRun, SOLVER_VERSION, type RunOpts, type SavedRun } from "./runs-lib.mts";
+import { runKey, reusableRun, runSummary, stripOpts, normalizeRun, suitPieces, SOLVER_VERSION, type RunOpts, type SavedRun } from "./runs-lib.mts";
 import { upgradeScan, validateScan } from "./scan-schema.mts";
 import { loadRules, listRules, DEFAULT_SHARD } from "./rules.mts";
 import { validate, type ValidatorSchema } from "./schema/validate.mts";
@@ -853,7 +853,7 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
     const bridges = Object.fromEntries([...new Set(before.pending.map((p) => p.adapter))].map((a) => [a, bridgeView(a, now)]));
     const state = noteSeen(pruneOverlay(harvestTrips(before, bridges, now), inv, now), config, inv);
     if (JSON.stringify(state) !== JSON.stringify(before)) writeOrganizeState(state);
-    const plan = planOrganize(inv, config, state.moves, { now, rarity: currentRules.rarity, blacklist: readBlacklist().map((e) => e.serial), seen: state.seen });
+    const plan = planOrganize(inv, config, state.moves, { now, rarity: currentRules.rarity, suitPieces: suitPieces(readRuns()), blacklist: readBlacklist().map((e) => e.serial), seen: state.seen });
     return { inv, config, state, plan, problems, bridges };
   }
   // A profiles.json that does not parse (a write cut short before writes were atomic, or a bad hand
@@ -1876,12 +1876,12 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
       }
       if (req.method === "GET" && url.pathname === "/api/organize/presets") return send(res, 200, { ok: true, presets: PRESETS });
       if (req.method === "POST" && url.pathname === "/api/organize/match") {
-        // Room for the largest filter a rule may carry (100 names, three 50-name lists, 20 property rules).
+        // Room for the largest filter a rule may carry (100 names, three 50-name lists, 10 tags, 20 property rules).
         const { match } = asObject(await readBody(req, { limit: 64e3 }));
         const problem = matchProblem(match);
         if (problem) return send(res, 400, { ok: false, error: problem });
         const { inv } = await getInventory();
-        const counted = matchCount(inv, readOrganize().config, match as RuleMatch, { now: Date.now(), rarity: currentRules.rarity, blacklist: readBlacklist().map((e) => e.serial) });
+        const counted = matchCount(inv, readOrganize().config, match as RuleMatch, { now: Date.now(), rarity: currentRules.rarity, suitPieces: suitPieces(readRuns()), blacklist: readBlacklist().map((e) => e.serial) });
         return send(res, 200, { ok: true, ...counted });
       }
       if (req.method === "POST" && url.pathname === "/api/organize/propose") {
@@ -1895,7 +1895,7 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
         }
         const { inv, config, state, problems } = await organizeNow();
         if (problems.length) return send(res, 409, { ok: false, error: `organize.json was hand-edited and parts of it were dropped (${problems[0]}); open Organize and save the setup first` });
-        const r = proposeOrganize(inv, config, state.moves, { strategy: strategy as StrategyId, containers: containers as number[] | undefined, now: Date.now(), rarity: currentRules.rarity, blacklist: readBlacklist().map((e) => e.serial), seen: state.seen });
+        const r = proposeOrganize(inv, config, state.moves, { strategy: strategy as StrategyId, containers: containers as number[] | undefined, now: Date.now(), rarity: currentRules.rarity, suitPieces: suitPieces(readRuns()), blacklist: readBlacklist().map((e) => e.serial), seen: state.seen });
         return send(res, r.ok ? 200 : 409, r);
       }
       if (req.method === "GET" && url.pathname === "/api/organize/plan") {

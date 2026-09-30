@@ -1219,6 +1219,14 @@ export function propertyKeys(inv: ItemsLike): string[] {
   set.delete("tagPenalty");
   return [...set].sort((a, b) => (PROP_LABELS[a] || a).localeCompare(PROP_LABELS[b] || b));
 }
+// Issue #133: the numeric tooltip lines no property models (parseTooltip's extras: "splintering weapon", "hit fatigue",
+// "weapon speed"), skill bonuses and ranges left out, so a property filter can put a threshold on them
+// (item-query.mts's colVal reads them). Apart from propertyKeys, which the Suit Builder's weights and floors list too.
+export function extraKeys(inv: ItemsLike): string[] {
+  const set = new Set<string>();
+  for (const it of Object.values(inv.items)) for (const [k, v] of Object.entries(it.extras || {})) if (typeof v === "number" && !SKILL_SET.has(k)) set.add(k);
+  return [...set].sort();
+}
 
 // The item's own words (name, tooltip lines, rarity, kind), never where it sits: what an Organize rule's free
 // text is matched against (item-query.mts's matchesItem, issue #11).

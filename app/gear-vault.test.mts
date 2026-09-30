@@ -14,7 +14,7 @@ import {
 } from "./vault-lib.mts";
 import type { Item, Inventory, ItemLocation, ProfilesFile, CharacterEntryRaw } from "./vault-lib.mts";
 import { upgradeScan, TAZUO_V1_CAPS } from "./scan-schema.mts";
-import { runKey, reusableRun, runSummary, normalizeRun, SOLVER_VERSION } from "./runs-lib.mts";
+import { runKey, reusableRun, runSummary, normalizeRun, suitPieces, SOLVER_VERSION } from "./runs-lib.mts";
 import type { SavedRun } from "./runs-lib.mts";
 import { corePath } from "./config.mts";
 import type { RulesV1, ScanV2 } from "./schema/types.d.mts";
@@ -1114,6 +1114,10 @@ test("[fast] runs: normalizeRun withdraws the proof of a run saved before the so
   assert.deepEqual(normalizeRun(old), old, "idempotent");
   assert.equal(normalizeRun({ id: "n", solverVersion: SOLVER_VERSION, result: { method: "exact", proven: true } }).result!.proven, true);
   assert.equal(normalizeRun({ id: "u", result: { method: "exact", proven: false } }).result!.proven, false, "an unproven run keeps its verdict");
+});
+test("[fast] runs: suitPieces is every piece of every saved suit, empty slots and runs with no result skipped (issue #133)", () => {
+  const runs: SavedRun[] = [{ id: "a", result: { best: { ring: { serial: 1 }, arms: null, chest: { serial: 2 } } } }, { id: "b", result: { best: { ring: { serial: 1 }, legs: { serial: 3 } } } }, { id: "c" }, { id: "d", result: {} }];
+  assert.deepEqual([...suitPieces(runs)].sort(), [1, 2, 3]);
 });
 test("[fast] runs: normalizeRun upgrades allowOthers/budgetS and stamps schemaVersion", () => {
   const r = normalizeRun({ id: "x", settings: { allowOthers: true, budgetS: 30 }, result: {} });
