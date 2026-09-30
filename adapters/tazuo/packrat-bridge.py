@@ -106,6 +106,7 @@ OPEN_FLOOR_S = 0.6        # ...and the least: the server refuses a use or lift w
 OPEN_POLL_S = 0.05        # how often it looks whether the window opened
 MOVE_WAIT_S = 1.5         # a trip's move that has not landed by then bounced
 MOVE_POLL_S = 0.05        # how often a trip looks whether its move landed
+LATE_LOOK_S = 0.5         # ...and how long after MOVE_WAIT_S it looks once more before calling a put bounced
 MOVE_GAP_S = 0.35         # least time between two of a trip's moves, in case the shard throttles drag and drop
 STATUS_EVERY_S = 2.0      # heartbeat: the app calls the bridge offline once `alive` is 8 s old
 HIGHLIGHT_S = 8
@@ -988,19 +989,28 @@ def drop_into(serial, it, dest, name):
     """A put's move of the live item `it` into dest's last container, and its verdict. Returns (ok, msg)."""
     # An item that cannot stack has landed only once it is in the container; the stack bookkeeping reads
     # the container's contents, a cost that grows with every item already there (#122).
-    if not stackable(it):
+    stacks = stackable(it)
+    graphic, hue = int(getattr(it, "Graphic", 0) or 0), int(getattr(it, "Hue", 0) or 0)
+    if not stacks:
         it2 = trip_move(serial, dest[-1], lambda x: inside(x, dest[-1]))
         if inside(it2, dest[-1]):
             return True, f"put {name} away"
-        return False, f"{name} bounced (full, or refused)"
-    graphic, hue = int(getattr(it, "Graphic", 0) or 0), int(getattr(it, "Hue", 0) or 0)
-    # Landed: in the container, or gone onto a stack there that grew. Only the verdict below decides, as
-    # before; the stack's growth only ends the wait early.
-    before = stack_total(dest[-1], graphic, hue)
-    it2 = trip_move(serial, dest[-1], lambda x: inside(x, dest[-1]) or (x is None and stack_total(dest[-1], graphic, hue) > before))
+    else:
+        # Landed: in the container, or gone onto a stack there that grew. Only the verdict below decides, as
+        # before; the stack's growth only ends the wait early.
+        before = stack_total(dest[-1], graphic, hue)
+        it2 = trip_move(serial, dest[-1], lambda x: inside(x, dest[-1]) or (x is None and stack_total(dest[-1], graphic, hue) > before))
+        if inside(it2, dest[-1]):
+            return True, f"put {name} away"
+        if it2 is None and stack_total(dest[-1], graphic, hue) > 0:
+            return True, f"put {name} away (onto a stack)"
+    # One late look before calling it bounced: a drop the server applied can reach the client after the wait,
+    # and an item taken for bounced is lifted again (a direct move's falls back to the backpack path).
+    API.Pause(LATE_LOOK_S)
+    it2 = find(serial)
     if inside(it2, dest[-1]):
         return True, f"put {name} away"
-    if it2 is None and stack_total(dest[-1], graphic, hue) > 0:
+    if stacks and it2 is None and stack_total(dest[-1], graphic, hue) > 0:
         return True, f"put {name} away (onto a stack)"
     return False, f"{name} bounced (full, or refused)"
 
@@ -1070,6 +1080,41 @@ def ms_since(t0, t1=None):
     return max(0, int(round(((time.time() if t1 is None else t1) - t0) * 1000)))
 
 
+def asked_to_stop():
+    """stop_requested, read after an interrupt: a client call failing then counts as the Stop it most likely is."""
+    try:
+        return stop_requested()
+    except BaseException:
+        return True
+
+
+def settle(op, s, p, t0):
+    """The step a Stop or an error cut short (`op` "take" or "put" for the trip step `s`, `p` a take's direct put
+    or None), as its item now lies, read once with every call guarded: after the client's Stop any of them may
+    fail. A take whose item is in the backpack took it (it is carried); a take's item in its direct put's
+    container, or a put's in its own, was moved there; anything else is reported failed, so the app keeps the
+    item where it last knew it and the message says to look. Returns the steps to report."""
+    serial, name = s["serial"], s["name"] or "item"
+
+    def step(o, msg, ok=True):
+        return {"op": o, "serial": serial, "ok": ok, "msg": msg, "ms": ms_since(t0)}
+    dest = s["dest"] if op == "put" else (p["dest"] if p else None)
+    try:
+        it, pack = find(serial), int(API.Backpack)
+        in_pack, in_dest = inside(it, pack), bool(dest) and inside(it, dest[-1])
+    except BaseException:
+        in_pack = in_dest = False
+    if op == "take" and in_pack:
+        carried.add(serial)
+        return [step("take", f"took {name}")]
+    if in_dest and op == "put":
+        carried.discard(serial)
+        return [step("put", f"put {name} away")]
+    if in_dest:
+        return [step("take", f"took {name}"), step("put", f"put {name} away, straight from where it was")]
+    return [step(op, f"{name}: cut short — check the game and rescan", False)]
+
+
 def direct_put(cmd, k, puts, blacklist):
     """The put that takes[k]'s item may go straight into (#130), or None. The planner fits every put after
     every take (app/organize.mts's attempt: a chest that is both a source and a target frees its room
@@ -1106,50 +1151,65 @@ def do_trip(cmd):
     steps, took, direct = [], set(), set()
     puts = {p["serial"]: p for p in cmd["puts"]}
     partial = False
-    for k, t in enumerate(cmd["takes"]):
-        if stopped or stop_requested():
-            stopped = True
-            break
-        t0 = time.time()
-        p = direct_put(cmd, k, puts, blacklist)
-        it, msg = take_source(t, roots, blacklist, p["dest"][0] if p else None)
-        ok, full = False, False
-        if it is not None and p is not None and near(p["dest"][0]):
-            t1 = time.time()
-            put = do_direct(p, it, blacklist)
-            if put is not None:
-                steps.append({"op": "take", "serial": t["serial"], "ok": True, "msg": f"took {t['name'] or 'item'}", "ms": ms_since(t0, t1)})
-                steps.append({"op": "put", "serial": t["serial"], "ok": True, "msg": put, "ms": ms_since(t1)})
-                heartbeat()
+    error = ""
+    doing = None              # the step under way: (op, take or put, its direct put or None, t0)
+    try:
+        for k, t in enumerate(cmd["takes"]):
+            if stopped or stop_requested():
+                stopped = True
+                break
+            t0 = time.time()
+            p = direct_put(cmd, k, puts, blacklist)
+            doing = ("take", t, p, t0)
+            it, msg = take_source(t, roots, blacklist, p["dest"][0] if p else None)
+            ok, full = False, False
+            if it is not None and p is not None and near(p["dest"][0]):
+                t1 = time.time()
+                put = do_direct(p, it, blacklist)
+                if put is not None:
+                    steps.append({"op": "take", "serial": t["serial"], "ok": True, "msg": f"took {t['name'] or 'item'}", "ms": ms_since(t0, t1)})
+                    steps.append({"op": "put", "serial": t["serial"], "ok": True, "msg": put, "ms": ms_since(t1)})
+                    doing = None
+                    heartbeat()
+                    took.add(t["serial"])
+                    direct.add(t["serial"])
+                    continue
+                it = find(t["serial"])
+                if not inside(it, t["chain"][-1]):
+                    it, msg = None, f"{t['name'] or 'item'} did not land in its container and is not back where it was — check the game and rescan"
+            if it is not None:
+                ok, msg, full = do_take(t, it)
+            steps.append({"op": "take", "serial": t["serial"], "ok": bool(ok), "msg": msg, "ms": ms_since(t0)})
+            doing = None
+            heartbeat()
+            if ok:
                 took.add(t["serial"])
-                direct.add(t["serial"])
+            if full:
+                partial = True
+                break
+        planned = set(t["serial"] for t in cmd["takes"])
+        for p in cmd["puts"]:
+            if stopped or stop_requested():
+                stopped = True
+                break
+            if p["serial"] in direct:
                 continue
-            it = find(t["serial"])
-            if not inside(it, t["chain"][-1]):
-                it, msg = None, f"{t['name'] or 'item'} did not land in its container and is not back where it was — check the game and rescan"
-        if it is not None:
-            ok, msg, full = do_take(t, it)
-        steps.append({"op": "take", "serial": t["serial"], "ok": bool(ok), "msg": msg, "ms": ms_since(t0)})
-        heartbeat()
-        if ok:
-            took.add(t["serial"])
-        if full:
-            partial = True
-            break
-    planned = set(t["serial"] for t in cmd["takes"])
-    for p in cmd["puts"]:
-        if stopped or stop_requested():
+            if p["serial"] in planned and p["serial"] not in took:
+                steps.append({"op": "put", "serial": p["serial"], "ok": False, "msg": "skipped: not taken on this trip", "ms": 0})
+                continue
+            t0 = time.time()
+            doing = ("put", p, None, t0)
+            ok, msg = do_put(p, roots, blacklist)
+            steps.append({"op": "put", "serial": p["serial"], "ok": bool(ok), "msg": msg, "ms": ms_since(t0)})
+            doing = None
+            heartbeat()
+    except BaseException as e:   # noqa: B036 -- the client's Stop interrupts at an API.Pause; the steps so far must still be reported
+        if isinstance(e, Exception) and not asked_to_stop():
+            error = str(e) or type(e).__name__
+        else:
             stopped = True
-            break
-        if p["serial"] in direct:
-            continue
-        if p["serial"] in planned and p["serial"] not in took:
-            steps.append({"op": "put", "serial": p["serial"], "ok": False, "msg": "skipped: not taken on this trip", "ms": 0})
-            continue
-        t0 = time.time()
-        ok, msg = do_put(p, roots, blacklist)
-        steps.append({"op": "put", "serial": p["serial"], "ok": bool(ok), "msg": msg, "ms": ms_since(t0)})
-        heartbeat()
+        if doing is not None:
+            steps.extend(settle(*doing))
     put_away = sum(1 for s in steps if s["op"] == "put" and s["ok"])
     failed = sum(1 for s in steps if not s["ok"])
     msg = f"trip {cmd['index']}: {put_away} put away, {failed} step{'' if failed == 1 else 's'} failed"
@@ -1157,7 +1217,9 @@ def do_trip(cmd):
         msg += " — backpack full, trip cut short"
     if stopped:
         msg += " — stopped"
-    return failed == 0 and not partial and not stopped, msg, {"steps": steps, "partial": partial, "stopped": stopped, "ms": ms_since(started)}
+    if error:
+        msg += f" — error: {error}"
+    return failed == 0 and not partial and not stopped and not error, msg, {"steps": steps, "partial": partial, "stopped": stopped, "ms": ms_since(started)}
 
 
 def run(cmd):

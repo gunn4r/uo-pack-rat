@@ -433,6 +433,58 @@ class TazUOBridge(BridgeCase, unittest.TestCase):
         self.assertIn("not back where it was", final["results"]["t1"]["steps"][0]["msg"])
         self.assertEqual(self.moves(w), [(AMULET, DEST)])
 
+    def test_a_direct_drop_the_client_shows_late_counts_as_landed_and_is_not_lifted_again(self):
+        w = trip_home()
+        w.move_lag = 1.7                         # past MOVE_WAIT_S, within the late look
+        final, _ = self.run_bridge(w, 1, [self.trip("t1", takes=[(AMULET, [CHEST, BAG])], puts=[(AMULET, [DEST])])])
+        self.assertTrue(final["results"]["t1"]["ok"], final["results"]["t1"])
+        self.assertEqual(self.steps(final, "t1"), [("take", AMULET, True), ("put", AMULET, True)])
+        self.assertEqual(self.moves(w), [(AMULET, DEST)])
+        self.assertEqual(w.items[AMULET].Container, DEST)
+
+    # ---- a trip cut short keeps what it did -----------------------------------------------------------
+
+    def interrupt(self, w):
+        """The client's Stop: it sets StopRequested and throws out of the script's next client call."""
+        w.api.StopRequested = True
+        raise KeyboardInterrupt("stop")
+
+    def test_a_stop_thrown_mid_move_still_reports_the_steps_already_done(self):
+        w = trip_home()
+        w.on_move = lambda s, dst: self.interrupt(w) if s == BRACELET else None
+        final, _ = self.run_bridge(w, 1, [self.trip("t1", takes=[(AMULET, [CHEST, BAG]), (BRACELET, [CHEST, BAG])],
+                                                    puts=[(AMULET, [DEST]), (BRACELET, [DEST])])])
+        r = final["results"]["t1"]
+        self.assertTrue(r["stopped"], r)
+        self.assertEqual(self.steps(final, "t1"), [("take", AMULET, True), ("put", AMULET, True), ("take", BRACELET, False)])
+        self.assertIn("check the game", r["steps"][2]["msg"])
+        self.assertEqual(w.items[BRACELET].Container, BAG)
+
+    def test_a_take_the_stop_cut_short_after_it_landed_is_reported_taken(self):
+        w = self.far_dest(trip_home())
+
+        def landed_then_stopped(s, dst):
+            if (s, dst) == (AMULET, PACK):
+                w.items[AMULET].Container = PACK         # the server applied the move before the Stop hit
+                self.interrupt(w)
+        w.on_move = landed_then_stopped
+        final, _ = self.run_bridge(w, 1, [self.trip("t1", takes=[(AMULET, [CHEST, BAG])], puts=[(AMULET, [DEST])])])
+        r = final["results"]["t1"]
+        self.assertTrue(r["stopped"], r)
+        self.assertEqual(self.steps(final, "t1"), [("take", AMULET, True)])
+
+    def test_a_client_error_mid_trip_reports_the_steps_already_done_and_the_error(self):
+        w = trip_home()
+        w.add(EMPTY, 0, name="Metal Chest", X=14, Y=10)      # the bracelet's put needs a step: the walk fails
+        w.walk_error = RuntimeError("pathfinder gone")
+        final, _ = self.run_bridge(w, 1, [self.trip("t1", takes=[(AMULET, [CHEST, BAG]), (BRACELET, [CHEST, BAG])],
+                                                    puts=[(AMULET, [DEST]), (BRACELET, [EMPTY])])])
+        r = final["results"]["t1"]
+        self.assertFalse(r["ok"])
+        self.assertFalse(r["stopped"])
+        self.assertIn("error: pathfinder gone", r["msg"])
+        self.assertEqual(self.steps(final, "t1"), [("take", AMULET, True), ("put", AMULET, True), ("take", BRACELET, False)])
+
     def test_a_put_into_a_container_a_later_take_frees_room_in_waits_for_the_backpack(self):
         # The planner fits every put after every take, so a put may not go ahead of a take from its container.
         w = trip_home()
@@ -525,8 +577,8 @@ class TazUOBridge(BridgeCase, unittest.TestCase):
         self.assertEqual(self.steps(final, "t1"), [("take", AMULET, True), ("put", AMULET, False)])
         self.assertIn("bounced", r["steps"][1]["msg"])
         done = [t for t, s in writes if "t1" in s.get("results", {})][0]
-        self.assertGreaterEqual(done - (times[1] - w.clock.start), 1.5)
-        self.assertLess(done - (times[1] - w.clock.start), 1.6)
+        self.assertGreaterEqual(done - (times[1] - w.clock.start), 1.5 + 0.5)    # MOVE_WAIT_S, then the late look (LATE_LOOK_S)
+        self.assertLess(done - (times[1] - w.clock.start), 2.1)
 
     # ---- the wait after opening a container --------------------------------------------------------
 
