@@ -354,7 +354,7 @@ function bigPlan(): unknown {
   const trips = Array.from({ length: 30 }, (_, i) => ({ index: i + 1, site: 0, takes: moves.slice(i * 20, i * 20 + 20).map((m) => m.serial), puts: moves.slice(i * 20, i * 20 + 20).map((m) => m.serial) }));
   return { ok: true, plan: { inventoryStamp: "2026-09-28T10:00:00Z", stamp: "big00001", sites: [{ index: 0, roots: [DORRAN, KESTREL] }], moves, trips,
     rules: [{ ruleId: "rule-1", matched: 640, inPlace: 30, toMove: 600, noRoom: 10 }], room: [{ ruleId: "rule-1", needSlots: 95, freeSlots: 85, shortfall: 10 }],
-    crossSite: [], warnings: [{ kind: "unknown-capacity", serial: KESTREL, detail: "rescan with the current scripts to read its fill" }], carried: [], unclaimed: 0,
+    crossSite: [], warnings: [{ kind: "unknown-capacity", serial: KESTREL, detail: "rescan with the current scripts to read its fill" }], carried: [], unclaimed: 0, seconds: 780,
     emptyBags: [{ serial: 0x700c0f01, name: "Weapons", container: KESTREL }] } };
 }
 
@@ -366,7 +366,7 @@ test("[slow] the plan puts its reports first and keeps a 600-move trip list coll
   try {
     await page.route("**/api/organize/plan", (r) => r.fulfill({ contentType: "application/json", body: JSON.stringify(bigPlan()) }));
     await go(page, "#/organize", "#org-plan #org-headline");
-    assert.equal(await page.locator("#org-headline").innerText(), "600 items to move in 30 trips");
+    assert.equal(await page.locator("#org-headline").innerText(), "600 items to move in 30 trips, about 13 minutes");
     const order = await page.evaluate(() => {
       const plan = document.querySelector("#org-plan")!;
       const room = [...plan.querySelectorAll(".msg")].find((m) => /no room/.test(m.textContent || ""))!;
@@ -416,7 +416,7 @@ test("[slow] Run trip queues one trip; Stop writes the stop flag; a failed put l
   const { app, page, errors } = await launch(dataDir);
   try {
     await go(page, "#/organize", "#org-plan #org-headline");
-    assert.match(await page.locator("#org-headline").innerText(), /^\d+ items? to move in 1 trip$/);
+    assert.match(await page.locator("#org-headline").innerText(), /^\d+ items? to move in 1 trip, (under a minute|about \d+ minutes?)$/);
     await page.waitForSelector("#org-run:not([disabled])", { timeout: 15_000 });
     await page.click("#org-run");
     const queue = join(bridgeDir, "queue.jsonl");

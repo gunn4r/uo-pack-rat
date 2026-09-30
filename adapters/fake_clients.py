@@ -285,13 +285,23 @@ def tazuo_api(world, backpack, bank=0, skills=None):
                 same[0].Amount += it.Amount
                 del world.items[s]
                 return
+        lag = getattr(world, "move_lag", 0)
+        if lag:        # the server applied the drop; the client hears of it `lag` fake seconds later
+            world.clock.at(world.clock.now - world.clock.start + lag, lambda: setattr(it, "Container", dst))
+            return
         it.Container = dst
     api.MoveItem = move
 
     def walk_to(x, y, wait, timeout):
         """The fake pathfinder: gets there at once, or never when world.no_path is set -- and then a
-        waiting call blocks for its whole timeout, the way the client's does."""
+        waiting call blocks for its whole timeout, the way the client's does. A tile in world.blocked
+        (a chest, a wall) has no path at all: the call says so at once. world.walk_error, when set, is
+        raised instead (a client call that fails)."""
         world.calls.append(("walk", x, y))
+        if getattr(world, "walk_error", None) is not None:
+            raise world.walk_error
+        if (x, y) in getattr(world, "blocked", ()):
+            return False
         if getattr(world, "no_path", False):
             if wait:
                 world.clock.advance(float(timeout))

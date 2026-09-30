@@ -7,7 +7,8 @@
 #   grab      : same, then move the item into your backpack and verify it landed
 #   goto      : walk to the container
 #   trip      : Organize. Take up to 20 items from your labelled containers into your backpack, then
-#               put each one into the container it belongs in, reporting every step
+#               put each one into the container it belongs in, reporting every step; an item whose
+#               container can be reached from the same spot goes straight there instead
 # Status (alive timestamp + last results) goes to bridge/tazuo/status.json for the app's indicator.
 # The data directory is `packrat-paths.json` beside this script, else $PACKRAT_DATA, else
 # ~/.pack-rat.
@@ -19,7 +20,8 @@
 # are refused, only containers are ever opened, grabs only ever pull from your own backpack/bank or
 # from the container chain the same command just opened, and a queue being written faster than a
 # person clicks stops the bridge outright.
-# A trip may only put away items this bridge took itself, never into your own pack, a corpse, a pack
+# A trip may only put away items this bridge took itself (or is taking right now, for a direct
+# move), never into your own pack, a corpse, a pack
 # a mobile carries, a trash container or a blacklisted one, and it halts between steps when the app
 # writes the stop flag.
 
@@ -99,6 +101,7 @@ BLACKLIST_PATH = os.path.join(data_dir(), "scan-blacklist.json")   # read at the
 POLL_S = 0.5
 MAX_HOURS = 8
 REACH = 2                 # tiles: containers open only when this close
+DIRECT_TRIES = 6          # tiles in reach of both containers a direct move tries to path to (stand_by_both)
 WALK_TIMEOUT_S = 20
 WALK_POLL_S = 0.5
 PAUSE_OPEN = 1.0          # after double-clicking a container: the most it waits for the window (wait_opened)
@@ -106,6 +109,7 @@ OPEN_FLOOR_S = 0.6        # ...and the least: the server refuses a use or lift w
 OPEN_POLL_S = 0.05        # how often it looks whether the window opened
 MOVE_WAIT_S = 1.5         # a trip's move that has not landed by then bounced
 MOVE_POLL_S = 0.05        # how often a trip looks whether its move landed
+LATE_LOOK_S = 0.5         # ...and how long after MOVE_WAIT_S it looks once more before calling a put bounced
 EMPTY_RECHECK_S = 0.3     # between the two reads that must both find a bag empty before a trip takes it
 CONTENTS_RE = re.compile(r"contents:\s*(\d+)", re.I)   # a container tooltip's "Contents: 3/125 Items, ..." line
 MOVE_GAP_S = 0.35         # least time between two of a trip's moves, in case the shard throttles drag and drop
@@ -483,8 +487,10 @@ carried = set()           # serials this bridge took on a trip and has not yet p
 # closes, and the server checks only reach when an item is lifted or dropped (walk_to sees to that). A
 # walk empties the set, since a container left behind can fall out of the client's view and forget its
 # contents; so does the start of every trip, and so does finding the character on another tile than
-# when the set was last filled (the player walked by hand mid-trip, out of range and back perhaps).
-trip_opened = set()
+# when the set was last filled (the player walked by hand mid-trip, out of range and back perhaps). The
+# one walk that keeps it is stand_by_both's step of a tile or two, which forgets only the containers
+# whose root it left out of reach. Keyed by container, each entry holds its chain's root.
+trip_opened = {}
 trip_spot = {"at": None}  # the character's tile when trip_opened was last added to
 last_move = {"at": 0.0}
 
@@ -703,7 +709,7 @@ def open_chain(chain, own=None, check=None, opened=None):
         wait_opened(int(c))
         heartbeat()
         if opened is not None:
-            opened.add(int(c))
+            opened[int(c)] = int(chain[0])
     return True, "opened"
 
 
@@ -927,39 +933,49 @@ def bag_is_empty(serial):
     return True
 
 
-def do_take(t, roots, blacklist):
-    """One take: the grab path, but dropped at an explicit spot in the backpack. Returns (ok, msg, full),
-    full meaning the backpack or the character cannot take it, which ends the trip's takes."""
+def take_source(t, roots, blacklist, beside=None):
+    """A take up to its move: the grab path's walk, opening and checks. Returns (item, why): the live
+    item, sitting directly in the chain's last container, or None and why the take fails. `beside` is
+    the root of the item's put when it may go there directly: the walk then first tries a tile in reach
+    of both (stand_by_both)."""
     serial, chain = t["serial"], t["chain"]
     name = t["name"] or "item"
     for c in chain:
         if c in blacklist:
-            return False, f"refused: 0x{c:x} is blacklisted — Pack Rat never opens it", False
+            return None, f"refused: 0x{c:x} is blacklisted — Pack Rat never opens it"
     # A take starts on the ground, never in your own backpack or bank: an item taken there joins the
     # carried set, and a put could then move anything you carry into any chest in reach.
     root = find(chain[0])
     why = chain_problem(chain, 0, root, set()) if root is not None else ""
     if why:
-        return False, why, False
-    if not walk_to(roots.get(chain[0]), chain[0]):
-        return False, "could not reach the container (not in view / too far / no path) — walk closer and retry", False
+        return None, why
+    if not (beside is not None and stand_by_both(chain[0], beside)) and not walk_to(roots.get(chain[0]), chain[0]):
+        return None, "could not reach the container (not in view / too far / no path) — walk closer and retry"
     ok, msg = open_chain(chain, own=set(), opened=trip_opened)
     if not ok:
-        return False, msg, False
+        return None, msg
     it = find(serial)
     if it is None:
-        return False, f"{name} is not in that container any more — rescan", False
-    if int(getattr(it, "Container", 0) or 0) != chain[-1]:
-        return False, f"refused: {name} is not inside the container the plan named — rescan", False
+        return None, f"{name} is not in that container any more — rescan"
+    if not inside(it, chain[-1]):
+        return None, f"refused: {name} is not inside the container the plan named — rescan"
     # A container is taken only when it is empty (Organize gathering empty bags, issue #128), read live: it
     # is opened like the chain above it (a bag's contents reach the client only once it opens, so an unopened
     # one proves nothing), and must then pass bag_is_empty.
     if is_container(it, str(getattr(it, "Name", "") or "")):
         ok, msg = open_chain(chain + [serial], own=set(), opened=trip_opened)
         if not ok:
-            return False, msg, False
+            return None, msg
         if not bag_is_empty(serial):
-            return False, f"refused: {name} did not open or is not empty — Pack Rat only moves empty bags", False
+            return None, f"refused: {name} did not open or is not empty — Pack Rat only moves empty bags"
+    return it, ""
+
+
+def do_take(t, it):
+    """One take, after take_source: dropped at an explicit spot in the backpack. Returns (ok, msg, full),
+    full meaning the backpack or the character cannot take it, which ends the trip's takes."""
+    serial = t["serial"]
+    name = t["name"] or "item"
     pack = int(API.Backpack)
     if not room_for(it, pack):
         return False, f"your backpack cannot take {name} — trip cut short", True
@@ -997,40 +1013,171 @@ def do_put(p, roots, blacklist):
             return False, why
     if not walk_to(roots.get(dest[0]), dest[0]):
         return False, "could not reach the container (not in view / too far / no path) — walk closer and retry"
-    ok, msg = open_chain(dest, own=set(), check=lambda i, x: refuse_dest(dest, i, x, blacklist), opened=trip_opened)
+    ok, msg = open_dest(dest, blacklist)
     if not ok:
         return False, msg
+    ok, msg = drop_into(serial, it, dest, name)
+    if ok:
+        carried.discard(serial)
+        return True, msg
+    return False, msg + " — it is still in your backpack"
+
+
+def open_dest(dest, blacklist):
+    """Open a put's destination chain from where the character stands, every entry checked first
+    (open_chain with no own roots, and refuse_dest). Returns (ok, message)."""
+    return open_chain(dest, own=set(), check=lambda i, x: refuse_dest(dest, i, x, blacklist), opened=trip_opened)
+
+
+def drop_into(serial, it, dest, name):
+    """A put's move of the live item `it` into dest's last container, and its verdict. Returns (ok, msg)."""
     # An item that cannot stack has landed only once it is in the container; the stack bookkeeping reads
     # the container's contents, a cost that grows with every item already there (#122).
-    if not stackable(it):
+    stacks = stackable(it)
+    graphic, hue = int(getattr(it, "Graphic", 0) or 0), int(getattr(it, "Hue", 0) or 0)
+    if not stacks:
         it2 = trip_move(serial, dest[-1], lambda x: inside(x, dest[-1]))
         if inside(it2, dest[-1]):
-            carried.discard(serial)
             return True, f"put {name} away"
-        return False, f"{name} bounced (full, or refused) — it is still in your backpack"
-    graphic, hue = int(getattr(it, "Graphic", 0) or 0), int(getattr(it, "Hue", 0) or 0)
-    # Landed: in the container, or gone onto a stack there that grew. Only the verdict below decides, as
-    # before; the stack's growth only ends the wait early.
-    before = stack_total(dest[-1], graphic, hue)
-    it2 = trip_move(serial, dest[-1], lambda x: inside(x, dest[-1]) or (x is None and stack_total(dest[-1], graphic, hue) > before))
+    else:
+        # Landed: in the container, or gone onto a stack there that grew. Only the verdict below decides, as
+        # before; the stack's growth only ends the wait early.
+        before = stack_total(dest[-1], graphic, hue)
+        it2 = trip_move(serial, dest[-1], lambda x: inside(x, dest[-1]) or (x is None and stack_total(dest[-1], graphic, hue) > before))
+        if inside(it2, dest[-1]):
+            return True, f"put {name} away"
+        if it2 is None and stack_total(dest[-1], graphic, hue) > 0:
+            return True, f"put {name} away (onto a stack)"
+    # One late look before calling it bounced: a drop the server applied can reach the client after the wait,
+    # and an item taken for bounced is lifted again (a direct move's falls back to the backpack path).
+    API.Pause(LATE_LOOK_S)
+    it2 = find(serial)
     if inside(it2, dest[-1]):
-        carried.discard(serial)
         return True, f"put {name} away"
-    if it2 is None and stack_total(dest[-1], graphic, hue) > 0:
-        carried.discard(serial)
+    if stacks and it2 is None and stack_total(dest[-1], graphic, hue) > 0:
         return True, f"put {name} away (onto a stack)"
-    return False, f"{name} bounced (full, or refused) — it is still in your backpack"
+    return False, f"{name} bounced (full, or refused)"
 
 
-def ms_since(t0):
-    return max(0, int(round((time.time() - t0) * 1000)))
+def near(serial):
+    """Whether the container `serial` lies on the ground within REACH of where the character stands."""
+    it = find(serial)
+    return it is not None and bool(getattr(it, "OnGround", False)) and dist_to(it.X, it.Y) <= REACH
+
+
+def stand_by_both(a, b):
+    """Stand within REACH of both ground containers `a` and `b`, for a direct move (#130). True at once
+    when the character already does; else, when the two are at most 2 x REACH apart (so tiles in reach
+    of both exist), it walks to the nearest such tile the client's pathfinder finds a way to (of equally
+    near ones, the one nearest the two containers, then the lowest x and y, so the choice is fixed). Which
+    tiles can be stood on is the pathfinder's to know, not the bridge's: one it finds no path to (a
+    chest, a wall) is passed over, DIRECT_TRIES at most. False sends the take the usual way. Both must
+    be on the ground where the client sees them, so the tile comes from live positions, never the queue.
+    The step keeps the containers this trip opened whose root is still in reach (trip_opened)."""
+    ia, ib = find(a), find(b)
+    if ia is None or ib is None or not getattr(ia, "OnGround", False) or not getattr(ib, "OnGround", False):
+        return False
+    ax, ay, bx, by = int(ia.X), int(ia.Y), int(ib.X), int(ib.Y)
+
+    def both():
+        return dist_to(ax, ay) <= REACH and dist_to(bx, by) <= REACH
+    if both():
+        return True
+    if max(abs(ax - bx), abs(ay - by)) > 2 * REACH:
+        return False
+    px, py = int(API.Player.X), int(API.Player.Y)
+
+    def tiles_to(x, y, x2, y2):
+        return max(abs(x - x2), abs(y - y2))
+    tiles = sorted(((x, y) for x in range(max(ax, bx) - REACH, min(ax, bx) + REACH + 1)
+                    for y in range(max(ay, by) - REACH, min(ay, by) + REACH + 1)
+                    if (x, y) not in ((ax, ay), (bx, by)) and within_walk(px, py, x, y)),
+                   key=lambda t: (tiles_to(t[0], t[1], px, py), tiles_to(t[0], t[1], ax, ay) + tiles_to(t[0], t[1], bx, by), t))
+    z = int(getattr(ia, "Z", 0) or 0)
+    for x, y in tiles[:DIRECT_TRIES]:
+        started = API.Pathfind(x, y, z, 0, False, WALK_TIMEOUT_S)
+        if started is False:
+            continue
+        arrived = wait_for_walk(started, both)
+        for c in [c for c, root in trip_opened.items() if not near(root)]:
+            del trip_opened[c]
+        trip_spot["at"] = (int(API.Player.X), int(API.Player.Y))
+        return arrived
+    return False
+
+
+def do_direct(p, it, blacklist):
+    """A direct move (#130): the take's item, already checked where it lies, dropped straight into its
+    put's destination, one lift instead of two, while that destination is in reach too. The put runs
+    every check a put runs except the carried set: the item is the one this trip's own take has just
+    found in its planned container, which is all a take would have added to that set. Returns the put's
+    message when the item landed, else None: the destination would not open from here (nothing moved),
+    or the server refused the drop, which bounces an item back where it was lifted from. The caller then
+    takes it into the backpack as before, so it is carried and its put runs later."""
+    if not open_dest(p["dest"], blacklist)[0]:
+        return None
+    ok, msg = drop_into(p["serial"], it, p["dest"], p["name"] or "item")
+    return msg + ", straight from where it was" if ok else None
+
+
+def ms_since(t0, t1=None):
+    return max(0, int(round(((time.time() if t1 is None else t1) - t0) * 1000)))
+
+
+def asked_to_stop():
+    """stop_requested, read after an interrupt: a client call failing then counts as the Stop it most likely is."""
+    try:
+        return stop_requested()
+    except BaseException:
+        return True
+
+
+def settle(op, s, p, t0):
+    """The step a Stop or an error cut short (`op` "take" or "put" for the trip step `s`, `p` a take's direct put
+    or None), as its item now lies, read once with every call guarded: after the client's Stop any of them may
+    fail. A take whose item is in the backpack took it (it is carried); a take's item in its direct put's
+    container, or a put's in its own, was moved there; anything else is reported failed, so the app keeps the
+    item where it last knew it and the message says to look. Returns the steps to report."""
+    serial, name = s["serial"], s["name"] or "item"
+
+    def step(o, msg, ok=True):
+        return {"op": o, "serial": serial, "ok": ok, "msg": msg, "ms": ms_since(t0)}
+    dest = s["dest"] if op == "put" else (p["dest"] if p else None)
+    try:
+        it, pack = find(serial), int(API.Backpack)
+        in_pack, in_dest = inside(it, pack), bool(dest) and inside(it, dest[-1])
+    except BaseException:
+        in_pack = in_dest = False
+    if op == "take" and in_pack:
+        carried.add(serial)
+        return [step("take", f"took {name}")]
+    if in_dest and op == "put":
+        carried.discard(serial)
+        return [step("put", f"put {name} away")]
+    if in_dest:
+        return [step("take", f"took {name}"), step("put", f"put {name} away, straight from where it was")]
+    return [step(op, f"{name}: cut short — check the game and rescan", False)]
+
+
+def direct_put(cmd, k, puts, blacklist):
+    """The put that takes[k]'s item may go straight into (#130), or None. The planner fits every put after
+    every take (app/organize.mts's attempt: a chest that is both a source and a target frees its room
+    before anything goes in), so a put may run early only when no take still to come frees room in a
+    container on its way; that put waits for the backpack path, as before. One with a blacklisted
+    container on its way is left to do_put to refuse, as before: nothing of it is walked to or opened."""
+    p = puts.get(cmd["takes"][k]["serial"])
+    if p is None or any(c in p["dest"] for t in cmd["takes"][k + 1:] for c in t["chain"]) or any(c in blacklist for c in p["dest"]):
+        return None
+    return p
 
 
 def do_trip(cmd):
-    """Organize: every take, then every put, one step at a time, the stop flag checked before each.
-    A take the backpack cannot hold ends the takes (partial), and a put of an item this trip meant to
-    take but did not is skipped. Every step and the trip carry `ms`, the milliseconds they took. Returns
-    (ok, msg, {"steps", "partial", "stopped", "ms"})."""
+    """Organize: every take, then every put, one step at a time, the stop flag checked before each. A
+    take whose put's destination is in reach, or can be brought in reach with a step (stand_by_both),
+    goes straight there and reports its take and its put together (a direct move, #130); its put is not
+    run again. A take the backpack cannot hold ends the takes (partial), and a put of an item this trip
+    meant to take but did not is skipped. Every step and the trip carry `ms`, the milliseconds they took.
+    Returns (ok, msg, {"steps", "partial", "stopped", "ms"})."""
     started = time.time()
     trip_opened.clear()
     # A flag written after this trip was queued is a Stop pressed while the trip waited its turn, and
@@ -1045,33 +1192,68 @@ def do_trip(cmd):
     serials = set(t["serial"] for t in cmd["takes"]) | set(p["serial"] for p in cmd["puts"])
     sysmsg(f"Pack Rat organize: trip {cmd['index']}, {len(serials)} items", INFO_HUE)
     roots = cmd["roots"]
-    steps, took = [], set()
+    steps, took, direct = [], set(), set()
+    puts = {p["serial"]: p for p in cmd["puts"]}
     partial = False
-    for t in cmd["takes"]:
-        if stopped or stop_requested():
+    error = ""
+    doing = None              # the step under way: (op, take or put, its direct put or None, t0)
+    try:
+        for k, t in enumerate(cmd["takes"]):
+            if stopped or stop_requested():
+                stopped = True
+                break
+            t0 = time.time()
+            p = direct_put(cmd, k, puts, blacklist)
+            doing = ("take", t, p, t0)
+            it, msg = take_source(t, roots, blacklist, p["dest"][0] if p else None)
+            ok, full = False, False
+            if it is not None and p is not None and near(p["dest"][0]):
+                t1 = time.time()
+                put = do_direct(p, it, blacklist)
+                if put is not None:
+                    steps.append({"op": "take", "serial": t["serial"], "ok": True, "msg": f"took {t['name'] or 'item'}", "ms": ms_since(t0, t1)})
+                    steps.append({"op": "put", "serial": t["serial"], "ok": True, "msg": put, "ms": ms_since(t1)})
+                    doing = None
+                    heartbeat()
+                    took.add(t["serial"])
+                    direct.add(t["serial"])
+                    continue
+                it = find(t["serial"])
+                if not inside(it, t["chain"][-1]):
+                    it, msg = None, f"{t['name'] or 'item'} did not land in its container and is not back where it was — check the game and rescan"
+            if it is not None:
+                ok, msg, full = do_take(t, it)
+            steps.append({"op": "take", "serial": t["serial"], "ok": bool(ok), "msg": msg, "ms": ms_since(t0)})
+            doing = None
+            heartbeat()
+            if ok:
+                took.add(t["serial"])
+            if full:
+                partial = True
+                break
+        planned = set(t["serial"] for t in cmd["takes"])
+        for p in cmd["puts"]:
+            if stopped or stop_requested():
+                stopped = True
+                break
+            if p["serial"] in direct:
+                continue
+            if p["serial"] in planned and p["serial"] not in took:
+                steps.append({"op": "put", "serial": p["serial"], "ok": False, "msg": "skipped: not taken on this trip", "ms": 0})
+                continue
+            t0 = time.time()
+            doing = ("put", p, None, t0)
+            ok, msg = do_put(p, roots, blacklist)
+            steps.append({"op": "put", "serial": p["serial"], "ok": bool(ok), "msg": msg, "ms": ms_since(t0)})
+            doing = None
+            heartbeat()
+    except BaseException as e:   # noqa: B036 -- the client's Stop interrupts at an API.Pause; the steps so far must still be reported
+        if isinstance(e, Exception) and not asked_to_stop():
+            error = str(e) or type(e).__name__
+        else:
             stopped = True
-            break
-        t0 = time.time()
-        ok, msg, full = do_take(t, roots, blacklist)
-        steps.append({"op": "take", "serial": t["serial"], "ok": bool(ok), "msg": msg, "ms": ms_since(t0)})
-        heartbeat()
-        if ok:
-            took.add(t["serial"])
-        if full:
-            partial = True
-            break
-    planned = set(t["serial"] for t in cmd["takes"])
-    for p in cmd["puts"]:
-        if stopped or stop_requested():
-            stopped = True
-            break
-        if p["serial"] in planned and p["serial"] not in took:
-            steps.append({"op": "put", "serial": p["serial"], "ok": False, "msg": "skipped: not taken on this trip", "ms": 0})
-            continue
-        t0 = time.time()
-        ok, msg = do_put(p, roots, blacklist)
-        steps.append({"op": "put", "serial": p["serial"], "ok": bool(ok), "msg": msg, "ms": ms_since(t0)})
-        heartbeat()
+        if doing is not None:
+            steps.extend(settle(*doing))
     put_away = sum(1 for s in steps if s["op"] == "put" and s["ok"])
     failed = sum(1 for s in steps if not s["ok"])
     msg = f"trip {cmd['index']}: {put_away} put away, {failed} step{'' if failed == 1 else 's'} failed"
@@ -1079,7 +1261,9 @@ def do_trip(cmd):
         msg += " — backpack full, trip cut short"
     if stopped:
         msg += " — stopped"
-    return failed == 0 and not partial and not stopped, msg, {"steps": steps, "partial": partial, "stopped": stopped, "ms": ms_since(started)}
+    if error:
+        msg += f" — error: {error}"
+    return failed == 0 and not partial and not stopped and not error, msg, {"steps": steps, "partial": partial, "stopped": stopped, "ms": ms_since(started)}
 
 
 def run(cmd):
