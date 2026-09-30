@@ -66,3 +66,10 @@ test("[fast] rarity presets: a tier exactly, or gear at Lesser Artifact and belo
   assert.deepEqual(matching("legendary-artifacts", things), ["Plate Helm"]);
   assert.deepEqual(matching("lesser-artifacts-and-below", things), ["Leather Cap"]);
 });
+
+test("[fast] the undesirables presets take splintering gear, the second only when it is brittle too, and skip saved suits (issue #133)", () => {
+  const gear = [{ name: "Splintering Axe", lines: ["Splintering Weapon 20%"] }, { name: "Brittle Axe", lines: ["Splintering Weapon 10%", "Brittle"] }, { name: "Plain Axe", lines: ["Brittle"] }, "Splintering Weapon Manual"];
+  assert.deepEqual(matching("splintering-weapons", gear), ["Brittle Axe", "Splintering Axe"]);
+  assert.deepEqual(matching("splintering-brittle", gear), ["Brittle Axe"]);
+  assert.equal(preset("splintering-weapons").match.skipSuits && preset("splintering-brittle").match.skipSuits, true);
+});

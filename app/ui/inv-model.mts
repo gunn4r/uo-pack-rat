@@ -70,6 +70,7 @@ export function queryParams(q: ItemQuery): URLSearchParams {
   if (q.nogarg) p.set("nogarg", "1");
   if (q.med) p.set("med", "1");
   for (const t of q.hideTags) p.append("hide", t);
+  for (const t of q.tags) p.append("tag", t);
   for (const f of q.props) p.append("prop", f.op ? `${f.key}:${f.op}:${f.min}` : `${f.key}:${f.min}`);
   if (q.group) p.set("group", "1");
   p.set("sort", q.sort);
@@ -147,6 +148,10 @@ export function activeFilters(q: ItemQuery, ctx: FilterContext): FilterToken[] {
   if (q.hideTags.length) {
     const tags = q.hideTags.join(", ");
     out.push({ id: "hide", label: `Hiding: ${tags}`, removeLabel: `Remove filter: Hiding ${tags}`, remove: (x) => ({ ...x, hideTags: [] }), cause: (t) => `Hiding ${listWords(q.hideTags)} hides all ${plural(t, "stack")}.` });
+  }
+  if (q.tags.length) {
+    const tags = q.tags.join(", ");
+    out.push({ id: "tags", label: `Tagged: ${tags}`, removeLabel: `Remove filter: Tagged ${tags}`, remove: (x) => ({ ...x, tags: [] }), cause: (t) => `${none(t)} is tagged ${listWords(q.tags)}.` });
   }
   if (q.nogarg) out.push({ id: "nogarg", label: "No gargoyle-only", removeLabel: "Remove filter: No gargoyle-only", remove: (x) => ({ ...x, nogarg: false }), cause: (t) => `Every one of the ${plural(t, "stack")} is gargoyle-only.` });
   if (q.med) out.push({ id: "med", label: "Meditation-safe", removeLabel: "Remove filter: Meditation-safe", remove: (x) => ({ ...x, med: false }), cause: (t) => `${none(t)} is meditation-safe gear.` });
