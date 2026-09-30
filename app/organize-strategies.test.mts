@@ -221,6 +221,17 @@ test("[fast] a group joining a sorted house's chest takes a bag there and leaves
   assert.equal(p.plan.moves, 2, "only the fragments move, into Quest's bag");
 });
 
+test("[fast] an Auto setup saved before crafting tools had a kind still files them with its Tools rule, until a rule asks for the Crafting kind; a player's own rule means what it says (issue #150)", () => {
+  const inv = fold([{ serial: A }, { serial: B, pos: at(102) }], [...things(A, ["Scissors", "Smith's Hammer", "Sewing Kit"]), ...things(B, ["Apple"], 4)]);
+  const now = ok(proposeOrganize(inv, emptyOrganizeConfig(), [], OPTS())).config;
+  assert.equal(planOrganize(inv, now, [], { now: NOW }).moves.length, 0);
+  const saved: OrganizeConfig = { ...now, rules: now.rules.filter((r) => r.id !== "auto-tools-2") };   // as this PR's parent wrote it
+  assert.deepEqual(saved.rules.map((r) => [r.id, r.match.query.kind]), [["auto-tools", ["tool"]], ["auto-other", []]]);
+  assert.equal(planOrganize(inv, saved, [], { now: NOW }).moves.length, 0, "the crafting tools stay in the Tools chest");
+  const mine: OrganizeConfig = { ...saved, rules: saved.rules.map((r) => (r.id === "auto-tools" ? { ...r, origin: "manual" as const } : r)) };
+  assert.deepEqual(planOrganize(inv, mine, [], { now: NOW }).moves.map((m) => [m.name, m.to]), [["Smith's Hammer", B], ["Sewing Kit", B]], "a player's own Tool rule takes tools only");
+});
+
 test("[fast] Simple and Detailed: neck armour goes with the armour, necklaces with the jewelry", () => {
   const neck: ThingSpec[] = [
     { serial: ITEM + 1, name: "Leather Gorget", in: A }, { serial: ITEM + 2, name: "Studded Gorget", in: A },

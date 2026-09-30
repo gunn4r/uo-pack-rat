@@ -333,7 +333,8 @@ test("[fast] kindOf: decor, quest and event items and crafting tools have kinds 
   assert.deepEqual(kinds(["Pickaxe", "Shovel", "Lockpick", "Fishing Pole", "Skinning Knife", "Scissors", "Lap Harp"]), Array(7).fill("tool"));
   // The live house's misses; an Ancient Weapon names nothing a kind is told by.
   assert.deepEqual(kinds(["Springs", "Clock Frame", "A Charter Guide", "Ancient Weapon"]), ["resource", "resource", "book", "other"]);
-  // What shares a word with the new kinds keeps its kind: deeds, event tokens, a Relic Fragment, food.
+  // What shares a word with the new kinds keeps its kind: deeds, event tokens, event bags, lamp oil, a Relic Fragment, food.
+  assert.deepEqual(kinds(["Trick Or Treat Bag", "Holiday Gift Box", "Lamp Oil"]), ["container", "container", "other"]);
   assert.deepEqual(kinds(["Holiday Tree Deed", "Rug Deed", "Halloween Token", "Relic Fragment", "Apple", "Cooked Bird", "Iron Ingot", "Board", "Recall Rune", "Bag Of Sending", "Bandage"]),
     ["deed", "deed", "currency", "resource", "food", "food", "resource", "resource", "rune", "container", "bandage"]);
 });

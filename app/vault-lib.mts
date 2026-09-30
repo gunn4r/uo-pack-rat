@@ -1246,6 +1246,7 @@ export function itemSearchBlob(it: Item): string {
 // Item kinds for everything that is not wearable gear. First match wins; names are UO base names.
 // ---------------------------------------------------------------------------
 export const KINDS: string[] = ["gear", "reagent", "potion", "scroll", "refinement", "resource", "gem", "ammo", "food", "crafting", "tool", "bandage", "currency", "map", "book", "rune", "deed", "container", "key", "clothing", "decor", "quest", "other"];
+const CONTAINER_RE = /\b(bag|pouch|box|chest|crate|backpack|basket|trunk|armoire|cabinet|quiver)\b/i;
 const KIND_RULES: Array<[string, RegExp]> = [
   ["reagent", /\b(black pearl|bloodmoss|blood moss|garlic|ginseng|mandrake|nightshade|spiders?'? ?silk|sulfurous ash|bat ?wing|grave dust|daemon blood|nox crystal|pig iron|dragon'?s blood|fertile dirt|reagent)\b/i],
   ["potion", /\b(potion|keg|elixir|balm|salve|lotion)\b/i],
@@ -1259,14 +1260,11 @@ const KIND_RULES: Array<[string, RegExp]> = [
   ["book", /\b(book|tome|journal|primer|compendium|guide)\b/i],
   ["deed", /\b(deed|commodity|certificate|voucher|ticket)\b/i],
   ["key", /\b(key|keyring|key ring)\b/i],
-  // Issue #150: quest and event items, decor and crafting tools, ahead of the words they share with resources ("fragment",
-  // Relic Fragment's), food (an Easter egg, Halloween candy, a flour sifter), gems (a crystal vase) and the tools. Deeds
-  // come first (a Holiday Tree Deed, a Rug Deed are deeds), and so do the currencies (an event token stays currency).
-  ["quest", /\b(mysterious fragment|quest|keepsakes?|memento|souvenir|halloween|christmas|easter|valentine'?s?|thanksgiving|holiday|trick or treat|anniversary|commemorative)\b/i],
-  // An ethereal mount's statuette is decor too: nothing else here fits it better.
-  ["decor", /\b(statuettes?|statues?|figurines?|sculptures?|bust|paintings?|portraits?|picture|tapestry|banners?|flags?|trophy|mounted|rugs?|carpets?|potted plant|flower ?pot|bonsai|vases?|urns?|lamps?|lanterns?|candles?|candelabrum|candelabra|chandelier|sconce|brazier|decorative|ornaments?|wreath|garland|globe|fountain|mirror|wall hanging)\b/i],
-  // The tools a crafting skill's menu opens from, and its stations; the gathering and utility tools (pickaxe, shovel,
-  // lockpick, fishing pole, skinning knife, scissors) and the instruments stay tools.
+  // Issue #150: ahead of the resources ("fragment"), food (Easter egg, flour sifter), gems (crystal vase) and tools;
+  // a container stays one (Trick Or Treat Bag), and an ethereal mount's statuette is decor.
+  ["quest", new RegExp(`^(?!.*${CONTAINER_RE.source}).*\\b(mysterious fragment|quest|keepsakes?|memento|souvenir|halloween|christmas|easter|valentine'?s?|thanksgiving|holiday|trick or treat|anniversary|commemorative)\\b`, "i")],
+  ["decor", /\b(statuettes?|statues?|figurines?|sculptures?|bust|paintings?|portraits?|picture|tapestry|banners?|flags?|trophy|mounted|rugs?|carpets?|potted plant|flower ?pot|bonsai|vases?|urns?|lamps?(?! oil)|lanterns?|candles?|candelabrum|candelabra|chandelier|sconce|brazier|decorative|ornaments?|wreath|garland|globe|fountain|mirror|wall hanging)\b/i],
+  // The tools a crafting menu opens from, and the stations; gathering tools, scissors and instruments stay tools.
   ["crafting", /\b(hammer|tongs|sewing kit|tinker'?s tools|tool kit|mortar|pestle|fletcher'?s tools|saw|jointing plane|moulding planes?|smoothing plane|draw knife|froe|inshave|scorp|pen|rolling pin|flour sifter|skillet|blowpipe|mallet and chisel|loom|spinning wheel|anvil|forge)\b/i],
   ["gem", /\b(diamond|ruby|sapphire|star sapphire|emerald|amethyst|citrine|tourmaline|amber|gem|gems|jewel)\b/i],
   ["ammo", /\b(arrow|arrows|bolt|bolts|crossbow bolt|shuriken|fukiya dart|throwing)\b/i],
@@ -1274,7 +1272,7 @@ const KIND_RULES: Array<[string, RegExp]> = [
   ["food", /\b(fish|steak|steaks|bread|cheese|apple|apples|meat|ham|egg|eggs|cake|pie|ribs|sausage|bacon|wine|ale|beer|liquor|milk|water|pitcher|cookie|cookies|grapes|pear|peach|banana|carrot|onion|cabbage|lettuce|pumpkin|squash|watermelon|honey|cooked|raw|muffin|chicken|lamb|bird|turkey|fruit|vegetable|dough|flour|jerky|stew|soup|candy|pretzel)\b/i],
   // A conjured Healing Stone (Mysticism) is used up like a tool; on a scroll graphic it is the spell (isSpellScroll).
   ["tool", /\b(pickaxe|shovel|scissors|skinning knife|lockpick|lockpicks|ink|fishing pole|tool|tools|axe|pick|healing stone)\b/i],
-  ["container", /\b(bag|pouch|box|chest|crate|backpack|basket|trunk|armoire|cabinet|quiver)\b/i],
+  ["container", CONTAINER_RE],
   ["clothing", /\b(shirt|doublet|surcoat|tunic|dress|gown|kilt|skirt|sash|apron|robe|cloak|hat|cap|bandana|bonnet|boots|sandals|shoes|thigh boots|gloves|half apron|body sash|obi|kimono|hakama|jin-?baori)\b/i],
 ];
 const REFINEMENT_RE = /\b(wash|varnish|polish|cure|gloss|scour|lacquer|resin) of (defense|protection|hardening|fortification|invulnerability)\b/i;
