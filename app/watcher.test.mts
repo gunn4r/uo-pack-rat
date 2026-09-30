@@ -224,6 +224,21 @@ test("[fast] startWatcher: a sweep handles the request file after every scan bes
   handle.close();
 });
 
+test("[fast] startWatcher: a drop whose watch event never comes is found by the periodic sweep", async () => {
+  const inboxDir = tmp("qm-inbox-silent-"), scansDir = tmp("qm-scans-silent-");
+  const accepted: StartWatcherOnAcceptedInfo[] = [];
+  const handle = startWatcher({
+    inboxDir, adapter: "tazuo", scansDir, getShard: () => SHARD, watch: fakeWatch(), debounceMs: 20, retries: 3, retryDelayMs: 20, sweepMs: 30,
+    onAccepted: (a) => accepted.push(a),
+  });
+  dropFile(inboxDir, "silent.json", JSON.stringify(validDoc({ character: "Silent" })));   // no fire(): the OS said nothing
+  await waitFor(() => accepted.length === 1);
+  assert.equal(accepted[0]!.character, "Silent");
+  await new Promise((r) => setTimeout(r, 100));
+  assert.equal(accepted.length, 1, "later sweeps find nothing new");
+  handle.close();
+});
+
 test("[fast] startWatcher: close() stops processing — a fire() afterward does nothing", async () => {
   const inboxDir = tmp("qm-inbox-close-"), scansDir = tmp("qm-scans-close-");
   const watch = fakeWatch();

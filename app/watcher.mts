@@ -39,7 +39,8 @@
 // promise chain, so two files' ingestion never interleaves; every await is guarded by a `closed` flag
 // so a close() mid-retry cuts the chain short instead of running past it. The watch heals itself: an
 // 'error' from it is logged and the watch re-armed, a deleted inbox is recreated (and watched again)
-// by the next sweep, and scanOnce() returns false when it could not sweep at all.
+// by the next sweep, and scanOnce() returns false when it could not sweep at all. A live watch is also swept every
+// sweepMs (5 s), since the OS can drop its notifications altogether.
 import {
   existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync, renameSync, unlinkSync, lstatSync, statSync, realpathSync,
   watch as fsWatch, type WatchListener,
@@ -262,6 +263,10 @@ export interface StartWatcherOptions {
   // A file of this name is not a scan: it goes to `handle` in its turn in the chain, so a scan dropped before it
   // is ingested first (Put away, issue #131: the panel's refresh, then its request). `handle` removes the file.
   request?: { name: string; handle: (path: string) => Promise<void> | void } | undefined;
+  // How often the inbox is swept anyway. fs.watch can stay silent for a watcher's whole life (the OS drops the
+  // notifications: app/server.test.mts, readUntilOrRescan), which left a drop waiting for a manual Rescan; a
+  // Put away request (issue #131) has a player waiting on it in game, so the inbox is also read every sweepMs.
+  sweepMs?: number;
 }
 
 // scanOnce() answers whether the sweep actually ran: false means the inbox could not be read or
@@ -276,7 +281,7 @@ export function startWatcher(
   {
     inboxDir, adapter, scansDir, getShard = () => undefined,
     log = () => {}, onAccepted = () => {}, onRejected = () => {},
-    debounceMs = 300, retries = 3, retryDelayMs = 700, watch = fsWatch, request,
+    debounceMs = 300, retries = 3, retryDelayMs = 700, watch = fsWatch, request, sweepMs = 5000,
   }: StartWatcherOptions = {} as StartWatcherOptions,   // every real call site supplies inboxDir/adapter/scansDir (see app/watcher.test.mts, app/vault-server.mts); this cast is compiler-only, matching config.mts's rawPort pattern
 ): WatcherHandle {
   mkdirSync(inboxDir, { recursive: true, mode: DATA_DIR_MODE });
@@ -436,11 +441,15 @@ export function startWatcher(
   arm();
   safeLog(`watching ${inboxDir} (adapter ${adapter})`);
   scanOnce();   // pick up files that landed while the app was closed (and arm again if that failed)
+  // Only while a watch is armed: a failing one is already swept by its own recovery, with its growing delay.
+  const sweeper = setInterval(() => { if (watcher && !recoveryTimer) scanOnce(); }, sweepMs);
+  sweeper.unref();
 
   return {
     scanOnce,
     close() {
       closed = true;
+      clearInterval(sweeper);
       for (const t of debounceTimers.values()) clearTimeout(t);
       debounceTimers.clear();
       for (const entry of pendingDelays) { clearTimeout(entry.timer!); entry.resolve(); }
