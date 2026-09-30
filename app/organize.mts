@@ -5,7 +5,7 @@
 import { matchesItem } from "./item-query.mts";
 import { parseStamp } from "./scan-schema.mts";
 import { CATCH_ALL_ID, EMPTY_BAGS_ID, type Build, type OrganizeConfig, type RuleMatch } from "./organize-config.mts";
-import { RESIST_KEYS, spellSchoolOf, TRASH_RE, type Character, type ContainerCapacity, type Inventory, type Item } from "./vault-lib.mts";
+import { RESIST_KEYS, spellSchoolOf, TRASH_RE, locationOf, type Character, type Container, type ContainerCapacity, type Inventory, type Item } from "./vault-lib.mts";
 import type { RulesV1RarityItem } from "./schema/types.d.mts";
 import type { TripInput } from "./bridge-trip.mts";
 
@@ -152,8 +152,11 @@ export function buildOf(it: Item): Build {
 
 // A rule's filter: the item query (location-free, item-query.mts's matchesItem) and, when given, any of the names
 // (compared as nameKeys; a name with no letter or digit matches nothing), the build (gear only) and the spell school
-// (spell scrolls only).
-export function ruleMatches(it: Item, m: RuleMatch, rarity: RulesV1RarityItem[] = []): boolean {
+// (spell scrolls only). `suits` holds the serials of every saved Suit Builder run's pieces (issue #133: the server
+// reads them from <data>/runs), which a rule with skipSuits leaves alone.
+const NO_SUITS: ReadonlySet<number> = new Set();
+export function ruleMatches(it: Item, m: RuleMatch, rarity: RulesV1RarityItem[] = [], suits: ReadonlySet<number> = NO_SUITS): boolean {
+  if (m.skipSuits && suits.has(it.serial)) return false;
   if (m.build && (!it.gear || buildOf(it) !== m.build)) return false;
   if (m.school && spellSchoolOf(baseName(it.name), it.graphic) !== m.school) return false;
   if (m.names?.length && !hasName(it, m.names)) return false;
@@ -168,8 +171,8 @@ function hasName(it: Item, names: readonly string[]): boolean {
 // What a rule filter would take if it were the only rule (the rule editor's live count, POST
 // /api/organize/match): the movable items in labelled roots it matches, their pieces (stack amounts) and up to
 // five of their names, stack counts stripped, distinct and in name order.
-export function matchCount(inv: Inventory, cfg: OrganizeConfig, m: RuleMatch, opts: ScopeOptions & { rarity?: RulesV1RarityItem[] | undefined }): { count: number; pieces: number; sample: string[] } {
-  const hits = scopeOf(inv, cfg, opts).movable.map((s) => inv.items[s]!).filter((it) => ruleMatches(it, m, opts.rarity));
+export function matchCount(inv: Inventory, cfg: OrganizeConfig, m: RuleMatch, opts: ScopeOptions & { rarity?: RulesV1RarityItem[] | undefined; suitPieces?: ReadonlySet<number> | undefined }): { count: number; pieces: number; sample: string[] } {
+  const hits = scopeOf(inv, cfg, opts).movable.map((s) => inv.items[s]!).filter((it) => ruleMatches(it, m, opts.rarity, opts.suitPieces));
   const names = [...new Set(hits.map((it) => it.name.replace(STACK_COUNT, "").trim()))].sort((a, b) => a.localeCompare(b, "en"));
   return { count: hits.length, pieces: hits.reduce((n, it) => n + (it.amount ?? 1), 0), sample: names.slice(0, 5) };
 }
@@ -177,16 +180,17 @@ export function matchCount(inv: Inventory, cfg: OrganizeConfig, m: RuleMatch, op
 export interface Claim { ruleId: string; alsoMatched: string[] }
 // First match wins (spec §1): the first rule whose filter passes claims the item and the others that pass are
 // only recorded. An item no rule claims goes to the catch-all, or stays put (null) when there is none.
-export function claimOf(it: Item, cfg: OrganizeConfig, rarity: RulesV1RarityItem[] = []): Claim | null {
-  const hits = cfg.rules.filter((r) => ruleMatches(it, r.match, rarity)).map((r) => r.id);
+export function claimOf(it: Item, cfg: OrganizeConfig, rarity: RulesV1RarityItem[] = [], suits: ReadonlySet<number> = NO_SUITS): Claim | null {
+  const hits = cfg.rules.filter((r) => ruleMatches(it, r.match, rarity, suits)).map((r) => r.id);
   if (hits.length) return { ruleId: hits[0]!, alsoMatched: hits.slice(1) };
   return cfg.catchAll != null ? { ruleId: CATCH_ALL_ID, alsoMatched: [] } : null;
 }
 
 // One confirmed step of a trip, from the results overlay (organize-state.json, app/organize-state.mts): the item
 // left `from` and is now in `to`, or in the backpack of the character that ran the trip when `to` is null (taken,
-// not yet put). `at` is the bridge's clock when the trip reported back.
-export interface OverlayMove { serial: number; name: string; from: number | null; to: number | null; at: string; trip: string }
+// not yet put). `at` is the bridge's clock when the trip reported back; `character` is whose client the bridge ran
+// the trip in, when its status file said (issue #127: where a carried item reads as being).
+export interface OverlayMove { serial: number; name: string; from: number | null; to: number | null; at: string; trip: string; character?: string | undefined }
 export interface Carried { serial: number; name: string }
 // The inventory as the overlay says it stands: moved items re-homed, and every container's fill (a copy of its
 // Contents line) adjusted for the steps it does not yet include.
@@ -220,6 +224,44 @@ export function applyOverlay(inv: Inventory, overlay: OverlayMove[]): Placed {
     items[m.serial] = { ...it, container: chain ? m.to : null, root: chain ? chain.at(-1)! : null };
   }
   return { inv: { ...inv, items }, counts, carried };
+}
+
+// Issue #127: the inventory every view and bridge command reads (the server's getInventory): the fold with the
+// overlay applied exactly as the planner applies it, so after a trip the app points at the chest an item went into,
+// not the one it came out of, until a scan catches up. A moved item's location is read again from its new container
+// (so its text, root, container and the chain Highlight walks agree), and a container's fill is the overlay's count.
+// A carried item sits at the top of the backpack of the character whose bridge took it (whose fill, when it states
+// one, counts it); with no such backpack in the scans (or a move recorded before moves named their character) it is
+// in no container and says it is carried. The planner takes the fold itself and applies the overlay on its own:
+// handed this, it would apply every move twice. Work beyond applyOverlay's is per move, not per item.
+export function overlaidInventory(inv: Inventory, overlay: OverlayMove[]): Inventory {
+  const placed = applyOverlay(inv, overlay);
+  const items = placed.inv.items;
+  const containers: Record<string, Container> = Object.assign(Object.create(null) as Record<string, Container>, inv.containers);
+  for (const [serial, cap] of placed.counts) {
+    const c = inv.containers[serial]!;
+    if (cap.items !== c.capacity!.items || cap.stones !== c.capacity!.stones) containers[serial] = { ...c, capacity: cap };
+  }
+  const packs = new Map<string, Container>();
+  for (const c of Object.values(inv.containers)) if (c.parent == null && c.kind === "backpack") packs.set(c.scannedBy, c);
+  const who = new Map(overlay.map((m) => [m.serial, m.character]));
+  const carried = new Set<number>();
+  for (const { serial } of placed.carried) {
+    const it = items[serial], character = who.get(serial);
+    const pack = character == null ? undefined : packs.get(character);
+    if (!it) continue;
+    if (!pack) { carried.add(serial); continue; }
+    items[serial] = { ...it, container: +pack.serial, root: +pack.root };
+    const cur = containers[pack.serial]!, cap = cur.capacity;
+    if (cap) containers[pack.serial] = { ...cur, capacity: { ...cap, items: cap.items + 1, stones: cap.stones == null ? null : cap.stones + weightOf(it) } };
+  }
+  const view = { ...inv, containers, items };
+  for (const [serial, character] of who) {
+    const it = items[serial];
+    if (!it || it === inv.items[serial]) continue;
+    it.location = carried.has(serial) ? { kind: "unknown", character: character ?? "?", text: `Carried by Organize${character ? ` (${character})` : ""}`, root: null, rootName: "?" } : locationOf(it, view);
+  }
+  return view;
 }
 
 // Spec §2.4: the container an item already counts as filed in — the nearest one above it that is any rule's
@@ -418,6 +460,7 @@ export interface Plan {
 }
 export interface PlanOptions extends ScopeOptions {
   rarity?: RulesV1RarityItem[] | undefined;
+  suitPieces?: ReadonlySet<number> | undefined;
   tripItems?: number | undefined;
   tripStones?: number | undefined;
   tripBytes?: number | undefined;
@@ -554,7 +597,7 @@ export function planOrganize(inv: Inventory, cfg: OrganizeConfig, overlay: Overl
   const bagTakes = !!newest?.adapter?.capabilities.bridge.includes(BAG_TAKES);
   if (gather != null && !bagTakes && bags.length) warnings.push({ kind: "old-scripts", serial: gather, detail: "empty bags are not gathered here until you reinstall the TazUO scripts from Settings and rescan: the installed bridge does not check that a bag is empty before taking it" });
   const bagClaim: Claim | null = gather != null && bagTakes ? { ruleId: EMPTY_BAGS_ID, alsoMatched: [] } : null;
-  const claims: [number, Claim | null][] = candidates.map((s) => [s, view.containers[s] && bagClaim ? bagClaim : claimOf(view.items[s]!, cfg, rarity)]);
+  const claims: [number, Claim | null][] = candidates.map((s) => [s, view.containers[s] && bagClaim ? bagClaim : claimOf(view.items[s]!, cfg, rarity, opts.suitPieces)]);
   if (bagClaim) claims.push(...bags.map((b): [number, Claim] => [b.serial, bagClaim]));
   for (const [serial, claim] of claims) {
     const it = view.items[serial]!;

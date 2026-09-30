@@ -515,8 +515,8 @@ export interface RejectedEvent {
   reason: string;
   at: number;
 }
-// broadcastEvent("changed", …): a forget / forget-character ("inventory") or a run deletion ("runs")
-// made in some tab — every tab reloads that data.
+// broadcastEvent("changed", …): a forget / forget-character or an Organize trip reporting back ("inventory"), or a
+// run deletion ("runs") — every tab reloads that data.
 export interface ChangedEvent {
   what: "inventory" | "runs";
   by?: string;   // an inventory change's x-client-id: the tab that made it has already reloaded

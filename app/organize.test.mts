@@ -16,7 +16,7 @@ import { resolveConfig } from "./config.mts";
 import { queueTrip } from "./bridge-trip.mts";
 import type { ScanV2 } from "./schema/types.d.mts";
 import {
-  ancestry, scopeOf, ruleMatches, buildOf, matchCount, CASTER_PROPS, CASTER_SKILLS, MELEE_PROPS, MELEE_SKILLS, claimOf, baseName, nameKey, applyOverlay, homeOf, newSim, simTake, simPut, mark, rollback, MAX_STACK,
+  ancestry, scopeOf, ruleMatches, buildOf, matchCount, CASTER_PROPS, CASTER_SKILLS, MELEE_PROPS, MELEE_SKILLS, claimOf, baseName, nameKey, applyOverlay, overlaidInventory, homeOf, newSim, simTake, simPut, mark, rollback, MAX_STACK,
   sitesOf, planOrganize, tripCommand, lineBytes, emptyBagsOf, type OverlayMove, type Sim, type Plan,
 } from "./organize.mts";
 
@@ -211,6 +211,21 @@ test("[fast] a rule's free text never matches where the item sits", () => {
 const T1 = "2026-09-28T11:00:00Z";
 const step = (serial: number, name: string, from: number | null, to: number | null, when = T1): OverlayMove => ({ serial, name, from, to, at: when, trip: "t-1" });
 
+test("[fast] an Undesirables rule with skipSuits leaves a saved suit's piece to the rules below (issue #133)", () => {
+  const AXE = 0x40001010, AXE2 = 0x40001011, lines = ["Splintering Weapon 20%", "Brittle"];
+  const inv = fold([{ serial: A, pos: at(100) }, { serial: B, pos: at(102) }, { serial: C, pos: at(104) }],
+    [{ serial: AXE, name: "Axe", in: C, lines }, { serial: AXE2, name: "Axe", in: C, lines }, { serial: KATANA, name: "Katana", in: C, lines: ["Splintering Weapon 5%"] }]);
+  const fodder: OrganizeRule = { id: "fodder", name: "Fodder", match: { query: { ...emptyRuleQuery(), tags: ["brittle"], props: [{ key: "splintering weapon", min: 10 }] }, skipSuits: true }, targets: [A], origin: "manual" };
+  const cfg = config({ labels: labels(A, B, C), rules: [fodder, rule("gear", { kind: ["gear"] }, [B])] });
+  const suits = new Set([AXE2]);
+  assert.deepEqual(claimOf(inv.items[AXE]!, cfg, [], suits), { ruleId: "fodder", alsoMatched: ["gear"] });
+  assert.deepEqual(claimOf(inv.items[AXE2]!, cfg, [], suits), { ruleId: "gear", alsoMatched: [] });
+  assert.deepEqual(claimOf(inv.items[KATANA]!, cfg, [], suits), { ruleId: "gear", alsoMatched: [] }, "below the threshold");
+  assert.equal(claimOf(inv.items[AXE2]!, { ...cfg, rules: [{ ...fodder, match: { ...fodder.match, skipSuits: false } }, ...cfg.rules.slice(1)] }, [], suits)?.ruleId, "fodder", "only a skipSuits rule looks at the suits");
+  assert.equal(matchCount(inv, cfg, fodder.match, { now: NOW, suitPieces: suits }).count, 1);
+  assert.deepEqual(moved(planOrganize(inv, cfg, [], { now: NOW, suitPieces: suits })).map(([s, , to]) => [s, to]), [[AXE, A], [KATANA, B], [AXE2, B]].sort((x, y) => x[0]! - y[0]!));
+});
+
 test("[fast] homeOf: the nearest container above an item that is some rule's target", () => {
   const inv = fold([{ serial: A }, { serial: BAG, parent: A }, { serial: POUCH, parent: BAG }], [{ serial: PEARL, name: "Black Pearl", in: POUCH }]);
   const pearl = inv.items[PEARL]!;
@@ -255,6 +270,30 @@ test("[fast] an item taken and not yet put is carried, in no container", () => {
   assert.equal(placed.inv.items[PEARL]!.root, null);
   assert.deepEqual(placed.carried, [{ serial: PEARL, name: "Black Pearl" }]);
   assert.equal(placed.counts.get(A)!.items, 0);
+});
+
+test("[fast] overlaidInventory: a moved item's location, root and container all read its destination, and fills are the overlay's", () => {
+  const inv = fold([{ serial: A }, { serial: B, pos: at(104) }, { serial: BAG, parent: B }], [{ serial: PEARL, name: "Black Pearl", in: A }, { serial: RUBY, name: "Ruby", in: A }]);
+  const before = JSON.stringify(inv);
+  const view = overlaidInventory(inv, [step(PEARL, "Black Pearl", A, BAG)]);
+  const pearl = view.items[PEARL]!;
+  assert.deepEqual([pearl.container, pearl.root, pearl.location?.text, pearl.location?.root], [BAG, B, `Box ${B} › Box ${BAG}`, B]);
+  assert.equal(view.items[RUBY], inv.items[RUBY], "an item the overlay does not move is the fold's own");
+  assert.deepEqual([view.containers[A]!.capacity!.items, view.containers[B]!.capacity!.items, view.containers[BAG]!.capacity!.items], [1, 2, 1]);
+  assert.equal(view.containers[A]!.serial, A);
+  assert.equal(JSON.stringify(inv), before, "the fold handed in is not changed");
+  assert.equal(overlaidInventory(inv, [step(PEARL, "Black Pearl", A, BAG, "2026-09-28T09:00:00Z")]).items[PEARL]!.location?.text, `Box ${A}`, "a step its scan has seen since is over");
+});
+
+test("[fast] overlaidInventory: a carried item is in its character's backpack, or says it is carried when that backpack is not in the scans", () => {
+  const inv = fold([{ serial: A }, { serial: PACK, kind: "backpack", name: "Backpack" }], [{ serial: PEARL, name: "Black Pearl", in: A }]);
+  const mine = overlaidInventory(inv, [{ ...step(PEARL, "Black Pearl", A, null), character: "Tester" }]).items[PEARL]!;
+  assert.deepEqual([mine.container, mine.root, mine.location?.kind, mine.location?.character, mine.location?.text], [PACK, PACK, "backpack", "Tester", "Tester's backpack"]);
+  const counted = fold([{ serial: A }, { serial: PACK, kind: "backpack", name: "Backpack", tooltip: ["Backpack", "Contents: 3/125 Items, 10/550 Stones"] }], [{ serial: PEARL, name: "Black Pearl", in: A, weight: 2 }]);
+  assert.deepEqual(overlaidInventory(counted, [{ ...step(PEARL, "Black Pearl", A, null), character: "Tester" }]).containers[PACK]!.capacity, { items: 4, maxItems: 125, stones: 12, maxStones: 550 }, "a backpack that states its fill counts what it carries");
+  const other = overlaidInventory(inv, [{ ...step(PEARL, "Black Pearl", A, null), character: "Someone" }]).items[PEARL]!;
+  assert.deepEqual([other.container, other.root, other.location?.character, other.location?.text], [null, null, "Someone", "Carried by Organize (Someone)"]);
+  assert.equal(overlaidInventory(inv, [step(PEARL, "Black Pearl", A, null)]).items[PEARL]!.location?.text, "Carried by Organize");
 });
 
 const simOf = (inv: Inventory): Sim => newSim(inv, applyOverlay(inv, []).counts);

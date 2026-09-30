@@ -281,10 +281,12 @@ function seenPanel(): Kids {
   const seg = segmented({ label: "Seen", options: [{ value: "0", label: "Any" }, { value: "1", label: "24 h" }, { value: "7", label: "7 days" }, { value: "30", label: "30 days" }], value: String(state.query.seenDays || 0), onChange: (v) => setQuery({ ...state.query, seenDays: +v }) });
   return [box("div", { class: "inv-pop-head" }, txt("Seen in the last", "caps")), seg];
 }
+// Hide the items with a tag, or (issue #133) show only the items with one: "Splintering and brittle" needs the latter.
 function tagsPanel(): Kids {
-  const pills = Object.keys(tagUnits()).map((t) => pill({ label: cap(t), pressed: state.query.hideTags.includes(t), off: true,
-    onToggle: (on) => setQuery({ ...state.query, hideTags: on ? [...state.query.hideTags, t] : state.query.hideTags.filter((x) => x !== t) }) }));
-  return [box("div", { class: "inv-pop-head" }, txt("Hide items tagged", "caps")), box("div", { class: "inv-pills" }, ...pills), txt("A struck-through tag is hidden.", "t-sm muted")];
+  const pills = (key: "hideTags" | "tags", off: boolean): HTMLElement => box("div", { class: "inv-pills" }, ...Object.keys(tagUnits()).map((t) => pill({ label: cap(t), pressed: state.query[key].includes(t), off,
+    onToggle: (on) => setQuery({ ...state.query, [key]: on ? [...state.query[key], t] : state.query[key].filter((x) => x !== t) }) })));
+  return [box("div", { class: "inv-pop-head" }, txt("Hide items tagged", "caps")), pills("hideTags", true), txt("A struck-through tag is hidden.", "t-sm muted"),
+    box("div", { class: "inv-pop-head" }, txt("Only items tagged", "caps")), pills("tags", false), txt("An item with any of the chosen tags is shown.", "t-sm muted")];
 }
 function gearPanel(): Kids {
   const garg = switchControl({ label: "Hide gargoyle-only gear", checked: state.query.nogarg, onChange: (on) => setQuery({ ...state.query, nogarg: on }) });
@@ -320,7 +322,7 @@ function openAddMenu(): void {
     { label: "Property rule…", onSelect: () => openPanel(addChip, "Property rule", propertyPanel, 300) },
     { label: "Slayer…", onSelect: () => openPanel(addChip, "Slayer", slayerPanel) },
     { label: "Seen…", onSelect: () => openPanel(addChip, "Seen", () => seenPanel()) },
-    { label: "Hide tags…", onSelect: () => openPanel(addChip, "Hide tags", () => tagsPanel()) },
+    { label: "Tags…", onSelect: () => openPanel(addChip, "Tags", () => tagsPanel()) },
     { label: "Gargoyle and meditation…", onSelect: () => openPanel(addChip, "Gear", () => gearPanel()) },
   );
   menu(addChip, entries, { label: "Add a filter" });
@@ -328,7 +330,7 @@ function openAddMenu(): void {
 // A property rule: the property (searchable, grouped like the column picker), ≥ ≤ =, a number. Rules
 // add up (an item must pass every one), which the popover says.
 function propertyPanel(close: () => void): Kids {
-  const keys = [...new Set([...state.propKeys, "strReq", "weight"])];
+  const keys = [...new Set([...state.propKeys, ...(state.facets?.extraKeys || []), "strReq", "weight"])];
   let key = "", op = "ge";
   const chosen = txt("Pick a property", "t-sm muted");
   const find = searchInput({ label: "Find a property", placeholder: "Find a property" });
