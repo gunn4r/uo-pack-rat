@@ -724,6 +724,54 @@ test("[slow] a ground container is blacklisted from Containers and unblacklisted
   }
 });
 
+// Highlight in game (issue #10): a ground container's row menu queues the bridge's highlight for the container
+// itself, with no chain (nothing to open) and its scanned tile; offline, the item is disabled with the reason.
+test("[slow] Highlight in game queues a highlight for a ground container, and is disabled while the bridge is offline", async (t) => {
+  const why = unavailable();
+  if (why) return t.skip(why);
+  const dataDir = seedDataDir("packrat-ui-highlight-");
+  const bridgeDir = join(dataDir, "bridge", "tazuo");
+  mkdirSync(bridgeDir, { recursive: true });
+  const { app, page, errors } = await launch(dataDir);
+  let alive: NodeJS.Timeout | undefined;
+  try {
+    await openTab(page, "containers");
+    const row = page.locator("#cont-table tbody tr[data-root]").last();   // the demo's roots are all ground containers
+    await row.waitFor({ timeout: 15_000 });
+    const serial = Number(await row.getAttribute("data-root"));
+    const item = page.getByRole("menuitem", { name: "Highlight in game" });
+    await row.getByRole("button", { name: /^Actions for / }).click();
+    assert.equal(await item.getAttribute("aria-disabled"), "true");
+    assert.match(await item.getAttribute("title") || "", /^Bridge offline/);
+    await page.keyboard.press("Escape");
+
+    // The bridge, as far as the page can tell: a status file refreshed every second.
+    const writeStatus = (): void => writeFileSync(join(bridgeDir, "status.json"), JSON.stringify({ alive: new Date().toISOString(), character: "Tester", current: null, counts: { done: 0, failed: 0 }, results: {} }));
+    writeStatus();
+    alive = setInterval(writeStatus, 1000);
+    await page.waitForFunction(() => document.querySelector("#bridge")?.getAttribute("data-state") === "ready", undefined, { timeout: 15_000 });
+    await row.getByRole("button", { name: /^Actions for / }).click();
+    await item.click();
+    const queue = join(bridgeDir, "queue.jsonl");
+    const end = Date.now() + 10_000;
+    let lines: string[] = [];
+    while (!lines.length && Date.now() < end) {
+      await page.waitForTimeout(100);
+      try { lines = readFileSync(queue, "utf8").trim().split("\n").filter(Boolean); } catch { /* not written yet */ }
+    }
+    assert.equal(lines.length, 1, "one command queued");
+    const cmd = JSON.parse(lines[0]!) as { action: string; serial: number; name: string; chain: number[]; pos: { x: number; y: number } | null };
+    assert.deepEqual([cmd.action, cmd.serial, cmd.chain], ["highlight", serial, []]);
+    assert.equal(cmd.name, "Metal Chest");
+    assert.deepEqual([cmd.pos?.x, cmd.pos?.y], [1000, 1000]);
+    assert.deepEqual(errors, []);
+  } finally {
+    clearInterval(alive);
+    await app.close();
+    rmSync(dataDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
+  }
+});
+
 // Rarity at most (issue #11): the Rarity popover's second list caps the tier. The strip and the chip say
 // so, and every tier left in the table is the one picked or a lower one.
 test("[slow] Rarity at most keeps the tier picked and the ones below it", async (t) => {

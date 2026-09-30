@@ -11,7 +11,10 @@ import type { Item } from "../vault-lib.mts";
 import type { BridgeQueueApiResponse, BridgeStatusApiResponse } from "./api-types.mts";
 
 // ---------------------------------------------------------------- bridge (Highlight / Grab / Go to)
-export function chainOf(it: Item): number[] {
+// What a command needs of its target: an item, or a container highlighted as itself (the Containers view's
+// Highlight in game, issue #10: its own serial, `container` its parent, so the chain stops above it).
+export type BridgeTarget = Pick<Item, "serial" | "name" | "container" | "root"> & Partial<Pick<Item, "equippedBy" | "location">>;
+export function chainOf(it: BridgeTarget): number[] {
   const chain: number[] = []; let cur = it.container != null ? state.inv!.containers[it.container] : null, guard = 0;
   while (cur && guard++ < 8) { chain.unshift(+cur.serial); cur = cur.parent != null ? state.inv!.containers[cur.parent] : null; }
   return chain;
@@ -20,13 +23,13 @@ export const BRIDGE_OFFLINE = "Bridge offline. Press Play on packrat-bridge.py i
 // A ground root's position, which the bridge's "Go to" walks to. The fold copies every scanned
 // container field onto inv.containers, `pos` included (docs/scan-schema.md), so a ground root from a
 // scanner that records positions carries one; a backpack or bank root has none.
-export const rootPos = (it: Item): unknown => (it.root != null ? state.inv!.containers[it.root] : null)?.pos || null;
+export const rootPos = (it: BridgeTarget): unknown => (it.root != null ? state.inv!.containers[it.root] : null)?.pos || null;
 // Queue one command for an item; the status poll toasts its result once packrat-bridge.py reports it.
 // The success branch is narrowed to `ok: true` (BridgeQueueApiResponse's own `ok` is plain `boolean`,
 // matching every route's response shape generally) so `r.ok ? r.id : r.error` below discriminates the
 // union properly — POST /api/bridge only ever sends this body on a 200 (api.mts throws for anything
 // else), so `ok` is always literally `true` on that path in practice.
-export async function sendBridge(action: string, it: Item): Promise<(BridgeQueueApiResponse & { ok: true }) | { ok: false; error: string }> {
+export async function sendBridge(action: string, it: BridgeTarget): Promise<(BridgeQueueApiResponse & { ok: true }) | { ok: false; error: string }> {
   try {
     // name is required by BRIDGE_SCHEMA.command — it.name should always be set, but a falsy/missing
     // one used to serialize away entirely (JSON.stringify drops an undefined property), which the
@@ -226,7 +229,7 @@ function showDataSection(): void {
 // ---- inventory
 // Why one bridge action cannot run on one item right now, in words for its disabled button's tooltip, or
 // null when it can (spec 3.5: offline actions are disabled with the reason, never left live to fail).
-export function bridgeActionReason(action: "highlight" | "grab" | "goto", it: Item): string | null {
+export function bridgeActionReason(action: "highlight" | "grab" | "goto", it: BridgeTarget): string | null {
   const name = ACTION_LABELS[action];
   if (it.equippedBy) return `${it.equippedBy} is wearing it.`;
   const adapter = currentAdapter();
@@ -238,7 +241,7 @@ export function bridgeActionReason(action: "highlight" | "grab" | "goto", it: It
 }
 // One bridge action from a row or the item peek: queued, and toasted as queued (the status poll toasts
 // the game's answer later).
-export async function runBridgeAction(action: "highlight" | "grab" | "goto", it: Item): Promise<void> {
+export async function runBridgeAction(action: "highlight" | "grab" | "goto", it: BridgeTarget): Promise<void> {
   const r = await sendBridge(action, it);
   toast(r.ok ? `${ACTION_LABELS[action]}: ${it.name} queued for ${bridge.character}` : r.error, r.ok ? "" : "bad");
 }
