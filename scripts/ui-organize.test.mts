@@ -245,6 +245,7 @@ test("[slow] + Rule from a preset, then targets in fill order; the editor lists 
     await page.waitForSelector("#rule-drawer:not([hidden]) #rule-preset");
     await page.selectOption("#rule-preset", "splintering-brittle");
     assert.equal(await page.locator("#rule-skip-suits").isChecked(), true);
+    assert.equal(await page.locator("#rule-delete").isVisible(), false, "a new rule has nothing to delete");
     assert.match(await page.locator("#rule-drawer").innerText(), /splintering weapon ≥ 1[\s\S]*Tagged: brittle/);
     await page.selectOption("#rule-add-target", String(DORRAN));
     await page.click("#rule-save");

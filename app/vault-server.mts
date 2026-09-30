@@ -853,7 +853,7 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
     const bridges = Object.fromEntries([...new Set(before.pending.map((p) => p.adapter))].map((a) => [a, bridgeView(a, now)]));
     const state = noteSeen(pruneOverlay(harvestTrips(before, bridges, now), inv, now), config, inv);
     if (JSON.stringify(state) !== JSON.stringify(before)) writeOrganizeState(state);
-    const plan = planOrganize(inv, config, state.moves, { now, rarity: currentRules.rarity, suitPieces: suitPieces(readRuns()), blacklist: readBlacklist().map((e) => e.serial), seen: state.seen });
+    const plan = planOrganize(inv, config, state.moves, { now, rarity: currentRules.rarity, suitPieces: suitsFor(config.rules.map((r) => r.match)), blacklist: readBlacklist().map((e) => e.serial), seen: state.seen });
     return { inv, config, state, plan, problems, bridges };
   }
   // A profiles.json that does not parse (a write cut short before writes were atomic, or a bad hand
@@ -1056,6 +1056,9 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
 
   // ---- saved runs: one JSON file per finished build in app/data/runs/ -------------------------------
   function readRuns(): SavedRun[] { return readRunFiles().map((r) => r.run); }
+  // Every saved suit's pieces, for Organize (issue #133), read only when a rule asks to skip them: the live count
+  // asks on every pause in typing, and few setups have such a rule.
+  function suitsFor(matches: RuleMatch[]): Set<number> | undefined { return matches.some((m) => m.skipSuits) ? suitPieces(readRuns()) : undefined; }
   function readRunFiles(): { file: string; run: SavedRun }[] {
     if (!existsSync(RUNS)) return [];
     const out: { file: string; run: SavedRun }[] = [];
@@ -1881,7 +1884,7 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
         const problem = matchProblem(match);
         if (problem) return send(res, 400, { ok: false, error: problem });
         const { inv } = await getInventory();
-        const counted = matchCount(inv, readOrganize().config, match as RuleMatch, { now: Date.now(), rarity: currentRules.rarity, suitPieces: suitPieces(readRuns()), blacklist: readBlacklist().map((e) => e.serial) });
+        const counted = matchCount(inv, readOrganize().config, match as RuleMatch, { now: Date.now(), rarity: currentRules.rarity, suitPieces: suitsFor([match as RuleMatch]), blacklist: readBlacklist().map((e) => e.serial) });
         return send(res, 200, { ok: true, ...counted });
       }
       if (req.method === "POST" && url.pathname === "/api/organize/propose") {
@@ -1895,7 +1898,7 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
         }
         const { inv, config, state, problems } = await organizeNow();
         if (problems.length) return send(res, 409, { ok: false, error: `organize.json was hand-edited and parts of it were dropped (${problems[0]}); open Organize and save the setup first` });
-        const r = proposeOrganize(inv, config, state.moves, { strategy: strategy as StrategyId, containers: containers as number[] | undefined, now: Date.now(), rarity: currentRules.rarity, suitPieces: suitPieces(readRuns()), blacklist: readBlacklist().map((e) => e.serial), seen: state.seen });
+        const r = proposeOrganize(inv, config, state.moves, { strategy: strategy as StrategyId, containers: containers as number[] | undefined, now: Date.now(), rarity: currentRules.rarity, suitPieces: suitsFor(config.rules.map((r) => r.match)), blacklist: readBlacklist().map((e) => e.serial), seen: state.seen });
         return send(res, r.ok ? 200 : 409, r);
       }
       if (req.method === "GET" && url.pathname === "/api/organize/plan") {
