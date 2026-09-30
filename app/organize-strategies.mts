@@ -322,7 +322,7 @@ export function proposeOrganize(inv: Inventory, cfg: OrganizeConfig, overlay: Ov
   const black = new Set(opts.blacklist ?? []);
   const origin: Origin = `strategy:${opts.strategy}`;
   const manualRules = cfg.rules.filter((r) => r.origin === "manual");
-  const mine = new Set([...manualRules.flatMap((r) => r.targets), ...(cfg.catchAll != null ? [cfg.catchAll] : [])]);
+  const mine = new Set([...manualRules.flatMap((r) => r.targets), ...[cfg.catchAll, cfg.emptyBagsTo].filter((s): s is number => s != null)]);
   const filled = new Set(cfg.rules.filter((r) => r.origin !== "manual").flatMap((r) => r.targets));
   const { candidates, unusable } = candidatesOf(view, cfg, placed.counts, black, mine, filled);
   const offered = new Set(candidates.map((c) => c.serial));
@@ -403,7 +403,8 @@ export function proposeOrganize(inv: Inventory, cfg: OrganizeConfig, overlay: Ov
     return { key: g.key, name: g.name, family: g.family, ruleIds, items: g.items.length, needSlots: need, targets, roomSlots, shortfall, addContainers: Math.ceil(shortfall / CONTAINER_SLOTS), crossSite: g.items.length - need };
   });
 
-  const config: OrganizeConfig = { version: 1, labels, rules: [...manualRules, ...autoRules], catchAll, pinnedItems: [...cfg.pinnedItems] };
+  // The gather container (issue #128) is the player's own, like the catch-all: its label is kept above, so it stays.
+  const config: OrganizeConfig = { version: 1, labels, rules: [...manualRules, ...autoRules], catchAll, ...(cfg.emptyBagsTo !== undefined ? { emptyBagsTo: cfg.emptyBagsTo } : {}), pinnedItems: [...cfg.pinnedItems] };
   const checked = checkOrganizeConfig(config);
   if (!checked.ok) return { ok: false, error: `Auto organize cannot save this setup: ${checked.error}` };
   const plan = planOrganize(inv, config, overlay, opts);

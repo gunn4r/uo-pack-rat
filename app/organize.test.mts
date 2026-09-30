@@ -9,7 +9,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { foldSnapshots, setRules, PROP_PATTERNS, SKILL_NAMES, type Inventory } from "./vault-lib.mts";
 import { houseScan, AT, type BoxSpec, type ThingSpec } from "./organize-fixture.mts";
-import { emptyRuleQuery, emptyOrganizeConfig, BUILDS, CATCH_ALL_ID, type OrganizeConfig, type OrganizeRule, type ContainerLabel, type RuleMatch } from "./organize-config.mts";
+import { emptyRuleQuery, emptyOrganizeConfig, BUILDS, CATCH_ALL_ID, EMPTY_BAGS_ID, type OrganizeConfig, type OrganizeRule, type ContainerLabel, type RuleMatch } from "./organize-config.mts";
 import type { RuleQuery } from "./item-query.mts";
 import type { RulesV1 } from "./schema/types.d.mts";
 import { resolveConfig } from "./config.mts";
@@ -17,7 +17,7 @@ import { queueTrip } from "./bridge-trip.mts";
 import type { ScanV2 } from "./schema/types.d.mts";
 import {
   ancestry, scopeOf, ruleMatches, buildOf, matchCount, CASTER_PROPS, CASTER_SKILLS, MELEE_PROPS, MELEE_SKILLS, claimOf, baseName, nameKey, applyOverlay, overlaidInventory, homeOf, newSim, simTake, simPut, mark, rollback, MAX_STACK,
-  sitesOf, planOrganize, tripCommand, lineBytes, type OverlayMove, type Sim, type Plan,
+  sitesOf, planOrganize, tripCommand, lineBytes, emptyBagsOf, type OverlayMove, type Sim, type Plan,
 } from "./organize.mts";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -543,4 +543,54 @@ test("[smoke] the TazUO fixture: every put fits when the trips are replayed in o
   }
   const reordered = foldSnapshots([{ ...raw, items: [...raw.items].reverse() }]);
   assert.equal(JSON.stringify(planOrganize(reordered, cfg, [], { now })), JSON.stringify(plan));
+});
+
+// Issue #128: the bags trips leave behind, gathered on request, and targets about to fill up.
+const BAG2 = 0x40000011, BAG3 = 0x40000012, BAG4 = 0x40000013, BAG5 = 0x40000014, BAG6 = 0x40000015;
+test("[fast] emptyBagsOf lists unlabelled bags holding nothing in labelled roots, never an unopened, pinned or blacklisted one", () => {
+  const inv = fold([{ serial: A }, { serial: BAG, parent: A, name: "Weapons" }, { serial: BAG2, parent: A }, { serial: BAG3, parent: A, opened: false },
+    { serial: BAG4, parent: A }, { serial: BAG5, parent: A }, { serial: POUCH, parent: A }, { serial: B, pos: at(104) }, { serial: BAG6, parent: B },
+    { serial: C, pos: at(106) }, { serial: 0x40000016, parent: C }],
+  [{ serial: RUBY, name: "Ruby", in: BAG2 }, { serial: PEARL, name: "Black Pearl", in: POUCH }]);
+  const cfg = config({ labels: { ...labels(A, BAG4), [String(C)]: { serial: C, name: "Display", pinned: true, origin: "manual" } }, pinnedItems: [BAG5] });
+  const roots = scopeOf(inv, cfg, { now: NOW }).roots;
+  assert.deepEqual(emptyBagsOf(inv, applyOverlay(inv, []).counts, cfg, roots), [{ serial: BAG, name: "Weapons", container: A }],
+    "not one with a ruby, an unopened one, a labelled one, a pinned item, one in an unlabelled chest or one in a pinned chest");
+  assert.deepEqual(emptyBagsOf(inv, applyOverlay(inv, []).counts, cfg, roots, [BAG]), [], "nor a blacklisted one");
+  const placed = applyOverlay(inv, [step(PEARL, "Black Pearl", POUCH, A)]);
+  assert.deepEqual(emptyBagsOf(placed.inv, placed.counts, cfg, roots).map((b) => b.serial), [BAG, POUCH], "a bag a trip emptied is empty");
+});
+
+test("[fast] the plan lists empty bags, and with a gather container moves them there in ordinary trips", () => {
+  const inv = fold([{ serial: A }, { serial: BAG, parent: A, name: "Weapons" }, { serial: C, pos: at(106) }]);
+  const bare = planOrganize(inv, config({ labels: labels(A, C), rules: [gems([A])] }), [], { now: NOW });
+  assert.deepEqual(bare.emptyBags, [{ serial: BAG, name: "Weapons", container: A }]);
+  assert.deepEqual(bare.moves, [], "without a gather container nothing moves");
+  const cfg = config({ labels: labels(A, C), rules: [gems([A])], emptyBagsTo: C });
+  const plan = planOrganize(inv, cfg, [], { now: NOW });
+  assert.deepEqual(plan.moves.map((m) => [m.serial, m.from, m.to, m.ruleId]), [[BAG, A, C, EMPTY_BAGS_ID]]);
+  assert.deepEqual(plan.rules.at(-1), { ruleId: EMPTY_BAGS_ID, matched: 1, inPlace: 0, toMove: 1, noRoom: 0 });
+  assert.deepEqual(tripCommand(inv, plan, 1)!.takes, [{ serial: BAG, name: "Weapons", chain: [A] }]);
+  const after = planOrganize(inv, cfg, [step(BAG, "Weapons", A, C)], { now: NOW });
+  assert.deepEqual([after.moves, after.emptyBags], [[], []], "a gathered bag is in place and no longer listed");
+  assert.equal(after.rules.at(-1)!.inPlace, 1);
+  const old = foldSnapshots([houseScan({ boxes: [{ serial: A }, { serial: BAG, parent: A, name: "Weapons" }, { serial: C, pos: at(106) }], bridge: ["highlight", "grab", "goto", "trip"] })]);
+  const stale = planOrganize(old, cfg, [], { now: NOW });
+  assert.deepEqual([stale.moves, stale.emptyBags.length], [[], 1], "scripts whose bridge does not declare trip-bags are never sent a bag");
+  assert.deepEqual(stale.warnings.map((w) => [w.kind, w.serial]), [["old-scripts", C]]);
+});
+
+test("[fast] a target past 90% after the plan, with no later target to overflow into, is warned about, empty bags counted", () => {
+  const inv = fold([{ serial: A, max: 10 }, { serial: BAG, parent: A }, { serial: B, pos: at(104) }, { serial: C, pos: at(106) }],
+    [...pearls(7, A), { serial: ASH, name: "Sulfurous Ash", in: B }, { serial: GARLIC, name: "Garlic", in: B }]);
+  const plan = planOrganize(inv, config({ labels: labels(A, B, C), rules: [reagents([A])] }), [], { now: NOW });
+  assert.deepEqual(plan.warnings.filter((w) => w.kind === "nearly-full"), [{ kind: "nearly-full", serial: A,
+    detail: 'Rule "reagents" fills it to 10/10 items after this plan (1 of them is an empty bag). Add another container to its targets, or make room.' }]);
+  const overflow = planOrganize(inv, config({ labels: labels(A, B, C), rules: [reagents([A, C])] }), [], { now: NOW });
+  assert.deepEqual(overflow.warnings.filter((w) => w.kind === "nearly-full"), [], "C still takes the overflow");
+  const gathered = planOrganize(inv, config({ labels: labels(A, B, C), rules: [reagents([A])], emptyBagsTo: C }), [], { now: NOW });
+  assert.deepEqual(gathered.warnings.filter((w) => w.kind === "nearly-full"), [], "gathering the bag out leaves it at 9/10, not past 90%");
+  const nested = fold([{ serial: A, max: 10 }, { serial: POUCH, parent: A }, { serial: B, pos: at(104) }], [...pearls(8, A), { serial: ASH, name: "Sulfurous Ash", in: B }]);
+  assert.deepEqual(planOrganize(nested, config({ labels: labels(A, POUCH, B), rules: [reagents([POUCH])] }), [], { now: NOW }).warnings.filter((w) => w.kind === "nearly-full").map((w) => w.serial), [A],
+    "a bag target in a chest past 90% names the chest");
 });

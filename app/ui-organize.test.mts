@@ -10,7 +10,7 @@ import type { ItemQuery } from "./item-query.mts";
 import type { Container } from "./vault-lib.mts";
 import { PENDING_GRACE_MS } from "./organize-state.mts";
 import type { BridgeResultEntry, OrganizeConfig, OrganizePlan, OrganizeProposal, OrganizeRule, PlanMove, ProposalCandidate, ProposalGroup } from "./ui/api-types.mts";
-import { CATCH_ALL_ID, moveRule, withLabel, withoutLabel, pinNote, pinnedWith, upsertRule, withoutRule, newRuleId, ruleQueryFrom, blankQuery, droppedNote, ruleNameFrom, checkDraft, matchSummary, extraFilters, targetView, fillText, fillTone, targetOptions, withTargetLabels, matchLine, debounced, MATCH_DEBOUNCE_MS, organizeStage, labelledPlaces, ruleNameOf, containerNameOf, ruleCountParts, planHeadline, unclaimedNote, roomLines, crossSiteLines, warningGroups, tripRows, moveName, moveWhere, carriedView, tripGate, stepWatch, outcomeOf, outcomeText, failedSteps, runAllNext, tripRefusal, adoptWatch, resumedNote, GRACE_MS, TRIP_MS, STRATEGY_TEXT, candidateGroups, candidateNote, proposalHeadline, groupStatus, groupAway, intoText, proposalNotes, proposalStays, canTrySimple, acceptGate } from "./ui/organize-model.mts";
+import { CATCH_ALL_ID, EMPTY_BAGS_ID, emptyBagsNote, moveRule, withLabel, withoutLabel, pinNote, pinnedWith, upsertRule, withoutRule, newRuleId, ruleQueryFrom, blankQuery, droppedNote, ruleNameFrom, checkDraft, matchSummary, extraFilters, targetView, fillText, fillTone, targetOptions, withTargetLabels, matchLine, debounced, MATCH_DEBOUNCE_MS, organizeStage, labelledPlaces, ruleNameOf, containerNameOf, ruleCountParts, planHeadline, unclaimedNote, roomLines, crossSiteLines, warningGroups, tripRows, moveName, moveWhere, carriedView, tripGate, stepWatch, outcomeOf, outcomeText, failedSteps, runAllNext, tripRefusal, adoptWatch, resumedNote, GRACE_MS, TRIP_MS, STRATEGY_TEXT, candidateGroups, candidateNote, proposalHeadline, groupStatus, groupAway, intoText, proposalNotes, proposalStays, canTrySimple, acceptGate } from "./ui/organize-model.mts";
 
 const A = 0x40000001, B = 0x40000002, C = 0x40000003, GONE = 0x40000009;
 const chest = (serial: number, over: Partial<Container> = {}): Container => ({ serial, root: serial, parent: null, kind: "ground", name: "Metal Chest", tooltip: ["Metal Chest"], label: `Metal Chest (0x${serial.toString(16)})`, capacity: { items: 61, maxItems: 125, stones: null, maxStones: null }, scannedBy: "Tester", scannedAt: "2026-09-28T10:00:00Z", ...over });
@@ -69,6 +69,10 @@ test("[fast] removing a label removes it from the rules that fill it", () => {
   assert.deepEqual(config.rules.map((r) => r.targets), [[A], [A]]);
   assert.deepEqual(dropped, ["Gems"]);
   assert.equal(config.catchAll, A);
+  const gather = withoutLabel({ ...CFG, emptyBagsTo: C }, C);
+  assert.deepEqual(gather.dropped, ["Gems", "Empty bags"], "the gather container comes off too (issue #128)");
+  assert.equal(gather.config.emptyBagsTo, null);
+  assert.equal(withoutLabel({ ...CFG, emptyBagsTo: A }, C).config.emptyBagsTo, A);
 });
 
 test("[fast] rules are added, replaced, deleted and pinned items added without touching the input", () => {
@@ -231,8 +235,9 @@ test("[fast] labelledPlaces maps each location text inside a labelled container 
   assert.equal(labelledPlaces(all, {}).size, 0);
 });
 
-test("[fast] the catch-all's plan id matches the planner's", () => {
+test("[fast] the catch-all's and the empty bags' plan ids match the planner's", () => {
   assert.equal(CATCH_ALL_ID, "catch-all");
+  assert.equal(EMPTY_BAGS_ID, "empty-bags");
 });
 
 const move = (serial: number, name: string, from: number | null, to: number, ruleId: string, trip: number, amount = 1): PlanMove => ({ serial, name, amount, from, to, ruleId, alsoMatched: [], trip });
@@ -244,7 +249,7 @@ const PLAN: OrganizePlan = {
   room: [{ ruleId: "rule-1", needSlots: 10, freeSlots: 2, shortfall: 8 }, { ruleId: "rule-2", needSlots: 1, freeSlots: 7, shortfall: 0 }],
   crossSite: [{ ruleId: "rule-2", count: 1 }, { ruleId: CATCH_ALL_ID, count: 12 }],
   warnings: [{ kind: "stale-container", serial: B, detail: "last scanned 9 days ago" }, { kind: "unknown-capacity", serial: B, detail: "its tooltip has no Contents line" }, { kind: "unknown-capacity", serial: GONE, detail: "not in any scan" }],
-  carried: [{ serial: 12, name: "Ruby" }], unclaimed: 3,
+  carried: [{ serial: 12, name: "Ruby" }], unclaimed: 3, emptyBags: [],
 };
 const nameOf = containerNameOf(CFG, CONTAINERS), ruleName = ruleNameOf(CFG);
 
@@ -257,6 +262,7 @@ test("[fast] the plan's headline, counts and unclaimed note", () => {
   assert.deepEqual(ruleCountParts(PLAN.rules[0]!), [{ text: "2 to move", warn: false }, { text: "40 in place", warn: false }, { text: "8 no room", warn: true }]);
   assert.deepEqual(ruleCountParts(PLAN.rules[1]!).map((p) => p.text), ["1 to move", "0 in place"]);
   assert.equal(ruleName(CATCH_ALL_ID), "Everything else");
+  assert.equal(ruleName(EMPTY_BAGS_ID), "Empty bags");
   assert.equal(ruleName("rule-9"), "rule-9");
 });
 
@@ -274,6 +280,18 @@ test("[fast] warnings are grouped by kind with each container named by its label
     { kind: "unknown-capacity", title: "Fill unknown: reinstall the scripts and rescan (2)", text: "Display: its tooltip has no Contents line · 0x40000009: not in any scan" },
   ]);
   assert.equal(warningGroups([{ kind: "stale-container", serial: A, detail: "last scanned 2026-01-01T12:00:00-07:00" }], nameOf)[0]!.text, "Reagents: last scanned 2026-01-01", "the planner's timestamps read as dates");
+});
+
+test("[fast] the empty bags note counts them, names a few with their place, and says how to gather them (issue #128)", () => {
+  assert.equal(emptyBagsNote(PLAN, false, nameOf), null);
+  const bags = Array.from({ length: 7 }, (_, i) => ({ serial: 0x42000000 + i, name: i ? "Bag" : "Weapons", container: i % 2 ? C : A }));
+  assert.deepEqual(emptyBagsNote({ emptyBags: bags, moves: [] }, false, nameOf), {
+    title: "7 empty bags in your labelled containers",
+    text: "Weapons (in Reagents), Bag (in Gems), Bag (in Reagents), Bag (in Gems), Bag (in Reagents) and 2 more. Each takes one of its container's item slots. To free those slots, pick a container for Empty bags under Rules, and the plan gathers them there.",
+  });
+  const one = bags.slice(0, 1);
+  assert.equal(emptyBagsNote({ emptyBags: one, moves: [move(one[0]!.serial, "Weapons", A, C, EMPTY_BAGS_ID, 1)] }, true, nameOf)!.text, "Weapons (in Reagents). Each takes one of its container's item slots. The trips below gather them into the container picked for Empty bags under Rules.");
+  assert.match(emptyBagsNote({ emptyBags: one, moves: [] }, true, nameOf)!.text, /not being gathered yet: the reports above say why\.$/, "picked, but no bag moves (old scripts, no room)");
 });
 
 test("[fast] tripRows sums each trip in one line and keeps its moves for the table", () => {

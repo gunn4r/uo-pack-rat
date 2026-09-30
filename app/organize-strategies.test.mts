@@ -470,3 +470,12 @@ test("[fast] the player's catch-all takes what no group does, so there is no Oth
   assert.equal(r.ok, false);
   assert.match((r as { error: string }).error, /at most 200 rules/);
 });
+
+test("[fast] the gather container for empty bags is kept, labelled and unticked by default, like the catch-all (issue #128)", () => {
+  const inv = fold([{ serial: A }, { serial: B, pos: at(102) }], things(A, ["Black Pearl"]));
+  const cfg: OrganizeConfig = { ...emptyOrganizeConfig(), labels: { [B]: manual(B, "Spare bags") }, emptyBagsTo: B };
+  const p = ok(proposeOrganize(inv, cfg, [], OPTS()));
+  assert.equal(p.config.emptyBagsTo, B);
+  assert.equal(p.config.labels[String(B)]!.name, "Spare bags");
+  assert.equal(p.candidates.find((c) => c.serial === B)!.ticked, false);
+});

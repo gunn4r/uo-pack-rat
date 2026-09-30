@@ -74,7 +74,7 @@ CAPABILITIES = {
                "Ring", "Talisman", "Necklace", "Waist", "Torso", "Bracelet", "Tunic",
                "Earrings", "Arms", "Cloak", "Robe", "Skirt", "Legs"],
     "arms": True, "bank": True, "ground": True, "nested": True, "tooltips": "opl",
-    "bridge": ["highlight", "grab", "goto", "trip"],
+    "bridge": ["highlight", "grab", "goto", "trip", "trip-bags"],
 }
 
 

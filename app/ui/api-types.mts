@@ -452,7 +452,7 @@ export interface BridgeQueueApiResponse {
 // it. The plan's types are mirrored from app/organize.mts, which imports server-only code (bridge-trip.mts).
 export type { OrganizeConfig, ContainerLabel, OrganizeRule, RuleMatch, Origin, Build } from "../organize-config.mts";
 export type { SpellSchool } from "../vault-lib.mts";
-export type PlanWarningKind = "stale-container" | "missing-target" | "missing-label" | "unknown-capacity" | "old-scripts" | "blacklisted" | "no-position" | "not-ground";
+export type PlanWarningKind = "stale-container" | "missing-target" | "missing-label" | "unknown-capacity" | "old-scripts" | "blacklisted" | "no-position" | "not-ground" | "nearly-full";
 export interface PlanWarning { kind: PlanWarningKind; serial: number; detail: string }
 export interface PlanMove { serial: number; name: string; amount: number; from: number | null; to: number; ruleId: string; alsoMatched: string[]; trip: number }
 export interface PlanTrip { index: number; site: number; takes: number[]; puts: number[] }
@@ -464,12 +464,13 @@ export interface OrganizePlan {
   sites: { index: number; roots: number[] }[];
   moves: PlanMove[];                 // in trip order; from null = carried in the backpack
   trips: PlanTrip[];                 // index 1-based; the first trip of each site is the only one the server runs
-  rules: PlanRuleReport[];           // one per rule in rule order, then "catch-all" when set
+  rules: PlanRuleReport[];           // one per rule in rule order, then "catch-all" and "empty-bags" when set
   room: PlanRoomReport[];
   crossSite: { ruleId: string; count: number }[];
   warnings: PlanWarning[];
   carried: { serial: number; name: string }[];
   unclaimed: number;
+  emptyBags: { serial: number; name: string; container: number }[];   // not yet in the gather container
 }
 export interface OrganizePreset { id: string; name: string; match: RuleMatch }
 export interface OrganizeApiResponse { ok: boolean; config: OrganizeConfig; problems: string[] }
