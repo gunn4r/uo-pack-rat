@@ -11,6 +11,16 @@ Standard interface (`npm test` and its variants are the same runner as `./script
 
 Results land in `test_logs/latest_summary.json`. Read that, not the console output.
 
+## Trying a PR before merging
+
+```
+npm run try -- 110            # one PR
+npm run try -- 100 110        # a stack: the first PR, with the others merged on top (locally only)
+npm run try -- 110 --demo     # sample data instead of your own
+```
+
+`scripts/try-pr.sh` fetches each PR, checks the first out into a reusable scratch worktree beside the repo (`../pack-rat-wt/try`, or `$PACKRAT_TRY_DIR`), merges the rest into it, and starts the desktop app from there; the next run resets and reuses the same folder, so there is nothing to clean up, and your own checkout is never touched. Without `--demo` it uses your real Pack Rat data, so quit the installed app first (one app per data folder). When the PRs change the game scripts it says so: stop them in game and reinstall from Settings in the trial window, then reinstall from your normal app afterwards. PRs that edit the same lines refuse to stack and the script names the files, except `CHANGELOG.md`, where every PR adds its own line: that file merges with git's union driver, keeping both. `--devtools` is passed through too. Needs `git`, `gh` and bash.
+
 `--changed` takes every path changed since the merge base (committed, staged, unstaged and untracked), maps it with `scripts/select-tests.mts` and runs every test in the selected files, `[slow]` and Electron included; the summary's `mode` is `"changed"` and its `note` says what was chosen. A changed test file runs itself; `adapters/**` runs `app/adapters.test.mts`; any other path runs the test files that reach it through relative string literals (imports, `new URL("./x.css")`) or, for a data file, name it in quotes; an `app/ui` file also adds the Electron test for its screen (all of them for shared UI code, plus `ui-contrast` for CSS). Docs select nothing, and if nothing is left the run writes an empty summary. The runner itself, its helpers (`electron-window.mts`, the builds), `package.json`, `tsconfig*`, `app/schema/**`, `electron/**` and any path no test reaches run the full suite instead. It prints each selected file with the paths that picked it.
 
 When to run what: while iterating, `--changed` plus `npm run typecheck`; before a PR's first push, `--fast` plus the Electron test files for the screens touched (or `--changed`, which picks them); follow-up commits after review, `--changed`. Run the full suite locally only when touching test infrastructure, the Electron shell or shared helpers, or to reproduce a CI failure — CI's full run on three OSes is the merge gate.

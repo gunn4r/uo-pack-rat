@@ -29,6 +29,7 @@
     "predist:dir": "npm run build:types && npm run build:ui",
     "start": "node scripts/start.mts",
     "desktop": "electron .",
+    "try": "bash scripts/try-pr.sh",
     "dist": "electron-builder --publish never",
     "dist:dir": "electron-builder --dir --publish never",
     "test": "node scripts/test-runner.mts",
