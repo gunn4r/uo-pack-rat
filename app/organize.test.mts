@@ -17,7 +17,7 @@ import { queueTrip } from "./bridge-trip.mts";
 import type { ScanV2 } from "./schema/types.d.mts";
 import {
   ancestry, scopeOf, ruleMatches, buildOf, matchCount, CASTER_PROPS, CASTER_SKILLS, MELEE_PROPS, MELEE_SKILLS, claimOf, baseName, nameKey, applyOverlay, overlaidInventory, homeOf, newSim, simTake, simPut, mark, rollback, MAX_STACK,
-  sitesOf, planOrganize, tripCommand, lineBytes, emptyBagsOf, directSerials, tripSeconds, STEP_S, type OverlayMove, type Sim, type Plan,
+  sitesOf, packKept, planOrganize, tripCommand, lineBytes, emptyBagsOf, directSerials, tripSeconds, STEP_S, type OverlayMove, type Sim, type Plan,
 } from "./organize.mts";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -574,6 +574,7 @@ test("[fast] Put away from the backpack puts only what lies loose at its top, in
   assert.deepEqual(tripCommand(inv, plan, 1)!.takes, []);
   assert.deepEqual(plan.crossSite, [{ ruleId: "rubies", count: 1 }], "the ruby's chest is at another house");
   assert.equal(plan.unclaimed, 1);
+  assert.deepEqual(packKept(inv, PACK, new Set([PEARL2])), { bags: 1, own: 1, pinned: 1 }, "what stays, for the answer: the pouch, the blessed pearl, the pinned one");
   const withCatchAll = planOrganize(inv, { ...cfg, catchAll: A }, [], { now: NOW, putAway: { from: "backpack", backpack: PACK, at: { x: 101, y: 100, facet: 1 } } });
   assert.deepEqual([withCatchAll.moves.map((m) => m.serial), withCatchAll.unclaimed], [[PEARL], 1], "the catch-all takes nothing from the backpack");
   const there = planOrganize(inv, cfg, [], { now: NOW, putAway: { from: "backpack", backpack: PACK, at: { x: 301, y: 100, facet: 1 } } });
