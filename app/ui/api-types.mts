@@ -484,7 +484,9 @@ export interface OrganizeMatchApiResponse { ok: boolean; count: number; pieces: 
 // POST /api/organize/propose (Auto organize): mirrored from app/organize-strategies.mts, which is server-only.
 export type AutoStrategy = "simple" | "detailed" | "build";
 export interface ProposalCandidate { serial: number; name: string; site: number; fill: { items: number; max: number }; label: { name: string; origin: Origin } | null; mine: boolean; ticked: boolean }
-export interface ProposalGroup { key: string; name: string; family: string; ruleIds: string[]; items: number; needSlots: number; targets: number[]; roomSlots: number; shortfall: number; addContainers: number; crossSite: number }
+export interface ProposalGroup { key: string; name: string; family: string; ruleIds: string[]; items: number; needSlots: number; targets: number[]; bagIn: number | null; needsBag: boolean; roomSlots: number; shortfall: number; addContainers: number; crossSite: number }
+// Issue #132: what the full layout needs beyond what the player has (chest null: one of the chests to add).
+export interface ProposalLayout { chests: number; bags: { chest: number | null; family: string; bags: number }[]; spareBags: number }
 export interface OrganizeProposal {
   strategy: AutoStrategy;
   candidates: ProposalCandidate[];
@@ -493,7 +495,7 @@ export interface OrganizeProposal {
   refused: { serial: number; reason: string }[];
   groups: ProposalGroup[];
   unassigned: number;
-  addContainers: number;
+  layout: ProposalLayout;
   manualRules: number;
   config: OrganizeConfig;            // the whole setup Accept saves with PUT /api/organize
   changed: boolean;

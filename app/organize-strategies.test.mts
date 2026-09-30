@@ -313,7 +313,7 @@ test("[fast] more groups than containers: the largest groups get them, the rest 
   const p = ok(proposeOrganize(inv, cfg, [], OPTS()));
   assert.deepEqual(p.containers, [A]);
   assert.deepEqual(p.groups.map((g) => [g.key, g.targets, g.addContainers]), [["weapons", [], 1], ["reagents", [A], 0], ["resources", [], 1], ["gems", [], 1]]);
-  assert.deepEqual([p.unassigned, p.addContainers], [3, 3]);
+  assert.deepEqual([p.unassigned, p.layout], [3, { chests: 3, bags: [], spareBags: 0 }]);
   const plan = planOrganize(inv, p.config, [], { now: NOW });
   assert.deepEqual(plan.moves.map((m) => m.name).sort(), ["Black Pearl", "Garlic"], "only the group with a container moves");
   assert.equal(plan.unclaimed, 0, "the others are claimed by their rules and stay where they are");
@@ -423,19 +423,49 @@ test("[fast] with too few chests a family's small groups share one, labelled wit
   ]);
   const p = ok(proposeOrganize(inv, emptyOrganizeConfig(), [], OPTS({ strategy: "detailed" })));
   assert.deepEqual(p.groups.map((g) => [g.key, g.targets, g.roomSlots, g.shortfall]), [
-    ["rings", [C], 1, 0], ["bracelets", [C], 1, 0], ["necklaces", [C], 1, 0], ["weapons", [B], 20, 0], ["ingots", [A], 1, 0], ["boards", [A], 1, 0],
+    ["rings", [C], 1, 0], ["bracelets", [C], 1, 0], ["necklaces", [C], 1, 0], ["weapons", [B], 15, 0], ["ingots", [A], 1, 0], ["boards", [A], 1, 0],
   ]);
   assert.deepEqual(Object.fromEntries(Object.values(p.config.labels).map((l) => [l.serial, l.name])), { [A]: "Resources", [B]: "Weapons", [C]: "Jewelry" });
   assert.deepEqual(p.config.rules.map((r) => [r.id, r.name, r.targets]), [
     ["auto-rings", "Rings", [C]], ["auto-bracelets", "Bracelets", [C]], ["auto-necklaces", "Necklaces", [C]], ["auto-weapons", "Weapons", [B]], ["auto-ingots", "Ingots", [A]], ["auto-boards", "Boards", [A]],
   ]);
-  assert.deepEqual([p.unassigned, p.addContainers], [0, 0]);
+  assert.deepEqual(p.groups.map((g) => [g.key, g.needsBag]).filter(([, n]) => n).map(([k]) => k), ["rings", "bracelets", "necklaces", "ingots", "boards"], "no bags in the shared chests: those groups share them loose");
+  assert.deepEqual([p.unassigned, p.layout], [0, { chests: 0, bags: [{ chest: C, family: "Jewelry", bags: 3 }, { chest: A, family: "Resources", bags: 2 }], spareBags: 0 }]);
   const again = ok(proposeOrganize(inv, p.config, [], OPTS({ strategy: "detailed" })));
   assert.equal(again.changed, false);
   const plan = planOrganize(inv, p.config, [], { now: NOW });
   const done: OverlayMove[] = plan.moves.map((m) => ({ serial: m.serial, name: m.name, from: m.from, to: m.to, at: new Date(NOW).toISOString(), trip: "t1" }));
   const after = ok(proposeOrganize(inv, p.config, done, OPTS({ strategy: "detailed" })));
   assert.deepEqual([after.changed, after.plan.moves], [false, 0], "after the trips, the shared chests stay as they are");
+});
+
+test("[fast] groups sharing a chest each get one of its empty bags, labelled for the group; one left without a bag shares the chest loose, and the layout asks for its bag; re-running after the trips moves nothing (issue #132)", () => {
+  const BAG2 = 0x40000009, BAG3 = 0x4000000a;
+  const inv = fold([{ serial: A }, { serial: BAG, parent: A }, { serial: BAG2, parent: A }, { serial: B, pos: at(102) }, { serial: BAG3, parent: B }],
+    [...things(A, ["Plate Helm", "Platemail Gorget", "Bone Armor"]), ...things(B, ["Gold Ring"], 4)]);
+  const p = ok(proposeOrganize(inv, emptyOrganizeConfig(), [], OPTS({ strategy: "detailed" })));
+  assert.deepEqual(p.groups.map((g) => [g.key, g.targets, g.bagIn, g.needsBag]), [
+    ["armour-head", [BAG], A, false], ["armour-neck", [BAG2], A, false], ["armour-chest", [A], null, true], ["rings", [B], null, false],
+  ]);
+  assert.deepEqual(Object.values(p.config.labels).map((l) => [l.serial, l.name]), [[A, "Armour"], [B, "Rings"], [BAG, "Armour: head"], [BAG2, "Armour: neck"]]);
+  assert.deepEqual(p.layout, { chests: 0, bags: [{ chest: A, family: "Armour", bags: 1 }], spareBags: 1 }, "B's empty bag is spare: move it into the Armour chest");
+  const plan = planOrganize(inv, p.config, [], { now: NOW });
+  assert.deepEqual(plan.moves.map((m) => [m.name, m.to]), [["Plate Helm", BAG], ["Platemail Gorget", BAG2]], "the ring stays in its chest, the chest piece loose in the shared one");
+  const done: OverlayMove[] = plan.moves.map((m) => ({ serial: m.serial, name: m.name, from: m.from, to: m.to, at: new Date(NOW).toISOString(), trip: "t1" }));
+  const after = ok(proposeOrganize(inv, p.config, done, OPTS({ strategy: "detailed" })));
+  assert.deepEqual([after.changed, after.plan.moves], [false, 0], "each group keeps its bag once its items are in it");
+});
+
+test("[fast] the full layout fills each chest to FILL: a group it fits there takes a second chest before the first is full; where it does not fit, the chests fill to the top and the layout counts the chests to add (issue #132)", () => {
+  const pearls = (n: number): ThingSpec[] => Array.from({ length: n }, (_, i) => ({ serial: ITEM + 1 + i, name: "Black Pearl", in: A, hue: i + 1 }));
+  const roomy = fold([{ serial: A }, { serial: B, pos: at(102) }], pearls(110));
+  const p = ok(proposeOrganize(roomy, emptyOrganizeConfig(), [], OPTS()));
+  assert.deepEqual(p.groups.map((g) => [g.targets, g.roomSlots, g.shortfall]), [[[A, B], 199, 0]], "110 items: 100 in A, room for their loot in B");
+  assert.deepEqual([p.layout, p.plan.moves], [{ chests: 0, bags: [], spareBags: 0 }, 0]);
+  const tight = fold([{ serial: A }], pearls(110));
+  const t = ok(proposeOrganize(tight, emptyOrganizeConfig(), [], OPTS()));
+  assert.deepEqual(t.groups.map((g) => [g.targets, g.roomSlots, g.shortfall]), [[[A], 125, 0]], "one chest: it fits to the top");
+  assert.equal(t.layout.chests, 1);
 });
 
 test("[fast] Detailed with too few containers says how many are missing; the same scans in any order give the same proposal", () => {
@@ -447,7 +477,8 @@ test("[fast] Detailed with too few containers says how many are missing; the sam
   // chest each, which their groups could share.
   assert.deepEqual(Object.values(p.config.labels).map((l) => l.name), ["Armour", "Potions & bandages"]);
   assert.equal(p.unassigned, p.groups.length - 4);
-  assert.equal(p.addContainers, 9);
+  assert.equal(p.layout.chests, 9);
+  assert.deepEqual(p.layout.bags.map((b) => [b.chest, b.family, b.bags]).slice(0, 2), [[null, "Armour", 2], [null, "Jewelry", 2]], "the full layout's family chests, each group in a bag");
   assert.deepEqual(ok(proposeOrganize(shuffled, emptyOrganizeConfig(), [], OPTS({ strategy: "detailed" }))), p);
 });
 

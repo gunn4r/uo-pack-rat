@@ -11,7 +11,7 @@ import { parseItemQuery } from "../item-query.mts";
 import type { ItemQuery, RuleQuery } from "../item-query.mts";
 import { activeFilters, plural } from "./inv-model.mts";
 import type { FilterContext } from "./inv-model.mts";
-import type { BridgeResultEntry, Build, SpellSchool, ContainerLabel, OrganizeConfig, OrganizeMatchApiResponse, OrganizePlan, OrganizeRule, PlanMove, PlanRuleReport, PlanWarning, PlanWarningKind, RuleMatch, AutoStrategy, OrganizeProposal, ProposalCandidate, ProposalGroup, OrganizeRunningTrip } from "./api-types.mts";
+import type { BridgeResultEntry, Build, SpellSchool, ContainerLabel, OrganizeConfig, OrganizeMatchApiResponse, OrganizePlan, OrganizeRule, PlanMove, PlanRuleReport, PlanWarning, PlanWarningKind, RuleMatch, AutoStrategy, OrganizeProposal, ProposalCandidate, ProposalGroup, ProposalLayout, OrganizeRunningTrip } from "./api-types.mts";
 
 // The ruleIds the plan reports the catch-all and the gathered empty bags under (app/organize-config.mts's
 // CATCH_ALL_ID and EMPTY_BAGS_ID; a value import from there would add a second server module to the page for two
@@ -424,19 +424,40 @@ export function proposalHeadline(p: OrganizeProposal): string {
 export function groupStatus(g: ProposalGroup): { badge: string; tone: "warn" | undefined; text: string | null } {
   if (!g.targets.length) return { badge: "No container", tone: "warn", text: `Add ${plural(g.addContainers, "container")}. Its items stay where they are.` };
   if (g.shortfall) return { badge: "Short", tone: "warn", text: `${plural(g.shortfall, "slot")} short: add ${plural(g.addContainers, "container")}.` };
+  if (g.needsBag) return { badge: "No bag", tone: undefined, text: "Loose in the chest it shares: an empty bag there keeps it apart." };
   return { badge: "Fits", tone: undefined, text: null };
 }
 export const groupAway = (g: ProposalGroup): string | null => (g.crossSite ? `${plural(g.crossSite, "item")} at another house ${g.crossSite === 1 ? "stays" : "stay"} there.` : null);
-// The chests a group gets, in fill order, by the names the player knows them by.
+// The chests a group gets, in fill order, by the names the player knows them by; a group given a bag in a shared
+// chest (issue #132), that chest.
+const candName = (s: number, cands: readonly ProposalCandidate[]): string => cands.find((c) => c.serial === s)?.name ?? `0x${s.toString(16)}`;
 export function intoText(g: ProposalGroup, cands: readonly ProposalCandidate[]): string {
+  if (g.bagIn != null) return `${candName(g.bagIn, cands)}, in a bag of its own`;
   if (!g.targets.length) return "—";
-  return g.targets.map((s) => cands.find((c) => c.serial === s)?.name ?? `0x${s.toString(16)}`).join(", then ");
+  return g.targets.map((s) => candName(s, cands)).join(", then ");
+}
+// Issue #132: what the strategy's full layout needs beyond what the player has, and where the bags go (a chest by
+// its name, with the family it holds when that differs), then a rescan and another run. 80% is organize-strategies'
+// FILL (server-only).
+function layoutNote(p: OrganizeProposal): string | null {
+  const { chests, bags, spareBags } = p.layout;
+  const count = bags.reduce((n, b) => n + b.bags, 0);
+  if (!chests && !count) return null;
+  const into = (b: ProposalLayout["bags"][number]): string => {
+    if (b.chest == null) return `${b.bags} in a new ${b.family} chest`;
+    const name = candName(b.chest, p.candidates);
+    return `${b.bags} in ${name}${name === b.family ? "" : ` (${b.family})`}`;
+  };
+  const what = [chests ? plural(chests, "more chest") : "", count ? plural(count, "bag") : ""].filter(Boolean).join(" and ");
+  const spare = count && spareBags ? ` ${plural(spareBags, "empty bag")} already in your chests can be moved in first.` : "";
+  return `For the full ${STRATEGY_TEXT[p.strategy].label} layout (no chest over 80% full, a bag for each group sharing one), add ${what}${count ? `: ${bags.map(into).join(", ")}` : ""}.${spare} Then rescan and run Auto organize again.`;
 }
 export function proposalNotes(p: OrganizeProposal): string[] {
+  const layout = layoutNote(p);
   return [
     ...(p.manualRules ? [p.manualRules === 1 ? "Your 1 rule stays above these and takes its items first." : `Your ${plural(p.manualRules, "rule")} stay above these and take their items first.`] : []),
     ...p.refused.map((r) => `Container 0x${r.serial.toString(16)} could not be used: ${r.reason}.`),
-    ...(p.addContainers ? [`Place ${plural(p.addContainers, "more container")}, scan them, and run Auto organize again to fit everything.`] : []),
+    ...(layout ? [layout] : []),
     ...(p.plan.crossSite ? [`${plural(p.plan.crossSite, "item")} ${p.plan.crossSite === 1 ? "belongs" : "belong"} at another house: carry ${p.plan.crossSite === 1 ? "it" : "them"} over by hand.`] : []),
   ];
 }
