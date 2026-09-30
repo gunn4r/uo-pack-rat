@@ -80,6 +80,7 @@ export function maxOrganizeConfig(): OrganizeConfig {
       query: { q: t(LIMITS.q), slot: list(), rarity: t(LIMITS.text), rarityMin: t(LIMITS.text), rarityMax: t(LIMITS.text), kind: list(), slayer: t(LIMITS.text),
         nogarg: false, med: false, hideTags: list(), props: Array(LIMITS.props).fill({ key: t(LIMITS.text), min: -1.2345678901234567e-300, op: "le" }) },
       names: Array(LIMITS.names).fill(t(LIMITS.text)),
+      build: "hybrid" as const,
     },
   }));
   return { version: 1, labels, rules, catchAll: serials[0]!, pinnedItems: serials.slice(0, LIMITS.pinnedItems).concat(Array.from({ length: LIMITS.pinnedItems - LIMITS.labels }, (_, i) => 1 + i)) };

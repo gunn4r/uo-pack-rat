@@ -32,7 +32,7 @@ const part = (id: string): HTMLElement => $<HTMLElement>(`#${id}`, drawer().root
 export async function openAutoOrganize(opener: HTMLElement | null = null): Promise<void> {
   const strategy = draft?.strategy ?? "simple";
   draft = { strategy, containers: null, proposal: null, base: "", busy: true, error: null, notice: null, seq: 0 };
-  const seg = segmented({ label: "Strategy", value: strategy, options: (["simple", "detailed"] as const).map((v) => ({ value: v, label: STRATEGY_TEXT[v].label })), onChange: (v) => { setStrategy(v as AutoStrategy); } });
+  const seg = segmented({ label: "Strategy", value: strategy, options: (["simple", "detailed", "build"] as const).map((v) => ({ value: v, label: STRATEGY_TEXT[v].label })), onChange: (v) => { setStrategy(v as AutoStrategy); } });
   drawer().body.replaceChildren(
     box("section", { class: "auto-section", id: "auto-strategy" }, el("h3", { class: "t-md" }, "1. Strategy"), seg, txt(STRATEGY_TEXT[strategy].text, "t-sm muted auto-strategy-text")),
     box("section", { class: "auto-section", id: "auto-containers" }),
