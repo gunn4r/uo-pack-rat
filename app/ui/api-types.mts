@@ -419,7 +419,7 @@ export interface BridgeCurrentCommand {
   name?: string | undefined;
 }
 // One step of a trip's result (the bridge's trip action: every take and put it tried, in order).
-export interface TripStepResult { op: "take" | "put"; serial: number; ok: boolean; msg: string }
+export interface TripStepResult { op: "take" | "put"; serial: number; ok: boolean; msg: string; ms?: number | undefined }
 export interface BridgeResultEntry {
   ok: boolean;
   msg: string;
@@ -427,6 +427,7 @@ export interface BridgeResultEntry {
   partial?: boolean | undefined;     // a trip whose take phase ended early (too heavy or too full)
   stopped?: boolean | undefined;     // a trip halted by the stop flag (POST /api/bridge/stop)
   steps?: TripStepResult[] | undefined;
+  ms?: number | undefined;           // how long a trip took, in milliseconds (TazUO 2.9.0 onward)
 }
 export interface BridgeStatusApiResponse {
   ok: boolean;

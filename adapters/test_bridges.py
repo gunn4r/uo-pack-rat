@@ -222,7 +222,7 @@ class TazUOBridge(BridgeCase, unittest.TestCase):
     ADAPTER = "tazuo"
 
     def start(self, world):
-        api = tazuo_api(world, PACK)
+        api = world.api = tazuo_api(world, PACK)
         if getattr(self, "drop_cancel", False):
             del api.CancelPathfinding
         world.clock.at(RUN_S, lambda: setattr(api, "StopRequested", True))
@@ -264,10 +264,98 @@ class TazUOBridge(BridgeCase, unittest.TestCase):
         self.assertEqual((r["partial"], r["stopped"]), (False, False))
         self.assertEqual(self.steps(final, "t1"), [("take", AMULET, True), ("take", BRACELET, True),
                                                    ("put", AMULET, True), ("put", BRACELET, True)])
-        self.assertEqual(sorted(set(k for s in r["steps"] for k in s)), ["msg", "ok", "op", "serial"])
+        self.assertEqual(sorted(set(k for s in r["steps"] for k in s)), ["ms", "msg", "ok", "op", "serial"])
+        for s in r["steps"]:
+            self.assertIs(type(s["ms"]), int)
+        self.assertIs(type(r["ms"]), int)
+        self.assertGreaterEqual(r["ms"], sum(s["ms"] for s in r["steps"]))
         self.assertEqual(self.moves(w), [(AMULET, PACK), (BRACELET, PACK), (AMULET, DEST_BAG), (BRACELET, DEST_BAG)])
         self.assertIn("Pack Rat organize: trip 3, 2 items", w.messages)
         self.assert_heartbeat(writes)
+
+    def test_a_trip_opens_each_container_once_and_the_next_trip_opens_it_again(self):
+        w = trip_home()
+        w.add(OTHER_GEM, BAG, name="Jewel", container_like=False, OnGround=False)
+        final, _ = self.run_bridge(w, 1, [
+            self.trip("t1", takes=[(AMULET, [CHEST, BAG]), (BRACELET, [CHEST, BAG])],
+                      puts=[(AMULET, [DEST, DEST_BAG]), (BRACELET, [DEST, DEST_BAG])]),
+            self.trip("t2", takes=[(OTHER_GEM, [CHEST, BAG])], puts=[(OTHER_GEM, [DEST, DEST_BAG])], index=4)])
+        for cid in ("t1", "t2"):
+            self.assertTrue(final["results"][cid]["ok"], final["results"][cid])
+        opened = self.opened(w)
+        self.assertEqual([opened.count(s) for s in (CHEST, BAG, DEST, DEST_BAG)], [2, 2, 2, 2])
+
+    def test_a_walk_during_a_trip_opens_the_containers_again(self):
+        w = trip_home()
+        w.add(OTHER_GEM, BAG, name="Jewel", container_like=False, OnGround=False)
+        final, _ = self.run_bridge(w, 1, [
+            self.trip("t1", takes=[(AMULET, [CHEST, BAG]), (FAR_RING, [FAR]), (OTHER_GEM, [CHEST, BAG])])])
+        self.assertTrue(final["results"]["t1"]["ok"], final["results"]["t1"])
+        self.assertEqual([c[1:] for c in w.calls if c[0] == "walk"], [(20, 10), (11, 10)])
+        opened = self.opened(w)
+        self.assertEqual([opened.count(s) for s in (CHEST, BAG)], [2, 2])
+
+    def test_a_player_who_steps_by_hand_mid_trip_gets_the_containers_opened_again(self):
+        w = trip_home()
+
+        def step(s, dst):
+            if (s, dst) == (AMULET, PACK):
+                w.px = w.api.Player.X = 12           # the player steps a tile; the chest stays in reach
+        w.on_move = step
+        final, _ = self.run_bridge(w, 1, [self.trip("t1", takes=[(AMULET, [CHEST, BAG]), (BRACELET, [CHEST, BAG])])])
+        self.assertTrue(final["results"]["t1"]["ok"], final["results"]["t1"])
+        self.assertEqual([c for c in w.calls if c[0] == "walk"], [])
+        opened = self.opened(w)
+        self.assertEqual([opened.count(s) for s in (CHEST, BAG)], [2, 2])
+
+    def test_a_container_opened_earlier_in_the_trip_is_still_checked_on_every_step(self):
+        w = trip_home()
+        w.add(OTHER_GEM, BAG, name="Jewel", container_like=False, OnGround=False)
+
+        def swap(s, dst):
+            if (s, dst) == (AMULET, PACK):
+                w.items[BAG].Container = OTHER_CHEST        # the bag moved to another chest mid-trip
+            if (s, dst) == (BRACELET, DEST):
+                w.items[DEST].Tooltip = "A Trash Barrel"    # and the destination turned out to be trash
+        w.on_move = swap
+        final, _ = self.run_bridge(w, 1, [
+            self.trip("t1", takes=[(AMULET, [CHEST, BAG]), (OTHER_GEM, [CHEST, BAG])]),
+            self.trip("t2", takes=[(BRACELET, [OTHER_CHEST, BAG])], index=4),
+            self.trip("t3", puts=[(BRACELET, [DEST]), (AMULET, [DEST])], index=5)])
+        self.assertEqual(self.steps(final, "t1"), [("take", AMULET, True), ("take", OTHER_GEM, False)])
+        self.assertIn("is not inside", final["results"]["t1"]["steps"][1]["msg"])
+        self.assertEqual(self.steps(final, "t3"), [("put", BRACELET, True), ("put", AMULET, False)])
+        self.assertIn("trash", final["results"]["t3"]["steps"][1]["msg"])
+        self.assertEqual(w.items[AMULET].Container, PACK)
+
+    def move_times(self, w):
+        """Record the fake second of every MoveItem call."""
+        times = []
+        w.on_move = lambda s, dst: times.append(w.clock.now)
+        return times
+
+    def test_a_move_that_lands_at_once_waits_only_the_minimum_gap_before_the_next(self):
+        w = trip_home()
+        times = self.move_times(w)
+        final, _ = self.run_bridge(w, 1, [self.trip("t1", takes=[(AMULET, [CHEST, BAG]), (BRACELET, [CHEST, BAG])],
+                                                    puts=[(AMULET, [DEST]), (BRACELET, [DEST])])])
+        self.assertTrue(final["results"]["t1"]["ok"], final["results"]["t1"])
+        gaps = [b - a for a, b in zip(times, times[1:])]
+        self.assertAlmostEqual(gaps[0], 0.35, places=3)    # second take: chest already open, first move landed at once
+        self.assertAlmostEqual(gaps[2], 0.35, places=3)    # second put likewise
+        self.assertLess(final["results"]["t1"]["steps"][1]["ms"], 500)
+
+    def test_a_move_that_never_lands_is_reported_bounced_after_the_cap(self):
+        w = trip_home()
+        w.refuse = {DEST}
+        times = self.move_times(w)
+        final, writes = self.run_bridge(w, 1, [self.trip("t1", takes=[(AMULET, [CHEST, BAG])], puts=[(AMULET, [DEST])])])
+        r = final["results"]["t1"]
+        self.assertEqual(self.steps(final, "t1"), [("take", AMULET, True), ("put", AMULET, False)])
+        self.assertIn("bounced", r["steps"][1]["msg"])
+        done = [t for t, s in writes if "t1" in s.get("results", {})][0]
+        self.assertGreaterEqual(done - (times[1] - w.clock.start), 1.5)
+        self.assertLess(done - (times[1] - w.clock.start), 1.6)
 
     def test_a_take_drops_at_an_explicit_spot_so_a_stack_keeps_its_serial(self):
         w = trip_home()
@@ -445,6 +533,7 @@ class TazUOBridge(BridgeCase, unittest.TestCase):
         self.assertTrue(final["results"]["t1"]["ok"], final["results"]["t1"])
         self.assertNotIn(AMULET, w.items)
         self.assertEqual(w.items[STACK].Amount, 2)
+        self.assertLess(final["results"]["t1"]["steps"][1]["ms"], 2500)   # two opens, then the merge counts at once
 
     def test_a_trip_line_over_the_line_limit_is_refused_unread(self):
         w = trip_home()

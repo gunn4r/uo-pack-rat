@@ -54,7 +54,8 @@ Not a separate file — one entry of `status.json`'s `results` object, keyed by 
 | `t` | string, RFC 3339 | When this result was recorded. |
 | `partial` | boolean, optional | A trip only: the backpack or the character's carry weight ended the takes early. |
 | `stopped` | boolean, optional | A trip only: the stop flag or the Script Manager's Stop ended it between steps. |
-| `steps` | array, optional | A trip only: `{op: "take"\|"put", serial, ok, msg}` per step, in execution order, at most 60. |
+| `steps` | array, optional | A trip only: `{op: "take"\|"put", serial, ok, msg, ms?}` per step, in execution order, at most 60. `ms` is how long the step took (walk, opening and move) in whole milliseconds, 0 for a skipped step. |
+| `ms` | integer, optional | A trip only: how long the whole trip took, in whole milliseconds. With the steps' own `ms`, it is how trips are benchmarked live. |
 
 ## Status
 
@@ -136,6 +137,8 @@ Execution: `<data>/bridge/stop` is cleared (a flag written at or after the trip'
 The carried set: the serials this bridge took and has not put, kept in memory for the bridge's lifetime. A put may only name one, so nothing else in the backpack can be put anywhere from the queue. It survives across commands, which is how "Put them away" works after a stopped trip; a restarted bridge starts with it empty and refuses such puts ("put it away by hand").
 
 Put checks: the item is at the top of the backpack; no container in `dest` is in `scan-blacklist.json`; the root lies on the ground (never your own pack or bank, never a pack a mobile carries); every bag sits inside the one before it; each is a container by the scanner's own test (never a corpse); none is trash by `TRASH_RE` on its tooltip name, and one whose tooltip reads nothing is refused rather than judged by the client's cached name (a trash barrel's can be plain "barrel"). Then a plain drop (which may stack), and a check that the item is in `dest`'s last container or merged onto a stack there; otherwise the put reports "bounced (full, or refused)" and the item stays carried.
+
+Timings (TazUO, issue #119). A trip double-clicks each container once: every step still runs every check above on every container in its chain, but a container this trip has already opened is not opened again (no `UseObject`, no 1 s `PAUSE_OPEN`), since the client keeps the contents it has been sent and the server checks only reach when an item is lifted or dropped. The set of opened containers starts empty with each trip and is emptied whenever the bridge walks or finds the character on another tile than when it last opened one (the player stepped by hand mid-trip), because a container left behind can drop out of the client's view and take its contents with it. After each move the bridge looks up the item every 0.05 s (`MOVE_POLL_S`) until it has landed (a take: at the top of the backpack; a put: in `dest`'s last container, or gone with a matching stack there grown) and gives up after 1.5 s (`MOVE_WAIT_S`), when the verdict above is made exactly as before. Two of a trip's moves are always at least 0.35 s apart (`MOVE_GAP_S`) in case the shard throttles drag and drop. Grab and highlight keep their own fixed waits.
 
 `POST /api/bridge/stop` (`{}`) writes the flag; the bridge halts after its current step.
 
