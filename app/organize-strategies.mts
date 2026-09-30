@@ -164,7 +164,17 @@ const byNeed = (a: GroupNeed, b: GroupNeed): number => b.need - a.need || (a.key
 // free chest for each family still to open one (it always gets one while any is free). A sharer that finds no free
 // chest then takes what room its family's chests have left (the most first), and one whose family has none left gets
 // an empty chain. Nothing here depends on the order the groups or chests come in.
+// Issue #146: holding on to chests (the earlier rule's past need, the ones holding only this group) must never cost
+// another group room. When it leaves items without room, the groups are assigned again `tight`, each taking its
+// earlier rule's chests and the next best only until it fits, and that wins if it leaves fewer items without room;
+// a house whose chests fit everything keeps them all, so a sorted one stays put.
 export function assignGroups(groups: readonly GroupNeed[], offers: readonly Offer[]): Assignment {
+  const short = (a: Assignment): number => groups.reduce((n, g) => n + Math.max(0, g.need - a.room.get(g.key)!), 0);
+  const keep = assign(groups, offers, false);
+  const tight = short(keep) ? assign(groups, offers, true) : keep;
+  return short(tight) < short(keep) ? tight : keep;
+}
+function assign(groups: readonly GroupNeed[], offers: readonly Offer[], tight: boolean): Assignment {
   const taken = new Set<number>();
   const chains = new Map<string, number[]>();
   const room = new Map<string, number>();
@@ -182,11 +192,11 @@ export function assignGroups(groups: readonly GroupNeed[], offers: readonly Offe
     let cover = 0;
     const kept = (g.prev ?? []).flatMap((s) => ranked.filter((o) => o.serial === s));
     for (const o of [...kept, ...ranked.filter((o) => !kept.includes(o))]) {
-      if (chain.length >= most || (cover >= g.need && !kept.includes(o))) break;
+      if (chain.length >= most || (cover >= g.need && (tight || !kept.includes(o)))) break;
       chain.push(o.serial);
       cover += o.room;
     }
-    for (const o of ranked) {
+    for (const o of tight ? [] : ranked) {
       if (chain.length >= most) break;
       if (chain.includes(o.serial) || !held(o) || Object.entries(o.held).some(([k, n]) => k !== g.key && n > 0)) continue;
       chain.push(o.serial);
