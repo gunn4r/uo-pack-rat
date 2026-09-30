@@ -344,6 +344,14 @@ class TazUOBridge(BridgeCase, unittest.TestCase):
         self.assertIn("skipped", r["steps"][3]["msg"])
         self.assertEqual(w.items[BRACELET].Container, BAG)
 
+    def test_a_stack_whose_tiledata_weight_is_zero_is_taken_not_counted_a_stone_a_unit(self):
+        # Arrows and reagents weigh a fraction of a stone, which tiledata stores as 0 (#117).
+        w = trip_home()
+        w.weight_max = 100
+        w.items[AMULET].Stones, w.items[AMULET].Amount = 0, 300
+        final, _ = self.run_bridge(w, 1, [self.trip("t1", takes=[(AMULET, [CHEST, BAG])], puts=[(AMULET, [DEST])])])
+        self.assertEqual(self.steps(final, "t1"), [("take", AMULET, True), ("put", AMULET, True)])
+
     def test_a_backpack_at_its_item_cap_takes_nothing(self):
         w = trip_home()
         for i in range(120):                     # with the five pieces trip_home() leaves in the pack: 125, the cap
