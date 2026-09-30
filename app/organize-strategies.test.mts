@@ -97,6 +97,11 @@ test("[fast] Detailed: gear by slot, reagents by school, power scrolls by level,
   ]);
 });
 
+test("[fast] Detailed: Spellbooks share a chest with the books, not the weapons (issue #123)", () => {
+  const family = (key: string): string => STRATEGIES.detailed.find((d) => d.key === key)!.family;
+  assert.deepEqual(["spellbooks", "books", "runes"].map(family), ["runes-books", "runes-books", "runes-books"]);
+});
+
 // Issue #123: the neck slot holds armour and necklaces alike; both strategies split them with the one Armour: neck
 // filter, which knows the Armor Of Initiation piece (a gorget graphic under the set's name) too.
 test("[fast] Simple and Detailed: neck armour goes with the armour, necklaces with the jewelry", () => {

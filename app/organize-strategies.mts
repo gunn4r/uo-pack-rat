@@ -35,7 +35,8 @@ const EVERYTHING: RuleMatch = { query: q({}) };
 // Order matters only where filters overlap, and there it is first match wins, as for rules: gear is split by slot
 // (every gear item has kind "gear", so no name pattern reaches it), the armour neck filter sits above Jewelry's neck
 // slot, Shields and Spellbooks above Weapons (both are held), power scrolls above the other scrolls, and each school
-// of reagents and each resource type above the rest of its kind. Shields and spellbooks are Weapons in Simple.
+// of reagents and each resource type above the rest of its kind. Shields and spellbooks are Weapons in Simple; in
+// Detailed a spellbook is in the books' family, so when chests run short it shares theirs, not the Weapons chest.
 const SIMPLE: readonly GroupDef[] = [
   def("armour", "Armour", "armour", gear(["helmet", "chest", "arms", "hands", "legs"]), preset("armour-neck")),
   def("jewelry", "Jewelry", "jewelry", gear(["ring", "bracelet", "neck", "earrings", "talisman"])),
@@ -69,7 +70,7 @@ const DETAILED: readonly GroupDef[] = [
   def("earrings", "Earrings", "jewelry", preset("earrings")),
   def("talismans", "Talismans", "jewelry", preset("talismans")),
   def("shields", "Shields", "weapons", preset("shields")),
-  def("spellbooks", "Spellbooks", "weapons", gear(["oneHanded"], ["spellbook", "book of", "tome"])),
+  def("spellbooks", "Spellbooks", "runes-books", gear(["oneHanded"], ["spellbook", "book of", "tome"])),
   def("weapons", "Weapons", "weapons", preset("weapons")),
   def("ammo", "Ammo", "weapons", preset("ammo")),
   def("other-gear", "Other gear", "other-gear", kinds("gear")),
