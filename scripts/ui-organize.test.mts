@@ -40,7 +40,7 @@ function dataDirWith(rules: SeedRule[] | null): string {
   }));
   return dir;
 }
-interface OrganizeFile { labels: Record<string, { name: string; color?: string; pinned?: boolean; origin: string }>; rules: Array<{ id: string; name: string; targets: number[]; origin: string; match: { query: Record<string, unknown>; names?: string[] } }>; catchAll: number | null; pinnedItems: number[] }
+interface OrganizeFile { labels: Record<string, { name: string; color?: string; pinned?: boolean; origin: string }>; rules: Array<{ id: string; name: string; targets: number[]; origin: string; match: { query: Record<string, unknown>; names?: string[]; build?: string } }>; catchAll: number | null; pinnedItems: number[] }
 const readOrganize = (dir: string): OrganizeFile | null => { try { return JSON.parse(readFileSync(join(dir, "organize.json"), "utf8")) as OrganizeFile; } catch { return null; } };
 // Poll a file-backed fact until it holds (a save is a PUT the page sends after the click).
 async function until<T>(read: () => T, ok: (v: T) => boolean, what: string): Promise<T> {
@@ -515,6 +515,27 @@ test("[slow] Auto organize: Simple proposes groups for the ticked chests, Accept
     assert.match(await page.locator("#auto-headline").innerText(), /already your setup/);
     assert.equal(await page.locator("#auto-accept").isDisabled(), true);
 
+    // By build: the gear groups by build, the rest as Simple has them.
+    await page.getByRole("radio", { name: "By build" }).click();
+    await page.waitForFunction(() => document.querySelector("#auto-proposal")?.getAttribute("aria-busy") === "false" && document.querySelector('#auto-strategy [data-value="build"]')?.getAttribute("aria-checked") === "true");
+    const keys = await page.locator("#auto-proposal tr[data-group]").evaluateAll((rows) => rows.map((r) => r.getAttribute("data-group")));
+    assert.ok(keys.some((k) => /^(caster|melee|hybrid|tank|plain)-gear$/.test(k!)) && !keys.includes("armour"), keys.join(", "));
+    // Accepted, its rules carry the build; the rule editor shows it as a token, and removing it makes the rule plain.
+    await page.click("#auto-accept");
+    const built = (await until(() => readOrganize(dataDir), (o) => !!o?.rules.some((r) => r.match.build), "the By build setup"))!.rules.find((r) => r.match.build)!;
+    await page.waitForSelector("#auto-drawer[hidden]", { state: "attached" });
+    await page.locator(`.org-rule[data-rule="${built.id}"]`).getByRole("button", { name: /^Actions for / }).click();
+    await page.getByRole("menuitem", { name: "Edit…" }).click();
+    await page.waitForSelector("#rule-drawer:not([hidden]) #rule-save");
+    const dropBuild = page.getByRole("button", { name: "Remove the build filter" });
+    await dropBuild.click();
+    assert.equal(await dropBuild.count(), 0);
+    await page.click("#rule-save");
+    const edited = await until(() => readOrganize(dataDir), (o) => o?.rules.find((r) => r.id === built.id)?.origin === "manual", "the edited rule");
+    assert.deepEqual(edited!.rules.find((r) => r.id === built.id)!.match, { query: built.match.query });
+    await page.waitForSelector("#rule-drawer[hidden]", { state: "attached" });
+    await page.click("#org-auto");
+    await page.waitForSelector(ready);
     // Detailed, then one chest unticked: each works the proposal out again. Try Simple goes back when offered.
     await page.getByRole("radio", { name: "Detailed" }).click();
     await page.waitForFunction(() => document.querySelector("#auto-proposal")?.getAttribute("aria-busy") === "false" && document.querySelector('#auto-strategy [data-value="detailed"]')?.getAttribute("aria-checked") === "true");
@@ -525,7 +546,7 @@ test("[slow] Auto organize: Simple proposes groups for the ticked chests, Accept
       await page.waitForFunction(() => document.querySelector('#auto-strategy [data-value="simple"]')?.getAttribute("aria-checked") === "true");
     }
     await page.keyboard.press("Escape");
-    assert.deepEqual(readOrganize(dataDir), saved, "closing without Accept saves nothing");
+    assert.deepEqual(readOrganize(dataDir), edited, "closing without Accept saves nothing");
     assert.deepEqual(errors, []);
   } finally {
     await app.close();

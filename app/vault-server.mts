@@ -47,7 +47,7 @@
 //         to start a rule from; read-only) ·
 //         POST /api/organize/match {match} -> {count, pieces, sample} (the movable items in labelled roots that one
 //         rule filter takes, ignoring the other rules: the rule editor's live count; read-only) ·
-//         POST /api/organize/propose {strategy: "simple"|"detailed", containers?: [serial…]} -> {proposal} (Auto
+//         POST /api/organize/propose {strategy: "simple"|"detailed"|"build", containers?: [serial…]} -> {proposal} (Auto
 //         organize: app/organize-strategies.mts's proposeOrganize over the ticked ground chests, or every one it ticks
 //         by default; the proposal carries the whole next setup, which the page saves with PUT /api/organize;
 //         read-only; 409 when organize.json needed salvage or the proposal would not save) ·

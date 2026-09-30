@@ -11,9 +11,9 @@ import { box, txt, button, meter, message, field, input, select, textarea, pill,
 import { errorText } from "./messages.mts";
 import { filterContext } from "./inventory.mts";
 import { loadOrganize, loadPresets, matchCount, refreshPlaces, saveConfig } from "./organize-data.mts";
-import { fillText, fillTone, withoutRule, newRuleId, ruleQueryFrom, blankQuery, droppedNote, ruleNameFrom, checkDraft, extraFilters, targetView, targetOptions, withTargetLabels, moveIn, upsertRule, matchLine, debounced, MATCH_DEBOUNCE_MS, type TargetView } from "./organize-model.mts";
+import { BUILD_TEXT, fillText, fillTone, withoutRule, newRuleId, ruleQueryFrom, blankQuery, droppedNote, ruleNameFrom, checkDraft, extraFilters, targetView, targetOptions, withTargetLabels, moveIn, upsertRule, matchLine, debounced, MATCH_DEBOUNCE_MS, type TargetView } from "./organize-model.mts";
 import type { ItemQuery, RuleQuery } from "../item-query.mts";
-import type { OrganizeMatchApiResponse, OrganizeRule, Origin } from "./api-types.mts";
+import type { Build, OrganizeMatchApiResponse, OrganizeRule, Origin, RuleMatch } from "./api-types.mts";
 
 // A container in a rule's chain: its label's colour, its name, its fill as a meter and "61/125", or why not.
 export function targetChip(t: TargetView): HTMLElement {
@@ -35,7 +35,7 @@ export async function deleteRule(r: OrganizeRule): Promise<boolean> {
 // ---------------------------------------------------------------- the drawer
 // The rule being edited, as typed: nothing is read back from the DOM, so a redraw (adding a target, removing a
 // filter) keeps everything the player typed. `match` is the last live count (POST /api/organize/match).
-interface Draft { id: string; isNew: boolean; name: string; query: RuleQuery; namesText: string; targets: number[]; origin: Origin; note: string | null; errors: { name?: string; names?: string }; serverError: string | null; match: OrganizeMatchApiResponse | null }
+interface Draft { id: string; isNew: boolean; name: string; query: RuleQuery; namesText: string; build: Build | undefined; targets: number[]; origin: Origin; note: string | null; errors: { name?: string; names?: string }; serverError: string | null; match: OrganizeMatchApiResponse | null }
 let draft: Draft | null = null;
 let handle: DrawerHandle | null = null;
 function drawer(): DrawerHandle {
@@ -58,9 +58,9 @@ export async function openRuleEditor(o: { rule?: OrganizeRule; preset?: boolean;
   const cfg = state.organize.config!;
   const from = o.fromQuery ? ruleQueryFrom(o.fromQuery) : null;
   draft = o.rule
-    ? { id: o.rule.id, isNew: false, name: o.rule.name, query: structuredClone(o.rule.match.query), namesText: (o.rule.match.names || []).join("\n"), targets: [...o.rule.targets], origin: o.rule.origin,
+    ? { id: o.rule.id, isNew: false, name: o.rule.name, query: structuredClone(o.rule.match.query), namesText: (o.rule.match.names || []).join("\n"), build: o.rule.match.build, targets: [...o.rule.targets], origin: o.rule.origin,
         note: o.rule.origin !== "manual" ? "Auto organize made this rule. Saving your changes makes it yours: Auto organize leaves it alone from then on." : null, errors: {}, serverError: null, match: null }
-    : { id: newRuleId(cfg.rules), isNew: true, name: o.fromQuery ? ruleNameFrom(o.fromQuery, filterContext()) : "", query: from ? from.query : blankQuery(), namesText: "", targets: [], origin: "manual",
+    : { id: newRuleId(cfg.rules), isNew: true, name: o.fromQuery ? ruleNameFrom(o.fromQuery, filterContext()) : "", query: from ? from.query : blankQuery(), namesText: "", build: undefined, targets: [], origin: "manual",
         note: from ? droppedNote(from.dropped) : null, errors: {}, serverError: null, match: null };
   $<HTMLElement>("#rule-drawer-title", drawer().root)!.textContent = draft.isNew ? "New rule" : "Edit rule";
   $<HTMLElement>("#rule-delete", drawer().root)!.hidden = draft.isNew;
@@ -78,6 +78,7 @@ function draw(focus?: string): void {
     if (!p) return;
     d.query = structuredClone(p.match.query);
     d.namesText = (p.match.names || []).join("\n");
+    d.build = p.match.build;
     if (!d.name.trim()) d.name = p.name;
     d.note = `Filled in from the preset ${p.name}. Editing the rule never changes the preset.`;
     draw("#rule-preset");
@@ -94,7 +95,8 @@ function draw(focus?: string): void {
   rMin.addEventListener("change", () => { d.query = { ...d.query, rarityMin: rMin.value }; countSoon(); });
   const rMax = select(ladder, d.query.rarityMax, { attrs: { id: "rule-rmax" } });
   rMax.addEventListener("change", () => { d.query = { ...d.query, rarityMax: rMax.value }; countSoon(); });
-  const extras = extraFilters(d.query, ctx);
+  // A build (Auto organize's By build) has no control of its own: it shows as a token, and removing it drops it.
+  const extras = [...(d.build ? [{ label: `Build: ${BUILD_TEXT[d.build]}`, removeLabel: "Remove the build filter", remove: (q: RuleQuery) => { d.build = undefined; return q; } }] : []), ...extraFilters(d.query, ctx)];
   const chosen = d.targets.map((s) => targetView(s, cfg, where));
   const list = box("ol", { class: "rule-targets", id: "rule-targets", "aria-label": "Containers, in fill order" }, ...chosen.map((t, i) => box("li", { class: "rule-target" },
     txt(`${i + 1}.`, "t-sm muted num"), targetChip(t),
@@ -144,11 +146,12 @@ async function countNow(): Promise<void> {
   if (c.errors.names) return;
   const seq = ++countSeq;
   let r: OrganizeMatchApiResponse | null = null;
-  try { r = await matchCount({ query: d.query, ...(c.names.length ? { names: c.names } : {}) }); } catch { /* no count: the line stays empty */ }
+  try { r = await matchCount(draftMatch(d, c.names)); } catch { /* no count: the line stays empty */ }
   if (seq !== countSeq || draft !== d) return;
   d.match = r;
   drawer().body.querySelector("#rule-match")?.replaceWith(matchEl());
 }
+const draftMatch = (d: Draft, names: string[]): RuleMatch => ({ query: d.query, ...(names.length ? { names } : {}), ...(d.build ? { build: d.build } : {}) });
 const countSoon = debounced(() => { void countNow(); }, MATCH_DEBOUNCE_MS);
 async function save(): Promise<void> {
   const d = draft!;
@@ -156,7 +159,7 @@ async function save(): Promise<void> {
   d.errors = c.errors;
   d.serverError = null;
   if (c.errors.name || c.errors.names) { draw(c.errors.name ? "#rule-name" : "#rule-names"); return; }
-  const rule: OrganizeRule = { id: d.id, name: c.name, match: { query: d.query, ...(c.names.length ? { names: c.names } : {}) }, targets: d.targets, origin: "manual" };
+  const rule: OrganizeRule = { id: d.id, name: c.name, match: draftMatch(d, c.names), targets: d.targets, origin: "manual" };
   const err = await saveConfig(upsertRule(withTargetLabels(state.organize.config!, d.targets, state.inv?.containers || {}), rule));
   if (err) { d.serverError = err; draw(); return; }
   drawer().close();

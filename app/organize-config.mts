@@ -9,8 +9,11 @@ export type Origin = "manual" | `strategy:${string}`;
 export interface ContainerLabel { serial: number; name: string; color?: string | undefined; pinned?: boolean | undefined; origin: Origin }
 // A rule's filter: the Inventory's item filters (never location, character or age: a rule must keep matching
 // an item after it moves) and, optionally, "name is any of" (a substring of the item's name, stack count
-// stripped, case-insensitive). Both must pass.
-export interface RuleMatch { query: RuleQuery; names?: string[] | undefined }
+// stripped, case-insensitive), and optionally a build (issue #91: the gear By build sorts into it, organize.mts's
+// buildOf; never an item that is not gear). All must pass.
+export type Build = "caster" | "melee" | "hybrid" | "tank" | "other";
+export const BUILDS: readonly Build[] = ["caster", "melee", "hybrid", "tank", "other"];
+export interface RuleMatch { query: RuleQuery; names?: string[] | undefined; build?: Build | undefined }
 // targets: labelled containers in fill order; when the first is full the next takes the overflow.
 export interface OrganizeRule { id: string; name: string; match: RuleMatch; targets: number[]; origin: Origin }
 export interface OrganizeConfig { version: 1; labels: Record<string, ContainerLabel>; rules: OrganizeRule[]; catchAll: number | null; pinnedItems: number[] }
@@ -80,11 +83,12 @@ function queryProblem(q: unknown, at: string): string | null {
 // checks before counting what a filter being edited would take.
 export function matchProblem(m: unknown, at = "match"): string | null {
   if (!isObj(m)) return `${at} must be an object`;
-  const badM = extra(m, ["query", "names"]);
+  const badM = extra(m, ["query", "names", "build"]);
   if (badM) return `${at}.${badM} is not a match field`;
   const qp = queryProblem(m.query, `${at}.query`);
   if (qp) return qp;
   if (m.names !== undefined && !textList(m.names, LIMITS.names)) return `${at}.names must be a list of at most ${LIMITS.names} names, each 1 to 64 characters`;
+  if (m.build !== undefined && !BUILDS.includes(m.build as Build)) return `${at}.build must be one of ${BUILDS.join(", ")}`;
   return null;
 }
 
