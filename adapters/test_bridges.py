@@ -834,6 +834,75 @@ class TazUOBridge(BridgeCase, unittest.TestCase):
         self.assertEqual(self.moved(w), [])
         self.assertNotIn(DEST, self.opened(w))
 
+    def put_away(self, cid, puts, index=3, picked=PACK):
+        return dict(self.trip(cid, puts=puts, index=index), putAway=picked)
+
+    def consent(self, w, picked=PACK, until_s=600):
+        """The panel's Put away, clicked just now on `picked`."""
+        w.shared = {"packrat_putaway": "%d:%f" % (picked, w.clock.start + until_s)}
+
+    def test_a_put_away_trip_without_the_panels_click_on_that_container_is_refused_and_nothing_moves(self):
+        for case in ("none", "not a consent", "expired", "another container", "not in your pack"):
+            w = trip_home()
+            if case == "not a consent":
+                w.shared = {"packrat_putaway": "soon"}
+            elif case == "expired":
+                self.consent(w, until_s=-1)
+            elif case == "another container":
+                self.consent(w, picked=POUCH)
+            elif case == "not in your pack":
+                self.consent(w, picked=CHEST)
+            final, _ = self.run_bridge(w, 1, [self.put_away("p1", [(LOOSE, [DEST])], picked=CHEST if case == "not in your pack" else PACK)])
+            self.assertFalse(final["results"]["p1"]["ok"], case)
+            self.assertIn("panel", final["results"]["p1"]["msg"], case)
+            self.assertEqual(self.moved(w), [], case)
+
+    def test_a_put_away_trip_puts_only_what_lies_directly_in_the_picked_container(self):
+        w = trip_home()
+        self.consent(w)
+        final, _ = self.run_bridge(w, 1, [self.put_away("p1", [(LOOSE, [DEST, DEST_BAG]), (RING, [DEST])]),
+                                          self.trip("p2", puts=[(BOOK, [DEST])], index=4)])
+        self.assertEqual(self.steps(final, "p1"), [("put", LOOSE, True), ("put", RING, False)])
+        self.assertIn("directly in the container you picked", final["results"]["p1"]["steps"][1]["msg"])
+        self.assertEqual(w.items[LOOSE].Container, DEST_BAG)
+        self.assertEqual(w.items[RING].Container, POUCH, "the ring in the pouch stays: the pouch was not picked")
+        # Nothing joined the carried set: an ordinary trip still puts only what the bridge took.
+        self.assertIn("not taken by this bridge", final["results"]["p2"]["steps"][0]["msg"])
+        self.assertEqual(self.moved(w), [LOOSE])
+
+    def test_a_bag_in_the_pack_picked_next_gives_up_its_own_items(self):
+        w = trip_home()
+        w.items[POUCH].Opened = True             # the panel's refresh opened it
+        self.consent(w, picked=POUCH)
+        final, _ = self.run_bridge(w, 1, [self.put_away("p1", [(RING, [DEST]), (LOOSE, [DEST])], picked=POUCH)])
+        self.assertEqual(self.steps(final, "p1"), [("put", RING, True), ("put", LOOSE, False)])
+        self.assertEqual(w.items[RING].Container, DEST)
+
+    def test_a_bag_dragged_out_of_the_pack_mid_trip_stops_the_remaining_puts(self):
+        w = trip_home()
+        w.items[POUCH].Opened = True
+        w.add(OTHER_GEM, POUCH, name="Gem", container_like=False, OnGround=False)
+        self.consent(w, picked=POUCH)
+
+        def drag_out(serial, dst):
+            if serial == RING:                   # the player drops the pouch on the floor as the first put goes
+                w.items[POUCH].Container, w.items[POUCH].OnGround = 0xFFFFFFFF, True
+        w.on_move = drag_out
+        final, _ = self.run_bridge(w, 1, [self.put_away("p1", [(RING, [DEST]), (OTHER_GEM, [DEST])], picked=POUCH)])
+        self.assertEqual(self.steps(final, "p1"), [("put", RING, True), ("put", OTHER_GEM, False)])
+        self.assertIn("no longer in your backpack", final["results"]["p1"]["steps"][1]["msg"])
+        self.assertEqual(w.items[OTHER_GEM].Container, POUCH)
+
+    def test_a_put_away_trip_puts_blessed_and_insured_items_but_never_a_bag(self):
+        w = trip_home()
+        w.add(OTHER_GEM, PACK, name="Gem", container_like=False, OnGround=False, Tooltip="Gem\n<b>Insured</b>")
+        w.add(STACK, PACK, name="Gem", container_like=False, OnGround=False, Tooltip="Gem\nBlessed")
+        self.consent(w)
+        final, _ = self.run_bridge(w, 1, [self.put_away("p1", [(POUCH, [DEST]), (OTHER_GEM, [DEST]), (STACK, [DEST])])])
+        self.assertEqual(self.steps(final, "p1"), [("put", POUCH, False), ("put", OTHER_GEM, True), ("put", STACK, True)])
+        self.assertIn("container", final["results"]["p1"]["steps"][0]["msg"])
+        self.assertEqual(w.items[POUCH].Container, PACK)
+
     def test_a_put_the_container_bounces_keeps_the_item_carried_for_put_them_away(self):
         w = trip_home()
         w.refuse = {DEST}

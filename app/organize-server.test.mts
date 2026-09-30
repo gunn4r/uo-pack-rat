@@ -3,7 +3,7 @@
 // results overlay (organize-state.json), GET /api/organize/presets and POST /api/organize/match. Tags: [fast]. Run: node --test app/organize-server.test.mts
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, writeFileSync, readFileSync, existsSync } from "node:fs";
+import { mkdtempSync, writeFileSync, readFileSync, existsSync, renameSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { resolveConfig, ensureLayout } from "./config.mts";
@@ -378,6 +378,59 @@ test("[fast] POST /api/organize/propose refuses an unknown strategy, a bad conta
     const salvaged = await call(s, "/api/organize/propose", body("POST", { strategy: "simple" }));
     assert.equal(salvaged.status, 409);
     assert.match(String(salvaged.body.error), /save the setup first/);
+  } finally {
+    await s.close();
+  }
+});
+
+// Put away (issue #131): the TazUO panel's request file, dropped into the inbox after the refresh's scan, answered in
+// bridge/tazuo/putaway.json with the first trip of the backpack's plan queued.
+test("[fast] Put away: a request dropped after a refresh plans the fresh backpack, queues one putAway trip and answers the panel", async () => {
+  const { s, dir } = await serve();
+  const PACK = 0x40000008, POUCH = 0x40000009, LOOT = 0x40001003, KEPT = 0x40001004, clickedAt = new Date().toISOString();
+  const inbox = join(dir, "inbox", "tazuo"), replyPath = join(dir, "bridge", "tazuo", "putaway.json");
+  const drop = (name: string, doc: unknown): void => { writeFileSync(join(inbox, `${name}.tmp`), JSON.stringify(doc)); renameSync(join(inbox, `${name}.tmp`), join(inbox, name)); };
+  const ask = async (id: string, over: Record<string, unknown> = {}): Promise<Record<string, unknown>> => {
+    drop("putaway-request.json", { id, container: PACK, character: "Tester", requestedAt: new Date().toISOString(), clickedAt, at: { x: 101, y: 100, facet: 1 }, ...over });
+    // Up to 20 s: a drop whose fs.watch notification the OS never delivers (seen under the parallel suite) is found
+    // by the watcher's 5 s sweep instead, and the fold and plan then run on a loaded machine.
+    for (let i = 0; i < 400; i++) {
+      const reply = existsSync(replyPath) ? JSON.parse(readFileSync(replyPath, "utf8")) as Record<string, unknown> : null;
+      if (reply && reply.id === (over.id === undefined ? id : null) && !existsSync(join(inbox, "putaway-request.json"))) return reply;
+      await new Promise((r) => setTimeout(r, 50));
+    }
+    throw new Error(`no answer to ${id}`);
+  };
+  try {
+    assert.equal((await call(s, "/api/organize", body("PUT", CONFIG_DOC))).status, 200);
+    // The refresh's scan lands just before the request: the request is planned after it is ingested.
+    drop("Tester-20260930-120000-quick.json", houseScan({ scannedAt: new Date().toISOString(), boxes: [{ serial: PACK, kind: "backpack" }, { serial: POUCH, parent: PACK }],
+      things: [{ serial: LOOT, name: "Black Pearl", in: PACK }, { serial: KEPT, name: "Black Pearl", in: POUCH }] }));
+    const first = await ask("r-1");
+    assert.equal(first.ok, true, JSON.stringify(first));
+    const [line] = queued(dir);
+    assert.equal(first.trip, line!.id);
+    assert.equal(line!.putAway, PACK, "the picked container, which the bridge checks against the panel's consent");
+    assert.deepEqual(line!.takes, []);
+    assert.deepEqual((line!.puts as { serial: number; dest: number[] }[]).map((p) => [p.serial, p.dest]), [[LOOT, [A]]], "only what lies directly in the pack: never the pouch's pearl, never the chests' items");
+    assert.deepEqual(stateOf(dir).pending.map((p) => p.id), [line!.id]);
+    const busy = await ask("r-2");
+    assert.equal(busy.ok, false);
+    assert.match(String(busy.msg), /has not reported back/);
+    const t = new Date().toISOString();
+    writeFileSync(join(dir, "bridge", "tazuo", "status.json"), JSON.stringify({ alive: t, character: "Tester", current: null, counts: {},
+      results: { [String(line!.id)]: { ok: true, msg: "trip 1: 1 put away", t, steps: [{ op: "put", serial: LOOT, ok: true, msg: "put away" }] } } }));
+    const done = await ask("r-3");
+    assert.deepEqual([done.ok, done.msg, done.detail, done.trip], [true, "Nothing to put away.", "1 bag stays in your pack", undefined]);
+    const old = await ask("r-4", { container: B });
+    assert.deepEqual([old.ok, old.msg], [false, "Pack Rat has not read that container yet."], "the chest's last scan is from before the click");
+    const stale = await ask("r-5", { id: "../../x", requestedAt: "2020-01-01T00:00:00Z" });
+    assert.equal(stale.ok, false);
+    const pouch = await ask("r-6", { container: POUCH });
+    assert.equal(pouch.ok, true, JSON.stringify(pouch));
+    const second = queued(dir)[1]!;
+    assert.deepEqual([second.putAway, (second.puts as { serial: number }[]).map((p) => p.serial)], [POUCH, [KEPT]], "picked next: the pouch's own items");
+    assert.equal(queued(dir).length, 2, "nothing more was queued");
   } finally {
     await s.close();
   }

@@ -572,6 +572,19 @@ class UntrustedInput(unittest.TestCase):
             trip, _ = ns["check_trip"](fresh_trip(roots=[1, 2]), NOW)
             self.assertIsNone(trip, name)
 
+    def test_a_put_away_trip_names_a_container_and_takes_nothing(self):
+        roots = {"1073741904": {"x": 12, "y": 10, "z": 0}}
+        for name, ns in self.each():
+            self.assertIsNone(ns["check_trip"](fresh_trip(), NOW)[0]["putAway"], name)
+            trip, why = ns["check_trip"](fresh_trip(roots=roots, takes=[], putAway=0x40000001), NOW)
+            self.assertEqual(trip["putAway"], 0x40000001, "%s: %s" % (name, why))
+            trip, why = ns["check_trip"](fresh_trip(putAway=0x40000001), NOW)
+            self.assertIsNone(trip, name)
+            self.assertIn("takes nothing", why, name)
+            for bad in (True, "0x40000001", 0, -1, 1.5):
+                trip, why = ns["check_trip"](fresh_trip(roots=roots, takes=[], putAway=bad), NOW)
+                self.assertIsNone(trip, "%s accepted putAway=%r" % (name, bad))
+
     def test_a_serial_named_twice_in_the_takes_is_refused(self):
         for name, ns in self.each():
             t = {"serial": 0x40000010, "name": "x", "chain": [0x40000001]}

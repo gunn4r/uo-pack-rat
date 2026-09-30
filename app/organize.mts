@@ -364,7 +364,8 @@ export function simPut(sim: Sim, it: Item, chain: number[], movers: Set<number>)
 // others whose facet is unknown) and single-link within SITE_TILES, the bridge's walk limit. A move never crosses
 // sites. Each site's roots ascending, sites ordered by their lowest serial.
 export const SITE_TILES = 24;
-const tiles = (a: Pos, b: Pos): number => Math.max(Math.abs(a.x - b.x), Math.abs(a.y - b.y));
+type Spot = Pick<Pos, "x" | "y" | "facet">;
+const tiles = (a: Spot, b: Spot): number => Math.max(Math.abs(a.x - b.x), Math.abs(a.y - b.y));
 export function sitesOf(inv: Inventory, roots: number[]): number[][] {
   const list = [...new Set(roots)].sort(bySerial);
   const parent = list.map((_, i) => i);
@@ -381,6 +382,39 @@ export function sitesOf(inv: Inventory, roots: number[]): number[][] {
   const groups = new Map<number, number[]>();
   list.forEach((s, i) => { const g = find(i); groups.set(g, [...(groups.get(g) ?? []), s]); });
   return [...groups.values()].sort((a, b) => a[0]! - b[0]!);
+}
+
+// The site (index into sitesOf's groups) a character standing at `at` is in: the one with a root nearest it, on the
+// same facet and within SITE_TILES, as sitesOf links roots. Undefined when none is.
+export function siteAt(inv: Inventory, groups: number[][], at: Spot): number | undefined {
+  let best: number | undefined, near = SITE_TILES + 1;
+  groups.forEach((g, i) => {
+    for (const r of g) {
+      const p = posOf(inv, r), d = tiles(at, p);
+      if ((p.facet ?? -1) === (at.facet ?? -1) && d < near) { best = i; near = d; }
+    }
+  });
+  return best;
+}
+
+// Put away (issue #131): the items directly in the picked container, since the bridge puts only those; picking the
+// container is the player's filter. Never a bag in it or anything in one (the player picks that bag next if they want
+// it), a pinned item or one named like trash.
+// A non-bag item lying directly in the container.
+const onTop = (inv: Inventory, it: Item, container: number): boolean =>
+  it.container != null && +it.container === container && !it.equippedBy && it.kind !== "container" && !inv.containers[it.serial];
+export function packItems(inv: Inventory, container: number, pinned: Set<number>): number[] {
+  return Object.values(inv.items).filter((it) => onTop(inv, it, container) && !TRASH_RE.test(it.name) && !pinned.has(+it.serial))
+    .map((it) => +it.serial);
+}
+// What packItems leaves directly in the container, and why, for Put away's answer: bags and pinned items.
+export interface PackKept { bags: number; pinned: number }
+export function packKept(inv: Inventory, container: number, pinned: Set<number>): PackKept {
+  const top = Object.values(inv.items).filter((it) => onTop(inv, it, container));
+  return {
+    bags: Object.values(inv.containers).filter((c) => c.parent != null && +c.parent === container).length,
+    pinned: top.filter((it) => pinned.has(+it.serial)).length,
+  };
 }
 
 // Stops in nearest-neighbour order from `from` (the lowest serial first when there is no starting point).
@@ -491,7 +525,14 @@ export interface Plan {
   seconds: number;          // about how long the trips take (tripSeconds), whole seconds
   emptyBags: EmptyBag[];   // emptyBagsOf's, less those already in the gather container
 }
+// Put away (issue #131, the TazUO panel's button): the one source a run takes from, instead of every labelled
+// root, always a container the player picked in game, and only what lies directly in it (packItems: never a bag in it
+// or what the bag holds). `pack`: the backpack or a bag inside it, put only
+// into the site the character stands in (`at`, where the panel was clicked); `ground`: a container in a labelled
+// ground chest (or the chest), taken from and put away as the house plan does.
+export type PutAway = { from: "pack"; container: number; at: Spot } | { from: "ground"; container: number };
 export interface PlanOptions extends ScopeOptions {
+  putAway?: PutAway | undefined;
   rarity?: RulesV1RarityItem[] | undefined;
   suitPieces?: ReadonlySet<number> | undefined;
   tripItems?: number | undefined;
@@ -622,16 +663,26 @@ export function planOrganize(inv: Inventory, cfg: OrganizeConfig, overlay: Overl
   let unclaimed = 0;
   // A carried item is put away unless it has been pinned since (the page's answer to a put the server refuses).
   const pinnedItems = new Set(cfg.pinnedItems);
-  const candidates = [...new Set([...scope.movable, ...[...carried].filter((s) => view.items[s] && !pinnedItems.has(s))])].sort(bySerial);
+  const put = opts.putAway;
+  // Put away from the pack: what lies directly in the picked container, which is in the pack already, like a carried
+  // item: put without a take. From a labelled ground container: what lies directly in it, taken as usual.
+  if (put?.from === "pack") for (const s of packItems(view, put.container, pinnedItems)) carried.add(s);
+  const here = put?.from === "pack" ? siteAt(view, groups, put.at) : undefined;
+  const loose = [...carried].filter((s) => view.items[s] && !pinnedItems.has(s));
+  const candidates = (put?.from === "pack" ? packItems(view, put.container, pinnedItems)
+    : put?.from === "ground" ? scope.movable.filter((s) => view.items[s]!.container != null && +view.items[s]!.container! === put.container)
+    : [...new Set([...scope.movable, ...loose])]).sort(bySerial);
   // Empty bags go to the gather container like one rule's items (issue #128); so does a bag a trip took and did
   // not put away. Without a gather container they stay where they are.
   // Only a bridge that checks live that a bag is empty before lifting it is sent one: the newest scan's scripts
   // (installed with the bridge) must declare "trip-bags", else the bags stay put with a warning to reinstall.
-  const bags = emptyBagsOf(view, placed.counts, cfg, scope.roots, opts.blacklist);
+  // Put away (issue #131) moves only what its source holds, and a backpack Put away trip takes nothing, so it
+  // gathers no bags.
+  const bags = put ? [] : emptyBagsOf(view, placed.counts, cfg, scope.roots, opts.blacklist);
   const newest = Object.values(view.characters).reduce<Character | null>((b, c) => (!b || stampMs(c.scannedAt) > stampMs(b.scannedAt) ? c : b), null);
   const bagTakes = !!newest?.adapter?.capabilities.bridge.includes(BAG_TAKES);
   if (gather != null && !bagTakes && bags.length) warnings.push({ kind: "old-scripts", serial: gather, detail: "empty bags are not gathered here until you reinstall the TazUO scripts from Settings and rescan: the installed bridge does not check that a bag is empty before taking it" });
-  const bagClaim: Claim | null = gather != null && bagTakes ? { ruleId: EMPTY_BAGS_ID, alsoMatched: [] } : null;
+  const bagClaim: Claim | null = gather != null && bagTakes && !put ? { ruleId: EMPTY_BAGS_ID, alsoMatched: [] } : null;
   const claims: [number, Claim | null][] = candidates.map((s) => [s, view.containers[s] && bagClaim ? bagClaim : claimOf(view.items[s]!, cfg, rarity, opts.suitPieces)]);
   if (bagClaim) claims.push(...bags.map((b): [number, Claim] => [b.serial, bagClaim]));
   for (const [serial, claim] of claims) {
@@ -648,7 +699,7 @@ export function planOrganize(inv: Inventory, cfg: OrganizeConfig, overlay: Overl
     if (blocked.has(claim.ruleId)) continue;
     const usable = targets.filter((t) => scope.usable.has(t));
     if (!usable.length) continue;
-    const site = inPack ? siteOf(usable[0]!) : siteOfRoot.get(+it.root!);
+    const site = !inPack ? siteOfRoot.get(+it.root!) : put?.from === "pack" ? here : siteOf(usable[0]!);
     const chain = site === undefined ? [] : usable.filter((t) => siteOf(t) === site);
     if (!chain.length) { cross.set(claim.ruleId, (cross.get(claim.ruleId) ?? 0) + 1); continue; }
     wants.set(site!, [...(wants.get(site!) ?? []), { it, ...claim, chain, from: inPack ? null : +it.container! }]);
