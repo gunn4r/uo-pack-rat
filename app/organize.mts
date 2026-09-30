@@ -91,6 +91,11 @@ const STACK_COUNT = /^\d[\d,]*\s+/;
 // An item's name without its stack count ("75 Grave Dust" → "grave dust"), lower-cased: what rule names and
 // stack merges compare.
 export const baseName = (name: string): string => name.replace(STACK_COUNT, "").trim().toLowerCase();
+// What a rule's names and an item's name compare as (issue #123): lower-cased with everything that is not a letter or
+// a digit removed, so the shard's "Blood Moss", "Batwing" and "Spiders' Silk" meet "bloodmoss", "bat wing" and
+// "spiders silk". An item's name loses its stack count first; a rule's name keeps a leading number ("120 skill").
+const squash = (s: string): string => s.toLowerCase().replace(/[^\p{L}\p{N}]/gu, "");
+export const nameKey = (name: string): string => squash(baseName(name));
 
 // By build's markers (issue #91): vault-lib's property keys, and the skills (lower-cased, as `extras` keys them)
 // whose bonus marks a piece. Spell Channeling has no number, so it is read from the flags; Mage Weapon reads as a
@@ -104,24 +109,26 @@ export const MELEE_SKILLS = ["swordsmanship", "tactics", "anatomy", "archery", "
 // A piece's summed resists at least this, with no caster or melee marker, is Tank gear.
 const TANK_RESISTS = 20;
 // Which build a piece of gear is: the side with more distinct markers, Hybrid on a tie. A piece with none is Melee when
-// it is a weapon (it has a damage range), else Tank when its resists add up to TANK_RESISTS, else Other.
+// it is a weapon (it has a damage range), else Tank when it is a shield (issue #123: held in the two-handed slot and not
+// a two-handed weapon, as vault-lib classifies shields) or its resists add up to TANK_RESISTS, else Other.
 export function buildOf(it: Item): Build {
   const n = (keys: string[], skills: string[]): number => keys.filter((k) => (k === "mageWeapon" ? !!it.props[k] : (it.props[k] ?? 0) > 0)).length
     + skills.filter((k) => { const v = it.extras[k]; return typeof v === "number" && v > 0; }).length;
   const caster = n(CASTER_PROPS, CASTER_SKILLS) + (it.flags.includes("spell channeling") ? 1 : 0), melee = n(MELEE_PROPS, MELEE_SKILLS);
   if (caster || melee) return caster > melee ? "caster" : melee > caster ? "melee" : "hybrid";
   if (Array.isArray(it.extras["weapon damage"])) return "melee";
+  if (it.slot === "twoHanded" && !it.twoHanded) return "tank";
   return RESIST_KEYS.reduce((sum, k) => sum + (it.props[k] ?? 0), 0) >= TANK_RESISTS ? "tank" : "other";
 }
 
 // A rule's filter: the item query (location-free, item-query.mts's matchesItem) and, when given, any of the names
-// and the build (gear only).
+// (compared as nameKeys; a name with no letter or digit matches nothing) and the build (gear only).
 export function ruleMatches(it: Item, m: RuleMatch, rarity: RulesV1RarityItem[] = []): boolean {
   if (m.build && (!it.gear || buildOf(it) !== m.build)) return false;
   const names = m.names ?? [];
   if (names.length) {
-    const n = baseName(it.name);
-    if (!names.some((w) => n.includes(w.trim().toLowerCase()))) return false;
+    const n = nameKey(it.name);
+    if (!names.some((w) => { const k = squash(w); return !!k && n.includes(k); })) return false;
   }
   return matchesItem(it, m.query, { rarity });
 }

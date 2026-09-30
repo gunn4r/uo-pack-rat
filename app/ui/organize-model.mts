@@ -53,6 +53,13 @@ export function withLabel(cfg: OrganizeConfig, label: ContainerLabel): { config:
   const next = { ...cfg, labels: { ...cfg.labels, [String(label.serial)]: label } };
   return label.pinned ? dropTarget(next, label.serial) : { config: next, dropped: [] };
 }
+// The Label… pin confirmation (issue #123): the chest is where these rules put items, so pinning takes it off them.
+export function pinNote(name: string, dropped: readonly string[]): string {
+  const q = dropped.map((d) => `"${d}"`);
+  const list = q.length > 1 ? `${q.slice(0, -1).join(", ")} and ${q.at(-1)!}` : q[0]!;
+  const one = dropped.length === 1;
+  return `${name} is where the rule${one ? "" : "s"} ${list} put${one ? "s" : ""} items. Nothing is put into a pinned container, so pinning it takes it off ${one ? "that rule" : "those rules"}. Unpinning it later does not put it back: add it to ${one ? "the rule" : "them"} again, or run Auto organize again.`;
+}
 export function withoutLabel(cfg: OrganizeConfig, serial: number): { config: OrganizeConfig; dropped: string[] } {
   const labels = { ...cfg.labels };
   delete labels[String(serial)];
@@ -374,9 +381,11 @@ export function tripRefusal(msg: string): string {
 // ---------------------------------------------------------------- Auto organize
 export const STRATEGY_TEXT: Record<AutoStrategy, { label: string; text: string }> = {
   simple: { label: "Simple", text: "One container for each kind of thing: armour, weapons, jewelry, reagents, scrolls, resources and so on." },
-  detailed: { label: "Detailed", text: "Splits each kind further: armour by slot, jewelry by type, reagents by school, power scrolls by level, resources by type. Needs more containers." },
-  build: { label: "By build", text: "Sorts gear by what it is for: caster, melee, hybrid (both equally), tank (resists and neither) and other gear. Everything else is grouped as in Simple." },
+  detailed: { label: "Detailed", text: "Splits each kind further: armour by slot, jewelry by type, reagents by school, scrolls by kind, resources by type. Short of containers, a kind's small groups share one." },
+  build: { label: "By build", text: "Sorts gear by what it is for: caster, melee, hybrid (both equally), tank (shields and resist pieces with neither) and other gear. Everything else is grouped as in Simple." },
 };
+// Under the chests (issue #123): an unticked chest leaves the scope, so its items are neither moved nor short of room.
+export const TICK_SCOPE_TEXT = "Only items in the chests you tick are organized; the rest are left where they are.";
 // The chests Auto organize may use, by house (a heading only when there is more than one).
 export function candidateGroups(cands: readonly ProposalCandidate[]): Array<{ site: number; title: string | null; rows: ProposalCandidate[] }> {
   const sites = [...new Set(cands.map((c) => c.site))].sort((a, b) => a - b);

@@ -121,6 +121,40 @@ test("[slow] Organize teaches labelling until a container is labelled, and Label
   }
 });
 
+test("[slow] Label… pinning a chest a rule fills names the rule and takes the chest off it, even when the rule came after the page loaded the setup (issue #123)", async (t) => {
+  const why = unavailable();
+  if (why) return t.skip(why);
+  const dataDir = dataDirWith([{ id: "rule-1", name: "Reagents", kind: ["reagent"], targets: [DORRAN] }]);
+  const { app, page, errors } = await launch(dataDir);
+  try {
+    await go(page, "#/containers", `#cont-table tr[data-root="${KESTREL}"]`);
+    await rowActions(page, KESTREL).click();
+    await page.getByRole("menuitem", { name: "Edit label…" }).click();
+    await page.waitForSelector("dialog[open] #lbl-name");
+    await page.getByRole("button", { name: "Cancel" }).click();
+    await page.waitForFunction(() => !document.querySelector("dialog[open]"));
+    // Auto organize (another window) adds a rule filling the Jewellery chest after the page read the setup.
+    const disk = readOrganize(dataDir)!;
+    disk.rules.push({ id: "auto-gems", name: "Gems", match: { query: { ...EMPTY_QUERY, kind: ["gem"] } }, targets: [KESTREL], origin: "strategy:simple" });
+    writeFileSync(join(dataDir, "organize.json"), JSON.stringify(disk));
+
+    await rowActions(page, KESTREL).click();
+    await page.getByRole("menuitem", { name: "Edit label…" }).click();
+    await page.waitForSelector("dialog[open] #lbl-name");
+    await page.locator("#lbl-pin").check();
+    await page.click("#lbl-save");
+    await page.waitForSelector("[data-confirm]");
+    await page.getByText('Jewellery is where the rule "Gems" puts items. Nothing is put into a pinned container, so pinning it takes it off that rule. Unpinning it later does not put it back: add it to the rule again, or run Auto organize again.').waitFor();
+    await page.click("[data-confirm]");
+    const saved = await until(() => readOrganize(dataDir), (f) => !!f?.labels[String(KESTREL)]?.pinned, "the pin in organize.json");
+    assert.deepEqual(saved!.rules.map((r) => [r.id, r.targets]), [["rule-1", [DORRAN]], ["auto-gems", []]]);
+    assert.deepEqual(errors, []);
+  } finally {
+    await app.close();
+    rmSync(dataDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
+  }
+});
+
 test("[slow] the Rules card: each rule's filter, targets with their fill and counts, the catch-all, and reordering by keyboard and by drag", async (t) => {
   const why = unavailable();
   if (why) return t.skip(why);
@@ -542,6 +576,7 @@ test("[slow] Auto organize: Simple proposes groups for the ticked chests, Accept
     await page.click("#org-auto");
     await page.waitForSelector(ready);
     assert.equal(await page.locator("#auto-containers input[type=checkbox]:checked").count(), 2, "both demo chests are offered and ticked");
+    assert.equal(await page.locator("#auto-containers .auto-scope").innerText(), "Only items in the chests you tick are organized; the rest are left where they are.", "under the chests, what ticking means");
     assert.ok(await page.locator("#auto-proposal tr[data-group]").count() > 0, "the proposal lists its groups");
     assert.match(await page.locator("#auto-headline").innerText(), /^Labels 2 containers and writes \d+ rules?\./);
 

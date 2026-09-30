@@ -198,6 +198,15 @@ test("[smoke] classify: names map to optimizer slots, containers/consumables are
   assert.equal(classify("Book Of Chivalry").slot, "oneHanded");
 });
 
+// Issue #123: a mastery primer is a consumable book, whatever its graphic's layer or its name's words say, so the
+// Suit Builder never sees one.
+test("[fast] classify: a Primer On … Mastery is a book, never gear", () => {
+  for (const [name, lines] of [["Primer On Mace Fighting Mastery", []], ["Primer On Archery Mastery", ["Blessed", "Luck 10"]]] as const) {
+    assert.deepEqual(classify(name, parseTooltip([name, ...lines]), null, 3834), { slot: null, twoHanded: false, gear: false }, name);   // 3834: a one-handed graphic
+    assert.equal(kindOf(name, parseTooltip([name, ...lines])), "book", name);
+  }
+});
+
 test("[fast] classify: equipped layer wins over the name", () => {
   assert.equal(classify("Weird Thing", null, "Torso").slot, "chest");
   assert.equal(classify("Chainmail Leggings", null, "Pants").slot, "legs");

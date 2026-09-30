@@ -46,6 +46,9 @@ test("[fast] each reagent preset finds its school's reagents, and Bone Armor is 
   assert.deepEqual(matching("magery-reagents", all), ["Black Pearl", "Bloodmoss", "Garlic", "Ginseng", "Mandrake Root", "Nightshade", "Spiders' Silk", "Sulfurous Ash"]);
   assert.deepEqual(matching("necromancy-reagents", all), ["Bat Wing", "Daemon Blood", "Grave Dust", "Nox Crystal", "Pig Iron"]);
   assert.deepEqual(matching("mysticism-reagents", all), ["Bone", "Daemon Bone", "Dragon's Blood", "Fertile Dirt"]);
+  // UO Alive's own spellings (issue #123).
+  assert.deepEqual(matching("magery-reagents", ["Blood Moss", "Spiders Silk"]), ["Blood Moss", "Spiders Silk"]);
+  assert.deepEqual(matching("necromancy-reagents", ["Batwing"]), ["Batwing"]);
 });
 
 test("[fast] each power scroll preset finds only its own level", () => {

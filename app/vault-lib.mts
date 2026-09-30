@@ -465,6 +465,9 @@ export function parseTooltip(rawLines?: Array<string | undefined> | undefined, a
 const WEAPON_RE = /\b(scimitar|katana|longsword|broadsword|viking sword|cutlass|cleaver|bone harvester|machete|no-dachi|double axe|war axe|battle axe|large battle axe|two handed axe|executioner|ornate axe|hatchet|axe|bardiche|halberd|paladin sword|radiant|dagger|kryss|war fork|short spear|spear|pike|pitchfork|leafblade|boning knife|sai|tekagi|mace|maul|club|war hammer|hammer pick|scepter|diamond mace|tessen|nunchaku|black staff|quarter staff|staff|bow|crossbow|yumi|longbow|composite|lance|scythe|knife|sledge hammer|soul glaive|cyclone|boomerang|glass sword|glass staff|stone war sword|crook|crescent blade|wakizashi|daisho|bokuto|lajatang|kama|tetsubo|war cleaver|spellblade|rune blade|war mace|bloodblade|dread sword|dual short axes|dual pointed spear|shortblade|longblade|talwar|disc mace|serpentstone staff|wild staff|gnarled staff|sword|blade)\b/i;
 const TWO_H_RE = /\b(two handed|double axe|large battle axe|bardiche|halberd|no-dachi|executioner|maul|war hammer|black staff|quarter staff|bow|crossbow|yumi|longbow|composite|scythe|pike|war fork|spear|lance|lajatang|tetsubo|daisho|bokuto|gnarled staff|wild staff|serpentstone staff|soul glaive|dual pointed spear|dual short axes|sledge hammer|scepter|glass staff)\b/i;
 const SHIELD_RE = /\b(shield|buckler)\b/i;
+// A mastery primer ("Primer On Archery Mastery") is a consumable book (issue #123): some carry a held graphic or a
+// weapon word, so it is decided before anything else and is never gear.
+const PRIMER_RE = /\bprimer on\b.*\bmastery\b/i;
 const HELD_TOOL_RE = /\b(fishing pole|candle|candelabra|torch|lantern|light source)\b/i;
 const SPELLBOOK_RE = /\b(spellbook|book of (chivalry|bushido|ninjitsu|magery|necromancy|mysticism|spellweaving)|necromancer spellbook|mysticism book|tome)\b/i;   // NOT bare "mystic": "Mystic Ring" is a ring
 const JEWEL_SLOTS: Array<[string, RegExp]> = [["ring", /\bring\b/i], ["bracelet", /\bbracelet\b/i], ["talisman", /\btalisman\b/i], ["neck", /\bnecklace\b/i], ["earrings", /\bearrings\b/i]];
@@ -566,6 +569,7 @@ export const layerOfGraphic = (graphic: number | null | undefined): string | nul
 export function classify(name: string | null | undefined, parsed?: ParsedTooltip | null | undefined, layer?: string | null | undefined, graphic?: number | null | undefined): ClassifyResult {
   const n = name || "";
   let slot = null, two = false;
+  if (PRIMER_RE.test(n)) return { slot: null, twoHanded: false, gear: false };
   if (layer && LAYER_TO_SLOT[layer]) {
     slot = LAYER_TO_SLOT[layer]!;
     two = slot === "twoHanded" && !SHIELD_RE.test(n) && (parsed?.twoHanded ?? TWO_H_RE.test(n));
@@ -1231,6 +1235,7 @@ const REFINEMENT_RE = /\b(wash|varnish|polish|cure|gloss|scour|lacquer|resin) of
 export function kindOf(name: string | null | undefined, parsed?: ParsedTooltip | null | undefined): string {
   const n = name || "";
   if (SPELL_NAMES.has(n.toLowerCase().trim())) return "scroll";
+  if (PRIMER_RE.test(n)) return "book";
   if (REFINEMENT_RE.test(n)) return "refinement";
   for (const [kind, rx] of KIND_RULES) if (rx.test(n)) return kind;
   const hasProps = parsed && Object.keys(parsed.props || {}).some((k) => k !== "tagPenalty");
