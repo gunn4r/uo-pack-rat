@@ -9,8 +9,8 @@ import { parseItemQuery } from "./item-query.mts";
 import type { ItemQuery } from "./item-query.mts";
 import type { Container } from "./vault-lib.mts";
 import { PENDING_GRACE_MS } from "./organize-state.mts";
-import type { BridgeResultEntry, OrganizeConfig, OrganizePlan, OrganizeRule, PlanMove } from "./ui/api-types.mts";
-import { CATCH_ALL_ID, moveRule, withLabel, withoutLabel, pinnedWith, upsertRule, withoutRule, newRuleId, ruleQueryFrom, blankQuery, droppedNote, ruleNameFrom, checkDraft, matchSummary, extraFilters, targetView, fillText, fillTone, targetOptions, withTargetLabels, matchLine, debounced, MATCH_DEBOUNCE_MS, organizeStage, labelledPlaces, ruleNameOf, containerNameOf, ruleCountParts, planHeadline, unclaimedNote, roomLines, crossSiteLines, warningGroups, tripRows, moveName, moveWhere, carriedView, tripGate, stepWatch, outcomeOf, outcomeText, failedSteps, runAllNext, tripRefusal, GRACE_MS, TRIP_MS } from "./ui/organize-model.mts";
+import type { BridgeResultEntry, OrganizeConfig, OrganizePlan, OrganizeProposal, OrganizeRule, PlanMove, ProposalCandidate, ProposalGroup } from "./ui/api-types.mts";
+import { CATCH_ALL_ID, moveRule, withLabel, withoutLabel, pinNote, pinnedWith, upsertRule, withoutRule, newRuleId, ruleQueryFrom, blankQuery, droppedNote, ruleNameFrom, checkDraft, matchSummary, extraFilters, targetView, fillText, fillTone, targetOptions, withTargetLabels, matchLine, debounced, MATCH_DEBOUNCE_MS, organizeStage, labelledPlaces, ruleNameOf, containerNameOf, ruleCountParts, planHeadline, unclaimedNote, roomLines, crossSiteLines, warningGroups, tripRows, moveName, moveWhere, carriedView, tripGate, stepWatch, outcomeOf, outcomeText, failedSteps, runAllNext, tripRefusal, adoptWatch, resumedNote, GRACE_MS, TRIP_MS, STRATEGY_TEXT, candidateGroups, candidateNote, proposalHeadline, groupStatus, groupAway, intoText, proposalNotes, proposalStays, canTrySimple, acceptGate } from "./ui/organize-model.mts";
 
 const A = 0x40000001, B = 0x40000002, C = 0x40000003, GONE = 0x40000009;
 const chest = (serial: number, over: Partial<Container> = {}): Container => ({ serial, root: serial, parent: null, kind: "ground", name: "Metal Chest", tooltip: ["Metal Chest"], label: `Metal Chest (0x${serial.toString(16)})`, capacity: { items: 61, maxItems: 125, stones: null, maxStones: null }, scannedBy: "Tester", scannedAt: "2026-09-28T10:00:00Z", ...over });
@@ -55,6 +55,12 @@ test("[fast] pinning a label takes it off every rule's targets and the catch-all
   assert.equal(renamed.config.labels[String(A)]!.name, "Regs");
   assert.deepEqual(renamed.config.rules, CFG.rules);
   assert.equal(CFG.labels[String(A)]!.name, "Reagents", "the input is untouched");
+});
+
+test("[fast] pinning a chest a rule fills says so in the player's words, naming the rule (issue #123)", () => {
+  assert.equal(pinNote("Gems", ["Gems"]), 'Gems is where the rule "Gems" puts items. Nothing is put into a pinned container, so pinning it takes it off that rule. Unpinning it later does not put it back: add it to the rule again, or run Auto organize again.');
+  assert.equal(pinNote("Reagents", ["Reagents", "Gems", "Everything else"]),
+    'Reagents is where the rules "Reagents", "Gems" and "Everything else" put items. Nothing is put into a pinned container, so pinning it takes it off those rules. Unpinning it later does not put it back: add it to them again, or run Auto organize again.');
 });
 
 test("[fast] removing a label removes it from the rules that fill it", () => {
@@ -109,6 +115,7 @@ test("[fast] a rule's one-line summary: its names first, then the Inventory's fi
   const match = { query: { ...blankQuery(), kind: ["reagent"] }, names: ["black pearl", "bloodmoss", "garlic", "ginseng"] };
   assert.equal(matchSummary(match, CTX), "Name: black pearl, bloodmoss, garlic +1 more · Kind: reagent");
   assert.equal(matchSummary({ query: blankQuery() }, CTX), "Every item (no filter yet)");
+  assert.equal(matchSummary({ query: { ...blankQuery(), kind: ["gear"] }, build: "hybrid" }, CTX), "Build: Hybrid · Kind: gear");
 });
 
 test("[fast] extraFilters lists the filters the editor has no control for, and removes one at a time", () => {
@@ -324,6 +331,19 @@ test("[fast] stepWatch gives up on a trip nobody picked up, on one whose bridge 
   assert.deepEqual(stepWatch(w, { ...off, result }, 99 * 60_000), { kind: "reported", outcome: "done", result });
 });
 
+test("[fast] adoptWatch follows a trip the server says is in flight from when it was queued, unless the page already watches one or gave up on it", () => {
+  const t = { id: "t-7", index: 3, queuedAt: "2026-09-29T10:00:00.000Z", picked: true };
+  const now = Date.parse("2026-09-29T10:02:00.000Z");
+  assert.deepEqual(adoptWatch(t, false, new Set(), now), { id: "t-7", index: 3, queuedAt: Date.parse(t.queuedAt), picked: true, heard: now });
+  assert.equal(adoptWatch(null, false, new Set(), now), null);
+  assert.equal(adoptWatch(t, true, new Set(), now), null, "a trip this page runs or is queueing is watched already");
+  assert.equal(adoptWatch(t, false, new Set(["t-7"]), now), null, "a trip the page stopped following (reported, or given up on) is not taken back");
+  assert.equal(adoptWatch({ ...t, queuedAt: "soon" }, false, new Set(), now), null);
+  // Queued two minutes ago and not picked up: the same rules as a trip this page queued, so it is given up at once.
+  assert.equal(stepWatch(adoptWatch({ ...t, picked: false }, false, new Set(), now)!, { currentId: null, result: null, online: true }, now).kind, "lost");
+  assert.equal(resumedNote(3), "Trip 3 was already running when this page opened (after a reload, or from another window), so it is followed here. Run all does not go on after it: once it reports back, press Run all again to continue.");
+});
+
 test("[fast] a trip's outcome: stopped, partial and failed each stop Run all with their own sentence", () => {
   const step = (ok: boolean) => ({ op: "put" as const, serial: 5, ok, msg: ok ? "put away" : "bounced (full, or refused)" });
   assert.equal(outcomeOf({ ok: true, msg: "", steps: [step(true)] }), "done");
@@ -353,6 +373,53 @@ test("[fast] runAllNext runs the new plan's first trip, and stops when a reporte
 test("[fast] a refused trip reads as what to do next, and a hand-edited setup asks to be saved first", () => {
   assert.equal(tripRefusal("the plan has changed since it was shown; reload it"), "The plan changed since it was shown: a scan arrived, a rule changed or a trip reported back. Here is the new plan; check it and press Run again.");
   assert.equal(tripRefusal("organize.json was hand-edited and parts of it were dropped (rules[0] x); open Organize and save the setup first"), "Part of organize.json could not be read and was left out, so no trip runs until you have checked the setup and pressed Save setup (above).");
-  assert.equal(tripRefusal("trip 1 has not reported back yet"), "Trip 1 is still running, started before this page was reloaded or from another window. Let it finish in game, then press Reload plan.");
+  assert.equal(tripRefusal("trip 1 has not reported back yet"), "Trip 1 has not reported back yet: it is still running in game. Let it finish, then press Reload plan.");
   assert.equal(tripRefusal("the plan has no trip 4"), "the plan has no trip 4");
+});
+
+test("[fast] Auto organize: the proposal's headline, each group's status, the notes, the chests by house, and when Accept and Try Simple are offered", () => {
+  const cand = (serial: number, over: Partial<ProposalCandidate> = {}): ProposalCandidate => ({ serial, name: `Chest ${serial.toString(16)}`, site: 0, fill: { items: 10, max: 125 }, label: null, mine: false, ticked: true, ...over });
+  const group = (over: Partial<ProposalGroup> = {}): ProposalGroup => ({ key: "reagents", name: "Reagents", family: "reagents", ruleIds: ["auto-reagents"], items: 40, needSlots: 40, targets: [A], roomSlots: 125, shortfall: 0, addContainers: 0, crossSite: 0, ...over });
+  const P = (over: Partial<OrganizeProposal> = {}): OrganizeProposal => ({ strategy: "simple", candidates: [cand(A), cand(B)], unusable: [], containers: [A, B], refused: [], groups: [group()], unassigned: 0, addContainers: 0, manualRules: 0, config: CFG, changed: true, plan: { moves: 12, trips: 1, noRoom: 0, crossSite: 0, unclaimed: 0 }, ...over });
+  assert.equal(proposalHeadline(P()), "Labels 2 containers and writes 1 rule. 12 items to move in 1 trip.");
+  assert.equal(proposalHeadline(P({ plan: { moves: 0, trips: 0, noRoom: 0, crossSite: 0, unclaimed: 0 } })), "Labels 2 containers and writes 1 rule. Nothing needs to move.");
+  assert.equal(proposalHeadline(P({ changed: false })), "This is already your setup: nothing to change.");
+  assert.equal(proposalHeadline(P({ containers: [] })), "Tick at least one container for Auto organize to use.");
+
+  assert.deepEqual(groupStatus(group()), { badge: "Fits", tone: undefined, text: null });
+  assert.deepEqual(groupStatus(group({ shortfall: 8, addContainers: 1 })), { badge: "Short", tone: "warn", text: "8 slots short: add 1 container." });
+  assert.deepEqual(groupStatus(group({ targets: [], roomSlots: 0, shortfall: 40, addContainers: 1 })), { badge: "No container", tone: "warn", text: "Add 1 container. Its items stay where they are." });
+  assert.equal(groupAway(group({ crossSite: 3 })), "3 items at another house stay there.");
+  assert.equal(groupAway(group()), null);
+  assert.equal(intoText(group({ targets: [A, B] }), [cand(A), cand(B)]), "Chest 40000001, then Chest 40000002");
+  assert.equal(intoText(group({ targets: [] }), []), "—");
+
+  assert.equal(proposalNotes(P({ manualRules: 1, plan: { moves: 0, trips: 0, noRoom: 0, crossSite: 0, unclaimed: 0 } }))[0], "Your 1 rule stays above these and takes its items first.");
+  assert.deepEqual(proposalNotes(P({ manualRules: 2, refused: [{ serial: C, reason: "blacklisted" }], addContainers: 3, plan: { moves: 1, trips: 1, noRoom: 0, crossSite: 4, unclaimed: 0 } })), [
+    "Your 2 rules stay above these and take their items first.",
+    "Container 0x40000003 could not be used: blacklisted.",
+    "Place 3 more containers, scan them, and run Auto organize again to fit everything.",
+    "4 items belong at another house: carry them over by hand.",
+  ]);
+  assert.deepEqual(proposalNotes(P()), []);
+  assert.deepEqual(proposalStays(P({ plan: { moves: 30, trips: 2, noRoom: 12, crossSite: 0, unclaimed: 5 } })), ["12 items have no room and stay where they are.", "5 items no rule takes stay where they are."]);
+  assert.deepEqual(proposalStays(P({ plan: { moves: 30, trips: 2, noRoom: 1, crossSite: 0, unclaimed: 1 } })), ["1 item has no room and stays where it is.", "1 item no rule takes stays where it is."]);
+  assert.deepEqual(proposalStays(P()), []);
+  assert.deepEqual(proposalStays(P({ containers: [], plan: { moves: 0, trips: 0, noRoom: 12, crossSite: 0, unclaimed: 5 } })), [], "the headline asks for a container first");
+
+  assert.deepEqual(candidateGroups([cand(A), cand(B, { site: 1 }), cand(C)]).map((g) => [g.title, g.rows.map((r) => r.serial)]), [["House 1", [A, C]], ["House 2", [B]]]);
+  assert.deepEqual(candidateGroups([cand(A), cand(C)]).map((g) => g.title), [null], "one house needs no heading");
+  assert.equal(candidateNote(cand(A)), null);
+  assert.equal(candidateNote(cand(A, { mine: true, ticked: false, label: { name: "Reagents", origin: "manual" } })), "Your own label: tick it to let Auto organize fill it (its name stays).");
+  assert.equal(candidateNote(cand(A, { mine: true, ticked: false })), "One of your rules fills it: tick it to let Auto organize use it too.");
+  assert.equal(candidateNote(cand(A, { mine: true, ticked: true, label: { name: "Reagents", origin: "manual" } })), null, "ticked because an earlier Auto rule fills it: nothing to explain");
+
+  assert.equal(canTrySimple(P({ strategy: "detailed", unassigned: 2 })), true);
+  assert.equal(canTrySimple(P({ strategy: "simple", unassigned: 2 })), false);
+  assert.equal(acceptGate(P(), false), null);
+  assert.equal(acceptGate(P(), true), "Working out the proposal…");
+  assert.equal(acceptGate(null, false), "Working out the proposal…");
+  assert.equal(acceptGate(P({ containers: [] }), false), "Tick at least one container first.");
+  assert.equal(acceptGate(P({ changed: false }), false), "Nothing to change: this is already your setup.");
+  assert.deepEqual(Object.keys(STRATEGY_TEXT), ["simple", "detailed", "build"]);
 });

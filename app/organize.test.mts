@@ -7,16 +7,16 @@ import { readFileSync, mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { foldSnapshots, setRules, type Inventory } from "./vault-lib.mts";
+import { foldSnapshots, setRules, PROP_PATTERNS, SKILL_NAMES, type Inventory } from "./vault-lib.mts";
 import { houseScan, AT, type BoxSpec, type ThingSpec } from "./organize-fixture.mts";
-import { emptyRuleQuery, emptyOrganizeConfig, CATCH_ALL_ID, type OrganizeConfig, type OrganizeRule, type ContainerLabel } from "./organize-config.mts";
+import { emptyRuleQuery, emptyOrganizeConfig, BUILDS, CATCH_ALL_ID, type OrganizeConfig, type OrganizeRule, type ContainerLabel, type RuleMatch } from "./organize-config.mts";
 import type { RuleQuery } from "./item-query.mts";
 import type { RulesV1 } from "./schema/types.d.mts";
 import { resolveConfig } from "./config.mts";
 import { queueTrip } from "./bridge-trip.mts";
 import type { ScanV2 } from "./schema/types.d.mts";
 import {
-  ancestry, scopeOf, ruleMatches, claimOf, baseName, applyOverlay, homeOf, newSim, simTake, simPut, mark, rollback, MAX_STACK,
+  ancestry, scopeOf, ruleMatches, buildOf, matchCount, CASTER_PROPS, CASTER_SKILLS, MELEE_PROPS, MELEE_SKILLS, claimOf, baseName, nameKey, applyOverlay, homeOf, newSim, simTake, simPut, mark, rollback, MAX_STACK,
   sitesOf, planOrganize, tripCommand, lineBytes, type OverlayMove, type Sim, type Plan,
 } from "./organize.mts";
 
@@ -113,6 +113,77 @@ test("[fast] rule names match the item's own name, stack count stripped, case-in
   assert.equal(ruleMatches(dust, { query: emptyRuleQuery(), names: ["GRAVE"] }), true);
   assert.equal(ruleMatches(inv.items[PEARL]!, { query: emptyRuleQuery(), names: ["grave dust"] }), false);
   assert.equal(ruleMatches(dust, { query: { ...emptyRuleQuery(), kind: ["gem"] }, names: ["grave dust"] }), false);
+});
+
+test("[fast] rule names and item names compare with spaces and punctuation removed on both sides (issue #123)", () => {
+  const inv = fold([{ serial: A }], [
+    { serial: 0x40002001, name: "Blood Moss", amount: 20, in: A }, { serial: 0x40002002, name: "Batwing", in: A }, { serial: 0x40002003, name: "Spiders' Silk", in: A },
+    { serial: 0x40002004, name: "A Wondrous Scroll Of Magery (105 Skill)", in: A }, { serial: 0x40002005, name: "A Legendary Scroll Of Magery (120 Skill)", in: A },
+  ]);
+  const takes = (name: string): string[] => Object.values(inv.items).filter((it) => ruleMatches(it, { query: emptyRuleQuery(), names: [name] })).map((it) => it.name);
+  assert.equal(nameKey("20 Spiders' Silk"), "spiderssilk");
+  assert.deepEqual(takes("bloodmoss"), ["Blood Moss"]);
+  assert.deepEqual(takes("bat wing"), ["Batwing"]);
+  assert.deepEqual(takes("spiders silk"), ["Spiders' Silk"]);
+  assert.deepEqual(takes("'"), [], "a name that is only punctuation matches nothing");
+  assert.deepEqual(takes("120 Skill"), ["A Legendary Scroll Of Magery (120 Skill)"], "a rule name's leading number is not a stack count");
+});
+
+test("[fast] a rule's build takes gear by its caster and melee markers, then its resists, and never takes anything else", () => {
+  const gear = (serial: number, name: string, lines: string[]): ThingSpec => ({ serial, name, in: A, lines });
+  const inv = fold([{ serial: A }], [
+    gear(0x40002001, "Gold Ring", ["Faster Casting 1", "Lower Mana Cost 8"]),
+    gear(0x40002002, "Quarter Staff", ["Spell Channeling", "Mage Weapon -25 Skill", "Damage Increase 20"]),
+    gear(0x40002003, "Katana", ["Hit Chance Increase 15", "Hit Fireball 30"]),
+    gear(0x40002004, "Gold Earrings", ["Magery +10", "Swordsmanship +5", "Tactics +5"]),
+    gear(0x40002005, "Gold Bracelet", ["Faster Casting 1", "Damage Increase 10"]),
+    gear(0x40002006, "Platemail Gorget", ["Physical Resist 10", "Fire Resist 10"]),
+    gear(0x40002007, "Leather Gloves", ["Physical Resist 5", "Faster Casting 0"]),
+    gear(0x40002008, "Katana", ["Weapon Damage 11 - 13", "Physical Resist 25"]),
+    gear(0x40002009, "Gargish Talwar", ["Spell Channeling", "Faster Casting -1", "Throwing +10", "Tactics +5"]),
+    { serial: PEARL, name: "Black Pearl", in: A },
+  ]);
+  const items = Object.values(inv.items).sort((a, b) => a.serial - b.serial);
+  assert.deepEqual(items.map((it) => [it.name, it.gear ? buildOf(it) : null]), [
+    ["Black Pearl", null],
+    ["Gold Ring", "caster"],
+    ["Quarter Staff", "caster"],
+    ["Katana", "melee"],
+    ["Gold Earrings", "melee"],
+    ["Gold Bracelet", "hybrid"],
+    ["Platemail Gorget", "tank"],
+    ["Leather Gloves", "other"],
+    ["Katana", "melee"],
+    ["Gargish Talwar", "melee"],
+  ]);
+  const takes = (build: RuleMatch["build"]): string[] => items.filter((it) => ruleMatches(it, { query: emptyRuleQuery(), build })).map((it) => it.name);
+  assert.deepEqual(takes("caster"), ["Gold Ring", "Quarter Staff"]);
+  assert.deepEqual(takes("other"), ["Leather Gloves"], "a build never takes what is not gear");
+  assert.equal(takes(undefined).length, items.length);
+  // The rule editor's live count and the plan agree on what a build rule takes.
+  for (const build of BUILDS) {
+    const cfg = config({ labels: labels(A), rules: [{ id: "r", name: "r", match: { query: emptyRuleQuery(), build }, targets: [A], origin: "manual" }] });
+    const counted = matchCount(inv, cfg, cfg.rules[0]!.match, { now: NOW }).count;
+    assert.deepEqual([counted, planOrganize(inv, cfg, [], { now: NOW }).rules.find((r) => r.ruleId === "r")?.matched], [takes(build).length, takes(build).length], build);
+  }
+});
+
+test("[fast] a shield with no caster or melee marker is Tank gear, whatever its resists (issue #123)", () => {
+  const inv = fold([{ serial: A }], [
+    { serial: 0x40002001, name: "Wooden Shield", in: A },
+    { serial: 0x40002002, name: "Heater Shield", in: A, lines: ["Physical Resist 1%"] },
+    { serial: 0x40002003, name: "Metal Kite Shield", in: A, lines: ["Spell Channeling", "Faster Casting -1"] },
+    { serial: 0x40002004, name: "Order Shield", in: A, lines: ["Hit Chance Increase 10"] },
+  ]);
+  assert.deepEqual(Object.values(inv.items).sort((a, b) => a.serial - b.serial).map((it) => [it.name, buildOf(it)]), [
+    ["Wooden Shield", "tank"], ["Heater Shield", "tank"], ["Metal Kite Shield", "caster"], ["Order Shield", "melee"],
+  ]);
+});
+
+test("[fast] every By build marker is a property key or skill the tooltip parser really produces", () => {
+  const keys = new Set(PROP_PATTERNS.map(([k]) => k)), skills = new Set(SKILL_NAMES);
+  assert.deepEqual([...CASTER_PROPS, ...MELEE_PROPS].filter((k) => !keys.has(k)), []);
+  assert.deepEqual([...CASTER_SKILLS, ...MELEE_SKILLS].filter((k) => !skills.has(k)), []);
 });
 
 test("[fast] a rule's free text never matches where the item sits", () => {

@@ -47,8 +47,13 @@
 //         to start a rule from; read-only) ·
 //         POST /api/organize/match {match} -> {count, pieces, sample} (the movable items in labelled roots that one
 //         rule filter takes, ignoring the other rules: the rule editor's live count; read-only) ·
+//         POST /api/organize/propose {strategy: "simple"|"detailed"|"build", containers?: [serial…]} -> {proposal} (Auto
+//         organize: app/organize-strategies.mts's proposeOrganize over the ticked ground chests, or every one it ticks
+//         by default; the proposal carries the whole next setup, which the page saves with PUT /api/organize;
+//         read-only; 409 when organize.json needed salvage or the proposal would not save) ·
 //         GET /api/organize/plan (app/organize.mts's planOrganize over the fold, organize.json, the blacklist and the
-//         results overlay <data>/organize-state.json, after reading finished trips out of the bridge's status.json) ·
+//         results overlay <data>/organize-state.json, after reading finished trips out of the bridge's status.json;
+//         `running` = {id, index, queuedAt, picked} for the trip not reported back yet, or null) ·
 //         POST /api/organize/trip {index, stamp} (queues that trip of the CURRENT plan with app/bridge-trip.mts's
 //         queueTrip; 409 when the client's bridge has no "trip", organize.json needed salvage, a trip has not reported
 //         back (while its bridge's heartbeat is fresh), stamp is not the plan's, or the trip is not its site's first) ·
@@ -120,9 +125,10 @@ import { parsePastedScan, writeScanToInbox } from "./import.mts";
 import { writeFileAtomic } from "./atomic-write.mts";
 import { addPanelAutostart, panelPrefsError, readPanelPrefs, tazuoRunning, writePanelPrefs } from "./tazuo-panel.mts";
 import { queueTrip, writeBridgeStop } from "./bridge-trip.mts";
-import { checkOrganizeConfig, emptyOrganizeConfig, matchProblem, salvageOrganizeConfig, MAX_SETUP_BYTES, type OrganizeConfig, type RuleMatch } from "./organize-config.mts";
+import { checkOrganizeConfig, emptyOrganizeConfig, LIMITS, matchProblem, salvageOrganizeConfig, MAX_SETUP_BYTES, type OrganizeConfig, type RuleMatch } from "./organize-config.mts";
 import { planOrganize, tripCommand, matchCount, type Plan } from "./organize.mts";
 import { PRESETS } from "./organize-presets.mts";
+import { proposeOrganize, STRATEGY_IDS, type StrategyId } from "./organize-strategies.mts";
 import { emptyOrganizeState, harvestTrips, noteSeen, pruneOverlay, salvageOrganizeState, PENDING_GRACE_MS, type BridgeView, type OrganizeState } from "./organize-state.mts";
 import { retentionError, retentionOf, runsToPrune, scansToPrune, type ScanFile } from "./retention.mts";
 import {
@@ -833,7 +839,7 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
   // The plan as it stands now: finished trips read out of their bridges' status files into the overlay, entries a
   // newer scan has settled dropped, labels' last-seen times refreshed (the state file is rewritten only when that
   // changed something), then planOrganize.
-  async function organizeNow(): Promise<{ inv: Inventory; state: OrganizeState; plan: Plan; problems: string[] }> {
+  async function organizeNow(): Promise<{ inv: Inventory; config: OrganizeConfig; state: OrganizeState; plan: Plan; problems: string[]; bridges: Record<string, BridgeView> }> {
     const { inv } = await getInventory();
     const { config, problems } = readOrganize();
     const before = readOrganizeState();
@@ -842,7 +848,7 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
     const state = noteSeen(pruneOverlay(harvestTrips(before, bridges, now), inv, now), config, inv);
     if (JSON.stringify(state) !== JSON.stringify(before)) writeOrganizeState(state);
     const plan = planOrganize(inv, config, state.moves, { now, rarity: currentRules.rarity, blacklist: readBlacklist().map((e) => e.serial), seen: state.seen });
-    return { inv, state, plan, problems };
+    return { inv, config, state, plan, problems, bridges };
   }
   // A profiles.json that does not parse (a write cut short before writes were atomic, or a bad hand
   // edit) used to answer every GET /api/profiles with a 500 until someone fixed the file by hand. It
@@ -1860,7 +1866,26 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
         const counted = matchCount(inv, readOrganize().config, match as RuleMatch, { now: Date.now(), rarity: currentRules.rarity, blacklist: readBlacklist().map((e) => e.serial) });
         return send(res, 200, { ok: true, ...counted });
       }
-      if (req.method === "GET" && url.pathname === "/api/organize/plan") return send(res, 200, { ok: true, plan: (await organizeNow()).plan });
+      if (req.method === "POST" && url.pathname === "/api/organize/propose") {
+        // Auto organize (spec §5): what a strategy would set up over the chests the player ticked (every one it ticks
+        // by default when `containers` is left out). Read-only: Accept saves the proposal's config with PUT
+        // /api/organize. Refused, like trips, while organize.json needed salvage: the player sees what was dropped first.
+        const { strategy, containers } = asObject(await readBody(req, { limit: 64e3 }));
+        if (!STRATEGY_IDS.includes(strategy as StrategyId)) return send(res, 400, { ok: false, error: `strategy must be ${STRATEGY_IDS.map((s) => `"${s}"`).join(" or ")}` });
+        if (containers !== undefined && !(Array.isArray(containers) && containers.length <= LIMITS.labels && containers.every((v) => isBoundedInt(v, 1, MAX_SERIAL)))) {
+          return send(res, 400, { ok: false, error: "containers must be a list of container serials" });
+        }
+        const { inv, config, state, problems } = await organizeNow();
+        if (problems.length) return send(res, 409, { ok: false, error: `organize.json was hand-edited and parts of it were dropped (${problems[0]}); open Organize and save the setup first` });
+        const r = proposeOrganize(inv, config, state.moves, { strategy: strategy as StrategyId, containers: containers as number[] | undefined, now: Date.now(), rarity: currentRules.rarity, blacklist: readBlacklist().map((e) => e.serial), seen: state.seen });
+        return send(res, r.ok ? 200 : 409, r);
+      }
+      if (req.method === "GET" && url.pathname === "/api/organize/plan") {
+        // `running`: the trip in flight, if any, so a page reloaded (or opened in a second window) mid-trip follows it.
+        const { state, plan, bridges } = await organizeNow();
+        const p = state.pending[0];
+        return send(res, 200, { ok: true, plan, running: p ? { id: p.id, index: p.index, queuedAt: p.queuedAt, picked: bridges[p.adapter]?.current === p.id } : null });
+      }
       if (req.method === "POST" && url.pathname === "/api/organize/trip") {
         // One trip of the CURRENT plan, built here and queued with queueTrip: the page names the trip and the plan it
         // was shown (stamp), never the moves. A plan that changed since — a new scan, an edited rule, a trip that

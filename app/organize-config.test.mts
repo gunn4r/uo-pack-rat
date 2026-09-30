@@ -34,6 +34,10 @@ test("[fast] checkOrganizeConfig accepts an empty setup and a full one", () => {
   assert.deepEqual(checkOrganizeConfig(emptyOrganizeConfig()), { ok: true, config: emptyOrganizeConfig() });
   const r = checkOrganizeConfig(full());
   assert.equal(r.ok, true, r.ok ? "" : r.error);
+  const built = full();
+  built.rules[1]!.match.build = "hybrid";
+  const b = checkOrganizeConfig(built);
+  assert.equal(b.ok, true, b.ok ? "" : b.error);
 });
 
 test("[fast] checkOrganizeConfig refuses each broken part and names it", () => {
@@ -51,8 +55,9 @@ test("[fast] checkOrganizeConfig refuses each broken part and names it", () => {
     ["a rule query missing a field", (c) => { delete (c.rules[0]!.match.query as Partial<RuleQuery>).kind; }, /kind is missing/],
     ["a property filter with a bad operator", (c) => { c.rules[1]!.match.query.props = [{ key: "psLevel", min: 110, op: "ge" as "le" }]; }, /props\[0\]/],
     ["an empty name in names", (c) => { c.rules[0]!.match.names = [""]; }, /names/],
+    ["an unknown build", (c) => { c.rules[0]!.match.build = "wizard" as "caster"; }, /rules\[0\]\.match\.build must be one of caster, melee, hybrid, tank, other/],
     ["a target that is not labelled", (c) => { c.rules[0]!.targets = [0x40000009]; }, /not a labelled container/],
-    ["a pinned target", (c) => { c.rules[0]!.targets = [P]; }, /pinned/],
+    ["a pinned target, naming the rule and the container", (c) => { c.rules[0]!.targets = [P]; }, /^The rule "Reagents" puts items into Display, which is pinned: nothing is put into a pinned container\. Take it off the rule, or unpin it\.$/],
     ["a target listed twice", (c) => { c.rules[0]!.targets = [A, A]; }, /twice/],
     ["a pinned catch-all", (c) => { c.catchAll = P; }, /catchAll.*pinned/],
     ["an unlabelled catch-all", (c) => { c.catchAll = 0x40000009; }, /catchAll/],
@@ -96,6 +101,14 @@ test("[fast] salvage: a label dropped costs the rules that name it that target o
   assert.match(problems.join("\n"), /rules\[0\]\.targets: \d+ is not a labelled container; target dropped/);
   const again = checkOrganizeConfig(config);
   assert.equal(again.ok, true, again.ok ? "" : again.error);
+});
+
+test("[fast] salvage: a rule with an unknown build is dropped like any other broken rule", () => {
+  const doc = full();
+  (doc.rules[0]!.match as { build?: string }).build = "wizard";
+  const { config, problems } = salvageOrganizeConfig(doc);
+  assert.deepEqual(config.rules.map((r) => r.id), ["r2"]);
+  assert.match(problems.join("\n"), /rules\[0\]\.match\.build must be one of .*; rule dropped/);
 });
 
 test("[fast] salvage: anything that is not a version 1 Organize file starts empty", () => {
