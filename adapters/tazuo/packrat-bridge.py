@@ -1014,6 +1014,8 @@ def do_put(p, roots, blacklist, loose=None):
     if serial not in carried:
         if it is None or int(getattr(it, "Container", 0) or 0) != loose:
             return False, f"{name} is no longer directly in the container you picked"
+        if not in_own_pack(loose):          # checked on every put: a bag dragged out mid-trip stops the rest
+            return False, "refused: the container you picked is no longer in your backpack"
     elif it is None or int(getattr(it, "Container", 0) or 0) != pack:
         carried.discard(serial)
         return False, f"{name} is no longer at the top of your backpack"
