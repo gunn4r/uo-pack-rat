@@ -560,49 +560,53 @@ test("[smoke] the TazUO fixture: every put fits when the trips are replayed in o
   assert.equal(JSON.stringify(planOrganize(reordered, cfg, [], { now })), JSON.stringify(plan));
 });
 
-// Put away (issue #131): the backpack or the Inbox as the run's only source.
-test("[fast] Put away from the backpack puts only what lies loose at its top, into the house the character stands in", () => {
+// Put away (issue #131): the container the player picked as the run's only source, and only what lies directly in it.
+const HOME = { x: 101, y: 100, facet: 1 };
+test("[fast] Put away from the backpack puts only what lies directly in it, into the house the character stands in", () => {
   const IN_POUCH = 0x40001008, BLESSED = 0x40001009, UNCLAIMED = 0x4000100a;
   const inv = fold([{ serial: A }, { serial: B, pos: at(104) }, { serial: FAR, pos: at(300) }, { serial: PACK, kind: "backpack" }, { serial: POUCH, parent: PACK }],
     [{ serial: PEARL, name: "Black Pearl", in: PACK }, { serial: RUBY, name: "Ruby", in: PACK }, { serial: PEARL2, name: "Black Pearl", in: PACK },
       { serial: IN_POUCH, name: "Black Pearl", in: POUCH }, { serial: BLESSED, name: "Black Pearl", in: PACK, lines: ["<b>Blessed</b>"] },
       { serial: UNCLAIMED, name: "Katana", in: PACK }, { serial: PEARL3, name: "Black Pearl", in: B }]);
   const cfg = config({ labels: labels(A, B, FAR), rules: [rule("pearls", {}, [A], ["pearl"]), rule("rubies", {}, [FAR], ["ruby"])], pinnedItems: [PEARL2] });
-  const plan = planOrganize(inv, cfg, [], { now: NOW, putAway: { from: "backpack", backpack: PACK, at: { x: 101, y: 100, facet: 1 } } });
+  const plan = planOrganize(inv, cfg, [], { now: NOW, putAway: { from: "pack", container: PACK, at: HOME } });
   assert.deepEqual(plan.moves.map((m) => [m.serial, m.from, m.to]), [[PEARL, null, A]], "never the pinned pearl, the pouch's, the blessed one, nor the chest's");
   assert.deepEqual(plan.trips.map((t) => [t.takes, t.puts]), [[[], [PEARL]]]);
   assert.deepEqual(tripCommand(inv, plan, 1)!.takes, []);
   assert.deepEqual(plan.crossSite, [{ ruleId: "rubies", count: 1 }], "the ruby's chest is at another house");
   assert.equal(plan.unclaimed, 1);
   assert.deepEqual(packKept(inv, PACK, new Set([PEARL2])), { bags: 1, own: 1, pinned: 1 }, "what stays, for the answer: the pouch, the blessed pearl, the pinned one");
-  const withCatchAll = planOrganize(inv, { ...cfg, catchAll: A }, [], { now: NOW, putAway: { from: "backpack", backpack: PACK, at: { x: 101, y: 100, facet: 1 } } });
-  assert.deepEqual([withCatchAll.moves.map((m) => m.serial), withCatchAll.unclaimed], [[PEARL], 1], "the catch-all takes nothing from the backpack");
-  const there = planOrganize(inv, cfg, [], { now: NOW, putAway: { from: "backpack", backpack: PACK, at: { x: 301, y: 100, facet: 1 } } });
+  const withCatchAll = planOrganize(inv, { ...cfg, catchAll: A }, [], { now: NOW, putAway: { from: "pack", container: PACK, at: HOME } });
+  assert.deepEqual([withCatchAll.moves.map((m) => m.serial), withCatchAll.unclaimed], [[PEARL], 1], "the catch-all takes nothing from the pack");
+  const there = planOrganize(inv, cfg, [], { now: NOW, putAway: { from: "pack", container: PACK, at: { x: 301, y: 100, facet: 1 } } });
   assert.deepEqual(there.moves.map((m) => [m.serial, m.to]), [[RUBY, FAR]], "standing at the other house");
-  const elsewhere = planOrganize(inv, cfg, [], { now: NOW, putAway: { from: "backpack", backpack: PACK, at: { x: 101, y: 100, facet: 2 } } });
+  const elsewhere = planOrganize(inv, cfg, [], { now: NOW, putAway: { from: "pack", container: PACK, at: { x: 101, y: 100, facet: 2 } } });
   assert.deepEqual(elsewhere.moves, [], "no house on this facet");
   assert.deepEqual(planOrganize(inv, cfg, [], { now: NOW }).moves.map((m) => [m.serial, m.from, m.to]), [[PEARL3, B, A]], "the house plan never takes from the backpack");
+  const pouch = planOrganize(inv, cfg, [], { now: NOW, putAway: { from: "pack", container: POUCH, at: HOME } });
+  assert.deepEqual(pouch.moves.map((m) => [m.serial, m.from, m.to]), [[IN_POUCH, null, A]], "a bag picked in the pack: only its own items");
 });
 
-test("[fast] Put away from the Inbox takes only what the Inbox holds", () => {
+test("[fast] Put away from a container in a labelled chest takes only what lies directly in it", () => {
   const IN = 0x40000009;
-  const inv = fold([{ serial: A }, { serial: B, pos: at(104) }, { serial: IN, pos: at(102) }],
-    [{ serial: PEARL, name: "Black Pearl", in: IN }, { serial: RUBY, name: "Ruby", in: IN }, { serial: PEARL3, name: "Black Pearl", in: B }]);
-  const cfg = config({ labels: { ...labels(A, B), [String(IN)]: { serial: IN, name: "Inbox", inbox: true, origin: "manual" } }, rules: [rule("pearls", {}, [A], ["pearl"])] });
-  const plan = planOrganize(inv, cfg, [], { now: NOW, putAway: { from: "inbox", inbox: IN } });
-  assert.deepEqual(plan.moves.map((m) => [m.serial, m.from, m.to]), [[PEARL, IN, A]]);
+  const inv = fold([{ serial: A }, { serial: B, pos: at(104) }, { serial: IN, pos: at(102) }, { serial: BAG, parent: IN }],
+    [{ serial: PEARL, name: "Black Pearl", in: IN }, { serial: RUBY, name: "Ruby", in: IN }, { serial: PEARL2, name: "Black Pearl", in: BAG }, { serial: PEARL3, name: "Black Pearl", in: B }]);
+  const cfg = config({ labels: labels(A, B, IN), rules: [rule("pearls", {}, [A], ["pearl"])] });
+  const plan = planOrganize(inv, cfg, [], { now: NOW, putAway: { from: "ground", container: IN } });
+  assert.deepEqual(plan.moves.map((m) => [m.serial, m.from, m.to]), [[PEARL, IN, A]], "never the bag's pearl nor another chest's");
   assert.equal(plan.unclaimed, 1);
+  assert.deepEqual(planOrganize(inv, cfg, [], { now: NOW, putAway: { from: "ground", container: BAG } }).moves.map((m) => [m.serial, m.from]), [[PEARL2, BAG]]);
 });
 
 test("[fast] Put away gathers no empty bags, which the house plan does", () => {
   const IN = 0x40000009;
   const inv = fold([{ serial: A }, { serial: BAG, parent: A }, { serial: B, pos: at(104) }, { serial: IN, pos: at(102) }, { serial: PACK, kind: "backpack" }],
     [{ serial: PEARL, name: "Black Pearl", in: IN }, { serial: PEARL2, name: "Black Pearl", in: PACK }]);
-  const cfg = config({ labels: { ...labels(A, B), [String(IN)]: { serial: IN, name: "Inbox", inbox: true, origin: "manual" } }, rules: [rule("pearls", {}, [A], ["pearl"])], emptyBagsTo: B });
+  const cfg = config({ labels: labels(A, B, IN), rules: [rule("pearls", {}, [A], ["pearl"])], emptyBagsTo: B });
   assert.deepEqual(planOrganize(inv, cfg, [], { now: NOW }).moves.map((m) => m.serial).sort(), [BAG, PEARL].sort());
-  assert.deepEqual(planOrganize(inv, cfg, [], { now: NOW, putAway: { from: "inbox", inbox: IN } }).moves.map((m) => m.serial), [PEARL]);
-  assert.deepEqual(planOrganize(inv, cfg, [], { now: NOW, putAway: { from: "backpack", backpack: PACK, at: { x: 101, y: 100, facet: 1 } } }).moves.map((m) => m.serial), [PEARL2],
-    "a backpack Put away trip takes nothing, so a bag in it would get the trip refused");
+  assert.deepEqual(planOrganize(inv, cfg, [], { now: NOW, putAway: { from: "ground", container: IN } }).moves.map((m) => m.serial), [PEARL]);
+  assert.deepEqual(planOrganize(inv, cfg, [], { now: NOW, putAway: { from: "pack", container: PACK, at: HOME } }).moves.map((m) => m.serial), [PEARL2],
+    "a pack Put away trip takes nothing, so a bag in it would get the trip refused");
 });
 
 // Issue #128: the bags trips leave behind, gathered on request, and targets about to fill up.

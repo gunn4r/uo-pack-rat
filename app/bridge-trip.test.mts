@@ -57,12 +57,12 @@ test("[fast] queueTrip appends one schema-valid trip line to the adapter's own q
 test("[fast] queueTrip writes putAway only on a Put away trip, which takes nothing (issue #131)", () => {
   const { paths } = fresh();
   assert.equal(queueTrip(paths, "tazuo", trip()).ok, true);
-  const bad = queueTrip(paths, "tazuo", trip({ putAway: true }));
+  const bad = queueTrip(paths, "tazuo", trip({ putAway: BAG }));
   assert.equal(bad.ok, false);
   assert.match(bad.ok ? "" : bad.error, /takes nothing/);
-  assert.equal(queueTrip(paths, "tazuo", trip({ roots: { [String(DEST)]: { x: 12, y: 10, z: 0 } }, takes: [], putAway: true })).ok, true);
+  assert.equal(queueTrip(paths, "tazuo", trip({ roots: { [String(DEST)]: { x: 12, y: 10, z: 0 } }, takes: [], putAway: BAG })).ok, true);
   const lines = queued(paths);
-  assert.deepEqual(lines.map((l) => l.putAway), [undefined, true]);
+  assert.deepEqual(lines.map((l) => l.putAway), [undefined, BAG]);
   for (const l of lines) assert.equal(validate(TRIP_SCHEMA, l).ok, true);
 });
 

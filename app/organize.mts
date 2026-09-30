@@ -397,25 +397,26 @@ export function siteAt(inv: Inventory, groups: number[][], at: Spot): number | u
   return best;
 }
 
-// Put away's backpack (issue #131): the items at its top level, since the bridge puts only from there. Never a bag
-// or anything in one (where a player keeps what they carry on purpose: reagents, tools, books), never a blessed or
-// insured item (the character's own things: loot is neither), a pinned item or one named like trash.
+// Put away (issue #131): the items directly in the picked container, since the bridge puts only those. Never a bag
+// in it or anything in one (the player picks that bag next if they want it: what they keep on them, potions and
+// reagents, stays in its own), never a blessed or insured item (the character's own things: loot is neither), a
+// pinned item or one named like trash.
 const OWN_LINE = /^(blessed|insured)$/i;
 const isOwn = (it: Item): boolean => it.lines.some((l) => OWN_LINE.test(l.replace(/<[^>]*>/g, "").trim()));
-// A non-bag item lying at the top of the backpack.
-const onTop = (inv: Inventory, it: Item, backpack: number): boolean =>
-  it.container != null && +it.container === backpack && !it.equippedBy && it.kind !== "container" && !inv.containers[it.serial];
-export function packItems(inv: Inventory, backpack: number, pinned: Set<number>): number[] {
-  return Object.values(inv.items).filter((it) => onTop(inv, it, backpack) && !TRASH_RE.test(it.name) && !pinned.has(+it.serial) && !isOwn(it))
+// A non-bag item lying directly in the container.
+const onTop = (inv: Inventory, it: Item, container: number): boolean =>
+  it.container != null && +it.container === container && !it.equippedBy && it.kind !== "container" && !inv.containers[it.serial];
+export function packItems(inv: Inventory, container: number, pinned: Set<number>): number[] {
+  return Object.values(inv.items).filter((it) => onTop(inv, it, container) && !TRASH_RE.test(it.name) && !pinned.has(+it.serial) && !isOwn(it))
     .map((it) => +it.serial);
 }
-// What packItems leaves at the top of the backpack, and why, for Put away's answer: bags, blessed or insured items,
+// What packItems leaves directly in the container, and why, for Put away's answer: bags, blessed or insured items,
 // pinned items.
 export interface PackKept { bags: number; own: number; pinned: number }
-export function packKept(inv: Inventory, backpack: number, pinned: Set<number>): PackKept {
-  const top = Object.values(inv.items).filter((it) => onTop(inv, it, backpack));
+export function packKept(inv: Inventory, container: number, pinned: Set<number>): PackKept {
+  const top = Object.values(inv.items).filter((it) => onTop(inv, it, container));
   return {
-    bags: Object.values(inv.containers).filter((c) => c.parent != null && +c.parent === backpack).length,
+    bags: Object.values(inv.containers).filter((c) => c.parent != null && +c.parent === container).length,
     own: top.filter(isOwn).length,
     pinned: top.filter((it) => !isOwn(it) && pinned.has(+it.serial)).length,
   };
@@ -530,10 +531,11 @@ export interface Plan {
   emptyBags: EmptyBag[];   // emptyBagsOf's, less those already in the gather container
 }
 // Put away (issue #131, the TazUO panel's button): the one source a run takes from, instead of every labelled
-// root. `backpack`: what lies loose at the top of that backpack (packItems) and anything carried, claimed by a rule
-// (never the catch-all), put only into the site the character stands in (`at`, where the panel was clicked);
-// `inbox`: what the Inbox label holds.
-export type PutAway = { from: "backpack"; backpack: number; at: Spot } | { from: "inbox"; inbox: number };
+// root, always a container the player picked in game, and only what lies directly in it (packItems: never a bag in it
+// or what the bag holds). `pack`: the backpack or a bag inside it, claimed by a rule (never the catch-all), put only
+// into the site the character stands in (`at`, where the panel was clicked); `ground`: a container in a labelled
+// ground chest (or the chest), taken from and put away as the house plan does.
+export type PutAway = { from: "pack"; container: number; at: Spot } | { from: "ground"; container: number };
 export interface PlanOptions extends ScopeOptions {
   putAway?: PutAway | undefined;
   rarity?: RulesV1RarityItem[] | undefined;
@@ -667,11 +669,13 @@ export function planOrganize(inv: Inventory, cfg: OrganizeConfig, overlay: Overl
   // A carried item is put away unless it has been pinned since (the page's answer to a put the server refuses).
   const pinnedItems = new Set(cfg.pinnedItems);
   const put = opts.putAway;
-  // Put away's backpack items are in the pack already, like carried ones: put without a take.
-  if (put?.from === "backpack") for (const s of packItems(view, put.backpack, pinnedItems)) carried.add(s);
-  const here = put?.from === "backpack" ? siteAt(view, groups, put.at) : undefined;
+  // Put away from the pack: what lies directly in the picked container, which is in the pack already, like a carried
+  // item: put without a take. From a labelled ground container: what lies directly in it, taken as usual.
+  if (put?.from === "pack") for (const s of packItems(view, put.container, pinnedItems)) carried.add(s);
+  const here = put?.from === "pack" ? siteAt(view, groups, put.at) : undefined;
   const loose = [...carried].filter((s) => view.items[s] && !pinnedItems.has(s));
-  const candidates = (put?.from === "backpack" ? loose : put?.from === "inbox" ? scope.movable.filter((s) => +view.items[s]!.root! === put.inbox)
+  const candidates = (put?.from === "pack" ? packItems(view, put.container, pinnedItems)
+    : put?.from === "ground" ? scope.movable.filter((s) => view.items[s]!.container != null && +view.items[s]!.container! === put.container)
     : [...new Set([...scope.movable, ...loose])]).sort(bySerial);
   // Empty bags go to the gather container like one rule's items (issue #128); so does a bag a trip took and did
   // not put away. Without a gather container they stay where they are.
@@ -690,7 +694,7 @@ export function planOrganize(inv: Inventory, cfg: OrganizeConfig, overlay: Overl
     const it = view.items[serial]!;
     // Put away from the backpack moves only what a rule names: the catch-all would sweep up everything a player
     // carries on purpose (bandages, reagents, keys, runes), so there it counts as no claim.
-    if (!claim || (put?.from === "backpack" && claim.ruleId === CATCH_ALL_ID)) { unclaimed++; continue; }
+    if (!claim || (put?.from === "pack" && claim.ruleId === CATCH_ALL_ID)) { unclaimed++; continue; }
     const rep = report.get(claim.ruleId)!;
     rep.matched++;
     const targets = chains.get(claim.ruleId)!;
@@ -702,7 +706,7 @@ export function planOrganize(inv: Inventory, cfg: OrganizeConfig, overlay: Overl
     if (blocked.has(claim.ruleId)) continue;
     const usable = targets.filter((t) => scope.usable.has(t));
     if (!usable.length) continue;
-    const site = !inPack ? siteOfRoot.get(+it.root!) : put?.from === "backpack" ? here : siteOf(usable[0]!);
+    const site = !inPack ? siteOfRoot.get(+it.root!) : put?.from === "pack" ? here : siteOf(usable[0]!);
     const chain = site === undefined ? [] : usable.filter((t) => siteOf(t) === site);
     if (!chain.length) { cross.set(claim.ruleId, (cross.get(claim.ruleId) ?? 0) + 1); continue; }
     wants.set(site!, [...(wants.get(site!) ?? []), { it, ...claim, chain, from: inPack ? null : +it.container! }]);

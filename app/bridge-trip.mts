@@ -34,7 +34,7 @@ const hasDuplicates = (serials: number[]): boolean => new Set(serials).size !== 
 export function queueTrip(paths: Pick<ConfigPaths, "bridgeFor" | "bridgeQueueFor">, adapter: string, trip: TripInput, now: Date = new Date()): QueueTripResult {
   const line: BridgeTripV1 = {
     id: randomUUID(), action: "trip", index: trip.index, stamp: trip.stamp, queuedAt: now.toISOString(),
-    roots: trip.roots, takes: cutNames(trip.takes), puts: cutNames(trip.puts), ...(trip.putAway ? { putAway: true } : {}),
+    roots: trip.roots, takes: cutNames(trip.takes), puts: cutNames(trip.puts), ...(trip.putAway ? { putAway: trip.putAway } : {}),
   };
   const { ok, errors } = validate(TRIP_SCHEMA, line);
   if (!ok) return { ok: false, error: `${errors[0]!.path} ${errors[0]!.msg}` };
