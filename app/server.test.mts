@@ -18,16 +18,25 @@ import { validate, type ValidatorSchema } from "./schema/validate.mts";
 import type { Item, Inventory, ProfilesFile } from "./vault-lib.mts";
 import type { RulesV1, ScanV2 } from "./schema/types.d.mts";
 import { MAX_INBOX_BYTES } from "./watcher.mts";
-import { candidateClientRoots, type AdapterInfo, type InstallScriptsResult, type DataDirCheck } from "./installer.mts";
+import { candidateClientRoots, repoFromPackage, type AdapterInfo, type InstallScriptsResult, type DataDirCheck, type FetchLike } from "./installer.mts";
 
 // The server looks for the game client's scripts (GET /api/setup's candidates, and the data-folder
 // check at startup and on every GET /api/setup, which reads the packrat-paths.json it finds). No test
 // may reach a real client folder, so every server here gets an empty temp home to search, with the
 // platform pinned to one that has no fixed-path roots (candidateClientRoots adds C:\TazUO on win32).
 const FAKE_HOME = mkdtempSync(join(tmpdir(), "qm-home-"));
+// Nor may any test reach GitHub: GET /api/update-check asks through this fake, which answers one fixed
+// release and records every URL it is asked for. A real request that stalled on a CI runner was aborted
+// after 10 s, but the lookup it was waiting on kept the file running past its last test (#125).
+const updateRequests: string[] = [];
+const fakeUpdateFetch: FetchLike = async (url) => {
+  updateRequests.push(url);
+  return { status: 200, json: async () => ({ tag_name: "v99.0.0" }) };
+};
 const startServer = (config: Parameters<typeof startRealServer>[0], opts: StartServerOptions = {}): Promise<ServerHandle> => startRealServer(config, {
   clientSearch: { home: FAKE_HOME, candidates: (a) => candidateClientRoots({ adapter: a.id, home: FAKE_HOME, platform: "linux", env: {}, adapterPlatform: a.platform }) },
   clientRunning: () => false,   // never shell out to pgrep/tasklist from a test
+  updateFetch: fakeUpdateFetch,
   ...opts,
 });
 
@@ -2122,11 +2131,15 @@ test("[fast] POST /api/import/rescan actually re-sweeps a file the folder watche
   }
 });
 
-test("[fast] GET /api/update-check reflects package.json (no repository field today => configured:false, no network call)", async () => {
+test("[fast] GET /api/update-check asks for package.json's repository through the injected fetch, never GitHub itself", async () => {
   const pkg = JSON.parse(readFileSync(join(HERE, "..", "package.json"), "utf8"));
+  const asked = updateRequests.length;
   const j = asJson(await (await get("/api/update-check")).json());
   assert.equal(j.ok, true);
-  assert.equal(j.configured, pkg.repository ? true : false, JSON.stringify(pkg.repository));
+  assert.equal(j.configured, true, JSON.stringify(pkg.repository));
+  assert.deepEqual(updateRequests.slice(asked), [`https://api.github.com/repos/${repoFromPackage(pkg)}/releases/latest`]);
+  assert.equal(j.latest, "99.0.0");
+  assert.equal(j.upToDate, false);
 });
 
 test("[fast] POST /api/host/pick-folder and open-path are 501 without a host; an injected host answers pick-folder and validates open-path's which", async () => {

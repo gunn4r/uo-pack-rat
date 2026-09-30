@@ -133,7 +133,7 @@ import { emptyOrganizeState, harvestTrips, noteSeen, pruneOverlay, salvageOrgani
 import { retentionError, retentionOf, runsToPrune, scansToPrune, type ScanFile } from "./retention.mts";
 import {
   listAdapters, candidateClientRoots, validateScriptsDir, installedVersion, installScripts, pasteScanner,
-  repoFromPackage, checkForUpdates, type CheckForUpdatesResult, checkScriptsDataDir, type DataDirCheck, type AdapterInfo,
+  repoFromPackage, checkForUpdates, type CheckForUpdatesResult, type FetchLike, checkScriptsDataDir, type DataDirCheck, type AdapterInfo,
 } from "./installer.mts";
 import { dataDirNotice } from "./ui/messages.mts";
 import { homedir } from "node:os";
@@ -478,6 +478,8 @@ export interface StartServerOptions {
   jobTimings?: JobTimings | undefined;
   // Whether a TazUO client is running (app/tazuo-panel.mts's tazuoRunning); a test supplies its own.
   clientRunning?: (() => boolean) | undefined;
+  // The fetch GET /api/update-check asks GitHub with; a test supplies its own so the suite never calls GitHub.
+  updateFetch?: FetchLike | undefined;
 }
 
 export interface ServerHandle {
@@ -504,7 +506,7 @@ export interface ServerHandle {
 // the same lever for the route-level equivalent instead of relying on a wide timeout margin to absorb
 // real wall-clock retry delay plus whatever scheduling/fs-watch jitter a loaded machine adds on top.
 // `jobTimings` (JobTimings above) shortens the job clocks for a test in the same way.
-export async function startServer(config: Config = ensureLayout(resolveConfig()), { host, clientSearch = defaultClientSearch(), watcherOptions = {}, jobTimings = {}, clientRunning = () => tazuoRunning() }: StartServerOptions = {}): Promise<ServerHandle> {
+export async function startServer(config: Config = ensureLayout(resolveConfig()), { host, clientSearch = defaultClientSearch(), watcherOptions = {}, jobTimings = {}, clientRunning = () => tazuoRunning(), updateFetch = fetch }: StartServerOptions = {}): Promise<ServerHandle> {
   const CONFIG = config;
   const SCANS = CONFIG.paths.scans, PROFILES = CONFIG.paths.profiles, DEFAULT_PROFILES = CONFIG.paths.defaultProfiles;
   const RUNS = CONFIG.paths.runs, SETTINGS = CONFIG.paths.settings, USER_RULES_DIR = CONFIG.paths.rules;
@@ -1496,7 +1498,7 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
         // Cached for an hour so every page load doesn't cost a GitHub round trip (and its unauthenticated
         // rate limit); a failed check is not cached, so the next request simply tries again.
         if (!updateCheckCache || Date.now() - updateCheckCache.at > UPDATE_CHECK_TTL_MS) {
-          const result = await checkForUpdates({ current: PACKAGE_JSON.version, repo: repoFromPackage(PACKAGE_JSON) });
+          const result = await checkForUpdates({ current: PACKAGE_JSON.version, repo: repoFromPackage(PACKAGE_JSON), fetchImpl: updateFetch });
           if (result.error) return send(res, 200, { ok: true, ...result });
           updateCheckCache = { at: Date.now(), result };
         }
