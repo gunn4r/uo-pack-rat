@@ -19,7 +19,7 @@ import type { Item, Container, Character, ScanSummary, OptItem, RunSettings, Pro
 import type { Facets, ItemQueryRows, ItemQueryGroups } from "../item-query.mts";
 import type { RulesV1 } from "../schema/types.d.mts";
 import type { AutostartOutcome, Hotkey as PanelHotkey, PanelPrefs } from "../tazuo-panel-prefs.mts";
-import type { OrganizeConfig, RuleMatch } from "../organize-config.mts";
+import type { OrganizeConfig, Origin, RuleMatch } from "../organize-config.mts";
 
 // ---------------------------------------------------------------- shared fragments
 
@@ -472,6 +472,25 @@ export interface OrganizePresetsApiResponse { ok: boolean; presets: OrganizePres
 export interface OrganizeTripApiResponse { ok: boolean; id: string; index: number }
 // POST /api/organize/match: what one rule filter takes of the movable items in labelled roots (app/organize.mts's matchCount).
 export interface OrganizeMatchApiResponse { ok: boolean; count: number; pieces: number; sample: string[] }
+// POST /api/organize/propose (Auto organize): mirrored from app/organize-strategies.mts, which is server-only.
+export type AutoStrategy = "simple" | "detailed";
+export interface ProposalCandidate { serial: number; name: string; site: number; fill: { items: number; max: number }; label: { name: string; origin: Origin } | null; mine: boolean; ticked: boolean }
+export interface ProposalGroup { key: string; name: string; family: string; ruleIds: string[]; items: number; needSlots: number; targets: number[]; roomSlots: number; shortfall: number; addContainers: number; crossSite: number }
+export interface OrganizeProposal {
+  strategy: AutoStrategy;
+  candidates: ProposalCandidate[];
+  unusable: { serial: number; name: string; reason: string }[];
+  containers: number[];
+  refused: { serial: number; reason: string }[];
+  groups: ProposalGroup[];
+  unassigned: number;
+  addContainers: number;
+  manualRules: number;
+  config: OrganizeConfig;            // the whole setup Accept saves with PUT /api/organize
+  changed: boolean;
+  plan: { moves: number; trips: number; noRoom: number; crossSite: number; unclaimed: number };
+}
+export interface OrganizeProposeApiResponse { ok: boolean; proposal: OrganizeProposal }
 
 // SSE payloads on the shared /api/events stream (ui/events.mts) — mirror vault-server.mts's
 // broadcastEvent("inventory", …) / broadcastEvent("rejected", …) literals (app/watcher.mts's

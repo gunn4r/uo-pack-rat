@@ -33,7 +33,7 @@ export function ancestry(inv: Inventory, serial: number | null): number[] | null
 
 type Pos = { x: number; y: number; z: number; facet?: number | undefined };
 // A position the bridge can walk to: whole tiles on the map (bridge.v1.schema.json's own bounds).
-function posOk(p: Record<string, number> | null | undefined): boolean {
+export function posOk(p: Record<string, number> | null | undefined): boolean {
   return !!p && [p.x, p.y, p.z].every((v) => Number.isInteger(v)) && p.x! >= 0 && p.x! <= 7168 && p.y! >= 0 && p.y! <= 4096 && p.z! >= -128 && p.z! <= 127;
 }
 const posOf = (inv: Inventory, serial: number): Pos => inv.containers[serial]!.pos as unknown as Pos;
