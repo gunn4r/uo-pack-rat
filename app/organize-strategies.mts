@@ -6,7 +6,7 @@
 import { isDeepStrictEqual } from "node:util";
 import { checkOrganizeConfig, emptyRuleQuery, LIMITS, type Build, type ContainerLabel, type OrganizeConfig, type OrganizeRule, type Origin, type RuleMatch } from "./organize-config.mts";
 import { PRESETS } from "./organize-presets.mts";
-import { applyOverlay, claimOf, planOrganize, posOk, ruleMatches, scopeOf, sitesOf, type OverlayMove, type ScopeOptions } from "./organize.mts";
+import { applyOverlay, claimOf, planOrganize, posOk, ruleMatches, scopeOf, sitesOf, SPELLBOOK_NAMES, type OverlayMove, type ScopeOptions } from "./organize.mts";
 import { bagLabel, TRASH_RE, type Container, type ContainerCapacity, type Inventory, type Item } from "./vault-lib.mts";
 import type { RuleQuery } from "./item-query.mts";
 import type { RulesV1RarityItem } from "./schema/types.d.mts";
@@ -40,6 +40,8 @@ const SKILL_SCROLLS: RuleMatch = { query: q({ kind: ["scroll"] }), names: ["scro
 // slot, Shields and Spellbooks above Weapons (both are held), power scrolls above the other scrolls, and each school
 // of reagents and each resource type above the rest of its kind. Shields and spellbooks are Weapons in Simple; in
 // Detailed a spellbook is in the books' family, so when chests run short it shares theirs, not the Weapons chest.
+// Simple's Resources takes refinements by a second filter (issue #129), as Detailed's Refinements does, so its first
+// rule keeps the id an earlier proposal gave it; instruments are tools (vault-lib's kindOf), so Tools needs none.
 const SIMPLE: readonly GroupDef[] = [
   def("armour", "Armour", "armour", gear(["helmet", "chest", "arms", "hands", "legs"]), preset("armour-neck")),
   def("jewelry", "Jewelry", "jewelry", gear(["ring", "bracelet", "neck", "earrings", "talisman"])),
@@ -48,7 +50,7 @@ const SIMPLE: readonly GroupDef[] = [
   def("reagents", "Reagents", "reagents", kinds("reagent")),
   def("skill-scrolls", "Skill scrolls", "scrolls", SKILL_SCROLLS),
   def("scrolls", "Spell scrolls", "scrolls", preset("spell-scrolls")),
-  def("resources", "Resources", "resources", kinds("resource")),
+  def("resources", "Resources", "resources", kinds("resource"), preset("refinements")),
   def("potions", "Potions & bandages", "potions", kinds("potion", "bandage")),
   def("runes-books", "Runes & books", "runes-books", kinds("rune", "book")),
   def("deeds", "Deeds", "deeds", preset("deeds")),
@@ -74,7 +76,7 @@ const DETAILED: readonly GroupDef[] = [
   def("earrings", "Earrings", "jewelry", preset("earrings")),
   def("talismans", "Talismans", "jewelry", preset("talismans")),
   def("shields", "Shields", "weapons", preset("shields")),
-  def("spellbooks", "Spellbooks", "runes-books", gear(["oneHanded"], ["spellbook", "book of", "tome"])),
+  def("spellbooks", "Spellbooks", "runes-books", gear(["oneHanded"], [...SPELLBOOK_NAMES])),
   def("weapons", "Weapons", "weapons", preset("weapons")),
   def("ammo", "Ammo", "weapons", preset("ammo")),
   def("other-gear", "Other gear", "other-gear", kinds("gear")),

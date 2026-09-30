@@ -109,6 +109,7 @@ test("[fast] rule names match the item's own name, stack count stripped, case-in
   const inv = fold([{ serial: A }], [{ serial: ASH, name: "Grave Dust", amount: 75, in: A }, { serial: PEARL, name: "Black Pearl", in: A }]);
   const dust = inv.items[ASH]!;
   assert.equal(baseName(dust.name), "grave dust");
+  assert.equal(baseName(fold([{ serial: A }], [{ serial: PEARL, name: "21025908 Of Wizardry", graphic: 0x1714, in: A }]).items[PEARL]!.name), "of wizardry", "an unresolved cliloc number is no stack count (issue #129)");
   assert.equal(ruleMatches(dust, { query: emptyRuleQuery(), names: ["grave dust"] }), true);
   assert.equal(ruleMatches(dust, { query: emptyRuleQuery(), names: ["GRAVE"] }), true);
   assert.equal(ruleMatches(inv.items[PEARL]!, { query: emptyRuleQuery(), names: ["grave dust"] }), false);
@@ -166,6 +167,20 @@ test("[fast] a rule's build takes gear by its caster and melee markers, then its
     const counted = matchCount(inv, cfg, cfg.rules[0]!.match, { now: NOW }).count;
     assert.deepEqual([counted, planOrganize(inv, cfg, [], { now: NOW }).rules.find((r) => r.ruleId === "r")?.matched], [takes(build).length, takes(build).length], build);
   }
+});
+
+test("[fast] a spellbook with no caster or melee marker is Caster gear, a Book Of Chivalry included, and one with markers goes by them (issue #129)", () => {
+  const inv = fold([{ serial: A }], [
+    { serial: 0x40002001, name: "Spellbook", in: A },
+    { serial: 0x40002002, name: "Necromancer Spellbook", in: A },
+    { serial: 0x40002003, name: "Spellweaving Spellbook", in: A },
+    { serial: 0x40002004, name: "Book Of Chivalry", in: A },
+    { serial: 0x40002005, name: "Book Of Bushido", in: A, lines: ["Swordsmanship +5", "Tactics +5"] },
+  ]);
+  assert.deepEqual(Object.values(inv.items).sort((a, b) => a.serial - b.serial).map((it) => [it.name, it.slot, buildOf(it)]), [
+    ["Spellbook", "oneHanded", "caster"], ["Necromancer Spellbook", "oneHanded", "caster"], ["Spellweaving Spellbook", "oneHanded", "caster"],
+    ["Book Of Chivalry", "oneHanded", "caster"], ["Book Of Bushido", "oneHanded", "melee"],
+  ]);
 });
 
 test("[fast] a shield with no caster or melee marker is Tank gear, whatever its resists (issue #123)", () => {
