@@ -437,16 +437,21 @@ def picked_source(serial):
     return None, "Pick your pack, a bag in it, or a chest."
 
 
-def cancel_put_away():
-    """Ends the run, withdraws the bridge's consent (a trip not started yet is refused) and writes the
-    stop flag, so a trip under way halts after its current step."""
-    trip = state["run"]["phase"] == "trip"
+def write_stop():
+    """Organize's stop flag: a trip under way halts after its current step."""
     try:
         os.makedirs(os.path.dirname(STOP_FLAG), exist_ok=True)
         with open(STOP_FLAG, "w", encoding="utf-8") as f:
             f.write(rfc3339_now() + "\n")
     except Exception:
         pass
+
+
+def cancel_put_away():
+    """Ends the run, withdraws the bridge's consent (a trip not started yet is refused) and writes the
+    stop flag, so a trip under way halts after its current step."""
+    trip = state["run"]["phase"] == "trip"
+    write_stop()
     end_put_away("Put away cancelled.", "The bridge stops after its current step." if trip else "")
 
 
@@ -550,6 +555,7 @@ def watch_put_away():
         result = (read_json(BRIDGE_STATUS, MAX_STATUS_BYTES).get("results") or {}).get(run["trip"])
         if not isinstance(result, dict):
             if waited > TRIP_WAIT_S:
+                write_stop()          # never left running unattended: it halts after its current step
                 end_put_away("The trip did not report back.", "%d put away." % run["put"])
             return
         steps = [x for x in result.get("steps") or [] if isinstance(x, dict)]
