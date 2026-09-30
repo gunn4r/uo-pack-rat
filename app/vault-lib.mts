@@ -1239,6 +1239,7 @@ const KIND_RULES: Array<[string, RegExp]> = [
   ["potion", /\b(potion|keg|elixir|balm|salve|lotion)\b/i],
   ["bandage", /\bbandage/i],
   ["currency", /\b(gold coin|gold|doubloon|silver|token|coin|check|bank check)\b/i],
+  ["resource", /\bblank scrolls?\b/i],   // Inscription's and Cartography's material, not a scroll to file
   ["scroll", /\b(scroll|powerscroll|scroll of)\b/i],
   // A message in a bottle and the SOS inside it go with the treasure maps (ahead of "bottle", a resource).
   ["map", /\b(map|message in a bottle|sos)\b/i],
@@ -1248,7 +1249,7 @@ const KIND_RULES: Array<[string, RegExp]> = [
   ["key", /\b(key|keyring|key ring)\b/i],
   ["gem", /\b(diamond|ruby|sapphire|star sapphire|emerald|amethyst|citrine|tourmaline|amber|gem|gems|jewel)\b/i],
   ["ammo", /\b(arrow|arrows|bolt|bolts|crossbow bolt|shuriken|fukiya dart|throwing)\b/i],
-  ["resource", /\b(ingot|ingots|ore|log|logs|board|boards|leather|hides|hide|cloth|bolt of cloth|yarn|thread|feather|feathers|shaft|shafts|cotton|wool|flax|kindling|granite|sand|bone|bones|scale|scales|blank scroll|blank map|fabric|silk|pelt|fur|resin|sap|bark|wood|essence|powder|dust|crystal|shard|fragment|ectoplasm|glass|bottle|bottles|empty bottle|jar|nails|hinge|gear|axle|spring|clock parts|sextant parts|barrel|pile of|stack of|bundle)\b/i],
+  ["resource", /\b(ingot|ingots|ore|log|logs|board|boards|leather|hides|hide|cloth|bolt of cloth|yarn|thread|feather|feathers|shaft|shafts|cotton|wool|flax|kindling|granite|sand|bone|bones|scale|scales|blank map|fabric|silk|pelt|fur|resin|sap|bark|wood|essence|powder|dust|crystal|shard|fragment|ectoplasm|glass|bottle|bottles|empty bottle|jar|nails|hinge|gear|axle|spring|clock parts|sextant parts|barrel|pile of|stack of|bundle)\b/i],
   ["food", /\b(fish|steak|steaks|bread|cheese|apple|apples|meat|ham|egg|eggs|cake|pie|ribs|sausage|bacon|wine|ale|beer|liquor|milk|water|pitcher|cookie|cookies|grapes|pear|peach|banana|carrot|onion|cabbage|lettuce|pumpkin|squash|watermelon|honey|cooked|raw|muffin|chicken|lamb|bird|turkey|fruit|vegetable|dough|flour|jerky|stew|soup|candy|pretzel)\b/i],
   ["tool", /\b(pickaxe|shovel|tongs|smith'?s hammer|sewing kit|tinker'?s tools|mortar|pestle|fletcher'?s tools|scissors|skinning knife|lockpick|lockpicks|mapmaker'?s pen|saw|dovetail|jointing plane|moulding plane|draw knife|froe|inshave|scorp|rolling pin|flour sifter|skillet|pen|ink|fishing pole|hammer|loom|spinning wheel|anvil|forge|tool|tools|axe|pick)\b/i],
   ["container", /\b(bag|pouch|box|chest|crate|backpack|basket|trunk|armoire|cabinet|quiver)\b/i],
