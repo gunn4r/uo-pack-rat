@@ -893,16 +893,15 @@ class TazUOBridge(BridgeCase, unittest.TestCase):
         self.assertIn("no longer in your backpack", final["results"]["p1"]["steps"][1]["msg"])
         self.assertEqual(w.items[OTHER_GEM].Container, POUCH)
 
-    def test_a_put_away_trip_never_puts_a_bag_or_a_blessed_or_insured_item(self):
+    def test_a_put_away_trip_puts_blessed_and_insured_items_but_never_a_bag(self):
         w = trip_home()
         w.add(OTHER_GEM, PACK, name="Gem", container_like=False, OnGround=False, Tooltip="Gem\n<b>Insured</b>")
         w.add(STACK, PACK, name="Gem", container_like=False, OnGround=False, Tooltip="Gem\nBlessed")
         self.consent(w)
         final, _ = self.run_bridge(w, 1, [self.put_away("p1", [(POUCH, [DEST]), (OTHER_GEM, [DEST]), (STACK, [DEST])])])
-        self.assertEqual(self.steps(final, "p1"), [("put", POUCH, False), ("put", OTHER_GEM, False), ("put", STACK, False)])
+        self.assertEqual(self.steps(final, "p1"), [("put", POUCH, False), ("put", OTHER_GEM, True), ("put", STACK, True)])
         self.assertIn("container", final["results"]["p1"]["steps"][0]["msg"])
-        self.assertIn("blessed or insured", final["results"]["p1"]["steps"][1]["msg"])
-        self.assertEqual(self.moved(w), [])
+        self.assertEqual(w.items[POUCH].Container, PACK)
 
     def test_a_put_the_container_bounces_keeps_the_item_carried_for_put_them_away(self):
         w = trip_home()

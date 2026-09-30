@@ -120,7 +120,6 @@ MARK_HUE = 53
 ALARM_HUE, OK_HUE, INFO_HUE = 33, 68, 88
 PACK_MAX_ITEMS = 125      # a backpack's item cap (ServUO's Container default MaxItems)
 PUT_AWAY_VAR = "packrat_putaway"   # set by packrat-panel.py's Put away (put_away_asked)
-OWN_LINE_RE = re.compile(r"^(blessed|insured)$", re.I)   # a tooltip line marking the character's own thing
 TAKE_DROP = (60, 90)      # where a trip drops what it takes, inside the backpack window: a drop at a spot never stacks
 
 # ---- untrusted input ---------------------------------------------------------------------------
@@ -1001,7 +1000,7 @@ def do_put(p, roots, blacklist, loose=None):
     """One put, the only step that moves an item somewhere other than your backpack, so it is fenced:
     only an item this bridge took (the carried set), from the top of your backpack, or on a Put away trip
     one lying directly in the container the player picked (`loose`, checked by do_trip against the
-    panel's consent) that is no bag and neither blessed nor insured (loose_problem), into a container
+    panel's consent) that is no bag (loose_problem), into a container
     chain whose root lies on the ground (open_chain with no own roots: never your pack, never a pack a
     mobile carries), none of it blacklisted, a corpse or trash (refuse_dest), checked before any walk
     where the client already knows the root."""
@@ -1020,7 +1019,7 @@ def do_put(p, roots, blacklist, loose=None):
         carried.discard(serial)
         return False, f"{name} is no longer at the top of your backpack"
     if serial not in carried:
-        why = loose_problem(serial, it, name)
+        why = loose_problem(it, name)
         if why:
             return False, why
     for c in dest:
@@ -1191,17 +1190,11 @@ def direct_put(cmd, k, puts, blacklist):
     return p
 
 
-def loose_problem(serial, it, name):
+def loose_problem(it, name):
     """What a Put away trip may not put of what lies in the container you picked, as the app's planner leaves it
-    out too (app/organize.mts's packItems): a bag (with whatever is in it), or a blessed or insured item.
-    A tooltip that reads nothing is refused rather than guessed. Returns the refusal, or ''."""
+    out too (app/organize.mts's packItems): a bag, with whatever is in it. Returns the refusal, or ''."""
     if is_container(it, str(getattr(it, "Name", "") or "")):
         return f"refused: {name} is a container — Put away leaves bags in your backpack"
-    lines = tooltip_lines(serial)
-    if not lines:
-        return f"refused: {name}'s tooltip has not loaded — try again"
-    if any(OWN_LINE_RE.match(re.sub(r"<[^>]*>", "", ln).strip()) for ln in lines):
-        return f"refused: {name} is blessed or insured — Put away leaves it with you"
     return ""
 
 

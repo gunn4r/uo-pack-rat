@@ -399,28 +399,23 @@ export function siteAt(inv: Inventory, groups: number[][], at: Spot): number | u
   return best;
 }
 
-// Put away (issue #131): the items directly in the picked container, since the bridge puts only those. Never a bag
-// in it or anything in one (the player picks that bag next if they want it: what they keep on them, potions and
-// reagents, stays in its own), never a blessed or insured item (the character's own things: loot is neither), a
-// pinned item or one named like trash.
-const OWN_LINE = /^(blessed|insured)$/i;
-const isOwn = (it: Item): boolean => it.lines.some((l) => OWN_LINE.test(l.replace(/<[^>]*>/g, "").trim()));
+// Put away (issue #131): the items directly in the picked container, since the bridge puts only those; picking the
+// container is the player's filter. Never a bag in it or anything in one (the player picks that bag next if they want
+// it), a pinned item or one named like trash.
 // A non-bag item lying directly in the container.
 const onTop = (inv: Inventory, it: Item, container: number): boolean =>
   it.container != null && +it.container === container && !it.equippedBy && it.kind !== "container" && !inv.containers[it.serial];
 export function packItems(inv: Inventory, container: number, pinned: Set<number>): number[] {
-  return Object.values(inv.items).filter((it) => onTop(inv, it, container) && !TRASH_RE.test(it.name) && !pinned.has(+it.serial) && !isOwn(it))
+  return Object.values(inv.items).filter((it) => onTop(inv, it, container) && !TRASH_RE.test(it.name) && !pinned.has(+it.serial))
     .map((it) => +it.serial);
 }
-// What packItems leaves directly in the container, and why, for Put away's answer: bags, blessed or insured items,
-// pinned items.
-export interface PackKept { bags: number; own: number; pinned: number }
+// What packItems leaves directly in the container, and why, for Put away's answer: bags and pinned items.
+export interface PackKept { bags: number; pinned: number }
 export function packKept(inv: Inventory, container: number, pinned: Set<number>): PackKept {
   const top = Object.values(inv.items).filter((it) => onTop(inv, it, container));
   return {
     bags: Object.values(inv.containers).filter((c) => c.parent != null && +c.parent === container).length,
-    own: top.filter(isOwn).length,
-    pinned: top.filter((it) => !isOwn(it) && pinned.has(+it.serial)).length,
+    pinned: top.filter((it) => pinned.has(+it.serial)).length,
   };
 }
 
@@ -534,7 +529,7 @@ export interface Plan {
 }
 // Put away (issue #131, the TazUO panel's button): the one source a run takes from, instead of every labelled
 // root, always a container the player picked in game, and only what lies directly in it (packItems: never a bag in it
-// or what the bag holds). `pack`: the backpack or a bag inside it, claimed by a rule (never the catch-all), put only
+// or what the bag holds). `pack`: the backpack or a bag inside it, put only
 // into the site the character stands in (`at`, where the panel was clicked); `ground`: a container in a labelled
 // ground chest (or the chest), taken from and put away as the house plan does.
 export type PutAway = { from: "pack"; container: number; at: Spot } | { from: "ground"; container: number };
@@ -697,9 +692,7 @@ export function planOrganize(inv: Inventory, cfg: OrganizeConfig, overlay: Overl
   if (bagClaim) claims.push(...bags.map((b): [number, Claim] => [b.serial, bagClaim]));
   for (const [serial, claim] of claims) {
     const it = view.items[serial]!;
-    // Put away from the backpack moves only what a rule names: the catch-all would sweep up everything a player
-    // carries on purpose (bandages, reagents, keys, runes), so there it counts as no claim.
-    if (!claim || (put?.from === "pack" && claim.ruleId === CATCH_ALL_ID)) { unclaimed++; continue; }
+    if (!claim) { unclaimed++; continue; }
     const rep = report.get(claim.ruleId)!;
     rep.matched++;
     const targets = chains.get(claim.ruleId)!;

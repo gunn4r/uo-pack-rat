@@ -40,8 +40,8 @@ test("[fast] a plan that moves nothing says what stayed and why in one short lin
   const rules = [{ ruleId: "a", matched: 3, inPlace: 1, toMove: 0, noRoom: 2 }, { ruleId: "b", matched: 1, inPlace: 0, toMove: 0, noRoom: 0 }];
   assert.equal(nothingDetail({ unclaimed: 4, crossSite: [{ ruleId: "b", count: 1 }], rules }, "your pack"), "4 with no rule stay in your pack, 1 for another house, 2 with no room, 1 already filed");
   assert.equal(nothingDetail({ unclaimed: 1, crossSite: [], rules: [] }, "that bag"), "1 with no rule stays in that bag");
-  assert.equal(nothingDetail({ unclaimed: 0, crossSite: [], rules: [] }, "your pack", { own: 7, bags: 1, pinned: 0 }), "7 blessed/insured, 1 bag stay in your pack");
-  assert.equal(nothingDetail({ unclaimed: 0, crossSite: [], rules: [] }, "your pack", { own: 0, bags: 1, pinned: 0 }), "1 bag stays in your pack");
-  assert.equal(nothingDetail({ unclaimed: 2, crossSite: [], rules: [] }, "your pack", { own: 0, bags: 0, pinned: 1 }), "1 pinned, 2 with no rule stay in your pack");
+  assert.equal(nothingDetail({ unclaimed: 0, crossSite: [], rules: [] }, "your pack", { bags: 1, pinned: 7 }), "1 bag, 7 pinned stay in your pack");
+  assert.equal(nothingDetail({ unclaimed: 0, crossSite: [], rules: [] }, "your pack", { bags: 1, pinned: 0 }), "1 bag stays in your pack");
+  assert.equal(nothingDetail({ unclaimed: 2, crossSite: [], rules: [] }, "your pack", { bags: 0, pinned: 1 }), "1 pinned, 2 with no rule stay in your pack");
   assert.equal(nothingDetail({ unclaimed: 0, crossSite: [], rules: [] }, "that container"), "Nothing lies directly in that container.");
 });
