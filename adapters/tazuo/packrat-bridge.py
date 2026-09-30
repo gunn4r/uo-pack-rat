@@ -98,7 +98,9 @@ MAX_HOURS = 8
 REACH = 2                 # tiles: containers open only when this close
 WALK_TIMEOUT_S = 20
 WALK_POLL_S = 0.5
-PAUSE_OPEN = 1.0          # after double-clicking a container, for its contents to arrive
+PAUSE_OPEN = 1.0          # after double-clicking a container: the most it waits for the window (wait_opened)
+OPEN_FLOOR_S = 0.6        # ...and the least: the server refuses a use or lift within 0.5 s of a use (ServUO ActionDelay)
+OPEN_POLL_S = 0.05        # how often it looks whether the window opened
 MOVE_WAIT_S = 1.5         # a trip's move that has not landed by then bounced
 MOVE_POLL_S = 0.05        # how often a trip looks whether its move landed
 MOVE_GAP_S = 0.35         # least time between two of a trip's moves, in case the shard throttles drag and drop
@@ -465,7 +467,8 @@ CONTAINER_GRAPHICS = {0x0E75, 0x0E76, 0x0E79, 0x0E7D, 0x09AA, 0x09A8, 0x09A9, 0x
 
 results = {}              # id -> {ok, msg}
 counts = {"done": 0, "failed": 0}
-last_status = {"current": None, "at": 0.0}
+last_status = {"current": None, "at": 0.0, "character": ""}
+pending = []              # validated commands waiting their turn (module-level so write_stopped sees them)
 carried = set()           # serials this bridge took on a trip and has not yet put away: a put may only name one
 # Containers the running trip has double-clicked since its last walk, and when its last move went out.
 # Opening a container once is enough: the client keeps the contents it has been sent after the window
@@ -534,8 +537,9 @@ def write_status(current=None):
     last_status["current"], last_status["at"] = current, time.time()
     try:
         keep = dict(list(results.items())[-MAX_RESULTS:])
+        last_status["character"] = str(API.Player.Name)
         write_json_atomic(STATUS, {"alive": rfc3339_now(),
-                                    "character": str(API.Player.Name), "current": current,
+                                    "character": last_status["character"], "current": current,
                                     "results": keep, "counts": counts})
     except Exception as e:
         sysmsg(f"bridge: status write failed: {e}", ALARM_HUE)
@@ -638,6 +642,23 @@ def walk_to(pos, root_serial):
     return it is not None and dist_to(it.X, it.Y) <= REACH
 
 
+def wait_opened(serial):
+    """After a double-click: wait OPEN_FLOOR_S, then until the client says the container's window
+    opened, PAUSE_OPEN at most. The client sets Opened on the server's open-container packet, which the
+    contents packet follows at once, so an empty container is as quick as a full one; one already open
+    reads Opened at once and waits just the floor. The floor is not about the client: stock ServUO
+    refuses a double-click or a lift that reaches it within ActionDelay (500 ms) of the last
+    double-click, so the next bag's open or the first take must not go sooner. A container that never
+    opens (locked, out of reach) costs the whole cap, as before."""
+    started = time.time()
+    API.Pause(OPEN_FLOOR_S)
+    while time.time() - started < PAUSE_OPEN and not API.StopRequested:
+        it = find(serial)
+        if it is not None and bool(getattr(it, "Opened", False)):
+            return
+        API.Pause(OPEN_POLL_S)
+
+
 def open_chain(chain, own=None, check=None, opened=None):
     """Open root, then each nested bag in order. Returns (ok, message). Each entry is checked against
     the live client before it is double-clicked: the root must be on the ground or one of `own` (your
@@ -666,7 +687,7 @@ def open_chain(chain, own=None, check=None, opened=None):
             API.UseObject(int(c))
         except Exception as e:
             return False, f"could not open container: {e}"
-        API.Pause(PAUSE_OPEN)
+        wait_opened(int(c))
         heartbeat()
         if opened is not None:
             opened.add(int(c))
@@ -1032,11 +1053,11 @@ def main():
     offset = os.path.getsize(QUEUE)      # ignore anything queued before we started
     deadline = time.time() + MAX_HOURS * 3600
     next_status = 0
-    pending = []                         # validated commands waiting their turn
     seen = []                            # ids already executed, oldest first
     spent = []                           # when each accepted command was accepted
     flooded = False
-    sysmsg(f"Pack Rat bridge up on {API.Player.Name}. Use Highlight / Grab / Go to in the app. Stop the script to end.")
+    last_status["character"] = str(API.Player.Name)
+    sysmsg(f"Pack Rat bridge up on {last_status['character']}. Use Highlight / Grab / Go to in the app. Stop the script to end.")
     while not API.StopRequested and time.time() < deadline and not flooded:
         API.ProcessCallbacks()
         try:
@@ -1103,15 +1124,31 @@ def main():
             write_status(None)
             next_status = time.time() + 2.0
         API.Pause(POLL_S)
-    for cmd in pending:
-        record(cmd["id"], False, "not run — the bridge stopped first")
+
+
+def write_stopped():
+    """The last status write, `stopped: true`: the app shows the bridge offline and the installer
+    stops waiting out the 30 s heartbeat. Called from a finally because the client's Stop interrupts
+    the script at its next API.Pause, so nothing after main()'s loop runs then. Every client call
+    here is guarded: after that interrupt any of them may fail, and the file must still be written."""
     try:
-        write_json_atomic(STATUS, {"alive": rfc3339_now(), "character": str(API.Player.Name),
+        for cmd in pending:
+            record(cmd["id"], False, "not run — the bridge stopped first")
+    except Exception:
+        pass
+    try:
+        write_json_atomic(STATUS, {"alive": rfc3339_now(), "character": last_status["character"],
                                     "current": None, "results": results, "counts": counts,
                                     "stopped": True})
     except Exception:
         pass
-    sysmsg("Pack Rat bridge stopped.")
+    try:
+        sysmsg("Pack Rat bridge stopped.")
+    except Exception:
+        pass
 
 
-main()
+try:
+    main()
+finally:
+    write_stopped()

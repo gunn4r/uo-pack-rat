@@ -135,9 +135,15 @@ class World(object):
     def open(self, serial):
         it = self.items.get(serial)
         self.calls.append(("open", serial))
-        # `Openable` marks a container whose graphic the client does not flag as one.
+        # `Openable` marks a container whose graphic the client does not flag as one. `open_lag` (fake
+        # seconds) models the server's answer arriving late: the window and its contents show only then.
         if it is not None and (it.IsContainer or getattr(it, "Openable", False)) and serial not in self.locked:
-            it.Opened = it.EverOpened = True
+            lag = getattr(self, "open_lag", 0)
+            if lag:
+                self.clock.at(self.clock.now - self.clock.start + lag, lambda: setattr(it, "Opened", True))
+            else:
+                it.Opened = True
+            it.EverOpened = True
             return True
         return False
 

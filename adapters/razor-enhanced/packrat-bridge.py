@@ -422,6 +422,7 @@ def check_line(cmd, actions, now_s):
 results = {}                # id -> {ok, msg, t}
 counts = {"done": 0, "failed": 0}
 last_status = {"current": None, "at": 0.0}
+pending = []              # validated commands waiting their turn (module-level so write_stopped sees them)
 
 
 # Named like a container (or carrying a bag graphic) but never one: a deed places an addon, a bag of
@@ -725,7 +726,6 @@ def main():
     offset = os.path.getsize(QUEUE)           # ignore anything queued before we started
     deadline = time.time() + MAX_HOURS * 3600
     next_status = 0
-    pending = []                              # validated commands waiting their turn
     seen = []                                 # ids already executed, oldest first
     spent = []                                # when each accepted command was accepted
     flooded = False
@@ -798,15 +798,30 @@ def main():
             write_status(None)
             next_status = time.time() + 2.0
         Misc.Pause(POLL_MS)
-    for cmd in pending:
-        record(cmd["id"], False, "not run -- the bridge stopped first")
+
+
+def write_stopped():
+    """The last status write, `stopped: true`: the app shows the bridge offline and the installer
+    stops waiting out the 30 s heartbeat. Called from a finally so a Stop that aborts the script
+    mid-pause still writes it; every step is guarded so the file is written whatever else fails."""
+    try:
+        for cmd in pending:
+            record(cmd["id"], False, "not run -- the bridge stopped first")
+    except Exception:
+        pass
     try:
         write_json_atomic(STATUS, {"alive": rfc3339_now(), "character": str(Player.Name),
                                     "current": None, "results": results, "counts": counts,
                                     "stopped": True})
     except Exception:
         pass
-    sysmsg("Pack Rat bridge stopped.")
+    try:
+        sysmsg("Pack Rat bridge stopped.")
+    except Exception:
+        pass
 
 
-main()
+try:
+    main()
+finally:
+    write_stopped()

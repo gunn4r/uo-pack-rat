@@ -16,8 +16,8 @@ PACK, POUCH, CHEST, BAG, FAR = 0x40000001, 0x40000002, 0x40000003, 0x40000004, 0
 RING, AMULET, BRACELET, FAR_RING = 0x40000010, 0x40000011, 0x40000012, 0x40000013
 OTHER_CHEST, OTHER_BAG, STRANGER_PACK, STRANGER_RING = 0x40000020, 0x40000021, 0x40000030, 0x40000031
 BOOK, RUNEBOOK, ARMOUR = 0x40000040, 0x40000041, 0x40000042
-DEST, DEST_BAG, TRASH_BIN, CORPSE, LOOSE, STACK, OTHER_GEM = (0x40000050, 0x40000051, 0x40000052, 0x40000053,
-                                                               0x40000054, 0x40000055, 0x40000056)
+DEST, DEST_BAG, TRASH_BIN, CORPSE, LOOSE, STACK, OTHER_GEM, EMPTY = (0x40000050, 0x40000051, 0x40000052, 0x40000053,
+                                                                      0x40000054, 0x40000055, 0x40000056, 0x40000057)
 RUN_S = 120                      # every scenario stops the bridge after this many fake seconds
 
 
@@ -217,6 +217,27 @@ class BridgeCase(object):
         self.run_bridge(w, 1, [c, c])
         self.assertEqual(self.moved(w), [AMULET])
 
+    # ---- the stop marker ---------------------------------------------------------------------------
+
+    def test_a_stop_that_interrupts_a_pause_still_marks_the_status_stopped_and_the_next_start_clears_it(self):
+        """The client's Stop interrupts the script at its next pause, so nothing after the main loop
+        runs: the stopped marker must come from a finally, or the installer waits out the heartbeat."""
+        class Interrupted(Exception):
+            pass
+
+        def interrupt():
+            raise Interrupted()
+
+        w = home()
+        w.clock.at(5, interrupt)
+        with self.assertRaises(Interrupted):
+            self.run_bridge(w, 60, [])
+        with open(os.path.join(self.dir, "status.json"), encoding="utf-8") as f:
+            self.assertIs(json.load(f).get("stopped"), True)
+        final, writes = self.run_bridge(home(), 1, [])
+        self.assertNotIn("stopped", writes[0][1], "a running bridge's heartbeat never says stopped")
+        self.assertIs(final.get("stopped"), True, "and an ordinary stop says it again")
+
 
 class TazUOBridge(BridgeCase, unittest.TestCase):
     ADAPTER = "tazuo"
@@ -356,6 +377,62 @@ class TazUOBridge(BridgeCase, unittest.TestCase):
         done = [t for t, s in writes if "t1" in s.get("results", {})][0]
         self.assertGreaterEqual(done - (times[1] - w.clock.start), 1.5)
         self.assertLess(done - (times[1] - w.clock.start), 1.6)
+
+    # ---- the wait after opening a container --------------------------------------------------------
+
+    def open_and_move_times(self, w):
+        """[(kind, serial, fake second)] for every UseObject and MoveItem, in order."""
+        times, real_open = [], w.open
+
+        def use(s):
+            times.append(("open", s, w.clock.now))
+            return real_open(s)
+        w.open = use
+        w.on_move = lambda s, dst: times.append(("move", s, w.clock.now))
+        return times
+
+    def gaps(self, times):
+        return [b[2] - a[2] for a, b in zip(times, times[1:])]
+
+    def test_an_open_whose_contents_arrive_at_once_waits_only_the_floor(self):
+        w = trip_home()
+        times = self.open_and_move_times(w)
+        final, _ = self.run_bridge(w, 1, [self.trip("t1", takes=[(AMULET, [CHEST, BAG])])])
+        self.assertTrue(final["results"]["t1"]["ok"], final["results"]["t1"])
+        self.assertEqual([t[:2] for t in times], [("open", CHEST), ("open", BAG), ("move", AMULET)])
+        for gap in self.gaps(times):
+            self.assertAlmostEqual(gap, 0.6, places=3)
+
+    def test_an_open_whose_contents_lag_waits_until_they_arrive(self):
+        w = trip_home()
+        w.open_lag = 0.8
+        times = self.open_and_move_times(w)
+        final, _ = self.run_bridge(w, 1, [self.trip("t1", takes=[(AMULET, [CHEST, BAG])])])
+        self.assertTrue(final["results"]["t1"]["ok"], final["results"]["t1"])
+        for gap in self.gaps(times):
+            self.assertGreaterEqual(gap, 0.8)
+            self.assertLess(gap, 0.86)
+
+    def test_an_open_whose_contents_never_arrive_gives_up_at_the_cap(self):
+        w = trip_home()
+        w.add(OTHER_GEM, CHEST, name="Jewel", container_like=False, OnGround=False)
+        w.open_lag = 30
+        final, _ = self.run_bridge(w, 1, [self.trip("t1", takes=[(OTHER_GEM, [CHEST])])])
+        step = final["results"]["t1"]["steps"][0]
+        self.assertFalse(step["ok"], step)
+        self.assertGreaterEqual(step["ms"], 1000)
+        self.assertLess(step["ms"], 1100)
+
+    def test_an_empty_container_does_not_hold_up_a_put(self):
+        w = trip_home()
+        w.add(EMPTY, 0, name="Metal Chest", X=11, Y=11)
+        times = self.open_and_move_times(w)
+        final, _ = self.run_bridge(w, 1, [self.trip("t1", takes=[(AMULET, [CHEST, BAG])], puts=[(AMULET, [EMPTY])])])
+        self.assertTrue(final["results"]["t1"]["ok"], final["results"]["t1"])
+        opened = [t for t in times if t[:2] == ("open", EMPTY)][0]
+        put = times[times.index(opened) + 1]
+        self.assertEqual(put[:2], ("move", AMULET))
+        self.assertAlmostEqual(put[2] - opened[2], 0.6, places=3)
 
     def test_a_take_drops_at_an_explicit_spot_so_a_stack_keeps_its_serial(self):
         w = trip_home()
