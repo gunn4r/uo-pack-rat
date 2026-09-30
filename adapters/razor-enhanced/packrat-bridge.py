@@ -420,6 +420,9 @@ def check_line(cmd, actions, now_s):
 # ---- end of the untrusted-input section --------------------------------------------------------
 
 results = {}                # id -> {ok, msg, t}
+# The ids in the order they were recorded: the client's Python does not keep a dict in insertion order
+# (issue #140), so trimming or writing by dict order could drop the newest result.
+result_order = []
 counts = {"done": 0, "failed": 0}
 last_status = {"current": None, "at": 0.0, "character": ""}
 pending = []              # validated commands waiting their turn (module-level so write_stopped sees them)
@@ -469,8 +472,7 @@ def as_int(v, default=0):
 def write_status(current=None):
     last_status["current"], last_status["at"] = current, time.time()
     try:
-        items = list(results.items())
-        keep = dict(items[-MAX_RESULTS:])
+        keep = {cid: results[cid] for cid in result_order}
         last_status["character"] = str(Player.Name)
         write_json_atomic(STATUS, {"alive": rfc3339_now(), "character": last_status["character"],
                                     "current": current, "results": keep, "counts": counts})
@@ -488,8 +490,11 @@ def heartbeat():
 def record(cid, ok, msg):
     """One result, trimmed in memory so the final whole-dict status write is bounded too."""
     results[cid] = {"ok": bool(ok), "msg": str(msg), "t": rfc3339_now()}
-    for old in list(results.keys())[:-MAX_RESULTS]:
-        results.pop(old, None)
+    if cid in result_order:
+        result_order.remove(cid)
+    result_order.append(cid)
+    while len(result_order) > MAX_RESULTS:
+        results.pop(result_order.pop(0), None)
     counts["done" if ok else "failed"] += 1
     sysmsg("bridge: {0}".format(msg), OK_HUE if ok else ALARM_HUE)
 
