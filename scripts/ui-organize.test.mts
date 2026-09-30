@@ -3,8 +3,8 @@
 // shown wherever an item's place is listed, rules from presets and from the Inventory's Save as rule…, a bag
 // inside a chest picked as a target, the live match count, reordering by keyboard and by drag, the plan's
 // reports and collapsed trip list, a client that cannot run trips, running a trip through the bridge's queue
-// (Stop, a failed step, Pin this item), and the screen at 1000 × 700. Skipped when electron or playwright is
-// absent, or under TEST_SKIP_ELECTRON.
+// (Stop, a failed step, Pin this item), a page reloaded mid-trip picking the trip back up, and the screen at
+// 1000 × 700. Skipped when electron or playwright is absent, or under TEST_SKIP_ELECTRON.
 import test from "node:test";
 import assert from "node:assert/strict";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
@@ -394,6 +394,50 @@ test("[slow] Run trip queues one trip; Stop writes the stop flag; a failed put l
 
     await page.getByRole("button", { name: "Pin this item" }).click();
     await until(() => readOrganize(dataDir), (f) => !!f?.pinnedItems.includes(first!), "the item pinned");
+    assert.deepEqual(errors, []);
+  } finally {
+    clearInterval(alive);
+    await app.close();
+    rmSync(dataDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
+  }
+});
+
+test("[slow] a page reloaded mid-trip picks the trip back up: shown as running, Stop works, and its report is read", async (t) => {
+  const why = unavailable();
+  if (why) return t.skip(why);
+  const dataDir = dataDirWith([{ id: "rule-1", name: "Magery reagents", names: ["sulfurous ash"], targets: [DORRAN] }]);
+  const bridgeDir = join(dataDir, "bridge", "tazuo");
+  mkdirSync(bridgeDir, { recursive: true });
+  let current: unknown = null, results: Record<string, unknown> = {};
+  const writeStatus = (): void => writeFileSync(join(bridgeDir, "status.json"), JSON.stringify({ alive: new Date().toISOString(), character: "Tester", current, counts: { done: 0, failed: 0 }, results }));
+  writeStatus();
+  const alive = setInterval(writeStatus, 1000).unref();   // unref: a failed launch (before the try) must not keep the file running
+  const { app, page, errors } = await launch(dataDir);
+  try {
+    await go(page, "#/organize", "#org-plan #org-headline");
+    await page.waitForSelector("#org-run:not([disabled])", { timeout: 15_000 });
+    await page.click("#org-run");
+    const queue = join(bridgeDir, "queue.jsonl");
+    const [line] = await until(() => (existsSync(queue) ? readFileSync(queue, "utf8").trim().split("\n") : []), (l) => l.length === 1, "one queued trip");
+    const cmd = JSON.parse(line!) as { id: string };
+    current = { id: cmd.id, action: "trip" };
+    writeStatus();
+
+    // The reloaded page knows nothing of the trip until the plan names it.
+    await page.reload();
+    await page.locator("#inv-table tbody tr.item").first().waitFor({ state: "attached", timeout: 30_000 });
+    await go(page, "#/organize", "#org-stop");
+    assert.match(await page.locator("#org-status").innerText(), /^Trip 1 running…$/);
+    assert.match(await page.locator("#org-plan").innerText(), /Trip 1 was already running when this page opened[\s\S]*press Run all again to continue\./);
+    assert.ok(await page.locator("#org-run").isDisabled(), "no second trip while the picked-up one runs");
+
+    await page.click("#org-stop");
+    await until(() => existsSync(join(dataDir, "bridge", "stop")), (v) => v, "the stop flag");
+    current = null;
+    results = { [cmd.id]: { ok: true, msg: "trip 1: stopped", t: new Date().toISOString(), partial: false, stopped: true, steps: [] } };
+    writeStatus();
+    await page.waitForSelector("#org-stop", { state: "detached", timeout: 20_000 });
+    assert.match(await page.locator("#org-plan").innerText(), /Trip 1 was stopped\./);
     assert.deepEqual(errors, []);
   } finally {
     clearInterval(alive);

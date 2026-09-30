@@ -10,7 +10,7 @@ import { box, txt, button, badge, message, segmented, check, table, tipWrap, cre
 import { errorText } from "./messages.mts";
 import { plural } from "./inv-model.mts";
 import { saveConfig } from "./organize-data.mts";
-import { STRATEGY_TEXT, candidateGroups, candidateNote, proposalHeadline, groupStatus, groupAway, intoText, proposalNotes, canTrySimple, acceptGate, debounced, MATCH_DEBOUNCE_MS } from "./organize-model.mts";
+import { STRATEGY_TEXT, candidateGroups, candidateNote, proposalHeadline, groupStatus, groupAway, intoText, proposalNotes, proposalStays, canTrySimple, acceptGate, debounced, MATCH_DEBOUNCE_MS } from "./organize-model.mts";
 import type { AutoStrategy, OrganizeProposal, OrganizeProposeApiResponse } from "./api-types.mts";
 
 // The drawer's state: the strategy, the ticked chests (null until the first proposal says which it ticks by
@@ -113,7 +113,7 @@ function paintProposal(): void {
   if (d.error) kids.push(message({ tone: "bad", title: "Could not work out a proposal", text: d.error }));
   if (!p) kids.push(txt(d.busy ? "Working out the proposal…" : "", "muted"));
   else {
-    kids.push(box("p", { class: "strong", id: "auto-headline" }, txt(proposalHeadline(p))), d.busy ? txt("Working it out again…", "t-sm muted") : null);
+    kids.push(box("p", { class: "strong", id: "auto-headline" }, txt(proposalHeadline(p))), ...proposalStays(p).map((text) => txt(text, "t-sm muted")), d.busy ? txt("Working it out again…", "t-sm muted") : null);
     for (const text of proposalNotes(p)) kids.push(message({ tone: "info", text }));
     if (canTrySimple(p)) kids.push(message({ tone: "warn", text: `${plural(p.unassigned, "group")} got no container. Simple needs fewer.`, actions: [button({ label: "Try Simple instead", size: "sm", attrs: { id: "auto-try-simple" }, onClick: () => { setStrategy("simple"); } })] }));
     if (p.groups.length) {
