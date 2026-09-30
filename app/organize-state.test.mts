@@ -36,6 +36,14 @@ test("[fast] harvestTrips turns a trip's confirmed steps into overlay moves and 
   ]);
 });
 
+test("[fast] a direct move's take and put, reported together ahead of the other takes, file the item in its destination", () => {
+  // Issue #130: the bridge reports a direct move as its take then its put, in execution order.
+  const result = { ok: true, msg: "trip 1", t: T1, steps: [
+    { op: "take", serial: PEARL, ok: true, msg: "" }, { op: "put", serial: PEARL, ok: true, msg: "" }, { op: "take", serial: RUBY, ok: true, msg: "" }] };
+  const next = harvestTrips(state({ pending: [trip()] }), { tazuo: { results: { "t-1": result }, current: null } }, Date.parse(QUEUED) + 30_000);
+  assert.deepEqual(next.moves.map((m) => [m.serial, m.to]), [[PEARL, A], [RUBY, null]]);
+});
+
 test("[fast] a put of an item an earlier trip left in the backpack keeps where it first came from", () => {
   const before = state({ moves: [{ serial: RUBY, name: "Ruby", from: A, to: null, at: T1, trip: "t-1" }],
     pending: [trip({ id: "t-2", steps: [{ serial: RUBY, name: "Ruby", from: null, to: B }] })] });
