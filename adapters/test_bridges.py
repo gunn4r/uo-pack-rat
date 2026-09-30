@@ -651,6 +651,58 @@ class TazUOBridge(BridgeCase, unittest.TestCase):
         self.assertNotIn(AMULET, w.items)
         self.assertEqual(w.items[STACK].Amount, 2)
         self.assertLess(final["results"]["t1"]["steps"][1]["ms"], 2500)   # two opens, then the merge counts at once
+        # The stack is looked up by type, not by reading every child of the bag.
+        self.assertIn(("find_type_all", 0x1086, DEST_BAG, 0), w.calls)
+        self.assertNotIn(("items_in", DEST_BAG), w.calls)
+
+    def test_a_put_of_an_item_that_cannot_stack_reads_none_of_the_containers_contents(self):
+        # 50 power scrolls into one chest got ~50 ms slower per scroll already there, live (#122): every
+        # put summed the chest's matching stacks, one client round trip per child.
+        w = trip_home()
+        w.items[AMULET].Stackable = False
+        for i in range(50):
+            w.add(0x40001000 + i, DEST_BAG, name="Jewel", container_like=False, OnGround=False, Stackable=False)
+        final, _ = self.run_bridge(w, 1, [self.trip("t1", takes=[(AMULET, [CHEST, BAG])], puts=[(AMULET, [DEST, DEST_BAG])])])
+        self.assertTrue(final["results"]["t1"]["ok"], final["results"]["t1"])
+        self.assertEqual(w.items[AMULET].Container, DEST_BAG)
+        self.assertEqual([c for c in w.calls if c[0] in ("items_in", "find_type_all") and c[1] != PACK], [])
+
+    def test_a_put_of_an_item_that_cannot_stack_and_vanishes_is_not_put_away(self):
+        w = trip_home()
+        w.items[AMULET].Stackable = False
+        w.add(STACK, DEST_BAG, name="Jewel", container_like=False, OnGround=False, Stackable=False)
+        w.refuse = {DEST_BAG}
+        w.on_move = lambda s, dst: w.items.pop(s) if dst == DEST_BAG else None
+        final, _ = self.run_bridge(w, 1, [self.trip("t1", takes=[(AMULET, [CHEST, BAG])], puts=[(AMULET, [DEST, DEST_BAG])])])
+        self.assertEqual(self.steps(final, "t1"), [("take", AMULET, True), ("put", AMULET, False)])
+
+    def test_a_merge_counts_only_stacks_directly_in_the_container_not_in_a_bag_inside_it(self):
+        # FindTypeAll matches an item whose container OR root container is the one asked for.
+        w = trip_home()
+        w.add(STACK, DEST_BAG, name="Jewel", container_like=False, OnGround=False)
+        w.refuse = {DEST}
+        w.on_move = lambda s, dst: w.items.pop(s) if dst == DEST else None
+        final, _ = self.run_bridge(w, 1, [self.trip("t1", takes=[(AMULET, [CHEST, BAG])], puts=[(AMULET, [DEST])])])
+        self.assertEqual(self.steps(final, "t1"), [("take", AMULET, True), ("put", AMULET, False)])
+
+    def assert_merge_counts(self, **world):
+        w = trip_home()
+        w.merges = True
+        for k, v in world.items():
+            setattr(w, k, v)
+        w.add(STACK, DEST_BAG, name="Jewel", container_like=False, OnGround=False)
+        final, _ = self.run_bridge(w, 1, [self.trip("t1", takes=[(AMULET, [CHEST, BAG])], puts=[(AMULET, [DEST, DEST_BAG])])])
+        self.assertTrue(final["results"]["t1"]["ok"], final["results"]["t1"])
+        self.assertEqual(w.items[STACK].Amount, 2)
+        return w
+
+    def test_a_merge_still_counts_on_a_client_without_find_type_all_or_whose_call_fails(self):
+        self.assertIn(("items_in", DEST_BAG), self.assert_merge_counts(find_type_all="missing").calls)
+        self.assertIn(("items_in", DEST_BAG), self.assert_merge_counts(find_type_all="raise").calls)
+
+    def test_an_item_whose_stackable_flag_cannot_be_read_is_treated_as_stackable(self):
+        self.assert_merge_counts(no_stackable_flag=True)
+        self.assert_merge_counts(data_error=RuntimeError)
 
     def test_a_trip_line_over_the_line_limit_is_refused_unread(self):
         w = trip_home()

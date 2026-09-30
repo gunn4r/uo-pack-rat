@@ -84,8 +84,16 @@ class Item(object):
         return ContainerGump(w, self) if self.Opened else None
 
     def GetItemData(self):
-        """TazUO's ApiItem.GetItemData(): the item's tiledata flags and per-unit weight (`Stones`, 1 when unset)."""
-        return types.SimpleNamespace(IsWearable=bool(getattr(self, "Wearable", False)), Weight=getattr(self, "Stones", 1))
+        """TazUO's ApiItem.GetItemData(): the item's tiledata flags and per-unit weight (`Stones`, 1 when unset).
+        `Stackable` (True when unset) is the tiledata stackable flag; a world with no_stackable_flag set
+        models a build whose data has no IsStackable, and `data_error` makes the call raise."""
+        w = self._world
+        if w is not None and getattr(w, "data_error", None) is not None:
+            raise w.data_error("GetItemData")
+        data = types.SimpleNamespace(IsWearable=bool(getattr(self, "Wearable", False)), Weight=getattr(self, "Stones", 1))
+        if w is None or not getattr(w, "no_stackable_flag", False):
+            data.IsStackable = bool(getattr(self, "Stackable", True))
+        return data
 
 
 class ContainerGump(object):
@@ -216,7 +224,29 @@ def tazuo_api(world, backpack, bank=0, skills=None):
         api.FindItem = lambda s: (lambda it: None if it is None else NoOpened(it))(world.known(int(s)))
     api.FindLayer = lambda layer: None
     api.UseObject = lambda s, *a: world.open(int(s))
-    api.ItemsInContainer = lambda s, recursive=False: world.kids(int(s), recursive)
+    def items_in(s, recursive=False):
+        world.calls.append(("items_in", int(s)))
+        return world.kids(int(s), recursive)
+    api.ItemsInContainer = items_in
+    fta = getattr(world, "find_type_all", "ok")     # "ok", "missing" (a build without the call) or "raise"
+    if fta != "missing":
+        def find_type_all(graphic, container=0xFFFFFFFF, range=0xFFFF, hue=0xFFFF, minamount=0):
+            """TazUO's FindTypeAll: items the client knows with this graphic (and hue, unless 0xFFFF)
+            whose container OR root container is `container` -- so an item in a bag in the chest matches too."""
+            world.calls.append(("find_type_all", int(graphic), int(container), int(hue)))
+            if fta == "raise":
+                raise RuntimeError("FindTypeAll failed")
+
+            def root(it):
+                seen = 0
+                while it.Container in world.items and seen < 32:
+                    it, seen = world.items[it.Container], seen + 1
+                return it.Serial
+            return [it for it in list(world.items.values())
+                    if world.known(it.Serial) is not None and it.Graphic == graphic
+                    and (hue == 0xFFFF or it.Hue == hue) and it.Amount >= minamount
+                    and container in (it.Container, root(it))]
+        api.FindTypeAll = find_type_all
     api.Contents = lambda s: len(world.kids(int(s), True))
     api.GetItemsOnGround = lambda r: [it for it in world.items.values() if it.OnGround and world.dist(it.X, it.Y) <= r]
     api.ItemNameAndProps = lambda s, b=False: getattr(world.items[int(s)], "Tooltip", None) or world.items[int(s)].Name

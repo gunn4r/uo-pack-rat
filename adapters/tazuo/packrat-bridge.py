@@ -824,19 +824,39 @@ def refuse_dest(dest, i, it, blacklist):
     return ""
 
 
-def stack_total(container, graphic, hue):
-    """The summed amount of the stacks in `container` a dropped item could merge onto (same graphic and
-    hue), 0 when there is none: a drop with no spot stacks, and the dropped item's own serial then
-    disappears."""
+def stackable(it):
+    """Whether `it` can merge onto a stack: the tiledata stackable flag. A client that cannot say is
+    taken to mean yes, which only costs the stack bookkeeping below."""
     try:
-        kids = API.ItemsInContainer(int(container), False) or []
+        return bool(getattr(it.GetItemData(), "IsStackable", True))
     except Exception:
-        return 0
+        return True
+
+
+def stack_total(container, graphic, hue):
+    """The summed amount of the stacks directly in `container` a dropped item could merge onto (same
+    graphic and hue), 0 when there is none: a drop with no spot stacks, and the dropped item's own serial
+    then disappears. Every read of a live item is a trip to the client's main thread, so FindTypeAll picks
+    the matches there; it also matches items in bags inside `container`, which the Container read drops.
+    A client without it falls back to reading every child."""
+    find_all = getattr(API, "FindTypeAll", None)   # the Legion stub can be ahead of the running client
+    kids = None
+    if find_all is not None:
+        try:
+            kids = [k for k in (find_all(graphic, container=int(container), hue=hue) or [])
+                    if int(getattr(k, "Container", 0) or 0) == int(container)]
+        except Exception:
+            kids = None
+    if kids is None:
+        try:
+            kids = [k for k in (API.ItemsInContainer(int(container), False) or [])
+                    if int(k.Graphic) == graphic and int(getattr(k, "Hue", 0) or 0) == hue]
+        except Exception:
+            return 0
     total = 0
     for k in kids:
         try:
-            if int(k.Graphic) == graphic and int(getattr(k, "Hue", 0) or 0) == hue:
-                total += max(1, int(getattr(k, "Amount", 1) or 1))
+            total += max(1, int(getattr(k, "Amount", 1) or 1))
         except Exception:
             pass
     return total
@@ -930,6 +950,14 @@ def do_put(p, roots, blacklist):
     ok, msg = open_chain(dest, own=set(), check=lambda i, x: refuse_dest(dest, i, x, blacklist), opened=trip_opened)
     if not ok:
         return False, msg
+    # An item that cannot stack has landed only once it is in the container; the stack bookkeeping reads
+    # the container's contents, a cost that grows with every item already there (#122).
+    if not stackable(it):
+        it2 = trip_move(serial, dest[-1], lambda x: inside(x, dest[-1]))
+        if inside(it2, dest[-1]):
+            carried.discard(serial)
+            return True, f"put {name} away"
+        return False, f"{name} bounced (full, or refused) — it is still in your backpack"
     graphic, hue = int(getattr(it, "Graphic", 0) or 0), int(getattr(it, "Hue", 0) or 0)
     # Landed: in the container, or gone onto a stack there that grew. Only the verdict below decides, as
     # before; the stack's growth only ends the wait early.
