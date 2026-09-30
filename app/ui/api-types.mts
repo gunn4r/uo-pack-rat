@@ -448,9 +448,10 @@ export interface BridgeQueueApiResponse {
 
 // ---------------------------------------------------------------- organize (issue #11)
 // The setup's types come straight from app/organize-config.mts: unlike the modules listed at the top of this
-// file it is pure and imports only item-query.mts's types, so the browser build type-checks it. The plan's
-// types are mirrored from app/organize.mts, which imports server-only code (bridge-trip.mts).
+// file it is pure and imports only item-query.mts's and vault-lib.mts's types, so the browser build type-checks
+// it. The plan's types are mirrored from app/organize.mts, which imports server-only code (bridge-trip.mts).
 export type { OrganizeConfig, ContainerLabel, OrganizeRule, RuleMatch, Origin, Build } from "../organize-config.mts";
+export type { SpellSchool } from "../vault-lib.mts";
 export type PlanWarningKind = "stale-container" | "missing-target" | "missing-label" | "unknown-capacity" | "old-scripts" | "blacklisted" | "no-position" | "not-ground";
 export interface PlanWarning { kind: PlanWarningKind; serial: number; detail: string }
 export interface PlanMove { serial: number; name: string; amount: number; from: number | null; to: number; ruleId: string; alsoMatched: string[]; trip: number }

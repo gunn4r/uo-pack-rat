@@ -56,6 +56,7 @@ test("[fast] checkOrganizeConfig refuses each broken part and names it", () => {
     ["a property filter with a bad operator", (c) => { c.rules[1]!.match.query.props = [{ key: "psLevel", min: 110, op: "ge" as "le" }]; }, /props\[0\]/],
     ["an empty name in names", (c) => { c.rules[0]!.match.names = [""]; }, /names/],
     ["an unknown build", (c) => { c.rules[0]!.match.build = "wizard" as "caster"; }, /rules\[0\]\.match\.build must be one of caster, melee, hybrid, tank, other/],
+    ["an unknown school", (c) => { c.rules[0]!.match.school = "pyromancy" as "magery"; }, /rules\[0\]\.match\.school must be one of magery, necromancy, mysticism, spellweaving/],
     ["a target that is not labelled", (c) => { c.rules[0]!.targets = [0x40000009]; }, /not a labelled container/],
     ["a pinned target, naming the rule and the container", (c) => { c.rules[0]!.targets = [P]; }, /^The rule "Reagents" puts items into Display, which is pinned: nothing is put into a pinned container\. Take it off the rule, or unpin it\.$/],
     ["a target listed twice", (c) => { c.rules[0]!.targets = [A, A]; }, /twice/],

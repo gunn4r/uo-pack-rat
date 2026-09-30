@@ -56,6 +56,11 @@ test("[fast] each power scroll preset finds only its own level", () => {
   for (const n of [105, 110, 115, 120]) assert.deepEqual(matching(`power-scrolls-${n}`, scrolls), [`A Wondrous Scroll Of Magery (${n} Skill)`]);
 });
 
+test("[fast] each school's scroll preset finds that school's spells by exact name, never a namesake of another school (issue #134)", () => {
+  const scrolls = [{ name: "Curse", graphic: 0x1F46 }, { name: "Curse Weapon", graphic: 0x2263 }, { name: "Remove Curse", graphic: 0 }, { name: "Healing Stone", graphic: 0x2D9F }, { name: "Healing Stone", graphic: 0x4078 }, { name: "Wildfire", graphic: 0x2D5A }];
+  assert.deepEqual(["magery", "necromancy", "mysticism", "spellweaving"].map((s) => matching(`${s}-scrolls`, scrolls)), [["Curse"], ["Curse Weapon"], ["Healing Stone"], ["Wildfire"]]);
+});
+
 test("[fast] rarity presets: a tier exactly, or gear at Lesser Artifact and below", () => {
   const things = [{ name: "Plate Helm", lines: ["Legendary Artifact", "Physical Resist 5%"] }, { name: "Leather Cap", lines: ["Physical Resist 2%"] }, "Ruby"];
   assert.deepEqual(matching("legendary-artifacts", things), ["Plate Helm"]);

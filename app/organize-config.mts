@@ -4,16 +4,19 @@
 // document with any fault (PUT /api/organize replaces the whole file); salvageOrganizeConfig keeps every part
 // of a hand-edited file that still makes sense and names what it dropped (every read).
 import type { RuleQuery } from "./item-query.mts";
+import type { SpellSchool } from "./vault-lib.mts";
 
 export type Origin = "manual" | `strategy:${string}`;
 export interface ContainerLabel { serial: number; name: string; color?: string | undefined; pinned?: boolean | undefined; origin: Origin }
 // A rule's filter: the Inventory's item filters (never location, character or age: a rule must keep matching
 // an item after it moves) and, optionally, "name is any of" (a substring of the item's name, stack count
 // stripped, case-insensitive), and optionally a build (issue #91: the gear By build sorts into it, organize.mts's
-// buildOf; never an item that is not gear). All must pass.
+// buildOf; never an item that is not gear), and optionally a spell school (issue #134: a spell scroll's, vault-lib's
+// spellSchoolOf). All must pass.
 export type Build = "caster" | "melee" | "hybrid" | "tank" | "other";
 export const BUILDS: readonly Build[] = ["caster", "melee", "hybrid", "tank", "other"];
-export interface RuleMatch { query: RuleQuery; names?: string[] | undefined; build?: Build | undefined }
+export const SCHOOLS: readonly SpellSchool[] = ["magery", "necromancy", "mysticism", "spellweaving"];
+export interface RuleMatch { query: RuleQuery; names?: string[] | undefined; build?: Build | undefined; school?: SpellSchool | undefined }
 // targets: labelled containers in fill order; when the first is full the next takes the overflow.
 export interface OrganizeRule { id: string; name: string; match: RuleMatch; targets: number[]; origin: Origin }
 export interface OrganizeConfig { version: 1; labels: Record<string, ContainerLabel>; rules: OrganizeRule[]; catchAll: number | null; pinnedItems: number[] }
@@ -83,12 +86,13 @@ function queryProblem(q: unknown, at: string): string | null {
 // checks before counting what a filter being edited would take.
 export function matchProblem(m: unknown, at = "match"): string | null {
   if (!isObj(m)) return `${at} must be an object`;
-  const badM = extra(m, ["query", "names", "build"]);
+  const badM = extra(m, ["query", "names", "build", "school"]);
   if (badM) return `${at}.${badM} is not a match field`;
   const qp = queryProblem(m.query, `${at}.query`);
   if (qp) return qp;
   if (m.names !== undefined && !textList(m.names, LIMITS.names)) return `${at}.names must be a list of at most ${LIMITS.names} names, each 1 to 64 characters`;
   if (m.build !== undefined && !BUILDS.includes(m.build as Build)) return `${at}.build must be one of ${BUILDS.join(", ")}`;
+  if (m.school !== undefined && !SCHOOLS.includes(m.school as SpellSchool)) return `${at}.school must be one of ${SCHOOLS.join(", ")}`;
   return null;
 }
 
