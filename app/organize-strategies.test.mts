@@ -60,14 +60,14 @@ test("[fast] Simple: one group per family, gear sorted by slot before any name p
 });
 
 test("[fast] Detailed: transcendence, spell and other scrolls, treasure maps, refinements, instruments and ammo each have a group (issue #123)", () => {
-  const names = ["Scroll Of Transcendence", "Greater Heal", "Blank Scroll", "A Tattered Treasure Map Leading To A Mage's Cache", "Varnish Of Defense", "Cure Of Protection",
+  const names = ["Scroll Of Transcendence", "Greater Heal", "Scroll Of Alacrity", "A Tattered Treasure Map Leading To A Mage's Cache", "Varnish Of Defense", "Cure Of Protection",
     "Drum", "Tambourine", "Lap Harp", "Bamboo Flute", "Lute", "Fire Horn", "Arrow", "Crossbow Bolt", "Apple", "Katana"];
   const groups = groupItems(STRATEGIES.detailed, Object.values(fold([{ serial: A }], things(A, names)).items));
   assert.deepEqual(groups.map((g) => [g.key, g.name, g.family, g.items.map((it) => it.name)]), [
     ["weapons", "Weapons", "weapons", ["Katana"]],
     ["ammo", "Ammo", "weapons", ["Arrow", "Crossbow Bolt"]],
     ["transcendence-scrolls", "Transcendence scrolls", "scrolls", ["Scroll Of Transcendence"]],
-    ["other-scrolls", "Other scrolls", "scrolls", ["Blank Scroll"]],
+    ["other-scrolls", "Other scrolls", "scrolls", ["Scroll Of Alacrity"]],
     ["magery-scrolls", "Magery scrolls", "scrolls", ["Greater Heal"]],
     ["refinements", "Refinements", "resources", ["Varnish Of Defense", "Cure Of Protection"]],
     ["treasure-maps", "Treasure maps & SOS", "maps", ["A Tattered Treasure Map Leading To A Mage's Cache"]],
@@ -104,13 +104,14 @@ test("[fast] Detailed: gear by slot, reagents by school, power scrolls by level,
 const SCROLLS: ThingSpec[] = ([
   ["A Legendary Scroll Of Fencing (120 Skill)", 0x14F0], ["Scroll Of Transcendence", 0x14EF], ["Scroll Of Alacrity", 0x14EF], ["Scroll Binder", 0x14F0],
   ["A Wondrous Scroll Of Power (+5 Maximum Stats)", 0x14F0], ["Blank Scroll", 0x0EF3], ["Curse", 0x1F46], ["Curse Weapon", 0x2263], ["Healing Stone", 0x2D9F],
-  ["Word Of Death", 0x2D5B], ["Remove Curse", 0], ["Healing Stone", 0x4078],
+  ["Word Of Death", 0x2D5B], ["Remove Curse", 0], ["Confidence", 0], ["Healing Stone", 0x4078],
 ] as const).map(([name, graphic], i) => ({ serial: ITEM + 100 + i, name, graphic, in: A }));
 
-test("[fast] Simple: skill scrolls apart from spell scrolls, and a conjured Healing Stone is no scroll (issue #134)", () => {
+test("[fast] Simple: skill scrolls apart from spell scrolls (a Chivalry or Bushido name with no graphic among them), blank scrolls with the resources, and a conjured Healing Stone is no scroll (issue #134)", () => {
   assert.deepEqual(groupItems(STRATEGIES.simple, Object.values(fold([{ serial: A }], SCROLLS).items)).map((g) => [g.key, g.name, g.items.map((it) => it.name)]), [
     ["skill-scrolls", "Skill scrolls", ["A Legendary Scroll Of Fencing (120 Skill)", "Scroll Of Transcendence", "Scroll Of Alacrity", "Scroll Binder", "A Wondrous Scroll Of Power (+5 Maximum Stats)"]],
-    ["scrolls", "Spell scrolls", ["Blank Scroll", "Curse", "Curse Weapon", "Healing Stone", "Word Of Death", "Remove Curse"]],
+    ["scrolls", "Spell scrolls", ["Curse", "Curse Weapon", "Healing Stone", "Word Of Death", "Remove Curse", "Confidence"]],
+    ["resources", "Resources", ["Blank Scroll"]],
     ["other", "Other", ["Healing Stone"]],
   ]);
 });
@@ -119,12 +120,13 @@ test("[fast] Detailed: spell scrolls by school, by exact name on the school's gr
   assert.deepEqual(groupItems(STRATEGIES.detailed, Object.values(fold([{ serial: A }], SCROLLS).items)).map((g) => [g.key, g.name, g.items.map((it) => it.name)]), [
     ["power-scrolls-120", "Power scrolls 120", ["A Legendary Scroll Of Fencing (120 Skill)"]],
     ["transcendence-scrolls", "Transcendence scrolls", ["Scroll Of Transcendence"]],
-    ["other-scrolls", "Other scrolls", ["Scroll Of Alacrity", "Scroll Binder", "A Wondrous Scroll Of Power (+5 Maximum Stats)", "Blank Scroll"]],
+    ["other-scrolls", "Other scrolls", ["Scroll Of Alacrity", "Scroll Binder", "A Wondrous Scroll Of Power (+5 Maximum Stats)"]],
     ["magery-scrolls", "Magery scrolls", ["Curse"]],
     ["necromancy-scrolls", "Necromancy scrolls", ["Curse Weapon"]],
     ["mysticism-scrolls", "Mysticism scrolls", ["Healing Stone"]],
     ["spellweaving-scrolls", "Spellweaving scrolls", ["Word Of Death"]],
-    ["scrolls", "Spell scrolls", ["Remove Curse"]],
+    ["scrolls", "Spell scrolls", ["Remove Curse", "Confidence"]],
+    ["resources", "Other resources", ["Blank Scroll"]],
     ["other", "Other", ["Healing Stone"]],
   ]);
 });
@@ -436,6 +438,12 @@ test("[fast] with too few chests a family's small groups share one, labelled wit
   const done: OverlayMove[] = plan.moves.map((m) => ({ serial: m.serial, name: m.name, from: m.from, to: m.to, at: new Date(NOW).toISOString(), trip: "t1" }));
   const after = ok(proposeOrganize(inv, p.config, done, OPTS({ strategy: "detailed" })));
   assert.deepEqual([after.changed, after.plan.moves], [false, 0], "after the trips, the shared chests stay as they are");
+});
+
+test("[fast] scroll groups sharing a chest label it Scrolls, whichever group comes last (issue #134)", () => {
+  const inv = fold([{ serial: A, max: 20 }, { serial: B, pos: at(102), max: 20 }], [...things(A, ["Katana", "Katana", "Katana"]), ...things(B, ["An Exalted Scroll Of Mysticism (110 Skill)", "Greater Heal", "Scroll Of Transcendence"], 10)]);
+  const p = ok(proposeOrganize(inv, emptyOrganizeConfig(), [], OPTS({ strategy: "detailed" })));
+  assert.deepEqual(Object.fromEntries(Object.values(p.config.labels).map((l) => [l.serial, l.name])), { [A]: "Weapons", [B]: "Scrolls" });
 });
 
 test("[fast] Detailed with too few containers says how many are missing; the same scans in any order give the same proposal", () => {

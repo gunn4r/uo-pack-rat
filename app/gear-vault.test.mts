@@ -332,8 +332,9 @@ test("[fast] a spell's name is a scroll only on a scroll graphic or none, and it
   assert.equal(spellSchoolOf("Healing Stone", 0x4078), null);
 });
 
-test("[fast] kindOf: a message in a bottle and an SOS are maps, not a resource (issue #134)", () => {
+test("[fast] kindOf: a message in a bottle and an SOS are maps, and a blank scroll is a resource (issue #134)", () => {
   assert.deepEqual(["A Message In A Bottle", "A SOS", "A Waterstained SOS", "Empty Bottle"].map((n) => kindOf(n)), ["map", "map", "map", "resource"]);
+  assert.deepEqual(["Blank Scroll", "5 Blank Scrolls"].map((n) => kindOf(n)), ["resource", "resource"]);
 });
 
 // ---- fold ---------------------------------------------------------------------------------
