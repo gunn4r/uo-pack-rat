@@ -314,6 +314,10 @@ test("[smoke] kindOf: non-gear names get a kind, unknown names with props are ge
   assert.equal(kindOf("Varnish Of Fortification"), "refinement");
   assert.equal(parseTooltip(["2 Greater Heal"], 2).name, "Greater Heal");
   assert.equal(parseTooltip(["10 Potions"], 1).name, "10 Potions");   // a name that starts with a number keeps it
+  // Issue #129: a cliloc number the client left unresolved in a name line is dropped, not taken for a stack's amount.
+  assert.equal(parseTooltip(["21025908 Of Wizardry", "Mana Increase 9"], 1).name, "Of Wizardry");
+  assert.equal(parseTooltip(["Feathered Hat 1025908 Of Wizardry"], 1).name, "Feathered Hat Of Wizardry");
+  assert.equal(parseTooltip(["60000 Gold"], 60000).name, "Gold");
   assert.equal(classify("Elven Glasses Of Restoration").slot, "helmet");
 });
 

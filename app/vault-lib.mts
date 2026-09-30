@@ -400,8 +400,12 @@ const PS_LEVEL_RE = /\bscroll\b.*\((\d{3}) skill\)/i;
 //              is kept as "set: <line>"
 // A stack's name line starts with its amount ("2 Greater Heal"); that number is stripped only when it
 // equals `amount`, so a name that really starts with a number ("10 Potions" on one item) keeps it.
+// A word of seven or more digits is dropped first: it is a cliloc number the client could not turn into text (issue
+// #129: a hat's name line read "21025908 Of Wizardry", 1025908 being the item-name cliloc of its graphic 0x1714), and
+// never a stack's amount, which is at most 65,535.
+const UNRESOLVED_CLILOC = /(^|\s)\d{7,}(?=\s|$)/g;
 export function stackName(line: string | undefined, amount?: number | undefined): string {
-  return stripHtml(line).replace(/^(\d+)\s+(?=\S)/, (all, n: string) => (+n === amount ? "" : all));
+  return stripHtml(line).replace(UNRESOLVED_CLILOC, "").trim().replace(/^(\d+)\s+(?=\S)/, (all, n: string) => (+n === amount ? "" : all));
 }
 export function parseTooltip(rawLines?: Array<string | undefined> | undefined, amount?: number | undefined): ParsedTooltip {
   const TU = tagUnits(), rarityLine = rarityRe();
