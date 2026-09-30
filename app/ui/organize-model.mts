@@ -53,6 +53,13 @@ export function withLabel(cfg: OrganizeConfig, label: ContainerLabel): { config:
   const next = { ...cfg, labels: { ...cfg.labels, [String(label.serial)]: label } };
   return label.pinned ? dropTarget(next, label.serial) : { config: next, dropped: [] };
 }
+// The Label… pin confirmation (issue #123): the chest is where these rules put items, so pinning takes it off them.
+export function pinNote(name: string, dropped: readonly string[]): string {
+  const q = dropped.map((d) => `"${d}"`);
+  const list = q.length > 1 ? `${q.slice(0, -1).join(", ")} and ${q.at(-1)!}` : q[0]!;
+  const one = dropped.length === 1;
+  return `${name} is where the rule${one ? "" : "s"} ${list} put${one ? "s" : ""} items. Nothing is put into a pinned container, so pinning it takes it off ${one ? "that rule" : "those rules"}.`;
+}
 export function withoutLabel(cfg: OrganizeConfig, serial: number): { config: OrganizeConfig; dropped: string[] } {
   const labels = { ...cfg.labels };
   delete labels[String(serial)];

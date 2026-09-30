@@ -57,7 +57,7 @@ test("[fast] checkOrganizeConfig refuses each broken part and names it", () => {
     ["an empty name in names", (c) => { c.rules[0]!.match.names = [""]; }, /names/],
     ["an unknown build", (c) => { c.rules[0]!.match.build = "wizard" as "caster"; }, /rules\[0\]\.match\.build must be one of caster, melee, hybrid, tank, other/],
     ["a target that is not labelled", (c) => { c.rules[0]!.targets = [0x40000009]; }, /not a labelled container/],
-    ["a pinned target", (c) => { c.rules[0]!.targets = [P]; }, /pinned/],
+    ["a pinned target, naming the rule and the container", (c) => { c.rules[0]!.targets = [P]; }, /^The rule "Reagents" puts items into Display, which is pinned: nothing is put into a pinned container\. Take it off the rule, or unpin it\.$/],
     ["a target listed twice", (c) => { c.rules[0]!.targets = [A, A]; }, /twice/],
     ["a pinned catch-all", (c) => { c.catchAll = P; }, /catchAll.*pinned/],
     ["an unlabelled catch-all", (c) => { c.catchAll = 0x40000009; }, /catchAll/],
