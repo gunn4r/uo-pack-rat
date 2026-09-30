@@ -1,7 +1,7 @@
 // organize-presets.mts — ready-made rule filters for Organize (issue #11). A preset is copied into a rule
 // (ruleFromPreset), and editing the rule never changes the preset. Where two presets overlap, the rule placed
-// higher wins (first match): put Shields above Weapons, Armour: neck above Necklaces, the power scroll presets
-// above Spell scrolls, and a rule for spellbooks above Weapons (a spellbook sits in the one-handed slot). Pure,
+// higher wins (first match): put Shields above Weapons, Armour: neck above Necklaces, the power scroll and
+// Transcendence scroll presets above Spell scrolls, and a rule for spellbooks above Weapons (a spellbook sits in the one-handed slot). Pure,
 // so the page can list them too.
 import { emptyRuleQuery, type OrganizeRule, type RuleMatch } from "./organize-config.mts";
 import type { RuleQuery } from "./item-query.mts";
@@ -29,7 +29,12 @@ export const PRESETS: readonly OrganizePreset[] = [
   { id: "gems", name: "Gems", match: kinds("gem") },
   { id: "potions", name: "Potions", match: kinds("potion") },
   { id: "bandages", name: "Bandages", match: kinds("bandage") },
+  { id: "transcendence-scrolls", name: "Transcendence scrolls", match: named(["scroll"], ["scroll of transcendence"]) },
   { id: "spell-scrolls", name: "Spell scrolls", match: kinds("scroll") },
+  { id: "treasure-maps", name: "Treasure maps", match: named(["map"], ["treasure map"]) },
+  { id: "refinements", name: "Refinements", match: kinds("refinement") },
+  { id: "instruments", name: "Instruments", match: named(["other", "tool"], ["drum", "tambourine", "harp", "lute", "flute", "fire horn"]) },
+  { id: "ammo", name: "Ammo", match: kinds("ammo") },
   { id: "runes", name: "Runes and runebooks", match: kinds("rune") },
   { id: "deeds", name: "Deeds", match: kinds("deed") },
   { id: "rings", name: "Rings", match: slots(["ring"]) },

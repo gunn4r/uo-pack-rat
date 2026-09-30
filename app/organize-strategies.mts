@@ -53,7 +53,9 @@ const SIMPLE: readonly GroupDef[] = [
   def("other", "Other", "other", EVERYTHING),
 ];
 // Spell scrolls stay one group: a scroll's school cannot be told by a name substring (Magery's "curse" is inside
-// Remove Curse and Curse Weapon, "heal" inside Healing Stone and a Scroll of Alacrity: Healing).
+// Remove Curse and Curse Weapon, "heal" inside Healing Stone and a Scroll of Alacrity: Healing). A spell scroll is
+// named after its spell alone, and every other scroll (vault-lib's kindOf) has "scroll" in its name, so Other scrolls
+// takes those by name above Spell scrolls, which then holds only the spells.
 const DETAILED: readonly GroupDef[] = [
   def("armour-head", "Armour: head", "armour", preset("armour-head")),
   def("armour-neck", "Armour: neck", "armour", preset("armour-neck")),
@@ -69,24 +71,30 @@ const DETAILED: readonly GroupDef[] = [
   def("shields", "Shields", "weapons", preset("shields")),
   def("spellbooks", "Spellbooks", "weapons", gear(["oneHanded"], ["spellbook", "book of", "tome"])),
   def("weapons", "Weapons", "weapons", preset("weapons")),
+  def("ammo", "Ammo", "weapons", preset("ammo")),
   def("other-gear", "Other gear", "other-gear", kinds("gear")),
   def("magery-reagents", "Magery reagents", "reagents", preset("magery-reagents")),
   def("necromancy-reagents", "Necromancy reagents", "reagents", preset("necromancy-reagents")),
   def("mysticism-reagents", "Mysticism reagents", "reagents", preset("mysticism-reagents")),
   def("reagents", "Other reagents", "reagents", kinds("reagent")),
   ...[105, 110, 115, 120].map((n) => def(`power-scrolls-${n}`, `Power scrolls ${n}`, "scrolls", preset(`power-scrolls-${n}`))),
-  def("scrolls", "Other scrolls", "scrolls", preset("spell-scrolls")),
+  def("transcendence-scrolls", "Transcendence scrolls", "scrolls", preset("transcendence-scrolls")),
+  def("other-scrolls", "Other scrolls", "scrolls", { query: q({ kind: ["scroll"] }), names: ["scroll"] }),
+  def("scrolls", "Spell scrolls", "scrolls", preset("spell-scrolls")),
   def("ingots", "Ingots", "resources", preset("ingots")),
   def("boards", "Boards", "resources", preset("boards")),
   def("leather", "Leather", "resources", preset("leather")),
   def("cloth", "Cloth", "resources", preset("cloth")),
   def("resources", "Other resources", "resources", kinds("resource")),
+  def("refinements", "Refinements", "resources", preset("refinements")),
   def("potions", "Potions", "potions", preset("potions")),
   def("bandages", "Bandages", "potions", preset("bandages")),
   def("runes", "Runes and runebooks", "runes-books", preset("runes")),
   def("books", "Books", "runes-books", kinds("book")),
   def("deeds", "Deeds", "deeds", preset("deeds")),
   def("gems", "Gems", "gems", preset("gems")),
+  def("treasure-maps", "Treasure maps", "other", preset("treasure-maps")),
+  def("instruments", "Instruments", "tools", preset("instruments")),
   def("tools", "Tools", "tools", kinds("tool")),
   def("clothing", "Clothing", "clothing", kinds("clothing")),
   def("other", "Other", "other", EVERYTHING),

@@ -56,6 +56,23 @@ test("[fast] Simple: one group per family, gear sorted by slot before any name p
   ]);
 });
 
+test("[fast] Detailed: transcendence, spell and other scrolls, treasure maps, refinements, instruments and ammo each have a group (issue #123)", () => {
+  const names = ["Scroll Of Transcendence", "Greater Heal", "Blank Scroll", "A Tattered Treasure Map Leading To A Mage's Cache", "Varnish Of Defense", "Cure Of Protection",
+    "Drum", "Tambourine", "Lap Harp", "Bamboo Flute", "Lute", "Fire Horn", "Arrow", "Crossbow Bolt", "Apple", "Katana"];
+  const groups = groupItems(STRATEGIES.detailed, Object.values(fold([{ serial: A }], things(A, names)).items));
+  assert.deepEqual(groups.map((g) => [g.key, g.name, g.family, g.items.map((it) => it.name)]), [
+    ["weapons", "Weapons", "weapons", ["Katana"]],
+    ["ammo", "Ammo", "weapons", ["Arrow", "Crossbow Bolt"]],
+    ["transcendence-scrolls", "Transcendence scrolls", "scrolls", ["Scroll Of Transcendence"]],
+    ["other-scrolls", "Other scrolls", "scrolls", ["Blank Scroll"]],
+    ["scrolls", "Spell scrolls", "scrolls", ["Greater Heal"]],
+    ["refinements", "Refinements", "resources", ["Varnish Of Defense", "Cure Of Protection"]],
+    ["treasure-maps", "Treasure maps", "other", ["A Tattered Treasure Map Leading To A Mage's Cache"]],
+    ["instruments", "Instruments", "tools", ["Drum", "Tambourine", "Lap Harp", "Bamboo Flute", "Lute", "Fire Horn"]],
+    ["other", "Other", "other", ["Apple"]],
+  ]);
+});
+
 test("[fast] Detailed: gear by slot, reagents by school, power scrolls by level, resources by type; spell scrolls stay one group", () => {
   assert.deepEqual(grouped("detailed").map(([key, , names]) => [key, names]), [
     ["armour-neck", ["Platemail Gorget"]],
