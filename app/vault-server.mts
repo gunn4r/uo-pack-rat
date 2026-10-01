@@ -45,6 +45,7 @@
 //         (<data>/scan-blacklist.json, the containers scans never open) ·
 //         GET|POST {name?, graphic?, kind} /api/item-kinds · POST /api/item-kinds/import {names?, graphics?}
 //         (<data>/item-kinds.json, the player's own item kinds: app/item-kinds.mts; kind null resets, an import merges) ·
+//         GET /api/houses (the houses scans captured: app/house-capture.mts) · GET /api/houses/<id> (one house's model: app/house-model.mts, tiledata.mul via app/tiledata.mts) ·
 //         GET|PUT /api/organize (<data>/organize.json, Organize's labels, rules, catch-all and pinned items: app/organize-config.mts;
 //         GET salvages a hand-edited file and lists what it dropped in `problems`) ·
 //         GET /api/organize/presets (app/organize-presets.mts's PRESETS, the rule filters the Organize page offers
@@ -138,6 +139,9 @@ import { checkPutAwayRequest, nothingDetail, requestId, tripMsg, FRESH_MARGIN_MS
 import { PRESETS } from "./organize-presets.mts";
 import { emptyKindOverrides, isKindName, kindCount, kindsDocument, kindsFor, kindsText, salvageKindOverrides, withKinds, withoutKinds, KIND_LIMITS, MAX_KINDS_BYTES, OVERRIDE_KINDS } from "./item-kinds.mts";
 import { proposeOrganize, STRATEGY_IDS, type StrategyId } from "./organize-strategies.mts";
+import { latestHouses, type HouseSource } from "./house-capture.mts";
+import { buildHouseModel, type HouseContainerInput } from "./house-model.mts";
+import { uoFolderFromTazuo, loadTileData, type TileData } from "./tiledata.mts";
 import { addGrab, emptyOrganizeState, harvestTrips, noteSeen, pruneOverlay, salvageOrganizeState, PENDING_GRACE_MS, type BridgeView, type OrganizeState } from "./organize-state.mts";
 import { retentionError, retentionOf, runsToPrune, scansToPrune, type ScanFile } from "./retention.mts";
 import { missingSinceLastScan, type MissingItem } from "./missing.mts";
@@ -766,6 +770,13 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
     if (!existsSync(SCANS)) return "no-scans-dir";
     return readdirSync(SCANS).filter((f) => f.endsWith(".json")).sort()
       .map((f) => { const st = statSync(join(SCANS, f)); return `${f}:${st.mtimeMs}:${st.size}`; }).join("|");
+  }
+  // The client's tiledata.mul for the house map (issue #10): found through TazUO's launcher profile when TazUO is the chosen client, else null (the map falls back to impassable = wall).
+  function houseTileData(): TileData | null {
+    const c = currentSettings.client;
+    if (!c || c.adapter !== "tazuo") return null;
+    const uo = uoFolderFromTazuo(c.scriptsDir);
+    return uo ? loadTileData(join(uo, "tiledata.mul")) : null;
   }
   async function getInventory(): Promise<InvValue> {
     harvestNow(Date.now());   // a trip that finished since is part of what every view shows
@@ -2029,6 +2040,26 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
       if (unlist) {
         writeFileAtomic(BLACKLIST, JSON.stringify(readBlacklist().filter((e) => e.serial !== Number(unlist[1])), null, 1) + "\n", DATA_FILE_MODE);
         return send(res, 200, { ok: true });
+      }
+      // The houses the scans captured (issue #10): GET /api/houses lists each with its size and chest count, GET /api/houses/<id> serves one house's whole model. Ground chests are every root container with a position; an id that names no house (or does not decode) is a 404.
+      if (req.method === "GET" && (url.pathname === "/api/houses" || url.pathname.startsWith("/api/houses/"))) {
+        const houses = latestHouses(readScans());
+        let one: HouseSource | undefined;
+        if (url.pathname !== "/api/houses") {
+          let id: string | null;
+          try { id = decodeURIComponent(url.pathname.slice("/api/houses/".length)); } catch { id = null; }
+          one = houses.find((h) => h.id === id);
+          if (!one) return send(res, 404, { ok: false, error: "no such house" });
+        }
+        const td = houseTileData();
+        const { inv } = await getInventory();
+        const ground: HouseContainerInput[] = Object.values(inv.containers).flatMap((c) => (c.parent == null && c.pos && Number.isFinite(c.pos.x) && Number.isFinite(c.pos.y))
+          ? [{ serial: c.serial, name: c.name ?? "", facet: c.pos.facet ?? null, x: c.pos.x!, y: c.pos.y!, z: c.pos.z ?? 0 }] : []);
+        if (one) return send(res, 200, { ok: true, house: buildHouseModel(one, td, ground) });
+        return send(res, 200, { ok: true, tiledata: td !== null, houses: houses.map((h) => {
+          const m = buildHouseModel(h, td, ground);
+          return { id: h.id, facet: h.facet, capturedAt: h.capturedAt, captures: h.captures, width: m.x1 - m.x0 + 1, height: m.y1 - m.y0 + 1, levels: m.levels.length, containers: m.stacks.reduce((a, st) => a + st.serials.length, 0) };
+        }) });
       }
       // The player's item kinds (issue #150): GET the whole document (the page's Classify this… and Export read it);
       // POST {name?, graphic?, kind} sets the kind for an exact item name and/or a graphic, and kind null takes those
