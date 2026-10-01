@@ -123,12 +123,16 @@ export function buildHouseModel(house: HouseSource, td: TileData | null, contain
   if (!house.tiles.length) x0 = y0 = x1 = y1 = 0;
   const rooms = roomsOf(cells, at, doors, levels, (x0 + x1) / 2, (y0 + y1) / 2);
 
-  // Stacks: the house's containers (same facet, either side unknown counts; inside the footprint) per tile, bottom first; a tile's column splits only where the next container is a storey (LEVEL_GAP) higher, and each stack sits on its bottom container's level.
+  // Stacks: the house's containers (same facet, either side unknown counts; inside the footprint) per tile, bottom first; a tile's column splits where the next container is a storey (LEVEL_GAP) higher or stands at or above the top of a higher level's floor or stair on that tile, and each stack sits on its bottom container's level.
   const inside = (c: HouseContainerInput): boolean => (c.facet === null || house.facet === null || c.facet === house.facet) && c.x >= x0 && c.x <= x1 && c.y >= y0 && c.y <= y1;
+  const onUpperFloor = (c: HouseContainerInput, level: number): boolean => levels.some((l) => {
+    const u = l.index > level ? at.get(key(l.index, c.x, c.y)) : undefined;
+    return !!u && (u.kind === "floor" || u.kind === "stair") && c.z >= u.z;
+  });
   const stackAt = new Map<string, Stack[]>(), below = new Map<string, { s: Stack; z: number }>();
   for (const c of containers.filter(inside).sort((a, b) => a.z - b.z || a.serial - b.serial)) {
     const col = `${c.x}:${c.y}`, prev = below.get(col);
-    let s = prev && c.z - prev.z < LEVEL_GAP ? prev.s : undefined;
+    let s = prev && c.z - prev.z < LEVEL_GAP && !onUpperFloor(c, prev.s.level) ? prev.s : undefined;
     if (!s) {
       const level = levelOf(c.z), k = key(level, c.x, c.y);
       s = { level, x: c.x, y: c.y, room: at.get(k)?.room ?? null, serials: [], spot: null, direction: "", letter: "" };

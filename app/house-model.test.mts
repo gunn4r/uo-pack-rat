@@ -173,12 +173,20 @@ test("[fast] house model: a castle (32 x 32, 4 levels, 300 chests) models in und
   assert.ok(ms < 250, `took ${ms.toFixed(0)} ms`);
 });
 
-test("[fast] house model: a tall stack reaching past the upper floor's z stays one stack on its bottom chest's level", () => {
-  const { house, chests } = vaultHouse();
-  const m = buildHouseModel(house, td, [...chests, { serial: 0x40000700, name: "Metal Chest", facet: 1, x: 3001, y: 1001, z: 27 }]);
-  const s = m.stacks.find((t) => t.x === 3001 && t.y === 1001)!;
-  assert.deepEqual([m.stacks.length, s.level, s.serials.length], [24, 0, 6]);
+test("[fast] house model: a tall stack in the open reaching past the upper floor's z stays one stack on its bottom chest's level", () => {
+  const m = buildHouseModel(courtyardHouse(), td, [7, 11, 15, 19, 23, 27].map((z, i) => ({ serial: 0x40000700 + i, name: "Metal Chest", facet: 1, x: 1012, y: 2012, z })));
+  const s = m.stacks[0]!;
+  assert.deepEqual([m.stacks.length, s.level, s.serials.length], [1, 0, 6]);
   assert.deepEqual(s.serials.map((n) => m.codes[String(n)]), [1, 2, 3, 4, 5, 6].map((h) => `${s.letter}${h}`));
+});
+
+test("[fast] house model: a chest on the floor above a full stack is on the upper floor, not the stack's 6th", () => {
+  const { house, chests } = vaultHouse();
+  const deck = { serial: 0x40000800, name: "Wooden Chest", facet: 1, x: 3001, y: 1001, z: 27 };
+  const m = buildHouseModel(house, td, [...chests, deck]);
+  const below = m.stacks.find((s) => s.level === 0 && s.x === 3001 && s.y === 1001)!, up = m.stacks.find((s) => s.serials.includes(deck.serial))!;
+  assert.deepEqual([below.serials.length, up.level, up.serials.length], [5, 1, 1]);
+  assert.equal(m.codes[String(deck.serial)], up.letter);
 });
 
 test("[fast] house model: chests a storey apart on one tile are two stacks on two levels", () => {
