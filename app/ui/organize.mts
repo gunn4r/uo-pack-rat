@@ -12,7 +12,7 @@ import { box, txt, button, badge, card, message, menu, select, tipWrap, table, t
 import { currentAdapter, BRIDGE_OFFLINE } from "./bridge.mts";
 import { setNavBusy } from "./shell.mts";
 import { errorText } from "./messages.mts";
-import { filterContext } from "./inventory.mts";
+import { filterContext, showKind } from "./inventory.mts";
 import { loadOrganize, refreshPlaces, saveConfig } from "./organize-data.mts";
 import { targetChip, deleteRule, openRuleEditor } from "./rule-editor.mts";
 import { openAutoOrganize } from "./auto-organize.mts";
@@ -96,7 +96,7 @@ function rulesCard(cfg: OrganizeConfig): HTMLElement {
   return card({ title: "Rules", actions: [auto, add], attrs: { id: "org-rules" }, body: [
     txt("Each item goes to the first rule it matches. Put narrow rules above broad ones.", "t-sm muted"),
     list,
-    pickRow(cfg, "catchAll", CATCH_ALL_ID, "Everything no rule takes", "Stays where it is", report.get(CATCH_ALL_ID)),
+    pickRow(cfg, "catchAll", CATCH_ALL_ID, "Everything no rule takes", "Stays where it is", report.get(CATCH_ALL_ID), reviewOther()),
     pickRow(cfg, "emptyBagsTo", EMPTY_BAGS_ID, "Empty bags", "Stay where they are", report.get(EMPTY_BAGS_ID)),
     el("div", { class: "sr", id: "org-live", "aria-live": "polite" }),
   ] });
@@ -118,6 +118,7 @@ function ruleRow(cfg: OrganizeConfig, r: OrganizeRule, i: number, rep: PlanRuleR
       { label: "Edit…", onSelect: () => { void openRuleEditor({ rule: r }); } },
       { label: "Move up", disabled: i === 0 ? "Already first" : null, onSelect: () => { void reorder(i, i - 1, false); } },
       { label: "Move down", disabled: i === cfg.rules.length - 1 ? "Already last" : null, onSelect: () => { void reorder(i, i + 1, false); } },
+      ...(r.id === "auto-other" ? [{ label: REVIEW_OTHER, onSelect: () => showKind("other") }] : []),
       "divider",
       { label: "Delete…", danger: true, onSelect: () => { void deleteRule(r); } },
     ], { label: `Actions for ${r.name}` });
@@ -136,12 +137,16 @@ function countsEl(rep: PlanRuleReport | undefined): HTMLElement {
   if (!rep) return box("span", { class: "org-counts" }, txt(state.organize.plan ? "" : "…", "t-sm muted"));
   return box("span", { class: "org-counts" }, ...ruleCountParts(rep).map((p) => (p.warn ? badge(p.text, "warn") : txt(p.text, "t-sm muted"))));
 }
+// Auto organize's Other group and the catch-all take what Pack Rat could not classify, among the rest: the Inventory
+// filtered to kind Other lists those items, each with Classify this… (issue #150).
+const REVIEW_OTHER = "Review unclassified items";
+const reviewOther = (): HTMLElement => button({ label: REVIEW_OTHER, variant: "ghost", size: "sm", attrs: { id: "org-review-other" }, onClick: () => showKind("other") });
 // The catch-all, and the container empty bags are gathered into (issue #128): each one labelled container or none.
-function pickRow(cfg: OrganizeConfig, key: "catchAll" | "emptyBagsTo", id: string, label: string, none: string, rep: PlanRuleReport | undefined): HTMLElement {
+function pickRow(cfg: OrganizeConfig, key: "catchAll" | "emptyBagsTo", id: string, label: string, none: string, rep: PlanRuleReport | undefined, extra: HTMLElement | null = null): HTMLElement {
   const now = cfg[key] ?? null, domId = `org-${id.replace("-", "")}`;
   const s = select([{ value: "", label: none }, ...targetOptions(cfg, containers(), [], { bags: false })], now == null ? "" : String(now), { size: "sm", attrs: { id: domId } });
   s.addEventListener("change", () => { void saveConfig({ ...cfg, [key]: s.value ? +s.value : null }).then((err) => { if (err) { s.value = now == null ? "" : String(now); toastBad(err); } }); });
-  return box("div", { class: "org-catchall", "data-rule": id }, el("label", { for: domId, class: "t-sm strong" }, label), s, countsEl(rep));
+  return box("div", { class: "org-catchall", "data-rule": id }, el("label", { for: domId, class: "t-sm strong" }, label), s, countsEl(rep), extra);
 }
 // Drag by the handle: the row is draggable only while its handle is held, so text in a row stays selectable.
 function wireDrag(row: HTMLElement, handle: HTMLElement, i: number): void {

@@ -666,7 +666,9 @@ interface EnrichLoc {
 // /api/blacklist) and the TazUO script packrat-blacklist.py both write. Scanners never open one.
 export interface BlacklistEntry { serial: number; name: string; addedAt: string; where?: string | undefined }
 
-export function foldSnapshots(snapshots: ScanV2[]): Inventory {
+// `overrides`: the player's kinds from <data>/item-kinds.json (issue #150, app/item-kinds.mts), applied as each item is
+// enriched, so a fresh scan honours them the same as a refold does.
+export function foldSnapshots(snapshots: ScanV2[], overrides: KindOverrides = NO_KIND_OVERRIDES): Inventory {
   // Null-prototype dictionaries, not `{}`: every key below comes from the scan (a container's own
   // serial, the character's name), and `obj["__proto__"] = value` on an ordinary object invokes the
   // inherited setter and REPLACES that object's prototype — the entry silently disappears and an
@@ -743,7 +745,7 @@ export function foldSnapshots(snapshots: ScanV2[]): Inventory {
       if (c.parent == null || !roots.has(+c.root)) continue;   // roots (chests, backpack, bank) are places, not things
       if (c.kind != null && c.kind !== "container" && c.kind !== "bag") continue;   // old scans said "bag"; a later scanner says "container"
       const bag = enrich({ serial: c.serial, name: bagLabel(c), tooltip: [bagLabel(c), ...(c.tooltip || [c.name]).slice(1)] as string[], amount: 1 },
-        { root: +c.root, container: +c.parent, equippedBy: null, layer: null, seenAt: snap.scannedAt, scannedBy: char });
+        { root: +c.root, container: +c.parent, equippedBy: null, layer: null, seenAt: snap.scannedAt, scannedBy: char }, overrides);
       if (!SPELLBOOK_RE.test(c.name || "") && !/runebook|runic atlas/i.test(c.name || "")) {   // a bag engraved "DEXXER armor" is still a bag
         bag.gear = false; bag.slot = null; bag.kind = "container";
       }
@@ -753,10 +755,10 @@ export function foldSnapshots(snapshots: ScanV2[]): Inventory {
       const c = bySerial.get(+raw.container);
       const root = c ? +c.root : null;
       if (root == null || !roots.has(root)) continue;
-      inv.items[raw.serial] = enrich(raw, { root, container: +raw.container, equippedBy: null, layer: null, seenAt: snap.scannedAt, scannedBy: char });
+      inv.items[raw.serial] = enrich(raw, { root, container: +raw.container, equippedBy: null, layer: null, seenAt: snap.scannedAt, scannedBy: char }, overrides);
     }
     for (const raw of snap.equipped || []) {
-      inv.items[raw.serial] = enrich(raw, { root: null, container: null, equippedBy: char, layer: raw.layer || null, seenAt: snap.scannedAt, scannedBy: char });
+      inv.items[raw.serial] = enrich(raw, { root: null, container: null, equippedBy: char, layer: raw.layer || null, seenAt: snap.scannedAt, scannedBy: char }, overrides);
     }
     if (!String(char).startsWith("_")) {   // "_vault" tombstones are not characters
       inv.characters[char] = { name: char, stats: snap.stats || {}, scannedAt: snap.scannedAt, position: snap.position || null,
@@ -823,9 +825,10 @@ function labelContainers(inv: Inventory): void {
   }
 }
 
-function enrich(raw: EnrichRaw, loc: EnrichLoc): Item {
+function enrich(raw: EnrichRaw, loc: EnrichLoc, overrides: KindOverrides): Item {
   const parsed = parseTooltip(raw.tooltip && raw.tooltip.length ? raw.tooltip : [raw.name], raw.amount);
   const cls = classify(parsed.name || raw.name, parsed, loc.layer, raw.graphic);
+  const shipped = cls.gear ? "gear" : kindOf(parsed.name || raw.name, parsed, raw.graphic);
   return {
     serial: +raw.serial, name: parsed.name || raw.name || "", graphic: raw.graphic, hue: raw.hue, amount: raw.amount || 1,
     props: parsed.props, setBonus: parsed.setBonus, extras: parsed.extras, flags: parsed.flags, tags: parsed.tags, strReq: parsed.strReq,
@@ -833,7 +836,7 @@ function enrich(raw: EnrichRaw, loc: EnrichLoc): Item {
     gargoyle: /\bgargish\b/i.test(parsed.name || raw.name || "") || parsed.flags.includes("gargoyles only"),
     slayers: slayersOf(parsed.flags),
     medable: medableOf(parsed.name || raw.name || "", cls.slot, cls.gear, parsed.flags),
-    slot: cls.slot, twoHanded: cls.twoHanded, gear: cls.gear, kind: cls.gear ? "gear" : kindOf(parsed.name || raw.name, parsed, raw.graphic), ...loc,
+    slot: cls.slot, twoHanded: cls.twoHanded, gear: cls.gear, kind: shipped === "gear" ? shipped : overriddenKind(overrides, parsed.name || raw.name, raw.graphic) ?? shipped, ...loc,
   };
 }
 
@@ -1290,6 +1293,23 @@ export function kindOf(name: string | null | undefined, parsed?: ParsedTooltip |
   for (const [kind, rx] of KIND_RULES) if (rx.test(n)) return kind;
   const hasProps = parsed && Object.keys(parsed.props || {}).some((k) => k !== "tagPenalty");
   return hasProps ? "gear" : "other";
+}
+
+// The player's own kinds (issue #150): <data>/item-kinds.json maps an exact item name (compared trimmed and lower-cased)
+// or a graphic ("0x" and lower-case hex) to one of KINDS, and app/item-kinds.mts reads and checks it. They sit over the
+// table above rather than copy it, so a better shipped table still reaches a player who has some. A name beats a graphic,
+// and neither ever applies to gear (enrich asks only for a non-gear kind, and "gear" is never an override's kind).
+export interface KindOverrides { names: Record<string, string>; graphics: Record<string, string> }
+// The kinds a player may pick: never gear, and never container, which Organize leaves out of every move (organize.mts),
+// so an item made one would leave Organize for good.
+export const OVERRIDE_KINDS: readonly string[] = KINDS.filter((k) => k !== "gear" && k !== "container");
+export const NO_KIND_OVERRIDES: KindOverrides = { names: {}, graphics: {} };
+export const kindNameKey = (name: string): string => name.trim().toLowerCase();
+export const kindGraphicKey = (graphic: number): string => `0x${graphic.toString(16)}`;
+// One map's entry, own properties only: the maps come from a file, and "constructor" must not read Object's.
+export const ownKind = (map: Record<string, string>, key: string): string | null => (Object.hasOwn(map, key) ? map[key]! : null);
+export function overriddenKind(o: KindOverrides, name: string | null | undefined, graphic: number | null | undefined): string | null {
+  return ownKind(o.names, kindNameKey(name || "")) ?? (graphic != null ? ownKind(o.graphics, kindGraphicKey(graphic)) : null);
 }
 
 // Slayer lines are plain flags: "Orc Slayer", "Silver" (= undead), the super slayers "Repond" (humanoid),
