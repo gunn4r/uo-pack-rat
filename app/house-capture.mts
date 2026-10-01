@@ -1,7 +1,4 @@
-// house-capture.mts — the houses the scans have captured (issue #10). A scan taken inside a house carries a
-// `house` section: the house's own tiles (every level, read from anywhere inside) and the furniture the
-// server had sent (within about 18 tiles of the player). The newest capture of a house gives its tiles;
-// furniture is merged across captures, so a castle fills in from scans at different spots.
+// house-capture.mts — the houses the scans have captured (issue #10). A scan taken inside a house carries a `house` section: the house's own tiles (every level, read from anywhere inside) and the furniture the server had sent (within about 18 tiles of the player). The newest capture of a house gives its tiles; furniture is merged across captures, so a castle fills in from scans at different spots; a house whose footprint a newer capture on its facet overlaps (redesigned or moved) is superseded and no longer served.
 import type { ScanV2 } from "./schema/types.d.mts";
 
 export type HouseTile = [graphic: number, x: number, y: number, z: number, impassable: number];

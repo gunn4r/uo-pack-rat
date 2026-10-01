@@ -1,5 +1,4 @@
-// house-fixture.mts — synthetic houses for the house model's tests (issue #10): no game data, every graphic
-// below is made up and described by the synthetic tiledata built here.
+// house-fixture.mts — synthetic houses for the house model's tests (issue #10): no game data, every graphic below is made up and described by the synthetic tiledata built here.
 import { FLAG, readTileData, type TileData } from "./tiledata.mts";
 import { syntheticTileData } from "./tiledata-fixture.mts";
 import { houseIdOf, type HouseSource, type HouseTile, type HouseItem } from "./house-capture.mts";

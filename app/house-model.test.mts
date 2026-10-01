@@ -1,6 +1,4 @@
-// house-model.test.mts — app/house-model.mts against synthetic houses (app/house-fixture.mts): levels, cells, the
-// dirt-under-floor and foundation-lip rules, indoor and yard, rooms and doorways, furniture, stacks, standing spots,
-// engraving codes, the no-tiledata fallback and a castle's speed. Tags: [fast]. Run: node --test app/house-model.test.mts
+// house-model.test.mts — app/house-model.mts against synthetic houses (app/house-fixture.mts): levels, cells, the dirt-under-floor and foundation-lip rules, indoor and yard, rooms and doorways, furniture, stacks, standing spots, engraving codes, the no-tiledata fallback and a castle's speed. Tags: [fast]. Run: node --test app/house-model.test.mts
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { buildHouseModel, letterOf, type HouseModel, type Cell } from "./house-model.mts";

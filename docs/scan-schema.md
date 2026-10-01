@@ -47,12 +47,14 @@ Numeric and length bounds, in one place so an adapter author can find them:
 | `kind` (container), `layer` | ≤ 64 characters | Short enumerated-ish values. |
 | every `tooltip` | ≤ 256 lines, each ≤ 512 characters | `parseTooltip` runs over every line of every item on every fold. The bound is what keeps a single crafted line from dominating that work. |
 | `skills` entry `value` / `base` / `cap` | 0 – 1000 | A skill is 0.0–120.0 on any shard this targets; 1000 is generous headroom, not a shard rule. |
+| `house.tiles` | ≤ 20,000 entries | A castle is 6,000–8,000 tiles; the bound keeps one capture from dominating a fold. |
+| `house.items` | ≤ 5,000 entries | Furniture within the server's 18-tile update range; generous headroom for a dense house. |
 
 Unbounded on purpose: the number of `items`, `containers`, `roots` and `equipped` entries. A real inventory is genuinely large and no honest limit suggested itself; the 32 MB file-size cap in `app/watcher.mts`'s `ingestFile` is the bound that actually applies, and it is checked from the file's own inode before a byte is read.
 
 ## House capture
 
-The optional `house` section (issue #10) is what the client knew of the house the player was standing in: its floor and wall tiles and the furniture on them. It is closed (`additionalProperties: false`), and every field below except `facet` is required.
+The optional `house` section (issue #10) is what the client knew of the house the player was standing in: its floor and wall tiles and the furniture on them. `capturedAt`, `at` and `tiles` are required; `facet` and `items` are optional. Other keys are allowed (`additionalProperties: true`, like the top level), so a key a newer adapter adds never makes an older app drop the whole scan.
 
 `facet` is the facet the house is on, an integer 0 to 5 (0 Felucca, 1 Trammel, 2 Ilshenar, 3 Malas, 4 Tokuno, 5 Ter Mur). It is left out when the client cannot say.
 
@@ -62,7 +64,9 @@ The optional `house` section (issue #10) is what the client knew of the house th
 
 `tiles` is an array of at most 20,000 tiles, each `[graphic, x, y, z, impassable]` with five integers; `impassable` is 0 or 1.
 
-`items` is an array of at most 5,000 items, each `[serial, graphic, x, y, z]` with five integers: the furniture and fixtures on the ground inside the house footprint. Containers are left out, since they already travel as roots.
+`items` is an array of at most 5,000 items, each `[serial, graphic, x, y, z]` with five integers: the furniture and fixtures on the ground inside the house footprint. Containers are left out, since they already travel as roots. It is left out altogether when the ground could not be read, which tells the app to erase none of the furniture an earlier capture saw (an empty list would say the house stands empty).
+
+What the TazUO scanner writes within those bounds: a house of more than 20,000 tiles is left out of the scan (the summary says so), and past 5,000 pieces of furniture the nearest 5,000 to the player are kept.
 
 ## `adapter`
 

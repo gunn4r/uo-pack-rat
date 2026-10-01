@@ -1,5 +1,4 @@
-// house-capture.test.mts — app/house-capture.mts: house ids, the newest capture per house, furniture merged across
-// captures from different spots. Tags: [fast]. Run: node --test app/house-capture.test.mts
+// house-capture.test.mts — app/house-capture.mts: house ids, the newest capture per house, furniture merged across captures from different spots (a capture that could not read the ground changing none), superseded footprints. Tags: [fast]. Run: node --test app/house-capture.test.mts
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { houseIdOf, latestHouses, type HouseCapture, type HouseTile } from "./house-capture.mts";
