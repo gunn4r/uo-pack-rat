@@ -45,6 +45,7 @@
 //         (<data>/scan-blacklist.json, the containers scans never open) ·
 //         GET|POST {name?, graphic?, kind} /api/item-kinds · POST /api/item-kinds/import {names?, graphics?}
 //         (<data>/item-kinds.json, the player's own item kinds: app/item-kinds.mts; kind null resets, an import merges) ·
+//         GET /api/houses (the houses scans captured: app/house-capture.mts) · GET /api/houses/<id> (one house's model: app/house-model.mts, tiledata.mul via app/tiledata.mts) ·
 //         GET|PUT /api/organize (<data>/organize.json, Organize's labels, rules, catch-all and pinned items: app/organize-config.mts;
 //         GET salvages a hand-edited file and lists what it dropped in `problems`) ·
 //         GET /api/organize/presets (app/organize-presets.mts's PRESETS, the rule filters the Organize page offers
@@ -138,6 +139,9 @@ import { checkPutAwayRequest, nothingDetail, requestId, tripMsg, FRESH_MARGIN_MS
 import { PRESETS } from "./organize-presets.mts";
 import { emptyKindOverrides, isKindName, kindCount, kindsDocument, kindsFor, kindsText, salvageKindOverrides, withKinds, withoutKinds, KIND_LIMITS, MAX_KINDS_BYTES, OVERRIDE_KINDS } from "./item-kinds.mts";
 import { proposeOrganize, STRATEGY_IDS, type StrategyId } from "./organize-strategies.mts";
+import { latestHouses, type HouseSource } from "./house-capture.mts";
+import { buildHouseModel, type HouseContainerInput, type HouseModel } from "./house-model.mts";
+import { uoFolderFromTazuo, loadTileData, type TileData } from "./tiledata.mts";
 import { addGrab, emptyOrganizeState, harvestTrips, noteSeen, pruneOverlay, salvageOrganizeState, PENDING_GRACE_MS, type BridgeView, type OrganizeState } from "./organize-state.mts";
 import { retentionError, retentionOf, runsToPrune, scansToPrune, type ScanFile } from "./retention.mts";
 import { missingSinceLastScan, type MissingItem } from "./missing.mts";
@@ -758,7 +762,7 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
   const UPDATE_CHECK_TTL_MS = 60 * 60 * 1000;
   let updateCheckCache: { at: number; result: CheckForUpdatesResult } | null = null;
 
-  type FoldValue = { fold: Inventory; missing: Record<string, MissingItem[]>; snapshotCount: number };
+  type FoldValue = { fold: Inventory; missing: Record<string, MissingItem[]>; snapshotCount: number; houses: HouseSource[] };
   type InvValue = FoldValue & { inv: Inventory };
   let foldCache: { sig: string | null; value: FoldValue | null } = { sig: null, value: null };
   let invCache: { sig: string | null; value: InvValue | null } = { sig: null, value: null };
@@ -766,6 +770,25 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
     if (!existsSync(SCANS)) return "no-scans-dir";
     return readdirSync(SCANS).filter((f) => f.endsWith(".json")).sort()
       .map((f) => { const st = statSync(join(SCANS, f)); return `${f}:${st.mtimeMs}:${st.size}`; }).join("|");
+  }
+  // The client's tiledata.mul for the house map (issue #10): found through TazUO's launcher profile when TazUO is the chosen client, else null (the map falls back to impassable = wall).
+  function houseTileData(): TileData | null {
+    const c = currentSettings.client;
+    if (!c || c.adapter !== "tazuo") return null;
+    const uo = uoFolderFromTazuo(c.scriptsDir);
+    return uo ? loadTileData(join(uo, "tiledata.mul")) : null;
+  }
+  // Built house models, kept while the served inventory (a new object whenever the scans, the item kinds or the overlay change; the houses come from the same fold) and the tiledata (loadTileData answers the same object until the file changes) stay the same. The ground chests are the inventory's ground roots with a position, as Organize picks them.
+  let houseMemo: { inv: Inventory | null; td: TileData | null; ground: HouseContainerInput[]; models: Map<string, HouseModel> } = { inv: null, td: null, ground: [], models: new Map() };
+  function houseModel(inv: Inventory, house: HouseSource, td: TileData | null): HouseModel {
+    if (houseMemo.inv !== inv || houseMemo.td !== td) {
+      const ground = Object.values(inv.containers).flatMap((c) => (c.parent == null && c.kind === "ground" && c.pos && Number.isFinite(c.pos.x) && Number.isFinite(c.pos.y))
+        ? [{ serial: c.serial, name: c.name ?? "", facet: c.pos.facet ?? null, x: c.pos.x!, y: c.pos.y!, z: c.pos.z ?? 0 }] : []);
+      houseMemo = { inv, td, ground, models: new Map() };
+    }
+    let m = houseMemo.models.get(house.id);
+    if (!m) { m = buildHouseModel(house, td, houseMemo.ground); houseMemo.models.set(house.id, m); }
+    return m;
   }
   async function getInventory(): Promise<InvValue> {
     harvestNow(Date.now());   // a trip that finished since is part of what every view shows
@@ -776,7 +799,7 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
     if (foldCache.sig !== sig) {   // sig and value are only ever set together
       const snaps = readScans();
       const fold = libMod.foldSnapshots(snaps, readKindOverrides());
-      foldCache = { sig, value: { fold, missing: missingSinceLastScan(snaps, fold), snapshotCount: snaps.length } };
+      foldCache = { sig, value: { fold, missing: missingSinceLastScan(snaps, fold), snapshotCount: snaps.length, houses: latestHouses(snaps) } };
     }
     const folded = foldCache.value!;
     let stateSig = "no-state";
@@ -1231,14 +1254,14 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
   // a run that does not parse stays), only by their bare name inside scans/ or runs/, and only a
   // regular file: lstat, so a symlink is left alone rather than followed. Nothing is pruned under
   // --demo: its scans are the committed fixtures and its runs folder is still the player's own.
-  // `refused`: old scans were due to go, but the fold without them differed, so every scan was kept.
-  interface PrunePlan { scans: string[]; runs: string[]; refused: boolean }
+  // `refused`: old scans were due to go, but the fold without them differed (or, `reason: "houses"`, a listed house would have changed), so every scan was kept.
+  interface PrunePlan { scans: string[]; runs: string[]; refused: boolean; reason?: "houses" }
   async function planPrune(): Promise<PrunePlan> {
     if (CONFIG.demo) return { scans: [], runs: [], refused: false };
     const r = retentionOf(savedSettings.retention);
     const scans = scansToPrune(readScanFiles(), (await lib()).foldSnapshots, r, Date.now());
     const runs = runsToPrune(readRunFiles().map(({ file, run }) => ({ file, character: String(run.character), createdAt: String(run.createdAt), label: String(run.label || "") })), r);
-    return { scans: scans.files, runs, refused: scans.refused };
+    return { scans: scans.files, runs, refused: scans.refused, ...(scans.reason ? { reason: scans.reason } : {}) };
   }
   function removeFiles(dir: string, files: string[]): string[] {
     const removed: string[] = [];
@@ -1259,7 +1282,7 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
       const plan = await planPrune();
       const scans = removeFiles(SCANS, plan.scans), runs = removeFiles(RUNS, plan.runs);
       const at = new Date().toISOString();
-      if (plan.refused) safeAppendLog(CONFIG.paths.log, `${at} retention (${why}) kept every scan: the inventory folded without the old ones differed\n`);
+      if (plan.refused) safeAppendLog(CONFIG.paths.log, `${at} retention (${why}) kept every scan: ${plan.reason === "houses" ? "a house's newest capture or furniture would have changed without the old ones" : "the inventory folded without the old ones differed"}\n`);
       if (scans.length || runs.length) safeAppendLog(CONFIG.paths.log, `${at} retention (${why}) removed ${scans.length} scans ${JSON.stringify(scans)} and ${runs.length} runs ${JSON.stringify(runs)}\n`);
       if (scans.length) broadcastEvent("changed", { what: "inventory", at: Date.now() });
       if (runs.length) broadcastEvent("changed", { what: "runs", at: Date.now() });
@@ -2029,6 +2052,23 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
       if (unlist) {
         writeFileAtomic(BLACKLIST, JSON.stringify(readBlacklist().filter((e) => e.serial !== Number(unlist[1])), null, 1) + "\n", DATA_FILE_MODE);
         return send(res, 200, { ok: true });
+      }
+      // The houses the scans captured (issue #10): GET /api/houses lists each with its size and chest count, GET /api/houses/<id> serves one house's whole model. Both come from the fold's cache and the built models are memoised (houseModel); an id that names no house (or does not decode) is a 404.
+      if (req.method === "GET" && (url.pathname === "/api/houses" || url.pathname.startsWith("/api/houses/"))) {
+        const { inv, houses } = await getInventory();
+        let one: HouseSource | undefined;
+        if (url.pathname !== "/api/houses") {
+          let id: string | null;
+          try { id = decodeURIComponent(url.pathname.slice("/api/houses/".length)); } catch { id = null; }
+          one = houses.find((h) => h.id === id);
+          if (!one) return send(res, 404, { ok: false, error: "no such house" });
+        }
+        const td = houseTileData();
+        if (one) return send(res, 200, { ok: true, house: houseModel(inv, one, td) });
+        return send(res, 200, { ok: true, tiledata: td !== null, houses: houses.map((h) => {
+          const m = houseModel(inv, h, td);
+          return { id: h.id, facet: h.facet, capturedAt: h.capturedAt, captures: h.captures, width: m.x1 - m.x0 + 1, height: m.y1 - m.y0 + 1, levels: m.levels.length, containers: m.stacks.reduce((a, st) => a + st.serials.length, 0) };
+        }) });
       }
       // The player's item kinds (issue #150): GET the whole document (the page's Classify this… and Export read it);
       // POST {name?, graphic?, kind} sets the kind for an exact item name and/or a graphic, and kind null takes those

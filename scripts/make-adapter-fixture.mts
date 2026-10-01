@@ -5,7 +5,7 @@
 // container pos -> {x:1,y:1,z:0} (its facet kept: which map a house is on names nobody), every serial remapped in order of first appearance to
 // 0x40000000+n (consistent across roots/containers/items/equipped), "Crafted By ..." tooltip lines
 // -> "Crafted By Nobody", "Engraved: ..." lines -> "Engraved: Fixture", scannedAt pinned to a fixed
-// stamp, account dropped, and adapter.version/capabilities replaced from the capabilities.json of the
+// stamp, account dropped, a house capture replaced by a small synthetic one, and adapter.version/capabilities replaced from the capabilities.json of the
 // adapter that produced the scan (its adapter.id; its own client name is kept) so the fixture
 // represents what THAT adapter actually emits today, not whatever an older real scan happened to
 // carry. Refuses to write anything that still contains the source character or account name
@@ -117,7 +117,9 @@ if (!existsSync(capabilitiesUrl)) {
 }
 const CAPABILITIES = JSON.parse(readFileSync(capabilitiesUrl, "utf8")) as AdapterCapabilitiesFile;
 
-const { account, ...rest } = scan;
+// A real house capture (issue #10) is the player's home: its real coordinates, tiles and furniture serials. It never reaches the fixture; when the scan carried one, this small synthetic house stands in for it, so the contract test still checks the shape the adapter writes.
+const SYNTHETIC_HOUSE = { capturedAt: "2026-01-01T12:00:00+00:00", at: { x: 1, y: 1 }, tiles: [[1301, 1, 1, 7, 0], [100, 0, 1, 7, 1]], facet: 1, items: [[1073799999, 2868, 1, 1, 7]] };
+const { account, house, ...rest } = scan;
 const fixture = {
   ...rest,
   character: "Fixture",
@@ -125,6 +127,7 @@ const fixture = {
   position: scan.position ? { x: 1, y: 1 } : scan.position,
   adapter: { id: CAPABILITIES.adapter, version: CAPABILITIES.version, client: scan.adapter.client, clientVersion: null, capabilities: CAPABILITIES.capabilities },
   roots, containers, items, equipped,
+  ...(house ? { house: SYNTHETIC_HOUSE } : {}),
 };
 
 // The anonymising step above (remapping serials, scrubbing tooltip lines, replacing adapter/character/

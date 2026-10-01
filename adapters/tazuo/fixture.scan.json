@@ -7311,7 +7311,7 @@
  "schemaVersion": 2,
  "adapter": {
   "id": "tazuo",
-  "version": "2.9.0",
+  "version": "2.10.0",
   "client": "TazUO",
   "clientVersion": null,
   "capabilities": {
@@ -7350,5 +7350,38 @@
     "trip-bags"
    ]
   }
+ },
+ "house": {
+  "capturedAt": "2026-01-01T12:00:00+00:00",
+  "at": {
+   "x": 1,
+   "y": 1
+  },
+  "tiles": [
+   [
+    1301,
+    1,
+    1,
+    7,
+    0
+   ],
+   [
+    100,
+    0,
+    1,
+    7,
+    1
+   ]
+  ],
+  "facet": 1,
+  "items": [
+   [
+    1073799999,
+    2868,
+    1,
+    1,
+    7
+   ]
+  ]
  }
 }
