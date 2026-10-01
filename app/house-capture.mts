@@ -28,7 +28,7 @@ export function houseGroups(scans: ScanV2[]): HouseGroup[] {
     const h = s.house;
     if (!h || !h.tiles.length) return;
     const id = houseIdOf(h.facet, h.tiles as HouseTile[]);
-    const g = byId.get(id) ?? { id, captures: [], items: new Map(), superseded: false };
+    const g: HouseGroup = byId.get(id) ?? { id, captures: [], items: new Map(), superseded: false };
     g.captures.push({ scan, house: h }); byId.set(id, g);
   });
   const groups = [...byId.values()];

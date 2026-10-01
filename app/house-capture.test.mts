@@ -2,11 +2,11 @@
 // captures from different spots. Tags: [fast]. Run: node --test app/house-capture.test.mts
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { houseIdOf, latestHouses, type HouseTile } from "./house-capture.mts";
+import { houseIdOf, latestHouses, type HouseCapture, type HouseTile } from "./house-capture.mts";
 import type { ScanV2 } from "./schema/types.d.mts";
 
 const tiles = (x0: number, y0: number): HouseTile[] => [[1, x0, y0, 7, 0], [1, x0 + 5, y0 + 5, 7, 0]];
-const scan = (capturedAt: string, house: Partial<NonNullable<ScanV2["house"]>> | null): ScanV2 => ({
+const scan = (capturedAt: string, house: { [K in keyof HouseCapture]?: HouseCapture[K] | undefined } | null): ScanV2 => ({
   schemaVersion: 2, character: "Tester", scannedAt: capturedAt, roots: [], containers: {}, items: [], equipped: [],
   ...(house ? { house: { capturedAt, at: { x: 100, y: 100 }, tiles: tiles(100, 100), items: [], facet: 1, ...house } } : {}),
 } as unknown as ScanV2);
