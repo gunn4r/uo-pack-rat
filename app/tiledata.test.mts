@@ -1,7 +1,10 @@
 // tiledata.test.mts — app/tiledata.mts: reading a 7.x tiledata.mul's item entries (flags, height, name), classifying a tile the way the house map draws it, and finding the file through TazUO's launcher profiles. Tags: [fast]. Run: node --test app/tiledata.test.mts
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { readTileData, classify, FLAG, LAND_BYTES } from "./tiledata.mts";
+import { mkdtempSync, mkdirSync, writeFileSync, utimesSync } from "node:fs";
+import { join } from "node:path";
+import { tmpdir } from "node:os";
+import { readTileData, classify, uoFolderFromTazuo, loadTileData, FLAG, LAND_BYTES } from "./tiledata.mts";
 import { syntheticTileData } from "./tiledata-fixture.mts";
 
 test("[fast] tiledata: reads flags, height and name of an item graphic", () => {
@@ -39,4 +42,44 @@ test("[fast] tiledata: classify follows door, stair, roof, window, wall, floor, 
 test("[fast] tiledata: without the file, an impassable tile is a wall and anything else a floor", () => {
   assert.equal(classify(null, true), "wall");
   assert.equal(classify(null, false), "floor");
+});
+
+function tazuoLayout(): { root: string; scripts: string; profiles: string } {
+  const root = mkdtempSync(join(tmpdir(), "pr-tazuo-"));
+  const scripts = join(root, "TazUO", "LegionScripts"), profiles = join(root, "Profiles", "Settings");
+  mkdirSync(scripts, { recursive: true }); mkdirSync(profiles, { recursive: true });
+  return { root, scripts, profiles };
+}
+
+test("[fast] tiledata: finds the UO folder named in a TazUO launcher profile", () => {
+  const { root, scripts, profiles } = tazuoLayout();
+  const uo = join(root, "UO");
+  mkdirSync(uo); writeFileSync(join(uo, "tiledata.mul"), syntheticTileData([]));
+  writeFileSync(join(profiles, "a.json"), "\ufeff" + JSON.stringify({ ultimaonlinedirectory: uo + "/" }));
+  writeFileSync(join(profiles, "a.json.bak-20260917"), JSON.stringify({ ultimaonlinedirectory: "/nowhere" }));
+  assert.equal(uoFolderFromTazuo(scripts), uo + "/");
+});
+
+test("[fast] tiledata: a profile naming a folder without tiledata.mul is passed over; none found is null", () => {
+  const { root, scripts, profiles } = tazuoLayout();
+  writeFileSync(join(profiles, "old.json"), JSON.stringify({ ultimaonlinedirectory: join(root, "gone") }));
+  writeFileSync(join(profiles, "bad.json"), "{not json");
+  assert.equal(uoFolderFromTazuo(scripts), null);
+  assert.equal(uoFolderFromTazuo(join(root, "no", "such", "dir")), null);
+});
+
+test("[fast] tiledata: loadTileData caches by mtime and size and answers null for a bad file", () => {
+  const dir = mkdtempSync(join(tmpdir(), "pr-td-"));
+  const file = join(dir, "tiledata.mul");
+  writeFileSync(file, syntheticTileData([{ graphic: 5, flags: FLAG.wall, height: 20, name: "stone wall" }]));
+  const a = loadTileData(file);
+  assert.equal(a!.info(5)!.name, "stone wall");
+  assert.equal(loadTileData(file), a, "same file, same object");
+  writeFileSync(file, syntheticTileData([{ graphic: 5, flags: FLAG.wall, height: 20, name: "brick wall" }]));
+  utimesSync(file, new Date(), new Date(Date.now() + 5000));
+  assert.equal(loadTileData(file)!.info(5)!.name, "brick wall");
+  writeFileSync(file, Buffer.alloc(10));
+  utimesSync(file, new Date(), new Date(Date.now() + 10000));
+  assert.equal(loadTileData(file), null);
+  assert.equal(loadTileData(join(dir, "missing.mul")), null);
 });
