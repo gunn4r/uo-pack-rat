@@ -1000,7 +1000,7 @@ def do_put(p, roots, blacklist, loose=None):
     """One put, the only step that moves an item somewhere other than your backpack, so it is fenced:
     only an item this bridge took (the carried set), from the top of your backpack, or on a Put away trip
     one lying directly in the container the player picked (`loose`, checked by do_trip against the
-    panel's consent) that is no bag (loose_problem), into a container
+    panel's consent, whether or not a trip left it carried) that is no bag (loose_problem), into a container
     chain whose root lies on the ground (open_chain with no own roots: never your pack, never a pack a
     mobile carries), none of it blacklisted, a corpse or trash (refuse_dest), checked before any walk
     where the client already knows the root."""
@@ -1010,15 +1010,19 @@ def do_put(p, roots, blacklist, loose=None):
         return False, f"refused: {name} was not taken by this bridge — put it away by hand"
     pack = int(API.Backpack)
     it = find(serial)
-    if serial not in carried:
-        if it is None or int(getattr(it, "Container", 0) or 0) != loose:
+    where = 0 if it is None else int(getattr(it, "Container", 0) or 0)
+    # On a Put away trip an item lying directly in the picked container goes the loose way even if an earlier trip
+    # left it carried (#155: the player dropped a failed trip's items into a bag and put that bag away).
+    via_loose = bool(loose) and (serial not in carried or where == loose)
+    if via_loose:
+        if where != loose:
             return False, f"{name} is no longer directly in the container you picked"
         if not in_own_pack(loose):          # checked on every put: a bag dragged out mid-trip stops the rest
             return False, "refused: the container you picked is no longer in your backpack"
-    elif it is None or int(getattr(it, "Container", 0) or 0) != pack:
+    elif where != pack:
         carried.discard(serial)
         return False, f"{name} is no longer at the top of your backpack"
-    if serial not in carried:
+    if via_loose:
         why = loose_problem(it, name)
         if why:
             return False, why
