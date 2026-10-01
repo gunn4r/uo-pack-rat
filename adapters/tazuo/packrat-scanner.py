@@ -92,6 +92,7 @@ BLACKLIST = set(e["serial"] for e in read_blacklist(os.path.join(data_dir(), "sc
 SKIPPED = set()          # blacklisted containers this run never opened
 TRASHED = set()          # trash containers this run never opened (TRASH_RE)
 HOUSE_LEFT_OUT = set()   # furniture past HOUSE_MAX_ITEMS this run left out of the house section (the farthest from the player)
+HOUSE_TOO_LARGE = []     # the tile count of a house this run left out for passing HOUSE_MAX_TILES
 STOP_CLOSE_S = 1.5       # after a Stop, stop closing windows after this long: the client gives a stopped script 2 s
 OUT_DIR = os.path.join(data_dir(), "inbox", "tazuo")
 ALARM_HUE, OK_HUE, INFO_HUE = 33, 68, 88
@@ -232,7 +233,7 @@ def root_entry(serial, kind, label):
 
 
 def house_capture(px, py):
-    """The house the player stands in, from the client's own house tiles (issue #10), or None outside a house or on a build without the multi calls. Only the tiles connected to the player's tile are kept (8-connected in x/y, across every z), so a neighbouring house is left out. Furniture and fixtures on the ground inside that footprint are recorded too; containers are not (they are roots)."""
+    """The house the player stands in, from the client's own house tiles (issue #10), or None outside a house or on a build without the multi calls. Only the tiles connected to the player's tile are kept (8-connected in x/y, across every z), so a neighbouring house is left out. Furniture and fixtures on the ground inside that footprint are recorded too, as `items` (left out when the ground cannot be read); containers are not (they are roots). A house of more than HOUSE_MAX_TILES tiles is left out and its count noted in HOUSE_TOO_LARGE."""
     at = getattr(API, "GetMultisAt", None)
     area = getattr(API, "GetMultisInArea", None)
     if at is None or area is None:
@@ -264,12 +265,21 @@ def house_capture(px, py):
                     todo.append(n)
     tiles = sorted(t for c in keep for t in cells[c])
     if len(tiles) > HOUSE_MAX_TILES:
+        HOUSE_TOO_LARGE.append(len(tiles))
         return None
-    items = []
+    house = {"capturedAt": rfc3339_now(), "at": {"x": int(px), "y": int(py)}, "tiles": tiles}
+    f = facet()
+    if f is not None:
+        house["facet"] = f
+    # The furniture: when the ground cannot be read, items is left out, so the app erases nothing it knew from an earlier capture (an empty list would say the house stands empty).
+    on_ground = getattr(API, "GetItemsOnGround", None)
     try:
-        ground = list(API.GetItemsOnGround(HOUSE_ITEM_REACH) or [])
+        ground = list(on_ground(HOUSE_ITEM_REACH) or []) if on_ground is not None else None
     except Exception:
-        ground = []
+        ground = None
+    if ground is None:
+        return house
+    items = []
     for g in ground:
         try:
             if (int(g.X), int(g.Y)) not in keep or is_container(g, str(getattr(g, "Name", "") or "")):
@@ -279,10 +289,7 @@ def house_capture(px, py):
             continue
     items.sort(key=lambda i: (max(abs(i[2] - px), abs(i[3] - py)), i[0]))
     HOUSE_LEFT_OUT.update(i[0] for i in items[HOUSE_MAX_ITEMS:])
-    house = {"capturedAt": rfc3339_now(), "at": {"x": int(px), "y": int(py)}, "tiles": tiles, "items": sorted(items[:HOUSE_MAX_ITEMS])}
-    f = facet()
-    if f is not None:
-        house["facet"] = f
+    house["items"] = sorted(items[:HOUSE_MAX_ITEMS])
     return house
 
 
@@ -562,7 +569,10 @@ def main():
         sysmsg("Pack Rat scan stopped — nothing written.", ALARM_HUE)
         return
 
-    house = house_capture(int(API.Player.X), int(API.Player.Y))
+    try:
+        house = house_capture(int(API.Player.X), int(API.Player.Y))
+    except Exception:   # the house is extra: a capture that fails never costs the scan
+        house = None
     if house is not None:
         snap["house"] = house
     fname = re.sub(r"[^A-Za-z0-9_-]", "_", char) + time.strftime("-%Y%m%d-%H%M%S") + ".json"
@@ -577,8 +587,12 @@ def main():
     if TRASHED:
         sysmsg(f"  skipped {len(TRASHED)} trash container{'s' if len(TRASHED) != 1 else ''}", INFO_HUE)
     if house is not None:
-        left_out = f" ({len(HOUSE_LEFT_OUT)} farther ones left out)" if HOUSE_LEFT_OUT else ""
-        sysmsg(f"  house: {len(house['tiles'])} tiles, {len(house['items'])} pieces of furniture{left_out}", INFO_HUE)
+        n = len(HOUSE_LEFT_OUT)
+        left_out = f" ({n} farther {'one' if n == 1 else 'ones'} left out)" if n else ""
+        furniture = f"{len(house['items'])} pieces of furniture{left_out}" if "items" in house else "furniture not read"
+        sysmsg(f"  house: {len(house['tiles'])} tiles, {furniture}", INFO_HUE)
+    if HOUSE_TOO_LARGE:
+        sysmsg(f"  house too large to record: {HOUSE_TOO_LARGE[0]} tiles", INFO_HUE)
 
 
 try:

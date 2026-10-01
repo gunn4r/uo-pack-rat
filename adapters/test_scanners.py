@@ -464,7 +464,48 @@ class TazUOScanner(DataDir, unittest.TestCase):
         self.assertEqual(len(items), 5000)
         self.assertNotIn(0x40000042, [i[0] for i in items])
         self.assertTrue(self.root(s, CHEST)["opened"])
-        self.assertIn("  house: 144 tiles, 5000 pieces of furniture (1 farther ones left out)", w.messages)
+        self.assertIn("  house: 144 tiles, 5000 pieces of furniture (1 farther one left out)", w.messages)
+
+    def test_a_ground_item_read_that_raises_writes_the_tiles_and_no_furniture_claim(self):
+        w = World(); home(w); w.multis = house_tiles(5, 5, 12, 12)
+        w.add(0x40000040, 0, name="table", container_like=False, X=12, Y=12, Z=7)
+        api = tazuo_api(w, PACK)
+        roots = api.GetItemsOnGround
+        def ground(r):
+            if r > 3:   # the house's furniture read, not the 3-tile root search
+                raise RuntimeError("the read failed")
+            return roots(r)
+        api.GetItemsOnGround = ground
+        run_script(self.SCRIPT, w, api=api)
+        [s] = self.scans("tazuo")
+        self.assertEqual(len(s["house"]["tiles"]), 144)
+        self.assertNotIn("items", s["house"], "an absent list erases nothing the app knew; an empty one would")
+        self.assertTrue(self.root(s, CHEST)["opened"])
+        self.assertIn("  house: 144 tiles, furniture not read", w.messages)
+
+    def test_a_house_over_the_tile_cap_is_left_out_and_the_summary_says_so(self):
+        w = World(); home(w)
+        w.multis = [t for z in range(139) for t in house_tiles(5, 5, 12, 12, z=z)]   # 20,016 tiles
+        self.scan(w)
+        [s] = self.scans("tazuo")
+        self.assertNotIn("house", s)
+        self.assertTrue(self.root(s, CHEST)["opened"])
+        self.assertIn("  house too large to record: 20016 tiles", w.messages)
+
+    def test_the_same_house_is_captured_whole_from_the_steps_a_corner_or_inside(self):
+        steps = [types.SimpleNamespace(Graphic=0x0751, X=x, Y=17, Z=0, Impassible=False) for x in range(5, 17)]
+        deck = [types.SimpleNamespace(Graphic=0x04C6, X=x, Y=y, Z=27, Impassible=False) for x in range(6, 16) for y in range(6, 16)]
+        tiles = []
+        for px, py in ((10, 10), (8, 17), (5, 5)):
+            shutil.rmtree(os.path.join(self.data, "inbox"), ignore_errors=True)
+            w = World(); home(w); w.px, w.py = px, py
+            w.multis = house_tiles(5, 5, 12, 12) + steps + deck
+            self.scan(w)
+            [s] = self.scans("tazuo")
+            tiles.append(s["house"]["tiles"])
+        self.assertEqual(len(tiles[0]), 12 * 12 + 12 + 100)
+        self.assertEqual(tiles[0], tiles[1])
+        self.assertEqual(tiles[0], tiles[2])
 
 
 class TazUORefresh(DataDir, unittest.TestCase):
