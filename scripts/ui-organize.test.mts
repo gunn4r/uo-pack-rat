@@ -3,8 +3,8 @@
 // shown wherever an item's place is listed, rules from presets and from the Inventory's Save as rule…, a bag
 // inside a chest picked as a target, the live match count, reordering by keyboard and by drag, the plan's
 // reports and collapsed trip list, a client that cannot run trips, running a trip through the bridge's queue
-// (Stop, a failed step, Pin this item), a page reloaded mid-trip picking the trip back up, and the screen at
-// 1000 × 700. Skipped when electron or playwright is absent, or under TEST_SKIP_ELECTRON.
+// (Stop, a failed step, Pin this item), a page reloaded mid-trip picking the trip back up, the screen at
+// 1000 × 700, and the player's item kinds (Review unclassified items, Classify this…, Export and Import). Skipped when electron or playwright is absent, or under TEST_SKIP_ELECTRON.
 import test from "node:test";
 import assert from "node:assert/strict";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
@@ -676,6 +676,59 @@ test("[slow] the Auto organize drawer fits a 1000 × 700 window: nothing scrolls
     await page.locator("#auto-accept").scrollIntoViewIfNeeded();
     assert.ok(await page.locator("#auto-accept").isVisible());
     await page.keyboard.press("Escape");
+    assert.deepEqual(errors, []);
+  } finally {
+    await app.close();
+    rmSync(dataDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
+  }
+});
+
+test("[slow] Review unclassified items opens the Other items, Classify this… moves one out at once, and Settings exports and imports the kinds (issue #150)", async (t) => {
+  const why = unavailable();
+  if (why) return t.skip(why);
+  const dataDir = dataDirWith([]);
+  const saved = join(dataDir, "exported.json");
+  const { app, page, errors } = await launch(dataDir);
+  try {
+    // The demo's one item Pack Rat cannot classify is Dorran's "2 Greater Heal" (a scroll graphic, no scroll name).
+    await go(page, "#/organize", "#org-review-other");
+    await page.locator("#org-review-other").click();
+    await page.waitForFunction(() => location.hash === "#/inventory" && document.querySelectorAll("#inv-table tbody tr.item").length === 1, undefined, { timeout: 15_000 });
+    const row = page.locator("#inv-table tbody tr.item").first();
+    assert.match(await row.innerText(), /2 Greater Heal/);
+    await row.hover();   // a row's actions show on hover
+    await row.getByRole("button", { name: "More actions" }).click();
+    await page.getByRole("menuitem", { name: "Classify this…" }).click();
+    await page.selectOption("#kind-pick", "scroll");
+    assert.equal(await page.locator('input[name="kind-scope"][value="name"]').isChecked(), true, "every item with this name, by default");
+    await page.locator("#kind-save").click();
+    await until(() => { try { return JSON.parse(readFileSync(join(dataDir, "item-kinds.json"), "utf8")) as unknown; } catch { return null; } },
+      (f) => JSON.stringify(f) === JSON.stringify({ version: 1, names: { "2 greater heal": "scroll" }, graphics: {} }), "item-kinds.json saved");
+    await page.waitForFunction(() => !document.querySelector("#inv-table tbody tr.item"), undefined, { timeout: 15_000 });
+
+    // Reset to automatic, from the item found by name.
+    await page.getByRole("button", { name: "Clear all filters" }).click();
+    const heal = page.locator("#inv-table tbody tr.item", { hasText: "2 Greater Heal" }).first();
+    await heal.hover();
+    await heal.getByRole("button", { name: "More actions" }).click();
+    await page.getByRole("menuitem", { name: "Classify this…" }).click();
+    assert.equal(await page.locator("#kind-pick").inputValue(), "scroll");
+    await page.locator("#kind-reset").click();
+    await until(() => readFileSync(join(dataDir, "item-kinds.json"), "utf8"), (s) => s.includes('"names": {}'), "the reset saved");
+
+    // Export in the desktop app is a download (Electron's own Save dialog, pointed at a file here); Import merges one in.
+    await app.evaluate(({ session }, path) => { session.defaultSession.once("will-download", (_e, item) => item.setSavePath(path)); }, saved);
+    writeFileSync(join(dataDir, "item-kinds.json"), JSON.stringify({ version: 1, names: { "ruby": "decor" }, graphics: {} }));
+    await go(page, "#/settings", "#set-kinds-export");
+    await page.locator("#set-kinds-export").click();
+    const exported = await until(() => { try { return JSON.parse(readFileSync(saved, "utf8")) as unknown; } catch { return null; } }, (f) => f != null, "the exported file");
+    assert.deepEqual(exported, { version: 1, names: { "ruby": "decor" }, graphics: {} });
+    const incoming = join(dataDir, "incoming.json");
+    writeFileSync(incoming, JSON.stringify({ version: 1, names: { "ruby": "gem", "2 greater heal": "scroll" }, graphics: { "0x1f49": "rock" } }));
+    await page.setInputFiles("#set-kinds-file", incoming);
+    await until(() => JSON.parse(readFileSync(join(dataDir, "item-kinds.json"), "utf8")) as unknown,
+      (f) => JSON.stringify(f) === JSON.stringify({ version: 1, names: { "ruby": "gem", "2 greater heal": "scroll" }, graphics: {} }), "the import merged");
+    await page.getByText(/Imported incoming\.json: you now have 2 item kinds\. 1 entry left out: graphics "0x1f49": "rock" is not a kind\./).waitFor({ timeout: 10_000 });
     assert.deepEqual(errors, []);
   } finally {
     await app.close();

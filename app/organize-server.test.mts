@@ -1,7 +1,7 @@
 // organize-server.test.mts — the Organize routes (issue #11) against a real listening server on a temp data
 // folder: GET/PUT /api/organize (organize.json), GET /api/organize/plan and POST /api/organize/trip with the
-// results overlay (organize-state.json), GET /api/organize/presets and POST /api/organize/match. Tags: [fast]. Run: node --test app/organize-server.test.mts
-import { test } from "node:test";
+// results overlay (organize-state.json), GET /api/organize/presets and POST /api/organize/match, and the item kinds routes (issue #150, item-kinds.json). Tags: [fast]. Run: node --test app/organize-server.test.mts
+import { test, mock } from "node:test";
 import assert from "node:assert/strict";
 import { mkdtempSync, writeFileSync, readFileSync, existsSync, renameSync } from "node:fs";
 import { join } from "node:path";
@@ -474,6 +474,130 @@ test("[fast] a Grab that worked frees its slot in the full container it left, an
     assert.equal(reply?.ok, true, JSON.stringify(reply));
     const line = queued(dir).find((l) => l.action === "trip")!;
     assert.deepEqual((line.puts as { serial: number; dest: number[] }[]).map((p) => [p.serial, p.dest]), [[GEM, [C]]]);
+  } finally {
+    await s.close();
+  }
+});
+
+// Issue #150: the player's own item kinds, <data>/item-kinds.json.
+const WEAPON = 0x40001009;
+const kindOfItem = async (s: ServerHandle, serial: number): Promise<string | undefined> =>
+  (await call<{ items: Record<string, Item> }>(s, `/api/items/by-serial?serials=${serial}`)).body.items[serial]?.kind;
+const restart = (dir: string): Promise<ServerHandle> => startServer(ensureLayout(resolveConfig(["--port", "0", "--data", dir], {})), { clientSearch: { home: FAKE_HOME, candidates: () => [] }, clientRunning: () => false });
+
+test("[fast] POST /api/item-kinds re-kinds the inventory with no rescan, the plan follows, it survives a restart, and kind null resets it", async () => {
+  const { s, dir } = await serve([{ serial: WEAPON, name: "Ancient Weapon", in: A, graphic: 0x1f14 }]);
+  let again: ServerHandle | null = null;
+  try {
+    assert.equal((await call(s, "/api/organize", body("PUT", CONFIG_DOC))).status, 200);
+    assert.equal(await kindOfItem(s, WEAPON), "other");
+    const set = await call(s, "/api/item-kinds", body("POST", { name: "ANCIENT weapon", kind: "gem" }));
+    assert.equal(set.status, 200, JSON.stringify(set.body));
+    assert.deepEqual(set.body, { ok: true, version: 1, names: { "ancient weapon": "gem" }, graphics: {} });
+    assert.deepEqual(JSON.parse(readFileSync(join(dir, "item-kinds.json"), "utf8")), { version: 1, names: { "ancient weapon": "gem" }, graphics: {} });
+    assert.equal(await kindOfItem(s, WEAPON), "gem");
+    const plan = (await call<{ plan: Plan }>(s, "/api/organize/plan")).body.plan;
+    assert.deepEqual(plan.moves.find((m) => m.serial === WEAPON)?.to, B, "the Gems rule now takes it");
+    await s.close();
+    again = await restart(dir);
+    assert.equal(await kindOfItem(again, WEAPON), "gem");
+    assert.equal((await call(again, "/api/item-kinds", body("POST", { graphic: 0x1f14, kind: "decor" }))).status, 200);
+    assert.equal(await kindOfItem(again, WEAPON), "gem", "the name beats the graphic");
+    const reset = await call(again, "/api/item-kinds", body("POST", { name: "Ancient Weapon", kind: null }));
+    assert.deepEqual(reset.body, { ok: true, version: 1, names: {}, graphics: { "0x1f14": "decor" } });
+    assert.equal(await kindOfItem(again, WEAPON), "decor");
+    assert.deepEqual((await call(again, "/api/item-kinds")).body, { ok: true, version: 1, names: {}, graphics: { "0x1f14": "decor" } });
+  } finally {
+    await (again ?? s).close();
+  }
+});
+
+test("[fast] POST /api/item-kinds refuses gear, an unknown kind, a bad name or graphic and a body naming neither", async () => {
+  const { s, dir } = await serve();
+  try {
+    for (const [sent, error] of [
+      [{ name: "Ruby", kind: "gear" }, /kind must be null or one of/],
+      [{ name: "Ruby", kind: "container" }, /kind must be null or one of/],
+      [{ name: "Ruby\u0000", kind: "decor" }, /name must be an item name/],
+      [{ name: "Ruby", kind: "boulder" }, /kind must be/],
+      [{ name: "Ruby" }, /kind must be/],
+      [{ name: "  ", kind: "decor" }, /name must be an item name/],
+      [{ name: "x".repeat(257), kind: "decor" }, /name must be/],
+      [{ graphic: 70000, kind: "decor" }, /graphic must be/],
+      [{ graphic: "0x1f14", kind: "decor" }, /graphic must be/],
+      [{ kind: "decor" }, /name or graphic is required/],
+    ] as const) {
+      const r = await call(s, "/api/item-kinds", body("POST", sent));
+      assert.equal(r.status, 400, JSON.stringify(sent));
+      assert.match(String(r.body.error), error);
+    }
+    assert.equal(existsSync(join(dir, "item-kinds.json")), false);
+  } finally {
+    await s.close();
+  }
+});
+
+test("[fast] POST /api/item-kinds/import merges a file in, its entries winning, says what it left out, and refuses a file with nothing to import", async () => {
+  const { s } = await serve([{ serial: WEAPON, name: "Ancient Weapon", in: A, graphic: 0x1f14 }]);
+  try {
+    assert.equal((await call(s, "/api/item-kinds", body("POST", { name: "Ruby", kind: "decor" }))).status, 200);
+    assert.equal((await call(s, "/api/item-kinds", body("POST", { name: "Black Pearl", kind: "tool" }))).status, 200);
+    const exported = (await call<Record<string, unknown>>(s, "/api/item-kinds")).body;
+    const r = await call(s, "/api/item-kinds/import", body("POST", { version: 1, names: { "Ruby": "gem", "ancient weapon": "quest", "Rock": "boulder" }, graphics: { "0x1F14": "decor" } }));
+    assert.equal(r.status, 200, JSON.stringify(r.body));
+    assert.deepEqual(r.body, { ok: true, version: 1, names: { "ruby": "gem", "black pearl": "tool", "ancient weapon": "quest" }, graphics: { "0x1f14": "decor" }, skipped: 1, problems: ['names "Rock": "boulder" is not a kind'] });
+    assert.equal(await kindOfItem(s, WEAPON), "quest");
+    assert.equal(await kindOfItem(s, RUBY), "gem");
+    for (const sent of [{ names: { "Rock": "boulder" } }, { version: 2, names: { "ruby": "gem" } }, {}]) {
+      const bad = await call(s, "/api/item-kinds/import", body("POST", sent));
+      assert.equal(bad.status, 400, JSON.stringify(sent));
+      assert.match(String(bad.body.error), /holds no item kinds to import/);
+    }
+    // Export then import on a fresh data folder reproduces the same kinds.
+    const fresh = await serve([{ serial: WEAPON, name: "Ancient Weapon", in: A, graphic: 0x1f14 }]);
+    try {
+      assert.equal((await call(fresh.s, "/api/item-kinds/import", body("POST", { version: exported.version, names: exported.names, graphics: exported.graphics }))).status, 200);
+      assert.deepEqual((await call(fresh.s, "/api/item-kinds")).body, exported);
+      assert.equal(await kindOfItem(fresh.s, RUBY), "decor");
+    } finally {
+      await fresh.s.close();
+    }
+  } finally {
+    await s.close();
+  }
+});
+
+test("[fast] an item-kinds.json that does not parse is moved aside with a warning, and one with bad entries loses only those", async () => {
+  const { s, dir } = await serve([{ serial: WEAPON, name: "Ancient Weapon", in: A, graphic: 0x1f14 }]);
+  const warn = mock.method(console, "warn", () => {});
+  try {
+    writeFileSync(join(dir, "item-kinds.json"), "{ not json");
+    assert.equal(await kindOfItem(s, WEAPON), "other");
+    assert.equal(readFileSync(join(dir, "item-kinds.json.corrupt"), "utf8"), "{ not json");
+    assert.equal(existsSync(join(dir, "item-kinds.json")), false);
+    assert.match(String(warn.mock.calls.at(-1)?.arguments[0]), /item-kinds\.json was ignored .*moved to item-kinds\.json\.corrupt/);
+    writeFileSync(join(dir, "item-kinds.json"), JSON.stringify({ version: 1, names: { "ancient weapon": "decor", "ruby": "gear" } }));
+    assert.equal(await kindOfItem(s, WEAPON), "decor");
+    assert.equal(await kindOfItem(s, RUBY), "gem");
+    assert.match(String(warn.mock.calls.at(-1)?.arguments[0]), /item-kinds\.json: left out names "ruby": "gear" is not a kind/);
+  } finally {
+    warn.mock.restore();
+    await s.close();
+  }
+});
+
+test("[fast] POST /api/item-kinds/import refuses a change whose item-kinds.json would be larger than a read accepts, and keeps the file", async () => {
+  const { s, dir } = await serve();
+  try {
+    // 256 Chinese characters are 768 bytes a name: 2000 of them fit, 1000 more would pass MAX_KINDS_BYTES.
+    const names = (from: number, n: number): Record<string, string> => Object.fromEntries(Array.from({ length: n }, (_, i) => [`${from + i} ${"龍".repeat(250)}`, "decor"]));
+    assert.equal((await call(s, "/api/item-kinds/import", body("POST", { names: names(0, 2000) }))).status, 200);
+    const before = readFileSync(join(dir, "item-kinds.json"), "utf8");
+    const r = await call(s, "/api/item-kinds/import", body("POST", { names: names(2000, 1000) }));
+    assert.equal(r.status, 409);
+    assert.match(String(r.body.error), /larger than 2 MB/);
+    assert.equal(readFileSync(join(dir, "item-kinds.json"), "utf8"), before);
+    assert.equal(Object.keys((await call<{ names: object }>(s, "/api/item-kinds")).body.names).length, 2000, "the file still reads");
   } finally {
     await s.close();
   }

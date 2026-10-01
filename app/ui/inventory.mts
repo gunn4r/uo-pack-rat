@@ -24,6 +24,7 @@ import type { FilterToken } from "./inv-model.mts";
 import type { ItemsApiResponse, UiPrefs } from "./api-types.mts";
 import { initPeek, openPeek, closePeek, peekOpen, peekSerial, peekRefresh } from "./peek.mts";
 import { openRuleEditor } from "./rule-editor.mts";
+import { openClassify } from "./kinds.mts";
 import { showItemTip, hideItemTip, tagChip } from "./dom.mts";
 
 const CHUNK = 500;              // rows per GET /api/items request (the server's own cap)
@@ -550,6 +551,8 @@ export function itemMenu(anchor: HTMLElement, it: Item): void {
     const s = `0x${it.serial.toString(16)}`;
     void copyText(s).then((ok) => ok ? toast(`Copied ${s}`, "good") : toast("Could not copy the serial.", "bad"));
   } });
+  // Gear keeps its slot-based kind, and a scanned bag is always a container (issue #150).
+  if (!it.gear && !state.inv?.containers[it.serial]) entries.push({ label: "Classify this…", icon: "sliders", onSelect: () => { void openClassify(it); } });
   menu(anchor, entries, { label: `More actions for ${it.name}` });
 }
 function actionsCell(it: Item): HTMLTableCellElement {
@@ -960,8 +963,11 @@ export function showCharacterItems(name: string): void {
   setQuery({ ...clearAll(state.query), chars: [name] });
   if (location.hash !== "#/inventory") location.hash = "#/inventory";
 }
-export function showContainer(root: number): void {
+export function showContainer(root: number): void { showOnly({ roots: [root] }); }
+// Every item of one kind: Organize's way to the items Pack Rat could not classify (issue #150).
+export function showKind(kind: string): void { showOnly({ kind: [kind] }); }
+function showOnly(filter: Partial<ItemQuery>): void {
   closePeek();
-  setQuery({ ...clearAll(state.query), roots: [root] });
+  setQuery({ ...clearAll(state.query), ...filter });
   if (location.hash !== "#/inventory") location.hash = "#/inventory";
 }

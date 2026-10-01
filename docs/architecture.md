@@ -39,6 +39,7 @@ One directory holds everything, resolved the same way for the bare server and th
   settings.json        {schemaVersion, shard, setupDone, client: {adapter, scriptsDir} | null, retention: {keepAll, scanDays, runsPerCharacter}, autoUpdateCheck}
   scan-blacklist.json  the containers scans skip: [{serial, name, addedAt, where?}], written by the app and by the TazUO and Razor Enhanced packrat-blacklist.py
   organize.json        Organize's setup: {version, labels, rules, catchAll, emptyBagsTo?, pinnedItems} (app/organize-config.mts); written by PUT /api/organize
+  item-kinds.json      the player's own item kinds: {version: 1, names: {"<item name, lower-case>": kind}, graphics: {"0x<hex>": kind}} (app/item-kinds.mts; issue #150); written by POST /api/item-kinds and /api/item-kinds/import
   organize-state.json  Organize's results overlay: {version, pending, grabs, moves, seen} (app/organize-state.mts); written by the server only
   ui-prefs.json        the page's view choices ({cols, colsVersion, colWidths, sheetProps, theme, appearance, sidebar, density, dismissedUpdate}: the Inventory columns and their widths, the character sheet's properties, the look, a pinned-collapsed sidebar, the update notice last dismissed)
   tazuo-panel.json     the TazUO in-game panel's hotkey and showAtLogin ({hotkey: {mods, key}, showAtLogin}), written by Settings, the wizard and the panel itself (app/tazuo-panel.mts)
