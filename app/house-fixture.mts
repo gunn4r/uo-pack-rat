@@ -87,3 +87,41 @@ export function castleHouse(): { house: HouseSource; chests: HouseContainerInput
   }
   return { house: source(t), chests: chests.slice(0, 300) };
 }
+
+// Paver floor tiles at z 7 for every spot in `floor`, stone walls at z 7 on every tile touching one (diagonals included), a door tile on each `doors` spot (which must also be floor), and `cover` (a roof or an upper floor) over every floor tile.
+function walled(floor: Array<[number, number]>, doors: Array<[number, number]>, cover: { graphic: number; z: number }): HouseTile[] {
+  const t: HouseTile[] = [], has = new Set(floor.map(([x, y]) => `${x}:${y}`)), walls = new Set<string>();
+  for (const [x, y] of floor) {
+    t.push([G.pavers, x, y, 7, 0], [cover.graphic, x, y, cover.z, 0]);
+    for (let dx = -1; dx <= 1; dx++) for (let dy = -1; dy <= 1; dy++) {
+      const k = `${x + dx}:${y + dy}`;
+      if (!has.has(k) && !walls.has(k)) { walls.add(k); t.push([G.stoneWall, x + dx, y + dy, 7, 1]); }
+    }
+  }
+  for (const [x, y] of doors) t.push([G.door, x, y, 7, 1]);
+  return t;
+}
+const rect = (x0: number, y0: number, x1: number, y1: number): Array<[number, number]> => {
+  const r: Array<[number, number]> = [];
+  for (let x = x0; x <= x1; x++) for (let y = y0; y <= y1; y++) r.push([x, y]);
+  return r;
+};
+
+// An 8 x 8 walled room at (2000, 3000) with a 2nd floor (z 27) over its 6 x 6 interior and a stair run climbing east along its north row: z 7, 12, 17, 22 at x 2001..2004.
+export function stairHouse(): HouseSource {
+  const t = walled(rect(2001, 3001, 2006, 3006), [], { graphic: G.planks, z: 27 });
+  for (let i = 0; i < 4; i++) t.push([G.stairs, 2001 + i, 3001, 7 + 5 * i, 0]);
+  return source(t);
+}
+
+// An 8 x 8 walled one-storey room at (4000, 4000) with a roof at z 27 over its 6 x 6 interior.
+export function roofHouse(): HouseSource {
+  return source(walled(rect(4001, 4001, 4006, 4006), [], { graphic: G.roof, z: 27 }));
+}
+
+// Two 6 x 6 rooms at (6001..6006, 7001..7006) and (6013..6018, 7001..7006) joined along y 7003 by a 1-wide corridor x 6008..6011, with doors at (6007, 7003) and (6012, 7003); all under a roof at z 27.
+export function hallHouse(): HouseSource {
+  const doors: Array<[number, number]> = [[6007, 7003], [6012, 7003]];
+  const corridor: Array<[number, number]> = [[6008, 7003], [6009, 7003], [6010, 7003], [6011, 7003]];
+  return source(walled([...rect(6001, 7001, 6006, 7006), ...corridor, ...doors, ...rect(6013, 7001, 6018, 7006)], doors, { graphic: G.roof, z: 27 }));
+}

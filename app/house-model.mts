@@ -49,7 +49,7 @@ export function buildHouseModel(house: HouseSource, td: TileData | null, contain
     const info = td?.info(graphic) ?? null;
     return { x, y, t: { cls: classify(info, imp === 1), name: info?.name ?? "", z } as Classed };
   }).filter((c) => c.t.cls !== "other");
-  const floorZs = classed.filter((c) => c.t.cls === "floor" || c.t.cls === "stair").map((c) => c.t.z);
+  const floorZs = classed.filter((c) => c.t.cls === "floor").map((c) => c.t.z);
   const bands = levelsOf(floorZs.length ? floorZs : [0]);
   const levelOf = (z: number): number => { let i = 0; bands.forEach((b, j) => { if (b.lo - LEVEL_SLACK <= z) i = j; }); return i; };
 
@@ -59,13 +59,14 @@ export function buildHouseModel(house: HouseSource, td: TileData | null, contain
     const e = byCell.get(k) ?? { level, x: c.x, y: c.y, tiles: [] };
     e.tiles.push(c.t); byCell.set(k, e);
   }
-  const cells: Cell[] = [];
+  const cells: Cell[] = [], doors = new Set<Cell>();
   for (const e of byCell.values()) {
     const floors = e.tiles.filter((t) => t.cls === "floor" || t.cls === "door"), stairs = e.tiles.filter((t) => t.cls === "stair");
     const roofs = e.tiles.filter((t) => t.cls === "roof"), walls = e.tiles.filter((t) => t.cls === "wall" || t.cls === "window" || t.cls === "block");
     const ground = [...floors, ...stairs];
     const floorTop = ground.length ? topOf(ground).z : -Infinity;
-    const real = walls.filter((t) => !ground.length || t.z >= floorTop);
+    const wallBase = floors.length ? topOf(floors).z : floorTop;
+    const real = walls.filter((t) => !ground.length || t.z >= wallBase);
     let kind: CellKind, material: string;
     if (real.length) {
       kind = real.some((t) => t.cls === "window") && !real.some((t) => t.cls !== "window") ? "window" : "wall";
@@ -75,7 +76,9 @@ export function buildHouseModel(house: HouseSource, td: TileData | null, contain
     else if (roofs.length) { kind = "roof"; material = topOf(roofs).name; }
     else continue;
     const z = ground.length ? floorTop : topOf(e.tiles).z;
-    cells.push({ level: e.level, x: e.x, y: e.y, kind, material, z, lip: walls.length > 0 && real.length === 0, indoor: false, doorway: floors.some((t) => t.cls === "door"), room: null });
+    const cell: Cell = { level: e.level, x: e.x, y: e.y, kind, material, z, lip: walls.length > 0 && real.length === 0, indoor: ground.length > 0 && roofs.some((t) => t.z > floorTop), doorway: false, room: null };
+    if (floors.some((t) => t.cls === "door")) { cell.doorway = true; doors.add(cell); }
+    cells.push(cell);
   }
 
   const at = new Map(cells.map((c) => [key(c.level, c.x, c.y), c]));
@@ -83,7 +86,7 @@ export function buildHouseModel(house: HouseSource, td: TileData | null, contain
   const solid = (l: number, x: number, y: number): boolean => { const c = at.get(key(l, x, y)); return !!c && (c.kind === "wall" || c.kind === "window"); };
   for (const c of cells) {
     if (c.kind !== "floor" && c.kind !== "stair") continue;
-    c.indoor = c.level > 0 || covered.has(`${c.x}:${c.y}`);
+    c.indoor = c.level > 0 || c.indoor || covered.has(`${c.x}:${c.y}`);
     if (c.kind === "floor" && ((solid(c.level, c.x - 1, c.y) && solid(c.level, c.x + 1, c.y)) || (solid(c.level, c.x, c.y - 1) && solid(c.level, c.x, c.y + 1)))) c.doorway = true;
   }
 
@@ -91,31 +94,36 @@ export function buildHouseModel(house: HouseSource, td: TileData | null, contain
   const levels: Level[] = bands.map((b, i) => ({ index: i, name: ORDINALS[i] ?? `${i + 1}th floor`, floorZ: b.floorZ, status: built.has(i) ? "built" : "floor-only" }));
   let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
   for (const t of house.tiles) { if (t[1] < x0) x0 = t[1]; if (t[1] > x1) x1 = t[1]; if (t[2] < y0) y0 = t[2]; if (t[2] > y1) y1 = t[2]; }
-  const rooms = roomsOf(cells, at, levels, (x0 + x1) / 2, (y0 + y1) / 2);
+  if (!house.tiles.length) x0 = y0 = x1 = y1 = 0;
+  const rooms = roomsOf(cells, at, doors, levels, (x0 + x1) / 2, (y0 + y1) / 2);
 
   return { id: house.id, facet: house.facet, capturedAt: house.capturedAt, captures: house.captures, x0, y0, x1, y1, levels, cells, rooms,
     furniture: [], stacks: [], spots: [], codes: {}, tiledata: td !== null };
 }
 
-function roomsOf(cells: Cell[], at: Map<string, Cell>, levels: Level[], cx: number, cy: number): Room[] {
+// Doorway cells (walls on both opposite sides) split rooms; afterwards the indoor cells still without a room form hallways (a 1-wide corridor is doorway cells end to end), except cells holding a door.
+function roomsOf(cells: Cell[], at: Map<string, Cell>, doors: Set<Cell>, levels: Level[], cx: number, cy: number): Room[] {
   const rooms: Room[] = [];
-  const walkable = (c: Cell | undefined): c is Cell => !!c && c.indoor && (c.kind === "floor" || c.kind === "stair") && !c.doorway;
-  const found: Array<{ level: number; cells: Cell[] }> = [];
-  const seen = new Set<Cell>();
-  for (const start of cells) {
-    if (!walkable(start) || seen.has(start)) continue;
-    const region: Cell[] = [], todo = [start];
-    seen.add(start);
-    while (todo.length) {
-      const c = todo.pop()!;
-      region.push(c);
-      for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]] as const) {
-        const n = at.get(key(c.level, c.x + dx, c.y + dy));
-        if (walkable(n) && !seen.has(n)) { seen.add(n); todo.push(n); }
+  const open = (c: Cell): boolean => c.indoor && (c.kind === "floor" || c.kind === "stair");
+  const fill = (ok: (c: Cell | undefined) => c is Cell): Array<{ level: number; cells: Cell[] }> => {
+    const found: Array<{ level: number; cells: Cell[] }> = [], seen = new Set<Cell>();
+    for (const start of cells) {
+      if (!ok(start) || seen.has(start)) continue;
+      const region: Cell[] = [], todo = [start];
+      seen.add(start);
+      while (todo.length) {
+        const c = todo.pop()!;
+        region.push(c);
+        for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]] as const) {
+          const n = at.get(key(c.level, c.x + dx, c.y + dy));
+          if (ok(n) && !seen.has(n)) { seen.add(n); todo.push(n); }
+        }
       }
+      if (region.length >= MIN_ROOM) found.push({ level: start.level, cells: region });
     }
-    if (region.length >= MIN_ROOM) found.push({ level: start.level, cells: region });
-  }
+    return found;
+  };
+  const found = fill((c): c is Cell => !!c && open(c) && !c.doorway);
   for (const lv of levels) {
     const mine = found.filter((f) => f.level === lv.index), used = new Map<string, number>();
     for (const f of mine) {
@@ -126,6 +134,8 @@ function roomsOf(cells: Cell[], at: Map<string, Cell>, levels: Level[], cx: numb
       rooms.push(roomFrom(rooms.length, lv.index, "room", name, f.cells));
     }
   }
+  const halls = fill((c): c is Cell => !!c && open(c) && c.room === null && !doors.has(c));
+  for (const lv of levels) halls.filter((f) => f.level === lv.index).forEach((f, i) => rooms.push(roomFrom(rooms.length, lv.index, "room", i ? `Hallway ${i + 1}` : "Hallway", f.cells)));
   const yard = cells.filter((c) => c.level === 0 && !c.indoor && (c.kind === "floor" || c.kind === "stair"));
   if (yard.length) rooms.push(roomFrom(rooms.length, 0, "yard", "Yard", yard));
   return rooms;
