@@ -82,6 +82,7 @@ SCAN_RANGE = 3           # tiles: ground containers within reach (house chests o
 HOUSE_RADIUS = 40        # tiles searched around the player for the house's tiles (a castle is about 32 across)
 HOUSE_MAX_TILES = 20000  # a capture larger than this is left out rather than bloating the scan
 HOUSE_ITEM_REACH = 18    # the server sends ground items within about this many tiles
+HOUSE_MAX_ITEMS = 5000   # the scan schema's cap on house items: past it the nearest are kept, so the scan file still validates
 SCAN_GROUND = True       # False = backpack/bank only, never touch containers on the ground
 GROUND_ONLY_AT_HOME = True   # when the bank box is open (you are at a bank) skip ground containers entirely
 PAUSE_OPEN = 1.2         # after UseObject on a container (raise on laggy connections)
@@ -90,6 +91,7 @@ OPENED_HERE = []         # container windows this run opened itself, in opening 
 BLACKLIST = set(e["serial"] for e in read_blacklist(os.path.join(data_dir(), "scan-blacklist.json")))
 SKIPPED = set()          # blacklisted containers this run never opened
 TRASHED = set()          # trash containers this run never opened (TRASH_RE)
+HOUSE_LEFT_OUT = set()   # furniture past HOUSE_MAX_ITEMS this run left out of the house section (the farthest from the player)
 STOP_CLOSE_S = 1.5       # after a Stop, stop closing windows after this long: the client gives a stopped script 2 s
 OUT_DIR = os.path.join(data_dir(), "inbox", "tazuo")
 ALARM_HUE, OK_HUE, INFO_HUE = 33, 68, 88
@@ -275,7 +277,9 @@ def house_capture(px, py):
             items.append([int(g.Serial), int(getattr(g, "Graphic", 0) or 0), int(g.X), int(g.Y), int(getattr(g, "Z", 0) or 0)])
         except Exception:
             continue
-    house = {"capturedAt": rfc3339_now(), "at": {"x": int(px), "y": int(py)}, "tiles": tiles, "items": sorted(items)}
+    items.sort(key=lambda i: (max(abs(i[2] - px), abs(i[3] - py)), i[0]))
+    HOUSE_LEFT_OUT.update(i[0] for i in items[HOUSE_MAX_ITEMS:])
+    house = {"capturedAt": rfc3339_now(), "at": {"x": int(px), "y": int(py)}, "tiles": tiles, "items": sorted(items[:HOUSE_MAX_ITEMS])}
     f = facet()
     if f is not None:
         house["facet"] = f
@@ -573,7 +577,8 @@ def main():
     if TRASHED:
         sysmsg(f"  skipped {len(TRASHED)} trash container{'s' if len(TRASHED) != 1 else ''}", INFO_HUE)
     if house is not None:
-        sysmsg(f"  house: {len(house['tiles'])} tiles, {len(house['items'])} pieces of furniture", INFO_HUE)
+        left_out = f" ({len(HOUSE_LEFT_OUT)} farther ones left out)" if HOUSE_LEFT_OUT else ""
+        sysmsg(f"  house: {len(house['tiles'])} tiles, {len(house['items'])} pieces of furniture{left_out}", INFO_HUE)
 
 
 try:

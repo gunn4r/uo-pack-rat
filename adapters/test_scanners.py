@@ -453,6 +453,19 @@ class TazUOScanner(DataDir, unittest.TestCase):
         [s] = self.scans("tazuo")
         self.assertEqual(s["house"]["items"], [[0x40000040, 0x0B34, 12, 12, 7]], "the chest beside the player is a root, not furniture")
 
+    def test_past_the_schemas_5000_house_items_the_farthest_are_left_out(self):
+        w = World(); home(w); w.multis = house_tiles(5, 5, 12, 12)
+        for i in range(5000):
+            w.add(0x50000000 + i, 0, name="vase", container_like=False, X=11, Y=11, Z=7)
+        w.add(0x40000042, 0, name="statue", container_like=False, X=16, Y=16, Z=7)   # the farthest, still inside
+        self.scan(w)
+        [s] = self.scans("tazuo")
+        items = s["house"]["items"]
+        self.assertEqual(len(items), 5000)
+        self.assertNotIn(0x40000042, [i[0] for i in items])
+        self.assertTrue(self.root(s, CHEST)["opened"])
+        self.assertIn("  house: 144 tiles, 5000 pieces of furniture (1 farther ones left out)", w.messages)
+
 
 class TazUORefresh(DataDir, unittest.TestCase):
     SCRIPT = adapter_path("tazuo", "packrat-refresh.py")
