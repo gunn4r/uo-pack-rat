@@ -75,6 +75,19 @@ export const SCAN_V2_SCHEMA = {
     position: NUMBER_MAP_OR_NULL,
     maxes: NUMBER_MAP_OR_NULL,
     resists: NUMBER_MAP_OR_NULL,
+    house: {
+      type: "object",
+      "$comment": "The house the player stood in (issue #10), from the client's house tiles: tiles are [graphic, x, y, z, impassable 0|1], items (furniture and fixtures on the ground inside the footprint, containers excluded) are [serial, graphic, x, y, z]; at is where the player stood, so the app knows which items a later capture should have seen. Written by TazUO 2.10.0 and later.",
+      required: ["capturedAt", "at", "tiles", "items"],
+      additionalProperties: false,
+      properties: {
+        facet: { type: "integer", enum: [0, 1, 2, 3, 4, 5] },
+        capturedAt: { type: "string" },
+        at: { type: "object", required: ["x", "y"], additionalProperties: false, properties: { x: { type: "integer" }, y: { type: "integer" } } },
+        tiles: { type: "array", maxItems: 20000, items: { type: "array", minItems: 5, maxItems: 5, items: { type: "integer" } } },
+        items: { type: "array", maxItems: 5000, items: { type: "array", minItems: 5, maxItems: 5, items: { type: "integer" } } }
+      }
+    },
     // Keyed by skill name; every adapter writes {value, cap} and TazUO/Razor Enhanced add `base`.
     // A wrong-shaped entry used to pass validation and then throw inside the character sheet's
     // render, taking the Characters tab and the Suit Builder down on every launch until the file was

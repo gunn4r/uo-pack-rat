@@ -25,6 +25,7 @@ Ground truth: `app/schema/scan.v2.schema.json` (the portable JSON Schema, restri
 | `containers` | object, required (can be empty) | Every container this scan saw, keyed by serial (as a string) — see below. Each entry must carry at least `serial` and `root`. |
 | `items` | array, required | Every non-equipped item this scan saw, in any opened container — see below. |
 | `equipped` | array, required | Every item on the character's paperdoll — see below. |
+| `house` | object, optional | The house the player stood in when the scan ran — see "House capture" below. Written by TazUO 2.10.0 and later. |
 
 A scan file may carry additional top-level fields beyond these (`additionalProperties: true` at the top level) — the quick-refresh adapter script adds a `meta: {mode, name, roots}` key, which the fold simply ignores. `adapter` and `adapter.capabilities`, though, are a **closed contract**: `additionalProperties: false` there, so an adapter must match the shape below exactly, no extra fields.
 
@@ -48,6 +49,20 @@ Numeric and length bounds, in one place so an adapter author can find them:
 | `skills` entry `value` / `base` / `cap` | 0 – 1000 | A skill is 0.0–120.0 on any shard this targets; 1000 is generous headroom, not a shard rule. |
 
 Unbounded on purpose: the number of `items`, `containers`, `roots` and `equipped` entries. A real inventory is genuinely large and no honest limit suggested itself; the 32 MB file-size cap in `app/watcher.mts`'s `ingestFile` is the bound that actually applies, and it is checked from the file's own inode before a byte is read.
+
+## House capture
+
+The optional `house` section (issue #10) is what the client knew of the house the player was standing in: its floor and wall tiles and the furniture on them. It is closed (`additionalProperties: false`), and every field below except `facet` is required.
+
+`facet` is the facet the house is on, an integer 0 to 5 (0 Felucca, 1 Trammel, 2 Ilshenar, 3 Malas, 4 Tokuno, 5 Ter Mur). It is left out when the client cannot say.
+
+`capturedAt` is when the capture was taken, a string; unlike `scannedAt` its shape is not checked.
+
+`at` is `{x, y}`, two integers: where the player stood. The app uses it to know which items a later capture should have seen from that spot.
+
+`tiles` is an array of at most 20,000 tiles, each `[graphic, x, y, z, impassable]` with five integers; `impassable` is 0 or 1.
+
+`items` is an array of at most 5,000 items, each `[serial, graphic, x, y, z]` with five integers: the furniture and fixtures on the ground inside the house footprint. Containers are left out, since they already travel as roots.
 
 ## `adapter`
 
