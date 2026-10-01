@@ -15,11 +15,14 @@ import type { HouseModel } from "./house-model.mts";
 
 const FAKE_HOME = mkdtempSync(join(tmpdir(), "pr-house-home-"));
 
-async function serve(withTiledata: boolean): Promise<ServerHandle> {
+const PACK = 0x40020001;
+
+async function serve(withTiledata: boolean): Promise<{ s: ServerHandle; dir: string }> {
   const dir = mkdtempSync(join(tmpdir(), "pr-house-"));
   const config = ensureLayout(resolveConfig(["--port", "0", "--data", dir], {}));
   const { house, chests } = vaultHouse();
-  const scan = houseScan({ scannedAt: house.capturedAt, boxes: chests.map((c) => ({ serial: c.serial, pos: { x: c.x, y: c.y, z: c.z, facet: 1 } })), things: [] });
+  const scan = houseScan({ scannedAt: house.capturedAt, boxes: [...chests.map((c) => ({ serial: c.serial, pos: { x: c.x, y: c.y, z: c.z, facet: 1 } })), { serial: PACK, kind: "backpack" as const, name: "Backpack" }], things: [] });
+  (scan.containers[String(PACK)] as Record<string, unknown>).pos = { x: 3001, y: 1001, z: 27, facet: 1 };   // a root that is not a ground chest is never a stack, wherever it says it is
   writeFileSync(join(dir, "scans", "house.json"), JSON.stringify({ ...scan, house: { facet: 1, capturedAt: house.capturedAt, at: { x: 3003, y: 1003 }, tiles: house.tiles, items: house.items } }));
   if (withTiledata) {
     const root = mkdtempSync(join(tmpdir(), "pr-house-tazuo-")), scripts = join(root, "TazUO", "LegionScripts"), profiles = join(root, "Profiles", "Settings"), uo = join(root, "UO");
@@ -28,10 +31,11 @@ async function serve(withTiledata: boolean): Promise<ServerHandle> {
     writeFileSync(join(profiles, "p.json"), JSON.stringify({ ultimaonlinedirectory: uo }));
     writeFileSync(join(dir, "settings.json"), JSON.stringify({ schemaVersion: 1, shard: "uoalive", client: { adapter: "tazuo", scriptsDir: scripts } }));
   }
-  return startServer(config, {
+  const s = await startServer(config, {
     clientSearch: { home: FAKE_HOME, candidates: (a) => candidateClientRoots({ adapter: a.id, home: FAKE_HOME, platform: "linux", env: {}, adapterPlatform: a.platform }) },
     clientRunning: () => false,
   });
+  return { s, dir };
 }
 async function get<T>(s: ServerHandle, path: string): Promise<{ status: number; body: T }> {
   const r = await fetch(s.url + path);
@@ -39,7 +43,7 @@ async function get<T>(s: ServerHandle, path: string): Promise<{ status: number; 
 }
 
 test("[fast] houses: a scan with a house capture lists the house and serves its model with its chests", async () => {
-  const s = await serve(true);
+  const { s } = await serve(true);
   try {
     const list = await get<{ houses: Array<{ id: string; containers: number; width: number; height: number; levels: number }>; tiledata: boolean }>(s, "/api/houses");
     assert.equal(list.status, 200);
@@ -50,12 +54,13 @@ test("[fast] houses: a scan with a house capture lists the house and serves its 
     assert.equal(one.body.house.tiledata, true);
     assert.equal(one.body.house.levels[0]!.status, "built");
     assert.equal(one.body.house.stacks.reduce((a, st) => a + st.serials.length, 0), 120);
+    assert.ok(!one.body.house.stacks.some((st) => st.serials.includes(PACK)), "a backpack root is not a ground chest");
     assert.equal(one.body.house.spots[0]!.teleporter, true);
   } finally { await s.close(); }
 });
 
 test("[fast] houses: without a tiledata.mul the model still builds, and an unknown or malformed id is a 404", async () => {
-  const s = await serve(false);
+  const { s } = await serve(false);
   try {
     const list = await get<{ tiledata: boolean }>(s, "/api/houses");
     assert.equal(list.body.tiledata, false);
@@ -67,5 +72,24 @@ test("[fast] houses: without a tiledata.mul the model still builds, and an unkno
       assert.equal(r.status, 404, path);
       assert.deepEqual(r.body, { ok: false, error: "no such house" }, path);
     }
+  } finally { await s.close(); }
+});
+
+test("[fast] houses: the same model is served again while nothing changes, and a newer capture replaces it", async () => {
+  const { s, dir } = await serve(true);
+  try {
+    const first = await get<{ house: HouseModel }>(s, "/api/houses/1-3000-1000");
+    const again = await get<{ house: HouseModel }>(s, "/api/houses/1-3000-1000");
+    assert.deepEqual(again.body, first.body);
+    const { house } = vaultHouse();
+    const later = new Date(Date.parse(house.capturedAt) + 60e3).toISOString();
+    const scan = houseScan({ character: "Other", scannedAt: later, boxes: [], things: [] });
+    writeFileSync(join(dir, "scans", "house-later.json"), JSON.stringify({ ...scan, house: { facet: 1, capturedAt: later, at: { x: 3003, y: 1003 }, tiles: [...house.tiles, [G.pavers, 3007, 1003, 7, 0]], items: house.items } }));
+    const next = await get<{ house: HouseModel }>(s, "/api/houses/1-3000-1000");
+    assert.equal(next.body.house.capturedAt, later);
+    assert.equal(next.body.house.captures, 2);
+    assert.equal(next.body.house.x1, 3007);
+    const list = await get<{ houses: Array<{ width: number; captures: number }> }>(s, "/api/houses");
+    assert.deepEqual(list.body.houses.map((h) => [h.width, h.captures]), [[8, 2]]);
   } finally { await s.close(); }
 });

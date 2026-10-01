@@ -140,7 +140,7 @@ import { PRESETS } from "./organize-presets.mts";
 import { emptyKindOverrides, isKindName, kindCount, kindsDocument, kindsFor, kindsText, salvageKindOverrides, withKinds, withoutKinds, KIND_LIMITS, MAX_KINDS_BYTES, OVERRIDE_KINDS } from "./item-kinds.mts";
 import { proposeOrganize, STRATEGY_IDS, type StrategyId } from "./organize-strategies.mts";
 import { latestHouses, type HouseSource } from "./house-capture.mts";
-import { buildHouseModel, type HouseContainerInput } from "./house-model.mts";
+import { buildHouseModel, type HouseContainerInput, type HouseModel } from "./house-model.mts";
 import { uoFolderFromTazuo, loadTileData, type TileData } from "./tiledata.mts";
 import { addGrab, emptyOrganizeState, harvestTrips, noteSeen, pruneOverlay, salvageOrganizeState, PENDING_GRACE_MS, type BridgeView, type OrganizeState } from "./organize-state.mts";
 import { retentionError, retentionOf, runsToPrune, scansToPrune, type ScanFile } from "./retention.mts";
@@ -762,7 +762,7 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
   const UPDATE_CHECK_TTL_MS = 60 * 60 * 1000;
   let updateCheckCache: { at: number; result: CheckForUpdatesResult } | null = null;
 
-  type FoldValue = { fold: Inventory; missing: Record<string, MissingItem[]>; snapshotCount: number };
+  type FoldValue = { fold: Inventory; missing: Record<string, MissingItem[]>; snapshotCount: number; houses: HouseSource[] };
   type InvValue = FoldValue & { inv: Inventory };
   let foldCache: { sig: string | null; value: FoldValue | null } = { sig: null, value: null };
   let invCache: { sig: string | null; value: InvValue | null } = { sig: null, value: null };
@@ -778,6 +778,18 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
     const uo = uoFolderFromTazuo(c.scriptsDir);
     return uo ? loadTileData(join(uo, "tiledata.mul")) : null;
   }
+  // Built house models, kept while the served inventory (a new object whenever the scans, the item kinds or the overlay change; the houses come from the same fold) and the tiledata (loadTileData answers the same object until the file changes) stay the same. The ground chests are the inventory's ground roots with a position, as Organize picks them.
+  let houseMemo: { inv: Inventory | null; td: TileData | null; ground: HouseContainerInput[]; models: Map<string, HouseModel> } = { inv: null, td: null, ground: [], models: new Map() };
+  function houseModel(inv: Inventory, house: HouseSource, td: TileData | null): HouseModel {
+    if (houseMemo.inv !== inv || houseMemo.td !== td) {
+      const ground = Object.values(inv.containers).flatMap((c) => (c.parent == null && c.kind === "ground" && c.pos && Number.isFinite(c.pos.x) && Number.isFinite(c.pos.y))
+        ? [{ serial: c.serial, name: c.name ?? "", facet: c.pos.facet ?? null, x: c.pos.x!, y: c.pos.y!, z: c.pos.z ?? 0 }] : []);
+      houseMemo = { inv, td, ground, models: new Map() };
+    }
+    let m = houseMemo.models.get(house.id);
+    if (!m) { m = buildHouseModel(house, td, houseMemo.ground); houseMemo.models.set(house.id, m); }
+    return m;
+  }
   async function getInventory(): Promise<InvValue> {
     harvestNow(Date.now());   // a trip that finished since is part of what every view shows
     const libMod = await lib();   // also refreshes libCache.mtime, which the signature below reads
@@ -787,7 +799,7 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
     if (foldCache.sig !== sig) {   // sig and value are only ever set together
       const snaps = readScans();
       const fold = libMod.foldSnapshots(snaps, readKindOverrides());
-      foldCache = { sig, value: { fold, missing: missingSinceLastScan(snaps, fold), snapshotCount: snaps.length } };
+      foldCache = { sig, value: { fold, missing: missingSinceLastScan(snaps, fold), snapshotCount: snaps.length, houses: latestHouses(snaps) } };
     }
     const folded = foldCache.value!;
     let stateSig = "no-state";
@@ -2041,9 +2053,9 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
         writeFileAtomic(BLACKLIST, JSON.stringify(readBlacklist().filter((e) => e.serial !== Number(unlist[1])), null, 1) + "\n", DATA_FILE_MODE);
         return send(res, 200, { ok: true });
       }
-      // The houses the scans captured (issue #10): GET /api/houses lists each with its size and chest count, GET /api/houses/<id> serves one house's whole model. Ground chests are every root container with a position; an id that names no house (or does not decode) is a 404.
+      // The houses the scans captured (issue #10): GET /api/houses lists each with its size and chest count, GET /api/houses/<id> serves one house's whole model. Both come from the fold's cache and the built models are memoised (houseModel); an id that names no house (or does not decode) is a 404.
       if (req.method === "GET" && (url.pathname === "/api/houses" || url.pathname.startsWith("/api/houses/"))) {
-        const houses = latestHouses(readScans());
+        const { inv, houses } = await getInventory();
         let one: HouseSource | undefined;
         if (url.pathname !== "/api/houses") {
           let id: string | null;
@@ -2052,12 +2064,9 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
           if (!one) return send(res, 404, { ok: false, error: "no such house" });
         }
         const td = houseTileData();
-        const { inv } = await getInventory();
-        const ground: HouseContainerInput[] = Object.values(inv.containers).flatMap((c) => (c.parent == null && c.pos && Number.isFinite(c.pos.x) && Number.isFinite(c.pos.y))
-          ? [{ serial: c.serial, name: c.name ?? "", facet: c.pos.facet ?? null, x: c.pos.x!, y: c.pos.y!, z: c.pos.z ?? 0 }] : []);
-        if (one) return send(res, 200, { ok: true, house: buildHouseModel(one, td, ground) });
+        if (one) return send(res, 200, { ok: true, house: houseModel(inv, one, td) });
         return send(res, 200, { ok: true, tiledata: td !== null, houses: houses.map((h) => {
-          const m = buildHouseModel(h, td, ground);
+          const m = houseModel(inv, h, td);
           return { id: h.id, facet: h.facet, capturedAt: h.capturedAt, captures: h.captures, width: m.x1 - m.x0 + 1, height: m.y1 - m.y0 + 1, levels: m.levels.length, containers: m.stacks.reduce((a, st) => a + st.serials.length, 0) };
         }) });
       }
