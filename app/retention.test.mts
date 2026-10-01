@@ -111,3 +111,12 @@ test("[fast] retention settings are validated with their bounds, and a bad store
   assert.deepEqual(retentionOf(undefined), RETENTION_DEFAULTS);
   assert.deepEqual(retentionOf({ scanDays: -4, runsPerCharacter: 20, keepAll: "no" }), { ...RETENTION_DEFAULTS, runsPerCharacter: 20 });
 });
+
+test("[fast] retention: the newest capture of each house is kept however old", () => {
+  const tiles = [[1, 100, 100, 7, 0], [1, 101, 100, 7, 0]];
+  const capture = (at: string) => ({ house: { facet: 1, capturedAt: at, at: { x: 100, y: 100 }, tiles, items: [] } });
+  const older = scan("house-old.json", daysAgo(90), "Builder", [], {}, [], [], capture(daysAgo(90)));
+  const newer = scan("house-new.json", daysAgo(80), "Builder", [], {}, [], [], capture(daysAgo(80)));
+  const recent = scan("recent.json", daysAgo(1), "Builder", [], {}, []);   // the character's newest scan, so only the house rule keeps house-new
+  assert.deepEqual(scansToPrune([older, newer, recent], foldSnapshots, RETENTION_DEFAULTS, NOW).files, ["house-old.json"]);
+});
