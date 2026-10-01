@@ -144,20 +144,41 @@ test("[fast] retention: an old capture of a house with no ground container of th
   assert.deepEqual(scansToPrune([visited, recent], foldSnapshots, RETENTION_DEFAULTS, NOW).files, ["house-visited.json"], "a boat, or a house the player only visited");
 });
 
-test("[fast] retention: a capture that erased a piece of furniture is not pruned while an older capture still showing it stays", () => {
+const houseShape = (files: ScanFile[]) => latestHouses(docs(files)).map((h) => [h.id, h.capturedAt, h.tiles, h.items]);
+const BANK = 130;
+
+test("[fast] retention: a capture that erased a piece of furniture is kept while an older capture still showing it stays", () => {
   const wide = [[1, 100, 100, 7, 0], [1, 140, 100, 7, 0]];
   const s1 = scan("s1.json", daysAgo(95), "Builder", [{ serial: OLDCHEST }], { [OLDCHEST]: box(OLDCHEST) }, [], [], capture(daysAgo(95), wide, [[11, 5, 101, 100, 7]]));   // the newest opener of OLDCHEST
   const s2 = scan("s2.json", daysAgo(90), "Builder", [], {}, [], [], capture(daysAgo(90), wide, []));   // item 11 is gone
   const s3 = scan("s3.json", daysAgo(80), "Builder", [], {}, [], [], capture(daysAgo(80), wide, [], { x: 135, y: 100 }));
-  const all = [s1, s2, s3, homeChest], { files } = scansToPrune(all, foldSnapshots, RETENTION_DEFAULTS, NOW);
-  assert.ok(!files.includes("s2.json"));
-  assert.deepEqual(latestHouses(docs(all.filter((s) => !files.includes(s.file)))), latestHouses(docs(all)), "the house's furniture is unchanged");
+  const all = [s1, s2, s3, homeChest], r = scansToPrune(all, foldSnapshots, RETENTION_DEFAULTS, NOW);
+  assert.deepEqual(r, { files: [], refused: false }, "s1 stays for its root, so s2 and s3 stay with it");
 });
 
-test("[fast] retention: a newer footprint is not pruned while the older one it superseded stays for another reason", () => {
+test("[fast] retention: a newer footprint is kept while the older one it superseded stays for another reason", () => {
   const a = scan("a.json", daysAgo(95), "Builder", [{ serial: OLDCHEST }], { [OLDCHEST]: box(OLDCHEST) }, [], [], capture(daysAgo(95), [[1, 200, 200, 7, 0], [1, 201, 200, 7, 0]]));
   const b = scan("b.json", daysAgo(90), "Builder", [], {}, [], [], capture(daysAgo(90), [[1, 199, 200, 7, 0], [1, 200, 200, 7, 0]]));
-  const all = [a, b, recent], { files } = scansToPrune(all, foldSnapshots, RETENTION_DEFAULTS, NOW);
-  assert.ok(!files.includes("b.json"));
-  assert.deepEqual(latestHouses(docs(all.filter((s) => !files.includes(s.file)))), latestHouses(docs(all)), "the listed house is unchanged");
+  const all = [a, b, recent], r = scansToPrune(all, foldSnapshots, RETENTION_DEFAULTS, NOW);
+  assert.deepEqual(r, { files: [], refused: false }, "b supersedes a, so it stays while a does");
+});
+
+test("[fast] retention: house captures beside the ordinary history neither stop pruning nor change a house", () => {
+  const wide = [[1, 100, 100, 7, 0], [1, 140, 100, 7, 0]];
+  const s1 = scan("s1.json", daysAgo(95), "Builder", [{ serial: 140 }], { 140: box(140) }, [], [], capture(daysAgo(95), wide, [[11, 5, 101, 100, 7]]));   // the newest opener of chest 140 (OLDCHEST's newest is a-60)
+  const s2 = scan("s2.json", daysAgo(90), "Builder", [], {}, [], [], capture(daysAgo(90), wide, []));
+  const s3 = scan("s3.json", daysAgo(80), "Builder", [], {}, [], [], capture(daysAgo(80), wide, [], { x: 135, y: 100 }));
+  const all = [...history, s1, s2, s3, homeChest], r = scansToPrune(all, foldSnapshots, RETENTION_DEFAULTS, NOW);
+  assert.equal(r.refused, false);
+  assert.deepEqual(r.files, ["a-90.json", "a-40.json", "a-35.json"], "what the history alone prunes; s1 stays for its chest and s2, s3 with it");
+  assert.deepEqual(houseShape(all.filter((s) => !r.files.includes(s.file))), houseShape(all));
+});
+
+test("[fast] retention: two old captures of a house only visited, the older one kept as a bank's newest opener, do not stop pruning", () => {
+  const v1 = scan("v1.json", daysAgo(95), "Builder", [{ serial: BANK, kind: "bank" }], { [BANK]: box(BANK) }, [], [], capture(daysAgo(95), plot, [[31, 5, 100, 100, 7]]));
+  const v2 = scan("v2.json", daysAgo(90), "Builder", [], {}, [], [], capture(daysAgo(90), plot, [[32, 5, 101, 100, 7]], { x: 130, y: 100 }));
+  const old = scan("old.json", daysAgo(85), "Builder", [], {}, []);
+  const all = [v1, v2, old, recent], r = scansToPrune(all, foldSnapshots, RETENTION_DEFAULTS, NOW);
+  assert.deepEqual(r, { files: ["old.json"], refused: false });
+  assert.deepEqual(houseShape(all.filter((s) => !r.files.includes(s.file))), houseShape(all));
 });

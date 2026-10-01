@@ -16,16 +16,16 @@ export function houseIdOf(facet: number | null | undefined, tiles: HouseTile[]):
 }
 
 export type HouseCapture = NonNullable<ScanV2["house"]>;
-export interface HouseGroup { id: string; captures: Array<{ scan: number; house: HouseCapture }>; items: Map<number, { item: HouseItem; scan: number }>; superseded: boolean }
+export interface HouseGroup { id: string; captures: Array<{ scan: number; house: HouseCapture }>; items: Map<number, { item: HouseItem; scan: number }>; supersededBy: number[] }
 
-// Every house the scans captured, by id: its captures oldest first (`scan` indexes `scans`; equal times keep the scans' order), its furniture merged across them with the capture each piece last came from, and whether it is superseded: a newer capture of another footprint on the same facet (an unknown facet matches only an unknown one) overlaps its newest one's bounding box, so it was redesigned or moved. A capture with no `items` (the ground could not be read) erases nothing and adds nothing. latestHouses and retention (app/retention.mts) both read houses through here.
+// Every house the scans captured, by id: its captures oldest first (`scan` indexes `scans`; equal times keep the scans' order), its furniture merged across them with the capture each piece last came from, and the captures (scan indexes) superseding it: each newer capture of another footprint on the same facet (an unknown facet matches only an unknown one) overlapping its newest one's bounding box, so it was redesigned or moved. A capture with no `items` (the ground could not be read) erases nothing and adds nothing. latestHouses and retention (app/retention.mts) both read houses through here.
 export function houseGroups(scans: ScanV2[]): HouseGroup[] {
   const byId = new Map<string, HouseGroup>();
   scans.forEach((s, scan) => {
     const h = s.house;
     if (!h || !h.tiles.length) return;
     const id = houseIdOf(h.facet, h.tiles as HouseTile[]);
-    const g: HouseGroup = byId.get(id) ?? { id, captures: [], items: new Map(), superseded: false };
+    const g: HouseGroup = byId.get(id) ?? { id, captures: [], items: new Map(), supersededBy: [] };
     g.captures.push({ scan, house: h }); byId.set(id, g);
   });
   const groups = [...byId.values()];
@@ -45,14 +45,14 @@ export function houseGroups(scans: ScanV2[]): HouseGroup[] {
   const boxes = groups.map((g) => ({ g, all: g.captures.map((c) => boxOf(c.house)) }));
   for (const { g, all } of boxes) {
     const last = all[all.length - 1]!;
-    g.superseded = boxes.some((o) => o.g !== g && o.all.some((b) => b.facet === last.facet && b.t > last.t && b.x0 <= last.x1 && last.x0 <= b.x1 && b.y0 <= last.y1 && last.y0 <= b.y1));
+    g.supersededBy = boxes.flatMap((o) => o.g === g ? [] : o.all.flatMap((b, i) => b.facet === last.facet && b.t > last.t && b.x0 <= last.x1 && last.x0 <= b.x1 && b.y0 <= last.y1 && last.y0 <= b.y1 ? [o.g.captures[i]!.scan] : []));
   }
   return groups;
 }
 
 // The houses to serve: each one not superseded, with its newest capture's tiles and its merged furniture.
 export function latestHouses(scans: ScanV2[]): HouseSource[] {
-  return houseGroups(scans).filter((g) => !g.superseded).map((g) => {
+  return houseGroups(scans).filter((g) => !g.supersededBy.length).map((g) => {
     const last = g.captures[g.captures.length - 1]!.house;
     return { id: g.id, facet: last.facet ?? null, capturedAt: last.capturedAt, tiles: last.tiles as HouseTile[], items: [...g.items.values()].map((v) => v.item).sort((a, b) => a[0] - b[0]), captures: g.captures.length };
   }).sort((a, b) => a.id.localeCompare(b.id));

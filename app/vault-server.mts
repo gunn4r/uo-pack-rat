@@ -1254,14 +1254,14 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
   // a run that does not parse stays), only by their bare name inside scans/ or runs/, and only a
   // regular file: lstat, so a symlink is left alone rather than followed. Nothing is pruned under
   // --demo: its scans are the committed fixtures and its runs folder is still the player's own.
-  // `refused`: old scans were due to go, but the fold without them differed, so every scan was kept.
-  interface PrunePlan { scans: string[]; runs: string[]; refused: boolean }
+  // `refused`: old scans were due to go, but the fold without them differed (or, `reason: "houses"`, a listed house would have changed), so every scan was kept.
+  interface PrunePlan { scans: string[]; runs: string[]; refused: boolean; reason?: "houses" }
   async function planPrune(): Promise<PrunePlan> {
     if (CONFIG.demo) return { scans: [], runs: [], refused: false };
     const r = retentionOf(savedSettings.retention);
     const scans = scansToPrune(readScanFiles(), (await lib()).foldSnapshots, r, Date.now());
     const runs = runsToPrune(readRunFiles().map(({ file, run }) => ({ file, character: String(run.character), createdAt: String(run.createdAt), label: String(run.label || "") })), r);
-    return { scans: scans.files, runs, refused: scans.refused };
+    return { scans: scans.files, runs, refused: scans.refused, ...(scans.reason ? { reason: scans.reason } : {}) };
   }
   function removeFiles(dir: string, files: string[]): string[] {
     const removed: string[] = [];
@@ -1282,7 +1282,7 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
       const plan = await planPrune();
       const scans = removeFiles(SCANS, plan.scans), runs = removeFiles(RUNS, plan.runs);
       const at = new Date().toISOString();
-      if (plan.refused) safeAppendLog(CONFIG.paths.log, `${at} retention (${why}) kept every scan: the inventory folded without the old ones differed\n`);
+      if (plan.refused) safeAppendLog(CONFIG.paths.log, `${at} retention (${why}) kept every scan: ${plan.reason === "houses" ? "a house's newest capture or furniture would have changed without the old ones" : "the inventory folded without the old ones differed"}\n`);
       if (scans.length || runs.length) safeAppendLog(CONFIG.paths.log, `${at} retention (${why}) removed ${scans.length} scans ${JSON.stringify(scans)} and ${runs.length} runs ${JSON.stringify(runs)}\n`);
       if (scans.length) broadcastEvent("changed", { what: "inventory", at: Date.now() });
       if (runs.length) broadcastEvent("changed", { what: "runs", at: Date.now() });
