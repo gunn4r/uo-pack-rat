@@ -3,8 +3,8 @@
 // engraving codes, the no-tiledata fallback and a castle's speed. Tags: [fast]. Run: node --test app/house-model.test.mts
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { buildHouseModel, type HouseModel, type Cell } from "./house-model.mts";
-import { fixtureTileData, courtyardHouse, stairHouse, roofHouse, hallHouse } from "./house-fixture.mts";
+import { buildHouseModel, letterOf, type HouseModel, type Cell } from "./house-model.mts";
+import { G, fixtureTileData, courtyardHouse, stairHouse, roofHouse, hallHouse, vaultHouse, castleHouse } from "./house-fixture.mts";
 
 const td = fixtureTileData();
 const cell = (m: HouseModel, level: number, x: number, y: number): Cell | undefined => m.cells.find((c) => c.level === level && c.x === x && c.y === y);
@@ -82,4 +82,72 @@ test("[fast] house model: a 1-wide corridor between two rooms is a Hallway; the 
 test("[fast] house model: a house with no tiles has zero bounds", () => {
   const m = buildHouseModel({ ...roofHouse(), tiles: [] }, td, []);
   assert.deepEqual([m.x0, m.y0, m.x1, m.y1, m.cells.length, m.rooms.length], [0, 0, 0, 0, 0, 0]);
+});
+
+test("[fast] house model: impassable furniture and doors are kept, passable decoration is not", () => {
+  const m = buildHouseModel(courtyardHouse(), td, []);
+  assert.deepEqual(m.furniture.map((f) => [f.kind, f.name, f.height]), [["block", "table", 6], ["door", "wooden door", 20]]);
+  assert.equal(cell(m, 0, 1009, 2010)!.doorway, true);
+  assert.deepEqual(buildHouseModel(courtyardHouse(), null, []).furniture, []);
+});
+
+test("[fast] house model: a door item splits rooms and stays out of the hallway like a door tile", () => {
+  const h = hallHouse(), doors = h.tiles.filter((t) => t[0] === G.door);
+  const m = buildHouseModel({ ...h, tiles: h.tiles.filter((t) => t[0] !== G.door), items: doors.map(([g, x, y, z], i) => [0x40000300 + i, g, x, y, z]) }, td, []);
+  assert.deepEqual(m.rooms.map((r) => [r.name, r.tiles]), [["West room", 36], ["East room", 36], ["Hallway", 4]]);
+  assert.deepEqual([cell(m, 0, 6007, 7003)!.room, cell(m, 0, 6012, 7003)!.room], [null, null]);
+});
+
+test("[fast] house model: a dense vault is one standing spot on the teleporter reaching all 120 chests", () => {
+  const { house, chests } = vaultHouse();
+  const m = buildHouseModel(house, td, chests);
+  assert.equal(m.stacks.length, 24);
+  assert.ok(m.stacks.every((s) => s.serials.length === 5));
+  assert.deepEqual(m.spots.map((s) => [s.x, s.y, s.teleporter]), [[3003, 1003, true]]);
+  assert.ok(m.stacks.every((s) => s.spot === 0));
+  assert.equal(m.furniture[0]!.kind, "teleporter");
+});
+
+test("[fast] house model: codes run clockwise from north, inner ring first, height in the stack after the letter", () => {
+  const { house, chests } = vaultHouse();
+  const m = buildHouseModel(house, td, chests);
+  const north = m.stacks.find((s) => s.x === 3003 && s.y === 1002)!, farNorth = m.stacks.find((s) => s.x === 3003 && s.y === 1001)!;
+  assert.deepEqual([north.letter, north.direction, farNorth.letter], ["A", "N", "B"]);
+  assert.equal(m.codes[String(north.serials[0])], "A1");
+  assert.equal(m.codes[String(north.serials[4])], "A5");
+  assert.equal(new Set(m.stacks.map((s) => s.letter)).size, 24);
+});
+
+test("[fast] house model: letters go A–Z, then AA, AB …, then AAA after ZZ", () => {
+  assert.deepEqual([0, 25, 26, 27, 51, 52, 701, 702].map(letterOf), ["A", "Z", "AA", "AB", "AZ", "BA", "ZZ", "AAA"]);
+});
+
+test("[fast] house model: a container on another facet or outside the footprint is not in the house", () => {
+  const { house, chests } = vaultHouse();
+  const m = buildHouseModel(house, td, [chests[0]!, { ...chests[1]!, facet: 0 }, { ...chests[2]!, x: 4000 }]);
+  assert.equal(m.stacks.reduce((a, s) => a + s.serials.length, 0), 1);
+});
+
+test("[fast] house model: a chest on a table and a table tile are never a standing spot", () => {
+  const m = buildHouseModel(courtyardHouse(), td, [{ serial: 0x40000500, name: "Wooden Chest", facet: 1, x: 1003, y: 2003, z: 13 }]);
+  assert.equal(m.stacks[0]!.serials.length, 1);
+  assert.notDeepEqual([m.spots[0]!.x, m.spots[0]!.y], [1003, 2003]);
+  assert.equal(m.stacks[0]!.spot, 0);
+});
+
+test("[fast] house model: a chest in a hallway is reached from the hallway and gets a code", () => {
+  const m = buildHouseModel(hallHouse(), td, [{ serial: 0x40000600, name: "Wooden Chest", facet: 1, x: 6009, y: 7003, z: 7 }]);
+  const hall = m.rooms.find((r) => r.name === "Hallway")!;
+  assert.deepEqual([m.stacks[0]!.room, m.spots.length, m.spots[0]!.room, m.codes[String(0x40000600)]], [hall.id, 1, hall.id, "A"]);
+});
+
+test("[fast] house model: a castle (32 x 32, 4 levels, 300 chests) models in under 250 ms", () => {
+  const { house, chests } = castleHouse();
+  const t0 = performance.now();
+  const m = buildHouseModel(house, td, chests);
+  const ms = performance.now() - t0;
+  assert.equal(m.levels.length, 4);
+  assert.equal(m.stacks.reduce((a, s) => a + s.serials.length, 0), 300);
+  assert.ok(m.stacks.every((s) => s.spot !== null), "every stack is reachable from some spot");
+  assert.ok(ms < 250, `took ${ms.toFixed(0)} ms`);
 });
