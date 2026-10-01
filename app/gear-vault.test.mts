@@ -322,8 +322,26 @@ test("[smoke] kindOf: non-gear names get a kind, unknown names with props are ge
   assert.equal(classify("Elven Glasses Of Restoration").slot, "helmet");
 });
 
+test("[fast] kindOf: decor, quest and event items and crafting tools have kinds of their own, and a live house's misses are fixed (issue #150)", () => {
+  const kinds = (names: string[]): string[] => names.map((n) => kindOf(n));
+  assert.deepEqual(kinds(["Ethereal Horse Statuette", "Painting Of A Ship", "Hunting Trophy", "Red Rug", "Potted Plant", "Crystal Vase", "Glass Vase", "Banner", "Tapestry", "Lamp Post", "Jack O' Lantern", "Candelabra", "Candle", "Figurine", "Decorative Armor Stand", "Snow Globe"]),
+    Array(16).fill("decor"));
+  assert.deepEqual(kinds(["Mysterious Fragment", "Quest Item", "Halloween Candy", "Easter Egg", "Christmas Stocking", "Valentine's Card", "Anniversary Keepsake"]), Array(7).fill("quest"));
+  assert.deepEqual(kinds(["Smith's Hammer", "Tongs", "Sewing Kit", "Tinker's Tools", "Tool Kit", "Mortar And Pestle", "Fletcher's Tools", "Saw", "Dovetail Saw", "Jointing Plane", "Moulding Planes", "Draw Knife", "Froe", "Inshave", "Scorp", "Hammer", "Mapmaker's Pen", "Scribe's Pen", "Rolling Pin", "Flour Sifter", "Skillet", "Loom", "Spinning Wheel", "Runic Hammer", "Runic Sewing Kit"]),
+    Array(25).fill("crafting"));
+  // The gathering and utility tools, and the instruments, stay tools.
+  assert.deepEqual(kinds(["Pickaxe", "Shovel", "Lockpick", "Fishing Pole", "Skinning Knife", "Scissors", "Lap Harp"]), Array(7).fill("tool"));
+  // The live house's misses; an Ancient Weapon names nothing a kind is told by.
+  assert.deepEqual(kinds(["Springs", "Clock Frame", "A Charter Guide", "Ancient Weapon"]), ["resource", "resource", "book", "other"]);
+  // What shares a word with the new kinds keeps its kind: deeds, event tokens, event bags, lamp oil, a Relic Fragment, food.
+  assert.deepEqual(kinds(["Trick Or Treat Bag", "Holiday Gift Box", "Holiday Ornament Box", "Christmas Candle Box", "Decorative Chest", "Trophy Chest", "Lamp Oil"]),
+    [...Array(6).fill("container"), "other"]);
+  assert.deepEqual(kinds(["Holiday Tree Deed", "Rug Deed", "Halloween Token", "Relic Fragment", "Apple", "Cooked Bird", "Iron Ingot", "Board", "Recall Rune", "Bag Of Sending", "Bandage"]),
+    ["deed", "deed", "currency", "resource", "food", "food", "resource", "resource", "rune", "container", "bandage"]);
+});
+
 test("[fast] a spell's name is a scroll only on a scroll graphic or none, and its school is the exact name on that school's graphic (issue #134)", () => {
-  assert.equal(kindOf("Healing Stone", null, 0x4078), "other");   // Mysticism's conjured stone
+  assert.equal(kindOf("Healing Stone", null, 0x4078), "tool");   // Mysticism's conjured stone (issue #150)
   assert.equal(kindOf("Healing Stone", null, 0x2D9F), "scroll");
   assert.deepEqual([["Curse", 0x1F46], ["Curse Weapon", 0x2263], ["Healing Stone", 0x2D9F], ["Word Of Death", 0x2D5B], ["curse weapon", null]].map(([n, g]) => spellSchoolOf(n as string, g as number | null)),
     ["magery", "necromancy", "mysticism", "spellweaving", "necromancy"]);

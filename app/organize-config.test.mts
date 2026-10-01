@@ -3,7 +3,7 @@
 // Tags: [fast]. Run: node --test app/organize-config.test.mts
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { checkOrganizeConfig, salvageOrganizeConfig, emptyOrganizeConfig, emptyRuleQuery, CATCH_ALL_ID, EMPTY_BAGS_ID, MAX_SETUP_BYTES, type OrganizeConfig } from "./organize-config.mts";
+import { checkOrganizeConfig, salvageOrganizeConfig, emptyOrganizeConfig, emptyRuleQuery, ruleMatchOf, CATCH_ALL_ID, EMPTY_BAGS_ID, MAX_SETUP_BYTES, type OrganizeConfig, type OrganizeRule } from "./organize-config.mts";
 import { maxOrganizeConfig } from "./organize-fixture.mts";
 import type { RuleQuery } from "./item-query.mts";
 
@@ -147,4 +147,13 @@ test("[fast] the largest setup the check allows fits MAX_SETUP_BYTES as the serv
   const max = maxOrganizeConfig();
   assert.equal(checkOrganizeConfig(max).ok, true);
   assert.ok(Buffer.byteLength(JSON.stringify(max, null, 2) + "\n") <= MAX_SETUP_BYTES);
+});
+
+test("[fast] ruleMatchOf reads an Auto rule for tools as taking crafting tools while none of Auto's rules asks for them; a player's own rule as it is (issue #150)", () => {
+  const rule = (id: string, kind: string[], origin: OrganizeRule["origin"] = "strategy:simple"): OrganizeRule => ({ id, name: id, match: { query: { ...emptyRuleQuery(), kind } }, targets: [A], origin });
+  const tools = rule("auto-tools", ["tool"]), mine = rule("mine", ["tool", "crafting"], "manual");
+  assert.deepEqual(ruleMatchOf(tools, [tools, mine]).query.kind, ["tool", "crafting"], "a player's rule asking for crafting leaves it be");
+  assert.deepEqual(ruleMatchOf(tools, [tools, rule("auto-tools-2", ["crafting"])]).query.kind, ["tool"], "a proposal made since reads as written");
+  assert.deepEqual(ruleMatchOf({ ...tools, origin: "manual" }, [tools]).query.kind, ["tool"]);
+  assert.deepEqual(ruleMatchOf(rule("auto-reagents", ["reagent"]), [tools]).query.kind, ["reagent"]);
 });
