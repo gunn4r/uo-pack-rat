@@ -60,6 +60,18 @@ test("[fast] tiledata: finds the UO folder named in a TazUO launcher profile", (
   assert.equal(uoFolderFromTazuo(scripts), uo + "/");
 });
 
+test("[fast] tiledata: with several launcher profiles the newest one's UO folder wins", () => {
+  const { root, scripts, profiles } = tazuoLayout();
+  const t = Date.now() / 1000;
+  for (const [name, age] of [["a-older", 3600], ["b-oldest", 7200], ["c-newest", 60]] as const) {   // the newest sorts last by name, so only the mtime order picks it
+    const uo = join(root, name);
+    mkdirSync(uo); writeFileSync(join(uo, "tiledata.mul"), syntheticTileData([]));
+    writeFileSync(join(profiles, `${name}.json`), JSON.stringify({ ultimaonlinedirectory: uo }));
+    utimesSync(join(profiles, `${name}.json`), t - age, t - age);
+  }
+  assert.equal(uoFolderFromTazuo(scripts), join(root, "c-newest"));
+});
+
 test("[fast] tiledata: a profile naming a folder without tiledata.mul is passed over; none found is null", () => {
   const { root, scripts, profiles } = tazuoLayout();
   writeFileSync(join(profiles, "old.json"), JSON.stringify({ ultimaonlinedirectory: join(root, "gone") }));

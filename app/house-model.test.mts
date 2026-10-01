@@ -165,6 +165,20 @@ test("[fast] house model: a chest in a 1-tile alcove (walls on both sides, no ro
   assert.equal(m.codes[String(0x40000750)], "A");
 });
 
+test("[fast] house model: chests in the yard and on the front steps are reached from the yard", () => {
+  const m = buildHouseModel(courtyardHouse(), td, [{ serial: 0x40000900, name: "Wooden Chest", facet: 1, x: 1012, y: 2012, z: 7 }, { serial: 0x40000901, name: "Wooden Chest", facet: 1, x: 1012, y: 2018, z: 0 }]);
+  const yard = m.rooms.find((r) => r.kind === "yard")!;
+  assert.equal(m.stacks.length, 2);
+  assert.ok(m.stacks.every((s) => s.room === yard.id && s.spot !== null && s.level === 0));
+  assert.ok(m.spots.every((p) => p.room === yard.id));
+  assert.deepEqual(Object.values(m.codes).sort(), ["A", "B"]);
+});
+
+test("[fast] house model: a house with no chests has no stacks, spots or codes", () => {
+  const m = buildHouseModel(courtyardHouse(), td, []);
+  assert.deepEqual([m.stacks, m.spots, m.codes], [[], [], {}]);
+});
+
 test("[fast] house model: a chest on a table and a table tile are never a standing spot", () => {
   const m = buildHouseModel(courtyardHouse(), td, [{ serial: 0x40000500, name: "Wooden Chest", facet: 1, x: 1003, y: 2003, z: 13 }]);
   assert.equal(m.stacks[0]!.serials.length, 1);
