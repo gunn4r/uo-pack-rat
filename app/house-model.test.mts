@@ -151,3 +151,31 @@ test("[fast] house model: a castle (32 x 32, 4 levels, 300 chests) models in und
   assert.ok(m.stacks.every((s) => s.spot !== null), "every stack is reachable from some spot");
   assert.ok(ms < 250, `took ${ms.toFixed(0)} ms`);
 });
+
+test("[fast] house model: a tall stack reaching past the upper floor's z stays one stack on its bottom chest's level", () => {
+  const { house, chests } = vaultHouse();
+  const m = buildHouseModel(house, td, [...chests, { serial: 0x40000700, name: "Metal Chest", facet: 1, x: 3001, y: 1001, z: 27 }]);
+  const s = m.stacks.find((t) => t.x === 3001 && t.y === 1001)!;
+  assert.deepEqual([m.stacks.length, s.level, s.serials.length], [24, 0, 6]);
+  assert.deepEqual(s.serials.map((n) => m.codes[String(n)]), [1, 2, 3, 4, 5, 6].map((h) => `${s.letter}${h}`));
+});
+
+test("[fast] house model: chests a storey apart on one tile are two stacks on two levels", () => {
+  const { house } = vaultHouse();
+  const m = buildHouseModel(house, td, [7, 27].map((z, i) => ({ serial: 0x40000710 + i, name: "Metal Chest", facet: 1, x: 3001, y: 1001, z })));
+  assert.deepEqual(m.stacks.map((s) => [s.level, s.serials.length]), [[0, 1], [1, 1]]);
+});
+
+test("[fast] house model: letters run room by room, not in pick order", () => {
+  const chest = (i: number, x: number, z: number) => ({ serial: 0x40000720 + i, name: "Wooden Chest", facet: 1, x, y: 7002, z });
+  const m = buildHouseModel(hallHouse(), td, [chest(0, 6002, 7), chest(1, 6014, 7), chest(2, 6014, 11)]);
+  const west = m.rooms.find((r) => r.name === "West room")!;
+  assert.deepEqual(m.stacks.map((s) => [s.room === west.id, s.letter]), [[true, "A"], [false, "B"]]);
+  assert.deepEqual(m.spots.map((s) => s.room), [west.id, m.rooms.find((r) => r.name === "East room")!.id]);
+});
+
+test("[fast] house model: a teleporter holding a chest is not a standing spot", () => {
+  const { house, chests } = vaultHouse();
+  const m = buildHouseModel(house, td, [...chests, { serial: 0x40000730, name: "Metal Chest", facet: 1, x: 3003, y: 1003, z: 7 }]);
+  assert.ok(m.spots.every((s) => !s.teleporter));
+});

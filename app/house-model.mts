@@ -111,13 +111,18 @@ export function buildHouseModel(house: HouseSource, td: TileData | null, contain
   if (!house.tiles.length) x0 = y0 = x1 = y1 = 0;
   const rooms = roomsOf(cells, at, doors, levels, (x0 + x1) / 2, (y0 + y1) / 2);
 
-  // Stacks: the house's containers (same facet, either side unknown counts; inside the footprint) grouped by tile and level, bottom first.
+  // Stacks: the house's containers (same facet, either side unknown counts; inside the footprint) per tile, bottom first; a tile's column splits only where the next container is a storey (LEVEL_GAP) higher, and each stack sits on its bottom container's level.
   const inside = (c: HouseContainerInput): boolean => (c.facet === null || house.facet === null || c.facet === house.facet) && c.x >= x0 && c.x <= x1 && c.y >= y0 && c.y <= y1;
-  const stackAt = new Map<string, Stack>();
+  const stackAt = new Map<string, Stack>(), below = new Map<string, { s: Stack; z: number }>();
   for (const c of containers.filter(inside).sort((a, b) => a.z - b.z || a.serial - b.serial)) {
-    const level = levelOf(c.z), k = key(level, c.x, c.y);
-    const s = stackAt.get(k) ?? { level, x: c.x, y: c.y, room: at.get(k)?.room ?? null, serials: [], spot: null, direction: "", letter: "" };
-    s.serials.push(c.serial); stackAt.set(k, s);
+    const col = `${c.x}:${c.y}`, prev = below.get(col);
+    let s = prev && c.z - prev.z < LEVEL_GAP ? prev.s : undefined;
+    if (!s) {
+      const level = levelOf(c.z), k = key(level, c.x, c.y);
+      s = stackAt.get(k) ?? { level, x: c.x, y: c.y, room: at.get(k)?.room ?? null, serials: [], spot: null, direction: "", letter: "" };
+      stackAt.set(k, s);
+    }
+    s.serials.push(c.serial); below.set(col, { s, z: c.z });
   }
   const stacks = [...stackAt.values()];
   const spots = spotsOf(cells, at, stackAt, furniture, levels);
@@ -148,14 +153,15 @@ function directionOf(dx: number, dy: number): string {
   return (dy < 0 ? "N" : dy > 0 ? "S" : "") + (dx > 0 ? "E" : dx < 0 ? "W" : "");
 }
 
-// Greedy cover per level: candidates are free floor and stair cells (no stack, no block) plus teleporter tiles; each reaches the stacks within REACH tiles (Chebyshev) in its own room, worked out once. Each round picks the candidate reaching the most uncovered containers, ties to the smaller total Manhattan distance, then y, then x; it stops when no candidate reaches anything. Sets each covered stack's spot and direction.
+// Greedy cover per level: candidates are free floor and stair cells plus teleporter tiles, none holding a stack or a block; each reaches the stacks within REACH tiles (Chebyshev) in its own room, worked out once. Each round picks the candidate reaching the most uncovered containers, ties to the smaller total Manhattan distance, then y, then x; it stops when no candidate reaches anything. Spots are then numbered by level, room (none last) and pick order, so letters run room by room. Sets each covered stack's spot and direction.
 function spotsOf(cells: Cell[], at: Map<string, Cell>, stackAt: Map<string, Stack>, furniture: Furniture[], levels: Level[]): Spot[] {
   const spots: Spot[] = [];
   const blocked = new Set(furniture.filter((f) => f.kind === "block").map((f) => key(f.level, f.x, f.y)));
   const teleports = new Set(furniture.filter((f) => f.kind === "teleporter").map((f) => key(f.level, f.x, f.y)));
   for (const lv of levels) {
-    const cands = new Set(cells.filter((c) => { const k = key(c.level, c.x, c.y); return c.level === lv.index && (c.kind === "floor" || c.kind === "stair") && !stackAt.has(k) && !blocked.has(k); }));
-    for (const k of teleports) { const c = at.get(k); if (c && c.level === lv.index) cands.add(c); }
+    const free = (k: string): boolean => !stackAt.has(k) && !blocked.has(k);
+    const cands = new Set(cells.filter((c) => c.level === lv.index && (c.kind === "floor" || c.kind === "stair") && free(key(c.level, c.x, c.y))));
+    for (const k of teleports) { const c = at.get(k); if (c && c.level === lv.index && free(k)) cands.add(c); }
     const reach: Array<{ c: Cell; stacks: Stack[] }> = [];
     for (const c of cands) {
       const near: Stack[] = [];
@@ -179,7 +185,11 @@ function spotsOf(cells: Cell[], at: Map<string, Cell>, stackAt: Map<string, Stac
       for (const s of best.cov) { s.spot = id; s.direction = directionOf(s.x - c.x, s.y - c.y); }
     }
   }
-  return spots;
+  const order = [...spots].sort((a, b) => a.level - b.level || (a.room ?? Infinity) - (b.room ?? Infinity) || a.id - b.id);
+  const renumber = new Map(order.map((p, i) => [p.id, i]));
+  for (const s of stackAt.values()) if (s.spot !== null) s.spot = renumber.get(s.spot)!;
+  order.forEach((p, i) => { p.id = i; });
+  return order;
 }
 
 // Doorway cells (walls on both opposite sides) split rooms; afterwards the indoor cells still without a room form hallways (a 1-wide corridor is doorway cells end to end), except cells holding a door.
