@@ -1219,6 +1219,13 @@ test("[smoke] /item-query.mjs is served as text/javascript with nosniff", async 
   assert.match(await r.text(), /export function applyItemQuery/);
 });
 
+test("[smoke] /organize-config.mjs, the rule editor's import, is served as text/javascript (issue #150)", async () => {
+  const r = await get("/organize-config.mjs");
+  assert.equal(r.status, 200);
+  assert.equal(r.headers.get("content-type"), "text/javascript; charset=utf-8");
+  assert.match(await r.text(), /export function ruleMatchOf/);
+});
+
 test("[smoke] /api/inventory carries facets, worn gear and counts, and no item list", async () => {
   const j = asJson<InventoryResponse>(await (await get("/api/inventory")).json());
   assert.equal(j.ok, true);
