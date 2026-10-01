@@ -107,12 +107,12 @@ const SCROLLS: ThingSpec[] = ([
   ["Word Of Death", 0x2D5B], ["Remove Curse", 0], ["Confidence", 0], ["Healing Stone", 0x4078],
 ] as const).map(([name, graphic], i) => ({ serial: ITEM + 100 + i, name, graphic, in: A }));
 
-test("[fast] Simple: skill scrolls apart from spell scrolls (a Chivalry or Bushido name with no graphic among them), blank scrolls with the resources, and a conjured Healing Stone is no scroll (issue #134)", () => {
+test("[fast] Simple: skill scrolls apart from spell scrolls (a Chivalry or Bushido name with no graphic among them), blank scrolls with the resources, and a conjured Healing Stone is no scroll (issue #134) but a tool (issue #150)", () => {
   assert.deepEqual(groupItems(STRATEGIES.simple, Object.values(fold([{ serial: A }], SCROLLS).items)).map((g) => [g.key, g.name, g.items.map((it) => it.name)]), [
     ["skill-scrolls", "Skill scrolls", ["A Legendary Scroll Of Fencing (120 Skill)", "Scroll Of Transcendence", "Scroll Of Alacrity", "Scroll Binder", "A Wondrous Scroll Of Power (+5 Maximum Stats)"]],
     ["scrolls", "Spell scrolls", ["Curse", "Curse Weapon", "Healing Stone", "Word Of Death", "Remove Curse", "Confidence"]],
     ["resources", "Resources", ["Blank Scroll"]],
-    ["other", "Other", ["Healing Stone"]],
+    ["tools", "Tools", ["Healing Stone"]],
   ]);
 });
 
@@ -127,7 +127,7 @@ test("[fast] Detailed: spell scrolls by school, by exact name on the school's gr
     ["spellweaving-scrolls", "Spellweaving scrolls", ["Word Of Death"]],
     ["scrolls", "Spell scrolls", ["Remove Curse", "Confidence"]],
     ["resources", "Other resources", ["Blank Scroll"]],
-    ["other", "Other", ["Healing Stone"]],
+    ["tools", "Tools", ["Healing Stone"]],
   ]);
 });
 
@@ -166,8 +166,74 @@ test("[fast] Simple and By build: refinements are Resources by the group's secon
   const rules = ok(proposeOrganize(inv, emptyOrganizeConfig(), [], OPTS())).config.rules;
   assert.deepEqual(rules.filter((r) => /resources|tools/.test(r.id)).map((r) => [r.id, r.match]), [
     ["auto-resources", { query: { ...emptyRuleQuery(), kind: ["resource"] } }], ["auto-resources-2", { query: { ...emptyRuleQuery(), kind: ["refinement"] } }],
-    ["auto-tools", { query: { ...emptyRuleQuery(), kind: ["tool"] } }],
+    ["auto-tools", { query: { ...emptyRuleQuery(), kind: ["tool"] } }], ["auto-tools-2", { query: { ...emptyRuleQuery(), kind: ["crafting"] } }],
   ]);
+});
+
+test("[fast] every strategy files decor and quest and event items in groups of their own in Other's family; crafting tools are Tools by a second rule in Simple and By build, their own group in Detailed (issue #150)", () => {
+  const names = ["Ethereal Horse Statuette", "Mysterious Fragment", "Smith's Hammer", "Scissors", "Drum", "Apple"];
+  const items = Object.values(fold([{ serial: A }], things(A, names)).items);
+  const decor = [["decor", "Decor", "other", ["Ethereal Horse Statuette"]], ["quest", "Quest & event items", "other", ["Mysterious Fragment"]], ["other", "Other", "other", ["Apple"]]];
+  const of = (id: keyof typeof STRATEGIES) => groupItems(STRATEGIES[id], items).map((g) => [g.key, g.name, g.family, g.items.map((it) => it.name)]);
+  for (const id of ["simple", "build"] as const) assert.deepEqual(of(id), [["tools", "Tools", "tools", ["Smith's Hammer", "Scissors", "Drum"]], ...decor], id);
+  assert.deepEqual(of("detailed"), [["instruments", "Instruments", "tools", ["Drum"]], ["crafting-tools", "Crafting tools", "tools", ["Smith's Hammer"]], ["tools", "Tools", "tools", ["Scissors"]], ...decor]);
+  // Tools' first rule keeps its id and filter, so a setup an earlier proposal saved still matches it.
+  const inv = fold([{ serial: A }, { serial: B, pos: at(102) }, { serial: C, pos: at(104) }], things(A, names));
+  const rules = ok(proposeOrganize(inv, emptyOrganizeConfig(), [], OPTS())).config.rules;
+  assert.deepEqual(rules.filter((r) => /tools|decor|quest/.test(r.id)).map((r) => [r.id, r.match.query.kind]), [["auto-tools", ["tool"]], ["auto-tools-2", ["crafting"]], ["auto-decor", ["decor"]], ["auto-quest", ["quest"]]]);
+});
+
+// The live regression the first cut of #150 had: Decor and Quest & event items in a family of their own made a house
+// whose chests fit its groups exactly send Spell scrolls to share the Skill scrolls chest, short of room, so a Quest
+// group could have a chest to itself. In Other's family, they double up with Other instead.
+test("[fast] Decor and Quest & event items share Other's chest when chests run short, never taking one from another group (issue #150)", () => {
+  const specs: [string, number, number?][] = [["Black Pearl", 40], ["Scroll Of Alacrity", 70], ["Greater Heal", 60, 0x1F49], ["Apple", 12], ["Mysterious Fragment", 9], ["Ethereal Horse Statuette", 1]];
+  const box = [A, B, C, D];
+  const spread: ThingSpec[] = specs.flatMap(([name, n, graphic]) => Array.from({ length: n }, () => ({ name, ...(graphic ? { graphic } : {}) })))
+    .map((t, i) => ({ serial: ITEM + i, in: box[i % box.length]!, ...t }));
+  const inv = fold([{ serial: A }, { serial: B, pos: at(102) }, { serial: C, pos: at(104) }, { serial: D, pos: at(106) }], spread);
+  for (const strategy of STRATEGY_IDS) {
+    const p = ok(proposeOrganize(inv, emptyOrganizeConfig(), [], OPTS({ strategy })));
+    assert.deepEqual(p.groups.filter((g) => g.shortfall).map((g) => g.key), [], `${strategy}: every group has room`);
+    assert.equal(p.plan.noRoom, 0, strategy);
+    const target = (key: string): number[] => p.groups.find((g) => g.key === key)!.targets;
+    assert.deepEqual(new Set([target("other"), target("quest"), target("decor")].map(String)).size, 1, `${strategy}: Decor and Quest share Other's chest`);
+    for (const g of p.groups) assert.ok(p.groups.every((h) => h.family === g.family || !h.targets.some((t) => g.targets.includes(t))), `${strategy}: ${g.key} shares only with its family`);
+  }
+});
+
+// Live: a house sorted by Simple, re-proposed once Mysterious Fragments became a Quest group of their own. Quest
+// shared Other's chest and took one of its empty bags, but Other was moved from the chest into the other bag, 2 of
+// its items with it, for nothing.
+test("[fast] a group joining a sorted house's chest takes a bag there and leaves the group already in the chest where it is, every earlier rule unchanged (issue #150)", () => {
+  // Other's chest holds two empty bags (it is where the empty bags gather), so a bag is there for either group.
+  const BAG2 = 0x40000009;
+  const boxes: BoxSpec[] = [{ serial: A }, { serial: B, pos: at(102) }, { serial: BAG, parent: B }, { serial: BAG2, parent: B }, { serial: C, pos: at(104) }];
+  const sorted: ThingSpec[] = [...things(A, ["Black Pearl", "Black Pearl"]), ...things(B, ["Apple", "Weird Trinket"], 3), ...things(C, ["Iron Ingot"], 5)];
+  const before = ok(proposeOrganize(fold(boxes, sorted), emptyOrganizeConfig(), [], OPTS()));
+  assert.deepEqual([before.plan.moves, before.groups.map((g) => [g.key, g.targets])], [0, [["reagents", [A]], ["resources", [C]], ["other", [B]]]]);
+  const p = ok(proposeOrganize(fold(boxes, [...sorted, ...things(C, ["Mysterious Fragment", "Mysterious Fragment"], 6)]), before.config, [], OPTS()));
+  const targets = (cfg: OrganizeConfig) => new Map(cfg.rules.map((r) => [r.id, r.targets]));
+  const now = targets(p.config);
+  for (const [id, t] of targets(before.config)) assert.deepEqual(now.get(id), t, id);
+  assert.deepEqual(p.groups.filter((g) => g.family === "other").map((g) => [g.key, g.targets, g.bagIn]), [["quest", [BAG], B], ["other", [B], null]]);
+  assert.equal(p.config.labels[String(B)]!.name, "Other");
+  assert.equal(p.plan.moves, 2, "only the fragments move, into Quest's bag");
+});
+
+test("[fast] an Auto setup saved before crafting tools had a kind still files them with its Tools rule, until a rule asks for the Crafting kind; a player's own rule means what it says (issue #150)", () => {
+  const inv = fold([{ serial: A }, { serial: B, pos: at(102) }], [...things(A, ["Scissors", "Smith's Hammer", "Sewing Kit"]), ...things(B, ["Apple"], 4)]);
+  const now = ok(proposeOrganize(inv, emptyOrganizeConfig(), [], OPTS())).config;
+  assert.equal(planOrganize(inv, now, [], { now: NOW }).moves.length, 0);
+  const saved: OrganizeConfig = { ...now, rules: now.rules.filter((r) => r.id !== "auto-tools-2") };   // as this PR's parent wrote it
+  assert.deepEqual(saved.rules.map((r) => [r.id, r.match.query.kind]), [["auto-tools", ["tool"]], ["auto-other", []]]);
+  assert.equal(planOrganize(inv, saved, [], { now: NOW }).moves.length, 0, "the crafting tools stay in the Tools chest");
+  // A rule of the player's own asking for crafting (as the release notes advise) leaves the saved Auto setup's reading be.
+  const runics: OrganizeRule = { id: "runics", name: "Runics", match: { query: { ...emptyRuleQuery(), kind: ["tool", "crafting"] }, names: ["runic"] }, targets: [C], origin: "manual" };
+  const withC = fold([{ serial: A }, { serial: B, pos: at(102) }, { serial: C, pos: at(104) }], [...things(A, ["Scissors", "Smith's Hammer", "Sewing Kit"]), ...things(B, ["Apple"], 4)]);
+  assert.equal(planOrganize(withC, { ...saved, labels: { ...saved.labels, [C]: { serial: C, name: "Runics", origin: "manual" } }, rules: [runics, ...saved.rules] }, [], { now: NOW }).moves.length, 0);
+  const mine: OrganizeConfig = { ...saved, rules: saved.rules.map((r) => (r.id === "auto-tools" ? { ...r, origin: "manual" as const } : r)) };
+  assert.deepEqual(planOrganize(inv, mine, [], { now: NOW }).moves.map((m) => [m.name, m.to]), [["Smith's Hammer", B], ["Sewing Kit", B]], "a player's own Tool rule takes tools only");
 });
 
 test("[fast] Simple and Detailed: neck armour goes with the armour, necklaces with the jewelry", () => {
