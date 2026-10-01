@@ -164,6 +164,8 @@ test("[fast] house model: chests a storey apart on one tile are two stacks on tw
   const { house } = vaultHouse();
   const m = buildHouseModel(house, td, [7, 27].map((z, i) => ({ serial: 0x40000710 + i, name: "Metal Chest", facet: 1, x: 3001, y: 1001, z })));
   assert.deepEqual(m.stacks.map((s) => [s.level, s.serials.length]), [[0, 1], [1, 1]]);
+  const same = buildHouseModel(house, td, [7, 22].map((z, i) => ({ serial: 0x40000710 + i, name: "Metal Chest", facet: 1, x: 3001, y: 1001, z })));
+  assert.deepEqual(same.stacks.map((s) => [s.level, s.serials.length]), [[0, 1], [0, 1]], "a storey's gap splits even within one level");
 });
 
 test("[fast] house model: letters run room by room, not in pick order", () => {
@@ -178,4 +180,17 @@ test("[fast] house model: a teleporter holding a chest is not a standing spot", 
   const { house, chests } = vaultHouse();
   const m = buildHouseModel(house, td, [...chests, { serial: 0x40000730, name: "Metal Chest", facet: 1, x: 3003, y: 1003, z: 7 }]);
   assert.ok(m.spots.every((s) => !s.teleporter));
+});
+
+test("[fast] house model: the model does not depend on the order of tiles, items or containers", () => {
+  let seed = 7;
+  const shuffle = <T,>(xs: T[]): T[] => { const r = [...xs]; for (let i = r.length - 1; i > 0; i--) { seed = (seed * 1103515245 + 12345) % 2147483648; const j = seed % (i + 1); [r[i], r[j]] = [r[j]!, r[i]!]; } return r; };
+  const pick = (m: HouseModel) => ({ cells: m.cells, rooms: m.rooms, furniture: m.furniture, spots: m.spots, stacks: m.stacks, codes: m.codes });
+  const { house: castle, chests } = castleHouse();
+  for (const [house, cs] of [[castle, chests], [courtyardHouse(), [{ serial: 0x40000500, name: "Wooden Chest", facet: 1, x: 1003, y: 2003, z: 13 }]]] as const) {
+    const want = pick(buildHouseModel(house, td, [...cs]));
+    for (const order of [<T,>(xs: readonly T[]): T[] => [...xs].reverse(), <T,>(xs: readonly T[]): T[] => shuffle([...xs])]) {
+      assert.deepEqual(pick(buildHouseModel({ ...house, tiles: order(house.tiles), items: order(house.items) }, td, order(cs))), want);
+    }
+  }
 });
