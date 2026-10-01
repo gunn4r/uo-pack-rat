@@ -149,6 +149,22 @@ test("[fast] house model: a container on another facet or outside the footprint 
   assert.equal(m.stacks.reduce((a, s) => a + s.serials.length, 0), 1);
 });
 
+test("[fast] house model: a container inside the bounding box but off the footprint (the notch of an L) is not in the house", () => {
+  const tiles = [[8000, 8000], [8001, 8000], [8002, 8000], [8003, 8000], [8000, 8001], [8001, 8001], [8002, 8001], [8003, 8001], [8000, 8002], [8001, 8002], [8000, 8003], [8001, 8003]].map(([x, y]): [number, number, number, number, number] => [G.pavers, x!, y!, 7, 0]);
+  const m = buildHouseModel({ ...roofHouse(), tiles, items: [] }, td, [{ serial: 0x40000740, name: "Wooden Chest", facet: 1, x: 8003, y: 8003, z: 7 }, { serial: 0x40000741, name: "Wooden Chest", facet: 1, x: 8000, y: 8003, z: 7 }]);
+  assert.deepEqual(m.stacks.flatMap((s) => s.serials), [0x40000741]);
+});
+
+test("[fast] house model: a chest in a 1-tile alcove (walls on both sides, no room) is reached from the room beside it", () => {
+  const h = roofHouse();
+  const tiles = [...h.tiles.filter((t) => !(t[1] === 4003 && t[2] === 4000)), [G.pavers, 4003, 4000, 7, 0], [G.roof, 4003, 4000, 27, 0], [G.stoneWall, 4003, 3999, 7, 1]] as typeof h.tiles;
+  const m = buildHouseModel({ ...h, tiles }, td, [{ serial: 0x40000750, name: "Wooden Chest", facet: 1, x: 4003, y: 4000, z: 7 }]);
+  assert.deepEqual([cell(m, 0, 4003, 4000)!.doorway, m.stacks[0]!.room], [true, null]);
+  assert.notEqual(m.stacks[0]!.spot, null);
+  assert.equal(m.spots[0]!.room, m.rooms.find((r) => r.name === "Main room")!.id);
+  assert.equal(m.codes[String(0x40000750)], "A");
+});
+
 test("[fast] house model: a chest on a table and a table tile are never a standing spot", () => {
   const m = buildHouseModel(courtyardHouse(), td, [{ serial: 0x40000500, name: "Wooden Chest", facet: 1, x: 1003, y: 2003, z: 13 }]);
   assert.equal(m.stacks[0]!.serials.length, 1);

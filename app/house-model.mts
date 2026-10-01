@@ -123,8 +123,9 @@ export function buildHouseModel(house: HouseSource, td: TileData | null, contain
   if (!house.tiles.length) x0 = y0 = x1 = y1 = 0;
   const rooms = roomsOf(cells, at, doors, levels, (x0 + x1) / 2, (y0 + y1) / 2);
 
-  // Stacks: the house's containers (same facet, either side unknown counts; inside the footprint) per tile, bottom first; a tile's column splits where the next container is a storey (LEVEL_GAP) higher or stands at or above the top of a higher level's floor or stair on that tile, and each stack sits on its bottom container's level.
-  const inside = (c: HouseContainerInput): boolean => (c.facet === null || house.facet === null || c.facet === house.facet) && c.x >= x0 && c.x <= x1 && c.y >= y0 && c.y <= y1;
+  // Stacks: the house's containers (same facet, either side unknown counts; on the footprint: some level has a cell at its tile) per tile, bottom first; a tile's column splits where the next container is a storey (LEVEL_GAP) higher or stands at or above the top of a higher level's floor or stair on that tile, and each stack sits on its bottom container's level.
+  const footprint = new Set(cells.map((c) => `${c.x}:${c.y}`));
+  const inside = (c: HouseContainerInput): boolean => (c.facet === null || house.facet === null || c.facet === house.facet) && footprint.has(`${c.x}:${c.y}`);
   const onUpperFloor = (c: HouseContainerInput, level: number): boolean => levels.some((l) => {
     const u = l.index > level ? at.get(key(l.index, c.x, c.y)) : undefined;
     return !!u && (u.kind === "floor" || u.kind === "stair") && c.z >= u.z;
@@ -169,7 +170,7 @@ function directionOf(dx: number, dy: number): string {
   return (dy < 0 ? "N" : dy > 0 ? "S" : "") + (dx > 0 ? "E" : dx < 0 ? "W" : "");
 }
 
-// Greedy cover per level: candidates are free floor and stair cells plus teleporter tiles, none holding a stack or a block; each reaches the stacks within REACH tiles (Chebyshev) in its own room, worked out once. Each round picks the candidate reaching the most uncovered containers, ties to the smaller total Manhattan distance, then y, then x; it stops when no candidate reaches anything. Spots are then numbered by level, room (none last) and pick order, so letters run room by room. Sets each covered stack's spot and direction.
+// Greedy cover per level: candidates are free floor and stair cells plus teleporter tiles, none holding a stack or a block; each reaches the stacks within REACH tiles (Chebyshev) in its own room, or in no room (an alcove or doorway cell) from any room, worked out once. Each round picks the candidate reaching the most uncovered containers, ties to the smaller total Manhattan distance, then y, then x; it stops when no candidate reaches anything. Spots are then numbered by level, room (none last) and pick order, so letters run room by room. Sets each covered stack's spot and direction.
 function spotsOf(cells: Cell[], at: Map<string, Cell>, stackAt: Map<string, Stack[]>, furniture: Furniture[], levels: Level[]): Spot[] {
   const spots: Spot[] = [];
   const blocked = new Set(furniture.filter((f) => f.kind === "block").map((f) => key(f.level, f.x, f.y)));
@@ -182,7 +183,7 @@ function spotsOf(cells: Cell[], at: Map<string, Cell>, stackAt: Map<string, Stac
     for (const c of cands) {
       const near: Stack[] = [];
       for (let dx = -REACH; dx <= REACH; dx++) for (let dy = -REACH; dy <= REACH; dy++) {
-        for (const s of stackAt.get(key(lv.index, c.x + dx, c.y + dy)) ?? []) if (s.room === c.room) near.push(s);
+        for (const s of stackAt.get(key(lv.index, c.x + dx, c.y + dy)) ?? []) if (s.room === null || s.room === c.room) near.push(s);
       }
       if (near.length) reach.push({ c, stacks: near });
     }
