@@ -134,6 +134,7 @@ class World(object):
         self.messages = []
         self.px, self.py = 10, 10
         self.facet = None          # what the client's map call answers: an int, a callable, or None for a build without the call
+        self.multis = None         # house tiles: a list of SimpleNamespace(Graphic, X, Y, Z, Impassible), or None for a build without the multi calls
 
     def add(self, serial, container=0, **kw):
         self.items[serial] = Item(serial, container, **kw)
@@ -182,6 +183,11 @@ class World(object):
 
     def dist(self, x, y):
         return max(abs(x - self.px), abs(y - self.py))
+
+
+def house_tiles(x0, y0, w, h, z=7, graphic=0x0519):
+    """A rectangle of floor tiles (and nothing else), the simplest house the multi calls can return."""
+    return [types.SimpleNamespace(Graphic=graphic, X=x, Y=y, Z=z, Impassible=False) for x in range(x0, x0 + w) for y in range(y0, y0 + h)]
 
 
 def tazuo_api(world, backpack, bank=0, skills=None):
@@ -258,6 +264,9 @@ def tazuo_api(world, backpack, bank=0, skills=None):
     api.RequestOPLData = lambda serials: None
     if world.facet is not None:    # a build without GetMap() has no attribute at all
         api.GetMap = lambda: world.facet() if callable(world.facet) else world.facet
+    if world.multis is not None:    # a build without the multi calls has no attribute at all
+        api.GetMultisAt = lambda x, y: [m for m in world.multis if m.X == x and m.Y == y]
+        api.GetMultisInArea = lambda x1, y1, x2, y2: [m for m in world.multis if x1 <= m.X <= x2 and y1 <= m.Y <= y2]
 
     def get_skill(name):
         v = (skills or {}).get(name)

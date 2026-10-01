@@ -38,6 +38,19 @@
     "position": { "type": ["object", "null"], "additionalProperties": { "type": "number" } },
     "maxes": { "type": ["object", "null"], "additionalProperties": { "type": "number" } },
     "resists": { "type": ["object", "null"], "additionalProperties": { "type": "number" } },
+    "house": {
+      "type": "object",
+      "$comment": "The house the player stood in (issue #10), from the client's house tiles: tiles are [graphic, x, y, z, impassable 0|1], items (furniture and fixtures on the ground inside the footprint, containers excluded) are [serial, graphic, x, y, z] and left out when the ground could not be read; at is where the player stood, so the app knows which items a later capture should have seen. Other keys are allowed, so a newer adapter's addition never makes an older app drop the scan. Written by TazUO 2.10.0 and later.",
+      "required": ["capturedAt", "at", "tiles"],
+      "additionalProperties": true,
+      "properties": {
+        "facet": { "type": "integer", "enum": [0, 1, 2, 3, 4, 5] },
+        "capturedAt": { "type": "string" },
+        "at": { "type": "object", "required": ["x", "y"], "additionalProperties": false, "properties": { "x": { "type": "integer" }, "y": { "type": "integer" } } },
+        "tiles": { "type": "array", "maxItems": 20000, "items": { "type": "array", "minItems": 5, "maxItems": 5, "items": { "type": "integer" } } },
+        "items": { "type": "array", "maxItems": 5000, "items": { "type": "array", "minItems": 5, "maxItems": 5, "items": { "type": "integer" } } }
+      }
+    },
     "skills": {
       "type": "object",
       "additionalProperties": {

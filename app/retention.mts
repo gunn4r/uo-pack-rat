@@ -5,11 +5,13 @@
 // Scans are pruned so the inventory never changes: every scan newer than the cutoff stays, and so,
 // whatever its age, does the newest scan that opened each root container (it decides that root's
 // contents, even when it found the root empty), every `_vault` tombstone (a Forget or Forget character
-// still in force; they are one file per root or character, so they never pile up) and every scan
+// still in force; they are one file per root or character, so they never pile up), for each of the
+// player's houses the scan carrying its newest capture and every scan whose furniture it still shows (issue #10), and every scan
 // something in the fold still carries the timestamp of (a character's card and worn set, a bag a later
-// scan could not open, which keeps what an older one saw in it). Then the fold of what is left is
+// scan could not open, which keeps what an older one saw in it), and a house's captures from its oldest kept one on (issue #10). Then the fold (and every house still listed) of what is left is
 // compared with the fold of everything, and when they differ nothing is pruned at all.
 import { parseStamp } from "./scan-schema.mts";
+import { houseGroups, latestHouses } from "./house-capture.mts";
 import type { Inventory } from "./vault-lib.mts";
 import type { ScanV2 } from "./schema/types.d.mts";
 
@@ -50,7 +52,7 @@ export interface ScanFile { file: string; doc: ScanV2 }
 // The scan files to delete, oldest first, and `refused` when some were old enough to go but the fold
 // without them differed, so none go. `scans` are the files the server reads (valid, upgraded), in the
 // order it folds ties; `fold` is vault-lib.mts's foldSnapshots.
-export function scansToPrune(scans: ScanFile[], fold: (s: ScanV2[]) => Inventory, r: Retention, now: number): { files: string[]; refused: boolean } {
+export function scansToPrune(scans: ScanFile[], fold: (s: ScanV2[]) => Inventory, r: Retention, now: number): { files: string[]; refused: boolean; reason?: "houses" } {
   const none = { files: [], refused: false };
   if (r.keepAll) return none;
   const cutoff = now - r.scanDays * DAY_MS;
@@ -63,17 +65,44 @@ export function scansToPrune(scans: ScanFile[], fold: (s: ScanV2[]) => Inventory
     for (const root of s.doc.roots || []) if (root.opened !== false) claim(`${+root.serial}`, s);
   }
   for (const s of newest.values()) keep.add(s.file);
+  let folded: Inventory | undefined;
+  const allFold = (): Inventory => (folded ??= fold(scans.map((s) => s.doc)));
+  // Houses (issue #10): the map is drawn from a house's newest capture and its furniture merged across captures, so those scans stay however old, for a house that is not superseded (redesigned or moved) and that holds a ground chest of the fold on its footprint (the player's own; a boat or a house only visited ages out like any scan).
+  const groups = houseGroups(scans.map((s) => s.doc));
+  if (groups.length) {
+    const ground = Object.values(allFold().containers).filter((c) => c.parent == null && c.kind === "ground" && c.pos && Number.isFinite(c.pos.x) && Number.isFinite(c.pos.y));
+    for (const g of groups) {
+      if (g.supersededBy.length) continue;
+      const last = g.captures[g.captures.length - 1]!.house, facet = last.facet ?? null;
+      const tiles = new Set(last.tiles.map((t) => `${t[1]}:${t[2]}`));
+      if (!ground.some((c) => (facet === null || c.pos!.facet == null || c.pos!.facet === facet) && tiles.has(`${c.pos!.x}:${c.pos!.y}`))) continue;
+      keep.add(scans[g.captures[g.captures.length - 1]!.scan]!.file);
+      for (const { scan } of g.items.values()) keep.add(scans[scan]!.file);
+    }
+  }
   if (keep.size === scans.length) return none;
-  const all = fold(scans.map((s) => s.doc));
+  const all = allFold();
   const live = new Set<string>([
     ...Object.values(all.items).map((it) => it.seenAt),
     ...Object.values(all.containers).map((c) => c.scannedAt),
     ...Object.values(all.characters).map((c) => c.scannedAt),
   ]);
   for (const s of scans) if (live.has(s.doc.scannedAt)) keep.add(s.file);
+  // A house with any kept capture (kept for a house, a root or anything else) keeps its furniture's captures and every capture from its oldest kept one on, so what is left merges to the same newest capture and furniture; a superseded one also keeps the captures superseding it, so it stays superseded. Repeated until nothing more is added.
+  for (let grew = true; grew;) {
+    grew = false;
+    for (const g of groups) {
+      const first = g.captures.findIndex((c) => keep.has(scans[c.scan]!.file));
+      if (first < 0) continue;
+      for (const i of [...g.captures.slice(first).map((c) => c.scan), ...[...g.items.values()].map((v) => v.scan), ...g.supersededBy]) {
+        if (!keep.has(scans[i]!.file)) { keep.add(scans[i]!.file); grew = true; }
+      }
+    }
+  }
   const kept = scans.filter((s) => keep.has(s.file));
   if (kept.length === scans.length) return none;
   if (!sameFold(all, fold(kept.map((s) => s.doc)))) return { files: [], refused: true };
+  if (!sameHouses(scans, kept)) return { files: [], refused: true, reason: "houses" };   // a backstop: the keep rules above leave every listed house as it was
   return { files: scans.filter((s) => !keep.has(s.file)).sort((a, b) => stamp(a) - stamp(b)).map((s) => s.file), refused: false };
 }
 
@@ -85,6 +114,13 @@ export function sameFold(a: Inventory, b: Inventory): boolean {
     return keys.length === Object.keys(y).length && keys.every((k) => k in y && JSON.stringify(x[k]) === JSON.stringify(y[k]));
   };
   return same(a.characters, b.characters) && same(a.containers, b.containers) && same(a.items, b.items);
+}
+
+// Every house the kept scans still list is listed the same by all of them: the same newest capture, tiles and furniture (issue #10). A house may drop out (a visited house or a boat ageing out), but pruning must never bring back furniture a newer capture erased or a footprint a newer one superseded. The keep rules in scansToPrune make this hold; it is checked as a backstop.
+function sameHouses(all: ScanFile[], kept: ScanFile[]): boolean {
+  const shape = (h: ReturnType<typeof latestHouses>[number]): string => JSON.stringify([h.capturedAt, h.tiles, h.items]);
+  const before = new Map(latestHouses(all.map((s) => s.doc)).map((h) => [h.id, shape(h)]));
+  return latestHouses(kept.map((s) => s.doc)).every((h) => before.get(h.id) === shape(h));
 }
 
 export interface RunFile { file: string; character: string; createdAt: string; label: string }

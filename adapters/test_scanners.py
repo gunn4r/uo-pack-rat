@@ -5,10 +5,10 @@ with what the newest scan says, so a false "opened, nothing inside" erases real 
 
 Run: python3 adapters/test_scanners.py  (app/adapters.test.mts also spawns it, so `npm test` does).
 """
-import glob, json, os, re, shutil, sys, tempfile, unittest
+import glob, json, os, re, shutil, sys, tempfile, types, unittest
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from fake_clients import PLAYER, World, adapter_path, razor_globals, run_script, tazuo_api  # noqa: E402
+from fake_clients import PLAYER, World, adapter_path, house_tiles, razor_globals, run_script, tazuo_api  # noqa: E402
 
 PACK, CHEST, BAG, RING, RING2, EMPTY = 0x40000001, 0x40000002, 0x40000003, 0x40000010, 0x40000011, 0x40000004
 TRASH_BARREL, BARREL, TRASH_CHEST = 0x40000300, 0x40000301, 0x40000302
@@ -402,6 +402,110 @@ class TazUOScanner(DataDir, unittest.TestCase):
                 self.scan(w)
                 [s] = self.scans("tazuo")
                 self.assertEqual(s["containers"][str(CHEST)]["pos"], {"x": 11, "y": 10, "z": 0})
+
+    def test_a_scan_inside_a_house_records_its_tiles_and_where_the_player_stood(self):
+        w = World(); home(w); w.facet = 1
+        w.multis = house_tiles(5, 5, 12, 12)
+        w.multis.append(types.SimpleNamespace(Graphic=0x0064, X=5, Y=5, Z=7, Impassible=True))
+        self.scan(w)
+        [s] = self.scans("tazuo")
+        h = s["house"]
+        self.assertEqual(h["facet"], 1)
+        self.assertEqual(h["at"], {"x": 10, "y": 10})
+        self.assertEqual(len(h["tiles"]), 12 * 12 + 1)
+        self.assertIn([0x0064, 5, 5, 7, 1], h["tiles"])
+        self.assertRegex(h["capturedAt"], r"^\d{4}-\d\d-\d\dT")
+
+    def test_only_the_house_under_the_player_is_kept(self):
+        w = World(); home(w)
+        w.multis = house_tiles(5, 5, 12, 12) + house_tiles(19, 5, 6, 6)   # a neighbour two tiles away
+        self.scan(w)
+        [s] = self.scans("tazuo")
+        self.assertEqual(len(s["house"]["tiles"]), 12 * 12)
+        self.assertTrue(all(t[1] <= 16 for t in s["house"]["tiles"]))
+
+    def test_no_house_section_outside_a_house_or_without_the_multi_calls(self):
+        for multis in (None, [], house_tiles(30, 30, 5, 5)):
+            with self.subTest(multis=None if multis is None else len(multis)):
+                shutil.rmtree(os.path.join(self.data, "inbox"), ignore_errors=True)
+                w = World(); home(w); w.multis = multis
+                self.scan(w)
+                [s] = self.scans("tazuo")
+                self.assertNotIn("house", s)
+
+    def test_a_multi_call_that_raises_leaves_the_house_out_and_the_scan_whole(self):
+        w = World(); home(w); w.multis = house_tiles(5, 5, 12, 12)
+        api = tazuo_api(w, PACK)
+        def broken(*a):
+            raise RuntimeError("in the stub, not in this build")
+        api.GetMultisInArea = broken
+        run_script(self.SCRIPT, w, api=api)
+        [s] = self.scans("tazuo")
+        self.assertNotIn("house", s)
+        self.assertTrue(self.root(s, CHEST)["opened"])
+
+    def test_furniture_inside_the_house_is_recorded_and_containers_are_not(self):
+        w = World(); home(w); w.multis = house_tiles(5, 5, 12, 12)
+        w.add(0x40000040, 0, name="table", container_like=False, X=12, Y=12, Z=7)
+        w.items[0x40000040].Graphic = 0x0B34
+        w.add(0x40000041, 0, name="statue", container_like=False, X=17, Y=17, Z=7)   # in reach, outside the footprint
+        self.scan(w)
+        [s] = self.scans("tazuo")
+        self.assertEqual(s["house"]["items"], [[0x40000040, 0x0B34, 12, 12, 7]], "the chest beside the player is a root, not furniture")
+
+    def test_past_the_schemas_5000_house_items_the_farthest_are_left_out(self):
+        w = World(); home(w); w.multis = house_tiles(5, 5, 12, 12)
+        for i in range(5000):
+            w.add(0x50000000 + i, 0, name="vase", container_like=False, X=11, Y=11, Z=7)
+        w.add(0x40000042, 0, name="statue", container_like=False, X=16, Y=16, Z=7)   # the farthest, still inside
+        self.scan(w)
+        [s] = self.scans("tazuo")
+        items = s["house"]["items"]
+        self.assertEqual(len(items), 5000)
+        self.assertNotIn(0x40000042, [i[0] for i in items])
+        self.assertTrue(self.root(s, CHEST)["opened"])
+        self.assertIn("  house: 144 tiles, 5000 pieces of furniture (1 farther one left out)", w.messages)
+
+    def test_a_ground_item_read_that_raises_writes_the_tiles_and_no_furniture_claim(self):
+        w = World(); home(w); w.multis = house_tiles(5, 5, 12, 12)
+        w.add(0x40000040, 0, name="table", container_like=False, X=12, Y=12, Z=7)
+        api = tazuo_api(w, PACK)
+        roots = api.GetItemsOnGround
+        def ground(r):
+            if r > 3:   # the house's furniture read, not the 3-tile root search
+                raise RuntimeError("the read failed")
+            return roots(r)
+        api.GetItemsOnGround = ground
+        run_script(self.SCRIPT, w, api=api)
+        [s] = self.scans("tazuo")
+        self.assertEqual(len(s["house"]["tiles"]), 144)
+        self.assertNotIn("items", s["house"], "an absent list erases nothing the app knew; an empty one would")
+        self.assertTrue(self.root(s, CHEST)["opened"])
+        self.assertIn("  house: 144 tiles, furniture not read", w.messages)
+
+    def test_a_house_over_the_tile_cap_is_left_out_and_the_summary_says_so(self):
+        w = World(); home(w)
+        w.multis = [t for z in range(139) for t in house_tiles(5, 5, 12, 12, z=z)]   # 20,016 tiles
+        self.scan(w)
+        [s] = self.scans("tazuo")
+        self.assertNotIn("house", s)
+        self.assertTrue(self.root(s, CHEST)["opened"])
+        self.assertIn("  house too large to record: 20016 tiles", w.messages)
+
+    def test_the_same_house_is_captured_whole_from_the_steps_a_corner_or_inside(self):
+        steps = [types.SimpleNamespace(Graphic=0x0751, X=x, Y=17, Z=0, Impassible=False) for x in range(5, 17)]
+        deck = [types.SimpleNamespace(Graphic=0x04C6, X=x, Y=y, Z=27, Impassible=False) for x in range(6, 16) for y in range(6, 16)]
+        tiles = []
+        for px, py in ((10, 10), (8, 17), (5, 5)):
+            shutil.rmtree(os.path.join(self.data, "inbox"), ignore_errors=True)
+            w = World(); home(w); w.px, w.py = px, py
+            w.multis = house_tiles(5, 5, 12, 12) + steps + deck
+            self.scan(w)
+            [s] = self.scans("tazuo")
+            tiles.append(s["house"]["tiles"])
+        self.assertEqual(len(tiles[0]), 12 * 12 + 12 + 100)
+        self.assertEqual(tiles[0], tiles[1])
+        self.assertEqual(tiles[0], tiles[2])
 
 
 class TazUORefresh(DataDir, unittest.TestCase):

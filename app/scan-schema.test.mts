@@ -235,3 +235,21 @@ test("[fast] validateScan: a container's pos may carry a facet, a whole number 0
   assert.equal(withPos(null).ok, true);
   for (const facet of [6, -1, 1.5, "1", null]) assert.equal(withPos({ x: 1, y: 2, z: 0, facet }).ok, false, `facet ${JSON.stringify(facet)}`);
 });
+
+test("[fast] scan schema: an optional house section with tiles and items", () => {
+  const house = { facet: 1, capturedAt: "2026-10-01T12:00:00Z", at: { x: 100, y: 200 },
+    tiles: [[1301, 100, 200, 7, 0], [99, 99, 200, 7, 1]], items: [[0x40000010, 2868, 101, 200, 7]] };
+  assert.equal(validateScan({ ...bounded, house }).ok, true);
+  assert.equal(validateScan({ ...bounded, house: { ...house, tiles: [[1, 2, 3]] } }).ok, false, "a tile has five numbers");
+  assert.equal(validateScan({ ...bounded, house: { ...house, facet: 9 } }).ok, false);
+  assert.equal(validateScan({ ...bounded, house: { ...house, tiles: Array.from({ length: 20001 }, () => [1, 2, 3, 4, 0]) } }).ok, false, "at most 20,000 tiles");
+  assert.equal(validateScan({ ...bounded, house: { facet: 1, tiles: [] } }).ok, false, "capturedAt, at and tiles are required");
+  const { items: _, ...unread } = house;
+  assert.equal(validateScan({ ...bounded, house: unread }).ok, true, "items is left out when the ground could not be read");
+});
+
+test("[fast] scan schema: a house tile with a negative z (a boat or a basement) and an empty items list validate, and so does an extra key in house", () => {
+  const house = { facet: 1, capturedAt: "2026-10-01T12:00:00Z", at: { x: 100, y: 200 }, tiles: [[1301, 100, 200, -5, 0]], items: [] };
+  assert.equal(validateScan({ ...bounded, house }).ok, true);
+  assert.equal(validateScan({ ...bounded, house: { ...house, designMode: true } }).ok, true, "a newer adapter's key must not make this app drop the whole scan");
+});

@@ -4,29 +4,24 @@
 // name does not say (a named artifact, or a set whose pieces are all called "Armor").
 //
 // Usage: node scripts/gen-graphic-layers.mts <path to tiledata.mul>
-// It rewrites only the block between the BEGIN/END markers in app/vault-lib.mts. Reads the 7.x
-// ("high seas") tiledata layout only: 512 land blocks of 32 x 30 bytes, then item blocks of 32 x 41
-// bytes, each block led by a 4-byte header. An older client's file has a different size and is refused.
+// It rewrites only the block between the BEGIN/END markers in app/vault-lib.mts. Reads the 7.x layout through app/tiledata.mts; an older client's file is refused.
 import { readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
+import { LAND_BYTES, ITEM_BLOCK, FLAG, itemOffset, assertItemLayout } from "../app/tiledata.mts";
 
-const LAND_BYTES = 512 * (4 + 32 * 30);
-const ITEM_BYTES = 41;
-const ITEM_BLOCK = 4 + 32 * ITEM_BYTES;
-const WEARABLE = 0x400000n;
 // Layers that are a piece of gear: hair (11), face (15), beard (16), backpack (21) and mount (25) are not.
 const GEAR_LAYERS = new Set([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 12, 13, 14, 17, 18, 19, 20, 22, 23, 24]);
 
 // [graphic, layer] for every wearable gear graphic, in graphic order.
 export function wearableLayers(buf: Buffer): Array<[number, number]> {
-  if (buf.length <= LAND_BYTES || (buf.length - LAND_BYTES) % ITEM_BLOCK !== 0) throw new Error(`not a 7.x tiledata.mul (${buf.length} bytes)`);
+  assertItemLayout(buf);
   const count = ((buf.length - LAND_BYTES) / ITEM_BLOCK) * 32;
   const out: Array<[number, number]> = [];
   for (let g = 0; g < count; g++) {
-    const at = LAND_BYTES + Math.floor(g / 32) * ITEM_BLOCK + 4 + (g % 32) * ITEM_BYTES;
+    const at = itemOffset(g);
     const layer = buf[at + 9]!;
-    if ((buf.readBigUInt64LE(at) & WEARABLE) !== 0n && GEAR_LAYERS.has(layer)) out.push([g, layer]);
+    if ((buf.readBigUInt64LE(at) & FLAG.wearable) !== 0n && GEAR_LAYERS.has(layer)) out.push([g, layer]);
   }
   return out;
 }
