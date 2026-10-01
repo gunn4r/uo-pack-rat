@@ -5,7 +5,7 @@ import { syntheticTileData } from "./tiledata-fixture.mts";
 import { houseIdOf, type HouseSource, type HouseTile, type HouseItem } from "./house-capture.mts";
 import type { HouseContainerInput } from "./house-model.mts";
 
-export const G = { dirt: 1, pavers: 2, grass: 3, planks: 4, stoneWall: 5, brickWall: 6, window: 7, stairs: 8, roof: 9, table: 10, door: 11, teleporter: 12, rug: 13, banister: 14 } as const;
+export const G = { dirt: 1, pavers: 2, grass: 3, planks: 4, stoneWall: 5, brickWall: 6, window: 7, stairs: 8, roof: 9, table: 10, door: 11, teleporter: 12, rug: 13, banister: 14, block: 15 } as const;
 
 export function fixtureTileData(): TileData {
   return readTileData(syntheticTileData([
@@ -23,6 +23,7 @@ export function fixtureTileData(): TileData {
     { graphic: G.teleporter, flags: 0n, name: "house teleporter" },
     { graphic: G.rug, flags: 0n, name: "rug" },
     { graphic: G.banister, flags: FLAG.impassable, height: 8, name: "wooden banister" },
+    { graphic: G.block, flags: FLAG.surface, height: 10, name: "stone" },
   ]));
 }
 
@@ -107,16 +108,31 @@ const rect = (x0: number, y0: number, x1: number, y1: number): Array<[number, nu
   return r;
 };
 
-// An 8 x 8 walled room at (2000, 3000) with a 2nd floor (z 27) over its 6 x 6 interior and a stair run climbing east along its north row: z 7, 12, 17, 22 at x 2001..2004.
-export function stairHouse(): HouseSource {
-  const t = walled(rect(2001, 3001, 2006, 3006), [], { graphic: G.planks, z: 27 });
-  for (let i = 0; i < 4; i++) t.push([G.stairs, 2001 + i, 3001, 7 + 5 * i, 0]);
-  return source(t);
+// A stair run climbing east from (x0, y) at z, one step per tile 5 z higher, each step standing on the filler blocks the client lays under every staircase (Surface tiles 10 high at z, z + 5, ...).
+function stairRun(x0: number, y: number, z: number): HouseTile[] {
+  const t: HouseTile[] = [];
+  for (let i = 0; i < 4; i++) {
+    t.push([G.stairs, x0 + i, y, z + 5 * i, 0]);
+    for (let b = 0; b < i; b++) t.push([G.block, x0 + i, y, z + 5 * b, 0]);
+  }
+  return t;
 }
 
-// An 8 x 8 walled one-storey room at (4000, 4000) with a roof at z 27 over its 6 x 6 interior.
+// An 8 x 8 walled room at (2000, 3000) with a 2nd floor (z 27) over its 6 x 6 interior and a stair run climbing east along its north row: z 7, 12, 17, 22 at x 2001..2004, on its blocks.
+export function stairHouse(): HouseSource {
+  return source([...walled(rect(2001, 3001, 2006, 3006), [], { graphic: G.planks, z: 27 }), ...stairRun(2001, 3001, 7)]);
+}
+
+// An 8 x 8 walled box at (7000, 7000), three storeys floored at z 7, 27 and 47 and walled at each, with a stair run on its blocks from 7 to 22 along y 7001 and from 27 to 42 along y 7003.
+export function towerHouse(): HouseSource {
+  const ground = walled(rect(7001, 7001, 7006, 7006), [], { graphic: G.planks, z: 27 });
+  const upper = ground.filter((t) => t[0] === G.stoneWall).flatMap(([g, x, y, , imp]): HouseTile[] => [[g, x, y, 27, imp], [g, x, y, 47, imp]]);
+  return source([...ground, ...upper, ...rect(7001, 7001, 7006, 7006).map(([x, y]): HouseTile => [G.planks, x, y, 47, 0]), ...stairRun(7001, 7001, 7), ...stairRun(7001, 7003, 27)]);
+}
+
+// An 8 x 8 walled one-storey room at (4000, 4000) under a lean-to roof over its 6 x 6 interior: one row per z, rising 3 a row from z 27 in the north, as roof tiles climb in the client.
 export function roofHouse(): HouseSource {
-  return source(walled(rect(4001, 4001, 4006, 4006), [], { graphic: G.roof, z: 27 }));
+  return source(walled(rect(4001, 4001, 4006, 4006), [], { graphic: G.roof, z: 27 }).map((t): HouseTile => t[0] === G.roof ? [t[0], t[1], t[2], 27 + 3 * (t[2] - 4001), t[4]] : t));
 }
 
 // Two 6 x 6 rooms at (6001..6006, 7001..7006) and (6013..6018, 7001..7006) joined along y 7003 by a 1-wide corridor x 6008..6011, with doors at (6007, 7003) and (6012, 7003); all under a roof at z 27.

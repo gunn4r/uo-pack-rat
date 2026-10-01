@@ -4,7 +4,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { buildHouseModel, letterOf, type HouseModel, type Cell } from "./house-model.mts";
-import { G, fixtureTileData, courtyardHouse, stairHouse, roofHouse, hallHouse, vaultHouse, castleHouse } from "./house-fixture.mts";
+import { G, fixtureTileData, courtyardHouse, stairHouse, towerHouse, roofHouse, hallHouse, vaultHouse, castleHouse } from "./house-fixture.mts";
 
 const td = fixtureTileData();
 const cell = (m: HouseModel, level: number, x: number, y: number): Cell | undefined => m.cells.find((c) => c.level === level && c.x === x && c.y === y);
@@ -62,6 +62,27 @@ test("[fast] house model: stairs between floors stay on the lower level and do n
   assert.equal(cell(m, 0, 2000, 3003)!.kind, "wall");
   assert.equal(cell(m, 0, 2003, 3004)!.indoor, true);
   assert.deepEqual(m.rooms.filter((r) => r.level === 0).map((r) => [r.kind, r.name, r.tiles]), [["room", "Main room", 36]]);
+});
+
+test("[fast] house model: stairs on their filler blocks (as the client lays every staircase) keep the storeys apart", () => {
+  const m = buildHouseModel(stairHouse(), td, []);
+  assert.deepEqual(m.levels.map((l) => [l.name, l.floorZ, l.status]), [["Ground floor", 7, "built"], ["2nd floor", 27, "floor-only"]]);
+  assert.ok(m.cells.filter((c) => c.kind === "stair").every((c) => c.level === 0));
+  assert.equal(cell(m, 0, 2003, 3001)!.kind, "stair", "a step standing on its blocks is a stair, not a floor");
+});
+
+test("[fast] house model: a three-storey house with stairs on blocks between each pair has three levels", () => {
+  const m = buildHouseModel(towerHouse(), td, []);
+  assert.deepEqual(m.levels.map((l) => l.floorZ), [7, 27, 47]);
+  assert.ok(m.cells.filter((c) => c.level === 0 && c.kind === "floor").every((c) => c.indoor), "nothing on the ground floor is yard");
+  assert.equal(m.rooms.filter((r) => r.kind === "yard").length, 0);
+});
+
+test("[fast] house model: without tiledata a roof is not a 2nd floor and stairs do not merge storeys", () => {
+  assert.deepEqual(buildHouseModel(roofHouse(), null, []).levels.map((l) => l.floorZ), [7]);
+  const s = buildHouseModel(stairHouse(), null, []);
+  assert.deepEqual(s.levels.map((l) => l.floorZ), [7, 27]);
+  assert.equal(s.rooms.filter((r) => r.kind === "yard").length, 0);
 });
 
 test("[fast] house model: a one-storey house under a roof is indoors, not a yard", () => {

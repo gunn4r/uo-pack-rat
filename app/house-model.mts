@@ -37,6 +37,15 @@ function levelsOf(floorZs: number[]): Array<{ lo: number; floorZ: number }> {
   });
 }
 
+// The floor z that make storeys. The client lays every staircase on Surface filler blocks 5 or 10 high, which would chain the storeys into one, so with tiledata only flat (height 0) floors count. Without it every passable tile reads as floor, roofs and steps included; best effort, a storey is a z holding many of them, so only z with at least a quarter of the busiest z's count are kept (a roof climbs a row per z and a stair a step per z).
+function storeyZs(floors: Array<{ height: number; t: Classed }>, tiledata: boolean): number[] {
+  if (tiledata) return floors.filter((f) => f.height === 0).map((f) => f.t.z);
+  const count = new Map<number, number>();
+  for (const f of floors) count.set(f.t.z, (count.get(f.t.z) ?? 0) + 1);
+  const most = Math.max(0, ...count.values());
+  return floors.map((f) => f.t.z).filter((z) => count.get(z)! * 4 >= most);
+}
+
 function compassName(dx: number, dy: number): string {
   const v = dy < -1.5 ? "north" : dy > 1.5 ? "south" : "", h = dx < -1.5 ? "west" : dx > 1.5 ? "east" : "";
   const n = v && h ? `${v}-${h}` : v || h || "middle";
@@ -50,9 +59,9 @@ export function buildHouseModel(house: HouseSource, td: TileData | null, contain
   const tiles = [...house.tiles].sort((a, b) => a[2] - b[2] || a[1] - b[1] || a[3] - b[3] || a[0] - b[0] || a[4] - b[4]);
   const classed = tiles.map(([graphic, x, y, z, imp]) => {
     const info = td?.info(graphic) ?? null;
-    return { x, y, t: { cls: classify(info, imp === 1), name: info?.name ?? "", z } as Classed };
+    return { x, y, height: info?.height ?? 0, t: { cls: classify(info, imp === 1), name: info?.name ?? "", z } as Classed };
   }).filter((c) => c.t.cls !== "other");
-  const floorZs = classed.filter((c) => c.t.cls === "floor").map((c) => c.t.z);
+  const floorZs = storeyZs(classed.filter((c) => c.t.cls === "floor"), td !== null);
   const bands = levelsOf(floorZs.length ? floorZs : [0]);
   const levelOf = (z: number): number => { let i = 0; bands.forEach((b, j) => { if (b.lo - LEVEL_SLACK <= z) i = j; }); return i; };
 
