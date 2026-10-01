@@ -8,10 +8,10 @@
 // still in force; they are one file per root or character, so they never pile up), for each of the
 // player's houses the scan carrying its newest capture and every scan whose furniture it still shows (issue #10), and every scan
 // something in the fold still carries the timestamp of (a character's card and worn set, a bag a later
-// scan could not open, which keeps what an older one saw in it). Then the fold of what is left is
+// scan could not open, which keeps what an older one saw in it). Then the fold (and every house still listed, issue #10) of what is left is
 // compared with the fold of everything, and when they differ nothing is pruned at all.
 import { parseStamp } from "./scan-schema.mts";
-import { houseGroups } from "./house-capture.mts";
+import { houseGroups, latestHouses } from "./house-capture.mts";
 import type { Inventory } from "./vault-lib.mts";
 import type { ScanV2 } from "./schema/types.d.mts";
 
@@ -90,7 +90,7 @@ export function scansToPrune(scans: ScanFile[], fold: (s: ScanV2[]) => Inventory
   for (const s of scans) if (live.has(s.doc.scannedAt)) keep.add(s.file);
   const kept = scans.filter((s) => keep.has(s.file));
   if (kept.length === scans.length) return none;
-  if (!sameFold(all, fold(kept.map((s) => s.doc)))) return { files: [], refused: true };
+  if (!sameFold(all, fold(kept.map((s) => s.doc))) || !sameHouses(scans, kept)) return { files: [], refused: true };
   return { files: scans.filter((s) => !keep.has(s.file)).sort((a, b) => stamp(a) - stamp(b)).map((s) => s.file), refused: false };
 }
 
@@ -102,6 +102,13 @@ export function sameFold(a: Inventory, b: Inventory): boolean {
     return keys.length === Object.keys(y).length && keys.every((k) => k in y && JSON.stringify(x[k]) === JSON.stringify(y[k]));
   };
   return same(a.characters, b.characters) && same(a.containers, b.containers) && same(a.items, b.items);
+}
+
+// Every house the kept scans still list is listed the same by all of them: the same newest capture, tiles and furniture (issue #10). A house may drop out (a visited house or a boat ageing out), but pruning must never bring back furniture a newer capture erased or a footprint a newer one superseded.
+function sameHouses(all: ScanFile[], kept: ScanFile[]): boolean {
+  const shape = (h: ReturnType<typeof latestHouses>[number]): string => JSON.stringify([h.capturedAt, h.tiles, h.items]);
+  const before = new Map(latestHouses(all.map((s) => s.doc)).map((h) => [h.id, shape(h)]));
+  return latestHouses(kept.map((s) => s.doc)).every((h) => before.get(h.id) === shape(h));
 }
 
 export interface RunFile { file: string; character: string; createdAt: string; label: string }
