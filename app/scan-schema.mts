@@ -77,9 +77,9 @@ export const SCAN_V2_SCHEMA = {
     resists: NUMBER_MAP_OR_NULL,
     house: {
       type: "object",
-      "$comment": "The house the player stood in (issue #10), from the client's house tiles: tiles are [graphic, x, y, z, impassable 0|1], items (furniture and fixtures on the ground inside the footprint, containers excluded) are [serial, graphic, x, y, z] and left out when the ground could not be read; at is where the player stood, so the app knows which items a later capture should have seen. Written by TazUO 2.10.0 and later.",
+      "$comment": "The house the player stood in (issue #10), from the client's house tiles: tiles are [graphic, x, y, z, impassable 0|1], items (furniture and fixtures on the ground inside the footprint, containers excluded) are [serial, graphic, x, y, z] and left out when the ground could not be read; at is where the player stood, so the app knows which items a later capture should have seen. Other keys are allowed, so a newer adapter's addition never makes an older app drop the scan. Written by TazUO 2.10.0 and later.",
       required: ["capturedAt", "at", "tiles"],
-      additionalProperties: false,
+      additionalProperties: true,
       properties: {
         facet: { type: "integer", enum: [0, 1, 2, 3, 4, 5] },
         capturedAt: { type: "string" },

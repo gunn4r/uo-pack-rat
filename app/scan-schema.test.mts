@@ -247,3 +247,9 @@ test("[fast] scan schema: an optional house section with tiles and items", () =>
   const { items: _, ...unread } = house;
   assert.equal(validateScan({ ...bounded, house: unread }).ok, true, "items is left out when the ground could not be read");
 });
+
+test("[fast] scan schema: a house tile with a negative z (a boat or a basement) and an empty items list validate, and so does an extra key in house", () => {
+  const house = { facet: 1, capturedAt: "2026-10-01T12:00:00Z", at: { x: 100, y: 200 }, tiles: [[1301, 100, 200, -5, 0]], items: [] };
+  assert.equal(validateScan({ ...bounded, house }).ok, true);
+  assert.equal(validateScan({ ...bounded, house: { ...house, designMode: true } }).ok, true, "a newer adapter's key must not make this app drop the whole scan");
+});
