@@ -903,6 +903,36 @@ class TazUOBridge(BridgeCase, unittest.TestCase):
         self.assertIn("container", final["results"]["p1"]["steps"][0]["msg"])
         self.assertEqual(w.items[POUCH].Container, PACK)
 
+    def test_an_item_a_failed_trip_left_carried_is_put_away_from_the_bag_it_was_dropped_in(self):
+        # Issue #155: t1's put bounces, so the amulet stays carried. The player then drops it into the pouch
+        # (or leaves it at the top of the pack) and puts away the pouch or the pack.
+        for case in ("dropped in the picked pouch", "dropped in a pouch, the pack picked", "left at the top, a pouch picked"):
+            w = trip_home()
+            w.refuse = {DEST}
+            w.items[POUCH].Opened = True
+            picked = PACK if case == "dropped in a pouch, the pack picked" else POUCH
+            self.consent(w, picked=picked)
+
+            def player(w=w, case=case):
+                w.refuse = set()
+                if case.startswith("dropped"):
+                    w.items[AMULET].Container = POUCH
+            w.clock.at(40, player)
+            self.enqueue_at(w, 50, [self.put_away("p2", [(AMULET, [DEST])], index=4, picked=picked),
+                                    self.trip("t3", puts=[(AMULET, [DEST])], index=5)])
+            final, _ = self.run_bridge(w, 1, [self.trip("t1", takes=[(AMULET, [CHEST, BAG])], puts=[(AMULET, [DEST])])])
+            self.assertEqual(self.steps(final, "t1"), [("take", AMULET, True), ("put", AMULET, False)], case)
+            if case == "dropped in a pouch, the pack picked":
+                # Not directly in the picked container, so the carried rule holds: only from the top of the pack.
+                self.assertEqual(self.steps(final, "p2"), [("put", AMULET, False)], case)
+                self.assertIn("no longer at the top of your backpack", final["results"]["p2"]["steps"][0]["msg"], case)
+                self.assertEqual(w.items[AMULET].Container, POUCH, case)
+            else:
+                self.assertEqual(self.steps(final, "p2"), [("put", AMULET, True)], case)
+                self.assertEqual(w.items[AMULET].Container, DEST, case)
+            # Either way the amulet has left the carried set: an ordinary trip no longer puts it.
+            self.assertIn("not taken by this bridge", final["results"]["t3"]["steps"][0]["msg"], case)
+
     def test_a_put_the_container_bounces_keeps_the_item_carried_for_put_them_away(self):
         w = trip_home()
         w.refuse = {DEST}
