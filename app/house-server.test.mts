@@ -75,6 +75,30 @@ test("[fast] houses: without a tiledata.mul the model still builds, and an unkno
   } finally { await s.close(); }
 });
 
+test("[fast] houses: a footprint grown west replaces the old house, so a chest inside both is counted in one house", async () => {
+  const { s, dir } = await serve(true);
+  try {
+    const { house } = vaultHouse();
+    const later = new Date(Date.parse(house.capturedAt) + 60e3).toISOString();
+    const scan = houseScan({ character: "Other", scannedAt: later, boxes: [], things: [] });
+    writeFileSync(join(dir, "scans", "house-grown.json"), JSON.stringify({ ...scan, house: { facet: 1, capturedAt: later, at: { x: 3003, y: 1003 }, tiles: [...house.tiles, [G.pavers, 2999, 1003, 7, 0]], items: house.items } }));
+    const list = await get<{ houses: Array<{ id: string; containers: number }> }>(s, "/api/houses");
+    assert.deepEqual(list.body.houses.map((h) => [h.id, h.containers]), [["1-2999-1000", 120]]);
+    assert.equal((await get(s, "/api/houses/1-3000-1000")).status, 404);
+  } finally { await s.close(); }
+});
+
+test("[fast] houses: a captured house holding no ground chest is listed with 0 containers", async () => {
+  const { s, dir } = await serve(true);
+  try {
+    const { house } = vaultHouse();
+    const scan = houseScan({ character: "Other", scannedAt: house.capturedAt, boxes: [], things: [] });
+    writeFileSync(join(dir, "scans", "house-empty.json"), JSON.stringify({ ...scan, house: { facet: 1, capturedAt: house.capturedAt, at: { x: 9003, y: 9003 }, tiles: house.tiles.map(([g, x, y, z, imp]) => [g, x + 6000, y + 8000, z, imp]), items: [] } }));
+    const list = await get<{ houses: Array<{ id: string; containers: number }> }>(s, "/api/houses");
+    assert.deepEqual(list.body.houses.map((h) => [h.id, h.containers]), [["1-3000-1000", 120], ["1-9000-9000", 0]]);
+  } finally { await s.close(); }
+});
+
 test("[fast] houses: the same model is served again while nothing changes, and a newer capture replaces it", async () => {
   const { s, dir } = await serve(true);
   try {

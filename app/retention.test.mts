@@ -112,11 +112,33 @@ test("[fast] retention settings are validated with their bounds, and a bad store
   assert.deepEqual(retentionOf({ scanDays: -4, runsPerCharacter: 20, keepAll: "no" }), { ...RETENTION_DEFAULTS, runsPerCharacter: 20 });
 });
 
+// A house capture (issue #10), and the character's newest scan holding a ground chest standing at (100, 100) on facet 1, inside every house below; without it (`recent`) no house is the player's own.
+const capture = (at: string, tiles: number[][], items: number[][] = [], where = { x: 100, y: 100 }) => ({ house: { facet: 1, capturedAt: at, at: where, tiles, items } });
+const homeChest = scan("recent.json", daysAgo(1), "Builder", [{ serial: CHEST }], { [CHEST]: box(CHEST, CHEST, null, { pos: { x: 100, y: 100, z: 7, facet: 1 } }) }, []);
+const recent = scan("recent.json", daysAgo(1), "Builder", [], {}, []);
+const plot = [[1, 100, 100, 7, 0], [1, 101, 100, 7, 0]];
+
 test("[fast] retention: the newest capture of each house is kept however old", () => {
-  const tiles = [[1, 100, 100, 7, 0], [1, 101, 100, 7, 0]];
-  const capture = (at: string) => ({ house: { facet: 1, capturedAt: at, at: { x: 100, y: 100 }, tiles, items: [] } });
-  const older = scan("house-old.json", daysAgo(90), "Builder", [], {}, [], [], capture(daysAgo(90)));
-  const newer = scan("house-new.json", daysAgo(80), "Builder", [], {}, [], [], capture(daysAgo(80)));
-  const recent = scan("recent.json", daysAgo(1), "Builder", [], {}, []);   // the character's newest scan, so only the house rule keeps house-new
-  assert.deepEqual(scansToPrune([older, newer, recent], foldSnapshots, RETENTION_DEFAULTS, NOW).files, ["house-old.json"]);
+  const older = scan("house-old.json", daysAgo(90), "Builder", [], {}, [], [], capture(daysAgo(90), plot));
+  const newer = scan("house-new.json", daysAgo(80), "Builder", [], {}, [], [], capture(daysAgo(80), plot));
+  assert.deepEqual(scansToPrune([older, newer, homeChest], foldSnapshots, RETENTION_DEFAULTS, NOW).files, ["house-old.json"], "homeChest is the character's newest scan, so only the house rule keeps house-new");
+});
+
+test("[fast] retention: an older capture is kept while it still gives the house a piece of furniture no newer capture could see", () => {
+  const wide = [[1, 100, 100, 7, 0], [1, 140, 100, 7, 0]];
+  const seenAgain = scan("house-a.json", daysAgo(95), "Builder", [], {}, [], [], capture(daysAgo(95), wide, [[20, 5, 101, 100, 7]]));
+  const farEnd = scan("house-b.json", daysAgo(90), "Builder", [], {}, [], [], capture(daysAgo(90), wide, [[21, 5, 130, 100, 7]], { x: 135, y: 100 }));
+  const newest = scan("house-c.json", daysAgo(80), "Builder", [], {}, [], [], capture(daysAgo(80), wide));
+  assert.deepEqual(scansToPrune([seenAgain, farEnd, newest, homeChest], foldSnapshots, RETENTION_DEFAULTS, NOW).files, ["house-a.json"], "house-c (standing at 100, 100) no longer sees item 20 and cannot see item 21, 30 tiles away");
+});
+
+test("[fast] retention: a house footprint that a newer capture overlaps ages out with its scan", () => {
+  const old = scan("house-old.json", daysAgo(90), "Builder", [], {}, [], [], capture(daysAgo(90), plot));
+  const grown = scan("house-grown.json", daysAgo(80), "Builder", [], {}, [], [], capture(daysAgo(80), [[1, 99, 100, 7, 0], ...plot]));
+  assert.deepEqual(scansToPrune([old, grown, homeChest], foldSnapshots, RETENTION_DEFAULTS, NOW).files, ["house-old.json"]);
+});
+
+test("[fast] retention: an old capture of a house with no ground container of the fold inside it ages out like any scan", () => {
+  const visited = scan("house-visited.json", daysAgo(90), "Builder", [], {}, [], [], capture(daysAgo(90), plot));
+  assert.deepEqual(scansToPrune([visited, recent], foldSnapshots, RETENTION_DEFAULTS, NOW).files, ["house-visited.json"], "a boat, or a house the player only visited");
 });

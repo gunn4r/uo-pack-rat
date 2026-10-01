@@ -243,5 +243,7 @@ test("[fast] scan schema: an optional house section with tiles and items", () =>
   assert.equal(validateScan({ ...bounded, house: { ...house, tiles: [[1, 2, 3]] } }).ok, false, "a tile has five numbers");
   assert.equal(validateScan({ ...bounded, house: { ...house, facet: 9 } }).ok, false);
   assert.equal(validateScan({ ...bounded, house: { ...house, tiles: Array.from({ length: 20001 }, () => [1, 2, 3, 4, 0]) } }).ok, false, "at most 20,000 tiles");
-  assert.equal(validateScan({ ...bounded, house: { facet: 1, tiles: [] } }).ok, false, "capturedAt, at, tiles and items are required");
+  assert.equal(validateScan({ ...bounded, house: { facet: 1, tiles: [] } }).ok, false, "capturedAt, at and tiles are required");
+  const { items: _, ...unread } = house;
+  assert.equal(validateScan({ ...bounded, house: unread }).ok, true, "items is left out when the ground could not be read");
 });

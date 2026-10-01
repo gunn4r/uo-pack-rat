@@ -5,13 +5,13 @@
 // Scans are pruned so the inventory never changes: every scan newer than the cutoff stays, and so,
 // whatever its age, does the newest scan that opened each root container (it decides that root's
 // contents, even when it found the root empty), every `_vault` tombstone (a Forget or Forget character
-// still in force; they are one file per root or character, so they never pile up), the newest scan
-// carrying each house's capture (issue #10) and every scan
+// still in force; they are one file per root or character, so they never pile up), for each of the
+// player's houses the scan carrying its newest capture and every scan whose furniture it still shows (issue #10), and every scan
 // something in the fold still carries the timestamp of (a character's card and worn set, a bag a later
 // scan could not open, which keeps what an older one saw in it). Then the fold of what is left is
 // compared with the fold of everything, and when they differ nothing is pruned at all.
 import { parseStamp } from "./scan-schema.mts";
-import { captureTime, houseIdOf, type HouseTile } from "./house-capture.mts";
+import { houseGroups } from "./house-capture.mts";
 import type { Inventory } from "./vault-lib.mts";
 import type { ScanV2 } from "./schema/types.d.mts";
 
@@ -65,17 +65,23 @@ export function scansToPrune(scans: ScanFile[], fold: (s: ScanV2[]) => Inventory
     for (const root of s.doc.roots || []) if (root.opened !== false) claim(`${+root.serial}`, s);
   }
   for (const s of newest.values()) keep.add(s.file);
-  // The newest capture of each house (issue #10): the house map is drawn from it, however old.
-  const houses = new Map<string, ScanFile>();
-  for (const s of scans) {
-    const h = s.doc.house;
-    if (!h || !h.tiles.length) continue;
-    const id = houseIdOf(h.facet, h.tiles as HouseTile[]), had = houses.get(id);
-    if (!had || captureTime(h.capturedAt) > captureTime(had.doc.house!.capturedAt)) houses.set(id, s);
+  let folded: Inventory | undefined;
+  const allFold = (): Inventory => (folded ??= fold(scans.map((s) => s.doc)));
+  // Houses (issue #10): the map is drawn from a house's newest capture and its furniture merged across captures, so those scans stay however old, for a house that is not superseded (redesigned or moved) and that holds a ground chest of the fold on its footprint (the player's own; a boat or a house only visited ages out like any scan).
+  const groups = houseGroups(scans.map((s) => s.doc));
+  if (groups.length) {
+    const ground = Object.values(allFold().containers).filter((c) => c.parent == null && c.kind === "ground" && c.pos && Number.isFinite(c.pos.x) && Number.isFinite(c.pos.y));
+    for (const g of groups) {
+      if (g.superseded) continue;
+      const last = g.captures[g.captures.length - 1]!.house, facet = last.facet ?? null;
+      const tiles = new Set(last.tiles.map((t) => `${t[1]}:${t[2]}`));
+      if (!ground.some((c) => (facet === null || c.pos!.facet == null || c.pos!.facet === facet) && tiles.has(`${c.pos!.x}:${c.pos!.y}`))) continue;
+      keep.add(scans[g.captures[g.captures.length - 1]!.scan]!.file);
+      for (const { scan } of g.items.values()) keep.add(scans[scan]!.file);
+    }
   }
-  for (const s of houses.values()) keep.add(s.file);
   if (keep.size === scans.length) return none;
-  const all = fold(scans.map((s) => s.doc));
+  const all = allFold();
   const live = new Set<string>([
     ...Object.values(all.items).map((it) => it.seenAt),
     ...Object.values(all.containers).map((c) => c.scannedAt),
