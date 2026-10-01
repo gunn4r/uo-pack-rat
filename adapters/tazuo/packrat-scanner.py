@@ -68,7 +68,7 @@ def read_blacklist(path):
 
 
 ADAPTER_ID = "tazuo"
-ADAPTER_VERSION = "2.9.0"
+ADAPTER_VERSION = "2.10.0"
 CAPABILITIES = {
     "layers": ["OneHanded", "TwoHanded", "Shoes", "Pants", "Shirt", "Helmet", "Gloves",
                "Ring", "Talisman", "Necklace", "Waist", "Torso", "Bracelet", "Tunic",
@@ -79,6 +79,9 @@ CAPABILITIES = {
 
 
 SCAN_RANGE = 3           # tiles: ground containers within reach (house chests open only when close)
+HOUSE_RADIUS = 40        # tiles searched around the player for the house's tiles (a castle is about 32 across)
+HOUSE_MAX_TILES = 20000  # a capture larger than this is left out rather than bloating the scan
+HOUSE_ITEM_REACH = 18    # the server sends ground items within about this many tiles
 SCAN_GROUND = True       # False = backpack/bank only, never touch containers on the ground
 GROUND_ONLY_AT_HOME = True   # when the bank box is open (you are at a bank) skip ground containers entirely
 PAUSE_OPEN = 1.2         # after UseObject on a container (raise on laggy connections)
@@ -224,6 +227,59 @@ def root_entry(serial, kind, label):
     if kind == "ground":
         entry["tooltip"] = tooltip_lines(serial)
     return entry
+
+
+def house_capture(px, py):
+    """The house the player stands in, from the client's own house tiles (issue #10), or None outside a house or on a build without the multi calls. Only the tiles connected to the player's tile are kept (8-connected in x/y, across every z), so a neighbouring house is left out. Furniture and fixtures on the ground inside that footprint are recorded too; containers are not (they are roots)."""
+    at = getattr(API, "GetMultisAt", None)
+    area = getattr(API, "GetMultisInArea", None)
+    if at is None or area is None:
+        return None
+    try:
+        if not list(at(px, py) or []):
+            return None
+        found = list(area(px - HOUSE_RADIUS, py - HOUSE_RADIUS, px + HOUSE_RADIUS, py + HOUSE_RADIUS) or [])
+    except Exception:
+        return None
+    cells = {}
+    for m in found:
+        try:
+            t = [int(m.Graphic), int(m.X), int(m.Y), int(m.Z), 1 if bool(getattr(m, "Impassible", False)) else 0]
+        except Exception:
+            continue
+        cells.setdefault((t[1], t[2]), []).append(t)
+    if (px, py) not in cells:
+        return None
+    keep = {(px, py)}
+    todo = [(px, py)]
+    while todo:
+        x, y = todo.pop()
+        for dx in (-1, 0, 1):
+            for dy in (-1, 0, 1):
+                n = (x + dx, y + dy)
+                if n in cells and n not in keep:
+                    keep.add(n)
+                    todo.append(n)
+    tiles = sorted(t for c in keep for t in cells[c])
+    if len(tiles) > HOUSE_MAX_TILES:
+        return None
+    items = []
+    try:
+        ground = list(API.GetItemsOnGround(HOUSE_ITEM_REACH) or [])
+    except Exception:
+        ground = []
+    for g in ground:
+        try:
+            if (int(g.X), int(g.Y)) not in keep or is_container(g, str(getattr(g, "Name", "") or "")):
+                continue
+            items.append([int(g.Serial), int(getattr(g, "Graphic", 0) or 0), int(g.X), int(g.Y), int(getattr(g, "Z", 0) or 0)])
+        except Exception:
+            continue
+    house = {"capturedAt": rfc3339_now(), "at": {"x": int(px), "y": int(py)}, "tiles": tiles, "items": sorted(items)}
+    f = facet()
+    if f is not None:
+        house["facet"] = f
+    return house
 
 
 def was_opened(serial):
@@ -502,6 +558,9 @@ def main():
         sysmsg("Pack Rat scan stopped — nothing written.", ALARM_HUE)
         return
 
+    house = house_capture(int(API.Player.X), int(API.Player.Y))
+    if house is not None:
+        snap["house"] = house
     fname = re.sub(r"[^A-Za-z0-9_-]", "_", char) + time.strftime("-%Y%m%d-%H%M%S") + ".json"
     path = os.path.join(OUT_DIR, fname)
     write_json_atomic(path, snap)
@@ -513,6 +572,8 @@ def main():
         sysmsg(f"  skipped {len(SKIPPED)} blacklisted container{'s' if len(SKIPPED) != 1 else ''}", INFO_HUE)
     if TRASHED:
         sysmsg(f"  skipped {len(TRASHED)} trash container{'s' if len(TRASHED) != 1 else ''}", INFO_HUE)
+    if house is not None:
+        sysmsg(f"  house: {len(house['tiles'])} tiles, {len(house['items'])} pieces of furniture", INFO_HUE)
 
 
 try:
