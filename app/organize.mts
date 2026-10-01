@@ -200,33 +200,81 @@ export interface Placed { inv: Inventory; counts: Map<number, ContainerCapacity>
 
 // Spec §2.2: confirmed moves are applied before planning, so a finished trip is not planned again before the next
 // scan. A step the item's own scan has seen since is over, except that the container it left still counts it until
-// that container's scan is newer too; a container's line read after the step already counts it.
+// that container's scan is newer too; a container's line read after the step already counts it. Issue #153: a moved
+// bag is a container too. Its record takes the new parent (so every chain through it, and the root of everything
+// inside, reads its new place), and it carries its whole fill with it, as a Contents line counts every item nested
+// under a container: the bag, plus what it holds. Steps run oldest first, so a step into a bag counts in the chest
+// the bag stood in at the time, and the bag's own later move carries that count on. A bag taken and not yet put
+// keeps its old record and its contents' place (the container it left loses only the bag): nothing is planned into
+// a carried bag, and the bridge rechecks the chain of any step out of it.
 export function applyOverlay(inv: Inventory, overlay: OverlayMove[]): Placed {
   const items: Record<string, Item> = Object.assign(Object.create(null) as Record<string, Item>, inv.items);
+  const containers: Record<string, Container> = Object.assign(Object.create(null) as Record<string, Container>, inv.containers);
+  const view = { ...inv, items, containers };
   const counts = new Map<number, ContainerCapacity>();
   for (const c of Object.values(inv.containers)) if (c.capacity) counts.set(+c.serial, { ...c.capacity });
   const carried: Carried[] = [];
   const bump = (serial: number | null, at: number, d: number, w: number): void => {
-    for (const s of ancestry(inv, serial) ?? []) {
+    for (const s of ancestry(view, serial) ?? []) {
       const cap = counts.get(s);
       if (!cap || stampMs(inv.containers[s]!.scannedAt) >= at) continue;
       cap.items += d;
-      if (cap.stones != null) cap.stones += d * w;
+      if (cap.stones != null) cap.stones += w;
     }
   };
-  for (const m of [...overlay].sort((a, b) => a.serial - b.serial)) {
+  let bagMoved = false;
+  for (const m of [...overlay].sort((a, b) => stampMs(a.at) - stampMs(b.at) || a.serial - b.serial)) {
     const at = stampMs(m.at);
     const it = items[m.serial];
-    const w = it?.weight ?? 1;
-    if (it && stampMs(it.seenAt) >= at) { bump(m.from, at, -1, w); continue; }
-    if (it) bump(it.container, at, -1, w);
-    if (m.to != null) bump(m.to, at, 1, w);
+    const seen = !!it && stampMs(it.seenAt) >= at;
+    // A carried bag keeps its record, and so its contents their place: only the bag itself leaves.
+    const inside = seen || m.to != null ? counts.get(m.serial) : undefined;
+    let n = 1 + (inside?.items ?? 0), w = (it ? weightOf(it) : 1) + (inside?.stones ?? 0);
+    if (seen) {
+      // A bag seen since its move: its line counts what it holds as of its own scan, while the container it left
+      // counted what it held as of that container's. Each step into or out of the bag between the two scans has
+      // already moved itself off (or onto) that container, so it is not carried off again with the bag.
+      if (inside && m.from != null) {
+        const since = stampMs(inv.containers[m.from]?.scannedAt ?? ""), upTo = stampMs(it.seenAt);
+        for (const o of overlay) {
+          const t = stampMs(o.at);
+          if (o.serial === m.serial || t <= since || t > upTo) continue;
+          const d = (ancestry(view, o.to)?.includes(m.serial) ? 1 : 0) - (ancestry(view, o.from)?.includes(m.serial) ? 1 : 0);
+          const fill = counts.get(o.serial);   // a bag stepped in or out carries its own fill, as its own step does
+          n -= d * (1 + (fill?.items ?? 0));
+          w -= d * ((items[o.serial] ? weightOf(items[o.serial]!) : 1) + (fill?.stones ?? 0));
+        }
+      }
+      bump(m.from, at, -n, -w);
+      continue;
+    }
+    if (it) bump(it.container, at, -n, -w);
+    if (m.to != null) bump(m.to, at, n, w);
     else carried.push({ serial: m.serial, name: m.name });
     if (!it) continue;
-    const chain = m.to == null ? null : ancestry(inv, m.to);
+    const chain = m.to == null ? null : ancestry(view, m.to);
     items[m.serial] = { ...it, container: chain ? m.to : null, root: chain ? chain.at(-1)! : null };
+    const bag = containers[m.serial];
+    if (bag && chain) { containers[m.serial] = { ...bag, parent: m.to, root: chain.at(-1)! }; bagMoved = true; }
   }
-  return { inv: { ...inv, items }, counts, carried };
+  // A backstop: steps the scans only half explain (a bag's contents changed by hand between scans) never leave a
+  // container holding less than nothing.
+  for (const cap of counts.values()) {
+    cap.items = Math.max(0, cap.items);
+    if (cap.stones != null) cap.stones = Math.max(0, cap.stones);
+  }
+  // A bag's move re-roots everything under it, however deep: one pass once all steps are in.
+  if (bagMoved) {
+    for (const [serial, c] of Object.entries(containers)) {
+      const root = ancestry(view, +serial)?.at(-1);
+      if (root != null && root !== +c.root) containers[serial] = { ...c, root };
+    }
+    for (const [serial, it] of Object.entries(items)) {
+      const root = it.container == null ? undefined : containers[it.container]?.root;
+      if (root != null && +root !== it.root) items[serial] = { ...it, root: +root };
+    }
+  }
+  return { inv: view, counts, carried };
 }
 
 // Issue #127: the inventory every view and bridge command reads (the server's getInventory): the fold with the
@@ -236,13 +284,14 @@ export function applyOverlay(inv: Inventory, overlay: OverlayMove[]): Placed {
 // A carried item sits at the top of the backpack of the character whose bridge took it (whose fill, when it states
 // one, counts it); with no such backpack in the scans (or a move recorded before moves named their character) it is
 // in no container and says it is carried. The planner takes the fold itself and applies the overlay on its own:
-// handed this, it would apply every move twice. Work beyond applyOverlay's is per move, not per item.
+// handed this, it would apply every move twice. Work beyond applyOverlay's is per move, not per item, except that
+// when a bag moved, everything inside it has its location read again (its path runs through the bag's new place).
 export function overlaidInventory(inv: Inventory, overlay: OverlayMove[]): Inventory {
   const placed = applyOverlay(inv, overlay);
   const items = placed.inv.items;
-  const containers: Record<string, Container> = Object.assign(Object.create(null) as Record<string, Container>, inv.containers);
+  const containers: Record<string, Container> = Object.assign(Object.create(null) as Record<string, Container>, placed.inv.containers);
   for (const [serial, cap] of placed.counts) {
-    const c = inv.containers[serial]!;
+    const c = containers[serial]!;
     if (cap.items !== c.capacity!.items || cap.stones !== c.capacity!.stones) containers[serial] = { ...c, capacity: cap };
   }
   const packs = new Map<string, Container>();
@@ -259,10 +308,19 @@ export function overlaidInventory(inv: Inventory, overlay: OverlayMove[]): Inven
     if (cap) containers[pack.serial] = { ...cur, capacity: { ...cap, items: cap.items + 1, stones: cap.stones == null ? null : cap.stones + weightOf(it) } };
   }
   const view = { ...inv, containers, items };
+  const located = new Set<number>();
   for (const [serial, character] of who) {
     const it = items[serial];
     if (!it || it === inv.items[serial]) continue;
+    located.add(serial);
     it.location = carried.has(serial) ? { kind: "unknown", character: character ?? "?", text: `Carried by Organize${character ? ` (${character})` : ""}`, root: null, rootName: "?" } : locationOf(it, view);
+  }
+  const bags = new Set(overlay.map((m) => m.serial).filter((s) => placed.inv.containers[s] !== inv.containers[s]));
+  if (bags.size) {
+    for (const [serial, it] of Object.entries(items)) {
+      if (located.has(+serial) || !ancestry(view, it.container)?.some((s) => bags.has(s))) continue;
+      items[serial] = { ...it, location: locationOf(it, view) };
+    }
   }
   return view;
 }
@@ -790,7 +848,8 @@ export function planOrganize(inv: Inventory, cfg: OrganizeConfig, overlay: Overl
 }
 
 // The queue-ready trip for POST /api/organize/trip, built from the current plan's moves exactly as the plan built
-// it. Null when the plan has no such trip.
+// it: `inv` is the fold with the overlay applied (applyOverlay's), so a chain through a bag a trip moved names the
+// chest the bag is in now (issue #153). Null when the plan has no such trip.
 export function tripCommand(inv: Inventory, plan: Plan, index: number): TripInput | null {
   const steps = plan.moves.filter((m) => m.trip === index);
   return steps.length ? tripInputFrom(inv, index, plan.stamp, steps) : null;
