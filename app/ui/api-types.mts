@@ -15,7 +15,7 @@
 // change on one side has somewhere obvious to update on the other; nothing here is validated against
 // the wire (HTTP responses are unvalidated network input, same trust level server.test.mts's own
 // per-route interfaces document), it just gives the page's own reads a name instead of `unknown`.
-import type { Item, Container, Character, ScanSummary, OptItem, RunSettings, ProfilesFile, BlacklistEntry } from "../vault-lib.mts";
+import type { Item, Container, Character, ScanSummary, OptItem, RunSettings, ProfilesFile, BlacklistEntry, KindOverrides } from "../vault-lib.mts";
 import type { Facets, ItemQueryRows, ItemQueryGroups } from "../item-query.mts";
 import type { RulesV1 } from "../schema/types.d.mts";
 import type { AutostartOutcome, Hotkey as PanelHotkey, PanelPrefs } from "../tazuo-panel-prefs.mts";
@@ -249,6 +249,9 @@ export interface BlacklistApiResponse {
   ok: boolean;
   containers: BlacklistEntry[];
 }
+// GET and POST /api/item-kinds, POST /api/item-kinds/import (issue #150): the whole item-kinds.json document after
+// the change; an import also says how many entries it left out and why (the first few).
+export interface ItemKindsApiResponse extends KindOverrides { ok: boolean; version: 1; skipped?: number; problems?: string[] }
 
 // ---------------------------------------------------------------- suit builder: optimize / runs
 

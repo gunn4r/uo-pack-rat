@@ -1,7 +1,8 @@
 // ui/settings.mts — the Settings screen (design spec 4.11): four sections (General, Game client, Data,
 // Updates) in a column of cards made of setting rows — title and help on the left, the control
 // on the right. General holds the look (theme family, appearance) and the shard rules; Game client its
-// status, Run setup and Reinstall; Data the data folder and logs with Open, the blacklisted containers,
+// status, Run setup and Reinstall; Data the data folder and logs with Open, the blacklisted containers, export and
+// import of the item kinds the player set,
 // how long old scans and saved runs are kept, and the danger zone (forget a character, forget a container); Updates the version, the update check and its automatic switch. Always re-fetches GET
 // /api/setup on render (a cheap directory listing) so it reflects whatever the wizard, or this screen's
 // own actions, just changed.
@@ -19,6 +20,7 @@ import { adapterCopy } from "./adapter-copy.mts";
 import { copiedScanner, loadScanner, scannerCopy } from "./paste-scanner.mts";
 import { clientErrorMessage, dataDirNotice, errorText, hostErrorMessage, installedIntoNote, pathsFileNote, relativeWhen } from "./messages.mts";
 import { autostartNote, hotkeyLabel, panelControls } from "./tazuo-panel.mts";
+import { exportKinds, importKinds } from "./kinds.mts";
 import type { SetupApiResponse, InstallApiResponse, UpdateCheckApiResponse, BlacklistApiResponse, CleanupApiResponse, RetentionSetting, SettingsApiResponse, PanelPrefs, TazuoPanelApiResponse } from "./api-types.mts";
 import type { BlacklistEntry } from "../vault-lib.mts";
 
@@ -215,6 +217,17 @@ function blacklistCard(list: BlacklistEntry[]): HTMLElement {
         void syncSettingsBlacklist();
       } }) })));
 }
+// The item kinds the player set with Classify this… (issue #150): Export saves item-kinds.json to share; Import merges
+// a file in, its entries winning.
+function kindsCard(): HTMLElement {
+  const picker = el("input", { type: "file", accept: ".json,application/json", class: "sr", tabindex: "-1", "aria-hidden": "true", id: "set-kinds-file" });
+  picker.addEventListener("change", () => { const f = picker.files?.[0]; picker.value = ""; if (f) void importKinds(f); });
+  return box("div", { class: "card set-card", id: "set-kinds" },
+    row({ title: "Item kinds you set", help: "Classify this… on an item in Inventory sets its kind. Export them to share or keep; Import adds a file's kinds to yours.",
+      control: box("div", { class: "set-inline" },
+        button({ label: "Export…", size: "sm", attrs: { id: "set-kinds-export" }, onClick: () => { void exportKinds(); } }),
+        button({ label: "Import…", size: "sm", attrs: { id: "set-kinds-import" }, onClick: () => picker.click() }), picker) }));
+}
 // Data retention (issue #28): how long old scans and saved runs are kept, saved to settings.json as
 // each control changes, and Clean up now, which asks the server for a count first (a dry run) and
 // says what it will remove before removing it.
@@ -286,6 +299,7 @@ function dataSection(setup: SetupApiResponse): HTMLElement {
       mismatch ? box("div", { class: "set-row-below set-pad" }, message({ tone: "warn", text: mismatch })) : null),
     retentionCard(),
     blacklistCard([]),
+    kindsCard(),
     box("div", { class: "card set-card set-danger", "aria-labelledby": "set-danger-h" },
       el("h3", { class: "t-md strong set-danger-title", id: "set-danger-h" }, "Danger zone"),
       row({ title: "Forget a character", label: "set-forget-who", control: box("div", { class: "set-inline" }, who, forget),
