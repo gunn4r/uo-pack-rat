@@ -277,3 +277,22 @@ test("[fast] house names: a bad name, a malformed id or a body that is not JSON 
     assert.deepEqual((await get(s, "/api/house-map")).body, { ok: true, houses: {} });
   } finally { await s.close(); rmSync(dir, { recursive: true, force: true }); }
 });
+test("[fast] house names: a PUT past 500 named houses or past 1 MB is refused with a 409 and the file is left as it was", async () => {
+  const { s, dir } = await serve(false);
+  try {
+    const file = join(dir, "house-map.json");
+    const full = JSON.stringify({ version: 1, houses: Object.fromEntries(Array.from({ length: 500 }, (_, i) => [`1-${i}-0`, { name: `H${i}` }])) });
+    writeFileSync(file, full);
+    const over = await putName(s, "/api/house-map/1-3000-1000", { name: "One more" });
+    assert.equal(over.status, 409);
+    assert.match(over.body.error ?? "", /at most 500 houses/);
+    assert.equal((await putName(s, "/api/house-map/1-7-0", { name: "Renamed" })).status, 200, "renaming a named house is still fine");
+    // 125 entries of about 7.9 kB each: under 1 MB on disk, and one more entry tips it over.
+    const big = JSON.stringify({ version: 1, houses: Object.fromEntries(Array.from({ length: 125 }, (_, i) => [`1-${i}-0`, { name: `H${i}`, notes: "x".repeat(7900) }])) });
+    writeFileSync(file, big);
+    const huge = await putName(s, "/api/house-map/1-3000-1000", { name: "Main", notes: "x".repeat(7900) });
+    assert.equal(huge.status, 409);
+    assert.match(huge.body.error ?? "", /larger than 1 MB/);
+    assert.equal(readFileSync(file, "utf8"), big);
+  } finally { await s.close(); rmSync(dir, { recursive: true, force: true }); }
+});

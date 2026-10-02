@@ -3,7 +3,8 @@
 // either the old file or the new one, never a truncated one. Used for writes into a player-chosen
 // folder (app/installer.mts: adapter scripts, packrat-paths.json, imported scans) and for every file
 // the server keeps in its own data directory (settings, profiles, saved runs, accepted scans,
-// tombstones, a pasted scan's inbox file).
+// tombstones, a pasted scan's inbox file). moveAside sets an unreadable data file aside as
+// <file>.corrupt before the server starts that file afresh.
 import { existsSync, lstatSync, renameSync, unlinkSync, writeFileSync, type Stats } from "node:fs";
 import { randomBytes } from "node:crypto";
 

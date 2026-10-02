@@ -439,6 +439,15 @@ test("[slow] House map: ✎ renames a house (Esc cancels; Enter saves, and the h
     assert.equal(await focused(), "map-rename");
     await page.locator("#map-rename").click();
     await page.waitForSelector("#map-panel #map-name");
+    // A reload while typing (as a new scan brings) rebuilds the field with the draft in it, focused, and saves nothing.
+    await page.locator("#map-name").fill("Draft");
+    await page.locator("#map-name").evaluate((e) => { e.dataset.old = "1"; });
+    await page.evaluate(() => window.dispatchEvent(new HashChangeEvent("hashchange")));
+    await page.waitForSelector("#map-panel #map-name:not([data-old])", { timeout: 15_000 });
+    assert.equal(await page.locator("#map-name").inputValue(), "Draft");
+    assert.equal(await focused(), "map-name");
+    await new Promise((r) => setTimeout(r, 300));
+    assert.equal(readFileSync(join(dir, "house-map.json"), "utf8").includes("Draft"), false, "the replaced field's blur saved nothing");
     await page.locator("#map-name").fill("  Main house ");
     await page.keyboard.press("Enter");
     await page.waitForFunction(() => document.querySelector("#map-panel .map-house-title h2")?.textContent === "Main house", undefined, { timeout: 15_000 });

@@ -20,7 +20,7 @@ interface MapState { list: HousesApiResponse | null; names: Record<string, House
 const S: MapState = { list: null, names: {}, models: [], plain: null, id: null, model: null, level: 0, view: "angle", mode: "contents", room: null, selected: null, hover: null, focus: null, vb: null, error: null };
 let seq = 0;
 let highlighting = false;   // Highlight the stack is sending (highlightStack)
-let renaming = false;       // the panel's house heading is the name field (renameField)
+let renaming: string | null = null;   // while renaming, the name as typed so far: a redraw rebuilds the field from it (renameField)
 const body = (): HTMLElement => $<HTMLElement>("#map-body")!;
 const selectedStack = (): Stack | null => (S.selected == null ? null : S.model?.stacks.find((s) => s.serials.includes(S.selected!)) ?? null);
 
@@ -50,7 +50,7 @@ export async function showMap(want: string | null): Promise<void> {
   const choices = [...S.models.map((m) => ({ id: m.id, containers: chestCount(m) })), ...(S.plain ? [{ id: PLAIN, containers: chestCount(S.plain) }] : [])];
   const id = pickHouse(choices, want, S.id);
   if (want && id !== want) history.replaceState(null, "", "#/map");
-  if (id !== S.id) { S.id = id; renaming = false; S.level = 0; S.room = null; S.selected = null; S.hover = null; S.focus = null; S.vb = null; }
+  if (id !== S.id) { S.id = id; renaming = null; S.level = 0; S.room = null; S.selected = null; S.hover = null; S.focus = null; S.vb = null; }
   S.model = id === PLAIN ? S.plain : S.models.find((m) => m.id === id) ?? null;
   if (S.model && S.level >= S.model.levels.length) { S.level = 0; S.vb = null; }
   if (!selectedStack()) S.selected = null;   // the stack is gone since (a rescan moved its chests)
@@ -401,7 +401,6 @@ function drawPanel(): void {
   const p = $<HTMLElement>("#map-panel"), m = S.model;
   if (!p || !m) return;
   const was = focusKey(p), s = selectedStack();
-  if (!s && renaming && p.querySelector("#map-name")) return;   // a redraw would throw away what is being typed
   if (!s) p.replaceChildren(...totalsPanel(m));
   else {
     const chests = chestViews(m, s, state.inv!, labels());
@@ -445,22 +444,23 @@ function totalsPanel(m: HouseModel): HTMLElement[] {
 // the offer to carry over the name of an earlier house this one replaced (house-map-model.mts carryOver).
 function houseHead(m: HouseModel): HTMLElement {
   const meta = txt(m.id === PLAIN ? "Ground chests outside any drawn house" : `${plural(m.levels.length, "level")} · ${plural(m.stacks.length, "stack")} · ${plural(m.spots.length, "standing spot")}`, "t-sm muted");
-  if (renaming) return box("header", { class: "map-panel-head" }, renameField(m), meta);
+  if (renaming != null) return box("header", { class: "map-panel-head" }, renameField(m, renaming), meta);
   const offer = carryOver(m, S.list?.houses.map((h) => h.id) ?? [], S.names);
   return box("header", { class: "map-panel-head" },
     box("div", { class: "map-house-title" }, el("h2", { class: "t-lg" }, houseName(m)),
-      m.id === PLAIN ? null : button({ label: "Rename house", icon: "pencil", iconOnly: true, variant: "ghost", size: "sm", attrs: { id: "map-rename" }, onClick: () => { renaming = true; drawPanel(); const f = $<HTMLInputElement>("#map-name"); f?.focus(); f?.select(); } })),
+      m.id === PLAIN ? null : button({ label: "Rename house", icon: "pencil", iconOnly: true, variant: "ghost", size: "sm", attrs: { id: "map-rename" }, onClick: () => { renaming = m.name ?? ""; drawPanel(); const f = $<HTMLInputElement>("#map-name"); f?.focus(); f?.select(); } })),
     meta,
     offer ? box("div", { class: "map-carry", id: "map-carry" }, txt(`Use the name "${offer.name}" from the earlier house here?`, "t-sm"),
       button({ label: "Use name", size: "sm", attrs: { id: "map-carry-use" }, onClick: () => { void saveName(m, offer.name).then((err) => { if (err) { toast(err, "bad"); return; } render(); $<HTMLElement>("#map-rename")?.focus(); }); } })) : null);
 }
 // Enter or leaving the field saves, Esc cancels; a refused save keeps the field open with the server's reason under it.
-// Either way out puts the focus back on the ✎.
-function renameField(m: HouseModel): HTMLElement {
-  const f = input({ size: "sm", value: m.name ?? "", placeholder: houseName(m), attrs: { id: "map-name", maxlength: "60", "aria-label": "House name" } });
-  const err = box("div", { class: "map-name-error" });
-  let busy = false, closed = false;
-  const close = (saved: boolean): void => { closed = true; renaming = false; if (saved) render(); else drawPanel(); $<HTMLElement>("#map-rename")?.focus(); };
+// Either way out puts the focus back on the ✎. A redraw (a reload on a new scan) rebuilds the field from the draft;
+// the field it replaces is gone by the time its blur is looked at, so it saves nothing. Leaving the window (to the
+// game) is not leaving the field.
+function renameField(m: HouseModel, draft: string): HTMLElement {
+  const f = input({ size: "sm", value: draft, placeholder: houseName(m), attrs: { id: "map-name", maxlength: "60", "aria-label": "House name" } });
+  let busy = false, closed = false, err: HTMLElement | null = null;
+  const close = (saved: boolean): void => { closed = true; renaming = null; if (saved) render(); else drawPanel(); $<HTMLElement>("#map-rename")?.focus(); };
   const save = async (): Promise<void> => {
     if (busy || closed) return;
     if (f.value.trim() === (m.name ?? "")) { close(false); return; }
@@ -468,14 +468,21 @@ function renameField(m: HouseModel): HTMLElement {
     const why = await saveName(m, f.value);
     busy = false;
     if (!why) { if (closed) render(); else close(true); }   // saved after an Esc: the name still changed
-    else if (!closed) { err.replaceChildren(message({ tone: "bad", text: why, attrs: { id: "map-name-error" } })); f.setAttribute("aria-invalid", "true"); f.setAttribute("aria-describedby", "map-name-error"); }
+    else if (!closed && f.isConnected) {
+      const shown = message({ tone: "bad", text: why, attrs: { id: "map-name-error" } });
+      if (err) err.replaceWith(shown); else f.after(shown);
+      err = shown;
+      f.setAttribute("aria-invalid", "true"); f.setAttribute("aria-describedby", "map-name-error");
+    }
   };
+  f.addEventListener("input", () => { renaming = f.value; });
+  f.addEventListener("focus", () => { f.setSelectionRange(f.value.length, f.value.length); });   // a rebuilt field keeps typing at the end
   f.addEventListener("keydown", (e) => {
     if (e.key === "Enter") { e.preventDefault(); void save(); }
     if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); if (!closed) close(false); }
   });
-  f.addEventListener("blur", () => { void save(); });
-  return box("div", { class: "map-name-edit" }, f, err);
+  f.addEventListener("blur", () => { if (document.hasFocus()) setTimeout(() => { if (f.isConnected) void save(); }, 0); });
+  return box("div", { class: "map-name-edit" }, f);
 }
 // PUT the house's whole entry (any other fields it carries kept) with its footprint now, so a later redesign can be
 // offered the name, and keep the answer in the page state (the caller redraws). Returns the server's reason when it refuses.

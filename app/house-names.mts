@@ -19,7 +19,9 @@ export const emptyHouseMap = (): HouseMapDoc => ({ version: 1, houses: {} });
 
 const isObj = (v: unknown): v is Record<string, unknown> => !!v && typeof v === "object" && !Array.isArray(v);
 const isInt = (v: unknown): v is number => typeof v === "number" && Number.isInteger(v);
-const CONTROL = /[\u0000-\u001f\u007f-\u009f]/;
+// C0/C1 controls, the line and paragraph separators and the bidi embeddings, overrides and isolates (a name could
+// otherwise flip the text around it); a zero-width joiner stays, emoji need it.
+const CONTROL = /[\u0000-\u001f\u007f-\u009f\u2028\u2029\u202a-\u202e\u2066-\u2069]/;
 
 // An entry as PUT carries it: the name trimmed, null when it is empty (the entry is removed), or why it is refused.
 export function checkHouseEntry(v: unknown): { ok: true; entry: HouseEntry | null } | { ok: false; error: string } {
@@ -44,7 +46,7 @@ export function withHouseEntry(doc: HouseMapDoc, id: string, entry: HouseEntry |
 
 // The file as the server reads it. A file that is too big, does not parse or is not version 1 is moved aside and reads
 // as empty (the next PUT would otherwise overwrite it); an entry with a bad id or name is left out of the read and the
-// file is left alone. `problem` says what happened, for the log.
+// file is left alone until the next save, which drops it. `problem` says what happened, for the log.
 export function readHouseMap(file: string): { doc: HouseMapDoc; problem: string | null } {
   if (!existsSync(file)) return { doc: emptyHouseMap(), problem: null };
   let why: string | null = null, raw: unknown = null;
@@ -67,6 +69,12 @@ export function readHouseMap(file: string): { doc: HouseMapDoc; problem: string 
   return { doc: { version: 1, houses }, problem: dropped ? `house-map.json: ${dropped} ${dropped === 1 ? "entry" : "entries"} with a bad id or name left out` : null };
 }
 
-export function writeHouseMap(file: string, doc: HouseMapDoc): void {
-  writeFileAtomic(file, JSON.stringify(doc, null, 2) + "\n", DATA_FILE_MODE);
+// Writes the map, or says why not: more than MAX_HOUSES names, or a file larger than a read accepts (it would be moved
+// aside as corrupt on the next read).
+export function writeHouseMap(file: string, doc: HouseMapDoc): string | null {
+  if (Object.keys(doc.houses).length > MAX_HOUSES) return `at most ${MAX_HOUSES} houses can be named; clear some names first`;
+  const text = JSON.stringify(doc, null, 2) + "\n";
+  if (Buffer.byteLength(text) > MAX_HOUSE_MAP_BYTES) return `that would make house-map.json larger than ${MAX_HOUSE_MAP_BYTES / 1e6} MB`;
+  writeFileAtomic(file, text, DATA_FILE_MODE);
+  return null;
 }

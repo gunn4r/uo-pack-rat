@@ -47,7 +47,7 @@
 //         (<data>/item-kinds.json, the player's own item kinds: app/item-kinds.mts; kind null resets, an import merges) ·
 //         GET /api/houses (the houses scans captured: app/house-capture.mts; tiledataFrom says where tiledata.mul came from, or why there is none) · GET /api/houses/<id> (one house's model: app/house-model.mts, tiledata.mul via app/tiledata.mts or the uoFolder setting) ·
 //         GET /api/house-map · PUT /api/house-map/<id> {name, bounds?} (<data>/house-map.json, the player's house names: app/house-names.mts;
-//         an empty name removes the entry; 400 on a bad name or id) ·
+//         an empty name removes the entry; 400 on a bad name or id, 409 past 500 names or 1 MB) ·
 //         GET|PUT /api/organize (<data>/organize.json, Organize's labels, rules, catch-all and pinned items: app/organize-config.mts;
 //         GET salvages a hand-edited file and lists what it dropped in `problems`) ·
 //         GET /api/organize/presets (app/organize-presets.mts's PRESETS, the rule filters the Organize page offers
@@ -142,7 +142,7 @@ import { PRESETS } from "./organize-presets.mts";
 import { emptyKindOverrides, isKindName, kindCount, kindsDocument, kindsFor, kindsText, salvageKindOverrides, withKinds, withoutKinds, KIND_LIMITS, MAX_KINDS_BYTES, OVERRIDE_KINDS } from "./item-kinds.mts";
 import { proposeOrganize, STRATEGY_IDS, type StrategyId } from "./organize-strategies.mts";
 import { latestHouses, type HouseSource } from "./house-capture.mts";
-import { checkHouseEntry, isHouseId, readHouseMap, withHouseEntry, writeHouseMap, MAX_HOUSES } from "./house-names.mts";
+import { checkHouseEntry, isHouseId, readHouseMap, withHouseEntry, writeHouseMap, type HouseMapDoc } from "./house-names.mts";
 import { buildHouseModel, plotSize, type HouseContainerInput, type HouseModel } from "./house-model.mts";
 import { uoFolderFromTazuo, loadTileData, type TileData } from "./tiledata.mts";
 import { addGrab, emptyOrganizeState, harvestTrips, noteSeen, pruneOverlay, salvageOrganizeState, PENDING_GRACE_MS, type BridgeView, type OrganizeState } from "./organize-state.mts";
@@ -916,11 +916,11 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
   // moved aside and the houses read unnamed; what a read set aside or left out goes to the log, once while it stays the same.
   const HOUSE_MAP = join(CONFIG.dataDir, "house-map.json");
   let namesProblem: string | null = null;
-  function readNames(): Record<string, { name: string }> {
+  function readNames(): HouseMapDoc {
     const { doc, problem } = readHouseMap(HOUSE_MAP);
     if (problem && problem !== namesProblem) safeAppendLog(CONFIG.paths.log, `${new Date().toISOString()} ${problem}\n`);
     namesProblem = problem;
-    return doc.houses;
+    return doc;
   }
   // <data>/organize-state.json: Organize's results overlay (app/organize-state.mts). Only this server writes it;
   // a damaged one reads as empty, which at worst plans a finished move again (the bridge then finds the item
@@ -2098,7 +2098,7 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
           one = houses.find((h) => h.id === id);
           if (!one) return send(res, 404, { ok: false, error: "no such house" });
         }
-        const from = houseTileData(), td = from.td, names = readNames();
+        const from = houseTileData(), td = from.td, names = readNames().houses;
         const named = (id: string): { name?: string } => (names[id] ? { name: names[id].name } : {});
         if (one) return send(res, 200, { ok: true, house: { ...houseModel(inv, one, td), ...named(one.id) } });
         return send(res, 200, { ok: true, tiledata: td !== null, tiledataFrom: { folder: from.folder, source: from.source, reason: from.reason }, houses: houses.map((h) => {
@@ -2109,17 +2109,16 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
       // The house names (issue #164): GET the whole map; PUT /api/house-map/<id> {name, bounds?, …} replaces that house's
       // entry (an empty name removes it). Any id of the house-id shape is taken, listed or not: a name kept for a house
       // that was redesigned or moved is what the page offers to carry over to its new id.
-      if (req.method === "GET" && url.pathname === "/api/house-map") return send(res, 200, { ok: true, houses: readNames() });
+      if (req.method === "GET" && url.pathname === "/api/house-map") return send(res, 200, { ok: true, houses: readNames().houses });
       if (req.method === "PUT" && url.pathname.startsWith("/api/house-map/")) {
         let id: string | null;
         try { id = decodeURIComponent(url.pathname.slice("/api/house-map/".length)); } catch { id = null; }
         if (id == null || !isHouseId(id)) return send(res, 400, { ok: false, error: "that is not a house id (<facet>-<x>-<y>)" });
         const checked = checkHouseEntry(await readBody(req, { limit: 8e3 }));
         if (!checked.ok) return send(res, 400, { ok: false, error: checked.error });
-        const { doc } = readHouseMap(HOUSE_MAP);
-        if (checked.entry && !doc.houses[id] && Object.keys(doc.houses).length >= MAX_HOUSES) return send(res, 409, { ok: false, error: `at most ${MAX_HOUSES} houses can be named` });
         mkdirSync(dirname(HOUSE_MAP), { recursive: true, mode: DATA_DIR_MODE });
-        writeHouseMap(HOUSE_MAP, withHouseEntry(doc, id, checked.entry));
+        const refused = writeHouseMap(HOUSE_MAP, withHouseEntry(readNames(), id, checked.entry));
+        if (refused) return send(res, 409, { ok: false, error: refused });
         return send(res, 200, { ok: true, entry: checked.entry });
       }
       // The player's item kinds (issue #150): GET the whole document (the page's Classify this… and Export read it);
