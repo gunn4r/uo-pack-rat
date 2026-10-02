@@ -1140,6 +1140,8 @@ function setDrawerW(chosen: number, max?: number): void {
 }
 // The page's size changes with the window (or the sidebar): fit the drawer again. Watched from the start, so its first call comes before any drawer opens.
 new ResizeObserver(() => fitDrawer()).observe(body());
+// The levels pane folds or comes back (a window crossing 1800 px): fit again once it has. Only the pane's own width transition counts, so the drawer's resize it may cause cannot call this again.
+body().addEventListener("transitionend", (e) => { if ((e.target as Element).classList?.contains("map-side") && e.propertyName === "width") fitDrawer(); });
 function drawerGrip(): HTMLElement {
   const g = box("div", { class: "map-drawer-grip", id: "map-drawer-grip", role: "separator", tabindex: "0", "aria-orientation": "vertical", "aria-label": "Resize contents", "aria-valuemin": DRAWER_MIN, "aria-valuenow": shownW, "aria-valuemax": shownW });
   g.addEventListener("pointerdown", (e: PointerEvent) => {

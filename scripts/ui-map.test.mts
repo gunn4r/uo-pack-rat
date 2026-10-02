@@ -1181,7 +1181,7 @@ test("[slow] House map: the contents drawer's handle resizes it by drag (kept ac
         let min = Infinity;
         document.querySelector<HTMLButtonElement>(`#map-panel li[data-chest="${top}"] [data-act="items"]`)!.click();
         const t0 = performance.now();
-        while (performance.now() - t0 < 1500) { min = Math.min(min, stage.getBoundingClientRect().width); await new Promise((r) => requestAnimationFrame(r)); }
+        while (performance.now() - t0 < 1500) { min = Math.min(min, stage.getBoundingClientRect().width); await new Promise((r) => { requestAnimationFrame(r); setTimeout(r, 50); }); }   // a throttled window's frames can stall
         return Math.round(min);
       }, TOP);
       await page.waitForSelector("#map-drawer .map-item");

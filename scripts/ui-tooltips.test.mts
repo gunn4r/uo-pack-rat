@@ -76,8 +76,16 @@ test("[slow] the item tooltip shows on every screen that draws an item: Inventor
     await page.keyboard.press("Escape");
     await setRows(page, "Grouped");
     await tipShows(page, page.locator("#inv-table tbody tr.item[data-serial] td:first-child").first(), "a grouped Inventory row");
-    const groups = await page.locator("#inv-table tbody tr.item").evaluateAll((trs) => trs.map((tr) => tr.hasAttribute("data-serial")));
-    assert.ok(groups.includes(false), "a group of several stacks carries no serial, so no tooltip");
+    // a group of several stacks (found through the API, not the first screenful) carries no serial, so no tooltip
+    const many = await page.evaluate(async () => ((await (await fetch("/api/items?group=1&limit=500")).json()) as { groups: Array<{ name: string; stacks: number }> }).groups.find((g) => g.stacks > 1)?.name ?? null);
+    assert.ok(many, "the demo scans hold a name in several stacks");
+    await page.fill("#f-text", many);
+    const hasSerial = await page.waitForFunction((name) => {
+      const tr = [...document.querySelectorAll("#inv-table tbody tr.item")].find((r) => r.querySelector("td")?.textContent === name);
+      return tr ? String(tr.hasAttribute("data-serial")) : null;
+    }, many, { timeout: 15_000 });
+    assert.equal(await hasSerial.jsonValue(), "false", `the group "${many}" of several stacks carries no serial`);
+    await page.fill("#f-text", "");
     await setRows(page, "List");
 
     await go(page, "#/characters/Dorran", "#tab-characters .sheet .slot[data-serial]");
