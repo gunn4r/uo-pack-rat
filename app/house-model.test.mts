@@ -104,7 +104,11 @@ test("[fast] house model: a house's size is its plot, without a row of front ste
   const both = buildHouseModel({ ...h, tiles: [...h.tiles, ...north] }, td, []);
   assert.deepEqual([size(both), both.y0, both.y1], [[10, 10], 8999, 9010], "steps on two opposite sides are each trimmed");
   const mixed = buildHouseModel({ ...h, tiles: [...h.tiles, ...north.filter((t) => t[1] !== 9004), [G.dirt, 9004, 8999, 7, 0]] }, td, []);
-  assert.deepEqual(size(mixed), [10, 11], "a row holding anything but stairs stays");
+  assert.deepEqual(size(mixed), [10, 11], "a row holding a tile at the floor's z stays");
+  const grass = buildHouseModel({ ...h, tiles: [...h.tiles, ...north.filter((t) => t[1] !== 9004), [G.dirt, 9004, 8999, 0, 0]] }, td, []);
+  assert.deepEqual(size(grass), [10, 10], "a ground tile below the floor beside the steps is still outside the plot");
+  const bare = buildHouseModel({ ...h, tiles: [...h.tiles, ...north.map((t): HouseTile => [G.dirt, t[1], t[2], 0, 0])] }, td, []);
+  assert.deepEqual(size(bare), [10, 11], "a row with no stairs is never trimmed");
 });
 
 test("[fast] house model: under the 2nd floor is indoors, the courtyard is the yard", () => {
