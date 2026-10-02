@@ -356,3 +356,29 @@ test("[slow] House map: Highlight the stack queues one highlight per chest top f
     await done(app, dir);
   }
 });
+
+test("[slow] House map: with no house captured the demo's ground chests stand on a plain grid with a hint to rescan, and with nothing scanned an empty state says how to scan a house", async (t) => {
+  const why = unavailable();
+  if (why) return t.skip(why);
+  const demoDir = mkdtempSync(join(tmpdir(), "packrat-map-demo-"));
+  writeFileSync(join(demoDir, "settings.json"), JSON.stringify({ schemaVersion: 1, shard: "uoalive", setupDone: true }));
+  const demo = await launch(demoDir, { demo: true });
+  try {
+    await go(demo.page, "#/map", "#map-svg .map-stack");
+    assert.equal(await demo.page.locator("#map-house").inputValue(), "plain");
+    assert.equal(await demo.page.locator("#map-svg [data-chest]").count(), 2);
+    assert.match(await demo.page.locator("#map-stage").textContent() || "", /Scan from inside the house with the 2\.11\.0 scripts to draw it/);
+    await demo.page.locator("#map-svg .map-stack").first().focus();
+    await demo.page.keyboard.press("Enter");
+    assert.equal(await demo.page.locator("#map-panel .map-chest-row").count(), 2);
+    assert.deepEqual(demo.errors, []);
+  } finally { await done(demo.app, demoDir); }
+  const emptyDir = mkdtempSync(join(tmpdir(), "packrat-map-empty-"));
+  writeFileSync(join(emptyDir, "settings.json"), JSON.stringify({ schemaVersion: 1, shard: "uoalive", setupDone: true }));
+  const empty = await launch(emptyDir);
+  try {
+    await go(empty.page, "#/map", ".map-empty");
+    assert.match(await empty.page.locator(".map-empty").textContent() || "", /2\.11\.0 scripts/);
+    assert.deepEqual(empty.errors, []);
+  } finally { await done(empty.app, emptyDir); }
+});

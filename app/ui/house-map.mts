@@ -113,8 +113,10 @@ function stage(): HTMLElement {
         button({ label: "Fit the level", icon: "fit", iconOnly: true, size: "sm", attrs: { id: "map-fit" }, onClick: fitTo })),
       box("div", { class: "map-callout", id: "map-callout", hidden: "" })));
 }
+// Above the map: why it is drawn in plain colours (no tiledata.mul), or, on the plain grid, how to get the house drawn.
 function notes(): HTMLElement[] {
-  const note = S.id === PLAIN || !S.list || S.list.tiledata ? null : tiledataNote(S.list.tiledataFrom.reason);
+  if (S.id === PLAIN) return [message({ tone: "info", text: "These chests are not inside a house a scan has drawn. Scan from inside the house with the 2.11.0 scripts to draw it.", attrs: { id: "map-plain-note" } })];
+  const note = !S.list || S.list.tiledata ? null : tiledataNote(S.list.tiledataFrom.reason);
   return note ? [message({ tone: "warn", title: "Plain colours", text: note, attrs: { id: "map-tiledata-note" }, actions: [box("a", { class: "btn btn-sm", href: "#/settings" }, txt("Set the UO folder in Settings"))] })] : [];
 }
 function emptyState(): HTMLElement {
