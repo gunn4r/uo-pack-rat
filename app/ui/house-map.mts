@@ -1,10 +1,11 @@
-// ui/house-map.mts — the House map screen (#/map, #/map/<house id>; issue #10, spec section 4). It fetches the houses the scans captured (GET /api/houses) and every house's model (GET /api/houses/<id>), picks the deep-linked house (else the last one shown, else the one with the most chests; a deep link to a house that no longer exists falls back and the route is put back to #/map), and lays out three panes: levels, rooms and the yard on the left, the map in the middle, the details on the right. Ground chests outside every drawn house are a house of their own on a plain grid. Every rule and number is ui/house-map-model.mts's; this module builds the DOM and the SVG and wires the events.
+// ui/house-map.mts — the House map screen (#/map, #/map/<house id>; issue #10, spec section 4). It fetches the houses the scans captured (GET /api/houses) and every house's model (GET /api/houses/<id>), picks the deep-linked house (else the last one shown, else the one with the most chests; a deep link to a house that no longer exists falls back and the route is put back to #/map), and lays out three panes: levels, rooms and the yard on the left, the map in the middle, the details on the right, and a chest's contents in a drawer beside them. Ground chests outside every drawn house are a house of their own on a plain grid. Every rule and number is ui/house-map-model.mts's; this module builds the DOM and the SVG and wires the events.
 import { state, bridge } from "./store.mts";
 import { $, el, safeColor, fmtN, toast } from "./dom.mts";
 import { api } from "./api.mts";
-import { box, txt, button, segmented, pill, message, meter, keyValue, modalOpen, tipWrap, input, copyText } from "./components.mts";
+import { box, txt, button, segmented, pill, message, meter, keyValue, modalOpen, tipWrap, input, copyText, icon } from "./components.mts";
 import { labelContainer } from "./containers.mts";
-import { showContainer } from "./inventory.mts";
+import { showContainer, itemMenu, rarityEl, tagEls } from "./inventory.mts";
+import { propertyLines, RESISTS } from "./peek.mts";
 import { bridgeActionReason, runBridgeAction, sendBridge, type BridgeTarget } from "./bridge.mts";
 import { errorText } from "./messages.mts";
 import { openWorldMap, fetchFacetImage, type FacetImage } from "./world-map.mts";
@@ -12,8 +13,9 @@ import { plural } from "./inv-model.mts";
 import { fillTone } from "./organize-model.mts";
 import { PLAIN, pickHouse, plainGrid, chestCount, roomCounts, houseLabel, houseName, carryOver, tiledataNote, chestViews, colourOf, chestLabel, sceneOf, boundsOf, fit, vbText,
   cutAway, calloutLines, nearestInDirection, houseTotals, legendOf, stackWhere, anchorOf, zoomAt, fillWords, whereOf, whereTitle, cropAround, facetMapUrl, markersOf, facetMapNote, markerRadii,
-  type Marker, type View, type Mode, type Box, type Colour, type ChestView, type Piece, type Prism, type Pt, type Dir } from "./house-map-model.mts";
-import type { ContainerLabel, HouseModel, HousesApiResponse, HouseApiResponse, HouseMapApiResponse, HouseMapEntry, HouseMapPutApiResponse, Room, Stack } from "./api-types.mts";
+  drawerChest, drawerMeta, slotsText, contentsOf, contentsSummary, filterContents, type Contents, type ContentsNode, type Marker, type View, type Mode, type Box, type Colour, type ChestView, type Piece, type Prism, type Pt, type Dir } from "./house-map-model.mts";
+import type { ContainerLabel, HouseModel, HousesApiResponse, HouseApiResponse, HouseMapApiResponse, HouseMapEntry, HouseMapPutApiResponse, ItemsApiResponse, Room, Stack } from "./api-types.mts";
+import type { Item } from "../vault-lib.mts";
 
 const SVG_NS = "http://www.w3.org/2000/svg";
 // The map's page state: the houses and models as last fetched, the player's house names (issue #164), the one shown, its level, view and colour mode, the room zoomed to, the selected stack (by a serial in it, so a rescan that keeps the stack keeps the selection), the hovered and focused stacks (by letter), the viewBox, and a load error.
@@ -59,21 +61,29 @@ export async function showMap(want: string | null): Promise<void> {
   S.model = id === PLAIN ? S.plain : S.models.find((m) => m.id === id) ?? null;
   if (S.model && S.level >= S.model.levels.length) { S.level = 0; S.vb = null; }
   if (!selectedStack()) S.selected = null;   // the stack is gone since (a rescan moved its chests)
-  render();
+  if (!render() && D) void loadDrawer();   // a new scan: the open drawer's chest fetched again (once), its tab, filter, folded bags and scroll kept
 }
 
-function render(): void {
+// Returns whether it started fetching the drawer's chest (the selection moved it to another chest), so a reload asks for it only once.
+function render(): boolean {
   const refocusScreen = keepFocus();
   document.title = S.model?.name ? `${S.model.name} · Pack Rat` : "Pack Rat";
   paintTopbar();
-  if (S.error) body().replaceChildren(message({ tone: "bad", title: "Could not load the house map", text: S.error }));
-  else if (!S.model) body().replaceChildren(emptyState());
-  else {
-    body().replaceChildren(side(), stage(), box("aside", { class: "card map-panel", id: "map-panel", "aria-label": "Details" }));
-    drawPanel();   // before the map, so the first fit measures the pane with the panel already filled
+  let fetching = false;
+  if (!S.model) {
+    body().classList.remove("has-drawer");
+    body().replaceChildren(S.error ? message({ tone: "bad", title: "Could not load the house map", text: S.error }) : emptyState());
+  } else {
+    fetching = followSelection();
+    if (fetching) void loadDrawer();
+    const drawer = $<HTMLElement>("#map-drawer");   // kept, so a redraw does not slide it in again
+    body().replaceChildren(side(), stage(), box("aside", { class: "card map-panel", id: "map-panel", "aria-label": "Details" }), ...(drawer && D ? [drawer] : []));
+    drawPanel();   // before the map, so the first fit measures the pane with the panel and the drawer already filled
+    placeDrawer();
     drawMap();
   }
   refocusScreen?.();
+  return fetching;
 }
 type Focusable = HTMLElement | SVGElement;
 // The focused control on the map screen, as a function that puts focus on its rebuilt twin once render() is done: a level pill, a room, a crumb or a stack by its data key, a panel control by focusKey. One that is gone hands focus to a stand-in: the first pill for a pill, the last crumb still a button for a crumb, else the map's tab stop. Null when focus is outside the screen.
@@ -89,6 +99,8 @@ function keepFocus(): (() => void) | null {
   if (room != null) return () => first(() => q(`.map-room[data-room="${room}"]`), stop);
   if (crumb != null) return () => first(() => q(`#map-crumbs [data-crumb="${crumb}"]`), () => [...tab.querySelectorAll<HTMLElement>("#map-crumbs button")].at(-1) ?? null, stop);
   if (stack != null) return () => first(() => q(`#map-svg [data-stack="${stack}"]`), stop);
+  const drawer = $<HTMLElement>("#map-drawer"), inDrawer = drawer ? focusKey(drawer) : null;
+  if (inDrawer) return () => { const d = $<HTMLElement>("#map-drawer"); if (d?.querySelector(inDrawer)) refocus(d, inDrawer, false); else first(stop); };
   const panel = $<HTMLElement>("#map-panel"), was = panel ? focusKey(panel) : null;
   return was ? () => { const p = $<HTMLElement>("#map-panel"); if (p?.querySelector(was)) refocus(p, was); else first(stop); } : null;
 }
@@ -357,9 +369,11 @@ function select(serial: number | null): void {
   S.selected = serial;
   const s = selectedStack();
   if (s) S.focus = s.letter;
+  if (followSelection()) void loadDrawer();
   paintStacks();
   drawCrumbs();
   drawPanel();
+  placeDrawer();
 }
 // Back to the house, or Esc: the selection clears, and focus in the panel (whose controls go with it) returns to the stack that was selected.
 function unselect(): void {
@@ -428,11 +442,12 @@ function focusKey(p: HTMLElement): string | null {
   const row = c.closest<HTMLElement>("li[data-chest]")?.dataset.chest;
   return `${row ? `li[data-chest="${row}"] ` : ""}${c.dataset.act ? `[data-act="${c.dataset.act}"]` : `#${CSS.escape(c.id)}`}`;
 }
-function refocus(p: HTMLElement, key: string): void {
+// `scroll` false for the drawer: its redraw puts the list's scroll back itself, and focusing a row would scroll it into view.
+function refocus(p: HTMLElement, key: string, scroll = true): void {
   const c = p.querySelector<HTMLElement>(key);
   if (!c) return;
   const wrap = c.parentElement?.classList.contains("tipwrap") ? c.parentElement : null;
-  (c.matches(":disabled") && wrap ? wrap : c).focus();
+  (c.matches(":disabled") && wrap ? wrap : c).focus({ preventScroll: !scroll });
 }
 // Nothing selected: the house's totals, the colours, and how to start.
 function totalsPanel(m: HouseModel): HTMLElement[] {
@@ -568,8 +583,9 @@ function chestRow(m: HouseModel, s: Stack, c: ChestView): HTMLElement {
   const container = state.inv!.containers[String(c.serial)];
   const noLabel = !c.opened ? notOpened : state.organize.blacklist.includes(c.serial) ? "Blacklisted: scans skip it. Unblacklist it in Settings to label it." : null;
   const lbl = button({ label: labels()[String(c.serial)] ? "Edit label…" : "Label…", size: "sm", disabled: !!noLabel, attrs: { "data-act": "label" }, onClick: () => { if (container) void labelContainer(container); } });
-  const items = button({ label: "Show items", size: "sm", disabled: !c.opened, attrs: { "data-act": "items" }, onClick: () => showContainer(c.serial) });
-  return box("li", { class: `map-chest-row${c.opened ? "" : " unopened"}`, "data-chest": String(c.serial) },
+  const items = button({ label: "Show items", size: "sm", disabled: !c.opened, attrs: { "data-act": "items" }, onClick: () => openDrawer(c.serial) });
+  const open = D?.chest === c.serial;
+  return box("li", { class: `map-chest-row${c.opened ? "" : " unopened"}${open ? " open" : ""}`, "data-chest": String(c.serial), ...(open ? { "aria-current": "true" } : {}) },
     swatchEl(colourOf(c, S.mode)),
     box("div", { class: "map-chest-text" },
       box("span", { class: "map-chest-name" }, txt(c.code, "mono strong"), txt(c.name, "ellip strong")),
@@ -599,6 +615,166 @@ async function highlightStack(m: HouseModel, s: Stack, chests: ChestView[]): Pro
     drawPanel();
   }
   toast(stopped ? `${sent} of ${chests.length} queued, stopped at ${stopped}` : `${plural(sent, "highlight")} queued for ${bridge.character}`, stopped ? "bad" : "");
+}
+// ---------------------------------------------------------------- the contents drawer
+// A column after the panel that lists a chest of the selected stack without leaving the map: the chest shown (null when no scan opened any chest of the stack), the filter typed (kept from chest to chest), the bags closed, its items as last fetched (kept on screen while a rescan's are fetched), the list's scroll, and the chest whose Show items opened it, where focus goes back on close.
+interface Drawer { chest: number | null; filter: string; closed: Set<number>; items: Item[] | null; error: string | null; scroll: number; opener: number | null }
+let D: Drawer | null = null;
+let drawerSeq = 0;
+const ITEMS_CHUNK = 500;   // GET /api/items' own cap
+const shownChest = (chest: number | null): Pick<Drawer, "chest" | "closed" | "items" | "error" | "scroll"> => ({ chest, closed: new Set(), items: null, error: null, scroll: 0 });
+// Show items: the drawer on that chest, focus in its filter.
+function openDrawer(chest: number): void {
+  const fresh = !D;
+  D = { filter: D?.filter ?? "", opener: chest, ...shownChest(chest) };
+  drawPanel();
+  placeDrawer(fresh);
+  void loadDrawer();
+  $<HTMLInputElement>("#map-drawer-filter")?.focus();
+}
+function closeDrawer(): void {
+  if (!D) return;
+  const opener = D.opener;
+  D = null;
+  drawerSeq++;
+  placeDrawer();
+  drawPanel();
+  const back = opener == null ? null : $<HTMLElement>(`#map-panel li[data-chest="${opener}"] [data-act="items"]`), s = selectedStack();
+  if (back) back.focus();
+  else if (s) focusStack(s.letter);
+}
+// The drawer follows the selection: gone with none, on the stack's top opened chest when the selection moves to another stack. True when it moved to another chest, whose items the caller fetches.
+function followSelection(): boolean {
+  if (!D) return false;
+  const s = selectedStack();
+  if (!s || !S.model) { D = null; drawerSeq++; return false; }
+  if (D.chest != null && s.serials.includes(D.chest)) return false;
+  Object.assign(D, shownChest(drawerChest(chestViews(S.model, s, state.inv!, labels()))));
+  return true;
+}
+// A tab: another chest of the stack.
+function showChest(serial: number): void {
+  if (!D || D.chest === serial) return;
+  const onTab = !!document.activeElement?.closest("#map-drawer [role=radio]");
+  Object.assign(D, shownChest(serial));
+  drawDrawer();
+  drawPanel();
+  void loadDrawer();
+  if (onTab) $<HTMLElement>(`#map-drawer-tab-${serial}`)?.focus();
+}
+// Put the drawer in the page (or take it out), then draw it. A drawer just opened grows from no width.
+function placeDrawer(animate = false): void {
+  const page = body();
+  let d = $<HTMLElement>("#map-drawer");
+  if (!D || !S.model) { d?.remove(); page.classList.remove("has-drawer"); return; }
+  const fresh = !d;
+  if (!d) { d = box("aside", { class: "card map-drawer", id: "map-drawer", role: "region", onkeydown: drawerKeys }); page.append(d); }
+  page.classList.add("has-drawer");
+  drawDrawer();
+  if (fresh && animate) { d.classList.add("entering"); void d.offsetWidth; d.classList.remove("entering"); }
+}
+// Esc from anywhere inside the drawer closes it (a menu opened from a row lives outside it and keeps its own Esc).
+function drawerKeys(e: Event): void {
+  const k = e as KeyboardEvent;
+  if (k.key !== "Escape" || k.defaultPrevented || k.metaKey || k.ctrlKey || k.altKey || k.shiftKey) return;
+  k.preventDefault();
+  k.stopPropagation();
+  closeDrawer();
+}
+const isBag = (serial: number): boolean => !!state.inv?.containers[String(serial)];
+// The header (code and name, where it is, ✕, the fill, the summary, a tab per chest of the stack, the filter and Open in Inventory) over the list. Every control has an id, so a redraw puts focus back on the same one (focusKey).
+function drawDrawer(): void {
+  const d = $<HTMLElement>("#map-drawer"), m = S.model, s = selectedStack(), dr = D;
+  if (!d || !m || !s || !dr) return;
+  const was = focusKey(d), chests = chestViews(m, s, state.inv!, labels()), c = chests.find((x) => x.serial === dr.chest) ?? null;
+  d.setAttribute("aria-label", `Contents of ${c ? `${c.code} ${c.name}` : `Stack ${s.letter}`}`);
+  const tabs = segmented({ label: "Chests in this stack", value: String(dr.chest ?? ""), onChange: (v) => showChest(+v),
+    options: chests.map((x) => ({ value: String(x.serial), label: x.code, sub: x.name, disabled: !x.opened, title: x.opened ? `${x.code} ${x.name}` : "Not opened yet" })) });
+  for (const b of tabs.querySelectorAll<HTMLButtonElement>("button")) b.id = `map-drawer-tab-${b.dataset.value}`;
+  const filter = input({ type: "search", size: "sm", value: dr.filter, placeholder: c ? `Filter ${c.code} contents…` : "Filter contents…", attrs: { id: "map-drawer-filter", "aria-label": c ? `Filter ${c.code} contents` : "Filter contents" } });
+  filter.addEventListener("input", () => { dr.filter = filter.value; dr.scroll = 0; drawDrawerBody(); });
+  const list = box("div", { class: "map-drawer-body", id: "map-drawer-body" });
+  list.addEventListener("scroll", () => { if (list.isConnected) dr.scroll = list.scrollTop; });   // a list being replaced reads 0 once detached
+  const meta = txt(c ? drawerMeta(c, s) : stackWhere(m, s), "t-sm muted ellip"), summary = txt("", "t-sm muted");
+  meta.id = "map-drawer-meta";
+  summary.id = "map-drawer-summary";
+  d.replaceChildren(
+    box("header", { class: "map-drawer-head" },
+      box("div", { class: "map-drawer-title" },
+        box("div", { class: "map-drawer-titles" }, box("h2", { class: "t-lg map-drawer-name" }, ...(c ? [txt(c.code, "mono"), txt(c.name, "ellip")] : [txt(`Stack ${s.letter}`, "ellip")])), meta),
+        button({ label: "Close contents", icon: "close", iconOnly: true, variant: "ghost", size: "sm", attrs: { id: "map-drawer-close" }, onClick: closeDrawer })),
+      c?.fill ? box("div", { class: "map-drawer-fill" }, meter(c.fill.items, c.fill.max, { tone: fillTone(c.fill), label: fillWords(c) }), txt(slotsText(c), "t-sm num")) : null,
+      summary,
+      box("div", { class: "map-drawer-tabs" }, tabs),
+      box("div", { class: "map-drawer-tools" }, filter, button({ label: "Open in Inventory", size: "sm", disabled: dr.chest == null, attrs: { id: "map-drawer-inventory" }, onClick: () => { if (dr.chest != null) showContainer(dr.chest); } }))),
+    list);
+  drawDrawerBody();
+  if (was) refocus(d, was, false);
+}
+// The list (and the summary over it): bags as groups that open and close, nested inside nested, then the items; the filter applied.
+function drawDrawerBody(): void {
+  const list = $<HTMLElement>("#map-drawer-body"), summary = $<HTMLElement>("#map-drawer-summary"), dr = D;
+  if (!list || !summary || !dr) return;
+  const note = (text: string, busy = false): HTMLElement => el("p", { class: "t-sm muted map-drawer-note", ...(busy ? { "aria-busy": "true" } : {}) }, text);
+  if (dr.chest == null) { summary.textContent = "Not opened yet"; list.replaceChildren(note("No chest in this stack has been opened yet: scan from beside it to list what is in it.")); return; }
+  if (dr.error) { summary.textContent = ""; list.replaceChildren(message({ tone: "bad", title: "Could not load the contents", text: dr.error })); return; }
+  if (!dr.items) { summary.textContent = "Loading…"; list.replaceChildren(note("Loading the contents…", true)); return; }
+  const all = treeOf(dr.items, dr.chest), shown = filterContents(all.nodes, dr.filter);
+  summary.textContent = contentsSummary(all);
+  const was = focusKey(list);   // a row or bag summary keeps focus through a rescan's new list
+  list.replaceChildren(...(shown.length ? shown.map(nodeEl) : [note(all.total ? `Nothing here matches "${dr.filter.trim()}".` : "Nothing in this chest.")]));
+  list.scrollTop = dr.scroll;
+  if (was) refocus(list, was, false);
+}
+// The tree of the items last fetched, built once per fetch: typing in the filter only filters it.
+let tree: { items: Item[]; chest: number; contents: Contents } | null = null;
+function treeOf(items: Item[], chest: number): Contents {
+  if (tree?.items !== items || tree.chest !== chest) tree = { items, chest, contents: contentsOf(items, chest, isBag) };
+  return tree.contents;
+}
+const titled = <E extends HTMLElement>(e: E, text: string): E => { e.title = text; return e; };
+function nodeEl(n: ContentsNode): HTMLElement {
+  if (n.kind === "item") return itemRow(n.item);
+  const serial = n.item.serial, group = el("details", { class: "map-bag" });
+  group.open = !D?.closed.has(serial);
+  group.addEventListener("toggle", () => { if (group.open) D?.closed.delete(serial); else D?.closed.add(serial); });
+  group.append(
+    box("summary", { class: "map-bag-head", id: `map-drawer-bag-${serial}` }, icon("chevron-right", { size: "sm" }), titled(txt(n.item.name, "ellip strong map-bag-name"), n.item.name), txt(plural(n.count, "item"), "t-sm muted num")),
+    box("div", { class: "map-bag-kids" }, ...n.kids.map(nodeEl)));
+  return group;
+}
+// An item in two lines, the Inventory's own pieces: the name and tags, then the rarity, the properties and the resists. Cut text shows whole on hover. A click opens the item's menu.
+function itemRow(it: Item): HTMLElement {
+  const name = (it.amount || 1) > 1 ? `${it.name} ×${it.amount.toLocaleString("en-US")}` : it.name;
+  const props = propertyLines(it).filter((l) => !l.muted).map((l) => (l.value ? `${l.name} ${l.value}` : l.name)).join(" · ");
+  const res = RESISTS.filter(([k]) => it.props[k]), rarity = rarityEl(it.rarity, "t-sm");
+  return box("button", { type: "button", class: "map-item", id: `map-drawer-item-${it.serial}`, "aria-haspopup": "menu", onclick: (e: Event) => itemMenu(e.currentTarget as HTMLElement, it) },
+    box("span", { class: "map-item-l1" }, titled(txt(name, "ellip map-item-name"), name), ...tagEls(it)),
+    rarity || props || res.length ? box("span", { class: "map-item-l2" }, rarity, props ? titled(txt(props, "ellip t-sm muted map-item-props"), props) : null,
+      res.length ? titled(box("span", { class: "map-item-res" }, ...res.map(([k, short, token]) => el("span", { style: `color:var(${token})` }, `${short.slice(0, 2)}${it.props[k]}`))), res.map(([k, short]) => `${short} ${it.props[k]}`).join(" · ")) : null) : null);
+}
+// Every item under the chest, in GET /api/items' 500-row pages, name order, each serial once; an answer for a chest no longer shown is dropped.
+async function loadDrawer(): Promise<void> {
+  const chest = D?.chest;
+  if (chest == null) return;
+  const my = ++drawerSeq, rows = new Map<number, Item>();   // by serial: a page that shifted under a change between requests repeats none
+  try {
+    for (let offset = 0, total = Infinity; offset < total;) {
+      const r = await api<ItemsApiResponse>(`/api/items?root=${chest}&offset=${offset}&limit=${ITEMS_CHUNK}`);
+      if (my !== drawerSeq) return;
+      const got = "rows" in r ? r.rows : [];
+      for (const it of got) rows.set(it.serial, it);
+      offset += got.length;
+      total = got.length ? r.total : offset;
+    }
+  } catch (e) {
+    if (my === drawerSeq && D) { D.error = errorText(e); drawDrawerBody(); }
+    return;
+  }
+  if (my !== drawerSeq || !D || D.chest !== chest) return;
+  D.items = [...rows.values()];
+  D.error = null;
+  drawDrawerBody();
 }
 // A saved label changes chest colours and names; the bridge going on or off line changes what Highlight may do.
 document.addEventListener("organizechange", () => { if (S.model && !$<HTMLElement>("#tab-map")!.hidden) { drawMap(); drawPanel(); } });

@@ -136,6 +136,9 @@
 .pr .seg button:hover { color: var(--color-text); background: transparent; }
 .pr .seg button[aria-pressed="true"], .pr .seg button[aria-checked="true"] { background: var(--color-surface); color: var(--color-text); box-shadow: 0 0 0 1px var(--color-border-strong); }
 .pr .seg.seg-md button { height: calc(var(--control-md) - 6px); padding: 0 var(--space-3); font-size: var(--text-base); }
+/* an option with a second line (segmented's `sub`): the two stacked, the second smaller and cut to the option's width */
+.pr .seg button:has(> .seg-sub) { flex-direction: column; justify-content: center; gap: 0; height: auto; min-height: calc(var(--control-md) - 6px); padding: var(--space-1) var(--space-2); line-height: var(--lh-sm); }
+.seg-sub { align-self: stretch; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--text-xs); line-height: var(--lh-xs); font-weight: var(--weight-regular); color: var(--color-text-muted); }
 .field > .seg { align-self: flex-start; }   /* in a column it keeps its own width */
 
 /* ---------------------------------------------------------------- chips, pills, badges, tags */

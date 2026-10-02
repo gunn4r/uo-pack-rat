@@ -3,9 +3,9 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { buildHouseModel } from "./house-model.mts";
 import { fixtureTileData, vaultHouse, roofHouse, courtyardHouse, castleHouse, foundationHouse, stairHouse, G } from "./house-fixture.mts";
-import type { Container } from "./vault-lib.mts";
-import type { HouseModel } from "./ui/api-types.mts";
-import { project, tilePolygon, boxFaces, pts, paintOrder, boundsOf, fit, zoomAt, vbText, anchorOf, W, chestViews, colourOf, legendOf, chestLabel, cutAway, calloutLines, houseTotals, pickHouse, houseLabel, houseName, carryOver, PLAIN, chestCount, roomCounts, nearestInDirection, tiledataNote, stackWhere, plainGrid, sceneOf, drawnZs, CHEST_H, whereOf, whereTitle, cropAround, facetMapUrl, markersOf, facetMapNote, parseRegion, markerRadii, type ChestView } from "./ui/house-map-model.mts";
+import type { Container, Item } from "./vault-lib.mts";
+import type { HouseModel, Stack } from "./ui/api-types.mts";
+import { project, tilePolygon, boxFaces, pts, paintOrder, boundsOf, fit, zoomAt, vbText, anchorOf, W, chestViews, colourOf, legendOf, chestLabel, cutAway, calloutLines, houseTotals, pickHouse, houseLabel, houseName, carryOver, PLAIN, chestCount, roomCounts, nearestInDirection, tiledataNote, stackWhere, plainGrid, sceneOf, drawnZs, CHEST_H, whereOf, whereTitle, cropAround, facetMapUrl, markersOf, facetMapNote, parseRegion, markerRadii, contentsOf, contentsSummary, filterContents, drawerChest, drawerMeta, slotsText, type ChestView, type ContentsNode } from "./ui/house-map-model.mts";
 
 const td = fixtureTileData();
 const has = (cls: string, c: string): boolean => cls.split(" ").includes(c);
@@ -485,4 +485,53 @@ test("[fast] house map: why the overview is missing, in plain words", () => {
     assert.ok(!/undefined|null/.test(t), r);
   }
   assert.match(facetMapNote("missing"), /facet/);
+});
+
+// ---------------------------------------------------------------- the contents drawer
+const thing = (serial: number, name: string, container: number, extra: Partial<Item> = {}): Item => ({ serial, name, container, root: 1, kind: "other", lines: [name], tags: [], rarity: null, props: {}, amount: 1, ...extra } as unknown as Item);
+const chestItems = (): Item[] => [
+  thing(10, "Arrows", 1), thing(11, "Weapons", 1, { kind: "container" }), thing(12, "Katana", 11, { lines: ["Katana", "Hit Chance Increase 15%"], rarity: "Greater Magic" }),
+  thing(13, "Gems", 11), thing(14, "Ruby", 13), thing(15, "Bow", 11, { tags: ["cursed"] }), thing(16, "Empty pouch", 1), thing(17, "Bandage", 1),
+];
+const bagSerials = new Set([11, 13, 16]);
+
+test("[fast] house map drawer: a chest's items as a tree, bags first and nested inside nested, with the loose and in-bag counts", () => {
+  const c = contentsOf(chestItems(), 1, (s) => bagSerials.has(s));
+  const shape = (ns: ContentsNode[]): unknown[] => ns.map((n) => (n.kind === "bag" ? [n.item.name, n.count, shape(n.kids)] : n.item.name));
+  assert.deepEqual(shape(c.nodes), [["Weapons", 4, [["Gems", 1, ["Ruby"]], "Katana", "Bow"]], ["Empty pouch", 0, []], "Arrows", "Bandage"]);
+  assert.deepEqual([c.total, c.loose, c.inBags, c.bags], [8, 2, 4, 2]);
+  assert.equal(contentsSummary(c), "8 items · 2 loose, 4 in 2 bags");
+  assert.equal(contentsSummary(contentsOf([thing(1, "A", 9)], 9, () => false)), "1 item");
+  assert.equal(contentsSummary(contentsOf([], 9, () => false)), "Empty");
+  // an item whose bag is not among the items (not scanned) is shown loose rather than lost
+  assert.deepEqual(contentsOf([thing(5, "Stray", 77)], 9, () => false).nodes.map((n) => n.item.name), ["Stray"]);
+});
+
+test("[fast] house map drawer: items in a container cycle, reachable from no chest, are shown loose rather than lost", () => {
+  const c = contentsOf([thing(1, "Pouch", 2), thing(2, "Box", 3), thing(3, "Crate", 1), thing(4, "Arrows", 9)], 9, () => false);
+  assert.deepEqual(c.nodes.map((n) => [n.kind, n.item.name]), [["item", "Arrows"], ["item", "Pouch"], ["item", "Box"], ["item", "Crate"]]);
+  assert.deepEqual([c.total, c.loose, c.inBags, c.bags], [4, 4, 0, 0]);
+  assert.equal(contentsSummary(c), "4 items");
+});
+
+test("[fast] house map drawer: the filter matches name, tooltip line and tag text, keeps a bag holding a match (or matching itself) and counts what it kept", () => {
+  const c = contentsOf(chestItems(), 1, (s) => bagSerials.has(s));
+  const names = (ns: ContentsNode[]): string[] => ns.flatMap((n) => [n.item.name, ...(n.kind === "bag" ? names(n.kids) : [])]);
+  assert.deepEqual(names(filterContents(c.nodes, "")), names(c.nodes), "no needle, everything");
+  assert.deepEqual(names(filterContents(c.nodes, "ruby")), ["Weapons", "Gems", "Ruby"]);
+  assert.deepEqual(names(filterContents(c.nodes, " HIT CHANCE ")), ["Weapons", "Katana"], "a property line, any case");
+  assert.deepEqual(names(filterContents(c.nodes, "cursed")), ["Weapons", "Bow"], "a tag");
+  assert.deepEqual(names(filterContents(c.nodes, "gems")), ["Weapons", "Gems", "Ruby"], "a matching bag keeps all it holds");
+  assert.equal((filterContents(c.nodes, "ruby")[0] as Extract<ContentsNode, { kind: "bag" }>).count, 2);
+  assert.deepEqual(filterContents(c.nodes, "nothing like it"), []);
+});
+
+test("[fast] house map drawer: a stack opens its top opened chest; the header words the chest, its stack and its fill", () => {
+  const view = (serial: number, opened: boolean, extra: Partial<ChestView> = {}): ChestView => ({ serial, code: `A${serial}`, name: `Chest ${serial}`, inGame: "Metal Chest", color: null, fill: { items: 106, max: 125 }, opened, items: 0, z: 0, ...extra });
+  assert.equal(drawerChest([view(4, false), view(3, true), view(2, true)]), 3, "top first, the first opened one");
+  assert.equal(drawerChest([view(4, false)]), null);
+  const s = { letter: "A", serials: [1, 2, 3, 4] } as unknown as Stack;
+  assert.equal(drawerMeta(view(3, true), s), "In game: Metal Chest · Stack A, 4 chests");
+  assert.equal(slotsText(view(3, true)), "106 of 125 slots");
+  assert.equal(slotsText(view(3, true, { fill: null })), "Fill unknown");
 });
