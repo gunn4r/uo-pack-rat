@@ -382,3 +382,58 @@ test("[slow] House map: with no house captured the demo's ground chests stand on
     assert.deepEqual(empty.errors, []);
   } finally { await done(empty.app, emptyDir); }
 });
+
+test("[slow] Settings › UO folder (house map): shows where tiledata.mul is found, refuses a relative path, saves a folder and resets to automatic", async (t) => {
+  const why = unavailable();
+  if (why) return t.skip(why);
+  const { dir, uo } = seed();
+  const other = join(dir, "other-uo");
+  mkdirSync(other);
+  writeFileSync(join(other, "tiledata.mul"), syntheticTileData(FIXTURE_TILES));
+  const saved = (): string | null | undefined => (JSON.parse(readFileSync(join(dir, "settings.json"), "utf8")) as { uoFolder?: string | null }).uoFolder;
+  const { app, page, errors } = await launch(dir);
+  try {
+    await go(page, "#/settings", "#set-uofolder-path");
+    const card = page.locator("#set-uofolder");
+    assert.match(await card.textContent() || "", /Found through TazUO's launcher/);
+    assert.ok((await card.textContent() || "").includes(uo));
+    await page.locator("#set-uofolder-path").fill("relative/uo");
+    await page.locator("#set-uofolder-save").click();
+    await page.waitForSelector("#set-uofolder .msg.bad");
+    await page.locator("#set-uofolder-path").fill(other);
+    await page.locator("#set-uofolder-save").click();
+    await until(saved, (v) => v === other, "the folder saved");
+    await page.waitForFunction(() => /Set here/.test(document.querySelector("#set-uofolder")?.textContent || ""));
+    await page.locator("#set-uofolder-reset").click();
+    await until(saved, (v) => v === null, "back to automatic");
+    await page.waitForFunction(() => /Found through TazUO's launcher/.test(document.querySelector("#set-uofolder")?.textContent || ""));
+    assert.deepEqual(errors, []);
+  } finally { await done(app, dir); }
+});
+
+test("[slow] Settings › UO folder (house map): a folder set here whose tiledata.mul cannot be read, or is gone, says why under the folder", async (t) => {
+  const why = unavailable();
+  if (why) return t.skip(why);
+  const { dir } = seed();
+  const mine = join(dir, "my-uo");
+  mkdirSync(mine);
+  writeFileSync(join(mine, "tiledata.mul"), Buffer.alloc(100));
+  const settings = JSON.parse(readFileSync(join(dir, "settings.json"), "utf8")) as Record<string, unknown>;
+  writeFileSync(join(dir, "settings.json"), JSON.stringify({ ...settings, uoFolder: mine }));
+  const { app, page, errors } = await launch(dir);
+  try {
+    await go(page, "#/settings", "#set-uofolder-path");
+    const card = page.locator("#set-uofolder");
+    const text = await card.textContent() || "";
+    assert.match(text, /Set here/);
+    assert.ok(text.includes(mine));
+    assert.match(await card.locator(".msg.warn").textContent() || "", /not one Pack Rat can read.*plain colours/);
+    assert.equal(await page.locator("#set-uofolder-reset").count(), 1);
+    rmSync(join(mine, "tiledata.mul"));
+    await page.locator("#set-uofolder-save").click();   // the field still holds the folder: refused, and the card looks again
+    await page.waitForSelector("#set-uofolder .msg.bad");
+    assert.match(await card.locator(".msg.warn").textContent() || "", /no tiledata\.mul any more.*plain colours/);
+    assert.equal(await page.locator("#set-uofolder-path").inputValue(), mine);
+    assert.deepEqual(errors, []);
+  } finally { await done(app, dir); }
+});

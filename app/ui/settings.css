@@ -15,6 +15,8 @@
 .set-row-below { grid-column: 1 / -1; display: flex; flex-direction: column; }
 .set-pad { padding: 0 var(--space-5) var(--space-4); }
 .set-inline { display: flex; align-items: center; gap: var(--space-2); }
+.set-uofolder-path { flex: 1 1 auto; }   /* the UO folder's field takes the row's width beside Save */
+.set-uofolder-where { display: block; }   /* the folder on its own line, cut with an ellipsis */
 .pr .set-select { width: 200px; }
 .pr .set-forget-select { width: 140px; }
 

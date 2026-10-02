@@ -51,6 +51,7 @@ export interface SettingsData {
   client?: ClientSetting | null | undefined;
   retention?: RetentionSetting | undefined;
   autoUpdateCheck?: boolean | undefined;   // Settings › Updates' automatic check (the server answers true unless it was turned off)
+  uoFolder?: string | null | undefined;    // Settings › UO folder (house map): the folder holding tiledata.mul; absent or null = found through TazUO's launcher
 }
 // POST /api/retention/cleanup: what a dry run would remove, or what a real run removed; refused when
 // old scans were kept because the inventory would have changed without them.
