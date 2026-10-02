@@ -147,7 +147,7 @@ function clientSection(setup: SetupApiResponse): HTMLElement {
   }
   return sectionFlagged("set-client", "Game client", !setup.settings.client, box("div", { class: "card set-card" }, status, reinstallRow),
     client?.adapter === "tazuo" && client.scriptsDir ? box("div", { class: "card set-card", id: "set-panel" }) : null,
-    box("div", { class: "card set-card", id: "set-uofolder" }));
+    uoFolderCard(uoFrom, null));
 }
 
 // The bundled web scanner's version beside its Copy button, and a newer-than-copied hint the way the
@@ -185,7 +185,7 @@ function panelCard(r: TazuoPanelApiResponse): HTMLElement {
 
 
 // ---------------------------------------------------------------- UO folder (house map, issue #10)
-// The folder the house map reads tiledata.mul from: where it was found (TazUO's launcher, or set here) and, when there is none or it cannot be read, why (the map's own note), a path field with Choose a folder… in the desktop app, and Reset to automatic. GET /api/houses says where it came from; PUT /api/settings {uoFolder} checks the folder and saves it (its refusal never echoes the path). A refused path stays in the field. When GET /api/houses fails, the card still shows the field (and a save's refusal) with the last place it heard of.
+// The folder the house map reads tiledata.mul from: where it was found (TazUO's launcher, or set here) and, when there is none or it cannot be read, why (the map's own note), a path field with Choose a folder… in the desktop app, and Reset to automatic. GET /api/houses says where it came from; PUT /api/settings {uoFolder} checks the folder and saves it (its refusal never echoes the path). A refused path stays in the field. When GET /api/houses fails, the card still shows the field (and a save's refusal) with the last place it heard of. A re-render of the page (a scan landing, an update check) draws the card from that last place too, never blank, until GET /api/houses answers again.
 let uoHostPicker = true;
 let uoDraft: string | null = null;
 let uoFrom: TiledataFrom = { folder: null, source: null, reason: null };

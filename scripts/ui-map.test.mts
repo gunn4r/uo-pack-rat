@@ -452,7 +452,7 @@ test("[slow] Settings › UO folder (house map): shows where tiledata.mul is fou
   const saved = (): string | null | undefined => (JSON.parse(readFileSync(join(dir, "settings.json"), "utf8")) as { uoFolder?: string | null }).uoFolder;
   const { app, page, errors } = await launch(dir);
   try {
-    await go(page, "#/settings", "#set-uofolder-path");
+    await go(page, "#/settings", "#set-uofolder .set-uofolder-where");   // the card as GET /api/houses tells it, not its first draw
     const card = page.locator("#set-uofolder");
     assert.match(await card.textContent() || "", /Found through TazUO's launcher/);
     assert.ok((await card.textContent() || "").includes(uo));
@@ -482,7 +482,7 @@ test("[slow] Settings › UO folder (house map): a folder set here whose tiledat
   writeFileSync(join(dir, "settings.json"), JSON.stringify({ ...settings, uoFolder: mine }));
   const { app, page, errors } = await launch(dir);
   try {
-    await go(page, "#/settings", "#set-uofolder-path");
+    await go(page, "#/settings", "#set-uofolder .set-uofolder-where");   // the card as GET /api/houses tells it, not its first draw
     const card = page.locator("#set-uofolder");
     const text = await card.textContent() || "";
     assert.match(text, /Set here/);
