@@ -323,6 +323,20 @@ test("[fast] house map: with front steps the house stands on a plinth: its outwa
   assert.ok(!sceneOf(buildHouseModel(stairHouse(), td, []), 0, "angle").pieces.some((p) => "cls" in p && has(p.cls, "map-plinth")), "an interior staircase starts at the floor: nothing to stand on");
 });
 
+test("[fast] house map: the plinth is one material, the ground level's most common lip family, whatever stands on each edge tile", () => {
+  const m = buildHouseModel(courtyardHouse(), td, []), sc = sceneOf(m, 0, "angle");
+  const fam = (x: number, y: number) => sc.pieces.find((p) => p.kind === "solid" && has(p.cls, "map-plinth") && p.x === x - m.x0 && p.y === y - m.y0);
+  const onTop = (x: number, y: number) => m.cells.find((c) => c.level === 0 && c.x === x && c.y === y)!;
+  assert.equal(onTop(1017, 2003).kind, "window", "the east edge holds the building's window");
+  assert.equal(onTop(1017, 2005).kind, "wall", "and its walls");
+  const south = fam(1005, 2017)!;
+  assert.ok(south.kind === "solid" && has(south.cls, "w-brick"), "the brick rim's family");
+  for (const [x, y] of [[1017, 2003], [1017, 2005], [1017, 2015]] as const) { const p = fam(x, y); assert.ok(p?.kind === "solid" && has(p.cls, "w-brick") && !has(p.cls, "w-stone") && !has(p.cls, "w-neutral"), `${x}, ${y}`); }
+  // With no lip on the ground level, the plain lip colour.
+  const bare = { ...m, cells: m.cells.map((c) => ({ ...c, lip: false })) };
+  assert.ok(sceneOf(bare, 0, "angle").pieces.filter((p) => p.kind === "solid" && has(p.cls, "map-plinth")).every((p) => p.kind === "solid" && has(p.cls, "w-neutral")));
+});
+
 test("[fast] house map: a level's bounds hold the plinth's bottom and a raised stair's top", () => {
   const m = buildHouseModel(foundationHouse(), td, []);
   const cell = (x: number, y: number) => m.cells.find((c) => c.level === 0 && c.x === x && c.y === y)!;

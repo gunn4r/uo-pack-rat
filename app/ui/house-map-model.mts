@@ -283,6 +283,12 @@ function heightsOf(m: HouseModel, level: number): Map<string, number> {
   return out;
 }
 // The ground level stands on a plinth down to its lowest stair (its front steps), above its floor; null on an upper level or with no stairs.
+// The plinth is one material: the most common family among the ground level's lip tiles (ties by name), else neutral (the plain lip colour).
+function plinthFamily(m: HouseModel): string {
+  const n = new Map<string, number>();
+  for (const c of m.cells) if (c.level === 0 && c.lip) n.set(c.family, (n.get(c.family) ?? 0) + 1);
+  return [...n].sort((a, b) => b[1] - a[1] || (a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : 0))[0]?.[0] ?? "neutral";
+}
 function plinthBase(m: HouseModel, level: number, base: number): number | null {
   if (level !== 0) return null;
   let lo = Infinity;
@@ -295,6 +301,7 @@ export function sceneOf(m: HouseModel, level: number, view: View): Scene {
   const below: string[] = [], floors: Scene["floors"] = [], reach: string[] = [], solids: Piece[] = [];
   const heights = heightsOf(m, level), foot = view === "angle" ? plinthBase(m, level, base) : null, kinds = new Map<string, Cell["kind"]>();
   if (foot != null) for (const c of m.cells) if (c.level === level) kinds.set(`${c.x}:${c.y}`, c.kind);
+  const plinth = foot != null ? `map-plinth w-${plinthFamily(m)}` : "";
   // A side of the plinth shows where the tile beyond it (south on the left, east on the right) is outside the house or a stair.
   const out = (x: number, y: number): boolean => { const k = kinds.get(`${x}:${y}`); return k == null || k === "stair"; };
   for (const c of m.cells) {
@@ -304,7 +311,7 @@ export function sceneOf(m: HouseModel, level: number, view: View): Scene {
     const bottom = c.kind === "floor" || c.kind === "stair" ? c.z - base : 0;
     if (foot != null && c.kind !== "stair" && bottom > foot) {
       const s = out(c.x, c.y + 1), e = out(c.x + 1, c.y), f = boxFaces(x, y, foot, bottom - foot, view);
-      if (s || e) solids.push({ kind: "solid", x, y, z: foot, cls: `map-plinth w-${c.family}`, prism: { top: "", left: s ? pts(f.left) : "", right: e ? pts(f.right) : "" } });
+      if (s || e) solids.push({ kind: "solid", x, y, z: foot, cls: plinth, prism: { top: "", left: s ? pts(f.left) : "", right: e ? pts(f.right) : "" } });
     }
     if (c.kind === "floor" || c.kind === "stair") {
       const z = c.z - base, top = c.kind === "stair" ? stairTop(c, heights) : null, tz = top ? top.z - base : z;
