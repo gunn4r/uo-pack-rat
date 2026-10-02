@@ -11,9 +11,9 @@ import { openWorldMap, fetchFacetImage, type FacetImage } from "./world-map.mts"
 import { plural } from "./inv-model.mts";
 import { fillTone } from "./organize-model.mts";
 import { PLAIN, pickHouse, plainGrid, chestCount, roomCounts, houseLabel, houseName, carryOver, tiledataNote, chestViews, colourOf, chestLabel, sceneOf, boundsOf, fit, vbText,
-  cutAway, calloutLines, nearestInDirection, houseTotals, legendOf, stackWhere, anchorOf, zoomAt, fillWords, whereOf, cropAround, facetMapUrl, markersOf, facetMapNote, parseRegion, markerRadii,
-  type Crop, type Marker, type View, type Mode, type Box, type Colour, type ChestView, type Piece, type Prism, type Pt, type Dir } from "./house-map-model.mts";
-import type { ContainerLabel, FacetMapReason, HouseModel, HousesApiResponse, HouseApiResponse, HouseMapApiResponse, HouseMapEntry, HouseMapPutApiResponse, Room, Stack } from "./api-types.mts";
+  cutAway, calloutLines, nearestInDirection, houseTotals, legendOf, stackWhere, anchorOf, zoomAt, fillWords, whereOf, cropAround, facetMapUrl, markersOf, facetMapNote, markerRadii,
+  type Marker, type View, type Mode, type Box, type Colour, type ChestView, type Piece, type Prism, type Pt, type Dir } from "./house-map-model.mts";
+import type { ContainerLabel, HouseModel, HousesApiResponse, HouseApiResponse, HouseMapApiResponse, HouseMapEntry, HouseMapPutApiResponse, Room, Stack } from "./api-types.mts";
 
 const SVG_NS = "http://www.w3.org/2000/svg";
 // The map's page state: the houses and models as last fetched, the player's house names (issue #164), the one shown, its level, view and colour mode, the room zoomed to, the selected stack (by a serial in it, so a rescan that keeps the stack keeps the selection), the hovered and focused stacks (by letter), the viewBox, and a load error.

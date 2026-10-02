@@ -55,7 +55,11 @@ export function openWorldMap(o: WorldMapOptions): void {
       e.querySelector(".wm-label")!.classList.toggle("off", !m.showLabel);
       shown.add(m.id);
     }
-    for (const [id, e] of els) if (!shown.has(id)) e.hidden = true;
+    for (const [id, e] of els) {
+      if (shown.has(id) || e.hidden) continue;
+      if (e.contains(document.activeElement)) viewport.focus({ preventScroll: true });   // a hidden marker would drop the focus out of the map, and its keys with it
+      e.hidden = true;
+    }
   };
   // The visible region at screen resolution, once the view has settled; nothing while the base already shows the view as sharply.
   const scheduleOverlay = (): void => {
@@ -65,8 +69,13 @@ export function openWorldMap(o: WorldMapOptions): void {
       if (!baseK || pxPerTile(v, vp) * dpr <= baseK * 1.05) { overlay.hidden = true; overlayAt = null; return; }
       const req = overlayRequest(v, { width: vp.width * dpr, height: vp.height * dpr }, facet);
       if (!req) return;
-      void fetchFacetImage(facetUrl(o.facet, req, req.size)).then((got) => {
+      // Decoded off screen first, then the picture and its place change together, so the old picture never shows in the new box.
+      void fetchFacetImage(facetUrl(o.facet, req, req.size)).then(async (got) => {
         if (id !== reqId || !("src" in got)) return;
+        const next = new Image();
+        next.src = got.src;
+        try { await next.decode(); } catch { return; }
+        if (id !== reqId) return;
         overlay.src = got.src;
         overlayAt = got.crop;
         overlay.hidden = false;
@@ -91,9 +100,9 @@ export function openWorldMap(o: WorldMapOptions): void {
   };
 
   const d = openDialog({ title: `World map · ${facetName(o.facet)}`, body: [viewport], width: "md", cls: "world-map-dialog", initialFocus: viewport, actions: [
-    button({ label: "Zoom out", icon: "zoom-out", iconOnly: true, size: "sm", attrs: { id: "wm-zoom-out" }, onClick: () => zoomBy(1.5) }),
-    button({ label: "Zoom in", icon: "zoom-in", iconOnly: true, size: "sm", attrs: { id: "wm-zoom-in" }, onClick: () => zoomBy(1 / 1.5) }),
-    button({ label: "Fit the facet", icon: "fit", iconOnly: true, size: "sm", attrs: { id: "wm-fit" }, onClick: fitAll }),
+    button({ label: "Zoom out", icon: "zoom-out", iconOnly: true, size: "sm", attrs: { id: "wm-zoom-out", title: "Zoom out (−)" }, onClick: () => zoomBy(1.5) }),
+    button({ label: "Zoom in", icon: "zoom-in", iconOnly: true, size: "sm", attrs: { id: "wm-zoom-in", title: "Zoom in (+)" }, onClick: () => zoomBy(1 / 1.5) }),
+    button({ label: "Fit the facet", icon: "fit", iconOnly: true, size: "sm", attrs: { id: "wm-fit", title: "Fit the facet (0)" }, onClick: fitAll }),
     button({ label: "Close", attrs: { id: "wm-close" }, onClick: () => d.close() }),
   ] });
   const dialog = d.dialog;
@@ -135,7 +144,8 @@ export function openWorldMap(o: WorldMapOptions): void {
     zoomBy(Math.exp(e.deltaY * (e.ctrlKey ? 0.01 : 0.002)), toWorld(v, vp, local(e)));
   }, { passive: false });
   dialog.addEventListener("keydown", (e) => {
-    if (e.defaultPrevented || e.metaKey || e.ctrlKey || e.altKey || (e.target as Element).closest?.("button")) return;
+    // Only a form field keeps its own keys; after a zoom button is clicked, the arrows and + / − / 0 still move the map (Enter and Space are not map keys, so the buttons keep those).
+    if (e.defaultPrevented || e.metaKey || e.ctrlKey || e.altKey || (e.target as Element).closest?.("input, textarea, select, [contenteditable]")) return;
     const step = e.shiftKey ? 240 : 80;
     const act: Record<string, () => void> = {
       "+": () => zoomBy(1 / 1.5), "=": () => zoomBy(1 / 1.5), "-": () => zoomBy(1.5), _: () => zoomBy(1.5), "0": fitAll,

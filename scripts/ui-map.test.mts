@@ -656,7 +656,10 @@ test("[slow] House map: the small map opens the world map lightbox by click or E
     assert.equal(await page.evaluate(() => document.activeElement?.id), "map-where-open");
     await page.locator("#map-where-open").click();
     await baseShown();
-    await page.locator(`.wm-marker[data-house="${NEIGHBOUR}"]`).click();
+    // + zooms about the house shown, so twice spreads the two markers well apart on any window size before the click.
+    await page.locator("#wm-zoom-in").click();
+    await page.locator("#wm-zoom-in").click();
+    await page.locator(`.wm-marker[data-house="${NEIGHBOUR}"]:not([hidden])`).click();
     await page.waitForFunction((id) => location.hash === `#/map/${id}`, NEIGHBOUR, { timeout: 10_000 });
     await page.waitForSelector("dialog.world-map-dialog", { state: "detached", timeout: 10_000 });
     assert.deepEqual(errors, []);
