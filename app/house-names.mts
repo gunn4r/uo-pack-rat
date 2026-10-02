@@ -38,11 +38,6 @@ export function checkHouseEntry(v: unknown): { ok: true; entry: HouseEntry | nul
   return { ok: true, entry: { ...v, name } as HouseEntry };
 }
 
-export function withHouseEntry(doc: HouseMapDoc, id: string, entry: HouseEntry | null): HouseMapDoc {
-  const houses = { ...doc.houses };
-  if (entry) houses[id] = entry; else delete houses[id];
-  return { version: 1, houses };
-}
 
 // The file as the server reads it. A file that is too big, does not parse or is not version 1 is moved aside and reads
 // as empty (the next PUT would otherwise overwrite it); an entry with a bad id or name is left out of the read and the
@@ -69,12 +64,19 @@ export function readHouseMap(file: string): { doc: HouseMapDoc; problem: string 
   return { doc: { version: 1, houses }, problem: dropped ? `house-map.json: ${dropped} ${dropped === 1 ? "entry" : "entries"} with a bad id or name left out` : null };
 }
 
-// Writes the map, or says why not: more than MAX_HOUSES names, or a file larger than a read accepts (it would be moved
-// aside as corrupt on the next read).
-export function writeHouseMap(file: string, doc: HouseMapDoc): string | null {
-  if (Object.keys(doc.houses).length > MAX_HOUSES) return `at most ${MAX_HOUSES} houses can be named; clear some names first`;
-  const text = JSON.stringify(doc, null, 2) + "\n";
-  if (Buffer.byteLength(text) > MAX_HOUSE_MAP_BYTES) return `that would make house-map.json larger than ${MAX_HOUSE_MAP_BYTES / 1e6} MB`;
+const textOf = (doc: HouseMapDoc): string => JSON.stringify(doc, null, 2) + "\n";
+// Sets one house's entry (null removes it) in `doc`, the map as read, and writes the map; or says why not. Only a change
+// that grows the map is refused: a new id past MAX_HOUSES names, or a file growing past the size a read accepts (it would
+// be moved aside as corrupt on the next read). Clearing or shortening a name always goes through.
+export function saveHouseEntry(file: string, doc: HouseMapDoc, id: string, entry: HouseEntry | null): string | null {
+  const houses = { ...doc.houses };
+  if (entry) houses[id] = entry; else delete houses[id];
+  const next: HouseMapDoc = { version: 1, houses }, text = textOf(next);
+  if (entry) {
+    if (!doc.houses[id] && Object.keys(doc.houses).length >= MAX_HOUSES) return `at most ${MAX_HOUSES} houses can be named; clear some names first`;
+    const size = Buffer.byteLength(text);
+    if (size > MAX_HOUSE_MAP_BYTES && size > Buffer.byteLength(textOf(doc))) return `that would make house-map.json larger than ${MAX_HOUSE_MAP_BYTES / 1e6} MB`;
+  }
   writeFileAtomic(file, text, DATA_FILE_MODE);
   return null;
 }

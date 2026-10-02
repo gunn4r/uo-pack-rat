@@ -4,7 +4,7 @@ import assert from "node:assert/strict";
 import { existsSync, mkdtempSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import { checkHouseEntry, isHouseId, readHouseMap, writeHouseMap, withHouseEntry, emptyHouseMap, MAX_HOUSES, MAX_HOUSE_MAP_BYTES, type HouseMapDoc } from "./house-names.mts";
+import { checkHouseEntry, isHouseId, readHouseMap, saveHouseEntry, emptyHouseMap, MAX_HOUSES, MAX_HOUSE_MAP_BYTES, type HouseMapDoc } from "./house-names.mts";
 
 test("[fast] house names: a name is trimmed, 1 to 60 characters, with no control characters; an empty one removes the entry", () => {
   assert.deepEqual(checkHouseEntry({ name: "  Main house  " }), { ok: true, entry: { name: "Main house" } });
@@ -35,22 +35,27 @@ test("[fast] house names: an id is <facet>-<x>-<y>, the facet a number or x", ()
 test("[fast] house names: write then read round-trips atomically, an entry set to null is removed, and a missing file reads empty", () => {
   const dir = mkdtempSync(join(tmpdir(), "pr-names-")), file = join(dir, "house-map.json");
   assert.deepEqual(readHouseMap(file), { doc: emptyHouseMap(), problem: null });
-  let doc = withHouseEntry(emptyHouseMap(), "1-3000-1000", { name: "Main house", notes: "kept" });
-  doc = withHouseEntry(doc, "3-10-20", { name: "Forge" });
-  assert.equal(writeHouseMap(file, doc), null);
+  assert.equal(saveHouseEntry(file, emptyHouseMap(), "1-3000-1000", { name: "Main house", notes: "kept" }), null);
+  assert.equal(saveHouseEntry(file, readHouseMap(file).doc, "3-10-20", { name: "Forge" }), null);
   assert.deepEqual(readHouseMap(file).doc, { version: 1, houses: { "1-3000-1000": { name: "Main house", notes: "kept" }, "3-10-20": { name: "Forge" } } });
-  writeHouseMap(file, withHouseEntry(doc, "3-10-20", null));
+  assert.equal(saveHouseEntry(file, readHouseMap(file).doc, "3-10-20", null), null);
   assert.deepEqual(Object.keys(readHouseMap(file).doc.houses), ["1-3000-1000"]);
   assert.deepEqual(readdirSync(dir), ["house-map.json"], "no temp file is left behind");
 });
 
-test("[fast] house names: a write is refused, leaving the file as it was, past MAX_HOUSES names or past the size a read accepts", () => {
+test("[fast] house names: a change that grows a full map is refused, leaving the file as it was; clearing or shortening a name always goes through", () => {
   const dir = mkdtempSync(join(tmpdir(), "pr-names-")), file = join(dir, "house-map.json");
-  const many: HouseMapDoc = { version: 1, houses: Object.fromEntries(Array.from({ length: MAX_HOUSES + 1 }, (_, i) => [`1-${i}-0`, { name: `H${i}` }])) };
-  assert.match(writeHouseMap(file, many) ?? "", new RegExp(`at most ${MAX_HOUSES} houses`));
-  const big: HouseMapDoc = { version: 1, houses: { "1-1-1": { name: "Big", notes: "x".repeat(MAX_HOUSE_MAP_BYTES) } } };
-  assert.match(writeHouseMap(file, big) ?? "", /larger than 1 MB/);
+  const many: HouseMapDoc = { version: 1, houses: Object.fromEntries(Array.from({ length: MAX_HOUSES }, (_, i) => [`1-${i}-0`, { name: `House ${i}` }])) };
+  assert.match(saveHouseEntry(file, many, "1-9999-0", { name: "One more" }) ?? "", new RegExp(`at most ${MAX_HOUSES} houses`));
   assert.equal(existsSync(file), false);
+  assert.equal(saveHouseEntry(file, many, "1-7-0", { name: "Renamed" }), null, "renaming a named house is no new id");
+  assert.equal(saveHouseEntry(file, many, "1-8-0", null), null, "clearing a name");
+  // Over the size a read accepts (a file grown by hand, say): a change that does not grow it still saves.
+  const big: HouseMapDoc = { version: 1, houses: { "1-1-1": { name: "Big", notes: "x".repeat(MAX_HOUSE_MAP_BYTES) }, "1-2-2": { name: "A long name here" } } };
+  assert.match(saveHouseEntry(file, big, "1-3-3", { name: "New" }) ?? "", /larger than 1 MB/);
+  assert.match(saveHouseEntry(file, big, "1-2-2", { name: "A longer name than before" }) ?? "", /larger than 1 MB/);
+  assert.equal(saveHouseEntry(file, big, "1-2-2", { name: "Short" }), null, "shortening a name");
+  assert.equal(saveHouseEntry(file, big, "1-2-2", null), null, "clearing a name");
 });
 
 test("[fast] house names: a corrupt file is renamed .corrupt and reads empty; a bad entry in a good file is dropped", () => {

@@ -47,7 +47,7 @@
 //         (<data>/item-kinds.json, the player's own item kinds: app/item-kinds.mts; kind null resets, an import merges) ·
 //         GET /api/houses (the houses scans captured: app/house-capture.mts; tiledataFrom says where tiledata.mul came from, or why there is none) · GET /api/houses/<id> (one house's model: app/house-model.mts, tiledata.mul via app/tiledata.mts or the uoFolder setting) ·
 //         GET /api/house-map · PUT /api/house-map/<id> {name, bounds?} (<data>/house-map.json, the player's house names: app/house-names.mts;
-//         an empty name removes the entry; 400 on a bad name or id, 409 past 500 names or 1 MB) ·
+//         an empty name removes the entry; 400 on a bad name or id, 409 when a change would grow it past 500 names or 1 MB) ·
 //         GET|PUT /api/organize (<data>/organize.json, Organize's labels, rules, catch-all and pinned items: app/organize-config.mts;
 //         GET salvages a hand-edited file and lists what it dropped in `problems`) ·
 //         GET /api/organize/presets (app/organize-presets.mts's PRESETS, the rule filters the Organize page offers
@@ -142,7 +142,7 @@ import { PRESETS } from "./organize-presets.mts";
 import { emptyKindOverrides, isKindName, kindCount, kindsDocument, kindsFor, kindsText, salvageKindOverrides, withKinds, withoutKinds, KIND_LIMITS, MAX_KINDS_BYTES, OVERRIDE_KINDS } from "./item-kinds.mts";
 import { proposeOrganize, STRATEGY_IDS, type StrategyId } from "./organize-strategies.mts";
 import { latestHouses, type HouseSource } from "./house-capture.mts";
-import { checkHouseEntry, isHouseId, readHouseMap, withHouseEntry, writeHouseMap, type HouseMapDoc } from "./house-names.mts";
+import { checkHouseEntry, isHouseId, readHouseMap, saveHouseEntry, type HouseMapDoc } from "./house-names.mts";
 import { buildHouseModel, plotSize, type HouseContainerInput, type HouseModel } from "./house-model.mts";
 import { uoFolderFromTazuo, loadTileData, type TileData } from "./tiledata.mts";
 import { addGrab, emptyOrganizeState, harvestTrips, noteSeen, pruneOverlay, salvageOrganizeState, PENDING_GRACE_MS, type BridgeView, type OrganizeState } from "./organize-state.mts";
@@ -2117,7 +2117,7 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
         const checked = checkHouseEntry(await readBody(req, { limit: 8e3 }));
         if (!checked.ok) return send(res, 400, { ok: false, error: checked.error });
         mkdirSync(dirname(HOUSE_MAP), { recursive: true, mode: DATA_DIR_MODE });
-        const refused = writeHouseMap(HOUSE_MAP, withHouseEntry(readNames(), id, checked.entry));
+        const refused = saveHouseEntry(HOUSE_MAP, readNames(), id, checked.entry);
         if (refused) return send(res, 409, { ok: false, error: refused });
         return send(res, 200, { ok: true, entry: checked.entry });
       }

@@ -277,7 +277,7 @@ test("[fast] house names: a bad name, a malformed id or a body that is not JSON 
     assert.deepEqual((await get(s, "/api/house-map")).body, { ok: true, houses: {} });
   } finally { await s.close(); rmSync(dir, { recursive: true, force: true }); }
 });
-test("[fast] house names: a PUT past 500 named houses or past 1 MB is refused with a 409 and the file is left as it was", async () => {
+test("[fast] house names: a PUT that would grow the map past 500 named houses or past 1 MB is refused with a 409 and the file is left as it was, while clearing or shortening a name still saves", async () => {
   const { s, dir } = await serve(false);
   try {
     const file = join(dir, "house-map.json");
@@ -287,6 +287,7 @@ test("[fast] house names: a PUT past 500 named houses or past 1 MB is refused wi
     assert.equal(over.status, 409);
     assert.match(over.body.error ?? "", /at most 500 houses/);
     assert.equal((await putName(s, "/api/house-map/1-7-0", { name: "Renamed" })).status, 200, "renaming a named house is still fine");
+    assert.equal((await putName(s, "/api/house-map/1-8-0", { name: "" })).status, 200, "clearing a name on a full map");
     // 125 entries of about 7.9 kB each: under 1 MB on disk, and one more entry tips it over.
     const big = JSON.stringify({ version: 1, houses: Object.fromEntries(Array.from({ length: 125 }, (_, i) => [`1-${i}-0`, { name: `H${i}`, notes: "x".repeat(7900) }])) });
     writeFileSync(file, big);
@@ -294,5 +295,7 @@ test("[fast] house names: a PUT past 500 named houses or past 1 MB is refused wi
     assert.equal(huge.status, 409);
     assert.match(huge.body.error ?? "", /larger than 1 MB/);
     assert.equal(readFileSync(file, "utf8"), big);
+    assert.equal((await putName(s, "/api/house-map/1-3-0", { name: "H3" })).status, 200, "shortening an entry on a full file");
+    assert.equal((await putName(s, "/api/house-map/1-4-0", { name: "" })).status, 200, "clearing one");
   } finally { await s.close(); rmSync(dir, { recursive: true, force: true }); }
 });
