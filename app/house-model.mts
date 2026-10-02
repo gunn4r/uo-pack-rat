@@ -143,6 +143,7 @@ export function buildHouseModel(house: HouseSource, td: TileData | null, contain
   // Furniture: doors (the doorway they stand in, or beside when open, stays out of hallways like a door tile's), teleporters by name, impassable items as blocks; passable decoration is not drawn.
   const furniture: Furniture[] = [];
   if (td) for (const [serial, graphic, x, y, z] of [...house.items].sort((a, b) => a[0] - b[0])) {
+    if (isHouseMulti(graphic)) continue;
     const info = td.info(graphic);
     if (!info) continue;
     const kind = classify(info, false) === "door" ? "door" : /teleporter/i.test(info.name) ? "teleporter" : (info.flags & FLAG.impassable) !== 0n ? "block" : null;
@@ -236,6 +237,9 @@ function directionOf(dx: number, dy: number): string {
 }
 
 // Greedy cover per level: candidates are free floor and stair cells plus teleporter tiles, none holding a stack or a block; each reaches the stacks within REACH tiles (Chebyshev) in its own room, or in no room (an alcove or doorway cell) from any room, worked out once. Each round picks the candidate reaching the most uncovered containers, ties to the smaller total Manhattan distance, then y, then x; it stops when no candidate reaches anything. Spots are then numbered by level, room (none last) and pick order, so letters run room by room. Sets each covered stack's spot and direction.
+// A house is itself an Item whose graphic is its multi id (ServUO's custom-house plots, 7x7 up to 18x18), standing at the plot centre; a static of the same id would be named as furniture (0x147B reads as a telescope), so it is not furniture.
+const isHouseMulti = (graphic: number): boolean => graphic >= 0x13ec && graphic <= 0x147b;
+
 function spotsOf(cells: Cell[], at: Map<string, Cell>, stackAt: Map<string, Stack[]>, furniture: Furniture[], levels: Level[]): Spot[] {
   const spots: Spot[] = [];
   const blocked = new Set(furniture.filter((f) => f.kind === "block").map((f) => key(f.level, f.x, f.y)));

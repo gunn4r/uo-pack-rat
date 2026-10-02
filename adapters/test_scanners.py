@@ -453,6 +453,16 @@ class TazUOScanner(DataDir, unittest.TestCase):
         [s] = self.scans("tazuo")
         self.assertEqual(s["house"]["items"], [[0x40000040, 0x0B34, 12, 12, 7]], "the chest beside the player is a root, not furniture")
 
+    def test_the_house_itself_is_not_recorded_as_furniture(self):
+        w = World(); home(w); w.multis = house_tiles(5, 5, 12, 12)
+        w.add(0x40000040, 0, name="house", container_like=False, X=11, Y=11, Z=7)
+        w.items[0x40000040].Graphic = 0x147B
+        w.add(0x40000042, 0, name="stool", container_like=False, X=12, Y=12, Z=7)
+        w.items[0x40000042].Graphic = 0x0A2A
+        self.scan(w)
+        [s] = self.scans("tazuo")
+        self.assertEqual(s["house"]["items"], [[0x40000042, 0x0A2A, 12, 12, 7]])
+
     def test_every_container_inside_the_house_is_listed_with_its_place_and_the_far_ones_are_not_opened(self):
         w = World(); home(w); w.multis = house_tiles(5, 5, 12, 12)
         w.add(0x40000050, 0, name="Metal Chest", X=15, Y=15, Z=7)   # inside, five tiles away: past the 3-tile opening reach
@@ -582,7 +592,7 @@ class TazUORefresh(DataDir, unittest.TestCase):
 class TazUOHouseMapRefresh(DataDir, unittest.TestCase):
     SCRIPT = adapter_path("tazuo", "packrat-house-map-refresh.py")
     SHARED = ("data_dir", "write_json_atomic", "rfc3339_now", "read_blacklist", "sysmsg", "is_container", "facet", "house_capture")
-    CONSTANTS = ("ADAPTER_ID", "CAPABILITIES", "HOUSE_RADIUS", "HOUSE_MAX_TILES", "HOUSE_ITEM_REACH", "HOUSE_MAX_ITEMS", "HOUSE_MAX_CONTAINERS",
+    CONSTANTS = ("ADAPTER_ID", "CAPABILITIES", "HOUSE_RADIUS", "HOUSE_MAX_TILES", "HOUSE_ITEM_REACH", "HOUSE_MULTI_IDS", "HOUSE_MAX_ITEMS", "HOUSE_MAX_CONTAINERS",
                  "BLACKLIST", "HOUSE_LEFT_OUT", "HOUSE_TOO_LARGE", "OUT_DIR", "CONTAINER_RE", "NOT_A_CONTAINER_RE", "NOT_A_CONTAINER_GRAPHICS",
                  "TRASH_RE", "WEARABLE_RE", "CONTAINER_GRAPHICS")
 

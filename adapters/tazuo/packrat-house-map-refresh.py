@@ -88,6 +88,7 @@ CAPABILITIES = {
 HOUSE_RADIUS = 40        # tiles searched around the player for the house's tiles (a castle is about 32 across)
 HOUSE_MAX_TILES = 20000  # a capture larger than this is left out rather than bloating the scan
 HOUSE_ITEM_REACH = 18    # the server sends ground items within about this many tiles
+HOUSE_MULTI_IDS = (0x13EC, 0x147B)   # custom-house plot multi ids, 7x7 to 18x18 (ServUO)
 HOUSE_MAX_ITEMS = 5000   # the scan schema's cap on house items: past it the nearest are kept, so the scan file still validates
 HOUSE_MAX_CONTAINERS = 5000  # the scan schema's cap on the house's containers: past it the nearest are kept
 BLACKLIST = set(e["serial"] for e in read_blacklist(os.path.join(data_dir(), "scan-blacklist.json")))
@@ -223,6 +224,8 @@ def house_capture(px, py):
                 continue
             row = [int(g.Serial), int(getattr(g, "Graphic", 0) or 0), int(g.X), int(g.Y), int(getattr(g, "Z", 0) or 0)]
             name = str(getattr(g, "Name", "") or "")
+            if HOUSE_MULTI_IDS[0] <= row[1] <= HOUSE_MULTI_IDS[1]:
+                continue    # the house itself: an Item whose graphic is its multi id, not furniture
             if not is_container(g, name):
                 items.append(row)
             elif row[0] not in BLACKLIST and row[0] not in TRASHED and not TRASH_RE.search(name):
