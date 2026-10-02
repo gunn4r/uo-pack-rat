@@ -1,7 +1,7 @@
 // house-model.test.mts — app/house-model.mts against synthetic houses (app/house-fixture.mts): levels, cells, the dirt-under-floor and foundation-lip rules, indoor and yard, rooms and doorways, furniture, stacks, standing spots, engraving codes, the no-tiledata fallback and a castle's speed. Tags: [fast]. Run: node --test app/house-model.test.mts
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { buildHouseModel, letterOf, materialFamily, type HouseModel, type Cell } from "./house-model.mts";
+import { buildHouseModel, letterOf, materialFamily, plotSize, type HouseModel, type Cell } from "./house-model.mts";
 import type { HouseItem } from "./house-capture.mts";
 import { G, fixtureTileData, courtyardHouse, stairHouse, towerHouse, roofHouse, hallHouse, vaultHouse, castleHouse, foundationHouse } from "./house-fixture.mts";
 
@@ -56,6 +56,15 @@ test("[fast] house model: a sub-floor wall away from the plot's edge and from an
   const m = buildHouseModel({ ...h, tiles: [...h.tiles, [G.stoneWall, 9020, 9005, 0, 1], [G.stoneWall, 9021, 9005, 0, 1], [G.stoneWall, 9022, 9005, 0, 1], [G.stoneWall, 9021, 9004, 0, 1], [G.stoneWall, 9021, 9006, 0, 1]] }, td, []);
   assert.equal(cell(m, 0, 9021, 9005)!.kind, "wall", "walled in on all four sides by tiles, no floor next to it");
   assert.deepEqual([cell(m, 0, 9020, 9005)!.kind, cell(m, 0, 9020, 9005)!.lip], ["floor", true], "but its neighbours are on the footprint's boundary");
+});
+
+test("[fast] house model: a house's size is its plot, without a row of front steps outside it", () => {
+  const size = (m: HouseModel) => { const s = plotSize(m); return [s.width, s.height]; };
+  assert.deepEqual(size(buildHouseModel(courtyardHouse(), td, [])), [18, 18]);
+  assert.deepEqual(size(buildHouseModel(foundationHouse(), td, [])), [10, 10]);
+  assert.deepEqual(size(buildHouseModel(vaultHouse().house, td, [])), [7, 7]);
+  const f = buildHouseModel(foundationHouse(), td, []);
+  assert.deepEqual([f.y0, f.y1], [9000, 9010], "the steps still draw");
 });
 
 test("[fast] house model: under the 2nd floor is indoors, the courtyard is the yard", () => {

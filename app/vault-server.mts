@@ -140,7 +140,7 @@ import { PRESETS } from "./organize-presets.mts";
 import { emptyKindOverrides, isKindName, kindCount, kindsDocument, kindsFor, kindsText, salvageKindOverrides, withKinds, withoutKinds, KIND_LIMITS, MAX_KINDS_BYTES, OVERRIDE_KINDS } from "./item-kinds.mts";
 import { proposeOrganize, STRATEGY_IDS, type StrategyId } from "./organize-strategies.mts";
 import { latestHouses, type HouseSource } from "./house-capture.mts";
-import { buildHouseModel, type HouseContainerInput, type HouseModel } from "./house-model.mts";
+import { buildHouseModel, plotSize, type HouseContainerInput, type HouseModel } from "./house-model.mts";
 import { uoFolderFromTazuo, loadTileData, type TileData } from "./tiledata.mts";
 import { addGrab, emptyOrganizeState, harvestTrips, noteSeen, pruneOverlay, salvageOrganizeState, PENDING_GRACE_MS, type BridgeView, type OrganizeState } from "./organize-state.mts";
 import { retentionError, retentionOf, runsToPrune, scansToPrune, type ScanFile } from "./retention.mts";
@@ -2098,7 +2098,7 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
         if (one) return send(res, 200, { ok: true, house: houseModel(inv, one, td) });
         return send(res, 200, { ok: true, tiledata: td !== null, tiledataFrom: { folder: from.folder, source: from.source, reason: from.reason }, houses: houses.map((h) => {
           const m = houseModel(inv, h, td);
-          return { id: h.id, facet: h.facet, capturedAt: h.capturedAt, captures: h.captures, width: m.x1 - m.x0 + 1, height: m.y1 - m.y0 + 1, levels: m.levels.length, containers: m.stacks.reduce((a, st) => a + st.serials.length, 0) };
+          return { id: h.id, facet: h.facet, capturedAt: h.capturedAt, captures: h.captures, ...plotSize(m), levels: m.levels.length, containers: m.stacks.reduce((a, st) => a + st.serials.length, 0) };
         }) });
       }
       // The player's item kinds (issue #150): GET the whole document (the page's Classify this… and Export read it);
