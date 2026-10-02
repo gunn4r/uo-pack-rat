@@ -113,15 +113,19 @@
 .map-chest > polygon { stroke: var(--color-border-strong); stroke-width: 1px; vector-effect: non-scaling-stroke; }
 .map-chest.unopened > polygon { stroke-dasharray: 3 2; }
 .map-stack.sel .map-chest > polygon, .map-stack:focus-visible .map-chest > polygon { stroke: var(--color-focus); stroke-width: 2px; }
-/* the player's areas (issue #10): a soft tint over their floor tiles in their colour, mixed as the floors are, a thin line along the union's outer edges, and the name in the colour with a halo of the surface; the one zoomed to a little stronger. The area being drawn is a little stronger and dashed, the keyboard's cursor a tile outline. None takes the pointer. */
-.map-area-shape > .map-area-tile { fill: color-mix(in srgb, var(--area) 32%, transparent); }
-.map-area-shape.sel > .map-area-tile { fill: color-mix(in srgb, var(--area) 45%, transparent); }
+/* the player's areas (issue #10): a tint over their floor tiles in their colour at 20%, a 1.5 px line along the union's outer edges; the one under the pointer, focused or zoomed to 12% stronger with a line 1.5 px thicker. The area being drawn is stronger and dashed, the keyboard's cursor a tile outline; the draft takes no pointer. */
+.map-area-shape > .map-area-tile { fill: color-mix(in srgb, var(--area) 20%, transparent); }
+.map-area-shape:is(.sel, .hot) > .map-area-tile { fill: color-mix(in srgb, var(--area) 32%, transparent); }
 .map-area-shape.draft > .map-area-tile { fill: color-mix(in srgb, var(--area) 50%, transparent); }
 .map-area-edge { fill: none; stroke: var(--area); stroke-width: 1.5px; stroke-linejoin: round; vector-effect: non-scaling-stroke; }
-.map-area-shape.sel > .map-area-edge { stroke-width: 2.5px; }
+.map-area-shape:is(.sel, .hot) > .map-area-edge { stroke-width: 3px; }
 .map-area-shape.draft > .map-area-edge { stroke-dasharray: 5 3; }
-.map-area-layer, .map-draft, .map-area-names { pointer-events: none; }
-.map-area-label { fill: color-mix(in srgb, var(--area) 75%, var(--color-text)); stroke: var(--color-surface); stroke-width: 3px; paint-order: stroke; stroke-linejoin: round; font-family: var(--font-body); font-size: 11px; font-weight: var(--weight-semibold); text-anchor: middle; dominant-baseline: middle; }
+.map-draft { pointer-events: none; }
+/* The area name pills: an HTML layer over the map, a fixed 12 px whatever the zoom, one per piece just above its front corner. The pill is a 1 px line in the area's colour on that colour mixed 22% into the surface; a name too long for its piece is cut with … or becomes a 10 px dot. The area's own pill shows its whole name, stronger, with a halo, over the others. The layer never takes the pointer. */
+.map-pills { position: absolute; inset: 0; z-index: 0; overflow: hidden; pointer-events: none; }
+.map-pill { position: absolute; transform: translate(-50%, -100%); white-space: nowrap; padding: 2px 7px; border: var(--border-width) solid var(--area); border-radius: var(--radius-full); background: color-mix(in srgb, var(--area) 22%, var(--color-surface)); color: var(--color-text); box-shadow: var(--shadow-chip); font-family: var(--font-body); font-size: 12px; line-height: 1.25; font-weight: var(--weight-medium); pointer-events: none; }
+.map-pill.dot { width: 10px; height: 10px; padding: 0; border: 1.5px solid var(--color-surface); background: var(--area); transform: translate(-50%, -50%); }
+.map-pill.hot { z-index: 1; background: color-mix(in srgb, var(--area) 38%, var(--color-surface)); box-shadow: 0 0 0 2px color-mix(in srgb, var(--area) 45%, transparent), var(--shadow-chip); }
 .map-draw-cursor { fill: none; stroke: var(--color-focus); stroke-width: 2px; vector-effect: non-scaling-stroke; }
 .map-draw-hint { position: absolute; left: var(--space-2); right: calc(var(--space-2) + 48px); top: var(--space-2); margin-inline: auto; width: fit-content; z-index: var(--z-sticky); display: flex; align-items: center; gap: var(--space-2); padding: var(--space-1-5) var(--space-3); background: var(--color-surface-raised); color: var(--color-text); border: var(--border-width) solid var(--color-accent); border-radius: var(--radius-md); box-shadow: var(--shadow-2); font-size: var(--text-sm); line-height: var(--lh-sm); }
 .map-draw-dot { flex: none; width: 8px; height: 8px; border-radius: 50%; background: var(--color-accent); }

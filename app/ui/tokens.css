@@ -136,6 +136,7 @@
   /* elevation */
   --shadow-1: none;
   --shadow-2: 0 4px 16px rgb(15 21 22 / 0.12);
+  --shadow-chip: 0 1px 2px rgb(15 21 22 / 0.18);   /* a small label on the map (the House map's area pills) */
   --shadow-3: 0 16px 48px rgb(15 21 22 / 0.20);
   --ring-focus: 0 0 0 2px var(--color-surface), 0 0 0 4px var(--color-focus);
   color-scheme: light;
@@ -185,6 +186,7 @@
   --color-map-marker: #e5382b; --color-map-marker-other: #ffd23f; --color-map-marker-edge: #ffffff; --color-map-marker-ink: #1b1b1b;  /* on the game's own world map, the same in both modes */
   --color-area-1: #b39dff; --color-area-2: #ffa04d; --color-area-3: #3fd6c2; --color-area-4: #ff6ac8; --color-area-5: #5b8cff; --color-area-6: #d4f04a; --color-area-7: #5fd35a; --color-area-8: #e8484f;  /* the player's drawn areas on the House map (issue #10) */
   --shadow-2: 0 4px 16px rgb(0 0 0 / 0.45);
+  --shadow-chip: 0 1px 2px rgb(0 0 0 / 0.45);   /* a small label on the map (the House map's area pills) */
   --shadow-3: 0 16px 48px rgb(0 0 0 / 0.6);
   --ring-focus: 0 0 0 2px var(--color-surface), 0 0 0 4px var(--color-focus);
   color-scheme: dark;

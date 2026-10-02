@@ -13,9 +13,9 @@ import { plural } from "./inv-model.mts";
 import { fillTone } from "./organize-model.mts";
 import { PLAIN, pickHouse, plainGrid, chestCount, houseLabel, houseName, carryOver, carryOverText, tiledataNote, chestViews, colourOf, chestLabel, sceneOf, boundsOf, fit, vbText,
   cutAway, calloutLines, nearestInDirection, houseTotals, legendOf, stackWhere, anchorOf, zoomAt, fillWords, whereOf, whereTitle, cropAround, facetMapUrl, markersOf, facetMapNote, markerRadii,
-  drawerChest, drawerMeta, slotsText, contentsOf, contentsSummary, filterContents, areaOfStack, levelAreas, tileAt, clampTile, rectOf, sizeText, unionTiles, coveredCells, outlineOf, labelSpot,
+  drawerChest, drawerMeta, slotsText, contentsOf, contentsSummary, filterContents, areaOfStack, levelAreas, tileAt, clampTile, rectOf, sizeText, unionTiles, coveredCells, outlineOf, pillsOf, fitLabel, LABEL_FIT,
   nextAreaId, nextAreaColor, moveCursor, project, tilePolygon, pts, liveAreas, withOrphans, redrawFailed, AREA_COLORS, AREA_COLOR_NAMES, MAX_AREAS, MAX_RECTS, type PlainModel, type Tile, type Contents, type ContentsNode, type Marker, type View, type Mode, type Box, type Colour, type ChestView, type Piece, type Prism, type Pt, type Dir } from "./house-map-model.mts";
-import type { AreaRect, ContainerLabel, HouseArea, HouseModel, HousesApiResponse, HouseApiResponse, HouseMapApiResponse, HouseMapEntry, HouseMapPutApiResponse, ItemsApiResponse, Stack } from "./api-types.mts";
+import type { AreaRect, ContainerLabel, HouseArea, HouseModel, UiPrefs, HousesApiResponse, HouseApiResponse, HouseMapApiResponse, HouseMapEntry, HouseMapPutApiResponse, ItemsApiResponse, Stack } from "./api-types.mts";
 import type { Item } from "../vault-lib.mts";
 
 const SVG_NS = "http://www.w3.org/2000/svg";
@@ -49,6 +49,31 @@ let naming: { level: number; color: string; rects: AreaRect[]; draft: string; er
 let renamingArea: { id: string; draft: string; error: string | null } | null = null;
 let deleting: string | null = null;
 let redrawn: { id: string; rects: AreaRect[] } | null = null;   // a redraw shown before its save is answered
+// The area under the pointer (on the map, or its row in the left pane) or focused in the pane: drawn stronger, its pill showing the whole name on top.
+let hotArea: string | null = null;
+// Whether the area name pills are hidden (ui-prefs areaLabels, set at load by applyMapPrefs; the zoom stack's toggle saves it).
+let labelsHidden = false;
+export function applyMapPrefs(prefs: UiPrefs | null): void { labelsHidden = prefs?.areaLabels === "hide"; }
+function toggleLabels(): void {
+  labelsHidden = !labelsHidden;
+  paintLabelsButton();
+  paintPills();
+  api("/api/ui-prefs", { method: "PUT", body: { areaLabels: labelsHidden ? "hide" : "show" } }).catch((e: Error) => toast(`Could not save the area labels choice: ${e.message}`, "bad"));
+}
+function paintLabelsButton(): void {
+  const b = $<HTMLButtonElement>("#map-labels");
+  if (!b) return;
+  const label = labelsHidden ? "Show area labels" : "Hide area labels";
+  b.setAttribute("aria-pressed", String(labelsHidden));
+  b.setAttribute("aria-label", label);
+  b.title = label;
+}
+function setHot(id: string | null): void {
+  if (id === hotArea) return;
+  hotArea = id;
+  for (const g of document.querySelectorAll<SVGGElement>("#map-svg .map-area-shape[data-area-shape]")) g.classList.toggle("hot", g.dataset.areaShape === id);
+  paintPills();
+}
 const stopEditing = (): void => { draw = null; dragging = false; naming = null; renamingArea = null; deleting = null; };
 // Leaving drawing mode any other way than Enter or Esc (another level, a crumb): said too.
 const dropDrawing = (): void => { if (!draw) return; draw = null; dragging = false; announce("Drawing cancelled."); };
@@ -202,10 +227,16 @@ function areaRow(m: HouseModel, a: HouseArea, chests: number, editable: boolean)
       "divider",
       { label: "Delete", danger: true, onSelect: () => { deleting = a.id; render(); $<HTMLElement>(`#map-area-keep-${CSS.escape(a.id)}`)?.focus(); } },
     ], { label: `Actions for ${a.name}`, width: 160 }); } });
-  return box("li", { class: "map-area-row" }, zoom,
+  const row = box("li", { class: "map-area-row" }, zoom,
     button({ label: `Rename ${a.name}`, icon: "pencil", iconOnly: true, variant: "ghost", size: "sm", attrs: { id: `map-area-edit-${a.id}` },
       onClick: () => { renamingArea = { id: a.id, draft: a.name, error: null }; render(); const f = $<HTMLInputElement>("#map-area-rename"); f?.focus(); f?.select(); } }),
     more);
+  // The row under the pointer or holding focus lights its area on the map.
+  row.addEventListener("pointerenter", () => setHot(a.id));
+  row.addEventListener("pointerleave", () => setHot(null));
+  row.addEventListener("focusin", () => setHot(a.id));
+  row.addEventListener("focusout", () => setHot(null));
+  return row;
 }
 // Change colour: the palette as a row of swatches, the area's own pressed.
 function colourPicker(m: HouseModel, a: HouseArea, anchor: HTMLElement): void {
@@ -391,10 +422,13 @@ function stage(): HTMLElement {
   svg.setAttribute("aria-label", draw ? "House map, drawing an area" : "House map");
   if (draw) { svg.setAttribute("tabindex", "0"); svg.setAttribute("aria-describedby", "map-draw-hint"); }
   wireSvg(svg);
+  // A pane that changes size moves the map under the pills: place them again.
+  const sized = new ResizeObserver(() => { if (svg.isConnected) paintPills(); else sized.disconnect(); });
+  sized.observe(svg);
   return box("section", { class: "card map-stage", id: "map-stage", "aria-label": "Map" },
     ...notes(),
     box("nav", { class: "map-crumbs", id: "map-crumbs", "aria-label": "Breadcrumb" }),
-    box("div", { class: "map-canvas", id: "map-canvas" }, svg,
+    box("div", { class: "map-canvas", id: "map-canvas" }, svg, box("div", { class: "map-pills", id: "map-pills", "aria-hidden": "true" }),
       draw ? box("div", { class: "map-draw-hint", id: "map-draw-hint" }, el("span", { class: "map-draw-dot", "aria-hidden": "true" }),
         el("span", { class: "map-draw-text" }, el("strong", {}, "Drag over tiles to draw the area."), " Shift-drag adds more. ", kbd("Enter"), " to finish, ", kbd("Esc"), " to cancel. Fit shows all.",
           el("span", { class: "sr" }, " Keyboard: the arrow keys move a tile cursor, Space starts and ends a rectangle, Shift+Space starts one more, Enter finishes, Escape cancels."))) : null,
@@ -402,7 +436,8 @@ function stage(): HTMLElement {
       box("div", { class: "map-zoom", role: "group", "aria-label": "Zoom" },
         button({ label: "Zoom in", icon: "zoom-in", iconOnly: true, size: "sm", attrs: { id: "map-zoom-in" }, onClick: () => zoomBy(1 / 1.25) }),
         button({ label: "Zoom out", icon: "zoom-out", iconOnly: true, size: "sm", attrs: { id: "map-zoom-out" }, onClick: () => zoomBy(1.25) }),
-        button({ label: "Fit the level", icon: "fit", iconOnly: true, size: "sm", attrs: { id: "map-fit" }, onClick: fitTo })),
+        button({ label: "Fit the level", icon: "fit", iconOnly: true, size: "sm", attrs: { id: "map-fit" }, onClick: fitTo }),
+        button({ label: labelsHidden ? "Show area labels" : "Hide area labels", icon: "label", iconOnly: true, size: "sm", attrs: { id: "map-labels", "aria-pressed": String(labelsHidden), title: labelsHidden ? "Show area labels" : "Hide area labels" }, onClick: toggleLabels })),
       box("div", { class: "map-callout", id: "map-callout", hidden: "" })));
 }
 // Above the map: why it is drawn in plain colours (no tiledata.mul), or, on the plain grid, how to get the house drawn.
@@ -479,21 +514,48 @@ function drawMap(): void {
   for (const f of scene.floors) ground.append(sv("polygon", { class: f.cls, points: f.pts }));
   for (const r of scene.reach) ground.append(sv("polygon", { class: "map-reach", points: r }));
   for (const p of scene.pieces) solids.append(pieceEl(p, views));
-  // The areas over the floors and under the walls and stacks; their names on top, placed clear of the stacks.
-  const areas = sv("g", { class: "map-area-layer" }), names = sv("g", { class: "map-area-names", "aria-hidden": "true" });
+  // The areas over the floors and under the walls and stacks (their names are pills over the map: paintPills). Each takes the pointer only to light up and show its name as a tooltip; a stack above it still takes the click.
+  const areas = sv("g", { class: "map-area-layer" });
   for (const a of areasNow()) {
     if (a.level !== S.level || draw?.target === a.id) continue;
-    areas.append(areaEl(m, a, a.id === S.area));
-    const at = labelSpot(m, a), p = project(at.x - m.x0, at.y - m.y0, at.z, S.view), t = sv("text", { class: "map-area-label", x: p[0].toFixed(1), y: p[1].toFixed(1), style: `--area:var(--color-${a.color})` });
-    t.textContent = a.name;
-    names.append(t);
+    const g = areaEl(m, a, a.id === S.area);
+    g.dataset.areaShape = a.id;
+    g.classList.toggle("hot", a.id === hotArea);
+    const title = sv("title", {});
+    title.textContent = a.name;
+    g.prepend(title);
+    areas.append(g);
   }
-  svg.replaceChildren(ground, areas, sv("g", { id: "map-draft", class: "map-draft" }), solids, names, sv("g", { id: "map-draft-top", class: "map-draft" }));
+  svg.replaceChildren(ground, areas, sv("g", { id: "map-draft", class: "map-draft" }), solids, sv("g", { id: "map-draft-top", class: "map-draft" }));
   drawCrumbs();
   if (!S.vb) S.vb = fit(boundsOf(m, S.level, S.view, areaById(S.area)), viewport());
   svg.setAttribute("viewBox", vbText(S.vb));
   paintStacks();
   paintDraft();
+  paintPills();
+}
+// The area name pills, an HTML layer over the map at a fixed screen size: one per piece of each area on the level, just above the middle of its front corner tile, placed from the SVG's screen matrix (so again after every pan, zoom, resize and redraw). A name is cut short with "…" to fit LABEL_FIT of its piece's width on screen, or a dot when under 3 characters fit; the area under the pointer, focused or zoomed to shows its whole name, on top. None while drawing a new shape for that area or with the labels hidden. They never take the pointer: the area's tint carries the name as a tooltip too.
+const PILL_PX = 12;
+let measureCtx: CanvasRenderingContext2D | null = null;
+function textWidth(text: string): number {
+  measureCtx ??= document.createElement("canvas").getContext("2d");
+  if (!measureCtx) return text.length * PILL_PX * 0.6;
+  measureCtx.font = `500 ${PILL_PX}px ${getComputedStyle(document.body).fontFamily}`;
+  return measureCtx.measureText(text).width;
+}
+function paintPills(): void {
+  const layer = $<HTMLElement>("#map-pills"), svg = $<SVGSVGElement>("#map-svg"), m = S.model, ctm = svg?.getScreenCTM();
+  if (!layer || !svg || !m) return;
+  if (labelsHidden || !ctm) { layer.replaceChildren(); return; }
+  const r = layer.getBoundingClientRect(), pills = pillsOf(m, areasNow().filter((a) => draw?.target !== a.id), S.level, S.view);
+  layer.replaceChildren(...pills.map((p) => {
+    const hot = p.id === hotArea || p.id === S.area, at = new DOMPoint(p.anchor[0], p.anchor[1]).matrixTransform(ctm);
+    const text = hot ? p.name : fitLabel(p.name, Math.max(24, p.span * ctm.a * LABEL_FIT), textWidth);
+    const e = el("div", { class: `map-pill${text == null ? " dot" : ""}${hot ? " hot" : ""}`, title: p.name, "data-area": p.id, style: `--area:var(--color-${p.color})` }, text ?? "");
+    e.style.left = `${at.x - r.left}px`;
+    e.style.top = `${at.y - r.top + (text == null ? 0 : PILL_PX * 0.6)}px`;
+    return e;
+  }));
 }
 // An area as a tint over its covered floor tiles and a thin line along the union's outer edges, in its colour.
 function areaEl(m: HouseModel, a: Pick<HouseArea, "level" | "rects" | "color">, sel: boolean, cls = "map-area-shape"): SVGElement {
@@ -614,7 +676,7 @@ function wireSvg(svg: SVGSVGElement): void {
   });
   svg.addEventListener("pointercancel", (e) => { endDrag(); endRectDrag(e); });
   svg.addEventListener("lostpointercapture", (e) => { endDrag(); endRectDrag(e); });
-  svg.addEventListener("pointerleave", () => { if (!drag && !draw) { S.hover = null; paintStacks(); hideCallout(); } });
+  svg.addEventListener("pointerleave", () => { if (!drag && !draw) { S.hover = null; paintStacks(); hideCallout(); setHot(null); } });
   svg.addEventListener("auxclick", (e) => { if (draw) e.preventDefault(); });   // no middle-click paste or autoscroll while drawing
   svg.addEventListener("wheel", (e) => { e.preventDefault(); if (e.deltaY === 0 || dragging) return; zoomBy(e.deltaY > 0 ? 1.15 : 1 / 1.15, svgPoint(svg, e.clientX, e.clientY)); }, { passive: false });
   svg.addEventListener("keydown", (e) => { if (draw) { if (drawKeys(e)) { e.preventDefault(); e.stopPropagation(); } return; } stackKeys(e); });
@@ -632,6 +694,7 @@ function wireSvg(svg: SVGSVGElement): void {
 }
 function hoverAt(e: PointerEvent): void {
   if (draw) return;
+  setHot(((e.target as Element).closest?.("[data-area-shape]") as SVGElement | null)?.dataset.areaShape ?? null);
   const t = e.target as Element, st = t.closest?.("[data-stack]") as SVGElement | null, item = t.closest?.("[data-name]") as SVGElement | null;
   const letter = st?.dataset.stack ?? null, changed = letter !== S.hover;
   if (changed) { S.hover = letter; paintStacks(); }
@@ -678,6 +741,7 @@ function setViewBox(b: Box): void {
   S.vb = b;
   $<SVGSVGElement>("#map-svg")?.setAttribute("viewBox", vbText(b));
   hideCallout();
+  paintPills();
 }
 function zoomBy(f: number, at?: Pt): void { if (S.vb) { setViewBox(zoomAt(S.vb, f, at?.[0], at?.[1])); paintDraft(); } }
 function fitTo(): void {

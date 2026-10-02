@@ -559,7 +559,7 @@ test("[slow] House map areas: a mouse drag draws an area, Enter asks its name, S
     assert.match(await page.locator('.map-area[data-area="a1"]').textContent() || "", /^North row25$/);
     assert.match(await page.locator(rest).textContent() || "", /^Everything else95$/);
     assert.equal(await page.locator("#map-svg .map-area-layer .map-area-tile").count(), 5, "the map shows the area's tint");
-    assert.equal(await page.locator("#map-svg .map-area-label").textContent(), "North row");
+    assert.deepEqual(await page.locator("#map-pills .map-pill").allTextContents(), ["North row"], "its name pill");
     assert.equal(await page.locator("#map-draw-hint").count(), 0, "drawing is over");
     assert.deepEqual(await until(() => readAreas(dir), (a) => !!a?.length, "the area saved"), [{ id: "a1", name: "North row", level: 0, color: "area-1", rects: [{ x0: 3001, y0: 1001, x1: 3005, y1: 1001 }] }]);
 
@@ -615,6 +615,58 @@ test("[slow] House map areas: a mouse drag draws an area, Enter asks its name, S
     assert.equal(await page.locator("#map-svg .map-area-tile").count(), 0);
     assert.equal(await page.evaluate(() => document.activeElement?.id), "map-new-area-0");
     await until(() => readAreas(dir), (a) => a === undefined, "the vault's entry gone with its last area (it has no name)");
+    assert.deepEqual(errors, []);
+  } finally { await done(app, dir); }
+});
+
+test("[slow] House map areas: a name pill per piece of an area at a fixed size, cut short to fit and whole on hover, never in the pointer's way; Hide area labels hides them and the choice survives a reload (1024 × 768)", async (t) => {
+  const why = unavailable();
+  if (why) return t.skip(why);
+  const { dir } = seed();
+  const LONG = "A very long name for a tiny spot";
+  writeFileSync(join(dir, "house-map.json"), JSON.stringify({ version: 1, houses: { [VAULT]: { name: "", bounds: VAULT_BOUNDS, areas: [
+    { id: "a1", name: "Loot Corner", level: 0, color: "area-2", rects: [{ x0: 3001, y0: 1001, x1: 3002, y1: 1002 }, { x0: 3004, y0: 1004, x1: 3005, y1: 1005 }] },
+    { id: "a2", name: LONG, level: 0, color: "area-5", rects: [{ x0: 3005, y0: 1001, x1: 3005, y1: 1001 }] }] } } }));
+  const { app, page, errors } = await launch(dir, { want: { width: 1024, height: 768 } });
+  const pills = (id: string) => page.locator(`#map-pills .map-pill[data-area="${id}"]`);
+  try {
+    await go(page, `#/map/${VAULT}`, "#map-pills .map-pill");
+    assert.equal(await pills("a1").count(), 2, "a pill for each piece of Loot Corner");
+    for (const text of await pills("a1").allTextContents()) assert.match(text, /^(Loot Corner|Loo[^…]*…)$/, "the name, or as much of it as the piece's width takes");
+    assert.deepEqual(await pills("a1").evaluateAll((es) => es.map((e) => e.getAttribute("title"))), ["Loot Corner", "Loot Corner"]);
+    const style = await pills("a1").first().evaluate((e) => { const c = getComputedStyle(e); return [c.fontSize, c.fontWeight, c.pointerEvents, getComputedStyle(e.parentElement!).pointerEvents]; });
+    assert.deepEqual(style, ["12px", "500", "none", "none"]);
+    assert.equal(await page.locator('#map-svg .map-area-shape[data-area-shape="a1"] > title').textContent(), "Loot Corner", "the tint carries the name as a tooltip");
+    const short = await pills("a2").textContent();
+    assert.notEqual(short, LONG, "a one-tile piece is too narrow for the whole name");
+    assert.ok(short === "" || short!.endsWith("…"), `cut short or a dot: ${short}`);
+    // The pill keeps its screen size through a zoom.
+    const before = await pills("a1").first().evaluate((e) => e.getBoundingClientRect().height);
+    await page.locator("#map-zoom-in").click();
+    assert.equal(await pills("a1").first().evaluate((e) => e.getBoundingClientRect().height), before);
+    // Hovering the area's row shows its whole name on top.
+    await page.locator('.map-area[data-area="a2"]').hover();
+    await page.waitForFunction((n) => document.querySelector('#map-pills .map-pill[data-area="a2"]')?.textContent === n, LONG, { timeout: 15_000 });
+    assert.match(await pills("a2").getAttribute("class") || "", /\bhot\b/);
+    assert.match(await page.locator('#map-svg .map-area-shape[data-area-shape="a2"]').getAttribute("class") || "", /\bhot\b/);
+    // A click on a stack under a pill still selects the stack.
+    const stack = `#map-svg [data-stack="${letter(vaultModel, 3005, 1005)}"]`;
+    await page.locator(stack).click({ force: true });
+    assert.equal(await page.locator(stack).getAttribute("aria-pressed"), "true");
+    // Hide area labels: no pills, the button says what it does now, and the choice is saved and survives a reload.
+    assert.equal(await page.locator("#map-labels").getAttribute("aria-label"), "Hide area labels");
+    await page.locator("#map-labels").click();
+    assert.equal(await page.locator("#map-pills .map-pill").count(), 0);
+    assert.equal(await page.locator("#map-labels").getAttribute("aria-pressed"), "true");
+    assert.equal(await page.locator("#map-labels").getAttribute("aria-label"), "Show area labels");
+    assert.equal(await page.locator("#map-svg .map-area-shape").count(), 2, "the tints stay");
+    await until(() => { try { return JSON.parse(readFileSync(join(dir, "ui-prefs.json"), "utf8")).areaLabels as string; } catch { return ""; } }, (v) => v === "hide", "the choice saved");
+    await page.reload();
+    await go(page, `#/map/${VAULT}`, "#map-svg .map-stack");
+    assert.equal(await page.locator("#map-labels").getAttribute("aria-pressed"), "true");
+    assert.equal(await page.locator("#map-pills .map-pill").count(), 0, "still hidden after a reload");
+    await page.locator("#map-labels").click();
+    assert.equal(await pills("a1").count(), 2, "shown again");
     assert.deepEqual(errors, []);
   } finally { await done(app, dir); }
 });
