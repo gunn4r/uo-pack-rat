@@ -2,6 +2,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { buildHouseModel, letterOf, type HouseModel, type Cell } from "./house-model.mts";
+import type { HouseItem } from "./house-capture.mts";
 import { G, fixtureTileData, courtyardHouse, stairHouse, towerHouse, roofHouse, hallHouse, vaultHouse, castleHouse } from "./house-fixture.mts";
 
 const td = fixtureTileData();
@@ -250,4 +251,16 @@ test("[fast] house model: the model does not depend on the order of tiles, items
       assert.deepEqual(pick(buildHouseModel({ ...house, tiles: order(house.tiles), items: order(house.items) }, td, order(cs))), want);
     }
   }
+});
+
+test("[fast] house model: an open door standing on the wall beside its gap marks the gap, not the wall (issue #159)", () => {
+  const h = hallHouse(), shut = h.tiles.filter((t) => t[0] !== G.door);
+  const open: HouseItem[] = [[0x40000310, G.door, 6007, 7002, 7], [0x40000311, G.door, 6012, 7004, 7]];
+  const m = buildHouseModel({ ...h, tiles: shut, items: open }, td, []);
+  assert.deepEqual([cell(m, 0, 6007, 7002)!.kind, cell(m, 0, 6007, 7002)!.doorway], ["wall", false]);
+  assert.deepEqual([cell(m, 0, 6012, 7004)!.kind, cell(m, 0, 6012, 7004)!.doorway], ["wall", false]);
+  assert.equal(cell(m, 0, 6007, 7003)!.doorway, true);
+  assert.deepEqual(m.rooms.map((r) => [r.name, r.tiles]), [["West room", 36], ["East room", 36], ["Hallway", 4]], "the gaps stay out of the hallway, as with a closed door");
+  assert.deepEqual([cell(m, 0, 6007, 7003)!.room, cell(m, 0, 6012, 7003)!.room], [null, null]);
+  assert.deepEqual(m.furniture.map((f) => [f.x, f.y]), [[6007, 7002], [6012, 7004]], "the door is drawn where it stands");
 });

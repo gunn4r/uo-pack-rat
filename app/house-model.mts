@@ -103,7 +103,7 @@ export function buildHouseModel(house: HouseSource, td: TileData | null, contain
     if (c.kind === "floor" && ((solid(c.level, c.x - 1, c.y) && solid(c.level, c.x + 1, c.y)) || (solid(c.level, c.x, c.y - 1) && solid(c.level, c.x, c.y + 1)))) c.doorway = true;
   }
 
-  // Furniture: doors (their cell is a doorway and, like a door tile, stays out of hallways), teleporters by name, impassable items as blocks; passable decoration is not drawn.
+  // Furniture: doors (the doorway they stand in, or beside when open, stays out of hallways like a door tile's), teleporters by name, impassable items as blocks; passable decoration is not drawn.
   const furniture: Furniture[] = [];
   if (td) for (const [serial, graphic, x, y, z] of [...house.items].sort((a, b) => a[0] - b[0])) {
     const info = td.info(graphic);
@@ -112,7 +112,7 @@ export function buildHouseModel(house: HouseSource, td: TileData | null, contain
     if (!kind) continue;
     const level = levelOf(z);
     furniture.push({ serial, kind, name: info.name, level, x, y, z, height: info.height });
-    const c = kind === "door" ? at.get(key(level, x, y)) : undefined;
+    const c = kind === "door" ? doorCell(at, solid, level, x, y) : undefined;
     if (c) { c.doorway = true; doors.add(c); }
   }
 
@@ -163,6 +163,18 @@ export function letterOf(n: number): string {
   let s = "";
   for (let k = n + 1; k > 0; k = Math.floor((k - 1) / 26)) s = String.fromCharCode(65 + ((k - 1) % 26)) + s;
   return s;
+}
+
+// The doorway a door item stands in: its own cell when that is not a wall or window. An open door stands on the wall beside the gap it closes (issue #159), so then the first floor neighbour (north, west, east, south, then the diagonals) with walls on both opposite sides; undefined when there is none.
+const NEIGHBOURS: ReadonlyArray<[number, number]> = [[0, -1], [-1, 0], [1, 0], [0, 1], [-1, -1], [1, -1], [-1, 1], [1, 1]];
+function doorCell(at: Map<string, Cell>, solid: (l: number, x: number, y: number) => boolean, level: number, x: number, y: number): Cell | undefined {
+  const c = at.get(key(level, x, y));
+  if (!c || (c.kind !== "wall" && c.kind !== "window")) return c;
+  for (const [dx, dy] of NEIGHBOURS) {
+    const n = at.get(key(level, x + dx, y + dy));
+    if (n?.kind === "floor" && ((solid(level, n.x - 1, n.y) && solid(level, n.x + 1, n.y)) || (solid(level, n.x, n.y - 1) && solid(level, n.x, n.y + 1)))) return n;
+  }
+  return undefined;
 }
 
 function directionOf(dx: number, dy: number): string {
