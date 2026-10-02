@@ -1099,13 +1099,22 @@ function placeDrawer(animate = false): void {
   const fresh = !d;
   if (!d) { d = box("aside", { class: "card map-drawer", id: "map-drawer", role: "region", onkeydown: drawerKeys }); page.append(d); }
   page.classList.add("has-drawer");
-  if (fresh) { showDrawerW(drawerW, Infinity); d.addEventListener("transitionend", (e) => { if (e.target === d && (e as TransitionEvent).propertyName === "width") fitDrawer(); }); }
   drawDrawer();
-  if (fresh && animate) { d.classList.add("entering"); void d.offsetWidth; d.classList.remove("entering"); }
-  if (!(fresh && animate) || getComputedStyle(d).transitionDuration === "0s") fitDrawer();   // else when it has grown (transitionend)
+  if (!fresh) { fitDrawer(); return; }
+  // Clamped before it shows: with nothing animating, the page is laid out with the drawer in at no width, the room
+  // it leaves measured and the width set. Only then does it grow (and the levels pane fold), straight to that width,
+  // so a width chosen on a wider screen never squeezes the map, not even for a frame.
+  page.classList.add("resizing");
+  d.classList.add("entering");
+  void d.offsetWidth;
+  showDrawerW(drawerW, stacked() ? Infinity : drawerLimit());
+  if (animate) page.classList.remove("has-drawer"); else d.classList.remove("entering");
+  void d.offsetWidth;
+  page.classList.remove("resizing");
+  if (animate) { page.classList.add("has-drawer"); void d.offsetWidth; d.classList.remove("entering"); }
 }
 // ---------------------------------------------------------------- the drawer's width
-// Its handle (on its left edge, from 1100 px up): a drag, ← and → (16 px, 64 with Shift), Home and End set the width, a double-click puts back the default; each saves it. The map keeps MAP_MIN px however wide the window is: the width shown is the chosen one clamped to that (on every window resize too), and the map's viewBox never needs a re-fit (the SVG scales it to fit) while its pills follow through their ResizeObserver.
+// Its handle (on its left edge, from 1100 px up): a drag, ← and → (16 px, 64 with Shift), Home and End set the width, a double-click puts back the default; each saves it. The map keeps MAP_MIN px however wide the window is: the width shown is the chosen one clamped to that (when the drawer opens and whenever the page changes size), and the map's viewBox never needs a re-fit (the SVG scales it to fit) while its pills follow through their ResizeObserver.
 const stacked = (): boolean => matchMedia("(max-width: 1099px)").matches;
 function drawerLimit(): number {
   const d = $<HTMLElement>("#map-drawer"), m = $<HTMLElement>("#map-stage");
@@ -1119,11 +1128,18 @@ function showDrawerW(w: number, max = drawerLimit()): number {
   return shownW;
 }
 function fitDrawer(): void { if ($<HTMLElement>("#map-drawer") && !stacked() && !$<HTMLElement>("#tab-map")!.hidden) showDrawerW(drawerW); }   // a hidden screen measures 0
-function setDrawerW(w: number, max?: number): void {
-  drawerW = showDrawerW(w, max);
-  api("/api/ui-prefs", { method: "PUT", body: { mapDrawerWidth: drawerW } }).catch((e: Error) => toast(`Could not save the contents width: ${e.message}`, "bad"));
+// The width chosen (a double-click chooses 400 even where less fits: a wider window shows it again), shown clamped, saved once the keys or the drag pause.
+let saveTimer = 0;
+function setDrawerW(chosen: number, max?: number): void {
+  drawerW = chosen;
+  showDrawerW(chosen, max);
+  clearTimeout(saveTimer);
+  saveTimer = setTimeout(() => {
+    api("/api/ui-prefs", { method: "PUT", body: { mapDrawerWidth: drawerW } }).catch((e: Error) => toast(`Could not save the contents width: ${e.message}`, "bad"));
+  }, 300) as unknown as number;
 }
-addEventListener("resize", fitDrawer);
+// The page's size changes with the window (or the sidebar): fit the drawer again. Watched from the start, so its first call comes before any drawer opens.
+new ResizeObserver(() => fitDrawer()).observe(body());
 function drawerGrip(): HTMLElement {
   const g = box("div", { class: "map-drawer-grip", id: "map-drawer-grip", role: "separator", tabindex: "0", "aria-orientation": "vertical", "aria-label": "Resize contents", "aria-valuemin": DRAWER_MIN, "aria-valuenow": shownW, "aria-valuemax": shownW });
   g.addEventListener("pointerdown", (e: PointerEvent) => {
@@ -1134,12 +1150,15 @@ function drawerGrip(): HTMLElement {
     g.setPointerCapture(e.pointerId);
     body().classList.add("resizing");
     const move = (m: PointerEvent): void => { moved = true; showDrawerW(w0 + x0 - m.clientX, max); };
+    const ends = ["pointerup", "pointercancel", "lostpointercapture"] as const;
     const up = (): void => {
-      g.removeEventListener("pointermove", move); g.removeEventListener("pointerup", up); g.removeEventListener("pointercancel", up);
+      g.removeEventListener("pointermove", move);
+      for (const t of ends) g.removeEventListener(t, up);
       body().classList.remove("resizing");
-      if (moved && shownW !== drawerW) setDrawerW(shownW, max);
+      if (moved) setDrawerW(shownW, max);
     };
-    g.addEventListener("pointermove", move); g.addEventListener("pointerup", up); g.addEventListener("pointercancel", up);
+    g.addEventListener("pointermove", move);
+    for (const t of ends) g.addEventListener(t, up);
   });
   g.addEventListener("dblclick", () => setDrawerW(DRAWER_W));
   g.addEventListener("keydown", (e: KeyboardEvent) => {
@@ -1147,7 +1166,7 @@ function drawerGrip(): HTMLElement {
     const max = drawerLimit(), w = drawerKey(e.key, e.shiftKey, shownW, max);
     if (w == null) return;
     e.preventDefault();
-    if (w !== shownW || w !== drawerW) setDrawerW(w, max);
+    setDrawerW(w, max);
   });
   return g;
 }

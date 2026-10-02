@@ -6,14 +6,14 @@
 #tab-map .map-page > :is(.msg, .map-empty, .panel) { grid-column: 1 / -1; align-self: start; }
 /* The contents drawer: a column of its own after the panel, opened by growing from no width (its content laid out at full width inside, so it slides in rather than reflowing). Between 1100 and 1799 px the levels pane folds away while it is open, its column shrinking the same way (the top bar's level pills still switch levels), and comes back when it closes. Below 1100 px everything stacks in one column. */
 .map-stage { transition: margin var(--duration-slow) var(--ease-standard); }
-.map-side { width: 280px; transition: width var(--duration-slow) var(--ease-standard), padding var(--duration-slow) var(--ease-standard), border-width var(--duration-slow) var(--ease-standard), visibility var(--duration-slow); }
+.map-side { width: 280px; transition: width var(--duration-slow) var(--ease-standard), padding var(--duration-slow) var(--ease-standard), visibility var(--duration-slow); }   /* the border drops at once: easing out it would hold the pane 2 px wide to the end, taking them from the map */
 .map-side > * { min-width: calc(280px - 2 * var(--space-3) - 2 * var(--border-width-frame)); }
 #tab-map .map-page.has-drawer { grid-template-columns: auto minmax(0, 1fr) 340px auto; }
-/* Its width is --drawer-w on the page (house-map.mts's showDrawerW: 400 px unless its handle on the left edge set another); while the handle is dragged nothing animates. */
+/* Its width is --drawer-w on the page (house-map.mts's showDrawerW: 400 px unless its handle on the left edge set another); while the handle is dragged, or the drawer is measured before it opens, nothing animates. */
 .map-drawer { position: relative; width: var(--drawer-w, 400px); transition: width var(--duration-slow) var(--ease-standard); }
 .map-drawer.entering { width: 0; }
 .map-drawer > * { min-width: calc(var(--drawer-w, 400px) - 2 * var(--border-width-frame)); }
-#tab-map .map-page.resizing :is(.map-drawer, .map-stage) { transition: none; }
+#tab-map .map-page.resizing :is(.map-drawer, .map-stage, .map-side) { transition: none; }
 #tab-map .map-page.resizing { cursor: col-resize; user-select: none; }
 .map-drawer > .map-drawer-grip { position: absolute; z-index: 1; inset: 0 auto 0 0; width: 8px; min-width: 0; cursor: col-resize; touch-action: none; }
 .map-drawer-grip::after { content: ""; position: absolute; left: 2px; top: 50%; width: 3px; height: 32px; transform: translateY(-50%); border-radius: var(--radius-full); background: var(--color-border-strong); }
