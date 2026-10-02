@@ -234,7 +234,7 @@ def root_entry(serial, kind, label):
 
 
 def house_capture(px, py):
-    """The house the player stands in, from the client's own house tiles (issue #10), or None outside a house or on a build without the multi calls. Only the tiles connected to the player's tile are kept (8-connected in x/y, across every z), so a neighbouring house is left out. What stands on the ground inside that footprint is recorded too (both left out when the ground cannot be read): furniture and fixtures as `items`, and every container as `containers` (2.11.0), opened or not, so the map shows a chest from the first scan even when it stood too far away to open; corpses, trash containers and blacklisted ones are left out. Names come from tiledata in the app, so this asks the server nothing. A house of more than HOUSE_MAX_TILES tiles is left out and its count noted in HOUSE_TOO_LARGE."""
+    """The house the player stands in, from the client's own house tiles (issue #10), or None outside a house or on a build without the multi calls. Only the tiles connected to the player's tile are kept (8-connected in x/y, across every z), so a neighbouring house is left out. What stands on the ground inside that footprint is recorded too (both left out when the ground cannot be read): furniture and fixtures as `items`, and every container as `containers` (2.11.0), opened or not, so the map shows a chest from the first scan even when it stood too far away to open; corpses, trash containers and blacklisted ones are left out (trash by name, or because the roots pass, which runs first, read its tooltip; a far trash container whose cached name is generic cannot be told apart without a tooltip query, which this never makes). Names come from tiledata in the app, so this asks the server nothing. A house of more than HOUSE_MAX_TILES tiles is left out and its count noted in HOUSE_TOO_LARGE."""
     at = getattr(API, "GetMultisAt", None)
     area = getattr(API, "GetMultisInArea", None)
     if at is None or area is None:
@@ -289,7 +289,7 @@ def house_capture(px, py):
             name = str(getattr(g, "Name", "") or "")
             if not is_container(g, name):
                 items.append(row)
-            elif row[0] not in BLACKLIST and not TRASH_RE.search(name):
+            elif row[0] not in BLACKLIST and row[0] not in TRASHED and not TRASH_RE.search(name):
                 chests.append(row)
         except Exception:
             continue
@@ -600,7 +600,8 @@ def main():
     if house is not None:
         n = len(HOUSE_LEFT_OUT)
         left_out = f" ({n} farther {'one' if n == 1 else 'ones'} left out)" if n else ""
-        furniture = f"{len(house['items'])} pieces of furniture{left_out}" if "items" in house else "furniture not read"
+        c = len(house.get("containers", []))
+        furniture = f"{len(house['items'])} pieces of furniture{left_out}, {c} chest{'s' if c != 1 else ''}" if "items" in house else "furniture and chests not read"
         sysmsg(f"  house: {len(house['tiles'])} tiles, {furniture}", INFO_HUE)
     if HOUSE_TOO_LARGE:
         sysmsg(f"  house too large to record: {HOUSE_TOO_LARGE[0]} tiles", INFO_HUE)

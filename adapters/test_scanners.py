@@ -465,6 +465,15 @@ class TazUOScanner(DataDir, unittest.TestCase):
         self.assertNotIn(0x40000050, self.opened(w))
         self.assertNotIn(0x40000050, [r["serial"] for r in s["roots"]])
         self.assertEqual(s["house"]["items"], [], "a container is never furniture")
+        self.assertIn("  house: 144 tiles, 0 pieces of furniture, 2 chests", w.messages)
+
+    def test_a_trash_barrel_the_scan_knew_only_by_its_tooltip_is_not_in_the_houses_chest_list(self):
+        w = World(); home(w); w.multis = house_tiles(5, 5, 12, 12); trash(w, cached=True)
+        self.scan(w)
+        [s] = self.scans("tazuo")
+        serials = [c[0] for c in s["house"]["containers"]]
+        self.assertNotIn(TRASH_BARREL, serials, "the client calls it just \"barrel\"; the roots pass learnt it is trash")
+        self.assertIn(BARREL, serials)
 
     def test_past_the_schemas_5000_house_items_the_farthest_are_left_out(self):
         w = World(); home(w); w.multis = house_tiles(5, 5, 12, 12)
@@ -477,7 +486,7 @@ class TazUOScanner(DataDir, unittest.TestCase):
         self.assertEqual(len(items), 5000)
         self.assertNotIn(0x40000042, [i[0] for i in items])
         self.assertTrue(self.root(s, CHEST)["opened"])
-        self.assertIn("  house: 144 tiles, 5000 pieces of furniture (1 farther one left out)", w.messages)
+        self.assertIn("  house: 144 tiles, 5000 pieces of furniture (1 farther one left out), 1 chest", w.messages)
 
     def test_a_ground_item_read_that_raises_writes_the_tiles_and_no_furniture_claim(self):
         w = World(); home(w); w.multis = house_tiles(5, 5, 12, 12)
@@ -495,7 +504,7 @@ class TazUOScanner(DataDir, unittest.TestCase):
         self.assertNotIn("items", s["house"], "an absent list erases nothing the app knew; an empty one would")
         self.assertNotIn("containers", s["house"], "an absent list erases nothing the app knew")
         self.assertTrue(self.root(s, CHEST)["opened"])
-        self.assertIn("  house: 144 tiles, furniture not read", w.messages)
+        self.assertIn("  house: 144 tiles, furniture and chests not read", w.messages)
 
     def test_a_house_over_the_tile_cap_is_left_out_and_the_summary_says_so(self):
         w = World(); home(w)
