@@ -1,7 +1,7 @@
 // house-server.test.mts — GET /api/houses and GET /api/houses/<id> (issue #10) against a real listening server on a temp data folder: a scan with a house capture becomes a house, its ground chests become stacks, and the client's tiledata.mul is found through the TazUO launcher profile (or not, and the model falls back). Tags: [fast]. Run: node --test app/house-server.test.mts
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { resolveConfig, ensureLayout } from "./config.mts";
@@ -17,7 +17,8 @@ const FAKE_HOME = mkdtempSync(join(tmpdir(), "pr-house-home-"));
 
 const PACK = 0x40020001;
 
-async function serve(withTiledata: boolean): Promise<{ s: ServerHandle; dir: string }> {
+// settings: fields laid over settings.json before the server starts, as a player's hand edit would be.
+async function serve(withTiledata: boolean, settings?: Record<string, unknown>): Promise<{ s: ServerHandle; dir: string }> {
   const dir = mkdtempSync(join(tmpdir(), "pr-house-"));
   const config = ensureLayout(resolveConfig(["--port", "0", "--data", dir], {}));
   const { house, chests } = vaultHouse();
@@ -31,6 +32,7 @@ async function serve(withTiledata: boolean): Promise<{ s: ServerHandle; dir: str
     writeFileSync(join(profiles, "p.json"), JSON.stringify({ ultimaonlinedirectory: uo }));
     writeFileSync(join(dir, "settings.json"), JSON.stringify({ schemaVersion: 1, shard: "uoalive", client: { adapter: "tazuo", scriptsDir: scripts } }));
   }
+  if (settings) writeFileSync(join(dir, "settings.json"), JSON.stringify({ ...JSON.parse(readFileSync(join(dir, "settings.json"), "utf8")), ...settings }));
   const s = await startServer(config, {
     clientSearch: { home: FAKE_HOME, candidates: (a) => candidateClientRoots({ adapter: a.id, home: FAKE_HOME, platform: "linux", env: {}, adapterPlatform: a.platform }) },
     clientRunning: () => false,
@@ -152,29 +154,32 @@ test("[fast] houses: the UO folder set in Settings wins over TazUO's launcher, a
     const auto = await get<{ tiledataFrom: From }>(s, "/api/houses");
     assert.equal(auto.body.tiledataFrom.source, "tazuo-profile");
     const mine = uoFolderWith(syntheticTileData([{ graphic: G.pavers, flags: FLAG.surface, name: "marble floor" }, { graphic: G.stoneWall, flags: FLAG.wall | FLAG.impassable, height: 20, name: "stone wall" }]));
-    const r = await put(s, { uoFolder: mine });
-    assert.equal(r.status, 200);
-    assert.equal(r.body.settings!.uoFolder, mine);
-    const list = await get<{ tiledata: boolean; tiledataFrom: From }>(s, "/api/houses");
-    assert.deepEqual([list.body.tiledata, list.body.tiledataFrom], [true, { folder: mine, source: "settings", reason: null }]);
-    const one = await get<{ house: HouseModel }>(s, "/api/houses/1-3000-1000");
-    assert.equal(one.body.house.cells.find((c) => c.x === 3002 && c.y === 1002 && c.level === 0)!.family, "marble");
-    assert.equal((await put(s, { uoFolder: null })).body.settings!.uoFolder, null, "null goes back to automatic");
-    assert.equal((await get<{ tiledataFrom: From }>(s, "/api/houses")).body.tiledataFrom.source, "tazuo-profile");
+    try {
+      const r = await put(s, { uoFolder: mine });
+      assert.equal(r.status, 200);
+      assert.equal(r.body.settings!.uoFolder, mine);
+      const list = await get<{ tiledata: boolean; tiledataFrom: From }>(s, "/api/houses");
+      assert.deepEqual([list.body.tiledata, list.body.tiledataFrom], [true, { folder: mine, source: "settings", reason: null }]);
+      const one = await get<{ house: HouseModel }>(s, "/api/houses/1-3000-1000");
+      assert.equal(one.body.house.cells.find((c) => c.x === 3002 && c.y === 1002 && c.level === 0)!.family, "marble");
+      assert.equal((await put(s, { uoFolder: null })).body.settings!.uoFolder, null, "null goes back to automatic");
+      assert.equal((await get<{ tiledataFrom: From }>(s, "/api/houses")).body.tiledataFrom.source, "tazuo-profile");
+    } finally { rmSync(mine, { recursive: true, force: true }); }
   } finally { await s.close(); }
 });
 
 test("[fast] houses: a UO folder that lost its tiledata.mul, a file that is not a 7.x tiledata.mul, and no client each say why there is none", async () => {
   const { s } = await serve(true);
   try {
-    const gone = uoFolderWith(syntheticTileData([]));
-    assert.equal((await put(s, { uoFolder: gone })).status, 200);
-    rmSync(join(gone, "tiledata.mul"));
-    assert.deepEqual((await get<{ tiledata: boolean; tiledataFrom: From }>(s, "/api/houses")).body.tiledataFrom, { folder: gone, source: "settings", reason: "override-missing" });
-    const junk = uoFolderWith(Buffer.alloc(100));
-    assert.equal((await put(s, { uoFolder: junk })).status, 200);
-    const list = await get<{ tiledata: boolean; tiledataFrom: From }>(s, "/api/houses");
-    assert.deepEqual([list.body.tiledata, list.body.tiledataFrom], [false, { folder: junk, source: "settings", reason: "unreadable" }]);
+    const gone = uoFolderWith(syntheticTileData([])), junk = uoFolderWith(Buffer.alloc(100));
+    try {
+      assert.equal((await put(s, { uoFolder: gone })).status, 200);
+      rmSync(join(gone, "tiledata.mul"));
+      assert.deepEqual((await get<{ tiledata: boolean; tiledataFrom: From }>(s, "/api/houses")).body.tiledataFrom, { folder: gone, source: "settings", reason: "override-missing" });
+      assert.equal((await put(s, { uoFolder: junk })).status, 200);
+      const list = await get<{ tiledata: boolean; tiledataFrom: From }>(s, "/api/houses");
+      assert.deepEqual([list.body.tiledata, list.body.tiledataFrom], [false, { folder: junk, source: "settings", reason: "unreadable" }]);
+    } finally { for (const d of [gone, junk]) rmSync(d, { recursive: true, force: true }); }
   } finally { await s.close(); }
   const { s: bare } = await serve(false);
   try {
@@ -186,10 +191,27 @@ test("[fast] houses: PUT /api/settings refuses a relative path, a UNC path and a
   const { s } = await serve(true);
   try {
     const empty = mkdtempSync(join(tmpdir(), "pr-house-empty-"));
-    for (const bad of ["uo/folder", "\\\\host\\share\\UO", "//host/share/UO", empty, 42, ""]) {
-      const r = await put(s, { uoFolder: bad });
-      assert.equal(r.status, 400, String(bad));
-      if (typeof bad === "string" && bad) assert.ok(!r.body.error!.includes(bad), `the error names no path: ${r.body.error}`);
-    }
+    try {
+      for (const bad of ["uo/folder", "\\\\host\\share\\UO", "//host/share/UO", empty, 42, ""]) {
+        const r = await put(s, { uoFolder: bad });
+        assert.equal(r.status, 400, String(bad));
+        if (typeof bad === "string" && bad) assert.ok(!r.body.error!.includes(bad), `the error names no path: ${r.body.error}`);
+      }
+    } finally { rmSync(empty, { recursive: true, force: true }); }
   } finally { await s.close(); }
+});
+
+test("[fast] houses: a hand-edited UO folder of a UNC or relative shape is reported wrong without being read, and a TazUO client with no launcher profile says so", async () => {
+  for (const uoFolder of ["\\\\server\\share", "//server/share", "uo/folder"]) {
+    const { s } = await serve(true, { uoFolder });
+    try {
+      assert.deepEqual((await get<{ tiledata: boolean; tiledataFrom: From }>(s, "/api/houses")).body.tiledataFrom, { folder: null, source: null, reason: "override-missing" }, uoFolder);
+    } finally { await s.close(); }
+  }
+  const bare = mkdtempSync(join(tmpdir(), "pr-house-noprofile-")), scripts = join(bare, "TazUO", "LegionScripts");
+  mkdirSync(scripts, { recursive: true });
+  const { s } = await serve(false, { client: { adapter: "tazuo", scriptsDir: scripts } });
+  try {
+    assert.deepEqual((await get<{ tiledataFrom: From }>(s, "/api/houses")).body.tiledataFrom, { folder: null, source: null, reason: "no-tazuo-profile" });
+  } finally { await s.close(); rmSync(bare, { recursive: true, force: true }); }
 });

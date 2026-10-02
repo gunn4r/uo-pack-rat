@@ -773,11 +773,12 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
     return readdirSync(SCANS).filter((f) => f.endsWith(".json")).sort()
       .map((f) => { const st = statSync(join(SCANS, f)); return `${f}:${st.mtimeMs}:${st.size}`; }).join("|");
   }
-  // Where the house map's tiledata.mul comes from (issue #10): the UO folder set in Settings wins; else, with TazUO the chosen client, the folder its launcher profile names. `reason` says why there is none, for the page to put in words: the folder set here lost its tiledata.mul, no client to look through, no TazUO profile naming one, or a file that is not a 7.x tiledata.mul.
+  // Where the house map's tiledata.mul comes from (issue #10): the UO folder set in Settings wins; else, with TazUO the chosen client, the folder its launcher profile names. `reason` says why there is none, for the page to put in words: the folder set here lost its tiledata.mul (or, hand-edited into settings.json, is not an absolute non-UNC path: refused on its shape before any filesystem call, as PUT /api/settings does, and not passed over for the automatic one, since the player chose a folder), no client to look through, no TazUO profile naming one, or a file that is not a 7.x tiledata.mul.
   interface TileDataFrom { td: TileData | null; folder: string | null; source: "settings" | "tazuo-profile" | null; reason: null | "override-missing" | "no-client" | "no-tazuo-profile" | "unreadable" }
   function houseTileData(): TileDataFrom {
     const o = currentSettings.uoFolder;
-    if (typeof o === "string" && o) {
+    if (o != null && o !== "") {
+      if (typeof o !== "string" || badPathShape(o)) return { td: null, folder: null, source: null, reason: "override-missing" };
       const path = join(o, "tiledata.mul"), td = loadTileData(path);
       return { td, folder: o, source: "settings", reason: td ? null : existsSync(path) ? "unreadable" : "override-missing" };
     }
