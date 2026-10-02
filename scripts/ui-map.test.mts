@@ -970,7 +970,8 @@ async function drawerLayout(page: Page, width: number, mapBefore: number): Promi
     assert.ok(drawer.x >= panel.x + panel.width - 1, `the drawer is right of the panel (${drawer.x} < ${panel.x + panel.width})`);
     assert.ok(map.width < mapBefore, `the map narrows (${map.width} ≥ ${mapBefore})`);
     if (width < 1800) assert.ok(side < 1, `below 1800 px the levels pane folds away (${side} px)`);
-    else assert.ok(side > 200, `from 1800 px the levels pane stays (${side} px)`);
+    else assert.ok(side > 270, `from 1800 px the 280 px levels pane stays (${side} px)`);
+    if (width >= 1400) assert.ok(map.width >= 370, `with the drawer open the map keeps room (${map.width} px)`);
   } else assert.ok(drawer.y >= panel.y + panel.height - 1, "below 1100 px the drawer comes after the panel");
 }
 
@@ -1028,7 +1029,7 @@ test("[slow] House map: Show items opens the contents drawer as a column of its 
     assert.equal(await page.evaluate(() => (document.activeElement as HTMLElement).dataset.act), "items");
     assert.equal(await page.locator("#map-panel li.open").count(), 0);
     await page.waitForTimeout(400);
-    assert.ok(await page.locator("#tab-map .map-side").evaluate((e) => e.getBoundingClientRect().width) > 200, "the levels pane is back");
+    assert.ok(await page.locator("#tab-map .map-side").evaluate((e) => e.getBoundingClientRect().width) > 270, "the 280 px levels pane is back");
     // another stack swaps the drawer to that stack's top chest; ✕ closes it with focus on the stack
     await opener.click();
     await page.waitForSelector("#map-drawer .map-item");

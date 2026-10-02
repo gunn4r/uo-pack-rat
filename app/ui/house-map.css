@@ -2,12 +2,12 @@
 #map-house { flex: 0 1 auto; min-width: 120px; }
 .map-levels { display: flex; gap: var(--space-1); min-width: 0; overflow-x: auto; }
 
-#tab-map .map-page { max-width: none; display: grid; grid-template-columns: 240px minmax(0, 1fr) 340px; gap: var(--space-3); overflow: hidden; }
+#tab-map .map-page { max-width: none; display: grid; grid-template-columns: 280px minmax(0, 1fr) 340px; gap: var(--space-3); overflow: hidden; }
 #tab-map .map-page > :is(.msg, .map-empty, .panel) { grid-column: 1 / -1; align-self: start; }
 /* The contents drawer: a column of its own after the panel, opened by growing from no width (its content laid out at full width inside, so it slides in rather than reflowing). Between 1100 and 1799 px the levels pane folds away while it is open, its column shrinking the same way (the top bar's level pills still switch levels), and comes back when it closes. Below 1100 px everything stacks in one column. */
 .map-stage { transition: margin var(--duration-slow) var(--ease-standard); }
-.map-side { width: 240px; transition: width var(--duration-slow) var(--ease-standard), padding var(--duration-slow) var(--ease-standard), border-width var(--duration-slow) var(--ease-standard), visibility var(--duration-slow); }
-.map-side > * { min-width: calc(240px - 2 * var(--space-3) - 2 * var(--border-width-frame)); }
+.map-side { width: 280px; transition: width var(--duration-slow) var(--ease-standard), padding var(--duration-slow) var(--ease-standard), border-width var(--duration-slow) var(--ease-standard), visibility var(--duration-slow); }
+.map-side > * { min-width: calc(280px - 2 * var(--space-3) - 2 * var(--border-width-frame)); }
 #tab-map .map-page.has-drawer { grid-template-columns: auto minmax(0, 1fr) 340px auto; }
 .map-drawer { width: 400px; transition: width var(--duration-slow) var(--ease-standard); }
 .map-drawer.entering { width: 0; }
@@ -30,9 +30,9 @@
 .map-level { display: flex; flex-direction: column; gap: var(--space-1); }
 .map-level-name { display: flex; align-items: baseline; justify-content: space-between; gap: var(--space-2); font-size: var(--text-md); line-height: var(--lh-md); }
 /* A level's areas (issue #10): a row is the zoom button (colour, name, chest count) then ✎ and ⋯; the rest of the level is a quiet row with a dashed swatch; a new area's name field in a bordered box; + New area under them. */
-.map-areas { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 2px; }
-.map-area-row { display: flex; align-items: center; gap: 2px; min-width: 0; }
-.map-area, .map-area-rest { flex: 1 1 auto; min-width: 0; display: grid; grid-template-columns: 12px minmax(0, 1fr) auto; align-items: center; gap: var(--space-2); padding: var(--space-1-5) var(--space-2); border: 0; border-radius: var(--radius-md); background: transparent; color: var(--color-text); font: inherit; text-align: left; }
+.map-areas { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--space-1); }
+.map-area-row { display: flex; align-items: center; gap: var(--space-1); min-width: 0; }
+.map-area, .map-area-rest { flex: 1 1 auto; min-width: 0; display: grid; grid-template-columns: 12px minmax(0, 1fr) auto; align-items: center; gap: var(--space-2); padding: var(--space-2) var(--space-2); border: 0; border-radius: var(--radius-md); background: transparent; color: var(--color-text); font: inherit; text-align: left; }
 .map-area { cursor: pointer; font-weight: var(--weight-medium); }
 .map-area:hover { background: var(--color-row-hover); }
 .map-area[aria-pressed="true"] { box-shadow: inset 3px 0 0 var(--color-accent); font-weight: var(--weight-semibold); }
