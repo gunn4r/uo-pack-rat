@@ -40,12 +40,24 @@ function neighbourCapture(): Record<string, unknown> {
   const c = houseScan({ character: "Neighbour", scannedAt: court.capturedAt, boxes: [], things: [] });
   return { ...c, house: { facet: 1, capturedAt: court.capturedAt, at: { x: 1005 + dx, y: 2005 + dy }, tiles: court.tiles.map(([g, x, y, z, f]) => [g, x + dx, y + dy, z, f]), items: court.items.map(([s, g, x, y, z]) => [s, g, x + dx, y + dy, z]) } };
 }
+// The contents drawer's chests: the top chest of the stack at 3001, 1001 holds a bag of weapons with a bag of gems inside it, and arrows loose; the chest under it a bandage.
+const FILLED = vaultModel.stacks.find((s) => s.x === 3001 && s.y === 1001)!.serials;
+const TOP = FILLED.at(-1)!, UNDER = FILLED.at(-2)!, BAG = 0x40500001, GEMS = 0x40500002;
+function drawerItems(): { boxes: Array<{ serial: number; name: string; parent: number }>; things: Array<{ serial: number; name: string; in: number; lines?: string[] }> } {
+  return {
+    boxes: [{ serial: BAG, name: "Weapons", parent: TOP }, { serial: GEMS, name: "Gems", parent: BAG }],
+    things: [{ serial: 0x40500010, name: "Katana", in: BAG, lines: ["Hit Chance Increase 15%", "Physical Resist 5%"] }, { serial: 0x40500011, name: "Bow", in: BAG },
+      { serial: 0x40500012, name: "Ruby", in: GEMS }, { serial: 0x40500013, name: "Arrows", in: TOP }, { serial: 0x40500014, name: "Bandage", in: UNDER }],
+  };
+}
 // A data folder with both houses captured: the vault's 120 chests (chest i holds (13·i) % 126 of 125 items, the first one labelled Reagents in teal), the courtyard with a chest in the yard and one the capture saw but no scan opened; with `castle`, also the 4-level castle and its 300 chests (another character's scan, the speed check); the synthetic tiledata.mul behind a fake TazUO launcher, which settings.json points at unless `client` is false.
-function seed({ client = true, castle = false, facet = false }: { client?: boolean; castle?: boolean; facet?: boolean } = {}): { dir: string; uo: string } {
+// With `items`, the top two chests of the stack at 3001, 1001 hold things (drawerItems).
+function seed({ client = true, castle = false, facet = false, items = false }: { client?: boolean; castle?: boolean; facet?: boolean; items?: boolean } = {}): { dir: string; uo: string } {
   const dir = mkdtempSync(join(tmpdir(), "packrat-map-"));
   mkdirSync(join(dir, "scans"), { recursive: true });
   const { house: vault, chests } = vaultHouse();
-  const v = houseScan({ scannedAt: vault.capturedAt, boxes: chests.map((c, i) => ({ serial: c.serial, name: c.name, pos: { x: c.x, y: c.y, z: c.z, facet: 1 }, count: (i * 13) % 126 })), things: [] });
+  const filled = items ? drawerItems() : { boxes: [], things: [] };
+  const v = houseScan({ scannedAt: vault.capturedAt, boxes: [...chests.map((c, i) => ({ serial: c.serial, name: c.name, pos: { x: c.x, y: c.y, z: c.z, facet: 1 }, count: (i * 13) % 126 })), ...filled.boxes], things: filled.things });
   writeFileSync(join(dir, "scans", "vault.json"), JSON.stringify({ ...v, house: { facet: 1, capturedAt: vault.capturedAt, at: { x: 3003, y: 1003 }, tiles: vault.tiles, items: vault.items } }));
   const court = courtyardHouse();
   const c = houseScan({ character: "Other", scannedAt: court.capturedAt, boxes: [{ serial: YARD_CHEST, name: "Wooden Chest", pos: { x: 1012, y: 2013, z: 7, facet: 1 } }], things: [] });
@@ -666,11 +678,11 @@ test("[slow] House map: the small map opens the world map lightbox by click or E
   } finally { await done(app, dir); }
 });
 
-test("[slow] House map: every text, control edge and icon passes contrast on the map, a selected stack, a callout, the no-tiledata note and the empty state, in both theme families light and dark; at 1000 × 700 the panes stack and nothing scrolls sideways", async (t) => {
+test("[slow] House map: every text, control edge and icon passes contrast on the map, a selected stack, the contents drawer, a callout, the no-tiledata note and the empty state, in both theme families light and dark; at 1000 × 700 the panes stack and nothing scrolls sideways", async (t) => {
   const why = unavailable();
   if (why) return t.skip(why);
   const rows: Array<ContrastRow & { where: string }> = [];
-  const { dir } = seed();
+  const { dir } = seed({ items: true });
   const { app, page, errors, size } = await launch(dir);
   try {
     await go(page, "#/map", "#map-svg .map-stack");
@@ -681,6 +693,15 @@ test("[slow] House map: every text, control edge and icon passes contrast on the
     await page.keyboard.press("Enter");
     await page.waitForSelector("#map-panel .map-chest-row");
     await measure(page, "selected stack", /Stack /, rows);
+    await page.locator(`#map-svg [data-stack="${letter(vaultModel, 3001, 1001)}"]`).focus();
+    await page.keyboard.press("Enter");
+    await page.locator(`#map-panel li[data-chest="${TOP}"] [data-act="items"]`).click();
+    await page.waitForSelector("#map-drawer .map-item");
+    await measure(page, "contents drawer", /loose/, rows);
+    await page.keyboard.press("Escape");
+    await page.waitForSelector("#map-drawer", { state: "detached" });
+    await page.locator(`#map-svg [data-stack="${front}"]`).focus();
+    await page.keyboard.press("Enter");
     await page.locator(`#map-svg [data-stack="${front}"]`).hover();
     await page.waitForSelector("#map-callout:not([hidden])");
     await measure(page, "callout", /top first/, rows);
@@ -712,4 +733,70 @@ test("[slow] House map: every text, control edge and icon passes contrast on the
   } finally { await done(empty.app, emptyDir); }
   const failed = failures(rows);
   assert.equal(failed.length, 0, `contrast failures (${failed.length} of ${rows.length} pairs):\n${describeFailures(failed)}`);
+});
+
+test("[slow] House map: Show items opens the contents drawer beside the panel and the map narrows; its tabs switch chests, the filter narrows the list, another stack swaps it, Esc and ✕ close it with focus back where it came from", async (t) => {
+  const why = unavailable();
+  if (why) return t.skip(why);
+  const { dir } = seed({ items: true });
+  const { app, page, errors } = await launch(dir);
+  try {
+    await go(page, "#/map", "#map-svg .map-stack");
+    const back = letter(vaultModel, 3001, 1001), front = letter(vaultModel, 3005, 1005);
+    await page.locator(`#map-svg [data-stack="${back}"]`).focus();
+    await page.keyboard.press("Enter");
+    await page.waitForSelector(`#map-panel li[data-chest="${TOP}"]`);
+    const mapWidth = async (): Promise<number> => (await page.locator("#map-stage").boundingBox())!.width;
+    const before = await mapWidth();
+    const opener = page.locator(`#map-panel li[data-chest="${TOP}"] [data-act="items"]`);
+    assert.equal(await opener.textContent(), "Show items");
+    await opener.click();
+    const drawer = page.locator("#map-drawer");
+    await page.waitForSelector("#map-drawer .map-item");
+    await page.waitForTimeout(400);   // the column's width transition
+    assert.ok(await mapWidth() < before, "the map column narrows");
+    assert.equal(await page.evaluate(() => location.hash), "#/map", "the map stays on screen");
+    const code = (await page.locator(`#map-panel li[data-chest="${TOP}"] .map-chest-name .mono`).textContent())!;
+    const name = (await page.locator(`#map-panel li[data-chest="${TOP}"] .map-chest-name .ellip`).textContent())!;
+    assert.equal(await drawer.getAttribute("role"), "region");
+    assert.equal(await drawer.getAttribute("aria-label"), `Contents of ${code} ${name}`);
+    assert.match(await page.locator("#map-drawer-meta").textContent() || "", new RegExp(`^In game: .* · Stack ${back}, ${FILLED.length} chests$`));
+    assert.equal(await page.locator("#map-drawer-summary").textContent(), "6 items · 1 loose, 4 in 1 bag");
+    assert.equal(await page.locator('#map-panel li.open').getAttribute("data-chest"), String(TOP), "the opened chest's row carries the accent bar");
+    const names = (): Promise<string[]> => page.locator("#map-drawer-body .map-item-name, #map-drawer-body .map-bag-name").allTextContents();
+    assert.deepEqual(await names(), ["Weapons", "Gems", "Ruby", "Katana", "Bow", "Arrows"]);
+    assert.match(await page.locator("#map-drawer-body .map-bag-head").first().textContent() || "", /4 items/);
+    // one tab per chest of the stack, the shown one checked
+    const tabs = page.locator("#map-drawer [role=radio]");
+    assert.equal(await tabs.count(), FILLED.length);
+    assert.equal(await page.locator(`#map-drawer-tab-${TOP}`).getAttribute("aria-checked"), "true");
+    await page.locator(`#map-drawer-tab-${UNDER}`).click();
+    await page.waitForFunction(() => document.querySelector("#map-drawer-summary")?.textContent === "1 item", undefined, { timeout: 10_000 });
+    assert.deepEqual(await names(), ["Bandage"]);
+    assert.equal(await page.locator('#map-panel li.open').getAttribute("data-chest"), String(UNDER));
+    await page.locator(`#map-drawer-tab-${TOP}`).click();
+    await page.waitForFunction(() => document.querySelector("#map-drawer-summary")?.textContent?.startsWith("6 items"), undefined, { timeout: 10_000 });
+    await page.locator("#map-drawer-filter").fill("ruby");
+    assert.deepEqual(await names(), ["Weapons", "Gems", "Ruby"]);
+    await page.locator("#map-drawer-filter").fill("hit chance");
+    assert.deepEqual(await names(), ["Weapons", "Katana"], "a property line matches");
+    // Esc from inside the drawer closes it, focus back on the Show items that opened it, and the map widens again
+    await page.keyboard.press("Escape");
+    await page.waitForSelector("#map-drawer", { state: "detached" });
+    assert.equal(await page.evaluate(() => document.activeElement?.closest("li[data-chest]")?.getAttribute("data-chest")), String(TOP));
+    assert.equal(await page.evaluate(() => (document.activeElement as HTMLElement).dataset.act), "items");
+    assert.equal(await page.locator("#map-panel li.open").count(), 0);
+    // another stack swaps the drawer to that stack's top chest; ✕ closes it with focus on the stack
+    await opener.click();
+    await page.waitForSelector("#map-drawer .map-item");
+    const frontTop = vaultModel.stacks.find((s) => s.letter === front)!.serials.at(-1)!;
+    await page.locator(`#map-svg [data-stack="${front}"]`).click();
+    await page.waitForFunction((s) => document.querySelector("#map-drawer [role=radio][aria-checked=true]")?.id === `map-drawer-tab-${s}`, frontTop, { timeout: 10_000 });
+    assert.equal(await page.locator("#map-drawer-summary").textContent(), "Empty");
+    assert.equal(await page.locator('#map-panel li.open').getAttribute("data-chest"), String(frontTop));
+    await page.locator("#map-drawer [aria-label='Close contents']").click();
+    await page.waitForSelector("#map-drawer", { state: "detached" });
+    assert.equal(await page.evaluate(() => (document.activeElement as HTMLElement | null)?.closest("[data-stack]")?.getAttribute("data-stack")), front);
+    assert.deepEqual(errors, []);
+  } finally { await done(app, dir); }
 });
