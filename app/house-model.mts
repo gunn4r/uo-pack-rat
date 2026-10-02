@@ -2,7 +2,8 @@
 import { classify, FLAG, type TileData, type TileClass } from "./tiledata.mts";
 import type { HouseSource } from "./house-capture.mts";
 
-export interface HouseContainerInput { serial: number; name: string; facet: number | null; x: number; y: number; z: number }
+// opened: false = a chest a house capture saw that no scan has opened (issue #10); absent = opened.
+export interface HouseContainerInput { serial: number; name: string; facet: number | null; x: number; y: number; z: number; opened?: boolean | undefined }
 export interface Level { index: number; name: string; floorZ: number; status: "built" | "floor-only" }
 export type CellKind = "floor" | "wall" | "window" | "stair" | "roof";
 export interface Cell { level: number; x: number; y: number; kind: CellKind; material: string; family: MaterialFamily; z: number; lip: boolean; indoor: boolean; doorway: boolean; room: number | null }
@@ -28,9 +29,9 @@ export function materialFamily(name: string): MaterialFamily {
 }
 export interface Room { id: number; level: number; kind: "room" | "yard"; name: string; tiles: number; x0: number; y0: number; x1: number; y1: number }
 export interface Furniture { serial: number; kind: "block" | "door" | "teleporter"; name: string; level: number; x: number; y: number; z: number; height: number }
-export interface Stack { level: number; x: number; y: number; room: number | null; serials: number[]; spot: number | null; direction: string; letter: string }
+export interface Stack { level: number; x: number; y: number; room: number | null; serials: number[]; zs: number[]; spot: number | null; direction: string; letter: string }
 export interface Spot { id: number; level: number; x: number; y: number; room: number | null; teleporter: boolean }
-export interface HouseModel { id: string; facet: number | null; capturedAt: string; captures: number; x0: number; y0: number; x1: number; y1: number; levels: Level[]; cells: Cell[]; rooms: Room[]; furniture: Furniture[]; stacks: Stack[]; spots: Spot[]; codes: Record<string, string>; tiledata: boolean }
+export interface HouseModel { id: string; facet: number | null; capturedAt: string; captures: number; x0: number; y0: number; x1: number; y1: number; levels: Level[]; cells: Cell[]; rooms: Room[]; furniture: Furniture[]; stacks: Stack[]; spots: Spot[]; codes: Record<string, string>; tiledata: boolean; unopened: number[]; unopenedNames: Record<string, string> }
 
 const LEVEL_GAP = 15;
 const LEVEL_SLACK = 3;
@@ -156,12 +157,16 @@ export function buildHouseModel(house: HouseSource, td: TileData | null, contain
     let s = prev && c.z - prev.z < LEVEL_GAP && !onUpperFloor(c, prev.s.level) ? prev.s : undefined;
     if (!s) {
       const level = levelOf(c.z), k = key(level, c.x, c.y);
-      s = { level, x: c.x, y: c.y, room: at.get(k)?.room ?? null, serials: [], spot: null, direction: "", letter: "" };
+      s = { level, x: c.x, y: c.y, room: at.get(k)?.room ?? null, serials: [], zs: [], spot: null, direction: "", letter: "" };
       stackAt.set(k, [...(stackAt.get(k) ?? []), s]);
     }
-    s.serials.push(c.serial); below.set(col, { s, z: c.z });
+    s.serials.push(c.serial); s.zs.push(c.z); below.set(col, { s, z: c.z });
   }
   const stacks = [...stackAt.values()].flat();
+  // The stacked chests no scan has opened, with the names their tiledata gives (the page shows them as not opened yet).
+  const seenOnly = new Map(containers.filter((c) => c.opened === false).map((c) => [c.serial, c.name]));
+  const unopened = stacks.flatMap((s) => s.serials).filter((n) => seenOnly.has(n)).sort((a, b) => a - b);
+  const unopenedNames = Object.fromEntries(unopened.map((n) => [String(n), seenOnly.get(n)!]));
   const spots = spotsOf(cells, at, stackAt, furniture, levels);
 
   const angle = (s: Stack): number => { const p = spots[s.spot!]!; return Math.round(((Math.atan2(s.x - p.x, -(s.y - p.y)) * 180) / Math.PI + 360) % 360); };
@@ -175,7 +180,7 @@ export function buildHouseModel(house: HouseSource, td: TileData | null, contain
   });
 
   return { id: house.id, facet: house.facet, capturedAt: house.capturedAt, captures: house.captures, x0, y0, x1, y1, levels, cells, rooms,
-    furniture, stacks: ordered, spots, codes, tiledata: td !== null };
+    furniture, stacks: ordered, spots, codes, tiledata: td !== null, unopened, unopenedNames };
 }
 
 // A, B … Z, AA, AB … ZZ, AAA … (bijective base 26).

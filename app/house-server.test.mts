@@ -117,3 +117,24 @@ test("[fast] houses: the same model is served again while nothing changes, and a
     assert.deepEqual(list.body.houses.map((h) => [h.width, h.captures]), [[8, 2]]);
   } finally { await s.close(); }
 });
+
+test("[fast] houses: a chest a capture saw but no scan opened is on the map as not opened, named from tiledata, and never in the inventory", async () => {
+  const { s, dir } = await serve(true);
+  const SEEN = 0x40030001, NAMED = 0x40030002;
+  try {
+    const { house } = vaultHouse();
+    const later = new Date(Date.parse(house.capturedAt) + 60e3).toISOString();
+    const scan = houseScan({ character: "Other", scannedAt: later, boxes: [], things: [] });
+    // 0x0E7C is past the synthetic tiledata's end (no name, so "container"); any graphic the synthetic file names stands in for a named chest.
+    writeFileSync(join(dir, "scans", "house-seen.json"), JSON.stringify({ ...scan, house: { facet: 1, capturedAt: later, at: { x: 3003, y: 1003 }, tiles: house.tiles, items: house.items,
+      containers: [[SEEN, 0x0E7C, 3003, 1002, 27], [NAMED, G.planks, 3004, 1002, 27], [0x40010000, 0x0E7C, 3001, 1001, 7]] } }));
+    const one = await get<{ house: HouseModel }>(s, "/api/houses/1-3000-1000");
+    assert.deepEqual(one.body.house.unopened, [SEEN, NAMED], "a chest the fold knows is drawn from the fold");
+    assert.deepEqual(one.body.house.unopenedNames, { [String(SEEN)]: "container", [String(NAMED)]: "wooden planks" });
+    assert.equal(one.body.house.stacks.find((st) => st.serials.includes(SEEN))!.level, 1);
+    const list = await get<{ houses: Array<{ containers: number }> }>(s, "/api/houses");
+    assert.equal(list.body.houses[0]!.containers, 122);
+    const inv = await get<{ inventory: { containers: Record<string, unknown> } }>(s, "/api/inventory");
+    assert.equal(String(SEEN) in inv.body.inventory.containers, false, "a chest no scan opened is nowhere in the inventory");
+  } finally { await s.close(); }
+});

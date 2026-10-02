@@ -783,11 +783,16 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
   function houseModel(inv: Inventory, house: HouseSource, td: TileData | null): HouseModel {
     if (houseMemo.inv !== inv || houseMemo.td !== td) {
       const ground = Object.values(inv.containers).flatMap((c) => (c.parent == null && c.kind === "ground" && c.pos && Number.isFinite(c.pos.x) && Number.isFinite(c.pos.y))
-        ? [{ serial: c.serial, name: c.name ?? "", facet: c.pos.facet ?? null, x: c.pos.x!, y: c.pos.y!, z: c.pos.z ?? 0 }] : []);
+        ? [{ serial: c.serial, name: c.name ?? "", facet: c.pos.facet ?? null, x: c.pos.x!, y: c.pos.y!, z: c.pos.z ?? 0, opened: true }] : []);
       houseMemo = { inv, td, ground, models: new Map() };
     }
     let m = houseMemo.models.get(house.id);
-    if (!m) { m = buildHouseModel(house, td, houseMemo.ground); houseMemo.models.set(house.id, m); }
+    if (!m) {
+      // The chests this house's captures saw that no scan has opened: on the map from the first scan, named from tiledata, as not opened yet. A chest the fold knows is drawn from the fold, and the fold, Organize and retention never see these.
+      const seen = house.containers.flatMap(([serial, graphic, x, y, z]) => inv.containers[String(serial)] ? [] : [{ serial, name: td?.info(graphic)?.name || "container", facet: house.facet, x, y, z, opened: false }]);
+      m = buildHouseModel(house, td, [...houseMemo.ground, ...seen]);
+      houseMemo.models.set(house.id, m);
+    }
     return m;
   }
   async function getInventory(): Promise<InvValue> {

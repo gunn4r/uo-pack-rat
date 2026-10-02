@@ -243,9 +243,9 @@ test("[fast] house model: a teleporter holding a chest is not a standing spot", 
 test("[fast] house model: the model does not depend on the order of tiles, items or containers", () => {
   let seed = 7;
   const shuffle = <T,>(xs: T[]): T[] => { const r = [...xs]; for (let i = r.length - 1; i > 0; i--) { seed = (seed * 1103515245 + 12345) % 2147483648; const j = seed % (i + 1); [r[i], r[j]] = [r[j]!, r[i]!]; } return r; };
-  const pick = (m: HouseModel) => ({ cells: m.cells, rooms: m.rooms, furniture: m.furniture, spots: m.spots, stacks: m.stacks, codes: m.codes });
+  const pick = (m: HouseModel) => ({ cells: m.cells, rooms: m.rooms, furniture: m.furniture, spots: m.spots, stacks: m.stacks, codes: m.codes, unopened: m.unopened, unopenedNames: m.unopenedNames });
   const { house: castle, chests } = castleHouse();
-  for (const [house, cs] of [[castle, chests], [courtyardHouse(), [{ serial: 0x40000500, name: "Wooden Chest", facet: 1, x: 1003, y: 2003, z: 13 }]]] as const) {
+  for (const [house, cs] of [[castle, chests.map((c, i) => i % 7 ? c : { ...c, opened: false })], [courtyardHouse(), [{ serial: 0x40000500, name: "Wooden Chest", facet: 1, x: 1003, y: 2003, z: 13 }]]] as const) {
     const want = pick(buildHouseModel(house, td, [...cs]));
     for (const order of [<T,>(xs: readonly T[]): T[] => [...xs].reverse(), <T,>(xs: readonly T[]): T[] => shuffle([...xs])]) {
       assert.deepEqual(pick(buildHouseModel({ ...house, tiles: order(house.tiles), items: order(house.items) }, td, order(cs))), want);
@@ -275,4 +275,16 @@ test("[fast] house model: each cell carries its material's family, and without t
   const m = buildHouseModel(courtyardHouse(), td, []);
   assert.deepEqual([cell(m, 0, 1002, 2002)!.family, cell(m, 0, 1012, 2012)!.family, cell(m, 0, 1009, 2012)!.family, cell(m, 1, 1002, 2002)!.family], ["tile", "grass", "stone", "wood"]);
   assert.ok(buildHouseModel(courtyardHouse(), null, []).cells.every((c) => c.family === "neutral"));
+});
+
+test("[fast] house model: a chest a capture saw and no scan opened is stacked, listed as not opened with its name, and every stack keeps its chests' z", () => {
+  const { house, chests } = vaultHouse();
+  const seen = { serial: 0x40000900, name: "metal chest", facet: 1, x: 3003, y: 1002, z: 27, opened: false };
+  const m = buildHouseModel(house, td, [...chests.slice(0, 5), seen]);
+  assert.deepEqual(m.unopened, [seen.serial]);
+  assert.deepEqual(m.unopenedNames, { [String(seen.serial)]: "metal chest" });
+  const up = m.stacks.find((s) => s.serials.includes(seen.serial))!;
+  assert.deepEqual([up.level, up.zs], [1, [27]]);
+  assert.deepEqual(m.stacks.find((s) => s.x === 3001 && s.y === 1001)!.zs, [7, 11, 15, 19, 23]);
+  assert.equal(typeof m.codes[String(seen.serial)], "string");
 });
