@@ -189,10 +189,11 @@ export const switchControl = (o: Omit<Parameters<typeof check>[0], "sw">): Retur
 // ---------------------------------------------------------------- segmented control
 // A single choice among 2-4 short options: role=radiogroup, one radio per option, arrow keys move and select,
 // only the checked one is in the tab order.
-export interface SegOption { value: string; label: string; disabled?: boolean | undefined }
+// `sub` is a second, smaller line under the label; `title` a tooltip (a disabled option's reason).
+export interface SegOption { value: string; label: string; sub?: string | undefined; title?: string | undefined; disabled?: boolean | undefined }
 export function segmented({ label, options, value, onChange, size }: { label: string; options: SegOption[]; value: string; onChange?: (value: string) => void; size?: "sm" | "md" }): HTMLDivElement & { setValue: (v: string) => void } {
   const btns = options.map((o) => {
-    const b = box("button", { type: "button", role: "radio", "data-value": o.value }, txt(o.label));
+    const b = box("button", { type: "button", role: "radio", "data-value": o.value, ...(o.title ? { title: o.title } : {}) }, txt(o.label), o.sub ? txt(o.sub, "seg-sub") : null);
     if (o.disabled) b.disabled = true;
     return b;
   });

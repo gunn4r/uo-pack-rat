@@ -1,13 +1,30 @@
-/* ui/house-map.css — the House map screen (ui/house-map.mts, issue #10): the top bar's controls, three panes (levels and rooms, the map, the details) stacked into one column below 1100 px, and the map drawn as SVG in the --color-map-* tokens. Tokens only (docs/ui.md). */
+/* ui/house-map.css — the House map screen (ui/house-map.mts, issue #10): the top bar's controls, three panes (levels and rooms, the map, the details) and a chest's contents drawer, stacked into one column below 1100 px, and the map drawn as SVG in the --color-map-* tokens. Tokens only (docs/ui.md). */
 #map-house { flex: 0 1 auto; min-width: 120px; }
 .map-levels { display: flex; gap: var(--space-1); min-width: 0; overflow-x: auto; }
 
 #tab-map .map-page { max-width: none; display: grid; grid-template-columns: 240px minmax(0, 1fr) 340px; gap: var(--space-3); overflow: hidden; }
 #tab-map .map-page > :is(.msg, .map-empty, .panel) { grid-column: 1 / -1; align-self: start; }
-@media (max-width: 1099px) {
-  #tab-map .map-page { grid-template-columns: minmax(0, 1fr); grid-auto-rows: max-content; overflow: auto; }
-  #tab-map .map-stage { min-height: 420px; }
+/* The contents drawer: a column of its own after the panel, opened by growing from no width (its content laid out at full width inside, so it slides in rather than reflowing). Between 1100 and 1799 px the levels pane folds away while it is open, its column shrinking the same way (the top bar's level pills still switch levels), and comes back when it closes. Below 1100 px everything stacks in one column. */
+.map-stage { transition: margin var(--duration-slow) var(--ease-standard); }
+.map-side { width: 240px; transition: width var(--duration-slow) var(--ease-standard), padding var(--duration-slow) var(--ease-standard), border-width var(--duration-slow) var(--ease-standard), visibility var(--duration-slow); }
+.map-side > * { min-width: calc(240px - 2 * var(--space-3) - 2 * var(--border-width-frame)); }
+#tab-map .map-page.has-drawer { grid-template-columns: auto minmax(0, 1fr) 340px auto; }
+.map-drawer { width: 400px; transition: width var(--duration-slow) var(--ease-standard); }
+.map-drawer.entering { width: 0; }
+.map-drawer > * { min-width: calc(400px - 2 * var(--border-width-frame)); }
+@media (min-width: 1100px) and (max-width: 1799px) {
+  #tab-map .map-page.has-drawer > .map-side { width: 0; padding-inline: 0; border-inline-width: 0; overflow: hidden; visibility: hidden; }
+  #tab-map .map-page.has-drawer > .map-stage { margin-left: calc(-1 * var(--space-3)); }   /* over the folded pane's gap */
 }
+@media (max-width: 1099px) {
+  #tab-map .map-page, #tab-map .map-page.has-drawer { grid-template-columns: minmax(0, 1fr); grid-auto-rows: max-content; overflow: auto; }
+  #tab-map .map-stage { min-height: 420px; }
+  .map-side, .map-drawer, .map-drawer.entering { width: auto; transition: none; }
+  .map-stage { transition: none; }
+  .map-side > *, .map-drawer > * { min-width: 0; }
+  .map-drawer { max-height: 80vh; }
+}
+@media (prefers-reduced-motion: reduce) { .map-side, .map-stage, .map-drawer { transition: none; } }
 
 .map-side, .map-panel { min-height: 0; overflow: auto; padding: var(--space-3); display: flex; flex-direction: column; gap: var(--space-3); }
 .map-level { display: flex; flex-direction: column; gap: var(--space-1); }
@@ -138,3 +155,34 @@ a.map-where-mark { cursor: pointer; outline: none; }
 a.map-where-mark:hover .map-where-dot { stroke: var(--color-map-marker-edge); stroke-width: 2.5; }
 a.map-where-mark:focus-visible .map-where-ring-out { stroke: var(--color-map-marker-ink); stroke-width: 5; }
 a.map-where-mark:focus-visible .map-where-ring-in { stroke: var(--color-map-marker-edge); stroke-width: 2; }
+/* The contents drawer (issue #10): the header over a list that scrolls; a bag is a group that opens and closes, its items under a rule; an item is two lines. The chest it shows has an accent bar in the panel. */
+.map-chest-row.open { margin-left: calc(-1 * var(--space-3)); padding-left: var(--space-3); box-shadow: inset 3px 0 0 var(--color-accent); }
+.map-drawer { min-height: 0; padding: 0; overflow: hidden; display: flex; flex-direction: column; }
+.map-drawer-head { flex: none; display: flex; flex-direction: column; gap: var(--space-2); padding: var(--space-3) var(--space-3) var(--space-2); border-bottom: var(--border-width) solid var(--color-border); }
+.map-drawer-title { display: flex; align-items: flex-start; gap: var(--space-2); }
+.map-drawer-titles { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.map-drawer-name { display: flex; align-items: baseline; gap: var(--space-2); min-width: 0; margin: 0; }
+.map-drawer-fill { display: flex; align-items: center; gap: var(--space-2); }
+.map-drawer-fill > .meter { flex: 1 1 auto; }
+.map-drawer-tabs > .seg { display: flex; }
+.map-drawer-tabs .seg > button { flex: 1 1 0; min-width: 0; }
+.map-drawer-tools { display: flex; gap: var(--space-2); }
+.map-drawer-tools > .input { flex: 1 1 auto; min-width: 0; }
+.map-drawer-body { flex: 1 1 auto; min-height: 0; overflow: auto; }
+.map-drawer-note { margin: 0; padding: var(--space-4) var(--space-3); }
+.map-drawer-body > .msg { margin: var(--space-3); }
+.map-bag-head { display: grid; grid-template-columns: 16px minmax(0, 1fr) auto; align-items: center; gap: var(--space-2); min-height: var(--row-group); padding: 0 var(--space-3); background: var(--color-surface-subtle); border-bottom: var(--border-width) solid var(--color-border); cursor: pointer; list-style: none; }
+.map-bag-head::-webkit-details-marker { display: none; }
+.map-bag-head:hover { background: var(--color-row-hover); }
+.map-bag-head:focus-visible { outline: 2px solid var(--color-focus); outline-offset: -2px; }
+.map-bag-head > svg { color: var(--color-text-muted); transition: transform var(--duration-fast) var(--ease-standard); }
+.map-bag[open] > .map-bag-head > svg { transform: rotate(90deg); }
+.map-bag-kids { margin-left: calc(var(--space-3) + 7px); border-left: var(--border-width) solid var(--color-border-strong); }
+.map-item { display: flex; flex-direction: column; gap: 2px; width: 100%; min-width: 0; padding: var(--space-1-5) var(--space-3); border: 0; border-bottom: var(--border-width) solid var(--color-border); border-radius: 0; background: transparent; color: var(--color-text); font: inherit; text-align: left; cursor: pointer; }
+.map-item:hover { background: var(--color-row-hover); }
+.map-item:focus-visible { outline: 2px solid var(--color-focus); outline-offset: -2px; }
+.map-item-l1, .map-item-l2 { display: flex; align-items: center; gap: var(--space-2); min-width: 0; }
+.map-item-name { flex: 1 1 auto; font-weight: var(--weight-medium); }
+.map-item-l1 > .tag, .map-item-l2 > .rar-tier { flex: none; }
+.map-item-props { flex: 1 1 auto; }
+.map-item-res { flex: none; margin-left: auto; display: flex; gap: var(--space-1-5); font-family: var(--font-mono); font-size: var(--text-xs); line-height: var(--lh-xs); }

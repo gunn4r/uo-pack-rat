@@ -62,7 +62,7 @@ export function peekRefresh(find: (serial: number) => Item | undefined, stillThe
 }
 
 // ---------------------------------------------------------------- the panel
-const RESISTS: Array<[string, string, string]> = [["physResist", "Phys", "--res-phys"], ["fireResist", "Fire", "--res-fire"], ["coldResist", "Cold", "--res-cold"], ["poisonResist", "Poison", "--res-poison"], ["energyResist", "Energy", "--res-energy"]];
+export const RESISTS: Array<[string, string, string]> = [["physResist", "Phys", "--res-phys"], ["fireResist", "Fire", "--res-fire"], ["coldResist", "Cold", "--res-cold"], ["poisonResist", "Poison", "--res-poison"], ["energyResist", "Energy", "--res-energy"]];
 // A tooltip line the Where and Resists sections already show; the tier line, which the header shows.
 const SHOWN_ELSEWHERE = /^(weight\b|durability\s+\d|(physical|fire|cold|poison|energy) resist\b)/i;
 const RARITY_LINE = /^(minor|lesser|greater|major|legendary) (magic item|artifact)$/i;
