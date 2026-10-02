@@ -14,7 +14,7 @@ import { fillTone } from "./organize-model.mts";
 import { PLAIN, pickHouse, plainGrid, chestCount, houseLabel, houseName, carryOver, carryOverText, tiledataNote, chestViews, colourOf, chestLabel, sceneOf, boundsOf, fit, vbText,
   cutAway, calloutLines, nearestInDirection, houseTotals, legendOf, stackWhere, anchorOf, zoomAt, fillWords, whereOf, whereTitle, cropAround, facetMapUrl, markersOf, facetMapNote, markerRadii,
   drawerChest, drawerMeta, slotsText, contentsOf, contentsSummary, filterContents, areaOfStack, levelAreas, tileAt, clampTile, rectOf, sizeText, unionTiles, coveredCells, outlineOf, labelSpot,
-  nextAreaId, nextAreaColor, moveCursor, project, tilePolygon, pts, liveAreas, AREA_COLORS, AREA_COLOR_NAMES, MAX_AREAS, MAX_RECTS, type PlainModel, type Tile, type Contents, type ContentsNode, type Marker, type View, type Mode, type Box, type Colour, type ChestView, type Piece, type Prism, type Pt, type Dir } from "./house-map-model.mts";
+  nextAreaId, nextAreaColor, moveCursor, project, tilePolygon, pts, liveAreas, withOrphans, redrawFailed, AREA_COLORS, AREA_COLOR_NAMES, MAX_AREAS, MAX_RECTS, type PlainModel, type Tile, type Contents, type ContentsNode, type Marker, type View, type Mode, type Box, type Colour, type ChestView, type Piece, type Prism, type Pt, type Dir } from "./house-map-model.mts";
 import type { AreaRect, ContainerLabel, HouseArea, HouseModel, HousesApiResponse, HouseApiResponse, HouseMapApiResponse, HouseMapEntry, HouseMapPutApiResponse, ItemsApiResponse, Stack } from "./api-types.mts";
 import type { Item } from "../vault-lib.mts";
 
@@ -283,8 +283,8 @@ async function removeArea(m: HouseModel, a: HouseArea): Promise<void> {
   render();
   $<HTMLElement>(`#map-new-area-${a.level}`)?.focus();
 }
-// Change the house's areas: `edit` is applied, when the save's turn comes (saveEntry), to the list as last saved, so a rename still being saved is never undone by a colour change or a delete made meanwhile. Returns the server's reason when it refuses.
-const editAreas = (m: HouseModel, edit: (saved: HouseArea[]) => HouseArea[]): Promise<string | null> => saveEntry(m, () => ({ areas: edit(savedAreas(m)) }));
+// Change the house's areas: `edit` is applied, when the save's turn comes (saveEntry), to the list as last saved, so a rename still being saved is never undone by a colour change or a delete made meanwhile; the hidden orphan-level areas are written back after it (withOrphans). Returns the server's reason when it refuses.
+const editAreas = (m: HouseModel, edit: (saved: HouseArea[]) => HouseArea[]): Promise<string | null> => saveEntry(m, () => ({ areas: withOrphans(edit(savedAreas(m)), S.names[m.id]?.areas, m.levels.length) }));
 // After a save from a menu (no field to show a refusal under): a toast says why, the page redraws, focus goes to the control with id `focusId`.
 function afterSave(why: string | null, focusId: string): void {
   if (why) toast(why, "bad");
@@ -324,22 +324,25 @@ function finishDrawing(): void {
   render();
   $<HTMLInputElement>("#map-area-new-name")?.focus();
 }
-// A redraw shows its new shape at once; if the save is refused the area goes back to its saved shape and drawing mode comes back with the new one, for Enter to try again.
+// A redraw shows its new shape at once; if the save is refused the area goes back to its saved shape and drawing mode comes back with the new one, for Enter to try again. An area deleted meanwhile is not saved again: the drawing is dropped, and the toast says so.
 async function saveRedraw(m: HouseModel, d: Draw, id: string): Promise<void> {
   const mine = { id, rects: d.rects };
   redrawn = mine;
   render();
   $<HTMLElement>(`#map-area-${CSS.escape(id)}`)?.focus();
-  const why = await editAreas(m, (l) => l.map((x) => (x.id === id ? { ...x, rects: mine.rects } : x)));
+  let gone = false;
+  const why = await editAreas(m, (l) => { gone = !l.some((x) => x.id === id); if (gone) throw new Error("That area was deleted meanwhile, so the new shape was dropped."); return l.map((x) => (x.id === id ? { ...x, rects: mine.rects } : x)); });
   if (redrawn === mine) redrawn = null;
   if (!why) { render(); return; }
-  if (S.model === m && !draw && !naming) {
+  if (gone) { toast(why, "bad"); render(); return; }
+  if (S.model === m && !draw && !naming && areaById(id)) {
+    renamingArea = null; deleting = null;
     draw = { ...d, cur: null, anchor: null };
     S.level = d.level;
-    toast(`Could not save the new shape: ${why} Your drawing is kept: press Enter to try again, or Esc to cancel.`, "bad");
+    toast(redrawFailed(why, true), "bad");
     render();
     $<SVGSVGElement>("#map-svg")?.focus();
-  } else { toast(`Could not save the new shape: ${why}`, "bad"); render(); }
+  } else { toast(redrawFailed(why, false), "bad"); render(); }
 }
 // A rectangle ends: it replaces the others, or (Shift) joins them, up to MAX_RECTS.
 function endRect(): void {
@@ -393,7 +396,7 @@ function stage(): HTMLElement {
     box("nav", { class: "map-crumbs", id: "map-crumbs", "aria-label": "Breadcrumb" }),
     box("div", { class: "map-canvas", id: "map-canvas" }, svg,
       draw ? box("div", { class: "map-draw-hint", id: "map-draw-hint" }, el("span", { class: "map-draw-dot", "aria-hidden": "true" }),
-        el("span", { class: "map-draw-text" }, el("strong", {}, "Drag over tiles to draw the area."), " Shift-drag adds more. ", kbd("Enter"), " to finish, ", kbd("Esc"), " to cancel. Fit shows the whole level.",
+        el("span", { class: "map-draw-text" }, el("strong", {}, "Drag over tiles to draw the area."), " Shift-drag adds more. ", kbd("Enter"), " to finish, ", kbd("Esc"), " to cancel. Fit shows all.",
           el("span", { class: "sr" }, " Keyboard: the arrow keys move a tile cursor, Space starts and ends a rectangle, Shift+Space starts one more, Enter finishes, Escape cancels."))) : null,
       draw ? box("div", { class: "map-draw-size", id: "map-draw-size", hidden: "" }) : null,
       box("div", { class: "map-zoom", role: "group", "aria-label": "Zoom" },

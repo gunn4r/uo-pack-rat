@@ -176,6 +176,8 @@ export function carryOver(m: HouseModel, listed: readonly string[], names: Reado
   }
   return null;
 }
+// The redraw failure's words: the server's reason with a full stop after it.
+export const redrawFailed = (why: string, kept: boolean): string => `Could not save the new shape: ${/[.!?]$/.test(why.trim()) ? why.trim() : `${why.trim()}.`}${kept ? " Your drawing is kept: press Enter to try again, or Esc to cancel." : ""}`;
 // The offer's words: what it would carry over.
 export function carryOverText(o: { name: string; areas: readonly HouseArea[] }): { text: string; action: string } {
   const what = o.name && o.areas.length ? "name and areas" : o.name ? "name" : "areas";
@@ -312,6 +314,8 @@ export const AREA_MARGIN = 8, MAX_AREAS = 32, MAX_RECTS = 16;
 export const AREA_COLOR_NAMES: Readonly<Record<string, string>> = { "area-1": "Purple", "area-2": "Orange", "area-3": "Teal", "area-4": "Pink", "area-5": "Blue", "area-6": "Yellow", "area-7": "Green", "area-8": "Red" };
 // The areas on the house's levels: one saved for a level the house no longer has (a rebuild took a storey away) is left out of the list, the counts, the cap and the next save.
 export const liveAreas = (areas: readonly HouseArea[] | undefined, levels: number): HouseArea[] => (areas ?? []).filter((a) => a.level < levels);
+// What a save of the areas writes: the edited live list, then the hidden orphan-level ones as they were, so a storey taken away in place and built again gets its areas back.
+export const withOrphans = (edited: readonly HouseArea[], saved: readonly HouseArea[] | undefined, levels: number): HouseArea[] => [...edited, ...(saved ?? []).filter((a) => a.level >= levels)];
 export type Tile = [number, number];
 export const inRects = (rects: readonly AreaRect[], x: number, y: number): boolean => rects.some((r) => x >= r.x0 && x <= r.x1 && y >= r.y0 && y <= r.y1);
 // The area a stack belongs to: the first, in list order, on its level whose rectangles hold its tile; null for the rest.

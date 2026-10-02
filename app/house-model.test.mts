@@ -202,13 +202,13 @@ test("[fast] house model: the house's own multi item (nearest the centre) is dro
   assert.deepEqual(items([[0x40000f02, 0x147b, 1009, 2009, 7], [0x40000f01, 0x147b, 1008, 2009, 7]]), [...base, 0x40000f02], "a tie drops the lower serial, whatever the order");
 });
 
-test("[fast] house model: a door item marks its doorway like a door tile, and a spot never reaches past the wall beside it", () => {
+test("[fast] house model: a door item marks its doorway like a door tile, and a spot never reaches across a doorway into another region", () => {
   const h = hallHouse(), doors = h.tiles.filter((t) => t[0] === G.door);
-  // Either side of the west door (6007, 7003): a chest in the west room out of the doorway's reach, and one in the corridor just past the door. A west-room tile by the wall is within reach of both, through the wall.
+  // Either side of the west door (6007, 7003): a chest in the west room out of the doorway's reach, and one in the corridor just past the door. A west-room tile by the wall is within reach of both, but the corridor is another region across the doorway.
   const chests = [{ serial: 0x40000a30, name: "Wooden Chest", facet: 1, x: 6004, y: 7004, z: 7 }, { serial: 0x40000a31, name: "Wooden Chest", facet: 1, x: 6008, y: 7003, z: 7 }];
   const m = buildHouseModel({ ...h, tiles: h.tiles.filter((t) => t[0] !== G.door), items: doors.map(([g, x, y, z], i) => [0x40000300 + i, g, x, y, z]) }, td, chests);
   assert.deepEqual([cell(m, 0, 6007, 7003)!.doorway, cell(m, 0, 6012, 7003)!.doorway], [true, true]);
-  assert.equal(m.spots.length, 2, "one spot each side, not one by the wall reaching both");
+  assert.equal(m.spots.length, 2, "one spot each side of the doorway, not one in the room reaching into the corridor");
   const spotOf = (serial: number) => m.spots[m.stacks.find((s) => s.serials.includes(serial))!.spot!]!;
   assert.ok(spotOf(0x40000a30).x <= 6006, "the room's chest from the room");
   assert.ok(spotOf(0x40000a31).x >= 6007, "the corridor's chest from the doorway or the corridor");

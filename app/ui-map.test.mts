@@ -5,7 +5,7 @@ import { buildHouseModel } from "./house-model.mts";
 import { fixtureTileData, vaultHouse, roofHouse, courtyardHouse, castleHouse, foundationHouse, stairHouse, G } from "./house-fixture.mts";
 import type { Container, Item } from "./vault-lib.mts";
 import type { HouseArea, HouseModel, Stack } from "./ui/api-types.mts";
-import { project, tilePolygon, boxFaces, pts, paintOrder, boundsOf, fit, zoomAt, vbText, anchorOf, W, chestViews, colourOf, legendOf, chestLabel, cutAway, calloutLines, houseTotals, pickHouse, houseLabel, houseName, carryOver, carryOverText, PLAIN, chestCount, nearestInDirection, tiledataNote, stackWhere, plainGrid, sceneOf, drawnZs, CHEST_H, whereOf, whereTitle, cropAround, facetMapUrl, markersOf, facetMapNote, parseRegion, markerRadii, contentsOf, contentsSummary, filterContents, drawerChest, drawerMeta, slotsText, areaOfStack, levelAreas, restName, unproject, tileAt, rectOf, sizeText, unionTiles, coveredCells, outlineOf, labelSpot, nextAreaId, nextAreaColor, moveCursor, clampTile, liveAreas, AREA_COLORS, AREA_COLOR_NAMES, type ChestView, type ContentsNode } from "./ui/house-map-model.mts";
+import { project, tilePolygon, boxFaces, pts, paintOrder, boundsOf, fit, zoomAt, vbText, anchorOf, W, chestViews, colourOf, legendOf, chestLabel, cutAway, calloutLines, houseTotals, pickHouse, houseLabel, houseName, carryOver, carryOverText, PLAIN, chestCount, nearestInDirection, tiledataNote, stackWhere, plainGrid, sceneOf, drawnZs, CHEST_H, whereOf, whereTitle, cropAround, facetMapUrl, markersOf, facetMapNote, parseRegion, markerRadii, contentsOf, contentsSummary, filterContents, drawerChest, drawerMeta, slotsText, areaOfStack, levelAreas, restName, unproject, tileAt, rectOf, sizeText, unionTiles, coveredCells, outlineOf, labelSpot, nextAreaId, nextAreaColor, moveCursor, clampTile, liveAreas, withOrphans, redrawFailed, AREA_COLORS, AREA_COLOR_NAMES, type ChestView, type ContentsNode } from "./ui/house-map-model.mts";
 
 const td = fixtureTileData();
 const has = (cls: string, c: string): boolean => cls.split(" ").includes(c);
@@ -464,6 +464,13 @@ test("[fast] house areas: an area on a level the house no longer has is left out
   const a = (id: string, level: number): HouseArea => ({ id, name: id, level, color: "area-1", rects: [{ x0: 0, y0: 0, x1: 0, y1: 0 }] });
   assert.deepEqual(liveAreas([a("g", 0), a("u", 1), a("gone", 2)], 2).map((x) => x.id), ["g", "u"]);
   assert.deepEqual(liveAreas(undefined, 2), []);
+  // A save keeps the hidden ones on disk: the edited live list, then the orphans as they were.
+  const saved = [a("g", 0), a("gone", 2), a("u", 1)];
+  assert.deepEqual(withOrphans(liveAreas(saved, 2).filter((x) => x.id !== "g"), saved, 2).map((x) => x.id), ["u", "gone"]);
+  assert.deepEqual(withOrphans([], undefined, 2), []);
+  assert.deepEqual(liveAreas(withOrphans([a("u", 1)], saved, 2), 3).map((x) => x.id), ["u", "gone"], "a storey built again shows its areas again");
+  assert.equal(redrawFailed("Disk full", false), "Could not save the new shape: Disk full.");
+  assert.equal(redrawFailed("Disk full.", true), "Could not save the new shape: Disk full. Your drawing is kept: press Enter to try again, or Esc to cancel.");
   assert.deepEqual(Object.keys(AREA_COLOR_NAMES), [...AREA_COLORS], "a name for every colour token");
   assert.equal(new Set(Object.values(AREA_COLOR_NAMES)).size, AREA_COLORS.length);
 });

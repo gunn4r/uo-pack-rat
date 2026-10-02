@@ -534,7 +534,7 @@ test("[slow] House map areas: a mouse drag draws an area, Enter asks its name, S
     assert.match(await page.locator(rest).textContent() || "", /^Whole floor120$/, "before any area the level is one Whole floor");
     await page.locator("#map-new-area-0").click();
     await page.waitForSelector("#map-draw-hint");
-    assert.equal(await page.locator("#map-draw-hint").textContent(), "Drag over tiles to draw the area. Shift-drag adds more. Enter to finish, Esc to cancel. Fit shows the whole level. Keyboard: the arrow keys move a tile cursor, Space starts and ends a rectangle, Shift+Space starts one more, Enter finishes, Escape cancels.");
+    assert.equal(await page.locator("#map-draw-hint").textContent(), "Drag over tiles to draw the area. Shift-drag adds more. Enter to finish, Esc to cancel. Fit shows all. Keyboard: the arrow keys move a tile cursor, Space starts and ends a rectangle, Shift+Space starts one more, Enter finishes, Escape cancels.");
     assert.equal(await page.locator("#map-new-area-0").textContent(), "Drawing…");
     assert.equal(await page.locator("#map-svg").evaluate((e) => getComputedStyle(e).cursor), "crosshair");
     const vb = await page.locator("#map-svg").getAttribute("viewBox");
