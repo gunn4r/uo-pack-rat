@@ -144,6 +144,26 @@ test("[fast] retention: an old capture of a house with no ground container of th
   assert.deepEqual(scansToPrune([visited, recent], foldSnapshots, RETENTION_DEFAULTS, NOW).files, ["house-visited.json"], "a boat, or a house the player only visited");
 });
 
+// A house-only file (TazUO's packrat-house-map-refresh.py, kind "house"): the house section and no inventory.
+const houseOnly = (file: string, at: string, tiles: number[][], items: number[][] = []): ScanFile => scan(file, at, "Builder", [], {}, [], [], { kind: "house", ...capture(at, tiles, items, undefined, []) });
+
+test("[fast] retention: a house-only file is kept however old while it carries the house's newest capture or furniture, and pruned once a newer capture covers it", () => {
+  const full = scan("house-full.json", daysAgo(90), "Builder", [], {}, [], [], capture(daysAgo(90), plot, [[20, 5, 101, 100, 7]]));
+  const only = houseOnly("house-only.json", daysAgo(80), plot, [[20, 5, 101, 100, 7]]);
+  const all = [full, only, homeChest];
+  assert.deepEqual(scansToPrune(all, foldSnapshots, RETENTION_DEFAULTS, NOW), { files: ["house-full.json"], refused: false }, "the house-only file is the newest capture");
+  const later = houseOnly("house-later.json", daysAgo(70), plot, [[20, 5, 101, 100, 7]]);
+  assert.deepEqual(scansToPrune([...all, later], foldSnapshots, RETENTION_DEFAULTS, NOW), { files: ["house-full.json", "house-only.json"], refused: false }, "a newer house-only file supersedes it");
+  assert.deepEqual(houseShape([only, homeChest]), houseShape(all));
+});
+
+test("[fast] retention: a house-only file never keeps a scan nor stops pruning, and the fold without it is the same", () => {
+  const only = houseOnly("house-only.json", daysAgo(5), plot);
+  const r = scansToPrune([...history, only], foldSnapshots, RETENTION_DEFAULTS, NOW);
+  assert.deepEqual(r, scansToPrune(history, foldSnapshots, RETENTION_DEFAULTS, NOW));
+  assert.ok(sameFold(foldSnapshots(docs([...history, only])), foldSnapshots(docs(history))));
+});
+
 const houseShape = (files: ScanFile[]) => latestHouses(docs(files)).map((h) => [h.id, h.capturedAt, h.tiles, h.items, h.containers]);
 const BANK = 130;
 

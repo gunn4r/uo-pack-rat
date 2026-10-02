@@ -3,7 +3,7 @@
 Four small scripts that run inside [Razor Enhanced](https://razorenhanced.readthedocs.io/) and send what your character owns to the Pack Rat app. Razor Enhanced only runs on Windows. You only run these scripts when you are at the keyboard (see [The AFK rule](#the-afk-rule)).
 
 - **`packrat-scanner.py` — the full scan.** Reads everything you are wearing, your backpack, your bank box if it is already open, and every chest and bag near you, including bags inside chests. It never opens a container you blacklisted or one named trash (the server empties those on a timer).
-- **`packrat-refresh.py` — the quick refresh.** Reads just your stats, skills, what you are wearing and your backpack.
+- **`packrat-character-refresh.py` — the character refresh.** Reads just your stats, skills, what you are wearing and your backpack. (Called `packrat-refresh.py` before 1.10.0; installing 1.10.0 removes the old copy.)
 - **`packrat-bridge.py` — the bridge.** Makes the app's **Highlight**, **Grab** and **Go to** buttons work.
 - **`packrat-blacklist.py` — blacklist a container.** Click a chest or bag, and scans never open or record it again.
 
@@ -29,7 +29,7 @@ To install by hand instead:
 When to run which:
 
 - **The first time you scan a character, or whenever your chests or bags change:** walk to a group of chests and run `packrat-scanner.py`. Walk to the next group and run it again. To include your bank, open your bank box first.
-- **After gearing up or training a character:** run `packrat-refresh.py`. It works anywhere.
+- **After gearing up or training a character:** run `packrat-character-refresh.py`. It works anywhere.
 - **To stop scans opening a container** (a guild chest, a vendor's stock): run `packrat-blacklist.py` and click it. Esc cancels. The app's **Settings** lists what you blacklisted, with **Unblacklist**.
 - **When you want to use the app's Highlight, Grab or Go to buttons:** start `packrat-bridge.py` and leave it running. It stops by itself after 8 hours, or when your character logs out.
 
@@ -60,7 +60,7 @@ Four IronPython 3.4 scripts that run inside [Razor Enhanced](https://razorenhanc
 ### What each script does
 
 - **`packrat-scanner.py`** — full inventory scan. Reads every equipped layer, the backpack (nested bags included), the bank box if it's already open this session, and every openable container on the ground within reach (recursively — bags in chests in chests). Skips every container in `<dataDir>/scan-blacklist.json` (recorded unopened, so the app keeps what it knew inside) and every trash container (see Limits). Dumps raw tooltip lines; the app does all the parsing. Run it standing next to a chest cluster, once per cluster, once per character.
-- **`packrat-refresh.py`** — quick refresh, the same snapshot as `adapters/tazuo/packrat-refresh.py`: stats, skills, maxes, resists, position, every equipped layer, and the backpack (nested bags included) as the only root. Bank and ground containers are never opened, so the app keeps what it last knew about them. The backpack is listed as a root so a piece you just took off lands there instead of vanishing from the fold; if the backpack itself does not open, nothing is written. Writes `<dataDir>/inbox/razor-enhanced/<Character>-<YYYYmmdd-HHMMSS>-quick.json`. Its helpers are copied verbatim from the scanner, and `adapters/test_scanners.py` fails if a copy drifts.
+- **`packrat-character-refresh.py`** — character refresh (the quick refresh; `packrat-refresh.py` before 1.10.0), the same snapshot as `adapters/tazuo/packrat-character-refresh.py`: stats, skills, maxes, resists, position, every equipped layer, and the backpack (nested bags included) as the only root. Bank and ground containers are never opened, so the app keeps what it last knew about them. The backpack is listed as a root so a piece you just took off lands there instead of vanishing from the fold; if the backpack itself does not open, nothing is written. Writes `<dataDir>/inbox/razor-enhanced/<Character>-<YYYYmmdd-HHMMSS>-quick.json`. Its helpers are copied verbatim from the scanner, and `adapters/test_scanners.py` fails if a copy drifts.
 - **`packrat-blacklist.py`** — one-shot blacklist, the same as `adapters/tazuo/packrat-blacklist.py`: `Target.PromptTarget` raises a cursor, and a clicked container (never your backpack, bank or a corpse) is appended to `<dataDir>/scan-blacklist.json` as `{serial, name, addedAt, where?}`, the file the app's Blacklist action and Settings use. Opens nothing, moves nothing.
 - **`packrat-bridge.py`** — the bridge. Leave it running while you use the app's Highlight, Grab, and Go to buttons on the Suit Builder or Inventory tab. Highlight recolors the item (and its containing chest) for a few seconds and prints a local message; grab does the same walk/open steps then moves the item into your backpack; go to just walks there. Bounded to 8 hours.
 

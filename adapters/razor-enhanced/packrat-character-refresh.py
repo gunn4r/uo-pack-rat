@@ -1,4 +1,4 @@
-# packrat-refresh.py -- ATTENDED one-shot: QUICK character refresh for the Pack Rat app without a
+# packrat-character-refresh.py -- ATTENDED one-shot: QUICK character refresh for the Pack Rat app without a
 # full scan. Reads this character's stats, skills, maxes, resists, position, every equipped layer and
 # the BACKPACK (nested bags included) -- nothing else. Bank and ground containers are never opened,
 # so the app keeps whatever it last knew about them.
@@ -9,7 +9,7 @@
 # the backpack as the one root makes that piece reappear in the backpack instead of vanishing.
 #
 # Helpers below are copied VERBATIM from packrat-scanner.py rather than imported, as
-# adapters/tazuo/packrat-refresh.py does (adapters/test_scanners.py keeps the copies identical).
+# adapters/tazuo/packrat-character-refresh.py does (adapters/test_scanners.py keeps the copies identical).
 #
 # Output: <data directory>/inbox/razor-enhanced/<Character>-<YYYYmmdd-HHMMSS>-quick.json. The app's
 # inbox watcher (app/watcher.mjs) picks it up like any scan. The data directory is
@@ -70,7 +70,7 @@ def read_blacklist(path):
 
 
 ADAPTER_ID = "razor-enhanced"
-ADAPTER_VERSION = "1.9.0"
+ADAPTER_VERSION = "1.10.0"
 CAPABILITIES = {
     "layers": ["RightHand", "LeftHand", "Shoes", "Pants", "Shirt", "Head", "Gloves", "Ring",
                "Talisman", "Neck", "Waist", "InnerTorso", "Bracelet", "MiddleTorso", "Earrings",

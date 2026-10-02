@@ -41,7 +41,8 @@ export function scanPreview(doc: ScanV2, inv: KnownInventory | null, { adapter, 
   const worn = doc.equipped.length;
   const stacks = doc.items.length;
   let replaces: string | null = null;
-  if (inv?.characters[character]) {
+  if (doc.kind === "house") replaces = "A house map refresh: it only updates the house map.";
+  else if (inv?.characters[character]) {
     // Only roots Pack Rat has seen before are replaced; a root new to it is simply added.
     const known = doc.roots.filter((r) => inv.containers[String(r.serial)]).map(rootLabel);
     replaces = known.length

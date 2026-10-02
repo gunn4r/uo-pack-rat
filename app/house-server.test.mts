@@ -120,6 +120,27 @@ test("[fast] houses: the same model is served again while nothing changes, and a
   } finally { await s.close(); }
 });
 
+test("[fast] houses: a house-only file (packrat-house-map-refresh.py) moves the house map on and leaves the inventory, the character card and its worn set exactly as they were", async () => {
+  const { s, dir } = await serve(true);
+  const RING = 0x40040001;
+  try {
+    const { house } = vaultHouse();
+    const worn = houseScan({ scannedAt: new Date(Date.parse(house.capturedAt) + 30e3).toISOString(), boxes: [{ serial: PACK, kind: "backpack" as const, name: "Backpack" }], things: [] });
+    writeFileSync(join(dir, "scans", "worn.json"), JSON.stringify({ ...worn, stats: { str: 90, dex: 20, int: 10 }, equipped: [{ serial: RING, name: "Gold Ring", layer: "Ring", nameSource: "opl", tooltip: ["Gold Ring"] }] }));
+    const before = await get<{ snapshotCount: number; inventory: { characters: Record<string, { scannedAt: string; stats: Record<string, number> }> } }>(s, "/api/inventory");
+    const later = new Date(Date.parse(house.capturedAt) + 60e3).toISOString();
+    const only = { ...houseScan({ scannedAt: later, boxes: [], things: [] }), kind: "house", stats: {}, house: { facet: 1, capturedAt: later, at: { x: 3003, y: 1003 }, tiles: house.tiles, items: house.items, containers: [] } };
+    writeFileSync(join(dir, "scans", "house-only.json"), JSON.stringify(only));
+    const after = await get<typeof before.body>(s, "/api/inventory");
+    assert.equal(after.body.snapshotCount, before.body.snapshotCount + 1, "the file is read");
+    assert.deepEqual(after.body.inventory, before.body.inventory, "the inventory, the cards, the worn sets and Missing are untouched");
+    assert.deepEqual(after.body.inventory.characters.Tester!.stats, { str: 90, dex: 20, int: 10 });
+    const one = await get<{ house: HouseModel }>(s, "/api/houses/1-3000-1000");
+    assert.equal(one.body.house.capturedAt, later);
+    assert.equal(one.body.house.stacks.reduce((a, st) => a + st.serials.length, 0), 120, "the chests the full scan opened are still on the map");
+  } finally { await s.close(); }
+});
+
 test("[fast] houses: a chest a capture saw but no scan opened is on the map as not opened, named from tiledata, and never in the inventory", async () => {
   const { s, dir } = await serve(true);
   const SEEN = 0x40030001, NAMED = 0x40030002;
