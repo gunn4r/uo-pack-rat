@@ -68,7 +68,7 @@ def read_blacklist(path):
 
 
 ADAPTER_ID = "tazuo"
-ADAPTER_VERSION = "2.12.0"
+ADAPTER_VERSION = "2.13.0"
 CAPABILITIES = {
     "layers": ["OneHanded", "TwoHanded", "Shoes", "Pants", "Shirt", "Helmet", "Gloves",
                "Ring", "Talisman", "Necklace", "Waist", "Torso", "Bracelet", "Tunic",
@@ -595,6 +595,9 @@ def main():
     except Exception:   # the house is extra: a capture that fails never costs the scan
         house = None
     if house is not None:
+        # The trash containers the roots pass skipped (issue #162), so the house map can leave them out of a later capture made too far away to read their tooltips. Left out when there were none.
+        if TRASHED:
+            house["trash"] = sorted(TRASHED)
         snap["house"] = house
     fname = re.sub(r"[^A-Za-z0-9_-]", "_", char) + time.strftime("-%Y%m%d-%H%M%S") + ".json"
     path = os.path.join(OUT_DIR, fname)

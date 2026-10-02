@@ -51,12 +51,13 @@ Numeric and length bounds, in one place so an adapter author can find them:
 | `house.tiles` | ≤ 20,000 entries | A castle is 6,000–8,000 tiles; the bound keeps one capture from dominating a fold. |
 | `house.items` | ≤ 5,000 entries | Furniture within the server's 18-tile update range; generous headroom for a dense house. |
 | `house.containers` | ≤ 5,000 entries | Every container on the ground inside the footprint; the same headroom as items. |
+| `house.trash` | ≤ 5,000 serials, each 0 – 4294967295 | The same headroom as containers. |
 
 Unbounded on purpose: the number of `items`, `containers`, `roots` and `equipped` entries. A real inventory is genuinely large and no honest limit suggested itself; the 32 MB file-size cap in `app/watcher.mts`'s `ingestFile` is the bound that actually applies, and it is checked from the file's own inode before a byte is read.
 
 ## House capture
 
-The optional `house` section (issue #10) is what the client knew of the house the player was standing in: its floor and wall tiles and the furniture on them. `capturedAt`, `at` and `tiles` are required; `facet` and `items` are optional. Other keys are allowed (`additionalProperties: true`, like the top level), so a key a newer adapter adds never makes an older app drop the whole scan.
+The optional `house` section (issue #10) is what the client knew of the house the player was standing in: its floor and wall tiles and the furniture on them. `capturedAt`, `at` and `tiles` are required; `facet`, `items`, `containers` and `trash` are optional. Other keys are allowed (`additionalProperties: true`, like the top level), so a key a newer adapter adds never makes an older app drop the whole scan.
 
 `facet` is the facet the house is on, an integer 0 to 5 (0 Felucca, 1 Trammel, 2 Ilshenar, 3 Malas, 4 Tokuno, 5 Ter Mur). It is left out when the client cannot say.
 
@@ -69,6 +70,8 @@ The optional `house` section (issue #10) is what the client knew of the house th
 `items` is an array of at most 5,000 items, each `[serial, graphic, x, y, z]` with five integers: the furniture and fixtures on the ground inside the house footprint. Containers are listed in `containers` instead. It is left out altogether when the ground could not be read, which tells the app to erase none of the furniture an earlier capture saw (an empty list would say the house stands empty).
 
 `containers` is an array of at most 5,000 entries in the same `[serial, graphic, x, y, z]` shape: every container on the ground inside the footprint (TazUO 2.11.0 and later), whether this scan opened it or not, so the House map shows a chest from the first scan even when it stood too far away to open. Corpses, trash containers and blacklisted ones are left out; a trash container is known by a name with "trash" in it, or by the tooltip the scan read when it reached the container as a root, so a far trash container whose cached name is generic ("barrel") cannot be told apart without a tooltip query, which the capture never makes, and is listed. Like `items`, it is left out when the ground could not be read. The app never folds these rows into the inventory: a chest no scan has opened is drawn on the map as not opened yet and appears nowhere else.
+
+`trash` is the sorted serials of the trash containers the scan skipped (TazUO 2.13.0 and later, issue #162): every container the scan's roots pass knew as trash, by its name or its tooltip, wherever it stood (a trash bag in the backpack is listed too). It is left out when the scan skipped none, and the whole section is still left out when the player stood in no house. A capture taken across the room cannot tell a trash container from a chest, so it lists it in `containers`; the app takes the union of `trash` over every capture of the house and leaves those serials out of the house's seen-only chests, so a trash container a scan beside it once skipped never shows as a chest not opened yet. A container a scan opened, which the fold knows, is drawn whatever a `trash` list says. Retention keeps the newest capture listing each serial in `trash` only while the house's merged chests still hold that serial; a trash serial no capture lists there hides nothing and keeps no capture.
 
 What the TazUO scanner writes within those bounds: a house of more than 20,000 tiles is left out of the scan (the summary says so), and past 5,000 pieces of furniture, or 5,000 containers, the nearest 5,000 to the player are kept.
 

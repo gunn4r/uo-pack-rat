@@ -212,3 +212,22 @@ test("[fast] retention: an older capture is kept while it still gives the house 
   assert.deepEqual(r, { files: ["house-a.json"], refused: false }, "house-c (standing at 100, 100) no longer sees chest 40 and cannot see chest 41, 30 tiles away");
   assert.deepEqual(houseShape(all.filter((s) => !r.files.includes(s.file))), houseShape(all));
 });
+
+test("[fast] retention: an old capture whose trash list keeps a container off the house map is kept, and pruning never brings the container back (issue #162)", () => {
+  const oldest = scan("house-0.json", daysAgo(100), "Builder", [], {}, [], [], capture(daysAgo(100), plot, [], { x: 110, y: 100 }, [[42, 0x2813, 101, 100, 7]]));
+  const near = scan("house-a.json", daysAgo(95), "Builder", [], {}, [], [], { house: { ...capture(daysAgo(95), plot, [], { x: 100, y: 100 }, []).house, trash: [42] } });
+  const far = scan("house-b.json", daysAgo(90), "Builder", [], {}, [], [], capture(daysAgo(90), plot, [], { x: 110, y: 100 }, [[42, 0x2813, 101, 100, 7]]));
+  const newest = scan("house-c.json", daysAgo(80), "Builder", [], {}, [], [], capture(daysAgo(80), plot, [], { x: 110, y: 100 }, [[42, 0x2813, 101, 100, 7]]));
+  const all = [oldest, near, far, newest, homeChest], r = scansToPrune(all, foldSnapshots, RETENTION_DEFAULTS, NOW);
+  assert.deepEqual(r, { files: ["house-0.json"], refused: false }, "house-a carries the trash list, so it and every newer capture stay");
+  assert.deepEqual(houseShape(all.filter((s) => !r.files.includes(s.file))), houseShape(all));
+});
+
+test("[fast] retention: a trash list naming a serial no capture lists as a chest keeps no capture (issue #162)", () => {
+  const run = (trash: boolean): string[] => {
+    const caps = [100, 90, 80, 70].map((d) => scan(`house-${d}.json`, daysAgo(d), "Builder", [], {}, [], [], { house: { ...capture(daysAgo(d), plot, [], { x: 100, y: 100 }, []).house, ...(trash && d === 100 ? { trash: [999] } : {}) } }));
+    return scansToPrune([...caps, homeChest], foldSnapshots, RETENTION_DEFAULTS, NOW).files;
+  };
+  assert.deepEqual(run(true), run(false));
+  assert.deepEqual(run(false), ["house-100.json", "house-90.json", "house-80.json"]);
+});

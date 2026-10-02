@@ -67,7 +67,7 @@ export function scansToPrune(scans: ScanFile[], fold: (s: ScanV2[]) => Inventory
   for (const s of newest.values()) keep.add(s.file);
   let folded: Inventory | undefined;
   const allFold = (): Inventory => (folded ??= fold(scans.map((s) => s.doc)));
-  // Houses (issue #10): the map is drawn from a house's newest capture and its furniture and every ground chest a capture saw merged across captures, so those scans stay however old, for a house that is not superseded (redesigned or moved) and that holds a ground chest of the fold on its footprint (the player's own; a boat or a house only visited ages out like any scan).
+  // Houses (issue #10): the map is drawn from a house's newest capture and its furniture and every ground chest a capture saw merged across captures, so those scans, and the captures listing its trash containers (issue #162), stay however old, for a house that is not superseded (redesigned or moved) and that holds a ground chest of the fold on its footprint (the player's own; a boat or a house only visited ages out like any scan).
   const groups = houseGroups(scans.map((s) => s.doc));
   if (groups.length) {
     const ground = Object.values(allFold().containers).filter((c) => c.parent == null && c.kind === "ground" && c.pos && Number.isFinite(c.pos.x) && Number.isFinite(c.pos.y));
@@ -77,7 +77,7 @@ export function scansToPrune(scans: ScanFile[], fold: (s: ScanV2[]) => Inventory
       const tiles = new Set(last.tiles.map((t) => `${t[1]}:${t[2]}`));
       if (!ground.some((c) => (facet === null || c.pos!.facet == null || c.pos!.facet === facet) && tiles.has(`${c.pos!.x}:${c.pos!.y}`))) continue;
       keep.add(scans[g.captures[g.captures.length - 1]!.scan]!.file);
-      for (const { scan } of [...g.items.values(), ...g.containers.values()]) keep.add(scans[scan]!.file);
+      for (const scan of [...[...g.items.values(), ...g.containers.values()].map((v) => v.scan), ...g.trash.values()]) keep.add(scans[scan]!.file);
     }
   }
   if (keep.size === scans.length) return none;
@@ -88,13 +88,13 @@ export function scansToPrune(scans: ScanFile[], fold: (s: ScanV2[]) => Inventory
     ...Object.values(all.characters).map((c) => c.scannedAt),
   ]);
   for (const s of scans) if (live.has(s.doc.scannedAt)) keep.add(s.file);
-  // A house with any kept capture (kept for a house, a root or anything else) keeps its furniture's and ground chests' captures and every capture from its oldest kept one on, so what is left merges to the same newest capture, furniture and chests; a superseded one also keeps the captures superseding it, so it stays superseded. Repeated until nothing more is added.
+  // A house with any kept capture (kept for a house, a root or anything else) keeps its furniture's, ground chests' and trash lists' captures and every capture from its oldest kept one on, so what is left merges to the same newest capture, furniture and chests; a superseded one also keeps the captures superseding it, so it stays superseded. Repeated until nothing more is added.
   for (let grew = true; grew;) {
     grew = false;
     for (const g of groups) {
       const first = g.captures.findIndex((c) => keep.has(scans[c.scan]!.file));
       if (first < 0) continue;
-      for (const i of [...g.captures.slice(first).map((c) => c.scan), ...[...g.items.values(), ...g.containers.values()].map((v) => v.scan), ...g.supersededBy]) {
+      for (const i of [...g.captures.slice(first).map((c) => c.scan), ...[...g.items.values(), ...g.containers.values()].map((v) => v.scan), ...g.trash.values(), ...g.supersededBy]) {
         if (!keep.has(scans[i]!.file)) { keep.add(scans[i]!.file); grew = true; }
       }
     }
