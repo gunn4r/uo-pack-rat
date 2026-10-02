@@ -73,7 +73,7 @@
   --color-map-grid: rgb(23 34 36 / 0.10); --color-map-below: rgb(23 34 36 / 0.12);
   --color-map-stone: #a9a59c; --color-map-brick: #b9745f; --color-map-plaster: #ded4c3; --color-map-wood: #b98a5f; --color-map-marble: #dcd8d0; --color-map-sandstone: #d8c49b;
   --color-map-dirt: #9b7c5d; --color-map-grass: #92b06c; --color-map-water: #82abc6; --color-map-tile: #a0b4b9; --color-map-neutral: #cbc6ba; --color-map-yard: #aec290;
-  --color-map-wall: #6f6c66; --color-map-window: #a2b7c9; --color-map-roof: #a88f55; --color-map-stair: #b7ad9a; --color-map-step: #918877; --color-map-lip: #8f5642;
+  --color-map-wall: #6f6c66; --color-map-window: #a2b7c9; --color-map-roof: #a88f55; --color-map-stair: #b7ad9a; --color-map-step: #918877; --color-map-lip: #8f5642; --color-map-wall-edge: rgb(23 34 36 / 0.35);
   --color-map-block: #8a7a63; --color-map-door: #6b4a2b; --color-map-teleporter: #7fd0ff; --color-map-spot: #2d6aa8; --color-map-shade: #000;
   --color-map-chest: #9aa3ad; --color-map-chest-empty: #ece9e2; --color-map-unopened: #f6f4ef;
   --color-map-free-empty: #9ad3a9; --color-map-free-half: #4f9a5c; --color-map-free-filling: #d29a1e; --color-map-free-full: #c2483d; --color-map-free-unknown: #b9b4a8;
@@ -143,7 +143,7 @@
   --color-map-grid: rgb(255 255 255 / 0.07); --color-map-below: rgb(255 255 255 / 0.08);
   --color-map-stone: #5e5c57; --color-map-brick: #7b4b3e; --color-map-plaster: #8e877b; --color-map-wood: #7b5b3e; --color-map-marble: #8f8c86; --color-map-sandstone: #8b7b5d;
   --color-map-dirt: #5f4c3a; --color-map-grass: #50693c; --color-map-water: #406279; --color-map-tile: #5e6f73; --color-map-neutral: #4b4841; --color-map-yard: #4d5f3e;
-  --color-map-wall: #aaa69d; --color-map-window: #6f89a1; --color-map-roof: #7e6b41; --color-map-stair: #6c6558; --color-map-step: #504a40; --color-map-lip: #9b6751;
+  --color-map-wall: #aaa69d; --color-map-window: #6f89a1; --color-map-roof: #7e6b41; --color-map-stair: #6c6558; --color-map-step: #504a40; --color-map-lip: #9b6751; --color-map-wall-edge: rgb(0 0 0 / 0.45);
   --color-map-block: #9a8a72; --color-map-door: #a47b50; --color-map-teleporter: #4fa8d8; --color-map-spot: #7fb2ff; --color-map-shade: #000;
   --color-map-chest: #8e98a2; --color-map-chest-empty: #3b3e41; --color-map-unopened: #262b2d;
   --color-map-free-empty: #3f7a52; --color-map-free-half: #5fae6c; --color-map-free-filling: #d9a640; --color-map-free-full: #e0645a; --color-map-free-unknown: #6c6860;

@@ -560,6 +560,7 @@ export interface HouseModel {
 // Where tiledata.mul came from (the uoFolder setting, or TazUO's launcher profile), or why there is none.
 export interface TiledataFrom { folder: string | null; source: "settings" | "tazuo-profile" | null; reason: null | "override-missing" | "no-client" | "no-tazuo-profile" | "unreadable" }
 // GET /api/houses
+// width and height are the plot, without a row of front steps outside it (house-model.mts plotSize).
 export interface HouseSummary { id: string; facet: number | null; capturedAt: string; captures: number; width: number; height: number; levels: number; containers: number }
 export interface HousesApiResponse { ok: boolean; tiledata: boolean; tiledataFrom: TiledataFrom; houses: HouseSummary[] }
 // GET /api/houses/<id>

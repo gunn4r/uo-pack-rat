@@ -4,7 +4,7 @@ import { syntheticTileData, type FixtureTile } from "./tiledata-fixture.mts";
 import { houseIdOf, type HouseSource, type HouseTile, type HouseItem } from "./house-capture.mts";
 import type { HouseContainerInput } from "./house-model.mts";
 
-export const G = { dirt: 1, pavers: 2, grass: 3, planks: 4, stoneWall: 5, brickWall: 6, window: 7, stairs: 8, roof: 9, table: 10, door: 11, teleporter: 12, rug: 13, banister: 14, block: 15 } as const;
+export const G = { dirt: 1, pavers: 2, grass: 3, planks: 4, stoneWall: 5, brickWall: 6, window: 7, stairs: 8, roof: 9, table: 10, door: 11, teleporter: 12, rug: 13, banister: 14, block: 15, woodWall: 16 } as const;
 
 export const FIXTURE_TILES: FixtureTile[] = [
     { graphic: G.dirt, flags: FLAG.surface, name: "dirt" },
@@ -22,6 +22,7 @@ export const FIXTURE_TILES: FixtureTile[] = [
     { graphic: G.rug, flags: 0n, name: "rug" },
     { graphic: G.banister, flags: FLAG.impassable, height: 8, name: "wooden banister" },
     { graphic: G.block, flags: FLAG.surface, height: 10, name: "stone" },
+    { graphic: G.woodWall, flags: FLAG.wall | FLAG.impassable, height: 20, name: "wooden wall" },
 ];
 export function fixtureTileData(): TileData {
   return readTileData(syntheticTileData(FIXTURE_TILES));
@@ -30,7 +31,7 @@ export function fixtureTileData(): TileData {
 const source = (tiles: HouseTile[], items: HouseItem[] = []): HouseSource =>
   ({ id: houseIdOf(1, tiles), facet: 1, capturedAt: "2026-10-01T12:00:00Z", tiles, items, containers: [], captures: 1 });
 
-// A plot of 18 x 19 tiles at (1000, 2000). Ground level z 7: the building is the north part (y 2001..2007, full width) plus a west wing (x 1001..1008, y 2008..2012); the rest of the plot is the courtyard. Walls at z 7 ring the building; walls at z 0 ring the whole plot (the foundation's edge). Every designed floor tile has a dirt tile under it at the same z. The 2nd floor (z 27) covers exactly the building and has no walls. Front steps along y 2018. A door in the wing's east wall at (1009, 2010); a table at (1003, 2003); a rug at (1004, 2004).
+// A plot of 18 x 18 tiles at (1000, 2000). Ground level z 7: the building is the north part (y 2001..2007, full width) plus a west wing (x 1001..1008, y 2008..2012); the rest of the plot is the courtyard. Walls at z 7 ring the building; walls at z 0 ring the whole plot (the foundation's edge). Every designed floor tile has a dirt tile under it at the same z. The 2nd floor (z 27) covers exactly the building and has no walls. Front steps along y 2018, outside the plot. A door in the wing's east wall at (1009, 2010); a table at (1003, 2003); a rug at (1004, 2004).
 export function courtyardHouse(): HouseSource {
   const t: HouseTile[] = [];
   const X0 = 1000, Y0 = 2000, X1 = 1017, Y1 = 2017;
@@ -50,6 +51,22 @@ export function courtyardHouse(): HouseSource {
   }
   for (let x = X0; x <= X1; x++) t.push([G.stairs, x, Y1 + 1, 0, 0]);
   return source(t, [[0x40000101, G.table, X0 + 3, Y0 + 3, 7], [0x40000102, G.rug, X0 + 4, Y0 + 4, 7], [0x40000103, G.door, X0 + 9, Y0 + 10, 7]]);
+}
+
+// A 10 x 10 plot at (9000, 9000) on a raised foundation, as a custom house's capture lists it: a dirt floor at z 7 and the foundation's stone walls at z 0 (each listed twice) on every edge tile. The west and north edge tiles (x 9000, y 9000) hold only those walls; the east and south ones also hold the dirt floor. A 3 x 3 wooden stall (walls at z 7 round (9004, 9004), a door tile in its south side at (9004, 9005)), and front steps outside the plot along y 9010.
+export function foundationHouse(): HouseSource {
+  const t: HouseTile[] = [];
+  const X0 = 9000, Y0 = 9000, X1 = 9009, Y1 = 9009;
+  for (let x = X0; x <= X1; x++) for (let y = Y0; y <= Y1; y++) {
+    if (x === X0 || x === X1 || y === Y0 || y === Y1) t.push([G.stoneWall, x, y, 0, 1], [G.stoneWall, x, y, 0, 1]);
+    if (x !== X0 && y !== Y0) t.push([G.dirt, x, y, 7, 0]);
+  }
+  for (let x = X0 + 3; x <= X0 + 5; x++) for (let y = Y0 + 3; y <= Y0 + 5; y++) {
+    if (x === X0 + 4 && y === Y0 + 4) continue;
+    t.push(x === X0 + 4 && y === Y0 + 5 ? [G.door, x, y, 7, 1] : [G.woodWall, x, y, 7, 1]);
+  }
+  for (let x = X0; x <= X1; x++) t.push([G.stairs, x, Y1 + 1, 0, 0]);
+  return source(t);
 }
 
 // A 7 x 7 walled room at (3000, 1000) with a 5 x 5 interior, a teleporter on the centre tile, and five metal chests (z 7, 11, 15, 19, 23) on each of the other 24 interior tiles: 120 chests. A 2nd floor over it.

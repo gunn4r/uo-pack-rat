@@ -44,9 +44,21 @@
 .map-solids g > polygon { fill: var(--fill); }
 .map-solids .side-l { fill: color-mix(in srgb, var(--fill) 80%, var(--color-map-shade)); }
 .map-solids .side-r { fill: color-mix(in srgb, var(--fill) 90%, var(--color-map-shade)); }
-.map-wall { --fill: var(--color-map-wall); }
-.map-wall.window { --fill: var(--color-map-window); }
-.map-lip { --fill: var(--color-map-lip); }
+/* walls, windows and the foundation's lip in their material's colour: its floor colour mixed toward the wall grey (so a wall stands off a floor of the same family), with an edge stroke; the neutral family keeps the plain wall grey, window blue and lip brown */
+.map-solids .w-stone { --tint: color-mix(in srgb, var(--color-map-stone) 65%, var(--color-map-wall)); }
+.map-solids .w-brick { --tint: color-mix(in srgb, var(--color-map-brick) 65%, var(--color-map-wall)); }
+.map-solids .w-plaster { --tint: color-mix(in srgb, var(--color-map-plaster) 65%, var(--color-map-wall)); }
+.map-solids .w-wood { --tint: color-mix(in srgb, var(--color-map-wood) 65%, var(--color-map-wall)); }
+.map-solids .w-marble { --tint: color-mix(in srgb, var(--color-map-marble) 65%, var(--color-map-wall)); }
+.map-solids .w-sandstone { --tint: color-mix(in srgb, var(--color-map-sandstone) 65%, var(--color-map-wall)); }
+.map-solids .w-dirt { --tint: color-mix(in srgb, var(--color-map-dirt) 65%, var(--color-map-wall)); }
+.map-solids .w-grass { --tint: color-mix(in srgb, var(--color-map-grass) 65%, var(--color-map-wall)); }
+.map-solids .w-water { --tint: color-mix(in srgb, var(--color-map-water) 65%, var(--color-map-wall)); }
+.map-solids .w-tile { --tint: color-mix(in srgb, var(--color-map-tile) 65%, var(--color-map-wall)); }
+.map-wall { --fill: var(--tint, var(--color-map-wall)); }
+.map-wall.window { --fill: color-mix(in srgb, var(--color-map-window) 65%, var(--tint, var(--color-map-window))); }
+.map-lip { --fill: var(--tint, var(--color-map-lip)); }
+.map-solids :is(.map-wall, .map-lip) > polygon { stroke: var(--color-map-wall-edge); stroke-width: 1px; vector-effect: non-scaling-stroke; }
 .map-roof { --fill: var(--color-map-roof); }
 .map-block { --fill: var(--color-map-block); }
 .map-door { --fill: var(--color-map-door); }
