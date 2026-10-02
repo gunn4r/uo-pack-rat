@@ -77,6 +77,7 @@ export interface UiPrefs {
   appearance?: "light" | "system" | "dark" | undefined;
   sidebar?: "auto" | "collapsed" | undefined;          // "collapsed" = pinned to icons at any width
   density?: "dense" | "regular" | undefined;           // the Inventory table's rows: 32 or 40 px
+  areaLabels?: "show" | "hide" | undefined;            // the House map's area name pills (absent = shown)
   dismissedUpdate?: string | undefined;                // the release whose update notice was dismissed (settings.mts)
   copiedScanner?: string | undefined;                  // the ClassicUO web scanner version last copied (paste-scanner.mts)
 }
@@ -546,15 +547,14 @@ export interface ApiError extends Error {
 export type MaterialFamily = "stone" | "brick" | "plaster" | "wood" | "marble" | "sandstone" | "dirt" | "grass" | "water" | "tile" | "neutral";
 export interface Level { index: number; name: string; floorZ: number; status: "built" | "floor-only" }
 export type CellKind = "floor" | "wall" | "window" | "stair" | "roof";
-export interface Cell { level: number; x: number; y: number; kind: CellKind; material: string; family: MaterialFamily; z: number; lip: boolean; indoor: boolean; doorway: boolean; room: number | null }
-export interface Room { id: number; level: number; kind: "room" | "yard"; name: string; tiles: number; x0: number; y0: number; x1: number; y1: number }
+export interface Cell { level: number; x: number; y: number; kind: CellKind; material: string; family: MaterialFamily; z: number; lip: boolean; indoor: boolean; doorway: boolean }
 export interface Furniture { serial: number; kind: "block" | "door" | "teleporter"; name: string; level: number; x: number; y: number; z: number; height: number }
 // serials and zs bottom first; codes[serial] is the engraving code ("C3", or "C" alone for a single chest).
-export interface Stack { level: number; x: number; y: number; room: number | null; serials: number[]; zs: number[]; spot: number | null; direction: string; letter: string }
-export interface Spot { id: number; level: number; x: number; y: number; room: number | null; teleporter: boolean }
+export interface Stack { level: number; x: number; y: number; serials: number[]; zs: number[]; spot: number | null; direction: string; letter: string }
+export interface Spot { id: number; level: number; x: number; y: number; teleporter: boolean }
 export interface HouseModel {
   id: string; facet: number | null; capturedAt: string; captures: number; x0: number; y0: number; x1: number; y1: number;
-  levels: Level[]; cells: Cell[]; rooms: Room[]; furniture: Furniture[]; stacks: Stack[]; spots: Spot[]; codes: Record<string, string>; tiledata: boolean;
+  levels: Level[]; cells: Cell[]; furniture: Furniture[]; stacks: Stack[]; spots: Spot[]; codes: Record<string, string>; tiledata: boolean;
   unopened: number[]; unopenedNames: Record<string, string>;   // the stacked chests no scan has opened, and their tiledata names
   name?: string | undefined;   // the player's name for the house (house-map.json, issue #164), when it has one
 }
@@ -568,9 +568,14 @@ export type FacetMapReason = "override-missing" | "no-client" | "no-tazuo-profil
 export interface HousesApiResponse { ok: boolean; tiledata: boolean; tiledataFrom: TiledataFrom; houses: HouseSummary[] }
 // GET /api/houses/<id>
 export interface HouseApiResponse { ok: boolean; house: HouseModel }
-// GET /api/house-map and PUT /api/house-map/<id> (app/house-names.mts, issue #164): the player's names by house id, each
-// with the footprint the house had when it was named. Other fields an entry may carry later are kept, unread.
+// GET /api/house-map and PUT /api/house-map/<id> (app/house-names.mts, issues #164 and #10): the player's names and drawn
+// areas by house id, each with the footprint the house had when it was named or its areas drawn. `name` is "" for a house
+// with areas but no name. Other fields an entry or an area may carry later are kept, unread.
 export interface HouseBounds { x0: number; y0: number; x1: number; y1: number; facet: number | null }
-export interface HouseMapEntry { name: string; bounds?: HouseBounds | undefined }
+// World tiles, inclusive.
+export interface AreaRect { x0: number; y0: number; x1: number; y1: number }
+// `color` is a token name, "area-1" … "area-8" (--color-area-N).
+export interface HouseArea { id: string; name: string; level: number; color: string; rects: AreaRect[] }
+export interface HouseMapEntry { name: string; bounds?: HouseBounds | undefined; areas?: HouseArea[] | undefined }
 export interface HouseMapApiResponse { ok: boolean; houses: Record<string, HouseMapEntry> }
 export interface HouseMapPutApiResponse { ok: boolean; entry: HouseMapEntry | null }

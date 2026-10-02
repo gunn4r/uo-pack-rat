@@ -3140,6 +3140,22 @@ test("[fast] PUT /api/ui-prefs keeps theme, appearance, sidebar, density, the co
   }
 });
 
+test("[fast] PUT /api/ui-prefs keeps the House map's area labels shown or hidden (issue #10) across a restart, and refuses anything else", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "qm-uiprefs-labels-"));
+  const put = (url: string, body: unknown): Promise<Response> => fetch(url + "/api/ui-prefs", { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
+  const s1 = await startServer(ensureLayout(resolveConfig(["--port", "0", "--data", dir], {})));
+  try {
+    assert.equal((await put(s1.url, { areaLabels: "hide" })).status, 200);
+    for (const bad of [{ areaLabels: "off" }, { areaLabels: false }, { areaLabels: "" }]) assert.equal((await put(s1.url, bad)).status, 400, JSON.stringify(bad));
+  } finally { await s1.close(); }
+  const s2 = await startServer(ensureLayout(resolveConfig(["--port", "0", "--data", dir], {})));
+  try {
+    assert.deepEqual(asJson(await (await fetch(s2.url + "/api/ui-prefs")).json()), { ok: true, prefs: { areaLabels: "hide" } });
+    assert.equal((await put(s2.url, { areaLabels: "show" })).status, 200);
+    assert.deepEqual(asJson(await (await fetch(s2.url + "/api/ui-prefs")).json()), { ok: true, prefs: { areaLabels: "show" } });
+  } finally { await s2.close(); }
+});
+
 // A deleted, renamed or transferred character used to keep its card and worn set in the inventory
 // forever: the fold only drops what a newer scan of the same root or character replaces.
 test("[fast] POST /api/forget-character drops the character, its worn set, backpack and bank, and a rescan brings it back", async () => {

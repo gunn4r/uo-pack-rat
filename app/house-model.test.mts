@@ -1,11 +1,11 @@
-// house-model.test.mts — app/house-model.mts against synthetic houses (app/house-fixture.mts): levels, cells, the dirt-under-floor and foundation-lip rules, indoor and yard, rooms and doorways, furniture, stacks, standing spots, engraving codes, the no-tiledata fallback and a castle's speed. Tags: [fast]. Run: node --test app/house-model.test.mts
+// house-model.test.mts — app/house-model.mts against synthetic houses (app/house-fixture.mts): levels, cells, the dirt-under-floor and foundation-lip rules, indoor and yard, doorways, the wall-aware spots (no automatic room names), furniture, stacks, standing spots, engraving codes, the no-tiledata fallback and a castle's speed. Tags: [fast]. Run: node --test app/house-model.test.mts
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { buildHouseModel, letterOf, materialFamily, plotSize, type HouseModel, type Cell } from "./house-model.mts";
 import type { HouseItem, HouseTile } from "./house-capture.mts";
 import { FLAG, readTileData } from "./tiledata.mts";
 import { syntheticTileData } from "./tiledata-fixture.mts";
-import { G, FIXTURE_TILES, fixtureTileData, courtyardHouse, stairHouse, towerHouse, roofHouse, hallHouse, vaultHouse, castleHouse, foundationHouse } from "./house-fixture.mts";
+import { G, FIXTURE_TILES, fixtureTileData, courtyardHouse, stairHouse, towerHouse, roofHouse, hallHouse, vaultHouse, castleHouse, foundationHouse, wallPairHouse } from "./house-fixture.mts";
 
 const td = fixtureTileData();
 const cell = (m: HouseModel, level: number, x: number, y: number): Cell | undefined => m.cells.find((c) => c.level === level && c.x === x && c.y === y);
@@ -42,14 +42,12 @@ test("[fast] house model: the foundation's edge is a lip on all four sides, with
   assert.deepEqual(m.levels.map((l) => [l.floorZ, l.status]), [[7, "built"]]);
 });
 
-test("[fast] house model: a foundation edge with no floor of its own is in no room or yard and is never a standing spot", () => {
+test("[fast] house model: a foundation edge with no floor of its own is never a standing spot", () => {
   const m = buildHouseModel(foundationHouse(), td, [{ serial: 0x40000a00, name: "Wooden Chest", facet: 1, x: 9001, y: 9001, z: 7 }]);
   const floorless = m.cells.filter((c) => c.y <= 9009 && (c.x === 9000 || c.y === 9000));
   assert.equal(floorless.length, 19);
-  assert.ok(floorless.every((c) => c.room === null));
-  const yard = m.rooms.find((r) => r.kind === "yard")!;
-  assert.equal(yard.tiles, 100 - 19 - 7 + 10, "the plot less the floorless edge and the stall's 7 walls, plus the 10 front steps");
-  assert.deepEqual(m.rooms.map((r) => r.kind), ["yard"]);
+  assert.ok(floorless.every((c) => !c.indoor));
+  assert.equal(m.stacks[0]!.spot, 0, "the chest beside the rim is reached from the yard");
   assert.ok(m.spots.length > 0 && m.spots.every((p) => p.x !== 9000 && p.y !== 9000));
 });
 
@@ -117,17 +115,15 @@ test("[fast] house model: under the 2nd floor is indoors, the courtyard is the y
   const m = buildHouseModel(courtyardHouse(), td, []);
   assert.equal(cell(m, 0, 1002, 2002)!.indoor, true);
   assert.equal(cell(m, 0, 1012, 2012)!.indoor, false);
-  const yard = m.rooms.find((r) => r.kind === "yard")!;
-  assert.equal(yard.name, "Yard");
-  assert.equal(cell(m, 0, 1012, 2012)!.room, yard.id);
 });
 
-test("[fast] house model: one indoor room on the ground floor is the Main room; the open 2nd floor is Open floor", () => {
-  const m = buildHouseModel(courtyardHouse(), td, []);
-  assert.deepEqual(m.rooms.filter((r) => r.kind === "room").map((r) => [r.level, r.name]), [[0, "Main room"], [1, "Open floor"]]);
-  const main = m.rooms.find((r) => r.name === "Main room")!;
-  assert.equal(cell(m, 0, 1002, 2002)!.room, main.id);
-  assert.equal(cell(m, 0, 1002, 2011)!.room, main.id, "the west wing is part of the same open room");
+test("[fast] house model: no automatic room, hallway or yard names: the player draws and names the areas (issue #10)", () => {
+  for (const h of [courtyardHouse(), hallHouse(), stairHouse(), roofHouse()]) {
+    const m = buildHouseModel(h, td, [{ serial: 0x40000a10, name: "Wooden Chest", facet: 1, x: h.tiles[0]![1], y: h.tiles[0]![2], z: 7 }]);
+    assert.equal("rooms" in m, false);
+    assert.ok(m.cells.every((c) => !("room" in c)) && m.stacks.every((s) => !("room" in s)) && m.spots.every((p) => !("room" in p)));
+    assert.doesNotMatch(JSON.stringify(m), /Main room|Open floor|Hallway|Yard|(North|South|East|West|Middle)[a-z-]* room/);
+  }
 });
 
 test("[fast] house model: without tiledata, impassable house tiles are walls and the rest floor, and it still builds", () => {
@@ -144,7 +140,6 @@ test("[fast] house model: stairs between floors stay on the lower level and do n
   assert.deepEqual([2001, 2002, 2003, 2004].map((x) => [cell(m, 0, x, 3001)!.kind, cell(m, 0, x, 3001)!.indoor]), Array(4).fill(["stair", true]));
   assert.equal(cell(m, 0, 2000, 3003)!.kind, "wall");
   assert.equal(cell(m, 0, 2003, 3004)!.indoor, true);
-  assert.deepEqual(m.rooms.filter((r) => r.level === 0).map((r) => [r.kind, r.name, r.tiles]), [["room", "Main room", 36]]);
 });
 
 test("[fast] house model: stairs on their filler blocks (as the client lays every staircase) keep the storeys apart", () => {
@@ -158,34 +153,35 @@ test("[fast] house model: a three-storey house with stairs on blocks between eac
   const m = buildHouseModel(towerHouse(), td, []);
   assert.deepEqual(m.levels.map((l) => l.floorZ), [7, 27, 47]);
   assert.ok(m.cells.filter((c) => c.level === 0 && c.kind === "floor").every((c) => c.indoor), "nothing on the ground floor is yard");
-  assert.equal(m.rooms.filter((r) => r.kind === "yard").length, 0);
 });
 
 test("[fast] house model: without tiledata a roof is not a 2nd floor and stairs do not merge storeys", () => {
   assert.deepEqual(buildHouseModel(roofHouse(), null, []).levels.map((l) => l.floorZ), [7]);
   const s = buildHouseModel(stairHouse(), null, []);
   assert.deepEqual(s.levels.map((l) => l.floorZ), [7, 27]);
-  assert.equal(s.rooms.filter((r) => r.kind === "yard").length, 0);
+  assert.ok(s.cells.filter((c) => c.level === 0 && c.kind === "floor" && !c.lip).every((c) => c.indoor), "nothing on the ground floor is yard");
 });
 
 test("[fast] house model: a one-storey house under a roof is indoors, not a yard", () => {
   const m = buildHouseModel(roofHouse(), td, []);
   assert.deepEqual(m.levels.map((l) => [l.name, l.status]), [["Ground floor", "built"]]);
   assert.equal(cell(m, 0, 4003, 4003)!.indoor, true);
-  assert.deepEqual(m.rooms.map((r) => [r.kind, r.name, r.tiles]), [["room", "Main room", 36]]);
 });
 
-test("[fast] house model: a 1-wide corridor between two rooms is a Hallway; the doors belong to no room", () => {
-  const m = buildHouseModel(hallHouse(), td, []);
-  assert.deepEqual(m.rooms.map((r) => [r.kind, r.name, r.tiles]), [["room", "West room", 36], ["room", "East room", 36], ["room", "Hallway", 4]]);
-  const hall = m.rooms.find((r) => r.name === "Hallway")!;
-  assert.deepEqual([6008, 6009, 6010, 6011].map((x) => cell(m, 0, x, 7003)!.room), Array(4).fill(hall.id));
-  assert.deepEqual([cell(m, 0, 6007, 7003)!.room, cell(m, 0, 6012, 7003)!.room], [null, null]);
+test("[fast] house model: a standing spot never reaches a chest through a wall: chests a tile apart either side of one are two spots", () => {
+  const chest = (i: number, x: number) => ({ serial: 0x40000a20 + i, name: "Wooden Chest", facet: 1, x, y: 7003, z: 7 });
+  const m = buildHouseModel(wallPairHouse(), td, [chest(0, 7006), chest(1, 7008)]);
+  assert.equal(cell(m, 0, 7007, 7003)!.kind, "wall");
+  assert.equal(m.spots.length, 2);
+  const side = (x: number): string => (x < 7007 ? "west" : "east");
+  assert.deepEqual(m.stacks.map((s) => [side(s.x), side(m.spots[s.spot!]!.x)]), [["west", "west"], ["east", "east"]]);
+  const again = buildHouseModel({ ...wallPairHouse(), tiles: [...wallPairHouse().tiles].reverse() }, td, [chest(1, 7008), chest(0, 7006)]);
+  assert.deepEqual([again.spots, again.codes], [m.spots, m.codes], "the same spots and codes whatever order the capture listed");
 });
 
 test("[fast] house model: a house with no tiles has zero bounds", () => {
   const m = buildHouseModel({ ...roofHouse(), tiles: [] }, td, []);
-  assert.deepEqual([m.x0, m.y0, m.x1, m.y1, m.cells.length, m.rooms.length], [0, 0, 0, 0, 0, 0]);
+  assert.deepEqual([m.x0, m.y0, m.x1, m.y1, m.cells.length], [0, 0, 0, 0, 0]);
 });
 
 test("[fast] house model: impassable furniture and doors are kept, passable decoration is not", () => {
@@ -206,11 +202,16 @@ test("[fast] house model: the house's own multi item (nearest the centre) is dro
   assert.deepEqual(items([[0x40000f02, 0x147b, 1009, 2009, 7], [0x40000f01, 0x147b, 1008, 2009, 7]]), [...base, 0x40000f02], "a tie drops the lower serial, whatever the order");
 });
 
-test("[fast] house model: a door item splits rooms and stays out of the hallway like a door tile", () => {
+test("[fast] house model: a door item marks its doorway like a door tile, and a spot never reaches across a doorway into another region", () => {
   const h = hallHouse(), doors = h.tiles.filter((t) => t[0] === G.door);
-  const m = buildHouseModel({ ...h, tiles: h.tiles.filter((t) => t[0] !== G.door), items: doors.map(([g, x, y, z], i) => [0x40000300 + i, g, x, y, z]) }, td, []);
-  assert.deepEqual(m.rooms.map((r) => [r.name, r.tiles]), [["West room", 36], ["East room", 36], ["Hallway", 4]]);
-  assert.deepEqual([cell(m, 0, 6007, 7003)!.room, cell(m, 0, 6012, 7003)!.room], [null, null]);
+  // Either side of the west door (6007, 7003): a chest in the west room out of the doorway's reach, and one in the corridor just past the door. A west-room tile by the wall is within reach of both, but the corridor is another region across the doorway.
+  const chests = [{ serial: 0x40000a30, name: "Wooden Chest", facet: 1, x: 6004, y: 7004, z: 7 }, { serial: 0x40000a31, name: "Wooden Chest", facet: 1, x: 6008, y: 7003, z: 7 }];
+  const m = buildHouseModel({ ...h, tiles: h.tiles.filter((t) => t[0] !== G.door), items: doors.map(([g, x, y, z], i) => [0x40000300 + i, g, x, y, z]) }, td, chests);
+  assert.deepEqual([cell(m, 0, 6007, 7003)!.doorway, cell(m, 0, 6012, 7003)!.doorway], [true, true]);
+  assert.equal(m.spots.length, 2, "one spot each side of the doorway, not one in the room reaching into the corridor");
+  const spotOf = (serial: number) => m.spots[m.stacks.find((s) => s.serials.includes(serial))!.spot!]!;
+  assert.ok(spotOf(0x40000a30).x <= 6006, "the room's chest from the room");
+  assert.ok(spotOf(0x40000a31).x >= 6007, "the corridor's chest from the doorway or the corridor");
 });
 
 test("[fast] house model: a dense vault is one standing spot on the teleporter reaching all 120 chests", () => {
@@ -253,18 +254,17 @@ test("[fast] house model: a chest in a 1-tile alcove (walls on both sides, no ro
   const h = roofHouse();
   const tiles = [...h.tiles.filter((t) => !(t[1] === 4003 && t[2] === 4000)), [G.pavers, 4003, 4000, 7, 0], [G.roof, 4003, 4000, 27, 0], [G.stoneWall, 4003, 3999, 7, 1]] as typeof h.tiles;
   const m = buildHouseModel({ ...h, tiles }, td, [{ serial: 0x40000750, name: "Wooden Chest", facet: 1, x: 4003, y: 4000, z: 7 }]);
-  assert.deepEqual([cell(m, 0, 4003, 4000)!.doorway, m.stacks[0]!.room], [true, null]);
+  assert.equal(cell(m, 0, 4003, 4000)!.doorway, true);
   assert.notEqual(m.stacks[0]!.spot, null);
-  assert.equal(m.spots[0]!.room, m.rooms.find((r) => r.name === "Main room")!.id);
+  assert.ok(m.spots[0]!.y > 4000, "the spot stands in the room, not in the alcove");
   assert.equal(m.codes[String(0x40000750)], "A");
 });
 
 test("[fast] house model: chests in the yard and on the front steps are reached from the yard", () => {
   const m = buildHouseModel(courtyardHouse(), td, [{ serial: 0x40000900, name: "Wooden Chest", facet: 1, x: 1012, y: 2012, z: 7 }, { serial: 0x40000901, name: "Wooden Chest", facet: 1, x: 1012, y: 2018, z: 0 }]);
-  const yard = m.rooms.find((r) => r.kind === "yard")!;
   assert.equal(m.stacks.length, 2);
-  assert.ok(m.stacks.every((s) => s.room === yard.id && s.spot !== null && s.level === 0));
-  assert.ok(m.spots.every((p) => p.room === yard.id));
+  assert.ok(m.stacks.every((s) => s.spot !== null && s.level === 0));
+  assert.ok(m.spots.every((p) => !cell(m, 0, p.x, p.y)!.indoor), "every spot stands in the yard");
   assert.deepEqual(Object.values(m.codes).sort(), ["A", "B"]);
 });
 
@@ -282,8 +282,8 @@ test("[fast] house model: a chest on a table and a table tile are never a standi
 
 test("[fast] house model: a chest in a hallway is reached from the hallway and gets a code", () => {
   const m = buildHouseModel(hallHouse(), td, [{ serial: 0x40000600, name: "Wooden Chest", facet: 1, x: 6009, y: 7003, z: 7 }]);
-  const hall = m.rooms.find((r) => r.name === "Hallway")!;
-  assert.deepEqual([m.stacks[0]!.room, m.spots.length, m.spots[0]!.room, m.codes[String(0x40000600)]], [hall.id, 1, hall.id, "A"]);
+  assert.deepEqual([m.spots.length, m.spots[0]!.y, m.codes[String(0x40000600)]], [1, 7003, "A"]);
+  assert.ok(m.spots[0]!.x >= 6008 && m.spots[0]!.x <= 6011, "the spot stands in the corridor");
 });
 
 test("[fast] house model: a castle (32 x 32, 4 levels, 300 chests) models in under 250 ms", () => {
@@ -324,9 +324,8 @@ test("[fast] house model: chests a storey apart on one tile are two stacks on tw
 test("[fast] house model: letters run room by room, not in pick order", () => {
   const chest = (i: number, x: number, z: number) => ({ serial: 0x40000720 + i, name: "Wooden Chest", facet: 1, x, y: 7002, z });
   const m = buildHouseModel(hallHouse(), td, [chest(0, 6002, 7), chest(1, 6014, 7), chest(2, 6014, 11)]);
-  const west = m.rooms.find((r) => r.name === "West room")!;
-  assert.deepEqual(m.stacks.map((s) => [s.room === west.id, s.letter]), [[true, "A"], [false, "B"]]);
-  assert.deepEqual(m.spots.map((s) => s.room), [west.id, m.rooms.find((r) => r.name === "East room")!.id]);
+  assert.deepEqual(m.stacks.map((s) => [s.x < 6007, s.letter]), [[true, "A"], [false, "B"]]);
+  assert.deepEqual(m.spots.map((s) => s.x < 6007), [true, false]);
 });
 
 test("[fast] house model: a teleporter holding a chest is not a standing spot", () => {
@@ -338,7 +337,7 @@ test("[fast] house model: a teleporter holding a chest is not a standing spot", 
 test("[fast] house model: the model does not depend on the order of tiles, items or containers", () => {
   let seed = 7;
   const shuffle = <T,>(xs: T[]): T[] => { const r = [...xs]; for (let i = r.length - 1; i > 0; i--) { seed = (seed * 1103515245 + 12345) % 2147483648; const j = seed % (i + 1); [r[i], r[j]] = [r[j]!, r[i]!]; } return r; };
-  const pick = (m: HouseModel) => ({ cells: m.cells, rooms: m.rooms, furniture: m.furniture, spots: m.spots, stacks: m.stacks, codes: m.codes, unopened: m.unopened, unopenedNames: m.unopenedNames });
+  const pick = (m: HouseModel) => ({ cells: m.cells, furniture: m.furniture, spots: m.spots, stacks: m.stacks, codes: m.codes, unopened: m.unopened, unopenedNames: m.unopenedNames });
   const { house: castle, chests } = castleHouse();
   for (const [house, cs] of [[castle, chests.map((c, i) => i % 7 ? c : { ...c, opened: false })], [courtyardHouse(), [{ serial: 0x40000500, name: "Wooden Chest", facet: 1, x: 1003, y: 2003, z: 13 }]], [foundationHouse(), []]] as const) {
     const want = pick(buildHouseModel(house, td, [...cs]));
@@ -355,8 +354,7 @@ test("[fast] house model: an open door standing on the wall beside its gap marks
   assert.deepEqual([cell(m, 0, 6007, 7002)!.kind, cell(m, 0, 6007, 7002)!.doorway], ["wall", false]);
   assert.deepEqual([cell(m, 0, 6012, 7004)!.kind, cell(m, 0, 6012, 7004)!.doorway], ["wall", false]);
   assert.equal(cell(m, 0, 6007, 7003)!.doorway, true);
-  assert.deepEqual(m.rooms.map((r) => [r.name, r.tiles]), [["West room", 36], ["East room", 36], ["Hallway", 4]], "the gaps stay out of the hallway, as with a closed door");
-  assert.deepEqual([cell(m, 0, 6007, 7003)!.room, cell(m, 0, 6012, 7003)!.room], [null, null]);
+  assert.equal(cell(m, 0, 6012, 7003)!.doorway, true, "both gaps, as with a closed door");
   assert.deepEqual(m.furniture.map((f) => [f.x, f.y]), [[6007, 7002], [6012, 7004]], "the door is drawn where it stands");
 });
 

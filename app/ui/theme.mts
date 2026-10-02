@@ -32,6 +32,7 @@ function paint(): void {
   root.dataset.theme = resolveTheme(current.theme);
   root.dataset.mode = resolveMode(current.appearance, !!media?.matches);
   root.dataset.appearance = current.appearance;
+  document.dispatchEvent(new Event("themechange"));   // views that measure text or colours (the House map's pills) fit again
 }
 
 // Called once at module load of app.mts (before any data arrives, so the first paint is already in the

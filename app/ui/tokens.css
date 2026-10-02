@@ -120,6 +120,7 @@
   --color-map-chest: #9aa3ad; --color-map-chest-empty: #ece9e2; --color-map-unopened: #f6f4ef;
   --color-map-free-empty: #9ad3a9; --color-map-free-half: #4f9a5c; --color-map-free-filling: #d29a1e; --color-map-free-full: #c2483d; --color-map-free-unknown: #b9b4a8;
   --color-map-marker: #e5382b; --color-map-marker-other: #ffd23f; --color-map-marker-edge: #ffffff; --color-map-marker-ink: #1b1b1b;  /* on the game's own world map, the same in both modes */
+  --color-area-1: #7c4dff; --color-area-2: #f07c1a; --color-area-3: #00a693; --color-area-4: #d6339b; --color-area-5: #2563eb; --color-area-6: #b5b800; --color-area-7: #2e9e3a; --color-area-8: #b3261e;  /* the player's drawn areas on the House map (issue #10) */
 
   /* type faces */
   --font-body: "IBM Plex Sans", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
@@ -135,6 +136,7 @@
   /* elevation */
   --shadow-1: none;
   --shadow-2: 0 4px 16px rgb(15 21 22 / 0.12);
+  --shadow-chip: 0 1px 2px rgb(15 21 22 / 0.18);   /* a small label on the map (the House map's area pills) */
   --shadow-3: 0 16px 48px rgb(15 21 22 / 0.20);
   --ring-focus: 0 0 0 2px var(--color-surface), 0 0 0 4px var(--color-focus);
   color-scheme: light;
@@ -182,7 +184,9 @@
   --color-map-chest: #8e98a2; --color-map-chest-empty: #3b3e41; --color-map-unopened: #262b2d;
   --color-map-free-empty: #3f7a52; --color-map-free-half: #5fae6c; --color-map-free-filling: #d9a640; --color-map-free-full: #e0645a; --color-map-free-unknown: #6c6860;
   --color-map-marker: #e5382b; --color-map-marker-other: #ffd23f; --color-map-marker-edge: #ffffff; --color-map-marker-ink: #1b1b1b;  /* on the game's own world map, the same in both modes */
+  --color-area-1: #b39dff; --color-area-2: #ffa04d; --color-area-3: #3fd6c2; --color-area-4: #ff6ac8; --color-area-5: #5b8cff; --color-area-6: #d4f04a; --color-area-7: #5fd35a; --color-area-8: #e8484f;  /* the player's drawn areas on the House map (issue #10) */
   --shadow-2: 0 4px 16px rgb(0 0 0 / 0.45);
+  --shadow-chip: 0 1px 2px rgb(0 0 0 / 0.45);   /* a small label on the map (the House map's area pills) */
   --shadow-3: 0 16px 48px rgb(0 0 0 / 0.6);
   --ring-focus: 0 0 0 2px var(--color-surface), 0 0 0 4px var(--color-focus);
   color-scheme: dark;

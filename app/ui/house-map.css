@@ -1,13 +1,13 @@
-/* ui/house-map.css — the House map screen (ui/house-map.mts, issue #10): the top bar's controls, three panes (levels and rooms, the map, the details) and a chest's contents drawer, stacked into one column below 1100 px, and the map drawn as SVG in the --color-map-* tokens. Tokens only (docs/ui.md). */
+/* ui/house-map.css — the House map screen (ui/house-map.mts, issue #10): the top bar's controls, three panes (levels and their areas, the map, the details) and a chest's contents drawer, stacked into one column below 1100 px, and the map drawn as SVG in the --color-map-* tokens. Tokens only (docs/ui.md). */
 #map-house { flex: 0 1 auto; min-width: 120px; }
 .map-levels { display: flex; gap: var(--space-1); min-width: 0; overflow-x: auto; }
 
-#tab-map .map-page { max-width: none; display: grid; grid-template-columns: 240px minmax(0, 1fr) 340px; gap: var(--space-3); overflow: hidden; }
+#tab-map .map-page { max-width: none; display: grid; grid-template-columns: 280px minmax(0, 1fr) 340px; gap: var(--space-3); overflow: hidden; }
 #tab-map .map-page > :is(.msg, .map-empty, .panel) { grid-column: 1 / -1; align-self: start; }
 /* The contents drawer: a column of its own after the panel, opened by growing from no width (its content laid out at full width inside, so it slides in rather than reflowing). Between 1100 and 1799 px the levels pane folds away while it is open, its column shrinking the same way (the top bar's level pills still switch levels), and comes back when it closes. Below 1100 px everything stacks in one column. */
 .map-stage { transition: margin var(--duration-slow) var(--ease-standard); }
-.map-side { width: 240px; transition: width var(--duration-slow) var(--ease-standard), padding var(--duration-slow) var(--ease-standard), border-width var(--duration-slow) var(--ease-standard), visibility var(--duration-slow); }
-.map-side > * { min-width: calc(240px - 2 * var(--space-3) - 2 * var(--border-width-frame)); }
+.map-side { width: 280px; transition: width var(--duration-slow) var(--ease-standard), padding var(--duration-slow) var(--ease-standard), border-width var(--duration-slow) var(--ease-standard), visibility var(--duration-slow); }
+.map-side > * { min-width: calc(280px - 2 * var(--space-3) - 2 * var(--border-width-frame)); }
 #tab-map .map-page.has-drawer { grid-template-columns: auto minmax(0, 1fr) 340px auto; }
 .map-drawer { width: 400px; transition: width var(--duration-slow) var(--ease-standard); }
 .map-drawer.entering { width: 0; }
@@ -29,16 +29,35 @@
 .map-side, .map-panel { min-height: 0; overflow: auto; padding: var(--space-3); display: flex; flex-direction: column; gap: var(--space-3); }
 .map-level { display: flex; flex-direction: column; gap: var(--space-1); }
 .map-level-name { display: flex; align-items: baseline; justify-content: space-between; gap: var(--space-2); font-size: var(--text-md); line-height: var(--lh-md); }
-.map-rooms { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 2px; }
-.map-room { display: flex; flex-direction: column; align-items: stretch; width: 100%; padding: var(--space-1-5) var(--space-2); border: 0; border-radius: var(--radius-md); background: transparent; color: var(--color-text); text-align: left; cursor: pointer; }
-.map-room:hover { background: var(--color-row-hover); }
-.map-room[aria-pressed="true"] { box-shadow: inset 3px 0 0 var(--color-accent); font-weight: var(--weight-semibold); }
+/* A level's areas (issue #10): a row is the zoom button (colour, name, chest count) then ✎ and ⋯; the rest of the level is a quiet row with a dashed swatch; a new area's name field in a bordered box; + New area under them. */
+.map-areas { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--space-1); }
+.map-area-row { display: flex; align-items: center; gap: var(--space-1); min-width: 0; }
+.map-area, .map-area-rest { flex: 1 1 auto; min-width: 0; display: grid; grid-template-columns: 12px minmax(0, 1fr) auto; align-items: center; gap: var(--space-2); padding: var(--space-2) var(--space-2); border: 0; border-radius: var(--radius-md); background: transparent; color: var(--color-text); font: inherit; text-align: left; }
+.map-area { cursor: pointer; font-weight: var(--weight-medium); }
+.map-area:hover { background: var(--color-row-hover); }
+.map-area[aria-pressed="true"] { box-shadow: inset 3px 0 0 var(--color-accent); font-weight: var(--weight-semibold); }
+.map-area-rest { color: var(--color-text-muted); }
+.map-area-row > .btn { flex: none; }
+.map-area-row > .map-name-edit { flex: 1 1 auto; min-width: 0; }
+.map-area-row.editing > .map-swatch { margin-left: var(--space-2); }
+.map-swatch.rest { border-style: dashed; background: transparent; }
+.map-area-new { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; gap: var(--space-1-5); padding: var(--space-2); border: var(--border-width) solid var(--color-accent); border-radius: var(--radius-md); }
+.map-area-new-field { display: flex; align-items: center; gap: var(--space-2); }
+.map-area-new-field > .input { flex: 1 1 auto; min-width: 0; }
+.map-area-new-actions { display: flex; justify-content: flex-end; gap: var(--space-1-5); }
+.map-new-area { align-self: flex-start; }
+.map-colours { display: grid; grid-template-columns: repeat(4, 28px); gap: var(--space-1-5); }
+.map-colour { width: 28px; height: 28px; padding: 0; border: var(--border-width) solid var(--color-border-strong); border-radius: var(--radius-md); background: var(--area); cursor: pointer; }
+.map-colour[aria-pressed="true"] { box-shadow: 0 0 0 2px var(--color-surface), 0 0 0 4px var(--color-focus); }
+.map-colour:focus-visible { outline: 2px solid var(--color-focus); outline-offset: 2px; }
 
 .map-stage { position: relative; display: flex; flex-direction: column; min-height: 0; overflow: hidden; }
 .map-stage > .msg { margin: var(--space-2) var(--space-2) 0; }
 .map-crumbs { padding: var(--space-1) var(--space-2); }
 .map-canvas { position: relative; flex: 1 1 auto; min-height: 0; background: var(--color-surface-sunken); }
 .map-svg { display: block; width: 100%; height: 100%; cursor: grab; touch-action: none; }
+.map-svg.drawing { cursor: crosshair; }
+.map-svg.drawing:focus-visible { outline: 2px solid var(--color-focus); outline-offset: -2px; }
 
 /* the drawing: floors by material family, faint walls of the level below, dashed reach squares, cut walls and solids with shaded sides */
 .map-floor { fill: var(--color-map-neutral); stroke: var(--color-map-grid); stroke-width: 0.5; }
@@ -91,6 +110,23 @@
 .map-chest > polygon { stroke: var(--color-border-strong); stroke-width: 1px; vector-effect: non-scaling-stroke; }
 .map-chest.unopened > polygon { stroke-dasharray: 3 2; }
 .map-stack.sel .map-chest > polygon, .map-stack:focus-visible .map-chest > polygon { stroke: var(--color-focus); stroke-width: 2px; }
+/* the player's areas (issue #10): a tint over their floor tiles in their colour at 20%, a 1.5 px line along the union's outer edges; the one under the pointer, focused or zoomed to 12% stronger with a line 1.5 px thicker. The area being drawn is stronger and dashed, the keyboard's cursor a tile outline; the draft takes no pointer. */
+.map-area-shape > .map-area-tile { fill: color-mix(in srgb, var(--area) 20%, transparent); }
+.map-area-shape:is(.sel, .hot) > .map-area-tile { fill: color-mix(in srgb, var(--area) 32%, transparent); }
+.map-area-shape.draft > .map-area-tile { fill: color-mix(in srgb, var(--area) 50%, transparent); }
+.map-area-edge { fill: none; stroke: var(--area); stroke-width: 1.5px; stroke-linejoin: round; vector-effect: non-scaling-stroke; }
+.map-area-shape:is(.sel, .hot) > .map-area-edge { stroke-width: 3px; }
+.map-area-shape.draft > .map-area-edge { stroke-dasharray: 5 3; }
+.map-draft { pointer-events: none; }
+/* The area name pills: an HTML layer over the map, a fixed 12 px whatever the zoom, one per piece just above its front corner. The pill is a 1 px line in the area's colour on that colour mixed 22% into the surface; a name too long for its piece is cut with … or becomes a 10 px dot. The area's own pill shows its whole name, stronger, with a halo, over the others. The layer never takes the pointer. */
+.map-pills { position: absolute; inset: 0; z-index: 0; overflow: hidden; pointer-events: none; }
+.map-pill { position: absolute; white-space: nowrap; padding: 2px 7px; border: var(--border-width) solid var(--area); border-radius: var(--radius-full); background: color-mix(in srgb, var(--area) 22%, var(--color-surface)); color: var(--color-text); box-shadow: var(--shadow-chip); font-family: var(--font-body); font-size: 12px; line-height: 1.25; font-weight: var(--weight-medium); pointer-events: none; }
+.map-pill.dot { width: 10px; height: 10px; padding: 0; border: 1.5px solid var(--color-surface); background: var(--area); }
+.map-pill.hot { z-index: 1; background: color-mix(in srgb, var(--area) 38%, var(--color-surface)); box-shadow: 0 0 0 2px color-mix(in srgb, var(--area) 45%, transparent), var(--shadow-chip); }
+.map-draw-cursor { fill: none; stroke: var(--color-focus); stroke-width: 2px; vector-effect: non-scaling-stroke; }
+.map-draw-hint { position: absolute; left: var(--space-2); right: calc(var(--space-2) + 48px); top: var(--space-2); margin-inline: auto; width: fit-content; z-index: var(--z-sticky); display: flex; align-items: center; gap: var(--space-2); padding: var(--space-1-5) var(--space-3); background: var(--color-surface-raised); color: var(--color-text); border: var(--border-width) solid var(--color-accent); border-radius: var(--radius-md); box-shadow: var(--shadow-2); font-size: var(--text-sm); line-height: var(--lh-sm); }
+.map-draw-dot { flex: none; width: 8px; height: 8px; border-radius: 50%; background: var(--color-accent); }
+.map-draw-size { position: absolute; z-index: var(--z-sticky); padding: 2px var(--space-2); border-radius: var(--radius-full); background: var(--color-accent); color: var(--color-on-accent); font-size: var(--text-sm); line-height: var(--lh-sm); font-weight: var(--weight-semibold); white-space: nowrap; pointer-events: none; }
 .map-crumb-list { display: flex; align-items: center; flex-wrap: wrap; gap: var(--space-1); list-style: none; margin: 0; padding: 0; }
 .map-crumb-list > li + li::before { content: "›"; margin-right: var(--space-1); color: var(--color-text-muted); }
 
@@ -166,6 +202,8 @@ a.map-where-mark:focus-visible .map-where-ring-in { stroke: var(--color-map-mark
 .map-drawer-fill > .meter { flex: 1 1 auto; }
 .map-drawer-tabs > .seg { display: flex; }
 .map-drawer-tabs .seg > button { flex: 1 1 0; min-width: 0; }
+.map-drawer-pick { display: flex; align-items: center; gap: var(--space-2); }
+.map-drawer-pick > .select { flex: 1 1 auto; min-width: 0; }
 .map-drawer-tools { display: flex; gap: var(--space-2); }
 .map-drawer-tools > .input { flex: 1 1 auto; min-width: 0; }
 .map-drawer-body { flex: 1 1 auto; min-height: 0; overflow: auto; }
@@ -185,4 +223,4 @@ a.map-where-mark:focus-visible .map-where-ring-in { stroke: var(--color-map-mark
 .map-item-name { flex: 1 1 auto; font-weight: var(--weight-medium); }
 .map-item-l1 > .tag, .map-item-l2 > .rar-tier { flex: none; }
 .map-item-props { flex: 1 1 auto; }
-.map-item-res { flex: none; margin-left: auto; display: flex; gap: var(--space-1-5); font-family: var(--font-mono); font-size: var(--text-xs); line-height: var(--lh-xs); }
+.map-item-res { flex: none; margin-left: auto; display: flex; gap: var(--space-1-5); font-family: var(--font-body); font-variant-numeric: tabular-nums; font-size: var(--text-xs); line-height: var(--lh-xs); }

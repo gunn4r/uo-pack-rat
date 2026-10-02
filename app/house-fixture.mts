@@ -152,6 +152,10 @@ export function roofHouse(): HouseSource {
   return source(walled(rect(4001, 4001, 4006, 4006), [], { graphic: G.roof, z: 27 }).map((t): HouseTile => t[0] === G.roof ? [t[0], t[1], t[2], 27 + 3 * (t[2] - 4001), t[4]] : t));
 }
 
+// Two 6 x 6 rooms side by side with one wall between them (x 7007) and no door: chests either side of it are a tile apart.
+export function wallPairHouse(): HouseSource {
+  return source(walled([...rect(7001, 7001, 7006, 7006), ...rect(7008, 7001, 7013, 7006)], [], { graphic: G.roof, z: 27 }));
+}
 // Two 6 x 6 rooms at (6001..6006, 7001..7006) and (6013..6018, 7001..7006) joined along y 7003 by a 1-wide corridor x 6008..6011, with doors at (6007, 7003) and (6012, 7003); all under a roof at z 27.
 export function hallHouse(): HouseSource {
   const doors: Array<[number, number]> = [[6007, 7003], [6012, 7003]];

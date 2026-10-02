@@ -1,11 +1,11 @@
-// ui-map.test.mts — app/ui/house-map-model.mts, the House map's pure rules (issue #10): the projection, tile and box polygons, the painter's order, a level's bounds and fit, the joins of a stack with the inventory and the Organize labels, the colour modes, the cut-away, callouts, totals, the house picker, keyboard moves, the plain grid, the scene of a level (castle speed included), and (issue #164) where a house is: its coordinates, sextant and copy line, the facet overview's crop, its markers and why it may be missing. Tags: [fast]. Run: node --test app/ui-map.test.mts
+// ui-map.test.mts — app/ui/house-map-model.mts, the House map's pure rules (issue #10): the projection, tile and box polygons, the painter's order, a level's bounds and fit, the joins of a stack with the inventory and the Organize labels, the colour modes, the cut-away, callouts, totals, the house picker, keyboard moves, the plain grid, the scene of a level (castle speed included), the drawn areas (issue #10: which area holds a chest, the screen-to-tile inverse, rectangles, outlines, label spots, ids, colours, the drawing cursor, carry-over), and (issue #164) where a house is: its centre tile and copy line, the facet overview's crop, its markers and why it may be missing. Tags: [fast]. Run: node --test app/ui-map.test.mts
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { buildHouseModel } from "./house-model.mts";
 import { fixtureTileData, vaultHouse, roofHouse, courtyardHouse, castleHouse, foundationHouse, stairHouse, G } from "./house-fixture.mts";
 import type { Container, Item } from "./vault-lib.mts";
-import type { HouseModel, Stack } from "./ui/api-types.mts";
-import { project, tilePolygon, boxFaces, pts, paintOrder, boundsOf, fit, zoomAt, vbText, anchorOf, W, chestViews, colourOf, legendOf, chestLabel, cutAway, calloutLines, houseTotals, pickHouse, houseLabel, houseName, carryOver, PLAIN, chestCount, roomCounts, nearestInDirection, tiledataNote, stackWhere, plainGrid, sceneOf, drawnZs, CHEST_H, whereOf, whereTitle, cropAround, facetMapUrl, markersOf, facetMapNote, parseRegion, markerRadii, contentsOf, contentsSummary, filterContents, drawerChest, drawerMeta, slotsText, type ChestView, type ContentsNode } from "./ui/house-map-model.mts";
+import type { HouseArea, HouseModel, Stack } from "./ui/api-types.mts";
+import { project, tilePolygon, boxFaces, pts, paintOrder, boundsOf, fit, zoomAt, vbText, anchorOf, W, chestViews, colourOf, legendOf, chestLabel, cutAway, calloutLines, houseTotals, pickHouse, houseLabel, houseName, carryOver, carryOverText, PLAIN, chestCount, nearestInDirection, tiledataNote, stackWhere, plainGrid, sceneOf, drawnZs, CHEST_H, whereOf, whereTitle, FACET_SIZE, cropAround, facetMapUrl, markersOf, facetMapNote, parseRegion, markerRadii, contentsOf, contentsSummary, filterContents, drawerChest, drawerMeta, slotsText, drawerPicker, DRAWER_TABS_MAX, piecesOf, frontCorner, fitLabel, pillsOf, placePill, LABEL_FIT, areaOfStack, levelAreas, restName, unproject, tileAt, rectOf, sizeText, unionTiles, coveredCells, outlineOf, nextAreaId, nextAreaColor, moveCursor, clampTile, liveAreas, withOrphans, redrawFailed, AREA_COLORS, AREA_COLOR_NAMES, type ChestView, type ContentsNode } from "./ui/house-map-model.mts";
 
 const td = fixtureTileData();
 const has = (cls: string, c: string): boolean => cls.split(" ").includes(c);
@@ -120,8 +120,10 @@ test("[fast] house map: a callout lists a stack's chests top first with their fi
   assert.equal(chestCount(m), 27);
   assert.equal(m.levels.reduce((a, l) => a + chestCount(m, l.index), 0), 27, "a level's count; the levels add up to the house");
   assert.equal(chestCount(m, m.levels.length), 0, "a level with no stacks");
-  assert.equal([...roomCounts(m).values()].reduce((a, n) => a + n, 0), 27);
-  assert.match(stackWhere(m, s), new RegExp(`^Main room · [NESW]+ of standing spot 1 · 4 chests, top first$`));
+  assert.match(stackWhere(m, s), new RegExp(`^Whole floor · [NESW]+ of standing spot 1 · 4 chests, top first$`));
+  const area: HouseArea = { id: "a1", name: "Reagents", level: 0, color: "area-1", rects: [{ x0: s.x, y0: s.y, x1: s.x, y1: s.y }] };
+  assert.match(stackWhere(m, s, [area]), /^Reagents · /);
+  assert.match(stackWhere(m, m.stacks.find((x) => x !== s)!, [area]), /^Everything else · /);
 });
 
 test("[fast] house map: the picker takes the deep-linked house, else the last one shown, else the one with the most chests; the plain grid only when nothing else", () => {
@@ -160,7 +162,9 @@ test("[fast] house map: ground chests outside every drawn house group by facet a
   assert.equal(g.id, PLAIN);
   assert.equal(chestCount(g), 5);
   assert.ok(!g.stacks.some((s) => s.serials.includes(housed)));
-  assert.deepEqual(g.rooms.map((r) => r.name), ["Trammel, group 1", "Trammel, group 2", "Malas, group 3"]);
+  assert.deepEqual(g.areas.map((r) => r.name), ["Trammel, group 1", "Trammel, group 2", "Malas, group 3"]);
+  assert.ok(g.stacks.every((s) => areaOfStack(g.areas, s)), "each group is an area holding its own chests");
+  assert.deepEqual(g.areas.map((a) => levelAreas(g, g.areas, 0).rows.find((r) => r.area === a)!.chests), [3, 1, 1]);
   assert.deepEqual(g.stacks.find((s) => s.serials.includes(0x40060002))!.serials, [0x40060002, 0x40060003], "two chests on one tile are one stack, bottom first");
   assert.equal(new Set(g.stacks.map((s) => `${s.x}:${s.y}`)).size, g.stacks.length, "groups never overlap on the grid");
   assert.equal(new Set(g.stacks.map((s) => s.letter)).size, g.stacks.length);
@@ -178,7 +182,7 @@ test("[fast] house map: the plain grid leaves out a drawn house's chests by seri
 test("[fast] house map: a chain of ground chests floors only the tiles around each chest", () => {
   const rows = Array.from({ length: 40 }, (_, i) => ({ serial: 0x40070000 + i, x: 1000 + 8 * i, y: 1000 + 8 * i, z: 0, facet: 1 }));
   const g = plainGrid(invOf(rows), [])!;
-  assert.equal(g.rooms.length, 1, "8 apart is one group");
+  assert.equal(g.areas.length, 1, "8 apart is one group");
   assert.ok(g.cells.length <= 9 * rows.length, `${g.cells.length} cells`);
   assert.equal(new Set(g.cells.map((c) => `${c.x}:${c.y}`)).size, g.cells.length, "no tile twice");
   assert.ok(g.stacks.every((s) => g.cells.some((c) => c.x === s.x && c.y === s.y)), "every chest stands on a floor tile");
@@ -187,7 +191,7 @@ test("[fast] house map: a chain of ground chests floors only the tiles around ea
 
 test("[fast] house map: each plain-grid group stands on its own floor, its chests at their heights above it", () => {
   const g = plainGrid(invOf([{ serial: 1, x: 100, y: 100, z: 0, facet: 1 }, { serial: 2, x: 500, y: 500, z: 40, facet: 1 }, { serial: 3, x: 500, y: 500, z: 46, facet: 1 }]), [])!;
-  assert.equal(g.rooms.length, 2);
+  assert.equal(g.areas.length, 2);
   assert.ok(g.cells.every((c) => c.z === g.levels[0]!.floorZ), "every group's floor is drawn at the level's floor");
   assert.deepEqual(g.stacks.map((s) => s.zs), [[0], [0, 6]], "the high group's chests sit on its floor, not 40 above the low one");
 });
@@ -197,7 +201,7 @@ test("[fast] house map: the plain grid is the same whatever order the inventory 
   const fwd = plainGrid(invOf(rows), [])!, rev = plainGrid(invOf([...rows].reverse()), [])!;
   assert.deepEqual(rev.stacks, fwd.stacks);
   assert.deepEqual(rev.cells, fwd.cells);
-  assert.deepEqual(rev.rooms, fwd.rooms);
+  assert.deepEqual(rev.areas, fwd.areas);
   assert.deepEqual(rev.codes, fwd.codes);
 });
 
@@ -234,9 +238,13 @@ test("[fast] house map: the courtyard draws its walls, window, foundation lip, s
   for (const want of ["map-wall w-stone", "map-wall window w-neutral", "map-lip w-brick", "map-block", "map-door"]) assert.ok(cls.some((c) => want.split(" ").every((w) => has(c, w))), want);
   assert.ok(sc.pieces.some((p) => p.kind === "solid" && has(p.cls, "map-stair") && p.steps?.length === 2), "the front steps rise to the rim");
   const cell = m.cells.find((c) => c.level === 0 && c.x === 1012 && c.y === 2013)!;
-  assert.equal(m.rooms.find((r) => r.id === cell.room)?.kind, "yard", "(1012, 2013) is in the courtyard");
-  const at = pts(tilePolygon(cell.x - m.x0, cell.y - m.y0, cell.z - m.levels[0]!.floorZ, "angle"));
-  assert.equal(sc.floors.find((f) => f.pts === at)?.cls, "map-floor f-grass yard");
+  assert.equal(cell.indoor, false, "(1012, 2013) is in the courtyard, under no roof or floor");
+  const floorAt = (c: typeof cell) => sc.floors.find((f) => f.pts === pts(tilePolygon(c.x - m.x0, c.y - m.y0, c.z - m.levels[0]!.floorZ, "angle")))?.cls;
+  assert.equal(floorAt(cell), "map-floor f-grass yard", "the yard tint comes from the cell being uncovered");
+  const inside = m.cells.find((c) => c.level === 0 && c.x === 1002 && c.y === 2002)!;
+  assert.equal(inside.indoor, true);
+  assert.equal(has(floorAt(inside)!, "yard"), false, "covered floor is not yard");
+  assert.ok(sceneOf(m, 1, "angle").floors.every((f) => !has(f.cls, "yard")), "an upper level is never yard");
 });
 
 test("[fast] house map: a stair rises as a block to meet the higher tile beside it, its steps running across the rise; a stair with nothing higher beside it stays flat", () => {
@@ -425,28 +433,207 @@ test("[fast] house map: the picker and the headings use the player's name when t
 test("[fast] house map: a name kept for a house no longer listed is offered to an unnamed house whose footprint overlaps it on the same facet", () => {
   const m = vault();   // facet 1, x 3000-3006, y 1000-1006
   const old = { name: "Old vault", bounds: { x0: 3004, y0: 1004, x1: 3010, y1: 1010, facet: 1 } };
-  assert.deepEqual(carryOver(m, [m.id], { "1-3004-1004": old }), { id: "1-3004-1004", name: "Old vault" });
+  assert.deepEqual(carryOver(m, [m.id], { "1-3004-1004": old }), { id: "1-3004-1004", name: "Old vault", areas: [] });
   assert.equal(carryOver({ ...m, name: "Vault" }, [m.id], { "1-3004-1004": old }), null, "a named house is offered nothing");
   assert.equal(carryOver(m, [m.id, "1-3004-1004"], { "1-3004-1004": old }), null, "the named house is still listed");
   assert.equal(carryOver(m, [m.id], { "3-3004-1004": { ...old, bounds: { ...old.bounds, facet: 3 } } }), null, "another facet");
   assert.equal(carryOver(m, [m.id], { "1-3007-1004": { ...old, bounds: { ...old.bounds, x0: 3007 } } }), null, "no overlap");
   assert.equal(carryOver(m, [m.id], { "1-3004-1004": { name: "No bounds" } }), null, "a name saved without its footprint");
   assert.equal(carryOver({ ...m, id: PLAIN }, [], { "1-3004-1004": old }), null, "never the plain grid");
+  assert.deepEqual(carryOverText({ name: "Old vault", areas: [] }), { text: 'Use the name "Old vault" from the earlier house here?', action: "Use name" });
+});
+
+test("[fast] house areas: the carry-over offer brings the earlier house's areas, the rectangles still on this house only, and says so", () => {
+  const m = vault();   // facet 1, x 3000-3006, y 1000-1006
+  const a = (id: string, rects: HouseArea["rects"]): HouseArea => ({ id, name: `Area ${id}`, level: 0, color: "area-2", rects });
+  const near = a("a1", [{ x0: 3001, y0: 1001, x1: 3003, y1: 1002 }, { x0: 3020, y0: 1001, x1: 3021, y1: 1002 }]), far = a("a2", [{ x0: 3100, y0: 1100, x1: 3101, y1: 1101 }]);
+  const old = { name: "Old vault", bounds: { x0: 3004, y0: 1004, x1: 3010, y1: 1010, facet: 1 }, areas: [near, far] };
+  assert.deepEqual(carryOver(m, [m.id], { "1-3004-1004": old }), { id: "1-3004-1004", name: "Old vault", areas: [{ ...near, rects: [near.rects[0]!] }] });
+  assert.deepEqual(carryOverText({ name: "Old vault", areas: [near] }), { text: 'Use the name and areas of "Old vault" from the earlier house here?', action: "Use name and areas" });
+  const unnamed = { name: "", bounds: old.bounds, areas: [near] };
+  assert.deepEqual(carryOver(m, [m.id], { "1-3004-1004": unnamed })?.areas.map((x) => x.id), ["a1"], "an earlier house with areas and no name");
+  assert.deepEqual(carryOverText({ name: "", areas: [near] }), { text: "Use the areas from the earlier house here?", action: "Use areas" });
+  assert.equal(carryOver(m, [m.id], { "1-3004-1004": old, [m.id]: { name: "", bounds: old.bounds, areas: [far] } }), null, "a house with areas of its own is offered nothing");
+  assert.equal(carryOver(m, [m.id], { "1-3004-1004": { ...unnamed, areas: [far] } }), null, "nothing left to carry");
+  const upstairs = { ...near, id: "a3", level: 2 };   // the vault has two levels
+  assert.deepEqual(carryOver(m, [m.id], { "1-3004-1004": { ...old, areas: [near, upstairs] } })?.areas.map((x) => x.id), ["a1"], "an area on a level this house lacks stays behind");
+  assert.notEqual(carryOver(m, [m.id], { "1-3004-1004": old, [m.id]: { name: "", bounds: old.bounds, areas: [upstairs] } }), null, "an orphan-level area of its own is no area");
+});
+
+test("[fast] house areas: an area on a level the house no longer has is left out of the list (and so of the counts and the cap)", () => {
+  const a = (id: string, level: number): HouseArea => ({ id, name: id, level, color: "area-1", rects: [{ x0: 0, y0: 0, x1: 0, y1: 0 }] });
+  assert.deepEqual(liveAreas([a("g", 0), a("u", 1), a("gone", 2)], 2).map((x) => x.id), ["g", "u"]);
+  assert.deepEqual(liveAreas(undefined, 2), []);
+  // A save keeps the hidden ones on disk: the edited live list, then the orphans as they were.
+  const saved = [a("g", 0), a("gone", 2), a("u", 1)];
+  assert.deepEqual(withOrphans(liveAreas(saved, 2).filter((x) => x.id !== "g"), saved, 2).map((x) => x.id), ["u", "gone"]);
+  assert.deepEqual(withOrphans([], undefined, 2), []);
+  assert.deepEqual(liveAreas(withOrphans([a("u", 1)], saved, 2), 3).map((x) => x.id), ["u", "gone"], "a storey built again shows its areas again");
+  assert.equal(redrawFailed("Disk full", false), "Could not save the new shape: Disk full.");
+  assert.equal(redrawFailed("Disk full.", true), "Could not save the new shape: Disk full. Your drawing is kept: press Enter to try again, or Esc to cancel.");
+  assert.deepEqual(Object.keys(AREA_COLOR_NAMES), [...AREA_COLORS], "a name for every colour token");
+  assert.equal(new Set(Object.values(AREA_COLOR_NAMES)).size, AREA_COLORS.length);
+});
+
+// ---------------------------------------------------------------- areas (issue #10)
+const areaOf = (id: string, level: number, rects: HouseArea["rects"], name = `Area ${id}`): HouseArea => ({ id, name, level, color: "area-1", rects });
+
+test("[fast] house areas: a stack belongs to the first area in list order holding its tile on its level; the rest is Everything else, or the Whole floor before the level has areas", () => {
+  const m = vault();   // 24 stacks of 5 on level 0, x 3001-3005, y 1001-1005 (the centre a teleporter)
+  assert.deepEqual(levelAreas(m, [], 0), { rows: [], rest: { name: "Whole floor", chests: 120 } });
+  const north = areaOf("n", 0, [{ x0: 3001, y0: 1001, x1: 3005, y1: 1001 }]), corner = areaOf("c", 0, [{ x0: 3001, y0: 1001, x1: 3001, y1: 1005 }]);
+  const upstairs = areaOf("u", 1, [{ x0: 3000, y0: 1000, x1: 3006, y1: 1006 }]);
+  const areas = [north, corner, upstairs], at = (x: number, y: number) => m.stacks.find((s) => s.x === x && s.y === y)!;
+  assert.equal(areaOfStack(areas, at(3001, 1001)), north, "on both: the first in list order wins");
+  assert.equal(areaOfStack([corner, north], at(3001, 1001)), corner);
+  assert.equal(areaOfStack(areas, at(3001, 1003)), corner);
+  assert.equal(areaOfStack(areas, at(3003, 1003 + 1)), null, "an area on another level never holds a stack");
+  const l0 = levelAreas(m, areas, 0);
+  assert.deepEqual(l0.rows.map((r) => [r.area.id, r.chests]), [["n", 25], ["c", 20]]);
+  assert.deepEqual(l0.rest, { name: "Everything else", chests: 75 });
+  assert.equal(l0.rows.reduce((a, r) => a + r.chests, l0.rest.chests), chestCount(m, 0), "the counts add up to the level");
+  assert.deepEqual(levelAreas(m, areas, 1), { rows: [{ area: upstairs, chests: 0 }], rest: { name: "Everything else", chests: 0 } });
+  assert.equal(restName([north], 1), "Whole floor", "a level with no areas of its own");
+});
+
+test("[fast] house areas: a point on screen maps back to the tile under it at the level's floor, the inverse of the projection", () => {
+  for (const view of ["angle", "top"] as const) for (const [x, y, z] of [[0, 0, 0], [3.25, 7.5, 0], [12.9, 0.1, 4], [-2, 5, 10]] as const) {
+    const back = unproject(project(x, y, z, view), view === "top" ? 0 : z, view);
+    assert.ok(Math.abs(back[0] - x) < 1e-9 && Math.abs(back[1] - y) < 1e-9, `${view} ${x},${y},${z} → ${back}`);
+  }
+  const m = vault();
+  for (const [tx, ty] of [[3000, 1000], [3004, 1002], [3006, 1006]] as const) for (const view of ["angle", "top"] as const) {
+    const centre = project(tx - m.x0 + 0.5, ty - m.y0 + 0.5, 0, view), corner = project(tx - m.x0 + 0.02, ty - m.y0 + 0.02, 0, view);
+    assert.deepEqual(tileAt(m, centre, view), [tx, ty], `${view} centre`);
+    assert.deepEqual(tileAt(m, corner, view), [tx, ty], `${view} near the north corner`);
+  }
+});
+
+test("[fast] house areas: a dragged rectangle, its size, and the floor tiles it tints", () => {
+  assert.deepEqual(rectOf([5, 9], [2, 4]), { x0: 2, y0: 4, x1: 5, y1: 9 });
+  assert.equal(sizeText(rectOf([0, 0], [5, 5])), "6 × 6 = 36 tiles");
+  assert.equal(sizeText(rectOf([3, 3], [3, 3])), "1 × 1 = 1 tile");
+  const m = vault();   // floor x 3001-3005, y 1001-1005 on level 0; walls around
+  const r = rectOf([2998, 999], [3002, 1002]);
+  assert.deepEqual(coveredCells(m, 0, [r]).map((c) => [c.x, c.y]), [[3001, 1001], [3002, 1001], [3001, 1002], [3002, 1002]], "only the floor tiles, not walls or tiles off the house");
+  assert.deepEqual(unionTiles([rectOf([0, 0], [1, 1]), rectOf([1, 1], [2, 1])]), [[0, 0], [1, 0], [0, 1], [1, 1], [2, 1]], "overlapping tiles once");
+  assert.deepEqual(clampTile(m, [2000, 1003]), [3000 - 8, 1003]);
+});
+
+test("[fast] house areas: the outline of a union of rectangles runs along its outer edges only, joined in straight runs", () => {
+  assert.deepEqual(outlineOf([rectOf([0, 0], [1, 0])]), [[[0, 0], [2, 0]], [[0, 0], [0, 1]], [[2, 0], [2, 1]], [[0, 1], [2, 1]]], "a 2 × 1 rectangle is 4 edges, not 6");
+  // An L: a 2 × 2 square and the tile east of its south-east corner, overlapping it.
+  const l = outlineOf([rectOf([0, 0], [1, 1]), rectOf([1, 1], [2, 1])]);
+  assert.equal(l.length, 6, JSON.stringify(l));
+  assert.ok(l.some(([a, b]) => a[0] === 0 && a[1] === 2 && b[0] === 3 && b[1] === 2), "the south edge runs on under both");
+  assert.ok(!l.some(([a, b]) => a[0] === 1 && b[0] === 2 && a[1] === 1 && b[1] === 1), "no edge between two tiles of the union");
+  const ring = outlineOf([rectOf([0, 0], [2, 0]), rectOf([0, 2], [2, 2]), rectOf([0, 0], [0, 2]), rectOf([2, 0], [2, 2])]);
+  assert.equal(ring.length, 8, "a ring has an outer and an inner outline");
+  assert.deepEqual(outlineOf([]), []);
+});
+
+test("[fast] house areas: rectangles that touch (4-neighbour) are one piece; a piece's front corner is its tile with the largest x + y", () => {
+  assert.deepEqual(piecesOf([rectOf([0, 0], [1, 1]), rectOf([2, 1], [3, 1])]).map((p) => p.length), [6], "touching side by side: one piece");
+  assert.deepEqual(piecesOf([rectOf([0, 0], [1, 1]), rectOf([2, 2], [3, 3])]).map((p) => p.length), [4, 4], "only a corner shared: two pieces");
+  assert.deepEqual(piecesOf([rectOf([10, 10], [10, 10]), rectOf([0, 0], [1, 0])]).map((p) => p[0]), [[0, 0], [10, 10]], "pieces in row order, whatever the rectangles' order");
+  assert.deepEqual(piecesOf([]), []);
+  assert.deepEqual(frontCorner([[0, 0], [1, 0], [0, 1], [1, 1]]), [1, 1]);
+  assert.deepEqual(frontCorner([[0, 2], [1, 1], [2, 0], [0, 0]]), [1, 1], "a tie: the middle one");
+});
+
+test("[fast] house areas: a label fits about 92% of its piece's width: the whole name, else cut short with …, else a dot when fewer than 3 characters fit", () => {
+  const measure = (t: string): number => t.length * 7;   // 7 px a character, the pill's padding and border 16 more
+  assert.equal(fitLabel("Loot Corner", 200, measure), "Loot Corner");
+  assert.equal(fitLabel("Loot Corner", 7 * 11 + 16, measure), "Loot Corner", "exactly fits");
+  assert.equal(fitLabel("Loot Corner", 7 * 6 + 16, measure), "Loot…", "cut short: 5 characters and the ellipsis, the trailing space trimmed");
+  assert.equal(fitLabel("Loot Corner", 7 * 4 + 16, measure), "Loo…");
+  assert.equal(fitLabel("Loot Corner", 7 * 3 + 16, measure), null, "fewer than 3 characters: the dot");
+  assert.equal(fitLabel("Ab", 200, measure), "Ab", "a short name that fits whole is never a dot");
+  assert.equal(LABEL_FIT, 0.92);
+});
+
+test("[fast] house areas: a pill is centred over its anchor and kept 8 px inside the pane, clear of the zoom buttons; an anchor off the pane hides it", () => {
+  const pane = { w: 600, h: 400 }, size = { w: 80, h: 20 }, zoom = { x0: 560, y0: 8, x1: 592, y1: 140 };
+  assert.deepEqual(placePill({ x: 300, y: 200 }, size, pane, 7, false, zoom), { left: 260, top: 187, hidden: false }, "centred, its foot 7 px below the anchor");
+  assert.deepEqual(placePill({ x: 300, y: 200 }, { w: 10, h: 10 }, pane, 7, true, zoom), { left: 295, top: 195, hidden: false }, "a dot is centred on it");
+  assert.deepEqual(placePill({ x: 10, y: 200 }, size, pane, 7, false, null), { left: 8, top: 187, hidden: false }, "the left edge");
+  assert.deepEqual(placePill({ x: 590, y: 300 }, size, pane, 7, false, zoom), { left: 512, top: 287, hidden: false }, "the right edge, below the zoom buttons");
+  assert.deepEqual(placePill({ x: 4, y: 3 }, size, pane, 7, false, null), { left: 8, top: 8, hidden: false }, "the top at least 8 px down");
+  assert.deepEqual(placePill({ x: 300, y: 399 }, size, pane, 7, false, null), { left: 260, top: 372, hidden: false }, "the bottom edge");
+  assert.deepEqual(placePill({ x: 560, y: 60 }, size, pane, 7, false, zoom), { left: 472, top: 47, hidden: false }, "moved left of the zoom buttons");
+  assert.equal(placePill({ x: -5, y: 200 }, size, pane, 7, false, zoom).hidden, true, "an anchor off the pane hides the pill");
+  assert.equal(placePill({ x: 300, y: 401 }, size, pane, 7, false, zoom).hidden, true);
+});
+
+test("[fast] house areas: a pill per piece of each area on the level, anchored at the piece's front corner tile's middle, with the piece's width on screen", () => {
+  const m = vault();
+  const two = areaOf("t", 0, [rectOf([3001, 1001], [3002, 1001]), rectOf([3004, 1004], [3005, 1005])], "Loot Corner"), up = areaOf("u", 1, [rectOf([3001, 1001], [3001, 1001])]);
+  const pills = pillsOf(m, [two, up], 0, "angle");
+  assert.deepEqual(pills.map((p) => [p.id, p.name, p.color]), [["t", "Loot Corner", "area-1"], ["t", "Loot Corner", "area-1"]], "two pieces, two pills; none from another level");
+  assert.deepEqual(pills[0]!.anchor, project(3002 - m.x0 + 0.5, 1001 - m.y0 + 0.5, 0, "angle"), "the first piece's front corner");
+  assert.deepEqual(pills[1]!.anchor, project(3005 - m.x0 + 0.5, 1005 - m.y0 + 0.5, 0, "angle"));
+  assert.equal(pills[0]!.span, (3 * W) / 2, "two tiles in a row at the game angle: from the first's west corner to the second's east, three half-tiles");
+  assert.equal(pillsOf(m, [two], 0, "top")[0]!.span, 2 * W, "top-down: two tiles wide");
+});
+
+test("[fast] house areas: a new area takes the first free id and the first unused palette colour; the cursor moves a tile north, east, south or west", () => {
+  assert.equal(nextAreaId([]), "a1");
+  assert.equal(nextAreaId([{ id: "a1" }, { id: "a3" }]), "a2");
+  assert.equal(nextAreaColor([]), "area-1");
+  assert.equal(nextAreaColor([{ color: "area-1" }, { color: "area-3" }]), "area-2");
+  assert.equal(nextAreaColor(AREA_COLORS.map((color) => ({ color }))), "area-1", "all used: round again");
+  const m = vault();
+  assert.deepEqual(moveCursor(m, [3003, 1003], "ArrowUp", "top"), [3003, 1002], "top-down: screen and world axes coincide");
+  assert.deepEqual(moveCursor(m, [3003, 1003], "ArrowRight", "top"), [3004, 1003]);
+  assert.deepEqual(moveCursor(m, [3003, 1003], "ArrowDown", "top"), [3003, 1004]);
+  assert.deepEqual(moveCursor(m, [3003, 1003], "ArrowLeft", "top"), [3002, 1003]);
+  assert.deepEqual(moveCursor(m, [2992, 1003], "ArrowLeft", "top"), [2992, 1003], "no further than 8 tiles off the house");
+  assert.equal(moveCursor(m, [3003, 1003], "Enter"), null);
+  assert.equal(moveCursor(m, [3003, 1003], "Enter", "top"), null);
+});
+
+test("[fast] house areas: at the game angle the arrow keys move the cursor the way they point on screen, ↓ undoes ↑, and every tile is reachable", () => {
+  const m = vault(), at = (t: readonly number[]) => project(t[0]!, t[1]!, 0, "angle");
+  for (const start of [[3003, 1003], [3002, 1003], [3001, 1004]] as Array<[number, number]>) {
+    const go = (k: string) => moveCursor(m, start, k)!, d = (k: string): [number, number] => { const a = at(start), b = at(go(k)); return [b[0] - a[0], b[1] - a[1]]; };
+    assert.deepEqual(d("ArrowLeft"), [-W, 0], "← one tile left");
+    assert.deepEqual(d("ArrowRight"), [W, 0], "→ one tile right");
+    const up = d("ArrowUp"), down = d("ArrowDown");
+    assert.ok(up[1] === -W / 2 && Math.abs(up[0]) === W / 2, `↑ half a tile up the screen: ${up}`);
+    assert.ok(down[1] === W / 2 && Math.abs(down[0]) === W / 2, `↓ half a tile down: ${down}`);
+    assert.deepEqual(moveCursor(m, go("ArrowUp"), "ArrowDown"), start, "↓ undoes ↑");
+    assert.deepEqual(moveCursor(m, go("ArrowDown"), "ArrowUp"), start, "↑ undoes ↓");
+    // Two presses go straight up or down: the column comes back.
+    const up2 = moveCursor(m, go("ArrowUp"), "ArrowUp")!;
+    assert.deepEqual([at(up2)[0] - at(start)[0], at(up2)[1] - at(start)[1]], [0, -W]);
+  }
+  // From the house's middle, the arrows reach every tile of the house.
+  const seen = new Set<string>(["3003:1003"]), todo: Array<[number, number]> = [[3003, 1003]];
+  while (todo.length) {
+    const t = todo.pop()!;
+    for (const k of ["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"]) {
+      const n = moveCursor(m, t, k)!;
+      if (n[0] < m.x0 || n[0] > m.x1 || n[1] < m.y0 || n[1] > m.y1 || seen.has(n.join(":"))) continue;
+      seen.add(n.join(":")); todo.push(n);
+    }
+  }
+  assert.equal(seen.size, (m.x1 - m.x0 + 1) * (m.y1 - m.y0 + 1));
+});
+
+test("[fast] house areas: boundsOf an area covers its rectangles only", () => {
+  const m = vault(), all = boundsOf(m, 0, "angle"), one = boundsOf(m, 0, "angle", areaOf("x", 0, [rectOf([3001, 1001], [3002, 1002])]));
+  assert.ok(one.w < all.w && one.h < all.h);
 });
 
 // ---------------------------------------------------------------- where the house is (issue #164)
 const summary = (id: string, facet: number | null, x0: number, y0: number, name?: string) => ({ id, facet, capturedAt: "", captures: 1, width: 18, height: 18, plot: { x0, y0, x1: x0 + 17, y1: y0 + 17 }, levels: 1, containers: 0, ...(name ? { name } : {}) });
 
-test("[fast] house map: a house's centre and corners in world tiles, its sextant reading and the one line Copy puts on the clipboard", () => {
+test("[fast] house map: a house's centre tile in world tiles and the one line the Location section shows and Copy puts on the clipboard", () => {
   const w = whereOf(summary("1-1427-1684", 1, 1427, 1684));
-  assert.deepEqual(w.centre, [1435, 1692]);
-  assert.equal(w.centreText, "1435, 1692");
-  assert.equal(w.corners, "Corners 1427, 1684 to 1444, 1701");
-  assert.equal(w.sextant, "5°58'S 7°52'E");
-  assert.equal(w.copy, "1435, 1692 · Trammel · 5°58'S 7°52'E");
-  const lost = whereOf(summary("1-7000-100", 1, 7000, 100));
-  assert.equal(lost.sextant, null, "no reading there: coordinates only");
-  assert.equal(lost.copy, "7008, 108 · Trammel");
+  assert.deepEqual(w, { centre: [1435, 1692], centreText: "1435, 1692", copy: "1435, 1692 · Trammel" }, "no corners, no sextant reading");
+  assert.equal(whereOf(summary("1-7000-100", 1, 7000, 100)).copy, "7008, 108 · Trammel");
+  assert.equal(whereOf(summary("x-5-6", null, 5, 6)).copy, "13, 14 · Unknown facet");
+  assert.deepEqual(FACET_SIZE[1], [7168, 4096]);
   assert.equal(whereTitle(summary("3-1000-400", 3, 1000, 400)), "Location - Malas - 1008 408", "the Where heading names the facet and the centre tile");
 });
 
@@ -524,6 +711,20 @@ test("[fast] house map drawer: the filter matches name, tooltip line and tag tex
   assert.deepEqual(names(filterContents(c.nodes, "gems")), ["Weapons", "Gems", "Ruby"], "a matching bag keeps all it holds");
   assert.equal((filterContents(c.nodes, "ruby")[0] as Extract<ContentsNode, { kind: "bag" }>).count, 2);
   assert.deepEqual(filterContents(c.nodes, "nothing like it"), []);
+});
+
+test("[fast] house map drawer: up to 4 chests the stack's chests are tabs; more are a select, each option the code and name, a chest not opened yet disabled", () => {
+  const view = (serial: number, opened: boolean): ChestView => ({ serial, code: `A${serial}`, name: `Chest ${serial}`, inGame: "Metal Chest", color: null, fill: null, opened, items: 0, z: 0 });
+  const four = drawerPicker([view(4, true), view(3, false), view(2, true), view(1, true)]);
+  assert.equal(four.kind, "tabs");
+  assert.deepEqual(four.options[1], { value: "3", label: "A3", sub: "Chest 3", disabled: true, title: "Not opened yet" });
+  assert.deepEqual(four.options[0], { value: "4", label: "A4", sub: "Chest 4", disabled: false, title: "A4 Chest 4" });
+  const five = drawerPicker([5, 4, 3, 2, 1].map((n) => view(n, n !== 3)));
+  assert.equal(five.kind, "select");
+  assert.equal(five.options.length, 5);
+  assert.deepEqual(five.options[2], { value: "3", label: "A3 Chest 3 · Not opened yet", sub: "Chest 3", disabled: true, title: "Not opened yet" });
+  assert.equal(five.options[0]!.label, "A5 Chest 5");
+  assert.equal(DRAWER_TABS_MAX, 4);
 });
 
 test("[fast] house map drawer: a stack opens its top opened chest; the header words the chest, its stack and its fill", () => {

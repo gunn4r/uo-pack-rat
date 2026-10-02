@@ -47,8 +47,8 @@
 //         (<data>/item-kinds.json, the player's own item kinds: app/item-kinds.mts; kind null resets, an import merges) ·
 //         GET /api/houses (the houses scans captured: app/house-capture.mts; tiledataFrom says where tiledata.mul came from, or why there is none) · GET /api/houses/<id> (one house's model: app/house-model.mts, tiledata.mul via app/tiledata.mts or the uoFolder setting) ·
 //         GET /api/facet-map/<facet>.png?x0&y0&x1&y1&w (x-region: the region drawn, slid inside the facet; a facet overview from the same UO folder's facetNN.mul: app/facet-map.mts, app/png.mts; 404 {reason} when there is none) ·
-//         GET /api/house-map · PUT /api/house-map/<id> {name, bounds?} (<data>/house-map.json, the player's house names: app/house-names.mts;
-//         an empty name removes the entry; 400 on a bad name or id, 409 when a change would grow it past 500 names or 1 MB) ·
+//         GET /api/house-map · PUT /api/house-map/<id> {name, bounds?, areas?} (<data>/house-map.json, the player's house names and drawn areas: app/house-names.mts;
+//         an empty name with no areas removes the entry; 400 on a bad name, area or id, 409 when a change would grow it past 500 names or 1 MB) ·
 //         GET|PUT /api/organize (<data>/organize.json, Organize's labels, rules, catch-all and pinned items: app/organize-config.mts;
 //         GET salvages a hand-edited file and lists what it dropped in `problems`) ·
 //         GET /api/organize/presets (app/organize-presets.mts's PRESETS, the rule filters the Organize page offers
@@ -68,7 +68,7 @@
 //         Put away (issue #131; no route: the TazUO panel drops inbox/<adapter>/putaway-request.json, the watcher hands it
 //         to putAway, which queues the first trip of the plan for the container the player picked like POST /api/organize/trip
 //         and answers in bridge/<adapter>/putaway.json; app/put-away.mts) ·
-//         GET|PUT /api/ui-prefs (<data>/ui-prefs.json: {cols?, colsVersion?, colWidths?, sheetProps?, theme?, appearance?, sidebar?, density?, dismissedUpdate?, copiedScanner?}, the page's view choices)
+//         GET|PUT /api/ui-prefs (<data>/ui-prefs.json: {cols?, colsVersion?, colWidths?, sheetProps?, theme?, appearance?, sidebar?, density?, areaLabels?, dismissedUpdate?, copiedScanner?}, the page's view choices)
 //         POST /api/bridge {action, serial, name, chain: [root…parent], pos|null} (queue for packrat-bridge.py) · GET /api/bridge/status · POST /api/bridge/stop {} (Organize's Stop: writes <data>/bridge/stop, which packrat-bridge.py checks between a trip's steps)
 //         GET /api/events — SSE, one stream shared by every connected client (not per-job like the
 //         optimize events above): hello {ok, watching: [adapter ids]} on connect, inventory
@@ -143,7 +143,7 @@ import { PRESETS } from "./organize-presets.mts";
 import { emptyKindOverrides, isKindName, kindCount, kindsDocument, kindsFor, kindsText, salvageKindOverrides, withKinds, withoutKinds, KIND_LIMITS, MAX_KINDS_BYTES, OVERRIDE_KINDS } from "./item-kinds.mts";
 import { proposeOrganize, STRATEGY_IDS, type StrategyId } from "./organize-strategies.mts";
 import { latestHouses, type HouseSource } from "./house-capture.mts";
-import { checkHouseEntry, isHouseId, readHouseMap, saveHouseEntry, type HouseMapDoc } from "./house-names.mts";
+import { checkHouseEntry, isHouseId, readHouseMap, saveHouseEntry, MAX_ENTRY_BYTES, type HouseMapDoc } from "./house-names.mts";
 import { buildHouseModel, plotBounds, plotSize, type HouseContainerInput, type HouseModel } from "./house-model.mts";
 import { uoFolderFromTazuo, loadTileData, type TileData } from "./tiledata.mts";
 import { decodeFacet, renderRegion, type FacetBitmap, type Region } from "./facet-map.mts";
@@ -193,6 +193,7 @@ const UI_PREF_CHOICES = {
   sidebar: ["auto", "collapsed"],
   density: ["dense", "regular"],   // the Inventory table's row height
   colsVersion: ["2"],              // the column set `cols` was saved against (app/ui/view-state.mts's COLS_VERSION)
+  areaLabels: ["show", "hide"],    // the House map's area name pills (app/ui/house-map.mts, issue #10)
 } as const satisfies Record<string, readonly string[]>;
 // The list fields: the Inventory tab's columns and the character sheet's shown properties (absent = the default set).
 const UI_PREF_LISTS = ["cols", "sheetProps"] as const;
@@ -2133,7 +2134,7 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
           if (!one) return send(res, 404, { ok: false, error: "no such house" });
         }
         const from = houseTileData(), td = from.td, names = readNames().houses;
-        const named = (id: string): { name?: string } => (names[id] ? { name: names[id].name } : {});
+        const named = (id: string): { name?: string } => (names[id]?.name ? { name: names[id].name } : {});
         if (one) return send(res, 200, { ok: true, house: { ...houseModel(inv, one, td), ...named(one.id) } });
         return send(res, 200, { ok: true, tiledata: td !== null, tiledataFrom: { folder: from.folder, source: from.source, reason: from.reason }, houses: houses.map((h) => {
           const m = houseModel(inv, h, td);
@@ -2157,15 +2158,15 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
         const out = facetPng(`${got.key}|${region}|${w}`, () => { const img = renderRegion(f, r, w); return encodePng(img.width, img.height, img.rgb); });
         return send(res, 200, out, "image/png", { "x-region": region });
       }
-      // The house names (issue #164): GET the whole map; PUT /api/house-map/<id> {name, bounds?, …} replaces that house's
-      // entry (an empty name removes it). Any id of the house-id shape is taken, listed or not: a name kept for a house
+      // The house names and areas (issues #164, #10): GET the whole map; PUT /api/house-map/<id> {name, bounds?, areas?, …}
+      // replaces that house's entry (an empty name with no areas removes it). Any id of the house-id shape is taken, listed or not: a name kept for a house
       // that was redesigned or moved is what the page offers to carry over to its new id.
       if (req.method === "GET" && url.pathname === "/api/house-map") return send(res, 200, { ok: true, houses: readNames().houses });
       if (req.method === "PUT" && url.pathname.startsWith("/api/house-map/")) {
         let id: string | null;
         try { id = decodeURIComponent(url.pathname.slice("/api/house-map/".length)); } catch { id = null; }
         if (id == null || !isHouseId(id)) return send(res, 400, { ok: false, error: "that is not a house id (<facet>-<x>-<y>)" });
-        const checked = checkHouseEntry(await readBody(req, { limit: 8e3 }));
+        const checked = checkHouseEntry(await readBody(req, { limit: MAX_ENTRY_BYTES }));
         if (!checked.ok) return send(res, 400, { ok: false, error: checked.error });
         mkdirSync(dirname(HOUSE_MAP), { recursive: true, mode: DATA_DIR_MODE });
         const refused = saveHouseEntry(HOUSE_MAP, readNames(), id, checked.entry);
