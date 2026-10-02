@@ -69,3 +69,15 @@ test("[fast] house capture: chests seen but not opened merge like furniture, and
   ]);
   assert.deepEqual(h!.containers.map((c) => c[0]), [22, 23], "21 was in reach of the 12:00 capture and gone; the 13:00 capture read no ground");
 });
+
+test("[fast] house capture: a trash container any capture of the house listed in trash is never a seen chest, whichever capture lists it and in any order (issue #162)", () => {
+  const near = scan("2026-10-01T10:00:00Z", { at: { x: 100, y: 100 }, containers: [[22, 0x0E7C, 101, 101, 7]], trash: [21] });
+  const far = scan("2026-10-01T12:00:00Z", { at: { x: 110, y: 110 }, containers: [[21, 0x2813, 101, 102, 7], [22, 0x0E7C, 101, 101, 7]] });
+  const other = scan("2026-10-01T11:00:00Z", { tiles: tiles(300, 300), trash: [22] });
+  const seen = (scans: ScanV2[]): number[] => latestHouses(scans).find((h) => h.id === "1-100-100")!.containers.map((c) => c[0]);
+  assert.deepEqual(seen([near, far, other]), [22], "the far capture could not tell 21 was trash; the near one could. Another house's trash list changes nothing here");
+  assert.deepEqual(seen([far, other, near]), [22]);
+  assert.deepEqual(seen([far]), [21, 22], "without a trash list the container still shows");
+  const later = scan("2026-10-01T13:00:00Z", { at: { x: 100, y: 100 }, containers: [[21, 0x2813, 101, 102, 7]], trash: [22] });
+  assert.deepEqual(seen([later, near, far]), [], "the lists of every capture are joined, the newest one's too");
+});
