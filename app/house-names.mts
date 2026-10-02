@@ -19,7 +19,7 @@ export const AREA_MARGIN = 8;
 // The PUT body's cap: 32 areas of 16 rectangles with long names fit with room to spare.
 export const MAX_ENTRY_BYTES = 64e3;
 const AREA_ID = /^[A-Za-z0-9_-]{1,24}$/;
-// Room for far more houses than a player keeps (the PUT body is capped at 8 kB an entry).
+// Room for far more houses than a player keeps (the PUT body is capped at MAX_ENTRY_BYTES an entry).
 export const MAX_HOUSE_MAP_BYTES = 1e6;
 export const MAX_HOUSES = 500;
 
