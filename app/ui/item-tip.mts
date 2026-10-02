@@ -4,7 +4,8 @@
 // A screen that draws an item registers it on the element it drew (dom.mts's itemTip, which also sets data-serial):
 // a registered record that carries its tooltip lines is shown as it is. Anything else (a piece the Suit Builder only
 // knows by serial and name, a plan's move) is looked up: the page's item cache, else one GET by serial. A serial the
-// server does not know is asked for once; until forget() (a new inventory), the partial record, if any, is shown.
+// server says it does not know is asked for once: until forget() (a new inventory) the partial record, if any, is
+// shown. A lookup that fails (offline, a server error) is no answer, so the next hover asks again.
 
 // The item shape the tooltip reads: looser than vault-lib.mts's Item, since suit-builder candidates and partial
 // records only ever carry some of it.
@@ -41,7 +42,8 @@ export function createTipResolver(cache: { get(serial: number): TooltipItem | un
       if (missed.has(serial)) return own ?? null;
       let ask = asking.get(serial);
       if (!ask) {
-        ask = fetchOne(serial).catch(() => undefined).then((it) => { asking.delete(serial); if (!it) missed.add(serial); return it; });
+        // Only an answer without the item is a miss: a lookup that failed (offline, a server error) is asked again next time.
+        ask = fetchOne(serial).then((it) => { if (!it) missed.add(serial); return it; }, () => undefined).finally(() => asking.delete(serial));
         asking.set(serial, ask);
       }
       return ask.then((it) => it ?? own ?? null);

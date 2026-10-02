@@ -55,7 +55,12 @@ test("[fast] item tooltip: a serial the server does not know is asked for once, 
   assert.deepEqual(asked, [3, 3], "a new inventory asks again");
 });
 
-test("[fast] item tooltip: a failed lookup counts as a miss and never throws", async () => {
-  const r = createTipResolver(new Map(), async () => { throw new Error("offline"); });
+test("[fast] item tooltip: a lookup that fails on the network never throws and is no miss: the next hover asks again", async () => {
+  let calls = 0;
+  const r = createTipResolver(new Map(), async () => { calls++; throw new Error("offline"); });
+  const host = {};
+  r.register(host, { name: "Move 1" });
+  assert.equal((await r.resolve(host, 1))?.name, "Move 1", "the partial record meanwhile");
   assert.equal(await r.resolve({}, 1), null);
+  assert.equal(calls, 2);
 });

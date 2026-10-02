@@ -4,7 +4,9 @@ import { SLOT_LABELS, labelOf, fullOf, tagInfo } from "../vault-lib.mts";
 import type { Item } from "../vault-lib.mts";
 import { EXTRA_COLS, rarityRank as rarityRankOf } from "../item-query.mts";
 import { state } from "./store.mts";
-import { resolveItems, rarityToken } from "./items.mts";
+import { rarityToken } from "./items.mts";
+import { api } from "./api.mts";
+import type { ItemsBySerialApiResponse } from "./api-types.mts";
 import { showToast, tag, tooltip } from "./components.mts";
 import { createTipResolver, type TooltipItem } from "./item-tip.mts";
 
@@ -183,7 +185,13 @@ export function tipNode(it: TooltipItem): HTMLDivElement {
 // action buttons) counts as off the item, and an item whose own pop or menu is open (aria-expanded) shows none.
 // Inside an open modal dialog (the top layer) it moves into the dialog, so it is drawn above it.
 const TIP_DELAY = 400;
-const tips = createTipResolver(state.itemCache, async (serial) => (await resolveItems([serial]))[serial]);
+// The lookup calls the API itself rather than resolveItems, which swallows a failed request: a network error must
+// reach the resolver, so it is not taken for an unknown serial.
+const tips = createTipResolver(state.itemCache, async (serial) => {
+  const it = (await api<ItemsBySerialApiResponse>(`/api/items/by-serial?serials=${serial}`)).items?.[serial];
+  if (it) state.itemCache.set(serial, it);
+  return it;
+});
 // itemTip(node, item): `node` shows the item's tooltip on hover and, unless `focus` is false, after 400 ms of keyboard
 // focus (it is made focusable if it is not). Every screen that draws an item wires it through here: the record it
 // drew is shown as it is when it carries its tooltip lines, else the item is looked up by serial once (item-tip.mts).
