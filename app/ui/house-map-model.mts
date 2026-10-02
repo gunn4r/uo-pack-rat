@@ -162,16 +162,16 @@ export const houseLabel = (h: HouseSummary): string => `${h.name ? `${h.name} ·
 export const houseName = (m: HouseModel): string => (m.id === PLAIN ? "Chests on the ground" : m.name ?? `${facetName(m.facet)} house`);
 // A redesigned or moved house gets a new id (spec §1): the name and areas of a house no longer listed whose footprint, as
 // it was when named or drawn, overlaps this house's on the same facet, to offer carrying over while this house has neither
-// a name nor an area of its own. The first such id wins. Only the areas that still lie on this house (AREA_MARGIN, as the
-// server checks) come along, each with the rectangles that do.
+// a name nor an area of its own. The first such id wins. Only the areas on a level this house has, and that still lie on
+// it (AREA_MARGIN, as the server checks), come along, each with the rectangles that do.
 export function carryOver(m: HouseModel, listed: readonly string[], names: Readonly<Record<string, HouseMapEntry>>): { id: string; name: string; areas: HouseArea[] } | null {
-  if (m.id === PLAIN || m.name || names[m.id]?.areas?.length) return null;
+  if (m.id === PLAIN || m.name || liveAreas(names[m.id]?.areas, m.levels.length).length) return null;
   for (const [id, e] of Object.entries(names).sort((a, b) => a[0].localeCompare(b[0]))) {
     const b = e.bounds;
     if (!b || listed.includes(id) || b.facet !== m.facet || !(e.name || e.areas?.length)) continue;
     if (!(b.x0 <= m.x1 && m.x0 <= b.x1 && b.y0 <= m.y1 && m.y0 <= b.y1)) continue;
     const on = (r: AreaRect): boolean => r.x0 >= m.x0 - AREA_MARGIN && r.y0 >= m.y0 - AREA_MARGIN && r.x1 <= m.x1 + AREA_MARGIN && r.y1 <= m.y1 + AREA_MARGIN;
-    const areas = (e.areas ?? []).map((a) => ({ ...a, rects: a.rects.filter(on) })).filter((a) => a.rects.length);
+    const areas = liveAreas(e.areas, m.levels.length).map((a) => ({ ...a, rects: a.rects.filter(on) })).filter((a) => a.rects.length);
     if (e.name || areas.length) return { id, name: e.name, areas };
   }
   return null;
@@ -308,6 +308,10 @@ export function filterContents(nodes: readonly ContentsNode[], text: string): Co
 // The player's own areas on a level (house-map.json, app/house-names.mts): each a name, a colour token and tile rectangles (world tiles, inclusive). These mirror the server's rules, which the browser build cannot import.
 export const AREA_COLORS = ["area-1", "area-2", "area-3", "area-4", "area-5", "area-6", "area-7", "area-8"] as const;
 export const AREA_MARGIN = 8, MAX_AREAS = 32, MAX_RECTS = 16;
+// Each colour token's name, for its swatch's label (the token's hue in both modes).
+export const AREA_COLOR_NAMES: Readonly<Record<string, string>> = { "area-1": "Purple", "area-2": "Orange", "area-3": "Teal", "area-4": "Pink", "area-5": "Blue", "area-6": "Yellow", "area-7": "Green", "area-8": "Red" };
+// The areas on the house's levels: one saved for a level the house no longer has (a rebuild took a storey away) is left out of the list, the counts, the cap and the next save.
+export const liveAreas = (areas: readonly HouseArea[] | undefined, levels: number): HouseArea[] => (areas ?? []).filter((a) => a.level < levels);
 export type Tile = [number, number];
 export const inRects = (rects: readonly AreaRect[], x: number, y: number): boolean => rects.some((r) => x >= r.x0 && x <= r.x1 && y >= r.y0 && y <= r.y1);
 // The area a stack belongs to: the first, in list order, on its level whose rectangles hold its tile; null for the rest.
@@ -394,11 +398,18 @@ export function clampTile(m: Bounds, [x, y]: Tile): Tile {
   const clamp = (v: number, lo: number, hi: number): number => Math.max(lo - AREA_MARGIN, Math.min(hi + AREA_MARGIN, v));
   return [clamp(x, m.x0, m.x1), clamp(y, m.y0, m.y1)];
 }
-// The drawing cursor's move for an arrow key, one tile in world terms: up is north (y − 1), right east (x + 1), the same at either view; null for any other key.
-const STEPS: Record<string, Tile> = { ArrowUp: [0, -1], ArrowDown: [0, 1], ArrowLeft: [-1, 0], ArrowRight: [1, 0] };
-export function moveCursor(m: Bounds, [x, y]: Tile, key: string): Tile | null {
-  const step = STEPS[key];
-  return step ? clampTile(m, [x + step[0], y + step[1]]) : null;
+// The drawing cursor's move for an arrow key, as the key points on screen; null for any other key. Top-down, screen and world axes coincide: up is y − 1, right x + 1. At the game angle a tile's screen row is x + y and its screen column x − y (always of the same parity): ← and → move a whole tile sideways (column ∓ 2, so x ∓ 1 and y ± 1); ↑ and ↓ move half a tile up or down (row ∓ 1), so the column must change by one, to the odd column beside an even one and back (the column pair it stays in): a straight line up or down the screen, every tile reachable, and ↓ undoing ↑.
+export function moveCursor(m: Bounds, [x, y]: Tile, key: string, view: View = "angle"): Tile | null {
+  if (view === "top") {
+    const step = ({ ArrowUp: [0, -1], ArrowDown: [0, 1], ArrowLeft: [-1, 0], ArrowRight: [1, 0] } as Record<string, Tile>)[key];
+    return step ? clampTile(m, [x + step[0], y + step[1]]) : null;
+  }
+  let r = x + y, c = x - y;
+  if (key === "ArrowLeft") c -= 2;
+  else if (key === "ArrowRight") c += 2;
+  else if (key === "ArrowUp" || key === "ArrowDown") { r += key === "ArrowUp" ? -1 : 1; c += c % 2 === 0 ? 1 : -1; }
+  else return null;
+  return clampTile(m, [(r + c) / 2, (r - c) / 2]);
 }
 
 // ---------------------------------------------------------------- keyboard

@@ -5,7 +5,7 @@ import { buildHouseModel } from "./house-model.mts";
 import { fixtureTileData, vaultHouse, roofHouse, courtyardHouse, castleHouse, foundationHouse, stairHouse, G } from "./house-fixture.mts";
 import type { Container, Item } from "./vault-lib.mts";
 import type { HouseArea, HouseModel, Stack } from "./ui/api-types.mts";
-import { project, tilePolygon, boxFaces, pts, paintOrder, boundsOf, fit, zoomAt, vbText, anchorOf, W, chestViews, colourOf, legendOf, chestLabel, cutAway, calloutLines, houseTotals, pickHouse, houseLabel, houseName, carryOver, carryOverText, PLAIN, chestCount, nearestInDirection, tiledataNote, stackWhere, plainGrid, sceneOf, drawnZs, CHEST_H, whereOf, whereTitle, cropAround, facetMapUrl, markersOf, facetMapNote, parseRegion, markerRadii, contentsOf, contentsSummary, filterContents, drawerChest, drawerMeta, slotsText, areaOfStack, levelAreas, restName, unproject, tileAt, rectOf, sizeText, unionTiles, coveredCells, outlineOf, labelSpot, nextAreaId, nextAreaColor, moveCursor, clampTile, AREA_COLORS, type ChestView, type ContentsNode } from "./ui/house-map-model.mts";
+import { project, tilePolygon, boxFaces, pts, paintOrder, boundsOf, fit, zoomAt, vbText, anchorOf, W, chestViews, colourOf, legendOf, chestLabel, cutAway, calloutLines, houseTotals, pickHouse, houseLabel, houseName, carryOver, carryOverText, PLAIN, chestCount, nearestInDirection, tiledataNote, stackWhere, plainGrid, sceneOf, drawnZs, CHEST_H, whereOf, whereTitle, cropAround, facetMapUrl, markersOf, facetMapNote, parseRegion, markerRadii, contentsOf, contentsSummary, filterContents, drawerChest, drawerMeta, slotsText, areaOfStack, levelAreas, restName, unproject, tileAt, rectOf, sizeText, unionTiles, coveredCells, outlineOf, labelSpot, nextAreaId, nextAreaColor, moveCursor, clampTile, liveAreas, AREA_COLORS, AREA_COLOR_NAMES, type ChestView, type ContentsNode } from "./ui/house-map-model.mts";
 
 const td = fixtureTileData();
 const has = (cls: string, c: string): boolean => cls.split(" ").includes(c);
@@ -455,6 +455,17 @@ test("[fast] house areas: the carry-over offer brings the earlier house's areas,
   assert.deepEqual(carryOverText({ name: "", areas: [near] }), { text: "Use the areas from the earlier house here?", action: "Use areas" });
   assert.equal(carryOver(m, [m.id], { "1-3004-1004": old, [m.id]: { name: "", bounds: old.bounds, areas: [far] } }), null, "a house with areas of its own is offered nothing");
   assert.equal(carryOver(m, [m.id], { "1-3004-1004": { ...unnamed, areas: [far] } }), null, "nothing left to carry");
+  const upstairs = { ...near, id: "a3", level: 2 };   // the vault has two levels
+  assert.deepEqual(carryOver(m, [m.id], { "1-3004-1004": { ...old, areas: [near, upstairs] } })?.areas.map((x) => x.id), ["a1"], "an area on a level this house lacks stays behind");
+  assert.notEqual(carryOver(m, [m.id], { "1-3004-1004": old, [m.id]: { name: "", bounds: old.bounds, areas: [upstairs] } }), null, "an orphan-level area of its own is no area");
+});
+
+test("[fast] house areas: an area on a level the house no longer has is left out of the list (and so of the counts and the cap)", () => {
+  const a = (id: string, level: number): HouseArea => ({ id, name: id, level, color: "area-1", rects: [{ x0: 0, y0: 0, x1: 0, y1: 0 }] });
+  assert.deepEqual(liveAreas([a("g", 0), a("u", 1), a("gone", 2)], 2).map((x) => x.id), ["g", "u"]);
+  assert.deepEqual(liveAreas(undefined, 2), []);
+  assert.deepEqual(Object.keys(AREA_COLOR_NAMES), [...AREA_COLORS], "a name for every colour token");
+  assert.equal(new Set(Object.values(AREA_COLOR_NAMES)).size, AREA_COLORS.length);
 });
 
 // ---------------------------------------------------------------- areas (issue #10)
@@ -531,12 +542,41 @@ test("[fast] house areas: a new area takes the first free id and the first unuse
   assert.equal(nextAreaColor([{ color: "area-1" }, { color: "area-3" }]), "area-2");
   assert.equal(nextAreaColor(AREA_COLORS.map((color) => ({ color }))), "area-1", "all used: round again");
   const m = vault();
-  assert.deepEqual(moveCursor(m, [3003, 1003], "ArrowUp"), [3003, 1002]);
-  assert.deepEqual(moveCursor(m, [3003, 1003], "ArrowRight"), [3004, 1003]);
-  assert.deepEqual(moveCursor(m, [3003, 1003], "ArrowDown"), [3003, 1004]);
-  assert.deepEqual(moveCursor(m, [3003, 1003], "ArrowLeft"), [3002, 1003]);
-  assert.deepEqual(moveCursor(m, [2992, 1003], "ArrowLeft"), [2992, 1003], "no further than 8 tiles off the house");
+  assert.deepEqual(moveCursor(m, [3003, 1003], "ArrowUp", "top"), [3003, 1002], "top-down: screen and world axes coincide");
+  assert.deepEqual(moveCursor(m, [3003, 1003], "ArrowRight", "top"), [3004, 1003]);
+  assert.deepEqual(moveCursor(m, [3003, 1003], "ArrowDown", "top"), [3003, 1004]);
+  assert.deepEqual(moveCursor(m, [3003, 1003], "ArrowLeft", "top"), [3002, 1003]);
+  assert.deepEqual(moveCursor(m, [2992, 1003], "ArrowLeft", "top"), [2992, 1003], "no further than 8 tiles off the house");
   assert.equal(moveCursor(m, [3003, 1003], "Enter"), null);
+  assert.equal(moveCursor(m, [3003, 1003], "Enter", "top"), null);
+});
+
+test("[fast] house areas: at the game angle the arrow keys move the cursor the way they point on screen, ↓ undoes ↑, and every tile is reachable", () => {
+  const m = vault(), at = (t: readonly number[]) => project(t[0]!, t[1]!, 0, "angle");
+  for (const start of [[3003, 1003], [3002, 1003], [3001, 1004]] as Array<[number, number]>) {
+    const go = (k: string) => moveCursor(m, start, k)!, d = (k: string) => { const a = at(start), b = at(go(k)); return [b[0] - a[0], b[1] - a[1]]; };
+    assert.deepEqual(d("ArrowLeft"), [-W, 0], "← one tile left");
+    assert.deepEqual(d("ArrowRight"), [W, 0], "→ one tile right");
+    const up = d("ArrowUp"), down = d("ArrowDown");
+    assert.ok(up[1] === -W / 2 && Math.abs(up[0]) === W / 2, `↑ half a tile up the screen: ${up}`);
+    assert.ok(down[1] === W / 2 && Math.abs(down[0]) === W / 2, `↓ half a tile down: ${down}`);
+    assert.deepEqual(moveCursor(m, go("ArrowUp"), "ArrowDown"), start, "↓ undoes ↑");
+    assert.deepEqual(moveCursor(m, go("ArrowDown"), "ArrowUp"), start, "↑ undoes ↓");
+    // Two presses go straight up or down: the column comes back.
+    const up2 = moveCursor(m, go("ArrowUp"), "ArrowUp")!;
+    assert.deepEqual([at(up2)[0] - at(start)[0], at(up2)[1] - at(start)[1]], [0, -W]);
+  }
+  // From the house's middle, the arrows reach every tile of the house.
+  const seen = new Set<string>(["3003:1003"]), todo: Array<[number, number]> = [[3003, 1003]];
+  while (todo.length) {
+    const t = todo.pop()!;
+    for (const k of ["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"]) {
+      const n = moveCursor(m, t, k)!;
+      if (n[0] < m.x0 || n[0] > m.x1 || n[1] < m.y0 || n[1] > m.y1 || seen.has(n.join(":"))) continue;
+      seen.add(n.join(":")); todo.push(n);
+    }
+  }
+  assert.equal(seen.size, (m.x1 - m.x0 + 1) * (m.y1 - m.y0 + 1));
 });
 
 test("[fast] house areas: boundsOf an area covers its rectangles only", () => {
