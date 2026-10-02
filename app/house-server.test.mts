@@ -162,6 +162,25 @@ test("[fast] houses: a chest a capture saw but no scan opened is on the map as n
   } finally { await s.close(); }
 });
 
+test("[fast] houses: a trash container an earlier capture listed in trash is no stack and not unopened when a later far capture sees it; an opened chest is drawn whatever a trash list says (issue #162)", async () => {
+  const { s, dir } = await serve(true);
+  const TRASH = 0x40030003, OPENED = 0x40010000;
+  try {
+    const { house } = vaultHouse();
+    const at = (ms: number): string => new Date(Date.parse(house.capturedAt) + ms).toISOString();
+    const capture = (when: string, extra: Record<string, unknown>) => ({ ...houseScan({ character: "Other", scannedAt: when, boxes: [], things: [] }), house: { facet: 1, capturedAt: when, at: { x: 3003, y: 1003 }, tiles: house.tiles, items: house.items, ...extra } });
+    writeFileSync(join(dir, "scans", "house-far.json"), JSON.stringify(capture(at(120e3), { containers: [[TRASH, 0x2813, 3003, 1002, 27]] })));
+    const unopened = async (): Promise<HouseModel> => (await get<{ house: HouseModel }>(s, "/api/houses/1-3000-1000")).body.house;
+    let m = await unopened();
+    assert.deepEqual(m.unopened, [TRASH], "without a trash list the far capture's container still shows");
+    writeFileSync(join(dir, "scans", "house-near.json"), JSON.stringify(capture(at(60e3), { containers: [], trash: [TRASH, OPENED] })));
+    m = await unopened();
+    assert.deepEqual([m.unopened, m.unopenedNames], [[], {}]);
+    assert.equal(m.stacks.some((st) => st.serials.includes(TRASH)), false);
+    assert.equal(m.stacks.some((st) => st.serials.includes(OPENED)), true, "a chest a scan opened is never dropped by a trash list");
+  } finally { await s.close(); }
+});
+
 type From = { folder: string | null; source: string | null; reason: string | null };
 async function put(s: ServerHandle, body: unknown): Promise<{ status: number; body: { ok: boolean; error?: string; settings?: { uoFolder?: string | null } } }> {
   const r = await fetch(s.url + "/api/settings", { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });

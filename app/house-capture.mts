@@ -16,16 +16,16 @@ export function houseIdOf(facet: number | null | undefined, tiles: HouseTile[]):
 }
 
 export type HouseCapture = NonNullable<ScanV2["house"]>;
-export interface HouseGroup { id: string; captures: Array<{ scan: number; house: HouseCapture }>; items: Map<number, { item: HouseItem; scan: number }>; containers: Map<number, { item: HouseItem; scan: number }>; supersededBy: number[] }
+export interface HouseGroup { id: string; captures: Array<{ scan: number; house: HouseCapture }>; items: Map<number, { item: HouseItem; scan: number }>; containers: Map<number, { item: HouseItem; scan: number }>; trash: Map<number, number>; supersededBy: number[] }
 
-// Every house the scans captured, by id: its captures oldest first (`scan` indexes `scans`; equal times keep the scans' order), its furniture and its containers (each `[serial, graphic, x, y, z]`) merged across them with the capture each piece last came from, and the captures (scan indexes) superseding it: each newer capture of another footprint on the same facet (an unknown facet matches only an unknown one) overlapping its newest one's bounding box, so it was redesigned or moved. A capture without `items` or `containers` (the ground could not be read) erases nothing and adds nothing to that list. latestHouses and retention (app/retention.mts) both read houses through here.
+// Every house the scans captured, by id: its captures oldest first (`scan` indexes `scans`; equal times keep the scans' order), its furniture and its containers (each `[serial, graphic, x, y, z]`) merged across them with the capture each piece last came from, the trash containers any of them listed (issue #162; serial to the newest capture listing it), which are never among its containers, and the captures (scan indexes) superseding it: each newer capture of another footprint on the same facet (an unknown facet matches only an unknown one) overlapping its newest one's bounding box, so it was redesigned or moved. A capture without `items` or `containers` (the ground could not be read) erases nothing and adds nothing to that list. latestHouses and retention (app/retention.mts) both read houses through here.
 export function houseGroups(scans: ScanV2[]): HouseGroup[] {
   const byId = new Map<string, HouseGroup>();
   scans.forEach((s, scan) => {
     const h = s.house;
     if (!h || !h.tiles.length) return;
     const id = houseIdOf(h.facet, h.tiles as HouseTile[]);
-    const g: HouseGroup = byId.get(id) ?? { id, captures: [], items: new Map(), containers: new Map(), supersededBy: [] };
+    const g: HouseGroup = byId.get(id) ?? { id, captures: [], items: new Map(), containers: new Map(), trash: new Map(), supersededBy: [] };
     g.captures.push({ scan, house: h }); byId.set(id, g);
   });
   const groups = [...byId.values()];
@@ -37,7 +37,9 @@ export function houseGroups(scans: ScanV2[]): HouseGroup[] {
         for (const [serial, { item: it }] of seen) if (Math.max(Math.abs(it[2] - c.at.x), Math.abs(it[3] - c.at.y)) <= HOUSE_ITEM_REACH) seen.delete(serial);
         for (const it of list as HouseItem[]) seen.set(it[0], { item: it, scan });
       }
+      for (const serial of c.trash ?? []) g.trash.set(serial, scan);
     }
+    for (const serial of g.trash.keys()) g.containers.delete(serial);
   }
   const boxOf = (h: HouseCapture): { facet: number | null; t: number; x0: number; y0: number; x1: number; y1: number } => {
     let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
