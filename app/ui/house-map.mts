@@ -158,12 +158,12 @@ function sv(tag: string, attrs: Record<string, string>, ...kids: SVGElement[]): 
   e.append(...kids);
   return e;
 }
-// A box as its two shaded sides (the stylesheet darkens them) and its top.
+// A box as its two shaded sides (the stylesheet darkens them) and its top (a plinth has none).
 function prismEl(cls: string, p: Prism): SVGElement {
   const g = sv("g", { class: cls });
   if (p.left) g.append(sv("polygon", { class: "side-l", points: p.left }));
   if (p.right) g.append(sv("polygon", { class: "side-r", points: p.right }));
-  g.append(sv("polygon", { class: "top", points: p.top }));
+  if (p.top) g.append(sv("polygon", { class: "top", points: p.top }));
   return g;
 }
 function viewsOf(m: HouseModel): Map<number, ChestView> {
@@ -172,7 +172,7 @@ function viewsOf(m: HouseModel): Map<number, ChestView> {
 }
 function pieceEl(p: Piece, views: Map<number, ChestView>): SVGElement {
   switch (p.kind) {
-    case "solid": return prismEl(p.cls, p.prism);
+    case "solid": { const g = prismEl(p.cls, p.prism); for (const b of p.steps ?? []) g.append(sv("polygon", { class: "map-step", points: b })); return g; }
     case "item": { const g = prismEl(p.cls, p.prism); g.dataset.name = p.name || "furniture"; return g; }
     case "spot": return sv("g", { class: "map-spot", role: "img", "aria-label": `Standing spot ${p.spot.id + 1}: every chest in its dashed square is within reach` },
       sv("ellipse", { cx: String(p.at[0]), cy: String(p.at[1]), rx: "6", ry: "3" }),
