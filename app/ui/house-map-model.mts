@@ -1,5 +1,7 @@
 // ui/house-map-model.mts — the House map's pure rules (issue #10, spec section 4): the projection (the client's angle, or top-down), the polygons of a tile and of a box, the painter's order, a level's bounds and their fit; below, the joins of a stack with the inventory and the Organize labels, the colour modes, the cut-away, the callout, the totals, the house picker, keyboard moves, the plain grid for chests outside any drawn house, and the scene of one level. No DOM and no store.mts import, so app/ui-map.test.mts runs it under plain node:test; ui/house-map.mts draws what it returns. Coordinates are relative to the house's corner (x0, y0); heights to the level's floor.
-import type { HouseModel, Room, Stack } from "./api-types.mts";
+import { bagLabel } from "../vault-lib.mts";
+import { plural, splitSerial } from "./inv-model.mts";
+import type { Cell, ContainerLabel, HouseModel, HouseSummary, InventoryData, Room, Stack, TiledataFrom } from "./api-types.mts";
 
 // A tile is W units wide at the game angle (half as tall), and one z step lifts a point K units: the client draws a 44-px tile and 4 px per z, a little flatter than this, which reads better at the map's size.
 export const W = 32, K = 2;
@@ -67,4 +69,164 @@ export const vbText = (b: Box): string => [b.x, b.y, b.w, b.h].map((n) => n.toFi
 export function anchorOf(m: HouseModel, s: Stack, view: View): Pt {
   const base = m.levels[s.level]?.floorZ ?? 0;
   return project(s.x - m.x0 + 0.5, s.y - m.y0 + 0.5, (s.zs[s.zs.length - 1] ?? base) - base + CHEST_H, view);
+}
+
+// ---------------------------------------------------------------- a stack's chests, and how they are coloured
+export type Mode = "contents" | "free";
+// A chest as the map and its panel show it: its code, the name its label gives (else its in-game name: the engraving, or its scanned name without the serial a duplicate carries, or a seen-only chest's tiledata name), its label colour, fill, item count and height.
+export interface ChestView { serial: number; code: string; name: string; inGame: string; color: string | null; fill: { items: number; max: number } | null; opened: boolean; items: number; z: number }
+type Inv = Pick<InventoryData, "containers" | "rootCounts">;
+export function chestViews(m: HouseModel, s: Stack, inv: Inv, labels: Readonly<Record<string, ContainerLabel>>): ChestView[] {
+  const unopened = new Set(m.unopened);
+  return s.serials.map((serial, i): ChestView => {
+    const key = String(serial), c = inv.containers[key], lab = labels[key];
+    const inGame = c ? splitSerial(c.label || bagLabel(c)).name : m.unopenedNames[key] ?? "container";
+    return { serial, code: m.codes[key] ?? s.letter, name: lab?.name ?? inGame, inGame, color: lab?.color ?? null, fill: c?.capacity ? { items: c.capacity.items, max: c.capacity.maxItems } : null,
+      opened: !unopened.has(serial), items: inv.rootCounts[key] ?? 0, z: s.zs[i] ?? 0 };
+  }).reverse();
+}
+// A chest's colour: a token, or an Organize label's colour (the page paints that through safeColor, always with a border-strong edge).
+export type Colour = { token: string } | { label: string };
+export function colourOf(c: ChestView, mode: Mode): Colour {
+  if (mode === "free") {
+    if (!c.opened || !c.fill || c.fill.max <= 0) return { token: "--color-map-free-unknown" };
+    const r = c.fill.items / c.fill.max;
+    return { token: r === 0 ? "--color-map-free-empty" : r < 0.5 ? "--color-map-free-half" : r < 0.9 ? "--color-map-free-filling" : "--color-map-free-full" };
+  }
+  if (!c.opened) return { token: "--color-map-unopened" };
+  if (c.color) return { label: c.color };
+  return { token: c.fill && c.fill.items === 0 ? "--color-map-chest-empty" : "--color-map-chest" };
+}
+export function legendOf(mode: Mode): Array<{ token: string | null; text: string }> {
+  return mode === "free"
+    ? [{ token: "--color-map-free-empty", text: "Empty" }, { token: "--color-map-free-half", text: "Under half full" }, { token: "--color-map-free-filling", text: "Filling" }, { token: "--color-map-free-full", text: "90% or more full" }, { token: "--color-map-free-unknown", text: "Fill unknown" }]
+    : [{ token: null, text: "A labelled chest takes its label's colour." }, { token: "--color-map-chest", text: "Not labelled" }, { token: "--color-map-chest-empty", text: "Not labelled, empty" }, { token: "--color-map-unopened", text: "Not opened yet" }];
+}
+export const fillWords = (c: ChestView): string => (!c.opened ? "not opened yet" : c.fill ? `${c.fill.items} of ${c.fill.max} items` : "fill unknown");
+// Every chest element's accessible name.
+export const chestLabel = (c: ChestView): string => `${c.code} ${c.name}, ${fillWords(c)}`;
+
+// ---------------------------------------------------------------- cut-away, callout, totals
+// The stacks drawn in front of `focus` on its level (larger x + y, within three tiles each way): they fade and let the pointer through, so the inner rings of a dense room can be reached.
+export function cutAway(m: HouseModel, level: number, focus: Stack): Set<string> {
+  return new Set(m.stacks.filter((s) => s.level === level && s !== focus && s.x + s.y > focus.x + focus.y && Math.abs(s.x - focus.x) <= 3 && Math.abs(s.y - focus.y) <= 3).map((s) => s.letter));
+}
+export interface CalloutLine { serial: number; code: string; name: string; fill: string; colour: Colour }
+export function calloutLines(s: Stack, chests: readonly ChestView[], mode: Mode): { title: string; lines: CalloutLine[] } {
+  return {
+    title: chests.length > 1 ? `Stack ${s.letter}, top first` : `Stack ${s.letter}`,
+    lines: chests.map((c) => ({ serial: c.serial, code: c.code, name: c.name, fill: !c.opened ? "not opened" : c.fill ? `${c.fill.items}/${c.fill.max}` : "?", colour: colourOf(c, mode) })),
+  };
+}
+export interface HouseTotals { containers: number; used: number; capacity: number; empty: number; full: number; unopened: number; unknown: number }
+export function houseTotals(chests: readonly ChestView[]): HouseTotals {
+  const t: HouseTotals = { containers: chests.length, used: 0, capacity: 0, empty: 0, full: 0, unopened: 0, unknown: 0 };
+  for (const c of chests) {
+    if (!c.opened) { t.unopened++; continue; }
+    if (!c.fill) { t.unknown++; continue; }
+    t.used += c.fill.items; t.capacity += c.fill.max;
+    if (c.fill.items === 0) t.empty++;
+    else if (c.fill.max > 0 && c.fill.items / c.fill.max >= 0.9) t.full++;
+  }
+  return t;
+}
+export const chestCount = (m: HouseModel): number => m.stacks.reduce((a, s) => a + s.serials.length, 0);
+export function roomCounts(m: HouseModel): Map<number, number> {
+  const out = new Map<number, number>();
+  for (const s of m.stacks) if (s.room != null) out.set(s.room, (out.get(s.room) ?? 0) + s.serials.length);
+  return out;
+}
+
+// ---------------------------------------------------------------- picking a house, names and words
+// The plain grid's id in the picker and the route (#/map/plain): house ids are "<facet>-<x>-<y>", so it never collides.
+export const PLAIN = "plain";
+export function pickHouse(choices: ReadonlyArray<{ id: string; containers: number }>, want: string | null, last: string | null): string | null {
+  const has = (id: string | null): id is string => id != null && choices.some((c) => c.id === id);
+  if (has(want)) return want;
+  if (has(last)) return last;
+  let best: { id: string; containers: number } | null = null;
+  for (const c of choices) if (c.id !== PLAIN && (!best || c.containers > best.containers)) best = c;
+  return best?.id ?? (has(PLAIN) ? PLAIN : null);
+}
+const FACETS = ["Felucca", "Trammel", "Ilshenar", "Malas", "Tokuno", "Ter Mur"];
+export const facetName = (f: number | null): string => (f != null ? FACETS[f] : undefined) ?? "Unknown facet";
+export const houseLabel = (h: HouseSummary): string => `${facetName(h.facet)} house, ${h.width} × ${h.height}, ${plural(h.containers, "container")}`;
+export const houseName = (m: HouseModel): string => (m.id === PLAIN ? "Chests on the ground" : `${facetName(m.facet)} house`);
+export function stackWhere(m: HouseModel, s: Stack): string {
+  const room = m.rooms.find((r) => r.id === s.room)?.name ?? "No room";
+  const spot = s.spot == null ? "no standing spot reaches it" : s.direction === "here" ? `at standing spot ${s.spot + 1}` : `${s.direction} of standing spot ${s.spot + 1}`;
+  return `${room} · ${spot} · ${plural(s.serials.length, "chest")}${s.serials.length > 1 ? ", top first" : ""}`;
+}
+// Why the map is drawn in plain colours (GET /api/houses's tiledataFrom.reason), or null when tiledata.mul was read.
+export function tiledataNote(reason: TiledataFrom["reason"]): string | null {
+  const plain = "so the house is drawn in plain colours, with every impassable tile as a wall";
+  switch (reason) {
+    case null: return null;
+    case "no-client": return `No game client is set up, so Pack Rat has no tiledata.mul to tell walls, floors and materials apart, ${plain}.`;
+    case "no-tazuo-profile": return `TazUO's launcher names no UO folder holding a tiledata.mul, ${plain}.`;
+    case "override-missing": return `The UO folder set in Settings has no tiledata.mul any more, ${plain}.`;
+    case "unreadable": return `The tiledata.mul found is not one Pack Rat can read, ${plain}.`;
+  }
+}
+
+// ---------------------------------------------------------------- keyboard
+export type Dir = "up" | "down" | "left" | "right";
+const DIRS: Record<Dir, Pt> = { up: [0, -1], down: [0, 1], left: [-1, 0], right: [1, 0] };
+// The candidate nearest `from` that way on screen, a sideways step counting double; null when nothing lies that way.
+export function nearestInDirection(from: Pt, cands: ReadonlyArray<{ id: string; at: Pt }>, dir: Dir): string | null {
+  const [ux, uy] = DIRS[dir];
+  let best: { id: string; score: number } | null = null;
+  for (const c of cands) {
+    const dx = c.at[0] - from[0], dy = c.at[1] - from[1];
+    const along = dx * ux + dy * uy, across = Math.abs(dx * uy - dy * ux);
+    if (along <= 0.5) continue;
+    const score = along + 2 * across;
+    if (!best || score < best.score) best = { id: c.id, score };
+  }
+  return best?.id ?? null;
+}
+
+// ---------------------------------------------------------------- the plain grid
+// Ground chests no drawn house holds (not on any captured footprint of their facet), as a house of their own: grouped by facet and by distance (a chest within 8 tiles of a group joins it), each group a "room" on one floor of plain tiles with a tile's margin, the groups laid side by side 3 tiles apart in rows about 40 tiles wide. Stacks are numbered 1, 2, …, and a chest's code is its stack's number and height ("3.2"). Null when there is no such chest.
+const CLUSTER = 8, GAP = 3, ROW = 40;
+export function plainGrid(inv: Pick<InventoryData, "containers">, houses: readonly HouseModel[]): HouseModel | null {
+  const footprints = houses.map((h) => ({ facet: h.facet, tiles: new Set(h.cells.map((c) => `${c.x}:${c.y}`)) }));
+  const inside = (f: number | null, x: number, y: number): boolean => footprints.some((h) => (h.facet === null || f === null || h.facet === f) && h.tiles.has(`${x}:${y}`));
+  const chests = Object.values(inv.containers).flatMap((c) => {
+    const p = c.pos, facet = p?.facet ?? null;
+    return c.parent == null && c.kind === "ground" && p && Number.isFinite(p.x) && Number.isFinite(p.y) && !inside(facet, p.x!, p.y!)
+      ? [{ serial: +c.serial, facet, x: p.x!, y: p.y!, z: p.z ?? 0 }] : [];
+  }).sort((a, b) => (a.facet ?? -1) - (b.facet ?? -1) || a.y - b.y || a.x - b.x || a.z - b.z || a.serial - b.serial);
+  if (!chests.length) return null;
+  let groups: Array<typeof chests> = [];
+  for (const c of chests) {
+    const near = groups.filter((g) => g[0]!.facet === c.facet && g.some((o) => Math.max(Math.abs(o.x - c.x), Math.abs(o.y - c.y)) <= CLUSTER));
+    groups = [...groups.filter((g) => !near.includes(g)), [...near.flat(), c]];
+  }
+  groups = groups.map((g) => [...g].sort((a, b) => a.y - b.y || a.x - b.x || a.z - b.z || a.serial - b.serial))
+    .sort((a, b) => (a[0]!.facet ?? -1) - (b[0]!.facet ?? -1) || a[0]!.y - b[0]!.y || a[0]!.x - b[0]!.x);
+  const cells: Cell[] = [], rooms: Room[] = [], stacks: Stack[] = [], codes: Record<string, string> = {};
+  const floorZ = Math.min(...chests.map((c) => c.z));
+  let cx = 0, cy = 0, rowH = 0;
+  groups.forEach((g, i) => {
+    const gx0 = Math.min(...g.map((c) => c.x)) - 1, gy0 = Math.min(...g.map((c) => c.y)) - 1, gx1 = Math.max(...g.map((c) => c.x)) + 1, gy1 = Math.max(...g.map((c) => c.y)) + 1;
+    const w = gx1 - gx0 + 1, h = gy1 - gy0 + 1;
+    if (cx > 0 && cx + w > ROW) { cx = 0; cy += rowH + GAP; rowH = 0; }
+    const ox = cx - gx0, oy = cy - gy0, z = Math.min(...g.map((c) => c.z));
+    for (let x = gx0; x <= gx1; x++) for (let y = gy0; y <= gy1; y++) cells.push({ level: 0, x: x + ox, y: y + oy, kind: "floor", material: "", family: "neutral", z, lip: false, indoor: true, doorway: false, room: i });
+    rooms.push({ id: i, level: 0, kind: "room", name: `${facetName(g[0]!.facet)}, group ${i + 1}`, tiles: w * h, x0: gx0 + ox, y0: gy0 + oy, x1: gx1 + ox, y1: gy1 + oy });
+    const byTile = new Map<string, Stack>();
+    for (const c of g) {
+      let s = byTile.get(`${c.x}:${c.y}`);
+      if (!s) { s = { level: 0, x: c.x + ox, y: c.y + oy, room: i, serials: [], zs: [], spot: null, direction: "", letter: "" }; byTile.set(`${c.x}:${c.y}`, s); stacks.push(s); }
+      s.serials.push(c.serial); s.zs.push(c.z);
+    }
+    cx += w + GAP; rowH = Math.max(rowH, h);
+  });
+  stacks.forEach((s, i) => {
+    s.letter = String(i + 1);
+    s.serials.forEach((serial, h) => { codes[String(serial)] = s.serials.length === 1 ? s.letter : `${s.letter}.${h + 1}`; });
+  });
+  return { id: PLAIN, facet: null, capturedAt: "", captures: 0, x0: 0, y0: 0, x1: Math.max(...cells.map((c) => c.x)), y1: Math.max(...cells.map((c) => c.y)),
+    levels: [{ index: 0, name: "Chests on the ground", floorZ, status: "floor-only" }], cells, rooms, furniture: [], stacks, spots: [], codes, tiledata: false, unopened: [], unopenedNames: {} };
 }
