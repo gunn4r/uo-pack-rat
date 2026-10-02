@@ -2,12 +2,13 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { buildHouseModel } from "./house-model.mts";
-import { fixtureTileData, vaultHouse, roofHouse, courtyardHouse, castleHouse } from "./house-fixture.mts";
+import { fixtureTileData, vaultHouse, roofHouse, courtyardHouse, castleHouse, foundationHouse } from "./house-fixture.mts";
 import type { Container } from "./vault-lib.mts";
 import type { HouseModel } from "./ui/api-types.mts";
 import { project, tilePolygon, boxFaces, pts, paintOrder, boundsOf, fit, zoomAt, vbText, anchorOf, W, chestViews, colourOf, legendOf, chestLabel, cutAway, calloutLines, houseTotals, pickHouse, PLAIN, chestCount, roomCounts, nearestInDirection, tiledataNote, stackWhere, plainGrid, sceneOf, drawnZs, CHEST_H, type ChestView } from "./ui/house-map-model.mts";
 
 const td = fixtureTileData();
+const has = (cls: string, c: string): boolean => cls.split(" ").includes(c);
 const vault = () => { const { house, chests } = vaultHouse(); return buildHouseModel(house, td, chests); };
 
 test("[fast] house map: the game angle puts x right-down and y left-down and lifts z; top-down is x right, y down, no z", () => {
@@ -204,8 +205,8 @@ test("[fast] house map: the vault's ground floor is 25 floor tiles, 24 cut walls
   const m = vault(), sc = sceneOf(m, 0, "angle");
   assert.equal(sc.floors.filter((f) => f.cls.startsWith("map-floor")).length, 25);
   assert.ok(sc.floors.every((f) => !f.cls.startsWith("map-floor") || f.cls.includes("f-tile")), "pavers are tile");
-  const kinds = (k: string, cls?: string) => sc.pieces.filter((p) => p.kind === k && (!cls || ("cls" in p && p.cls === cls))).length;
-  assert.deepEqual([kinds("solid", "map-wall"), kinds("item", "map-teleporter"), kinds("stack"), kinds("spot")], [24, 1, 24, 1]);
+  const kinds = (k: string, ...cls: string[]) => sc.pieces.filter((p) => p.kind === k && cls.every((c) => "cls" in p && has(p.cls, c))).length;
+  assert.deepEqual([kinds("solid", "map-wall", "w-stone"), kinds("item", "map-teleporter"), kinds("stack"), kinds("spot")], [24, 1, 24, 1]);
   assert.equal(sc.pieces.flatMap((p) => (p.kind === "stack" ? p.chests : [])).length, 120);
   assert.equal(sc.reach.length, 1);
   const keys = sc.pieces.map((p) => p.x + p.y);
@@ -230,12 +231,21 @@ test("[fast] house map: chests sharing a z on one tile are drawn one on another,
 test("[fast] house map: the courtyard draws its walls, window, foundation lip, stairs, table and door, and its yard tiles as yard", () => {
   const m = buildHouseModel(courtyardHouse(), td, []), sc = sceneOf(m, 0, "angle");
   const cls = sc.pieces.flatMap((p) => ("cls" in p ? [p.cls] : []));
-  for (const c of ["map-wall", "map-wall window", "map-lip", "map-block", "map-door"]) assert.ok(cls.includes(c), c);
+  for (const want of ["map-wall w-stone", "map-wall window w-neutral", "map-lip w-brick", "map-block", "map-door"]) assert.ok(cls.some((c) => want.split(" ").every((w) => has(c, w))), want);
   assert.ok(sc.floors.some((f) => f.cls.includes("map-stair")) && sc.floors.some((f) => f.cls === "map-step"));
   const cell = m.cells.find((c) => c.level === 0 && c.x === 1012 && c.y === 2013)!;
   assert.equal(m.rooms.find((r) => r.id === cell.room)?.kind, "yard", "(1012, 2013) is in the courtyard");
   const at = pts(tilePolygon(cell.x - m.x0, cell.y - m.y0, cell.z - m.levels[0]!.floorZ, "angle"));
   assert.equal(sc.floors.find((f) => f.pts === at)?.cls, "map-floor f-grass yard");
+});
+
+test("[fast] house map: walls and the foundation's lip take their material's colour family: a wooden stall is wood, the stone rim stone", () => {
+  const m = buildHouseModel(foundationHouse(), td, []), sc = sceneOf(m, 0, "angle");
+  const at = (x: number, y: number) => sc.pieces.filter((p) => p.kind === "solid" && p.x === x - m.x0 && p.y === y - m.y0).map((p) => ("cls" in p ? p.cls : ""));
+  const one = (x: number, y: number, ...want: string[]) => { const c = at(x, y); assert.equal(c.length, 1, `${x}, ${y}`); assert.ok(want.every((w) => has(c[0]!, w)), `${x}, ${y}: ${c[0]}`); };
+  one(9003, 9003, "map-wall", "w-wood");
+  for (const [x, y] of [[9000, 9005], [9009, 9005], [9005, 9000], [9005, 9009]] as const) one(x, y, "map-lip", "w-stone");
+  assert.ok(!sc.pieces.some((p) => "cls" in p && has(p.cls, "map-wall") && !has(p.cls, "w-wood")), "no foundation tile is drawn as a wall");
 });
 
 test("[fast] house map: a castle's level becomes a scene in well under the 100 ms page budget", () => {
