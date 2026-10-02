@@ -199,10 +199,11 @@ export function buildHouseModel(house: HouseSource, td: TileData | null, contain
     furniture, stacks: ordered, spots, codes, tiledata: td !== null, unopened, unopenedNames };
 }
 
-// The house's size as the player knows it: its plot, without an outer row or column holding only stair tiles (a custom house's front steps stand outside the plot). The model's bounds keep the steps, so they still draw.
+// The house's size as the player knows it: its plot, without an outer row or column of front steps (a custom house's steps stand outside the plot): a ground-level row holding a stair tile with every tile in it below the ground floor's z. The model's bounds keep the steps, so they still draw.
 export function plotSize(m: HouseModel): { width: number; height: number } {
   let { x0, y0, x1, y1 } = m;
-  const steps = (on: (c: Cell) => boolean): boolean => { const row = m.cells.filter(on); return row.length > 0 && row.every((c) => c.kind === "stair"); };
+  const floorZ = m.levels[0]?.floorZ ?? 0;
+  const steps = (on: (c: Cell) => boolean): boolean => { const row = m.cells.filter((c) => c.level === 0 && on(c)); return row.some((c) => c.kind === "stair") && row.every((c) => c.z < floorZ); };
   if (x1 > x0 && steps((c) => c.x === x0)) x0++;
   if (x1 > x0 && steps((c) => c.x === x1)) x1--;
   if (y1 > y0 && steps((c) => c.y === y0)) y0++;
