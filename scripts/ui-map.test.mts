@@ -7,6 +7,7 @@ import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createRequire } from "node:module";
 import { fitWindow, type RealSize, testEnv, noUpdateCheck } from "./electron-window.mts";
+import { probeContrast, failures, describeFailures, type ContrastRow } from "./contrast-probe.mts";
 import { houseScan } from "../app/organize-fixture.mts";
 import { vaultHouse, courtyardHouse, castleHouse, fixtureTileData, FIXTURE_TILES } from "../app/house-fixture.mts";
 import { syntheticTileData } from "../app/tiledata-fixture.mts";
@@ -400,6 +401,7 @@ test("[slow] Settings › UO folder (house map): shows where tiledata.mul is fou
     await page.locator("#set-uofolder-path").fill("relative/uo");
     await page.locator("#set-uofolder-save").click();
     await page.waitForSelector("#set-uofolder .msg.bad");
+    assert.match(await page.locator("#set-uofolder .msg.bad").textContent() || "", /Enter the full path of a folder\./);
     await page.locator("#set-uofolder-path").fill(other);
     await page.locator("#set-uofolder-save").click();
     await until(saved, (v) => v === other, "the folder saved");
@@ -432,8 +434,75 @@ test("[slow] Settings › UO folder (house map): a folder set here whose tiledat
     rmSync(join(mine, "tiledata.mul"));
     await page.locator("#set-uofolder-save").click();   // the field still holds the folder: refused, and the card looks again
     await page.waitForSelector("#set-uofolder .msg.bad");
+    assert.match(await card.locator(".msg.bad").textContent() || "", /That folder has no tiledata\.mul\./);
+    assert.ok(!(await card.locator(".msg.bad").textContent() || "").includes(mine), "the refusal never echoes the path");
     assert.match(await card.locator(".msg.warn").textContent() || "", /no tiledata\.mul any more.*plain colours/);
     assert.equal(await page.locator("#set-uofolder-path").inputValue(), mine);
     assert.deepEqual(errors, []);
   } finally { await done(app, dir); }
+});
+
+// One scene measured in both theme families, light and dark (the page's own look only, as ui-contrast.test.mts does).
+async function measure(page: Page, name: string, rows: Array<ContrastRow & { where: string }>): Promise<void> {
+  for (const family of ["default", "britannia"] as const) {
+    await page.evaluate(async (f) => (await import("/ui/theme.mjs" as string)).applyLook({ theme: f }), family);
+    for (const mode of ["light", "dark"] as const) {
+      await page.emulateMedia({ colorScheme: mode, reducedMotion: "reduce" });
+      await page.waitForFunction(([f, m]) => document.documentElement.dataset.theme === f && document.documentElement.dataset.mode === m, [family, mode], { timeout: 5_000 });
+      await page.waitForTimeout(80);
+      const got = await page.evaluate(probeContrast);
+      assert.ok(got.length > 10, `${name} (${family} ${mode}) measured only ${got.length} pairs — did the scene render?`);
+      for (const r of got) rows.push({ ...r, where: `${name} · ${family} ${mode}` });
+    }
+  }
+  await page.evaluate(async () => (await import("/ui/theme.mjs" as string)).applyLook({ theme: "default" }));
+  await page.emulateMedia({ colorScheme: "light" });
+}
+
+test("[slow] House map: every text, control edge and icon passes contrast on the map, a selected stack, a callout, the no-tiledata note and the empty state, in both theme families light and dark; at 1000 × 700 the panes stack and nothing scrolls sideways", async (t) => {
+  const why = unavailable();
+  if (why) return t.skip(why);
+  const rows: Array<ContrastRow & { where: string }> = [];
+  const { dir } = seed();
+  const { app, page, errors, size } = await launch(dir);
+  try {
+    await go(page, "#/map", "#map-svg .map-stack");
+    await page.mouse.move(size.width - 20, 4);
+    await measure(page, "house map", rows);
+    const front = letter(vaultModel, 3005, 1005);
+    await page.locator(`#map-svg [data-stack="${front}"]`).focus();
+    await page.keyboard.press("Enter");
+    await page.waitForSelector("#map-panel .map-chest-row");
+    await measure(page, "selected stack", rows);
+    await page.locator(`#map-svg [data-stack="${front}"]`).hover();
+    await page.waitForSelector("#map-callout:not([hidden])");
+    await measure(page, "callout", rows);
+    // The houses list without tiledata: the real body read through the page (a route's own refetch lacks the app's token and gets 401), then answered with the reason swapped in.
+    const real = await page.evaluate(async () => (await fetch("/api/houses")).json() as Promise<Record<string, unknown>>);
+    await page.route("**/api/houses", (route) => route.fulfill({ json: { ...real, tiledata: false, tiledataFrom: { folder: null, source: null, reason: "no-client" } } }));
+    await go(page, `#/map/${COURT}`, "#map-tiledata-note");
+    await page.unroute("**/api/houses");
+    await page.mouse.move(size.width - 20, 4);
+    await measure(page, "no-tiledata note", rows);
+
+    // a small window: one column, no sideways scroll anywhere on the screen
+    await fitWindow(app, page, { width: 1000, height: 700 });
+    await go(page, `#/map/${VAULT}`, "#map-svg .map-stack");
+    const layout = await page.evaluate(() => {
+      const over = (sel: string): number => { const e = document.querySelector(sel) as HTMLElement; return e.scrollWidth - e.clientWidth; };
+      return { cols: getComputedStyle(document.querySelector("#map-body")!).gridTemplateColumns.split(" ").length, page: over("html"), body: over("#map-body"), top: over("#tab-map .topbar") };
+    });
+    assert.deepEqual(layout, { cols: 1, page: 0, body: 0, top: 0 });
+    assert.deepEqual(errors, []);
+  } finally { await done(app, dir); }
+  const emptyDir = mkdtempSync(join(tmpdir(), "packrat-map-empty-"));
+  writeFileSync(join(emptyDir, "settings.json"), JSON.stringify({ schemaVersion: 1, shard: "uoalive", setupDone: true }));
+  const empty = await launch(emptyDir);
+  try {
+    await go(empty.page, "#/map", ".map-empty");
+    await empty.page.mouse.move(empty.size.width - 20, 4);
+    await measure(empty.page, "empty state", rows);
+  } finally { await done(empty.app, emptyDir); }
+  const failed = failures(rows);
+  assert.equal(failed.length, 0, `contrast failures (${failed.length} of ${rows.length} pairs):\n${describeFailures(failed)}`);
 });
