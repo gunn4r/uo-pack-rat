@@ -2140,13 +2140,13 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
           return { id: h.id, ...named(h.id), facet: h.facet, capturedAt: h.capturedAt, captures: h.captures, ...plotSize(m), plot: plotBounds(m), levels: m.levels.length, containers: m.stacks.reduce((a, st) => a + st.serials.length, 0) };
         }) });
       }
-      // The facet overview (issue #164): GET /api/facet-map/<facet>.png?x0&y0&x1&y1[&w], the facet 0 to 5, a region in tiles (x1, y1 exclusive) and a size of at most 1024 (the default) on either side, never larger than the region. A region reaching past the facet is slid inside it (and cut to the facet's size), and `x-region: x0,y0,x1,y1` says which one was drawn. A 404 says why there is no image (no UO folder, the file missing or not a facet bitmap) as a reason word, never with the path.
+      // The facet overview (issue #164): GET /api/facet-map/<facet>.png?x0&y0&x1&y1[&w], the facet 0 to 5, a region in tiles (x1, y1 exclusive) and a size of at most 2048 on either side (1024 by default), never larger than the region. A region reaching past the facet is slid inside it (and cut to the facet's size), and `x-region: x0,y0,x1,y1` says which one was drawn. A 404 says why there is no image (no UO folder, the file missing or not a facet bitmap) as a reason word, never with the path.
       if (req.method === "GET" && url.pathname.startsWith("/api/facet-map/")) {
         const m = /^\/api\/facet-map\/([0-5])\.png$/.exec(url.pathname);
         if (!m) return send(res, 400, { ok: false, error: "the facet must be 0 to 5" });
         const q = url.searchParams, int = (k: string): number | null => (q.has(k) && /^\d{1,5}$/.test(q.get(k)!) ? Number(q.get(k)) : null);
         const w = q.has("w") ? int("w") : 1024;
-        if (w == null || w < 1 || w > 1024) return send(res, 400, { ok: false, error: "w must be a size from 1 to 1024" });
+        if (w == null || w < 1 || w > 2048) return send(res, 400, { ok: false, error: "w must be a size from 1 to 2048" });
         const [x0, y0, x1, y1] = (["x0", "y0", "x1", "y1"] as const).map(int);
         if (x0 == null || y0 == null || x1 == null || y1 == null || x0 >= x1 || y0 >= y1) return send(res, 400, { ok: false, error: "a region is x0, y0, x1 and y1, whole numbers with x0 < x1 and y0 < y1" });
         const got = facetBitmap(Number(m[1]));

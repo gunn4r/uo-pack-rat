@@ -348,6 +348,19 @@ test("[fast] facet map: a region of the UO folder's facet file is served as a PN
   } finally { await s.close(); rmSync(uo, { recursive: true, force: true }); }
 });
 
+test("[fast] facet map: an image is at most 2048 pixels on either side, the default 1024", async () => {
+  const { s } = await serve(true);
+  const uo = uoFolderWith(syntheticTileData([]));
+  writeFileSync(join(uo, "facet01.mul"), syntheticFacet(3000, 3000, Array.from({ length: 3000 }, () => Array.from({ length: 12 }, (): Run => [250, rgb555(0, 10, 20)]))));
+  try {
+    assert.equal((await put(s, { uoFolder: uo })).status, 200);
+    const R = "x0=0&y0=0&x1=3000&y1=1500";
+    assert.deepEqual(ihdrSize((await png(s, `/api/facet-map/1.png?${R}&w=2048`)).buf), [2048, 1024]);
+    assert.deepEqual(ihdrSize((await png(s, `/api/facet-map/1.png?${R}`)).buf), [1024, 512]);
+    assert.deepEqual(ihdrSize((await png(s, "/api/facet-map/1.png?x0=0&y0=0&x1=1000&y1=3000&w=2048")).buf), [683, 2048], "a tall region is capped by its height");
+  } finally { await s.close(); rmSync(uo, { recursive: true, force: true }); }
+});
+
 test("[fast] facet map: a bad facet, region or size is a 400; a missing or unreadable file, a Settings folder that is gone, or no UO folder, a 404 with a reason and never the path", async () => {
   const { s } = await serve(true);
   const uo = uoFolderWith(syntheticTileData([]));
@@ -357,7 +370,7 @@ test("[fast] facet map: a bad facet, region or size is a 400; a missing or unrea
   try {
     assert.equal((await put(s, { uoFolder: uo })).status, 200);
     for (const path of [`/api/facet-map/6.png?${R}`, `/api/facet-map/-1.png?${R}`, `/api/facet-map/01.png?${R}`, `/api/facet-map/1.5.png?${R}`, `/api/facet-map/x.png?${R}`, `/api/facet-map/1?${R}`,
-      "/api/facet-map/1.png", `/api/facet-map/1.png?${R}&w=0`, `/api/facet-map/1.png?${R}&w=2000`, `/api/facet-map/1.png?${R}&w=abc`, "/api/facet-map/1.png?x0=0&y0=0&x1=4",
+      "/api/facet-map/1.png", `/api/facet-map/1.png?${R}&w=0`, `/api/facet-map/1.png?${R}&w=2049`, `/api/facet-map/1.png?${R}&w=abc`, "/api/facet-map/1.png?x0=0&y0=0&x1=4",
       "/api/facet-map/1.png?x0=4&y0=0&x1=4&y1=4", "/api/facet-map/1.png?x0=-1&y0=0&x1=4&y1=4", "/api/facet-map/1.png?x0=0.5&y0=0&x1=4&y1=4"]) {
       const r = await get<{ ok: boolean }>(s, path);
       assert.equal(r.status, 400, path);
