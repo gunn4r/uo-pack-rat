@@ -256,7 +256,7 @@ export function facetMapNote(reason: FacetMapReason | "error"): string {
 export const drawerChest = (chests: readonly ChestView[]): number | null => chests.find((c) => c.opened)?.serial ?? null;
 export const drawerMeta = (c: ChestView, s: Pick<Stack, "letter" | "serials">): string => `In game: ${c.inGame} · Stack ${s.letter}, ${plural(s.serials.length, "chest")}`;
 export const slotsText = (c: ChestView): string => (c.fill ? `${c.fill.items} of ${c.fill.max} slots` : "Fill unknown");
-// A chest's items as a tree: each bag (a scanned container, or anything an item sits in) with what it holds, bags first, then the items, each in the order given; `count` is everything inside a bag, bags in it included. An item whose bag is not among the items is shown loose rather than lost.
+// A chest's items as a tree: each bag (a scanned container, or anything an item sits in) with what it holds, bags first, then the items, each in the order given; `count` is everything inside a bag, bags in it included. An item whose bag is not among the items, or that sits in a container cycle, is shown loose rather than lost.
 export type ContentsNode = { kind: "item"; item: Item } | { kind: "bag"; item: Item; count: number; kids: ContentsNode[] };
 export interface Contents { nodes: ContentsNode[]; total: number; loose: number; inBags: number; bags: number }
 const countOf = (ns: readonly ContentsNode[]): number => ns.reduce((n, x) => n + 1 + (x.kind === "bag" ? x.count : 0), 0);
@@ -264,7 +264,8 @@ export function contentsOf(items: readonly Item[], root: number, isBag: (serial:
   const serials = new Set(items.map((it) => it.serial)), byParent = new Map<number, Item[]>();
   for (const it of items) {
     const parent = it.container != null && it.container !== it.serial && serials.has(it.container) ? it.container : root;
-    byParent.set(parent, [...(byParent.get(parent) ?? []), it]);
+    const kids = byParent.get(parent);
+    if (kids) kids.push(it); else byParent.set(parent, [it]);
   }
   const seen = new Set<number>();
   const build = (parent: number): ContentsNode[] => {
@@ -277,7 +278,8 @@ export function contentsOf(items: readonly Item[], root: number, isBag: (serial:
     }
     return [...bags, ...loose];
   };
-  const nodes = build(root), top = nodes.filter((n) => n.kind === "bag");
+  // Items in a container cycle (each in another of them) are reached from no chest: they are shown loose.
+  const nodes = [...build(root), ...items.filter((it) => !seen.has(it.serial)).map((item): ContentsNode => ({ kind: "item", item }))], top = nodes.filter((n) => n.kind === "bag");
   return { nodes, total: items.length, loose: nodes.length - top.length, inBags: countOf(top) - top.length, bags: top.length };
 }
 export function contentsSummary(c: Contents): string {

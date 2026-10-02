@@ -507,6 +507,13 @@ test("[fast] house map drawer: a chest's items as a tree, bags first and nested 
   assert.deepEqual(contentsOf([thing(5, "Stray", 77)], 9, () => false).nodes.map((n) => n.item.name), ["Stray"]);
 });
 
+test("[fast] house map drawer: items in a container cycle, reachable from no chest, are shown loose rather than lost", () => {
+  const c = contentsOf([thing(1, "Pouch", 2), thing(2, "Box", 3), thing(3, "Crate", 1), thing(4, "Arrows", 9)], 9, () => false);
+  assert.deepEqual(c.nodes.map((n) => [n.kind, n.item.name]), [["item", "Arrows"], ["item", "Pouch"], ["item", "Box"], ["item", "Crate"]]);
+  assert.deepEqual([c.total, c.loose, c.inBags, c.bags], [4, 4, 0, 0]);
+  assert.equal(contentsSummary(c), "4 items");
+});
+
 test("[fast] house map drawer: the filter matches name, tooltip line and tag text, keeps a bag holding a match (or matching itself) and counts what it kept", () => {
   const c = contentsOf(chestItems(), 1, (s) => bagSerials.has(s));
   const names = (ns: ContentsNode[]): string[] => ns.flatMap((n) => [n.item.name, ...(n.kind === "bag" ? names(n.kids) : [])]);
