@@ -320,6 +320,26 @@ test("[fast] house names: a PUT that would grow the map past 500 named houses or
   } finally { await s.close(); rmSync(dir, { recursive: true, force: true }); }
 });
 
+test("[fast] house areas (issue #10): a PUT carries the whole entry with 32 areas of 16 rectangles (past the old 8 kB cap); an area-only house names nothing; a bad area is a 400", async () => {
+  const { s, dir } = await serve(false);
+  try {
+    const bounds = { x0: 3000, y0: 1000, x1: 3006, y1: 1006, facet: 1 };
+    const rects = Array.from({ length: 16 }, (_, i) => ({ x0: 3000 + (i % 7), y0: 1000, x1: 3000 + (i % 7), y1: 1006 }));
+    const areas = Array.from({ length: 32 }, (_, i) => ({ id: `area-${i}`, name: `Area number ${i} with a long name to fill it out`, level: i % 2, color: `area-${(i % 8) + 1}`, rects }));
+    assert.ok(JSON.stringify({ name: "", bounds, areas }).length > 8e3);
+    const saved = await putName(s, "/api/house-map/1-3000-1000", { name: "", bounds, areas });
+    assert.equal(saved.status, 200, JSON.stringify(saved.body));
+    assert.deepEqual(saved.body, { ok: true, entry: { name: "", bounds, areas } });
+    assert.deepEqual((await get(s, "/api/house-map")).body, { ok: true, houses: { "1-3000-1000": { name: "", bounds, areas } } });
+    assert.equal("name" in (await get<{ houses: Array<{ name?: string }> }>(s, "/api/houses")).body.houses[0]!, false, "an empty name is no name");
+    assert.equal("name" in (await get<{ house: { name?: string } }>(s, "/api/houses/1-3000-1000")).body.house, false);
+    const bad = await putName(s, "/api/house-map/1-3000-1000", { name: "", bounds, areas: [{ ...areas[0], color: "#ff0000" }] });
+    assert.equal(bad.status, 400);
+    assert.match(bad.body.error ?? "", /colour must be one of/);
+    assert.equal((await putName(s, "/api/house-map/1-3000-1000", { name: "", bounds, areas: [] })).body.entry, null, "no name and no areas removes the entry");
+  } finally { await s.close(); rmSync(dir, { recursive: true, force: true }); }
+});
+
 // The facet overview (issue #164): GET /api/facet-map/<facet>.png from the UO folder's facetNN.mul, a region of it and a width.
 async function png(s: ServerHandle, path: string): Promise<{ status: number; type: string | null; region: string | null; buf: Buffer }> {
   const r = await fetch(s.url + path);

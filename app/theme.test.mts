@@ -93,3 +93,34 @@ test("[fast] rarityToken maps every shipped tier name to its --rarity-* token, a
   assert.equal(rarityToken("Mythic Relic"), null);
   assert.equal(rarityToken(null), null);
 });
+
+// The values one rule block of a stylesheet sets, by custom property (hex colours only).
+function hexes(css: string, selector: string): Map<string, [number, number, number]> {
+  const at = css.indexOf(selector + " {");
+  assert.ok(at >= 0, `a block for ${selector}`);
+  const body = css.slice(css.indexOf("{", at) + 1, css.indexOf("\n}", at));
+  return new Map([...body.matchAll(/(--[\w-]+)\s*:\s*#([0-9a-f]{6})\b/gi)].map((m) => [m[1]!, [0, 2, 4].map((i) => parseInt(m[2]!.slice(i, i + 2), 16)) as [number, number, number]]));
+}
+const dist = (a: readonly number[], b: readonly number[]): number => Math.hypot(a[0]! - b[0]!, a[1]! - b[1]!, a[2]! - b[2]!);
+
+test("[fast] the House map's eight area colours (issue #10) are set in both modes of every theme family, distinct from each other and from every floor colour", async () => {
+  const { readFileSync } = await import("node:fs");
+  const { BUILT_THEMES } = await import("./ui/theme.mts");
+  const FLOORS = ["stone", "brick", "plaster", "wood", "marble", "sandstone", "dirt", "grass", "water", "tile", "neutral", "yard", "stair"].map((f) => `--color-map-${f}`);
+  for (const family of BUILT_THEMES) {
+    const css = readFileSync(new URL(family === "default" ? "./ui/tokens.css" : `./ui/${family}.css`, import.meta.url), "utf8");
+    const blocks = family === "default"
+      ? { light: ':root, [data-theme="default"][data-mode="light"], [data-theme="default"] [data-mode="light"]', dark: '[data-theme="default"][data-mode="dark"], [data-theme="default"] [data-mode="dark"]' }
+      : { light: `[data-theme="${family}"][data-mode="light"], [data-theme="${family}"] [data-mode="light"]`, dark: `[data-theme="${family}"][data-mode="dark"], [data-theme="${family}"] [data-mode="dark"]` };
+    for (const [mode, selector] of Object.entries(blocks)) {
+      const v = hexes(css, selector), areas = Array.from({ length: 8 }, (_, i) => v.get(`--color-area-${i + 1}`));
+      assert.ok(areas.every(Boolean), `${family} ${mode} sets --color-area-1 … 8`);
+      for (let i = 0; i < 8; i++) for (let j = i + 1; j < 8; j++) assert.ok(dist(areas[i]!, areas[j]!) >= 80, `${family} ${mode}: area ${i + 1} and ${j + 1} are told apart`);
+      for (const f of FLOORS) {
+        const floor = v.get(f);
+        assert.ok(floor, `${family} ${mode} sets ${f}`);
+        areas.forEach((a, i) => assert.ok(dist(a!, floor) >= 60, `${family} ${mode}: area ${i + 1} stands off ${f}`));
+      }
+    }
+  }
+});

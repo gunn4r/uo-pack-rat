@@ -23,7 +23,7 @@ import { bindDrawer, segmented, clearToasts, closePopover } from "./components.m
 import { openRunsDrawer, closeRunsDrawer } from "./runs.mts";
 import { loadOrganize, refreshPlaces } from "./organize-data.mts";
 import { showOrganize } from "./organize.mts";
-import { showMap } from "./house-map.mts";
+import { showMap, applyMapPrefs } from "./house-map.mts";
 import type { SettingsApiResponse, RulesApiResponse, SetupApiResponse, InventoryApiResponse, ProfilesApiResponse, UiPrefsApiResponse } from "./api-types.mts";
 
 // ---------------------------------------------------------------- data
@@ -66,6 +66,7 @@ export async function load(): Promise<void> {
   state.sheetProps = prefs?.prefs.sheetProps ?? null;
   applyLook(prefs ? prefs.prefs : null);
   applyShellPrefs(prefs ? prefs.prefs : null);
+  applyMapPrefs(prefs ? prefs.prefs : null);
   // Settings, Import, the live-scan stream and the first-run wizard need nothing from the inventory,
   // so they come up before it: a failed inventory or profiles fetch must not take the Settings tab
   // (the page's way to the data folder) down with it.

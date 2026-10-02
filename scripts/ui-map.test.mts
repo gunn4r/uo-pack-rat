@@ -1,4 +1,4 @@
-// ui-map.test.mts — [slow]: the House map (issue #10) in the real Electron window over a seeded data folder (the dense vault and the courtyard house of app/house-fixture.mts, their chests from app/organize-fixture.mts, a synthetic tiledata.mul behind a fake TazUO launcher): the nav entry, the picker and level pills, a stale deep link, the no-tiledata note, the drawing in both views, callouts, selection, cut-away, keyboard (and a walk of the screen by keyboard alone that keeps focus through every redraw), pan and zoom, the detail panel's actions, the colour modes, a chest no scan opened, the plain grid over the demo scans, the empty state, the Settings UO folder card, where the house is (coordinates, the facet overview and its markers, and the world map lightbox, issue #164), the 1000 × 700 layout and contrast in both theme families. Skipped when electron or playwright is absent, or under TEST_SKIP_ELECTRON.
+// ui-map.test.mts — [slow]: the House map (issue #10) in the real Electron window over a seeded data folder (the dense vault and the courtyard house of app/house-fixture.mts, their chests from app/organize-fixture.mts, a synthetic tiledata.mul behind a fake TazUO launcher): the nav entry, the picker and level pills, a stale deep link, the no-tiledata note, the drawing in both views, callouts, selection, cut-away, keyboard (and a walk of the screen by keyboard alone that keeps focus through every redraw), pan and zoom, the detail panel's actions, the colour modes, a chest no scan opened, the plain grid over the demo scans, the empty state, the Settings UO folder card, where the house is (coordinates, the facet overview and its markers, and the world map lightbox, issue #164), the player's areas (issue #10: drawn by a mouse drag and by the keyboard alone, named, renamed and deleted, the counts and the tint, carried over to a redesigned house), the 1000 × 700 layout and contrast in both theme families. Skipped when electron or playwright is absent, or under TEST_SKIP_ELECTRON.
 import test from "node:test";
 import assert from "node:assert/strict";
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
@@ -32,6 +32,7 @@ const td = fixtureTileData();
 const vaultModel = (() => { const { house, chests } = vaultHouse(); return buildHouseModel(house, td, chests); })();
 const courtModel = buildHouseModel(courtyardHouse(), td, [{ serial: YARD_CHEST, name: "Wooden Chest", facet: 1, x: 1012, y: 2013, z: 7 }, { serial: SEEN_ONLY, name: "container", facet: 1, x: 1012, y: 2012, z: 7, opened: false }]);
 const letter = (m: HouseModel, x: number, y: number): string => m.stacks.find((s) => s.x === x && s.y === y)!.letter;
+const VAULT_BOUNDS = { x0: vaultModel.x0, y0: vaultModel.y0, x1: vaultModel.x1, y1: vaultModel.y1, facet: 1 };
 
 // A neighbour of the vault: the courtyard house moved 2100 tiles east and 900 north, so it stands inside the vault's facet overview.
 const NEIGHBOUR = "1-3100-1100";
@@ -62,7 +63,8 @@ function writeVault(dir: string, items: boolean, more: Thing[] = []): void {
 }
 // A data folder with both houses captured: the vault's 120 chests (chest i holds (13·i) % 126 of 125 items, the first one labelled Reagents in teal), the courtyard with a chest in the yard and one the capture saw but no scan opened; with `castle`, also the 4-level castle and its 300 chests (another character's scan, the speed check); the synthetic tiledata.mul behind a fake TazUO launcher, which settings.json points at unless `client` is false.
 // With `items`, the top two chests of the stack at 3001, 1001 hold things (drawerItems).
-function seed({ client = true, castle = false, facet = false, items = false }: { client?: boolean; castle?: boolean; facet?: boolean; items?: boolean } = {}): { dir: string; uo: string } {
+// With `areas`, the vault has one area of its own, "North row" (the five stacks at y 1001).
+function seed({ client = true, castle = false, facet = false, items = false, areas = false }: { client?: boolean; castle?: boolean; facet?: boolean; items?: boolean; areas?: boolean } = {}): { dir: string; uo: string } {
   const dir = mkdtempSync(join(tmpdir(), "packrat-map-"));
   mkdirSync(join(dir, "scans"), { recursive: true });
   writeVault(dir, items);
@@ -85,6 +87,7 @@ function seed({ client = true, castle = false, facet = false, items = false }: {
   writeFileSync(join(root, "Profiles", "Settings", "p.json"), JSON.stringify({ ultimaonlinedirectory: uo }));
   writeFileSync(join(dir, "settings.json"), JSON.stringify({ schemaVersion: 1, shard: "uoalive", setupDone: true, ...(client ? { client: { adapter: "tazuo", scriptsDir: scripts } } : {}) }));
   writeFileSync(join(dir, "organize.json"), JSON.stringify({ version: 1, catchAll: null, pinnedItems: [], rules: [], labels: { [LABELLED]: { serial: LABELLED, name: "Reagents", color: "#2f7f7f", origin: "manual" } } }));
+  if (areas) writeFileSync(join(dir, "house-map.json"), JSON.stringify({ version: 1, houses: { [VAULT]: { name: "", bounds: VAULT_BOUNDS, areas: [{ id: "a1", name: "North row", level: 0, color: "area-3", rects: [{ x0: 3001, y0: 1001, x1: 3005, y1: 1001 }] }] } } }));
   return { dir, uo };
 }
 async function launch(dataDir: string, { want = { width: 1440, height: 900 }, demo = false }: { want?: RealSize; demo?: boolean } = {}): Promise<{ app: ElectronApplication; page: Page; errors: string[]; size: RealSize }> {
@@ -284,10 +287,10 @@ async function tabTo(page: Page, sel: string, key = "Tab"): Promise<void> {
   }
   throw new Error(`${key} never reached ${sel}`);
 }
-test("[slow] House map: the keyboard alone walks the screen, and focus stays put through a level, a room, a selection, a reload and Esc from the panel", async (t) => {
+test("[slow] House map: the keyboard alone walks the screen, and focus stays put through a level, an area, a selection, a reload and Esc from the panel", async (t) => {
   const why = unavailable();
   if (why) return t.skip(why);
-  const { dir } = seed();
+  const { dir } = seed({ areas: true });
   const { app, page, errors } = await launch(dir);
   try {
     await go(page, "#/map", "#map-svg .map-stack");
@@ -303,11 +306,12 @@ test("[slow] House map: the keyboard alone walks the screen, and focus stays put
     assert.equal(await page.locator(pill(0)).getAttribute("aria-pressed"), "true", "the level shown stays pressed");
     assert.ok(await focused(page, pill(0)));
 
-    const room = '.map-room[data-room="0"]';
-    await tabTo(page, room);
+    const area = '.map-area[data-area="a1"]';
+    await tabTo(page, area);
     await page.keyboard.press("Enter");
-    assert.equal(await page.locator(room).getAttribute("aria-pressed"), "true");
-    assert.ok(await focused(page, room), "focus stays on the room");
+    assert.equal(await page.locator(area).getAttribute("aria-pressed"), "true");
+    assert.ok(await focused(page, area), "focus stays on the area");
+    assert.equal(await page.locator("#map-svg .map-area-shape.sel").count(), 1, "the area is highlighted on the map");
 
     await tabTo(page, "#map-svg [data-stack]");
     await page.keyboard.press("ArrowRight");
@@ -448,12 +452,13 @@ test("[slow] House map: Highlight the stack queues one highlight per chest top f
   }
 });
 
-test("[slow] House map: ✎ renames a house (Esc cancels; Enter saves, and the heading, picker, crumb and page title follow with focus back on ✎), and a redesigned house is offered an earlier house's name", async (t) => {
+test("[slow] House map: ✎ renames a house (Esc cancels; Enter saves, and the heading, picker, crumb and page title follow with focus back on ✎), and a redesigned house is offered an earlier house's name and areas", async (t) => {
   const why = unavailable();
   if (why) return t.skip(why);
   const { dir } = seed();
   // A named house no longer captured, whose footprint overlaps the courtyard's (not the vault's).
-  writeFileSync(join(dir, "house-map.json"), JSON.stringify({ version: 1, houses: { "1-1010-2010": { name: "Old courtyard", bounds: { x0: 1010, y0: 2010, x1: 1027, y1: 2027, facet: 1 } } } }));
+  writeFileSync(join(dir, "house-map.json"), JSON.stringify({ version: 1, houses: { "1-1010-2010": { name: "Old courtyard", bounds: { x0: 1010, y0: 2010, x1: 1027, y1: 2027, facet: 1 },
+    areas: [{ id: "a1", name: "Garden", level: 0, color: "area-7", rects: [{ x0: 1011, y0: 2011, x1: 1015, y1: 2016 }] }] } } }));
   const { app, page, errors } = await launch(dir);
   const heading = (): Promise<string | null> => page.locator("#map-panel .map-house-title h2").textContent();
   const focused = (): Promise<string | undefined> => page.evaluate(() => document.activeElement?.id);
@@ -491,13 +496,226 @@ test("[slow] House map: ✎ renames a house (Esc cancels; Enter saves, and the h
     assert.deepEqual(saved.houses[VAULT]!.bounds, { x0: vaultModel.x0, y0: vaultModel.y0, x1: vaultModel.x1, y1: vaultModel.y1, facet: 1 });
     await page.locator("#map-house").selectOption(COURT);
     await page.waitForSelector("#map-panel #map-carry");
-    assert.match(await page.locator("#map-carry").textContent() || "", /^Use the name "Old courtyard" from the earlier house here\?Use name$/);
+    assert.match(await page.locator("#map-carry").textContent() || "", /^Use the name and areas of "Old courtyard" from the earlier house here\?Use name and areas$/);
     await page.locator("#map-carry-use").click();
     await page.waitForFunction(() => document.querySelector("#map-panel .map-house-title h2")?.textContent === "Old courtyard", undefined, { timeout: 15_000 });
     assert.equal(await page.locator("#map-carry").count(), 0, "the offer goes once the house is named");
+    assert.match(await page.locator('.map-area[data-area="a1"]').textContent() || "", /^Garden2$/, "the area came along, holding the yard chest and the chest beside it no scan opened (1012, 2013 and 1012, 2012)");
+    const carried = JSON.parse(readFileSync(join(dir, "house-map.json"), "utf8")) as { houses: Record<string, { areas?: Array<{ name: string }> }> };
+    assert.deepEqual(carried.houses[COURT]!.areas?.map((a) => a.name), ["Garden"]);
     assert.match(await page.locator(`#map-house option[value="${COURT}"]`).textContent() || "", /^Old courtyard · Trammel, \d+ × \d+, \d+ containers?$/);
     await go(page, "#/inventory", "#tab-inventory:not([hidden])");
     assert.equal(await page.title(), "Pack Rat", "another screen puts the page title back");
+    assert.deepEqual(errors, []);
+  } finally { await done(app, dir); }
+});
+
+// The client point of a tile's middle on the floor of the level shown (the page's own projection and viewBox), scrolled into view first.
+async function tilePoint(page: Page, x: number, y: number): Promise<[number, number]> {
+  await page.locator("#map-svg").scrollIntoViewIfNeeded();
+  return page.evaluate(([x, y, x0, y0]) => {
+    const svg = document.querySelector("#map-svg") as SVGSVGElement, ctm = svg.getScreenCTM()!, fx = x! - x0! + 0.5, fy = y! - y0! + 0.5;
+    const p = new DOMPoint(((fx - fy) * 32) / 2, ((fx + fy) * 32) / 2).matrixTransform(ctm);
+    return [p.x, p.y] as [number, number];
+  }, [x, y, vaultModel.x0, vaultModel.y0]);
+}
+const readAreas = (dir: string): Array<{ id: string; name: string; color: string; rects: unknown[] }> | undefined => {
+  try { return (JSON.parse(readFileSync(join(dir, "house-map.json"), "utf8")) as { houses: Record<string, { areas?: Array<{ id: string; name: string; color: string; rects: unknown[] }> }> }).houses[VAULT]?.areas; } catch { return undefined; }
+};
+
+test("[slow] House map areas: a mouse drag draws an area, Enter asks its name, Save adds its row with its chest count and tints the map; ✎ renames it and ⋯ › Delete asks inline before it goes (1024 × 768)", async (t) => {
+  const why = unavailable();
+  if (why) return t.skip(why);
+  const { dir } = seed();
+  const { app, page, errors } = await launch(dir, { want: { width: 1024, height: 768 } });
+  const rest = '.map-level:first-child .map-area-row.rest';
+  try {
+    await go(page, `#/map/${VAULT}`, "#map-svg .map-stack");
+    assert.match(await page.locator(rest).textContent() || "", /^Whole floor120$/, "before any area the level is one Whole floor");
+    await page.locator("#map-new-area-0").click();
+    await page.waitForSelector("#map-draw-hint");
+    assert.equal(await page.locator("#map-draw-hint").textContent(), "Drag over tiles to draw the area. Shift-drag adds more. Enter to finish, Esc to cancel. Fit shows all. Keyboard: the arrow keys move a tile cursor, Space starts and ends a rectangle, Shift+Space starts one more, Enter finishes, Escape cancels.");
+    assert.equal(await page.locator("#map-new-area-0").textContent(), "Drawing…");
+    assert.equal(await page.locator("#map-svg").evaluate((e) => getComputedStyle(e).cursor), "crosshair");
+    const vb = await page.locator("#map-svg").getAttribute("viewBox");
+    const [ax, ay] = await tilePoint(page, 3001, 1001), [bx, by] = await tilePoint(page, 3005, 1001);
+    await page.mouse.move(ax, ay);
+    await page.mouse.down();
+    await page.mouse.move((ax + bx) / 2, (ay + by) / 2, { steps: 3 });
+    await page.mouse.move(bx, by, { steps: 3 });
+    assert.equal(await page.locator("#map-draw-size").textContent(), "5 × 1 = 5 tiles");
+    assert.equal(await page.locator("#map-svg").getAttribute("viewBox"), vb, "a drag draws, it does not pan");
+    await page.mouse.up();
+    assert.equal(await page.locator("#map-draft .map-area-tile").count(), 5, "the five covered floor tiles are tinted");
+    await page.keyboard.press("Enter");
+    await page.waitForSelector("#map-area-new-name");
+    assert.equal(await page.evaluate(() => document.activeElement?.id), "map-area-new-name");
+    assert.equal(await page.locator("#map-area-new-save").isDisabled(), true, "Save waits for a name");
+    assert.match(await page.locator(".map-area-new").textContent() || "", /5 tiles · 25 chests/);
+    await page.keyboard.type("North row");
+    assert.equal(await page.locator("#map-area-new-save").isDisabled(), false);
+    await page.locator("#map-area-new-save").click();
+    await page.waitForSelector('.map-area[data-area="a1"]');
+    assert.match(await page.locator('.map-area[data-area="a1"]').textContent() || "", /^North row25$/);
+    assert.match(await page.locator(rest).textContent() || "", /^Everything else95$/);
+    assert.equal(await page.locator("#map-svg .map-area-layer .map-area-tile").count(), 5, "the map shows the area's tint");
+    assert.deepEqual(await page.locator("#map-pills .map-pill").allTextContents(), ["North row"], "its name pill");
+    assert.equal(await page.locator("#map-draw-hint").count(), 0, "drawing is over");
+    assert.deepEqual(await until(() => readAreas(dir), (a) => !!a?.length, "the area saved"), [{ id: "a1", name: "North row", level: 0, color: "area-1", rects: [{ x0: 3001, y0: 1001, x1: 3005, y1: 1001 }] }]);
+
+    // ✎: Esc keeps the name, Enter saves a new one; focus goes back to ✎ either way.
+    await page.locator("#map-area-edit-a1").click();
+    await page.locator("#map-area-rename").fill("Scratch");
+    await page.keyboard.press("Escape");
+    await page.waitForSelector("#map-area-edit-a1");
+    assert.match(await page.locator('.map-area[data-area="a1"]').textContent() || "", /^North row/);
+    assert.equal(await page.evaluate(() => document.activeElement?.id), "map-area-edit-a1");
+    await page.locator("#map-area-edit-a1").click();
+    await page.locator("#map-area-rename").fill("Reagents");
+    await page.keyboard.press("Enter");
+    await page.waitForFunction(() => document.querySelector('.map-area[data-area="a1"]')?.textContent?.startsWith("Reagents"), undefined, { timeout: 15_000 });
+    assert.equal(await page.evaluate(() => document.activeElement?.id), "map-area-edit-a1");
+    await until(() => readAreas(dir), (a) => a?.[0]?.name === "Reagents", "the rename saved");
+
+    // ⋯ › Delete asks with the page's yes/no dialog; Cancel keeps the area, focus back on its ⋯.
+    await page.locator("#map-area-menu-a1").click();
+    await page.locator('.pop [role="menuitem"]', { hasText: "Delete" }).click();
+    await page.waitForSelector("dialog[open] [data-confirm]");
+    assert.match(await page.locator("dialog[open]").textContent() || "", /Delete Reagents\?.*Its chests go to Whole floor\./);
+    assert.equal(await page.locator("dialog[open] [data-confirm]").textContent(), "Delete area");
+    await page.locator("dialog[open] [data-cancel]").click();
+    await page.waitForSelector("dialog[open]", { state: "detached" });
+    assert.equal(await page.evaluate(() => document.activeElement?.id), "map-area-menu-a1");
+    assert.equal(await page.locator('.map-area[data-area="a1"]').count(), 1);
+    // ⋯ › Change colour: the palette by name, the area's own pressed.
+    await page.locator("#map-area-menu-a1").click();
+    await page.locator('.pop [role="menuitem"]', { hasText: "Change colour" }).click();
+    await page.waitForSelector("#map-colour-area-3");
+    assert.equal(await page.locator("#map-colour-area-1").getAttribute("aria-pressed"), "true");
+    assert.deepEqual(await page.locator(".map-colour").evaluateAll((bs) => bs.map((b) => b.getAttribute("aria-label"))), ["Purple", "Orange", "Teal", "Pink", "Blue", "Yellow", "Green", "Red"]);
+    await page.locator("#map-colour-area-3").click();
+    await until(() => readAreas(dir), (a) => a?.[0]?.color === "area-3", "the colour saved");
+    await page.waitForFunction(() => (document.querySelector('.map-area[data-area="a1"] .map-swatch') as HTMLElement | null)?.style.background.includes("area-3"), undefined, { timeout: 15_000 });
+    // ⋯ › Redraw: the area's row of stacks moved one row south, shown at once and saved.
+    await page.locator("#map-area-menu-a1").click();
+    await page.locator('.pop [role="menuitem"]', { hasText: "Redraw" }).click();
+    await page.waitForSelector("#map-draw-hint");
+    const [rx, ry] = await tilePoint(page, 3001, 1002), [sx, sy] = await tilePoint(page, 3005, 1002);
+    await page.mouse.move(rx, ry);
+    await page.mouse.down();
+    await page.mouse.move(sx, sy, { steps: 4 });
+    await page.mouse.up();
+    await page.keyboard.press("Enter");
+    await page.waitForFunction(() => !document.querySelector("#map-draw-hint"), undefined, { timeout: 15_000 });
+    assert.match(await page.locator('.map-area[data-area="a1"]').textContent() || "", /^Reagents25$/);
+    assert.equal(await page.evaluate(() => document.activeElement?.id), "map-area-a1");
+    assert.deepEqual((await until(() => readAreas(dir), (a) => (a?.[0]?.rects as Array<{ y0: number }> | undefined)?.[0]?.y0 === 1002, "the redraw saved"))![0]!.rects, [{ x0: 3001, y0: 1002, x1: 3005, y1: 1002 }]);
+    await page.locator("#map-area-menu-a1").click();
+    await page.locator('.pop [role="menuitem"]', { hasText: "Delete" }).click();
+    await page.locator("dialog[open] [data-confirm]").click();
+    await page.waitForFunction(() => !document.querySelector('.map-area[data-area="a1"]'), undefined, { timeout: 15_000 });
+    assert.match(await page.locator(rest).textContent() || "", /^Whole floor120$/);
+    assert.equal(await page.locator("#map-svg .map-area-tile").count(), 0);
+    assert.equal(await page.evaluate(() => document.activeElement?.id), "map-new-area-0");
+    await until(() => readAreas(dir), (a) => a === undefined, "the vault's entry gone with its last area (it has no name)");
+    assert.deepEqual(errors, []);
+  } finally { await done(app, dir); }
+});
+
+test("[slow] House map areas: a name pill per piece of an area at a fixed size, cut short to fit and whole on hover, never in the pointer's way; Hide area labels hides them and the choice survives a reload (1024 × 768)", async (t) => {
+  const why = unavailable();
+  if (why) return t.skip(why);
+  const { dir } = seed();
+  const LONG = "A very long name for a tiny spot";
+  writeFileSync(join(dir, "house-map.json"), JSON.stringify({ version: 1, houses: { [VAULT]: { name: "", bounds: VAULT_BOUNDS, areas: [
+    { id: "a1", name: "Loot Corner", level: 0, color: "area-2", rects: [{ x0: 3001, y0: 1001, x1: 3002, y1: 1002 }, { x0: 3004, y0: 1004, x1: 3005, y1: 1005 }] },
+    { id: "a2", name: LONG, level: 0, color: "area-5", rects: [{ x0: 3005, y0: 1001, x1: 3005, y1: 1001 }] }] } } }));
+  const { app, page, errors } = await launch(dir, { want: { width: 1024, height: 768 } });
+  const pills = (id: string) => page.locator(`#map-pills .map-pill[data-area="${id}"]`);
+  try {
+    await go(page, `#/map/${VAULT}`, "#map-pills .map-pill");
+    assert.equal(await pills("a1").count(), 2, "a pill for each piece of Loot Corner");
+    for (const text of await pills("a1").allTextContents()) assert.match(text, /^(Loot Corner|Loo[^…]*…)$/, "the name, or as much of it as the piece's width takes");
+    assert.deepEqual(await pills("a1").evaluateAll((es) => es.map((e) => e.getAttribute("title"))), ["Loot Corner", "Loot Corner"]);
+    const style = await pills("a1").first().evaluate((e) => { const c = getComputedStyle(e); return [c.fontSize, c.fontWeight, c.pointerEvents, getComputedStyle(e.parentElement!).pointerEvents]; });
+    assert.deepEqual(style, ["12px", "500", "none", "none"]);
+    assert.equal(await page.locator('#map-svg .map-area-shape[data-area-shape="a1"] > title').textContent(), "Loot Corner", "the tint carries the name as a tooltip");
+    const short = await pills("a2").textContent();
+    assert.notEqual(short, LONG, "a one-tile piece is too narrow for the whole name");
+    assert.ok(short === "" || short!.endsWith("…"), `cut short or a dot: ${short}`);
+    // The pill keeps its screen size through a zoom.
+    const before = await pills("a1").first().evaluate((e) => e.getBoundingClientRect().height);
+    await page.locator("#map-zoom-in").click();
+    assert.equal(await pills("a1").first().evaluate((e) => e.getBoundingClientRect().height), before);
+    // Hovering the area's row shows its whole name on top.
+    await page.locator('.map-area[data-area="a2"]').hover();
+    await page.waitForFunction((n) => document.querySelector('#map-pills .map-pill[data-area="a2"]')?.textContent === n, LONG, { timeout: 15_000 });
+    assert.match(await pills("a2").getAttribute("class") || "", /\bhot\b/);
+    assert.match(await page.locator('#map-svg .map-area-shape[data-area-shape="a2"]').getAttribute("class") || "", /\bhot\b/);
+    // A click on a stack under a pill still selects the stack.
+    const stack = `#map-svg [data-stack="${letter(vaultModel, 3005, 1005)}"]`;
+    await page.locator(stack).click({ force: true });
+    assert.equal(await page.locator(stack).getAttribute("aria-pressed"), "true");
+    // Hide area labels: no pills, the button pressed, and the choice is saved and survives a reload.
+    assert.equal(await page.locator("#map-labels").getAttribute("aria-label"), "Hide area labels");
+    await page.locator("#map-labels").click();
+    assert.equal(await page.locator("#map-pills .map-pill").count(), 0);
+    assert.equal(await page.locator("#map-labels").getAttribute("aria-pressed"), "true");
+    assert.equal(await page.locator("#map-labels").getAttribute("aria-label"), "Hide area labels", "one fixed name; pressed means hidden");
+    assert.equal(await page.locator("#map-svg .map-area-shape").count(), 2, "the tints stay");
+    await until(() => { try { return JSON.parse(readFileSync(join(dir, "ui-prefs.json"), "utf8")).areaLabels as string; } catch { return ""; } }, (v) => v === "hide", "the choice saved");
+    await page.reload();
+    await go(page, `#/map/${VAULT}`, "#map-svg .map-stack");
+    assert.equal(await page.locator("#map-labels").getAttribute("aria-pressed"), "true");
+    assert.equal(await page.locator("#map-pills .map-pill").count(), 0, "still hidden after a reload");
+    await page.locator("#map-labels").click();
+    assert.equal(await pills("a1").count(), 2, "shown again");
+    assert.deepEqual(errors, []);
+  } finally { await done(app, dir); }
+});
+
+test("[slow] House map areas: the keyboard alone draws an area (arrows move the cursor, Space starts and ends a rectangle, Shift+Space adds one, the size is announced, Enter finishes, Esc cancels)", async (t) => {
+  const why = unavailable();
+  if (why) return t.skip(why);
+  const { dir } = seed();
+  const { app, page, errors } = await launch(dir, { want: { width: 1024, height: 768 } });
+  // The live region is emptied and refilled on the next frame: wait for the words.
+  const live = async (want: string): Promise<void> => { await page.waitForFunction((w) => document.querySelector("#map-draw-live")?.textContent === w, want, { timeout: 15_000 }); };
+  const keys = async (...ks: string[]): Promise<void> => { for (const k of ks) await page.keyboard.press(k); };
+  try {
+    await go(page, `#/map/${VAULT}`, "#map-svg .map-stack");
+    // Esc cancels, focus back on + New area.
+    await tabTo(page, "#map-new-area-0");
+    await page.keyboard.press("Enter");
+    await page.waitForSelector("#map-draw-hint");
+    assert.ok(await focused(page, "#map-svg"), "the map takes the keyboard");
+    await keys("Space", "ArrowRight", "Escape");
+    await page.waitForFunction(() => !document.querySelector("#map-draw-hint"), undefined, { timeout: 15_000 });
+    assert.ok(await focused(page, "#map-new-area-0"));
+    await live("Drawing cancelled.");
+
+    // The cursor starts mid-house (3003, 1003) and the arrows move it the way they point on screen (↑ half a tile up, → a whole tile right): four ↑ to the north corner (3001, 1001), then four ↓ and two → lay the row of five to 3005, 1001; Shift+Space and four ↓ and two ← add the column down to 3005, 1005.
+    await page.keyboard.press("Enter");
+    await page.waitForSelector("#map-draw-hint");
+    await keys("ArrowUp", "ArrowUp", "ArrowUp", "ArrowUp", "Space");
+    assert.equal(await page.locator("#map-svg .map-draw-cursor").count(), 1, "the cursor is drawn");
+    await keys("ArrowDown", "ArrowDown", "ArrowDown", "ArrowDown", "ArrowRight", "ArrowRight");
+    await live("5 × 1 = 5 tiles");
+    await keys("Space");
+    await live("1 rectangle, 5 tiles. Enter to finish.");
+    await keys("Shift+Space", "ArrowDown", "ArrowDown", "ArrowDown", "ArrowDown", "ArrowLeft", "ArrowLeft");
+    await live("1 × 5 = 5 tiles");
+    await keys("Space");
+    await live("2 rectangles, 9 tiles. Enter to finish.");
+    await keys("Enter");
+    await page.waitForSelector("#map-area-new-name");
+    assert.ok(await focused(page, "#map-area-new-name"));
+    await page.keyboard.type("East corner");
+    await keys("Enter");
+    await page.waitForSelector('.map-area[data-area="a1"]');
+    assert.match(await page.locator('.map-area[data-area="a1"]').textContent() || "", /^East corner45$/, "nine stacks of five");
+    assert.ok(await focused(page, '.map-area[data-area="a1"]'), "focus on the new area's row");
+    assert.deepEqual((await until(() => readAreas(dir), (a) => !!a?.length, "the area saved"))![0]!.rects, [{ x0: 3001, y0: 1001, x1: 3005, y1: 1001 }, { x0: 3005, y0: 1001, x1: 3005, y1: 1005 }]);
     assert.deepEqual(errors, []);
   } finally { await done(app, dir); }
 });
@@ -604,14 +822,18 @@ async function measure(page: Page, name: string, shows: RegExp, rows: Array<Cont
   await page.emulateMedia({ colorScheme: "light" });
 }
 
-test("[slow] House map: Where shows the house's coordinates and the facet overview with a marker per house, another house's marker opens its map by click or keyboard, and without the facet file a line says why", async (t) => {
+test("[slow] House map: the Location section shows the house's coordinates under its heading and the facet overview with a marker per house, another house's marker opens its map by click or keyboard, and without the facet file a line says why", async (t) => {
   const skip = unavailable();
   if (skip) { t.skip(skip); return; }
   const { dir } = seed({ facet: true });
   const { app, page, errors } = await launch(dir);
   try {
     await go(page, `#/map/${VAULT}`, "#map-panel #map-where");
-    assert.match((await page.locator("#map-where-text").textContent())!, /^3003, 1003 · Trammel · \d+°\d\d'[NS] \d+°\d\d'[EW]$/);
+    // The coordinates are the Location section's first line, under its heading; the heading area above has no coordinates or corners.
+    assert.deepEqual(await page.locator("#map-where > *").evaluateAll((es) => es.slice(0, 2).map((e) => e.id || e.className)), ["map-where-title", "map-where-coords"]);
+    assert.equal(await page.locator("#map-where-title").textContent(), "Location - Trammel - 3003 1003");
+    assert.equal(await page.locator("#map-where #map-where-text").textContent(), "3003, 1003 · Trammel");
+    assert.doesNotMatch(await page.locator("#map-panel .map-panel-head").textContent() || "", /Corners|3003, 1003/);
     assert.equal(await page.locator("#map-where-copy").getAttribute("aria-label"), "Copy the coordinates");
     await page.waitForFunction(() => { const i = document.querySelector<HTMLImageElement>("#map-where .map-where-img"); return !!i && i.complete && i.naturalWidth === 600 && i.naturalHeight === 450; }, null, { timeout: 30_000 });
     assert.equal(await page.locator("#map-where .map-where-mark.current").getAttribute("aria-label"), "Trammel house at 3003, 1003 (this house)");
@@ -634,7 +856,8 @@ test("[slow] House map: Where shows the house's coordinates and the facet overvi
   try {
     await go(b.page, `#/map/${VAULT}`, "#map-panel #map-where-note");
     assert.match((await b.page.locator("#map-where-note").textContent())!, /no world map file for this facet/);
-    assert.match((await b.page.locator("#map-where-text").textContent())!, /^3003, 1003 · Trammel/);
+    assert.equal(await b.page.locator("#map-where #map-where-text").textContent(), "3003, 1003 · Trammel", "the heading and the coordinates stay, the reason under them");
+    assert.deepEqual(await b.page.locator("#map-where > *").evaluateAll((es) => es.map((e) => e.id || e.className)), ["map-where-title", "map-where-coords", "map-where-note"]);
     assert.equal(await b.page.locator("#map-where img").count(), 0);
   } finally { await done(b.app, bare); }
 });
@@ -752,7 +975,8 @@ async function drawerLayout(page: Page, width: number, mapBefore: number): Promi
     assert.ok(drawer.x >= panel.x + panel.width - 1, `the drawer is right of the panel (${drawer.x} < ${panel.x + panel.width})`);
     assert.ok(map.width < mapBefore, `the map narrows (${map.width} ≥ ${mapBefore})`);
     if (width < 1800) assert.ok(side < 1, `below 1800 px the levels pane folds away (${side} px)`);
-    else assert.ok(side > 200, `from 1800 px the levels pane stays (${side} px)`);
+    else assert.ok(side > 270, `from 1800 px the 280 px levels pane stays (${side} px)`);
+    if (width >= 1440) assert.ok(map.width >= 360, `with the drawer open the map keeps room (${map.width} px)`);
   } else assert.ok(drawer.y >= panel.y + panel.height - 1, "below 1100 px the drawer comes after the panel");
 }
 
@@ -787,13 +1011,15 @@ test("[slow] House map: Show items opens the contents drawer as a column of its 
     const names = (): Promise<string[]> => page.locator("#map-drawer-body .map-item-name, #map-drawer-body .map-bag-name").allTextContents();
     assert.deepEqual(await names(), ["Weapons", "Gems", "Ruby", "Bow", "Katana", "Arrows"], "bags first, then the items by name, nested inside nested");
     assert.match(await page.locator("#map-drawer-body .map-bag-head").first().textContent() || "", /4 items/);
-    // one tab per chest of the stack, the shown one checked
-    assert.equal(await page.locator("#map-drawer [role=radio]").count(), FILLED.length);
-    assert.equal(await page.locator(`#map-drawer-tab-${TOP}`).getAttribute("aria-checked"), "true");
-    await page.locator(`#map-drawer-tab-${UNDER}`).click();
+    // five chests: a select labelled Chest (tabs are for up to four), an option per chest, the shown one chosen
+    assert.equal(await page.locator("#map-drawer [role=radio]").count(), 0);
+    assert.equal(await page.locator("#map-drawer-chest option").count(), FILLED.length);
+    assert.equal(await page.locator('#map-drawer label[for="map-drawer-chest"]').textContent(), "Chest");
+    assert.equal(await page.locator("#map-drawer-chest").inputValue(), String(TOP));
+    await page.locator("#map-drawer-chest").selectOption(String(UNDER));
     await summaryIs("46 items · 1 loose, 43 in 2 bags");
     assert.equal(await page.locator('#map-panel li.open').getAttribute("data-chest"), String(UNDER));
-    await page.locator(`#map-drawer-tab-${TOP}`).click();
+    await page.locator("#map-drawer-chest").selectOption(String(TOP));
     await summaryIs("6 items · 1 loose, 4 in 1 bag");
     await page.locator("#map-drawer-filter").fill("ruby");
     await page.waitForFunction(() => document.querySelectorAll("#map-drawer-body .map-item").length === 1);
@@ -808,13 +1034,13 @@ test("[slow] House map: Show items opens the contents drawer as a column of its 
     assert.equal(await page.evaluate(() => (document.activeElement as HTMLElement).dataset.act), "items");
     assert.equal(await page.locator("#map-panel li.open").count(), 0);
     await page.waitForTimeout(400);
-    assert.ok(await page.locator("#tab-map .map-side").evaluate((e) => e.getBoundingClientRect().width) > 200, "the levels pane is back");
+    assert.ok(await page.locator("#tab-map .map-side").evaluate((e) => e.getBoundingClientRect().width) > 270, "the 280 px levels pane is back");
     // another stack swaps the drawer to that stack's top chest; ✕ closes it with focus on the stack
     await opener.click();
     await page.waitForSelector("#map-drawer .map-item");
     const frontTop = vaultModel.stacks.find((s) => s.letter === front)!.serials.at(-1)!;
     await page.locator(`#map-svg [data-stack="${front}"]`).click();
-    await page.waitForFunction((s) => document.querySelector("#map-drawer [role=radio][aria-checked=true]")?.id === `map-drawer-tab-${s}`, frontTop, { timeout: 10_000 });
+    await page.waitForFunction((s) => (document.querySelector("#map-drawer-chest") as HTMLSelectElement | null)?.value === String(s), frontTop, { timeout: 10_000 });
     await summaryIs("Empty");
     assert.equal(await page.locator('#map-panel li.open').getAttribute("data-chest"), String(frontTop));
     await page.locator("#map-drawer [aria-label='Close contents']").click();
@@ -826,7 +1052,7 @@ test("[slow] House map: Show items opens the contents drawer as a column of its 
     await page.keyboard.press("Enter");
     await opener.click();
     await page.waitForSelector("#map-drawer .map-item");
-    await page.locator(`#map-drawer-tab-${UNDER}`).click();
+    await page.locator("#map-drawer-chest").selectOption(String(UNDER));
     await summaryIs("46 items · 1 loose, 43 in 2 bags");
     await page.locator("#map-drawer-filter").fill("pearl");
     await page.locator(`#map-drawer-bag-${SPARE}`).click();
@@ -839,7 +1065,7 @@ test("[slow] House map: Show items opens the contents drawer as a column of its 
     await page.evaluate(async () => { await (await import("/ui/app.mjs" as string)).reload(); });
     await summaryIs("47 items · 1 loose, 44 in 2 bags");
     assert.ok((await names()).includes("Pearl 41"), "the new item shows");
-    assert.equal(await page.locator(`#map-drawer-tab-${UNDER}`).getAttribute("aria-checked"), "true");
+    assert.equal(await page.locator("#map-drawer-chest").inputValue(), String(UNDER));
     assert.equal(await page.locator("#map-drawer-filter").inputValue(), "pearl");
     assert.equal(await page.locator(`#map-drawer-bag-${SPARE}`).evaluate((e) => (e.parentElement as HTMLDetailsElement).open), false, "the folded bag stays folded");
     assert.equal(await page.locator(`#map-drawer-bag-${SUPPLIES}`).evaluate((e) => (e.parentElement as HTMLDetailsElement).open), true);
@@ -852,6 +1078,22 @@ test("[slow] House map: Show items opens the contents drawer as a column of its 
     await page.waitForFunction(() => location.hash === "#/inventory", undefined, { timeout: 10_000 });
     await page.waitForSelector("#inv-peek:not([hidden]) #peek-title", { timeout: 15_000 });
     assert.equal(await page.locator("#peek-title").textContent(), "Pearl 01");
+    assert.deepEqual(errors, []);
+  } finally { await done(app, dir); }
+});
+
+test("[slow] House map: a stack of up to four chests picks its chest in the drawer by tabs, not a select (1024 × 768)", async (t) => {
+  const why = unavailable();
+  if (why) return t.skip(why);
+  const { dir } = seed();
+  const { app, page, errors } = await launch(dir, { want: { width: 1024, height: 768 } });
+  try {
+    await go(page, `#/map/${COURT}`, `#map-svg [data-stack="${letter(courtModel, 1012, 2013)}"]`);
+    await page.locator(`#map-svg [data-stack="${letter(courtModel, 1012, 2013)}"]`).click({ force: true });
+    await page.locator(`#map-panel li[data-chest="${YARD_CHEST}"] [data-act="items"]`).click();
+    await page.waitForSelector("#map-drawer");
+    assert.equal(await page.locator(`#map-drawer [role=radio]#map-drawer-tab-${YARD_CHEST}`).getAttribute("aria-checked"), "true");
+    assert.equal(await page.locator("#map-drawer-chest").count(), 0);
     assert.deepEqual(errors, []);
   } finally { await done(app, dir); }
 });
