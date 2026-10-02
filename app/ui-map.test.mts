@@ -414,7 +414,7 @@ test("[fast] house map: a castle's level becomes a scene in well under the 100 m
 });
 
 test("[fast] house map: the picker and the headings use the player's name when the house has one", () => {
-  const h = { id: "1-3000-1000", facet: 1, capturedAt: "", captures: 1, width: 18, height: 18, levels: 2, containers: 120 };
+  const h = { id: "1-3000-1000", facet: 1, capturedAt: "", captures: 1, width: 18, height: 18, plot: { x0: 3000, y0: 1000, x1: 3017, y1: 1017 }, levels: 2, containers: 120 };
   assert.equal(houseLabel(h), "Trammel house, 18 × 18, 120 containers");
   assert.equal(houseLabel({ ...h, name: "Main house" }), "Main house · Trammel, 18 × 18, 120 containers");
   const m = vault();
