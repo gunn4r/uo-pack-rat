@@ -1,7 +1,8 @@
 // house-model.test.mts — app/house-model.mts against synthetic houses (app/house-fixture.mts): levels, cells, the dirt-under-floor and foundation-lip rules, indoor and yard, rooms and doorways, furniture, stacks, standing spots, engraving codes, the no-tiledata fallback and a castle's speed. Tags: [fast]. Run: node --test app/house-model.test.mts
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { buildHouseModel, letterOf, type HouseModel, type Cell } from "./house-model.mts";
+import { buildHouseModel, letterOf, materialFamily, type HouseModel, type Cell } from "./house-model.mts";
+import type { HouseItem } from "./house-capture.mts";
 import { G, fixtureTileData, courtyardHouse, stairHouse, towerHouse, roofHouse, hallHouse, vaultHouse, castleHouse } from "./house-fixture.mts";
 
 const td = fixtureTileData();
@@ -242,12 +243,48 @@ test("[fast] house model: a teleporter holding a chest is not a standing spot", 
 test("[fast] house model: the model does not depend on the order of tiles, items or containers", () => {
   let seed = 7;
   const shuffle = <T,>(xs: T[]): T[] => { const r = [...xs]; for (let i = r.length - 1; i > 0; i--) { seed = (seed * 1103515245 + 12345) % 2147483648; const j = seed % (i + 1); [r[i], r[j]] = [r[j]!, r[i]!]; } return r; };
-  const pick = (m: HouseModel) => ({ cells: m.cells, rooms: m.rooms, furniture: m.furniture, spots: m.spots, stacks: m.stacks, codes: m.codes });
+  const pick = (m: HouseModel) => ({ cells: m.cells, rooms: m.rooms, furniture: m.furniture, spots: m.spots, stacks: m.stacks, codes: m.codes, unopened: m.unopened, unopenedNames: m.unopenedNames });
   const { house: castle, chests } = castleHouse();
-  for (const [house, cs] of [[castle, chests], [courtyardHouse(), [{ serial: 0x40000500, name: "Wooden Chest", facet: 1, x: 1003, y: 2003, z: 13 }]]] as const) {
+  for (const [house, cs] of [[castle, chests.map((c, i) => i % 7 ? c : { ...c, opened: false })], [courtyardHouse(), [{ serial: 0x40000500, name: "Wooden Chest", facet: 1, x: 1003, y: 2003, z: 13 }]]] as const) {
     const want = pick(buildHouseModel(house, td, [...cs]));
     for (const order of [<T,>(xs: readonly T[]): T[] => [...xs].reverse(), <T,>(xs: readonly T[]): T[] => shuffle([...xs])]) {
       assert.deepEqual(pick(buildHouseModel({ ...house, tiles: order(house.tiles), items: order(house.items) }, td, order(cs))), want);
     }
   }
+});
+
+test("[fast] house model: an open door standing on the wall beside its gap marks the gap, not the wall (issue #159)", () => {
+  const h = hallHouse(), shut = h.tiles.filter((t) => t[0] !== G.door);
+  const open: HouseItem[] = [[0x40000310, G.door, 6007, 7002, 7], [0x40000311, G.door, 6012, 7004, 7]];
+  const m = buildHouseModel({ ...h, tiles: shut, items: open }, td, []);
+  assert.deepEqual([cell(m, 0, 6007, 7002)!.kind, cell(m, 0, 6007, 7002)!.doorway], ["wall", false]);
+  assert.deepEqual([cell(m, 0, 6012, 7004)!.kind, cell(m, 0, 6012, 7004)!.doorway], ["wall", false]);
+  assert.equal(cell(m, 0, 6007, 7003)!.doorway, true);
+  assert.deepEqual(m.rooms.map((r) => [r.name, r.tiles]), [["West room", 36], ["East room", 36], ["Hallway", 4]], "the gaps stay out of the hallway, as with a closed door");
+  assert.deepEqual([cell(m, 0, 6007, 7003)!.room, cell(m, 0, 6012, 7003)!.room], [null, null]);
+  assert.deepEqual(m.furniture.map((f) => [f.x, f.y]), [[6007, 7002], [6012, 7004]], "the door is drawn where it stands");
+});
+
+test("[fast] house model: a material name maps to a colour family by keyword, a nameless one to neutral", () => {
+  const cases: Array<[string, string]> = [["stone wall", "stone"], ["stone pavers Dark", "tile"], ["wooden planks", "wood"], ["grass", "grass"], ["dirt", "dirt"], ["sand", "dirt"], ["sandstone floor", "sandstone"],
+    ["marblefloor east", "marble"], ["floor gold east01", "marble"], ["brick wall", "brick"], ["plaster wall", "plaster"], ["water", "water"], ["thatch roof", "wood"], ["Wallset1 FloorB East", "neutral"], ["", "neutral"]];
+  for (const [name, family] of cases) assert.equal(materialFamily(name), family, name);
+});
+
+test("[fast] house model: each cell carries its material's family, and without tiledata every cell is neutral", () => {
+  const m = buildHouseModel(courtyardHouse(), td, []);
+  assert.deepEqual([cell(m, 0, 1002, 2002)!.family, cell(m, 0, 1012, 2012)!.family, cell(m, 0, 1009, 2012)!.family, cell(m, 1, 1002, 2002)!.family], ["tile", "grass", "stone", "wood"]);
+  assert.ok(buildHouseModel(courtyardHouse(), null, []).cells.every((c) => c.family === "neutral"));
+});
+
+test("[fast] house model: a chest a capture saw and no scan opened is stacked, listed as not opened with its name, and every stack keeps its chests' z", () => {
+  const { house, chests } = vaultHouse();
+  const seen = { serial: 0x40000900, name: "metal chest", facet: 1, x: 3003, y: 1002, z: 27, opened: false };
+  const m = buildHouseModel(house, td, [...chests.slice(0, 5), seen]);
+  assert.deepEqual(m.unopened, [seen.serial]);
+  assert.deepEqual(m.unopenedNames, { [String(seen.serial)]: "metal chest" });
+  const up = m.stacks.find((s) => s.serials.includes(seen.serial))!;
+  assert.deepEqual([up.level, up.zs], [1, [27]]);
+  assert.deepEqual(m.stacks.find((s) => s.x === 3001 && s.y === 1001)!.zs, [7, 11, 15, 19, 23]);
+  assert.equal(typeof m.codes[String(seen.serial)], "string");
 });

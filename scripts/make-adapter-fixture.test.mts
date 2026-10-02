@@ -172,13 +172,14 @@ test("[fast] a ground container's facet survives anonymising; its tile does not"
 
 test("[fast] a house the source scan captured never reaches the fixture: a synthetic house stands in for it, and a scan with none gets none", () => {
   withScan((scan) => {
-    (scan as unknown as Record<string, unknown>).house = { facet: 1, capturedAt: "2026-09-30T20:00:00Z", at: { x: 4321, y: 2345 }, tiles: [[1301, 4321, 2345, 7, 0], [100, 4320, 2345, 7, 1]], items: [[0x40001234, 2868, 4321, 2345, 7]] };
+    (scan as unknown as Record<string, unknown>).house = { facet: 1, capturedAt: "2026-09-30T20:00:00Z", at: { x: 4321, y: 2345 }, tiles: [[1301, 4321, 2345, 7, 0], [100, 4320, 2345, 7, 1]], items: [[0x40001234, 2868, 4321, 2345, 7]], containers: [[0x40001235, 3708, 4321, 2345, 7]] };
   }, (inPath, outPath) => {
     const r = run(inPath, outPath);
     assert.equal(r.status, 0, `expected exit 0, stderr: ${r.stderr}`);
     const text = readFileSync(outPath, "utf8"), out = JSON.parse(text) as { house?: { at: unknown; tiles: number[][] } };
     for (const n of ["4321", "2345", "2026-09-30T20"]) assert.ok(!text.includes(n), `${n} from the real house is in the fixture`);
     assert.deepEqual(out.house!.at, { x: 1, y: 1 });
+    assert.ok(!text.includes(String(0x40001235)), "the real house's chest is in the fixture");
     assert.equal(validateScan(JSON.parse(text)).ok, true);
   });
   withScan((scan) => { delete (scan as unknown as Record<string, unknown>).house; }, (inPath, outPath) => {

@@ -58,3 +58,14 @@ test("[fast] house capture: a malformed capturedAt sorts as the oldest capture",
   ]);
   assert.equal(h!.tiles[0]![0], 1);
 });
+
+test("[fast] house capture: chests seen but not opened merge like furniture, and a capture without the list erases none", () => {
+  const unread = JSON.parse(JSON.stringify(scan("2026-10-01T13:00:00Z", { at: { x: 101, y: 101 }, containers: undefined }))) as ScanV2;
+  assert.equal("containers" in unread.house!, false);
+  const [h] = latestHouses([
+    scan("2026-10-01T10:00:00Z", { at: { x: 100, y: 100 }, containers: [[21, 0x0E7C, 101, 101, 7], [22, 0x0E7C, 130, 130, 7]] }),
+    scan("2026-10-01T12:00:00Z", { at: { x: 102, y: 102 }, containers: [[23, 0x0E7C, 103, 103, 7]] }),
+    unread,
+  ]);
+  assert.deepEqual(h!.containers.map((c) => c[0]), [22, 23], "21 was in reach of the 12:00 capture and gone; the 13:00 capture read no ground");
+});
