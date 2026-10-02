@@ -156,7 +156,7 @@ function sortValue(it: Item, key: string, ladder: RulesV1RarityItem[] | undefine
   return colVal(it, key);
 }
 
-// `serial` is the group's first stack in the list's order: the item whose tooltip the group's row shows.
+// `serial` is the group's first stack in the list's order: a group of one stack shows that item's tooltip.
 interface ItemGroupJson { name: string; kind: string; slot: string | null; amount: number; stacks: number; locations: Array<[string, number]>; serial: number; }
 const groupJson = (g: ItemGroup): ItemGroupJson => ({ name: g.name, kind: g.kind, slot: g.slot, amount: g.amount, stacks: g.stacks, locations: [...g.locations.entries()], serial: g.items[0]!.serial });
 

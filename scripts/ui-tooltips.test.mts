@@ -76,6 +76,8 @@ test("[slow] the item tooltip shows on every screen that draws an item: Inventor
     await page.keyboard.press("Escape");
     await setRows(page, "Grouped");
     await tipShows(page, page.locator("#inv-table tbody tr.item[data-serial] td:first-child").first(), "a grouped Inventory row");
+    const groups = await page.locator("#inv-table tbody tr.item").evaluateAll((trs) => trs.map((tr) => tr.hasAttribute("data-serial")));
+    assert.ok(groups.includes(false), "a group of several stacks carries no serial, so no tooltip");
     await setRows(page, "List");
 
     await go(page, "#/characters/Dorran", "#tab-characters .sheet .slot[data-serial]");

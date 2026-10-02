@@ -575,7 +575,8 @@ function rowFor(i: number, cols: ColDef[]): HTMLTableRowElement {
   if (p.groups) {
     const g = p.groups[i];
     if (!g) return skeletonRow(cols, i);
-    tr = el("tr", { class: "item", "data-serial": g.serial, "data-index": i, "aria-rowindex": i + 2, tabindex: "-1" }, ...cols.map((c) => groupCell(c, g)));   // the group's first stack is its tooltip
+    // a group of one stack is that item, with its tooltip; several stacks may differ, so no one of them speaks for the group
+    tr = el("tr", { class: "item", ...(g.stacks === 1 ? { "data-serial": g.serial } : {}), "data-index": i, "aria-rowindex": i + 2, tabindex: "-1" }, ...cols.map((c) => groupCell(c, g)));
   } else {
     const it = p.rows[i];
     if (!it) return skeletonRow(cols, i);
