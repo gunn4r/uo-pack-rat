@@ -1,8 +1,8 @@
-// ui/house-map.mts — the House map screen (#/map, #/map/<house id>; issue #10, spec section 4). It fetches the houses the scans captured (GET /api/houses) and every house's model (GET /api/houses/<id>), picks the deep-linked house (else the last one shown, else the one with the most chests; a deep link to a house that no longer exists falls back and the route is put back to #/map), and lays out three panes: levels, rooms and the yard on the left, the map in the middle, the details on the right, and a chest's contents in a drawer beside them. Ground chests outside every drawn house are a house of their own on a plain grid. Every rule and number is ui/house-map-model.mts's; this module builds the DOM and the SVG and wires the events.
+// ui/house-map.mts — the House map screen (#/map, #/map/<house id>; issue #10, spec section 4). It fetches the houses the scans captured (GET /api/houses) and every house's model (GET /api/houses/<id>), picks the deep-linked house (else the last one shown, else the one with the most chests; a deep link to a house that no longer exists falls back and the route is put back to #/map), and lays out three panes: levels and the player's own areas on the left (issue #10: drawn on the map by mouse or keyboard, named, renamed, recoloured, redrawn and deleted here), the map in the middle, the details on the right, and a chest's contents in a drawer beside them. Ground chests outside every drawn house are a house of their own on a plain grid. Every rule and number is ui/house-map-model.mts's; this module builds the DOM and the SVG and wires the events.
 import { state, bridge } from "./store.mts";
 import { $, el, safeColor, fmtN, toast } from "./dom.mts";
 import { api } from "./api.mts";
-import { box, txt, button, segmented, pill, message, meter, keyValue, modalOpen, tipWrap, input, copyText, icon } from "./components.mts";
+import { box, txt, button, segmented, pill, message, meter, keyValue, modalOpen, tipWrap, input, copyText, icon, kbd, menu, popover, closePopover } from "./components.mts";
 import { labelContainer } from "./containers.mts";
 import { showContainer, itemMenu, rarityEl, tagEls } from "./inventory.mts";
 import { propertyLines, RESISTS } from "./peek.mts";
@@ -11,16 +11,17 @@ import { errorText } from "./messages.mts";
 import { openWorldMap, fetchFacetImage, type FacetImage } from "./world-map.mts";
 import { plural } from "./inv-model.mts";
 import { fillTone } from "./organize-model.mts";
-import { PLAIN, pickHouse, plainGrid, chestCount, roomCounts, houseLabel, houseName, carryOver, tiledataNote, chestViews, colourOf, chestLabel, sceneOf, boundsOf, fit, vbText,
+import { PLAIN, pickHouse, plainGrid, chestCount, houseLabel, houseName, carryOver, carryOverText, tiledataNote, chestViews, colourOf, chestLabel, sceneOf, boundsOf, fit, vbText,
   cutAway, calloutLines, nearestInDirection, houseTotals, legendOf, stackWhere, anchorOf, zoomAt, fillWords, whereOf, whereTitle, cropAround, facetMapUrl, markersOf, facetMapNote, markerRadii,
-  drawerChest, drawerMeta, slotsText, contentsOf, contentsSummary, filterContents, type Contents, type ContentsNode, type Marker, type View, type Mode, type Box, type Colour, type ChestView, type Piece, type Prism, type Pt, type Dir } from "./house-map-model.mts";
-import type { ContainerLabel, HouseModel, HousesApiResponse, HouseApiResponse, HouseMapApiResponse, HouseMapEntry, HouseMapPutApiResponse, ItemsApiResponse, Room, Stack } from "./api-types.mts";
+  drawerChest, drawerMeta, slotsText, contentsOf, contentsSummary, filterContents, areaOfStack, levelAreas, tileAt, clampTile, rectOf, sizeText, unionTiles, coveredCells, outlineOf, labelSpot,
+  nextAreaId, nextAreaColor, moveCursor, project, tilePolygon, pts, AREA_COLORS, MAX_AREAS, MAX_RECTS, type PlainModel, type Tile, type Contents, type ContentsNode, type Marker, type View, type Mode, type Box, type Colour, type ChestView, type Piece, type Prism, type Pt, type Dir } from "./house-map-model.mts";
+import type { AreaRect, ContainerLabel, HouseArea, HouseModel, HousesApiResponse, HouseApiResponse, HouseMapApiResponse, HouseMapEntry, HouseMapPutApiResponse, ItemsApiResponse, Stack } from "./api-types.mts";
 import type { Item } from "../vault-lib.mts";
 
 const SVG_NS = "http://www.w3.org/2000/svg";
-// The map's page state: the houses and models as last fetched, the player's house names (issue #164), the one shown, its level, view and colour mode, the room zoomed to, the selected stack (by a serial in it, so a rescan that keeps the stack keeps the selection), the hovered and focused stacks (by letter), the viewBox, and a load error.
-interface MapState { list: HousesApiResponse | null; names: Record<string, HouseMapEntry>; models: HouseModel[]; plain: HouseModel | null; id: string | null; model: HouseModel | null; level: number; view: View; mode: Mode; room: number | null; selected: number | null; hover: string | null; focus: string | null; vb: Box | null; error: string | null }
-const S: MapState = { list: null, names: {}, models: [], plain: null, id: null, model: null, level: 0, view: "angle", mode: "contents", room: null, selected: null, hover: null, focus: null, vb: null, error: null };
+// The map's page state: the houses and models as last fetched, the player's house names and areas (issues #164, #10), the one shown, its level, view and colour mode, the area zoomed to (by id), the selected stack (by a serial in it, so a rescan that keeps the stack keeps the selection), the hovered and focused stacks (by letter), the viewBox, and a load error.
+interface MapState { list: HousesApiResponse | null; names: Record<string, HouseMapEntry>; models: HouseModel[]; plain: PlainModel | null; id: string | null; model: HouseModel | null; level: number; view: View; mode: Mode; area: string | null; selected: number | null; hover: string | null; focus: string | null; vb: Box | null; error: string | null }
+const S: MapState = { list: null, names: {}, models: [], plain: null, id: null, model: null, level: 0, view: "angle", mode: "contents", area: null, selected: null, hover: null, focus: null, vb: null, error: null };
 let seq = 0;
 let highlighting = false;   // Highlight the stack is sending (highlightStack)
 let renaming: string | null = null;   // while renaming, the name as typed so far: a redraw rebuilds the field from it (renameField)
@@ -29,6 +30,19 @@ let nameError: string | null = null;  // the server's reason for the last refuse
 const facetImages = new Map<string, "loading" | FacetImage>();
 const body = (): HTMLElement => $<HTMLElement>("#map-body")!;
 const selectedStack = (): Stack | null => (S.selected == null ? null : S.model?.stacks.find((s) => s.serials.includes(S.selected!)) ?? null);
+// The areas of the house shown: the player's (house-map.json), or the plain grid's groups (read-only).
+const areasNow = (): HouseArea[] => (S.id === PLAIN ? S.plain?.areas ?? [] : (S.id && S.names[S.id]?.areas) || []);
+const areaById = (id: string | null): HouseArea | null => (id == null ? null : areasNow().find((a) => a.id === id) ?? null);
+// ---------------------------------------------------------------- editing areas (issue #10)
+// Drawing: the level, the area being redrawn (null for a new one), the rectangles finished, the one being dragged or laid by the keyboard (from its anchor), whether it is added to the others (Shift), and the keyboard's tile cursor (shown once the keyboard moves it).
+interface Draw { level: number; target: string | null; color: string; rects: AreaRect[]; cur: AreaRect | null; anchor: Tile | null; add: boolean; cursor: Tile; keyed: boolean }
+let draw: Draw | null = null;
+let dragging = false;   // a mouse drag is drawing a rectangle
+// A new area drawn and waiting for its name (the field's draft kept through redraws), an area being renamed, one asking to be deleted, and a save under way.
+let naming: { level: number; color: string; rects: AreaRect[]; draft: string; error: string | null } | null = null;
+let renamingArea: { id: string; draft: string; error: string | null } | null = null;
+let deleting: string | null = null;
+const stopEditing = (): void => { draw = null; dragging = false; naming = null; renamingArea = null; deleting = null; };
 
 // The top bar's view and colour switches (index.html holds placeholders), and the house picker.
 const viewSeg = segmented({ label: "View", value: "angle", options: [{ value: "angle", label: "Game angle" }, { value: "top", label: "Top-down" }], onChange: (v) => { S.view = v === "top" ? "top" : "angle"; S.vb = null; render(); } });
@@ -37,6 +51,8 @@ $<HTMLElement>("#map-view")!.replaceWith(viewSeg);
 const modeSeg = segmented({ label: "Colours", value: "contents", options: [{ value: "contents", label: "Contents" }, { value: "free", label: "Free space" }], onChange: (v) => { S.mode = v === "free" ? "free" : "contents"; render(); } });
 modeSeg.id = "map-mode";
 $<HTMLElement>("#map-mode")!.replaceWith(modeSeg);
+// What the drawing keys did, for a screen reader: outside the panes a redraw rebuilds, so an announcement made just after one is still heard.
+$<HTMLElement>("#tab-map")!.append(box("div", { class: "sr", id: "map-draw-live", "aria-live": "polite" }));
 $<HTMLSelectElement>("#map-house")!.addEventListener("change", (e) => { location.hash = `#/map/${encodeURIComponent((e.target as HTMLSelectElement).value)}`; });
 
 export async function showMap(want: string | null): Promise<void> {
@@ -57,9 +73,10 @@ export async function showMap(want: string | null): Promise<void> {
   const choices = [...S.models.map((m) => ({ id: m.id, containers: chestCount(m) })), ...(S.plain ? [{ id: PLAIN, containers: chestCount(S.plain) }] : [])];
   const id = pickHouse(choices, want, S.id);
   if (want && id !== want) history.replaceState(null, "", "#/map");
-  if (id !== S.id) { S.id = id; renaming = null; nameError = null; S.level = 0; S.room = null; S.selected = null; S.hover = null; S.focus = null; S.vb = null; }
+  if (id !== S.id) { S.id = id; renaming = null; nameError = null; stopEditing(); S.level = 0; S.area = null; S.selected = null; S.hover = null; S.focus = null; S.vb = null; }
   S.model = id === PLAIN ? S.plain : S.models.find((m) => m.id === id) ?? null;
-  if (S.model && S.level >= S.model.levels.length) { S.level = 0; S.vb = null; }
+  if (S.model && S.level >= S.model.levels.length) { S.level = 0; S.vb = null; stopEditing(); }
+  if (S.area && !areaById(S.area)) S.area = null;   // deleted meanwhile
   if (!selectedStack()) S.selected = null;   // the stack is gone since (a rescan moved its chests)
   if (!render() && D) void loadDrawer();   // a new scan: the open drawer's chest fetched again (once), its tab, filter, folded bags and scroll kept
 }
@@ -86,7 +103,7 @@ function render(): boolean {
   return fetching;
 }
 type Focusable = HTMLElement | SVGElement;
-// The focused control on the map screen, as a function that puts focus on its rebuilt twin once render() is done: a level pill, a room, a crumb or a stack by its data key, a panel control by focusKey. One that is gone hands focus to a stand-in: the first pill for a pill, the last crumb still a button for a crumb, else the map's tab stop. Null when focus is outside the screen.
+// The focused control on the map screen, as a function that puts focus on its rebuilt twin once render() is done: a level pill, a crumb or a stack by its data key, a control of the left pane by its id (an area's row, ✎ and ⋯, + New area, a name field), the map itself while drawing, a panel control by focusKey. One that is gone hands focus to a stand-in: the first pill for a pill, the last crumb still a button for a crumb, else the map's tab stop. Null when focus is outside the screen.
 function keepFocus(): (() => void) | null {
   const a = document.activeElement, tab = $<HTMLElement>("#tab-map")!;
   if (!(a instanceof Element) || !tab.contains(a)) return null;
@@ -94,9 +111,11 @@ function keepFocus(): (() => void) | null {
   const stop = (): Focusable | null => q('#map-svg [data-stack][tabindex="0"]');
   const first = (...picks: Array<() => Focusable | null>): void => { for (const p of picks) { const e = p(); if (e) { e.focus(); return; } } };
   const key = (name: string): string | undefined => a.closest<Focusable>(`[data-${name}]`)?.dataset[name];
-  const level = key("level"), room = key("room"), crumb = key("crumb"), stack = key("stack");
+  const level = key("level"), crumb = key("crumb"), stack = key("stack");
   if (level != null) return () => first(() => q(`#map-levels [data-level="${level}"]`), () => q("#map-levels [data-level]"));
-  if (room != null) return () => first(() => q(`.map-room[data-room="${room}"]`), stop);
+  if (a.id === "map-svg") return () => first(() => q("#map-svg"));
+  const side = a.closest(".map-side") ? a.id : "";
+  if (side) return () => first(() => q(`#${CSS.escape(side)}`), () => q(`#map-new-area-${S.level}`), stop);
   if (crumb != null) return () => first(() => q(`#map-crumbs [data-crumb="${crumb}"]`), () => [...tab.querySelectorAll<HTMLElement>("#map-crumbs button")].at(-1) ?? null, stop);
   if (stack != null) return () => first(() => q(`#map-svg [data-stack="${stack}"]`), stop);
   const drawer = $<HTMLElement>("#map-drawer"), inDrawer = drawer ? focusKey(drawer) : null;
@@ -118,37 +137,238 @@ function paintTopbar(): void {
 // The level shown already does nothing (its pill, which unpressed itself on the click, is pressed again).
 function setLevel(i: number): void {
   if (i === S.level) { $<HTMLElement>(`#map-levels [data-level="${i}"]`)?.setAttribute("aria-pressed", "true"); return; }
-  S.level = i; S.room = null; S.selected = null; S.hover = null; S.vb = null;
+  if (draw) draw = null;
+  if (naming?.level !== i) naming = null;
+  S.level = i; S.area = null; S.selected = null; S.hover = null; S.vb = null;
   render();
 }
-function zoomToRoom(r: Room): void {
-  S.level = r.level; S.room = r.id; S.selected = null; S.hover = null; S.vb = null;
+function zoomToArea(a: HouseArea): void {
+  S.level = a.level; S.area = a.id; S.selected = null; S.hover = null; S.vb = null;
   render();
 }
 
-// Left: each level with its chest count and status, its rooms and the yard, each with a count; a room zooms the map to it.
+// Left: each level with its chest count and status; its areas (issue #10), each with its colour, chest count, ✎ and ⋯ (a click zooms the map to it); the rest of the level ("Everything else", or "Whole floor" before it has areas); + New area. The plain grid's groups are areas too, but read-only.
 function side(): HTMLElement {
-  const m = S.model!, counts = roomCounts(m);
-  return box("aside", { class: "card map-side", "aria-label": "Levels and rooms" }, ...m.levels.map((l) => box("section", { class: "map-level" },
-    box("h2", { class: "map-level-name" }, txt(l.name, "strong"), txt(plural(chestCount(m, l.index), "container"), "t-sm muted")),
-    l.status === "floor-only" && m.id !== PLAIN ? el("p", { class: "t-sm muted" }, "Floor only, no walls or stairs yet") : null,
-    box("ul", { class: "map-rooms" }, ...m.rooms.filter((r) => r.level === l.index).map((r) => box("li", {},
-      box("button", { type: "button", class: "map-room", "data-room": String(r.id), "aria-pressed": String(S.room === r.id), onclick: () => zoomToRoom(r) },
-        txt(r.name, "ellip"), txt(counts.get(r.id) ? plural(counts.get(r.id)!, "container") : "no containers", "t-sm muted"))))))));
+  const m = S.model!, areas = areasNow(), own = m.id !== PLAIN;
+  return box("aside", { class: "card map-side", "aria-label": "Levels and areas" }, ...m.levels.map((l) => {
+    const { rows, rest } = levelAreas(m, areas, l.index);
+    const drawingHere = draw?.level === l.index && draw.target == null;
+    return box("section", { class: "map-level" },
+      box("h2", { class: "map-level-name" }, txt(l.name, "strong"), txt(plural(chestCount(m, l.index), "container"), "t-sm muted")),
+      l.status === "floor-only" && own ? el("p", { class: "t-sm muted" }, "Floor only, no walls or stairs yet") : null,
+      box("ul", { class: "map-areas", "aria-label": `Areas on the ${l.name.toLowerCase()}` },
+        ...rows.map((r) => areaRow(m, r.area, r.chests, own)),
+        naming?.level === l.index ? namingRow(m, naming) : null,
+        box("li", { class: "map-area-row rest" }, box("span", { class: "map-area-rest" }, el("span", { class: "map-swatch rest", "aria-hidden": "true" }), txt(rest.name, "ellip"), txt(String(rest.chests), "t-sm muted num")))),
+      own ? button({ label: drawingHere ? "Drawing…" : "New area", icon: drawingHere ? undefined : "plus", size: "sm", variant: drawingHere ? "primary" : "secondary", cls: "map-new-area",
+        disabled: !drawingHere && (!!naming || areas.length >= MAX_AREAS),
+        attrs: { id: `map-new-area-${l.index}`, ...(drawingHere ? { "aria-pressed": "true" } : {}), ...(areas.length >= MAX_AREAS ? { title: `A house can have at most ${MAX_AREAS} areas.` } : {}) },
+        onClick: () => { if (drawingHere) finishDrawing(); else startDrawing(l.index, null); } }) : null);
+  }));
+}
+// An area's row: its zoom button (colour, name, chest count), ✎ (Rename) and ⋯ (Redraw, Change colour, Delete); while renaming, the name field in its place; while asking to delete, the question with Delete and Cancel.
+function areaRow(m: HouseModel, a: HouseArea, chests: number, editable: boolean): HTMLElement {
+  const swatch = el("span", { class: "map-swatch", "aria-hidden": "true", style: `background:var(--color-${a.color})` });
+  if (deleting === a.id) return box("li", { class: "map-area-row confirm" },
+    box("span", { class: "map-area-ask t-sm" }, txt(`Delete "${a.name}"? Its chests go to Everything else.`)),
+    box("span", { class: "map-area-ask-actions" },
+      button({ label: "Delete", variant: "danger", size: "sm", attrs: { id: `map-area-delete-${a.id}` }, onClick: () => { void removeArea(m, a); } }),
+      button({ label: "Cancel", size: "sm", attrs: { id: `map-area-keep-${a.id}` }, onClick: () => { deleting = null; render(); $<HTMLElement>(`#map-area-menu-${CSS.escape(a.id)}`)?.focus(); } })));
+  if (renamingArea?.id === a.id) return box("li", { class: "map-area-row editing" }, swatch, areaRenameField(m, a, renamingArea));
+  const zoom = box("button", { type: "button", class: "map-area", id: `map-area-${a.id}`, "data-area": a.id, "aria-pressed": String(S.area === a.id), onclick: () => zoomToArea(a) },
+    swatch, txt(a.name, "ellip"), txt(String(chests), "t-sm muted num"));
+  zoom.setAttribute("aria-label", `${a.name}, ${plural(chests, "container")}`);
+  if (!editable) return box("li", { class: "map-area-row" }, zoom);
+  const more: HTMLButtonElement = button({ label: `More actions for ${a.name}`, icon: "more", iconOnly: true, variant: "ghost", size: "sm", attrs: { id: `map-area-menu-${a.id}`, "aria-haspopup": "menu", "aria-expanded": "false" },
+    onClick: () => { menu(more, [
+      { label: "Redraw", onSelect: () => startDrawing(a.level, a.id) },
+      { label: "Change colour", onSelect: () => colourPicker(m, a, more) },
+      "divider",
+      { label: "Delete", danger: true, onSelect: () => { deleting = a.id; render(); $<HTMLElement>(`#map-area-keep-${CSS.escape(a.id)}`)?.focus(); } },
+    ], { label: `Actions for ${a.name}`, width: 160 }); } });
+  return box("li", { class: "map-area-row" }, zoom,
+    button({ label: `Rename ${a.name}`, icon: "pencil", iconOnly: true, variant: "ghost", size: "sm", attrs: { id: `map-area-edit-${a.id}` },
+      onClick: () => { renamingArea = { id: a.id, draft: a.name, error: null }; render(); const f = $<HTMLInputElement>("#map-area-rename"); f?.focus(); f?.select(); } }),
+    more);
+}
+// Change colour: the palette as a row of swatches, the area's own pressed.
+function colourPicker(m: HouseModel, a: HouseArea, anchor: HTMLElement): void {
+  popover(anchor, [box("div", { class: "map-colours", role: "group", "aria-label": `Colour of ${a.name}` }, ...AREA_COLORS.map((c, i) =>
+    box("button", { type: "button", class: "map-colour", "aria-label": `Colour ${i + 1}`, "aria-pressed": String(a.color === c), style: `--area:var(--color-${c})`,
+      onclick: () => { closePopover(); if (c !== a.color) void saveAreas(m, areasNow().map((x) => (x.id === a.id ? { ...x, color: c } : x)), `#map-area-menu-${a.id}`); } })))], { label: `Colour of ${a.name}` });
+}
+// Rename, as the house's name: Enter or leaving the field saves, Esc cancels, a refused name keeps the field open with the reason; a redraw rebuilds it from the draft.
+function areaRenameField(m: HouseModel, a: HouseArea, r: { draft: string; error: string | null }): HTMLElement {
+  const f = input({ size: "sm", value: r.draft, invalid: !!r.error, attrs: { id: "map-area-rename", maxlength: "60", "aria-label": `Name of ${a.name}`, ...(r.error ? { "aria-describedby": "map-area-rename-error" } : {}) } });
+  let busy = false, closed = false;
+  const back = (): void => { $<HTMLElement>(`#map-area-edit-${CSS.escape(a.id)}`)?.focus(); };
+  const close = (): void => { closed = true; renamingArea = null; render(); back(); };
+  const save = async (): Promise<void> => {
+    if (busy || closed) return;
+    const name = f.value.trim();
+    if (!name || name === a.name) { close(); return; }
+    busy = true;
+    const why = await saveAreas(m, areasNow().map((x) => (x.id === a.id ? { ...x, name } : x)), null);
+    busy = false;
+    if (!why) { if (!closed) close(); }
+    else if (!closed && renamingArea) { renamingArea.error = why; render(); $<HTMLInputElement>("#map-area-rename")?.focus(); }
+  };
+  f.addEventListener("input", () => { if (renamingArea) renamingArea.draft = f.value; });
+  f.addEventListener("focus", () => { f.setSelectionRange(f.value.length, f.value.length); });
+  f.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") { e.preventDefault(); void save(); }
+    if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); if (!closed) close(); }
+  });
+  f.addEventListener("blur", () => { if (document.hasFocus()) setTimeout(() => { if (f.isConnected && !closed) void save(); }, 0); });
+  return box("div", { class: "map-name-edit" }, f, r.error ? message({ tone: "bad", text: r.error, attrs: { id: "map-area-rename-error" } }) : null);
+}
+// A new area just drawn: "Name this area", its colour and the field, its size and chest count, Cancel and Save (Save waits for a name). Enter saves, Esc cancels.
+function namingRow(m: HouseModel, n: NonNullable<typeof naming>): HTMLElement {
+  const areas = areasNow(), probe: HouseArea = { id: "new", name: "", level: n.level, color: n.color, rects: n.rects };
+  const chests = levelAreas(m, [...areas, probe], n.level).rows.find((r) => r.area === probe)?.chests ?? 0;
+  const f = input({ size: "sm", value: n.draft, placeholder: "e.g. Potions", invalid: !!n.error, attrs: { id: "map-area-new-name", maxlength: "60", "aria-labelledby": "map-area-new-label", ...(n.error ? { "aria-describedby": "map-area-new-error" } : {}) } });
+  const save = button({ label: "Save", variant: "primary", size: "sm", disabled: !n.draft.trim(), attrs: { id: "map-area-new-save" }, onClick: () => { void saveNew(m); } });
+  f.addEventListener("input", () => { if (naming) naming.draft = f.value; save.disabled = !f.value.trim(); });
+  f.addEventListener("focus", () => { f.setSelectionRange(f.value.length, f.value.length); });
+  f.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") { e.preventDefault(); void saveNew(m); }
+    if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); cancelNaming(); }
+  });
+  return box("li", { class: "map-area-row naming" }, box("div", { class: "map-area-new" },
+    el("label", { class: "t-sm muted", id: "map-area-new-label", for: "map-area-new-name" }, "Name this area"),
+    box("div", { class: "map-area-new-field" }, el("span", { class: "map-swatch", "aria-hidden": "true", style: `background:var(--color-${n.color})` }), f),
+    txt(`${plural(unionTiles(n.rects).length, "tile")} · ${plural(chests, "chest")}`, "t-sm muted"),
+    n.error ? message({ tone: "bad", text: n.error, attrs: { id: "map-area-new-error" } }) : null,
+    box("div", { class: "map-area-new-actions" }, button({ label: "Cancel", size: "sm", attrs: { id: "map-area-new-cancel" }, onClick: cancelNaming }), save)));
+}
+function cancelNaming(): void {
+  const level = naming?.level ?? S.level;
+  naming = null;
+  render();
+  $<HTMLElement>(`#map-new-area-${level}`)?.focus();
+}
+async function saveNew(m: HouseModel): Promise<void> {
+  const n = naming;
+  if (!n || !n.draft.trim()) return;
+  const areas = areasNow(), area: HouseArea = { id: nextAreaId(areas), name: n.draft.trim(), level: n.level, color: n.color, rects: n.rects };
+  const why = await saveAreas(m, [...areas, area], null);
+  if (naming !== n) return;
+  if (why) { n.error = why; render(); $<HTMLInputElement>("#map-area-new-name")?.focus(); return; }
+  naming = null;
+  S.area = area.id;
+  render();
+  $<HTMLElement>(`#map-area-${CSS.escape(area.id)}`)?.focus();
+}
+async function removeArea(m: HouseModel, a: HouseArea): Promise<void> {
+  const why = await saveAreas(m, areasNow().filter((x) => x.id !== a.id), null);
+  deleting = null;
+  if (why) { toast(why, "bad"); render(); return; }
+  if (S.area === a.id) { S.area = null; S.vb = null; }
+  render();
+  $<HTMLElement>(`#map-new-area-${a.level}`)?.focus();
+}
+// Save the house's areas (the whole entry PUT); the page redraws with the answer. Returns the server's reason when it refuses (a toast too when `focusAfter` is given: a save from a menu has no field to show it under), else focuses `focusAfter`.
+async function saveAreas(m: HouseModel, areas: HouseArea[], focusAfter: string | null): Promise<string | null> {
+  const why = await saveEntry(m, { areas });
+  if (focusAfter != null) {
+    if (why) toast(why, "bad");
+    render();
+    $<HTMLElement>(`#${CSS.escape(focusAfter.slice(1))}`)?.focus();
+  }
+  return why;
+}
+// Drawing mode: "+ New area" (a new area on that level) or Redraw (an area's rectangles anew). The map takes the keyboard: its cursor starts at the level's middle.
+function startDrawing(level: number, target: string | null): void {
+  const m = S.model;
+  if (!m) return;
+  const a = areaById(target), mid: Tile = [Math.floor((m.x0 + m.x1) / 2), Math.floor((m.y0 + m.y1) / 2)];
+  naming = null; renamingArea = null; deleting = null;
+  draw = { level, target, color: a?.color ?? nextAreaColor(areasNow()), rects: [], cur: null, anchor: null, add: false, cursor: mid, keyed: false };
+  if (S.level !== level) { S.level = level; S.area = null; S.selected = null; S.vb = null; }
+  S.hover = null;
+  render();
+  announce(target ? `Redrawing ${a?.name ?? "the area"}. Drag over tiles, or press Space, move with the arrow keys and press Space again. Enter to finish, Escape to cancel.` : "Drawing a new area. Drag over tiles, or press Space, move with the arrow keys and press Space again. Shift adds more. Enter to finish, Escape to cancel.");
+  $<SVGSVGElement>("#map-svg")?.focus();
+}
+function cancelDrawing(): void {
+  const d = draw;
+  if (!d) return;
+  draw = null; dragging = false;
+  render();
+  announce("Drawing cancelled.");
+  (d.target ? $<HTMLElement>(`#map-area-menu-${CSS.escape(d.target)}`) : $<HTMLElement>(`#map-new-area-${d.level}`))?.focus();
+}
+// Enter: a rectangle the keyboard is laying is ended first; a redraw saves at once, a new area asks for its name.
+function finishDrawing(): void {
+  const d = draw, m = S.model;
+  if (!d || !m) return;
+  if (d.cur) endRect();
+  if (!d.rects.length) { announce("Nothing drawn yet. Drag over tiles, or press Space to start a rectangle. Escape cancels."); return; }
+  draw = null; dragging = false;
+  if (d.target) {
+    const target = d.target;
+    void saveAreas(m, areasNow().map((x) => (x.id === target ? { ...x, rects: d.rects } : x)), `#map-area-${target}`);
+    return;
+  }
+  naming = { level: d.level, color: d.color, rects: d.rects, draft: "", error: null };
+  render();
+  $<HTMLInputElement>("#map-area-new-name")?.focus();
+}
+// A rectangle ends: it replaces the others, or (Shift) joins them, up to MAX_RECTS.
+function endRect(): void {
+  const d = draw;
+  if (!d?.cur) return;
+  if (d.add && d.rects.length >= MAX_RECTS) announce(`An area has at most ${MAX_RECTS} rectangles.`);
+  else d.rects = d.add ? [...d.rects, d.cur] : [d.cur];
+  d.cur = null; d.anchor = null;
+  const n = unionTiles(d.rects).length;
+  announce(`${plural(d.rects.length, "rectangle")}, ${plural(n, "tile")}. Enter to finish.`);
+  paintDraft();
+}
+const announce = (text: string): void => { const live = $<HTMLElement>("#map-draw-live"); if (live) live.textContent = text; };
+// The map's keys while drawing: an arrow moves the cursor (and the rectangle being laid), Space starts or ends a rectangle (Shift+Space starts one that joins the others), Enter finishes, Esc cancels.
+function drawKeys(e: KeyboardEvent): boolean {
+  const d = draw, m = S.model;
+  if (!d || !m || e.metaKey || e.ctrlKey || e.altKey) return false;
+  if (e.key === "Escape") { cancelDrawing(); return true; }
+  if (e.key === "Enter") { finishDrawing(); return true; }
+  if (e.key === " ") {
+    if (d.anchor) endRect();
+    else { d.keyed = true; d.anchor = d.cursor; d.add = e.shiftKey; d.cur = rectOf(d.cursor, d.cursor); announce(`Started at the cursor: ${sizeText(d.cur)}. Move with the arrow keys, Space to end.`); paintDraft(); }
+    return true;
+  }
+  const next = moveCursor(m, d.cursor, e.key);
+  if (!next) return false;
+  d.keyed = true; d.cursor = next;
+  if (d.anchor) { d.cur = rectOf(d.anchor, next); announce(sizeText(d.cur)); }
+  paintDraft();
+  keepInView(next);
+  return true;
+}
+// The cursor's tile brought back to the middle when the keyboard moves it out of view.
+function keepInView([x, y]: Tile): void {
+  const m = S.model;
+  if (!m || !S.vb) return;
+  const at = project(x - m.x0 + 0.5, y - m.y0 + 0.5, 0, S.view);
+  if (!inBox(S.vb, at)) setViewBox({ ...S.vb, x: at[0] - S.vb.w / 2, y: at[1] - S.vb.h / 2 });
 }
 
-// The middle pane: notes above the map, the breadcrumb, then the SVG with its zoom buttons and the callout over it.
+// The middle pane: notes above the map, the breadcrumb, then the SVG with its zoom buttons and the callout over it. While drawing an area: the hint bar over the map, the size pill, and the map takes the keyboard (a tab stop of its own, its live region saying what the keys did).
 function stage(): HTMLElement {
   const svg = document.createElementNS(SVG_NS, "svg");
   svg.id = "map-svg";
-  svg.setAttribute("class", "map-svg");
-  svg.setAttribute("role", "group");
-  svg.setAttribute("aria-label", "House map");
+  svg.setAttribute("class", `map-svg${draw ? " drawing" : ""}`);
+  svg.setAttribute("role", draw ? "application" : "group");
+  svg.setAttribute("aria-label", draw ? "House map, drawing an area" : "House map");
+  if (draw) { svg.setAttribute("tabindex", "0"); svg.setAttribute("aria-describedby", "map-draw-hint"); }
   wireSvg(svg);
   return box("section", { class: "card map-stage", id: "map-stage", "aria-label": "Map" },
     ...notes(),
     box("nav", { class: "map-crumbs", id: "map-crumbs", "aria-label": "Breadcrumb" }),
     box("div", { class: "map-canvas", id: "map-canvas" }, svg,
+      draw ? box("div", { class: "map-draw-hint", id: "map-draw-hint" }, el("span", { class: "map-draw-dot", "aria-hidden": "true" }),
+        el("span", {}, el("strong", {}, "Drag over tiles to draw the area."), " Shift-drag adds more. ", kbd("Enter"), " to finish, ", kbd("Esc"), " to cancel.")) : null,
+      draw ? box("div", { class: "map-draw-size", id: "map-draw-size", hidden: "" }) : null,
       box("div", { class: "map-zoom", role: "group", "aria-label": "Zoom" },
         button({ label: "Zoom in", icon: "zoom-in", iconOnly: true, size: "sm", attrs: { id: "map-zoom-in" }, onClick: () => zoomBy(1 / 1.25) }),
         button({ label: "Zoom out", icon: "zoom-out", iconOnly: true, size: "sm", attrs: { id: "map-zoom-out" }, onClick: () => zoomBy(1.25) }),
@@ -229,13 +449,56 @@ function drawMap(): void {
   for (const f of scene.floors) ground.append(sv("polygon", { class: f.cls, points: f.pts }));
   for (const r of scene.reach) ground.append(sv("polygon", { class: "map-reach", points: r }));
   for (const p of scene.pieces) solids.append(pieceEl(p, views));
-  svg.replaceChildren(ground, solids);
+  // The areas over the floors and under the walls and stacks; their names on top, placed clear of the stacks.
+  const areas = sv("g", { class: "map-area-layer" }), names = sv("g", { class: "map-area-names", "aria-hidden": "true" });
+  for (const a of areasNow()) {
+    if (a.level !== S.level || draw?.target === a.id) continue;
+    areas.append(areaEl(m, a, a.id === S.area));
+    const at = labelSpot(m, a), p = project(at.x - m.x0, at.y - m.y0, at.z, S.view), t = sv("text", { class: "map-area-label", x: p[0].toFixed(1), y: p[1].toFixed(1), style: `--area:var(--color-${a.color})` });
+    t.textContent = a.name;
+    names.append(t);
+  }
+  svg.replaceChildren(ground, areas, sv("g", { id: "map-draft", class: "map-draft" }), solids, names, sv("g", { id: "map-draft-top", class: "map-draft" }));
   drawCrumbs();
-  if (!S.vb) S.vb = fit(boundsOf(m, S.level, S.view, m.rooms.find((r) => r.id === S.room) ?? null), viewport());
+  if (!S.vb) S.vb = fit(boundsOf(m, S.level, S.view, areaById(S.area)), viewport());
   svg.setAttribute("viewBox", vbText(S.vb));
   paintStacks();
+  paintDraft();
 }
-// The selection, the cut-away in front of the hovered (or focused) stack, else the selected one (Game angle only: top-down nothing hides anything), and the roving tab stop (the focused stack, else the selected one, else the first in code order in the room zoomed to, else the first in view, else the first).
+// An area as a tint over its covered floor tiles and a thin line along the union's outer edges, in its colour.
+function areaEl(m: HouseModel, a: Pick<HouseArea, "level" | "rects" | "color">, sel: boolean, cls = "map-area-shape"): SVGElement {
+  const base = m.levels[a.level]?.floorZ ?? 0, g = sv("g", { class: `${cls}${sel ? " sel" : ""}`, style: `--area:var(--color-${a.color})` });
+  for (const c of coveredCells(m, a.level, a.rects)) g.append(sv("polygon", { class: "map-area-tile", points: pts(tilePolygon(c.x - m.x0, c.y - m.y0, c.z - base, S.view)) }));
+  const d = outlineOf(a.rects).map(([p, q]) => { const s0 = project(p[0] - m.x0, p[1] - m.y0, 0, S.view), s1 = project(q[0] - m.x0, q[1] - m.y0, 0, S.view); return `M${s0[0].toFixed(1)} ${s0[1].toFixed(1)}L${s1[0].toFixed(1)} ${s1[1].toFixed(1)}`; }).join("");
+  if (d) g.append(sv("path", { class: "map-area-edge", d }));
+  return g;
+}
+// The area being drawn (or waiting for its name): its rectangles and the one being dragged tinted over the floor, their outline and the keyboard's cursor over the stacks (a dense room hides its floor), and the size pill.
+function paintDraft(): void {
+  const layer = $<SVGGElement>("#map-draft"), top = $<SVGGElement>("#map-draft-top"), m = S.model;
+  if (!layer || !top || !m) return;
+  const d = draw, rects = d ? [...d.rects, ...(d.cur ? [d.cur] : [])] : naming?.level === S.level ? naming.rects : [];
+  const color = d?.color ?? naming?.color ?? "area-1", shape = rects.length ? areaEl(m, { level: S.level, rects, color }, false, "map-area-shape draft") : null;
+  const edge = shape?.querySelector(".map-area-edge");
+  layer.replaceChildren(...(shape ? [shape] : []));
+  top.replaceChildren(...(edge && shape ? [sv("g", { class: "map-area-shape draft", style: shape.getAttribute("style") ?? "" }, edge as SVGElement)] : []));
+  if (d?.keyed) top.append(sv("polygon", { class: "map-draw-cursor", points: pts(tilePolygon(d.cursor[0] - m.x0, d.cursor[1] - m.y0, 0, S.view)) }));
+  const pill = $<HTMLElement>("#map-draw-size"), shown = d?.cur ?? d?.rects.at(-1) ?? null;
+  if (!pill) return;
+  if (!shown) { pill.hidden = true; return; }
+  pill.textContent = sizeText(shown);
+  pill.hidden = false;
+  placePill(pill, project(shown.x1 + 1 - m.x0, shown.y1 + 1 - m.y0, 0, S.view));
+}
+// Under the rectangle's south corner, kept 8 px inside the map pane.
+function placePill(out: HTMLElement, at: Pt): void {
+  const svg = $<SVGSVGElement>("#map-svg"), canvas = $<HTMLElement>("#map-canvas"), ctm = svg?.getScreenCTM();
+  if (!svg || !canvas || !ctm) return;
+  const p = new DOMPoint(at[0], at[1]).matrixTransform(ctm), r = canvas.getBoundingClientRect(), w = out.offsetWidth, h = out.offsetHeight;
+  out.style.left = `${Math.max(8, Math.min(p.x - r.left - w / 2, r.width - w - 8))}px`;
+  out.style.top = `${Math.max(8, Math.min(p.y - r.top + 8, r.height - h - 8))}px`;
+}
+// The selection, the cut-away in front of the hovered (or focused) stack, else the selected one (Game angle only: top-down nothing hides anything), and the roving tab stop (the focused stack, else the selected one, else the first in code order in the area zoomed to, else the first in view, else the first).
 function paintStacks(): void {
   const m = S.model;
   if (!m) return;
@@ -243,36 +506,65 @@ function paintStacks(): void {
   const focus = here.find((s) => s.letter === S.hover) ?? (sel?.level === S.level ? sel : null);
   const cut = focus && S.view === "angle" ? cutAway(m, S.level, focus) : new Set<string>();
   const roving = here.find((s) => s.letter === S.focus)?.letter ?? (sel?.level === S.level ? sel.letter
-    : (here.find((s) => S.room != null && s.room === S.room) ?? here.find((s) => S.vb && inBox(S.vb, anchorOf(m, s, S.view))) ?? here[0])?.letter);
+    : (here.find((s) => S.area != null && areaOfStack(areasNow(), s)?.id === S.area) ?? here.find((s) => S.vb && inBox(S.vb, anchorOf(m, s, S.view))) ?? here[0])?.letter);
   for (const e of document.querySelectorAll<SVGGElement>("#map-svg .map-stack")) {
     const letter = e.dataset.stack;
+    if (draw) { e.setAttribute("tabindex", "-1"); continue; }   // the map itself is the tab stop while drawing
     e.classList.toggle("sel", letter === sel?.letter);
     e.classList.toggle("cut", !!letter && cut.has(letter));
     e.setAttribute("aria-pressed", String(letter === sel?.letter));
     e.setAttribute("tabindex", letter === roving ? "0" : "-1");
   }
 }
-// house › level › room › stack; each part above the last goes back up to it.
+// house › level › area › stack; each part above the last goes back up to it. A selected stack outside every area shows where it is ("Everything else", or the "Whole floor") as plain text.
 function drawCrumbs(): void {
   const nav = $<HTMLElement>("#map-crumbs"), m = S.model;
   if (!nav || !m) return;
-  const sel = selectedStack(), level = m.levels[S.level], room = m.rooms.find((r) => r.id === (sel?.room ?? S.room)) ?? null;
+  const sel = selectedStack(), level = m.levels[S.level], areas = areasNow(), area = sel ? areaOfStack(areas, sel) : areaById(S.area);
   const crumb = (key: string, label: string, go: (() => void) | null): HTMLElement => box("li", {}, go ? button({ label, variant: "ghost", size: "sm", attrs: { "data-crumb": key }, onClick: go }) : txt(label, "strong"));
-  const up = (level: number): void => { S.level = level; S.room = null; S.selected = null; S.hover = null; S.vb = null; render(); };
+  const up = (level: number): void => { draw = null; S.level = level; S.area = null; S.selected = null; S.hover = null; S.vb = null; render(); };
   nav.replaceChildren(box("ol", { class: "map-crumb-list" },
-    crumb("house", houseName(m), sel || S.room != null || S.level !== 0 ? () => up(0) : null),
-    level ? crumb("level", level.name, sel || S.room != null ? () => up(S.level) : null) : null,
-    room ? crumb("room", room.name, sel ? () => zoomToRoom(room) : null) : null,
+    crumb("house", houseName(m), sel || S.area != null || S.level !== 0 ? () => up(0) : null),
+    level ? crumb("level", level.name, sel || S.area != null ? () => up(S.level) : null) : null,
+    area ? crumb("area", area.name, sel ? () => zoomToArea(area) : null) : sel ? box("li", {}, txt(levelAreas(m, areas, sel.level).rest.name, "muted")) : null,
     sel ? crumb("stack", `Stack ${sel.letter}`, null) : null));
 }
 
 // ---------------------------------------------------------------- interaction
-// A press that moves more than 3 px pans the viewBox; one that does not is a click (a stack selects it, anywhere else clears). The wheel zooms about the pointer. Neither touches the drawing. A drag ends however the pointer leaves it: released off the map, cancelled, or its capture lost (an OS gesture, a switch of window).
+// A press that moves more than 3 px pans the viewBox; one that does not is a click (a stack selects it, anywhere else clears). The wheel zooms about the pointer. Neither touches the drawing. A drag ends however the pointer leaves it: released off the map, cancelled, or its capture lost (an OS gesture, a switch of window). While drawing an area a press draws a rectangle instead (Shift: one more), and neither panning nor the wheel moves the map during it (the zoom buttons still do).
 function wireSvg(svg: SVGSVGElement): void {
   let drag: { x: number; y: number; vb: Box; id: number; moved: boolean } | null = null;
   const endDrag = (): void => { drag = null; svg.classList.remove("dragging"); };
-  svg.addEventListener("pointerdown", (e) => { if (e.button === 0 && S.vb) drag = { x: e.clientX, y: e.clientY, vb: S.vb, id: e.pointerId, moved: false }; });
+  const tileOf = (e: PointerEvent): Tile => clampTile(S.model!, tileAt(S.model!, svgPoint(svg, e.clientX, e.clientY), S.view));
+  const endRectDrag = (e: PointerEvent): void => {
+    if (!dragging) return;
+    dragging = false;
+    if (svg.hasPointerCapture(e.pointerId)) svg.releasePointerCapture(e.pointerId);
+    endRect();
+  };
+  svg.addEventListener("pointerdown", (e) => {
+    if (draw && S.model) {
+      if (e.button !== 0) return;
+      e.preventDefault();
+      svg.focus();
+      const t = tileOf(e);
+      draw.anchor = t; draw.add = e.shiftKey; draw.cur = rectOf(t, t); dragging = true;
+      svg.setPointerCapture(e.pointerId);
+      paintDraft();
+      return;
+    }
+    if (e.button === 0 && S.vb) drag = { x: e.clientX, y: e.clientY, vb: S.vb, id: e.pointerId, moved: false };
+  });
   svg.addEventListener("pointermove", (e) => {
+    if (draw) {
+      if (!dragging || !draw.anchor || !S.model) return;
+      if (!(e.buttons & 1)) { endRectDrag(e); return; }
+      const next = rectOf(draw.anchor, tileOf(e)), cur = draw.cur;
+      if (cur && cur.x0 === next.x0 && cur.y0 === next.y0 && cur.x1 === next.x1 && cur.y1 === next.y1) return;
+      draw.cur = next;
+      paintDraft();
+      return;
+    }
     if (drag && !(e.buttons & 1)) endDrag();
     if (!drag) { hoverAt(e); return; }
     const dx = e.clientX - drag.x, dy = e.clientY - drag.y;
@@ -280,6 +572,7 @@ function wireSvg(svg: SVGSVGElement): void {
     if (drag.moved) { const k = drag.vb.w / (svg.clientWidth || 1); setViewBox({ ...drag.vb, x: drag.vb.x - dx * k, y: drag.vb.y - dy * k }); }
   });
   svg.addEventListener("pointerup", (e) => {
+    if (draw) { endRectDrag(e); return; }
     const d = drag;
     endDrag();
     if (!d) return;
@@ -287,15 +580,15 @@ function wireSvg(svg: SVGSVGElement): void {
     const hit = (e.target as Element).closest?.("[data-stack]") as SVGElement | null;
     pick(hit?.dataset.stack ?? null);
   });
-  svg.addEventListener("pointercancel", endDrag);
-  svg.addEventListener("lostpointercapture", endDrag);
-  svg.addEventListener("pointerleave", () => { if (!drag) { S.hover = null; paintStacks(); hideCallout(); } });
-  svg.addEventListener("wheel", (e) => { e.preventDefault(); if (e.deltaY === 0) return; zoomBy(e.deltaY > 0 ? 1.15 : 1 / 1.15, svgPoint(svg, e.clientX, e.clientY)); }, { passive: false });
-  svg.addEventListener("keydown", stackKeys);
+  svg.addEventListener("pointercancel", (e) => { endDrag(); endRectDrag(e); });
+  svg.addEventListener("lostpointercapture", (e) => { endDrag(); endRectDrag(e); });
+  svg.addEventListener("pointerleave", () => { if (!drag && !draw) { S.hover = null; paintStacks(); hideCallout(); } });
+  svg.addEventListener("wheel", (e) => { e.preventDefault(); if (e.deltaY === 0 || dragging) return; zoomBy(e.deltaY > 0 ? 1.15 : 1 / 1.15, svgPoint(svg, e.clientX, e.clientY)); }, { passive: false });
+  svg.addEventListener("keydown", (e) => { if (draw) { if (drawKeys(e)) { e.preventDefault(); e.stopPropagation(); } return; } stackKeys(e); });
   // A stack the keyboard reaches outside the view is brought to its middle, at the same zoom (a press focuses too, and must not move the stack from under the pointer).
   svg.addEventListener("focusin", (e) => {
     const t = (e.target as Element).closest?.("[data-stack]") as SVGElement | null, m = S.model, s = m?.stacks.find((x) => x.letter === t?.dataset.stack);
-    if (!m || !s) return;
+    if (!m || !s || draw) return;
     S.focus = S.hover = s.letter;
     paintStacks();
     const at = anchorOf(m, s, S.view);
@@ -305,6 +598,7 @@ function wireSvg(svg: SVGSVGElement): void {
   svg.addEventListener("focusout", () => { S.hover = null; paintStacks(); hideCallout(); });
 }
 function hoverAt(e: PointerEvent): void {
+  if (draw) return;
   const t = e.target as Element, st = t.closest?.("[data-stack]") as SVGElement | null, item = t.closest?.("[data-name]") as SVGElement | null;
   const letter = st?.dataset.stack ?? null, changed = letter !== S.hover;
   if (changed) { S.hover = letter; paintStacks(); }
@@ -352,12 +646,12 @@ function setViewBox(b: Box): void {
   $<SVGSVGElement>("#map-svg")?.setAttribute("viewBox", vbText(b));
   hideCallout();
 }
-function zoomBy(f: number, at?: Pt): void { if (S.vb) setViewBox(zoomAt(S.vb, f, at?.[0], at?.[1])); }
+function zoomBy(f: number, at?: Pt): void { if (S.vb) { setViewBox(zoomAt(S.vb, f, at?.[0], at?.[1])); paintDraft(); } }
 function fitTo(): void {
   if (!S.model) return;
-  S.room = null;
-  for (const b of document.querySelectorAll(".map-room")) b.setAttribute("aria-pressed", "false");
+  if (S.area != null) { S.area = null; drawMap(); for (const b of document.querySelectorAll(".map-area[aria-pressed]")) b.setAttribute("aria-pressed", "false"); }
   setViewBox(fit(boundsOf(S.model, S.level, S.view), viewport()));
+  paintDraft();
   drawCrumbs();
 }
 // A click or Enter on a stack selects it (again unselects it); anywhere else clears the selection.
@@ -399,9 +693,16 @@ function focusStack(letter: string): void {
   paintStacks();
   $<SVGElement>(`#map-svg [data-stack="${letter}"]`)?.focus();
 }
+// While drawing, Enter and Esc work wherever focus is on the map screen (the drawing's own button, a crumb, after a click on blank space), but not in a field, a dialog or a menu.
+document.addEventListener("keydown", (e) => {
+  if (!draw || (e.key !== "Escape" && e.key !== "Enter") || e.defaultPrevented || $<HTMLElement>("#tab-map")!.hidden || modalOpen() || document.querySelector(".pop")) return;
+  const t = e.target as Element | null;
+  if (t?.closest?.("input, textarea, select, [contenteditable], dialog, .drawer-root, #map-svg") || (e.key === "Enter" && t?.closest?.("button, a"))) return;
+  if (drawKeys(e)) e.preventDefault();
+});
 // Esc clears the selection, unless something nearer the user takes it (a field, a dialog, a drawer or a popover), another screen is showing, or a modifier is held. On the document: after a click on blank space focus is on <body>, outside the map.
 document.addEventListener("keydown", (e) => {
-  if (e.key !== "Escape" || e.defaultPrevented || e.metaKey || e.ctrlKey || e.altKey || e.shiftKey || S.selected == null || $<HTMLElement>("#tab-map")!.hidden) return;
+  if (e.key !== "Escape" || e.defaultPrevented || e.metaKey || e.ctrlKey || e.altKey || e.shiftKey || S.selected == null || draw || $<HTMLElement>("#tab-map")!.hidden) return;
   const t = e.target as Element | null;
   if (t?.closest?.("input, textarea, select, [contenteditable], dialog, .drawer-root") || document.querySelector(".pop, .drawer-root:not([hidden])") || modalOpen()) return;
   e.preventDefault();
@@ -426,7 +727,7 @@ function drawPanel(): void {
     const why = stackReason(m, s, chests) ?? (highlighting ? "Sending the highlights…" : null);
     const all = button({ label: chests.length > 1 ? "Highlight the stack" : "Highlight", icon: "highlight", size: "sm", disabled: !!why, attrs: { id: "map-highlight-stack" }, onClick: () => { void highlightStack(m, s, chests); } });
     p.replaceChildren(
-      box("header", { class: "map-panel-head" }, el("h2", { class: "t-lg" }, chests.length > 1 ? `Stack ${s.letter}` : chests[0]!.name), txt(stackWhere(m, s), "t-sm muted")),
+      box("header", { class: "map-panel-head" }, el("h2", { class: "t-lg" }, chests.length > 1 ? `Stack ${s.letter}` : chests[0]!.name), txt(stackWhere(m, s, areasNow()), "t-sm muted")),
       box("ol", { class: "map-chests", "aria-label": "Chests, top first" }, ...chests.map((c) => chestRow(m, s, c))),
       box("div", { class: "map-panel-actions" }, why ? tipWrap(all, why) : all, button({ label: "Back to the house", variant: "ghost", size: "sm", onClick: unselect })),
       legend());
@@ -457,7 +758,7 @@ function totalsPanel(m: HouseModel): HTMLElement[] {
     ...(t.capacity ? [meter(t.used, t.capacity, { label: `${t.used} of ${t.capacity} item slots used` })] : []),
     keyValue([["Containers", fmtN(t.containers)], ["Item slots used", `${fmtN(t.used)} of ${fmtN(t.capacity)}`], ["Item slots free", fmtN(t.capacity - t.used)], ["Empty", fmtN(t.empty)], ["Full or nearly", fmtN(t.full)], ["Not opened yet", fmtN(t.unopened)], ...(t.unknown ? [["Fill unknown", fmtN(t.unknown)] as [string, string]] : [])]),
     legend(),
-    el("p", { class: "t-sm muted" }, "Click a stack on the map, or a room on the left."),
+    el("p", { class: "t-sm muted" }, "Click a stack on the map, or an area on the left."),
     whereSection(m),
   ].filter((e): e is HTMLElement => e != null);
 }
@@ -523,15 +824,15 @@ async function loadFacetImage(url: string): Promise<void> {
 function houseHead(m: HouseModel): HTMLElement {
   const meta = txt(m.id === PLAIN ? "Ground chests outside any drawn house" : `${plural(m.levels.length, "level")} · ${plural(m.stacks.length, "stack")} · ${plural(m.spots.length, "standing spot")}`, "t-sm muted");
   if (renaming != null) return box("header", { class: "map-panel-head" }, renameField(m, renaming, nameError), meta, ...whereLines(m));
-  const offer = carryOver(m, S.list?.houses.map((h) => h.id) ?? [], S.names);
+  const offer = carryOver(m, S.list?.houses.map((h) => h.id) ?? [], S.names), words = offer ? carryOverText(offer) : null;
   return box("header", { class: "map-panel-head" },
     // One block in the flex header, its heading and ✎ inline, so the ✎ follows the last word of a name that wraps.
     box("div", { class: "map-house-title" }, el("h2", { class: "t-lg" }, houseName(m)),
       m.id === PLAIN ? null : button({ label: "Rename house", icon: "pencil", iconOnly: true, variant: "ghost", size: "sm", attrs: { id: "map-rename" }, onClick: () => { renaming = m.name ?? ""; nameError = null; drawPanel(); const f = $<HTMLInputElement>("#map-name"); f?.focus(); f?.select(); } })),
     meta,
     ...whereLines(m),
-    offer ? box("div", { class: "map-carry", id: "map-carry" }, txt(`Use the name "${offer.name}" from the earlier house here?`, "t-sm"),
-      button({ label: "Use name", size: "sm", attrs: { id: "map-carry-use" }, onClick: () => { void saveName(m, offer.name).then((err) => { if (err) { toast(err, "bad"); return; } render(); $<HTMLElement>("#map-rename")?.focus(); }); } })) : null);
+    offer && words ? box("div", { class: "map-carry", id: "map-carry" }, txt(words.text, "t-sm"),
+      button({ label: words.action, size: "sm", attrs: { id: "map-carry-use" }, onClick: () => { void saveEntry(m, { name: offer.name, ...(offer.areas.length ? { areas: offer.areas } : {}) }).then((err) => { if (err) { toast(err, "bad"); return; } render(); $<HTMLElement>("#map-rename")?.focus(); }); } })) : null);
 }
 // Enter or leaving the field saves, Esc cancels; a refused save keeps the field open with the server's reason under it.
 // Either way out puts the focus back on the ✎. A redraw (a reload on a new scan) rebuilds the field from the draft;
@@ -559,14 +860,17 @@ function renameField(m: HouseModel, draft: string, error: string | null): HTMLEl
   f.addEventListener("blur", () => { if (document.hasFocus()) setTimeout(() => { if (f.isConnected) void save(); }, 0); });
   return box("div", { class: "map-name-edit" }, f, error ? message({ tone: "bad", text: error, attrs: { id: "map-name-error" } }) : null);
 }
-// PUT the house's whole entry (any other fields it carries kept) with its footprint now, so a later redesign can be
-// offered the name, and keep the answer in the page state (the caller redraws). Returns the server's reason when it refuses.
-async function saveName(m: HouseModel, name: string): Promise<string | null> {
+// PUT the house's whole entry (its name and areas, and any other fields it carries, kept unless `patch` sets them) with
+// its footprint now, so a later redesign can be offered the name and areas, and keep the answer in the page state (the
+// caller redraws). Returns the server's reason when it refuses.
+const saveName = (m: HouseModel, name: string): Promise<string | null> => saveEntry(m, { name });
+async function saveEntry(m: HouseModel, patch: { name?: string; areas?: HouseArea[] }): Promise<string | null> {
   let r: HouseMapPutApiResponse;
-  try { r = await api<HouseMapPutApiResponse>(`/api/house-map/${encodeURIComponent(m.id)}`, { method: "PUT", body: { ...S.names[m.id], name, bounds: { x0: m.x0, y0: m.y0, x1: m.x1, y1: m.y1, facet: m.facet } } }); }
+  const body = { ...S.names[m.id], name: m.name ?? "", ...patch, bounds: { x0: m.x0, y0: m.y0, x1: m.x1, y1: m.y1, facet: m.facet } };
+  try { r = await api<HouseMapPutApiResponse>(`/api/house-map/${encodeURIComponent(m.id)}`, { method: "PUT", body }); }
   catch (e) { return errorText(e); }
   if (r.entry) S.names[m.id] = r.entry; else delete S.names[m.id];
-  for (const h of [...S.models, ...(S.list?.houses ?? [])]) if (h.id === m.id) h.name = r.entry?.name;
+  for (const h of [...S.models, ...(S.list?.houses ?? [])]) if (h.id === m.id) h.name = r.entry?.name || undefined;
   return null;
 }
 // A chest as the bridge's target: the chest itself, with no chain. A chest no scan opened has no scanned root, so it carries the place its house capture saw it.
@@ -695,7 +999,7 @@ function drawDrawer(): void {
   filter.addEventListener("input", () => { dr.filter = filter.value; dr.scroll = 0; drawDrawerBody(); });
   const list = box("div", { class: "map-drawer-body", id: "map-drawer-body" });
   list.addEventListener("scroll", () => { if (list.isConnected) dr.scroll = list.scrollTop; });   // a list being replaced reads 0 once detached
-  const meta = txt(c ? drawerMeta(c, s) : stackWhere(m, s), "t-sm muted ellip"), summary = txt("", "t-sm muted");
+  const meta = txt(c ? drawerMeta(c, s) : stackWhere(m, s, areasNow()), "t-sm muted ellip"), summary = txt("", "t-sm muted");
   meta.id = "map-drawer-meta";
   summary.id = "map-drawer-summary";
   d.replaceChildren(

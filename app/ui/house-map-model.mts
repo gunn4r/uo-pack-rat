@@ -37,7 +37,7 @@ const CORNERS: ReadonlyArray<Pt> = [[0, 0], [1, 0], [1, 1], [0, 1]];
 // What a level draws, in drawing units, with a tile's margin: every cell of the level (or of `area`'s rectangles) up to a cut wall's height, and every stack up to its top chest.
 export function boundsOf(m: HouseModel, level: number, view: View, area: Pick<HouseArea, "rects"> | null = null): Box {
   const base = m.levels[level]?.floorZ ?? 0;
-  const inRoom = (x: number, y: number): boolean => !area || inRects(area.rects, x, y);
+  const inArea = (x: number, y: number): boolean => !area || inRects(area.rects, x, y);
   let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
   const add = (x: number, y: number, lo: number, hi: number): void => {
     for (const [dx, dy] of CORNERS) for (const z of [lo, hi]) {
@@ -49,11 +49,11 @@ export function boundsOf(m: HouseModel, level: number, view: View, area: Pick<Ho
     }
   };
   const heights = heightsOf(m, level), plinth = plinthOf(m, level, base, heights);
-  for (const c of m.cells) if (c.level === level && inRoom(c.x, c.y)) {
+  for (const c of m.cells) if (c.level === level && inArea(c.x, c.y)) {
     const z = c.kind === "floor" || c.kind === "stair" ? c.z - base : 0, top = c.kind === "stair" ? stairTop(c, heights).z - base : z;
     add(c.x, c.y, plinth?.(c)?.lo ?? z, top + WALL_H);
   }
-  for (const s of m.stacks) if (s.level === level && inRoom(s.x, s.y)) add(s.x, s.y, 0, (drawnZs(s, base).at(-1) ?? 0) + CHEST_H);
+  for (const s of m.stacks) if (s.level === level && inArea(s.x, s.y)) add(s.x, s.y, 0, (drawnZs(s, base).at(-1) ?? 0) + CHEST_H);
   if (x0 === Infinity) return { x: 0, y: 0, w: 4 * W, h: 4 * W };
   return { x: x0 - W, y: y0 - W, w: x1 - x0 + 2 * W, h: y1 - y0 + 2 * W };
 }
@@ -118,7 +118,7 @@ export const fillWords = (c: ChestView): string => (!c.opened ? "not opened yet"
 export const chestLabel = (c: ChestView): string => `${c.code} ${c.name}, ${fillWords(c)}`;
 
 // ---------------------------------------------------------------- cut-away, callout, totals
-// The stacks drawn in front of `focus` on its level (larger x + y, within three tiles each way): they fade and let the pointer through, so the inner rings of a dense room can be reached.
+// The stacks drawn in front of `focus` on its level (larger x + y, within three tiles each way): they fade and let the pointer through, so the inner rings of a dense vault can be reached.
 export function cutAway(m: HouseModel, level: number, focus: Stack): Set<string> {
   return new Set(m.stacks.filter((s) => s.level === level && s !== focus && s.x + s.y > focus.x + focus.y && Math.abs(s.x - focus.x) <= 3 && Math.abs(s.y - focus.y) <= 3).map((s) => s.letter));
 }

@@ -1,4 +1,4 @@
-/* ui/house-map.css — the House map screen (ui/house-map.mts, issue #10): the top bar's controls, three panes (levels and rooms, the map, the details) and a chest's contents drawer, stacked into one column below 1100 px, and the map drawn as SVG in the --color-map-* tokens. Tokens only (docs/ui.md). */
+/* ui/house-map.css — the House map screen (ui/house-map.mts, issue #10): the top bar's controls, three panes (levels and their areas, the map, the details) and a chest's contents drawer, stacked into one column below 1100 px, and the map drawn as SVG in the --color-map-* tokens. Tokens only (docs/ui.md). */
 #map-house { flex: 0 1 auto; min-width: 120px; }
 .map-levels { display: flex; gap: var(--space-1); min-width: 0; overflow-x: auto; }
 
@@ -29,16 +29,38 @@
 .map-side, .map-panel { min-height: 0; overflow: auto; padding: var(--space-3); display: flex; flex-direction: column; gap: var(--space-3); }
 .map-level { display: flex; flex-direction: column; gap: var(--space-1); }
 .map-level-name { display: flex; align-items: baseline; justify-content: space-between; gap: var(--space-2); font-size: var(--text-md); line-height: var(--lh-md); }
-.map-rooms { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 2px; }
-.map-room { display: flex; flex-direction: column; align-items: stretch; width: 100%; padding: var(--space-1-5) var(--space-2); border: 0; border-radius: var(--radius-md); background: transparent; color: var(--color-text); text-align: left; cursor: pointer; }
-.map-room:hover { background: var(--color-row-hover); }
-.map-room[aria-pressed="true"] { box-shadow: inset 3px 0 0 var(--color-accent); font-weight: var(--weight-semibold); }
+/* A level's areas (issue #10): a row is the zoom button (colour, name, chest count) then ✎ and ⋯; the rest of the level is a quiet row with a dashed swatch; a new area's name field in a bordered box; + New area under them. */
+.map-areas { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 2px; }
+.map-area-row { display: flex; align-items: center; gap: 2px; min-width: 0; }
+.map-area, .map-area-rest { flex: 1 1 auto; min-width: 0; display: grid; grid-template-columns: 12px minmax(0, 1fr) auto; align-items: center; gap: var(--space-2); padding: var(--space-1-5) var(--space-2); border: 0; border-radius: var(--radius-md); background: transparent; color: var(--color-text); font: inherit; text-align: left; }
+.map-area { cursor: pointer; font-weight: var(--weight-medium); }
+.map-area:hover { background: var(--color-row-hover); }
+.map-area[aria-pressed="true"] { box-shadow: inset 3px 0 0 var(--color-accent); font-weight: var(--weight-semibold); }
+.map-area-rest { color: var(--color-text-muted); }
+.map-area-row > .btn { flex: none; }
+.map-area-row > .map-name-edit { flex: 1 1 auto; min-width: 0; }
+.map-area-row.editing > .map-swatch { margin-left: var(--space-2); }
+.map-area-row.confirm { flex-wrap: wrap; gap: var(--space-1-5); padding: var(--space-1-5) var(--space-2); border-radius: var(--radius-md); background: var(--color-surface-subtle); }
+.map-area-ask { flex: 1 1 100%; }
+.map-area-ask-actions { display: flex; gap: var(--space-1-5); }
+.map-swatch.rest { border-style: dashed; background: transparent; }
+.map-area-new { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; gap: var(--space-1-5); padding: var(--space-2); border: var(--border-width) solid var(--color-accent); border-radius: var(--radius-md); }
+.map-area-new-field { display: flex; align-items: center; gap: var(--space-2); }
+.map-area-new-field > .input { flex: 1 1 auto; min-width: 0; }
+.map-area-new-actions { display: flex; justify-content: flex-end; gap: var(--space-1-5); }
+.map-new-area { align-self: flex-start; }
+.map-colours { display: grid; grid-template-columns: repeat(4, 28px); gap: var(--space-1-5); }
+.map-colour { width: 28px; height: 28px; padding: 0; border: var(--border-width) solid var(--color-border-strong); border-radius: var(--radius-md); background: var(--area); cursor: pointer; }
+.map-colour[aria-pressed="true"] { box-shadow: 0 0 0 2px var(--color-surface), 0 0 0 4px var(--color-focus); }
+.map-colour:focus-visible { outline: 2px solid var(--color-focus); outline-offset: 2px; }
 
 .map-stage { position: relative; display: flex; flex-direction: column; min-height: 0; overflow: hidden; }
 .map-stage > .msg { margin: var(--space-2) var(--space-2) 0; }
 .map-crumbs { padding: var(--space-1) var(--space-2); }
 .map-canvas { position: relative; flex: 1 1 auto; min-height: 0; background: var(--color-surface-sunken); }
 .map-svg { display: block; width: 100%; height: 100%; cursor: grab; touch-action: none; }
+.map-svg.drawing { cursor: crosshair; }
+.map-svg.drawing:focus-visible { outline: 2px solid var(--color-focus); outline-offset: -2px; }
 
 /* the drawing: floors by material family, faint walls of the level below, dashed reach squares, cut walls and solids with shaded sides */
 .map-floor { fill: var(--color-map-neutral); stroke: var(--color-map-grid); stroke-width: 0.5; }
@@ -91,6 +113,19 @@
 .map-chest > polygon { stroke: var(--color-border-strong); stroke-width: 1px; vector-effect: non-scaling-stroke; }
 .map-chest.unopened > polygon { stroke-dasharray: 3 2; }
 .map-stack.sel .map-chest > polygon, .map-stack:focus-visible .map-chest > polygon { stroke: var(--color-focus); stroke-width: 2px; }
+/* the player's areas (issue #10): a soft tint over their floor tiles in their colour, mixed as the floors are, a thin line along the union's outer edges, and the name in the colour with a halo of the surface; the one zoomed to a little stronger. The area being drawn is a little stronger and dashed, the keyboard's cursor a tile outline. None takes the pointer. */
+.map-area-shape > .map-area-tile { fill: color-mix(in srgb, var(--area) 32%, transparent); }
+.map-area-shape.sel > .map-area-tile { fill: color-mix(in srgb, var(--area) 45%, transparent); }
+.map-area-shape.draft > .map-area-tile { fill: color-mix(in srgb, var(--area) 50%, transparent); }
+.map-area-edge { fill: none; stroke: var(--area); stroke-width: 1.5px; stroke-linejoin: round; vector-effect: non-scaling-stroke; }
+.map-area-shape.sel > .map-area-edge { stroke-width: 2.5px; }
+.map-area-shape.draft > .map-area-edge { stroke-dasharray: 5 3; }
+.map-area-layer, .map-draft, .map-area-names { pointer-events: none; }
+.map-area-label { fill: color-mix(in srgb, var(--area) 75%, var(--color-text)); stroke: var(--color-surface); stroke-width: 3px; paint-order: stroke; stroke-linejoin: round; font-family: var(--font-body); font-size: 11px; font-weight: var(--weight-semibold); text-anchor: middle; dominant-baseline: middle; }
+.map-draw-cursor { fill: none; stroke: var(--color-focus); stroke-width: 2px; vector-effect: non-scaling-stroke; }
+.map-draw-hint { position: absolute; left: var(--space-2); right: calc(var(--space-2) + 48px); top: var(--space-2); margin-inline: auto; width: fit-content; z-index: var(--z-sticky); display: flex; align-items: center; gap: var(--space-2); padding: var(--space-1-5) var(--space-3); background: var(--color-surface-raised); color: var(--color-text); border: var(--border-width) solid var(--color-accent); border-radius: var(--radius-md); box-shadow: var(--shadow-2); font-size: var(--text-sm); line-height: var(--lh-sm); }
+.map-draw-dot { flex: none; width: 8px; height: 8px; border-radius: 50%; background: var(--color-accent); }
+.map-draw-size { position: absolute; z-index: var(--z-sticky); padding: 2px var(--space-2); border-radius: var(--radius-full); background: var(--color-accent); color: var(--color-on-accent); font-size: var(--text-sm); line-height: var(--lh-sm); font-weight: var(--weight-semibold); white-space: nowrap; pointer-events: none; }
 .map-crumb-list { display: flex; align-items: center; flex-wrap: wrap; gap: var(--space-1); list-style: none; margin: 0; padding: 0; }
 .map-crumb-list > li + li::before { content: "›"; margin-right: var(--space-1); color: var(--color-text-muted); }
 
