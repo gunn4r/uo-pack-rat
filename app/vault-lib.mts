@@ -683,6 +683,7 @@ export function foldSnapshots(snapshots: ScanV2[], overrides: KindOverrides = NO
   const sorted = [...snapshots].sort((a, b) => stampOf(a.scannedAt) - stampOf(b.scannedAt));
   for (const snap of sorted) {
     if (snap.schemaVersion !== 2) throw new Error("foldSnapshots needs v2 scans — call upgradeScan first");
+    if (snap.kind === "house") continue;   // a house-only file (TazUO's packrat-house-map-refresh.py) is for the house map alone: it must not replace a card or a worn set
     const char = snap.character;
     if (char === "_vault") forgetCharacter(inv, (snap as ScanV2 & { forgetCharacter?: unknown }).forgetCharacter);
     // A root with opened:false (open failed — too far, locked) is still listed in snap.roots, but

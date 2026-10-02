@@ -71,6 +71,21 @@ test("[fast] ingestFile: a valid inbox file lands in scansDir under its accepted
   assert.equal(existsSync(src), false);
 });
 
+test("[fast] ingestFile: a house-only file is accepted as it is, and beside a scan of the same character and second rather than as its duplicate", () => {
+  const inboxDir = tmp("qm-inbox-house-"), scansDir = tmp("qm-scans-house-");
+  writeFileSync(join(inboxDir, "Fixture-20260101-120000.json"), JSON.stringify(validDoc()));
+  assert.equal(ingestFile({ path: join(inboxDir, "Fixture-20260101-120000.json"), scansDir, shard: SHARD }).ok, true);
+  const house = { capturedAt: "2026-01-01T12:00:00+00:00", at: { x: 10, y: 10 }, tiles: [[1, 10, 10, 7, 0]], items: [], containers: [] };
+  const src = join(inboxDir, "Fixture-20260101-120000-house.json");
+  writeFileSync(src, JSON.stringify(validDoc({ kind: "house", house })));
+  const result = ingestFile({ path: src, scansDir, shard: SHARD });
+  assert.equal(result.ok, true, result.reason);
+  assert.equal(result.duplicate, undefined);
+  assert.equal(result.file, "Fixture-20260101T120000+0000-2.json");
+  assert.deepEqual(JSON.parse(readFileSync(join(scansDir, result.file!), "utf8")).house, house);
+  assert.equal(existsSync(src), false);
+});
+
 test("[fast] ingestFile: a schema-invalid doc reports the validation reason and leaves the file alone", () => {
   const inboxDir = tmp("qm-inbox-inv-"), scansDir = tmp("qm-scans-inv-");
   const src = join(inboxDir, "partial.json");

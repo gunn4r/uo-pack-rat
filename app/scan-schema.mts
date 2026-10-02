@@ -46,6 +46,7 @@ export const SCAN_V2_SCHEMA = {
     scannedAt: { type: "string", pattern: "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d+)?([+-]\\d{2}:\\d{2}|Z)$" },
     shard: { type: ["string", "null"] },
     account: { type: "string", pattern: "^[a-f0-9]{16,64}$", "$comment": "an opaque hashed account id (e.g. hex SHA-256 of the account name) — never the plaintext name" },
+    kind: { type: "string", enum: ["house"], "$comment": "Left out for a scan. \"house\" marks a house-only file (TazUO's packrat-house-map-refresh.py, 2.12.0 and later): it carries the house section and nothing else (stats {}, every inventory list empty, which validateScan checks), and only the house map reads it; the fold, Missing and Organize skip it." },
     adapter: {
       type: "object",
       additionalProperties: false,
@@ -194,6 +195,15 @@ export function validateScan(doc: unknown): ValidationResult {
   const stamp = (doc as { scannedAt?: unknown } | null)?.scannedAt;
   if (result.ok && typeof stamp === "string" && !isRealStamp(stamp)) {
     return { ok: false, errors: [{ path: "/scannedAt", msg: "not a real date and time" }] };
+  }
+  // A house-only file (kind "house") must carry its house and no inventory, so nothing but the house map can take anything from it.
+  const d = doc as Record<string, unknown>;
+  if (result.ok && d.kind === "house") {
+    if (d.house === undefined) return { ok: false, errors: [{ path: "/house", msg: "is required in a house-only file" }] };
+    for (const key of ["roots", "containers", "items", "equipped"]) {
+      const v = d[key];
+      if (Array.isArray(v) ? v.length : Object.keys(v as object).length) return { ok: false, errors: [{ path: `/${key}`, msg: "must be empty in a house-only file" }] };
+    }
   }
   return result;
 }

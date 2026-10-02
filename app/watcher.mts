@@ -96,6 +96,7 @@ function stampFor(scannedAt: unknown): string {
 export interface NamedScan {
   character?: unknown;
   scannedAt: unknown;
+  kind?: unknown;
 }
 
 export function acceptedName(doc: NamedScan, existingNames: Set<string> = new Set()): string {
@@ -110,7 +111,8 @@ export function acceptedName(doc: NamedScan, existingNames: Set<string> = new Se
 const escapeRegExp = (s: string): string => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
 // A file already in scansDir under this doc's accepted base name (with or without a "-2"/"-3"...
-// collision suffix) whose own character+scannedAt match doc's is the SAME scan already ingested —
+// collision suffix) whose own character+scannedAt (and kind: a house-only file of the same second is
+// another file, issue #10) match doc's is the SAME scan already ingested —
 // makes ingestFile idempotent against a stuck/duplicated inbox file. Reads scansDir directly (no
 // in-memory state), so this holds across a process restart too. Returns the matching filename or null.
 function findExistingAccepted(scansDir: string, doc: NamedScan): string | null {
@@ -124,7 +126,7 @@ function findExistingAccepted(scansDir: string, doc: NamedScan): string | null {
     let existingDoc: UnvalidatedScan;
     try { existingDoc = JSON.parse(readFileSync(join(scansDir, name), "utf8")) as UnvalidatedScan; }
     catch { continue; }   // unreadable/corrupt existing file — not a usable match
-    if (existingDoc.character === doc.character && existingDoc.scannedAt === doc.scannedAt) return name;
+    if (existingDoc.character === doc.character && existingDoc.scannedAt === doc.scannedAt && existingDoc.kind === doc.kind) return name;
   }
   return null;
 }
