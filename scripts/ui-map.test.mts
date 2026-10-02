@@ -416,6 +416,51 @@ test("[slow] House map: Highlight the stack queues one highlight per chest top f
   }
 });
 
+test("[slow] House map: ✎ renames a house (Esc cancels; Enter saves, and the heading, picker, crumb and page title follow with focus back on ✎), and a redesigned house is offered an earlier house's name", async (t) => {
+  const why = unavailable();
+  if (why) return t.skip(why);
+  const { dir } = seed();
+  // A named house no longer captured, whose footprint overlaps the courtyard's (not the vault's).
+  writeFileSync(join(dir, "house-map.json"), JSON.stringify({ version: 1, houses: { "1-1010-2010": { name: "Old courtyard", bounds: { x0: 1010, y0: 2010, x1: 1027, y1: 2027, facet: 1 } } } }));
+  const { app, page, errors } = await launch(dir);
+  const heading = (): Promise<string | null> => page.locator("#map-panel .map-house-title h2").textContent();
+  const focused = (): Promise<string | undefined> => page.evaluate(() => document.activeElement?.id);
+  try {
+    await go(page, `#/map/${VAULT}`, "#map-panel #map-rename");
+    assert.equal(await page.locator("#map-carry").count(), 0, "the vault overlaps no earlier house");
+    assert.equal(await page.locator("#map-rename").getAttribute("aria-label"), "Rename house");
+    await page.locator("#map-rename").click();
+    await page.waitForSelector("#map-panel #map-name");
+    assert.equal(await focused(), "map-name");
+    await page.locator("#map-name").fill("Scratch");
+    await page.keyboard.press("Escape");
+    await page.waitForSelector("#map-panel #map-rename");
+    assert.equal(await heading(), "Trammel house", "Esc keeps the old heading");
+    assert.equal(await focused(), "map-rename");
+    await page.locator("#map-rename").click();
+    await page.waitForSelector("#map-panel #map-name");
+    await page.locator("#map-name").fill("  Main house ");
+    await page.keyboard.press("Enter");
+    await page.waitForFunction(() => document.querySelector("#map-panel .map-house-title h2")?.textContent === "Main house", undefined, { timeout: 15_000 });
+    assert.equal(await focused(), "map-rename");
+    assert.equal(await page.locator(`#map-house option[value="${VAULT}"]`).textContent(), "Main house · Trammel, 7 × 7, 120 containers");
+    assert.equal(await page.locator("#map-crumbs li").first().textContent(), "Main house");
+    assert.equal(await page.title(), "Main house · Pack Rat");
+    const saved = await until(() => JSON.parse(readFileSync(join(dir, "house-map.json"), "utf8")) as { houses: Record<string, { name: string; bounds?: unknown }> }, (d) => d.houses[VAULT]?.name === "Main house", "the name saved");
+    assert.deepEqual(saved.houses[VAULT]!.bounds, { x0: vaultModel.x0, y0: vaultModel.y0, x1: vaultModel.x1, y1: vaultModel.y1, facet: 1 });
+    await page.locator("#map-house").selectOption(COURT);
+    await page.waitForSelector("#map-panel #map-carry");
+    assert.match(await page.locator("#map-carry").textContent() || "", /^Use the name "Old courtyard" from the earlier house here\?Use name$/);
+    await page.locator("#map-carry-use").click();
+    await page.waitForFunction(() => document.querySelector("#map-panel .map-house-title h2")?.textContent === "Old courtyard", undefined, { timeout: 15_000 });
+    assert.equal(await page.locator("#map-carry").count(), 0, "the offer goes once the house is named");
+    assert.match(await page.locator(`#map-house option[value="${COURT}"]`).textContent() || "", /^Old courtyard · Trammel, \d+ × \d+, \d+ containers?$/);
+    await go(page, "#/inventory", "#tab-inventory:not([hidden])");
+    assert.equal(await page.title(), "Pack Rat", "another screen puts the page title back");
+    assert.deepEqual(errors, []);
+  } finally { await done(app, dir); }
+});
+
 test("[slow] House map: with no house captured the demo's ground chests stand on a plain grid with a hint to rescan, and with nothing scanned an empty state says how to scan a house", async (t) => {
   const why = unavailable();
   if (why) return t.skip(why);

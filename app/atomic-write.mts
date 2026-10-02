@@ -4,7 +4,7 @@
 // folder (app/installer.mts: adapter scripts, packrat-paths.json, imported scans) and for every file
 // the server keeps in its own data directory (settings, profiles, saved runs, accepted scans,
 // tombstones, a pasted scan's inbox file).
-import { lstatSync, renameSync, unlinkSync, writeFileSync, type Stats } from "node:fs";
+import { existsSync, lstatSync, renameSync, unlinkSync, writeFileSync, type Stats } from "node:fs";
 import { randomBytes } from "node:crypto";
 
 // The temp name is random, not a fixed "<dest>.new"/"<dest>.tmp". A fixed, published temp name is a
@@ -60,4 +60,14 @@ export function atomicReplace(dest: string, writeTemp: (tmp: string) => void): v
 // and gets the process default.
 export function writeFileAtomic(dest: string, body: string, mode?: number): void {
   atomicReplace(dest, (tmp) => writeFileSync(tmp, body, { flag: "wx", ...(mode != null ? { mode } : {}) }));
+}
+
+// An unreadable data file is renamed to <file>.corrupt (never overwritten: an older .corrupt keeps
+// its name and the new one gets a timestamp) so whatever was in it can still be recovered by hand.
+// Returns the name it was kept as, or throws when the rename itself fails.
+export function moveAside(file: string): string {
+  let aside = `${file}.corrupt`;
+  if (existsSync(aside)) aside = `${file}.corrupt-${Date.now()}`;
+  renameSync(file, aside);
+  return aside;
 }
