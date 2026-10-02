@@ -546,15 +546,14 @@ export interface ApiError extends Error {
 export type MaterialFamily = "stone" | "brick" | "plaster" | "wood" | "marble" | "sandstone" | "dirt" | "grass" | "water" | "tile" | "neutral";
 export interface Level { index: number; name: string; floorZ: number; status: "built" | "floor-only" }
 export type CellKind = "floor" | "wall" | "window" | "stair" | "roof";
-export interface Cell { level: number; x: number; y: number; kind: CellKind; material: string; family: MaterialFamily; z: number; lip: boolean; indoor: boolean; doorway: boolean; room: number | null }
-export interface Room { id: number; level: number; kind: "room" | "yard"; name: string; tiles: number; x0: number; y0: number; x1: number; y1: number }
+export interface Cell { level: number; x: number; y: number; kind: CellKind; material: string; family: MaterialFamily; z: number; lip: boolean; indoor: boolean; doorway: boolean }
 export interface Furniture { serial: number; kind: "block" | "door" | "teleporter"; name: string; level: number; x: number; y: number; z: number; height: number }
 // serials and zs bottom first; codes[serial] is the engraving code ("C3", or "C" alone for a single chest).
-export interface Stack { level: number; x: number; y: number; room: number | null; serials: number[]; zs: number[]; spot: number | null; direction: string; letter: string }
-export interface Spot { id: number; level: number; x: number; y: number; room: number | null; teleporter: boolean }
+export interface Stack { level: number; x: number; y: number; serials: number[]; zs: number[]; spot: number | null; direction: string; letter: string }
+export interface Spot { id: number; level: number; x: number; y: number; teleporter: boolean }
 export interface HouseModel {
   id: string; facet: number | null; capturedAt: string; captures: number; x0: number; y0: number; x1: number; y1: number;
-  levels: Level[]; cells: Cell[]; rooms: Room[]; furniture: Furniture[]; stacks: Stack[]; spots: Spot[]; codes: Record<string, string>; tiledata: boolean;
+  levels: Level[]; cells: Cell[]; furniture: Furniture[]; stacks: Stack[]; spots: Spot[]; codes: Record<string, string>; tiledata: boolean;
   unopened: number[]; unopenedNames: Record<string, string>;   // the stacked chests no scan has opened, and their tiledata names
   name?: string | undefined;   // the player's name for the house (house-map.json, issue #164), when it has one
 }

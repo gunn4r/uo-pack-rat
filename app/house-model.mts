@@ -6,7 +6,7 @@ import type { HouseItem, HouseSource } from "./house-capture.mts";
 export interface HouseContainerInput { serial: number; name: string; facet: number | null; x: number; y: number; z: number; opened?: boolean | undefined }
 export interface Level { index: number; name: string; floorZ: number; status: "built" | "floor-only" }
 export type CellKind = "floor" | "wall" | "window" | "stair" | "roof";
-export interface Cell { level: number; x: number; y: number; kind: CellKind; material: string; family: MaterialFamily; z: number; lip: boolean; indoor: boolean; doorway: boolean; room: number | null }
+export interface Cell { level: number; x: number; y: number; kind: CellKind; material: string; family: MaterialFamily; z: number; lip: boolean; indoor: boolean; doorway: boolean }
 
 // The colour a tile is drawn in, from its tiledata name by keyword (spec section 2). Order matters: sandstone, marble and brick before stone, and "sand" alone (not sandstone) is dirt; "gold" floors read as marble, pavers as tile. A name nothing matches, or no name (no tiledata.mul), is neutral.
 export type MaterialFamily = "stone" | "brick" | "plaster" | "wood" | "marble" | "sandstone" | "dirt" | "grass" | "water" | "tile" | "neutral";
@@ -27,15 +27,14 @@ export function materialFamily(name: string): MaterialFamily {
   for (const [family, re] of FAMILIES) if (re.test(n)) return family;
   return "neutral";
 }
-export interface Room { id: number; level: number; kind: "room" | "yard"; name: string; tiles: number; x0: number; y0: number; x1: number; y1: number }
 export interface Furniture { serial: number; kind: "block" | "door" | "teleporter"; name: string; level: number; x: number; y: number; z: number; height: number }
-export interface Stack { level: number; x: number; y: number; room: number | null; serials: number[]; zs: number[]; spot: number | null; direction: string; letter: string }
-export interface Spot { id: number; level: number; x: number; y: number; room: number | null; teleporter: boolean }
-export interface HouseModel { id: string; facet: number | null; capturedAt: string; captures: number; x0: number; y0: number; x1: number; y1: number; levels: Level[]; cells: Cell[]; rooms: Room[]; furniture: Furniture[]; stacks: Stack[]; spots: Spot[]; codes: Record<string, string>; tiledata: boolean; unopened: number[]; unopenedNames: Record<string, string> }
+export interface Stack { level: number; x: number; y: number; serials: number[]; zs: number[]; spot: number | null; direction: string; letter: string }
+export interface Spot { id: number; level: number; x: number; y: number; teleporter: boolean }
+export interface HouseModel { id: string; facet: number | null; capturedAt: string; captures: number; x0: number; y0: number; x1: number; y1: number; levels: Level[]; cells: Cell[]; furniture: Furniture[]; stacks: Stack[]; spots: Spot[]; codes: Record<string, string>; tiledata: boolean; unopened: number[]; unopenedNames: Record<string, string> }
 
 const LEVEL_GAP = 15;
 const LEVEL_SLACK = 3;
-const MIN_ROOM = 4;
+const MIN_REGION = 4;
 const REACH = 2;
 const ORDINALS = ["Ground floor", "2nd floor", "3rd floor", "4th floor", "5th floor", "6th floor"];
 
@@ -67,16 +66,10 @@ function storeyZs(floors: Array<{ height: number; t: Classed }>, tiledata: boole
   return floors.map((f) => f.t.z).filter((z) => count.get(z)! * 4 >= most);
 }
 
-function compassName(dx: number, dy: number): string {
-  const v = dy < -1.5 ? "north" : dy > 1.5 ? "south" : "", h = dx < -1.5 ? "west" : dx > 1.5 ? "east" : "";
-  const n = v && h ? `${v}-${h}` : v || h || "middle";
-  return n[0]!.toUpperCase() + n.slice(1) + " room";
-}
-
 const topOf = (ts: Classed[]): Classed => ts.reduce((a, b) => (b.z > a.z ? b : a));
 
 export function buildHouseModel(house: HouseSource, td: TileData | null, containers: HouseContainerInput[]): HouseModel {
-  // Everything below works from sorted tiles, cells, items and containers, so the model (room ids and names, spots, codes) is the same however a capture listed them.
+  // Everything below works from sorted tiles, cells, items and containers, so the model (spots and codes) is the same however a capture listed them.
   const tiles = [...house.tiles].sort((a, b) => a[2] - b[2] || a[1] - b[1] || a[3] - b[3] || a[0] - b[0] || a[4] - b[4]);
   const classed = tiles.map(([graphic, x, y, z, imp]) => {
     const info = td?.info(graphic) ?? null;
@@ -92,7 +85,7 @@ export function buildHouseModel(house: HouseSource, td: TileData | null, contain
     const e = byCell.get(k) ?? { level, x: c.x, y: c.y, tiles: [] };
     e.tiles.push(c.t); byCell.set(k, e);
   }
-  // A foundation edge (spec section 3): a tile with no floor or stair, on the footprint's outer boundary or beside a floor, whose walls all start (base z: foundation pieces are tall) below the floor beside them, is the rim, drawn as a lip like the edge tiles that do carry a floor. "The floor beside them" is the lowest floor (stairs aside: front steps run down past the foundation) among the 8 neighbours on the same level (diagonals too, so a sunken room's corner walls stand on its floor), else the level's floor. It belongs to no room, yard or spot (rims below).
+  // A foundation edge (spec section 3): a tile with no floor or stair, on the footprint's outer boundary or beside a floor, whose walls all start (base z: foundation pieces are tall) below the floor beside them, is the rim, drawn as a lip like the edge tiles that do carry a floor. "The floor beside them" is the lowest floor (stairs aside: front steps run down past the foundation) among the 8 neighbours on the same level (diagonals too, so a sunken room's corner walls stand on its floor), else the level's floor. It belongs to no region or spot (rims below).
   const footprintAt = new Set(classed.map((c) => `${c.x}:${c.y}`));
   const groundZ = (level: number, x: number, y: number, steps = true): number | undefined => {
     const g = byCell.get(key(level, x, y))?.tiles.filter((t) => t.cls === "floor" || t.cls === "door" || (steps && t.cls === "stair"));
@@ -124,7 +117,7 @@ export function buildHouseModel(house: HouseSource, td: TileData | null, contain
     else if (roofs.length) { kind = "roof"; material = topOf(roofs).name; }
     else continue;
     const z = rim ? floorZ : ground.length ? floorTop : topOf(e.tiles).z;
-    const cell: Cell = { level: e.level, x: e.x, y: e.y, kind, material, family: materialFamily(material), z, lip: walls.length > 0 && real.length === 0, indoor: ground.length > 0 && roofs.some((t) => t.z > floorTop), doorway: false, room: null };
+    const cell: Cell = { level: e.level, x: e.x, y: e.y, kind, material, family: materialFamily(material), z, lip: walls.length > 0 && real.length === 0, indoor: ground.length > 0 && roofs.some((t) => t.z > floorTop), doorway: false };
     if (floors.some((t) => t.cls === "door")) { cell.doorway = true; doors.add(cell); }
     if (rim) rims.add(cell);
     cells.push(cell);
@@ -160,7 +153,7 @@ export function buildHouseModel(house: HouseSource, td: TileData | null, contain
   let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
   for (const t of house.tiles) { if (t[1] < x0) x0 = t[1]; if (t[1] > x1) x1 = t[1]; if (t[2] < y0) y0 = t[2]; if (t[2] > y1) y1 = t[2]; }
   if (!house.tiles.length) x0 = y0 = x1 = y1 = 0;
-  const rooms = roomsOf(cells, at, doors, rims, levels, (x0 + x1) / 2, (y0 + y1) / 2);
+  const region = regionsOf(cells, at, doors, rims, levels);
 
   // Stacks: the house's containers (same facet, either side unknown counts; on the footprint: some level has a cell at its tile) per tile, bottom first; a tile's column splits where the next container is a storey (LEVEL_GAP) higher or stands at or above the top of a higher level's floor or stair on that tile, and each stack sits on its bottom container's level.
   const footprint = new Set(cells.map((c) => `${c.x}:${c.y}`));
@@ -169,13 +162,15 @@ export function buildHouseModel(house: HouseSource, td: TileData | null, contain
     const u = l.index > level ? at.get(key(l.index, c.x, c.y)) : undefined;
     return !!u && (u.kind === "floor" || u.kind === "stair") && c.z >= u.z;
   });
-  const stackAt = new Map<string, Stack[]>(), below = new Map<string, { s: Stack; z: number }>();
+  const stackAt = new Map<string, Stack[]>(), stackRegion = new Map<Stack, number | null>(), below = new Map<string, { s: Stack; z: number }>();
   for (const c of containers.filter(inside).sort((a, b) => a.z - b.z || a.serial - b.serial)) {
     const col = `${c.x}:${c.y}`, prev = below.get(col);
     let s = prev && c.z - prev.z < LEVEL_GAP && !onUpperFloor(c, prev.s.level) ? prev.s : undefined;
     if (!s) {
       const level = levelOf(c.z), k = key(level, c.x, c.y);
-      s = { level, x: c.x, y: c.y, room: at.get(k)?.room ?? null, serials: [], zs: [], spot: null, direction: "", letter: "" };
+      s = { level, x: c.x, y: c.y, serials: [], zs: [], spot: null, direction: "", letter: "" };
+      const r = at.get(k);
+      stackRegion.set(s, r ? region.get(r) ?? null : null);
       stackAt.set(k, [...(stackAt.get(k) ?? []), s]);
     }
     s.serials.push(c.serial); s.zs.push(c.z); below.set(col, { s, z: c.z });
@@ -185,7 +180,7 @@ export function buildHouseModel(house: HouseSource, td: TileData | null, contain
   const seenOnly = new Map(containers.filter((c) => c.opened === false).map((c) => [c.serial, c.name]));
   const unopened = stacks.flatMap((s) => s.serials).filter((n) => seenOnly.has(n)).sort((a, b) => a - b);
   const unopenedNames = Object.fromEntries(unopened.map((n) => [String(n), seenOnly.get(n)!]));
-  const spots = spotsOf(cells.filter((c) => !rims.has(c)), at, stackAt, furniture, levels);
+  const spots = spotsOf(cells.filter((c) => !rims.has(c)), at, stackAt, furniture, levels, (c) => region.get(c) ?? null, (s) => stackRegion.get(s) ?? null);
 
   const angle = (s: Stack): number => { const p = spots[s.spot!]!; return Math.round(((Math.atan2(s.x - p.x, -(s.y - p.y)) * 180) / Math.PI + 360) % 360); };
   const ring = (s: Stack): number => { const p = spots[s.spot!]!; return Math.max(Math.abs(s.x - p.x), Math.abs(s.y - p.y)); };
@@ -197,7 +192,7 @@ export function buildHouseModel(house: HouseSource, td: TileData | null, contain
     s.serials.forEach((serial, h) => { codes[String(serial)] = s.serials.length === 1 ? s.letter : `${s.letter}${h + 1}`; });
   });
 
-  return { id: house.id, facet: house.facet, capturedAt: house.capturedAt, captures: house.captures, x0, y0, x1, y1, levels, cells, rooms,
+  return { id: house.id, facet: house.facet, capturedAt: house.capturedAt, captures: house.captures, x0, y0, x1, y1, levels, cells,
     furniture, stacks: ordered, spots, codes, tiledata: td !== null, unopened, unopenedNames };
 }
 
@@ -241,7 +236,7 @@ function directionOf(dx: number, dy: number): string {
   return (dy < 0 ? "N" : dy > 0 ? "S" : "") + (dx > 0 ? "E" : dx < 0 ? "W" : "");
 }
 
-// Greedy cover per level: candidates are free floor and stair cells plus teleporter tiles, none holding a stack or a block; each reaches the stacks within REACH tiles (Chebyshev) in its own room, or in no room (an alcove or doorway cell) from any room, worked out once. Each round picks the candidate reaching the most uncovered containers, ties to the smaller total Manhattan distance, then y, then x; it stops when no candidate reaches anything. Spots are then numbered by level, room (none last) and pick order, so letters run room by room. Sets each covered stack's spot and direction.
+// Greedy cover per level: candidates are free floor and stair cells plus teleporter tiles, none holding a stack or a block; each reaches the stacks within REACH tiles (Chebyshev) in its own region (regionsOf), or in no region (an alcove or doorway cell) from any region, so never through a wall, worked out once. Each round picks the candidate reaching the most uncovered containers, ties to the smaller total Manhattan distance, then y, then x; it stops when no candidate reaches anything. Spots are then numbered by level, region (none last) and pick order, so letters run room by room. Sets each covered stack's spot and direction.
 // A house is itself an Item whose graphic is its multi id, standing at the plot centre (ServUO Scripts/Multis/HousePlacementTool.cs: every customizable house uses a multi id from 0x13EC to 0x147B); a static of the same id would be named as furniture (0x147B reads as a telescope). But ServUO's Telescope addon (Scripts/Items/Addons/Telescope.cs) has a real component with graphic 0x147B, so only ONE item is dropped: the in-range one nearest the centre of the tiles' x/y bounds, ties to the lowest serial, and only when it is within HOUSE_ITEM_CENTRE_RADIUS of that centre.
 const HOUSE_MULTI_MIN = 0x13ec, HOUSE_MULTI_MAX = 0x147b;
 const HOUSE_ITEM_CENTRE_RADIUS = 2;   // the bounds include steps and the rim, so their centre sits up to about a tile off the multi origin, and an even-sized plot has a .5 centre
@@ -255,8 +250,8 @@ function houseItemSerial(house: HouseSource): number | null {
   return Math.max(Math.abs(best[2] - cx), Math.abs(best[3] - cy)) <= HOUSE_ITEM_CENTRE_RADIUS ? best[0] : null;
 }
 
-function spotsOf(cells: Cell[], at: Map<string, Cell>, stackAt: Map<string, Stack[]>, furniture: Furniture[], levels: Level[]): Spot[] {
-  const spots: Spot[] = [];
+function spotsOf(cells: Cell[], at: Map<string, Cell>, stackAt: Map<string, Stack[]>, furniture: Furniture[], levels: Level[], cellRegion: (c: Cell) => number | null, stackRegion: (s: Stack) => number | null): Spot[] {
+  const spots: Spot[] = [], spotRegion = new Map<number, number | null>();
   const blocked = new Set(furniture.filter((f) => f.kind === "block").map((f) => key(f.level, f.x, f.y)));
   const teleports = new Set(furniture.filter((f) => f.kind === "teleporter").map((f) => key(f.level, f.x, f.y)));
   for (const lv of levels) {
@@ -267,7 +262,7 @@ function spotsOf(cells: Cell[], at: Map<string, Cell>, stackAt: Map<string, Stac
     for (const c of cands) {
       const near: Stack[] = [];
       for (let dx = -REACH; dx <= REACH; dx++) for (let dy = -REACH; dy <= REACH; dy++) {
-        for (const s of stackAt.get(key(lv.index, c.x + dx, c.y + dy)) ?? []) if (s.room === null || s.room === c.room) near.push(s);
+        for (const s of stackAt.get(key(lv.index, c.x + dx, c.y + dy)) ?? []) if (stackRegion(s) === null || stackRegion(s) === cellRegion(c)) near.push(s);
       }
       if (near.length) reach.push({ c, stacks: near });
     }
@@ -281,59 +276,47 @@ function spotsOf(cells: Cell[], at: Map<string, Cell>, stackAt: Map<string, Stac
       }
       if (!best) break;
       const { c } = best, id = spots.length;
-      spots.push({ id, level: lv.index, x: c.x, y: c.y, room: c.room, teleporter: teleports.has(key(lv.index, c.x, c.y)) });
+      spots.push({ id, level: lv.index, x: c.x, y: c.y, teleporter: teleports.has(key(lv.index, c.x, c.y)) });
+      spotRegion.set(id, cellRegion(c));
       for (const s of best.cov) { s.spot = id; s.direction = directionOf(s.x - c.x, s.y - c.y); }
     }
   }
-  const order = [...spots].sort((a, b) => a.level - b.level || (a.room ?? Infinity) - (b.room ?? Infinity) || a.id - b.id);
+  const order = [...spots].sort((a, b) => a.level - b.level || (spotRegion.get(a.id) ?? Infinity) - (spotRegion.get(b.id) ?? Infinity) || a.id - b.id);
   const renumber = new Map(order.map((p, i) => [p.id, i]));
   for (const s of [...stackAt.values()].flat()) if (s.spot !== null) s.spot = renumber.get(s.spot)!;
   order.forEach((p, i) => { p.id = i; });
   return order;
 }
 
-// Doorway cells (walls on both opposite sides) split rooms; afterwards the indoor cells still without a room form hallways (a 1-wide corridor is doorway cells end to end), except cells holding a door.
-function roomsOf(cells: Cell[], at: Map<string, Cell>, doors: Set<Cell>, rims: Set<Cell>, levels: Level[], cx: number, cy: number): Room[] {
-  const rooms: Room[] = [];
+// The wall-aware regions standing spots work in (issue #10: never shown, the player draws their own areas): doorway cells (walls on both opposite sides) split the indoor floor into rooms of at least MIN_REGION cells, level by level; afterwards the indoor cells still in none form hallways (a 1-wide corridor is doorway cells end to end), except cells holding a door; the ground level's uncovered floor (the foundation's rim aside) is one region last. Numbered in that order, so spot order (and with it every letter) is deterministic.
+function regionsOf(cells: Cell[], at: Map<string, Cell>, doors: Set<Cell>, rims: Set<Cell>, levels: Level[]): Map<Cell, number> {
+  const region = new Map<Cell, number>();
+  let next = 0;
+  const claim = (cs: Cell[]): void => { const id = next++; for (const c of cs) region.set(c, id); };
   const open = (c: Cell): boolean => c.indoor && (c.kind === "floor" || c.kind === "stair");
   const fill = (ok: (c: Cell | undefined) => c is Cell): Array<{ level: number; cells: Cell[] }> => {
     const found: Array<{ level: number; cells: Cell[] }> = [], seen = new Set<Cell>();
     for (const start of cells) {
       if (!ok(start) || seen.has(start)) continue;
-      const region: Cell[] = [], todo = [start];
+      const part: Cell[] = [], todo = [start];
       seen.add(start);
       while (todo.length) {
         const c = todo.pop()!;
-        region.push(c);
+        part.push(c);
         for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]] as const) {
           const n = at.get(key(c.level, c.x + dx, c.y + dy));
           if (ok(n) && !seen.has(n)) { seen.add(n); todo.push(n); }
         }
       }
-      if (region.length >= MIN_ROOM) found.push({ level: start.level, cells: region });
+      if (part.length >= MIN_REGION) found.push({ level: start.level, cells: part });
     }
     return found;
   };
   const found = fill((c): c is Cell => !!c && open(c) && !c.doorway);
-  for (const lv of levels) {
-    const mine = found.filter((f) => f.level === lv.index), used = new Map<string, number>();
-    for (const f of mine) {
-      const mx = f.cells.reduce((a, c) => a + c.x, 0) / f.cells.length - cx, my = f.cells.reduce((a, c) => a + c.y, 0) / f.cells.length - cy;
-      let name = lv.index > 0 && lv.status === "floor-only" ? "Open floor" : mine.length === 1 ? "Main room" : compassName(mx, my);
-      const n = (used.get(name) ?? 0) + 1; used.set(name, n);
-      if (n > 1) name += ` ${n}`;
-      rooms.push(roomFrom(rooms.length, lv.index, "room", name, f.cells));
-    }
-  }
-  const halls = fill((c): c is Cell => !!c && open(c) && c.room === null && !doors.has(c));
-  for (const lv of levels) halls.filter((f) => f.level === lv.index).forEach((f, i) => rooms.push(roomFrom(rooms.length, lv.index, "room", i ? `Hallway ${i + 1}` : "Hallway", f.cells)));
+  for (const lv of levels) for (const f of found) if (f.level === lv.index) claim(f.cells);
+  const halls = fill((c): c is Cell => !!c && open(c) && !region.has(c) && !doors.has(c));
+  for (const lv of levels) for (const f of halls) if (f.level === lv.index) claim(f.cells);
   const yard = cells.filter((c) => c.level === 0 && !c.indoor && (c.kind === "floor" || c.kind === "stair") && !rims.has(c));
-  if (yard.length) rooms.push(roomFrom(rooms.length, 0, "yard", "Yard", yard));
-  return rooms;
-}
-
-function roomFrom(id: number, level: number, kind: "room" | "yard", name: string, cells: Cell[]): Room {
-  let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
-  for (const c of cells) { c.room = id; if (c.x < x0) x0 = c.x; if (c.x > x1) x1 = c.x; if (c.y < y0) y0 = c.y; if (c.y > y1) y1 = c.y; }
-  return { id, level, kind, name, tiles: cells.length, x0, y0, x1, y1 };
+  if (yard.length) claim(yard);
+  return region;
 }
