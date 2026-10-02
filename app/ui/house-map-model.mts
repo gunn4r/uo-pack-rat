@@ -130,7 +130,8 @@ export function houseTotals(chests: readonly ChestView[]): HouseTotals {
   }
   return t;
 }
-export const chestCount = (m: HouseModel): number => m.stacks.reduce((a, s) => a + s.serials.length, 0);
+// The chests in a house, or on one of its levels.
+export const chestCount = (m: HouseModel, level: number | null = null): number => m.stacks.reduce((a, s) => a + (level == null || s.level === level ? s.serials.length : 0), 0);
 export function roomCounts(m: HouseModel): Map<number, number> {
   const out = new Map<number, number>();
   for (const s of m.stacks) if (s.room != null) out.set(s.room, (out.get(s.room) ?? 0) + s.serials.length);

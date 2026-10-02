@@ -117,6 +117,8 @@ test("[fast] house map: a callout lists a stack's chests top first with their fi
   assert.equal(t.empty, 1, "chest 0 holds nothing");
   assert.deepEqual(houseTotals([{ ...v[0]!, opened: false, fill: null }, { ...v[0]!, fill: null }]), { containers: 2, used: 0, capacity: 0, empty: 0, full: 0, unopened: 1, unknown: 1 });
   assert.equal(chestCount(m), 27);
+  assert.equal(m.levels.reduce((a, l) => a + chestCount(m, l.index), 0), 27, "a level's count; the levels add up to the house");
+  assert.equal(chestCount(m, m.levels.length), 0, "a level with no stacks");
   assert.equal([...roomCounts(m).values()].reduce((a, n) => a + n, 0), 27);
   assert.match(stackWhere(m, s), new RegExp(`^Main room · [NESW]+ of standing spot 1 · 4 chests, top first$`));
 });
