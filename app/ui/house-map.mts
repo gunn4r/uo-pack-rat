@@ -13,7 +13,7 @@ import { plural } from "./inv-model.mts";
 import { fillTone } from "./organize-model.mts";
 import { PLAIN, pickHouse, plainGrid, chestCount, houseLabel, houseName, carryOver, carryOverText, tiledataNote, chestViews, colourOf, chestLabel, sceneOf, boundsOf, fit, vbText,
   cutAway, calloutLines, nearestInDirection, houseTotals, legendOf, stackWhere, anchorOf, zoomAt, fillWords, whereOf, whereTitle, cropAround, facetMapUrl, markersOf, facetMapNote, markerRadii,
-  drawerChest, drawerMeta, slotsText, drawerPicker, contentsOf, contentsSummary, filterContents, areaOfStack, levelAreas, tileAt, clampTile, rectOf, sizeText, unionTiles, coveredCells, outlineOf, pillsOf, fitLabel, placePill as pillBox, LABEL_FIT, type AreaPill,
+  drawerChest, drawerMeta, slotsText, drawerPicker, DRAWER_W, DRAWER_MIN, drawerMax, clampDrawer, drawerKey, contentsOf, contentsSummary, filterContents, areaOfStack, levelAreas, tileAt, clampTile, rectOf, sizeText, unionTiles, coveredCells, outlineOf, pillsOf, fitLabel, placePill as pillBox, LABEL_FIT, type AreaPill,
   nextAreaId, nextAreaColor, moveCursor, project, tilePolygon, pts, liveAreas, withOrphans, redrawFailed, AREA_COLORS, AREA_COLOR_NAMES, MAX_AREAS, MAX_RECTS, type PlainModel, type Tile, type Contents, type ContentsNode, type Marker, type View, type Mode, type Box, type Colour, type ChestView, type Piece, type Prism, type Pt, type Dir } from "./house-map-model.mts";
 import type { AreaRect, ContainerLabel, HouseArea, HouseModel, UiPrefs, HousesApiResponse, HouseApiResponse, HouseMapApiResponse, HouseMapEntry, HouseMapPutApiResponse, ItemsApiResponse, Stack } from "./api-types.mts";
 import type { Item } from "../vault-lib.mts";
@@ -52,7 +52,9 @@ let redrawn: { id: string; rects: AreaRect[] } | null = null;   // a redraw show
 let hotArea: string | null = null;
 // Whether the area name pills are hidden (ui-prefs areaLabels, set at load by applyMapPrefs; the zoom stack's toggle saves it).
 let labelsHidden = false;
-export function applyMapPrefs(prefs: UiPrefs | null): void { labelsHidden = prefs?.areaLabels === "hide"; }
+// The contents drawer's width as chosen (ui-prefs mapDrawerWidth, set at load by applyMapPrefs; its handle saves it), and as shown: the chosen width clamped to what the window leaves (fitDrawer).
+let drawerW = DRAWER_W, shownW = DRAWER_W;
+export function applyMapPrefs(prefs: UiPrefs | null): void { labelsHidden = prefs?.areaLabels === "hide"; drawerW = prefs?.mapDrawerWidth ?? DRAWER_W; }
 function toggleLabels(): void {
   labelsHidden = !labelsHidden;
   paintLabelsButton();
@@ -1097,8 +1099,57 @@ function placeDrawer(animate = false): void {
   const fresh = !d;
   if (!d) { d = box("aside", { class: "card map-drawer", id: "map-drawer", role: "region", onkeydown: drawerKeys }); page.append(d); }
   page.classList.add("has-drawer");
+  if (fresh) { showDrawerW(drawerW, Infinity); d.addEventListener("transitionend", (e) => { if (e.target === d && (e as TransitionEvent).propertyName === "width") fitDrawer(); }); }
   drawDrawer();
   if (fresh && animate) { d.classList.add("entering"); void d.offsetWidth; d.classList.remove("entering"); }
+  if (!(fresh && animate) || getComputedStyle(d).transitionDuration === "0s") fitDrawer();   // else when it has grown (transitionend)
+}
+// ---------------------------------------------------------------- the drawer's width
+// Its handle (on its left edge, from 1100 px up): a drag, ← and → (16 px, 64 with Shift), Home and End set the width, a double-click puts back the default; each saves it. The map keeps MAP_MIN px however wide the window is: the width shown is the chosen one clamped to that (on every window resize too), and the map's viewBox never needs a re-fit (the SVG scales it to fit) while its pills follow through their ResizeObserver.
+const stacked = (): boolean => matchMedia("(max-width: 1099px)").matches;
+function drawerLimit(): number {
+  const d = $<HTMLElement>("#map-drawer"), m = $<HTMLElement>("#map-stage");
+  return d && m ? drawerMax(d.getBoundingClientRect().width, m.getBoundingClientRect().width) : DRAWER_W;
+}
+function showDrawerW(w: number, max = drawerLimit()): number {
+  shownW = clampDrawer(w, max);
+  body().style.setProperty("--drawer-w", `${shownW}px`);
+  const g = $<HTMLElement>("#map-drawer-grip");
+  if (g) { g.setAttribute("aria-valuenow", String(shownW)); g.setAttribute("aria-valuemax", String(isFinite(max) ? Math.max(DRAWER_MIN, max) : shownW)); }
+  return shownW;
+}
+function fitDrawer(): void { if ($<HTMLElement>("#map-drawer") && !stacked()) showDrawerW(drawerW); }
+function setDrawerW(w: number, max?: number): void {
+  drawerW = showDrawerW(w, max);
+  api("/api/ui-prefs", { method: "PUT", body: { mapDrawerWidth: drawerW } }).catch((e: Error) => toast(`Could not save the contents width: ${e.message}`, "bad"));
+}
+addEventListener("resize", fitDrawer);
+function drawerGrip(): HTMLElement {
+  const g = box("div", { class: "map-drawer-grip", id: "map-drawer-grip", role: "separator", tabindex: "0", "aria-orientation": "vertical", "aria-label": "Resize contents", "aria-valuemin": DRAWER_MIN, "aria-valuenow": shownW, "aria-valuemax": shownW });
+  g.addEventListener("pointerdown", (e: PointerEvent) => {
+    if (e.button !== 0) return;
+    e.preventDefault();
+    const x0 = e.clientX, w0 = shownW, max = drawerLimit();
+    let moved = false;
+    g.setPointerCapture(e.pointerId);
+    body().classList.add("resizing");
+    const move = (m: PointerEvent): void => { moved = true; showDrawerW(w0 + x0 - m.clientX, max); };
+    const up = (): void => {
+      g.removeEventListener("pointermove", move); g.removeEventListener("pointerup", up); g.removeEventListener("pointercancel", up);
+      body().classList.remove("resizing");
+      if (moved && shownW !== drawerW) setDrawerW(shownW, max);
+    };
+    g.addEventListener("pointermove", move); g.addEventListener("pointerup", up); g.addEventListener("pointercancel", up);
+  });
+  g.addEventListener("dblclick", () => setDrawerW(DRAWER_W));
+  g.addEventListener("keydown", (e: KeyboardEvent) => {
+    if (e.metaKey || e.ctrlKey || e.altKey) return;
+    const max = drawerLimit(), w = drawerKey(e.key, e.shiftKey, shownW, max);
+    if (w == null) return;
+    e.preventDefault();
+    if (w !== shownW || w !== drawerW) setDrawerW(w, max);
+  });
+  return g;
 }
 // Esc from anywhere inside the drawer closes it (a menu opened from a row lives outside it and keeps its own Esc).
 function drawerKeys(e: Event): void {
@@ -1133,7 +1184,7 @@ function drawDrawer(): void {
   const meta = txt(c ? drawerMeta(c, s) : stackWhere(m, s, areasNow()), "t-sm muted ellip"), summary = txt("", "t-sm muted");
   meta.id = "map-drawer-meta";
   summary.id = "map-drawer-summary";
-  d.replaceChildren(
+  d.replaceChildren(drawerGrip(),
     box("header", { class: "map-drawer-head" },
       box("div", { class: "map-drawer-title" },
         box("div", { class: "map-drawer-titles" }, box("h2", { class: "t-lg map-drawer-name" }, ...(c ? [txt(c.code, "mono"), txt(c.name, "ellip")] : [txt(`Stack ${s.letter}`, "ellip")])), meta),
