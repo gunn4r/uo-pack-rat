@@ -561,8 +561,10 @@ export interface HouseModel {
 // Where tiledata.mul came from (the uoFolder setting, or TazUO's launcher profile), or why there is none.
 export interface TiledataFrom { folder: string | null; source: "settings" | "tazuo-profile" | null; reason: null | "override-missing" | "no-client" | "no-tazuo-profile" | "unreadable" }
 // GET /api/houses
-// width and height are the plot, without a row of front steps outside it (house-model.mts plotSize).
-export interface HouseSummary { id: string; name?: string | undefined; facet: number | null; capturedAt: string; captures: number; width: number; height: number; levels: number; containers: number }
+// width, height and plot are the plot, without a row of front steps outside it (house-model.mts plotBounds).
+export interface HouseSummary { id: string; name?: string | undefined; facet: number | null; capturedAt: string; captures: number; width: number; height: number; plot: { x0: number; y0: number; x1: number; y1: number }; levels: number; containers: number }
+// GET /api/facet-map/<facet>.png answers a PNG, or a 404 with why there is none: no UO folder (as TiledataFrom), or the facet file missing or not a facet bitmap.
+export type FacetMapReason = "override-missing" | "no-client" | "no-tazuo-profile" | "missing" | "unreadable";
 export interface HousesApiResponse { ok: boolean; tiledata: boolean; tiledataFrom: TiledataFrom; houses: HouseSummary[] }
 // GET /api/houses/<id>
 export interface HouseApiResponse { ok: boolean; house: HouseModel }
