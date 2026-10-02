@@ -1118,7 +1118,7 @@ function showDrawerW(w: number, max = drawerLimit()): number {
   if (g) { g.setAttribute("aria-valuenow", String(shownW)); g.setAttribute("aria-valuemax", String(isFinite(max) ? Math.max(DRAWER_MIN, max) : shownW)); }
   return shownW;
 }
-function fitDrawer(): void { if ($<HTMLElement>("#map-drawer") && !stacked()) showDrawerW(drawerW); }
+function fitDrawer(): void { if ($<HTMLElement>("#map-drawer") && !stacked() && !$<HTMLElement>("#tab-map")!.hidden) showDrawerW(drawerW); }   // a hidden screen measures 0
 function setDrawerW(w: number, max?: number): void {
   drawerW = showDrawerW(w, max);
   api("/api/ui-prefs", { method: "PUT", body: { mapDrawerWidth: drawerW } }).catch((e: Error) => toast(`Could not save the contents width: ${e.message}`, "bad"));
