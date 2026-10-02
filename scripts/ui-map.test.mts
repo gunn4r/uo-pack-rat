@@ -500,7 +500,7 @@ test("[slow] House map: ✎ renames a house (Esc cancels; Enter saves, and the h
     await page.locator("#map-carry-use").click();
     await page.waitForFunction(() => document.querySelector("#map-panel .map-house-title h2")?.textContent === "Old courtyard", undefined, { timeout: 15_000 });
     assert.equal(await page.locator("#map-carry").count(), 0, "the offer goes once the house is named");
-    assert.match(await page.locator('.map-area[data-area="a1"]').textContent() || "", /^Garden1$/, "the area came along, holding the yard chest");
+    assert.match(await page.locator('.map-area[data-area="a1"]').textContent() || "", /^Garden2$/, "the area came along, holding the yard chest and the chest beside it no scan opened (1012, 2013 and 1012, 2012)");
     const carried = JSON.parse(readFileSync(join(dir, "house-map.json"), "utf8")) as { houses: Record<string, { areas?: Array<{ name: string }> }> };
     assert.deepEqual(carried.houses[COURT]!.areas?.map((a) => a.name), ["Garden"]);
     assert.match(await page.locator(`#map-house option[value="${COURT}"]`).textContent() || "", /^Old courtyard · Trammel, \d+ × \d+, \d+ containers?$/);
