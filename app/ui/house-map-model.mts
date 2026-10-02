@@ -2,7 +2,7 @@
 import { bagLabel, itemOwnBlob, type Item } from "../vault-lib.mts";
 import { plural, splitSerial } from "./inv-model.mts";
 import { FACET_SIZE, sextant, sextantText } from "./sextant.mts";
-import type { Cell, ContainerLabel, FacetMapReason, HouseMapEntry, HouseModel, HouseSummary, InventoryData, Room, Spot, Stack, TiledataFrom } from "./api-types.mts";
+import type { AreaRect, Cell, ContainerLabel, FacetMapReason, HouseArea, HouseMapEntry, HouseModel, HouseSummary, InventoryData, Spot, Stack, TiledataFrom } from "./api-types.mts";
 
 // A tile is W units wide at the game angle (half as tall), and one z step lifts a point K units: the client draws a 44-px tile and 4 px per z, a little flatter than this, which reads better at the map's size.
 export const W = 32, K = 2;
@@ -34,10 +34,10 @@ export function paintOrder<T extends { x: number; y: number; z: number }>(items:
 }
 
 const CORNERS: ReadonlyArray<Pt> = [[0, 0], [1, 0], [1, 1], [0, 1]];
-// What a level draws, in drawing units, with a tile's margin: every cell of the level (or of `room`'s bounding box) up to a cut wall's height, and every stack up to its top chest.
-export function boundsOf(m: HouseModel, level: number, view: View, room: Room | null = null): Box {
+// What a level draws, in drawing units, with a tile's margin: every cell of the level (or of `area`'s rectangles) up to a cut wall's height, and every stack up to its top chest.
+export function boundsOf(m: HouseModel, level: number, view: View, area: Pick<HouseArea, "rects"> | null = null): Box {
   const base = m.levels[level]?.floorZ ?? 0;
-  const inRoom = (x: number, y: number): boolean => !room || (x >= room.x0 && x <= room.x1 && y >= room.y0 && y <= room.y1);
+  const inRoom = (x: number, y: number): boolean => !area || inRects(area.rects, x, y);
   let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
   const add = (x: number, y: number, lo: number, hi: number): void => {
     for (const [dx, dy] of CORNERS) for (const z of [lo, hi]) {
@@ -143,11 +143,6 @@ export function houseTotals(chests: readonly ChestView[]): HouseTotals {
 }
 // The chests in a house, or on one of its levels.
 export const chestCount = (m: HouseModel, level: number | null = null): number => m.stacks.reduce((a, s) => a + (level == null || s.level === level ? s.serials.length : 0), 0);
-export function roomCounts(m: HouseModel): Map<number, number> {
-  const out = new Map<number, number>();
-  for (const s of m.stacks) if (s.room != null) out.set(s.room, (out.get(s.room) ?? 0) + s.serials.length);
-  return out;
-}
 
 // ---------------------------------------------------------------- picking a house, names and words
 // The plain grid's id in the picker and the route (#/map/plain): house ids are "<facet>-<x>-<y>", so it never collides.
@@ -165,21 +160,31 @@ export const facetName = (f: number | null): string => (f != null ? FACETS[f] : 
 // A house the player named (issue #164) is called by its name, the facet after it in the picker.
 export const houseLabel = (h: HouseSummary): string => `${h.name ? `${h.name} · ${facetName(h.facet)}` : `${facetName(h.facet)} house`}, ${h.width} × ${h.height}, ${plural(h.containers, "container")}`;
 export const houseName = (m: HouseModel): string => (m.id === PLAIN ? "Chests on the ground" : m.name ?? `${facetName(m.facet)} house`);
-// A redesigned or moved house gets a new id (spec §1): the name of a house no longer listed whose footprint, as it was
-// when named, overlaps this unnamed house's on the same facet, to offer carrying over. The first such id wins.
-export function carryOver(m: HouseModel, listed: readonly string[], names: Readonly<Record<string, HouseMapEntry>>): { id: string; name: string } | null {
-  if (m.id === PLAIN || m.name) return null;
+// A redesigned or moved house gets a new id (spec §1): the name and areas of a house no longer listed whose footprint, as
+// it was when named or drawn, overlaps this house's on the same facet, to offer carrying over while this house has neither
+// a name nor an area of its own. The first such id wins. Only the areas that still lie on this house (AREA_MARGIN, as the
+// server checks) come along, each with the rectangles that do.
+export function carryOver(m: HouseModel, listed: readonly string[], names: Readonly<Record<string, HouseMapEntry>>): { id: string; name: string; areas: HouseArea[] } | null {
+  if (m.id === PLAIN || m.name || names[m.id]?.areas?.length) return null;
   for (const [id, e] of Object.entries(names).sort((a, b) => a[0].localeCompare(b[0]))) {
     const b = e.bounds;
-    if (!b || listed.includes(id) || b.facet !== m.facet) continue;
-    if (b.x0 <= m.x1 && m.x0 <= b.x1 && b.y0 <= m.y1 && m.y0 <= b.y1) return { id, name: e.name };
+    if (!b || listed.includes(id) || b.facet !== m.facet || !(e.name || e.areas?.length)) continue;
+    if (!(b.x0 <= m.x1 && m.x0 <= b.x1 && b.y0 <= m.y1 && m.y0 <= b.y1)) continue;
+    const on = (r: AreaRect): boolean => r.x0 >= m.x0 - AREA_MARGIN && r.y0 >= m.y0 - AREA_MARGIN && r.x1 <= m.x1 + AREA_MARGIN && r.y1 <= m.y1 + AREA_MARGIN;
+    const areas = (e.areas ?? []).map((a) => ({ ...a, rects: a.rects.filter(on) })).filter((a) => a.rects.length);
+    if (e.name || areas.length) return { id, name: e.name, areas };
   }
   return null;
 }
-export function stackWhere(m: HouseModel, s: Stack): string {
-  const room = m.rooms.find((r) => r.id === s.room)?.name ?? "No room";
+// The offer's words: what it would carry over.
+export function carryOverText(o: { name: string; areas: readonly HouseArea[] }): { text: string; action: string } {
+  const what = o.name && o.areas.length ? "name and areas" : o.name ? "name" : "areas";
+  const text = !o.name ? `Use the ${what} from the earlier house here?` : o.areas.length ? `Use the ${what} of "${o.name}" from the earlier house here?` : `Use the name "${o.name}" from the earlier house here?`;
+  return { text, action: `Use ${what}` };
+}
+export function stackWhere(m: HouseModel, s: Stack, areas: readonly HouseArea[] = []): string {
   const spot = s.spot == null ? "no standing spot reaches it" : s.direction === "here" ? `at standing spot ${s.spot + 1}` : `${s.direction} of standing spot ${s.spot + 1}`;
-  return `${room} · ${spot} · ${plural(s.serials.length, "chest")}${s.serials.length > 1 ? ", top first" : ""}`;
+  return `${areaName(areas, s)} · ${spot} · ${plural(s.serials.length, "chest")}${s.serials.length > 1 ? ", top first" : ""}`;
 }
 // Why the map is drawn in plain colours (GET /api/houses's tiledataFrom.reason), or null when tiledata.mul was read.
 export function tiledataNote(reason: TiledataFrom["reason"]): string | null {
@@ -299,6 +304,103 @@ export function filterContents(nodes: readonly ContentsNode[], text: string): Co
   });
 }
 
+// ---------------------------------------------------------------- areas (issue #10)
+// The player's own areas on a level (house-map.json, app/house-names.mts): each a name, a colour token and tile rectangles (world tiles, inclusive). These mirror the server's rules, which the browser build cannot import.
+export const AREA_COLORS = ["area-1", "area-2", "area-3", "area-4", "area-5", "area-6", "area-7", "area-8"] as const;
+export const AREA_MARGIN = 8, MAX_AREAS = 32, MAX_RECTS = 16;
+export type Tile = [number, number];
+export const inRects = (rects: readonly AreaRect[], x: number, y: number): boolean => rects.some((r) => x >= r.x0 && x <= r.x1 && y >= r.y0 && y <= r.y1);
+// The area a stack belongs to: the first, in list order, on its level whose rectangles hold its tile; null for the rest.
+export const areaOfStack = (areas: readonly HouseArea[], s: Pick<Stack, "level" | "x" | "y">): HouseArea | null => areas.find((a) => a.level === s.level && inRects(a.rects, s.x, s.y)) ?? null;
+// Where the rest of a level is: "Everything else" once the level has areas, else the level is one "Whole floor".
+export const restName = (areas: readonly HouseArea[], level: number): string => (areas.some((a) => a.level === level) ? "Everything else" : "Whole floor");
+export const areaName = (areas: readonly HouseArea[], s: Pick<Stack, "level" | "x" | "y">): string => areaOfStack(areas, s)?.name ?? restName(areas, s.level);
+// A level's rows in the left pane: its areas in list order with their chest counts, then the rest.
+export function levelAreas(m: HouseModel, areas: readonly HouseArea[], level: number): { rows: Array<{ area: HouseArea; chests: number }>; rest: { name: string; chests: number } } {
+  const rows = areas.filter((a) => a.level === level).map((area) => ({ area, chests: 0 })), rest = { name: restName(areas, level), chests: 0 };
+  for (const s of m.stacks) {
+    if (s.level !== level) continue;
+    const a = areaOfStack(areas, s), row = a ? rows.find((r) => r.area === a) : undefined;
+    if (row) row.chests += s.serials.length; else rest.chests += s.serials.length;
+  }
+  return { rows, rest };
+}
+// The inverse of `project` at height z (house-relative tiles, fractional): which point of the floor a point on screen shows.
+export function unproject([px, py]: Pt, z: number, view: View): Pt {
+  if (view === "top") return [px / W, py / W];
+  const sum = ((py + z * K) * 2) / W, diff = (px * 2) / W;
+  return [(sum + diff) / 2, (sum - diff) / 2];
+}
+// The world tile under a point of the drawing, on the level's floor.
+export function tileAt(m: HouseModel, p: Pt, view: View): Tile {
+  const [x, y] = unproject(p, 0, view);
+  return [Math.floor(x) + m.x0, Math.floor(y) + m.y0];
+}
+export const rectOf = (a: Tile, b: Tile): AreaRect => ({ x0: Math.min(a[0], b[0]), y0: Math.min(a[1], b[1]), x1: Math.max(a[0], b[0]), y1: Math.max(a[1], b[1]) });
+export const sizeText = (r: AreaRect): string => { const w = r.x1 - r.x0 + 1, h = r.y1 - r.y0 + 1; return `${w} × ${h} = ${plural(w * h, "tile")}`; };
+// Every tile the rectangles cover, each once, by row.
+export function unionTiles(rects: readonly AreaRect[]): Tile[] {
+  const seen = new Set<string>(), out: Tile[] = [];
+  for (const r of rects) for (let y = r.y0; y <= r.y1; y++) for (let x = r.x0; x <= r.x1; x++) { const k = `${x}:${y}`; if (!seen.has(k)) { seen.add(k); out.push([x, y]); } }
+  return out.sort((a, b) => a[1] - b[1] || a[0] - b[0]);
+}
+// The level's floor and stair cells the rectangles cover: what a drawn area (or one being drawn) tints.
+export const coveredCells = (m: HouseModel, level: number, rects: readonly AreaRect[]): Cell[] => m.cells.filter((c) => c.level === level && (c.kind === "floor" || c.kind === "stair") && inRects(rects, c.x, c.y));
+// The union's outline: the tile edges with the union on one side only, joined where they run on in a line, as segments between tile corners (world tiles).
+export function outlineOf(rects: readonly AreaRect[]): Array<[Pt, Pt]> {
+  const tiles = unionTiles(rects), has = new Set(tiles.map(([x, y]) => `${x}:${y}`)), on = (x: number, y: number): boolean => has.has(`${x}:${y}`);
+  const rows = new Map<string, number[]>(), cols = new Map<string, number[]>();   // "y:side" → the x of each edge, "x:side" → the y
+  const add = (m: Map<string, number[]>, k: string, v: number): void => { const l = m.get(k); if (l) l.push(v); else m.set(k, [v]); };
+  for (const [x, y] of tiles) {
+    if (!on(x, y - 1)) add(rows, `${y}:n`, x);
+    if (!on(x, y + 1)) add(rows, `${y + 1}:s`, x);
+    if (!on(x - 1, y)) add(cols, `${x}:w`, y);
+    if (!on(x + 1, y)) add(cols, `${x + 1}:e`, y);
+  }
+  const runs = (vs: number[]): Array<[number, number]> => {
+    const out: Array<[number, number]> = [];
+    for (const v of [...vs].sort((a, b) => a - b)) { const last = out[out.length - 1]; if (last && last[1] === v) last[1] = v + 1; else out.push([v, v + 1]); }
+    return out;
+  };
+  const segs: Array<[Pt, Pt]> = [];
+  for (const [k, xs] of rows) { const y = Number(k.split(":")[0]); for (const [a, b] of runs(xs)) segs.push([[a, y], [b, y]]); }
+  for (const [k, ys] of cols) { const x = Number(k.split(":")[0]); for (const [a, b] of runs(ys)) segs.push([[x, a], [x, b]]); }
+  return segs.sort((a, b) => a[0][1] - b[0][1] || a[0][0] - b[0][0] || a[1][1] - b[1][1] || a[1][0] - b[1][0]);
+}
+// Where an area's name goes (world tiles, a tile's middle, and the floor's height there above the level's): the covered floor tile with no stack nearest the area's middle (ties by row, then column); with none, the middle of its tiles.
+export function labelSpot(m: HouseModel, area: Pick<HouseArea, "level" | "rects">): { x: number; y: number; z: number } {
+  const tiles = unionTiles(area.rects), base = m.levels[area.level]?.floorZ ?? 0;
+  const cx = tiles.reduce((a, t) => a + t[0], 0) / (tiles.length || 1) + 0.5, cy = tiles.reduce((a, t) => a + t[1], 0) / (tiles.length || 1) + 0.5;
+  const stacked = new Set(m.stacks.filter((s) => s.level === area.level).map((s) => `${s.x}:${s.y}`));
+  let best: { c: Cell; d: number } | null = null;
+  for (const c of coveredCells(m, area.level, area.rects)) {
+    if (c.kind !== "floor" || stacked.has(`${c.x}:${c.y}`)) continue;
+    const d = (c.x + 0.5 - cx) ** 2 + (c.y + 0.5 - cy) ** 2;
+    if (!best || d < best.d - 1e-9) best = { c, d };
+  }
+  return best ? { x: best.c.x + 0.5, y: best.c.y + 0.5, z: best.c.z - base } : { x: cx, y: cy, z: 0 };
+}
+// A new area's id ("a1", "a2", … the first not taken) and colour (the first of the palette no area uses, else round again).
+export function nextAreaId(areas: readonly Pick<HouseArea, "id">[]): string {
+  const ids = new Set(areas.map((a) => a.id));
+  for (let i = 1; ; i++) if (!ids.has(`a${i}`)) return `a${i}`;
+}
+export function nextAreaColor(areas: readonly Pick<HouseArea, "color">[]): string {
+  return AREA_COLORS.find((c) => !areas.some((a) => a.color === c)) ?? AREA_COLORS[areas.length % AREA_COLORS.length]!;
+}
+// A tile kept within the house's bounds and AREA_MARGIN around them, where the server takes a rectangle.
+type Bounds = Pick<HouseModel, "x0" | "y0" | "x1" | "y1">;
+export function clampTile(m: Bounds, [x, y]: Tile): Tile {
+  const clamp = (v: number, lo: number, hi: number): number => Math.max(lo - AREA_MARGIN, Math.min(hi + AREA_MARGIN, v));
+  return [clamp(x, m.x0, m.x1), clamp(y, m.y0, m.y1)];
+}
+// The drawing cursor's move for an arrow key, one tile in world terms: up is north (y − 1), right east (x + 1), the same at either view; null for any other key.
+const STEPS: Record<string, Tile> = { ArrowUp: [0, -1], ArrowDown: [0, 1], ArrowLeft: [-1, 0], ArrowRight: [1, 0] };
+export function moveCursor(m: Bounds, [x, y]: Tile, key: string): Tile | null {
+  const step = STEPS[key];
+  return step ? clampTile(m, [x + step[0], y + step[1]]) : null;
+}
+
 // ---------------------------------------------------------------- keyboard
 export type Dir = "up" | "down" | "left" | "right";
 const DIRS: Record<Dir, Pt> = { up: [0, -1], down: [0, 1], left: [-1, 0], right: [1, 0] };
@@ -317,9 +419,10 @@ export function nearestInDirection(from: Pt, cands: ReadonlyArray<{ id: string; 
 }
 
 // ---------------------------------------------------------------- the plain grid
-// Ground chests no drawn house holds (no captured house lists their serial), as a house of their own: grouped by facet and by distance (a chest within 8 tiles of a group joins it), each group a "room" of plain floor tiles one tile around each chest, on its own floor (its lowest chest), the groups laid side by side 3 tiles apart in rows about 40 tiles wide. Stacks are numbered 1, 2, …, and a chest's code is its stack's number and height ("3.2"). Null when there is no such chest.
+// Ground chests no drawn house holds (no captured house lists their serial), as a house of their own: grouped by facet and by distance (a chest within 8 tiles of a group joins it), each group an area of its own (read-only, named "<facet>, group <n>", its bounding box) of plain floor tiles one tile around each chest, on its own floor (its lowest chest), the groups laid side by side 3 tiles apart in rows about 40 tiles wide. Stacks are numbered 1, 2, …, and a chest's code is its stack's number and height ("3.2"). Null when there is no such chest.
 const CLUSTER = 8, GAP = 3, ROW = 40;
-export function plainGrid(inv: Pick<InventoryData, "containers">, houses: readonly HouseModel[]): HouseModel | null {
+export type PlainModel = HouseModel & { areas: HouseArea[] };
+export function plainGrid(inv: Pick<InventoryData, "containers">, houses: readonly HouseModel[]): PlainModel | null {
   const housed = new Set<number>();
   for (const h of houses) { for (const s of h.stacks) for (const serial of s.serials) housed.add(serial); for (const serial of Object.keys(h.codes)) housed.add(+serial); }
   const chests = Object.values(inv.containers).flatMap((c) => {
@@ -335,7 +438,7 @@ export function plainGrid(inv: Pick<InventoryData, "containers">, houses: readon
   }
   groups = groups.map((g) => [...g].sort((a, b) => a.y - b.y || a.x - b.x || a.z - b.z || a.serial - b.serial))
     .sort((a, b) => (a[0]!.facet ?? -1) - (b[0]!.facet ?? -1) || a[0]!.y - b[0]!.y || a[0]!.x - b[0]!.x);
-  const cells: Cell[] = [], rooms: Room[] = [], stacks: Stack[] = [], codes: Record<string, string> = {};
+  const cells: Cell[] = [], areas: HouseArea[] = [], stacks: Stack[] = [], codes: Record<string, string> = {};
   let cx = 0, cy = 0, rowH = 0, x1 = 0, y1 = 0;
   groups.forEach((g, i) => {
     let gx0 = Infinity, gy0 = Infinity, gx1 = -Infinity, gy1 = -Infinity, z = Infinity;
@@ -346,13 +449,13 @@ export function plainGrid(inv: Pick<InventoryData, "containers">, houses: readon
     for (const c of g) for (let y = c.y - 1; y <= c.y + 1; y++) for (let x = c.x - 1; x <= c.x + 1; x++) {
       if (tiles.has(`${x}:${y}`)) continue;
       tiles.add(`${x}:${y}`);
-      cells.push({ level: 0, x: x + ox, y: y + oy, kind: "floor", material: "", family: "neutral", z: 0, lip: false, indoor: true, doorway: false, room: i });
+      cells.push({ level: 0, x: x + ox, y: y + oy, kind: "floor", material: "", family: "neutral", z: 0, lip: false, indoor: true, doorway: false });
     }
-    rooms.push({ id: i, level: 0, kind: "room", name: `${facetName(g[0]!.facet)}, group ${i + 1}`, tiles: tiles.size, x0: gx0 + ox, y0: gy0 + oy, x1: gx1 + ox, y1: gy1 + oy });
+    areas.push({ id: `g${i + 1}`, name: `${facetName(g[0]!.facet)}, group ${i + 1}`, level: 0, color: AREA_COLORS[i % AREA_COLORS.length]!, rects: [{ x0: gx0 + ox, y0: gy0 + oy, x1: gx1 + ox, y1: gy1 + oy }] });
     const byTile = new Map<string, Stack>();
     for (const c of g) {
       let s = byTile.get(`${c.x}:${c.y}`);
-      if (!s) { s = { level: 0, x: c.x + ox, y: c.y + oy, room: i, serials: [], zs: [], spot: null, direction: "", letter: "" }; byTile.set(`${c.x}:${c.y}`, s); stacks.push(s); }
+      if (!s) { s = { level: 0, x: c.x + ox, y: c.y + oy, serials: [], zs: [], spot: null, direction: "", letter: "" }; byTile.set(`${c.x}:${c.y}`, s); stacks.push(s); }
       s.serials.push(c.serial); s.zs.push(c.z - z);
     }
     x1 = Math.max(x1, gx1 + ox); y1 = Math.max(y1, gy1 + oy);
@@ -363,11 +466,11 @@ export function plainGrid(inv: Pick<InventoryData, "containers">, houses: readon
     s.serials.forEach((serial, h) => { codes[String(serial)] = s.serials.length === 1 ? s.letter : `${s.letter}.${h + 1}`; });
   });
   return { id: PLAIN, facet: null, capturedAt: "", captures: 0, x0: 0, y0: 0, x1, y1,
-    levels: [{ index: 0, name: "Chests on the ground", floorZ: 0, status: "floor-only" }], cells, rooms, furniture: [], stacks, spots: [], codes, tiledata: false, unopened: [], unopenedNames: {} };
+    levels: [{ index: 0, name: "Chests on the ground", floorZ: 0, status: "floor-only" }], cells, areas, furniture: [], stacks, spots: [], codes, tiledata: false, unopened: [], unopenedNames: {} };
 }
 
 // ---------------------------------------------------------------- the scene of one level
-// What ui/house-map.mts draws for a level, in drawing units: the walls of the level below as faint tiles (on an upper level), the floor and stair tiles (with step bands), each standing spot's dashed reach, then every solid thing back to front: cut walls and windows and the foundation's lip in their material's colour (w-<family>), the ground level's plinth (with front steps, the outward sides of its edge tiles run down to the lowest step, at the game angle), stairs (at the game angle, raised to meet the tile they lead to; from above they stay tiles), roof edges, furniture, doors and teleporters, the stacks (one box per chest at its real height, lifted clear of one below it that shares its z) and the standing spots' figures.
+// What ui/house-map.mts draws for a level, in drawing units: the walls of the level below as faint tiles (on an upper level), the floor and stair tiles (with step bands; uncovered ground-level floor is the yard), each standing spot's dashed reach, then every solid thing back to front: cut walls and windows and the foundation's lip in their material's colour (w-<family>), the ground level's plinth (with front steps, the outward sides of its edge tiles run down to the lowest step, at the game angle), stairs (at the game angle, raised to meet the tile they lead to; from above they stay tiles), roof edges, furniture, doors and teleporters, the stacks (one box per chest at its real height, lifted clear of one below it that shares its z) and the standing spots' figures.
 export interface Prism { top: string; left: string; right: string }
 export type Piece =
   | { kind: "solid"; x: number; y: number; z: number; cls: string; prism: Prism; steps?: string[] }
@@ -434,7 +537,6 @@ function plinthOf(m: HouseModel, level: number, base: number, heights: ReadonlyM
 }
 export function sceneOf(m: HouseModel, level: number, view: View): Scene {
   const base = m.levels[level]?.floorZ ?? 0;
-  const yard = new Set(m.rooms.filter((r) => r.kind === "yard").map((r) => r.id));
   const below: string[] = [], floors: Scene["floors"] = [], reach: string[] = [], solids: Piece[] = [];
   const heights = heightsOf(m, level), plinth = view === "angle" ? plinthOf(m, level, base, heights) : null;
   const plinthCls = plinth ? `map-plinth w-${plinthFamily(m)}` : "";
@@ -451,7 +553,7 @@ export function sceneOf(m: HouseModel, level: number, view: View): Scene {
       // At the game angle every stair is a solid in back-to-front order (a flat one is a top only), so a step in front is never painted over by the one behind it.
       if (top && view === "angle") solids.push({ kind: "solid", x, y, z, cls: "map-stair", prism: tz > z ? prism(x, y, z, tz - z, view, 0) : { top: pts(tilePolygon(x, y, z, view)), left: "", right: "" }, steps });
       else {
-        floors.push({ pts: pts(tilePolygon(x, y, tz, view)), cls: `map-floor f-${c.family}${c.room != null && yard.has(c.room) ? " yard" : ""}${top ? " map-stair" : ""}` });
+        floors.push({ pts: pts(tilePolygon(x, y, tz, view)), cls: `map-floor f-${c.family}${c.level === 0 && !c.indoor ? " yard" : ""}${top ? " map-stair" : ""}` });
         for (const b of steps) floors.push({ pts: b, cls: "map-step" });
       }
       if (c.lip) solids.push({ kind: "solid", x, y, z, cls: `map-lip w-${c.family}`, prism: prism(x, y, z, LIP_H, view, 0) });
