@@ -2,16 +2,17 @@
 import { state, bridge } from "./store.mts";
 import { $, el, safeColor, fmtN, toast } from "./dom.mts";
 import { api } from "./api.mts";
-import { box, txt, button, segmented, pill, message, meter, keyValue, modalOpen, tipWrap, input } from "./components.mts";
+import { box, txt, button, segmented, pill, message, meter, keyValue, modalOpen, tipWrap, input, copyText } from "./components.mts";
 import { labelContainer } from "./containers.mts";
 import { showContainer } from "./inventory.mts";
 import { bridgeActionReason, runBridgeAction, sendBridge, type BridgeTarget } from "./bridge.mts";
 import { errorText } from "./messages.mts";
+import { openWorldMap, fetchFacetImage, type FacetImage } from "./world-map.mts";
 import { plural } from "./inv-model.mts";
 import { fillTone } from "./organize-model.mts";
 import { PLAIN, pickHouse, plainGrid, chestCount, roomCounts, houseLabel, houseName, carryOver, tiledataNote, chestViews, colourOf, chestLabel, sceneOf, boundsOf, fit, vbText,
-  cutAway, calloutLines, nearestInDirection, houseTotals, legendOf, stackWhere, anchorOf, zoomAt, fillWords,
-  type View, type Mode, type Box, type Colour, type ChestView, type Piece, type Prism, type Pt, type Dir } from "./house-map-model.mts";
+  cutAway, calloutLines, nearestInDirection, houseTotals, legendOf, stackWhere, anchorOf, zoomAt, fillWords, whereOf, whereTitle, cropAround, facetMapUrl, markersOf, facetMapNote, markerRadii,
+  type Marker, type View, type Mode, type Box, type Colour, type ChestView, type Piece, type Prism, type Pt, type Dir } from "./house-map-model.mts";
 import type { ContainerLabel, HouseModel, HousesApiResponse, HouseApiResponse, HouseMapApiResponse, HouseMapEntry, HouseMapPutApiResponse, Room, Stack } from "./api-types.mts";
 
 const SVG_NS = "http://www.w3.org/2000/svg";
@@ -22,6 +23,8 @@ let seq = 0;
 let highlighting = false;   // Highlight the stack is sending (highlightStack)
 let renaming: string | null = null;   // while renaming, the name as typed so far: a redraw rebuilds the field from it (renameField)
 let nameError: string | null = null;  // the server's reason for the last refused name, shown under the field until a save or a cancel
+// Each facet overview asked for, until the next load of the screen: loading, the image with the region the server drew, or why there is none (world-map.mts fetchFacetImage).
+const facetImages = new Map<string, "loading" | FacetImage>();
 const body = (): HTMLElement => $<HTMLElement>("#map-body")!;
 const selectedStack = (): Stack | null => (S.selected == null ? null : S.model?.stacks.find((s) => s.serials.includes(S.selected!)) ?? null);
 
@@ -43,6 +46,7 @@ export async function showMap(want: string | null): Promise<void> {
     const models = await Promise.all(list.houses.map(async (h) => (await api<HouseApiResponse>(`/api/houses/${encodeURIComponent(h.id)}`)).house));
     if (my !== seq) return;
     S.list = list; S.names = names.houses; S.models = models; S.plain = plainGrid(state.inv, models); S.error = null;
+    facetImages.clear();
   } catch (e) {
     if (my !== seq) return;
     S.error = errorText(e); S.model = null; render();
@@ -439,19 +443,78 @@ function totalsPanel(m: HouseModel): HTMLElement[] {
     keyValue([["Containers", fmtN(t.containers)], ["Item slots used", `${fmtN(t.used)} of ${fmtN(t.capacity)}`], ["Item slots free", fmtN(t.capacity - t.used)], ["Empty", fmtN(t.empty)], ["Full or nearly", fmtN(t.full)], ["Not opened yet", fmtN(t.unopened)], ...(t.unknown ? [["Fill unknown", fmtN(t.unknown)] as [string, string]] : [])]),
     legend(),
     el("p", { class: "t-sm muted" }, "Click a stack on the map, or a room on the left."),
-  ];
+    whereSection(m),
+  ].filter((e): e is HTMLElement => e != null);
+}
+// ---------------------------------------------------------------- where the house is (issue #164)
+const summaryOf = (m: HouseModel) => (m.id === PLAIN ? undefined : S.list?.houses.find((h) => h.id === m.id));
+// Under the house's heading: its centre, facet and sextant reading with a copy button, and its corners.
+function whereLines(m: HouseModel): HTMLElement[] {
+  const h = summaryOf(m);
+  if (!h) return [];
+  const w = whereOf(h), line = txt(w.copy, "t-sm");
+  line.id = "map-where-text";
+  const copy = button({ label: "Copy the coordinates", icon: "clipboard", iconOnly: true, variant: "ghost", size: "sm", attrs: { id: "map-where-copy" }, onClick: async () => {
+    if (await copyText(w.copy)) { toast(`Copied ${w.copy}`, "good"); return; }
+    const t = $<HTMLElement>("#map-where-text");
+    if (t) getSelection()?.selectAllChildren(t);
+    toast("Pack Rat could not reach the clipboard. The coordinates are selected: press ⌘C or Ctrl+C to copy them.", "bad");
+  } });
+  return [box("div", { class: "map-where-coords" }, line, copy), txt(w.corners, "t-sm muted")];
+}
+// The Where section: 600 x 450 tiles of the facet's overview around the house (GET /api/facet-map), a marker on it and a smaller one on every other captured house there, each of those a link to its map, placed in the region the server says it drew (x-region). When the image does not load, a line says why; the coordinates above stay.
+function whereSection(m: HouseModel): HTMLElement | null {
+  const h = summaryOf(m), crop = h ? cropAround(h.facet, whereOf(h).centre) : null;
+  if (!h || h.facet == null || !crop) return null;
+  const url = facetMapUrl(h.facet, crop), got = facetImages.get(url);
+  if (!got) void loadFacetImage(url);
+  const section = (...kids: HTMLElement[]): HTMLElement => box("section", { class: "map-where", id: "map-where", "aria-labelledby": "map-where-title" }, el("h3", { class: "t-md", id: "map-where-title" }, whereTitle(h)), ...kids);
+  if (!got || got === "loading") return section(el("p", { class: "t-sm muted", id: "map-where-loading", "aria-busy": "true" }, "Loading the world map…"));
+  if ("reason" in got) return section(el("p", { class: "t-sm muted", id: "map-where-note" }, facetMapNote(got.reason)));
+  const c = got.crop, w = c.x1 - c.x0, ht = c.y1 - c.y0;
+  // The small map opens the whole facet in the world map lightbox (world-map.mts), by a click or by Enter or Space.
+  const open = (): void => openWorldMap({ facet: h.facet!, houses: S.list!.houses, currentId: m.id, centre: whereOf(h).centre });
+  const img = el("img", { class: "map-where-img", id: "map-where-open", src: got.src, alt: `The world map around ${houseName(m)}`, role: "button", tabindex: "0", "aria-label": "Open the world map", width: String(w), height: String(ht),
+    onclick: open, onkeydown: (e: Event) => { const k = (e as KeyboardEvent).key; if (k === "Enter" || k === " ") { e.preventDefault(); open(); } } });
+  const marks = sv("svg", { class: "map-where-marks", viewBox: `0 0 ${w} ${ht}`, preserveAspectRatio: "none", role: "group", "aria-label": "Houses on the world map" }, ...markersOf(S.list!.houses, m.id, h.facet, c).map(markerEl));
+  const frame = box("div", { class: "map-where-frame" }, img, marks);
+  // Marker sizes are screen pixels (a 24 px target for a link), so they follow the frame's width.
+  const size = (): void => { const r = markerRadii(w, frame.clientWidth); for (const e of marks.querySelectorAll<SVGCircleElement>("circle[data-r]")) e.setAttribute("r", String(r[e.dataset.r as keyof typeof r])); };
+  const watch = new ResizeObserver(() => { if (frame.isConnected) size(); else watch.disconnect(); });
+  watch.observe(frame);
+  size();
+  return section(frame);
+}
+// The house shown is a plain marker; another house is a link to its map, so the keyboard reaches it and Enter opens it. Its focus ring is two circles, dark under light, seen on pale and dark ground alike.
+function markerEl(mk: Marker): SVGElement {
+  const title = sv("title", {});
+  title.textContent = mk.label;
+  const at = { cx: String(mk.x), cy: String(mk.y) };
+  if (mk.current) return sv("g", { class: "map-where-mark current", role: "img", "aria-label": mk.label }, title, sv("circle", { ...at, "data-r": "current", class: "map-where-dot" }));
+  return sv("a", { class: "map-where-mark", href: `#/map/${encodeURIComponent(mk.id)}`, "aria-label": mk.label, "data-house": mk.id }, title,
+    sv("circle", { ...at, "data-r": "hit", class: "map-where-hit" }), sv("circle", { ...at, "data-r": "ring", class: "map-where-ring-out" }), sv("circle", { ...at, "data-r": "ring", class: "map-where-ring-in" }),
+    sv("circle", { ...at, "data-r": "other", class: "map-where-dot" }));
+}
+// One request for the small map; then the panel is drawn again with it.
+async function loadFacetImage(url: string): Promise<void> {
+  facetImages.set(url, "loading");
+  const got = await fetchFacetImage(url);
+  if (facetImages.get(url) !== "loading") return;   // the screen loaded again meanwhile
+  facetImages.set(url, got);
+  if ($<HTMLElement>("#map-where")) drawPanel();
 }
 // The house's heading with its ✎ (Rename house), or the name field while renaming; under it the house's counts, and
 // the offer to carry over the name of an earlier house this one replaced (house-map-model.mts carryOver).
 function houseHead(m: HouseModel): HTMLElement {
   const meta = txt(m.id === PLAIN ? "Ground chests outside any drawn house" : `${plural(m.levels.length, "level")} · ${plural(m.stacks.length, "stack")} · ${plural(m.spots.length, "standing spot")}`, "t-sm muted");
-  if (renaming != null) return box("header", { class: "map-panel-head" }, renameField(m, renaming, nameError), meta);
+  if (renaming != null) return box("header", { class: "map-panel-head" }, renameField(m, renaming, nameError), meta, ...whereLines(m));
   const offer = carryOver(m, S.list?.houses.map((h) => h.id) ?? [], S.names);
   return box("header", { class: "map-panel-head" },
     // One block in the flex header, its heading and ✎ inline, so the ✎ follows the last word of a name that wraps.
     box("div", { class: "map-house-title" }, el("h2", { class: "t-lg" }, houseName(m)),
       m.id === PLAIN ? null : button({ label: "Rename house", icon: "pencil", iconOnly: true, variant: "ghost", size: "sm", attrs: { id: "map-rename" }, onClick: () => { renaming = m.name ?? ""; nameError = null; drawPanel(); const f = $<HTMLInputElement>("#map-name"); f?.focus(); f?.select(); } })),
     meta,
+    ...whereLines(m),
     offer ? box("div", { class: "map-carry", id: "map-carry" }, txt(`Use the name "${offer.name}" from the earlier house here?`, "t-sm"),
       button({ label: "Use name", size: "sm", attrs: { id: "map-carry-use" }, onClick: () => { void saveName(m, offer.name).then((err) => { if (err) { toast(err, "bad"); return; } render(); $<HTMLElement>("#map-rename")?.focus(); }); } })) : null);
 }

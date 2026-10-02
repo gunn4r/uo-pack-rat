@@ -102,3 +102,39 @@
 .map-house-title > .btn { vertical-align: middle; margin-block: calc(-1 * var(--space-1)); margin-left: var(--space-1); }
 .map-name-edit { display: flex; flex-direction: column; gap: var(--space-1-5); }
 .map-carry { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); margin-top: var(--space-1); }
+/* Where the house is (issue #164): its coordinates under the heading, and the facet overview with a marker per house. The overview is the game's own map, so the markers' colours are the same in both modes. */
+.map-where-coords { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-1); }
+.map-where-coords > .btn { margin-block: calc(-1 * var(--space-1)); }
+.map-where { display: flex; flex-direction: column; gap: var(--space-1-5); }
+.map-where-frame { position: relative; overflow: hidden; border: var(--border-width) solid var(--color-border); border-radius: var(--radius-md); }
+.map-where-img { display: block; width: 100%; height: auto; }
+.map-where-img { cursor: zoom-in; outline: none; }
+.map-where-frame:has(.map-where-img:focus-visible) { box-shadow: var(--ring-focus); }
+.map-where-marks { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
+a.map-where-mark { pointer-events: auto; }
+/* The world map lightbox (ui/world-map.mts): nearly the whole window, the facet image and its markers placed in screen pixels. Labels sit on the marker ink, the same in both modes, as the map is the game's own. */
+.pr dialog.dialog.world-map-dialog { width: calc(100vw - 48px); height: calc(100vh - 48px); max-height: none; }
+.world-map-dialog .dialog-body { flex: 1; min-height: 0; padding: var(--space-4) var(--space-4) var(--space-2); }
+.world-map-dialog .dialog-foot { padding: var(--space-2) var(--space-4) var(--space-4); }
+.wm-viewport { position: relative; flex: 1; min-height: 0; overflow: hidden; border-radius: var(--radius-md); background: var(--color-surface-sunken); cursor: grab; touch-action: none; outline: none; }
+.wm-viewport.dragging { cursor: grabbing; }
+.wm-viewport:focus-visible { box-shadow: var(--ring-focus); }
+.wm-base, .wm-overlay { position: absolute; left: 0; top: 0; max-width: none; user-select: none; pointer-events: none; }
+.wm-markers { position: absolute; inset: 0; pointer-events: none; }
+.wm-marker { position: absolute; left: -12px; top: -12px; display: flex; align-items: center; gap: var(--space-1); pointer-events: auto; text-decoration: none; outline: none; }
+.wm-marker.current { z-index: 1; }
+.wm-marker[hidden] { display: none; }
+.wm-dot { flex: none; width: 24px; height: 24px; border-radius: 50%; background: radial-gradient(circle, var(--color-map-marker-other) 0 4px, var(--color-map-marker-ink) 4.5px 6px, transparent 6.5px); }
+.wm-marker.current .wm-dot { background: radial-gradient(circle, var(--color-map-marker) 0 6px, var(--color-map-marker-edge) 6.5px 8.5px, transparent 9px); }
+a.wm-marker:focus-visible .wm-dot { box-shadow: 0 0 0 2px var(--color-map-marker-edge), 0 0 0 4px var(--color-map-marker-ink); }
+.wm-label { padding: 1px var(--space-1-5); border-radius: var(--radius-sm); background: var(--color-map-marker-ink); color: var(--color-map-marker-edge); font-size: var(--text-sm); line-height: var(--lh-sm); white-space: nowrap; }
+.wm-label.off { display: none; }
+.wm-status { position: absolute; left: var(--space-3); top: var(--space-3); margin: 0; padding: var(--space-1) var(--space-2); border-radius: var(--radius-sm); background: var(--color-surface-raised); color: var(--color-text); }
+.map-where-dot { fill: var(--color-map-marker-other); stroke: var(--color-map-marker-ink); stroke-width: 1.5; vector-effect: non-scaling-stroke; }
+.map-where-mark.current .map-where-dot { fill: var(--color-map-marker); stroke: var(--color-map-marker-edge); stroke-width: 2.5; }
+.map-where-hit { fill: transparent; stroke: none; }
+.map-where-ring-out, .map-where-ring-in { fill: none; stroke: none; vector-effect: non-scaling-stroke; }
+a.map-where-mark { cursor: pointer; outline: none; }
+a.map-where-mark:hover .map-where-dot { stroke: var(--color-map-marker-edge); stroke-width: 2.5; }
+a.map-where-mark:focus-visible .map-where-ring-out { stroke: var(--color-map-marker-ink); stroke-width: 5; }
+a.map-where-mark:focus-visible .map-where-ring-in { stroke: var(--color-map-marker-edge); stroke-width: 2; }

@@ -46,6 +46,7 @@
 //         GET|POST {name?, graphic?, kind} /api/item-kinds · POST /api/item-kinds/import {names?, graphics?}
 //         (<data>/item-kinds.json, the player's own item kinds: app/item-kinds.mts; kind null resets, an import merges) ·
 //         GET /api/houses (the houses scans captured: app/house-capture.mts; tiledataFrom says where tiledata.mul came from, or why there is none) · GET /api/houses/<id> (one house's model: app/house-model.mts, tiledata.mul via app/tiledata.mts or the uoFolder setting) ·
+//         GET /api/facet-map/<facet>.png?x0&y0&x1&y1&w (x-region: the region drawn, slid inside the facet; a facet overview from the same UO folder's facetNN.mul: app/facet-map.mts, app/png.mts; 404 {reason} when there is none) ·
 //         GET /api/house-map · PUT /api/house-map/<id> {name, bounds?} (<data>/house-map.json, the player's house names: app/house-names.mts;
 //         an empty name removes the entry; 400 on a bad name or id, 409 when a change would grow it past 500 names or 1 MB) ·
 //         GET|PUT /api/organize (<data>/organize.json, Organize's labels, rules, catch-all and pinned items: app/organize-config.mts;
@@ -143,8 +144,10 @@ import { emptyKindOverrides, isKindName, kindCount, kindsDocument, kindsFor, kin
 import { proposeOrganize, STRATEGY_IDS, type StrategyId } from "./organize-strategies.mts";
 import { latestHouses, type HouseSource } from "./house-capture.mts";
 import { checkHouseEntry, isHouseId, readHouseMap, saveHouseEntry, type HouseMapDoc } from "./house-names.mts";
-import { buildHouseModel, plotSize, type HouseContainerInput, type HouseModel } from "./house-model.mts";
+import { buildHouseModel, plotBounds, plotSize, type HouseContainerInput, type HouseModel } from "./house-model.mts";
 import { uoFolderFromTazuo, loadTileData, type TileData } from "./tiledata.mts";
+import { decodeFacet, renderRegion, type FacetBitmap, type Region } from "./facet-map.mts";
+import { encodePng } from "./png.mts";
 import { addGrab, emptyOrganizeState, harvestTrips, noteSeen, pruneOverlay, salvageOrganizeState, PENDING_GRACE_MS, type BridgeView, type OrganizeState } from "./organize-state.mts";
 import { retentionError, retentionOf, runsToPrune, scansToPrune, type ScanFile } from "./retention.mts";
 import { missingSinceLastScan, type MissingItem } from "./missing.mts";
@@ -218,7 +221,7 @@ interface HttpError extends Error {
   statusCode?: number;
 }
 
-function send(res: http.ServerResponse, status: number, body: unknown, type = "application/json"): void {
+function send(res: http.ServerResponse, status: number, body: unknown, type = "application/json", extra: Record<string, string> = {}): void {
   // Every non-JSON caller passes an already-read file: a string (readFileSync's utf8 result) for
   // text, a Buffer for the favicon and the fonts — the cast is compiler-only, matching config.mts's
   // rawPort pattern. Binary types (image/*, font/*) carry no charset.
@@ -228,7 +231,7 @@ function send(res: http.ServerResponse, status: number, body: unknown, type = "a
   // is framable too.
   const headers: Record<string, string> = { "content-type": type.startsWith("image/") || type.startsWith("font/") ? type : type + "; charset=utf-8", "cache-control": "no-store", "x-content-type-options": "nosniff", "x-frame-options": "DENY" };
   if (type === "text/html") headers["content-security-policy"] = CSP;
-  res.writeHead(status, headers);
+  res.writeHead(status, { ...headers, ...extra });
   res.end(data);
 }
 
@@ -769,19 +772,50 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
   }
   // Where the house map's tiledata.mul comes from (issue #10): the UO folder set in Settings wins; else, with TazUO the chosen client, the folder its launcher profile names. `reason` says why there is none, for the page to put in words: the folder set here lost its tiledata.mul (or, hand-edited into settings.json, is not an absolute non-UNC path: refused on its shape before any filesystem call, as PUT /api/settings does, and not passed over for the automatic one, since the player chose a folder), no client to look through, no TazUO profile naming one, or a file that is not a 7.x tiledata.mul.
   interface TileDataFrom { td: TileData | null; folder: string | null; source: "settings" | "tazuo-profile" | null; reason: null | "override-missing" | "no-client" | "no-tazuo-profile" | "unreadable" }
-  function houseTileData(): TileDataFrom {
+  type UoFolder = { folder: string; source: "settings" | "tazuo-profile" } | { folder: null; reason: "override-missing" | "no-client" | "no-tazuo-profile" };
+  function uoFolder(): UoFolder {
     const o = currentSettings.uoFolder;
-    if (o != null && o !== "") {
-      if (typeof o !== "string" || badPathShape(o)) return { td: null, folder: null, source: null, reason: "override-missing" };
-      const path = join(o, "tiledata.mul"), td = loadTileData(path);
-      return { td, folder: o, source: "settings", reason: td ? null : existsSync(path) ? "unreadable" : "override-missing" };
-    }
+    if (o != null && o !== "") return typeof o !== "string" || badPathShape(o) ? { folder: null, reason: "override-missing" } : { folder: o, source: "settings" };
     const c = currentSettings.client;
-    if (!c || c.adapter !== "tazuo") return { td: null, folder: null, source: null, reason: "no-client" };
+    if (!c || c.adapter !== "tazuo") return { folder: null, reason: "no-client" };
     const uo = uoFolderFromTazuo(c.scriptsDir);
-    if (!uo) return { td: null, folder: null, source: null, reason: "no-tazuo-profile" };
-    const td = loadTileData(join(uo, "tiledata.mul"));
-    return { td, folder: uo, source: "tazuo-profile", reason: td ? null : "unreadable" };
+    return uo ? { folder: uo, source: "tazuo-profile" } : { folder: null, reason: "no-tazuo-profile" };
+  }
+  function houseTileData(): TileDataFrom {
+    const at = uoFolder();
+    if (at.folder === null) return { td: null, folder: null, source: null, reason: at.reason };
+    const path = join(at.folder, "tiledata.mul"), td = loadTileData(path);
+    return { td, folder: at.folder, source: at.source, reason: td ? null : at.source === "settings" && !existsSync(path) ? "override-missing" : "unreadable" };
+  }
+  // The facet overview (issue #164): the UO folder's facetNN.mul, checked once while the file stays the same and kept per facet as the file's own bytes and its row starts (all six together are about 30 MB), and the PNGs cut from them kept by facet file, region and size up to 32 MB in all, the oldest dropped first. Never written to disk. `reason` says why there is none, the folder never: a folder set in Settings that is gone reads as override-missing, as it does for tiledata.mul.
+  const facetMemo = new Map<number, { key: string; bitmap: FacetBitmap | null }>();
+  const facetPngs = new Map<string, Buffer>();
+  let facetPngBytes = 0;
+  const FACET_MAX_BYTES = 64 * 1024 * 1024, FACET_PNG_BYTES = 32 * 1024 * 1024;
+  function facetBitmap(facet: number): { bitmap: FacetBitmap; key: string } | { reason: string } {
+    const at = uoFolder();
+    if (at.folder === null) return { reason: at.reason };
+    if (at.source === "settings") { try { if (!statSync(at.folder).isDirectory()) return { reason: "override-missing" }; } catch { return { reason: "override-missing" }; } }
+    const path = join(at.folder, `facet0${facet}.mul`);
+    let key: string;
+    try { const st = statSync(path); if (!st.isFile()) return { reason: "missing" }; if (st.size > FACET_MAX_BYTES) return { reason: "unreadable" }; key = `${path}:${st.mtimeMs}:${st.size}`; } catch { return { reason: "missing" }; }
+    let memo = facetMemo.get(facet);
+    if (memo?.key !== key) {
+      let bitmap: FacetBitmap | null;
+      try { bitmap = decodeFacet(readFileSync(path)); } catch { bitmap = null; }
+      memo = { key, bitmap };
+      facetMemo.set(facet, memo);
+    }
+    return memo.bitmap ? { bitmap: memo.bitmap, key } : { reason: "unreadable" };
+  }
+  function facetPng(key: string, make: () => Buffer): Buffer {
+    let out = facetPngs.get(key);
+    if (out) return out;
+    out = make();
+    for (const [k, v] of facetPngs) { if (facetPngBytes + out.length <= FACET_PNG_BYTES) break; facetPngs.delete(k); facetPngBytes -= v.length; }
+    facetPngs.set(key, out);
+    facetPngBytes += out.length;
+    return out;
   }
   // Built house models, kept while the served inventory (a new object whenever the scans, the item kinds or the overlay change; the houses come from the same fold) and the tiledata (loadTileData answers the same object until the file changes) stay the same. The ground chests are the inventory's ground roots with a position, as Organize picks them.
   let houseMemo: { inv: Inventory | null; td: TileData | null; ground: HouseContainerInput[]; models: Map<string, HouseModel> } = { inv: null, td: null, ground: [], models: new Map() };
@@ -2103,8 +2137,25 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
         if (one) return send(res, 200, { ok: true, house: { ...houseModel(inv, one, td), ...named(one.id) } });
         return send(res, 200, { ok: true, tiledata: td !== null, tiledataFrom: { folder: from.folder, source: from.source, reason: from.reason }, houses: houses.map((h) => {
           const m = houseModel(inv, h, td);
-          return { id: h.id, ...named(h.id), facet: h.facet, capturedAt: h.capturedAt, captures: h.captures, ...plotSize(m), levels: m.levels.length, containers: m.stacks.reduce((a, st) => a + st.serials.length, 0) };
+          return { id: h.id, ...named(h.id), facet: h.facet, capturedAt: h.capturedAt, captures: h.captures, ...plotSize(m), plot: plotBounds(m), levels: m.levels.length, containers: m.stacks.reduce((a, st) => a + st.serials.length, 0) };
         }) });
+      }
+      // The facet overview (issue #164): GET /api/facet-map/<facet>.png?x0&y0&x1&y1[&w], the facet 0 to 5, a region in tiles (x1, y1 exclusive) and a size of at most 2048 on either side (1024 by default), never larger than the region. A region reaching past the facet is slid inside it (and cut to the facet's size), and `x-region: x0,y0,x1,y1` says which one was drawn. A 404 says why there is no image (no UO folder, the file missing or not a facet bitmap) as a reason word, never with the path.
+      if (req.method === "GET" && url.pathname.startsWith("/api/facet-map/")) {
+        const m = /^\/api\/facet-map\/([0-5])\.png$/.exec(url.pathname);
+        if (!m) return send(res, 400, { ok: false, error: "the facet must be 0 to 5" });
+        const q = url.searchParams, int = (k: string): number | null => (q.has(k) && /^\d{1,5}$/.test(q.get(k)!) ? Number(q.get(k)) : null);
+        const w = q.has("w") ? int("w") : 1024;
+        if (w == null || w < 1 || w > 2048) return send(res, 400, { ok: false, error: "w must be a size from 1 to 2048" });
+        const [x0, y0, x1, y1] = (["x0", "y0", "x1", "y1"] as const).map(int);
+        if (x0 == null || y0 == null || x1 == null || y1 == null || x0 >= x1 || y0 >= y1) return send(res, 400, { ok: false, error: "a region is x0, y0, x1 and y1, whole numbers with x0 < x1 and y0 < y1" });
+        const got = facetBitmap(Number(m[1]));
+        if ("reason" in got) return send(res, 404, { ok: false, reason: got.reason });
+        const f = got.bitmap, slide = (a: number, b: number, max: number): [number, number] => { const span = Math.min(b - a, max), from = Math.min(a, max - span); return [from, from + span]; };
+        const [rx0, rx1] = slide(x0, x1, f.width), [ry0, ry1] = slide(y0, y1, f.height), r: Region = { x0: rx0, y0: ry0, x1: rx1, y1: ry1 };
+        const region = `${r.x0},${r.y0},${r.x1},${r.y1}`;
+        const out = facetPng(`${got.key}|${region}|${w}`, () => { const img = renderRegion(f, r, w); return encodePng(img.width, img.height, img.rgb); });
+        return send(res, 200, out, "image/png", { "x-region": region });
       }
       // The house names (issue #164): GET the whole map; PUT /api/house-map/<id> {name, bounds?, …} replaces that house's
       // entry (an empty name removes it). Any id of the house-id shape is taken, listed or not: a name kept for a house

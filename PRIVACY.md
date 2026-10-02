@@ -34,6 +34,7 @@ Everything lives under one data directory:
 - **Settings** (`settings.json`) — which shard's rules you're using, which game client and scripts folder are linked, whether you've been through first-run setup, the data-retention choices (below), and whether the automatic update check is on.
 - **Your own shard rules** — any rules file you put in `rules/` yourself; the app only reads that folder.
 - **View choices** (`ui-prefs.json`) — the Inventory tab's columns, their widths and row height, the look (theme and light/dark), the sidebar, the properties a character sheet shows, and the last release whose update notice you dismissed.
+- **The world map** — nothing is stored. The House map's Where section reads your own client's facet map files (`facet00.mul` … `facet05.mul`) from the UO folder, the same way it reads `tiledata.mul`, and draws a piece of the map around your house in memory. The image never leaves your machine, is never written to disk, and none of it ships with Pack Rat.
 - **House names** (`house-map.json`) — the names you give your houses on the House map, each with the house's id and its footprint (facet and corner coordinates) when you named it.
 - **Blacklisted containers** — the containers your scans skip, with a name, when you added each one and, for a chest on the ground, its position (`scan-blacklist.json`).
 - **The bridge queue** — commands waiting for the in-game bridge script (Highlight / Grab / Go to) to pick up and act on, and its own status file, under `bridge/<client>/`.

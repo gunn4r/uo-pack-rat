@@ -1,4 +1,4 @@
-// house-server.test.mts — GET /api/houses and GET /api/houses/<id> (issue #10) against a real listening server on a temp data folder: a scan with a house capture becomes a house, its ground chests become stacks, and the client's tiledata.mul is found through the TazUO launcher profile (or not, and the model falls back). Tags: [fast]. Run: node --test app/house-server.test.mts
+// house-server.test.mts — GET /api/houses and GET /api/houses/<id> (issue #10) against a real listening server on a temp data folder: a scan with a house capture becomes a house, its ground chests become stacks, and the client's tiledata.mul is found through the TazUO launcher profile (or not, and the model falls back); and (issue #164) each house's plot and GET /api/facet-map/<facet>.png from the same UO folder's facetNN.mul. Tags: [fast]. Run: node --test app/house-server.test.mts
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
@@ -10,6 +10,7 @@ import { candidateClientRoots } from "./installer.mts";
 import { houseScan } from "./organize-fixture.mts";
 import { vaultHouse, G } from "./house-fixture.mts";
 import { syntheticTileData } from "./tiledata-fixture.mts";
+import { syntheticFacet, rgb555, type Run } from "./facet-fixture.mts";
 import { FLAG } from "./tiledata.mts";
 import type { HouseModel } from "./house-model.mts";
 
@@ -317,4 +318,86 @@ test("[fast] house names: a PUT that would grow the map past 500 named houses or
     assert.equal((await putName(s, "/api/house-map/1-3-0", { name: "H3" })).status, 200, "shortening an entry on a full file");
     assert.equal((await putName(s, "/api/house-map/1-4-0", { name: "" })).status, 200, "clearing one");
   } finally { await s.close(); rmSync(dir, { recursive: true, force: true }); }
+});
+
+// The facet overview (issue #164): GET /api/facet-map/<facet>.png from the UO folder's facetNN.mul, a region of it and a width.
+async function png(s: ServerHandle, path: string): Promise<{ status: number; type: string | null; region: string | null; buf: Buffer }> {
+  const r = await fetch(s.url + path);
+  return { status: r.status, type: r.headers.get("content-type"), region: r.headers.get("x-region"), buf: Buffer.from(await r.arrayBuffer()) };
+}
+const ihdrSize = (b: Buffer): [number, number] => [b.readUInt32BE(16), b.readUInt32BE(20)];
+
+test("[fast] facet map: a region of the UO folder's facet file is served as a PNG no larger than asked, and one reaching past the facet is slid inside it", async () => {
+  const { s } = await serve(true);
+  const uo = uoFolderWith(syntheticTileData([]));
+  writeFileSync(join(uo, "facet01.mul"), syntheticFacet(8, 4, Array.from({ length: 4 }, () => [[4, rgb555(31, 0, 0)], [4, rgb555(0, 0, 31)]] as Run[])));
+  try {
+    assert.equal((await put(s, { uoFolder: uo })).status, 200);
+    const whole = await png(s, "/api/facet-map/1.png?x0=0&y0=0&x1=8&y1=4");
+    assert.equal(whole.status, 200);
+    assert.equal(whole.type, "image/png");
+    assert.equal(whole.region, "0,0,8,4");
+    assert.deepEqual([...whole.buf.subarray(0, 8)], [137, 80, 78, 71, 13, 10, 26, 10]);
+    assert.deepEqual(ihdrSize(whole.buf), [8, 4]);
+    assert.deepEqual(ihdrSize((await png(s, "/api/facet-map/1.png?x0=0&y0=0&x1=8&y1=4&w=4")).buf), [4, 2], "the aspect ratio is kept");
+    assert.deepEqual(ihdrSize((await png(s, "/api/facet-map/1.png?x0=2&y0=1&x1=6&y1=3&w=1024")).buf), [4, 2], "a region is never drawn larger than it is");
+    const slid = await png(s, "/api/facet-map/1.png?x0=6&y0=3&x1=10&y1=5");
+    assert.deepEqual([slid.status, slid.region, ihdrSize(slid.buf)], [200, "4,2,8,4", [4, 2]], "slid back inside, same size");
+    const big = await png(s, "/api/facet-map/1.png?x0=3&y0=0&x1=603&y1=450");
+    assert.deepEqual([big.status, big.region], [200, "0,0,8,4"], "cut to the facet's size");
+  } finally { await s.close(); rmSync(uo, { recursive: true, force: true }); }
+});
+
+test("[fast] facet map: an image is at most 2048 pixels on either side, the default 1024", async () => {
+  const { s } = await serve(true);
+  const uo = uoFolderWith(syntheticTileData([]));
+  writeFileSync(join(uo, "facet01.mul"), syntheticFacet(3000, 3000, Array.from({ length: 3000 }, () => Array.from({ length: 12 }, (): Run => [250, rgb555(0, 10, 20)]))));
+  try {
+    assert.equal((await put(s, { uoFolder: uo })).status, 200);
+    const R = "x0=0&y0=0&x1=3000&y1=1500";
+    assert.deepEqual(ihdrSize((await png(s, `/api/facet-map/1.png?${R}&w=2048`)).buf), [2048, 1024]);
+    assert.deepEqual(ihdrSize((await png(s, `/api/facet-map/1.png?${R}`)).buf), [1024, 512]);
+    assert.deepEqual(ihdrSize((await png(s, "/api/facet-map/1.png?x0=0&y0=0&x1=1000&y1=3000&w=2048")).buf), [683, 2048], "a tall region is capped by its height");
+  } finally { await s.close(); rmSync(uo, { recursive: true, force: true }); }
+});
+
+test("[fast] facet map: a bad facet, region or size is a 400; a missing or unreadable file, a Settings folder that is gone, or no UO folder, a 404 with a reason and never the path", async () => {
+  const { s } = await serve(true);
+  const uo = uoFolderWith(syntheticTileData([]));
+  writeFileSync(join(uo, "facet01.mul"), syntheticFacet(8, 4, Array.from({ length: 4 }, () => [[8, 0]] as Run[])));
+  writeFileSync(join(uo, "facet02.mul"), Buffer.from([8, 0, 4, 0, 1]));
+  const R = "x0=0&y0=0&x1=4&y1=4";
+  try {
+    assert.equal((await put(s, { uoFolder: uo })).status, 200);
+    for (const path of [`/api/facet-map/6.png?${R}`, `/api/facet-map/-1.png?${R}`, `/api/facet-map/01.png?${R}`, `/api/facet-map/1.5.png?${R}`, `/api/facet-map/x.png?${R}`, `/api/facet-map/1?${R}`,
+      "/api/facet-map/1.png", `/api/facet-map/1.png?${R}&w=0`, `/api/facet-map/1.png?${R}&w=2049`, `/api/facet-map/1.png?${R}&w=abc`, "/api/facet-map/1.png?x0=0&y0=0&x1=4",
+      "/api/facet-map/1.png?x0=4&y0=0&x1=4&y1=4", "/api/facet-map/1.png?x0=-1&y0=0&x1=4&y1=4", "/api/facet-map/1.png?x0=0.5&y0=0&x1=4&y1=4"]) {
+      const r = await get<{ ok: boolean }>(s, path);
+      assert.equal(r.status, 400, path);
+      assert.equal(r.body.ok, false, path);
+    }
+    for (const [path, reason] of [[`/api/facet-map/3.png?${R}`, "missing"], [`/api/facet-map/2.png?${R}`, "unreadable"]] as const) {
+      const r = await fetch(s.url + path), text = await r.text();
+      assert.equal(r.status, 404, path);
+      assert.deepEqual(JSON.parse(text), { ok: false, reason }, path);
+      assert.ok(!text.includes(uo), "the folder is never echoed");
+    }
+    rmSync(uo, { recursive: true, force: true });
+    assert.deepEqual(await get(s, `/api/facet-map/1.png?${R}`), { status: 404, body: { ok: false, reason: "override-missing" } }, "the folder set in Settings is gone");
+  } finally { await s.close(); rmSync(uo, { recursive: true, force: true }); }
+  const { s: bare } = await serve(false);
+  try {
+    assert.deepEqual(await get(bare, `/api/facet-map/1.png?${R}`), { status: 404, body: { ok: false, reason: "no-client" } });
+  } finally { await bare.close(); }
+});
+
+test("[fast] houses: each listed house carries its plot, the footprint without the front steps", async () => {
+  const { s } = await serve(true);
+  try {
+    const list = await get<{ houses: Array<{ width: number; height: number; plot: { x0: number; y0: number; x1: number; y1: number } }> }>(s, "/api/houses");
+    const h = list.body.houses[0]!;
+    assert.deepEqual([h.plot.x1 - h.plot.x0 + 1, h.plot.y1 - h.plot.y0 + 1], [h.width, h.height]);
+    assert.equal(h.plot.x0, 3000);
+    assert.equal(h.plot.y0, 1000);
+  } finally { await s.close(); }
 });
