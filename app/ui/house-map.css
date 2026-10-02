@@ -3,7 +3,7 @@
 .map-levels { display: flex; gap: var(--space-1); min-width: 0; overflow-x: auto; }
 
 #tab-map .map-page { display: grid; grid-template-columns: 240px minmax(0, 1fr) 340px; gap: var(--space-3); overflow: hidden; }
-#tab-map .map-page > :is(.msg, .map-empty) { grid-column: 1 / -1; align-self: start; }
+#tab-map .map-page > :is(.msg, .map-empty, .panel) { grid-column: 1 / -1; align-self: start; }
 @media (max-width: 1099px) {
   #tab-map .map-page { grid-template-columns: minmax(0, 1fr); overflow: auto; }
   #tab-map .map-stage { min-height: 420px; }
@@ -13,7 +13,7 @@
 .map-level { display: flex; flex-direction: column; gap: var(--space-1); }
 .map-level-name { display: flex; align-items: baseline; justify-content: space-between; gap: var(--space-2); font-size: var(--text-md); line-height: var(--lh-md); }
 .map-rooms { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 2px; }
-.map-room { display: flex; flex-direction: column; align-items: flex-start; width: 100%; padding: var(--space-1-5) var(--space-2); border: 0; border-radius: var(--radius-md); background: transparent; color: var(--color-text); text-align: left; cursor: pointer; }
+.map-room { display: flex; flex-direction: column; align-items: stretch; width: 100%; padding: var(--space-1-5) var(--space-2); border: 0; border-radius: var(--radius-md); background: transparent; color: var(--color-text); text-align: left; cursor: pointer; }
 .map-room:hover { background: var(--color-row-hover); }
 .map-room[aria-pressed="true"] { box-shadow: inset 3px 0 0 var(--color-accent); font-weight: var(--weight-semibold); }
 

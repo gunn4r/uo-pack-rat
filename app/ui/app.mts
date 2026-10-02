@@ -31,7 +31,7 @@ import type { SettingsApiResponse, RulesApiResponse, SetupApiResponse, Inventory
 // The inventory-backed tabs depend on /api/inventory and /api/profiles; Settings and Import only on the
 // first three routes.
 // The Inventory screen says it in its own table card (inventory.mts's inventoryFailed).
-const DATA_PANELS = ["#char-body", "#b-result"];
+const DATA_PANELS = ["#char-body", "#b-result", "#map-body"];
 const SETUP_PANELS = ["#settings-body", "#import-body"];
 function loadFailed(e: unknown, panels: string[]): void {
   const msg = `Could not load: ${(e as Error).message}`;
