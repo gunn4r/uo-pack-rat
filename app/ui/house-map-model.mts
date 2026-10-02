@@ -188,14 +188,14 @@ export function nearestInDirection(from: Pt, cands: ReadonlyArray<{ id: string; 
 }
 
 // ---------------------------------------------------------------- the plain grid
-// Ground chests no drawn house holds (not on any captured footprint of their facet), as a house of their own: grouped by facet and by distance (a chest within 8 tiles of a group joins it), each group a "room" on one floor of plain tiles with a tile's margin, the groups laid side by side 3 tiles apart in rows about 40 tiles wide. Stacks are numbered 1, 2, …, and a chest's code is its stack's number and height ("3.2"). Null when there is no such chest.
+// Ground chests no drawn house holds (no captured house lists their serial), as a house of their own: grouped by facet and by distance (a chest within 8 tiles of a group joins it), each group a "room" of plain floor tiles one tile around each chest, on its own floor (its lowest chest), the groups laid side by side 3 tiles apart in rows about 40 tiles wide. Stacks are numbered 1, 2, …, and a chest's code is its stack's number and height ("3.2"). Null when there is no such chest.
 const CLUSTER = 8, GAP = 3, ROW = 40;
 export function plainGrid(inv: Pick<InventoryData, "containers">, houses: readonly HouseModel[]): HouseModel | null {
-  const footprints = houses.map((h) => ({ facet: h.facet, tiles: new Set(h.cells.map((c) => `${c.x}:${c.y}`)) }));
-  const inside = (f: number | null, x: number, y: number): boolean => footprints.some((h) => (h.facet === null || f === null || h.facet === f) && h.tiles.has(`${x}:${y}`));
+  const housed = new Set<number>();
+  for (const h of houses) { for (const s of h.stacks) for (const serial of s.serials) housed.add(serial); for (const serial of Object.keys(h.codes)) housed.add(+serial); }
   const chests = Object.values(inv.containers).flatMap((c) => {
     const p = c.pos, facet = p?.facet ?? null;
-    return c.parent == null && c.kind === "ground" && p && Number.isFinite(p.x) && Number.isFinite(p.y) && !inside(facet, p.x!, p.y!)
+    return c.parent == null && c.kind === "ground" && p && Number.isFinite(p.x) && Number.isFinite(p.y) && !housed.has(+c.serial)
       ? [{ serial: +c.serial, facet, x: p.x!, y: p.y!, z: p.z ?? 0 }] : [];
   }).sort((a, b) => (a.facet ?? -1) - (b.facet ?? -1) || a.y - b.y || a.x - b.x || a.z - b.z || a.serial - b.serial);
   if (!chests.length) return null;
@@ -207,29 +207,34 @@ export function plainGrid(inv: Pick<InventoryData, "containers">, houses: readon
   groups = groups.map((g) => [...g].sort((a, b) => a.y - b.y || a.x - b.x || a.z - b.z || a.serial - b.serial))
     .sort((a, b) => (a[0]!.facet ?? -1) - (b[0]!.facet ?? -1) || a[0]!.y - b[0]!.y || a[0]!.x - b[0]!.x);
   const cells: Cell[] = [], rooms: Room[] = [], stacks: Stack[] = [], codes: Record<string, string> = {};
-  const floorZ = Math.min(...chests.map((c) => c.z));
-  let cx = 0, cy = 0, rowH = 0;
+  let cx = 0, cy = 0, rowH = 0, x1 = 0, y1 = 0;
   groups.forEach((g, i) => {
-    const gx0 = Math.min(...g.map((c) => c.x)) - 1, gy0 = Math.min(...g.map((c) => c.y)) - 1, gx1 = Math.max(...g.map((c) => c.x)) + 1, gy1 = Math.max(...g.map((c) => c.y)) + 1;
+    let gx0 = Infinity, gy0 = Infinity, gx1 = -Infinity, gy1 = -Infinity, z = Infinity;
+    for (const c of g) { gx0 = Math.min(gx0, c.x - 1); gy0 = Math.min(gy0, c.y - 1); gx1 = Math.max(gx1, c.x + 1); gy1 = Math.max(gy1, c.y + 1); z = Math.min(z, c.z); }
     const w = gx1 - gx0 + 1, h = gy1 - gy0 + 1;
     if (cx > 0 && cx + w > ROW) { cx = 0; cy += rowH + GAP; rowH = 0; }
-    const ox = cx - gx0, oy = cy - gy0, z = Math.min(...g.map((c) => c.z));
-    for (let x = gx0; x <= gx1; x++) for (let y = gy0; y <= gy1; y++) cells.push({ level: 0, x: x + ox, y: y + oy, kind: "floor", material: "", family: "neutral", z, lip: false, indoor: true, doorway: false, room: i });
-    rooms.push({ id: i, level: 0, kind: "room", name: `${facetName(g[0]!.facet)}, group ${i + 1}`, tiles: w * h, x0: gx0 + ox, y0: gy0 + oy, x1: gx1 + ox, y1: gy1 + oy });
+    const ox = cx - gx0, oy = cy - gy0, tiles = new Set<string>();
+    for (const c of g) for (let y = c.y - 1; y <= c.y + 1; y++) for (let x = c.x - 1; x <= c.x + 1; x++) {
+      if (tiles.has(`${x}:${y}`)) continue;
+      tiles.add(`${x}:${y}`);
+      cells.push({ level: 0, x: x + ox, y: y + oy, kind: "floor", material: "", family: "neutral", z: 0, lip: false, indoor: true, doorway: false, room: i });
+    }
+    rooms.push({ id: i, level: 0, kind: "room", name: `${facetName(g[0]!.facet)}, group ${i + 1}`, tiles: tiles.size, x0: gx0 + ox, y0: gy0 + oy, x1: gx1 + ox, y1: gy1 + oy });
     const byTile = new Map<string, Stack>();
     for (const c of g) {
       let s = byTile.get(`${c.x}:${c.y}`);
       if (!s) { s = { level: 0, x: c.x + ox, y: c.y + oy, room: i, serials: [], zs: [], spot: null, direction: "", letter: "" }; byTile.set(`${c.x}:${c.y}`, s); stacks.push(s); }
-      s.serials.push(c.serial); s.zs.push(c.z);
+      s.serials.push(c.serial); s.zs.push(c.z - z);
     }
+    x1 = Math.max(x1, gx1 + ox); y1 = Math.max(y1, gy1 + oy);
     cx += w + GAP; rowH = Math.max(rowH, h);
   });
   stacks.forEach((s, i) => {
     s.letter = String(i + 1);
     s.serials.forEach((serial, h) => { codes[String(serial)] = s.serials.length === 1 ? s.letter : `${s.letter}.${h + 1}`; });
   });
-  return { id: PLAIN, facet: null, capturedAt: "", captures: 0, x0: 0, y0: 0, x1: Math.max(...cells.map((c) => c.x)), y1: Math.max(...cells.map((c) => c.y)),
-    levels: [{ index: 0, name: "Chests on the ground", floorZ, status: "floor-only" }], cells, rooms, furniture: [], stacks, spots: [], codes, tiledata: false, unopened: [], unopenedNames: {} };
+  return { id: PLAIN, facet: null, capturedAt: "", captures: 0, x0: 0, y0: 0, x1, y1,
+    levels: [{ index: 0, name: "Chests on the ground", floorZ: 0, status: "floor-only" }], cells, rooms, furniture: [], stacks, spots: [], codes, tiledata: false, unopened: [], unopenedNames: {} };
 }
 
 // ---------------------------------------------------------------- the scene of one level

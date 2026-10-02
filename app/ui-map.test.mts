@@ -148,9 +148,9 @@ test("[fast] house map: the no-tiledata note names its reason, and there is none
 });
 
 test("[fast] house map: ground chests outside every drawn house group by facet and distance onto a plain grid", () => {
-  const v = vault();
+  const v = vault(), housed = v.stacks[0]!.serials[0]!;
   const inv = invOf([
-    { serial: 0x40060001, x: 3001, y: 1001, z: 7, facet: 1 },    // inside the vault: drawn there, not here
+    { serial: housed, x: v.stacks[0]!.x, y: v.stacks[0]!.y, z: v.stacks[0]!.zs[0]!, facet: 1 },    // in the vault: drawn there, not here
     { serial: 0x40060002, x: 100, y: 100, z: 0, facet: 1 }, { serial: 0x40060003, x: 100, y: 100, z: 4, facet: 1 }, { serial: 0x40060004, x: 108, y: 100, z: 0, facet: 1 },
     { serial: 0x40060005, x: 300, y: 300, z: 0, facet: 1 },
     { serial: 0x40060006, x: 100, y: 100, z: 0, facet: 3 },
@@ -158,14 +158,47 @@ test("[fast] house map: ground chests outside every drawn house group by facet a
   const g = plainGrid(inv, [v])!;
   assert.equal(g.id, PLAIN);
   assert.equal(chestCount(g), 5);
-  assert.ok(!g.stacks.some((s) => s.serials.includes(0x40060001)));
+  assert.ok(!g.stacks.some((s) => s.serials.includes(housed)));
   assert.deepEqual(g.rooms.map((r) => r.name), ["Trammel, group 1", "Trammel, group 2", "Malas, group 3"]);
   assert.deepEqual(g.stacks.find((s) => s.serials.includes(0x40060002))!.serials, [0x40060002, 0x40060003], "two chests on one tile are one stack, bottom first");
   assert.equal(new Set(g.stacks.map((s) => `${s.x}:${s.y}`)).size, g.stacks.length, "groups never overlap on the grid");
   assert.equal(new Set(g.stacks.map((s) => s.letter)).size, g.stacks.length);
   assert.ok(g.cells.every((c) => c.kind === "floor" && c.family === "neutral"));
-  assert.equal(plainGrid(invOf([{ serial: 0x40060001, x: 3001, y: 1001, z: 7, facet: 1 }]), [v]), null);
+  assert.equal(plainGrid(invOf([{ serial: housed, x: v.stacks[0]!.x, y: v.stacks[0]!.y, z: 7, facet: 1 }]), [v]), null);
   assert.equal(chestCount(plainGrid(invOf([{ serial: 1, x: 5, y: 5, z: 0 }]), [])!), 1, "a chest of an unknown facet is drawn too");
+});
+
+test("[fast] house map: the plain grid leaves out a drawn house's chests by serial, wherever the inventory puts them", () => {
+  const v = vault(), housed = v.stacks[0]!.serials[0]!;
+  const g = plainGrid(invOf([{ serial: housed, x: 50, y: 50, z: 0, facet: 1 }, { serial: 0x40060010, x: 60, y: 60, z: 0, facet: 1 }]), [v])!;
+  assert.deepEqual(g.stacks.flatMap((s) => s.serials), [0x40060010], "a house chest on a tile the house has no cell for is still the house's");
+});
+
+test("[fast] house map: a chain of ground chests floors only the tiles around each chest, and builds quickly", () => {
+  const rows = Array.from({ length: 40 }, (_, i) => ({ serial: 0x40070000 + i, x: 1000 + 8 * i, y: 1000 + 8 * i, z: 0, facet: 1 }));
+  const t0 = performance.now(), g = plainGrid(invOf(rows), [])!, ms = performance.now() - t0;
+  assert.equal(g.rooms.length, 1, "8 apart is one group");
+  assert.ok(g.cells.length <= 9 * rows.length, `${g.cells.length} cells`);
+  assert.equal(new Set(g.cells.map((c) => `${c.x}:${c.y}`)).size, g.cells.length, "no tile twice");
+  assert.ok(g.stacks.every((s) => g.cells.some((c) => c.x === s.x && c.y === s.y)), "every chest stands on a floor tile");
+  assert.ok(g.x1 >= Math.max(...g.stacks.map((s) => s.x)) + 1 && g.y1 >= Math.max(...g.stacks.map((s) => s.y)) + 1);
+  assert.ok(ms < 50, `${ms.toFixed(1)} ms`);
+});
+
+test("[fast] house map: each plain-grid group stands on its own floor, its chests at their heights above it", () => {
+  const g = plainGrid(invOf([{ serial: 1, x: 100, y: 100, z: 0, facet: 1 }, { serial: 2, x: 500, y: 500, z: 40, facet: 1 }, { serial: 3, x: 500, y: 500, z: 46, facet: 1 }]), [])!;
+  assert.equal(g.rooms.length, 2);
+  assert.ok(g.cells.every((c) => c.z === g.levels[0]!.floorZ), "every group's floor is drawn at the level's floor");
+  assert.deepEqual(g.stacks.map((s) => s.zs), [[0], [0, 6]], "the high group's chests sit on its floor, not 40 above the low one");
+});
+
+test("[fast] house map: the plain grid is the same whatever order the inventory lists its chests", () => {
+  const rows = [{ serial: 1, x: 100, y: 100, z: 0, facet: 1 }, { serial: 2, x: 104, y: 100, z: 0, facet: 1 }, { serial: 3, x: 100, y: 100, z: 5, facet: 1 }, { serial: 4, x: 300, y: 300, z: 2, facet: 1 }, { serial: 5, x: 10, y: 10, z: 0, facet: 3 }, { serial: 6, x: 110, y: 104, z: 0, facet: 1 }];
+  const fwd = plainGrid(invOf(rows), [])!, rev = plainGrid(invOf([...rows].reverse()), [])!;
+  assert.deepEqual(rev.stacks, fwd.stacks);
+  assert.deepEqual(rev.cells, fwd.cells);
+  assert.deepEqual(rev.rooms, fwd.rooms);
+  assert.deepEqual(rev.codes, fwd.codes);
 });
 
 test("[fast] house map: the vault's ground floor is 25 floor tiles, 24 cut walls, a teleporter, 24 stacks of 5 and a standing spot, back to front", () => {
