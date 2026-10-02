@@ -13,7 +13,7 @@ import { plural } from "./inv-model.mts";
 import { fillTone } from "./organize-model.mts";
 import { PLAIN, pickHouse, plainGrid, chestCount, houseLabel, houseName, carryOver, carryOverText, tiledataNote, chestViews, colourOf, chestLabel, sceneOf, boundsOf, fit, vbText,
   cutAway, calloutLines, nearestInDirection, houseTotals, legendOf, stackWhere, anchorOf, zoomAt, fillWords, whereOf, whereTitle, cropAround, facetMapUrl, markersOf, facetMapNote, markerRadii,
-  drawerChest, drawerMeta, slotsText, drawerPicker, contentsOf, contentsSummary, filterContents, areaOfStack, levelAreas, tileAt, clampTile, rectOf, sizeText, unionTiles, coveredCells, outlineOf, pillsOf, fitLabel, LABEL_FIT,
+  drawerChest, drawerMeta, slotsText, drawerPicker, contentsOf, contentsSummary, filterContents, areaOfStack, levelAreas, tileAt, clampTile, rectOf, sizeText, unionTiles, coveredCells, outlineOf, pillsOf, fitLabel, placePill as pillBox, LABEL_FIT, type AreaPill,
   nextAreaId, nextAreaColor, moveCursor, project, tilePolygon, pts, liveAreas, withOrphans, redrawFailed, AREA_COLORS, AREA_COLOR_NAMES, MAX_AREAS, MAX_RECTS, type PlainModel, type Tile, type Contents, type ContentsNode, type Marker, type View, type Mode, type Box, type Colour, type ChestView, type Piece, type Prism, type Pt, type Dir } from "./house-map-model.mts";
 import type { AreaRect, ContainerLabel, HouseArea, HouseModel, UiPrefs, HousesApiResponse, HouseApiResponse, HouseMapApiResponse, HouseMapEntry, HouseMapPutApiResponse, ItemsApiResponse, Stack } from "./api-types.mts";
 import type { Item } from "../vault-lib.mts";
@@ -59,19 +59,13 @@ function toggleLabels(): void {
   paintPills();
   api("/api/ui-prefs", { method: "PUT", body: { areaLabels: labelsHidden ? "hide" : "show" } }).catch((e: Error) => toast(`Could not save the area labels choice: ${e.message}`, "bad"));
 }
-function paintLabelsButton(): void {
-  const b = $<HTMLButtonElement>("#map-labels");
-  if (!b) return;
-  const label = labelsHidden ? "Show area labels" : "Hide area labels";
-  b.setAttribute("aria-pressed", String(labelsHidden));
-  b.setAttribute("aria-label", label);
-  b.title = label;
-}
+// One name, Hide area labels; pressed while they are hidden.
+function paintLabelsButton(): void { $<HTMLButtonElement>("#map-labels")?.setAttribute("aria-pressed", String(labelsHidden)); }
 function setHot(id: string | null): void {
   if (id === hotArea) return;
   hotArea = id;
   for (const g of document.querySelectorAll<SVGGElement>("#map-svg .map-area-shape[data-area-shape]")) g.classList.toggle("hot", g.dataset.areaShape === id);
-  paintPills();
+  paintPills(true);
 }
 const stopEditing = (): void => { draw = null; dragging = false; naming = null; renamingArea = null; };
 // Leaving drawing mode any other way than Enter or Esc (another level, a crumb): said too.
@@ -226,10 +220,12 @@ function areaRow(m: HouseModel, a: HouseArea, chests: number, editable: boolean)
       onClick: () => { renamingArea = { id: a.id, draft: a.name, error: null }; render(); const f = $<HTMLInputElement>("#map-area-rename"); f?.focus(); f?.select(); } }),
     more);
   // The row under the pointer or holding focus lights its area on the map.
+  // It stays lit while focus is anywhere in it (its ✎ or ⋯ too), looked at once the focus has moved.
+  const cool = (): void => { if (hotArea === a.id && !row.matches(":focus-within") && !row.matches(":hover")) setHot(null); };
   row.addEventListener("pointerenter", () => setHot(a.id));
-  row.addEventListener("pointerleave", () => setHot(null));
+  row.addEventListener("pointerleave", () => { if (!row.matches(":focus-within")) setHot(null); });
   row.addEventListener("focusin", () => setHot(a.id));
-  row.addEventListener("focusout", () => setHot(null));
+  row.addEventListener("focusout", () => { setTimeout(cool, 0); });
   return row;
 }
 // Change colour: the palette as a row of swatches, the area's own pressed.
@@ -434,7 +430,7 @@ function stage(): HTMLElement {
         button({ label: "Zoom in", icon: "zoom-in", iconOnly: true, size: "sm", attrs: { id: "map-zoom-in" }, onClick: () => zoomBy(1 / 1.25) }),
         button({ label: "Zoom out", icon: "zoom-out", iconOnly: true, size: "sm", attrs: { id: "map-zoom-out" }, onClick: () => zoomBy(1.25) }),
         button({ label: "Fit the level", icon: "fit", iconOnly: true, size: "sm", attrs: { id: "map-fit" }, onClick: fitTo }),
-        button({ label: labelsHidden ? "Show area labels" : "Hide area labels", icon: "label", iconOnly: true, size: "sm", attrs: { id: "map-labels", "aria-pressed": String(labelsHidden), title: labelsHidden ? "Show area labels" : "Hide area labels" }, onClick: toggleLabels })),
+        button({ label: "Hide area labels", icon: "label", iconOnly: true, size: "sm", attrs: { id: "map-labels", "aria-pressed": String(labelsHidden), title: "Hide area labels" }, onClick: toggleLabels })),
       box("div", { class: "map-callout", id: "map-callout", hidden: "" })));
 }
 // Above the map: why it is drawn in plain colours (no tiledata.mul), or, on the plain grid, how to get the house drawn.
@@ -518,42 +514,65 @@ function drawMap(): void {
     const g = areaEl(m, a, a.id === S.area);
     g.dataset.areaShape = a.id;
     g.classList.toggle("hot", a.id === hotArea);
-    const title = sv("title", {});
-    title.textContent = a.name;
-    g.prepend(title);
+    if (!draw) { const title = sv("title", {}); title.textContent = a.name; g.prepend(title); }   // no tooltip in the way while drawing
     areas.append(g);
   }
+  pillBase = pillsOf(m, areasNow().filter((a) => draw?.target !== a.id), S.level, S.view);
+  pillTexts = null;
   svg.replaceChildren(ground, areas, sv("g", { id: "map-draft", class: "map-draft" }), solids, sv("g", { id: "map-draft-top", class: "map-draft" }));
   drawCrumbs();
   if (!S.vb) S.vb = fit(boundsOf(m, S.level, S.view, areaById(S.area)), viewport());
   svg.setAttribute("viewBox", vbText(S.vb));
   paintStacks();
   paintDraft();
-  paintPills();
+  paintPills(true);
 }
 // The area name pills, an HTML layer over the map at a fixed screen size: one per piece of each area on the level, just above the middle of its front corner tile, placed from the SVG's screen matrix (so again after every pan, zoom, resize and redraw). A name is cut short with "…" to fit LABEL_FIT of its piece's width on screen, or a dot when under 3 characters fit; the area under the pointer, focused or zoomed to shows its whole name, on top. None while drawing a new shape for that area or with the labels hidden. They never take the pointer: the area's tint carries the name as a tooltip too.
+// The pills of the level shown (pillsOf, worked out once per drawMap), and their fitted texts at one zoom (a pan moves the pills and keeps them; a zoom, a font arriving or a theme change fits them again).
 const PILL_PX = 12;
+let pillBase: AreaPill[] = [];
+let pillTexts: { scale: number; texts: Array<string | null> } | null = null;
 let measureCtx: CanvasRenderingContext2D | null = null;
-function textWidth(text: string): number {
+function fittedTexts(scale: number): Array<string | null> {
+  if (pillTexts?.scale === scale) return pillTexts.texts;
   measureCtx ??= document.createElement("canvas").getContext("2d");
-  if (!measureCtx) return text.length * PILL_PX * 0.6;
-  measureCtx.font = `500 ${PILL_PX}px ${getComputedStyle(document.body).fontFamily}`;
-  return measureCtx.measureText(text).width;
+  const ctx = measureCtx, font = `500 ${PILL_PX}px ${getComputedStyle(document.body).fontFamily}`;   // read once per fit
+  if (ctx) ctx.font = font;
+  const measure = (t: string): number => (ctx ? ctx.measureText(t).width : t.length * PILL_PX * 0.6);
+  pillTexts = { scale, texts: pillBase.map((p) => fitLabel(p.name, Math.max(24, p.span * scale * LABEL_FIT), measure)) };
+  return pillTexts.texts;
 }
-function paintPills(): void {
+let pillsBuilt: string | null = null;   // what the pills on screen were built for: the zoom, the area lit and the one zoomed to
+// `rebuild` (a redraw, the area lit changing) builds the pills again; otherwise they are only built again when the zoom changed, and moved.
+function paintPills(rebuild = false): void {
   const layer = $<HTMLElement>("#map-pills"), svg = $<SVGSVGElement>("#map-svg"), m = S.model, ctm = svg?.getScreenCTM();
   if (!layer || !svg || !m) return;
-  if (labelsHidden || !ctm) { layer.replaceChildren(); return; }
-  const r = layer.getBoundingClientRect(), pills = pillsOf(m, areasNow().filter((a) => draw?.target !== a.id), S.level, S.view);
-  layer.replaceChildren(...pills.map((p) => {
-    const hot = p.id === hotArea || p.id === S.area, at = new DOMPoint(p.anchor[0], p.anchor[1]).matrixTransform(ctm);
-    const text = hot ? p.name : fitLabel(p.name, Math.max(24, p.span * ctm.a * LABEL_FIT), textWidth);
-    const e = el("div", { class: `map-pill${text == null ? " dot" : ""}${hot ? " hot" : ""}`, title: p.name, "data-area": p.id, style: `--area:var(--color-${p.color})` }, text ?? "");
-    e.style.left = `${at.x - r.left}px`;
-    e.style.top = `${at.y - r.top + (text == null ? 0 : PILL_PX * 0.6)}px`;
-    return e;
-  }));
+  if (labelsHidden || !ctm) { layer.replaceChildren(); pillsBuilt = null; return; }
+  const key = `${ctm.a.toFixed(5)}|${hotArea}|${S.area}`;
+  if (rebuild || key !== pillsBuilt || layer.childElementCount !== pillBase.length) {
+    const texts = fittedTexts(ctm.a);
+    layer.replaceChildren(...pillBase.map((p, i) => {
+      const hot = p.id === hotArea || p.id === S.area, text = hot ? p.name : texts[i] ?? null;
+      return el("div", { class: `map-pill${text == null ? " dot" : ""}${hot ? " hot" : ""}`, title: p.name, "data-area": p.id, style: `--area:var(--color-${p.color})` }, text ?? "");
+    }));
+    pillsBuilt = key;
+  }
+  // Placed after they are in the page, so their own width keeps them inside the pane and clear of the zoom buttons.
+  const r = layer.getBoundingClientRect(), z = $<HTMLElement>("#map-canvas .map-zoom")?.getBoundingClientRect();
+  const avoid = z ? { x0: z.left - r.left, y0: z.top - r.top, x1: z.right - r.left, y1: z.bottom - r.top } : null;
+  [...layer.children].forEach((node, i) => {
+    const e = node as HTMLElement, p = pillBase[i]!, at = new DOMPoint(p.anchor[0], p.anchor[1]).matrixTransform(ctm);
+    e.hidden = false;   // measured shown
+    const box = pillBox({ x: at.x - r.left, y: at.y - r.top }, { w: e.offsetWidth, h: e.offsetHeight }, { w: r.width, h: r.height }, PILL_PX * 0.6, e.classList.contains("dot"), avoid);
+    e.hidden = box.hidden;
+    e.style.left = `${box.left}px`;
+    e.style.top = `${box.top}px`;
+  });
 }
+// A font arriving after the first paint, or another theme, changes the text widths: fit the pills again.
+const refit = (): void => { pillTexts = null; if (S.model && !$<HTMLElement>("#tab-map")!.hidden) paintPills(true); };
+void document.fonts?.ready.then(refit);
+document.addEventListener("themechange", refit);
 // An area as a tint over its covered floor tiles and a thin line along the union's outer edges, in its colour.
 function areaEl(m: HouseModel, a: Pick<HouseArea, "level" | "rects" | "color">, sel: boolean, cls = "map-area-shape"): SVGElement {
   const base = m.levels[a.level]?.floorZ ?? 0, g = sv("g", { class: `${cls}${sel ? " sel" : ""}`, style: `--area:var(--color-${a.color})` });
@@ -691,7 +710,10 @@ function wireSvg(svg: SVGSVGElement): void {
 }
 function hoverAt(e: PointerEvent): void {
   if (draw) return;
-  setHot(((e.target as Element).closest?.("[data-area-shape]") as SVGElement | null)?.dataset.areaShape ?? null);
+  // An area lights up under the pointer, also through a stack standing in it.
+  const shape = ((e.target as Element).closest?.("[data-area-shape]") as SVGElement | null)?.dataset.areaShape;
+  const over = shape ? null : S.model?.stacks.find((x) => x.letter === ((e.target as Element).closest?.("[data-stack]") as SVGElement | null)?.dataset.stack);
+  setHot(shape ?? (over ? areaOfStack(areasNow(), over)?.id ?? null : null));
   const t = e.target as Element, st = t.closest?.("[data-stack]") as SVGElement | null, item = t.closest?.("[data-name]") as SVGElement | null;
   const letter = st?.dataset.stack ?? null, changed = letter !== S.hover;
   if (changed) { S.hover = letter; paintStacks(); }

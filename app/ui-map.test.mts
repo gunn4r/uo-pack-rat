@@ -5,7 +5,7 @@ import { buildHouseModel } from "./house-model.mts";
 import { fixtureTileData, vaultHouse, roofHouse, courtyardHouse, castleHouse, foundationHouse, stairHouse, G } from "./house-fixture.mts";
 import type { Container, Item } from "./vault-lib.mts";
 import type { HouseArea, HouseModel, Stack } from "./ui/api-types.mts";
-import { project, tilePolygon, boxFaces, pts, paintOrder, boundsOf, fit, zoomAt, vbText, anchorOf, W, chestViews, colourOf, legendOf, chestLabel, cutAway, calloutLines, houseTotals, pickHouse, houseLabel, houseName, carryOver, carryOverText, PLAIN, chestCount, nearestInDirection, tiledataNote, stackWhere, plainGrid, sceneOf, drawnZs, CHEST_H, whereOf, whereTitle, cropAround, facetMapUrl, markersOf, facetMapNote, parseRegion, markerRadii, contentsOf, contentsSummary, filterContents, drawerChest, drawerMeta, slotsText, drawerPicker, DRAWER_TABS_MAX, piecesOf, frontCorner, fitLabel, pillsOf, LABEL_FIT, areaOfStack, levelAreas, restName, unproject, tileAt, rectOf, sizeText, unionTiles, coveredCells, outlineOf, nextAreaId, nextAreaColor, moveCursor, clampTile, liveAreas, withOrphans, redrawFailed, AREA_COLORS, AREA_COLOR_NAMES, type ChestView, type ContentsNode } from "./ui/house-map-model.mts";
+import { project, tilePolygon, boxFaces, pts, paintOrder, boundsOf, fit, zoomAt, vbText, anchorOf, W, chestViews, colourOf, legendOf, chestLabel, cutAway, calloutLines, houseTotals, pickHouse, houseLabel, houseName, carryOver, carryOverText, PLAIN, chestCount, nearestInDirection, tiledataNote, stackWhere, plainGrid, sceneOf, drawnZs, CHEST_H, whereOf, whereTitle, cropAround, facetMapUrl, markersOf, facetMapNote, parseRegion, markerRadii, contentsOf, contentsSummary, filterContents, drawerChest, drawerMeta, slotsText, drawerPicker, DRAWER_TABS_MAX, piecesOf, frontCorner, fitLabel, pillsOf, placePill, LABEL_FIT, areaOfStack, levelAreas, restName, unproject, tileAt, rectOf, sizeText, unionTiles, coveredCells, outlineOf, nextAreaId, nextAreaColor, moveCursor, clampTile, liveAreas, withOrphans, redrawFailed, AREA_COLORS, AREA_COLOR_NAMES, type ChestView, type ContentsNode } from "./ui/house-map-model.mts";
 
 const td = fixtureTileData();
 const has = (cls: string, c: string): boolean => cls.split(" ").includes(c);
@@ -550,6 +550,19 @@ test("[fast] house areas: a label fits about 92% of its piece's width: the whole
   assert.equal(fitLabel("Loot Corner", 7 * 3 + 16, measure), null, "fewer than 3 characters: the dot");
   assert.equal(fitLabel("Ab", 200, measure), "Ab", "a short name that fits whole is never a dot");
   assert.equal(LABEL_FIT, 0.92);
+});
+
+test("[fast] house areas: a pill is centred over its anchor and kept 8 px inside the pane, clear of the zoom buttons; an anchor off the pane hides it", () => {
+  const pane = { w: 600, h: 400 }, size = { w: 80, h: 20 }, zoom = { x0: 560, y0: 8, x1: 592, y1: 140 };
+  assert.deepEqual(placePill({ x: 300, y: 200 }, size, pane, 7, false, zoom), { left: 260, top: 187, hidden: false }, "centred, its foot 7 px below the anchor");
+  assert.deepEqual(placePill({ x: 300, y: 200 }, { w: 10, h: 10 }, pane, 7, true, zoom), { left: 295, top: 195, hidden: false }, "a dot is centred on it");
+  assert.deepEqual(placePill({ x: 10, y: 200 }, size, pane, 7, false, null), { left: 8, top: 187, hidden: false }, "the left edge");
+  assert.deepEqual(placePill({ x: 590, y: 300 }, size, pane, 7, false, zoom), { left: 512, top: 287, hidden: false }, "the right edge, below the zoom buttons");
+  assert.deepEqual(placePill({ x: 4, y: 3 }, size, pane, 7, false, null), { left: 8, top: 8, hidden: false }, "the top at least 8 px down");
+  assert.deepEqual(placePill({ x: 300, y: 399 }, size, pane, 7, false, null), { left: 260, top: 372, hidden: false }, "the bottom edge");
+  assert.deepEqual(placePill({ x: 560, y: 60 }, size, pane, 7, false, zoom), { left: 472, top: 47, hidden: false }, "moved left of the zoom buttons");
+  assert.equal(placePill({ x: -5, y: 200 }, size, pane, 7, false, zoom).hidden, true, "an anchor off the pane hides the pill");
+  assert.equal(placePill({ x: 300, y: 401 }, size, pane, 7, false, zoom).hidden, true);
 });
 
 test("[fast] house areas: a pill per piece of each area on the level, anchored at the piece's front corner tile's middle, with the piece's width on screen", () => {

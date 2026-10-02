@@ -656,12 +656,12 @@ test("[slow] House map areas: a name pill per piece of an area at a fixed size, 
     const stack = `#map-svg [data-stack="${letter(vaultModel, 3005, 1005)}"]`;
     await page.locator(stack).click({ force: true });
     assert.equal(await page.locator(stack).getAttribute("aria-pressed"), "true");
-    // Hide area labels: no pills, the button says what it does now, and the choice is saved and survives a reload.
+    // Hide area labels: no pills, the button pressed, and the choice is saved and survives a reload.
     assert.equal(await page.locator("#map-labels").getAttribute("aria-label"), "Hide area labels");
     await page.locator("#map-labels").click();
     assert.equal(await page.locator("#map-pills .map-pill").count(), 0);
     assert.equal(await page.locator("#map-labels").getAttribute("aria-pressed"), "true");
-    assert.equal(await page.locator("#map-labels").getAttribute("aria-label"), "Show area labels");
+    assert.equal(await page.locator("#map-labels").getAttribute("aria-label"), "Hide area labels", "one fixed name; pressed means hidden");
     assert.equal(await page.locator("#map-svg .map-area-shape").count(), 2, "the tints stay");
     await until(() => { try { return JSON.parse(readFileSync(join(dir, "ui-prefs.json"), "utf8")).areaLabels as string; } catch { return ""; } }, (v) => v === "hide", "the choice saved");
     await page.reload();

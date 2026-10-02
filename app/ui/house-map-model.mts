@@ -410,6 +410,18 @@ export function fitLabel(name: string, maxW: number, measure: (text: string) => 
   while (lo < hi) { const mid = (lo + hi + 1) >> 1; if (measure(`${name.slice(0, mid).trimEnd()}…`) + LABEL_PAD <= maxW) lo = mid; else hi = mid - 1; }
   return lo >= 3 ? `${name.slice(0, lo).trimEnd()}…` : null;
 }
+// Where a pill goes on the map pane (px from its top left): centred on the anchor, sitting `lift` px below it at its foot (a dot: centred on it). An anchor outside the pane hides the pill and is left as it is. Otherwise the whole pill stays MARGIN px inside the pane, its top at least MARGIN down, and clear of `avoid` (the zoom buttons' box): a pill that would overlap it moves left of it.
+export const PILL_MARGIN = 8;
+export interface PillBox { left: number; top: number; hidden: boolean }
+export function placePill(anchor: { x: number; y: number }, size: { w: number; h: number }, pane: { w: number; h: number }, lift: number, dot: boolean, avoid: { x0: number; y0: number; x1: number; y1: number } | null): PillBox {
+  let left = anchor.x - size.w / 2, top = dot ? anchor.y - size.h / 2 : anchor.y + lift - size.h;
+  if (anchor.x < 0 || anchor.y < 0 || anchor.x > pane.w || anchor.y > pane.h) return { left, top, hidden: true };
+  const m = PILL_MARGIN, clamp = (v: number, lo: number, hi: number): number => Math.max(lo, Math.min(v, hi));
+  left = clamp(left, m, pane.w - m - size.w);
+  top = clamp(top, m, pane.h - m - size.h);
+  if (avoid && left + size.w > avoid.x0 - m && left < avoid.x1 + m && top < avoid.y1 + m && top + size.h > avoid.y0 - m) left = Math.max(m, avoid.x0 - m - size.w);
+  return { left, top, hidden: false };
+}
 // A pill per piece of each area on the level: anchored at the middle of the piece's front corner tile on the floor (drawing units), with the piece's width as drawn (the label fits LABEL_FIT of it on screen).
 export interface AreaPill { id: string; name: string; color: string; anchor: Pt; span: number }
 export function pillsOf(m: HouseModel, areas: readonly HouseArea[], level: number, view: View): AreaPill[] {
