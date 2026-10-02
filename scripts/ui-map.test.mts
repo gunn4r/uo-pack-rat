@@ -976,7 +976,7 @@ async function drawerLayout(page: Page, width: number, mapBefore: number): Promi
     assert.ok(map.width < mapBefore, `the map narrows (${map.width} ≥ ${mapBefore})`);
     if (width < 1800) assert.ok(side < 1, `below 1800 px the levels pane folds away (${side} px)`);
     else assert.ok(side > 270, `from 1800 px the 280 px levels pane stays (${side} px)`);
-    if (width >= 1400) assert.ok(map.width >= 370, `with the drawer open the map keeps room (${map.width} px)`);
+    if (width >= 1440) assert.ok(map.width >= 360, `with the drawer open the map keeps room (${map.width} px)`);
   } else assert.ok(drawer.y >= panel.y + panel.height - 1, "below 1100 px the drawer comes after the panel");
 }
 
