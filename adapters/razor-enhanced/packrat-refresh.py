@@ -9,7 +9,7 @@
 # the backpack as the one root makes that piece reappear in the backpack instead of vanishing.
 #
 # Helpers below are copied VERBATIM from packrat-scanner.py rather than imported, as
-# adapters/tazuo/packrat-refresh.py does (adapters/test_scanners.py keeps the copies identical).
+# adapters/tazuo/packrat-character-refresh.py does (adapters/test_scanners.py keeps the copies identical).
 #
 # Output: <data directory>/inbox/razor-enhanced/<Character>-<YYYYmmdd-HHMMSS>-quick.json. The app's
 # inbox watcher (app/watcher.mjs) picks it up like any scan. The data directory is

@@ -532,7 +532,7 @@ class TazUOScanner(DataDir, unittest.TestCase):
 
 
 class TazUORefresh(DataDir, unittest.TestCase):
-    SCRIPT = adapter_path("tazuo", "packrat-refresh.py")
+    SCRIPT = adapter_path("tazuo", "packrat-character-refresh.py")
 
     def test_it_walks_the_backpack_with_the_scanners_own_code(self):
         def body(path, name):

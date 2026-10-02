@@ -67,7 +67,7 @@ test("[fast] listAdapters finds tazuo with its five scripts and a summary mentio
   assert.equal(adapters.length, 1);
   const tazuo = adapters[0]!;
   assert.equal(tazuo.id, "tazuo");
-  assert.deepEqual(tazuo.scripts.sort(), ["packrat-blacklist.py", "packrat-bridge.py", "packrat-panel.py", "packrat-refresh.py", "packrat-scanner.py"]);
+  assert.deepEqual(tazuo.scripts.sort(), ["packrat-blacklist.py", "packrat-bridge.py", "packrat-character-refresh.py", "packrat-panel.py", "packrat-scanner.py"]);
   const tazuoCaps = tazuo.capabilities as { bank?: unknown };
   assert.ok(tazuoCaps && tazuoCaps.bank, JSON.stringify(tazuo.capabilities));
   assert.match(tazuo.summary, /grab/);
@@ -269,7 +269,7 @@ test("[fast] installedVersion reads the adapter version after an install and nul
   const after = installedVersion(scriptsDir, "tazuo");
   assert.equal(after.version, TAZUO_VERSION);
   assert.equal(after.files["packrat-scanner.py"], true);
-  assert.equal(after.files["packrat-refresh.py"], true);
+  assert.equal(after.files["packrat-character-refresh.py"], true);
   assert.equal(after.files["packrat-bridge.py"], true);
 });
 
@@ -529,7 +529,7 @@ test("[fast] installScripts installs byte-identical copies, leaves no .new files
   const result = installScripts({ adapter: "tazuo", adaptersDir, scriptsDir, dataDir, bridgeStatusPath: join(scriptsDir, "no-status.json") });
   assert.equal(result.ok, true, JSON.stringify(result));
   assert.equal(result.version, TAZUO_VERSION);
-  assert.deepEqual(result.installed.sort(), ["packrat-blacklist.py", "packrat-bridge.py", "packrat-panel.py", "packrat-refresh.py", "packrat-scanner.py"]);
+  assert.deepEqual(result.installed.sort(), ["packrat-blacklist.py", "packrat-bridge.py", "packrat-character-refresh.py", "packrat-panel.py", "packrat-scanner.py"]);
 
   for (const name of result.installed) {
     const srcBuf = readFileSync(join(adaptersDir, "tazuo", name));
@@ -539,6 +539,48 @@ test("[fast] installScripts installs byte-identical copies, leaves no .new files
   const leftoverNew = readdirSync(scriptsDir).filter((f) => f.endsWith(".new"));
   assert.deepEqual(leftoverNew, []);
   assert.deepEqual(JSON.parse(readFileSync(join(scriptsDir, "packrat-paths.json"), "utf8")), { dataDir });
+});
+
+// TazUO 2.12.0 renamed packrat-refresh.py to packrat-character-refresh.py (issue #10): an install removes the old copy, which would
+// otherwise stay in the Script Manager beside the new one, but only when its first line says it is Pack Rat's own.
+const RETIRED_REFRESH_HEADER = "# packrat-refresh.py — ATTENDED one-shot: QUICK character refresh for the Pack Rat";
+
+test("[fast] installScripts removes TazUO's retired packrat-refresh.py when it is Pack Rat's own", () => {
+  const scriptsDir = tmp("qm-is-retired-");
+  writeFileSync(join(scriptsDir, "packrat-refresh.py"), `${RETIRED_REFRESH_HEADER}\n# app without a full scan.\nimport API\n`);
+  const result = installScripts({ adapter: "tazuo", adaptersDir: fakeAdaptersDir(), scriptsDir, dataDir: tmp("qm-is-data-"), bridgeStatusPath: join(scriptsDir, "no-status.json") });
+  assert.equal(result.ok, true, JSON.stringify(result));
+  assert.equal(existsSync(join(scriptsDir, "packrat-refresh.py")), false);
+  assert.equal(existsSync(join(scriptsDir, "packrat-character-refresh.py")), true);
+});
+
+test("[fast] installScripts leaves any other file named packrat-refresh.py alone, and never removes it for another adapter", () => {
+  for (const [adapter, first] of [["tazuo", "# packrat-refresh.py — my own refresh, not Pack Rat's"], ["tazuo", `#${RETIRED_REFRESH_HEADER}`], ["tazuo", ""]] as const) {
+    const scriptsDir = tmp("qm-is-retired-other-");
+    const text = `${first}\nimport API\n`;
+    writeFileSync(join(scriptsDir, "packrat-refresh.py"), text);
+    const result = installScripts({ adapter, adaptersDir: fakeAdaptersDir(), scriptsDir, dataDir: tmp("qm-is-data-"), bridgeStatusPath: join(scriptsDir, "no-status.json") });
+    assert.equal(result.ok, true, JSON.stringify(result));
+    assert.equal(readFileSync(join(scriptsDir, "packrat-refresh.py"), "utf8"), text, first);
+  }
+  const scriptsDir = tmp("qm-is-retired-re-");
+  const result = installScripts({ adapter: "razor-enhanced", adaptersDir: fakeMultiAdaptersDir(), scriptsDir, dataDir: tmp("qm-is-data-"), bridgeStatusPath: join(scriptsDir, "no-status.json") });
+  assert.equal(result.ok, true, JSON.stringify(result));
+  assert.equal(existsSync(join(scriptsDir, "packrat-refresh.py")), true, "Razor Enhanced's refresh keeps its name");
+});
+
+test("[fast] installScripts leaves a symlink or a folder named packrat-refresh.py alone", () => {
+  const scriptsDir = tmp("qm-is-retired-link-"), outside = tmp("qm-is-retired-outside-");
+  writeFileSync(join(outside, "old.py"), `${RETIRED_REFRESH_HEADER}\n`);
+  if (trySymlink(join(outside, "old.py"), join(scriptsDir, "packrat-refresh.py"))) {
+    assert.equal(installScripts({ adapter: "tazuo", adaptersDir: fakeAdaptersDir(), scriptsDir, dataDir: tmp("qm-is-data-"), bridgeStatusPath: join(scriptsDir, "no-status.json") }).ok, true);
+    assert.equal(lstatSync(join(scriptsDir, "packrat-refresh.py")).isSymbolicLink(), true);
+    assert.equal(readFileSync(join(outside, "old.py"), "utf8"), `${RETIRED_REFRESH_HEADER}\n`);
+  }
+  const folderDir = tmp("qm-is-retired-dir-");
+  mkdirSync(join(folderDir, "packrat-refresh.py"));
+  assert.equal(installScripts({ adapter: "tazuo", adaptersDir: fakeAdaptersDir(), scriptsDir: folderDir, dataDir: tmp("qm-is-data-"), bridgeStatusPath: join(folderDir, "no-status.json") }).ok, true);
+  assert.equal(lstatSync(join(folderDir, "packrat-refresh.py")).isDirectory(), true);
 });
 
 test("[fast] installScripts reports badDir for a scriptsDir that does not exist", () => {
@@ -572,14 +614,14 @@ test("[fast] installScripts rejects a path-traversal or otherwise invalid adapte
 test("[fast] installScripts cleans up its .new file and reports the partial install on a mid-install failure", () => {
   const adaptersDir = fakeAdaptersDir();
   const scriptsDir = tmp("qm-is-midfail-dest-");
-  // scriptNamesIn sorts alphabetically: blacklist, bridge, panel, refresh, scanner. Pre-occupy the fourth name with
+  // scriptNamesIn sorts alphabetically: blacklist, bridge, character-refresh, panel, scanner. Pre-occupy the fourth name with
   // a directory so its renameSync (file -> existing directory) throws EISDIR partway through the loop.
-  mkdirSync(join(scriptsDir, "packrat-refresh.py"), { recursive: true });
+  mkdirSync(join(scriptsDir, "packrat-panel.py"), { recursive: true });
   const result = installScripts({ adapter: "tazuo", adaptersDir, scriptsDir, dataDir: tmp("qm-is-data-"), bridgeStatusPath: join(scriptsDir, "no-status.json") });
   assert.equal(result.ok, false);
   assert.equal(result.code, "writeFailed");
   assert.equal(typeof result.error, "string");
-  assert.deepEqual(result.installed, ["packrat-blacklist.py", "packrat-bridge.py", "packrat-panel.py"], "the scripts installed before the failure are reported");
+  assert.deepEqual(result.installed, ["packrat-blacklist.py", "packrat-bridge.py", "packrat-character-refresh.py"], "the scripts installed before the failure are reported");
   assert.ok(existsSync(join(scriptsDir, "packrat-bridge.py")), "the already-succeeded install is left in place");
   const leftoverNew = readdirSync(scriptsDir).filter((f) => f.endsWith(".new"));
   assert.deepEqual(leftoverNew, [], "no dangling .new file from the failed write");
@@ -670,7 +712,7 @@ test("[fast] installScripts refuses a destination that is a symlink rather than 
   assert.equal(result.code, "writeFailed");
   assert.match(result.error, /symlink/);
   assert.equal(readFileSync(canary, "utf8"), "untouched");
-  assert.deepEqual(result.installed, ["packrat-blacklist.py", "packrat-bridge.py", "packrat-panel.py", "packrat-refresh.py"], "the scripts installed before the refusal are reported");
+  assert.deepEqual(result.installed, ["packrat-blacklist.py", "packrat-bridge.py", "packrat-character-refresh.py", "packrat-panel.py"], "the scripts installed before the refusal are reported");
   assert.deepEqual(readdirSync(scriptsDir).filter((f) => f.endsWith(".new")), [], "no dangling temp file");
 });
 
@@ -726,7 +768,7 @@ test("[fast] installScripts keeps a hand-authored packrat-paths.json naming a di
   assert.equal(result.pathsFile, "kept", "the install reports that it kept the player's file, so the UI can say so");
   assert.equal(readFileSync(join(scriptsDir, "packrat-paths.json"), "utf8"), authored, "byte-identical — not even reformatted");
   assert.equal(existsSync(join(scriptsDir, "packrat-paths.json.bak")), false, "nothing was written, so there's nothing to back up");
-  assert.deepEqual(result.installed.sort(), ["packrat-blacklist.py", "packrat-bridge.py", "packrat-panel.py", "packrat-refresh.py", "packrat-scanner.py"], "the scripts themselves still install");
+  assert.deepEqual(result.installed.sort(), ["packrat-blacklist.py", "packrat-bridge.py", "packrat-character-refresh.py", "packrat-panel.py", "packrat-scanner.py"], "the scripts themselves still install");
 });
 
 test("[fast] installScripts rewrites a packrat-paths.json naming this same dataDir, and backs up one that isn't in the documented shape", () => {
@@ -758,7 +800,7 @@ test("[fast] installScripts installs normally when adaptersDir is reached throug
   const scriptsDir = tmp("qm-is-adapterslink-dest-");
   const result = installScripts({ adapter: "tazuo", adaptersDir: link, scriptsDir, dataDir: tmp("qm-is-data-"), bridgeStatusPath: join(scriptsDir, "no-status.json") });
   assert.equal(result.ok, true, JSON.stringify(result));
-  assert.deepEqual(result.installed.sort(), ["packrat-blacklist.py", "packrat-bridge.py", "packrat-panel.py", "packrat-refresh.py", "packrat-scanner.py"]);
+  assert.deepEqual(result.installed.sort(), ["packrat-blacklist.py", "packrat-bridge.py", "packrat-character-refresh.py", "packrat-panel.py", "packrat-scanner.py"]);
 });
 
 // ---- repoFromPackage -------------------------------------------------------------------------------------

@@ -4,7 +4,7 @@
 // takes an injectable fetchImpl so callers (and tests) never depend on a real fetch global.
 import {
   existsSync, statSync, lstatSync, readdirSync, readFileSync, copyFileSync, realpathSync,
-  mkdirSync, openSync, readSync, closeSync, fstatSync, constants, type Dirent, type Stats,
+  mkdirSync, openSync, readSync, closeSync, fstatSync, unlinkSync, constants, type Dirent, type Stats,
 } from "node:fs";
 import { basename, join, resolve, dirname, isAbsolute } from "node:path";
 import { atomicReplace, writeFileAtomic } from "./atomic-write.mts";
@@ -546,11 +546,29 @@ export function installScripts(
     catch (e) { return { ok: false, code: "writeFailed", error: (e as Error).message, installed: [...installed] }; }
     installed.push(name);
   }
+  removeRetired(adapter, destDir, log);
   const { version } = installedVersion(destDir, adapter);
   let pathsFile: PathsFileOutcome;
   try { pathsFile = writePathsFile(destDir, dataDir); }
   catch (e) { return { ok: false, code: "writeFailed", error: (e as Error).message, installed: [...installed] }; }
   return { ok: true, installed, version, pathsFile };
+}
+
+// Scripts an earlier version shipped under a name it no longer uses, by adapter, each with the first line that marks the
+// file as Pack Rat's own (issue #10: TazUO 2.12.0 renamed packrat-refresh.py to packrat-character-refresh.py, and the old
+// copy would stay in the Script Manager beside the new one). An install removes such a file once the scripts are in
+// place; a file of that name with any other first line, a symlink or a folder is left alone, and a removal that fails
+// costs the install nothing.
+const RETIRED_SCRIPTS: Record<string, Array<{ name: string; header: string }>> = {
+  tazuo: [{ name: "packrat-refresh.py", header: "# packrat-refresh.py — ATTENDED one-shot: QUICK character refresh for the Pack Rat" }],
+};
+function removeRetired(adapter: string, destDir: string, log: (msg: string) => void): void {
+  for (const { name, header } of Object.hasOwn(RETIRED_SCRIPTS, adapter) ? RETIRED_SCRIPTS[adapter]! : []) {
+    const path = join(destDir, name);
+    if (readHead(path)?.split(/\r?\n/, 1)[0] !== header) continue;
+    try { unlinkSync(path); log(`removed the retired ${name}`); }
+    catch (e) { log(`could not remove the retired ${name}: ${(e as Error).message}`); }
+  }
 }
 
 // packrat-paths.json is the one destination here that may already hold something the PLAYER wrote:

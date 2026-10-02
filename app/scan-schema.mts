@@ -218,7 +218,7 @@ export function parseStamp(s: string): number {
 const NAIVE_LOCAL_RE = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})$/;
 
 // Converts a naive local "YYYY-MM-DDTHH:MM:SS" wall-clock stamp (what packrat-scanner.py /
-// packrat-refresh.py / the pre-Task-1 server's localStamp() all wrote) into RFC 3339 using
+// packrat-refresh.py (now packrat-character-refresh.py) / the pre-Task-1 server's localStamp() all wrote) into RFC 3339 using
 // THIS machine's UTC offset at that wall-clock instant (DST-correct: the offset is read off a Date
 // built from the same y/m/d/h/mi/s, not off "now").
 function naiveLocalToRfc3339(stamp: string): string {

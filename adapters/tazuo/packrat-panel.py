@@ -1,7 +1,7 @@
 # packrat-panel.py — ATTENDED in-game control panel for Pack Rat. A small window whose buttons run the
 # other Pack Rat scripts, so nobody has to find them in the Script Manager:
 #   Scan here               packrat-scanner.py
-#   Quick refresh           packrat-refresh.py
+#   Character refresh       packrat-character-refresh.py
 #   Start / Stop bridge     packrat-bridge.py (the label follows whether it is running)
 #   Blacklist a container   packrat-blacklist.py
 #   Put away...             Put away (issue #131): files what lies directly in a container you pick with
@@ -14,7 +14,7 @@
 # Put away is one click, one run: it raises a target cursor, and the container picked (your backpack, a
 # bag at any depth in it, or a container in a chest on the ground within reach, which the app must have
 # labelled) is the run's only source; only what lies directly in it moves, never a bag in it or what the
-# bag holds (pick that bag next). The panel runs the quick refresh (your pack) or Scan here (a chest) and
+# bag holds (pick that bag next). The panel runs the character refresh (your pack) or Scan here (a chest) and
 # waits for its scan file, then drops a request into <data>/inbox/tazuo/putaway-request.json that names
 # only the container, this character and where it stands. The app (it must be running) plans the first
 # trip with its Organize rules, queues it for the bridge and answers in <data>/bridge/tazuo/putaway.json;
@@ -84,8 +84,8 @@ ADAPTER_ID = "tazuo"
 ADAPTER_VERSION = "2.11.0"
 
 SELF = "packrat-panel.py"
-SCANNER, REFRESH, BRIDGE, BLACKLIST = "packrat-scanner.py", "packrat-refresh.py", "packrat-bridge.py", "packrat-blacklist.py"
-LABELS = {SCANNER: "scan", REFRESH: "quick refresh", BRIDGE: "bridge", BLACKLIST: "blacklist"}
+SCANNER, REFRESH, BRIDGE, BLACKLIST = "packrat-scanner.py", "packrat-character-refresh.py", "packrat-bridge.py", "packrat-blacklist.py"
+LABELS = {SCANNER: "scan", REFRESH: "character refresh", BRIDGE: "bridge", BLACKLIST: "blacklist"}
 
 DATA = data_dir()
 HEARTBEAT = os.path.join(DATA, "bridge", "tazuo", "panel.json")
@@ -364,7 +364,7 @@ def refresh():
 
 
 def facet():
-    """The map the player stands on (0 Felucca .. 5 Ter Mur), as packrat-refresh.py reads it. None when
+    """The map the player stands on (0 Felucca .. 5 Ter Mur), as packrat-character-refresh.py reads it. None when
     the client cannot say."""
     get_map = getattr(API, "GetMap", None)
     try:
@@ -456,7 +456,7 @@ def cancel_put_away():
 
 
 def on_put_away():
-    """Put away's click: a target cursor for the container, then the scan (the quick refresh for your
+    """Put away's click: a target cursor for the container, then the scan (the character refresh for your
     pack, Scan here for a chest), then watch_put_away takes it from there. The bridge must be on: it
     carries the trips. While a run goes on, the button cancels it."""
     if state["run"] is not None:
@@ -479,7 +479,7 @@ def on_put_away():
         return
     script = REFRESH if source == "pack" else SCANNER
     if is_running(script) or script in state["pending"]:
-        say("The %s is running; try again after it." % LABELS[script])
+        say("The %s is running;" % LABELS[script], "try again after it.")
         return
     # The scan it waits for is one newer than this character's newest now: file times, never the clock.
     state["run"] = {"container": serial, "script": script, "phase": "scan", "since": time.time(), "before": last_scan(),
@@ -536,7 +536,7 @@ def watch_put_away():
         if t is not None and (run["before"] is None or t > run["before"]):
             ask(run)
         elif waited > SCAN_WAIT_S or (waited > START_CHECK_S and not is_running(run["script"]) and run["script"] not in state["pending"]):
-            end_put_away("Put away stopped: the %s saved nothing." % LABELS[run["script"]])
+            end_put_away("Put away stopped: the %s" % LABELS[run["script"]], "saved nothing.")
     elif run["phase"] == "reply":
         reply = read_json(PUT_AWAY_REPLY)
         if reply.get("id") != run["id"]:
@@ -614,7 +614,7 @@ def build_window():
         g.Add(lbl)
         ui[key] = lbl
     buttons = [("scan_btn", "Scan here", lambda: start(SCANNER), 16, 44),
-               ("refresh_btn", "Quick refresh", lambda: start(REFRESH), 196, 44),
+               ("refresh_btn", "Character refresh", lambda: start(REFRESH), 196, 44),
                ("bridge_btn", "Start bridge", on_bridge, 16, 80),
                ("blacklist_btn", "Blacklist a container", lambda: start(BLACKLIST), 196, 80),
                ("away_btn", "Put away...", on_put_away, 16, 116),

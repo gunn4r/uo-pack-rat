@@ -1,6 +1,6 @@
 import ast, json, os, re, sys, tempfile, unittest
 HERE = os.path.dirname(os.path.abspath(__file__))
-SCRIPTS = ["packrat-scanner.py", "packrat-refresh.py", "packrat-bridge.py", "packrat-panel.py"]
+SCRIPTS = ["packrat-scanner.py", "packrat-character-refresh.py", "packrat-bridge.py", "packrat-panel.py"]
 
 def helper_source(text, name):
     m = re.search(r"^def %s\(.*?(?=^def |^[A-Z_]+ = |\Z)" % name, text, re.S | re.M)
@@ -65,7 +65,7 @@ class Paths(unittest.TestCase):
             self.assertIn('ADAPTER_ID = "tazuo"', t, s)
             self.assertIn('ADAPTER_VERSION = "2.11.0"', t, s)
             self.assertNotIn('"version": 1', t, s)
-        for s in ("packrat-scanner.py", "packrat-refresh.py"):
+        for s in ("packrat-scanner.py", "packrat-character-refresh.py"):
             t = read_text(os.path.join(HERE, s))
             self.assertIn('"schemaVersion": 2', t, s)
 
