@@ -77,6 +77,7 @@ export interface UiPrefs {
   appearance?: "light" | "system" | "dark" | undefined;
   sidebar?: "auto" | "collapsed" | undefined;          // "collapsed" = pinned to icons at any width
   density?: "dense" | "regular" | undefined;           // the Inventory table's rows: 32 or 40 px
+  areaLabels?: "show" | "hide" | undefined;            // the House map's area name pills (absent = shown)
   dismissedUpdate?: string | undefined;                // the release whose update notice was dismissed (settings.mts)
   copiedScanner?: string | undefined;                  // the ClassicUO web scanner version last copied (paste-scanner.mts)
 }

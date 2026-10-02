@@ -68,7 +68,7 @@
 //         Put away (issue #131; no route: the TazUO panel drops inbox/<adapter>/putaway-request.json, the watcher hands it
 //         to putAway, which queues the first trip of the plan for the container the player picked like POST /api/organize/trip
 //         and answers in bridge/<adapter>/putaway.json; app/put-away.mts) ·
-//         GET|PUT /api/ui-prefs (<data>/ui-prefs.json: {cols?, colsVersion?, colWidths?, sheetProps?, theme?, appearance?, sidebar?, density?, dismissedUpdate?, copiedScanner?}, the page's view choices)
+//         GET|PUT /api/ui-prefs (<data>/ui-prefs.json: {cols?, colsVersion?, colWidths?, sheetProps?, theme?, appearance?, sidebar?, density?, areaLabels?, dismissedUpdate?, copiedScanner?}, the page's view choices)
 //         POST /api/bridge {action, serial, name, chain: [root…parent], pos|null} (queue for packrat-bridge.py) · GET /api/bridge/status · POST /api/bridge/stop {} (Organize's Stop: writes <data>/bridge/stop, which packrat-bridge.py checks between a trip's steps)
 //         GET /api/events — SSE, one stream shared by every connected client (not per-job like the
 //         optimize events above): hello {ok, watching: [adapter ids]} on connect, inventory
@@ -193,6 +193,7 @@ const UI_PREF_CHOICES = {
   sidebar: ["auto", "collapsed"],
   density: ["dense", "regular"],   // the Inventory table's row height
   colsVersion: ["2"],              // the column set `cols` was saved against (app/ui/view-state.mts's COLS_VERSION)
+  areaLabels: ["show", "hide"],    // the House map's area name pills (app/ui/house-map.mts, issue #10)
 } as const satisfies Record<string, readonly string[]>;
 // The list fields: the Inventory tab's columns and the character sheet's shown properties (absent = the default set).
 const UI_PREF_LISTS = ["cols", "sheetProps"] as const;

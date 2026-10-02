@@ -5,7 +5,7 @@ import { buildHouseModel } from "./house-model.mts";
 import { fixtureTileData, vaultHouse, roofHouse, courtyardHouse, castleHouse, foundationHouse, stairHouse, G } from "./house-fixture.mts";
 import type { Container, Item } from "./vault-lib.mts";
 import type { HouseArea, HouseModel, Stack } from "./ui/api-types.mts";
-import { project, tilePolygon, boxFaces, pts, paintOrder, boundsOf, fit, zoomAt, vbText, anchorOf, W, chestViews, colourOf, legendOf, chestLabel, cutAway, calloutLines, houseTotals, pickHouse, houseLabel, houseName, carryOver, carryOverText, PLAIN, chestCount, nearestInDirection, tiledataNote, stackWhere, plainGrid, sceneOf, drawnZs, CHEST_H, whereOf, whereTitle, cropAround, facetMapUrl, markersOf, facetMapNote, parseRegion, markerRadii, contentsOf, contentsSummary, filterContents, drawerChest, drawerMeta, slotsText, areaOfStack, levelAreas, restName, unproject, tileAt, rectOf, sizeText, unionTiles, coveredCells, outlineOf, labelSpot, nextAreaId, nextAreaColor, moveCursor, clampTile, liveAreas, withOrphans, redrawFailed, AREA_COLORS, AREA_COLOR_NAMES, type ChestView, type ContentsNode } from "./ui/house-map-model.mts";
+import { project, tilePolygon, boxFaces, pts, paintOrder, boundsOf, fit, zoomAt, vbText, anchorOf, W, chestViews, colourOf, legendOf, chestLabel, cutAway, calloutLines, houseTotals, pickHouse, houseLabel, houseName, carryOver, carryOverText, PLAIN, chestCount, nearestInDirection, tiledataNote, stackWhere, plainGrid, sceneOf, drawnZs, CHEST_H, whereOf, whereTitle, cropAround, facetMapUrl, markersOf, facetMapNote, parseRegion, markerRadii, contentsOf, contentsSummary, filterContents, drawerChest, drawerMeta, slotsText, piecesOf, frontCorner, fitLabel, pillsOf, LABEL_FIT, areaOfStack, levelAreas, restName, unproject, tileAt, rectOf, sizeText, unionTiles, coveredCells, outlineOf, nextAreaId, nextAreaColor, moveCursor, clampTile, liveAreas, withOrphans, redrawFailed, AREA_COLORS, AREA_COLOR_NAMES, type ChestView, type ContentsNode } from "./ui/house-map-model.mts";
 
 const td = fixtureTileData();
 const has = (cls: string, c: string): boolean => cls.split(" ").includes(c);
@@ -532,14 +532,35 @@ test("[fast] house areas: the outline of a union of rectangles runs along its ou
   assert.deepEqual(outlineOf([]), []);
 });
 
-test("[fast] house areas: the name label sits on a covered floor tile with no stack, nearest the middle; else at the middle", () => {
-  const m = vault();   // every floor tile but the centre teleporter (3003, 1003) holds a stack
-  assert.deepEqual(labelSpot(m, areaOf("v", 0, [rectOf([3001, 1001], [3005, 1005])])), { x: 3003.5, y: 1003.5, z: 0 }, "the free centre tile");
-  assert.deepEqual(labelSpot(m, areaOf("s", 0, [rectOf([3001, 1001], [3002, 1002])])), { x: 3002, y: 1002, z: 0 }, "all stacked: the middle");
-  const r = ringHouse();   // roof house: chests on a ring round (4003, 4003)
-  const at = labelSpot(r, areaOf("r", 0, [rectOf([4002, 4002], [4004, 4004])]));
-  assert.deepEqual([at.x, at.y], [4003.5, 4003.5], "the free middle tile of the ring");
-  assert.ok(!r.stacks.some((s) => s.x + 0.5 === at.x && s.y + 0.5 === at.y));
+test("[fast] house areas: rectangles that touch (4-neighbour) are one piece; a piece's front corner is its tile with the largest x + y", () => {
+  assert.deepEqual(piecesOf([rectOf([0, 0], [1, 1]), rectOf([2, 1], [3, 1])]).map((p) => p.length), [6], "touching side by side: one piece");
+  assert.deepEqual(piecesOf([rectOf([0, 0], [1, 1]), rectOf([2, 2], [3, 3])]).map((p) => p.length), [4, 4], "only a corner shared: two pieces");
+  assert.deepEqual(piecesOf([rectOf([10, 10], [10, 10]), rectOf([0, 0], [1, 0])]).map((p) => p[0]), [[0, 0], [10, 10]], "pieces in row order, whatever the rectangles' order");
+  assert.deepEqual(piecesOf([]), []);
+  assert.deepEqual(frontCorner([[0, 0], [1, 0], [0, 1], [1, 1]]), [1, 1]);
+  assert.deepEqual(frontCorner([[0, 2], [1, 1], [2, 0], [0, 0]]), [1, 1], "a tie: the middle one");
+});
+
+test("[fast] house areas: a label fits about 92% of its piece's width: the whole name, else cut short with …, else a dot when fewer than 3 characters fit", () => {
+  const measure = (t: string): number => t.length * 7;   // 7 px a character, the pill's padding and border 16 more
+  assert.equal(fitLabel("Loot Corner", 200, measure), "Loot Corner");
+  assert.equal(fitLabel("Loot Corner", 7 * 11 + 16, measure), "Loot Corner", "exactly fits");
+  assert.equal(fitLabel("Loot Corner", 7 * 6 + 16, measure), "Loot…", "cut short: 5 characters and the ellipsis, the trailing space trimmed");
+  assert.equal(fitLabel("Loot Corner", 7 * 4 + 16, measure), "Loo…");
+  assert.equal(fitLabel("Loot Corner", 7 * 3 + 16, measure), null, "fewer than 3 characters: the dot");
+  assert.equal(fitLabel("Ab", 200, measure), "Ab", "a short name that fits whole is never a dot");
+  assert.equal(LABEL_FIT, 0.92);
+});
+
+test("[fast] house areas: a pill per piece of each area on the level, anchored at the piece's front corner tile's middle, with the piece's width on screen", () => {
+  const m = vault();
+  const two = areaOf("t", 0, [rectOf([3001, 1001], [3002, 1001]), rectOf([3004, 1004], [3005, 1005])], "Loot Corner"), up = areaOf("u", 1, [rectOf([3001, 1001], [3001, 1001])]);
+  const pills = pillsOf(m, [two, up], 0, "angle");
+  assert.deepEqual(pills.map((p) => [p.id, p.name, p.color]), [["t", "Loot Corner", "area-1"], ["t", "Loot Corner", "area-1"]], "two pieces, two pills; none from another level");
+  assert.deepEqual(pills[0]!.anchor, project(3002 - m.x0 + 0.5, 1001 - m.y0 + 0.5, 0, "angle"), "the first piece's front corner");
+  assert.deepEqual(pills[1]!.anchor, project(3005 - m.x0 + 0.5, 1005 - m.y0 + 0.5, 0, "angle"));
+  assert.equal(pills[0]!.span, (3 * W) / 2, "two tiles in a row at the game angle: from the first's west corner to the second's east, three half-tiles");
+  assert.equal(pillsOf(m, [two], 0, "top")[0]!.span, 2 * W, "top-down: two tiles wide");
 });
 
 test("[fast] house areas: a new area takes the first free id and the first unused palette colour; the cursor moves a tile north, east, south or west", () => {

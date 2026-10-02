@@ -375,18 +375,48 @@ export function outlineOf(rects: readonly AreaRect[]): Array<[Pt, Pt]> {
   for (const [k, ys] of cols) { const x = Number(k.split(":")[0]); for (const [a, b] of runs(ys)) segs.push([[x, a], [x, b]]); }
   return segs.sort((a, b) => a[0][1] - b[0][1] || a[0][0] - b[0][0] || a[1][1] - b[1][1] || a[1][0] - b[1][0]);
 }
-// Where an area's name goes (world tiles, a tile's middle, and the floor's height there above the level's): the covered floor tile with no stack nearest the area's middle (ties by row, then column); with none, the middle of its tiles.
-export function labelSpot(m: HouseModel, area: Pick<HouseArea, "level" | "rects">): { x: number; y: number; z: number } {
-  const tiles = unionTiles(area.rects), base = m.levels[area.level]?.floorZ ?? 0;
-  const cx = tiles.reduce((a, t) => a + t[0], 0) / (tiles.length || 1) + 0.5, cy = tiles.reduce((a, t) => a + t[1], 0) / (tiles.length || 1) + 0.5;
-  const stacked = new Set(m.stacks.filter((s) => s.level === area.level).map((s) => `${s.x}:${s.y}`));
-  let best: { c: Cell; d: number } | null = null;
-  for (const c of coveredCells(m, area.level, area.rects)) {
-    if (c.kind !== "floor" || stacked.has(`${c.x}:${c.y}`)) continue;
-    const d = (c.x + 0.5 - cx) ** 2 + (c.y + 0.5 - cy) ** 2;
-    if (!best || d < best.d - 1e-9) best = { c, d };
+// An area's pieces: its tiles split where they do not touch (4-neighbour), each piece by row, the pieces in the order of their first tile.
+export function piecesOf(rects: readonly AreaRect[]): Tile[][] {
+  const tiles = unionTiles(rects), left = new Map(tiles.map((t) => [`${t[0]}:${t[1]}`, t])), out: Tile[][] = [];
+  for (const start of tiles) {
+    if (!left.delete(`${start[0]}:${start[1]}`)) continue;
+    const piece: Tile[] = [], todo = [start];
+    while (todo.length) {
+      const [x, y] = todo.pop()!;
+      piece.push([x, y]);
+      for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]] as const) { const k = `${x + dx}:${y + dy}`, n = left.get(k); if (n) { left.delete(k); todo.push(n); } }
+    }
+    out.push(piece.sort((a, b) => a[1] - b[1] || a[0] - b[0]));
   }
-  return best ? { x: best.c.x + 0.5, y: best.c.y + 0.5, z: best.c.z - base } : { x: cx, y: cy, z: 0 };
+  return out;
+}
+// A piece's front corner, where its label goes: the tile nearest the viewer at the game angle (the largest x + y); of several, the middle one along that row (by x).
+export function frontCorner(tiles: readonly Tile[]): Tile {
+  const top = Math.max(...tiles.map((t) => t[0] + t[1])), row = tiles.filter((t) => t[0] + t[1] === top).sort((a, b) => a[0] - b[0]);
+  return row[Math.floor((row.length - 1) / 2)]!;
+}
+// A label's text: the whole name when it fits `maxW` screen px with the pill's padding and border (16 px), else the longest start of it, cut at a space's end, with "…" that fits; null (a dot) when fewer than 3 characters would fit. `measure` gives a text's width in px.
+export const LABEL_FIT = 0.92, LABEL_PAD = 16;
+export function fitLabel(name: string, maxW: number, measure: (text: string) => number): string | null {
+  if (measure(name) + LABEL_PAD <= maxW) return name;
+  let lo = 0, hi = name.length;
+  while (lo < hi) { const mid = (lo + hi + 1) >> 1; if (measure(`${name.slice(0, mid).trimEnd()}…`) + LABEL_PAD <= maxW) lo = mid; else hi = mid - 1; }
+  return lo >= 3 ? `${name.slice(0, lo).trimEnd()}…` : null;
+}
+// A pill per piece of each area on the level: anchored at the middle of the piece's front corner tile on the floor (drawing units), with the piece's width as drawn (the label fits LABEL_FIT of it on screen).
+export interface AreaPill { id: string; name: string; color: string; anchor: Pt; span: number }
+export function pillsOf(m: HouseModel, areas: readonly HouseArea[], level: number, view: View): AreaPill[] {
+  const out: AreaPill[] = [];
+  for (const a of areas) {
+    if (a.level !== level) continue;
+    for (const piece of piecesOf(a.rects)) {
+      const [fx, fy] = frontCorner(piece);
+      let lo = Infinity, hi = -Infinity;
+      for (const [x, y] of piece) for (const [dx, dy] of CORNERS) { const px = project(x - m.x0 + dx, y - m.y0 + dy, 0, view)[0]; if (px < lo) lo = px; if (px > hi) hi = px; }
+      out.push({ id: a.id, name: a.name, color: a.color, anchor: project(fx - m.x0 + 0.5, fy - m.y0 + 0.5, 0, view), span: hi - lo });
+    }
+  }
+  return out;
 }
 // A new area's id ("a1", "a2", … the first not taken) and colour (the first of the palette no area uses, else round again).
 export function nextAreaId(areas: readonly Pick<HouseArea, "id">[]): string {
