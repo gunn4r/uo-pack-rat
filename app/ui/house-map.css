@@ -37,7 +37,7 @@
 .map-floor.f-tile { fill: var(--color-map-tile); }
 .map-floor.f-neutral.yard { fill: var(--color-map-yard); }
 .map-floor.map-stair { fill: var(--color-map-stair); }
-.map-step { fill: var(--color-map-step); }
+.map-step, .map-solids g > .map-step { fill: var(--color-map-step); }
 .map-below { fill: var(--color-map-below); }
 .map-reach { fill: none; stroke: var(--color-map-spot); stroke-width: 1px; stroke-dasharray: 4 3; vector-effect: non-scaling-stroke; pointer-events: none; }
 /* every solid's faces take its --fill; the sides are that fill mixed toward --color-map-shade (no per-polygon filter, so pan and zoom repaint cheaply) */
@@ -59,6 +59,9 @@
 .map-wall.window { --fill: color-mix(in srgb, var(--color-map-window) 65%, var(--tint, var(--color-map-window))); }
 .map-lip { --fill: var(--tint, var(--color-map-lip)); }
 .map-solids :is(.map-wall, .map-lip) > polygon { stroke: var(--color-map-wall-edge); stroke-width: 1px; vector-effect: non-scaling-stroke; }
+/* a stair raised to meet the tile it leads to: the stair colour, its sides shaded, its edges the floor grid's, the step bands on its top */
+.map-stair { --fill: var(--color-map-stair); }
+.map-solids .map-stair > polygon { stroke: var(--color-map-grid); stroke-width: 0.5; }
 .map-roof { --fill: var(--color-map-roof); }
 .map-block { --fill: var(--color-map-block); }
 .map-door { --fill: var(--color-map-door); }

@@ -244,10 +244,10 @@ export function plainGrid(inv: Pick<InventoryData, "containers">, houses: readon
 }
 
 // ---------------------------------------------------------------- the scene of one level
-// What ui/house-map.mts draws for a level, in drawing units: the walls of the level below as faint tiles (on an upper level), the floor and stair tiles (with step bands), each standing spot's dashed reach, then every solid thing back to front: cut walls and windows and the foundation's lip in their material's colour (w-<family>), roof edges, furniture, doors and teleporters, the stacks (one box per chest at its real height, lifted clear of one below it that shares its z) and the standing spots' figures.
+// What ui/house-map.mts draws for a level, in drawing units: the walls of the level below as faint tiles (on an upper level), the floor and stair tiles (with step bands), each standing spot's dashed reach, then every solid thing back to front: cut walls and windows and the foundation's lip in their material's colour (w-<family>), stairs raised to meet the tile they lead to (at the game angle; from above they stay tiles), roof edges, furniture, doors and teleporters, the stacks (one box per chest at its real height, lifted clear of one below it that shares its z) and the standing spots' figures.
 export interface Prism { top: string; left: string; right: string }
 export type Piece =
-  | { kind: "solid"; x: number; y: number; z: number; cls: string; prism: Prism }
+  | { kind: "solid"; x: number; y: number; z: number; cls: string; prism: Prism; steps?: string[] }
   | { kind: "item"; x: number; y: number; z: number; cls: string; prism: Prism; name: string }
   | { kind: "stack"; x: number; y: number; z: number; stack: Stack; chests: Array<{ serial: number; prism: Prism }> }
   | { kind: "spot"; x: number; y: number; z: number; spot: Spot; at: Pt };
@@ -257,20 +257,39 @@ function prism(x: number, y: number, z: number, h: number, view: View, inset: nu
   const f = boxFaces(x, y, z, h, view, inset);
   return { top: pts(f.top), left: pts(f.left), right: pts(f.right) };
 }
-// A band of a tile across x, from a to b (fractions of the tile): a stair's steps.
-const band = (x: number, y: number, z: number, view: View, a: number, b: number): Pt[] => [project(x + a, y, z, view), project(x + b, y, z, view), project(x + b, y + 1, z, view), project(x + a, y + 1, z, view)];
+// A band of a tile across x (or across y), from a to b (fractions of the tile): a stair's steps.
+const band = (x: number, y: number, z: number, view: View, a: number, b: number, acrossY: boolean): Pt[] => acrossY
+  ? [project(x, y + a, z, view), project(x + 1, y + a, z, view), project(x + 1, y + b, z, view), project(x, y + b, z, view)]
+  : [project(x + a, y, z, view), project(x + b, y, z, view), project(x + b, y + 1, z, view), project(x + a, y + 1, z, view)];
+// A stair rises to the highest floor, lip or stair tile beside it on its level that is above it by at most STAIR_RISE (the first of north, east, south, west on a tie), its steps running across that way; with none it lies flat, its steps across x.
+const STAIR_RISE = 20;
+const SIDES: ReadonlyArray<[number, number, boolean]> = [[0, -1, true], [1, 0, false], [0, 1, true], [-1, 0, false]];
+function stairTop(c: Cell, heights: ReadonlyMap<string, number>): { z: number; acrossY: boolean } {
+  let z = c.z, acrossY = false;
+  for (const [dx, dy, ay] of SIDES) {
+    const n = heights.get(`${c.x + dx}:${c.y + dy}`);
+    if (n != null && n > z && n - c.z <= STAIR_RISE) { z = n; acrossY = ay; }
+  }
+  return { z, acrossY };
+}
 export function sceneOf(m: HouseModel, level: number, view: View): Scene {
   const base = m.levels[level]?.floorZ ?? 0;
   const yard = new Set(m.rooms.filter((r) => r.kind === "yard").map((r) => r.id));
   const below: string[] = [], floors: Scene["floors"] = [], reach: string[] = [], solids: Piece[] = [];
+  const heights = new Map<string, number>();
+  for (const c of m.cells) if (c.level === level && (c.kind === "floor" || c.kind === "stair")) { const k = `${c.x}:${c.y}`; heights.set(k, Math.max(c.z, heights.get(k) ?? -Infinity)); }
   for (const c of m.cells) {
     const x = c.x - m.x0, y = c.y - m.y0;
     if (level > 0 && c.level === level - 1 && (c.kind === "wall" || c.kind === "window")) below.push(pts(tilePolygon(x, y, c.z - base, view)));
     if (c.level !== level) continue;
     if (c.kind === "floor" || c.kind === "stair") {
-      const z = c.z - base;
-      floors.push({ pts: pts(tilePolygon(x, y, z, view)), cls: `map-floor f-${c.family}${c.room != null && yard.has(c.room) ? " yard" : ""}${c.kind === "stair" ? " map-stair" : ""}` });
-      if (c.kind === "stair") for (const k of [1, 3]) floors.push({ pts: pts(band(x, y, z, view, k / 4, (k + 1) / 4)), cls: "map-step" });
+      const z = c.z - base, top = c.kind === "stair" ? stairTop(c, heights) : null, tz = top ? top.z - base : z;
+      const steps = top ? [1, 3].map((k) => pts(band(x, y, tz, view, k / 4, (k + 1) / 4, top.acrossY))) : [];
+      if (top && tz > z && view === "angle") solids.push({ kind: "solid", x, y, z, cls: "map-stair", prism: prism(x, y, z, tz - z, view, 0), steps });
+      else {
+        floors.push({ pts: pts(tilePolygon(x, y, tz, view)), cls: `map-floor f-${c.family}${c.room != null && yard.has(c.room) ? " yard" : ""}${top ? " map-stair" : ""}` });
+        for (const b of steps) floors.push({ pts: b, cls: "map-step" });
+      }
       if (c.lip) solids.push({ kind: "solid", x, y, z, cls: `map-lip w-${c.family}`, prism: prism(x, y, z, LIP_H, view, 0) });
     } else if (c.kind === "roof") solids.push({ kind: "solid", x, y, z: 0, cls: "map-roof", prism: prism(x, y, 0, ROOF_H, view, 0) });
     else solids.push({ kind: "solid", x, y, z: 0, cls: `map-wall${c.kind === "window" ? " window" : ""} w-${c.family}`, prism: prism(x, y, 0, c.kind === "window" ? WINDOW_H : WALL_H, view, 0.08) });

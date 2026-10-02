@@ -2,7 +2,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { buildHouseModel } from "./house-model.mts";
-import { fixtureTileData, vaultHouse, roofHouse, courtyardHouse, castleHouse, foundationHouse } from "./house-fixture.mts";
+import { fixtureTileData, vaultHouse, roofHouse, courtyardHouse, castleHouse, foundationHouse, stairHouse } from "./house-fixture.mts";
 import type { Container } from "./vault-lib.mts";
 import type { HouseModel } from "./ui/api-types.mts";
 import { project, tilePolygon, boxFaces, pts, paintOrder, boundsOf, fit, zoomAt, vbText, anchorOf, W, chestViews, colourOf, legendOf, chestLabel, cutAway, calloutLines, houseTotals, pickHouse, PLAIN, chestCount, roomCounts, nearestInDirection, tiledataNote, stackWhere, plainGrid, sceneOf, drawnZs, CHEST_H, type ChestView } from "./ui/house-map-model.mts";
@@ -232,11 +232,56 @@ test("[fast] house map: the courtyard draws its walls, window, foundation lip, s
   const m = buildHouseModel(courtyardHouse(), td, []), sc = sceneOf(m, 0, "angle");
   const cls = sc.pieces.flatMap((p) => ("cls" in p ? [p.cls] : []));
   for (const want of ["map-wall w-stone", "map-wall window w-neutral", "map-lip w-brick", "map-block", "map-door"]) assert.ok(cls.some((c) => want.split(" ").every((w) => has(c, w))), want);
-  assert.ok(sc.floors.some((f) => f.cls.includes("map-stair")) && sc.floors.some((f) => f.cls === "map-step"));
+  assert.ok(sc.pieces.some((p) => p.kind === "solid" && has(p.cls, "map-stair") && p.steps?.length === 2), "the front steps rise to the rim");
   const cell = m.cells.find((c) => c.level === 0 && c.x === 1012 && c.y === 2013)!;
   assert.equal(m.rooms.find((r) => r.id === cell.room)?.kind, "yard", "(1012, 2013) is in the courtyard");
   const at = pts(tilePolygon(cell.x - m.x0, cell.y - m.y0, cell.z - m.levels[0]!.floorZ, "angle"));
   assert.equal(sc.floors.find((f) => f.pts === at)?.cls, "map-floor f-grass yard");
+});
+
+test("[fast] house map: a stair rises as a block to meet the higher tile beside it, its steps running across the rise; a stair with nothing higher beside it stays flat", () => {
+  const m = buildHouseModel(foundationHouse(), td, []), base = m.levels[0]!.floorZ;
+  const stair = m.cells.find((c) => c.level === 0 && c.kind === "stair" && c.x === 9004)!, x = stair.x - m.x0, y = stair.y - m.y0;
+  const rim = m.cells.find((c) => c.level === 0 && c.x === stair.x && c.y === stair.y - 1)!;
+  assert.ok(rim.lip && rim.z > stair.z, "the steps lie below the rim to their north");
+  for (const view of ["angle", "top"] as const) {
+    const sc = sceneOf(m, 0, view);
+    const block = sc.pieces.find((p) => p.kind === "solid" && has(p.cls, "map-stair") && p.x === x && p.y === y);
+    const tile = sc.floors.find((f) => has(f.cls, "map-stair") && f.pts === pts(tilePolygon(x, y, rim.z - base, view)));
+    // The bands run along x (across the rise to the north): their corners step in y.
+    const across = [1, 3].map((k) => pts([project(x, y + k / 4, rim.z - base, view), project(x + 1, y + k / 4, rim.z - base, view), project(x + 1, y + (k + 1) / 4, rim.z - base, view), project(x, y + (k + 1) / 4, rim.z - base, view)]));
+    if (view === "angle") {
+      assert.ok(block?.kind === "solid", "a raised block at the game angle");
+      assert.equal(block.z, stair.z - base, "ordered from its own height");
+      assert.deepEqual(block.prism, { top: pts(boxFaces(x, y, stair.z - base, rim.z - stair.z, view).top), left: pts(boxFaces(x, y, stair.z - base, rim.z - stair.z, view).left), right: pts(boxFaces(x, y, stair.z - base, rim.z - stair.z, view).right) });
+      assert.equal(block.prism.top, pts(tilePolygon(x, y, rim.z - base, view)), "its top is level with the rim");
+      assert.deepEqual(block.steps, across);
+      assert.ok(!sc.floors.some((f) => has(f.cls, "map-stair") && f.pts === pts(tilePolygon(x, y, stair.z - base, view))), "no flat tile left at street level");
+    } else {
+      assert.ok(!block && tile, "from above it is a floor tile");
+      for (const b of across) assert.ok(sc.floors.some((f) => f.cls === "map-step" && f.pts === b), "with the same bands");
+    }
+  }
+  // A lone stair beside nothing higher: a flat tile with its bands across x, as before.
+  const lone = { ...m, cells: [stair] }, sc = sceneOf(lone, 0, "angle");
+  assert.ok(!sc.pieces.some((p) => p.kind === "solid" && has(p.cls, "map-stair")));
+  assert.ok(sc.floors.some((f) => has(f.cls, "map-stair") && f.pts === pts(tilePolygon(x, y, stair.z - base, "angle"))));
+  const z = stair.z - base;
+  assert.ok(sc.floors.some((f) => f.cls === "map-step" && f.pts === pts([project(x + 0.25, y, z, "angle"), project(x + 0.5, y, z, "angle"), project(x + 0.5, y + 1, z, "angle"), project(x + 0.25, y + 1, z, "angle")])));
+});
+
+test("[fast] house map: an interior staircase rises step by step, each step to the next one's height, its steps running across x; the top step stays flat", () => {
+  const m = buildHouseModel(stairHouse(), td, []), base = m.levels[0]!.floorZ, sc = sceneOf(m, 0, "angle");
+  const steps = m.cells.filter((c) => c.level === 0 && c.kind === "stair").sort((a, b) => a.x - b.x);
+  assert.deepEqual(steps.map((c) => c.z), [7, 12, 17, 22]);
+  steps.forEach((c, i) => {
+    const x = c.x - m.x0, y = c.y - m.y0, block = sc.pieces.find((p) => p.kind === "solid" && has(p.cls, "map-stair") && p.x === x && p.y === y);
+    if (i === steps.length - 1) { assert.ok(!block, "nothing higher beside the top step on this level"); return; }
+    const top = steps[i + 1]!.z - base;
+    assert.ok(block?.kind === "solid", `step ${i + 1} is raised`);
+    assert.equal(block.prism.top, pts(tilePolygon(x, y, top, "angle")), `step ${i + 1} rises to the next`);
+    assert.equal(block.steps?.[0], pts([project(x + 0.25, y, top, "angle"), project(x + 0.5, y, top, "angle"), project(x + 0.5, y + 1, top, "angle"), project(x + 0.25, y + 1, top, "angle")]), "bands across x, the way the run climbs");
+  });
 });
 
 test("[fast] house map: walls and the foundation's lip take their material's colour family: a wooden stall is wood, the stone rim stone", () => {
