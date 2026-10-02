@@ -579,6 +579,104 @@ class TazUORefresh(DataDir, unittest.TestCase):
         self.assertIn("  skipped 1 trash container", w.messages)
 
 
+class TazUOHouseMapRefresh(DataDir, unittest.TestCase):
+    SCRIPT = adapter_path("tazuo", "packrat-house-map-refresh.py")
+    SHARED = ("data_dir", "write_json_atomic", "rfc3339_now", "read_blacklist", "sysmsg", "is_container", "facet", "house_capture")
+    CONSTANTS = ("ADAPTER_ID", "CAPABILITIES", "HOUSE_RADIUS", "HOUSE_MAX_TILES", "HOUSE_ITEM_REACH", "HOUSE_MAX_ITEMS", "HOUSE_MAX_CONTAINERS",
+                 "BLACKLIST", "HOUSE_LEFT_OUT", "HOUSE_TOO_LARGE", "OUT_DIR", "CONTAINER_RE", "NOT_A_CONTAINER_RE", "NOT_A_CONTAINER_GRAPHICS",
+                 "TRASH_RE", "WEARABLE_RE", "CONTAINER_GRAPHICS")
+
+    def house(self, w):
+        """Run the house map refresh with a client that records every tooltip and OPL request."""
+        api = tazuo_api(w, PACK)
+        asked = []
+        names = api.ItemNameAndProps
+        api.ItemNameAndProps = lambda s, b=False: (asked.append(("tooltip", int(s))), names(s, b))[1]
+        api.RequestOPLData = lambda serials: asked.append(("opl", list(serials)))
+        run_script(self.SCRIPT, w, api=api)
+        return asked
+
+    def test_it_captures_the_house_with_the_scanners_own_code(self):
+        for name in self.SHARED:
+            body = helper_body(self.SCRIPT, name)
+            self.assertIsNotNone(body, name)
+            self.assertEqual(body, helper_body(TazUOScanner.SCRIPT, name), name)
+        with open(self.SCRIPT, encoding="utf-8") as f:
+            mine = f.read()
+        with open(TazUOScanner.SCRIPT, encoding="utf-8") as f:
+            scanner = f.read()
+        for name in self.CONSTANTS:
+            pattern = r"^%s = .*?(?=^[A-Za-z_#]|\Z)" % name
+            m = re.search(pattern, mine, re.S | re.M)
+            self.assertIsNotNone(m, name)
+            self.assertEqual(m.group(0), re.search(pattern, scanner, re.S | re.M).group(0), name)
+
+    def test_it_writes_only_the_house_and_asks_the_server_nothing(self):
+        w = World(); home(w); w.facet = 1; w.multis = house_tiles(5, 5, 12, 12)
+        w.add(0x40000040, 0, name="table", container_like=False, X=12, Y=12, Z=7)
+        w.items[0x40000040].Graphic = 0x0B34
+        w.add(0x40000050, 0, name="Metal Chest", X=15, Y=15, Z=7)
+        w.items[0x40000050].Graphic = 0x0E7C
+        asked = self.house(w)
+        files = glob.glob(os.path.join(self.data, "inbox", "tazuo", "*.json"))
+        self.assertEqual(len(files), 1)
+        self.assertRegex(os.path.basename(files[0]), r"^Tester-\d{8}-\d{6}-house\.json$")
+        [s] = self.scans("tazuo")
+        self.assertEqual(s["kind"], "house")
+        self.assertEqual(s["character"], "Tester")
+        self.assertEqual(s["schemaVersion"], 2)
+        self.assertEqual((s["stats"], s["roots"], s["containers"], s["items"], s["equipped"]), ({}, [], {}, [], []))
+        h = s["house"]
+        self.assertEqual((h["facet"], h["at"], len(h["tiles"])), (1, {"x": 10, "y": 10}, 144))
+        self.assertEqual(h["items"], [[0x40000040, 0x0B34, 12, 12, 7]])
+        self.assertEqual(h["containers"], [[CHEST, 0x0E75, 11, 10, 0], [0x40000050, 0x0E7C, 15, 15, 7]])
+        self.assertEqual(self.opened(w), [], "no container is opened")
+        self.assertEqual(asked, [], "no tooltip or OPL request")
+        self.assertEqual(w.messages, ["Pack Rat house map refresh (Tester) -> %s: 144 tiles, 1 pieces of furniture, 2 chests" % os.path.basename(files[0])])
+
+    def test_trash_blacklisted_containers_and_corpses_are_left_out_of_the_chests(self):
+        w = World(); home(w); w.multis = house_tiles(5, 5, 12, 12)
+        w.add(0x40000052, 0, name="trash barrel", X=14, Y=14)
+        w.add(0x40000053, 0, name="Wooden Box", X=13, Y=13)
+        w.add(0x40000054, 0, name="a corpse", Graphic=0x2006, X=12, Y=13)
+        self.blacklist([0x40000053])
+        self.house(w)
+        [s] = self.scans("tazuo")
+        self.assertEqual([c[0] for c in s["house"]["containers"]], [CHEST])
+
+    def test_outside_a_house_or_without_the_multi_calls_it_writes_nothing_and_says_so(self):
+        for multis in (None, [], house_tiles(30, 30, 5, 5), [t for z in range(139) for t in house_tiles(5, 5, 12, 12, z=z)]):
+            with self.subTest(multis=None if multis is None else len(multis)):
+                w = World(); home(w); w.multis = multis
+                self.house(w)
+                self.assertEqual(self.scans("tazuo"), [])
+                self.assertEqual(len(w.messages), 1)
+                self.assertTrue(w.messages[0].startswith("Pack Rat house map refresh: "), w.messages[0])
+        self.assertIn("20016 tiles", w.messages[0])
+
+    def test_a_ground_read_that_fails_writes_the_tiles_and_says_the_furniture_was_not_read(self):
+        w = World(); home(w); w.multis = house_tiles(5, 5, 12, 12)
+        api = tazuo_api(w, PACK)
+        def broken(r):
+            raise RuntimeError("the read failed")
+        api.GetItemsOnGround = broken
+        run_script(self.SCRIPT, w, api=api)
+        [s] = self.scans("tazuo")
+        self.assertNotIn("items", s["house"])
+        self.assertTrue(w.messages[0].endswith(": 144 tiles, furniture and chests not read"), w.messages)
+
+    def test_a_stop_writes_nothing(self):
+        w = World(); home(w); w.multis = house_tiles(5, 5, 12, 12)
+        api = tazuo_api(w, PACK)
+        api.StopRequested = True
+        run_script(self.SCRIPT, w, api=api)
+        self.assertEqual(self.scans("tazuo"), [])
+
+    def test_it_runs_where_the_host_defines_no___file__(self):
+        w = World(); home(w); w.multis = house_tiles(5, 5, 12, 12)
+        run_script(self.SCRIPT, w, api=tazuo_api(w, PACK), with_file=False)
+        self.assertEqual(len(self.scans("tazuo")), 1)
+
 
 class TazUOBlacklist(DataDir, unittest.TestCase):
     SCRIPT = adapter_path("tazuo", "packrat-blacklist.py")

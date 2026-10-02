@@ -1,6 +1,6 @@
 import ast, json, os, re, sys, tempfile, unittest
 HERE = os.path.dirname(os.path.abspath(__file__))
-SCRIPTS = ["packrat-scanner.py", "packrat-character-refresh.py", "packrat-bridge.py", "packrat-panel.py"]
+SCRIPTS = ["packrat-scanner.py", "packrat-character-refresh.py", "packrat-house-map-refresh.py", "packrat-bridge.py", "packrat-panel.py"]
 
 def helper_source(text, name):
     m = re.search(r"^def %s\(.*?(?=^def |^[A-Z_]+ = |\Z)" % name, text, re.S | re.M)
@@ -58,14 +58,14 @@ class Paths(unittest.TestCase):
         self.assertRegex(stamp, r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}([+-]\d{2}:\d{2}|Z)$")
 
     def test_scan_v2_header_fields(self):
-        # Every script carries the adapter identity constants; the scanner and refresh (the two
-        # that write scan files) emit schemaVersion 2 and drop the old top-level "version": 1 key.
+        # Every script carries the adapter identity constants; the scanner and the two refreshes (the
+        # three that write scan files) emit schemaVersion 2 and drop the old top-level "version": 1 key.
         for s in SCRIPTS:
             t = read_text(os.path.join(HERE, s))
             self.assertIn('ADAPTER_ID = "tazuo"', t, s)
             self.assertIn('ADAPTER_VERSION = "2.11.0"', t, s)
             self.assertNotIn('"version": 1', t, s)
-        for s in ("packrat-scanner.py", "packrat-character-refresh.py"):
+        for s in ("packrat-scanner.py", "packrat-character-refresh.py", "packrat-house-map-refresh.py"):
             t = read_text(os.path.join(HERE, s))
             self.assertIn('"schemaVersion": 2', t, s)
 
