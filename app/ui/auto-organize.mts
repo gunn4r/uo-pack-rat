@@ -89,13 +89,13 @@ function paintContainers(): void {
   const d = draft!, host = part("auto-containers"), p = d.proposal;
   const head = [el("h3", { class: "t-md" }, "2. Containers it may use"), txt("Ticked containers are labelled for their group. Items are only ever taken from, and put into, labelled containers.", "t-sm muted")];
   if (!p) { if (!host.childElementCount) host.replaceChildren(...head); return; }
-  const focused = (document.activeElement as HTMLElement | null)?.dataset?.serial;
+  const focused = (document.activeElement as HTMLElement | null)?.dataset?.container;
   const chosen = new Set(d.containers ?? []);
   const sites = candidateGroups(p.candidates).map((g) => box("div", { class: "auto-site" },
     g.title ? el("h4", { class: "t-sm strong" }, g.title) : null,
     box("ul", { class: "auto-cands" }, ...g.rows.map((c) => {
       const note = candidateNote(c);
-      const cb = check({ label: `${c.name} · ${c.fill.items}/${c.fill.max}`, checked: chosen.has(c.serial), attrs: { "data-serial": String(c.serial) }, onChange: (on) => { toggle(c.serial, on); } });
+      const cb = check({ label: `${c.name} · ${c.fill.items}/${c.fill.max}`, checked: chosen.has(c.serial), attrs: { "data-container": String(c.serial) }, onChange: (on) => { toggle(c.serial, on); } });
       return box("li", { class: "auto-cand" }, cb.root, note ? txt(note, "t-sm muted") : null);
     }))));
   const out = p.unusable.length
@@ -103,7 +103,7 @@ function paintContainers(): void {
       box("ul", { class: "auto-unusable-list" }, ...p.unusable.map((u) => box("li", {}, txt(`${u.name}: ${u.reason}`, "t-sm muted")))))
     : null;
   host.replaceChildren(...head, ...(p.candidates.length ? [...sites, txt(TICK_SCOPE_TEXT, "t-sm muted auto-scope")] : [txt("No container on the ground can be used yet. Scan your house in game first.", "muted")]), ...compactChildren([out]));
-  if (focused) host.querySelector<HTMLElement>(`input[data-serial="${CSS.escape(focused)}"]`)?.focus();
+  if (focused) host.querySelector<HTMLElement>(`input[data-container="${CSS.escape(focused)}"]`)?.focus();
 }
 function paintProposal(): void {
   const d = draft!, host = part("auto-proposal"), p = d.proposal;
