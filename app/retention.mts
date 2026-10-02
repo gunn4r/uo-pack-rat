@@ -6,7 +6,7 @@
 // whatever its age, does the newest scan that opened each root container (it decides that root's
 // contents, even when it found the root empty), every `_vault` tombstone (a Forget or Forget character
 // still in force; they are one file per root or character, so they never pile up), for each of the
-// player's houses the scan carrying its newest capture and every scan whose furniture or not-opened chests it still shows (issue #10), and every scan
+// player's houses the scan carrying its newest capture and every scan whose furniture or ground chests it still shows (issue #10), and every scan
 // something in the fold still carries the timestamp of (a character's card and worn set, a bag a later
 // scan could not open, which keeps what an older one saw in it), and a house's captures from its oldest kept one on (issue #10). Then the fold (and every house still listed) of what is left is
 // compared with the fold of everything, and when they differ nothing is pruned at all.
@@ -67,7 +67,7 @@ export function scansToPrune(scans: ScanFile[], fold: (s: ScanV2[]) => Inventory
   for (const s of newest.values()) keep.add(s.file);
   let folded: Inventory | undefined;
   const allFold = (): Inventory => (folded ??= fold(scans.map((s) => s.doc)));
-  // Houses (issue #10): the map is drawn from a house's newest capture and its furniture and not-opened chests merged across captures, so those scans stay however old, for a house that is not superseded (redesigned or moved) and that holds a ground chest of the fold on its footprint (the player's own; a boat or a house only visited ages out like any scan).
+  // Houses (issue #10): the map is drawn from a house's newest capture and its furniture and every ground chest a capture saw merged across captures, so those scans stay however old, for a house that is not superseded (redesigned or moved) and that holds a ground chest of the fold on its footprint (the player's own; a boat or a house only visited ages out like any scan).
   const groups = houseGroups(scans.map((s) => s.doc));
   if (groups.length) {
     const ground = Object.values(allFold().containers).filter((c) => c.parent == null && c.kind === "ground" && c.pos && Number.isFinite(c.pos.x) && Number.isFinite(c.pos.y));
@@ -88,7 +88,7 @@ export function scansToPrune(scans: ScanFile[], fold: (s: ScanV2[]) => Inventory
     ...Object.values(all.characters).map((c) => c.scannedAt),
   ]);
   for (const s of scans) if (live.has(s.doc.scannedAt)) keep.add(s.file);
-  // A house with any kept capture (kept for a house, a root or anything else) keeps its furniture's and not-opened chests' captures and every capture from its oldest kept one on, so what is left merges to the same newest capture, furniture and chests; a superseded one also keeps the captures superseding it, so it stays superseded. Repeated until nothing more is added.
+  // A house with any kept capture (kept for a house, a root or anything else) keeps its furniture's and ground chests' captures and every capture from its oldest kept one on, so what is left merges to the same newest capture, furniture and chests; a superseded one also keeps the captures superseding it, so it stays superseded. Repeated until nothing more is added.
   for (let grew = true; grew;) {
     grew = false;
     for (const g of groups) {
@@ -116,7 +116,7 @@ export function sameFold(a: Inventory, b: Inventory): boolean {
   return same(a.characters, b.characters) && same(a.containers, b.containers) && same(a.items, b.items);
 }
 
-// Every house the kept scans still list is listed the same by all of them: the same newest capture, tiles, furniture and not-opened chests (issue #10). A house may drop out (a visited house or a boat ageing out), but pruning must never bring back furniture or a chest a newer capture erased or a footprint a newer one superseded. The keep rules in scansToPrune make this hold; it is checked as a backstop.
+// Every house the kept scans still list is listed the same by all of them: the same newest capture, tiles, furniture and ground chests (every ground container a capture saw, issue #10). A house may drop out (a visited house or a boat ageing out), but pruning must never bring back furniture or a chest a newer capture erased or a footprint a newer one superseded. The keep rules in scansToPrune make this hold; it is checked as a backstop.
 function sameHouses(all: ScanFile[], kept: ScanFile[]): boolean {
   const shape = (h: ReturnType<typeof latestHouses>[number]): string => JSON.stringify([h.capturedAt, h.tiles, h.items, h.containers]);
   const before = new Map(latestHouses(all.map((s) => s.doc)).map((h) => [h.id, shape(h)]));

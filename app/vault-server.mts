@@ -788,7 +788,7 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
     }
     let m = houseMemo.models.get(house.id);
     if (!m) {
-      // The chests this house's captures saw that no scan has opened: on the map from the first scan, named from tiledata, as not opened yet. A chest the fold knows is drawn from the fold, and the fold, Organize and retention never see these.
+      // The chests this house's captures saw that no scan has opened: on the map from the first scan, named from tiledata, as not opened yet. A chest the fold knows is drawn from the fold. The fold and Organize never see these; retention keeps the captures that contribute them.
       const seen = house.containers.flatMap(([serial, graphic, x, y, z]) => inv.containers[String(serial)] ? [] : [{ serial, name: td?.info(graphic)?.name || "container", facet: house.facet, x, y, z, opened: false }]);
       m = buildHouseModel(house, td, [...houseMemo.ground, ...seen]);
       houseMemo.models.set(house.id, m);
