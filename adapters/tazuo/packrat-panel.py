@@ -88,6 +88,7 @@ SELF = "packrat-panel.py"
 SCANNER, REFRESH, BRIDGE, BLACKLIST = "packrat-scanner.py", "packrat-character-refresh.py", "packrat-bridge.py", "packrat-blacklist.py"
 HOUSE = "packrat-house-map-refresh.py"
 LABELS = {SCANNER: "scan", REFRESH: "character refresh", HOUSE: "house map refresh", BRIDGE: "bridge", BLACKLIST: "blacklist"}
+RUNNING = {SCANNER: "scan", REFRESH: "refresh", HOUSE: "house", BRIDGE: "bridge", BLACKLIST: "blacklist"}   # the Running line's words: all five fit the window
 
 DATA = data_dir()
 HEARTBEAT = os.path.join(DATA, "bridge", "tazuo", "panel.json")
@@ -318,8 +319,12 @@ def hotkey_text(hk):
     return "%s shows/hides this window." % hotkey_name(hk)
 
 
+HOUSE_FILE = re.compile(r"-house(-\d+)?\.json$")
+
+
 def last_scan():
-    """mtime of this character's newest scan file in the inbox or scans/ (names only, never opened)."""
+    """mtime of this character's newest scan file in the inbox or scans/ (names only, never opened). A house map
+    refresh's file (named "-house", in both folders) is not a scan: it reads nothing Put away waits for."""
     slug = re.sub(r"[^A-Za-z0-9_-]", "_", state["character"])
     if not slug:
         return None
@@ -331,7 +336,7 @@ def last_scan():
                 for i, e in enumerate(it):
                     if i >= MAX_DIR_ENTRIES:
                         break
-                    if pattern.match(e.name) and e.is_file(follow_symlinks=False):
+                    if pattern.match(e.name) and not HOUSE_FILE.search(e.name) and e.is_file(follow_symlinks=False):
                         mt = e.stat(follow_symlinks=False).st_mtime
                         newest = mt if newest is None or mt > newest else newest
         except Exception:
@@ -363,7 +368,7 @@ def refresh():
             say("The %s finished." % LABELS[name])
         state["quiet"].discard(name)
     state["was_running"] = set(running)
-    set_text("running", "Running: " + (", ".join(LABELS[n] for n in running) or "nothing"))
+    set_text("running", "Running: " + (", ".join(RUNNING[n] for n in running) or "nothing"))
     set_text("bridge_btn", "Stop bridge" if BRIDGE in running else "Start bridge")
     set_text("bridge", "Bridge: " + ("on" if BRIDGE in running else "off"))
     t = last_scan()

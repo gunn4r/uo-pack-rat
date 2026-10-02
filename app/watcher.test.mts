@@ -71,7 +71,7 @@ test("[fast] ingestFile: a valid inbox file lands in scansDir under its accepted
   assert.equal(existsSync(src), false);
 });
 
-test("[fast] ingestFile: a house-only file is accepted as it is, and beside a scan of the same character and second rather than as its duplicate", () => {
+test("[fast] ingestFile: a house-only file is accepted as <Char>-<stamp>-house.json beside a scan of the same character and second, and once only", () => {
   const inboxDir = tmp("qm-inbox-house-"), scansDir = tmp("qm-scans-house-");
   writeFileSync(join(inboxDir, "Fixture-20260101-120000.json"), JSON.stringify(validDoc()));
   assert.equal(ingestFile({ path: join(inboxDir, "Fixture-20260101-120000.json"), scansDir, shard: SHARD }).ok, true);
@@ -81,9 +81,13 @@ test("[fast] ingestFile: a house-only file is accepted as it is, and beside a sc
   const result = ingestFile({ path: src, scansDir, shard: SHARD });
   assert.equal(result.ok, true, result.reason);
   assert.equal(result.duplicate, undefined);
-  assert.equal(result.file, "Fixture-20260101T120000+0000-2.json");
+  assert.equal(result.file, "Fixture-20260101T120000+0000-house.json");
   assert.deepEqual(JSON.parse(readFileSync(join(scansDir, result.file!), "utf8")).house, house);
   assert.equal(existsSync(src), false);
+  writeFileSync(src, JSON.stringify(validDoc({ kind: "house", house })));
+  const again = ingestFile({ path: src, scansDir, shard: SHARD });
+  assert.deepEqual([again.file, again.duplicate], ["Fixture-20260101T120000+0000-house.json", true]);
+  assert.deepEqual(readdirSync(scansDir).sort(), ["Fixture-20260101T120000+0000-house.json", "Fixture-20260101T120000+0000.json"]);
 });
 
 test("[fast] ingestFile: a schema-invalid doc reports the validation reason and leaves the file alone", () => {

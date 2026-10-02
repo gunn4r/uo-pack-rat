@@ -307,6 +307,30 @@ class Panel(unittest.TestCase):
         self.assertEqual([c for c in api.log if c[0] == "play"], [("play", "packrat-character-refresh.py")], "its file would read as the run's scan")
         self.assertIn("Put away is running;", seen["refused"])
 
+    def test_a_house_map_refresh_is_not_a_scan_for_the_last_scan_line_or_put_aways_wait(self):
+        w, api = self.house([PACK])
+        seen = {}
+        self.write({}, "scans", "Tester-20261002T120000+0000-house.json")
+        w.clock.at(0.5, lambda: seen.setdefault("only_house", self.labels(api)))
+        w.clock.at(1, lambda: api.click(self.control(api, "Put away...")))
+        w.clock.at(3, lambda: self.write({}, "inbox", "tazuo", "Tester-20261002-120005-house.json"))
+        w.clock.at(5, lambda: seen.setdefault("asked", os.path.exists(self.path("inbox", "tazuo", "putaway-request.json"))))
+        w.clock.at(6, lambda: (api.running.remove("packrat-character-refresh.py"), self.write({}, "inbox", "tazuo", "Tester-20261002-120010-quick.json")))
+        w.clock.at(8, lambda: seen.setdefault("asked_after", os.path.exists(self.path("inbox", "tazuo", "putaway-request.json"))))
+        self.run_panel(w, api, until_s=9)
+        self.assertIn("Last scan: none yet", seen["only_house"])
+        self.assertFalse(seen["asked"], "a house file is not the scan Put away waits for")
+        self.assertTrue(seen["asked_after"])
+
+    def test_the_running_line_fits_with_every_script_running(self):
+        w = World()
+        api = tazuo_panel_api(w, loaded=list(ALL))
+        api.running.extend(ALL)
+        self.run_panel(w, api, until_s=4)
+        line = next(t for t in self.labels(api) if t.startswith("Running:"))
+        self.assertLessEqual(len(line), 48, line)
+        self.assertEqual(line.count(","), 4, line)
+
     def test_a_trip_that_never_reports_back_ends_the_run_and_writes_the_stop_flag(self):
         w, api = self.house([PACK])
 

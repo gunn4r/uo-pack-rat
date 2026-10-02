@@ -6,7 +6,8 @@
 // acceptedName(doc, existingNames) — the scans/ filename for a v2 doc: <slug>-<stamp>.json, slug =
 // character with anything outside [A-Za-z0-9_-] turned to "_", stamp = scannedAt with ":" removed
 // and "-" removed from the date/time (kept only as the offset's sign, if any; "Z" stays "Z");
-// collisions against existingNames get "-2", "-3", ... appended before ".json".
+// a house-only file (kind "house") gets "-house" after the stamp; collisions against existingNames get
+// "-2", "-3", ... appended before ".json".
 //
 // ingestFile({path, scansDir, shard, log}) — read + JSON.parse the inbox file, upgradeScan it,
 // validateScan it, write the result into scansDir under its acceptedName (app/atomic-write.mts's
@@ -102,7 +103,8 @@ export interface NamedScan {
 export function acceptedName(doc: NamedScan, existingNames: Set<string> = new Set()): string {
   const slug = String(doc.character ?? "").replace(/[^A-Za-z0-9_-]/g, "_");
   const stamp = stampFor(doc.scannedAt);
-  const base = `${slug}-${stamp}`;
+  // A house-only file (issue #10) keeps its "-house" suffix, so a name alone tells it from a scan (the TazUO panel's last-scan line reads names).
+  const base = `${slug}-${stamp}${doc.kind === "house" ? "-house" : ""}`;
   let name = `${base}.json`;
   for (let n = 2; existingNames.has(name); n++) name = `${base}-${n}.json`;
   return name;
