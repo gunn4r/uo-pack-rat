@@ -1,10 +1,10 @@
-// house-names.test.mts — app/house-names.mts, <data>/house-map.json (issue #164): the name rules (trimmed, 1 to 60 characters, no control characters, empty removes), the optional bounds, unknown entry fields kept, the atomic write, and a corrupt file moved aside. Tags: [fast]. Run: node --test app/house-names.test.mts
+// house-names.test.mts — app/house-names.mts, <data>/house-map.json (issue #164): the name rules (trimmed, 1 to 60 characters, no control characters, empty removes), the optional bounds, the drawn areas (issue #10: names, palette, levels, rectangles on the house, limits), unknown entry and area fields kept, the atomic write, and a corrupt file moved aside. Tags: [fast]. Run: node --test app/house-names.test.mts
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { existsSync, mkdtempSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import { checkHouseEntry, isHouseId, readHouseMap, saveHouseEntry, emptyHouseMap, MAX_HOUSES, MAX_HOUSE_MAP_BYTES, type HouseMapDoc } from "./house-names.mts";
+import { checkHouseEntry, isHouseId, readHouseMap, saveHouseEntry, emptyHouseMap, MAX_HOUSES, MAX_HOUSE_MAP_BYTES, MAX_AREAS, MAX_RECTS, AREA_COLORS, AREA_MARGIN, MAX_ENTRY_BYTES, type HouseMapDoc, type HouseArea } from "./house-names.mts";
 
 test("[fast] house names: a name is trimmed, 1 to 60 characters, with no control characters; an empty one removes the entry", () => {
   assert.deepEqual(checkHouseEntry({ name: "  Main house  " }), { ok: true, entry: { name: "Main house" } });
@@ -25,6 +25,75 @@ test("[fast] house names: bounds are optional integers on a facet, and unknown e
   assert.deepEqual(checkHouseEntry({ name: "Forge", bounds, rooms: { a: 1 } }), { ok: true, entry: { name: "Forge", bounds, rooms: { a: 1 } } });
   assert.deepEqual(checkHouseEntry({ name: "Forge", bounds: { ...bounds, facet: null } }), { ok: true, entry: { name: "Forge", bounds: { ...bounds, facet: null } } });
   for (const b of [{ ...bounds, x0: 1.5 }, { ...bounds, y1: "3" }, { x0: 1, y0: 2 }, [], 7]) assert.equal(checkHouseEntry({ name: "Forge", bounds: b }).ok, false, JSON.stringify(b));
+});
+
+const B = { x0: 100, y0: 200, x1: 117, y1: 217, facet: 1 };
+const area = (o: Partial<HouseArea> = {}): HouseArea => ({ id: "a1", name: "Reagents", level: 0, color: "area-1", rects: [{ x0: 101, y0: 201, x1: 104, y1: 203 }], ...o });
+const err = (v: unknown): string => { const r = checkHouseEntry(v); assert.equal(r.ok, false, JSON.stringify(v)); return (r as { error: string }).error; };
+
+test("[fast] house areas: an area is an id, a trimmed name, a level, a palette colour and rectangles; unknown fields on the entry and the area are kept", () => {
+  const r = checkHouseEntry({ name: "Forge", bounds: B, areas: [area({ name: "  Reagents ", note: "kept" }), area({ id: "b-2_x", level: 1, color: "area-8", rects: [{ x0: 110, y0: 210, x1: 110, y1: 210 }, { x0: 100, y0: 200, x1: 117, y1: 217 }] })], notes: "kept" });
+  assert.deepEqual(r, { ok: true, entry: { name: "Forge", bounds: B, notes: "kept", areas: [area({ note: "kept" }), area({ id: "b-2_x", level: 1, color: "area-8", rects: [{ x0: 110, y0: 210, x1: 110, y1: 210 }, { x0: 100, y0: 200, x1: 117, y1: 217 }] })] } });
+  assert.deepEqual(AREA_COLORS, ["area-1", "area-2", "area-3", "area-4", "area-5", "area-6", "area-7", "area-8"]);
+});
+
+test("[fast] house areas: a house with areas and no name is kept with an empty name; no name and no areas removes the entry", () => {
+  assert.deepEqual(checkHouseEntry({ name: "  ", bounds: B, areas: [area()] }), { ok: true, entry: { name: "", bounds: B, areas: [area()] } });
+  assert.deepEqual(checkHouseEntry({ name: "", bounds: B, areas: [] }), { ok: true, entry: null });
+  assert.deepEqual(checkHouseEntry({ name: "Forge", bounds: B, areas: [] }), { ok: true, entry: { name: "Forge", bounds: B } }, "an empty list is not stored");
+});
+
+test("[fast] house areas: bad names, ids, levels, colours and rectangles are refused", () => {
+  assert.match(err({ name: "", bounds: B, areas: [area({ name: " " })] }), /1 to 60 characters/);
+  assert.match(err({ name: "", bounds: B, areas: [area({ name: "x".repeat(61) })] }), /1 to 60 characters/);
+  assert.match(err({ name: "", bounds: B, areas: [area({ name: "a\nb" })] }), /control characters/);
+  assert.match(err({ name: "", bounds: B, areas: [area({ name: 5 as unknown as string })] }), /name must be a string/);
+  for (const id of ["", "a b", "x".repeat(25), 7, "a/b"]) assert.match(err({ name: "", bounds: B, areas: [area({ id: id as string })] }), /id/, String(id));
+  assert.match(err({ name: "", bounds: B, areas: [area(), area({ name: "Other" })] }), /share the id a1/);
+  for (const level of [-1, 1.5, 16, "0"]) assert.match(err({ name: "", bounds: B, areas: [area({ level: level as number })] }), /level/, String(level));
+  for (const color of ["area-0", "area-9", "#ff0000", "red", "var(--x)", null]) assert.match(err({ name: "", bounds: B, areas: [area({ color: color as string })] }), /colour must be one of area-1/, String(color));
+  for (const rects of [[], "x", [{ x0: 101, y0: 201, x1: 100, y1: 203 }], [{ x0: 101, y0: 201, x1: 102 }], [{ x0: 101.5, y0: 201, x1: 102, y1: 203 }], [7]]) assert.ok(err({ name: "", bounds: B, areas: [area({ rects: rects as HouseArea["rects"] })] }), JSON.stringify(rects));
+  assert.match(err({ name: "", bounds: B, areas: "x" }), /must be a list/);
+  assert.match(err({ name: "", bounds: B, areas: [7] }), /must be an object/);
+  assert.match(err({ name: "Forge", areas: [area()] }), /need the house's bounds/);
+});
+
+test("[fast] house areas: a rectangle may reach a few tiles past the house's bounds, no further", () => {
+  const ok = (r: HouseArea["rects"][number]): boolean => checkHouseEntry({ name: "", bounds: B, areas: [area({ rects: [r] })] }).ok;
+  assert.equal(ok({ x0: B.x0 - AREA_MARGIN, y0: B.y0 - AREA_MARGIN, x1: B.x1 + AREA_MARGIN, y1: B.y1 + AREA_MARGIN }), true);
+  assert.equal(ok({ x0: B.x0 - AREA_MARGIN - 1, y0: B.y0, x1: B.x0, y1: B.y0 }), false);
+  assert.equal(ok({ x0: B.x1, y0: B.y1, x1: B.x1, y1: B.y1 + AREA_MARGIN + 1 }), false);
+  assert.match(err({ name: "", bounds: B, areas: [area({ rects: [{ x0: 5000, y0: 5000, x1: 5001, y1: 5001 }] })] }), /lie on the house/);
+});
+
+test("[fast] house areas: at most 32 areas a house and 16 rectangles an area; the largest entry fits the PUT cap", () => {
+  const rects = Array.from({ length: MAX_RECTS }, (_, i) => ({ x0: 100 + i, y0: 200, x1: 100 + i, y1: 217 }));
+  const many = Array.from({ length: MAX_AREAS }, (_, i) => area({ id: `area-${i}`, name: "👩\u200d🔧".repeat(12), color: AREA_COLORS[i % 8]!, rects }));
+  const full = checkHouseEntry({ name: "x".repeat(60), bounds: B, areas: many });
+  assert.equal(full.ok, true);
+  assert.ok(Buffer.byteLength(JSON.stringify((full as { entry: unknown }).entry)) < MAX_ENTRY_BYTES, "the biggest valid entry fits the PUT body cap");
+  assert.match(err({ name: "", bounds: B, areas: [...many, area({ id: "one-more" })] }), /at most 32 areas/);
+  assert.match(err({ name: "", bounds: B, areas: [area({ rects: [...rects, rects[0]!] })] }), /1 to 16 rectangles/);
+});
+
+test("[fast] house areas: the entry round-trips through the file, and a corrupt area drops only its house's entry on read", () => {
+  const dir = mkdtempSync(join(tmpdir(), "pr-names-")), file = join(dir, "house-map.json");
+  assert.equal(saveHouseEntry(file, emptyHouseMap(), "1-100-200", { name: "", bounds: B, areas: [area()] }), null);
+  assert.deepEqual(readHouseMap(file).doc.houses, { "1-100-200": { name: "", bounds: B, areas: [area()] } });
+  writeFileSync(file, JSON.stringify({ version: 1, houses: { "1-100-200": { name: "Good", bounds: B, areas: [area()] }, "1-1-1": { name: "Bad", bounds: B, areas: [area({ color: "#f00" })] } } }));
+  const r = readHouseMap(file);
+  assert.deepEqual(Object.keys(r.doc.houses), ["1-100-200"]);
+  assert.match(r.problem ?? "", /1 entry/);
+});
+
+test("[fast] house areas: carried over to a redesigned house (a new id, an overlapping footprint), the areas save under the new bounds", () => {
+  const dir = mkdtempSync(join(tmpdir(), "pr-names-")), file = join(dir, "house-map.json");
+  assert.equal(saveHouseEntry(file, emptyHouseMap(), "1-108-208", { name: "Forge", bounds: B, areas: [area()] }), null);
+  const old = readHouseMap(file).doc.houses["1-108-208"]!, moved = { x0: 98, y0: 199, x1: 115, y1: 216, facet: 1 };
+  const carried = checkHouseEntry({ name: old.name, bounds: moved, areas: old.areas });
+  assert.equal(carried.ok, true);
+  assert.equal(saveHouseEntry(file, readHouseMap(file).doc, "1-106-207", (carried as { entry: HouseMapDoc["houses"][string] }).entry), null);
+  assert.deepEqual(readHouseMap(file).doc.houses["1-106-207"], { name: "Forge", bounds: moved, areas: [area()] });
 });
 
 test("[fast] house names: an id is <facet>-<x>-<y>, the facet a number or x", () => {

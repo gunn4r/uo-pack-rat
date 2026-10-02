@@ -567,9 +567,14 @@ export type FacetMapReason = "override-missing" | "no-client" | "no-tazuo-profil
 export interface HousesApiResponse { ok: boolean; tiledata: boolean; tiledataFrom: TiledataFrom; houses: HouseSummary[] }
 // GET /api/houses/<id>
 export interface HouseApiResponse { ok: boolean; house: HouseModel }
-// GET /api/house-map and PUT /api/house-map/<id> (app/house-names.mts, issue #164): the player's names by house id, each
-// with the footprint the house had when it was named. Other fields an entry may carry later are kept, unread.
+// GET /api/house-map and PUT /api/house-map/<id> (app/house-names.mts, issues #164 and #10): the player's names and drawn
+// areas by house id, each with the footprint the house had when it was named or its areas drawn. `name` is "" for a house
+// with areas but no name. Other fields an entry or an area may carry later are kept, unread.
 export interface HouseBounds { x0: number; y0: number; x1: number; y1: number; facet: number | null }
-export interface HouseMapEntry { name: string; bounds?: HouseBounds | undefined }
+// World tiles, inclusive.
+export interface AreaRect { x0: number; y0: number; x1: number; y1: number }
+// `color` is a token name, "area-1" … "area-8" (--color-area-N).
+export interface HouseArea { id: string; name: string; level: number; color: string; rects: AreaRect[] }
+export interface HouseMapEntry { name: string; bounds?: HouseBounds | undefined; areas?: HouseArea[] | undefined }
 export interface HouseMapApiResponse { ok: boolean; houses: Record<string, HouseMapEntry> }
 export interface HouseMapPutApiResponse { ok: boolean; entry: HouseMapEntry | null }
