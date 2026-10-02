@@ -244,7 +244,7 @@ export function plainGrid(inv: Pick<InventoryData, "containers">, houses: readon
 }
 
 // ---------------------------------------------------------------- the scene of one level
-// What ui/house-map.mts draws for a level, in drawing units: the walls of the level below as faint tiles (on an upper level), the floor and stair tiles (with step bands), each standing spot's dashed reach, then every solid thing back to front: cut walls and windows, the foundation's lip, roof edges, furniture, doors and teleporters, the stacks (one box per chest at its real height, lifted clear of one below it that shares its z) and the standing spots' figures.
+// What ui/house-map.mts draws for a level, in drawing units: the walls of the level below as faint tiles (on an upper level), the floor and stair tiles (with step bands), each standing spot's dashed reach, then every solid thing back to front: cut walls and windows and the foundation's lip in their material's colour (w-<family>), roof edges, furniture, doors and teleporters, the stacks (one box per chest at its real height, lifted clear of one below it that shares its z) and the standing spots' figures.
 export interface Prism { top: string; left: string; right: string }
 export type Piece =
   | { kind: "solid"; x: number; y: number; z: number; cls: string; prism: Prism }
@@ -271,9 +271,9 @@ export function sceneOf(m: HouseModel, level: number, view: View): Scene {
       const z = c.z - base;
       floors.push({ pts: pts(tilePolygon(x, y, z, view)), cls: `map-floor f-${c.family}${c.room != null && yard.has(c.room) ? " yard" : ""}${c.kind === "stair" ? " map-stair" : ""}` });
       if (c.kind === "stair") for (const k of [1, 3]) floors.push({ pts: pts(band(x, y, z, view, k / 4, (k + 1) / 4)), cls: "map-step" });
-      if (c.lip) solids.push({ kind: "solid", x, y, z, cls: "map-lip", prism: prism(x, y, z, LIP_H, view, 0) });
+      if (c.lip) solids.push({ kind: "solid", x, y, z, cls: `map-lip w-${c.family}`, prism: prism(x, y, z, LIP_H, view, 0) });
     } else if (c.kind === "roof") solids.push({ kind: "solid", x, y, z: 0, cls: "map-roof", prism: prism(x, y, 0, ROOF_H, view, 0) });
-    else solids.push({ kind: "solid", x, y, z: 0, cls: c.kind === "window" ? "map-wall window" : "map-wall", prism: prism(x, y, 0, c.kind === "window" ? WINDOW_H : WALL_H, view, 0.08) });
+    else solids.push({ kind: "solid", x, y, z: 0, cls: `map-wall${c.kind === "window" ? " window" : ""} w-${c.family}`, prism: prism(x, y, 0, c.kind === "window" ? WINDOW_H : WALL_H, view, 0.08) });
   }
   for (const f of m.furniture) {
     if (f.level !== level) continue;
