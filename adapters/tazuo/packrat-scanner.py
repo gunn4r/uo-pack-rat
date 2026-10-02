@@ -68,7 +68,7 @@ def read_blacklist(path):
 
 
 ADAPTER_ID = "tazuo"
-ADAPTER_VERSION = "2.10.0"
+ADAPTER_VERSION = "2.11.0"
 CAPABILITIES = {
     "layers": ["OneHanded", "TwoHanded", "Shoes", "Pants", "Shirt", "Helmet", "Gloves",
                "Ring", "Talisman", "Necklace", "Waist", "Torso", "Bracelet", "Tunic",
@@ -83,6 +83,7 @@ HOUSE_RADIUS = 40        # tiles searched around the player for the house's tile
 HOUSE_MAX_TILES = 20000  # a capture larger than this is left out rather than bloating the scan
 HOUSE_ITEM_REACH = 18    # the server sends ground items within about this many tiles
 HOUSE_MAX_ITEMS = 5000   # the scan schema's cap on house items: past it the nearest are kept, so the scan file still validates
+HOUSE_MAX_CONTAINERS = 5000  # the scan schema's cap on the house's containers: past it the nearest are kept
 SCAN_GROUND = True       # False = backpack/bank only, never touch containers on the ground
 GROUND_ONLY_AT_HOME = True   # when the bank box is open (you are at a bank) skip ground containers entirely
 PAUSE_OPEN = 1.2         # after UseObject on a container (raise on laggy connections)
@@ -233,7 +234,7 @@ def root_entry(serial, kind, label):
 
 
 def house_capture(px, py):
-    """The house the player stands in, from the client's own house tiles (issue #10), or None outside a house or on a build without the multi calls. Only the tiles connected to the player's tile are kept (8-connected in x/y, across every z), so a neighbouring house is left out. Furniture and fixtures on the ground inside that footprint are recorded too, as `items` (left out when the ground cannot be read); containers are not (they are roots). A house of more than HOUSE_MAX_TILES tiles is left out and its count noted in HOUSE_TOO_LARGE."""
+    """The house the player stands in, from the client's own house tiles (issue #10), or None outside a house or on a build without the multi calls. Only the tiles connected to the player's tile are kept (8-connected in x/y, across every z), so a neighbouring house is left out. What stands on the ground inside that footprint is recorded too (both left out when the ground cannot be read): furniture and fixtures as `items`, and every container as `containers` (2.11.0), opened or not, so the map shows a chest from the first scan even when it stood too far away to open; corpses, trash containers and blacklisted ones are left out. Names come from tiledata in the app, so this asks the server nothing. A house of more than HOUSE_MAX_TILES tiles is left out and its count noted in HOUSE_TOO_LARGE."""
     at = getattr(API, "GetMultisAt", None)
     area = getattr(API, "GetMultisInArea", None)
     if at is None or area is None:
@@ -279,17 +280,27 @@ def house_capture(px, py):
         ground = None
     if ground is None:
         return house
-    items = []
+    items, chests = [], []
     for g in ground:
         try:
-            if (int(g.X), int(g.Y)) not in keep or is_container(g, str(getattr(g, "Name", "") or "")):
+            if (int(g.X), int(g.Y)) not in keep:
                 continue
-            items.append([int(g.Serial), int(getattr(g, "Graphic", 0) or 0), int(g.X), int(g.Y), int(getattr(g, "Z", 0) or 0)])
+            row = [int(g.Serial), int(getattr(g, "Graphic", 0) or 0), int(g.X), int(g.Y), int(getattr(g, "Z", 0) or 0)]
+            name = str(getattr(g, "Name", "") or "")
+            if not is_container(g, name):
+                items.append(row)
+            elif row[0] not in BLACKLIST and not TRASH_RE.search(name):
+                chests.append(row)
         except Exception:
             continue
-    items.sort(key=lambda i: (max(abs(i[2] - px), abs(i[3] - py)), i[0]))
+
+    def nearest(row):
+        return (max(abs(row[2] - px), abs(row[3] - py)), row[0])
+    items.sort(key=nearest)
     HOUSE_LEFT_OUT.update(i[0] for i in items[HOUSE_MAX_ITEMS:])
     house["items"] = sorted(items[:HOUSE_MAX_ITEMS])
+    chests.sort(key=nearest)
+    house["containers"] = sorted(chests[:HOUSE_MAX_CONTAINERS])
     return house
 
 

@@ -453,6 +453,19 @@ class TazUOScanner(DataDir, unittest.TestCase):
         [s] = self.scans("tazuo")
         self.assertEqual(s["house"]["items"], [[0x40000040, 0x0B34, 12, 12, 7]], "the chest beside the player is a root, not furniture")
 
+    def test_every_container_inside_the_house_is_listed_with_its_place_and_the_far_ones_are_not_opened(self):
+        w = World(); home(w); w.multis = house_tiles(5, 5, 12, 12)
+        w.add(0x40000050, 0, name="Metal Chest", X=15, Y=15, Z=7)   # inside, five tiles away: past the 3-tile opening reach
+        w.items[0x40000050].Graphic = 0x0E7C
+        w.add(0x40000051, 0, name="Wooden Chest", X=20, Y=20)      # in the server's reach, outside the footprint
+        w.add(0x40000052, 0, name="trash barrel", X=14, Y=14)      # a trash container is never listed
+        self.scan(w)
+        [s] = self.scans("tazuo")
+        self.assertEqual(s["house"]["containers"], [[CHEST, 0x0E75, 11, 10, 0], [0x40000050, 0x0E7C, 15, 15, 7]])
+        self.assertNotIn(0x40000050, self.opened(w))
+        self.assertNotIn(0x40000050, [r["serial"] for r in s["roots"]])
+        self.assertEqual(s["house"]["items"], [], "a container is never furniture")
+
     def test_past_the_schemas_5000_house_items_the_farthest_are_left_out(self):
         w = World(); home(w); w.multis = house_tiles(5, 5, 12, 12)
         for i in range(5000):
@@ -480,6 +493,7 @@ class TazUOScanner(DataDir, unittest.TestCase):
         [s] = self.scans("tazuo")
         self.assertEqual(len(s["house"]["tiles"]), 144)
         self.assertNotIn("items", s["house"], "an absent list erases nothing the app knew; an empty one would")
+        self.assertNotIn("containers", s["house"], "an absent list erases nothing the app knew")
         self.assertTrue(self.root(s, CHEST)["opened"])
         self.assertIn("  house: 144 tiles, furniture not read", w.messages)
 

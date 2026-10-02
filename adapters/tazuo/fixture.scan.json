@@ -7311,7 +7311,7 @@
  "schemaVersion": 2,
  "adapter": {
   "id": "tazuo",
-  "version": "2.10.0",
+  "version": "2.11.0",
   "client": "TazUO",
   "clientVersion": null,
   "capabilities": {
@@ -7378,6 +7378,15 @@
    [
     1073799999,
     2868,
+    1,
+    1,
+    7
+   ]
+  ],
+  "containers": [
+   [
+    1073799998,
+    3708,
     1,
     1,
     7
