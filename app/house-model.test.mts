@@ -3,7 +3,9 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { buildHouseModel, letterOf, materialFamily, plotSize, type HouseModel, type Cell } from "./house-model.mts";
 import type { HouseItem, HouseTile } from "./house-capture.mts";
-import { G, fixtureTileData, courtyardHouse, stairHouse, towerHouse, roofHouse, hallHouse, vaultHouse, castleHouse, foundationHouse } from "./house-fixture.mts";
+import { FLAG, readTileData } from "./tiledata.mts";
+import { syntheticTileData } from "./tiledata-fixture.mts";
+import { G, FIXTURE_TILES, fixtureTileData, courtyardHouse, stairHouse, towerHouse, roofHouse, hallHouse, vaultHouse, castleHouse, foundationHouse } from "./house-fixture.mts";
 
 const td = fixtureTileData();
 const cell = (m: HouseModel, level: number, x: number, y: number): Cell | undefined => m.cells.find((c) => c.level === level && c.x === x && c.y === y);
@@ -191,6 +193,17 @@ test("[fast] house model: impassable furniture and doors are kept, passable deco
   assert.deepEqual(m.furniture.map((f) => [f.kind, f.name, f.height]), [["block", "table", 6], ["door", "wooden door", 20]]);
   assert.equal(cell(m, 0, 1009, 2010)!.doorway, true);
   assert.deepEqual(buildHouseModel(courtyardHouse(), null, []).furniture, []);
+});
+
+test("[fast] house model: the house's own multi item (nearest the centre) is dropped, a telescope piece elsewhere and an ordinary item stay", () => {
+  const tiles = readTileData(syntheticTileData([...FIXTURE_TILES, { graphic: 0x147b, flags: FLAG.impassable, height: 6, name: "telescope" }, { graphic: 0x0a2a, flags: FLAG.impassable, height: 6, name: "stool" }]));
+  const h = courtyardHouse();
+  const items = (extra: HouseItem[]) => buildHouseModel({ ...h, items: [...h.items, ...extra] }, tiles, []).furniture.map((f) => f.serial).sort();
+  const base = [0x40000101, 0x40000103];
+  assert.deepEqual(items([[0x40000f01, 0x147b, 1009, 2009, 7], [0x40000f02, 0x147b, 1003, 2012, 7], [0x40000f03, 0x0a2a, 1005, 2005, 7]]), [...base, 0x40000f02, 0x40000f03]);
+  assert.deepEqual(items([[0x40000f02, 0x147b, 1003, 2012, 7]]), [...base, 0x40000f02], "a lone in-range item far from the centre is a telescope, not the house");
+  assert.deepEqual(items([[0x40000f02, 0x147b, 1010, 2011, 7]]), base, "one or two tiles off the centre is still the house");
+  assert.deepEqual(items([[0x40000f02, 0x147b, 1009, 2009, 7], [0x40000f01, 0x147b, 1008, 2009, 7]]), [...base, 0x40000f02], "a tie drops the lower serial, whatever the order");
 });
 
 test("[fast] house model: a door item splits rooms and stays out of the hallway like a door tile", () => {
