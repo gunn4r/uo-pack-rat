@@ -2,10 +2,10 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { buildHouseModel } from "./house-model.mts";
-import { fixtureTileData, vaultHouse, roofHouse } from "./house-fixture.mts";
+import { fixtureTileData, vaultHouse, roofHouse, courtyardHouse, castleHouse } from "./house-fixture.mts";
 import type { Container } from "./vault-lib.mts";
 import type { HouseModel } from "./ui/api-types.mts";
-import { project, tilePolygon, boxFaces, pts, paintOrder, boundsOf, fit, zoomAt, vbText, anchorOf, W, chestViews, colourOf, legendOf, chestLabel, cutAway, calloutLines, houseTotals, pickHouse, PLAIN, chestCount, roomCounts, nearestInDirection, tiledataNote, stackWhere, plainGrid, type ChestView } from "./ui/house-map-model.mts";
+import { project, tilePolygon, boxFaces, pts, paintOrder, boundsOf, fit, zoomAt, vbText, anchorOf, W, chestViews, colourOf, legendOf, chestLabel, cutAway, calloutLines, houseTotals, pickHouse, PLAIN, chestCount, roomCounts, nearestInDirection, tiledataNote, stackWhere, plainGrid, sceneOf, type ChestView } from "./ui/house-map-model.mts";
 
 const td = fixtureTileData();
 const vault = () => { const { house, chests } = vaultHouse(); return buildHouseModel(house, td, chests); };
@@ -166,4 +166,38 @@ test("[fast] house map: ground chests outside every drawn house group by facet a
   assert.ok(g.cells.every((c) => c.kind === "floor" && c.family === "neutral"));
   assert.equal(plainGrid(invOf([{ serial: 0x40060001, x: 3001, y: 1001, z: 7, facet: 1 }]), [v]), null);
   assert.equal(chestCount(plainGrid(invOf([{ serial: 1, x: 5, y: 5, z: 0 }]), [])!), 1, "a chest of an unknown facet is drawn too");
+});
+
+test("[fast] house map: the vault's ground floor is 25 floor tiles, 24 cut walls, a teleporter, 24 stacks of 5 and a standing spot, back to front", () => {
+  const m = vault(), sc = sceneOf(m, 0, "angle");
+  assert.equal(sc.floors.filter((f) => f.cls.startsWith("map-floor")).length, 25);
+  assert.ok(sc.floors.every((f) => !f.cls.startsWith("map-floor") || f.cls.includes("f-tile")), "pavers are tile");
+  const kinds = (k: string, cls?: string) => sc.pieces.filter((p) => p.kind === k && (!cls || ("cls" in p && p.cls === cls))).length;
+  assert.deepEqual([kinds("solid", "map-wall"), kinds("item", "map-teleporter"), kinds("stack"), kinds("spot")], [24, 1, 24, 1]);
+  assert.equal(sc.pieces.flatMap((p) => (p.kind === "stack" ? p.chests : [])).length, 120);
+  assert.equal(sc.reach.length, 1);
+  const keys = sc.pieces.map((p) => p.x + p.y);
+  assert.deepEqual(keys, [...keys].sort((a, b) => a - b));
+  const top = sceneOf(m, 0, "top");
+  assert.ok(top.pieces.every((p) => p.kind !== "stack" || p.chests.every((c) => c.prism.left === "" && c.prism.right === "")), "from above a chest is its top only");
+  const up = sceneOf(m, 1, "angle");
+  assert.deepEqual([up.below.length, up.floors.length, up.pieces.filter((p) => p.kind === "stack").length], [24, 49, 0], "the 2nd floor shows the walls below it faintly");
+});
+
+test("[fast] house map: the courtyard draws its walls, window, foundation lip, stairs, table and door, and its yard tiles as yard", () => {
+  const m = buildHouseModel(courtyardHouse(), td, []), sc = sceneOf(m, 0, "angle");
+  const cls = sc.pieces.flatMap((p) => ("cls" in p ? [p.cls] : []));
+  for (const c of ["map-wall", "map-wall window", "map-lip", "map-block", "map-door"]) assert.ok(cls.includes(c), c);
+  assert.ok(sc.floors.some((f) => f.cls.includes("map-stair")) && sc.floors.some((f) => f.cls === "map-step"));
+  const cell = m.cells.find((c) => c.level === 0 && c.x === 1012 && c.y === 2013)!;
+  assert.equal(m.rooms.find((r) => r.id === cell.room)?.kind, "yard", "(1012, 2013) is in the courtyard");
+  const at = pts(tilePolygon(cell.x - m.x0, cell.y - m.y0, cell.z - m.levels[0]!.floorZ, "angle"));
+  assert.equal(sc.floors.find((f) => f.pts === at)?.cls, "map-floor f-grass yard");
+});
+
+test("[fast] house map: a castle's level becomes a scene in well under the 100 ms page budget", () => {
+  const { house, chests } = castleHouse(), m = buildHouseModel(house, td, chests);
+  const t0 = performance.now(), sc = sceneOf(m, 0, "angle"), ms = performance.now() - t0;
+  assert.ok(sc.pieces.length > 300);
+  assert.ok(ms < 100, `took ${ms.toFixed(0)} ms`);
 });

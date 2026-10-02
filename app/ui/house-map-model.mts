@@ -1,7 +1,7 @@
 // ui/house-map-model.mts — the House map's pure rules (issue #10, spec section 4): the projection (the client's angle, or top-down), the polygons of a tile and of a box, the painter's order, a level's bounds and their fit; below, the joins of a stack with the inventory and the Organize labels, the colour modes, the cut-away, the callout, the totals, the house picker, keyboard moves, the plain grid for chests outside any drawn house, and the scene of one level. No DOM and no store.mts import, so app/ui-map.test.mts runs it under plain node:test; ui/house-map.mts draws what it returns. Coordinates are relative to the house's corner (x0, y0); heights to the level's floor.
 import { bagLabel } from "../vault-lib.mts";
 import { plural, splitSerial } from "./inv-model.mts";
-import type { Cell, ContainerLabel, HouseModel, HouseSummary, InventoryData, Room, Stack, TiledataFrom } from "./api-types.mts";
+import type { Cell, ContainerLabel, HouseModel, HouseSummary, InventoryData, Room, Spot, Stack, TiledataFrom } from "./api-types.mts";
 
 // A tile is W units wide at the game angle (half as tall), and one z step lifts a point K units: the client draws a 44-px tile and 4 px per z, a little flatter than this, which reads better at the map's size.
 export const W = 32, K = 2;
@@ -230,4 +230,57 @@ export function plainGrid(inv: Pick<InventoryData, "containers">, houses: readon
   });
   return { id: PLAIN, facet: null, capturedAt: "", captures: 0, x0: 0, y0: 0, x1: Math.max(...cells.map((c) => c.x)), y1: Math.max(...cells.map((c) => c.y)),
     levels: [{ index: 0, name: "Chests on the ground", floorZ, status: "floor-only" }], cells, rooms, furniture: [], stacks, spots: [], codes, tiledata: false, unopened: [], unopenedNames: {} };
+}
+
+// ---------------------------------------------------------------- the scene of one level
+// What ui/house-map.mts draws for a level, in drawing units: the walls of the level below as faint tiles (on an upper level), the floor and stair tiles (with step bands), each standing spot's dashed reach, then every solid thing back to front: cut walls and windows, the foundation's lip, roof edges, furniture, doors and teleporters, the stacks (one box per chest at its real height) and the standing spots' figures.
+export interface Prism { top: string; left: string; right: string }
+export type Piece =
+  | { kind: "solid"; x: number; y: number; z: number; cls: string; prism: Prism }
+  | { kind: "item"; x: number; y: number; z: number; cls: string; prism: Prism; name: string }
+  | { kind: "stack"; x: number; y: number; z: number; stack: Stack; chests: Array<{ serial: number; prism: Prism }> }
+  | { kind: "spot"; x: number; y: number; z: number; spot: Spot; at: Pt };
+export interface Scene { below: string[]; floors: Array<{ pts: string; cls: string }>; reach: string[]; pieces: Piece[] }
+const REACH = 2;
+function prism(x: number, y: number, z: number, h: number, view: View, inset: number): Prism {
+  const f = boxFaces(x, y, z, h, view, inset);
+  return { top: pts(f.top), left: pts(f.left), right: pts(f.right) };
+}
+// A band of a tile across x, from a to b (fractions of the tile): a stair's steps.
+const band = (x: number, y: number, z: number, view: View, a: number, b: number): Pt[] => [project(x + a, y, z, view), project(x + b, y, z, view), project(x + b, y + 1, z, view), project(x + a, y + 1, z, view)];
+export function sceneOf(m: HouseModel, level: number, view: View): Scene {
+  const base = m.levels[level]?.floorZ ?? 0;
+  const yard = new Set(m.rooms.filter((r) => r.kind === "yard").map((r) => r.id));
+  const below: string[] = [], floors: Scene["floors"] = [], reach: string[] = [], solids: Piece[] = [];
+  for (const c of m.cells) {
+    const x = c.x - m.x0, y = c.y - m.y0;
+    if (level > 0 && c.level === level - 1 && (c.kind === "wall" || c.kind === "window")) below.push(pts(tilePolygon(x, y, c.z - base, view)));
+    if (c.level !== level) continue;
+    if (c.kind === "floor" || c.kind === "stair") {
+      const z = c.z - base;
+      floors.push({ pts: pts(tilePolygon(x, y, z, view)), cls: `map-floor f-${c.family}${c.room != null && yard.has(c.room) ? " yard" : ""}${c.kind === "stair" ? " map-stair" : ""}` });
+      if (c.kind === "stair") for (const k of [1, 3]) floors.push({ pts: pts(band(x, y, z, view, k / 4, (k + 1) / 4)), cls: "map-step" });
+      if (c.lip) solids.push({ kind: "solid", x, y, z, cls: "map-lip", prism: prism(x, y, z, LIP_H, view, 0) });
+    } else if (c.kind === "roof") solids.push({ kind: "solid", x, y, z: 0, cls: "map-roof", prism: prism(x, y, 0, ROOF_H, view, 0) });
+    else solids.push({ kind: "solid", x, y, z: 0, cls: c.kind === "window" ? "map-wall window" : "map-wall", prism: prism(x, y, 0, c.kind === "window" ? WINDOW_H : WALL_H, view, 0.08) });
+  }
+  for (const f of m.furniture) {
+    if (f.level !== level) continue;
+    const x = f.x - m.x0, y = f.y - m.y0, z = f.z - base;
+    if (f.kind === "block") solids.push({ kind: "item", x, y, z, cls: "map-block", prism: prism(x, y, z, Math.max(1, f.height), view, 0.15), name: f.name });
+    else solids.push({ kind: "item", x, y, z: z + 0.5, cls: f.kind === "door" ? "map-door" : "map-teleporter", prism: { top: pts(tilePolygon(x, y, z + 0.5, view, f.kind === "door" ? 0.3 : 0.15)), left: "", right: "" }, name: f.name });
+  }
+  for (const s of m.stacks) {
+    if (s.level !== level) continue;
+    const x = s.x - m.x0, y = s.y - m.y0;
+    solids.push({ kind: "stack", x, y, z: (s.zs[0] ?? base) - base, stack: s,
+      chests: s.serials.map((serial, i) => ({ serial, prism: prism(x, y, (s.zs[i] ?? base) - base, CHEST_H, view, view === "top" ? Math.min(0.4, 0.12 + 0.06 * i) : 0.18) })) });
+  }
+  for (const p of m.spots) {
+    if (p.level !== level) continue;
+    const x = p.x - m.x0, y = p.y - m.y0;
+    reach.push(pts([project(x - REACH, y - REACH, 0, view), project(x + REACH + 1, y - REACH, 0, view), project(x + REACH + 1, y + REACH + 1, 0, view), project(x - REACH, y + REACH + 1, 0, view)]));
+    solids.push({ kind: "spot", x, y, z: 0, spot: p, at: project(x + 0.5, y + 0.5, 0, view) });
+  }
+  return { below, floors, reach, pieces: paintOrder(solids) };
 }
