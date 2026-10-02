@@ -554,7 +554,7 @@ test("[fast] house areas: a new area takes the first free id and the first unuse
 test("[fast] house areas: at the game angle the arrow keys move the cursor the way they point on screen, ↓ undoes ↑, and every tile is reachable", () => {
   const m = vault(), at = (t: readonly number[]) => project(t[0]!, t[1]!, 0, "angle");
   for (const start of [[3003, 1003], [3002, 1003], [3001, 1004]] as Array<[number, number]>) {
-    const go = (k: string) => moveCursor(m, start, k)!, d = (k: string) => { const a = at(start), b = at(go(k)); return [b[0] - a[0], b[1] - a[1]]; };
+    const go = (k: string) => moveCursor(m, start, k)!, d = (k: string): [number, number] => { const a = at(start), b = at(go(k)); return [b[0] - a[0], b[1] - a[1]]; };
     assert.deepEqual(d("ArrowLeft"), [-W, 0], "← one tile left");
     assert.deepEqual(d("ArrowRight"), [W, 0], "→ one tile right");
     const up = d("ArrowUp"), down = d("ArrowDown");

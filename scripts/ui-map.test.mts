@@ -519,8 +519,8 @@ async function tilePoint(page: Page, x: number, y: number): Promise<[number, num
     return [p.x, p.y] as [number, number];
   }, [x, y, vaultModel.x0, vaultModel.y0]);
 }
-const readAreas = (dir: string): Array<{ id: string; name: string; rects: unknown[] }> | undefined => {
-  try { return (JSON.parse(readFileSync(join(dir, "house-map.json"), "utf8")) as { houses: Record<string, { areas?: Array<{ id: string; name: string; rects: unknown[] }> }> }).houses[VAULT]?.areas; } catch { return undefined; }
+const readAreas = (dir: string): Array<{ id: string; name: string; color: string; rects: unknown[] }> | undefined => {
+  try { return (JSON.parse(readFileSync(join(dir, "house-map.json"), "utf8")) as { houses: Record<string, { areas?: Array<{ id: string; name: string; color: string; rects: unknown[] }> }> }).houses[VAULT]?.areas; } catch { return undefined; }
 };
 
 test("[slow] House map areas: a mouse drag draws an area, Enter asks its name, Save adds its row with its chest count and tints the map; ✎ renames it and ⋯ › Delete asks inline before it goes (1024 × 768)", async (t) => {
@@ -534,7 +534,7 @@ test("[slow] House map areas: a mouse drag draws an area, Enter asks its name, S
     assert.match(await page.locator(rest).textContent() || "", /^Whole floor120$/, "before any area the level is one Whole floor");
     await page.locator("#map-new-area-0").click();
     await page.waitForSelector("#map-draw-hint");
-    assert.equal(await page.locator("#map-draw-hint").textContent(), "Drag over tiles to draw the area. Shift-drag adds more. Enter to finish, Esc to cancel.");
+    assert.equal(await page.locator("#map-draw-hint").textContent(), "Drag over tiles to draw the area. Shift-drag adds more. Enter to finish, Esc to cancel. Fit shows the whole level. Keyboard: the arrow keys move a tile cursor, Space starts and ends a rectangle, Shift+Space starts one more, Enter finishes, Escape cancels.");
     assert.equal(await page.locator("#map-new-area-0").textContent(), "Drawing…");
     assert.equal(await page.locator("#map-svg").evaluate((e) => getComputedStyle(e).cursor), "crosshair");
     const vb = await page.locator("#map-svg").getAttribute("viewBox");
@@ -584,6 +584,29 @@ test("[slow] House map areas: a mouse drag draws an area, Enter asks its name, S
     assert.match(await page.locator(".map-area-row.confirm").textContent() || "", /^Delete "Reagents"\? Its chests go to Everything else\.DeleteCancel$/);
     await page.locator("#map-area-keep-a1").click();
     await page.waitForSelector('.map-area[data-area="a1"]');
+    // ⋯ › Change colour: the palette by name, the area's own pressed.
+    await page.locator("#map-area-menu-a1").click();
+    await page.locator('.pop [role="menuitem"]', { hasText: "Change colour" }).click();
+    await page.waitForSelector("#map-colour-area-3");
+    assert.equal(await page.locator("#map-colour-area-1").getAttribute("aria-pressed"), "true");
+    assert.deepEqual(await page.locator(".map-colour").evaluateAll((bs) => bs.map((b) => b.getAttribute("aria-label"))), ["Purple", "Orange", "Teal", "Pink", "Blue", "Yellow", "Green", "Red"]);
+    await page.locator("#map-colour-area-3").click();
+    await until(() => readAreas(dir), (a) => a?.[0]?.color === "area-3", "the colour saved");
+    await page.waitForFunction(() => (document.querySelector('.map-area[data-area="a1"] .map-swatch') as HTMLElement | null)?.style.background.includes("area-3"), undefined, { timeout: 15_000 });
+    // ⋯ › Redraw: the area's row of stacks moved one row south, shown at once and saved.
+    await page.locator("#map-area-menu-a1").click();
+    await page.locator('.pop [role="menuitem"]', { hasText: "Redraw" }).click();
+    await page.waitForSelector("#map-draw-hint");
+    const [rx, ry] = await tilePoint(page, 3001, 1002), [sx, sy] = await tilePoint(page, 3005, 1002);
+    await page.mouse.move(rx, ry);
+    await page.mouse.down();
+    await page.mouse.move(sx, sy, { steps: 4 });
+    await page.mouse.up();
+    await page.keyboard.press("Enter");
+    await page.waitForFunction(() => !document.querySelector("#map-draw-hint"), undefined, { timeout: 15_000 });
+    assert.match(await page.locator('.map-area[data-area="a1"]').textContent() || "", /^Reagents25$/);
+    assert.equal(await page.evaluate(() => document.activeElement?.id), "map-area-a1");
+    assert.deepEqual((await until(() => readAreas(dir), (a) => (a?.[0]?.rects as Array<{ y0: number }> | undefined)?.[0]?.y0 === 1002, "the redraw saved"))![0]!.rects, [{ x0: 3001, y0: 1002, x1: 3005, y1: 1002 }]);
     await page.locator("#map-area-menu-a1").click();
     await page.locator('.pop [role="menuitem"]', { hasText: "Delete" }).click();
     await page.locator("#map-area-delete-a1").click();
@@ -601,7 +624,8 @@ test("[slow] House map areas: the keyboard alone draws an area (arrows move the 
   if (why) return t.skip(why);
   const { dir } = seed();
   const { app, page, errors } = await launch(dir, { want: { width: 1024, height: 768 } });
-  const live = (): Promise<string | null> => page.locator("#map-draw-live").textContent();
+  // The live region is emptied and refilled on the next frame: wait for the words.
+  const live = async (want: string): Promise<void> => { await page.waitForFunction((w) => document.querySelector("#map-draw-live")?.textContent === w, want, { timeout: 15_000 }); };
   const keys = async (...ks: string[]): Promise<void> => { for (const k of ks) await page.keyboard.press(k); };
   try {
     await go(page, `#/map/${VAULT}`, "#map-svg .map-stack");
@@ -613,21 +637,21 @@ test("[slow] House map areas: the keyboard alone draws an area (arrows move the 
     await keys("Space", "ArrowRight", "Escape");
     await page.waitForFunction(() => !document.querySelector("#map-draw-hint"), undefined, { timeout: 15_000 });
     assert.ok(await focused(page, "#map-new-area-0"));
-    assert.equal(await live(), "Drawing cancelled.");
+    await live("Drawing cancelled.");
 
-    // The cursor starts mid-house (3003, 1003): to 3001, 1001, a row of five, then Shift+Space a column down the east end.
+    // The cursor starts mid-house (3003, 1003) and the arrows move it the way they point on screen (↑ half a tile up, → a whole tile right): four ↑ to the north corner (3001, 1001), then four ↓ and two → lay the row of five to 3005, 1001; Shift+Space and four ↓ and two ← add the column down to 3005, 1005.
     await page.keyboard.press("Enter");
     await page.waitForSelector("#map-draw-hint");
-    await keys("ArrowLeft", "ArrowLeft", "ArrowUp", "ArrowUp", "Space");
+    await keys("ArrowUp", "ArrowUp", "ArrowUp", "ArrowUp", "Space");
     assert.equal(await page.locator("#map-svg .map-draw-cursor").count(), 1, "the cursor is drawn");
-    await keys("ArrowRight", "ArrowRight", "ArrowRight", "ArrowRight");
-    assert.equal(await live(), "5 × 1 = 5 tiles");
+    await keys("ArrowDown", "ArrowDown", "ArrowDown", "ArrowDown", "ArrowRight", "ArrowRight");
+    await live("5 × 1 = 5 tiles");
     await keys("Space");
-    assert.equal(await live(), "1 rectangle, 5 tiles. Enter to finish.");
-    await keys("Shift+Space", "ArrowDown", "ArrowDown", "ArrowDown", "ArrowDown");
-    assert.equal(await live(), "1 × 5 = 5 tiles");
+    await live("1 rectangle, 5 tiles. Enter to finish.");
+    await keys("Shift+Space", "ArrowDown", "ArrowDown", "ArrowDown", "ArrowDown", "ArrowLeft", "ArrowLeft");
+    await live("1 × 5 = 5 tiles");
     await keys("Space");
-    assert.equal(await live(), "2 rectangles, 9 tiles. Enter to finish.");
+    await live("2 rectangles, 9 tiles. Enter to finish.");
     await keys("Enter");
     await page.waitForSelector("#map-area-new-name");
     assert.ok(await focused(page, "#map-area-new-name"));
