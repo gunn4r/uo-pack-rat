@@ -844,6 +844,7 @@ test("[slow] House map: Show items opens the contents drawer as a column of its 
     assert.equal(await page.locator(`#map-drawer-bag-${SPARE}`).evaluate((e) => (e.parentElement as HTMLDetailsElement).open), false, "the folded bag stays folded");
     assert.equal(await page.locator(`#map-drawer-bag-${SUPPLIES}`).evaluate((e) => (e.parentElement as HTMLDetailsElement).open), true);
     assert.ok(Math.abs(await list.evaluate((e) => e.scrollTop) - scrolled) <= 1, "the scroll is kept");
+    assert.equal(await page.evaluate(() => document.activeElement?.id), `map-drawer-bag-${SPARE}`, "focus stays on the folded bag's summary");
 
     // an item's ⋯ menu: Open details leaves for the Inventory with the item in the peek
     await page.locator(`#map-drawer-item-${0x40500200}`).click();

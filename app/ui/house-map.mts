@@ -721,8 +721,10 @@ function drawDrawerBody(): void {
   if (!dr.items) { summary.textContent = "Loading…"; list.replaceChildren(note("Loading the contents…", true)); return; }
   const all = treeOf(dr.items, dr.chest), shown = filterContents(all.nodes, dr.filter);
   summary.textContent = contentsSummary(all);
+  const was = focusKey(list);   // a row or bag summary keeps focus through a rescan's new list
   list.replaceChildren(...(shown.length ? shown.map(nodeEl) : [note(all.total ? `Nothing here matches "${dr.filter.trim()}".` : "Nothing in this chest.")]));
   list.scrollTop = dr.scroll;
+  if (was) refocus(list, was, false);
 }
 // The tree of the items last fetched, built once per fetch: typing in the filter only filters it.
 let tree: { items: Item[]; chest: number; contents: Contents } | null = null;
