@@ -5,7 +5,27 @@ import type { HouseSource } from "./house-capture.mts";
 export interface HouseContainerInput { serial: number; name: string; facet: number | null; x: number; y: number; z: number }
 export interface Level { index: number; name: string; floorZ: number; status: "built" | "floor-only" }
 export type CellKind = "floor" | "wall" | "window" | "stair" | "roof";
-export interface Cell { level: number; x: number; y: number; kind: CellKind; material: string; z: number; lip: boolean; indoor: boolean; doorway: boolean; room: number | null }
+export interface Cell { level: number; x: number; y: number; kind: CellKind; material: string; family: MaterialFamily; z: number; lip: boolean; indoor: boolean; doorway: boolean; room: number | null }
+
+// The colour a tile is drawn in, from its tiledata name by keyword (spec section 2). Order matters: sandstone, marble and brick before stone, and "sand" alone (not sandstone) is dirt; "gold" floors read as marble, pavers as tile. A name nothing matches, or no name (no tiledata.mul), is neutral.
+export type MaterialFamily = "stone" | "brick" | "plaster" | "wood" | "marble" | "sandstone" | "dirt" | "grass" | "water" | "tile" | "neutral";
+const FAMILIES: ReadonlyArray<[MaterialFamily, RegExp]> = [
+  ["water", /water|pool|pond|fountain|swamp/],
+  ["grass", /grass|jungle|hedge|lea(f|ves)|palm|fern/],
+  ["sandstone", /sandstone/],
+  ["dirt", /dirt|mud|earth|\bsand\b|wasteland|cave/],
+  ["marble", /marble|virtue|mosaic|gold/],
+  ["brick", /brick/],
+  ["plaster", /plaster|stucco|clay/],
+  ["tile", /tile|slate|ceramic|ornate|crystal|paver/],
+  ["stone", /stone|rock|cobble|flagstone|granite|ruin|arch|dungeon|medusa|battlement/],
+  ["wood", /wood|plank|log|timber|shingl|thatch|bamboo|board|parquet|palisade|bark|hay|straw|reed|tent|hide|cloth/],
+];
+export function materialFamily(name: string): MaterialFamily {
+  const n = name.toLowerCase();
+  for (const [family, re] of FAMILIES) if (re.test(n)) return family;
+  return "neutral";
+}
 export interface Room { id: number; level: number; kind: "room" | "yard"; name: string; tiles: number; x0: number; y0: number; x1: number; y1: number }
 export interface Furniture { serial: number; kind: "block" | "door" | "teleporter"; name: string; level: number; x: number; y: number; z: number; height: number }
 export interface Stack { level: number; x: number; y: number; room: number | null; serials: number[]; spot: number | null; direction: string; letter: string }
@@ -88,7 +108,7 @@ export function buildHouseModel(house: HouseSource, td: TileData | null, contain
     else if (roofs.length) { kind = "roof"; material = topOf(roofs).name; }
     else continue;
     const z = ground.length ? floorTop : topOf(e.tiles).z;
-    const cell: Cell = { level: e.level, x: e.x, y: e.y, kind, material, z, lip: walls.length > 0 && real.length === 0, indoor: ground.length > 0 && roofs.some((t) => t.z > floorTop), doorway: false, room: null };
+    const cell: Cell = { level: e.level, x: e.x, y: e.y, kind, material, family: materialFamily(material), z, lip: walls.length > 0 && real.length === 0, indoor: ground.length > 0 && roofs.some((t) => t.z > floorTop), doorway: false, room: null };
     if (floors.some((t) => t.cls === "door")) { cell.doorway = true; doors.add(cell); }
     cells.push(cell);
   }

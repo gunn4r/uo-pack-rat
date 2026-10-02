@@ -1,7 +1,7 @@
 // house-model.test.mts — app/house-model.mts against synthetic houses (app/house-fixture.mts): levels, cells, the dirt-under-floor and foundation-lip rules, indoor and yard, rooms and doorways, furniture, stacks, standing spots, engraving codes, the no-tiledata fallback and a castle's speed. Tags: [fast]. Run: node --test app/house-model.test.mts
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { buildHouseModel, letterOf, type HouseModel, type Cell } from "./house-model.mts";
+import { buildHouseModel, letterOf, materialFamily, type HouseModel, type Cell } from "./house-model.mts";
 import type { HouseItem } from "./house-capture.mts";
 import { G, fixtureTileData, courtyardHouse, stairHouse, towerHouse, roofHouse, hallHouse, vaultHouse, castleHouse } from "./house-fixture.mts";
 
@@ -263,4 +263,16 @@ test("[fast] house model: an open door standing on the wall beside its gap marks
   assert.deepEqual(m.rooms.map((r) => [r.name, r.tiles]), [["West room", 36], ["East room", 36], ["Hallway", 4]], "the gaps stay out of the hallway, as with a closed door");
   assert.deepEqual([cell(m, 0, 6007, 7003)!.room, cell(m, 0, 6012, 7003)!.room], [null, null]);
   assert.deepEqual(m.furniture.map((f) => [f.x, f.y]), [[6007, 7002], [6012, 7004]], "the door is drawn where it stands");
+});
+
+test("[fast] house model: a material name maps to a colour family by keyword, a nameless one to neutral", () => {
+  const cases: Array<[string, string]> = [["stone wall", "stone"], ["stone pavers Dark", "tile"], ["wooden planks", "wood"], ["grass", "grass"], ["dirt", "dirt"], ["sand", "dirt"], ["sandstone floor", "sandstone"],
+    ["marblefloor east", "marble"], ["floor gold east01", "marble"], ["brick wall", "brick"], ["plaster wall", "plaster"], ["water", "water"], ["thatch roof", "wood"], ["Wallset1 FloorB East", "neutral"], ["", "neutral"]];
+  for (const [name, family] of cases) assert.equal(materialFamily(name), family, name);
+});
+
+test("[fast] house model: each cell carries its material's family, and without tiledata every cell is neutral", () => {
+  const m = buildHouseModel(courtyardHouse(), td, []);
+  assert.deepEqual([cell(m, 0, 1002, 2002)!.family, cell(m, 0, 1012, 2012)!.family, cell(m, 0, 1009, 2012)!.family, cell(m, 1, 1002, 2002)!.family], ["tile", "grass", "stone", "wood"]);
+  assert.ok(buildHouseModel(courtyardHouse(), null, []).cells.every((c) => c.family === "neutral"));
 });
