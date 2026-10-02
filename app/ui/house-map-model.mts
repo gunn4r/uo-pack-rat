@@ -1,7 +1,7 @@
 // ui/house-map-model.mts — the House map's pure rules (issue #10, spec section 4): the projection (the client's angle, or top-down), the polygons of a tile and of a box, the painter's order, a level's bounds and their fit; below, the joins of a stack with the inventory and the Organize labels, the colour modes, the cut-away, the callout, the totals, the house picker, keyboard moves, the plain grid for chests outside any drawn house, and the scene of one level. No DOM and no store.mts import, so app/ui-map.test.mts runs it under plain node:test; ui/house-map.mts draws what it returns. Coordinates are relative to the house's corner (x0, y0); heights to the level's floor.
 import { bagLabel } from "../vault-lib.mts";
 import { plural, splitSerial } from "./inv-model.mts";
-import type { Cell, ContainerLabel, HouseModel, HouseSummary, InventoryData, Room, Spot, Stack, TiledataFrom } from "./api-types.mts";
+import type { Cell, ContainerLabel, HouseMapEntry, HouseModel, HouseSummary, InventoryData, Room, Spot, Stack, TiledataFrom } from "./api-types.mts";
 
 // A tile is W units wide at the game angle (half as tall), and one z step lifts a point K units: the client draws a 44-px tile and 4 px per z, a little flatter than this, which reads better at the map's size.
 export const W = 32, K = 2;
@@ -161,8 +161,20 @@ export function pickHouse(choices: ReadonlyArray<{ id: string; containers: numbe
 }
 const FACETS = ["Felucca", "Trammel", "Ilshenar", "Malas", "Tokuno", "Ter Mur"];
 export const facetName = (f: number | null): string => (f != null ? FACETS[f] : undefined) ?? "Unknown facet";
-export const houseLabel = (h: HouseSummary): string => `${facetName(h.facet)} house, ${h.width} × ${h.height}, ${plural(h.containers, "container")}`;
-export const houseName = (m: HouseModel): string => (m.id === PLAIN ? "Chests on the ground" : `${facetName(m.facet)} house`);
+// A house the player named (issue #164) is called by its name, the facet after it in the picker.
+export const houseLabel = (h: HouseSummary): string => `${h.name ? `${h.name} · ${facetName(h.facet)}` : `${facetName(h.facet)} house`}, ${h.width} × ${h.height}, ${plural(h.containers, "container")}`;
+export const houseName = (m: HouseModel): string => (m.id === PLAIN ? "Chests on the ground" : m.name ?? `${facetName(m.facet)} house`);
+// A redesigned or moved house gets a new id (spec §1): the name of a house no longer listed whose footprint, as it was
+// when named, overlaps this unnamed house's on the same facet, to offer carrying over. The first such id wins.
+export function carryOver(m: HouseModel, listed: readonly string[], names: Readonly<Record<string, HouseMapEntry>>): { id: string; name: string } | null {
+  if (m.id === PLAIN || m.name) return null;
+  for (const [id, e] of Object.entries(names).sort((a, b) => a[0].localeCompare(b[0]))) {
+    const b = e.bounds;
+    if (!b || listed.includes(id) || b.facet !== m.facet) continue;
+    if (b.x0 <= m.x1 && m.x0 <= b.x1 && b.y0 <= m.y1 && m.y0 <= b.y1) return { id, name: e.name };
+  }
+  return null;
+}
 export function stackWhere(m: HouseModel, s: Stack): string {
   const room = m.rooms.find((r) => r.id === s.room)?.name ?? "No room";
   const spot = s.spot == null ? "no standing spot reaches it" : s.direction === "here" ? `at standing spot ${s.spot + 1}` : `${s.direction} of standing spot ${s.spot + 1}`;

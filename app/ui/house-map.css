@@ -96,3 +96,9 @@
 .map-legend { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: var(--space-1) var(--space-3); }
 .map-legend-item { display: flex; align-items: center; gap: var(--space-1-5); }
 .map-chest-actions { display: flex; flex-direction: column; align-items: stretch; gap: var(--space-1); }
+/* The house heading with its ✎, the name field while renaming, and the offer to carry over an earlier house's name (issue #164). */
+.map-house-title { min-width: 0; overflow-wrap: anywhere; }
+.map-house-title > h2 { display: inline; }
+.map-house-title > .btn { vertical-align: middle; margin-block: calc(-1 * var(--space-1)); margin-left: var(--space-1); }
+.map-name-edit { display: flex; flex-direction: column; gap: var(--space-1-5); }
+.map-carry { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); margin-top: var(--space-1); }
