@@ -28,6 +28,7 @@ const SCREENS: Record<string, string> = {
   shell: "ui-shell",
   inventory: "ui-state", "inv-model": "ui-state", characters: "ui-state", roster: "ui-state", sheet: "ui-state",
   runs: "ui-state", peek: "ui-state", containers: "ui-state", "view-state": "ui-state",
+  "house-map": "ui-map", "house-map-model": "ui-map",
 };
 
 const LITERAL = /["'`](\.\.?\/[^"'`\s]+)["'`]/g;

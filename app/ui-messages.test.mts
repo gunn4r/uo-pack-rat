@@ -6,7 +6,7 @@
 // All [fast]. Run: node --test app/ui-messages.test.mts
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { pathsFileNote, installedIntoNote, clientFolderGone, clientErrorMessage, hostErrorMessage, optimizeErrorMessage, errorText, dataDirNotice, dataDirBanner, bridgeOfflineText, bridgeView, relativeWhen } from "./ui/messages.mts";
+import { pathsFileNote, installedIntoNote, clientFolderGone, clientErrorMessage, uoFolderErrorMessage, hostErrorMessage, optimizeErrorMessage, errorText, dataDirNotice, dataDirBanner, bridgeOfflineText, bridgeView, relativeWhen } from "./ui/messages.mts";
 import type { ApiError } from "./ui/api-types.mts";
 
 function apiError(message: string, extra: { status?: number; code?: unknown } = {}): ApiError {
@@ -86,6 +86,12 @@ test("[fast] both routes' ways of saying 'that folder is gone' become one senten
 test("[fast] every other install failure is shown exactly as the server worded it", () => {
   const running = "a Pack Rat script is running in the client — type -stopall in game";
   assert.equal(clientErrorMessage(apiError(running, { status: 409, code: "running" })), running);
+});
+
+test("[fast] a refused UO folder says what to fix in player words and never echoes the path", () => {
+  assert.equal(uoFolderErrorMessage(apiError("settings.uoFolder must be null or the full path of a folder", { status: 400 })), "Enter the full path of a folder.");
+  assert.equal(uoFolderErrorMessage(apiError("settings.uoFolder: no tiledata.mul found in that folder", { status: 400 })), "That folder has no tiledata.mul.");
+  assert.equal(uoFolderErrorMessage(apiError("unauthorized", { status: 401 })), "unauthorized");
 });
 
 // ---- POST /api/host/* ------------------------------------------------------------------------------

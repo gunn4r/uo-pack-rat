@@ -51,6 +51,7 @@ export interface SettingsData {
   client?: ClientSetting | null | undefined;
   retention?: RetentionSetting | undefined;
   autoUpdateCheck?: boolean | undefined;   // Settings › Updates' automatic check (the server answers true unless it was turned off)
+  uoFolder?: string | null | undefined;    // Settings › UO folder (house map): the folder holding tiledata.mul; absent or null = found through TazUO's launcher
 }
 // POST /api/retention/cleanup: what a dry run would remove, or what a real run removed; refused when
 // old scans were kept because the inventory would have changed without them.
@@ -538,3 +539,28 @@ export interface ApiError extends Error {
   status?: number | undefined;
   code?: unknown;
 }
+
+// ---------------------------------------------------------------- house map (issue #10)
+// Mirrored from app/house-model.mts (HouseModel and its parts) and the GET /api/houses routes in app/vault-server.mts:
+// house-model.mts imports app/tiledata.mts (node:fs), so the browser build cannot even import its types.
+export type MaterialFamily = "stone" | "brick" | "plaster" | "wood" | "marble" | "sandstone" | "dirt" | "grass" | "water" | "tile" | "neutral";
+export interface Level { index: number; name: string; floorZ: number; status: "built" | "floor-only" }
+export type CellKind = "floor" | "wall" | "window" | "stair" | "roof";
+export interface Cell { level: number; x: number; y: number; kind: CellKind; material: string; family: MaterialFamily; z: number; lip: boolean; indoor: boolean; doorway: boolean; room: number | null }
+export interface Room { id: number; level: number; kind: "room" | "yard"; name: string; tiles: number; x0: number; y0: number; x1: number; y1: number }
+export interface Furniture { serial: number; kind: "block" | "door" | "teleporter"; name: string; level: number; x: number; y: number; z: number; height: number }
+// serials and zs bottom first; codes[serial] is the engraving code ("C3", or "C" alone for a single chest).
+export interface Stack { level: number; x: number; y: number; room: number | null; serials: number[]; zs: number[]; spot: number | null; direction: string; letter: string }
+export interface Spot { id: number; level: number; x: number; y: number; room: number | null; teleporter: boolean }
+export interface HouseModel {
+  id: string; facet: number | null; capturedAt: string; captures: number; x0: number; y0: number; x1: number; y1: number;
+  levels: Level[]; cells: Cell[]; rooms: Room[]; furniture: Furniture[]; stacks: Stack[]; spots: Spot[]; codes: Record<string, string>; tiledata: boolean;
+  unopened: number[]; unopenedNames: Record<string, string>;   // the stacked chests no scan has opened, and their tiledata names
+}
+// Where tiledata.mul came from (the uoFolder setting, or TazUO's launcher profile), or why there is none.
+export interface TiledataFrom { folder: string | null; source: "settings" | "tazuo-profile" | null; reason: null | "override-missing" | "no-client" | "no-tazuo-profile" | "unreadable" }
+// GET /api/houses
+export interface HouseSummary { id: string; facet: number | null; capturedAt: string; captures: number; width: number; height: number; levels: number; containers: number }
+export interface HousesApiResponse { ok: boolean; tiledata: boolean; tiledataFrom: TiledataFrom; houses: HouseSummary[] }
+// GET /api/houses/<id>
+export interface HouseApiResponse { ok: boolean; house: HouseModel }
