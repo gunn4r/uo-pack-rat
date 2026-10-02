@@ -211,12 +211,18 @@ test("[slow] House map: hover shows a stack's callout, a click selects it and fi
     await page.locator("#map-fit").click();
     assert.equal(await vb(), fitted);
     // a press whose release happened off the map does not leave a drag behind: a move with no button held pans nothing
-    await page.evaluate(() => {
-      const svg = document.querySelector("#map-svg")!, r = svg.getBoundingClientRect(), at = { clientX: r.left + 20, clientY: r.top + 20, pointerId: 1, bubbles: true };
-      svg.dispatchEvent(new PointerEvent("pointerdown", { ...at, button: 0, buttons: 1 }));
-      svg.dispatchEvent(new PointerEvent("pointermove", { ...at, clientX: at.clientX + 200, clientY: at.clientY + 120, buttons: 0 }));
+    // (setPointerCapture is stubbed for this one move: a synthetic pointer has no capture to take, and a throw there would stop a stale drag before it panned, so the check would pass on code that keeps the drag)
+    const left = await page.evaluate(() => {
+      const svg = document.querySelector<SVGSVGElement>("#map-svg")!, r = svg.getBoundingClientRect(), at = { clientX: r.left + 20, clientY: r.top + 20, pointerId: 1, bubbles: true };
+      svg.setPointerCapture = () => {};
+      try {
+        svg.dispatchEvent(new PointerEvent("pointerdown", { ...at, button: 0, buttons: 1 }));
+        svg.dispatchEvent(new PointerEvent("pointermove", { ...at, clientX: at.clientX + 200, clientY: at.clientY + 120, buttons: 0 }));
+      } finally { delete (svg as { setPointerCapture?: unknown }).setPointerCapture; }
+      return svg.classList.contains("dragging");
     });
     assert.equal(await vb(), fitted, "a move with no button held after a lost release does not pan");
+    assert.equal(left, false, "and leaves no drag behind");
 
     // the stacks in front of an inner one fade and let the pointer through; the keyboard reaches it too
     await stack(inner).focus();
@@ -233,4 +239,116 @@ test("[slow] House map: hover shows a stack's callout, a click selects it and fi
     assert.ok(moved && moved !== inner, "an arrow key moves to the next stack that way");
     assert.deepEqual(errors, []);
   } finally { await done(app, dir); }
+});
+
+const readQueue = (d: string): Array<{ action: string; serial: number; name: string; chain: number[]; pos: Record<string, number> | null }> => {
+  try { return readFileSync(join(d, "queue.jsonl"), "utf8").trim().split("\n").filter(Boolean).map((l) => JSON.parse(l)); } catch { return []; }
+};
+
+test("[slow] House map: the panel lists a vault stack top first with its label, Highlight queues for the bridge, Free space changes the legend, Label… opens, a label colour keeps its edge, a reload keeps the selection, and a chest no scan opened highlights by its place and cannot be labelled", async (t) => {
+  const why = unavailable();
+  if (why) return t.skip(why);
+  const { dir } = seed();
+  const bridgeDir = join(dir, "bridge", "tazuo");
+  mkdirSync(bridgeDir, { recursive: true });
+  const writeStatus = (): void => writeFileSync(join(bridgeDir, "status.json"), JSON.stringify({ alive: new Date().toISOString(), character: "Tester", current: null, counts: { done: 0, failed: 0 }, results: {} }));
+  writeStatus();
+  const alive = setInterval(writeStatus, 1000);
+  const { app, page, errors } = await launch(dir);
+  try {
+    await go(page, "#/map", "#map-svg .map-stack");
+    await page.waitForFunction(() => document.querySelector("#bridge")?.getAttribute("data-state") === "ready", undefined, { timeout: 15_000 });
+    // a label colour fills the chest, and the chest keeps its border-strong edge
+    const paint = await page.locator(`#map-svg [data-chest="${LABELLED}"] polygon.top`).evaluate((p) => {
+      const probe = document.createElement("div");
+      probe.style.color = "var(--color-border-strong)";
+      document.body.append(probe);
+      const edge = getComputedStyle(probe).color;
+      probe.remove();
+      const s = getComputedStyle(p);
+      return { fill: s.fill, stroke: s.stroke, edge };
+    });
+    assert.equal(paint.fill, "rgb(47, 127, 127)");
+    assert.equal(paint.stroke, paint.edge);
+
+    const back = letter(vaultModel, 3001, 1001), serials = vaultModel.stacks.find((s) => s.letter === back)!.serials;
+    await page.locator(`#map-svg [data-stack="${back}"]`).focus();
+    await page.keyboard.press("Enter");
+    const rows = page.locator("#map-panel .map-chest-row");
+    assert.deepEqual(await rows.evaluateAll((r) => r.map((x) => Number((x as HTMLElement).dataset.chest))), [...serials].reverse());
+    const mine = page.locator(`#map-panel li[data-chest="${LABELLED}"]`);
+    assert.match(await mine.textContent() || "", /Reagents.*In game: Metal Chest/);
+    await mine.locator('[data-act="highlight"]').click();
+    const [one] = await until(() => readQueue(bridgeDir), (l) => l.length === 1, "the highlight queued");
+    assert.deepEqual([one!.action, one!.serial, one!.name, one!.chain, one!.pos], ["highlight", LABELLED, "Reagents", [], { x: 3001, y: 1001, z: 7, facet: 1 }]);
+
+    await page.getByRole("radio", { name: "Free space" }).click();
+    await page.waitForFunction(() => /90% or more full/.test(document.querySelector("#map-legend")?.textContent || ""));
+    await mine.locator('[data-act="label"]').click();
+    await page.waitForSelector("#lbl-name");
+    await page.keyboard.press("Escape");
+
+    // data changing while the map is open: a reload keeps the selected stack
+    await page.evaluate(async () => { await (await import("/ui/app.mjs" as string)).reload(); });
+    await page.waitForSelector(`#map-svg [data-stack="${back}"][aria-pressed="true"]`);
+    assert.equal(await rows.count(), 5);
+
+    // a chest the capture saw and no scan opened
+    await page.selectOption("#map-house", COURT);
+    const seen = letter(courtModel, 1012, 2012);
+    await page.waitForSelector(`#map-svg [data-stack="${seen}"]`);
+    assert.equal(await page.locator(`#map-svg [data-chest="${SEEN_ONLY}"]`).getAttribute("class"), "map-chest unopened");
+    await page.locator(`#map-svg [data-stack="${seen}"]`).focus();
+    await page.keyboard.press("Enter");
+    const row = page.locator(`#map-panel li[data-chest="${SEEN_ONLY}"]`);
+    assert.match(await row.textContent() || "", /Not opened yet: scan from standing spot \d+/);
+    assert.equal(await row.locator('[data-act="label"]').isDisabled(), true);
+    assert.equal(await row.locator('[data-act="items"]').isDisabled(), true);
+    await row.locator('[data-act="highlight"]').click();
+    const lines = await until(() => readQueue(bridgeDir), (l) => l.length === 2, "the second highlight queued");
+    assert.deepEqual([lines[1]!.serial, lines[1]!.chain, lines[1]!.pos], [SEEN_ONLY, [], { x: 1012, y: 2012, z: 7, facet: 1 }]);
+    assert.deepEqual(errors, []);
+  } finally {
+    clearInterval(alive);
+    await done(app, dir);
+  }
+});
+
+test("[slow] House map: Highlight the stack queues one highlight per chest top first, each by its scanned place or, for a chest no scan opened, by the place its capture saw it", async (t) => {
+  const why = unavailable();
+  if (why) return t.skip(why);
+  const { dir } = seed();
+  const bridgeDir = join(dir, "bridge", "tazuo");
+  mkdirSync(bridgeDir, { recursive: true });
+  const writeStatus = (): void => writeFileSync(join(bridgeDir, "status.json"), JSON.stringify({ alive: new Date().toISOString(), character: "Tester", current: null, counts: { done: 0, failed: 0 }, results: {} }));
+  writeStatus();
+  const alive = setInterval(writeStatus, 1000);
+  const { app, page, errors } = await launch(dir);
+  try {
+    await go(page, "#/map", "#map-svg .map-stack");
+    await page.waitForFunction(() => document.querySelector("#bridge")?.getAttribute("data-state") === "ready", undefined, { timeout: 15_000 });
+    const back = letter(vaultModel, 3001, 1001), stack = vaultModel.stacks.find((s) => s.letter === back)!, top = [...stack.serials].reverse();
+    await page.locator(`#map-svg [data-stack="${back}"]`).focus();
+    await page.keyboard.press("Enter");
+    await page.waitForSelector("#map-highlight-stack:not([disabled])");
+    assert.equal((await page.locator("#map-highlight-stack").textContent())?.trim(), "Highlight the stack");
+    await page.locator("#map-highlight-stack").click();
+    const lines = await until(() => readQueue(bridgeDir), (l) => l.length === 5, "the stack's highlights queued");
+    assert.deepEqual(lines.map((l) => [l.action, l.serial, l.chain, l.pos?.x, l.pos?.y]), top.map((s) => ["highlight", s, [], 3001, 1001]));
+    assert.deepEqual(lines.map((l) => l.pos?.z), [...stack.zs].reverse());
+
+    await page.selectOption("#map-house", COURT);
+    const seen = letter(courtModel, 1012, 2012);
+    await page.waitForSelector(`#map-svg [data-stack="${seen}"]`);
+    await page.locator(`#map-svg [data-stack="${seen}"]`).focus();
+    await page.keyboard.press("Enter");
+    await page.waitForSelector("#map-highlight-stack:not([disabled])");
+    await page.locator("#map-highlight-stack").click();
+    const all = await until(() => readQueue(bridgeDir), (l) => l.length === 6, "the seen-only chest's highlight queued");
+    assert.deepEqual([all[5]!.serial, all[5]!.chain, all[5]!.pos], [SEEN_ONLY, [], { x: 1012, y: 2012, z: 7, facet: 1 }]);
+    assert.deepEqual(errors, []);
+  } finally {
+    clearInterval(alive);
+    await done(app, dir);
+  }
 });

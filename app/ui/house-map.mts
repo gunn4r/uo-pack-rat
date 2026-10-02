@@ -1,8 +1,11 @@
 // ui/house-map.mts — the House map screen (#/map, #/map/<house id>; issue #10, spec section 4). It fetches the houses the scans captured (GET /api/houses) and every house's model (GET /api/houses/<id>), picks the deep-linked house (else the last one shown, else the one with the most chests; a deep link to a house that no longer exists falls back and the route is put back to #/map), and lays out three panes: levels, rooms and the yard on the left, the map in the middle, the details on the right. Ground chests outside every drawn house are a house of their own on a plain grid. Every rule and number is ui/house-map-model.mts's; this module builds the DOM and the SVG and wires the events.
-import { state } from "./store.mts";
-import { $, el, safeColor, fmtN } from "./dom.mts";
+import { state, bridge } from "./store.mts";
+import { $, el, safeColor, fmtN, toast } from "./dom.mts";
 import { api } from "./api.mts";
-import { box, txt, button, segmented, pill, message, meter, keyValue, modalOpen } from "./components.mts";
+import { box, txt, button, segmented, pill, message, meter, keyValue, modalOpen, tipWrap } from "./components.mts";
+import { labelContainer } from "./containers.mts";
+import { showContainer } from "./inventory.mts";
+import { bridgeActionReason, runBridgeAction, sendBridge, type BridgeTarget } from "./bridge.mts";
 import { errorText } from "./messages.mts";
 import { plural } from "./inv-model.mts";
 import { fillTone } from "./organize-model.mts";
@@ -354,17 +357,19 @@ function swatchEl(c: Colour | null): HTMLElement | null {
 function legend(): HTMLElement {
   return box("ul", { class: "map-legend", id: "map-legend", "aria-label": "Colours" }, ...legendOf(S.mode).map((l) => box("li", { class: "map-legend-item" }, swatchEl(l.token ? { token: l.token } : null), txt(l.text, "t-sm"))));
 }
-// The selected stack's chests, else the house's totals.
+// The selected stack's chests, else the house's totals. Highlight the stack is offered on the same terms as each chest's Highlight.
 function drawPanel(): void {
   const p = $<HTMLElement>("#map-panel"), m = S.model;
   if (!p || !m) return;
   const s = selectedStack();
   if (!s) { p.replaceChildren(...totalsPanel(m)); return; }
   const chests = chestViews(m, s, state.inv!, labels());
+  const why = stackReason(m, s, chests);
+  const all = button({ label: chests.length > 1 ? "Highlight the stack" : "Highlight", icon: "highlight", size: "sm", disabled: !!why, attrs: { id: "map-highlight-stack" }, onClick: () => { void highlightStack(m, s, chests); } });
   p.replaceChildren(
     box("header", { class: "map-panel-head" }, el("h2", { class: "t-lg" }, chests.length > 1 ? `Stack ${s.letter}` : chests[0]!.name), txt(stackWhere(m, s), "t-sm muted")),
     box("ol", { class: "map-chests", "aria-label": "Chests, top first" }, ...chests.map((c) => chestRow(m, s, c))),
-    box("div", { class: "map-panel-actions" }, button({ label: "Back to the house", variant: "ghost", size: "sm", onClick: () => select(null) })),
+    box("div", { class: "map-panel-actions" }, why ? tipWrap(all, why) : all, button({ label: "Back to the house", variant: "ghost", size: "sm", onClick: () => select(null) })),
     legend());
 }
 // Nothing selected: the house's totals, the colours, and how to start.
@@ -379,13 +384,44 @@ function totalsPanel(m: HouseModel): HTMLElement[] {
     el("p", { class: "t-sm muted" }, "Click a stack on the map, or a room on the left."),
   ];
 }
-// One chest of the selected stack: its code and name (the in-game name too when a label renames it), its fill and item count, or why it is not known yet.
+// A chest as the bridge's target: the chest itself, with no chain. A chest no scan opened has no scanned root, so it carries the place its house capture saw it.
+function chestTarget(m: HouseModel, s: Stack, c: ChestView): { it: BridgeTarget; opts: { pos?: unknown } } {
+  return { it: { serial: c.serial, name: c.name, container: null, root: c.opened ? c.serial : null }, opts: c.opened ? {} : { pos: { x: s.x, y: s.y, z: c.z, ...(m.facet != null ? { facet: m.facet } : {}) } } };
+}
+const stackReason = (m: HouseModel, s: Stack, chests: ChestView[]): string | null => chests.map((c) => bridgeActionReason("highlight", chestTarget(m, s, c).it)).find((r) => r) ?? null;
+// One chest of the selected stack: its code and name (the in-game name too when a label renames it), its fill and item count or why they are not known yet, and Highlight, Label… and Show items. Label… and Show items wait for a scan that opens the chest.
 function chestRow(m: HouseModel, s: Stack, c: ChestView): HTMLElement {
+  const { it, opts } = chestTarget(m, s, c);
+  const notOpened = `Not opened yet: scan from standing spot ${(s.spot ?? 0) + 1} to label it and list what is in it.`;
+  const why = bridgeActionReason("highlight", it);
+  const hl = button({ label: "Highlight", icon: "highlight", size: "sm", disabled: !!why, attrs: { "data-act": "highlight" }, onClick: () => { void runBridgeAction("highlight", it, opts); } });
+  const container = state.inv!.containers[String(c.serial)];
+  const noLabel = !c.opened ? notOpened : state.organize.blacklist.includes(c.serial) ? "Blacklisted: scans skip it. Unblacklist it in Settings to label it." : null;
+  const lbl = button({ label: labels()[String(c.serial)] ? "Edit label…" : "Label…", size: "sm", disabled: !!noLabel, attrs: { "data-act": "label" }, onClick: () => { if (container) void labelContainer(container); } });
+  const items = button({ label: "Show items", size: "sm", disabled: !c.opened, attrs: { "data-act": "items" }, onClick: () => showContainer(c.serial) });
   return box("li", { class: `map-chest-row${c.opened ? "" : " unopened"}`, "data-chest": String(c.serial) },
     swatchEl(colourOf(c, S.mode)),
     box("div", { class: "map-chest-text" },
       box("span", { class: "map-chest-name" }, txt(c.code, "mono strong"), txt(c.name, "ellip strong")),
       c.name !== c.inGame ? txt(`In game: ${c.inGame}`, "t-sm muted ellip") : null,
       c.fill ? box("span", { class: "cont-fill" }, meter(c.fill.items, c.fill.max, { tone: fillTone(c.fill), label: fillWords(c) }), txt(`${c.fill.items}/${c.fill.max}`, "t-sm num")) : txt("Fill unknown", "t-sm muted"),
-      txt(c.opened ? plural(c.items, "item") : `Not opened yet: scan from standing spot ${(s.spot ?? 0) + 1} to label it and list what is in it.`, c.opened ? "t-sm muted" : "t-sm")));
+      txt(c.opened ? plural(c.items, "item") : notOpened, c.opened ? "t-sm muted" : "t-sm")),
+    box("div", { class: "map-chest-actions" }, why ? tipWrap(hl, why) : hl, noLabel ? tipWrap(lbl, noLabel) : lbl, c.opened ? items : tipWrap(items, notOpened)));
 }
+// Highlight the stack: one highlight per chest, top first, 300 ms apart, stopping at the first refusal; one toast says how it went.
+async function highlightStack(m: HouseModel, s: Stack, chests: ChestView[]): Promise<void> {
+  const why = stackReason(m, s, chests);
+  if (why) { toast(why, "bad"); return; }
+  let sent = 0, stopped: string | null = null;
+  for (const c of chests) {
+    const { it, opts } = chestTarget(m, s, c);
+    const r = await sendBridge("highlight", it, opts);
+    if (!r.ok) { stopped = `${c.name}: ${r.error}`; break; }
+    sent++;
+    if (sent < chests.length) await new Promise((res) => setTimeout(res, 300));
+  }
+  toast(stopped ? `${sent} of ${chests.length} queued, stopped at ${stopped}` : `${plural(sent, "highlight")} queued for ${bridge.character}`, stopped ? "bad" : "");
+}
+// A saved label changes chest colours and names; the bridge going on or off line changes what Highlight may do.
+document.addEventListener("organizechange", () => { if (S.model && !$<HTMLElement>("#tab-map")!.hidden) { drawMap(); drawPanel(); } });
+document.addEventListener("bridgechange", () => { if (S.model && !$<HTMLElement>("#tab-map")!.hidden) drawPanel(); });

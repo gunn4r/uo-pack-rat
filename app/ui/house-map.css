@@ -73,10 +73,11 @@
 /* the panel */
 .map-panel-head { display: flex; flex-direction: column; gap: 2px; }
 .map-chests { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
-.map-chest-row { display: grid; grid-template-columns: 12px minmax(0, 1fr); gap: var(--space-2); align-items: start; padding: var(--space-2) 0; border-top: var(--border-width) solid var(--color-border); }
+.map-chest-row { display: grid; grid-template-columns: 12px minmax(0, 1fr) auto; gap: var(--space-2); align-items: start; padding: var(--space-2) 0; border-top: var(--border-width) solid var(--color-border); }
 .map-chest-row > .map-swatch { margin-top: 4px; }
 .map-chest-text { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
 .map-chest-name { display: flex; gap: var(--space-2); min-width: 0; }
 .map-panel-actions { display: flex; flex-wrap: wrap; gap: var(--space-2); }
 .map-legend { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: var(--space-1) var(--space-3); }
 .map-legend-item { display: flex; align-items: center; gap: var(--space-1-5); }
+.map-chest-actions { display: flex; flex-direction: column; align-items: stretch; gap: var(--space-1); }
