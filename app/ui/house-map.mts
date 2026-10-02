@@ -2,24 +2,26 @@
 import { state, bridge } from "./store.mts";
 import { $, el, safeColor, fmtN, toast } from "./dom.mts";
 import { api } from "./api.mts";
-import { box, txt, button, segmented, pill, message, meter, keyValue, modalOpen, tipWrap } from "./components.mts";
+import { box, txt, button, segmented, pill, message, meter, keyValue, modalOpen, tipWrap, input } from "./components.mts";
 import { labelContainer } from "./containers.mts";
 import { showContainer } from "./inventory.mts";
 import { bridgeActionReason, runBridgeAction, sendBridge, type BridgeTarget } from "./bridge.mts";
 import { errorText } from "./messages.mts";
 import { plural } from "./inv-model.mts";
 import { fillTone } from "./organize-model.mts";
-import { PLAIN, pickHouse, plainGrid, chestCount, roomCounts, houseLabel, houseName, tiledataNote, chestViews, colourOf, chestLabel, sceneOf, boundsOf, fit, vbText,
+import { PLAIN, pickHouse, plainGrid, chestCount, roomCounts, houseLabel, houseName, carryOver, tiledataNote, chestViews, colourOf, chestLabel, sceneOf, boundsOf, fit, vbText,
   cutAway, calloutLines, nearestInDirection, houseTotals, legendOf, stackWhere, anchorOf, zoomAt, fillWords,
   type View, type Mode, type Box, type Colour, type ChestView, type Piece, type Prism, type Pt, type Dir } from "./house-map-model.mts";
-import type { ContainerLabel, HouseModel, HousesApiResponse, HouseApiResponse, Room, Stack } from "./api-types.mts";
+import type { ContainerLabel, HouseModel, HousesApiResponse, HouseApiResponse, HouseMapApiResponse, HouseMapEntry, HouseMapPutApiResponse, Room, Stack } from "./api-types.mts";
 
 const SVG_NS = "http://www.w3.org/2000/svg";
-// The map's page state: the houses and models as last fetched, the one shown, its level, view and colour mode, the room zoomed to, the selected stack (by a serial in it, so a rescan that keeps the stack keeps the selection), the hovered and focused stacks (by letter), the viewBox, and a load error.
-interface MapState { list: HousesApiResponse | null; models: HouseModel[]; plain: HouseModel | null; id: string | null; model: HouseModel | null; level: number; view: View; mode: Mode; room: number | null; selected: number | null; hover: string | null; focus: string | null; vb: Box | null; error: string | null }
-const S: MapState = { list: null, models: [], plain: null, id: null, model: null, level: 0, view: "angle", mode: "contents", room: null, selected: null, hover: null, focus: null, vb: null, error: null };
+// The map's page state: the houses and models as last fetched, the player's house names (issue #164), the one shown, its level, view and colour mode, the room zoomed to, the selected stack (by a serial in it, so a rescan that keeps the stack keeps the selection), the hovered and focused stacks (by letter), the viewBox, and a load error.
+interface MapState { list: HousesApiResponse | null; names: Record<string, HouseMapEntry>; models: HouseModel[]; plain: HouseModel | null; id: string | null; model: HouseModel | null; level: number; view: View; mode: Mode; room: number | null; selected: number | null; hover: string | null; focus: string | null; vb: Box | null; error: string | null }
+const S: MapState = { list: null, names: {}, models: [], plain: null, id: null, model: null, level: 0, view: "angle", mode: "contents", room: null, selected: null, hover: null, focus: null, vb: null, error: null };
 let seq = 0;
 let highlighting = false;   // Highlight the stack is sending (highlightStack)
+let renaming: string | null = null;   // while renaming, the name as typed so far: a redraw rebuilds the field from it (renameField)
+let nameError: string | null = null;  // the server's reason for the last refused name, shown under the field until a save or a cancel
 const body = (): HTMLElement => $<HTMLElement>("#map-body")!;
 const selectedStack = (): Stack | null => (S.selected == null ? null : S.model?.stacks.find((s) => s.serials.includes(S.selected!)) ?? null);
 
@@ -37,10 +39,10 @@ export async function showMap(want: string | null): Promise<void> {
   const my = ++seq;
   if (!S.model && !S.error) body().replaceChildren(message({ tone: "info", text: "Drawing the house map…", attrs: { "aria-busy": "true" } }));
   try {
-    const list = await api<HousesApiResponse>("/api/houses");
+    const [list, names] = await Promise.all([api<HousesApiResponse>("/api/houses"), api<HouseMapApiResponse>("/api/house-map")]);
     const models = await Promise.all(list.houses.map(async (h) => (await api<HouseApiResponse>(`/api/houses/${encodeURIComponent(h.id)}`)).house));
     if (my !== seq) return;
-    S.list = list; S.models = models; S.plain = plainGrid(state.inv, models); S.error = null;
+    S.list = list; S.names = names.houses; S.models = models; S.plain = plainGrid(state.inv, models); S.error = null;
   } catch (e) {
     if (my !== seq) return;
     S.error = errorText(e); S.model = null; render();
@@ -49,7 +51,7 @@ export async function showMap(want: string | null): Promise<void> {
   const choices = [...S.models.map((m) => ({ id: m.id, containers: chestCount(m) })), ...(S.plain ? [{ id: PLAIN, containers: chestCount(S.plain) }] : [])];
   const id = pickHouse(choices, want, S.id);
   if (want && id !== want) history.replaceState(null, "", "#/map");
-  if (id !== S.id) { S.id = id; S.level = 0; S.room = null; S.selected = null; S.hover = null; S.focus = null; S.vb = null; }
+  if (id !== S.id) { S.id = id; renaming = null; nameError = null; S.level = 0; S.room = null; S.selected = null; S.hover = null; S.focus = null; S.vb = null; }
   S.model = id === PLAIN ? S.plain : S.models.find((m) => m.id === id) ?? null;
   if (S.model && S.level >= S.model.levels.length) { S.level = 0; S.vb = null; }
   if (!selectedStack()) S.selected = null;   // the stack is gone since (a rescan moved its chests)
@@ -58,6 +60,7 @@ export async function showMap(want: string | null): Promise<void> {
 
 function render(): void {
   const refocusScreen = keepFocus();
+  document.title = S.model?.name ? `${S.model.name} · Pack Rat` : "Pack Rat";
   paintTopbar();
   if (S.error) body().replaceChildren(message({ tone: "bad", title: "Could not load the house map", text: S.error }));
   else if (!S.model) body().replaceChildren(emptyState());
@@ -431,13 +434,62 @@ function refocus(p: HTMLElement, key: string): void {
 function totalsPanel(m: HouseModel): HTMLElement[] {
   const t = houseTotals(m.stacks.flatMap((s) => chestViews(m, s, state.inv!, labels())));
   return [
-    box("header", { class: "map-panel-head" }, el("h2", { class: "t-lg" }, houseName(m)),
-      txt(m.id === PLAIN ? "Ground chests outside any drawn house" : `${plural(m.levels.length, "level")} · ${plural(m.stacks.length, "stack")} · ${plural(m.spots.length, "standing spot")}`, "t-sm muted")),
+    houseHead(m),
     ...(t.capacity ? [meter(t.used, t.capacity, { label: `${t.used} of ${t.capacity} item slots used` })] : []),
     keyValue([["Containers", fmtN(t.containers)], ["Item slots used", `${fmtN(t.used)} of ${fmtN(t.capacity)}`], ["Item slots free", fmtN(t.capacity - t.used)], ["Empty", fmtN(t.empty)], ["Full or nearly", fmtN(t.full)], ["Not opened yet", fmtN(t.unopened)], ...(t.unknown ? [["Fill unknown", fmtN(t.unknown)] as [string, string]] : [])]),
     legend(),
     el("p", { class: "t-sm muted" }, "Click a stack on the map, or a room on the left."),
   ];
+}
+// The house's heading with its ✎ (Rename house), or the name field while renaming; under it the house's counts, and
+// the offer to carry over the name of an earlier house this one replaced (house-map-model.mts carryOver).
+function houseHead(m: HouseModel): HTMLElement {
+  const meta = txt(m.id === PLAIN ? "Ground chests outside any drawn house" : `${plural(m.levels.length, "level")} · ${plural(m.stacks.length, "stack")} · ${plural(m.spots.length, "standing spot")}`, "t-sm muted");
+  if (renaming != null) return box("header", { class: "map-panel-head" }, renameField(m, renaming, nameError), meta);
+  const offer = carryOver(m, S.list?.houses.map((h) => h.id) ?? [], S.names);
+  return box("header", { class: "map-panel-head" },
+    // One block in the flex header, its heading and ✎ inline, so the ✎ follows the last word of a name that wraps.
+    box("div", { class: "map-house-title" }, el("h2", { class: "t-lg" }, houseName(m)),
+      m.id === PLAIN ? null : button({ label: "Rename house", icon: "pencil", iconOnly: true, variant: "ghost", size: "sm", attrs: { id: "map-rename" }, onClick: () => { renaming = m.name ?? ""; nameError = null; drawPanel(); const f = $<HTMLInputElement>("#map-name"); f?.focus(); f?.select(); } })),
+    meta,
+    offer ? box("div", { class: "map-carry", id: "map-carry" }, txt(`Use the name "${offer.name}" from the earlier house here?`, "t-sm"),
+      button({ label: "Use name", size: "sm", attrs: { id: "map-carry-use" }, onClick: () => { void saveName(m, offer.name).then((err) => { if (err) { toast(err, "bad"); return; } render(); $<HTMLElement>("#map-rename")?.focus(); }); } })) : null);
+}
+// Enter or leaving the field saves, Esc cancels; a refused save keeps the field open with the server's reason under it.
+// Either way out puts the focus back on the ✎. A redraw (a reload on a new scan) rebuilds the field from the draft;
+// the field it replaces is gone by the time its blur is looked at, so it saves nothing. Leaving the window (to the
+// game) is not leaving the field.
+function renameField(m: HouseModel, draft: string, error: string | null): HTMLElement {
+  const f = input({ size: "sm", value: draft, placeholder: houseName(m), invalid: !!error, attrs: { id: "map-name", maxlength: "60", "aria-label": "House name", ...(error ? { "aria-describedby": "map-name-error" } : {}) } });
+  let busy = false, closed = false;
+  const close = (saved: boolean): void => { closed = true; renaming = null; nameError = null; if (saved) render(); else drawPanel(); $<HTMLElement>("#map-rename")?.focus(); };
+  const save = async (): Promise<void> => {
+    if (busy || closed) return;
+    if (f.value.trim() === (m.name ?? "")) { close(false); return; }
+    busy = true;
+    const why = await saveName(m, f.value);
+    busy = false;
+    if (!why) { if (closed) render(); else close(true); }   // saved after an Esc: the name still changed
+    else if (!closed) { nameError = why; drawPanel(); }   // the field (this one, or the one a redraw put in its place) shows it
+  };
+  f.addEventListener("input", () => { renaming = f.value; });
+  f.addEventListener("focus", () => { f.setSelectionRange(f.value.length, f.value.length); });   // a rebuilt field keeps typing at the end
+  f.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") { e.preventDefault(); void save(); }
+    if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); if (!closed) close(false); }
+  });
+  f.addEventListener("blur", () => { if (document.hasFocus()) setTimeout(() => { if (f.isConnected) void save(); }, 0); });
+  return box("div", { class: "map-name-edit" }, f, error ? message({ tone: "bad", text: error, attrs: { id: "map-name-error" } }) : null);
+}
+// PUT the house's whole entry (any other fields it carries kept) with its footprint now, so a later redesign can be
+// offered the name, and keep the answer in the page state (the caller redraws). Returns the server's reason when it refuses.
+async function saveName(m: HouseModel, name: string): Promise<string | null> {
+  let r: HouseMapPutApiResponse;
+  try { r = await api<HouseMapPutApiResponse>(`/api/house-map/${encodeURIComponent(m.id)}`, { method: "PUT", body: { ...S.names[m.id], name, bounds: { x0: m.x0, y0: m.y0, x1: m.x1, y1: m.y1, facet: m.facet } } }); }
+  catch (e) { return errorText(e); }
+  if (r.entry) S.names[m.id] = r.entry; else delete S.names[m.id];
+  for (const h of [...S.models, ...(S.list?.houses ?? [])]) if (h.id === m.id) h.name = r.entry?.name;
+  return null;
 }
 // A chest as the bridge's target: the chest itself, with no chain. A chest no scan opened has no scanned root, so it carries the place its house capture saw it.
 function chestTarget(m: HouseModel, s: Stack, c: ChestView): { it: BridgeTarget; opts: { pos?: unknown } } {

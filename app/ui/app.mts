@@ -132,6 +132,7 @@ function showTab(tab: string): void {
   const screen = screenOf(tab);
   if (screen !== lastScreen) clearToasts();   // a toast belongs to the page it was raised on
   closePopover();
+  if (screen !== "map") document.title = "Pack Rat";   // the House map names the page after a named house (ui/house-map.mts)
   for (const sec of document.querySelectorAll<HTMLElement>(".screen")) sec.hidden = sec.id !== "tab-" + screen;
   setCurrentNav(tab === "containers" ? "inventory" : tab);
   if (tab === "inventory" || tab === "containers") showInventoryView(tab === "containers" ? "containers" : "items");

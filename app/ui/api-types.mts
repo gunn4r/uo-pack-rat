@@ -556,12 +556,19 @@ export interface HouseModel {
   id: string; facet: number | null; capturedAt: string; captures: number; x0: number; y0: number; x1: number; y1: number;
   levels: Level[]; cells: Cell[]; rooms: Room[]; furniture: Furniture[]; stacks: Stack[]; spots: Spot[]; codes: Record<string, string>; tiledata: boolean;
   unopened: number[]; unopenedNames: Record<string, string>;   // the stacked chests no scan has opened, and their tiledata names
+  name?: string | undefined;   // the player's name for the house (house-map.json, issue #164), when it has one
 }
 // Where tiledata.mul came from (the uoFolder setting, or TazUO's launcher profile), or why there is none.
 export interface TiledataFrom { folder: string | null; source: "settings" | "tazuo-profile" | null; reason: null | "override-missing" | "no-client" | "no-tazuo-profile" | "unreadable" }
 // GET /api/houses
 // width and height are the plot, without a row of front steps outside it (house-model.mts plotSize).
-export interface HouseSummary { id: string; facet: number | null; capturedAt: string; captures: number; width: number; height: number; levels: number; containers: number }
+export interface HouseSummary { id: string; name?: string | undefined; facet: number | null; capturedAt: string; captures: number; width: number; height: number; levels: number; containers: number }
 export interface HousesApiResponse { ok: boolean; tiledata: boolean; tiledataFrom: TiledataFrom; houses: HouseSummary[] }
 // GET /api/houses/<id>
 export interface HouseApiResponse { ok: boolean; house: HouseModel }
+// GET /api/house-map and PUT /api/house-map/<id> (app/house-names.mts, issue #164): the player's names by house id, each
+// with the footprint the house had when it was named. Other fields an entry may carry later are kept, unread.
+export interface HouseBounds { x0: number; y0: number; x1: number; y1: number; facet: number | null }
+export interface HouseMapEntry { name: string; bounds?: HouseBounds | undefined }
+export interface HouseMapApiResponse { ok: boolean; houses: Record<string, HouseMapEntry> }
+export interface HouseMapPutApiResponse { ok: boolean; entry: HouseMapEntry | null }

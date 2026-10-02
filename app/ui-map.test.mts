@@ -5,7 +5,7 @@ import { buildHouseModel } from "./house-model.mts";
 import { fixtureTileData, vaultHouse, roofHouse, courtyardHouse, castleHouse, foundationHouse, stairHouse, G } from "./house-fixture.mts";
 import type { Container } from "./vault-lib.mts";
 import type { HouseModel } from "./ui/api-types.mts";
-import { project, tilePolygon, boxFaces, pts, paintOrder, boundsOf, fit, zoomAt, vbText, anchorOf, W, chestViews, colourOf, legendOf, chestLabel, cutAway, calloutLines, houseTotals, pickHouse, PLAIN, chestCount, roomCounts, nearestInDirection, tiledataNote, stackWhere, plainGrid, sceneOf, drawnZs, CHEST_H, type ChestView } from "./ui/house-map-model.mts";
+import { project, tilePolygon, boxFaces, pts, paintOrder, boundsOf, fit, zoomAt, vbText, anchorOf, W, chestViews, colourOf, legendOf, chestLabel, cutAway, calloutLines, houseTotals, pickHouse, houseLabel, houseName, carryOver, PLAIN, chestCount, roomCounts, nearestInDirection, tiledataNote, stackWhere, plainGrid, sceneOf, drawnZs, CHEST_H, type ChestView } from "./ui/house-map-model.mts";
 
 const td = fixtureTileData();
 const has = (cls: string, c: string): boolean => cls.split(" ").includes(c);
@@ -411,4 +411,25 @@ test("[fast] house map: a castle's level becomes a scene in well under the 100 m
   for (let i = 0; i < 3; i++) { const t0 = performance.now(); sc = sceneOf(m, 0, "angle"); ms = Math.min(ms, performance.now() - t0); }
   assert.ok(sc.pieces.length > 300);
   assert.ok(ms < 100, `took ${ms.toFixed(0)} ms`);
+});
+
+test("[fast] house map: the picker and the headings use the player's name when the house has one", () => {
+  const h = { id: "1-3000-1000", facet: 1, capturedAt: "", captures: 1, width: 18, height: 18, levels: 2, containers: 120 };
+  assert.equal(houseLabel(h), "Trammel house, 18 × 18, 120 containers");
+  assert.equal(houseLabel({ ...h, name: "Main house" }), "Main house · Trammel, 18 × 18, 120 containers");
+  const m = vault();
+  assert.equal(houseName(m), "Trammel house");
+  assert.equal(houseName({ ...m, name: "Main house" }), "Main house");
+});
+
+test("[fast] house map: a name kept for a house no longer listed is offered to an unnamed house whose footprint overlaps it on the same facet", () => {
+  const m = vault();   // facet 1, x 3000-3006, y 1000-1006
+  const old = { name: "Old vault", bounds: { x0: 3004, y0: 1004, x1: 3010, y1: 1010, facet: 1 } };
+  assert.deepEqual(carryOver(m, [m.id], { "1-3004-1004": old }), { id: "1-3004-1004", name: "Old vault" });
+  assert.equal(carryOver({ ...m, name: "Vault" }, [m.id], { "1-3004-1004": old }), null, "a named house is offered nothing");
+  assert.equal(carryOver(m, [m.id, "1-3004-1004"], { "1-3004-1004": old }), null, "the named house is still listed");
+  assert.equal(carryOver(m, [m.id], { "3-3004-1004": { ...old, bounds: { ...old.bounds, facet: 3 } } }), null, "another facet");
+  assert.equal(carryOver(m, [m.id], { "1-3007-1004": { ...old, bounds: { ...old.bounds, x0: 3007 } } }), null, "no overlap");
+  assert.equal(carryOver(m, [m.id], { "1-3004-1004": { name: "No bounds" } }), null, "a name saved without its footprint");
+  assert.equal(carryOver({ ...m, id: PLAIN }, [], { "1-3004-1004": old }), null, "never the plain grid");
 });

@@ -255,3 +255,66 @@ test("[fast] houses: a hand-edited UO folder of a UNC or relative shape is repor
     assert.deepEqual((await get<{ tiledataFrom: From }>(s, "/api/houses")).body.tiledataFrom, { folder: null, source: null, reason: "no-tazuo-profile" });
   } finally { await s.close(); rmSync(bare, { recursive: true, force: true }); }
 });
+
+// The house names (issue #164): GET /api/house-map and PUT /api/house-map/<id> on <data>/house-map.json, and each house's name in GET /api/houses and /api/houses/<id>.
+async function putName(s: ServerHandle, path: string, body: unknown): Promise<{ status: number; body: { ok: boolean; error?: string; entry?: unknown } }> {
+  const r = await fetch(s.url + path, { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
+  return { status: r.status, body: (await r.json()) as { ok: boolean; error?: string; entry?: unknown } };
+}
+test("[fast] house names: GET starts empty, a PUT is stored trimmed and shows in the houses list and the model, an empty name removes it", async () => {
+  const { s, dir } = await serve(false);
+  try {
+    assert.deepEqual((await get(s, "/api/house-map")).body, { ok: true, houses: {} });
+    const bounds = { x0: 3000, y0: 1000, x1: 3006, y1: 1006, facet: 1 };
+    const saved = await putName(s, "/api/house-map/1-3000-1000", { name: "  Main house ", bounds });
+    assert.equal(saved.status, 200);
+    assert.deepEqual(saved.body, { ok: true, entry: { name: "Main house", bounds } });
+    assert.deepEqual((await get(s, "/api/house-map")).body, { ok: true, houses: { "1-3000-1000": { name: "Main house", bounds } } });
+    assert.deepEqual(JSON.parse(readFileSync(join(dir, "house-map.json"), "utf8")), { version: 1, houses: { "1-3000-1000": { name: "Main house", bounds } } });
+    assert.equal((await get<{ houses: Array<{ name?: string }> }>(s, "/api/houses")).body.houses[0]!.name, "Main house");
+    assert.equal((await get<{ house: { name?: string } }>(s, "/api/houses/1-3000-1000")).body.house.name, "Main house");
+    assert.equal((await putName(s, "/api/house-map/3-10-20", { name: "Gone house" })).status, 200, "a name may be kept for a house not listed now");
+    const cleared = await putName(s, "/api/house-map/1-3000-1000", { name: "" });
+    assert.deepEqual(cleared.body, { ok: true, entry: null });
+    assert.deepEqual((await get(s, "/api/house-map")).body, { ok: true, houses: { "3-10-20": { name: "Gone house" } } });
+    assert.equal("name" in (await get<{ houses: Array<{ name?: string }> }>(s, "/api/houses")).body.houses[0]!, false);
+  } finally { await s.close(); rmSync(dir, { recursive: true, force: true }); }
+});
+test("[fast] house names: a bad name, a malformed id or a body that is not JSON is refused", async () => {
+  const { s, dir } = await serve(false);
+  try {
+    const long = await putName(s, "/api/house-map/1-3000-1000", { name: "x".repeat(61) });
+    assert.equal(long.status, 400);
+    assert.match(long.body.error ?? "", /1 to 60 characters/);
+    assert.equal((await putName(s, "/api/house-map/1-3000-1000", { name: "a\nb" })).status, 400);
+    const badId = await putName(s, "/api/house-map/plain", { name: "Main" });
+    assert.equal(badId.status, 400);
+    assert.match(badId.body.error ?? "", /not a house id/);
+    assert.equal((await putName(s, "/api/house-map/..%2Fetc", { name: "Main" })).status, 400);
+    const r = await fetch(s.url + "/api/house-map/1-3000-1000", { method: "PUT", body: "{}" });
+    assert.equal(r.status, 415);
+    assert.deepEqual((await get(s, "/api/house-map")).body, { ok: true, houses: {} });
+  } finally { await s.close(); rmSync(dir, { recursive: true, force: true }); }
+});
+test("[fast] house names: a PUT that would grow the map past 500 named houses or past 1 MB is refused with a 409 and the file is left as it was, while clearing or shortening a name still saves", async () => {
+  const { s, dir } = await serve(false);
+  try {
+    const file = join(dir, "house-map.json");
+    const full = JSON.stringify({ version: 1, houses: Object.fromEntries(Array.from({ length: 500 }, (_, i) => [`1-${i}-0`, { name: `H${i}` }])) });
+    writeFileSync(file, full);
+    const over = await putName(s, "/api/house-map/1-3000-1000", { name: "One more" });
+    assert.equal(over.status, 409);
+    assert.match(over.body.error ?? "", /at most 500 houses/);
+    assert.equal((await putName(s, "/api/house-map/1-7-0", { name: "Renamed" })).status, 200, "renaming a named house is still fine");
+    assert.equal((await putName(s, "/api/house-map/1-8-0", { name: "" })).status, 200, "clearing a name on a full map");
+    // 125 entries of about 7.9 kB each: under 1 MB on disk, and one more entry tips it over.
+    const big = JSON.stringify({ version: 1, houses: Object.fromEntries(Array.from({ length: 125 }, (_, i) => [`1-${i}-0`, { name: `H${i}`, notes: "x".repeat(7900) }])) });
+    writeFileSync(file, big);
+    const huge = await putName(s, "/api/house-map/1-3000-1000", { name: "Main", notes: "x".repeat(7900) });
+    assert.equal(huge.status, 409);
+    assert.match(huge.body.error ?? "", /larger than 1 MB/);
+    assert.equal(readFileSync(file, "utf8"), big);
+    assert.equal((await putName(s, "/api/house-map/1-3-0", { name: "H3" })).status, 200, "shortening an entry on a full file");
+    assert.equal((await putName(s, "/api/house-map/1-4-0", { name: "" })).status, 200, "clearing one");
+  } finally { await s.close(); rmSync(dir, { recursive: true, force: true }); }
+});
