@@ -899,7 +899,7 @@ class RazorScanner(DataDir, unittest.TestCase):
 
 
 class RazorRefresh(DataDir, unittest.TestCase):
-    SCRIPT = adapter_path("razor-enhanced", "packrat-refresh.py")
+    SCRIPT = adapter_path("razor-enhanced", "packrat-character-refresh.py")
 
     def refresh(self, world):
         run_script(self.SCRIPT, world, extra_globals=razor_globals(world, PACK))

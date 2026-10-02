@@ -541,32 +541,33 @@ test("[fast] installScripts installs byte-identical copies, leaves no .new files
   assert.deepEqual(JSON.parse(readFileSync(join(scriptsDir, "packrat-paths.json"), "utf8")), { dataDir });
 });
 
-// TazUO 2.12.0 renamed packrat-refresh.py to packrat-character-refresh.py (issue #10): an install removes the old copy, which would
-// otherwise stay in the Script Manager beside the new one, but only when its first line says it is Pack Rat's own.
+// TazUO 2.12.0 and Razor Enhanced 1.10.0 renamed packrat-refresh.py to packrat-character-refresh.py (issue #10): an install removes the
+// old copy, which would otherwise stay in the client's script list beside the new one, but only when its first line is that adapter's own.
 const RETIRED_REFRESH_HEADER = "# packrat-refresh.py — ATTENDED one-shot: QUICK character refresh for the Pack Rat";
+const RETIRED_RE_REFRESH_HEADER = "# packrat-refresh.py -- ATTENDED one-shot: QUICK character refresh for the Pack Rat app without a";
 
-test("[fast] installScripts removes TazUO's retired packrat-refresh.py when it is Pack Rat's own", () => {
-  const scriptsDir = tmp("qm-is-retired-");
-  writeFileSync(join(scriptsDir, "packrat-refresh.py"), `${RETIRED_REFRESH_HEADER}\n# app without a full scan.\nimport API\n`);
-  const result = installScripts({ adapter: "tazuo", adaptersDir: fakeAdaptersDir(), scriptsDir, dataDir: tmp("qm-is-data-"), bridgeStatusPath: join(scriptsDir, "no-status.json") });
-  assert.equal(result.ok, true, JSON.stringify(result));
-  assert.equal(existsSync(join(scriptsDir, "packrat-refresh.py")), false);
-  assert.equal(existsSync(join(scriptsDir, "packrat-character-refresh.py")), true);
+test("[fast] installScripts removes the retired packrat-refresh.py when it is Pack Rat's own, for TazUO and Razor Enhanced", () => {
+  for (const [adapter, header] of [["tazuo", RETIRED_REFRESH_HEADER], ["razor-enhanced", RETIRED_RE_REFRESH_HEADER]] as const) {
+    const scriptsDir = tmp("qm-is-retired-");
+    writeFileSync(join(scriptsDir, "packrat-refresh.py"), `${header}\n# full scan.\nimport API\n`);
+    const result = installScripts({ adapter, adaptersDir: fakeMultiAdaptersDir(), scriptsDir, dataDir: tmp("qm-is-data-"), bridgeStatusPath: join(scriptsDir, "no-status.json") });
+    assert.equal(result.ok, true, JSON.stringify(result));
+    assert.equal(existsSync(join(scriptsDir, "packrat-refresh.py")), false, adapter);
+    assert.equal(existsSync(join(scriptsDir, "packrat-character-refresh.py")), true, adapter);
+  }
 });
 
-test("[fast] installScripts leaves any other file named packrat-refresh.py alone, and never removes it for another adapter", () => {
-  for (const [adapter, first] of [["tazuo", "# packrat-refresh.py — my own refresh, not Pack Rat's"], ["tazuo", `#${RETIRED_REFRESH_HEADER}`], ["tazuo", ""]] as const) {
+test("[fast] installScripts leaves any other file named packrat-refresh.py alone, another adapter's included", () => {
+  const cases = [["tazuo", "# packrat-refresh.py — my own refresh, not Pack Rat's"], ["tazuo", `#${RETIRED_REFRESH_HEADER}`], ["tazuo", ""], ["tazuo", RETIRED_RE_REFRESH_HEADER],
+    ["razor-enhanced", "# packrat-refresh.py -- my own refresh"], ["razor-enhanced", RETIRED_REFRESH_HEADER]] as const;
+  for (const [adapter, first] of cases) {
     const scriptsDir = tmp("qm-is-retired-other-");
     const text = `${first}\nimport API\n`;
     writeFileSync(join(scriptsDir, "packrat-refresh.py"), text);
-    const result = installScripts({ adapter, adaptersDir: fakeAdaptersDir(), scriptsDir, dataDir: tmp("qm-is-data-"), bridgeStatusPath: join(scriptsDir, "no-status.json") });
+    const result = installScripts({ adapter, adaptersDir: fakeMultiAdaptersDir(), scriptsDir, dataDir: tmp("qm-is-data-"), bridgeStatusPath: join(scriptsDir, "no-status.json") });
     assert.equal(result.ok, true, JSON.stringify(result));
-    assert.equal(readFileSync(join(scriptsDir, "packrat-refresh.py"), "utf8"), text, first);
+    assert.equal(readFileSync(join(scriptsDir, "packrat-refresh.py"), "utf8"), text, `${adapter}: ${first}`);
   }
-  const scriptsDir = tmp("qm-is-retired-re-");
-  const result = installScripts({ adapter: "razor-enhanced", adaptersDir: fakeMultiAdaptersDir(), scriptsDir, dataDir: tmp("qm-is-data-"), bridgeStatusPath: join(scriptsDir, "no-status.json") });
-  assert.equal(result.ok, true, JSON.stringify(result));
-  assert.equal(existsSync(join(scriptsDir, "packrat-refresh.py")), true, "Razor Enhanced's refresh keeps its name");
 });
 
 test("[fast] installScripts leaves a symlink or a folder named packrat-refresh.py alone", () => {
@@ -655,7 +656,7 @@ test("[fast] installScripts for one adapter never copies another adapter's scrip
   const scriptsDir = tmp("qm-is-isolation-dest-");
   const result = installScripts({ adapter: "razor-enhanced", adaptersDir, scriptsDir, dataDir: tmp("qm-is-data-"), bridgeStatusPath: join(scriptsDir, "no-status.json") });
   assert.equal(result.ok, true, JSON.stringify(result));
-  assert.deepEqual(result.installed.sort(), ["packrat-blacklist.py", "packrat-bridge.py", "packrat-refresh.py", "packrat-scanner.py"]);
+  assert.deepEqual(result.installed.sort(), ["packrat-blacklist.py", "packrat-bridge.py", "packrat-character-refresh.py", "packrat-scanner.py"]);
   assert.equal(existsSync(join(scriptsDir, "packrat-panel.py")), false, "tazuo's panel script (razor-enhanced ships none) was not copied");
   for (const name of result.installed) {
     const srcBuf = readFileSync(join(adaptersDir, "razor-enhanced", name));

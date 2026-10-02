@@ -1,4 +1,4 @@
-# packrat-refresh.py -- ATTENDED one-shot: QUICK character refresh for the Pack Rat app without a
+# packrat-character-refresh.py -- ATTENDED one-shot: QUICK character refresh for the Pack Rat app without a
 # full scan. Reads this character's stats, skills, maxes, resists, position, every equipped layer and
 # the BACKPACK (nested bags included) -- nothing else. Bank and ground containers are never opened,
 # so the app keeps whatever it last knew about them.
@@ -70,7 +70,7 @@ def read_blacklist(path):
 
 
 ADAPTER_ID = "razor-enhanced"
-ADAPTER_VERSION = "1.9.0"
+ADAPTER_VERSION = "1.10.0"
 CAPABILITIES = {
     "layers": ["RightHand", "LeftHand", "Shoes", "Pants", "Shirt", "Head", "Gloves", "Ring",
                "Talisman", "Neck", "Waist", "InnerTorso", "Bracelet", "MiddleTorso", "Earrings",

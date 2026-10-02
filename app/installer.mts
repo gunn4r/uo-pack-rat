@@ -555,12 +555,13 @@ export function installScripts(
 }
 
 // Scripts an earlier version shipped under a name it no longer uses, by adapter, each with the first line that marks the
-// file as Pack Rat's own (issue #10: TazUO 2.12.0 renamed packrat-refresh.py to packrat-character-refresh.py, and the old
-// copy would stay in the Script Manager beside the new one). An install removes such a file once the scripts are in
+// file as Pack Rat's own (issue #10: TazUO 2.12.0 and Razor Enhanced 1.10.0 renamed packrat-refresh.py to
+// packrat-character-refresh.py, and the old copy would stay in the client's script list beside the new one). An install removes such a file once the scripts are in
 // place; a file of that name with any other first line, a symlink or a folder is left alone, and a removal that fails
 // costs the install nothing.
 const RETIRED_SCRIPTS: Record<string, Array<{ name: string; header: string }>> = {
   tazuo: [{ name: "packrat-refresh.py", header: "# packrat-refresh.py — ATTENDED one-shot: QUICK character refresh for the Pack Rat" }],
+  "razor-enhanced": [{ name: "packrat-refresh.py", header: "# packrat-refresh.py -- ATTENDED one-shot: QUICK character refresh for the Pack Rat app without a" }],
 };
 function removeRetired(adapter: string, destDir: string, log: (msg: string) => void): void {
   for (const { name, header } of Object.hasOwn(RETIRED_SCRIPTS, adapter) ? RETIRED_SCRIPTS[adapter]! : []) {
