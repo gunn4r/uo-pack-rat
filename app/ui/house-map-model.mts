@@ -248,7 +248,7 @@ export function plainGrid(inv: Pick<InventoryData, "containers">, houses: readon
 }
 
 // ---------------------------------------------------------------- the scene of one level
-// What ui/house-map.mts draws for a level, in drawing units: the walls of the level below as faint tiles (on an upper level), the floor and stair tiles (with step bands), each standing spot's dashed reach, then every solid thing back to front: cut walls and windows and the foundation's lip in their material's colour (w-<family>), the ground level's plinth (with front steps, the outward sides of its edge tiles run down to the lowest step, at the game angle), stairs raised to meet the tile they lead to (at the game angle; from above they stay tiles), roof edges, furniture, doors and teleporters, the stacks (one box per chest at its real height, lifted clear of one below it that shares its z) and the standing spots' figures.
+// What ui/house-map.mts draws for a level, in drawing units: the walls of the level below as faint tiles (on an upper level), the floor and stair tiles (with step bands), each standing spot's dashed reach, then every solid thing back to front: cut walls and windows and the foundation's lip in their material's colour (w-<family>), the ground level's plinth (with front steps, the outward sides of its edge tiles run down to the lowest step, at the game angle), stairs (at the game angle, raised to meet the tile they lead to; from above they stay tiles), roof edges, furniture, doors and teleporters, the stacks (one box per chest at its real height, lifted clear of one below it that shares its z) and the standing spots' figures.
 export interface Prism { top: string; left: string; right: string }
 export type Piece =
   | { kind: "solid"; x: number; y: number; z: number; cls: string; prism: Prism; steps?: string[] }
@@ -309,7 +309,8 @@ export function sceneOf(m: HouseModel, level: number, view: View): Scene {
     if (c.kind === "floor" || c.kind === "stair") {
       const z = c.z - base, top = c.kind === "stair" ? stairTop(c, heights) : null, tz = top ? top.z - base : z;
       const steps = top ? [1, 3].map((k) => pts(band(x, y, tz, view, k / 4, (k + 1) / 4, top.acrossY))) : [];
-      if (top && tz > z && view === "angle") solids.push({ kind: "solid", x, y, z, cls: "map-stair", prism: prism(x, y, z, tz - z, view, 0), steps });
+      // At the game angle every stair is a solid in back-to-front order (a flat one is a top only), so a step in front is never painted over by the one behind it.
+      if (top && view === "angle") solids.push({ kind: "solid", x, y, z, cls: "map-stair", prism: tz > z ? prism(x, y, z, tz - z, view, 0) : { top: pts(tilePolygon(x, y, z, view)), left: "", right: "" }, steps });
       else {
         floors.push({ pts: pts(tilePolygon(x, y, tz, view)), cls: `map-floor f-${c.family}${c.room != null && yard.has(c.room) ? " yard" : ""}${top ? " map-stair" : ""}` });
         for (const b of steps) floors.push({ pts: b, cls: "map-step" });

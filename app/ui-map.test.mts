@@ -253,7 +253,8 @@ test("[fast] house map: a stair rises as a block to meet the higher tile beside 
     if (view === "angle") {
       assert.ok(block?.kind === "solid", "a raised block at the game angle");
       assert.equal(block.z, stair.z - base, "ordered from its own height");
-      assert.deepEqual(block.prism, { top: pts(boxFaces(x, y, stair.z - base, rim.z - stair.z, view).top), left: pts(boxFaces(x, y, stair.z - base, rim.z - stair.z, view).left), right: pts(boxFaces(x, y, stair.z - base, rim.z - stair.z, view).right) });
+      const f = boxFaces(x, y, stair.z - base, rim.z - stair.z, view);
+      assert.deepEqual(block.prism, { top: pts(f.top), left: pts(f.left), right: pts(f.right) });
       assert.equal(block.prism.top, pts(tilePolygon(x, y, rim.z - base, view)), "its top is level with the rim");
       assert.deepEqual(block.steps, across);
       assert.ok(!sc.floors.some((f) => has(f.cls, "map-stair") && f.pts === pts(tilePolygon(x, y, stair.z - base, view))), "no flat tile left at street level");
@@ -262,21 +263,29 @@ test("[fast] house map: a stair rises as a block to meet the higher tile beside 
       for (const b of across) assert.ok(sc.floors.some((f) => f.cls === "map-step" && f.pts === b), "with the same bands");
     }
   }
-  // A lone stair beside nothing higher: a flat tile with its bands across x, as before.
-  const lone = { ...m, cells: [stair] }, sc = sceneOf(lone, 0, "angle");
-  assert.ok(!sc.pieces.some((p) => p.kind === "solid" && has(p.cls, "map-stair")));
-  assert.ok(sc.floors.some((f) => has(f.cls, "map-stair") && f.pts === pts(tilePolygon(x, y, stair.z - base, "angle"))));
-  const z = stair.z - base;
-  assert.ok(sc.floors.some((f) => f.cls === "map-step" && f.pts === pts([project(x + 0.25, y, z, "angle"), project(x + 0.5, y, z, "angle"), project(x + 0.5, y + 1, z, "angle"), project(x + 0.25, y + 1, z, "angle")])));
+  // A lone stair beside nothing higher lies flat at its own height, its bands across x: from above a floor tile as before, at the game angle a top only.
+  const lone = { ...m, cells: [stair] }, z = stair.z - base, bands = (view: "angle" | "top") => [1, 3].map((k) => pts([project(x + k / 4, y, z, view), project(x + (k + 1) / 4, y, z, view), project(x + (k + 1) / 4, y + 1, z, view), project(x + k / 4, y + 1, z, view)]));
+  const flat = sceneOf(lone, 0, "angle").pieces.find((p) => p.kind === "solid" && has(p.cls, "map-stair"));
+  assert.ok(flat?.kind === "solid");
+  assert.deepEqual([flat.prism, flat.steps], [{ top: pts(tilePolygon(x, y, z, "angle")), left: "", right: "" }, bands("angle")]);
+  const above = sceneOf(lone, 0, "top");
+  assert.ok(above.floors.some((f) => has(f.cls, "map-stair") && f.pts === pts(tilePolygon(x, y, z, "top"))));
+  assert.deepEqual(above.floors.filter((f) => f.cls === "map-step").map((f) => f.pts), bands("top"));
 });
 
-test("[fast] house map: an interior staircase rises step by step, each step to the next one's height, its steps running across x; the top step stays flat", () => {
+test("[fast] house map: an interior staircase rises step by step, each step to the next one's height, its steps running across x; the top step stays flat, drawn after the step behind it", () => {
   const m = buildHouseModel(stairHouse(), td, []), base = m.levels[0]!.floorZ, sc = sceneOf(m, 0, "angle");
   const steps = m.cells.filter((c) => c.level === 0 && c.kind === "stair").sort((a, b) => a.x - b.x);
   assert.deepEqual(steps.map((c) => c.z), [7, 12, 17, 22]);
   steps.forEach((c, i) => {
     const x = c.x - m.x0, y = c.y - m.y0, block = sc.pieces.find((p) => p.kind === "solid" && has(p.cls, "map-stair") && p.x === x && p.y === y);
-    if (i === steps.length - 1) { assert.ok(!block, "nothing higher beside the top step on this level"); return; }
+    if (i === steps.length - 1) {
+      assert.ok(block?.kind === "solid", "the top step is a piece too");
+      assert.deepEqual(block.prism, { top: pts(tilePolygon(x, y, c.z - base, "angle")), left: "", right: "" }, "nothing higher beside it on this level: flat");
+      const prev = sc.pieces.findIndex((p) => p.kind === "solid" && has(p.cls, "map-stair") && p.x === x - 1 && p.y === y);
+      assert.ok(prev >= 0 && sc.pieces.indexOf(block) > prev, "painted after step 3, whose side would otherwise cover it");
+      return;
+    }
     const top = steps[i + 1]!.z - base;
     assert.ok(block?.kind === "solid", `step ${i + 1} is raised`);
     assert.equal(block.prism.top, pts(tilePolygon(x, y, top, "angle")), `step ${i + 1} rises to the next`);
