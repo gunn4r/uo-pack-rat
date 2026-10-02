@@ -11,7 +11,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from fake_clients import PLAYER, STRANGER, World, adapter_path, run_script, tazuo_panel_api  # noqa: E402
 
 SCRIPT = adapter_path("tazuo", "packrat-panel.py")
-ALL = ("packrat-scanner.py", "packrat-character-refresh.py", "packrat-bridge.py", "packrat-blacklist.py")
+ALL = ("packrat-scanner.py", "packrat-character-refresh.py", "packrat-house-map-refresh.py", "packrat-bridge.py", "packrat-blacklist.py")
 PACK, POUCH, BOOK, CHEST, FAR, CORPSE, TRASH, THEIRS, RING, BLACK = (0x40000001, 0x40000002, 0x40000003, 0x40000004, 0x40000005,
                                                                     0x40000006, 0x40000007, 0x40000008, 0x40000009, 0x4000000a)
 
@@ -55,6 +55,7 @@ class Panel(unittest.TestCase):
         w.clock.at(1, lambda: api.click(self.control(api, "Scan here")))
         w.clock.at(2, lambda: api.click(self.control(api, "Character refresh")))
         w.clock.at(3, lambda: api.click(self.control(api, "Blacklist a container")))
+        w.clock.at(3.5, lambda: api.click(self.control(api, "House map refresh")))
         w.clock.at(4, lambda: api.click(self.control(api, "Start bridge")))
         w.clock.at(7, lambda: seen.setdefault("on", self.labels(api)))
         w.clock.at(8, lambda: api.click(self.control(api, "Stop bridge")))
@@ -63,7 +64,8 @@ class Panel(unittest.TestCase):
         self.run_panel(w, api)
         self.assertEqual([c for c in api.log if c[0] != "hotkey"],
                          [("play", "PackRat/packrat-scanner.py"), ("play", "PackRat/packrat-character-refresh.py"),
-                          ("play", "PackRat/packrat-blacklist.py"), ("play", "PackRat/packrat-bridge.py"),
+                          ("play", "PackRat/packrat-blacklist.py"), ("play", "PackRat/packrat-house-map-refresh.py"),
+                          ("play", "PackRat/packrat-bridge.py"),
                           ("stop", "PackRat/packrat-bridge.py")])
         self.assertIn("Stop bridge", seen["on"])
         self.assertIn("Bridge: on", seen["on"])
@@ -72,6 +74,23 @@ class Panel(unittest.TestCase):
         self.assertFalse(api.windows[0].IsVisible, "Close hides the window")
         self.assertGreaterEqual(w.clock.now - w.clock.start, 30, "and the panel keeps running")
         self.assertEqual(w.calls, [], "the panel takes no action in the world")
+
+    def test_every_button_and_line_fits_the_window_and_no_two_buttons_overlap(self):
+        w = World()
+        api = tazuo_panel_api(w)
+        self.run_panel(w, api, until_s=1)
+        g = api.windows[0]
+        buttons = [c for c in g.children if c.Width]
+        self.assertIn("House map refresh", [b.Text for b in buttons])
+        refresh, house = self.control(api, "Character refresh"), self.control(api, "House map refresh")
+        self.assertEqual(refresh.Y, house.Y, "the two refreshes sit side by side")
+        for c in g.children:
+            self.assertTrue(0 <= c.X and c.X + c.Width <= g.Width and 0 <= c.Y and c.Y + max(c.Height, 16) <= g.Height, c.Text)
+        for i, a in enumerate(buttons):
+            for b in buttons[i + 1:]:
+                self.assertFalse(a.X < b.X + b.Width and b.X < a.X + a.Width and a.Y < b.Y + b.Height and b.Y < a.Y + a.Height, (a.Text, b.Text))
+        status = [c.Y for c in g.children if not c.Width and c.Y > 14]   # every line but the title
+        self.assertGreaterEqual(min(status), max(b.Y + b.Height for b in buttons if b.Text != "Close"), "the status lines sit below the buttons")
 
     def test_a_script_that_does_not_start_says_so(self):
         w = World()
@@ -277,6 +296,16 @@ class Panel(unittest.TestCase):
         self.assertEqual([c for c in api.log if c[0] == "play"], [("play", "packrat-scanner.py")])
         self.assertEqual(self.read("inbox", "tazuo", "putaway-request.json")["container"], CHEST)
         self.assertIn("Pack Rat did not answer.", self.labels(api))
+
+    def test_the_house_map_refresh_waits_while_a_put_away_runs(self):
+        w, api = self.house([PACK])
+        seen = {}
+        w.clock.at(1, lambda: api.click(self.control(api, "Put away...")))
+        w.clock.at(2, lambda: api.click(self.control(api, "House map refresh")))
+        w.clock.at(3, lambda: seen.setdefault("refused", self.labels(api)))
+        self.run_panel(w, api, until_s=4)
+        self.assertEqual([c for c in api.log if c[0] == "play"], [("play", "packrat-character-refresh.py")], "its file would read as the run's scan")
+        self.assertIn("Put away is running;", seen["refused"])
 
     def test_a_trip_that_never_reports_back_ends_the_run_and_writes_the_stop_flag(self):
         w, api = self.house([PACK])

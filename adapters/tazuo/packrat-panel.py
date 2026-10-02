@@ -2,6 +2,7 @@
 # other Pack Rat scripts, so nobody has to find them in the Script Manager:
 #   Scan here               packrat-scanner.py
 #   Character refresh       packrat-character-refresh.py
+#   House map refresh       packrat-house-map-refresh.py (waits while a Put away runs: its file would read as the run's scan)
 #   Start / Stop bridge     packrat-bridge.py (the label follows whether it is running)
 #   Blacklist a container   packrat-blacklist.py
 #   Put away...             Put away (issue #131): files what lies directly in a container you pick with
@@ -85,7 +86,8 @@ ADAPTER_VERSION = "2.11.0"
 
 SELF = "packrat-panel.py"
 SCANNER, REFRESH, BRIDGE, BLACKLIST = "packrat-scanner.py", "packrat-character-refresh.py", "packrat-bridge.py", "packrat-blacklist.py"
-LABELS = {SCANNER: "scan", REFRESH: "character refresh", BRIDGE: "bridge", BLACKLIST: "blacklist"}
+HOUSE = "packrat-house-map-refresh.py"
+LABELS = {SCANNER: "scan", REFRESH: "character refresh", HOUSE: "house map refresh", BRIDGE: "bridge", BLACKLIST: "blacklist"}
 
 DATA = data_dir()
 HEARTBEAT = os.path.join(DATA, "bridge", "tazuo", "panel.json")
@@ -122,7 +124,7 @@ MAX_DIR_ENTRIES = 5000    # names looked at per folder per refresh
 DEFAULT_HOTKEY = "CTRL+SHIFT+P"
 HOTKEY_MODS = ("CTRL", "ALT", "SHIFT")
 HOTKEY_KEY_RE = re.compile(r"[A-Z0-9]|F[1-9]|F1[0-2]")    # used with fullmatch
-W, H = 380, 308
+W, H = 380, 344
 TITLE_HUE, TEXT_HUE, OK_HUE = 1153, 996, 68
 
 state = {"done": False, "prefix": "", "character": "", "pending": {}, "was_running": set(),
@@ -201,6 +203,13 @@ def watch_pending():
         elif time.time() >= until:
             del state["pending"][name]
             say("Didn't start. Try again in a moment;", "if it persists, open Script Manager or relog.")
+
+
+def on_house():
+    if state["run"] is not None:
+        say("Put away is running;", "refresh the house map after it.")
+        return
+    start(HOUSE)
 
 
 def on_bridge():
@@ -348,7 +357,7 @@ def refresh():
         except Exception:
             pass
     set_text("title", "Pack Rat - " + "".join(ch for ch in state["character"] if ch.isprintable())[:30])
-    running = [n for n in (SCANNER, REFRESH, BRIDGE, BLACKLIST) if is_running(n)]
+    running = [n for n in (SCANNER, REFRESH, HOUSE, BRIDGE, BLACKLIST) if is_running(n)]
     for name in state["was_running"] - set(running) - set(state["pending"]):
         if state["run"] is None and name not in state["quiet"]:   # a Put away says what it is doing itself
             say("The %s finished." % LABELS[name])
@@ -601,9 +610,9 @@ def build_window():
     g = create_window()
     if g is None:
         return None
-    rows = [("title", "Pack Rat", TITLE_HUE, 14), ("running", "", TEXT_HUE, 160),
-            ("bridge", "", TEXT_HUE, 180), ("scan", "", TEXT_HUE, 200),
-            ("msg", "", OK_HUE, 222), ("msg2", "", OK_HUE, 240), ("hotkey", "", TEXT_HUE, 276)]
+    rows = [("title", "Pack Rat", TITLE_HUE, 14), ("running", "", TEXT_HUE, 196),
+            ("bridge", "", TEXT_HUE, 216), ("scan", "", TEXT_HUE, 236),
+            ("msg", "", OK_HUE, 258), ("msg2", "", OK_HUE, 276), ("hotkey", "", TEXT_HUE, 312)]
     for key, text, hue, y in rows:
         lbl = call(gumps("CreateGumpLabel"), text, hue)
         if lbl is None:
@@ -613,13 +622,14 @@ def build_window():
         lbl.SetPos(16, y)
         g.Add(lbl)
         ui[key] = lbl
-    buttons = [("scan_btn", "Scan here", lambda: start(SCANNER), 16, 44),
-               ("refresh_btn", "Character refresh", lambda: start(REFRESH), 196, 44),
-               ("bridge_btn", "Start bridge", on_bridge, 16, 80),
+    buttons = [("refresh_btn", "Character refresh", lambda: start(REFRESH), 16, 44),
+               ("house_btn", "House map refresh", on_house, 196, 44),
+               ("scan_btn", "Scan here", lambda: start(SCANNER), 16, 80),
                ("blacklist_btn", "Blacklist a container", lambda: start(BLACKLIST), 196, 80),
-               ("away_btn", "Put away...", on_put_away, 16, 116),
-               ("login_btn", login_text(), on_login, 196, 116),
-               ("close_btn", "Close", on_close, 276, 268)]
+               ("bridge_btn", "Start bridge", on_bridge, 16, 116),
+               ("away_btn", "Put away...", on_put_away, 196, 116),
+               ("login_btn", login_text(), on_login, 16, 152),
+               ("close_btn", "Close", on_close, 276, 304)]
     for key, text, fn, x, y in buttons:
         b = call(gumps("CreateSimpleButton"), text, 88 if key == "close_btn" else 168, 28)
         if b is None:
