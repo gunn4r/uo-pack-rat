@@ -211,7 +211,9 @@ export const forgetTipMisses = (): void => tips.forget();
 // event while it waits cannot cancel it); null for a pointer tooltip. tipHost is the item either one is for.
 let tipTimer = 0, tipSerial: number | null = null, tipAnchor: HTMLElement | null = null, tipHost: HTMLElement | null = null;
 let tipGone: MutationObserver | null = null;
-function tipEl(): HTMLElement { return $<HTMLElement>("#tip")!; }
+// Held here, not looked up: while it is drawn inside a dialog, removing the dialog would otherwise take it along.
+let tipBox: HTMLElement | null = null;
+function tipEl(): HTMLElement { return (tipBox ??= $<HTMLElement>("#tip")!); }
 function placeAt(x: number, y: number): void {
   const tip = tipEl(), pad = 14, w = tip.offsetWidth, h = tip.offsetHeight;
   let left = x + pad, top = y + pad;
@@ -245,7 +247,9 @@ export function hideItemTip(): void {
   tipSerial = null;
   tipHost = null;
   tipGone?.disconnect();
-  tipEl().style.display = "none";
+  const tip = tipEl();
+  tip.style.display = "none";
+  if (tip.parentElement !== document.body) document.body.append(tip);   // back from a dialog
   if (tipAnchor) { tipAnchor.removeAttribute("aria-describedby"); tipAnchor = null; }
 }
 const popOpen = (host: HTMLElement): boolean => host.getAttribute("aria-expanded") === "true";
