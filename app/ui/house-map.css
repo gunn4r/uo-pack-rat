@@ -1,11 +1,11 @@
 /* ui/house-map.css — the House map screen (ui/house-map.mts, issue #10): the top bar's controls, three panes (levels and rooms, the map, the details) stacked into one column below 1100 px, and the map drawn as SVG in the --color-map-* tokens. Tokens only (docs/ui.md). */
-#map-house { flex: 0 1 220px; min-width: 120px; }
+#map-house { flex: 0 1 auto; min-width: 120px; }
 .map-levels { display: flex; gap: var(--space-1); min-width: 0; overflow-x: auto; }
 
 #tab-map .map-page { display: grid; grid-template-columns: 240px minmax(0, 1fr) 340px; gap: var(--space-3); overflow: hidden; }
 #tab-map .map-page > :is(.msg, .map-empty, .panel) { grid-column: 1 / -1; align-self: start; }
 @media (max-width: 1099px) {
-  #tab-map .map-page { grid-template-columns: minmax(0, 1fr); overflow: auto; }
+  #tab-map .map-page { grid-template-columns: minmax(0, 1fr); grid-auto-rows: max-content; overflow: auto; }
   #tab-map .map-stage { min-height: 420px; }
 }
 

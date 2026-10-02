@@ -18,7 +18,7 @@ import { forgetCharacter } from "./characters.mts";
 import { bridgeNote, renderDataDirNotice } from "./bridge.mts";
 import { adapterCopy } from "./adapter-copy.mts";
 import { copiedScanner, loadScanner, scannerCopy } from "./paste-scanner.mts";
-import { clientErrorMessage, dataDirNotice, errorText, hostErrorMessage, installedIntoNote, pathsFileNote, relativeWhen } from "./messages.mts";
+import { clientErrorMessage, uoFolderErrorMessage, dataDirNotice, errorText, hostErrorMessage, installedIntoNote, pathsFileNote, relativeWhen } from "./messages.mts";
 import { autostartNote, hotkeyLabel, panelControls } from "./tazuo-panel.mts";
 import { exportKinds, importKinds } from "./kinds.mts";
 import { tiledataNote } from "./house-map-model.mts";
@@ -185,19 +185,21 @@ function panelCard(r: TazuoPanelApiResponse): HTMLElement {
 
 
 // ---------------------------------------------------------------- UO folder (house map, issue #10)
-// The folder the house map reads tiledata.mul from: where it was found (TazUO's launcher, or set here) and, when there is none or it cannot be read, why (the map's own note), a path field with Choose a folder… in the desktop app, and Reset to automatic. GET /api/houses says where it came from; PUT /api/settings {uoFolder} checks the folder and saves it (its refusal never echoes the path). A refused path stays in the field.
+// The folder the house map reads tiledata.mul from: where it was found (TazUO's launcher, or set here) and, when there is none or it cannot be read, why (the map's own note), a path field with Choose a folder… in the desktop app, and Reset to automatic. GET /api/houses says where it came from; PUT /api/settings {uoFolder} checks the folder and saves it (its refusal never echoes the path). A refused path stays in the field. When GET /api/houses fails, the card still shows the field (and a save's refusal) with the last place it heard of.
 let uoHostPicker = true;
 let uoDraft: string | null = null;
+let uoFrom: TiledataFrom = { folder: null, source: null, reason: null };
 async function syncUoFolderCard(error: string | null = null): Promise<void> {
   if (!$("#set-uofolder")) return;
-  try { $<HTMLElement>("#set-uofolder")?.replaceWith(uoFolderCard((await api<HousesApiResponse>("/api/houses")).tiledataFrom, error)); } catch { /* the card keeps what it showed */ }
+  try { uoFrom = (await api<HousesApiResponse>("/api/houses")).tiledataFrom; } catch { /* keep the last place heard of */ }
+  $<HTMLElement>("#set-uofolder")?.replaceWith(uoFolderCard(uoFrom, error));
 }
 function uoFolderCard(from: TiledataFrom, error: string | null): HTMLElement {
-  const path = input({ value: uoDraft ?? state.settings?.uoFolder ?? "", placeholder: "The folder holding tiledata.mul", attrs: { id: "set-uofolder-path", class: "input set-uofolder-path", "aria-label": "UO folder" } });
+  const path = input({ value: uoDraft ?? state.settings?.uoFolder ?? "", placeholder: "The folder holding tiledata.mul", attrs: { id: "set-uofolder-path", class: "input set-uofolder-path" } });
   path.addEventListener("input", () => { uoDraft = path.value; });
   const save = async (folder: string | null): Promise<void> => {
     try { state.settings = (await api<SettingsApiResponse>("/api/settings", { method: "PUT", body: { uoFolder: folder } })).settings; uoDraft = null; void syncUoFolderCard(); }
-    catch (e) { void syncUoFolderCard(errorText(e)); }
+    catch (e) { void syncUoFolderCard(uoFolderErrorMessage(e)); }
   };
   const pick = async (): Promise<void> => {
     try {
