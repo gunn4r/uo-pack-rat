@@ -57,12 +57,33 @@ export async function showMap(want: string | null): Promise<void> {
 }
 
 function render(): void {
+  const refocusScreen = keepFocus();
   paintTopbar();
-  if (S.error) { body().replaceChildren(message({ tone: "bad", title: "Could not load the house map", text: S.error })); return; }
-  if (!S.model) { body().replaceChildren(emptyState()); return; }
-  body().replaceChildren(side(), stage(), box("aside", { class: "card map-panel", id: "map-panel", "aria-label": "Details" }));
-  drawPanel();   // before the map, so the first fit measures the pane with the panel already filled
-  drawMap();
+  if (S.error) body().replaceChildren(message({ tone: "bad", title: "Could not load the house map", text: S.error }));
+  else if (!S.model) body().replaceChildren(emptyState());
+  else {
+    body().replaceChildren(side(), stage(), box("aside", { class: "card map-panel", id: "map-panel", "aria-label": "Details" }));
+    drawPanel();   // before the map, so the first fit measures the pane with the panel already filled
+    drawMap();
+  }
+  refocusScreen?.();
+}
+type Focusable = HTMLElement | SVGElement;
+// The focused control on the map screen, as a function that puts focus on its rebuilt twin once render() is done: a level pill, a room, a crumb or a stack by its data key, a panel control by focusKey. One that is gone hands focus to a stand-in: the first pill for a pill, the last crumb still a button for a crumb, else the map's tab stop. Null when focus is outside the screen.
+function keepFocus(): (() => void) | null {
+  const a = document.activeElement, tab = $<HTMLElement>("#tab-map")!;
+  if (!(a instanceof Element) || !tab.contains(a)) return null;
+  const q = (sel: string): Focusable | null => tab.querySelector<Focusable>(sel);
+  const stop = (): Focusable | null => q('#map-svg [data-stack][tabindex="0"]');
+  const first = (...picks: Array<() => Focusable | null>): void => { for (const p of picks) { const e = p(); if (e) { e.focus(); return; } } };
+  const key = (name: string): string | undefined => a.closest<Focusable>(`[data-${name}]`)?.dataset[name];
+  const level = key("level"), room = key("room"), crumb = key("crumb"), stack = key("stack");
+  if (level != null) return () => first(() => q(`#map-levels [data-level="${level}"]`), () => q("#map-levels [data-level]"));
+  if (room != null) return () => first(() => q(`.map-room[data-room="${room}"]`), stop);
+  if (crumb != null) return () => first(() => q(`#map-crumbs [data-crumb="${crumb}"]`), () => [...tab.querySelectorAll<HTMLElement>("#map-crumbs button")].at(-1) ?? null, stop);
+  if (stack != null) return () => first(() => q(`#map-svg [data-stack="${stack}"]`), stop);
+  const panel = $<HTMLElement>("#map-panel"), was = panel ? focusKey(panel) : null;
+  return was ? () => { const p = $<HTMLElement>("#map-panel"); if (p?.querySelector(was)) refocus(p, was); else first(stop); } : null;
 }
 
 function paintTopbar(): void {
@@ -71,11 +92,13 @@ function paintTopbar(): void {
   sel.replaceChildren(...opts.map((o) => el("option", { value: o.value }, o.label)));
   sel.value = S.id ?? "";
   sel.disabled = opts.length < 2;
-  $<HTMLElement>("#map-levels")!.replaceChildren(...(S.model?.levels ?? []).map((l) => pill({ label: l.name, pressed: l.index === S.level, onToggle: () => setLevel(l.index) })));
+  $<HTMLElement>("#map-levels")!.replaceChildren(...(S.model?.levels ?? []).map((l) => { const p = pill({ label: l.name, pressed: l.index === S.level, onToggle: () => setLevel(l.index) }); p.dataset.level = String(l.index); return p; }));
   viewSeg.setValue(S.view);
   modeSeg.setValue(S.mode);
 }
+// The level shown already does nothing (its pill, which unpressed itself on the click, is pressed again).
 function setLevel(i: number): void {
+  if (i === S.level) { $<HTMLElement>(`#map-levels [data-level="${i}"]`)?.setAttribute("aria-pressed", "true"); return; }
   S.level = i; S.room = null; S.selected = null; S.hover = null; S.vb = null;
   render();
 }
@@ -91,7 +114,7 @@ function side(): HTMLElement {
     box("h2", { class: "map-level-name" }, txt(l.name, "strong"), txt(plural(chestCount(m, l.index), "container"), "t-sm muted")),
     l.status === "floor-only" && m.id !== PLAIN ? el("p", { class: "t-sm muted" }, "Floor only, no walls or stairs yet") : null,
     box("ul", { class: "map-rooms" }, ...m.rooms.filter((r) => r.level === l.index).map((r) => box("li", {},
-      box("button", { type: "button", class: "map-room", "aria-pressed": String(S.room === r.id), onclick: () => zoomToRoom(r) },
+      box("button", { type: "button", class: "map-room", "data-room": String(r.id), "aria-pressed": String(S.room === r.id), onclick: () => zoomToRoom(r) },
         txt(r.name, "ellip"), txt(counts.get(r.id) ? plural(counts.get(r.id)!, "container") : "no containers", "t-sm muted"))))))));
 }
 
@@ -193,14 +216,15 @@ function drawMap(): void {
   svg.setAttribute("viewBox", vbText(S.vb));
   paintStacks();
 }
-// The selection, the cut-away in front of the hovered (or focused) stack, else the selected one (Game angle only: top-down nothing hides anything), and the roving tab stop (the focused stack, else the selected one, else the first in code order).
+// The selection, the cut-away in front of the hovered (or focused) stack, else the selected one (Game angle only: top-down nothing hides anything), and the roving tab stop (the focused stack, else the selected one, else the first in code order in the room zoomed to, else the first in view, else the first).
 function paintStacks(): void {
   const m = S.model;
   if (!m) return;
   const sel = selectedStack(), here = m.stacks.filter((s) => s.level === S.level);
   const focus = here.find((s) => s.letter === S.hover) ?? (sel?.level === S.level ? sel : null);
   const cut = focus && S.view === "angle" ? cutAway(m, S.level, focus) : new Set<string>();
-  const roving = here.find((s) => s.letter === S.focus)?.letter ?? (sel?.level === S.level ? sel.letter : here[0]?.letter);
+  const roving = here.find((s) => s.letter === S.focus)?.letter ?? (sel?.level === S.level ? sel.letter
+    : (here.find((s) => S.room != null && s.room === S.room) ?? here.find((s) => S.vb && inBox(S.vb, anchorOf(m, s, S.view))) ?? here[0])?.letter);
   for (const e of document.querySelectorAll<SVGGElement>("#map-svg .map-stack")) {
     const letter = e.dataset.stack;
     e.classList.toggle("sel", letter === sel?.letter);
@@ -214,13 +238,13 @@ function drawCrumbs(): void {
   const nav = $<HTMLElement>("#map-crumbs"), m = S.model;
   if (!nav || !m) return;
   const sel = selectedStack(), level = m.levels[S.level], room = m.rooms.find((r) => r.id === (sel?.room ?? S.room)) ?? null;
-  const crumb = (label: string, go: (() => void) | null): HTMLElement => box("li", {}, go ? button({ label, variant: "ghost", size: "sm", onClick: go }) : txt(label, "strong"));
+  const crumb = (key: string, label: string, go: (() => void) | null): HTMLElement => box("li", {}, go ? button({ label, variant: "ghost", size: "sm", attrs: { "data-crumb": key }, onClick: go }) : txt(label, "strong"));
   const up = (level: number): void => { S.level = level; S.room = null; S.selected = null; S.hover = null; S.vb = null; render(); };
   nav.replaceChildren(box("ol", { class: "map-crumb-list" },
-    crumb(houseName(m), sel || S.room != null || S.level !== 0 ? () => up(0) : null),
-    level ? crumb(level.name, sel || S.room != null ? () => up(S.level) : null) : null,
-    room ? crumb(room.name, sel ? () => zoomToRoom(room) : null) : null,
-    sel ? crumb(`Stack ${sel.letter}`, null) : null));
+    crumb("house", houseName(m), sel || S.room != null || S.level !== 0 ? () => up(0) : null),
+    level ? crumb("level", level.name, sel || S.room != null ? () => up(S.level) : null) : null,
+    room ? crumb("room", room.name, sel ? () => zoomToRoom(room) : null) : null,
+    sel ? crumb("stack", `Stack ${sel.letter}`, null) : null));
 }
 
 // ---------------------------------------------------------------- interaction
@@ -249,12 +273,15 @@ function wireSvg(svg: SVGSVGElement): void {
   svg.addEventListener("pointerleave", () => { if (!drag) { S.hover = null; paintStacks(); hideCallout(); } });
   svg.addEventListener("wheel", (e) => { e.preventDefault(); if (e.deltaY === 0) return; zoomBy(e.deltaY > 0 ? 1.15 : 1 / 1.15, svgPoint(svg, e.clientX, e.clientY)); }, { passive: false });
   svg.addEventListener("keydown", stackKeys);
+  // A stack the keyboard reaches outside the view is brought to its middle, at the same zoom (a press focuses too, and must not move the stack from under the pointer).
   svg.addEventListener("focusin", (e) => {
-    const t = (e.target as Element).closest?.("[data-stack]") as SVGElement | null;
-    if (!t?.dataset.stack) return;
-    S.focus = S.hover = t.dataset.stack;
+    const t = (e.target as Element).closest?.("[data-stack]") as SVGElement | null, m = S.model, s = m?.stacks.find((x) => x.letter === t?.dataset.stack);
+    if (!m || !s) return;
+    S.focus = S.hover = s.letter;
     paintStacks();
-    showCallout(t.dataset.stack);
+    const at = anchorOf(m, s, S.view);
+    if (!drag && S.vb && !inBox(S.vb, at)) setViewBox({ ...S.vb, x: at[0] - S.vb.w / 2, y: at[1] - S.vb.h / 2 });
+    showCallout(s.letter);
   });
   svg.addEventListener("focusout", () => { S.hover = null; paintStacks(); hideCallout(); });
 }
@@ -300,6 +327,7 @@ function svgPoint(svg: SVGSVGElement, x: number, y: number): Pt {
   const p = new DOMPoint(x, y).matrixTransform(ctm.inverse());
   return [p.x, p.y];
 }
+const inBox = (b: Box, p: Pt): boolean => p[0] >= b.x && p[0] <= b.x + b.w && p[1] >= b.y && p[1] <= b.y + b.h;
 function setViewBox(b: Box): void {
   S.vb = b;
   $<SVGSVGElement>("#map-svg")?.setAttribute("viewBox", vbText(b));
@@ -326,6 +354,12 @@ function select(serial: number | null): void {
   drawCrumbs();
   drawPanel();
 }
+// Back to the house, or Esc: the selection clears, and focus in the panel (whose controls go with it) returns to the stack that was selected.
+function unselect(): void {
+  const s = selectedStack(), inPanel = !!$<HTMLElement>("#map-panel")?.contains(document.activeElement);
+  select(null);
+  if (s && inPanel) focusStack(s.letter);
+}
 // Enter or Space selects the focused stack; an arrow key moves to the nearest stack that way on screen.
 const ARROWS: Record<string, Dir> = { ArrowUp: "up", ArrowDown: "down", ArrowLeft: "left", ArrowRight: "right" };
 function stackKeys(e: KeyboardEvent): void {
@@ -350,7 +384,7 @@ document.addEventListener("keydown", (e) => {
   const t = e.target as Element | null;
   if (t?.closest?.("input, textarea, select, [contenteditable], dialog, .drawer-root") || document.querySelector(".pop, .drawer-root:not([hidden])") || modalOpen()) return;
   e.preventDefault();
-  select(null);
+  unselect();
 });
 
 // ---------------------------------------------------------------- the panel
@@ -373,7 +407,7 @@ function drawPanel(): void {
     p.replaceChildren(
       box("header", { class: "map-panel-head" }, el("h2", { class: "t-lg" }, chests.length > 1 ? `Stack ${s.letter}` : chests[0]!.name), txt(stackWhere(m, s), "t-sm muted")),
       box("ol", { class: "map-chests", "aria-label": "Chests, top first" }, ...chests.map((c) => chestRow(m, s, c))),
-      box("div", { class: "map-panel-actions" }, why ? tipWrap(all, why) : all, button({ label: "Back to the house", variant: "ghost", size: "sm", onClick: () => select(null) })),
+      box("div", { class: "map-panel-actions" }, why ? tipWrap(all, why) : all, button({ label: "Back to the house", variant: "ghost", size: "sm", onClick: unselect })),
       legend());
   }
   if (was) refocus(p, was);
@@ -400,7 +434,7 @@ function totalsPanel(m: HouseModel): HTMLElement[] {
     box("header", { class: "map-panel-head" }, el("h2", { class: "t-lg" }, houseName(m)),
       txt(m.id === PLAIN ? "Ground chests outside any drawn house" : `${plural(m.levels.length, "level")} · ${plural(m.stacks.length, "stack")} · ${plural(m.spots.length, "standing spot")}`, "t-sm muted")),
     ...(t.capacity ? [meter(t.used, t.capacity, { label: `${t.used} of ${t.capacity} item slots used` })] : []),
-    keyValue([["Containers", fmtN(t.containers)], ["Item slots used", `${fmtN(t.used)} of ${fmtN(t.capacity)}`], ["Item slots free", fmtN(t.capacity - t.used)], ["Empty", fmtN(t.empty)], ["Full or nearly", fmtN(t.full)], ["Not opened yet", fmtN(t.unopened)]]),
+    keyValue([["Containers", fmtN(t.containers)], ["Item slots used", `${fmtN(t.used)} of ${fmtN(t.capacity)}`], ["Item slots free", fmtN(t.capacity - t.used)], ["Empty", fmtN(t.empty)], ["Full or nearly", fmtN(t.full)], ["Not opened yet", fmtN(t.unopened)], ...(t.unknown ? [["Fill unknown", fmtN(t.unknown)] as [string, string]] : [])]),
     legend(),
     el("p", { class: "t-sm muted" }, "Click a stack on the map, or a room on the left."),
   ];
@@ -413,7 +447,7 @@ const stackReason = (m: HouseModel, s: Stack, chests: ChestView[]): string | nul
 // One chest of the selected stack: its code and name (the in-game name too when a label renames it), its fill and item count or why they are not known yet, and Highlight, Label… and Show items. Label… and Show items wait for a scan that opens the chest.
 function chestRow(m: HouseModel, s: Stack, c: ChestView): HTMLElement {
   const { it, opts } = chestTarget(m, s, c);
-  const notOpened = `Not opened yet: scan from standing spot ${(s.spot ?? 0) + 1} to label it and list what is in it.`;
+  const notOpened = s.spot == null ? "Not opened yet: no standing spot reaches it — scan from beside it to label it and list what is in it." : `Not opened yet: scan from standing spot ${s.spot + 1} to label it and list what is in it.`;
   const why = bridgeActionReason("highlight", it);
   const hl = button({ label: "Highlight", icon: "highlight", size: "sm", disabled: !!why, attrs: { "data-act": "highlight" }, onClick: () => { void runBridgeAction("highlight", it, opts); } });
   const container = state.inv!.containers[String(c.serial)];
@@ -426,7 +460,7 @@ function chestRow(m: HouseModel, s: Stack, c: ChestView): HTMLElement {
       box("span", { class: "map-chest-name" }, txt(c.code, "mono strong"), txt(c.name, "ellip strong")),
       c.name !== c.inGame ? txt(`In game: ${c.inGame}`, "t-sm muted ellip") : null,
       c.fill ? box("span", { class: "cont-fill" }, meter(c.fill.items, c.fill.max, { tone: fillTone(c.fill), label: fillWords(c) }), txt(`${c.fill.items}/${c.fill.max}`, "t-sm num")) : txt("Fill unknown", "t-sm muted"),
-      txt(c.opened ? plural(c.items, "item") : notOpened, c.opened ? "t-sm muted" : "t-sm")),
+      txt(c.opened ? `${plural(c.items, "item")} scanned` : notOpened, c.opened ? "t-sm muted" : "t-sm")),
     box("div", { class: "map-chest-actions" }, why ? tipWrap(hl, why) : hl, noLabel ? tipWrap(lbl, noLabel) : lbl, c.opened ? items : tipWrap(items, notOpened)));
 }
 // Highlight the stack: one highlight per chest, top first, 300 ms apart, stopping at the first refusal; one toast says how it went. One run at a time: the button is disabled while it sends, and a second press (an old button a redraw replaced) does nothing.

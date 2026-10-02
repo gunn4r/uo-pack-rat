@@ -1,4 +1,4 @@
-// ui-map.test.mts — [slow]: the House map (issue #10) in the real Electron window over a seeded data folder (the dense vault and the courtyard house of app/house-fixture.mts, their chests from app/organize-fixture.mts, a synthetic tiledata.mul behind a fake TazUO launcher): the nav entry, the picker and level pills, a stale deep link, the no-tiledata note, the drawing in both views, callouts, selection, cut-away, keyboard, pan and zoom, the detail panel's actions, the colour modes, a chest no scan opened, the plain grid over the demo scans, the empty state, the Settings UO folder card, the 1000 × 700 layout and contrast in both theme families. Skipped when electron or playwright is absent, or under TEST_SKIP_ELECTRON.
+// ui-map.test.mts — [slow]: the House map (issue #10) in the real Electron window over a seeded data folder (the dense vault and the courtyard house of app/house-fixture.mts, their chests from app/organize-fixture.mts, a synthetic tiledata.mul behind a fake TazUO launcher): the nav entry, the picker and level pills, a stale deep link, the no-tiledata note, the drawing in both views, callouts, selection, cut-away, keyboard (and a walk of the screen by keyboard alone that keeps focus through every redraw), pan and zoom, the detail panel's actions, the colour modes, a chest no scan opened, the plain grid over the demo scans, the empty state, the Settings UO folder card, the 1000 × 700 layout and contrast in both theme families. Skipped when electron or playwright is absent, or under TEST_SKIP_ELECTRON.
 import test from "node:test";
 import assert from "node:assert/strict";
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
@@ -12,6 +12,7 @@ import { houseScan } from "../app/organize-fixture.mts";
 import { vaultHouse, courtyardHouse, castleHouse, fixtureTileData, FIXTURE_TILES } from "../app/house-fixture.mts";
 import { syntheticTileData } from "../app/tiledata-fixture.mts";
 import { buildHouseModel, type HouseModel } from "../app/house-model.mts";
+import { anchorOf } from "../app/ui/house-map-model.mts";
 import type { ElectronApplication, Page } from "playwright";
 
 const ROOT = dirname(dirname(fileURLToPath(import.meta.url)));
@@ -242,6 +243,63 @@ test("[slow] House map: hover shows a stack's callout, a click selects it and fi
   } finally { await done(app, dir); }
 });
 
+const focused = (page: Page, sel: string): Promise<boolean> => page.evaluate((s) => !!document.activeElement?.matches(s), sel);
+// Press Tab (or Shift+Tab) until the focus is on `sel`.
+async function tabTo(page: Page, sel: string, key = "Tab"): Promise<void> {
+  for (let i = 0; i < 80; i++) {
+    await page.keyboard.press(key);
+    if (await focused(page, sel)) return;
+  }
+  throw new Error(`${key} never reached ${sel}`);
+}
+test("[slow] House map: the keyboard alone walks the screen, and focus stays put through a level, a room, a selection, a reload and Esc from the panel", async (t) => {
+  const why = unavailable();
+  if (why) return t.skip(why);
+  const { dir } = seed();
+  const { app, page, errors } = await launch(dir);
+  try {
+    await go(page, "#/map", "#map-svg .map-stack");
+    const pill = (i: number) => `#map-levels [data-level="${i}"]`;
+    await tabTo(page, pill(1));
+    await page.keyboard.press("Enter");
+    assert.equal(await page.locator(pill(1)).getAttribute("aria-pressed"), "true");
+    assert.ok(await focused(page, pill(1)), "focus stays on the 2nd floor pill");
+    await tabTo(page, pill(0), "Shift+Tab");
+    await page.keyboard.press("Enter");
+    assert.ok(await focused(page, pill(0)), "focus stays on the Ground floor pill");
+    await page.keyboard.press("Enter");
+    assert.equal(await page.locator(pill(0)).getAttribute("aria-pressed"), "true", "the level shown stays pressed");
+    assert.ok(await focused(page, pill(0)));
+
+    const room = '.map-room[data-room="0"]';
+    await tabTo(page, room);
+    await page.keyboard.press("Enter");
+    assert.equal(await page.locator(room).getAttribute("aria-pressed"), "true");
+    assert.ok(await focused(page, room), "focus stays on the room");
+
+    await tabTo(page, "#map-svg [data-stack]");
+    await page.keyboard.press("ArrowRight");
+    await page.keyboard.press("Enter");
+    const got = await page.evaluate(() => { const a = document.activeElement as SVGElement; return { letter: a.dataset.stack ?? "", pressed: a.getAttribute("aria-pressed"), vb: document.querySelector("#map-svg")!.getAttribute("viewBox") || "" }; });
+    assert.equal(got.pressed, "true", "Enter selected the focused stack");
+    const [x, y] = anchorOf(vaultModel, vaultModel.stacks.find((s) => s.letter === got.letter)!, "angle"), [vx, vy, vw, vh] = got.vb.split(" ").map(Number);
+    assert.ok(x >= vx! && x <= vx! + vw! && y >= vy! && y <= vy! + vh!, `stack ${got.letter} at ${x},${y} is inside the viewBox ${got.vb}`);
+    const stack = `#map-svg [data-stack="${got.letter}"]`;
+
+    // a reload rebuilds the map and keeps the focus on the stack
+    await page.evaluate(() => { (document.querySelector("#map-svg > g") as SVGGElement).dataset.mark = "old"; });
+    await page.evaluate(async () => { await (await import("/ui/app.mjs" as string)).reload(); });
+    await page.waitForFunction(() => !document.querySelector('#map-svg > g[data-mark="old"]') && !!document.querySelector('#map-svg [aria-pressed="true"]'), undefined, { timeout: 15_000 });
+    assert.ok(await focused(page, stack), "focus is on the stack after a reload");
+
+    await tabTo(page, "#map-highlight-stack, .tipwrap:has(#map-highlight-stack)");
+    await page.keyboard.press("Escape");
+    assert.equal(await page.locator('#map-svg [aria-pressed="true"]').count(), 0, "Esc cleared the selection");
+    assert.ok(await focused(page, stack), "and focus went back to the stack");
+    assert.deepEqual(errors, []);
+  } finally { await done(app, dir); }
+});
+
 // The bridge, as far as the page can tell: a status file refreshed every second until stop(). The page's commands land in bridgeDir's queue.jsonl.
 function bridgeOnline(dir: string): { bridgeDir: string; stop: () => void } {
   const bridgeDir = join(dir, "bridge", "tazuo");
@@ -442,8 +500,8 @@ test("[slow] Settings › UO folder (house map): a folder set here whose tiledat
   } finally { await done(app, dir); }
 });
 
-// One scene measured in both theme families, light and dark (the page's own look only, as ui-contrast.test.mts does).
-async function measure(page: Page, name: string, rows: Array<ContrastRow & { where: string }>): Promise<void> {
+// One scene measured in both theme families, light and dark (the page's own look only, as ui-contrast.test.mts does); some measured text must match `shows`, so the scene is the one meant.
+async function measure(page: Page, name: string, shows: RegExp, rows: Array<ContrastRow & { where: string }>): Promise<void> {
   for (const family of ["default", "britannia"] as const) {
     await page.evaluate(async (f) => (await import("/ui/theme.mjs" as string)).applyLook({ theme: f }), family);
     for (const mode of ["light", "dark"] as const) {
@@ -452,6 +510,7 @@ async function measure(page: Page, name: string, rows: Array<ContrastRow & { whe
       await page.waitForTimeout(80);
       const got = await page.evaluate(probeContrast);
       assert.ok(got.length > 10, `${name} (${family} ${mode}) measured only ${got.length} pairs — did the scene render?`);
+      assert.ok(got.some((r) => shows.test(r.text)), `${name} (${family} ${mode}) measured no text matching ${shows}`);
       for (const r of got) rows.push({ ...r, where: `${name} · ${family} ${mode}` });
     }
   }
@@ -468,26 +527,26 @@ test("[slow] House map: every text, control edge and icon passes contrast on the
   try {
     await go(page, "#/map", "#map-svg .map-stack");
     await page.mouse.move(size.width - 20, 4);
-    await measure(page, "house map", rows);
+    await measure(page, "house map", /Item slots/, rows);
     const front = letter(vaultModel, 3005, 1005);
     await page.locator(`#map-svg [data-stack="${front}"]`).focus();
     await page.keyboard.press("Enter");
     await page.waitForSelector("#map-panel .map-chest-row");
-    await measure(page, "selected stack", rows);
+    await measure(page, "selected stack", /Stack /, rows);
     await page.locator(`#map-svg [data-stack="${front}"]`).hover();
     await page.waitForSelector("#map-callout:not([hidden])");
-    await measure(page, "callout", rows);
+    await measure(page, "callout", /top first/, rows);
     // The houses list without tiledata: the real body read through the page (a route's own refetch lacks the app's token and gets 401), then answered with the reason swapped in.
     const real = await page.evaluate(async () => (await fetch("/api/houses")).json() as Promise<Record<string, unknown>>);
     await page.route("**/api/houses", (route) => route.fulfill({ json: { ...real, tiledata: false, tiledataFrom: { folder: null, source: null, reason: "no-client" } } }));
     await go(page, `#/map/${COURT}`, "#map-tiledata-note");
     await page.unroute("**/api/houses");
     await page.mouse.move(size.width - 20, 4);
-    await measure(page, "no-tiledata note", rows);
+    await measure(page, "no-tiledata note", /No game client/, rows);   // the note's text row starts with its title and is cut at 60 characters, before the word tiledata
 
     // a small window: one column, no sideways scroll anywhere on the screen
     await fitWindow(app, page, { width: 1000, height: 700 });
-    await go(page, `#/map/${VAULT}`, "#map-svg .map-stack");
+    await go(page, `#/map/${VAULT}`, `#map-svg [data-chest="${LABELLED}"]`);   // a vault-only chest: the courtyard drawn before it has stacks too
     const layout = await page.evaluate(() => {
       const over = (sel: string): number => { const e = document.querySelector(sel) as HTMLElement; return e.scrollWidth - e.clientWidth; };
       return { cols: getComputedStyle(document.querySelector("#map-body")!).gridTemplateColumns.split(" ").length, page: over("html"), body: over("#map-body"), top: over("#tab-map .topbar") };
@@ -501,7 +560,7 @@ test("[slow] House map: every text, control edge and icon passes contrast on the
   try {
     await go(empty.page, "#/map", ".map-empty");
     await empty.page.mouse.move(empty.size.width - 20, 4);
-    await measure(empty.page, "empty state", rows);
+    await measure(empty.page, "empty state", /No house|scan/i, rows);
   } finally { await done(empty.app, emptyDir); }
   const failed = failures(rows);
   assert.equal(failed.length, 0, `contrast failures (${failed.length} of ${rows.length} pairs):\n${describeFailures(failed)}`);
