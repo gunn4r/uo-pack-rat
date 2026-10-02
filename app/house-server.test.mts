@@ -1,7 +1,7 @@
 // house-server.test.mts — GET /api/houses and GET /api/houses/<id> (issue #10) against a real listening server on a temp data folder: a scan with a house capture becomes a house, its ground chests become stacks, and the client's tiledata.mul is found through the TazUO launcher profile (or not, and the model falls back). Tags: [fast]. Run: node --test app/house-server.test.mts
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, mkdirSync, writeFileSync } from "node:fs";
+import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { resolveConfig, ensureLayout } from "./config.mts";
@@ -136,5 +136,60 @@ test("[fast] houses: a chest a capture saw but no scan opened is on the map as n
     assert.equal(list.body.houses[0]!.containers, 122);
     const inv = await get<{ inventory: { containers: Record<string, unknown> } }>(s, "/api/inventory");
     assert.equal(String(SEEN) in inv.body.inventory.containers, false, "a chest no scan opened is nowhere in the inventory");
+  } finally { await s.close(); }
+});
+
+type From = { folder: string | null; source: string | null; reason: string | null };
+async function put(s: ServerHandle, body: unknown): Promise<{ status: number; body: { ok: boolean; error?: string; settings?: { uoFolder?: string | null } } }> {
+  const r = await fetch(s.url + "/api/settings", { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
+  return { status: r.status, body: (await r.json()) as { ok: boolean; error?: string; settings?: { uoFolder?: string | null } } };
+}
+const uoFolderWith = (bytes: Buffer): string => { const d = mkdtempSync(join(tmpdir(), "pr-house-uo-")); writeFileSync(join(d, "tiledata.mul"), bytes); return d; };
+
+test("[fast] houses: the UO folder set in Settings wins over TazUO's launcher, and says where it came from", async () => {
+  const { s } = await serve(true);
+  try {
+    const auto = await get<{ tiledataFrom: From }>(s, "/api/houses");
+    assert.equal(auto.body.tiledataFrom.source, "tazuo-profile");
+    const mine = uoFolderWith(syntheticTileData([{ graphic: G.pavers, flags: FLAG.surface, name: "marble floor" }, { graphic: G.stoneWall, flags: FLAG.wall | FLAG.impassable, height: 20, name: "stone wall" }]));
+    const r = await put(s, { uoFolder: mine });
+    assert.equal(r.status, 200);
+    assert.equal(r.body.settings!.uoFolder, mine);
+    const list = await get<{ tiledata: boolean; tiledataFrom: From }>(s, "/api/houses");
+    assert.deepEqual([list.body.tiledata, list.body.tiledataFrom], [true, { folder: mine, source: "settings", reason: null }]);
+    const one = await get<{ house: HouseModel }>(s, "/api/houses/1-3000-1000");
+    assert.equal(one.body.house.cells.find((c) => c.x === 3002 && c.y === 1002 && c.level === 0)!.family, "marble");
+    assert.equal((await put(s, { uoFolder: null })).body.settings!.uoFolder, null, "null goes back to automatic");
+    assert.equal((await get<{ tiledataFrom: From }>(s, "/api/houses")).body.tiledataFrom.source, "tazuo-profile");
+  } finally { await s.close(); }
+});
+
+test("[fast] houses: a UO folder that lost its tiledata.mul, a file that is not a 7.x tiledata.mul, and no client each say why there is none", async () => {
+  const { s } = await serve(true);
+  try {
+    const gone = uoFolderWith(syntheticTileData([]));
+    assert.equal((await put(s, { uoFolder: gone })).status, 200);
+    rmSync(join(gone, "tiledata.mul"));
+    assert.deepEqual((await get<{ tiledata: boolean; tiledataFrom: From }>(s, "/api/houses")).body.tiledataFrom, { folder: gone, source: "settings", reason: "override-missing" });
+    const junk = uoFolderWith(Buffer.alloc(100));
+    assert.equal((await put(s, { uoFolder: junk })).status, 200);
+    const list = await get<{ tiledata: boolean; tiledataFrom: From }>(s, "/api/houses");
+    assert.deepEqual([list.body.tiledata, list.body.tiledataFrom], [false, { folder: junk, source: "settings", reason: "unreadable" }]);
+  } finally { await s.close(); }
+  const { s: bare } = await serve(false);
+  try {
+    assert.deepEqual((await get<{ tiledataFrom: From }>(bare, "/api/houses")).body.tiledataFrom, { folder: null, source: null, reason: "no-client" });
+  } finally { await bare.close(); }
+});
+
+test("[fast] houses: PUT /api/settings refuses a relative path, a UNC path and a folder without tiledata.mul, without echoing the path", async () => {
+  const { s } = await serve(true);
+  try {
+    const empty = mkdtempSync(join(tmpdir(), "pr-house-empty-"));
+    for (const bad of ["uo/folder", "\\\\host\\share\\UO", "//host/share/UO", empty, 42, ""]) {
+      const r = await put(s, { uoFolder: bad });
+      assert.equal(r.status, 400, String(bad));
+      if (typeof bad === "string" && bad) assert.ok(!r.body.error!.includes(bad), `the error names no path: ${r.body.error}`);
+    }
   } finally { await s.close(); }
 });
