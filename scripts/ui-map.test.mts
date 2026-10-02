@@ -605,6 +605,8 @@ test("[slow] House map: Where shows the house's coordinates and the facet overvi
     await page.keyboard.press("Enter");
     await page.waitForFunction((id) => location.hash === `#/map/${id}`, VAULT, { timeout: 10_000 });
     await go(page, `#/map/${COURT}`, "#map-panel #map-where");
+    // The vault's section may still be on screen: wait for the courtyard's own marker before counting.
+    await page.waitForSelector('#map-where .map-where-mark.current[aria-label="Trammel house at 1008, 2008 (this house)"]', { timeout: 30_000 });
     assert.equal(await page.locator("#map-where a.map-where-mark").count(), 0, "no other house within the courtyard's crop");
     assert.deepEqual(errors, []);
   } finally { await done(app, dir); }

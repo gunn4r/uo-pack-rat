@@ -10,8 +10,8 @@ import { errorText } from "./messages.mts";
 import { plural } from "./inv-model.mts";
 import { fillTone } from "./organize-model.mts";
 import { PLAIN, pickHouse, plainGrid, chestCount, roomCounts, houseLabel, houseName, carryOver, tiledataNote, chestViews, colourOf, chestLabel, sceneOf, boundsOf, fit, vbText,
-  cutAway, calloutLines, nearestInDirection, houseTotals, legendOf, stackWhere, anchorOf, zoomAt, fillWords, whereOf, cropAround, facetMapUrl, markersOf, facetMapNote,
-  type Marker, type View, type Mode, type Box, type Colour, type ChestView, type Piece, type Prism, type Pt, type Dir } from "./house-map-model.mts";
+  cutAway, calloutLines, nearestInDirection, houseTotals, legendOf, stackWhere, anchorOf, zoomAt, fillWords, whereOf, cropAround, facetMapUrl, markersOf, facetMapNote, parseRegion, markerRadii,
+  type Crop, type Marker, type View, type Mode, type Box, type Colour, type ChestView, type Piece, type Prism, type Pt, type Dir } from "./house-map-model.mts";
 import type { ContainerLabel, FacetMapReason, HouseModel, HousesApiResponse, HouseApiResponse, HouseMapApiResponse, HouseMapEntry, HouseMapPutApiResponse, Room, Stack } from "./api-types.mts";
 
 const SVG_NS = "http://www.w3.org/2000/svg";
@@ -22,7 +22,9 @@ let seq = 0;
 let highlighting = false;   // Highlight the stack is sending (highlightStack)
 let renaming: string | null = null;   // while renaming, the name as typed so far: a redraw rebuilds the field from it (renameField)
 let nameError: string | null = null;  // the server's reason for the last refused name, shown under the field until a save or a cancel
-const facetFailed = new Map<string, FacetMapReason | "error">();   // why each facet overview URL did not load, until the next load of the screen
+// Each facet overview asked for, until the next load of the screen: loading, the image (a data: URL, which the page's CSP allows where a blob: one is not) with the region the server drew, or why there is none.
+type FacetImage = "loading" | { src: string; crop: Crop } | { reason: FacetMapReason | "error" };
+const facetImages = new Map<string, FacetImage>();
 const body = (): HTMLElement => $<HTMLElement>("#map-body")!;
 const selectedStack = (): Stack | null => (S.selected == null ? null : S.model?.stacks.find((s) => s.serials.includes(S.selected!)) ?? null);
 
@@ -44,7 +46,7 @@ export async function showMap(want: string | null): Promise<void> {
     const models = await Promise.all(list.houses.map(async (h) => (await api<HouseApiResponse>(`/api/houses/${encodeURIComponent(h.id)}`)).house));
     if (my !== seq) return;
     S.list = list; S.names = names.houses; S.models = models; S.plain = plainGrid(state.inv, models); S.error = null;
-    facetFailed.clear();
+    facetImages.clear();
   } catch (e) {
     if (my !== seq) return;
     S.error = errorText(e); S.model = null; render();
@@ -460,34 +462,50 @@ function whereLines(m: HouseModel): HTMLElement[] {
   } });
   return [box("div", { class: "map-where-coords" }, line, copy), txt(w.corners, "t-sm muted")];
 }
-// The Where section: 600 x 450 tiles of the facet's overview around the house (GET /api/facet-map), a marker on it and a smaller one on every other captured house there, each of those a link to its map. When the image does not load, a line says why; the coordinates above stay.
+// The Where section: 600 x 450 tiles of the facet's overview around the house (GET /api/facet-map), a marker on it and a smaller one on every other captured house there, each of those a link to its map, placed in the region the server says it drew (x-region). When the image does not load, a line says why; the coordinates above stay.
 function whereSection(m: HouseModel): HTMLElement | null {
   const h = summaryOf(m), crop = h ? cropAround(h.facet, whereOf(h).centre) : null;
   if (!h || h.facet == null || !crop) return null;
-  const url = facetMapUrl(h.facet, crop), why = facetFailed.get(url), w = crop.x1 - crop.x0, ht = crop.y1 - crop.y0;
-  const head = el("h3", { class: "t-md", id: "map-where-title" }, "Where");
-  if (why) return box("section", { class: "map-where", id: "map-where", "aria-labelledby": "map-where-title" }, head, el("p", { class: "t-sm muted", id: "map-where-note" }, facetMapNote(why)));
-  const img = el("img", { class: "map-where-img", src: url, alt: `The world map around ${houseName(m)}`, width: String(w), height: String(ht), onerror: () => { void whyNoMap(url); } });
-  const marks = sv("svg", { class: "map-where-marks", viewBox: `0 0 ${w} ${ht}`, preserveAspectRatio: "none", role: "group", "aria-label": "Houses on the world map" }, ...markersOf(S.list!.houses, m.id, h.facet, crop).map(markerEl));
-  return box("section", { class: "map-where", id: "map-where", "aria-labelledby": "map-where-title" }, head, box("div", { class: "map-where-frame" }, img, marks));
+  const url = facetMapUrl(h.facet, crop), got = facetImages.get(url);
+  if (!got) void loadFacetImage(url);
+  const section = (...kids: HTMLElement[]): HTMLElement => box("section", { class: "map-where", id: "map-where", "aria-labelledby": "map-where-title" }, el("h3", { class: "t-md", id: "map-where-title" }, "Where"), ...kids);
+  if (!got || got === "loading") return section(el("p", { class: "t-sm muted", id: "map-where-loading", "aria-busy": "true" }, "Loading the world map…"));
+  if ("reason" in got) return section(el("p", { class: "t-sm muted", id: "map-where-note" }, facetMapNote(got.reason)));
+  const c = got.crop, w = c.x1 - c.x0, ht = c.y1 - c.y0;
+  const img = el("img", { class: "map-where-img", src: got.src, alt: `The world map around ${houseName(m)}`, width: String(w), height: String(ht) });
+  const marks = sv("svg", { class: "map-where-marks", viewBox: `0 0 ${w} ${ht}`, preserveAspectRatio: "none", role: "group", "aria-label": "Houses on the world map" }, ...markersOf(S.list!.houses, m.id, h.facet, c).map(markerEl));
+  const frame = box("div", { class: "map-where-frame" }, img, marks);
+  // Marker sizes are screen pixels (a 24 px target for a link), so they follow the frame's width.
+  const size = (): void => { const r = markerRadii(w, frame.clientWidth); for (const e of marks.querySelectorAll<SVGCircleElement>("circle[data-r]")) e.setAttribute("r", String(r[e.dataset.r as keyof typeof r])); };
+  const watch = new ResizeObserver(() => { if (frame.isConnected) size(); else watch.disconnect(); });
+  watch.observe(frame);
+  size();
+  return section(frame);
 }
-// The house shown is a plain marker; another house is a link to its map, so the keyboard reaches it and Enter opens it.
+// The house shown is a plain marker; another house is a link to its map, so the keyboard reaches it and Enter opens it. Its focus ring is two circles, dark under light, seen on pale and dark ground alike.
 function markerEl(mk: Marker): SVGElement {
   const title = sv("title", {});
   title.textContent = mk.label;
   const at = { cx: String(mk.x), cy: String(mk.y) };
-  if (mk.current) return sv("g", { class: "map-where-mark current", role: "img", "aria-label": mk.label }, title, sv("circle", { ...at, r: "11", class: "map-where-dot" }));
-  return sv("a", { class: "map-where-mark", href: `#/map/${encodeURIComponent(mk.id)}`, "aria-label": mk.label, "data-house": mk.id }, title, sv("circle", { ...at, r: "16", class: "map-where-hit" }), sv("circle", { ...at, r: "7", class: "map-where-dot" }));
+  if (mk.current) return sv("g", { class: "map-where-mark current", role: "img", "aria-label": mk.label }, title, sv("circle", { ...at, "data-r": "current", class: "map-where-dot" }));
+  return sv("a", { class: "map-where-mark", href: `#/map/${encodeURIComponent(mk.id)}`, "aria-label": mk.label, "data-house": mk.id }, title,
+    sv("circle", { ...at, "data-r": "hit", class: "map-where-hit" }), sv("circle", { ...at, "data-r": "ring", class: "map-where-ring-out" }), sv("circle", { ...at, "data-r": "ring", class: "map-where-ring-in" }),
+    sv("circle", { ...at, "data-r": "other", class: "map-where-dot" }));
 }
-// An <img> cannot read the 404's body, so ask once more for the reason, then redraw the panel with it.
-async function whyNoMap(url: string): Promise<void> {
-  let reason: FacetMapReason | "error" = "error";
+// One request: the PNG and the region it shows, or the 404's reason; then the panel is drawn again with it.
+async function loadFacetImage(url: string): Promise<void> {
+  facetImages.set(url, "loading");
+  let got: FacetImage = { reason: "error" };
   try {
-    const r = await fetch(url);
-    const b = r.status === 404 ? (await r.json()) as { reason?: unknown } : null;
-    if (typeof b?.reason === "string" && ["override-missing", "no-client", "no-tazuo-profile", "missing", "unreadable"].includes(b.reason)) reason = b.reason as FacetMapReason;
+    const r = await fetch(url), crop = parseRegion(r.headers.get("x-region"));
+    if (r.ok && crop) got = { src: await new Promise<string>((ok, no) => { const f = new FileReader(); f.onload = () => ok(String(f.result)); f.onerror = () => no(f.error); void r.blob().then((b) => f.readAsDataURL(b), no); }), crop };
+    else if (r.status === 404) {
+      const b = (await r.json()) as { reason?: unknown };
+      if (typeof b.reason === "string" && ["override-missing", "no-client", "no-tazuo-profile", "missing", "unreadable"].includes(b.reason)) got = { reason: b.reason as FacetMapReason };
+    }
   } catch { /* the request itself failed: "error" */ }
-  facetFailed.set(url, reason);
+  if (facetImages.get(url) !== "loading") return;   // the screen loaded again meanwhile
+  facetImages.set(url, got);
   if ($<HTMLElement>("#map-where")) drawPanel();
 }
 // The house's heading with its ✎ (Rename house), or the name field while renaming; under it the house's counts, and

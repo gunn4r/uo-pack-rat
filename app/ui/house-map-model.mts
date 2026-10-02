@@ -225,12 +225,24 @@ export function markersOf(houses: readonly HouseSummary[], currentId: string | n
   }
   return out.sort((a, b) => Number(a.current) - Number(b.current));
 }
+// The region GET /api/facet-map says it drew (its x-region header, "x0,y0,x1,y1"), or null for anything else.
+export function parseRegion(v: string | null): Crop | null {
+  const m = v ? /^(\d{1,5}),(\d{1,5}),(\d{1,5}),(\d{1,5})$/.exec(v) : null;
+  if (!m) return null;
+  const [x0, y0, x1, y1] = m.slice(1).map(Number) as [number, number, number, number];
+  return x0 < x1 && y0 < y1 ? { x0, y0, x1, y1 } : null;
+}
+// The markers' radii in crop tiles for a crop `tiles` wide shown `px` pixels wide (300 before the frame is laid out): the house shown 6 px, another 4 px, its focus ring 9 px and its target 12 px (24 across).
+export function markerRadii(tiles: number, px: number): { current: number; other: number; ring: number; hit: number } {
+  const k = tiles / (px > 0 ? px : 300);
+  return { current: 6 * k, other: 4 * k, ring: 9 * k, hit: 12 * k };
+}
 // Why the overview is not shown (GET /api/facet-map's 404 reason, or "error" when the request itself failed); the coordinates still are.
 export function facetMapNote(reason: FacetMapReason | "error"): string {
   switch (reason) {
     case "no-client": return "No game client is set up, so Pack Rat has no UO folder to read the world map from.";
     case "no-tazuo-profile": return "TazUO's launcher names no UO folder, so Pack Rat has no world map to show.";
-    case "override-missing": return "The UO folder set in Settings is not there any more, so Pack Rat has no world map to show.";
+    case "override-missing": return "The UO folder set in Settings has no world map files any more, so Pack Rat has no world map to show.";
     case "missing": return "The UO folder has no world map file for this facet.";
     case "unreadable": return "The world map file for this facet is not one Pack Rat can read.";
     case "error": return "The world map could not be loaded.";

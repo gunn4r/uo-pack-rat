@@ -5,7 +5,7 @@ import { buildHouseModel } from "./house-model.mts";
 import { fixtureTileData, vaultHouse, roofHouse, courtyardHouse, castleHouse, foundationHouse, stairHouse, G } from "./house-fixture.mts";
 import type { Container } from "./vault-lib.mts";
 import type { HouseModel } from "./ui/api-types.mts";
-import { project, tilePolygon, boxFaces, pts, paintOrder, boundsOf, fit, zoomAt, vbText, anchorOf, W, chestViews, colourOf, legendOf, chestLabel, cutAway, calloutLines, houseTotals, pickHouse, houseLabel, houseName, carryOver, PLAIN, chestCount, roomCounts, nearestInDirection, tiledataNote, stackWhere, plainGrid, sceneOf, drawnZs, CHEST_H, whereOf, cropAround, facetMapUrl, markersOf, facetMapNote, type ChestView } from "./ui/house-map-model.mts";
+import { project, tilePolygon, boxFaces, pts, paintOrder, boundsOf, fit, zoomAt, vbText, anchorOf, W, chestViews, colourOf, legendOf, chestLabel, cutAway, calloutLines, houseTotals, pickHouse, houseLabel, houseName, carryOver, PLAIN, chestCount, roomCounts, nearestInDirection, tiledataNote, stackWhere, plainGrid, sceneOf, drawnZs, CHEST_H, whereOf, cropAround, facetMapUrl, markersOf, facetMapNote, parseRegion, markerRadii, type ChestView } from "./ui/house-map-model.mts";
 
 const td = fixtureTileData();
 const has = (cls: string, c: string): boolean => cls.split(" ").includes(c);
@@ -467,6 +467,14 @@ test("[fast] house map: markers sit at each house's centre tile inside the crop;
   assert.equal(ms.find((m) => m.current)!.label, "Main house (this house)");
   assert.equal(ms.find((m) => !m.current)!.label, "Trammel house at 1508, 1708");
   assert.deepEqual(markersOf(list, "nope", 1, crop).map((m) => m.current), [false, false], "no current house, still the others");
+});
+
+test("[fast] house map: the region the server drew is read from its x-region header, and markers are sized in screen pixels", () => {
+  assert.deepEqual(parseRegion("848,0,1448,450"), { x0: 848, y0: 0, x1: 1448, y1: 450 });
+  for (const bad of [null, "", "1,2,3", "1,2,3,4,5", "4,0,4,9", "a,b,c,d", "-1,0,4,4", " 1,2,3,4"]) assert.equal(parseRegion(bad), null, String(bad));
+  assert.deepEqual(markerRadii(600, 300), { current: 12, other: 8, ring: 18, hit: 24 }, "at half scale, a 24 px target is 48 tiles across");
+  assert.deepEqual(markerRadii(600, 600), { current: 6, other: 4, ring: 9, hit: 12 });
+  assert.deepEqual(markerRadii(600, 0), markerRadii(600, 300), "before layout, 300 px is assumed");
 });
 
 test("[fast] house map: why the overview is missing, in plain words", () => {
