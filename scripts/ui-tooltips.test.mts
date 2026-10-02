@@ -106,7 +106,7 @@ test("[slow] the item tooltip shows on every screen that draws an item: Inventor
   }
 });
 
-test("[slow] the item tooltip hides on Esc and on a scroll, follows keyboard focus with aria-describedby, and gives way to a character sheet slot's own pop", async (t) => {
+test("[slow] the item tooltip skips action buttons, hides on Esc and on a scroll, follows keyboard focus with aria-describedby, and gives way to a character sheet slot's own pop", async (t) => {
   const why = unavailable();
   if (why) return t.skip(why);
   const dir = seed();
@@ -128,8 +128,13 @@ test("[slow] the item tooltip hides on Esc and on a scroll, follows keyboard foc
     await page.keyboard.press("Enter");
     await page.locator("#map-panel [data-act=items]:not([disabled])").first().click();
     await page.waitForSelector("#map-drawer .map-item");
+    const row = page.locator("#map-drawer .map-item-row").first();
+    // the row's actions are a data-no-tip zone
+    await row.locator(".map-item-acts button").first().hover();
+    await page.waitForTimeout(700);
+    assert.equal(await shown(page), false, "no tooltip over the row's actions");
     // a scroll hides it
-    await tipShows(page, page.locator("#map-drawer .map-item").first(), "a drawer row");
+    await tipShows(page, row.locator(".map-item"), "a drawer row");
     await page.locator("#map-drawer-body").dispatchEvent("scroll");
     assert.equal(await shown(page), false, "a scroll hides it");
     // keyboard focus: shown after 400 ms with aria-describedby, gone on blur
@@ -142,6 +147,7 @@ test("[slow] the item tooltip hides on Esc and on a scroll, follows keyboard foc
     await page.waitForFunction(() => getComputedStyle(document.querySelector("#tip")!).display === "block", undefined, { timeout: 5_000 });
     assert.equal(await focused.getAttribute("aria-describedby"), "tip");
     await page.keyboard.press("Tab");
+    assert.equal(await page.evaluate(() => document.activeElement?.closest(".map-item-acts") != null), true, "Tab goes on into the row's actions");
     assert.equal(await shown(page), false);
     assert.equal(await page.locator("#map-drawer .map-item").first().getAttribute("aria-describedby"), null);
     // a character sheet slot's pop and the hover tooltip never show together

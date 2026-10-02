@@ -4,7 +4,7 @@ import { $, el, itemTip, safeColor, fmtN, toast } from "./dom.mts";
 import { api } from "./api.mts";
 import { box, txt, button, segmented, pill, message, meter, keyValue, modalOpen, tipWrap, input, copyText, icon, kbd, menu, popover, closePopover, confirmDialog, select as selectEl } from "./components.mts";
 import { labelContainer } from "./containers.mts";
-import { showContainer, itemMenu, rarityEl, tagEls } from "./inventory.mts";
+import { showContainer, itemMenu, itemActions, rarityEl, tagEls } from "./inventory.mts";
 import { propertyLines, RESISTS } from "./peek.mts";
 import { bridgeActionReason, runBridgeAction, sendBridge, type BridgeTarget } from "./bridge.mts";
 import { errorText } from "./messages.mts";
@@ -1177,15 +1177,19 @@ function nodeEl(n: ContentsNode): HTMLElement {
     box("div", { class: "map-bag-kids" }, ...n.kids.map(nodeEl)));
   return group;
 }
-// An item in two lines, the Inventory's own pieces: the name and tags, then the rarity, the properties and the resists. Hovering or focusing it shows the item tooltip, which has everything a cut line leaves out. A click opens the item's menu.
+const ROW_ACTS = ["highlight", "grab", "goto", "more"];
+// An item in two lines, the Inventory's own pieces: the name and tags, then the rarity, the properties and the resists. Hovering or focusing it shows the item tooltip, which has everything a cut line leaves out. A click opens the item's menu. At its right end, shown on hover and focus and always in the tab order, the Inventory row's actions (itemActions), in a data-no-tip zone so aiming at them never pops the tooltip.
 function itemRow(it: Item): HTMLElement {
   const name = (it.amount || 1) > 1 ? `${it.name} ×${it.amount.toLocaleString("en-US")}` : it.name;
   const props = propertyLines(it).filter((l) => !l.muted).map((l) => (l.value ? `${l.name} ${l.value}` : l.name)).join(" · ");
   const res = RESISTS.filter(([k]) => it.props[k]), rarity = rarityEl(it.rarity, "t-sm");
-  return itemTip(box("button", { type: "button", class: "map-item", id: `map-drawer-item-${it.serial}`, "aria-haspopup": "menu", onclick: (e: Event) => itemMenu(e.currentTarget as HTMLElement, it) },
+  const main = box("button", { type: "button", class: "map-item", id: `map-drawer-item-${it.serial}`, "aria-haspopup": "menu", onclick: (e: Event) => itemMenu(e.currentTarget as HTMLElement, it) },
     box("span", { class: "map-item-l1" }, txt(name, "ellip map-item-name"), ...tagEls(it)),
     rarity || props || res.length ? box("span", { class: "map-item-l2" }, rarity, props ? txt(props, "ellip t-sm muted map-item-props") : null,
-      res.length ? box("span", { class: "map-item-res" }, ...res.map(([k, short, token]) => el("span", { style: `color:var(${token})` }, `${short.slice(0, 2)}${it.props[k]}`))) : null) : null), it);
+      res.length ? box("span", { class: "map-item-res" }, ...res.map(([k, short, token]) => el("span", { style: `color:var(${token})` }, `${short.slice(0, 2)}${it.props[k]}`))) : null) : null);
+  const acts = itemActions(it);
+  acts.querySelectorAll("button").forEach((b, i) => { b.id = `map-drawer-${ROW_ACTS[i] ?? i}-${it.serial}`; });   // so a redraw keeps focus on it (focusKey)
+  return box("div", { class: "map-item-row" }, itemTip(main, it), box("span", { class: "map-item-acts", "data-no-tip": "" }, acts));
 }
 // Every item under the chest, in GET /api/items' 500-row pages, name order, each serial once; an answer for a chest no longer shown is dropped.
 async function loadDrawer(): Promise<void> {
@@ -1210,6 +1214,6 @@ async function loadDrawer(): Promise<void> {
   D.error = null;
   drawDrawerBody();
 }
-// A saved label changes chest colours and names; the bridge going on or off line changes what Highlight may do.
+// A saved label changes chest colours and names; the bridge going on or off line changes what Highlight, Grab and Go to may do.
 document.addEventListener("organizechange", () => { if (S.model && !$<HTMLElement>("#tab-map")!.hidden) { drawMap(); drawPanel(); } });
-document.addEventListener("bridgechange", () => { if (S.model && !$<HTMLElement>("#tab-map")!.hidden) drawPanel(); });
+document.addEventListener("bridgechange", () => { if (S.model && !$<HTMLElement>("#tab-map")!.hidden) { drawPanel(); drawDrawerBody(); } });

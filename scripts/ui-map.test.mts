@@ -1116,3 +1116,39 @@ test("[slow] House map: in a 1920 × 1000 window the contents drawer is a fourth
     assert.equal(await page.evaluate(() => getComputedStyle(document.querySelector("#map-body")!).gridTemplateColumns.split(" ").length), 4);
   } finally { await done(app, dir); }
 });
+
+test("[slow] House map: a contents drawer row shows the Inventory row's Highlight, Grab, Go to and ⋯ on hover and focus, reachable by Tab, and Highlight queues that item for the bridge", async (t) => {
+  const why = unavailable();
+  if (why) return t.skip(why);
+  const { dir } = seed({ items: true });
+  const { bridgeDir, stop } = bridgeOnline(dir);
+  const { app, page, errors } = await launch(dir);
+  const ARROWS = 0x40500013;
+  try {
+    await go(page, "#/map", "#map-svg .map-stack");
+    await page.waitForFunction(() => document.querySelector("#bridge")?.getAttribute("data-state") === "ready", undefined, { timeout: 15_000 });
+    await page.locator(`#map-svg [data-stack="${letter(vaultModel, 3001, 1001)}"]`).focus();
+    await page.keyboard.press("Enter");
+    await page.locator(`#map-panel li[data-chest="${TOP}"] [data-act="items"]`).click();
+    await page.waitForSelector(`#map-drawer-item-${ARROWS}`);
+    const row = page.locator("#map-drawer .map-item-row", { has: page.locator(`#map-drawer-item-${ARROWS}`) });
+    const acts = row.locator(".map-item-acts");
+    assert.equal(await acts.getAttribute("data-no-tip"), "", "aiming at the actions never pops the item tooltip");
+    assert.deepEqual(await acts.locator("button").evaluateAll((bs) => bs.map((b) => b.getAttribute("aria-label"))), ["Highlight in game", "Grab to backpack", "Go to container", "More actions"]);
+    const opacity = (): Promise<string> => acts.evaluate((e) => getComputedStyle(e).opacity);
+    await page.mouse.move(2, 2);
+    assert.equal(await opacity(), "0", "hidden until the row is hovered or focused");
+    // focus: Tab from the row goes into its actions, which show
+    await page.locator(`#map-drawer-item-${ARROWS}`).focus();
+    assert.equal(await opacity(), "1");
+    await page.keyboard.press("Tab");
+    assert.equal(await page.evaluate(() => document.activeElement?.id), `map-drawer-highlight-${ARROWS}`);
+    // hover, then Highlight: queued for the bridge with this item
+    await row.hover();
+    assert.equal(await opacity(), "1");
+    await acts.getByRole("button", { name: "Highlight in game" }).click();
+    const [one] = await until(() => readQueue(bridgeDir), (l) => l.length === 1, "the highlight queued");
+    assert.deepEqual([one!.action, one!.serial, one!.name], ["highlight", ARROWS, "Arrows"]);
+    assert.deepEqual(errors, []);
+  } finally { stop(); await done(app, dir); }
+});
