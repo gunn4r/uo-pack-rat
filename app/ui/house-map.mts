@@ -1,12 +1,14 @@
 // ui/house-map.mts — the House map screen (#/map, #/map/<house id>; issue #10, spec section 4). It fetches the houses the scans captured (GET /api/houses) and every house's model (GET /api/houses/<id>), picks the deep-linked house (else the last one shown, else the one with the most chests; a deep link to a house that no longer exists falls back and the route is put back to #/map), and lays out three panes: levels, rooms and the yard on the left, the map in the middle, the details on the right. Ground chests outside every drawn house are a house of their own on a plain grid. Every rule and number is ui/house-map-model.mts's; this module builds the DOM and the SVG and wires the events.
 import { state } from "./store.mts";
-import { $, el, safeColor } from "./dom.mts";
+import { $, el, safeColor, fmtN } from "./dom.mts";
 import { api } from "./api.mts";
-import { box, txt, button, segmented, pill, message } from "./components.mts";
+import { box, txt, button, segmented, pill, message, meter, keyValue, modalOpen } from "./components.mts";
 import { errorText } from "./messages.mts";
 import { plural } from "./inv-model.mts";
+import { fillTone } from "./organize-model.mts";
 import { PLAIN, pickHouse, plainGrid, chestCount, roomCounts, houseLabel, houseName, tiledataNote, chestViews, colourOf, chestLabel, sceneOf, boundsOf, fit, vbText,
-  type View, type Mode, type Box, type Colour, type ChestView, type Piece, type Prism } from "./house-map-model.mts";
+  cutAway, calloutLines, nearestInDirection, houseTotals, legendOf, stackWhere, anchorOf, zoomAt, fillWords,
+  type View, type Mode, type Box, type Colour, type ChestView, type Piece, type Prism, type Pt, type Dir } from "./house-map-model.mts";
 import type { ContainerLabel, HouseModel, HousesApiResponse, HouseApiResponse, Room, Stack } from "./api-types.mts";
 
 const SVG_NS = "http://www.w3.org/2000/svg";
@@ -55,6 +57,7 @@ function render(): void {
   if (S.error) { body().replaceChildren(message({ tone: "bad", title: "Could not load the house map", text: S.error })); return; }
   if (!S.model) { body().replaceChildren(emptyState()); return; }
   body().replaceChildren(side(), stage(), box("aside", { class: "card map-panel", id: "map-panel", "aria-label": "Details" }));
+  drawPanel();   // before the map, so the first fit measures the pane with the panel already filled
   drawMap();
 }
 
@@ -88,17 +91,23 @@ function side(): HTMLElement {
         txt(r.name, "ellip"), txt(counts.get(r.id) ? plural(counts.get(r.id)!, "container") : "no containers", "t-sm muted"))))))));
 }
 
-// The middle pane: notes above the map, the breadcrumb, then the SVG.
+// The middle pane: notes above the map, the breadcrumb, then the SVG with its zoom buttons and the callout over it.
 function stage(): HTMLElement {
   const svg = document.createElementNS(SVG_NS, "svg");
   svg.id = "map-svg";
   svg.setAttribute("class", "map-svg");
   svg.setAttribute("role", "group");
   svg.setAttribute("aria-label", "House map");
+  wireSvg(svg);
   return box("section", { class: "card map-stage", id: "map-stage", "aria-label": "Map" },
     ...notes(),
     box("nav", { class: "map-crumbs", id: "map-crumbs", "aria-label": "Breadcrumb" }),
-    box("div", { class: "map-canvas", id: "map-canvas" }, svg));
+    box("div", { class: "map-canvas", id: "map-canvas" }, svg,
+      box("div", { class: "map-zoom", role: "group", "aria-label": "Zoom" },
+        button({ label: "Zoom in", icon: "zoom-in", iconOnly: true, size: "sm", attrs: { id: "map-zoom-in" }, onClick: () => zoomBy(1 / 1.25) }),
+        button({ label: "Zoom out", icon: "zoom-out", iconOnly: true, size: "sm", attrs: { id: "map-zoom-out" }, onClick: () => zoomBy(1.25) }),
+        button({ label: "Fit the level", icon: "fit", iconOnly: true, size: "sm", attrs: { id: "map-fit" }, onClick: fitTo })),
+      box("div", { class: "map-callout", id: "map-callout", hidden: "" })));
 }
 function notes(): HTMLElement[] {
   const note = S.id === PLAIN || !S.list || S.list.tiledata ? null : tiledataNote(S.list.tiledataFrom.reason);
@@ -178,15 +187,18 @@ function drawMap(): void {
   svg.setAttribute("viewBox", vbText(S.vb));
   paintStacks();
 }
-// The selection and the roving tab stop (one stack at a time is in the tab order: the focused one, else the selected one, else the first in code order).
+// The selection, the cut-away in front of the hovered (or focused) stack, else the selected one (Game angle only: top-down nothing hides anything), and the roving tab stop (the focused stack, else the selected one, else the first in code order).
 function paintStacks(): void {
   const m = S.model;
   if (!m) return;
   const sel = selectedStack(), here = m.stacks.filter((s) => s.level === S.level);
+  const focus = here.find((s) => s.letter === S.hover) ?? (sel?.level === S.level ? sel : null);
+  const cut = focus && S.view === "angle" ? cutAway(m, S.level, focus) : new Set<string>();
   const roving = here.find((s) => s.letter === S.focus)?.letter ?? (sel?.level === S.level ? sel.letter : here[0]?.letter);
   for (const e of document.querySelectorAll<SVGGElement>("#map-svg .map-stack")) {
     const letter = e.dataset.stack;
     e.classList.toggle("sel", letter === sel?.letter);
+    e.classList.toggle("cut", !!letter && cut.has(letter));
     e.setAttribute("aria-pressed", String(letter === sel?.letter));
     e.setAttribute("tabindex", letter === roving ? "0" : "-1");
   }
@@ -203,4 +215,174 @@ function drawCrumbs(): void {
     level ? crumb(level.name, sel || S.room != null ? () => up(S.level) : null) : null,
     room ? crumb(room.name, sel ? () => zoomToRoom(room) : null) : null,
     sel ? crumb(`Stack ${sel.letter}`, null) : null));
+}
+
+// ---------------------------------------------------------------- interaction
+// A press that moves more than 3 px pans the viewBox; one that does not is a click (a stack selects it, anywhere else clears). The wheel zooms about the pointer. Neither touches the drawing.
+function wireSvg(svg: SVGSVGElement): void {
+  let drag: { x: number; y: number; vb: Box; id: number; moved: boolean } | null = null;
+  svg.addEventListener("pointerdown", (e) => { if (e.button === 0 && S.vb) drag = { x: e.clientX, y: e.clientY, vb: S.vb, id: e.pointerId, moved: false }; });
+  svg.addEventListener("pointermove", (e) => {
+    if (!drag) { hoverAt(e); return; }
+    const dx = e.clientX - drag.x, dy = e.clientY - drag.y;
+    if (!drag.moved && Math.abs(dx) + Math.abs(dy) > 3) { drag.moved = true; svg.setPointerCapture(drag.id); svg.classList.add("dragging"); hideCallout(); }
+    if (drag.moved) { const k = drag.vb.w / (svg.clientWidth || 1); setViewBox({ ...drag.vb, x: drag.vb.x - dx * k, y: drag.vb.y - dy * k }); }
+  });
+  svg.addEventListener("pointerup", (e) => {
+    const d = drag;
+    drag = null;
+    svg.classList.remove("dragging");
+    if (!d) return;
+    if (d.moved) { if (svg.hasPointerCapture(e.pointerId)) svg.releasePointerCapture(e.pointerId); return; }
+    const hit = (e.target as Element).closest?.("[data-stack]") as SVGElement | null;
+    pick(hit?.dataset.stack ?? null);
+  });
+  svg.addEventListener("pointerleave", () => { if (!drag) { S.hover = null; paintStacks(); hideCallout(); } });
+  svg.addEventListener("wheel", (e) => { e.preventDefault(); zoomBy(e.deltaY > 0 ? 1.15 : 1 / 1.15, svgPoint(svg, e.clientX, e.clientY)); }, { passive: false });
+  svg.addEventListener("keydown", stackKeys);
+  svg.addEventListener("focusin", (e) => {
+    const t = (e.target as Element).closest?.("[data-stack]") as SVGElement | null;
+    if (!t?.dataset.stack) return;
+    S.focus = S.hover = t.dataset.stack;
+    paintStacks();
+    showCallout(t.dataset.stack);
+  });
+  svg.addEventListener("focusout", () => { S.hover = null; paintStacks(); hideCallout(); });
+}
+function hoverAt(e: PointerEvent): void {
+  const t = e.target as Element, st = t.closest?.("[data-stack]") as SVGElement | null, item = t.closest?.("[data-name]") as SVGElement | null;
+  const letter = st?.dataset.stack ?? null;
+  if (letter !== S.hover) { S.hover = letter; paintStacks(); }
+  const svg = $<SVGSVGElement>("#map-svg");
+  if (letter) showCallout(letter);
+  else if (item?.dataset.name && svg) showName(item.dataset.name, svgPoint(svg, e.clientX, e.clientY));
+  else hideCallout();
+}
+// The callout: a stack's chests top first with their fill, at a fixed on-screen size, beside the stack and inside the map pane.
+function showCallout(letter: string): void {
+  const m = S.model, s = m?.stacks.find((x) => x.letter === letter), out = $<HTMLElement>("#map-callout");
+  if (!m || !s || !out) return;
+  const c = calloutLines(s, chestViews(m, s, state.inv!, labels()), S.mode);
+  out.replaceChildren(txt(c.title, "t-sm strong"), ...c.lines.map((l) => box("div", { class: "map-callout-row" }, swatchEl(l.colour), txt(l.code, "mono t-sm"), txt(l.name, "ellip t-sm"), txt(l.fill, "num muted t-sm"))));
+  out.hidden = false;
+  place(out, anchorOf(m, s, S.view));
+}
+function showName(name: string, at: Pt): void {
+  const out = $<HTMLElement>("#map-callout");
+  if (!out) return;
+  out.replaceChildren(txt(name, "t-sm"));
+  out.hidden = false;
+  place(out, at);
+}
+function hideCallout(): void { const out = $<HTMLElement>("#map-callout"); if (out) out.hidden = true; }
+// To the right of the point, else to its left, and clamped 8 px inside the map pane.
+function place(out: HTMLElement, at: Pt): void {
+  const svg = $<SVGSVGElement>("#map-svg"), canvas = $<HTMLElement>("#map-canvas"), ctm = svg?.getScreenCTM();
+  if (!svg || !canvas || !ctm) return;
+  const p = new DOMPoint(at[0], at[1]).matrixTransform(ctm), r = canvas.getBoundingClientRect(), w = out.offsetWidth, h = out.offsetHeight;
+  let x = p.x - r.left + 16;
+  if (x + w > r.width - 8) x = p.x - r.left - w - 16;
+  out.style.left = `${Math.max(8, x)}px`;
+  out.style.top = `${Math.max(8, Math.min(p.y - r.top - 12, r.height - h - 8))}px`;
+}
+function svgPoint(svg: SVGSVGElement, x: number, y: number): Pt {
+  const ctm = svg.getScreenCTM();
+  if (!ctm) return [0, 0];
+  const p = new DOMPoint(x, y).matrixTransform(ctm.inverse());
+  return [p.x, p.y];
+}
+function setViewBox(b: Box): void {
+  S.vb = b;
+  $<SVGSVGElement>("#map-svg")?.setAttribute("viewBox", vbText(b));
+  hideCallout();
+}
+function zoomBy(f: number, at?: Pt): void { if (S.vb) setViewBox(zoomAt(S.vb, f, at?.[0], at?.[1])); }
+function fitTo(): void {
+  if (!S.model) return;
+  S.room = null;
+  for (const b of document.querySelectorAll(".map-room")) b.setAttribute("aria-pressed", "false");
+  setViewBox(fit(boundsOf(S.model, S.level, S.view), viewport()));
+  drawCrumbs();
+}
+// A click or Enter on a stack selects it (again unselects it); anywhere else clears the selection.
+function pick(letter: string | null): void {
+  const s = letter ? S.model?.stacks.find((x) => x.letter === letter) ?? null : null;
+  select(s && s !== selectedStack() ? s.serials[0]! : null);
+}
+function select(serial: number | null): void {
+  S.selected = serial;
+  const s = selectedStack();
+  if (s) S.focus = s.letter;
+  paintStacks();
+  drawCrumbs();
+  drawPanel();
+}
+// Enter or Space selects the focused stack; an arrow key moves to the nearest stack that way on screen.
+const ARROWS: Record<string, Dir> = { ArrowUp: "up", ArrowDown: "down", ArrowLeft: "left", ArrowRight: "right" };
+function stackKeys(e: KeyboardEvent): void {
+  const t = (e.target as Element).closest?.("[data-stack]") as SVGElement | null, m = S.model;
+  if (!t?.dataset.stack || !m || e.defaultPrevented || e.metaKey || e.ctrlKey || e.altKey) return;
+  if (e.key === "Enter" || e.key === " ") { e.preventDefault(); pick(t.dataset.stack); return; }
+  const dir = ARROWS[e.key];
+  if (!dir) return;
+  e.preventDefault();
+  const here = m.stacks.find((s) => s.letter === t.dataset.stack)!;
+  const next = nearestInDirection(anchorOf(m, here, S.view), m.stacks.filter((s) => s.level === S.level && s !== here).map((s) => ({ id: s.letter, at: anchorOf(m, s, S.view) })), dir);
+  if (next) focusStack(next);
+}
+function focusStack(letter: string): void {
+  S.focus = letter;
+  paintStacks();
+  $<SVGElement>(`#map-svg [data-stack="${letter}"]`)?.focus();
+}
+// Esc clears the selection, unless something nearer the user takes it (a field, a dialog, a drawer or a popover), another screen is showing, or a modifier is held. On the document: after a click on blank space focus is on <body>, outside the map.
+document.addEventListener("keydown", (e) => {
+  if (e.key !== "Escape" || e.defaultPrevented || e.metaKey || e.ctrlKey || e.altKey || e.shiftKey || S.selected == null || $<HTMLElement>("#tab-map")!.hidden) return;
+  const t = e.target as Element | null;
+  if (t?.closest?.("input, textarea, select, [contenteditable], dialog, .drawer-root") || document.querySelector(".pop, .drawer-root:not([hidden])") || modalOpen()) return;
+  e.preventDefault();
+  select(null);
+});
+
+// ---------------------------------------------------------------- the panel
+function swatchEl(c: Colour | null): HTMLElement | null {
+  return c ? el("span", { class: "map-swatch", "aria-hidden": "true", style: `background:${cssColour(c)}` }) : null;
+}
+function legend(): HTMLElement {
+  return box("ul", { class: "map-legend", id: "map-legend", "aria-label": "Colours" }, ...legendOf(S.mode).map((l) => box("li", { class: "map-legend-item" }, swatchEl(l.token ? { token: l.token } : null), txt(l.text, "t-sm"))));
+}
+// The selected stack's chests, else the house's totals.
+function drawPanel(): void {
+  const p = $<HTMLElement>("#map-panel"), m = S.model;
+  if (!p || !m) return;
+  const s = selectedStack();
+  if (!s) { p.replaceChildren(...totalsPanel(m)); return; }
+  const chests = chestViews(m, s, state.inv!, labels());
+  p.replaceChildren(
+    box("header", { class: "map-panel-head" }, el("h2", { class: "t-lg" }, chests.length > 1 ? `Stack ${s.letter}` : chests[0]!.name), txt(stackWhere(m, s), "t-sm muted")),
+    box("ol", { class: "map-chests", "aria-label": "Chests, top first" }, ...chests.map((c) => chestRow(m, s, c))),
+    box("div", { class: "map-panel-actions" }, button({ label: "Back to the house", variant: "ghost", size: "sm", onClick: () => select(null) })),
+    legend());
+}
+// Nothing selected: the house's totals, the colours, and how to start.
+function totalsPanel(m: HouseModel): HTMLElement[] {
+  const t = houseTotals(m.stacks.flatMap((s) => chestViews(m, s, state.inv!, labels())));
+  return [
+    box("header", { class: "map-panel-head" }, el("h2", { class: "t-lg" }, houseName(m)),
+      txt(m.id === PLAIN ? "Ground chests outside any drawn house" : `${plural(m.levels.length, "level")} · ${plural(m.stacks.length, "stack")} · ${plural(m.spots.length, "standing spot")}`, "t-sm muted")),
+    ...(t.capacity ? [meter(t.used, t.capacity, { label: `${t.used} of ${t.capacity} item slots used` })] : []),
+    keyValue([["Containers", fmtN(t.containers)], ["Item slots used", `${fmtN(t.used)} of ${fmtN(t.capacity)}`], ["Item slots free", fmtN(t.capacity - t.used)], ["Empty", fmtN(t.empty)], ["Full or nearly", fmtN(t.full)], ["Not opened yet", fmtN(t.unopened)]]),
+    legend(),
+    el("p", { class: "t-sm muted" }, "Click a stack on the map, or a room on the left."),
+  ];
+}
+// One chest of the selected stack: its code and name (the in-game name too when a label renames it), its fill and item count, or why it is not known yet.
+function chestRow(m: HouseModel, s: Stack, c: ChestView): HTMLElement {
+  return box("li", { class: `map-chest-row${c.opened ? "" : " unopened"}`, "data-chest": String(c.serial) },
+    swatchEl(colourOf(c, S.mode)),
+    box("div", { class: "map-chest-text" },
+      box("span", { class: "map-chest-name" }, txt(c.code, "mono strong"), txt(c.name, "ellip strong")),
+      c.name !== c.inGame ? txt(`In game: ${c.inGame}`, "t-sm muted ellip") : null,
+      c.fill ? box("span", { class: "cont-fill" }, meter(c.fill.items, c.fill.max, { tone: fillTone(c.fill), label: fillWords(c) }), txt(`${c.fill.items}/${c.fill.max}`, "t-sm num")) : txt("Fill unknown", "t-sm muted"),
+      txt(c.opened ? plural(c.items, "item") : `Not opened yet: scan from standing spot ${(s.spot ?? 0) + 1} to label it and list what is in it.`, c.opened ? "t-sm muted" : "t-sm")));
 }

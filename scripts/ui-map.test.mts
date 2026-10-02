@@ -168,3 +168,62 @@ test("[slow] House map: draws every vault chest and the courtyard's walls in bot
     assert.deepEqual(errors, []);
   } finally { await done(app, dir); }
 });
+test("[slow] House map: hover shows a stack's callout, a click selects it and fills the panel, Esc clears, pan and zoom only move the viewBox, and an inner stack of the dense vault is reached through the cut-away and the keyboard", async (t) => {
+  const why = unavailable();
+  if (why) return t.skip(why);
+  const { dir } = seed();
+  const { app, page, errors } = await launch(dir);
+  try {
+    await go(page, "#/map", "#map-svg .map-stack");
+    await page.waitForTimeout(500);   // let the first layout settle before hovering
+    const front = letter(vaultModel, 3005, 1005), inner = letter(vaultModel, 3002, 1002);
+    const stack = (l: string) => page.locator(`#map-svg [data-stack="${l}"]`);
+    await stack(front).hover();
+    await page.waitForSelector("#map-callout:not([hidden])");
+    assert.equal(await page.locator("#map-callout .map-callout-row").count(), 5);
+    await stack(front).click();
+    assert.equal(await stack(front).getAttribute("aria-pressed"), "true");
+    assert.equal(await page.locator("#map-panel h2").textContent(), `Stack ${front}`);
+    assert.equal(await page.locator("#map-panel .map-chest-row").count(), 5);
+    assert.match(await page.locator("#map-crumbs").textContent() || "", new RegExp(`Stack ${front}$`));
+    await page.keyboard.press("Escape");
+    await page.waitForFunction(() => !document.querySelector('#map-svg .map-stack[aria-pressed="true"]'));
+    assert.match(await page.locator("#map-panel").textContent() || "", /Item slots used/);
+
+    // pan and zoom move the viewBox; the drawing stays the same nodes
+    const vb = (): Promise<string | null> => page.locator("#map-svg").getAttribute("viewBox");
+    const fitted = await vb();
+    await page.evaluate(() => { (document.querySelector("#map-svg > g") as SVGGElement).dataset.mark = "kept"; });
+    await page.locator("#map-zoom-in").click();
+    const zoomed = await vb();
+    assert.notEqual(zoomed, fitted);
+    const r = (await page.locator("#map-svg").boundingBox())!;
+    await page.mouse.move(r.x + 12, r.y + 12);
+    await page.mouse.down();
+    await page.mouse.move(r.x + 92, r.y + 52, { steps: 5 });
+    await page.mouse.up();
+    const panned = await vb();
+    assert.notEqual(panned, zoomed);
+    await page.mouse.move(r.x + r.width / 2, r.y + r.height / 2);
+    await page.mouse.wheel(0, -300);
+    await page.waitForFunction((was) => document.querySelector("#map-svg")!.getAttribute("viewBox") !== was, panned);
+    assert.equal(await page.locator('#map-svg > g[data-mark="kept"]').count(), 1, "pan and zoom never redraw the map");
+    await page.locator("#map-fit").click();
+    assert.equal(await vb(), fitted);
+
+    // the stacks in front of an inner one fade and let the pointer through; the keyboard reaches it too
+    await stack(inner).focus();
+    const cut = await page.locator("#map-svg .map-stack.cut").evaluateAll((gs) => gs.map((g) => (g as SVGElement).dataset.stack!));
+    const want = vaultModel.stacks.filter((s) => s.x + s.y > 3002 + 1002 && Math.abs(s.x - 3002) <= 3 && Math.abs(s.y - 1002) <= 3).map((s) => s.letter);
+    assert.deepEqual(cut.sort(), want.sort());
+    await page.keyboard.press("Enter");
+    assert.equal(await page.locator("#map-panel h2").textContent(), `Stack ${inner}`);
+    await page.keyboard.press("Escape");
+    await stack(inner).click();
+    assert.equal(await stack(inner).getAttribute("aria-pressed"), "true", "a click reaches the inner stack");
+    await page.keyboard.press("ArrowDown");
+    const moved = await page.evaluate(() => (document.activeElement as SVGElement | null)?.dataset?.stack ?? null);
+    assert.ok(moved && moved !== inner, "an arrow key moves to the next stack that way");
+    assert.deepEqual(errors, []);
+  } finally { await done(app, dir); }
+});
