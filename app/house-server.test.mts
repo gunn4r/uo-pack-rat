@@ -169,7 +169,7 @@ test("[fast] houses: a trash container an earlier capture listed in trash is no 
     const { house } = vaultHouse();
     const at = (ms: number): string => new Date(Date.parse(house.capturedAt) + ms).toISOString();
     const capture = (when: string, extra: Record<string, unknown>) => ({ ...houseScan({ character: "Other", scannedAt: when, boxes: [], things: [] }), house: { facet: 1, capturedAt: when, at: { x: 3003, y: 1003 }, tiles: house.tiles, items: house.items, ...extra } });
-    writeFileSync(join(dir, "scans", "house-far.json"), JSON.stringify(capture(at(120e3), { containers: [[TRASH, 0x2813, 3003, 1002, 27]] })));
+    writeFileSync(join(dir, "scans", "house-far.json"), JSON.stringify(capture(at(120e3), { containers: [[TRASH, 0x2813, 3003, 1002, 27], [OPENED, 0x0E7C, 3001, 1001, 7]] })));
     const unopened = async (): Promise<HouseModel> => (await get<{ house: HouseModel }>(s, "/api/houses/1-3000-1000")).body.house;
     let m = await unopened();
     assert.deepEqual(m.unopened, [TRASH], "without a trash list the far capture's container still shows");

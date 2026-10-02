@@ -222,3 +222,12 @@ test("[fast] retention: an old capture whose trash list keeps a container off th
   assert.deepEqual(r, { files: ["house-0.json"], refused: false }, "house-a carries the trash list, so it and every newer capture stay");
   assert.deepEqual(houseShape(all.filter((s) => !r.files.includes(s.file))), houseShape(all));
 });
+
+test("[fast] retention: a trash list naming a serial no capture lists as a chest keeps no capture (issue #162)", () => {
+  const run = (trash: boolean): string[] => {
+    const caps = [100, 90, 80, 70].map((d) => scan(`house-${d}.json`, daysAgo(d), "Builder", [], {}, [], [], { house: { ...capture(daysAgo(d), plot, [], { x: 100, y: 100 }, []).house, ...(trash && d === 100 ? { trash: [999] } : {}) } }));
+    return scansToPrune([...caps, homeChest], foldSnapshots, RETENTION_DEFAULTS, NOW).files;
+  };
+  assert.deepEqual(run(true), run(false));
+  assert.deepEqual(run(false), ["house-100.json", "house-90.json", "house-80.json"]);
+});
