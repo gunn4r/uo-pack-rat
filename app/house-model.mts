@@ -92,9 +92,12 @@ export function buildHouseModel(house: HouseSource, td: TileData | null, contain
     const e = byCell.get(k) ?? { level, x: c.x, y: c.y, tiles: [] };
     e.tiles.push(c.t); byCell.set(k, e);
   }
-  // A foundation edge (spec section 3): a tile with no floor or stair whose walls all stand below its level's floor, on the footprint's outer boundary or beside a floor, is the rim, drawn as a lip like the edge tiles that do carry a floor. It belongs to no room, yard or spot (rims below).
+  // A foundation edge (spec section 3): a tile with no floor or stair, on the footprint's outer boundary or beside a floor, whose walls all start (base z: foundation pieces are tall) below the floor beside them, is the rim, drawn as a lip like the edge tiles that do carry a floor. "The floor beside them" is the lowest floor (stairs aside: front steps run down past the foundation) among the 8 neighbours on the same level (diagonals too, so a sunken room's corner walls stand on its floor), else the level's floor. It belongs to no room, yard or spot (rims below).
   const footprintAt = new Set(classed.map((c) => `${c.x}:${c.y}`));
-  const hasGround = (level: number, x: number, y: number): boolean => !!byCell.get(key(level, x, y))?.tiles.some((t) => t.cls === "floor" || t.cls === "door" || t.cls === "stair");
+  const groundZ = (level: number, x: number, y: number, steps = true): number | undefined => {
+    const g = byCell.get(key(level, x, y))?.tiles.filter((t) => t.cls === "floor" || t.cls === "door" || (steps && t.cls === "stair"));
+    return g?.length ? topOf(g).z : undefined;
+  };
   const SIDES = [[1, 0], [-1, 0], [0, 1], [0, -1]] as const;
   const cells: Cell[] = [], doors = new Set<Cell>(), rims = new Set<Cell>();
   for (const e of byCell.values()) {
@@ -104,7 +107,12 @@ export function buildHouseModel(house: HouseSource, td: TileData | null, contain
     const floorTop = ground.length ? topOf(ground).z : -Infinity;
     const wallBase = floors.length ? topOf(floors).z : floorTop;
     const floorZ = bands[e.level]!.floorZ;
-    const rim = !ground.length && walls.length > 0 && walls.every((t) => t.z < floorZ) && SIDES.some(([dx, dy]) => !footprintAt.has(`${e.x + dx}:${e.y + dy}`) || hasGround(e.level, e.x + dx, e.y + dy));
+    let rim = false;
+    if (!ground.length && walls.length && SIDES.some(([dx, dy]) => !footprintAt.has(`${e.x + dx}:${e.y + dy}`) || groundZ(e.level, e.x + dx, e.y + dy) !== undefined)) {
+      const beside = NEIGHBOURS.map(([dx, dy]) => groundZ(e.level, e.x + dx, e.y + dy, false)).filter((z): z is number => z !== undefined);
+      const ref = beside.length ? Math.min(...beside) : floorZ;
+      rim = walls.every((t) => t.z < ref);
+    }
     const real = rim ? [] : walls.filter((t) => !ground.length || t.z >= wallBase);
     let kind: CellKind, material: string;
     if (real.length) {

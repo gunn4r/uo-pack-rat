@@ -2,7 +2,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { buildHouseModel, letterOf, materialFamily, plotSize, type HouseModel, type Cell } from "./house-model.mts";
-import type { HouseItem } from "./house-capture.mts";
+import type { HouseItem, HouseTile } from "./house-capture.mts";
 import { G, fixtureTileData, courtyardHouse, stairHouse, towerHouse, roofHouse, hallHouse, vaultHouse, castleHouse, foundationHouse } from "./house-fixture.mts";
 
 const td = fixtureTileData();
@@ -58,6 +58,40 @@ test("[fast] house model: a sub-floor wall away from the plot's edge and from an
   assert.deepEqual([cell(m, 0, 9020, 9005)!.kind, cell(m, 0, 9020, 9005)!.lip], ["floor", true], "but its neighbours are on the footprint's boundary");
 });
 
+test("[fast] house model: a sunken room's floorless walls standing at its own floor z stay walls, though the level's usual floor is higher", () => {
+  const h = foundationHouse(), ring = (x: number, y: number) => x >= 9004 && x <= 9008 && y >= 9004 && y <= 9008;
+  const inner = (x: number, y: number) => x >= 9005 && x <= 9007 && y >= 9005 && y <= 9007;
+  const tiles = h.tiles.filter((t) => t[0] !== G.woodWall && t[0] !== G.door && !(t[0] === G.dirt && ring(t[1], t[2])));
+  for (let x = 9004; x <= 9008; x++) for (let y = 9004; y <= 9008; y++) tiles.push(inner(x, y) ? [G.dirt, x, y, 2, 0] : [G.stoneWall, x, y, 2, 1]);
+  const m = buildHouseModel({ ...h, tiles }, td, []);
+  assert.deepEqual(m.levels.map((l) => l.floorZ), [7], "z 2 and z 7 are one level");
+  const walls = m.cells.filter((c) => ring(c.x, c.y) && !inner(c.x, c.y));
+  assert.equal(walls.length, 16);
+  assert.ok(walls.every((c) => c.kind === "wall"), "corners included: a diagonal neighbour's floor at z 2 counts");
+});
+
+test("[fast] house model: a floorless 20-high ring starting below the floor beside it is a foundation, so it draws as lips", () => {
+  const tiles: HouseTile[] = [];
+  for (let x = 9500; x <= 9506; x++) for (let y = 9500; y <= 9506; y++) {
+    const edge = x === 9500 || x === 9506 || y === 9500 || y === 9506;
+    tiles.push(edge ? [G.stoneWall, x, y, 0, 1] : [G.pavers, x, y, 7, 0]);
+  }
+  const m = buildHouseModel({ ...roofHouse(), tiles, items: [] }, td, []);
+  const ring = m.cells.filter((c) => c.x === 9500 || c.x === 9506 || c.y === 9500 || c.y === 9506);
+  assert.equal(ring.length, 24);
+  assert.ok(ring.every((c) => c.kind === "floor" && c.lip && c.z === 7), "base z 0 is below the floor at z 7 beside it");
+});
+
+test("[fast] house model: an upper level's sub-floor walls are lips on that level and never touch the ground floor's walls", () => {
+  const h = towerHouse(), extra: HouseTile[] = [];
+  for (let y = 7000; y <= 7007; y++) extra.push([G.stoneWall, 6999, y, 25, 1]);
+  const m = buildHouseModel({ ...h, tiles: [...h.tiles, ...extra] }, td, []);
+  assert.ok([...Array(8).keys()].every((i) => { const c = cell(m, 1, 6999, 7000 + i); return !!c && c.kind === "floor" && c.lip && c.z === 27; }), "the upper level's rim, at that level's floor");
+  assert.ok([...Array(8).keys()].every((i) => cell(m, 0, 7000, 7000 + i)!.kind === "wall" && cell(m, 1, 7000, 7000 + i)!.kind === "wall"), "the walls beside it stay walls on both levels");
+  assert.equal(cell(m, 0, 6999, 7003), undefined);
+  assert.ok(m.cells.filter((c) => c.level === 0).every((c) => !c.lip));
+});
+
 test("[fast] house model: a house's size is its plot, without a row of front steps outside it", () => {
   const size = (m: HouseModel) => { const s = plotSize(m); return [s.width, s.height]; };
   assert.deepEqual(size(buildHouseModel(courtyardHouse(), td, [])), [18, 18]);
@@ -65,6 +99,12 @@ test("[fast] house model: a house's size is its plot, without a row of front ste
   assert.deepEqual(size(buildHouseModel(vaultHouse().house, td, [])), [7, 7]);
   const f = buildHouseModel(foundationHouse(), td, []);
   assert.deepEqual([f.y0, f.y1], [9000, 9010], "the steps still draw");
+  const h = foundationHouse(), north: HouseTile[] = [];
+  for (let x = 9000; x <= 9009; x++) north.push([G.stairs, x, 8999, 0, 0]);
+  const both = buildHouseModel({ ...h, tiles: [...h.tiles, ...north] }, td, []);
+  assert.deepEqual([size(both), both.y0, both.y1], [[10, 10], 8999, 9010], "steps on two opposite sides are each trimmed");
+  const mixed = buildHouseModel({ ...h, tiles: [...h.tiles, ...north.filter((t) => t[1] !== 9004), [G.dirt, 9004, 8999, 7, 0]] }, td, []);
+  assert.deepEqual(size(mixed), [10, 11], "a row holding anything but stairs stays");
 });
 
 test("[fast] house model: under the 2nd floor is indoors, the courtyard is the yard", () => {
