@@ -48,7 +48,7 @@ export function boundsOf(m: HouseModel, level: number, view: View, room: Room | 
     }
   };
   for (const c of m.cells) if (c.level === level && inRoom(c.x, c.y)) { const z = c.kind === "floor" || c.kind === "stair" ? c.z - base : 0; add(c.x, c.y, z, z + WALL_H); }
-  for (const s of m.stacks) if (s.level === level && inRoom(s.x, s.y)) add(s.x, s.y, 0, (s.zs[s.zs.length - 1] ?? base) - base + CHEST_H);
+  for (const s of m.stacks) if (s.level === level && inRoom(s.x, s.y)) add(s.x, s.y, 0, (drawnZs(s, base).at(-1) ?? 0) + CHEST_H);
   if (x0 === Infinity) return { x: 0, y: 0, w: 4 * W, h: 4 * W };
   return { x: x0 - W, y: y0 - W, w: x1 - x0 + 2 * W, h: y1 - y0 + 2 * W };
 }
@@ -68,7 +68,13 @@ export const vbText = (b: Box): string => [b.x, b.y, b.w, b.h].map((n) => n.toFi
 // The point just above a stack's top chest, where its callout's line starts and keyboard moves measure from.
 export function anchorOf(m: HouseModel, s: Stack, view: View): Pt {
   const base = m.levels[s.level]?.floorZ ?? 0;
-  return project(s.x - m.x0 + 0.5, s.y - m.y0 + 0.5, (s.zs[s.zs.length - 1] ?? base) - base + CHEST_H, view);
+  return project(s.x - m.x0 + 0.5, s.y - m.y0 + 0.5, (drawnZs(s, base).at(-1) ?? 0) + CHEST_H, view);
+}
+// A stack's chests' heights above the floor as drawn: each at least a chest's height above the one below it, so chests sharing a z on one tile sit one on another instead of inside each other (display only).
+export function drawnZs(s: Stack, base: number): number[] {
+  const out: number[] = [];
+  for (const z of s.zs) out.push(Math.max(z - base, out.length ? out[out.length - 1]! + CHEST_H : -Infinity));
+  return out;
 }
 
 // ---------------------------------------------------------------- a stack's chests, and how they are coloured
@@ -238,7 +244,7 @@ export function plainGrid(inv: Pick<InventoryData, "containers">, houses: readon
 }
 
 // ---------------------------------------------------------------- the scene of one level
-// What ui/house-map.mts draws for a level, in drawing units: the walls of the level below as faint tiles (on an upper level), the floor and stair tiles (with step bands), each standing spot's dashed reach, then every solid thing back to front: cut walls and windows, the foundation's lip, roof edges, furniture, doors and teleporters, the stacks (one box per chest at its real height) and the standing spots' figures.
+// What ui/house-map.mts draws for a level, in drawing units: the walls of the level below as faint tiles (on an upper level), the floor and stair tiles (with step bands), each standing spot's dashed reach, then every solid thing back to front: cut walls and windows, the foundation's lip, roof edges, furniture, doors and teleporters, the stacks (one box per chest at its real height, lifted clear of one below it that shares its z) and the standing spots' figures.
 export interface Prism { top: string; left: string; right: string }
 export type Piece =
   | { kind: "solid"; x: number; y: number; z: number; cls: string; prism: Prism }
@@ -277,9 +283,9 @@ export function sceneOf(m: HouseModel, level: number, view: View): Scene {
   }
   for (const s of m.stacks) {
     if (s.level !== level) continue;
-    const x = s.x - m.x0, y = s.y - m.y0;
-    solids.push({ kind: "stack", x, y, z: (s.zs[0] ?? base) - base, stack: s,
-      chests: s.serials.map((serial, i) => ({ serial, prism: prism(x, y, (s.zs[i] ?? base) - base, CHEST_H, view, view === "top" ? Math.min(0.4, 0.12 + 0.06 * i) : 0.18) })) });
+    const x = s.x - m.x0, y = s.y - m.y0, zs = drawnZs(s, base);
+    solids.push({ kind: "stack", x, y, z: zs[0] ?? 0, stack: s,
+      chests: s.serials.map((serial, i) => ({ serial, prism: prism(x, y, zs[i] ?? 0, CHEST_H, view, view === "top" ? Math.min(0.4, 0.12 + 0.06 * i) : 0.18) })) });
   }
   for (const p of m.spots) {
     if (p.level !== level) continue;

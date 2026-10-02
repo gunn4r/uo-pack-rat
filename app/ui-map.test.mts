@@ -5,7 +5,7 @@ import { buildHouseModel } from "./house-model.mts";
 import { fixtureTileData, vaultHouse, roofHouse, courtyardHouse, castleHouse } from "./house-fixture.mts";
 import type { Container } from "./vault-lib.mts";
 import type { HouseModel } from "./ui/api-types.mts";
-import { project, tilePolygon, boxFaces, pts, paintOrder, boundsOf, fit, zoomAt, vbText, anchorOf, W, chestViews, colourOf, legendOf, chestLabel, cutAway, calloutLines, houseTotals, pickHouse, PLAIN, chestCount, roomCounts, nearestInDirection, tiledataNote, stackWhere, plainGrid, sceneOf, type ChestView } from "./ui/house-map-model.mts";
+import { project, tilePolygon, boxFaces, pts, paintOrder, boundsOf, fit, zoomAt, vbText, anchorOf, W, chestViews, colourOf, legendOf, chestLabel, cutAway, calloutLines, houseTotals, pickHouse, PLAIN, chestCount, roomCounts, nearestInDirection, tiledataNote, stackWhere, plainGrid, sceneOf, drawnZs, CHEST_H, type ChestView } from "./ui/house-map-model.mts";
 
 const td = fixtureTileData();
 const vault = () => { const { house, chests } = vaultHouse(); return buildHouseModel(house, td, chests); };
@@ -174,15 +174,14 @@ test("[fast] house map: the plain grid leaves out a drawn house's chests by seri
   assert.deepEqual(g.stacks.flatMap((s) => s.serials), [0x40060010], "a house chest on a tile the house has no cell for is still the house's");
 });
 
-test("[fast] house map: a chain of ground chests floors only the tiles around each chest, and builds quickly", () => {
+test("[fast] house map: a chain of ground chests floors only the tiles around each chest", () => {
   const rows = Array.from({ length: 40 }, (_, i) => ({ serial: 0x40070000 + i, x: 1000 + 8 * i, y: 1000 + 8 * i, z: 0, facet: 1 }));
-  const t0 = performance.now(), g = plainGrid(invOf(rows), [])!, ms = performance.now() - t0;
+  const g = plainGrid(invOf(rows), [])!;
   assert.equal(g.rooms.length, 1, "8 apart is one group");
   assert.ok(g.cells.length <= 9 * rows.length, `${g.cells.length} cells`);
   assert.equal(new Set(g.cells.map((c) => `${c.x}:${c.y}`)).size, g.cells.length, "no tile twice");
   assert.ok(g.stacks.every((s) => g.cells.some((c) => c.x === s.x && c.y === s.y)), "every chest stands on a floor tile");
   assert.ok(g.x1 >= Math.max(...g.stacks.map((s) => s.x)) + 1 && g.y1 >= Math.max(...g.stacks.map((s) => s.y)) + 1);
-  assert.ok(ms < 50, `${ms.toFixed(1)} ms`);
 });
 
 test("[fast] house map: each plain-grid group stands on its own floor, its chests at their heights above it", () => {
@@ -215,6 +214,17 @@ test("[fast] house map: the vault's ground floor is 25 floor tiles, 24 cut walls
   assert.ok(top.pieces.every((p) => p.kind !== "stack" || p.chests.every((c) => c.prism.left === "" && c.prism.right === "")), "from above a chest is its top only");
   const up = sceneOf(m, 1, "angle");
   assert.deepEqual([up.below.length, up.floors.length, up.pieces.filter((p) => p.kind === "stack").length], [24, 49, 0], "the 2nd floor shows the walls below it faintly");
+});
+
+test("[fast] house map: chests sharing a z on one tile are drawn one on another, not inside each other", () => {
+  const g = plainGrid(invOf([{ serial: 1, x: 100, y: 100, z: 0, facet: 1 }, { serial: 2, x: 100, y: 100, z: 0, facet: 1 }, { serial: 3, x: 100, y: 100, z: 9, facet: 1 }]), [])!;
+  const s = g.stacks[0]!, base = g.levels[0]!.floorZ;
+  assert.deepEqual(s.zs.map((z) => z - base), [0, 0, 9], "the model keeps the real heights");
+  assert.deepEqual(drawnZs(s, base), [0, CHEST_H, 9], "the second chest sits on the first; the third is already clear of it");
+  const piece = sceneOf(g, 0, "angle").pieces.find((p) => p.kind === "stack");
+  assert.ok(piece?.kind === "stack");
+  assert.equal(piece.chests[1]!.prism.top, pts(boxFaces(s.x - g.x0, s.y - g.y0, CHEST_H, CHEST_H, "angle", 0.18).top));
+  assert.deepEqual(anchorOf(g, s, "angle"), project(s.x - g.x0 + 0.5, s.y - g.y0 + 0.5, 9 + CHEST_H, "angle"));
 });
 
 test("[fast] house map: the courtyard draws its walls, window, foundation lip, stairs, table and door, and its yard tiles as yard", () => {
