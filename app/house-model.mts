@@ -2,15 +2,36 @@
 import { classify, FLAG, type TileData, type TileClass } from "./tiledata.mts";
 import type { HouseSource } from "./house-capture.mts";
 
-export interface HouseContainerInput { serial: number; name: string; facet: number | null; x: number; y: number; z: number }
+// opened: false = a chest a house capture saw that no scan has opened (issue #10); absent = opened.
+export interface HouseContainerInput { serial: number; name: string; facet: number | null; x: number; y: number; z: number; opened?: boolean | undefined }
 export interface Level { index: number; name: string; floorZ: number; status: "built" | "floor-only" }
 export type CellKind = "floor" | "wall" | "window" | "stair" | "roof";
-export interface Cell { level: number; x: number; y: number; kind: CellKind; material: string; z: number; lip: boolean; indoor: boolean; doorway: boolean; room: number | null }
+export interface Cell { level: number; x: number; y: number; kind: CellKind; material: string; family: MaterialFamily; z: number; lip: boolean; indoor: boolean; doorway: boolean; room: number | null }
+
+// The colour a tile is drawn in, from its tiledata name by keyword (spec section 2). Order matters: sandstone, marble and brick before stone, and "sand" alone (not sandstone) is dirt; "gold" floors read as marble, pavers as tile. A name nothing matches, or no name (no tiledata.mul), is neutral.
+export type MaterialFamily = "stone" | "brick" | "plaster" | "wood" | "marble" | "sandstone" | "dirt" | "grass" | "water" | "tile" | "neutral";
+const FAMILIES: ReadonlyArray<[MaterialFamily, RegExp]> = [
+  ["water", /water|pool|pond|fountain|swamp/],
+  ["grass", /grass|jungle|hedge|lea(f|ves)|palm|fern/],
+  ["sandstone", /sandstone/],
+  ["dirt", /dirt|mud|earth|\bsand\b|wasteland|cave/],
+  ["marble", /marble|virtue|mosaic|gold/],
+  ["brick", /brick/],
+  ["plaster", /plaster|stucco|clay/],
+  ["tile", /tile|slate|ceramic|ornate|crystal|paver/],
+  ["stone", /stone|rock|cobble|flagstone|granite|ruin|arch|dungeon|medusa|battlement/],
+  ["wood", /wood|plank|log|timber|shingl|thatch|bamboo|board|parquet|palisade|bark|hay|straw|reed|tent|hide|cloth/],
+];
+export function materialFamily(name: string): MaterialFamily {
+  const n = name.toLowerCase();
+  for (const [family, re] of FAMILIES) if (re.test(n)) return family;
+  return "neutral";
+}
 export interface Room { id: number; level: number; kind: "room" | "yard"; name: string; tiles: number; x0: number; y0: number; x1: number; y1: number }
 export interface Furniture { serial: number; kind: "block" | "door" | "teleporter"; name: string; level: number; x: number; y: number; z: number; height: number }
-export interface Stack { level: number; x: number; y: number; room: number | null; serials: number[]; spot: number | null; direction: string; letter: string }
+export interface Stack { level: number; x: number; y: number; room: number | null; serials: number[]; zs: number[]; spot: number | null; direction: string; letter: string }
 export interface Spot { id: number; level: number; x: number; y: number; room: number | null; teleporter: boolean }
-export interface HouseModel { id: string; facet: number | null; capturedAt: string; captures: number; x0: number; y0: number; x1: number; y1: number; levels: Level[]; cells: Cell[]; rooms: Room[]; furniture: Furniture[]; stacks: Stack[]; spots: Spot[]; codes: Record<string, string>; tiledata: boolean }
+export interface HouseModel { id: string; facet: number | null; capturedAt: string; captures: number; x0: number; y0: number; x1: number; y1: number; levels: Level[]; cells: Cell[]; rooms: Room[]; furniture: Furniture[]; stacks: Stack[]; spots: Spot[]; codes: Record<string, string>; tiledata: boolean; unopened: number[]; unopenedNames: Record<string, string> }
 
 const LEVEL_GAP = 15;
 const LEVEL_SLACK = 3;
@@ -88,7 +109,7 @@ export function buildHouseModel(house: HouseSource, td: TileData | null, contain
     else if (roofs.length) { kind = "roof"; material = topOf(roofs).name; }
     else continue;
     const z = ground.length ? floorTop : topOf(e.tiles).z;
-    const cell: Cell = { level: e.level, x: e.x, y: e.y, kind, material, z, lip: walls.length > 0 && real.length === 0, indoor: ground.length > 0 && roofs.some((t) => t.z > floorTop), doorway: false, room: null };
+    const cell: Cell = { level: e.level, x: e.x, y: e.y, kind, material, family: materialFamily(material), z, lip: walls.length > 0 && real.length === 0, indoor: ground.length > 0 && roofs.some((t) => t.z > floorTop), doorway: false, room: null };
     if (floors.some((t) => t.cls === "door")) { cell.doorway = true; doors.add(cell); }
     cells.push(cell);
   }
@@ -103,7 +124,7 @@ export function buildHouseModel(house: HouseSource, td: TileData | null, contain
     if (c.kind === "floor" && ((solid(c.level, c.x - 1, c.y) && solid(c.level, c.x + 1, c.y)) || (solid(c.level, c.x, c.y - 1) && solid(c.level, c.x, c.y + 1)))) c.doorway = true;
   }
 
-  // Furniture: doors (their cell is a doorway and, like a door tile, stays out of hallways), teleporters by name, impassable items as blocks; passable decoration is not drawn.
+  // Furniture: doors (the doorway they stand in, or beside when open, stays out of hallways like a door tile's), teleporters by name, impassable items as blocks; passable decoration is not drawn.
   const furniture: Furniture[] = [];
   if (td) for (const [serial, graphic, x, y, z] of [...house.items].sort((a, b) => a[0] - b[0])) {
     const info = td.info(graphic);
@@ -112,7 +133,7 @@ export function buildHouseModel(house: HouseSource, td: TileData | null, contain
     if (!kind) continue;
     const level = levelOf(z);
     furniture.push({ serial, kind, name: info.name, level, x, y, z, height: info.height });
-    const c = kind === "door" ? at.get(key(level, x, y)) : undefined;
+    const c = kind === "door" ? doorCell(at, solid, level, x, y) : undefined;
     if (c) { c.doorway = true; doors.add(c); }
   }
 
@@ -136,12 +157,16 @@ export function buildHouseModel(house: HouseSource, td: TileData | null, contain
     let s = prev && c.z - prev.z < LEVEL_GAP && !onUpperFloor(c, prev.s.level) ? prev.s : undefined;
     if (!s) {
       const level = levelOf(c.z), k = key(level, c.x, c.y);
-      s = { level, x: c.x, y: c.y, room: at.get(k)?.room ?? null, serials: [], spot: null, direction: "", letter: "" };
+      s = { level, x: c.x, y: c.y, room: at.get(k)?.room ?? null, serials: [], zs: [], spot: null, direction: "", letter: "" };
       stackAt.set(k, [...(stackAt.get(k) ?? []), s]);
     }
-    s.serials.push(c.serial); below.set(col, { s, z: c.z });
+    s.serials.push(c.serial); s.zs.push(c.z); below.set(col, { s, z: c.z });
   }
   const stacks = [...stackAt.values()].flat();
+  // The stacked chests no scan has opened, with the names their tiledata gives (the page shows them as not opened yet).
+  const seenOnly = new Map(containers.filter((c) => c.opened === false).map((c) => [c.serial, c.name]));
+  const unopened = stacks.flatMap((s) => s.serials).filter((n) => seenOnly.has(n)).sort((a, b) => a - b);
+  const unopenedNames = Object.fromEntries(unopened.map((n) => [String(n), seenOnly.get(n)!]));
   const spots = spotsOf(cells, at, stackAt, furniture, levels);
 
   const angle = (s: Stack): number => { const p = spots[s.spot!]!; return Math.round(((Math.atan2(s.x - p.x, -(s.y - p.y)) * 180) / Math.PI + 360) % 360); };
@@ -155,7 +180,7 @@ export function buildHouseModel(house: HouseSource, td: TileData | null, contain
   });
 
   return { id: house.id, facet: house.facet, capturedAt: house.capturedAt, captures: house.captures, x0, y0, x1, y1, levels, cells, rooms,
-    furniture, stacks: ordered, spots, codes, tiledata: td !== null };
+    furniture, stacks: ordered, spots, codes, tiledata: td !== null, unopened, unopenedNames };
 }
 
 // A, B … Z, AA, AB … ZZ, AAA … (bijective base 26).
@@ -163,6 +188,18 @@ export function letterOf(n: number): string {
   let s = "";
   for (let k = n + 1; k > 0; k = Math.floor((k - 1) / 26)) s = String.fromCharCode(65 + ((k - 1) % 26)) + s;
   return s;
+}
+
+// The doorway a door item stands in: its own cell when that is not a wall or window. An open door stands on the wall beside the gap it closes (issue #159), so then the first floor neighbour (north, west, east, south, then the diagonals) with walls on both opposite sides; undefined when there is none.
+const NEIGHBOURS: ReadonlyArray<[number, number]> = [[0, -1], [-1, 0], [1, 0], [0, 1], [-1, -1], [1, -1], [-1, 1], [1, 1]];
+function doorCell(at: Map<string, Cell>, solid: (l: number, x: number, y: number) => boolean, level: number, x: number, y: number): Cell | undefined {
+  const c = at.get(key(level, x, y));
+  if (!c || (c.kind !== "wall" && c.kind !== "window")) return c;
+  for (const [dx, dy] of NEIGHBOURS) {
+    const n = at.get(key(level, x + dx, y + dy));
+    if (n?.kind === "floor" && ((solid(level, n.x - 1, n.y) && solid(level, n.x + 1, n.y)) || (solid(level, n.x, n.y - 1) && solid(level, n.x, n.y + 1)))) return n;
+  }
+  return undefined;
 }
 
 function directionOf(dx: number, dy: number): string {

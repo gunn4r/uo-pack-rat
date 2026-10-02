@@ -57,7 +57,7 @@ These scripts read what your character can see and move one item when you click.
 
 Everything below is for people working on the adapter itself.
 
-What has run against a live client: the scanner, refresh and bridge were verified live, attended, before version 2.1.0, and `packrat-panel.py` was run live on build 26.0923.64 (buttons, hotkey, start at login, but not yet starting hidden). Every other change since 2.1.0, up to this 2.10.0, has only run against the fake clients in `adapters/fake_clients.py` (see `TESTING.md`).
+What has run against a live client: the scanner, refresh and bridge were verified live, attended, before version 2.1.0, and `packrat-panel.py` was run live on build 26.0923.64 (buttons, hotkey, start at login, but not yet starting hidden). Every other change since 2.1.0, up to this 2.11.0, has only run against the fake clients in `adapters/fake_clients.py` (see `TESTING.md`).
 
 ### Contract (scan v2 / bridge v1)
 

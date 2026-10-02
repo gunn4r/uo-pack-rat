@@ -253,3 +253,10 @@ test("[fast] scan schema: a house tile with a negative z (a boat or a basement) 
   assert.equal(validateScan({ ...bounded, house }).ok, true);
   assert.equal(validateScan({ ...bounded, house: { ...house, designMode: true } }).ok, true, "a newer adapter's key must not make this app drop the whole scan");
 });
+
+test("[fast] scan schema: house.containers lists five-integer rows, at most 5,000 (TazUO 2.11.0)", () => {
+  const house = { facet: 1, capturedAt: "2026-10-01T12:00:00Z", at: { x: 100, y: 200 }, tiles: [[1, 100, 200, 7, 0]], containers: [[0x40000001, 0x0E7C, 100, 200, 7]] };
+  assert.equal(validateScan({ ...bounded, house }).ok, true);
+  assert.equal(validateScan({ ...bounded, house: { ...house, containers: [[1, 2, 3]] } }).ok, false, "a container row has five numbers");
+  assert.equal(validateScan({ ...bounded, house: { ...house, containers: Array.from({ length: 5001 }, () => [1, 2, 3, 4, 5]) } }).ok, false, "at most 5,000");
+});

@@ -24,7 +24,7 @@
 //         GET /api/items/by-serial?serials=1,2,3 — full item records (location/tags/equippedBy…) by
 //         serial, 1-200 at a time (400 otherwise); a serial with no item is simply absent from the
 //         response · GET|PUT /api/profiles (<data>/profiles.json)
-//         GET|PUT /api/settings (<data>/settings.json: {shard, setupDone?, client?, retention?, autoUpdateCheck?}) ·
+//         GET|PUT /api/settings (<data>/settings.json: {shard, setupDone?, client?, retention?, autoUpdateCheck?, uoFolder?}) ·
 //         GET|PUT /api/tazuo-panel ({hotkey?, showAtLogin?} -> {prefs}: the TazUO panel's hotkey and whether it
 //         shows its window at login, <data>/tazuo-panel.json, app/tazuo-panel.mts) ·
 //         POST /api/retention/cleanup {dryRun} -> {scans, runs, refused} (prune old scans and saved runs
@@ -45,7 +45,7 @@
 //         (<data>/scan-blacklist.json, the containers scans never open) ·
 //         GET|POST {name?, graphic?, kind} /api/item-kinds · POST /api/item-kinds/import {names?, graphics?}
 //         (<data>/item-kinds.json, the player's own item kinds: app/item-kinds.mts; kind null resets, an import merges) ·
-//         GET /api/houses (the houses scans captured: app/house-capture.mts) · GET /api/houses/<id> (one house's model: app/house-model.mts, tiledata.mul via app/tiledata.mts) ·
+//         GET /api/houses (the houses scans captured: app/house-capture.mts; tiledataFrom says where tiledata.mul came from, or why there is none) · GET /api/houses/<id> (one house's model: app/house-model.mts, tiledata.mul via app/tiledata.mts or the uoFolder setting) ·
 //         GET|PUT /api/organize (<data>/organize.json, Organize's labels, rules, catch-all and pinned items: app/organize-config.mts;
 //         GET salvages a hand-edited file and lists what it dropped in `problems`) ·
 //         GET /api/organize/presets (app/organize-presets.mts's PRESETS, the rule filters the Organize page offers
@@ -146,7 +146,7 @@ import { addGrab, emptyOrganizeState, harvestTrips, noteSeen, pruneOverlay, salv
 import { retentionError, retentionOf, runsToPrune, scansToPrune, type ScanFile } from "./retention.mts";
 import { missingSinceLastScan, type MissingItem } from "./missing.mts";
 import {
-  listAdapters, candidateClientRoots, validateScriptsDir, installedVersion, installScripts, pasteScanner,
+  listAdapters, candidateClientRoots, validateScriptsDir, badPathShape, installedVersion, installScripts, pasteScanner,
   repoFromPackage, checkForUpdates, type CheckForUpdatesResult, type FetchLike, checkScriptsDataDir, type DataDirCheck, type AdapterInfo,
 } from "./installer.mts";
 import { dataDirNotice } from "./ui/messages.mts";
@@ -344,6 +344,7 @@ const MAX_SERIAL = 0xFFFFFFFF;
 // the machine — "existing directory" vs "file or absent", for free, from an unauthenticated route in
 // the bare `npm start` configuration (post-review fix, Important 3).
 const NO_CLIENT_FOLDER = "no scripts folder found there for that client";
+const NO_TILEDATA = "no tiledata.mul found in that folder";
 
 // Every log append in this file goes through here rather than a bare appendFileSync (post-review
 // fix, Important 1): a deleted logs/ dir (the Settings tab's own "Open" button shows the user right
@@ -551,6 +552,7 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
     client?: ClientSettings | null;
     retention?: unknown;
     autoUpdateCheck?: boolean;
+    uoFolder?: string | null;
     [key: string]: unknown;
   }
   // The shard picker: <data>/settings.json ({schemaVersion, shard}) names which app/rules/<shard>.json
@@ -771,23 +773,37 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
     return readdirSync(SCANS).filter((f) => f.endsWith(".json")).sort()
       .map((f) => { const st = statSync(join(SCANS, f)); return `${f}:${st.mtimeMs}:${st.size}`; }).join("|");
   }
-  // The client's tiledata.mul for the house map (issue #10): found through TazUO's launcher profile when TazUO is the chosen client, else null (the map falls back to impassable = wall).
-  function houseTileData(): TileData | null {
+  // Where the house map's tiledata.mul comes from (issue #10): the UO folder set in Settings wins; else, with TazUO the chosen client, the folder its launcher profile names. `reason` says why there is none, for the page to put in words: the folder set here lost its tiledata.mul (or, hand-edited into settings.json, is not an absolute non-UNC path: refused on its shape before any filesystem call, as PUT /api/settings does, and not passed over for the automatic one, since the player chose a folder), no client to look through, no TazUO profile naming one, or a file that is not a 7.x tiledata.mul.
+  interface TileDataFrom { td: TileData | null; folder: string | null; source: "settings" | "tazuo-profile" | null; reason: null | "override-missing" | "no-client" | "no-tazuo-profile" | "unreadable" }
+  function houseTileData(): TileDataFrom {
+    const o = currentSettings.uoFolder;
+    if (o != null && o !== "") {
+      if (typeof o !== "string" || badPathShape(o)) return { td: null, folder: null, source: null, reason: "override-missing" };
+      const path = join(o, "tiledata.mul"), td = loadTileData(path);
+      return { td, folder: o, source: "settings", reason: td ? null : existsSync(path) ? "unreadable" : "override-missing" };
+    }
     const c = currentSettings.client;
-    if (!c || c.adapter !== "tazuo") return null;
+    if (!c || c.adapter !== "tazuo") return { td: null, folder: null, source: null, reason: "no-client" };
     const uo = uoFolderFromTazuo(c.scriptsDir);
-    return uo ? loadTileData(join(uo, "tiledata.mul")) : null;
+    if (!uo) return { td: null, folder: null, source: null, reason: "no-tazuo-profile" };
+    const td = loadTileData(join(uo, "tiledata.mul"));
+    return { td, folder: uo, source: "tazuo-profile", reason: td ? null : "unreadable" };
   }
   // Built house models, kept while the served inventory (a new object whenever the scans, the item kinds or the overlay change; the houses come from the same fold) and the tiledata (loadTileData answers the same object until the file changes) stay the same. The ground chests are the inventory's ground roots with a position, as Organize picks them.
   let houseMemo: { inv: Inventory | null; td: TileData | null; ground: HouseContainerInput[]; models: Map<string, HouseModel> } = { inv: null, td: null, ground: [], models: new Map() };
   function houseModel(inv: Inventory, house: HouseSource, td: TileData | null): HouseModel {
     if (houseMemo.inv !== inv || houseMemo.td !== td) {
       const ground = Object.values(inv.containers).flatMap((c) => (c.parent == null && c.kind === "ground" && c.pos && Number.isFinite(c.pos.x) && Number.isFinite(c.pos.y))
-        ? [{ serial: c.serial, name: c.name ?? "", facet: c.pos.facet ?? null, x: c.pos.x!, y: c.pos.y!, z: c.pos.z ?? 0 }] : []);
+        ? [{ serial: c.serial, name: c.name ?? "", facet: c.pos.facet ?? null, x: c.pos.x!, y: c.pos.y!, z: c.pos.z ?? 0, opened: true }] : []);
       houseMemo = { inv, td, ground, models: new Map() };
     }
     let m = houseMemo.models.get(house.id);
-    if (!m) { m = buildHouseModel(house, td, houseMemo.ground); houseMemo.models.set(house.id, m); }
+    if (!m) {
+      // The chests this house's captures saw that no scan has opened: on the map from the first scan, named from tiledata, as not opened yet. A chest the fold knows is drawn from the fold. The fold and Organize never see these; retention keeps the captures that contribute them.
+      const seen = house.containers.flatMap(([serial, graphic, x, y, z]) => inv.containers[String(serial)] ? [] : [{ serial, name: td?.info(graphic)?.name || "container", facet: house.facet, x, y, z, opened: false }]);
+      m = buildHouseModel(house, td, [...houseMemo.ground, ...seen]);
+      houseMemo.models.set(house.id, m);
+    }
     return m;
   }
   async function getInventory(): Promise<InvValue> {
@@ -1505,6 +1521,20 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
             }
           }
         }
+        // uoFolder (issue #10): the folder the house map reads tiledata.mul from, or null for automatic (TazUO's launcher). Checked like the client folder: a bounded string of an absolute, non-UNC shape before any filesystem call (installer.mts's badPathShape: a UNC path's first stat is an outbound SMB connection), then a folder holding a tiledata.mul file. The error never echoes the path.
+        let nextUoFolder: string | null | undefined;
+        if (Object.prototype.hasOwnProperty.call(body, "uoFolder")) {
+          const v = body.uoFolder;
+          if (v === null) nextUoFolder = null;
+          else {
+            if (!isBoundedString(v, MAX_PATH_LEN) || badPathShape(v)) return send(res, 400, { ok: false, error: "settings.uoFolder must be null or the full path of a folder" });
+            const dir = resolve(v);
+            let found = false;
+            try { found = statSync(dir).isDirectory() && statSync(join(dir, "tiledata.mul")).isFile(); } catch { found = false; }
+            if (!found) return send(res, 400, { ok: false, error: `settings.uoFolder: ${NO_TILEDATA}` });
+            nextUoFolder = dir;
+          }
+        }
         // Only the fields this request carried reach settings.json (saveSettings): a startup fallback
         // for a field it did not name stays in memory, where it belongs.
         const changes: Partial<SettingsDoc> = {};
@@ -1512,6 +1542,7 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
         if (Object.prototype.hasOwnProperty.call(body, "setupDone")) changes.setupDone = body.setupDone as boolean;
         if (Object.prototype.hasOwnProperty.call(body, "autoUpdateCheck")) changes.autoUpdateCheck = body.autoUpdateCheck as boolean;
         if (nextClient !== undefined) changes.client = nextClient;
+        if (nextUoFolder !== undefined) changes.uoFolder = nextUoFolder;
         if (hasRetention) changes.retention = { ...retentionOf(savedSettings.retention), ...(body.retention as object) };
         saveSettings(changes);
         currentRules = nextRules;
@@ -2063,9 +2094,9 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
           one = houses.find((h) => h.id === id);
           if (!one) return send(res, 404, { ok: false, error: "no such house" });
         }
-        const td = houseTileData();
+        const from = houseTileData(), td = from.td;
         if (one) return send(res, 200, { ok: true, house: houseModel(inv, one, td) });
-        return send(res, 200, { ok: true, tiledata: td !== null, houses: houses.map((h) => {
+        return send(res, 200, { ok: true, tiledata: td !== null, tiledataFrom: { folder: from.folder, source: from.source, reason: from.reason }, houses: houses.map((h) => {
           const m = houseModel(inv, h, td);
           return { id: h.id, facet: h.facet, capturedAt: h.capturedAt, captures: h.captures, width: m.x1 - m.x0 + 1, height: m.y1 - m.y0 + 1, levels: m.levels.length, containers: m.stacks.reduce((a, st) => a + st.serials.length, 0) };
         }) });

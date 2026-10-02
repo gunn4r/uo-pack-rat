@@ -260,7 +260,7 @@ export type ValidateScriptsDirResult =
 // authentication attempt against it, repeated on every render and every launch. The "\\?\" device form
 // is the same shape. POSIX has nothing to gain from a leading "//" either, so one rule covers both
 // platforms and neither has to guess at the other's syntax.
-function badPathShape(dir: string): string | null {
+export function badPathShape(dir: string): string | null {
   if (/^[\\/]{2}/.test(dir)) return "a UNC or device path is not a scripts folder";
   if (!isAbsolute(dir)) return "a scripts folder must be an absolute path";
   return null;

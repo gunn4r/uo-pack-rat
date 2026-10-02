@@ -118,7 +118,7 @@ if (!existsSync(capabilitiesUrl)) {
 const CAPABILITIES = JSON.parse(readFileSync(capabilitiesUrl, "utf8")) as AdapterCapabilitiesFile;
 
 // A real house capture (issue #10) is the player's home: its real coordinates, tiles and furniture serials. It never reaches the fixture; when the scan carried one, this small synthetic house stands in for it, so the contract test still checks the shape the adapter writes.
-const SYNTHETIC_HOUSE = { capturedAt: "2026-01-01T12:00:00+00:00", at: { x: 1, y: 1 }, tiles: [[1301, 1, 1, 7, 0], [100, 0, 1, 7, 1]], facet: 1, items: [[1073799999, 2868, 1, 1, 7]] };
+const SYNTHETIC_HOUSE = { capturedAt: "2026-01-01T12:00:00+00:00", at: { x: 1, y: 1 }, tiles: [[1301, 1, 1, 7, 0], [100, 0, 1, 7, 1]], facet: 1, items: [[1073799999, 2868, 1, 1, 7]], containers: [[1073799998, 3708, 1, 1, 7]] };
 const { account, house, ...rest } = scan;
 const fixture = {
   ...rest,

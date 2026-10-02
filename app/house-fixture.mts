@@ -27,7 +27,7 @@ export function fixtureTileData(): TileData {
 }
 
 const source = (tiles: HouseTile[], items: HouseItem[] = []): HouseSource =>
-  ({ id: houseIdOf(1, tiles), facet: 1, capturedAt: "2026-10-01T12:00:00Z", tiles, items, captures: 1 });
+  ({ id: houseIdOf(1, tiles), facet: 1, capturedAt: "2026-10-01T12:00:00Z", tiles, items, containers: [], captures: 1 });
 
 // A plot of 18 x 19 tiles at (1000, 2000). Ground level z 7: the building is the north part (y 2001..2007, full width) plus a west wing (x 1001..1008, y 2008..2012); the rest of the plot is the courtyard. Walls at z 7 ring the building; walls at z 0 ring the whole plot (the foundation's edge). Every designed floor tile has a dirt tile under it at the same z. The 2nd floor (z 27) covers exactly the building and has no walls. Front steps along y 2018. A door in the wing's east wall at (1009, 2010); a table at (1003, 2003); a rug at (1004, 2004).
 export function courtyardHouse(): HouseSource {

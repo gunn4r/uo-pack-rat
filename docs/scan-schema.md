@@ -49,6 +49,7 @@ Numeric and length bounds, in one place so an adapter author can find them:
 | `skills` entry `value` / `base` / `cap` | 0 – 1000 | A skill is 0.0–120.0 on any shard this targets; 1000 is generous headroom, not a shard rule. |
 | `house.tiles` | ≤ 20,000 entries | A castle is 6,000–8,000 tiles; the bound keeps one capture from dominating a fold. |
 | `house.items` | ≤ 5,000 entries | Furniture within the server's 18-tile update range; generous headroom for a dense house. |
+| `house.containers` | ≤ 5,000 entries | Every container on the ground inside the footprint; the same headroom as items. |
 
 Unbounded on purpose: the number of `items`, `containers`, `roots` and `equipped` entries. A real inventory is genuinely large and no honest limit suggested itself; the 32 MB file-size cap in `app/watcher.mts`'s `ingestFile` is the bound that actually applies, and it is checked from the file's own inode before a byte is read.
 
@@ -64,9 +65,11 @@ The optional `house` section (issue #10) is what the client knew of the house th
 
 `tiles` is an array of at most 20,000 tiles, each `[graphic, x, y, z, impassable]` with five integers; `impassable` is 0 or 1.
 
-`items` is an array of at most 5,000 items, each `[serial, graphic, x, y, z]` with five integers: the furniture and fixtures on the ground inside the house footprint. Containers are left out, since they already travel as roots. It is left out altogether when the ground could not be read, which tells the app to erase none of the furniture an earlier capture saw (an empty list would say the house stands empty).
+`items` is an array of at most 5,000 items, each `[serial, graphic, x, y, z]` with five integers: the furniture and fixtures on the ground inside the house footprint. Containers are listed in `containers` instead. It is left out altogether when the ground could not be read, which tells the app to erase none of the furniture an earlier capture saw (an empty list would say the house stands empty).
 
-What the TazUO scanner writes within those bounds: a house of more than 20,000 tiles is left out of the scan (the summary says so), and past 5,000 pieces of furniture the nearest 5,000 to the player are kept.
+`containers` is an array of at most 5,000 entries in the same `[serial, graphic, x, y, z]` shape: every container on the ground inside the footprint (TazUO 2.11.0 and later), whether this scan opened it or not, so the House map shows a chest from the first scan even when it stood too far away to open. Corpses, trash containers and blacklisted ones are left out; a trash container is known by a name with "trash" in it, or by the tooltip the scan read when it reached the container as a root, so a far trash container whose cached name is generic ("barrel") cannot be told apart without a tooltip query, which the capture never makes, and is listed. Like `items`, it is left out when the ground could not be read. The app never folds these rows into the inventory: a chest no scan has opened is drawn on the map as not opened yet and appears nowhere else.
+
+What the TazUO scanner writes within those bounds: a house of more than 20,000 tiles is left out of the scan (the summary says so), and past 5,000 pieces of furniture, or 5,000 containers, the nearest 5,000 to the player are kept.
 
 ## `adapter`
 
