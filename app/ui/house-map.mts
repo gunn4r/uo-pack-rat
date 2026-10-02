@@ -19,6 +19,7 @@ const SVG_NS = "http://www.w3.org/2000/svg";
 interface MapState { list: HousesApiResponse | null; models: HouseModel[]; plain: HouseModel | null; id: string | null; model: HouseModel | null; level: number; view: View; mode: Mode; room: number | null; selected: number | null; hover: string | null; focus: string | null; vb: Box | null; error: string | null }
 const S: MapState = { list: null, models: [], plain: null, id: null, model: null, level: 0, view: "angle", mode: "contents", room: null, selected: null, hover: null, focus: null, vb: null, error: null };
 let seq = 0;
+let highlighting = false;   // Highlight the stack is sending (highlightStack)
 const body = (): HTMLElement => $<HTMLElement>("#map-body")!;
 const selectedStack = (): Stack | null => (S.selected == null ? null : S.model?.stacks.find((s) => s.serials.includes(S.selected!)) ?? null);
 
@@ -357,20 +358,38 @@ function swatchEl(c: Colour | null): HTMLElement | null {
 function legend(): HTMLElement {
   return box("ul", { class: "map-legend", id: "map-legend", "aria-label": "Colours" }, ...legendOf(S.mode).map((l) => box("li", { class: "map-legend-item" }, swatchEl(l.token ? { token: l.token } : null), txt(l.text, "t-sm"))));
 }
-// The selected stack's chests, else the house's totals. Highlight the stack is offered on the same terms as each chest's Highlight.
+// The selected stack's chests, else the house's totals. Highlight the stack is offered on the same terms as each chest's Highlight, and not while it is still sending. A redraw keeps the focus on the same control when it is still there.
 function drawPanel(): void {
   const p = $<HTMLElement>("#map-panel"), m = S.model;
   if (!p || !m) return;
-  const s = selectedStack();
-  if (!s) { p.replaceChildren(...totalsPanel(m)); return; }
-  const chests = chestViews(m, s, state.inv!, labels());
-  const why = stackReason(m, s, chests);
-  const all = button({ label: chests.length > 1 ? "Highlight the stack" : "Highlight", icon: "highlight", size: "sm", disabled: !!why, attrs: { id: "map-highlight-stack" }, onClick: () => { void highlightStack(m, s, chests); } });
-  p.replaceChildren(
-    box("header", { class: "map-panel-head" }, el("h2", { class: "t-lg" }, chests.length > 1 ? `Stack ${s.letter}` : chests[0]!.name), txt(stackWhere(m, s), "t-sm muted")),
-    box("ol", { class: "map-chests", "aria-label": "Chests, top first" }, ...chests.map((c) => chestRow(m, s, c))),
-    box("div", { class: "map-panel-actions" }, why ? tipWrap(all, why) : all, button({ label: "Back to the house", variant: "ghost", size: "sm", onClick: () => select(null) })),
-    legend());
+  const was = focusKey(p), s = selectedStack();
+  if (!s) p.replaceChildren(...totalsPanel(m));
+  else {
+    const chests = chestViews(m, s, state.inv!, labels());
+    const why = stackReason(m, s, chests) ?? (highlighting ? "Sending the highlights…" : null);
+    const all = button({ label: chests.length > 1 ? "Highlight the stack" : "Highlight", icon: "highlight", size: "sm", disabled: !!why, attrs: { id: "map-highlight-stack" }, onClick: () => { void highlightStack(m, s, chests); } });
+    p.replaceChildren(
+      box("header", { class: "map-panel-head" }, el("h2", { class: "t-lg" }, chests.length > 1 ? `Stack ${s.letter}` : chests[0]!.name), txt(stackWhere(m, s), "t-sm muted")),
+      box("ol", { class: "map-chests", "aria-label": "Chests, top first" }, ...chests.map((c) => chestRow(m, s, c))),
+      box("div", { class: "map-panel-actions" }, why ? tipWrap(all, why) : all, button({ label: "Back to the house", variant: "ghost", size: "sm", onClick: () => select(null) })),
+      legend());
+  }
+  if (was) refocus(p, was);
+}
+// The focused panel control as a selector (its chest row, then its data-act or id), or null when focus is elsewhere or on a control with neither. A disabled control's focus sits on its tooltip wrapper, so the wrapper's control stands for it.
+function focusKey(p: HTMLElement): string | null {
+  const a = document.activeElement;
+  if (!(a instanceof HTMLElement) || !p.contains(a)) return null;
+  const c = a.matches("[data-act], [id]") ? a : a.querySelector<HTMLElement>("[data-act], [id]");
+  if (!c) return null;
+  const row = c.closest<HTMLElement>("li[data-chest]")?.dataset.chest;
+  return `${row ? `li[data-chest="${row}"] ` : ""}${c.dataset.act ? `[data-act="${c.dataset.act}"]` : `#${CSS.escape(c.id)}`}`;
+}
+function refocus(p: HTMLElement, key: string): void {
+  const c = p.querySelector<HTMLElement>(key);
+  if (!c) return;
+  const wrap = c.parentElement?.classList.contains("tipwrap") ? c.parentElement : null;
+  (c.matches(":disabled") && wrap ? wrap : c).focus();
 }
 // Nothing selected: the house's totals, the colours, and how to start.
 function totalsPanel(m: HouseModel): HTMLElement[] {
@@ -408,17 +427,25 @@ function chestRow(m: HouseModel, s: Stack, c: ChestView): HTMLElement {
       txt(c.opened ? plural(c.items, "item") : notOpened, c.opened ? "t-sm muted" : "t-sm")),
     box("div", { class: "map-chest-actions" }, why ? tipWrap(hl, why) : hl, noLabel ? tipWrap(lbl, noLabel) : lbl, c.opened ? items : tipWrap(items, notOpened)));
 }
-// Highlight the stack: one highlight per chest, top first, 300 ms apart, stopping at the first refusal; one toast says how it went.
+// Highlight the stack: one highlight per chest, top first, 300 ms apart, stopping at the first refusal; one toast says how it went. One run at a time: the button is disabled while it sends, and a second press (an old button a redraw replaced) does nothing.
 async function highlightStack(m: HouseModel, s: Stack, chests: ChestView[]): Promise<void> {
+  if (highlighting) return;
   const why = stackReason(m, s, chests);
   if (why) { toast(why, "bad"); return; }
   let sent = 0, stopped: string | null = null;
-  for (const c of chests) {
-    const { it, opts } = chestTarget(m, s, c);
-    const r = await sendBridge("highlight", it, opts);
-    if (!r.ok) { stopped = `${c.name}: ${r.error}`; break; }
-    sent++;
-    if (sent < chests.length) await new Promise((res) => setTimeout(res, 300));
+  try {
+    highlighting = true;
+    drawPanel();
+    for (const c of chests) {
+      const { it, opts } = chestTarget(m, s, c);
+      const r = await sendBridge("highlight", it, opts);
+      if (!r.ok) { stopped = `${c.name}: ${r.error}`; break; }
+      sent++;
+      if (sent < chests.length) await new Promise((res) => setTimeout(res, 300));
+    }
+  } finally {
+    highlighting = false;
+    drawPanel();
   }
   toast(stopped ? `${sent} of ${chests.length} queued, stopped at ${stopped}` : `${plural(sent, "highlight")} queued for ${bridge.character}`, stopped ? "bad" : "");
 }

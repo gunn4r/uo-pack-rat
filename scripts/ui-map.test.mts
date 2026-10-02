@@ -241,6 +241,15 @@ test("[slow] House map: hover shows a stack's callout, a click selects it and fi
   } finally { await done(app, dir); }
 });
 
+// The bridge, as far as the page can tell: a status file refreshed every second until stop(). The page's commands land in bridgeDir's queue.jsonl.
+function bridgeOnline(dir: string): { bridgeDir: string; stop: () => void } {
+  const bridgeDir = join(dir, "bridge", "tazuo");
+  mkdirSync(bridgeDir, { recursive: true });
+  const write = (): void => writeFileSync(join(bridgeDir, "status.json"), JSON.stringify({ alive: new Date().toISOString(), character: "Tester", current: null, counts: { done: 0, failed: 0 }, results: {} }));
+  write();
+  const timer = setInterval(write, 1000);
+  return { bridgeDir, stop: () => clearInterval(timer) };
+}
 const readQueue = (d: string): Array<{ action: string; serial: number; name: string; chain: number[]; pos: Record<string, number> | null }> => {
   try { return readFileSync(join(d, "queue.jsonl"), "utf8").trim().split("\n").filter(Boolean).map((l) => JSON.parse(l)); } catch { return []; }
 };
@@ -249,11 +258,7 @@ test("[slow] House map: the panel lists a vault stack top first with its label, 
   const why = unavailable();
   if (why) return t.skip(why);
   const { dir } = seed();
-  const bridgeDir = join(dir, "bridge", "tazuo");
-  mkdirSync(bridgeDir, { recursive: true });
-  const writeStatus = (): void => writeFileSync(join(bridgeDir, "status.json"), JSON.stringify({ alive: new Date().toISOString(), character: "Tester", current: null, counts: { done: 0, failed: 0 }, results: {} }));
-  writeStatus();
-  const alive = setInterval(writeStatus, 1000);
+  const { bridgeDir, stop } = bridgeOnline(dir);
   const { app, page, errors } = await launch(dir);
   try {
     await go(page, "#/map", "#map-svg .map-stack");
@@ -309,20 +314,16 @@ test("[slow] House map: the panel lists a vault stack top first with its label, 
     assert.deepEqual([lines[1]!.serial, lines[1]!.chain, lines[1]!.pos], [SEEN_ONLY, [], { x: 1012, y: 2012, z: 7, facet: 1 }]);
     assert.deepEqual(errors, []);
   } finally {
-    clearInterval(alive);
+    stop();
     await done(app, dir);
   }
 });
 
-test("[slow] House map: Highlight the stack queues one highlight per chest top first, each by its scanned place or, for a chest no scan opened, by the place its capture saw it", async (t) => {
+test("[slow] House map: Highlight the stack queues one highlight per chest top first, once however fast it is pressed, each by its scanned place or, for a chest no scan opened, by the place its capture saw it", async (t) => {
   const why = unavailable();
   if (why) return t.skip(why);
   const { dir } = seed();
-  const bridgeDir = join(dir, "bridge", "tazuo");
-  mkdirSync(bridgeDir, { recursive: true });
-  const writeStatus = (): void => writeFileSync(join(bridgeDir, "status.json"), JSON.stringify({ alive: new Date().toISOString(), character: "Tester", current: null, counts: { done: 0, failed: 0 }, results: {} }));
-  writeStatus();
-  const alive = setInterval(writeStatus, 1000);
+  const { bridgeDir, stop } = bridgeOnline(dir);
   const { app, page, errors } = await launch(dir);
   try {
     await go(page, "#/map", "#map-svg .map-stack");
@@ -332,8 +333,11 @@ test("[slow] House map: Highlight the stack queues one highlight per chest top f
     await page.keyboard.press("Enter");
     await page.waitForSelector("#map-highlight-stack:not([disabled])");
     assert.equal((await page.locator("#map-highlight-stack").textContent())?.trim(), "Highlight the stack");
-    await page.locator("#map-highlight-stack").click();
+    // two presses in a row (the second on the button the first one's redraw replaced) send the stack once
+    await page.evaluate(() => { const b = document.querySelector<HTMLButtonElement>("#map-highlight-stack")!; b.click(); b.click(); });
     const lines = await until(() => readQueue(bridgeDir), (l) => l.length === 5, "the stack's highlights queued");
+    await page.waitForSelector("#map-highlight-stack:not([disabled])");
+    assert.equal(readQueue(bridgeDir).length, 5, "Highlight the stack ran once");
     assert.deepEqual(lines.map((l) => [l.action, l.serial, l.chain, l.pos?.x, l.pos?.y]), top.map((s) => ["highlight", s, [], 3001, 1001]));
     assert.deepEqual(lines.map((l) => l.pos?.z), [...stack.zs].reverse());
 
@@ -348,7 +352,7 @@ test("[slow] House map: Highlight the stack queues one highlight per chest top f
     assert.deepEqual([all[5]!.serial, all[5]!.chain, all[5]!.pos], [SEEN_ONLY, [], { x: 1012, y: 2012, z: 7, facet: 1 }]);
     assert.deepEqual(errors, []);
   } finally {
-    clearInterval(alive);
+    stop();
     await done(app, dir);
   }
 });
