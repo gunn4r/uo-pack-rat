@@ -541,7 +541,7 @@ function groupCell(col: ColDef, g: Group): HTMLTableCellElement {
 // ---------------------------------------------------------------- the table: rows and actions
 const ACTIONS: Array<["highlight" | "grab" | "goto", string]> = [["highlight", "Highlight in game"], ["grab", "Grab to backpack"], ["goto", "Go to container"]];
 export function itemMenu(anchor: HTMLElement, it: Item): void {
-  const entries: MenuItem[] = [{ label: "Open details", icon: "panel-left", onSelect: () => { const i = state.page.rows.findIndex((r) => r?.serial === it.serial); if (i >= 0) openPeekAt(i, true); } }];
+  const entries: MenuItem[] = [{ label: "Open details", icon: "panel-left", onSelect: () => { const i = state.page.rows.findIndex((r) => r?.serial === it.serial); if (i >= 0) openPeekAt(i, true); else showItem(it); } }];
   if (it.root != null && !it.equippedBy) entries.push({ label: "Show everything in this container", icon: "folder", onSelect: () => showContainer(+it.root!) });
   entries.push({ label: "Copy serial", icon: "clipboard", onSelect: () => {
     const s = `0x${it.serial.toString(16)}`;

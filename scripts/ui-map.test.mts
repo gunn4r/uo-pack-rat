@@ -764,7 +764,7 @@ test("[slow] House map: Show items opens the contents drawer beside the panel an
     assert.equal(await page.locator("#map-drawer-summary").textContent(), "6 items · 1 loose, 4 in 1 bag");
     assert.equal(await page.locator('#map-panel li.open').getAttribute("data-chest"), String(TOP), "the opened chest's row carries the accent bar");
     const names = (): Promise<string[]> => page.locator("#map-drawer-body .map-item-name, #map-drawer-body .map-bag-name").allTextContents();
-    assert.deepEqual(await names(), ["Weapons", "Gems", "Ruby", "Katana", "Bow", "Arrows"]);
+    assert.deepEqual(await names(), ["Weapons", "Gems", "Ruby", "Bow", "Katana", "Arrows"], "bags first, then the items by name, nested inside nested");
     assert.match(await page.locator("#map-drawer-body .map-bag-head").first().textContent() || "", /4 items/);
     // one tab per chest of the stack, the shown one checked
     const tabs = page.locator("#map-drawer [role=radio]");
