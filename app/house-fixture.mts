@@ -1,13 +1,12 @@
 // house-fixture.mts — synthetic houses for the house model's tests (issue #10): no game data, every graphic below is made up and described by the synthetic tiledata built here.
 import { FLAG, readTileData, type TileData } from "./tiledata.mts";
-import { syntheticTileData } from "./tiledata-fixture.mts";
+import { syntheticTileData, type FixtureTile } from "./tiledata-fixture.mts";
 import { houseIdOf, type HouseSource, type HouseTile, type HouseItem } from "./house-capture.mts";
 import type { HouseContainerInput } from "./house-model.mts";
 
 export const G = { dirt: 1, pavers: 2, grass: 3, planks: 4, stoneWall: 5, brickWall: 6, window: 7, stairs: 8, roof: 9, table: 10, door: 11, teleporter: 12, rug: 13, banister: 14, block: 15 } as const;
 
-export function fixtureTileData(): TileData {
-  return readTileData(syntheticTileData([
+export const FIXTURE_TILES: FixtureTile[] = [
     { graphic: G.dirt, flags: FLAG.surface, name: "dirt" },
     { graphic: G.pavers, flags: FLAG.surface, name: "stone pavers" },
     { graphic: G.grass, flags: FLAG.surface, name: "grass" },
@@ -23,7 +22,9 @@ export function fixtureTileData(): TileData {
     { graphic: G.rug, flags: 0n, name: "rug" },
     { graphic: G.banister, flags: FLAG.impassable, height: 8, name: "wooden banister" },
     { graphic: G.block, flags: FLAG.surface, height: 10, name: "stone" },
-  ]));
+];
+export function fixtureTileData(): TileData {
+  return readTileData(syntheticTileData(FIXTURE_TILES));
 }
 
 const source = (tiles: HouseTile[], items: HouseItem[] = []): HouseSource =>

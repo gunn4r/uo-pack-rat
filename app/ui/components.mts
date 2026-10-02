@@ -72,6 +72,9 @@ const ICONS = {
   "panel-left": [["rect", { x: "3", y: "4", width: "18", height: "16", rx: "2" }], P("M9 4v16")],
   undo: [P("M9 14 4 9l5-5"), P("M4 9h10.5a5.5 5.5 0 0 1 0 11H11")],
   grip: [["circle", { cx: "9", cy: "6", r: "1.3" }], ["circle", { cx: "15", cy: "6", r: "1.3" }], ["circle", { cx: "9", cy: "12", r: "1.3" }], ["circle", { cx: "15", cy: "12", r: "1.3" }], ["circle", { cx: "9", cy: "18", r: "1.3" }], ["circle", { cx: "15", cy: "18", r: "1.3" }]],
+  "zoom-in": [["circle", { cx: "11", cy: "11", r: "7" }], P("m20 20-3.5-3.5M8 11h6M11 8v6")],
+  "zoom-out": [["circle", { cx: "11", cy: "11", r: "7" }], P("m20 20-3.5-3.5M8 11h6")],
+  fit: [P("M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5")],
 } satisfies Record<string, Shape[]>;
 export type IconName = keyof typeof ICONS;
 const SVG_NS = "http://www.w3.org/2000/svg";

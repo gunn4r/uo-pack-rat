@@ -1,0 +1,83 @@
+/* ui/house-map.css — the House map screen (ui/house-map.mts, issue #10): the top bar's controls, three panes (levels and rooms, the map, the details) stacked into one column below 1100 px, and the map drawn as SVG in the --color-map-* tokens. Tokens only (docs/ui.md). */
+#map-house { flex: 0 1 auto; min-width: 120px; }
+.map-levels { display: flex; gap: var(--space-1); min-width: 0; overflow-x: auto; }
+
+#tab-map .map-page { display: grid; grid-template-columns: 240px minmax(0, 1fr) 340px; gap: var(--space-3); overflow: hidden; }
+#tab-map .map-page > :is(.msg, .map-empty, .panel) { grid-column: 1 / -1; align-self: start; }
+@media (max-width: 1099px) {
+  #tab-map .map-page { grid-template-columns: minmax(0, 1fr); grid-auto-rows: max-content; overflow: auto; }
+  #tab-map .map-stage { min-height: 420px; }
+}
+
+.map-side, .map-panel { min-height: 0; overflow: auto; padding: var(--space-3); display: flex; flex-direction: column; gap: var(--space-3); }
+.map-level { display: flex; flex-direction: column; gap: var(--space-1); }
+.map-level-name { display: flex; align-items: baseline; justify-content: space-between; gap: var(--space-2); font-size: var(--text-md); line-height: var(--lh-md); }
+.map-rooms { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 2px; }
+.map-room { display: flex; flex-direction: column; align-items: stretch; width: 100%; padding: var(--space-1-5) var(--space-2); border: 0; border-radius: var(--radius-md); background: transparent; color: var(--color-text); text-align: left; cursor: pointer; }
+.map-room:hover { background: var(--color-row-hover); }
+.map-room[aria-pressed="true"] { box-shadow: inset 3px 0 0 var(--color-accent); font-weight: var(--weight-semibold); }
+
+.map-stage { position: relative; display: flex; flex-direction: column; min-height: 0; overflow: hidden; }
+.map-stage > .msg { margin: var(--space-2) var(--space-2) 0; }
+.map-crumbs { padding: var(--space-1) var(--space-2); }
+.map-canvas { position: relative; flex: 1 1 auto; min-height: 0; background: var(--color-surface-sunken); }
+.map-svg { display: block; width: 100%; height: 100%; cursor: grab; touch-action: none; }
+
+/* the drawing: floors by material family, faint walls of the level below, dashed reach squares, cut walls and solids with shaded sides */
+.map-floor { fill: var(--color-map-neutral); stroke: var(--color-map-grid); stroke-width: 0.5; }
+.map-floor.f-stone { fill: var(--color-map-stone); }
+.map-floor.f-brick { fill: var(--color-map-brick); }
+.map-floor.f-plaster { fill: var(--color-map-plaster); }
+.map-floor.f-wood { fill: var(--color-map-wood); }
+.map-floor.f-marble { fill: var(--color-map-marble); }
+.map-floor.f-sandstone { fill: var(--color-map-sandstone); }
+.map-floor.f-dirt { fill: var(--color-map-dirt); }
+.map-floor.f-grass { fill: var(--color-map-grass); }
+.map-floor.f-water { fill: var(--color-map-water); }
+.map-floor.f-tile { fill: var(--color-map-tile); }
+.map-floor.f-neutral.yard { fill: var(--color-map-yard); }
+.map-floor.map-stair { fill: var(--color-map-stair); }
+.map-step { fill: var(--color-map-step); }
+.map-below { fill: var(--color-map-below); }
+.map-reach { fill: none; stroke: var(--color-map-spot); stroke-width: 1px; stroke-dasharray: 4 3; vector-effect: non-scaling-stroke; pointer-events: none; }
+/* every solid's faces take its --fill; the sides are that fill mixed toward --color-map-shade (no per-polygon filter, so pan and zoom repaint cheaply) */
+.map-solids g > polygon { fill: var(--fill); }
+.map-solids .side-l { fill: color-mix(in srgb, var(--fill) 80%, var(--color-map-shade)); }
+.map-solids .side-r { fill: color-mix(in srgb, var(--fill) 90%, var(--color-map-shade)); }
+.map-wall { --fill: var(--color-map-wall); }
+.map-wall.window { --fill: var(--color-map-window); }
+.map-lip { --fill: var(--color-map-lip); }
+.map-roof { --fill: var(--color-map-roof); }
+.map-block { --fill: var(--color-map-block); }
+.map-door { --fill: var(--color-map-door); }
+.map-teleporter { --fill: var(--color-map-teleporter); }
+.map-teleporter > polygon { stroke: var(--color-map-spot); stroke-width: 1px; vector-effect: non-scaling-stroke; }
+.map-spot { fill: var(--color-map-spot); pointer-events: none; }
+/* a chest: its colour mode's fill, always with a border-strong edge (a label colour on a floor of the same lightness still reads) */
+.map-stack { cursor: pointer; outline: none; transition: opacity var(--duration-fast) var(--ease-standard); }
+.map-chest { --fill: var(--chest, var(--color-map-chest)); }
+.map-chest > polygon { stroke: var(--color-border-strong); stroke-width: 1px; vector-effect: non-scaling-stroke; }
+.map-chest.unopened > polygon { stroke-dasharray: 3 2; }
+.map-stack.sel .map-chest > polygon, .map-stack:focus-visible .map-chest > polygon { stroke: var(--color-focus); stroke-width: 2px; }
+.map-crumb-list { display: flex; align-items: center; flex-wrap: wrap; gap: var(--space-1); list-style: none; margin: 0; padding: 0; }
+.map-crumb-list > li + li::before { content: "›"; margin-right: var(--space-1); color: var(--color-text-muted); }
+
+/* interaction: cut-away, dragging, zoom buttons on a card of their own (so their edges read on any floor), the callout */
+.map-stack.cut { opacity: 0.15; pointer-events: none; }
+.map-svg.dragging { cursor: grabbing; }
+.map-zoom { position: absolute; right: var(--space-2); top: var(--space-2); display: flex; flex-direction: column; gap: var(--space-1); padding: var(--space-1); background: var(--color-surface); border-radius: var(--radius-md); box-shadow: var(--shadow-2); }
+.map-callout { position: absolute; z-index: var(--z-sticky); width: max-content; max-width: 320px; display: flex; flex-direction: column; gap: 2px; padding: var(--space-2); background: var(--color-surface-raised); color: var(--color-text); border: var(--border-width) solid var(--color-border-strong); border-radius: var(--radius-md); box-shadow: var(--shadow-2); pointer-events: none; }
+.map-callout-row { display: grid; grid-template-columns: 10px auto minmax(0, 1fr) auto; align-items: center; gap: var(--space-2); }
+.map-swatch { width: 10px; height: 10px; flex: none; border-radius: var(--radius-sm); border: var(--border-width) solid var(--color-border-strong); }
+
+/* the panel */
+.map-panel-head { display: flex; flex-direction: column; gap: 2px; }
+.map-chests { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
+.map-chest-row { display: grid; grid-template-columns: 12px minmax(0, 1fr) auto; gap: var(--space-2); align-items: start; padding: var(--space-2) 0; border-top: var(--border-width) solid var(--color-border); }
+.map-chest-row > .map-swatch { margin-top: 4px; }
+.map-chest-text { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.map-chest-name { display: flex; gap: var(--space-2); min-width: 0; }
+.map-panel-actions { display: flex; flex-wrap: wrap; gap: var(--space-2); }
+.map-legend { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: var(--space-1) var(--space-3); }
+.map-legend-item { display: flex; align-items: center; gap: var(--space-1-5); }
+.map-chest-actions { display: flex; flex-direction: column; align-items: stretch; gap: var(--space-1); }

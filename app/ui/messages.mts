@@ -47,6 +47,14 @@ export function clientErrorMessage(e: unknown): string {
     : errorText(e);   // e.g. the 409 "-stopall" text, verbatim
 }
 
+// PUT /api/settings {uoFolder} (issue #10) refuses a path that is not a full folder path, or a folder with no tiledata.mul; the server's wording names the field, the player gets the fix (never the path).
+export function uoFolderErrorMessage(e: unknown): string {
+  const text = errorText(e);
+  if (/settings\.uoFolder must be/.test(text)) return "Enter the full path of a folder.";
+  if (/settings\.uoFolder: no tiledata\.mul/.test(text)) return "That folder has no tiledata.mul.";
+  return text;
+}
+
 // ---------------------------------------------------------------- GET /api/setup's dataDirCheck
 // The client's scripts writing to one data folder while the app reads another shows up as an empty
 // inventory and an offline bridge, and neither says why. The server logs this same sentence to the

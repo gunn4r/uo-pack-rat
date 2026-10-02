@@ -223,3 +223,8 @@ export function gridKey(key: string, index: number, count: number, page: number)
     default: return null;
   }
 }
+// "Metal Chest (0x700b0000)" → the name and its serial, drawn apart (the serial in faint mono).
+export function splitSerial(text: string): { name: string; serial: string } {
+  const m = text.match(/^(.*?)\s*\((0x[0-9a-f]+)\)(.*)$/i);
+  return m ? { name: `${m[1]}${m[3]}`, serial: m[2]! } : { name: text, serial: "" };
+}
