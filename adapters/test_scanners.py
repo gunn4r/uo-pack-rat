@@ -453,15 +453,17 @@ class TazUOScanner(DataDir, unittest.TestCase):
         [s] = self.scans("tazuo")
         self.assertEqual(s["house"]["items"], [[0x40000040, 0x0B34, 12, 12, 7]], "the chest beside the player is a root, not furniture")
 
-    def test_the_house_itself_is_not_recorded_as_furniture(self):
-        w = World(); home(w); w.multis = house_tiles(5, 5, 12, 12)
-        w.add(0x40000040, 0, name="house", container_like=False, X=11, Y=11, Z=7)
-        w.items[0x40000040].Graphic = 0x147B
-        w.add(0x40000042, 0, name="stool", container_like=False, X=12, Y=12, Z=7)
-        w.items[0x40000042].Graphic = 0x0A2A
-        self.scan(w)
-        [s] = self.scans("tazuo")
-        self.assertEqual(s["house"]["items"], [[0x40000042, 0x0A2A, 12, 12, 7]])
+    def test_only_the_item_nearest_the_centre_is_dropped_as_the_house_itself(self):
+        def run(extra):
+            w = World(); home(w); w.multis = house_tiles(5, 5, 12, 12)
+            for serial, graphic, x, y in extra:
+                w.add(serial, 0, name="x", container_like=False, X=x, Y=y, Z=7)
+                w.items[serial].Graphic = graphic
+            self.scan(w)
+            return [r[0] for r in self.scans("tazuo")[-1]["house"]["items"]]
+        # footprint x/y 5..16, centre 10.5; the multi at the centre goes, a telescope piece and a stool stay
+        self.assertEqual(run([(0x40000040, 0x147B, 10, 10), (0x40000041, 0x147B, 6, 14), (0x40000042, 0x0A2A, 12, 12)]), [0x40000041, 0x40000042])
+        self.assertEqual(run([(0x40000041, 0x147B, 6, 14)]), [], "a lone in-range item is the house")
 
     def test_every_container_inside_the_house_is_listed_with_its_place_and_the_far_ones_are_not_opened(self):
         w = World(); home(w); w.multis = house_tiles(5, 5, 12, 12)

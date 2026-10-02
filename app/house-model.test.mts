@@ -195,11 +195,13 @@ test("[fast] house model: impassable furniture and doors are kept, passable deco
   assert.deepEqual(buildHouseModel(courtyardHouse(), null, []).furniture, []);
 });
 
-test("[fast] house model: the house's own multi item is not furniture, an ordinary item beside it is", () => {
+test("[fast] house model: the house's own multi item (nearest the centre) is dropped, a telescope piece elsewhere and an ordinary item stay", () => {
   const tiles = readTileData(syntheticTileData([...FIXTURE_TILES, { graphic: 0x147b, flags: FLAG.impassable, height: 6, name: "telescope" }, { graphic: 0x0a2a, flags: FLAG.impassable, height: 6, name: "stool" }]));
   const h = courtyardHouse();
-  const m = buildHouseModel({ ...h, items: [...h.items, [0x40000f01, 0x147b, 1009, 2009, 7], [0x40000f02, 0x0a2a, 1005, 2005, 7]] }, tiles, []);
-  assert.deepEqual(m.furniture.map((f) => f.serial).sort(), [0x40000101, 0x40000103, 0x40000f02]);
+  const items = (extra: HouseItem[]) => buildHouseModel({ ...h, items: [...h.items, ...extra] }, tiles, []).furniture.map((f) => f.serial).sort();
+  const base = [0x40000101, 0x40000103];
+  assert.deepEqual(items([[0x40000f01, 0x147b, 1009, 2009, 7], [0x40000f02, 0x147b, 1003, 2012, 7], [0x40000f03, 0x0a2a, 1005, 2005, 7]]), [...base, 0x40000f02, 0x40000f03]);
+  assert.deepEqual(items([[0x40000f02, 0x147b, 1003, 2012, 7]]), base, "a lone in-range item is the house");
 });
 
 test("[fast] house model: a door item splits rooms and stays out of the hallway like a door tile", () => {

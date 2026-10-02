@@ -142,8 +142,9 @@ export function buildHouseModel(house: HouseSource, td: TileData | null, contain
 
   // Furniture: doors (the doorway they stand in, or beside when open, stays out of hallways like a door tile's), teleporters by name, impassable items as blocks; passable decoration is not drawn.
   const furniture: Furniture[] = [];
+  const own = houseItemSerial(house);
   if (td) for (const [serial, graphic, x, y, z] of [...house.items].sort((a, b) => a[0] - b[0])) {
-    if (isHouseMulti(graphic)) continue;
+    if (serial === own) continue;
     const info = td.info(graphic);
     if (!info) continue;
     const kind = classify(info, false) === "door" ? "door" : /teleporter/i.test(info.name) ? "teleporter" : (info.flags & FLAG.impassable) !== 0n ? "block" : null;
@@ -237,8 +238,15 @@ function directionOf(dx: number, dy: number): string {
 }
 
 // Greedy cover per level: candidates are free floor and stair cells plus teleporter tiles, none holding a stack or a block; each reaches the stacks within REACH tiles (Chebyshev) in its own room, or in no room (an alcove or doorway cell) from any room, worked out once. Each round picks the candidate reaching the most uncovered containers, ties to the smaller total Manhattan distance, then y, then x; it stops when no candidate reaches anything. Spots are then numbered by level, room (none last) and pick order, so letters run room by room. Sets each covered stack's spot and direction.
-// A house is itself an Item whose graphic is its multi id (ServUO's custom-house plots, 7x7 up to 18x18), standing at the plot centre; a static of the same id would be named as furniture (0x147B reads as a telescope), so it is not furniture.
-const isHouseMulti = (graphic: number): boolean => graphic >= 0x13ec && graphic <= 0x147b;
+// A house is itself an Item whose graphic is its multi id, standing at the plot centre (ServUO Scripts/Multis/HousePlacementTool.cs: every customizable house uses a multi id from 0x13EC to 0x147B); a static of the same id would be named as furniture (0x147B reads as a telescope). But ServUO's Telescope addon (Scripts/Items/Addons/Telescope.cs) has a real component with graphic 0x147B, so only ONE item is dropped: the in-range one nearest the centre of the tiles' x/y bounds, ties to the lowest serial.
+function houseItemSerial(house: HouseSource): number | null {
+  const cand = house.items.filter((i) => i[1] >= 0x13ec && i[1] <= 0x147b);
+  if (!cand.length || !house.tiles.length) return null;
+  const xs = house.tiles.map((t) => t[1]), ys = house.tiles.map((t) => t[2]);
+  const cx = (Math.min(...xs) + Math.max(...xs)) / 2, cy = (Math.min(...ys) + Math.max(...ys)) / 2;
+  const d = (i: HouseItem) => (i[2] - cx) ** 2 + (i[3] - cy) ** 2;
+  return cand.reduce((a, b) => (d(b) < d(a) || (d(b) === d(a) && b[0] < a[0]) ? b : a))[0];
+}
 
 function spotsOf(cells: Cell[], at: Map<string, Cell>, stackAt: Map<string, Stack[]>, furniture: Furniture[], levels: Level[]): Spot[] {
   const spots: Spot[] = [];

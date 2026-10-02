@@ -82,7 +82,7 @@ SCAN_RANGE = 3           # tiles: ground containers within reach (house chests o
 HOUSE_RADIUS = 40        # tiles searched around the player for the house's tiles (a castle is about 32 across)
 HOUSE_MAX_TILES = 20000  # a capture larger than this is left out rather than bloating the scan
 HOUSE_ITEM_REACH = 18    # the server sends ground items within about this many tiles
-HOUSE_MULTI_IDS = (0x13EC, 0x147B)   # custom-house plot multi ids, 7x7 to 18x18 (ServUO)
+HOUSE_MULTI_IDS = (0x13EC, 0x147B)   # custom-house multi ids (ServUO HousePlacementTool.cs)
 HOUSE_MAX_ITEMS = 5000   # the scan schema's cap on house items: past it the nearest are kept, so the scan file still validates
 HOUSE_MAX_CONTAINERS = 5000  # the scan schema's cap on the house's containers: past it the nearest are kept
 SCAN_GROUND = True       # False = backpack/bank only, never touch containers on the ground
@@ -288,8 +288,6 @@ def house_capture(px, py):
                 continue
             row = [int(g.Serial), int(getattr(g, "Graphic", 0) or 0), int(g.X), int(g.Y), int(getattr(g, "Z", 0) or 0)]
             name = str(getattr(g, "Name", "") or "")
-            if HOUSE_MULTI_IDS[0] <= row[1] <= HOUSE_MULTI_IDS[1]:
-                continue    # the house itself: an Item whose graphic is its multi id, not furniture
             if not is_container(g, name):
                 items.append(row)
             elif row[0] not in BLACKLIST and row[0] not in TRASHED and not TRASH_RE.search(name):
@@ -299,6 +297,12 @@ def house_capture(px, py):
 
     def nearest(row):
         return (max(abs(row[2] - px), abs(row[3] - py)), row[0])
+    # The house itself is an Item whose graphic is its multi id (ServUO Scripts/Multis/HousePlacementTool.cs: 0x13EC to 0x147B), standing at the plot centre. ServUO's Telescope addon (Scripts/Items/Addons/Telescope.cs) also has a component with graphic 0x147B, so only the one in-range item nearest the centre of the tiles' x/y bounds is dropped (ties to the lowest serial).
+    multis = [r for r in items if HOUSE_MULTI_IDS[0] <= r[1] <= HOUSE_MULTI_IDS[1]]
+    if multis:
+        xs, ys = [c[0] for c in keep], [c[1] for c in keep]
+        cx, cy = (min(xs) + max(xs)) / 2, (min(ys) + max(ys)) / 2
+        items.remove(min(multis, key=lambda r: ((r[2] - cx) ** 2 + (r[3] - cy) ** 2, r[0])))
     items.sort(key=nearest)
     HOUSE_LEFT_OUT.update(i[0] for i in items[HOUSE_MAX_ITEMS:])
     house["items"] = sorted(items[:HOUSE_MAX_ITEMS])
