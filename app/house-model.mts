@@ -1,6 +1,6 @@
 // house-model.mts — a house as the map draws it (issue #10), built from the newest capture of its tiles (app/house-capture.mts), the client's tiledata.mul (app/tiledata.mts; null when it was not found) and the fold's ground containers. Pure. Spec: docs/superpowers/specs/2026-10-01-house-map-design.md, section 3.
 import { classify, FLAG, type TileData, type TileClass } from "./tiledata.mts";
-import type { HouseSource } from "./house-capture.mts";
+import type { HouseItem, HouseSource } from "./house-capture.mts";
 
 // opened: false = a chest a house capture saw that no scan has opened (issue #10); absent = opened.
 export interface HouseContainerInput { serial: number; name: string; facet: number | null; x: number; y: number; z: number; opened?: boolean | undefined }
