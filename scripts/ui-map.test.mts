@@ -210,6 +210,13 @@ test("[slow] House map: hover shows a stack's callout, a click selects it and fi
     assert.equal(await page.locator('#map-svg > g[data-mark="kept"]').count(), 1, "pan and zoom never redraw the map");
     await page.locator("#map-fit").click();
     assert.equal(await vb(), fitted);
+    // a press whose release happened off the map does not leave a drag behind: a move with no button held pans nothing
+    await page.evaluate(() => {
+      const svg = document.querySelector("#map-svg")!, r = svg.getBoundingClientRect(), at = { clientX: r.left + 20, clientY: r.top + 20, pointerId: 1, bubbles: true };
+      svg.dispatchEvent(new PointerEvent("pointerdown", { ...at, button: 0, buttons: 1 }));
+      svg.dispatchEvent(new PointerEvent("pointermove", { ...at, clientX: at.clientX + 200, clientY: at.clientY + 120, buttons: 0 }));
+    });
+    assert.equal(await vb(), fitted, "a move with no button held after a lost release does not pan");
 
     // the stacks in front of an inner one fade and let the pointer through; the keyboard reaches it too
     await stack(inner).focus();

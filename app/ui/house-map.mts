@@ -218,11 +218,13 @@ function drawCrumbs(): void {
 }
 
 // ---------------------------------------------------------------- interaction
-// A press that moves more than 3 px pans the viewBox; one that does not is a click (a stack selects it, anywhere else clears). The wheel zooms about the pointer. Neither touches the drawing.
+// A press that moves more than 3 px pans the viewBox; one that does not is a click (a stack selects it, anywhere else clears). The wheel zooms about the pointer. Neither touches the drawing. A drag ends however the pointer leaves it: released off the map, cancelled, or its capture lost (an OS gesture, a switch of window).
 function wireSvg(svg: SVGSVGElement): void {
   let drag: { x: number; y: number; vb: Box; id: number; moved: boolean } | null = null;
+  const endDrag = (): void => { drag = null; svg.classList.remove("dragging"); };
   svg.addEventListener("pointerdown", (e) => { if (e.button === 0 && S.vb) drag = { x: e.clientX, y: e.clientY, vb: S.vb, id: e.pointerId, moved: false }; });
   svg.addEventListener("pointermove", (e) => {
+    if (drag && !(e.buttons & 1)) endDrag();
     if (!drag) { hoverAt(e); return; }
     const dx = e.clientX - drag.x, dy = e.clientY - drag.y;
     if (!drag.moved && Math.abs(dx) + Math.abs(dy) > 3) { drag.moved = true; svg.setPointerCapture(drag.id); svg.classList.add("dragging"); hideCallout(); }
@@ -230,15 +232,16 @@ function wireSvg(svg: SVGSVGElement): void {
   });
   svg.addEventListener("pointerup", (e) => {
     const d = drag;
-    drag = null;
-    svg.classList.remove("dragging");
+    endDrag();
     if (!d) return;
     if (d.moved) { if (svg.hasPointerCapture(e.pointerId)) svg.releasePointerCapture(e.pointerId); return; }
     const hit = (e.target as Element).closest?.("[data-stack]") as SVGElement | null;
     pick(hit?.dataset.stack ?? null);
   });
+  svg.addEventListener("pointercancel", endDrag);
+  svg.addEventListener("lostpointercapture", endDrag);
   svg.addEventListener("pointerleave", () => { if (!drag) { S.hover = null; paintStacks(); hideCallout(); } });
-  svg.addEventListener("wheel", (e) => { e.preventDefault(); zoomBy(e.deltaY > 0 ? 1.15 : 1 / 1.15, svgPoint(svg, e.clientX, e.clientY)); }, { passive: false });
+  svg.addEventListener("wheel", (e) => { e.preventDefault(); if (e.deltaY === 0) return; zoomBy(e.deltaY > 0 ? 1.15 : 1 / 1.15, svgPoint(svg, e.clientX, e.clientY)); }, { passive: false });
   svg.addEventListener("keydown", stackKeys);
   svg.addEventListener("focusin", (e) => {
     const t = (e.target as Element).closest?.("[data-stack]") as SVGElement | null;
@@ -251,10 +254,10 @@ function wireSvg(svg: SVGSVGElement): void {
 }
 function hoverAt(e: PointerEvent): void {
   const t = e.target as Element, st = t.closest?.("[data-stack]") as SVGElement | null, item = t.closest?.("[data-name]") as SVGElement | null;
-  const letter = st?.dataset.stack ?? null;
-  if (letter !== S.hover) { S.hover = letter; paintStacks(); }
+  const letter = st?.dataset.stack ?? null, changed = letter !== S.hover;
+  if (changed) { S.hover = letter; paintStacks(); }
   const svg = $<SVGSVGElement>("#map-svg");
-  if (letter) showCallout(letter);
+  if (letter) { if (changed || $<HTMLElement>("#map-callout")?.hidden) showCallout(letter); }   // a stack's callout is built once per stack hovered (again after a pan or zoom hid it)
   else if (item?.dataset.name && svg) showName(item.dataset.name, svgPoint(svg, e.clientX, e.clientY));
   else hideCallout();
 }
