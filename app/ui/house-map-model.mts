@@ -262,6 +262,13 @@ export function facetMapNote(reason: FacetMapReason | "error"): string {
 // Which chest a stack opens in the drawer: its top opened one (chests come top first), null when no scan opened any.
 export const drawerChest = (chests: readonly ChestView[]): number | null => chests.find((c) => c.opened)?.serial ?? null;
 export const drawerMeta = (c: ChestView, s: Pick<Stack, "letter" | "serials">): string => `In game: ${c.inGame} · Stack ${s.letter}, ${plural(s.serials.length, "chest")}`;
+// How the drawer picks a chest of the stack: a tab each (the segmented control, which is for 2 to 4 choices) up to DRAWER_TABS_MAX chests, else a select. Each choice is the chest's code and name; a chest no scan opened is disabled, "Not opened yet".
+export const DRAWER_TABS_MAX = 4;
+export interface DrawerChoice { value: string; label: string; sub: string; disabled: boolean; title: string }
+export function drawerPicker(chests: readonly ChestView[]): { kind: "tabs" | "select"; options: DrawerChoice[] } {
+  const kind = chests.length > DRAWER_TABS_MAX ? "select" : "tabs";
+  return { kind, options: chests.map((x) => ({ value: String(x.serial), label: kind === "tabs" ? x.code : `${x.code} ${x.name}${x.opened ? "" : " · Not opened yet"}`, sub: x.name, disabled: !x.opened, title: x.opened ? `${x.code} ${x.name}` : "Not opened yet" })) };
+}
 export const slotsText = (c: ChestView): string => (c.fill ? `${c.fill.items} of ${c.fill.max} slots` : "Fill unknown");
 // A chest's items as a tree: each bag (a scanned container, or anything an item sits in) with what it holds, bags first, then the items, each in the order given; `count` is everything inside a bag, bags in it included. An item whose bag is not among the items, or that sits in a container cycle, is shown loose rather than lost.
 export type ContentsNode = { kind: "item"; item: Item } | { kind: "bag"; item: Item; count: number; kids: ContentsNode[] };

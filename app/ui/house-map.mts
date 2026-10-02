@@ -2,7 +2,7 @@
 import { state, bridge } from "./store.mts";
 import { $, el, safeColor, fmtN, toast } from "./dom.mts";
 import { api } from "./api.mts";
-import { box, txt, button, segmented, pill, message, meter, keyValue, modalOpen, tipWrap, input, copyText, icon, kbd, menu, popover, closePopover } from "./components.mts";
+import { box, txt, button, segmented, pill, message, meter, keyValue, modalOpen, tipWrap, input, copyText, icon, kbd, menu, popover, closePopover, confirmDialog, select as selectEl } from "./components.mts";
 import { labelContainer } from "./containers.mts";
 import { showContainer, itemMenu, rarityEl, tagEls } from "./inventory.mts";
 import { propertyLines, RESISTS } from "./peek.mts";
@@ -13,7 +13,7 @@ import { plural } from "./inv-model.mts";
 import { fillTone } from "./organize-model.mts";
 import { PLAIN, pickHouse, plainGrid, chestCount, houseLabel, houseName, carryOver, carryOverText, tiledataNote, chestViews, colourOf, chestLabel, sceneOf, boundsOf, fit, vbText,
   cutAway, calloutLines, nearestInDirection, houseTotals, legendOf, stackWhere, anchorOf, zoomAt, fillWords, whereOf, whereTitle, cropAround, facetMapUrl, markersOf, facetMapNote, markerRadii,
-  drawerChest, drawerMeta, slotsText, contentsOf, contentsSummary, filterContents, areaOfStack, levelAreas, tileAt, clampTile, rectOf, sizeText, unionTiles, coveredCells, outlineOf, pillsOf, fitLabel, LABEL_FIT,
+  drawerChest, drawerMeta, slotsText, drawerPicker, contentsOf, contentsSummary, filterContents, areaOfStack, levelAreas, tileAt, clampTile, rectOf, sizeText, unionTiles, coveredCells, outlineOf, pillsOf, fitLabel, LABEL_FIT,
   nextAreaId, nextAreaColor, moveCursor, project, tilePolygon, pts, liveAreas, withOrphans, redrawFailed, AREA_COLORS, AREA_COLOR_NAMES, MAX_AREAS, MAX_RECTS, type PlainModel, type Tile, type Contents, type ContentsNode, type Marker, type View, type Mode, type Box, type Colour, type ChestView, type Piece, type Prism, type Pt, type Dir } from "./house-map-model.mts";
 import type { AreaRect, ContainerLabel, HouseArea, HouseModel, UiPrefs, HousesApiResponse, HouseApiResponse, HouseMapApiResponse, HouseMapEntry, HouseMapPutApiResponse, ItemsApiResponse, Stack } from "./api-types.mts";
 import type { Item } from "../vault-lib.mts";
@@ -47,7 +47,6 @@ let dragging = false;   // a mouse drag is drawing a rectangle
 // A new area drawn and waiting for its name (the field's draft kept through redraws), an area being renamed, one asking to be deleted, and a save under way.
 let naming: { level: number; color: string; rects: AreaRect[]; draft: string; error: string | null } | null = null;
 let renamingArea: { id: string; draft: string; error: string | null } | null = null;
-let deleting: string | null = null;
 let redrawn: { id: string; rects: AreaRect[] } | null = null;   // a redraw shown before its save is answered
 // The area under the pointer (on the map, or its row in the left pane) or focused in the pane: drawn stronger, its pill showing the whole name on top.
 let hotArea: string | null = null;
@@ -74,7 +73,7 @@ function setHot(id: string | null): void {
   for (const g of document.querySelectorAll<SVGGElement>("#map-svg .map-area-shape[data-area-shape]")) g.classList.toggle("hot", g.dataset.areaShape === id);
   paintPills();
 }
-const stopEditing = (): void => { draw = null; dragging = false; naming = null; renamingArea = null; deleting = null; };
+const stopEditing = (): void => { draw = null; dragging = false; naming = null; renamingArea = null; };
 // Leaving drawing mode any other way than Enter or Esc (another level, a crumb): said too.
 const dropDrawing = (): void => { if (!draw) return; draw = null; dragging = false; announce("Drawing cancelled."); };
 
@@ -210,11 +209,6 @@ function side(): HTMLElement {
 // An area's row: its zoom button (colour, name, chest count), ✎ (Rename) and ⋯ (Redraw, Change colour, Delete); while renaming, the name field in its place; while asking to delete, the question with Delete and Cancel.
 function areaRow(m: HouseModel, a: HouseArea, chests: number, editable: boolean): HTMLElement {
   const swatch = el("span", { class: "map-swatch", "aria-hidden": "true", style: `background:var(--color-${a.color})` });
-  if (deleting === a.id) return box("li", { class: "map-area-row confirm" },
-    box("span", { class: "map-area-ask t-sm" }, txt(`Delete "${a.name}"? Its chests go to Everything else.`)),
-    box("span", { class: "map-area-ask-actions" },
-      button({ label: "Delete", variant: "danger", size: "sm", attrs: { id: `map-area-delete-${a.id}` }, onClick: () => { void removeArea(m, a); } }),
-      button({ label: "Cancel", size: "sm", attrs: { id: `map-area-keep-${a.id}` }, onClick: () => { deleting = null; render(); $<HTMLElement>(`#map-area-menu-${CSS.escape(a.id)}`)?.focus(); } })));
   if (renamingArea?.id === a.id) return box("li", { class: "map-area-row editing" }, swatch, areaRenameField(m, a, renamingArea));
   const zoom = box("button", { type: "button", class: "map-area", id: `map-area-${a.id}`, "data-area": a.id, "aria-pressed": String(S.area === a.id), onclick: () => zoomToArea(a) },
     swatch, txt(a.name, "ellip"), txt(String(chests), "t-sm muted num"));
@@ -225,7 +219,7 @@ function areaRow(m: HouseModel, a: HouseArea, chests: number, editable: boolean)
       { label: "Redraw", onSelect: () => startDrawing(a.level, a.id) },
       { label: "Change colour", onSelect: () => colourPicker(m, a, more) },
       "divider",
-      { label: "Delete", danger: true, onSelect: () => { deleting = a.id; render(); $<HTMLElement>(`#map-area-keep-${CSS.escape(a.id)}`)?.focus(); } },
+      { label: "Delete", danger: true, onSelect: () => { void askDelete(m, a); } },
     ], { label: `Actions for ${a.name}`, width: 160 }); } });
   const row = box("li", { class: "map-area-row" }, zoom,
     button({ label: `Rename ${a.name}`, icon: "pencil", iconOnly: true, variant: "ghost", size: "sm", attrs: { id: `map-area-edit-${a.id}` },
@@ -306,13 +300,16 @@ async function saveNew(m: HouseModel): Promise<void> {
   render();
   $<HTMLElement>(`#map-area-${CSS.escape(id)}`)?.focus();
 }
-async function removeArea(m: HouseModel, a: HouseArea): Promise<void> {
+// Delete asks with the page's yes/no dialog. Cancel puts focus back on the row's ⋯; a delete puts it on the next area's ⋯ on that level, else on the one before, else on + New area.
+async function askDelete(m: HouseModel, a: HouseArea): Promise<void> {
+  const menuOf = (id: string): HTMLElement | null => $<HTMLElement>(`#map-area-menu-${CSS.escape(id)}`);
+  if (!await confirmDialog({ title: `Delete ${a.name}?`, body: `Its chests go to ${levelAreas(m, areasNow().filter((x) => x.id !== a.id), a.level).rest.name}. The chests themselves stay where they are.`, confirmLabel: "Delete area" })) { menuOf(a.id)?.focus(); return; }
+  const mates = areasNow().filter((x) => x.level === a.level), at = mates.findIndex((x) => x.id === a.id), next = mates[at + 1] ?? mates[at - 1] ?? null;
   const why = await editAreas(m, (l) => l.filter((x) => x.id !== a.id));
-  deleting = null;
-  if (why) { toast(why, "bad"); render(); return; }
+  if (why) { toast(why, "bad"); render(); menuOf(a.id)?.focus(); return; }
   if (S.area === a.id) { S.area = null; S.vb = null; }
   render();
-  $<HTMLElement>(`#map-new-area-${a.level}`)?.focus();
+  (next && menuOf(next.id) || $<HTMLElement>(`#map-new-area-${a.level}`))?.focus();
 }
 // Change the house's areas: `edit` is applied, when the save's turn comes (saveEntry), to the list as last saved, so a rename still being saved is never undone by a colour change or a delete made meanwhile; the hidden orphan-level areas are written back after it (withOrphans). Returns the server's reason when it refuses.
 const editAreas = (m: HouseModel, edit: (saved: HouseArea[]) => HouseArea[]): Promise<string | null> => saveEntry(m, () => ({ areas: withOrphans(edit(savedAreas(m)), S.names[m.id]?.areas, m.levels.length) }));
@@ -327,7 +324,7 @@ function startDrawing(level: number, target: string | null): void {
   const m = S.model;
   if (!m) return;
   const a = areaById(target), mid: Tile = [Math.floor((m.x0 + m.x1) / 2), Math.floor((m.y0 + m.y1) / 2)];
-  naming = null; renamingArea = null; deleting = null;
+  naming = null; renamingArea = null;
   draw = { level, target, color: a?.color ?? nextAreaColor(areasNow()), rects: [], cur: null, anchor: null, add: false, cursor: mid, keyed: false };
   if (S.level !== level) { S.level = level; S.area = null; S.selected = null; S.vb = null; }
   S.hover = null;
@@ -367,7 +364,7 @@ async function saveRedraw(m: HouseModel, d: Draw, id: string): Promise<void> {
   if (!why) { render(); return; }
   if (gone) { toast(why, "bad"); render(); return; }
   if (S.model === m && !draw && !naming && areaById(id)) {
-    renamingArea = null; deleting = null;
+    renamingArea = null;
     draw = { ...d, cur: null, anchor: null };
     S.level = d.level;
     toast(redrawFailed(why, true), "bad");
@@ -1097,9 +1094,17 @@ function drawDrawer(): void {
   if (!d || !m || !s || !dr) return;
   const was = focusKey(d), chests = chestViews(m, s, state.inv!, labels()), c = chests.find((x) => x.serial === dr.chest) ?? null;
   d.setAttribute("aria-label", `Contents of ${c ? `${c.code} ${c.name}` : `Stack ${s.letter}`}`);
-  const tabs = segmented({ label: "Chests in this stack", value: String(dr.chest ?? ""), onChange: (v) => showChest(+v),
-    options: chests.map((x) => ({ value: String(x.serial), label: x.code, sub: x.name, disabled: !x.opened, title: x.opened ? `${x.code} ${x.name}` : "Not opened yet" })) });
-  for (const b of tabs.querySelectorAll<HTMLButtonElement>("button")) b.id = `map-drawer-tab-${b.dataset.value}`;
+  // A tab per chest up to four (drawerPicker); a taller stack is a select labelled Chest.
+  const pick = drawerPicker(chests);
+  let tabs: HTMLElement;
+  if (pick.kind === "tabs") {
+    tabs = segmented({ label: "Chests in this stack", value: String(dr.chest ?? ""), onChange: (v) => showChest(+v), options: pick.options });
+    for (const b of tabs.querySelectorAll<HTMLButtonElement>("button")) b.id = `map-drawer-tab-${b.dataset.value}`;
+  } else {
+    const sel = selectEl(pick.options, String(dr.chest ?? ""), { size: "sm", attrs: { id: "map-drawer-chest" } });
+    sel.addEventListener("change", () => showChest(+sel.value));
+    tabs = box("div", { class: "map-drawer-pick" }, el("label", { class: "t-sm muted", for: "map-drawer-chest" }, "Chest"), sel);
+  }
   const filter = input({ type: "search", size: "sm", value: dr.filter, placeholder: c ? `Filter ${c.code} contents…` : "Filter contents…", attrs: { id: "map-drawer-filter", "aria-label": c ? `Filter ${c.code} contents` : "Filter contents" } });
   filter.addEventListener("input", () => { dr.filter = filter.value; dr.scroll = 0; drawDrawerBody(); });
   const list = box("div", { class: "map-drawer-body", id: "map-drawer-body" });

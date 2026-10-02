@@ -5,7 +5,7 @@ import { buildHouseModel } from "./house-model.mts";
 import { fixtureTileData, vaultHouse, roofHouse, courtyardHouse, castleHouse, foundationHouse, stairHouse, G } from "./house-fixture.mts";
 import type { Container, Item } from "./vault-lib.mts";
 import type { HouseArea, HouseModel, Stack } from "./ui/api-types.mts";
-import { project, tilePolygon, boxFaces, pts, paintOrder, boundsOf, fit, zoomAt, vbText, anchorOf, W, chestViews, colourOf, legendOf, chestLabel, cutAway, calloutLines, houseTotals, pickHouse, houseLabel, houseName, carryOver, carryOverText, PLAIN, chestCount, nearestInDirection, tiledataNote, stackWhere, plainGrid, sceneOf, drawnZs, CHEST_H, whereOf, whereTitle, cropAround, facetMapUrl, markersOf, facetMapNote, parseRegion, markerRadii, contentsOf, contentsSummary, filterContents, drawerChest, drawerMeta, slotsText, piecesOf, frontCorner, fitLabel, pillsOf, LABEL_FIT, areaOfStack, levelAreas, restName, unproject, tileAt, rectOf, sizeText, unionTiles, coveredCells, outlineOf, nextAreaId, nextAreaColor, moveCursor, clampTile, liveAreas, withOrphans, redrawFailed, AREA_COLORS, AREA_COLOR_NAMES, type ChestView, type ContentsNode } from "./ui/house-map-model.mts";
+import { project, tilePolygon, boxFaces, pts, paintOrder, boundsOf, fit, zoomAt, vbText, anchorOf, W, chestViews, colourOf, legendOf, chestLabel, cutAway, calloutLines, houseTotals, pickHouse, houseLabel, houseName, carryOver, carryOverText, PLAIN, chestCount, nearestInDirection, tiledataNote, stackWhere, plainGrid, sceneOf, drawnZs, CHEST_H, whereOf, whereTitle, cropAround, facetMapUrl, markersOf, facetMapNote, parseRegion, markerRadii, contentsOf, contentsSummary, filterContents, drawerChest, drawerMeta, slotsText, drawerPicker, DRAWER_TABS_MAX, piecesOf, frontCorner, fitLabel, pillsOf, LABEL_FIT, areaOfStack, levelAreas, restName, unproject, tileAt, rectOf, sizeText, unionTiles, coveredCells, outlineOf, nextAreaId, nextAreaColor, moveCursor, clampTile, liveAreas, withOrphans, redrawFailed, AREA_COLORS, AREA_COLOR_NAMES, type ChestView, type ContentsNode } from "./ui/house-map-model.mts";
 
 const td = fixtureTileData();
 const has = (cls: string, c: string): boolean => cls.split(" ").includes(c);
@@ -702,6 +702,20 @@ test("[fast] house map drawer: the filter matches name, tooltip line and tag tex
   assert.deepEqual(names(filterContents(c.nodes, "gems")), ["Weapons", "Gems", "Ruby"], "a matching bag keeps all it holds");
   assert.equal((filterContents(c.nodes, "ruby")[0] as Extract<ContentsNode, { kind: "bag" }>).count, 2);
   assert.deepEqual(filterContents(c.nodes, "nothing like it"), []);
+});
+
+test("[fast] house map drawer: up to 4 chests the stack's chests are tabs; more are a select, each option the code and name, a chest not opened yet disabled", () => {
+  const view = (serial: number, opened: boolean): ChestView => ({ serial, code: `A${serial}`, name: `Chest ${serial}`, inGame: "Metal Chest", color: null, fill: null, opened, items: 0, z: 0 });
+  const four = drawerPicker([view(4, true), view(3, false), view(2, true), view(1, true)]);
+  assert.equal(four.kind, "tabs");
+  assert.deepEqual(four.options[1], { value: "3", label: "A3", sub: "Chest 3", disabled: true, title: "Not opened yet" });
+  assert.deepEqual(four.options[0], { value: "4", label: "A4", sub: "Chest 4", disabled: false, title: "A4 Chest 4" });
+  const five = drawerPicker([5, 4, 3, 2, 1].map((n) => view(n, n !== 3)));
+  assert.equal(five.kind, "select");
+  assert.equal(five.options.length, 5);
+  assert.deepEqual(five.options[2], { value: "3", label: "A3 Chest 3 · Not opened yet", sub: "Chest 3", disabled: true, title: "Not opened yet" });
+  assert.equal(five.options[0]!.label, "A5 Chest 5");
+  assert.equal(DRAWER_TABS_MAX, 4);
 });
 
 test("[fast] house map drawer: a stack opens its top opened chest; the header words the chest, its stack and its fill", () => {

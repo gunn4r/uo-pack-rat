@@ -40,9 +40,6 @@
 .map-area-row > .btn { flex: none; }
 .map-area-row > .map-name-edit { flex: 1 1 auto; min-width: 0; }
 .map-area-row.editing > .map-swatch { margin-left: var(--space-2); }
-.map-area-row.confirm { flex-wrap: wrap; gap: var(--space-1-5); padding: var(--space-1-5) var(--space-2); border-radius: var(--radius-md); background: var(--color-surface-subtle); }
-.map-area-ask { flex: 1 1 100%; }
-.map-area-ask-actions { display: flex; gap: var(--space-1-5); }
 .map-swatch.rest { border-style: dashed; background: transparent; }
 .map-area-new { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; gap: var(--space-1-5); padding: var(--space-2); border: var(--border-width) solid var(--color-accent); border-radius: var(--radius-md); }
 .map-area-new-field { display: flex; align-items: center; gap: var(--space-2); }
@@ -205,6 +202,8 @@ a.map-where-mark:focus-visible .map-where-ring-in { stroke: var(--color-map-mark
 .map-drawer-fill > .meter { flex: 1 1 auto; }
 .map-drawer-tabs > .seg { display: flex; }
 .map-drawer-tabs .seg > button { flex: 1 1 0; min-width: 0; }
+.map-drawer-pick { display: flex; align-items: center; gap: var(--space-2); }
+.map-drawer-pick > .select { flex: 1 1 auto; min-width: 0; }
 .map-drawer-tools { display: flex; gap: var(--space-2); }
 .map-drawer-tools > .input { flex: 1 1 auto; min-width: 0; }
 .map-drawer-body { flex: 1 1 auto; min-height: 0; overflow: auto; }
@@ -224,4 +223,4 @@ a.map-where-mark:focus-visible .map-where-ring-in { stroke: var(--color-map-mark
 .map-item-name { flex: 1 1 auto; font-weight: var(--weight-medium); }
 .map-item-l1 > .tag, .map-item-l2 > .rar-tier { flex: none; }
 .map-item-props { flex: 1 1 auto; }
-.map-item-res { flex: none; margin-left: auto; display: flex; gap: var(--space-1-5); font-family: var(--font-mono); font-size: var(--text-xs); line-height: var(--lh-xs); }
+.map-item-res { flex: none; margin-left: auto; display: flex; gap: var(--space-1-5); font-family: var(--font-body); font-variant-numeric: tabular-nums; font-size: var(--text-xs); line-height: var(--lh-xs); }

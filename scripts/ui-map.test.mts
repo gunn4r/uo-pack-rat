@@ -577,13 +577,16 @@ test("[slow] House map areas: a mouse drag draws an area, Enter asks its name, S
     assert.equal(await page.evaluate(() => document.activeElement?.id), "map-area-edit-a1");
     await until(() => readAreas(dir), (a) => a?.[0]?.name === "Reagents", "the rename saved");
 
-    // ⋯ › Delete asks in the row; Cancel keeps it, Delete removes it.
+    // ⋯ › Delete asks with the page's yes/no dialog; Cancel keeps the area, focus back on its ⋯.
     await page.locator("#map-area-menu-a1").click();
     await page.locator('.pop [role="menuitem"]', { hasText: "Delete" }).click();
-    await page.waitForSelector(".map-area-row.confirm");
-    assert.match(await page.locator(".map-area-row.confirm").textContent() || "", /^Delete "Reagents"\? Its chests go to Everything else\.DeleteCancel$/);
-    await page.locator("#map-area-keep-a1").click();
-    await page.waitForSelector('.map-area[data-area="a1"]');
+    await page.waitForSelector("dialog[open] [data-confirm]");
+    assert.match(await page.locator("dialog[open]").textContent() || "", /Delete Reagents\?.*Its chests go to Whole floor\./);
+    assert.equal(await page.locator("dialog[open] [data-confirm]").textContent(), "Delete area");
+    await page.locator("dialog[open] [data-cancel]").click();
+    await page.waitForSelector("dialog[open]", { state: "detached" });
+    assert.equal(await page.evaluate(() => document.activeElement?.id), "map-area-menu-a1");
+    assert.equal(await page.locator('.map-area[data-area="a1"]').count(), 1);
     // ⋯ › Change colour: the palette by name, the area's own pressed.
     await page.locator("#map-area-menu-a1").click();
     await page.locator('.pop [role="menuitem"]', { hasText: "Change colour" }).click();
@@ -609,8 +612,8 @@ test("[slow] House map areas: a mouse drag draws an area, Enter asks its name, S
     assert.deepEqual((await until(() => readAreas(dir), (a) => (a?.[0]?.rects as Array<{ y0: number }> | undefined)?.[0]?.y0 === 1002, "the redraw saved"))![0]!.rects, [{ x0: 3001, y0: 1002, x1: 3005, y1: 1002 }]);
     await page.locator("#map-area-menu-a1").click();
     await page.locator('.pop [role="menuitem"]', { hasText: "Delete" }).click();
-    await page.locator("#map-area-delete-a1").click();
-    await page.waitForFunction(() => !document.querySelector('.map-area[data-area="a1"], .map-area-row.confirm'), undefined, { timeout: 15_000 });
+    await page.locator("dialog[open] [data-confirm]").click();
+    await page.waitForFunction(() => !document.querySelector('.map-area[data-area="a1"]'), undefined, { timeout: 15_000 });
     assert.match(await page.locator(rest).textContent() || "", /^Whole floor120$/);
     assert.equal(await page.locator("#map-svg .map-area-tile").count(), 0);
     assert.equal(await page.evaluate(() => document.activeElement?.id), "map-new-area-0");
@@ -1002,13 +1005,15 @@ test("[slow] House map: Show items opens the contents drawer as a column of its 
     const names = (): Promise<string[]> => page.locator("#map-drawer-body .map-item-name, #map-drawer-body .map-bag-name").allTextContents();
     assert.deepEqual(await names(), ["Weapons", "Gems", "Ruby", "Bow", "Katana", "Arrows"], "bags first, then the items by name, nested inside nested");
     assert.match(await page.locator("#map-drawer-body .map-bag-head").first().textContent() || "", /4 items/);
-    // one tab per chest of the stack, the shown one checked
-    assert.equal(await page.locator("#map-drawer [role=radio]").count(), FILLED.length);
-    assert.equal(await page.locator(`#map-drawer-tab-${TOP}`).getAttribute("aria-checked"), "true");
-    await page.locator(`#map-drawer-tab-${UNDER}`).click();
+    // five chests: a select labelled Chest (tabs are for up to four), an option per chest, the shown one chosen
+    assert.equal(await page.locator("#map-drawer [role=radio]").count(), 0);
+    assert.equal(await page.locator("#map-drawer-chest option").count(), FILLED.length);
+    assert.equal(await page.locator('#map-drawer label[for="map-drawer-chest"]').textContent(), "Chest");
+    assert.equal(await page.locator("#map-drawer-chest").inputValue(), String(TOP));
+    await page.locator("#map-drawer-chest").selectOption(String(UNDER));
     await summaryIs("46 items · 1 loose, 43 in 2 bags");
     assert.equal(await page.locator('#map-panel li.open').getAttribute("data-chest"), String(UNDER));
-    await page.locator(`#map-drawer-tab-${TOP}`).click();
+    await page.locator("#map-drawer-chest").selectOption(String(TOP));
     await summaryIs("6 items · 1 loose, 4 in 1 bag");
     await page.locator("#map-drawer-filter").fill("ruby");
     await page.waitForFunction(() => document.querySelectorAll("#map-drawer-body .map-item").length === 1);
@@ -1029,7 +1034,7 @@ test("[slow] House map: Show items opens the contents drawer as a column of its 
     await page.waitForSelector("#map-drawer .map-item");
     const frontTop = vaultModel.stacks.find((s) => s.letter === front)!.serials.at(-1)!;
     await page.locator(`#map-svg [data-stack="${front}"]`).click();
-    await page.waitForFunction((s) => document.querySelector("#map-drawer [role=radio][aria-checked=true]")?.id === `map-drawer-tab-${s}`, frontTop, { timeout: 10_000 });
+    await page.waitForFunction((s) => (document.querySelector("#map-drawer-chest") as HTMLSelectElement | null)?.value === String(s), frontTop, { timeout: 10_000 });
     await summaryIs("Empty");
     assert.equal(await page.locator('#map-panel li.open').getAttribute("data-chest"), String(frontTop));
     await page.locator("#map-drawer [aria-label='Close contents']").click();
@@ -1041,7 +1046,7 @@ test("[slow] House map: Show items opens the contents drawer as a column of its 
     await page.keyboard.press("Enter");
     await opener.click();
     await page.waitForSelector("#map-drawer .map-item");
-    await page.locator(`#map-drawer-tab-${UNDER}`).click();
+    await page.locator("#map-drawer-chest").selectOption(String(UNDER));
     await summaryIs("46 items · 1 loose, 43 in 2 bags");
     await page.locator("#map-drawer-filter").fill("pearl");
     await page.locator(`#map-drawer-bag-${SPARE}`).click();
@@ -1054,7 +1059,7 @@ test("[slow] House map: Show items opens the contents drawer as a column of its 
     await page.evaluate(async () => { await (await import("/ui/app.mjs" as string)).reload(); });
     await summaryIs("47 items · 1 loose, 44 in 2 bags");
     assert.ok((await names()).includes("Pearl 41"), "the new item shows");
-    assert.equal(await page.locator(`#map-drawer-tab-${UNDER}`).getAttribute("aria-checked"), "true");
+    assert.equal(await page.locator("#map-drawer-chest").inputValue(), String(UNDER));
     assert.equal(await page.locator("#map-drawer-filter").inputValue(), "pearl");
     assert.equal(await page.locator(`#map-drawer-bag-${SPARE}`).evaluate((e) => (e.parentElement as HTMLDetailsElement).open), false, "the folded bag stays folded");
     assert.equal(await page.locator(`#map-drawer-bag-${SUPPLIES}`).evaluate((e) => (e.parentElement as HTMLDetailsElement).open), true);
@@ -1067,6 +1072,22 @@ test("[slow] House map: Show items opens the contents drawer as a column of its 
     await page.waitForFunction(() => location.hash === "#/inventory", undefined, { timeout: 10_000 });
     await page.waitForSelector("#inv-peek:not([hidden]) #peek-title", { timeout: 15_000 });
     assert.equal(await page.locator("#peek-title").textContent(), "Pearl 01");
+    assert.deepEqual(errors, []);
+  } finally { await done(app, dir); }
+});
+
+test("[slow] House map: a stack of up to four chests picks its chest in the drawer by tabs, not a select (1024 × 768)", async (t) => {
+  const why = unavailable();
+  if (why) return t.skip(why);
+  const { dir } = seed();
+  const { app, page, errors } = await launch(dir, { want: { width: 1024, height: 768 } });
+  try {
+    await go(page, `#/map/${COURT}`, `#map-svg [data-stack="${letter(courtModel, 1012, 2013)}"]`);
+    await page.locator(`#map-svg [data-stack="${letter(courtModel, 1012, 2013)}"]`).click({ force: true });
+    await page.locator(`#map-panel li[data-chest="${YARD_CHEST}"] [data-act="items"]`).click();
+    await page.waitForSelector("#map-drawer");
+    assert.equal(await page.locator(`#map-drawer [role=radio]#map-drawer-tab-${YARD_CHEST}`).getAttribute("aria-checked"), "true");
+    assert.equal(await page.locator("#map-drawer-chest").count(), 0);
     assert.deepEqual(errors, []);
   } finally { await done(app, dir); }
 });
