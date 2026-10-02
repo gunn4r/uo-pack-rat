@@ -1,11 +1,11 @@
-// ui-map.test.mts — app/ui/house-map-model.mts, the House map's pure rules (issue #10): the projection, tile and box polygons, the painter's order, a level's bounds and fit, the joins of a stack with the inventory and the Organize labels, the colour modes, the cut-away, callouts, totals, the house picker, keyboard moves, the plain grid, and the scene of a level (castle speed included). Tags: [fast]. Run: node --test app/ui-map.test.mts
+// ui-map.test.mts — app/ui/house-map-model.mts, the House map's pure rules (issue #10): the projection, tile and box polygons, the painter's order, a level's bounds and fit, the joins of a stack with the inventory and the Organize labels, the colour modes, the cut-away, callouts, totals, the house picker, keyboard moves, the plain grid, the scene of a level (castle speed included), and (issue #164) where a house is: its coordinates, sextant and copy line, the facet overview's crop, its markers and why it may be missing. Tags: [fast]. Run: node --test app/ui-map.test.mts
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { buildHouseModel } from "./house-model.mts";
 import { fixtureTileData, vaultHouse, roofHouse, courtyardHouse, castleHouse, foundationHouse, stairHouse, G } from "./house-fixture.mts";
 import type { Container } from "./vault-lib.mts";
 import type { HouseModel } from "./ui/api-types.mts";
-import { project, tilePolygon, boxFaces, pts, paintOrder, boundsOf, fit, zoomAt, vbText, anchorOf, W, chestViews, colourOf, legendOf, chestLabel, cutAway, calloutLines, houseTotals, pickHouse, houseLabel, houseName, carryOver, PLAIN, chestCount, roomCounts, nearestInDirection, tiledataNote, stackWhere, plainGrid, sceneOf, drawnZs, CHEST_H, type ChestView } from "./ui/house-map-model.mts";
+import { project, tilePolygon, boxFaces, pts, paintOrder, boundsOf, fit, zoomAt, vbText, anchorOf, W, chestViews, colourOf, legendOf, chestLabel, cutAway, calloutLines, houseTotals, pickHouse, houseLabel, houseName, carryOver, PLAIN, chestCount, roomCounts, nearestInDirection, tiledataNote, stackWhere, plainGrid, sceneOf, drawnZs, CHEST_H, whereOf, cropAround, facetMapUrl, markersOf, facetMapNote, type ChestView } from "./ui/house-map-model.mts";
 
 const td = fixtureTileData();
 const has = (cls: string, c: string): boolean => cls.split(" ").includes(c);
@@ -432,4 +432,48 @@ test("[fast] house map: a name kept for a house no longer listed is offered to a
   assert.equal(carryOver(m, [m.id], { "1-3007-1004": { ...old, bounds: { ...old.bounds, x0: 3007 } } }), null, "no overlap");
   assert.equal(carryOver(m, [m.id], { "1-3004-1004": { name: "No bounds" } }), null, "a name saved without its footprint");
   assert.equal(carryOver({ ...m, id: PLAIN }, [], { "1-3004-1004": old }), null, "never the plain grid");
+});
+
+// ---------------------------------------------------------------- where the house is (issue #164)
+const summary = (id: string, facet: number | null, x0: number, y0: number, name?: string) => ({ id, facet, capturedAt: "", captures: 1, width: 18, height: 18, plot: { x0, y0, x1: x0 + 17, y1: y0 + 17 }, levels: 1, containers: 0, ...(name ? { name } : {}) });
+
+test("[fast] house map: a house's centre and corners in world tiles, its sextant reading and the one line Copy puts on the clipboard", () => {
+  const w = whereOf(summary("1-1427-1684", 1, 1427, 1684));
+  assert.deepEqual(w.centre, [1435, 1692]);
+  assert.equal(w.centreText, "1435, 1692");
+  assert.equal(w.corners, "Corners 1427, 1684 to 1444, 1701");
+  assert.equal(w.sextant, "5°58'S 7°52'E");
+  assert.equal(w.copy, "1435, 1692 · Trammel · 5°58'S 7°52'E");
+  const lost = whereOf(summary("1-7000-100", 1, 7000, 100));
+  assert.equal(lost.sextant, null, "no reading there: coordinates only");
+  assert.equal(lost.copy, "7008, 108 · Trammel");
+});
+
+test("[fast] house map: the overview's crop is 600 x 450 tiles around the house, slid back inside the facet at its edges", () => {
+  assert.deepEqual(cropAround(1, [1435, 1692]), { x0: 1135, y0: 1467, x1: 1735, y1: 1917 });
+  assert.deepEqual(cropAround(1, [10, 4090]), { x0: 0, y0: 3646, x1: 600, y1: 4096 });
+  assert.deepEqual(cropAround(4, [1440, 5]), { x0: 848, y0: 0, x1: 1448, y1: 450 });
+  assert.equal(cropAround(null, [10, 10]), null);
+  assert.equal(cropAround(9, [10, 10]), null);
+  assert.equal(facetMapUrl(3, { x0: 1, y0: 2, x1: 601, y1: 452 }), "/api/facet-map/3.png?x0=1&y0=2&x1=601&y1=452&w=600");
+});
+
+test("[fast] house map: markers sit at each house's centre tile inside the crop; houses on another facet or outside the crop have none", () => {
+  const here = summary("1-1427-1684", 1, 1427, 1684, "Main house");
+  const crop = cropAround(1, whereOf(here).centre)!;
+  const list = [here, summary("1-1500-1700", 1, 1500, 1700), summary("3-1427-1684", 3, 1427, 1684, "Malas forge"), summary("1-3000-3000", 1, 3000, 3000), summary("0-1500-1700", 0, 1500, 1700)];
+  const ms = markersOf(list, here.id, 1, crop);
+  assert.deepEqual(ms.map((m) => [m.id, m.current, m.x, m.y]), [["1-1500-1700", false, 373.5, 241.5], ["1-1427-1684", true, 300.5, 225.5]], "the others first, this house drawn last, on top");
+  assert.equal(ms.find((m) => m.current)!.label, "Main house (this house)");
+  assert.equal(ms.find((m) => !m.current)!.label, "Trammel house at 1508, 1708");
+  assert.deepEqual(markersOf(list, "nope", 1, crop).map((m) => m.current), [false, false], "no current house, still the others");
+});
+
+test("[fast] house map: why the overview is missing, in plain words", () => {
+  for (const r of ["no-client", "no-tazuo-profile", "override-missing", "missing", "unreadable", "error"] as const) {
+    const t = facetMapNote(r);
+    assert.ok(t.length > 20, r);
+    assert.ok(!/undefined|null/.test(t), r);
+  }
+  assert.match(facetMapNote("missing"), /facet/);
 });

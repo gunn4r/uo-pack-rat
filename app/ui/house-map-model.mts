@@ -1,7 +1,8 @@
 // ui/house-map-model.mts — the House map's pure rules (issue #10, spec section 4): the projection (the client's angle, or top-down), the polygons of a tile and of a box, the painter's order, a level's bounds and their fit; below, the joins of a stack with the inventory and the Organize labels, the colour modes, the cut-away, the callout, the totals, the house picker, keyboard moves, the plain grid for chests outside any drawn house, and the scene of one level. No DOM and no store.mts import, so app/ui-map.test.mts runs it under plain node:test; ui/house-map.mts draws what it returns. Coordinates are relative to the house's corner (x0, y0); heights to the level's floor.
 import { bagLabel } from "../vault-lib.mts";
 import { plural, splitSerial } from "./inv-model.mts";
-import type { Cell, ContainerLabel, HouseMapEntry, HouseModel, HouseSummary, InventoryData, Room, Spot, Stack, TiledataFrom } from "./api-types.mts";
+import { FACET_SIZE, sextant, sextantText } from "./sextant.mts";
+import type { Cell, ContainerLabel, FacetMapReason, HouseMapEntry, HouseModel, HouseSummary, InventoryData, Room, Spot, Stack, TiledataFrom } from "./api-types.mts";
 
 // A tile is W units wide at the game angle (half as tall), and one z step lifts a point K units: the client draws a 44-px tile and 4 px per z, a little flatter than this, which reads better at the map's size.
 export const W = 32, K = 2;
@@ -189,6 +190,50 @@ export function tiledataNote(reason: TiledataFrom["reason"]): string | null {
     case "no-tazuo-profile": return `TazUO's launcher names no UO folder holding a tiledata.mul, ${plain}.`;
     case "override-missing": return `The UO folder set in Settings has no tiledata.mul any more, ${plain}.`;
     case "unreadable": return `The tiledata.mul found is not one Pack Rat can read, ${plain}.`;
+  }
+}
+
+// ---------------------------------------------------------------- where the house is (issue #164)
+// A house's place in the world from its plot (the front steps left out): the centre tile (the lower middle of an even side), its corners, the sextant reading (null where the client shows none) and the one line Copy puts on the clipboard.
+export interface Where { centre: [number, number]; centreText: string; corners: string; sextant: string | null; copy: string }
+export function whereOf(h: Pick<HouseSummary, "facet" | "plot">): Where {
+  const p = h.plot, centre: [number, number] = [Math.floor((p.x0 + p.x1) / 2), Math.floor((p.y0 + p.y1) / 2)];
+  const centreText = `${centre[0]}, ${centre[1]}`, s = sextant(h.facet, centre[0], centre[1]), reading = s ? sextantText(s) : null;
+  return { centre, centreText, corners: `Corners ${p.x0}, ${p.y0} to ${p.x1}, ${p.y1}`, sextant: reading, copy: [centreText, facetName(h.facet), ...(reading ? [reading] : [])].join(" · ") };
+}
+// The facet overview shows 600 x 450 tiles around the house (on a 7168-wide facet the whole map would make it a speck), slid back inside the facet at its edges; null for an unknown facet. x1 and y1 are exclusive, as GET /api/facet-map takes them.
+export interface Crop { x0: number; y0: number; x1: number; y1: number }
+export const CROP_W = 600, CROP_H = 450;
+export function cropAround(facet: number | null, [cx, cy]: readonly [number, number]): Crop | null {
+  const size = facet == null ? undefined : FACET_SIZE[facet];
+  if (!size) return null;
+  const along = (c: number, span: number, max: number): [number, number] => { const w = Math.min(span, max), a = Math.max(0, Math.min(c - Math.floor(w / 2), max - w)); return [a, a + w]; };
+  const [x0, x1] = along(cx, CROP_W, size[0]), [y0, y1] = along(cy, CROP_H, size[1]);
+  return { x0, y0, x1, y1 };
+}
+export const facetMapUrl = (facet: number, c: Crop): string => `/api/facet-map/${facet}.png?x0=${c.x0}&y0=${c.y0}&x1=${c.x1}&y1=${c.y1}&w=${CROP_W}`;
+// A marker per captured house on the facet whose centre tile lies in the crop, at the tile's middle in crop tiles; the house shown last, so it draws on top. Each is named by the house's name, else its coordinates.
+export interface Marker { id: string; x: number; y: number; current: boolean; label: string }
+export function markersOf(houses: readonly HouseSummary[], currentId: string | null, facet: number, c: Crop): Marker[] {
+  const out: Marker[] = [];
+  for (const h of houses) {
+    if (h.facet !== facet) continue;
+    const { centre: [x, y], centreText } = whereOf(h);
+    if (x < c.x0 || x >= c.x1 || y < c.y0 || y >= c.y1) continue;
+    const current = h.id === currentId, name = h.name ?? `${facetName(h.facet)} house at ${centreText}`;
+    out.push({ id: h.id, x: x - c.x0 + 0.5, y: y - c.y0 + 0.5, current, label: current ? `${name} (this house)` : name });
+  }
+  return out.sort((a, b) => Number(a.current) - Number(b.current));
+}
+// Why the overview is not shown (GET /api/facet-map's 404 reason, or "error" when the request itself failed); the coordinates still are.
+export function facetMapNote(reason: FacetMapReason | "error"): string {
+  switch (reason) {
+    case "no-client": return "No game client is set up, so Pack Rat has no UO folder to read the world map from.";
+    case "no-tazuo-profile": return "TazUO's launcher names no UO folder, so Pack Rat has no world map to show.";
+    case "override-missing": return "The UO folder set in Settings is not there any more, so Pack Rat has no world map to show.";
+    case "missing": return "The UO folder has no world map file for this facet.";
+    case "unreadable": return "The world map file for this facet is not one Pack Rat can read.";
+    case "error": return "The world map could not be loaded.";
   }
 }
 

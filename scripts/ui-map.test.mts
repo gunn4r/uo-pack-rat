@@ -1,4 +1,4 @@
-// ui-map.test.mts — [slow]: the House map (issue #10) in the real Electron window over a seeded data folder (the dense vault and the courtyard house of app/house-fixture.mts, their chests from app/organize-fixture.mts, a synthetic tiledata.mul behind a fake TazUO launcher): the nav entry, the picker and level pills, a stale deep link, the no-tiledata note, the drawing in both views, callouts, selection, cut-away, keyboard (and a walk of the screen by keyboard alone that keeps focus through every redraw), pan and zoom, the detail panel's actions, the colour modes, a chest no scan opened, the plain grid over the demo scans, the empty state, the Settings UO folder card, the 1000 × 700 layout and contrast in both theme families. Skipped when electron or playwright is absent, or under TEST_SKIP_ELECTRON.
+// ui-map.test.mts — [slow]: the House map (issue #10) in the real Electron window over a seeded data folder (the dense vault and the courtyard house of app/house-fixture.mts, their chests from app/organize-fixture.mts, a synthetic tiledata.mul behind a fake TazUO launcher): the nav entry, the picker and level pills, a stale deep link, the no-tiledata note, the drawing in both views, callouts, selection, cut-away, keyboard (and a walk of the screen by keyboard alone that keeps focus through every redraw), pan and zoom, the detail panel's actions, the colour modes, a chest no scan opened, the plain grid over the demo scans, the empty state, the Settings UO folder card, where the house is (coordinates, the facet overview and its markers, issue #164), the 1000 × 700 layout and contrast in both theme families. Skipped when electron or playwright is absent, or under TEST_SKIP_ELECTRON.
 import test from "node:test";
 import assert from "node:assert/strict";
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
@@ -11,6 +11,7 @@ import { probeContrast, failures, describeFailures, type ContrastRow } from "./c
 import { houseScan } from "../app/organize-fixture.mts";
 import { vaultHouse, courtyardHouse, castleHouse, fixtureTileData, FIXTURE_TILES } from "../app/house-fixture.mts";
 import { syntheticTileData } from "../app/tiledata-fixture.mts";
+import { syntheticFacet, rgb555, type Run } from "../app/facet-fixture.mts";
 import { buildHouseModel, type HouseModel } from "../app/house-model.mts";
 import { anchorOf } from "../app/ui/house-map-model.mts";
 import type { ElectronApplication, Page } from "playwright";
@@ -32,8 +33,15 @@ const vaultModel = (() => { const { house, chests } = vaultHouse(); return build
 const courtModel = buildHouseModel(courtyardHouse(), td, [{ serial: YARD_CHEST, name: "Wooden Chest", facet: 1, x: 1012, y: 2013, z: 7 }, { serial: SEEN_ONLY, name: "container", facet: 1, x: 1012, y: 2012, z: 7, opened: false }]);
 const letter = (m: HouseModel, x: number, y: number): string => m.stacks.find((s) => s.x === x && s.y === y)!.letter;
 
+// A neighbour of the vault: the courtyard house moved 2100 tiles east and 900 north, so it stands inside the vault's facet overview.
+const NEIGHBOUR = "1-3100-1100";
+function neighbourCapture(): Record<string, unknown> {
+  const court = courtyardHouse(), dx = 2100, dy = -900;
+  const c = houseScan({ character: "Neighbour", scannedAt: court.capturedAt, boxes: [], things: [] });
+  return { ...c, house: { facet: 1, capturedAt: court.capturedAt, at: { x: 1005 + dx, y: 2005 + dy }, tiles: court.tiles.map(([g, x, y, z, f]) => [g, x + dx, y + dy, z, f]), items: court.items.map(([s, g, x, y, z]) => [s, g, x + dx, y + dy, z]) } };
+}
 // A data folder with both houses captured: the vault's 120 chests (chest i holds (13·i) % 126 of 125 items, the first one labelled Reagents in teal), the courtyard with a chest in the yard and one the capture saw but no scan opened; with `castle`, also the 4-level castle and its 300 chests (another character's scan, the speed check); the synthetic tiledata.mul behind a fake TazUO launcher, which settings.json points at unless `client` is false.
-function seed({ client = true, castle = false }: { client?: boolean; castle?: boolean } = {}): { dir: string; uo: string } {
+function seed({ client = true, castle = false, facet = false }: { client?: boolean; castle?: boolean; facet?: boolean } = {}): { dir: string; uo: string } {
   const dir = mkdtempSync(join(tmpdir(), "packrat-map-"));
   mkdirSync(join(dir, "scans"), { recursive: true });
   const { house: vault, chests } = vaultHouse();
@@ -50,6 +58,11 @@ function seed({ client = true, castle = false }: { client?: boolean; castle?: bo
   const root = join(dir, "client"), scripts = join(root, "TazUO", "LegionScripts"), uo = join(root, "UO");
   for (const d of [scripts, join(root, "Profiles", "Settings"), uo]) mkdirSync(d, { recursive: true });
   writeFileSync(join(uo, "tiledata.mul"), syntheticTileData(FIXTURE_TILES));
+  // With `facet`, a Trammel overview (7168 x 4096 tiles in green and blue stripes) and the vault's neighbour.
+  if (facet) {
+    writeFileSync(join(uo, "facet01.mul"), syntheticFacet(7168, 4096, Array.from({ length: 4096 }, () => Array.from({ length: 32 }, (_, i): Run => [224, i % 2 ? rgb555(4, 12, 20) : rgb555(8, 16, 4)]))));
+    writeFileSync(join(dir, "scans", "neighbour.json"), JSON.stringify(neighbourCapture()));
+  }
   writeFileSync(join(root, "Profiles", "Settings", "p.json"), JSON.stringify({ ultimaonlinedirectory: uo }));
   writeFileSync(join(dir, "settings.json"), JSON.stringify({ schemaVersion: 1, shard: "uoalive", setupDone: true, ...(client ? { client: { adapter: "tazuo", scriptsDir: scripts } } : {}) }));
   writeFileSync(join(dir, "organize.json"), JSON.stringify({ version: 1, catchAll: null, pinnedItems: [], rules: [], labels: { [LABELLED]: { serial: LABELLED, name: "Reagents", color: "#2f7f7f", origin: "manual" } } }));
@@ -571,6 +584,39 @@ async function measure(page: Page, name: string, shows: RegExp, rows: Array<Cont
   await page.evaluate(async () => (await import("/ui/theme.mjs" as string)).applyLook({ theme: "default" }));
   await page.emulateMedia({ colorScheme: "light" });
 }
+
+test("[slow] House map: Where shows the house's coordinates and the facet overview with a marker per house, another house's marker opens its map by click or keyboard, and without the facet file a line says why", async (t) => {
+  const skip = unavailable();
+  if (skip) { t.skip(skip); return; }
+  const { dir } = seed({ facet: true });
+  const { app, page, errors } = await launch(dir);
+  try {
+    await go(page, `#/map/${VAULT}`, "#map-panel #map-where");
+    assert.match((await page.locator("#map-where-text").textContent())!, /^3003, 1003 · Trammel · \d+°\d\d'[NS] \d+°\d\d'[EW]$/);
+    assert.equal(await page.locator("#map-where-copy").getAttribute("aria-label"), "Copy the coordinates");
+    await page.waitForFunction(() => { const i = document.querySelector<HTMLImageElement>("#map-where .map-where-img"); return !!i && i.complete && i.naturalWidth === 600 && i.naturalHeight === 450; }, null, { timeout: 30_000 });
+    assert.equal(await page.locator("#map-where .map-where-mark.current").getAttribute("aria-label"), "Trammel house at 3003, 1003 (this house)");
+    const other = page.locator(`#map-where a.map-where-mark[data-house="${NEIGHBOUR}"]`);
+    assert.equal(await other.getAttribute("aria-label"), "Trammel house at 3108, 1108");
+    await other.click();
+    await page.waitForFunction((id) => location.hash === `#/map/${id}`, NEIGHBOUR, { timeout: 10_000 });
+    await page.waitForSelector(`#map-where a.map-where-mark[data-house="${VAULT}"]`, { timeout: 30_000 });
+    await page.locator(`#map-where a.map-where-mark[data-house="${VAULT}"]`).focus();
+    await page.keyboard.press("Enter");
+    await page.waitForFunction((id) => location.hash === `#/map/${id}`, VAULT, { timeout: 10_000 });
+    await go(page, `#/map/${COURT}`, "#map-panel #map-where");
+    assert.equal(await page.locator("#map-where a.map-where-mark").count(), 0, "no other house within the courtyard's crop");
+    assert.deepEqual(errors, []);
+  } finally { await done(app, dir); }
+  const { dir: bare } = seed();
+  const b = await launch(bare);
+  try {
+    await go(b.page, `#/map/${VAULT}`, "#map-panel #map-where-note");
+    assert.match((await b.page.locator("#map-where-note").textContent())!, /no world map file for this facet/);
+    assert.match((await b.page.locator("#map-where-text").textContent())!, /^3003, 1003 · Trammel/);
+    assert.equal(await b.page.locator("#map-where img").count(), 0);
+  } finally { await done(b.app, bare); }
+});
 
 test("[slow] House map: every text, control edge and icon passes contrast on the map, a selected stack, a callout, the no-tiledata note and the empty state, in both theme families light and dark; at 1000 × 700 the panes stack and nothing scrolls sideways", async (t) => {
   const why = unavailable();
