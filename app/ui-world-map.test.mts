@@ -1,25 +1,26 @@
 // ui-world-map.test.mts — app/ui/world-map-model.mts (issue #164), the world map lightbox's pure rules: the first view (the facet fitted, nudged toward the house within the slack), zoom about a point between the fit and 2 screen px per tile, panning by screen pixels, keeping the facet in view, the region to request in whole tiles at screen resolution, screen positions, and the markers at a zoom with their labels kept from overlapping. Tags: [fast]. Run: node --test app/ui-world-map.test.mts
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { firstView, zoomView, panView, clampView, toScreen, toWorld, overlayRequest, worldMarkers, pxPerTile, MAX_PX_PER_TILE, LABEL_PX_PER_TILE } from "./ui/world-map-model.mts";
+import { firstView, zoomAnchor, zoomView, panView, clampView, toScreen, toWorld, overlayRequest, worldMarkers, pxPerTile, MAX_PX_PER_TILE, LABEL_PX_PER_TILE } from "./ui/world-map-model.mts";
 import type { HouseSummary } from "./ui/api-types.mts";
 
 const FACET = { width: 7168, height: 4096 }, VP = { width: 1400, height: 800 };
 const close = (a: number, b: number, why: string): void => assert.ok(Math.abs(a - b) < 1e-6, `${why}: ${a} vs ${b}`);
 
-test("[fast] world map: the first view fits the whole facet and leans toward the house only as far as the facet stays in view", () => {
-  const v = firstView(FACET, VP, [3000, 1000]);
+test("[fast] world map: the first view fits the whole facet in its middle, and the zoom keys zoom about the house while it is in view", () => {
+  const v = firstView(FACET, VP);
   close(v.w / v.h, VP.width / VP.height, "the viewport's shape");
   assert.ok(v.w >= FACET.width && v.h >= FACET.height, "the whole facet is in view");
   assert.ok(v.x <= 0 && v.x + v.w >= FACET.width && v.y <= 0 && v.y + v.h >= FACET.height);
-  const tall = firstView({ width: 1280, height: 4096 }, VP, [100, 2000]);
+  const tall = firstView({ width: 1280, height: 4096 }, VP);
   close(tall.h, 4096, "fitted on height");
-  close(tall.x + tall.w / 2, 100, "the house in the middle, the slack allowing it");
-  assert.ok(tall.x <= 0 && tall.x + tall.w >= 1280, "the facet still wholly in view");
+  close(tall.x + tall.w / 2, 640, "the facet in the middle, the slack on both sides");
+  assert.deepEqual(zoomAnchor(v, [3000, 1000]), [3000, 1000]);
+  assert.deepEqual(zoomAnchor({ x: 0, y: 0, w: 700, h: 400 }, [3000, 1000]), [350, 200], "out of view: the view's centre");
 });
 
 test("[fast] world map: zoom keeps the point under the cursor, between the fit and 2 screen px per tile", () => {
-  const fitV = firstView(FACET, VP, [3000, 1000]);
+  const fitV = firstView(FACET, VP);
   const at: [number, number] = [3000, 1000];
   const z = zoomView(fitV, 0.5, at, FACET, VP);
   close(z.w, fitV.w / 2, "half as wide");
@@ -36,7 +37,7 @@ test("[fast] world map: zoom keeps the point under the cursor, between the fit a
 });
 
 test("[fast] world map: panning moves by screen pixels and stops at the facet's edges", () => {
-  const z = zoomView(firstView(FACET, VP, [3000, 1000]), 0.1, [3000, 1000], FACET, VP);
+  const z = zoomView(firstView(FACET, VP), 0.1, [3000, 1000], FACET, VP);
   const k = z.w / VP.width;
   const p = panView(z, -100, 50, FACET, VP);
   close(p.x, z.x + 100 * k, "dragging left shows more east");
@@ -66,7 +67,7 @@ const house = (id: string, facet: number, x0: number, y0: number, name?: string)
 
 test("[fast] world map: markers at a zoom sit at each house's centre tile in screen pixels; the house shown is labelled always, others once zoomed in, never overlapping", () => {
   const houses = [house("1-1000-1000", 1, 1000, 1000, "Main house"), house("1-1004-1000", 1, 1004, 1000, "Next door"), house("1-1300-1000", 1, 1300, 1000), house("3-1000-1000", 3, 1000, 1000, "Malas forge"), house("1-5000-3000", 1, 5000, 3000)];
-  const fitV = firstView(FACET, VP, [1008, 1008]);
+  const fitV = firstView(FACET, VP);
   const far = worldMarkers(houses, "1-1000-1000", 1, fitV, VP);
   assert.deepEqual(far.map((m) => m.id), ["1-1004-1000", "1-1300-1000", "1-5000-3000", "1-1000-1000"], "this facet only, the house shown last (on top)");
   assert.deepEqual(far.map((m) => m.showLabel), [false, false, false, true]);

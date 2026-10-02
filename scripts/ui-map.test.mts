@@ -1,4 +1,4 @@
-// ui-map.test.mts — [slow]: the House map (issue #10) in the real Electron window over a seeded data folder (the dense vault and the courtyard house of app/house-fixture.mts, their chests from app/organize-fixture.mts, a synthetic tiledata.mul behind a fake TazUO launcher): the nav entry, the picker and level pills, a stale deep link, the no-tiledata note, the drawing in both views, callouts, selection, cut-away, keyboard (and a walk of the screen by keyboard alone that keeps focus through every redraw), pan and zoom, the detail panel's actions, the colour modes, a chest no scan opened, the plain grid over the demo scans, the empty state, the Settings UO folder card, where the house is (coordinates, the facet overview and its markers, issue #164), the 1000 × 700 layout and contrast in both theme families. Skipped when electron or playwright is absent, or under TEST_SKIP_ELECTRON.
+// ui-map.test.mts — [slow]: the House map (issue #10) in the real Electron window over a seeded data folder (the dense vault and the courtyard house of app/house-fixture.mts, their chests from app/organize-fixture.mts, a synthetic tiledata.mul behind a fake TazUO launcher): the nav entry, the picker and level pills, a stale deep link, the no-tiledata note, the drawing in both views, callouts, selection, cut-away, keyboard (and a walk of the screen by keyboard alone that keeps focus through every redraw), pan and zoom, the detail panel's actions, the colour modes, a chest no scan opened, the plain grid over the demo scans, the empty state, the Settings UO folder card, where the house is (coordinates, the facet overview and its markers, and the world map lightbox, issue #164), the 1000 × 700 layout and contrast in both theme families. Skipped when electron or playwright is absent, or under TEST_SKIP_ELECTRON.
 import test from "node:test";
 import assert from "node:assert/strict";
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
@@ -618,6 +618,49 @@ test("[slow] House map: Where shows the house's coordinates and the facet overvi
     assert.match((await b.page.locator("#map-where-text").textContent())!, /^3003, 1003 · Trammel/);
     assert.equal(await b.page.locator("#map-where img").count(), 0);
   } finally { await done(b.app, bare); }
+});
+
+test("[slow] House map: the small map opens the world map lightbox by click or Enter; + asks for the visible region at screen resolution and lays it over the base; Esc and Close close it with focus back on the small map; another house's marker opens its map", async (t) => {
+  const skip = unavailable();
+  if (skip) { t.skip(skip); return; }
+  const { dir } = seed({ facet: true });
+  const { app, page, errors } = await launch(dir);
+  const asked: string[] = [];
+  page.on("request", (r) => { if (r.url().includes("/api/facet-map/1.png")) asked.push(new URL(r.url()).search); });
+  const isBase = (q: string): boolean => q.startsWith("?x0=0&y0=0&x1=8192&y1=8192&");
+  const baseShown = async (): Promise<void> => { await page.waitForFunction(() => { const i = document.querySelector<HTMLImageElement>("dialog.world-map-dialog[open] .wm-base"); return !!i && !i.hidden && i.complete && i.naturalWidth > 0; }, null, { timeout: 30_000 }); };
+  try {
+    await go(page, `#/map/${VAULT}`, "#map-panel #map-where-open");
+    assert.equal(await page.locator("#map-where-open").getAttribute("aria-label"), "Open the world map");
+    assert.equal(await page.locator("#map-where-open").getAttribute("role"), "button");
+    await page.locator("#map-where-open").click();
+    await page.waitForSelector("dialog.world-map-dialog[open]", { timeout: 10_000 });
+    assert.ok(await page.locator("dialog.world-map-dialog .wm-viewport").isVisible());
+    await baseShown();
+    assert.ok(asked.some(isBase), `the base is the whole facet: ${asked.join(" ")}`);
+    assert.equal(await page.locator(".wm-marker.current").getAttribute("aria-label"), "Trammel house at 3003, 1003 (this house)");
+    assert.equal(await page.locator(`.wm-marker[data-house="${NEIGHBOUR}"]`).getAttribute("href"), `#/map/${NEIGHBOUR}`);
+    const before = asked.length;
+    await page.locator("#wm-zoom-in").click();
+    await page.waitForFunction(() => { const i = document.querySelector<HTMLImageElement>(".wm-overlay"); return !!i && !i.hidden && i.complete && i.naturalWidth > 0; }, null, { timeout: 30_000 });
+    const overlayAsks = asked.slice(before).filter((q) => !isBase(q));
+    assert.equal(overlayAsks.length, 1, `one region asked for after +: ${overlayAsks.join(" ")}`);
+    assert.match(overlayAsks[0]!, /^\?x0=\d+&y0=\d+&x1=\d+&y1=\d+&w=\d+$/);
+    await page.keyboard.press("Escape");
+    await page.waitForSelector("dialog.world-map-dialog", { state: "detached", timeout: 10_000 });
+    assert.equal(await page.evaluate(() => document.activeElement?.id), "map-where-open", "focus back on the small map");
+    await page.keyboard.press("Enter");
+    await page.waitForSelector("dialog.world-map-dialog[open]", { timeout: 10_000 });
+    await page.locator("#wm-close").click();
+    await page.waitForSelector("dialog.world-map-dialog", { state: "detached", timeout: 10_000 });
+    assert.equal(await page.evaluate(() => document.activeElement?.id), "map-where-open");
+    await page.locator("#map-where-open").click();
+    await baseShown();
+    await page.locator(`.wm-marker[data-house="${NEIGHBOUR}"]`).click();
+    await page.waitForFunction((id) => location.hash === `#/map/${id}`, NEIGHBOUR, { timeout: 10_000 });
+    await page.waitForSelector("dialog.world-map-dialog", { state: "detached", timeout: 10_000 });
+    assert.deepEqual(errors, []);
+  } finally { await done(app, dir); }
 });
 
 test("[slow] House map: every text, control edge and icon passes contrast on the map, a selected stack, a callout, the no-tiledata note and the empty state, in both theme families light and dark; at 1000 × 700 the panes stack and nothing scrolls sideways", async (t) => {

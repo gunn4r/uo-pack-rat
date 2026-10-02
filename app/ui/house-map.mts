@@ -7,6 +7,7 @@ import { labelContainer } from "./containers.mts";
 import { showContainer } from "./inventory.mts";
 import { bridgeActionReason, runBridgeAction, sendBridge, type BridgeTarget } from "./bridge.mts";
 import { errorText } from "./messages.mts";
+import { openWorldMap, fetchFacetImage, type FacetImage } from "./world-map.mts";
 import { plural } from "./inv-model.mts";
 import { fillTone } from "./organize-model.mts";
 import { PLAIN, pickHouse, plainGrid, chestCount, roomCounts, houseLabel, houseName, carryOver, tiledataNote, chestViews, colourOf, chestLabel, sceneOf, boundsOf, fit, vbText,
@@ -22,9 +23,8 @@ let seq = 0;
 let highlighting = false;   // Highlight the stack is sending (highlightStack)
 let renaming: string | null = null;   // while renaming, the name as typed so far: a redraw rebuilds the field from it (renameField)
 let nameError: string | null = null;  // the server's reason for the last refused name, shown under the field until a save or a cancel
-// Each facet overview asked for, until the next load of the screen: loading, the image (a data: URL, which the page's CSP allows where a blob: one is not) with the region the server drew, or why there is none.
-type FacetImage = "loading" | { src: string; crop: Crop } | { reason: FacetMapReason | "error" };
-const facetImages = new Map<string, FacetImage>();
+// Each facet overview asked for, until the next load of the screen: loading, the image with the region the server drew, or why there is none (world-map.mts fetchFacetImage).
+const facetImages = new Map<string, "loading" | FacetImage>();
 const body = (): HTMLElement => $<HTMLElement>("#map-body")!;
 const selectedStack = (): Stack | null => (S.selected == null ? null : S.model?.stacks.find((s) => s.serials.includes(S.selected!)) ?? null);
 
@@ -472,7 +472,10 @@ function whereSection(m: HouseModel): HTMLElement | null {
   if (!got || got === "loading") return section(el("p", { class: "t-sm muted", id: "map-where-loading", "aria-busy": "true" }, "Loading the world map…"));
   if ("reason" in got) return section(el("p", { class: "t-sm muted", id: "map-where-note" }, facetMapNote(got.reason)));
   const c = got.crop, w = c.x1 - c.x0, ht = c.y1 - c.y0;
-  const img = el("img", { class: "map-where-img", src: got.src, alt: `The world map around ${houseName(m)}`, width: String(w), height: String(ht) });
+  // The small map opens the whole facet in the world map lightbox (world-map.mts), by a click or by Enter or Space.
+  const open = (): void => openWorldMap({ facet: h.facet!, houses: S.list!.houses, currentId: m.id, centre: whereOf(h).centre });
+  const img = el("img", { class: "map-where-img", id: "map-where-open", src: got.src, alt: `The world map around ${houseName(m)}`, role: "button", tabindex: "0", "aria-label": "Open the world map", width: String(w), height: String(ht),
+    onclick: open, onkeydown: (e: Event) => { const k = (e as KeyboardEvent).key; if (k === "Enter" || k === " ") { e.preventDefault(); open(); } } });
   const marks = sv("svg", { class: "map-where-marks", viewBox: `0 0 ${w} ${ht}`, preserveAspectRatio: "none", role: "group", "aria-label": "Houses on the world map" }, ...markersOf(S.list!.houses, m.id, h.facet, c).map(markerEl));
   const frame = box("div", { class: "map-where-frame" }, img, marks);
   // Marker sizes are screen pixels (a 24 px target for a link), so they follow the frame's width.
@@ -492,18 +495,10 @@ function markerEl(mk: Marker): SVGElement {
     sv("circle", { ...at, "data-r": "hit", class: "map-where-hit" }), sv("circle", { ...at, "data-r": "ring", class: "map-where-ring-out" }), sv("circle", { ...at, "data-r": "ring", class: "map-where-ring-in" }),
     sv("circle", { ...at, "data-r": "other", class: "map-where-dot" }));
 }
-// One request: the PNG and the region it shows, or the 404's reason; then the panel is drawn again with it.
+// One request for the small map; then the panel is drawn again with it.
 async function loadFacetImage(url: string): Promise<void> {
   facetImages.set(url, "loading");
-  let got: FacetImage = { reason: "error" };
-  try {
-    const r = await fetch(url), crop = parseRegion(r.headers.get("x-region"));
-    if (r.ok && crop) got = { src: await new Promise<string>((ok, no) => { const f = new FileReader(); f.onload = () => ok(String(f.result)); f.onerror = () => no(f.error); void r.blob().then((b) => f.readAsDataURL(b), no); }), crop };
-    else if (r.status === 404) {
-      const b = (await r.json()) as { reason?: unknown };
-      if (typeof b.reason === "string" && ["override-missing", "no-client", "no-tazuo-profile", "missing", "unreadable"].includes(b.reason)) got = { reason: b.reason as FacetMapReason };
-    }
-  } catch { /* the request itself failed: "error" */ }
+  const got = await fetchFacetImage(url);
   if (facetImages.get(url) !== "loading") return;   // the screen loaded again meanwhile
   facetImages.set(url, got);
   if ($<HTMLElement>("#map-where")) drawPanel();

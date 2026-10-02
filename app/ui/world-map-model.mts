@@ -1,4 +1,4 @@
-// ui/world-map-model.mts — the world map lightbox's pure rules (issue #164). A view is a box of world tiles (house-map-model's Box) shown in a viewport of screen pixels with the same shape (house-map-model's fit makes it so). It zooms about a point between the whole facet fitted and MAX_PX_PER_TILE, pans by screen pixels, and always keeps the facet in view: a view wider than the facet holds all of it, a narrower one stays inside it. The region it asks the server for is the visible tiles, whole and inside the facet, at screen resolution. No DOM; ui/world-map.mts draws what it returns.
+// ui/world-map-model.mts — the world map lightbox's pure rules (issue #164). A view is a box of world tiles (house-map-model's Box) shown in a viewport of screen pixels with the same shape (house-map-model's fit makes it so). It zooms about a point between the whole facet fitted and MAX_PX_PER_TILE, pans by screen pixels, and always keeps the facet in view: a view wider than the facet holds it in its middle (no empty band on one side), a narrower one stays inside it. The zoom buttons and keys zoom about the house while it is in view, so the first + homes in on it. The region it asks the server for is the visible tiles, whole and inside the facet, at screen resolution. No DOM; ui/world-map.mts draws what it returns.
 import { fit, whereOf, facetName, type Box, type Pt } from "./house-map-model.mts";
 import type { HouseSummary } from "./api-types.mts";
 
@@ -10,15 +10,14 @@ export const toScreen = (v: Box, vp: Size, [x, y]: Pt): Pt => [((x - v.x) * vp.w
 export const toWorld = (v: Box, vp: Size, [sx, sy]: Pt): Pt => [v.x + (sx * v.w) / vp.width, v.y + (sy * v.h) / vp.height];
 
 export function clampView(v: Box, facet: Size): Box {
-  const along = (a: number, span: number, max: number): number => (span >= max ? Math.min(Math.max(a, max - span), 0) : Math.min(Math.max(a, 0), max - span));
+  const along = (a: number, span: number, max: number): number => (span >= max ? (max - span) / 2 : Math.min(Math.max(a, 0), max - span));
   return { x: along(v.x, v.w, facet.width), y: along(v.y, v.h, facet.height), w: v.w, h: v.h };
 }
 const fitted = (facet: Size, vp: Size): Box => fit({ x: 0, y: 0, w: facet.width, h: facet.height }, vp);
-// The whole facet fitted to the viewport, moved toward the house as far as keeps the facet in view.
-export function firstView(facet: Size, vp: Size, [cx, cy]: Pt): Box {
-  const f = fitted(facet, vp);
-  return clampView({ ...f, x: cx - f.w / 2, y: cy - f.h / 2 }, facet);
-}
+// The whole facet fitted to the viewport, in its middle.
+export const firstView = (facet: Size, vp: Size): Box => clampView(fitted(facet, vp), facet);
+// Where the zoom buttons and keys zoom about: the house while it is in view, else the view's centre.
+export const zoomAnchor = (v: Box, house: Pt): Pt => (house[0] >= v.x && house[0] <= v.x + v.w && house[1] >= v.y && house[1] <= v.y + v.h ? house : [v.x + v.w / 2, v.y + v.h / 2]);
 // f < 1 zooms in, keeping `at` (world tiles) where it is on screen.
 export function zoomView(v: Box, f: number, [ax, ay]: Pt, facet: Size, vp: Size): Box {
   const maxW = fitted(facet, vp).w, minW = Math.min(vp.width / MAX_PX_PER_TILE, maxW);
