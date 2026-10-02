@@ -135,6 +135,10 @@ test("[slow] House map: draws every vault chest and the courtyard's walls in bot
       assert.equal(await page.locator("#map-svg .map-wall").count(), 24, view);
     }
     assert.equal(await page.locator(`#map-svg [data-chest="${LABELLED}"]`).getAttribute("aria-label"), `${vaultModel.codes[String(LABELLED)]} Reagents, 0 of 125 items`);
+    const inner = vaultModel.stacks.find((s) => s.x === 3002 && s.y === 1002)!;
+    const said = await page.locator(`#map-svg .map-stack[data-stack="${inner.letter}"]`).getAttribute("aria-label") || "";
+    assert.match(said, new RegExp(`^Stack ${inner.letter}, 5 chests: `), said);
+    for (const serial of inner.serials) assert.ok(said.includes(`${vaultModel.codes[String(serial)]} Metal Chest, `), `the stack's name holds ${vaultModel.codes[String(serial)]}: ${said}`);
     const ms = await timeLevel("2nd floor", "Ground floor");
     assert.ok(ms < 100, `drew the vault's ground floor in ${ms.toFixed(0)} ms`);
     assert.equal(await page.locator("#map-svg [data-chest]").count(), 120);
@@ -145,9 +149,13 @@ test("[slow] House map: draws every vault chest and the courtyard's walls in bot
     assert.equal(await page.locator("#map-svg [data-chest]").count(), 180);
     await page.selectOption("#map-house", COURT);
     await page.waitForFunction(() => document.querySelectorAll("#map-svg .map-lip").length > 0, undefined, { timeout: 15_000 });
-    assert.ok(await page.locator("#map-svg .map-wall").count() > 0);
-    assert.ok(await page.locator("#map-svg .map-floor.f-grass").count() > 0, "families come from the client's tiledata");
-    assert.equal(await page.locator("#map-svg [data-chest]").count(), 2);
+    for (const view of ["Top-down", "Game angle"]) {
+      await page.getByRole("radio", { name: view }).click();
+      await page.waitForSelector("#map-svg .map-lip");
+      assert.ok(await page.locator("#map-svg .map-wall").count() > 0, view);
+      assert.ok(await page.locator("#map-svg .map-floor.f-grass").count() > 0, `${view}: families come from the client's tiledata`);
+      assert.equal(await page.locator("#map-svg [data-chest]").count(), 2, view);
+    }
     const split = await page.evaluate(() => {
       const bad: string[] = [];
       for (const e of document.querySelectorAll("#tab-map *")) {

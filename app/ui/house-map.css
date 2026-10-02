@@ -40,19 +40,23 @@
 .map-step { fill: var(--color-map-step); }
 .map-below { fill: var(--color-map-below); }
 .map-reach { fill: none; stroke: var(--color-map-spot); stroke-width: 1px; stroke-dasharray: 4 3; vector-effect: non-scaling-stroke; pointer-events: none; }
-.map-solids .side-l { filter: brightness(0.8); }
-.map-solids .side-r { filter: brightness(0.9); }
-.map-wall > polygon { fill: var(--color-map-wall); }
-.map-wall.window > polygon { fill: var(--color-map-window); }
-.map-lip > polygon { fill: var(--color-map-lip); }
-.map-roof > polygon { fill: var(--color-map-roof); }
-.map-block > polygon { fill: var(--color-map-block); }
-.map-door > polygon { fill: var(--color-map-door); }
-.map-teleporter > polygon { fill: var(--color-map-teleporter); stroke: var(--color-map-spot); stroke-width: 1px; vector-effect: non-scaling-stroke; }
+/* every solid's faces take its --fill; the sides are that fill mixed toward --color-map-shade (no per-polygon filter, so pan and zoom repaint cheaply) */
+.map-solids g > polygon { fill: var(--fill); }
+.map-solids .side-l { fill: color-mix(in srgb, var(--fill) 80%, var(--color-map-shade)); }
+.map-solids .side-r { fill: color-mix(in srgb, var(--fill) 90%, var(--color-map-shade)); }
+.map-wall { --fill: var(--color-map-wall); }
+.map-wall.window { --fill: var(--color-map-window); }
+.map-lip { --fill: var(--color-map-lip); }
+.map-roof { --fill: var(--color-map-roof); }
+.map-block { --fill: var(--color-map-block); }
+.map-door { --fill: var(--color-map-door); }
+.map-teleporter { --fill: var(--color-map-teleporter); }
+.map-teleporter > polygon { stroke: var(--color-map-spot); stroke-width: 1px; vector-effect: non-scaling-stroke; }
 .map-spot { fill: var(--color-map-spot); pointer-events: none; }
 /* a chest: its colour mode's fill, always with a border-strong edge (a label colour on a floor of the same lightness still reads) */
 .map-stack { cursor: pointer; outline: none; transition: opacity var(--duration-fast) var(--ease-standard); }
-.map-chest > polygon { fill: var(--chest, var(--color-map-chest)); stroke: var(--color-border-strong); stroke-width: 1px; vector-effect: non-scaling-stroke; }
+.map-chest { --fill: var(--chest, var(--color-map-chest)); }
+.map-chest > polygon { stroke: var(--color-border-strong); stroke-width: 1px; vector-effect: non-scaling-stroke; }
 .map-chest.unopened > polygon { stroke-dasharray: 3 2; }
 .map-stack.sel .map-chest > polygon, .map-stack:focus-visible .map-chest > polygon { stroke: var(--color-focus); stroke-width: 2px; }
 .map-crumb-list { display: flex; align-items: center; flex-wrap: wrap; gap: var(--space-1); list-style: none; margin: 0; padding: 0; }

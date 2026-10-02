@@ -141,7 +141,9 @@ function pieceEl(p: Piece, views: Map<number, ChestView>): SVGElement {
       sv("rect", { x: String(p.at[0] - 3), y: String(p.at[1] - 17), width: "6", height: "14", rx: "3" }),
       sv("circle", { cx: String(p.at[0]), cy: String(p.at[1] - 20), r: "3.6" }));
     case "stack": {
-      const g = sv("g", { class: "map-stack", "data-stack": p.stack.letter, role: "button", tabindex: "-1", "aria-pressed": "false", "aria-label": `Stack ${p.stack.letter}, ${plural(p.stack.serials.length, "chest")}` });
+      // A button's children are presentational, so the stack's own name carries its chests, top first, as each chest's label words them.
+      const named = p.chests.flatMap((c) => { const v = views.get(c.serial); return v ? [chestLabel(v)] : []; }).reverse();
+      const g = sv("g", { class: "map-stack", "data-stack": p.stack.letter, role: "button", tabindex: "-1", "aria-pressed": "false", "aria-label": `Stack ${p.stack.letter}, ${plural(p.stack.serials.length, "chest")}: ${named.join("; ")}` });
       for (const c of p.chests) {
         const v = views.get(c.serial);
         if (!v) continue;
