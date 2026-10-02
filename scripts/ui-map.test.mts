@@ -40,25 +40,32 @@ function neighbourCapture(): Record<string, unknown> {
   const c = houseScan({ character: "Neighbour", scannedAt: court.capturedAt, boxes: [], things: [] });
   return { ...c, house: { facet: 1, capturedAt: court.capturedAt, at: { x: 1005 + dx, y: 2005 + dy }, tiles: court.tiles.map(([g, x, y, z, f]) => [g, x + dx, y + dy, z, f]), items: court.items.map(([s, g, x, y, z]) => [s, g, x + dx, y + dy, z]) } };
 }
-// The contents drawer's chests: the top chest of the stack at 3001, 1001 holds a bag of weapons with a bag of gems inside it, and arrows loose; the chest under it a bandage.
+// The contents drawer's chests: the top chest of the stack at 3001, 1001 holds a bag of weapons with a bag of gems inside it, and arrows loose; the chest under it a bandage loose, a bag Spare with three pearls and a bag Supplies with 40, enough to scroll. `more` adds things (a later scan).
 const FILLED = vaultModel.stacks.find((s) => s.x === 3001 && s.y === 1001)!.serials;
-const TOP = FILLED.at(-1)!, UNDER = FILLED.at(-2)!, BAG = 0x40500001, GEMS = 0x40500002;
-function drawerItems(): { boxes: Array<{ serial: number; name: string; parent: number }>; things: Array<{ serial: number; name: string; in: number; lines?: string[] }> } {
+const TOP = FILLED.at(-1)!, UNDER = FILLED.at(-2)!, BAG = 0x40500001, GEMS = 0x40500002, SPARE = 0x40500003, SUPPLIES = 0x40500004;
+type Thing = { serial: number; name: string; in: number; lines?: string[] };
+function drawerItems(more: Thing[] = []): { boxes: Array<{ serial: number; name: string; parent: number }>; things: Thing[] } {
+  const pearls = (bag: number, n: number, first: number, tag: string): Thing[] => Array.from({ length: n }, (_, i) => ({ serial: first + i, name: `Pearl ${tag}${String(i + 1).padStart(2, "0")}`, in: bag }));
   return {
-    boxes: [{ serial: BAG, name: "Weapons", parent: TOP }, { serial: GEMS, name: "Gems", parent: BAG }],
+    boxes: [{ serial: BAG, name: "Weapons", parent: TOP }, { serial: GEMS, name: "Gems", parent: BAG }, { serial: SPARE, name: "Spare", parent: UNDER }, { serial: SUPPLIES, name: "Supplies", parent: UNDER }],
     things: [{ serial: 0x40500010, name: "Katana", in: BAG, lines: ["Hit Chance Increase 15%", "Physical Resist 5%"] }, { serial: 0x40500011, name: "Bow", in: BAG },
-      { serial: 0x40500012, name: "Ruby", in: GEMS }, { serial: 0x40500013, name: "Arrows", in: TOP }, { serial: 0x40500014, name: "Bandage", in: UNDER }],
+      { serial: 0x40500012, name: "Ruby", in: GEMS }, { serial: 0x40500013, name: "Arrows", in: TOP }, { serial: 0x40500014, name: "Bandage", in: UNDER },
+      ...pearls(SPARE, 3, 0x40500100, "S"), ...pearls(SUPPLIES, 40, 0x40500200, ""), ...more],
   };
+}
+// The vault's scan (with `items`, the drawer's chests filled, plus `more`).
+function writeVault(dir: string, items: boolean, more: Thing[] = []): void {
+  const { house: vault, chests } = vaultHouse();
+  const filled = items ? drawerItems(more) : { boxes: [], things: [] };
+  const v = houseScan({ scannedAt: vault.capturedAt, boxes: [...chests.map((c, i) => ({ serial: c.serial, name: c.name, pos: { x: c.x, y: c.y, z: c.z, facet: 1 }, count: (i * 13) % 126 })), ...filled.boxes], things: filled.things });
+  writeFileSync(join(dir, "scans", "vault.json"), JSON.stringify({ ...v, house: { facet: 1, capturedAt: vault.capturedAt, at: { x: 3003, y: 1003 }, tiles: vault.tiles, items: vault.items } }));
 }
 // A data folder with both houses captured: the vault's 120 chests (chest i holds (13·i) % 126 of 125 items, the first one labelled Reagents in teal), the courtyard with a chest in the yard and one the capture saw but no scan opened; with `castle`, also the 4-level castle and its 300 chests (another character's scan, the speed check); the synthetic tiledata.mul behind a fake TazUO launcher, which settings.json points at unless `client` is false.
 // With `items`, the top two chests of the stack at 3001, 1001 hold things (drawerItems).
 function seed({ client = true, castle = false, facet = false, items = false }: { client?: boolean; castle?: boolean; facet?: boolean; items?: boolean } = {}): { dir: string; uo: string } {
   const dir = mkdtempSync(join(tmpdir(), "packrat-map-"));
   mkdirSync(join(dir, "scans"), { recursive: true });
-  const { house: vault, chests } = vaultHouse();
-  const filled = items ? drawerItems() : { boxes: [], things: [] };
-  const v = houseScan({ scannedAt: vault.capturedAt, boxes: [...chests.map((c, i) => ({ serial: c.serial, name: c.name, pos: { x: c.x, y: c.y, z: c.z, facet: 1 }, count: (i * 13) % 126 })), ...filled.boxes], things: filled.things });
-  writeFileSync(join(dir, "scans", "vault.json"), JSON.stringify({ ...v, house: { facet: 1, capturedAt: vault.capturedAt, at: { x: 3003, y: 1003 }, tiles: vault.tiles, items: vault.items } }));
+  writeVault(dir, items);
   const court = courtyardHouse();
   const c = houseScan({ character: "Other", scannedAt: court.capturedAt, boxes: [{ serial: YARD_CHEST, name: "Wooden Chest", pos: { x: 1012, y: 2013, z: 7, facet: 1 } }], things: [] });
   writeFileSync(join(dir, "scans", "courtyard.json"), JSON.stringify({ ...c, house: { facet: 1, capturedAt: court.capturedAt, at: { x: 1005, y: 2005 }, tiles: court.tiles, items: court.items, containers: [[SEEN_ONLY, 0x0E7C, 1012, 2012, 7]] } }));
@@ -735,68 +742,134 @@ test("[slow] House map: every text, control edge and icon passes contrast on the
   assert.equal(failed.length, 0, `contrast failures (${failed.length} of ${rows.length} pairs):\n${describeFailures(failed)}`);
 });
 
-test("[slow] House map: Show items opens the contents drawer beside the panel and the map narrows; its tabs switch chests, the filter narrows the list, another stack swaps it, Esc and ✕ close it with focus back where it came from", async (t) => {
+// Where the drawer sits for the window's width: its own column right of the panel from 1100 px (the levels pane folded away below 1800, there from 1800), else after the panel in the one column.
+async function drawerLayout(page: Page, width: number, mapBefore: number): Promise<void> {
+  await page.waitForTimeout(400);   // the columns' width transition
+  const box = async (sel: string) => (await page.locator(sel).boundingBox())!;
+  const [panel, drawer, map] = [await box("#map-panel"), await box("#map-drawer"), await box("#map-stage")];
+  const side = await page.locator("#tab-map .map-side").evaluate((e) => e.getBoundingClientRect().width);
+  if (width >= 1100) {
+    assert.ok(drawer.x >= panel.x + panel.width - 1, `the drawer is right of the panel (${drawer.x} < ${panel.x + panel.width})`);
+    assert.ok(map.width < mapBefore, `the map narrows (${map.width} ≥ ${mapBefore})`);
+    if (width < 1800) assert.ok(side < 1, `below 1800 px the levels pane folds away (${side} px)`);
+    else assert.ok(side > 200, `from 1800 px the levels pane stays (${side} px)`);
+  } else assert.ok(drawer.y >= panel.y + panel.height - 1, "below 1100 px the drawer comes after the panel");
+}
+
+test("[slow] House map: Show items opens the contents drawer as a column of its own and the map narrows (after the panel in one column on a small screen); its tabs switch chests, the filter narrows the list, another stack swaps it, Esc and ✕ close it with focus back where it came from, a new scan keeps its tab, filter, folded bag and scroll, and an item's Open details opens it in Inventory", async (t) => {
   const why = unavailable();
   if (why) return t.skip(why);
   const { dir } = seed({ items: true });
-  const { app, page, errors } = await launch(dir);
+  const { app, page, errors, size } = await launch(dir);
   try {
     await go(page, "#/map", "#map-svg .map-stack");
     const back = letter(vaultModel, 3001, 1001), front = letter(vaultModel, 3005, 1005);
     await page.locator(`#map-svg [data-stack="${back}"]`).focus();
     await page.keyboard.press("Enter");
     await page.waitForSelector(`#map-panel li[data-chest="${TOP}"]`);
-    const mapWidth = async (): Promise<number> => (await page.locator("#map-stage").boundingBox())!.width;
-    const before = await mapWidth();
+    const before = (await page.locator("#map-stage").boundingBox())!.width;
     const opener = page.locator(`#map-panel li[data-chest="${TOP}"] [data-act="items"]`);
     assert.equal(await opener.textContent(), "Show items");
     await opener.click();
     const drawer = page.locator("#map-drawer");
     await page.waitForSelector("#map-drawer .map-item");
-    await page.waitForTimeout(400);   // the column's width transition
-    assert.ok(await mapWidth() < before, "the map column narrows");
+    await drawerLayout(page, size.width, before);
     assert.equal(await page.evaluate(() => location.hash), "#/map", "the map stays on screen");
     const code = (await page.locator(`#map-panel li[data-chest="${TOP}"] .map-chest-name .mono`).textContent())!;
     const name = (await page.locator(`#map-panel li[data-chest="${TOP}"] .map-chest-name .ellip`).textContent())!;
     assert.equal(await drawer.getAttribute("role"), "region");
     assert.equal(await drawer.getAttribute("aria-label"), `Contents of ${code} ${name}`);
     assert.match(await page.locator("#map-drawer-meta").textContent() || "", new RegExp(`^In game: .* · Stack ${back}, ${FILLED.length} chests$`));
-    assert.equal(await page.locator("#map-drawer-summary").textContent(), "6 items · 1 loose, 4 in 1 bag");
+    const summary = (): Promise<string | null> => page.locator("#map-drawer-summary").textContent();
+    const summaryIs = (text: string): Promise<unknown> => page.waitForFunction((x) => document.querySelector("#map-drawer-summary")?.textContent === x, text, { timeout: 10_000 });
+    assert.equal(await summary(), "6 items · 1 loose, 4 in 1 bag");
     assert.equal(await page.locator('#map-panel li.open').getAttribute("data-chest"), String(TOP), "the opened chest's row carries the accent bar");
     const names = (): Promise<string[]> => page.locator("#map-drawer-body .map-item-name, #map-drawer-body .map-bag-name").allTextContents();
     assert.deepEqual(await names(), ["Weapons", "Gems", "Ruby", "Bow", "Katana", "Arrows"], "bags first, then the items by name, nested inside nested");
     assert.match(await page.locator("#map-drawer-body .map-bag-head").first().textContent() || "", /4 items/);
     // one tab per chest of the stack, the shown one checked
-    const tabs = page.locator("#map-drawer [role=radio]");
-    assert.equal(await tabs.count(), FILLED.length);
+    assert.equal(await page.locator("#map-drawer [role=radio]").count(), FILLED.length);
     assert.equal(await page.locator(`#map-drawer-tab-${TOP}`).getAttribute("aria-checked"), "true");
     await page.locator(`#map-drawer-tab-${UNDER}`).click();
-    await page.waitForFunction(() => document.querySelector("#map-drawer-summary")?.textContent === "1 item", undefined, { timeout: 10_000 });
-    assert.deepEqual(await names(), ["Bandage"]);
+    await summaryIs("46 items · 1 loose, 43 in 2 bags");
     assert.equal(await page.locator('#map-panel li.open').getAttribute("data-chest"), String(UNDER));
     await page.locator(`#map-drawer-tab-${TOP}`).click();
-    await page.waitForFunction(() => document.querySelector("#map-drawer-summary")?.textContent?.startsWith("6 items"), undefined, { timeout: 10_000 });
+    await summaryIs("6 items · 1 loose, 4 in 1 bag");
     await page.locator("#map-drawer-filter").fill("ruby");
+    await page.waitForFunction(() => document.querySelectorAll("#map-drawer-body .map-item").length === 1);
     assert.deepEqual(await names(), ["Weapons", "Gems", "Ruby"]);
     await page.locator("#map-drawer-filter").fill("hit chance");
+    await page.waitForFunction(() => document.querySelector("#map-drawer-body .map-item-name")?.textContent === "Katana");
     assert.deepEqual(await names(), ["Weapons", "Katana"], "a property line matches");
-    // Esc from inside the drawer closes it, focus back on the Show items that opened it, and the map widens again
+    // Esc from inside the drawer closes it, focus back on the Show items that opened it, and the levels pane comes back
     await page.keyboard.press("Escape");
     await page.waitForSelector("#map-drawer", { state: "detached" });
     assert.equal(await page.evaluate(() => document.activeElement?.closest("li[data-chest]")?.getAttribute("data-chest")), String(TOP));
     assert.equal(await page.evaluate(() => (document.activeElement as HTMLElement).dataset.act), "items");
     assert.equal(await page.locator("#map-panel li.open").count(), 0);
+    await page.waitForTimeout(400);
+    assert.ok(await page.locator("#tab-map .map-side").evaluate((e) => e.getBoundingClientRect().width) > 200, "the levels pane is back");
     // another stack swaps the drawer to that stack's top chest; ✕ closes it with focus on the stack
     await opener.click();
     await page.waitForSelector("#map-drawer .map-item");
     const frontTop = vaultModel.stacks.find((s) => s.letter === front)!.serials.at(-1)!;
     await page.locator(`#map-svg [data-stack="${front}"]`).click();
     await page.waitForFunction((s) => document.querySelector("#map-drawer [role=radio][aria-checked=true]")?.id === `map-drawer-tab-${s}`, frontTop, { timeout: 10_000 });
-    assert.equal(await page.locator("#map-drawer-summary").textContent(), "Empty");
+    await summaryIs("Empty");
     assert.equal(await page.locator('#map-panel li.open').getAttribute("data-chest"), String(frontTop));
     await page.locator("#map-drawer [aria-label='Close contents']").click();
     await page.waitForSelector("#map-drawer", { state: "detached" });
     assert.equal(await page.evaluate(() => (document.activeElement as HTMLElement | null)?.closest("[data-stack]")?.getAttribute("data-stack")), front);
+
+    // a new scan: the drawer keeps its tab, filter, folded bag and scroll, and shows the new item
+    await page.locator(`#map-svg [data-stack="${back}"]`).focus();
+    await page.keyboard.press("Enter");
+    await opener.click();
+    await page.waitForSelector("#map-drawer .map-item");
+    await page.locator(`#map-drawer-tab-${UNDER}`).click();
+    await summaryIs("46 items · 1 loose, 43 in 2 bags");
+    await page.locator("#map-drawer-filter").fill("pearl");
+    await page.locator(`#map-drawer-bag-${SPARE}`).click();
+    assert.equal(await page.locator(`#map-drawer-bag-${SPARE}`).evaluate((e) => (e.parentElement as HTMLDetailsElement).open), false);
+    const list = page.locator("#map-drawer-body");
+    const scrolled = await list.evaluate((e) => { e.scrollTop = 200; return e.scrollTop; });
+    assert.ok(scrolled > 50, `the list scrolls (${scrolled})`);
+    await page.waitForTimeout(150);
+    writeVault(dir, true, [{ serial: 0x40500300, name: "Pearl 41", in: SUPPLIES }]);
+    await page.evaluate(async () => { await (await import("/ui/app.mjs" as string)).reload(); });
+    await summaryIs("47 items · 1 loose, 44 in 2 bags");
+    assert.ok((await names()).includes("Pearl 41"), "the new item shows");
+    assert.equal(await page.locator(`#map-drawer-tab-${UNDER}`).getAttribute("aria-checked"), "true");
+    assert.equal(await page.locator("#map-drawer-filter").inputValue(), "pearl");
+    assert.equal(await page.locator(`#map-drawer-bag-${SPARE}`).evaluate((e) => (e.parentElement as HTMLDetailsElement).open), false, "the folded bag stays folded");
+    assert.equal(await page.locator(`#map-drawer-bag-${SUPPLIES}`).evaluate((e) => (e.parentElement as HTMLDetailsElement).open), true);
+    assert.ok(Math.abs(await list.evaluate((e) => e.scrollTop) - scrolled) <= 1, "the scroll is kept");
+
+    // an item's ⋯ menu: Open details leaves for the Inventory with the item in the peek
+    await page.locator(`#map-drawer-item-${0x40500200}`).click();
+    await page.getByRole("menuitem", { name: "Open details" }).click();
+    await page.waitForFunction(() => location.hash === "#/inventory", undefined, { timeout: 10_000 });
+    await page.waitForSelector("#inv-peek:not([hidden]) #peek-title", { timeout: 15_000 });
+    assert.equal(await page.locator("#peek-title").textContent(), "Pearl 01");
     assert.deepEqual(errors, []);
+  } finally { await done(app, dir); }
+});
+
+test("[slow] House map: in a 1920 × 1000 window the contents drawer is a fourth column and the levels pane stays", async (t) => {
+  const why = unavailable();
+  if (why) return t.skip(why);
+  const { dir } = seed({ items: true });
+  const { app, page, size } = await launch(dir, { want: { width: 1920, height: 1000 } });
+  try {
+    if (size.width < 1920) return t.skip(`this screen fits a window only ${size.width} px wide; the four columns need 1920`);
+    await go(page, "#/map", "#map-svg .map-stack");
+    await page.locator(`#map-svg [data-stack="${letter(vaultModel, 3001, 1001)}"]`).focus();
+    await page.keyboard.press("Enter");
+    await page.waitForSelector(`#map-panel li[data-chest="${TOP}"]`);
+    const before = (await page.locator("#map-stage").boundingBox())!.width;
+    await page.locator(`#map-panel li[data-chest="${TOP}"] [data-act="items"]`).click();
+    await page.waitForSelector("#map-drawer .map-item");
+    await drawerLayout(page, size.width, before);
+    assert.equal(await page.evaluate(() => getComputedStyle(document.querySelector("#map-body")!).gridTemplateColumns.split(" ").length), 4);
   } finally { await done(app, dir); }
 });
