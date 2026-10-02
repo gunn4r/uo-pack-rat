@@ -489,6 +489,23 @@ class TazUOScanner(DataDir, unittest.TestCase):
         self.assertNotIn(TRASH_BARREL, serials, "the client calls it just \"barrel\"; the roots pass learnt it is trash")
         self.assertIn(BARREL, serials)
 
+    def test_the_trash_containers_the_roots_pass_skipped_are_listed_in_the_house_so_a_later_far_capture_can_leave_them_out(self):
+        w = World(); home(w); w.multis = house_tiles(5, 5, 12, 12); trash(w, cached=True)
+        self.scan(w)
+        [s] = self.scans("tazuo")
+        self.assertEqual(s["house"]["trash"], sorted([TRASH_BARREL, TRASH_CHEST]))
+
+    def test_a_house_without_trash_has_no_trash_list_and_trash_without_a_house_records_nothing(self):
+        w = World(); home(w); w.multis = house_tiles(5, 5, 12, 12)
+        self.scan(w)
+        self.assertNotIn("trash", self.scans("tazuo")[-1]["house"])
+        shutil.rmtree(os.path.join(self.data, "inbox"))
+        w = World(); home(w); trash(w)
+        self.scan(w)
+        [s] = self.scans("tazuo")
+        self.assertNotIn("house", s)
+        self.assertNotIn("trash", s)
+
     def test_past_the_schemas_5000_house_items_the_farthest_are_left_out(self):
         w = World(); home(w); w.multis = house_tiles(5, 5, 12, 12)
         for i in range(5000):
