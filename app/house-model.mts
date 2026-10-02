@@ -1,6 +1,6 @@
 // house-model.mts — a house as the map draws it (issue #10), built from the newest capture of its tiles (app/house-capture.mts), the client's tiledata.mul (app/tiledata.mts; null when it was not found) and the fold's ground containers. Pure. Spec: docs/superpowers/specs/2026-10-01-house-map-design.md, section 3.
 import { classify, FLAG, type TileData, type TileClass } from "./tiledata.mts";
-import type { HouseSource } from "./house-capture.mts";
+import type { HouseItem, HouseSource } from "./house-capture.mts";
 
 // opened: false = a chest a house capture saw that no scan has opened (issue #10); absent = opened.
 export interface HouseContainerInput { serial: number; name: string; facet: number | null; x: number; y: number; z: number; opened?: boolean | undefined }
@@ -142,7 +142,9 @@ export function buildHouseModel(house: HouseSource, td: TileData | null, contain
 
   // Furniture: doors (the doorway they stand in, or beside when open, stays out of hallways like a door tile's), teleporters by name, impassable items as blocks; passable decoration is not drawn.
   const furniture: Furniture[] = [];
+  const own = houseItemSerial(house);
   if (td) for (const [serial, graphic, x, y, z] of [...house.items].sort((a, b) => a[0] - b[0])) {
+    if (serial === own) continue;
     const info = td.info(graphic);
     if (!info) continue;
     const kind = classify(info, false) === "door" ? "door" : /teleporter/i.test(info.name) ? "teleporter" : (info.flags & FLAG.impassable) !== 0n ? "block" : null;
@@ -236,6 +238,19 @@ function directionOf(dx: number, dy: number): string {
 }
 
 // Greedy cover per level: candidates are free floor and stair cells plus teleporter tiles, none holding a stack or a block; each reaches the stacks within REACH tiles (Chebyshev) in its own room, or in no room (an alcove or doorway cell) from any room, worked out once. Each round picks the candidate reaching the most uncovered containers, ties to the smaller total Manhattan distance, then y, then x; it stops when no candidate reaches anything. Spots are then numbered by level, room (none last) and pick order, so letters run room by room. Sets each covered stack's spot and direction.
+// A house is itself an Item whose graphic is its multi id, standing at the plot centre (ServUO Scripts/Multis/HousePlacementTool.cs: every customizable house uses a multi id from 0x13EC to 0x147B); a static of the same id would be named as furniture (0x147B reads as a telescope). But ServUO's Telescope addon (Scripts/Items/Addons/Telescope.cs) has a real component with graphic 0x147B, so only ONE item is dropped: the in-range one nearest the centre of the tiles' x/y bounds, ties to the lowest serial, and only when it is within HOUSE_ITEM_CENTRE_RADIUS of that centre.
+const HOUSE_MULTI_MIN = 0x13ec, HOUSE_MULTI_MAX = 0x147b;
+const HOUSE_ITEM_CENTRE_RADIUS = 2;   // the bounds include steps and the rim, so their centre sits up to about a tile off the multi origin, and an even-sized plot has a .5 centre
+function houseItemSerial(house: HouseSource): number | null {
+  const cand = house.items.filter((i) => i[1] >= HOUSE_MULTI_MIN && i[1] <= HOUSE_MULTI_MAX);
+  if (!cand.length || !house.tiles.length) return null;
+  const xs = house.tiles.map((t) => t[1]), ys = house.tiles.map((t) => t[2]);
+  const cx = (Math.min(...xs) + Math.max(...xs)) / 2, cy = (Math.min(...ys) + Math.max(...ys)) / 2;
+  const d = (i: HouseItem) => (i[2] - cx) ** 2 + (i[3] - cy) ** 2;
+  const best = cand.reduce((a, b) => (d(b) < d(a) || (d(b) === d(a) && b[0] < a[0]) ? b : a));
+  return Math.max(Math.abs(best[2] - cx), Math.abs(best[3] - cy)) <= HOUSE_ITEM_CENTRE_RADIUS ? best[0] : null;
+}
+
 function spotsOf(cells: Cell[], at: Map<string, Cell>, stackAt: Map<string, Stack[]>, furniture: Furniture[], levels: Level[]): Spot[] {
   const spots: Spot[] = [];
   const blocked = new Set(furniture.filter((f) => f.kind === "block").map((f) => key(f.level, f.x, f.y)));
