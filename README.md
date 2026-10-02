@@ -67,7 +67,8 @@ TazUO scripts require **TazUO v26.0923.64 or later**; update TazUO from its laun
 The setup window put these scripts in your client's scripts folder (which ones depends on the client):
 
 - **`packrat-scanner.py`** — the full scan: what you wear, your backpack, and every chest and bag within 3 tiles, including bags inside them. With your bank box open it reads the bank instead of nearby chests. Trash barrels and chests are skipped.
-- **`packrat-refresh.py`** — a quick refresh of your stats, skills, worn gear and backpack; takes a few seconds, works anywhere.
+- **`packrat-character-refresh.py`** (TazUO; `packrat-refresh.py` on Razor Enhanced) — a quick refresh of your stats, skills, worn gear and backpack; takes a few seconds, works anywhere.
+- **`packrat-house-map-refresh.py`** (TazUO only) — records just the house you stand in for the **House map**: its floors and walls, furniture and where every chest stands. Opens nothing and leaves the inventory as it was.
 - **`packrat-bridge.py`** — makes the app's **Highlight**, **Grab** and **Go to** buttons work. Start it and leave it running; it stops on its own after 8 hours.
 - **`packrat-blacklist.py`** — click a chest or bag and scans never open it again, such as a guild chest. You can also blacklist a container from the app's **Containers** view.
 - **`packrat-panel.py`** — the in-game Pack Rat panel (TazUO only): a small window with buttons for all of the above, and Organize's **Put away** (below). It starts with TazUO; **Ctrl+Shift+P** shows or hides it, and you can change that hotkey in **Settings**.
@@ -75,7 +76,8 @@ The setup window put these scripts in your client's scripts folder (which ones d
 The routine:
 
 - **First time on a character, or when your chests change:** stand next to a group of chests and run the scanner; repeat at each group. For your bank, open the bank box and run it there.
-- **After gearing up or training:** run the quick refresh.
+- **After gearing up or training:** run the character refresh.
+- **After moving furniture or chests around your house (TazUO):** stand inside it and run the house map refresh.
 - **To find or fetch an item:** start the bridge, then use the buttons on the item in **Inventory** or **Suit Builder**. **Highlight** marks it and its container in game, **Go to** walks you to its chest, **Grab** walks there and puts it in your backpack. To find a chest itself, use **Highlight in game** in its ⋯ menu under Inventory › Containers.
 
 Scans show up in **Inventory** within a few seconds; you don't have to press anything in the app. **Characters** shows each character's sheet and paperdoll, and **Suit Builder** finds the best suit for a character from everything you own, with saved runs you can reopen and compare.

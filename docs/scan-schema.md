@@ -26,6 +26,7 @@ Ground truth: `app/schema/scan.v2.schema.json` (the portable JSON Schema, restri
 | `items` | array, required | Every non-equipped item this scan saw, in any opened container — see below. |
 | `equipped` | array, required | Every item on the character's paperdoll — see below. |
 | `house` | object, optional | The house the player stood in when the scan ran — see "House capture" below. Written by TazUO 2.10.0 and later. |
+| `kind` | string, optional, only `"house"` | Left out for a scan. `"house"` marks a house-only file — see "House-only files" below. |
 
 A scan file may carry additional top-level fields beyond these (`additionalProperties: true` at the top level) — the quick-refresh adapter script adds a `meta: {mode, name, roots}` key, which the fold simply ignores. `adapter` and `adapter.capabilities`, though, are a **closed contract**: `additionalProperties: false` there, so an adapter must match the shape below exactly, no extra fields.
 
@@ -70,6 +71,10 @@ The optional `house` section (issue #10) is what the client knew of the house th
 `containers` is an array of at most 5,000 entries in the same `[serial, graphic, x, y, z]` shape: every container on the ground inside the footprint (TazUO 2.11.0 and later), whether this scan opened it or not, so the House map shows a chest from the first scan even when it stood too far away to open. Corpses, trash containers and blacklisted ones are left out; a trash container is known by a name with "trash" in it, or by the tooltip the scan read when it reached the container as a root, so a far trash container whose cached name is generic ("barrel") cannot be told apart without a tooltip query, which the capture never makes, and is listed. Like `items`, it is left out when the ground could not be read. The app never folds these rows into the inventory: a chest no scan has opened is drawn on the map as not opened yet and appears nowhere else.
 
 What the TazUO scanner writes within those bounds: a house of more than 20,000 tiles is left out of the scan (the summary says so), and past 5,000 pieces of furniture, or 5,000 containers, the nearest 5,000 to the player are kept.
+
+### House-only files
+
+TazUO's `packrat-house-map-refresh.py` (2.12.0 and later) records the house without scanning anything else, and writes `<Character>-<YYYYmmdd-HHMMSS>-house.json` to the inbox: a full v2 document with `"kind": "house"`, the `house` section exactly as a scan inside the house would carry it, and no inventory: `stats` is `{}` and `roots`, `containers`, `items` and `equipped` are empty. `validateScan` refuses a house-only file without a `house` or with anything in those four. The fold skips it, so it never replaces a character's card or worn set and adds no row to the scan list; Missing finds no roots in it, and Organize and the Containers view work from the fold. Only the house map (`app/house-capture.mts`) reads it, as one more capture of the house, and retention treats it like any capture: kept while it holds the house's newest capture or furniture and chests no newer capture could have seen, pruned once a newer capture covers it and it is older than the window. The inbox watcher tells it apart from a scan of the same character and second by its `kind`, so neither is taken for the other's duplicate.
 
 ## `adapter`
 
@@ -140,7 +145,7 @@ Every scan file on disk is v1 or v2 shaped; the server upgrades v1 files to v2 o
 A v1 file is recognized by `version: 1` (instead of `schemaVersion`). The upgrade:
 
 - Sets `schemaVersion: 2` and drops `version`.
-- Converts `scannedAt` from v1's naive local wall-clock string (`"2026-09-13T14:20:44"`, no offset — what `packrat-scanner.py`/`packrat-refresh.py` and the pre-v2 server both wrote) to RFC 3339, using **this machine's** UTC offset for that specific date and time (DST-correct — the offset is computed from a `Date` built out of the same year/month/day/hour/minute/second, not from "now").
+- Converts `scannedAt` from v1's naive local wall-clock string (`"2026-09-13T14:20:44"`, no offset — what `packrat-scanner.py`/`packrat-refresh.py` (now `packrat-character-refresh.py`) and the pre-v2 server both wrote) to RFC 3339, using **this machine's** UTC offset for that specific date and time (DST-correct — the offset is computed from a `Date` built out of the same year/month/day/hour/minute/second, not from "now").
 - Stamps `adapter`: `{id: "tazuo", version: "1", client: "TazUO", clientVersion: null, capabilities: TAZUO_V1_CAPS}` — except a tombstone (`character` starting with `_`), which gets `id: "app"` instead, since a v1-shaped tombstone was never written by a game-client adapter. `TAZUO_V1_CAPS` (in `app/scan-schema.mts`) is the capability set the original scanner script actually had: all 20 equip layers, arms/bank/ground/nested all `true`, `tooltips: "opl"`, `bridge: ["highlight", "grab", "goto"]`.
 - Marks every `roots[]` entry `opened: true` — v1 had no concept of a root the scan couldn't open, so every listed root is treated as successfully opened.
 - Coerces every serial-shaped field to a number: `roots[].serial`, `containers` keys and each entry's `.serial`/`.parent`/`.root`, `items[].serial`/`.container`, `equipped[].serial`. (v1 data was occasionally serialized with string serials; the fold assumes numbers throughout.)
