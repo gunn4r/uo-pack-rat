@@ -248,6 +248,14 @@ test("[fast] scan schema: an optional house section with tiles and items", () =>
   assert.equal(validateScan({ ...bounded, house: unread }).ok, true, "items is left out when the ground could not be read");
 });
 
+test("[fast] scan schema: house.trash is an optional list of serials (issue #162)", () => {
+  const house = { facet: 1, capturedAt: "2026-10-01T12:00:00Z", at: { x: 100, y: 200 }, tiles: [[1301, 100, 200, 7, 0]] };
+  assert.equal(validateScan({ ...bounded, house: { ...house, trash: [0x40000300, 0x40000302] } }).ok, true);
+  assert.equal(validateScan({ ...bounded, house: { ...house, trash: [] } }).ok, true);
+  for (const trash of [["0x40000300"], [-1], [4294967296], [1.5], 7]) assert.equal(validateScan({ ...bounded, house: { ...house, trash } }).ok, false, JSON.stringify(trash));
+  assert.equal(validateScan({ ...bounded, house: { ...house, trash: Array.from({ length: 5001 }, (_, i) => i) } }).ok, false, "at most 5,000 serials");
+});
+
 test("[fast] scan schema: a house tile with a negative z (a boat or a basement) and an empty items list validate, and so does an extra key in house", () => {
   const house = { facet: 1, capturedAt: "2026-10-01T12:00:00Z", at: { x: 100, y: 200 }, tiles: [[1301, 100, 200, -5, 0]], items: [] };
   assert.equal(validateScan({ ...bounded, house }).ok, true);

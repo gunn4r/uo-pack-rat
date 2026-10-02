@@ -45,7 +45,7 @@ To start a script with one key, right-click it in the Script Manager, choose **S
 
 - The scanner only reads chests close enough to open. A chest it can't open is kept as it was in your last scan, not emptied.
 - The bank is only read while your bank box is open. While it is open, the full scan reads only your backpack and bank, not nearby chests.
-- Trash barrels and chests (anything with the word "trash" in its name) are never opened or recorded, whether on the ground or inside another container: the server empties them on a timer. The scan says how many it skipped. You don't need to blacklist them.
+- Trash barrels and chests (anything with the word "trash" in its name) are never opened or recorded, whether on the ground or inside another container: the server empties them on a timer. The scan says how many it skipped, and a scan inside a house records their serials in `house.trash` (2.13.0), so the house map leaves them out even after a scan from across the room. You don't need to blacklist them.
 - A scan takes from a few seconds to a couple of minutes, depending on how many bags it has to open. If you stop it part way, it saves nothing, and you can simply run it again.
 - The bridge stops by itself after 8 hours, or when you press Stop. Start it again when you need it.
 - The bridge only walks up to 24 tiles. If an item is further away, it tells you to walk closer and try again.
@@ -59,7 +59,7 @@ These scripts read what your character can see and move one item when you click.
 
 Everything below is for people working on the adapter itself.
 
-What has run against a live client: the scanner, refresh and bridge were verified live, attended, before version 2.1.0, and `packrat-panel.py` was run live on build 26.0923.64 (buttons, hotkey, start at login, but not yet starting hidden). Every other change since 2.1.0, up to this 2.12.0, has only run against the fake clients in `adapters/fake_clients.py` (see `TESTING.md`).
+What has run against a live client: the scanner, refresh and bridge were verified live, attended, before version 2.1.0, and `packrat-panel.py` was run live on build 26.0923.64 (buttons, hotkey, start at login, but not yet starting hidden). Every other change since 2.1.0, up to this 2.13.0, has only run against the fake clients in `adapters/fake_clients.py` (see `TESTING.md`).
 
 ### Contract (scan v2 / bridge v1)
 
