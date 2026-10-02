@@ -1,8 +1,7 @@
 // ui/world-map.mts — the world map lightbox (issue #164): the Where section's small map opens the whole facet in a modal dialog (components.mts openDialog: Esc, focus kept in and given back), fitted at first; the zoom buttons and keys zoom about the house while it is in view. A low-resolution image of the whole facet is the base; when the view zooms past it, the visible region is fetched again at screen resolution (150 ms after the view settles, older answers ignored) and laid over the base where the server's x-region says it belongs. The wheel (a pinch arrives as a wheel with ctrlKey) zooms about the pointer, +, − and 0 (fit) zoom, a drag or the arrow keys pan. Every captured house of the facet has a marker of a fixed screen size; another house's marker closes the lightbox and opens its map. Every rule and number is ui/world-map-model.mts's.
 import { $, el } from "./dom.mts";
 import { box, txt, button, openDialog } from "./components.mts";
-import { facetName, parseRegion, type Box, type Crop, type Pt } from "./house-map-model.mts";
-import { FACET_SIZE } from "./sextant.mts";
+import { facetName, parseRegion, FACET_SIZE, type Box, type Crop, type Pt } from "./house-map-model.mts";
 import { firstView, zoomAnchor, zoomView, panView, toScreen, toWorld, overlayRequest, worldMarkers, pxPerTile, type Size } from "./world-map-model.mts";
 import type { FacetMapReason, HouseSummary } from "./api-types.mts";
 

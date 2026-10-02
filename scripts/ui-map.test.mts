@@ -822,14 +822,18 @@ async function measure(page: Page, name: string, shows: RegExp, rows: Array<Cont
   await page.emulateMedia({ colorScheme: "light" });
 }
 
-test("[slow] House map: Where shows the house's coordinates and the facet overview with a marker per house, another house's marker opens its map by click or keyboard, and without the facet file a line says why", async (t) => {
+test("[slow] House map: the Location section shows the house's coordinates under its heading and the facet overview with a marker per house, another house's marker opens its map by click or keyboard, and without the facet file a line says why", async (t) => {
   const skip = unavailable();
   if (skip) { t.skip(skip); return; }
   const { dir } = seed({ facet: true });
   const { app, page, errors } = await launch(dir);
   try {
     await go(page, `#/map/${VAULT}`, "#map-panel #map-where");
-    assert.match((await page.locator("#map-where-text").textContent())!, /^3003, 1003 · Trammel · \d+°\d\d'[NS] \d+°\d\d'[EW]$/);
+    // The coordinates are the Location section's first line, under its heading; the heading area above has no coordinates or corners.
+    assert.deepEqual(await page.locator("#map-where > *").evaluateAll((es) => es.slice(0, 2).map((e) => e.id || e.className)), ["map-where-title", "map-where-coords"]);
+    assert.equal(await page.locator("#map-where-title").textContent(), "Location - Trammel - 3003 1003");
+    assert.equal(await page.locator("#map-where #map-where-text").textContent(), "3003, 1003 · Trammel");
+    assert.doesNotMatch(await page.locator("#map-panel .map-panel-head").textContent() || "", /Corners|3003, 1003/);
     assert.equal(await page.locator("#map-where-copy").getAttribute("aria-label"), "Copy the coordinates");
     await page.waitForFunction(() => { const i = document.querySelector<HTMLImageElement>("#map-where .map-where-img"); return !!i && i.complete && i.naturalWidth === 600 && i.naturalHeight === 450; }, null, { timeout: 30_000 });
     assert.equal(await page.locator("#map-where .map-where-mark.current").getAttribute("aria-label"), "Trammel house at 3003, 1003 (this house)");
@@ -852,7 +856,8 @@ test("[slow] House map: Where shows the house's coordinates and the facet overvi
   try {
     await go(b.page, `#/map/${VAULT}`, "#map-panel #map-where-note");
     assert.match((await b.page.locator("#map-where-note").textContent())!, /no world map file for this facet/);
-    assert.match((await b.page.locator("#map-where-text").textContent())!, /^3003, 1003 · Trammel/);
+    assert.equal(await b.page.locator("#map-where #map-where-text").textContent(), "3003, 1003 · Trammel", "the heading and the coordinates stay, the reason under them");
+    assert.deepEqual(await b.page.locator("#map-where > *").evaluateAll((es) => es.map((e) => e.id || e.className)), ["map-where-title", "map-where-coords", "map-where-note"]);
     assert.equal(await b.page.locator("#map-where img").count(), 0);
   } finally { await done(b.app, bare); }
 });

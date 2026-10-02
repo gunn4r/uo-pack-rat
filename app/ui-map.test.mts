@@ -1,11 +1,11 @@
-// ui-map.test.mts — app/ui/house-map-model.mts, the House map's pure rules (issue #10): the projection, tile and box polygons, the painter's order, a level's bounds and fit, the joins of a stack with the inventory and the Organize labels, the colour modes, the cut-away, callouts, totals, the house picker, keyboard moves, the plain grid, the scene of a level (castle speed included), the drawn areas (issue #10: which area holds a chest, the screen-to-tile inverse, rectangles, outlines, label spots, ids, colours, the drawing cursor, carry-over), and (issue #164) where a house is: its coordinates, sextant and copy line, the facet overview's crop, its markers and why it may be missing. Tags: [fast]. Run: node --test app/ui-map.test.mts
+// ui-map.test.mts — app/ui/house-map-model.mts, the House map's pure rules (issue #10): the projection, tile and box polygons, the painter's order, a level's bounds and fit, the joins of a stack with the inventory and the Organize labels, the colour modes, the cut-away, callouts, totals, the house picker, keyboard moves, the plain grid, the scene of a level (castle speed included), the drawn areas (issue #10: which area holds a chest, the screen-to-tile inverse, rectangles, outlines, label spots, ids, colours, the drawing cursor, carry-over), and (issue #164) where a house is: its centre tile and copy line, the facet overview's crop, its markers and why it may be missing. Tags: [fast]. Run: node --test app/ui-map.test.mts
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { buildHouseModel } from "./house-model.mts";
 import { fixtureTileData, vaultHouse, roofHouse, courtyardHouse, castleHouse, foundationHouse, stairHouse, G } from "./house-fixture.mts";
 import type { Container, Item } from "./vault-lib.mts";
 import type { HouseArea, HouseModel, Stack } from "./ui/api-types.mts";
-import { project, tilePolygon, boxFaces, pts, paintOrder, boundsOf, fit, zoomAt, vbText, anchorOf, W, chestViews, colourOf, legendOf, chestLabel, cutAway, calloutLines, houseTotals, pickHouse, houseLabel, houseName, carryOver, carryOverText, PLAIN, chestCount, nearestInDirection, tiledataNote, stackWhere, plainGrid, sceneOf, drawnZs, CHEST_H, whereOf, whereTitle, cropAround, facetMapUrl, markersOf, facetMapNote, parseRegion, markerRadii, contentsOf, contentsSummary, filterContents, drawerChest, drawerMeta, slotsText, drawerPicker, DRAWER_TABS_MAX, piecesOf, frontCorner, fitLabel, pillsOf, placePill, LABEL_FIT, areaOfStack, levelAreas, restName, unproject, tileAt, rectOf, sizeText, unionTiles, coveredCells, outlineOf, nextAreaId, nextAreaColor, moveCursor, clampTile, liveAreas, withOrphans, redrawFailed, AREA_COLORS, AREA_COLOR_NAMES, type ChestView, type ContentsNode } from "./ui/house-map-model.mts";
+import { project, tilePolygon, boxFaces, pts, paintOrder, boundsOf, fit, zoomAt, vbText, anchorOf, W, chestViews, colourOf, legendOf, chestLabel, cutAway, calloutLines, houseTotals, pickHouse, houseLabel, houseName, carryOver, carryOverText, PLAIN, chestCount, nearestInDirection, tiledataNote, stackWhere, plainGrid, sceneOf, drawnZs, CHEST_H, whereOf, whereTitle, FACET_SIZE, cropAround, facetMapUrl, markersOf, facetMapNote, parseRegion, markerRadii, contentsOf, contentsSummary, filterContents, drawerChest, drawerMeta, slotsText, drawerPicker, DRAWER_TABS_MAX, piecesOf, frontCorner, fitLabel, pillsOf, placePill, LABEL_FIT, areaOfStack, levelAreas, restName, unproject, tileAt, rectOf, sizeText, unionTiles, coveredCells, outlineOf, nextAreaId, nextAreaColor, moveCursor, clampTile, liveAreas, withOrphans, redrawFailed, AREA_COLORS, AREA_COLOR_NAMES, type ChestView, type ContentsNode } from "./ui/house-map-model.mts";
 
 const td = fixtureTileData();
 const has = (cls: string, c: string): boolean => cls.split(" ").includes(c);
@@ -628,16 +628,12 @@ test("[fast] house areas: boundsOf an area covers its rectangles only", () => {
 // ---------------------------------------------------------------- where the house is (issue #164)
 const summary = (id: string, facet: number | null, x0: number, y0: number, name?: string) => ({ id, facet, capturedAt: "", captures: 1, width: 18, height: 18, plot: { x0, y0, x1: x0 + 17, y1: y0 + 17 }, levels: 1, containers: 0, ...(name ? { name } : {}) });
 
-test("[fast] house map: a house's centre and corners in world tiles, its sextant reading and the one line Copy puts on the clipboard", () => {
+test("[fast] house map: a house's centre tile in world tiles and the one line the Location section shows and Copy puts on the clipboard", () => {
   const w = whereOf(summary("1-1427-1684", 1, 1427, 1684));
-  assert.deepEqual(w.centre, [1435, 1692]);
-  assert.equal(w.centreText, "1435, 1692");
-  assert.equal(w.corners, "Corners 1427, 1684 to 1444, 1701");
-  assert.equal(w.sextant, "5°58'S 7°52'E");
-  assert.equal(w.copy, "1435, 1692 · Trammel · 5°58'S 7°52'E");
-  const lost = whereOf(summary("1-7000-100", 1, 7000, 100));
-  assert.equal(lost.sextant, null, "no reading there: coordinates only");
-  assert.equal(lost.copy, "7008, 108 · Trammel");
+  assert.deepEqual(w, { centre: [1435, 1692], centreText: "1435, 1692", copy: "1435, 1692 · Trammel" }, "no corners, no sextant reading");
+  assert.equal(whereOf(summary("1-7000-100", 1, 7000, 100)).copy, "7008, 108 · Trammel");
+  assert.equal(whereOf(summary("x-5-6", null, 5, 6)).copy, "13, 14 · Unknown facet");
+  assert.deepEqual(FACET_SIZE[1], [7168, 4096]);
   assert.equal(whereTitle(summary("3-1000-400", 3, 1000, 400)), "Location - Malas - 1008 408", "the Where heading names the facet and the centre tile");
 });
 

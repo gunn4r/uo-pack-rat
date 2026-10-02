@@ -1,7 +1,6 @@
 // ui/house-map-model.mts — the House map's pure rules (issue #10, spec section 4): the projection (the client's angle, or top-down), the polygons of a tile and of a box, the painter's order, a level's bounds and their fit; below, the joins of a stack with the inventory and the Organize labels, the colour modes, the cut-away, the callout, the totals, the house picker, keyboard moves, the plain grid for chests outside any drawn house, and the scene of one level. No DOM and no store.mts import, so app/ui-map.test.mts runs it under plain node:test; ui/house-map.mts draws what it returns. Coordinates are relative to the house's corner (x0, y0); heights to the level's floor.
 import { bagLabel, itemOwnBlob, type Item } from "../vault-lib.mts";
 import { plural, splitSerial } from "./inv-model.mts";
-import { FACET_SIZE, sextant, sextantText } from "./sextant.mts";
 import type { AreaRect, Cell, ContainerLabel, FacetMapReason, HouseArea, HouseMapEntry, HouseModel, HouseSummary, InventoryData, Spot, Stack, TiledataFrom } from "./api-types.mts";
 
 // A tile is W units wide at the game angle (half as tall), and one z step lifts a point K units: the client draws a 44-px tile and 4 px per z, a little flatter than this, which reads better at the map's size.
@@ -201,12 +200,14 @@ export function tiledataNote(reason: TiledataFrom["reason"]): string | null {
 }
 
 // ---------------------------------------------------------------- where the house is (issue #164)
-// A house's place in the world from its plot (the front steps left out): the centre tile (the lower middle of an even side), its corners, the sextant reading (null where the client shows none) and the one line Copy puts on the clipboard.
-export interface Where { centre: [number, number]; centreText: string; corners: string; sextant: string | null; copy: string }
+// Each facet's size in tiles (0 Felucca, 1 Trammel, 2 Ilshenar, 3 Malas, 4 Tokuno, 5 Ter Mur).
+export const FACET_SIZE: ReadonlyArray<readonly [number, number]> = [[7168, 4096], [7168, 4096], [2304, 1600], [2560, 2048], [1448, 1448], [1280, 4096]];
+// A house's place in the world from its plot (the front steps left out): the centre tile (the lower middle of an even side) and the one line the Location section shows and Copy puts on the clipboard, "<x>, <y> · <facet>".
+export interface Where { centre: [number, number]; centreText: string; copy: string }
 export function whereOf(h: Pick<HouseSummary, "facet" | "plot">): Where {
   const p = h.plot, centre: [number, number] = [Math.floor((p.x0 + p.x1) / 2), Math.floor((p.y0 + p.y1) / 2)];
-  const centreText = `${centre[0]}, ${centre[1]}`, s = sextant(h.facet, centre[0], centre[1]), reading = s ? sextantText(s) : null;
-  return { centre, centreText, corners: `Corners ${p.x0}, ${p.y0} to ${p.x1}, ${p.y1}`, sextant: reading, copy: [centreText, facetName(h.facet), ...(reading ? [reading] : [])].join(" · ") };
+  const centreText = `${centre[0]}, ${centre[1]}`;
+  return { centre, centreText, copy: `${centreText} · ${facetName(h.facet)}` };
 }
 // The Where section's heading: "Location - <facet> - <x> <y>", the plot's centre tile.
 export const whereTitle = (h: Pick<HouseSummary, "facet" | "plot">): string => `Location - ${facetName(h.facet)} - ${whereOf(h).centre.join(" ")}`;

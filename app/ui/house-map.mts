@@ -880,10 +880,8 @@ function totalsPanel(m: HouseModel): HTMLElement[] {
 }
 // ---------------------------------------------------------------- where the house is (issue #164)
 const summaryOf = (m: HouseModel) => (m.id === PLAIN ? undefined : S.list?.houses.find((h) => h.id === m.id));
-// Under the house's heading: its centre, facet and sextant reading with a copy button, and its corners.
-function whereLines(m: HouseModel): HTMLElement[] {
-  const h = summaryOf(m);
-  if (!h) return [];
+// The Location section's first line: the centre tile and the facet, with a copy button.
+function whereLine(h: NonNullable<ReturnType<typeof summaryOf>>): HTMLElement {
   const w = whereOf(h), line = txt(w.copy, "t-sm");
   line.id = "map-where-text";
   const copy = button({ label: "Copy the coordinates", icon: "clipboard", iconOnly: true, variant: "ghost", size: "sm", attrs: { id: "map-where-copy" }, onClick: async () => {
@@ -892,15 +890,17 @@ function whereLines(m: HouseModel): HTMLElement[] {
     if (t) getSelection()?.selectAllChildren(t);
     toast("Pack Rat could not reach the clipboard. The coordinates are selected: press ⌘C or Ctrl+C to copy them.", "bad");
   } });
-  return [box("div", { class: "map-where-coords" }, line, copy), txt(w.corners, "t-sm muted")];
+  return box("div", { class: "map-where-coords" }, line, copy);
 }
-// The Where section: 600 x 450 tiles of the facet's overview around the house (GET /api/facet-map), a marker on it and a smaller one on every other captured house there, each of those a link to its map, placed in the region the server says it drew (x-region). When the image does not load, a line says why; the coordinates above stay.
+// The Location section: its heading, the coordinates line, then 600 x 450 tiles of the facet's overview around the house (GET /api/facet-map), a marker on it and a smaller one on every other captured house there, each of those a link to its map, placed in the region the server says it drew (x-region). When the image does not load, a line under the coordinates says why; with no facet known, the coordinates alone.
 function whereSection(m: HouseModel): HTMLElement | null {
-  const h = summaryOf(m), crop = h ? cropAround(h.facet, whereOf(h).centre) : null;
-  if (!h || h.facet == null || !crop) return null;
+  const h = summaryOf(m);
+  if (!h) return null;
+  const section = (...kids: HTMLElement[]): HTMLElement => box("section", { class: "map-where", id: "map-where", "aria-labelledby": "map-where-title" }, el("h3", { class: "t-md", id: "map-where-title" }, whereTitle(h)), whereLine(h), ...kids);
+  const crop = cropAround(h.facet, whereOf(h).centre);
+  if (h.facet == null || !crop) return section();
   const url = facetMapUrl(h.facet, crop), got = facetImages.get(url);
   if (!got) void loadFacetImage(url);
-  const section = (...kids: HTMLElement[]): HTMLElement => box("section", { class: "map-where", id: "map-where", "aria-labelledby": "map-where-title" }, el("h3", { class: "t-md", id: "map-where-title" }, whereTitle(h)), ...kids);
   if (!got || got === "loading") return section(el("p", { class: "t-sm muted", id: "map-where-loading", "aria-busy": "true" }, "Loading the world map…"));
   if ("reason" in got) return section(el("p", { class: "t-sm muted", id: "map-where-note" }, facetMapNote(got.reason)));
   const c = got.crop, w = c.x1 - c.x0, ht = c.y1 - c.y0;
@@ -939,14 +939,13 @@ async function loadFacetImage(url: string): Promise<void> {
 // the offer to carry over the name of an earlier house this one replaced (house-map-model.mts carryOver).
 function houseHead(m: HouseModel): HTMLElement {
   const meta = txt(m.id === PLAIN ? "Ground chests outside any drawn house" : `${plural(m.levels.length, "level")} · ${plural(m.stacks.length, "stack")} · ${plural(m.spots.length, "standing spot")}`, "t-sm muted");
-  if (renaming != null) return box("header", { class: "map-panel-head" }, renameField(m, renaming, nameError), meta, ...whereLines(m));
+  if (renaming != null) return box("header", { class: "map-panel-head" }, renameField(m, renaming, nameError), meta);
   const offer = carryOver(m, S.list?.houses.map((h) => h.id) ?? [], S.names), words = offer ? carryOverText(offer) : null;
   return box("header", { class: "map-panel-head" },
     // One block in the flex header, its heading and ✎ inline, so the ✎ follows the last word of a name that wraps.
     box("div", { class: "map-house-title" }, el("h2", { class: "t-lg" }, houseName(m)),
       m.id === PLAIN ? null : button({ label: "Rename house", icon: "pencil", iconOnly: true, variant: "ghost", size: "sm", attrs: { id: "map-rename" }, onClick: () => { renaming = m.name ?? ""; nameError = null; drawPanel(); const f = $<HTMLInputElement>("#map-name"); f?.focus(); f?.select(); } })),
     meta,
-    ...whereLines(m),
     offer && words ? box("div", { class: "map-carry", id: "map-carry" }, txt(words.text, "t-sm"),
       button({ label: words.action, size: "sm", attrs: { id: "map-carry-use" }, onClick: () => { void saveEntry(m, () => ({ name: offer.name, ...(offer.areas.length ? { areas: offer.areas } : {}) })).then((err) => { if (err) { toast(err, "bad"); return; } render(); $<HTMLElement>("#map-rename")?.focus(); }); } })) : null);
 }
