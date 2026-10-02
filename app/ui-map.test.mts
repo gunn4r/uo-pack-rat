@@ -5,7 +5,7 @@ import { buildHouseModel } from "./house-model.mts";
 import { fixtureTileData, vaultHouse, roofHouse, courtyardHouse, castleHouse, foundationHouse, stairHouse, G } from "./house-fixture.mts";
 import type { Container } from "./vault-lib.mts";
 import type { HouseModel } from "./ui/api-types.mts";
-import { project, tilePolygon, boxFaces, pts, paintOrder, boundsOf, fit, zoomAt, vbText, anchorOf, W, chestViews, colourOf, legendOf, chestLabel, cutAway, calloutLines, houseTotals, pickHouse, houseLabel, houseName, carryOver, PLAIN, chestCount, roomCounts, nearestInDirection, tiledataNote, stackWhere, plainGrid, sceneOf, drawnZs, CHEST_H, whereOf, cropAround, facetMapUrl, markersOf, facetMapNote, parseRegion, markerRadii, type ChestView } from "./ui/house-map-model.mts";
+import { project, tilePolygon, boxFaces, pts, paintOrder, boundsOf, fit, zoomAt, vbText, anchorOf, W, chestViews, colourOf, legendOf, chestLabel, cutAway, calloutLines, houseTotals, pickHouse, houseLabel, houseName, carryOver, PLAIN, chestCount, roomCounts, nearestInDirection, tiledataNote, stackWhere, plainGrid, sceneOf, drawnZs, CHEST_H, whereOf, whereTitle, cropAround, facetMapUrl, markersOf, facetMapNote, parseRegion, markerRadii, type ChestView } from "./ui/house-map-model.mts";
 
 const td = fixtureTileData();
 const has = (cls: string, c: string): boolean => cls.split(" ").includes(c);
@@ -447,6 +447,7 @@ test("[fast] house map: a house's centre and corners in world tiles, its sextant
   const lost = whereOf(summary("1-7000-100", 1, 7000, 100));
   assert.equal(lost.sextant, null, "no reading there: coordinates only");
   assert.equal(lost.copy, "7008, 108 · Trammel");
+  assert.equal(whereTitle(summary("3-1000-400", 3, 1000, 400)), "Location - Malas - 1008 408", "the Where heading names the facet and the centre tile");
 });
 
 test("[fast] house map: the overview's crop is 600 x 450 tiles around the house, slid back inside the facet at its edges", () => {

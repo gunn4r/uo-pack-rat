@@ -201,6 +201,8 @@ export function whereOf(h: Pick<HouseSummary, "facet" | "plot">): Where {
   const centreText = `${centre[0]}, ${centre[1]}`, s = sextant(h.facet, centre[0], centre[1]), reading = s ? sextantText(s) : null;
   return { centre, centreText, corners: `Corners ${p.x0}, ${p.y0} to ${p.x1}, ${p.y1}`, sextant: reading, copy: [centreText, facetName(h.facet), ...(reading ? [reading] : [])].join(" · ") };
 }
+// The Where section's heading: "Location - <facet> - <x> <y>", the plot's centre tile.
+export const whereTitle = (h: Pick<HouseSummary, "facet" | "plot">): string => `Location - ${facetName(h.facet)} - ${whereOf(h).centre.join(" ")}`;
 // The facet overview shows 600 x 450 tiles around the house (on a 7168-wide facet the whole map would make it a speck), slid back inside the facet at its edges; null for an unknown facet. x1 and y1 are exclusive, as GET /api/facet-map takes them.
 export interface Crop { x0: number; y0: number; x1: number; y1: number }
 export const CROP_W = 600, CROP_H = 450;

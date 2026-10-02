@@ -11,7 +11,7 @@ import { openWorldMap, fetchFacetImage, type FacetImage } from "./world-map.mts"
 import { plural } from "./inv-model.mts";
 import { fillTone } from "./organize-model.mts";
 import { PLAIN, pickHouse, plainGrid, chestCount, roomCounts, houseLabel, houseName, carryOver, tiledataNote, chestViews, colourOf, chestLabel, sceneOf, boundsOf, fit, vbText,
-  cutAway, calloutLines, nearestInDirection, houseTotals, legendOf, stackWhere, anchorOf, zoomAt, fillWords, whereOf, cropAround, facetMapUrl, markersOf, facetMapNote, markerRadii,
+  cutAway, calloutLines, nearestInDirection, houseTotals, legendOf, stackWhere, anchorOf, zoomAt, fillWords, whereOf, whereTitle, cropAround, facetMapUrl, markersOf, facetMapNote, markerRadii,
   type Marker, type View, type Mode, type Box, type Colour, type ChestView, type Piece, type Prism, type Pt, type Dir } from "./house-map-model.mts";
 import type { ContainerLabel, HouseModel, HousesApiResponse, HouseApiResponse, HouseMapApiResponse, HouseMapEntry, HouseMapPutApiResponse, Room, Stack } from "./api-types.mts";
 
@@ -468,7 +468,7 @@ function whereSection(m: HouseModel): HTMLElement | null {
   if (!h || h.facet == null || !crop) return null;
   const url = facetMapUrl(h.facet, crop), got = facetImages.get(url);
   if (!got) void loadFacetImage(url);
-  const section = (...kids: HTMLElement[]): HTMLElement => box("section", { class: "map-where", id: "map-where", "aria-labelledby": "map-where-title" }, el("h3", { class: "t-md", id: "map-where-title" }, "Where"), ...kids);
+  const section = (...kids: HTMLElement[]): HTMLElement => box("section", { class: "map-where", id: "map-where", "aria-labelledby": "map-where-title" }, el("h3", { class: "t-md", id: "map-where-title" }, whereTitle(h)), ...kids);
   if (!got || got === "loading") return section(el("p", { class: "t-sm muted", id: "map-where-loading", "aria-busy": "true" }, "Loading the world map…"));
   if ("reason" in got) return section(el("p", { class: "t-sm muted", id: "map-where-note" }, facetMapNote(got.reason)));
   const c = got.crop, w = c.x1 - c.x0, ht = c.y1 - c.y0;
