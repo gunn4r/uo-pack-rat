@@ -295,18 +295,22 @@ function plinthBase(m: HouseModel, level: number, base: number): number | null {
   for (const c of m.cells) if (c.level === 0 && c.kind === "stair") lo = Math.min(lo, c.z);
   return lo === Infinity ? null : lo - base;
 }
-// A cell's piece of the plinth, from the plinth's foot up to the cell's bottom: its south (left) and east (right) sides where the tile beyond faces outward (no cell of the level there, or a floor or stair below the level's floor; a wall never does). Only cells standing at or above the floor get one; null for a cell without, and no function at all with no plinth. Known limit: each tile draws only its own sides, so at a notch in the footprint the wedge where two edges meet is not filled.
-type PlinthPiece = { lo: number; hi: number; s: boolean; e: boolean };
+// A cell's piece of the plinth, up to the cell's bottom: its south (left) and east (right) sides where the tile beyond faces outward (no cell of the level there, or a floor or stair below the level's floor; a wall never does), each down to that tile's height (the plinth's foot where there is none), so a sunken floor inside the house reads as a pit. Only cells standing at or above the floor get one; null for a cell without, and no function at all with no plinth. Known limit: each tile draws only its own sides, so at a notch in the footprint the wedge where two edges meet is not filled.
+type PlinthPiece = { lo: number; hi: number; s: number | null; e: number | null };
 function plinthOf(m: HouseModel, level: number, base: number, heights: ReadonlyMap<string, number>): ((c: Cell) => PlinthPiece | null) | null {
   const foot = plinthBase(m, level, base);
   if (foot == null) return null;
   const here = new Set<string>();
   for (const c of m.cells) if (c.level === level) here.add(`${c.x}:${c.y}`);
-  const out = (x: number, y: number): boolean => { const k = `${x}:${y}`, h = heights.get(k); return !here.has(k) || (h != null && h - base < 0); };
+  // How deep the side facing (x, y) runs, or null when that tile is not outward.
+  const depth = (x: number, y: number): number | null => { const k = `${x}:${y}`, h = heights.get(k); return !here.has(k) ? foot : h != null && h - base < 0 ? Math.max(foot, h - base) : null; };
   return (c) => {
     if (c.kind === "stair") return null;
-    const bottom = c.kind === "floor" ? c.z - base : 0, s = out(c.x, c.y + 1), e = out(c.x + 1, c.y);
-    return bottom >= 0 && bottom > foot && (s || e) ? { lo: foot, hi: bottom, s, e } : null;
+    const bottom = c.kind === "floor" ? c.z - base : 0;
+    if (bottom < 0) return null;
+    const side = (x: number, y: number): number | null => { const d = depth(x, y); return d != null && d < bottom ? d : null; };
+    const s = side(c.x, c.y + 1), e = side(c.x + 1, c.y);
+    return s != null || e != null ? { lo: Math.min(s ?? Infinity, e ?? Infinity), hi: bottom, s, e } : null;
   };
 }
 export function sceneOf(m: HouseModel, level: number, view: View): Scene {
@@ -320,7 +324,8 @@ export function sceneOf(m: HouseModel, level: number, view: View): Scene {
     if (level > 0 && c.level === level - 1 && (c.kind === "wall" || c.kind === "window")) below.push(pts(tilePolygon(x, y, c.z - base, view)));
     if (c.level !== level) continue;
     const pp = plinth?.(c);
-    if (pp) { const f = boxFaces(x, y, pp.lo, pp.hi - pp.lo, view); solids.push({ kind: "solid", x, y, z: pp.lo, cls: plinthCls, prism: { top: "", left: pp.s ? pts(f.left) : "", right: pp.e ? pts(f.right) : "" } }); }
+    if (pp) solids.push({ kind: "solid", x, y, z: pp.lo, cls: plinthCls, prism: { top: "",
+      left: pp.s != null ? pts(boxFaces(x, y, pp.s, pp.hi - pp.s, view).left) : "", right: pp.e != null ? pts(boxFaces(x, y, pp.e, pp.hi - pp.e, view).right) : "" } });
     if (c.kind === "floor" || c.kind === "stair") {
       const z = c.z - base, top = c.kind === "stair" ? stairTop(c, heights) : null, tz = top ? top.z - base : z;
       const steps = top ? [1, 3].map((k) => pts(band(x, y, tz, view, k / 4, (k + 1) / 4, top.acrossY))) : [];
