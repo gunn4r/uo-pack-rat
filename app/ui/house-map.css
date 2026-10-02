@@ -57,8 +57,8 @@
 .map-solids .w-tile { --tint: color-mix(in srgb, var(--color-map-tile) 65%, var(--color-map-wall)); }
 .map-wall { --fill: var(--tint, var(--color-map-wall)); }
 .map-wall.window { --fill: color-mix(in srgb, var(--color-map-window) 65%, var(--tint, var(--color-map-window))); }
-.map-lip { --fill: var(--tint, var(--color-map-lip)); }
-.map-solids :is(.map-wall, .map-lip) > polygon { stroke: var(--color-map-wall-edge); stroke-width: 1px; vector-effect: non-scaling-stroke; }
+.map-lip, .map-plinth { --fill: var(--tint, var(--color-map-lip)); }
+.map-solids :is(.map-wall, .map-lip, .map-plinth) > polygon { stroke: var(--color-map-wall-edge); stroke-width: 1px; vector-effect: non-scaling-stroke; }
 /* a stair raised to meet the tile it leads to: the stair colour, its sides shaded, its edges the floor grid's, the step bands on its top */
 .map-stair { --fill: var(--color-map-stair); }
 .map-solids .map-stair > polygon { stroke: var(--color-map-grid); stroke-width: 0.5; }

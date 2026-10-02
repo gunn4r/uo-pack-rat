@@ -284,9 +284,51 @@ test("[fast] house map: an interior staircase rises step by step, each step to t
   });
 });
 
+test("[fast] house map: with front steps the house stands on a plinth: its outward edge sides run down to the steps' height, at the game angle only, behind the steps", () => {
+  const m = buildHouseModel(foundationHouse(), td, []), base = m.levels[0]!.floorZ;
+  const low = Math.min(...m.cells.filter((c) => c.level === 0 && c.kind === "stair").map((c) => c.z)) - base;
+  assert.equal(low, -7);
+  const sc = sceneOf(m, 0, "angle"), plinths = sc.pieces.filter((p) => p.kind === "solid" && has(p.cls, "map-plinth"));
+  const at = (x: number, y: number) => plinths.find((p) => p.x === x - m.x0 && p.y === y - m.y0);
+  const faces = (x: number, y: number, z: number) => boxFaces(x - m.x0, y - m.y0, low, z - low, "angle");
+  // The south rim's outward side faces the steps, the east rim's the street; the corner shows both; each runs from the steps up to the rim.
+  const south = at(9004, 9009), east = at(9009, 9004), corner = at(9009, 9009);
+  assert.ok(south?.kind === "solid" && east?.kind === "solid" && corner?.kind === "solid");
+  assert.ok(has(south.cls, "w-stone"), south.cls);
+  assert.deepEqual(south.prism, { top: "", left: pts(faces(9004, 9009, 0).left), right: "" });
+  assert.deepEqual(east.prism, { top: "", left: "", right: pts(faces(9009, 9004, 0).right) });
+  assert.deepEqual(corner.prism, { top: "", left: pts(faces(9009, 9009, 0).left), right: pts(faces(9009, 9009, 0).right) });
+  assert.ok(plinths.every((p) => p.z === low));
+  // Inner cells and the back (north and west) edges, whose outward sides face away, get none.
+  assert.ok(plinths.every((p) => p.x + m.x0 === 9009 || p.y + m.y0 === 9009), "only the south and east edges");
+  // Back to front: each plinth before its rim's lip, and before the raised step in front of it.
+  const order = (pred: (p: (typeof sc.pieces)[number]) => boolean) => sc.pieces.findIndex(pred);
+  const sx = 9004 - m.x0, sy = 9009 - m.y0;
+  assert.ok(order((p) => p === south) < order((p) => p.kind === "solid" && has(p.cls, "map-lip") && p.x === sx && p.y === sy));
+  assert.ok(order((p) => p === south) < order((p) => p.kind === "solid" && has(p.cls, "map-stair") && p.x === sx && p.y === sy + 1));
+  assert.ok(!sceneOf(m, 0, "top").pieces.some((p) => "cls" in p && has(p.cls, "map-plinth")), "top-down: no plinth");
+  // Without steps there is no plinth.
+  const flat = { ...m, cells: m.cells.filter((c) => c.kind !== "stair") };
+  assert.ok(!sceneOf(flat, 0, "angle").pieces.some((p) => "cls" in p && has(p.cls, "map-plinth")));
+  assert.ok(!sceneOf(vault(), 0, "angle").pieces.some((p) => "cls" in p && has(p.cls, "map-plinth")));
+  assert.ok(!sceneOf(buildHouseModel(stairHouse(), td, []), 0, "angle").pieces.some((p) => "cls" in p && has(p.cls, "map-plinth")), "an interior staircase starts at the floor: nothing to stand on");
+});
+
+test("[fast] house map: a level's bounds hold the plinth's bottom and a raised stair's top", () => {
+  const m = buildHouseModel(foundationHouse(), td, []);
+  const cell = (x: number, y: number) => m.cells.find((c) => c.level === 0 && c.x === x && c.y === y)!;
+  // An east rim tile and a stair far to its west: the rim's plinth runs 7 below it, lower on screen than anything else.
+  const plinth = { ...m, cells: [cell(9009, 9004), cell(9000, 9010)] };
+  assert.ok(boundsOf(plinth, 0, "angle").y + boundsOf(plinth, 0, "angle").h >= project(10, 5, -7, "angle")[1] + W);
+  // A stair at the floor beside a tile 20 higher rises to it, a cut wall's height above that.
+  const stair = cell(9004, 9010), high = { ...cell(9004, 9009), y: 9011, z: stair.z + 20, lip: false };
+  const raised = { ...m, cells: [stair, high] }, z = stair.z + 20 - m.levels[0]!.floorZ;
+  assert.ok(boundsOf(raised, 0, "angle").y <= project(9004 - m.x0, 9010 - m.y0, z + 6, "angle")[1] - W);
+});
+
 test("[fast] house map: walls and the foundation's lip take their material's colour family: a wooden stall is wood, the stone rim stone", () => {
   const m = buildHouseModel(foundationHouse(), td, []), sc = sceneOf(m, 0, "angle");
-  const at = (x: number, y: number) => sc.pieces.filter((p) => p.kind === "solid" && p.x === x - m.x0 && p.y === y - m.y0).map((p) => ("cls" in p ? p.cls : ""));
+  const at = (x: number, y: number) => sc.pieces.filter((p) => p.kind === "solid" && !has(p.cls, "map-plinth") && p.x === x - m.x0 && p.y === y - m.y0).map((p) => ("cls" in p ? p.cls : ""));
   const one = (x: number, y: number, ...want: string[]) => { const c = at(x, y); assert.equal(c.length, 1, `${x}, ${y}`); assert.ok(want.every((w) => has(c[0]!, w)), `${x}, ${y}: ${c[0]}`); };
   one(9003, 9003, "map-wall", "w-wood");
   for (const [x, y] of [[9000, 9005], [9009, 9005], [9005, 9000], [9005, 9009]] as const) one(x, y, "map-lip", "w-stone");

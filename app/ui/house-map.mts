@@ -158,12 +158,12 @@ function sv(tag: string, attrs: Record<string, string>, ...kids: SVGElement[]): 
   e.append(...kids);
   return e;
 }
-// A box as its two shaded sides (the stylesheet darkens them) and its top.
+// A box as its two shaded sides (the stylesheet darkens them) and its top (a plinth has none).
 function prismEl(cls: string, p: Prism): SVGElement {
   const g = sv("g", { class: cls });
   if (p.left) g.append(sv("polygon", { class: "side-l", points: p.left }));
   if (p.right) g.append(sv("polygon", { class: "side-r", points: p.right }));
-  g.append(sv("polygon", { class: "top", points: p.top }));
+  if (p.top) g.append(sv("polygon", { class: "top", points: p.top }));
   return g;
 }
 function viewsOf(m: HouseModel): Map<number, ChestView> {
