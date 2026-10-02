@@ -254,6 +254,18 @@ test("[fast] scan schema: a house tile with a negative z (a boat or a basement) 
   assert.equal(validateScan({ ...bounded, house: { ...house, designMode: true } }).ok, true, "a newer adapter's key must not make this app drop the whole scan");
 });
 
+test("[fast] scan schema: a house-only file (kind \"house\", TazUO 2.12.0) carries a house and nothing else", () => {
+  const house = { facet: 1, capturedAt: "2026-10-01T12:00:00Z", at: { x: 100, y: 200 }, tiles: [[1, 100, 200, 7, 0]], items: [], containers: [] };
+  const only = { ...bounded, stats: {}, kind: "house", house };
+  assert.equal(validateScan(only).ok, true);
+  assert.equal(invalid({ ...only, kind: "inventory" }), "/kind expected one of [\"house\"]");
+  const { house: _, ...houseless } = only;
+  assert.equal(invalid(houseless), "/house is required in a house-only file");
+  for (const [key, value] of [["roots", [{ serial: 1, kind: "backpack", name: "Backpack", opened: true }]], ["containers", { 1: { serial: 1, root: 1 } }], ["items", [{ serial: 2, container: 1, nameSource: "opl" }]], ["equipped", [{ serial: 3, nameSource: "opl" }]]] as const) {
+    assert.equal(invalid({ ...only, [key]: value }), `/${key} must be empty in a house-only file`, key);
+  }
+});
+
 test("[fast] scan schema: house.containers lists five-integer rows, at most 5,000 (TazUO 2.11.0)", () => {
   const house = { facet: 1, capturedAt: "2026-10-01T12:00:00Z", at: { x: 100, y: 200 }, tiles: [[1, 100, 200, 7, 0]], containers: [[0x40000001, 0x0E7C, 100, 200, 7]] };
   assert.equal(validateScan({ ...bounded, house }).ok, true);

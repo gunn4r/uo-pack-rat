@@ -1,7 +1,8 @@
 # packrat-panel.py — ATTENDED in-game control panel for Pack Rat. A small window whose buttons run the
 # other Pack Rat scripts, so nobody has to find them in the Script Manager:
 #   Scan here               packrat-scanner.py
-#   Quick refresh           packrat-refresh.py
+#   Character refresh       packrat-character-refresh.py
+#   House map refresh       packrat-house-map-refresh.py (waits while a Put away runs: its file would read as the run's scan)
 #   Start / Stop bridge     packrat-bridge.py (the label follows whether it is running)
 #   Blacklist a container   packrat-blacklist.py
 #   Put away...             Put away (issue #131): files what lies directly in a container you pick with
@@ -14,7 +15,7 @@
 # Put away is one click, one run: it raises a target cursor, and the container picked (your backpack, a
 # bag at any depth in it, or a container in a chest on the ground within reach, which the app must have
 # labelled) is the run's only source; only what lies directly in it moves, never a bag in it or what the
-# bag holds (pick that bag next). The panel runs the quick refresh (your pack) or Scan here (a chest) and
+# bag holds (pick that bag next). The panel runs the character refresh (your pack) or Scan here (a chest) and
 # waits for its scan file, then drops a request into <data>/inbox/tazuo/putaway-request.json that names
 # only the container, this character and where it stands. The app (it must be running) plans the first
 # trip with its Organize rules, queues it for the bridge and answers in <data>/bridge/tazuo/putaway.json;
@@ -81,11 +82,13 @@ def rfc3339_now():
 
 
 ADAPTER_ID = "tazuo"
-ADAPTER_VERSION = "2.11.0"
+ADAPTER_VERSION = "2.12.0"
 
 SELF = "packrat-panel.py"
-SCANNER, REFRESH, BRIDGE, BLACKLIST = "packrat-scanner.py", "packrat-refresh.py", "packrat-bridge.py", "packrat-blacklist.py"
-LABELS = {SCANNER: "scan", REFRESH: "quick refresh", BRIDGE: "bridge", BLACKLIST: "blacklist"}
+SCANNER, REFRESH, BRIDGE, BLACKLIST = "packrat-scanner.py", "packrat-character-refresh.py", "packrat-bridge.py", "packrat-blacklist.py"
+HOUSE = "packrat-house-map-refresh.py"
+LABELS = {SCANNER: "scan", REFRESH: "character refresh", HOUSE: "house map refresh", BRIDGE: "bridge", BLACKLIST: "blacklist"}
+RUNNING = {SCANNER: "scan", REFRESH: "refresh", HOUSE: "house", BRIDGE: "bridge", BLACKLIST: "blacklist"}   # the Running line's words: all five fit the window
 
 DATA = data_dir()
 HEARTBEAT = os.path.join(DATA, "bridge", "tazuo", "panel.json")
@@ -122,7 +125,7 @@ MAX_DIR_ENTRIES = 5000    # names looked at per folder per refresh
 DEFAULT_HOTKEY = "CTRL+SHIFT+P"
 HOTKEY_MODS = ("CTRL", "ALT", "SHIFT")
 HOTKEY_KEY_RE = re.compile(r"[A-Z0-9]|F[1-9]|F1[0-2]")    # used with fullmatch
-W, H = 380, 308
+W, H = 380, 344
 TITLE_HUE, TEXT_HUE, OK_HUE = 1153, 996, 68
 
 state = {"done": False, "prefix": "", "character": "", "pending": {}, "was_running": set(),
@@ -201,6 +204,13 @@ def watch_pending():
         elif time.time() >= until:
             del state["pending"][name]
             say("Didn't start. Try again in a moment;", "if it persists, open Script Manager or relog.")
+
+
+def on_house():
+    if state["run"] is not None:
+        say("Put away is running;", "refresh the house map after it.")
+        return
+    start(HOUSE)
 
 
 def on_bridge():
@@ -309,8 +319,12 @@ def hotkey_text(hk):
     return "%s shows/hides this window." % hotkey_name(hk)
 
 
+HOUSE_FILE = re.compile(r"-house(-\d+)?\.json$")
+
+
 def last_scan():
-    """mtime of this character's newest scan file in the inbox or scans/ (names only, never opened)."""
+    """mtime of this character's newest scan file in the inbox or scans/ (names only, never opened). A house map
+    refresh's file (named "-house", in both folders) is not a scan: it reads nothing Put away waits for."""
     slug = re.sub(r"[^A-Za-z0-9_-]", "_", state["character"])
     if not slug:
         return None
@@ -322,7 +336,7 @@ def last_scan():
                 for i, e in enumerate(it):
                     if i >= MAX_DIR_ENTRIES:
                         break
-                    if pattern.match(e.name) and e.is_file(follow_symlinks=False):
+                    if pattern.match(e.name) and not HOUSE_FILE.search(e.name) and e.is_file(follow_symlinks=False):
                         mt = e.stat(follow_symlinks=False).st_mtime
                         newest = mt if newest is None or mt > newest else newest
         except Exception:
@@ -348,13 +362,13 @@ def refresh():
         except Exception:
             pass
     set_text("title", "Pack Rat - " + "".join(ch for ch in state["character"] if ch.isprintable())[:30])
-    running = [n for n in (SCANNER, REFRESH, BRIDGE, BLACKLIST) if is_running(n)]
+    running = [n for n in (SCANNER, REFRESH, HOUSE, BRIDGE, BLACKLIST) if is_running(n)]
     for name in state["was_running"] - set(running) - set(state["pending"]):
         if state["run"] is None and name not in state["quiet"]:   # a Put away says what it is doing itself
             say("The %s finished." % LABELS[name])
         state["quiet"].discard(name)
     state["was_running"] = set(running)
-    set_text("running", "Running: " + (", ".join(LABELS[n] for n in running) or "nothing"))
+    set_text("running", "Running: " + (", ".join(RUNNING[n] for n in running) or "nothing"))
     set_text("bridge_btn", "Stop bridge" if BRIDGE in running else "Start bridge")
     set_text("bridge", "Bridge: " + ("on" if BRIDGE in running else "off"))
     t = last_scan()
@@ -364,7 +378,7 @@ def refresh():
 
 
 def facet():
-    """The map the player stands on (0 Felucca .. 5 Ter Mur), as packrat-refresh.py reads it. None when
+    """The map the player stands on (0 Felucca .. 5 Ter Mur), as packrat-character-refresh.py reads it. None when
     the client cannot say."""
     get_map = getattr(API, "GetMap", None)
     try:
@@ -456,7 +470,7 @@ def cancel_put_away():
 
 
 def on_put_away():
-    """Put away's click: a target cursor for the container, then the scan (the quick refresh for your
+    """Put away's click: a target cursor for the container, then the scan (the character refresh for your
     pack, Scan here for a chest), then watch_put_away takes it from there. The bridge must be on: it
     carries the trips. While a run goes on, the button cancels it."""
     if state["run"] is not None:
@@ -479,7 +493,7 @@ def on_put_away():
         return
     script = REFRESH if source == "pack" else SCANNER
     if is_running(script) or script in state["pending"]:
-        say("The %s is running; try again after it." % LABELS[script])
+        say("The %s is running;" % LABELS[script], "try again after it.")
         return
     # The scan it waits for is one newer than this character's newest now: file times, never the clock.
     state["run"] = {"container": serial, "script": script, "phase": "scan", "since": time.time(), "before": last_scan(),
@@ -536,7 +550,7 @@ def watch_put_away():
         if t is not None and (run["before"] is None or t > run["before"]):
             ask(run)
         elif waited > SCAN_WAIT_S or (waited > START_CHECK_S and not is_running(run["script"]) and run["script"] not in state["pending"]):
-            end_put_away("Put away stopped: the %s saved nothing." % LABELS[run["script"]])
+            end_put_away("Put away stopped: the %s" % LABELS[run["script"]], "saved nothing.")
     elif run["phase"] == "reply":
         reply = read_json(PUT_AWAY_REPLY)
         if reply.get("id") != run["id"]:
@@ -601,9 +615,9 @@ def build_window():
     g = create_window()
     if g is None:
         return None
-    rows = [("title", "Pack Rat", TITLE_HUE, 14), ("running", "", TEXT_HUE, 160),
-            ("bridge", "", TEXT_HUE, 180), ("scan", "", TEXT_HUE, 200),
-            ("msg", "", OK_HUE, 222), ("msg2", "", OK_HUE, 240), ("hotkey", "", TEXT_HUE, 276)]
+    rows = [("title", "Pack Rat", TITLE_HUE, 14), ("running", "", TEXT_HUE, 196),
+            ("bridge", "", TEXT_HUE, 216), ("scan", "", TEXT_HUE, 236),
+            ("msg", "", OK_HUE, 258), ("msg2", "", OK_HUE, 276), ("hotkey", "", TEXT_HUE, 312)]
     for key, text, hue, y in rows:
         lbl = call(gumps("CreateGumpLabel"), text, hue)
         if lbl is None:
@@ -613,13 +627,14 @@ def build_window():
         lbl.SetPos(16, y)
         g.Add(lbl)
         ui[key] = lbl
-    buttons = [("scan_btn", "Scan here", lambda: start(SCANNER), 16, 44),
-               ("refresh_btn", "Quick refresh", lambda: start(REFRESH), 196, 44),
-               ("bridge_btn", "Start bridge", on_bridge, 16, 80),
+    buttons = [("refresh_btn", "Character refresh", lambda: start(REFRESH), 16, 44),
+               ("house_btn", "House map refresh", on_house, 196, 44),
+               ("scan_btn", "Scan here", lambda: start(SCANNER), 16, 80),
                ("blacklist_btn", "Blacklist a container", lambda: start(BLACKLIST), 196, 80),
-               ("away_btn", "Put away...", on_put_away, 16, 116),
-               ("login_btn", login_text(), on_login, 196, 116),
-               ("close_btn", "Close", on_close, 276, 268)]
+               ("bridge_btn", "Start bridge", on_bridge, 16, 116),
+               ("away_btn", "Put away...", on_put_away, 196, 116),
+               ("login_btn", login_text(), on_login, 16, 152),
+               ("close_btn", "Close", on_close, 276, 304)]
     for key, text, fn, x, y in buttons:
         b = call(gumps("CreateSimpleButton"), text, 88 if key == "close_btn" else 168, 28)
         if b is None:

@@ -333,12 +333,13 @@ def tazuo_api(world, backpack, bank=0, skills=None):
 
 class Control(object):
     """A script-built window or control: its text, children, and click / close callbacks."""
-    def __init__(self, text=""):
+    def __init__(self, text="", width=0, height=0):
         self.Text, self.children, self.IsDisposed, self.IsVisible = text, [], False, True
         self.on_click = self.on_disposed = None
+        self.X, self.Y, self.Width, self.Height = 0, 0, width, height
 
     def SetPos(self, x, y):
-        pass
+        self.X, self.Y = x, y
 
     def Add(self, child):
         self.children.append(child)
@@ -370,8 +371,8 @@ def tazuo_panel_api(world, loaded=(), prefix=""):
         while api.queue:
             api.queue.pop(0)()
 
-    def window(*args):
-        api.windows.append(Control())
+    def window(x, y, w, h, *args):
+        api.windows.append(Control(width=w, height=h))
         return api.windows[-1]
 
     api.PlayScript, api.StopScript, api.ProcessCallbacks = play, stop, process
@@ -390,7 +391,7 @@ def tazuo_panel_api(world, loaded=(), prefix=""):
     api.press = lambda key: api.hotkeys.get(key) and api.queue.append(api.hotkeys[key])
     api.Gumps = types.SimpleNamespace(
         CreateModernGump=window, CreateGumpLabel=lambda text, hue=0: Control(text),
-        CreateSimpleButton=lambda text, w, h: Control(text),
+        CreateSimpleButton=lambda text, w, h: Control(text, w, h),
         AddControlOnClick=lambda c, fn, *a: setattr(c, "on_click", fn),
         AddControlOnDisposed=lambda c, fn: setattr(c, "on_disposed", fn),
         AddGump=lambda g: None)

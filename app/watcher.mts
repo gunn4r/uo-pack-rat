@@ -6,7 +6,8 @@
 // acceptedName(doc, existingNames) — the scans/ filename for a v2 doc: <slug>-<stamp>.json, slug =
 // character with anything outside [A-Za-z0-9_-] turned to "_", stamp = scannedAt with ":" removed
 // and "-" removed from the date/time (kept only as the offset's sign, if any; "Z" stays "Z");
-// collisions against existingNames get "-2", "-3", ... appended before ".json".
+// a house-only file (kind "house") gets "-house" after the stamp; collisions against existingNames get
+// "-2", "-3", ... appended before ".json".
 //
 // ingestFile({path, scansDir, shard, log}) — read + JSON.parse the inbox file, upgradeScan it,
 // validateScan it, write the result into scansDir under its acceptedName (app/atomic-write.mts's
@@ -96,12 +97,14 @@ function stampFor(scannedAt: unknown): string {
 export interface NamedScan {
   character?: unknown;
   scannedAt: unknown;
+  kind?: unknown;
 }
 
 export function acceptedName(doc: NamedScan, existingNames: Set<string> = new Set()): string {
   const slug = String(doc.character ?? "").replace(/[^A-Za-z0-9_-]/g, "_");
   const stamp = stampFor(doc.scannedAt);
-  const base = `${slug}-${stamp}`;
+  // A house-only file (issue #10) keeps its "-house" suffix, so a name alone tells it from a scan (the TazUO panel's last-scan line reads names).
+  const base = `${slug}-${stamp}${doc.kind === "house" ? "-house" : ""}`;
   let name = `${base}.json`;
   for (let n = 2; existingNames.has(name); n++) name = `${base}-${n}.json`;
   return name;
@@ -110,7 +113,8 @@ export function acceptedName(doc: NamedScan, existingNames: Set<string> = new Se
 const escapeRegExp = (s: string): string => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
 // A file already in scansDir under this doc's accepted base name (with or without a "-2"/"-3"...
-// collision suffix) whose own character+scannedAt match doc's is the SAME scan already ingested —
+// collision suffix) whose own character+scannedAt (and kind: a house-only file of the same second is
+// another file, issue #10) match doc's is the SAME scan already ingested —
 // makes ingestFile idempotent against a stuck/duplicated inbox file. Reads scansDir directly (no
 // in-memory state), so this holds across a process restart too. Returns the matching filename or null.
 function findExistingAccepted(scansDir: string, doc: NamedScan): string | null {
@@ -124,7 +128,7 @@ function findExistingAccepted(scansDir: string, doc: NamedScan): string | null {
     let existingDoc: UnvalidatedScan;
     try { existingDoc = JSON.parse(readFileSync(join(scansDir, name), "utf8")) as UnvalidatedScan; }
     catch { continue; }   // unreadable/corrupt existing file — not a usable match
-    if (existingDoc.character === doc.character && existingDoc.scannedAt === doc.scannedAt) return name;
+    if (existingDoc.character === doc.character && existingDoc.scannedAt === doc.scannedAt && existingDoc.kind === doc.kind) return name;
   }
   return null;
 }

@@ -39,6 +39,13 @@ test("[fast] a character already in Pack Rat: the replace line names the contain
   assert.equal(scanPreview(doc, null).replaces, null, "no inventory loaded yet: nothing to say");
 });
 
+test("[fast] a house-only file (a house map refresh) says it only updates the house map, whoever is already in Pack Rat", () => {
+  const doc = { ...kestrel(), kind: "house" as const, stats: {}, roots: [], containers: {}, items: [], equipped: [], house: { capturedAt: "2026-10-01T12:00:00Z", at: { x: 1, y: 1 }, tiles: [] } };
+  for (const inv of [{ characters: { Kestrel: {} }, containers: {} }, { characters: {}, containers: {} }]) {
+    assert.equal(scanPreview(doc, inv).replaces, "A house map refresh: it only updates the house map.");
+  }
+});
+
 test("[fast] a scan that names another client than the one picked is one warning, in short names", () => {
   const p = scanPreview(kestrel(), null, { adapter: "classicuo-web", adapters: ADAPTERS });
   assert.deepEqual(p.warnings, ["This scan says it came from TazUO, but ClassicUO web client is picked above."]);
