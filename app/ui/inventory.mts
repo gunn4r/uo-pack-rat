@@ -570,7 +570,7 @@ function rowFor(i: number, cols: ColDef[]): HTMLTableRowElement {
   if (p.groups) {
     const g = p.groups[i];
     if (!g) return skeletonRow(cols, i);
-    tr = el("tr", { class: "item", "data-index": i, "aria-rowindex": i + 2, tabindex: "-1" }, ...cols.map((c) => groupCell(c, g)));
+    tr = el("tr", { class: "item", "data-serial": g.serial, "data-index": i, "aria-rowindex": i + 2, tabindex: "-1" }, ...cols.map((c) => groupCell(c, g)));   // the group's first stack is its tooltip
   } else {
     const it = p.rows[i];
     if (!it) return skeletonRow(cols, i);

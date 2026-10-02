@@ -35,6 +35,9 @@ class FakeElement {
   constructor(tagName: string) { this.tagName = tagName; }
   setAttribute(k: string, v: unknown): void { this.attrs[k] = String(v); }
   hasAttribute(k: string): boolean { return k in this.attrs; }
+  // dom.mts's itemTip sets data-serial through dataset and makes the item focusable
+  tabIndex = -1;
+  get dataset(): Record<string, string> { return new Proxy(this.attrs, { set: (a, k, v) => { a[`data-${String(k)}`] = String(v); return true; } }); }
   // attribute selectors only ("[a], [b]"), the form tipHostOf asks with
   closest(sel: string): FakeElement | null {
     const names = sel.split(",").map((s) => s.trim().slice(1, -1));

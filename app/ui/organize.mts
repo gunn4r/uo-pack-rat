@@ -6,7 +6,7 @@
 // /api/bridge/stop; saves go through ui/organize-data.mts). The rule editor drawer is ui/rule-editor.mts, Auto organize's ui/auto-organize.mts;
 // Containers' Label… is ui/containers.mts.
 import { state, bridge } from "./store.mts";
-import { $, el, toast, compactChildren } from "./dom.mts";
+import { $, el, itemTip, toast, compactChildren } from "./dom.mts";
 import { api } from "./api.mts";
 import { box, txt, button, badge, card, message, menu, select, tipWrap, table, type Kids } from "./components.mts";
 import { currentAdapter, BRIDGE_OFFLINE } from "./bridge.mts";
@@ -263,8 +263,10 @@ function tripEl(r: TripRow, nameOf: (s: number) => string, ruleName: (id: string
   const d = el("details", { class: "org-trip", "data-trip": r.index }, el("summary", {}, txt(r.text)));
   d.addEventListener("toggle", () => {
     if (!d.open || d.querySelector("table")) return;
-    d.append(table({ label: `Trip ${r.index}`, columns: [{ label: "Item" }, { label: "From → to" }, { label: "Rule" }],
-      rows: r.moves.map((m) => ({ attrs: { class: "org-move", "data-serial": m.serial }, cells: [moveName(m), moveWhere(m, nameOf), ruleName(m.ruleId)] })) }));
+    const moves = table({ label: `Trip ${r.index}`, columns: [{ label: "Item" }, { label: "From → to" }, { label: "Rule" }],
+      rows: r.moves.map((m) => ({ attrs: { class: "org-move" }, cells: [moveName(m), moveWhere(m, nameOf), ruleName(m.ruleId)] })) });
+    moves.querySelectorAll<HTMLElement>("tr.org-move").forEach((tr, i) => itemTip(tr, r.moves[i]!, { focus: false }));   // the item's tooltip on hover
+    d.append(moves);
   });
   return d;
 }
@@ -282,8 +284,8 @@ function carriedEl(plan: OrganizePlan): HTMLElement | null {
 // the plan stops asking for them.
 function failedEl(f: { index: number; steps: FailedStep[] }): HTMLElement {
   return message({ tone: "bad", title: `Trip ${f.index}: ${f.steps.length === 1 ? "1 item" : `${f.steps.length} items`} could not be moved`,
-    text: box("span", { class: "org-failed" }, ...f.steps.map((s) => box("span", { class: "org-failed-row", "data-serial": s.serial },
-      txt(`${s.name}: ${s.msg}`), button({ label: "Pin this item", size: "sm", variant: "ghost", onClick: () => { void pinItem(s); } })))) });
+    text: box("span", { class: "org-failed" }, ...f.steps.map((s) => itemTip(box("span", { class: "org-failed-row" },
+      txt(`${s.name}: ${s.msg}`), button({ label: "Pin this item", size: "sm", variant: "ghost", attrs: { "data-no-tip": "" }, onClick: () => { void pinItem(s); } })), s, { focus: false }))) });
 }
 async function pinItem(s: FailedStep): Promise<void> {
   const err = await saveConfig(pinnedWith(state.organize.config!, s.serial));

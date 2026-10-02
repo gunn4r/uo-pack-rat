@@ -167,10 +167,10 @@ test("[fast] applyItemQuery: paging — offset/limit slice rows, total and piece
 });
 
 test("[fast] applyItemQuery: group mode shapes rows as JSON-safe groups and sorts by amount/kind/name", () => {
-  const items = [mk({ name: "Bandage", kind: "bandage", amount: 30, location: { text: "A" } }), mk({ name: "Bandage", kind: "bandage", amount: 20, location: { text: "B" } }), mk({ name: "Arrow", kind: "ammo", amount: 5, location: { text: "A" } })];
+  const items = [mk({ serial: 11, name: "Bandage", kind: "bandage", amount: 30, location: { text: "A" } }), mk({ serial: 12, name: "Bandage", kind: "bandage", amount: 20, location: { text: "B" } }), mk({ serial: 13, name: "Arrow", kind: "ammo", amount: 5, location: { text: "A" } })];
   const byAmount = applyItemQuery(items, parseItemQuery(new URLSearchParams("group=1&sort=amount")), ctx) as ItemQueryGroups;
   assert.equal(byAmount.total, 2);
-  assert.deepEqual(byAmount.groups[0], { name: "Bandage", kind: "bandage", slot: items[0]!.slot, amount: 50, stacks: 2, locations: [["A", 30], ["B", 20]] });
+  assert.deepEqual(byAmount.groups[0], { name: "Bandage", kind: "bandage", slot: items[0]!.slot, amount: 50, stacks: 2, locations: [["A", 30], ["B", 20]], serial: 11 }, "serial: the first stack in the list's order, whose tooltip the group row shows");
   assert.ok(!("items" in byAmount.groups[0]!) && Array.isArray(byAmount.groups[0]!.locations));
   const byName = applyItemQuery(items, parseItemQuery(new URLSearchParams("group=1&sort=name")), ctx) as ItemQueryGroups;
   assert.deepEqual(byName.groups.map((g) => g.name), ["Arrow", "Bandage"]);

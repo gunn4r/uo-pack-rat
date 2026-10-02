@@ -6,8 +6,10 @@ import { EXTRA_COLS, rarityRank as rarityRankOf } from "../item-query.mts";
 import { state } from "./store.mts";
 import { resolveItems, rarityToken } from "./items.mts";
 import { showToast, tag, tooltip } from "./components.mts";
+import { createTipResolver, type TooltipItem } from "./item-tip.mts";
 
 export { EXTRA_COLS, colVal } from "../item-query.mts";
+export type { TooltipItem } from "./item-tip.mts";
 
 // $(selector[, root]) — every id/class this page looks up is one app/index.html itself defines, so
 // callers use `$(...)!` at the call site (this page's own house style, per the migration plan's DOM-
@@ -120,18 +122,6 @@ export function toast(text: string, cls = ""): void {
 
 // ---------------------------------------------------------------- in-game style tooltip
 
-// A hover tooltip's item shape is looser than vault-lib.mts's Item: it also renders the itemCache's
-// full records AND suit-builder candidates resolveItems() returns, which only ever carry {lines,
-// name, amount, rarity, location?} — declared locally because tipNode() reads exactly these fields
-// and nothing else, and a candidate that isn't a full Item still renders a tooltip today.
-export interface TooltipItem {
-  lines?: string[] | undefined;
-  name: string;
-  amount?: number | undefined;
-  rarity?: string | null | undefined;
-  tags?: string[] | undefined;
-  location?: { text: string } | undefined;
-}
 interface TooltipLine {
   text: string;
   color: string | null;
@@ -186,14 +176,33 @@ export function tipNode(it: TooltipItem): HTMLDivElement {
     foot.length ? el("div", { class: "tip-foot t-sm" }, ...foot) : null);
 }
 
-// The one item tooltip (#tip, always a dark subtree): shown 400 ms after the pointer settles on anything
-// carrying data-serial (the Inventory's rows, the Suit Builder's pieces), or after a row has had keyboard
-// focus for 400 ms (showItemTip). pointer-events: none, so it never takes the pointer from the table.
-// A region inside a host marked data-no-tip (a row's action buttons) counts as off the item.
+// The one item tooltip (#tip, always a dark subtree): shown 400 ms after the pointer settles on anything carrying
+// data-serial, or after an item has had keyboard focus for 400 ms (showItemTip). It hides on leave, on Esc, when the
+// item leaves the page, and on a scroll (a keyboard tooltip follows its item instead: focusing a row scrolls it into
+// view). pointer-events: none, so it never takes the pointer. A region inside a host marked data-no-tip (a row's
+// action buttons) counts as off the item, and an item whose own pop or menu is open (aria-expanded) shows none.
+// Inside an open modal dialog (the top layer) it moves into the dialog, so it is drawn above it.
 const TIP_DELAY = 400;
-// tipAnchor is the focused row a keyboard tooltip belongs to (set as soon as focus asks for one, so a
-// stray pointer event while it waits cannot cancel it); null for a pointer tooltip.
-let tipTimer = 0, tipSerial: number | null = null, tipAnchor: HTMLElement | null = null;
+const tips = createTipResolver(state.itemCache, async (serial) => (await resolveItems([serial]))[serial]);
+// itemTip(node, item): `node` shows the item's tooltip on hover and, unless `focus` is false, after 400 ms of keyboard
+// focus (it is made focusable if it is not). Every screen that draws an item wires it through here: the record it
+// drew is shown as it is when it carries its tooltip lines, else the item is looked up by serial once (item-tip.mts).
+export function itemTip<T extends HTMLElement>(node: T, item: TooltipItem & { serial: number }, { focus = true }: { focus?: boolean } = {}): T {
+  node.dataset.serial = String(item.serial);
+  tips.register(node, item);
+  if (focus) {
+    if (node.tabIndex < 0) node.tabIndex = 0;
+    node.addEventListener("focus", () => { if (node.matches(":focus-visible")) showItemTip(item.serial, node); });
+    node.addEventListener("blur", () => hideItemTip());
+  }
+  return node;
+}
+// A new inventory: a serial no lookup found before may be found now.
+export const forgetTipMisses = (): void => tips.forget();
+// tipAnchor is the focused item a keyboard tooltip belongs to (set as soon as focus asks for one, so a stray pointer
+// event while it waits cannot cancel it); null for a pointer tooltip. tipHost is the item either one is for.
+let tipTimer = 0, tipSerial: number | null = null, tipAnchor: HTMLElement | null = null, tipHost: HTMLElement | null = null;
+let tipGone: MutationObserver | null = null;
 function tipEl(): HTMLElement { return $<HTMLElement>("#tip")!; }
 function placeAt(x: number, y: number): void {
   const tip = tipEl(), pad = 14, w = tip.offsetWidth, h = tip.offsetHeight;
@@ -202,35 +211,46 @@ function placeAt(x: number, y: number): void {
   if (top + h > innerHeight - 8) top = Math.max(8, innerHeight - h - 8);
   tip.style.left = `${Math.max(8, left)}px`; tip.style.top = `${top}px`;
 }
-// Resolve the serial's record (the cache, else GET /api/items/by-serial) and show it, unless the pointer
-// or focus has moved on by the time it resolves.
-function showSerial(serial: number, place: () => void): void {
-  const paint = (it: TooltipItem): void => {
-    if (tipSerial !== serial) return;
-    const tip = tipEl();
+const placeBy = (anchor: HTMLElement): void => { const r = anchor.getBoundingClientRect(); placeAt(r.left + 240, r.top - 6); };
+// The tooltip is for `host` now: watch for it leaving the page.
+function arm(host: HTMLElement, serial: number): void {
+  tipSerial = serial;
+  tipHost = host;
+  tipGone ??= new MutationObserver(() => { if (tipHost && !tipHost.isConnected) hideItemTip(); });
+  tipGone.observe(document.body, { childList: true, subtree: true });
+}
+// Resolve the host's record and show it, unless the pointer or focus has moved on by the time it resolves.
+function showSerial(host: HTMLElement, serial: number, place: () => void): void {
+  const paint = (it: TooltipItem | null): void => {
+    if (!it || tipSerial !== serial || tipHost !== host || !host.isConnected) return;
+    const tip = tipEl(), layer = host.closest("dialog[open]") ?? document.body;
+    if (tip.parentElement !== layer) layer.append(tip);
     tip.replaceChildren(tipNode(it));
     tip.style.display = "block";
     place();
   };
-  const cached = state.itemCache.get(serial);
-  if (cached) { paint(cached); return; }
-  resolveItems([serial]).then((found) => { const it = found[serial]; if (it) paint(it); });
+  const now = tips.resolve(host, serial);
+  if (now instanceof Promise) void now.then(paint); else paint(now);
 }
 export function hideItemTip(): void {
   clearTimeout(tipTimer);
   tipSerial = null;
+  tipHost = null;
+  tipGone?.disconnect();
   tipEl().style.display = "none";
   if (tipAnchor) { tipAnchor.removeAttribute("aria-describedby"); tipAnchor = null; }
 }
-// The tooltip for a keyboard-focused row: after 400 ms, beside the row's Name cell.
+const popOpen = (host: HTMLElement): boolean => host.getAttribute("aria-expanded") === "true";
+// The tooltip for a keyboard-focused item: after 400 ms, beside it.
 export function showItemTip(serial: number, anchor: HTMLElement): void {
   hideItemTip();
-  tipSerial = serial;
+  if (popOpen(anchor)) return;
+  arm(anchor, serial);
   tipAnchor = anchor;
   tipTimer = setTimeout(() => {
     if (!anchor.isConnected || document.activeElement !== anchor) return;
     anchor.setAttribute("aria-describedby", "tip");
-    showSerial(serial, () => { const r = anchor.getBoundingClientRect(); placeAt(r.left + 240, r.top - 6); });
+    showSerial(anchor, serial, () => placeBy(anchor));
   }, TIP_DELAY) as unknown as number;
 }
 // The data-serial host whose tooltip the pointer over `target` asks for, or null.
@@ -242,14 +262,18 @@ export function installTooltip(): void {
   let lastX = 0, lastY = 0;
   document.addEventListener("mouseover", (e) => {
     const host = tipHostOf(e.target as Element);
-    if (!host) { if (tipSerial != null && !tipAnchor) hideItemTip(); return; }
+    if (!host || popOpen(host)) { if (tipSerial != null && !tipAnchor) hideItemTip(); return; }
     const serial = +host.dataset.serial!;
-    if (serial === tipSerial) return;
+    if (serial === tipSerial && (host === tipHost || tipAnchor)) return;
     hideItemTip();
-    tipSerial = serial;
-    tipTimer = setTimeout(() => showSerial(serial, () => placeAt(lastX, lastY)), TIP_DELAY) as unknown as number;
+    arm(host, serial);
+    tipTimer = setTimeout(() => showSerial(host, serial, () => placeAt(lastX, lastY)), TIP_DELAY) as unknown as number;
   });
   document.addEventListener("mousemove", (e) => { lastX = e.clientX; lastY = e.clientY; if (tipEl().style.display === "block" && !tipAnchor) placeAt(lastX, lastY); });
   document.addEventListener("mouseout", (e) => { if (!tipAnchor && !tipHostOf(e.relatedTarget as Element | null)) hideItemTip(); });
   document.addEventListener("keydown", (e) => { if (e.key === "Escape") hideItemTip(); }, true);
+  document.addEventListener("scroll", () => {
+    if (tipSerial == null) return;
+    if (!tipAnchor) hideItemTip(); else if (tipEl().style.display === "block") placeBy(tipAnchor);
+  }, { capture: true, passive: true });
 }

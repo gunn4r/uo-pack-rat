@@ -1,6 +1,6 @@
 // ui/house-map.mts — the House map screen (#/map, #/map/<house id>; issue #10, spec section 4). It fetches the houses the scans captured (GET /api/houses) and every house's model (GET /api/houses/<id>), picks the deep-linked house (else the last one shown, else the one with the most chests; a deep link to a house that no longer exists falls back and the route is put back to #/map), and lays out three panes: levels and the player's own areas on the left (issue #10: drawn on the map by mouse or keyboard, named, renamed, recoloured, redrawn and deleted here), the map in the middle, the details on the right, and a chest's contents in a drawer beside them. Ground chests outside every drawn house are a house of their own on a plain grid. Every rule and number is ui/house-map-model.mts's; this module builds the DOM and the SVG and wires the events.
 import { state, bridge } from "./store.mts";
-import { $, el, safeColor, fmtN, toast } from "./dom.mts";
+import { $, el, itemTip, safeColor, fmtN, toast } from "./dom.mts";
 import { api } from "./api.mts";
 import { box, txt, button, segmented, pill, message, meter, keyValue, modalOpen, tipWrap, input, copyText, icon, kbd, menu, popover, closePopover, confirmDialog, select as selectEl } from "./components.mts";
 import { labelContainer } from "./containers.mts";
@@ -1167,26 +1167,25 @@ function treeOf(items: Item[], chest: number): Contents {
   if (tree?.items !== items || tree.chest !== chest) tree = { items, chest, contents: contentsOf(items, chest, isBag) };
   return tree.contents;
 }
-const titled = <E extends HTMLElement>(e: E, text: string): E => { e.title = text; return e; };
 function nodeEl(n: ContentsNode): HTMLElement {
   if (n.kind === "item") return itemRow(n.item);
   const serial = n.item.serial, group = el("details", { class: "map-bag" });
   group.open = !D?.closed.has(serial);
   group.addEventListener("toggle", () => { if (group.open) D?.closed.delete(serial); else D?.closed.add(serial); });
   group.append(
-    box("summary", { class: "map-bag-head", id: `map-drawer-bag-${serial}` }, icon("chevron-right", { size: "sm" }), titled(txt(n.item.name, "ellip strong map-bag-name"), n.item.name), txt(plural(n.count, "item"), "t-sm muted num")),
+    itemTip(box("summary", { class: "map-bag-head", id: `map-drawer-bag-${serial}` }, icon("chevron-right", { size: "sm" }), txt(n.item.name, "ellip strong map-bag-name"), txt(plural(n.count, "item"), "t-sm muted num")), n.item),
     box("div", { class: "map-bag-kids" }, ...n.kids.map(nodeEl)));
   return group;
 }
-// An item in two lines, the Inventory's own pieces: the name and tags, then the rarity, the properties and the resists. Cut text shows whole on hover. A click opens the item's menu.
+// An item in two lines, the Inventory's own pieces: the name and tags, then the rarity, the properties and the resists. Hovering or focusing it shows the item tooltip, which has everything a cut line leaves out. A click opens the item's menu.
 function itemRow(it: Item): HTMLElement {
   const name = (it.amount || 1) > 1 ? `${it.name} ×${it.amount.toLocaleString("en-US")}` : it.name;
   const props = propertyLines(it).filter((l) => !l.muted).map((l) => (l.value ? `${l.name} ${l.value}` : l.name)).join(" · ");
   const res = RESISTS.filter(([k]) => it.props[k]), rarity = rarityEl(it.rarity, "t-sm");
-  return box("button", { type: "button", class: "map-item", id: `map-drawer-item-${it.serial}`, "aria-haspopup": "menu", onclick: (e: Event) => itemMenu(e.currentTarget as HTMLElement, it) },
-    box("span", { class: "map-item-l1" }, titled(txt(name, "ellip map-item-name"), name), ...tagEls(it)),
-    rarity || props || res.length ? box("span", { class: "map-item-l2" }, rarity, props ? titled(txt(props, "ellip t-sm muted map-item-props"), props) : null,
-      res.length ? titled(box("span", { class: "map-item-res" }, ...res.map(([k, short, token]) => el("span", { style: `color:var(${token})` }, `${short.slice(0, 2)}${it.props[k]}`))), res.map(([k, short]) => `${short} ${it.props[k]}`).join(" · ")) : null) : null);
+  return itemTip(box("button", { type: "button", class: "map-item", id: `map-drawer-item-${it.serial}`, "aria-haspopup": "menu", onclick: (e: Event) => itemMenu(e.currentTarget as HTMLElement, it) },
+    box("span", { class: "map-item-l1" }, txt(name, "ellip map-item-name"), ...tagEls(it)),
+    rarity || props || res.length ? box("span", { class: "map-item-l2" }, rarity, props ? txt(props, "ellip t-sm muted map-item-props") : null,
+      res.length ? box("span", { class: "map-item-res" }, ...res.map(([k, short, token]) => el("span", { style: `color:var(${token})` }, `${short.slice(0, 2)}${it.props[k]}`))) : null) : null), it);
 }
 // Every item under the chest, in GET /api/items' 500-row pages, name order, each serial once; an answer for a chest no longer shown is dropped.
 async function loadDrawer(): Promise<void> {
