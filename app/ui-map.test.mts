@@ -2,7 +2,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { buildHouseModel } from "./house-model.mts";
-import { fixtureTileData, vaultHouse, roofHouse, courtyardHouse, castleHouse, foundationHouse, stairHouse } from "./house-fixture.mts";
+import { fixtureTileData, vaultHouse, roofHouse, courtyardHouse, castleHouse, foundationHouse, stairHouse, G } from "./house-fixture.mts";
 import type { Container } from "./vault-lib.mts";
 import type { HouseModel } from "./ui/api-types.mts";
 import { project, tilePolygon, boxFaces, pts, paintOrder, boundsOf, fit, zoomAt, vbText, anchorOf, W, chestViews, colourOf, legendOf, chestLabel, cutAway, calloutLines, houseTotals, pickHouse, PLAIN, chestCount, roomCounts, nearestInDirection, tiledataNote, stackWhere, plainGrid, sceneOf, drawnZs, CHEST_H, type ChestView } from "./ui/house-map-model.mts";
@@ -321,6 +321,28 @@ test("[fast] house map: with front steps the house stands on a plinth: its outwa
   assert.ok(!sceneOf(flat, 0, "angle").pieces.some((p) => "cls" in p && has(p.cls, "map-plinth")));
   assert.ok(!sceneOf(vault(), 0, "angle").pieces.some((p) => "cls" in p && has(p.cls, "map-plinth")));
   assert.ok(!sceneOf(buildHouseModel(stairHouse(), td, []), 0, "angle").pieces.some((p) => "cls" in p && has(p.cls, "map-plinth")), "an interior staircase starts at the floor: nothing to stand on");
+});
+
+test("[fast] house map: ground tiles at street level beside the steps are outside: the plinth runs unbroken along the rim, and they get none of their own", () => {
+  const h = foundationHouse();
+  const tiles = h.tiles.map((t): typeof t => (t[0] === G.stairs && (t[1] < 9004 || t[1] > 9005) ? [G.dirt, t[1], t[2], 0, 0] : t));
+  const m = buildHouseModel({ ...h, tiles }, td, []), sc = sceneOf(m, 0, "angle");
+  assert.deepEqual(m.cells.filter((c) => c.level === 0 && c.y === 9010).map((c) => c.kind).sort(), [...Array(8).fill("floor"), "stair", "stair"], "the step row: two stairs among ground tiles");
+  const plinths = sc.pieces.filter((p) => p.kind === "solid" && has(p.cls, "map-plinth"));
+  const at = (x: number, y: number) => plinths.find((p) => p.x === x - m.x0 && p.y === y - m.y0);
+  for (let x = 9000; x <= 9009; x++) { const p = at(x, 9009); assert.ok(p?.kind === "solid" && p.prism.left !== "", `the rim's south side at ${x}`); }
+  const corner = at(9009, 9009);
+  assert.ok(corner?.kind === "solid" && corner.prism.right !== "", "and the corner's east side");
+  assert.ok(!plinths.some((p) => p.y + m.y0 === 9010), "nothing on the ground tiles");
+});
+
+test("[fast] house map: an interior staircase is inside: with front steps too, no plinth is drawn within the walls", () => {
+  const h = stairHouse(), step = h.tiles.find((t) => t[0] === G.stairs)!;
+  const m = buildHouseModel({ ...h, tiles: [...h.tiles, ...[2002, 2003, 2004].map((x): typeof step => [G.stairs, x, 3008, 0, 0])] }, td, []);
+  const plinths = sceneOf(m, 0, "angle").pieces.filter((p) => p.kind === "solid" && has(p.cls, "map-plinth"));
+  assert.ok(plinths.length > 0, "the house stands on a plinth");
+  // The walls ring x 2000..2007, y 3000..3007; inside them, and on the north and west walls, every side faces in.
+  for (const p of plinths) { const x = p.x + m.x0, y = p.y + m.y0; assert.ok(x === 2007 || y === 3007, `a plinth at ${x}, ${y}`); }
 });
 
 test("[fast] house map: the plinth is one material, the ground level's most common lip family, whatever stands on each edge tile", () => {

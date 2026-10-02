@@ -47,10 +47,10 @@ export function boundsOf(m: HouseModel, level: number, view: View, room: Room | 
       if (py > y1) y1 = py;
     }
   };
-  const heights = heightsOf(m, level), foot = plinthBase(m, level, base);
+  const heights = heightsOf(m, level), plinth = plinthOf(m, level, base, heights);
   for (const c of m.cells) if (c.level === level && inRoom(c.x, c.y)) {
     const z = c.kind === "floor" || c.kind === "stair" ? c.z - base : 0, top = c.kind === "stair" ? stairTop(c, heights).z - base : z;
-    add(c.x, c.y, foot != null && c.kind !== "stair" ? Math.min(z, foot) : z, top + WALL_H);
+    add(c.x, c.y, plinth?.(c)?.lo ?? z, top + WALL_H);
   }
   for (const s of m.stacks) if (s.level === level && inRoom(s.x, s.y)) add(s.x, s.y, 0, (drawnZs(s, base).at(-1) ?? 0) + CHEST_H);
   if (x0 === Infinity) return { x: 0, y: 0, w: 4 * W, h: 4 * W };
@@ -282,37 +282,45 @@ function heightsOf(m: HouseModel, level: number): Map<string, number> {
   for (const c of m.cells) if (c.level === level && (c.kind === "floor" || c.kind === "stair")) { const k = `${c.x}:${c.y}`; out.set(k, Math.max(c.z, out.get(k) ?? -Infinity)); }
   return out;
 }
-// The ground level stands on a plinth down to its lowest stair (its front steps), above its floor; null on an upper level or with no stairs.
 // The plinth is one material: the most common family among the ground level's lip tiles (ties by name), else neutral (the plain lip colour).
 function plinthFamily(m: HouseModel): string {
   const n = new Map<string, number>();
   for (const c of m.cells) if (c.level === 0 && c.lip) n.set(c.family, (n.get(c.family) ?? 0) + 1);
   return [...n].sort((a, b) => b[1] - a[1] || (a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : 0))[0]?.[0] ?? "neutral";
 }
+// The ground level stands on a plinth down to its lowest stair (its front steps), above its floor; null on an upper level or with no stairs.
 function plinthBase(m: HouseModel, level: number, base: number): number | null {
   if (level !== 0) return null;
   let lo = Infinity;
   for (const c of m.cells) if (c.level === 0 && c.kind === "stair") lo = Math.min(lo, c.z);
   return lo === Infinity ? null : lo - base;
 }
+// A cell's piece of the plinth, from the plinth's foot up to the cell's bottom: its south (left) and east (right) sides where the tile beyond faces outward (no cell of the level there, or a floor or stair below the level's floor; a wall never does). Only cells standing at or above the floor get one; null for a cell without, and no function at all with no plinth. Known limit: each tile draws only its own sides, so at a notch in the footprint the wedge where two edges meet is not filled.
+type PlinthPiece = { lo: number; hi: number; s: boolean; e: boolean };
+function plinthOf(m: HouseModel, level: number, base: number, heights: ReadonlyMap<string, number>): ((c: Cell) => PlinthPiece | null) | null {
+  const foot = plinthBase(m, level, base);
+  if (foot == null) return null;
+  const here = new Set<string>();
+  for (const c of m.cells) if (c.level === level) here.add(`${c.x}:${c.y}`);
+  const out = (x: number, y: number): boolean => { const k = `${x}:${y}`, h = heights.get(k); return !here.has(k) || (h != null && h - base < 0); };
+  return (c) => {
+    if (c.kind === "stair") return null;
+    const bottom = c.kind === "floor" ? c.z - base : 0, s = out(c.x, c.y + 1), e = out(c.x + 1, c.y);
+    return bottom >= 0 && bottom > foot && (s || e) ? { lo: foot, hi: bottom, s, e } : null;
+  };
+}
 export function sceneOf(m: HouseModel, level: number, view: View): Scene {
   const base = m.levels[level]?.floorZ ?? 0;
   const yard = new Set(m.rooms.filter((r) => r.kind === "yard").map((r) => r.id));
   const below: string[] = [], floors: Scene["floors"] = [], reach: string[] = [], solids: Piece[] = [];
-  const heights = heightsOf(m, level), foot = view === "angle" ? plinthBase(m, level, base) : null, kinds = new Map<string, Cell["kind"]>();
-  if (foot != null) for (const c of m.cells) if (c.level === level) kinds.set(`${c.x}:${c.y}`, c.kind);
-  const plinth = foot != null ? `map-plinth w-${plinthFamily(m)}` : "";
-  // A side of the plinth shows where the tile beyond it (south on the left, east on the right) is outside the house or a stair.
-  const out = (x: number, y: number): boolean => { const k = kinds.get(`${x}:${y}`); return k == null || k === "stair"; };
+  const heights = heightsOf(m, level), plinth = view === "angle" ? plinthOf(m, level, base, heights) : null;
+  const plinthCls = plinth ? `map-plinth w-${plinthFamily(m)}` : "";
   for (const c of m.cells) {
     const x = c.x - m.x0, y = c.y - m.y0;
     if (level > 0 && c.level === level - 1 && (c.kind === "wall" || c.kind === "window")) below.push(pts(tilePolygon(x, y, c.z - base, view)));
     if (c.level !== level) continue;
-    const bottom = c.kind === "floor" || c.kind === "stair" ? c.z - base : 0;
-    if (foot != null && c.kind !== "stair" && bottom > foot) {
-      const s = out(c.x, c.y + 1), e = out(c.x + 1, c.y), f = boxFaces(x, y, foot, bottom - foot, view);
-      if (s || e) solids.push({ kind: "solid", x, y, z: foot, cls: plinth, prism: { top: "", left: s ? pts(f.left) : "", right: e ? pts(f.right) : "" } });
-    }
+    const pp = plinth?.(c);
+    if (pp) { const f = boxFaces(x, y, pp.lo, pp.hi - pp.lo, view); solids.push({ kind: "solid", x, y, z: pp.lo, cls: plinthCls, prism: { top: "", left: pp.s ? pts(f.left) : "", right: pp.e ? pts(f.right) : "" } }); }
     if (c.kind === "floor" || c.kind === "stair") {
       const z = c.z - base, top = c.kind === "stair" ? stairTop(c, heights) : null, tz = top ? top.z - base : z;
       const steps = top ? [1, 3].map((k) => pts(band(x, y, tz, view, k / 4, (k + 1) / 4, top.acrossY))) : [];
