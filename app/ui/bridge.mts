@@ -29,12 +29,13 @@ export const rootPos = (it: BridgeTarget): unknown => (it.root != null ? state.i
 // matching every route's response shape generally) so `r.ok ? r.id : r.error` below discriminates the
 // union properly — POST /api/bridge only ever sends this body on a 200 (api.mts throws for anything
 // else), so `ok` is always literally `true` on that path in practice.
-export async function sendBridge(action: string, it: BridgeTarget): Promise<(BridgeQueueApiResponse & { ok: true }) | { ok: false; error: string }> {
+// `pos` stands in for the root's scanned position: the House map highlights a chest no scan opened (issue #10) at the place its house capture saw it.
+export async function sendBridge(action: string, it: BridgeTarget, { pos }: { pos?: unknown } = {}): Promise<(BridgeQueueApiResponse & { ok: true }) | { ok: false; error: string }> {
   try {
     // name is required by BRIDGE_SCHEMA.command — it.name should always be set, but a falsy/missing
     // one used to serialize away entirely (JSON.stringify drops an undefined property), which the
     // server now rejects with a 400 instead of silently queuing a contract-violating line.
-    const r = await api<BridgeQueueApiResponse>("/api/bridge", { method: "POST", body: { action, serial: it.serial, name: it.name || "?", chain: chainOf(it), pos: rootPos(it), location: it.location?.text } });
+    const r = await api<BridgeQueueApiResponse>("/api/bridge", { method: "POST", body: { action, serial: it.serial, name: it.name || "?", chain: chainOf(it), pos: pos ?? rootPos(it), location: it.location?.text } });
     if (r.ok) bridge.pending.set(r.id, it.name);
     // `ok: true` here is the trust the function's own return type documents above, not a new runtime
     // check — this cast is compiler-only.
@@ -241,7 +242,7 @@ export function bridgeActionReason(action: "highlight" | "grab" | "goto", it: Br
 }
 // One bridge action from a row or the item peek: queued, and toasted as queued (the status poll toasts
 // the game's answer later).
-export async function runBridgeAction(action: "highlight" | "grab" | "goto", it: BridgeTarget): Promise<void> {
-  const r = await sendBridge(action, it);
+export async function runBridgeAction(action: "highlight" | "grab" | "goto", it: BridgeTarget, opts: { pos?: unknown } = {}): Promise<void> {
+  const r = await sendBridge(action, it, opts);
   toast(r.ok ? `${ACTION_LABELS[action]}: ${it.name} queued for ${bridge.character}` : r.error, r.ok ? "" : "bad");
 }

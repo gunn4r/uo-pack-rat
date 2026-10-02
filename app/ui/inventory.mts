@@ -19,13 +19,14 @@ import { optionsKeeping, colsFromPrefs, COLS_VERSION } from "./view-state.mts";
 import { relativeWhen } from "./messages.mts";
 import { txt, box, icon, button, searchInput, filterChip, token, pill, segmented, switchControl, popover, closePopover, rowActions, message, menu, input, nextId, copyText } from "./components.mts";
 import type { Kids, MenuItem, PopoverHandle } from "./components.mts";
-import { plural, queryParams, activeFilters, clearAll, matchLine, countFact, emptyCause, rowWindow, chunksToFetch, gridKey, colShort, colFull, groupColumns, COL_GROUPS, DEFAULT_COLS, ITEM_COLS, shortTier, rootName } from "./inv-model.mts";
+import { plural, splitSerial, queryParams, activeFilters, clearAll, matchLine, countFact, emptyCause, rowWindow, chunksToFetch, gridKey, colShort, colFull, groupColumns, COL_GROUPS, DEFAULT_COLS, ITEM_COLS, shortTier, rootName } from "./inv-model.mts";
 import type { FilterToken } from "./inv-model.mts";
 import type { ItemsApiResponse, UiPrefs } from "./api-types.mts";
 import { initPeek, openPeek, closePeek, peekOpen, peekSerial, peekRefresh } from "./peek.mts";
 import { openRuleEditor } from "./rule-editor.mts";
 import { openClassify } from "./kinds.mts";
 import { showItemTip, hideItemTip, tagChip } from "./dom.mts";
+export { splitSerial } from "./inv-model.mts";
 
 const CHUNK = 500;              // rows per GET /api/items request (the server's own cap)
 const NARROW = "(max-width: 1179px)";
@@ -219,11 +220,6 @@ function slotOptions(): Option[] {
 }
 function kindOptions(): Option[] {
   return keeping((state.facets?.kinds || []).map((k) => ({ value: k.name, label: k.name, count: k.count })), state.query.kind, String);
-}
-// "Metal Chest (0x700b0000)" → the name and its serial, drawn apart (the serial in faint mono).
-export function splitSerial(text: string): { name: string; serial: string } {
-  const m = text.match(/^(.*?)\s*\((0x[0-9a-f]+)\)(.*)$/i);
-  return m ? { name: `${m[1]}${m[3]}`, serial: m[2]! } : { name: text, serial: "" };
 }
 // The Location tree: each character's worn set, backpack and bank (with the bags inside them), then the
 // containers on the ground. A root's checkbox takes everything inside it; a bag's takes just that bag.

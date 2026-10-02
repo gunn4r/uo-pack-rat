@@ -47,8 +47,8 @@ async function blacklist(r: Container, name: string, n: number): Promise<void> {
 
 // Label… (Organize, issue #11): the container's name for Organize, an optional colour and Pinned. Labelling a
 // ground container is what puts it in Organize's reach; pinning keeps it out of every rule's targets, so a
-// pin or a removal that takes it off rules says which, first.
-async function labelContainer(r: Container): Promise<void> {
+// pin or a removal that takes it off rules says which, first. Also offered by the House map's panel (ui/house-map.mts).
+export async function labelContainer(r: Container): Promise<void> {
   if (!state.organize.config) { try { await loadOrganize(); } catch (e) { toast(errorText(e), "bad"); return; } }
   const cfg = state.organize.config!, had = cfg.labels[String(r.serial)];
   const shown = had?.name ?? (r.label || bagLabel(r));

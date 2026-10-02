@@ -18,10 +18,11 @@ import { forgetCharacter } from "./characters.mts";
 import { bridgeNote, renderDataDirNotice } from "./bridge.mts";
 import { adapterCopy } from "./adapter-copy.mts";
 import { copiedScanner, loadScanner, scannerCopy } from "./paste-scanner.mts";
-import { clientErrorMessage, dataDirNotice, errorText, hostErrorMessage, installedIntoNote, pathsFileNote, relativeWhen } from "./messages.mts";
+import { clientErrorMessage, uoFolderErrorMessage, dataDirNotice, errorText, hostErrorMessage, installedIntoNote, pathsFileNote, relativeWhen } from "./messages.mts";
 import { autostartNote, hotkeyLabel, panelControls } from "./tazuo-panel.mts";
 import { exportKinds, importKinds } from "./kinds.mts";
-import type { SetupApiResponse, InstallApiResponse, UpdateCheckApiResponse, BlacklistApiResponse, CleanupApiResponse, RetentionSetting, SettingsApiResponse, PanelPrefs, TazuoPanelApiResponse } from "./api-types.mts";
+import { tiledataNote } from "./house-map-model.mts";
+import type { SetupApiResponse, InstallApiResponse, UpdateCheckApiResponse, BlacklistApiResponse, CleanupApiResponse, RetentionSetting, SettingsApiResponse, PanelPrefs, TazuoPanelApiResponse, HousesApiResponse, TiledataFrom, HostPickFolderApiResponse, ApiError } from "./api-types.mts";
 import type { BlacklistEntry } from "../vault-lib.mts";
 
 // Reinstall's own confirmation and result — separate from the wizard's, since this row acts on the client
@@ -47,6 +48,7 @@ export async function renderSettings(setup?: SetupApiResponse): Promise<void> {
   root.replaceChildren(generalSection(), clientSection(setup), dataSection(setup), updatesSection(setup));
   void syncSettingsBlacklist();
   void syncPanelCard();
+  void syncUoFolderCard();
 }
 
 // ---------------------------------------------------------------- building blocks
@@ -144,7 +146,8 @@ function clientSection(setup: SetupApiResponse): HTMLElement {
         ...(() => { const n = r && autostartNote(r.autostart); return n ? [message({ tone: n.tone, text: n.text })] : []; })()] });
   }
   return sectionFlagged("set-client", "Game client", !setup.settings.client, box("div", { class: "card set-card" }, status, reinstallRow),
-    client?.adapter === "tazuo" && client.scriptsDir ? box("div", { class: "card set-card", id: "set-panel" }) : null);
+    client?.adapter === "tazuo" && client.scriptsDir ? box("div", { class: "card set-card", id: "set-panel" }) : null,
+    uoFolderCard(uoFrom, null));
 }
 
 // The bundled web scanner's version beside its Copy button, and a newer-than-copied hint the way the
@@ -180,6 +183,48 @@ function panelCard(r: TazuoPanelApiResponse): HTMLElement {
     row({ title: "Panel hotkey", control: c.hotkey, help: "Shows or hides the panel in game. A letter or digit needs a modifier, since the hotkey also fires while you type in chat.", below: [errFor("hotkey")] }));
 }
 
+
+// ---------------------------------------------------------------- UO folder (house map, issue #10)
+// The folder the house map reads tiledata.mul from: where it was found (TazUO's launcher, or set here) and, when there is none or it cannot be read, why (the map's own note), a path field with Choose a folder… in the desktop app, and Reset to automatic. GET /api/houses says where it came from; PUT /api/settings {uoFolder} checks the folder and saves it (its refusal never echoes the path). A refused path stays in the field. When GET /api/houses fails, the card still shows the field (and a save's refusal) with the last place it heard of. A re-render of the page (a scan landing, an update check) draws the card from that last place too, never blank, until GET /api/houses answers again.
+let uoHostPicker = true;
+let uoDraft: string | null = null;
+let uoFrom: TiledataFrom = { folder: null, source: null, reason: null };
+async function syncUoFolderCard(error: string | null = null): Promise<void> {
+  if (!$("#set-uofolder")) return;
+  try { uoFrom = (await api<HousesApiResponse>("/api/houses")).tiledataFrom; } catch { /* keep the last place heard of */ }
+  $<HTMLElement>("#set-uofolder")?.replaceWith(uoFolderCard(uoFrom, error));
+}
+function uoFolderCard(from: TiledataFrom, error: string | null): HTMLElement {
+  const path = input({ value: uoDraft ?? state.settings?.uoFolder ?? "", placeholder: "The folder holding tiledata.mul", attrs: { id: "set-uofolder-path", class: "input set-uofolder-path" } });
+  path.addEventListener("input", () => { uoDraft = path.value; });
+  const save = async (folder: string | null): Promise<void> => {
+    try { state.settings = (await api<SettingsApiResponse>("/api/settings", { method: "PUT", body: { uoFolder: folder } })).settings; uoDraft = null; void syncUoFolderCard(); }
+    catch (e) { void syncUoFolderCard(uoFolderErrorMessage(e)); }
+  };
+  const pick = async (): Promise<void> => {
+    try {
+      const r = await api<HostPickFolderApiResponse>("/api/host/pick-folder", { method: "POST", body: { title: "Choose your Ultima Online folder" } });
+      if (r.path) { uoDraft = r.path; await save(r.path); }
+    } catch (e) {
+      // 501: no desktop shell (a bare `node vault-server.mts`), so the typed path is the way in; 504: the shell never answered.
+      if ((e as ApiError).status === 501) { uoHostPicker = false; void syncUoFolderCard(); }
+      else showToast(hostErrorMessage(e, "Could not open the folder picker"), "bad");
+    }
+  };
+  const help = from.folder
+    ? el("span", {}, from.source === "settings" ? "Set here:" : "Found through TazUO's launcher:", el("span", { class: "mono ellip set-uofolder-where", title: from.folder }, from.folder))
+    : "The folder holding tiledata.mul, which tells the house map's walls, floors and materials apart.";
+  const note = tiledataNote(from.reason);
+  const set = !!state.settings?.uoFolder;
+  return box("div", { class: "card set-card", id: "set-uofolder" },
+    row({ title: "UO folder (house map)", label: "set-uofolder-path", help,
+      control: uoHostPicker || set ? box("div", { class: "set-inline" },
+        uoHostPicker ? button({ label: "Choose a folder…", icon: "folder", attrs: { id: "set-uofolder-pick" }, onClick: () => { void pick(); } }) : null,
+        set ? button({ label: "Reset to automatic", variant: "ghost", attrs: { id: "set-uofolder-reset" }, onClick: () => { uoDraft = null; void save(null); } }) : null) : null,
+      below: [box("div", { class: "set-inline" }, path, button({ label: "Save", attrs: { id: "set-uofolder-save" }, onClick: () => { const v = path.value.trim(); void save(v || null); } })),
+        note ? message({ tone: "warn", text: note }) : null,
+        error ? message({ tone: "bad", title: "Could not save the UO folder", text: error }) : null] }));
+}
 
 // ---------------------------------------------------------------- Data: folders, danger zone
 function pathRow(label: string, which: string, path: string, canOpen: boolean): HTMLElement {
