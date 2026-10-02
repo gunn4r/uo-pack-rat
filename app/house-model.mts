@@ -238,14 +238,17 @@ function directionOf(dx: number, dy: number): string {
 }
 
 // Greedy cover per level: candidates are free floor and stair cells plus teleporter tiles, none holding a stack or a block; each reaches the stacks within REACH tiles (Chebyshev) in its own room, or in no room (an alcove or doorway cell) from any room, worked out once. Each round picks the candidate reaching the most uncovered containers, ties to the smaller total Manhattan distance, then y, then x; it stops when no candidate reaches anything. Spots are then numbered by level, room (none last) and pick order, so letters run room by room. Sets each covered stack's spot and direction.
-// A house is itself an Item whose graphic is its multi id, standing at the plot centre (ServUO Scripts/Multis/HousePlacementTool.cs: every customizable house uses a multi id from 0x13EC to 0x147B); a static of the same id would be named as furniture (0x147B reads as a telescope). But ServUO's Telescope addon (Scripts/Items/Addons/Telescope.cs) has a real component with graphic 0x147B, so only ONE item is dropped: the in-range one nearest the centre of the tiles' x/y bounds, ties to the lowest serial.
+// A house is itself an Item whose graphic is its multi id, standing at the plot centre (ServUO Scripts/Multis/HousePlacementTool.cs: every customizable house uses a multi id from 0x13EC to 0x147B); a static of the same id would be named as furniture (0x147B reads as a telescope). But ServUO's Telescope addon (Scripts/Items/Addons/Telescope.cs) has a real component with graphic 0x147B, so only ONE item is dropped: the in-range one nearest the centre of the tiles' x/y bounds, ties to the lowest serial, and only when it is within HOUSE_ITEM_CENTRE_RADIUS of that centre.
+const HOUSE_MULTI_MIN = 0x13ec, HOUSE_MULTI_MAX = 0x147b;
+const HOUSE_ITEM_CENTRE_RADIUS = 2;   // the bounds include steps and the rim, so their centre sits up to about a tile off the multi origin, and an even-sized plot has a .5 centre
 function houseItemSerial(house: HouseSource): number | null {
-  const cand = house.items.filter((i) => i[1] >= 0x13ec && i[1] <= 0x147b);
+  const cand = house.items.filter((i) => i[1] >= HOUSE_MULTI_MIN && i[1] <= HOUSE_MULTI_MAX);
   if (!cand.length || !house.tiles.length) return null;
   const xs = house.tiles.map((t) => t[1]), ys = house.tiles.map((t) => t[2]);
   const cx = (Math.min(...xs) + Math.max(...xs)) / 2, cy = (Math.min(...ys) + Math.max(...ys)) / 2;
   const d = (i: HouseItem) => (i[2] - cx) ** 2 + (i[3] - cy) ** 2;
-  return cand.reduce((a, b) => (d(b) < d(a) || (d(b) === d(a) && b[0] < a[0]) ? b : a))[0];
+  const best = cand.reduce((a, b) => (d(b) < d(a) || (d(b) === d(a) && b[0] < a[0]) ? b : a));
+  return Math.max(Math.abs(best[2] - cx), Math.abs(best[3] - cy)) <= HOUSE_ITEM_CENTRE_RADIUS ? best[0] : null;
 }
 
 function spotsOf(cells: Cell[], at: Map<string, Cell>, stackAt: Map<string, Stack[]>, furniture: Furniture[], levels: Level[]): Spot[] {

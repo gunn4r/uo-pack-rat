@@ -463,7 +463,9 @@ class TazUOScanner(DataDir, unittest.TestCase):
             return [r[0] for r in self.scans("tazuo")[-1]["house"]["items"]]
         # footprint x/y 5..16, centre 10.5; the multi at the centre goes, a telescope piece and a stool stay
         self.assertEqual(run([(0x40000040, 0x147B, 10, 10), (0x40000041, 0x147B, 6, 14), (0x40000042, 0x0A2A, 12, 12)]), [0x40000041, 0x40000042])
-        self.assertEqual(run([(0x40000041, 0x147B, 6, 14)]), [], "a lone in-range item is the house")
+        self.assertEqual(run([(0x40000041, 0x147B, 6, 14)]), [0x40000041], "a lone in-range item far from the centre is a telescope, not the house")
+        self.assertEqual(run([(0x40000041, 0x147B, 12, 12)]), [], "one or two tiles off the centre is still the house")
+        self.assertEqual(run([(0x40000051, 0x147B, 11, 11), (0x40000050, 0x147B, 10, 10)]), [0x40000051], "a tie drops the lower serial, whatever the order")
 
     def test_every_container_inside_the_house_is_listed_with_its_place_and_the_far_ones_are_not_opened(self):
         w = World(); home(w); w.multis = house_tiles(5, 5, 12, 12)
@@ -594,7 +596,7 @@ class TazUORefresh(DataDir, unittest.TestCase):
 class TazUOHouseMapRefresh(DataDir, unittest.TestCase):
     SCRIPT = adapter_path("tazuo", "packrat-house-map-refresh.py")
     SHARED = ("data_dir", "write_json_atomic", "rfc3339_now", "read_blacklist", "sysmsg", "is_container", "facet", "house_capture")
-    CONSTANTS = ("ADAPTER_ID", "CAPABILITIES", "HOUSE_RADIUS", "HOUSE_MAX_TILES", "HOUSE_ITEM_REACH", "HOUSE_MULTI_IDS", "HOUSE_MAX_ITEMS", "HOUSE_MAX_CONTAINERS",
+    CONSTANTS = ("ADAPTER_ID", "CAPABILITIES", "HOUSE_RADIUS", "HOUSE_MAX_TILES", "HOUSE_ITEM_REACH", "HOUSE_MULTI_IDS", "HOUSE_ITEM_CENTRE_RADIUS", "HOUSE_MAX_ITEMS", "HOUSE_MAX_CONTAINERS",
                  "BLACKLIST", "HOUSE_LEFT_OUT", "HOUSE_TOO_LARGE", "OUT_DIR", "CONTAINER_RE", "NOT_A_CONTAINER_RE", "NOT_A_CONTAINER_GRAPHICS",
                  "TRASH_RE", "WEARABLE_RE", "CONTAINER_GRAPHICS")
 

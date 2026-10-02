@@ -201,7 +201,9 @@ test("[fast] house model: the house's own multi item (nearest the centre) is dro
   const items = (extra: HouseItem[]) => buildHouseModel({ ...h, items: [...h.items, ...extra] }, tiles, []).furniture.map((f) => f.serial).sort();
   const base = [0x40000101, 0x40000103];
   assert.deepEqual(items([[0x40000f01, 0x147b, 1009, 2009, 7], [0x40000f02, 0x147b, 1003, 2012, 7], [0x40000f03, 0x0a2a, 1005, 2005, 7]]), [...base, 0x40000f02, 0x40000f03]);
-  assert.deepEqual(items([[0x40000f02, 0x147b, 1003, 2012, 7]]), base, "a lone in-range item is the house");
+  assert.deepEqual(items([[0x40000f02, 0x147b, 1003, 2012, 7]]), [...base, 0x40000f02], "a lone in-range item far from the centre is a telescope, not the house");
+  assert.deepEqual(items([[0x40000f02, 0x147b, 1010, 2011, 7]]), base, "one or two tiles off the centre is still the house");
+  assert.deepEqual(items([[0x40000f02, 0x147b, 1009, 2009, 7], [0x40000f01, 0x147b, 1008, 2009, 7]]), [...base, 0x40000f02], "a tie drops the lower serial, whatever the order");
 });
 
 test("[fast] house model: a door item splits rooms and stays out of the hallway like a door tile", () => {

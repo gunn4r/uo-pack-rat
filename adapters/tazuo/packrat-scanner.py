@@ -83,6 +83,7 @@ HOUSE_RADIUS = 40        # tiles searched around the player for the house's tile
 HOUSE_MAX_TILES = 20000  # a capture larger than this is left out rather than bloating the scan
 HOUSE_ITEM_REACH = 18    # the server sends ground items within about this many tiles
 HOUSE_MULTI_IDS = (0x13EC, 0x147B)   # custom-house multi ids (ServUO HousePlacementTool.cs)
+HOUSE_ITEM_CENTRE_RADIUS = 2   # the bounds include steps and the rim, so their centre sits up to about a tile off the multi origin, and an even-sized plot has a .5 centre
 HOUSE_MAX_ITEMS = 5000   # the scan schema's cap on house items: past it the nearest are kept, so the scan file still validates
 HOUSE_MAX_CONTAINERS = 5000  # the scan schema's cap on the house's containers: past it the nearest are kept
 SCAN_GROUND = True       # False = backpack/bank only, never touch containers on the ground
@@ -297,12 +298,14 @@ def house_capture(px, py):
 
     def nearest(row):
         return (max(abs(row[2] - px), abs(row[3] - py)), row[0])
-    # The house itself is an Item whose graphic is its multi id (ServUO Scripts/Multis/HousePlacementTool.cs: 0x13EC to 0x147B), standing at the plot centre. ServUO's Telescope addon (Scripts/Items/Addons/Telescope.cs) also has a component with graphic 0x147B, so only the one in-range item nearest the centre of the tiles' x/y bounds is dropped (ties to the lowest serial).
+    # The house itself is an Item whose graphic is its multi id (ServUO Scripts/Multis/HousePlacementTool.cs: 0x13EC to 0x147B), standing at the plot centre. ServUO's Telescope addon (Scripts/Items/Addons/Telescope.cs) also has a component with graphic 0x147B, so only the one in-range item nearest the centre of the tiles' x/y bounds is dropped (ties to the lowest serial), and only when it is within HOUSE_ITEM_CENTRE_RADIUS of that centre.
     multis = [r for r in items if HOUSE_MULTI_IDS[0] <= r[1] <= HOUSE_MULTI_IDS[1]]
     if multis:
         xs, ys = [c[0] for c in keep], [c[1] for c in keep]
         cx, cy = (min(xs) + max(xs)) / 2, (min(ys) + max(ys)) / 2
-        items.remove(min(multis, key=lambda r: ((r[2] - cx) ** 2 + (r[3] - cy) ** 2, r[0])))
+        best = min(multis, key=lambda r: ((r[2] - cx) ** 2 + (r[3] - cy) ** 2, r[0]))
+        if max(abs(best[2] - cx), abs(best[3] - cy)) <= HOUSE_ITEM_CENTRE_RADIUS:
+            items.remove(best)
     items.sort(key=nearest)
     HOUSE_LEFT_OUT.update(i[0] for i in items[HOUSE_MAX_ITEMS:])
     house["items"] = sorted(items[:HOUSE_MAX_ITEMS])
