@@ -1442,12 +1442,13 @@ test("[slow] House map Stack plan: lists every container of the dense vault, a c
     await page.keyboard.press("Enter");
     await page.waitForSelector(`#map-plan .sp-card.sel[data-stack="${next}"]`);
     // the page never scrolls sideways and the level pills show whole: stacked at 1000 px, the levels pane folded at 1440
+    // A CI runner's screen may be smaller than 1440 px (fitWindow keeps the window inside it): the levels pane folds only when the window really is in the 1100–1799 px band.
     for (const width of [1000, 1440]) {
-      await fitWindow(app, page, { width, height: 768 });
-      if (width === 1440) await page.waitForFunction(() => getComputedStyle(document.querySelector(".map-side")!).visibility === "hidden", undefined, { timeout: 10_000 });   // the levels pane folds so the cards fit
+      const real = await fitWindow(app, page, { width, height: 768 });
+      if (real.width >= 1100 && real.width < 1800) await page.waitForFunction(() => getComputedStyle(document.querySelector(".map-side")!).visibility === "hidden", undefined, { timeout: 10_000 });   // the levels pane folds so the cards fit
       const l = await sideways(page);
-      assert.deepEqual([l.page, l.body], [0, 0], `nothing scrolls sideways at ${width} px`);
-      assert.deepEqual(await clippedPills(page), [], `the level pills show whole at ${width} px`);
+      assert.deepEqual([l.page, l.body], [0, 0], `nothing scrolls sideways at ${real.width} px`);
+      assert.deepEqual(await clippedPills(page), [], `the level pills show whole at ${real.width} px`);
     }
     // back to the game angle: the drawing again, the selection kept
     await page.locator('#map-view [data-value="angle"]').click();
