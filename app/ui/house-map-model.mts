@@ -424,7 +424,7 @@ export function fitLabel(name: string, maxW: number, measure: (text: string) => 
   while (lo < hi) { const mid = (lo + hi + 1) >> 1; if (measure(`${name.slice(0, mid).trimEnd()}…`) + LABEL_PAD <= maxW) lo = mid; else hi = mid - 1; }
   return lo >= 3 ? `${name.slice(0, lo).trimEnd()}…` : null;
 }
-// Where a pill goes on the map pane (px from its top left): centred on the anchor, sitting `lift` px below it at its foot (a dot: centred on it). An anchor outside the pane hides the pill and is left as it is. Otherwise the whole pill stays MARGIN px inside the pane, its top at least MARGIN down, and clear of `avoid` (the zoom buttons' box): a pill that would overlap it moves left of it.
+// Where a pill goes on the map pane (px from its top left): centered on the anchor, sitting `lift` px below it at its foot (a dot: centered on it). An anchor outside the pane hides the pill and is left as it is. Otherwise the whole pill stays MARGIN px inside the pane, its top at least MARGIN down, and clear of `avoid` (the zoom buttons' box): a pill that would overlap it moves left of it.
 export const PILL_MARGIN = 8;
 export interface PillBox { left: number; top: number; hidden: boolean }
 export function placePill(anchor: { x: number; y: number }, size: { w: number; h: number }, pane: { w: number; h: number }, lift: number, dot: boolean, avoid: { x0: number; y0: number; x1: number; y1: number } | null): PillBox {
@@ -590,14 +590,16 @@ export function positionWords(index: number, count: number): string {
   return `${ordinal(index + 1)} from bottom`;
 }
 // A query's matches in a house: each matching container (in the house's stack order, top first within a stack) with its height in the stack and its matching items by name (amounts added up, in name order, the first of each name standing for it in a tooltip); each stack's matching containers; the matches' total amount; and the matches outside the house.
-export interface HitLine { name: string; amount: number; item: Item }
+// A match as the search reads it: GET /api/items?fields=hits's row (a whole Item will do too).
+export type Hit = Pick<Item, "serial" | "name" | "amount" | "root" | "container"> & { location?: { text: string } | undefined };
+export interface HitLine { name: string; amount: number; item: Hit }
 export interface HitChest { serial: number; stack: Stack; index: number; position: string; amount: number; lines: HitLine[] }
-export interface HouseHits { chests: HitChest[]; stacks: Map<string, HitChest[]>; serials: Set<number>; amount: number; outside: Item[] }
+export interface HouseHits { chests: HitChest[]; stacks: Map<string, HitChest[]>; serials: Set<number>; amount: number; outside: Hit[] }
 const amountOf = (it: Pick<Item, "amount">): number => it.amount || 1;
-export function houseHits(m: HouseModel, items: readonly Item[], containers: Tree): HouseHits {
+export function houseHits(m: HouseModel, items: readonly Hit[], containers: Tree): HouseHits {
   const where = new Map<number, { stack: Stack; index: number; order: number }>();
   m.stacks.forEach((stack, order) => stack.serials.forEach((serial, index) => where.set(serial, { stack, index, order })));
-  const by = new Map<number, Item[]>(), outside: Item[] = [];
+  const by = new Map<number, Hit[]>(), outside: Hit[] = [];
   for (const it of items) {
     const f = floorContainerOf(it, containers);
     if (f == null || !where.has(f)) { outside.push(it); continue; }
@@ -631,16 +633,20 @@ export const searchCount = (amount: number, containers: number): string => `${fm
 const fmtCount = (n: number): string => n.toLocaleString("en-US");
 // A pinned callout's heading: the stack, and how many of its containers match ("1 container" for a stack of one).
 export const calloutHead = (s: Pick<Stack, "letter" | "serials">, matches: number): { title: string; count: string } => ({ title: `Stack ${s.letter}`, count: s.serials.length > 1 ? `${matches} of ${s.serials.length} match` : "1 container" });
-// The pinned callouts sit in one row across the map pane (px), in their stacks' left-to-right order, so no two leaders cross: as many as fit at least CALLOUT_MIN px wide, up to `max` (the stacks given first win, the rest are a "+N more stacks" chip at the row's end), each at most CALLOUT_W wide, the row centred over its stacks and kept `margin` px inside the pane, clear of the zoom buttons on the right (`reserve`). Each leader leaves its card's foot over its stack, at least 16 px in from the card's sides.
-export const CALLOUT_W = 248, CALLOUT_MIN = 150, CALLOUT_MAX = 3;
+// The pinned callouts sit in one row across the map pane (px), in their stacks' left-to-right order, so no two leaders cross: as many as fit at least CALLOUT_MIN px wide, up to `max` (the stacks given first win, the rest are a "+N more stacks" chip at the row's end), each at most CALLOUT_W wide, the row centered over its stacks and kept `margin` px inside the pane, clear of the zoom buttons on the right (`reserve`). Each leader leaves its card's foot over its stack, at least 16 px in from the card's sides. Stacks in one screen column (anchors within COLUMN px across) go higher anchor first, so the left card's leader ends above the right card's and they never cross.
+export const CALLOUT_W = 248, CALLOUT_MIN = 150, CALLOUT_MAX = 3, COLUMN = 8;
 export interface CalloutSlot { id: string; left: number; width: number; leaderX: number }
-export function calloutRow(anchors: ReadonlyArray<{ id: string; x: number }>, paneW: number, { max = CALLOUT_MAX, gap = 8, margin = 12, reserve = 52, chipW = 120 }: { max?: number; gap?: number; margin?: number; reserve?: number; chipW?: number } = {}): { cards: CalloutSlot[]; more: { left: number; width: number; count: number } | null } {
+export function calloutRow(anchors: ReadonlyArray<{ id: string; x: number; y?: number }>, paneW: number, { max = CALLOUT_MAX, gap = 8, margin = 12, reserve = 52, chipW = 120 }: { max?: number; gap?: number; margin?: number; reserve?: number; chipW?: number } = {}): { cards: CalloutSlot[]; more: { left: number; width: number; count: number } | null } {
   const room = Math.max(0, paneW - 2 * margin - reserve);
   const fits = (k: number): boolean => k * CALLOUT_MIN + (k - 1) * gap + (k < anchors.length ? chipW + gap : 0) <= room;
   let k = Math.min(max, anchors.length);
   while (k > 1 && !fits(k)) k--;
   if (!anchors.length) return { cards: [], more: null };
   const shown = anchors.slice(0, k).sort((a, b) => a.x - b.x), rest = anchors.length - k, chip = rest ? chipW + gap : 0;
+  for (let i = 0; i + 1 < shown.length; i++) {
+    const a = shown[i]!, b = shown[i + 1]!;
+    if (b.x - a.x < COLUMN && (b.y ?? 0) < (a.y ?? 0)) { shown[i] = b; shown[i + 1] = a; if (i > 0) i -= 2; }
+  }
   const width = Math.max(1, Math.min(CALLOUT_W, (room - chip - (k - 1) * gap) / k)), rowW = k * width + (k - 1) * gap + chip;
   const mid = shown.reduce((a, s) => a + s.x, 0) / k;
   const left0 = Math.max(margin, Math.min(mid - rowW / 2, margin + room - rowW));
@@ -674,17 +680,22 @@ export function houseIndex(houses: ReadonlyArray<Pick<HouseModel, "id" | "facet"
   for (const [key, c] of Object.entries(containers)) if (!out.has(+key) && onTheGround(c)) out.set(+key, plain);
   return out;
 }
-// The matches outside the house shown: those in another house (by house, linked from the note) and those anywhere else (by place: a backpack, a bank, a container on no map), each by its total amount, the most first.
-export interface Elsewhere { amount: number; houses: Array<HouseRef & { amount: number }>; places: Array<{ name: string; amount: number }> }
-const placeOf = (it: Item): string => it.location?.text.split(" › ")[0]?.trim() || "an unknown place";
-export function elsewhereOf(items: readonly Item[], index: ReadonlyMap<number, HouseRef>, containers: Tree, here: string | null): Elsewhere {
-  const houses = new Map<string, HouseRef & { amount: number }>(), places = new Map<string, number>();
+// The matches outside the house shown: those in another house (by house, linked from the note, with the containers there that hold them) and those anywhere else (by place: a backpack, a bank, a container on no map), each by its total amount, the most first.
+export interface Elsewhere { amount: number; houses: Array<HouseRef & { amount: number; serials: number[] }>; places: Array<{ name: string; amount: number }> }
+const placeOf = (it: Hit): string => it.location?.text.split(" › ")[0]?.trim() || "an unknown place";
+export function elsewhereOf(items: readonly Hit[], index: ReadonlyMap<number, HouseRef>, containers: Tree, here: string | null): Elsewhere {
+  const houses = new Map<string, HouseRef & { amount: number; serials: number[] }>(), places = new Map<string, number>();
   let amount = 0;
   for (const it of items) {
     const f = floorContainerOf(it, containers), h = f == null ? undefined : index.get(f);
     if (h?.id === here) continue;
     amount += amountOf(it);
-    if (h) { const e = houses.get(h.id); if (e) e.amount += amountOf(it); else houses.set(h.id, { ...h, amount: amountOf(it) }); }
+    if (h) {
+      const e = houses.get(h.id) ?? { ...h, amount: 0, serials: [] };
+      e.amount += amountOf(it);
+      if (!e.serials.includes(f!)) e.serials.push(f!);
+      houses.set(h.id, e);
+    }
     else places.set(placeOf(it), (places.get(placeOf(it)) ?? 0) + amountOf(it));
   }
   const most = <T extends { name: string; amount: number }>(l: T[]): T[] => l.sort((a, b) => b.amount - a.amount || a.name.localeCompare(b.name));

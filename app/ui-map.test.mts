@@ -552,10 +552,10 @@ test("[fast] house areas: a label fits about 92% of its piece's width: the whole
   assert.equal(LABEL_FIT, 0.92);
 });
 
-test("[fast] house areas: a pill is centred over its anchor and kept 8 px inside the pane, clear of the zoom buttons; an anchor off the pane hides it", () => {
+test("[fast] house areas: a pill is centered over its anchor and kept 8 px inside the pane, clear of the zoom buttons; an anchor off the pane hides it", () => {
   const pane = { w: 600, h: 400 }, size = { w: 80, h: 20 }, zoom = { x0: 560, y0: 8, x1: 592, y1: 140 };
-  assert.deepEqual(placePill({ x: 300, y: 200 }, size, pane, 7, false, zoom), { left: 260, top: 187, hidden: false }, "centred, its foot 7 px below the anchor");
-  assert.deepEqual(placePill({ x: 300, y: 200 }, { w: 10, h: 10 }, pane, 7, true, zoom), { left: 295, top: 195, hidden: false }, "a dot is centred on it");
+  assert.deepEqual(placePill({ x: 300, y: 200 }, size, pane, 7, false, zoom), { left: 260, top: 187, hidden: false }, "centered, its foot 7 px below the anchor");
+  assert.deepEqual(placePill({ x: 300, y: 200 }, { w: 10, h: 10 }, pane, 7, true, zoom), { left: 295, top: 195, hidden: false }, "a dot is centered on it");
   assert.deepEqual(placePill({ x: 10, y: 200 }, size, pane, 7, false, null), { left: 8, top: 187, hidden: false }, "the left edge");
   assert.deepEqual(placePill({ x: 590, y: 300 }, size, pane, 7, false, zoom), { left: 512, top: 287, hidden: false }, "the right edge, below the zoom buttons");
   assert.deepEqual(placePill({ x: 4, y: 3 }, size, pane, 7, false, null), { left: 8, top: 8, hidden: false }, "the top at least 8 px down");
@@ -840,6 +840,10 @@ test("[fast] house map search: the callouts sit in one row in their stacks' left
   assert.ok(narrow.cards.length < 3 && narrow.cards.every((c) => c.width >= CALLOUT_MIN), "a narrow pane shows fewer, never thinner than the minimum");
   assert.equal(narrow.more?.count, 3 - narrow.cards.length);
   assert.deepEqual(calloutRow([], 900), { cards: [], more: null });
+  // stacks in one screen column: the left card takes the higher anchor, so the two leaders never cross
+  const column = calloutRow([{ id: "low", x: 400, y: 500 }, { id: "high", x: 401, y: 300 }, { id: "far", x: 700, y: 100 }], 1200);
+  assert.deepEqual(column.cards.map((c) => c.id), ["high", "low", "far"]);
+  assert.deepEqual(calloutRow([{ id: "high", x: 400, y: 300 }, { id: "low", x: 403, y: 500 }], 1200).cards.map((c) => c.id), ["high", "low"]);
 });
 
 test("[fast] house map search: the view zooms to the matching stacks, at least 8 tiles across, with room above for the callouts", () => {
@@ -865,7 +869,7 @@ test("[fast] house map links: which house holds each container (a drawn house's 
   const items = [thing(1, "Ingot", 1, { root: 1, amount: 200 }), thing(2, "Ingot", 4, { root: 2, amount: 5 }), thing(3, "Ingot", 3, { root: 3, amount: 364, location: { text: "Ann's backpack › Pouch", kind: "backpack", character: "Ann", root: 3 } }), thing(4, "Ingot", 7, { root: 7 })];
   const e = elsewhereOf(items, idx, containers, "1-8-8");
   assert.equal(e.amount, 569);
-  assert.deepEqual(e.houses.map((h) => [h.id, h.amount]), [["1-5-5", 200], [PLAIN, 5]]);
+  assert.deepEqual(e.houses.map((h) => [h.id, h.amount, h.serials]), [["1-5-5", 200, [1]], [PLAIN, 5, [2]]], "each house with the containers there that hold the matches");
   assert.deepEqual(e.places, [{ name: "Ann's backpack", amount: 364 }]);
   assert.equal(outsideText(e), "569 more outside this house (Keep, Containers on the ground, and 1 more place).");
   assert.equal(outsideText(elsewhereOf([items[2]!], idx, containers, null)), "364 more outside this house (Ann's backpack).");
