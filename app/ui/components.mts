@@ -76,6 +76,7 @@ const ICONS = {
   "zoom-out": [["circle", { cx: "11", cy: "11", r: "7" }], P("m20 20-3.5-3.5M8 11h6")],
   fit: [P("M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5")],
   pencil: [P("M4 20h4L19 9l-4-4L4 16z"), P("M13.5 6.5l4 4")],
+  house: [P("M3 11 12 4l9 7"), P("M5 10v10h14V10M10 20v-6h4v6")],
   label: [P("M3 12V4h8l10 10-8 8z"), ["circle", { cx: "7.5", cy: "7.5", r: "1.5" }]],
 } satisfies Record<string, Shape[]>;
 export type IconName = keyof typeof ICONS;

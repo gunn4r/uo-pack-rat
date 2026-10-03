@@ -1,6 +1,6 @@
 // ui/containers.mts — the Inventory screen's Containers view (design spec 4.2): every scanned root
 // container in the same dense table the Items view uses, grouped by character with the ground
-// containers last, a Fill column (each container's Contents line), and a row "⋯" menu with "Show these items",
+// containers last, a Fill column (each container's Contents line), and a row "⋯" menu with "Show these items", "Show on map" (a container a house map holds: ui/house-links.mts, issue #10),
 // "Show missing items" (a root with items missing since its last scan, which also shows a badge; issue #99),
 // "Highlight in game" (ground containers; the bridge's highlight with the container as its target, issue #10),
 // "Label…" / "Edit label…" (ground containers not blacklisted; Organize, issue #11), "Blacklist…" (ground
@@ -19,6 +19,7 @@ import { loadOrganize, saveConfig } from "./organize-data.mts";
 import { withLabel, withoutLabel, pinNote, LABEL_COLOURS, fillTone } from "./organize-model.mts";
 import { plural } from "./inv-model.mts";
 import { reload } from "./app.mts";
+import { houseOfContainer, showOnMap } from "./house-links.mts";
 import { openedRoots } from "./roster.mts";
 import { showContainer, splitSerial } from "./inventory.mts";
 import { bridgeActionReason, runBridgeAction } from "./bridge.mts";
@@ -173,14 +174,15 @@ export function renderContainers(): void {
       const missing = inv.missingCounts[r.serial] || 0;
       // The container is the target, named in game as this row names it (no chain: a root has no parent).
       const target = { serial: +r.serial, name, container: null, root: r.root };
-      const more = button({ label: `Actions for ${label}`, icon: "more", iconOnly: true, variant: "ghost", size: "sm", onClick: () => menu(more, [
+      const more = button({ label: `Actions for ${label}`, icon: "more", iconOnly: true, variant: "ghost", size: "sm", onClick: () => { const home = houseOfContainer(+r.serial); menu(more, [
         { label: "Show these items", icon: "inventory", onSelect: () => showContainer(+r.serial) },
+        ...(home ? [{ label: "Show on map", icon: "house" as const, count: home.name, onSelect: () => showOnMap(home.id, +r.serial) }] : []),
         ...(r.kind === "ground" ? [{ label: "Highlight in game", icon: "highlight" as const, disabled: bridgeActionReason("highlight", target), onSelect: () => { void runBridgeAction("highlight", target); } }] : []),
         ...(missing ? [{ label: "Show missing items", onSelect: () => { void showMissing(r, label); } }] : []),
         ...(canLabel ? [{ label: lab ? "Edit label…" : "Label…", onSelect: () => { void labelContainer(r); } }] : []),
         ...(r.kind === "ground" ? [{ label: "Blacklist…", onSelect: () => { void blacklist(r, label, n); } }] : []),
         { label: "Forget…", danger: true, onSelect: () => { forget(r, label, n); } },
-      ], { label: `Actions for ${label}` }) });
+      ], { label: `Actions for ${label}` }); } });
       rows.push(el("tr", { "data-root": r.serial },
         el("td", {}, box("span", { class: "inv-loc" }, swatch, txt(name, "ellip"), txt(serial || `0x${(+r.serial).toString(16)}`, "mono faint"), lab?.pinned ? tag("Pinned") : null, bags ? txt(plural(bags, "container"), "t-sm muted") : null, missing ? tag(`${missing} missing`, "warn") : null)),
         el("td", {}, txt(KIND_NAMES[String(r.kind)] || String(r.kind || "Unknown"))),

@@ -25,6 +25,7 @@ import { loadOrganize, refreshPlaces } from "./organize-data.mts";
 import { showOrganize } from "./organize.mts";
 import { showMap, applyMapPrefs } from "./house-map.mts";
 import { parseMapHash } from "./house-map-model.mts";
+import { loadHouseLinks } from "./house-links.mts";
 import type { SettingsApiResponse, RulesApiResponse, SetupApiResponse, InventoryApiResponse, ProfilesApiResponse, UiPrefsApiResponse } from "./api-types.mts";
 
 // ---------------------------------------------------------------- data
@@ -89,6 +90,7 @@ export async function reload(): Promise<void> {
   // locations unlabelled, and the Organize screen says why when it is opened.
   const [inv, prof] = await Promise.all([get<InventoryApiResponse>("/api/inventory"), get<ProfilesApiResponse>("/api/profiles"), loadOrganize().catch(() => undefined)]);
   state.inv = inv.inventory; state.profiles = migrateProfiles(prof.profiles).profiles;
+  void loadHouseLinks();   // Show on map, on item rows and in the Containers view
   state.itemCache.clear();   // a rescan can move or drop a piece — stale by-serial lookups must not survive it
   forgetTipMisses();
   state.facets = state.inv.facets;
