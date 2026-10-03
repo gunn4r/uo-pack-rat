@@ -19,6 +19,7 @@ import { loadOrganize, saveConfig } from "./organize-data.mts";
 import { withLabel, withoutLabel, pinNote, LABEL_COLOURS, fillTone } from "./organize-model.mts";
 import { plural } from "./inv-model.mts";
 import { reload } from "./app.mts";
+import { openedRoots } from "./roster.mts";
 import { showContainer, splitSerial } from "./inventory.mts";
 import { bridgeActionReason, runBridgeAction } from "./bridge.mts";
 import type { ForgetApiResponse, MissingApiResponse, OrganizeConfig } from "./api-types.mts";
@@ -117,6 +118,15 @@ function fillCell(r: Container): HTMLElement {
   return box("span", { class: "cont-fill" }, meter(c.items, c.maxItems, { tone: fillTone({ items: c.items, max: c.maxItems }), label: `${c.items} of ${c.maxItems} items` }), txt(`${c.items}/${c.maxItems}`, "t-sm num"));
 }
 
+// #/containers/<Name> (issue #10): only the containers that character's scans opened, the ones the character
+// sheet counts; null lists every container.
+let scanner: string | null = null;
+export function showContainers(name: string | null): void {
+  scanner = name;
+  if (state.inv) renderContainers();
+}
+const showAll = (): HTMLElement => el("a", { href: "#/containers", id: "cont-show-all" }, "Show all");
+
 export function renderContainers(): void {
   const t = $<HTMLTableElement>("#cont-table")!;
   // load() always fetches the inventory before this is ever called — same non-null assumption every
@@ -125,8 +135,15 @@ export function renderContainers(): void {
   t.querySelector("colgroup")!.replaceChildren(...COLS.map(([, w]) => el("col", { style: `width:${w}px` })), el("col", { style: "width:48px" }));
   t.querySelector("thead")!.replaceChildren(el("tr", {}, ...COLS.map(([h, , num]) => el("th", { scope: "col", class: num ? "num" : "" }, txt(h))), el("th", { scope: "col" }, txt("Actions", "sr"))));
   const body = t.querySelector("tbody")!;
-  const roots = Object.values(inv.containers).filter((c) => c.parent == null);
+  const roots = scanner ? openedRoots(inv.containers, scanner) : Object.values(inv.containers).filter((c) => c.parent == null);
   const foot = $<HTMLElement>("#cont-foot")!;
+  if (!roots.length && scanner) {
+    body.replaceChildren(el("tr", {}, el("td", { colspan: COLS.length + 1 }, box("div", { class: "empty-state" }, el("h3", { class: "t-lg" }, `${scanner}'s scans opened no containers`), showAll()))));
+    const none = tableFoot("No containers");
+    none.id = "cont-foot";
+    foot.replaceWith(none);
+    return;
+  }
   if (!roots.length) {
     body.replaceChildren(el("tr", {}, el("td", { colspan: COLS.length + 1 }, box("div", { class: "empty-state" }, el("h3", { class: "t-lg" }, "Nothing scanned yet"), el("p", { class: "muted" }, txt("Containers show up here once a scan has opened them."))))));
     foot.replaceWith(tableFoot("No containers"));
@@ -175,7 +192,8 @@ export function renderContainers(): void {
     }
   }
   body.replaceChildren(...rows);
-  const next = tableFoot(plural(roots.length, "container"), plural(Object.values(inv.rootCounts).reduce((a, b) => a + b, 0), "item"), "Newest scan of a container wins; Forget one you emptied");
+  const counted = plural(roots.length, "container") + (scanner ? ` ${scanner}'s scans opened` : "");
+  const next = tableFoot(counted, plural((scanner ? roots.map((r) => inv.rootCounts[r.serial] || 0) : Object.values(inv.rootCounts)).reduce((a, b) => a + b, 0), "item"), scanner ? showAll() : null, "Newest scan of a container wins; Forget one you emptied");
   next.id = "cont-foot";
   foot.replaceWith(next);
 }
