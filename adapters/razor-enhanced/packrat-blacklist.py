@@ -115,7 +115,7 @@ def main():
     except Exception:
         serial = 0
     if not 0 < serial <= 0xFFFFFFFF:
-        sysmsg("Pack Rat: cancelled, nothing blacklisted.", INFO_HUE)
+        sysmsg("Pack Rat: canceled, nothing blacklisted.", INFO_HUE)
         return
     it = Items.FindBySerial(serial)
     own = set()

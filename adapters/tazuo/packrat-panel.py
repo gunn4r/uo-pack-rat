@@ -82,7 +82,7 @@ def rfc3339_now():
 
 
 ADAPTER_ID = "tazuo"
-ADAPTER_VERSION = "2.13.0"
+ADAPTER_VERSION = "2.14.0"
 
 SELF = "packrat-panel.py"
 SCANNER, REFRESH, BRIDGE, BLACKLIST = "packrat-scanner.py", "packrat-character-refresh.py", "packrat-bridge.py", "packrat-blacklist.py"
@@ -448,7 +448,7 @@ def picked_source(serial):
         except Exception:
             break
         it = call(getattr(API, "FindItem", None), c)
-    return None, "Pick your pack, a bag in it, or a chest."
+    return None, "Pick your pack, a container in it, or one on the ground."
 
 
 def write_stop():
@@ -466,7 +466,7 @@ def cancel_put_away():
     stop flag, so a trip under way halts after its current step."""
     trip = state["run"]["phase"] == "trip"
     write_stop()
-    end_put_away("Put away cancelled.", "The bridge stops after its current step." if trip else "")
+    end_put_away("Put away canceled.", "The bridge stops after its current step." if trip else "")
 
 
 def on_put_away():
@@ -501,7 +501,7 @@ def on_put_away():
     away_buttons()
     start(script)
     state["quiet"].add(script)
-    say("Put away: reading %s..." % ("your pack" if source == "pack" else "the chest"))
+    say("Put away: reading %s..." % ("your pack" if source == "pack" else "the container"))
 
 
 def end_put_away(line1, line2=""):

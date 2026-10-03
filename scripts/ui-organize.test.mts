@@ -377,7 +377,7 @@ test("[slow] the plan puts its reports first and keeps a 600-move trip list coll
       return { room: before(room, head), warn: before(warn, head), bags: before(bags, head), roomText: room.textContent, bagsText: bags.textContent };
     });
     assert.deepEqual([order.room, order.warn, order.bags], [true, true, true], "the room report, warnings and empty bags sit above the trip list");
-    assert.match(order.bagsText!, /1 empty bag in your labelled containers[\s\S]*Weapons \(in Jewellery\)/);
+    assert.match(order.bagsText!, /1 empty bag in your labeled containers[\s\S]*Weapons \(in Jewellery\)/);
     assert.match(order.roomText!, /Magery reagents: 10 items have no room \(95 slots needed, 85 free\)/);
     assert.equal(await page.locator(".org-trip").count(), 30);
     assert.equal(await page.locator(".org-move").count(), 0, "no move row is built until its trip is opened");
@@ -595,7 +595,7 @@ test("[slow] Auto organize: Simple proposes groups for the ticked chests, Accept
     await page.click("#org-auto");
     await page.waitForSelector(ready);
     assert.equal(await page.locator("#auto-containers input[type=checkbox]:checked").count(), 2, "both demo chests are offered and ticked");
-    assert.equal(await page.locator("#auto-containers .auto-scope").innerText(), "Only items in the chests you tick are organized; the rest are left where they are.", "under the chests, what ticking means");
+    assert.equal(await page.locator("#auto-containers .auto-scope").innerText(), "Only items in the containers you check are organized; the rest are left where they are.", "under the chests, what ticking means");
     assert.ok(await page.locator("#auto-proposal tr[data-group]").count() > 0, "the proposal lists its groups");
     assert.match(await page.locator("#auto-headline").innerText(), /^Labels 2 containers and writes \d+ rules?\./);
 

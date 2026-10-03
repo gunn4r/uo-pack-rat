@@ -479,7 +479,7 @@ class TazUOScanner(DataDir, unittest.TestCase):
         self.assertNotIn(0x40000050, self.opened(w))
         self.assertNotIn(0x40000050, [r["serial"] for r in s["roots"]])
         self.assertEqual(s["house"]["items"], [], "a container is never furniture")
-        self.assertIn("  house: 144 tiles, 0 pieces of furniture, 2 chests", w.messages)
+        self.assertIn("  house: 144 tiles, 0 pieces of furniture, 2 containers", w.messages)
 
     def test_a_trash_barrel_the_scan_knew_only_by_its_tooltip_is_not_in_the_houses_chest_list(self):
         w = World(); home(w); w.multis = house_tiles(5, 5, 12, 12); trash(w, cached=True)
@@ -517,7 +517,7 @@ class TazUOScanner(DataDir, unittest.TestCase):
         self.assertEqual(len(items), 5000)
         self.assertNotIn(0x40000042, [i[0] for i in items])
         self.assertTrue(self.root(s, CHEST)["opened"])
-        self.assertIn("  house: 144 tiles, 5000 pieces of furniture (1 farther one left out), 1 chest", w.messages)
+        self.assertIn("  house: 144 tiles, 5000 pieces of furniture (1 farther one left out), 1 container", w.messages)
 
     def test_a_ground_item_read_that_raises_writes_the_tiles_and_no_furniture_claim(self):
         w = World(); home(w); w.multis = house_tiles(5, 5, 12, 12)
@@ -535,7 +535,7 @@ class TazUOScanner(DataDir, unittest.TestCase):
         self.assertNotIn("items", s["house"], "an absent list erases nothing the app knew; an empty one would")
         self.assertNotIn("containers", s["house"], "an absent list erases nothing the app knew")
         self.assertTrue(self.root(s, CHEST)["opened"])
-        self.assertIn("  house: 144 tiles, furniture and chests not read", w.messages)
+        self.assertIn("  house: 144 tiles, furniture and containers not read", w.messages)
 
     def test_a_house_over_the_tile_cap_is_left_out_and_the_summary_says_so(self):
         w = World(); home(w)
@@ -663,7 +663,7 @@ class TazUOHouseMapRefresh(DataDir, unittest.TestCase):
         self.assertEqual(h["containers"], [[CHEST, 0x0E75, 11, 10, 0], [0x40000050, 0x0E7C, 15, 15, 7]])
         self.assertEqual(self.opened(w), [], "no container is opened")
         self.assertEqual(asked, [], "no tooltip or OPL request")
-        self.assertEqual(w.messages, ["Pack Rat house map refresh (Tester) -> %s: 144 tiles, 1 pieces of furniture, 2 chests" % os.path.basename(files[0])])
+        self.assertEqual(w.messages, ["Pack Rat house map refresh (Tester) -> %s: 144 tiles, 1 pieces of furniture, 2 containers" % os.path.basename(files[0])])
 
     def test_trash_blacklisted_containers_and_corpses_are_left_out_of_the_chests(self):
         w = World(); home(w); w.multis = house_tiles(5, 5, 12, 12)
@@ -694,7 +694,7 @@ class TazUOHouseMapRefresh(DataDir, unittest.TestCase):
         run_script(self.SCRIPT, w, api=api)
         [s] = self.scans("tazuo")
         self.assertNotIn("items", s["house"])
-        self.assertTrue(w.messages[0].endswith(": 144 tiles, furniture and chests not read"), w.messages)
+        self.assertTrue(w.messages[0].endswith(": 144 tiles, furniture and containers not read"), w.messages)
 
     def test_a_stop_writes_nothing(self):
         w = World(); home(w); w.multis = house_tiles(5, 5, 12, 12)
@@ -1027,7 +1027,7 @@ class RazorBlacklist(DataDir, unittest.TestCase):
         for target in (-1, 0, PACK, RING2):
             self.pick(w, target)
         self.assertFalse(os.path.exists(os.path.join(self.data, "scan-blacklist.json")))
-        self.assertEqual(w.messages.count("Pack Rat: cancelled, nothing blacklisted."), 2)
+        self.assertEqual(w.messages.count("Pack Rat: canceled, nothing blacklisted."), 2)
 
 
 if __name__ == "__main__":

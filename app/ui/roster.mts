@@ -1,6 +1,8 @@
-// ui/roster.mts — the Characters roster's rows, filter and sort, kept free of the DOM and of app.mts so
-// app/ui-characters.test.mts can import them.
+// ui/roster.mts — the Characters roster's rows, filter and sort, and the sheet's scan summary, kept free of the
+// DOM and of app.mts so app/ui-characters.test.mts can import them.
 import type { ResistFigure } from "./sheet.mts";
+import type { Container } from "../vault-lib.mts";
+import { plural } from "./inv-model.mts";
 
 export interface RosterRow {
   name: string;
@@ -28,4 +30,18 @@ export function rosterView(rows: RosterRow[], q: string, sort: RosterSort): Rost
 }
 // "110 · 60 · 20", with a dash for a number the scan didn't carry.
 export const triple = (xs: Array<number | null>): string => xs.map((x) => (x == null ? "–" : String(x))).join(" · ");
+
+// The containers a character's scans opened (issue #10): every root container they scanned, their backpack and
+// bank aside. The sheet counts them and links to the Containers view at #/containers/<Name>, which lists these.
+type Root = Pick<Container, "parent" | "kind" | "scannedBy">;
+export const openedRoots = <C extends Root>(containers: Readonly<Record<string, C>>, name: string): C[] =>
+  Object.values(containers).filter((r) => r.parent == null && r.scannedBy === name && r.kind !== "backpack" && r.kind !== "bank");
+export const openedHref = (name: string): string => `#/containers/${encodeURIComponent(name)}`;
+// The sheet's one summary line, "Scanned 7 h ago · 11 pieces worn · opened 37 containers", without the last part
+// when the scans opened none.
+export interface SheetMeta { scanned: string; worn: string; opened: { text: string; href: string } | null }
+export function sheetMeta(name: string, when: string, worn: number, containers: Readonly<Record<string, Root>>): SheetMeta {
+  const n = openedRoots(containers, name).length;
+  return { scanned: `Scanned ${when}`, worn: `${plural(worn, "piece")} worn`, opened: n ? { text: `opened ${plural(n, "container")}`, href: openedHref(name) } : null };
+}
 

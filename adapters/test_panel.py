@@ -236,7 +236,7 @@ class Panel(unittest.TestCase):
         def answer(trip):
             reqs.append(self.read("inbox", "tazuo", "putaway-request.json"))
             seen.setdefault("consent", api.shared.get("packrat_putaway"))
-            reply = {"id": reqs[-1]["id"], "ok": True, "msg": "Nothing to put away.", "detail": "1 with no rule stays in that bag"}
+            reply = {"id": reqs[-1]["id"], "ok": True, "msg": "Nothing to put away.", "detail": "1 with no rule stays in that container"}
             self.write(dict(reply, trip=trip, msg="Putting away 2 items...") if trip else reply, "bridge", "tazuo", "putaway.json")
 
         steps = [{"op": "put", "serial": 1, "ok": True, "msg": "put"}, {"op": "put", "serial": 2, "ok": True, "msg": "put"}]
@@ -260,7 +260,7 @@ class Panel(unittest.TestCase):
         self.assertIn("Cancel put away", seen["running"])
         self.assertIn("Putting away 2 items...", seen["trip"])
         self.assertIn("Put away done: 2 put away.", self.labels(api))
-        self.assertIn("1 with no rule stays in that bag", self.labels(api))
+        self.assertIn("1 with no rule stays in that container", self.labels(api))
         self.assertIn("Put away...", self.labels(api))
         self.assertEqual(api.shared["packrat_putaway"], "", "and not after it")
         self.assertEqual(w.calls, [], "the panel takes no action in the world")
@@ -276,9 +276,9 @@ class Panel(unittest.TestCase):
             w.clock.at(1.5 + k, lambda: said.append(self.labels(api)[4]))
         self.run_panel(w, api, until_s=len(picks) + 2)
         self.assertEqual(said[:-1], ["Put away: nothing picked.", "That is not a container.", "That is not a container.", "That is not a container.",
-                                     "That is a trash container.", "Pick your pack, a bag in it, or a chest.", "Stand next to it first.",
+                                     "That is a trash container.", "Pick your pack, a container in it, or one on the ground.", "Stand next to it first.",
                                      "That container is blacklisted."])
-        self.assertEqual(said[-1], "Put away: reading the chest...")
+        self.assertEqual(said[-1], "Put away: reading the container...")
         self.assertEqual([c for c in api.log if c[0] == "play"], [("play", "packrat-scanner.py")], "only the chest in reach starts a scan")
         self.assertFalse(os.path.exists(self.path("inbox", "tazuo", "putaway-request.json")))
 
@@ -356,7 +356,7 @@ class Panel(unittest.TestCase):
         w.clock.at(6, lambda: api.click(self.control(api, "Put away...")))
         w.clock.at(8, lambda: (api.running.remove("packrat-character-refresh.py"), self.write({}, "inbox", "tazuo", "Tester-20260930-120000-quick.json")))
         self.run_panel(w, api, until_s=12)
-        self.assertIn("Put away cancelled.", seen["cancelled"])
+        self.assertIn("Put away canceled.", seen["cancelled"])
         self.assertIn("Put away...", seen["cancelled"])
         self.assertTrue(os.path.isfile(self.path("bridge", "stop")), "a trip under way halts after its step")
         self.assertIn("Put away needs shared variables,", self.labels(api))

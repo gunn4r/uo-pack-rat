@@ -51,7 +51,7 @@ test("[fast] house areas: bad names, ids, levels, colours and rectangles are ref
   for (const id of ["", "a b", "x".repeat(25), 7, "a/b"]) assert.match(err({ name: "", bounds: B, areas: [area({ id: id as string })] }), /id/, String(id));
   assert.match(err({ name: "", bounds: B, areas: [area(), area({ name: "Other" })] }), /share the id a1/);
   for (const level of [-1, 1.5, 16, "0"]) assert.match(err({ name: "", bounds: B, areas: [area({ level: level as number })] }), /level/, String(level));
-  for (const color of ["area-0", "area-9", "#ff0000", "red", "var(--x)", null]) assert.match(err({ name: "", bounds: B, areas: [area({ color: color as string })] }), /colour must be one of area-1/, String(color));
+  for (const color of ["area-0", "area-9", "#ff0000", "red", "var(--x)", null]) assert.match(err({ name: "", bounds: B, areas: [area({ color: color as string })] }), /color must be one of area-1/, String(color));
   for (const rects of [[], "x", [{ x0: 101, y0: 201, x1: 100, y1: 203 }], [{ x0: 101, y0: 201, x1: 102 }], [{ x0: 101.5, y0: 201, x1: 102, y1: 203 }], [7]]) assert.ok(err({ name: "", bounds: B, areas: [area({ rects: rects as HouseArea["rects"] })] }), JSON.stringify(rects));
   assert.match(err({ name: "", bounds: B, areas: "x" }), /must be a list/);
   assert.match(err({ name: "", bounds: B, areas: [7] }), /must be an object/);

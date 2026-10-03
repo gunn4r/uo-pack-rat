@@ -87,7 +87,7 @@ function paint(): void { paintContainers(); paintProposal(); paintAccept(); }
 // unticked; the unusable ones in a closed list with the reason. Focus stays on the checkbox the player was on.
 function paintContainers(): void {
   const d = draft!, host = part("auto-containers"), p = d.proposal;
-  const head = [el("h3", { class: "t-md" }, "2. Containers it may use"), txt("Ticked containers are labelled for their group. Items are only ever taken from, and put into, labelled containers.", "t-sm muted")];
+  const head = [el("h3", { class: "t-md" }, "2. Containers it may use"), txt("Checked containers are labeled for their group. Items are only ever taken from, and put into, labeled containers.", "t-sm muted")];
   if (!p) { if (!host.childElementCount) host.replaceChildren(...head); return; }
   const focused = (document.activeElement as HTMLElement | null)?.dataset?.container;
   const chosen = new Set(d.containers ?? []);

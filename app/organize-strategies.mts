@@ -45,7 +45,7 @@ const SKILL_SCROLLS: RuleMatch = { query: q({ kind: ["scroll"] }), names: ["scro
 // crafting tools come in by a second filter the same way (issue #150). Decor and Quest & event items are in Other's
 // family: what they hold used to be Other, so short of chests they share its chest rather than take one from a group.
 const SIMPLE: readonly GroupDef[] = [
-  def("armour", "Armour", "armour", gear(["helmet", "chest", "arms", "hands", "legs"]), preset("armour-neck")),
+  def("armour", "Armor", "armour", gear(["helmet", "chest", "arms", "hands", "legs"]), preset("armour-neck")),
   def("jewelry", "Jewelry", "jewelry", gear(["ring", "bracelet", "neck", "earrings", "talisman"])),
   def("weapons", "Weapons", "weapons", preset("weapons")),
   def("other-gear", "Other gear", "other-gear", kinds("gear")),
@@ -68,12 +68,12 @@ const SIMPLE: readonly GroupDef[] = [
 // groups leave, by name, above the spells. Those go by school (issue #134: the rule's `school`, an exact spell name, since a name substring cannot tell them:
 // Magery's "curse" is inside Remove Curse and Curse Weapon), and Spell scrolls keeps any of no known school.
 const DETAILED: readonly GroupDef[] = [
-  def("armour-head", "Armour: head", "armour", preset("armour-head")),
-  def("armour-neck", "Armour: neck", "armour", preset("armour-neck")),
-  def("armour-chest", "Armour: chest", "armour", preset("armour-chest")),
-  def("armour-arms", "Armour: arms", "armour", preset("armour-arms")),
-  def("armour-hands", "Armour: hands", "armour", preset("armour-hands")),
-  def("armour-legs", "Armour: legs", "armour", preset("armour-legs")),
+  def("armour-head", "Armor: head", "armour", preset("armour-head")),
+  def("armour-neck", "Armor: neck", "armour", preset("armour-neck")),
+  def("armour-chest", "Armor: chest", "armour", preset("armour-chest")),
+  def("armour-arms", "Armor: arms", "armour", preset("armour-arms")),
+  def("armour-hands", "Armor: hands", "armour", preset("armour-hands")),
+  def("armour-legs", "Armor: legs", "armour", preset("armour-legs")),
   def("rings", "Rings", "jewelry", preset("rings")),
   def("bracelets", "Bracelets", "jewelry", preset("bracelets")),
   def("necklaces", "Necklaces", "jewelry", preset("necklaces")),
@@ -269,7 +269,7 @@ const NEW_CHEST_ROOM = Math.floor(FILL * CONTAINER_SLOTS);
 // Stand-ins for the chests still to add, above every real serial (a serial is 31 bits), so a tie goes to a real one.
 const NEW_CHEST = 2 ** 31;
 // What a chest shared by a family's groups is labelled.
-const FAMILY_NAMES: Record<Family, string> = { armour: "Armour", jewelry: "Jewelry", weapons: "Weapons", "other-gear": "Other gear", gear: "Gear", reagents: "Reagents",
+const FAMILY_NAMES: Record<Family, string> = { armour: "Armor", jewelry: "Jewelry", weapons: "Weapons", "other-gear": "Other gear", gear: "Gear", reagents: "Reagents",
   scrolls: "Scrolls", maps: "Treasure maps & SOS", resources: "Resources", potions: "Potions & bandages", "runes-books": "Runes & books", deeds: "Deeds", gems: "Gems",
   tools: "Tools", clothing: "Clothing", other: "Other" };
 // The chests two or more groups share, each with their keys in the order the groups come (table order).

@@ -80,7 +80,7 @@ def read_blacklist(path):
 
 
 ADAPTER_ID = "tazuo"
-ADAPTER_VERSION = "2.13.0"
+ADAPTER_VERSION = "2.14.0"
 CAPABILITIES = {
     "layers": ["OneHanded", "TwoHanded", "Shoes", "Pants", "Shirt", "Helmet", "Gloves",
                "Ring", "Talisman", "Necklace", "Waist", "Torso", "Bracelet", "Tunic",
@@ -1198,7 +1198,7 @@ def loose_problem(it, name):
     """What a Put away trip may not put of what lies in the container you picked, as the app's planner leaves it
     out too (app/organize.mts's packItems): a bag, with whatever is in it. Returns the refusal, or ''."""
     if is_container(it, str(getattr(it, "Name", "") or "")):
-        return f"refused: {name} is a container — Put away leaves bags in your backpack"
+        return f"refused: {name} is a container — Put away leaves containers in your backpack"
     return ""
 
 

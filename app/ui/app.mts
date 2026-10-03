@@ -11,7 +11,7 @@ import { pollBridge } from "./bridge.mts";
 import { buildFilters, fetchItems, initFilters, applyUiPrefs, inventoryFailed } from "./inventory.mts";
 import { renderCharacters, showCharacter } from "./characters.mts";
 import { initBuilder, syncBuilderCharacters, selectCharacter } from "./builder.mts";
-import { renderContainers } from "./containers.mts";
+import { renderContainers, showContainers } from "./containers.mts";
 import { connectEvents } from "./events.mts";
 import { openWizard } from "./wizard.mts";
 import { renderSettings, startUpdateChecks, syncSettingsCharacters, syncSettingsBlacklist } from "./settings.mts";
@@ -103,16 +103,16 @@ export async function reload(): Promise<void> {
 
 // ---------------------------------------------------------------- screens + hash routes
 // Six screens (Inventory, House map, Characters, Suit Builder, Organize, Settings), each a <main> in index.html, and routes on
-// top of them: #/inventory, #/containers (Inventory's Containers view), #/map (the House map, the house with the most chests), #/map/<house id> (that house, or #/map/plain for chests outside any drawn house), #/characters,
+// top of them: #/inventory, #/containers (Inventory's Containers view), #/containers/<Character> (only the containers that character's scans opened), #/map (the House map, the house with the most chests), #/map/<house id> (that house, or #/map/plain for chests outside any drawn house), #/characters,
 // #/characters/<Character> (that character's sheet), #/builder/<Character>, #/runs (the Suit Builder with the saved-runs drawer open), #/organize (Organize: labels, rules, the plan and its trips), #/import (the Import
 // drawer over whichever screen was showing) and #/settings. A reload lands where you were; nav clicks add a
 // history entry (back/forward walk them, and close a drawer); switching the builder's character replaces the
 // entry instead.
 const ROUTES = ["inventory", "containers", "map", "characters", "builder", "runs", "organize", "import", "settings"];
-export function parseRoute(): { tab: string; character: string | null; sheet: string | null; house: string | null } {
+export function parseRoute(): { tab: string; character: string | null; sheet: string | null; house: string | null; scanner: string | null } {
   const parts = location.hash.replace(/^#\/?/, "").split("/").filter(Boolean).map((x) => { try { return decodeURIComponent(x); } catch { return x; } });
   const tab = ROUTES.includes(parts[0] as string) ? parts[0]! : "inventory";
-  return { tab, character: tab === "builder" ? parts[1] || null : null, sheet: tab === "characters" ? parts[1] || null : null, house: tab === "map" ? parts[1] || null : null };
+  return { tab, character: tab === "builder" ? parts[1] || null : null, sheet: tab === "characters" ? parts[1] || null : null, house: tab === "map" ? parts[1] || null : null, scanner: tab === "containers" ? parts[1] || null : null };
 }
 export function routeFor(tab: string): string { return tab === "builder" && state.builder.character ? `#/builder/${encodeURIComponent(state.builder.character)}` : `#/${tab}`; }
 
@@ -149,6 +149,7 @@ function applyRoute(): void {
   if (r.tab === "organize") void showOrganize();
   if (r.tab === "map") void showMap(r.house);
   if (r.tab === "characters") showCharacter(r.sheet);
+  if (r.tab === "containers") showContainers(r.scanner);
   if (r.tab === "builder" && state.inv) {
     if (r.character && r.character !== state.builder.character && state.inv.characters[r.character]) selectCharacter(r.character);
     else if (!r.character && state.builder.character) history.replaceState(null, "", routeFor("builder"));

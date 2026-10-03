@@ -110,7 +110,7 @@ export function colourOf(c: ChestView, mode: Mode): Colour {
 export function legendOf(mode: Mode): Array<{ token: string | null; text: string }> {
   return mode === "free"
     ? [{ token: "--color-map-free-empty", text: "Empty" }, { token: "--color-map-free-half", text: "Under half full" }, { token: "--color-map-free-filling", text: "Filling" }, { token: "--color-map-free-full", text: "90% or more full" }, { token: "--color-map-free-unknown", text: "Fill unknown" }]
-    : [{ token: null, text: "A labelled chest takes its label's colour." }, { token: "--color-map-chest", text: "Not labelled" }, { token: "--color-map-chest-empty", text: "Not labelled, empty" }, { token: "--color-map-unopened", text: "Not opened yet" }];
+    : [{ token: null, text: "A labeled container takes its label's color." }, { token: "--color-map-chest", text: "Not labeled" }, { token: "--color-map-chest-empty", text: "Not labeled, empty" }, { token: "--color-map-unopened", text: "Not opened yet" }];
 }
 export const fillWords = (c: ChestView): string => (!c.opened ? "not opened yet" : c.fill ? `${c.fill.items} of ${c.fill.max} items` : "fill unknown");
 // Every chest element's accessible name.
@@ -158,7 +158,7 @@ const FACETS = ["Felucca", "Trammel", "Ilshenar", "Malas", "Tokuno", "Ter Mur"];
 export const facetName = (f: number | null): string => (f != null ? FACETS[f] : undefined) ?? "Unknown facet";
 // A house the player named (issue #164) is called by its name, the facet after it in the picker.
 export const houseLabel = (h: HouseSummary): string => `${h.name ? `${h.name} · ${facetName(h.facet)}` : `${facetName(h.facet)} house`}, ${h.width} × ${h.height}, ${plural(h.containers, "container")}`;
-export const houseName = (m: HouseModel): string => (m.id === PLAIN ? "Chests on the ground" : m.name ?? `${facetName(m.facet)} house`);
+export const houseName = (m: HouseModel): string => (m.id === PLAIN ? "Containers on the ground" : m.name ?? `${facetName(m.facet)} house`);
 // A redesigned or moved house gets a new id (spec §1): the name and areas of a house no longer listed whose footprint, as
 // it was when named or drawn, overlaps this house's on the same facet, to offer carrying over while this house has neither
 // a name nor an area of its own. The first such id wins. Only the areas on a level this house has, and that still lie on
@@ -185,11 +185,11 @@ export function carryOverText(o: { name: string; areas: readonly HouseArea[] }):
 }
 export function stackWhere(m: HouseModel, s: Stack, areas: readonly HouseArea[] = []): string {
   const spot = s.spot == null ? "no standing spot reaches it" : s.direction === "here" ? `at standing spot ${s.spot + 1}` : `${s.direction} of standing spot ${s.spot + 1}`;
-  return `${areaName(areas, s)} · ${spot} · ${plural(s.serials.length, "chest")}${s.serials.length > 1 ? ", top first" : ""}`;
+  return `${areaName(areas, s)} · ${spot} · ${plural(s.serials.length, "container")}${s.serials.length > 1 ? ", top first" : ""}`;
 }
 // Why the map is drawn in plain colours (GET /api/houses's tiledataFrom.reason), or null when tiledata.mul was read.
 export function tiledataNote(reason: TiledataFrom["reason"]): string | null {
-  const plain = "so the house is drawn in plain colours, with every impassable tile as a wall";
+  const plain = "so the house is drawn in plain colors, with every impassable tile as a wall";
   switch (reason) {
     case null: return null;
     case "no-client": return `No game client is set up, so Pack Rat has no tiledata.mul to tell walls, floors and materials apart, ${plain}.`;
@@ -262,7 +262,7 @@ export function facetMapNote(reason: FacetMapReason | "error"): string {
 // ---------------------------------------------------------------- the contents drawer
 // Which chest a stack opens in the drawer: its top opened one (chests come top first), null when no scan opened any.
 export const drawerChest = (chests: readonly ChestView[]): number | null => chests.find((c) => c.opened)?.serial ?? null;
-export const drawerMeta = (c: ChestView, s: Pick<Stack, "letter" | "serials">): string => `In game: ${c.inGame} · Stack ${s.letter}, ${plural(s.serials.length, "chest")}`;
+export const drawerMeta = (c: ChestView, s: Pick<Stack, "letter" | "serials">): string => `In game: ${c.inGame} · Stack ${s.letter}, ${plural(s.serials.length, "container")}`;
 // The drawer's width, dragged on its left edge or set from the keyboard (ui-prefs mapDrawerWidth): 400 px by default, at least DRAWER_MIN, and at most what leaves the map MAP_MIN px at the window's width (drawerMax, from the drawer's and the map's widths now).
 export const DRAWER_W = 400, DRAWER_MIN = 320, MAP_MIN = 360;
 export const drawerMax = (drawerW: number, mapW: number): number => Math.max(DRAWER_MIN, Math.floor(drawerW + mapW - MAP_MIN));
@@ -312,7 +312,7 @@ export function contentsOf(items: readonly Item[], root: number, isBag: (serial:
 }
 export function contentsSummary(c: Contents): string {
   if (!c.total) return "Empty";
-  return c.bags ? `${plural(c.total, "item")} · ${c.loose} loose, ${c.inBags} in ${plural(c.bags, "bag")}` : plural(c.total, "item");
+  return c.bags ? `${plural(c.total, "item")} · ${c.loose} loose, ${c.inBags} in ${plural(c.bags, "container")}` : plural(c.total, "item");
 }
 // The drawer's filter: an item whose name, tooltip lines, rarity, kind or tags hold the text (any case); a bag stays when it matches itself (with all it holds) or holds a match, counting what it kept.
 export function filterContents(nodes: readonly ContentsNode[], text: string): ContentsNode[] {
@@ -544,7 +544,7 @@ export function plainGrid(inv: Pick<InventoryData, "containers">, houses: readon
     s.serials.forEach((serial, h) => { codes[String(serial)] = s.serials.length === 1 ? s.letter : `${s.letter}.${h + 1}`; });
   });
   return { id: PLAIN, facet: null, capturedAt: "", captures: 0, x0: 0, y0: 0, x1, y1,
-    levels: [{ index: 0, name: "Chests on the ground", floorZ: 0, status: "floor-only" }], cells, areas, furniture: [], stacks, spots: [], codes, tiledata: false, unopened: [], unopenedNames: {} };
+    levels: [{ index: 0, name: "Containers on the ground", floorZ: 0, status: "floor-only" }], cells, areas, furniture: [], stacks, spots: [], codes, tiledata: false, unopened: [], unopenedNames: {} };
 }
 
 // ---------------------------------------------------------------- the scene of one level

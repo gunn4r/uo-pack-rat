@@ -74,7 +74,7 @@ def main():
     API.SysMsg("Pack Rat: click a container to blacklist it (Esc cancels).", INFO_HUE)
     serial = int(API.RequestTarget(TARGET_S) or 0)
     if not serial:
-        API.SysMsg("Pack Rat: cancelled, nothing blacklisted.", INFO_HUE)
+        API.SysMsg("Pack Rat: canceled, nothing blacklisted.", INFO_HUE)
         return
     it = API.FindItem(serial)
     own = set()

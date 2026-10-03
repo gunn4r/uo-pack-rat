@@ -183,7 +183,7 @@ function summarize(capabilities: unknown): string {
   if (caps.layers && caps.layers.length) reads.push("every layer");
   if (caps.bank) reads.push("bank");
   if (caps.ground) reads.push("ground");
-  if (caps.nested) reads.push("nested bags");
+  if (caps.nested) reads.push("nested containers");
   const bits: string[] = [];
   if (reads.length) bits.push(`reads ${reads.join(", ")}`);
   if (caps.bridge && caps.bridge.length) bits.push(`bridge: ${caps.bridge.join(", ")}`);

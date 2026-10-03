@@ -69,7 +69,7 @@ def read_blacklist(path):
 
 
 ADAPTER_ID = "razor-enhanced"
-ADAPTER_VERSION = "1.10.0"
+ADAPTER_VERSION = "1.11.0"
 # Keep this literal in sync with capabilities.json -- a test enforces the two never drift apart
 # for the TazUO adapter (test_paths.py) and the same discipline applies here by hand until this
 # adapter has its own test.
@@ -349,7 +349,7 @@ def close_opened():
 
 def note_unopened(entry, label):
     sysmsg("  {0} in {1} was not opened -- its contents are kept from the last scan".format(
-        entry["name"] or "a bag", label), ALARM_HUE)
+        entry["name"] or "a container", label), ALARM_HUE)
 
 
 # Razor Enhanced's own skill names (Player.GetRealSkillValue / Player.UseSkill's documented

@@ -13,7 +13,7 @@ import { relativeWhen } from "./messages.mts";
 import { sheetNode, wornSet, resistFigures, atCap, plural, lowDurabilityCount, lowDurabilitySummary, type ResistFigure, type SheetItem } from "./sheet.mts";
 import type { Item } from "../vault-lib.mts";
 import type { RunsListApiResponse } from "./api-types.mts";
-import { rosterView, triple, type RosterRow, type RosterSort } from "./roster.mts";
+import { rosterView, triple, sheetMeta, type RosterRow, type RosterSort } from "./roster.mts";
 
 
 const num = (v: unknown): number | null => (v != null && Number.isFinite(Number(v)) ? Number(v) : null);
@@ -156,16 +156,8 @@ function slotDetail(it: SheetItem, tile: HTMLElement): void {
   p.root.setAttribute("data-mode", "dark");
 }
 function metaLine(name: string): HTMLElement {
-  const inv = state.inv!, c = inv.characters[name]!;
-  const worn = (inv.worn[name] || []).length;
-  // the containers this character's scans opened: "33 items in Metal Chest 0x700c0000"
-  const roots = Object.values(inv.containers).filter((r) => r.parent == null && r.scannedBy === name && r.kind !== "backpack" && r.kind !== "bank");
-  const parts: HTMLElement[] = [txt(`Scanned ${relativeWhen(c.scannedAt)}`), txt(`${plural(worn, "piece")} worn`)];
-  for (const r of roots) {
-    // the fold's label already carries the serial when two containers share a name
-    const where = r.label || r.name || "a container", hex = `0x${Number(r.serial).toString(16)}`;
-    parts.push(el("span", {}, `${plural(inv.rootCounts[r.serial] || 0, "item")} in ${where}`, where.includes(hex) ? null : [" ", txt(hex, "mono faint")]));
-  }
+  const inv = state.inv!, m = sheetMeta(name, relativeWhen(inv.characters[name]!.scannedAt), (inv.worn[name] || []).length, inv.containers);
+  const parts: HTMLElement[] = [txt(m.scanned), txt(m.worn), ...(m.opened ? [el("a", { href: m.opened.href, id: "sheet-opened" }, m.opened.text)] : [])];
   return box("p", { class: "sheet-meta t-sm muted" }, ...parts.flatMap((p, i) => (i ? [el("span", { class: "faint", "aria-hidden": "true" }, "·"), p] : [p])));
 }
 function renderSheet(name: string): void {

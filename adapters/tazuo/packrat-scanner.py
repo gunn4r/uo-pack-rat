@@ -68,7 +68,7 @@ def read_blacklist(path):
 
 
 ADAPTER_ID = "tazuo"
-ADAPTER_VERSION = "2.13.0"
+ADAPTER_VERSION = "2.14.0"
 CAPABILITIES = {
     "layers": ["OneHanded", "TwoHanded", "Shoes", "Pants", "Shirt", "Helmet", "Gloves",
                "Ring", "Talisman", "Necklace", "Waist", "Torso", "Bracelet", "Tunic",
@@ -406,7 +406,7 @@ def scan_root(root_serial, kind, label, containers, items, seen):
             if s in unopened:
                 containers[s]["opened"] = False
             if s in unopened and s not in BLACKLIST:
-                sysmsg(f"  {cname or 'a bag'} in {label} was not opened — its contents are kept from the last scan", ALARM_HUE)
+                sysmsg(f"  {cname or 'a container'} in {label} was not opened — its contents are kept from the last scan", ALARM_HUE)
             continue
         items.append(item_dict(it, lines, parent))
         n += 1
@@ -614,7 +614,7 @@ def main():
         n = len(HOUSE_LEFT_OUT)
         left_out = f" ({n} farther {'one' if n == 1 else 'ones'} left out)" if n else ""
         c = len(house.get("containers", []))
-        furniture = f"{len(house['items'])} pieces of furniture{left_out}, {c} chest{'s' if c != 1 else ''}" if "items" in house else "furniture and chests not read"
+        furniture = f"{len(house['items'])} pieces of furniture{left_out}, {c} container{'s' if c != 1 else ''}" if "items" in house else "furniture and containers not read"
         sysmsg(f"  house: {len(house['tiles'])} tiles, {furniture}", INFO_HUE)
     if HOUSE_TOO_LARGE:
         sysmsg(f"  house too large to record: {HOUSE_TOO_LARGE[0]} tiles", INFO_HUE)

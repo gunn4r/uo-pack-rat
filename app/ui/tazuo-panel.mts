@@ -26,6 +26,6 @@ export function panelControls(prefs: PanelPrefs, onChange: (change: Partial<Pane
 export function autostartNote(a: AutostartOutcome | null | undefined): { tone: "ok" | "warn" | "bad"; text: string } | null {
   if (!a || a.status === "unchanged") return null;
   if (a.status === "applied") return { tone: "ok", text: "The Pack Rat panel now starts every time you start TazUO." };
-  if (a.status === "running") return { tone: "warn", text: "TazUO is open, so the panel was not added to its autostart list. Quit TazUO and reinstall, or tick Autostart for packrat-panel.py in the Script Manager." };
+  if (a.status === "running") return { tone: "warn", text: "TazUO is open, so the panel was not added to its autostart list. Quit TazUO and reinstall, or check Autostart for packrat-panel.py in the Script Manager." };
   return { tone: "bad", text: `Could not add the panel to TazUO's autostart list: ${"error" in a ? a.error : "unknown error"}` };
 }

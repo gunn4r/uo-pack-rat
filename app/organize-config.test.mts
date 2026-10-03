@@ -65,13 +65,13 @@ test("[fast] checkOrganizeConfig refuses each broken part and names it", () => {
     ["an unknown school", (c) => { c.rules[0]!.match.school = "pyromancy" as "magery"; }, /rules\[0\]\.match\.school must be one of magery, necromancy, mysticism, spellweaving/],
     ["too many required tags", (c) => { c.rules[0]!.match.query.tags = Array(11).fill("brittle"); }, /rules\[0\]\.match\.query\.tags must be a list of at most 10 tags/],
     ["a skipSuits that is not true or false", (c) => { c.rules[0]!.match.skipSuits = "yes" as unknown as boolean; }, /rules\[0\]\.match\.skipSuits must be true or false/],
-    ["a target that is not labelled", (c) => { c.rules[0]!.targets = [0x40000009]; }, /not a labelled container/],
+    ["a target that is not labelled", (c) => { c.rules[0]!.targets = [0x40000009]; }, /not a labeled container/],
     ["a pinned target, naming the rule and the container", (c) => { c.rules[0]!.targets = [P]; }, /^The rule "Reagents" puts items into Display, which is pinned: nothing is put into a pinned container\. Take it off the rule, or unpin it\.$/],
     ["a target listed twice", (c) => { c.rules[0]!.targets = [A, A]; }, /twice/],
     ["a pinned catch-all", (c) => { c.catchAll = P; }, /catchAll.*pinned/],
     ["an unlabelled catch-all", (c) => { c.catchAll = 0x40000009; }, /catchAll/],
     ["a pinned gather container", (c) => { c.emptyBagsTo = P; }, /emptyBagsTo.*pinned/],
-    ["an unlabelled gather container", (c) => { c.emptyBagsTo = 0x40000009; }, /emptyBagsTo: \d+ is not a labelled container/],
+    ["an unlabelled gather container", (c) => { c.emptyBagsTo = 0x40000009; }, /emptyBagsTo: \d+ is not a labeled container/],
     ["a pinned item listed twice", (c) => { c.pinnedItems = [5, 5]; }, /pinnedItems/],
     ["too many rules", (c) => { c.rules = Array.from({ length: 201 }, (_, i) => ({ ...c.rules[0]!, id: `r${i}` })); }, /at most 200/],
   ];
@@ -109,7 +109,7 @@ test("[fast] salvage: a label dropped costs the rules that name it that target o
   assert.deepEqual(config.rules.map((r) => [r.id, r.targets]), [["r1", []], ["r2", [B]]]);
   assert.equal(config.catchAll, B);
   assert.equal(problems.length, 3, problems.join("\n"));
-  assert.match(problems.join("\n"), /rules\[0\]\.targets: \d+ is not a labelled container; target dropped/);
+  assert.match(problems.join("\n"), /rules\[0\]\.targets: \d+ is not a labeled container; target dropped/);
   const again = checkOrganizeConfig(config);
   assert.equal(again.ok, true, again.ok ? "" : again.error);
 });
@@ -117,7 +117,7 @@ test("[fast] salvage: a label dropped costs the rules that name it that target o
 test("[fast] salvage: a gather container that lost its label is cleared, and a good one kept (issue #128)", () => {
   const { config, problems } = salvageOrganizeConfig({ ...full(), emptyBagsTo: 0x40000009 });
   assert.equal(config.emptyBagsTo, undefined);
-  assert.match(problems.join("\n"), /emptyBagsTo: \d+ is not a labelled container; empty bags left where they are/);
+  assert.match(problems.join("\n"), /emptyBagsTo: \d+ is not a labeled container; empty bags left where they are/);
   assert.equal(salvageOrganizeConfig({ ...full(), emptyBagsTo: A }).config.emptyBagsTo, A);
 });
 

@@ -444,7 +444,7 @@ function weaponChip(): HTMLButtonElement {
       p.excludeWeapons = toggleWeapon(p.excludeWeapons || [], w, on);
       paintChip(chip, weaponsChipText(p.excludeWeapons), !!p.excludeWeapons.length); updateTemplateBadge();
     } }).root);
-    popover(chip, [el("p", { class: "help" }, txt("Exclude weapon skills: a ticked skill's weapons never enter the pool.")),
+    popover(chip, [el("p", { class: "help" }, txt("Exclude weapon skills: a checked skill's weapons never enter the pool.")),
       box("div", { class: "b-checks", role: "group", "aria-label": "Exclude weapon skills" }, ...checks)], { label: "Exclude weapon skills" });
   };
   return chip;
@@ -611,7 +611,7 @@ function setBuilding(on: boolean): void {
   res.inert = stale;
   if (stale) res.setAttribute("aria-hidden", "true"); else res.removeAttribute("aria-hidden");
 }
-const cancelledNote = (ms: number): HTMLElement => message({ tone: "info", text: `Cancelled after ${fmtSecs(ms)}.`, actions: [button({ label: "Build again", size: "sm", onClick: () => runBuild() })] });
+const cancelledNote = (ms: number): HTMLElement => message({ tone: "info", text: `Canceled after ${fmtSecs(ms)}.`, actions: [button({ label: "Build again", size: "sm", onClick: () => runBuild() })] });
 // A refusal or failure: an inline message at the top of the results; when it names a field, that field gets
 // the error and the focus.
 function failJob(job: BuilderJob, text: string): void {
@@ -727,7 +727,7 @@ function runPanel(job: BuilderJob): BuilderJobUi {
       dot.className = `dot ${tone || "busy"}`;
       vBeat.className = `v${tone ? ` tone-${tone}` : ""}`; vBeat.textContent = text;
     },
-    cancelling() { cancel.disabled = true; cancel.replaceChildren(txt("Cancelling…")); },
+    cancelling() { cancel.disabled = true; cancel.replaceChildren(txt("Canceling…")); },
   };
   return ui;
 }

@@ -421,7 +421,7 @@ test("[fast] Put away: a request dropped after a refresh plans the fresh backpac
     writeFileSync(join(dir, "bridge", "tazuo", "status.json"), JSON.stringify({ alive: t, character: "Tester", current: null, counts: {},
       results: { [String(line!.id)]: { ok: true, msg: "trip 1: 1 put away", t, steps: [{ op: "put", serial: LOOT, ok: true, msg: "put away" }] } } }));
     const done = await ask("r-3");
-    assert.deepEqual([done.ok, done.msg, done.detail, done.trip], [true, "Nothing to put away.", "1 bag stays in your pack", undefined]);
+    assert.deepEqual([done.ok, done.msg, done.detail, done.trip], [true, "Nothing to put away.", "1 container stays in your pack", undefined]);
     const old = await ask("r-4", { container: B });
     assert.deepEqual([old.ok, old.msg], [false, "Pack Rat has not read that container yet."], "the chest's last scan is from before the click");
     const stale = await ask("r-5", { id: "../../x", requestedAt: "2020-01-01T00:00:00Z" });
