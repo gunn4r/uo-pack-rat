@@ -191,12 +191,12 @@ function checklist({ title, options, selected, onChange, searchable = options.le
   return [box("div", { class: "inv-pop-head" }, txt(title, "caps"), el("span", { class: "spacer" }), clear), find?.root, list];
 }
 const SLOT_GROUPS: Record<string, string> = {
-  helmet: "Armour", chest: "Armour", arms: "Armour", hands: "Armour", legs: "Armour",
-  neck: "Jewellery", ring: "Jewellery", bracelet: "Jewellery", earrings: "Jewellery", talisman: "Jewellery",
+  helmet: "Armor", chest: "Armor", arms: "Armor", hands: "Armor", legs: "Armor",
+  neck: "Jewelry", ring: "Jewelry", bracelet: "Jewelry", earrings: "Jewelry", talisman: "Jewelry",
   oneHanded: "Weapons", twoHanded: "Weapons",
   cloak: "Clothing", robe: "Clothing", tunic: "Clothing", shirt: "Clothing", feet: "Clothing", waist: "Clothing",
 };
-const SLOT_GROUP_ORDER = ["Armour", "Jewellery", "Weapons", "Clothing", "Other"];
+const SLOT_GROUP_ORDER = ["Armor", "Jewelry", "Weapons", "Clothing", "Other"];
 function placesByCharacter(): Map<string, Place[]> {
   const m = new Map<string, Place[]>();
   for (const p of state.facets?.places || []) m.set(p.character, [...(m.get(p.character) || []), p]);

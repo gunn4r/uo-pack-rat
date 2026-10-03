@@ -58,12 +58,12 @@ export function checkPutAwayRequest(raw: unknown, now: number): { ok: true; requ
 const plural = (n: number, word: string): string => `${n} ${word}${n === 1 ? "" : "s"}`;
 
 // What a Put away plan leaves and why, in a line short enough for the panel, never empty: what stays in the picked
-// container, `where` ("your pack", "that bag": its bags and pinned items, `kept`, and what no rule claims), what
+// container, `where` ("your pack", "that container": its containers and pinned items, `kept`, and what no rule claims), what
 // belongs at another house than the one you stand in, what has no room, and what is already home there.
 export function nothingDetail(plan: Pick<Plan, "unclaimed" | "crossSite" | "rules">, where: string, kept: PackKept = { bags: 0, pinned: 0 }): string {
   const cross = plan.crossSite.reduce((n, c) => n + c.count, 0);
   const noRoom = plan.rules.reduce((n, r) => n + r.noRoom, 0), home = plan.rules.reduce((n, r) => n + r.inPlace, 0);
-  const stay = [[kept.bags, plural(kept.bags, "bag")], [kept.pinned, `${kept.pinned} pinned`],
+  const stay = [[kept.bags, plural(kept.bags, "container")], [kept.pinned, `${kept.pinned} pinned`],
     [plan.unclaimed, `${plan.unclaimed} with no rule`]].filter(([n]) => n) as [number, string][];
   const one = stay.length === 1 && stay[0]![0] === 1;
   const line = [

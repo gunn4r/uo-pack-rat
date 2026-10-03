@@ -120,7 +120,7 @@ test("[fast] house map: a callout lists a stack's chests top first with their fi
   assert.equal(chestCount(m), 27);
   assert.equal(m.levels.reduce((a, l) => a + chestCount(m, l.index), 0), 27, "a level's count; the levels add up to the house");
   assert.equal(chestCount(m, m.levels.length), 0, "a level with no stacks");
-  assert.match(stackWhere(m, s), new RegExp(`^Whole floor · [NESW]+ of standing spot 1 · 4 chests, top first$`));
+  assert.match(stackWhere(m, s), new RegExp(`^Whole floor · [NESW]+ of standing spot 1 · 4 containers, top first$`));
   const area: HouseArea = { id: "a1", name: "Reagents", level: 0, color: "area-1", rects: [{ x0: s.x, y0: s.y, x1: s.x, y1: s.y }] };
   assert.match(stackWhere(m, s, [area]), /^Reagents · /);
   assert.match(stackWhere(m, m.stacks.find((x) => x !== s)!, [area]), /^Everything else · /);
@@ -146,7 +146,7 @@ test("[fast] house map: an arrow key moves to the nearest stack that way, prefer
 
 test("[fast] house map: the no-tiledata note names its reason, and there is none with tiledata", () => {
   assert.equal(tiledataNote(null), null);
-  for (const r of ["no-client", "no-tazuo-profile", "override-missing", "unreadable"] as const) assert.match(tiledataNote(r)!, /plain colours/, r);
+  for (const r of ["no-client", "no-tazuo-profile", "override-missing", "unreadable"] as const) assert.match(tiledataNote(r)!, /plain colors/, r);
   assert.match(tiledataNote("no-client")!, /No game client is set up/);
 });
 
@@ -687,7 +687,7 @@ test("[fast] house map drawer: a chest's items as a tree, bags first and nested 
   const shape = (ns: ContentsNode[]): unknown[] => ns.map((n) => (n.kind === "bag" ? [n.item.name, n.count, shape(n.kids)] : n.item.name));
   assert.deepEqual(shape(c.nodes), [["Weapons", 4, [["Gems", 1, ["Ruby"]], "Katana", "Bow"]], ["Empty pouch", 0, []], "Arrows", "Bandage"]);
   assert.deepEqual([c.total, c.loose, c.inBags, c.bags], [8, 2, 4, 2]);
-  assert.equal(contentsSummary(c), "8 items · 2 loose, 4 in 2 bags");
+  assert.equal(contentsSummary(c), "8 items · 2 loose, 4 in 2 containers");
   assert.equal(contentsSummary(contentsOf([thing(1, "A", 9)], 9, () => false)), "1 item");
   assert.equal(contentsSummary(contentsOf([], 9, () => false)), "Empty");
   // an item whose bag is not among the items (not scanned) is shown loose rather than lost
@@ -732,7 +732,7 @@ test("[fast] house map drawer: a stack opens its top opened chest; the header wo
   assert.equal(drawerChest([view(4, false), view(3, true), view(2, true)]), 3, "top first, the first opened one");
   assert.equal(drawerChest([view(4, false)]), null);
   const s = { letter: "A", serials: [1, 2, 3, 4] } as unknown as Stack;
-  assert.equal(drawerMeta(view(3, true), s), "In game: Metal Chest · Stack A, 4 chests");
+  assert.equal(drawerMeta(view(3, true), s), "In game: Metal Chest · Stack A, 4 containers");
   assert.equal(slotsText(view(3, true)), "106 of 125 slots");
   assert.equal(slotsText(view(3, true, { fill: null })), "Fill unknown");
 });

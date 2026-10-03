@@ -64,6 +64,6 @@ It records the character's name; their full skill list with every value and cap;
 
 The schema also has room for an opaque, hashed account identifier, which no shipped adapter writes today.
 
-So: if you share a scan file — to report a bug, ask for help, or hand it to someone else — expect all of that to travel with it. Not just which character it came from, but where that character keeps their things, and an itemised list of what is worth taking. On a shard with house-adjacent theft mechanics, that is a targeting aid.
+So: if you share a scan file — to report a bug, ask for help, or hand it to someone else — expect all of that to travel with it. Not just which character it came from, but where that character keeps their things, and an itemized list of what is worth taking. On a shard with house-adjacent theft mechanics, that is a targeting aid.
 
 > **Before attaching a scan file to a public issue, a forum post or a Discord message, open it and look.** A GitHub issue is permanent, public and indexed. If you only need the app to reproduce a bug, say so in the issue and ask what to send — a few tooltip lines are usually enough, and the maintainer can take the rest privately.

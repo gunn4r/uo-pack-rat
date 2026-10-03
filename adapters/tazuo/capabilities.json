@@ -1,6 +1,6 @@
 {
   "adapter": "tazuo",
-  "version": "2.13.0",
+  "version": "2.14.0",
   "transport": "folder",
   "actions": ["open-container", "move-to-own-backpack", "move-into-ground-container", "pathfind-local", "client-local-highlight"],
   "capabilities": {

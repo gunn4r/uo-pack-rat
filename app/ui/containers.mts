@@ -19,6 +19,7 @@ import { loadOrganize, saveConfig } from "./organize-data.mts";
 import { withLabel, withoutLabel, pinNote, LABEL_COLOURS, fillTone } from "./organize-model.mts";
 import { plural } from "./inv-model.mts";
 import { reload } from "./app.mts";
+import { openedRoots } from "./roster.mts";
 import { showContainer, splitSerial } from "./inventory.mts";
 import { bridgeActionReason, runBridgeAction } from "./bridge.mts";
 import type { ForgetApiResponse, MissingApiResponse, OrganizeConfig } from "./api-types.mts";
@@ -53,7 +54,7 @@ export async function labelContainer(r: Container): Promise<void> {
   const cfg = state.organize.config!, had = cfg.labels[String(r.serial)];
   const shown = had?.name ?? (r.label || bagLabel(r));
   const name = input({ value: had?.name ?? bagLabel(r), attrs: { id: "lbl-name", maxlength: "64" } });
-  const colour = select([{ value: "", label: "No colour" }, ...LABEL_COLOURS.map((c) => ({ value: c.value, label: c.name }))], had?.color ?? "", { attrs: { id: "lbl-colour" } });
+  const colour = select([{ value: "", label: "No color" }, ...LABEL_COLOURS.map((c) => ({ value: c.value, label: c.name }))], had?.color ?? "", { attrs: { id: "lbl-colour" } });
   const pin = switchControl({ label: "Pinned: Organize never takes items out or puts items in", checked: !!had?.pinned, attrs: { id: "lbl-pin" } });
   const problem = el("div", {});
   let dlg: { close: () => void } | null = null;
@@ -72,7 +73,7 @@ export async function labelContainer(r: Container): Promise<void> {
     const err = await saveConfig(config);
     if (err) { fail(err); return; }
     dlg?.close();
-    toast(`${n} is labelled for Organize.`, "good");
+    toast(`${n} is labeled for Organize.`, "good");
   };
   const remove = async (): Promise<void> => {
     const { config, dropped } = withoutLabel(await current(), +r.serial);
@@ -80,12 +81,12 @@ export async function labelContainer(r: Container): Promise<void> {
     const err = await saveConfig(config);
     if (err) { fail(err); return; }
     dlg?.close();
-    toast(`${shown} is no longer labelled.`, "good");
+    toast(`${shown} is no longer labeled.`, "good");
   };
   name.addEventListener("keydown", (e) => { if (e.key === "Enter") void save(); });
   dlg = openDialog({
     title: had ? `Edit label: ${shown}` : `Label ${shown}`, width: "md", initialFocus: name,
-    body: [el("p", { class: "muted" }, "Organize only takes items from, and puts items into, labelled containers. The label is shown wherever this container is."), field({ label: "Label", control: name }), field({ label: "Colour", control: colour }), pin.root, problem],
+    body: [el("p", { class: "muted" }, "Organize only takes items from, and puts items into, labeled containers. The label is shown wherever this container is."), field({ label: "Label", control: name }), field({ label: "Color", control: colour }), pin.root, problem],
     actions: [...(had ? [button({ label: "Remove label", variant: "danger-outline", onClick: () => { void remove(); } })] : []), button({ label: "Cancel", onClick: () => dlg?.close() }), button({ label: "Save label", variant: "primary", attrs: { id: "lbl-save" }, onClick: () => { void save(); } })],
   });
 }
@@ -117,6 +118,15 @@ function fillCell(r: Container): HTMLElement {
   return box("span", { class: "cont-fill" }, meter(c.items, c.maxItems, { tone: fillTone({ items: c.items, max: c.maxItems }), label: `${c.items} of ${c.maxItems} items` }), txt(`${c.items}/${c.maxItems}`, "t-sm num"));
 }
 
+// #/containers/<Name> (issue #10): only the containers that character's scans opened, the ones the character
+// sheet counts; null lists every container.
+let scanner: string | null = null;
+export function showContainers(name: string | null): void {
+  scanner = name;
+  if (state.inv) renderContainers();
+}
+const showAll = (): HTMLElement => el("a", { href: "#/containers", id: "cont-show-all" }, "Show all");
+
 export function renderContainers(): void {
   const t = $<HTMLTableElement>("#cont-table")!;
   // load() always fetches the inventory before this is ever called — same non-null assumption every
@@ -125,11 +135,18 @@ export function renderContainers(): void {
   t.querySelector("colgroup")!.replaceChildren(...COLS.map(([, w]) => el("col", { style: `width:${w}px` })), el("col", { style: "width:48px" }));
   t.querySelector("thead")!.replaceChildren(el("tr", {}, ...COLS.map(([h, , num]) => el("th", { scope: "col", class: num ? "num" : "" }, txt(h))), el("th", { scope: "col" }, txt("Actions", "sr"))));
   const body = t.querySelector("tbody")!;
-  const roots = Object.values(inv.containers).filter((c) => c.parent == null);
+  const roots = scanner ? openedRoots(inv.containers, scanner) : Object.values(inv.containers).filter((c) => c.parent == null);
+  // Each render swaps the footer for a new one, which keeps the id so the next render finds it.
   const foot = $<HTMLElement>("#cont-foot")!;
+  const setFoot = (next: HTMLDivElement): void => { next.id = "cont-foot"; foot.replaceWith(next); };
+  if (!roots.length && scanner) {
+    body.replaceChildren(el("tr", {}, el("td", { colspan: COLS.length + 1 }, box("div", { class: "empty-state" }, el("h3", { class: "t-lg" }, `${scanner}'s scans opened no containers`), showAll()))));
+    setFoot(tableFoot("No containers"));
+    return;
+  }
   if (!roots.length) {
     body.replaceChildren(el("tr", {}, el("td", { colspan: COLS.length + 1 }, box("div", { class: "empty-state" }, el("h3", { class: "t-lg" }, "Nothing scanned yet"), el("p", { class: "muted" }, txt("Containers show up here once a scan has opened them."))))));
-    foot.replaceWith(tableFoot("No containers"));
+    setFoot(tableFoot("No containers"));
     return;
   }
   // Grouped by character, the ground last: a backpack or bank under its owner, a ground container under
@@ -165,7 +182,7 @@ export function renderContainers(): void {
         { label: "Forget…", danger: true, onSelect: () => { forget(r, label, n); } },
       ], { label: `Actions for ${label}` }) });
       rows.push(el("tr", { "data-root": r.serial },
-        el("td", {}, box("span", { class: "inv-loc" }, swatch, txt(name, "ellip"), txt(serial || `0x${(+r.serial).toString(16)}`, "mono faint"), lab?.pinned ? tag("Pinned") : null, bags ? txt(plural(bags, "bag"), "t-sm muted") : null, missing ? tag(`${missing} missing`, "warn") : null)),
+        el("td", {}, box("span", { class: "inv-loc" }, swatch, txt(name, "ellip"), txt(serial || `0x${(+r.serial).toString(16)}`, "mono faint"), lab?.pinned ? tag("Pinned") : null, bags ? txt(plural(bags, "container"), "t-sm muted") : null, missing ? tag(`${missing} missing`, "warn") : null)),
         el("td", {}, txt(KIND_NAMES[String(r.kind)] || String(r.kind || "Unknown"))),
         el("td", {}, txt(r.scannedBy)),
         el("td", {}, txt(relativeWhen(r.scannedAt))),
@@ -175,7 +192,7 @@ export function renderContainers(): void {
     }
   }
   body.replaceChildren(...rows);
-  const next = tableFoot(plural(roots.length, "container"), plural(Object.values(inv.rootCounts).reduce((a, b) => a + b, 0), "item"), "Newest scan of a container wins; Forget one you emptied");
-  next.id = "cont-foot";
-  foot.replaceWith(next);
+  const counted = plural(roots.length, "container") + (scanner ? ` ${scanner}'s scans opened` : "");
+  const next = tableFoot(counted, plural((scanner ? roots.map((r) => inv.rootCounts[r.serial] || 0) : Object.values(inv.rootCounts)).reduce((a, b) => a + b, 0), "item"), scanner ? showAll() : null, "Newest scan of a container wins; Forget one you emptied");
+  setFoot(next);
 }

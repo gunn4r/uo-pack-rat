@@ -44,7 +44,7 @@ test("[fast] every Simple, Detailed and By build group is made of valid rule fil
 
 test("[fast] Simple: one group per family, gear sorted by slot before any name pattern, Other last", () => {
   assert.deepEqual(grouped("simple"), [
-    ["armour", "Armour", ["Platemail Gorget", "Bone Armor"]],
+    ["armour", "Armor", ["Platemail Gorget", "Bone Armor"]],
     ["jewelry", "Jewelry", ["Gold Necklace", "Gold Ring"]],
     ["weapons", "Weapons", ["Katana", "Heater Shield", "Spellbook"]],
     ["reagents", "Reagents", ["Black Pearl", "Grave Dust"]],
@@ -515,8 +515,8 @@ test("[fast] groups sharing a chest each get one of its empty bags, labelled for
   assert.deepEqual(p.groups.map((g) => [g.key, g.targets, g.bagIn, g.needsBag]), [
     ["armour-head", [BAG], A, false], ["armour-neck", [BAG2], A, false], ["armour-chest", [A], null, true], ["rings", [B], null, false],
   ]);
-  assert.deepEqual(Object.values(p.config.labels).map((l) => [l.serial, l.name]), [[A, "Armour"], [B, "Rings"], [BAG, "Armour: head"], [BAG2, "Armour: neck"]]);
-  assert.deepEqual(p.layout, { chests: 0, bags: [{ chest: A, family: "Armour", bags: 1 }], spareBags: 1, roomy: false }, "B's empty bag is spare: move it into the Armour chest; the one in the unticked chest C is not counted");
+  assert.deepEqual(Object.values(p.config.labels).map((l) => [l.serial, l.name]), [[A, "Armor"], [B, "Rings"], [BAG, "Armor: head"], [BAG2, "Armor: neck"]]);
+  assert.deepEqual(p.layout, { chests: 0, bags: [{ chest: A, family: "Armor", bags: 1 }], spareBags: 1, roomy: false }, "B's empty bag is spare: move it into the Armor chest; the one in the unticked chest C is not counted");
   const plan = planOrganize(inv, p.config, [], { now: NOW });
   assert.deepEqual(plan.moves.map((m) => [m.name, m.to]), [["Plate Helm", BAG], ["Platemail Gorget", BAG2]], "the ring stays in its chest, the chest piece loose in the shared one");
   const done: OverlayMove[] = plan.moves.map((m) => ({ serial: m.serial, name: m.name, from: m.from, to: m.to, at: new Date(NOW).toISOString(), trip: "t1" }));
@@ -598,10 +598,10 @@ test("[fast] Detailed with too few containers says how many are missing; the sam
   const p = ok(proposeOrganize(inv, emptyOrganizeConfig(), [], OPTS({ strategy: "detailed" })));
   // Two chests: the two armour groups share one, Potions and Bandages the other; the other nine families are short a
   // chest each, which their groups could share.
-  assert.deepEqual(Object.values(p.config.labels).map((l) => l.name), ["Armour", "Potions & bandages"]);
+  assert.deepEqual(Object.values(p.config.labels).map((l) => l.name), ["Armor", "Potions & bandages"]);
   assert.equal(p.unassigned, p.groups.length - 4);
   assert.equal(p.layout.chests, 9);
-  assert.deepEqual(p.layout.bags.map((b) => [b.chest, b.family, b.bags]).slice(0, 2), [[null, "Armour", 2], [null, "Jewelry", 2]], "the full layout's family chests, each group in a bag");
+  assert.deepEqual(p.layout.bags.map((b) => [b.chest, b.family, b.bags]).slice(0, 2), [[null, "Armor", 2], [null, "Jewelry", 2]], "the full layout's family chests, each group in a bag");
   assert.deepEqual(ok(proposeOrganize(shuffled, emptyOrganizeConfig(), [], OPTS({ strategy: "detailed" }))), p);
 });
 

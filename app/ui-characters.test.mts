@@ -1,12 +1,13 @@
 // ui-characters.test.mts — the Characters screen's pure logic: the sheet's formatters (the "cap +N" badge,
 // the at-cap meter, the attribute bonus split, "now → after", a slot tile's key numbers, tag tones,
-// pluralising) from app/ui/sheet.mts, and the roster's search and sort from app/ui/roster.mts. Lives in
+// pluralising) from app/ui/sheet.mts, and the roster's search and sort and the sheet's scan summary from
+// app/ui/roster.mts. Lives in
 // app/ rather than app/ui/ for the reason app/ui-render.test.mts gives. Tags: [fast].
 import "../scripts/localstorage-shim-for-tests.mts";   // app/ui/store.mts reads localStorage at module scope
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { capOver, capBadgeText, atCap, bonusBreakdown, moveText, keyNumbers, tagTone, plural, lowDurability, lowDurabilityCount, lowDurabilitySummary, SHEET_CATALOGUE, DEFAULT_SHEET_PROPS } from "./ui/sheet.mts";
-import { rosterView, triple, type RosterRow } from "./ui/roster.mts";
+import { rosterView, triple, sheetMeta, openedRoots, type RosterRow } from "./ui/roster.mts";
 
 test("[fast] sheet: the cap badge says how far the raw value is past the cap, and nothing at or under it", () => {
   assert.equal(capOver(72, 70), 2);
@@ -134,4 +135,22 @@ test("[fast] roster: the search matches anywhere in the name, ignoring case and 
 test("[fast] roster: stat triples join with middots and dash a missing number", () => {
   assert.equal(triple([110, 60, 20]), "110 · 60 · 20");
   assert.equal(triple([100, null, 100]), "100 · – · 100");
+});
+
+test("[fast] sheet: the scan summary counts the containers the character's scans opened, links to them, and leaves the count out at none", () => {
+  const containers = {
+    "1": { serial: 1, root: 1, parent: null, kind: "ground", scannedBy: "Dorran" },
+    "2": { serial: 2, root: 2, parent: null, kind: "ground", scannedBy: "Dorran" },
+    "3": { serial: 3, root: 1, parent: 1, kind: "container", scannedBy: "Dorran" },   // a bag inside 1: not a root
+    "4": { serial: 4, root: 4, parent: null, kind: "backpack", scannedBy: "Dorran" },
+    "5": { serial: 5, root: 5, parent: null, kind: "bank", scannedBy: "Dorran" },
+    "6": { serial: 6, root: 6, parent: null, kind: "ground", scannedBy: "Kestrel" },
+  };
+  assert.deepEqual(openedRoots(containers, "Dorran").map((c) => c.serial), [1, 2], "roots only, the backpack and bank aside");
+  assert.deepEqual(sheetMeta("Dorran", "7 h ago", 11, containers),
+    { scanned: "Scanned 7 h ago", worn: "11 pieces worn", opened: { text: "opened 2 containers", href: "#/containers/Dorran" } });
+  assert.deepEqual(sheetMeta("Kestrel", "1 d ago", 1, containers).opened, { text: "opened 1 container", href: "#/containers/Kestrel" });
+  assert.equal(sheetMeta("Sir Ana", "now", 0, containers).opened, null, "no container opened: no count and no link");
+  const spaced = { "7": { serial: 7, root: 7, parent: null, kind: "ground", scannedBy: "Sir Ana" } };
+  assert.equal(sheetMeta("Sir Ana", "now", 0, spaced).opened!.href, "#/containers/Sir%20Ana", "the name is encoded for the hash");
 });

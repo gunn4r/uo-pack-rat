@@ -25,8 +25,8 @@ const KNOWN: Record<string, AdapterCopy> = {
   tazuo: {
     short: "TazUO",
     badge: { text: "In-game actions", tone: "ok" },
-    blurb: "Scans every layer, the bank, ground containers and nested bags. Highlight, Grab and Go to work from Pack Rat.",
-    blurbUnavailable: "Scans every layer, the bank, ground containers and nested bags, with in-game actions.",
+    blurb: "Scans every layer, the bank, ground containers and the containers inside them. Highlight, Grab and Go to work from Pack Rat.",
+    blurbUnavailable: "Scans every layer, the bank, ground containers and the containers inside them, with in-game actions.",
     folderQuestion: "Where is TazUO?",
     folderHelp: "Pick the TazUO folder or the LegionScripts folder inside it. Pack Rat puts its scanner in LegionScripts.",
     folderPick: "Choose your TazUO folder",
@@ -38,8 +38,8 @@ const KNOWN: Record<string, AdapterCopy> = {
   "razor-enhanced": {
     short: "Razor Enhanced",
     badge: { text: "In-game actions", tone: "ok" },
-    blurb: "Scans every layer, the bank, ground containers and nested bags. Highlight, Grab and Go to work from Pack Rat.",
-    blurbUnavailable: "Scans every layer, the bank, ground containers and nested bags, with in-game actions.",
+    blurb: "Scans every layer, the bank, ground containers and the containers inside them. Highlight, Grab and Go to work from Pack Rat.",
+    blurbUnavailable: "Scans every layer, the bank, ground containers and the containers inside them, with in-game actions.",
     folderQuestion: "Where is Razor Enhanced?",
     folderHelp: "Pick the folder Razor.exe is in, or the Scripts folder inside it. Pack Rat puts its scanner in Scripts.",
     folderPick: "Choose your Razor Enhanced folder",
@@ -51,8 +51,8 @@ const KNOWN: Record<string, AdapterCopy> = {
   "classicuo-web": {
     short: "ClassicUO web client",
     badge: { text: "Paste scans" },
-    blurb: "Scans every layer, ground containers and nested bags. You copy its scanner into the client and paste what it prints into Import.",
-    blurbUnavailable: "Scans every layer, ground containers and nested bags. You paste what its scanner prints into Import.",
+    blurb: "Scans every layer, ground containers and the containers inside them. You copy its scanner into the client and paste what it prints into Import.",
+    blurbUnavailable: "Scans every layer, ground containers and the containers inside them. You paste what its scanner prints into Import.",
     pasteHelp: "The web client runs in your browser and can't save files, so there is no folder to find. Its scanner is one script you paste into the client once; it prints your scan in the game window.",
   },
 };

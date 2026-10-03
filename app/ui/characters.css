@@ -34,7 +34,6 @@
 .pr .crumbs a:hover { color: var(--color-text); text-decoration: underline; }
 .crumbs h1 { overflow: hidden; text-overflow: ellipsis; }
 .sheet-meta { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--space-2); }
-.sheet-meta .mono { font-family: var(--font-mono); }
 
 /* ---------------------------------------------------------------- the sheet */
 .sheet { display: flex; flex-direction: column; gap: var(--space-4); min-width: 0; container-type: inline-size; }
