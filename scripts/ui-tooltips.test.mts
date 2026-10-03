@@ -70,6 +70,12 @@ test("[slow] the item tooltip shows on every screen that draws an item: Inventor
     await page.locator("#inv-table tbody tr.item").first().waitFor({ timeout: 30_000 });
 
     await tipShows(page, page.locator("#inv-table tbody tr.item td:nth-child(2)").first(), "an Inventory row");
+    // a row below the fold: hovering scrolls it into view first, and that scroll (it lands after the pointer is on
+    // the row) must not cancel the tooltip of the row still under the pointer
+    await page.locator("#inv-scroll").evaluate((e) => { e.scrollTop = 0; });
+    const below = page.locator("#inv-table tbody tr.item").last();
+    assert.ok((await below.boundingBox())!.y > (await page.locator("#inv-scroll").boundingBox())!.y + (await page.locator("#inv-scroll").boundingBox())!.height, "the row starts below the fold");
+    await tipShows(page, below.locator("td:nth-child(2)"), "an Inventory row scrolled into view by the hover");
     await page.locator("#inv-table tbody tr.item").nth(1).click();
     await page.waitForSelector("#inv-peek:not([hidden])");
     await tipShows(page, page.locator("#inv-table tbody tr.item td:nth-child(2)").nth(3), "an Inventory row with the peek open");
@@ -116,7 +122,7 @@ test("[slow] the item tooltip shows on every screen that draws an item: Inventor
   }
 });
 
-test("[slow] the item tooltip skips action buttons, hides on Esc and on a scroll, follows keyboard focus with aria-describedby, and gives way to a character sheet slot's own pop", async (t) => {
+test("[slow] the item tooltip skips action buttons, hides on Esc and on a scroll that takes the item from under the pointer (but not on the scroll a hover makes to bring its row into view), follows keyboard focus with aria-describedby, and gives way to a character sheet slot's own pop", async (t) => {
   const why = unavailable();
   if (why) return t.skip(why);
   const dir = seed();
@@ -143,10 +149,10 @@ test("[slow] the item tooltip skips action buttons, hides on Esc and on a scroll
     await row.locator(".map-item-acts button").first().hover();
     await page.waitForTimeout(700);
     assert.equal(await shown(page), false, "no tooltip over the row's actions");
-    // a scroll hides it
+    // a scroll that moves the item out from under the pointer hides it
     await tipShows(page, row.locator(".map-item"), "a drawer row");
-    await page.locator("#map-drawer-body").dispatchEvent("scroll");
-    assert.equal(await shown(page), false, "a scroll hides it");
+    await page.locator("#map-drawer-body").evaluate((e) => { e.scrollTop += 200; });
+    await page.waitForFunction(() => getComputedStyle(document.querySelector("#tip")!).display === "none", undefined, { timeout: 5_000 });
     // keyboard focus: shown after 400 ms with aria-describedby, gone on blur
     await page.mouse.move(2, 2);
     await page.locator("#map-drawer-filter").focus();

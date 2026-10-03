@@ -180,8 +180,8 @@ export function tipNode(it: TooltipItem): HTMLDivElement {
 
 // The one item tooltip (#tip, always a dark subtree): shown 400 ms after the pointer settles on anything carrying
 // data-serial, or after an item has had keyboard focus for 400 ms (showItemTip). It hides on leave, on Esc, when the
-// item leaves the page, and on a scroll (a keyboard tooltip follows its item instead: focusing a row scrolls it into
-// view). pointer-events: none, so it never takes the pointer. A region inside a host marked data-no-tip (a row's
+// item leaves the page, and on a scroll that moves it from under the pointer (a keyboard tooltip follows its item
+// instead: focusing a row scrolls it into view). pointer-events: none, so it never takes the pointer. A region inside a host marked data-no-tip (a row's
 // action buttons) counts as off the item, and an item whose own pop or menu is open (aria-expanded) shows none.
 // Inside an open modal dialog (the top layer) it moves into the dialog, so it is drawn above it.
 const TIP_DELAY = 400;
@@ -284,8 +284,12 @@ export function installTooltip(): void {
   document.addEventListener("mousemove", (e) => { lastX = e.clientX; lastY = e.clientY; if (tipEl().style.display === "block" && !tipAnchor) placeAt(lastX, lastY); });
   document.addEventListener("mouseout", (e) => { if (!tipAnchor && !tipHostOf(e.relatedTarget as Element | null)) hideItemTip(); });
   document.addEventListener("keydown", (e) => { if (e.key === "Escape") hideItemTip(); }, true);
+  // A scroll hides a pointer tooltip only when it took the item from under the pointer: a hover that first scrolls its
+  // row into view (Playwright, or a page bringing a row into view) fires its scroll after the pointer is already on
+  // the row, and that must not cancel it. A keyboard tooltip follows its item.
   document.addEventListener("scroll", () => {
     if (tipSerial == null) return;
-    if (!tipAnchor) hideItemTip(); else if (tipEl().style.display === "block") placeBy(tipAnchor);
+    if (tipAnchor) { if (tipEl().style.display === "block") placeBy(tipAnchor); return; }
+    if (tipHostOf(document.elementFromPoint(lastX, lastY)) !== tipHost) hideItemTip();
   }, { capture: true, passive: true });
 }
