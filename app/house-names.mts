@@ -58,7 +58,7 @@ function checkAreas(v: unknown, b: HouseBounds | undefined): { ok: true; areas: 
     if (!n.ok) return n;
     if (!n.name) return { ok: false, error: `An area's name must be 1 to ${NAME_MAX} characters.` };
     if (!isInt(a.level) || a.level < 0 || a.level > MAX_LEVEL) return { ok: false, error: `an area's level must be a whole number from 0 to ${MAX_LEVEL}` };
-    if (typeof a.color !== "string" || !(AREA_COLORS as readonly string[]).includes(a.color)) return { ok: false, error: `an area's colour must be one of ${AREA_COLORS.join(", ")}` };
+    if (typeof a.color !== "string" || !(AREA_COLORS as readonly string[]).includes(a.color)) return { ok: false, error: `an area's color must be one of ${AREA_COLORS.join(", ")}` };
     if (!Array.isArray(a.rects) || !a.rects.length || a.rects.length > MAX_RECTS) return { ok: false, error: `An area must have 1 to ${MAX_RECTS} rectangles.` };
     for (const r of a.rects) {
       if (!(isObj(r) && isInt(r.x0) && isInt(r.y0) && isInt(r.x1) && isInt(r.y1) && r.x0 <= r.x1 && r.y0 <= r.y1)) return { ok: false, error: "a rectangle must be {x0, y0, x1, y1}, whole numbers with x0 <= x1 and y0 <= y1" };

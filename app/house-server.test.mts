@@ -335,7 +335,7 @@ test("[fast] house areas (issue #10): a PUT carries the whole entry with 32 area
     assert.equal("name" in (await get<{ house: { name?: string } }>(s, "/api/houses/1-3000-1000")).body.house, false);
     const bad = await putName(s, "/api/house-map/1-3000-1000", { name: "", bounds, areas: [{ ...areas[0], color: "#ff0000" }] });
     assert.equal(bad.status, 400);
-    assert.match(bad.body.error ?? "", /colour must be one of/);
+    assert.match(bad.body.error ?? "", /color must be one of/);
     assert.equal((await putName(s, "/api/house-map/1-3000-1000", { name: "", bounds, areas: [] })).body.entry, null, "no name and no areas removes the entry");
   } finally { await s.close(); rmSync(dir, { recursive: true, force: true }); }
 });

@@ -271,8 +271,8 @@ function otherSuitsCard(res: OptimizeResult, view: number | null): HTMLElement {
   const n = picked.size;
   const cmp = button({ label: n >= 2 ? `Compare ${n} suits` : "Compare suits", size: "sm", disabled: n < 2, onClick: () => openSuitCompare([...picked].map(Number).sort((a, b) => a - b)) });
   return el("section", { class: "card b-flush", "aria-label": "Other suits" },
-    box("div", { class: "card-head" }, el("h2", {}, title), txt(pickRefused ? `${pickRefused} can be compared` : "Tick 2 or 3 to compare", `t-sm ${pickRefused ? "tone-warn" : "muted"}`), el("span", { class: "spacer" }),
-      n < 2 ? tipWrap(cmp, "Tick 2 or 3 suits to compare them.") : cmp),
+    box("div", { class: "card-head" }, el("h2", {}, title), txt(pickRefused ? `${pickRefused} can be compared` : "Check 2 or 3 to compare", `t-sm ${pickRefused ? "tone-warn" : "muted"}`), el("span", { class: "spacer" }),
+      n < 2 ? tipWrap(cmp, "Check 2 or 3 suits to compare them.") : cmp),
     (() => { const t = table({ label: "Other suits", columns: [{ label: "Select", width: "44px" }, { label: "Suit", width: "80px" }, { label: "vs best", num: true, width: "90px" }, { label: "Different pieces", width: "32%" }, { label: "Totals vs best" }, { label: "", width: "88px" }], rows });
       t.querySelector("thead th")!.replaceChildren(el("span", { class: "sr" }, "Select")); return t; })());
 }

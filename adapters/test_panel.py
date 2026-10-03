@@ -356,7 +356,7 @@ class Panel(unittest.TestCase):
         w.clock.at(6, lambda: api.click(self.control(api, "Put away...")))
         w.clock.at(8, lambda: (api.running.remove("packrat-character-refresh.py"), self.write({}, "inbox", "tazuo", "Tester-20260930-120000-quick.json")))
         self.run_panel(w, api, until_s=12)
-        self.assertIn("Put away cancelled.", seen["cancelled"])
+        self.assertIn("Put away canceled.", seen["cancelled"])
         self.assertIn("Put away...", seen["cancelled"])
         self.assertTrue(os.path.isfile(self.path("bridge", "stop")), "a trip under way halts after its step")
         self.assertIn("Put away needs shared variables,", self.labels(api))

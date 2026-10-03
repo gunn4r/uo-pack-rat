@@ -146,7 +146,7 @@ test("[fast] house map: an arrow key moves to the nearest stack that way, prefer
 
 test("[fast] house map: the no-tiledata note names its reason, and there is none with tiledata", () => {
   assert.equal(tiledataNote(null), null);
-  for (const r of ["no-client", "no-tazuo-profile", "override-missing", "unreadable"] as const) assert.match(tiledataNote(r)!, /plain colours/, r);
+  for (const r of ["no-client", "no-tazuo-profile", "override-missing", "unreadable"] as const) assert.match(tiledataNote(r)!, /plain colors/, r);
   assert.match(tiledataNote("no-client")!, /No game client is set up/);
 });
 

@@ -1076,7 +1076,7 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
     let source: PutAway;
     if (root.kind === "backpack" && root.scannedBy === req.character) source = { from: "pack", container: +picked.serial, at: req.at };
     else if (root.kind === "ground" && config.labels[String(root.serial)]) source = { from: "ground", container: +picked.serial };
-    else return { ok: false, msg: root.kind === "ground" ? "That chest is not labelled for Organize." : "Pick your backpack, a bag in it,", detail: root.kind === "ground" ? "Label it in the app first." : "or a container in a labelled chest." };
+    else return { ok: false, msg: root.kind === "ground" ? "That chest is not labeled for Organize." : "Pick your backpack, a bag in it,", detail: root.kind === "ground" ? "Label it in the app first." : "or a container in a labeled chest." };
     const black = new Set(readBlacklist().map((e) => e.serial));
     if (chain.some((s) => black.has(s))) return { ok: false, msg: "That container is blacklisted.", detail: "Pack Rat never opens it." };
     if (chain.some((s) => config.labels[String(s)]?.pinned)) return { ok: false, msg: "That container is pinned.", detail: "Organize never takes items out of it." };
@@ -2215,7 +2215,7 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
         // A blacklisted container is never opened by a scan, so a label on one could only plan from stale contents.
         const black = new Set(readBlacklist().map((e) => e.serial));
         const listed = Object.values(checked.config.labels).find((l) => black.has(l.serial));
-        if (listed) return send(res, 400, { ok: false, error: `container ${listed.serial} is blacklisted and cannot be labelled` });
+        if (listed) return send(res, 400, { ok: false, error: `container ${listed.serial} is blacklisted and cannot be labeled` });
         mkdirSync(dirname(ORGANIZE), { recursive: true, mode: DATA_DIR_MODE });
         writeFileAtomic(ORGANIZE, JSON.stringify(checked.config, null, 2) + "\n", DATA_FILE_MODE);
         return send(res, 200, { ok: true });

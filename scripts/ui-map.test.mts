@@ -140,7 +140,7 @@ test("[slow] House map: the nav entry opens it, the picker lists both houses wit
     assert.equal(await page.locator("#map-house").inputValue(), VAULT, "the house with the most chests");
     assert.deepEqual(await page.locator("#map-levels .pill").allTextContents(), ["Ground floor", "2nd floor"]);
     assert.equal(await page.locator('#map-levels .pill[aria-pressed="true"]').textContent(), "Ground floor");
-    assert.match(await page.locator("#map-tiledata-note").textContent() || "", /No game client is set up.*plain colours/);
+    assert.match(await page.locator("#map-tiledata-note").textContent() || "", /No game client is set up.*plain colors/);
     assert.equal(await page.locator('#map-tiledata-note a[href="#/settings"]').count(), 1);
     assert.ok(await page.locator("#map-svg .map-floor").count() > 0, "the house is still drawn");
     assert.equal(await page.locator("#map-svg .map-floor:not(.f-neutral)").count(), 0, "every floor neutral without tiledata");
@@ -589,7 +589,7 @@ test("[slow] House map areas: a mouse drag draws an area, Enter asks its name, S
     assert.equal(await page.locator('.map-area[data-area="a1"]').count(), 1);
     // ⋯ › Change colour: the palette by name, the area's own pressed.
     await page.locator("#map-area-menu-a1").click();
-    await page.locator('.pop [role="menuitem"]', { hasText: "Change colour" }).click();
+    await page.locator('.pop [role="menuitem"]', { hasText: "Change color" }).click();
     await page.waitForSelector("#map-colour-area-3");
     assert.equal(await page.locator("#map-colour-area-1").getAttribute("aria-pressed"), "true");
     assert.deepEqual(await page.locator(".map-colour").evaluateAll((bs) => bs.map((b) => b.getAttribute("aria-label"))), ["Purple", "Orange", "Teal", "Pink", "Blue", "Yellow", "Green", "Red"]);
@@ -692,7 +692,7 @@ test("[slow] House map areas: the keyboard alone draws an area (arrows move the 
     await keys("Space", "ArrowRight", "Escape");
     await page.waitForFunction(() => !document.querySelector("#map-draw-hint"), undefined, { timeout: 15_000 });
     assert.ok(await focused(page, "#map-new-area-0"));
-    await live("Drawing cancelled.");
+    await live("Drawing canceled.");
 
     // The cursor starts mid-house (3003, 1003) and the arrows move it the way they point on screen (↑ half a tile up, → a whole tile right): four ↑ to the north corner (3001, 1001), then four ↓ and two → lay the row of five to 3005, 1001; Shift+Space and four ↓ and two ← add the column down to 3005, 1005.
     await page.keyboard.press("Enter");
@@ -791,14 +791,14 @@ test("[slow] Settings › UO folder (house map): a folder set here whose tiledat
     const text = await card.textContent() || "";
     assert.match(text, /Set here/);
     assert.ok(text.includes(mine));
-    assert.match(await card.locator(".msg.warn").textContent() || "", /not one Pack Rat can read.*plain colours/);
+    assert.match(await card.locator(".msg.warn").textContent() || "", /not one Pack Rat can read.*plain colors/);
     assert.equal(await page.locator("#set-uofolder-reset").count(), 1);
     rmSync(join(mine, "tiledata.mul"));
     await page.locator("#set-uofolder-save").click();   // the field still holds the folder: refused, and the card looks again
     await page.waitForSelector("#set-uofolder .msg.bad");
     assert.match(await card.locator(".msg.bad").textContent() || "", /That folder has no tiledata\.mul\./);
     assert.ok(!(await card.locator(".msg.bad").textContent() || "").includes(mine), "the refusal never echoes the path");
-    assert.match(await card.locator(".msg.warn").textContent() || "", /no tiledata\.mul any more.*plain colours/);
+    assert.match(await card.locator(".msg.warn").textContent() || "", /no tiledata\.mul any more.*plain colors/);
     assert.equal(await page.locator("#set-uofolder-path").inputValue(), mine);
     assert.deepEqual(errors, []);
   } finally { await done(app, dir); }

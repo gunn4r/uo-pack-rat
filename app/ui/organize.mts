@@ -58,10 +58,10 @@ function render(): void {
   const cfg = state.organize.config;
   if (!cfg || !state.inv) return;
   const stage = organizeStage(cfg, groundRoots());
-  if (stage === "no-scans") { body().replaceChildren(emptyState("Nothing to organise yet", "Organize moves items between containers on the ground, such as the chests in your house. Scan them in game first.", null)); return; }
+  if (stage === "no-scans") { body().replaceChildren(emptyState("Nothing to organize yet", "Organize moves items between containers on the ground, such as the chests in your house. Scan them in game first.", null)); return; }
   if (stage === "no-labels") {
     const auto = button({ label: "Auto organize…", attrs: { id: "org-auto" }, onClick: () => { void openAutoOrganize(auto); } });
-    body().replaceChildren(emptyState("Label your storage first", "Organize only takes items from, and puts items into, containers you have labelled, so a friend's chest or a vendor is never touched. In Inventory › Containers, choose Label… from a chest's ⋯ menu, or let Auto organize label your chests and write the rules for you.",
+    body().replaceChildren(emptyState("Label your storage first", "Organize only takes items from, and puts items into, containers you have labeled, so a friend's chest or a vendor is never touched. In Inventory › Containers, choose Label… from a chest's ⋯ menu, or let Auto organize label your chests and write the rules for you.",
       box("div", { class: "org-empty-actions" },
         button({ label: "Open Containers", variant: "primary", attrs: { id: "org-open-containers" }, onClick: () => { location.hash = "#/containers"; } }), auto)));
     return;
@@ -92,7 +92,7 @@ function rulesCard(cfg: OrganizeConfig): HTMLElement {
   const report = new Map((state.organize.plan?.rules || []).map((r) => [r.ruleId, r] as const));
   const list = cfg.rules.length
     ? box("ol", { class: "org-rules", "aria-label": "Rules, first match wins" }, ...cfg.rules.map((r, i) => ruleRow(cfg, r, i, report.get(r.id))))
-    : box("div", { class: "empty-state" }, el("h3", { class: "t-lg" }, "No rules yet"), el("p", { class: "muted" }, "A rule says which items go where: reagents into the reagent chest, rings into the jewellery box. Start from a preset."));
+    : box("div", { class: "empty-state" }, el("h3", { class: "t-lg" }, "No rules yet"), el("p", { class: "muted" }, "A rule says which items go where: reagents into the reagent chest, rings into the jewelry box. Start from a preset."));
   return card({ title: "Rules", actions: [auto, add], attrs: { id: "org-rules" }, body: [
     txt("Each item goes to the first rule it matches. Put narrow rules above broad ones.", "t-sm muted"),
     list,

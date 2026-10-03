@@ -144,8 +144,8 @@ function openPropsPicker(anchor: HTMLElement, redraw: () => void): void {
 }
 // The worn-gear tiles, in fixed groups so every row has equal height and nothing is orphaned.
 export const SLOT_GROUPS: Array<[string, string[]]> = [
-  ["Armour", ["helmet", "neck", "chest", "arms", "hands", "legs"]],
-  ["Weapons and jewellery", ["oneHanded", "twoHanded", "ring", "bracelet", "earrings", "talisman"]],
+  ["Armor", ["helmet", "neck", "chest", "arms", "hands", "legs"]],
+  ["Weapons and jewelry", ["oneHanded", "twoHanded", "ring", "bracelet", "earrings", "talisman"]],
   ["Clothing", ["cloak", "robe", "tunic", "shirt", "waist", "feet"]],
 ];
 const FIXED_SLOTS = new Set(SLOT_GROUPS.flatMap(([, s]) => s));

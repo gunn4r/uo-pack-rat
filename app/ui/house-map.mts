@@ -71,13 +71,13 @@ function setHot(id: string | null): void {
 }
 const stopEditing = (): void => { draw = null; dragging = false; naming = null; renamingArea = null; };
 // Leaving drawing mode any other way than Enter or Esc (another level, a crumb): said too.
-const dropDrawing = (): void => { if (!draw) return; draw = null; dragging = false; announce("Drawing cancelled."); };
+const dropDrawing = (): void => { if (!draw) return; draw = null; dragging = false; announce("Drawing canceled."); };
 
 // The top bar's view and colour switches (index.html holds placeholders), and the house picker.
 const viewSeg = segmented({ label: "View", value: "angle", options: [{ value: "angle", label: "Game angle" }, { value: "top", label: "Top-down" }], onChange: (v) => { S.view = v === "top" ? "top" : "angle"; S.vb = null; render(); } });
 viewSeg.id = "map-view";
 $<HTMLElement>("#map-view")!.replaceWith(viewSeg);
-const modeSeg = segmented({ label: "Colours", value: "contents", options: [{ value: "contents", label: "Contents" }, { value: "free", label: "Free space" }], onChange: (v) => { S.mode = v === "free" ? "free" : "contents"; render(); } });
+const modeSeg = segmented({ label: "Colors", value: "contents", options: [{ value: "contents", label: "Contents" }, { value: "free", label: "Free space" }], onChange: (v) => { S.mode = v === "free" ? "free" : "contents"; render(); } });
 modeSeg.id = "map-mode";
 $<HTMLElement>("#map-mode")!.replaceWith(modeSeg);
 // What the drawing keys did, for a screen reader: outside the panes a redraw rebuilds, so an announcement made just after one is still heard.
@@ -213,7 +213,7 @@ function areaRow(m: HouseModel, a: HouseArea, chests: number, editable: boolean)
   const more: HTMLButtonElement = button({ label: `More actions for ${a.name}`, icon: "more", iconOnly: true, variant: "ghost", size: "sm", attrs: { id: `map-area-menu-${a.id}`, "aria-haspopup": "menu", "aria-expanded": "false" },
     onClick: () => { menu(more, [
       { label: "Redraw", onSelect: () => startDrawing(a.level, a.id) },
-      { label: "Change colour", onSelect: () => colourPicker(m, a, more) },
+      { label: "Change color", onSelect: () => colourPicker(m, a, more) },
       "divider",
       { label: "Delete", danger: true, onSelect: () => { void askDelete(m, a); } },
     ], { label: `Actions for ${a.name}`, width: 160 }); } });
@@ -232,9 +232,9 @@ function areaRow(m: HouseModel, a: HouseArea, chests: number, editable: boolean)
 }
 // Change colour: the palette as a row of swatches, the area's own pressed.
 function colourPicker(m: HouseModel, a: HouseArea, anchor: HTMLElement): void {
-  popover(anchor, [box("div", { class: "map-colours", role: "group", "aria-label": `Colour of ${a.name}` }, ...AREA_COLORS.map((c, i) =>
-    box("button", { type: "button", class: "map-colour", id: `map-colour-${c}`, "aria-label": AREA_COLOR_NAMES[c] ?? `Colour ${i + 1}`, title: AREA_COLOR_NAMES[c] ?? "", "aria-pressed": String(a.color === c), style: `--area:var(--color-${c})`,
-      onclick: () => { closePopover(); if (c !== a.color) void editAreas(m, (l) => l.map((x) => (x.id === a.id ? { ...x, color: c } : x))).then((why) => afterSave(why, `map-area-menu-${a.id}`)); } })))], { label: `Colour of ${a.name}` });
+  popover(anchor, [box("div", { class: "map-colours", role: "group", "aria-label": `Color of ${a.name}` }, ...AREA_COLORS.map((c, i) =>
+    box("button", { type: "button", class: "map-colour", id: `map-colour-${c}`, "aria-label": AREA_COLOR_NAMES[c] ?? `Color ${i + 1}`, title: AREA_COLOR_NAMES[c] ?? "", "aria-pressed": String(a.color === c), style: `--area:var(--color-${c})`,
+      onclick: () => { closePopover(); if (c !== a.color) void editAreas(m, (l) => l.map((x) => (x.id === a.id ? { ...x, color: c } : x))).then((why) => afterSave(why, `map-area-menu-${a.id}`)); } })))], { label: `Color of ${a.name}` });
 }
 // Rename, as the house's name: Enter or leaving the field saves, Esc cancels, a refused name keeps the field open with the reason; a redraw rebuilds it from the draft.
 function areaRenameField(m: HouseModel, a: HouseArea, r: { draft: string; error: string | null }): HTMLElement {
@@ -335,7 +335,7 @@ function cancelDrawing(): void {
   if (!d) return;
   draw = null; dragging = false;
   render();
-  announce("Drawing cancelled.");
+  announce("Drawing canceled.");
   (d.target ? $<HTMLElement>(`#map-area-menu-${CSS.escape(d.target)}`) : $<HTMLElement>(`#map-new-area-${d.level}`))?.focus();
 }
 // Enter: a rectangle the keyboard is laying is ended first; a redraw saves at once, a new area asks for its name.
@@ -439,7 +439,7 @@ function stage(): HTMLElement {
 function notes(): HTMLElement[] {
   if (S.id === PLAIN) return [message({ tone: "info", text: "These chests are not inside a house a scan has drawn. Scan from inside the house with the 2.11.0 scripts to draw it.", attrs: { id: "map-plain-note" } })];
   const note = !S.list || S.list.tiledata ? null : tiledataNote(S.list.tiledataFrom.reason);
-  return note ? [message({ tone: "warn", title: "Plain colours", text: note, attrs: { id: "map-tiledata-note" }, actions: [box("a", { class: "btn btn-sm", href: "#/settings" }, txt("Set the UO folder in Settings"))] })] : [];
+  return note ? [message({ tone: "warn", title: "Plain colors", text: note, attrs: { id: "map-tiledata-note" }, actions: [box("a", { class: "btn btn-sm", href: "#/settings" }, txt("Set the UO folder in Settings"))] })] : [];
 }
 function emptyState(): HTMLElement {
   return box("section", { class: "card map-empty" }, box("div", { class: "empty-state" },
@@ -832,7 +832,7 @@ function swatchEl(c: Colour | null): HTMLElement | null {
   return c ? el("span", { class: "map-swatch", "aria-hidden": "true", style: `background:${cssColour(c)}` }) : null;
 }
 function legend(): HTMLElement {
-  return box("ul", { class: "map-legend", id: "map-legend", "aria-label": "Colours" }, ...legendOf(S.mode).map((l) => box("li", { class: "map-legend-item" }, swatchEl(l.token ? { token: l.token } : null), txt(l.text, "t-sm"))));
+  return box("ul", { class: "map-legend", id: "map-legend", "aria-label": "Colors" }, ...legendOf(S.mode).map((l) => box("li", { class: "map-legend-item" }, swatchEl(l.token ? { token: l.token } : null), txt(l.text, "t-sm"))));
 }
 // The selected stack's chests, else the house's totals. Highlight the stack is offered on the same terms as each chest's Highlight, and not while it is still sending. A redraw keeps the focus on the same control when it is still there.
 function drawPanel(): void {

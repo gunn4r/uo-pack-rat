@@ -1027,7 +1027,7 @@ class RazorBlacklist(DataDir, unittest.TestCase):
         for target in (-1, 0, PACK, RING2):
             self.pick(w, target)
         self.assertFalse(os.path.exists(os.path.join(self.data, "scan-blacklist.json")))
-        self.assertEqual(w.messages.count("Pack Rat: cancelled, nothing blacklisted."), 2)
+        self.assertEqual(w.messages.count("Pack Rat: canceled, nothing blacklisted."), 2)
 
 
 if __name__ == "__main__":

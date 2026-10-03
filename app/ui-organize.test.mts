@@ -187,7 +187,7 @@ test("[fast] saving a rule labels each unlabelled bag it picked, by the bag's ow
 test("[fast] the live match line says how many items the filter takes, with examples, and that higher rules may claim some", () => {
   assert.deepEqual(matchLine({ count: 3, pieces: 43, sample: ["Black Pearl", "Garlic", "Sulfurous Ash"] }, 2), { text: "Matches 3 items (e.g. Black Pearl, Garlic, Sulfurous Ash)", note: "Rules above this one may claim some of them first." });
   assert.deepEqual(matchLine({ count: 1, pieces: 1, sample: ["Ruby"] }, 0), { text: "Matches 1 item (e.g. Ruby)", note: null });
-  assert.deepEqual(matchLine({ count: 0, pieces: 0, sample: [] }, 3), { text: "Matches no item in your labelled containers.", note: null });
+  assert.deepEqual(matchLine({ count: 0, pieces: 0, sample: [] }, 3), { text: "Matches no item in your labeled containers.", note: null });
   assert.equal(matchLine(null, 1), null);
 });
 
@@ -291,7 +291,7 @@ test("[fast] the empty bags note counts them, names a few with their place, and 
   assert.equal(emptyBagsNote(PLAN, false, nameOf), null);
   const bags = Array.from({ length: 7 }, (_, i) => ({ serial: 0x42000000 + i, name: i ? "Bag" : "Weapons", container: i % 2 ? C : A }));
   assert.deepEqual(emptyBagsNote({ emptyBags: bags, moves: [] }, false, nameOf), {
-    title: "7 empty bags in your labelled containers",
+    title: "7 empty bags in your labeled containers",
     text: "Weapons (in Reagents), Bag (in Gems), Bag (in Reagents), Bag (in Gems), Bag (in Reagents) and 2 more. Each takes one of its container's item slots. To free those slots, pick a container for Empty bags under Rules, and the plan gathers them there.",
   });
   const one = bags.slice(0, 1);
@@ -409,7 +409,7 @@ test("[fast] Auto organize: the proposal's headline, each group's status, the no
   assert.equal(proposalHeadline(P()), "Labels 2 containers and writes 1 rule. 12 items to move in 1 trip, about 1 minute.");
   assert.equal(proposalHeadline(P({ plan: { moves: 0, trips: 0, noRoom: 0, crossSite: 0, unclaimed: 0, seconds: 30 } })), "Labels 2 containers and writes 1 rule. Nothing needs to move.");
   assert.equal(proposalHeadline(P({ changed: false })), "This is already your setup: nothing to change.");
-  assert.equal(proposalHeadline(P({ containers: [] })), "Tick at least one container for Auto organize to use.");
+  assert.equal(proposalHeadline(P({ containers: [] })), "Check at least one container for Auto organize to use.");
 
   assert.deepEqual(groupStatus(group()), { badge: "Fits", tone: undefined, text: null });
   assert.deepEqual(groupStatus(group({ shortfall: 8, addContainers: 1 })), { badge: "Short", tone: "warn", text: "8 slots short: add 1 container." });
@@ -430,9 +430,9 @@ test("[fast] Auto organize: the proposal's headline, each group's status, the no
   ]);
   assert.deepEqual(proposalNotes(P()), []);
   assert.deepEqual(proposalNotes(P({ layout: { chests: 0, bags: [], spareBags: 0, roomy: true } })), ["No chest is filled past 80%, so new loot has room: some groups spread into a second chest."]);
-  const bags = [{ chest: A, family: "Armour", bags: 5 }, { chest: B, family: "Chest 40000002", bags: 1 }, { chest: null, family: "Scrolls", bags: 2 }];
+  const bags = [{ chest: A, family: "Armor", bags: 5 }, { chest: B, family: "Chest 40000002", bags: 1 }, { chest: null, family: "Scrolls", bags: 2 }];
   assert.deepEqual(proposalNotes(P({ strategy: "detailed", layout: { chests: 1, bags, spareBags: 3, roomy: false } })), [
-    "For the full Detailed layout (no chest over 80% full, a bag for each group sharing one), add 1 more chest and 8 bags: 5 in Chest 40000001 (Armour), 1 in Chest 40000002, 2 in a new Scrolls chest. 3 empty bags already in your chests can be moved in first. Then rescan and run Auto organize again.",
+    "For the full Detailed layout (no chest over 80% full, a bag for each group sharing one), add 1 more chest and 8 bags: 5 in Chest 40000001 (Armor), 1 in Chest 40000002, 2 in a new Scrolls chest. 3 empty bags already in your chests can be moved in first. Then rescan and run Auto organize again.",
   ]);
   assert.deepEqual(proposalStays(P({ plan: { moves: 30, trips: 2, noRoom: 12, crossSite: 0, unclaimed: 5, seconds: 30 } })), ["12 items have no room and stay where they are.", "5 items no rule takes stay where they are."]);
   assert.deepEqual(proposalStays(P({ plan: { moves: 30, trips: 2, noRoom: 1, crossSite: 0, unclaimed: 1, seconds: 30 } })), ["1 item has no room and stays where it is.", "1 item no rule takes stays where it is."]);
@@ -442,8 +442,8 @@ test("[fast] Auto organize: the proposal's headline, each group's status, the no
   assert.deepEqual(candidateGroups([cand(A), cand(B, { site: 1 }), cand(C)]).map((g) => [g.title, g.rows.map((r) => r.serial)]), [["House 1", [A, C]], ["House 2", [B]]]);
   assert.deepEqual(candidateGroups([cand(A), cand(C)]).map((g) => g.title), [null], "one house needs no heading");
   assert.equal(candidateNote(cand(A)), null);
-  assert.equal(candidateNote(cand(A, { mine: true, ticked: false, label: { name: "Reagents", origin: "manual" } })), "Your own label: tick it to let Auto organize fill it (its name stays).");
-  assert.equal(candidateNote(cand(A, { mine: true, ticked: false })), "One of your rules fills it: tick it to let Auto organize use it too.");
+  assert.equal(candidateNote(cand(A, { mine: true, ticked: false, label: { name: "Reagents", origin: "manual" } })), "Your own label: check it to let Auto organize fill it (its name stays).");
+  assert.equal(candidateNote(cand(A, { mine: true, ticked: false })), "One of your rules fills it: check it to let Auto organize use it too.");
   assert.equal(candidateNote(cand(A, { mine: true, ticked: true, label: { name: "Reagents", origin: "manual" } })), null, "ticked because an earlier Auto rule fills it: nothing to explain");
 
   assert.equal(canTrySimple(P({ strategy: "detailed", unassigned: 2 })), true);
@@ -451,7 +451,7 @@ test("[fast] Auto organize: the proposal's headline, each group's status, the no
   assert.equal(acceptGate(P(), false), null);
   assert.equal(acceptGate(P(), true), "Working out the proposal…");
   assert.equal(acceptGate(null, false), "Working out the proposal…");
-  assert.equal(acceptGate(P({ containers: [] }), false), "Tick at least one container first.");
+  assert.equal(acceptGate(P({ containers: [] }), false), "Check at least one container first.");
   assert.equal(acceptGate(P({ changed: false }), false), "Nothing to change: this is already your setup.");
   assert.deepEqual(Object.keys(STRATEGY_TEXT), ["simple", "detailed", "build"]);
 });

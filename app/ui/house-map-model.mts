@@ -110,7 +110,7 @@ export function colourOf(c: ChestView, mode: Mode): Colour {
 export function legendOf(mode: Mode): Array<{ token: string | null; text: string }> {
   return mode === "free"
     ? [{ token: "--color-map-free-empty", text: "Empty" }, { token: "--color-map-free-half", text: "Under half full" }, { token: "--color-map-free-filling", text: "Filling" }, { token: "--color-map-free-full", text: "90% or more full" }, { token: "--color-map-free-unknown", text: "Fill unknown" }]
-    : [{ token: null, text: "A labelled chest takes its label's colour." }, { token: "--color-map-chest", text: "Not labelled" }, { token: "--color-map-chest-empty", text: "Not labelled, empty" }, { token: "--color-map-unopened", text: "Not opened yet" }];
+    : [{ token: null, text: "A labeled chest takes its label's color." }, { token: "--color-map-chest", text: "Not labeled" }, { token: "--color-map-chest-empty", text: "Not labeled, empty" }, { token: "--color-map-unopened", text: "Not opened yet" }];
 }
 export const fillWords = (c: ChestView): string => (!c.opened ? "not opened yet" : c.fill ? `${c.fill.items} of ${c.fill.max} items` : "fill unknown");
 // Every chest element's accessible name.
@@ -189,7 +189,7 @@ export function stackWhere(m: HouseModel, s: Stack, areas: readonly HouseArea[] 
 }
 // Why the map is drawn in plain colours (GET /api/houses's tiledataFrom.reason), or null when tiledata.mul was read.
 export function tiledataNote(reason: TiledataFrom["reason"]): string | null {
-  const plain = "so the house is drawn in plain colours, with every impassable tile as a wall";
+  const plain = "so the house is drawn in plain colors, with every impassable tile as a wall";
   switch (reason) {
     case null: return null;
     case "no-client": return `No game client is set up, so Pack Rat has no tiledata.mul to tell walls, floors and materials apart, ${plain}.`;

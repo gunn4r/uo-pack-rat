@@ -75,7 +75,7 @@ function labelProblem(key: string, v: unknown): string | null {
   if (bad) return `${at}.${bad} is not a label field`;
   if (v.serial !== Number(key)) return `${at}.serial must be ${key}`;
   if (!isText(v.name)) return `${at}.name must be 1 to 64 characters`;
-  if (v.color !== undefined && !(typeof v.color === "string" && COLOR.test(v.color))) return `${at}.color must be a #rrggbb colour`;
+  if (v.color !== undefined && !(typeof v.color === "string" && COLOR.test(v.color))) return `${at}.color must be a #rrggbb color`;
   if (v.pinned !== undefined && typeof v.pinned !== "boolean") return `${at}.pinned must be true or false`;
   if (!isOrigin(v.origin)) return `${at}.origin must be "manual" or "strategy:<id>"`;
   return null;
@@ -122,7 +122,7 @@ export function matchProblem(m: unknown, at = "match"): string | null {
 // A rule's target is named with the rule (issue #123: pinning a chest an Auto rule fills is the usual way here, and
 // the player knows the rule by its name, not its place in the list).
 function containerProblem(v: unknown, labels: Record<string, ContainerLabel>, at: string, rule?: string): string | null {
-  if (!isSerial(v) || !labels[String(v)]) return `${at}: ${short(v)} is not a labelled container`;
+  if (!isSerial(v) || !labels[String(v)]) return `${at}: ${short(v)} is not a labeled container`;
   if (labels[String(v)]!.pinned) {
     return rule != null ? `The rule "${rule}" puts items into ${labels[String(v)]!.name}, which is pinned: nothing is put into a pinned container. Take it off the rule, or unpin it.`
       : `${at}: ${v} is pinned, and nothing is put into a pinned container`;

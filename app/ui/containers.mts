@@ -53,7 +53,7 @@ export async function labelContainer(r: Container): Promise<void> {
   const cfg = state.organize.config!, had = cfg.labels[String(r.serial)];
   const shown = had?.name ?? (r.label || bagLabel(r));
   const name = input({ value: had?.name ?? bagLabel(r), attrs: { id: "lbl-name", maxlength: "64" } });
-  const colour = select([{ value: "", label: "No colour" }, ...LABEL_COLOURS.map((c) => ({ value: c.value, label: c.name }))], had?.color ?? "", { attrs: { id: "lbl-colour" } });
+  const colour = select([{ value: "", label: "No color" }, ...LABEL_COLOURS.map((c) => ({ value: c.value, label: c.name }))], had?.color ?? "", { attrs: { id: "lbl-colour" } });
   const pin = switchControl({ label: "Pinned: Organize never takes items out or puts items in", checked: !!had?.pinned, attrs: { id: "lbl-pin" } });
   const problem = el("div", {});
   let dlg: { close: () => void } | null = null;
@@ -72,7 +72,7 @@ export async function labelContainer(r: Container): Promise<void> {
     const err = await saveConfig(config);
     if (err) { fail(err); return; }
     dlg?.close();
-    toast(`${n} is labelled for Organize.`, "good");
+    toast(`${n} is labeled for Organize.`, "good");
   };
   const remove = async (): Promise<void> => {
     const { config, dropped } = withoutLabel(await current(), +r.serial);
@@ -80,12 +80,12 @@ export async function labelContainer(r: Container): Promise<void> {
     const err = await saveConfig(config);
     if (err) { fail(err); return; }
     dlg?.close();
-    toast(`${shown} is no longer labelled.`, "good");
+    toast(`${shown} is no longer labeled.`, "good");
   };
   name.addEventListener("keydown", (e) => { if (e.key === "Enter") void save(); });
   dlg = openDialog({
     title: had ? `Edit label: ${shown}` : `Label ${shown}`, width: "md", initialFocus: name,
-    body: [el("p", { class: "muted" }, "Organize only takes items from, and puts items into, labelled containers. The label is shown wherever this container is."), field({ label: "Label", control: name }), field({ label: "Colour", control: colour }), pin.root, problem],
+    body: [el("p", { class: "muted" }, "Organize only takes items from, and puts items into, labeled containers. The label is shown wherever this container is."), field({ label: "Label", control: name }), field({ label: "Color", control: colour }), pin.root, problem],
     actions: [...(had ? [button({ label: "Remove label", variant: "danger-outline", onClick: () => { void remove(); } })] : []), button({ label: "Cancel", onClick: () => dlg?.close() }), button({ label: "Save label", variant: "primary", attrs: { id: "lbl-save" }, onClick: () => { void save(); } })],
   });
 }

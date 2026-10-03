@@ -82,7 +82,7 @@ def rfc3339_now():
 
 
 ADAPTER_ID = "tazuo"
-ADAPTER_VERSION = "2.13.0"
+ADAPTER_VERSION = "2.14.0"
 
 SELF = "packrat-panel.py"
 SCANNER, REFRESH, BRIDGE, BLACKLIST = "packrat-scanner.py", "packrat-character-refresh.py", "packrat-bridge.py", "packrat-blacklist.py"
@@ -466,7 +466,7 @@ def cancel_put_away():
     stop flag, so a trip under way halts after its current step."""
     trip = state["run"]["phase"] == "trip"
     write_stop()
-    end_put_away("Put away cancelled.", "The bridge stops after its current step." if trip else "")
+    end_put_away("Put away canceled.", "The bridge stops after its current step." if trip else "")
 
 
 def on_put_away():

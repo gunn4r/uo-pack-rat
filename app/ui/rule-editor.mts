@@ -113,7 +113,7 @@ function draw(focus?: string): void {
       button({ label: `Remove ${t.name}`, icon: "close", iconOnly: true, variant: "ghost", size: "sm", onClick: () => { d.targets = d.targets.filter((x) => x !== t.serial); draw(); } })))));
   // Labelled chests with the bags inside them indented under them (a picked bag is labelled when the rule is saved).
   const addable = targetOptions(cfg, where, d.targets, { blacklist: state.organize.blacklist }).map((o) => ({ value: o.value, label: `${" ".repeat(4 * o.depth)}${o.label}` }));
-  const addSel = select([{ value: "", label: addable.length ? "Add a container…" : "No other labelled container" }, ...addable], "", { attrs: { id: "rule-add-target" } });
+  const addSel = select([{ value: "", label: addable.length ? "Add a container…" : "No other labeled container" }, ...addable], "", { attrs: { id: "rule-add-target" } });
   addSel.disabled = !addable.length;
   addSel.addEventListener("change", () => { if (addSel.value) { d.targets = [...d.targets, +addSel.value]; draw("#rule-add-target"); } });
   drawer().body.replaceChildren(...compactChildren([
@@ -130,7 +130,7 @@ function draw(focus?: string): void {
     box("div", { class: "field" }, suits.root, txt("A piece of any suit the Suit Builder saved is left to the rules below, however well it fits this one.", "t-sm muted")),
     matchEl(),
     el("h3", { class: "t-md" }, "Where they go"),
-    el("p", { class: "t-sm muted" }, "The first container fills up, then the next. Pick labelled chests or the bags inside them: label more chests in Inventory › Containers."),
+    el("p", { class: "t-sm muted" }, "The first container fills up, then the next. Pick labeled chests or the bags inside them: label more chests in Inventory › Containers."),
     list,
     field({ label: "Add a container", control: addSel }),
   ]));

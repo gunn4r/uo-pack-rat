@@ -160,7 +160,7 @@ function step1(): StepContent {
   sel.addEventListener("change", () => { wiz!.shard = sel.value; render(); $<HTMLSelectElement>("#wiz-shard")?.focus(); });
   return {
     question: "Which shard do you play on?",
-    help: "Pack Rat reads item property caps, rarity colours and the Resisting Spells bonus from the shard's rules.",
+    help: "Pack Rat reads item property caps, rarity colors and the Resisting Spells bonus from the shard's rules.",
     body: [field({ label: "Shard rules", control: sel }), wiz!.shard === "uoalive" ? message({ tone: "info", text: AFK_NOTICE }) : null],
   };
 }
