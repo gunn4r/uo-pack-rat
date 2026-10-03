@@ -848,6 +848,8 @@ test("[fast] house map search: the view zooms to the matching stacks, at least 8
   assert.ok(a[0] > v.x && a[0] < v.x + v.w && a[1] > v.y + v.h / 2 && a[1] < v.y + v.h, "the stack in the lower half");
   const both = hitsView(m, [m.stacks[0]!, m.stacks.at(-1)!], "angle"), b = anchorOf(m, m.stacks.at(-1)!, "angle");
   assert.ok(b[0] > both.x && b[0] < both.x + both.w && b[1] < both.y + both.h);
+  const front = m.stacks.reduce((a, b) => (b.x + b.y > a.x + a.y ? b : a)), fv = hitsView(m, [front], "angle"), fh = hitsView(m, [front], "angle", false).h;
+  for (const o of m.stacks) { const [ox, oy] = anchorOf(m, o, "angle"); if (Math.abs(ox - (fv.x + fv.w / 2)) <= fv.w / 2) assert.ok(oy - fv.y >= fh - 0.01, `the room is above stack ${o.letter} too`); }
   const mid = hitsView(m, [s], "angle", false);
   assert.ok(a[1] > mid.y && a[1] < mid.y + mid.h && mid.h === v.h / 2, "without room the stack is in the middle");
 });

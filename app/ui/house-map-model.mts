@@ -647,7 +647,7 @@ export function calloutRow(anchors: ReadonlyArray<{ id: string; x: number }>, pa
   const cards = shown.map((a, i): CalloutSlot => { const left = left0 + i * (width + gap); return { id: a.id, left, width, leaderX: Math.max(left + Math.min(16, width / 2), Math.min(left + width - Math.min(16, width / 2), a.x)) }; });
   return { cards, more: rest ? { left: left0 + k * (width + gap), width: chipW, count: rest } : null };
 }
-// The view a search zooms to: the matching stacks as drawn, at least 8 tiles across and 6 high, with as much again above them for the callouts (`room`; without it, as "Show on map" zooms to one stack, they are in the middle).
+// The view a search zooms to: the matching stacks as drawn, at least 8 tiles across and 6 high, with as much again above them for the callouts (`room`; without it, as "Show on map" zooms to one stack, they are in the middle). The callouts go above every stack on the level, so the room starts over the highest one standing across the view's width.
 export function hitsView(m: HouseModel, stacks: readonly Stack[], view: View, room = true): Box {
   let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
   for (const s of stacks) {
@@ -659,7 +659,11 @@ export function hitsView(m: HouseModel, stacks: readonly Stack[], view: View, ro
   }
   if (x0 === Infinity) return boundsOf(m, 0, view);
   const w = Math.max(x1 - x0 + 2 * W, 8 * W), h = Math.max(y1 - y0 + 2 * W, 6 * W), cx = (x0 + x1) / 2, cy = (y0 + y1) / 2;
-  return room ? { x: cx - w / 2, y: cy - h / 2 - h, w, h: 2 * h } : { x: cx - w / 2, y: cy - h / 2, w, h };
+  if (!room) return { x: cx - w / 2, y: cy - h / 2, w, h };
+  let top = Infinity;
+  for (const s of m.stacks) if (s.level === stacks[0]!.level) { const [ax, ay] = anchorOf(m, s, view); if (Math.abs(ax - cx) <= w / 2) top = Math.min(top, ay); }
+  const y = Math.min(cy - h / 2 - h, top - h);
+  return { x: cx - w / 2, y, w, h: cy + h / 2 - y };
 }
 // Which house holds each container, by serial: the houses' stacks (GET /api/houses lists each house's container serials), and every other ground container with a place of its own on the plain grid. What "Show on map" and the search's "Elsewhere" go by.
 export interface HouseRef { id: string; name: string }

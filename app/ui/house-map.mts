@@ -221,12 +221,14 @@ function placePins(m: HouseModel, ctm: DOMMatrix | null): void {
   const r = layer.getBoundingClientRect(), base = m.levels[S.level]?.floorZ ?? 0, zoom = $<HTMLElement>("#map-canvas .map-zoom")?.getBoundingClientRect();
   const screen = (p: Pt): Pt => { const q = new DOMPoint(p[0], p[1]).matrixTransform(ctm); return [q.x - r.left, q.y - r.top]; };
   // Each stack's leader ends on its top matching container's top face.
-  const anchors = pinStacks.map(({ stack: s, hits }) => { const [x, y] = screen(project(s.x - m.x0 + 0.5, s.y - m.y0 + 0.5, (drawnZs(s, base)[hits[0]!.index] ?? 0) + CHEST_H, S.view)); return { id: s.letter, x, y, top: screen(anchorOf(m, s, S.view))[1] }; });
+  const anchors = pinStacks.map(({ stack: s, hits }) => { const [x, y] = screen(project(s.x - m.x0 + 0.5, s.y - m.y0 + 0.5, (drawnZs(s, base)[hits[0]!.index] ?? 0) + CHEST_H, S.view)); return { id: s.letter, x, y }; });
   const row = calloutRow(anchors, r.width, { reserve: zoom ? Math.max(0, r.right - zoom.left) : 52 });
   const cards = [...layer.querySelectorAll<HTMLElement>(".map-pin")], shown = new Map(row.cards.map((c) => [c.id, c]));
   for (const c of cards) { const slot = shown.get(c.dataset.stack!); c.hidden = !slot; if (slot) c.style.width = `${slot.width}px`; }
-  const tall = Math.max(0, ...cards.filter((c) => !c.hidden).map((c) => c.offsetHeight));
-  const y = Math.max(12, Math.min(...anchors.filter((a) => shown.has(a.id)).map((a) => a.top)) - 28 - tall);
+  // The row sits above every stack standing under it (the matching ones' tops at least), as far up as the pane allows.
+  const tall = Math.max(0, ...cards.filter((c) => !c.hidden).map((c) => c.offsetHeight)), x0 = row.cards[0]?.left ?? 0, x1 = row.more ? row.more.left + row.more.width : (row.cards.at(-1)?.left ?? 0) + (row.cards.at(-1)?.width ?? 0);
+  const tops = m.stacks.filter((s) => s.level === S.level).map((s) => screen(anchorOf(m, s, S.view))).filter(([x]) => x >= x0 && x <= x1);
+  const y = Math.max(12, Math.min(...tops.map(([, ty]) => ty), ...anchors.filter((a) => shown.has(a.id)).map((a) => a.y)) - 28 - tall);
   const leaders = layer.querySelector("svg.map-leaders")!;
   leaders.replaceChildren();
   for (const c of cards) {
