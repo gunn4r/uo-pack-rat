@@ -271,25 +271,38 @@ export function tipHostOf(target: Element | null): HTMLElement | null {
   return t?.hasAttribute("data-serial") ? t : null;
 }
 export function installTooltip(): void {
-  let lastX = 0, lastY = 0;
+  let lastX = 0, lastY = 0, pointerSeen = false;
+  // The item under the pointer now (a scroll can move another one under a still pointer), or `fallback` before any
+  // pointer move has told us where the pointer is.
+  const underPointer = (fallback: HTMLElement | null): HTMLElement | null => (pointerSeen ? tipHostOf(document.elementFromPoint(lastX, lastY)) : fallback);
+  // Wait 400 ms on `host`, then show whatever item is under the pointer by then: the tooltip always describes it.
+  const pointTo = (host: HTMLElement): void => {
+    hideItemTip();
+    arm(host, +host.dataset.serial!);
+    tipTimer = setTimeout(() => {
+      const now = underPointer(host);
+      if (!now || popOpen(now)) { hideItemTip(); return; }
+      if (now !== tipHost) arm(now, +now.dataset.serial!);
+      showSerial(now, tipSerial!, () => placeAt(lastX, lastY));
+    }, TIP_DELAY) as unknown as number;
+  };
   document.addEventListener("mouseover", (e) => {
     const host = tipHostOf(e.target as Element);
     if (!host || popOpen(host)) { if (tipSerial != null && !tipAnchor) hideItemTip(); return; }
-    const serial = +host.dataset.serial!;
-    if (serial === tipSerial && (host === tipHost || tipAnchor)) return;
-    hideItemTip();
-    arm(host, serial);
-    tipTimer = setTimeout(() => showSerial(host, serial, () => placeAt(lastX, lastY)), TIP_DELAY) as unknown as number;
+    if (+host.dataset.serial! === tipSerial && (host === tipHost || tipAnchor)) return;
+    pointTo(host);
   });
-  document.addEventListener("mousemove", (e) => { lastX = e.clientX; lastY = e.clientY; if (tipEl().style.display === "block" && !tipAnchor) placeAt(lastX, lastY); });
+  document.addEventListener("mousemove", (e) => { lastX = e.clientX; lastY = e.clientY; pointerSeen = true; if (tipEl().style.display === "block" && !tipAnchor) placeAt(lastX, lastY); });
   document.addEventListener("mouseout", (e) => { if (!tipAnchor && !tipHostOf(e.relatedTarget as Element | null)) hideItemTip(); });
   document.addEventListener("keydown", (e) => { if (e.key === "Escape") hideItemTip(); }, true);
-  // A scroll hides a pointer tooltip only when it took the item from under the pointer: a hover that first scrolls its
-  // row into view (Playwright, or a page bringing a row into view) fires its scroll after the pointer is already on
-  // the row, and that must not cancel it. A keyboard tooltip follows its item.
+  // A scroll changes a pointer tooltip only when it moved another item (or none) under the pointer: then it hides, and
+  // the item now there gets its own 400 ms. A hover that first scrolls its row into view fires that scroll after the
+  // pointer is already on the row, and it must not cancel it. A keyboard tooltip follows its item.
   document.addEventListener("scroll", () => {
     if (tipSerial == null) return;
     if (tipAnchor) { if (tipEl().style.display === "block") placeBy(tipAnchor); return; }
-    if (tipHostOf(document.elementFromPoint(lastX, lastY)) !== tipHost) hideItemTip();
+    const now = underPointer(tipHost);
+    if (now === tipHost) return;
+    if (now && !popOpen(now)) pointTo(now); else hideItemTip();
   }, { capture: true, passive: true });
 }

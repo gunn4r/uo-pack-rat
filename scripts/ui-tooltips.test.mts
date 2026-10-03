@@ -39,17 +39,22 @@ async function go(page: Page, hash: string, ready: string): Promise<void> {
   await page.evaluate((h) => { location.hash = h; }, hash);
   await page.waitForSelector(ready, { timeout: 30_000 });
 }
-// Hover `target` (from a pointer parked off every item) and check #tip shows the item its data-serial names.
-async function tipShows(page: Page, target: Locator, where: string): Promise<void> {
+const nameOf = (page: Page, serial: string): Promise<string | null> => page.evaluate(async (s) => ((await (await fetch(`/api/items/by-serial?serials=${s}`)).json()) as { items: Record<string, { name: string }> }).items[s]?.name ?? null, serial);
+// Hover `target` (from a pointer parked off every item; Playwright scrolls it into view first, `scroll` false leaves
+// that to the hover) and check #tip shows the item under the pointer once it appears, and that this is the target.
+async function tipShows(page: Page, target: Locator, where: string, { scroll = true }: { scroll?: boolean } = {}): Promise<void> {
   await page.mouse.move(2, 2);
   await page.waitForFunction(() => getComputedStyle(document.querySelector("#tip")!).display === "none", undefined, { timeout: 5_000 });
-  await target.scrollIntoViewIfNeeded();
+  if (scroll) await target.scrollIntoViewIfNeeded();
   const serial = await target.evaluate((e) => e.closest("[data-serial]")?.getAttribute("data-serial") ?? null);
   assert.ok(serial, `${where}: the item carries data-serial`);
-  const name = await page.evaluate(async (s) => ((await (await fetch(`/api/items/by-serial?serials=${s}`)).json()) as { items: Record<string, { name: string }> }).items[s]?.name ?? null, serial);
-  assert.ok(name, `${where}: ${serial} is a known item`);
+  await page.evaluate(() => { const w = window as unknown as { tipAt?: number[] }; if (!w.tipAt) document.addEventListener("mousemove", (e) => { w.tipAt = [e.clientX, e.clientY]; }, true); });
   await target.hover();
   await page.waitForFunction(() => getComputedStyle(document.querySelector("#tip")!).display === "block", undefined, { timeout: 10_000 });
+  const under = await page.evaluate(() => { const [x, y] = (window as unknown as { tipAt: number[] }).tipAt; return document.elementFromPoint(x!, y!)?.closest("[data-serial]")?.getAttribute("data-serial") ?? null; });
+  assert.equal(under, serial, `${where}: the pointer is on the item hovered`);
+  const name = await nameOf(page, serial);
+  assert.ok(name, `${where}: ${serial} is a known item`);
   const shown = await page.locator("#tip .tip-name").innerText();
   assert.ok(shown === name || shown.endsWith(` ${name}`), `${where}: the tooltip shows "${shown}", not ${name}`);
   const box = (await page.locator("#tip").boundingBox())!, vp = page.viewportSize() ?? await page.evaluate(() => ({ width: innerWidth, height: innerHeight }));
@@ -72,10 +77,13 @@ test("[slow] the item tooltip shows on every screen that draws an item: Inventor
     await tipShows(page, page.locator("#inv-table tbody tr.item td:nth-child(2)").first(), "an Inventory row");
     // a row below the fold: hovering scrolls it into view first, and that scroll (it lands after the pointer is on
     // the row) must not cancel the tooltip of the row still under the pointer
+    // (pinned by its serial: the virtual table draws more rows as it scrolls, so "the last row" moves)
     await page.locator("#inv-scroll").evaluate((e) => { e.scrollTop = 0; });
-    const below = page.locator("#inv-table tbody tr.item").last();
-    assert.ok((await below.boundingBox())!.y > (await page.locator("#inv-scroll").boundingBox())!.y + (await page.locator("#inv-scroll").boundingBox())!.height, "the row starts below the fold");
-    await tipShows(page, below.locator("td:nth-child(2)"), "an Inventory row scrolled into view by the hover");
+    const lastSerial = await page.locator("#inv-table tbody tr.item").last().getAttribute("data-serial");
+    const below = page.locator(`#inv-table tbody tr.item[data-serial="${lastSerial}"]`);
+    const fold = (await page.locator("#inv-scroll").boundingBox())!;
+    assert.ok((await below.boundingBox())!.y > fold.y + fold.height, "the row starts below the fold");
+    await tipShows(page, below.locator("td:nth-child(2)"), "an Inventory row scrolled into view by the hover", { scroll: false });
     await page.locator("#inv-table tbody tr.item").nth(1).click();
     await page.waitForSelector("#inv-peek:not([hidden])");
     await tipShows(page, page.locator("#inv-table tbody tr.item td:nth-child(2)").nth(3), "an Inventory row with the peek open");
