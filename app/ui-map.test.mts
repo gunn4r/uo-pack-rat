@@ -422,7 +422,7 @@ test("[fast] house map: a castle's level becomes a scene in well under the 100 m
 });
 
 test("[fast] house map: the picker and the headings use the player's name when the house has one", () => {
-  const h = { id: "1-3000-1000", facet: 1, capturedAt: "", captures: 1, width: 18, height: 18, plot: { x0: 3000, y0: 1000, x1: 3017, y1: 1017 }, levels: 2, containers: 120 };
+  const h = { id: "1-3000-1000", facet: 1, capturedAt: "", captures: 1, width: 18, height: 18, plot: { x0: 3000, y0: 1000, x1: 3017, y1: 1017 }, levels: 2, containers: 120, serials: [] };
   assert.equal(houseLabel(h), "Trammel house, 18 × 18, 120 containers");
   assert.equal(houseLabel({ ...h, name: "Main house" }), "Main house · Trammel, 18 × 18, 120 containers");
   const m = vault();
@@ -626,7 +626,7 @@ test("[fast] house areas: boundsOf an area covers its rectangles only", () => {
 });
 
 // ---------------------------------------------------------------- where the house is (issue #164)
-const summary = (id: string, facet: number | null, x0: number, y0: number, name?: string) => ({ id, facet, capturedAt: "", captures: 1, width: 18, height: 18, plot: { x0, y0, x1: x0 + 17, y1: y0 + 17 }, levels: 1, containers: 0, ...(name ? { name } : {}) });
+const summary = (id: string, facet: number | null, x0: number, y0: number, name?: string) => ({ id, facet, capturedAt: "", captures: 1, width: 18, height: 18, plot: { x0, y0, x1: x0 + 17, y1: y0 + 17 }, levels: 1, containers: 0, serials: [] as number[], ...(name ? { name } : {}) });
 
 test("[fast] house map: a house's centre tile in world tiles and the one line the Location section shows and Copy puts on the clipboard", () => {
   const w = whereOf(summary("1-1427-1684", 1, 1427, 1684));

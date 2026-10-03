@@ -63,7 +63,7 @@ test("[fast] world map: screen and world positions round-trip", () => {
   assert.deepEqual(toWorld(v, VP, [700, 400]), [1350, 700]);
 });
 
-const house = (id: string, facet: number, x0: number, y0: number, name?: string): HouseSummary => ({ id, facet, capturedAt: "", captures: 1, width: 18, height: 18, plot: { x0, y0, x1: x0 + 17, y1: y0 + 17 }, levels: 1, containers: 0, ...(name ? { name } : {}) });
+const house = (id: string, facet: number, x0: number, y0: number, name?: string): HouseSummary => ({ id, facet, capturedAt: "", captures: 1, width: 18, height: 18, plot: { x0, y0, x1: x0 + 17, y1: y0 + 17 }, levels: 1, containers: 0, serials: [], ...(name ? { name } : {}) });
 
 test("[fast] world map: markers at a zoom sit at each house's centre tile in screen pixels; the house shown is labelled always, others once zoomed in, never overlapping", () => {
   const houses = [house("1-1000-1000", 1, 1000, 1000, "Main house"), house("1-1004-1000", 1, 1004, 1000, "Next door"), house("1-1300-1000", 1, 1300, 1000), house("3-1000-1000", 3, 1000, 1000, "Malas forge"), house("1-5000-3000", 1, 5000, 3000)];
