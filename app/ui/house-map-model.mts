@@ -1,5 +1,5 @@
 // ui/house-map-model.mts — the House map's pure rules (issue #10, spec section 4): the projection (the client's angle, or top-down), the polygons of a tile and of a box, the painter's order, a level's bounds and their fit; below, the joins of a stack with the inventory and the Organize labels, the colour modes, the cut-away, the callout, the totals, the house picker, keyboard moves, the plain grid for chests outside any drawn house, and the scene of one level. No DOM and no store.mts import, so app/ui-map.test.mts runs it under plain node:test; ui/house-map.mts draws what it returns. Coordinates are relative to the house's corner (x0, y0); heights to the level's floor.
-import { bagLabel, itemOwnBlob, type Item } from "../vault-lib.mts";
+import { bagLabel, itemOwnBlob, type Container, type Item } from "../vault-lib.mts";
 import { plural, splitSerial } from "./inv-model.mts";
 import type { AreaRect, Cell, ContainerLabel, FacetMapReason, HouseArea, HouseMapEntry, HouseModel, HouseSummary, InventoryData, Spot, Stack, TiledataFrom } from "./api-types.mts";
 
@@ -158,7 +158,7 @@ const FACETS = ["Felucca", "Trammel", "Ilshenar", "Malas", "Tokuno", "Ter Mur"];
 export const facetName = (f: number | null): string => (f != null ? FACETS[f] : undefined) ?? "Unknown facet";
 // A house the player named (issue #164) is called by its name, the facet after it in the picker.
 export const houseLabel = (h: HouseSummary): string => `${h.name ? `${h.name} · ${facetName(h.facet)}` : `${facetName(h.facet)} house`}, ${h.width} × ${h.height}, ${plural(h.containers, "container")}`;
-export const houseName = (m: HouseModel): string => (m.id === PLAIN ? "Containers on the ground" : m.name ?? `${facetName(m.facet)} house`);
+export const houseName = (m: Pick<HouseModel, "id" | "name" | "facet">): string => (m.id === PLAIN ? "Containers on the ground" : m.name ?? `${facetName(m.facet)} house`);
 // A redesigned or moved house gets a new id (spec §1): the name and areas of a house no longer listed whose footprint, as
 // it was when named or drawn, overlaps this house's on the same facet, to offer carrying over while this house has neither
 // a name nor an area of its own. The first such id wins. Only the areas on a level this house has, and that still lie on
@@ -500,13 +500,15 @@ export function nearestInDirection(from: Pt, cands: ReadonlyArray<{ id: string; 
 // Ground chests no drawn house holds (no captured house lists their serial), as a house of their own: grouped by facet and by distance (a chest within 8 tiles of a group joins it), each group an area of its own (read-only, named "<facet>, group <n>", its bounding box) of plain floor tiles one tile around each chest, on its own floor (its lowest chest), the groups laid side by side 3 tiles apart in rows about 40 tiles wide. Stacks are numbered 1, 2, …, and a chest's code is its stack's number and height ("3.2"). Null when there is no such chest.
 const CLUSTER = 8, GAP = 3, ROW = 40;
 export type PlainModel = HouseModel & { areas: HouseArea[] };
+// A ground container with a place of its own: what the plain grid draws when no drawn house holds it.
+const onTheGround = (c: Pick<Container, "parent" | "kind" | "pos">): boolean => c.parent == null && c.kind === "ground" && !!c.pos && Number.isFinite(c.pos.x) && Number.isFinite(c.pos.y);
 export function plainGrid(inv: Pick<InventoryData, "containers">, houses: readonly HouseModel[]): PlainModel | null {
   const housed = new Set<number>();
   for (const h of houses) { for (const s of h.stacks) for (const serial of s.serials) housed.add(serial); for (const serial of Object.keys(h.codes)) housed.add(+serial); }
   const chests = Object.values(inv.containers).flatMap((c) => {
     const p = c.pos, facet = p?.facet ?? null;
-    return c.parent == null && c.kind === "ground" && p && Number.isFinite(p.x) && Number.isFinite(p.y) && !housed.has(+c.serial)
-      ? [{ serial: +c.serial, facet, x: p.x!, y: p.y!, z: p.z ?? 0 }] : [];
+    return onTheGround(c) && !housed.has(+c.serial)
+      ? [{ serial: +c.serial, facet, x: p!.x!, y: p!.y!, z: p!.z ?? 0 }] : [];
   }).sort((a, b) => (a.facet ?? -1) - (b.facet ?? -1) || a.y - b.y || a.x - b.x || a.z - b.z || a.serial - b.serial);
   if (!chests.length) return null;
   let groups: Array<typeof chests> = [];
@@ -545,6 +547,149 @@ export function plainGrid(inv: Pick<InventoryData, "containers">, houses: readon
   });
   return { id: PLAIN, facet: null, capturedAt: "", captures: 0, x0: 0, y0: 0, x1, y1,
     levels: [{ index: 0, name: "Containers on the ground", floorZ: 0, status: "floor-only" }], cells, areas, furniture: [], stacks, spots: [], codes, tiledata: false, unopened: [], unopenedNames: {} };
+}
+
+// ---------------------------------------------------------------- search on the map, and the links to it (issue #10)
+// The route: #/map/<house>?q=<query>&select=<container serial>, the query trimmed (the server lower-cases it), `select` a stack to open on (by a container in it). Other routes' parts after "?" are not the map's.
+export interface MapRoute { house: string | null; q: string; select: number | null }
+export function parseMapHash(hash: string): MapRoute {
+  const body = hash.replace(/^#\/?/, ""), at = body.indexOf("?");
+  const parts = (at < 0 ? body : body.slice(0, at)).split("/").filter(Boolean), sp = new URLSearchParams(at < 0 ? "" : body.slice(at + 1));
+  let house: string | null = null;
+  if (parts[0] === "map" && parts[1]) { try { house = decodeURIComponent(parts[1]); } catch { house = parts[1]; } }
+  const sel = sp.get("select");
+  return { house, q: (sp.get("q") ?? "").trim(), select: sel && /^\d{1,10}$/.test(sel) ? Number(sel) : null };
+}
+export function mapHash(r: Partial<MapRoute>): string {
+  const sp = new URLSearchParams();
+  if (r.q?.trim()) sp.set("q", r.q.trim());
+  if (r.select != null) sp.set("select", String(r.select));
+  const qs = sp.toString();
+  return `#/map${r.house ? `/${encodeURIComponent(r.house)}` : ""}${qs ? `?${qs}` : ""}`;
+}
+// The container on the floor an item is in: up the containers it sits in to the one with no parent, so a bag in a bag in a chest counts for the chest. An item in a container the scans never listed (or in a cycle) counts for its scan root; one worn, or in nothing, for none.
+type Tree = Readonly<Record<string, Pick<Container, "parent">>>;
+export function floorContainerOf(it: Pick<Item, "root" | "container">, containers: Tree): number | null {
+  let cur = it.container ?? it.root;
+  const seen = new Set<number>();
+  while (cur != null && !seen.has(cur)) {
+    seen.add(cur);
+    const c = containers[String(cur)];
+    if (!c) break;
+    if (c.parent == null) return cur;
+    cur = c.parent;
+  }
+  return it.root ?? null;
+}
+// Where a container stands in its stack, counted from the floor (index 0 is the bottom one).
+const ordinal = (n: number): string => { const t = n % 100; return `${n}${t >= 11 && t <= 13 ? "th" : ["th", "st", "nd", "rd"][n % 10] ?? "th"}`; };
+export function positionWords(index: number, count: number): string {
+  if (count <= 1) return "On its own";
+  if (index <= 0) return "Bottom";
+  if (index >= count - 1) return "Top";
+  return `${ordinal(index + 1)} from bottom`;
+}
+// A query's matches in a house: each matching container (in the house's stack order, top first within a stack) with its height in the stack and its matching items by name (amounts added up, in name order, the first of each name standing for it in a tooltip); each stack's matching containers; the matches' total amount; and the matches outside the house.
+export interface HitLine { name: string; amount: number; item: Item }
+export interface HitChest { serial: number; stack: Stack; index: number; position: string; amount: number; lines: HitLine[] }
+export interface HouseHits { chests: HitChest[]; stacks: Map<string, HitChest[]>; serials: Set<number>; amount: number; outside: Item[] }
+const amountOf = (it: Pick<Item, "amount">): number => it.amount || 1;
+export function houseHits(m: HouseModel, items: readonly Item[], containers: Tree): HouseHits {
+  const where = new Map<number, { stack: Stack; index: number; order: number }>();
+  m.stacks.forEach((stack, order) => stack.serials.forEach((serial, index) => where.set(serial, { stack, index, order })));
+  const by = new Map<number, Item[]>(), outside: Item[] = [];
+  for (const it of items) {
+    const f = floorContainerOf(it, containers);
+    if (f == null || !where.has(f)) { outside.push(it); continue; }
+    const list = by.get(f);
+    if (list) list.push(it); else by.set(f, [it]);
+  }
+  const chests = [...by].map(([serial, list]): HitChest & { order: number } => {
+    const { stack, index, order } = where.get(serial)!, names = new Map<string, HitLine>();
+    for (const it of list) { const l = names.get(it.name); if (l) l.amount += amountOf(it); else names.set(it.name, { name: it.name, amount: amountOf(it), item: it }); }
+    return { serial, stack, index, order, position: positionWords(index, stack.serials.length), amount: list.reduce((a, it) => a + amountOf(it), 0), lines: [...names.values()].sort((a, b) => a.name.localeCompare(b.name)) };
+  }).sort((a, b) => a.order - b.order || b.index - a.index).map(({ order: _, ...c }): HitChest => c);
+  const stacks = new Map<string, HitChest[]>();
+  for (const c of chests) { const l = stacks.get(c.stack.letter); if (l) l.push(c); else stacks.set(c.stack.letter, [c]); }
+  return { chests, stacks, serials: new Set(chests.map((c) => c.serial)), amount: chests.reduce((a, c) => a + c.amount, 0), outside };
+}
+// While searching, a level's counts for the left pane: how many of its containers match, in each of its areas (by id) and in the rest.
+export interface Tally { matches: number; containers: number }
+export function levelHits(m: HouseModel, areas: readonly HouseArea[], level: number, hit: ReadonlySet<number>): Tally & { areas: Map<string, Tally>; rest: Tally } {
+  const out = { matches: 0, containers: 0, areas: new Map<string, Tally>(areas.filter((a) => a.level === level).map((a) => [a.id, { matches: 0, containers: 0 }])), rest: { matches: 0, containers: 0 } };
+  for (const s of m.stacks) {
+    if (s.level !== level) continue;
+    const a = areaOfStack(areas, s), t = (a && out.areas.get(a.id)) || out.rest, n = s.serials.filter((x) => hit.has(x)).length;
+    t.matches += n; t.containers += s.serials.length; out.matches += n; out.containers += s.serials.length;
+  }
+  return out;
+}
+export const levelHitText = (t: Tally): string => (t.matches ? `${fmtCount(t.matches)} of ${plural(t.containers, "container")} match` : "no matches");
+export const areaHitText = (t: Tally): string => (t.matches ? `${fmtCount(t.matches)} of ${fmtCount(t.containers)}` : "–");
+export const hitsSummary = (amount: number, containers: number): string => `${plural(amount, "item")} in ${plural(containers, "container")}`;
+export const searchCount = (amount: number, containers: number): string => `${fmtCount(amount)} in ${fmtCount(containers)}`;
+const fmtCount = (n: number): string => n.toLocaleString("en-US");
+// A pinned callout's heading: the stack, and how many of its containers match ("1 container" for a stack of one).
+export const calloutHead = (s: Pick<Stack, "letter" | "serials">, matches: number): { title: string; count: string } => ({ title: `Stack ${s.letter}`, count: s.serials.length > 1 ? `${matches} of ${s.serials.length} match` : "1 container" });
+// The pinned callouts sit in one row across the map pane (px), in their stacks' left-to-right order, so no two leaders cross: as many as fit at least CALLOUT_MIN px wide, up to `max` (the stacks given first win, the rest are a "+N more stacks" chip at the row's end), each at most CALLOUT_W wide, the row centred over its stacks and kept `margin` px inside the pane, clear of the zoom buttons on the right (`reserve`). Each leader leaves its card's foot over its stack, at least 16 px in from the card's sides.
+export const CALLOUT_W = 248, CALLOUT_MIN = 150, CALLOUT_MAX = 3;
+export interface CalloutSlot { id: string; left: number; width: number; leaderX: number }
+export function calloutRow(anchors: ReadonlyArray<{ id: string; x: number }>, paneW: number, { max = CALLOUT_MAX, gap = 8, margin = 12, reserve = 52, chipW = 120 }: { max?: number; gap?: number; margin?: number; reserve?: number; chipW?: number } = {}): { cards: CalloutSlot[]; more: { left: number; width: number; count: number } | null } {
+  const room = Math.max(0, paneW - 2 * margin - reserve);
+  const fits = (k: number): boolean => k * CALLOUT_MIN + (k - 1) * gap + (k < anchors.length ? chipW + gap : 0) <= room;
+  let k = Math.min(max, anchors.length);
+  while (k > 1 && !fits(k)) k--;
+  if (!anchors.length) return { cards: [], more: null };
+  const shown = anchors.slice(0, k).sort((a, b) => a.x - b.x), rest = anchors.length - k, chip = rest ? chipW + gap : 0;
+  const width = Math.max(1, Math.min(CALLOUT_W, (room - chip - (k - 1) * gap) / k)), rowW = k * width + (k - 1) * gap + chip;
+  const mid = shown.reduce((a, s) => a + s.x, 0) / k;
+  const left0 = Math.max(margin, Math.min(mid - rowW / 2, margin + room - rowW));
+  const cards = shown.map((a, i): CalloutSlot => { const left = left0 + i * (width + gap); return { id: a.id, left, width, leaderX: Math.max(left + Math.min(16, width / 2), Math.min(left + width - Math.min(16, width / 2), a.x)) }; });
+  return { cards, more: rest ? { left: left0 + k * (width + gap), width: chipW, count: rest } : null };
+}
+// The view a search zooms to: the matching stacks as drawn, at least 8 tiles across and 6 high, with as much again above them for the callouts.
+export function hitsView(m: HouseModel, stacks: readonly Stack[], view: View): Box {
+  let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+  for (const s of stacks) {
+    const base = m.levels[s.level]?.floorZ ?? 0, top = (drawnZs(s, base).at(-1) ?? 0) + CHEST_H;
+    for (const [dx, dy] of CORNERS) for (const z of [0, top]) {
+      const [px, py] = project(s.x - m.x0 + dx, s.y - m.y0 + dy, z, view);
+      x0 = Math.min(x0, px); x1 = Math.max(x1, px); y0 = Math.min(y0, py); y1 = Math.max(y1, py);
+    }
+  }
+  if (x0 === Infinity) return boundsOf(m, 0, view);
+  const w = Math.max(x1 - x0 + 2 * W, 8 * W), h = Math.max(y1 - y0 + 2 * W, 6 * W), cx = (x0 + x1) / 2, cy = (y0 + y1) / 2;
+  return { x: cx - w / 2, y: cy - h / 2 - h, w, h: 2 * h };
+}
+// Which house holds each container, by serial: the houses' stacks (GET /api/houses lists each house's container serials), and every other ground container with a place of its own on the plain grid. What "Show on map" and the search's "Elsewhere" go by.
+export interface HouseRef { id: string; name: string }
+export function houseIndex(houses: ReadonlyArray<Pick<HouseModel, "id" | "facet"> & { name?: string | undefined; serials: readonly number[] }>, containers: Readonly<Record<string, Pick<Container, "parent" | "kind" | "pos">>>): Map<number, HouseRef> {
+  const out = new Map<number, HouseRef>();
+  for (const h of houses) { const ref = { id: h.id, name: houseName(h) }; for (const s of h.serials) out.set(s, ref); }
+  const plain = { id: PLAIN, name: houseName({ id: PLAIN, facet: null }) };
+  for (const [key, c] of Object.entries(containers)) if (!out.has(+key) && onTheGround(c)) out.set(+key, plain);
+  return out;
+}
+// The matches outside the house shown: those in another house (by house, linked from the note) and those anywhere else (by place: a backpack, a bank, a container on no map), each by its total amount, the most first.
+export interface Elsewhere { amount: number; houses: Array<HouseRef & { amount: number }>; places: Array<{ name: string; amount: number }> }
+const placeOf = (it: Item): string => it.location?.text.split(" › ")[0]?.trim() || "an unknown place";
+export function elsewhereOf(items: readonly Item[], index: ReadonlyMap<number, HouseRef>, containers: Tree, here: string | null): Elsewhere {
+  const houses = new Map<string, HouseRef & { amount: number }>(), places = new Map<string, number>();
+  let amount = 0;
+  for (const it of items) {
+    const f = floorContainerOf(it, containers), h = f == null ? undefined : index.get(f);
+    if (h?.id === here) continue;
+    amount += amountOf(it);
+    if (h) { const e = houses.get(h.id); if (e) e.amount += amountOf(it); else houses.set(h.id, { ...h, amount: amountOf(it) }); }
+    else places.set(placeOf(it), (places.get(placeOf(it)) ?? 0) + amountOf(it));
+  }
+  const most = <T extends { name: string; amount: number }>(l: T[]): T[] => l.sort((a, b) => b.amount - a.amount || a.name.localeCompare(b.name));
+  return { amount, houses: most([...houses.values()]), places: most([...places].map(([name, n]) => ({ name, amount: n }))) };
+}
+// The panel's line about them: "3 more outside this house (Another house, Ann's backpack, and 1 more place)."
+export function outsideText(e: Elsewhere): string {
+  const names = [...e.houses, ...e.places].map((x) => x.name), rest = names.length - 2;
+  return `${fmtCount(e.amount)} more outside this house (${names.slice(0, 2).join(", ")}${rest > 0 ? `, and ${plural(rest, "more place")}` : ""}).`;
 }
 
 // ---------------------------------------------------------------- the scene of one level

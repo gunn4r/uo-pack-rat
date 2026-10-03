@@ -1,11 +1,11 @@
-// ui-map.test.mts — app/ui/house-map-model.mts, the House map's pure rules (issue #10): the projection, tile and box polygons, the painter's order, a level's bounds and fit, the joins of a stack with the inventory and the Organize labels, the colour modes, the cut-away, callouts, totals, the house picker, keyboard moves, the plain grid, the scene of a level (castle speed included), the drawn areas (issue #10: which area holds a chest, the screen-to-tile inverse, rectangles, outlines, label spots, ids, colours, the drawing cursor, carry-over), and (issue #164) where a house is: its centre tile and copy line, the facet overview's crop, its markers and why it may be missing. Tags: [fast]. Run: node --test app/ui-map.test.mts
+// ui-map.test.mts — app/ui/house-map-model.mts, the House map's pure rules (issue #10): the projection, tile and box polygons, the painter's order, a level's bounds and fit, the joins of a stack with the inventory and the Organize labels, the colour modes, the cut-away, callouts, totals, the house picker, keyboard moves, the plain grid, the scene of a level (castle speed included), the drawn areas (issue #10: which area holds a chest, the screen-to-tile inverse, rectangles, outlines, label spots, ids, colours, the drawing cursor, carry-over), and (issue #164) where a house is: its centre tile and copy line, the facet overview's crop, its markers and why it may be missing; and the search on the map (issue #10: its route, an item's container on the floor, the matches by container and stack, the left pane's counts, the callouts' row, the view it zooms to, which house holds a container and the matches elsewhere). Tags: [fast]. Run: node --test app/ui-map.test.mts
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { buildHouseModel } from "./house-model.mts";
 import { fixtureTileData, vaultHouse, roofHouse, courtyardHouse, castleHouse, foundationHouse, stairHouse, G } from "./house-fixture.mts";
 import type { Container, Item } from "./vault-lib.mts";
 import type { HouseArea, HouseModel, Stack } from "./ui/api-types.mts";
-import { project, tilePolygon, boxFaces, pts, paintOrder, boundsOf, fit, zoomAt, vbText, anchorOf, W, chestViews, colourOf, legendOf, chestLabel, cutAway, calloutLines, houseTotals, pickHouse, houseLabel, houseName, carryOver, carryOverText, PLAIN, chestCount, nearestInDirection, tiledataNote, stackWhere, plainGrid, sceneOf, drawnZs, CHEST_H, whereOf, whereTitle, FACET_SIZE, cropAround, facetMapUrl, markersOf, facetMapNote, parseRegion, markerRadii, contentsOf, contentsSummary, filterContents, drawerChest, drawerMeta, slotsText, drawerPicker, DRAWER_TABS_MAX, DRAWER_W, DRAWER_MIN, drawerMax, clampDrawer, drawerKey, piecesOf, frontCorner, fitLabel, pillsOf, placePill, LABEL_FIT, areaOfStack, levelAreas, restName, unproject, tileAt, rectOf, sizeText, unionTiles, coveredCells, outlineOf, nextAreaId, nextAreaColor, moveCursor, clampTile, liveAreas, withOrphans, redrawFailed, AREA_COLORS, AREA_COLOR_NAMES, type ChestView, type ContentsNode } from "./ui/house-map-model.mts";
+import { project, tilePolygon, boxFaces, pts, paintOrder, boundsOf, fit, zoomAt, vbText, anchorOf, W, chestViews, colourOf, legendOf, chestLabel, cutAway, calloutLines, houseTotals, pickHouse, houseLabel, houseName, carryOver, carryOverText, PLAIN, chestCount, nearestInDirection, tiledataNote, stackWhere, plainGrid, sceneOf, drawnZs, CHEST_H, whereOf, whereTitle, FACET_SIZE, cropAround, facetMapUrl, markersOf, facetMapNote, parseRegion, markerRadii, contentsOf, contentsSummary, filterContents, drawerChest, drawerMeta, slotsText, drawerPicker, DRAWER_TABS_MAX, parseMapHash, mapHash, floorContainerOf, positionWords, houseHits, levelHits, levelHitText, areaHitText, hitsSummary, searchCount, calloutHead, calloutRow, CALLOUT_W, CALLOUT_MIN, hitsView, houseIndex, elsewhereOf, outsideText, DRAWER_W, DRAWER_MIN, drawerMax, clampDrawer, drawerKey, piecesOf, frontCorner, fitLabel, pillsOf, placePill, LABEL_FIT, areaOfStack, levelAreas, restName, unproject, tileAt, rectOf, sizeText, unionTiles, coveredCells, outlineOf, nextAreaId, nextAreaColor, moveCursor, clampTile, liveAreas, withOrphans, redrawFailed, AREA_COLORS, AREA_COLOR_NAMES, type ChestView, type ContentsNode } from "./ui/house-map-model.mts";
 
 const td = fixtureTileData();
 const has = (cls: string, c: string): boolean => cls.split(" ").includes(c);
@@ -757,4 +757,112 @@ test("[fast] house map: the drawer's resize handle moves 16 px per arrow (64 wit
   assert.equal(drawerKey("Home", false, 500, 640), 320);
   assert.equal(drawerKey("End", false, 500, 640), 640);
   assert.equal(drawerKey("Enter", false, 500, 640), null);
+});
+
+// ---------------------------------------------------------------- search on the map (issue #10)
+test("[fast] house map search: the route keeps the house, the query and a stack to select, and reads back what it wrote", () => {
+  assert.deepEqual(parseMapHash("#/map/1-3000-1000?q=spell%20book&select=1073807360"), { house: "1-3000-1000", q: "spell book", select: 0x40010000 });
+  assert.deepEqual(parseMapHash("#/map"), { house: null, q: "", select: null });
+  assert.deepEqual(parseMapHash("#/map?q=a%2Fb"), { house: null, q: "a/b", select: null }, "a slash in the query is not a house");
+  assert.deepEqual(parseMapHash("#/map/plain?select=x"), { house: "plain", q: "", select: null });
+  for (const r of [{ house: "1-3000-1000", q: "Pearl & ruby", select: 12 }, { house: null, q: "x", select: null }, { house: "plain", q: "", select: 3 }]) assert.deepEqual(parseMapHash(mapHash(r)), r);
+  assert.equal(mapHash({ house: "1-3000-1000" }), "#/map/1-3000-1000");
+  assert.equal(mapHash({ house: "1-3000-1000", q: "  " }), "#/map/1-3000-1000", "a blank query is no query");
+});
+
+test("[fast] house map search: an item counts for the container on the floor it is in, through nested bags; an unlisted bag or a cycle falls back to the scan root, a worn item to none", () => {
+  const containers = { 1: { parent: null }, 2: { parent: 1 }, 3: { parent: 2 }, 8: { parent: 9 }, 9: { parent: 8 } };
+  assert.equal(floorContainerOf({ container: 1, root: 1 }, containers), 1);
+  assert.equal(floorContainerOf({ container: 3, root: 1 }, containers), 1, "a bag in a bag in the chest");
+  assert.equal(floorContainerOf({ container: 77, root: 1 }, containers), 1, "a bag no scan listed");
+  assert.equal(floorContainerOf({ container: 8, root: 5 }, containers), 5, "a cycle");
+  assert.equal(floorContainerOf({ container: null, root: null }, containers), null);
+});
+
+test("[fast] house map search: a container's place in its stack in words, counted from the floor", () => {
+  assert.equal(positionWords(0, 1), "On its own");
+  assert.deepEqual([0, 1, 2, 3, 4].map((i) => positionWords(i, 5)), ["Bottom", "2nd from bottom", "3rd from bottom", "4th from bottom", "Top"]);
+  assert.equal(positionWords(10, 13), "11th from bottom");
+  assert.equal(positionWords(20, 23), "21st from bottom");
+});
+
+test("[fast] house map search: the matches in a house by container (stack order, top first) with their items by name and amount, each stack's matches, and the rest outside the house", () => {
+  const m = vault(), [s0, s1] = m.stacks, bottom = s0!.serials[0]!, top = s0!.serials.at(-1)!, other = s1!.serials[2]!;
+  const containers: Record<string, { parent: number | null }> = Object.fromEntries(m.stacks.flatMap((s) => s.serials.map((x) => [String(x), { parent: null }])));
+  containers[900] = { parent: top }; containers[901] = { parent: 900 };   // a bag in a bag in the top chest
+  const items = [thing(1, "Pearl", bottom, { root: bottom, amount: 3 }), thing(2, "Pearl", bottom, { root: bottom, amount: 2 }), thing(3, "Black Pearl", 901, { root: top }),
+    thing(4, "Pearl", other, { root: other, amount: 0 }), thing(5, "Pearl", 50, { root: 50 }), thing(6, "Pearl", 0, { root: null, container: null })];
+  const h = houseHits(m, items, containers);
+  assert.deepEqual(h.chests.map((c) => [c.serial, c.stack.letter, c.position, c.amount, c.lines.map((l) => `${l.name} × ${l.amount}`)]), [
+    [top, s0!.letter, "Top", 1, ["Black Pearl × 1"]], [bottom, s0!.letter, "Bottom", 5, ["Pearl × 5"]], [other, s1!.letter, "3rd from bottom", 1, ["Pearl × 1"]]]);
+  assert.equal(h.chests[1]!.lines[0]!.item.serial, 1, "the first item of a name stands for it");
+  assert.deepEqual([...h.stacks.keys()], [s0!.letter, s1!.letter]);
+  assert.deepEqual(h.stacks.get(s0!.letter)!.map((c) => c.serial), [top, bottom]);
+  assert.equal(h.amount, 7);
+  assert.deepEqual(h.outside.map((it) => it.serial), [5, 6]);
+  assert.deepEqual([...h.serials].sort(), [top, bottom, other].sort());
+});
+
+test("[fast] house map search: the left pane's counts per level, area and rest, and their words", () => {
+  const m = vault(), north: HouseArea = { id: "a1", name: "North", level: 0, color: "area-1", rects: [{ x0: 3001, y0: 1001, x1: 3005, y1: 1001 }] };
+  const inNorth = m.stacks.find((s) => s.y === 1001)!, elsewhere = m.stacks.find((s) => s.y === 1005)!;
+  const t = levelHits(m, [north], 0, new Set([inNorth.serials[0]!, inNorth.serials[1]!, elsewhere.serials[4]!]));
+  assert.deepEqual([t.matches, t.containers], [3, 120]);
+  assert.deepEqual(t.areas.get("a1"), { matches: 2, containers: 25 });
+  assert.deepEqual(t.rest, { matches: 1, containers: 95 });
+  assert.equal(levelHitText(t), "3 of 120 containers match");
+  assert.equal(levelHitText({ matches: 0, containers: 9 }), "no matches");
+  assert.equal(areaHitText(t.areas.get("a1")!), "2 of 25");
+  assert.equal(areaHitText({ matches: 0, containers: 4 }), "–");
+  assert.equal(hitsSummary(7, 3), "7 items in 3 containers");
+  assert.equal(hitsSummary(1, 1), "1 item in 1 container");
+  assert.equal(searchCount(1200, 3), "1,200 in 3");
+  assert.deepEqual(calloutHead({ letter: "I", serials: [1, 2, 3, 4] }, 1), { title: "Stack I", count: "1 of 4 match" });
+  assert.deepEqual(calloutHead({ letter: "F", serials: [1] }, 1), { title: "Stack F", count: "1 container" });
+});
+
+test("[fast] house map search: the callouts sit in one row in their stacks' left-to-right order, never overlapping, kept clear of the zoom buttons, at most 3 with a +N more chip", () => {
+  const row = calloutRow([{ id: "C", x: 600 }, { id: "I", x: 200 }, { id: "F", x: 400 }], 900);
+  assert.deepEqual(row.cards.map((c) => c.id), ["I", "F", "C"]);
+  assert.equal(row.more, null);
+  for (let i = 1; i < row.cards.length; i++) assert.ok(row.cards[i]!.left >= row.cards[i - 1]!.left + row.cards[i - 1]!.width, "no overlap");
+  for (const c of row.cards) {
+    assert.ok(c.width <= CALLOUT_W && c.left >= 12 && c.left + c.width <= 900 - 12 - 52, JSON.stringify(c));
+    assert.ok(c.leaderX >= c.left + 16 && c.leaderX <= c.left + c.width - 16);
+  }
+  for (let i = 1; i < row.cards.length; i++) assert.ok(row.cards[i]!.leaderX >= row.cards[i - 1]!.leaderX, "leaders never cross");
+  const many = calloutRow([{ id: "A", x: 100 }, { id: "B", x: 50 }, { id: "C", x: 300 }, { id: "D", x: 10 }, { id: "E", x: 20 }], 1200);
+  assert.deepEqual(many.cards.map((c) => c.id), ["B", "A", "C"], "the first three given, in screen order");
+  assert.equal(many.more?.count, 2);
+  assert.ok(many.more!.left >= many.cards.at(-1)!.left + many.cards.at(-1)!.width);
+  assert.ok(many.more!.left + many.more!.width <= 1200 - 12 - 52);
+  const narrow = calloutRow([{ id: "A", x: 100 }, { id: "B", x: 200 }, { id: "C", x: 300 }], 400);
+  assert.ok(narrow.cards.length < 3 && narrow.cards.every((c) => c.width >= CALLOUT_MIN), "a narrow pane shows fewer, never thinner than the minimum");
+  assert.equal(narrow.more?.count, 3 - narrow.cards.length);
+  assert.deepEqual(calloutRow([], 900), { cards: [], more: null });
+});
+
+test("[fast] house map search: the view zooms to the matching stacks, at least 8 tiles across, with room above for the callouts", () => {
+  const m = vault(), s = m.stacks[0]!, v = hitsView(m, [s], "angle"), a = anchorOf(m, s, "angle");
+  assert.ok(v.w >= 8 * W && v.h >= 12 * W, JSON.stringify(v));
+  assert.ok(a[0] > v.x && a[0] < v.x + v.w && a[1] > v.y + v.h / 2 && a[1] < v.y + v.h, "the stack in the lower half");
+  const both = hitsView(m, [m.stacks[0]!, m.stacks.at(-1)!], "angle"), b = anchorOf(m, m.stacks.at(-1)!, "angle");
+  assert.ok(b[0] > both.x && b[0] < both.x + both.w && b[1] < both.y + both.h);
+});
+
+test("[fast] house map links: which house holds each container (a drawn house's stacks, else the plain grid for a ground container with a place), and the matches elsewhere by house and by place", () => {
+  const containers = { 1: { parent: null, kind: "ground", pos: { x: 1, y: 1 } }, 2: { parent: null, kind: "ground", pos: { x: 9, y: 9 } }, 3: { parent: null, kind: "backpack", pos: null }, 4: { parent: 2, kind: "bag", pos: null } };
+  const idx = houseIndex([{ id: "1-5-5", facet: 1, name: "Keep", serials: [1] }, { id: "1-8-8", facet: 0, serials: [7] }], containers);
+  assert.deepEqual(idx.get(1), { id: "1-5-5", name: "Keep" });
+  assert.deepEqual(idx.get(7), { id: "1-8-8", name: "Felucca house" });
+  assert.deepEqual(idx.get(2), { id: PLAIN, name: "Containers on the ground" });
+  assert.equal(idx.get(3), undefined);
+  assert.equal(idx.get(4), undefined, "a bag is in its container's house, not one of its own");
+  const items = [thing(1, "Ingot", 1, { root: 1, amount: 200 }), thing(2, "Ingot", 4, { root: 2, amount: 5 }), thing(3, "Ingot", 3, { root: 3, amount: 364, location: { text: "Ann's backpack › Pouch", kind: "backpack", character: "Ann", root: 3 } }), thing(4, "Ingot", 7, { root: 7 })];
+  const e = elsewhereOf(items, idx, containers, "1-8-8");
+  assert.equal(e.amount, 569);
+  assert.deepEqual(e.houses.map((h) => [h.id, h.amount]), [["1-5-5", 200], [PLAIN, 5]]);
+  assert.deepEqual(e.places, [{ name: "Ann's backpack", amount: 364 }]);
+  assert.equal(outsideText(e), "569 more outside this house (Keep, Containers on the ground, and 1 more place).");
+  assert.equal(outsideText(elsewhereOf([items[2]!], idx, containers, null)), "364 more outside this house (Ann's backpack).");
 });
