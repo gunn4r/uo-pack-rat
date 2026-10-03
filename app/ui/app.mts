@@ -24,6 +24,7 @@ import { openRunsDrawer, closeRunsDrawer } from "./runs.mts";
 import { loadOrganize, refreshPlaces } from "./organize-data.mts";
 import { showOrganize } from "./organize.mts";
 import { showMap, applyMapPrefs } from "./house-map.mts";
+import { parseMapHash } from "./house-map-model.mts";
 import type { SettingsApiResponse, RulesApiResponse, SetupApiResponse, InventoryApiResponse, ProfilesApiResponse, UiPrefsApiResponse } from "./api-types.mts";
 
 // ---------------------------------------------------------------- data
@@ -98,19 +99,19 @@ export async function reload(): Promise<void> {
   buildFilters(); fetchItems(); renderCharacters(); renderContainers(); syncBuilderCharacters();
   syncSettingsCharacters();
   if (parseRoute().tab === "organize") void showOrganize();
-  if (parseRoute().tab === "map") void showMap(parseRoute().house);
+  if (parseRoute().tab === "map") void showMap(parseMapHash(location.hash));
 }
 
 // ---------------------------------------------------------------- screens + hash routes
 // Six screens (Inventory, House map, Characters, Suit Builder, Organize, Settings), each a <main> in index.html, and routes on
-// top of them: #/inventory, #/containers (Inventory's Containers view), #/containers/<Character> (only the containers that character's scans opened), #/map (the House map, the house with the most chests), #/map/<house id> (that house, or #/map/plain for chests outside any drawn house), #/characters,
+// top of them: #/inventory, #/containers (Inventory's Containers view), #/containers/<Character> (only the containers that character's scans opened), #/map (the House map, the house with the most chests), #/map/<house id> (that house, or #/map/plain for chests outside any drawn house; ?q=<query> searches it, ?select=<container serial> opens on that container's stack: ui/house-map-model.mts parseMapHash), #/characters,
 // #/characters/<Character> (that character's sheet), #/builder/<Character>, #/runs (the Suit Builder with the saved-runs drawer open), #/organize (Organize: labels, rules, the plan and its trips), #/import (the Import
 // drawer over whichever screen was showing) and #/settings. A reload lands where you were; nav clicks add a
 // history entry (back/forward walk them, and close a drawer); switching the builder's character replaces the
 // entry instead.
 const ROUTES = ["inventory", "containers", "map", "characters", "builder", "runs", "organize", "import", "settings"];
 export function parseRoute(): { tab: string; character: string | null; sheet: string | null; house: string | null; scanner: string | null } {
-  const parts = location.hash.replace(/^#\/?/, "").split("/").filter(Boolean).map((x) => { try { return decodeURIComponent(x); } catch { return x; } });
+  const parts = location.hash.replace(/^#\/?/, "").split("?")[0]!.split("/").filter(Boolean).map((x) => { try { return decodeURIComponent(x); } catch { return x; } });
   const tab = ROUTES.includes(parts[0] as string) ? parts[0]! : "inventory";
   return { tab, character: tab === "builder" ? parts[1] || null : null, sheet: tab === "characters" ? parts[1] || null : null, house: tab === "map" ? parts[1] || null : null, scanner: tab === "containers" ? parts[1] || null : null };
 }
@@ -147,7 +148,7 @@ function applyRoute(): void {
   showTab(r.tab);
   if (r.tab === "settings") void syncSettingsBlacklist();
   if (r.tab === "organize") void showOrganize();
-  if (r.tab === "map") void showMap(r.house);
+  if (r.tab === "map") void showMap(parseMapHash(location.hash));
   if (r.tab === "characters") showCharacter(r.sheet);
   if (r.tab === "containers") showContainers(r.scanner);
   if (r.tab === "builder" && state.inv) {

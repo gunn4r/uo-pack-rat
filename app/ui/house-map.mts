@@ -2,9 +2,9 @@
 import { state, bridge } from "./store.mts";
 import { $, el, itemTip, safeColor, fmtN, toast } from "./dom.mts";
 import { api } from "./api.mts";
-import { box, txt, button, segmented, pill, message, meter, keyValue, modalOpen, tipWrap, input, copyText, icon, kbd, menu, popover, closePopover, confirmDialog, select as selectEl } from "./components.mts";
+import { box, txt, button, segmented, pill, message, meter, keyValue, modalOpen, tipWrap, input, copyText, icon, kbd, menu, popover, closePopover, confirmDialog, select as selectEl, searchInput, badge } from "./components.mts";
 import { labelContainer } from "./containers.mts";
-import { showContainer, itemMenu, itemActions, rarityEl, tagEls } from "./inventory.mts";
+import { showContainer, showSearch, itemMenu, itemActions, rarityEl, tagEls } from "./inventory.mts";
 import { propertyLines, RESISTS } from "./peek.mts";
 import { bridgeActionReason, runBridgeAction, sendBridge, type BridgeTarget } from "./bridge.mts";
 import { errorText } from "./messages.mts";
@@ -14,7 +14,9 @@ import { fillTone } from "./organize-model.mts";
 import { PLAIN, pickHouse, plainGrid, chestCount, houseLabel, houseName, carryOver, carryOverText, tiledataNote, chestViews, colourOf, chestLabel, sceneOf, boundsOf, fit, vbText,
   cutAway, calloutLines, nearestInDirection, houseTotals, legendOf, stackWhere, anchorOf, zoomAt, fillWords, whereOf, whereTitle, cropAround, facetMapUrl, markersOf, facetMapNote, markerRadii,
   drawerChest, drawerMeta, slotsText, drawerPicker, DRAWER_W, DRAWER_MIN, drawerMax, clampDrawer, drawerKey, contentsOf, contentsSummary, filterContents, areaOfStack, levelAreas, tileAt, clampTile, rectOf, sizeText, unionTiles, coveredCells, outlineOf, pillsOf, fitLabel, placePill as pillBox, LABEL_FIT, type AreaPill,
-  nextAreaId, nextAreaColor, moveCursor, project, tilePolygon, pts, liveAreas, withOrphans, redrawFailed, AREA_COLORS, AREA_COLOR_NAMES, MAX_AREAS, MAX_RECTS, type PlainModel, type Tile, type Contents, type ContentsNode, type Marker, type View, type Mode, type Box, type Colour, type ChestView, type Piece, type Prism, type Pt, type Dir } from "./house-map-model.mts";
+  nextAreaId, nextAreaColor, moveCursor, project, tilePolygon, pts, liveAreas, withOrphans, redrawFailed, AREA_COLORS, AREA_COLOR_NAMES, MAX_AREAS, MAX_RECTS, areaName, drawnZs, CHEST_H,
+  mapHash, houseHits, levelHits, levelHitText, areaHitText, hitsSummary, searchCount, calloutHead, calloutRow, CALLOUT_MAX, hitsView, houseIndex, elsewhereOf, outsideText,
+  type MapRoute, type HouseHits, type HitChest, type Tally, type HouseRef, type Elsewhere, type PlainModel, type Tile, type Contents, type ContentsNode, type Marker, type View, type Mode, type Box, type Colour, type ChestView, type Piece, type Prism, type Pt, type Dir } from "./house-map-model.mts";
 import type { AreaRect, ContainerLabel, HouseArea, HouseModel, UiPrefs, HousesApiResponse, HouseApiResponse, HouseMapApiResponse, HouseMapEntry, HouseMapPutApiResponse, ItemsApiResponse, Stack } from "./api-types.mts";
 import type { Item } from "../vault-lib.mts";
 
@@ -90,9 +92,192 @@ function announce(text: string): void {
   live.textContent = "";
   requestAnimationFrame(() => { if (my === announced) live.textContent = text; });
 }
-$<HTMLSelectElement>("#map-house")!.addEventListener("change", (e) => { location.hash = `#/map/${encodeURIComponent((e.target as HTMLSelectElement).value)}`; });
+$<HTMLSelectElement>("#map-house")!.addEventListener("change", (e) => { location.hash = mapHash({ house: (e.target as HTMLSelectElement).value, q: query }); });
 
-export async function showMap(want: string | null): Promise<void> {
+// ---------------------------------------------------------------- search (issue #10)
+// The query as typed (the route carries it: #/map/<house>?q=), every item GET /api/items?q= found for it with the inventory it was found in (null with no query, or before the first answer) or why the search failed, and what the next draw zooms to: the matches on the level (after a new query, another house or level) or the stack a "Show on map" link asked for.
+let query = "";
+interface Found { q: string; items: Item[]; inv: unknown; error: string | null }
+let found: Found | null = null;
+let searchSeq = 0, searchTimer = 0;
+let zoomNext: "hits" | { stacks: Stack[]; room: boolean } | null = null;
+// The search box at the top bar's right end: the count of matches in this house ("7 in 3"), × to clear, and under it the note for a query with no match here.
+const search = searchInput({ label: "Find items in this house", placeholder: "Find items in this house", attrs: { id: "map-q", autocomplete: "off", spellcheck: "false" } });
+const searchCountEl = txt("", "map-search-count num"), searchNote = box("div", { class: "map-search-note", id: "map-search-note", hidden: "" });
+const searchClear = button({ label: "Clear search", icon: "close", iconOnly: true, variant: "ghost", size: "sm", cls: "map-search-clear", attrs: { id: "map-q-clear", hidden: "" }, onClick: () => { setQuery(""); search.input.focus(); } });
+searchCountEl.setAttribute("aria-hidden", "true");   // the live region says it
+search.root.id = "map-search";
+search.root.classList.add("map-search");
+search.root.append(searchCountEl, searchClear, searchNote);
+$<HTMLElement>("#map-search")!.replaceWith(search.root);
+// Typing waits 150 ms as the Inventory's search does; Esc in the box clears it.
+search.input.addEventListener("input", () => { searchClear.hidden = !search.input.value; clearTimeout(searchTimer); searchTimer = setTimeout(() => setQuery(search.input.value), 150) as unknown as number; });
+search.input.addEventListener("keydown", (e) => { if (e.key === "Escape" && search.input.value) { e.preventDefault(); e.stopPropagation(); setQuery(""); } });
+function setQuery(text: string): void {
+  clearTimeout(searchTimer);
+  if (search.input.value !== text) search.input.value = text;
+  const q = text.trim();
+  if (q === query) { paintSearch(); return; }
+  query = q;
+  if (!$<HTMLElement>("#tab-map")!.hidden) history.replaceState(null, "", mapHash({ house: S.id, q }));
+  void runSearch(true);
+}
+// Every match, in GET /api/items' 500-row pages (each serial once); an answer for a query no longer asked is dropped. `refit` zooms to the matches once they are in.
+async function runSearch(refit: boolean): Promise<void> {
+  const q = query, my = ++searchSeq, inv = state.inv;
+  if (!q) { found = null; zoomNext = null; render(); return; }
+  paintSearch();
+  const rows = new Map<number, Item>();
+  try {
+    for (let offset = 0, total = Infinity; offset < total;) {
+      const r = await api<ItemsApiResponse>(`/api/items?q=${encodeURIComponent(q)}&offset=${offset}&limit=${ITEMS_CHUNK}`);
+      if (my !== searchSeq) return;
+      const got = "rows" in r ? r.rows : [];
+      for (const it of got) rows.set(it.serial, it);
+      offset += got.length;
+      total = got.length ? r.total : offset;
+    }
+  } catch (e) {
+    if (my === searchSeq) { found = { q, items: [], inv, error: errorText(e) }; render(); }
+    return;
+  }
+  if (my !== searchSeq) return;
+  found = { q, items: [...rows.values()], inv, error: null };
+  if (refit) zoomNext = "hits";
+  render();
+  const h = hitsNow();
+  announce(h?.chests.length ? hitsSummary(h.amount, h.chests.length) : h && elsewhere(h).amount ? "No matches in this house" : "No items match");
+}
+// The matches in the house shown (worked out once per answer and house), or null with no answer for the query yet; matching() only when the house has one (the map is ghosted, the panel lists them).
+let hitsMemo: { found: Found; model: HouseModel; hits: HouseHits } | null = null;
+function hitsNow(): HouseHits | null {
+  const m = S.model;
+  if (!m || !found || found.q !== query || found.error || !state.inv) return null;
+  if (hitsMemo?.found !== found || hitsMemo.model !== m) hitsMemo = { found, model: m, hits: houseHits(m, found.items, state.inv.containers) };
+  return hitsMemo!.hits;
+}
+const matching = (): HouseHits | null => { const h = hitsNow(); return h?.chests.length ? h : null; };
+// The matches outside this house: in another house (the houses as last fetched, and the plain grid) or anywhere else.
+let indexMemo: { models: HouseModel[]; inv: unknown; index: Map<number, HouseRef> } | null = null;
+function elsewhere(h: HouseHits): Elsewhere {
+  const inv = state.inv!;
+  if (indexMemo?.models !== S.models || indexMemo.inv !== inv) indexMemo = { models: S.models, inv, index: houseIndex(S.models.map((m) => ({ id: m.id, name: m.name, facet: m.facet, serials: m.stacks.flatMap((s) => s.serials) })), inv.containers) };
+  return elsewhereOf(h.outside, indexMemo.index, inv.containers, S.id);
+}
+const inventoryLink = (text: string): HTMLElement => el("a", { href: "#/inventory", id: "map-search-inventory", onclick: (e: Event) => { e.preventDefault(); showSearch(query); } }, text);
+// The box's count, its gold ring while this house has matches, ×, and the note under it: "No matches in this house" with where they are instead (another house a link to its map, the query kept), or "No items match".
+function paintSearch(): void {
+  const h = hitsNow(), busy = !!query && found?.q !== query;
+  searchClear.hidden = !search.input.value;
+  search.root.classList.toggle("active", !!h?.chests.length);
+  search.input.setAttribute("aria-busy", String(busy));
+  searchCountEl.textContent = !h ? "" : h.chests.length ? searchCount(h.amount, h.chests.length) : "0";
+  const err = found?.q === query ? found.error : null;
+  if (!err && (!h || h.chests.length)) { searchNote.hidden = true; searchNote.replaceChildren(); return; }
+  searchNote.hidden = false;
+  if (err) { searchNote.replaceChildren(txt("Could not search", "strong"), txt(err, "t-sm")); return; }
+  const e = elsewhere(h!);
+  if (!e.amount) { searchNote.replaceChildren(txt("No items match", "strong")); return; }
+  const lines = [...e.houses.map((x) => box("span", { class: "t-sm" }, txt(`${fmtN(x.amount)} in `), el("a", { href: mapHash({ house: x.id, q: query }) }, x.name))), ...e.places.map((p) => txt(`${fmtN(p.amount)} in ${p.name}`, "t-sm"))];
+  searchNote.replaceChildren(txt("No matches in this house", "strong"), txt("Elsewhere:", "t-sm muted"), ...lines.slice(0, 6),
+    ...(lines.length > 6 ? [txt(`and ${plural(lines.length - 6, "more place")}`, "t-sm muted")] : []), box("span", { class: "t-sm" }, inventoryLink("Show them in Inventory")));
+}
+// The zoom a draw owes: to the level's matching stacks with room above them for the callouts (once the query's answer is in), or to the stack a link selected.
+function zoomPending(m: HouseModel, hits: HouseHits | null): void {
+  const z = zoomNext;
+  if (!z || (z === "hits" && found?.q !== query)) return;
+  zoomNext = null;
+  const stacks = z === "hits" ? (hits ? m.stacks.filter((s) => s.level === S.level && hits.stacks.has(s.letter)) : []) : z.stacks;
+  if (stacks.length) S.vb = fit(hitsView(m, stacks, S.view, z === "hits" || z.room), viewport());
+}
+// The pinned callouts: one per matching stack on the level, the most matched first (CALLOUT_MAX of them built), in one row over the map (house-map-model.mts calloutRow), each with a thin gold leader to its top matching container. Built once per draw, placed again by paintPills after every pan, zoom and resize. A click on one selects its stack. They are hidden from screen readers: the panel lists the same.
+let pinStacks: Array<{ stack: Stack; hits: HitChest[] }> = [];
+const PIN_LINES = 3;
+function buildPins(m: HouseModel, h: HouseHits | null): void {
+  const layer = $<HTMLElement>("#map-pins");
+  if (!layer) return;
+  const amount = (x: { hits: HitChest[] }): number => x.hits.reduce((a, c) => a + c.amount, 0);
+  pinStacks = h ? m.stacks.filter((s) => s.level === S.level && h.stacks.has(s.letter)).map((stack) => ({ stack, hits: h.stacks.get(stack.letter)! })).sort((a, b) => amount(b) - amount(a)) : [];
+  const views = new Map(pinStacks.slice(0, CALLOUT_MAX).flatMap((p) => chestViews(m, p.stack, state.inv!, labels())).map((v) => [v.serial, v]));
+  layer.replaceChildren(sv("svg", { class: "map-leaders" }), ...pinStacks.slice(0, CALLOUT_MAX).map(({ stack, hits }) => {
+    const head = calloutHead(stack, hits.length);
+    return box("div", { class: "map-pin", "data-stack": stack.letter, onclick: () => { if (selectedStack() !== stack) select(hits[0]!.serial); } },
+      box("div", { class: "map-pin-head" }, txt(head.title, "t-sm strong"), txt(head.count, "t-xs muted")),
+      ...hits.map((c) => {
+        const v = views.get(c.serial)!;
+        return box("div", { class: "map-pin-chest" },
+          box("div", { class: "map-pin-l1" }, txt(v.code, "mono t-sm strong"), txt(v.name, "ellip t-sm")),
+          box("div", { class: "map-pin-line" }, txt(c.position, "t-xs muted")),
+          ...c.lines.slice(0, PIN_LINES).map((l) => itemTip(box("div", { class: "map-pin-line" }, txt(l.name, "ellip t-xs"), txt(`× ${fmtN(l.amount)}`, "t-xs num muted")), l.item, { focus: false })),
+          c.lines.length > PIN_LINES ? box("div", { class: "map-pin-line" }, txt(`and ${plural(c.lines.length - PIN_LINES, "more")}`, "t-xs muted")) : null);
+      }));
+  }), box("div", { class: "map-pin-more", id: "map-pin-more" }));
+}
+function placePins(m: HouseModel, ctm: DOMMatrix | null): void {
+  const layer = $<HTMLElement>("#map-pins");
+  if (!layer) return;
+  layer.hidden = !pinStacks.length || !ctm;
+  if (layer.hidden || !ctm) return;
+  const r = layer.getBoundingClientRect(), base = m.levels[S.level]?.floorZ ?? 0, zoom = $<HTMLElement>("#map-canvas .map-zoom")?.getBoundingClientRect();
+  const screen = (p: Pt): Pt => { const q = new DOMPoint(p[0], p[1]).matrixTransform(ctm); return [q.x - r.left, q.y - r.top]; };
+  // Each stack's leader ends on its top matching container's top face.
+  const anchors = pinStacks.map(({ stack: s, hits }) => { const [x, y] = screen(project(s.x - m.x0 + 0.5, s.y - m.y0 + 0.5, (drawnZs(s, base)[hits[0]!.index] ?? 0) + CHEST_H, S.view)); return { id: s.letter, x, y, top: screen(anchorOf(m, s, S.view))[1] }; });
+  const row = calloutRow(anchors, r.width, { reserve: zoom ? Math.max(0, r.right - zoom.left) : 52 });
+  const cards = [...layer.querySelectorAll<HTMLElement>(".map-pin")], shown = new Map(row.cards.map((c) => [c.id, c]));
+  for (const c of cards) { const slot = shown.get(c.dataset.stack!); c.hidden = !slot; if (slot) c.style.width = `${slot.width}px`; }
+  const tall = Math.max(0, ...cards.filter((c) => !c.hidden).map((c) => c.offsetHeight));
+  const y = Math.max(12, Math.min(...anchors.filter((a) => shown.has(a.id)).map((a) => a.top)) - 28 - tall);
+  const leaders = layer.querySelector("svg.map-leaders")!;
+  leaders.replaceChildren();
+  for (const c of cards) {
+    const slot = shown.get(c.dataset.stack!), a = anchors.find((x) => x.id === c.dataset.stack);
+    if (!slot || !a) continue;
+    c.style.left = `${slot.left}px`;
+    c.style.top = `${y}px`;
+    const y0 = y + c.offsetHeight, mid = (y0 + a.y) / 2;
+    leaders.append(sv("path", { class: "map-leader", d: `M${slot.leaderX.toFixed(1)},${y0.toFixed(1)} C${slot.leaderX.toFixed(1)},${mid.toFixed(1)} ${a.x.toFixed(1)},${mid.toFixed(1)} ${a.x.toFixed(1)},${a.y.toFixed(1)}` }), sv("circle", { class: "map-leader-dot", cx: a.x.toFixed(1), cy: a.y.toFixed(1), r: "4" }));
+  }
+  const more = $<HTMLElement>("#map-pin-more")!;
+  more.hidden = !row.more;
+  if (row.more) { more.textContent = `+${plural(row.more.count, "more stack")}`; more.style.left = `${row.more.left}px`; more.style.top = `${y}px`; more.style.width = `${row.more.width}px`; }
+}
+// Nothing selected, while this house has matches: the matches on the level shown, per container its code and name, area, stack and place in it, and the items found (each with its tooltip), with Show items; other levels with matches; the matches outside the house. The house's totals and Location are left out until the search is cleared.
+function searchPanel(m: HouseModel, h: HouseHits): HTMLElement[] {
+  const level = m.levels[S.level], here = h.chests.filter((c) => c.stack.level === S.level), areas = areasNow(), e = elsewhere(h);
+  const views = new Map(m.stacks.filter((s) => s.level === S.level && h.stacks.has(s.letter)).flatMap((s) => chestViews(m, s, state.inv!, labels())).map((v) => [v.serial, v]));
+  const on = m.id === PLAIN || !level ? "" : ` on the ${level.name.toLowerCase()}`;
+  const others = m.levels.flatMap((l) => { const n = l.index === S.level ? 0 : h.chests.filter((c) => c.stack.level === l.index).length; return n ? [{ l, n }] : []; });
+  return [
+    houseHead(m),
+    box("div", { class: "map-hits-head" }, el("h3", { class: "t-md", id: "map-hits-title" }, here.length ? hitsSummary(here.reduce((a, c) => a + c.amount, 0), here.length) : `No matches${on}`), txt(`Matching "${query}"${on}`, "t-sm muted")),
+    here.length ? box("ol", { class: "map-hits", "aria-labelledby": "map-hits-title" }, ...here.map((c) => hitRow(m, c, views.get(c.serial)!, areas))) : null,
+    others.length ? box("div", { class: "map-hits-levels" }, txt("Also on", "t-sm muted"), ...others.map(({ l, n }) => button({ label: `${l.name} (${fmtN(n)})`, size: "sm", attrs: { "data-act": `level-${l.index}` }, onClick: () => setLevel(l.index) }))) : null,
+    box("div", { class: "map-hits-foot" },
+      e.amount ? box("span", { class: "t-sm", id: "map-hits-outside" }, txt(`${outsideText(e)} `), inventoryLink("See all in Inventory")) : null,
+      here.length ? txt("Click a match to select its stack.", "t-sm muted") : null),
+  ].filter((x): x is HTMLElement => x != null);
+}
+const HIT_LINES = 5;
+function hitRow(m: HouseModel, c: HitChest, v: ChestView, areas: readonly HouseArea[]): HTMLElement {
+  const go = (): void => {
+    select(c.serial);
+    const at = anchorOf(m, c.stack, S.view);
+    if (S.vb && !inBox(S.vb, at)) setViewBox({ ...S.vb, x: at[0] - S.vb.w / 2, y: at[1] - S.vb.h / 2 });
+  };
+  return box("li", { class: "map-hit", "data-chest": String(c.serial) },
+    swatchEl(colourOf(v, S.mode)),
+    box("div", { class: "map-hit-text" },
+      box("button", { type: "button", class: "map-hit-pick", "data-act": "pick", title: `Select Stack ${c.stack.letter}`, onclick: go }, txt(v.code, "mono strong"), txt(v.name, "ellip strong")),
+      txt(`${areaName(areas, c.stack)} · Stack ${c.stack.letter} · ${c.position}`, "t-sm muted ellip"),
+      box("ul", { class: "map-hit-items", "aria-label": `Matching items in ${v.code} ${v.name}` },
+        ...c.lines.slice(0, HIT_LINES).map((l) => itemTip(box("li", { class: "map-hit-item" }, txt(l.name, "ellip t-sm"), txt(`× ${fmtN(l.amount)}`, "t-sm num muted")), l.item)),
+        c.lines.length > HIT_LINES ? box("li", { class: "map-hit-item" }, txt(`and ${plural(c.lines.length - HIT_LINES, "more")}`, "t-sm muted")) : null)),
+    box("div", { class: "map-chest-actions" }, button({ label: "Show items", size: "sm", attrs: { "data-act": "items" }, onClick: () => { select(c.serial); openDrawer(c.serial); } })));
+}
+
+export async function showMap(r: MapRoute): Promise<void> {
+  const want = r.house, newQuery = r.q !== query;
+  if (newQuery) { query = r.q; search.input.value = r.q; found = null; searchSeq++; }
   if (!state.inv) return;   // before the first load; reload() calls it again
   const my = ++seq;
   if (!S.model && !S.error) body().replaceChildren(message({ tone: "info", text: "Drawing the house map…", attrs: { "aria-busy": "true" } }));
@@ -109,10 +294,17 @@ export async function showMap(want: string | null): Promise<void> {
   }
   const choices = [...S.models.map((m) => ({ id: m.id, containers: chestCount(m) })), ...(S.plain ? [{ id: PLAIN, containers: chestCount(S.plain) }] : [])];
   const id = pickHouse(choices, want, S.id);
-  if (want && id !== want) history.replaceState(null, "", "#/map");
-  if (id !== S.id) { S.id = id; renaming = null; nameError = null; stopEditing(); S.level = 0; S.area = null; S.selected = null; S.hover = null; S.focus = null; S.vb = null; }
+  if (want && id !== want) history.replaceState(null, "", mapHash({ q: query }));
+  if (id !== S.id) { S.id = id; renaming = null; nameError = null; stopEditing(); S.level = 0; S.area = null; S.selected = null; S.hover = null; S.focus = null; S.vb = null; if (query) zoomNext = "hits"; }
   S.model = id === PLAIN ? S.plain : S.models.find((m) => m.id === id) ?? null;
   if (S.model && S.level >= S.model.levels.length) { S.level = 0; S.vb = null; stopEditing(); }
+  // "Show on map": the stack holding that container selected on its level and zoomed to, nothing else opened; the route keeps only the house and the query.
+  if (r.select != null) {
+    const st = S.model?.stacks.find((s) => s.serials.includes(r.select!));
+    if (st) { stopEditing(); S.level = st.level; S.area = null; S.selected = r.select; S.hover = null; S.focus = st.letter; S.vb = null; D = null; drawerSeq++; zoomNext = { stacks: [st], room: false }; }
+    history.replaceState(null, "", mapHash({ house: S.id, q: query }));
+  }
+  if (query && (newQuery || found?.inv !== state.inv)) void runSearch(newQuery);   // a new query, or a new scan under the old one
   if (S.area && !areaById(S.area)) S.area = null;   // deleted meanwhile
   if (!selectedStack()) S.selected = null;   // the stack is gone since (a rescan moved its chests)
   if (!render() && D) void loadDrawer();   // a new scan: the open drawer's chest fetched again (once), its tab, filter, folded bags and scroll kept
@@ -167,15 +359,24 @@ function paintTopbar(): void {
   sel.replaceChildren(...opts.map((o) => el("option", { value: o.value }, o.label)));
   sel.value = S.id ?? "";
   sel.disabled = opts.length < 2;
-  $<HTMLElement>("#map-levels")!.replaceChildren(...(S.model?.levels ?? []).map((l) => { const p = pill({ label: l.name, pressed: l.index === S.level, onToggle: () => setLevel(l.index) }); p.dataset.level = String(l.index); return p; }));
+  // While searching, a level with matches says how many of its containers match on its pill.
+  const h = matching(), m = S.model;
+  $<HTMLElement>("#map-levels")!.replaceChildren(...(m?.levels ?? []).map((l) => {
+    const p = pill({ label: l.name, pressed: l.index === S.level, onToggle: () => setLevel(l.index) }), n = h && m ? levelHits(m, areasNow(), l.index, h.serials).matches : 0;
+    p.dataset.level = String(l.index);
+    if (n) { p.append(txt(fmtN(n), "map-level-count num")); p.setAttribute("aria-label", `${l.name}, ${plural(n, "matching container")}`); }
+    return p;
+  }));
   viewSeg.setValue(S.view);
   modeSeg.setValue(S.mode);
+  paintSearch();
 }
 // The level shown already does nothing (its pill, which unpressed itself on the click, is pressed again).
 function setLevel(i: number): void {
   if (i === S.level) { $<HTMLElement>(`#map-levels [data-level="${i}"]`)?.setAttribute("aria-pressed", "true"); return; }
   dropDrawing();   // a name being asked for stays, under its own level
   S.level = i; S.area = null; S.selected = null; S.hover = null; S.vb = null;
+  if (matching()) zoomNext = "hits";
   render();
 }
 function zoomToArea(a: HouseArea): void {
@@ -185,30 +386,32 @@ function zoomToArea(a: HouseArea): void {
 
 // Left: each level with its chest count and status; its areas (issue #10), each with its colour, chest count, ✎ and ⋯ (a click zooms the map to it); the rest of the level ("Everything else", or "Whole floor" before it has areas); + New area. The plain grid's groups are areas too, but read-only.
 function side(): HTMLElement {
-  const m = S.model!, areas = areasNow(), own = m.id !== PLAIN;
+  const m = S.model!, areas = areasNow(), own = m.id !== PLAIN, h = matching();
   return box("aside", { class: "card map-side", "aria-label": "Levels and areas" }, ...m.levels.map((l) => {
-    const { rows, rest } = levelAreas(m, areas, l.index);
+    const { rows, rest } = levelAreas(m, areas, l.index), t = h ? levelHits(m, areas, l.index, h.serials) : null;
     const drawingHere = draw?.level === l.index && draw.target == null;
     return box("section", { class: "map-level" },
-      box("h2", { class: "map-level-name" }, txt(l.name, "strong"), txt(plural(chestCount(m, l.index), "container"), "t-sm muted")),
+      box("h2", { class: "map-level-name" }, txt(l.name, "strong"), txt(t ? levelHitText(t) : plural(chestCount(m, l.index), "container"), "t-sm muted")),
       l.status === "floor-only" && own ? el("p", { class: "t-sm muted" }, "Floor only, no walls or stairs yet") : null,
       box("ul", { class: "map-areas", "aria-label": `Areas on the ${l.name.toLowerCase()}` },
-        ...rows.map((r) => areaRow(m, r.area, r.chests, own)),
+        ...rows.map((r) => areaRow(m, r.area, r.chests, own, t?.areas.get(r.area.id) ?? null)),
         naming?.level === l.index ? namingRow(m, naming) : null,
-        box("li", { class: "map-area-row rest" }, box("span", { class: "map-area-rest" }, el("span", { class: "map-swatch rest", "aria-hidden": "true" }), txt(rest.name, "ellip"), txt(String(rest.chests), "t-sm muted num")))),
+        box("li", { class: "map-area-row rest" }, box("span", { class: "map-area-rest" }, el("span", { class: "map-swatch rest", "aria-hidden": "true" }), txt(rest.name, "ellip"), t ? hitCount(t.rest) : txt(String(rest.chests), "t-sm muted num")))),
       own ? button({ label: drawingHere ? "Drawing…" : "New area", icon: drawingHere ? undefined : "plus", size: "sm", variant: drawingHere ? "primary" : "secondary", cls: "map-new-area",
         disabled: !drawingHere && (!!draw || !!naming || areas.length >= MAX_AREAS),
         attrs: { id: `map-new-area-${l.index}`, ...(drawingHere ? { "aria-pressed": "true" } : {}), ...(areas.length >= MAX_AREAS ? { title: `A house can have at most ${MAX_AREAS} areas.` } : {}) },
         onClick: () => { if (drawingHere) finishDrawing(); else startDrawing(l.index, null); } }) : null);
   }));
 }
-// An area's row: its zoom button (colour, name, chest count), ✎ (Rename) and ⋯ (Redraw, Change colour, Delete); while renaming, the name field in its place; while asking to delete, the question with Delete and Cancel.
-function areaRow(m: HouseModel, a: HouseArea, chests: number, editable: boolean): HTMLElement {
+// While searching, an area's count is how many of its containers match, a gold badge ("–" for none).
+const hitCount = (t: Tally): HTMLElement => (t.matches ? badge(areaHitText(t), "best") : txt(areaHitText(t), "t-sm muted num"));
+// An area's row: its zoom button (colour, name, chest count, or while searching its matches), ✎ (Rename) and ⋯ (Redraw, Change colour, Delete); while renaming, the name field in its place; while asking to delete, the question with Delete and Cancel.
+function areaRow(m: HouseModel, a: HouseArea, chests: number, editable: boolean, hits: Tally | null): HTMLElement {
   const swatch = el("span", { class: "map-swatch", "aria-hidden": "true", style: `background:var(--color-${a.color})` });
   if (renamingArea?.id === a.id) return box("li", { class: "map-area-row editing" }, swatch, areaRenameField(m, a, renamingArea));
   const zoom = box("button", { type: "button", class: "map-area", id: `map-area-${a.id}`, "data-area": a.id, "aria-pressed": String(S.area === a.id), onclick: () => zoomToArea(a) },
-    swatch, txt(a.name, "ellip"), txt(String(chests), "t-sm muted num"));
-  zoom.setAttribute("aria-label", `${a.name}, ${plural(chests, "container")}`);
+    swatch, txt(a.name, "ellip"), hits ? hitCount(hits) : txt(String(chests), "t-sm muted num"));
+  zoom.setAttribute("aria-label", `${a.name}, ${hits ? `${hits.matches} of ${plural(hits.containers, "container")} match` : plural(chests, "container")}`);
   if (!editable) return box("li", { class: "map-area-row" }, zoom);
   const more: HTMLButtonElement = button({ label: `More actions for ${a.name}`, icon: "more", iconOnly: true, variant: "ghost", size: "sm", attrs: { id: `map-area-menu-${a.id}`, "aria-haspopup": "menu", "aria-expanded": "false" },
     onClick: () => { menu(more, [
@@ -423,7 +626,7 @@ function stage(): HTMLElement {
   return box("section", { class: "card map-stage", id: "map-stage", "aria-label": "Map" },
     ...notes(),
     box("nav", { class: "map-crumbs", id: "map-crumbs", "aria-label": "Breadcrumb" }),
-    box("div", { class: "map-canvas", id: "map-canvas" }, svg, box("div", { class: "map-pills", id: "map-pills", "aria-hidden": "true" }),
+    box("div", { class: "map-canvas", id: "map-canvas" }, svg, box("div", { class: "map-pills", id: "map-pills", "aria-hidden": "true" }), box("div", { class: "map-pins", id: "map-pins", "aria-hidden": "true", hidden: "" }),
       draw ? box("div", { class: "map-draw-hint", id: "map-draw-hint" }, el("span", { class: "map-draw-dot", "aria-hidden": "true" }),
         el("span", { class: "map-draw-text" }, el("strong", {}, "Drag over tiles to draw the area."), " Shift-drag adds more. ", kbd("Enter"), " to finish, ", kbd("Esc"), " to cancel. Fit shows all.",
           el("span", { class: "sr" }, " Keyboard: the arrow keys move a tile cursor, Space starts and ends a rectangle, Shift+Space starts one more, Enter finishes, Escape cancels."))) : null,
@@ -469,7 +672,7 @@ function viewsOf(m: HouseModel): Map<number, ChestView> {
   const inv = state.inv!, labs = labels();
   return new Map(m.stacks.filter((s) => s.level === S.level).flatMap((s) => chestViews(m, s, inv, labs)).map((v) => [v.serial, v]));
 }
-function pieceEl(p: Piece, views: Map<number, ChestView>): SVGElement {
+function pieceEl(p: Piece, views: Map<number, ChestView>, hits: HouseHits | null): SVGElement {
   switch (p.kind) {
     case "solid": { const g = prismEl(p.cls, p.prism); for (const b of p.steps ?? []) g.append(sv("polygon", { class: "map-step", points: b })); return g; }
     case "item": { const g = prismEl(p.cls, p.prism); g.dataset.name = p.name || "furniture"; return g; }
@@ -480,7 +683,10 @@ function pieceEl(p: Piece, views: Map<number, ChestView>): SVGElement {
     case "stack": {
       // A button's children are presentational, so the stack's own name carries its chests, top first, as each chest's label words them.
       const named = p.chests.flatMap((c) => { const v = views.get(c.serial); return v ? [chestLabel(v)] : []; }).reverse();
-      const g = sv("g", { class: "map-stack", "data-stack": p.stack.letter, role: "button", tabindex: "-1", "aria-pressed": "false", "aria-label": `Stack ${p.stack.letter}, ${plural(p.stack.serials.length, "container")}: ${named.join("; ")}` });
+      // While searching, a stack with a match stands on a gold base and its matching chests are outlined in gold; every other chest is a pale ghost.
+      const hit = !!hits?.stacks.has(p.stack.letter);
+      const g = sv("g", { class: `map-stack${hits ? (hit ? " hit" : " ghosted") : ""}`, "data-stack": p.stack.letter, role: "button", tabindex: "-1", "aria-pressed": "false", "aria-label": `Stack ${p.stack.letter}, ${plural(p.stack.serials.length, "container")}${hit ? ", matches" : ""}: ${named.join("; ")}` });
+      if (hit) g.append(sv("polygon", { class: "map-hit-base", points: pts(tilePolygon(p.x, p.y, p.z, S.view)) }));
       for (const c of p.chests) {
         const v = views.get(c.serial);
         if (!v) continue;
@@ -488,6 +694,7 @@ function pieceEl(p: Piece, views: Map<number, ChestView>): SVGElement {
         ch.setAttribute("role", "img");
         ch.setAttribute("aria-label", chestLabel(v));
         ch.setAttribute("data-chest", String(c.serial));
+        if (hits) ch.classList.add(hits.serials.has(c.serial) ? "hit" : "ghost");
         ch.style.setProperty("--chest", cssColour(colourOf(v, S.mode)));
         g.append(ch);
       }
@@ -503,12 +710,12 @@ function viewport(): { width: number; height: number } {
 function drawMap(): void {
   const svg = $<SVGSVGElement>("#map-svg"), m = S.model;
   if (!svg || !m) return;
-  const scene = sceneOf(m, S.level, S.view), views = viewsOf(m);
+  const scene = sceneOf(m, S.level, S.view), views = viewsOf(m), hits = matching();
   const ground = sv("g", { class: "map-ground" }), solids = sv("g", { class: "map-solids" });
   for (const p of scene.below) ground.append(sv("polygon", { class: "map-below", points: p }));
   for (const f of scene.floors) ground.append(sv("polygon", { class: f.cls, points: f.pts }));
   for (const r of scene.reach) ground.append(sv("polygon", { class: "map-reach", points: r }));
-  for (const p of scene.pieces) solids.append(pieceEl(p, views));
+  for (const p of scene.pieces) solids.append(pieceEl(p, views, hits));
   // The areas over the floors and under the walls and stacks (their names are pills over the map: paintPills). Each takes the pointer only to light up and show its name as a tooltip; a stack above it still takes the click.
   const areas = sv("g", { class: "map-area-layer" });
   for (const a of areasNow()) {
@@ -523,10 +730,12 @@ function drawMap(): void {
   pillTexts = null;
   svg.replaceChildren(ground, areas, sv("g", { id: "map-draft", class: "map-draft" }), solids, sv("g", { id: "map-draft-top", class: "map-draft" }));
   drawCrumbs();
+  zoomPending(m, hits);
   if (!S.vb) S.vb = fit(boundsOf(m, S.level, S.view, areaById(S.area)), viewport());
   svg.setAttribute("viewBox", vbText(S.vb));
   paintStacks();
   paintDraft();
+  buildPins(m, hits);
   paintPills(true);
 }
 // The area name pills, an HTML layer over the map at a fixed screen size: one per piece of each area on the level, just above the middle of its front corner tile, placed from the SVG's screen matrix (so again after every pan, zoom, resize and redraw). A name is cut short with "…" to fit LABEL_FIT of its piece's width on screen, or a dot when under 3 characters fit; the area under the pointer, focused or zoomed to shows its whole name, on top. None while drawing a new shape for that area or with the labels hidden. They never take the pointer: the area's tint carries the name as a tooltip too.
@@ -549,6 +758,7 @@ let pillsBuilt: string | null = null;   // what the pills on screen were built f
 function paintPills(rebuild = false): void {
   const layer = $<HTMLElement>("#map-pills"), svg = $<SVGSVGElement>("#map-svg"), m = S.model, ctm = svg?.getScreenCTM();
   if (!layer || !svg || !m) return;
+  placePins(m, ctm ?? null);   // the search's callouts follow the map the same way
   if (labelsHidden || !ctm) { layer.replaceChildren(); pillsBuilt = null; return; }
   const key = `${ctm.a.toFixed(5)}|${hotArea}|${S.area}`;
   if (rebuild || key !== pillsBuilt || layer.childElementCount !== pillBase.length) {
@@ -839,7 +1049,8 @@ function drawPanel(): void {
   const p = $<HTMLElement>("#map-panel"), m = S.model;
   if (!p || !m) return;
   const was = focusKey(p), s = selectedStack();
-  if (!s) p.replaceChildren(...totalsPanel(m));
+  const h = matching();
+  if (!s) p.replaceChildren(...(h ? searchPanel(m, h) : totalsPanel(m)));
   else {
     const chests = chestViews(m, s, state.inv!, labels());
     const why = stackReason(m, s, chests) ?? (highlighting ? "Sending the highlights…" : null);
@@ -925,7 +1136,7 @@ function markerEl(mk: Marker): SVGElement {
   title.textContent = mk.label;
   const at = { cx: String(mk.x), cy: String(mk.y) };
   if (mk.current) return sv("g", { class: "map-where-mark current", role: "img", "aria-label": mk.label }, title, sv("circle", { ...at, "data-r": "current", class: "map-where-dot" }));
-  return sv("a", { class: "map-where-mark", href: `#/map/${encodeURIComponent(mk.id)}`, "aria-label": mk.label, "data-house": mk.id }, title,
+  return sv("a", { class: "map-where-mark", href: mapHash({ house: mk.id, q: query }), "aria-label": mk.label, "data-house": mk.id }, title,
     sv("circle", { ...at, "data-r": "hit", class: "map-where-hit" }), sv("circle", { ...at, "data-r": "ring", class: "map-where-ring-out" }), sv("circle", { ...at, "data-r": "ring", class: "map-where-ring-in" }),
     sv("circle", { ...at, "data-r": "other", class: "map-where-dot" }));
 }

@@ -647,8 +647,8 @@ export function calloutRow(anchors: ReadonlyArray<{ id: string; x: number }>, pa
   const cards = shown.map((a, i): CalloutSlot => { const left = left0 + i * (width + gap); return { id: a.id, left, width, leaderX: Math.max(left + Math.min(16, width / 2), Math.min(left + width - Math.min(16, width / 2), a.x)) }; });
   return { cards, more: rest ? { left: left0 + k * (width + gap), width: chipW, count: rest } : null };
 }
-// The view a search zooms to: the matching stacks as drawn, at least 8 tiles across and 6 high, with as much again above them for the callouts.
-export function hitsView(m: HouseModel, stacks: readonly Stack[], view: View): Box {
+// The view a search zooms to: the matching stacks as drawn, at least 8 tiles across and 6 high, with as much again above them for the callouts (`room`; without it, as "Show on map" zooms to one stack, they are in the middle).
+export function hitsView(m: HouseModel, stacks: readonly Stack[], view: View, room = true): Box {
   let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
   for (const s of stacks) {
     const base = m.levels[s.level]?.floorZ ?? 0, top = (drawnZs(s, base).at(-1) ?? 0) + CHEST_H;
@@ -659,7 +659,7 @@ export function hitsView(m: HouseModel, stacks: readonly Stack[], view: View): B
   }
   if (x0 === Infinity) return boundsOf(m, 0, view);
   const w = Math.max(x1 - x0 + 2 * W, 8 * W), h = Math.max(y1 - y0 + 2 * W, 6 * W), cx = (x0 + x1) / 2, cy = (y0 + y1) / 2;
-  return { x: cx - w / 2, y: cy - h / 2 - h, w, h: 2 * h };
+  return room ? { x: cx - w / 2, y: cy - h / 2 - h, w, h: 2 * h } : { x: cx - w / 2, y: cy - h / 2, w, h };
 }
 // Which house holds each container, by serial: the houses' stacks (GET /api/houses lists each house's container serials), and every other ground container with a place of its own on the plain grid. What "Show on map" and the search's "Elsewhere" go by.
 export interface HouseRef { id: string; name: string }

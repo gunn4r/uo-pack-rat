@@ -967,6 +967,8 @@ export function showCharacterItems(name: string): void {
   if (location.hash !== "#/inventory") location.hash = "#/inventory";
 }
 export function showContainer(root: number): void { showOnly({ roots: [root] }); }
+// The House map's "See all in Inventory": the Items view searching for the same text, every other filter cleared.
+export function showSearch(q: string): void { showOnly({ q: q.trim().toLowerCase() }); }
 // Every item of one kind: Organize's way to the items Pack Rat could not classify (issue #150).
 export function showKind(kind: string): void { showOnly({ kind: [kind] }); }
 function showOnly(filter: Partial<ItemQuery>): void {
