@@ -1382,6 +1382,12 @@ test("[slow] Show on map: an Inventory item's ⋯ menu and a Containers view row
 
 // ---------------------------------------------------------------- the Stack plan (issue #10)
 const chestsOf = (page: Page, sel: string): Promise<number[]> => page.locator(sel).evaluateAll((es) => es.map((e) => Number((e as HTMLElement).dataset.chest)));
+// Whether a plan card is wholly inside the pane that scrolls it (the plan, or the page below 1100 px).
+const cardInView = (page: Page, letter: string): Promise<boolean> => page.evaluate((l) => {
+  const r = document.querySelector(`#map-plan .sp-card[data-stack="${l}"]`)!.getBoundingClientRect();
+  return ["#map-plan", "#map-body"].every((sel) => { const b = document.querySelector(sel)!.getBoundingClientRect(); return r.top >= b.top - 1 && r.bottom <= b.bottom + 1 && r.left >= b.left - 1 && r.right <= b.right + 1; });
+}, letter);
+const scrollAway = (page: Page): Promise<void> => page.evaluate(() => { for (const sel of ["#map-plan", "#map-body"]) { const e = document.querySelector(sel)!; e.scrollTop = 1e6; e.scrollLeft = 1e6; } });
 const sideways = (page: Page): Promise<{ page: number; body: number }> => page.evaluate(() => {
   const over = (sel: string): number => { const e = document.querySelector(sel) as HTMLElement; return e.scrollWidth - e.clientWidth; };
   return { page: over("html"), body: over("#map-body") };
@@ -1424,6 +1430,7 @@ test("[slow] House map Stack plan: lists every container of the dense vault, a c
     // Esc closes the drawer, Esc again clears the selection with focus on the card; the arrows move, Enter selects
     await page.keyboard.press("Escape");
     await page.waitForSelector("#map-drawer", { state: "detached" });
+    assert.equal(await page.evaluate(() => (document.activeElement as HTMLElement | null)?.dataset.stack), nw.letter, "a drawer opened from a row gives focus back to its card");
     await page.keyboard.press("Escape");
     await page.waitForSelector("#map-plan .sp-card.sel", { state: "detached" });
     assert.equal(await page.evaluate(() => (document.activeElement as HTMLElement | null)?.dataset.stack), nw.letter);
@@ -1449,7 +1456,7 @@ test("[slow] House map Stack plan: lists every container of the dense vault, a c
   } finally { await done(app, dir); }
 });
 
-test("[slow] House map Stack plan: a search marks the matching rows with the items found, fades the cards with no match and lists the matches in the panel, with no pins (1024 × 768)", async (t) => {
+test("[slow] House map Stack plan: a search scrolls to its first matching card, marks the matching rows with the items found, fades the cards with no match and lists the matches in the panel, with no pins; Show on map scrolls to its card (1024 × 768)", async (t) => {
   const why = unavailable();
   if (why) return t.skip(why);
   const dir = seedRubies();
@@ -1458,8 +1465,18 @@ test("[slow] House map Stack plan: a search marks the matching rows with the ite
     await go(page, `#/map/${VAULT}`, "#map-svg .map-stack");
     await page.locator('#map-view [data-value="plan"]').click();
     await page.waitForSelector("#map-plan .sp-card");
+    assert.equal(await page.locator("#map-plan").getAttribute("role"), null);
+    assert.equal(await page.locator("#map-plan .sp-cards").getAttribute("role"), "list", "explicit list semantics on the display: contents list");
+    assert.equal(await page.locator("#map-plan .sp-card").first().getAttribute("role"), "listitem");
+    // a new search brings its first matching card into view
+    await scrollAway(page);
+    const back = letter(vaultModel, 3001, 1001), front = letter(vaultModel, 3005, 1005);
+    assert.equal(await cardInView(page, back), false);
     await page.fill("#map-q", "ruby");
     await page.waitForSelector("#map-plan .sp-row.hit");
+    await page.waitForFunction((l) => document.querySelector("#map-plan .sp-card.has-hit")?.getAttribute("data-stack") === l, back);
+    await page.waitForTimeout(200);
+    assert.equal(await cardInView(page, back), true, "the first matching card is scrolled into view");
     assert.deepEqual((await chestsOf(page, "#map-plan .sp-row.hit")).sort(), [FILLED.at(-1)!, RUBY_FRONT].sort());
     assert.equal(await page.locator("#map-plan .sp-card.has-hit").count(), 2);
     assert.equal(await page.locator("#map-plan .sp-card.faded").count(), 22);
@@ -1469,7 +1486,15 @@ test("[slow] House map Stack plan: a search marks the matching rows with the ite
     assert.equal(await page.locator("#map-hits-title").textContent(), "2 items in 2 containers");
     // a match in the panel selects its stack in the plan
     await page.locator(`#map-panel .map-hit[data-chest="${RUBY_FRONT}"] .map-hit-pick`).click();
-    await page.waitForSelector(`#map-plan .sp-card.sel[data-stack="${letter(vaultModel, 3005, 1005)}"]`);
+    await page.waitForSelector(`#map-plan .sp-card.sel[data-stack="${front}"]`);
+    // Show on map with the plan up: the container's card selected and scrolled into view
+    await page.fill("#map-q", "");
+    await go(page, "#/containers", `tr[data-root="${RUBY_FRONT}"]`);
+    await page.locator(`tr[data-root="${RUBY_FRONT}"] .cont-act button`).click();
+    await page.getByRole("menuitem", { name: /Show on map/ }).click();
+    await page.waitForSelector(`#map-plan .sp-card.sel[data-stack="${front}"]`);
+    await page.waitForTimeout(200);
+    assert.equal(await cardInView(page, front), true, "Show on map scrolls the plan to the card");
     assert.deepEqual(errors, []);
   } finally { await done(app, dir); }
 });

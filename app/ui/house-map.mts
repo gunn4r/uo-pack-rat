@@ -81,7 +81,7 @@ const dropDrawing = (): void => { if (!draw) return; draw = null; dragging = fal
 // The Stack plan (issue #10) keeps the drawing's angle for the way back; it has no drawing, so an area being drawn is dropped.
 const viewSeg = segmented({ label: "View", value: "angle", options: [{ value: "angle", label: "Game angle" }, { value: "top", label: "Top-down" }, { value: "plan", label: "Stack plan" }], onChange: (v) => {
   S.plan = v === "plan";
-  if (S.plan) dropDrawing(); else S.view = v === "top" ? "top" : "angle";
+  if (S.plan) { dropDrawing(); if (naming) { naming = null; announce("Drawing canceled."); } } else S.view = v === "top" ? "top" : "angle";
   S.vb = null;
   render();
 } });
@@ -584,7 +584,7 @@ async function saveRedraw(m: HouseModel, d: Draw, id: string): Promise<void> {
   if (redrawn === mine) redrawn = null;
   if (!why) { render(); return; }
   if (gone) { toast(why, "bad"); render(); return; }
-  if (S.model === m && !draw && !naming && areaById(id)) {
+  if (S.model === m && !draw && !naming && !S.plan && areaById(id)) {
     renamingArea = null;
     draw = { ...d, cur: null, anchor: null };
     S.level = d.level;
@@ -663,7 +663,7 @@ function stage(): HTMLElement {
 // Above the map: why it is drawn in plain colours (no tiledata.mul), or, on the plain grid, how to get the house drawn.
 function notes(): HTMLElement[] {
   if (S.id === PLAIN) return [message({ tone: "info", text: "These containers are not inside a house a scan has drawn. Scan from inside the house with the 2.11.0 scripts to draw it.", attrs: { id: "map-plain-note" } })];
-  const note = !S.list || S.list.tiledata ? null : tiledataNote(S.list.tiledataFrom.reason);
+  const note = !S.list || S.list.tiledata || S.plan ? null : tiledataNote(S.list.tiledataFrom.reason);   // the Stack plan draws no walls or floors
   return note ? [message({ tone: "warn", title: "Plain colors", text: note, attrs: { id: "map-tiledata-note" }, actions: [box("a", { class: "btn btn-sm", href: "#/settings" }, txt("Set the UO folder in Settings"))] })] : [];
 }
 function emptyState(): HTMLElement {
@@ -876,31 +876,33 @@ function drawPlan(): void {
     i === 0 ? areaPill(a.area, a.containers, tally?.areas.get(a.area.id) ?? null) : null)));
   for (const e of p.empties) grid.append(el("div", { class: "sp-empty", "aria-hidden": "true", style: `grid-column:${e.col + 1};grid-row:${e.row + 1}` }));
   // The list reads in the plan's order, row by row: a squeezed column's caption after the first row's card west of it, a squeezed row's before the row under it.
-  const gaps = [...p.cols.flatMap((t, i) => (t.empty ? [{ row: 0, col: i, el: box("li", { class: "sp-gap down", style: `grid-column:${i + 1};grid-row:1 / -1` }, txt(gapText(t.to - t.from + 1))) }] : [])),
-    ...p.rows.flatMap((t, i) => (t.empty ? [{ row: i, col: -1, el: box("li", { class: "sp-gap", style: `grid-row:${i + 1};grid-column:1 / -1` }, txt(gapText(t.to - t.from + 1))) }] : []))];
+  const gaps = [...p.cols.flatMap((t, i) => (t.empty ? [{ row: 0, col: i, el: box("li", { class: "sp-gap down", role: "listitem", style: `grid-column:${i + 1};grid-row:1 / -1` }, txt(gapText(t.to - t.from + 1))) }] : [])),
+    ...p.rows.flatMap((t, i) => (t.empty ? [{ row: i, col: -1, el: box("li", { class: "sp-gap", role: "listitem", style: `grid-row:${i + 1};grid-column:1 / -1` }, txt(gapText(t.to - t.from + 1))) }] : []))];
   const items = [...p.cards.map((c) => ({ row: c.row, col: c.col, el: planCard(m, c, h) })), ...gaps].sort((a, b) => a.row - b.row || a.col - b.col);
-  const list = box("ol", { class: "sp-cards", "aria-label": `Stack plan of ${zoomed ? zoomed.name : `the ${(m.levels[S.level]?.name ?? "level").toLowerCase()}`}, north up` }, ...items.map((x) => x.el));
+  const list = box("ol", { class: "sp-cards", role: "list", "aria-label": `Stack plan of ${zoomed ? zoomed.name : `the ${(m.levels[S.level]?.name ?? "level").toLowerCase()}`}, north up` }, ...items.map((x) => x.el));
   list.addEventListener("click", (e) => {
     const t = e.target as Element, card = t.closest<HTMLElement>("[data-stack]"), row = t.closest<HTMLElement>("[data-chest]");
     if (!card) return;
     if (!row) { pick(card.dataset.stack!); return; }
     select(+row.dataset.chest!);
-    if (!row.classList.contains("unopened")) openDrawer(+row.dataset.chest!);
+    if (!row.classList.contains("unopened")) openDrawer(+row.dataset.chest!, card.dataset.stack!);
   });
-  list.addEventListener("keydown", (e) => {
-    const card = e.target as HTMLElement, dir = ARROWS[e.key];
-    if (!card.dataset?.stack || e.defaultPrevented || e.metaKey || e.ctrlKey || e.altKey) return;
-    if (e.key === "Enter" || e.key === " ") { e.preventDefault(); pick(card.dataset.stack); return; }
-    if (!dir || !planNow) return;
-    e.preventDefault();
-    const next = planNeighbor(planNow, card.dataset.stack, dir);
-    if (next) focusStack(next);
-  });
+  list.addEventListener("keydown", stackKeys);
   list.addEventListener("focusin", (e) => { const letter = (e.target as HTMLElement).dataset?.stack; if (letter) { S.focus = letter; paintPlan(); } });
   grid.append(list);
   wrap.replaceChildren(box("div", { class: "sp-bar" }, txt("Seen from above, north up. Each card is one tile, its containers top first; runs of empty tiles are squeezed.", "t-sm muted"),
     txt(`${plural(p.cards.length, "stack")} · ${plural(p.containers, "container")}`, "t-sm muted num sp-count")), box("div", { class: "sp-frame" }, grid), ...(foot ? [foot] : []));
   paintPlan();
+  scrollPlan();
+}
+// What the map would zoom to (a "Show on map" stack, a new search's matches) the plan scrolls to instead, once per ask: the stack's card, or the first matching card. zoomNext stays for the map, which still zooms to it when the view goes back.
+let planScrolled: unknown = null;
+function scrollPlan(): void {
+  const z = zoomNext, key = z === "hits" ? found : z;
+  if (!z || key === planScrolled || (z === "hits" && found?.q !== query)) return;
+  planScrolled = key;
+  const card = $<HTMLElement>(z === "hits" ? "#map-plan .sp-card.has-hit" : `#map-plan .sp-card[data-stack="${CSS.escape(z.stacks[0]?.letter ?? "")}"]`);
+  if (card) requestAnimationFrame(() => card.scrollIntoView({ block: "nearest", inline: "nearest" }));
 }
 // An area's name pill at its top-left: its container count, or while searching how many of them match; a click shows only that area.
 function areaPill(a: HouseArea, containers: number, t: Tally | null): HTMLElement {
@@ -910,10 +912,11 @@ function areaPill(a: HouseArea, containers: number, t: Tally | null): HTMLElemen
 }
 function planCard(m: HouseModel, c: PlanCard, h: HouseHits | null): HTMLElement {
   const s = c.stack, head = planHead(s), hits = h?.stacks.get(s.letter) ?? null;
-  return box("li", { class: `sp-card${h ? (hits ? " has-hit" : " faded") : ""}`, "data-stack": s.letter, tabindex: "-1", style: `grid-column:${c.col + 1};grid-row:${c.row + 1}`,
+  const rows = planRows(chestViews(m, s, state.inv!, labels()));
+  return box("li", { class: `sp-card${h ? (hits ? " has-hit" : " faded") : ""}`, role: "listitem", "data-stack": s.letter, tabindex: "-1", style: `grid-column:${c.col + 1};grid-row:${c.row + 1};--code-w:${Math.max(2, ...rows.map((r) => r.code.length))}`,
     "aria-label": `${head.title}, ${head.count}${c.area ? `, ${c.area.name}` : ""}${hits ? `, ${plural(hits.length, "match", "matches")}` : ""}` },
     box("div", { class: "sp-card-head" }, txt(head.title, "t-sm strong"), txt(head.count, "t-xs muted")),
-    box("ol", { class: "sp-rows", "aria-label": `Containers in ${head.title}, top first` }, ...planRows(chestViews(m, s, state.inv!, labels())).map((r) => planRow(r, hits?.find((x) => x.serial === r.serial) ?? null))));
+    box("ol", { class: "sp-rows", "aria-label": `Containers in ${head.title}, top first` }, ...rows.map((r) => planRow(r, hits?.find((x) => x.serial === r.serial) ?? null))));
 }
 // A container's row: its code; its label as a chip in the label's color, then the in-game name; its fill bar and count out of its own maximum (or why it is not known); while it matches a search, the items found.
 function planRow(r: PlanRow, hit: HitChest | null): HTMLElement {
@@ -1105,14 +1108,15 @@ function unselect(): void {
 // Enter or Space selects the focused stack; an arrow key moves to the nearest stack that way on screen.
 const ARROWS: Record<string, Dir> = { ArrowUp: "up", ArrowDown: "down", ArrowLeft: "left", ArrowRight: "right" };
 function stackKeys(e: KeyboardEvent): void {
-  const t = (e.target as Element).closest?.("[data-stack]") as SVGElement | null, m = S.model;
+  const t = (e.target as Element).closest?.("[data-stack]") as HTMLElement | SVGElement | null, m = S.model;
   if (!t?.dataset.stack || !m || e.defaultPrevented || e.metaKey || e.ctrlKey || e.altKey) return;
   if (e.key === "Enter" || e.key === " ") { e.preventDefault(); pick(t.dataset.stack); return; }
   const dir = ARROWS[e.key];
   if (!dir) return;
   e.preventDefault();
   const here = m.stacks.find((s) => s.letter === t.dataset.stack)!;
-  const next = nearestInDirection(anchorOf(m, here, S.view), m.stacks.filter((s) => s.level === S.level && s !== here).map((s) => ({ id: s.letter, at: anchorOf(m, s, S.view) })), dir);
+  // On the Stack plan the nearest card that way on its grid, on the map the nearest stack that way on screen.
+  const next = S.plan ? (planNow ? planNeighbor(planNow, here.letter, dir) : null) : nearestInDirection(anchorOf(m, here, S.view), m.stacks.filter((s) => s.level === S.level && s !== here).map((s) => ({ id: s.letter, at: anchorOf(m, s, S.view) })), dir);
   if (next) focusStack(next);
 }
 function focusStack(letter: string): void {
@@ -1357,15 +1361,15 @@ async function highlightStack(m: HouseModel, s: Stack, chests: ChestView[]): Pro
 }
 // ---------------------------------------------------------------- the contents drawer
 // A column after the panel that lists a chest of the selected stack without leaving the map: the chest shown (null when no scan opened any chest of the stack), the filter typed (kept from chest to chest), the bags closed, its items as last fetched (kept on screen while a rescan's are fetched), the list's scroll, and the chest whose Show items opened it, where focus goes back on close.
-interface Drawer { chest: number | null; filter: string; closed: Set<number>; items: Item[] | null; error: string | null; scroll: number; opener: number | null }
+interface Drawer { chest: number | null; filter: string; closed: Set<number>; items: Item[] | null; error: string | null; scroll: number; opener: number | null; card: string | null }
 let D: Drawer | null = null;
 let drawerSeq = 0;
 const ITEMS_CHUNK = 500;   // GET /api/items' own cap
 const shownChest = (chest: number | null): Pick<Drawer, "chest" | "closed" | "items" | "error" | "scroll"> => ({ chest, closed: new Set(), items: null, error: null, scroll: 0 });
-// Show items: the drawer on that chest, focus in its filter.
-function openDrawer(chest: number): void {
+// Show items (or a container row of a Stack plan card, `card`): the drawer on that chest, focus in its filter.
+function openDrawer(chest: number, card: string | null = null): void {
   const fresh = !D;
-  D = { filter: D?.filter ?? "", opener: chest, ...shownChest(chest) };
+  D = { filter: D?.filter ?? "", opener: chest, card, ...shownChest(chest) };
   drawPanel();
   placeDrawer(fresh);
   void loadDrawer();
@@ -1373,13 +1377,14 @@ function openDrawer(chest: number): void {
 }
 function closeDrawer(): void {
   if (!D) return;
-  const opener = D.opener;
+  const opener = D.opener, card = S.plan ? D.card : null;
   D = null;
   drawerSeq++;
   placeDrawer();
   drawPanel();
-  const back = opener == null ? null : $<HTMLElement>(`#map-panel li[data-chest="${opener}"] [data-act="items"]`), s = selectedStack();
-  if (back) back.focus();
+  const back = opener == null || card ? null : $<HTMLElement>(`#map-panel li[data-chest="${opener}"] [data-act="items"]`), s = selectedStack();
+  if (card) focusStack(card);
+  else if (back) back.focus();
   else if (s) focusStack(s.letter);
 }
 // The drawer follows the selection: gone with none, on the stack's top opened chest when the selection moves to another stack. True when it moved to another chest, whose items the caller fetches.
