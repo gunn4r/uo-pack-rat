@@ -165,7 +165,7 @@ export function renderContainers(): void {
         { label: "Forget…", danger: true, onSelect: () => { forget(r, label, n); } },
       ], { label: `Actions for ${label}` }) });
       rows.push(el("tr", { "data-root": r.serial },
-        el("td", {}, box("span", { class: "inv-loc" }, swatch, txt(name, "ellip"), txt(serial || `0x${(+r.serial).toString(16)}`, "mono faint"), lab?.pinned ? tag("Pinned") : null, bags ? txt(plural(bags, "bag"), "t-sm muted") : null, missing ? tag(`${missing} missing`, "warn") : null)),
+        el("td", {}, box("span", { class: "inv-loc" }, swatch, txt(name, "ellip"), txt(serial || `0x${(+r.serial).toString(16)}`, "mono faint"), lab?.pinned ? tag("Pinned") : null, bags ? txt(plural(bags, "container"), "t-sm muted") : null, missing ? tag(`${missing} missing`, "warn") : null)),
         el("td", {}, txt(KIND_NAMES[String(r.kind)] || String(r.kind || "Unknown"))),
         el("td", {}, txt(r.scannedBy)),
         el("td", {}, txt(relativeWhen(r.scannedAt))),

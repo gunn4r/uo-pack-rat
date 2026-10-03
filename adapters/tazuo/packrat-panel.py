@@ -448,7 +448,7 @@ def picked_source(serial):
         except Exception:
             break
         it = call(getattr(API, "FindItem", None), c)
-    return None, "Pick your pack, a bag in it, or a chest."
+    return None, "Pick your pack, a container in it, or one on the ground."
 
 
 def write_stop():
@@ -501,7 +501,7 @@ def on_put_away():
     away_buttons()
     start(script)
     state["quiet"].add(script)
-    say("Put away: reading %s..." % ("your pack" if source == "pack" else "the chest"))
+    say("Put away: reading %s..." % ("your pack" if source == "pack" else "the container"))
 
 
 def end_put_away(line1, line2=""):

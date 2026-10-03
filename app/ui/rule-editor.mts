@@ -130,7 +130,7 @@ function draw(focus?: string): void {
     box("div", { class: "field" }, suits.root, txt("A piece of any suit the Suit Builder saved is left to the rules below, however well it fits this one.", "t-sm muted")),
     matchEl(),
     el("h3", { class: "t-md" }, "Where they go"),
-    el("p", { class: "t-sm muted" }, "The first container fills up, then the next. Pick labeled chests or the bags inside them: label more chests in Inventory › Containers."),
+    el("p", { class: "t-sm muted" }, "The first container fills up, then the next. Pick labeled containers or the containers inside them: label more in Inventory › Containers."),
     list,
     field({ label: "Add a container", control: addSel }),
   ]));

@@ -61,7 +61,7 @@ function render(): void {
   if (stage === "no-scans") { body().replaceChildren(emptyState("Nothing to organize yet", "Organize moves items between containers on the ground, such as the chests in your house. Scan them in game first.", null)); return; }
   if (stage === "no-labels") {
     const auto = button({ label: "Auto organize…", attrs: { id: "org-auto" }, onClick: () => { void openAutoOrganize(auto); } });
-    body().replaceChildren(emptyState("Label your storage first", "Organize only takes items from, and puts items into, containers you have labeled, so a friend's chest or a vendor is never touched. In Inventory › Containers, choose Label… from a chest's ⋯ menu, or let Auto organize label your chests and write the rules for you.",
+    body().replaceChildren(emptyState("Label your storage first", "Organize only takes items from, and puts items into, containers you have labeled, so a friend's chest or a vendor is never touched. In Inventory › Containers, choose Label… from a container's ⋯ menu, or let Auto organize label your chests and write the rules for you.",
       box("div", { class: "org-empty-actions" },
         button({ label: "Open Containers", variant: "primary", attrs: { id: "org-open-containers" }, onClick: () => { location.hash = "#/containers"; } }), auto)));
     return;

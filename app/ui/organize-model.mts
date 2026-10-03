@@ -412,7 +412,7 @@ export const STRATEGY_TEXT: Record<AutoStrategy, { label: string; text: string }
   build: { label: "By build", text: "Sorts gear by what it is for: caster, melee, hybrid (both equally), tank (shields and resist pieces with neither) and other gear. Everything else is grouped as in Simple." },
 };
 // Under the chests (issue #123): an unticked chest leaves the scope, so its items are neither moved nor short of room.
-export const TICK_SCOPE_TEXT = "Only items in the chests you check are organized; the rest are left where they are.";
+export const TICK_SCOPE_TEXT = "Only items in the containers you check are organized; the rest are left where they are.";
 // The chests Auto organize may use, by house (a heading only when there is more than one).
 export function candidateGroups(cands: readonly ProposalCandidate[]): Array<{ site: number; title: string | null; rows: ProposalCandidate[] }> {
   const sites = [...new Set(cands.map((c) => c.site))].sort((a, b) => a - b);
@@ -433,7 +433,7 @@ export function proposalHeadline(p: OrganizeProposal): string {
 export function groupStatus(g: ProposalGroup): { badge: string; tone: "warn" | undefined; text: string | null } {
   if (!g.targets.length) return { badge: "No container", tone: "warn", text: `Add ${plural(g.addContainers, "container")}. Its items stay where they are.` };
   if (g.shortfall) return { badge: "Short", tone: "warn", text: `${plural(g.shortfall, "slot")} short: add ${plural(g.addContainers, "container")}.` };
-  if (g.needsBag) return { badge: "No bag", tone: undefined, text: "Loose in the chest it shares: an empty bag there keeps it apart." };
+  if (g.needsBag) return { badge: "No bag", tone: undefined, text: "Loose in the container it shares: an empty bag there keeps it apart." };
   return { badge: "Fits", tone: undefined, text: null };
 }
 export const groupAway = (g: ProposalGroup): string | null => (g.crossSite ? `${plural(g.crossSite, "item")} at another house ${g.crossSite === 1 ? "stays" : "stay"} there.` : null);
@@ -453,20 +453,20 @@ function layoutNote(p: OrganizeProposal): string | null {
   const count = bags.reduce((n, b) => n + b.bags, 0);
   if (!chests && !count) return null;
   const into = (b: ProposalLayout["bags"][number]): string => {
-    if (b.chest == null) return `${b.bags} in a new ${b.family} chest`;
+    if (b.chest == null) return `${b.bags} in a new ${b.family} container`;
     const name = candName(b.chest, p.candidates);
     return `${b.bags} in ${name}${name === b.family ? "" : ` (${b.family})`}`;
   };
-  const what = [chests ? plural(chests, "more chest") : "", count ? plural(count, "bag") : ""].filter(Boolean).join(" and ");
-  const spare = count && spareBags ? ` ${plural(spareBags, "empty bag")} already in your chests can be moved in first.` : "";
-  return `For the full ${STRATEGY_TEXT[p.strategy].label} layout (no chest over 80% full, a bag for each group sharing one), add ${what}${count ? `: ${bags.map(into).join(", ")}` : ""}.${spare} Then rescan and run Auto organize again.`;
+  const what = [chests ? plural(chests, "more container") : "", count ? plural(count, "bag") : ""].filter(Boolean).join(" and ");
+  const spare = count && spareBags ? ` ${plural(spareBags, "empty bag")} already in your containers can be moved in first.` : "";
+  return `For the full ${STRATEGY_TEXT[p.strategy].label} layout (no container over 80% full, a bag for each group sharing one), add ${what}${count ? `: ${bags.map(into).join(", ")}` : ""}.${spare} Then rescan and run Auto organize again.`;
 }
 export function proposalNotes(p: OrganizeProposal): string[] {
   const layout = layoutNote(p);
   return [
     ...(p.manualRules ? [p.manualRules === 1 ? "Your 1 rule stays above these and takes its items first." : `Your ${plural(p.manualRules, "rule")} stay above these and take their items first.`] : []),
     ...p.refused.map((r) => `Container 0x${r.serial.toString(16)} could not be used: ${r.reason}.`),
-    ...(p.layout.roomy ? ["No chest is filled past 80%, so new loot has room: some groups spread into a second chest."] : []),
+    ...(p.layout.roomy ? ["No container is filled past 80%, so new loot has room: some groups spread into a second container."] : []),
     ...(layout ? [layout] : []),
     ...(p.plan.crossSite ? [`${plural(p.plan.crossSite, "item")} ${p.plan.crossSite === 1 ? "belongs" : "belong"} at another house: carry ${p.plan.crossSite === 1 ? "it" : "them"} over by hand.`] : []),
   ];

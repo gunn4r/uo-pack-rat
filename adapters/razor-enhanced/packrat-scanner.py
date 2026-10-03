@@ -349,7 +349,7 @@ def close_opened():
 
 def note_unopened(entry, label):
     sysmsg("  {0} in {1} was not opened -- its contents are kept from the last scan".format(
-        entry["name"] or "a bag", label), ALARM_HUE)
+        entry["name"] or "a container", label), ALARM_HUE)
 
 
 # Razor Enhanced's own skill names (Player.GetRealSkillValue / Player.UseSkill's documented

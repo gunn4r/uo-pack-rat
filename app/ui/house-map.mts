@@ -163,7 +163,7 @@ function keepFocus(): (() => void) | null {
 
 function paintTopbar(): void {
   const sel = $<HTMLSelectElement>("#map-house")!;
-  const opts = [...(S.list?.houses ?? []).map((h) => ({ value: h.id, label: houseLabel(h) })), ...(S.plain ? [{ value: PLAIN, label: `Chests outside a drawn house (${chestCount(S.plain)})` }] : [])];
+  const opts = [...(S.list?.houses ?? []).map((h) => ({ value: h.id, label: houseLabel(h) })), ...(S.plain ? [{ value: PLAIN, label: `Containers outside a drawn house (${chestCount(S.plain)})` }] : [])];
   sel.replaceChildren(...opts.map((o) => el("option", { value: o.value }, o.label)));
   sel.value = S.id ?? "";
   sel.disabled = opts.length < 2;
@@ -276,7 +276,7 @@ function namingRow(m: HouseModel, n: NonNullable<typeof naming>): HTMLElement {
   return box("li", { class: "map-area-row naming" }, box("div", { class: "map-area-new" },
     el("label", { class: "t-sm muted", id: "map-area-new-label", for: "map-area-new-name" }, "Name this area"),
     box("div", { class: "map-area-new-field" }, el("span", { class: "map-swatch", "aria-hidden": "true", style: `background:var(--color-${n.color})` }), f),
-    txt(`${plural(unionTiles(n.rects).length, "tile")} · ${plural(chests, "chest")}`, "t-sm muted"),
+    txt(`${plural(unionTiles(n.rects).length, "tile")} · ${plural(chests, "container")}`, "t-sm muted"),
     n.error ? message({ tone: "bad", text: n.error, attrs: { id: "map-area-new-error" } }) : null,
     box("div", { class: "map-area-new-actions" }, button({ label: "Cancel", size: "sm", attrs: { id: "map-area-new-cancel" }, onClick: cancelNaming }), save)));
 }
@@ -301,7 +301,7 @@ async function saveNew(m: HouseModel): Promise<void> {
 // Delete asks with the page's yes/no dialog. Cancel puts focus back on the row's ⋯; a delete puts it on the next area's ⋯ on that level, else on the one before, else on + New area.
 async function askDelete(m: HouseModel, a: HouseArea): Promise<void> {
   const menuOf = (id: string): HTMLElement | null => $<HTMLElement>(`#map-area-menu-${CSS.escape(id)}`);
-  if (!await confirmDialog({ title: `Delete ${a.name}?`, body: `Its chests go to ${levelAreas(m, areasNow().filter((x) => x.id !== a.id), a.level).rest.name}. The chests themselves stay where they are.`, confirmLabel: "Delete area" })) { menuOf(a.id)?.focus(); return; }
+  if (!await confirmDialog({ title: `Delete ${a.name}?`, body: `Its containers go to ${levelAreas(m, areasNow().filter((x) => x.id !== a.id), a.level).rest.name}. The containers themselves stay where they are.`, confirmLabel: "Delete area" })) { menuOf(a.id)?.focus(); return; }
   const mates = areasNow().filter((x) => x.level === a.level), at = mates.findIndex((x) => x.id === a.id), next = mates[at + 1] ?? mates[at - 1] ?? null;
   const why = await editAreas(m, (l) => l.filter((x) => x.id !== a.id));
   if (why) { toast(why, "bad"); render(); menuOf(a.id)?.focus(); return; }
@@ -437,14 +437,14 @@ function stage(): HTMLElement {
 }
 // Above the map: why it is drawn in plain colours (no tiledata.mul), or, on the plain grid, how to get the house drawn.
 function notes(): HTMLElement[] {
-  if (S.id === PLAIN) return [message({ tone: "info", text: "These chests are not inside a house a scan has drawn. Scan from inside the house with the 2.11.0 scripts to draw it.", attrs: { id: "map-plain-note" } })];
+  if (S.id === PLAIN) return [message({ tone: "info", text: "These containers are not inside a house a scan has drawn. Scan from inside the house with the 2.11.0 scripts to draw it.", attrs: { id: "map-plain-note" } })];
   const note = !S.list || S.list.tiledata ? null : tiledataNote(S.list.tiledataFrom.reason);
   return note ? [message({ tone: "warn", title: "Plain colors", text: note, attrs: { id: "map-tiledata-note" }, actions: [box("a", { class: "btn btn-sm", href: "#/settings" }, txt("Set the UO folder in Settings"))] })] : [];
 }
 function emptyState(): HTMLElement {
   return box("section", { class: "card map-empty" }, box("div", { class: "empty-state" },
     el("h2", { class: "t-lg" }, "No house to draw yet"),
-    el("p", { class: "muted" }, "Scan from inside your house with the 2.11.0 scripts (TazUO), and the house map draws it here with every chest where it stands.")));
+    el("p", { class: "muted" }, "Scan from inside your house with the 2.11.0 scripts (TazUO), and the house map draws it here with every container where it stands.")));
 }
 
 // ---------------------------------------------------------------- drawing
@@ -473,14 +473,14 @@ function pieceEl(p: Piece, views: Map<number, ChestView>): SVGElement {
   switch (p.kind) {
     case "solid": { const g = prismEl(p.cls, p.prism); for (const b of p.steps ?? []) g.append(sv("polygon", { class: "map-step", points: b })); return g; }
     case "item": { const g = prismEl(p.cls, p.prism); g.dataset.name = p.name || "furniture"; return g; }
-    case "spot": return sv("g", { class: "map-spot", role: "img", "aria-label": `Standing spot ${p.spot.id + 1}: every chest in its dashed square is within reach` },
+    case "spot": return sv("g", { class: "map-spot", role: "img", "aria-label": `Standing spot ${p.spot.id + 1}: every container in its dashed square is within reach` },
       sv("ellipse", { cx: String(p.at[0]), cy: String(p.at[1]), rx: "6", ry: "3" }),
       sv("rect", { x: String(p.at[0] - 3), y: String(p.at[1] - 17), width: "6", height: "14", rx: "3" }),
       sv("circle", { cx: String(p.at[0]), cy: String(p.at[1] - 20), r: "3.6" }));
     case "stack": {
       // A button's children are presentational, so the stack's own name carries its chests, top first, as each chest's label words them.
       const named = p.chests.flatMap((c) => { const v = views.get(c.serial); return v ? [chestLabel(v)] : []; }).reverse();
-      const g = sv("g", { class: "map-stack", "data-stack": p.stack.letter, role: "button", tabindex: "-1", "aria-pressed": "false", "aria-label": `Stack ${p.stack.letter}, ${plural(p.stack.serials.length, "chest")}: ${named.join("; ")}` });
+      const g = sv("g", { class: "map-stack", "data-stack": p.stack.letter, role: "button", tabindex: "-1", "aria-pressed": "false", "aria-label": `Stack ${p.stack.letter}, ${plural(p.stack.serials.length, "container")}: ${named.join("; ")}` });
       for (const c of p.chests) {
         const v = views.get(c.serial);
         if (!v) continue;
@@ -846,7 +846,7 @@ function drawPanel(): void {
     const all = button({ label: chests.length > 1 ? "Highlight the stack" : "Highlight", icon: "highlight", size: "sm", disabled: !!why, attrs: { id: "map-highlight-stack" }, onClick: () => { void highlightStack(m, s, chests); } });
     p.replaceChildren(
       box("header", { class: "map-panel-head" }, el("h2", { class: "t-lg" }, chests.length > 1 ? `Stack ${s.letter}` : chests[0]!.name), txt(stackWhere(m, s, areasNow()), "t-sm muted")),
-      box("ol", { class: "map-chests", "aria-label": "Chests, top first" }, ...chests.map((c) => chestRow(m, s, c))),
+      box("ol", { class: "map-chests", "aria-label": "Containers, top first" }, ...chests.map((c) => chestRow(m, s, c))),
       box("div", { class: "map-panel-actions" }, why ? tipWrap(all, why) : all, button({ label: "Back to the house", variant: "ghost", size: "sm", onClick: unselect })),
       legend());
   }
@@ -940,7 +940,7 @@ async function loadFacetImage(url: string): Promise<void> {
 // The house's heading with its ✎ (Rename house), or the name field while renaming; under it the house's counts, and
 // the offer to carry over the name of an earlier house this one replaced (house-map-model.mts carryOver).
 function houseHead(m: HouseModel): HTMLElement {
-  const meta = txt(m.id === PLAIN ? "Ground chests outside any drawn house" : `${plural(m.levels.length, "level")} · ${plural(m.stacks.length, "stack")} · ${plural(m.spots.length, "standing spot")}`, "t-sm muted");
+  const meta = txt(m.id === PLAIN ? "Ground containers outside any drawn house" : `${plural(m.levels.length, "level")} · ${plural(m.stacks.length, "stack")} · ${plural(m.spots.length, "standing spot")}`, "t-sm muted");
   if (renaming != null) return box("header", { class: "map-panel-head" }, renameField(m, renaming, nameError), meta);
   const offer = carryOver(m, S.list?.houses.map((h) => h.id) ?? [], S.names), words = offer ? carryOverText(offer) : null;
   return box("header", { class: "map-panel-head" },
@@ -1191,12 +1191,12 @@ function drawDrawer(): void {
   const pick = drawerPicker(chests);
   let tabs: HTMLElement;
   if (pick.kind === "tabs") {
-    tabs = segmented({ label: "Chests in this stack", value: String(dr.chest ?? ""), onChange: (v) => showChest(+v), options: pick.options });
+    tabs = segmented({ label: "Containers in this stack", value: String(dr.chest ?? ""), onChange: (v) => showChest(+v), options: pick.options });
     for (const b of tabs.querySelectorAll<HTMLButtonElement>("button")) b.id = `map-drawer-tab-${b.dataset.value}`;
   } else {
     const sel = selectEl(pick.options, String(dr.chest ?? ""), { size: "sm", attrs: { id: "map-drawer-chest" } });
     sel.addEventListener("change", () => showChest(+sel.value));
-    tabs = box("div", { class: "map-drawer-pick" }, el("label", { class: "t-sm muted", for: "map-drawer-chest" }, "Chest"), sel);
+    tabs = box("div", { class: "map-drawer-pick" }, el("label", { class: "t-sm muted", for: "map-drawer-chest" }, "Container"), sel);
   }
   const filter = input({ type: "search", size: "sm", value: dr.filter, placeholder: c ? `Filter ${c.code} contents…` : "Filter contents…", attrs: { id: "map-drawer-filter", "aria-label": c ? `Filter ${c.code} contents` : "Filter contents" } });
   filter.addEventListener("input", () => { dr.filter = filter.value; dr.scroll = 0; drawDrawerBody(); });
@@ -1223,13 +1223,13 @@ function drawDrawerBody(): void {
   const list = $<HTMLElement>("#map-drawer-body"), summary = $<HTMLElement>("#map-drawer-summary"), dr = D;
   if (!list || !summary || !dr) return;
   const note = (text: string, busy = false): HTMLElement => el("p", { class: "t-sm muted map-drawer-note", ...(busy ? { "aria-busy": "true" } : {}) }, text);
-  if (dr.chest == null) { summary.textContent = "Not opened yet"; list.replaceChildren(note("No chest in this stack has been opened yet: scan from beside it to list what is in it.")); return; }
+  if (dr.chest == null) { summary.textContent = "Not opened yet"; list.replaceChildren(note("No container in this stack has been opened yet: scan from beside it to list what is in it.")); return; }
   if (dr.error) { summary.textContent = ""; list.replaceChildren(message({ tone: "bad", title: "Could not load the contents", text: dr.error })); return; }
   if (!dr.items) { summary.textContent = "Loading…"; list.replaceChildren(note("Loading the contents…", true)); return; }
   const all = treeOf(dr.items, dr.chest), shown = filterContents(all.nodes, dr.filter);
   summary.textContent = contentsSummary(all);
   const was = focusKey(list);   // a row or bag summary keeps focus through a rescan's new list
-  list.replaceChildren(...(shown.length ? shown.map(nodeEl) : [note(all.total ? `Nothing here matches "${dr.filter.trim()}".` : "Nothing in this chest.")]));
+  list.replaceChildren(...(shown.length ? shown.map(nodeEl) : [note(all.total ? `Nothing here matches "${dr.filter.trim()}".` : "Nothing in this container.")]));
   list.scrollTop = dr.scroll;
   if (was) refocus(list, was, false);
 }

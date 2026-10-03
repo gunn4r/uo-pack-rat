@@ -241,7 +241,7 @@ function fetchCard(items: Item[], name: string): HTMLElement | null {
       box("span", { class: "b-fetch-acts" }, goGate ? tipWrap(go, goGate) : go, grabGate ? tipWrap(grab, grabGate) : grab));
   });
   return el("section", { class: "card", "aria-label": "Fetch list" },
-    box("div", { class: "card-head" }, el("h2", {}, "Fetch list"), txt("Walk to each chest once", "t-sm muted")),
+    box("div", { class: "card-head" }, el("h2", {}, "Fetch list"), txt("Walk to each container once", "t-sm muted")),
     box("div", { class: "b-fetch-list" }, ...rows));
 }
 

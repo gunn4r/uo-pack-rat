@@ -316,7 +316,7 @@ def scan_root(root_serial, kind, label, containers, items, seen):
             if s in unopened:
                 containers[s]["opened"] = False
             if s in unopened and s not in BLACKLIST:
-                sysmsg(f"  {cname or 'a bag'} in {label} was not opened — its contents are kept from the last scan", ALARM_HUE)
+                sysmsg(f"  {cname or 'a container'} in {label} was not opened — its contents are kept from the last scan", ALARM_HUE)
             continue
         items.append(item_dict(it, lines, parent))
         n += 1
@@ -469,7 +469,7 @@ def main():
     write_json_atomic(path, snap)
     bags = sum(1 for c in snap["containers"].values() if c.get("kind") == "container")
     sysmsg(f"Pack Rat refresh ({char}) done in {time.time() - t0:.0f}s: {len(snap['equipped'])} worn, "
-           f"{n} backpack items in {bags} bags, {len(snap['skills'])} skills -> {fname}")
+           f"{n} backpack items in {bags} containers, {len(snap['skills'])} skills -> {fname}")
     sysmsg(f"  bank and ground containers untouched (app keeps its last scan of them)", INFO_HUE)
     if SKIPPED:
         sysmsg(f"  skipped {len(SKIPPED)} blacklisted container{'s' if len(SKIPPED) != 1 else ''}", INFO_HUE)

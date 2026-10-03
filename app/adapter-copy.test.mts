@@ -21,13 +21,13 @@ test("[fast] running text uses the short names, never the README titles", () => 
 test("[fast] client cards: a badge and one plain sentence; a client this machine can't run says so", () => {
   const t = clientCard(TAZUO, "darwin");
   assert.deepEqual({ name: t.name, badge: t.badge.text, available: t.available }, { name: "TazUO", badge: "In-game actions", available: true });
-  assert.match(t.sentence, /^Scans every layer, the bank, ground containers and nested bags\. Highlight, Grab and Go to work from Pack Rat\.$/);
+  assert.match(t.sentence, /^Scans every layer, the bank, ground containers and the containers inside them\. Highlight, Grab and Go to work from Pack Rat\.$/);
   const w = clientCard(WEB, "darwin");
   assert.equal(w.badge.text, "Paste scans");
   assert.match(w.sentence, /You copy its scanner into the client and paste what it prints into Import\./);
   const r = clientCard(RAZOR, "darwin");
   assert.deepEqual({ badge: r.badge.text, available: r.available }, { badge: "Windows only", available: false });
-  assert.equal(r.sentence, "Not available on this Mac. Scans every layer, the bank, ground containers and nested bags, with in-game actions.");
+  assert.equal(r.sentence, "Not available on this Mac. Scans every layer, the bank, ground containers and the containers inside them, with in-game actions.");
   assert.match(clientCard(RAZOR, "linux").sentence, /^Not available on this computer\./);
   assert.equal(clientCard(RAZOR, "win32").available, true);
   for (const a of ALL) for (const p of ["darwin", "win32"]) assert.doesNotMatch(clientCard(a, p).sentence, /adapter|transport/i, "no machine words in the card");

@@ -277,7 +277,7 @@ def main():
     n = len(HOUSE_LEFT_OUT)
     left_out = f" ({n} farther {'one' if n == 1 else 'ones'} left out)" if n else ""
     c = len(house.get("containers", []))
-    furniture = f"{len(house['items'])} pieces of furniture{left_out}, {c} chest{'s' if c != 1 else ''}" if "items" in house else "furniture and chests not read"
+    furniture = f"{len(house['items'])} pieces of furniture{left_out}, {c} container{'s' if c != 1 else ''}" if "items" in house else "furniture and containers not read"
     sysmsg(f"Pack Rat house map refresh ({char}) -> {fname}: {len(house['tiles'])} tiles, {furniture}")
 
 

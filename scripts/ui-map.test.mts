@@ -174,7 +174,7 @@ test("[slow] House map: draws every vault chest and the courtyard's walls in bot
     assert.equal(await page.locator(`#map-svg [data-chest="${LABELLED}"]`).getAttribute("aria-label"), `${vaultModel.codes[String(LABELLED)]} Reagents, 0 of 125 items`);
     const inner = vaultModel.stacks.find((s) => s.x === 3002 && s.y === 1002)!;
     const said = await page.locator(`#map-svg .map-stack[data-stack="${inner.letter}"]`).getAttribute("aria-label") || "";
-    assert.match(said, new RegExp(`^Stack ${inner.letter}, 5 chests: `), said);
+    assert.match(said, new RegExp(`^Stack ${inner.letter}, 5 containers: `), said);
     for (const serial of inner.serials) assert.ok(said.includes(`${vaultModel.codes[String(serial)]} Metal Chest, `), `the stack's name holds ${vaultModel.codes[String(serial)]}: ${said}`);
     const ms = await timeLevel("2nd floor", "Ground floor");
     assert.ok(ms < 100, `drew the vault's ground floor in ${ms.toFixed(0)} ms`);
@@ -551,7 +551,7 @@ test("[slow] House map areas: a mouse drag draws an area, Enter asks its name, S
     await page.waitForSelector("#map-area-new-name");
     assert.equal(await page.evaluate(() => document.activeElement?.id), "map-area-new-name");
     assert.equal(await page.locator("#map-area-new-save").isDisabled(), true, "Save waits for a name");
-    assert.match(await page.locator(".map-area-new").textContent() || "", /5 tiles · 25 chests/);
+    assert.match(await page.locator(".map-area-new").textContent() || "", /5 tiles · 25 containers/);
     await page.keyboard.type("North row");
     assert.equal(await page.locator("#map-area-new-save").isDisabled(), false);
     await page.locator("#map-area-new-save").click();
@@ -581,7 +581,7 @@ test("[slow] House map areas: a mouse drag draws an area, Enter asks its name, S
     await page.locator("#map-area-menu-a1").click();
     await page.locator('.pop [role="menuitem"]', { hasText: "Delete" }).click();
     await page.waitForSelector("dialog[open] [data-confirm]");
-    assert.match(await page.locator("dialog[open]").textContent() || "", /Delete Reagents\?.*Its chests go to Whole floor\./);
+    assert.match(await page.locator("dialog[open]").textContent() || "", /Delete Reagents\?.*Its containers go to Whole floor\./);
     assert.equal(await page.locator("dialog[open] [data-confirm]").textContent(), "Delete area");
     await page.locator("dialog[open] [data-cancel]").click();
     await page.waitForSelector("dialog[open]", { state: "detached" });
@@ -1003,10 +1003,10 @@ test("[slow] House map: Show items opens the contents drawer as a column of its 
     const name = (await page.locator(`#map-panel li[data-chest="${TOP}"] .map-chest-name .ellip`).textContent())!;
     assert.equal(await drawer.getAttribute("role"), "region");
     assert.equal(await drawer.getAttribute("aria-label"), `Contents of ${code} ${name}`);
-    assert.match(await page.locator("#map-drawer-meta").textContent() || "", new RegExp(`^In game: .* · Stack ${back}, ${FILLED.length} chests$`));
+    assert.match(await page.locator("#map-drawer-meta").textContent() || "", new RegExp(`^In game: .* · Stack ${back}, ${FILLED.length} containers$`));
     const summary = (): Promise<string | null> => page.locator("#map-drawer-summary").textContent();
     const summaryIs = (text: string): Promise<unknown> => page.waitForFunction((x) => document.querySelector("#map-drawer-summary")?.textContent === x, text, { timeout: 10_000 });
-    assert.equal(await summary(), "6 items · 1 loose, 4 in 1 bag");
+    assert.equal(await summary(), "6 items · 1 loose, 4 in 1 container");
     assert.equal(await page.locator('#map-panel li.open').getAttribute("data-chest"), String(TOP), "the opened chest's row carries the accent bar");
     const names = (): Promise<string[]> => page.locator("#map-drawer-body .map-item-name, #map-drawer-body .map-bag-name").allTextContents();
     assert.deepEqual(await names(), ["Weapons", "Gems", "Ruby", "Bow", "Katana", "Arrows"], "bags first, then the items by name, nested inside nested");
@@ -1014,13 +1014,13 @@ test("[slow] House map: Show items opens the contents drawer as a column of its 
     // five chests: a select labelled Chest (tabs are for up to four), an option per chest, the shown one chosen
     assert.equal(await page.locator("#map-drawer [role=radio]").count(), 0);
     assert.equal(await page.locator("#map-drawer-chest option").count(), FILLED.length);
-    assert.equal(await page.locator('#map-drawer label[for="map-drawer-chest"]').textContent(), "Chest");
+    assert.equal(await page.locator('#map-drawer label[for="map-drawer-chest"]').textContent(), "Container");
     assert.equal(await page.locator("#map-drawer-chest").inputValue(), String(TOP));
     await page.locator("#map-drawer-chest").selectOption(String(UNDER));
-    await summaryIs("46 items · 1 loose, 43 in 2 bags");
+    await summaryIs("46 items · 1 loose, 43 in 2 containers");
     assert.equal(await page.locator('#map-panel li.open').getAttribute("data-chest"), String(UNDER));
     await page.locator("#map-drawer-chest").selectOption(String(TOP));
-    await summaryIs("6 items · 1 loose, 4 in 1 bag");
+    await summaryIs("6 items · 1 loose, 4 in 1 container");
     await page.locator("#map-drawer-filter").fill("ruby");
     await page.waitForFunction(() => document.querySelectorAll("#map-drawer-body .map-item").length === 1);
     assert.deepEqual(await names(), ["Weapons", "Gems", "Ruby"]);
@@ -1053,7 +1053,7 @@ test("[slow] House map: Show items opens the contents drawer as a column of its 
     await opener.click();
     await page.waitForSelector("#map-drawer .map-item");
     await page.locator("#map-drawer-chest").selectOption(String(UNDER));
-    await summaryIs("46 items · 1 loose, 43 in 2 bags");
+    await summaryIs("46 items · 1 loose, 43 in 2 containers");
     await page.locator("#map-drawer-filter").fill("pearl");
     await page.locator(`#map-drawer-bag-${SPARE}`).click();
     assert.equal(await page.locator(`#map-drawer-bag-${SPARE}`).evaluate((e) => (e.parentElement as HTMLDetailsElement).open), false);
@@ -1063,7 +1063,7 @@ test("[slow] House map: Show items opens the contents drawer as a column of its 
     await page.waitForTimeout(150);
     writeVault(dir, true, [{ serial: 0x40500300, name: "Pearl 41", in: SUPPLIES }]);
     await page.evaluate(async () => { await (await import("/ui/app.mjs" as string)).reload(); });
-    await summaryIs("47 items · 1 loose, 44 in 2 bags");
+    await summaryIs("47 items · 1 loose, 44 in 2 containers");
     assert.ok((await names()).includes("Pearl 41"), "the new item shows");
     assert.equal(await page.locator("#map-drawer-chest").inputValue(), String(UNDER));
     assert.equal(await page.locator("#map-drawer-filter").inputValue(), "pearl");

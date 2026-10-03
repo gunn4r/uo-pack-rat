@@ -344,7 +344,7 @@ def close_opened():
 
 def note_unopened(entry, label):
     sysmsg("  {0} in {1} was not opened -- its contents are kept from the last scan".format(
-        entry["name"] or "a bag", label), ALARM_HUE)
+        entry["name"] or "a container", label), ALARM_HUE)
 
 
 # Razor Enhanced's own skill names (Player.GetRealSkillValue / Player.UseSkill's documented
@@ -439,7 +439,7 @@ def main():
     fname = safe_char + time.strftime("-%Y%m%d-%H%M%S") + "-quick.json"
     write_json_atomic(os.path.join(OUT_DIR, fname), snap)
     bags = sum(1 for c in snap["containers"].values() if c.get("kind") == "container")
-    sysmsg("Pack Rat refresh ({0}) done in {1:.0f}s: {2} worn, {3} backpack items in {4} bags, {5} skills -> {6}".format(
+    sysmsg("Pack Rat refresh ({0}) done in {1:.0f}s: {2} worn, {3} backpack items in {4} containers, {5} skills -> {6}".format(
         char, time.time() - t0, len(snap["equipped"]), n, bags, len(snap["skills"]), fname))
     sysmsg("  bank and ground containers untouched (app keeps its last scan of them)", INFO_HUE)
     if SKIPPED:

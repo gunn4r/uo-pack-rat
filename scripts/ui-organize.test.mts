@@ -595,7 +595,7 @@ test("[slow] Auto organize: Simple proposes groups for the ticked chests, Accept
     await page.click("#org-auto");
     await page.waitForSelector(ready);
     assert.equal(await page.locator("#auto-containers input[type=checkbox]:checked").count(), 2, "both demo chests are offered and ticked");
-    assert.equal(await page.locator("#auto-containers .auto-scope").innerText(), "Only items in the chests you check are organized; the rest are left where they are.", "under the chests, what ticking means");
+    assert.equal(await page.locator("#auto-containers .auto-scope").innerText(), "Only items in the containers you check are organized; the rest are left where they are.", "under the chests, what ticking means");
     assert.ok(await page.locator("#auto-proposal tr[data-group]").count() > 0, "the proposal lists its groups");
     assert.match(await page.locator("#auto-headline").innerText(), /^Labels 2 containers and writes \d+ rules?\./);
 

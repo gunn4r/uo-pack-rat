@@ -40,7 +40,7 @@ function whatToPress(installedNames: string[]): HTMLElement[] {
   const refresh = has("character-refresh");   // never TazUO's packrat-house-map-refresh.py, which only the panel offers
   if (refresh) lines.push(line("After a gearing or skill-training session on a character: run ", refresh, "."));
   const scanner = has("scanner");
-  if (scanner) lines.push(line("The first time you scan a character, or whenever chests or bags move or get restocked: stand near them and run ", scanner, ". Repeat at each cluster."));
+  if (scanner) lines.push(line("The first time you scan a character, or whenever containers move or get restocked: stand near them and run ", scanner, ". Repeat at each cluster."));
   const bridge = has("bridge");
   if (bridge) lines.push(line("Whenever you want Pack Rat's Highlight, Grab and Go to buttons: start ", bridge, " and leave it running."));
   return lines;
