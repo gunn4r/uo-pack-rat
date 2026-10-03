@@ -136,17 +136,17 @@ export function renderContainers(): void {
   t.querySelector("thead")!.replaceChildren(el("tr", {}, ...COLS.map(([h, , num]) => el("th", { scope: "col", class: num ? "num" : "" }, txt(h))), el("th", { scope: "col" }, txt("Actions", "sr"))));
   const body = t.querySelector("tbody")!;
   const roots = scanner ? openedRoots(inv.containers, scanner) : Object.values(inv.containers).filter((c) => c.parent == null);
+  // Each render swaps the footer for a new one, which keeps the id so the next render finds it.
   const foot = $<HTMLElement>("#cont-foot")!;
+  const setFoot = (next: HTMLDivElement): void => { next.id = "cont-foot"; foot.replaceWith(next); };
   if (!roots.length && scanner) {
     body.replaceChildren(el("tr", {}, el("td", { colspan: COLS.length + 1 }, box("div", { class: "empty-state" }, el("h3", { class: "t-lg" }, `${scanner}'s scans opened no containers`), showAll()))));
-    const none = tableFoot("No containers");
-    none.id = "cont-foot";
-    foot.replaceWith(none);
+    setFoot(tableFoot("No containers"));
     return;
   }
   if (!roots.length) {
     body.replaceChildren(el("tr", {}, el("td", { colspan: COLS.length + 1 }, box("div", { class: "empty-state" }, el("h3", { class: "t-lg" }, "Nothing scanned yet"), el("p", { class: "muted" }, txt("Containers show up here once a scan has opened them."))))));
-    foot.replaceWith(tableFoot("No containers"));
+    setFoot(tableFoot("No containers"));
     return;
   }
   // Grouped by character, the ground last: a backpack or bank under its owner, a ground container under
@@ -194,6 +194,5 @@ export function renderContainers(): void {
   body.replaceChildren(...rows);
   const counted = plural(roots.length, "container") + (scanner ? ` ${scanner}'s scans opened` : "");
   const next = tableFoot(counted, plural((scanner ? roots.map((r) => inv.rootCounts[r.serial] || 0) : Object.values(inv.rootCounts)).reduce((a, b) => a + b, 0), "item"), scanner ? showAll() : null, "Newest scan of a container wins; Forget one you emptied");
-  next.id = "cont-foot";
-  foot.replaceWith(next);
+  setFoot(next);
 }
