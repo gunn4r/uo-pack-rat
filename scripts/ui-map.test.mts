@@ -951,6 +951,7 @@ test("[slow] House map: every text, control edge and icon passes contrast on the
       return { cols: getComputedStyle(document.querySelector("#map-body")!).gridTemplateColumns.split(" ").length, page: over("html"), body: over("#map-body"), top: over("#tab-map .topbar") };
     });
     assert.deepEqual(layout, { cols: 1, page: 0, body: 0, top: 0 });
+    assert.deepEqual(await clippedPills(page), [], "every level pill shows whole beside the search box");
     assert.deepEqual(errors, []);
   } finally { await done(app, dir); }
   const emptyDir = mkdtempSync(join(tmpdir(), "packrat-map-empty-"));
@@ -1244,6 +1245,14 @@ function seedRubies(): string {
   writeVault(dir, true, [{ serial: 0x40500300, name: "Ruby", in: RUBY_FRONT }]);
   return dir;
 }
+// The level pills not wholly inside the level strip (cut off by its edge, or hidden behind the search box).
+const clippedPills = (page: Page): Promise<string[]> => page.evaluate(() => {
+  const strip = document.querySelector("#map-levels")!.getBoundingClientRect(), box = document.querySelector("#map-search")!.getBoundingClientRect();
+  return [...document.querySelectorAll<HTMLElement>("#map-levels .pill")].filter((p) => {
+    const r = p.getBoundingClientRect(), overBox = r.left < box.right && r.right > box.left && r.top < box.bottom && r.bottom > box.top;
+    return r.left < strip.left - 0.5 || r.right > strip.right + 0.5 || overBox;
+  }).map((p) => p.textContent ?? "");
+});
 const callouts = (page: Page): Promise<string[]> => page.locator("#map-pins .map-pin:not([hidden])").evaluateAll((es) => es.map((e) => (e as HTMLElement).dataset.stack ?? ""));
 
 test("[slow] House map search: typing a query ghosts every other container, pins a callout per matching stack and lists the matches in the panel; a match selects its stack, the query is in the route and survives a reload, and Esc in the box clears it (1024 × 768)", async (t) => {
@@ -1275,6 +1284,12 @@ test("[slow] House map search: typing a query ghosts every other container, pins
     await page.waitForFunction(() => document.querySelector("#map-draw-live")?.textContent === "2 items in 2 containers", undefined, { timeout: 10_000 });
     assert.equal(await page.locator(".map-level-name").first().locator(".muted").textContent(), "2 of 120 containers match");
     assert.equal(await page.locator('#map-levels [data-level="0"] .map-level-count').textContent(), "2");
+    assert.deepEqual(await clippedPills(page), [], "the level pills, a match count on one, show whole beside the box");
+    for (const width of [1050, 1099]) {
+      await fitWindow(app, page, { width, height: 768 });
+      assert.deepEqual(await clippedPills(page), [], `at ${width} px too`);
+    }
+    await fitWindow(app, page, { width: 1024, height: 768 });
     // the panel: the matches on the level, the house's totals and Location left out
     assert.equal(await page.locator("#map-hits-title").textContent(), "2 items in 2 containers");
     assert.deepEqual((await page.locator("#map-panel .map-hit").evaluateAll((es) => es.map((e) => (e as HTMLElement).dataset.chest ?? ""))).sort(), [String(FILLED.at(-1)), String(RUBY_FRONT)].sort());

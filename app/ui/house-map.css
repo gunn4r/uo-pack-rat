@@ -239,11 +239,15 @@ a.map-where-mark:focus-visible .map-where-ring-in { stroke: var(--color-map-mark
 .map-item-res { flex: none; margin-left: auto; display: flex; gap: var(--space-1-5); font-family: var(--font-body); font-variant-numeric: tabular-nums; font-size: var(--text-xs); line-height: var(--lh-xs); }
 /* Search on the map (issue #10): the box at the top bar's right end with its count and ×, its gold ring while this house has matches, and under it the note for a query with no match here. */
 .map-search { flex: 0 1 260px; min-width: 160px; margin-left: auto; }
-.map-search .input { height: var(--control-sm); font-size: var(--text-sm); padding-right: 76px; }
+/* The text stops short of the count and ×: --count-ch is the count's length (house-map.mts paintSearch), measured in the input's own ch, wider than the count's small digits. */
+.map-search .input { height: var(--control-sm); font-size: var(--text-sm); padding-right: calc(34px + var(--count-ch, 0) * 1ch); }
 .map-search .input::-webkit-search-cancel-button { display: none; }
 .map-search-count { position: absolute; right: 32px; font-size: var(--text-xs); color: var(--color-text-muted); pointer-events: none; white-space: nowrap; }
 .map-search .map-search-clear { position: absolute; right: 2px; }
 .map-search.active .input { border-color: var(--color-highlight); box-shadow: 0 0 0 1px var(--color-highlight); }
+/* A top bar too narrow for everything wraps (the box goes to a second line) rather than squeeze the level pills behind the box. */
+#tab-map #map-topbar { flex-wrap: wrap; height: auto; min-height: var(--topbar-h); row-gap: var(--space-2); padding-block: var(--space-2); }
+#tab-map .map-levels { flex: none; max-width: 100%; }
 .map-search-note { position: absolute; z-index: var(--z-sticky); right: 0; top: calc(100% + 6px); width: max-content; display: flex; flex-direction: column; gap: 2px; padding: var(--space-2) var(--space-3); background: var(--color-surface-raised); color: var(--color-text); border: var(--border-width) solid var(--color-border-strong); border-radius: var(--radius-md); box-shadow: var(--shadow-2); font-size: var(--text-sm); line-height: var(--lh-sm); }
 .map-level-count { min-width: 18px; height: 18px; padding: 0 5px; margin-right: calc(-1 * var(--space-1-5)); border-radius: var(--radius-full); background: var(--color-highlight); color: var(--color-on-highlight); font-size: var(--text-xs); line-height: 18px; text-align: center; font-weight: var(--weight-semibold); }
 /* The map while searching: a matching container keeps its color with a gold outline, its stack stands on a gold base; every other container is a pale ghost, still drawn so stack positions read. */
@@ -258,6 +262,7 @@ a.map-where-mark:focus-visible .map-where-ring-in { stroke: var(--color-map-mark
 .map-leader { fill: none; stroke: var(--color-highlight); stroke-width: 1.5; }
 .map-leader-dot { fill: var(--color-highlight); stroke: var(--color-surface); stroke-width: 1.5; }
 .map-pin { position: absolute; display: flex; flex-direction: column; gap: var(--space-1); padding: var(--space-2); background: var(--color-surface-raised); color: var(--color-text); border: var(--border-width) solid var(--color-border-strong); border-left: 3px solid var(--color-highlight); border-radius: var(--radius-md); box-shadow: var(--shadow-2); pointer-events: auto; cursor: pointer; }
+.map-svg.drawing ~ .map-pins .map-pin { pointer-events: none; }   /* drawing an area: the callouts never take the drag */
 .map-pin-head, .map-pin-l1, .map-pin-line { display: flex; align-items: baseline; gap: var(--space-1-5); min-width: 0; }
 .map-pin-head { justify-content: space-between; }
 .map-pin-chest { display: flex; flex-direction: column; gap: 1px; min-width: 0; }

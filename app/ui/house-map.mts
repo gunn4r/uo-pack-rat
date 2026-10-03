@@ -15,9 +15,11 @@ import { PLAIN, pickHouse, plainGrid, chestCount, houseLabel, houseName, carryOv
   cutAway, calloutLines, nearestInDirection, houseTotals, legendOf, stackWhere, anchorOf, zoomAt, fillWords, whereOf, whereTitle, cropAround, facetMapUrl, markersOf, facetMapNote, markerRadii,
   drawerChest, drawerMeta, slotsText, drawerPicker, DRAWER_W, DRAWER_MIN, drawerMax, clampDrawer, drawerKey, contentsOf, contentsSummary, filterContents, areaOfStack, levelAreas, tileAt, clampTile, rectOf, sizeText, unionTiles, coveredCells, outlineOf, pillsOf, fitLabel, placePill as pillBox, LABEL_FIT, type AreaPill,
   nextAreaId, nextAreaColor, moveCursor, project, tilePolygon, pts, liveAreas, withOrphans, redrawFailed, AREA_COLORS, AREA_COLOR_NAMES, MAX_AREAS, MAX_RECTS, areaName, drawnZs, CHEST_H,
-  mapHash, houseHits, levelHits, levelHitText, areaHitText, hitsSummary, searchCount, calloutHead, calloutRow, CALLOUT_MAX, hitsView, houseIndex, elsewhereOf, outsideText,
-  type MapRoute, type HouseHits, type HitChest, type Tally, type HouseRef, type Elsewhere, type PlainModel, type Tile, type Contents, type ContentsNode, type Marker, type View, type Mode, type Box, type Colour, type ChestView, type Piece, type Prism, type Pt, type Dir } from "./house-map-model.mts";
-import type { AreaRect, ContainerLabel, HouseArea, HouseModel, UiPrefs, HousesApiResponse, HouseApiResponse, HouseMapApiResponse, HouseMapEntry, HouseMapPutApiResponse, ItemsApiResponse, Stack } from "./api-types.mts";
+  mapHash, parseMapHash, houseHits, levelHits, levelHitText, areaHitText, hitsSummary, searchCount, calloutHead, calloutRow, CALLOUT_MAX, hitsView, elsewhereOf, outsideText,
+  type MapRoute, type HouseHits, type HitChest, type Tally, type Elsewhere, type PlainModel, type Tile, type Contents, type ContentsNode, type Marker, type View, type Mode, type Box, type Colour, type ChestView, type Piece, type Prism, type Pt, type Dir } from "./house-map-model.mts";
+import type { AreaRect, ContainerLabel, HouseArea, HouseModel, UiPrefs, HousesApiResponse, HouseApiResponse, HouseMapApiResponse, HouseMapEntry, HouseMapPutApiResponse, ItemsApiResponse, ItemHitsApiResponse, InventoryData, Stack } from "./api-types.mts";
+import { HIT_LIMIT, type HitRow } from "../item-query.mts";
+import { houseLinks, setHouses } from "./house-links.mts";
 import type { Item } from "../vault-lib.mts";
 
 const SVG_NS = "http://www.w3.org/2000/svg";
@@ -92,14 +94,12 @@ function announce(text: string): void {
   live.textContent = "";
   requestAnimationFrame(() => { if (my === announced) live.textContent = text; });
 }
-$<HTMLSelectElement>("#map-house")!.addEventListener("change", (e) => { location.hash = mapHash({ house: (e.target as HTMLSelectElement).value, q: query }); });
-
 // ---------------------------------------------------------------- search (issue #10)
-// The query as typed (the route carries it: #/map/<house>?q=), every item GET /api/items?q= found for it with the inventory it was found in (null with no query, or before the first answer) or why the search failed, and what the next draw zooms to: the matches on the level (after a new query, another house or level) or the stack a "Show on map" link asked for.
+// The query as typed (the route carries it: #/map/<house>?q=), every match GET /api/items?fields=hits found for it with the inventory it was found in (null with no query, or before the first answer) or why the search failed, whether the matches are still to be zoomed to (a new query asked it; only an answer clears it, so a rescan that restarts the fetch keeps it), and what the next draw zooms to: the matches on the level (after a new query, another house or level) or the stack a "Show on map" link asked for.
 let query = "";
-interface Found { q: string; items: Item[]; inv: unknown; error: string | null }
+interface Found { q: string; items: HitRow[]; inv: InventoryData | null; error: string | null }
 let found: Found | null = null;
-let searchSeq = 0, searchTimer = 0;
+let searchSeq = 0, searchTimer = 0, refitWanted = false;
 let zoomNext: "hits" | { stacks: Stack[]; room: boolean } | null = null;
 // The search box at the top bar's right end: the count of matches in this house ("7 in 3"), × to clear, and under it the note for a query with no match here.
 const search = searchInput({ label: "Find items in this house", placeholder: "Find items in this house", attrs: { id: "map-q", autocomplete: "off", spellcheck: "false" } });
@@ -113,37 +113,40 @@ $<HTMLElement>("#map-search")!.replaceWith(search.root);
 // Typing waits 150 ms as the Inventory's search does; Esc in the box clears it.
 search.input.addEventListener("input", () => { searchClear.hidden = !search.input.value; clearTimeout(searchTimer); searchTimer = setTimeout(() => setQuery(search.input.value), 150) as unknown as number; });
 search.input.addEventListener("keydown", (e) => { if (e.key === "Escape" && search.input.value) { e.preventDefault(); e.stopPropagation(); setQuery(""); } });
+// Another house keeps the query: the box's text, even one typed in the last 150 ms (its pending update is dropped, or it would put the old house back in the route).
+$<HTMLSelectElement>("#map-house")!.addEventListener("change", (e) => { clearTimeout(searchTimer); location.hash = mapHash({ house: (e.target as HTMLSelectElement).value, q: search.input.value }); });
 function setQuery(text: string): void {
   clearTimeout(searchTimer);
   if (search.input.value !== text) search.input.value = text;
   const q = text.trim();
   if (q === query) { paintSearch(); return; }
   query = q;
-  if (!$<HTMLElement>("#tab-map")!.hidden) history.replaceState(null, "", mapHash({ house: S.id, q }));
+  if (!$<HTMLElement>("#tab-map")!.hidden) history.replaceState(null, "", mapHash({ house: parseMapHash(location.hash).house ?? S.id, q }));
   void runSearch(true);
 }
-// Every match, in GET /api/items' 500-row pages (each serial once); an answer for a query no longer asked is dropped. `refit` zooms to the matches once they are in.
+// Every match as GET /api/items?fields=hits gives it (its lean rows, HIT_LIMIT a page, so one request is normal; each serial once); an answer for a query no longer asked is dropped. `refit` asks to zoom to the matches once they are in.
 async function runSearch(refit: boolean): Promise<void> {
   const q = query, my = ++searchSeq, inv = state.inv;
-  if (!q) { found = null; zoomNext = null; render(); return; }
+  if (refit) refitWanted = true;
+  if (!q) { found = null; zoomNext = null; refitWanted = false; render(); return; }
   paintSearch();
-  const rows = new Map<number, Item>();
+  const rows = new Map<number, HitRow>();
   try {
     for (let offset = 0, total = Infinity; offset < total;) {
-      const r = await api<ItemsApiResponse>(`/api/items?q=${encodeURIComponent(q)}&offset=${offset}&limit=${ITEMS_CHUNK}`);
+      const r = await api<ItemHitsApiResponse>(`/api/items?fields=hits&q=${encodeURIComponent(q)}&offset=${offset}&limit=${HIT_LIMIT}`);
       if (my !== searchSeq) return;
-      const got = "rows" in r ? r.rows : [];
+      const got = r.rows;
       for (const it of got) rows.set(it.serial, it);
       offset += got.length;
       total = got.length ? r.total : offset;
     }
   } catch (e) {
-    if (my === searchSeq) { found = { q, items: [], inv, error: errorText(e) }; render(); }
+    if (my === searchSeq) { found = { q, items: [], inv, error: errorText(e) }; refitWanted = false; render(); }
     return;
   }
   if (my !== searchSeq) return;
   found = { q, items: [...rows.values()], inv, error: null };
-  if (refit) zoomNext = "hits";
+  if (refitWanted) { zoomNext = "hits"; refitWanted = false; }
   render();
   const h = hitsNow();
   announce(h?.chests.length ? hitsSummary(h.amount, h.chests.length) : h && elsewhere(h).amount ? "No matches in this house" : "No items match");
@@ -157,13 +160,8 @@ function hitsNow(): HouseHits | null {
   return hitsMemo!.hits;
 }
 const matching = (): HouseHits | null => { const h = hitsNow(); return h?.chests.length ? h : null; };
-// The matches outside this house: in another house (the houses as last fetched, and the plain grid) or anywhere else.
-let indexMemo: { models: HouseModel[]; inv: unknown; index: Map<number, HouseRef> } | null = null;
-function elsewhere(h: HouseHits): Elsewhere {
-  const inv = state.inv!;
-  if (indexMemo?.models !== S.models || indexMemo.inv !== inv) indexMemo = { models: S.models, inv, index: houseIndex(S.models.map((m) => ({ id: m.id, name: m.name, facet: m.facet, serials: m.stacks.flatMap((s) => s.serials) })), inv.containers) };
-  return elsewhereOf(h.outside, indexMemo.index, inv.containers, S.id);
-}
+// The matches outside this house: in another house or anywhere else, by the one index of which house holds each container (ui/house-links.mts, kept to the houses this screen last fetched).
+const elsewhere = (h: HouseHits): Elsewhere => elsewhereOf(h.outside, houseLinks(), state.inv!.containers, S.id);
 const inventoryLink = (text: string): HTMLElement => el("a", { href: "#/inventory", id: "map-search-inventory", onclick: (e: Event) => { e.preventDefault(); showSearch(query); } }, text);
 // The box's count, its gold ring while this house has matches, ×, and the note under it: "No matches in this house" with where they are instead (another house a link to its map, the query kept), or "No items match".
 function paintSearch(): void {
@@ -172,15 +170,22 @@ function paintSearch(): void {
   search.root.classList.toggle("active", !!h?.chests.length);
   search.input.setAttribute("aria-busy", String(busy));
   searchCountEl.textContent = !h ? "" : h.chests.length ? searchCount(h.amount, h.chests.length) : "0";
+  search.root.style.setProperty("--count-ch", String(searchCountEl.textContent.length));
   const err = found?.q === query ? found.error : null;
   if (!err && (!h || h.chests.length)) { searchNote.hidden = true; searchNote.replaceChildren(); return; }
   searchNote.hidden = false;
   if (err) { searchNote.replaceChildren(txt("Could not search", "strong"), txt(err, "t-sm")); return; }
   const e = elsewhere(h!);
   if (!e.amount) { searchNote.replaceChildren(txt("No items match", "strong")); return; }
-  const lines = [...e.houses.map((x) => box("span", { class: "t-sm" }, txt(`${fmtN(x.amount)} in `), el("a", { href: mapHash({ house: x.id, q: query }) }, x.name))), ...e.places.map((p) => txt(`${fmtN(p.amount)} in ${p.name}`, "t-sm"))];
+  const lines = [...e.houses.map((x) => box("span", { class: "t-sm" }, txt(`${fmtN(x.amount)} in `), el("a", { href: mapHash({ house: x.id, q: query }) }, x.name), x.serials.length === 1 ? txt(` · ${containerName(x.id, x.serials[0]!)}`) : null)), ...e.places.map((p) => txt(`${fmtN(p.amount)} in ${p.name}`, "t-sm"))];
   searchNote.replaceChildren(txt("No matches in this house", "strong"), txt("Elsewhere:", "t-sm muted"), ...lines.slice(0, 6),
     ...(lines.length > 6 ? [txt(`and ${plural(lines.length - 6, "more place")}`, "t-sm muted")] : []), box("span", { class: "t-sm" }, inventoryLink("Show them in Inventory")));
+}
+// A container in another house as its panel names it ("A1 Wooden Box"), from that house's model as last fetched.
+function containerName(house: string, serial: number): string {
+  const m = house === PLAIN ? S.plain : S.models.find((x) => x.id === house), s = m?.stacks.find((x) => x.serials.includes(serial));
+  const v = m && s ? chestViews(m, s, state.inv!, labels()).find((x) => x.serial === serial) : undefined;
+  return v ? `${v.code} ${v.name}` : "a container";
 }
 // The zoom a draw owes: to the level's matching stacks with room above them for the callouts (once the query's answer is in), or to the stack a link selected.
 function zoomPending(m: HouseModel, hits: HouseHits | null): void {
@@ -225,8 +230,10 @@ function placePins(m: HouseModel, ctm: DOMMatrix | null): void {
   const row = calloutRow(anchors, r.width, { reserve: zoom ? Math.max(0, r.right - zoom.left) : 52 });
   const cards = [...layer.querySelectorAll<HTMLElement>(".map-pin")], shown = new Map(row.cards.map((c) => [c.id, c]));
   for (const c of cards) { const slot = shown.get(c.dataset.stack!); c.hidden = !slot; if (slot) c.style.width = `${slot.width}px`; }
+  // One layout: every height read after the widths are all written, then only writes.
+  const heights = new Map(cards.filter((c) => !c.hidden).map((c) => [c, c.offsetHeight]));
   // The row sits above every stack standing under it (the matching ones' tops at least), as far up as the pane allows.
-  const tall = Math.max(0, ...cards.filter((c) => !c.hidden).map((c) => c.offsetHeight)), x0 = row.cards[0]?.left ?? 0, x1 = row.more ? row.more.left + row.more.width : (row.cards.at(-1)?.left ?? 0) + (row.cards.at(-1)?.width ?? 0);
+  const tall = Math.max(0, ...heights.values()), x0 = row.cards[0]?.left ?? 0, x1 = row.more ? row.more.left + row.more.width : (row.cards.at(-1)?.left ?? 0) + (row.cards.at(-1)?.width ?? 0);
   const tops = m.stacks.filter((s) => s.level === S.level).map((s) => screen(anchorOf(m, s, S.view))).filter(([x]) => x >= x0 && x <= x1);
   const y = Math.max(12, Math.min(...tops.map(([, ty]) => ty), ...anchors.filter((a) => shown.has(a.id)).map((a) => a.y)) - 28 - tall);
   const leaders = layer.querySelector("svg.map-leaders")!;
@@ -236,7 +243,7 @@ function placePins(m: HouseModel, ctm: DOMMatrix | null): void {
     if (!slot || !a) continue;
     c.style.left = `${slot.left}px`;
     c.style.top = `${y}px`;
-    const y0 = y + c.offsetHeight, mid = (y0 + a.y) / 2;
+    const y0 = y + heights.get(c)!, mid = (y0 + a.y) / 2;
     leaders.append(sv("path", { class: "map-leader", d: `M${slot.leaderX.toFixed(1)},${y0.toFixed(1)} C${slot.leaderX.toFixed(1)},${mid.toFixed(1)} ${a.x.toFixed(1)},${mid.toFixed(1)} ${a.x.toFixed(1)},${a.y.toFixed(1)}` }), sv("circle", { class: "map-leader-dot", cx: a.x.toFixed(1), cy: a.y.toFixed(1), r: "4" }));
   }
   const more = $<HTMLElement>("#map-pin-more")!;
@@ -288,6 +295,7 @@ export async function showMap(r: MapRoute): Promise<void> {
     const models = await Promise.all(list.houses.map(async (h) => (await api<HouseApiResponse>(`/api/houses/${encodeURIComponent(h.id)}`)).house));
     if (my !== seq) return;
     S.list = list; S.names = names.houses; S.models = models; S.plain = plainGrid(state.inv, models); S.error = null;
+    setHouses(list.houses);
     facetImages.clear();
   } catch (e) {
     if (my !== seq) return;
