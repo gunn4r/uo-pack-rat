@@ -35,6 +35,13 @@ export function rarityRank(ladder: RulesV1RarityItem[] | null | undefined, name:
 }
 
 const CLAMP_LIMIT = (n: number): number => Math.max(1, Math.min(500, n));
+// The House map's search (issue #10): `fields=hits` answers each match with only what the map reads (its container and scan
+// root, for which house and container hold it, and its place's words; an item tooltip fetches the rest by serial), so a page may
+// hold HIT_LIMIT rows (the default) and one request answers nearly any query. `group` does not apply to it.
+export const HIT_LIMIT = 10000;
+export interface HitRow { serial: number; name: string; amount: number; root: number | null; container: number | null; location?: { text: string } | undefined }
+export const wantsHits = (sp: URLSearchParams): boolean => sp.get("fields") === "hits";
+export const hitRow = (it: Item): HitRow => ({ serial: it.serial, name: it.name, amount: it.amount, root: it.root, container: it.container, ...(it.location ? { location: { text: it.location.text } } : {}) });
 
 // A property rule: `min` is the threshold and `op` says which side of it passes — absent is "at least"
 // (the rule's original and wire-default meaning, `prop=hci:10`), "le" is "at most", "eq" is "exactly".
@@ -75,7 +82,7 @@ export function parseItemQuery(searchParams: URLSearchParams): ItemQuery {
   }
   const listOf = (name: string): string[] => sp.getAll(name).map((s) => s.trim()).filter(Boolean);
   const limitN = parseInt(sp.get("limit") as string, 10);
-  const limit = CLAMP_LIMIT(Number.isFinite(limitN) ? limitN : 200);
+  const limit = wantsHits(sp) ? Math.max(1, Math.min(HIT_LIMIT, Number.isFinite(limitN) ? limitN : HIT_LIMIT)) : CLAMP_LIMIT(Number.isFinite(limitN) ? limitN : 200);
   const offsetN = parseInt(sp.get("offset") as string, 10);
   const offset = Number.isFinite(offsetN) && offsetN > 0 ? offsetN : 0;
   const seenDaysN = +(sp.get("seenDays") as string);
@@ -96,7 +103,7 @@ export function parseItemQuery(searchParams: URLSearchParams): ItemQuery {
     hideTags,
     tags: splitAll("tag"),
     props,
-    group: sp.get("group") === "1",
+    group: sp.get("group") === "1" && !wantsHits(sp),
     sort: sp.get("sort") || "name",
     dir: sp.get("dir") === "-1" ? -1 : 1,
     offset,
