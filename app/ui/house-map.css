@@ -34,6 +34,7 @@
   .map-side > *, .map-drawer > * { min-width: 0; }
   .map-drawer { max-height: 80vh; }
   .map-drawer > .map-drawer-grip { display: none; }   /* one column: the drawer is as wide as the page */
+  #tab-map .sp-wrap { position: static; overflow-x: auto; }   /* the Stack plan grows with its cards and the page scrolls, not a box of its own */
 }
 @media (prefers-reduced-motion: reduce) { .map-side, .map-stage, .map-drawer { transition: none; } }
 
@@ -306,15 +307,15 @@ button.sp-area-name:focus-visible { outline: 2px solid var(--color-focus); outli
 .sp-gap { display: flex; align-items: center; justify-content: center; min-width: 0; overflow: hidden; color: var(--color-text-muted); font-size: var(--text-xs); line-height: var(--lh-xs); white-space: nowrap; }
 .sp-gap.down { writing-mode: vertical-rl; transform: rotate(180deg); }
 .sp-gap:not(.down) { justify-content: flex-start; padding-left: var(--space-2); }   /* a squeezed row spans the whole plan: its caption starts at the left, where it is in view */
-.sp-card { position: relative; z-index: 1; align-self: start; min-width: 0; display: flex; flex-direction: column; background: var(--color-surface); border: var(--border-width) solid var(--color-border-strong); border-radius: var(--radius-md); box-shadow: var(--shadow-chip); overflow: hidden; cursor: pointer; outline: none; }
+.sp-card { position: relative; z-index: 1; align-self: start; min-width: 0; display: flex; flex-direction: column; background: var(--color-surface); border: var(--border-width) solid var(--color-border-strong); border-radius: var(--radius-md); box-shadow: var(--shadow-chip); overflow: hidden; cursor: pointer; }
 .sp-card:hover { border-color: var(--color-accent); }
-.sp-card:focus-visible { box-shadow: var(--ring-focus); }
+.sp-card:focus-visible { outline: 2px solid var(--color-focus); outline-offset: 2px; }   /* an outline, so the selected and matching cards' box-shadows never hide it */
 .sp-card.sel { border-color: var(--color-accent); box-shadow: 0 0 0 1px var(--color-accent); }
 .sp-card-head { display: flex; align-items: baseline; justify-content: space-between; gap: var(--space-2); padding: 3px var(--space-2); line-height: 18px; background: var(--color-surface-subtle); border-bottom: var(--border-width) solid var(--color-border); }
 .sp-rows { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
-.sp-row { display: grid; grid-template-columns: 22px minmax(0, 1fr); column-gap: var(--space-1-5); padding: 3px var(--space-2); line-height: 18px; border-top: var(--border-width) solid var(--color-border); }
+.sp-row { display: grid; grid-template-columns: auto minmax(0, 1fr); column-gap: var(--space-1-5); padding: 3px var(--space-2); line-height: 18px; border-top: var(--border-width) solid var(--color-border); }
 .sp-row:first-child { border-top: 0; }
-.sp-row > .mono { grid-row: span 2; padding-top: 1px; }
+.sp-row > .mono { grid-row: span 2; padding-top: 1px; min-width: calc(var(--code-w, 2) * 1ch); }   /* the card's longest code (house-map.mts planCard), in the code's own font, so every row of a card lines up */
 .sp-l1, .sp-l2, .sp-hitline { display: flex; align-items: center; gap: var(--space-1-5); min-width: 0; }
 .sp-l1 > .ellip { flex: 1 0 40%; }
 .sp-hitline > .ellip { flex: 1 1 auto; }
