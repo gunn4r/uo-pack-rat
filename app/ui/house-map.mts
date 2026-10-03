@@ -15,7 +15,7 @@ import { PLAIN, pickHouse, plainGrid, chestCount, houseLabel, houseName, carryOv
   cutAway, calloutLines, nearestInDirection, houseTotals, legendOf, stackWhere, anchorOf, zoomAt, fillWords, whereOf, whereTitle, cropAround, facetMapUrl, markersOf, facetMapNote, markerRadii,
   drawerChest, drawerMeta, slotsText, drawerPicker, DRAWER_W, DRAWER_MIN, drawerMax, clampDrawer, drawerKey, contentsOf, contentsSummary, filterContents, areaOfStack, levelAreas, tileAt, clampTile, rectOf, sizeText, unionTiles, coveredCells, outlineOf, pillsOf, fitLabel, placePill as pillBox, LABEL_FIT, type AreaPill,
   nextAreaId, nextAreaColor, moveCursor, project, tilePolygon, pts, liveAreas, withOrphans, redrawFailed, AREA_COLORS, AREA_COLOR_NAMES, MAX_AREAS, MAX_RECTS, areaName, drawnZs, CHEST_H,
-  mapHash, parseMapHash, houseHits, levelHits, levelHitText, areaHitText, hitsSummary, searchCount, calloutHead, calloutRow, CALLOUT_MAX, hitsView, elsewhereOf, outsideText,
+  mapHash, parseMapHash, houseHits, levelHits, stackPlan, planHead, planRows, planNeighbor, gapText, bareText, type Plan, type PlanCard, type PlanRow, levelHitText, areaHitText, hitsSummary, searchCount, calloutHead, calloutRow, CALLOUT_MAX, hitsView, elsewhereOf, outsideText,
   type MapRoute, type HouseHits, type HitChest, type Tally, type Elsewhere, type PlainModel, type Tile, type Contents, type ContentsNode, type Marker, type View, type Mode, type Box, type Colour, type ChestView, type Piece, type Prism, type Pt, type Dir } from "./house-map-model.mts";
 import type { AreaRect, ContainerLabel, HouseArea, HouseModel, UiPrefs, HousesApiResponse, HouseApiResponse, HouseMapApiResponse, HouseMapEntry, HouseMapPutApiResponse, ItemsApiResponse, ItemHitsApiResponse, InventoryData, Stack } from "./api-types.mts";
 import { HIT_LIMIT, type HitRow } from "../item-query.mts";
@@ -23,9 +23,9 @@ import { houseLinks, setHouses } from "./house-links.mts";
 import type { Item } from "../vault-lib.mts";
 
 const SVG_NS = "http://www.w3.org/2000/svg";
-// The map's page state: the houses and models as last fetched, the player's house names and areas (issues #164, #10), the one shown, its level, view and colour mode, the area zoomed to (by id), the selected stack (by a serial in it, so a rescan that keeps the stack keeps the selection), the hovered and focused stacks (by letter), the viewBox, and a load error.
-interface MapState { list: HousesApiResponse | null; names: Record<string, HouseMapEntry>; models: HouseModel[]; plain: PlainModel | null; id: string | null; model: HouseModel | null; level: number; view: View; mode: Mode; area: string | null; selected: number | null; hover: string | null; focus: string | null; vb: Box | null; error: string | null }
-const S: MapState = { list: null, names: {}, models: [], plain: null, id: null, model: null, level: 0, view: "angle", mode: "contents", area: null, selected: null, hover: null, focus: null, vb: null, error: null };
+// The map's page state: the houses and models as last fetched, the player's house names and areas (issues #164, #10), the one shown, its level, view (the Stack plan, else the drawing's angle) and colour mode, the area zoomed to (by id), the selected stack (by a serial in it, so a rescan that keeps the stack keeps the selection), the hovered and focused stacks (by letter), the viewBox, and a load error.
+interface MapState { list: HousesApiResponse | null; names: Record<string, HouseMapEntry>; models: HouseModel[]; plain: PlainModel | null; id: string | null; model: HouseModel | null; level: number; view: View; plan: boolean; mode: Mode; area: string | null; selected: number | null; hover: string | null; focus: string | null; vb: Box | null; error: string | null }
+const S: MapState = { list: null, names: {}, models: [], plain: null, id: null, model: null, level: 0, view: "angle", plan: false, mode: "contents", area: null, selected: null, hover: null, focus: null, vb: null, error: null };
 let seq = 0;
 let highlighting = false;   // Highlight the stack is sending (highlightStack)
 let renaming: string | null = null;   // while renaming, the name as typed so far: a redraw rebuilds the field from it (renameField)
@@ -78,7 +78,13 @@ const stopEditing = (): void => { draw = null; dragging = false; naming = null; 
 const dropDrawing = (): void => { if (!draw) return; draw = null; dragging = false; announce("Drawing canceled."); };
 
 // The top bar's view and colour switches (index.html holds placeholders), and the house picker.
-const viewSeg = segmented({ label: "View", value: "angle", options: [{ value: "angle", label: "Game angle" }, { value: "top", label: "Top-down" }], onChange: (v) => { S.view = v === "top" ? "top" : "angle"; S.vb = null; render(); } });
+// The Stack plan (issue #10) keeps the drawing's angle for the way back; it has no drawing, so an area being drawn is dropped.
+const viewSeg = segmented({ label: "View", value: "angle", options: [{ value: "angle", label: "Game angle" }, { value: "top", label: "Top-down" }, { value: "plan", label: "Stack plan" }], onChange: (v) => {
+  S.plan = v === "plan";
+  if (S.plan) dropDrawing(); else S.view = v === "top" ? "top" : "angle";
+  S.vb = null;
+  render();
+} });
 viewSeg.id = "map-view";
 $<HTMLElement>("#map-view")!.replaceWith(viewSeg);
 const modeSeg = segmented({ label: "Colors", value: "contents", options: [{ value: "contents", label: "Contents" }, { value: "free", label: "Free space" }], onChange: (v) => { S.mode = v === "free" ? "free" : "contents"; render(); } });
@@ -270,6 +276,7 @@ const HIT_LINES = 5;
 function hitRow(m: HouseModel, c: HitChest, v: ChestView, areas: readonly HouseArea[]): HTMLElement {
   const go = (): void => {
     select(c.serial);
+    if (S.plan) { $<HTMLElement>(`#map-plan [data-stack="${c.stack.letter}"]`)?.scrollIntoView({ block: "nearest", inline: "nearest" }); return; }
     const at = anchorOf(m, c.stack, S.view);
     if (S.vb && !inBox(S.vb, at)) setViewBox({ ...S.vb, x: at[0] - S.vb.w / 2, y: at[1] - S.vb.h / 2 });
   };
@@ -327,12 +334,13 @@ function render(): boolean {
   paintTopbar();
   let fetching = false;
   if (!S.model) {
-    body().classList.remove("has-drawer");
+    body().classList.remove("has-drawer", "plan");
     body().replaceChildren(S.error ? message({ tone: "bad", title: "Could not load the house map", text: S.error }) : emptyState());
   } else {
     fetching = followSelection();
     if (fetching) void loadDrawer();
     const drawer = $<HTMLElement>("#map-drawer");   // kept, so a redraw does not slide it in again
+    body().classList.toggle("plan", S.plan);   // the levels pane folds as for the drawer (house-map.css)
     body().replaceChildren(side(), stage(), box("aside", { class: "card map-panel", id: "map-panel", "aria-label": "Details" }), ...(drawer && D ? [drawer] : []));
     drawPanel();   // before the map, so the first fit measures the pane with the panel and the drawer already filled
     placeDrawer();
@@ -347,7 +355,7 @@ function keepFocus(): (() => void) | null {
   const a = document.activeElement, tab = $<HTMLElement>("#tab-map")!;
   if (!(a instanceof Element) || !tab.contains(a)) return null;
   const q = (sel: string): Focusable | null => tab.querySelector<Focusable>(sel);
-  const stop = (): Focusable | null => q('#map-svg [data-stack][tabindex="0"]');
+  const stop = (): Focusable | null => q(':is(#map-svg, #map-plan) [data-stack][tabindex="0"]');
   const first = (...picks: Array<() => Focusable | null>): void => { for (const p of picks) { const e = p(); if (e) { e.focus(); return; } } };
   const key = (name: string): string | undefined => a.closest<Focusable>(`[data-${name}]`)?.dataset[name];
   const level = key("level"), crumb = key("crumb"), stack = key("stack");
@@ -356,7 +364,7 @@ function keepFocus(): (() => void) | null {
   const side = a.closest(".map-side") ? a.id : "";
   if (side) return () => first(() => q(`#${CSS.escape(side)}`), () => q(`#map-new-area-${S.level}`), stop);
   if (crumb != null) return () => first(() => q(`#map-crumbs [data-crumb="${crumb}"]`), () => [...tab.querySelectorAll<HTMLElement>("#map-crumbs button")].at(-1) ?? null, stop);
-  if (stack != null) return () => first(() => q(`#map-svg [data-stack="${stack}"]`), stop);
+  if (stack != null) return () => first(() => q(`:is(#map-svg, #map-plan) [data-stack="${stack}"]`), stop);
   const drawer = $<HTMLElement>("#map-drawer"), inDrawer = drawer ? focusKey(drawer) : null;
   if (inDrawer) return () => { const d = $<HTMLElement>("#map-drawer"); if (d?.querySelector(inDrawer)) refocus(d, inDrawer, false); else first(stop); };
   const panel = $<HTMLElement>("#map-panel"), was = panel ? focusKey(panel) : null;
@@ -377,7 +385,7 @@ function paintTopbar(): void {
     if (n) { p.append(txt(fmtN(n), "map-level-count num")); p.setAttribute("aria-label", `${l.name}, ${plural(n, "matching container")}`); }
     return p;
   }));
-  viewSeg.setValue(S.view);
+  viewSeg.setValue(S.plan ? "plan" : S.view);
   modeSeg.setValue(S.mode);
   paintSearch();
 }
@@ -408,11 +416,13 @@ function side(): HTMLElement {
         naming?.level === l.index ? namingRow(m, naming) : null,
         box("li", { class: "map-area-row rest" }, box("span", { class: "map-area-rest" }, el("span", { class: "map-swatch rest", "aria-hidden": "true" }), txt(rest.name, "ellip"), t ? hitCount(t.rest) : txt(String(rest.chests), "t-sm muted num")))),
       own ? button({ label: drawingHere ? "Drawing…" : "New area", icon: drawingHere ? undefined : "plus", size: "sm", variant: drawingHere ? "primary" : "secondary", cls: "map-new-area",
-        disabled: !drawingHere && (!!draw || !!naming || areas.length >= MAX_AREAS),
-        attrs: { id: `map-new-area-${l.index}`, ...(drawingHere ? { "aria-pressed": "true" } : {}), ...(areas.length >= MAX_AREAS ? { title: `A house can have at most ${MAX_AREAS} areas.` } : {}) },
+        disabled: !drawingHere && (!!draw || !!naming || areas.length >= MAX_AREAS || S.plan),
+        attrs: { id: `map-new-area-${l.index}`, ...(drawingHere ? { "aria-pressed": "true" } : {}), ...(areas.length >= MAX_AREAS ? { title: `A house can have at most ${MAX_AREAS} areas.` } : S.plan ? { title: NO_DRAWING } : {}) },
         onClick: () => { if (drawingHere) finishDrawing(); else startDrawing(l.index, null); } }) : null);
   }));
 }
+// The Stack plan has no drawing to draw an area on.
+const NO_DRAWING = "Switch to Game angle or Top-down to draw";
 // While searching, an area's count is how many of its containers match, a gold badge ("–" for none).
 const hitCount = (t: Tally): HTMLElement => (t.matches ? badge(areaHitText(t), "best") : txt(areaHitText(t), "t-sm muted num"));
 // An area's row: its zoom button (colour, name, chest count, or while searching its matches), ✎ (Rename) and ⋯ (Redraw, Change colour, Delete); while renaming, the name field in its place; while asking to delete, the question with Delete and Cancel.
@@ -425,7 +435,7 @@ function areaRow(m: HouseModel, a: HouseArea, chests: number, editable: boolean,
   if (!editable) return box("li", { class: "map-area-row" }, zoom);
   const more: HTMLButtonElement = button({ label: `More actions for ${a.name}`, icon: "more", iconOnly: true, variant: "ghost", size: "sm", attrs: { id: `map-area-menu-${a.id}`, "aria-haspopup": "menu", "aria-expanded": "false" },
     onClick: () => { menu(more, [
-      { label: "Redraw", onSelect: () => startDrawing(a.level, a.id) },
+      { label: "Redraw", disabled: S.plan ? NO_DRAWING : null, onSelect: () => startDrawing(a.level, a.id) },
       { label: "Change color", onSelect: () => colourPicker(m, a, more) },
       "divider",
       { label: "Delete", danger: true, onSelect: () => { void askDelete(m, a); } },
@@ -621,8 +631,10 @@ function keepInView([x, y]: Tile): void {
   if (!inBox(S.vb, at)) setViewBox({ ...S.vb, x: at[0] - S.vb.w / 2, y: at[1] - S.vb.h / 2 });
 }
 
-// The middle pane: notes above the map, the breadcrumb, then the SVG with its zoom buttons and the callout over it. While drawing an area: the hint bar over the map, the size pill, and the map takes the keyboard (a tab stop of its own, its live region saying what the keys did).
+// The middle pane: notes above the map, the breadcrumb, then the SVG with its zoom buttons and the callout over it, or the Stack plan in its place (no zoom, pan, pills or callouts there). While drawing an area: the hint bar over the map, the size pill, and the map takes the keyboard (a tab stop of its own, its live region saying what the keys did).
 function stage(): HTMLElement {
+  if (S.plan) return box("section", { class: "card map-stage", id: "map-stage", "aria-label": "Map" }, ...notes(), box("nav", { class: "map-crumbs", id: "map-crumbs", "aria-label": "Breadcrumb" }),
+    box("div", { class: "map-canvas", id: "map-canvas" }, box("div", { class: "sp-wrap", id: "map-plan" })));
   const svg = document.createElementNS(SVG_NS, "svg");
   svg.id = "map-svg";
   svg.setAttribute("class", `map-svg${draw ? " drawing" : ""}`);
@@ -718,6 +730,7 @@ function viewport(): { width: number; height: number } {
 }
 // The current level, built once per level, view, mode or data change; pan and zoom only ever change the viewBox. The breadcrumb is drawn before the first fit, so the viewport it measures is the one left under it.
 function drawMap(): void {
+  if (S.plan) { drawCrumbs(); drawPlan(); return; }
   const svg = $<SVGSVGElement>("#map-svg"), m = S.model;
   if (!svg || !m) return;
   const scene = sceneOf(m, S.level, S.view), views = viewsOf(m), hits = matching();
@@ -832,6 +845,7 @@ function placePill(out: HTMLElement, at: Pt): void {
 function paintStacks(): void {
   const m = S.model;
   if (!m) return;
+  if (S.plan) { paintPlan(); return; }
   const sel = selectedStack(), here = m.stacks.filter((s) => s.level === S.level);
   const focus = here.find((s) => s.letter === S.hover) ?? (sel?.level === S.level ? sel : null);
   const cut = focus && S.view === "angle" ? cutAway(m, S.level, focus) : new Set<string>();
@@ -844,6 +858,81 @@ function paintStacks(): void {
     e.classList.toggle("cut", !!letter && cut.has(letter));
     e.setAttribute("aria-pressed", String(letter === sel?.letter));
     e.setAttribute("tabindex", letter === roving ? "0" : "-1");
+  }
+}
+// ---------------------------------------------------------------- the Stack plan (issue #10)
+// The level (or the area zoomed to) seen from above, north up: a card per stack at its column and row (house-map-model.mts stackPlan), each run of empty tiles squeezed to one narrow captioned track, each area's cards on its tint with its name pill (a click zooms to it; while searching it counts the matches), and under the plan the areas with no container. It is the text-first view: the cards are a list, each a list of its containers top first. One card is the tab stop, the arrow keys move between cards, Enter selects (Esc clears, as on the map); a click on a card selects its stack, on a container row also opens that container in the drawer. While searching, a matching card marks its matching rows and names the items found, the other cards fade.
+let planNow: Plan | null = null;
+function drawPlan(): void {
+  const wrap = $<HTMLElement>("#map-plan"), m = S.model;
+  if (!wrap || !m) return;
+  const areas = areasNow(), p = stackPlan(m, areas, S.level, S.area), h = matching(), tally = h ? levelHits(m, areas, S.level, h.serials) : null, zoomed = areaById(S.area);
+  planNow = p;
+  const foot = p.bare.length ? txt(bareText(p.bare), "t-sm muted") : null;
+  if (!p.cards.length) { wrap.replaceChildren(el("p", { class: "muted", id: "map-plan-none" }, zoomed ? `No containers in ${zoomed.name}.` : "No containers on this floor."), ...(foot ? [foot] : [])); return; }
+  const track = (empty: boolean, size: string): string => (empty ? "var(--plan-gap)" : size);
+  const grid = box("div", { class: "sp-grid", style: `grid-template-columns:${p.cols.map((t) => track(t.empty, "minmax(var(--plan-card), 1fr)")).join(" ")};grid-template-rows:${p.rows.map((t) => track(t.empty, "auto")).join(" ")}` });
+  for (const a of p.areas) a.boxes.forEach((b, i) => grid.append(box("div", { class: "sp-area", "data-area": a.area.id, style: `--area:var(--color-${a.area.color});grid-column:${b.col0 + 1} / ${b.col1 + 2};grid-row:${b.row0 + 1} / ${b.row1 + 2}` },
+    i === 0 ? areaPill(a.area, a.containers, tally?.areas.get(a.area.id) ?? null) : null)));
+  for (const e of p.empties) grid.append(el("div", { class: "sp-empty", "aria-hidden": "true", style: `grid-column:${e.col + 1};grid-row:${e.row + 1}` }));
+  // The list reads in the plan's order, row by row: a squeezed column's caption after the first row's card west of it, a squeezed row's before the row under it.
+  const gaps = [...p.cols.flatMap((t, i) => (t.empty ? [{ row: 0, col: i, el: box("li", { class: "sp-gap down", style: `grid-column:${i + 1};grid-row:1 / -1` }, txt(gapText(t.to - t.from + 1))) }] : [])),
+    ...p.rows.flatMap((t, i) => (t.empty ? [{ row: i, col: -1, el: box("li", { class: "sp-gap", style: `grid-row:${i + 1};grid-column:1 / -1` }, txt(gapText(t.to - t.from + 1))) }] : []))];
+  const items = [...p.cards.map((c) => ({ row: c.row, col: c.col, el: planCard(m, c, h) })), ...gaps].sort((a, b) => a.row - b.row || a.col - b.col);
+  const list = box("ol", { class: "sp-cards", "aria-label": `Stack plan of ${zoomed ? zoomed.name : `the ${(m.levels[S.level]?.name ?? "level").toLowerCase()}`}, north up` }, ...items.map((x) => x.el));
+  list.addEventListener("click", (e) => {
+    const t = e.target as Element, card = t.closest<HTMLElement>("[data-stack]"), row = t.closest<HTMLElement>("[data-chest]");
+    if (!card) return;
+    if (!row) { pick(card.dataset.stack!); return; }
+    select(+row.dataset.chest!);
+    if (!row.classList.contains("unopened")) openDrawer(+row.dataset.chest!);
+  });
+  list.addEventListener("keydown", (e) => {
+    const card = e.target as HTMLElement, dir = ARROWS[e.key];
+    if (!card.dataset?.stack || e.defaultPrevented || e.metaKey || e.ctrlKey || e.altKey) return;
+    if (e.key === "Enter" || e.key === " ") { e.preventDefault(); pick(card.dataset.stack); return; }
+    if (!dir || !planNow) return;
+    e.preventDefault();
+    const next = planNeighbor(planNow, card.dataset.stack, dir);
+    if (next) focusStack(next);
+  });
+  list.addEventListener("focusin", (e) => { const letter = (e.target as HTMLElement).dataset?.stack; if (letter) { S.focus = letter; paintPlan(); } });
+  grid.append(list);
+  wrap.replaceChildren(box("div", { class: "sp-bar" }, txt("Seen from above, north up. Each card is one tile, its containers top first; runs of empty tiles are squeezed.", "t-sm muted"),
+    txt(`${plural(p.cards.length, "stack")} · ${plural(p.containers, "container")}`, "t-sm muted num sp-count")), box("div", { class: "sp-frame" }, grid), ...(foot ? [foot] : []));
+  paintPlan();
+}
+// An area's name pill at its top-left: its container count, or while searching how many of them match; a click shows only that area.
+function areaPill(a: HouseArea, containers: number, t: Tally | null): HTMLElement {
+  const count = t?.matches ? badge(areaHitText(t), "best") : txt(String(containers), "muted num");
+  if (S.area === a.id) return box("span", { class: "sp-area-name" }, txt(a.name), count);
+  return box("button", { type: "button", class: "sp-area-name", title: `Show only ${a.name}`, "aria-label": `Show only ${a.name}, ${t ? `${t.matches} of ${plural(t.containers, "container")} match` : plural(containers, "container")}`, onclick: () => zoomToArea(a) }, txt(a.name), count);
+}
+function planCard(m: HouseModel, c: PlanCard, h: HouseHits | null): HTMLElement {
+  const s = c.stack, head = planHead(s), hits = h?.stacks.get(s.letter) ?? null;
+  return box("li", { class: `sp-card${h ? (hits ? " has-hit" : " faded") : ""}`, "data-stack": s.letter, tabindex: "-1", style: `grid-column:${c.col + 1};grid-row:${c.row + 1}`,
+    "aria-label": `${head.title}, ${head.count}${c.area ? `, ${c.area.name}` : ""}${hits ? `, ${plural(hits.length, "match", "matches")}` : ""}` },
+    box("div", { class: "sp-card-head" }, txt(head.title, "t-sm strong"), txt(head.count, "t-xs muted")),
+    box("ol", { class: "sp-rows", "aria-label": `Containers in ${head.title}, top first` }, ...planRows(chestViews(m, s, state.inv!, labels())).map((r) => planRow(r, hits?.find((x) => x.serial === r.serial) ?? null))));
+}
+// A container's row: its code; its label as a chip in the label's color, then the in-game name; its fill bar and count out of its own maximum (or why it is not known); while it matches a search, the items found.
+function planRow(r: PlanRow, hit: HitChest | null): HTMLElement {
+  const color = r.label?.color ? safeColor(r.label.color) : null, found = hit?.lines.map((l) => `${l.name} × ${fmtN(l.amount)}`).join(", ") ?? "";
+  return box("li", { class: `sp-row${r.opened ? "" : " unopened"}${hit ? " hit" : ""}`, "data-chest": String(r.serial) },
+    txt(r.code, "mono t-sm strong"),
+    box("span", { class: "sp-l1" }, r.label ? box("span", { class: "badge sp-chip", title: `Label: ${r.label.name}`, ...(color ? { style: `--chip:${color}` } : {}) }, txt(r.label.name)) : null, txt(r.name, `ellip t-sm${r.label ? " muted" : ""}`)),
+    box("span", { class: "sp-l2" }, r.fill ? meter(r.fill.items, r.fill.max, { tone: fillTone(r.fill), label: `${r.fill.items} of ${r.fill.max} items` }) : null, txt(r.fillText, r.fill ? "t-xs num" : "t-xs muted")),
+    hit ? box("span", { class: "sp-hitline t-xs", title: found }, txt(found, "ellip")) : null);
+}
+// The selected card's accent outline, and the roving tab stop: the focused card, else the selected one, else the first.
+function paintPlan(): void {
+  const sel = selectedStack(), cards = [...document.querySelectorAll<HTMLElement>("#map-plan .sp-card")];
+  const stop = cards.find((c) => c.dataset.stack === S.focus) ?? cards.find((c) => c.dataset.stack === sel?.letter) ?? cards[0];
+  for (const c of cards) {
+    const on = c.dataset.stack === sel?.letter;
+    c.classList.toggle("sel", on);
+    if (on) c.setAttribute("aria-current", "true"); else c.removeAttribute("aria-current");
+    c.tabIndex = c === stop ? 0 : -1;
   }
 }
 // house › level › area › stack; each part above the last goes back up to it. A selected stack outside every area shows where it is ("Everything else", or the "Whole floor") as plain text.
@@ -1029,7 +1118,7 @@ function stackKeys(e: KeyboardEvent): void {
 function focusStack(letter: string): void {
   S.focus = letter;
   paintStacks();
-  $<SVGElement>(`#map-svg [data-stack="${letter}"]`)?.focus();
+  $<HTMLElement | SVGElement>(`:is(#map-svg, #map-plan) [data-stack="${letter}"]`)?.focus();
 }
 // While drawing, Enter and Esc work wherever focus is on the map screen (the drawing's own button, a crumb, after a click on blank space), but not in a field, a dialog or a menu.
 document.addEventListener("keydown", (e) => {
