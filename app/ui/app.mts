@@ -5,7 +5,7 @@
 // #/builder/<name> deep link, and the builder reads the route back).
 import { migrateProfiles, setRules } from "../vault-lib.mts";
 import { state, newestStamp } from "./store.mts";
-import { $, el, installTooltip } from "./dom.mts";
+import { $, el, installTooltip, forgetTipMisses } from "./dom.mts";
 import { api } from "./api.mts";
 import { pollBridge } from "./bridge.mts";
 import { buildFilters, fetchItems, initFilters, applyUiPrefs, inventoryFailed } from "./inventory.mts";
@@ -89,6 +89,7 @@ export async function reload(): Promise<void> {
   const [inv, prof] = await Promise.all([get<InventoryApiResponse>("/api/inventory"), get<ProfilesApiResponse>("/api/profiles"), loadOrganize().catch(() => undefined)]);
   state.inv = inv.inventory; state.profiles = migrateProfiles(prof.profiles).profiles;
   state.itemCache.clear();   // a rescan can move or drop a piece — stale by-serial lookups must not survive it
+  forgetTipMisses();
   state.facets = state.inv.facets;
   state.propKeys = state.inv.propKeys;
   refreshPlaces();

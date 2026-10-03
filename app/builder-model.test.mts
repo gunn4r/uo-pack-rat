@@ -133,6 +133,7 @@ test("[fast] builder model: compare keeps differing rows, marks cells that diffe
     ["Cloak", ["Cloak", "nothing*", "nothing*"]],
     ["Weapon (1H)", ["Broadsword", "Broadsword", "Animated Katana*"]],
   ]);
+  assert.deepEqual(m.pieces.map((r) => r.cells.map((c) => c.serial)), [[7, null, null], [8, 8, 9]], "a piece's serial, for its item tooltip");
   assert.deepEqual(m.totals.map((r) => [r.key, r.best]), [
     ["physResist", [false, false, true]], ["dexBonus", [false, false, true]], ["fc", [true, true, false]], ["hitLightning", [true, true, false]],
   ]);

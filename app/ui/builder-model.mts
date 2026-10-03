@@ -252,7 +252,7 @@ export function afterChange(stats: Record<string, unknown>, maxes: Record<string
 // A member's own caps (a saved run built with other resist caps than the others) decide its best values; else the
 // shared caps do.
 export interface CompareMember { assignment: Partial<Record<string, { serial: number; name: string } | null | undefined>>; totals: PropMap; caps?: Record<string, number> | undefined }
-export interface ComparePieceRow { slot: string; label: string; cells: Array<{ text: string; diff: boolean }> }
+export interface ComparePieceRow { slot: string; label: string; cells: Array<{ text: string; diff: boolean; serial: number | null }> }
 export interface CompareTotalRow { key: string; label: string; values: number[]; best: boolean[] }
 export interface CompareModel { pieces: ComparePieceRow[]; totals: CompareTotalRow[]; hiddenTotals: string[]; hiddenPieces: number }
 export function compareModel(members: CompareMember[], slots: string[], keys: string[], caps: Record<string, number>, differencesOnly = true): CompareModel {
@@ -262,7 +262,7 @@ export function compareModel(members: CompareMember[], slots: string[], keys: st
     const serials = members.map((m) => m.assignment[slot]?.serial || 0);
     const differs = serials.some((s) => s !== serials[0]);
     if (!differs && differencesOnly) { hiddenPieces++; continue; }
-    pieces.push({ slot, label: SLOT_LABELS[slot] || slot, cells: members.map((m, i) => ({ text: m.assignment[slot]?.name || "nothing", diff: i > 0 && serials[i] !== serials[0] })) });
+    pieces.push({ slot, label: SLOT_LABELS[slot] || slot, cells: members.map((m, i) => ({ text: m.assignment[slot]?.name || "nothing", diff: i > 0 && serials[i] !== serials[0], serial: serials[i] || null })) });
   }
   const totals: CompareTotalRow[] = [], hiddenTotals: string[] = [];
   for (const key of [...new Set(keys)].filter((k) => k !== "tagPenalty")) {

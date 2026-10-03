@@ -8,7 +8,7 @@
 import { totalsOf, resistSkillBonus, PROP_FULL } from "../vault-lib.mts";
 import type { ExtrasMap, OptItem, ResistCap } from "../vault-lib.mts";
 import { state } from "./store.mts";
-import { el, label, slotLabel, toast } from "./dom.mts";
+import { el, itemTip, label, slotLabel, toast } from "./dom.mts";
 import { api } from "./api.mts";
 import { rarityToken } from "./items.mts";
 import { txt, box, badge, tag, meter, message, button, check, searchInput, popover } from "./components.mts";
@@ -26,7 +26,7 @@ export type SheetItem = Pick<OptItem, "serial" | "name" | "slot" | "props"> & { 
 export type SheetAssignment = Partial<Record<string, SheetItem | null | undefined>>;
 export interface SheetOptions {
   // A filled slot tile was clicked (or pressed from the keyboard): show that piece. Without it the tiles
-  // still carry data-serial, so the page's hover tooltip works on them.
+  // still show the page's item tooltip (dom.mts's itemTip), on hover and on keyboard focus.
   onSlot?: ((item: SheetItem, tile: HTMLElement) => void) | undefined;
   // The Suit Builder's now → after sheet: the resist caps its build used, the player's overrides included. The
   // Characters screen passes none and shows the shard's caps.
@@ -248,13 +248,13 @@ export function sheetNode(name: string, before: SheetAssignment, after: SheetAss
     const isNew = !single && !nowSerials.has(it.serial);
     // only the one-suit sheet: an optimizer piece carries no durability, so a before/after sheet would badge some pieces and not others
     const low = single ? lowDurability(it) : null;
-    const t = box("button", { type: "button", class: "slot", "data-serial": it.serial, ...(token ? { style: `border-color:var(${token})` } : {}) },
+    const t = box("button", { type: "button", class: "slot", ...(token ? { style: `border-color:var(${token})` } : {}) },
       isNew ? box("span", { class: "slot-head" }, head, badge("New", "accent")) : head,
       txt(it.name, "nm"),
       tags.length || nums.length ? box("span", { class: "slot-meta t-sm" }, ...tags.map((x) => tag(x, tagTone(x))), nums.length ? txt(nums.join(" · "), "muted") : null) : null,
       low ? badge(low, "warn") : null);
     if (opts.onSlot) t.addEventListener("click", () => opts.onSlot!(it, t));
-    return t;
+    return itemTip(t, it);
   };
   const groups = SLOT_GROUPS.map(([title, slots]) => box("div", { class: "slot-group" }, txt(title, "caps"),
     box("div", { class: "slot-grid" }, ...slots.map((s) => tile(s, bySlot.get(s))))));

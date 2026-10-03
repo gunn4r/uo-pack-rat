@@ -1,10 +1,10 @@
 // ui/house-map.mts — the House map screen (#/map, #/map/<house id>; issue #10, spec section 4). It fetches the houses the scans captured (GET /api/houses) and every house's model (GET /api/houses/<id>), picks the deep-linked house (else the last one shown, else the one with the most chests; a deep link to a house that no longer exists falls back and the route is put back to #/map), and lays out three panes: levels and the player's own areas on the left (issue #10: drawn on the map by mouse or keyboard, named, renamed, recoloured, redrawn and deleted here), the map in the middle, the details on the right, and a chest's contents in a drawer beside them. Ground chests outside every drawn house are a house of their own on a plain grid. Every rule and number is ui/house-map-model.mts's; this module builds the DOM and the SVG and wires the events.
 import { state, bridge } from "./store.mts";
-import { $, el, safeColor, fmtN, toast } from "./dom.mts";
+import { $, el, itemTip, safeColor, fmtN, toast } from "./dom.mts";
 import { api } from "./api.mts";
 import { box, txt, button, segmented, pill, message, meter, keyValue, modalOpen, tipWrap, input, copyText, icon, kbd, menu, popover, closePopover, confirmDialog, select as selectEl } from "./components.mts";
 import { labelContainer } from "./containers.mts";
-import { showContainer, itemMenu, rarityEl, tagEls } from "./inventory.mts";
+import { showContainer, itemMenu, itemActions, rarityEl, tagEls } from "./inventory.mts";
 import { propertyLines, RESISTS } from "./peek.mts";
 import { bridgeActionReason, runBridgeAction, sendBridge, type BridgeTarget } from "./bridge.mts";
 import { errorText } from "./messages.mts";
@@ -13,7 +13,7 @@ import { plural } from "./inv-model.mts";
 import { fillTone } from "./organize-model.mts";
 import { PLAIN, pickHouse, plainGrid, chestCount, houseLabel, houseName, carryOver, carryOverText, tiledataNote, chestViews, colourOf, chestLabel, sceneOf, boundsOf, fit, vbText,
   cutAway, calloutLines, nearestInDirection, houseTotals, legendOf, stackWhere, anchorOf, zoomAt, fillWords, whereOf, whereTitle, cropAround, facetMapUrl, markersOf, facetMapNote, markerRadii,
-  drawerChest, drawerMeta, slotsText, drawerPicker, contentsOf, contentsSummary, filterContents, areaOfStack, levelAreas, tileAt, clampTile, rectOf, sizeText, unionTiles, coveredCells, outlineOf, pillsOf, fitLabel, placePill as pillBox, LABEL_FIT, type AreaPill,
+  drawerChest, drawerMeta, slotsText, drawerPicker, DRAWER_W, DRAWER_MIN, drawerMax, clampDrawer, drawerKey, contentsOf, contentsSummary, filterContents, areaOfStack, levelAreas, tileAt, clampTile, rectOf, sizeText, unionTiles, coveredCells, outlineOf, pillsOf, fitLabel, placePill as pillBox, LABEL_FIT, type AreaPill,
   nextAreaId, nextAreaColor, moveCursor, project, tilePolygon, pts, liveAreas, withOrphans, redrawFailed, AREA_COLORS, AREA_COLOR_NAMES, MAX_AREAS, MAX_RECTS, type PlainModel, type Tile, type Contents, type ContentsNode, type Marker, type View, type Mode, type Box, type Colour, type ChestView, type Piece, type Prism, type Pt, type Dir } from "./house-map-model.mts";
 import type { AreaRect, ContainerLabel, HouseArea, HouseModel, UiPrefs, HousesApiResponse, HouseApiResponse, HouseMapApiResponse, HouseMapEntry, HouseMapPutApiResponse, ItemsApiResponse, Stack } from "./api-types.mts";
 import type { Item } from "../vault-lib.mts";
@@ -52,7 +52,9 @@ let redrawn: { id: string; rects: AreaRect[] } | null = null;   // a redraw show
 let hotArea: string | null = null;
 // Whether the area name pills are hidden (ui-prefs areaLabels, set at load by applyMapPrefs; the zoom stack's toggle saves it).
 let labelsHidden = false;
-export function applyMapPrefs(prefs: UiPrefs | null): void { labelsHidden = prefs?.areaLabels === "hide"; }
+// The contents drawer's width as chosen (ui-prefs mapDrawerWidth, set at load by applyMapPrefs; its handle saves it), and as shown: the chosen width clamped to what the window leaves (fitDrawer).
+let drawerW = DRAWER_W, shownW = DRAWER_W;
+export function applyMapPrefs(prefs: UiPrefs | null): void { labelsHidden = prefs?.areaLabels === "hide"; drawerW = prefs?.mapDrawerWidth ?? DRAWER_W; }
 function toggleLabels(): void {
   labelsHidden = !labelsHidden;
   paintLabelsButton();
@@ -1098,7 +1100,77 @@ function placeDrawer(animate = false): void {
   if (!d) { d = box("aside", { class: "card map-drawer", id: "map-drawer", role: "region", onkeydown: drawerKeys }); page.append(d); }
   page.classList.add("has-drawer");
   drawDrawer();
-  if (fresh && animate) { d.classList.add("entering"); void d.offsetWidth; d.classList.remove("entering"); }
+  if (!fresh) { fitDrawer(); return; }
+  // Clamped before it shows: with nothing animating, the page is laid out with the drawer in at no width, the room
+  // it leaves measured and the width set. Only then does it grow (and the levels pane fold), straight to that width,
+  // so a width chosen on a wider screen never squeezes the map, not even for a frame.
+  page.classList.add("resizing");
+  d.classList.add("entering");
+  void d.offsetWidth;
+  showDrawerW(drawerW, stacked() ? Infinity : drawerLimit());
+  if (animate) page.classList.remove("has-drawer"); else d.classList.remove("entering");
+  void d.offsetWidth;
+  page.classList.remove("resizing");
+  if (animate) { page.classList.add("has-drawer"); void d.offsetWidth; d.classList.remove("entering"); }
+}
+// ---------------------------------------------------------------- the drawer's width
+// Its handle (on its left edge, from 1100 px up): a drag, ← and → (16 px, 64 with Shift), Home and End set the width, a double-click puts back the default; each saves it. The map keeps MAP_MIN px however wide the window is: the width shown is the chosen one clamped to that (when the drawer opens and whenever the page changes size), and the map's viewBox never needs a re-fit (the SVG scales it to fit) while its pills follow through their ResizeObserver.
+const stacked = (): boolean => matchMedia("(max-width: 1099px)").matches;
+function drawerLimit(): number {
+  const d = $<HTMLElement>("#map-drawer"), m = $<HTMLElement>("#map-stage");
+  return d && m ? drawerMax(d.getBoundingClientRect().width, m.getBoundingClientRect().width) : DRAWER_W;
+}
+function showDrawerW(w: number, max = drawerLimit()): number {
+  shownW = clampDrawer(w, max);
+  body().style.setProperty("--drawer-w", `${shownW}px`);
+  const g = $<HTMLElement>("#map-drawer-grip");
+  if (g) { g.setAttribute("aria-valuenow", String(shownW)); g.setAttribute("aria-valuemax", String(isFinite(max) ? Math.max(DRAWER_MIN, max) : shownW)); }
+  return shownW;
+}
+function fitDrawer(): void { if ($<HTMLElement>("#map-drawer") && !stacked() && !$<HTMLElement>("#tab-map")!.hidden) showDrawerW(drawerW); }   // a hidden screen measures 0
+// The width chosen (a double-click chooses 400 even where less fits: a wider window shows it again), shown clamped, saved once the keys or the drag pause.
+let saveTimer = 0;
+function setDrawerW(chosen: number, max?: number): void {
+  drawerW = chosen;
+  showDrawerW(chosen, max);
+  clearTimeout(saveTimer);
+  saveTimer = setTimeout(() => {
+    api("/api/ui-prefs", { method: "PUT", body: { mapDrawerWidth: drawerW } }).catch((e: Error) => toast(`Could not save the contents width: ${e.message}`, "bad"));
+  }, 300) as unknown as number;
+}
+// The page's size changes with the window (or the sidebar): fit the drawer again. Watched from the start, so its first call comes before any drawer opens.
+new ResizeObserver(() => fitDrawer()).observe(body());
+// The levels pane folds or comes back (a window crossing 1800 px): fit again once it has. Only the pane's own width transition counts, so the drawer's resize it may cause cannot call this again.
+body().addEventListener("transitionend", (e) => { if ((e.target as Element).classList?.contains("map-side") && e.propertyName === "width") fitDrawer(); });
+function drawerGrip(): HTMLElement {
+  const g = box("div", { class: "map-drawer-grip", id: "map-drawer-grip", role: "separator", tabindex: "0", "aria-orientation": "vertical", "aria-label": "Resize contents", "aria-valuemin": DRAWER_MIN, "aria-valuenow": shownW, "aria-valuemax": shownW });
+  g.addEventListener("pointerdown", (e: PointerEvent) => {
+    if (e.button !== 0) return;
+    e.preventDefault();
+    const x0 = e.clientX, w0 = shownW, max = drawerLimit();
+    let moved = false;
+    g.setPointerCapture(e.pointerId);
+    body().classList.add("resizing");
+    const move = (m: PointerEvent): void => { moved = true; showDrawerW(w0 + x0 - m.clientX, max); };
+    const ends = ["pointerup", "pointercancel", "lostpointercapture"] as const;
+    const up = (): void => {
+      g.removeEventListener("pointermove", move);
+      for (const t of ends) g.removeEventListener(t, up);
+      body().classList.remove("resizing");
+      if (moved) setDrawerW(shownW, max);
+    };
+    g.addEventListener("pointermove", move);
+    for (const t of ends) g.addEventListener(t, up);
+  });
+  g.addEventListener("dblclick", () => setDrawerW(DRAWER_W));
+  g.addEventListener("keydown", (e: KeyboardEvent) => {
+    if (e.metaKey || e.ctrlKey || e.altKey) return;
+    const max = drawerLimit(), w = drawerKey(e.key, e.shiftKey, shownW, max);
+    if (w == null) return;
+    e.preventDefault();
+    setDrawerW(w, max);
+  });
+  return g;
 }
 // Esc from anywhere inside the drawer closes it (a menu opened from a row lives outside it and keeps its own Esc).
 function drawerKeys(e: Event): void {
@@ -1133,7 +1205,7 @@ function drawDrawer(): void {
   const meta = txt(c ? drawerMeta(c, s) : stackWhere(m, s, areasNow()), "t-sm muted ellip"), summary = txt("", "t-sm muted");
   meta.id = "map-drawer-meta";
   summary.id = "map-drawer-summary";
-  d.replaceChildren(
+  d.replaceChildren(drawerGrip(),
     box("header", { class: "map-drawer-head" },
       box("div", { class: "map-drawer-title" },
         box("div", { class: "map-drawer-titles" }, box("h2", { class: "t-lg map-drawer-name" }, ...(c ? [txt(c.code, "mono"), txt(c.name, "ellip")] : [txt(`Stack ${s.letter}`, "ellip")])), meta),
@@ -1167,26 +1239,29 @@ function treeOf(items: Item[], chest: number): Contents {
   if (tree?.items !== items || tree.chest !== chest) tree = { items, chest, contents: contentsOf(items, chest, isBag) };
   return tree.contents;
 }
-const titled = <E extends HTMLElement>(e: E, text: string): E => { e.title = text; return e; };
 function nodeEl(n: ContentsNode): HTMLElement {
   if (n.kind === "item") return itemRow(n.item);
   const serial = n.item.serial, group = el("details", { class: "map-bag" });
   group.open = !D?.closed.has(serial);
   group.addEventListener("toggle", () => { if (group.open) D?.closed.delete(serial); else D?.closed.add(serial); });
   group.append(
-    box("summary", { class: "map-bag-head", id: `map-drawer-bag-${serial}` }, icon("chevron-right", { size: "sm" }), titled(txt(n.item.name, "ellip strong map-bag-name"), n.item.name), txt(plural(n.count, "item"), "t-sm muted num")),
+    itemTip(box("summary", { class: "map-bag-head", id: `map-drawer-bag-${serial}` }, icon("chevron-right", { size: "sm" }), txt(n.item.name, "ellip strong map-bag-name"), txt(plural(n.count, "item"), "t-sm muted num")), n.item),
     box("div", { class: "map-bag-kids" }, ...n.kids.map(nodeEl)));
   return group;
 }
-// An item in two lines, the Inventory's own pieces: the name and tags, then the rarity, the properties and the resists. Cut text shows whole on hover. A click opens the item's menu.
+const ROW_ACTS = ["highlight", "grab", "goto", "more"];
+// An item in two lines, the Inventory's own pieces: the name and tags, then the rarity, the properties and the resists. Hovering or focusing it shows the item tooltip, which has everything a cut line leaves out. A click opens the item's menu. At its right end, shown on hover and focus and always in the tab order, the Inventory row's actions (itemActions), in a data-no-tip zone so aiming at them never pops the tooltip.
 function itemRow(it: Item): HTMLElement {
   const name = (it.amount || 1) > 1 ? `${it.name} ×${it.amount.toLocaleString("en-US")}` : it.name;
   const props = propertyLines(it).filter((l) => !l.muted).map((l) => (l.value ? `${l.name} ${l.value}` : l.name)).join(" · ");
   const res = RESISTS.filter(([k]) => it.props[k]), rarity = rarityEl(it.rarity, "t-sm");
-  return box("button", { type: "button", class: "map-item", id: `map-drawer-item-${it.serial}`, "aria-haspopup": "menu", onclick: (e: Event) => itemMenu(e.currentTarget as HTMLElement, it) },
-    box("span", { class: "map-item-l1" }, titled(txt(name, "ellip map-item-name"), name), ...tagEls(it)),
-    rarity || props || res.length ? box("span", { class: "map-item-l2" }, rarity, props ? titled(txt(props, "ellip t-sm muted map-item-props"), props) : null,
-      res.length ? titled(box("span", { class: "map-item-res" }, ...res.map(([k, short, token]) => el("span", { style: `color:var(${token})` }, `${short.slice(0, 2)}${it.props[k]}`))), res.map(([k, short]) => `${short} ${it.props[k]}`).join(" · ")) : null) : null);
+  const main = box("button", { type: "button", class: "map-item", id: `map-drawer-item-${it.serial}`, "aria-haspopup": "menu", onclick: (e: Event) => itemMenu(e.currentTarget as HTMLElement, it) },
+    box("span", { class: "map-item-l1" }, txt(name, "ellip map-item-name"), ...tagEls(it)),
+    rarity || props || res.length ? box("span", { class: "map-item-l2" }, rarity, props ? txt(props, "ellip t-sm muted map-item-props") : null,
+      res.length ? box("span", { class: "map-item-res" }, ...res.map(([k, short, token]) => el("span", { style: `color:var(${token})` }, `${short.slice(0, 2)}${it.props[k]}`))) : null) : null);
+  const acts = itemActions(it);
+  acts.querySelectorAll("button").forEach((b, i) => { b.id = `map-drawer-${ROW_ACTS[i] ?? i}-${it.serial}`; });   // so a redraw keeps focus on it (focusKey)
+  return box("div", { class: "map-item-row" }, itemTip(main, it), box("span", { class: "map-item-acts", "data-no-tip": "" }, acts));
 }
 // Every item under the chest, in GET /api/items' 500-row pages, name order, each serial once; an answer for a chest no longer shown is dropped.
 async function loadDrawer(): Promise<void> {
@@ -1211,6 +1286,6 @@ async function loadDrawer(): Promise<void> {
   D.error = null;
   drawDrawerBody();
 }
-// A saved label changes chest colours and names; the bridge going on or off line changes what Highlight may do.
+// A saved label changes chest colours and names; the bridge going on or off line changes what Highlight, Grab and Go to may do.
 document.addEventListener("organizechange", () => { if (S.model && !$<HTMLElement>("#tab-map")!.hidden) { drawMap(); drawPanel(); } });
-document.addEventListener("bridgechange", () => { if (S.model && !$<HTMLElement>("#tab-map")!.hidden) drawPanel(); });
+document.addEventListener("bridgechange", () => { if (S.model && !$<HTMLElement>("#tab-map")!.hidden) { drawPanel(); drawDrawerBody(); } });

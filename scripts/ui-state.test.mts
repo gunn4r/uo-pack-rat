@@ -726,7 +726,7 @@ test("[slow] a ground container is blacklisted from Containers and unblacklisted
 
 // Missing since last scan (issue #99): Kestrel's chest scanned twice, the second time without its Runebook and Drum
 // and with 64 fewer gold. Its row carries a "3 missing" badge and its menu Show missing items, whose dialog lists
-// them; Dorran's chest, scanned once, has neither. Recent stamps, or retention prunes the older scan at startup.
+// them, each row with its item tooltip (drawn inside the dialog, and still on the page after it closes); Dorran's chest, scanned once, has neither. Recent stamps, or retention prunes the older scan at startup.
 test("[slow] a container with items missing since its last scan shows a badge and lists them", async (t) => {
   const why = unavailable();
   if (why) return t.skip(why);
@@ -757,8 +757,18 @@ test("[slow] a container with items missing since its last scan shows a badge an
     const cells = await dialog.locator("tbody tr").evaluateAll((trs) => trs.map((tr) => [...tr.querySelectorAll("td")].slice(0, 2).map((td) => td.textContent)));
     assert.deepEqual(cells, [["Drum", "1"], ["Gold Coin", "64 fewer"], ["Runebook", "1"]]);
     assert.match(await dialog.locator("tbody tr").first().locator("td").nth(2).innerText(), /h ago|\d/);
+    // a missing item's row shows the item tooltip (the record the dialog drew: the server no longer has the item),
+    // drawn inside the modal dialog so it sits above it; closing the dialog removes it, never the tooltip
+    await dialog.locator("tbody tr").first().hover();
+    await page.waitForFunction(() => getComputedStyle(document.querySelector("#tip")!).display === "block", undefined, { timeout: 10_000 });
+    assert.equal(await page.locator("#tip .tip-name").innerText(), "Drum");
+    assert.equal(await page.evaluate(() => document.querySelector("#tip")!.parentElement?.tagName), "DIALOG");
     await page.keyboard.press("Escape");
     await dialog.waitFor({ state: "detached", timeout: 10_000 });
+    assert.equal(await page.evaluate(() => document.querySelector("#tip")?.parentElement === document.body), true, "the tooltip is back on the page");
+    await page.locator("#inv-view").getByRole("radio", { name: "Items" }).click();
+    await page.locator("#inv-table tbody tr.item td:nth-child(2)").first().hover();
+    await page.waitForFunction(() => getComputedStyle(document.querySelector("#tip")!).display === "block", undefined, { timeout: 10_000 });
     assert.deepEqual(errors, []);
   } finally {
     await app.close();
