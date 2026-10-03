@@ -1116,3 +1116,122 @@ test("[slow] House map: in a 1920 × 1000 window the contents drawer is a fourth
     assert.equal(await page.evaluate(() => getComputedStyle(document.querySelector("#map-body")!).gridTemplateColumns.split(" ").length), 4);
   } finally { await done(app, dir); }
 });
+
+test("[slow] House map: a contents drawer row shows the Inventory row's Highlight, Grab, Go to and ⋯ on hover and focus, reachable by Tab, and Highlight queues that item for the bridge", async (t) => {
+  const why = unavailable();
+  if (why) return t.skip(why);
+  const { dir } = seed({ items: true });
+  const { bridgeDir, stop } = bridgeOnline(dir);
+  const { app, page, errors } = await launch(dir);
+  const ARROWS = 0x40500013;
+  try {
+    await go(page, "#/map", "#map-svg .map-stack");
+    await page.waitForFunction(() => document.querySelector("#bridge")?.getAttribute("data-state") === "ready", undefined, { timeout: 15_000 });
+    await page.locator(`#map-svg [data-stack="${letter(vaultModel, 3001, 1001)}"]`).focus();
+    await page.keyboard.press("Enter");
+    await page.locator(`#map-panel li[data-chest="${TOP}"] [data-act="items"]`).click();
+    await page.waitForSelector(`#map-drawer-item-${ARROWS}`);
+    const row = page.locator("#map-drawer .map-item-row", { has: page.locator(`#map-drawer-item-${ARROWS}`) });
+    const acts = row.locator(".map-item-acts");
+    assert.equal(await acts.getAttribute("data-no-tip"), "", "aiming at the actions never pops the item tooltip");
+    assert.deepEqual(await acts.locator("button").evaluateAll((bs) => bs.map((b) => b.getAttribute("aria-label"))), ["Highlight in game", "Grab to backpack", "Go to container", "More actions"]);
+    const opacity = (): Promise<string> => acts.evaluate((e) => getComputedStyle(e).opacity);
+    await page.mouse.move(2, 2);
+    assert.equal(await opacity(), "0", "hidden until the row is hovered or focused");
+    // focus: Tab from the row goes into its actions, which show
+    await page.locator(`#map-drawer-item-${ARROWS}`).focus();
+    assert.equal(await opacity(), "1");
+    await page.keyboard.press("Tab");
+    assert.equal(await page.evaluate(() => document.activeElement?.id), `map-drawer-highlight-${ARROWS}`);
+    // hover, then Highlight: queued for the bridge with this item
+    await row.hover();
+    assert.equal(await opacity(), "1");
+    await acts.getByRole("button", { name: "Highlight in game" }).click();
+    const [one] = await until(() => readQueue(bridgeDir), (l) => l.length === 1, "the highlight queued");
+    assert.deepEqual([one!.action, one!.serial, one!.name], ["highlight", ARROWS, "Arrows"]);
+    assert.deepEqual(errors, []);
+  } finally { stop(); await done(app, dir); }
+});
+
+test("[slow] House map: the contents drawer's handle resizes it by drag (kept across a reload), double-click (400 chosen, shown as wide as fits) and the keyboard, never under 320 px; a width saved wider than the window allows opens clamped without squeezing the map for a frame", async (t) => {
+  const why = unavailable();
+  if (why) return t.skip(why);
+  const { dir } = seed({ items: true });
+  // a width chosen on a far wider screen
+  writeFileSync(join(dir, "ui-prefs.json"), JSON.stringify({ mapDrawerWidth: 4000 }));
+  const { app, page, errors, size } = await launch(dir);
+  try {
+    if (size.width < 1100) return t.skip(`this screen fits a window only ${size.width} px wide; below 1100 px the drawer stacks and has no handle`);
+    const drawerCss = (): Promise<string> => page.evaluate(() => getComputedStyle(document.querySelector("#map-body")!).getPropertyValue("--drawer-w"));
+    // The drawer's width once it has stopped moving (it animates to a new width).
+    const settled = (): Promise<number> => page.waitForFunction(() => {
+      const d = document.querySelector("#map-drawer"), want = getComputedStyle(document.querySelector("#map-body")!).getPropertyValue("--drawer-w");
+      return d && !d.classList.contains("entering") && getComputedStyle(d).width === want.trim() ? Math.round(d.getBoundingClientRect().width) : 0;
+    }, undefined, { timeout: 15_000 }).then((h) => h.jsonValue() as Promise<number>);
+    const select = async (): Promise<void> => {
+      await go(page, "#/map", "#map-svg .map-stack");
+      await page.locator(`#map-svg [data-stack="${letter(vaultModel, 3001, 1001)}"]`).focus();
+      await page.keyboard.press("Enter");
+      await page.waitForSelector(`#map-panel li[data-chest="${TOP}"] [data-act="items"]`);
+    };
+    // Show items, sampling the map's width every frame while the drawer opens: its narrowest is where it ends.
+    const open = async (): Promise<{ least: number; end: number }> => {
+      const least = await page.evaluate(async (top) => {
+        const stage = document.querySelector("#map-stage")!;
+        let min = Infinity;
+        document.querySelector<HTMLButtonElement>(`#map-panel li[data-chest="${top}"] [data-act="items"]`)!.click();
+        const t0 = performance.now();
+        while (performance.now() - t0 < 1500) { min = Math.min(min, stage.getBoundingClientRect().width); await new Promise((r) => { requestAnimationFrame(r); setTimeout(r, 50); }); }   // a throttled window's frames can stall
+        return Math.round(min);
+      }, TOP);
+      await page.waitForSelector("#map-drawer .map-item");
+      await settled();
+      return { least, end: Math.round((await page.locator("#map-stage").boundingBox())!.width) };
+    };
+    const saved = (): number | undefined => { try { return JSON.parse(readFileSync(join(dir, "ui-prefs.json"), "utf8")).mapDrawerWidth as number; } catch { return undefined; } };
+    await select();
+    const first = await open();
+    assert.ok(first.least >= first.end - 1, `opening never squeezed the map below where it ends (${first.least} < ${first.end})`);
+    const grip = page.locator("#map-drawer-grip");
+    assert.deepEqual(await grip.evaluate((g) => ["role", "aria-orientation", "aria-label", "aria-valuemin", "tabindex"].map((a) => g.getAttribute(a))), ["separator", "vertical", "Resize contents", "320", "0"]);
+    const max = Number(await grip.getAttribute("aria-valuemax"));
+    const clamp = (w: number): number => Math.min(Math.max(w, 320), Math.max(320, max));
+    assert.equal(await settled(), clamp(4000), "the saved 4000 shown as wide as the window allows");
+    if (max > 320) assert.ok(first.end >= 359, `the map keeps 360 px (${first.end})`);
+    // a double-click chooses 400 (shown as wide as fits) and saves 400
+    await grip.dblclick();
+    assert.equal(await settled(), clamp(400));
+    await until(saved, (v) => v === 400, "the default saved");
+    // a drag 32 px right narrows it by 32 (never under 320), saved
+    const b = (await grip.boundingBox())!;
+    await page.mouse.move(b.x + b.width / 2, b.y + b.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(b.x + b.width / 2 + 32, b.y + b.height / 2, { steps: 4 });
+    await page.mouse.up();
+    const dragged = clamp(clamp(400) - 32);
+    assert.equal(await settled(), dragged);
+    await until(saved, (v) => v === dragged, "the dragged width saved");
+    // a reload keeps it
+    await page.reload();
+    await page.waitForSelector("#app");
+    await select();
+    await open();
+    assert.equal(await settled(), dragged, "the width survives a reload");
+    assert.equal(await drawerCss(), `${dragged}px`);
+    // the keyboard: ← and → move the edge 16 px (Shift 64), Home and End go to the minimum and maximum
+    await grip.focus();
+    const key = async (k: string, want: number): Promise<void> => {
+      await page.keyboard.press(k);
+      assert.equal(await settled(), want, k);
+      assert.equal(Number(await grip.getAttribute("aria-valuenow")), want, `${k}: aria-valuenow`);
+    };
+    await key("Shift+ArrowLeft", clamp(dragged + 64));
+    await key("ArrowRight", clamp(clamp(dragged + 64) - 16));
+    await key("Home", 320);
+    await key("End", clamp(max));
+    if (max > 320) assert.ok((await page.locator("#map-stage").boundingBox())!.width >= 359, "at the maximum the map keeps 360 px");
+    await until(saved, (v) => v === clamp(max), "the keyboard's width saved once the keys pause");
+    assert.equal(await page.evaluate(() => document.activeElement?.id), "map-drawer-grip", "focus stays on the handle");
+    assert.deepEqual(errors, []);
+  } finally { await done(app, dir); }
+});

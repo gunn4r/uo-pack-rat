@@ -3156,6 +3156,26 @@ test("[fast] PUT /api/ui-prefs keeps the House map's area labels shown or hidden
   } finally { await s2.close(); }
 });
 
+test("[fast] PUT /api/ui-prefs keeps the House map contents drawer's width (issue #10) across a restart: a whole number of px from 320 to 4000, nothing else", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "qm-uiprefs-drawer-"));
+  const put = (url: string, body: unknown): Promise<Response> => fetch(url + "/api/ui-prefs", { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
+  const s1 = await startServer(ensureLayout(resolveConfig(["--port", "0", "--data", dir], {})));
+  try {
+    assert.equal((await put(s1.url, { mapDrawerWidth: 512 })).status, 200);
+    for (const bad of [{ mapDrawerWidth: 319 }, { mapDrawerWidth: 4001 }, { mapDrawerWidth: 400.5 }, { mapDrawerWidth: "400" }, { mapDrawerWidth: null }]) assert.equal((await put(s1.url, bad)).status, 400, JSON.stringify(bad));
+  } finally { await s1.close(); }
+  const s2 = await startServer(ensureLayout(resolveConfig(["--port", "0", "--data", dir], {})));
+  try {
+    assert.deepEqual(asJson(await (await fetch(s2.url + "/api/ui-prefs")).json()), { ok: true, prefs: { mapDrawerWidth: 512 } });
+  } finally { await s2.close(); }
+  // a hand-edited width out of range reads as never chosen
+  writeFileSync(join(dir, "ui-prefs.json"), JSON.stringify({ mapDrawerWidth: 9000 }));
+  const s3 = await startServer(ensureLayout(resolveConfig(["--port", "0", "--data", dir], {})));
+  try {
+    assert.deepEqual(asJson(await (await fetch(s3.url + "/api/ui-prefs")).json()), { ok: true, prefs: {} });
+  } finally { await s3.close(); }
+});
+
 // A deleted, renamed or transferred character used to keep its card and worn set in the inventory
 // forever: the fold only drops what a newer scan of the same root or character replaces.
 test("[fast] POST /api/forget-character drops the character, its worn set, backpack and bank, and a rescan brings it back", async () => {

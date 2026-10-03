@@ -11,7 +11,7 @@
 import { bagLabel } from "../vault-lib.mts";
 import type { Container } from "../vault-lib.mts";
 import { state } from "./store.mts";
-import { $, el, toast, safeColor } from "./dom.mts";
+import { $, el, itemTip, toast, safeColor } from "./dom.mts";
 import { api } from "./api.mts";
 import { txt, box, button, confirmDialog, menu, tableFoot, input, select, switchControl, field, message, openDialog, meter, tag } from "./components.mts";
 import { relativeWhen, errorText } from "./messages.mts";
@@ -96,10 +96,10 @@ async function showMissing(r: Container, name: string): Promise<void> {
   let items: MissingApiResponse["items"];
   try { ({ items } = await api<MissingApiResponse>(`/api/missing?root=${+r.serial}`)); } catch (e) { toast(errorText(e), "bad"); return; }
   const close = button({ label: "Close", variant: "primary", onClick: () => dlg.close() });
-  const rows = [...items].sort((a, b) => a.name.localeCompare(b.name)).map((m) => el("tr", {},
+  const rows = [...items].sort((a, b) => a.name.localeCompare(b.name)).map((m) => itemTip(el("tr", {},
     el("td", {}, txt(m.name || `0x${m.serial.toString(16)}`)),
     el("td", { class: "num" }, txt(m.fewer ? `${m.fewer.toLocaleString("en-US")} fewer` : m.amount.toLocaleString("en-US"))),
-    el("td", {}, txt(relativeWhen(m.lastSeen)))));
+    el("td", {}, txt(relativeWhen(m.lastSeen)))), m, { focus: false }));   // its tooltip: the record drawn here (the item is gone from the inventory)
   const table = el("table", { class: "tbl", "aria-label": `Missing from ${name}` },
     el("colgroup", {}, el("col"), el("col", { style: "width:110px" }), el("col", { style: "width:140px" })),
     el("thead", {}, el("tr", {}, el("th", { scope: "col" }, txt("Item")), el("th", { scope: "col", class: "num" }, txt("Amount")), el("th", { scope: "col" }, txt("Last seen there")))),

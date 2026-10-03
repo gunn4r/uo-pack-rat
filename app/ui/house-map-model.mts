@@ -263,6 +263,19 @@ export function facetMapNote(reason: FacetMapReason | "error"): string {
 // Which chest a stack opens in the drawer: its top opened one (chests come top first), null when no scan opened any.
 export const drawerChest = (chests: readonly ChestView[]): number | null => chests.find((c) => c.opened)?.serial ?? null;
 export const drawerMeta = (c: ChestView, s: Pick<Stack, "letter" | "serials">): string => `In game: ${c.inGame} · Stack ${s.letter}, ${plural(s.serials.length, "chest")}`;
+// The drawer's width, dragged on its left edge or set from the keyboard (ui-prefs mapDrawerWidth): 400 px by default, at least DRAWER_MIN, and at most what leaves the map MAP_MIN px at the window's width (drawerMax, from the drawer's and the map's widths now).
+export const DRAWER_W = 400, DRAWER_MIN = 320, MAP_MIN = 360;
+export const drawerMax = (drawerW: number, mapW: number): number => Math.max(DRAWER_MIN, Math.floor(drawerW + mapW - MAP_MIN));
+export const clampDrawer = (w: number, max: number): number => Math.round(Math.min(Math.max(w, DRAWER_MIN), Math.max(DRAWER_MIN, max)));
+// A key on the focused handle: ← and → move the edge 16 px (64 with Shift) the way the arrow points, so ← widens the drawer; Home and End go to the minimum and maximum. Null for any other key.
+export function drawerKey(key: string, shift: boolean, w: number, max: number): number | null {
+  const step = shift ? 64 : 16;
+  if (key === "ArrowLeft") return clampDrawer(w + step, max);
+  if (key === "ArrowRight") return clampDrawer(w - step, max);
+  if (key === "Home") return DRAWER_MIN;
+  if (key === "End") return clampDrawer(max, max);
+  return null;
+}
 // How the drawer picks a chest of the stack: a tab each (the segmented control, which is for 2 to 4 choices) up to DRAWER_TABS_MAX chests, else a select. Each choice is the chest's code and name; a chest no scan opened is disabled, "Not opened yet".
 export const DRAWER_TABS_MAX = 4;
 export interface DrawerChoice { value: string; label: string; sub: string; disabled: boolean; title: string }

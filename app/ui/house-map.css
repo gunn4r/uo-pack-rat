@@ -6,12 +6,19 @@
 #tab-map .map-page > :is(.msg, .map-empty, .panel) { grid-column: 1 / -1; align-self: start; }
 /* The contents drawer: a column of its own after the panel, opened by growing from no width (its content laid out at full width inside, so it slides in rather than reflowing). Between 1100 and 1799 px the levels pane folds away while it is open, its column shrinking the same way (the top bar's level pills still switch levels), and comes back when it closes. Below 1100 px everything stacks in one column. */
 .map-stage { transition: margin var(--duration-slow) var(--ease-standard); }
-.map-side { width: 280px; transition: width var(--duration-slow) var(--ease-standard), padding var(--duration-slow) var(--ease-standard), border-width var(--duration-slow) var(--ease-standard), visibility var(--duration-slow); }
+.map-side { width: 280px; transition: width var(--duration-slow) var(--ease-standard), padding var(--duration-slow) var(--ease-standard), visibility var(--duration-slow); }   /* the border drops at once: easing out it would hold the pane 2 px wide to the end, taking them from the map */
 .map-side > * { min-width: calc(280px - 2 * var(--space-3) - 2 * var(--border-width-frame)); }
 #tab-map .map-page.has-drawer { grid-template-columns: auto minmax(0, 1fr) 340px auto; }
-.map-drawer { width: 400px; transition: width var(--duration-slow) var(--ease-standard); }
+/* Its width is --drawer-w on the page (house-map.mts's showDrawerW: 400 px unless its handle on the left edge set another); while the handle is dragged, or the drawer is measured before it opens, nothing animates. */
+.map-drawer { position: relative; width: var(--drawer-w, 400px); transition: width var(--duration-slow) var(--ease-standard); }
 .map-drawer.entering { width: 0; }
-.map-drawer > * { min-width: calc(400px - 2 * var(--border-width-frame)); }
+.map-drawer > * { min-width: calc(var(--drawer-w, 400px) - 2 * var(--border-width-frame)); }
+#tab-map .map-page.resizing :is(.map-drawer, .map-stage, .map-side) { transition: none; }
+#tab-map .map-page.resizing { cursor: col-resize; user-select: none; }
+.map-drawer > .map-drawer-grip { position: absolute; z-index: 1; inset: 0 auto 0 0; width: 8px; min-width: 0; cursor: col-resize; touch-action: none; }
+.map-drawer-grip::after { content: ""; position: absolute; left: 2px; top: 50%; width: 3px; height: 32px; transform: translateY(-50%); border-radius: var(--radius-full); background: var(--color-border-strong); }
+.map-drawer-grip:hover::after, .map-drawer-grip:focus-visible::after, .resizing .map-drawer-grip::after { background: var(--color-accent); height: 48px; }
+.map-drawer-grip:focus-visible { outline: 2px solid var(--color-focus); outline-offset: -2px; }
 @media (min-width: 1100px) and (max-width: 1799px) {
   #tab-map .map-page.has-drawer > .map-side { width: 0; padding-inline: 0; border-inline-width: 0; overflow: hidden; visibility: hidden; }
   #tab-map .map-page.has-drawer > .map-stage { margin-left: calc(-1 * var(--space-3)); }   /* over the folded pane's gap */
@@ -23,6 +30,7 @@
   .map-stage { transition: none; }
   .map-side > *, .map-drawer > * { min-width: 0; }
   .map-drawer { max-height: 80vh; }
+  .map-drawer > .map-drawer-grip { display: none; }   /* one column: the drawer is as wide as the page */
 }
 @media (prefers-reduced-motion: reduce) { .map-side, .map-stage, .map-drawer { transition: none; } }
 
@@ -217,7 +225,11 @@ a.map-where-mark:focus-visible .map-where-ring-in { stroke: var(--color-map-mark
 .map-bag[open] > .map-bag-head > svg { transform: rotate(90deg); }
 .map-bag-kids { margin-left: calc(var(--space-3) + 7px); border-left: var(--border-width) solid var(--color-border-strong); }
 .map-item { display: flex; flex-direction: column; gap: 2px; width: 100%; min-width: 0; padding: var(--space-1-5) var(--space-3); border: 0; border-bottom: var(--border-width) solid var(--color-border); border-radius: 0; background: transparent; color: var(--color-text); font: inherit; text-align: left; cursor: pointer; }
-.map-item:hover { background: var(--color-row-hover); }
+.map-item-row:hover > .map-item { background: var(--color-row-hover); }
+/* A row's actions (Highlight, Grab, Go to, ⋯) over its right end, shown on hover and focus; transparent rather than hidden the rest of the time, so Tab always reaches them. */
+.map-item-row { position: relative; }
+.map-item-acts { position: absolute; right: 0; top: 50%; transform: translateY(-50%); padding: 0 var(--space-1-5) 0 var(--space-2); opacity: 0; background: var(--color-row-hover); color: var(--color-on-row-hover); box-shadow: -8px 0 8px var(--color-row-hover); }
+.map-item-row:hover > .map-item-acts, .map-item-row:focus-within > .map-item-acts { opacity: 1; }
 .map-item:focus-visible { outline: 2px solid var(--color-focus); outline-offset: -2px; }
 .map-item-l1, .map-item-l2 { display: flex; align-items: center; gap: var(--space-2); min-width: 0; }
 .map-item-name { flex: 1 1 auto; font-weight: var(--weight-medium); }

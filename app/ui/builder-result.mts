@@ -7,7 +7,7 @@ import { OPTIMIZER_SLOTS, RESIST_KEYS, getRules, resistSkillBonus, totalsOf, req
 import type { EffectiveProfile, Item, OptItem, PropMap, ResistCap } from "../vault-lib.mts";
 import { state } from "./store.mts";
 import type { BuildMeta } from "./store.mts";
-import { $, el, label, fmtN, fmtSecs, fmtRunTime, slotLabel, rarCell, showItemTip, hideItemTip, toast, whereText } from "./dom.mts";
+import { $, el, label, fmtN, fmtSecs, fmtRunTime, slotLabel, rarCell, itemTip, toast, whereText } from "./dom.mts";
 import { box, txt, button, icon, badge, message, meter, switchControl, check, table, tableFoot, rowActions, tipWrap, tooltip, keyValue, token, copyText } from "./components.mts";
 import { sheetNode } from "./sheet.mts";
 import { bridgeActionReason, runBridgeAction, grabAll, grabbable } from "./bridge.mts";
@@ -23,15 +23,10 @@ const serialHex = (s: number): string => `0x${s.toString(16)}`;
 function keyProps(props: PropMap | undefined, n = 3): string {
   return Object.entries(props || {}).filter(([k, v]) => k !== "tagPenalty" && !k.endsWith("Pool") && v).sort((a, b) => Math.abs(b[1]) - Math.abs(a[1])).slice(0, n).map(([k, v]) => `${label(k)} ${v}`).join(" · ");
 }
-// A piece the item tooltip answers for: hovering it shows the tooltip (dom.mts's installTooltip reads
-// data-serial), and so does 400 ms of keyboard focus, as on an Inventory row.
-function tipTarget<T extends HTMLElement>(node: T, serial: number): T {
-  node.dataset.serial = String(serial);
-  node.tabIndex = 0;
+// A piece the item tooltip answers for (dom.mts's itemTip): on hover, and after 400 ms of keyboard focus.
+function tipTarget<T extends HTMLElement>(node: T, item: { serial: number; name: string }): T {
   node.classList.add("b-tip");
-  node.addEventListener("focus", () => { if (node.matches(":focus-visible")) showItemTip(serial, node); });
-  node.addEventListener("blur", () => hideItemTip());
-  return node;
+  return itemTip(node, item);
 }
 // One resist tile: its name in its resist colour, the value (before → after when there is a before) against
 // the requirement or cap, a meter and the outcome line, and under it the cap's override when the build has one
@@ -72,7 +67,7 @@ function currentSuitCard(name: string): HTMLElement {
   const sorted = [...worn].sort((a, b) => order(a) - order(b));
   const rows = sorted.map((it) => ({ cells: [slotLabel(it.slot), txt(it.name), rarCell(it), txt(keyProps(it.props) || "no properties", keyProps(it.props) ? "muted" : "faint")] }));
   const tbl = rows.length ? table({ label: "Worn now", columns: [{ label: "Slot", width: "18%" }, { label: "Wearing", width: "30%" }, { label: "Rarity", width: "18%" }, { label: "Key properties" }], rows }) : null;
-  tbl?.querySelectorAll("tbody tr").forEach((tr, i) => tipTarget(tr as HTMLTableRowElement, sorted[i]!.serial));
+  tbl?.querySelectorAll("tbody tr").forEach((tr, i) => tipTarget(tr as HTMLTableRowElement, sorted[i]!));
   return el("section", { class: "card b-flush", id: "b-current", "aria-label": `${name}'s current suit` },
     box("div", { class: "card-head" }, el("h2", {}, "Current suit"), txt(`What ${name} wears now, against the requirements`, "t-sm muted")),
     box("div", { class: "b-resists card-pad" }, ...tiles),
@@ -184,8 +179,8 @@ function planCard(current: OptSuit, suit: OptSuit, name: string, changes: string
     if (locked) ra.querySelector(".btn")?.classList.add("on");
     const where = !changed ? txt("") : item ? txt(item.equippedBy ? `worn by ${item.equippedBy}` : whereText(item.location?.text), "t-sm muted") : next ? txt("not in the current inventory", "t-sm faint") : txt("");
     // each piece's name answers for its own tooltip, the worn one and its replacement
-    return { cells: [slotLabel(slot), now ? tipTarget(txt(now.name, changed ? "muted" : ""), now.serial) : txt("Empty", "faint"),
-      !changed ? txt("keep", "muted") : next ? tipTarget(txt(next.name, "strong"), next.serial) : txt("nothing", "faint"),
+    return { cells: [slotLabel(slot), now ? tipTarget(txt(now.name, changed ? "muted" : ""), now) : txt("Empty", "faint"),
+      !changed ? txt("keep", "muted") : next ? tipTarget(txt(next.name, "strong"), next) : txt("nothing", "faint"),
       where, next && changed ? txt(keyProps(next.props) || "no properties", keyProps(next.props) ? "muted" : "faint") : txt(""), ra] };
   });
   const sw = switchControl({ label: "Show unchanged slots", checked: showUnchanged, onChange: (v) => { showUnchanged = v; rerender(); } });
@@ -236,7 +231,7 @@ function fetchCard(items: Item[], name: string): HTMLElement | null {
     const go = button({ label: "Go to", size: "sm", icon: "goto", disabled: !!goGate, onClick: () => runBridgeAction("goto", first) });
     const grab = button({ label: `Grab ${mine.length || list.length}`, size: "sm", icon: "grab", disabled: !!grabGate, onClick: () => grabAll(list, name) });
     const pieces = el("ul", { class: "b-fetch-pieces", "aria-label": `${plural(list.length, "piece")} to fetch` },
-      ...list.map((it) => el("li", {}, tipTarget(txt(it.name, "b-fetch-piece"), it.serial))));
+      ...list.map((it) => el("li", {}, tipTarget(txt(it.name, "b-fetch-piece"), it))));
     const contHex = cont ? serialHex(+cont.serial) : "";
     return box("div", { class: "b-fetch" },
       box("div", { class: "b-fetch-where" }, crumbsEl(where, contHex),
@@ -359,7 +354,7 @@ function showCompare(spec: () => CompareSpec): void {
   const group = (text: string): HTMLTableRowElement => tr("group", el("td", { colspan: cols.length + 1 }, txt(text, "caps")));
   const body: HTMLTableRowElement[] = [];
   if (s.settingsRow) body.push(group("Settings"), tr("", el("td", {}, "Changed from the first"), ...s.settingsRow.map((t) => el("td", { class: "muted" }, t))));
-  if (m.pieces.length) body.push(group(diffOnly ? "Pieces that differ" : "Pieces"), ...m.pieces.map((r) => tr("", el("td", {}, r.label), ...r.cells.map((c) => el("td", c.diff ? { class: "diff" } : {}, c.text)))));
+  if (m.pieces.length) body.push(group(diffOnly ? "Pieces that differ" : "Pieces"), ...m.pieces.map((r) => tr("", el("td", {}, r.label), ...r.cells.map((c) => el("td", c.diff ? { class: "diff" } : {}, c.serial ? tipTarget(txt(c.text), { serial: c.serial, name: c.text }) : c.text)))));
   if (m.totals.length) body.push(group(diffOnly ? "Totals that differ" : "Totals"), ...m.totals.map((r) => tr("", el("td", {}, r.label), ...r.values.map((v, i) => el("td", r.best[i] ? { class: "best" } : {}, fmtN(v).replace("-", "−"))))));
   body.push(group("Outcome"), ...s.outcomeRows.map((rowLabel, ri) => tr("", el("td", {}, rowLabel), ...cols.map((c) => el("td", {}, c.outcome[ri] || "")))));
   body.push(tr("", el("td", { class: "b-cmp-act" }, el("span", { class: "sr" }, "Actions")), ...cols.map((c) => el("td", { class: "b-cmp-act" }, c.action))));

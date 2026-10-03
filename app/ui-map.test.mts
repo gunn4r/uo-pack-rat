@@ -5,7 +5,7 @@ import { buildHouseModel } from "./house-model.mts";
 import { fixtureTileData, vaultHouse, roofHouse, courtyardHouse, castleHouse, foundationHouse, stairHouse, G } from "./house-fixture.mts";
 import type { Container, Item } from "./vault-lib.mts";
 import type { HouseArea, HouseModel, Stack } from "./ui/api-types.mts";
-import { project, tilePolygon, boxFaces, pts, paintOrder, boundsOf, fit, zoomAt, vbText, anchorOf, W, chestViews, colourOf, legendOf, chestLabel, cutAway, calloutLines, houseTotals, pickHouse, houseLabel, houseName, carryOver, carryOverText, PLAIN, chestCount, nearestInDirection, tiledataNote, stackWhere, plainGrid, sceneOf, drawnZs, CHEST_H, whereOf, whereTitle, FACET_SIZE, cropAround, facetMapUrl, markersOf, facetMapNote, parseRegion, markerRadii, contentsOf, contentsSummary, filterContents, drawerChest, drawerMeta, slotsText, drawerPicker, DRAWER_TABS_MAX, piecesOf, frontCorner, fitLabel, pillsOf, placePill, LABEL_FIT, areaOfStack, levelAreas, restName, unproject, tileAt, rectOf, sizeText, unionTiles, coveredCells, outlineOf, nextAreaId, nextAreaColor, moveCursor, clampTile, liveAreas, withOrphans, redrawFailed, AREA_COLORS, AREA_COLOR_NAMES, type ChestView, type ContentsNode } from "./ui/house-map-model.mts";
+import { project, tilePolygon, boxFaces, pts, paintOrder, boundsOf, fit, zoomAt, vbText, anchorOf, W, chestViews, colourOf, legendOf, chestLabel, cutAway, calloutLines, houseTotals, pickHouse, houseLabel, houseName, carryOver, carryOverText, PLAIN, chestCount, nearestInDirection, tiledataNote, stackWhere, plainGrid, sceneOf, drawnZs, CHEST_H, whereOf, whereTitle, FACET_SIZE, cropAround, facetMapUrl, markersOf, facetMapNote, parseRegion, markerRadii, contentsOf, contentsSummary, filterContents, drawerChest, drawerMeta, slotsText, drawerPicker, DRAWER_TABS_MAX, DRAWER_W, DRAWER_MIN, drawerMax, clampDrawer, drawerKey, piecesOf, frontCorner, fitLabel, pillsOf, placePill, LABEL_FIT, areaOfStack, levelAreas, restName, unproject, tileAt, rectOf, sizeText, unionTiles, coveredCells, outlineOf, nextAreaId, nextAreaColor, moveCursor, clampTile, liveAreas, withOrphans, redrawFailed, AREA_COLORS, AREA_COLOR_NAMES, type ChestView, type ContentsNode } from "./ui/house-map-model.mts";
 
 const td = fixtureTileData();
 const has = (cls: string, c: string): boolean => cls.split(" ").includes(c);
@@ -735,4 +735,26 @@ test("[fast] house map drawer: a stack opens its top opened chest; the header wo
   assert.equal(drawerMeta(view(3, true), s), "In game: Metal Chest · Stack A, 4 chests");
   assert.equal(slotsText(view(3, true)), "106 of 125 slots");
   assert.equal(slotsText(view(3, true, { fill: null })), "Fill unknown");
+});
+
+test("[fast] house map: the contents drawer is 400 px by default, at least 320, and at most what leaves the map 360 px", () => {
+  assert.deepEqual([DRAWER_W, DRAWER_MIN], [400, 320]);
+  assert.equal(drawerMax(400, 600), 640, "the map's 240 px above its 360 go to the drawer");
+  assert.equal(drawerMax(400, 300), 340, "a map already under 360 px takes the drawer down to give it back");
+  assert.equal(drawerMax(320, 100), 320, "never under the minimum");
+  assert.equal(clampDrawer(500.4, 640), 500);
+  assert.equal(clampDrawer(200, 640), 320);
+  assert.equal(clampDrawer(900, 640), 640);
+  assert.equal(clampDrawer(900, 200), 320, "a window too narrow for both keeps the minimum");
+});
+
+test("[fast] house map: the drawer's resize handle moves 16 px per arrow (64 with Shift) the way the arrow points, Home and End go to the minimum and maximum", () => {
+  assert.equal(drawerKey("ArrowLeft", false, 400, 640), 416, "← moves the edge left: wider");
+  assert.equal(drawerKey("ArrowRight", false, 400, 640), 384);
+  assert.equal(drawerKey("ArrowLeft", true, 400, 640), 464);
+  assert.equal(drawerKey("ArrowRight", true, 360, 640), 320, "clamped");
+  assert.equal(drawerKey("ArrowLeft", true, 620, 640), 640, "clamped");
+  assert.equal(drawerKey("Home", false, 500, 640), 320);
+  assert.equal(drawerKey("End", false, 500, 640), 640);
+  assert.equal(drawerKey("Enter", false, 500, 640), null);
 });

@@ -552,11 +552,16 @@ export function itemMenu(anchor: HTMLElement, it: Item): void {
   if (!it.gear && !state.inv?.containers[it.serial]) entries.push({ label: "Classify this…", icon: "sliders", onSelect: () => { void openClassify(it); } });
   menu(anchor, entries, { label: `More actions for ${it.name}` });
 }
-function actionsCell(it: Item): HTMLTableCellElement {
-  return el("td", { class: "act-cell", "data-no-tip": "" }, rowActions([
+// An item row's actions: Highlight, Grab and Go to (gated by the bridge, a disabled one saying why) and the ⋯ menu. The
+// House map's contents drawer shows the same on its rows.
+export function itemActions(it: Item): HTMLSpanElement {
+  return rowActions([
     ...ACTIONS.map(([action, text]) => ({ label: text, icon: action, disabled: bridgeActionReason(action, it), onClick: () => { runBridgeAction(action, it); } })),
     { label: "More actions", icon: "more" as const, onClick: (e: MouseEvent) => itemMenu(e.currentTarget as HTMLElement, it) },
-  ]));
+  ]);
+}
+function actionsCell(it: Item): HTMLTableCellElement {
+  return el("td", { class: "act-cell", "data-no-tip": "" }, itemActions(it));
 }
 
 let rowCache = new Map<number, HTMLTableRowElement>();
@@ -570,7 +575,8 @@ function rowFor(i: number, cols: ColDef[]): HTMLTableRowElement {
   if (p.groups) {
     const g = p.groups[i];
     if (!g) return skeletonRow(cols, i);
-    tr = el("tr", { class: "item", "data-index": i, "aria-rowindex": i + 2, tabindex: "-1" }, ...cols.map((c) => groupCell(c, g)));
+    // a group of one stack is that item, with its tooltip; several stacks may differ, so no one of them speaks for the group
+    tr = el("tr", { class: "item", ...(g.stacks === 1 ? { "data-serial": g.serial } : {}), "data-index": i, "aria-rowindex": i + 2, tabindex: "-1" }, ...cols.map((c) => groupCell(c, g)));
   } else {
     const it = p.rows[i];
     if (!it) return skeletonRow(cols, i);
