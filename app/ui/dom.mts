@@ -1,6 +1,6 @@
 // ui/dom.mts — DOM helpers, formatting/label helpers, rarity, and the in-game style hover tooltip.
 // Moved verbatim out of index.html's inline <script type="module"> (Task 4, the page split).
-import { SLOT_LABELS, labelOf, fullOf, tagInfo } from "../vault-lib.mts";
+import { SLOT_LABELS, labelOf, fullOf, tagInfo, gameName } from "../vault-lib.mts";
 import type { Item } from "../vault-lib.mts";
 import { EXTRA_COLS, rarityRank as rarityRankOf } from "../item-query.mts";
 import { state } from "./store.mts";
@@ -172,6 +172,8 @@ export function tipNode(it: TooltipItem): HTMLDivElement {
   const foot = [tier ? el("span", tierColor ? { style: `color:${tierColor}` } : {}, tier) : null, it.location ? el("span", { class: "muted tip-where" }, whereText(it.location.text)) : null].filter((x): x is HTMLSpanElement => !!x);
   return el("div", { class: "tipcard" },
     el("div", { class: "tip-head" }, el("span", { class: "strong tip-name", ...(tierColor ? { style: `color:${tierColor}` } : {}) }, qty + it.name), ...tagEls),
+    // The name the game uses, when the shown one differs (a Scroll of Transcendence's names its skill, issue #181).
+    gameName(it) !== it.name ? el("div", { class: "muted tip-game" }, `In game: ${gameName(it)}`) : null,
     body.length ? el("div", { class: "divider" }) : null,
     body.length ? el("div", { class: "tip-lines" }, ...body) : null,
     foot.length ? el("div", { class: "divider" }) : null,
