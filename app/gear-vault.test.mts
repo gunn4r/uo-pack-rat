@@ -906,6 +906,10 @@ test("[fast] profiles: ubwsAnyWeapon is on unless set false, and the schema take
   assert.equal(templateFrom({ ubwsAnyWeapon: false }).ubwsAnyWeapon, false);
   const schema = JSON.parse(readFileSync(join(HERE, "schema", "profiles.v2.schema.json"), "utf8")) as ValidatorSchema;
   assert.ok(validate(schema, { schemaVersion: 2, characters: { A: { ubwsAnyWeapon: false } }, templates: { t: templateFrom({}) } }).ok);
+  for (const g of ["characters", "templates"]) {
+    const r = validate(schema, { schemaVersion: 2, characters: {}, templates: {}, [g]: { A: { ubwsAnyWeapon: "yes" } } });
+    assert.match(r.errors[0]?.path || "", new RegExp(`^/${g}/A/ubwsAnyWeapon`), `PUT /api/profiles refuses a non-boolean in ${g}: ${JSON.stringify(r.errors)}`);
+  }
   assert.deepEqual(settingsDiff({}, { ubwsAnyWeapon: false }), ["Use Best Weapon Skill weapons held to their own skill"]);
   assert.deepEqual(settingsDiff({ ubwsAnyWeapon: false }, { ubwsAnyWeapon: true }), ["Use Best Weapon Skill weapons allowed"]);
   assert.deepEqual(settingsDiff({}, { ubwsAnyWeapon: true }), [], "absent means on");
