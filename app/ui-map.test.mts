@@ -1,11 +1,11 @@
-// ui-map.test.mts — app/ui/house-map-model.mts, the House map's pure rules (issue #10): the projection, tile and box polygons, the painter's order, a level's bounds and fit, the joins of a stack with the inventory and the Organize labels, the colour modes, the cut-away, callouts, totals, the house picker, keyboard moves, the plain grid, the scene of a level (castle speed included), the drawn areas (issue #10: which area holds a chest, the screen-to-tile inverse, rectangles, outlines, label spots, ids, colours, the drawing cursor, carry-over), and (issue #164) where a house is: its centre tile and copy line, the facet overview's crop, its markers and why it may be missing; and the search on the map (issue #10: its route, an item's container on the floor, the matches by container and stack, the left pane's counts, the callouts' row, the view it zooms to, which house holds a container and the matches elsewhere). Tags: [fast]. Run: node --test app/ui-map.test.mts
+// ui-map.test.mts — app/ui/house-map-model.mts, the House map's pure rules (issue #10): the projection, tile and box polygons, the painter's order, a level's bounds and fit, the joins of a stack with the inventory and the Organize labels, the colour modes, the cut-away, callouts, totals, the house picker, keyboard moves, the plain grid, the scene of a level (castle speed included), the drawn areas (issue #10: which area holds a chest, the screen-to-tile inverse, rectangles, outlines, label spots, ids, colours, the drawing cursor, carry-over), and (issue #164) where a house is: its centre tile and copy line, the facet overview's crop, its markers and why it may be missing; and the search on the map (issue #10: its route, an item's container on the floor, the matches by container and stack, the left pane's counts, the callouts' row, the view it zooms to, which house holds a container and the matches elsewhere), and the Stack plan (issue #10: the squeezed tracks, the cards and their rows, the areas and the keyboard). Tags: [fast]. Run: node --test app/ui-map.test.mts
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { buildHouseModel } from "./house-model.mts";
 import { fixtureTileData, vaultHouse, roofHouse, courtyardHouse, castleHouse, foundationHouse, stairHouse, G } from "./house-fixture.mts";
 import type { Container, Item } from "./vault-lib.mts";
 import type { HouseArea, HouseModel, Stack } from "./ui/api-types.mts";
-import { project, tilePolygon, boxFaces, pts, paintOrder, boundsOf, fit, zoomAt, vbText, anchorOf, W, chestViews, colourOf, legendOf, chestLabel, cutAway, calloutLines, houseTotals, pickHouse, houseLabel, houseName, carryOver, carryOverText, PLAIN, chestCount, nearestInDirection, tiledataNote, stackWhere, plainGrid, sceneOf, drawnZs, CHEST_H, whereOf, whereTitle, FACET_SIZE, cropAround, facetMapUrl, markersOf, facetMapNote, parseRegion, markerRadii, contentsOf, contentsSummary, filterContents, drawerChest, drawerMeta, slotsText, drawerPicker, DRAWER_TABS_MAX, parseMapHash, mapHash, floorContainerOf, positionWords, houseHits, levelHits, levelHitText, areaHitText, hitsSummary, searchCount, calloutHead, calloutRow, CALLOUT_W, CALLOUT_MIN, hitsView, houseIndex, elsewhereOf, outsideText, DRAWER_W, DRAWER_MIN, drawerMax, clampDrawer, drawerKey, piecesOf, frontCorner, fitLabel, pillsOf, placePill, LABEL_FIT, areaOfStack, levelAreas, restName, unproject, tileAt, rectOf, sizeText, unionTiles, coveredCells, outlineOf, nextAreaId, nextAreaColor, moveCursor, clampTile, liveAreas, withOrphans, redrawFailed, AREA_COLORS, AREA_COLOR_NAMES, type ChestView, type ContentsNode } from "./ui/house-map-model.mts";
+import { project, tilePolygon, boxFaces, pts, paintOrder, boundsOf, fit, zoomAt, vbText, anchorOf, W, chestViews, colourOf, legendOf, chestLabel, cutAway, calloutLines, houseTotals, pickHouse, houseLabel, houseName, carryOver, carryOverText, PLAIN, chestCount, nearestInDirection, tiledataNote, stackWhere, plainGrid, sceneOf, drawnZs, CHEST_H, whereOf, whereTitle, FACET_SIZE, cropAround, facetMapUrl, markersOf, facetMapNote, parseRegion, markerRadii, contentsOf, contentsSummary, filterContents, drawerChest, drawerMeta, slotsText, drawerPicker, DRAWER_TABS_MAX, parseMapHash, mapHash, floorContainerOf, positionWords, houseHits, levelHits, levelHitText, areaHitText, hitsSummary, searchCount, calloutHead, calloutRow, CALLOUT_W, CALLOUT_MIN, hitsView, houseIndex, elsewhereOf, outsideText, DRAWER_W, DRAWER_MIN, drawerMax, clampDrawer, drawerKey, piecesOf, frontCorner, fitLabel, pillsOf, placePill, LABEL_FIT, areaOfStack, levelAreas, restName, unproject, tileAt, rectOf, sizeText, unionTiles, coveredCells, outlineOf, nextAreaId, nextAreaColor, moveCursor, clampTile, liveAreas, withOrphans, redrawFailed, AREA_COLORS, AREA_COLOR_NAMES, planTracks, trackAt, gapText, stackPlan, planHead, planRows, bareText, planNeighbor, type ChestView, type ContentsNode } from "./ui/house-map-model.mts";
 
 const td = fixtureTileData();
 const has = (cls: string, c: string): boolean => cls.split(" ").includes(c);
@@ -873,4 +873,82 @@ test("[fast] house map links: which house holds each container (a drawn house's 
   assert.deepEqual(e.places, [{ name: "Ann's backpack", amount: 364 }]);
   assert.equal(outsideText(e), "569 more outside this house (Keep, Containers on the ground, and 1 more place).");
   assert.equal(outsideText(elsewhereOf([items[2]!], idx, containers, null)), "364 more outside this house (Ann's backpack).");
+});
+
+// ---------------------------------------------------------------- the Stack plan (issue #10)
+test("[fast] house map Stack plan: each run of empty columns or rows is one narrow track; a tile with a stack is a track of its own", () => {
+  const tile = (n: number) => ({ from: n, to: n, empty: false }), gap = (from: number, to: number) => ({ from, to, empty: true });
+  assert.deepEqual(planTracks([3, 4, 10, 11, 20]), [tile(3), tile(4), gap(5, 9), tile(10), tile(11), gap(12, 19), tile(20)], "a run of seven and one of eight");
+  assert.deepEqual(planTracks([1, 3]), [tile(1), gap(2, 2), tile(3)], "a gap of exactly one tile is a track too");
+  assert.deepEqual(planTracks([7]), [tile(7)], "a single tile");
+  assert.deepEqual(planTracks([5, 2, 2, 5]), [tile(2), gap(3, 4), tile(5)], "unsorted and repeated values: each once, in order, the edges are tiles");
+  assert.deepEqual(planTracks([]), [], "all empty: no tracks");
+  const t = planTracks([3, 4, 10]);
+  assert.deepEqual([trackAt(t, 3), trackAt(t, 7), trackAt(t, 10), trackAt(t, 2), trackAt(t, 11)], [0, 2, 3, -1, -1], "a value's track, -1 outside the plan");
+  assert.deepEqual([gapText(7), gapText(1)], ["7 tiles with nothing on them", "1 tile with nothing on it"]);
+});
+
+const letter = (m: HouseModel, x: number, y: number): string => m.stacks.find((s) => s.x === x && s.y === y)!.letter;
+// Stacks at hand-picked tiles, for plans with gaps (only what stackPlan reads).
+const sparse = (tiles: Array<[string, number, number, number]>): Pick<HouseModel, "stacks"> => ({ stacks: tiles.map(([letter, x, y, n]): Stack => ({ level: 0, x, y, serials: Array.from({ length: n }, (_, i) => x * 1000 + y * 10 + i), zs: [], spot: null, direction: "", letter })) });
+
+test("[fast] house map Stack plan: every stack of the level is a card at its column and row, in reading order, empty tiles between them kept, empty runs squeezed", () => {
+  const m = vault(), p = stackPlan(m, [], 0);
+  assert.deepEqual([p.cols.length, p.rows.length, p.cards.length, p.containers], [5, 5, 24, 120], "the dense vault: 5 × 5 tiles, no gap, 24 stacks of 5");
+  assert.deepEqual(p.empties, [{ col: 2, row: 2 }], "the teleporter's tile in the middle is an empty cell");
+  assert.deepEqual(p.cards.slice(0, 6).map((c) => [c.stack.x, c.stack.y, c.col, c.row]), [[3001, 1001, 0, 0], [3002, 1001, 1, 0], [3003, 1001, 2, 0], [3004, 1001, 3, 0], [3005, 1001, 4, 0], [3001, 1002, 0, 1]], "row by row, west to east");
+  assert.deepEqual(stackPlan(m, [], 1).cards, [], "a level with no stacks has no cards");
+  const s = stackPlan(sparse([["A", 0, 0, 4], ["B", 8, 0, 1], ["C", 8, 5, 2]]), [], 0);
+  assert.deepEqual(s.cols, [{ from: 0, to: 0, empty: false }, { from: 1, to: 7, empty: true }, { from: 8, to: 8, empty: false }]);
+  assert.deepEqual(s.rows, [{ from: 0, to: 0, empty: false }, { from: 1, to: 4, empty: true }, { from: 5, to: 5, empty: false }]);
+  assert.deepEqual(s.cards.map((c) => [c.stack.letter, c.col, c.row]), [["A", 0, 0], ["B", 2, 0], ["C", 2, 2]]);
+  assert.deepEqual(s.empties, [{ col: 0, row: 2 }], "only tile cells are empty cells: the gap tracks are captions");
+  assert.equal(s.containers, 7);
+});
+
+test("[fast] house map Stack plan: a card is its stack's name and count, then its containers top first with code, label, in-game name and fill out of the real maximum, or Not opened yet", () => {
+  assert.deepEqual(planHead({ letter: "C", serials: [1, 2, 3, 4] }), { title: "Stack C", count: "4 containers" });
+  assert.deepEqual(planHead({ letter: "F", serials: [1] }), { title: "Stack F", count: "1 container" });
+  const v = (over: Partial<ChestView>): ChestView => ({ serial: 1, code: "C1", name: "Metal Chest", inGame: "Metal Chest", color: null, fill: { items: 41, max: 125 }, opened: true, items: 41, z: 7, ...over });
+  const rows = planRows([v({ serial: 4, code: "C4", fill: { items: 0, max: 125 } }), v({ serial: 3, code: "C3", name: "Runes & books", color: "#2f7f7f", fill: { items: 41, max: 240 } }), v({ serial: 2, code: "C2", name: "chest", inGame: "chest", opened: false, fill: null }), v({ serial: 1, code: "C1", fill: null })]);
+  assert.deepEqual(rows.map((r) => r.code), ["C4", "C3", "C2", "C1"], "top first, as chestViews gives them");
+  assert.deepEqual(rows[0], { serial: 4, code: "C4", label: null, name: "Metal Chest", opened: true, fill: { items: 0, max: 125 }, fillText: "0/125" });
+  assert.deepEqual([rows[1]!.label, rows[1]!.name, rows[1]!.fillText], [{ name: "Runes & books", color: "#2f7f7f" }, "Metal Chest", "41/240"], "a label as a chip in its color, the in-game name after it, the fill out of the container's own maximum");
+  assert.deepEqual([rows[2]!.opened, rows[2]!.fill, rows[2]!.fillText], [false, null, "Not opened yet"]);
+  assert.equal(rows[3]!.fillText, "Fill unknown");
+  const m = vault(), s = m.stacks[0]!, inv = { containers: {}, rootCounts: {} };
+  assert.deepEqual(planRows(chestViews(m, s, inv, {})).map((r) => r.serial), [...s.serials].reverse(), "a real stack: top first");
+});
+
+test("[fast] house map Stack plan: an area's cards sit on its tint (a box per rectangle, clipped to the plan, its pill on the top-left one); areas with no container are named under the plan; zoomed to an area only its tiles show", () => {
+  const m = vault(), area = (id: string, name: string, rects: HouseArea["rects"]): HouseArea => ({ id, name, level: 0, color: "area-3", rects });
+  const north = area("a1", "North row", [{ x0: 2990, y0: 1001, x1: 3005, y1: 1001 }]), corner = area("a2", "Corner", [{ x0: 3004, y0: 1004, x1: 3005, y1: 1005 }, { x0: 3001, y0: 1003, x1: 3001, y1: 1003 }]), yard = area("a3", "The Yard", [{ x0: 3100, y0: 1100, x1: 3101, y1: 1101 }]), up: HouseArea = { ...area("a4", "Attic", [{ x0: 3000, y0: 1000, x1: 3006, y1: 1006 }]), level: 1 };
+  const p = stackPlan(m, [north, corner, yard, up], 0);
+  assert.deepEqual(p.areas.map((a) => [a.area.id, a.containers, a.boxes]), [
+    ["a1", 25, [{ col0: 0, col1: 4, row0: 0, row1: 0 }]],
+    ["a2", 25, [{ col0: 0, col1: 0, row0: 2, row1: 2 }, { col0: 3, col1: 4, row0: 3, row1: 4 }]],
+  ], "a rectangle reaching past the plan is clipped to it; the top-left box comes first, where the pill goes");
+  assert.deepEqual(p.bare, ["The Yard"], "an area on the level with no container; another level's are not this plan's");
+  assert.equal(bareText(p.bare), "The Yard: no containers.");
+  assert.equal(bareText(["The Yard", "Porch"]), "The Yard, Porch: no containers.");
+  assert.deepEqual(p.cards.filter((c) => c.area).map((c) => [c.stack.letter, c.area!.id]).length, 10);
+  assert.equal(p.cards.find((c) => c.stack.x === 3001 && c.stack.y === 1001)!.area, north);
+  const z = stackPlan(m, [north, corner, yard], 0, "a2");
+  assert.deepEqual([z.cards.length, z.containers, z.cols.length, z.rows.length], [5, 25, 4, 3], "only the area's tiles: columns 3001 to 3005 squeezed between, rows 1003 to 1005");
+  assert.deepEqual(z.cols.map((c) => c.empty), [false, true, false, false]);
+  assert.deepEqual([z.areas.map((a) => a.area.id), z.bare], [["a2"], []]);
+  const s = stackPlan(sparse([["A", 0, 0, 1], ["B", 8, 0, 1]]), [area("g", "Gap only", [{ x0: 2, y0: 0, x1: 5, y1: 0 }]), area("h", "Holds A", [{ x0: 0, y0: 0, x1: 0, y1: 0 }, { x0: 3, y0: 0, x1: 4, y1: 0 }])], 0);
+  assert.deepEqual(s.areas.map((a) => [a.area.id, a.boxes]), [["h", [{ col0: 0, col1: 0, row0: 0, row1: 0 }]]], "a rectangle over squeezed tracks only is left out");
+  assert.deepEqual(s.bare, ["Gap only"]);
+});
+
+test("[fast] house map Stack plan: the arrow keys move to the neighboring card on the plan's grid, over an empty tile, none past the edge", () => {
+  const m = vault(), p = stackPlan(m, [], 0), at = (x: number, y: number) => letter(m, x, y);
+  assert.equal(planNeighbor(p, at(3002, 1003), "right"), at(3004, 1003), "over the empty middle tile");
+  assert.equal(planNeighbor(p, at(3003, 1002), "down"), at(3003, 1004));
+  assert.equal(planNeighbor(p, at(3001, 1001), "left"), null);
+  assert.equal(planNeighbor(p, at(3001, 1001), "up"), null);
+  assert.equal(planNeighbor(p, at(3005, 1005), "up"), at(3005, 1004));
+  const s = stackPlan(sparse([["A", 0, 0, 1], ["B", 8, 0, 1], ["C", 8, 5, 1]]), [], 0);
+  assert.deepEqual([planNeighbor(s, "A", "right"), planNeighbor(s, "B", "down"), planNeighbor(s, "C", "left")], ["B", "C", "A"]);
 });

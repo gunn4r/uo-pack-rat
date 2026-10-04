@@ -9,6 +9,7 @@
 .map-stage { transition: margin var(--duration-slow) var(--ease-standard); }
 .map-side { width: 280px; transition: width var(--duration-slow) var(--ease-standard), padding var(--duration-slow) var(--ease-standard), visibility var(--duration-slow); }   /* the border drops at once: easing out it would hold the pane 2 px wide to the end, taking them from the map */
 .map-side > * { min-width: calc(280px - 2 * var(--space-3) - 2 * var(--border-width-frame)); }
+#tab-map .map-page.plan { grid-template-columns: auto minmax(0, 1fr) 340px; }
 #tab-map .map-page.has-drawer { grid-template-columns: auto minmax(0, 1fr) 340px auto; }
 /* Its width is --drawer-w on the page (house-map.mts's showDrawerW: 400 px unless its handle on the left edge set another); while the handle is dragged, or the drawer is measured before it opens, nothing animates. */
 .map-drawer { position: relative; width: var(--drawer-w, 400px); transition: width var(--duration-slow) var(--ease-standard); }
@@ -20,18 +21,20 @@
 .map-drawer-grip::after { content: ""; position: absolute; left: 2px; top: 50%; width: 3px; height: 32px; transform: translateY(-50%); border-radius: var(--radius-full); background: var(--color-border-strong); }
 .map-drawer-grip:hover::after, .map-drawer-grip:focus-visible::after, .resizing .map-drawer-grip::after { background: var(--color-accent); height: 48px; }
 .map-drawer-grip:focus-visible { outline: 2px solid var(--color-focus); outline-offset: -2px; }
+/* The Stack plan folds the levels pane in the same band, so about five cards fit across; its area pills carry the areas meanwhile. */
 @media (min-width: 1100px) and (max-width: 1799px) {
-  #tab-map .map-page.has-drawer > .map-side { width: 0; padding-inline: 0; border-inline-width: 0; overflow: hidden; visibility: hidden; }
-  #tab-map .map-page.has-drawer > .map-stage { margin-left: calc(-1 * var(--space-3)); }   /* over the folded pane's gap */
+  #tab-map .map-page:is(.has-drawer, .plan) > .map-side { width: 0; padding-inline: 0; border-inline-width: 0; overflow: hidden; visibility: hidden; }
+  #tab-map .map-page:is(.has-drawer, .plan) > .map-stage { margin-left: calc(-1 * var(--space-3)); }   /* over the folded pane's gap */
 }
 @media (max-width: 1099px) {
-  #tab-map .map-page, #tab-map .map-page.has-drawer { grid-template-columns: minmax(0, 1fr); grid-auto-rows: max-content; overflow: auto; }
+  #tab-map .map-page, #tab-map .map-page:is(.has-drawer, .plan) { grid-template-columns: minmax(0, 1fr); grid-auto-rows: max-content; overflow: auto; }
   #tab-map .map-stage { min-height: 420px; }
   .map-side, .map-drawer, .map-drawer.entering { width: auto; transition: none; }
   .map-stage { transition: none; }
   .map-side > *, .map-drawer > * { min-width: 0; }
   .map-drawer { max-height: 80vh; }
   .map-drawer > .map-drawer-grip { display: none; }   /* one column: the drawer is as wide as the page */
+  #tab-map .sp-wrap { position: static; overflow-x: auto; }   /* the Stack plan grows with its cards and the page scrolls, not a box of its own */
 }
 @media (prefers-reduced-motion: reduce) { .map-side, .map-stage, .map-drawer { transition: none; } }
 
@@ -287,3 +290,42 @@ a.map-where-mark:focus-visible .map-where-ring-in { stroke: var(--color-map-mark
 .map-hit-item:focus-visible { outline: 2px solid var(--color-focus); outline-offset: 1px; }
 .map-hits-levels { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-1-5); }
 .map-hits-foot { display: flex; flex-direction: column; gap: var(--space-1); padding-top: var(--space-2); border-top: var(--border-width) solid var(--color-border); }
+/* The Stack plan (issue #10): the level from above, a card per stack on a grid of tile tracks (house-map.mts drawPlan sets the tracks), each run of empty tiles a narrow captioned track; an area is its color's tint and outline behind its cards, its name on a pill at its top-left. It scrolls inside its pane, never the page. */
+.sp-wrap { position: absolute; inset: 0; overflow: auto; padding: var(--space-3); display: flex; flex-direction: column; gap: var(--space-1); background: var(--color-surface-sunken); }
+.sp-bar { display: flex; align-items: baseline; justify-content: space-between; flex-wrap: wrap; gap: var(--space-1) var(--space-3); }
+.sp-count { flex: none; }
+.sp-frame { padding: var(--space-4) 6px 6px; }
+.sp-grid { --plan-gap: 26px; --plan-card: 168px; display: grid; gap: var(--space-2); }
+.sp-cards { display: contents; list-style: none; margin: 0; padding: 0; }
+.sp-area { margin: -6px; border: 1.5px solid var(--area); border-radius: var(--radius-lg); background: color-mix(in srgb, var(--area) 9%, transparent); }
+.sp-area-name { position: relative; z-index: 2; top: -11px; left: 10px; display: inline-flex; align-items: center; gap: var(--space-1-5); padding: 1px var(--space-2); border: var(--border-width) solid var(--area); border-radius: var(--radius-full); background: color-mix(in srgb, var(--area) 22%, var(--color-surface)); color: var(--color-text); box-shadow: var(--shadow-chip); font: inherit; font-size: 12px; line-height: 1.3; font-weight: var(--weight-medium); white-space: nowrap; }
+button.sp-area-name { cursor: pointer; }
+button.sp-area-name:hover { background: color-mix(in srgb, var(--area) 38%, var(--color-surface)); }
+button.sp-area-name:focus-visible { outline: 2px solid var(--color-focus); outline-offset: 2px; }
+.sp-area-name .badge { height: 16px; padding: 0 6px; }
+.sp-empty { border: 1px dashed color-mix(in srgb, var(--color-border-strong) 60%, transparent); border-radius: var(--radius-md); min-height: 40px; }
+.sp-gap { display: flex; align-items: center; justify-content: center; min-width: 0; overflow: hidden; color: var(--color-text-muted); font-size: var(--text-xs); line-height: var(--lh-xs); white-space: nowrap; }
+.sp-gap.down { writing-mode: vertical-rl; transform: rotate(180deg); }
+.sp-gap:not(.down) { justify-content: flex-start; padding-left: var(--space-2); }   /* a squeezed row spans the whole plan: its caption starts at the left, where it is in view */
+.sp-card { position: relative; z-index: 1; align-self: start; min-width: 0; display: flex; flex-direction: column; background: var(--color-surface); border: var(--border-width) solid var(--color-border-strong); border-radius: var(--radius-md); box-shadow: var(--shadow-chip); overflow: hidden; cursor: pointer; }
+.sp-card:hover { border-color: var(--color-accent); }
+.sp-card:focus-visible { outline: 2px solid var(--color-focus); outline-offset: 2px; }   /* an outline, so the selected and matching cards' box-shadows never hide it */
+.sp-card.sel { border-color: var(--color-accent); box-shadow: 0 0 0 1px var(--color-accent); }
+.sp-card-head { display: flex; align-items: baseline; justify-content: space-between; gap: var(--space-2); padding: 3px var(--space-2); line-height: 18px; background: var(--color-surface-subtle); border-bottom: var(--border-width) solid var(--color-border); }
+.sp-rows { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
+.sp-row { display: grid; grid-template-columns: auto minmax(0, 1fr); column-gap: var(--space-1-5); padding: 3px var(--space-2); line-height: 18px; border-top: var(--border-width) solid var(--color-border); }
+.sp-row:first-child { border-top: 0; }
+.sp-row > .mono { grid-row: span 2; padding-top: 1px; min-width: calc(var(--code-w, 2) * 1ch); }   /* the card's longest code (house-map.mts planCard), in the code's own font, so every row of a card lines up */
+.sp-l1, .sp-l2, .sp-hitline { display: flex; align-items: center; gap: var(--space-1-5); min-width: 0; }
+.sp-l1 > .ellip { flex: 1 0 40%; }
+.sp-hitline > .ellip { flex: 1 1 auto; }
+.sp-chip { flex: 0 1 auto; min-width: 0; height: 17px; padding: 0 6px; overflow: hidden; text-overflow: ellipsis; display: block; line-height: 15px; border: var(--border-width) solid var(--chip, var(--color-border-strong)); background: color-mix(in srgb, var(--chip, var(--color-surface-sunken)) 22%, var(--color-surface)); color: var(--color-text); }
+.sp-l2 > .meter { flex: 1 1 auto; min-width: 24px; height: 5px; }
+.sp-l2 > .num { flex: none; line-height: 14px; color: var(--color-text-muted); }
+.sp-hitline { grid-column: 2; }
+/* while searching: a matching card is outlined in gold, its matching rows marked with a gold bar on a light gold wash and the items named; its other rows dim, and cards with no match fade */
+.sp-card.faded { opacity: 0.38; }
+.sp-card.has-hit { border-color: var(--color-highlight); box-shadow: 0 0 0 1px var(--color-highlight), var(--shadow-chip); }
+.sp-card.has-hit.sel { box-shadow: 0 0 0 1px var(--color-highlight), 0 0 0 3px var(--color-accent); }
+.sp-card.has-hit .sp-row:not(.hit) { opacity: 0.5; }
+.sp-row.hit { background: color-mix(in srgb, var(--color-highlight) 16%, var(--color-surface)); box-shadow: inset 3px 0 0 var(--color-highlight); }

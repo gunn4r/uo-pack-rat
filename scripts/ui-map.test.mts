@@ -1,4 +1,4 @@
-// ui-map.test.mts — [slow]: the House map (issue #10) in the real Electron window over a seeded data folder (the dense vault and the courtyard house of app/house-fixture.mts, their chests from app/organize-fixture.mts, a synthetic tiledata.mul behind a fake TazUO launcher): the nav entry, the picker and level pills, a stale deep link, the no-tiledata note, the drawing in both views, callouts, selection, cut-away, keyboard (and a walk of the screen by keyboard alone that keeps focus through every redraw), pan and zoom, the detail panel's actions, the colour modes, a chest no scan opened, the plain grid over the demo scans, the empty state, the Settings UO folder card, where the house is (coordinates, the facet overview and its markers, and the world map lightbox, issue #164), the player's areas (issue #10: drawn by a mouse drag and by the keyboard alone, named, renamed and deleted, the counts and the tint, carried over to a redesigned house), the search on the map and Show on map (issue #10: ghosts, callouts, the panel list, the route, the elsewhere note, the Inventory and Containers links), the 1000 × 700 layout and contrast in both theme families. Skipped when electron or playwright is absent, or under TEST_SKIP_ELECTRON.
+// ui-map.test.mts — [slow]: the House map (issue #10) in the real Electron window over a seeded data folder (the dense vault and the courtyard house of app/house-fixture.mts, their chests from app/organize-fixture.mts, a synthetic tiledata.mul behind a fake TazUO launcher): the nav entry, the picker and level pills, a stale deep link, the no-tiledata note, the drawing in both views, callouts, selection, cut-away, keyboard (and a walk of the screen by keyboard alone that keeps focus through every redraw), pan and zoom, the detail panel's actions, the colour modes, a chest no scan opened, the plain grid over the demo scans, the empty state, the Settings UO folder card, where the house is (coordinates, the facet overview and its markers, and the world map lightbox, issue #164), the player's areas (issue #10: drawn by a mouse drag and by the keyboard alone, named, renamed and deleted, the counts and the tint, carried over to a redesigned house), the search on the map and Show on map (issue #10: ghosts, callouts, the panel list, the route, the elsewhere note, the Inventory and Containers links), the Stack plan (issue #10: every container listed, a row selecting its stack, the keyboard, the search marking rows, the layout at 1000 and 1440 px), the 1000 × 700 layout and contrast in both theme families. Skipped when electron or playwright is absent, or under TEST_SKIP_ELECTRON.
 import test from "node:test";
 import assert from "node:assert/strict";
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
@@ -1376,6 +1376,126 @@ test("[slow] Show on map: an Inventory item's ⋯ menu and a Containers view row
     await page.getByRole("menuitem", { name: /Show on map/ }).click();
     await page.waitForSelector(`#map-svg [data-stack="${front}"].sel`);
     assert.equal(await page.locator("#map-panel li[data-chest]").count(), 5);
+    assert.deepEqual(errors, []);
+  } finally { await done(app, dir); }
+});
+
+// ---------------------------------------------------------------- the Stack plan (issue #10)
+const chestsOf = (page: Page, sel: string): Promise<number[]> => page.locator(sel).evaluateAll((es) => es.map((e) => Number((e as HTMLElement).dataset.chest)));
+// Whether a plan card is wholly inside the pane that scrolls it (the plan, or the page below 1100 px).
+const cardInView = (page: Page, letter: string): Promise<boolean> => page.evaluate((l) => {
+  const r = document.querySelector(`#map-plan .sp-card[data-stack="${l}"]`)!.getBoundingClientRect();
+  return ["#map-plan", "#map-body"].every((sel) => { const b = document.querySelector(sel)!.getBoundingClientRect(); return r.top >= b.top - 1 && r.bottom <= b.bottom + 1 && r.left >= b.left - 1 && r.right <= b.right + 1; });
+}, letter);
+const scrollAway = (page: Page): Promise<void> => page.evaluate(() => { for (const sel of ["#map-plan", "#map-body"]) { const e = document.querySelector(sel)!; e.scrollTop = 1e6; e.scrollLeft = 1e6; } });
+const sideways = (page: Page): Promise<{ page: number; body: number }> => page.evaluate(() => {
+  const over = (sel: string): number => { const e = document.querySelector(sel) as HTMLElement; return e.scrollWidth - e.clientWidth; };
+  return { page: over("html"), body: over("#map-body") };
+});
+
+test("[slow] House map Stack plan: lists every container of the dense vault, a card per stack with its containers top first, the area on its tint; a row selects its stack, fills the panel and opens it in the drawer; the keyboard walks the cards; New area waits for a drawing view; nothing is clipped or scrolls sideways (1024 × 768)", async (t) => {
+  const why = unavailable();
+  if (why) return t.skip(why);
+  const { dir } = seed({ items: true, areas: true });
+  const { app, page, errors } = await launch(dir, { want: { width: 1024, height: 768 } });
+  try {
+    await go(page, `#/map/${VAULT}`, "#map-svg .map-stack");
+    await page.locator('#map-view [data-value="plan"]').click();
+    await page.waitForSelector("#map-plan .sp-card");
+    assert.equal(await page.locator('#map-view [data-value="plan"]').getAttribute("aria-checked"), "true");
+    assert.deepEqual([await page.locator("#map-svg").count(), await page.locator("#map-canvas .map-zoom").count(), await page.locator("#map-pins").count()], [0, 0, 0], "no drawing, zoom buttons or pins in the plan");
+    // every container once, a card per stack, the teleporter's tile an empty cell
+    assert.equal(await page.locator("#map-plan .sp-card").count(), 24);
+    assert.deepEqual((await chestsOf(page, "#map-plan .sp-row")).sort((a, b) => a - b), vaultModel.stacks.flatMap((s) => s.serials).sort((a, b) => a - b));
+    assert.equal(await page.locator("#map-plan .sp-empty").count(), 1);
+    assert.match(await page.locator("#map-plan .sp-bar").textContent() ?? "", /^Seen from above, north up\..*24 stacks · 120 containers$/);
+    const nw = vaultModel.stacks.find((s) => s.x === 3001 && s.y === 1001)!, card = page.locator(`#map-plan .sp-card[data-stack="${nw.letter}"]`);
+    assert.deepEqual(await chestsOf(page, `#map-plan .sp-card[data-stack="${nw.letter}"] .sp-row`), [...nw.serials].reverse(), "top first");
+    assert.equal(await card.locator(".sp-card-head").textContent(), `Stack ${nw.letter}5 containers`);
+    assert.equal(await card.getAttribute("aria-label"), `Stack ${nw.letter}, 5 containers, North row`);
+    assert.equal(await card.locator(`.sp-row[data-chest="${LABELLED}"] .sp-chip`).textContent(), "Reagents", "the label as a chip");
+    assert.match(await card.locator(`.sp-row[data-chest="${LABELLED}"]`).textContent() ?? "", /Metal Chest\d+\/125$/, "the in-game name and the fill out of the container's maximum");
+    assert.match(await page.locator("#map-plan .sp-area .sp-area-name").textContent() ?? "", /^North row25$/, "the area's pill and its count");
+    // drawing waits for a drawing view
+    const newArea = page.locator("#map-new-area-0");
+    assert.equal(await newArea.isDisabled(), true);
+    assert.equal(await newArea.getAttribute("title"), "Switch to Game angle or Top-down to draw");
+    // a container row selects its stack, fills the panel and opens that container in the drawer
+    await card.locator(`.sp-row[data-chest="${UNDER}"]`).click();
+    await page.waitForSelector(`#map-plan .sp-card.sel[data-stack="${nw.letter}"]`);
+    assert.equal(await page.locator("#map-panel h2").first().textContent(), `Stack ${nw.letter}`);
+    assert.equal(await page.locator("#map-panel li[data-chest]").count(), 5);
+    await page.waitForSelector("#map-drawer");
+    assert.equal(await page.inputValue("#map-drawer-chest"), String(UNDER));
+    // Esc closes the drawer, Esc again clears the selection with focus on the card; the arrows move, Enter selects
+    await page.keyboard.press("Escape");
+    await page.waitForSelector("#map-drawer", { state: "detached" });
+    assert.equal(await page.evaluate(() => (document.activeElement as HTMLElement | null)?.dataset.stack), nw.letter, "a drawer opened from a row gives focus back to its card");
+    await page.keyboard.press("Escape");
+    await page.waitForSelector("#map-plan .sp-card.sel", { state: "detached" });
+    assert.equal(await page.evaluate(() => (document.activeElement as HTMLElement | null)?.dataset.stack), nw.letter);
+    await page.keyboard.press("ArrowRight");
+    await page.keyboard.press("ArrowDown");
+    const next = letter(vaultModel, 3002, 1002);
+    assert.equal(await page.evaluate(() => (document.activeElement as HTMLElement | null)?.dataset.stack), next);
+    assert.equal(await page.locator('#map-plan .sp-card[tabindex="0"]').getAttribute("data-stack"), next, "one tab stop, on the focused card");
+    await page.keyboard.press("Enter");
+    await page.waitForSelector(`#map-plan .sp-card.sel[data-stack="${next}"]`);
+    // the page never scrolls sideways and the level pills show whole: stacked at 1000 px, the levels pane folded at 1440
+    // A CI runner's screen may be smaller than 1440 px (fitWindow keeps the window inside it): the levels pane folds only when the window really is in the 1100–1799 px band.
+    for (const width of [1000, 1440]) {
+      const real = await fitWindow(app, page, { width, height: 768 });
+      if (real.width >= 1100 && real.width < 1800) await page.waitForFunction(() => getComputedStyle(document.querySelector(".map-side")!).visibility === "hidden", undefined, { timeout: 10_000 });   // the levels pane folds so the cards fit
+      const l = await sideways(page);
+      assert.deepEqual([l.page, l.body], [0, 0], `nothing scrolls sideways at ${real.width} px`);
+      assert.deepEqual(await clippedPills(page), [], `the level pills show whole at ${real.width} px`);
+    }
+    // back to the game angle: the drawing again, the selection kept
+    await page.locator('#map-view [data-value="angle"]').click();
+    await page.waitForSelector(`#map-svg [data-stack="${next}"].sel`);
+    assert.deepEqual(errors, []);
+  } finally { await done(app, dir); }
+});
+
+test("[slow] House map Stack plan: a search scrolls to its first matching card, marks the matching rows with the items found, fades the cards with no match and lists the matches in the panel, with no pins; Show on map scrolls to its card (1024 × 768)", async (t) => {
+  const why = unavailable();
+  if (why) return t.skip(why);
+  const dir = seedRubies();
+  const { app, page, errors } = await launch(dir, { want: { width: 1024, height: 768 } });
+  try {
+    await go(page, `#/map/${VAULT}`, "#map-svg .map-stack");
+    await page.locator('#map-view [data-value="plan"]').click();
+    await page.waitForSelector("#map-plan .sp-card");
+    assert.equal(await page.locator("#map-plan").getAttribute("role"), null);
+    assert.equal(await page.locator("#map-plan .sp-cards").getAttribute("role"), "list", "explicit list semantics on the display: contents list");
+    assert.equal(await page.locator("#map-plan .sp-card").first().getAttribute("role"), "listitem");
+    // a new search brings its first matching card into view
+    await scrollAway(page);
+    const back = letter(vaultModel, 3001, 1001), front = letter(vaultModel, 3005, 1005);
+    assert.equal(await cardInView(page, back), false);
+    await page.fill("#map-q", "ruby");
+    await page.waitForSelector("#map-plan .sp-row.hit");
+    await page.waitForFunction((l) => document.querySelector("#map-plan .sp-card.has-hit")?.getAttribute("data-stack") === l, back);
+    await page.waitForTimeout(200);
+    assert.equal(await cardInView(page, back), true, "the first matching card is scrolled into view");
+    assert.deepEqual((await chestsOf(page, "#map-plan .sp-row.hit")).sort(), [FILLED.at(-1)!, RUBY_FRONT].sort());
+    assert.equal(await page.locator("#map-plan .sp-card.has-hit").count(), 2);
+    assert.equal(await page.locator("#map-plan .sp-card.faded").count(), 22);
+    assert.equal(await page.locator(`#map-plan .sp-row[data-chest="${RUBY_FRONT}"] .sp-hitline`).textContent(), "Ruby × 1");
+    assert.equal(await page.locator(`#map-plan .sp-row[data-chest="${RUBY_FRONT}"] .sp-hitline`).getAttribute("title"), "Ruby × 1");
+    assert.equal(await page.locator("#map-pins").count(), 0);
+    assert.equal(await page.locator("#map-hits-title").textContent(), "2 items in 2 containers");
+    // a match in the panel selects its stack in the plan
+    await page.locator(`#map-panel .map-hit[data-chest="${RUBY_FRONT}"] .map-hit-pick`).click();
+    await page.waitForSelector(`#map-plan .sp-card.sel[data-stack="${front}"]`);
+    // Show on map with the plan up: the container's card selected and scrolled into view
+    await page.fill("#map-q", "");
+    await go(page, "#/containers", `tr[data-root="${RUBY_FRONT}"]`);
+    await page.locator(`tr[data-root="${RUBY_FRONT}"] .cont-act button`).click();
+    await page.getByRole("menuitem", { name: /Show on map/ }).click();
+    await page.waitForSelector(`#map-plan .sp-card.sel[data-stack="${front}"]`);
+    await page.waitForTimeout(200);
+    assert.equal(await cardInView(page, front), true, "Show on map scrolls the plan to the card");
     assert.deepEqual(errors, []);
   } finally { await done(app, dir); }
 });
