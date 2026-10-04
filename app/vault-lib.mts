@@ -467,6 +467,10 @@ export function parseTooltip(rawLines?: Array<string | undefined> | undefined, a
   return { name, props, setBonus, tags, strReq, rarity, extras, flags, twoHanded, weight, skillReq, sotSkill, lines };
 }
 
+// An item's name in game: its tooltip's first line, a stack's count stripped; the shown name when it has no tooltip.
+export function gameName(it: { name: string; lines?: string[] | undefined; amount?: number | undefined }): string {
+  return stackName(it.lines?.[0], it.amount) || it.name;
+}
 // The name the app shows for an item: its in-game name, except a Scroll of Transcendence, which says its skill and
 // points (issue #181: dozens of rows read "Scroll Of Transcendence" otherwise). The in-game name stays lines[0].
 export function displayName(parsed: Pick<ParsedTooltip, "name" | "props" | "sotSkill">): string {
@@ -852,7 +856,7 @@ function enrich(raw: EnrichRaw, loc: EnrichLoc, overrides: KindOverrides): Item 
     gargoyle: /\bgargish\b/i.test(parsed.name || raw.name || "") || parsed.flags.includes("gargoyles only"),
     slayers: slayersOf(parsed.flags),
     medable: medableOf(parsed.name || raw.name || "", cls.slot, cls.gear, parsed.flags),
-    slot: cls.slot, twoHanded: cls.twoHanded, gear: cls.gear, kind: shipped === "gear" ? shipped : overriddenKind(overrides, name, raw.graphic) ?? shipped, ...loc,
+    slot: cls.slot, twoHanded: cls.twoHanded, gear: cls.gear, kind: shipped === "gear" ? shipped : (overriddenKind(overrides, name, null) ?? overriddenKind(overrides, parsed.name || raw.name, raw.graphic)) ?? shipped, ...loc,
   };
 }
 

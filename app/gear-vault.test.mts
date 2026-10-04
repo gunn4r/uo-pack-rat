@@ -8,7 +8,7 @@ import { createHash } from "node:crypto";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { dirname, join } from "node:path";
 import {
-  parseTooltip, displayName, classify, foldSnapshots, spellSchoolOf, buildPools, requirementReport, totalsOf, propertyKeys, bagLabel, capacityOf, NOT_BUILDER_KEYS, kindOf, groupByName, slayersOf, medableOf, weaponAllowed, settingsDiff, PROP_LABELS, LAYER_TO_SLOT, effectiveProfile, resistSkillBonus, toOptItem, labelOf, builderKeys, migrateProfiles, templateFrom, TEMPLATE_KEYS, setRules, getRules, tagUnits, tagInfo,
+  parseTooltip, displayName, gameName, classify, foldSnapshots, spellSchoolOf, buildPools, requirementReport, totalsOf, propertyKeys, bagLabel, capacityOf, NOT_BUILDER_KEYS, kindOf, groupByName, slayersOf, medableOf, weaponAllowed, settingsDiff, PROP_LABELS, LAYER_TO_SLOT, effectiveProfile, resistSkillBonus, toOptItem, labelOf, builderKeys, migrateProfiles, templateFrom, TEMPLATE_KEYS, setRules, getRules, tagUnits, tagInfo,
   WEAPON_SKILLS, migrateWeaponSetting, excludeWeaponsError,
   shardResistCap, resistCapsFor, resistCapsError, profileResistCaps, RESIST_CAP_LIMITS,
 } from "./vault-lib.mts";
@@ -817,6 +817,12 @@ test("[smoke] displayName names a Scroll of Transcendence by its skill and point
   assert.equal(displayName(parseTooltip(["Scroll Of Transcendence", "Skill: Chivalry 2 Skill Points"])), "Scroll of Transcendence (Chivalry - 2.0 Pts)");
   assert.equal(displayName(parseTooltip(["Scroll Of Transcendence"])), "Scroll Of Transcendence");
   assert.equal(displayName(parseTooltip(["An Exalted Scroll Of Mysticism (110 Skill)"])), "An Exalted Scroll Of Mysticism (110 Skill)");
+});
+
+test("[fast] gameName is the tooltip's first line, a stack's count stripped, else the shown name", () => {
+  assert.equal(gameName({ name: "Scroll of Transcendence (Chivalry - 0.6 Pts)", lines: ["Scroll Of Transcendence", "Skill: Chivalry 0.6 Skill Points"] }), "Scroll Of Transcendence");
+  assert.equal(gameName({ name: "Black Pearl", lines: ["20 Black Pearl"], amount: 20 }), "Black Pearl");
+  assert.equal(gameName({ name: "Katana" }), "Katana");
 });
 
 test("[fast] fold: Scrolls of Transcendence show their skill and points, stay scrolls, and group and sort by skill", () => {
