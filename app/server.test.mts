@@ -59,6 +59,7 @@ interface InventoryFacets {
   kinds: unknown[];
   gearSkills: string[];
   flagKeys: string[];
+  weaponSkills: Array<{ name: string; count: number }>;
   propKeys?: string[];
   [key: string]: unknown;
 }
@@ -1306,6 +1307,12 @@ test("[fast] /api/items pages, sorts and searches", async () => {
   assert.ok(channel.rows!.every((r) => r.flags.includes("spell channeling")));
   const both = asJson<ItemsPageResponse>(await (await get("/api/items?flag=" + encodeURIComponent("spell channeling") + "&flag=" + encodeURIComponent("mage armor"))).json());
   assert.equal(both.total, 0, "flags AND together: no fixture item has both");
+  // Issue #188: a weapon skill reaches the query from the wire, and the facets count it.
+  const fencing = inv.inventory.facets.weaponSkills.find((w) => w.name === "fencing");
+  assert.ok(fencing && fencing.count > 0, JSON.stringify(inv.inventory.facets.weaponSkills));
+  const fence = asJson<ItemsPageResponse>(await (await get("/api/items?limit=500&wskill=fencing")).json());
+  assert.equal(fence.total, fencing.count);
+  assert.ok(fence.rows!.every((r) => r.skillReq === "fencing"), JSON.stringify(fence.rows!.map((r) => r.skillReq)));
 });
 
 test("[fast] GET /api/items/by-serial resolves full item records by serial", async () => {

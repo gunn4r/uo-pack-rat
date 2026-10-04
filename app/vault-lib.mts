@@ -1024,6 +1024,14 @@ export function weaponAllowed(it: Item, excluded: string[] = [], ubws = true): b
   if (ubwsLetsIn(excluded, ubws) && (it.flags || []).includes("use best weapon skill")) return true;
   return !excluded.includes(String(it.skillReq || "").toLowerCase());
 }
+// Issue #188: the weapon skills a weapon counts under in the Inventory's Weapon skill filter, in WEAPON_SKILLS order: its
+// Skill Required line, and with Use Best Weapon Skill also the three melee skills it may swing with (ServUO
+// BaseWeapon.GetUsedSkill), the same MELEE_SKILLS the Suit Builder's weaponAllowed uses (#187).
+export function weaponSkillsOf(it: Pick<Item, "slot" | "skillReq" | "flags">): string[] {
+  if (it.slot !== "oneHanded" && it.slot !== "twoHanded") return [];
+  const own = String(it.skillReq || "").toLowerCase(), best = (it.flags || []).includes("use best weapon skill");
+  return WEAPON_SKILLS.filter((w) => w === own || (best && MELEE_SKILLS.includes(w)));
+}
 // Profiles, templates and runs saved before the exclusion list held one choice, `weaponSkill` ("archery", or null/""
 // for any weapon), which means "exclude every other weapon skill". Returns `s` itself when there is nothing to convert.
 export function migrateWeaponSetting<T extends object>(s: T): T {

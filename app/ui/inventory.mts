@@ -57,11 +57,11 @@ function setQuery(next: ItemQuery): void {
 }
 
 // ---------------------------------------------------------------- toolbar
-type ChipId = "char" | "slot" | "loc" | "rarity" | "kind" | "slayer" | "seen";
+type ChipId = "char" | "slot" | "loc" | "rarity" | "kind" | "wskill" | "slayer" | "seen";
 const chips = {} as Record<ChipId, HTMLButtonElement>;
 let search: HTMLInputElement, addChip: HTMLButtonElement, viewSeg: HTMLDivElement & { setValue: (v: string) => void }, settingsBtn: HTMLButtonElement;
-const FACETS: ChipId[] = ["char", "slot", "loc", "rarity", "kind"];
-const CHIP_NAMES: Record<ChipId, string> = { char: "Character", slot: "Slot", loc: "Location", rarity: "Rarity", kind: "Kind", slayer: "Slayer", seen: "Seen" };
+const FACETS: ChipId[] = ["char", "slot", "loc", "rarity", "kind", "wskill"];
+const CHIP_NAMES: Record<ChipId, string> = { char: "Character", slot: "Slot", loc: "Location", rarity: "Rarity", kind: "Kind", wskill: "Weapon skill", slayer: "Slayer", seen: "Seen" };
 
 // A chip's words: "Slot", "Slot: Ring", "Slot: Ring +2".
 function chipText(id: ChipId): string {
@@ -74,6 +74,7 @@ function chipText(id: ChipId): string {
     case "rarity": return q.rarityMin && q.rarityMax ? `Rarity: ${shortTier(q.rarityMin)} – ${shortTier(q.rarityMax)}`
       : q.rarityMin ? `Rarity ≥ ${shortTier(q.rarityMin)}` : q.rarityMax ? `Rarity ≤ ${shortTier(q.rarityMax)}` : name;
     case "kind": return many(q.kind);
+    case "wskill": return many(q.wskill.map(flagLabel));
     case "slayer": return q.slayer === "*" ? "Any slayer" : `Slayer: ${q.slayer}`;
     case "seen": return `Seen: ${q.seenDays === 1 ? "24 h" : `${q.seenDays} days`}`;
   }
@@ -86,6 +87,7 @@ function chipSet(id: ChipId): boolean {
     case "loc": return q.loc.length + q.roots.length > 0;
     case "rarity": return !!(q.rarityMin || q.rarityMax);
     case "kind": return q.kind.length > 0;
+    case "wskill": return q.wskill.length > 0;
     case "slayer": return !!q.slayer;
     case "seen": return !!q.seenDays;
   }
@@ -219,6 +221,10 @@ function slotOptions(): Option[] {
   opts.push({ value: "?", label: "No known slot", group: "Other" });
   return keeping(opts, state.query.slot, slotLabel);
 }
+// Issue #188: the weapon skills weapons count under, with Use Best Weapon Skill weapons under each melee skill.
+function weaponSkillOptions(): Option[] {
+  return keeping((state.facets?.weaponSkills || []).map((w) => ({ value: w.name, label: flagLabel(w.name), count: w.count })), state.query.wskill, flagLabel);
+}
 function kindOptions(): Option[] {
   return keeping((state.facets?.kinds || []).map((k) => ({ value: k.name, label: k.name, count: k.count })), state.query.kind, String);
 }
@@ -297,6 +303,8 @@ function facetPanel(id: ChipId, close: () => void): Kids {
     case "char": return checklist({ title: "Character", options: charOptions(), selected: q.chars, onChange: (v) => setQuery({ ...state.query, chars: v }) });
     case "slot": return checklist({ title: "Slot", options: slotOptions(), selected: q.slot, searchable: false, onChange: (v) => setQuery({ ...state.query, slot: v }) });
     case "kind": return checklist({ title: "Kind", options: kindOptions(), selected: q.kind, onChange: (v) => setQuery({ ...state.query, kind: v }) });
+    case "wskill": return [...checklist({ title: "Weapon skill", options: weaponSkillOptions(), selected: q.wskill, searchable: false, onChange: (v) => setQuery({ ...state.query, wskill: v }) }),
+      txt("Use Best Weapon Skill weapons count under Swordsmanship, Fencing and Mace Fighting.", "t-sm muted")];
     case "loc": return checklist({ title: "Location", options: locationOptions(), selected: [...q.roots.map((r) => `root:${r}`), ...q.loc.map((l) => `loc:${l}`)], searchable: true,
       onChange: (v) => setQuery({ ...state.query, roots: v.filter((x) => x.startsWith("root:")).map((x) => +x.slice(5)), loc: v.filter((x) => x.startsWith("loc:")).map((x) => x.slice(4)) }) });
     case "rarity": return rarityPanel(close);
@@ -314,8 +322,8 @@ const openFacet = (id: ChipId, anchor: HTMLElement): void => openPanel(anchor, C
 // ---------------------------------------------------------------- "+ Filter"
 function openAddMenu(): void {
   const entries: MenuItem[] = [];
-  // Below 1180 px the unset facet chips fold in here, so the toolbar never wraps (spec 3.7).
-  if (narrow()) for (const id of FACETS) if (!chipSet(id)) entries.push({ label: `${CHIP_NAMES[id]}…`, onSelect: () => openFacet(id, addChip) });
+  // Below 1180 px the unset facet chips fold in here, so the toolbar never wraps (spec 3.7); Weapon skill below 1280 px.
+  for (const id of FACETS) if (!chipSet(id) && !chips[id].getClientRects().length) entries.push({ label: `${CHIP_NAMES[id]}…`, onSelect: () => openFacet(id, addChip) });
   entries.push(
     { label: "Property rule…", onSelect: () => openPanel(addChip, "Property rule", propertyPanel, 300) },
     { label: "Slayer…", onSelect: () => openPanel(addChip, "Slayer", slayerPanel) },

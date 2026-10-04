@@ -74,6 +74,7 @@ export function queryParams(q: ItemQuery): URLSearchParams {
   for (const t of q.tags) p.append("tag", t);
   for (const f of q.props) p.append("prop", f.op ? `${f.key}:${f.op}:${f.min}` : `${f.key}:${f.min}`);
   for (const f of q.flags) p.append("flag", f);
+  for (const w of q.wskill) p.append("wskill", w);
   if (q.group) p.set("group", "1");
   p.set("sort", q.sort);
   p.set("dir", String(q.dir));
@@ -135,6 +136,10 @@ export function activeFilters(q: ItemQuery, ctx: FilterContext): FilterToken[] {
   }
   if (q.rarity) out.push({ id: "rarity", label: `Rarity: ${q.rarity}`, removeLabel: "Remove filter: Rarity", remove: (x) => ({ ...x, rarity: "" }), cause: (t) => `${none(t)} is ${a(q.rarity)}.` });
   for (const k of q.kind) out.push({ id: `kind:${k}`, label: `Kind: ${k}`, removeLabel: `Remove filter: Kind ${k}`, remove: (x) => ({ ...x, kind: without(x.kind, k) }), cause: (t) => `${none(t)} is of the kind ${k}.` });
+  for (const w of q.wskill) {
+    const name = flagLabel(w);
+    out.push({ id: `wskill:${w}`, label: `Weapon skill: ${name}`, removeLabel: `Remove filter: Weapon skill ${name}`, remove: (x) => ({ ...x, wskill: without(x.wskill, w) }), cause: (t) => `${none(t)} is ${a(name)} weapon.` });
+  }
   q.props.forEach((f, i) => {
     const text = propRuleLabel(f, ctx.propLabel);
     out.push({ id: `prop:${i}`, label: text, removeLabel: `Remove filter: ${text}`, remove: (x) => ({ ...x, props: x.props.filter((_, j) => j !== i) }), cause: (t) => `${none(t)} has ${text}.` });
