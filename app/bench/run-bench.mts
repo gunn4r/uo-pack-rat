@@ -59,6 +59,7 @@ if (has("render")) {
 // off a character entry at all) plus excludeRoots, which CharacterEntryRaw doesn't declare.
 interface BenchCharacterEntry {
   excludeWeapons?: string[] | undefined;
+  ubwsAnyWeapon?: boolean | undefined;
   softFloors?: string[] | undefined;
   floors?: Record<string, number> | undefined;
   weights?: Record<string, number> | undefined;
@@ -157,7 +158,7 @@ function buildCell(inv: VaultLib.Inventory, who: string, patch: Partial<BenchCha
   const p = { ...p0, ...patch, floors: { ...(p0.floors || {}), ...(patch.floors || {}) }, weights: { ...(p0.weights || {}), ...(patch.weights || {}) } };
   const c = inv.characters[who];
   const { pools, current, blocked = [] } = lib.buildPools(inv, who, { allowOthersWorn: false, strength: p.strLimit ?? (c ? (c.stats.str as number) : 125), excludeTags: p.excludeTags || [],   // Character.stats is Record<string, unknown> — str is always numeric at runtime
-    excludeRoots: p.excludeRoots || [], excludeGargoyle: !p.allowGargoyle, medOnly: !!p.medOnly, excludeWeapons: p.excludeWeapons || [], excludeSkills: p.excludeSkills || [] });
+    excludeRoots: p.excludeRoots || [], excludeGargoyle: !p.allowGargoyle, medOnly: !!p.medOnly, excludeWeapons: p.excludeWeapons || [], ubwsAnyWeapon: p.ubwsAnyWeapon !== false, excludeSkills: p.excludeSkills || [] });
   for (const s of p.lockedSlots || []) pools[s] = [];
   const optCurrent = { ...current };
   for (const s of blocked) delete optCurrent[s];

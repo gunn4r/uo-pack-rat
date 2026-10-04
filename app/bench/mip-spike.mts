@@ -43,6 +43,7 @@ if (!existsSync(config.paths.profiles)) {
 // off a character entry at all) plus excludeRoots, which CharacterEntryRaw doesn't declare.
 interface SpikeCharacterEntry {
   excludeWeapons?: string[] | undefined;
+  ubwsAnyWeapon?: boolean | undefined;
   softFloors?: string[] | undefined;
   floors?: Record<string, number> | undefined;
   weights?: Record<string, number> | undefined;
@@ -77,7 +78,7 @@ const p = who.endsWith("-anyweapon") ? { ...p0, excludeWeapons: [] } : { ...p0 }
 if (process.env.SOFT) p.softFloors = process.env.SOFT.split(",");
 const c = inv.characters[base];
 const { pools, current, blocked = [] } = lib.buildPools(inv, base, { allowOthersWorn: false, strength: p.strLimit ?? (c ? (c.stats.str as number) : 125), excludeTags: p.excludeTags || [],   // Character.stats is Record<string, unknown> — str is always numeric at runtime
-  excludeRoots: p.excludeRoots || [], excludeGargoyle: !p.allowGargoyle, medOnly: !!p.medOnly, excludeWeapons: p.excludeWeapons || [], excludeSkills: p.excludeSkills || [] });
+  excludeRoots: p.excludeRoots || [], excludeGargoyle: !p.allowGargoyle, medOnly: !!p.medOnly, excludeWeapons: p.excludeWeapons || [], ubwsAnyWeapon: p.ubwsAnyWeapon !== false, excludeSkills: p.excludeSkills || [] });
 for (const s of p.lockedSlots || []) pools[s] = [];
 const cur = { ...current }; for (const s of blocked) delete cur[s];
 const optional = new Set(["cloak", "talisman", "ring", "bracelet", "neck", "oneHanded", "twoHanded"].filter((s) => !(p.lockedSlots || []).includes(s)));
