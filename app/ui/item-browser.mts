@@ -52,7 +52,8 @@ export interface DetailHooks {
   refresh: (find: (serial: number) => Item | undefined, stillThere: boolean) => void;
 }
 export interface ItemBrowserOptions {
-  // Always applied and never shown: no chip, token or "+ Filter" entry for a field it names (e.g. `{ slot: ["ring"] }`).
+  // Always applied (e.g. `{ slot: ["ring"] }`), overriding the player's value of any field it names. Only the matching
+  // chips are hidden: the search box and the "+ Filter" entries for property rules, tags and gargoyle/meditation stay.
   fixed?: Partial<ItemQuery>;
   // The columns shown at first and after "Reset to default" (DEFAULT_COLS when left out).
   columns?: string[];
@@ -974,7 +975,7 @@ export function createItemBrowser(root: HTMLElement, opts: ItemBrowserOptions): 
       const m = gridKey(e.key, i, page.total, pageRows);
       if (!m || (m.kind === "close" && !detailOpen())) return;
       e.preventDefault();
-      if (m.kind === "move") { focusRow(m.index); if (detailOpen()) activate(m.index); }
+      if (m.kind === "move") { focusRow(m.index); if (detailOpen() && !page.groups) activate(m.index); }
       else if (m.kind === "open") activate(i);
       else opts.detail!.close(true);
     });
