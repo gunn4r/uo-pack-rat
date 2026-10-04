@@ -1,5 +1,5 @@
 // ui/house-map-model.mts — the House map's pure rules (issue #10, spec section 4): the projection (the client's angle, or top-down), the polygons of a tile and of a box, the painter's order, a level's bounds and their fit; below, the joins of a stack with the inventory and the Organize labels, the colour modes, the cut-away, the callout, the totals, the house picker, keyboard moves, the plain grid for chests outside any drawn house, and the scene of one level. No DOM and no store.mts import, so app/ui-map.test.mts runs it under plain node:test; ui/house-map.mts draws what it returns. Coordinates are relative to the house's corner (x0, y0); heights to the level's floor.
-import { bagLabel, itemOwnBlob, type Container, type Item } from "../vault-lib.mts";
+import { bagLabel, compareNames, itemOwnBlob, type Container, type Item } from "../vault-lib.mts";
 import { plural, splitSerial } from "./inv-model.mts";
 import type { AreaRect, Cell, ContainerLabel, FacetMapReason, HouseArea, HouseMapEntry, HouseModel, HouseSummary, InventoryData, Spot, Stack, TiledataFrom } from "./api-types.mts";
 
@@ -662,7 +662,7 @@ export function houseHits(m: HouseModel, items: readonly Hit[], containers: Tree
   const chests = [...by].map(([serial, list]): HitChest & { order: number } => {
     const { stack, index, order } = where.get(serial)!, names = new Map<string, HitLine>();
     for (const it of list) { const l = names.get(it.name); if (l) l.amount += amountOf(it); else names.set(it.name, { name: it.name, amount: amountOf(it), item: it }); }
-    return { serial, stack, index, order, position: positionWords(index, stack.serials.length), amount: list.reduce((a, it) => a + amountOf(it), 0), lines: [...names.values()].sort((a, b) => a.name.localeCompare(b.name)) };
+    return { serial, stack, index, order, position: positionWords(index, stack.serials.length), amount: list.reduce((a, it) => a + amountOf(it), 0), lines: [...names.values()].sort((a, b) => compareNames(a.name, b.name)) };
   }).sort((a, b) => a.order - b.order || b.index - a.index).map(({ order: _, ...c }): HitChest => c);
   const stacks = new Map<string, HitChest[]>();
   for (const c of chests) { const l = stacks.get(c.stack.letter); if (l) l.push(c); else stacks.set(c.stack.letter, [c]); }
@@ -751,7 +751,7 @@ export function elsewhereOf(items: readonly Hit[], index: ReadonlyMap<number, Ho
     }
     else places.set(placeOf(it), (places.get(placeOf(it)) ?? 0) + amountOf(it));
   }
-  const most = <T extends { name: string; amount: number }>(l: T[]): T[] => l.sort((a, b) => b.amount - a.amount || a.name.localeCompare(b.name));
+  const most = <T extends { name: string; amount: number }>(l: T[]): T[] => l.sort((a, b) => b.amount - a.amount || compareNames(a.name, b.name));
   return { amount, houses: most([...houses.values()]), places: most([...places].map(([name, n]) => ({ name, amount: n }))) };
 }
 // The panel's line about them: "3 more outside this house (Another house, Ann's backpack, and 1 more place)."

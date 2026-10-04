@@ -56,5 +56,10 @@
     { "name": "Legendary Artifact", "colour": "#e0342b" }
   ],
   "raceLock": { "gargoyleOnly": true },
-  "freeSkills": ["Lumberjacking", "Cartography", "Lockpicking", "Remove Trap", "Detecting Hidden", "Mining", "Fishing", "Hiding", "Item Identification", "Camping", "Begging", "Arms Lore", "Forensic Evaluation", "Taste Identification", "Cooking", "Tracking", "Herding"]
+  "freeSkills": ["Lumberjacking", "Cartography", "Lockpicking", "Remove Trap", "Detecting Hidden", "Mining", "Fishing", "Hiding", "Item Identification", "Camping", "Begging", "Arms Lore", "Forensic Evaluation", "Taste Identification", "Cooking", "Tracking", "Herding"],
+  "scrollBinder": {
+    "powerScrolls": [{ "from": 105, "to": 110, "count": 8 }, { "from": 110, "to": 115, "count": 12 }, { "from": 115, "to": 120, "count": 10 }],
+    "statScrolls": [{ "from": 5, "to": 10, "count": 6 }, { "from": 10, "to": 15, "count": 8 }, { "from": 15, "to": 20, "count": 8 }, { "from": 20, "to": 25, "count": 5 }],
+    "transcendence": { "usableAt": [2.0, 5.0] }
+  }
 }
