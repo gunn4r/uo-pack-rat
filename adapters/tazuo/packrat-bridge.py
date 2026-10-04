@@ -80,7 +80,7 @@ def read_blacklist(path):
 
 
 ADAPTER_ID = "tazuo"
-ADAPTER_VERSION = "2.14.0"
+ADAPTER_VERSION = "2.15.0"
 CAPABILITIES = {
     "layers": ["OneHanded", "TwoHanded", "Shoes", "Pants", "Shirt", "Helmet", "Gloves",
                "Ring", "Talisman", "Necklace", "Waist", "Torso", "Bracelet", "Tunic",
@@ -121,6 +121,7 @@ ALARM_HUE, OK_HUE, INFO_HUE = 33, 68, 88
 PACK_MAX_ITEMS = 125      # a backpack's item cap (ServUO's Container default MaxItems)
 PUT_AWAY_VAR = "packrat_putaway"   # set by packrat-panel.py's Put away (put_away_asked)
 TAKE_DROP = (60, 90)      # where a trip drops what it takes, inside the backpack window: a drop at a spot never stacks
+STOP_CLOSE_S = 0.5        # stop closing windows this long after the Stop was first seen: the client gives a stopped script 2 s
 
 # ---- untrusted input ---------------------------------------------------------------------------
 # <dataDir>/bridge/<adapter>/queue.jsonl is an ordinary file: the app writes it, but so can any
@@ -500,6 +501,11 @@ carried = set()           # serials this bridge took on a trip and has not yet p
 # whose root it left out of reach. Keyed by container, each entry holds its chain's root.
 trip_opened = {}
 trip_spot = {"at": None}  # the character's tile when trip_opened was last added to
+# The container windows the running command opened itself, in opening order, as (serial, item): run()
+# closes them when the command ends (close_opened). A window the player already had open is not in it.
+opened_here = []
+unclosable = set()        # serials of windows close_opened() could not close, each reported once per bridge run
+stop_seen = {"at": None}  # when this script first saw the client's Stop (stop_age)
 last_move = {"at": 0.0}
 
 
@@ -686,6 +692,98 @@ def wait_opened(serial):
         API.Pause(OPEN_POLL_S)
 
 
+def container_gump(it):
+    """The item's open container window, or None: TazUO's ApiItem.GetContainerGump(), looked up with
+    getattr since the Legion stub can be ahead of the running client. Never raises."""
+    try:
+        get_gump = getattr(it, "GetContainerGump", None)
+        return get_gump() if get_gump is not None else None
+    except Exception:
+        return None
+
+
+def note_if_closed(it):
+    """Remember a container whose window is not open yet, just before this command double-clicks it,
+    so close_opened() closes exactly the windows the command opened. A window counts as open when the
+    client's Opened flag says so or GetContainerGump() finds it; either one is enough, so a window the
+    player opened is never taken for one the bridge opened. Your backpack and bank are never noted:
+    they stay open whatever opened them. The client's item object is kept, not just the serial: once
+    Stop is pressed the client cancels the script's lookups (FindItem answers nothing), while an item
+    object still reaches its window."""
+    try:
+        serial = int(it.Serial)
+        if serial in own_roots([]) or any(s == serial for s, _ in opened_here):
+            return
+        if bool(getattr(it, "Opened", False)) or container_gump(it) is not None:
+            return
+        opened_here.append((serial, it))
+    except Exception:
+        pass
+
+
+def holds_your_window(serial):
+    """Whether an open window you opened yourself sits inside this container, at any depth: a container
+    in it whose Opened flag is set and that this command did not open. Closing the container would close
+    that window too. A client that cannot list the contents answers False, and the container is closed."""
+    ours = set(s for s, _ in opened_here)
+    try:
+        for k in API.ItemsInContainer(int(serial), True) or []:
+            if int(k.Serial) not in ours and bool(getattr(k, "Opened", False)):
+                return True
+    except Exception:
+        pass
+    return False
+
+
+def close_opened():
+    """Close the container windows this command opened, innermost first (the reverse of the order they
+    were opened). main() runs it once the command's result is written; after a Stop, the module's
+    finally runs it once the stopped marker is written. It never raises, and it always empties
+    opened_here.
+
+    The method, from the scanner's close_opened(), which closes its windows the same way:
+    item.GetContainerGump() returns the client's open container window and its Dispose() closes it.
+    Disposing a window is client-side only; it sends the server nothing. API.CloseGump(id) is no
+    fallback, since it finds gumps by their server gump id and a container window has none. A build
+    without GetContainerGump() or Dispose() leaves the window open, and a message says how many, once
+    per container in a bridge run.
+
+    A container showing a name plate cannot be closed this way: GetContainerGump() takes the first
+    gump of any kind with the item's serial from the back of the client's gump list, which is the
+    plate (PlayTazUO/TazUO#1087), and answers None. Such windows stay open and are counted too. A
+    container holding a window you opened yourself is left open (holds_your_window).
+
+    After a Stop it gives up STOP_CLOSE_S after the Stop was first seen: each GetContainerGump() waits
+    on the client's main thread, and the client detaches a stopped script's thread after 2 s."""
+    try:
+        left = []
+        for serial, it in reversed(opened_here):
+            if stop_age() >= STOP_CLOSE_S:
+                break
+            try:
+                if holds_your_window(serial):
+                    continue
+                gump = container_gump(it)
+                dispose = getattr(gump, "Dispose", None) if gump is not None else None
+                if dispose is not None:
+                    dispose()
+                    continue
+                if not bool(getattr(it, "Opened", True)):
+                    continue          # it never opened (locked, out of reach), or it is closed already
+            except Exception:
+                pass
+            left.append(serial)
+        new = [s for s in left if s not in unclosable]
+        unclosable.update(new)
+        if new:
+            sysmsg(f"Pack Rat: {len(new)} container{'s' if len(new) != 1 else ''} the bridge opened could not be closed — "
+                   f"close {'them' if len(new) != 1 else 'it'} by hand.", INFO_HUE)
+    except BaseException:   # noqa: B036 -- cleanup only: an interrupt or a failing client call ends it quietly
+        pass
+    finally:
+        del opened_here[:]
+
+
 def open_chain(chain, own=None, check=None, opened=None):
     """Open root, then each nested bag in order. Returns (ok, message). Each entry is checked against
     the live client before it is double-clicked: the root must be on the ground or one of `own` (your
@@ -710,6 +808,7 @@ def open_chain(chain, own=None, check=None, opened=None):
             return False, f"refused: 0x{int(c):x} is not a container — the bridge only ever opens containers"
         if opened is not None and int(c) in opened:
             continue
+        note_if_closed(it)
         try:
             API.UseObject(int(c))
         except Exception as e:
@@ -783,7 +882,21 @@ def do_grab(cmd):
 
 def stop_requested():
     """The Script Manager's Stop, or Organize's Stop button (the flag POST /api/bridge/stop writes)."""
+    stop_age()
     return bool(API.StopRequested) or os.path.isfile(STOP_FLAG)   # a directory there cannot be cleared: ignored
+
+
+def stop_age():
+    """Seconds since this script first saw the client's Stop, or 0 before it has. A read of the flag
+    that fails counts as the Stop: after the client's interrupt any call may fail."""
+    try:
+        if not API.StopRequested:
+            return 0.0
+    except BaseException:   # noqa: B036 -- a failed read after the interrupt is the Stop itself
+        pass
+    if stop_seen["at"] is None:
+        stop_seen["at"] = time.time()
+    return time.time() - stop_seen["at"]
 
 
 def clear_stop():
@@ -1442,10 +1555,18 @@ def main():
                 write_status(None)
             except Exception as e:
                 sysmsg(f"bridge: {cmd['action']} failed: {e}", ALARM_HUE)
+            # Closing comes after the result is written. After a Stop it waits for the module's finally,
+            # after the stopped marker, since the client kills a stopped script 2 s on.
+            stop_age()                       # notes a Stop first seen now
+            if cmd["action"] == "highlight":
+                del opened_here[:]           # a highlight's containers stay open: they show you where the item is
+            elif stop_seen["at"] is None:
+                close_opened()
         if time.time() >= next_status:
             write_status(None)
             next_status = time.time() + 2.0
-        API.Pause(POLL_S)
+        if not API.StopRequested:            # stopping: straight on to the stopped marker and the closing
+            API.Pause(POLL_S)
 
 
 def write_stopped():
@@ -1453,6 +1574,7 @@ def write_stopped():
     stops waiting out the 30 s heartbeat. Called from a finally because the client's Stop interrupts
     the script at its next API.Pause, so nothing after main()'s loop runs then. Every client call
     here is guarded: after that interrupt any of them may fail, and the file must still be written."""
+    stop_age()
     for cmd in pending:
         try:                  # one at a time: record's SysMsg failing must not skip the rest
             record(cmd["id"], False, "not run — the bridge stopped first")
@@ -1474,3 +1596,4 @@ try:
     main()
 finally:
     write_stopped()
+    close_opened()
