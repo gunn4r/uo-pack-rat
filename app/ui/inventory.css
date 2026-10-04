@@ -170,7 +170,9 @@
 .scr-next > .meter { height: 4px; }
 .scr-next > .muted { text-align: right; }
 /* Scrolls of Transcendence: the points as chips, and the total against the usable marks */
-.scr-chips { display: flex; align-items: center; gap: var(--space-1); min-width: 0; overflow: hidden; }
+/* Equal points share a chip ("18 × 0.3"); a long row of chips wraps inside its cell instead of being cut off. */
+.scr-tbl td.scr-chips-cell { white-space: normal; height: auto; min-height: var(--row-dense); padding-top: var(--space-1); padding-bottom: var(--space-1); }
+.scr-chips { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-1); min-width: 0; }
 .scr-chips > .badge { flex: none; height: 18px; padding: 0 var(--space-1-5); font-family: var(--font-mono); font-weight: var(--weight-regular); color: var(--color-text); }
 .sot-bar { position: relative; height: 6px; border-radius: var(--radius-full); background: var(--color-surface-sunken); }
 .sot-bar > .fill { position: absolute; left: 0; top: 0; bottom: 0; border-radius: var(--radius-full); background: var(--color-accent); }

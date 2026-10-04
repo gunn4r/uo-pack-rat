@@ -111,6 +111,7 @@ test("[slow] the Scrolls view rolls power scrolls and Scrolls of Transcendence u
     // 18 × 0.3 make neither 2.0 nor 5.0: bind 17 of them for 5.1, a usable 5.0 with 0.1 lost. The meter stops at 5.0
     // and its text keeps the real total.
     const tactics = await cells(page, "Tactics");
+    assert.equal(tactics[1]!.trim(), "18 × 0.3", "equal points share one chip");
     assert.equal(tactics[4], "Bind 17 × 0.3 → 5.0 (0.1 lost)");
     const bar = row(page, "Tactics").locator('[role="meter"]');
     assert.deepEqual([await bar.getAttribute("aria-valuenow"), await bar.getAttribute("aria-valuetext")], ["5", "5.4 points"]);

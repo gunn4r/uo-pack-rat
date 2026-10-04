@@ -127,14 +127,16 @@ export function sotPlan(tenths: number[], usableAt: number[]): SotPlan {
   const above = targets.find((t) => t > total)!;
   return { kind: "short", target: above, short: above - total };
 }
-// The picked scrolls, largest first, a run of equal ones as "17 × 0.3".
-function pickText(pick: number[]): string {
+// Runs of equal values in a sorted list, as [value, count]: [8, 4, 4] → [[8, 1], [4, 2]].
+export function runsOf(sorted: number[]): Array<[number, number]> {
   const runs: Array<[number, number]> = [];
-  for (const t of pick) { const last = runs[runs.length - 1]; if (last && last[0] === t) last[1]++; else runs.push([t, 1]); }
-  return runs.map(([t, n]) => (n > 1 ? `${n} × ${fmtTenths(t)}` : fmtTenths(t))).join(" + ");
+  for (const t of sorted) { const last = runs[runs.length - 1]; if (last && last[0] === t) last[1]++; else runs.push([t, 1]); }
+  return runs;
 }
+// Points (tenths, sorted) as words, a run of equal ones as "17 × 0.3": the plan's picks and the Scrolls column's chips.
+export const runText = (sorted: number[]): string[] => runsOf(sorted).map(([t, n]) => (n > 1 ? `${n} × ${fmtTenths(t)}` : fmtTenths(t)));
 export function planText(plan: SotPlan): string {
-  if (plan.kind === "bind") return `Bind ${pickText(plan.pick)} → ${fmtTenths(plan.target)}${plan.lost ? ` (${fmtTenths(plan.lost)} lost)` : ""}`;
+  if (plan.kind === "bind") return `Bind ${runText(plan.pick).join(" + ")} → ${fmtTenths(plan.target)}${plan.lost ? ` (${fmtTenths(plan.lost)} lost)` : ""}`;
   return `${fmtTenths(plan.short)} short of ${fmtTenths(plan.target)}`;
 }
 

@@ -14,7 +14,7 @@ import { errorText } from "./messages.mts";
 import { plural, splitSerial } from "./inv-model.mts";
 import { showSearch, tagEls } from "./inventory.mts";
 import {
-  powerRows, powerLevels, sotRows, emptyBinderCount, scrollFacts, filterRows, powerQuery, sotQuery, placeGroups, planText, fmtTenths, toTenths, whoText, listName,
+  powerRows, powerLevels, sotRows, emptyBinderCount, scrollFacts, filterRows, powerQuery, sotQuery, placeGroups, planText, runText, fmtTenths, toTenths, whoText, listName,
   type PowerRow, type SotRow,
 } from "./scrolls-model.mts";
 import type { ItemsApiResponse } from "./api-types.mts";
@@ -223,7 +223,7 @@ function nextCell(r: PowerRow): HTMLElement {
 function sotColumns(plain: boolean): Col[] {
   const cols: Col[] = [
     { head: th("Skill"), width: "skill", cell: skillCell },
-    { head: th("Scrolls"), width: "chips", cell: (r) => el("td", {}, box("span", { class: "scr-chips" }, ...(r as SotRow).tenths.map((t) => badge(fmtTenths(t))))) },
+    { head: th("Scrolls"), width: "chips", cell: (r) => el("td", { class: "scr-chips-cell" }, box("span", { class: "scr-chips" }, ...runText((r as SotRow).tenths).map((t) => badge(t)))) },
     { head: th("Total", { num: true, sort: "descending" }), width: "total", cell: (r) => el("td", { class: "num" }, txt(fmtTenths((r as SotRow).total), "strong")) },
   ];
   // The detail lists the scrolls, so the chips make way for the plan while it is open.

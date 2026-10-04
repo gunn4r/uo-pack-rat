@@ -9,7 +9,7 @@ import { readFileSync } from "node:fs";
 import type { Item } from "./vault-lib.mts";
 import type { RulesV1 } from "./schema/types.d.mts";
 import {
-  powerSkill, powerRows, powerLevels, nextStep, bindEverything, holdingsText, sotRows, sotPlan, fewestSubset, planText, fmtTenths,
+  powerSkill, powerRows, powerLevels, nextStep, bindEverything, holdingsText, sotRows, sotPlan, fewestSubset, planText, fmtTenths, runsOf, runText,
   isEmptyBinder, emptyBinderCount, scrollFacts, filterRows, powerQuery, sotQuery, placeGroups, whoText, listName,
 } from "./ui/scrolls-model.mts";
 
@@ -116,6 +116,10 @@ test("[fast] scrolls model: the binder plan binds to exactly 5.0 when it can, el
   assert.deepEqual(sotPlan(eighteen, USABLE), { kind: "bind", target: 50, pick: eighteen.slice(1), lost: 1 });
   assert.equal(planText(sotPlan(eighteen, USABLE)), "Bind 17 × 0.3 → 5.0 (0.1 lost)");
   // Least overshoot first, then fewest scrolls: 2.4 + 2.7 (5.1) over 2.4 + 2.4 + 0.3 (also 5.1, three scrolls) and 2.7 + 2.7.
+  assert.deepEqual(runsOf([8, 4, 4, 2, 2, 2]), [[8, 1], [4, 2], [2, 3]]);
+  assert.deepEqual(runsOf([]), []);
+  assert.deepEqual(runText([3, 3, 3]), ["3 × 0.3"]);
+  assert.deepEqual(runText([10, 6, 6]), ["1.0", "2 × 0.6"]);
   assert.equal(planText({ kind: "bind", target: 20, pick: [8, 4, 4, 2, 2], lost: 0 }), "Bind 0.8 + 2 × 0.4 + 2 × 0.2 → 2.0");
   assert.deepEqual(sotPlan([27, 27, 24, 24, 3], USABLE), { kind: "bind", target: 50, pick: [27, 24], lost: 1 });
   // An exact set still wins over an overshoot: 1.3 + 0.7 make 2.0 exactly.
