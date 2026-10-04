@@ -80,7 +80,7 @@ def read_blacklist(path):
 
 
 ADAPTER_ID = "tazuo"
-ADAPTER_VERSION = "2.14.0"
+ADAPTER_VERSION = "2.15.0"
 CAPABILITIES = {
     "layers": ["OneHanded", "TwoHanded", "Shoes", "Pants", "Shirt", "Helmet", "Gloves",
                "Ring", "Talisman", "Necklace", "Waist", "Torso", "Bracelet", "Tunic",
@@ -121,6 +121,7 @@ ALARM_HUE, OK_HUE, INFO_HUE = 33, 68, 88
 PACK_MAX_ITEMS = 125      # a backpack's item cap (ServUO's Container default MaxItems)
 PUT_AWAY_VAR = "packrat_putaway"   # set by packrat-panel.py's Put away (put_away_asked)
 TAKE_DROP = (60, 90)      # where a trip drops what it takes, inside the backpack window: a drop at a spot never stacks
+STOP_CLOSE_S = 1.5        # after a Stop, stop closing windows after this long: the client gives a stopped script 2 s
 
 # ---- untrusted input ---------------------------------------------------------------------------
 # <dataDir>/bridge/<adapter>/queue.jsonl is an ordinary file: the app writes it, but so can any
@@ -500,6 +501,9 @@ carried = set()           # serials this bridge took on a trip and has not yet p
 # whose root it left out of reach. Keyed by container, each entry holds its chain's root.
 trip_opened = {}
 trip_spot = {"at": None}  # the character's tile when trip_opened was last added to
+# The container windows the running command opened itself, in opening order, as (serial, item): run()
+# closes them when the command ends (close_opened). A window the player already had open is not in it.
+opened_here = []
 last_move = {"at": 0.0}
 
 
@@ -686,6 +690,75 @@ def wait_opened(serial):
         API.Pause(OPEN_POLL_S)
 
 
+def container_gump(it):
+    """The item's open container window, or None: TazUO's ApiItem.GetContainerGump(), looked up with
+    getattr since the Legion stub can be ahead of the running client. Never raises."""
+    try:
+        get_gump = getattr(it, "GetContainerGump", None)
+        return get_gump() if get_gump is not None else None
+    except Exception:
+        return None
+
+
+def note_if_closed(it):
+    """Remember a container whose window is not open yet, just before this command double-clicks it,
+    so close_opened() closes exactly the windows the command opened. A window counts as open when the
+    client's Opened flag says so or GetContainerGump() finds it; either one is enough, so a window the
+    player opened is never taken for one the bridge opened. Your backpack and bank are never noted:
+    they stay open whatever opened them. The client's item object is kept, not just the serial: once
+    Stop is pressed the client cancels the script's lookups (FindItem answers nothing), while an item
+    object still reaches its window."""
+    try:
+        serial = int(it.Serial)
+        if serial in own_roots([]) or any(s == serial for s, _ in opened_here):
+            return
+        if bool(getattr(it, "Opened", False)) or container_gump(it) is not None:
+            return
+        opened_here.append((serial, it))
+    except Exception:
+        pass
+
+
+def close_opened():
+    """Close the container windows this command opened, innermost first (the reverse of the order they
+    were opened). Runs when the command ends, however it ends (run()'s finally), and never raises.
+
+    The method, from the scanner's close_opened(), which closes its windows the same way:
+    item.GetContainerGump() returns the client's open container window and its Dispose() closes it.
+    Disposing a window is client-side only; it sends the server nothing. API.CloseGump(id) is no
+    fallback, since it finds gumps by their server gump id and a container window has none. A build
+    without GetContainerGump() or Dispose() leaves the window open, and one message says how many.
+
+    A container showing a name plate cannot be closed this way: GetContainerGump() takes the first
+    gump of any kind with the item's serial from the back of the client's gump list, which is the
+    plate (PlayTazUO/TazUO#1087), and answers None. Such windows stay open and are counted too.
+
+    After a Stop the loop is bounded by STOP_CLOSE_S: each GetContainerGump() waits on the client's
+    main thread, and the client detaches a stopped script's thread after 2 s."""
+    started, left = time.time(), 0
+    for _, it in reversed(opened_here):
+        if API.StopRequested and time.time() - started >= STOP_CLOSE_S:
+            break
+        try:
+            gump = container_gump(it)
+            dispose = getattr(gump, "Dispose", None) if gump is not None else None
+            if dispose is not None:
+                dispose()
+                continue
+            if not bool(getattr(it, "Opened", True)):
+                continue          # it never opened (locked, out of reach), or it is closed already
+        except Exception:
+            pass
+        left += 1
+    del opened_here[:]
+    if left:
+        try:
+            sysmsg(f"Pack Rat: {left} container{'s' if left != 1 else ''} the bridge opened could not be closed — "
+                   f"close {'them' if left != 1 else 'it'} by hand.", INFO_HUE)
+        except Exception:
+            pass
+
+
 def open_chain(chain, own=None, check=None, opened=None):
     """Open root, then each nested bag in order. Returns (ok, message). Each entry is checked against
     the live client before it is double-clicked: the root must be on the ground or one of `own` (your
@@ -710,6 +783,7 @@ def open_chain(chain, own=None, check=None, opened=None):
             return False, f"refused: 0x{int(c):x} is not a container — the bridge only ever opens containers"
         if opened is not None and int(c) in opened:
             continue
+        note_if_closed(it)
         try:
             API.UseObject(int(c))
         except Exception as e:
@@ -1325,6 +1399,18 @@ def do_trip(cmd):
 
 
 def run(cmd):
+    """Run one command, then close the container windows it opened (close_opened), however it ended. A
+    highlight's are left open: they show you where the item is."""
+    try:
+        return run_command(cmd)
+    finally:
+        if cmd["action"] == "highlight":
+            del opened_here[:]
+        else:
+            close_opened()
+
+
+def run_command(cmd):
     action = cmd["action"]
     if action not in ACTIONS:
         return False, "unknown action"

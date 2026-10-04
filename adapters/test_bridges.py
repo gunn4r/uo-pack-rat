@@ -809,6 +809,7 @@ class TazUOBridge(BridgeCase, unittest.TestCase):
 
     def test_an_item_gone_since_the_plan_fails_its_take_and_its_put_is_skipped(self):
         w = trip_home()
+        w.items[BAG].Opened = True     # the player has it open, so t1 leaves it open and the fake keeps its contents known
         gone = 0x40000099
         final, _ = self.run_bridge(w, 1, [
             self.trip("t1", takes=[(gone, [CHEST, BAG]), (AMULET, [CHEST, BAG])], puts=[(gone, [DEST]), (AMULET, [DEST])]),
@@ -1053,6 +1054,73 @@ class TazUOBridge(BridgeCase, unittest.TestCase):
         self.assertTrue([k for k in final["results"] if k.startswith("rejected-")], final["results"])
         self.assertEqual(self.moved(w), [])
 
+
+    # ---- closing what a command opened (#196) --------------------------------------------------------
+
+    def closed(self, world):
+        return [c[1] for c in world.calls if c[0] == "close"]
+
+    def test_a_trip_closes_the_containers_it_opened_deepest_first_once_it_is_done(self):
+        w = self.far_dest(trip_home())
+        final, _ = self.run_bridge(w, 1, [self.trip("t1", takes=[(AMULET, [CHEST, BAG])], puts=[(AMULET, [DEST, DEST_BAG])])])
+        self.assertTrue(final["results"]["t1"]["ok"], final["results"]["t1"])
+        self.assertEqual(self.opened(w), [CHEST, BAG, DEST, DEST_BAG])
+        self.assertEqual(self.closed(w), [DEST_BAG, DEST, BAG, CHEST])
+        last_move = max(i for i, c in enumerate(w.calls) if c[0] == "move")
+        first_close = min(i for i, c in enumerate(w.calls) if c[0] == "close")
+        self.assertLess(last_move, first_close, "nothing closes while the trip still needs it")
+
+    def test_a_container_already_open_before_the_trip_stays_open(self):
+        w = trip_home()
+        w.add(OTHER_GEM, OTHER_BAG, name="Jewel", container_like=False, OnGround=False)
+        w.items[OTHER_BAG].Opened = True                 # the player had the bag open too, behind its name plate
+        w.labels.add(OTHER_BAG)
+        final, _ = self.run_bridge(w, 1, [self.trip("t1", takes=[(OTHER_GEM, [OTHER_CHEST, OTHER_BAG])])])
+        self.assertTrue(final["results"]["t1"]["ok"], final["results"]["t1"])
+        self.assertEqual(self.closed(w), [])
+        self.assertTrue(w.items[OTHER_CHEST].Opened)
+
+    def test_a_trip_stopped_midway_still_closes_what_it_opened(self):
+        w = trip_home()
+        w.on_move = lambda s, dst: self.interrupt(w) if s == BRACELET else None
+        final, _ = self.run_bridge(w, 1, [self.trip("t1", takes=[(AMULET, [CHEST, BAG]), (BRACELET, [CHEST, BAG])],
+                                                    puts=[(AMULET, [DEST]), (BRACELET, [DEST])])])
+        self.assertTrue(final["results"]["t1"]["stopped"])
+        self.assertEqual(self.closed(w), [DEST, BAG, CHEST])
+
+    def test_a_grab_that_fails_midway_still_closes_what_it_opened(self):
+        w = home()
+
+        def fail(s, dst):
+            raise RuntimeError("client gone")
+        w.on_move = fail
+        final, _ = self.run_bridge(w, 1, [self.cmd("g1", "grab", AMULET, [CHEST, BAG])])
+        self.assertIn("client gone", final["results"]["g1"]["msg"])
+        self.assertEqual(self.closed(w), [BAG, CHEST])
+
+    def test_the_backpack_is_never_closed(self):
+        w = home()
+        w.items[PACK].Opened = False                     # the player had closed it: the grab opens it
+        final, _ = self.run_bridge(w, 1, [self.cmd("g1", "grab", RING, [PACK, POUCH])])
+        self.assertTrue(final["results"]["g1"]["ok"], final["results"]["g1"])
+        self.assertEqual(self.opened(w), [PACK, POUCH])
+        self.assertEqual(self.closed(w), [POUCH])
+        self.assertTrue(w.items[PACK].Opened)
+
+    def test_a_highlight_leaves_its_containers_open_to_show_where_the_item_is(self):
+        w = home()
+        self.run_bridge(w, 1, [self.cmd("h1", "highlight", AMULET, [CHEST, BAG])])
+        self.assertEqual(self.opened(w), [CHEST, BAG])
+        self.assertEqual(self.closed(w), [])
+
+    def test_a_client_that_cannot_close_a_window_says_so_and_the_trip_still_succeeds(self):
+        for flag in ("no_container_gump", "gump_without_dispose"):
+            w = trip_home()
+            setattr(w, flag, True)
+            final, _ = self.run_bridge(w, 1, [self.trip("t1", takes=[(AMULET, [CHEST, BAG])])])
+            self.assertTrue(final["results"]["t1"]["ok"], (flag, final["results"]["t1"]))
+            self.assertEqual(self.closed(w), [], flag)
+            self.assertTrue(any("2 containers the bridge opened could not be closed" in m for m in w.messages), (flag, w.messages))
 
     def test_a_timed_out_walk_is_reported_failed_even_where_pathfinding_cannot_be_cancelled(self):
         w = home(); w.no_path = True
