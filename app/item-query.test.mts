@@ -85,6 +85,17 @@ test("[fast] applyItemQuery: text search hits itemSearchBlob (name)", () => {
   assert.deepEqual(names(rows), ["Vile Ring"]);
 });
 
+test("[fast] applyItemQuery: a Scroll of Transcendence is found by its skill, and sorts by skill then points (issue #181)", () => {
+  const sot = (skill: string, pts: string): Item => mk({ name: `Scroll of Transcendence (${skill} - ${pts} Pts)`, kind: "scroll", slot: null, lines: ["Scroll Of Transcendence", `Skill: ${skill} ${pts} Skill Points`] });
+  const items = [sot("Chivalry", "0.5"), sot("Animal Lore", "10.0"), sot("Animal Lore", "2.0"), ...ITEMS];
+  const hits = (q: string): string[] => names((applyItemQuery(items, parseItemQuery(new URLSearchParams(q)), ctx) as ItemQueryRows).rows);
+  assert.deepEqual(hits("q=transcendence+animal+lore&sort=name&dir=1"), ["Scroll of Transcendence (Animal Lore - 2.0 Pts)", "Scroll of Transcendence (Animal Lore - 10.0 Pts)"]);
+  assert.deepEqual(hits("q=animal+lore+2.0"), ["Scroll of Transcendence (Animal Lore - 2.0 Pts)"]);
+  assert.deepEqual(hits("q=transcendence&sort=name&dir=1"), ["Scroll of Transcendence (Animal Lore - 2.0 Pts)", "Scroll of Transcendence (Animal Lore - 10.0 Pts)", "Scroll of Transcendence (Chivalry - 0.5 Pts)"]);
+  const groups = (applyItemQuery(items, parseItemQuery(new URLSearchParams("q=transcendence&group=1&sort=name&dir=1")), ctx) as ItemQueryGroups).groups.map((g) => g.name);
+  assert.deepEqual(groups, ["Scroll of Transcendence (Animal Lore - 2.0 Pts)", "Scroll of Transcendence (Animal Lore - 10.0 Pts)", "Scroll of Transcendence (Chivalry - 0.5 Pts)"]);
+});
+
 test("[fast] applyItemQuery: kind filter", () => {
   const { rows } = applyItemQuery(ITEMS, parseItemQuery(new URLSearchParams("kind=bandage")), ctx) as ItemQueryRows;
   assert.deepEqual(names(rows), ["Bandage"]);

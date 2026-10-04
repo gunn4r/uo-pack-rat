@@ -151,6 +151,8 @@ export function matchesItem(it: Item, rq: RuleQuery, { rarity = [] }: { rarity?:
   return itemPasses(it, rq, rq.q.trim().toLowerCase(), itemOwnBlob, minRank, maxRank, rarity);
 }
 
+// Names compare their numbers as numbers, so "(Animal Lore - 2.0 Pts)" sorts before "(Animal Lore - 10.0 Pts)" (issue #181).
+const NAME_ORDER: Intl.CollatorOptions = { numeric: true };
 function sortValue(it: Item, key: string, ladder: RulesV1RarityItem[] | undefined): string | number {
   if (key === "name") return it.name;
   if (key === "seen") return String(it.seenAt);
@@ -182,12 +184,12 @@ export function applyItemQuery(items: Item[], query: ItemQuery, { rarity = [], n
   const k = query.sort, d = query.dir;
   const sorted = [...found].sort((a, b) => {
     const av = sortValue(a, k, rarity), bv = sortValue(b, k, rarity);
-    return typeof av === "number" ? ((bv as number) - av) * d : String(av).localeCompare(String(bv)) * d;
+    return typeof av === "number" ? ((bv as number) - av) * d : String(av).localeCompare(String(bv), undefined, k === "name" ? NAME_ORDER : {}) * d;
   });
   if (query.group) {
     // Group mode's sortable headers are Name, Kind, Total (amount) and Stacks; the numeric ones sort
     // high-to-low at dir +1, like the row view's numeric columns.
-    const groups = groupByName(sorted).sort((a, b) => (k === "amount" ? (b.amount - a.amount) * d : k === "stacks" ? (b.stacks - a.stacks) * d : k === "kind" ? a.kind.localeCompare(b.kind) * d : a.name.localeCompare(b.name) * d));
+    const groups = groupByName(sorted).sort((a, b) => (k === "amount" ? (b.amount - a.amount) * d : k === "stacks" ? (b.stacks - a.stacks) * d : k === "kind" ? a.kind.localeCompare(b.kind) * d : a.name.localeCompare(b.name, undefined, NAME_ORDER) * d));
     return { groups: groups.slice(query.offset, query.offset + query.limit).map(groupJson), total: groups.length, stacks: found.length, pieces };
   }
   return { rows: sorted.slice(query.offset, query.offset + query.limit), total: sorted.length, pieces };
