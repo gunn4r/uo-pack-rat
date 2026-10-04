@@ -377,6 +377,10 @@ test("[slow] two excluded weapon skills show on the chip and are saved with the 
     assert.equal(await chip.innerText(), "Weapons: any");
     await chip.click();
     for (const w of ["archery", "throwing"]) await page.locator(`.pop input[value="${w}"]`).check();
+    assert.equal(await chip.innerText(), "Weapons: 2 excluded, plus Use Best Weapon Skill");
+    const ubws = page.locator(".pop #b-ubws");
+    assert.ok(await ubws.isChecked(), "Use Best Weapon Skill is on by default");
+    await ubws.uncheck();
     assert.equal(await chip.innerText(), "Weapons: 2 excluded");
     await page.keyboard.press("Escape");
     await page.click("#b-save");
@@ -385,7 +389,8 @@ test("[slow] two excluded weapon skills show on the chip and are saved with the 
     await page.waitForSelector("#tab-builder:not([hidden]) #b-weapon", { timeout: 30_000 });
     assert.equal(await chip.innerText(), "Weapons: 2 excluded");
     await chip.click();
-    assert.deepEqual(await page.locator(".pop input:checked").evaluateAll((is) => is.map((i) => (i as HTMLInputElement).value)), ["archery", "throwing"]);
+    assert.ok(!(await page.locator(".pop #b-ubws").isChecked()), "the switch saved off");
+    assert.deepEqual(await page.locator(".pop .b-checks input:checked").evaluateAll((is) => is.map((i) => (i as HTMLInputElement).value)), ["archery", "throwing"]);
     assert.deepEqual(errors, []);
   } finally {
     await app.close();

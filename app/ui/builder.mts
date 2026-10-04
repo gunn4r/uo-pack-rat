@@ -435,17 +435,24 @@ function paintChip(chip: HTMLButtonElement, text: string, set: boolean): void {
   chip.classList.toggle("set", set);
   chip.querySelector("span")!.textContent = text;
 }
-// The Weapons chip: a checklist of the weapon skills, where a tick EXCLUDES that skill's weapons from the pool.
+// The Weapons chip: a checklist of the weapon skills, where a tick EXCLUDES that skill's weapons from the pool, and
+// under it the Use Best Weapon Skill switch (profile `ubwsAnyWeapon`, absent means on).
 function weaponChip(): HTMLButtonElement {
   const p = state.builder.profile!;
-  const chip = filterChip({ label: weaponsChipText(p.excludeWeapons), set: !!p.excludeWeapons?.length, attrs: { id: "b-weapon" } });
+  const text = (): string => weaponsChipText(p.excludeWeapons, p.ubwsAnyWeapon !== false);
+  const chip = filterChip({ label: text(), set: !!p.excludeWeapons?.length, attrs: { id: "b-weapon" } });
   chip.onclick = () => {
     const checks = WEAPON_SKILLS.map((w) => check({ label: weaponName(w), checked: !!p.excludeWeapons?.includes(w), attrs: { value: w }, onChange: (on) => {
       p.excludeWeapons = toggleWeapon(p.excludeWeapons || [], w, on);
-      paintChip(chip, weaponsChipText(p.excludeWeapons), !!p.excludeWeapons.length); updateTemplateBadge();
+      paintChip(chip, text(), !!p.excludeWeapons.length); updateTemplateBadge();
     } }).root);
+    const ubws = check({ label: "Allow any weapon with Use Best Weapon Skill", checked: p.ubwsAnyWeapon !== false, attrs: { id: "b-ubws" }, onChange: (on) => {
+      p.ubwsAnyWeapon = on;
+      paintChip(chip, text(), !!p.excludeWeapons?.length); updateTemplateBadge();
+    } }).root;
     popover(chip, [el("p", { class: "help" }, txt("Exclude weapon skills: a checked skill's weapons never enter the pool.")),
-      box("div", { class: "b-checks", role: "group", "aria-label": "Exclude weapon skills" }, ...checks)], { label: "Exclude weapon skills" });
+      box("div", { class: "b-checks", role: "group", "aria-label": "Exclude weapon skills" }, ...checks),
+      ubws, el("p", { class: "help" }, txt("It swings with your best of Swordsmanship, Fencing or Mace Fighting."))], { label: "Exclude weapon skills" });
   };
   return chip;
 }
@@ -542,7 +549,7 @@ async function runBuild(): Promise<void> {
   const badRule = document.querySelector<HTMLInputElement>("#b-panel-body .rule-row input[aria-invalid='true']");
   if (badRule) { badRule.focus(); return; }
   const name = state.builder.character, p = readControls();
-  const settings: RunSettings = { allowOthersWorn: p.allowOthersWorn, strLimit: p.strLimit, excludeTags: p.excludeTags, excludeRoots: p.excludeRoots, allowGargoyle: p.allowGargoyle, medOnly: p.medOnly, excludeWeapons: p.excludeWeapons || [], excludeSkills: p.excludeSkills || [], lockedSlots: p.lockedSlots };
+  const settings: RunSettings = { allowOthersWorn: p.allowOthersWorn, strLimit: p.strLimit, excludeTags: p.excludeTags, excludeRoots: p.excludeRoots, allowGargoyle: p.allowGargoyle, medOnly: p.medOnly, excludeWeapons: p.excludeWeapons || [], ubwsAnyWeapon: p.ubwsAnyWeapon !== false, excludeSkills: p.excludeSkills || [], lockedSlots: p.lockedSlots };
   const exact = knobs.exact, budgetMs = 1000 * Number(knobs.budgetS);
   const altCount = Number(knobs.altCount), altTol = Number(knobs.altTol);
   const opts = { restarts: Number(knobs.restarts), exact, ...(exact ? { timeBudgetMs: budgetMs } : {}), ...(exact && altCount > 0 ? { alternatives: { count: altCount, tolerance: altTol } } : {}) };   // the budget field is disabled without exact search: the server's default applies

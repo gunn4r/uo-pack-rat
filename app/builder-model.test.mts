@@ -54,6 +54,15 @@ test("[fast] builder model: the Weapons chip and summary say the exclusions in w
   assert.equal(weaponsSummary(), "any weapon");
   assert.equal(weaponsSummary(["throwing", "archery", "swordsmanship"]), "no archery, swordsmanship or throwing weapons", "in the skills' own order");
   assert.equal(weaponsSummary(["archery", "swordsmanship", "fencing", "throwing"]), "mace fighting weapons only");
+  // Use Best Weapon Skill is named only where it lets in what the exclusions alone would not.
+  assert.equal(weaponsChipText(["archery", "fencing", "mace fighting", "throwing"], true), "Weapons: Swordsmanship only, plus Use Best Weapon Skill");
+  assert.equal(weaponsChipText(["archery", "throwing"], true), "Weapons: 2 excluded, plus Use Best Weapon Skill");
+  assert.equal(weaponsChipText([], true), "Weapons: any");
+  assert.equal(weaponsChipText(["swordsmanship", "fencing", "mace fighting"], true), "Weapons: 3 excluded", "no melee skill left to swing with");
+  assert.equal(weaponsChipText(["archery", "fencing", "mace fighting", "throwing"], false), "Weapons: Swordsmanship only");
+  assert.equal(weaponsSummary(["archery", "fencing", "mace fighting", "throwing"], true), "swordsmanship weapons only, plus Use Best Weapon Skill");
+  assert.equal(poolSummary({ excludeWeapons: ["archery", "fencing", "mace fighting", "throwing"] }), "Own gear and unworn gear · no gargoyle-only · swordsmanship weapons only, plus Use Best Weapon Skill", "absent means on");
+  assert.equal(poolSummary({ excludeWeapons: ["archery", "fencing", "mace fighting", "throwing"], ubwsAnyWeapon: false }), "Own gear and unworn gear · no gargoyle-only · swordsmanship weapons only");
   assert.deepEqual(toggleWeapon(["throwing"], "archery", true), ["archery", "throwing"], "kept in the skills' order");
   assert.deepEqual(toggleWeapon(["archery", "throwing"], "archery", false), ["throwing"]);
 });
