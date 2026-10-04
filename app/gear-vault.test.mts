@@ -896,6 +896,13 @@ test("[fast] weapon filter: a Use Best Weapon Skill weapon passes while any mele
   assert.ok(!weaponAllowed(ubws("oneHanded", "fencing"), swordsOnly, false), "the switch off: its own skill decides");
   assert.ok(!weaponAllowed({ slot: "oneHanded", skillReq: "fencing", flags: [] } as unknown as Item, swordsOnly), "no flag, no pass");
   assert.ok(weaponAllowed({ slot: "ring", flags: ["use best weapon skill"] } as unknown as Item, [...WEAPON_SKILLS]), "a non-weapon is untouched");
+  // Issue #193: on this shard a Use Best Weapon Skill weapon can carry no Skill Required line (a Sledge Hammer). It swings
+  // with a melee skill all the same, so with every melee skill excluded (or the switch off and any one excluded) it stays out.
+  const noLine = { slot: "oneHanded", skillReq: null, flags: ["use best weapon skill"] } as unknown as Item;
+  assert.ok(!weaponAllowed(noLine, OTHERS("archery")), "archery only: the hammer stays out");
+  assert.ok(!weaponAllowed(noLine, swordsOnly, false), "the switch off: no skill of its own to vouch for it");
+  assert.ok(weaponAllowed(noLine, swordsOnly), "a melee skill allowed: it swings with that");
+  assert.ok(weaponAllowed({ slot: "twoHanded", skillReq: null, flags: [] } as unknown as Item, OTHERS("archery")), "a shield (no line, no flag) is untouched");
   const inv = { items: { 1: { serial: 1, slot: "oneHanded", gear: true, props: {}, tags: [], strReq: 0, root: 1, equippedBy: null, skillReq: "fencing", flags: ["use best weapon skill"] } } } as unknown as Inventory;
   assert.equal(buildPools(inv, "Kestrel", { excludeWeapons: swordsOnly }).pools.oneHanded?.length, 1, "buildPools defaults the switch on");
   assert.equal(buildPools(inv, "Kestrel", { excludeWeapons: swordsOnly, ubwsAnyWeapon: false }).skipped.weapon.length, 1);
