@@ -467,6 +467,8 @@ export function parseTooltip(rawLines?: Array<string | undefined> | undefined, a
   return { name, props, setBonus, tags, strReq, rarity, extras, flags, twoHanded, weight, skillReq, sotSkill, lines };
 }
 
+// The app's name order: A to Z, numbers by value, so "(Animal Lore - 2.0 Pts)" comes before "(Animal Lore - 10.0 Pts)" (issue #181).
+export const compareNames = (a: string, b: string): number => a.localeCompare(b, undefined, { numeric: true });
 // An item's name in game: its tooltip's first line, a stack's count stripped; the shown name when it has no tooltip.
 export function gameName(it: { name: string; lines?: string[] | undefined; amount?: number | undefined }): string {
   return stackName(it.lines?.[0], it.amount) || it.name;

@@ -8,7 +8,7 @@ import { createHash } from "node:crypto";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { dirname, join } from "node:path";
 import {
-  parseTooltip, displayName, gameName, classify, foldSnapshots, spellSchoolOf, buildPools, requirementReport, totalsOf, propertyKeys, bagLabel, capacityOf, NOT_BUILDER_KEYS, kindOf, groupByName, slayersOf, medableOf, weaponAllowed, settingsDiff, PROP_LABELS, LAYER_TO_SLOT, effectiveProfile, resistSkillBonus, toOptItem, labelOf, builderKeys, migrateProfiles, templateFrom, TEMPLATE_KEYS, setRules, getRules, tagUnits, tagInfo,
+  parseTooltip, displayName, gameName, compareNames, classify, foldSnapshots, spellSchoolOf, buildPools, requirementReport, totalsOf, propertyKeys, bagLabel, capacityOf, NOT_BUILDER_KEYS, kindOf, groupByName, slayersOf, medableOf, weaponAllowed, settingsDiff, PROP_LABELS, LAYER_TO_SLOT, effectiveProfile, resistSkillBonus, toOptItem, labelOf, builderKeys, migrateProfiles, templateFrom, TEMPLATE_KEYS, setRules, getRules, tagUnits, tagInfo,
   WEAPON_SKILLS, migrateWeaponSetting, excludeWeaponsError,
   shardResistCap, resistCapsFor, resistCapsError, profileResistCaps, RESIST_CAP_LIMITS,
 } from "./vault-lib.mts";
@@ -817,6 +817,11 @@ test("[smoke] displayName names a Scroll of Transcendence by its skill and point
   assert.equal(displayName(parseTooltip(["Scroll Of Transcendence", "Skill: Chivalry 2 Skill Points"])), "Scroll of Transcendence (Chivalry - 2.0 Pts)");
   assert.equal(displayName(parseTooltip(["Scroll Of Transcendence"])), "Scroll Of Transcendence");
   assert.equal(displayName(parseTooltip(["An Exalted Scroll Of Mysticism (110 Skill)"])), "An Exalted Scroll Of Mysticism (110 Skill)");
+});
+
+test("[fast] compareNames orders names A to Z with their numbers by value (issue #181)", () => {
+  const names = ["Scroll of Transcendence (Animal Lore - 10.0 Pts)", "Black Pearl", "Scroll of Transcendence (Animal Lore - 2.0 Pts)", "scroll of transcendence (Chivalry - 0.5 Pts)"];
+  assert.deepEqual(names.sort(compareNames), ["Black Pearl", "Scroll of Transcendence (Animal Lore - 2.0 Pts)", "Scroll of Transcendence (Animal Lore - 10.0 Pts)", "scroll of transcendence (Chivalry - 0.5 Pts)"]);
 });
 
 test("[fast] gameName is the tooltip's first line, a stack's count stripped, else the shown name", () => {
