@@ -1519,6 +1519,9 @@ test("[fast] weapon exclusions: a bad list is 400, excluded weapons stay out of 
   const bad = await post({ excludeWeapons: ["bows"] });
   assert.equal(bad.status, 400);
   assert.match(asJson<ErrorBody>(await bad.json()).error, /settings\.excludeWeapons\[0\] is not a weapon skill/);
+  const badUbws = await post({ ubwsAnyWeapon: "yes" });
+  assert.equal(badUbws.status, 400);
+  assert.match(asJson<ErrorBody>(await badUbws.json()).error, /settings\.ubwsAnyWeapon must be a boolean/);
 
   const inv = foldFixtures(join(HERE, "fixtures"));
   const skillOf = (serial: number): string => String(inv.items[serial]?.skillReq || "").toLowerCase();

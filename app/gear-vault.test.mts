@@ -17,6 +17,7 @@ import { upgradeScan, TAZUO_V1_CAPS } from "./scan-schema.mts";
 import { runKey, reusableRun, runSummary, normalizeRun, suitPieces, SOLVER_VERSION } from "./runs-lib.mts";
 import type { SavedRun } from "./runs-lib.mts";
 import { corePath } from "./config.mts";
+import { validate, type ValidatorSchema } from "./schema/validate.mts";
 import type { RulesV1, ScanV2 } from "./schema/types.d.mts";
 import type { OptPools, OptAssignment, OptProfile } from "./exact-solver.mts";
 import type * as Core from "../scripts/optimizer-core.mts";
@@ -882,6 +883,36 @@ test("[fast] weapon filter: an excluded skill's weapons leave the pool, and noth
   assert.deepEqual(fm.pools.helmet!.map((i) => i.serial), [6]);
   assert.deepEqual(hands(buildPools(inv, "Kestrel", {})), [1, 2, 3, 4, 5, 7, 8], "no exclusions: everything");
   assert.ok(weaponAllowed({ slot: "ring" } as unknown as Item, [...WEAPON_SKILLS]));
+});
+
+test("[fast] weapon filter: a Use Best Weapon Skill weapon passes while any melee skill is allowed", () => {
+  const ubws = (slot: string, skillReq: string): Item => ({ slot, skillReq, flags: ["use best weapon skill"] } as unknown as Item);
+  const swordsOnly = OTHERS("swordsmanship");
+  assert.ok(weaponAllowed(ubws("twoHanded", "swordsmanship"), swordsOnly), "a katana");
+  assert.ok(weaponAllowed(ubws("oneHanded", "fencing"), swordsOnly), "a kryss swings with swordsmanship");
+  assert.ok(weaponAllowed(ubws("twoHanded", "archery"), swordsOnly), "a bow swings with the best melee skill too");
+  assert.ok(!weaponAllowed(ubws("oneHanded", "fencing"), ["swordsmanship", "fencing", "mace fighting"]), "every melee skill excluded");
+  assert.ok(weaponAllowed(ubws("twoHanded", "archery"), ["swordsmanship", "fencing", "mace fighting"]), "then its own skill decides");
+  assert.ok(!weaponAllowed(ubws("oneHanded", "fencing"), swordsOnly, false), "the switch off: its own skill decides");
+  assert.ok(!weaponAllowed({ slot: "oneHanded", skillReq: "fencing", flags: [] } as unknown as Item, swordsOnly), "no flag, no pass");
+  assert.ok(weaponAllowed({ slot: "ring", flags: ["use best weapon skill"] } as unknown as Item, [...WEAPON_SKILLS]), "a non-weapon is untouched");
+  const inv = { items: { 1: { serial: 1, slot: "oneHanded", gear: true, props: {}, tags: [], strReq: 0, root: 1, equippedBy: null, skillReq: "fencing", flags: ["use best weapon skill"] } } } as unknown as Inventory;
+  assert.equal(buildPools(inv, "Kestrel", { excludeWeapons: swordsOnly }).pools.oneHanded?.length, 1, "buildPools defaults the switch on");
+  assert.equal(buildPools(inv, "Kestrel", { excludeWeapons: swordsOnly, ubwsAnyWeapon: false }).skipped.weapon.length, 1);
+});
+
+test("[fast] profiles: ubwsAnyWeapon is on unless set false, and the schema takes it", () => {
+  assert.equal(templateFrom({}).ubwsAnyWeapon, true, "an old profile or template without the field");
+  assert.equal(templateFrom({ ubwsAnyWeapon: false }).ubwsAnyWeapon, false);
+  const schema = JSON.parse(readFileSync(join(HERE, "schema", "profiles.v2.schema.json"), "utf8")) as ValidatorSchema;
+  assert.ok(validate(schema, { schemaVersion: 2, characters: { A: { ubwsAnyWeapon: false } }, templates: { t: templateFrom({}) } }).ok);
+  for (const g of ["characters", "templates"]) {
+    const r = validate(schema, { schemaVersion: 2, characters: {}, templates: {}, [g]: { A: { ubwsAnyWeapon: "yes" } } });
+    assert.match(r.errors[0]?.path || "", new RegExp(`^/${g}/A/ubwsAnyWeapon`), `PUT /api/profiles refuses a non-boolean in ${g}: ${JSON.stringify(r.errors)}`);
+  }
+  assert.deepEqual(settingsDiff({}, { ubwsAnyWeapon: false }), ["Use Best Weapon Skill weapons held to their own skill"]);
+  assert.deepEqual(settingsDiff({ ubwsAnyWeapon: false }, { ubwsAnyWeapon: true }), ["Use Best Weapon Skill weapons allowed"]);
+  assert.deepEqual(settingsDiff({}, { ubwsAnyWeapon: true }), [], "absent means on");
 });
 
 // Issue #188: the weapon skills a weapon counts under in the Inventory's Weapon skill filter. Use Best Weapon Skill swings
