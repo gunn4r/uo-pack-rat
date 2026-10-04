@@ -5,7 +5,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { EXTRA_COLS, colVal, rarityRank, parseItemQuery, applyItemQuery, facetsOf, matchesItem } from "./item-query.mts";
 import type { ItemQueryRows, ItemQueryGroups, RuleQuery } from "./item-query.mts";
-import { KINDS, flagLabel } from "./vault-lib.mts";
+import { KINDS, flagLabel, flagKeys } from "./vault-lib.mts";
 import type { Item } from "./vault-lib.mts";
 
 const NOW = Date.parse("2026-09-16T00:00:00Z");
@@ -371,4 +371,28 @@ test("[fast] applyItemQuery and matchesItem: every flag must be present, alongsi
   assert.deepEqual(ruleNames("flag=night%20sight&flag=mage%20armor", FLAGGED), ["Mage Plate"]);
   const { flags, ...old } = rule("kind=gear");
   assert.equal(matchesItem(FLAGGED[3]!, old), true, "a rule saved before flags existed has none, and requires none");
+});
+
+test("[fast] \"(imbued)\" is a yes/no property, read Imbued (issue #182)", () => {
+  const items = [mk({ name: "Imbued Kryss", slot: "oneHanded", gear: true, flags: ["(imbued)"] }), mk({ name: "Ingots", kind: "resource", slot: null, gear: false, flags: ["(imbued)"] })];
+  assert.deepEqual(flagKeys({ items }), ["(imbued)"]);
+  assert.equal(flagLabel("(imbued)"), "Imbued");
+  assert.deepEqual(names((applyItemQuery(items, parseItemQuery(new URLSearchParams("flag=(imbued)&kind=gear")), ctx) as ItemQueryRows).rows), ["Imbued Kryss"]);
+});
+test("[fast] every armor set piece folds into one Part of an Armor Set, whatever its piece count (issue #182)", () => {
+  const items = [
+    mk({ name: "Helm Of Sets", slot: "helmet", gear: true, flags: ["part of an armor set (6 pieces)"] }),
+    mk({ name: "Gloves Of Sets", slot: "hands", gear: true, flags: ["part of an armor set (4 pieces)"] }),
+    mk({ name: "Plain Gloves", slot: "hands", gear: true, flags: [] }),
+  ];
+  assert.deepEqual(flagKeys({ items }), ["part of an armor set"]);
+  assert.equal(flagLabel("part of an armor set"), "Part of an Armor Set");
+  const rows = (s: string): string[] => names((applyItemQuery(items, parseItemQuery(new URLSearchParams(s)), ctx) as ItemQueryRows).rows).sort();
+  assert.deepEqual(rows("flag=part%20of%20an%20armor%20set"), ["Gloves Of Sets", "Helm Of Sets"]);
+  assert.deepEqual(ruleNames("flag=part%20of%20an%20armor%20set", items), ["Gloves Of Sets", "Helm Of Sets"]);
+});
+test("[fast] matchesItem: a rule's flags match whatever their case, as a hand-edited organize.json may have them (issue #182)", () => {
+  assert.equal(matchesItem(FLAGGED[0]!, { ...rule(""), flags: ["Spell Channeling"] }), true);
+  assert.equal(matchesItem(FLAGGED[1]!, { ...rule(""), flags: ["Part Of An Armor Set", "MAGE ARMOR"] }), false, "still every one");
+  assert.equal(matchesItem(mk({ name: "Set Helm", gear: true, flags: ["part of an armor set (6 pieces)"] }), { ...rule(""), flags: ["Part of an Armor Set"] }), true);
 });

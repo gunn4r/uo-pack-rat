@@ -12,7 +12,7 @@
 // string columns (name, kind, slot label, location) sort A-to-Z when dir is +1 (av.localeCompare(bv) *
 // dir) — that asymmetry is the page's existing behavior (best-stat-first is the useful default for a
 // property column; alphabetical is the useful default for a name column), reproduced exactly, not fixed.
-import { itemSearchBlob, itemOwnBlob, groupByName, KINDS, SLOT_LABELS, propertyKeys, extraKeys, flagKeys, gearSkills } from "./vault-lib.mts";
+import { itemSearchBlob, itemOwnBlob, groupByName, KINDS, SLOT_LABELS, propertyKeys, extraKeys, flagKeys, flagKey, gearSkills } from "./vault-lib.mts";
 import type { Item, ItemGroup } from "./vault-lib.mts";
 import type { RulesV1RarityItem } from "./schema/types.d.mts";
 
@@ -134,7 +134,7 @@ function itemPasses(it: Item, q: RuleQuery, needle: string, blob: (it: Item) => 
   if (it.tags.some((t) => q.hideTags.includes(t))) return false;
   if (q.tags?.length && !it.tags.some((t) => q.tags!.includes(t))) return false;
   for (const f of q.props) if (!passes(colVal(it, f.key), f)) return false;
-  if (q.flags?.some((f) => !it.flags?.includes(f))) return false;
+  if (q.flags?.some((f) => !it.flags?.some((x) => flagKey(x) === flagKey(f)))) return false;
   if (needle && !blob(it).includes(needle)) return false;
   return true;
 }
