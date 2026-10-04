@@ -54,9 +54,10 @@ test("[fast] builder model: the Weapons chip and summary say the exclusions in w
   assert.equal(weaponsSummary(), "any weapon");
   assert.equal(weaponsSummary(["throwing", "archery", "swordsmanship"]), "no archery, swordsmanship or throwing weapons", "in the skills' own order");
   assert.equal(weaponsSummary(["archery", "swordsmanship", "fencing", "throwing"]), "mace fighting weapons only");
-  // Use Best Weapon Skill is named only where it lets in what the exclusions alone would not.
+  // Use Best Weapon Skill is named only when some melee skill is excluded and some is still allowed.
   assert.equal(weaponsChipText(["archery", "fencing", "mace fighting", "throwing"], true), "Weapons: Swordsmanship only, plus Use Best Weapon Skill");
-  assert.equal(weaponsChipText(["archery", "throwing"], true), "Weapons: 2 excluded, plus Use Best Weapon Skill");
+  assert.equal(weaponsChipText(["archery", "throwing"], true), "Weapons: 2 excluded", "every melee skill allowed: UBWS weapons pass anyway");
+  assert.equal(weaponsChipText(["fencing", "mace fighting"], true), "Weapons: 2 excluded, plus Use Best Weapon Skill");
   assert.equal(weaponsChipText([], true), "Weapons: any");
   assert.equal(weaponsChipText(["swordsmanship", "fencing", "mace fighting"], true), "Weapons: 3 excluded", "no melee skill left to swing with");
   assert.equal(weaponsChipText(["archery", "fencing", "mace fighting", "throwing"], false), "Weapons: Swordsmanship only");
