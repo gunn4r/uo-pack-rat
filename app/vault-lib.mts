@@ -1021,8 +1021,13 @@ export const MELEE_SKILLS: string[] = ["swordsmanship", "fencing", "mace fightin
 export const ubwsLetsIn = (excluded: string[], ubws = true): boolean => ubws && MELEE_SKILLS.some((w) => !excluded.includes(w));
 export function weaponAllowed(it: Item, excluded: string[] = [], ubws = true): boolean {
   if (!excluded.length || (it.slot !== "oneHanded" && it.slot !== "twoHanded")) return true;
-  if (ubwsLetsIn(excluded, ubws) && (it.flags || []).includes("use best weapon skill")) return true;
-  return !excluded.includes(String(it.skillReq || "").toLowerCase());
+  const own = String(it.skillReq || "").toLowerCase();
+  if ((it.flags || []).includes("use best weapon skill")) {
+    if (ubwsLetsIn(excluded, ubws)) return true;
+    // No Skill Required line (#193): it swings with a melee skill, and nothing vouches for one.
+    if (!own) return false;
+  }
+  return !excluded.includes(own);
 }
 // Issue #188: the weapon skills a weapon counts under in the Inventory's Weapon skill filter, in WEAPON_SKILLS order: its
 // Skill Required line, and with Use Best Weapon Skill also the three melee skills it may swing with (ServUO
