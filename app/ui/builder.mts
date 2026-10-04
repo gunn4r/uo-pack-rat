@@ -4,7 +4,7 @@
 // suit). The result, the compare view and the Solver details are ui/builder-result.mts; the saved-runs drawer
 // is ui/runs.mts. The panel is drawn from state.builder.profile plus the Advanced knobs below, so what a
 // build sends, what a profile saves and what a run snapshots are read from state, never from the DOM.
-import { PROP_LABELS, NOT_BUILDER_KEYS, OPTIMIZER_SLOTS, tagUnits, WEAPON_SKILLS, resistSkillBonus, effectiveProfile, getRules, RESIST_KEYS, RESIST_CAP_LIMITS, resistCapsFor, templateFrom, settingsDiff, bagLabel } from "../vault-lib.mts";
+import { PROP_LABELS, NOT_BUILDER_KEYS, OPTIMIZER_SLOTS, tagUnits, WEAPON_SKILLS, MELEE_SKILLS, resistSkillBonus, effectiveProfile, getRules, RESIST_KEYS, RESIST_CAP_LIMITS, resistCapsFor, templateFrom, settingsDiff, bagLabel } from "../vault-lib.mts";
 import type { EffectiveProfile, ResistCap, RunSettings, Character } from "../vault-lib.mts";
 import { state, invStamp } from "./store.mts";
 import type { BuilderProfile, BuilderJob, BuilderJobUi, FinishedBuild, BuildMeta } from "./store.mts";
@@ -444,15 +444,25 @@ function weaponChip(): HTMLButtonElement {
   chip.onclick = () => {
     const checks = WEAPON_SKILLS.map((w) => check({ label: weaponName(w), checked: !!p.excludeWeapons?.includes(w), attrs: { value: w }, onChange: (on) => {
       p.excludeWeapons = toggleWeapon(p.excludeWeapons || [], w, on);
-      paintChip(chip, text(), !!p.excludeWeapons.length); updateTemplateBadge();
+      paintChip(chip, text(), !!p.excludeWeapons.length); updateTemplateBadge(); paintUbws();
     } }).root);
     const ubws = check({ label: "Allow any weapon with Use Best Weapon Skill", checked: p.ubwsAnyWeapon !== false, attrs: { id: "b-ubws" }, onChange: (on) => {
       p.ubwsAnyWeapon = on;
       paintChip(chip, text(), !!p.excludeWeapons?.length); updateTemplateBadge();
-    } }).root;
+    } });
+    // With every melee skill excluded the check has nothing to swing with, so it is disabled and says why.
+    const paintUbws = (): void => {
+      const off = MELEE_SKILLS.every((w) => p.excludeWeapons?.includes(w));
+      ubws.input.disabled = off;
+      for (const n of [ubws.input, ubws.root]) {
+        if (off) n.title = "Use Best Weapon Skill swings with Swordsmanship, Fencing or Mace Fighting, all excluded";
+        else n.removeAttribute("title");
+      }
+    };
+    paintUbws();
     popover(chip, [el("p", { class: "help" }, txt("Exclude weapon skills: a checked skill's weapons never enter the pool.")),
       box("div", { class: "b-checks", role: "group", "aria-label": "Exclude weapon skills" }, ...checks),
-      ubws, el("p", { class: "help" }, txt("It swings with your best of Swordsmanship, Fencing or Mace Fighting."))], { label: "Exclude weapon skills" });
+      ubws.root, el("p", { class: "help" }, txt("It swings with your best of Swordsmanship, Fencing or Mace Fighting."))], { label: "Exclude weapon skills" });
   };
   return chip;
 }
