@@ -13,6 +13,7 @@ import { vaultHouse, courtyardHouse, castleHouse, fixtureTileData, FIXTURE_TILES
 import { syntheticTileData } from "../app/tiledata-fixture.mts";
 import { syntheticFacet, rgb555, type Run } from "../app/facet-fixture.mts";
 import { buildHouseModel, type HouseModel } from "../app/house-model.mts";
+import { fastestMs } from "../app/timing-fixture.mts";
 import { anchorOf } from "../app/ui/house-map-model.mts";
 import type { ElectronApplication, Page } from "playwright";
 
@@ -156,7 +157,8 @@ test("[slow] House map: draws every vault chest and the courtyard's walls in bot
   if (why) return t.skip(why);
   const { dir } = seed({ castle: true });
   const { app, page, errors } = await launch(dir);
-  // Click a level pill and time the synchronous redraw it triggers (sceneOf and the whole SVG build).
+  // Click a level pill and time the synchronous redraw it triggers (sceneOf and the whole SVG build); fastestMs keeps the
+  // fastest of several such redraws, so a busy runner times the code, not its neighbours.
   const timeLevel = (from: string, to: string): Promise<number> => page.evaluate(([a, b]) => {
     const pill = (name: string) => [...document.querySelectorAll<HTMLButtonElement>("#map-levels .pill")].find((x) => x.textContent === name)!;
     pill(a!).click();
@@ -176,12 +178,12 @@ test("[slow] House map: draws every vault chest and the courtyard's walls in bot
     const said = await page.locator(`#map-svg .map-stack[data-stack="${inner.letter}"]`).getAttribute("aria-label") || "";
     assert.match(said, new RegExp(`^Stack ${inner.letter}, 5 containers: `), said);
     for (const serial of inner.serials) assert.ok(said.includes(`${vaultModel.codes[String(serial)]} Metal Chest, `), `the stack's name holds ${vaultModel.codes[String(serial)]}: ${said}`);
-    const ms = await timeLevel("2nd floor", "Ground floor");
+    const ms = await fastestMs(() => timeLevel("2nd floor", "Ground floor"), 100);
     assert.ok(ms < 100, `drew the vault's ground floor in ${ms.toFixed(0)} ms`);
     assert.equal(await page.locator("#map-svg [data-chest]").count(), 120);
     await page.selectOption("#map-house", CASTLE);
     await page.waitForFunction(() => document.querySelectorAll("#map-svg [data-chest]").length === 180, undefined, { timeout: 15_000 });
-    const castleMs = await timeLevel("2nd floor", "Ground floor");
+    const castleMs = await fastestMs(() => timeLevel("2nd floor", "Ground floor"), 100);
     assert.ok(castleMs < 100, `drew the castle's ground floor in ${castleMs.toFixed(0)} ms`);
     assert.equal(await page.locator("#map-svg [data-chest]").count(), 180);
     await page.selectOption("#map-house", COURT);

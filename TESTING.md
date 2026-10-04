@@ -174,6 +174,10 @@ TEST_SKIP_SLOW=1 npm test
 
 Add a tag to every new test; an untagged test only runs in full mode (no pattern is applied there).
 
+## Speed checks
+
+A test that asserts code runs inside a millisecond budget times it with `fastestMs` from `app/timing-fixture.mts` (issue #195), never with a single sample: one untimed warm-up run, then the fastest of up to 10 runs spaced 50 ms apart, stopping at the first run inside the budget. CI runs on shared machines whose neighbours steal the CPU in bursts, and noise only ever adds time, so the minimum is the honest reading of the code's own cost; a real regression is slow on every run and still fails. Pass `fastestMs` a sample function that returns its own elapsed ms: `msOf(() => work())` for in-process code, or the time a `page.evaluate` measured inside an Electron page (the House map's level redraw in `scripts/ui-map.test.mts`). Keep the budget at what the feature needs, not at what a slow runner happened to take. Checks that guard a complexity cliff with a wide ceiling (`parseTooltip`'s 1 s against a 9 s quadratic, the fold's ratio of two runs) or that time a timeout or deadline itself (`timeBudgetMs`, `renameRetrying`, `close()`) are not speed checks in this sense and keep their single measurement.
+
 ## Ad-hoc runs
 
 `node --test` works directly on this suite, but pass explicit file globs — bare directory names (`node --test app scripts`) do **not** recurse into subdirectories on this Node version/project layout, and running bare `node --test` with no path at all will additionally pick up `scripts/test-runner.mts` itself as a test file (it matches Node's default `test-*.mts` discovery pattern) and re-enter its own `run()` call. Use:

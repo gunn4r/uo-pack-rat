@@ -2,6 +2,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { buildHouseModel } from "./house-model.mts";
+import { fastestMs, msOf } from "./timing-fixture.mts";
 import { fixtureTileData, vaultHouse, roofHouse, courtyardHouse, castleHouse, foundationHouse, stairHouse, G } from "./house-fixture.mts";
 import type { Container, Item } from "./vault-lib.mts";
 import type { HouseArea, HouseModel, Stack } from "./ui/api-types.mts";
@@ -412,11 +413,10 @@ test("[fast] house map: walls and the foundation's lip take their material's col
   assert.ok(!sc.pieces.some((p) => "cls" in p && has(p.cls, "map-wall") && !has(p.cls, "w-wood")), "no foundation tile is drawn as a wall");
 });
 
-test("[fast] house map: a castle's level becomes a scene in well under the 100 ms page budget", () => {
+test("[fast] house map: a castle's level becomes a scene in well under the 100 ms page budget", async () => {
   const { house, chests } = castleHouse(), m = buildHouseModel(house, td, chests);
-  // The best of three runs (the JIT warm), so a loaded CI runner times the code, not its neighbours.
-  let sc = sceneOf(m, 0, "angle"), ms = Infinity;
-  for (let i = 0; i < 3; i++) { const t0 = performance.now(); sc = sceneOf(m, 0, "angle"); ms = Math.min(ms, performance.now() - t0); }
+  let sc = sceneOf(m, 0, "angle");
+  const ms = await fastestMs(() => msOf(() => { sc = sceneOf(m, 0, "angle"); }), 100);
   assert.ok(sc.pieces.length > 300);
   assert.ok(ms < 100, `took ${ms.toFixed(0)} ms`);
 });

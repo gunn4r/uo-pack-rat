@@ -5,6 +5,7 @@ import { buildHouseModel, letterOf, materialFamily, plotSize, type HouseModel, t
 import type { HouseItem, HouseTile } from "./house-capture.mts";
 import { FLAG, readTileData } from "./tiledata.mts";
 import { syntheticTileData } from "./tiledata-fixture.mts";
+import { fastestMs, msOf } from "./timing-fixture.mts";
 import { G, FIXTURE_TILES, fixtureTileData, courtyardHouse, stairHouse, towerHouse, roofHouse, hallHouse, vaultHouse, castleHouse, foundationHouse, wallPairHouse } from "./house-fixture.mts";
 
 const td = fixtureTileData();
@@ -286,11 +287,10 @@ test("[fast] house model: a chest in a hallway is reached from the hallway and g
   assert.ok(m.spots[0]!.x >= 6008 && m.spots[0]!.x <= 6011, "the spot stands in the corridor");
 });
 
-test("[fast] house model: a castle (32 x 32, 4 levels, 300 chests) models in under 250 ms", () => {
+test("[fast] house model: a castle (32 x 32, 4 levels, 300 chests) models in under 250 ms", async () => {
   const { house, chests } = castleHouse();
-  // The best of three runs (the JIT warm), so a loaded CI runner times the code, not its neighbours.
-  let m = buildHouseModel(house, td, chests), ms = Infinity;
-  for (let i = 0; i < 3; i++) { const t0 = performance.now(); m = buildHouseModel(house, td, chests); ms = Math.min(ms, performance.now() - t0); }
+  let m = buildHouseModel(house, td, chests);
+  const ms = await fastestMs(() => msOf(() => { m = buildHouseModel(house, td, chests); }), 250);
   assert.equal(m.levels.length, 4);
   assert.equal(m.stacks.reduce((a, s) => a + s.serials.length, 0), 300);
   assert.ok(m.stacks.every((s) => s.spot !== null), "every stack is reachable from some spot");
