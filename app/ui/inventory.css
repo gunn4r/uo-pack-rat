@@ -133,11 +133,11 @@
 /* ---------------------------------------------------------------- Scrolls view (ui/scrolls.mts, issue #181) */
 .scr-search { width: 280px; flex: 0 1 280px; min-width: 180px; }
 .scr-search .input { padding-right: 32px; }
-#scr-tabs .seg-count { margin-left: 2px; color: var(--color-text-faint); font-variant-numeric: tabular-nums; }
+#scr-tabs .seg-count { margin-left: var(--space-0-5); color: var(--color-text-faint); font-variant-numeric: tabular-nums; }
 #scr-tabs button[aria-checked="true"] .seg-count { color: var(--color-text-muted); }
-.scr-facts { display: flex; align-items: center; gap: 6px; min-height: 28px; flex: none; min-width: 0; overflow: hidden; color: var(--color-text-muted); font-size: var(--text-sm); }
+.scr-facts { display: flex; align-items: center; gap: var(--space-1-5); min-height: 28px; flex: none; min-width: 0; overflow: hidden; color: var(--color-text-muted); font-size: var(--text-sm); }
 .scr-facts > span { white-space: nowrap; }
-.scr-warn { flex: none; }
+.scr-warn, #scr-stale { flex: none; }
 /* Wide enough that the roll-up and plan columns never crush; narrower windows scroll the table sideways. */
 .scr-tbl { min-width: 760px; }
 .scr-tbl.scr-plain { min-width: 640px; }
@@ -155,7 +155,7 @@
   .scr-tbl col.scr-w-bind { width: 160px; }
 }
 .scr-tbl tr.item { cursor: pointer; }
-.scr-tbl th .scr-sorted { display: inline-flex; align-items: center; gap: 4px; vertical-align: middle; }
+.scr-tbl th .scr-sorted { display: inline-flex; align-items: center; gap: var(--space-1); vertical-align: middle; }
 .scr-tbl th.num .scr-sorted { flex-direction: row-reverse; }
 .scr-tbl td.num a { color: var(--color-link); text-decoration: none; font-weight: var(--weight-medium); }
 .scr-tbl td.num a:hover { text-decoration: underline; }
@@ -170,8 +170,8 @@
 .scr-next > .meter { height: 4px; }
 .scr-next > .muted { text-align: right; }
 /* Scrolls of Transcendence: the points as chips, and the total against the usable marks */
-.scr-chips { display: flex; align-items: center; gap: 4px; min-width: 0; overflow: hidden; }
-.scr-chips > .badge { flex: none; height: 18px; padding: 0 6px; font-family: var(--font-mono); font-weight: var(--weight-regular); color: var(--color-text); }
+.scr-chips { display: flex; align-items: center; gap: var(--space-1); min-width: 0; overflow: hidden; }
+.scr-chips > .badge { flex: none; height: 18px; padding: 0 var(--space-1-5); font-family: var(--font-mono); font-weight: var(--weight-regular); color: var(--color-text); }
 .sot-bar { position: relative; height: 6px; border-radius: var(--radius-full); background: var(--color-surface-sunken); }
 .sot-bar > .fill { position: absolute; left: 0; top: 0; bottom: 0; border-radius: var(--radius-full); background: var(--color-accent); }
 .sot-bar > .mark { position: absolute; top: -4px; bottom: -4px; width: 2px; margin-left: -1px; background: var(--color-border-strong); border-radius: 1px; }
@@ -182,13 +182,13 @@
 .sot-scale > span:last-child { transform: translateX(-100%); }
 /* the detail, in the item peek's panel */
 .scr-peek .peek-meta .badge { height: 20px; }
-.scr-rollup { display: flex; flex-direction: column; gap: 6px; }
+.scr-rollup { display: flex; flex-direction: column; gap: var(--space-1-5); }
 .scr-place { display: flex; flex-direction: column; }
-.scr-place-head { display: flex; align-items: baseline; gap: 6px; min-width: 0; padding: 6px 0 2px; border-bottom: var(--border-width) solid var(--color-border); }
+.scr-place-head { display: flex; align-items: baseline; gap: var(--space-1-5); min-width: 0; padding: var(--space-1-5) 0 var(--space-0-5); border-bottom: var(--border-width) solid var(--color-border); }
 .scr-place-head > .ellip { flex: 0 1 auto; font-weight: var(--weight-medium); }
 .scr-place-head > .mono { flex: none; }
 .scr-place-n { margin-left: auto; flex: none; font-variant-numeric: tabular-nums; }
-.scr-place-who { padding: 2px 0 4px; }
+.scr-place-who { padding: var(--space-0-5) 0 var(--space-1); }
 .scr-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
 .scr-list > li { display: flex; align-items: center; gap: var(--space-2); min-height: 28px; border-bottom: var(--border-width) solid var(--color-border); min-width: 0; }
 .scr-list > li > .ellip { flex: 1 1 auto; }

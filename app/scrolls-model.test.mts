@@ -114,8 +114,9 @@ test("[fast] scrolls model: the binder plan binds to exactly 5.0 when it can, el
   // set that overshoots least, with the fewest scrolls: 17 × 0.3 = 5.1, 0.1 lost.
   const eighteen = Array.from({ length: 18 }, () => 3);
   assert.deepEqual(sotPlan(eighteen, USABLE), { kind: "bind", target: 50, pick: eighteen.slice(1), lost: 1 });
-  assert.equal(planText(sotPlan(eighteen, USABLE)), `Bind ${Array.from({ length: 17 }, () => "0.3").join(" + ")} → 5.0 (0.1 lost)`);
+  assert.equal(planText(sotPlan(eighteen, USABLE)), "Bind 17 × 0.3 → 5.0 (0.1 lost)");
   // Least overshoot first, then fewest scrolls: 2.4 + 2.7 (5.1) over 2.4 + 2.4 + 0.3 (also 5.1, three scrolls) and 2.7 + 2.7.
+  assert.equal(planText({ kind: "bind", target: 20, pick: [8, 4, 4, 2, 2], lost: 0 }), "Bind 0.8 + 2 × 0.4 + 2 × 0.2 → 2.0");
   assert.deepEqual(sotPlan([27, 27, 24, 24, 3], USABLE), { kind: "bind", target: 50, pick: [27, 24], lost: 1 });
   // An exact set still wins over an overshoot: 1.3 + 0.7 make 2.0 exactly.
   assert.deepEqual(sotPlan([27, 27, 13, 7], USABLE), { kind: "bind", target: 20, pick: [13, 7], lost: 0 });

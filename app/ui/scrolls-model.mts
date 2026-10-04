@@ -127,8 +127,14 @@ export function sotPlan(tenths: number[], usableAt: number[]): SotPlan {
   const above = targets.find((t) => t > total)!;
   return { kind: "short", target: above, short: above - total };
 }
+// The picked scrolls, largest first, a run of equal ones as "17 × 0.3".
+function pickText(pick: number[]): string {
+  const runs: Array<[number, number]> = [];
+  for (const t of pick) { const last = runs[runs.length - 1]; if (last && last[0] === t) last[1]++; else runs.push([t, 1]); }
+  return runs.map(([t, n]) => (n > 1 ? `${n} × ${fmtTenths(t)}` : fmtTenths(t))).join(" + ");
+}
 export function planText(plan: SotPlan): string {
-  if (plan.kind === "bind") return `Bind ${plan.pick.map(fmtTenths).join(" + ")} → ${fmtTenths(plan.target)}${plan.lost ? ` (${fmtTenths(plan.lost)} lost)` : ""}`;
+  if (plan.kind === "bind") return `Bind ${pickText(plan.pick)} → ${fmtTenths(plan.target)}${plan.lost ? ` (${fmtTenths(plan.lost)} lost)` : ""}`;
   return `${fmtTenths(plan.short)} short of ${fmtTenths(plan.target)}`;
 }
 

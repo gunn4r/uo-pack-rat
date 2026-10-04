@@ -46,8 +46,8 @@ test("[slow] the Scrolls view rolls power scrolls and Scrolls of Transcendence u
     await page.waitForFunction(() => location.hash === "#/scrolls");
     await row(page, "Provocation").waitFor({ timeout: 15_000 });
     assert.equal(await page.locator("#inv-view [aria-checked=true]").innerText(), "Scrolls");
-    assert.match(await page.locator("#scr-tabs").innerText(), /Power scrolls\s*25[\s\S]*Scrolls of Transcendence\s*11/);
-    assert.equal((await page.locator("#scr-facts").innerText()).replace(/\s+/g, " "), "25 power scrolls across 6 skills · 11 Scrolls of Transcendence across 6 skills · 1 empty Scroll Binder · 2 skills ready to bind");
+    assert.match(await page.locator("#scr-tabs").innerText(), /Power scrolls\s*25[\s\S]*Scrolls of Transcendence\s*29/);
+    assert.equal((await page.locator("#scr-facts").innerText()).replace(/\s+/g, " "), "25 power scrolls across 6 skills · 29 Scrolls of Transcendence across 7 skills · 1 empty Scroll Binder · 2 skills ready to bind");
 
     // One row per skill, closest to a roll-up first: Meditation can bind now; Archery and Provocation need 7 more each,
     // Archery's at the higher tier. Counts sit under their level; a zero is a blank cell.
@@ -65,10 +65,12 @@ test("[slow] the Scrolls view rolls power scrolls and Scrolls of Transcendence u
     assert.equal(pro[6], "", "a row that binds nothing has no text there");
     assert.equal(await row(page, "Provocation").locator('[role="meter"]').getAttribute("aria-label"), "5 of 12 110 scrolls toward a 115");
 
-    // The filter narrows the skills.
+    // The filter narrows the skills, and leaves the facts (a live region) as they are, not drawn again.
+    await page.evaluate(() => { (document.querySelector("#scr-facts span") as HTMLElement & { kept?: boolean }).kept = true; });
     await page.fill("#scr-q", "spir");
     await page.waitForFunction(() => document.querySelectorAll("#scr-table tbody tr.item").length === 1);
     assert.match(await page.locator("#scr-foot").innerText(), /1 of 6 skills · 1 scroll/);
+    assert.equal(await page.evaluate(() => (document.querySelector("#scr-facts span") as HTMLElement & { kept?: boolean }).kept), true);
     await page.fill("#scr-q", "");
     await row(page, "Provocation").waitFor();
 
@@ -106,6 +108,12 @@ test("[slow] the Scrolls view rolls power scrolls and Scrolls of Transcendence u
     assert.equal(medSot[4], "Bind 1.0 + 0.6 + 0.4 → 2.0");
     assert.equal((await cells(page, "Chivalry"))[4], "0.8 short of 2.0");
     assert.equal(await row(page, "Chivalry").locator('[role="meter"]').getAttribute("aria-valuetext"), "1.2 points");
+    // 18 × 0.3 make neither 2.0 nor 5.0: bind 17 of them for 5.1, a usable 5.0 with 0.1 lost. The meter stops at 5.0
+    // and its text keeps the real total.
+    const tactics = await cells(page, "Tactics");
+    assert.equal(tactics[4], "Bind 17 × 0.3 → 5.0 (0.1 lost)");
+    const bar = row(page, "Tactics").locator('[role="meter"]');
+    assert.deepEqual([await bar.getAttribute("aria-valuenow"), await bar.getAttribute("aria-valuetext")], ["5", "5.4 points"]);
 
     // A count cell lands on the Items view searching for exactly those scrolls.
     await page.evaluate(() => { location.hash = "#/scrolls"; });

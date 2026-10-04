@@ -1,6 +1,6 @@
 // scrolls-fixture.mts — the demo scans with more scrolls in Kestrel's chest, for the Scrolls view's Electron test
 // (scripts/ui-scrolls.test.mts, issue #181): a skill that can bind now, one close to a roll-up, Scrolls of
-// Transcendence that make an exact 2.0, and an empty Scroll Binder. Written into a data folder's scans/, so the
+// Transcendence that make an exact 2.0, some that can only bind past 5.0, and an empty Scroll Binder. Written into a data folder's scans/, so the
 // committed demo fixtures, and every other test's counts, stay as they are.
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
@@ -24,6 +24,7 @@ export const EXTRA: ScanItem[] = [
   ...power(5, "Provocation", 110), ...power(1, "Provocation", 115),   // 110 → 115: 5 of 12, 7 more
   ...power(3, "Archery", 115),   // 115 → 120: 3 of 10, 7 more
   sot("Meditation", 1.0), sot("Meditation", 0.6), sot("Meditation", 0.4), sot("Meditation", 0.3),   // Bind 1.0 + 0.6 + 0.4 → 2.0
+  ...Array.from({ length: 18 }, () => sot("Tactics", 0.3)),   // 5.4, no exact 2.0 or 5.0: bind 17 for 5.1, 0.1 lost
   scroll("Scroll Binder", ["Weight: 1 Stone"]),
 ];
 

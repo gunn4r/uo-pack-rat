@@ -88,6 +88,7 @@ function build(): void {
   root().replaceChildren(
     box("div", { class: "inv-toolbar", role: "toolbar", "aria-label": "Scrolls" }, s.root, tabs),
     box("div", { class: "scr-facts", id: "scr-facts", role: "status" }),
+    el("div", { id: "scr-stale", hidden: true }),
     el("div", { id: "scr-warn", hidden: true }),
     box("div", { class: "inv-body" },
       box("section", { class: "card inv-card", "aria-label": "Scrolls" },
@@ -109,8 +110,15 @@ function render(): void {
   const [pc, sc] = [...tabs.querySelectorAll<HTMLElement>(".seg-count")];
   pc!.textContent = data ? power.reduce((a, r) => a + r.total, 0).toLocaleString("en-US") : "";
   sc!.textContent = data ? sot.reduce((a, r) => a + r.tenths.length, 0).toLocaleString("en-US") : "";
+  // A live region: redrawn only when its words change, so typing in the filter does not announce it again.
   const facts = $<HTMLElement>("#scr-facts")!;
-  facts.replaceChildren(...(data && (data.power.length || data.sot.length) ? scrollFacts({ power, sot, binders: emptyBinderCount(data.binders), binder: !!binderRules() }) : []).flatMap((f, i) => [i ? txt("·", "faint") : null, txt(f)]).filter((x): x is HTMLSpanElement => !!x));
+  const factList = data && (data.power.length || data.sot.length) ? scrollFacts({ power, sot, binders: emptyBinderCount(data.binders), binder: !!binderRules() }) : [];
+  if (facts.dataset.text !== factList.join(" · ")) { facts.dataset.text = factList.join(" · "); facts.replaceChildren(...dotted(factList)); }
+  // A failed refetch over scrolls already shown: say they may be out of date.
+  const stale = $<HTMLElement>("#scr-stale")!;
+  const staleText = data && loadError ? `Could not refresh the scrolls, so these are from an earlier load: ${loadError}` : "";
+  stale.hidden = !staleText;
+  if (stale.dataset.text !== staleText) { stale.dataset.text = staleText; stale.replaceChildren(...(staleText ? [message({ tone: "bad", text: staleText })] : [])); }
   const warn = $<HTMLElement>("#scr-warn")!;
   const at = usableAt();
   warn.hidden = !(tab === "sot" && at && at.length > 1 && sot.length);
@@ -121,12 +129,14 @@ function render(): void {
   drawTable(all, shown);
   drawDetail(shown);
 }
+// Facts side by side with a faint "·" between them (the facts line, the footer's right-hand side).
+const dotted = (parts: string[]): HTMLSpanElement[] => parts.flatMap((t, i) => (i ? [txt("·", "faint"), txt(t)] : [txt(t)]));
 function transcendenceWarning(at: number[]): HTMLElement {
   const [first, ...rest] = at.map((p) => fmtTenths(toTenths(p)));
   const last = rest[rest.length - 1]!;
   return message({ tone: "warn", attrs: { role: "note", class: "msg warn scr-warn" }, text: box("span", {},
     txt(`Going past ${first} locks the binder until ${rest[0]}. `, "strong"),
-    txt(`A binder turns into a usable scroll at exactly ${first} points; add more and it stays a binder until it reaches ${rest.join(", then ")}, and points above ${last} are lost. The plans below only ever bind to an exact ${[first, ...rest].join(" or ")}.`)) });
+    txt(`A binder turns into a usable scroll at exactly ${first} points; add more and it stays a binder until it reaches ${rest.join(", then ")}, and points above ${last} are lost. The plans below bind to exactly ${[first, ...rest].join(" or ")} when your scrolls can, and otherwise go past ${last} by as little as they can.`)) });
 }
 
 function th(label: string | HTMLElement, { num = false, sort, title }: { num?: boolean; sort?: "ascending" | "descending"; title?: string } = {}): HTMLTableCellElement {
@@ -226,9 +236,10 @@ function sotColumns(plain: boolean): Col[] {
   cols.push({ head: th("Binder plan"), cell: (r) => { const p = (r as SotRow).plan!; return el("td", {}, txt(planText(p), p.kind === "bind" ? "ellip" : "ellip muted")); } });
   return cols;
 }
-// The total against the usable marks; a total past the last one fills the bar.
+// The total against the usable marks; a total past the last one fills the bar, and its value stays at the last mark
+// while its text gives the real total.
 function sotBar(r: SotRow, at: number[], max: number): HTMLElement {
-  return box("div", { class: "sot-bar", role: "meter", "aria-valuemin": 0, "aria-valuemax": max / 10, "aria-valuenow": r.total / 10, "aria-valuetext": `${fmtTenths(r.total)} points`, "aria-label": `${r.skill} points` },
+  return box("div", { class: "sot-bar", role: "meter", "aria-valuemin": 0, "aria-valuemax": max / 10, "aria-valuenow": Math.min(r.total, max) / 10, "aria-valuetext": `${fmtTenths(r.total)} points`, "aria-label": `${r.skill} points` },
     el("span", { class: "fill", style: `width:${Math.min(100, (100 * r.total) / max)}%` }),
     ...at.slice(0, -1).map((p) => el("span", { class: "mark", style: `left:${(100 * toTenths(p)) / max}%` })));
 }
@@ -236,8 +247,7 @@ function footer(all: Row[], shown: Row[], plain: boolean): HTMLDivElement {
   const scrolls = shown.reduce((a, r) => a + ("tenths" in r ? r.tenths.length : r.total), 0);
   const skills = shown.length === all.length ? plural(all.length, "skill") : `${shown.length.toLocaleString("en-US")} of ${plural(all.length, "skill")}`;
   // The count on the left, then the recipe and the order on the right.
-  const strip = (...right: string[]): HTMLDivElement => box("div", { class: "tbl-foot" }, txt(`${skills} · ${plural(scrolls, "scroll")}`), el("span", { class: "spacer" }),
-    ...right.flatMap((t, i) => [i ? txt("·", "faint") : null, txt(t)]).filter((x): x is HTMLSpanElement => !!x));
+  const strip = (...right: string[]): HTMLDivElement => box("div", { class: "tbl-foot" }, txt(`${skills} · ${plural(scrolls, "scroll")}`), el("span", { class: "spacer" }), ...dotted(right));
   if (tab === "power") {
     if (plain) return strip("Sorted by skill");
     return strip(`Binder: ${steps().map((s) => `${s.count} × ${s.from} → ${s.to}`).join(" · ")}`, "Sorted by closest to a roll-up");
