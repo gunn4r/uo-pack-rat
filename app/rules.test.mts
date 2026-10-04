@@ -128,3 +128,39 @@ test("[fast] tagInfo is optional and must map tags to short text", () => {
     assert.throws(() => loadRules(`tagbad${i}`, { userRulesDir: dir }), `${JSON.stringify(bad).slice(0, 40)} should be refused`);
   }
 });
+
+// scrollBinder (issue #181): the Scroll Binder's recipes, which the Inventory's Scrolls view rolls up against. Optional:
+// a shard without it gets the view's plain holdings.
+test("[fast] uoalive carries the Scroll Binder recipes and generic-osi none", () => {
+  const sb = loadRules("uoalive").scrollBinder;
+  assert.deepEqual(sb?.powerScrolls, [{ from: 105, to: 110, count: 8 }, { from: 110, to: 115, count: 12 }, { from: 115, to: 120, count: 10 }]);
+  assert.deepEqual(sb?.statScrolls, [{ from: 5, to: 10, count: 6 }, { from: 10, to: 15, count: 8 }, { from: 15, to: 20, count: 8 }, { from: 20, to: 25, count: 5 }]);
+  assert.deepEqual(sb?.transcendence, { usableAt: [2, 5] });
+  assert.equal(loadRules("generic-osi").scrollBinder, undefined);
+});
+
+test("[fast] a scrollBinder that could not be rolled up is refused", () => {
+  const good = loadRules("uoalive");
+  const step = { from: 105, to: 110, count: 8 };
+  const bad: Array<[string, unknown]> = [
+    ["a string count", { powerScrolls: [{ ...step, count: "8" }] }],
+    ["a count of 1", { powerScrolls: [{ ...step, count: 1 }] }],
+    ["a fractional level", { powerScrolls: [{ ...step, from: 105.5 }] }],
+    ["a step missing its target", { powerScrolls: [{ from: 105, count: 8 }] }],
+    ["an unknown key", { powerScrolls: [step], extra: true }],
+    ["a step down", { powerScrolls: [{ from: 110, to: 105, count: 8 }] }],
+    ["two steps from one level", { powerScrolls: [step, { from: 105, to: 115, count: 20 }] }],
+    ["usable points out of order", { transcendence: { usableAt: [5, 2] } }],
+    ["usable points finer than a tenth", { transcendence: { usableAt: [2.05] } }],
+    ["no usable points", { transcendence: { usableAt: [] } }],
+    ["zero usable points", { transcendence: { usableAt: [0, 2] } }],
+  ];
+  for (const [what, scrollBinder] of bad) {
+    const dir = mkdtempSync(join(tmpdir(), "qm-rules-binder-"));
+    writeFileSync(join(dir, "bad.json"), JSON.stringify({ ...good, id: "bad", scrollBinder }));
+    assert.throws(() => loadRules("bad", { userRulesDir: dir }), /bad\.json/, what);
+  }
+  const dir = mkdtempSync(join(tmpdir(), "qm-rules-binder-"));
+  writeFileSync(join(dir, "ok.json"), JSON.stringify({ ...good, id: "partial", scrollBinder: { transcendence: { usableAt: [1.5] } } }));
+  assert.deepEqual(loadRules("partial", { userRulesDir: dir }).scrollBinder, { transcendence: { usableAt: [1.5] } }, "each recipe list is optional");
+});
