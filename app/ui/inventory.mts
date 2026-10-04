@@ -7,7 +7,7 @@
 // between two spacer rows sized to the rest, and loads the matching rows from the server in 500-row
 // chunks as they scroll into view, so a large inventory costs one request per screenful reached, never
 // a pager click.
-import { SLOT_LABELS, tagUnits } from "../vault-lib.mts";
+import { SLOT_LABELS, tagUnits, flagLabel } from "../vault-lib.mts";
 import type { Item } from "../vault-lib.mts";
 import type { ItemQuery, Place } from "../item-query.mts";
 import { state } from "./store.mts";
@@ -326,10 +326,12 @@ function openAddMenu(): void {
   menu(addChip, entries, { label: "Add a filter" });
 }
 // A property rule: the property (searchable, grouped like the column picker), ≥ ≤ =, a number. Rules
-// add up (an item must pass every one), which the popover says.
+// add up (an item must pass every one), which the popover says. A yes/no property (issue #182, the last group)
+// is just "has": picking one hides the comparison and the number.
 function propertyPanel(close: () => void): Kids {
   const keys = [...new Set([...state.propKeys, ...(state.facets?.extraKeys || []), "strReq", "weight"])];
-  let key = "", op = "ge";
+  const flags = state.facets?.flagKeys || [];
+  let key = "", op = "ge", flag = false;
   const chosen = txt("Pick a property", "t-sm muted");
   const find = searchInput({ label: "Find a property", placeholder: "Find a property" });
   find.input.classList.add("input-sm");
@@ -337,10 +339,17 @@ function propertyPanel(close: () => void): Kids {
   const num = input({ type: "number", value: 1, size: "sm", attrs: { "aria-label": "Value" } });
   const opSeg = segmented({ label: "Comparison", options: [{ value: "ge", label: "≥" }, { value: "le", label: "≤" }, { value: "eq", label: "=" }], value: "ge", onChange: (v) => { op = v; } });
   const add = button({ label: "Add rule", variant: "primary", size: "sm", disabled: true, onClick: () => {
+    if (flag) { setQuery({ ...state.query, flags: [...new Set([...state.query.flags, key])] }); close(); return; }
     if (!key || num.value === "" || !Number.isFinite(+num.value)) { num.focus(); return; }
     setQuery({ ...state.query, props: [...state.query.props, { key, min: +num.value, ...(op === "ge" ? {} : { op: op as "le" | "eq" }) }] });
     close();
   } });
+  const pick = (b: HTMLElement, k: string, name: string, isFlag: boolean): void => {
+    key = k; flag = isFlag; chosen.textContent = name; chosen.className = "t-sm strong"; add.disabled = false;
+    opSeg.hidden = num.hidden = isFlag;
+    for (const o of list.querySelectorAll("[role=option]")) o.setAttribute("aria-selected", String(o === b));
+    if (isFlag) add.focus(); else { num.focus(); num.select(); }
+  };
   const draw = (filter: string): void => {
     const kids: HTMLElement[] = [];
     for (const g of groupColumns(keys)) {
@@ -348,14 +357,17 @@ function propertyPanel(close: () => void): Kids {
       if (!ks.length) continue;
       kids.push(txt(g.group, "inv-opt-group t-sm muted"));
       for (const k of ks) {
-        const b = box("button", { type: "button", class: "menu-item inv-prop", role: "option", "aria-selected": String(k === key) }, txt(colFull(k, full), "ellip"), txt(label(k), "t-sm muted"));
-        b.addEventListener("click", () => {
-          key = k; chosen.textContent = colFull(k, full); chosen.className = "t-sm strong"; add.disabled = false;
-          for (const o of list.querySelectorAll("[role=option]")) o.setAttribute("aria-selected", String(o === b));
-          num.focus(); num.select();
-        });
+        const b = box("button", { type: "button", class: "menu-item inv-prop", role: "option", "aria-selected": String(!flag && k === key) }, txt(colFull(k, full), "ellip"), txt(label(k), "t-sm muted"));
+        b.addEventListener("click", () => pick(b, k, colFull(k, full), false));
         kids.push(b);
       }
+    }
+    const fs = flags.filter((f) => !filter || f.includes(filter));
+    if (fs.length) kids.push(txt("Yes or no", "inv-opt-group t-sm muted"));
+    for (const f of fs) {
+      const b = box("button", { type: "button", class: "menu-item inv-prop", role: "option", "aria-selected": String(flag && f === key) }, txt(flagLabel(f), "ellip"), txt("Yes / no", "t-sm muted"));
+      b.addEventListener("click", () => pick(b, f, flagLabel(f), true));
+      kids.push(b);
     }
     list.replaceChildren(...(kids.length ? kids : [txt("No property matches.", "t-sm muted")]));
   };

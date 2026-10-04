@@ -1279,6 +1279,35 @@ export function extraKeys(inv: ItemsLike): string[] {
   for (const it of Object.values(inv.items)) for (const [k, v] of Object.entries(it.extras || {})) if (typeof v === "number" && !SKILL_SET.has(k)) set.add(k);
   return [...set].sort();
 }
+// Issue #182: the yes/no properties a filter can require (parseTooltip's flags), the ones present in the inventory.
+// A flag is offered when it is a known yes/no property (ServUO's boolean item attributes, "(imbued)", "part of an armor
+// set", plus the shard's item states) on any item, or when, on a piece of gear, it reads like one: one to four plain
+// words, with no digits or punctuation (which rules out "set: …", "engraved: …" and "1st year veteran reward"), no
+// linking word ("crafted by …", "blessed for …", "a recall rune for …") and no race lock ("gargoyles only", which the
+// gargoyle switch covers). Gear only, because a resource's lines are its material ("valorite", "barbed leather"), never
+// a property. Slayers have the Slayer filter, and tags (cursed, antique …) never reach the flags: parseTooltip files
+// them under tags.
+const BOOLEAN_FLAGS = new Set(["spell channeling", "mage armor", "night sight", "balanced", "use best weapon skill", "blessed", "insured", "exceptional", "reactive paralyze", "battle lust", "(imbued)", "part of an armor set"]);
+const FLAG_LIKE_RE = /^[a-z]+(?: [a-z]+){0,3}$/;
+const FREE_TEXT_RE = /\b(by|for|of|from|to|in|on|only)\b/;
+const ARMOR_SET_RE = /^part of an armor set\b/;
+// The key a flag is offered and matched under, lower-cased: every set piece's "part of an armor set (6 pieces)" is one
+// "part of an armor set", whatever its piece count. A filter's own flags go through it too, so a hand-edited rule's
+// "Spell Channeling" still matches.
+export const flagKey = (f: string): string => {
+  const k = f.toLowerCase();
+  return ARMOR_SET_RE.test(k) ? "part of an armor set" : k;
+};
+const isPropertyFlag = (f: string, gear: boolean): boolean => !slayersOf([f]).length && (BOOLEAN_FLAGS.has(f) || (gear && FLAG_LIKE_RE.test(f) && !FREE_TEXT_RE.test(f)));
+export function flagKeys(inv: ItemsLike): string[] {
+  const set = new Set<string>();
+  for (const it of Object.values(inv.items)) for (const raw of it.flags || []) { const f = flagKey(raw); if (isPropertyFlag(f, !!it.gear)) set.add(f); }
+  return [...set].sort((a, b) => flagLabel(a).localeCompare(flagLabel(b)));
+}
+// A flag's display name, in title case with its brackets dropped: "spell channeling" reads "Spell Channeling",
+// "(imbued)" "Imbued", "part of an armor set" "Part of an Armor Set".
+const SMALL_WORDS = new Set(["a", "an", "the", "of", "by", "for", "in", "on", "to"]);
+export const flagLabel = (f: string): string => f.replace(/[()]/g, "").trim().split(" ").map((w, i) => (i && SMALL_WORDS.has(w) ? w : w.charAt(0).toUpperCase() + w.slice(1))).join(" ");
 
 // The item's own words (name, tooltip lines, rarity, kind), never where it sits: what an Organize rule's free
 // text is matched against (item-query.mts's matchesItem, issue #11).

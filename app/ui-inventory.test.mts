@@ -25,7 +25,7 @@ test("[fast] plural agrees with its count and groups thousands", () => {
 });
 
 test("[fast] queryParams round-trips through the server's parser", () => {
-  const q: ItemQuery = { ...BASE, q: "ring", chars: ["Dorran", "Kestrel"], slot: ["ring", "?"], loc: ["Metal Chest, left"], roots: [12], rarityMin: "Greater Magic Item", kind: ["gear"], seenDays: 7, slayer: "*", nogarg: true, med: true, hideTags: ["cursed"], tags: ["brittle", "antique"], props: [{ key: "lmc", min: 8 }, { key: "hci", min: 5, op: "le" }], group: true, sort: "hci", dir: -1, offset: 500, limit: 500 };
+  const q: ItemQuery = { ...BASE, q: "ring", chars: ["Dorran", "Kestrel"], slot: ["ring", "?"], loc: ["Metal Chest, left"], roots: [12], rarityMin: "Greater Magic Item", kind: ["gear"], seenDays: 7, slayer: "*", nogarg: true, med: true, hideTags: ["cursed"], tags: ["brittle", "antique"], props: [{ key: "lmc", min: 8 }, { key: "hci", min: 5, op: "le" }], flags: ["spell channeling", "mage armor"], group: true, sort: "hci", dir: -1, offset: 500, limit: 500 };
   assert.deepEqual(parseItemQuery(queryParams(q)), q);
   assert.deepEqual(parseItemQuery(queryParams(BASE)), BASE);
 });
@@ -41,6 +41,16 @@ test("[fast] activeFilters words each filter as its token and removes only itsel
   assert.deepEqual(noKind.kind, []);
   assert.equal(noKind.rarityMin, "Greater Magic Item", "removing one filter leaves the others");
   assert.deepEqual(activeFilters(BASE, CTX), [], "a fresh query has no active filters");
+});
+
+test("[fast] a yes/no property is a token of its own, in Title Case, and Clear all clears it (issue #182)", () => {
+  const q: ItemQuery = { ...BASE, flags: ["spell channeling", "mage armor"] };
+  const tokens = activeFilters(q, CTX);
+  assert.deepEqual(tokens.map((t) => t.label), ["Spell Channeling", "Mage Armor"]);
+  assert.deepEqual(tokens.map((t) => t.removeLabel), ["Remove filter: Spell Channeling", "Remove filter: Mage Armor"]);
+  assert.deepEqual(tokens[0]!.remove(q).flags, ["mage armor"], "removing one leaves the other");
+  assert.equal(tokens[0]!.cause(3), "None of the 3 stacks has Spell Channeling.");
+  assert.deepEqual(clearAll(q).flags, []);
 });
 
 test("[fast] activeFilters counts the search as a filter, and Clear all clears it too", () => {
