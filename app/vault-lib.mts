@@ -461,14 +461,26 @@ export function parseTooltip(rawLines?: Array<string | undefined> | undefined, a
   }
   const ps = name.match(PS_LEVEL_RE);
   if (ps) props.psLevel = +ps[1]!;
-  const sot = SOT_NAME_RE.test(name) ? lines.slice(1).map((l) => l.match(SOT_LINE_RE)).find(Boolean) : null;
-  if (sot) { sotSkill = sot[1]!; props.sotPoints = +sot[2]!; }
+  const sot = sotOf(name, lines);
+  if (sot) { sotSkill = sot.skill; props.sotPoints = sot.points; }
   if (tags.length) props.tagPenalty = tags.reduce((a, t) => a + TU[t]!, 0);
   return { name, props, setBonus, tags, strReq, rarity, extras, flags, twoHanded, weight, skillReq, sotSkill, lines };
 }
 
 // The app's name order: A to Z, numbers by value, so "(Animal Lore - 2.0 Pts)" comes before "(Animal Lore - 10.0 Pts)" (issue #181).
 export const compareNames = (a: string, b: string): number => a.localeCompare(b, undefined, { numeric: true });
+// A Scroll of Transcendence's skill and points from its name and (stripped) tooltip lines; null for anything else.
+function sotOf(name: string, lines: string[]): { skill: string; points: number } | null {
+  const m = SOT_NAME_RE.test(name) ? lines.slice(1).map((l) => l.match(SOT_LINE_RE)).find(Boolean) : null;
+  return m ? { skill: m[1]!, points: +m[2]! } : null;
+}
+// displayName straight from a tooltip, without parseTooltip and so without the shard's rules: app/missing.mts runs
+// beside a vault-lib the server re-imports, whose rules this module instance never gets.
+export function shownName(rawLines: Array<string | undefined>, amount?: number | undefined): string {
+  const lines = rawLines.map(stripHtml).filter(Boolean);
+  const name = stackName(lines[0], amount), sot = sotOf(name, lines);
+  return displayName({ name, sotSkill: sot?.skill ?? null, props: sot ? { sotPoints: sot.points } : {} });
+}
 // An item's name in game: its tooltip's first line, a stack's count stripped; the shown name when it has no tooltip.
 export function gameName(it: { name: string; lines?: string[] | undefined; amount?: number | undefined }): string {
   return stackName(it.lines?.[0], it.amount) || it.name;

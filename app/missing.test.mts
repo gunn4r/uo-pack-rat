@@ -5,7 +5,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { foldSnapshots, setRules } from "./vault-lib.mts";
+import { foldSnapshots, getRules, setRules } from "./vault-lib.mts";
 import { missingSinceLastScan } from "./missing.mts";
 import { validateScan } from "./scan-schema.mts";
 import type { RulesV1, ScanV2 } from "./schema/types.d.mts";
@@ -133,4 +133,15 @@ test("[fast] two stacks of Scrolls of Transcendence merged in another chest are 
 test("[fast] a missing Scroll of Transcendence is listed by its skill and points (issue #181)", () => {
   const got = missing([scan(T1, [sot(PEARL, CHEST, 1)]), scan(T2, [])]);
   assert.deepEqual(got, { [CHEST]: [{ serial: PEARL, name: "Scroll of Transcendence (Chivalry - 0.6 Pts)", amount: 1, lastSeen: T1 }] });
+});
+test("[fast] missingSinceLastScan reads no shard rules: the server hands it a fold made by a freshly imported vault-lib (issue #181)", () => {
+  const snaps = [scan(T1, [sot(PEARL, CHEST, 1)]), scan(T2, [])];
+  const inv = foldSnapshots(snaps);
+  const rules = getRules();
+  setRules(null as unknown as RulesV1);
+  try {
+    assert.deepEqual(missingSinceLastScan(snaps, inv), { [CHEST]: [{ serial: PEARL, name: "Scroll of Transcendence (Chivalry - 0.6 Pts)", amount: 1, lastSeen: T1 }] });
+  } finally {
+    setRules(rules);
+  }
 });
