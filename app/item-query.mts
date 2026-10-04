@@ -12,7 +12,7 @@
 // string columns (name, kind, slot label, location) sort A-to-Z when dir is +1 (av.localeCompare(bv) *
 // dir) — that asymmetry is the page's existing behavior (best-stat-first is the useful default for a
 // property column; alphabetical is the useful default for a name column), reproduced exactly, not fixed.
-import { itemSearchBlob, itemOwnBlob, groupByName, KINDS, SLOT_LABELS, propertyKeys, extraKeys, gearSkills } from "./vault-lib.mts";
+import { itemSearchBlob, itemOwnBlob, groupByName, KINDS, SLOT_LABELS, propertyKeys, extraKeys, flagKeys, gearSkills } from "./vault-lib.mts";
 import type { Item, ItemGroup } from "./vault-lib.mts";
 import type { RulesV1RarityItem } from "./schema/types.d.mts";
 
@@ -50,21 +50,24 @@ export interface PropFilter { key: string; min: number; op?: PropOp | undefined;
 // The list filters (chars, slot, loc, roots, kind) match ANY of their values; an empty list is no filter.
 // `rarity` matches one tier exactly, `rarityMin` that tier or any above it on the shard's ladder, `rarityMax` that tier or any below it (an item with no tier, or one off the ladder, counts as below every tier).
 // `hideTags` drops an item with any of its tags, `tags` (issue #133) keeps only an item with any of its tags.
+// `flags` (issue #182) keeps only an item with EVERY one of its yes/no properties, like the property rules it sits beside.
 export interface ItemQuery {
   q: string; chars: string[]; slot: string[]; loc: string[]; roots: number[]; rarity: string; rarityMin: string; rarityMax: string; kind: string[];
-  seenDays: number; slayer: string; nogarg: boolean; med: boolean; hideTags: string[]; tags: string[]; props: PropFilter[]; group: boolean;
+  seenDays: number; slayer: string; nogarg: boolean; med: boolean; hideTags: string[]; tags: string[]; props: PropFilter[]; flags: string[]; group: boolean;
   sort: string; dir: 1 | -1; offset: number; limit: number;
 }
 
 // An Organize rule's query (issue #11): the Inventory's filters on the item itself. Location, character and
 // seen filters are left out, and so are the view and paging, because a rule must keep matching an item after
-// it moves. `tags` is optional: rules saved before it (issue #133) have none.
-export type RuleQuery = Omit<ItemQuery, "loc" | "roots" | "chars" | "seenDays" | "group" | "sort" | "dir" | "offset" | "limit" | "tags"> & { tags?: string[] };
+// it moves. `tags` and `flags` are optional: rules saved before them (issues #133, #182) have none.
+export type RuleQuery = Omit<ItemQuery, "loc" | "roots" | "chars" | "seenDays" | "group" | "sort" | "dir" | "offset" | "limit" | "tags" | "flags"> & { tags?: string[]; flags?: string[] };
 
 // Reads every filter/sort/paging knob off a URLSearchParams (GET /api/items' query string, or the page's
 // own future use of the same parser). `hide`, `tag`, `prop`, `slot` and `kind` accept either a single
 // comma-separated value (hide=a,b) or repeated params (hide=a&hide=b) — both are flattened the same way.
 // `char` and `loc` are repeated params only: a character or container name may itself hold a comma.
+// `flag` (issue #182) is repeated only too, one yes/no property each (`flag=spell channeling`), lower-cased as
+// parseTooltip keeps them: a separate param rather than a `prop` op, because a prop rule is a number on a key.
 // A prop rule is `key:min` (at least) or `key:op:min` with op one of ge, le, eq.
 export function parseItemQuery(searchParams: URLSearchParams): ItemQuery {
   const sp = searchParams;
@@ -103,6 +106,7 @@ export function parseItemQuery(searchParams: URLSearchParams): ItemQuery {
     hideTags,
     tags: splitAll("tag"),
     props,
+    flags: listOf("flag").map((s) => s.toLowerCase()),
     group: sp.get("group") === "1" && !wantsHits(sp),
     sort: sp.get("sort") || "name",
     dir: sp.get("dir") === "-1" ? -1 : 1,
@@ -130,6 +134,7 @@ function itemPasses(it: Item, q: RuleQuery, needle: string, blob: (it: Item) => 
   if (it.tags.some((t) => q.hideTags.includes(t))) return false;
   if (q.tags?.length && !it.tags.some((t) => q.tags!.includes(t))) return false;
   for (const f of q.props) if (!passes(colVal(it, f.key), f)) return false;
+  if (q.flags?.some((f) => !it.flags?.includes(f))) return false;
   if (needle && !blob(it).includes(needle)) return false;
   return true;
 }
@@ -208,6 +213,8 @@ export interface Facets {
   // Numeric extras a property filter can threshold (issue #133): offered by the Inventory's property rule only,
   // never by the Suit Builder, whose keys propKeys feeds.
   extraKeys: string[];
+  // Yes/no properties a filter can require (issue #182; vault-lib.mts's flagKeys says which flags count), lower-cased.
+  flagKeys: string[];
   gearSkills: string[];
   itemCount: number;
 }
@@ -238,5 +245,5 @@ export function facetsOf(items: Item[], { rarity = [] }: { rarity?: RulesV1Rarit
   const slayers = slayerNames.map((name) => ({ name, count: items.filter((i) => i.slayers?.includes(name)).length }));
   const slayerAny = items.filter((i) => i.slayers?.length).length;
   const kinds = KINDS.filter((k) => items.some((i) => i.kind === k)).map((name) => ({ name, count: items.filter((i) => i.kind === name).length }));
-  return { slots, locations, places, rarities, slayers, slayerAny, kinds, propKeys: propertyKeys({ items }), extraKeys: extraKeys({ items }), gearSkills: gearSkills({ items }), itemCount: items.length };
+  return { slots, locations, places, rarities, slayers, slayerAny, kinds, propKeys: propertyKeys({ items }), extraKeys: extraKeys({ items }), flagKeys: flagKeys({ items }), gearSkills: gearSkills({ items }), itemCount: items.length };
 }

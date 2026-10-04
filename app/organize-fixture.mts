@@ -79,7 +79,7 @@ export function maxOrganizeConfig(): OrganizeConfig {
     id: String(i).padEnd(64, "r"), name: t(LIMITS.text), origin: `strategy:${t(32)}` as const, targets: serials.slice(i, i + LIMITS.targets),
     match: {
       query: { q: t(LIMITS.q), slot: list(), rarity: t(LIMITS.text), rarityMin: t(LIMITS.text), rarityMax: t(LIMITS.text), kind: list(), slayer: t(LIMITS.text),
-        nogarg: false, med: false, hideTags: list(), tags: Array(LIMITS.tags).fill(t(LIMITS.text)), props: Array(LIMITS.props).fill({ key: t(LIMITS.text), min: -1.2345678901234567e-300, op: "le" }) },
+        nogarg: false, med: false, hideTags: list(), tags: Array(LIMITS.tags).fill(t(LIMITS.text)), flags: Array(LIMITS.flags).fill(t(LIMITS.text)), props: Array(LIMITS.props).fill({ key: t(LIMITS.text), min: -1.2345678901234567e-300, op: "le" }) },
       names: Array(LIMITS.names).fill(t(LIMITS.text)),
       build: "hybrid" as const,
       skipSuits: false,

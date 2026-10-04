@@ -58,6 +58,7 @@ function asJson<T = Record<string, unknown>>(body: unknown): T {
 interface InventoryFacets {
   kinds: unknown[];
   gearSkills: string[];
+  flagKeys: string[];
   propKeys?: string[];
   [key: string]: unknown;
 }
@@ -1294,6 +1295,13 @@ test("[fast] /api/items pages, sorts and searches", async () => {
   // The Inventory's list filters and the rarity minimum reach the query from the wire.
   const rings = asJson<ItemsPageResponse>(await (await get("/api/items?slot=ring&slot=bracelet&rarityMin=" + encodeURIComponent("Major Magic Item"))).json());
   assert.ok(rings.rows!.length > 0 && rings.rows!.every((r) => ["ring", "bracelet"].includes(r.slot as string)), JSON.stringify(rings.rows!.map((r) => r.slot)));
+  // Issue #182: a yes/no property reaches the query from the wire, and the facets offer it.
+  assert.ok(inv.inventory.facets.flagKeys.includes("spell channeling"), JSON.stringify(inv.inventory.facets.flagKeys));
+  const channel = asJson<ItemsPageResponse>(await (await get("/api/items?limit=500&flag=" + encodeURIComponent("spell channeling"))).json());
+  assert.ok(channel.rows!.length > 0 && channel.rows!.length < total, JSON.stringify(channel.total));
+  assert.ok(channel.rows!.every((r) => r.flags.includes("spell channeling")));
+  const both = asJson<ItemsPageResponse>(await (await get("/api/items?flag=" + encodeURIComponent("spell channeling") + "&flag=" + encodeURIComponent("mage armor"))).json());
+  assert.equal(both.total, 0, "flags AND together: no fixture item has both");
 });
 
 test("[fast] GET /api/items/by-serial resolves full item records by serial", async () => {

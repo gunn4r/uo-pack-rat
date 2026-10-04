@@ -847,3 +847,32 @@ test("[slow] Rarity at most keeps the tier picked and the ones below it", async 
     rmSync(dataDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
   }
 });
+
+test("[slow] a yes/no property picked in the property rule narrows the rows to the items that have it (issue #182)", async (t) => {
+  const why = unavailable();
+  if (why) return t.skip(why);
+  const dataDir = seedDataDir("packrat-ui-flag-");
+  const { app, page, errors } = await launch(dataDir);
+  try {
+    await fitWindow(app, page, { width: 1024, height: 768 });
+    await page.locator("#inv-table tbody tr.item").first().waitFor({ timeout: 30_000 });
+    await page.click("#f-add");
+    await page.getByRole("menuitem", { name: "Property rule…" }).click();
+    const pop = page.locator(".pop");
+    await pop.getByPlaceholder("Find a property").fill("spell");
+    await pop.getByRole("option", { name: "Spell Channeling" }).click();
+    assert.equal(await pop.getByRole("radiogroup", { name: "Comparison" }).isHidden(), true, "a yes/no property has no comparison");
+    assert.equal(await pop.getByRole("spinbutton", { name: "Value" }).isHidden(), true, "and no number");
+    assert.equal(await page.evaluate(() => document.activeElement?.textContent), "Add rule", "Add rule takes the focus, so Enter adds it");
+    await page.keyboard.press("Enter");
+    await waitCount(page, /^1 of /);
+    assert.ok((await page.locator("#inv-active .token").allInnerTexts()).some((s) => s.trim() === "Spell Channeling"), "the strip shows the property as a token");
+    assert.deepEqual((await page.locator("#inv-table tbody tr.item").allInnerTexts()).map((s) => s.includes("Animated Katana")), [true]);
+    await page.locator("#inv-active").getByRole("button", { name: "Remove filter: Spell Channeling" }).click();
+    await waitCount(page, /^[\d,]+ stacks/);
+    assert.deepEqual(errors, []);
+  } finally {
+    await app.close();
+    rmSync(dataDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
+  }
+});

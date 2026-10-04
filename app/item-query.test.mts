@@ -5,7 +5,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { EXTRA_COLS, colVal, rarityRank, parseItemQuery, applyItemQuery, facetsOf, matchesItem } from "./item-query.mts";
 import type { ItemQueryRows, ItemQueryGroups, RuleQuery } from "./item-query.mts";
-import { KINDS } from "./vault-lib.mts";
+import { KINDS, flagLabel } from "./vault-lib.mts";
 import type { Item } from "./vault-lib.mts";
 
 const NOW = Date.parse("2026-09-16T00:00:00Z");
@@ -56,7 +56,7 @@ const names = (r: Item[]): string[] => r.map((it) => it.name);
 
 test("[fast] parseItemQuery: defaults with no params", () => {
   const q = parseItemQuery(new URLSearchParams());
-  assert.deepEqual(q, { q: "", chars: [], slot: [], loc: [], roots: [], rarity: "", rarityMin: "", rarityMax: "", kind: [], seenDays: 0, slayer: "", nogarg: false, med: false, hideTags: [], tags: [], props: [], group: false, sort: "name", dir: 1, offset: 0, limit: 200 });
+  assert.deepEqual(q, { q: "", chars: [], slot: [], loc: [], roots: [], rarity: "", rarityMin: "", rarityMax: "", kind: [], seenDays: 0, slayer: "", nogarg: false, med: false, hideTags: [], tags: [], props: [], flags: [], group: false, sort: "name", dir: 1, offset: 0, limit: 200 });
 });
 
 test("[fast] parseItemQuery: clamps limit to [1, 500], offset to >= 0", () => {
@@ -336,4 +336,39 @@ test("[fast] rarityRank: known names rank in ladder order, unknown → 0", () =>
   assert.equal(rarityRank(RARITY_LADDER, "Not A Real Tier"), 0);
   assert.equal(rarityRank(RARITY_LADDER, null), 0);
   assert.equal(rarityRank([], "Minor Magic Item"), 0);
+});
+
+// Issue #182: yes/no properties ("Spell Channeling") as a filter. Only real item properties are offered: slayers have the
+// Slayer filter, race locks the gargoyle switch, and free text (maker, engraving, set lines, "blessed for …") and a
+// resource's material word are no property.
+const FLAGGED = [
+  mk({ name: "Animated Katana", slot: "oneHanded", gear: true, slayers: ["Orc"], flags: ["spell channeling", "orc slayer", "crafted by nobody", "engraved: bag 2"] }),
+  mk({ name: "Mage Plate", slot: "chest", gear: true, medable: true, flags: ["mage armor", "night sight", "blessed for somebody", "set: lower mana cost 8% (total)"] }),
+  mk({ name: "Night Ring", slot: "ring", gear: true, flags: ["night sight", "silver", "gargoyles only", "some new property"] }),
+  mk({ name: "Plain Kryss", slot: "oneHanded", gear: true, flags: [] }),
+  mk({ name: "Ingots", kind: "resource", slot: null, gear: false, flags: ["valorite", "a recall rune for an unknown location (trammel)"] }),
+  mk({ name: "Runebook", kind: "other", slot: null, gear: false, flags: ["blessed", "64 spells"] }),
+];
+test("[fast] facetsOf: flagKeys lists the yes/no properties present, never a slayer, race lock, free text or material", () => {
+  assert.deepEqual(facetsOf(FLAGGED).flagKeys, ["blessed", "mage armor", "night sight", "some new property", "spell channeling"]);
+  assert.deepEqual(facetsOf(ITEMS).flagKeys, [], "an item with no flags offers none");
+  assert.equal(flagLabel("spell channeling"), "Spell Channeling");
+});
+test("[fast] parseItemQuery: flag is repeated, lower-cased and kept whole", () => {
+  assert.deepEqual(parseItemQuery(new URLSearchParams("flag=Spell%20Channeling&flag=night%20sight&flag=%20")).flags, ["spell channeling", "night sight"]);
+  assert.deepEqual(parseItemQuery(new URLSearchParams()).flags, []);
+});
+test("[fast] applyItemQuery and matchesItem: every flag must be present, alongside the other filters", () => {
+  const rows = (s: string): string[] => names((applyItemQuery(FLAGGED, parseItemQuery(new URLSearchParams(s)), ctx) as ItemQueryRows).rows).sort();
+  assert.deepEqual(rows("flag=spell%20channeling"), ["Animated Katana"]);
+  assert.deepEqual(rows("flag=night%20sight"), ["Mage Plate", "Night Ring"]);
+  assert.deepEqual(rows("flag=night%20sight&flag=mage%20armor"), ["Mage Plate"], "AND, not any-of");
+  assert.deepEqual(rows("flag=night%20sight&slot=ring"), ["Night Ring"]);
+  assert.deepEqual(rows("flag=spell%20channeling&slayer=Orc"), ["Animated Katana"]);
+  assert.deepEqual(rows("flag=spell%20channeling&q=kryss"), []);
+  assert.deepEqual(rows("flag=reactive%20paralyze"), [], "a property no item has matches nothing");
+  assert.deepEqual(names((applyItemQuery([mk({ name: "Old Record" })], parseItemQuery(new URLSearchParams("flag=night%20sight")), ctx) as ItemQueryRows).rows), [], "an item without flags never has one");
+  assert.deepEqual(ruleNames("flag=night%20sight&flag=mage%20armor", FLAGGED), ["Mage Plate"]);
+  const { flags, ...old } = rule("kind=gear");
+  assert.equal(matchesItem(FLAGGED[3]!, old), true, "a rule saved before flags existed has none, and requires none");
 });

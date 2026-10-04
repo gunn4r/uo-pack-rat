@@ -1235,6 +1235,24 @@ export function extraKeys(inv: ItemsLike): string[] {
   for (const it of Object.values(inv.items)) for (const [k, v] of Object.entries(it.extras || {})) if (typeof v === "number" && !SKILL_SET.has(k)) set.add(k);
   return [...set].sort();
 }
+// Issue #182: the yes/no properties a filter can require (parseTooltip's flags), the ones present in the inventory.
+// A flag is offered when it is a known yes/no property (ServUO's boolean item attributes, plus the shard's item states)
+// on any item, or when, on a piece of gear, it reads like one: one to four plain words, with no digits or punctuation
+// (which rules out "set: …", "engraved: …", "1st year veteran reward" and "(imbued)"), no linking word ("crafted by …",
+// "blessed for …", "a recall rune for …") and no race lock ("gargoyles only", which the gargoyle switch covers). Gear
+// only, because a resource's lines are its material ("valorite", "barbed leather"), never a property. Slayers have the
+// Slayer filter, and tags (cursed, antique …) never reach the flags: parseTooltip files them under tags.
+const BOOLEAN_FLAGS = new Set(["spell channeling", "mage armor", "night sight", "balanced", "use best weapon skill", "blessed", "insured", "exceptional", "reactive paralyze", "battle lust"]);
+const FLAG_LIKE_RE = /^[a-z]+(?: [a-z]+){0,3}$/;
+const FREE_TEXT_RE = /\b(by|for|of|from|to|in|on|only)\b/;
+const isPropertyFlag = (f: string, gear: boolean): boolean => !slayersOf([f]).length && (BOOLEAN_FLAGS.has(f) || (gear && FLAG_LIKE_RE.test(f) && !FREE_TEXT_RE.test(f)));
+export function flagKeys(inv: ItemsLike): string[] {
+  const set = new Set<string>();
+  for (const it of Object.values(inv.items)) for (const f of it.flags || []) if (isPropertyFlag(f, !!it.gear)) set.add(f);
+  return [...set].sort();
+}
+// A flag's display name: "spell channeling" reads "Spell Channeling".
+export const flagLabel = (f: string): string => f.replace(/\b\w/g, (c) => c.toUpperCase());
 
 // The item's own words (name, tooltip lines, rarity, kind), never where it sits: what an Organize rule's free
 // text is matched against (item-query.mts's matchesItem, issue #11).
