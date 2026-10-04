@@ -6,7 +6,7 @@
 // Import reads one with a file input and merges it in, its entries winning (Settings › Data). reload() is imported
 // when it is needed: app.mts wires the page up as it loads, and this module is reached from inventory.mts, which the
 // DOM-less unit tests import.
-import { OVERRIDE_KINDS, kindNameKey, kindGraphicKey, ownKind, type Item } from "../vault-lib.mts";
+import { OVERRIDE_KINDS, gameName, kindNameKey, kindGraphicKey, ownKind, type Item } from "../vault-lib.mts";
 import { el, toast } from "./dom.mts";
 import { api } from "./api.mts";
 import { box, button, field, openDialog, select, txt } from "./components.mts";
@@ -18,7 +18,10 @@ import type { ItemKindsApiResponse } from "./api-types.mts";
 export async function openClassify(it: Item): Promise<void> {
   let doc: ItemKindsApiResponse;
   try { doc = await api<ItemKindsApiResponse>("/api/item-kinds"); } catch (e) { toast(errorText(e), "bad"); return; }
-  const byName = ownKind(doc.names, kindNameKey(it.name)), byGraphic = it.graphic != null ? ownKind(doc.graphics, kindGraphicKey(it.graphic)) : null;
+  // The name scope is the in-game name, which every item named so in game shares (a Scroll of Transcendence's shown
+  // name carries its skill, issue #181); the title keeps the shown name.
+  const named = gameName(it);
+  const byName = ownKind(doc.names, kindNameKey(named)), byGraphic = it.graphic != null ? ownKind(doc.graphics, kindGraphicKey(it.graphic)) : null;
   const now = byName ?? byGraphic ?? it.kind;
   const kind = select(OVERRIDE_KINDS.map((k) => ({ value: k, label: k })), OVERRIDE_KINDS.includes(now) ? now : "other", { attrs: { id: "kind-pick" } });
   const scope = (value: "name" | "graphic", label: string, on: boolean, disabled = false): HTMLLabelElement => {
@@ -27,9 +30,9 @@ export async function openClassify(it: Item): Promise<void> {
     return box("label", { class: "check" }, r, txt(label));
   };
   const scopes = box("div", { class: "field", role: "radiogroup", "aria-label": "Applies to" }, txt("Applies to", "label"),
-    scope("name", `Every item named "${it.name}"`, !byGraphic || !!byName),
+    scope("name", `Every item named "${named}"`, !byGraphic || !!byName),
     scope("graphic", it.graphic != null ? `Every item that looks like this (graphic ${kindGraphicKey(it.graphic)})` : "Every item that looks like this (its graphic is not known)", !!byGraphic && !byName, it.graphic == null));
-  const set = byName ? `You set this for every item named "${it.name}".` : byGraphic ? `You set this for every item with graphic ${kindGraphicKey(it.graphic!)}.` : null;
+  const set = byName ? `You set this for every item named "${named}".` : byGraphic ? `You set this for every item with graphic ${kindGraphicKey(it.graphic!)}.` : null;
   let d: { close: () => void } | null = null;
   // One change, then the inventory again; a refusal keeps the dialog open with the server's reason.
   const send = async (bodies: object[], done: string): Promise<void> => {
@@ -42,14 +45,14 @@ export async function openClassify(it: Item): Promise<void> {
   const save = (): Promise<void> => {
     const byGraphicNow = scopes.querySelector<HTMLInputElement>("input:checked")?.value === "graphic";
     // A name beats a graphic, so this item's own name entry would hide the graphic's new kind: it goes.
-    return send(byGraphicNow ? [...(byName ? [{ name: it.name, kind: null }] : []), { graphic: it.graphic, kind: kind.value }] : [{ name: it.name, kind: kind.value }],
-      byGraphicNow ? `Every item with graphic ${kindGraphicKey(it.graphic!)} is now ${kind.value}.` : `Every item named "${it.name}" is now ${kind.value}.`);
+    return send(byGraphicNow ? [...(byName ? [{ name: named, kind: null }] : []), { graphic: it.graphic, kind: kind.value }] : [{ name: named, kind: kind.value }],
+      byGraphicNow ? `Every item with graphic ${kindGraphicKey(it.graphic!)} is now ${kind.value}.` : `Every item named "${named}" is now ${kind.value}.`);
   };
   d = openDialog({
     title: `Classify ${it.name}`, width: "md", initialFocus: kind,
     body: [field({ label: "Kind", control: kind, help: set ?? `Now ${it.kind}, from Pack Rat's own list.` }), scopes],
     actions: [
-      ...(set ? [button({ label: "Reset to automatic", variant: "danger-outline", attrs: { id: "kind-reset" }, onClick: () => { void send([byName ? { name: it.name, kind: null } : { graphic: it.graphic, kind: null }], byName ? `Every item named "${it.name}" is classified automatically again.` : `Every item with graphic ${kindGraphicKey(it.graphic!)} is classified automatically again.`); } })] : []),
+      ...(set ? [button({ label: "Reset to automatic", variant: "danger-outline", attrs: { id: "kind-reset" }, onClick: () => { void send([byName ? { name: named, kind: null } : { graphic: it.graphic, kind: null }], byName ? `Every item named "${named}" is classified automatically again.` : `Every item with graphic ${kindGraphicKey(it.graphic!)} is classified automatically again.`); } })] : []),
       button({ label: "Cancel", onClick: () => d?.close() }),
       button({ label: "Save", variant: "primary", attrs: { id: "kind-save" }, onClick: () => { void save(); } }),
     ],

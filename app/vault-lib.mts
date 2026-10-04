@@ -33,6 +33,8 @@ export interface ParsedTooltip {
   twoHanded: boolean | null;
   weight: number | null;
   skillReq: string | null;
+  // A Scroll of Transcendence's skill as its tooltip writes it ("Animal Lore"); its points are props.sotPoints.
+  sotSkill: string | null;
   lines: string[];
 }
 
@@ -190,14 +192,14 @@ export const PROP_LABELS: Record<string, string> = {
   enhancePotions: "EP", selfRepair: "Self Rep", hitFireball: "Hit Fireball", hitLightning: "Hit Lightning",
   hitHarm: "Hit Harm", hitMagicArrow: "Hit MA", hitDispel: "Hit Dispel", hitPoisonArea: "Poison Area",
   hitFireArea: "Fire Area", hitColdArea: "Cold Area", hitEnergyArea: "Energy Area", hitPhysArea: "Phys Area",
-  mageWeapon: "Mage Wpn", psLevel: "PS level", tagPenalty: "Tag penalty",
+  mageWeapon: "Mage Wpn", psLevel: "PS level", sotPoints: "SoT pts", tagPenalty: "Tag penalty",
   stamPool: "Stam pool", manaPool: "Mana pool", hitsPool: "Hits pool",
 };
 // Properties the builder's weight and requirement rows never offer: tagPenalty carries a fixed weight
 // from the profile, and an item without a Mage Weapon line reads mageWeapon 0, which beats every mage
-// weapon's negative, so weighting it would reward not being one; psLevel is a power scroll's, never gear's.
+// weapon's negative, so weighting it would reward not being one; psLevel and sotPoints are scrolls', never gear's.
 // All stay filterable in the Inventory.
-export const NOT_BUILDER_KEYS = new Set(["tagPenalty", "mageWeapon", "psLevel"]);
+export const NOT_BUILDER_KEYS = new Set(["tagPenalty", "mageWeapon", "psLevel", "sotPoints"]);
 
 // Full names for the abbreviations, shown as hover tooltips in the app.
 export const PROP_FULL: Record<string, string> = {
@@ -210,7 +212,7 @@ export const PROP_FULL: Record<string, string> = {
   hitLifeLeech: "Hit Life Leech", hitStamLeech: "Hit Stamina Leech", hitManaLeech: "Hit Mana Leech", hitLowerDef: "Hit Lower Defense", hitLowerAttack: "Hit Lower Attack",
   enhancePotions: "Enhance Potions", selfRepair: "Self Repair", hitFireball: "Hit Fireball", hitLightning: "Hit Lightning", hitHarm: "Hit Harm",
   hitMagicArrow: "Hit Magic Arrow", hitDispel: "Hit Dispel", hitPoisonArea: "Hit Poison Area", hitFireArea: "Hit Fire Area", hitColdArea: "Hit Cold Area",
-  hitEnergyArea: "Hit Energy Area", hitPhysArea: "Hit Physical Area", mageWeapon: "Mage Weapon", psLevel: "Power scroll level (the skill cap it raises to)", tagPenalty: "Penalty for Cursed / Brittle / Antique / Prized tags",
+  hitEnergyArea: "Hit Energy Area", hitPhysArea: "Hit Physical Area", mageWeapon: "Mage Weapon", psLevel: "Power scroll level (the skill cap it raises to)", sotPoints: "Scroll of Transcendence skill points", tagPenalty: "Penalty for Cursed / Brittle / Antique / Prized tags",
   stamPool: "Stamina from gear: DEX bonus + Stamina Increase", manaPool: "Mana from gear: INT bonus + Mana Increase",
   hitsPool: "Hit points from gear: STR bonus ÷ 2 + Hit Point Increase",
 };
@@ -389,6 +391,10 @@ const SET_TOTAL_LINE_RE = /\(total\)$|^mastery bonus cooldown\b/;
 // A power scroll names its level: "An Exalted Scroll Of Mysticism (110 Skill)" (UO Alive, from real scans).
 // Only a scroll's name counts, so no other item with a number in brackets gains a property.
 const PS_LEVEL_RE = /\bscroll\b.*\((\d{3}) skill\)/i;
+// A Scroll of Transcendence names its skill and points on a tooltip line (issue #181): "Skill: Animal Lore 0.1 Skill
+// Points" (UO Alive, from real scans) or the older "Spirit Speak 0.5 Skill".
+const SOT_NAME_RE = /\bscroll of transcendence\b/i;
+const SOT_LINE_RE = /^(?:skill:\s*)?(.+?)\s+(\d+(?:\.\d+)?)\s+skill(?: points?)?\.?$/i;
 
 // Returns { name, props, setBonus, tags, strReq, rarity, extras, flags, lines }.
 //   props    : modeled numeric properties (optimizer keys) of the piece itself
@@ -412,7 +418,7 @@ export function parseTooltip(rawLines?: Array<string | undefined> | undefined, a
   const lines = (rawLines || []).map(stripHtml).filter(Boolean);
   const name = stackName(lines[0], amount);
   const props: PropMap = {}, setBonus: PropMap = {}, extras: ExtrasMap = {}, flags: string[] = [], tags: string[] = [];
-  let strReq = 0, rarity: string | null = null, twoHanded: boolean | null = null, weight: number | null = null, skillReq: string | null = null;
+  let strReq = 0, rarity: string | null = null, twoHanded: boolean | null = null, weight: number | null = null, skillReq: string | null = null, sotSkill: string | null = null;
   let inSet = false, inSetTotals = false;
   for (const raw of lines.slice(1)) {
     const line = raw.toLowerCase();
@@ -455,8 +461,34 @@ export function parseTooltip(rawLines?: Array<string | undefined> | undefined, a
   }
   const ps = name.match(PS_LEVEL_RE);
   if (ps) props.psLevel = +ps[1]!;
+  const sot = sotOf(name, lines);
+  if (sot) { sotSkill = sot.skill; props.sotPoints = sot.points; }
   if (tags.length) props.tagPenalty = tags.reduce((a, t) => a + TU[t]!, 0);
-  return { name, props, setBonus, tags, strReq, rarity, extras, flags, twoHanded, weight, skillReq, lines };
+  return { name, props, setBonus, tags, strReq, rarity, extras, flags, twoHanded, weight, skillReq, sotSkill, lines };
+}
+
+// The app's name order: A to Z, numbers by value, so "(Animal Lore - 2.0 Pts)" comes before "(Animal Lore - 10.0 Pts)" (issue #181).
+export const compareNames = (a: string, b: string): number => a.localeCompare(b, undefined, { numeric: true });
+// A Scroll of Transcendence's skill and points from its name and (stripped) tooltip lines; null for anything else.
+function sotOf(name: string, lines: string[]): { skill: string; points: number } | null {
+  const m = SOT_NAME_RE.test(name) ? lines.slice(1).map((l) => l.match(SOT_LINE_RE)).find(Boolean) : null;
+  return m ? { skill: m[1]!, points: +m[2]! } : null;
+}
+// displayName straight from a tooltip, without parseTooltip and so without the shard's rules: app/missing.mts runs
+// beside a vault-lib the server re-imports, whose rules this module instance never gets.
+export function shownName(rawLines: Array<string | undefined>, amount?: number | undefined): string {
+  const lines = rawLines.map(stripHtml).filter(Boolean);
+  const name = stackName(lines[0], amount), sot = sotOf(name, lines);
+  return displayName({ name, sotSkill: sot?.skill ?? null, props: sot ? { sotPoints: sot.points } : {} });
+}
+// An item's name in game: its tooltip's first line, a stack's count stripped; the shown name when it has no tooltip.
+export function gameName(it: { name: string; lines?: string[] | undefined; amount?: number | undefined }): string {
+  return stackName(it.lines?.[0], it.amount) || it.name;
+}
+// The name the app shows for an item: its in-game name, except a Scroll of Transcendence, which says its skill and
+// points (issue #181: dozens of rows read "Scroll Of Transcendence" otherwise). The in-game name stays lines[0].
+export function displayName(parsed: Pick<ParsedTooltip, "name" | "props" | "sotSkill">): string {
+  return parsed.sotSkill ? `Scroll of Transcendence (${parsed.sotSkill} - ${parsed.props.sotPoints!.toFixed(1)} Pts)` : parsed.name;
 }
 
 // ---------------------------------------------------------------------------
@@ -830,14 +862,15 @@ function enrich(raw: EnrichRaw, loc: EnrichLoc, overrides: KindOverrides): Item 
   const parsed = parseTooltip(raw.tooltip && raw.tooltip.length ? raw.tooltip : [raw.name], raw.amount);
   const cls = classify(parsed.name || raw.name, parsed, loc.layer, raw.graphic);
   const shipped = cls.gear ? "gear" : kindOf(parsed.name || raw.name, parsed, raw.graphic);
+  const name = displayName(parsed) || raw.name || "";
   return {
-    serial: +raw.serial, name: parsed.name || raw.name || "", graphic: raw.graphic, hue: raw.hue, amount: raw.amount || 1,
+    serial: +raw.serial, name, graphic: raw.graphic, hue: raw.hue, amount: raw.amount || 1,
     props: parsed.props, setBonus: parsed.setBonus, extras: parsed.extras, flags: parsed.flags, tags: parsed.tags, strReq: parsed.strReq,
     rarity: parsed.rarity, weight: parsed.weight, skillReq: parsed.skillReq, lines: parsed.lines,
     gargoyle: /\bgargish\b/i.test(parsed.name || raw.name || "") || parsed.flags.includes("gargoyles only"),
     slayers: slayersOf(parsed.flags),
     medable: medableOf(parsed.name || raw.name || "", cls.slot, cls.gear, parsed.flags),
-    slot: cls.slot, twoHanded: cls.twoHanded, gear: cls.gear, kind: shipped === "gear" ? shipped : overriddenKind(overrides, parsed.name || raw.name, raw.graphic) ?? shipped, ...loc,
+    slot: cls.slot, twoHanded: cls.twoHanded, gear: cls.gear, kind: shipped === "gear" ? shipped : (overriddenKind(overrides, name, null) ?? overriddenKind(overrides, parsed.name || raw.name, raw.graphic)) ?? shipped, ...loc,
   };
 }
 
@@ -1238,12 +1271,15 @@ export function extraKeys(inv: ItemsLike): string[] {
 
 // The item's own words (name, tooltip lines, rarity, kind), never where it sits: what an Organize rule's free
 // text is matched against (item-query.mts's matchesItem, issue #11).
+// The name once more with its punctuation as spaces, so "transcendence animal lore" finds "Scroll of Transcendence
+// (Animal Lore - 0.1 Pts)" (issue #181).
+const plainName = (it: Item): string => it.name.replace(/[^\p{L}\p{N}.]+/gu, " ");
 export function itemOwnBlob(it: Item): string {
-  return [it.name, ...(it.lines || []), it.rarity || "", it.kind || ""].join(" \n ").toLowerCase();
+  return [it.name, plainName(it), ...(it.lines || []), it.rarity || "", it.kind || ""].join(" \n ").toLowerCase();
 }
 
 export function itemSearchBlob(it: Item): string {
-  return [it.name, ...(it.lines || []), it.location?.text || "", it.rarity || "", it.kind || ""].join(" \n ").toLowerCase();
+  return [it.name, plainName(it), ...(it.lines || []), it.location?.text || "", it.rarity || "", it.kind || ""].join(" \n ").toLowerCase();
 }
 
 // ---------------------------------------------------------------------------
