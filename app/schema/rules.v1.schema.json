@@ -1,5 +1,5 @@
 {
-  "$comment": "Pack Rat shard rules file schema v1. Draft-07 style, restricted to the keyword subset app/schema/validate.mjs supports. A rules file carries everything that is shard-specific rather than OSI-standard: property caps, the Resisting Spells resist-bonus formula, race-specific cap overrides, tag-penalty units, the rarity ladder (name + colour, in ascending order), the gargoyle race-lock policy the free-skill list shown on character cards and, optionally, the Scroll Binder's recipes (scrollBinder, issue #181). app/rules.mjs validates every builtin and user rules file against this schema before it reaches setRules().",
+  "$comment": "Pack Rat shard rules file schema v1. Draft-07 style, restricted to the keyword subset app/schema/validate.mjs supports. A rules file carries everything that is shard-specific rather than OSI-standard: property caps, the Resisting Spells resist-bonus formula, race-specific cap overrides, tag-penalty units, the rarity ladder (name + colour, in ascending order), the gargoyle race-lock policy the free-skill list shown on character cards and, optionally, the Scroll Binder's recipes (scrollBinder, issue #181) and the Slayer filter's grouping (slayerGroups, issue #189). app/rules.mjs validates every builtin and user rules file against this schema before it reaches setRules().",
   "type": "object",
   "additionalProperties": true,
   "required": ["schemaVersion", "id", "name", "caps", "raceCaps", "resistSkillBonus", "tagUnits", "rarity", "raceLock", "freeSkills"],
@@ -37,6 +37,19 @@
       }
     },
     "freeSkills": { "type": "array", "items": { "type": "string" } },
+    "slayerGroups": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["slayers"],
+        "properties": {
+          "super": { "type": "array", "minItems": 1, "items": { "type": "string", "minLength": 1 } },
+          "heading": { "type": "string", "minLength": 1 },
+          "slayers": { "type": "array", "items": { "type": "string", "minLength": 1 } }
+        }
+      }
+    },
     "scrollBinder": {
       "type": "object",
       "additionalProperties": false,

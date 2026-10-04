@@ -57,6 +57,17 @@
   ],
   "raceLock": { "gargoyleOnly": true },
   "freeSkills": ["Lumberjacking", "Cartography", "Lockpicking", "Remove Trap", "Detecting Hidden", "Mining", "Fishing", "Hiding", "Item Identification", "Camping", "Begging", "Arms Lore", "Forensic Evaluation", "Taste Identification", "Cooking", "Tracking", "Herding"],
+  "slayerGroups": [
+    { "super": ["Demon", "Abyss", "Exorcism (demons)"], "slayers": ["Gargoyle"] },
+    { "super": ["Elemental", "Elemental Ban"], "slayers": ["Air Elemental", "Blood Elemental", "Earth Elemental", "Fire Elemental", "Poison Elemental", "Elemental Health", "Snow Elemental", "Water Elemental"] },
+    { "super": ["Fey"], "slayers": [] },
+    { "super": ["Arachnid"], "slayers": ["Scorpion", "Spider", "Terathan"] },
+    { "super": ["Reptile"], "slayers": ["Dragon", "Lizardman", "Ophidian", "Snake"] },
+    { "super": ["Repond", "Repond (humanoids)"], "slayers": ["Goblin", "Orc", "Ogre", "Troll", "Vermin"] },
+    { "super": ["Undead", "Undead (Silver)"], "slayers": [] },
+    { "super": ["Eodon"], "slayers": ["Dinosaur", "Eodon Tribes", "Myrmidex"] },
+    { "heading": "Talisman slayers", "slayers": ["Bat", "Bear", "Beetle", "Bird", "Bovine", "Flame", "Ice", "Mage", "Wolf"] }
+  ],
   "scrollBinder": {
     "powerScrolls": [{ "from": 105, "to": 110, "count": 8 }, { "from": 110, "to": 115, "count": 12 }, { "from": 115, "to": 120, "count": 10 }],
     "statScrolls": [{ "from": 5, "to": 10, "count": 6 }, { "from": 10, "to": 15, "count": 8 }, { "from": 15, "to": 20, "count": 8 }, { "from": 20, "to": 25, "count": 5 }],

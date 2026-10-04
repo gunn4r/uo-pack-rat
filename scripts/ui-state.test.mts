@@ -906,3 +906,31 @@ test("[slow] Swordsmanship picked in the Weapon skill chip narrows the rows to s
     rmSync(dataDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
   }
 });
+
+test("[slow] the Slayer filter lists each super slayer above its lesser slayers, and picking one narrows the rows (issue #189)", async (t) => {
+  const why = unavailable();
+  if (why) return t.skip(why);
+  const dataDir = seedDataDir("packrat-ui-slayer-");
+  const { app, page, errors } = await launch(dataDir);
+  try {
+    await fitWindow(app, page, { width: 1024, height: 768 });
+    await page.locator("#inv-table tbody tr.item").first().waitFor({ timeout: 30_000 });
+    await page.click("#f-add");
+    await page.getByRole("menuitem", { name: "Slayer…" }).click();
+    const list = page.locator(".pop").getByRole("radiogroup", { name: "Slayer" });
+    const rows = (await list.locator(".inv-opt").allInnerTexts()).map((s) => s.split("\n")[0]!.trim());
+    // The demo scans hold Gargoyle Slayer items but no Demon Slayer one: Demon stays as their heading, with no radio.
+    const demon = rows.findIndex((s) => s.startsWith("Demon Slayer")), gargoyle = rows.indexOf("Gargoyle Slayer");
+    assert.ok(demon >= 0 && gargoyle > demon, `Demon Slayer heads Gargoyle Slayer: ${JSON.stringify(rows)}`);
+    assert.equal(await list.locator(".inv-opt").nth(demon).locator("input").count(), 0, "a heading is not a radio");
+    const count = (await list.locator(".inv-opt").nth(gargoyle).locator(".inv-opt-count").innerText()).trim();
+    await list.locator('input[value="Gargoyle"]').click();
+    await waitCount(page, new RegExp(`^${count} of `));
+    assert.ok((await page.locator("#inv-active .token").allInnerTexts()).some((s) => s.includes("Slayer: Gargoyle Slayer")), "the strip names the slayer");
+    assert.equal(await page.locator("#inv-table tbody tr.item").count(), Number(count));
+    assert.deepEqual(errors, []);
+  } finally {
+    await app.close();
+    rmSync(dataDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
+  }
+});

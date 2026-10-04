@@ -46,6 +46,21 @@ export function scrollBinderProblem(sb: RulesV1["scrollBinder"]): string | null 
   return null;
 }
 
+// What the schema cannot say about the Slayer filter's groups (issue #189): each group is either a super slayer's
+// (its names) or a titled list, never both, and a slayer is listed in one place only, in any case.
+export function slayerGroupsProblem(groups: RulesV1["slayerGroups"]): string | null {
+  const seen = new Set<string>();
+  for (const [i, g] of (groups ?? []).entries()) {
+    if (!g.super === !g.heading) return `/slayerGroups/${i} needs either "super" or "heading"`;
+    for (const name of [...(g.super ?? []), ...g.slayers]) {
+      const key = name.toLowerCase();
+      if (seen.has(key)) return `/slayerGroups lists "${name}" twice`;
+      seen.add(key);
+    }
+  }
+  return null;
+}
+
 function loadFile(path: string): RulesV1 {
   let raw: unknown;
   try {
@@ -55,8 +70,8 @@ function loadFile(path: string): RulesV1 {
   }
   const { ok, errors } = validate(SCHEMA, raw);
   if (!ok) throw new Error(`invalid rules file ${path}: ${errors.map((e) => `${e.path} ${e.msg}`).join("; ")}`);
-  const binder = scrollBinderProblem((raw as RulesV1).scrollBinder);
-  if (binder) throw new Error(`invalid rules file ${path}: ${binder}`);
+  const problem = scrollBinderProblem((raw as RulesV1).scrollBinder) ?? slayerGroupsProblem((raw as RulesV1).slayerGroups);
+  if (problem) throw new Error(`invalid rules file ${path}: ${problem}`);
   // validate() only proves raw matches the ValidatorSchema keyword subset above, at runtime — it has
   // no way to hand back a narrowed RulesV1 (it's shared by every schema in this repo, not specific to
   // this one), so this cast is the trust boundary, taken only after the check just above passed.

@@ -46,5 +46,16 @@
     { "name": "Legendary Artifact", "colour": "#e0342b" }
   ],
   "raceLock": { "gargoyleOnly": true },
-  "freeSkills": []
+  "freeSkills": [],
+  "slayerGroups": [
+    { "super": ["Demon", "Exorcism (demons)"], "slayers": ["Gargoyle"] },
+    { "super": ["Elemental", "Elemental Ban"], "slayers": ["Air Elemental", "Blood Elemental", "Earth Elemental", "Fire Elemental", "Poison Elemental", "Elemental Health", "Snow Elemental", "Water Elemental"] },
+    { "super": ["Fey"], "slayers": [] },
+    { "super": ["Arachnid"], "slayers": ["Scorpion", "Spider", "Terathan"] },
+    { "super": ["Reptile"], "slayers": ["Dragon", "Lizardman", "Ophidian", "Snake"] },
+    { "super": ["Repond", "Repond (humanoids)"], "slayers": ["Ogre", "Orc", "Troll"] },
+    { "super": ["Undead", "Undead (Silver)"], "slayers": [] },
+    { "super": ["Eodon"], "slayers": ["Dinosaur", "Eodon Tribes", "Myrmidex"] },
+    { "heading": "Talisman slayers", "slayers": ["Bat", "Bear", "Beetle", "Bird", "Bovine", "Flame", "Goblin", "Ice", "Mage", "Vermin", "Wolf"] }
+  ]
 }
