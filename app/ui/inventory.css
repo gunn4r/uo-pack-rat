@@ -19,6 +19,8 @@
   .inv-toolbar .fchip[data-facet]:not(.set) { display: none; }
   .inv-toolbar #inv-rows { display: none; }
 }
+/* The Weapon skill chip (issue #188) folds already below 1280 px: the toolbar has no room for it between 1180 and 1280. */
+@media (max-width: 1279px) { .inv-toolbar #f-wskill:not(.set) { display: none; } }
 
 /* ---------------------------------------------------------------- the table card */
 .inv-body { flex: 1 1 auto; min-height: 0; display: flex; gap: var(--space-4); position: relative; }
@@ -102,6 +104,10 @@
 .inv-opt .ellip { flex: 1 1 auto; }
 .inv-opt .inv-opt-count { margin-left: auto; font-size: var(--text-sm); color: var(--color-text-muted); font-variant-numeric: tabular-nums; }
 .inv-opt .mono { flex: none; }
+.inv-opt.head { display: flex; gap: var(--space-2); color: var(--color-text-muted); }
+.inv-opt.head:not(.title) { padding-left: calc(14px + var(--space-2)); }
+.inv-opt.sep { margin-top: var(--space-1); padding-top: var(--space-1); border-top: 1px solid var(--color-border); }
+.inv-opt-tag { margin-left: var(--space-1); font-size: var(--text-xs); color: var(--color-text-muted); }
 .inv-prop-list { max-height: 220px; }
 .pr .menu-item.inv-prop { height: 28px; justify-content: space-between; font-weight: var(--weight-regular); }
 .pr .menu-item.inv-prop[aria-selected="true"] { background: var(--color-chip-set); color: var(--color-on-chip-set); border: var(--border-width) solid var(--color-accent); }

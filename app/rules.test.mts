@@ -164,3 +164,36 @@ test("[fast] a scrollBinder that could not be rolled up is refused", () => {
   writeFileSync(join(dir, "ok.json"), JSON.stringify({ ...good, id: "partial", scrollBinder: { transcendence: { usableAt: [1.5] } } }));
   assert.deepEqual(loadRules("partial", { userRulesDir: dir }).scrollBinder, { transcendence: { usableAt: [1.5] } }, "each recipe list is optional");
 });
+
+// slayerGroups (issue #189): the Slayer filter's super slayers with their lesser slayers, as the shard's wiki charts
+// them. Optional: a shard without it gets the plain A–Z list.
+test("[fast] uoalive groups its slayers like the wiki's charts, generic-osi like ServUO's SlayerGroup", () => {
+  const ua = loadRules("uoalive").slayerGroups ?? [];
+  const lesserOf = (groups: typeof ua, superName: string) => groups.find((g) => g.super?.includes(superName))?.slayers;
+  assert.deepEqual(lesserOf(ua, "Reptile"), ["Dragon", "Lizardman", "Ophidian", "Snake"]);
+  assert.deepEqual(lesserOf(ua, "Repond"), ["Goblin", "Orc", "Ogre", "Troll", "Vermin"], "the wiki's chart puts Goblin and Vermin under Repond");
+  assert.deepEqual(lesserOf(ua, "Fey"), []);
+  assert.ok(ua.find((g) => g.heading === "Talisman slayers")?.slayers.includes("Mage"));
+  const go = loadRules("generic-osi").slayerGroups ?? [];
+  assert.deepEqual(lesserOf(go, "Repond"), ["Ogre", "Orc", "Troll"], "stock ServUO has Goblin as a talisman slayer");
+  assert.ok(go.find((g) => g.heading === "Talisman slayers")?.slayers.includes("Goblin"));
+});
+
+test("[fast] a slayerGroups table that could not be drawn is refused", () => {
+  const good = loadRules("uoalive");
+  const bad: Array<[string, unknown]> = [
+    ["not a list", { Reptile: ["Dragon"] }],
+    ["a group without slayers", [{ super: ["Reptile"] }]],
+    ["a super that is not a list", [{ super: "Reptile", slayers: [] }]],
+    ["an empty name", [{ super: ["Reptile"], slayers: [""] }]],
+    ["an unknown key", [{ super: ["Reptile"], slayers: [], lesser: [] }]],
+    ["neither a super nor a heading", [{ slayers: ["Dragon"] }]],
+    ["both a super and a heading", [{ super: ["Reptile"], heading: "Reptiles", slayers: [] }]],
+    ["a name in two places", [{ super: ["Reptile"], slayers: ["Dragon"] }, { heading: "Talisman slayers", slayers: ["dragon"] }]],
+  ];
+  for (const [what, slayerGroups] of bad) {
+    const dir = mkdtempSync(join(tmpdir(), "qm-rules-slayers-"));
+    writeFileSync(join(dir, "bad.json"), JSON.stringify({ ...good, id: "bad", slayerGroups }));
+    assert.throws(() => loadRules("bad", { userRulesDir: dir }), /bad\.json/, what);
+  }
+});

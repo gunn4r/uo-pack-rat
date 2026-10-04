@@ -4,7 +4,7 @@
 // fetches, and the table's keyboard model. The rendered screen is driven by scripts/ui-state.test.mts.
 import test from "node:test";
 import assert from "node:assert/strict";
-import { plural, queryParams, activeFilters, clearAll, matchLine, countFact, emptyCause, rowWindow, chunksToFetch, gridKey, colGroup, groupColumns, DEFAULT_COLS, shortTier, propRuleLabel } from "./ui/inv-model.mts";
+import { plural, queryParams, activeFilters, clearAll, matchLine, countFact, emptyCause, rowWindow, chunksToFetch, gridKey, colGroup, groupColumns, DEFAULT_COLS, shortTier, propRuleLabel, slayerTree, slayerLabel } from "./ui/inv-model.mts";
 import { parseItemQuery } from "./item-query.mts";
 import type { ItemQuery } from "./item-query.mts";
 
@@ -25,7 +25,7 @@ test("[fast] plural agrees with its count and groups thousands", () => {
 });
 
 test("[fast] queryParams round-trips through the server's parser", () => {
-  const q: ItemQuery = { ...BASE, q: "ring", chars: ["Dorran", "Kestrel"], slot: ["ring", "?"], loc: ["Metal Chest, left"], roots: [12], rarityMin: "Greater Magic Item", kind: ["gear"], seenDays: 7, slayer: "*", nogarg: true, med: true, hideTags: ["cursed"], tags: ["brittle", "antique"], props: [{ key: "lmc", min: 8 }, { key: "hci", min: 5, op: "le" }], flags: ["spell channeling", "mage armor"], group: true, sort: "hci", dir: -1, offset: 500, limit: 500 };
+  const q: ItemQuery = { ...BASE, q: "ring", chars: ["Dorran", "Kestrel"], slot: ["ring", "?"], loc: ["Metal Chest, left"], roots: [12], rarityMin: "Greater Magic Item", kind: ["gear"], seenDays: 7, slayer: "*", nogarg: true, med: true, hideTags: ["cursed"], tags: ["brittle", "antique"], props: [{ key: "lmc", min: 8 }, { key: "hci", min: 5, op: "le" }], flags: ["spell channeling", "mage armor"], wskill: ["fencing", "mace fighting"], group: true, sort: "hci", dir: -1, offset: 500, limit: 500 };
   assert.deepEqual(parseItemQuery(queryParams(q)), q);
   assert.deepEqual(parseItemQuery(queryParams(BASE)), BASE);
 });
@@ -51,6 +51,16 @@ test("[fast] a yes/no property is a token of its own, in Title Case, and Clear a
   assert.deepEqual(tokens[0]!.remove(q).flags, ["mage armor"], "removing one leaves the other");
   assert.equal(tokens[0]!.cause(3), "None of the 3 stacks has Spell Channeling.");
   assert.deepEqual(clearAll(q).flags, []);
+});
+
+test("[fast] a weapon skill is a token of its own, and Clear all clears it (issue #188)", () => {
+  const q: ItemQuery = { ...BASE, wskill: ["swordsmanship", "mace fighting"] };
+  const tokens = activeFilters(q, CTX);
+  assert.deepEqual(tokens.map((t) => t.label), ["Weapon skill: Swordsmanship", "Weapon skill: Mace Fighting"]);
+  assert.deepEqual(tokens.map((t) => t.removeLabel), ["Remove filter: Weapon skill Swordsmanship", "Remove filter: Weapon skill Mace Fighting"]);
+  assert.deepEqual(tokens[0]!.remove(q).wskill, ["mace fighting"], "removing one leaves the other");
+  assert.equal(tokens[0]!.cause(3), "None of the 3 stacks is a Swordsmanship weapon.");
+  assert.deepEqual(clearAll(q).wskill, []);
 });
 
 test("[fast] activeFilters counts the search as a filter, and Clear all clears it too", () => {
@@ -145,4 +155,55 @@ test("[fast] gridKey: arrows, Home/End and Page keys move within the list; Enter
   assert.deepEqual(gridKey("Escape", 2, 10, 5), { kind: "close" });
   assert.equal(gridKey("a", 2, 10, 5), null);
   assert.equal(gridKey("ArrowDown", 0, 0, 5), null, "an empty table takes no keys");
+});
+
+// The Slayer filter's list (issue #189), laid out like the shard's slayer charts: each super slayer, then its lesser slayers.
+const GROUPS = [
+  { super: ["Demon"], slayers: ["Gargoyle"] },
+  { super: ["Reptile"], slayers: ["Dragon", "Snake"] },
+  { super: ["Undead", "Undead (Silver)"], slayers: [] },
+  { super: ["Fey"], slayers: [] },
+  { heading: "Talisman slayers", slayers: ["Bat", "Mage"] },
+];
+const f = (...pairs: Array<[string, number]>) => pairs.map(([name, count]) => ({ name, count }));
+test("[fast] slayerLabel names a slayer the way its item does", () => {
+  assert.equal(slayerLabel("Air Elemental"), "Air Elemental Slayer");
+  assert.equal(slayerLabel("reptile"), "Reptile Slayer");
+  assert.equal(slayerLabel("Undead (Silver)"), "Undead Slayer (Silver)", "a capitalized bracket is the item's own wording and stays");
+  assert.equal(slayerLabel("Exorcism (demons)"), "Exorcism Slayer", "a lower-case bracket only describes the group and goes");
+  assert.equal(slayerLabel("Repond (humanoids)"), "Repond Slayer");
+});
+test("[fast] slayerTree puts each super slayer before its lesser slayers, in the table's order", () => {
+  assert.deepEqual(slayerTree(f(["Bat", 1], ["Dragon", 2], ["Reptile", 3], ["Snake", 4], ["Undead (Silver)", 5]), GROUPS), [
+    { kind: "super", value: "Reptile", label: "Reptile Slayer", count: 3, first: true },
+    { kind: "slayer", value: "Dragon", label: "Dragon Slayer", count: 2, level: 1 },
+    { kind: "slayer", value: "Snake", label: "Snake Slayer", count: 4, level: 1 },
+    { kind: "super", value: "Undead (Silver)", label: "Undead Slayer (Silver)", count: 5, first: true },
+    { kind: "title", label: "Talisman slayers", first: true },
+    { kind: "slayer", value: "Bat", label: "Bat Slayer", count: 1, level: 0 },
+  ]);
+});
+test("[fast] slayerTree keeps a missing super slayer as a heading over its lesser slayers, and hides empty groups", () => {
+  assert.deepEqual(slayerTree(f(["Gargoyle", 7]), GROUPS), [
+    { kind: "super", value: null, label: "Demon Slayer", count: 0, first: true },
+    { kind: "slayer", value: "Gargoyle", label: "Gargoyle Slayer", count: 7, level: 1 },
+  ]);
+  assert.deepEqual(slayerTree([], GROUPS), []);
+});
+test("[fast] slayerTree files a slayer the table lacks under Other, A–Z, and matches names in any case", () => {
+  assert.deepEqual(slayerTree(f(["Zebra", 1], ["fey", 2], ["Balron", 3]), GROUPS), [
+    { kind: "super", value: "fey", label: "Fey Slayer", count: 2, first: true },
+    { kind: "title", label: "Other", first: true },
+    { kind: "slayer", value: "Balron", label: "Balron Slayer", count: 3, level: 0 },
+    { kind: "slayer", value: "Zebra", label: "Zebra Slayer", count: 1, level: 0 },
+  ]);
+});
+test("[fast] slayerTree marks the first row of every group, so two super slayers in a row from different groups are kept apart", () => {
+  assert.deepEqual(slayerTree(f(["Fey", 1], ["Undead", 2], ["Undead (Silver)", 3]), GROUPS).map((r) => r.kind !== "title" && "first" in r ? `${r.label} first` : r.label),
+    ["Undead Slayer first", "Undead Slayer (Silver)", "Fey Slayer first"]);
+});
+test("[fast] slayerTree without a table is the plain A–Z list", () => {
+  const plain = [{ kind: "slayer", value: "Dragon", label: "Dragon Slayer", count: 2, level: 0 }, { kind: "slayer", value: "Orc", label: "Orc Slayer", count: 1, level: 0 }];
+  assert.deepEqual(slayerTree(f(["Orc", 1], ["Dragon", 2]), undefined), plain);
+  assert.deepEqual(slayerTree(f(["Orc", 1], ["Dragon", 2]), []), plain);
 });

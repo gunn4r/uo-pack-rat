@@ -7,6 +7,43 @@ import type { ItemQuery, PropFilter, Place } from "../item-query.mts";
 import { clearedQuery } from "./view-state.mts";
 import { flagLabel } from "../vault-lib.mts";
 
+// ---------------------------------------------------------------- slayers
+// "Air Elemental Slayer". A bracket in the name stays when it is the item's own capitalized wording ("Undead Slayer
+// (Silver)", from a Silver weapon) and goes when it only describes the group in lower case ("Exorcism (demons)").
+export function slayerLabel(name: string): string {
+  const m = name.match(/^(.*?)\s*\((.*)\)$/);
+  const title = (s: string) => s.replace(/\b\w/g, (c) => c.toUpperCase());
+  return m && /^[A-Z]/.test(m[2]!) ? `${title(m[1]!)} Slayer (${m[2]})` : `${title(m ? m[1]! : name)} Slayer`;
+}
+// The Slayer filter's rows (issue #189), laid out like the shard's slayer charts (the rules' slayerGroups): each super
+// slayer, then its lesser slayers one step in; a titled list (the talisman slayers); and last, under "Other", any slayer
+// the table lacks. Only slayers the inventory has are listed. A super slayer it lacks stays as an unpickable heading
+// (value null) while one of its lesser slayers is there; a group with nothing in it goes. The first row of each group
+// says so (`first`), for the hairline between groups. No table: the plain A–Z list, one group with no first row.
+export type SlayerRow =
+  | { kind: "title"; label: string; first?: true }
+  | { kind: "super"; value: string | null; label: string; count: number; first?: true }
+  | { kind: "slayer"; value: string; label: string; count: number; level: 0 | 1; first?: true };
+type SlayerGroup = { super?: string[] | undefined; heading?: string | undefined; slayers: string[] };
+export function slayerTree(facet: Array<{ name: string; count: number }>, groups: SlayerGroup[] | undefined): SlayerRow[] {
+  const byKey = new Map(facet.map((s) => [s.name.toLowerCase(), s]));
+  const take = (name: string) => { const s = byKey.get(name.toLowerCase()); byKey.delete(name.toLowerCase()); return s; };
+  const slayer = (s: { name: string; count: number }, level: 0 | 1): SlayerRow => ({ kind: "slayer", value: s.name, label: slayerLabel(s.name), count: s.count, level });
+  const out: SlayerRow[] = [];
+  const group = (rows: SlayerRow[]): void => { if (rows.length) out.push({ ...rows[0]!, first: true }, ...rows.slice(1)); };
+  for (const g of groups ?? []) {
+    const supers = (g.super ?? []).map(take).filter((s) => s != null).map((s): SlayerRow => ({ kind: "super", value: s.name, label: slayerLabel(s.name), count: s.count }));
+    const lesser = g.slayers.map(take).filter((s) => s != null).map((s) => slayer(s, g.super ? 1 : 0));
+    if (!lesser.length && !supers.length) continue;
+    const head: SlayerRow[] = g.heading ? [{ kind: "title", label: g.heading }] : supers.length ? [] : [{ kind: "super", value: null, label: slayerLabel(g.super![0]!), count: 0 }];
+    group([...head, ...supers, ...lesser]);
+  }
+  const rest = [...byKey.values()].sort((a, b) => a.name.localeCompare(b.name)).map((s) => slayer(s, 0));
+  if (groups?.length) group(rest.length ? [{ kind: "title", label: "Other" }, ...rest] : []);
+  else out.push(...rest);
+  return out;
+}
+
 // ---------------------------------------------------------------- counts and plurals
 // "1 stack", "2 stacks", "1,204 pieces": a count and its noun, always agreeing.
 export function plural(n: number, one: string, many = `${one}s`): string {
@@ -74,6 +111,7 @@ export function queryParams(q: ItemQuery): URLSearchParams {
   for (const t of q.tags) p.append("tag", t);
   for (const f of q.props) p.append("prop", f.op ? `${f.key}:${f.op}:${f.min}` : `${f.key}:${f.min}`);
   for (const f of q.flags) p.append("flag", f);
+  for (const w of q.wskill) p.append("wskill", w);
   if (q.group) p.set("group", "1");
   p.set("sort", q.sort);
   p.set("dir", String(q.dir));
@@ -135,6 +173,10 @@ export function activeFilters(q: ItemQuery, ctx: FilterContext): FilterToken[] {
   }
   if (q.rarity) out.push({ id: "rarity", label: `Rarity: ${q.rarity}`, removeLabel: "Remove filter: Rarity", remove: (x) => ({ ...x, rarity: "" }), cause: (t) => `${none(t)} is ${a(q.rarity)}.` });
   for (const k of q.kind) out.push({ id: `kind:${k}`, label: `Kind: ${k}`, removeLabel: `Remove filter: Kind ${k}`, remove: (x) => ({ ...x, kind: without(x.kind, k) }), cause: (t) => `${none(t)} is of the kind ${k}.` });
+  for (const w of q.wskill) {
+    const name = flagLabel(w);
+    out.push({ id: `wskill:${w}`, label: `Weapon skill: ${name}`, removeLabel: `Remove filter: Weapon skill ${name}`, remove: (x) => ({ ...x, wskill: without(x.wskill, w) }), cause: (t) => `${none(t)} is ${a(name)} weapon.` });
+  }
   q.props.forEach((f, i) => {
     const text = propRuleLabel(f, ctx.propLabel);
     out.push({ id: `prop:${i}`, label: text, removeLabel: `Remove filter: ${text}`, remove: (x) => ({ ...x, props: x.props.filter((_, j) => j !== i) }), cause: (t) => `${none(t)} has ${text}.` });
@@ -145,7 +187,7 @@ export function activeFilters(q: ItemQuery, ctx: FilterContext): FilterToken[] {
   }
   if (q.slayer) {
     const any = q.slayer === "*";
-    out.push({ id: "slayer", label: any ? "Any slayer" : `Slayer: ${q.slayer}`, removeLabel: "Remove filter: Slayer", remove: (x) => ({ ...x, slayer: "" }), cause: (t) => any ? `${none(t)} is a slayer.` : `${none(t)} is ${a(q.slayer)} slayer.` });
+    out.push({ id: "slayer", label: any ? "Any slayer" : `Slayer: ${slayerLabel(q.slayer)}`, removeLabel: "Remove filter: Slayer", remove: (x) => ({ ...x, slayer: "" }), cause: (t) => any ? `${none(t)} is a slayer.` : `${none(t)} is ${a(q.slayer)} slayer.` });
   }
   if (q.seenDays) {
     const span = q.seenDays === 1 ? "24 hours" : `${q.seenDays} days`;

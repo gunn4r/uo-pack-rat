@@ -12,7 +12,7 @@
 // string columns (name, kind, slot label, location) sort A-to-Z when dir is +1 (av.localeCompare(bv) *
 // dir) — that asymmetry is the page's existing behavior (best-stat-first is the useful default for a
 // property column; alphabetical is the useful default for a name column), reproduced exactly, not fixed.
-import { itemSearchBlob, itemOwnBlob, groupByName, compareNames, KINDS, SLOT_LABELS, propertyKeys, extraKeys, flagKeys, flagKey, gearSkills } from "./vault-lib.mts";
+import { itemSearchBlob, itemOwnBlob, groupByName, compareNames, KINDS, SLOT_LABELS, propertyKeys, extraKeys, flagKeys, flagKey, gearSkills, weaponSkillsOf, WEAPON_SKILLS } from "./vault-lib.mts";
 import type { Item, ItemGroup } from "./vault-lib.mts";
 import type { RulesV1RarityItem } from "./schema/types.d.mts";
 
@@ -51,19 +51,20 @@ export interface PropFilter { key: string; min: number; op?: PropOp | undefined;
 // `rarity` matches one tier exactly, `rarityMin` that tier or any above it on the shard's ladder, `rarityMax` that tier or any below it (an item with no tier, or one off the ladder, counts as below every tier).
 // `hideTags` drops an item with any of its tags, `tags` (issue #133) keeps only an item with any of its tags.
 // `flags` (issue #182) keeps only an item with EVERY one of its yes/no properties, like the property rules it sits beside.
+// `wskill` (issue #188) is a list filter too: a weapon counting under any of its skills (vault-lib.mts's weaponSkillsOf).
 export interface ItemQuery {
   q: string; chars: string[]; slot: string[]; loc: string[]; roots: number[]; rarity: string; rarityMin: string; rarityMax: string; kind: string[];
-  seenDays: number; slayer: string; nogarg: boolean; med: boolean; hideTags: string[]; tags: string[]; props: PropFilter[]; flags: string[]; group: boolean;
+  seenDays: number; slayer: string; nogarg: boolean; med: boolean; hideTags: string[]; tags: string[]; props: PropFilter[]; flags: string[]; wskill: string[]; group: boolean;
   sort: string; dir: 1 | -1; offset: number; limit: number;
 }
 
 // An Organize rule's query (issue #11): the Inventory's filters on the item itself. Location, character and
 // seen filters are left out, and so are the view and paging, because a rule must keep matching an item after
-// it moves. `tags` and `flags` are optional: rules saved before them (issues #133, #182) have none.
-export type RuleQuery = Omit<ItemQuery, "loc" | "roots" | "chars" | "seenDays" | "group" | "sort" | "dir" | "offset" | "limit" | "tags" | "flags"> & { tags?: string[]; flags?: string[] };
+// it moves. `tags`, `flags` and `wskill` are optional: rules saved before them (issues #133, #182, #188) have none.
+export type RuleQuery = Omit<ItemQuery, "loc" | "roots" | "chars" | "seenDays" | "group" | "sort" | "dir" | "offset" | "limit" | "tags" | "flags" | "wskill"> & { tags?: string[]; flags?: string[]; wskill?: string[] };
 
 // Reads every filter/sort/paging knob off a URLSearchParams (GET /api/items' query string, or the page's
-// own future use of the same parser). `hide`, `tag`, `prop`, `slot` and `kind` accept either a single
+// own future use of the same parser). `hide`, `tag`, `prop`, `slot`, `kind` and `wskill` accept either a single
 // comma-separated value (hide=a,b) or repeated params (hide=a&hide=b) — both are flattened the same way.
 // `char` and `loc` are repeated params only: a character or container name may itself hold a comma.
 // `flag` (issue #182) is repeated only too, one yes/no property each (`flag=spell channeling`), lower-cased as
@@ -107,6 +108,7 @@ export function parseItemQuery(searchParams: URLSearchParams): ItemQuery {
     tags: splitAll("tag"),
     props,
     flags: listOf("flag").map((s) => s.toLowerCase()),
+    wskill: splitAll("wskill").map((s) => s.toLowerCase()),
     group: sp.get("group") === "1" && !wantsHits(sp),
     sort: sp.get("sort") || "name",
     dir: sp.get("dir") === "-1" ? -1 : 1,
@@ -135,6 +137,7 @@ function itemPasses(it: Item, q: RuleQuery, needle: string, blob: (it: Item) => 
   if (q.tags?.length && !it.tags.some((t) => q.tags!.includes(t))) return false;
   for (const f of q.props) if (!passes(colVal(it, f.key), f)) return false;
   if (q.flags?.some((f) => !it.flags?.some((x) => flagKey(x) === flagKey(f)))) return false;
+  if (q.wskill?.length && !weaponSkillsOf(it).some((w) => q.wskill!.some((s) => s.toLowerCase() === w))) return false;
   if (needle && !blob(it).includes(needle)) return false;
   return true;
 }
@@ -209,6 +212,8 @@ export interface Facets {
   slayers: Array<{ name: string; count: number }>;
   slayerAny: number;
   kinds: Array<{ name: string; count: number }>;
+  // The weapon skills weapons count under (issue #188, vault-lib.mts's weaponSkillsOf), in WEAPON_SKILLS order.
+  weaponSkills: Array<{ name: string; count: number }>;
   propKeys: string[];
   // Numeric extras a property filter can threshold (issue #133): offered by the Inventory's property rule only,
   // never by the Suit Builder, whose keys propKeys feeds.
@@ -245,5 +250,7 @@ export function facetsOf(items: Item[], { rarity = [] }: { rarity?: RulesV1Rarit
   const slayers = slayerNames.map((name) => ({ name, count: items.filter((i) => i.slayers?.includes(name)).length }));
   const slayerAny = items.filter((i) => i.slayers?.length).length;
   const kinds = KINDS.filter((k) => items.some((i) => i.kind === k)).map((name) => ({ name, count: items.filter((i) => i.kind === name).length }));
-  return { slots, locations, places, rarities, slayers, slayerAny, kinds, propKeys: propertyKeys({ items }), extraKeys: extraKeys({ items }), flagKeys: flagKeys({ items }), gearSkills: gearSkills({ items }), itemCount: items.length };
+  const skillsOf = items.map(weaponSkillsOf);
+  const weaponSkills = WEAPON_SKILLS.map((name) => ({ name, count: skillsOf.filter((s) => s.includes(name)).length })).filter((w) => w.count);
+  return { slots, locations, places, rarities, slayers, slayerAny, kinds, weaponSkills, propKeys: propertyKeys({ items }), extraKeys: extraKeys({ items }), flagKeys: flagKeys({ items }), gearSkills: gearSkills({ items }), itemCount: items.length };
 }

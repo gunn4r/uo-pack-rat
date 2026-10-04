@@ -93,10 +93,10 @@ test("[fast] newRuleId takes the lowest free rule-N", () => {
 });
 
 test("[fast] a rule saved from the Inventory keeps the item filters and names the location, character and seen filters it left out", () => {
-  const q: ItemQuery = { ...BASE, q: "ring", chars: ["Tester"], loc: ["Metal Chest"], roots: [A], seenDays: 7, slot: ["ring"], kind: ["gear"], rarityMin: "Lesser Artifact", tags: ["brittle"], props: [{ key: "lmc", min: 8 }], flags: ["spell channeling"], group: true, sort: "lmc", dir: -1 };
+  const q: ItemQuery = { ...BASE, q: "ring", chars: ["Tester"], loc: ["Metal Chest"], roots: [A], seenDays: 7, slot: ["ring"], kind: ["gear"], rarityMin: "Lesser Artifact", tags: ["brittle"], props: [{ key: "lmc", min: 8 }], flags: ["spell channeling"], wskill: ["fencing"], group: true, sort: "lmc", dir: -1 };
   const { query, dropped } = ruleQueryFrom(q);
-  assert.deepEqual(Object.keys(query).sort(), ["flags", "hideTags", "kind", "med", "nogarg", "props", "q", "rarity", "rarityMax", "rarityMin", "slayer", "slot", "tags"]);
-  assert.deepEqual([query.q, query.slot, query.kind, query.rarityMin, query.tags, query.props, query.flags], ["ring", ["ring"], ["gear"], "Lesser Artifact", ["brittle"], [{ key: "lmc", min: 8 }], ["spell channeling"]]);
+  assert.deepEqual(Object.keys(query).sort(), ["flags", "hideTags", "kind", "med", "nogarg", "props", "q", "rarity", "rarityMax", "rarityMin", "slayer", "slot", "tags", "wskill"]);
+  assert.deepEqual([query.q, query.slot, query.kind, query.rarityMin, query.tags, query.props, query.flags, query.wskill], ["ring", ["ring"], ["gear"], "Lesser Artifact", ["brittle"], [{ key: "lmc", min: 8 }], ["spell channeling"], ["fencing"]]);
   assert.notEqual(query.props, q.props, "a copy, so editing the rule never edits the Inventory's filters");
   assert.deepEqual(dropped, ["Location", "Character", "Seen"]);
   assert.equal(droppedNote(dropped), "Location, Character and Seen filters are left out: a rule matches items wherever they are, so it keeps matching after they move.");

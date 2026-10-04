@@ -19,7 +19,7 @@ import { optionsKeeping, colsFromPrefs, COLS_VERSION } from "./view-state.mts";
 import { relativeWhen } from "./messages.mts";
 import { txt, box, icon, button, searchInput, filterChip, token, pill, segmented, switchControl, popover, closePopover, rowActions, message, menu, input, nextId, copyText } from "./components.mts";
 import type { Kids, MenuItem, PopoverHandle } from "./components.mts";
-import { plural, splitSerial, queryParams, activeFilters, clearAll, matchLine, countFact, emptyCause, rowWindow, chunksToFetch, gridKey, colShort, colFull, groupColumns, COL_GROUPS, DEFAULT_COLS, ITEM_COLS, shortTier, rootName } from "./inv-model.mts";
+import { plural, splitSerial, queryParams, activeFilters, clearAll, matchLine, countFact, emptyCause, rowWindow, chunksToFetch, gridKey, colShort, colFull, groupColumns, COL_GROUPS, DEFAULT_COLS, ITEM_COLS, shortTier, rootName, slayerTree, slayerLabel } from "./inv-model.mts";
 import type { FilterToken } from "./inv-model.mts";
 import type { ItemsApiResponse, UiPrefs } from "./api-types.mts";
 import { initPeek, openPeek, closePeek, peekOpen, peekSerial, peekRefresh } from "./peek.mts";
@@ -57,11 +57,11 @@ function setQuery(next: ItemQuery): void {
 }
 
 // ---------------------------------------------------------------- toolbar
-type ChipId = "char" | "slot" | "loc" | "rarity" | "kind" | "slayer" | "seen";
+type ChipId = "char" | "slot" | "loc" | "rarity" | "kind" | "wskill" | "slayer" | "seen";
 const chips = {} as Record<ChipId, HTMLButtonElement>;
 let search: HTMLInputElement, addChip: HTMLButtonElement, viewSeg: HTMLDivElement & { setValue: (v: string) => void }, settingsBtn: HTMLButtonElement;
-const FACETS: ChipId[] = ["char", "slot", "loc", "rarity", "kind"];
-const CHIP_NAMES: Record<ChipId, string> = { char: "Character", slot: "Slot", loc: "Location", rarity: "Rarity", kind: "Kind", slayer: "Slayer", seen: "Seen" };
+const FACETS: ChipId[] = ["char", "slot", "loc", "rarity", "kind", "wskill"];
+const CHIP_NAMES: Record<ChipId, string> = { char: "Character", slot: "Slot", loc: "Location", rarity: "Rarity", kind: "Kind", wskill: "Weapon skill", slayer: "Slayer", seen: "Seen" };
 
 // A chip's words: "Slot", "Slot: Ring", "Slot: Ring +2".
 function chipText(id: ChipId): string {
@@ -74,7 +74,8 @@ function chipText(id: ChipId): string {
     case "rarity": return q.rarityMin && q.rarityMax ? `Rarity: ${shortTier(q.rarityMin)} – ${shortTier(q.rarityMax)}`
       : q.rarityMin ? `Rarity ≥ ${shortTier(q.rarityMin)}` : q.rarityMax ? `Rarity ≤ ${shortTier(q.rarityMax)}` : name;
     case "kind": return many(q.kind);
-    case "slayer": return q.slayer === "*" ? "Any slayer" : `Slayer: ${q.slayer}`;
+    case "wskill": return many(q.wskill.map(flagLabel));
+    case "slayer": return q.slayer === "*" ? "Any slayer" : `Slayer: ${slayerLabel(q.slayer)}`;
     case "seen": return `Seen: ${q.seenDays === 1 ? "24 h" : `${q.seenDays} days`}`;
   }
 }
@@ -86,6 +87,7 @@ function chipSet(id: ChipId): boolean {
     case "loc": return q.loc.length + q.roots.length > 0;
     case "rarity": return !!(q.rarityMin || q.rarityMax);
     case "kind": return q.kind.length > 0;
+    case "wskill": return q.wskill.length > 0;
     case "slayer": return !!q.slayer;
     case "seen": return !!q.seenDays;
   }
@@ -219,6 +221,10 @@ function slotOptions(): Option[] {
   opts.push({ value: "?", label: "No known slot", group: "Other" });
   return keeping(opts, state.query.slot, slotLabel);
 }
+// Issue #188: the weapon skills weapons count under, with Use Best Weapon Skill weapons under each melee skill.
+function weaponSkillOptions(): Option[] {
+  return keeping((state.facets?.weaponSkills || []).map((w) => ({ value: w.name, label: flagLabel(w.name), count: w.count })), state.query.wskill, flagLabel);
+}
 function kindOptions(): Option[] {
   return keeping((state.facets?.kinds || []).map((k) => ({ value: k.name, label: k.name, count: k.count })), state.query.kind, String);
 }
@@ -249,14 +255,20 @@ function locationOptions(): Option[] {
   for (const l of state.query.loc) if (!out.some((o) => o.value === `loc:${l}`)) out.push({ value: `loc:${l}`, label: `${l} (none now)`, group: "No longer scanned" });
   return out;
 }
-// A single-choice list of radios; picking one sets the filter and closes the popover.
-function radioList(title: string, rows: Array<{ value: string; label: HTMLElement; count?: number | undefined }>, current: string, pick: (v: string) => void): HTMLElement {
+// A single-choice list of radios; picking one sets the filter and closes the popover. A row without a value is a
+// heading: no radio, so the arrow keys pass over it, and presentation only, so it is not read as a member of the group.
+interface RadioRow { value: string | null; label: HTMLElement; count?: number | undefined; cls?: string | undefined }
+function radioList(title: string, rows: RadioRow[], current: string, pick: (v: string) => void): HTMLElement {
   const name = nextId("radio");
   return box("div", { class: "inv-opts", role: "radiogroup", "aria-label": title }, ...rows.map((row) => {
-    const r = el("input", { type: "radio", name, value: row.value });
-    r.checked = current === row.value;
-    r.addEventListener("change", () => pick(row.value));
-    return box("label", { class: "check inv-opt" }, r, row.label, row.count != null ? txt(row.count.toLocaleString("en-US"), "inv-opt-count") : null);
+    const count = row.count != null ? txt(row.count.toLocaleString("en-US"), "inv-opt-count") : null;
+    const cls = `inv-opt${row.cls ? ` ${row.cls}` : ""}`;
+    const value = row.value;
+    if (value == null) return box("div", { class: `${cls} head`, role: "presentation" }, row.label, count);
+    const r = el("input", { type: "radio", name, value });
+    r.checked = current === value;
+    r.addEventListener("change", () => pick(value));
+    return box("label", { class: `check ${cls}` }, r, row.label, count);
   }));
 }
 // A floor and a ceiling on the shard's ladder, each a single-choice list; picking either sets that bound and
@@ -269,11 +281,21 @@ function rarityPanel(close: () => void): Kids {
     box("div", { class: "inv-pop-head" }, txt("Rarity at most", "caps")),
     radioList("Rarity at most", tiers(), state.query.rarityMax, (v) => { setQuery({ ...state.query, rarityMax: v }); close(); })];
 }
+// Laid out like the shard's slayer charts (issue #189, inv-model.mts's slayerTree): each super slayer, its lesser slayers
+// one step in, the talisman slayers and any others under small titles, a hairline between groups.
 function slayerPanel(close: () => void): Kids {
   const f = state.facets;
+  const tree = slayerTree(f?.slayers || [], state.rules?.slayerGroups);
+  const rows = tree.map((r): RadioRow => {
+    const cls = (...c: string[]) => [...c, r.first ? "sep" : ""].filter(Boolean).join(" ") || undefined;
+    if (r.kind === "title") return { value: null, label: txt(r.label, "t-sm muted"), cls: cls("title") };
+    if (r.kind === "super") return { value: r.value, label: el("span", { class: "ellip" }, r.label, el("span", { class: "inv-opt-tag", "aria-hidden": "true" }, "Super")), count: r.value == null ? undefined : r.count, cls: cls() };
+    return { value: r.value, label: txt(r.label, "ellip"), count: r.count, cls: cls(r.level ? "sub" : "") };
+  });
   return [box("div", { class: "inv-pop-head" }, txt("Slayer", "caps")),
-    radioList("Slayer", [{ value: "", label: txt("No slayer filter") }, { value: "*", label: txt("Any slayer"), count: f?.slayerAny || 0 }, ...(f?.slayers || []).map((s) => ({ value: s.name, label: txt(s.name, "ellip"), count: s.count }))],
-      state.query.slayer, (v) => { setQuery({ ...state.query, slayer: v }); close(); })];
+    radioList("Slayer", [{ value: "", label: txt("No slayer filter") }, { value: "*", label: txt("Any slayer"), count: f?.slayerAny || 0 }, ...rows],
+      state.query.slayer, (v) => { setQuery({ ...state.query, slayer: v }); close(); }),
+    tree.some((r) => r.kind === "super") ? txt("A super slayer also hits its lesser slayers' creatures, but at double damage instead of triple.", "t-sm muted") : null];
 }
 function seenPanel(): Kids {
   const seg = segmented({ label: "Seen", options: [{ value: "0", label: "Any" }, { value: "1", label: "24 h" }, { value: "7", label: "7 days" }, { value: "30", label: "30 days" }], value: String(state.query.seenDays || 0), onChange: (v) => setQuery({ ...state.query, seenDays: +v }) });
@@ -297,6 +319,8 @@ function facetPanel(id: ChipId, close: () => void): Kids {
     case "char": return checklist({ title: "Character", options: charOptions(), selected: q.chars, onChange: (v) => setQuery({ ...state.query, chars: v }) });
     case "slot": return checklist({ title: "Slot", options: slotOptions(), selected: q.slot, searchable: false, onChange: (v) => setQuery({ ...state.query, slot: v }) });
     case "kind": return checklist({ title: "Kind", options: kindOptions(), selected: q.kind, onChange: (v) => setQuery({ ...state.query, kind: v }) });
+    case "wskill": return [...checklist({ title: "Weapon skill", options: weaponSkillOptions(), selected: q.wskill, searchable: false, onChange: (v) => setQuery({ ...state.query, wskill: v }) }),
+      txt("Use Best Weapon Skill weapons count under Swordsmanship, Fencing and Mace Fighting.", "t-sm muted")];
     case "loc": return checklist({ title: "Location", options: locationOptions(), selected: [...q.roots.map((r) => `root:${r}`), ...q.loc.map((l) => `loc:${l}`)], searchable: true,
       onChange: (v) => setQuery({ ...state.query, roots: v.filter((x) => x.startsWith("root:")).map((x) => +x.slice(5)), loc: v.filter((x) => x.startsWith("loc:")).map((x) => x.slice(4)) }) });
     case "rarity": return rarityPanel(close);
@@ -314,8 +338,8 @@ const openFacet = (id: ChipId, anchor: HTMLElement): void => openPanel(anchor, C
 // ---------------------------------------------------------------- "+ Filter"
 function openAddMenu(): void {
   const entries: MenuItem[] = [];
-  // Below 1180 px the unset facet chips fold in here, so the toolbar never wraps (spec 3.7).
-  if (narrow()) for (const id of FACETS) if (!chipSet(id)) entries.push({ label: `${CHIP_NAMES[id]}…`, onSelect: () => openFacet(id, addChip) });
+  // Below 1180 px the unset facet chips fold in here, so the toolbar never wraps (spec 3.7); Weapon skill below 1280 px.
+  for (const id of FACETS) if (!chipSet(id) && !chips[id].getClientRects().length) entries.push({ label: `${CHIP_NAMES[id]}…`, onSelect: () => openFacet(id, addChip) });
   entries.push(
     { label: "Property rule…", onSelect: () => openPanel(addChip, "Property rule", propertyPanel, 300) },
     { label: "Slayer…", onSelect: () => openPanel(addChip, "Slayer", slayerPanel) },
