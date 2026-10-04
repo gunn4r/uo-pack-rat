@@ -236,7 +236,7 @@ def tazuo_api(world, backpack, bank=0, skills=None):
     api.GetSharedVar = lambda name: api.shared.get(name)
     api.UseObject = lambda s, *a: world.open(int(s))
     def items_in(s, recursive=False):
-        world.calls.append(("items_in", int(s)))
+        world.calls.append(("items_in_all" if recursive else "items_in", int(s)))
         return None if getattr(world, "items_in_none", False) else world.kids(int(s), recursive)
     api.ItemsInContainer = items_in
     fta = getattr(world, "find_type_all", "ok")     # "ok", "missing" (a build without the call) or "raise"
