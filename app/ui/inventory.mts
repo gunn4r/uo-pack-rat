@@ -365,7 +365,7 @@ function propertyPanel(close: () => void): Kids {
     const fs = flags.filter((f) => !filter || f.includes(filter));
     if (fs.length) kids.push(txt("Yes or no", "inv-opt-group t-sm muted"));
     for (const f of fs) {
-      const b = box("button", { type: "button", class: "menu-item inv-prop", role: "option", "aria-selected": String(flag && f === key) }, txt(flagLabel(f), "ellip"));
+      const b = box("button", { type: "button", class: "menu-item inv-prop", role: "option", "aria-selected": String(flag && f === key) }, txt(flagLabel(f), "ellip"), txt("Yes / no", "t-sm muted"));
       b.addEventListener("click", () => pick(b, f, flagLabel(f), true));
       kids.push(b);
     }
