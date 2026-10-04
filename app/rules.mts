@@ -32,6 +32,20 @@ interface RulesEntry {
   path: string;
 }
 
+// What the schema cannot say about the Scroll Binder's recipes (issue #181), which the Scrolls view's roll-up needs:
+// each step goes up and no two start at the same level, and the usable Transcendence totals rise in whole tenths.
+export function scrollBinderProblem(sb: RulesV1["scrollBinder"]): string | null {
+  for (const key of ["powerScrolls", "statScrolls"] as const) {
+    const steps = sb?.[key] ?? [];
+    if (steps.some((s) => s.to <= s.from)) return `/scrollBinder/${key} has a step whose "to" is not above its "from"`;
+    if (new Set(steps.map((s) => s.from)).size < steps.length) return `/scrollBinder/${key} has two steps from the same level`;
+  }
+  const at = sb?.transcendence?.usableAt ?? [];
+  if (at.some((p) => Math.abs(p * 10 - Math.round(p * 10)) > 1e-9)) return "/scrollBinder/transcendence/usableAt must be whole tenths";
+  if (at.some((p, i) => i > 0 && p <= at[i - 1]!)) return "/scrollBinder/transcendence/usableAt must rise";
+  return null;
+}
+
 function loadFile(path: string): RulesV1 {
   let raw: unknown;
   try {
@@ -41,6 +55,8 @@ function loadFile(path: string): RulesV1 {
   }
   const { ok, errors } = validate(SCHEMA, raw);
   if (!ok) throw new Error(`invalid rules file ${path}: ${errors.map((e) => `${e.path} ${e.msg}`).join("; ")}`);
+  const binder = scrollBinderProblem((raw as RulesV1).scrollBinder);
+  if (binder) throw new Error(`invalid rules file ${path}: ${binder}`);
   // validate() only proves raw matches the ValidatorSchema keyword subset above, at runtime — it has
   // no way to hand back a narrowed RulesV1 (it's shared by every schema in this repo, not specific to
   // this one), so this cast is the trust boundary, taken only after the check just above passed.

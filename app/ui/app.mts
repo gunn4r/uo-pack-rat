@@ -12,6 +12,7 @@ import { buildFilters, fetchItems, initFilters, applyUiPrefs, inventoryFailed } 
 import { renderCharacters, showCharacter } from "./characters.mts";
 import { initBuilder, syncBuilderCharacters, selectCharacter } from "./builder.mts";
 import { renderContainers, showContainers } from "./containers.mts";
+import { showScrolls, scrollsChanged } from "./scrolls.mts";
 import { connectEvents } from "./events.mts";
 import { openWizard } from "./wizard.mts";
 import { renderSettings, startUpdateChecks, syncSettingsCharacters, syncSettingsBlacklist } from "./settings.mts";
@@ -101,37 +102,41 @@ export async function reload(): Promise<void> {
   buildFilters(); fetchItems(); renderCharacters(); renderContainers(); syncBuilderCharacters();
   syncSettingsCharacters();
   if (parseRoute().tab === "organize") void showOrganize();
+  if (parseRoute().tab === "scrolls") showScrolls(parseRoute().scrolls);
   if (parseRoute().tab === "map") void showMap(parseMapHash(location.hash));
 }
 
 // ---------------------------------------------------------------- screens + hash routes
 // Six screens (Inventory, House map, Characters, Suit Builder, Organize, Settings), each a <main> in index.html, and routes on
-// top of them: #/inventory, #/containers (Inventory's Containers view), #/containers/<Character> (only the containers that character's scans opened), #/map (the House map, the house with the most chests), #/map/<house id> (that house, or #/map/plain for chests outside any drawn house; ?q=<query> searches it, ?select=<container serial> opens on that container's stack: ui/house-map-model.mts parseMapHash), #/characters,
+// top of them: #/inventory, #/containers (Inventory's Containers view), #/containers/<Character> (only the containers that character's scans opened), #/scrolls and #/scrolls/sot (Inventory's Scrolls view on its Power scrolls or Scrolls of Transcendence tab, issue #181), #/map (the House map, the house with the most chests), #/map/<house id> (that house, or #/map/plain for chests outside any drawn house; ?q=<query> searches it, ?select=<container serial> opens on that container's stack: ui/house-map-model.mts parseMapHash), #/characters,
 // #/characters/<Character> (that character's sheet), #/builder/<Character>, #/runs (the Suit Builder with the saved-runs drawer open), #/organize (Organize: labels, rules, the plan and its trips), #/import (the Import
 // drawer over whichever screen was showing) and #/settings. A reload lands where you were; nav clicks add a
 // history entry (back/forward walk them, and close a drawer); switching the builder's character replaces the
 // entry instead.
-const ROUTES = ["inventory", "containers", "map", "characters", "builder", "runs", "organize", "import", "settings"];
-export function parseRoute(): { tab: string; character: string | null; sheet: string | null; house: string | null; scanner: string | null } {
+const ROUTES = ["inventory", "containers", "scrolls", "map", "characters", "builder", "runs", "organize", "import", "settings"];
+export function parseRoute(): { tab: string; character: string | null; sheet: string | null; house: string | null; scanner: string | null; scrolls: "power" | "sot" } {
   const parts = location.hash.replace(/^#\/?/, "").split("?")[0]!.split("/").filter(Boolean).map((x) => { try { return decodeURIComponent(x); } catch { return x; } });
   const tab = ROUTES.includes(parts[0] as string) ? parts[0]! : "inventory";
-  return { tab, character: tab === "builder" ? parts[1] || null : null, sheet: tab === "characters" ? parts[1] || null : null, house: tab === "map" ? parts[1] || null : null, scanner: tab === "containers" ? parts[1] || null : null };
+  return { tab, character: tab === "builder" ? parts[1] || null : null, sheet: tab === "characters" ? parts[1] || null : null, house: tab === "map" ? parts[1] || null : null, scanner: tab === "containers" ? parts[1] || null : null, scrolls: tab === "scrolls" && parts[1] === "sot" ? "sot" : "power" };
 }
 export function routeFor(tab: string): string { return tab === "builder" && state.builder.character ? `#/builder/${encodeURIComponent(state.builder.character)}` : `#/${tab}`; }
 
 let lastScreen = "inventory";
-const screenOf = (tab: string): string => (tab === "containers" ? "inventory" : tab === "runs" ? "builder" : tab === "import" ? lastScreen : tab);
+const isInvView = (tab: string): boolean => tab === "inventory" || tab === "containers" || tab === "scrolls";
+const screenOf = (tab: string): string => (isInvView(tab) ? "inventory" : tab === "runs" ? "builder" : tab === "import" ? lastScreen : tab);
 const importDrawer = bindDrawer($<HTMLElement>("#import-drawer")!);
 // The Import drawer closes itself once a scan lands (ui/import.mts); the drawerclose listener below puts the route back.
 export const closeImportDrawer = (): void => importDrawer.close();
-// Inventory's Items | Containers switch (in its top bar) is a view of one screen, not a screen of its own.
-const invView = segmented({ label: "View", options: [{ value: "items", label: "Items" }, { value: "containers", label: "Containers" }], value: "items", onChange: (v) => { location.hash = v === "containers" ? "#/containers" : "#/inventory"; } });
+// Inventory's Items | Containers | Scrolls switch (in its top bar) is a view of one screen, not a screen of its own.
+type InvView = "items" | "containers" | "scrolls";
+const invView = segmented({ label: "View", options: [{ value: "items", label: "Items" }, { value: "containers", label: "Containers" }, { value: "scrolls", label: "Scrolls" }], value: "items", onChange: (v) => { location.hash = v === "items" ? "#/inventory" : `#/${v}`; } });
 invView.id = "inv-view";
 $<HTMLElement>("#inv-view")!.replaceWith(invView);
-function showInventoryView(view: "items" | "containers"): void {
+function showInventoryView(view: InvView): void {
   invView.setValue(view);
   $<HTMLElement>("#inv-view-items")!.hidden = view !== "items";
   $<HTMLElement>("#tab-containers")!.hidden = view !== "containers";
+  $<HTMLElement>("#tab-scrolls")!.hidden = view !== "scrolls";
 }
 function showTab(tab: string): void {
   const screen = screenOf(tab);
@@ -139,8 +144,8 @@ function showTab(tab: string): void {
   closePopover();
   if (screen !== "map") document.title = "Pack Rat";   // the House map names the page after a named house (ui/house-map.mts)
   for (const sec of document.querySelectorAll<HTMLElement>(".screen")) sec.hidden = sec.id !== "tab-" + screen;
-  setCurrentNav(tab === "containers" ? "inventory" : tab);
-  if (tab === "inventory" || tab === "containers") showInventoryView(tab === "containers" ? "containers" : "items");
+  setCurrentNav(isInvView(tab) ? "inventory" : tab);
+  if (isInvView(tab)) showInventoryView(tab === "inventory" ? "items" : tab as InvView);
   if (tab !== "import") lastScreen = screen;
   if (tab === "import") importDrawer.open(); else importDrawer.close();
   if (tab === "runs") openRunsDrawer(); else if (screen !== "builder") closeRunsDrawer();
@@ -153,6 +158,7 @@ function applyRoute(): void {
   if (r.tab === "map") void showMap(parseMapHash(location.hash));
   if (r.tab === "characters") showCharacter(r.sheet);
   if (r.tab === "containers") showContainers(r.scanner);
+  if (r.tab === "scrolls") showScrolls(r.scrolls);
   if (r.tab === "builder" && state.inv) {
     if (r.character && r.character !== state.builder.character && state.inv.characters[r.character]) selectCharacter(r.character);
     else if (!r.character && state.builder.character) history.replaceState(null, "", routeFor("builder"));
@@ -169,7 +175,7 @@ for (const a of document.querySelectorAll<HTMLAnchorElement>("#sidebar [data-nav
 });
 window.addEventListener("hashchange", applyRoute);
 // A saved Organize setup changes how locations read: the Containers view and the Items rows redraw.
-document.addEventListener("organizechange", () => { if (state.inv) { renderContainers(); fetchItems(); } });
+document.addEventListener("organizechange", () => { if (state.inv) { renderContainers(); fetchItems(); scrollsChanged(); } });
 initShell();
 initFilters();   // the Inventory's toolbar and loading skeleton, before any data arrives
 showTab(parseRoute().tab);   // before the inventory loads, so a reload never flashes the wrong screen
