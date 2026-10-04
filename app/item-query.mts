@@ -12,7 +12,7 @@
 // string columns (name, kind, slot label, location) sort A-to-Z when dir is +1 (av.localeCompare(bv) *
 // dir) — that asymmetry is the page's existing behavior (best-stat-first is the useful default for a
 // property column; alphabetical is the useful default for a name column), reproduced exactly, not fixed.
-import { itemSearchBlob, itemOwnBlob, groupByName, KINDS, SLOT_LABELS, propertyKeys, extraKeys, flagKeys, flagKey, gearSkills } from "./vault-lib.mts";
+import { itemSearchBlob, itemOwnBlob, groupByName, compareNames, KINDS, SLOT_LABELS, propertyKeys, extraKeys, flagKeys, flagKey, gearSkills } from "./vault-lib.mts";
 import type { Item, ItemGroup } from "./vault-lib.mts";
 import type { RulesV1RarityItem } from "./schema/types.d.mts";
 
@@ -187,12 +187,12 @@ export function applyItemQuery(items: Item[], query: ItemQuery, { rarity = [], n
   const k = query.sort, d = query.dir;
   const sorted = [...found].sort((a, b) => {
     const av = sortValue(a, k, rarity), bv = sortValue(b, k, rarity);
-    return typeof av === "number" ? ((bv as number) - av) * d : String(av).localeCompare(String(bv)) * d;
+    return typeof av === "number" ? ((bv as number) - av) * d : (k === "name" ? compareNames(String(av), String(bv)) : String(av).localeCompare(String(bv))) * d;
   });
   if (query.group) {
     // Group mode's sortable headers are Name, Kind, Total (amount) and Stacks; the numeric ones sort
     // high-to-low at dir +1, like the row view's numeric columns.
-    const groups = groupByName(sorted).sort((a, b) => (k === "amount" ? (b.amount - a.amount) * d : k === "stacks" ? (b.stacks - a.stacks) * d : k === "kind" ? a.kind.localeCompare(b.kind) * d : a.name.localeCompare(b.name) * d));
+    const groups = groupByName(sorted).sort((a, b) => (k === "amount" ? (b.amount - a.amount) * d : k === "stacks" ? (b.stacks - a.stacks) * d : k === "kind" ? a.kind.localeCompare(b.kind) * d : compareNames(a.name, b.name) * d));
     return { groups: groups.slice(query.offset, query.offset + query.limit).map(groupJson), total: groups.length, stacks: found.length, pieces };
   }
   return { rows: sorted.slice(query.offset, query.offset + query.limit), total: sorted.length, pieces };

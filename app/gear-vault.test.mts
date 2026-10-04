@@ -8,7 +8,7 @@ import { createHash } from "node:crypto";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { dirname, join } from "node:path";
 import {
-  parseTooltip, classify, foldSnapshots, spellSchoolOf, buildPools, requirementReport, totalsOf, propertyKeys, bagLabel, capacityOf, NOT_BUILDER_KEYS, kindOf, groupByName, slayersOf, medableOf, weaponAllowed, settingsDiff, PROP_LABELS, LAYER_TO_SLOT, effectiveProfile, resistSkillBonus, toOptItem, labelOf, builderKeys, migrateProfiles, templateFrom, TEMPLATE_KEYS, setRules, getRules, tagUnits, tagInfo,
+  parseTooltip, displayName, gameName, compareNames, classify, foldSnapshots, spellSchoolOf, buildPools, requirementReport, totalsOf, propertyKeys, bagLabel, capacityOf, NOT_BUILDER_KEYS, kindOf, groupByName, slayersOf, medableOf, weaponAllowed, settingsDiff, PROP_LABELS, LAYER_TO_SLOT, effectiveProfile, resistSkillBonus, toOptItem, labelOf, builderKeys, migrateProfiles, templateFrom, TEMPLATE_KEYS, setRules, getRules, tagUnits, tagInfo,
   WEAPON_SKILLS, migrateWeaponSetting, excludeWeaponsError,
   shardResistCap, resistCapsFor, resistCapsError, profileResistCaps, RESIST_CAP_LIMITS,
 } from "./vault-lib.mts";
@@ -797,6 +797,46 @@ test("[fast] requirementReport marks floors met/unmet and caps", () => {
   assert.equal(by.lmc!.met, false);
   assert.equal(by.fc!.met, null); assert.equal(by.fc!.capped, true);
   assert.equal(by.fcr!.value, 0);
+});
+
+test("[smoke] parseTooltip reads a Scroll of Transcendence's skill and points", () => {
+  const sot = (lines: string[], amount?: number) => { const p = parseTooltip(lines, amount); return [p.sotSkill, p.props.sotPoints]; };
+  assert.deepEqual(sot(["Scroll Of Transcendence", "Cursed", "Weight: 1 Stone", "Skill: Animal Lore 0.1 Skill Points"]), ["Animal Lore", 0.1]);
+  assert.deepEqual(sot(["Scroll Of Transcendence", "Spirit Speak 0.5 Skill"]), ["Spirit Speak", 0.5], "the older line form");
+  assert.deepEqual(sot(["Scroll Of Transcendence", "Skill: Fencing 1 Skill Point"]), ["Fencing", 1], "a singular point");
+  assert.deepEqual(sot(["Scroll Of Transcendence", "Skill: Fencing 0.3 Skill Points."]), ["Fencing", 0.3], "a trailing period");
+  assert.deepEqual(sot(["Scroll Of Transcendence", "Spirit Speak 0.5 Skill."]), ["Spirit Speak", 0.5], "a trailing period on the older form");
+  assert.deepEqual(sot(["2 Scroll Of Transcendence", "Skill: Chivalry 1.2 Skill Points"], 2), ["Chivalry", 1.2], "a stack prefix");
+  assert.deepEqual(sot(["scroll of TRANSCENDENCE", "skill: Animal Taming 3 skill points"]), ["Animal Taming", 3], "mixed case");
+  assert.deepEqual(sot(["Scroll Of Alacrity", "Skill: Animal Lore 0.1 Skill Points"]), [null, undefined], "only a Scroll of Transcendence");
+  assert.deepEqual(sot(["Scroll Of Transcendence"]), [null, undefined], "no skill line, no skill");
+});
+
+test("[smoke] displayName names a Scroll of Transcendence by its skill and points, and leaves every other name alone", () => {
+  assert.equal(displayName(parseTooltip(["Scroll Of Transcendence", "Skill: Animal Lore 0.1 Skill Points"])), "Scroll of Transcendence (Animal Lore - 0.1 Pts)");
+  assert.equal(displayName(parseTooltip(["Scroll Of Transcendence", "Skill: Chivalry 2 Skill Points"])), "Scroll of Transcendence (Chivalry - 2.0 Pts)");
+  assert.equal(displayName(parseTooltip(["Scroll Of Transcendence"])), "Scroll Of Transcendence");
+  assert.equal(displayName(parseTooltip(["An Exalted Scroll Of Mysticism (110 Skill)"])), "An Exalted Scroll Of Mysticism (110 Skill)");
+});
+
+test("[fast] compareNames orders names A to Z with their numbers by value (issue #181)", () => {
+  const names = ["Scroll of Transcendence (Animal Lore - 10.0 Pts)", "Black Pearl", "Scroll of Transcendence (Animal Lore - 2.0 Pts)", "scroll of transcendence (Chivalry - 0.5 Pts)"];
+  assert.deepEqual(names.sort(compareNames), ["Black Pearl", "Scroll of Transcendence (Animal Lore - 2.0 Pts)", "Scroll of Transcendence (Animal Lore - 10.0 Pts)", "scroll of transcendence (Chivalry - 0.5 Pts)"]);
+});
+
+test("[fast] gameName is the tooltip's first line, a stack's count stripped, else the shown name", () => {
+  assert.equal(gameName({ name: "Scroll of Transcendence (Chivalry - 0.6 Pts)", lines: ["Scroll Of Transcendence", "Skill: Chivalry 0.6 Skill Points"] }), "Scroll Of Transcendence");
+  assert.equal(gameName({ name: "Black Pearl", lines: ["20 Black Pearl"], amount: 20 }), "Black Pearl");
+  assert.equal(gameName({ name: "Katana" }), "Katana");
+});
+
+test("[fast] fold: Scrolls of Transcendence show their skill and points, stay scrolls, and group and sort by skill", () => {
+  const inv = foldSnapshots([dorran]);
+  const sots = Object.values(inv.items).filter((it) => it.lines[0] === "Scroll Of Transcendence").map((it) => it.name).sort();
+  assert.deepEqual(sots, ["Scroll of Transcendence (Chivalry - 0.6 Pts)", "Scroll of Transcendence (Spellweaving - 0.2 Pts)"]);
+  assert.ok(Object.values(inv.items).filter((it) => it.lines[0] === "Scroll Of Transcendence").every((it) => it.kind === "scroll" && !it.gear));
+  assert.equal(groupByName(Object.values(inv.items).filter((it) => it.lines[0] === "Scroll Of Transcendence")).length, 2, "two skills, two groups");
+  assert.ok(NOT_BUILDER_KEYS.has("sotPoints"));
 });
 
 test("[fast] propertyKeys lists the modeled properties present", () => {
