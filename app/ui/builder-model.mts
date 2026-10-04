@@ -3,7 +3,7 @@
 // "other changes" badges and "after the change" values, the compare table's differing rows and best values,
 // and a saved run's label and badges. No DOM and no page state, so app/builder-model.test.mts can check it
 // all directly; ui/builder.mts, ui/builder-result.mts and ui/runs.mts draw what it returns.
-import { labelOf, fullOf, NOT_BUILDER_KEYS, RESIST_KEYS, RESIST_CAP_LIMITS, SLOT_LABELS, settingsDiff, shardResistCap, WEAPON_SKILLS, MELEE_SKILLS } from "../vault-lib.mts";
+import { labelOf, fullOf, NOT_BUILDER_KEYS, RESIST_KEYS, RESIST_CAP_LIMITS, SLOT_LABELS, settingsDiff, shardResistCap, WEAPON_SKILLS, MELEE_SKILLS, ubwsLetsIn } from "../vault-lib.mts";
 import type { PropMap, ResistCap, RunSettings } from "../vault-lib.mts";
 
 export const plural = (n: number, word: string, many = `${word}s`): string => `${n.toLocaleString("en-US")} ${n === 1 ? word : many}`;
@@ -74,7 +74,7 @@ interface WeaponWords { any: string; none: string; only: (w: string) => string; 
 function weaponsText(excluded: string[], ubws: boolean, t: WeaponWords): string {
   const allowed = WEAPON_SKILLS.filter((w) => !excluded.includes(w));
   const text = !excluded.length ? t.any : !allowed.length ? t.none : allowed.length === 1 ? t.only(allowed[0]!) : t.some(WEAPON_SKILLS.filter((w) => excluded.includes(w)));
-  const named = ubws && MELEE_SKILLS.some((w) => excluded.includes(w)) && MELEE_SKILLS.some((w) => !excluded.includes(w));
+  const named = ubwsLetsIn(excluded, ubws) && MELEE_SKILLS.some((w) => excluded.includes(w));
   return named ? `${text}, plus Use Best Weapon Skill` : text;
 }
 export const weaponsSummary = (excluded: string[] = [], ubws = false): string =>
