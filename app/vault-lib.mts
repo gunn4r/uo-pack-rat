@@ -1020,12 +1020,13 @@ export function weaponAllowed(it: Item, excluded: string[] = []): boolean {
 }
 // Issue #188: the weapon skills a weapon counts under in the Inventory's Weapon skill filter, in WEAPON_SKILLS order: its
 // Skill Required line, and with Use Best Weapon Skill also the three melee skills it may swing with (ServUO
-// BaseWeapon.GetUsedSkill). The Suit Builder's weaponAllowed holds the same Use Best Weapon Skill rule on its own (#187).
-const MELEE_SKILLS = ["swordsmanship", "fencing", "mace fighting"];
+// BaseWeapon.GetUsedSkill). The Suit Builder's weaponAllowed holds the same Use Best Weapon Skill rule on its own (#187),
+// with an exported MELEE_SKILLS that can replace UBWS_SKILLS once both have landed.
+const UBWS_SKILLS = ["swordsmanship", "fencing", "mace fighting"];
 export function weaponSkillsOf(it: Pick<Item, "slot" | "skillReq" | "flags">): string[] {
   if (it.slot !== "oneHanded" && it.slot !== "twoHanded") return [];
   const own = String(it.skillReq || "").toLowerCase(), best = (it.flags || []).includes("use best weapon skill");
-  return WEAPON_SKILLS.filter((w) => w === own || (best && MELEE_SKILLS.includes(w)));
+  return WEAPON_SKILLS.filter((w) => w === own || (best && UBWS_SKILLS.includes(w)));
 }
 // Profiles, templates and runs saved before the exclusion list held one choice, `weaponSkill` ("archery", or null/""
 // for any weapon), which means "exclude every other weapon skill". Returns `s` itself when there is nothing to convert.
