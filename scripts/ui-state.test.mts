@@ -116,6 +116,12 @@ test("[slow] refresh, Clear all, the virtual table and Forget keep the page's st
     assert.equal(await page.locator("#f-text").inputValue(), "", "Clear all clears the search too");
     assert.equal(await page.locator("#inv-active").isHidden(), true, "no active filters, no strip");
 
+    // A Scroll of Transcendence's row names its skill and points, and the search finds it by them (issue #181).
+    await page.fill("#f-text", "transcendence chivalry");
+    await page.locator("#inv-table tbody tr.item", { hasText: "Scroll of Transcendence (Chivalry - 0.6 Pts)" }).first().waitFor({ timeout: 10_000 });
+    await page.click("#f-clear");
+    await waitCount(page, /^160 stacks · /);
+
     // No pager: the table is virtual. It draws a screenful of rows, and scrolling to the end brings the
     // last one in.
     const drawn = await page.locator("#inv-table tbody tr.item").count();

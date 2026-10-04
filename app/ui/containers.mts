@@ -8,7 +8,7 @@
 // ↔ app) that is fine here since both are function declarations only called after bootstrap. reload(),
 // not load(): a Forget changes the inventory and nothing else, and must keep the filters and the builder
 // as they are.
-import { bagLabel } from "../vault-lib.mts";
+import { bagLabel, compareNames } from "../vault-lib.mts";
 import type { Container } from "../vault-lib.mts";
 import { state } from "./store.mts";
 import { $, el, itemTip, toast, safeColor } from "./dom.mts";
@@ -98,7 +98,7 @@ async function showMissing(r: Container, name: string): Promise<void> {
   let items: MissingApiResponse["items"];
   try { ({ items } = await api<MissingApiResponse>(`/api/missing?root=${+r.serial}`)); } catch (e) { toast(errorText(e), "bad"); return; }
   const close = button({ label: "Close", variant: "primary", onClick: () => dlg.close() });
-  const rows = [...items].sort((a, b) => a.name.localeCompare(b.name)).map((m) => itemTip(el("tr", {},
+  const rows = [...items].sort((a, b) => compareNames(a.name, b.name)).map((m) => itemTip(el("tr", {},
     el("td", {}, txt(m.name || `0x${m.serial.toString(16)}`)),
     el("td", { class: "num" }, txt(m.fewer ? `${m.fewer.toLocaleString("en-US")} fewer` : m.amount.toLocaleString("en-US"))),
     el("td", {}, txt(relativeWhen(m.lastSeen)))), m, { focus: false }));   // its tooltip: the record drawn here (the item is gone from the inventory)

@@ -1267,12 +1267,16 @@ test("[fast] /api/items pages, sorts and searches", async () => {
   const all = asJson<ItemsPageResponse>(await (await get("/api/items?limit=500")).json());
   assert.equal(all.rows!.length, total);
   const names = all.rows!.map((r) => r.name);
-  assert.deepEqual(names, [...names].sort((a, b) => a.localeCompare(b)), "sort=name (default) is A-to-Z");
+  assert.deepEqual(names, [...names].sort((a, b) => a.localeCompare(b, undefined, { numeric: true })), "sort=name (default) is A-to-Z, numbers by value");
   const rev = asJson<ItemsPageResponse>(await (await get("/api/items?limit=500&sort=name&dir=-1")).json());
   assert.deepEqual(rev.rows!.map((r) => r.name), [...names].reverse(), "dir=-1 reverses the default sort");
   const search = asJson<ItemsPageResponse>(await (await get("/api/items?q=" + encodeURIComponent("Vicious Crescent Blade"))).json());
   assert.ok(search.rows!.length >= 1, JSON.stringify(search));
   assert.ok(search.rows!.some((r) => r.name === "Vicious Crescent Blade"));
+  // A Scroll of Transcendence is named by its skill and points, and found by them (issue #181).
+  const sot = asJson<ItemsPageResponse>(await (await get("/api/items?q=" + encodeURIComponent("transcendence chivalry"))).json());
+  assert.ok(sot.rows!.length > 0 && sot.rows!.every((r) => r.name === "Scroll of Transcendence (Chivalry - 0.6 Pts)"), JSON.stringify(sot.rows!.map((r) => r.name)));
+  assert.equal(sot.rows![0]!.lines[0], "Scroll Of Transcendence", "the in-game name stays the tooltip's first line");
   const clamp = asJson<ItemsPageResponse>(await (await get("/api/items?limit=9999")).json());
   assert.equal(clamp.limit, 500);
   // The House map's search (issue #10): fields=hits answers the same query with only what the map reads, many rows a page.

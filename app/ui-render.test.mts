@@ -191,6 +191,17 @@ test("[fast] tipNode: name and tags on top, element-coloured resists, muted dura
   assert.equal(byClass("tip-where")[0]!.textContent, "Metal Chest (0x700b0000)");
 });
 
+test("[fast] tipNode: a Scroll of Transcendence shows its in-game name, muted, under its shown name; other items do not (issue #181)", () => {
+  const byClass = (n: FakeElement, c: string): FakeElement[] => elements(n).filter((e) => e.className.split(" ").includes(c));
+  const sot = tipNode({ name: "Scroll of Transcendence (Chivalry - 0.6 Pts)", lines: ["Scroll Of Transcendence", "Skill: Chivalry 0.6 Skill Points"] }) as unknown as FakeElement;
+  assert.equal(byClass(sot, "tip-name")[0]!.textContent, "Scroll of Transcendence (Chivalry - 0.6 Pts)");
+  const game = byClass(sot, "tip-game")[0]!;
+  assert.equal(game.textContent, "In game: Scroll Of Transcendence");
+  assert.ok(game.className.split(" ").includes("muted"));
+  const pearls = tipNode({ name: "Black Pearl", amount: 20, lines: ["20 Black Pearl"] }) as unknown as FakeElement;
+  assert.equal(byClass(pearls, "tip-game").length, 0, "a stack's count is not a different name");
+});
+
 // Issue #69: a row's action buttons sit inside the row's data-serial host but are not the item, so
 // hovering them asks for no item tooltip; the rest of the row still does.
 test("[fast] tipHostOf: a row's cells ask for its item tooltip, its data-no-tip actions cell does not", () => {

@@ -42,6 +42,7 @@ details summary { cursor: pointer; color: var(--color-text-muted); font-size: va
 .tipcard-host .tip-head { display: flex; align-items: center; gap: var(--space-2); }
 .tipcard-host .tip-name { flex: 1 1 auto; min-width: 0; font-size: var(--text-base); line-height: var(--lh-base); }
 .tipcard-host .tip-head .tag { flex: none; }
+.tipcard-host .tip-game { margin-top: -4px; font-size: 12px; line-height: 18px; overflow-wrap: anywhere; }   /* the in-game name, close under the shown one */
 .tipcard-host .tip-lines { display: flex; flex-direction: column; gap: 2px; font-size: 12px; line-height: 18px; }
 .tipcard-host .tip-foot { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
 .tipcard-host .tip-where { overflow-wrap: anywhere; }   /* the whole location, wrapped: never cut off */

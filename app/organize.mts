@@ -5,9 +5,9 @@
 import { matchesItem } from "./item-query.mts";
 import { parseStamp } from "./scan-schema.mts";
 import { CATCH_ALL_ID, EMPTY_BAGS_ID, ruleMatchOf, type Build, type OrganizeConfig, type RuleMatch } from "./organize-config.mts";
-import { RESIST_KEYS, spellSchoolOf, TRASH_RE, locationOf, type Character, type Container, type ContainerCapacity, type Inventory, type Item } from "./vault-lib.mts";
+import { RESIST_KEYS, gameName, spellSchoolOf, TRASH_RE, locationOf, type Character, type Container, type ContainerCapacity, type Inventory, type Item } from "./vault-lib.mts";
 import type { RulesV1RarityItem } from "./schema/types.d.mts";
-import type { TripInput } from "./bridge-trip.mts";
+import { TRIP_NAME_MAX, type TripInput } from "./bridge-trip.mts";
 
 export type WarningKind = "stale-container" | "missing-target" | "missing-label" | "unknown-capacity" | "old-scripts" | "blacklisted" | "no-position" | "not-ground" | "nearly-full";
 export interface PlanWarning { kind: WarningKind; serial: number; detail: string }
@@ -516,7 +516,10 @@ export function tripInputFrom(inv: Inventory, index: number, stamp: string, step
   const ordered = (stops: number[], paths: Map<number, number[]>, then: (s: number) => number = () => 0): number[] =>
     [...paths.keys()].sort((a, b) => stops.indexOf(paths.get(a)![0]!) - stops.indexOf(paths.get(b)![0]!) || then(a) - then(b) || a - b);
   const putStop = (s: number): number => putStops.indexOf(puts.get(s)![0]!);
-  const name = new Map(steps.map((s) => [s.serial, s.name.slice(0, 40)]));
+  // A shown name past the bridge's limit goes as the in-game name (a Scroll of Transcendence's would be cut mid-number,
+  // issue #181), itself cut if it must be.
+  const tripName = (s: TripStep): string => (s.name.length <= TRIP_NAME_MAX || !inv.items[s.serial] ? s.name : gameName(inv.items[s.serial]!)).slice(0, TRIP_NAME_MAX);
+  const name = new Map(steps.map((s) => [s.serial, tripName(s)]));
   const roots: TripInput["roots"] = {};
   for (const r of [...takeStops, ...putStops]) {
     const p = posOf(inv, r);

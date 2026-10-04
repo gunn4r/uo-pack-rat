@@ -25,6 +25,15 @@ const kinds = (o?: KindOverrides): Record<number, string | undefined> => {
   return Object.fromEntries([WEAPON, FRAME, HORSE, SWORD, PEARL].map((s) => [s, items[s]?.kind]));
 };
 
+test("[fast] item kinds: a Scroll of Transcendence takes its display name's kind, then its in-game name's, then its graphic's (issue #181)", () => {
+  const SOT = 0x40001006;
+  const sotScan = houseScan({ boxes: [{ serial: CHEST }], things: [{ serial: SOT, name: "Scroll Of Transcendence", in: CHEST, graphic: 0x14ef, lines: ["Scroll Of Transcendence", "Skill: Chivalry 0.6 Skill Points"] }] });
+  const kind = (o: KindOverrides): string | undefined => foldSnapshots([sotScan], o).items[SOT]?.kind;
+  assert.equal(kind({ names: { "scroll of transcendence": "quest" }, graphics: {} }), "quest", "an override made before the display name still applies");
+  assert.equal(kind({ names: { "scroll of transcendence": "quest", "scroll of transcendence (chivalry - 0.6 pts)": "decor" }, graphics: { "0x14ef": "tool" } }), "decor");
+  assert.equal(kind({ names: {}, graphics: { "0x14ef": "tool" } }), "tool");
+});
+
 test("[fast] item kinds: the shipped table alone, then a name beats a graphic beats the table, and gear never changes", () => {
   assert.deepEqual(kinds(), { [WEAPON]: "other", [FRAME]: "resource", [HORSE]: "decor", [SWORD]: "gear", [PEARL]: "reagent" });
   const o: KindOverrides = { names: { "ancient weapon": "quest", "katana": "decor", "black pearl": "tool" }, graphics: { "0x1f14": "crafting", "0x13ff": "tool", "0x104e": "decor" } };

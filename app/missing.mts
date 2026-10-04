@@ -9,7 +9,7 @@
 // under-reported while such a stack exists, but a merge is never reported as missing.
 // Pure; app/vault-server.mts runs it beside the fold, over the same scans.
 import { parseStamp } from "./scan-schema.mts";
-import { stackName, TRASH_RE } from "./vault-lib.mts";
+import { shownName, TRASH_RE } from "./vault-lib.mts";
 import type { Inventory } from "./vault-lib.mts";
 import type { ScanV2 } from "./schema/types.d.mts";
 
@@ -47,8 +47,8 @@ function contentsOf(snap: ScanV2): Map<number, Map<number, Seen>> {
     const root = bySerial.has(+raw.container) ? +bySerial.get(+raw.container)!.root : roots.has(+raw.container) ? +raw.container : null;
     if (root == null || !roots.has(root) || inTrash(+raw.container)) continue;
     const amount = raw.amount || 1;
-    // The fold's name for it: the first tooltip line with text, its count stripped (parseTooltip).
-    const name = stackName((raw.tooltip?.length ? raw.tooltip : [raw.name]).find((l) => stackName(l)), amount) || raw.name || "";
+    // The fold's name for it (enrich's displayName), so a Scroll of Transcendence names its skill (issue #181).
+    const name = shownName(raw.tooltip?.length ? raw.tooltip : [raw.name], amount) || raw.name || "";
     add(root, +raw.serial, { name, amount, kind: kindOf(name, raw.graphic, raw.hue) });
   }
   return out;

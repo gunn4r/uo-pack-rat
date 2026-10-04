@@ -50,7 +50,7 @@ export const moveText = (b: number, a: number, suffix = ""): string => (b === a 
 // Up to two numbers a slot tile shows under the piece's name: the properties nearest their shard cap (a
 // property with no cap is measured against 100), in the order the item lists them. Skill bonuses read
 // "Magery +20". Bookkeeping keys the fold adds (tag penalty, pool sizes) are not properties.
-const NOT_SHOWN = new Set(["tagPenalty", "stamPool", "manaPool", "hitsPool", "psLevel"]);
+const NOT_SHOWN = new Set(["tagPenalty", "stamPool", "manaPool", "hitsPool", "psLevel", "sotPoints"]);
 export function keyNumbers(props: Record<string, number>, caps: Record<string, number>, n = 2): string[] {
   const entries = Object.entries(props).filter(([k, v]) => !NOT_SHOWN.has(k) && Number.isFinite(v) && v > 0);
   const top = new Set([...entries].sort((x, y) => y[1] / (caps[y[0]] || 100) - x[1] / (caps[x[0]] || 100)).slice(0, n).map(([k]) => k));

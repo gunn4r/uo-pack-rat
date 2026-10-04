@@ -17,7 +17,7 @@ import { queueTrip } from "./bridge-trip.mts";
 import type { ScanV2 } from "./schema/types.d.mts";
 import {
   ancestry, scopeOf, ruleMatches, buildOf, matchCount, CASTER_PROPS, CASTER_SKILLS, MELEE_PROPS, MELEE_SKILLS, claimOf, baseName, nameKey, applyOverlay, overlaidInventory, homeOf, newSim, simTake, simPut, mark, rollback, MAX_STACK,
-  sitesOf, packKept, planOrganize, tripCommand, lineBytes, emptyBagsOf, directSerials, tripSeconds, STEP_S, type OverlayMove, type Sim, type Plan,
+  sitesOf, packKept, planOrganize, tripCommand, tripInputFrom, lineBytes, emptyBagsOf, directSerials, tripSeconds, STEP_S, type OverlayMove, type Sim, type Plan,
 } from "./organize.mts";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -594,6 +594,17 @@ test("[fast] the stamp changes when the plan changes, and only then", () => {
   assert.equal(planOrganize(inv, cfg, [], { now: NOW + 1000 }).stamp, stamp);
   assert.notEqual(planOrganize(inv, { ...cfg, rules: [reagents([B])] }, [], { now: NOW }).stamp, stamp);
   assert.notEqual(planOrganize(inv, cfg, [step(PEARL, "Black Pearl", B, A)], { now: NOW }).stamp, stamp);
+});
+
+test("[fast] tripInputFrom sends the in-game name for a shown name longer than a trip allows, never one cut mid-number (issue #181)", () => {
+  const SOT = 0x40001020, LONG = 0x40001021;
+  const inv = fold([{ serial: A }, { serial: B, pos: at(102) }], [
+    { serial: SOT, name: "Scroll Of Transcendence", in: B, lines: ["Skill: Animal Lore 0.1 Skill Points"] },
+    { serial: LONG, name: "An Exceedingly Long Named Thing Of Many Words", in: B }, { serial: PEARL, name: "Black Pearl", in: B }]);
+  assert.equal(inv.items[SOT]!.name, "Scroll of Transcendence (Animal Lore - 0.1 Pts)");
+  const trip = tripInputFrom(inv, 1, "s", [SOT, LONG, PEARL].map((serial) => ({ serial, name: inv.items[serial]!.name, from: B, to: A })))!;
+  const names = Object.fromEntries(trip.takes.map((t) => [t.serial, t.name]));
+  assert.deepEqual(names, { [SOT]: "Scroll Of Transcendence", [LONG]: "An Exceedingly Long Named Thing Of Many Words".slice(0, 40), [PEARL]: "Black Pearl" }, "a long in-game name is still cut to the limit");
 });
 
 test("[fast] tripCommand builds the line queueTrip writes: every root placed once, chains root first, the plan's stamp", () => {
