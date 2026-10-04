@@ -184,3 +184,13 @@ export function placeGroups(items: Item[]): PlaceGroup[] {
   }
   return [...by.values()];
 }
+// Who saw a place, under its name in the detail: "On the ground · scanned by Kestrel", "Kestrel's backpack".
+export function whoText(loc: Item["location"]): string {
+  if (!loc) return "";
+  if (loc.kind === "ground") return `On the ground · scanned by ${loc.character}`;
+  if (loc.kind === "backpack" || loc.kind === "bank") return `${loc.character}'s ${loc.kind}`;
+  return loc.character;
+}
+// A scroll's name in the detail's list, where its level or points are on a badge beside it: "Mythical Scroll Of
+// Provocation", "Scroll of Transcendence".
+export const listName = (name: string): string => name.replace(/^an? /i, "").replace(/ \([^()]*\)$/, "");

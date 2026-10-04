@@ -11,7 +11,7 @@ import type { Item } from "./vault-lib.mts";
 import type { RulesV1 } from "./schema/types.d.mts";
 import {
   powerSkill, powerRows, powerLevels, nextStep, bindEverything, holdingsText, sotRows, sotPlan, fewestSubset, planText, fmtTenths,
-  isEmptyBinder, emptyBinderCount, scrollFacts, filterRows, powerQuery, sotQuery, placeGroups,
+  isEmptyBinder, emptyBinderCount, scrollFacts, filterRows, powerQuery, sotQuery, placeGroups, whoText, listName,
 } from "./ui/scrolls-model.mts";
 
 const RULES = JSON.parse(readFileSync(new URL("./rules/uoalive.json", import.meta.url), "utf8")) as RulesV1;
@@ -157,6 +157,10 @@ test("[fast] scrolls model: the detail groups scrolls by where they are, in the 
   const c = ps("Provocation", 110, { root: 1, location: { kind: "ground", character: "Kestrel", text: "Chest A (0x1)", root: 1 } });
   const groups = placeGroups([a, b, c]);
   assert.deepEqual(groups.map((g) => [g.text, g.items.map((i) => i.serial)]), [["Chest A (0x1)", [a.serial, c.serial]], ["Chest B (0x2)", [b.serial]]]);
+  assert.equal(listName(a.name), "Mythical Scroll Of Provocation");
+  assert.equal(listName(sot("Animal Lore", 0.1).name), "Scroll of Transcendence");
+  assert.equal(whoText(a.location), "On the ground · scanned by Kestrel");
+  assert.equal(whoText({ kind: "backpack", character: "Dorran", text: "Backpack", root: 3 }), "Dorran's backpack");
 });
 
 test("[fast] scrolls model: the fewest-scrolls plan agrees with trying every subset", () => {
