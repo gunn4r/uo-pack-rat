@@ -25,7 +25,7 @@ test("[fast] plural agrees with its count and groups thousands", () => {
 });
 
 test("[fast] queryParams round-trips through the server's parser", () => {
-  const q: ItemQuery = { ...BASE, q: "ring", chars: ["Dorran", "Kestrel"], slot: ["ring", "?"], loc: ["Metal Chest, left"], roots: [12], rarityMin: "Greater Magic Item", kind: ["gear"], seenDays: 7, slayer: "*", nogarg: true, med: true, hideTags: ["cursed"], tags: ["brittle", "antique"], props: [{ key: "lmc", min: 8 }, { key: "hci", min: 5, op: "le" }], flags: ["spell channeling", "mage armor"], group: true, sort: "hci", dir: -1, offset: 500, limit: 500 };
+  const q: ItemQuery = { ...BASE, q: "ring", chars: ["Dorran", "Kestrel"], slot: ["ring", "?"], loc: ["Metal Chest, left"], roots: [12], rarityMin: "Greater Magic Item", kind: ["gear"], seenDays: 7, slayer: "*", nogarg: true, med: true, hideTags: ["cursed"], tags: ["brittle", "antique"], props: [{ key: "lmc", min: 8 }, { key: "hci", min: 5, op: "le" }], flags: ["spell channeling", "mage armor"], wskill: ["fencing", "mace fighting"], group: true, sort: "hci", dir: -1, offset: 500, limit: 500 };
   assert.deepEqual(parseItemQuery(queryParams(q)), q);
   assert.deepEqual(parseItemQuery(queryParams(BASE)), BASE);
 });
@@ -51,6 +51,16 @@ test("[fast] a yes/no property is a token of its own, in Title Case, and Clear a
   assert.deepEqual(tokens[0]!.remove(q).flags, ["mage armor"], "removing one leaves the other");
   assert.equal(tokens[0]!.cause(3), "None of the 3 stacks has Spell Channeling.");
   assert.deepEqual(clearAll(q).flags, []);
+});
+
+test("[fast] a weapon skill is a token of its own, and Clear all clears it (issue #188)", () => {
+  const q: ItemQuery = { ...BASE, wskill: ["swordsmanship", "mace fighting"] };
+  const tokens = activeFilters(q, CTX);
+  assert.deepEqual(tokens.map((t) => t.label), ["Weapon skill: Swordsmanship", "Weapon skill: Mace Fighting"]);
+  assert.deepEqual(tokens.map((t) => t.removeLabel), ["Remove filter: Weapon skill Swordsmanship", "Remove filter: Weapon skill Mace Fighting"]);
+  assert.deepEqual(tokens[0]!.remove(q).wskill, ["mace fighting"], "removing one leaves the other");
+  assert.equal(tokens[0]!.cause(3), "None of the 3 stacks is a Swordsmanship weapon.");
+  assert.deepEqual(clearAll(q).wskill, []);
 });
 
 test("[fast] activeFilters counts the search as a filter, and Clear all clears it too", () => {

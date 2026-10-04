@@ -42,6 +42,8 @@ test("[fast] checkOrganizeConfig accepts an empty setup and a full one", () => {
   built.rules[1]!.match.query.tags = ["brittle"];
   // Issue #182: and require yes/no properties; one saved before them (r1 here) still reads.
   built.rules[1]!.match.query.flags = ["spell channeling"];
+  // Issue #188: and pick weapon skills; one saved before them (r1 here) still reads.
+  built.rules[1]!.match.query.wskill = ["Fencing", "mace fighting"];
   built.rules[1]!.match.skipSuits = true;
   const b = checkOrganizeConfig(built);
   assert.equal(b.ok, true, b.ok ? "" : b.error);
@@ -67,6 +69,8 @@ test("[fast] checkOrganizeConfig refuses each broken part and names it", () => {
     ["an unknown school", (c) => { c.rules[0]!.match.school = "pyromancy" as "magery"; }, /rules\[0\]\.match\.school must be one of magery, necromancy, mysticism, spellweaving/],
     ["too many required tags", (c) => { c.rules[0]!.match.query.tags = Array(11).fill("brittle"); }, /rules\[0\]\.match\.query\.tags must be a list of at most 10 tags/],
     ["too many required yes/no properties", (c) => { c.rules[0]!.match.query.flags = Array(11).fill("mage armor"); }, /rules\[0\]\.match\.query\.flags must be a list of at most 10 properties/],
+    ["an unknown weapon skill", (c) => { c.rules[0]!.match.query.wskill = ["wrestling"]; }, /rules\[0\]\.match\.query\.wskill must be a list of at most 5 weapon skills \(archery, swordsmanship, fencing, mace fighting, throwing\)/],
+    ["too many weapon skills", (c) => { c.rules[0]!.match.query.wskill = Array(6).fill("fencing"); }, /rules\[0\]\.match\.query\.wskill must be a list of at most 5 weapon skills/],
     ["a skipSuits that is not true or false", (c) => { c.rules[0]!.match.skipSuits = "yes" as unknown as boolean; }, /rules\[0\]\.match\.skipSuits must be true or false/],
     ["a target that is not labelled", (c) => { c.rules[0]!.targets = [0x40000009]; }, /not a labeled container/],
     ["a pinned target, naming the rule and the container", (c) => { c.rules[0]!.targets = [P]; }, /^The rule "Reagents" puts items into Display, which is pinned: nothing is put into a pinned container\. Take it off the rule, or unpin it\.$/],
