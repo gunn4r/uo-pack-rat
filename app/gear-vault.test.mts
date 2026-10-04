@@ -9,7 +9,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import { dirname, join } from "node:path";
 import {
   parseTooltip, classify, foldSnapshots, spellSchoolOf, buildPools, requirementReport, totalsOf, propertyKeys, bagLabel, capacityOf, NOT_BUILDER_KEYS, kindOf, groupByName, slayersOf, medableOf, weaponAllowed, settingsDiff, PROP_LABELS, LAYER_TO_SLOT, effectiveProfile, resistSkillBonus, toOptItem, labelOf, builderKeys, migrateProfiles, templateFrom, TEMPLATE_KEYS, setRules, getRules, tagUnits, tagInfo,
-  WEAPON_SKILLS, migrateWeaponSetting, excludeWeaponsError,
+  WEAPON_SKILLS, migrateWeaponSetting, excludeWeaponsError, weaponSkillsOf,
   shardResistCap, resistCapsFor, resistCapsError, profileResistCaps, RESIST_CAP_LIMITS,
 } from "./vault-lib.mts";
 import type { Item, Inventory, ItemLocation, ProfilesFile, CharacterEntryRaw } from "./vault-lib.mts";
@@ -842,6 +842,21 @@ test("[fast] weapon filter: an excluded skill's weapons leave the pool, and noth
   assert.deepEqual(fm.pools.helmet!.map((i) => i.serial), [6]);
   assert.deepEqual(hands(buildPools(inv, "Kestrel", {})), [1, 2, 3, 4, 5, 7, 8], "no exclusions: everything");
   assert.ok(weaponAllowed({ slot: "ring" } as unknown as Item, [...WEAPON_SKILLS]));
+});
+
+// Issue #188: the weapon skills a weapon counts under in the Inventory's Weapon skill filter. Use Best Weapon Skill swings
+// with the best of the three melee skills (ServUO BaseWeapon.GetUsedSkill), so it counts under all three.
+test("[fast] weaponSkillsOf: a weapon's own skill, plus the three melee skills with Use Best Weapon Skill", () => {
+  const w = (o: Record<string, unknown>): Item => ({ slot: "oneHanded", skillReq: null, flags: [], ...o }) as unknown as Item;
+  assert.deepEqual(weaponSkillsOf(w({ skillReq: "fencing" })), ["fencing"]);
+  assert.deepEqual(weaponSkillsOf(w({ slot: "twoHanded", skillReq: "Archery" })), ["archery"], "read whatever its case");
+  assert.deepEqual(weaponSkillsOf(w({ skillReq: "archery", flags: ["use best weapon skill"] })), ["archery", "swordsmanship", "fencing", "mace fighting"]);
+  assert.deepEqual(weaponSkillsOf(w({ skillReq: "fencing", flags: ["use best weapon skill"] })), ["swordsmanship", "fencing", "mace fighting"]);
+  assert.deepEqual(weaponSkillsOf(w({ flags: ["use best weapon skill"] })), ["swordsmanship", "fencing", "mace fighting"], "no Skill Required line");
+  assert.deepEqual(weaponSkillsOf(w({})), [], "a weapon with no Skill Required line counts under none");
+  assert.deepEqual(weaponSkillsOf(w({ skillReq: "wrestling" })), [], "only the weapon skills");
+  assert.deepEqual(weaponSkillsOf(w({ slot: "ring", flags: ["use best weapon skill"] })), [], "not a weapon");
+  assert.deepEqual(weaponSkillsOf({ slot: "hands" } as unknown as Item), []);
 });
 
 test("[fast] weapon exclusions: the old single choice converts to every other skill; the list holds known skills", () => {

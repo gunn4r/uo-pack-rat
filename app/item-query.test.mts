@@ -56,7 +56,7 @@ const names = (r: Item[]): string[] => r.map((it) => it.name);
 
 test("[fast] parseItemQuery: defaults with no params", () => {
   const q = parseItemQuery(new URLSearchParams());
-  assert.deepEqual(q, { q: "", chars: [], slot: [], loc: [], roots: [], rarity: "", rarityMin: "", rarityMax: "", kind: [], seenDays: 0, slayer: "", nogarg: false, med: false, hideTags: [], tags: [], props: [], flags: [], group: false, sort: "name", dir: 1, offset: 0, limit: 200 });
+  assert.deepEqual(q, { q: "", chars: [], slot: [], loc: [], roots: [], rarity: "", rarityMin: "", rarityMax: "", kind: [], seenDays: 0, slayer: "", nogarg: false, med: false, hideTags: [], tags: [], props: [], flags: [], wskill: [], group: false, sort: "name", dir: 1, offset: 0, limit: 200 });
 });
 
 test("[fast] parseItemQuery: clamps limit to [1, 500], offset to >= 0", () => {
@@ -395,4 +395,34 @@ test("[fast] matchesItem: a rule's flags match whatever their case, as a hand-ed
   assert.equal(matchesItem(FLAGGED[0]!, { ...rule(""), flags: ["Spell Channeling"] }), true);
   assert.equal(matchesItem(FLAGGED[1]!, { ...rule(""), flags: ["Part Of An Armor Set", "MAGE ARMOR"] }), false, "still every one");
   assert.equal(matchesItem(mk({ name: "Set Helm", gear: true, flags: ["part of an armor set (6 pieces)"] }), { ...rule(""), flags: ["Part of an Armor Set"] }), true);
+});
+
+// Issue #188: the Weapon skill filter, any of the skills picked; Use Best Weapon Skill counts under the three melee skills.
+const ARMED = [
+  mk({ name: "Katana", slot: "oneHanded", skillReq: "swordsmanship", flags: [] }),
+  mk({ name: "Kryss", slot: "oneHanded", skillReq: "fencing", rarity: "Lesser Artifact", flags: [] }),
+  mk({ name: "War Hammer", slot: "twoHanded", skillReq: "mace fighting", flags: ["use best weapon skill"] }),
+  mk({ name: "Bow", slot: "twoHanded", skillReq: "archery", flags: [] }),
+  mk({ name: "Second Bow", slot: "twoHanded", skillReq: "archery", flags: [] }),
+  mk({ name: "Ring", slot: "ring", flags: [] }),
+];
+test("[fast] facetsOf: weaponSkills counts the weapons under each skill, in the Suit Builder's order", () => {
+  assert.deepEqual(facetsOf(ARMED).weaponSkills, [{ name: "archery", count: 2 }, { name: "swordsmanship", count: 2 }, { name: "fencing", count: 2 }, { name: "mace fighting", count: 1 }]);
+  assert.deepEqual(facetsOf([mk({ name: "Ring" })]).weaponSkills, [], "no weapons, no options");
+});
+test("[fast] parseItemQuery: wskill is repeated or comma-separated, and lower-cased", () => {
+  assert.deepEqual(parseItemQuery(new URLSearchParams("wskill=Fencing,mace%20fighting&wskill=archery")).wskill, ["fencing", "mace fighting", "archery"]);
+  assert.deepEqual(parseItemQuery(new URLSearchParams()).wskill, []);
+});
+test("[fast] applyItemQuery and matchesItem: any of the weapon skills, alongside the other filters", () => {
+  const rows = (s: string): string[] => names((applyItemQuery(ARMED, parseItemQuery(new URLSearchParams(s)), ctx) as ItemQueryRows).rows).sort();
+  assert.deepEqual(rows("wskill=swordsmanship"), ["Katana", "War Hammer"], "Use Best Weapon Skill counts as a sword");
+  assert.deepEqual(rows("wskill=archery"), ["Bow", "Second Bow"]);
+  assert.deepEqual(rows("wskill=archery,fencing"), ["Bow", "Kryss", "Second Bow", "War Hammer"], "any of");
+  assert.deepEqual(rows("wskill=fencing&rarity=Lesser%20Artifact"), ["Kryss"], "and the other filters too");
+  assert.deepEqual(rows("wskill=throwing"), []);
+  assert.deepEqual(ruleNames("wskill=mace%20fighting", ARMED), ["War Hammer"]);
+  assert.equal(matchesItem(ARMED[1]!, { ...rule(""), wskill: ["Fencing"] }), true, "a hand-edited rule matches whatever its case");
+  const { wskill, ...old } = rule("kind=gear");
+  assert.equal(matchesItem(ARMED[5]!, old), true, "a rule saved before wskill existed has none, and requires none");
 });

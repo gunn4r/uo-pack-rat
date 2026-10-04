@@ -19,6 +19,8 @@
   .inv-toolbar .fchip[data-facet]:not(.set) { display: none; }
   .inv-toolbar #inv-rows { display: none; }
 }
+/* The Weapon skill chip (issue #188) folds already below 1280 px: the toolbar has no room for it between 1180 and 1280. */
+@media (max-width: 1279px) { .inv-toolbar #f-wskill:not(.set) { display: none; } }
 
 /* ---------------------------------------------------------------- the table card */
 .inv-body { flex: 1 1 auto; min-height: 0; display: flex; gap: var(--space-4); position: relative; }
