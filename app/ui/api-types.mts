@@ -16,7 +16,7 @@
 // the wire (HTTP responses are unvalidated network input, same trust level server.test.mts's own
 // per-route interfaces document), it just gives the page's own reads a name instead of `unknown`.
 import type { Item, Container, Character, ScanSummary, OptItem, RunSettings, ProfilesFile, BlacklistEntry, KindOverrides } from "../vault-lib.mts";
-import type { Facets, ItemQueryRows, ItemQueryGroups } from "../item-query.mts";
+import type { Facets, ItemQueryRows, ItemQueryGroups, HitRow } from "../item-query.mts";
 import type { RulesV1 } from "../schema/types.d.mts";
 import type { AutostartOutcome, Hotkey as PanelHotkey, PanelPrefs } from "../tazuo-panel-prefs.mts";
 import type { OrganizeConfig, Origin, RuleMatch } from "../organize-config.mts";
@@ -129,6 +129,8 @@ export interface InventoryApiResponse {
 // GET /api/items — the same ItemQueryRows | ItemQueryGroups union applyItemQuery() returns
 // (item-query.mts), plus the request's own offset/limit echoed back.
 export type ItemsApiResponse = { ok: boolean; offset: number; limit: number } & (ItemQueryRows | ItemQueryGroups);
+// GET /api/items?fields=hits (the House map's search): each match's serial, name, amount, container, root and place.
+export interface ItemHitsApiResponse { ok: boolean; total: number; offset: number; limit: number; rows: HitRow[] }
 
 // GET /api/items/by-serial
 export interface ItemsBySerialApiResponse {
@@ -563,7 +565,7 @@ export interface HouseModel {
 export interface TiledataFrom { folder: string | null; source: "settings" | "tazuo-profile" | null; reason: null | "override-missing" | "no-client" | "no-tazuo-profile" | "unreadable" }
 // GET /api/houses
 // width, height and plot are the plot, without a row of front steps outside it (house-model.mts plotBounds).
-export interface HouseSummary { id: string; name?: string | undefined; facet: number | null; capturedAt: string; captures: number; width: number; height: number; plot: { x0: number; y0: number; x1: number; y1: number }; levels: number; containers: number }
+export interface HouseSummary { id: string; name?: string | undefined; facet: number | null; capturedAt: string; captures: number; width: number; height: number; plot: { x0: number; y0: number; x1: number; y1: number }; levels: number; containers: number; serials: number[] }
 // GET /api/facet-map/<facet>.png answers a PNG, or a 404 with why there is none: no UO folder (as TiledataFrom), or the facet file missing or not a facet bitmap.
 export type FacetMapReason = "override-missing" | "no-client" | "no-tazuo-profile" | "missing" | "unreadable";
 export interface HousesApiResponse { ok: boolean; tiledata: boolean; tiledataFrom: TiledataFrom; houses: HouseSummary[] }

@@ -1,4 +1,4 @@
-// ui-map.test.mts — [slow]: the House map (issue #10) in the real Electron window over a seeded data folder (the dense vault and the courtyard house of app/house-fixture.mts, their chests from app/organize-fixture.mts, a synthetic tiledata.mul behind a fake TazUO launcher): the nav entry, the picker and level pills, a stale deep link, the no-tiledata note, the drawing in both views, callouts, selection, cut-away, keyboard (and a walk of the screen by keyboard alone that keeps focus through every redraw), pan and zoom, the detail panel's actions, the colour modes, a chest no scan opened, the plain grid over the demo scans, the empty state, the Settings UO folder card, where the house is (coordinates, the facet overview and its markers, and the world map lightbox, issue #164), the player's areas (issue #10: drawn by a mouse drag and by the keyboard alone, named, renamed and deleted, the counts and the tint, carried over to a redesigned house), the 1000 × 700 layout and contrast in both theme families. Skipped when electron or playwright is absent, or under TEST_SKIP_ELECTRON.
+// ui-map.test.mts — [slow]: the House map (issue #10) in the real Electron window over a seeded data folder (the dense vault and the courtyard house of app/house-fixture.mts, their chests from app/organize-fixture.mts, a synthetic tiledata.mul behind a fake TazUO launcher): the nav entry, the picker and level pills, a stale deep link, the no-tiledata note, the drawing in both views, callouts, selection, cut-away, keyboard (and a walk of the screen by keyboard alone that keeps focus through every redraw), pan and zoom, the detail panel's actions, the colour modes, a chest no scan opened, the plain grid over the demo scans, the empty state, the Settings UO folder card, where the house is (coordinates, the facet overview and its markers, and the world map lightbox, issue #164), the player's areas (issue #10: drawn by a mouse drag and by the keyboard alone, named, renamed and deleted, the counts and the tint, carried over to a redesigned house), the search on the map and Show on map (issue #10: ghosts, callouts, the panel list, the route, the elsewhere note, the Inventory and Containers links), the 1000 × 700 layout and contrast in both theme families. Skipped when electron or playwright is absent, or under TEST_SKIP_ELECTRON.
 import test from "node:test";
 import assert from "node:assert/strict";
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
@@ -951,6 +951,7 @@ test("[slow] House map: every text, control edge and icon passes contrast on the
       return { cols: getComputedStyle(document.querySelector("#map-body")!).gridTemplateColumns.split(" ").length, page: over("html"), body: over("#map-body"), top: over("#tab-map .topbar") };
     });
     assert.deepEqual(layout, { cols: 1, page: 0, body: 0, top: 0 });
+    assert.deepEqual(await clippedPills(page), [], "every level pill shows whole beside the search box");
     assert.deepEqual(errors, []);
   } finally { await done(app, dir); }
   const emptyDir = mkdtempSync(join(tmpdir(), "packrat-map-empty-"));
@@ -1232,6 +1233,149 @@ test("[slow] House map: the contents drawer's handle resizes it by drag (kept ac
     if (max > 320) assert.ok((await page.locator("#map-stage").boundingBox())!.width >= 359, "at the maximum the map keeps 360 px");
     await until(saved, (v) => v === clamp(max), "the keyboard's width saved once the keys pause");
     assert.equal(await page.evaluate(() => document.activeElement?.id), "map-drawer-grip", "focus stays on the handle");
+    assert.deepEqual(errors, []);
+  } finally { await done(app, dir); }
+});
+
+// ---------------------------------------------------------------- search on the map, and Show on map (issue #10)
+// The drawer's Ruby (in Gems, in Weapons, in the top chest of the stack at 3001, 1001) and a second Ruby in the chest second from the bottom of the stack at 3005, 1005.
+const FRONT = vaultModel.stacks.find((s) => s.x === 3005 && s.y === 1005)!.serials, RUBY_FRONT = FRONT[1]!, RUBY_NESTED = 0x40500012;
+function seedRubies(): string {
+  const { dir } = seed({ items: true });
+  writeVault(dir, true, [{ serial: 0x40500300, name: "Ruby", in: RUBY_FRONT }]);
+  return dir;
+}
+// The level pills not wholly inside the level strip (cut off by its edge, or hidden behind the search box).
+const clippedPills = (page: Page): Promise<string[]> => page.evaluate(() => {
+  const strip = document.querySelector("#map-levels")!.getBoundingClientRect(), box = document.querySelector("#map-search")!.getBoundingClientRect();
+  return [...document.querySelectorAll<HTMLElement>("#map-levels .pill")].filter((p) => {
+    const r = p.getBoundingClientRect(), overBox = r.left < box.right && r.right > box.left && r.top < box.bottom && r.bottom > box.top;
+    return r.left < strip.left - 0.5 || r.right > strip.right + 0.5 || overBox;
+  }).map((p) => p.textContent ?? "");
+});
+const callouts = (page: Page): Promise<string[]> => page.locator("#map-pins .map-pin:not([hidden])").evaluateAll((es) => es.map((e) => (e as HTMLElement).dataset.stack ?? ""));
+
+test("[slow] House map search: typing a query ghosts every other container, pins a callout per matching stack and lists the matches in the panel; a match selects its stack, the query is in the route and survives a reload, and Esc in the box clears it (1024 × 768)", async (t) => {
+  const why = unavailable();
+  if (why) return t.skip(why);
+  const dir = seedRubies();
+  const { app, page, errors } = await launch(dir, { want: { width: 1024, height: 768 } });
+  try {
+    await go(page, `#/map/${VAULT}`, "#map-svg .map-stack");
+    const back = letter(vaultModel, 3001, 1001), front = letter(vaultModel, 3005, 1005);
+    await page.fill("#map-q", "ruby");
+    await page.waitForSelector("#map-pins .map-pin");
+    assert.equal(await page.evaluate(() => location.hash), `#/map/${VAULT}?q=ruby`);
+    assert.deepEqual((await callouts(page)).sort(), [back, front].sort());
+    assert.equal(await page.locator("#map-pins").getAttribute("aria-hidden"), "true", "the callouts are hidden from screen readers: the panel lists the same");
+    assert.equal(await page.locator("#map-svg .map-stack.hit").count(), 2);
+    assert.equal(await page.locator("#map-svg .map-chest.hit").count(), 2);
+    assert.equal(await page.locator("#map-svg .map-chest.ghost").count(), 118, "every other container is a ghost, still drawn");
+    assert.equal(await page.locator("#map-svg .map-hit-base").count(), 2, "a gold base under each matching stack");
+    assert.match(await page.locator(`#map-svg [data-stack="${back}"]`).getAttribute("aria-label") ?? "", new RegExp(`^Stack ${back}, 5 containers, matches: `));
+    // the callouts sit in one row, side by side, the leaders' ends in the same order
+    const cards = await page.locator("#map-pins .map-pin:not([hidden])").evaluateAll((es) => es.map((e) => { const r = e.getBoundingClientRect(); return { l: r.left, r: r.right, t: r.top }; }).sort((a, b) => a.l - b.l));
+    assert.equal(new Set(cards.map((c) => Math.round(c.t))).size, 1, "one row");
+    for (let i = 1; i < cards.length; i++) assert.ok(cards[i]!.l >= cards[i - 1]!.r, "callouts never overlap");
+    assert.match(await page.locator(`#map-pins .map-pin[data-stack="${back}"]`).textContent() ?? "", /1 of 5 match.*Top.*Ruby× 1/);
+    // the count in the box, said by the live region; the left pane and the level pill count matches
+    assert.equal(await page.locator("#map-search .map-search-count").textContent(), "2 in 2");
+    assert.ok(await page.locator("#map-search.active").count(), "the box has its gold ring");
+    await page.waitForFunction(() => document.querySelector("#map-draw-live")?.textContent === "2 items in 2 containers", undefined, { timeout: 10_000 });
+    assert.equal(await page.locator(".map-level-name").first().locator(".muted").textContent(), "2 of 120 containers match");
+    assert.equal(await page.locator('#map-levels [data-level="0"] .map-level-count').textContent(), "2");
+    assert.deepEqual(await clippedPills(page), [], "the level pills, a match count on one, show whole beside the box");
+    for (const width of [1050, 1099]) {
+      await fitWindow(app, page, { width, height: 768 });
+      assert.deepEqual(await clippedPills(page), [], `at ${width} px too`);
+    }
+    await fitWindow(app, page, { width: 1024, height: 768 });
+    // the panel: the matches on the level, the house's totals and Location left out
+    assert.equal(await page.locator("#map-hits-title").textContent(), "2 items in 2 containers");
+    assert.deepEqual((await page.locator("#map-panel .map-hit").evaluateAll((es) => es.map((e) => (e as HTMLElement).dataset.chest ?? ""))).sort(), [String(FILLED.at(-1)), String(RUBY_FRONT)].sort());
+    assert.match(await page.locator(`#map-panel .map-hit[data-chest="${RUBY_FRONT}"]`).textContent() ?? "", new RegExp(`Stack ${front} · 2nd from bottom.*Ruby× 1`));
+    assert.equal(await page.locator("#map-where").count(), 0);
+    assert.equal(await page.locator("#map-panel .kv").count(), 0);
+    // a match selects its stack (its normal panel), the matches still highlighted
+    await page.locator(`#map-panel .map-hit[data-chest="${RUBY_FRONT}"] .map-hit-pick`).click();
+    await page.waitForSelector(`#map-svg [data-stack="${front}"].sel`);
+    await page.waitForSelector(`#map-panel li[data-chest="${RUBY_FRONT}"] [data-act="label"]`);
+    assert.equal(await page.locator("#map-svg .map-chest.ghost").count(), 118);
+    // a reload keeps the query
+    await page.reload();
+    await page.waitForSelector("#map-pins .map-pin");
+    assert.equal(await page.inputValue("#map-q"), "ruby");
+    assert.equal(await page.locator("#map-svg .map-chest.hit").count(), 2);
+    // Esc in the box clears it, and the map and the route with it
+    await page.locator("#map-q").focus();
+    await page.keyboard.press("Escape");
+    await page.waitForFunction(() => !document.querySelector("#map-svg .map-chest.ghost"), undefined, { timeout: 10_000 });
+    assert.equal(await page.inputValue("#map-q"), "");
+    assert.equal(await page.evaluate(() => location.hash), `#/map/${VAULT}`);
+    assert.deepEqual(await callouts(page), []);
+    assert.ok(await page.locator("#map-panel .kv").count(), "the house's totals are back");
+    assert.deepEqual(errors, []);
+  } finally { await done(app, dir); }
+});
+
+test("[slow] House map search: a query with no match in the house leaves the map as it is and says where the matches are instead (another house a link that keeps the query), or that nothing matches", async (t) => {
+  const why = unavailable();
+  if (why) return t.skip(why);
+  const dir = seedRubies();
+  const { app, page, errors } = await launch(dir, { want: { width: 1024, height: 768 } });
+  try {
+    await go(page, `#/map/${COURT}?q=ruby`, "#map-search-note:not([hidden])");
+    const note = page.locator("#map-search-note");
+    assert.match(await note.textContent() ?? "", /^No matches in this houseElsewhere:2 in Trammel houseShow them in Inventory$/);
+    assert.equal(await note.locator("a").first().getAttribute("href"), `#/map/${VAULT}?q=ruby`);
+    assert.equal(await page.locator("#map-svg .map-chest.ghost").count(), 0, "not ghosted");
+    assert.equal(await page.locator("#map-search.active").count(), 0, "no gold ring");
+    assert.equal(await page.locator("#map-search .map-search-count").textContent(), "0");
+    await page.waitForFunction(() => document.querySelector("#map-draw-live")?.textContent === "No matches in this house", undefined, { timeout: 10_000 });
+    await note.locator("a").first().click();
+    await page.waitForSelector("#map-pins .map-pin");
+    assert.equal(await page.evaluate(() => location.hash), `#/map/${VAULT}?q=ruby`);
+    assert.equal(await page.locator("#map-search-note").isHidden(), true);
+    // nothing anywhere
+    await page.fill("#map-q", "no such thing");
+    await page.waitForFunction(() => document.querySelector("#map-search-note")?.textContent === "No items match", undefined, { timeout: 10_000 });
+    assert.equal(await page.locator("#map-svg .map-chest.ghost").count(), 0);
+    // Show them in Inventory: the Items view searching for the same words
+    await go(page, `#/map/${COURT}?q=ruby`, "#map-search-note:not([hidden]) #map-search-inventory");
+    await page.locator("#map-search-inventory").click();
+    await page.waitForFunction(() => location.hash === "#/inventory" && (document.querySelector("#f-text") as HTMLInputElement | null)?.value === "ruby", undefined, { timeout: 10_000 });
+    assert.deepEqual(errors, []);
+  } finally { await done(app, dir); }
+});
+
+test("[slow] Show on map: an Inventory item's ⋯ menu and a Containers view row open the map on that house with the container's stack selected, zoomed to and nothing else open (1024 × 768)", async (t) => {
+  const why = unavailable();
+  if (why) return t.skip(why);
+  const dir = seedRubies();
+  const { app, page, errors } = await launch(dir, { want: { width: 1024, height: 768 } });
+  try {
+    await go(page, "#/inventory", "tr.item");
+    await page.fill("#f-text", "ruby");
+    const row = page.locator(`tr.item[data-serial="${RUBY_NESTED}"]`);
+    await row.waitFor();
+    await row.hover();
+    await row.locator('button[aria-label="More actions"]').click();
+    const item = page.getByRole("menuitem", { name: /Show on map/ });
+    assert.match(await item.textContent() ?? "", /Show on mapTrammel house$/, "the house's name as its hint");
+    await item.click();
+    const back = letter(vaultModel, 3001, 1001), front = letter(vaultModel, 3005, 1005);
+    await page.waitForSelector(`#map-svg [data-stack="${back}"].sel`);
+    assert.equal(await page.evaluate(() => location.hash), `#/map/${VAULT}`, "the route keeps the house only");
+    assert.equal(await page.locator("#map-panel h2").first().textContent(), `Stack ${back}`);
+    assert.equal(await page.locator("#map-drawer").count(), 0, "nothing else opens");
+    const vb = (await page.locator("#map-svg").getAttribute("viewBox"))!.split(" ").map(Number), [x, y] = anchorOf(vaultModel, vaultModel.stacks.find((s) => s.letter === back)!, "angle");
+    assert.ok(x > vb[0]! && x < vb[0]! + vb[2]! && y > vb[1]! && y < vb[1]! + vb[3]!, "zoomed to the stack");
+    // the Containers view's row menu
+    await go(page, "#/containers", `tr[data-root="${RUBY_FRONT}"]`);
+    await page.locator(`tr[data-root="${RUBY_FRONT}"] .cont-act button`).click();
+    await page.getByRole("menuitem", { name: /Show on map/ }).click();
+    await page.waitForSelector(`#map-svg [data-stack="${front}"].sel`);
+    assert.equal(await page.locator("#map-panel li[data-chest]").count(), 5);
     assert.deepEqual(errors, []);
   } finally { await done(app, dir); }
 });

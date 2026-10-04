@@ -48,7 +48,7 @@ async function get<T>(s: ServerHandle, path: string): Promise<{ status: number; 
 test("[fast] houses: a scan with a house capture lists the house and serves its model with its chests", async () => {
   const { s } = await serve(true);
   try {
-    const list = await get<{ houses: Array<{ id: string; containers: number; width: number; height: number; levels: number }>; tiledata: boolean }>(s, "/api/houses");
+    const list = await get<{ houses: Array<{ id: string; containers: number; width: number; height: number; levels: number; serials: number[] }>; tiledata: boolean }>(s, "/api/houses");
     assert.equal(list.status, 200);
     assert.equal(list.body.tiledata, true);
     assert.deepEqual(list.body.houses.map((h) => [h.id, h.containers, h.width, h.height]), [["1-3000-1000", 120, 7, 7]]);
@@ -58,6 +58,7 @@ test("[fast] houses: a scan with a house capture lists the house and serves its 
     assert.equal(one.body.house.levels[0]!.status, "built");
     assert.equal(one.body.house.stacks.reduce((a, st) => a + st.serials.length, 0), 120);
     assert.ok(!one.body.house.stacks.some((st) => st.serials.includes(PACK)), "a backpack root is not a ground chest");
+    assert.deepEqual([...list.body.houses[0]!.serials].sort(), one.body.house.stacks.flatMap((st) => st.serials).sort(), "the list names every container in the house's stacks (Show on map goes by it)");
     assert.equal(one.body.house.spots[0]!.teleporter, true);
   } finally { await s.close(); }
 });

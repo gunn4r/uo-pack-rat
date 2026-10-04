@@ -1275,6 +1275,16 @@ test("[fast] /api/items pages, sorts and searches", async () => {
   assert.ok(search.rows!.some((r) => r.name === "Vicious Crescent Blade"));
   const clamp = asJson<ItemsPageResponse>(await (await get("/api/items?limit=9999")).json());
   assert.equal(clamp.limit, 500);
+  // The House map's search (issue #10): fields=hits answers the same query with only what the map reads, many rows a page.
+  const hits = asJson<{ ok: boolean; total: number; limit: number; rows: Array<Record<string, unknown>> }>(await (await get("/api/items?fields=hits&limit=9999&q=" + encodeURIComponent("Vicious Crescent Blade"))).json());
+  assert.equal(hits.total, search.total);
+  assert.equal(hits.limit, 9999, "a hits page may be far larger than 500");
+  assert.deepEqual(hits.rows.map((r) => r.serial), search.rows!.map((r) => r.serial));
+  for (const r of hits.rows) assert.deepEqual(Object.keys(r).sort(), ["amount", "container", "name", "root", "serial", ...("location" in r ? ["location"] : [])].sort(), JSON.stringify(r));
+  const full = search.rows!.find((r) => r.serial === hits.rows[0]!.serial)!;
+  assert.deepEqual(hits.rows[0], { serial: full.serial, name: full.name, amount: full.amount, root: full.root, container: full.container, ...(full.location ? { location: { text: full.location.text } } : {}) });
+  const every = asJson<{ total: number; rows: unknown[] }>(await (await get("/api/items?fields=hits&group=1")).json());
+  assert.equal(every.rows.length, total, "one request is normal: the default hits page holds the whole fixture, and group is ignored");
   const grouped = asJson<ItemsPageResponse>(await (await get("/api/items?group=1")).json());
   assert.equal(grouped.ok, true);
   assert.ok(Array.isArray(grouped.groups) && grouped.groups.length > 0);
