@@ -8,36 +8,40 @@ import { clearedQuery } from "./view-state.mts";
 import { flagLabel } from "../vault-lib.mts";
 
 // ---------------------------------------------------------------- slayers
-// "Air Elemental Slayer", and "Undead Slayer (Silver)" for a name that carries its old item wording in brackets.
+// "Air Elemental Slayer". A bracket in the name stays when it is the item's own capitalized wording ("Undead Slayer
+// (Silver)", from a Silver weapon) and goes when it only describes the group in lower case ("Exorcism (demons)").
 export function slayerLabel(name: string): string {
-  const m = name.match(/^(.*?)\s*(\(.*\))$/);
+  const m = name.match(/^(.*?)\s*\((.*)\)$/);
   const title = (s: string) => s.replace(/\b\w/g, (c) => c.toUpperCase());
-  return m ? `${title(m[1]!)} Slayer ${m[2]}` : `${title(name)} Slayer`;
+  return m && /^[A-Z]/.test(m[2]!) ? `${title(m[1]!)} Slayer (${m[2]})` : `${title(m ? m[1]! : name)} Slayer`;
 }
 // The Slayer filter's rows (issue #189), laid out like the shard's slayer charts (the rules' slayerGroups): each super
 // slayer, then its lesser slayers one step in; a titled list (the talisman slayers); and last, under "Other", any slayer
 // the table lacks. Only slayers the inventory has are listed. A super slayer it lacks stays as an unpickable heading
-// (value null) while one of its lesser slayers is there; a group with nothing in it goes. No table: the plain A–Z list.
+// (value null) while one of its lesser slayers is there; a group with nothing in it goes. The first row of each group
+// says so (`first`), for the hairline between groups. No table: the plain A–Z list, one group with no first row.
 export type SlayerRow =
-  | { kind: "title"; label: string }
-  | { kind: "super"; value: string | null; label: string; count: number }
-  | { kind: "slayer"; value: string; label: string; count: number; level: 0 | 1 };
+  | { kind: "title"; label: string; first?: true }
+  | { kind: "super"; value: string | null; label: string; count: number; first?: true }
+  | { kind: "slayer"; value: string; label: string; count: number; level: 0 | 1; first?: true };
 type SlayerGroup = { super?: string[] | undefined; heading?: string | undefined; slayers: string[] };
 export function slayerTree(facet: Array<{ name: string; count: number }>, groups: SlayerGroup[] | undefined): SlayerRow[] {
   const byKey = new Map(facet.map((s) => [s.name.toLowerCase(), s]));
   const take = (name: string) => { const s = byKey.get(name.toLowerCase()); byKey.delete(name.toLowerCase()); return s; };
   const slayer = (s: { name: string; count: number }, level: 0 | 1): SlayerRow => ({ kind: "slayer", value: s.name, label: slayerLabel(s.name), count: s.count, level });
   const out: SlayerRow[] = [];
+  const group = (rows: SlayerRow[]): void => { if (rows.length) out.push({ ...rows[0]!, first: true }, ...rows.slice(1)); };
   for (const g of groups ?? []) {
-    const supers = (g.super ?? []).map(take).filter((s) => s != null);
+    const supers = (g.super ?? []).map(take).filter((s) => s != null).map((s): SlayerRow => ({ kind: "super", value: s.name, label: slayerLabel(s.name), count: s.count }));
     const lesser = g.slayers.map(take).filter((s) => s != null).map((s) => slayer(s, g.super ? 1 : 0));
-    if (g.heading && lesser.length) out.push({ kind: "title", label: g.heading });
-    if (g.super && !supers.length && lesser.length) out.push({ kind: "super", value: null, label: slayerLabel(g.super[0]!), count: 0 });
-    out.push(...supers.map((s): SlayerRow => ({ kind: "super", value: s.name, label: slayerLabel(s.name), count: s.count })), ...lesser);
+    if (!lesser.length && !supers.length) continue;
+    const head: SlayerRow[] = g.heading ? [{ kind: "title", label: g.heading }] : supers.length ? [] : [{ kind: "super", value: null, label: slayerLabel(g.super![0]!), count: 0 }];
+    group([...head, ...supers, ...lesser]);
   }
   const rest = [...byKey.values()].sort((a, b) => a.name.localeCompare(b.name)).map((s) => slayer(s, 0));
-  if (rest.length && groups?.length) out.push({ kind: "title", label: "Other" });
-  return [...out, ...rest];
+  if (groups?.length) group(rest.length ? [{ kind: "title", label: "Other" }, ...rest] : []);
+  else out.push(...rest);
+  return out;
 }
 
 // ---------------------------------------------------------------- counts and plurals

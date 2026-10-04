@@ -250,7 +250,7 @@ function locationOptions(): Option[] {
   return out;
 }
 // A single-choice list of radios; picking one sets the filter and closes the popover. A row without a value is a
-// heading: no radio, so the arrow keys pass over it.
+// heading: no radio, so the arrow keys pass over it, and presentation only, so it is not read as a member of the group.
 interface RadioRow { value: string | null; label: HTMLElement; count?: number | undefined; cls?: string | undefined }
 function radioList(title: string, rows: RadioRow[], current: string, pick: (v: string) => void): HTMLElement {
   const name = nextId("radio");
@@ -258,7 +258,7 @@ function radioList(title: string, rows: RadioRow[], current: string, pick: (v: s
     const count = row.count != null ? txt(row.count.toLocaleString("en-US"), "inv-opt-count") : null;
     const cls = `inv-opt${row.cls ? ` ${row.cls}` : ""}`;
     const value = row.value;
-    if (value == null) return box("div", { class: `${cls} head` }, row.label, count);
+    if (value == null) return box("div", { class: `${cls} head`, role: "presentation" }, row.label, count);
     const r = el("input", { type: "radio", name, value });
     r.checked = current === value;
     r.addEventListener("change", () => pick(value));
@@ -280,11 +280,11 @@ function rarityPanel(close: () => void): Kids {
 function slayerPanel(close: () => void): Kids {
   const f = state.facets;
   const tree = slayerTree(f?.slayers || [], state.rules?.slayerGroups);
-  const rows = tree.map((r, i): RadioRow => {
-    const sep = r.kind === "title" || (r.kind === "super" && tree[i - 1]?.kind !== "super") ? " sep" : "";
-    if (r.kind === "title") return { value: null, label: txt(r.label, "t-sm muted"), cls: `title${sep}` };
-    if (r.kind === "super") return { value: r.value, label: box("span", { class: "ellip" }, document.createTextNode(r.label), txt("Super", "inv-opt-tag")), count: r.value == null ? undefined : r.count, cls: sep.trim() || undefined };
-    return { value: r.value, label: txt(r.label, "ellip"), count: r.count, cls: r.level ? "sub" : undefined };
+  const rows = tree.map((r): RadioRow => {
+    const cls = (...c: string[]) => [...c, r.first ? "sep" : ""].filter(Boolean).join(" ") || undefined;
+    if (r.kind === "title") return { value: null, label: txt(r.label, "t-sm muted"), cls: cls("title") };
+    if (r.kind === "super") return { value: r.value, label: el("span", { class: "ellip" }, r.label, el("span", { class: "inv-opt-tag", "aria-hidden": "true" }, "Super")), count: r.value == null ? undefined : r.count, cls: cls() };
+    return { value: r.value, label: txt(r.label, "ellip"), count: r.count, cls: cls(r.level ? "sub" : "") };
   });
   return [box("div", { class: "inv-pop-head" }, txt("Slayer", "caps")),
     radioList("Slayer", [{ value: "", label: txt("No slayer filter") }, { value: "*", label: txt("Any slayer"), count: f?.slayerAny || 0 }, ...rows],
