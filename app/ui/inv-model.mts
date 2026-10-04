@@ -5,6 +5,7 @@
 // plain node:test (the same arrangement as ui/view-state.mts).
 import type { ItemQuery, PropFilter, Place } from "../item-query.mts";
 import { clearedQuery } from "./view-state.mts";
+import { flagLabel } from "../vault-lib.mts";
 
 // ---------------------------------------------------------------- counts and plurals
 // "1 stack", "2 stacks", "1,204 pieces": a count and its noun, always agreeing.
@@ -72,6 +73,7 @@ export function queryParams(q: ItemQuery): URLSearchParams {
   for (const t of q.hideTags) p.append("hide", t);
   for (const t of q.tags) p.append("tag", t);
   for (const f of q.props) p.append("prop", f.op ? `${f.key}:${f.op}:${f.min}` : `${f.key}:${f.min}`);
+  for (const f of q.flags) p.append("flag", f);
   if (q.group) p.set("group", "1");
   p.set("sort", q.sort);
   p.set("dir", String(q.dir));
@@ -137,6 +139,10 @@ export function activeFilters(q: ItemQuery, ctx: FilterContext): FilterToken[] {
     const text = propRuleLabel(f, ctx.propLabel);
     out.push({ id: `prop:${i}`, label: text, removeLabel: `Remove filter: ${text}`, remove: (x) => ({ ...x, props: x.props.filter((_, j) => j !== i) }), cause: (t) => `${none(t)} has ${text}.` });
   });
+  for (const f of q.flags) {
+    const text = flagLabel(f);
+    out.push({ id: `flag:${f}`, label: text, removeLabel: `Remove filter: ${text}`, remove: (x) => ({ ...x, flags: without(x.flags, f) }), cause: (t) => `${none(t)} has ${text}.` });
+  }
   if (q.slayer) {
     const any = q.slayer === "*";
     out.push({ id: "slayer", label: any ? "Any slayer" : `Slayer: ${q.slayer}`, removeLabel: "Remove filter: Slayer", remove: (x) => ({ ...x, slayer: "" }), cause: (t) => any ? `${none(t)} is a slayer.` : `${none(t)} is ${a(q.slayer)} slayer.` });

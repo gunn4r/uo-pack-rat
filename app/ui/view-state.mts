@@ -14,9 +14,9 @@ export function optionsKeeping(options: SelectOption[], current: string, gone: (
 }
 
 // Every filter back to its default: the search text, the checklists, the rarity, the switches, the hidden and
-// required tags and the property rules. The view (grouping, sort, chunk size) is not a filter and stays as it was.
+// required tags, the property rules and the yes/no properties. The view (grouping, sort, chunk size) is not a filter and stays as it was.
 export function clearedQuery(q: ItemQuery): ItemQuery {
-  return { ...q, q: "", chars: [], slot: [], loc: [], roots: [], rarity: "", rarityMin: "", rarityMax: "", kind: [], seenDays: 0, slayer: "", nogarg: false, med: false, hideTags: [], tags: [], props: [], offset: 0 };
+  return { ...q, q: "", chars: [], slot: [], loc: [], roots: [], rarity: "", rarityMin: "", rarityMax: "", kind: [], seenDays: 0, slayer: "", nogarg: false, med: false, hideTags: [], tags: [], props: [], flags: [], offset: 0 };
 }
 
 // The Inventory columns to use at load, from GET /api/ui-prefs' answer (null when that request failed)
