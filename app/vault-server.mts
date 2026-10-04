@@ -20,7 +20,8 @@
 //         GET /api/missing?root= — what left that root since its last scan (app/missing.mts, issue #99)
 //         GET /api/items?q=&slot=&loc=&rarity=&kind=&seenDays=&slayer=&nogarg=&med=&hide=&prop=&group=
 //         &sort=&dir=&offset=&limit= — a paged, server-side search/sort over the same folded inventory
-//         (parseItemQuery/applyItemQuery, app/item-query.mts) ·
+//         (parseItemQuery/applyItemQuery, app/item-query.mts); &fields=hits answers lean rows (hitRow), up to
+//         HIT_LIMIT a page, for the House map's search ·
 //         GET /api/items/by-serial?serials=1,2,3 — full item records (location/tags/equippedBy…) by
 //         serial, 1-200 at a time (400 otherwise); a serial with no item is simply absent from the
 //         response · GET|PUT /api/profiles (<data>/profiles.json)
@@ -45,7 +46,7 @@
 //         (<data>/scan-blacklist.json, the containers scans never open) ·
 //         GET|POST {name?, graphic?, kind} /api/item-kinds · POST /api/item-kinds/import {names?, graphics?}
 //         (<data>/item-kinds.json, the player's own item kinds: app/item-kinds.mts; kind null resets, an import merges) ·
-//         GET /api/houses (the houses scans captured: app/house-capture.mts; tiledataFrom says where tiledata.mul came from, or why there is none) · GET /api/houses/<id> (one house's model: app/house-model.mts, tiledata.mul via app/tiledata.mts or the uoFolder setting) ·
+//         GET /api/houses (the houses scans captured: app/house-capture.mts, each with its container serials; tiledataFrom says where tiledata.mul came from, or why there is none) · GET /api/houses/<id> (one house's model: app/house-model.mts, tiledata.mul via app/tiledata.mts or the uoFolder setting) ·
 //         GET /api/facet-map/<facet>.png?x0&y0&x1&y1&w (x-region: the region drawn, slid inside the facet; a facet overview from the same UO folder's facetNN.mul: app/facet-map.mts, app/png.mts; 404 {reason} when there is none) ·
 //         GET /api/house-map · PUT /api/house-map/<id> {name, bounds?, areas?} (<data>/house-map.json, the player's house names and drawn areas: app/house-names.mts;
 //         an empty name with no areas removes the entry; 400 on a bad name, area or id, 409 when a change would grow it past 500 names or 1 MB) ·
@@ -129,7 +130,7 @@ import { runKey, reusableRun, runSummary, stripOpts, normalizeRun, suitPieces, S
 import { upgradeScan, validateScan } from "./scan-schema.mts";
 import { loadRules, listRules, DEFAULT_SHARD } from "./rules.mts";
 import { validate, type ValidatorSchema } from "./schema/validate.mts";
-import { parseItemQuery, applyItemQuery, facetsOf, type ItemQueryRows, type ItemQueryGroups } from "./item-query.mts";
+import { parseItemQuery, applyItemQuery, facetsOf, wantsHits, hitRow, type ItemQueryRows, type ItemQueryGroups } from "./item-query.mts";
 import { DEFAULT_OPTIONAL_SLOTS } from "./mip.mts";
 import { startWatcher, jsonErrorReason, MAX_INBOX_BYTES, type StartWatcherOptions, type WatcherHandle } from "./watcher.mts";
 import { parsePastedScan, writeScanToInbox } from "./import.mts";
@@ -1441,6 +1442,7 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
         const { inv } = await getInventory();
         const query = parseItemQuery(url.searchParams);
         const result = applyItemQuery(Object.values(inv.items), query, { rarity: currentRules.rarity });
+        if (wantsHits(url.searchParams)) return send(res, 200, { ok: true, total: result.total, offset: query.offset, limit: query.limit, rows: (result as ItemQueryRows).rows.map(hitRow) });
         // applyItemQuery returns the ItemQueryRows | ItemQueryGroups union; narrow at each call site
         // by query.group, same as app/item-query.test.mts does — `total` is common to both branches.
         if (query.group) { const g = result as ItemQueryGroups; return send(res, 200, { ok: true, total: g.total, stacks: g.stacks, pieces: g.pieces, offset: query.offset, limit: query.limit, groups: g.groups }); }
@@ -2130,7 +2132,7 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
         writeFileAtomic(BLACKLIST, JSON.stringify(readBlacklist().filter((e) => e.serial !== Number(unlist[1])), null, 1) + "\n", DATA_FILE_MODE);
         return send(res, 200, { ok: true });
       }
-      // The houses the scans captured (issue #10): GET /api/houses lists each with its size and chest count, GET /api/houses/<id> serves one house's whole model. Both come from the fold's cache and the built models are memoised (houseModel); an id that names no house (or does not decode) is a 404.
+      // The houses the scans captured (issue #10): GET /api/houses lists each with its size, chest count and container serials (what Inventory's "Show on map" looks an item's container up in), GET /api/houses/<id> serves one house's whole model. Both come from the fold's cache and the built models are memoised (houseModel); an id that names no house (or does not decode) is a 404.
       if (req.method === "GET" && (url.pathname === "/api/houses" || url.pathname.startsWith("/api/houses/"))) {
         const { inv, houses } = await getInventory();
         let one: HouseSource | undefined;
@@ -2145,7 +2147,7 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
         if (one) return send(res, 200, { ok: true, house: { ...houseModel(inv, one, td), ...named(one.id) } });
         return send(res, 200, { ok: true, tiledata: td !== null, tiledataFrom: { folder: from.folder, source: from.source, reason: from.reason }, houses: houses.map((h) => {
           const m = houseModel(inv, h, td);
-          return { id: h.id, ...named(h.id), facet: h.facet, capturedAt: h.capturedAt, captures: h.captures, ...plotSize(m), plot: plotBounds(m), levels: m.levels.length, containers: m.stacks.reduce((a, st) => a + st.serials.length, 0) };
+          return { id: h.id, ...named(h.id), facet: h.facet, capturedAt: h.capturedAt, captures: h.captures, ...plotSize(m), plot: plotBounds(m), levels: m.levels.length, containers: m.stacks.reduce((a, st) => a + st.serials.length, 0), serials: m.stacks.flatMap((st) => st.serials) };
         }) });
       }
       // The facet overview (issue #164): GET /api/facet-map/<facet>.png?x0&y0&x1&y1[&w], the facet 0 to 5, a region in tiles (x1, y1 exclusive) and a size of at most 2048 on either side (1024 by default), never larger than the region. A region reaching past the facet is slid inside it (and cut to the facet's size), and `x-region: x0,y0,x1,y1` says which one was drawn. A 404 says why there is no image (no UO folder, the file missing or not a facet bitmap) as a reason word, never with the path.

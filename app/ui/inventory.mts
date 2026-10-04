@@ -25,6 +25,7 @@ import type { ItemsApiResponse, UiPrefs } from "./api-types.mts";
 import { initPeek, openPeek, closePeek, peekOpen, peekSerial, peekRefresh } from "./peek.mts";
 import { openRuleEditor } from "./rule-editor.mts";
 import { openClassify } from "./kinds.mts";
+import { houseOfItem, showOnMap } from "./house-links.mts";
 import { showItemTip, hideItemTip, tagChip } from "./dom.mts";
 export { splitSerial } from "./inv-model.mts";
 
@@ -544,6 +545,8 @@ const ACTIONS: Array<["highlight" | "grab" | "goto", string]> = [["highlight", "
 export function itemMenu(anchor: HTMLElement, it: Item): void {
   const entries: MenuItem[] = [{ label: "Open details", icon: "panel-left", onSelect: () => { const i = state.page.rows.findIndex((r) => r?.serial === it.serial); if (i >= 0 && location.hash.startsWith("#/inventory")) openPeekAt(i, true); else showItem(it); } }];
   if (it.root != null && !it.equippedBy) entries.push({ label: "Show everything in this container", icon: "folder", onSelect: () => showContainer(+it.root!) });
+  const home = houseOfItem(it);
+  if (home) entries.push({ label: "Show on map", icon: "house", count: home.name, onSelect: () => showOnMap(home.id, home.serial) });
   entries.push({ label: "Copy serial", icon: "clipboard", onSelect: () => {
     const s = `0x${it.serial.toString(16)}`;
     void copyText(s).then((ok) => ok ? toast(`Copied ${s}`, "good") : toast("Could not copy the serial.", "bad"));
@@ -967,6 +970,8 @@ export function showCharacterItems(name: string): void {
   if (location.hash !== "#/inventory") location.hash = "#/inventory";
 }
 export function showContainer(root: number): void { showOnly({ roots: [root] }); }
+// The House map's "See all in Inventory": the Items view searching for the same text, every other filter cleared.
+export function showSearch(q: string): void { showOnly({ q: q.trim().toLowerCase() }); }
 // Every item of one kind: Organize's way to the items Pack Rat could not classify (issue #150).
 export function showKind(kind: string): void { showOnly({ kind: [kind] }); }
 function showOnly(filter: Partial<ItemQuery>): void {

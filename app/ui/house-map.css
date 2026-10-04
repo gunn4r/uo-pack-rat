@@ -1,6 +1,7 @@
 /* ui/house-map.css — the House map screen (ui/house-map.mts, issue #10): the top bar's controls, three panes (levels and their areas, the map, the details) and a chest's contents drawer, stacked into one column below 1100 px, and the map drawn as SVG in the --color-map-* tokens. Tokens only (docs/ui.md). */
 #map-house { flex: 0 1 auto; min-width: 120px; }
 .map-levels { display: flex; gap: var(--space-1); min-width: 0; overflow-x: auto; }
+.map-levels > .pill { flex: none; white-space: nowrap; }
 
 #tab-map .map-page { max-width: none; display: grid; grid-template-columns: 280px minmax(0, 1fr) 340px; gap: var(--space-3); overflow: hidden; }
 #tab-map .map-page > :is(.msg, .map-empty, .panel) { grid-column: 1 / -1; align-self: start; }
@@ -236,3 +237,53 @@ a.map-where-mark:focus-visible .map-where-ring-in { stroke: var(--color-map-mark
 .map-item-l1 > .tag, .map-item-l2 > .rar-tier { flex: none; }
 .map-item-props { flex: 1 1 auto; }
 .map-item-res { flex: none; margin-left: auto; display: flex; gap: var(--space-1-5); font-family: var(--font-body); font-variant-numeric: tabular-nums; font-size: var(--text-xs); line-height: var(--lh-xs); }
+/* Search on the map (issue #10): the box at the top bar's right end with its count and ×, its gold ring while this house has matches, and under it the note for a query with no match here. */
+.map-search { flex: 0 1 260px; min-width: 160px; margin-left: auto; }
+/* The text stops short of the count and ×: --count-ch is the count's length (house-map.mts paintSearch), measured in the input's own ch, wider than the count's small digits. */
+.map-search .input { height: var(--control-sm); font-size: var(--text-sm); padding-right: calc(34px + var(--count-ch, 0) * 1ch); }
+.map-search .input::-webkit-search-cancel-button { display: none; }
+.map-search-count { position: absolute; right: 32px; font-size: var(--text-xs); color: var(--color-text-muted); pointer-events: none; white-space: nowrap; }
+.map-search .map-search-clear { position: absolute; right: 2px; }
+.map-search.active .input { border-color: var(--color-highlight); box-shadow: 0 0 0 1px var(--color-highlight); }
+/* A top bar too narrow for everything wraps (the box goes to a second line) rather than squeeze the level pills behind the box. */
+#tab-map #map-topbar { flex-wrap: wrap; height: auto; min-height: var(--topbar-h); row-gap: var(--space-2); padding-block: var(--space-2); }
+#tab-map .map-levels { flex: none; max-width: 100%; }
+.map-search-note { position: absolute; z-index: var(--z-sticky); right: 0; top: calc(100% + 6px); width: max-content; display: flex; flex-direction: column; gap: 2px; padding: var(--space-2) var(--space-3); background: var(--color-surface-raised); color: var(--color-text); border: var(--border-width) solid var(--color-border-strong); border-radius: var(--radius-md); box-shadow: var(--shadow-2); font-size: var(--text-sm); line-height: var(--lh-sm); }
+.map-level-count { min-width: 18px; height: 18px; padding: 0 5px; margin-right: calc(-1 * var(--space-1-5)); border-radius: var(--radius-full); background: var(--color-highlight); color: var(--color-on-highlight); font-size: var(--text-xs); line-height: 18px; text-align: center; font-weight: var(--weight-semibold); }
+/* The map while searching: a matching container keeps its color with a gold outline, its stack stands on a gold base; every other container is a pale ghost, still drawn so stack positions read. */
+.map-chest.ghost { --fill: color-mix(in srgb, var(--chest, var(--color-map-chest)) 22%, var(--color-surface)); }
+.map-chest.ghost > polygon { stroke: color-mix(in srgb, var(--color-border-strong) 45%, transparent); }
+.map-stack.ghosted { opacity: 0.55; }
+.map-chest.hit > polygon { stroke: var(--color-highlight); stroke-width: 2.5px; }
+.map-hit-base { fill: color-mix(in srgb, var(--color-highlight) 75%, transparent); stroke: var(--color-highlight); stroke-width: 2px; vector-effect: non-scaling-stroke; }
+/* The pinned callouts: a row of cards over the map at a fixed screen size, each with a thin gold leader to its matching container; the layer lets the pointer through, the cards take it (a click selects the stack, an item shows its tooltip). */
+.map-pins { position: absolute; inset: 0; z-index: 1; overflow: hidden; pointer-events: none; }
+.map-leaders { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; }
+.map-leader { fill: none; stroke: var(--color-highlight); stroke-width: 1.5; }
+.map-leader-dot { fill: var(--color-highlight); stroke: var(--color-surface); stroke-width: 1.5; }
+.map-pin { position: absolute; display: flex; flex-direction: column; gap: var(--space-1); padding: var(--space-2); background: var(--color-surface-raised); color: var(--color-text); border: var(--border-width) solid var(--color-border-strong); border-left: 3px solid var(--color-highlight); border-radius: var(--radius-md); box-shadow: var(--shadow-2); pointer-events: auto; cursor: pointer; }
+.map-svg.drawing ~ .map-pins .map-pin { pointer-events: none; }   /* drawing an area: the callouts never take the drag */
+.map-pin-head, .map-pin-l1, .map-pin-line { display: flex; align-items: baseline; gap: var(--space-1-5); min-width: 0; }
+.map-pin-head { justify-content: space-between; }
+.map-pin-chest { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
+.map-pin-line { padding-left: 26px; }
+.map-pin-l1 > .mono { flex: none; min-width: 20px; }
+:is(.map-pin-l1, .map-pin-line) > .ellip { flex: 1 1 auto; min-width: 0; }
+:is(.map-pin-head, .map-pin-line, .map-hit-item) > .num, .map-pin-head > .muted { flex: none; white-space: nowrap; }
+.map-pin-more { position: absolute; display: flex; align-items: center; justify-content: center; height: 28px; padding: 0 var(--space-2); background: var(--color-surface-raised); color: var(--color-text); border: var(--border-width) solid var(--color-highlight); border-radius: var(--radius-full); box-shadow: var(--shadow-chip); font-size: var(--text-sm); white-space: nowrap; }
+/* The panel while searching: the matches per container, its items under a gold rule, Show items at the right. */
+.map-hits-head { display: flex; flex-direction: column; gap: 2px; }
+.map-hits-head > h3 { margin: 0; }
+.map-hits { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
+.map-hit { display: grid; grid-template-columns: 12px minmax(0, 1fr) auto; gap: var(--space-2); align-items: start; padding: var(--space-2) 0; border-top: var(--border-width) solid var(--color-border); }
+.map-hit > .map-swatch { margin-top: 4px; }
+.map-hit-text { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.map-hit-pick { display: flex; gap: var(--space-2); min-width: 0; padding: 0; border: 0; background: transparent; color: var(--color-text); font: inherit; text-align: left; cursor: pointer; }
+.map-hit-pick:hover > .ellip { text-decoration: underline; }
+.map-hit-pick:focus-visible { outline: 2px solid var(--color-focus); outline-offset: 2px; border-radius: var(--radius-sm); }
+.map-hit-items { list-style: none; margin: 2px 0 0; padding: 0 0 0 var(--space-2); border-left: 2px solid var(--color-highlight); display: flex; flex-direction: column; gap: 1px; }
+.map-hit-item { display: flex; gap: var(--space-1-5); min-width: 0; }
+.map-hit-item > .ellip { flex: 1 1 auto; min-width: 0; }
+.map-hit-item:focus-visible { outline: 2px solid var(--color-focus); outline-offset: 1px; }
+.map-hits-levels { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-1-5); }
+.map-hits-foot { display: flex; flex-direction: column; gap: var(--space-1); padding-top: var(--space-2); border-top: var(--border-width) solid var(--color-border); }
