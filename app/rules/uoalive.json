@@ -58,7 +58,7 @@
   "raceLock": { "gargoyleOnly": true },
   "freeSkills": ["Lumberjacking", "Cartography", "Lockpicking", "Remove Trap", "Detecting Hidden", "Mining", "Fishing", "Hiding", "Item Identification", "Camping", "Begging", "Arms Lore", "Forensic Evaluation", "Taste Identification", "Cooking", "Tracking", "Herding"],
   "slayerGroups": [
-    { "super": ["Demon", "Exorcism (demons)"], "slayers": ["Gargoyle"] },
+    { "super": ["Demon", "Abyss", "Exorcism (demons)"], "slayers": ["Gargoyle"] },
     { "super": ["Elemental", "Elemental Ban"], "slayers": ["Air Elemental", "Blood Elemental", "Earth Elemental", "Fire Elemental", "Poison Elemental", "Elemental Health", "Snow Elemental", "Water Elemental"] },
     { "super": ["Fey"], "slayers": [] },
     { "super": ["Arachnid"], "slayers": ["Scorpion", "Spider", "Terathan"] },
