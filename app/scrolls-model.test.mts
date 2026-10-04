@@ -6,7 +6,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { setRules } from "./vault-lib.mts";
 import type { Item } from "./vault-lib.mts";
 import type { RulesV1 } from "./schema/types.d.mts";
 import {
@@ -15,7 +14,6 @@ import {
 } from "./ui/scrolls-model.mts";
 
 const RULES = JSON.parse(readFileSync(new URL("./rules/uoalive.json", import.meta.url), "utf8")) as RulesV1;
-setRules(RULES);   // a Scroll of Transcendence's skill is read off its tooltip, which needs the tag units
 const STEPS = RULES.scrollBinder!.powerScrolls!;
 const USABLE = RULES.scrollBinder!.transcendence!.usableAt;
 const TIER: Record<number, string> = { 105: "A Wondrous", 110: "An Exalted", 115: "A Mythical", 120: "A Legendary" };
@@ -106,20 +104,31 @@ test("[fast] scrolls model: the fewest Scrolls of Transcendence that add up exac
 test("[fast] scrolls model: the binder plan binds to exactly 5.0 when it can, else 2.0, else says how far off", () => {
   assert.deepEqual(sotPlan([8], USABLE), { kind: "short", target: 20, short: 12 });
   assert.equal(planText(sotPlan([8], USABLE)), "1.2 short of 2.0");
-  assert.deepEqual(sotPlan([10, 6, 4, 3], USABLE), { kind: "bind", target: 20, pick: [10, 6, 4] });
+  assert.deepEqual(sotPlan([10, 6, 4, 3], USABLE), { kind: "bind", target: 20, pick: [10, 6, 4], lost: 0 });
   assert.equal(planText(sotPlan([10, 6, 4, 3], USABLE)), "Bind 1.0 + 0.6 + 0.4 → 2.0");
-  assert.deepEqual(sotPlan([20, 20, 10, 5, 1], USABLE), { kind: "bind", target: 50, pick: [20, 20, 10] });
+  assert.deepEqual(sotPlan([20, 20, 10, 5, 1], USABLE), { kind: "bind", target: 50, pick: [20, 20, 10], lost: 0 });
   // 2.4 in all, none adding up to 2.0: going past 2.0 locks the binder until 5.0.
   assert.deepEqual(sotPlan([3, 3, 3, 3, 3, 3, 3, 3], USABLE), { kind: "short", target: 50, short: 26 });
   assert.equal(planText(sotPlan([3, 3, 3, 3, 3, 3, 3, 3], USABLE)), "2.6 short of 5.0");
-  assert.deepEqual(sotPlan([3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3], USABLE), { kind: "none", targets: [20, 50] });
-  assert.equal(planText({ kind: "none", targets: [20, 50] }), "No set adds up to exactly 2.0 or 5.0");
+  // 18 × 0.3 (5.4) make neither 2.0 nor 5.0 exactly: past 5.0 the binder is usable and the rest is lost, so bind the
+  // set that overshoots least, with the fewest scrolls: 17 × 0.3 = 5.1, 0.1 lost.
+  const eighteen = Array.from({ length: 18 }, () => 3);
+  assert.deepEqual(sotPlan(eighteen, USABLE), { kind: "bind", target: 50, pick: eighteen.slice(1), lost: 1 });
+  assert.equal(planText(sotPlan(eighteen, USABLE)), `Bind ${Array.from({ length: 17 }, () => "0.3").join(" + ")} → 5.0 (0.1 lost)`);
+  // Least overshoot first, then fewest scrolls: 2.4 + 2.7 (5.1) over 2.4 + 2.4 + 0.3 (also 5.1, three scrolls) and 2.7 + 2.7.
+  assert.deepEqual(sotPlan([27, 27, 24, 24, 3], USABLE), { kind: "bind", target: 50, pick: [27, 24], lost: 1 });
+  // An exact set still wins over an overshoot: 1.3 + 0.7 make 2.0 exactly.
+  assert.deepEqual(sotPlan([27, 27, 13, 7], USABLE), { kind: "bind", target: 20, pick: [13, 7], lost: 0 });
+});
+
+test("[fast] scrolls model: a Scroll of Transcendence's skill comes from its shown name, with no rules loaded", () => {
+  assert.deepEqual(sotRows([sot("Animal Lore", 0.1), item("Scroll Of Transcendence", ["Scroll Of Transcendence"], { sotPoints: 0.1 })], null).map((r) => r.skill), ["Animal Lore"]);
 });
 
 test("[fast] scrolls model: Scrolls of Transcendence total per skill, sorted by total", () => {
   const rows = sotRows([sot("Chivalry", 0.6), sot("Chivalry", 0.6), sot("Focus", 0.1), sot("Meditation", 0.4), sot("Meditation", 0.8, { amount: 2 })], USABLE);
   assert.deepEqual(rows.map((r) => [r.skill, r.tenths, fmtTenths(r.total)]), [["Meditation", [8, 8, 4], "2.0"], ["Chivalry", [6, 6], "1.2"], ["Focus", [1], "0.1"]]);
-  assert.deepEqual(rows[0]!.plan, { kind: "bind", target: 20, pick: [8, 8, 4] });
+  assert.deepEqual(rows[0]!.plan, { kind: "bind", target: 20, pick: [8, 8, 4], lost: 0 });
   assert.equal(rows[0]!.ready, true);
   const plain = sotRows([sot("Focus", 0.1), sot("Chivalry", 0.6)], null);
   assert.deepEqual(plain.map((r) => [r.skill, r.plan, r.ready]), [["Chivalry", null, false], ["Focus", null, false]]);
@@ -139,6 +148,10 @@ test("[fast] scrolls model: the header's facts", () => {
   const trans = sotRows([sot("Focus", 0.1)], USABLE);
   assert.deepEqual(scrollFacts({ power, sot: trans, binders: 1, binder: true }), ["17 power scrolls across 2 skills", "1 Scroll of Transcendence across 1 skill", "1 empty Scroll Binder", "1 skill ready to bind"]);
   assert.deepEqual(scrollFacts({ power: powerRows(many(5, "Meditation", 110), STEPS), sot: [], binders: 0, binder: true }), ["5 power scrolls across 1 skill", "0 Scrolls of Transcendence across 0 skills", "0 empty Scroll Binders", "Nothing is ready to bind yet"]);
+  // A skill ready in both tabs counts once.
+  const both = sotRows([sot("Healing", 1.0), sot("Healing", 1.0)], USABLE);
+  assert.equal(scrollFacts({ power, sot: both, binders: 0, binder: true })[3], "1 skill ready to bind");
+  assert.equal(scrollFacts({ power, sot: [...both, ...sotRows([sot("Focus", 2.0)], USABLE)], binders: 0, binder: true })[3], "2 skills ready to bind");
   assert.deepEqual(scrollFacts({ power, sot: trans, binders: 1, binder: false }), ["17 power scrolls across 2 skills", "1 Scroll of Transcendence across 1 skill"], "no binder recipes: no binder facts");
 });
 

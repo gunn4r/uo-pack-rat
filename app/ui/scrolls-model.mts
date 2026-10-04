@@ -4,7 +4,6 @@
 // the shard rules' `scrollBinder` (docs/shard-rules.md); a shard without them gets the plain holdings. No DOM and no
 // store.mts import, so app/scrolls-model.test.mts runs it under plain node:test. Points are whole tenths throughout
 // (0.3 is 3), never floats, so 0.1 + 0.2 adds up to exactly 0.3.
-import { parseTooltip } from "../vault-lib.mts";
 import type { Item } from "../vault-lib.mts";
 import type { RulesV1ScrollBinderPowerScrollsItem } from "../schema/types.d.mts";
 import { plural } from "./inv-model.mts";
@@ -104,34 +103,46 @@ export function fewestSubset(vals: number[], target: number): number[] | null {
   return pick.sort((a, b) => b - a);
 }
 
-export type SotPlan = { kind: "bind"; target: number; pick: number[] } | { kind: "short"; target: number; short: number } | { kind: "none"; targets: number[] };
+// `lost` is what a bind past the last usable total throws away (0 for an exact one).
+export type SotPlan = { kind: "bind"; target: number; pick: number[]; lost: number } | { kind: "short"; target: number; short: number };
 // The binder's plan for one skill's scrolls (tenths). The binder is usable at exactly the first usable total, once past
 // it only at exactly the next, and loses anything above the last; so bind the highest usable total the scrolls can make
-// exactly, with the fewest scrolls. Otherwise how far the whole lot is from the next usable total above it, or "none"
-// when the lot is already past the last one and no subset makes any.
+// exactly, with the fewest scrolls. With no exact set and the lot at or past the last total, bind the set that goes
+// past it least (then the fewest scrolls): no scroll on the way can land on a usable total exactly, since no set makes
+// one, and the overshoot is lost. Otherwise say how far the lot is from the next usable total above it.
 export function sotPlan(tenths: number[], usableAt: number[]): SotPlan {
-  const total = tenths.reduce((a, t) => a + t, 0), targets = usableAt.map(toTenths);
+  const total = tenths.reduce((a, t) => a + t, 0), targets = usableAt.map(toTenths), last = targets[targets.length - 1]!;
   for (const target of [...targets].reverse()) {
     if (target > total) continue;
     const pick = fewestSubset(tenths, target);
-    if (pick) return { kind: "bind", target, pick };
+    if (pick) return { kind: "bind", target, pick, lost: 0 };
   }
-  const above = targets.find((t) => t > total);
-  return above == null ? { kind: "none", targets } : { kind: "short", target: above, short: above - total };
+  // The least sum past the last total is below last + the largest scroll: drop that set's smallest and it is under last.
+  if (total >= last) {
+    for (let sum = last + 1; sum <= total; sum++) {
+      const pick = fewestSubset(tenths, sum);
+      if (pick) return { kind: "bind", target: last, pick, lost: sum - last };
+    }
+  }
+  const above = targets.find((t) => t > total)!;
+  return { kind: "short", target: above, short: above - total };
 }
 export function planText(plan: SotPlan): string {
-  if (plan.kind === "bind") return `Bind ${plan.pick.map(fmtTenths).join(" + ")} → ${fmtTenths(plan.target)}`;
-  if (plan.kind === "short") return `${fmtTenths(plan.short)} short of ${fmtTenths(plan.target)}`;
-  return `No set adds up to exactly ${plan.targets.map(fmtTenths).join(" or ")}`;
+  if (plan.kind === "bind") return `Bind ${plan.pick.map(fmtTenths).join(" + ")} → ${fmtTenths(plan.target)}${plan.lost ? ` (${fmtTenths(plan.lost)} lost)` : ""}`;
+  return `${fmtTenths(plan.short)} short of ${fmtTenths(plan.target)}`;
 }
 
 export interface SotRow { skill: string; tenths: number[]; total: number; items: Item[]; plan: SotPlan | null; ready: boolean }
-// One row per skill (the skill part 1 reads off the tooltip, vault-lib.mts's sotSkill), its scrolls' points largest
+// The skill a Scroll of Transcendence's shown name gives it (vault-lib.mts's displayName: "Scroll of Transcendence
+// (Animal Lore - 0.1 Pts)"), or null.
+const SOT_SHOWN_RE = /^Scroll of Transcendence \((.+) - \d+(?:\.\d+)? Pts\)$/;
+export const sotSkillOf = (name: string): string | null => SOT_SHOWN_RE.exec(name)?.[1] ?? null;
+// One row per skill, its scrolls' points largest
 // first, a stack counted once per scroll; sorted by total, then name. `usableAt` null (no binder recipe) means no plan.
 export function sotRows(items: Item[], usableAt: number[] | null): SotRow[] {
   const by = new Map<string, { tenths: number[]; items: Item[] }>();
   for (const it of items) {
-    const points = it.props.sotPoints, skill = points ? parseTooltip(it.lines, it.amount).sotSkill : null;
+    const points = it.props.sotPoints, skill = sotSkillOf(it.name);
     if (!points || !skill) continue;
     const s = by.get(skill) ?? { tenths: [], items: [] };
     for (let i = 0; i < (it.amount || 1); i++) s.tenths.push(toTenths(points));
@@ -160,7 +171,8 @@ export function scrollFacts({ power, sot, binders, binder }: { power: PowerRow[]
   const psN = power.reduce((a, r) => a + r.total, 0), sotN = sot.reduce((a, r) => a + r.tenths.length, 0);
   const facts = [`${plural(psN, "power scroll")} across ${plural(power.length, "skill")}`, `${plural(sotN, "Scroll of Transcendence", "Scrolls of Transcendence")} across ${plural(sot.length, "skill")}`];
   if (!binder) return facts;
-  const ready = power.filter((r) => r.ready).length + sot.filter((r) => r.ready).length;
+  // A skill ready in both tabs is one skill.
+  const ready = new Set([...power, ...sot].filter((r) => r.ready).map((r) => r.skill)).size;
   return [...facts, plural(binders, "empty Scroll Binder"), ready ? `${plural(ready, "skill")} ready to bind` : "Nothing is ready to bind yet"];
 }
 export function filterRows<T extends { skill: string }>(rows: T[], q: string): T[] {
