@@ -64,9 +64,6 @@ export interface ItemBrowserOptions {
   detail?: DetailHooks;
   // Whether column, width and density changes are saved to ui-prefs (the Inventory's are).
   persist?: boolean;
-  // false: no toolbar and no active-filter strip (a compact list of the fixed query, sorted by its headers); the
-  // root then needs only the table card. The query changes only through setQuery.
-  toolbar?: boolean;
   // Whether the controls the factory builds carry the Inventory's ids (#f-text, #inv-settings, …), which its CSS
   // and the Electron tests select. A second instance leaves them off: an id is page-wide.
   globalIds?: boolean;
@@ -312,15 +309,14 @@ function noScansState(): HTMLElement {
 const dot = (): HTMLElement => el("span", { class: "faint", "aria-hidden": "true" }, "·");
 
 // ---------------------------------------------------------------- the factory
-// `root` holds the Items view's markup (index.html's #inv-view-items): .inv-toolbar, .inv-active (both left out with
-// `toolbar: false`), and a card with .inv-scroll (the table.inv-tbl with its colgroup, thead and tbody, and
-// .inv-state), .inv-fade and .tbl-foot.
+// `root` holds the Items view's markup (index.html's #inv-view-items): .inv-toolbar, .inv-active, and a card with
+// .inv-scroll (the table.inv-tbl with its colgroup, thead and tbody, and .inv-state), .inv-fade and .tbl-foot.
 export function createItemBrowser(root: HTMLElement, opts: ItemBrowserOptions): ItemBrowser {
   const fixed = opts.fixed || {};
   const defaultCols = opts.columns || DEFAULT_COLS;
   const idOf = (name: string): { id?: string } => (opts.globalIds ? { id: name } : {});
   const part = <E extends HTMLElement = HTMLElement>(sel: string): E => root.querySelector<E>(sel)!;
-  const toolbar = opts.toolbar === false ? null : part(".inv-toolbar"), strip = opts.toolbar === false ? null : part(".inv-active"), scroller = part(".inv-scroll"), table = part<HTMLTableElement>("table.inv-tbl");
+  const toolbar = part(".inv-toolbar"), strip = part(".inv-active"), scroller = part(".inv-scroll"), table = part<HTMLTableElement>("table.inv-tbl");
   const stateHolder = part(".inv-state"), fade = part(".inv-fade"), foot = part(".tbl-foot");
   root.dataset.itemBrowser = "";
 
@@ -411,8 +407,8 @@ export function createItemBrowser(root: HTMLElement, opts: ItemBrowserOptions): 
     viewSeg = segmented({ label: "Rows", options: [{ value: "list", label: "List" }, { value: "grouped", label: "Grouped" }], value: "list", onChange: (v) => setView(v === "grouped") });
     if (opts.globalIds) viewSeg.id = "inv-rows";
     settingsBtn = button({ label: "Table settings: columns and density", icon: "sliders", iconOnly: true, size: "sm", attrs: { ...idOf("inv-settings"), "aria-haspopup": "dialog", "aria-expanded": "false", "data-stop": "" }, onClick: () => openSettings() });
-    toolbar!.replaceChildren(s.root, ...FACETS.map((c) => chips[c]), chips.slayer, chips.seen, addChip, el("span", { class: "spacer" }), viewSeg, settingsBtn);
-    rovingToolbar(toolbar!, search);
+    toolbar.replaceChildren(s.root, ...FACETS.map((c) => chips[c]), chips.slayer, chips.seen, addChip, el("span", { class: "spacer" }), viewSeg, settingsBtn);
+    rovingToolbar(toolbar, search);
     syncToolbar();
   }
   function setView(grouped: boolean): void {
@@ -551,7 +547,6 @@ export function createItemBrowser(root: HTMLElement, opts: ItemBrowserOptions): 
 
   // ---------------------------------------------------------------- active-filter strip
   function renderActive(): void {
-    if (!strip) return;
     const tokens = tokensNow();
     strip.hidden = !tokens.length;
     if (!tokens.length) { strip.replaceChildren(); return; }
@@ -880,7 +875,7 @@ export function createItemBrowser(root: HTMLElement, opts: ItemBrowserOptions): 
     const cause = emptyAlone ? emptyCause(tokens, emptyAlone, state.facets?.itemCount || 0) : tokens.length === 1 ? emptyCause(tokens, [], state.facets?.itemCount || 0) : "Checking which filter excludes everything…";
     return box("div", { class: "empty-state", ...idOf("inv-empty") }, icon("search"), el("h3", { class: "t-lg" }, "No items match"), el("p", { class: "muted" }, txt(cause)),
       tokens.length ? box("div", { class: "inv-empty-tokens" }, txt("Remove a filter:", "t-sm muted"), ...tokenEls(tokens)) : null,
-      search ? button({ label: "Clear all filters", variant: "primary", onClick: () => { setQuery(clearAll(query)); search.focus(); } }) : null);
+      button({ label: "Clear all filters", variant: "primary", onClick: () => { setQuery(clearAll(query)); search.focus(); } }));
   }
   // Which active filters match nothing on their own: one small query per filter, asked only when the
   // result is empty, so the sentence can name the cause (spec 3.5).
@@ -909,7 +904,7 @@ export function createItemBrowser(root: HTMLElement, opts: ItemBrowserOptions): 
   }
   function failed(e: unknown): void {
     loadError = String((e as Error).message || e).replace(/\.$/, "");
-    for (const c of toolbar?.querySelectorAll<HTMLButtonElement | HTMLInputElement>("button, input") ?? []) c.disabled = true;
+    for (const c of toolbar.querySelectorAll<HTMLButtonElement | HTMLInputElement>("button, input")) c.disabled = true;
     renderTable();
   }
   function renderFoot(): void {
@@ -1020,7 +1015,7 @@ export function createItemBrowser(root: HTMLElement, opts: ItemBrowserOptions): 
     // "/" focuses the search from anywhere on the browser's screen (spec 3.6): only a shown browser answers, and
     // not when the key is pressed inside another one.
     document.addEventListener("keydown", (e) => {
-      if (e.key !== "/" || !search || e.metaKey || e.ctrlKey || e.altKey) return;
+      if (e.key !== "/" || e.metaKey || e.ctrlKey || e.altKey) return;
       const t = e.target as HTMLElement;
       if (t.closest("input, textarea, select, [contenteditable], dialog, .drawer-root") || root.offsetParent === null) return;
       const owner = t.closest("[data-item-browser]");
@@ -1036,7 +1031,7 @@ export function createItemBrowser(root: HTMLElement, opts: ItemBrowserOptions): 
     if (g) setQuery({ ...query, group: false, q: g.name.toLowerCase(), sort: "name", dir: 1 });
   }
 
-  if (toolbar) buildToolbar();
+  buildToolbar();
   wireTable();
   rebuildTable();
   return {
@@ -1047,7 +1042,7 @@ export function createItemBrowser(root: HTMLElement, opts: ItemBrowserOptions): 
     setQuery,
     fetch: fetchItems,
     sync: () => {
-      for (const c of toolbar?.querySelectorAll<HTMLButtonElement | HTMLInputElement>("button, input") ?? []) c.disabled = false;
+      for (const c of toolbar.querySelectorAll<HTMLButtonElement | HTMLInputElement>("button, input")) c.disabled = false;
       loadError = null;
       syncToolbar();
     },
