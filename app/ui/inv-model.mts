@@ -7,6 +7,39 @@ import type { ItemQuery, PropFilter, Place } from "../item-query.mts";
 import { clearedQuery } from "./view-state.mts";
 import { flagLabel } from "../vault-lib.mts";
 
+// ---------------------------------------------------------------- slayers
+// "Air Elemental Slayer", and "Undead Slayer (Silver)" for a name that carries its old item wording in brackets.
+export function slayerLabel(name: string): string {
+  const m = name.match(/^(.*?)\s*(\(.*\))$/);
+  const title = (s: string) => s.replace(/\b\w/g, (c) => c.toUpperCase());
+  return m ? `${title(m[1]!)} Slayer ${m[2]}` : `${title(name)} Slayer`;
+}
+// The Slayer filter's rows (issue #189), laid out like the shard's slayer charts (the rules' slayerGroups): each super
+// slayer, then its lesser slayers one step in; a titled list (the talisman slayers); and last, under "Other", any slayer
+// the table lacks. Only slayers the inventory has are listed. A super slayer it lacks stays as an unpickable heading
+// (value null) while one of its lesser slayers is there; a group with nothing in it goes. No table: the plain A–Z list.
+export type SlayerRow =
+  | { kind: "title"; label: string }
+  | { kind: "super"; value: string | null; label: string; count: number }
+  | { kind: "slayer"; value: string; label: string; count: number; level: 0 | 1 };
+type SlayerGroup = { super?: string[] | undefined; heading?: string | undefined; slayers: string[] };
+export function slayerTree(facet: Array<{ name: string; count: number }>, groups: SlayerGroup[] | undefined): SlayerRow[] {
+  const byKey = new Map(facet.map((s) => [s.name.toLowerCase(), s]));
+  const take = (name: string) => { const s = byKey.get(name.toLowerCase()); byKey.delete(name.toLowerCase()); return s; };
+  const slayer = (s: { name: string; count: number }, level: 0 | 1): SlayerRow => ({ kind: "slayer", value: s.name, label: slayerLabel(s.name), count: s.count, level });
+  const out: SlayerRow[] = [];
+  for (const g of groups ?? []) {
+    const supers = (g.super ?? []).map(take).filter((s) => s != null);
+    const lesser = g.slayers.map(take).filter((s) => s != null).map((s) => slayer(s, g.super ? 1 : 0));
+    if (g.heading && lesser.length) out.push({ kind: "title", label: g.heading });
+    if (g.super && !supers.length && lesser.length) out.push({ kind: "super", value: null, label: slayerLabel(g.super[0]!), count: 0 });
+    out.push(...supers.map((s): SlayerRow => ({ kind: "super", value: s.name, label: slayerLabel(s.name), count: s.count })), ...lesser);
+  }
+  const rest = [...byKey.values()].sort((a, b) => a.name.localeCompare(b.name)).map((s) => slayer(s, 0));
+  if (rest.length && groups?.length) out.push({ kind: "title", label: "Other" });
+  return [...out, ...rest];
+}
+
 // ---------------------------------------------------------------- counts and plurals
 // "1 stack", "2 stacks", "1,204 pieces": a count and its noun, always agreeing.
 export function plural(n: number, one: string, many = `${one}s`): string {
@@ -145,7 +178,7 @@ export function activeFilters(q: ItemQuery, ctx: FilterContext): FilterToken[] {
   }
   if (q.slayer) {
     const any = q.slayer === "*";
-    out.push({ id: "slayer", label: any ? "Any slayer" : `Slayer: ${q.slayer}`, removeLabel: "Remove filter: Slayer", remove: (x) => ({ ...x, slayer: "" }), cause: (t) => any ? `${none(t)} is a slayer.` : `${none(t)} is ${a(q.slayer)} slayer.` });
+    out.push({ id: "slayer", label: any ? "Any slayer" : `Slayer: ${slayerLabel(q.slayer)}`, removeLabel: "Remove filter: Slayer", remove: (x) => ({ ...x, slayer: "" }), cause: (t) => any ? `${none(t)} is a slayer.` : `${none(t)} is ${a(q.slayer)} slayer.` });
   }
   if (q.seenDays) {
     const span = q.seenDays === 1 ? "24 hours" : `${q.seenDays} days`;
