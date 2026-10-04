@@ -364,9 +364,9 @@ test("[slow] resist caps: a floor past its cap warns, a race change drops a now-
   }
 });
 
-// Weapon exclusions (issue #45): ticking two skills in the Weapons popover says so on the chip, and Save profile
-// keeps them across a reload.
-test("[slow] two excluded weapon skills show on the chip and are saved with the profile", async (t) => {
+// Weapon exclusions (issue #45): checked skills in the Weapons popover say so on the chip, and Save profile keeps
+// them across a reload, with the Use Best Weapon Skill check (issue #187).
+test("[slow] excluded weapon skills and the Use Best Weapon Skill check show on the chip and are saved with the profile", async (t) => {
   const why = unavailable();
   if (why) return t.skip(why);
   const dataDir = seedDataDir("packrat-ui-weapons-");
@@ -377,15 +377,27 @@ test("[slow] two excluded weapon skills show on the chip and are saved with the 
     assert.equal(await chip.innerText(), "Weapons: any");
     await chip.click();
     for (const w of ["archery", "throwing"]) await page.locator(`.pop input[value="${w}"]`).check();
-    assert.equal(await chip.innerText(), "Weapons: 2 excluded");
+    assert.equal(await chip.innerText(), "Weapons: 2 excluded", "every melee skill allowed: no Use Best Weapon Skill suffix");
+    for (const w of ["fencing", "mace fighting"]) await page.locator(`.pop input[value="${w}"]`).check();
+    assert.equal(await chip.innerText(), "Weapons: Swordsmanship only, plus Use Best Weapon Skill");
+    const ubws = page.locator(".pop #b-ubws");
+    assert.ok(await ubws.isChecked(), "Use Best Weapon Skill is on by default");
+    await ubws.uncheck();
+    assert.equal(await chip.innerText(), "Weapons: Swordsmanship only");
+    await page.locator('.pop input[value="swordsmanship"]').check();
+    assert.ok(await ubws.isDisabled(), "every melee skill excluded: the check has nothing to swing with");
+    assert.equal(await ubws.getAttribute("title"), "Use Best Weapon Skill swings with Swordsmanship, Fencing or Mace Fighting, all excluded");
+    await page.locator('.pop input[value="swordsmanship"]').uncheck();
+    assert.ok(await ubws.isEnabled());
     await page.keyboard.press("Escape");
     await page.click("#b-save");
     await page.waitForFunction(() => /Profile for .* saved/.test(document.body.textContent || ""), undefined, { timeout: 10_000 });
     await page.reload();
     await page.waitForSelector("#tab-builder:not([hidden]) #b-weapon", { timeout: 30_000 });
-    assert.equal(await chip.innerText(), "Weapons: 2 excluded");
+    assert.equal(await chip.innerText(), "Weapons: Swordsmanship only");
     await chip.click();
-    assert.deepEqual(await page.locator(".pop input:checked").evaluateAll((is) => is.map((i) => (i as HTMLInputElement).value)), ["archery", "throwing"]);
+    assert.ok(!(await page.locator(".pop #b-ubws").isChecked()), "the switch saved off");
+    assert.deepEqual(await page.locator(".pop .b-checks input:checked").evaluateAll((is) => is.map((i) => (i as HTMLInputElement).value)), ["archery", "fencing", "mace fighting", "throwing"]);
     assert.deepEqual(errors, []);
   } finally {
     await app.close();

@@ -956,6 +956,7 @@ export interface BuildPoolsOptions {
   excludeGargoyle?: boolean | undefined;
   medOnly?: boolean | undefined;
   excludeWeapons?: string[] | undefined;   // weapon skills left out (weaponAllowed)
+  ubwsAnyWeapon?: boolean | undefined;     // a Use Best Weapon Skill weapon passes while a melee skill is allowed (default on)
   excludeSkills?: string[] | undefined;
 }
 export interface SkippedLists {
@@ -968,7 +969,7 @@ export interface BuildPoolsResult {
   blocked: string[];
 }
 export function buildPools(inv: Inventory, character: string, opts: BuildPoolsOptions = {}): BuildPoolsResult {
-  const { allowOthersWorn = false, strength = Infinity, excludeTags = [], excludeRoots = [], excludeGargoyle = getRules().raceLock.gargoyleOnly, medOnly = false, excludeWeapons = [], excludeSkills = [] } = opts;
+  const { allowOthersWorn = false, strength = Infinity, excludeTags = [], excludeRoots = [], excludeGargoyle = getRules().raceLock.gargoyleOnly, medOnly = false, excludeWeapons = [], ubwsAnyWeapon = true, excludeSkills = [] } = opts;
   const pools: Partial<Record<string, PooledOptItem[]>> = {}, current: Partial<Record<string, PooledOptItem>> = {}, skipped: SkippedLists = { str: [], tags: [], worn: [], roots: [], gargoyle: [], nonMed: [], weapon: [], skill: [] };
   const exRoots = new Set(excludeRoots.map(Number));
   for (const it of Object.values(inv.items)) {
@@ -981,7 +982,7 @@ export function buildPools(inv: Inventory, character: string, opts: BuildPoolsOp
     if (it.equippedBy && it.equippedBy !== character && !allowOthersWorn) { skipped.worn.push(it); continue; }
     if (excludeGargoyle && it.gargoyle) { skipped.gargoyle.push(it); continue; }
     if (medOnly && !it.medable) { skipped.nonMed.push(it); continue; }
-    if (!weaponAllowed(it, excludeWeapons)) { skipped.weapon.push(it); continue; }
+    if (!weaponAllowed(it, excludeWeapons, ubwsAnyWeapon)) { skipped.weapon.push(it); continue; }
     if (hasSkillBonus(it, excludeSkills)) { skipped.skill.push(it); continue; }
     if (it.strReq > strength) { skipped.str.push(it); continue; }
     if (it.tags.some((t) => excludeTags.includes(t))) { skipped.tags.push(it); continue; }
@@ -992,7 +993,7 @@ export function buildPools(inv: Inventory, character: string, opts: BuildPoolsOp
   // the "keep what you wear" rule.
   const blocked = OPTIMIZER_SLOTS.filter((sl) => {
     const it = current[sl] ? inv.items[current[sl]!.serial] || ({} as Item) : null;
-    return it && (!weaponAllowed(it, excludeWeapons) || hasSkillBonus(it, excludeSkills));
+    return it && (!weaponAllowed(it, excludeWeapons, ubwsAnyWeapon) || hasSkillBonus(it, excludeSkills));
   });
   return { pools, current, skipped, blocked };
 }
@@ -1013,10 +1014,23 @@ export function builderKeys(inv: ItemsLike): string[] {
 
 // Weapon-type filter for the suit builder: the weapon skills the player excluded (profile `excludeWeapons`). A weapon
 // whose Skill Required line names an excluded skill never enters the pool; nothing else in the hands is touched.
+// A weapon with Use Best Weapon Skill swings with the wielder's best of the three melee skills, never Archery or
+// Throwing (ServUO BaseWeapon.GetUsedSkill), so with `ubws` on it passes while any of those three is allowed.
 export const WEAPON_SKILLS: string[] = ["archery", "swordsmanship", "fencing", "mace fighting", "throwing"];
-export function weaponAllowed(it: Item, excluded: string[] = []): boolean {
+export const MELEE_SKILLS: string[] = ["swordsmanship", "fencing", "mace fighting"];
+export const ubwsLetsIn = (excluded: string[], ubws = true): boolean => ubws && MELEE_SKILLS.some((w) => !excluded.includes(w));
+export function weaponAllowed(it: Item, excluded: string[] = [], ubws = true): boolean {
   if (!excluded.length || (it.slot !== "oneHanded" && it.slot !== "twoHanded")) return true;
+  if (ubwsLetsIn(excluded, ubws) && (it.flags || []).includes("use best weapon skill")) return true;
   return !excluded.includes(String(it.skillReq || "").toLowerCase());
+}
+// Issue #188: the weapon skills a weapon counts under in the Inventory's Weapon skill filter, in WEAPON_SKILLS order: its
+// Skill Required line, and with Use Best Weapon Skill also the three melee skills it may swing with (ServUO
+// BaseWeapon.GetUsedSkill), the same MELEE_SKILLS the Suit Builder's weaponAllowed uses (#187).
+export function weaponSkillsOf(it: Pick<Item, "slot" | "skillReq" | "flags">): string[] {
+  if (it.slot !== "oneHanded" && it.slot !== "twoHanded") return [];
+  const own = String(it.skillReq || "").toLowerCase(), best = (it.flags || []).includes("use best weapon skill");
+  return WEAPON_SKILLS.filter((w) => w === own || (best && MELEE_SKILLS.includes(w)));
 }
 // Profiles, templates and runs saved before the exclusion list held one choice, `weaponSkill` ("archery", or null/""
 // for any weapon), which means "exclude every other weapon skill". Returns `s` itself when there is nothing to convert.
@@ -1037,7 +1051,7 @@ export function excludeWeaponsError(v: unknown, path = "excludeWeapons"): string
 // Templates: a full set of builder settings with no character in them (no race, STR limit or skipped containers).
 // A character's profile keeps its own working copy plus `template`, the name it was applied from; drift between the
 // two is settingsDiff(templateFrom(template), templateFrom(profile)).
-export const TEMPLATE_KEYS: string[] = ["floors", "softFloors", "weights", "floorBonus", "lockedSlots", "excludeTags", "excludeSkills", "allowOthersWorn", "allowGargoyle", "medOnly", "excludeWeapons", "resistCaps"];
+export const TEMPLATE_KEYS: string[] = ["floors", "softFloors", "weights", "floorBonus", "lockedSlots", "excludeTags", "excludeSkills", "allowOthersWorn", "allowGargoyle", "medOnly", "excludeWeapons", "ubwsAnyWeapon", "resistCaps"];
 export interface TemplateSource {
   floors?: Record<string, number> | undefined;
   softFloors?: string[] | undefined;
@@ -1050,6 +1064,7 @@ export interface TemplateSource {
   allowGargoyle?: boolean | undefined;
   medOnly?: boolean | undefined;
   excludeWeapons?: string[] | undefined;   // weapon skills left out of the pool
+  ubwsAnyWeapon?: boolean | undefined;     // absent means true (weaponAllowed)
   resistCaps?: Record<string, number> | undefined;   // the player's per-resist cap overrides, paperdoll terms
 }
 export interface Template {
@@ -1064,12 +1079,13 @@ export interface Template {
   allowGargoyle: boolean;
   medOnly: boolean;
   excludeWeapons: string[];
+  ubwsAnyWeapon: boolean;
   resistCaps: Record<string, number>;
 }
 export function templateFrom(s: TemplateSource = {}): Template {
   return { floors: { ...(s.floors || {}) }, softFloors: [...(s.softFloors || [])], weights: { ...(s.weights || {}) }, floorBonus: s.floorBonus ?? 1000,
     lockedSlots: [...(s.lockedSlots || [])], excludeTags: [...(s.excludeTags || [])], excludeSkills: [...(s.excludeSkills || [])],
-    allowOthersWorn: !!s.allowOthersWorn, allowGargoyle: !!s.allowGargoyle, medOnly: !!s.medOnly, excludeWeapons: [...(s.excludeWeapons || [])], resistCaps: { ...(s.resistCaps || {}) } };
+    allowOthersWorn: !!s.allowOthersWorn, allowGargoyle: !!s.allowGargoyle, medOnly: !!s.medOnly, excludeWeapons: [...(s.excludeWeapons || [])], ubwsAnyWeapon: s.ubwsAnyWeapon !== false, resistCaps: { ...(s.resistCaps || {}) } };
 }
 
 // A profiles.json character entry, loosely — every field optional, TemplateSource's builder settings
@@ -1144,6 +1160,7 @@ export interface RunSettings {
   allowOthersWorn?: boolean | undefined;
   exact?: boolean | undefined;
   excludeWeapons?: string[] | undefined;
+  ubwsAnyWeapon?: boolean | undefined;
   strLimit?: number | undefined;
   restarts?: number | undefined;
   budgetMs?: number | undefined;
@@ -1195,6 +1212,8 @@ export function settingsDiff(a: RunSettings = {}, b: RunSettings = {}): string[]
   const [wOn, wOff] = setDiff(a.excludeWeapons, b.excludeWeapons);
   if (wOn.length) out.push(`excluding ${wOn.join(", ")} weapons`);
   if (wOff.length) out.push(`allowing ${wOff.join(", ")} weapons`);
+  const ubws = (s: RunSettings) => s.ubwsAnyWeapon !== false;   // absent means on
+  if (ubws(a) !== ubws(b)) out.push(ubws(b) ? "Use Best Weapon Skill weapons allowed" : "Use Best Weapon Skill weapons held to their own skill");
   if (a.strLimit !== b.strLimit && b.strLimit != null) out.push(`STR limit ${a.strLimit ?? "?"} → ${b.strLimit}`);
   if (a.restarts !== b.restarts && b.restarts != null) out.push(`restarts ${a.restarts ?? "?"} → ${b.restarts}`);
   if (a.budgetMs !== b.budgetMs && b.budgetMs != null && b.exact) out.push(`budget ${(a.budgetMs ?? 0) / 1000} s → ${b.budgetMs / 1000} s`);
