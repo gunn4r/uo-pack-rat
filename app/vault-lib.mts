@@ -394,7 +394,7 @@ const PS_LEVEL_RE = /\bscroll\b.*\((\d{3}) skill\)/i;
 // A Scroll of Transcendence names its skill and points on a tooltip line (issue #181): "Skill: Animal Lore 0.1 Skill
 // Points" (UO Alive, from real scans) or the older "Spirit Speak 0.5 Skill".
 const SOT_NAME_RE = /\bscroll of transcendence\b/i;
-const SOT_LINE_RE = /^(?:skill:\s*)?(.+?)\s+(\d+(?:\.\d+)?)\s+skill(?: points)?$/i;
+const SOT_LINE_RE = /^(?:skill:\s*)?(.+?)\s+(\d+(?:\.\d+)?)\s+skill(?: points?)?\.?$/i;
 
 // Returns { name, props, setBonus, tags, strReq, rarity, extras, flags, lines }.
 //   props    : modeled numeric properties (optimizer keys) of the piece itself

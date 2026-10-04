@@ -803,6 +803,9 @@ test("[smoke] parseTooltip reads a Scroll of Transcendence's skill and points", 
   const sot = (lines: string[], amount?: number) => { const p = parseTooltip(lines, amount); return [p.sotSkill, p.props.sotPoints]; };
   assert.deepEqual(sot(["Scroll Of Transcendence", "Cursed", "Weight: 1 Stone", "Skill: Animal Lore 0.1 Skill Points"]), ["Animal Lore", 0.1]);
   assert.deepEqual(sot(["Scroll Of Transcendence", "Spirit Speak 0.5 Skill"]), ["Spirit Speak", 0.5], "the older line form");
+  assert.deepEqual(sot(["Scroll Of Transcendence", "Skill: Fencing 1 Skill Point"]), ["Fencing", 1], "a singular point");
+  assert.deepEqual(sot(["Scroll Of Transcendence", "Skill: Fencing 0.3 Skill Points."]), ["Fencing", 0.3], "a trailing period");
+  assert.deepEqual(sot(["Scroll Of Transcendence", "Spirit Speak 0.5 Skill."]), ["Spirit Speak", 0.5], "a trailing period on the older form");
   assert.deepEqual(sot(["2 Scroll Of Transcendence", "Skill: Chivalry 1.2 Skill Points"], 2), ["Chivalry", 1.2], "a stack prefix");
   assert.deepEqual(sot(["scroll of TRANSCENDENCE", "skill: Animal Taming 3 skill points"]), ["Animal Taming", 3], "mixed case");
   assert.deepEqual(sot(["Scroll Of Alacrity", "Skill: Animal Lore 0.1 Skill Points"]), [null, undefined], "only a Scroll of Transcendence");
