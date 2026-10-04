@@ -1021,8 +1021,13 @@ export const MELEE_SKILLS: string[] = ["swordsmanship", "fencing", "mace fightin
 export const ubwsLetsIn = (excluded: string[], ubws = true): boolean => ubws && MELEE_SKILLS.some((w) => !excluded.includes(w));
 export function weaponAllowed(it: Item, excluded: string[] = [], ubws = true): boolean {
   if (!excluded.length || (it.slot !== "oneHanded" && it.slot !== "twoHanded")) return true;
-  if (ubwsLetsIn(excluded, ubws) && (it.flags || []).includes("use best weapon skill")) return true;
-  return !excluded.includes(String(it.skillReq || "").toLowerCase());
+  const own = String(it.skillReq || "").toLowerCase();
+  if ((it.flags || []).includes("use best weapon skill")) {
+    if (ubwsLetsIn(excluded, ubws)) return true;
+    // No Skill Required line (#193): it swings with a melee skill, and nothing vouches for one.
+    if (!own) return false;
+  }
+  return !excluded.includes(own);
 }
 // Profiles, templates and runs saved before the exclusion list held one choice, `weaponSkill` ("archery", or null/""
 // for any weapon), which means "exclude every other weapon skill". Returns `s` itself when there is nothing to convert.
