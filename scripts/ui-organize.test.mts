@@ -7,7 +7,7 @@
 // 1000 × 700, and the player's item kinds (Review unclassified items, Classify this…, Export and Import). Skipped when electron or playwright is absent, or under TEST_SKIP_ELECTRON.
 import test from "node:test";
 import assert from "node:assert/strict";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -718,7 +718,9 @@ test("[slow] Review unclassified items opens the Other items, Classify this… m
 
     // Export in the desktop app is a download (Electron's own Save dialog, pointed at a file here); Import merges one in.
     await app.evaluate(({ session }, path) => { session.defaultSession.once("will-download", (_e, item) => item.setSavePath(path)); }, saved);
-    writeFileSync(join(dataDir, "item-kinds.json"), JSON.stringify({ version: 1, names: { "ruby": "decor" }, graphics: {} }));
+    // Written whole by a rename, as the server writes it: a plain writeFileSync truncates first, and the page's reload after the reset can read the empty file in that window, which sets it aside as unparsable (#178).
+    writeFileSync(join(dataDir, "item-kinds.tmp"), JSON.stringify({ version: 1, names: { "ruby": "decor" }, graphics: {} }));
+    renameSync(join(dataDir, "item-kinds.tmp"), join(dataDir, "item-kinds.json"));
     await go(page, "#/settings", "#set-kinds-export");
     await page.locator("#set-kinds-export").click();
     const exported = await until(() => { try { return JSON.parse(readFileSync(saved, "utf8")) as unknown; } catch { return null; } }, (f) => f != null, "the exported file");
