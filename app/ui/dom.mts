@@ -173,7 +173,7 @@ export function tipNode(it: TooltipItem): HTMLDivElement {
   return el("div", { class: "tipcard" },
     el("div", { class: "tip-head" }, el("span", { class: "strong tip-name", ...(tierColor ? { style: `color:${tierColor}` } : {}) }, qty + it.name), ...tagEls),
     // The name the game uses, when the shown one differs (a Scroll of Transcendence's names its skill, issue #181).
-    gameName(it) !== it.name ? el("div", { class: "muted t-xs tip-game" }, `In game: ${gameName(it)}`) : null,
+    gameName(it) !== it.name ? el("div", { class: "muted tip-game" }, `In game: ${gameName(it)}`) : null,
     body.length ? el("div", { class: "divider" }) : null,
     body.length ? el("div", { class: "tip-lines" }, ...body) : null,
     foot.length ? el("div", { class: "divider" }) : null,
