@@ -7,7 +7,7 @@
 //         shared by the browser and GET /api/items below — no DOM, no node: imports, servable byte for
 //         byte like vault-lib.mts) · GET /scan-schema.mjs (vault-lib.mts imports it for parseStamp, so
 //         it must be servable to the browser the same way) ·
-//         GET /schema/validate.mjs (scan-schema.mts's own import, same reason) · GET /organize-config.mjs (the rule editor's import, same reason) ·
+//         GET /schema/validate.mjs (scan-schema.mts's own import, same reason) · GET /organize-config.mjs (the rule editor's import, same reason) · GET /buffs.mjs (the Suit Builder's Manual buffs, same reason) ·
 //         GET /ui/<name> (name matching /^[a-z0-9-]+\.(mjs|css)$/, served from app/ui/, else 404) ·
 //         GET /ui/fonts/<name>.woff2 (the bundled IBM Plex faces, app/ui/fonts/, as binary font/woff2) ·
 //         GET /api/inventory (the cached fold of every scan, with Organize's results overlay applied —
@@ -69,7 +69,7 @@
 //         Put away (issue #131; no route: the TazUO panel drops inbox/<adapter>/putaway-request.json, the watcher hands it
 //         to putAway, which queues the first trip of the plan for the container the player picked like POST /api/organize/trip
 //         and answers in bridge/<adapter>/putaway.json; app/put-away.mts) ·
-//         GET|PUT /api/ui-prefs (<data>/ui-prefs.json: {cols?, colsVersion?, colWidths?, sheetProps?, theme?, appearance?, sidebar?, density?, areaLabels?, mapDrawerWidth?, builderMode?, manualFor?, manualSuit?, dismissedUpdate?, copiedScanner?}, the page's view choices)
+//         GET|PUT /api/ui-prefs (<data>/ui-prefs.json: {cols?, colsVersion?, colWidths?, sheetProps?, theme?, appearance?, sidebar?, density?, areaLabels?, mapDrawerWidth?, builderMode?, manualFor?, manualSuit?, manualBuffs?, buffSkills?, buffsCount?, dismissedUpdate?, copiedScanner?}, the page's view choices)
 //         POST /api/bridge {action, serial, name, chain: [root…parent], pos|null} (queue for packrat-bridge.py) · GET /api/bridge/status · POST /api/bridge/stop {} (Organize's Stop: writes <data>/bridge/stop, which packrat-bridge.py checks between a trip's steps)
 //         GET /api/events — SSE, one stream shared by every connected client (not per-job like the
 //         optimize events above): hello {ok, watching: [adapter ids]} on connect, inventory
@@ -133,6 +133,7 @@ import { validate, type ValidatorSchema } from "./schema/validate.mts";
 import { parseItemQuery, applyItemQuery, facetsOf, wantsHits, hitRow, type ItemQueryRows, type ItemQueryGroups } from "./item-query.mts";
 import { DEFAULT_OPTIONAL_SLOTS } from "./mip.mts";
 import { GEAR_SLOTS } from "./vault-lib.mts";
+import { isBuffList, isBuffSkills } from "./buffs.mts";
 import { startWatcher, jsonErrorReason, MAX_INBOX_BYTES, type StartWatcherOptions, type WatcherHandle } from "./watcher.mts";
 import { parsePastedScan, writeScanToInbox } from "./import.mts";
 import { moveAside, writeFileAtomic } from "./atomic-write.mts";
@@ -198,13 +199,14 @@ const UI_PREF_CHOICES = {
   areaLabels: ["show", "hide"],    // the House map's area name pills (app/ui/house-map.mts, issue #10)
   builderMode: ["automatic", "manual"],   // the Suit Builder's mode (app/ui/builder-manual.mts, issue #12)
   manualFor: ["character", "none"],       // whether Manual totals take the picked character's bonuses
+  buffsCount: ["on", "off"],              // whether Manual's totals count the buffs that are on (app/buffs.mts)
 } as const satisfies Record<string, readonly string[]>;
 // The list fields: the Inventory tab's columns and the character sheet's shown properties (absent = the default set).
 const UI_PREF_LISTS = ["cols", "sheetProps"] as const;
 // The version fields: the release whose in-app update notice was dismissed (ui/settings.mts's automatic
 // update check), and the ClassicUO web scanner last copied into the client (ui/paste-scanner.mts).
 const UI_PREF_VERSIONS = ["dismissedUpdate", "copiedScanner"] as const;
-type UiPrefsFile = { -readonly [K in typeof UI_PREF_LISTS[number]]?: string[] } & { -readonly [K in keyof typeof UI_PREF_CHOICES]?: string } & { -readonly [K in typeof UI_PREF_VERSIONS[number]]?: string } & { colWidths?: Record<string, number>; mapDrawerWidth?: number; manualSuit?: Record<string, number> };
+type UiPrefsFile = { -readonly [K in typeof UI_PREF_LISTS[number]]?: string[] } & { -readonly [K in keyof typeof UI_PREF_CHOICES]?: string } & { -readonly [K in typeof UI_PREF_VERSIONS[number]]?: string } & { colWidths?: Record<string, number>; mapDrawerWidth?: number; manualSuit?: Record<string, number>; manualBuffs?: string[]; buffSkills?: Record<string, number> };
 // The House map's contents drawer width in px (app/ui/house-map.mts, issue #10): the page clamps it to the window.
 const isDrawerWidth = (v: unknown): v is number => isBoundedInt(v, 320, 4000);
 // The Inventory columns' dragged widths ({colKey: px}): at most 200 column keys (the same keys `cols` holds), each a whole 40 to 1200 px.
@@ -894,6 +896,8 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
     if (isColWidths(raw.colWidths)) out.colWidths = raw.colWidths;
     if (isDrawerWidth(raw.mapDrawerWidth)) out.mapDrawerWidth = raw.mapDrawerWidth;
     if (isManualSuit(raw.manualSuit)) out.manualSuit = raw.manualSuit;
+    if (isBuffList(raw.manualBuffs)) out.manualBuffs = raw.manualBuffs;
+    if (isBuffSkills(raw.buffSkills)) out.buffSkills = raw.buffSkills;
     for (const key of UI_PREF_VERSIONS) if (isBoundedString(raw[key], 64)) out[key] = raw[key];
     return out;
   }
@@ -1400,6 +1404,8 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
       if (req.method === "GET" && url.pathname === "/item-query.mjs") return send(res, 200, readFileSync(join(WEB, "item-query.mjs"), "utf8"), "text/javascript");
       // The rule editor opens an Auto rule as the planner reads it (organize-config.mts's ruleMatchOf, issue #150).
       if (req.method === "GET" && url.pathname === "/organize-config.mjs") return send(res, 200, readFileSync(join(WEB, "organize-config.mjs"), "utf8"), "text/javascript");
+      // Manual's buffs read the same catalog the server checks ui-prefs with (app/buffs.mts, issue #12).
+      if (req.method === "GET" && url.pathname === "/buffs.mjs") return send(res, 200, readFileSync(join(WEB, "buffs.mjs"), "utf8"), "text/javascript");
       if (req.method === "GET" && url.pathname === "/scan-schema.mjs") return send(res, 200, readFileSync(join(WEB, "scan-schema.mjs"), "utf8"), "text/javascript");
       // The Import drawer's instant preview parses a paste with the server's own rule (app/paste-scan.mts).
       if (req.method === "GET" && url.pathname === "/paste-scan.mjs") return send(res, 200, readFileSync(join(WEB, "paste-scan.mjs"), "utf8"), "text/javascript");
@@ -1513,6 +1519,15 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
         if (Object.prototype.hasOwnProperty.call(body, "manualSuit")) {
           if (!isManualSuit(body.manualSuit)) return send(res, 400, { ok: false, error: "manualSuit must map the suit's slots to item serials" });
           next.manualSuit = body.manualSuit;
+        }
+        // Manual's buffs (app/buffs.mts): catalog ids, and the numbers they scale with, each within its bounds.
+        if (Object.prototype.hasOwnProperty.call(body, "manualBuffs")) {
+          if (!isBuffList(body.manualBuffs)) return send(res, 400, { ok: false, error: "manualBuffs must list known buffs, each once" });
+          next.manualBuffs = body.manualBuffs;
+        }
+        if (Object.prototype.hasOwnProperty.call(body, "buffSkills")) {
+          if (!isBuffSkills(body.buffSkills)) return send(res, 400, { ok: false, error: "buffSkills must map known buff skills to numbers within their range" });
+          next.buffSkills = body.buffSkills;
         }
         for (const key of UI_PREF_VERSIONS) {
           if (!Object.prototype.hasOwnProperty.call(body, key)) continue;

@@ -1228,6 +1228,13 @@ test("[smoke] /organize-config.mjs, the rule editor's import, is served as text/
   assert.match(await r.text(), /export function ruleMatchOf/);
 });
 
+test("[smoke] /buffs.mjs, Manual's buff catalog, is served as text/javascript (issue #12)", async () => {
+  const r = await get("/buffs.mjs");
+  assert.equal(r.status, 200);
+  assert.equal(r.headers.get("content-type"), "text/javascript; charset=utf-8");
+  assert.match(await r.text(), /export function applyBuffs/);
+});
+
 test("[smoke] /api/inventory carries facets, worn gear and counts, and no item list", async () => {
   const j = asJson<InventoryResponse>(await (await get("/api/inventory")).json());
   assert.equal(j.ok, true);
@@ -3208,7 +3215,7 @@ test("[fast] PUT /api/ui-prefs keeps the House map contents drawer's width (issu
   } finally { await s3.close(); }
 });
 
-test("[fast] PUT /api/ui-prefs keeps the Suit Builder's mode and its Manual suit (issue #12) across a restart, and refuses anything else, an unknown slot or __proto__ included", async () => {
+test("[fast] PUT /api/ui-prefs keeps the Suit Builder's mode, its Manual suit and buffs (issue #12) across a restart, and refuses anything else, an unknown slot or __proto__ included", async () => {
   const dir = mkdtempSync(join(tmpdir(), "qm-uiprefs-manual-"));
   const put = (url: string, body: unknown): Promise<Response> => fetch(url + "/api/ui-prefs", { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
   const s1 = await startServer(ensureLayout(resolveConfig(["--port", "0", "--data", dir], {})));
@@ -3226,6 +3233,13 @@ test("[fast] PUT /api/ui-prefs keeps the Suit Builder's mode and its Manual suit
     assert.deepEqual(asJson(await (await fetch(s2.url + "/api/ui-prefs")).json()), { ok: true, prefs: { builderMode: "manual", manualFor: "none", manualSuit: { ring: 1879769144, twoHanded: 0xFFFFFFFF, feet: 7 } } });
     assert.equal((await put(s2.url, { manualSuit: {} })).status, 200, "an empty suit is a suit");
     assert.deepEqual(asJson<{ prefs: Record<string, unknown> }>(await (await fetch(s2.url + "/api/ui-prefs")).json()).prefs.manualSuit, {});
+    // its buffs (app/buffs.mts): catalog ids each once, the edited numbers within their bounds, and the count switch
+    assert.equal((await put(s2.url, { manualBuffs: ["divineFury", "whiteTiger"], buffSkills: { Chivalry: 105.5, Karma: -200 }, buffsCount: "off" })).status, 200);
+    for (const bad of [{ manualBuffs: ["nope"] }, { manualBuffs: ["bless", "bless"] }, { manualBuffs: "bless" }, { buffSkills: { Chivalry: 151 } }, { buffSkills: { Hiding: 100 } }, { buffSkills: [] }, { buffsCount: "yes" }]) {
+      assert.equal((await put(s2.url, bad)).status, 400, JSON.stringify(bad));
+    }
+    const prefs = asJson<{ prefs: Record<string, unknown> }>(await (await fetch(s2.url + "/api/ui-prefs")).json()).prefs;
+    assert.deepEqual([prefs.manualBuffs, prefs.buffSkills, prefs.buffsCount], [["divineFury", "whiteTiger"], { Chivalry: 105.5, Karma: -200 }, "off"]);
   } finally { await s2.close(); }
 });
 

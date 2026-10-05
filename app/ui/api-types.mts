@@ -82,6 +82,9 @@ export interface UiPrefs {
   builderMode?: "automatic" | "manual" | undefined;    // the Suit Builder's mode (absent = Automatic)
   manualFor?: "character" | "none" | undefined;        // Manual totals with the picked character's bonuses, or raw items (absent = character)
   manualSuit?: Record<string, number> | undefined;     // the Manual suit: a serial per slot (builder-manual.mts)
+  manualBuffs?: string[] | undefined;                  // the Manual suit's buffs that are on (app/buffs.mts ids)
+  buffSkills?: Record<string, number> | undefined;     // the buff numbers the player edited, by app/buffs.mts input
+  buffsCount?: "on" | "off" | undefined;               // whether Manual's totals count the buffs (absent = on)
   dismissedUpdate?: string | undefined;                // the release whose update notice was dismissed (settings.mts)
   copiedScanner?: string | undefined;                  // the ClassicUO web scanner version last copied (paste-scanner.mts)
 }
