@@ -2,11 +2,13 @@
 // no solver import here (app/mip-solve.mts owns the runtime). Every modelling choice reproduces
 // app/bench/mip-spike.mts, which was validated to the decimal against the core's proven optima —
 // see docs/solver.md for the model and app/bench/REPORT.md for the evidence.
-import type { OptItem } from "./vault-lib.mts";
+import { GEAR_SLOTS, REQUIRED_SLOTS, type OptItem } from "./vault-lib.mts";
 
 export const HARD_FLOOR_BONUS = 1e7;   // == scripts/optimizer-core.mts HARD_FLOOR_BONUS
-export const DEFAULT_SLOTS: string[] = ["helmet", "chest", "arms", "hands", "legs", "neck", "ring", "bracelet", "talisman", "cloak", "oneHanded", "twoHanded"];
-export const DEFAULT_OPTIONAL_SLOTS: string[] = ["cloak", "talisman", "ring", "bracelet", "neck", "oneHanded", "twoHanded"];
+// Every gear slot (issue #202); all but the five armor pieces may be left empty. The core keeps its own copy (it
+// imports nothing), and app/solver.test.mts checks the two agree.
+export const DEFAULT_SLOTS: string[] = GEAR_SLOTS;
+export const DEFAULT_OPTIONAL_SLOTS: string[] = GEAR_SLOTS.filter((s) => !REQUIRED_SLOTS.includes(s));
 const INF = Infinity;
 
 // One CSR-row entry: [columnIndex, coefficient]. A plain inline `[a, b]` array literal infers as

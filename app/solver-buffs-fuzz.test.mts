@@ -21,10 +21,9 @@ import type { Character, Profile } from "./vault-lib.mts";
 import { BUFF_IDS, BUFF_INPUTS, STAT_MAX, applyBuffs, plannedProfile, toggleBuff } from "./buffs.mts";
 import type { BuffPlan, Skills } from "./buffs.mts";
 import { solveExact, type OptPools, type OptAssignment, type OptProfile } from "./exact-solver.mts";
-import { core } from "./solver-fixture.mts";   // also loads the uoalive rules
+import { core, fuzzSlots } from "./solver-fixture.mts";   // also loads the uoalive rules
 
 type Item = NonNullable<OptPools[string]>[number];
-const SLOTS = ["helmet", "chest", "ring", "neck"];
 const DIMS = ["hci", "dci", "ssi", "di", "fc", "manaRegen", "hpRegen", "luck", "strBonus", "dexBonus", "physResist", "fireResist", "coldResist", "energyResist"];
 const EPS = 1e-6;
 
@@ -34,8 +33,7 @@ function generate(rnd: () => number, serialBase: number): Instance {
   const pickSome = <T,>(list: T[], pr: number): T[] => list.filter(() => rnd() < pr);
   let serial = serialBase;
   const mkItem = (slot: string): Item => ({ serial: ++serial, name: `item${serial}`, slot, props: Object.fromEntries(pickSome(DIMS, 0.35).map((d) => [d, int(-8, 30)])) });
-  const slots = pickSome(SLOTS, 0.7);
-  if (slots.length < 2) slots.push(...SLOTS.filter((s) => !slots.includes(s)).slice(0, 2 - slots.length));
+  const slots = fuzzSlots(rnd, 4);
   const pools: OptPools = {}, current: OptAssignment = {};
   for (const s of slots) {
     pools[s] = Array.from({ length: int(1, 4) }, () => mkItem(s));
@@ -86,7 +84,11 @@ for (const seed of SEEDS) {
     const unproven: string[] = [];
     for (let i = 0; i < PER_SEED; i++) {
       const inst = generate(rnd, seed * 100000 + i * 100), label = `seed ${seed} instance ${i} (${inst.plan.on.join(", ") || "no buffs"})`;
-      const base = effectiveProfile(inst.p, inst.ch), planned = plannedProfile(inst.p, inst.ch, inst.plan), prof = planned as OptProfile;
+      const planned = plannedProfile(inst.p, inst.ch, inst.plan), prof = planned as OptProfile;
+      // an override above the shard's cap on a resist a buff lowers is set aside by design (docs/solver.md), so the
+      // character really has the shard's cap there
+      const ignored = planned.buffs?.overridesIgnored ?? {};
+      const base = effectiveProfile({ ...inst.p, resistCaps: Object.fromEntries(Object.entries(inst.p.resistCaps || {}).filter(([k]) => !Object.hasOwn(ignored, k))) }, inst.ch);
       if (JSON.stringify(planned.caps) !== JSON.stringify(base.caps) || JSON.stringify(planned.floors) !== JSON.stringify(base.floors)) shifted++;
       // what the character really has: applyBuffs on the caps before the buffs
       const view = profileResistCaps(base), caps0 = { ...base.caps };

@@ -186,8 +186,9 @@ function capsFor(name: string): { capOf: (k: string) => number | undefined; resi
     race,
   };
 }
-// Worn pieces the optimizer never touches (feet, robe, waist, earrings, a second chest-layer item) count
-// on both sides of a before/after sheet.
+// Worn pieces the suit's `before` leaves out count on both sides of a before/after sheet: those a run saved while the
+// optimizer searched twelve slots never planned (feet, robe, waist…), and those no slot holds. A piece in `before` is
+// never one, so a result's worn boots count once, on the side that keeps them.
 function withExtras(name: string, before: SheetAssignment): (set: SheetAssignment) => SheetAssignment {
   const inSuit = new Set(Object.values(before).filter(Boolean).map((x) => (x as SheetItem).serial));
   const extra = (state.inv!.worn[name] || []).filter((i) => !inSuit.has(i.serial));

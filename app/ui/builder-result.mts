@@ -3,7 +3,7 @@
 // resist tiles and the other changes, the Plan, the Fetch list, the other suits, "<name> after the change",
 // Solver details), and the compare view for 2-3 suits or saved runs. The numbers come from
 // ui/builder-model.mts; the bridge actions are gated by ui/bridge.mts's bridgeActionReason().
-import { GEAR_SLOTS, OPTIMIZER_SLOTS, RESIST_KEYS, resistSkillBonus, totalsOf, requirementReport, resistCapsFor, profileResistCaps } from "../vault-lib.mts";
+import { GEAR_SLOTS, RESIST_KEYS, resistSkillBonus, totalsOf, requirementReport, resistCapsFor, profileResistCaps } from "../vault-lib.mts";
 import type { EffectiveProfile, Item, OptItem, PropMap, ResistCap } from "../vault-lib.mts";
 import { state } from "./store.mts";
 import type { BuildMeta } from "./store.mts";
@@ -67,7 +67,7 @@ function currentSuitCard(name: string): HTMLElement {
   const caps = resistCapsFor(p?.race, p?.resistCaps);
   // a requirement set above its cap counts only up to it, as the solver scores it
   const tiles = RESIST_KEYS.map((k) => resistTile(k, (totals[k] || 0) + rsb, p?.floors?.[k] != null ? Math.min(p.floors[k]!, caps[k]!.cap) : null, caps[k]!));
-  const order = (it: Item): number => { const i = OPTIMIZER_SLOTS.indexOf(it.slot || ""); return i < 0 ? 99 : i; };
+  const order = (it: Item): number => { const i = GEAR_SLOTS.indexOf(it.slot || ""); return i < 0 ? 99 : i; };
   const sorted = [...worn].sort((a, b) => order(a) - order(b));
   const rows = sorted.map((it) => ({ cells: [slotLabel(it.slot), txt(it.name), rarCell(it), txt(keyProps(it.props) || "no properties", keyProps(it.props) ? "muted" : "faint")] }));
   const tbl = rows.length ? table({ label: "Worn now", columns: [{ label: "Slot", width: "18%" }, { label: "Wearing", width: "30%" }, { label: "Rarity", width: "18%" }, { label: "Key properties" }], rows }) : null;
@@ -107,7 +107,7 @@ export async function renderResult(res: OptimizeResult, current: OptSuit, prof: 
   const alts = res.alternatives || [];
   const view = state.builder.altView != null && alts[state.builder.altView] ? state.builder.altView : null;
   const suit = view == null ? res.best : alts[view]!.best;
-  const slots = slotsOf(res), changes = slots.filter((sl) => (current[sl]?.serial || 0) !== (suit[sl]?.serial || 0));
+  const slots = slotsOf(res.best), changes = slots.filter((sl) => (current[sl]?.serial || 0) !== (suit[sl]?.serial || 0));
   // The optimizer's own item shape has no location or equippedBy: resolve full records for the pieces the
   // Plan and Fetch list are about to show. A piece that no longer resolves (rescanned away) keeps its name.
   const resolved = await resolveItems(changes.map((sl) => suit[sl]?.serial).filter(Boolean));
@@ -154,7 +154,7 @@ function headlineCard(res: OptimizeResult, current: OptSuit, suit: OptSuit, prof
   // Manual takes the suit as it is shown, with the buffs it was planned with (one undo step there)
   const manual = res.method === "manual", buffsUsed: RunBuffs | undefined = prof.buffs ? runBuffs(prof.buffs.on, prof.buffs.skills) : undefined;
   const start = button({ label: manual ? "Open in Manual" : "Start from this result", icon: "pencil", attrs: { id: "b-to-manual" },
-    onClick: () => { void openInManual(suit, slotsOf(res), buffsUsed, manual ? "Open the manual run" : "Start from the result"); } });
+    onClick: () => { void openInManual(suit, slotsOf(res.best), buffsUsed, manual ? "Open the manual run" : "Start from the result"); } });
   const tiles = RESIST_KEYS.map((k) => resistTile(k, now.totals[k]!, pdFloors[k] ?? null, { cap: now.caps[k]!, shard: caps[k]!.shard }, was.totals[k]!));
   const other = [...otherChanges([...Object.keys(prof.floors), ...Object.keys(prof.weights)], was.totals, now.totals, now.caps, pdFloors), ...pastCapBadges(now).map((text) => ({ text, tone: "ok" as const }))];
   const unreachable = (res.unreachableFloors || []).length ? message({ tone: "warn", text: `No suit in the pool can reach these requirements${prof.buffs ? ", even with the buffs" : ""}: ${res.unreachableFloors!.map((k) => propName(k)).join(", ")}.` }) : null;
@@ -192,7 +192,7 @@ function planCard(current: OptSuit, suit: OptSuit, name: string, all: string[], 
     const item = changed && next ? resolved[next.serial] || null : null;
     const locked = !!p?.lockedSlots?.includes(slot);
     const acts: Parameters<typeof rowActions>[0] = [];
-    if (p && state.builder.character === name && OPTIMIZER_SLOTS.includes(slot)) acts.push({ label: locked ? `Unlock ${slotLabel(slot)}` : `Lock ${slotLabel(slot)} in the next build`, icon: "lock", onClick: () => {
+    if (p && state.builder.character === name) acts.push({ label: locked ? `Unlock ${slotLabel(slot)}` : `Lock ${slotLabel(slot)} in the next build`, icon: "lock", onClick: () => {
       p.lockedSlots = locked ? p.lockedSlots!.filter((x) => x !== slot) : [...(p.lockedSlots || []), slot];
       renderPanel(); rerender();
     } });
@@ -289,7 +289,7 @@ function otherSuitsCard(res: OptimizeResult, view: number | null): HTMLElement {
     box("div", { class: "card-pad" }, el("p", { class: "muted" }, txt(res.altShortfall === "budget" ? `The time budget ran out before another suit within ${fmtN(res.altTolerance)} points was found.` : `No other suit scores within ${fmtN(res.altTolerance)} points of the best.`))));
   const rows = all.map((s, i) => {
     const ta = totalsOf(s.best), d = s.score - res.score;
-    const slotsDiff = OPTIMIZER_SLOTS.filter((sl) => (s.best[sl]?.serial || 0) !== (res.best[sl]?.serial || 0));
+    const slotsDiff = GEAR_SLOTS.filter((sl) => (s.best[sl]?.serial || 0) !== (res.best[sl]?.serial || 0));
     const propDiff = [...new Set([...Object.keys(ta), ...Object.keys(tb)])].filter((k) => k !== "tagPenalty" && (ta[k] || 0) !== (tb[k] || 0))
       .sort((x, y) => label(x).localeCompare(label(y))).map((k) => { const v = (ta[k] || 0) - (tb[k] || 0); return `${label(k)} ${v > 0 ? "+" : "−"}${Math.abs(v)}`; });
     const tick = check({ label: "", checked: picked.has(String(i)), attrs: { "aria-label": i === 0 ? "Select the best suit" : `Select suit ${i + 1}` }, onChange: (on) => {
@@ -360,7 +360,7 @@ function detailsCard(res: OptimizeResult, meta: BuildMeta | undefined, view: num
 
 // ---------------------------------------------------------------- compare (2-3 suits or saved runs)
 interface CompareColumn extends CompareMember { head: HTMLElement; token: string; removeLabel: string; outcome: string[]; action: HTMLElement }
-interface CompareSpec { title: string; noun: string; slots?: string[] | undefined; footnote?: string | undefined; columns: CompareColumn[]; outcomeRows: string[]; settingsRow?: string[] | undefined; keys: string[]; caps: Record<string, number>; onRemove: (i: number) => void }
+interface CompareSpec { title: string; noun: string; columns: CompareColumn[]; outcomeRows: string[]; settingsRow?: string[] | undefined; keys: string[]; caps: Record<string, number>; onRemove: (i: number) => void }
 let diffOnly = true;
 let openSpec: (() => CompareSpec) | null = null;
 export function closeCompare(): void {
@@ -387,7 +387,7 @@ function showCompare(spec: () => CompareSpec): void {
   $<HTMLElement>("#b-cmp-topbar")!.hidden = false;
   const view = $<HTMLElement>("#b-compare-view")!;
   view.hidden = false;
-  const m = compareModel(s.columns, s.slots ?? OPTIMIZER_SLOTS, s.keys, s.caps, diffOnly);
+  const m = compareModel(s.columns, GEAR_SLOTS, s.keys, s.caps, diffOnly);
   const cols = s.columns;
   const tr = (cls: string, ...cells: HTMLElement[]): HTMLTableRowElement => el("tr", cls ? { class: cls } : {}, ...cells);
   const group = (text: string): HTMLTableRowElement => tr("group", el("td", { colspan: cols.length + 1 }, txt(text, "caps")));
@@ -399,7 +399,7 @@ function showCompare(spec: () => CompareSpec): void {
   body.push(tr("", el("td", { class: "b-cmp-act" }, el("span", { class: "sr" }, "Actions")), ...cols.map((c) => el("td", { class: "b-cmp-act" }, c.action))));
   const tbl = el("table", { class: "tbl b-cmp", "aria-label": s.title }, el("colgroup", {}, el("col", { style: "width:220px" }), ...cols.map(() => el("col"))),
     el("thead", {}, el("tr", {}, el("th", { scope: "col" }, txt("Property")), ...cols.map((c) => el("th", { scope: "col" }, c.head)))), el("tbody", {}, ...body));
-  const note = [diffOnly ? hiddenRowsNote(cols.length, m.hiddenTotals, m.hiddenPieces) : "", s.footnote || ""].filter(Boolean).join(" ");
+  const note = diffOnly ? hiddenRowsNote(cols.length, m.hiddenTotals, m.hiddenPieces) : "";
   const sw = switchControl({ label: "Differences only", checked: diffOnly, onChange: (v) => { diffOnly = v; if (openSpec) showCompare(openSpec); } });
   view.replaceChildren(
     box("div", { class: "b-cmp-bar" }, txt("Comparing", "t-sm muted"), ...cols.map((c, i) => token({ label: c.token, removeLabel: c.removeLabel, onRemove: () => { s.onRemove(i); } })), txt("up to 3", "t-sm muted"), el("span", { class: "spacer" }), sw.root),
@@ -449,7 +449,6 @@ export function openRunCompare(runs: SavedRunLike[], titleOf: (r: SavedRunLike) 
     const capped = views.some(anyOverridden);
     const columns: CompareColumn[] = list.map((r, i) => {
       const floors = r.settings.floors || {};
-      // a manual run's totals count its feet, robe and so on, as Manual shows them (the note under the table says so)
       const { totals, caps } = withBuffs(totalsOf(r.result.best), rsb, paperdollCaps(views[i]!), buffPlan(name, r.settings.race, savedBuffs(r.settings)));
       const met = Object.keys(floors).filter((k) => (totals[k] || 0) >= effectiveFloor(k, floors[k]!, caps)).length;
       const v = verdict(r.result);
@@ -461,8 +460,7 @@ export function openRunCompare(runs: SavedRunLike[], titleOf: (r: SavedRunLike) 
     const first = list[0]!;
     const settingsRow = list.map((r, i) => (i === 0 ? "—" : runSettingsDiff(first.settings, r.settings).join(" · ") || "same settings"));
     const keys = compareKeys(columns, { floors: Object.assign({}, ...list.map((r) => r.settings.floors || {})), weights: Object.assign({}, ...list.map((r) => r.settings.weights || {})) });
-    const manual = list.some((r) => r.result.method === "manual");
-    return { title: "Compare runs", noun: "runs", slots: manual ? GEAR_SLOTS : OPTIMIZER_SLOTS, footnote: manual ? "A manual run's totals include its feet, robe and other pieces the optimizer doesn't fill." : undefined, columns, outcomeRows: ["Changes", "Requirements met", "Verdict", ...(capped ? ["Resist caps"] : [])], settingsRow, keys, caps: paperdollCaps(views[0]!),
+    return { title: "Compare runs", noun: "runs", columns, outcomeRows: ["Changes", "Requirements met", "Verdict", ...(capped ? ["Resist caps"] : [])], settingsRow, keys, caps: paperdollCaps(views[0]!),
       onRemove: (i) => { const gone = list[i]!; list = list.filter((_, j) => j !== i); onRemove(gone.id); if (list.length < 2) closeCompare(); else showCompare(openSpec!); } };
   });
 }

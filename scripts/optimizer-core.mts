@@ -6,8 +6,8 @@
 // written as plain interfaces + function declarations. Everything is deterministic given a
 // seed (mulberry32 — `Math.random` is banned in the sandbox and is never called here).
 //
-// The problem: you have ~30 candidate items per slot across 12 slots. Exhaustive search is
-// 30^12. The point of optimizing a SET rather than each slot independently is that scoring is
+// The problem: you have ~30 candidate items per slot across 19 slots. Exhaustive search is
+// 30^19. The point of optimizing a SET rather than each slot independently is that scoring is
 // NOT separable — a property that is already at its cap contributes ZERO more, and resist
 // FLOORS ("all five resists >= 65") are a whole-suit property that individually-inferior
 // pieces can reach together. So per-item greedy is provably wrong and the search has to move
@@ -61,7 +61,7 @@ const HARD_FLOOR_BONUS = 1e7;
 
 interface OptOptions {
   seed?: number;          // PRNG seed; same seed => byte-identical result
-  restarts?: number;      // seeded-random restart count (default 200; ~100ms at 12 slots x 30 candidates)
+  restarts?: number;      // seeded-random restart count (default 200; ~160ms at 19 slots x 30 candidates)
   maxPasses?: number;     // safety bound on hill-climb passes per start (default 200)
   slots?: string[];       // slot universe (default optDefaultSlots())
   optionalSlots?: string[]; // slots where "equip nothing" is a legal choice
@@ -159,15 +159,17 @@ function optMulberry32(seed: number): () => number {
 // Slot model
 // ---------------------------------------------------------------------------
 
-// The 12 slots we optimize. `oneHanded` is the weapon layer; `twoHanded` holds EITHER a shield
-// OR a two-handed weapon.
+// The 19 slots we optimize, one per paperdoll layer: the game refuses an item only when another worn item is on the
+// same layer, plus the hand rule below. `oneHanded` is the weapon layer; `twoHanded` holds EITHER a shield OR a
+// two-handed weapon.
 function optDefaultSlots(): string[] {
-  return ["helmet", "chest", "arms", "hands", "legs", "neck", "ring", "bracelet", "talisman", "cloak", "oneHanded", "twoHanded"];
+  return ["helmet", "neck", "chest", "arms", "hands", "legs", "outerLegs", "feet", "oneHanded", "twoHanded",
+    "shirt", "tunic", "robe", "waist", "cloak", "ring", "bracelet", "earrings", "talisman"];
 }
 
-// Slots where wearing nothing is a legitimate choice rather than a hole to be filled.
+// Slots where wearing nothing is a legitimate choice rather than a hole to be filled: all but the five armor pieces.
 function optDefaultOptionalSlots(): string[] {
-  return ["cloak", "talisman", "ring", "bracelet", "neck", "oneHanded", "twoHanded"];
+  return optDefaultSlots().filter(function (s) { return ["helmet", "chest", "arms", "hands", "legs"].indexOf(s) < 0; });
 }
 
 function optIsTwoHandedWeapon(it: OptItem | null): boolean {

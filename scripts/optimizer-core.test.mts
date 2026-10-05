@@ -203,8 +203,8 @@ test("[fast] finds the known optimum that requires two individually-inferior pie
   const r = optimizeSuit(pools, current, profile, { seed: 2024, restarts: 0 });
   const rWithRestarts = optimizeSuit(pools, current, profile, { seed: 2024, restarts: 30 });
 
-  // 10 filler slots x di 5 = 50 di, fire 40 + 30 = 70 >= 65.
-  const OPTIMUM = 1000 + 0.1 * 70 + 50;
+  // 17 filler slots x di 5 = 85 di, fire 40 + 30 = 70 >= 65.
+  const OPTIMUM = 1000 + 0.1 * 70 + 85;
   assert.equal(r.best.helmet!.name, "Fire Crown", `helmet was ${r.best.helmet && r.best.helmet.name}`);
   assert.equal(r.best.chest!.name, "Ember Plate", `chest was ${r.best.chest && r.best.chest.name}`);
   assert.ok(Math.abs(r.score - OPTIMUM) < 1e-6, `score ${r.score} != optimum ${OPTIMUM}`);
@@ -237,8 +237,8 @@ test("[fast] perSlotChanges reports every changed slot with its property delta",
   assert.deepEqual(r.totals.before, before);
 });
 
-// (5) Runtime: 12 slots x 30 candidates must finish well under 2 seconds.
-test("[fast] runtime: 12 slots x 30 candidates under 2s", (t) => {
+// (5) Runtime: 19 slots x 30 candidates must finish well under 2 seconds.
+test("[fast] runtime: 19 slots x 30 candidates under 2s", (t) => {
   const { pools, current } = makeWorld(8675309, 30);
   const runs = 5;
   const t0 = process.hrtime.bigint();
@@ -248,7 +248,7 @@ test("[fast] runtime: 12 slots x 30 candidates under 2s", (t) => {
     evals = r.evaluations;
   }
   const ms = Number(process.hrtime.bigint() - t0) / 1e6 / runs;
-  t.diagnostic(`${ms.toFixed(1)} ms mean over ${runs} runs (12 slots x 30 candidates, default restarts, ${evals.toLocaleString("en-US")} set evaluations per run)`);
+  t.diagnostic(`${ms.toFixed(1)} ms mean over ${runs} runs (19 slots x 30 candidates, default restarts, ${evals.toLocaleString("en-US")} set evaluations per run)`);
   assert.ok(ms < 2000, `mean run took ${ms.toFixed(1)}ms`);
 });
 

@@ -1,7 +1,7 @@
 // runs-lib.mts — saved suit-builder runs: the cache key, the reuse rule, and the list summary.
 // Server-side only (uses node:crypto); the page never imports it.
 import { createHash } from "node:crypto";
-import { migrateWeaponSetting, totalsOf, OPTIMIZER_SLOTS, type OptItem } from "./vault-lib.mts";
+import { migrateWeaponSetting, totalsOf, type OptItem } from "./vault-lib.mts";
 
 // The optimizer search options a saved run was made with. Loosely shaped (an index signature) because
 // this module only ever serializes opts wholesale (runKey) or reads the few named fields below — the
@@ -38,7 +38,8 @@ export interface RunKeyInput {
 // are never served as "reused". 2: soft floors allow negative totals, negative capped weights.
 // 3: the reach estimate respects the hands row; heuristic-only runs honour the time budget.
 // 4: a warm start keeps a slot that may not be empty filled (a locked slot's piece was dropped, and the search stuck).
-export const SOLVER_VERSION = 4;
+// 5: both solvers search every gear slot, feet, shirt, middle torso, robe, waist, earrings and kilt included (#202).
+export const SOLVER_VERSION = 5;
 // The first SOLVER_VERSION whose "proven optimal" holds: before 2 a soft floor ruled out every suit with a
 // negative total, so HiGHS could prove a worse suit optimal.
 export const PROOF_SOUND_SINCE = 2;
@@ -102,18 +103,14 @@ export function reusableRun(runs: SavedRun[], key: string, opts: { timeBudgetMs?
 }
 
 // A suit built by hand in the Suit Builder's Manual mode, saved as a run (issue #12, "Save as run"): `suit` and `worn`
-// are slot -> piece over every gear slot (the six the optimizer has no slot for included), `worn` what the character
-// wears now. Its result has the shape a search's has (best, perSlotChanges, totals before and after), with method
-// "manual" and no score: the core's score needs the profile the page plans with, and a number a search never
-// produced would only mislead beside the searched runs. Its totals `after` are the optimizer's twelve slots, like a
-// search's; `outside` holds the six other slots', which the drawer's badges add back (runSummary). Its key
-// starts "manual:", so no search request can match it.
+// are slot -> piece over every gear slot, `worn` what the character wears now. Its result has the shape a search's has
+// (best, perSlotChanges, totals before and after), with method "manual" and no score: the core's score needs the
+// profile the page plans with, and a number a search never produced would only mislead beside the searched runs. Its
+// key starts "manual:", so no search request can match it.
 export interface ManualRunInput {
   id: string; character: string; createdAt: string; settings: RunSettingsRaw; inventoryStamp: unknown;
   suit: Record<string, OptItem>; worn: Record<string, OptItem>; slots: readonly string[];
 }
-// the pieces in the optimizer's slots (`inside`), or in the others
-const pick = (suit: Record<string, OptItem>, inside: boolean): Record<string, OptItem> => Object.fromEntries(Object.entries(suit).filter(([s]) => OPTIMIZER_SLOTS.includes(s) === inside));
 export function manualRun({ id, character, createdAt, settings, inventoryStamp, suit, worn, slots }: ManualRunInput): SavedRun {
   const best = Object.fromEntries(slots.map((s) => [s, suit[s] ?? null]));
   const perSlotChanges = slots.filter((s) => (suit[s]?.serial ?? 0) !== (worn[s]?.serial ?? 0)).map((s) => {
@@ -126,7 +123,7 @@ export function manualRun({ id, character, createdAt, settings, inventoryStamp, 
   });
   const key = `manual:${createHash("sha1").update(JSON.stringify({ character, suit: Object.fromEntries(Object.entries(best).map(([s, it]) => [s, it?.serial ?? null])), settings })).digest("hex")}`;
   return { id, key, character, createdAt, label: "", settings, schemaVersion: 1, solverVersion: SOLVER_VERSION, inventoryStamp, poolSize: null, skipped: {}, ms: 0,
-    result: { method: "manual", best, perSlotChanges, totals: { before: totalsOf(worn), after: totalsOf(pick(suit, true)), outside: totalsOf(pick(suit, false)) } } };
+    result: { method: "manual", best, perSlotChanges, totals: { before: totalsOf(worn), after: totalsOf(suit) } } };
 }
 
 export interface RunSummary {
@@ -150,8 +147,8 @@ export interface RunSummary {
   changes: number | null;                        // how many slots the run's suit changes
   totalsAfter: Record<string, number> | null;    // the suit's item totals, for the drawer's resist and requirement badges
 }
-// The suit's item totals the drawer's badges read: a manual run's include its six other slots' pieces (`outside`), as
-// Manual and the result view show it.
+// The suit's item totals the drawer's badges read. A manual run saved while the optimizer searched only twelve slots
+// (SOLVER_VERSION 4) kept its other slots' pieces apart (`outside`); they count, as Manual shows the suit.
 function totalsAfter(res: RunResult): Record<string, number> | null {
   const t = res.totals as { after?: Record<string, number>; outside?: Record<string, number> } | undefined;
   if (!t?.after) return null;

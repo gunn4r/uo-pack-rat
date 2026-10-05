@@ -184,6 +184,17 @@ test("[fast] sheetParts: Manual's stats count the manual suit alone, whatever el
   assert.ok(!parts.props.textContent.includes("Resists include"), "no resist footnote where no resist is drawn");
 });
 
+// Issue #202: a result plans the feet too, so worn boots are in its `before` and count once, on the side that keeps
+// them; a run saved with twelve slots never planned them, and they count on both sides.
+test("[fast] sheetParts: worn boots count once in a result that replaces them, and on both sides of an old twelve-slot run", () => {
+  const helm = { serial: 1, name: "Helm", slot: "helmet", props: { physResist: 10 } }, boots = { serial: 2, name: "Boots", slot: "feet", props: { physResist: 5 } };
+  withCharacter("Kestrel", {});
+  (state.inv as unknown as { worn: Record<string, unknown[]> }).worn.Kestrel = [helm, boots];
+  const phys = (before: Record<string, unknown>, after: Record<string, unknown>): string => sheetParts("Kestrel", before as never, after as never).resists[0]!.textContent;
+  assert.match(phys({ helmet: helm, feet: boots }, { helmet: helm, feet: { serial: 3, name: "Better Boots", slot: "feet", props: { physResist: 9 } } }), /15.*19/, "the new boots replace the worn ones");
+  assert.match(phys({ helmet: helm }, { helmet: { serial: 4, name: "Better Helm", slot: "helmet", props: { physResist: 12 } } }), /15.*17/, "an old run: the worn boots on both sides");
+});
+
 test("[fast] safeColor accepts only #rgb / #rrggbb and drops everything else", () => {
   assert.equal(safeColor("#fff"), "#fff");
   assert.equal(safeColor("#A335EE"), "#A335EE");

@@ -8,9 +8,10 @@
 // generated cell (app/solver-large.test.mts) have files of their own, so the runner runs them in parallel.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { effectiveProfile } from "./vault-lib.mts";
+import { effectiveProfile, GEAR_SLOTS } from "./vault-lib.mts";
 import { buffSkillValues, plannedProfile } from "./buffs.mts";
 import { solveExact, type OptPools, type OptAssignment, type OptProfile } from "./exact-solver.mts";
+import { DEFAULT_SLOTS, DEFAULT_OPTIONAL_SLOTS } from "./mip.mts";
 import { solveModel as realSolveModel, type Handle, type SolveModelOptions } from "./mip-solve.mts";
 import { BASE_OPTS, cell, core, defaultProfiles, runBoth, sig, templateNames, type OptOptions } from "./solver-fixture.mts";
 
@@ -253,6 +254,41 @@ test("[fast] opts.slots narrows the MIP like the heuristic", async () => {
   assert.equal(r.proven, true);
   assert.equal(r.score, 5);
   assert.deepEqual(Object.keys(r.best), ["ring"]);
+});
+
+// Issue #202: both solvers search every gear slot, one per paperdoll layer, from one list (vault-lib's GEAR_SLOTS; the
+// paste-able core keeps a copy, checked here), and only the five armor pieces must stay filled.
+test("[fast] the slot lists: every gear slot in both solvers, from one source; the new slots are optional", () => {
+  assert.deepEqual(DEFAULT_SLOTS, GEAR_SLOTS);
+  assert.deepEqual(core.optDefaultSlots(), GEAR_SLOTS, "the core's copy");
+  assert.deepEqual(core.optDefaultOptionalSlots(), DEFAULT_OPTIONAL_SLOTS, "the core's copy");
+  assert.deepEqual(GEAR_SLOTS.filter((s) => !DEFAULT_OPTIONAL_SLOTS.includes(s)), ["helmet", "chest", "arms", "hands", "legs"]);
+  for (const s of ["feet", "shirt", "tunic", "robe", "waist", "earrings", "outerLegs"]) assert.ok(DEFAULT_OPTIONAL_SLOTS.includes(s), `${s} may stay empty`);
+});
+
+// The default slots, nothing narrowed: a piece in each new slot wins when it helps, a worn robe that costs Luck comes
+// off, and the hand rule is unchanged (a bow beats a sword and shield here, and leaves the one-hand slot empty).
+test("[fast] the new slots: boots, a sash, a kilt and the rest win in both solvers when they help; the hand rule holds", async () => {
+  let serial = 90500;
+  const it = (slot: string, props: Record<string, number>, twoHanded = false): OptPools[string][number] => ({ serial: ++serial, name: `${slot} ${serial}`, slot, props, ...(twoHanded ? { twoHanded: true } : {}) });
+  const NEW = ["feet", "shirt", "tunic", "waist", "earrings", "outerLegs"];
+  const pools: OptPools = Object.fromEntries(NEW.map((s, i) => [s, [it(s, { luck: 1 + i }), it(s, { luck: -2 })]]));
+  const wornRobe = it("robe", { luck: -5 });
+  pools.robe = [wornRobe];
+  pools.oneHanded = [it("oneHanded", { di: 25 })];
+  pools.twoHanded = [it("twoHanded", { physResist: 10 }), it("twoHanded", { di: 40 }, true)];
+  const profile: OptProfile = { weights: { luck: 1, di: 1, physResist: 1 }, caps: {} };
+  const current: OptAssignment = { robe: wornRobe };
+  const opts: OptOptions = { exact: true, timeBudgetMs: 10000, restarts: 5, seed: 1 };
+  const r = await solveExact({ core, pools, current, profile, opts, onProgress: () => {} });
+  const ref = core.optimizeSuit(pools, current, profile, opts);
+  for (const [who, res] of [["HiGHS", r], ["core", ref]] as const) {
+    assert.equal(res.proven, true, who);
+    assert.deepEqual(NEW.map((s) => res.best[s]?.props.luck), [1, 2, 3, 4, 5, 6], `${who}: the better piece in every new slot`);
+    assert.equal(res.best.robe, null, `${who}: the worn robe comes off`);
+    assert.deepEqual([res.best.twoHanded?.twoHanded, res.best.oneHanded], [true, null], `${who}: the bow, nothing in the other hand`);
+    assert.equal(res.score, 21 + 40);
+  }
 });
 
 // Review M2: a HiGHS objective above the core's own re-score used to throw "re-score mismatch" and

@@ -4,7 +4,7 @@
 // suit). The result, the compare view and the Solver details are ui/builder-result.mts; the saved-runs drawer
 // is ui/runs.mts. The panel is drawn from state.builder.profile plus the Advanced knobs below, so what a
 // build sends, what a profile saves and what a run snapshots are read from state, never from the DOM.
-import { PROP_LABELS, NOT_BUILDER_KEYS, OPTIMIZER_SLOTS, tagUnits, WEAPON_SKILLS, MELEE_SKILLS, resistSkillBonus, effectiveProfile, profileResistCaps, totalsOf, getRules, RESIST_KEYS, RESIST_CAP_LIMITS, resistCapsFor, templateFrom, settingsDiff, bagLabel } from "../vault-lib.mts";
+import { PROP_LABELS, NOT_BUILDER_KEYS, GEAR_SLOTS, tagUnits, WEAPON_SKILLS, MELEE_SKILLS, resistSkillBonus, effectiveProfile, profileResistCaps, totalsOf, getRules, RESIST_KEYS, RESIST_CAP_LIMITS, resistCapsFor, templateFrom, settingsDiff, bagLabel } from "../vault-lib.mts";
 import type { EffectiveProfile, ResistCap, RunBuffs, RunSettings, Character } from "../vault-lib.mts";
 import { applyBuffs, buffById, gearNeedsText, overrideNote, planBuffs, normalizeBuffs, normalizeBuffListsByCharacter, ownEntry, plannedProfile, runBuffs, toggleBuff, type BuffPlan } from "../buffs.mts";
 import { state, invStamp } from "./store.mts";
@@ -528,7 +528,7 @@ function poolSection(): HTMLElement {
       switchControl({ label: text, checked: !!p[key], attrs: { id }, onChange: (v) => { p[key] = v; updateTemplateBadge(); } }).root;
     return [
       box("div", { class: "b-switches" }, sw("b-others", "Allow gear worn by other characters", "allowOthersWorn"), sw("b-garg", "Allow gargoyle-only gear", "allowGargoyle"), sw("b-med", "Meditation-safe gear only", "medOnly")),
-      box("div", { class: "b-chips" }, weaponChip(), listChip("b-locked", "Locked slots", () => p.lockedSlots!, (v) => { p.lockedSlots = v; }, () => OPTIMIZER_SLOTS.map((s) => ({ value: s, label: slotLabel(s) })), false),
+      box("div", { class: "b-chips" }, weaponChip(), listChip("b-locked", "Locked slots", () => p.lockedSlots!, (v) => { p.lockedSlots = v; }, () => GEAR_SLOTS.map((s) => ({ value: s, label: slotLabel(s) })), false),
         tagsChip(), listChip("b-exskills", "Forbid skill bonuses", () => p.excludeSkills!, (v) => { p.excludeSkills = v; },
           () => [...new Set([...(state.facets?.gearSkills || []), ...p.excludeSkills!])].sort().map((sk) => ({ value: sk, label: sk[0]!.toUpperCase() + sk.slice(1) })), true),
         listChip("b-exroots", "Skip containers", () => p.excludeRoots!.map(String), (v) => { p.excludeRoots = v.map((x) => (Number.isFinite(Number(x)) ? Number(x) : x)); }, rootOptions, true)),

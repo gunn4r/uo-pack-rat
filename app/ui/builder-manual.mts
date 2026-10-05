@@ -1,13 +1,13 @@
 // ui/builder-manual.mts — the Suit Builder's Manual mode (issue #12): an Automatic | Manual switch in the top bar,
 // and in Manual a suit built by hand. The totals strip (resists, the casting and combat totals and the stats, each
-// against its cap), the twelve slot cards, and beside them the picker: one item browser (item-browser.mts) fixed to
+// against its cap), the slot cards, and beside them the picker: one item browser (item-browser.mts) fixed to
 // the selected slot, with a delta column saying what each row would change. A pick fills the slot and the picker
 // stays on it, so piece after piece can be tried. The mode, "No character" and the suit (a serial per slot) are
 // ui-prefs fields, so they survive a reload; a scan reload resolves the serials again, and one that no longer
 // resolves shows as a missing card. The numbers come from ui/manual-model.mts. Buffs, abilities and forms (app/buffs.mts,
 // drawn by ui/builder-buffs.mts) can be counted in the totals: the ones that are on, the numbers the player edited and
 // the switch are ui-prefs fields too, and turning one on or off is a step in the suit's undo history.
-import { GEAR_SLOTS, OPTIMIZER_SLOTS, RESIST_KEYS, effectiveProfile, profileResistCaps, requirementReport, toOptItem, totalsOf } from "../vault-lib.mts";
+import { GEAR_SLOTS, RESIST_KEYS, effectiveProfile, profileResistCaps, requirementReport, toOptItem, totalsOf } from "../vault-lib.mts";
 import type { Character, EffectiveProfile, Item, OptItem, PropMap, RunBuffs } from "../vault-lib.mts";
 import { applyBuffs, buffById, buffSkillValues, isBuffSkillsByCharacter, normalizeBuffs, ownEntry, plannedProfile, runBuffs, toggleBuff, NO_CHARACTER, signed } from "../buffs.mts";
 import type { BuffResult, BuffWho, Stats } from "../buffs.mts";
@@ -480,9 +480,9 @@ const buffActions: BuffActions = {
 // ---------------------------------------------------------------- fill the rest, save as run, the fetch list
 // "Fill the rest automatically": the search for the empty slots (POST /api/optimize with `pinned`, the suit as it is).
 // Every placed piece stays; the rest is planned with the Automatic panel's requirements, weights, pool settings and
-// resist caps, the buffs Manual's totals count, and, as a constant base, the placed pieces the search has no slot for
-// (feet, robe, waist and so on). With No character it plans on Manual's raw item totals (no Resisting Spells, race or
-// stat headroom) from the pieces nobody wears. One search at a time, with Cancel; Automatic's Build waits for it.
+// resist caps and the buffs Manual's totals count. With No character it plans on Manual's raw item totals (no
+// Resisting Spells, race or stat headroom) from the pieces nobody wears. One search at a time, with Cancel;
+// Automatic's Build waits for it.
 interface Fill { id: string | null; es: EventSource | null; prof: EffectiveProfile; start: FillStart; text: string; frac: number }
 let fill: Fill | null = null;
 let fillUi: { text: HTMLElement; bar: ReturnType<typeof progress> } | null = null;
@@ -495,9 +495,8 @@ const fillNow = (): Omit<FillStart, "empty"> => ({ who: manualCharacter(), buffs
 const fillable = (): string[] => fillableSlots(slots, slots.twoHanded != null && !!items[slots.twoHanded]?.twoHanded);
 function fillProfile(): EffectiveProfile {
   const name = manualCharacter(), p = readControls(), suit = suitItems(), { values, stats, race } = buffInputs();
-  const outside = Object.fromEntries(Object.entries(suit).filter(([s]) => !OPTIMIZER_SLOTS.includes(s)).map(([s, it]) => [s, toOptItem(it)]));
   return plannedProfile(name ? p : { ...p, race: undefined, resistCaps: undefined, caps: undefined }, name ? state.inv!.characters[name] as Character : null,
-    { on: countBuffs ? buffs : [], skills: values, stats, who: { race, weaponFlags: weaponFlags(suit) }, worn: totalsOf(suitOpt()), base: totalsOf(outside) });
+    { on: countBuffs ? buffs : [], skills: values, stats, who: { race, weaponFlags: weaponFlags(suit) }, worn: totalsOf(suitOpt()) });
 }
 async function fillRest(): Promise<void> {
   if (fill || state.builder.job) return;
@@ -545,7 +544,7 @@ async function landFill(f: Fill, res: OptimizeResult): Promise<void> {
     if (it && !handConflict(s, it, held(next))) { next[s] = it.serial; items[it.serial] = it; }
   }
   const n = Object.keys(next).length - Object.keys(slots).length;
-  const gear = Object.fromEntries(OPTIMIZER_SLOTS.flatMap((s) => (next[s] != null && items[next[s]!] ? [[s, toOptItem(items[next[s]!]!)]] : [])));
+  const gear = Object.fromEntries(GEAR_SLOTS.flatMap((s) => (next[s] != null && items[next[s]!] ? [[s, toOptItem(items[next[s]!]!)]] : [])));
   const short = requirementReport(totalsOf(gear), f.prof).filter((r) => r.met === false).map((r) => label(r.key));
   // the requirements still missed, else how sure the search is (a proof here is about the empty slots only)
   const v = res.method === "exact" && res.proven ? "best for the empty slots" : verdict(res).text.toLowerCase();
@@ -613,7 +612,7 @@ export async function openInManual(suit: OptSuit, covered: readonly string[], ru
   setMode("manual");
   paintCharSelect();
   $<HTMLElement>("#mb-suit h2")?.focus();
-  // a search plans the optimizer's slots only: say which of Manual's other pieces stayed, as the totals count them
+  // a run saved while the optimizer searched only twelve slots: say which of Manual's other pieces stayed
   const keptText = kept.length ? ` Kept your ${listWords(kept.map(slotLabel))} ${kept.length === 1 ? "piece" : "pieces"}.` : "";
   toast(`Opened in Manual.${keptText} ${KEY_NAMES.undo} puts back the suit you had.`);
 }
