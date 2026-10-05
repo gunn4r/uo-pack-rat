@@ -586,11 +586,22 @@ function optDominates(a: number[], b: number[], space: OptSpace): boolean {
   return true;
 }
 
-function optDominancePrune(list: (OptItem | null)[], space: OptSpace, keepNull: boolean): (OptItem | null)[] {
+// `keepNull`: the slot may stay empty. Outside the hands an empty slot is then still dropped for a piece that scores
+// exactly like it (a worn pair of plain boots): the same score, and the search no longer splits on every such tie.
+function optDominancePrune(list: (OptItem | null)[], space: OptSpace, keepNull: boolean, hand: boolean): (OptItem | null)[] {
   const out: (OptItem | null)[] = [];
+  const asEmpty = function (b: OptItem | null): boolean {
+    if (b === null) return false;
+    const v = optVec(b, space);
+    return optDominates(v, space.zero, space) && optDominates(space.zero, v, space);
+  };
   for (let i = 0; i < list.length; i++) {
     const a = list[i] as OptItem | null;
-    if (a === null) { if (keepNull || !list.some((b) => b !== null && optDominates(optVec(b, space), space.zero, space))) out.push(null); continue; }
+    if (a === null) {
+      const keep = keepNull ? hand || !list.some(asEmpty) : !list.some((b) => b !== null && optDominates(optVec(b, space), space.zero, space));
+      if (keep) out.push(null);
+      continue;
+    }
     const va = optVec(a, space);
     let dominated = false;
     for (let j = 0; j < list.length && !dominated; j++) {
@@ -882,9 +893,9 @@ function optimizeSuit(pools: Record<string, OptItem[]>, current: OptAssignment, 
     const pcands: Record<string, (OptItem | null)[]> = {};
     for (let i = 0; i < slots.length; i++) {
       const s = slots[i]!;
-      const keepNull = s === "oneHanded" || s === "twoHanded" || !!optional[s];
+      const hand = s === "oneHanded" || s === "twoHanded", keepNull = hand || !!optional[s];
       // Dominance pruning is safe for the single best suit only: a dominated piece can still belong in a runner-up.
-      pcands[s] = alt ? cands[s]!.slice() : optDominancePrune(cands[s]!, space, keepNull);
+      pcands[s] = alt ? cands[s]!.slice() : optDominancePrune(cands[s]!, space, keepNull, hand);
       before += cands[s]!.length; after += pcands[s]!.length;
     }
     prog.phase = "exact"; prog.candidates = after; emit(true);

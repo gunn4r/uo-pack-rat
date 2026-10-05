@@ -135,7 +135,7 @@ type OptSpace = ReturnType<typeof Core.optBuildSpace>;
 function corePruneCount(pools: OptPools, current: OptAssignment, profile: OptProfile): { sizes: Record<string, number>; total: number } {
   const space: OptSpace = core.optBuildSpace(core.optCollectKeys(pools, current, profile), profile);
   const sizes: Record<string, number> = {};
-  for (const [slot, list] of Object.entries(pools)) sizes[slot] = core.optDominancePrune(list, space, true).length;
+  for (const [slot, list] of Object.entries(pools)) sizes[slot] = core.optDominancePrune(list, space, true, slot === "oneHanded" || slot === "twoHanded").length;
   return { sizes, total: Object.values(sizes).reduce((a, b) => a + b, 0) };
 }
 const real = readRealSnapshots();
