@@ -266,6 +266,14 @@ test("[fast] the slot lists: every gear slot in both solvers, from one source; t
   for (const s of ["feet", "shirt", "tunic", "robe", "waist", "earrings", "outerLegs"]) assert.ok(DEFAULT_OPTIONAL_SLOTS.includes(s), `${s} may stay empty`);
 });
 
+// An unworn piece that only ties with an empty slot (Luck boots under an HCI and DI profile) is left off HiGHS's suit
+// too: the core's final pass trims it, so the fetch list never sends the player for it.
+test("[fast] HiGHS's suit leaves off an unworn piece that adds nothing", async () => {
+  const boots = { serial: 90601, name: "Lucky Boots", slot: "feet", props: { luck: 5 } }, ring = { serial: 90602, name: "R", slot: "ring", props: { hci: 5, di: 10 } };
+  const r = await solveExact({ core, pools: { feet: [boots], ring: [ring] }, current: {}, profile: { weights: { hci: 1, di: 1 }, caps: {} }, opts: { exact: true, timeBudgetMs: 5000, restarts: 0, seed: 1, warmStart: { feet: boots.serial } }, onProgress: () => {} });
+  assert.deepEqual([r.proven, r.score, r.best.feet, r.best.ring?.serial], [true, 15, null, ring.serial]);
+});
+
 // The default slots, nothing narrowed: a piece in each new slot wins when it helps, a worn robe that costs Luck comes
 // off, and the hand rule is unchanged (a bow beats a sword and shield here, and leaves the one-hand slot empty).
 test("[fast] the new slots: boots, a sash, a kilt and the rest win in both solvers when they help; the hand rule holds", async () => {

@@ -929,6 +929,18 @@ function optimizeSuit(pools: Record<string, OptItem[]>, current: OptAssignment, 
   }
   prog.phase = "done"; emit(true);
 
+  // An unworn piece in an optional slot (the hands aside) that adds nothing to the score comes off: a tie with wearing
+  // nothing would only send the player to fetch it. One pass after the search, so both solvers' final suits agree.
+  const untrimmed = scoreSet(best, profile);
+  let tied = untrimmed;
+  for (let i = 0; i < slots.length; i++) {
+    const s = slots[i]!, it = best[s] || null;
+    if (!it || !optional[s] || s === "oneHanded" || s === "twoHanded" || (cur[s] && cur[s]!.serial === it.serial)) continue;
+    const without: OptAssignment = { ...best, [s]: null }, sc = scoreSet(without, profile);
+    if (sc >= tied - 1e-9) { best = without; tied = sc; }
+  }
+  bestScore += tied - untrimmed;
+
   // Per-slot diff report.
   const changes: OptSlotChange[] = [];
   for (let i = 0; i < slots.length; i++) {

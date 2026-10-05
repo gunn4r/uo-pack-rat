@@ -297,6 +297,19 @@ test("[fast] dominance pruning keeps the better item on a negatively weighted, f
 // Issue #202: a worn plain piece (boots with no properties) scores exactly like an empty slot. Outside the hands the
 // exact search drops the empty choice for it, so it does not branch on every such tie (four of them made the fixture's
 // proof four times slower); in a hand the empty choice stays, since it is what lets a two-hander in.
+// The reviewer's probe: unworn boots with only Luck, a profile that weights HCI and DI. They tie with bare feet, and the
+// search must not send the player to fetch them, whichever path found the suit; worn, they stay.
+test("[fast] an unworn piece that adds nothing to the score is left off the suit", () => {
+  const boots: OptItem = { serial: 1, name: "Lucky Boots", slot: "feet", props: { luck: 5 } }, ring: OptItem = { serial: 2, name: "R", slot: "ring", props: { hci: 5, di: 10 } };
+  const profile = { weights: { hci: 1, di: 1 }, caps: {} };
+  const opts = { restarts: 3, slots: ["feet", "ring"], optionalSlots: ["feet", "ring"], warmStart: { feet: 1, ring: 2 } };
+  for (const exact of [false, true]) {
+    const r = optimizeSuit({ feet: [boots], ring: [ring] }, {}, profile, { ...opts, exact });
+    assert.deepEqual([r.score, r.best.feet, r.best.ring?.serial], [15, null, 2], `exact ${exact}`);
+    assert.equal(optimizeSuit({ feet: [boots], ring: [ring] }, { feet: boots }, profile, { ...opts, exact }).best.feet?.serial, 1, "worn, they stay");
+  }
+});
+
 test("[fast] dominance pruning drops an empty slot for a piece that scores like it, outside the hands", () => {
   const boots: OptItem = { serial: 1, name: "Boots", slot: "feet", props: {} }, ring: OptItem = { serial: 2, name: "R", slot: "ring", props: { luck: 5 } };
   const profile = { weights: { luck: 1 }, caps: {} };
