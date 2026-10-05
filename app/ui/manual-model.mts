@@ -90,23 +90,25 @@ export function slotDelta(before: PropMap, after: PropMap, keys: string[], caps:
 
 // ---------------------------------------------------------------- undo and redo
 // The manual suit's history: each change to it is one step (a pick, with the hand rule's clear in the same step; a
-// Clear; Clear all; Start from what <name> wears), kept 40 back. Undo returns the step to apply its `before`; redo
-// its `after`. A new change after an undo drops what could have been redone; a change that changes nothing is no step.
+// Clear; Clear all; Start from what <name> wears; a buff turned on or off), kept 40 back. A step holds the state
+// before and after it (Manual's: the suit and its buffs). Undo returns the step to apply its `before`; redo its
+// `after`. A new change after an undo drops what could have been redone; a change that changes nothing is no step.
 export type Suit = Record<string, number>;
-export interface Step { before: Suit; after: Suit; label: string }
-export interface History { past: Step[]; future: Step[] }
+export interface Step<T = Suit> { before: T; after: T; label: string }
+export interface History<T = Suit> { past: Array<Step<T>>; future: Array<Step<T>> }
 export const HISTORY_MAX = 40;
-export const emptyHistory = (): History => ({ past: [], future: [] });
-const sameSuit = (a: Suit, b: Suit): boolean => Object.keys(a).length === Object.keys(b).length && Object.keys(a).every((k) => a[k] === b[k]);
-export function record(h: History, before: Suit, after: Suit, label: string): History {
-  if (sameSuit(before, after)) return h;
+export const emptyHistory = <T = Suit,>(): History<T> => ({ past: [], future: [] });
+// Equal states, whatever order their keys were written in.
+const canon = (v: unknown): string => JSON.stringify(v, (_k, x: unknown) => (x && typeof x === "object" && !Array.isArray(x) ? Object.fromEntries(Object.entries(x).sort(([a], [b]) => a.localeCompare(b))) : x));
+export function record<T>(h: History<T>, before: T, after: T, label: string): History<T> {
+  if (canon(before) === canon(after)) return h;
   return { past: [...h.past, { before, after, label }].slice(-HISTORY_MAX), future: [] };
 }
-export function undoStep(h: History): { history: History; step: Step } | null {
+export function undoStep<T>(h: History<T>): { history: History<T>; step: Step<T> } | null {
   const step = h.past[h.past.length - 1];
   return step ? { history: { past: h.past.slice(0, -1), future: [step, ...h.future] }, step } : null;
 }
-export function redoStep(h: History): { history: History; step: Step } | null {
+export function redoStep<T>(h: History<T>): { history: History<T>; step: Step<T> } | null {
   const [step, ...rest] = h.future;
   return step ? { history: { past: [...h.past, step], future: rest }, step } : null;
 }

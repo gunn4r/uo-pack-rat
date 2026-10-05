@@ -115,6 +115,10 @@ test("[fast] manual model: the suit's history undoes and redoes, keeps 40 steps,
   h = record(h, {}, { ring: 1 }, "Ring → Arcane Ring");
   h = record(h, { ring: 1 }, { ring: 1, oneHanded: 2 }, "Weapon (1H) → Katana");
   assert.equal(record(h, { ring: 1 }, { ring: 1 }, "nothing"), h, "a change that changes nothing is no step");
+  // Manual's steps hold the suit and its buffs: the same state written in another key order is no step either
+  const both = emptyHistory<{ slots: Record<string, number>; buffs: string[] }>();
+  assert.equal(record(both, { slots: { ring: 1, neck: 2 }, buffs: ["bless"] }, { buffs: ["bless"], slots: { neck: 2, ring: 1 } }, "nothing"), both);
+  assert.equal(record(both, { slots: {}, buffs: [] }, { slots: {}, buffs: ["bless"] }, "Bless on").past.length, 1);
   const u = undoStep(h)!;
   assert.deepEqual(u.step.before, { ring: 1 }); assert.equal(u.step.label, "Weapon (1H) → Katana");
   const r = redoStep(u.history)!;

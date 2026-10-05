@@ -441,7 +441,7 @@ test("[slow] a switch's on state stands apart from its off state in each theme a
 
 // Manual mode (issue #12): a slot opens the picker on its pieces, a picked row fills the slot and moves the totals,
 // and the picker stays on that slot with the row marked as the one in it; the undo key takes it out, redo puts it back. Esc closes it onto the slot card, and the
-// suit is kept in ui-prefs.json.
+// suit is kept in ui-prefs.json. A buff turned on marks the totals it moves.
 test("[slow] Manual mode: a picked piece fills its slot, moves the totals and leaves the picker on the slot", async (t) => {
   const why = unavailable();
   if (why) return t.skip(why);
@@ -488,12 +488,26 @@ test("[slow] Manual mode: a picked piece fills its slot, moves the totals and le
     await page.waitForSelector("#mb-picker", { state: "hidden" });
     assert.equal(await page.evaluate(() => (document.activeElement as HTMLElement | null)?.dataset.slot), "ring", "focus back on the slot card");
     // The suit is saved by a PUT the page does not wait on: poll the file until it holds the ring.
-    type Prefs = { builderMode?: string; manualSuit?: Record<string, number> };
+    type Prefs = { builderMode?: string; manualSuit?: Record<string, number>; manualBuffs?: string[] };
     const read = (): Prefs => { try { return JSON.parse(readFileSync(join(dataDir, "ui-prefs.json"), "utf8")) as Prefs; } catch { return {}; } };
     let prefs = read();
     for (let i = 0; i < 50 && typeof prefs.manualSuit?.ring !== "number"; i++) { await page.waitForTimeout(100); prefs = read(); }
     assert.equal(prefs.builderMode, "manual");
     assert.equal(typeof prefs.manualSuit?.ring, "number", "the suit is kept for the next launch");
+    // A buff (app/buffs.mts): Add buff opens the buff picker in the side column, Divine Fury on puts its chip in the
+    // Buffs row and a marker line under HCI, and Esc closes the picker onto Add buff.
+    await page.click("#bf-add");
+    await page.waitForSelector("#mb-buffs:not([hidden]) #bf-cb-divineFury");
+    await page.locator("#bf-cb-divineFury").check();
+    await page.waitForSelector('#mb-totals [data-key="hci"] .bf-sub');
+    assert.match(await page.locator('#mb-totals [data-key="hci"] .bf-sub').innerText(), /\+1[05]/, "Divine Fury's HCI, flat or top tier");
+    assert.match(await page.locator('#mb-totals .bf-strip .token[data-buff="divineFury"]').innerText(), /Divine Fury/);
+    await page.keyboard.press("Escape");
+    await page.waitForSelector("#mb-buffs", { state: "hidden" });
+    assert.equal(await page.evaluate(() => document.activeElement?.id), "bf-add", "focus back on Add buff");
+    let bp = read();
+    for (let i = 0; i < 50 && !bp.manualBuffs?.includes("divineFury"); i++) { await page.waitForTimeout(100); bp = read(); }
+    assert.deepEqual(bp.manualBuffs, ["divineFury"], "the buffs are kept for the next launch");
     assert.deepEqual(errors, []);
   } finally {
     await app.close();
