@@ -9,13 +9,14 @@ import { OPTIMIZER_SLOTS, RESIST_KEYS, effectiveProfile, profileResistCaps, toOp
 import type { Character, EffectiveProfile, Item, OptItem } from "../vault-lib.mts";
 import type { ItemQuery } from "../item-query.mts";
 import { state } from "./store.mts";
-import { $, el, label, slotLabel, itemTip, toast, whereText } from "./dom.mts";
+import { $, el, label, slotLabel, itemTip, toast } from "./dom.mts";
 import { box, txt, button, icon, meter, segmented, tag, confirmDialog, modalOpen } from "./components.mts";
 import { api } from "./api.mts";
 import { resolveItems, rarityToken } from "./items.mts";
 import { closeCompare, keyProps, RESIST_NAMES } from "./builder-result.mts";
 import { capNote, paperdoll, paperdollCaps } from "./builder-model.mts";
 import { itemActions } from "./inventory.mts";
+import { sheetParts } from "./sheet.mts";
 import { createItemBrowser } from "./item-browser.mts";
 import type { ItemBrowser } from "./item-browser.mts";
 import type { UiPrefs } from "./api-types.mts";
@@ -156,6 +157,7 @@ function draw(): void {
   const root = $<HTMLElement>("#b-manual")!;
   root.querySelector("#mb-totals")!.replaceWith(totalsCard());
   root.querySelector("#mb-suit")!.replaceWith(suitCard());
+  root.querySelector("#mb-stats")!.replaceWith(statsCard());
   paintPicker();
 }
 function totalsCard(): HTMLElement {
@@ -182,6 +184,16 @@ function totalsCard(): HTMLElement {
     box("div", { class: "b-resists" }, ...tiles),
     box("div", { class: "mb-props" }, ...[...TOTAL_KEYS, ...STAT_KEYS].map(stat)));
 }
+// The character sheet's figures (sheet.mts's KPI row and Properties card, with the skills) for the manual suit: the
+// character's own attributes with the suit's bonuses in place of what it wears in those slots (the sheet's
+// now → after sum, drawn with the after figures only), or the items' totals alone with no character.
+function statsCard(): HTMLElement {
+  const name = manualCharacter();
+  const worn = name ? Object.fromEntries((state.inv!.worn[name] || []).filter((i) => i.slot && OPTIMIZER_SLOTS.includes(i.slot)).map((i) => [i.slot!, i])) : {};
+  const suit = Object.fromEntries(Object.entries(slots).flatMap(([s, serial]) => (items[serial] ? [[s, items[serial]!]] : [])));
+  const { kpis, props } = sheetParts(name, worn, suit, { resistCaps: profileResistCaps(profile()), compare: false });
+  return box("div", { class: "sheet mb-stats", id: "mb-stats", role: "group", "aria-label": name ? `${name} in this suit` : "This suit's item totals" }, kpis, props);
+}
 // Armor first, then jewelry, the cloak and the hands, as on the paperdoll.
 const GROUPS: Array<[string, string[]]> = [["Armor", ["helmet", "neck", "chest", "arms", "hands", "legs"]], ["Jewelry, cloak and weapons", ["ring", "bracelet", "talisman", "cloak", "oneHanded", "twoHanded"]]];
 function suitCard(): HTMLElement {
@@ -192,21 +204,26 @@ function suitCard(): HTMLElement {
     box("div", { class: "card-head" }, el("h2", {}, "Suit"), txt(filled ? `${filled} of ${OPTIMIZER_SLOTS.length} slots filled${missing ? `, ${missing} missing from your scans` : ""}` : "Every slot is empty", `t-sm ${missing ? "tone-warn" : "muted"}`), el("span", { class: "spacer" }), worn, clear),
     box("div", { class: "mb-suit-body" }, ...GROUPS.map(([title, group]) => box("div", { class: "mb-group", role: "group", "aria-label": title }, txt(title, "caps muted"), box("div", { class: "mb-grid" }, ...group.map(slotCard))))));
 }
-// A slot card: a button that opens the picker on the slot (the piece's name in its rarity's color, its key
-// properties and where it lives; "Empty"; or "Missing" for a serial the scans no longer have), and Clear.
+// A slot card, two lines: a button that opens the picker on the slot (the slot and the piece's name in its rarity's
+// color, then its key properties, with where it lives in its item tooltip; "Empty"; or "Missing" for a serial the
+// scans no longer have), and Clear.
 function slotCard(slot: string): HTMLElement {
   const serial = slots[slot], it = serial != null ? items[serial] : undefined, sel = pickSlot === slot, nm = slotLabel(slot);
-  let lines: HTMLElement[];
+  let head: HTMLElement, line: HTMLElement;
   if (it) {
     const token = rarityToken(it.rarity), props = keyProps(it.props);
-    lines = [txt(it.name, "mb-name ellip"), txt(props || "No properties", "t-sm muted ellip"), txt(whereText(it.location?.text) || "Unknown place", "t-sm faint ellip")];
-    if (token) lines[0]!.style.color = `var(${token})`;
+    head = txt(it.name, "mb-name ellip");
+    if (token) head.style.color = `var(${token})`;
+    line = txt(props || "No properties", "t-sm muted ellip");
   } else if (serial != null) {
-    lines = [txt("Missing", "mb-name tone-warn"), txt("No longer in your scans", "t-sm muted ellip"), txt(`0x${serial.toString(16)}`, "t-sm mono faint")];
+    head = txt("Missing", "mb-name tone-warn");
+    line = txt(`No longer in your scans · 0x${serial.toString(16)}`, "t-sm muted ellip");
   } else {
-    lines = [box("span", { class: "mb-choose" }, icon("plus", { size: "sm" }), txt(sel ? "Choosing…" : "Empty")), txt(sel ? "Pick a piece in the list" : "Click to choose a piece", "t-sm faint ellip")];
+    head = box("span", { class: "mb-choose" }, icon("plus", { size: "sm" }), txt(sel ? "Choosing…" : "Empty"));
+    line = txt(sel ? "Pick a piece in the list" : "Click to choose a piece", "t-sm faint ellip");
   }
-  const open = box("button", { type: "button", class: "mb-slot-pick", "data-slot": slot, "aria-expanded": String(sel), "aria-controls": "mb-picker", onclick: () => openPicker(slot) }, txt(nm, "caps muted"), ...lines);
+  const open = box("button", { type: "button", class: "mb-slot-pick", "data-slot": slot, "aria-expanded": String(sel), "aria-controls": "mb-picker", onclick: () => openPicker(slot) },
+    box("span", { class: "mb-slot-line" }, txt(nm, "caps muted"), head), line);
   if (it) itemTip(open, it);
   const clear = serial != null ? button({ label: `Clear ${nm}`, icon: "close", iconOnly: true, variant: "ghost", size: "sm", cls: "mb-clear", onClick: () => clearSlot(slot) }) : null;
   return box("div", { class: `mb-slot${serial == null ? " mb-empty" : ""}${serial != null && !it ? " mb-missing" : ""}${sel ? " mb-sel" : ""}` }, open, clear);

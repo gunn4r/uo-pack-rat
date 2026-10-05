@@ -64,7 +64,7 @@ function elements(n: FakeElement): FakeElement[] {
   createTextNode: (s: string) => new FakeText(s),
 };
 
-const { sheetNode } = await import("./ui/sheet.mts");
+const { sheetNode, sheetParts } = await import("./ui/sheet.mts");
 const { safeColor, tipNode, tipHostOf, el } = await import("./ui/dom.mts");
 const { state } = await import("./ui/store.mts");
 const { setRules } = await import("./vault-lib.mts");
@@ -144,6 +144,25 @@ test("[fast] sheetNode: a build's raised resist cap is used and named; without o
   assert.ok(plain.textContent.includes("70/ 70") && plain.textContent.includes("cap +20"), "the Characters screen keeps the shard's 70");
   assert.ok(!plain.textContent.includes("raised from"));
   assert.ok(plain.textContent.includes("value / shard cap"));
+});
+
+// The Suit Builder's Manual stats card (issue #12): the sheet's figures for the suit being built, drawn as plain
+// values (no "now → after"), with the character's own attributes under that suit; with no character, item totals only.
+test("[fast] sheetParts: Manual's figures are the suit's own, with a character's base or with none", () => {
+  const worn = { serial: 1, name: "Old Helm", slot: "helmet", props: { strBonus: 5, fireResist: 10 } };
+  const picked = { serial: 2, name: "New Helm", slot: "helmet", props: { strBonus: 8, lrc: 20 } };
+  withCharacter("Kestrel", { stats: { str: 105 }, skills: { Magery: { value: 100, cap: 100 } } });
+  (state.inv as unknown as { worn: Record<string, unknown[]> }).worn.Kestrel = [worn];
+  const text = (name: string | null): string => { const p = sheetParts(name, name ? { helmet: worn as never } : {}, { helmet: picked as never }, { compare: false }); return `${p.kpis.textContent} ${p.props.textContent}`; };
+  const mine = text("Kestrel");
+  assert.ok(mine.includes("108"), `STR is the character's own 100 plus the picked helm's 8: ${mine.slice(0, 300)}`);
+  assert.ok(!mine.includes("→"), "no now → after in the Manual card");
+  assert.ok(mine.includes("Magery") && mine.includes("value / shard cap"));
+  const none = text(null);
+  assert.ok(none.includes("—") && !none.includes("Magery") && !none.includes("Rescan"), "no character: no attributes, pools or skills");
+  assert.ok(none.includes("Item totals only"));
+  // the sheet page itself is unchanged by the split
+  assert.ok((sheetNode("Kestrel", { helmet: worn as never }, null) as unknown as Node).textContent.includes("105"));
 });
 
 test("[fast] safeColor accepts only #rgb / #rrggbb and drops everything else", () => {

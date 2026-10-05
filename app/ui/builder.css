@@ -135,29 +135,37 @@
 .mb-props .b-stat .v { font-variant-numeric: tabular-nums; }
 .mb-props .mb-stat-sep { padding-left: var(--space-3); border-left: var(--border-width) solid var(--color-border); }
 .mb-main { flex: 1 0 auto; height: 0; min-height: 420px; display: flex; gap: var(--space-4); position: relative; }
-.mb-suit { flex: 2 1 0; min-width: 320px; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; }
-.mb-suit > * { flex: none; }   /* a scrolling column: its head and body keep their height */
+/* the left column: the suit card, then the character's stats in this suit, scrolling together */
+.mb-left { flex: 2 1 0; min-width: 320px; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; gap: var(--space-4); }
+.mb-left > *, .mb-suit > * { flex: none; }   /* a scrolling column: its cards keep their height */
+.mb-suit { display: flex; flex-direction: column; }
 .mb-suit .card-head { flex-wrap: wrap; }
-.mb-suit-body { display: flex; flex-direction: column; gap: var(--space-4); padding: var(--space-4); }
-.mb-group { display: flex; flex-direction: column; gap: var(--space-2); }
-.mb-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: var(--space-3); }
+.mb-suit-body { display: flex; flex-direction: column; gap: var(--space-3); padding: var(--space-3) var(--space-4) var(--space-4); }
+.mb-group { display: flex; flex-direction: column; gap: var(--space-1-5); }
+.mb-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: var(--space-2); }
 /* beside the picker, at most three columns, so each group of six reads as two full rows */
 .b-manual.picking .mb-grid { grid-template-columns: repeat(auto-fill, minmax(max(160px, 30%), 1fr)); }
 /* a slot card: the whole card is its button (opens the picker on the slot); Clear sits over its top-right corner */
 .mb-slot { position: relative; min-width: 0; }
-.pr .mb-slot-pick { display: flex; flex-direction: column; align-items: stretch; gap: var(--space-1); width: 100%; min-height: 96px; padding: var(--space-3); text-align: left; font-weight: var(--weight-regular);
+.pr .mb-slot-pick { display: flex; flex-direction: column; align-items: stretch; gap: var(--space-0-5); width: 100%; padding: var(--space-2) var(--space-3); text-align: left; font-weight: var(--weight-regular);
   border: var(--border-width) solid var(--color-border); border-radius: var(--radius-lg); background: var(--color-surface); color: var(--color-text); cursor: pointer; }
 .pr .mb-slot-pick:hover { border-color: var(--color-border-strong); background: var(--color-row-hover); color: var(--color-on-row-hover); }
 .pr .mb-slot-pick:focus-visible { outline: none; box-shadow: var(--ring-focus); }
 .pr .mb-slot.mb-empty .mb-slot-pick { border-style: dashed; background: var(--color-surface-subtle); }
 .pr .mb-slot.mb-missing .mb-slot-pick { border-color: var(--color-warning); }
 .pr .mb-slot.mb-sel .mb-slot-pick { border-style: solid; border-color: var(--color-accent); box-shadow: 0 0 0 1px var(--color-accent); background: var(--color-surface); }
-.mb-slot-pick > .caps { padding-right: var(--control-sm); }
+/* the slot and the piece's name on one line, clear of the Clear button */
+.mb-slot-line { display: flex; align-items: center; gap: var(--space-2); min-width: 0; padding-right: var(--control-sm); }
+.mb-slot-line > .caps { flex: none; }
+.mb-slot-line > .mb-name, .mb-slot-line > .mb-choose { flex: 1 1 auto; min-width: 0; }
 .mb-slot-pick .ellip { display: block; }
 .mb-name { font-weight: var(--weight-medium); }
 .mb-choose { display: flex; align-items: center; gap: var(--space-1-5); color: var(--color-text-muted); }
 .mb-slot.mb-sel .mb-choose { color: var(--color-accent); }
-.mb-slot .mb-clear { position: absolute; top: var(--space-1-5); right: var(--space-1-5); }
+/* the character's stats in this suit (sheet.mts's KPI row and Properties card) in the narrow left column: the resist
+   figures one step smaller, so "15 / 70" stays on one line */
+@container (max-width: 640px) { .mb-stats .kpi-value .t-2xl { font-size: var(--text-lg); line-height: var(--lh-lg); } }
+.mb-slot .mb-clear { position: absolute; top: var(--space-1); right: var(--space-1); }
 /* the side column: the hint, or the picker (one item browser, fixed to the selected slot) */
 /* the hint is a narrow column; the picker takes about three fifths of the row */
 .mb-side { width: var(--constraints-w); flex: none; min-height: 0; display: flex; flex-direction: column; }
