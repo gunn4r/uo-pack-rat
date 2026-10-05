@@ -989,6 +989,9 @@ export interface BuildPoolsOptions {
   excludeWeapons?: string[] | undefined;   // weapon skills left out (weaponAllowed)
   ubwsAnyWeapon?: boolean | undefined;     // a Use Best Weapon Skill weapon passes while a melee skill is allowed (default on)
   excludeSkills?: string[] | undefined;
+  // Manual's placed pieces by slot (issue #12, "Fill the rest automatically"): each is its slot's only candidate and
+  // the suit's current piece there, and nothing else is current.
+  pinned?: Partial<Record<string, number>> | undefined;
 }
 export interface SkippedLists {
   str: Item[]; tags: Item[]; worn: Item[]; roots: Item[]; gargoyle: Item[]; nonMed: Item[]; weapon: Item[]; skill: Item[];
@@ -999,8 +1002,9 @@ export interface BuildPoolsResult {
   skipped: SkippedLists;
   blocked: string[];
 }
-export function buildPools(inv: Inventory, character: string, opts: BuildPoolsOptions = {}): BuildPoolsResult {
-  const { allowOthersWorn = false, strength = Infinity, excludeTags = [], excludeRoots = [], excludeGargoyle = getRules().raceLock.gargoyleOnly, medOnly = false, excludeWeapons = [], ubwsAnyWeapon = true, excludeSkills = [] } = opts;
+// `character` null: nobody's suit (Manual's No character), so every worn piece is another character's.
+export function buildPools(inv: Inventory, character: string | null, opts: BuildPoolsOptions = {}): BuildPoolsResult {
+  const { allowOthersWorn = false, strength = Infinity, excludeTags = [], excludeRoots = [], excludeGargoyle = getRules().raceLock.gargoyleOnly, medOnly = false, excludeWeapons = [], ubwsAnyWeapon = true, excludeSkills = [], pinned } = opts;
   const pools: Partial<Record<string, PooledOptItem[]>> = {}, current: Partial<Record<string, PooledOptItem>> = {}, skipped: SkippedLists = { str: [], tags: [], worn: [], roots: [], gargoyle: [], nonMed: [], weapon: [], skill: [] };
   const exRoots = new Set(excludeRoots.map(Number));
   for (const it of Object.values(inv.items)) {
@@ -1009,7 +1013,7 @@ export function buildPools(inv: Inventory, character: string, opts: BuildPoolsOp
     // place that fact narrows to PooledOptItem, backed by the `!it.slot` check just above (no runtime
     // change: opt.slot is it.slot, already known non-null here).
     const opt = toOptItem(it) as PooledOptItem;
-    if (it.equippedBy === character) { if (!current[it.slot]) current[it.slot] = opt; }
+    if (character != null && it.equippedBy === character) { if (!current[it.slot] && !pinned) current[it.slot] = opt; }
     if (it.equippedBy && it.equippedBy !== character && !allowOthersWorn) { skipped.worn.push(it); continue; }
     if (excludeGargoyle && it.gargoyle) { skipped.gargoyle.push(it); continue; }
     if (medOnly && !it.medable) { skipped.nonMed.push(it); continue; }
@@ -1020,10 +1024,18 @@ export function buildPools(inv: Inventory, character: string, opts: BuildPoolsOp
     if (it.root != null && exRoots.has(+it.root)) { skipped.roots.push(it); continue; }
     (pools[it.slot] ||= []).push(opt);
   }
+  // A pinned piece is kept whoever wears it and whatever the filters say. The hand rule holds in the pools: a pinned
+  // two-handed weapon empties the one-hand slot, and a pinned one-hander keeps two-handed weapons out of the other hand.
+  for (const [slot, serial] of Object.entries(pinned || {})) {
+    const it = serial != null ? inv.items[serial] : undefined;
+    if (it?.gear && it.slot === slot && OPTIMIZER_SLOTS.includes(slot)) pools[slot] = [current[slot] = toOptItem(it) as PooledOptItem];
+  }
+  if (current.twoHanded?.twoHanded && pinned?.twoHanded != null) pools.oneHanded = [];
+  if (current.oneHanded && pinned?.oneHanded != null) pools.twoHanded = (pools.twoHanded || []).filter((it) => !it.twoHanded);
   // A worn piece the filters rule out (wrong weapon type, a forbidden skill bonus) must not stay a candidate through
-  // the "keep what you wear" rule.
+  // the "keep what you wear" rule. A pinned piece is never blocked.
   const blocked = OPTIMIZER_SLOTS.filter((sl) => {
-    const it = current[sl] ? inv.items[current[sl]!.serial] || ({} as Item) : null;
+    const it = current[sl] && pinned?.[sl] == null ? inv.items[current[sl]!.serial] || ({} as Item) : null;
     return it && (!weaponAllowed(it, excludeWeapons, ubwsAnyWeapon) || hasSkillBonus(it, excludeSkills));
   });
   return { pools, current, skipped, blocked };

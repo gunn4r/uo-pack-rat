@@ -45,7 +45,7 @@ One directory holds everything, resolved the same way for the bare server and th
   ui-prefs.json        the page's view choices ({cols, colsVersion, colWidths, sheetProps, theme, appearance, sidebar, density, areaLabels, mapDrawerWidth, builderMode, manualFor, manualSuit, manualBuffs, autoBuffs, buffSkills, buffsCount, dismissedUpdate, copiedScanner}: the Inventory columns and their widths, the character sheet's properties, the look, a pinned-collapsed sidebar, the House map's labels and drawer, the Suit Builder's mode, Manual suit and buffs, Automatic's buffs per character and the buff numbers edited per character, the update notice last dismissed, the web scanner last copied)
   tazuo-panel.json     the TazUO in-game panel's hotkey and showAtLogin ({hotkey: {mods, key}, showAtLogin}), written by Settings, the wizard and the panel itself (app/tazuo-panel.mts)
   rules/                user-defined or overriding shard rules files
-  runs/                 one file per finished suit-build job (scans/ and runs/ are pruned by settings.json's retention on startup and on Clean up now: app/retention.mts)
+  runs/                 one file per finished suit-build job, and per suit saved from Manual (scans/ and runs/ are pruned by settings.json's retention on startup and on Clean up now: app/retention.mts)
   bridge/<adapter>/     queue.jsonl (commands) and status.json (the bridge script's heartbeat); the CONFIGURED client's own directory, not a fixed "tazuo"
     panel.json           bridge/tazuo/ only: the in-game panel's heartbeat (adapters/tazuo/packrat-panel.py), same alive/stopped shape as status.json
     putaway.json         the server's answer to the last Put away request (app/put-away.mts), which the panel reads

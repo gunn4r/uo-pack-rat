@@ -844,12 +844,19 @@ function optimizeSuit(pools: Record<string, OptItem[]>, current: OptAssignment, 
   if (opts.warmStart) {
     // An earlier run's best suit, re-scored under this run's profile. Pieces no longer in the pool become
     // empty slots; the local search repairs the rest. Only a starting point: it can never lower the result.
+    // A slot that may not be empty (a locked slot, or Manual's pinned piece) keeps its current piece, else its
+    // first candidate: an empty one there would be a suit no search may return, and the incumbent would stick.
     const warm: OptAssignment = {};
     for (let i = 0; i < slots.length; i++) {
       const want = opts.warmStart[slots[i]!];
       let hit: OptItem | null = null;
       const list = cands[slots[i]!]!;
       for (let j = 0; j < list.length && want; j++) { const c = list[j] as OptItem | null; if (c && c.serial === want) { hit = c; break; } }
+      if (!hit && list.indexOf(null) < 0) {
+        const own = cur[slots[i]!];
+        for (let j = 0; j < list.length && own; j++) { const c = list[j] as OptItem | null; if (c && c.serial === own.serial) { hit = c; break; } }
+        if (!hit) hit = list[0] as OptItem | null;
+      }
       warm[slots[i]!] = hit;
     }
     consider(optSanitize(warm, slots));

@@ -125,9 +125,10 @@
         <div class="b-compare-view" id="b-compare-view" hidden></div>
         <!-- Manual mode (ui/builder-manual.mts): the totals strip, the slot cards and, beside them, the hint or the picker -->
         <div class="b-manual" id="b-manual" hidden>
+          <p class="sr" id="mb-live" aria-live="polite"></p>
           <section id="mb-totals"></section>
           <div class="mb-main">
-            <div class="mb-left"><section id="mb-suit"></section><div id="mb-stats"></div></div>
+            <div class="mb-left"><section id="mb-suit"></section><div id="mb-stats"></div><div id="mb-fetch"></div></div>
             <aside class="card mb-side" id="mb-hint" aria-labelledby="mb-hint-h">
               <h2 class="t-lg" id="mb-hint-h">Build a suit by hand</h2>
               <p class="muted">Click a slot to list the pieces that fit it, each with what it would change in the totals. Picking one puts it in the slot, and the list stays on that slot so you can try others.</p>

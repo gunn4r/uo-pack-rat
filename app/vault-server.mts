@@ -33,11 +33,13 @@
 //         rules object plus every {id,name,source} listRules() finds — builtin and <data>/rules/*.json)
 //         POST /api/optimize {pools,current,profile,opts} -> {id}, or {character,settings,profile,opts}
 //         to have the server build the pools itself (buildPools, per-slot lockedSlots/blocked handling —
-//         see the route below); either form's response carries poolSize/skipped/current/blocked/warning?
+//         see the route below; with `pinned`, Manual's suit {slot: serial}, it fills only the empty slots, for a
+//         character or none, and is never saved as a run); either form's response carries poolSize/skipped/current/blocked/warning?
 //         GET /api/optimize/<id>/events (SSE: hello, progress, done|failed|cancelled) ·
 //         POST /api/optimize/<id>/cancel · GET /api/optimize/<id>/status
 //         A request whose inputs match a saved run that cannot be bettered returns {cached: true, run} at once.
-//         GET /api/runs?character= (saved runs, newest first) · GET|PUT {label}|DELETE /api/runs/<id>
+//         GET /api/runs?character= (saved runs, newest first) · GET|PUT {label}|DELETE /api/runs/<id> ·
+//         POST /api/runs {character, suit, settings, inventoryStamp} (save Manual's suit as a run, method "manual")
 //         POST /api/forget {root} (drop a container from the inventory: writes a tombstone scan;
 //         409 under --demo, which must never write into the committed app/fixtures/) ·
 //         POST /api/forget-character {character} (drop a character's card, worn set, backpack and bank:
@@ -126,7 +128,7 @@ import { Worker } from "node:worker_threads";
 import { unlinkSync } from "node:fs";
 import { randomUUID, timingSafeEqual } from "node:crypto";
 import type { AddressInfo } from "node:net";
-import { runKey, reusableRun, runSummary, stripOpts, normalizeRun, suitPieces, SOLVER_VERSION, type RunOpts, type SavedRun } from "./runs-lib.mts";
+import { runKey, reusableRun, runSummary, stripOpts, normalizeRun, suitPieces, manualRun, SOLVER_VERSION, type RunOpts, type SavedRun } from "./runs-lib.mts";
 import { upgradeScan, validateScan } from "./scan-schema.mts";
 import { loadRules, listRules, DEFAULT_SHARD } from "./rules.mts";
 import { validate, type ValidatorSchema } from "./schema/validate.mts";
@@ -162,7 +164,7 @@ import { dataDirNotice } from "./ui/messages.mts";
 import { homedir } from "node:os";
 
 import { resolveConfig, ensureLayout, APP_DIR, DATA_DIR_MODE, DATA_FILE_MODE, type Config } from "./config.mts";
-import type { Item, Inventory, ProfilesFile, BlacklistEntry, KindOverrides } from "./vault-lib.mts";
+import type { Item, Inventory, OptItem, ProfilesFile, BlacklistEntry, KindOverrides } from "./vault-lib.mts";
 import type * as VaultLib from "./vault-lib.mts";
 import type { ScanV2, RulesV1 } from "./schema/types.d.mts";
 import type { WorkerMessage, WorkerDoneMessage } from "./optimize-worker.mts";
@@ -220,6 +222,16 @@ function isColWidths(v: unknown): v is Record<string, number> {
 function isManualSuit(v: unknown): v is Record<string, number> {
   if (!v || typeof v !== "object" || Array.isArray(v)) return false;
   return Object.entries(v).every(([k, s]) => GEAR_SLOTS.includes(k) && isBoundedInt(s, 1, MAX_SERIAL));
+}
+// Manual's suit against the inventory (a fill's `pinned`, a manual run's `suit`): each serial a gear piece of its slot in
+// the scans, and no two-handed weapon beside a one-hander.
+function manualSuitError(inv: Inventory, suit: Record<string, number>, path: string): string | null {
+  for (const [slot, serial] of Object.entries(suit)) {
+    const it = inv.items[serial];
+    if (!it?.gear || it.slot !== slot) return `${path}.${slot}: 0x${serial.toString(16)} is not a gear piece for that slot in your scans`;
+  }
+  if (suit.twoHanded != null && suit.oneHanded != null && inv.items[suit.twoHanded]!.twoHanded) return `${path}: a two-handed weapon leaves the one-hand slot empty`;
+  return null;
 }
 // Localhost security (spec §4.5): a request's Host must name this server, an Origin (when present)
 // must be this same origin, and — with a token configured — every /api/* route except the SSE
@@ -426,6 +438,40 @@ const OPTS_MAX_TIME_BUDGET_MS = 60 * 60 * 1000;
 // The same ranges as numbers the page can show: the Suit Builder's Advanced fields validate against a copy
 // (app/ui/builder-model.mts's SOLVER_LIMITS; app/server.test.mts checks the two agree).
 export const OPTS_LIMITS = { restarts: { min: 1, max: 10000 }, timeBudgetMs: { min: 0, max: OPTS_MAX_TIME_BUDGET_MS }, alternativesCount: { min: 0, max: 100 } } as const;
+// A saved run's settings snapshot (ui/runs.mts settingsSnapshot), as POST /api/runs takes it: only its known fields,
+// each of its type and in a sane range, property maps with plain keys (no __proto__), and the resist caps, weapon
+// exclusions and buffs held to their own rules.
+const RUN_SETTING_FLAGS = ["allowGargoyle", "medOnly", "allowOthersWorn", "ubwsAnyWeapon", "exact"];
+// Each search knob's range, as the Suit Builder's Advanced fields hold them (builder-model.mts KNOB_RANGES, from
+// OPTS_LIMITS): [min, max, whole number].
+const RUN_SETTING_NUMBERS: Record<string, [number, number, boolean]> = {
+  strLimit: [1, 1000, true], restarts: [OPTS_LIMITS.restarts.min, OPTS_LIMITS.restarts.max, true], budgetMs: [0, OPTS_MAX_TIME_BUDGET_MS, true],
+  altCount: [OPTS_LIMITS.alternativesCount.min, OPTS_LIMITS.alternativesCount.max, true], altTol: [0, 1e9, false],
+};
+const RUN_SETTING_LISTS = ["softFloors", "lockedSlots", "excludeTags", "excludeRoots", "excludeSkills"];
+const plainKey = (k: string): boolean => isBoundedString(k, 64) && !["__proto__", "constructor", "prototype"].includes(k);
+function runSettingsError(st: Record<string, unknown>, vl: typeof VaultLib): string | null {
+  for (const [k, v] of Object.entries(st)) {
+    if (v == null) continue;
+    if (k === "floors" || k === "weights") {
+      if (typeof v !== "object" || Array.isArray(v)) return `settings.${k} must be an object`;
+      const bad = Object.entries(v).find(([p, n]) => !plainKey(p) || typeof n !== "number" || !Number.isFinite(n) || Math.abs(n) > 1e6);
+      if (bad) return `settings.${k}.${short(bad[0])} must be a number between -1000000 and 1000000`;
+    } else if (RUN_SETTING_FLAGS.includes(k)) { if (typeof v !== "boolean") return `settings.${k} must be a boolean`; }
+    else if (Object.hasOwn(RUN_SETTING_NUMBERS, k)) {
+      const [min, max, whole] = RUN_SETTING_NUMBERS[k]!;
+      if (typeof v !== "number" || !Number.isFinite(v) || v < min || v > max || (whole && !Number.isInteger(v))) return `settings.${k} must be a ${whole ? "whole " : ""}number from ${min} to ${max}`;
+    }
+    else if (RUN_SETTING_LISTS.includes(k)) {
+      if (!Array.isArray(v) || v.length > 200 || v.some((x) => !(isBoundedString(x, 64) || (k === "excludeRoots" && isBoundedInt(x, 0, MAX_SERIAL))))) return `settings.${k} must be a list of names`;
+    } else if (k === "race") { if (!["human", "elf", "gargoyle"].includes(v as string)) return "settings.race must be human, elf or gargoyle"; }
+    else if (k === "excludeWeapons") { const e = vl.excludeWeaponsError(v, "settings.excludeWeapons"); if (e) return e; }
+    else if (k === "resistCaps") { const e = vl.resistCapsError(v, "settings.resistCaps"); if (e) return e; }
+    else if (k === "buffs") { if (!isRunBuffs(v)) return "settings.buffs must list known buffs, each once and one form at most, with their numbers in range"; }
+    else return `settings.${short(k)} is not a run setting`;
+  }
+  return null;
+}
 function optsError(opts: Record<string, unknown>): string | null {
   for (const [k, v] of Object.entries(opts)) {
     switch (k) {
@@ -1175,6 +1221,7 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
     key: string;
     meta: Record<string, unknown>;
     input: JobInput;
+    save: boolean;                       // saved as a run when done (a Manual fill is not)
     state: JobState;
     startedAt: number;
     progress: SolveProgress | null;
@@ -1232,9 +1279,9 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
   // Job ids are crypto.randomUUID() (spec §4.5) rather than the old Date.now()-based id: the SSE
   // events route is exempt from the bearer token (EventSource can't carry one), so the id itself
   // must be unguessable — the events route's ownership check (below) is the other half of that.
-  function startJob(input: JobInput, key: string, meta: Record<string, unknown>, clientId: string | string[] | null = null): Job {
+  function startJob(input: JobInput, key: string, meta: Record<string, unknown>, clientId: string | string[] | null = null, save = true): Job {
     const id = randomUUID();
-    const job: Job = { id, clientId, key, meta, input, state: "running", startedAt: Date.now(), progress: null, result: null, ms: null, error: null, runId: null, clients: new Set(), workers: new Set(), stuckTimer: null };
+    const job: Job = { id, clientId, key, meta, input, save, state: "running", startedAt: Date.now(), progress: null, result: null, ms: null, error: null, runId: null, clients: new Set(), workers: new Set(), stuckTimer: null };
     jobs.set(id, job);
     runJob(job).catch((e) => {
       // Cancelled (or the server is shutting down): the terminated workers reject, nothing to report.
@@ -1279,7 +1326,7 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
     const { result } = await spawnWorker(job, { pools, current, profile, opts }, (p) => emitProgress(job, p), onWarn);
     if (job.state !== "running") return;
     job.state = "done"; job.result = result; job.ms = Date.now() - t0;
-    try { job.runId = saveRun(job).id; } catch (e) { console.error(`could not save run ${job.id}: ${(e as Error).message}`); }
+    if (job.save) try { job.runId = saveRun(job).id; } catch (e) { console.error(`could not save run ${job.id}: ${(e as Error).message}`); }
     finish(job, "done", { result, ms: job.ms, runId: job.runId });
   }
   function cancelJob(job: Job): void {
@@ -1861,9 +1908,9 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
         // pools/current/opts/meta/settings stay Record<string,unknown> (property-accessible, every
         // field still `unknown`) all the way through this route; profile/character stay bare `unknown`
         // — nothing here validates their shape beyond what's checked explicitly below (see report).
-        let { pools = {}, current = {}, profile, opts = {}, meta = {}, character = null, settings = {} } = asObject(await readBody(req)) as {
+        let { pools = {}, current = {}, profile, opts = {}, meta = {}, character = null, settings = {}, pinned } = asObject(await readBody(req)) as {
           pools?: Record<string, unknown>; current?: Record<string, unknown>; profile?: unknown; opts?: Record<string, unknown>;
-          meta?: Record<string, unknown>; character?: unknown; settings?: Record<string, unknown>;
+          meta?: Record<string, unknown>; character?: unknown; settings?: Record<string, unknown>; pinned?: unknown;
         };
         // Everything the caller sent is checked before anything is started (post-review fix, Important
         // 5): opts against a small allowlist of search options with real ranges, meta down to the five
@@ -1891,7 +1938,12 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
         // character names a folded inventory key and lands in a saved run's own `character` field —
         // truthy-checked only, until this pass (see report).
         if (character != null && !isBoundedString(character, 64)) return send(res, 400, { ok: false, error: "character must be a string" });
-        if (character) {
+        // Manual's "Fill the rest automatically" (issue #12): `pinned` is Manual's suit, {slot: serial}. Each piece is
+        // kept in its slot (buildPools), the search fills only the empty slots, and with no character the pool is the
+        // pieces nobody wears. A fill is never saved as a run, nor answered by one.
+        if (pinned != null && !isManualSuit(pinned)) return send(res, 400, { ok: false, error: "pinned must map gear slots to serials" });
+        const fill = pinned != null;
+        if (character || fill) {
           // A `null` in any optional field (as a saved run's settings can carry — e.g. re-posted from
           // the runs drawer) means "use the default", exactly like an absent field, not "the value is
           // null": normalise both to absent BEFORE validation, so the type checks below and the
@@ -1926,13 +1978,18 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
           const { inv } = await getInventory();
           // buildPools would happily build pools from every other character's gear and save the run
           // under a name the inventory has never seen.
-          if (!Object.hasOwn(inv.characters, character)) return send(res, 404, { ok: false, error: `no scans for character ${JSON.stringify(character)}` });
-          const built = (await lib()).buildPools(inv, character, { allowOthersWorn, strength: strLimit, excludeTags: tagList, excludeRoots: rootList, excludeGargoyle: !allowGargoyle, medOnly, excludeWeapons, ubwsAnyWeapon, excludeSkills: skillList });
+          if (character && !Object.hasOwn(inv.characters, character)) return send(res, 404, { ok: false, error: `no scans for character ${JSON.stringify(character)}` });
+          const pins = (pinned || {}) as Record<string, number>;
+          const badPin = manualSuitError(inv, pins, "pinned");
+          if (badPin) return send(res, 400, { ok: false, error: badPin });
+          // a fill keeps the placed pieces in place of the locked slots: they are the only slots that keep their piece
+          const keep = fill ? Object.keys(pins) : lockedList;
+          const built = (await lib()).buildPools(inv, (character as string) || null, { allowOthersWorn: allowOthersWorn && !!character, strength: strLimit, excludeTags: tagList, excludeRoots: rootList, excludeGargoyle: !allowGargoyle, medOnly, excludeWeapons, ubwsAnyWeapon, excludeSkills: skillList, ...(fill ? { pinned: pins } : {}) });
           pools = built.pools; current = built.current; blocked = built.blocked;
           skipped = Object.fromEntries(Object.entries(built.skipped).map(([k, v]) => [k, v.length]));
           for (const slot of blocked) delete current[slot];       // a worn piece the filters now rule out must not stay "current"
-          for (const slot of lockedList) pools[slot] = [];        // a locked slot offers no alternatives — it always keeps current
-          opts = { ...(opts as RunOpts), optionalSlots: DEFAULT_OPTIONAL_SLOTS.filter((slot) => !lockedList.includes(slot)) };
+          if (!fill) for (const slot of lockedList) pools[slot] = [];   // a locked slot offers no alternatives — it always keeps current
+          opts = { ...(opts as RunOpts), optionalSlots: DEFAULT_OPTIONAL_SLOTS.filter((slot) => !keep.includes(slot)) };
           // The saved run keeps the page's whole settings snapshot (floors, weights, race, search knobs:
           // the runs drawer labels, compares and re-applies runs from it), with the pool settings it
           // actually ran on written over it.
@@ -1950,7 +2007,7 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
         const fullOpts = Object.assign({ seed: 2026, restarts: 200 }, opts as RunOpts);
         const key = runKey({ pools, current, profile, opts: fullOpts });
         const runs = readRuns();
-        const hit = reusableRun(runs, key, fullOpts as { timeBudgetMs?: number });
+        const hit = fill ? null : reusableRun(runs, key, fullOpts as { timeBudgetMs?: number });
         // §11c: warn (not block) once the candidate pool is large enough that the exact solver can
         // take a while — the page shows this line above the progress panel (Task 3).
         const poolSize = typeof meta.poolSize === "number" ? meta.poolSize : Object.values(pools).reduce((a: number, v) => a + (Array.isArray(v) ? v.length : 0), 0);
@@ -1960,7 +2017,7 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
         if (character) { meta.poolSize = poolSize; meta.skipped = skipped; }
         if (hit) return send(res, 200, { ok: true, cached: true, run: hit, poolSize, skipped, current, blocked });
         // warm start: this character's newest saved suit, re-scored under the new settings
-        const last = runs.find((r) => r.character === meta.character && r.result && r.result.best);
+        const last = fill ? null : runs.find((r) => r.character === meta.character && r.result && r.result.best);
         // last.result/.best were both truthy-checked by the .find() predicate just above; `.best`'s
         // real shape is an OptAssignment-like {slot -> {serial} | null} map, looser than RunResult's
         // own declared fields (an index-signature read, same trust as everywhere else in this route).
@@ -1983,9 +2040,33 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
         if (previous) cancelJob(previous);
         const superseded = previous ? previous.id : null;
         const jobClientId = headerClientId || randomUUID();
-        const job = startJob({ pools, current, profile, opts: fullOpts }, key, meta, jobClientId);
+        const job = startJob({ pools, current, profile, opts: fullOpts }, key, meta, jobClientId, !fill);
         if (poolSize > 50000) job.meta.warning = "over 50,000 candidates; the exact solver may take a while";
         return send(res, 200, { ok: true, id: job.id, warmFrom: last ? last.id : null, superseded, warning: job.meta.warning, poolSize, skipped, current, blocked });
+      }
+      if (req.method === "POST" && url.pathname === "/api/runs") {
+        // Save Manual's suit as a run (issue #12): {character, suit: {slot: serial}, settings, inventoryStamp}. The
+        // server reads each piece and what the character wears from its own inventory (runs-lib.mts manualRun).
+        const { character, suit, settings, inventoryStamp = null } = asObject(await readBody(req, { limit: 64e3 }));
+        if (!isBoundedString(character, 64) || !character) return send(res, 400, { ok: false, error: "character must be a string" });
+        if (!isManualSuit(suit) || !Object.keys(suit).length) return send(res, 400, { ok: false, error: "suit must map gear slots to serials, at least one" });
+        if (!settings || typeof settings !== "object" || Array.isArray(settings) || JSON.stringify(settings).length > META_MAX_BYTES) return send(res, 400, { ok: false, error: "settings must be an object" });
+        if (inventoryStamp != null && !isBoundedString(inventoryStamp, 256)) return send(res, 400, { ok: false, error: "inventoryStamp must be a string" });
+        const badSettings = runSettingsError(settings as Record<string, unknown>, await lib());
+        if (badSettings) return send(res, 400, { ok: false, error: badSettings });
+        const { inv } = await getInventory();
+        if (!Object.hasOwn(inv.characters, character)) return send(res, 404, { ok: false, error: `no scans for character ${JSON.stringify(character)}` });
+        const { toOptItem } = await lib();
+        const badSuit = manualSuitError(inv, suit, "suit");
+        if (badSuit) return send(res, 400, { ok: false, error: badSuit });
+        const pieces = Object.fromEntries(Object.entries(suit).map(([slot, serial]) => [slot, toOptItem(inv.items[serial]!)]));
+        const worn: Record<string, OptItem> = {};
+        for (const it of Object.values(inv.items)) if (it.equippedBy === character && it.slot && GEAR_SLOTS.includes(it.slot)) worn[it.slot] ??= toOptItem(it);
+        mkdirSync(RUNS, { recursive: true, mode: DATA_DIR_MODE });
+        const run = manualRun({ id: randomUUID(), character, createdAt: new Date().toISOString(), settings: settings as Record<string, unknown>, inventoryStamp, suit: pieces, worn, slots: GEAR_SLOTS });
+        writeFileAtomic(join(RUNS, `${run.id}.json`), JSON.stringify(run), DATA_FILE_MODE);
+        broadcastEvent("changed", { what: "runs", at: Date.now() });
+        return send(res, 200, { ok: true, run: runSummary(run) });
       }
       if (req.method === "GET" && url.pathname === "/api/runs") {
         const who = url.searchParams.get("character");

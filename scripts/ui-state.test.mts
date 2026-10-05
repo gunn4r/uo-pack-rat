@@ -624,7 +624,7 @@ test("[slow] a saved run or run list that lands after a character switch is not 
     await page.route("**/api/runs/*", async (route) => { await new Promise((r) => setTimeout(r, 1500)); await route.continue(); });
     await page.click("#b-runs-open");
     await page.click("#b-runs .run-card button[aria-haspopup=menu]");
-    await page.getByRole("menuitem", { name: "Open" }).click();
+    await page.getByRole("menuitem", { name: "Open", exact: true }).click();
     await page.selectOption("#b-char", other);
     await page.waitForTimeout(3000);
     assert.doesNotMatch(await page.locator("#b-result").innerText(), /Best suit for/, "the run opened for one character is not drawn under the other");
