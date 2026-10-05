@@ -183,6 +183,17 @@ const SCENES: Scene[] = [
     await p.click("#b-run");
     await p.waitForFunction(() => !document.querySelector<HTMLButtonElement>("#b-run")?.disabled && document.querySelector("#b-result .b-planned"), undefined, { timeout: 60_000 });
   } },
+  // Manual's hand-offs (issue #12): the result taken into Manual, a slot cleared and filled again by the search (its
+  // outcome line, the fetch list), and the suit saved as a run, so the runs drawer below draws its Manual badge.
+  { name: "builder manual fill", enter: async (p) => {
+    await p.click("#b-to-manual");
+    await p.waitForSelector("#b-manual:not([hidden]) #mb-suit .mb-slot");
+    await p.locator(".mb-slot:has([data-slot='ring']) .mb-clear").click();
+    await p.click("#mb-fill");
+    await p.waitForFunction(() => /^(Filled|Nothing filled)/.test(document.querySelector(".mb-fill")?.textContent || ""), undefined, { timeout: 60_000 });
+    await p.click("#mb-save-run");
+    await p.locator("#mb-fetch").scrollIntoViewIfNeeded();
+  }, leave: (p) => p.click('#b-mode [data-value="automatic"]') },
   // ---- Organize (issue #11): the screen with its plan, the rule drawer, and Label… on a container
   { name: "organize", enter: (p) => route(p, "#/organize", "#org-plan #org-headline") },
   { name: "organize rule editor", enter: async (p) => {

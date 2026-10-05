@@ -7,24 +7,27 @@
 // resolves shows as a missing card. The numbers come from ui/manual-model.mts. Buffs, abilities and forms (app/buffs.mts,
 // drawn by ui/builder-buffs.mts) can be counted in the totals: the ones that are on, the numbers the player edited and
 // the switch are ui-prefs fields too, and turning one on or off is a step in the suit's undo history.
-import { GEAR_SLOTS, RESIST_KEYS, effectiveProfile, profileResistCaps, toOptItem, totalsOf } from "../vault-lib.mts";
-import type { Character, EffectiveProfile, Item, OptItem, PropMap } from "../vault-lib.mts";
-import { applyBuffs, buffById, buffSkillValues, isBuffSkillsByCharacter, normalizeBuffs, ownEntry, toggleBuff, NO_CHARACTER, signed } from "../buffs.mts";
+import { GEAR_SLOTS, OPTIMIZER_SLOTS, RESIST_KEYS, effectiveProfile, profileResistCaps, requirementReport, toOptItem, totalsOf } from "../vault-lib.mts";
+import type { Character, EffectiveProfile, Item, OptItem, PropMap, RunBuffs } from "../vault-lib.mts";
+import { applyBuffs, buffById, buffSkillValues, isBuffSkillsByCharacter, normalizeBuffs, ownEntry, plannedProfile, runBuffs, toggleBuff, NO_CHARACTER, signed } from "../buffs.mts";
 import type { BuffResult, BuffWho, Stats } from "../buffs.mts";
 import type { ItemQuery } from "../item-query.mts";
-import { state } from "./store.mts";
+import { state, invStamp } from "./store.mts";
 import { $, el, label, slotLabel, itemTip, toast } from "./dom.mts";
-import { box, txt, button, icon, segmented, tag, confirmDialog, modalOpen, tooltip, tipWrap } from "./components.mts";
+import { box, txt, button, icon, segmented, tag, confirmDialog, modalOpen, tooltip, tipWrap, progress } from "./components.mts";
 import { api } from "./api.mts";
 import { resolveItems, rarityToken } from "./items.mts";
-import { closeCompare, keyProps, RESIST_NAMES } from "./builder-result.mts";
-import { capNote, paperdoll, paperdollCaps } from "./builder-model.mts";
+import { closeCompare, fetchCard, grabAllButton, keyProps, verdict, RESIST_NAMES } from "./builder-result.mts";
+import { capNote, knobError, paperdoll, paperdollCaps, plural, type KnobField } from "./builder-model.mts";
+import { followJob, knobs, poolSettings, readControls, searchOpts, progressText } from "./builder.mts";
+import { loadRuns, settingsSnapshot } from "./runs.mts";
+import { optimizeErrorMessage } from "./messages.mts";
 import { itemActions } from "./inventory.mts";
 import { sheetParts, wornSet } from "./sheet.mts";
 import { createItemBrowser } from "./item-browser.mts";
 import type { ItemBrowser } from "./item-browser.mts";
-import type { UiPrefs } from "./api-types.mts";
-import { MANUAL_GROUPS, emptyHistory, record, undoStep, redoStep, historyKey, historyKeyNames, type History, type Suit, TOTAL_KEYS, STAT_KEYS, STRIP_KEYS, capped, capLine, slotQuery, handConflict, handNote, savedSlots, missingSlots, deltaKeys, slotDelta } from "./manual-model.mts";
+import type { UiPrefs, OptimizeResult, OptimizeStartApiResponse, OptSuit } from "./api-types.mts";
+import { MANUAL_GROUPS, emptyHistory, record, undoStep, redoStep, historyKey, historyKeyNames, type History, type Suit, TOTAL_KEYS, STAT_KEYS, STRIP_KEYS, capped, capLine, slotQuery, handConflict, handNote, suitFrom, fillableSlots, fetchPieces, fillPicks, keptSlots, listWords, applyEditStep, type FillStart, type EditStep, savedSlots, missingSlots, deltaKeys, slotDelta } from "./manual-model.mts";
 import { buffMarker, buffStrip, createBuffPicker, keepChipFocus, type BuffActions, type BuffPicker, type BuffView } from "./builder-buffs.mts";
 
 type Mode = "automatic" | "manual";
@@ -47,7 +50,10 @@ let buffPicker: BuffPicker | null = null;
 let replaced: { on: string; off: string } | null = null;
 // The suit's undo history, its steps holding the suit and its buffs (in memory: a reload starts a new one; another
 // character keeps it, the suit is shared).
-interface Snapshot { slots: Suit; buffs: string[] }
+// A step that also changed the Count buffs switch or some buff numbers (Open in Manual) carries them too, so undo puts
+// them back: the numbers as only the ones it set, for one character (null: back to its own), and a number edited since
+// is left as edited (manual-model.mts applyEditStep). Other steps leave them out.
+interface Snapshot { slots: Suit; buffs: string[]; count?: boolean; edits?: EditStep }
 let history: History<Snapshot> = emptyHistory();
 const MAC = /Mac|iPhone|iPad/.test(navigator.platform), KEY_NAMES = historyKeyNames(MAC);
 
@@ -73,7 +79,7 @@ const manualCharacter = (): string | null => (noCharacter ? null : state.builder
 // Once, from initBuilder(): the mode switch beside the title, and Manual's screen.
 export function initManual(): void {
   seg = segmented({ label: "Builder mode", options: [{ value: "automatic", label: "Automatic" }, { value: "manual", label: "Manual" }], value: mode, size: "md",
-    onChange: (v) => { mode = v as Mode; savePrefs({ builderMode: mode }); showMode(); } });
+    onChange: (v) => setMode(v as Mode) });
   seg.id = "b-mode";
   $<HTMLElement>("#h-builder")!.after(seg);
   const root = $<HTMLElement>("#b-manual")!;
@@ -107,10 +113,17 @@ function showMode(): void {
   seg!.setValue(mode);
   $<HTMLElement>("#tab-builder")!.classList.toggle("manual", manual);
   $<HTMLElement>("#b-manual")!.hidden = !manual;
-  $<HTMLElement>("#b-runs-open")!.hidden = manual;   // saved runs are Automatic results
   paintCharSelect();
   if (manual) void syncManual();
 }
+function setMode(m: Mode): void {
+  if (mode === m) return;
+  mode = m;
+  savePrefs({ builderMode: mode });
+  showMode();
+}
+// A saved run opened or compared from Manual's runs drawer is shown in Automatic's result view.
+export const showAutomatic = (): void => setMode("automatic");
 // The character select: Manual adds "No character" (raw item totals) at its top.
 export function paintCharSelect(): void {
   const sel = $<HTMLSelectElement>("#b-char")!, none = sel.querySelector('option[value=""]');
@@ -143,7 +156,7 @@ export async function syncManual(): Promise<void> {
   if (browser) { browser.sync(); if (pickSlot) browser.fetch(); }
 }
 // Every filled slot for the hand rule: a piece no longer in the scans still fills its hand.
-const held = (): Record<string, Item | Record<string, never>> => Object.fromEntries(Object.entries(slots).map(([s, serial]) => [s, items[serial] ?? {}]));
+const held = (suit = slots): Record<string, Item | Record<string, never>> => Object.fromEntries(Object.entries(suit).map(([s, serial]) => [s, items[serial] ?? {}]));
 const suitOpt = (): Record<string, OptItem> => Object.fromEntries(Object.entries(slots).flatMap(([s, serial]) => (items[serial] ? [[s, toOptItem(items[serial]!)]] : [])));
 function profile(): EffectiveProfile {
   const name = manualCharacter();
@@ -174,6 +187,15 @@ export function editBuffInputs(name: string | null, values: Readonly<Record<stri
   inputsMemo = null;
   savePrefs({ buffSkills: buffEdits });
 }
+// A saved run's buff numbers, where they differ from the character's now, so its buffs count as they did.
+export function applyRunInputs(name: string | null, b: RunBuffs | undefined): void {
+  const edits = runInputEdits(name, b);
+  if (Object.keys(edits).length) editBuffInputs(name, edits);
+}
+function runInputEdits(name: string | null, b: RunBuffs | undefined): Record<string, number> {
+  const now = buffInputsOf(name).values, used = new Set((b?.on ?? []).flatMap((id) => buffById(id)!.inputs));
+  return Object.fromEntries([...used].filter((i) => b!.skills[i] != null && b!.skills[i] !== now[i]).map((i) => [i, b!.skills[i]!]));
+}
 // The suit's pieces by slot (a piece no longer in the scans left out), and the held weapon's flags: a two-handed
 // weapon, else the one-handed slot's piece (Enchant reads its Spell Channeling).
 const suitItems = (): Record<string, Item> => Object.fromEntries(Object.entries(slots).flatMap(([s, serial]) => (items[serial] ? [[s, items[serial]!]] : [])));
@@ -184,13 +206,19 @@ function buffed(t: PropMap, caps: Record<string, number>, all = false, suit: Rec
   return applyBuffs(t, caps, countBuffs || all ? buffs : [], values, stats, who);
 }
 // Every change to the suit or its buffs is one undo step, named by `label` ("Ring → Arcane Ring", "Divine Fury on");
-// undo and redo pass none. `note` is the form a turned-on form replaced, said in the buff picker until the next change.
-function commit(next: Partial<Snapshot>, label: string | null, note: typeof replaced = null): void {
-  const after = { slots: next.slots ?? slots, buffs: next.buffs ?? buffs };
-  if (label) history = record(history, { slots, buffs }, after, label);
-  const changed = { ...(after.slots !== slots ? { manualSuit: after.slots } : {}), ...(after.buffs !== buffs ? { manualBuffs: after.buffs } : {}) };
+// undo and redo pass none, and `from`, the step's other side (the numbers it expects to find). `note` is the form a
+// turned-on form replaced, said in the buff picker until the next change.
+function commit(next: Partial<Snapshot>, label: string | null, note: typeof replaced = null, from: Snapshot | null = null): void {
+  const e = next.edits, was: EditStep | undefined = e && { who: e.who, values: Object.fromEntries(Object.keys(e.values).map((k) => [k, ownEntry(buffEdits, e.who)?.[k] ?? null])) };
+  const after: Snapshot = { slots: next.slots ?? slots, buffs: next.buffs ?? buffs, ...(next.count != null ? { count: next.count } : {}), ...(e ? { edits: e } : {}) };
+  if (label) history = record(history, { slots, buffs, ...(next.count != null ? { count: countBuffs } : {}), ...(was ? { edits: was } : {}) }, after, label);
+  const edits = e ? applyEditStep(buffEdits, e.who, (from?.edits ?? was)!.values, e.values) : buffEdits;
+  const changed = { ...(after.slots !== slots ? { manualSuit: after.slots } : {}), ...(after.buffs !== buffs ? { manualBuffs: after.buffs } : {}),
+    ...(after.count != null && after.count !== countBuffs ? { buffsCount: after.count ? "on" as const : "off" as const } : {}), ...(edits !== buffEdits ? { buffSkills: edits } : {}) };
   if (Object.keys(changed).length) savePrefs(changed);
-  slots = after.slots; buffs = after.buffs; replaced = note;
+  slots = after.slots; buffs = after.buffs; replaced = note; fillNote = null;
+  if (after.count != null) countBuffs = after.count;
+  buffEdits = edits;
   refresh();
 }
 // The screen, and the rows' deltas and the current row, follow the suit, its buffs and their numbers.
@@ -233,7 +261,7 @@ function stepHistory(kind: "undo" | "redo"): void {
   history = r.history;
   const next = kind === "undo" ? r.step.before : r.step.after;
   const text = `${kind === "undo" ? "Undid" : "Redid"}: ${r.step.label}`, focused = document.activeElement?.id;
-  commit(next, null);
+  commit(next, null, null, kind === "undo" ? r.step.after : r.step.before);
   // The redrawn button keeps the focus; when it is now disabled (nothing more that way), the other one, else the card.
   if (focused === "mb-undo" || focused === "mb-redo") {
     const same = $<HTMLButtonElement>(`#${focused}`), other = $<HTMLButtonElement>(focused === "mb-undo" ? "#mb-redo" : "#mb-undo");
@@ -253,16 +281,20 @@ function historyButton(kind: "undo" | "redo"): HTMLElement {
 // ---------------------------------------------------------------- drawing
 // Another character picked (its bonuses and its profile's floors and weights): the screen and the rows' deltas.
 export function renderManual(): void {
+  if (fill && fill.start.who !== manualCharacter()) cancelFill("Fill canceled: the character changed");
   if (!isManual() || !state.inv || syncing || !synced) return;
   refresh();
 }
 function draw(): void {
   inputsMemo = null;
+  const cancelFocused = document.activeElement?.id === "mb-fill-cancel";
   const root = $<HTMLElement>("#b-manual")!;
   root.querySelector("#mb-totals")!.replaceWith(totalsCard());
   root.querySelector("#mb-suit")!.replaceWith(suitCard());
   root.querySelector("#mb-stats")!.replaceWith(statsCard());
+  root.querySelector("#mb-fetch")!.replaceWith(fetchList());
   paintPicker();
+  if (cancelFocused) $<HTMLElement>("#mb-fill-cancel")?.focus();   // a change made during a fill redraws the row
 }
 function totalsCard(): HTMLElement {
   const name = manualCharacter(), prof = profile(), resists = profileResistCaps(prof), base = paperdollCaps(resists);
@@ -322,6 +354,8 @@ function suitCard(): HTMLElement {
   const clear = filled ? button({ label: "Clear all", variant: "ghost", size: "sm", attrs: { id: "mb-clear" }, onClick: () => { void clearAll(); } }) : null;
   return el("section", { class: "card mb-suit", id: "mb-suit", "aria-label": "Suit" },
     box("div", { class: "card-head" }, el("h2", { tabindex: "-1" }, "Suit"), count, historyButton("undo"), historyButton("redo"), worn, clear),
+    // the search for the empty slots and Save as run, then the search's progress or its outcome
+    box("div", { class: "mb-suit-acts" }, fillButton(missing), saveButton(missing), fill || fillNote ? fillLine() : null),
     box("div", { class: "mb-suit-body" }, ...MANUAL_GROUPS.map((column) => box("div", { class: "mb-suit-col" },
       ...column.map(([title, group]) => box("div", { class: "mb-group", role: "group", "aria-label": title }, txt(title, "caps muted"), box("div", { class: "mb-grid" }, ...group.map(slotCard))))))));
 }
@@ -435,3 +469,149 @@ const buffActions: BuffActions = {
   // the replaced-form note's Undo: the form it replaced is back on, and its checkbox takes the focus
   undo: () => { const off = replaced?.off; stepHistory("undo"); if (off) document.getElementById(`bf-cb-${off}`)?.focus(); },
 };
+
+// ---------------------------------------------------------------- fill the rest, save as run, the fetch list
+// "Fill the rest automatically": the search for the empty slots (POST /api/optimize with `pinned`, the suit as it is).
+// Every placed piece stays; the rest is planned with the Automatic panel's requirements, weights, pool settings and
+// resist caps, the buffs Manual's totals count, and, as a constant base, the placed pieces the search has no slot for
+// (feet, robe, waist and so on). With No character it plans on Manual's raw item totals (no Resisting Spells, race or
+// stat headroom) from the pieces nobody wears. One search at a time, with Cancel; Automatic's Build waits for it.
+interface Fill { id: string | null; es: EventSource | null; prof: EffectiveProfile; start: FillStart; text: string; frac: number }
+let fill: Fill | null = null;
+let fillUi: { text: HTMLElement; bar: ReturnType<typeof progress> } | null = null;
+// The last search's outcome, under the suit card's head until the next change.
+let fillNote: { text: string; tone: "ok" | "warn" | "bad" | "muted" } | null = null;
+export const filling = (): boolean => !!fill;
+// What a fill is checked against when it lands (manual-model.mts fillPicks): whose suit, the counted buffs, the suit,
+// and what it plans with (the profile, buff numbers included, and the pool settings).
+const fillNow = (): Omit<FillStart, "empty"> => ({ who: manualCharacter(), buffs: countBuffs ? buffs : [], suit: slots, plan: JSON.stringify([fillProfile(), poolSettings()]) });
+const fillable = (): string[] => fillableSlots(slots, slots.twoHanded != null && !!items[slots.twoHanded]?.twoHanded);
+function fillProfile(): EffectiveProfile {
+  const name = manualCharacter(), p = readControls(), suit = suitItems(), { values, stats, race } = buffInputs();
+  const outside = Object.fromEntries(Object.entries(suit).filter(([s]) => !OPTIMIZER_SLOTS.includes(s)).map(([s, it]) => [s, toOptItem(it)]));
+  return plannedProfile(name ? p : { ...p, race: undefined, resistCaps: undefined, caps: undefined }, name ? state.inv!.characters[name] as Character : null,
+    { on: countBuffs ? buffs : [], skills: values, stats, who: { race, weaponFlags: weaponFlags(suit) }, worn: totalsOf(suitOpt()), base: totalsOf(outside) });
+}
+async function fillRest(): Promise<void> {
+  if (fill || state.builder.job) return;
+  const f: Fill = { id: null, es: null, prof: fillProfile(), start: { ...fillNow(), empty: fillable() }, text: "Starting…", frac: 0 };
+  fill = f; fillNote = null;
+  draw();
+  $<HTMLElement>("#mb-fill-cancel")?.focus();
+  let r: OptimizeStartApiResponse;
+  try { r = await api<OptimizeStartApiResponse>("/api/optimize", { method: "POST", body: { character: manualCharacter(), settings: poolSettings(), profile: f.prof, opts: searchOpts(), pinned: slots } }); }
+  catch (e) { if (fill === f) endFill({ text: optimizeErrorMessage(e), tone: "bad" }); return; }
+  if (fill !== f) { if (r.id) api(`/api/optimize/${r.id}/cancel`, { method: "POST" }).catch(() => {}); return; }   // canceled while the request was in flight
+  f.id = r.id!;
+  f.es = followJob(f.id, {
+    progress: (p) => { ({ text: f.text, frac: f.frac } = progressText(p)); paintFill(); },
+    done: (d) => { if (fill === f) void landFill(f, d.result); },
+    failed: (error) => { if (fill === f) endFill({ text: error, tone: "bad" }); },
+    cancelled: () => { if (fill === f) endFill({ text: "Fill canceled.", tone: "muted" }); },
+  });
+}
+function cancelFill(text = "Fill canceled."): void {
+  if (!fill) return;
+  if (fill.id) api(`/api/optimize/${fill.id}/cancel`, { method: "POST" }).catch(() => {});
+  endFill({ text, tone: "muted" });
+}
+// The search ended: its outcome under the head, said to a screen reader, and Cancel's focus to the fill button.
+function endFill(note: NonNullable<typeof fillNote>): void {
+  const hadFocus = document.activeElement?.id === "mb-fill-cancel";
+  fill?.es?.close(); fill = null; fillUi = null;
+  fillNote = note;
+  draw();
+  $<HTMLElement>("#mb-live")!.textContent = note.text;
+  if (hadFocus) $<HTMLElement>("#mb-fill")?.focus();
+}
+// The suit found, into the slots still empty (a piece placed meanwhile stays, and so does a hand the rule would clear)
+// as one undo step, with the verdict and the requirements the filled suit still misses.
+async function landFill(f: Fill, res: OptimizeResult): Promise<void> {
+  const want = fillPicks(f.start, fillNow(), res.best);
+  const found = "picks" in want ? await resolveItems(Object.values(want.picks)) : {};
+  if (fill !== f) return;
+  const r = fillPicks(f.start, fillNow(), res.best);   // checked again: the suit may have changed while the pieces resolved
+  if ("stale" in r) { f.id = null; cancelFill(r.stale); return; }
+  const next = { ...slots };
+  for (const [s, serial] of Object.entries(r.picks)) {
+    const it = found[serial];
+    if (it && !handConflict(s, it, held(next))) { next[s] = it.serial; items[it.serial] = it; }
+  }
+  const n = Object.keys(next).length - Object.keys(slots).length;
+  const gear = Object.fromEntries(OPTIMIZER_SLOTS.flatMap((s) => (next[s] != null && items[next[s]!] ? [[s, toOptItem(items[next[s]!]!)]] : [])));
+  const short = requirementReport(totalsOf(gear), f.prof).filter((r) => r.met === false).map((r) => label(r.key));
+  // the requirements still missed, else how sure the search is (a proof here is about the empty slots only)
+  const v = res.method === "exact" && res.proven ? "best for the empty slots" : verdict(res).text.toLowerCase();
+  const text = [n ? `Filled ${plural(n, "slot")}` : "Nothing filled: no piece in the pool improves the suit", short.length ? `short of ${short.join(", ")}` : v].filter(Boolean).join(" · ");
+  if (n) commit({ slots: next }, `Fill the rest: ${plural(n, "slot")}`);
+  endFill({ text, tone: short.length ? "warn" : n ? "ok" : "muted" });
+}
+function fillButton(missing: number): HTMLElement {
+  const open = fillable().length;
+  const why = fill ? null : !state.builder.profile ? "Import a scan first: the search plans with a character's settings"
+    : state.builder.job ? "A build is running in Automatic" : missing ? "Clear the missing pieces first" : !open ? "Every slot the search fills is taken" : null;
+  const b = button({ label: fill ? "Filling…" : "Fill the rest automatically", icon: "builder", variant: "primary", size: "sm", disabled: !!fill || !!why, attrs: { id: "mb-fill" }, onClick: () => { void fillRest(); } });
+  return why ? tipWrap(b, why) : fill ? b : tooltip(b, `Searches ${plural(open, "empty slot")} with Automatic's requirements and weights, keeping every piece placed here.`);
+}
+// While searching: a busy dot, what the search is at, a bar and Cancel; after it, its outcome.
+function fillLine(): HTMLElement {
+  if (!fill) return box("div", { class: "mb-fill" }, txt(fillNote!.text, `t-sm ${fillNote!.tone === "muted" ? "muted" : `tone-${fillNote!.tone}`}`));
+  fillUi = { text: txt(fill.text, "t-sm"), bar: progress(fill.frac * 1000, 1000, "Fill progress") };
+  return box("div", { class: "mb-fill", role: "group", "aria-label": "Filling the empty slots" }, el("span", { class: "dot busy", role: "img", "aria-label": "Searching" }),
+    fillUi.text, fillUi.bar, button({ label: "Cancel", size: "sm", attrs: { id: "mb-fill-cancel" }, onClick: () => cancelFill() }));
+}
+function paintFill(): void {
+  if (!fill || !fillUi) return;
+  fillUi.text.textContent = fill.text;
+  fillUi.bar.set(Math.round(fill.frac * 1000));
+}
+
+// "Save as run": the suit as a run in the character's Saved runs (POST /api/runs, method "manual"), with the panel's
+// settings and the buffs the totals count.
+function saveButton(missing: number): HTMLElement {
+  const name = manualCharacter();
+  const why = !name ? "Choose a character to save a run for" : missing ? "Clear the missing pieces first" : !Object.keys(slots).length ? "Place a piece first" : null;
+  const b = button({ label: "Save as run", size: "sm", disabled: !!why, attrs: { id: "mb-save-run" }, onClick: () => { void saveAsRun(name!); } });
+  return why ? tipWrap(b, why) : b;
+}
+// The search knobs a run's settings carry (the STR limit is the profile's last good one), by the Advanced field's name.
+const RUN_KNOBS: Array<[KnobField, string]> = [["restarts", "Restarts"], ["budgetS", "Time budget"], ["altCount", "Other suits"], ["altTol", "Within points"]];
+async function saveAsRun(name: string): Promise<void> {
+  // a knob typed out of range in Automatic would be saved with the run, so it is said here rather than refused there
+  const bad = RUN_KNOBS.find(([f]) => knobError(f, knobs[f]));
+  if (bad) { toast(`Automatic's ${bad[1]} field reads "${knobs[bad[0]]}": ${knobError(bad[0], knobs[bad[0]])} Fix it under Advanced to save a run.`, "bad"); return; }
+  const settings = { ...settingsSnapshot(), buffs: runBuffs(countBuffs ? buffs : [], buffInputs().values) };
+  try { await api("/api/runs", { method: "POST", body: { character: name, suit: slots, settings, inventoryStamp: invStamp() } }); }
+  catch (e) { toast(`Could not save the run: ${(e as Error).message}`, "bad"); return; }
+  toast(`Saved to ${name}'s runs as a manual suit.`, "good");
+  void loadRuns();
+}
+
+// A suit from Automatic (a result, a saved run) into Manual as one undo step: each slot it plans takes its piece or is
+// emptied, the others keep theirs, and the buffs it was planned with are turned on with their numbers, so the totals
+// match it. Manual opens on the same character.
+export async function openInManual(suit: OptSuit, covered: readonly string[], runB: RunBuffs | undefined, label: string): Promise<void> {
+  cancelFill("Fill canceled: another suit was opened");
+  const next = suitFrom(slots, suit, covered), kept = keptSlots(next, covered);
+  Object.assign(items, await resolveItems(Object.values(next)));   // drawn whole at once: no piece flashes up as missing
+  if (noCharacter) { noCharacter = false; savePrefs({ manualFor: "character" }); }
+  // the run's buffs (none for a run without), counted, with the numbers they took: all in the same undo step
+  const name = manualCharacter(), runEdits = runInputEdits(name, runB);
+  const edits: EditStep | undefined = Object.keys(runEdits).length ? { who: name ?? NO_CHARACTER, values: runEdits } : undefined;
+  synced = true;
+  commit({ slots: next, buffs: runB?.on ?? [], ...(runB ? { count: true } : {}), ...(edits ? { edits } : {}) }, label);
+  setMode("manual");
+  paintCharSelect();
+  $<HTMLElement>("#mb-suit h2")?.focus();
+  // a search plans the optimizer's slots only: say which of Manual's other pieces stayed, as the totals count them
+  const keptText = kept.length ? ` Kept your ${listWords(kept.map(slotLabel))} ${kept.length === 1 ? "piece" : "pieces"}.` : "";
+  toast(`Opened in Manual.${keptText} ${KEY_NAMES.undo} puts back the suit you had.`);
+}
+
+// The fetch list for the suit's pieces the character doesn't wear (the result's, builder-result.mts fetchCard).
+function fetchList(): HTMLElement {
+  const name = manualCharacter(), pieces = fetchPieces(Object.values(suitItems()), name), card = fetchCard(pieces, name, grabAllButton(pieces, name, { id: "mb-grab-all", size: "sm" }));
+  if (!card) return el("div", { id: "mb-fetch", hidden: "" });
+  card.id = "mb-fetch";
+  return card;
+}

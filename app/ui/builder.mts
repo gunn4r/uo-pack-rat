@@ -19,7 +19,7 @@ import { optimizeErrorMessage } from "./messages.mts";
 import { parseRoute, routeFor } from "./app.mts";
 import { setNavBusy } from "./shell.mts";
 import { loadRuns, settingsSnapshot, openRunsDrawer } from "./runs.mts";
-import { initManual, paintCharSelect, setManualFor, renderManual, syncManual, buffInputsOf, buffEditsOf, editBuffInputs, savePrefs, weaponFlags } from "./builder-manual.mts";
+import { initManual, paintCharSelect, setManualFor, renderManual, syncManual, buffInputsOf, buffEditsOf, editBuffInputs, applyRunInputs, savePrefs, weaponFlags, filling } from "./builder-manual.mts";
 import { renderResult, renderCurrentSuit, refreshCurrentSuit, resultLoadError, closeCompare, resetResultView } from "./builder-result.mts";
 import { paperdoll, paperdollCaps, propName, weightsSummary, requirementsSummary, poolSummary, advancedSummary, knobError, firstKnobError, knobFromServerError, ruleValueError, resistCapError, withResistCap, capNote, resistCapsSummary, gearCapsText, pruneResistCaps, floorCapWarning, weaponsChipText, weaponName, toggleWeapon, type Knobs, type KnobField } from "./builder-model.mts";
 import type { UiPrefs, OptimizeResult, OptimizeProgress, SavedRunLike, OptimizeStartApiResponse, OptimizeCancelApiResponse, JobSnapshotEvent, JobDoneEvent, JobFailedEvent, JobCancelledEvent } from "./api-types.mts";
@@ -295,11 +295,8 @@ function setPanelBuffs(on: string[]): void {
 // A saved run's buffs back ("Load these settings"): the ones on, and the numbers they scale with where the run's differ
 // from the character's now, so building again plans as the run did. The panel is redrawn by the caller.
 export function loadRunBuffs(b: RunBuffs | undefined): void {
-  const name = state.builder.character!, now = buffInputsOf(name).values;
   setPanelBuffs(b?.on ?? []);
-  const used = new Set((b?.on ?? []).flatMap((id) => buffById(id)!.inputs));
-  const edits = Object.fromEntries([...used].filter((i) => b!.skills[i] != null && b!.skills[i] !== now[i]).map((i) => [i, b!.skills[i]!]));
-  if (Object.keys(edits).length) editBuffInputs(name, edits);
+  applyRunInputs(state.builder.character!, b);
 }
 function buffsSection(): HTMLElement {
   const on = buffsOn();
@@ -652,12 +649,21 @@ function focusKnob(f: KnobField, err: string): void {
 }
 
 // ---------------------------------------------------------------- the build
+// The panel's candidate pool settings, as POST /api/optimize's by-character form takes them.
+export function poolSettings(): RunSettings {
+  const p = readControls();
+  return { allowOthersWorn: p.allowOthersWorn, strLimit: p.strLimit, excludeTags: p.excludeTags, excludeRoots: p.excludeRoots, allowGargoyle: p.allowGargoyle, medOnly: p.medOnly, excludeWeapons: p.excludeWeapons || [], ubwsAnyWeapon: p.ubwsAnyWeapon !== false, excludeSkills: p.excludeSkills || [], lockedSlots: p.lockedSlots };
+}
+// The Advanced search options (the budget field is disabled without exact search: the server's default applies).
+export const searchOpts = (): { restarts: number; exact: boolean; timeBudgetMs?: number } =>
+  ({ restarts: Number(knobs.restarts), exact: knobs.exact, ...(knobs.exact ? { timeBudgetMs: 1000 * Number(knobs.budgetS) } : {}) });
 function optimizerProfile(): EffectiveProfile {
   const name = state.builder.character!, p = state.builder.profile!;
   return plannedProfile(p, state.inv!.characters[name] as Character | null, buffPlan(name, p.race, panelBuffs()));
 }
 async function runBuild(): Promise<void> {
   if (state.builder.job) return;
+  if (filling()) { toast("Manual is filling its empty slots. Wait for it, or cancel it there, before building."); return; }
   if (!state.builder.character || !state.builder.profile) { toast("No character to build for yet: scan one first.", "bad"); return; }
   // A bad field stops the build and takes focus, with its reason under it; the button itself stays enabled.
   const bad = firstKnobError(knobs);
@@ -672,11 +678,10 @@ async function runBuild(): Promise<void> {
   }
   const badRule = document.querySelector<HTMLInputElement>("#b-panel-body .rule-row input[aria-invalid='true']");
   if (badRule) { badRule.focus(); return; }
-  const name = state.builder.character, p = readControls();
-  const settings: RunSettings = { allowOthersWorn: p.allowOthersWorn, strLimit: p.strLimit, excludeTags: p.excludeTags, excludeRoots: p.excludeRoots, allowGargoyle: p.allowGargoyle, medOnly: p.medOnly, excludeWeapons: p.excludeWeapons || [], ubwsAnyWeapon: p.ubwsAnyWeapon !== false, excludeSkills: p.excludeSkills || [], lockedSlots: p.lockedSlots };
+  const name = state.builder.character, settings = poolSettings();
   const exact = knobs.exact, budgetMs = 1000 * Number(knobs.budgetS);
   const altCount = Number(knobs.altCount), altTol = Number(knobs.altTol);
-  const opts = { restarts: Number(knobs.restarts), exact, ...(exact ? { timeBudgetMs: budgetMs } : {}), ...(exact && altCount > 0 ? { alternatives: { count: altCount, tolerance: altTol } } : {}) };   // the budget field is disabled without exact search: the server's default applies
+  const opts = { ...searchOpts(), ...(exact && altCount > 0 ? { alternatives: { count: altCount, tolerance: altTol } } : {}) };
   closeCompare();
   // Pools/current/skipped are the server's job (buildPools against its own cached inventory, POST
   // /api/optimize's by-character form): the page sends the character + settings and reads poolSize/skipped/
@@ -703,30 +708,40 @@ async function runBuild(): Promise<void> {
   if (r.cached) { finishJob(job, { result: r.run!.result, ms: r.run!.ms!, runId: r.run!.id, reused: r.run! }); return; }
   job.id = r.id!;
   job.timer = setInterval(() => job.ui!.tick(job), 200) as unknown as number;
-  // EventSource can't carry the X-Client-Id header (or the token): the server checks this ?client= param
-  // against the job's own owner instead (vault-server.mts's events route).
-  const es = new EventSource(`/api/optimize/${job.id}/events?client=${encodeURIComponent(CLIENT_ID)}`);
-  job.es = es;
-  const onProgress = (p: OptimizeProgress): void => { job.last = p; job.lastProgressAt = Date.now(); job.lastServerAt = Date.now(); job.connected = true; job.ui!.update(job); };
+  job.es = followJob(job.id, {
+    progress: (p) => { job.last = p; job.lastProgressAt = Date.now(); job.lastServerAt = Date.now(); job.connected = true; job.ui!.update(job); },
+    alive: (connected) => { if (connected) job.lastServerAt = Date.now(); job.connected = connected; },
+    done: (d) => finishJob(job, d),
+    failed: (error) => failJob(job, error),
+    cancelled: (ms) => endJob(job, cancelledNote(ms)),
+  });
+}
+export interface JobEvents { progress(p: OptimizeProgress): void; alive?(connected: boolean): void; done(d: JobDoneEvent): void; failed(error: string): void; cancelled(ms: number): void }
+// An optimize job's events (the Automatic build, and Manual's "Fill the rest automatically"): its progress, then done,
+// failed or cancelled. EventSource can't carry the X-Client-Id header (or the token): the server checks this ?client=
+// param against the job's own owner instead (vault-server.mts's events route).
+export function followJob(id: string, on: JobEvents): EventSource {
+  const es = new EventSource(`/api/optimize/${id}/events?client=${encodeURIComponent(CLIENT_ID)}`);
   es.addEventListener("hello", (e: MessageEvent<string>) => {
     const snap = JSON.parse(e.data) as JobSnapshotEvent;
-    if (snap.progress) onProgress(snap.progress);
-    if (snap.state === "done") finishJob(job, { result: snap.result!, ms: snap.ms!, runId: snap.runId });
-    else if (snap.state === "error") failJob(job, snap.error || "The build failed.");
+    if (snap.progress) on.progress(snap.progress);
+    if (snap.state === "done") on.done({ result: snap.result!, ms: snap.ms!, runId: snap.runId });
+    else if (snap.state === "error") on.failed(snap.error || "The build failed.");
     // job.ms is always set immediately before cancelJob()'s finish() call that produces this event.
-    else if (snap.state === "cancelled") endJob(job, cancelledNote(snap.ms!));
+    else if (snap.state === "cancelled") on.cancelled(snap.ms!);
   });
-  es.addEventListener("progress", (e: MessageEvent<string>) => onProgress(JSON.parse(e.data) as OptimizeProgress));
-  es.addEventListener("ping", () => { job.lastServerAt = Date.now(); job.connected = true; });
-  es.addEventListener("done", (e: MessageEvent<string>) => finishJob(job, JSON.parse(e.data) as JobDoneEvent));
-  es.addEventListener("failed", (e: MessageEvent<string>) => failJob(job, (JSON.parse(e.data) as JobFailedEvent).error));
-  es.addEventListener("cancelled", (e: MessageEvent<string>) => endJob(job, cancelledNote((JSON.parse(e.data) as JobCancelledEvent).ms)));
+  es.addEventListener("progress", (e: MessageEvent<string>) => on.progress(JSON.parse(e.data) as OptimizeProgress));
+  es.addEventListener("ping", () => on.alive?.(true));
+  es.addEventListener("done", (e: MessageEvent<string>) => on.done(JSON.parse(e.data) as JobDoneEvent));
+  es.addEventListener("failed", (e: MessageEvent<string>) => on.failed((JSON.parse(e.data) as JobFailedEvent).error));
+  es.addEventListener("cancelled", (e: MessageEvent<string>) => on.cancelled((JSON.parse(e.data) as JobCancelledEvent).ms));
   // EventSource reconnects by itself and "hello" then catches us up — unless the server refused the stream (a
   // restart forgot the job: 404), after which it stays closed for good.
   es.onerror = () => {
-    job.connected = false;
-    if (es.readyState === EventSource.CLOSED) failJob(job, "Lost the build: the server no longer knows this job (it may have restarted). Build again.");
+    on.alive?.(false);
+    if (es.readyState === EventSource.CLOSED) on.failed("Lost the build: the server no longer knows this job (it may have restarted). Build again.");
   };
+  return es;
 }
 // While a build runs: the footer button says so and is disabled, the sidebar's Suit Builder item shows a busy
 // dot, and a result already on screen stays there dimmed and out of reach until the new one lands.
@@ -796,6 +811,16 @@ export async function cancelJob(job: BuilderJob): Promise<void> {
   endJob(job, cancelledNote(Date.now() - job.startedAt));
 }
 
+// A progress packet in words, with how far along it is (0 to 1): the build's progress card and Manual's fill read it.
+// Every field read bare below is one the server's progress packet always sets for that phase (see api-types.mts's
+// OptimizeProgress): the `!` documents that rather than inventing a fallback value.
+export function progressText(p: OptimizeProgress): { frac: number; text: string; detail: string } {
+  const clamp = (f: number): number => Math.max(0, Math.min(1, f));
+  if (p.phase === "heuristic") return { frac: clamp(p.restarts ? p.restartsDone! / p.restarts : 0), text: `Restart ${fmtN(p.restartsDone)} of ${fmtN(p.restarts)}`, detail: `${fmtN(p.candidates)} candidate items` };
+  if (p.phase === "exact") return { frac: clamp(p.budgetMs ? p.elapsedMs! / p.budgetMs : 0), text: p.gapPoints == null ? "Proving: no bound yet" : `Proving: at most ${fmtN(p.gapPoints)} points from the bound`, detail: `${fmtN(p.nodes)} search nodes · ${fmtN(p.candidates)} candidates` };
+  if (p.phase === "alternatives") return { frac: clamp(p.wanted ? p.found! / p.wanted : 1), text: `${fmtN(p.found)} of ${fmtN(p.wanted)} other suits found`, detail: "" };
+  return { frac: 1, text: "Finishing…", detail: "" };
+}
 // The inline progress card: busy dot, what is being built, Cancel (Esc while the card has focus), the three
 // phases, a determinate bar (restarts, then the time budget of the exact phase, then the other suits found),
 // and the stat row. The phase changes are announced; the numbers that tick every 200 ms are not.
@@ -829,18 +854,9 @@ function runPanel(job: BuilderJob): BuilderJobUi {
         step.replaceWith(next); step = next;
         live.textContent = cur < phases.length ? phases[cur]![1] : "Finishing";
       }
-      // Every field read bare below is one the server's progress packet always sets for that phase (see
-      // api-types.mts's OptimizeProgress): the `!` documents that rather than inventing a fallback value.
-      let frac = 0;
-      if (p.phase === "heuristic") { frac = p.restarts ? p.restartsDone! / p.restarts : 0; main.textContent = `Restart ${fmtN(p.restartsDone)} of ${fmtN(p.restarts)}`; cand.textContent = `${fmtN(p.candidates)} candidate items`; }
-      else if (p.phase === "exact") {
-        frac = p.budgetMs ? Math.min(1, p.elapsedMs! / p.budgetMs) : 0;
-        main.textContent = p.gapPoints == null ? "Proving: no bound yet" : `Proving: at most ${fmtN(p.gapPoints)} points from the bound`;
-        cand.textContent = `${fmtN(p.nodes)} search nodes · ${fmtN(p.candidates)} candidates`;
-      }
-      else if (p.phase === "alternatives") { frac = p.wanted ? p.found! / p.wanted : 1; main.textContent = `${fmtN(p.found)} of ${fmtN(p.wanted)} other suits found`; cand.textContent = ""; }
-      else { frac = 1; main.textContent = "Finishing…"; }
-      bar.set(Math.round(Math.max(0, Math.min(1, frac)) * 1000));
+      const { frac, text, detail } = progressText(p);
+      main.textContent = text; cand.textContent = detail;
+      bar.set(Math.round(frac * 1000));
       vBest.textContent = p.improvements ? `improved ${fmtN(p.improvements)}× · at ${fmtSecs(p.lastImprovementMs!)}` : "the current suit";
       vReq.className = "v";
       if (p.floorsTotal) { vReq.textContent = `${p.floorsMet} of ${p.floorsTotal}`; vReq.classList.add("strong", p.floorsMet === p.floorsTotal ? "tone-ok" : "tone-warn"); }

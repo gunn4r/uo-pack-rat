@@ -3446,3 +3446,96 @@ test("[fast] POST /api/retention/cleanup counts first, then removes old scans an
 test("[fast] POST /api/retention/cleanup is refused under --demo, whose runs folder is still the player's", async () => {
   assert.equal((await putJson(srv.url + "/api/retention/cleanup", "POST", { dryRun: true })).status, 409);
 });
+
+// ---------------------------------------------------------------------------------------------
+// Issue #12, Manual's hand-offs: POST /api/optimize with `pinned` (Fill the rest automatically) and POST /api/runs (Save
+// as run). Uses the module-level --demo `srv`.
+async function demoGear(): Promise<{ character: string; worn: Item[]; loose: Item[] }> {
+  const inv = asJson<InventoryResponse>(await (await get("/api/inventory")).json());
+  const rows = asJson<ItemsPageResponse>(await (await get("/api/items?limit=2000")).json()).rows!.filter((it) => it.gear && it.slot);
+  const character = Object.keys(inv.inventory.worn).find((c) => rows.some((it) => it.equippedBy === c))!;
+  return { character, worn: rows.filter((it) => it.equippedBy === character), loose: rows.filter((it) => !it.equippedBy) };
+}
+const fillBody = (character: string | null, pinned: Record<string, number>, profile: Record<string, unknown> = { weights: { luck: 1, hci: 3, physResist: 2 }, caps: { physResist: 70 } }) =>
+  ({ method: "POST", headers: JSON_HEADERS, body: JSON.stringify({ character, settings: { lockedSlots: ["helmet"] }, profile, opts: { exact: true, timeBudgetMs: 20000 }, pinned }) });
+
+test("[fast] /api/optimize with pinned: every placed piece stays, the rest is searched, and no run is saved (issue #12)", async () => {
+  const { character, worn, loose } = await demoGear();
+  const pin = loose.find((it) => it.slot !== "twoHanded" && it.slot !== "oneHanded") ?? worn[0]!;   // a piece nobody wears
+  const pinned = { [pin.slot!]: pin.serial, feet: 1 };   // a slot the search has none for is accepted and left to the profile
+  const before = asJson<{ runs: unknown[] }>(await (await get(`/api/runs?character=${encodeURIComponent(character)}`)).json()).runs.length;
+  const r = await fetch(srv.url + "/api/optimize", fillBody(character, { [pin.slot!]: pin.serial }));
+  const j = asJson<OptimizeJobResponse>(await r.json());
+  assert.equal(r.status, 200, JSON.stringify(j));
+  assert.deepEqual(Object.keys(j.current!), [pin.slot], "the placed pieces are the only current pieces");
+  const done = await pollJob(srv.url, j.id!, (s) => s.state === "done", 20000);
+  assert.equal(done.state, "done", JSON.stringify(done));
+  const best = done.result!.best as Record<string, { serial: number } | null>;
+  assert.equal(best[pin.slot!]!.serial, pin.serial);
+  assert.equal(asJson<{ runs: unknown[] }>(await (await get(`/api/runs?character=${encodeURIComponent(character)}`)).json()).runs.length, before, "a fill is not saved");
+  // a serial that is not that slot's piece in the scans is refused, and so is a slot that is not a gear slot
+  const bad = await fetch(srv.url + "/api/optimize", fillBody(character, { ...pinned, [pin.slot!]: pin.serial + 999999 }));
+  assert.equal(bad.status, 400);
+  assert.equal((await fetch(srv.url + "/api/optimize", fillBody(character, { saddle: pin.serial }))).status, 400);
+  // a piece that is not gear, and a two-handed weapon beside a one-hander, as /api/runs refuses them
+  const all = asJson<ItemsPageResponse>(await (await get("/api/items?limit=2000")).json()).rows!;
+  const notGear = all.find((it) => !it.gear);
+  if (notGear) assert.equal((await fetch(srv.url + "/api/optimize", fillBody(character, { ring: notGear.serial }))).status, 400);
+  const twoH = [...loose, ...worn].find((it) => it.slot === "twoHanded" && it.twoHanded), oneH = [...loose, ...worn].find((it) => it.slot === "oneHanded");
+  if (twoH && oneH) assert.equal((await fetch(srv.url + "/api/optimize", fillBody(character, { twoHanded: twoH.serial, oneHanded: oneH.serial }))).status, 400);
+});
+
+test("[fast] /api/optimize with pinned and no character: the pool is the pieces nobody wears, plus a pinned worn one (issue #12)", async () => {
+  const { worn } = await demoGear();
+  const pin = worn.find((it) => it.slot !== "oneHanded" && it.slot !== "twoHanded")!;   // worn by someone: Manual allows it
+  const r = await fetch(srv.url + "/api/optimize", fillBody(null, { [pin.slot!]: pin.serial }));
+  const j = asJson<OptimizeJobResponse>(await r.json());
+  assert.equal(r.status, 200, JSON.stringify(j));
+  const done = await pollJob(srv.url, j.id!, (s) => s.state === "done", 20000);
+  const rows = asJson<ItemsPageResponse>(await (await get("/api/items?limit=2000")).json()).rows!;
+  const wearer = new Map(rows.map((it) => [it.serial, it.equippedBy]));
+  for (const [slot, it] of Object.entries(done.result!.best as Record<string, { serial: number } | null>)) {
+    if (!it) continue;
+    if (slot === pin.slot) assert.equal(it.serial, pin.serial);
+    else assert.ok(!wearer.get(it.serial), `${slot}: ${it.serial} is worn by ${wearer.get(it.serial)}`);
+  }
+});
+
+test("[fast] POST /api/runs saves Manual's suit as a manual run: its shape, its key and the checks (issue #12)", async () => {
+  const { character, worn, loose } = await demoGear();
+  const piece = loose.find((it) => it.slot === "ring") ?? loose[0]!;
+  const suit = { ...Object.fromEntries(worn.filter((it) => it.slot !== piece.slot).map((it) => [it.slot!, it.serial])), [piece.slot!]: piece.serial };
+  const settings = { floors: { hci: 3 }, weights: { luck: 1 }, race: "human", buffs: { on: ["divineFury"], skills: { Chivalry: 100 } } };
+  const post = (body: unknown) => fetch(srv.url + "/api/runs", { method: "POST", headers: JSON_HEADERS, body: JSON.stringify(body) });
+  const r = await post({ character, suit, settings, inventoryStamp: "s1" });
+  const j = asJson<{ ok: boolean; run: { id: string; method: string; changes: number; settings: Record<string, unknown> } }>(await r.json());
+  assert.equal(r.status, 200, JSON.stringify(j));
+  assert.equal(j.run.method, "manual");
+  assert.equal(j.run.changes, 1);
+  assert.deepEqual(j.run.settings.floors, { hci: 3 });
+  const full = asJson<{ run: { key: string; inventoryStamp: string; result: { method: string; score?: number; best: Record<string, { serial: number } | null>; perSlotChanges: Array<{ slot: string; toSerial: number }> } } }>(await (await get(`/api/runs/${j.run.id}`)).json()).run;
+  assert.match(full.key, /^manual:[0-9a-f]{40}$/);
+  assert.equal(full.inventoryStamp, "s1");
+  assert.equal(full.result.score, undefined, "no score: nothing searched for it");
+  assert.equal(full.result.best[piece.slot!]!.serial, piece.serial);
+  assert.ok(Object.hasOwn(full.result.best, "feet") && Object.hasOwn(full.result.best, "earrings"), "every gear slot");
+  assert.deepEqual(full.result.perSlotChanges.map((c) => [c.slot, c.toSerial]), [[piece.slot, piece.serial]]);
+  // the checks
+  assert.equal((await post({ character: "Nobody", suit, settings })).status, 404);
+  assert.equal((await post({ character, suit: {}, settings })).status, 400);
+  assert.equal((await post({ character, suit: { [piece.slot!]: piece.serial + 999999 }, settings })).status, 400);
+  assert.equal((await post({ character, suit, settings: { buffs: { on: ["noSuchBuff"], skills: {} } } })).status, 400);
+  assert.equal((await post({ character, suit, settings: { resistCaps: { fireResist: 900 } } })).status, 400);
+  // the whole snapshot is checked: an absurd floor, a weight that is not a number, a __proto__ key, an unknown field
+  for (const bad of ['{"floors":{"physResist":1e308}}', '{"weights":{"a":null}}', '{"floors":{"__proto__":5}}', '{"race":"orc"}', '{"lockedSlots":"ring"}', '{"strLimit":-1}', '{"restarts":0.5}', '{"restarts":20000}', '{"altCount":101}', '{"altTol":-1}', '{"budgetMs":1e12}', '{"whatever":1}']) {
+    const r = await fetch(srv.url + "/api/runs", { method: "POST", headers: JSON_HEADERS, body: `{"character":${JSON.stringify(character)},"suit":${JSON.stringify(suit)},"settings":${bad}}` });
+    assert.equal(r.status, 400, bad);
+  }
+  const range = asJson<ErrorBody>(await (await post({ character, suit, settings: { restarts: 20000 } })).json()).error;
+  assert.equal(range, "settings.restarts must be a whole number from 1 to 10000", "the error names the range");
+  // every knob at the edge of the range the page allows is taken
+  assert.equal((await post({ character, suit, settings: { strLimit: 1000, restarts: 10000, budgetMs: 3600000, altCount: 100, altTol: 12.5, exact: false } })).status, 200);
+  const twoH = loose.find((it) => it.slot === "twoHanded" && it.twoHanded) ?? worn.find((it) => it.slot === "twoHanded" && it.twoHanded);
+  const oneH = [...loose, ...worn].find((it) => it.slot === "oneHanded");
+  if (twoH && oneH) assert.equal((await post({ character, suit: { twoHanded: twoH.serial, oneHanded: oneH.serial }, settings })).status, 400);
+});

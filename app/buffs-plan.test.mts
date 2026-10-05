@@ -15,7 +15,7 @@ import { BUFFS, STAT_MAX, applyBuffs, article, buffSkillValues, gearNeedsText, o
 import type { BuffPlan, BuffResult, Skills, Stats } from "./buffs.mts";
 import { solveExact, type OptPools, type OptProfile } from "./exact-solver.mts";
 import { cell, core, defaultProfiles, fixture, templateNames } from "./solver-fixture.mts";   // also loads the uoalive rules
-import { runKey, SOLVER_VERSION } from "./runs-lib.mts";
+import { runKey } from "./runs-lib.mts";
 
 const DEFAULTS = buffSkillValues(null, {}).values;
 // A shipped template as the panel holds it, and the fixture character (the solver fixture's own cell builds these too).
@@ -44,7 +44,8 @@ function checkPlan(p: Profile, ch: Character | null, pl: BuffPlan, label: string
   for (const k of RESIST_KEYS) caps[k] = view[k]!.cap;
   if (pl.stats) Object.assign(caps, { strBonus: STAT_MAX - pl.stats.str, dexBonus: STAT_MAX - pl.stats.dex, intBonus: STAT_MAX - pl.stats.int });
   const r = applyBuffs(pl.worn, caps, pl.on, pl.skills, pl.stats, pl.who);
-  const bonus = (k: string): number => (RESIST_KEYS.includes(k) ? rsb : 0);
+  // the Resisting Spells bonus, and Manual's pieces outside the search (the plan's base)
+  const bonus = (k: string): number => (RESIST_KEYS.includes(k) ? rsb : 0) + (pl.base?.[k] || 0);
   for (const [k, cap] of Object.entries(planned.caps)) {
     for (const g of [-30, -5, 0, 7, 20, 45, 64, 70, 90, 140]) {
       assert.equal(Math.min(g, cap) + bonus(k) + sum(r, k), Math.min(g + bonus(k) + sum(r, k), r.caps[k]!), `${label}: ${k} cap at gear ${g}`);
@@ -216,7 +217,7 @@ test("[fast] buffs plan: a requirement's note: its article, a full cap, no cap a
 test("[fast] buffs plan: the run key follows the plan: Enemy of One alone keys as none, numbers no buff reads change nothing", () => {
   const c = cell("melee"), key = (pl: BuffPlan | null): string => runKey({ pools: c.pools, current: c.current, profile: plannedProfile(defaultTemplate("melee"), FIXTURE, pl), opts: { seed: 2026, restarts: 200 } });
   const none = key(null);
-  if (SOLVER_VERSION === 3) assert.equal(none, "ac4629c8a8ca3cf77dbcba655c8e8bf8cd65f4a8", "main's key (02b052e) for the melee template");
+  assert.equal(none, "2c90c9b185e929e2cc44d6c6295995e288e4f918", "the key for the melee template at SOLVER_VERSION 4 (was ac4629c8… at 3, main 02b052e): a change here means every saved run stops being reused");
   assert.equal(key(plan(["enemyOfOne"])), none, "Enemy of One plans like none");
   assert.notEqual(key(plan(["divineFury"], { Chivalry: 105 })), key(plan(["divineFury"], { Chivalry: 120 })), "another tier, another plan");
   assert.equal(key(plan(["divineFury"], { Chivalry: 105 })), key(plan(["divineFury"], { Chivalry: 105, Necromancy: 40, Bushido: 3 })), "an edit no buff on reads");
@@ -305,4 +306,22 @@ test("[fast] buffs plan: a buff that lowers a cap under the worn total makes the
   const cursed = plannedProfile(p, null, plan(["curse"], { "Enemy Eval Int": 120 }));
   assert.equal(cursed.caps.fireResist, 60, "Curse: the Fire cap 70 → 60");
   assert.equal((await both(pools, cursed, { chest: worn })).best.chest?.serial, 92302, "Fire past 60 is worth nothing, so Luck wins");
+});
+
+// Manual's "Fill the rest automatically" (issue #12): the placed pieces in the six slots the search has none for (feet,
+// shirt, tunic, robe, waist, earrings) are a constant base, the way a buff's in-cap share is. Checked against the
+// meaning (checkPlan with the base) with no buffs, with buffs that change caps, for No character and with Resisting
+// Spells, and the sash case by its numbers: an LRC 20 sash leaves the gear an 80 LRC floor and an 80 cap.
+test("[fast] buffs plan: pieces outside the search shift caps and floors exactly, buffs or none", () => {
+  const p: Profile = { ...ALL, floors: { ...ALL.floors, lrc: 100, lmc: 40 }, weights: { ...ALL.weights, lrc: 2, lmc: 3 } };
+  const base: PropMap = { lrc: 20, lmc: 5, physResist: 8, fireResist: -3, coldResist: 15, strBonus: 5, hci: 50, luck: 100, manaRegen: 2 };
+  const stats: Stats = { str: 90, dex: 80, int: 60 };
+  for (const [on, ch, label] of [[[], null, "no buffs"], [["divineFury", "magicReflection"], null, "Divine Fury + Magic Reflection"], [["wraithForm", "curse"], RS100, "Wraith Form + Curse, Resisting Spells 100"], [["protection", "bless"], RS100, "Protection + Bless, Resisting Spells 100"]] as Array<[string[], Character | null, string]>) {
+    const pl0 = plan(on, {}, { stats }), pl: BuffPlan = { ...(ch ? withRS(pl0) : pl0), base };
+    checkPlan(p, ch, pl, `${label}, with a base`);
+  }
+  const sash = plannedProfile(p, null, { ...plan([]), base: { lrc: 20 } });
+  assert.deepEqual([sash.floors.lrc, sash.caps.lrc], [80, 80]);
+  // no base, no buffs: the plain profile
+  assert.deepEqual(plannedProfile(p, null, plan([])), effectiveProfile(p, null));
 });

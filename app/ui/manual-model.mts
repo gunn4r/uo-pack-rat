@@ -1,9 +1,9 @@
 // ui/manual-model.mts — the Suit Builder's Manual mode, its pure logic (issue #12): the totals strip's keys and the
 // line under each total, the slot groups, the picker's slot filter, the one-hand/two-hand rule, a saved suit read
-// back, the slots whose piece left the scans, a picker row's delta ("LRC +20 → 77"), and the suit's undo history and
-// keys. No DOM and no page state, so app/manual-model.test.mts checks it directly; ui/builder-manual.mts draws what it
-// returns.
-import { RESIST_KEYS, GEAR_SLOTS, labelOf } from "../vault-lib.mts";
+// back, the slots whose piece left the scans, a picker row's delta ("LRC +20 → 77"), the suit's undo history and
+// keys, and the hand-offs with Automatic (a result into the suit, the pieces to fetch). No DOM and no page state, so
+// app/manual-model.test.mts checks it directly; ui/builder-manual.mts draws what it returns.
+import { RESIST_KEYS, GEAR_SLOTS, OPTIMIZER_SLOTS, labelOf } from "../vault-lib.mts";
 import type { PropMap } from "../vault-lib.mts";
 import type { ItemQuery } from "../item-query.mts";
 
@@ -122,3 +122,54 @@ export function historyKey(e: KeyLike, mac: boolean): "undo" | "redo" | null {
 }
 // The keys' names on this platform, for the buttons' tooltips.
 export const historyKeyNames = (mac: boolean): { undo: string; redo: string } => (mac ? { undo: "⌘Z", redo: "⇧⌘Z" } : { undo: "Ctrl+Z", redo: "Ctrl+Y" });
+
+// ---------------------------------------------------------------- hand-offs with Automatic
+// A result's or a saved run's suit into Manual's ("Start from this result", "Open in Manual"): each slot it plans
+// (`covered`) takes its piece or is emptied, and every other slot keeps its own.
+export function suitFrom(current: Suit, best: Partial<Record<string, { serial: number } | null>>, covered: readonly string[]): Suit {
+  const next = { ...current };
+  for (const s of covered) { const it = best[s]; if (it) next[s] = it.serial; else delete next[s]; }
+  return next;
+}
+// The search's slots that are empty: "Fill the rest automatically" fills these, less the one-hand slot beside a
+// two-handed weapon. A slot the search has no slot for (feet, robe…) is never one.
+export function fillableSlots(suit: Suit, twoHanded: boolean): string[] {
+  return OPTIMIZER_SLOTS.filter((s) => suit[s] == null && !(s === "oneHanded" && twoHanded));
+}
+// Buff numbers an undo step set for one character (`who`) by key, null for "back to the character's own": applied key
+// by key, and only where the number is still the one the other side of the step left (`expect`), so undoing a step
+// never takes back a number edited after it.
+export type EditMap = Record<string, Record<string, number>>;
+export interface EditStep { who: string; values: Record<string, number | null> }
+export function applyEditStep(all: EditMap, who: string, expect: Record<string, number | null>, set: Record<string, number | null>): EditMap {
+  const mine = { ...(Object.hasOwn(all, who) ? all[who] : {}) };
+  let moved = false;
+  for (const [k, v] of Object.entries(set)) {
+    if ((mine[k] ?? null) !== (expect[k] ?? null) || (mine[k] ?? null) === v) continue;
+    if (v == null) delete mine[k]; else mine[k] = v;
+    moved = true;
+  }
+  return moved ? { ...all, [who]: mine } : all;
+}
+// "Fill the rest": what a search started from (whose suit, the buffs the totals counted, the suit and its empty slots,
+// and `plan`, a key of what it planned with: the profile, the buff numbers in it, the pool settings) and its answer
+// against Manual now. Stale, with why, when any of them changed meanwhile (a character switched, a buff or the Count
+// switch flipped, a piece placed or cleared, a requirement, weight or buff number edited); else the found pieces for the slots that were empty, never
+// a placed piece again.
+export interface FillStart { who: string | null; buffs: string[]; suit: Suit; plan: string; empty: string[] }
+export function fillPicks(start: FillStart, now: Omit<FillStart, "empty">, best: Partial<Record<string, { serial: number } | null>>): { stale: string } | { picks: Suit } {
+  if (start.who !== now.who) return { stale: "Fill canceled: the character changed" };
+  if (start.buffs.join() !== now.buffs.join()) return { stale: "Fill canceled: the buffs changed" };
+  const keys = Object.keys(start.suit);
+  if (keys.length !== Object.keys(now.suit).length || keys.some((s) => start.suit[s] !== now.suit[s])) return { stale: "Fill canceled: the suit changed" };
+  if (start.plan !== now.plan) return { stale: "Fill canceled: the settings changed" };
+  const placed = new Set(Object.values(start.suit));
+  return { picks: Object.fromEntries(start.empty.flatMap((s) => { const it = best[s]; return it && !placed.has(it.serial) ? [[s, it.serial]] : []; })) };
+}
+// "Waist", "Waist and Earrings", "Feet, Waist and Earrings".
+export const listWords = (xs: readonly string[]): string => (xs.length < 2 ? xs.join("") : `${xs.slice(0, -1).join(", ")} and ${xs[xs.length - 1]}`);
+// Start from this result: the filled slots it leaves as they were (Manual's feet, robe and so on), by name.
+export const keptSlots = (suit: Suit, covered: readonly string[]): string[] => Object.keys(suit).filter((s) => !covered.includes(s));
+// The fetch list's pieces: those the character doesn't wear, every piece with No character (`name` null).
+export const fetchPieces = <T extends { equippedBy?: string | null | undefined }>(pieces: T[], name: string | null): T[] =>
+  pieces.filter((it) => !name || it.equippedBy !== name);

@@ -3,7 +3,7 @@
 // "other changes" badges and "after the change" values, the compare table's differing rows and best values,
 // and a saved run's label and badges. No DOM and no page state, so app/builder-model.test.mts can check it
 // all directly; ui/builder.mts, ui/builder-result.mts and ui/runs.mts draw what it returns.
-import { getRules, labelOf, fullOf, NOT_BUILDER_KEYS, RESIST_KEYS, RESIST_CAP_LIMITS, SLOT_LABELS, settingsDiff, shardResistCap, WEAPON_SKILLS, MELEE_SKILLS, ubwsLetsIn } from "../vault-lib.mts";
+import { getRules, labelOf, fullOf, GEAR_SLOTS, OPTIMIZER_SLOTS, NOT_BUILDER_KEYS, RESIST_KEYS, RESIST_CAP_LIMITS, SLOT_LABELS, settingsDiff, shardResistCap, WEAPON_SKILLS, MELEE_SKILLS, ubwsLetsIn } from "../vault-lib.mts";
 import type { PlannedBuffs, PropMap, ResistCap, RunSettings } from "../vault-lib.mts";
 import { applyBuffs, buffById, buffsDiff, capWord, signed, type BuffResult } from "../buffs.mts";
 
@@ -325,6 +325,9 @@ export function toggleCompare(selected: ReadonlySet<string>, id: string, on: boo
 // ---------------------------------------------------------------- saved runs
 // What changed between two runs' settings, their buffs included ("+Divine Fury").
 export const runSettingsDiff = (a: RunSettings, b: RunSettings): string[] => [...settingsDiff(a, b), ...buffsDiff(a.buffs, b.buffs)];
+// The slots a result plans: a suit built by hand (Manual's "Save as run", method "manual") has every gear slot, a
+// search (and a run saved before Manual) the optimizer's twelve.
+export const slotsOf = (res: { method?: string | null | undefined }): string[] => (res.method === "manual" ? GEAR_SLOTS : OPTIMIZER_SLOTS);
 // A run's name when the player gave it none: how its settings differ from the run saved before it.
 export function runAutoLabel(prev: RunSettings | null, settings: RunSettings): { text: string; diff: string[] } {
   if (!prev) return { text: "First saved run", diff: [] };
