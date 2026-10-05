@@ -106,6 +106,20 @@ test("[fast] Fill the rest: the fillable slots, and the fetch list's pieces", ()
   assert.deepEqual(fetchPieces(pieces, null).map((p) => p.n), [1, 2, 3], "No character: every piece, the unworn ones included");
 });
 
+// The probe that found it: an earlier run's helmet (luck 30) as the warm start, where the helmet is pinned to one with
+// luck −20. The core used to start from no helmet at all, a suit no search may return, and kept it (10 for the ring
+// alone); the pinned slot keeps its piece, and the answer is −20 + 10.
+test("[fast] a warm start never empties a pinned slot", async () => {
+  const pinnedHelm = mk("helmet", { luck: -20 }), oldHelm = mk("helmet", { luck: 30 }), ring = mk("ring", { luck: 10 });
+  const { pools, current } = buildPools(invOf([pinnedHelm, oldHelm, ring]), "A", { pinned: { helmet: pinnedHelm.serial } });
+  const profile: OptProfile = { weights: { luck: 1 }, caps: {}, floors: {}, hardFloors: [], floorBonus: 1000 };
+  const opts = { seed: 1, restarts: 3, optionalSlots: DEFAULT_OPTIONAL_SLOTS, warmStart: { helmet: oldHelm.serial, ring: ring.serial } };
+  const exact = core.optimizeSuit(pools as never, current as never, profile, { ...opts, exact: true, timeBudgetMs: 5000 });
+  assert.deepEqual([exact.score, exact.best.helmet?.serial], [-10, pinnedHelm.serial]);
+  const h = await solveExact({ core, pools: pools as never, current: current as never, profile, opts: { ...opts, exact: true, timeBudgetMs: 10000 }, onProgress: () => {}, onWarn: () => {} });
+  assert.deepEqual([h.score, h.best.helmet?.serial, h.proven], [-10, pinnedHelm.serial, true]);
+});
+
 // ---- the fuzz: random pinned subsets, both solvers against brute force over the unpinned slots
 const SLOTS = ["helmet", "neck", "ring", "cloak", "oneHanded", "twoHanded"];
 const DIMS = ["hci", "dci", "luck", "lrc"];
@@ -142,7 +156,9 @@ for (const seed of [4, 19, 2026]) {
         for (const it of cands[k]!) rec(k + 1, { ...pick, [SLOTS[k]!]: it ? (toOptItem(it) as OptAssignment[string]) : null });
       };
       rec(0, {});
-      const opts = { seed: 1, restarts: 3, optionalSlots };
+      // a warm start from an earlier run: any piece of the instance per slot, pinned slots included, or nothing
+      const warmStart = Object.fromEntries(SLOTS.map((s) => { const c = items.filter((it) => it.slot === s); return [s, c.length && rnd() < 0.6 ? c[int(0, c.length - 1)]!.serial : null]; }));
+      const opts = { seed: 1, restarts: 3, optionalSlots, warmStart };
       const exact = core.optimizeSuit(pools as never, current as never, profile, { ...opts, exact: true, timeBudgetMs: 5000 });
       assert.ok(Math.abs(exact.score - oracle) < EPS, `${label}: core ${exact.score} != brute force ${oracle}`);
       const h = await solveExact({ core, pools: pools as never, current: current as never, profile, opts: { ...opts, exact: true, timeBudgetMs: 10000 }, onProgress: () => {}, onWarn: () => {} });

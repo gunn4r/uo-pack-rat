@@ -4,7 +4,8 @@
 // the oracle), the core's exact branch-and-bound (proven, equal to the oracle), and `solveExact`
 // through HiGHS (proven, equal to the oracle, bound never below its own score). The generator leans
 // on the cases that broke before: negative property values under soft and hard floors, negative
-// weights on capped and floored properties, locked slots, and the shield / two-hander pair.
+// weights on capped and floored properties, locked slots, the shield / two-hander pair, and a warm start that
+// lacks a locked slot's piece.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { pathToFileURL } from "node:url";
@@ -106,7 +107,10 @@ for (const seed of SEEDS) {
       const label = `seed ${seed} instance ${i}`;
       const cands = candidates(inst);
       const oracle = bruteForce(inst, cands);
-      const base: OptOptions = { seed: 1, restarts: 2, slots: inst.slots, optionalSlots: inst.optionalSlots };
+      // a warm start from an "earlier run": per slot a piece of the pool, one no longer anywhere, or nothing (a locked
+      // slot whose piece the warm start lacks must still keep its own)
+      const warmStart = Object.fromEntries(inst.slots.map((s) => { const r = rnd(), pool = inst.pools[s] || []; return [s, r < 0.4 && pool.length ? pool[Math.floor(rnd() * pool.length)]!.serial : r < 0.7 ? 999999 : null]; }));
+      const base: OptOptions = { seed: 1, restarts: 2, slots: inst.slots, optionalSlots: inst.optionalSlots, warmStart };
 
       const heur = core.optimizeSuit(inst.pools, inst.current, inst.profile, { ...base, exact: false });
       assertValidSuit(inst, cands, heur.best, `${label} heuristic`);

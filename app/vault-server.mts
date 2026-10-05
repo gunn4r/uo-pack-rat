@@ -223,6 +223,16 @@ function isManualSuit(v: unknown): v is Record<string, number> {
   if (!v || typeof v !== "object" || Array.isArray(v)) return false;
   return Object.entries(v).every(([k, s]) => GEAR_SLOTS.includes(k) && isBoundedInt(s, 1, MAX_SERIAL));
 }
+// Manual's suit against the inventory (a fill's `pinned`, a manual run's `suit`): each serial a gear piece of its slot in
+// the scans, and no two-handed weapon beside a one-hander.
+function manualSuitError(inv: Inventory, suit: Record<string, number>, path: string): string | null {
+  for (const [slot, serial] of Object.entries(suit)) {
+    const it = inv.items[serial];
+    if (!it?.gear || it.slot !== slot) return `${path}.${slot}: 0x${serial.toString(16)} is not a gear piece for that slot in your scans`;
+  }
+  if (suit.twoHanded != null && suit.oneHanded != null && inv.items[suit.twoHanded]!.twoHanded) return `${path}: a two-handed weapon leaves the one-hand slot empty`;
+  return null;
+}
 // Localhost security (spec §4.5): a request's Host must name this server, an Origin (when present)
 // must be this same origin, and — with a token configured — every /api/* route except the SSE
 // events stream (EventSource cannot carry an Authorization header; see below) must present it. None
@@ -1936,8 +1946,8 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
           // under a name the inventory has never seen.
           if (character && !Object.hasOwn(inv.characters, character)) return send(res, 404, { ok: false, error: `no scans for character ${JSON.stringify(character)}` });
           const pins = (pinned || {}) as Record<string, number>;
-          const lost = Object.entries(pins).find(([slot, serial]) => inv.items[serial]?.slot !== slot);
-          if (lost) return send(res, 400, { ok: false, error: `pinned.${lost[0]}: 0x${lost[1].toString(16)} is not that slot's piece in your scans` });
+          const badPin = manualSuitError(inv, pins, "pinned");
+          if (badPin) return send(res, 400, { ok: false, error: badPin });
           // a fill keeps the placed pieces in place of the locked slots: they are the only slots that keep their piece
           const keep = fill ? Object.keys(pins) : lockedList;
           const built = (await lib()).buildPools(inv, (character as string) || null, { allowOthersWorn: allowOthersWorn && !!character, strength: strLimit, excludeTags: tagList, excludeRoots: rootList, excludeGargoyle: !allowGargoyle, medOnly, excludeWeapons, ubwsAnyWeapon, excludeSkills: skillList, ...(fill ? { pinned: pins } : {}) });
@@ -1973,7 +1983,7 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
         if (character) { meta.poolSize = poolSize; meta.skipped = skipped; }
         if (hit) return send(res, 200, { ok: true, cached: true, run: hit, poolSize, skipped, current, blocked });
         // warm start: this character's newest saved suit, re-scored under the new settings
-        const last = runs.find((r) => r.character === meta.character && r.result && r.result.best);
+        const last = fill ? null : runs.find((r) => r.character === meta.character && r.result && r.result.best);
         // last.result/.best were both truthy-checked by the .find() predicate just above; `.best`'s
         // real shape is an OptAssignment-like {slot -> {serial} | null} map, looser than RunResult's
         // own declared fields (an index-signature read, same trust as everywhere else in this route).
@@ -2015,10 +2025,9 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
         const { inv } = await getInventory();
         if (!Object.hasOwn(inv.characters, character)) return send(res, 404, { ok: false, error: `no scans for character ${JSON.stringify(character)}` });
         const { toOptItem } = await lib();
-        const lost = Object.entries(suit).find(([slot, serial]) => inv.items[serial]?.slot !== slot);
-        if (lost) return send(res, 400, { ok: false, error: `suit.${lost[0]}: 0x${lost[1].toString(16)} is not that slot's piece in your scans` });
+        const badSuit = manualSuitError(inv, suit, "suit");
+        if (badSuit) return send(res, 400, { ok: false, error: badSuit });
         const pieces = Object.fromEntries(Object.entries(suit).map(([slot, serial]) => [slot, toOptItem(inv.items[serial]!)]));
-        if (pieces.twoHanded?.twoHanded && pieces.oneHanded) return send(res, 400, { ok: false, error: "a two-handed weapon leaves the one-hand slot empty" });
         const worn: Record<string, OptItem> = {};
         for (const it of Object.values(inv.items)) if (it.equippedBy === character && it.slot && GEAR_SLOTS.includes(it.slot)) worn[it.slot] ??= toOptItem(it);
         mkdirSync(RUNS, { recursive: true, mode: DATA_DIR_MODE });

@@ -217,7 +217,7 @@ test("[fast] buffs plan: a requirement's note: its article, a full cap, no cap a
 test("[fast] buffs plan: the run key follows the plan: Enemy of One alone keys as none, numbers no buff reads change nothing", () => {
   const c = cell("melee"), key = (pl: BuffPlan | null): string => runKey({ pools: c.pools, current: c.current, profile: plannedProfile(defaultTemplate("melee"), FIXTURE, pl), opts: { seed: 2026, restarts: 200 } });
   const none = key(null);
-  if (SOLVER_VERSION === 3) assert.equal(none, "ac4629c8a8ca3cf77dbcba655c8e8bf8cd65f4a8", "main's key (02b052e) for the melee template");
+  if ((SOLVER_VERSION as number) === 3) assert.equal(none, "ac4629c8a8ca3cf77dbcba655c8e8bf8cd65f4a8", "main's key (02b052e) for the melee template");
   assert.equal(key(plan(["enemyOfOne"])), none, "Enemy of One plans like none");
   assert.notEqual(key(plan(["divineFury"], { Chivalry: 105 })), key(plan(["divineFury"], { Chivalry: 120 })), "another tier, another plan");
   assert.equal(key(plan(["divineFury"], { Chivalry: 105 })), key(plan(["divineFury"], { Chivalry: 105, Necromancy: 40, Bushido: 3 })), "an edit no buff on reads");

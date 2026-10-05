@@ -37,7 +37,8 @@ export interface RunKeyInput {
 // (scripts/optimizer-core.mts) that can change a result, so runs saved before it stop matching and
 // are never served as "reused". 2: soft floors allow negative totals, negative capped weights.
 // 3: the reach estimate respects the hands row; heuristic-only runs honour the time budget.
-export const SOLVER_VERSION = 3;
+// 4: a warm start keeps a slot that may not be empty filled (a locked slot's piece was dropped, and the search stuck).
+export const SOLVER_VERSION = 4;
 // The first SOLVER_VERSION whose "proven optimal" holds: before 2 a soft floor ruled out every suit with a
 // negative total, so HiGHS could prove a worse suit optimal.
 export const PROOF_SOUND_SINCE = 2;

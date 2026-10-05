@@ -3477,6 +3477,12 @@ test("[fast] /api/optimize with pinned: every placed piece stays, the rest is se
   const bad = await fetch(srv.url + "/api/optimize", fillBody(character, { ...pinned, [pin.slot!]: pin.serial + 999999 }));
   assert.equal(bad.status, 400);
   assert.equal((await fetch(srv.url + "/api/optimize", fillBody(character, { saddle: pin.serial }))).status, 400);
+  // a piece that is not gear, and a two-handed weapon beside a one-hander, as /api/runs refuses them
+  const all = asJson<ItemsPageResponse>(await (await get("/api/items?limit=2000")).json()).rows!;
+  const notGear = all.find((it) => !it.gear);
+  if (notGear) assert.equal((await fetch(srv.url + "/api/optimize", fillBody(character, { ring: notGear.serial }))).status, 400);
+  const twoH = [...loose, ...worn].find((it) => it.slot === "twoHanded" && it.twoHanded), oneH = [...loose, ...worn].find((it) => it.slot === "oneHanded");
+  if (twoH && oneH) assert.equal((await fetch(srv.url + "/api/optimize", fillBody(character, { twoHanded: twoH.serial, oneHanded: oneH.serial }))).status, 400);
 });
 
 test("[fast] /api/optimize with pinned and no character: the pool is the pieces nobody wears, plus a pinned worn one (issue #12)", async () => {
