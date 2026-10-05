@@ -6,10 +6,11 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { setRules, effectiveProfile, OPTIMIZER_SLOTS, SLOT_LABELS } from "./vault-lib.mts";
+import { setRules, effectiveProfile, profileResistCaps, OPTIMIZER_SLOTS, SLOT_LABELS } from "./vault-lib.mts";
 import type { RulesV1 } from "./schema/types.d.mts";
 import { optIsValidAssignment } from "../scripts/optimizer-core.mts";
-import { capped, capLine, paperdollTotals, manualCaps, slotQuery, handConflict, handNote, savedSlots, missingSlots, deltaKeys, slotDelta, STRIP_KEYS } from "./ui/manual-model.mts";
+import { paperdoll, paperdollCaps } from "./ui/builder-model.mts";
+import { capped, capLine, slotQuery, handConflict, handNote, savedSlots, missingSlots, deltaKeys, slotDelta, STRIP_KEYS } from "./ui/manual-model.mts";
 
 setRules(JSON.parse(readFileSync(new URL("./rules/uoalive.json", import.meta.url), "utf8")) as RulesV1);
 
@@ -26,7 +27,8 @@ test("[fast] manual model: a total over its cap shows the cap and what is wasted
 });
 
 test("[fast] manual model: resists count in paperdoll terms, the character's Resisting Spells and race caps included", () => {
-  assert.deepEqual(paperdollTotals({ fireResist: 30, lrc: 20 }, 40), { physResist: 40, fireResist: 70, coldResist: 40, poisonResist: 40, energyResist: 40, lrc: 20 });
+  const manualCaps = (prof: ReturnType<typeof effectiveProfile>): Record<string, number> => paperdollCaps(profileResistCaps(prof));
+  assert.deepEqual(paperdoll({ fireResist: 30, lrc: 20 }, 40), { physResist: 40, fireResist: 70, coldResist: 40, poisonResist: 40, energyResist: 40, lrc: 20 });
   const raw = manualCaps(effectiveProfile({}, null));
   assert.equal(raw.energyResist, 70, "no character: the shard's caps");
   assert.equal(raw.lrc, 100); assert.equal(raw.lmc, 40);
@@ -63,6 +65,10 @@ test("[fast] manual model: the hand rule clears what the optimizer would refuse,
     assert.ok(optIsValidAssignment(after), `the suit after ${pick.name} is one the optimizer accepts`);
     if (!cleared) assert.equal(optIsValidAssignment({ ...suit, [slot]: pick }), true, "nothing is cleared that did not need to be");
   }
+  // A piece no longer in the scans still fills its hand: a two-hander picked clears it. A missing piece in the
+  // two-handed slot is never known to be a two-hander, so a one-hander picked keeps it.
+  assert.equal(handConflict("twoHanded", bow, { oneHanded: {} }), "oneHanded");
+  assert.equal(handConflict("oneHanded", sword, { twoHanded: {} }), null);
   assert.equal(handNote("Katana", "Weapon (1H)"), "Katana left Weapon (1H): a two-handed weapon takes both hands.");
 });
 
@@ -75,11 +81,11 @@ test("[fast] manual model: a saved suit keeps only known slots holding whole ser
 });
 
 test("[fast] manual model: a row's delta says what moves, up to the cap, gains and losses apart", () => {
-  const caps = manualCaps(effectiveProfile({}, null));
+  const caps = paperdollCaps(profileResistCaps(effectiveProfile({}, null)));
   const keys = deltaKeys({});
   assert.deepEqual(keys, STRIP_KEYS, "no profile: the strip's properties");
-  const before = paperdollTotals({ lrc: 57, lmc: 27, fireResist: 60, dexBonus: 2 }, 0);
-  const after = paperdollTotals({ lrc: 77, lmc: 35, fireResist: 52, dexBonus: 2 }, 0);
+  const before = paperdoll({ lrc: 57, lmc: 27, fireResist: 60, dexBonus: 2 }, 0);
+  const after = paperdoll({ lrc: 77, lmc: 35, fireResist: 52, dexBonus: 2 }, 0);
   const parts = slotDelta(before, after, keys, caps);
   assert.deepEqual(parts.map((p) => p.text), ["Fire −8 → 52", "LRC +20 → 77", "LMC +8 → 35"]);
   assert.deepEqual(parts.map((p) => p.tone), ["bad", "ok", "ok"]);

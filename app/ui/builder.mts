@@ -44,7 +44,7 @@ export function initBuilder(): void {
   $<HTMLSelectElement>("#b-char")!.onchange = () => {
     const v = $<HTMLSelectElement>("#b-char")!.value;
     setManualFor(v || null);
-    if (v) selectCharacter(v);
+    if (v && v !== state.builder.character) selectCharacter(v);   // back from "No character" to the same one keeps its panel and result
   };
   $<HTMLButtonElement>("#b-run")!.onclick = runBuild;
   $<HTMLButtonElement>("#b-save")!.onclick = saveProfile;

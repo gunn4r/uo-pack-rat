@@ -1,9 +1,9 @@
 // ui/manual-model.mts — the Suit Builder's Manual mode, its pure logic (issue #12): the totals strip's keys and the
-// line under each total, the caps it measures against, the picker's slot filter, the one-hand/two-hand rule, a
+// line under each total, the picker's slot filter, the one-hand/two-hand rule, a
 // saved suit read back, the slots whose piece left the scans, and a picker row's delta ("LRC +20 → 77"). No DOM and
 // no page state, so app/manual-model.test.mts checks it directly; ui/builder-manual.mts draws what it returns.
-import { RESIST_KEYS, OPTIMIZER_SLOTS, labelOf, profileResistCaps } from "../vault-lib.mts";
-import type { EffectiveProfile, PropMap } from "../vault-lib.mts";
+import { RESIST_KEYS, OPTIMIZER_SLOTS, labelOf } from "../vault-lib.mts";
+import type { PropMap } from "../vault-lib.mts";
 import type { ItemQuery } from "../item-query.mts";
 
 const num = (n: number): string => n.toLocaleString("en-US", { maximumFractionDigits: 2 });
@@ -14,19 +14,6 @@ export const TOTAL_KEYS = ["lrc", "lmc", "fc", "fcr", "ssi", "dci", "hci", "di"]
 export const STAT_KEYS = ["strBonus", "dexBonus", "intBonus"];
 export const STRIP_KEYS = [...RESIST_KEYS, ...TOTAL_KEYS, ...STAT_KEYS];
 
-// Resists in paperdoll terms: the item totals plus the character's Resisting Spells bonus (0 with no character).
-export function paperdollTotals(totals: PropMap, rsb: number): PropMap {
-  const t = { ...totals };
-  for (const k of RESIST_KEYS) t[k] = (t[k] || 0) + rsb;
-  return t;
-}
-// What the strip and the deltas measure against: the shard's caps, with each resist's in paperdoll terms (the
-// player's override, else the race's cap).
-export function manualCaps(prof: EffectiveProfile): Record<string, number> {
-  const caps = { ...prof.caps }, resists = profileResistCaps(prof);
-  for (const k of RESIST_KEYS) caps[k] = resists[k]!.cap;
-  return caps;
-}
 // A total as the strip shows it: capped, with what is wasted past the cap.
 export function capped(value: number, cap: number | null | undefined): { shown: number; wasted: number } {
   return cap == null ? { shown: value, wasted: 0 } : { shown: Math.min(value, cap), wasted: Math.max(0, value - cap) };
@@ -47,7 +34,8 @@ export const slotQuery = (slot: string): Partial<ItemQuery> => ({ slot: [slot] }
 
 // The one-hand/two-hand rule, as the optimizer applies it (optimizer-core.mts's optIsValidAssignment): a two-handed
 // weapon in the twoHanded slot rules out anything in oneHanded, while a shield goes with a one-handed weapon. The slot a
-// pick clears, or null.
+// pick clears, or null. `suit` has an entry for every filled slot: a piece no longer in the scans is `{}`, which still
+// fills its hand but is never known to be two-handed.
 interface Held { twoHanded?: boolean | null | undefined }
 export function handConflict(slot: string, pick: Held, suit: Partial<Record<string, Held | null | undefined>>): string | null {
   if (slot === "twoHanded" && pick.twoHanded && suit.oneHanded) return "oneHanded";
@@ -80,7 +68,7 @@ export interface DeltaPart { key: string; text: string; tone: "ok" | "bad" | "mu
 // What putting a row in the slot changes, for each of `keys` that moves: "LRC +20 → 77" (the change in what counts,
 // up to the cap, and the new capped total), a gain in the ok tone and a loss in the bad one; a change that lies
 // wholly past the cap counts for nothing and reads "LMC +8 over cap", muted. `before` and `after` are in the
-// strip's terms (paperdollTotals).
+// strip's terms (builder-model.mts's paperdoll).
 export function slotDelta(before: PropMap, after: PropMap, keys: string[], caps: Record<string, number | undefined>): DeltaPart[] {
   return keys.flatMap((k): DeltaPart[] => {
     const b = before[k] || 0, a = after[k] || 0;

@@ -14,12 +14,12 @@ import { box, txt, button, icon, meter, segmented, tag, confirmDialog, modalOpen
 import { api } from "./api.mts";
 import { resolveItems, rarityToken } from "./items.mts";
 import { closeCompare, keyProps, RESIST_NAMES } from "./builder-result.mts";
-import { capNote } from "./builder-model.mts";
+import { capNote, paperdoll, paperdollCaps } from "./builder-model.mts";
 import { itemActions } from "./inventory.mts";
 import { createItemBrowser } from "./item-browser.mts";
 import type { ItemBrowser } from "./item-browser.mts";
 import type { UiPrefs } from "./api-types.mts";
-import { TOTAL_KEYS, STAT_KEYS, paperdollTotals, manualCaps, capped, capLine, slotQuery, handConflict, handNote, savedSlots, missingSlots, deltaKeys, slotDelta } from "./manual-model.mts";
+import { TOTAL_KEYS, STAT_KEYS, capped, capLine, slotQuery, handConflict, handNote, savedSlots, missingSlots, deltaKeys, slotDelta } from "./manual-model.mts";
 
 type Mode = "automatic" | "manual";
 let mode: Mode = "automatic";
@@ -38,6 +38,7 @@ export function applyBuilderPrefs(prefs: UiPrefs | null): void {
   mode = prefs?.builderMode === "manual" ? "manual" : "automatic";
   noCharacter = prefs?.manualFor === "none";
   slots = savedSlots(prefs?.manualSuit);
+  synced = false;
   if (seg) showMode();
 }
 const savePrefs = (body: UiPrefs): void => { api("/api/ui-prefs", { method: "PUT", body }).catch((e: Error) => toast(`Could not save the Suit Builder's mode or manual suit: ${e.message}`, "bad")); };
@@ -79,18 +80,18 @@ export function paintCharSelect(): void {
   if (!isManual()) none?.remove();
   sel.value = isManual() && !manualCharacter() ? "" : state.builder.character || "";
 }
-// The select changed in Manual: "No character", or a character (which the caller then selects).
+// The select changed in Manual: "No character", or a character (which the caller selects when it is another one).
 export function setManualFor(character: string | null): void {
   if (!isManual()) return;
   noCharacter = !character;
   savePrefs({ manualFor: noCharacter ? "none" : "character" });
-  if (noCharacter) renderManual();
+  renderManual();
 }
 
 // ---------------------------------------------------------------- the suit
 // After a load, a scan reload or a switch to Manual: the saved serials resolved to their records again.
 // Until it lands the screen is not drawn, so a piece still resolving never flashes up as missing.
-let syncSeq = 0, syncing = false;
+let syncSeq = 0, syncing = false, synced = false;
 export async function syncManual(): Promise<void> {
   if (!isManual() || !state.inv) return;
   const mine = ++syncSeq, asked = slots;
@@ -98,11 +99,13 @@ export async function syncManual(): Promise<void> {
   const found = await resolveItems(Object.values(asked));
   if (mine !== syncSeq) return;
   if (asked !== slots) { void syncManual(); return; }   // a pick or a clear landed meanwhile: resolve the suit as it is now
-  syncing = false;
+  syncing = false; synced = true;
   items = found;
   draw();
   if (browser) { browser.sync(); if (pickSlot) browser.fetch(); }
 }
+// Every filled slot for the hand rule: a piece no longer in the scans still fills its hand.
+const held = (): Record<string, Item | Record<string, never>> => Object.fromEntries(Object.entries(slots).map(([s, serial]) => [s, items[serial] ?? {}]));
 const suitOpt = (): Record<string, OptItem> => Object.fromEntries(Object.entries(slots).flatMap(([s, serial]) => (items[serial] ? [[s, toOptItem(items[serial]!)]] : [])));
 function profile(): EffectiveProfile {
   const name = manualCharacter();
@@ -123,7 +126,7 @@ function clearSlot(slot: string): void {
 function pick(it: Item): void {
   const slot = pickSlot;
   if (!slot || slots[slot] === it.serial) return;
-  const cleared = handConflict(slot, it, suitOpt());
+  const cleared = handConflict(slot, it, held());
   const next = { ...slots, [slot]: it.serial };
   if (cleared) delete next[cleared];
   items[it.serial] = it;
@@ -145,7 +148,7 @@ async function startFromWorn(name: string): Promise<void> {
 // ---------------------------------------------------------------- drawing
 // Another character picked (its bonuses and its profile's floors and weights): the screen and the rows' deltas.
 export function renderManual(): void {
-  if (!isManual() || !state.inv || syncing) return;
+  if (!isManual() || !state.inv || syncing || !synced) return;
   draw();
   if (pickSlot) browser?.fetch();
 }
@@ -156,11 +159,11 @@ function draw(): void {
   paintPicker();
 }
 function totalsCard(): HTMLElement {
-  const name = manualCharacter(), prof = profile(), caps = manualCaps(prof), resists = profileResistCaps(prof);
-  const suit = suitOpt(), t = paperdollTotals(totalsOf(suit), prof.resistBonus);
+  const name = manualCharacter(), prof = profile(), resists = profileResistCaps(prof), caps = paperdollCaps(resists);
+  const suit = suitOpt(), t = paperdoll(totalsOf(suit), prof.resistBonus);
   const tiles = RESIST_KEYS.map((k) => {
     const [nm, color] = RESIST_NAMES[k]!, c = resists[k]!, v = t[k] || 0, { shown, wasted } = capped(v, c.cap), line = capLine(v, c.cap), note = capNote(c);
-    return box("div", { class: `resist tint tint-${color.slice(6)}` }, el("span", { class: "t-sm resist-name", style: `color:var(${color})` }, nm),
+    return box("div", { class: `resist tint tint-${color.slice(6)}`, "data-key": k }, el("span", { class: "t-sm resist-name", style: `color:var(${color})` }, nm),
       box("span", { class: "b-resist-val" }, txt(shown, "t-xl"), txt(`/ ${c.cap}`, "muted")),
       meter(shown, c.cap, { tone: wasted ? "warn" : "ok", label: `${nm} ${shown} of ${c.cap}` }), txt(line.text, `t-sm tone-${line.tone}`),
       note ? txt(`Cap ${note}`, "t-sm strong b-cap-note") : null);
@@ -168,7 +171,7 @@ function totalsCard(): HTMLElement {
   const stat = (k: string): HTMLElement => {
     const v = t[k] || 0, cap = caps[k], line = capLine(v, cap);
     return box("div", { class: `b-stat${k === STAT_KEYS[0] ? " mb-stat-sep" : ""}`, "data-key": k }, txt(label(k), "t-sm muted"),
-      box("span", { class: "v" }, txt(cap == null ? `${v > 0 ? "+" : ""}${v}` : capped(v, cap).shown, "strong"), cap == null ? null : txt(` / ${cap}`, "muted")),
+      box("span", { class: "v" }, txt(cap == null ? v : capped(v, cap).shown, "strong"), cap == null ? null : txt(` / ${cap}`, "muted")),
       txt(line.text, `t-sm tone-${line.tone}`));
   };
   const rsb = prof.resistBonus || 0;
@@ -248,9 +251,9 @@ function deltaCell(it: Item): HTMLElement {
   if (pickSlot && slots[pickSlot] === it.serial) return txt("In this slot", "t-sm muted mb-delta");
   const slot = pickSlot!, prof = profile(), rsb = prof.resistBonus || 0, cur = suitOpt();
   const after = { ...cur, [slot]: toOptItem(it) };
-  const cleared = handConflict(slot, it, cur);
+  const cleared = handConflict(slot, it, held());
   if (cleared) delete after[cleared];
-  const parts = slotDelta(paperdollTotals(totalsOf(cur), rsb), paperdollTotals(totalsOf(after), rsb), deltaKeys(prof), manualCaps(prof));
+  const parts = slotDelta(paperdoll(totalsOf(cur), rsb), paperdoll(totalsOf(after), rsb), deltaKeys(prof), paperdollCaps(profileResistCaps(prof)));
   const kids = parts.flatMap((p, i) => [i ? txt(" · ", "faint") : null, txt(p.text, `tone-${p.tone}`)]);
   const worn = it.equippedBy ? tag(`Worn by ${it.equippedBy}`, it.equippedBy === manualCharacter() ? undefined : "warn") : null;
   return el("span", { class: "mb-delta" }, worn, it.gargoyle ? tag("Gargoyle") : null, ...(kids.length ? kids : [txt("No change", "muted")]));

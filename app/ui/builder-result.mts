@@ -3,7 +3,7 @@
 // resist tiles and the other changes, the Plan, the Fetch list, the other suits, "<name> after the change",
 // Solver details), and the compare view for 2-3 suits or saved runs. The numbers come from
 // ui/builder-model.mts; the bridge actions are gated by ui/bridge.mts's bridgeActionReason().
-import { OPTIMIZER_SLOTS, RESIST_KEYS, getRules, resistSkillBonus, totalsOf, requirementReport, settingsDiff, resistCapsFor, profileResistCaps } from "../vault-lib.mts";
+import { OPTIMIZER_SLOTS, RESIST_KEYS, resistSkillBonus, totalsOf, requirementReport, settingsDiff, resistCapsFor, profileResistCaps } from "../vault-lib.mts";
 import type { EffectiveProfile, Item, OptItem, PropMap, ResistCap } from "../vault-lib.mts";
 import { state } from "./store.mts";
 import type { BuildMeta } from "./store.mts";
@@ -14,7 +14,7 @@ import { bridgeActionReason, runBridgeAction, grabAll, grabbable } from "./bridg
 import { resolveItems } from "./items.mts";
 import { renderPanel } from "./builder.mts";
 import { splitSerial } from "./inventory.mts";
-import { afterChange, compareModel, hiddenRowsNote, locationCrumbs, otherChanges, plural, resistOutcome, toggleCompare, propName, capNote, capsLine, anyOverridden, effectiveFloor, type CompareMember } from "./builder-model.mts";
+import { paperdoll, paperdollCaps, afterChange, compareModel, hiddenRowsNote, locationCrumbs, otherChanges, plural, resistOutcome, toggleCompare, propName, capNote, capsLine, anyOverridden, effectiveFloor, type CompareMember } from "./builder-model.mts";
 import type { OptSuit, OptimizeResult, SavedRunLike } from "./api-types.mts";
 
 export const RESIST_NAMES: Record<string, [string, string]> = { physResist: ["Physical", "--res-phys"], fireResist: ["Fire", "--res-fire"], coldResist: ["Cold", "--res-cold"], poisonResist: ["Poison", "--res-poison"], energyResist: ["Energy", "--res-energy"] };
@@ -365,18 +365,6 @@ function showCompare(spec: () => CompareSpec): void {
   view.replaceChildren(
     box("div", { class: "b-cmp-bar" }, txt("Comparing", "t-sm muted"), ...cols.map((c, i) => token({ label: c.token, removeLabel: c.removeLabel, onRemove: () => { s.onRemove(i); } })), txt("up to 3", "t-sm muted"), el("span", { class: "spacer" }), sw.root),
     el("div", { class: "card b-flush" }, el("div", { class: "b-tbl-scroll" }, tbl), note ? tableFoot(txt(note)) : null));
-}
-// Resists in paperdoll values (item totals + the Resisting Spells bonus) against paperdoll caps.
-function paperdoll(totals: PropMap, rsb: number): PropMap {
-  const t = { ...totals };
-  for (const k of RESIST_KEYS) t[k] = (t[k] || 0) + rsb;
-  return t;
-}
-// The shard's caps with the build's resist caps (overrides included) in place of its resist ones.
-function paperdollCaps(resists: Record<string, ResistCap>): Record<string, number> {
-  const caps = { ...(getRules().caps as Record<string, number>) };
-  for (const k of RESIST_KEYS) caps[k] = resists[k]!.cap;
-  return caps;
 }
 function compareKeys(cols: Array<{ totals: PropMap }>, prof: { floors?: Record<string, number>; weights?: Record<string, number> }): string[] {
   const keys = new Set<string>([...Object.keys(prof.floors || {}), ...Object.keys(prof.weights || {})]);

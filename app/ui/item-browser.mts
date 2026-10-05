@@ -740,6 +740,8 @@ export function createItemBrowser(root: HTMLElement, opts: ItemBrowserOptions): 
       return;
     }
     if (g !== gen) return;   // a newer query has been issued since: this answer is stale
+    // A row with keyboard focus is replaced below (focus would drop to <body>): the redrawn active row takes it.
+    const body = table.tBodies[0]!, hadFocus = !!document.activeElement?.matches("tr.item") && body.contains(document.activeElement);
     if (fresh) {
       fresh = false; loadedOnce = true;
       rowCache = new Map();
@@ -755,6 +757,7 @@ export function createItemBrowser(root: HTMLElement, opts: ItemBrowserOptions): 
     const into: unknown[] = page.groups || page.rows;
     got.forEach((r, i) => { into[offset + i] = r; rowCache.delete(offset + i); });
     renderTable();
+    if (hadFocus && !body.contains(document.activeElement)) rowEl(activeIndex)?.focus();
     // An item asked for from elsewhere (reveal): activate it once its row has landed.
     if (wanted != null && !page.groups) {
       const i = page.rows.findIndex((r) => r?.serial === wanted);

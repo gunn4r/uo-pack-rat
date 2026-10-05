@@ -456,12 +456,16 @@ test("[slow] Manual mode: a picked piece fills its slot, moves the totals and le
     await ring.click();
     await page.waitForSelector("#mb-picker:not([hidden]) tbody tr.item");
     assert.equal(await page.locator("#mb-picker-h").textContent(), "Ring: choose a piece");
-    const totalsBefore = await page.locator("#mb-totals").innerText();
+    // Each total's tile (the five resists and the property and stat tiles), by its key: not the "N of 12" header.
+    const tiles = (): Promise<Record<string, string>> => page.$$eval("#mb-totals [data-key]", (els) => Object.fromEntries(els.map((e) => [(e as HTMLElement).dataset.key!, (e as HTMLElement).innerText])));
+    const totalsBefore = await tiles();
     const row = page.locator("#mb-picker tbody tr.item").first();
     const name = (await row.locator("td").first().innerText()).trim();
     await row.click();
     await page.waitForFunction((n) => document.querySelector('.mb-slot-pick[data-slot="ring"]')?.textContent?.includes(n), name);
-    assert.notEqual(await page.locator("#mb-totals").innerText(), totalsBefore, "the totals moved");
+    const totalsAfter = await tiles();
+    assert.ok(Object.keys(totalsBefore).length >= 16, "every total has its tile");
+    assert.ok(Object.keys(totalsAfter).some((k) => totalsAfter[k] !== totalsBefore[k]), "a total's tile moved");
     assert.equal(await page.locator("#mb-picker").isVisible(), true, "the picker stays open");
     assert.equal(await page.locator("#mb-picker-h").textContent(), "Ring: choose a piece", "on the same slot");
     assert.ok((await page.locator("#mb-status").textContent() || "").includes(`${name} is in Ring`), "the status line says where it went");
@@ -472,7 +476,11 @@ test("[slow] Manual mode: a picked piece fills its slot, moves the totals and le
     await page.keyboard.press("Escape");
     await page.waitForSelector("#mb-picker", { state: "hidden" });
     assert.equal(await page.evaluate(() => (document.activeElement as HTMLElement | null)?.dataset.slot), "ring", "focus back on the slot card");
-    const prefs = JSON.parse(readFileSync(join(dataDir, "ui-prefs.json"), "utf8")) as { builderMode?: string; manualSuit?: Record<string, number> };
+    // The suit is saved by a PUT the page does not wait on: poll the file until it holds the ring.
+    type Prefs = { builderMode?: string; manualSuit?: Record<string, number> };
+    const read = (): Prefs => { try { return JSON.parse(readFileSync(join(dataDir, "ui-prefs.json"), "utf8")) as Prefs; } catch { return {}; } };
+    let prefs = read();
+    for (let i = 0; i < 50 && typeof prefs.manualSuit?.ring !== "number"; i++) { await page.waitForTimeout(100); prefs = read(); }
     assert.equal(prefs.builderMode, "manual");
     assert.equal(typeof prefs.manualSuit?.ring, "number", "the suit is kept for the next launch");
     assert.deepEqual(errors, []);
