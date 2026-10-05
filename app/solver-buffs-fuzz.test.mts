@@ -10,8 +10,9 @@
 //   - a requirement is met by a suit's gear exactly when gear + bonus + share reaches it (a resist's up to its buffed
 //     cap), for every gear total the solvers can tell apart (a floor at 0 reads as none, which a negative gear total
 //     below it would really miss: no real suit carries one).
-// Resist cap overrides run the whole 0-150 range, under the Resisting Spells bonus included, and raw stats leave gear
-// what is left to 150 of STR, DEX and INT.
+// Resist cap overrides run the whole 0-150 range, under the Resisting Spells bonus included (a resist no buff touches
+// keeps main's cap there, stopped at 0, and is held to that), and raw stats leave gear what is left to 150 of STR, DEX
+// and INT.
 // Tags: [fast]. Run: node --test app/solver-buffs-fuzz.test.mts
 import { test } from "node:test";
 import assert from "node:assert/strict";
@@ -95,7 +96,10 @@ for (const seed of SEEDS) {
       const r = applyBuffs(inst.plan.worn, caps0, inst.plan.on, inst.plan.skills, inst.plan.stats, inst.plan.who);
       const share = (k: string): number => (r.shares[k] || []).filter((x) => !x.outside).reduce((n, x) => n + x.value, 0);
       const bonus = (k: string): number => (RESIST_KEYS.includes(k) ? base.resistBonus : 0);
-      const real = (k: string, g: number): number => Math.min(g + bonus(k) + share(k), r.caps[k] ?? Infinity);
+      // a resist no buff touches keeps main's cap, stopped at 0 when an override puts it under the Resisting Spells
+      // bonus: that corner is main's own (docs/solver.md), so it is held to main's numbers rather than the real ones
+      const mains = (k: string): boolean => RESIST_KEYS.includes(k) && !(r.shares[k] || []).some((x) => !x.outside) && !(r.capShares[k] || []).length && caps0[k]! < bonus(k);
+      const real = (k: string, g: number): number => (mains(k) ? Math.min(g, 0) + bonus(k) : Math.min(g + bonus(k) + share(k), r.caps[k] ?? Infinity));
       const weightsOnly = { ...prof, floors: {}, hardFloors: [] };
       const w = planned.weights;
 
@@ -129,7 +133,7 @@ for (const seed of SEEDS) {
       // the best suit's paid totals, with the bonus and the shares, never pass a real cap
       for (const [k, c] of Object.entries(planned.caps)) {
         if (!w[k]) continue;
-        assert.ok(Math.min(gear(h.best, k), c) + bonus(k) + share(k) <= r.caps[k]! + EPS, `${label}: ${k} paid past its real cap ${r.caps[k]}`);
+        if (!mains(k)) assert.ok(Math.min(gear(h.best, k), c) + bonus(k) + share(k) <= r.caps[k]! + EPS, `${label}: ${k} paid past its real cap ${r.caps[k]}`);
       }
     }
     assert.ok(shifted > PER_SEED / 3, `the buffs moved the profile in ${shifted} of ${PER_SEED} instances`);

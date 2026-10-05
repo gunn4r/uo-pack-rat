@@ -498,16 +498,17 @@ export function planBuffs(p: Profile, character: Character | null, plan: BuffPla
 }
 const STAT_KEYS: Array<[keyof Stats, string]> = [["str", "strBonus"], ["dex", "dexBonus"], ["int", "intBonus"]];
 // The buffs applied to a profile's caps (in paperdoll terms, the stats' 150 less the raw stats) and the worn suit, and
-// what that shifts: every cap a buff changed or shares, the stat caps, and with any buff on every resist; and each
-// key's in-cap share. With no buffs the resists are left out, so they keep effectiveProfile's own caps, main's. `r`
-// says which buff gave what (a requirement's note).
+// what that shifts: every cap a buff changed or has an in-cap share on, and the stat caps; and each key's in-cap
+// share. A resist no buff touches is left out, so it keeps effectiveProfile's own cap (main's, stopped at 0 under the
+// Resisting Spells bonus), and buffs that touch nothing (Enemy of One) plan and key exactly as none. `r` says which
+// buff gave what (a requirement's note).
 export function buffShift(base: EffectiveProfile, plan: BuffPlan): { shift: BuffShift; r: BuffResult } {
   const view = profileResistCaps(base), caps = { ...base.caps };
   for (const k of RESIST_KEYS) caps[k] = view[k]!.cap;
   if (plan.stats) for (const [s, k] of STAT_KEYS) caps[k] = STAT_MAX - plan.stats[s];
   const r = applyBuffs(plan.worn, caps, plan.on, plan.skills, plan.stats, plan.who);
   const shares = Object.fromEntries(Object.entries(r.shares).map(([k, list]) => [k, list.filter((x) => !x.outside).reduce((n, x) => n + x.value, 0)]));
-  const touched = (k: string, v: number): boolean => v !== caps[k] || Object.hasOwn(shares, k) || (!!plan.stats && STAT_KEYS.some(([, sk]) => sk === k)) || (!!plan.on.length && RESIST_KEYS.includes(k));
+  const touched = (k: string, v: number): boolean => v !== caps[k] || Object.hasOwn(shares, k) || (!!plan.stats && STAT_KEYS.some(([, sk]) => sk === k));
   const kept = Object.entries(r.caps).filter(([k, v]) => touched(k, v));
   return { shift: { caps: Object.fromEntries(kept), shares }, r };
 }
@@ -543,7 +544,8 @@ export const signed = (n: number): string => `${n < 0 ? "−" : "+"}${Math.abs(n
 export const signedPct = (n: number): string => `${signed(Math.round(n * 100) / 100)}%`;
 // A bonus added past the cap, or a penalty applied after it (Protection's FC −2): "past" or "after".
 export const capWord = (n: number): string => (n < 0 ? "after" : "past");
-// "a" or "an" before a number as it is read aloud: an 8, an 11, an 18, an 80, an 88, an 800, an 1100 ("eleven hundred").
+// "a" or "an" before a number as it is read aloud, for the sizes a cap takes: an 8, an 11, an 18, an 80, an 88, an 800,
+// an 1100 ("eleven hundred"). Larger numbers (11,000) aren't handled.
 export const article = (n: number): string => (/^(8|1[18]$|1[18]\d\d$)/.test(String(n)) ? "an" : "a");
 // A requirement's note with buffs planned: what gear still has to supply (`need`, against its cap `gearCap`), and which
 // buff gave what. "Gear needs 35: Divine Fury gives 10", "Gear needs 45 of a 50 cap: Divine Fury −20, White Tiger Form

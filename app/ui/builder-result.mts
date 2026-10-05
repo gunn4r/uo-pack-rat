@@ -14,7 +14,7 @@ import { bridgeActionReason, runBridgeAction, grabAll, grabbable } from "./bridg
 import { resolveItems } from "./items.mts";
 import { splitSerial } from "./inventory.mts";
 import { buffPlan, renderPanel } from "./builder.mts";
-import { savedBuffs, plannedFromWorn, buffById } from "../buffs.mts";
+import { savedBuffs, plannedFromWorn, buffById, buffsDiff, runBuffs } from "../buffs.mts";
 import { paperdoll, paperdollCaps, paperdollFloors, pastCapBadges, runSettingsDiff, withBuffs, afterChange, compareModel, hiddenRowsNote, locationCrumbs, otherChanges, plural, resistOutcome, toggleCompare, propName, capNote, capsLine, anyOverridden, effectiveFloor, type CompareMember } from "./builder-model.mts";
 import type { OptSuit, OptimizeResult, SavedRunLike } from "./api-types.mts";
 
@@ -116,7 +116,7 @@ export async function renderResult(res: OptimizeResult, current: OptSuit, prof: 
     fetchCard(fetchItems, name),
     res.altTolerance != null ? otherSuitsCard(res, view) : null,
     afterCard(name, current, suit, prof),
-    detailsCard(res, meta, view),
+    detailsCard(res, meta, view, prof),
   ].filter((x): x is HTMLElement => !!x);
   const out = $<HTMLElement>("#b-result")!;
   out.classList.remove("b-stale"); out.inert = false; out.removeAttribute("aria-hidden");
@@ -316,7 +316,7 @@ function afterCard(name: string, current: OptSuit, suit: OptSuit, prof: Effectiv
 }
 
 // ---- 6. solver details: collapsed; the score lives here, not in the headline
-function detailsCard(res: OptimizeResult, meta: BuildMeta | undefined, view: number | null): HTMLElement {
+function detailsCard(res: OptimizeResult, meta: BuildMeta | undefined, view: number | null, prof: EffectiveProfile): HTMLElement {
   const skipped = meta?.skipped;
   const cnt = (k: string): number => (Array.isArray(skipped?.[k]) ? (skipped![k] as unknown[]).length : +((skipped?.[k] as number) || 0));   // live arrays, or a saved run's counts
   const skips = ([["worn by others", cnt("worn")], ["too heavy", cnt("str")], ["tagged", cnt("tags")], ["gargoyle-only", cnt("gargoyle")], ["not meditation-safe", cnt("nonMed")], ["by the Weapons filter", cnt("weapon")], ["in skipped containers", cnt("roots")]] as Array<[string, number]>)
@@ -336,7 +336,11 @@ function detailsCard(res: OptimizeResult, meta: BuildMeta | undefined, view: num
   pairs.push(["Score", `${fmtN(Math.round(res.currentScore))} → ${fmtN(Math.round(score))}`]);
   if (res.gapPoints != null) pairs.push(["Gap to the bound", `${fmtN(res.gapPoints)} points`]);
   if (res.altTolerance != null) pairs.push(["Other suits", `${fmtN((res.alternatives || []).length)} within ${fmtN(res.altTolerance)} points${res.altShortfall === "budget" ? " · the time budget ran out before more were found" : ""}`]);
-  if (meta?.reused) pairs.push(["Reused", `the run from ${fmtRunTime(meta.reused.createdAt)} (same inventory, settings and options)`]);
+  // A run is reused when the solvers' input is the same (runs-lib.mts's runKey): its buffs may differ where they plan alike.
+  if (meta?.reused) {
+    const other = buffsDiff(savedBuffs(meta.reused.settings), prof.buffs ? runBuffs(prof.buffs.on, prof.buffs.skills) : undefined).length > 0;
+    pairs.push(["Reused", `the run from ${fmtRunTime(meta.reused.createdAt)} (same inventory and plan)${other ? ", saved with different buffs that plan the same" : ""}`]);
+  }
   return el("section", { class: "card", "aria-label": "Solver details" }, t, detailsOpen ? el("div", { class: "b-details", id: "b-details" }, keyValue(pairs)) : null);
 }
 

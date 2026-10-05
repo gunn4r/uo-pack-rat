@@ -223,6 +223,14 @@ test("[fast] buffs plan: the run key follows the plan: Enemy of One alone keys a
   assert.notEqual(key(plan(["divineFury"], { Chivalry: 105 })), none);
 });
 
+test("[fast] buffs plan: Enemy of One keys as none with a resist override under the Resisting Spells bonus too", () => {
+  const p: Profile = { weights: { coldResist: 1 }, resistCaps: { coldResist: 20 } }, stats = { str: 80, dex: 80, int: 80 };
+  const none = plannedProfile(p, RS100, withRS(plan([], {}, { stats }))), eoo = plannedProfile(p, RS100, withRS(plan(["enemyOfOne"], {}, { stats })));
+  assert.deepEqual([none.caps.coldResist, eoo.caps.coldResist], [0, 0], "a resist no buff touches keeps main's cap, stopped at 0");
+  const k = (x: EffectiveProfile): string => runKey({ pools: {}, current: {}, profile: x, opts: {} });
+  assert.equal(k(eoo), k(none));
+});
+
 // ---------------------------------------------------------------- the solvers on small pools
 const OPTS = { exact: true, timeBudgetMs: 5000, restarts: 5, seed: 1, slots: ["helmet", "chest"], optionalSlots: ["helmet", "chest"] };
 type Piece = { serial: number; name: string; slot: string; props: PropMap };
