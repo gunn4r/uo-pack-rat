@@ -459,9 +459,11 @@ test("[slow] Manual mode: a picked piece fills its slot, moves the totals and le
     // Each total's tile (the five resists and the property and stat tiles), by its key: not the "N of 12" header.
     const tiles = (): Promise<Record<string, string>> => page.$$eval("#mb-totals [data-key]", (els) => Object.fromEntries(els.map((e) => [(e as HTMLElement).dataset.key!, (e as HTMLElement).innerText])));
     const totalsBefore = await tiles();
+    // Picked from the keyboard, the way a player steps through pieces: the first row focused, then Enter.
     const row = page.locator("#mb-picker tbody tr.item").first();
     const name = (await row.locator("td").first().innerText()).trim();
-    await row.click();
+    await row.focus();
+    await page.keyboard.press("Enter");
     await page.waitForFunction((n) => document.querySelector('.mb-slot-pick[data-slot="ring"]')?.textContent?.includes(n), name);
     const totalsAfter = await tiles();
     assert.ok(Object.keys(totalsBefore).length >= 16, "every total has its tile");

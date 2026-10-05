@@ -757,7 +757,7 @@ export function createItemBrowser(root: HTMLElement, opts: ItemBrowserOptions): 
     const into: unknown[] = page.groups || page.rows;
     got.forEach((r, i) => { into[offset + i] = r; rowCache.delete(offset + i); });
     renderTable();
-    if (hadFocus && !body.contains(document.activeElement)) rowEl(activeIndex)?.focus();
+    if (hadFocus && !body.contains(document.activeElement)) focusRow(activeIndex);   // scrolled clear of the sticky header
     // An item asked for from elsewhere (reveal): activate it once its row has landed.
     if (wanted != null && !page.groups) {
       const i = page.rows.findIndex((r) => r?.serial === wanted);

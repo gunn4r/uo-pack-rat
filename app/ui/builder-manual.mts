@@ -227,6 +227,7 @@ function openPicker(slot: string): void {
   }
   browser.setQuery({ ...browser.query });   // the new slot's pieces, from the top
   draw();
+  $<HTMLElement>("#mb-picker")!.scrollIntoView({ block: "nearest" });   // on a short window the screen scrolls to show it whole
   host.querySelector<HTMLInputElement>(".inv-search input")?.focus();
 }
 function closePicker(): void {
