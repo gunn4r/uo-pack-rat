@@ -1480,7 +1480,8 @@ export function slayersOf(flags: string[] | null | undefined): string[] {
 
 // Meditation rule (ServUO): armour materials with MeditationAllowance None/Half block or halve mana regen unless the
 // piece has Mage Armor; a held weapon or shield blocks it unless Spell Channeling (spellbooks are fine). Jewellery,
-// cloaks, talismans and cloth never interfere.
+// cloaks, talismans and cloth never interfere: in the neck slot only a gorget, a mempo or a collar is armor, so a
+// Gold Necklace or Gold Beads is never read as gold armor.
 const ARMOR_SLOT_SET = new Set(["helmet", "chest", "arms", "hands", "legs", "outerLegs", "neck", "feet", "robe", "tunic", "waist", "shirt"]);
 // material words that always block meditation (platemail, chain, bone, studded …)
 const NONMED_RE = /\b(platemail|plate|chainmail|chain|ringmail|bone|dragon|woodland|studded|metal|stone|verite|valorite|agapite|bronze|copper|shadow iron|dull copper|gold|scale)\b/i;
@@ -1496,6 +1497,7 @@ export function medableOf(name: string, slot: string | null | undefined, gear: b
     return f.includes("spell channeling");
   }
   if (!ARMOR_SLOT_SET.has(slot as string)) return true;
+  if (slot === "neck" && !/\b(gorget|mempo|collar)\b/i.test(name)) return true;
   if (f.includes("mage armor")) return true;
   if (NONMED_RE.test(name)) return false;
   if (MED_MATERIAL_RE.test(name)) return true;

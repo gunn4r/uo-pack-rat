@@ -324,6 +324,11 @@ test("[smoke] medableOf: materials, Mage Armor and Spell Channeling decide medit
   assert.equal(medableOf("Fortified Bone Armor Of Wizardry", "chest", true, []), false);
   assert.equal(medableOf("Fortified Bone Armor Of Wizardry", "chest", true, ["mage armor"]), true);
   assert.equal(medableOf("Leather Gorget", "neck", true, []), true);
+  assert.equal(medableOf("Platemail Gorget", "neck", true, []), false);
+  assert.equal(medableOf("Bone Mempo", "neck", true, []), false);
+  // jewelry in the neck slot never blocks meditation, whatever metal it is made of
+  assert.equal(medableOf("Gold Necklace", "neck", true, []), true);
+  assert.equal(medableOf("Gold Beads", "neck", true, []), true);
   assert.equal(medableOf("Leaf Tonlet", "legs", true, []), true);
   assert.equal(medableOf("Woodland Chest", "chest", true, []), false);
   assert.equal(medableOf("Studded Tunic", "chest", true, []), false);
