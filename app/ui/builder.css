@@ -121,6 +121,7 @@
 .b-cmp-bar .check { align-items: center; }
 .tbl.b-cmp th { height: 64px; }
 .b-cmp-col { display: flex; flex-direction: column; gap: var(--space-1); min-width: 0; }
+.b-cmp-col .b-row > .badge { flex: none; }   /* a long run name is cut, its whole name its tooltip, and the verdict stays */
 .tbl.b-cmp td { white-space: normal; }
 .tbl.b-cmp td.b-cmp-act { height: 44px; }
 
@@ -279,4 +280,4 @@
 .b-fetch-piece:hover { color: var(--color-text); }
 /* Automatic's buff picker, in a popover from the Buffs section: the same picker as Manual's side column */
 .pop-body:has(> .bf-pick) { padding: 0; gap: 0; }
-.pop-body > .bf-pick { display: flex; flex-direction: column; height: min(640px, calc(100vh - 32px)); }
+.pop-body > .bf-pick { display: flex; flex-direction: column; height: min(var(--buff-picker-h), calc(100vh - var(--space-8))); }

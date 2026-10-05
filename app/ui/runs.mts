@@ -11,7 +11,7 @@ import { api } from "./api.mts";
 import { bindDrawer, box, txt, button, badge, message, input, confirmDialog, menu, type DrawerHandle } from "./components.mts";
 import { renderNavCounts } from "./shell.mts";
 import { resolveItems } from "./items.mts";
-import { renderPanel, readControls, knobs, applyKnobs, clearCapDrafts, panelBuffs, buffPlan, setPanelBuffs } from "./builder.mts";
+import { renderPanel, readControls, knobs, applyKnobs, clearCapDrafts, panelBuffs, buffPlan, loadRunBuffs } from "./builder.mts";
 import { renderResult, openRunCompare, closeCompare } from "./builder-result.mts";
 import { paperdollCaps, runAutoLabel, runBadges, runSettingsDiff, toggleCompare, plural, withBuffs } from "./builder-model.mts";
 import type { RunsListApiResponse, RunApiResponse, RunPutApiResponse, RunSummaryLike, SavedRunLike } from "./api-types.mts";
@@ -32,7 +32,7 @@ export function applySettings(st: RunSettings): void {
     excludeTags: [...(st.excludeTags || [])], excludeRoots: [...(st.excludeRoots || [])], strLimit: st.strLimit, allowGargoyle: !!st.allowGargoyle, medOnly: !!st.medOnly, excludeWeapons: [...(st.excludeWeapons || [])], ubwsAnyWeapon: st.ubwsAnyWeapon !== false,
     race: st.race || p.race || "human", excludeSkills: [...(st.excludeSkills || [])], allowOthersWorn: !!st.allowOthersWorn, resistCaps: { ...(st.resistCaps || {}) } });
   applyKnobs(st);
-  setPanelBuffs(savedBuffs(st)?.on ?? []);
+  loadRunBuffs(savedBuffs(st));
   clearCapDrafts();
   renderPanel();
   toast("Settings loaded into the panel. Save profile to keep them.", "good");

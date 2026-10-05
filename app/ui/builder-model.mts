@@ -5,7 +5,7 @@
 // all directly; ui/builder.mts, ui/builder-result.mts and ui/runs.mts draw what it returns.
 import { getRules, labelOf, fullOf, NOT_BUILDER_KEYS, RESIST_KEYS, RESIST_CAP_LIMITS, SLOT_LABELS, settingsDiff, shardResistCap, WEAPON_SKILLS, MELEE_SKILLS, ubwsLetsIn } from "../vault-lib.mts";
 import type { PlannedBuffs, PropMap, ResistCap, RunSettings } from "../vault-lib.mts";
-import { applyBuffs, buffById, buffsDiff, signed, type BuffResult } from "../buffs.mts";
+import { applyBuffs, buffById, buffsDiff, capWord, signed, type BuffResult } from "../buffs.mts";
 
 export const plural = (n: number, word: string, many = `${word}s`): string => `${n.toLocaleString("en-US")} ${n === 1 ? word : many}`;
 const num = (n: number): string => n.toLocaleString("en-US", { maximumFractionDigits: 2 });
@@ -41,9 +41,10 @@ export function withBuffs(t: PropMap, rsb: number, caps: Record<string, number>,
 // Floors in paperdoll terms: a resist's with the Resisting Spells bonus added back.
 export const paperdollFloors = (floors: Record<string, number>, rsb: number): Record<string, number> =>
   Object.fromEntries(Object.entries(floors).map(([k, v]) => [k, RESIST_KEYS.includes(k) ? v + rsb : v]));
-// What the buffs add past the cap, as badges: "DI +68 past the cap · Enemy of One".
+// What the buffs add past the cap, as badges: "DI +68 past the cap (Enemy of One)"; a penalty applied after it, such
+// as Protection's casting delay, "FC −2 after the cap (Protection)".
 export const pastCapBadges = (r: BuffResult): string[] =>
-  Object.entries(r.outside).filter(([, v]) => v).map(([k, v]) => `${labelOf(k)} ${signed(v)} past the cap · ${(r.shares[k] || []).filter((x) => x.outside).map((x) => buffById(x.id)!.name).join(", ")}`);
+  Object.entries(r.outside).filter(([, v]) => v).map(([k, v]) => `${labelOf(k)} ${signed(v)} ${capWord(v)} the cap (${(r.shares[k] || []).filter((x) => x.outside).map((x) => buffById(x.id)!.name).join(", ")})`);
 
 // ---------------------------------------------------------------- panel summaries
 // "each resist 6" when all five resists carry the same value, else each one on its own.

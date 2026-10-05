@@ -4,7 +4,7 @@
 // character's skills, a field per number a group scales with, and the note when a form replaced another. Manual shows
 // the picker in its side column, Automatic in a popover from its Buffs section (ui/builder.mts). The model is
 // app/buffs.mts; ui/builder-manual.mts and ui/builder.mts hold the state and call these with it.
-import { BUFFS, BUFF_GROUPS, BUFF_INPUTS, EXCLUSIVE, buffById, buffContext, buffNeeds, buffText, signed, signedPct } from "../buffs.mts";
+import { BUFFS, BUFF_GROUPS, BUFF_INPUTS, EXCLUSIVE, buffById, buffContext, buffNeeds, buffText, capWord, signed, signedPct } from "../buffs.mts";
 import type { Buff, BuffResult, BuffWho, Skills, Stats } from "../buffs.mts";
 import type { PropMap } from "../vault-lib.mts";
 import { el, label } from "./dom.mts";
@@ -22,6 +22,7 @@ export interface BuffView {
   caps: Record<string, number>;          // the caps before any buff, which a cap change is described against
   all: BuffResult;                       // every buff that is on applied, counted or not: which are beaten or blocked
   replaced: { on: string; off: string } | null;
+  cleared?: string[] | null;             // the buffs Clear all took off, said with Undo (Automatic: Manual's undo history has it)
   count: boolean;
   open: boolean;
 }
@@ -59,6 +60,14 @@ export function buffChip(id: string, v: BuffView, a: Pick<BuffActions, "toggle">
   t.dataset.buff = id;
   return t;
 }
+// A chip's ×, or anything that redraws a row of chips: `act` runs, and focus stays in the row (`row`, a selector): on the
+// chip after the one that had it, else on `add` (an id).
+export function keepChipFocus(row: string, add: string, act: () => void): void {
+  const chip = document.activeElement?.closest<HTMLElement>(`${row} .token`);
+  const after = chip ? (chip.nextElementSibling as HTMLElement | null)?.dataset.buff : undefined;
+  act();
+  if (chip) (document.querySelector<HTMLElement>(`${row} .token[data-buff="${after}"] button`) ?? document.getElementById(add))?.focus();
+}
 // The Buffs row: a chip per buff that is on, Add buff, and the switch.
 export function buffStrip(v: BuffView, a: BuffActions): HTMLElement {
   const chips = v.on.map((id) => buffChip(id, v, a));
@@ -75,9 +84,9 @@ export function buffMarker(k: string, r: BuffResult, baseCap: number | undefined
   const sum = (outside: boolean): number => shares.filter((s) => !!s.outside === outside).reduce((n, s) => n + s.value, 0);
   const inCap = sum(false), past = sum(true), raise = baseCap == null ? 0 : (r.caps[k] ?? baseCap) - baseCap;
   const pct = shares.reduce((n, s) => n + (s.pct ?? 0), 0);   // with no character, Bless's +13% and Curse's −20% are of the same base
-  const parts = [inCap ? signed(inCap) : pct ? signedPct(pct) : null, raise ? `cap ${signed(raise)}` : null, past ? `${signed(past)} past cap` : null].filter(Boolean);
+  const parts = [inCap ? signed(inCap) : pct ? signedPct(pct) : null, raise ? `cap ${signed(raise)}` : null, past ? `${signed(past)} ${capWord(past)} cap` : null].filter(Boolean);
   if (!parts.length) return null;
-  const who = [...shares.map((s) => `${nameOf(s.id)} ${s.pct != null ? signedPct(s.pct) : signed(s.value)}${s.outside ? " past the cap" : ""}`),
+  const who = [...shares.map((s) => `${nameOf(s.id)} ${s.pct != null ? signedPct(s.pct) : signed(s.value)}${s.outside ? ` ${capWord(s.value)} the cap` : ""}`),
     ...capShares.map((s) => `${nameOf(s.id)} cap ${signed(s.value)}`)].join(", ");
   return box("span", { class: "t-sm bf-sub", title: `From the buffs: ${who}` }, icon("spark", { size: "sm" }), txt(parts.join(" · ")), el("span", { class: "sr" }, `, from the buffs: ${who}`));
 }
@@ -182,10 +191,10 @@ function paintBuffPicker(host: HTMLElement, id: Ids, v: BuffView, a: PickerActio
   host.querySelector(".bf-status")!.textContent = [q ? `${hits.length} of ${BUFFS.length} match “${search.value.trim()}”` : null, `${v.on.length} on`,
     forms ? "1 form" : null, v.name ? `numbers from ${v.name}'s skills` : "no character: every skill at 120"].filter(Boolean).join(" · ");
   host.querySelector<HTMLButtonElement>(`#${id("clear")}`)!.disabled = !v.on.length;
-  const r = v.replaced, excl = r ? buffById(r.on)?.excl : undefined;
+  const r = v.replaced, excl = r ? buffById(r.on)?.excl : undefined, undo = button({ label: "Undo", variant: "ghost", size: "sm", attrs: { id: id("undo") }, onClick: a.undo });
   const hint = r && excl ? message({ tone: "info", attrs: { class: "msg info bf-hint" },
-    text: el("span", {}, el("span", { class: "strong" }, `${nameOf(r.on)} replaced ${nameOf(r.off)}. `), EXCLUSIVE[excl]!),
-    actions: [button({ label: "Undo", variant: "ghost", size: "sm", attrs: { id: id("undo") }, onClick: a.undo })] }) : null;
+    text: el("span", {}, el("span", { class: "strong" }, `${nameOf(r.on)} replaced ${nameOf(r.off)}. `), EXCLUSIVE[excl]!), actions: [undo] })
+    : v.cleared?.length ? message({ tone: "info", attrs: { class: "msg info bf-hint" }, text: el("span", {}, el("span", { class: "strong" }, "Cleared: "), v.cleared.map(nameOf).join(", ")), actions: [undo] }) : null;
   // a folded group lists its rows only when a search matches them. Each group is its own box, so its sticky head
   // scrolls away with it rather than staying under the next group's.
   const groups = BUFF_GROUPS.flatMap((g) => {

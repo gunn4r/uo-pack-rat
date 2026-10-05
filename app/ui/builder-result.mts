@@ -136,8 +136,13 @@ function verdict(res: OptimizeResult): { text: string; tone?: "ok" | "warn" | "b
 function headlineCard(res: OptimizeResult, current: OptSuit, suit: OptSuit, prof: EffectiveProfile, name: string, view: number | null, nChanges: number, fetchItems: Item[], meta: BuildMeta | undefined): HTMLElement {
   const before = totalsOf(current), after = totalsOf(suit);
   const rsb = prof.resistBonus || 0;
-  const report = requirementReport(after, prof);
-  const unmet = report.filter((r) => r.met === false).length, floors = report.filter((r) => r.met != null).length;
+  // in paperdoll terms, with the buffs it was planned with unless "Show without buffs" is on, against the caps they leave
+  const caps = profileResistCaps(prof), base = paperdollCaps(caps), shown = withoutBuffs ? null : prof.buffs;
+  const was = withBuffs(before, rsb, base, shown), now = withBuffs(after, rsb, base, shown), pdFloors = paperdollFloors(prof.buffs?.floors ?? prof.floors, rsb);
+  // with buffs planned, a requirement is met or not by the totals shown, with or without them
+  const floorKeys = Object.keys(pdFloors).filter((k) => k !== "tagPenalty");
+  const report = requirementReport(after, prof), floors = prof.buffs ? floorKeys.length : report.filter((r) => r.met != null).length;
+  const unmet = prof.buffs ? floorKeys.filter((k) => (now.totals[k] || 0) < effectiveFloor(k, pdFloors[k]!, now.caps)).length : report.filter((r) => r.met === false).length;
   const v = verdict(res);
   const vb = v.text ? box("span", { class: `badge${v.tone ? " " + v.tone : ""}` }, v.tone === "ok" ? icon("check", { size: "sm" }) : null, txt(v.text)) : null;
   const line = [plural(nChanges, "change"), floors ? (unmet ? `${plural(unmet, "requirement")} not met` : "every requirement met") : "",
@@ -146,9 +151,6 @@ function headlineCard(res: OptimizeResult, current: OptSuit, suit: OptSuit, prof
   const gate = todo.length ? bridgeActionReason("grab", todo[0]!) : null;
   const grab = button({ label: todo.length ? `Grab all ${todo.length}` : "Grab all", icon: "grab", variant: "primary", disabled: !!gate || !todo.length, onClick: () => grabAll(fetchItems, name), attrs: { id: "b-grab-all" } });
   const grabCtl = gate || !todo.length ? tipWrap(grab, gate || `Nothing to grab: every piece is already with ${name} or worn.`) : grab;
-  // in paperdoll terms, with the buffs it was planned with unless "Show without buffs" is on, against the caps they leave
-  const caps = profileResistCaps(prof), base = paperdollCaps(caps), shown = withoutBuffs ? null : prof.buffs;
-  const was = withBuffs(before, rsb, base, shown), now = withBuffs(after, rsb, base, shown), pdFloors = paperdollFloors(prof.buffs?.floors ?? prof.floors, rsb);
   const tiles = RESIST_KEYS.map((k) => resistTile(k, now.totals[k]!, pdFloors[k] ?? null, { cap: now.caps[k]!, shard: caps[k]!.shard }, was.totals[k]!));
   const other = [...otherChanges([...Object.keys(prof.floors), ...Object.keys(prof.weights)], was.totals, now.totals, now.caps, pdFloors), ...pastCapBadges(now).map((text) => ({ text, tone: "ok" as const }))];
   const unreachable = (res.unreachableFloors || []).length ? message({ tone: "warn", text: `No suit in the pool can reach these requirements${prof.buffs ? ", even with the buffs" : ""}: ${res.unreachableFloors!.map((k) => propName(k)).join(", ")}.` }) : null;
@@ -166,12 +168,14 @@ function headlineCard(res: OptimizeResult, current: OptSuit, suit: OptSuit, prof
 // switch redraws the totals; the suit stays the one the search found with the buffs.
 function plannedWith(prof: EffectiveProfile, name: string): HTMLElement | null {
   if (!prof.buffs) return null;
-  const worn = plannedFromWorn(prof.buffs.on).map((id) => buffById(id)!.name);
-  const flip = button({ label: withoutBuffs ? "Show with buffs" : "Show without buffs", variant: "ghost", size: "sm", attrs: { id: "b-buffs-shown" }, onClick: () => {
+  const flip = button({ label: "Show without buffs", variant: "ghost", size: "sm", attrs: { id: "b-buffs-shown", "aria-pressed": String(withoutBuffs) }, onClick: () => {
     withoutBuffs = !withoutBuffs; void rerender().then(() => document.getElementById("b-buffs-shown")?.focus());
   } });
-  return box("div", { class: "b-planned" }, txt("Planned with", "t-sm muted"), ...prof.buffs.on.map((id) => badge(buffById(id)!.name, "accent")), txt("·", "faint"), flip,
-    worn.length ? el("p", { class: "t-sm muted b-planned-note" }, txt(`${worn.join(", ")}: planned with what ${name} wears now (its Enhance Potions, its weapon's Spell Channeling)`)) : null);
+  // each buff whose numbers came from the suit worn now, with what they came from
+  const worn = plannedFromWorn(prof.buffs.on).map((id) => `${buffById(id)!.name} is worked out from the suit ${name} wears now (${buffById(id)!.excl === "enchant" ? "its weapon's Spell Channeling" : "its Enhance Potions"})`);
+  return box("div", { class: "b-planned" }, txt("Planned with", "t-sm muted"), ...prof.buffs.on.map((id) => badge(buffById(id)!.name, "accent")), txt("·", "faint"),
+    tooltip(flip, "Redraws the totals without the buffs. The suit stays the one found with them: nothing is searched again."),
+    worn.length ? el("p", { class: "t-sm muted b-planned-note" }, txt(`${worn.join(". ")}.`)) : null);
 }
 
 // ---- 2. plan: the slots that change, with lock / highlight / grab
@@ -430,7 +434,7 @@ export function openRunCompare(runs: SavedRunLike[], titleOf: (r: SavedRunLike) 
       const { totals, caps } = withBuffs(totalsOf(r.result.best), rsb, paperdollCaps(views[i]!), buffPlan(name, r.settings.race, savedBuffs(r.settings)));
       const met = Object.keys(floors).filter((k) => (totals[k] || 0) >= effectiveFloor(k, floors[k]!, caps)).length;
       const v = verdict(r.result);
-      const head = box("span", { class: "b-cmp-col" }, box("span", { class: "b-row" }, txt(titleOf(r), "strong"), v.text ? badge(v.text, v.tone === "bad" ? "bad" : v.tone) : null), txt(`${fmtRunTime(r.createdAt)} · ${fmtSecs(r.ms || 0)}`, "t-sm"));
+      const head = box("span", { class: "b-cmp-col" }, box("span", { class: "b-row" }, el("span", { class: "strong ellip", title: titleOf(r) }, titleOf(r)), v.text ? badge(v.text, v.tone === "bad" ? "bad" : v.tone) : null), txt(`${fmtRunTime(r.createdAt)} · ${fmtSecs(r.ms || 0)}`, "t-sm"));
       const action = r.id === state.builder.openRun ? txt("Showing in the result", "t-sm muted") : button({ label: "Open this run", size: "sm", onClick: () => { closeCompare(); open(r.id); } });
       return { assignment: r.result.best, totals, caps, head, token: r.label || fmtRunTime(r.createdAt), removeLabel: `Remove the run from ${fmtRunTime(r.createdAt)} from comparison`,
         outcome: [plural((r.result.perSlotChanges || []).length, "change"), Object.keys(floors).length ? `${met} of ${Object.keys(floors).length}` : "none set", v.text, ...(capped ? [capsLine(views[i]!)] : [])], action };

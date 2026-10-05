@@ -6,20 +6,20 @@
 // build sends, what a profile saves and what a run snapshots are read from state, never from the DOM.
 import { PROP_LABELS, NOT_BUILDER_KEYS, OPTIMIZER_SLOTS, tagUnits, WEAPON_SKILLS, MELEE_SKILLS, resistSkillBonus, effectiveProfile, profileResistCaps, totalsOf, getRules, RESIST_KEYS, RESIST_CAP_LIMITS, resistCapsFor, templateFrom, settingsDiff, bagLabel } from "../vault-lib.mts";
 import type { EffectiveProfile, ResistCap, RunBuffs, RunSettings, Character } from "../vault-lib.mts";
-import { applyBuffs, buffById, buffShift, gearNeedsText, isBuffListsByCharacter, plannedProfile, runBuffs, toggleBuff, type BuffPlan } from "../buffs.mts";
+import { applyBuffs, buffById, gearNeedsText, overrideNote, planBuffs, normalizeBuffs, normalizeBuffListsByCharacter, ownEntry, plannedProfile, runBuffs, toggleBuff, type BuffPlan } from "../buffs.mts";
 import { state, invStamp } from "./store.mts";
 import type { BuilderProfile, BuilderJob, BuilderJobUi, FinishedBuild, BuildMeta } from "./store.mts";
 import { $, el, label, full, fmtN, fmtSecs, slotLabel, toast } from "./dom.mts";
 import { promptText } from "./dialog.mts";
 import { box, txt, button, icon, kbd, badge, message, select, input, field, switchControl, check, segmented, filterChip, pill, popover, closePopover, menu, searchInput, stepper, progress, tooltip, confirmDialog, modalOpen } from "./components.mts";
 import { api, CLIENT_ID } from "./api.mts";
-import { buffChip, createBuffPicker, type BuffPicker, type BuffView, type PickerActions } from "./builder-buffs.mts";
+import { buffChip, createBuffPicker, keepChipFocus, type BuffPicker, type BuffView, type PickerActions } from "./builder-buffs.mts";
 import { wornSet } from "./sheet.mts";
 import { optimizeErrorMessage } from "./messages.mts";
 import { parseRoute, routeFor } from "./app.mts";
 import { setNavBusy } from "./shell.mts";
 import { loadRuns, settingsSnapshot, openRunsDrawer } from "./runs.mts";
-import { initManual, paintCharSelect, setManualFor, renderManual, syncManual, buffInputsOf, buffEditsOf, editBuffInput, weaponFlags } from "./builder-manual.mts";
+import { initManual, paintCharSelect, setManualFor, renderManual, syncManual, buffInputsOf, buffEditsOf, editBuffInputs, savePrefs, weaponFlags } from "./builder-manual.mts";
 import { renderResult, renderCurrentSuit, refreshCurrentSuit, resultLoadError, closeCompare, resetResultView } from "./builder-result.mts";
 import { paperdoll, paperdollCaps, propName, weightsSummary, requirementsSummary, poolSummary, advancedSummary, knobError, firstKnobError, knobFromServerError, ruleValueError, resistCapError, withResistCap, capNote, resistCapsSummary, gearCapsText, pruneResistCaps, floorCapWarning, weaponsChipText, weaponName, toggleWeapon, type Knobs, type KnobField } from "./builder-model.mts";
 import type { UiPrefs, OptimizeResult, OptimizeProgress, SavedRunLike, OptimizeStartApiResponse, OptimizeCancelApiResponse, JobSnapshotEvent, JobDoneEvent, JobFailedEvent, JobCancelledEvent } from "./api-types.mts";
@@ -165,12 +165,17 @@ function redraw(id: string): void {
 }
 // A collapsible section: title, an optional count badge, the open/close button, and when closed a one-line
 // summary in place of its body.
+// Each section's count badge, kept so a count can change without the section being redrawn (setCount).
+const counts: Record<string, HTMLSpanElement> = {};
+const setCount = (id: string, n: number): void => { counts[id]?.replaceChildren(txt(String(n))); };
 function section(id: string, title: string, { count, summary, body, inline = false }: { count?: number | undefined; summary: () => string; body: () => Array<Node | null>; inline?: boolean }): HTMLElement {
   const isOpen = open[id], hid = `b-sec-${id}-h`, bid = `b-sec-${id}-body`;
+  const cnt = count != null ? badge(String(count)) : null;
+  if (cnt) counts[id] = cnt; else delete counts[id];
   const t = button({ label: `${isOpen ? "Collapse" : "Expand"} ${title.toLowerCase()}`, icon: isOpen ? "chevron-up" : "chevron-down", iconOnly: true, variant: "ghost", size: "sm",
     attrs: { "aria-expanded": String(isOpen), "aria-controls": bid }, onClick: () => { open[id] = !open[id]; redraw(id); document.querySelector<HTMLElement>(`#b-sec-${id} .b-sec-head .btn`)?.focus(); } });
   const sum = isOpen ? null : txt(summary(), `t-sm muted${inline ? " ellip" : ""}`);
-  const head = box("div", { class: "b-sec-head" }, el("h3", { id: hid, class: "t-md strong" }, title), count != null ? badge(String(count)) : null,
+  const head = box("div", { class: "b-sec-head" }, el("h3", { id: hid, class: "t-md strong" }, title), cnt,
     inline && sum ? sum : el("span", { class: "spacer" }), t);
   return box("section", { class: "b-sec", id: `b-sec-${id}`, "aria-labelledby": hid }, head,
     !isOpen && !inline ? el("p", {}, sum) : null,
@@ -263,34 +268,39 @@ async function deleteTemplate(): Promise<void> {
 
 // ---- buffs (issue #12): the ones on count as always on, so the search doesn't spend gear on what they give
 // Kept by character (ui-prefs autoBuffs). The numbers they scale with are the character's, and an edited one is shared
-// with Manual. `replaced` is the form a just-turned-on form replaced, said in the picker until the next change.
+// with Manual. `note` is what the picker says until the next change: the form a just-turned-on form replaced, or the
+// buffs Clear all took off, each with Undo.
 let autoBuffs: Record<string, string[]> = {};
-let replaced: { on: string; off: string } | null = null;
+let note: { replaced: { on: string; off: string } } | { cleared: string[] } | null = null;
 let picker: BuffPicker | null = null;
-// load()'s GET /api/ui-prefs answer: each list through toggleBuff, so a hand-edited file's second form is dropped.
-export function applyAutoBuffPrefs(prefs: UiPrefs | null): void {
-  const saved = isBuffListsByCharacter(prefs?.autoBuffs) ? prefs.autoBuffs : {};
-  autoBuffs = Object.fromEntries(Object.entries(saved).map(([n, ids]) => [n, ids.reduce<string[]>((on, id) => toggleBuff(on, id).next, [])]));
-}
-const buffsOn = (): string[] => autoBuffs[state.builder.character!] || [];
+// load()'s GET /api/ui-prefs answer (the server has healed each list already; this heals a hand-made one too).
+export function applyAutoBuffPrefs(prefs: UiPrefs | null): void { autoBuffs = normalizeBuffListsByCharacter(prefs?.autoBuffs) ?? {}; }
+const buffsOn = (): string[] => ownEntry(autoBuffs, state.builder.character!) || [];
 // The panel's buffs, as a run saves them (absent with none on).
 export const panelBuffs = (): RunBuffs | undefined => runBuffs(buffsOn(), buffInputsOf(state.builder.character!).values);
-// What a build for `name` plans with: `buffs` (the panel's, or a saved run's) and the numbers they took, over the
-// character's own; its raw stats and `race`; and what it wears now, which a potion's Enhance Potions and Enchant's
-// Spell Channeling are read from (app/buffs.mts plannedProfile).
-export function buffPlan(name: string, race: string | null | undefined, buffs: RunBuffs | undefined): BuffPlan | null {
-  if (!buffs) return null;
+// What a build for `name` plans with: `buffs` (the panel's, or a saved run's; none is a plan too, for the stat caps)
+// and the numbers they took, over the character's own; its raw stats and `race`; and what it wears now, which a
+// potion's Enhance Potions and Enchant's Spell Channeling are read from (app/buffs.mts plannedProfile).
+export function buffPlan(name: string, race: string | null | undefined, buffs: RunBuffs | undefined): BuffPlan {
   const inputs = buffInputsOf(name), worn = state.inv!.worn[name] || [];
-  return { on: buffs.on, skills: { ...inputs.values, ...buffs.skills }, stats: inputs.stats, worn: totalsOf(wornSet(name)),
+  return { on: buffs?.on ?? [], skills: { ...inputs.values, ...buffs?.skills }, stats: inputs.stats, worn: totalsOf(wornSet(name)),
     who: { race: race || "human", weaponFlags: weaponFlags(Object.fromEntries(worn.map((i) => [i.slot, i]))) } };
 }
-// A saved run's buffs back on ("Load these settings"); the panel is redrawn by the caller.
-export function setPanelBuffs(on: string[]): void {
-  const { [state.builder.character!]: _was, ...rest } = autoBuffs;
-  autoBuffs = on.length ? { ...rest, [state.builder.character!]: on } : rest;
-  saveAutoBuffs();
+// The panel's buffs set (healed, as a saved list is), and saved.
+function setPanelBuffs(on: string[]): void {
+  const name = state.builder.character!, { [name]: _was, ...rest } = autoBuffs, list = normalizeBuffs(on) ?? [];
+  autoBuffs = list.length ? { ...rest, [name]: list } : rest;
+  savePrefs({ autoBuffs });
 }
-const saveAutoBuffs = (): void => { api("/api/ui-prefs", { method: "PUT", body: { autoBuffs } }).catch((e: Error) => toast(`Could not save the buffs: ${e.message}`, "bad")); };
+// A saved run's buffs back ("Load these settings"): the ones on, and the numbers they scale with where the run's differ
+// from the character's now, so building again plans as the run did. The panel is redrawn by the caller.
+export function loadRunBuffs(b: RunBuffs | undefined): void {
+  const name = state.builder.character!, now = buffInputsOf(name).values;
+  setPanelBuffs(b?.on ?? []);
+  const used = new Set((b?.on ?? []).flatMap((id) => buffById(id)!.inputs));
+  const edits = Object.fromEntries([...used].filter((i) => b!.skills[i] != null && b!.skills[i] !== now[i]).map((i) => [i, b!.skills[i]!]));
+  if (Object.keys(edits).length) editBuffInputs(name, edits);
+}
 function buffsSection(): HTMLElement {
   const on = buffsOn();
   return section("buffs", "Buffs", { count: on.length, summary: () => (on.length ? on.map((id) => buffById(id)!.name).join(", ") : "None on"), body: () => {
@@ -303,48 +313,44 @@ function buffsSection(): HTMLElement {
 }
 // The picker's state: the buffs on, their numbers, and what each would add, against the caps before any buff.
 function buffView(): BuffView {
-  const name = state.builder.character!, p = state.builder.profile!, inputs = buffInputsOf(name), plan = buffPlan(name, p.race, { on: buffsOn(), skills: {} })!;
+  const name = state.builder.character!, p = state.builder.profile!, inputs = buffInputsOf(name), plan = buffPlan(name, p.race, { on: buffsOn(), skills: {} });
   const prof = effectiveProfile(p, state.inv!.characters[name] as Character | null), totals = paperdoll(plan.worn, prof.resistBonus), caps = paperdollCaps(profileResistCaps(prof));
   return { name, on: plan.on, values: plan.skills, planned: inputs.planned, edits: buffEditsOf(name), stats: plan.stats, who: plan.who, totals, caps,
-    all: applyBuffs(totals, caps, plan.on, plan.skills, plan.stats, plan.who), replaced, count: true, open: !!picker };
+    all: applyBuffs(totals, caps, plan.on, plan.skills, plan.stats, plan.who), replaced: note && "replaced" in note ? note.replaced : null,
+    cleared: note && "cleared" in note ? note.cleared : null, count: true, open: !!picker };
 }
-// A buff on or off, a form turned on saying which one it replaced. Saved, and the chips, the requirements' notes and
+// A buff on or off (or all off), with the picker's note: saved, and the chips, the count, the requirements' notes and
 // the picker follow.
-function setBuffs(next: string[], note: typeof replaced): void {
+function setBuffs(next: string[], n: typeof note): void {
   setPanelBuffs(next);
-  replaced = note;
-  repaintBuffs();
-}
-function repaintBuffs(): void {
-  const row = document.getElementById("b-buff-chips"), add = document.getElementById("b-buff-add");
-  const v = buffView();
+  note = n;
+  const row = document.getElementById("b-buff-chips"), add = document.getElementById("b-buff-add"), v = buffView();
   if (row && add) row.replaceChildren(...v.on.map((id) => buffChip(id, v, buffActions)), add);
-  const count = document.querySelector("#b-sec-buffs .b-sec-head .badge");
-  if (count) count.textContent = String(v.on.length);
+  setCount("buffs", v.on.length);
   redraw("req");
   picker?.paint(v);
 }
 const buffActions: PickerActions = {
-  // A chip's × keeps the focus in the row: on the next chip, else Add buff.
-  toggle: (id) => {
-    const chip = document.activeElement?.closest<HTMLElement>("#b-buff-chips .token");
-    const after = chip ? (chip.nextElementSibling as HTMLElement | null)?.dataset.buff : undefined;
+  toggle: (id) => keepChipFocus("#b-buff-chips", "b-buff-add", () => {
     const { next, replaced: off } = toggleBuff(buffsOn(), id);
-    setBuffs(next, off ? { on: id, off } : null);
-    if (chip) (document.querySelector<HTMLElement>(`#b-buff-chips .token[data-buff="${after}"] button`) ?? document.getElementById("b-buff-add"))?.focus();
-  },
-  setInput: (id, value) => { editBuffInput(state.builder.character, id, value); repaintBuffs(); },
-  clear: () => setBuffs([], null),
+    setBuffs(next, off ? { replaced: { on: id, off } } : null);
+  }),
+  setInput: (id, value) => { editBuffInputs(state.builder.character, { [id]: value }); setBuffs(buffsOn(), note); },
+  clear: () => setBuffs([], buffsOn().length ? { cleared: buffsOn() } : null),
   close: closePopover,
-  // the replaced-form note's Undo: the form it replaced is back on, and its checkbox takes the focus
-  undo: () => { const off = replaced?.off; if (off) { setBuffs(toggleBuff(buffsOn(), off).next, null); document.getElementById(`abf-cb-${off}`)?.focus(); } },
+  // the note's Undo: the form it replaced, or the buffs it cleared, back on; the replaced form's checkbox takes the focus
+  undo: () => {
+    if (note && "cleared" in note) { setBuffs(note.cleared, null); return; }
+    const off = note?.replaced.off;
+    if (off) { setBuffs(toggleBuff(buffsOn(), off).next, null); document.getElementById(`abf-cb-${off}`)?.focus(); }
+  },
 };
 // Add buff opens the picker in a popover beside the panel; a second press, Esc or a click outside closes it.
 function openBuffPicker(anchor: HTMLElement): void {
   if (picker) { closePopover(); return; }
   const host = box("div", { class: "bf-pick" });
   picker = createBuffPicker(host, "abf", buffActions, () => "Counted as always on: the search plans around them. A bonus past the cap, like Enemy of One's damage, never changes the plan.");
-  popover(anchor, [host], { label: `Buffs for ${state.builder.character}`, width: 480, beside: $<HTMLElement>("#b-panel")!, onClose: () => { picker = null; replaced = null; } });
+  popover(anchor, [host], { label: `Buffs for ${state.builder.character}`, width: 480, beside: $<HTMLElement>("#b-panel")!, onClose: () => { picker = null; note = null; } });
   picker.paint(buffView());
   picker.focusSearch();
 }
@@ -393,7 +399,7 @@ function requirementsSection(): HTMLElement {
   return section("req", "Requirements", { count: keys.length, summary: () => requirementsSummary(p.floors, p.softFloors), body: () => {
     const rsb = resistSkillBonus(state.inv!.characters[name]?.skills);
     // with buffs on, each requirement they touch says what gear still has to supply
-    const plan = buffPlan(name, p.race, panelBuffs()), buffs = plan && { prof: optimizerProfile(), r: buffShift(effectiveProfile(p, state.inv!.characters[name] as Character | null), plan).r };
+    const { prof, r } = planBuffs(p, state.inv!.characters[name] as Character | null, buffPlan(name, p.race, panelBuffs()));
     const help = el("p", { class: "help" }, txt(`The suit must reach every hard requirement. Soft ones are preferences. Resisting Spells gives ${name} +${rsb}, ${gearCapsText(panelResistCaps(), rsb)}.`));
     const rows = keys.map((k) => {
       const nm = propName(k);
@@ -403,8 +409,9 @@ function requirementsSection(): HTMLElement {
       const row = box("div", { class: "rule-row", "data-key": k }, ruleName(nm), txt("≥", "muted"), num, hard,
         button({ label: `Remove requirement: ${nm}`, icon: "close", iconOnly: true, variant: "ghost", size: "sm", onClick: () => { delete p.floors![k]; p.softFloors = p.softFloors!.filter((x) => x !== k); redraw("req"); focusIn("req", ".b-add"); } }));
       floorWarning(row, num, k);
-      const note = buffs && gearNeedsText(k, buffs.prof.floors[k]!, buffs.prof.caps[k], buffs.r);
-      if (note) row.append(el("span", { class: "t-sm b-buff-note" }, note));
+      const ignored = prof.buffs?.overridesIgnored?.[k];
+      const said = r ? [ignored != null ? overrideNote(k, ignored, r) : null, gearNeedsText(k, prof.floors[k]!, prof.caps[k], r)].filter(Boolean).join(". ") : "";
+      if (said) row.append(el("span", { class: "t-sm b-buff-note" }, said));
       return row;
     });
     const add = filterChip({ label: "Add requirement", add: true, attrs: { class: "fchip add b-add", id: "b-addfloor" } });

@@ -9,7 +9,7 @@
 // the switch are ui-prefs fields too, and turning one on or off is a step in the suit's undo history.
 import { GEAR_SLOTS, RESIST_KEYS, effectiveProfile, profileResistCaps, toOptItem, totalsOf } from "../vault-lib.mts";
 import type { Character, EffectiveProfile, Item, OptItem, PropMap } from "../vault-lib.mts";
-import { applyBuffs, buffById, buffSkillValues, isBuffList, isBuffSkillsByCharacter, toggleBuff, NO_CHARACTER, signed } from "../buffs.mts";
+import { applyBuffs, buffById, buffSkillValues, isBuffSkillsByCharacter, normalizeBuffs, ownEntry, toggleBuff, NO_CHARACTER, signed } from "../buffs.mts";
 import type { BuffResult, BuffWho, Stats } from "../buffs.mts";
 import type { ItemQuery } from "../item-query.mts";
 import { state } from "./store.mts";
@@ -25,7 +25,7 @@ import { createItemBrowser } from "./item-browser.mts";
 import type { ItemBrowser } from "./item-browser.mts";
 import type { UiPrefs } from "./api-types.mts";
 import { MANUAL_GROUPS, emptyHistory, record, undoStep, redoStep, historyKey, historyKeyNames, type History, type Suit, TOTAL_KEYS, STAT_KEYS, STRIP_KEYS, capped, capLine, slotQuery, handConflict, handNote, savedSlots, missingSlots, deltaKeys, slotDelta } from "./manual-model.mts";
-import { buffMarker, buffStrip, createBuffPicker, type BuffActions, type BuffPicker, type BuffView } from "./builder-buffs.mts";
+import { buffMarker, buffStrip, createBuffPicker, keepChipFocus, type BuffActions, type BuffPicker, type BuffView } from "./builder-buffs.mts";
 
 type Mode = "automatic" | "manual";
 let mode: Mode = "automatic";
@@ -57,14 +57,15 @@ export function applyBuilderPrefs(prefs: UiPrefs | null): void {
   mode = prefs?.builderMode === "manual" ? "manual" : "automatic";
   noCharacter = prefs?.manualFor === "none";
   slots = savedSlots(prefs?.manualSuit);
-  // through toggleBuff, so a hand-edited file's second form is dropped and the list is in catalog order
-  buffs = isBuffList(prefs?.manualBuffs) ? prefs.manualBuffs.reduce<string[]>((on, id) => (on.includes(id) ? on : toggleBuff(on, id).next), []) : [];
+  // healed (normalizeBuffs): a hand-edited file's second form replaces the first, and the list is in catalog order
+  buffs = normalizeBuffs(prefs?.manualBuffs) ?? [];
   buffEdits = isBuffSkillsByCharacter(prefs?.buffSkills) ? prefs.buffSkills : {};
   countBuffs = prefs?.buffsCount !== "off";
   synced = false;
   if (seg) showMode();
 }
-const savePrefs = (body: UiPrefs): void => { api("/api/ui-prefs", { method: "PUT", body }).catch((e: Error) => toast(`Could not save the Suit Builder's mode or manual suit: ${e.message}`, "bad")); };
+// The Suit Builder's choices into ui-prefs, for both modes.
+export const savePrefs = (body: UiPrefs): void => { api("/api/ui-prefs", { method: "PUT", body }).catch((e: Error) => toast(`Could not save your Suit Builder choices: ${e.message}`, "bad")); };
 const isManual = (): boolean => mode === "manual";
 // The character whose bonuses Manual's totals take: the builder's own, unless "No character" is picked.
 const manualCharacter = (): string | null => (noCharacter ? null : state.builder.character);
@@ -154,7 +155,7 @@ function profile(): EffectiveProfile {
 // Change cell reads them.
 export type BuffInputs = { values: Record<string, number>; planned: Set<string>; stats: Stats | null; race: string | null };
 let inputsMemo: BuffInputs | null = null;
-export const buffEditsOf = (name: string | null): Record<string, number> => buffEdits[name ?? NO_CHARACTER] || {};
+export const buffEditsOf = (name: string | null): Record<string, number> => ownEntry(buffEdits, name ?? NO_CHARACTER) || {};
 const editsFor = (): Record<string, number> => buffEditsOf(manualCharacter());
 export function buffInputsOf(name: string | null): BuffInputs {
   const c = name ? state.inv!.characters[name] : null;
@@ -165,10 +166,11 @@ export function buffInputsOf(name: string | null): BuffInputs {
   return { values, planned, stats: { str: raw("str", "strBonus"), dex: raw("dex", "dexBonus"), int: raw("int", "intBonus") }, race: state.profiles?.characters?.[name]?.race || "human" };
 }
 const buffInputs = (): BuffInputs => (inputsMemo ||= buffInputsOf(manualCharacter()));
-// A buff number edited for a character (null: back to its own skill, or the default), saved for both modes.
-export function editBuffInput(name: string | null, id: string, value: number | null): void {
-  const key = name ?? NO_CHARACTER, { [id]: _was, ...rest } = buffEditsOf(name);
-  buffEdits = { ...buffEdits, [key]: value == null ? rest : { ...rest, [id]: value } };
+// Buff numbers edited for a character (null: back to its own skill, or the default), saved for both modes.
+export function editBuffInputs(name: string | null, values: Readonly<Record<string, number | null>>): void {
+  const next = { ...buffEditsOf(name) };
+  for (const [id, value] of Object.entries(values)) { if (value == null) delete next[id]; else next[id] = value; }
+  buffEdits = { ...buffEdits, [name ?? NO_CHARACTER]: next };
   inputsMemo = null;
   savePrefs({ buffSkills: buffEdits });
 }
@@ -421,14 +423,11 @@ function buffView(): BuffView {
 const buffActions: BuffActions = {
   // A buff on or off is an undo step; a form turned on says which one it replaced. A chip's × keeps the focus in the
   // row: on the next chip, else Add buff.
-  toggle: (id) => {
+  toggle: (id) => keepChipFocus(".bf-strip", "bf-add", () => {
     const { next, replaced: off } = toggleBuff(buffs, id), name = buffById(id)!.name, on = next.includes(id);
-    const chip = document.activeElement?.closest<HTMLElement>(".bf-strip .token");
-    const after = chip ? (chip.nextElementSibling as HTMLElement | null)?.dataset.buff : undefined;
     commit({ buffs: next }, `${name} ${on ? "on" : "off"}`, off ? { on: id, off } : null);
-    if (chip) ($<HTMLElement>(`.bf-strip .token[data-buff="${after}"] button`) ?? $<HTMLElement>("#bf-add"))?.focus();
-  },
-  setInput: (id, value) => { editBuffInput(manualCharacter(), id, value); refresh(); },
+  }),
+  setInput: (id, value) => { editBuffInputs(manualCharacter(), { [id]: value }); refresh(); },
   clear: () => commit({ buffs: [] }, "Clear buffs"),
   setCount: (on) => { countBuffs = on; savePrefs({ buffsCount: on ? "on" : "off" }); refresh(); },
   open: openBuffs,

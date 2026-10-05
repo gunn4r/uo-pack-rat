@@ -291,7 +291,8 @@ test("[slow] a raised resist cap is marked, built with, shown in the result and 
     assert.match(await tile.innerText(), /Cap raised from 70/);
     assert.match(await page.locator("#b-result .b-planned").innerText(), /Planned with\s*Divine Fury/);
     await page.click("#b-buffs-shown");
-    await page.waitForFunction(() => document.getElementById("b-buffs-shown")?.textContent === "Show with buffs");
+    await page.waitForSelector('#b-buffs-shown[aria-pressed="true"]');
+    assert.equal(await page.locator("#b-buffs-shown").innerText(), "Show without buffs", "one label, its state in aria-pressed");
     assert.equal(await page.evaluate(() => document.activeElement?.id), "b-buffs-shown", "the button keeps the focus");
     await page.click("#b-runs-open");
     await page.waitForSelector("#runs-drawer:not([hidden]) .run-card");
