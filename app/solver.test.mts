@@ -9,6 +9,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { effectiveProfile } from "./vault-lib.mts";
+import { buffSkillValues, plannedProfile } from "./buffs.mts";
 import { solveExact, type OptPools, type OptAssignment, type OptProfile } from "./exact-solver.mts";
 import { solveModel as realSolveModel, type Handle, type SolveModelOptions } from "./mip-solve.mts";
 import { BASE_OPTS, cell, core, defaultProfiles, runBoth, sig, templateNames, type OptOptions } from "./solver-fixture.mts";
@@ -208,6 +209,38 @@ test("[fast] a raised Fire cap: both solvers take Fire past 70 when the cap is 9
 test("[fast] resist cap overrides: HiGHS equals the core's proven optimum on each default template", async (t) => {
   for (const name of templateNames) {
     await t.test(name, async (t2) => { await runBoth(t2, cell(name, { overrides: { resistCaps: { fireResist: 95, coldResist: 60 } } }), BASE_OPTS); });
+  }
+});
+
+// Issue #12: a buff planned on is a base the gear needn't supply. With Divine Fury's SSI +10, a 60 SSI requirement
+// needs only 50 from gear, so the suit that gives up 10 SSI for 100 Luck wins; without it, it can't.
+test("[fast] buffs: with Divine Fury on, both solvers pick the cheaper SSI suit that leaves room for Luck", async (t) => {
+  const pools = {
+    helmet: [{ serial: 91201, name: "Swift Helm", slot: "helmet", props: { ssi: 50 } }, { serial: 91202, name: "Lucky Helm", slot: "helmet", props: { ssi: 40, luck: 100 } }],
+    chest: [{ serial: 91203, name: "Swift Tunic", slot: "chest", props: { ssi: 10 } }, { serial: 91204, name: "Lucky Tunic", slot: "chest", props: { luck: 50 } }],
+  };
+  const slots = ["helmet", "chest"], optionalSlots = ["helmet", "chest"];
+  const opts = { exact: true, timeBudgetMs: 5000, restarts: 5, seed: 1, slots, optionalSlots };
+  const p = { floors: { ssi: 60 }, weights: { luck: 1 } }, skills = { ...buffSkillValues(null, {}).values, Chivalry: 105 };
+  for (const [on, helmet, luck] of [[[], 91201, 0], [["divineFury"], 91202, 100]] as const) {
+    const profile = plannedProfile(p, null, { on: [...on], skills, stats: null, who: {}, worn: {} }) as OptProfile;
+    const { r, ref } = await runBoth(t, { pools: pools as unknown as OptPools, current: {}, profile }, opts);
+    assert.equal(r.proven && ref.proven, true);
+    assert.equal(r.best.helmet?.serial, helmet, `HiGHS with ${on.join(", ") || "no buffs"}`);
+    assert.equal(ref.best.helmet?.serial, helmet, `core with ${on.join(", ") || "no buffs"}`);
+    assert.equal(Object.values(r.best).reduce((n, it) => n + (it?.props.luck || 0), 0), luck);
+  }
+});
+
+// The equivalence on the real fixture with buffs whose shares are negative (Divine Fury's DCI), change a cap (Magic
+// Reflection's Phys) and set one (Corpse Skin's Fire and Poison): the melee and tank templates both prove, to one score
+// (the archer one takes the core past its budget, as without buffs).
+test("[fast] buffs: HiGHS equals the core's proven optimum with buffs planned on", async (t) => {
+  for (const name of ["melee", "tank"]) {
+    await t.test(name, async (t2) => {
+      const { r, ref } = await runBoth(t2, cell(name, { buffs: ["divineFury", "magicReflection", "corpseSkin"] }), BASE_OPTS);
+      assert.equal(r.proven && ref.proven, true, "both proven, so runBoth held them to one score");
+    });
   }
 });
 

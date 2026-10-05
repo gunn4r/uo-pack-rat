@@ -166,6 +166,23 @@ const SCENES: Scene[] = [
     await p.waitForSelector("#b-sec-req .field-warn");
     await p.locator("#b-sec-caps").scrollIntoViewIfNeeded();
   }, leave: async (p) => { await p.fill("#b-cap-coldResist", "70"); await p.fill("#b-cap-poisonResist", "70"); } },
+  // Buffs (issue #12): the Automatic picker in its popover with Divine Fury on and a DCI requirement it changes (the
+  // chips, the picker's tags and fields, the requirement's note), then a build planned with it (the headline's
+  // "Planned with" badges, Show without buffs, the past-the-cap badge).
+  { name: "builder buff popover", enter: async (p) => {
+    await p.click("#b-addfloor");
+    await p.keyboard.type("Defense chance");
+    await p.keyboard.press("Enter");
+    await p.click("#b-buff-add");
+    await p.locator("#abf-cb-divineFury").check();
+    await p.locator("#abf-cb-enemyOfOne").check();
+    await p.waitForSelector("#b-sec-req .b-buff-note");
+  } },
+  { name: "builder planned with buffs", enter: async (p) => {
+    await p.keyboard.press("Escape");
+    await p.click("#b-run");
+    await p.waitForFunction(() => !document.querySelector<HTMLButtonElement>("#b-run")?.disabled && document.querySelector("#b-result .b-planned"), undefined, { timeout: 60_000 });
+  } },
   // ---- Organize (issue #11): the screen with its plan, the rule drawer, and Label… on a container
   { name: "organize", enter: (p) => route(p, "#/organize", "#org-plan #org-headline") },
   { name: "organize rule editor", enter: async (p) => {

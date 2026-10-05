@@ -43,9 +43,12 @@ export const SOLVER_VERSION = 3;
 export const PROOF_SOUND_SINCE = 2;
 
 // Everything that shapes the answer: the candidate pools, the worn suit, the scoring profile, the
-// search options, and the solver version.
+// search options, and the solver version. A profile's `buffs` (app/buffs.mts plannedProfile: which buffs were planned
+// with and their numbers) is left out: the caps and floors they shifted are what the solvers read, so buff sets that
+// plan alike (Enemy of One alone, or none; an edit to a number no buff on reads) share a run.
 export function runKey({ pools = {}, current = {}, profile = {}, opts = {} }: RunKeyInput): string {
-  return createHash("sha1").update(JSON.stringify({ solver: SOLVER_VERSION, pools, current, profile, opts: stripOpts(opts) })).digest("hex");
+  const { buffs: _planned, ...solved } = (profile || {}) as Record<string, unknown>;
+  return createHash("sha1").update(JSON.stringify({ solver: SOLVER_VERSION, pools, current, profile: solved, opts: stripOpts(opts) })).digest("hex");
 }
 
 export interface RunResult {

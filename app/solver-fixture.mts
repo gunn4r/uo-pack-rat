@@ -7,8 +7,9 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { dirname, join } from "node:path";
-import { buildPools, effectiveProfile, setRules, foldSnapshots, type ProfilesFile, type Template, type BuildPoolsResult } from "./vault-lib.mts";
+import { buildPools, setRules, foldSnapshots, type ProfilesFile, type Template, type BuildPoolsResult } from "./vault-lib.mts";
 import { upgradeScan } from "./scan-schema.mts";
+import { buffSkillValues, plannedProfile } from "./buffs.mts";
 import type { ScanV2 } from "./schema/types.d.mts";
 import { corePath } from "./config.mts";
 import { solveExact, type OptPools, type OptAssignment, type OptProfile } from "./exact-solver.mts";
@@ -38,7 +39,8 @@ export const templateNames = Object.keys(defaultProfiles.templates!);
 
 // cell(profileName, {soft, overrides}) — the fixture's pools/current, plus a profile built from one
 // of the shipped default templates: `overrides` land on the template (before effectiveProfile), so
-// e.g. `{ overrides: { floors: { ...template.floors, luck: 5000 } } }` adds an extra hard floor.
+// e.g. `{ overrides: { floors: { ...template.floors, luck: 5000 } } }` adds an extra hard floor. `buffs` are planned
+// on (app/buffs.mts plannedProfile) with the fixture character's skills, the rest at their defaults.
 //
 // fixturePools/fixtureCurrent are vault-lib.mts's PooledOptItem-based shapes (buildPools's own return
 // type, honestly typed with a required, non-null `slot` — see vault-lib.mts's own comment on
@@ -48,10 +50,10 @@ export const templateNames = Object.keys(defaultProfiles.templates!);
 // is simply absent, not present with an empty array) — that optional-vs-required container shape is
 // what the cast crosses now, not an item-level mismatch. The guard below asserts the item level stays
 // aligned on its own.
-export function cell(profileName: string, { soft = [], overrides = {} }: { soft?: string[] | undefined; overrides?: Partial<Template> | undefined } = {}): { pools: OptPools; current: OptAssignment; profile: OptProfile } {
+export function cell(profileName: string, { soft = [], overrides = {}, buffs = [] }: { soft?: string[] | undefined; overrides?: Partial<Template> | undefined; buffs?: string[] | undefined } = {}): { pools: OptPools; current: OptAssignment; profile: OptProfile } {
   const template = defaultProfiles.templates![profileName]!;
-  const p = { ...template, softFloors: [...soft], ...overrides };
-  const profile = effectiveProfile(p, inv.characters.Fixture!);
+  const p = { ...template, softFloors: [...soft], ...overrides }, c = inv.characters.Fixture!;
+  const profile = plannedProfile(p, c, buffs.length ? { on: buffs, skills: buffSkillValues(c.skills || {}, {}).values, stats: null, who: {}, worn: {} } : null);
   return { pools: fixturePools as unknown as OptPools, current: fixtureCurrent as unknown as OptAssignment, profile };
 }
 
