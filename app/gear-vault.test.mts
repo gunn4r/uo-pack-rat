@@ -221,8 +221,8 @@ test("[smoke] classify: every \"... Arms\" name is an arms piece, never chest an
 
 test("[fast] classify: names the base-name rules used to miss", () => {
   const want: Array<[string, string]> = [["Leather Skirt", "legs"], ["Fortified Leather Skirt", "legs"], ["Long Pants", "legs"], ["Elven Pants", "legs"],
-    ["Hakama", "legs"], ["Tattsuke Hakama", "legs"], ["Kasa", "helmet"], ["Cloth Ninja Hood", "helmet"], ["Fur Cape", "cloak"], ["Mantle", "cloak"],
-    ["Quiver Of Infinity", "cloak"], ["Beads", "neck"], ["Gold Ring", "ring"], ["Gold Bracelet", "bracelet"]];
+    ["Hakama", "outerLegs"], ["Tattsuke Hakama", "legs"], ["Kasa", "helmet"], ["Cloth Ninja Hood", "helmet"], ["Fur Cape", "cloak"], ["Mantle", "cloak"],
+    ["Quiver Of Infinity", "cloak"], ["Gold Ring", "ring"], ["Gold Bracelet", "bracelet"]];
   for (const [n, slot] of want) assert.equal(classify(n).slot, slot, n);
   assert.equal(classify("Gold Coin").gear, false, "gold coins are still not gear");
   assert.equal(classify("Bolt Of Cloth").gear, false, "cloth is still a resource");
@@ -236,6 +236,44 @@ test("[fast] classify: a middle-torso piece has its own slot, not chest", () => 
   assert.equal(classify("Surcoat").slot, "tunic");
   assert.equal(classify("Heart Of The Lion", null, "Torso").slot, "chest");
   assert.equal(classify("Studded Tunic").slot, "chest", "armour named Tunic is still chest by name");
+});
+
+// Issue #202, the golden table: every case the layer research (ServUO's item classes against the client's tiledata)
+// found, by graphic and by name alone. The graphic decides wherever the table knows it; the name rules are the fallback
+// for a graphic it does not, and must agree with it on these names, never invent a slot (bare beads are not worn).
+const GOLDEN_SLOTS: Array<[string, number, string | null]> = [
+  // shirts under chest armor; the middle torso over it
+  ["Shirt", 0x1517, "shirt"], ["Fancy Shirt", 0x1efd, "shirt"], ["Elven Shirt", 0x2fbd, "shirt"],
+  ["Formal Shirt", 0x230f, "tunic"], ["Tunic", 0x1fa1, "tunic"], ["Full Apron", 0x153d, "tunic"], ["Body Sash", 0x1541, "tunic"],
+  ["Gargish Sash", 0x46b4, "tunic"], ["Jin-Baori", 0x27a1, "tunic"], ["Jester Suit", 0x1f9f, "tunic"],
+  ["Leather Tunic", 0x13ca, "chest"], ["Studded Tunic", 0x13d9, "chest"], ["Ringmail Tunic", 0x13ec, "chest"], ["Chainmail Tunic", 0x13bd, "chest"],
+  // legs (the Pants layer) and what goes over them
+  ["Platemail Legs", 0x1411, "legs"], ["Leather Skirt", 0x1c08, "legs"], ["Leather Shorts", 0x1c00, "legs"], ["Tiger Pelt Long Skirt", 0x7826, "legs"],
+  ["Tattsuke-Hakama", 0x279b, "legs"], ["Leaf Tonlet", 0x2fca, "legs"],
+  ["Kilt", 0x1537, "outerLegs"], ["Skirt", 0x1516, "outerLegs"], ["Hakama", 0x279a, "outerLegs"],
+  ["Hakama-Shita", 0x279c, "robe"], ["Kimono", 0x2681, "robe"], ["Plain Dress", 0x1f01, "robe"], ["Fancy Dress", 0x1eff, "robe"], ["Gilded Dress", 0x230d, "robe"],
+  // gargish pieces on another piece's layer
+  ["Gargish Platemail Kilt", 0x30b, "hands"], ["Gargish Stone Kilt Of Vitality", 0x287, "hands"],
+  ["Gargish Leather Wing Armor", 0x457e, "cloak"], ["Gargish Cloth Wing Armor", 0x45a4, "cloak"],
+  ["Gargish Glasses", 0x4644, "earrings"], ["Elven Glasses", 0x2fb8, "helmet"],
+  ["Plate Talons", 0x42de, "feet"], ["Leather Talons", 0x41d8, "feet"], ["Waraji", 0x2653, "feet"],
+  ["Dragon Turtle Hide Bracers", 0x782e, "arms"], ["Elven Quiver", 0x2fb7, "cloak"],
+  // names that had no slot
+  ["Tiger Pelt Collar", 0x7829, "neck"], ["Leather Ninja Mitts", 0x2792, "hands"], ["Flower Garland", 0x2305, "helmet"],
+  ["Half Apron", 0x153b, "waist"], ["Gold Beads", 0x1089, "neck"], ["Silver Beads", 0x1f05, "neck"],
+];
+test("[fast] classify: the golden table, by graphic and by name alone", () => {
+  for (const [name, graphic, slot] of GOLDEN_SLOTS) {
+    assert.equal(classify(name, null, null, graphic).slot, slot, `${name} by graphic 0x${graphic.toString(16)}`);
+    assert.equal(classify(name).slot, slot, `${name} by name`);
+  }
+  // names with no graphic in the client's table here: the name alone
+  const byName: Array<[string, string | null]> = [["Gargish Leather Legs", "legs"], ["Gargish Cloth Legs", "legs"], ["Gargish Cloth Kilt", "hands"],
+    ["Fur Sarong", "outerLegs"], ["Fancy Kilt", "outerLegs"], ["Evening Gown", "robe"], ["Kamishimo", "robe"], ["Epaulette", "robe"],
+    ["Assassin's Cowl", "helmet"], ["Chef's Toque", "helmet"], ["Elegant Collar", "neck"], ["Gargish Stone Amulet", "neck"],
+    ["Leather Tunic Of Defense", "chest"], ["Beads", null]];
+  for (const [name, slot] of byName) assert.equal(classify(name).slot, slot, name);
+  assert.equal(classify("Beads").gear, false, "beads are not worn");
 });
 
 // The client's own tiledata says which layer every wearable graphic goes on; the graphic decides

@@ -3219,12 +3219,12 @@ test("[fast] PUT /api/ui-prefs keeps the House map contents drawer's width (issu
   } finally { await s3.close(); }
 });
 
-test("[fast] PUT /api/ui-prefs keeps the Suit Builder's mode, its Manual suit and buffs and Automatic's buffs by character (issue #12) across a restart, and refuses anything else, an unknown slot or __proto__ included", async () => {
+test("[fast] PUT /api/ui-prefs keeps the Suit Builder's mode, its Manual suit and buffs and Automatic's buffs by character (issue #12) across a restart, and refuses anything else, an unknown slot or __proto__ included; the kilt slot is a slot (issue #202)", async () => {
   const dir = mkdtempSync(join(tmpdir(), "qm-uiprefs-manual-"));
   const put = (url: string, body: unknown): Promise<Response> => fetch(url + "/api/ui-prefs", { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
   const s1 = await startServer(ensureLayout(resolveConfig(["--port", "0", "--data", dir], {})));
   try {
-    assert.equal((await put(s1.url, { builderMode: "manual", manualFor: "none", manualSuit: { ring: 1879769144, twoHanded: 0xFFFFFFFF, feet: 7 } })).status, 200);
+    assert.equal((await put(s1.url, { builderMode: "manual", manualFor: "none", manualSuit: { ring: 1879769144, twoHanded: 0xFFFFFFFF, feet: 7, outerLegs: 8 } })).status, 200);
     for (const bad of [{ builderMode: "auto" }, { manualFor: "Dorran" }, { manualSuit: [1] }, { manualSuit: { ring: 0 } }, { manualSuit: { ring: 1.5 } }, { manualSuit: { ring: "5" } }, { manualSuit: { ring: 0x100000000 } }, { manualSuit: { backpack: 5 } }, { manualSuit: null }]) {
       assert.equal((await put(s1.url, bad)).status, 400, JSON.stringify(bad));
     }
@@ -3234,7 +3234,7 @@ test("[fast] PUT /api/ui-prefs keeps the Suit Builder's mode, its Manual suit an
   } finally { await s1.close(); }
   const s2 = await startServer(ensureLayout(resolveConfig(["--port", "0", "--data", dir], {})));
   try {
-    assert.deepEqual(asJson(await (await fetch(s2.url + "/api/ui-prefs")).json()), { ok: true, prefs: { builderMode: "manual", manualFor: "none", manualSuit: { ring: 1879769144, twoHanded: 0xFFFFFFFF, feet: 7 } } });
+    assert.deepEqual(asJson(await (await fetch(s2.url + "/api/ui-prefs")).json()), { ok: true, prefs: { builderMode: "manual", manualFor: "none", manualSuit: { ring: 1879769144, twoHanded: 0xFFFFFFFF, feet: 7, outerLegs: 8 } } });
     assert.equal((await put(s2.url, { manualSuit: {} })).status, 200, "an empty suit is a suit");
     assert.deepEqual(asJson<{ prefs: Record<string, unknown> }>(await (await fetch(s2.url + "/api/ui-prefs")).json()).prefs.manualSuit, {});
     // its buffs (app/buffs.mts): catalog ids each once, the edited numbers within their bounds, and the count switch

@@ -29,11 +29,11 @@ export function capLine(value: number, cap: number | null | undefined): { text: 
 }
 
 // ---------------------------------------------------------------- slots
-// Manual's slot cards: every slot the classifier knows (GEAR_SLOTS), grouped as on the paperdoll, in two columns of
-// nine (armor and weapons, then clothing and jewelry). A test checks the groups hold GEAR_SLOTS exactly, so a slot the
-// classifier gains has to be placed here.
+// Manual's slot cards: every slot the classifier knows (GEAR_SLOTS), grouped as on the paperdoll, in two columns
+// (armor and weapons, then clothing and jewelry), a kilt or skirt beside the legs it goes over. A test checks the
+// groups hold GEAR_SLOTS exactly, so a slot the classifier gains has to be placed here.
 export const MANUAL_GROUPS: Array<Array<[string, string[]]>> = [
-  [["Armor", ["helmet", "neck", "chest", "arms", "hands", "legs", "feet"]], ["Weapons", ["oneHanded", "twoHanded"]]],
+  [["Armor", ["helmet", "neck", "chest", "arms", "hands", "legs", "outerLegs", "feet"]], ["Weapons", ["oneHanded", "twoHanded"]]],
   [["Clothing", ["shirt", "tunic", "robe", "waist", "cloak"]], ["Jewelry", ["ring", "bracelet", "earrings", "talisman"]]],
 ];
 // The picker's fixed filter for a slot. An item's slot is one of GEAR_SLOTS as is, so it is that slot alone:
@@ -64,6 +64,18 @@ export function savedSlots(raw: unknown): Record<string, number> {
 // The slots whose saved serial no longer resolves to an item (rescanned away, sold, forgotten), in GEAR_SLOTS order.
 export const missingSlots = (slots: Record<string, number>, found: Record<number, unknown>): string[] =>
   GEAR_SLOTS.filter((s) => slots[s] != null && !found[slots[s]!]);
+// A saved suit against the scans now (issue #202): a piece the classifier has since moved (a kilt saved under legs, a
+// shirt under chest) goes to its slot, unless a piece of that slot's own is there. A piece no longer in the scans stays
+// where it was. The same suit back when nothing moved.
+export function reslotted(slots: Suit, found: Record<number, { slot?: string | null | undefined } | undefined>): Suit {
+  const next: Suit = {}, moved: Array<[string, number]> = [];
+  for (const [s, serial] of Object.entries(slots)) {
+    const now = found[serial]?.slot;
+    if (now && now !== s && GEAR_SLOTS.includes(now)) moved.push([now, serial]); else next[s] = serial;
+  }
+  for (const [s, serial] of moved) next[s] ??= serial;
+  return moved.length ? next : slots;
+}
 
 // ---------------------------------------------------------------- a picker row's delta
 // The properties a row's delta speaks about: the strip's, then any other with a floor or a weight in the profile.

@@ -538,37 +538,48 @@ const PRIMER_RE = /\bprimer on\b.*\bmastery\b/i;
 const HELD_TOOL_RE = /\b(fishing pole|candle|candelabra|torch|lantern|light source)\b/i;
 const SPELLBOOK_RE = /\b(spellbook|book of (chivalry|bushido|ninjitsu|magery|necromancy|mysticism|spellweaving)|necromancer spellbook|mysticism book|tome)\b/i;   // NOT bare "mystic": "Mystic Ring" is a ring
 const JEWEL_SLOTS: Array<[string, RegExp]> = [["ring", /\bring\b/i], ["bracelet", /\bbracelet\b/i], ["talisman", /\btalisman\b/i], ["neck", /\bnecklace\b/i], ["earrings", /\bearrings\b/i]];
+// First match wins, and the order settles the names two slots share (issue #202, from the layers in ServUO's item
+// classes): gargish glasses are earrings and elven glasses a helm; a gargish kilt sits on the gloves layer; wing armor
+// is a cloak; leather and tiger pelt skirts and shorts, the leaf tonlet and the tattsuke hakama are legs, while a cloth
+// kilt, skirt, hakama or sarong goes over them; the hakama-shita is a robe; a formal shirt, a full apron and every sash
+// are the middle torso; a tunic is chest armor when a material names it and the middle torso when bare; gold and silver
+// beads are necklaces, bare beads are not worn. These only decide a graphic the tiledata table does not know.
 const ARMOR_SLOTS: Array<[string, RegExp]> = [
-  ["helmet", /\b(helm|helmet|bascinet|circlet|coif|cap|hat|mask|skullcap|bandana|bonnet|hood|glasses|goggles|hatsuburi|jingasa|kabuto|kasa)\b/i],
-  ["neck", /\b(gorget|mempo|beads)\b/i],
-  ["hands", /\b(gloves|gauntlets)\b/i],
-  ["arms", /\b(arms|sleeves|vambraces|rerebrace|pauldrons|hiro sode)\b/i],
-  ["legs", /\b(leggings|chausses|greaves|kilt|shorts|haidate|suneate|leg guards|tonlet|skirt|pants|hakama)\b/i],
-  ["cloak", /\b(cloak|cape|mantle|quiver)\b/i],
-  ["feet", /\b(sandals|boots|shoes|thigh boots|tabi)\b/i],
-  ["robe", /\b(robe|tunic top|shroud)\b/i],
-  ["tunic", /\b(doublet|surcoat|body sash)\b/i],
-  ["chest", /\b(armor|tunic|breastplate|hauberk|ringmail|chainmail|platemail|plate|hide|do|chest|jacket|shirt|vest|bustier|female plate)\b/i],
-  ["waist", /\b(sash|apron|obi|half apron|belt)\b/i],
+  ["earrings", /\bgargish glasses\b/i],
+  ["helmet", /\b(helm|helmet|bascinet|circlet|coif|cap|hat|mask|skullcap|bandana|bonnet|hood|cowl|garland|toque|hachimaki|glasses|goggles|hatsuburi|jingasa|kabuto|kasa)\b/i],
+  ["neck", /\b(gorget|mempo|collar|amulet|(gold|silver) beads)\b/i],
+  ["hands", /\b(gloves|gauntlets|mitts)\b|\bgargish\b.*\bkilt\b/i],
+  ["arms", /\b(arms|sleeves|vambraces|rerebrace|pauldrons|hiro sode|bracers)\b/i],
+  ["cloak", /\b(cloak|cape|mantle|quiver|wing armor)\b/i],
+  ["legs", /\b(leggings|legs|chausses|greaves|shorts|haidate|suneate|leg guards|tonlet|pants|kobakama|tattsuke.?hakama|(leather|tiger pelt( long)?) skirt)\b/i],
+  ["feet", /\b(sandals|boots|shoes|thigh boots|tabi|talons|waraji)\b/i],
+  ["robe", /\b(robe|tunic top|tabard|shroud|dress|gown|kimono|kamishimo|hakama.?shita|epaulet(te|s)?)\b/i],
+  ["outerLegs", /\b(kilt|skirt|hakama|sarong)\b/i],
+  ["tunic", /\b(doublet|surcoat|sash|formal shirt|full apron|jin.?baori|jester suit)\b|(?<!\b(leather|studded|ringmail|chainmail|platemail|bone|hide|leaf|woodland|dragon) )\btunic\b/i],
+  ["shirt", /\bshirt\b/i],
+  ["chest", /\b(armor|tunic|breastplate|hauberk|ringmail|chainmail|platemail|plate|hide|do|chest|jacket|vest|bustier|female plate)\b/i],
+  ["waist", /\b(apron|obi|belt)\b/i],
 ];
 // No bare "gold": gold coins are caught by "coin", and "Gold Ring" / "Gold Bracelet" are jewellery.
-// "cloth" is a resource unless it names a garment ("Cloth Ninja Hood").
-const SKIP_RE = /\b(bandage|potion|reagent|ore|ingot|log|board|scroll|deed|arrow|bolt|garlic|ginseng|mandrake|nightshade|bloodmoss|sulfurous|black pearl|key|map|gem|cloth(?! ninja)|feather|shaft|kindling|torch|lantern|fish|powder|essence|seed|runebook|bag of|pouch|backpack|chest of|crate|box|bottle|jar|token|ticket|coin|doubloon|bone pile|bark|sap|ingots|jewelry box)\b/i;
-// Middle-torso clothing (the Tunic layer: doublet, cloth tunic, surcoat, body sash) is worn over chest
-// armour (the Torso layer), so it has its own "tunic" slot rather than competing for "chest". Like
-// robe, shirt, feet, waist and earrings, it is tracked but not one of the slots the optimizer fills.
+// "cloth" is a resource unless it names a garment ("Cloth Ninja Hood", "Gargish Cloth Kilt").
+const SKIP_RE = /\b(bandage|potion|reagent|ore|ingot|log|board|scroll|deed|arrow|bolt|garlic|ginseng|mandrake|nightshade|bloodmoss|sulfurous|black pearl|key|map|gem|cloth(?! (ninja|kilt|legs|arms|chest|wing))|feather|shaft|kindling|torch|lantern|fish|powder|essence|seed|runebook|bag of|pouch|backpack|chest of|crate|box|bottle|jar|token|ticket|coin|doubloon|bone pile|bark|sap|ingots|jewelry box)\b/i;
+// One slot per paperdoll layer, since the server refuses an item only when another worn item is on the same layer
+// (issue #202). So middle-torso clothing (the Tunic layer: doublet, cloth tunic, surcoat, sashes) goes over chest armor
+// (the Torso layer) and a shirt under it, and a cloth kilt or skirt (the Skirt layer) over pants or armor legs, which
+// share the Pants layer. TazUO's "Legs" layer holds no item; it folds into "legs". Like robe, shirt, feet, waist,
+// earrings and outerLegs, middle torso is tracked but not one of the slots the optimizer fills.
 export const LAYER_TO_SLOT: Record<string, string> = {
   OneHanded: "oneHanded", TwoHanded: "twoHanded", Helmet: "helmet", Gloves: "hands", Arms: "arms",
   Legs: "legs", Pants: "legs", Necklace: "neck", Ring: "ring", Bracelet: "bracelet", Talisman: "talisman",
   Torso: "chest", Cloak: "cloak", Shoes: "feet", Robe: "robe", Earrings: "earrings", Waist: "waist",
-  Tunic: "tunic", Shirt: "shirt", Skirt: "legs",
+  Tunic: "tunic", Shirt: "shirt", Skirt: "outerLegs",
 };
-// Every slot an equippable piece can be classified into: one per paperdoll layer the classifier knows (Pants and
-// Skirt share "legs"). The Suit Builder's Manual mode shows them all; the optimizer fills OPTIMIZER_SLOTS.
+// Every slot an equippable piece can be classified into: one per paperdoll layer the classifier knows. The Suit
+// Builder's Manual mode shows them all; the optimizer fills OPTIMIZER_SLOTS.
 export const GEAR_SLOTS: string[] = [...new Set(Object.values(LAYER_TO_SLOT))];
 export const OPTIMIZER_SLOTS: string[] = ["helmet", "chest", "arms", "hands", "legs", "neck", "ring", "bracelet", "talisman", "cloak", "oneHanded", "twoHanded"];
 export const SLOT_LABELS: Record<string, string> = {
-  helmet: "Head", chest: "Chest", arms: "Arms", hands: "Hands", legs: "Legs", neck: "Neck", ring: "Ring",
+  helmet: "Head", chest: "Chest", arms: "Arms", hands: "Hands", legs: "Legs", outerLegs: "Kilt / Skirt", neck: "Neck", ring: "Ring",
   bracelet: "Bracelet", talisman: "Talisman", cloak: "Cloak", oneHanded: "Weapon (1H)", twoHanded: "Weapon 2H / Shield",
   feet: "Feet", robe: "Robe", tunic: "Middle Torso", earrings: "Earrings", waist: "Waist", shirt: "Shirt", spellbook: "Spellbook",
 };
@@ -1467,7 +1478,7 @@ export function slayersOf(flags: string[] | null | undefined): string[] {
 // Meditation rule (ServUO): armour materials with MeditationAllowance None/Half block or halve mana regen unless the
 // piece has Mage Armor; a held weapon or shield blocks it unless Spell Channeling (spellbooks are fine). Jewellery,
 // cloaks, talismans and cloth never interfere.
-const ARMOR_SLOT_SET = new Set(["helmet", "chest", "arms", "hands", "legs", "neck", "feet", "robe", "tunic", "waist", "shirt"]);
+const ARMOR_SLOT_SET = new Set(["helmet", "chest", "arms", "hands", "legs", "outerLegs", "neck", "feet", "robe", "tunic", "waist", "shirt"]);
 // material words that always block meditation (platemail, chain, bone, studded …)
 const NONMED_RE = /\b(platemail|plate|chainmail|chain|ringmail|bone|dragon|woodland|studded|metal|stone|verite|valorite|agapite|bronze|copper|shadow iron|dull copper|gold|scale)\b/i;
 // material words that mean leather/cloth (meditation allowed) — checked before the helm list

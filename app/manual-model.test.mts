@@ -10,7 +10,7 @@ import { setRules, effectiveProfile, profileResistCaps, GEAR_SLOTS, LAYER_TO_SLO
 import type { RulesV1 } from "./schema/types.d.mts";
 import { optIsValidAssignment } from "../scripts/optimizer-core.mts";
 import { paperdoll, paperdollCaps } from "./ui/builder-model.mts";
-import { MANUAL_GROUPS, emptyHistory, record, undoStep, redoStep, historyKey, historyKeyNames, HISTORY_MAX, capped, capLine, slotQuery, handConflict, handNote, savedSlots, missingSlots, deltaKeys, slotDelta, STRIP_KEYS } from "./ui/manual-model.mts";
+import { MANUAL_GROUPS, emptyHistory, record, undoStep, redoStep, historyKey, historyKeyNames, HISTORY_MAX, capped, capLine, slotQuery, handConflict, handNote, savedSlots, missingSlots, reslotted, deltaKeys, slotDelta, STRIP_KEYS } from "./ui/manual-model.mts";
 
 setRules(JSON.parse(readFileSync(new URL("./rules/uoalive.json", import.meta.url), "utf8")) as RulesV1);
 
@@ -47,9 +47,34 @@ test("[fast] manual model: Manual's groups hold every slot the classifier knows,
   const grouped = MANUAL_GROUPS.flat().flatMap(([, slots]) => slots);
   assert.equal(new Set(grouped).size, grouped.length, "no slot twice");
   assert.deepEqual([...grouped].sort(), [...GEAR_SLOTS].sort());
-  for (const s of ["feet", "robe", "tunic", "shirt", "waist", "earrings"]) assert.ok(GEAR_SLOTS.includes(s), s);
-  assert.equal(LAYER_TO_SLOT.Skirt, "legs", "a skirt is a legs piece");
+  assert.equal(GEAR_SLOTS.length, 19);
   for (const s of GEAR_SLOTS) assert.ok(SLOT_LABELS[s], `${s} has a label`);
+  const armor = MANUAL_GROUPS[0]![0]![1];
+  assert.equal(armor[armor.indexOf("legs") + 1], "outerLegs", "a kilt or skirt sits beside the legs");
+});
+
+// Issue #202: one slot per paperdoll layer (TazUO's names, ServUO's layer in the comment), since the server refuses an
+// item only when another worn item is on the same layer. Pants and armor legs share Pants; TazUO's Legs layer
+// (InnerLegs) holds no item and folds into legs.
+test("[fast] manual model: each paperdoll layer has its own slot", () => {
+  assert.deepEqual(LAYER_TO_SLOT, {
+    OneHanded: "oneHanded", TwoHanded: "twoHanded", Shoes: "feet", Pants: "legs", Shirt: "shirt", Helmet: "helmet",
+    Gloves: "hands", Ring: "ring", Talisman: "talisman", Necklace: "neck", Waist: "waist", Torso: "chest",   // Neck, InnerTorso
+    Bracelet: "bracelet", Tunic: "tunic", Earrings: "earrings", Arms: "arms", Cloak: "cloak", Robe: "robe",   // MiddleTorso, OuterTorso
+    Skirt: "outerLegs", Legs: "legs",   // OuterLegs, InnerLegs
+  });
+});
+
+test("[fast] manual model: a saved piece the classifier has moved goes to its slot now, unless that slot has its own", () => {
+  const found = { 1: { slot: "outerLegs" }, 2: { slot: "shirt" }, 3: { slot: "chest" }, 4: { slot: "ring" } };
+  // a kilt saved under legs and a shirt under chest (beside no chest piece) move; the ring stays; a gone piece stays
+  assert.deepEqual(reslotted({ legs: 1, chest: 2, ring: 4, feet: 9 }, found), { outerLegs: 1, shirt: 2, ring: 4, feet: 9 });
+  // the shirt under chest when the shirt slot holds another shirt: the shirt slot's own piece wins and the stale one goes
+  assert.deepEqual(reslotted({ chest: 2, shirt: 5 }, { ...found, 5: { slot: "shirt" } }), { shirt: 5 });
+  // a slot a moved piece leaves takes a piece moving into it
+  assert.deepEqual(reslotted({ chest: 2, shirt: 7, legs: 3 }, { ...found, 7: { slot: "shirt" } }), { shirt: 7, chest: 3 });
+  const same = { chest: 3, ring: 4 };
+  assert.equal(reslotted(same, found), same, "nothing moved: the same suit back");
 });
 
 test("[fast] manual model: the hand rule clears what the optimizer would refuse, and nothing else", () => {

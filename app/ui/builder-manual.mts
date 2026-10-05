@@ -27,7 +27,7 @@ import { sheetParts, wornSet } from "./sheet.mts";
 import { createItemBrowser } from "./item-browser.mts";
 import type { ItemBrowser } from "./item-browser.mts";
 import type { UiPrefs, OptimizeResult, OptimizeStartApiResponse, OptSuit } from "./api-types.mts";
-import { MANUAL_GROUPS, emptyHistory, record, undoStep, redoStep, historyKey, historyKeyNames, type History, type Suit, TOTAL_KEYS, STAT_KEYS, STRIP_KEYS, capped, capLine, slotQuery, handConflict, handNote, suitFrom, fillableSlots, fetchPieces, fillPicks, keptSlots, listWords, applyEditStep, type FillStart, type EditStep, savedSlots, missingSlots, deltaKeys, slotDelta } from "./manual-model.mts";
+import { MANUAL_GROUPS, emptyHistory, record, undoStep, redoStep, historyKey, historyKeyNames, type History, type Suit, TOTAL_KEYS, STAT_KEYS, STRIP_KEYS, capped, capLine, slotQuery, handConflict, handNote, suitFrom, fillableSlots, fetchPieces, fillPicks, keptSlots, listWords, applyEditStep, type FillStart, type EditStep, savedSlots, missingSlots, reslotted, deltaKeys, slotDelta } from "./manual-model.mts";
 import { buffMarker, buffStrip, createBuffPicker, keepChipFocus, type BuffActions, type BuffPicker, type BuffView } from "./builder-buffs.mts";
 
 type Mode = "automatic" | "manual";
@@ -152,6 +152,8 @@ export async function syncManual(): Promise<void> {
   if (asked !== slots) { void syncManual(); return; }   // a pick or a clear landed meanwhile: resolve the suit as it is now
   syncing = false; synced = true;
   items = found;
+  const moved = reslotted(slots, found);   // a piece saved under a slot the classifier has since changed
+  if (moved !== slots) { slots = moved; savePrefs({ manualSuit: slots }); }
   draw();
   if (browser) { browser.sync(); if (pickSlot) browser.fetch(); }
 }
@@ -592,8 +594,10 @@ async function saveAsRun(name: string): Promise<void> {
 // match it. Manual opens on the same character.
 export async function openInManual(suit: OptSuit, covered: readonly string[], runB: RunBuffs | undefined, label: string): Promise<void> {
   cancelFill("Fill canceled: another suit was opened");
-  const next = suitFrom(slots, suit, covered), kept = keptSlots(next, covered);
-  Object.assign(items, await resolveItems(Object.values(next)));   // drawn whole at once: no piece flashes up as missing
+  const planned = suitFrom(slots, suit, covered);
+  Object.assign(items, await resolveItems(Object.values(planned)));   // drawn whole at once: no piece flashes up as missing
+  // a run saved before the classifier moved one of its pieces: the piece in its slot now
+  const next = reslotted(planned, items), kept = keptSlots(next, covered);
   if (noCharacter) { noCharacter = false; savePrefs({ manualFor: "character" }); }
   // the run's buffs (none for a run without), counted, with the numbers they took: all in the same undo step
   const name = manualCharacter(), runEdits = runInputEdits(name, runB);
