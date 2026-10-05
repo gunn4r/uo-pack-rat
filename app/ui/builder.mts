@@ -16,6 +16,7 @@ import { optimizeErrorMessage } from "./messages.mts";
 import { parseRoute, routeFor } from "./app.mts";
 import { setNavBusy } from "./shell.mts";
 import { loadRuns, settingsSnapshot, openRunsDrawer } from "./runs.mts";
+import { initManual, paintCharSelect, setManualFor, renderManual, syncManual } from "./builder-manual.mts";
 import { renderResult, renderCurrentSuit, refreshCurrentSuit, resultLoadError, closeCompare, resetResultView } from "./builder-result.mts";
 import { propName, weightsSummary, requirementsSummary, poolSummary, advancedSummary, knobError, firstKnobError, knobFromServerError, ruleValueError, resistCapError, withResistCap, capNote, resistCapsSummary, gearCapsText, pruneResistCaps, floorCapWarning, weaponsChipText, weaponName, toggleWeapon, type Knobs, type KnobField } from "./builder-model.mts";
 import type { OptimizeResult, OptimizeProgress, SavedRunLike, OptimizeStartApiResponse, OptimizeCancelApiResponse, JobSnapshotEvent, JobDoneEvent, JobFailedEvent, JobCancelledEvent } from "./api-types.mts";
@@ -39,7 +40,12 @@ const KNOB_IDS: Record<KnobField, string> = { strLimit: "b-str", restarts: "b-re
 // The builder's listeners, attached once for the page's life (app.mts's load()). Everything that depends on
 // the inventory is syncBuilderCharacters()'s job, which runs on every load and refresh.
 export function initBuilder(): void {
-  $<HTMLSelectElement>("#b-char")!.onchange = () => selectCharacter($<HTMLSelectElement>("#b-char")!.value);
+  // Manual's "No character" is the empty value; a character is selected for both modes.
+  $<HTMLSelectElement>("#b-char")!.onchange = () => {
+    const v = $<HTMLSelectElement>("#b-char")!.value;
+    setManualFor(v || null);
+    if (v && v !== state.builder.character) selectCharacter(v);   // back from "No character" to the same one keeps its panel and result
+  };
   $<HTMLButtonElement>("#b-run")!.onclick = runBuild;
   $<HTMLButtonElement>("#b-save")!.onclick = saveProfile;
   $<HTMLButtonElement>("#b-runs-open")!.onclick = openRunsDrawer;
@@ -60,6 +66,7 @@ export function initBuilder(): void {
     toggle.setAttribute("aria-expanded", String(!folded));
     toggle.querySelector("svg")?.replaceWith(icon(folded ? "chevron-down" : "chevron-up", { size: "sm" }));
   };
+  initManual();
 }
 // The character list after the inventory or profiles changed (a first load, a scan landing, a Forget).
 // A character still present stays selected and keeps its panel, unsaved edits included; the panel is redrawn
@@ -82,6 +89,8 @@ export function syncBuilderCharacters(): void {
     $<HTMLElement>("#b-result")!.replaceChildren(box("div", { class: "card empty-state" }, el("h2", { class: "t-lg" }, "No characters yet"), el("p", { class: "muted" }, txt("Import a scan and its character shows up here."))));
   }
   setNoCharacter(!names.length);
+  paintCharSelect();
+  void syncManual();
 }
 // With no character there is nothing to build or save: both buttons are disabled, and say why — in their
 // title, and in the panel's own line that they are described by.
@@ -116,6 +125,8 @@ export function selectCharacter(name: string): void {
   if (parked?.name === name) { state.builder.parked = null; showFinished(parked); }
   else renderCurrentSuit(name);
   loadRuns();
+  paintCharSelect();
+  renderManual();
 }
 // The profile with the panel's STR limit folded in: what a build sends and a profile saves.
 export function readControls(): BuilderProfile {

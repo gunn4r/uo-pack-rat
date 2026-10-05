@@ -535,6 +535,9 @@ export const LAYER_TO_SLOT: Record<string, string> = {
   Torso: "chest", Cloak: "cloak", Shoes: "feet", Robe: "robe", Earrings: "earrings", Waist: "waist",
   Tunic: "tunic", Shirt: "shirt", Skirt: "legs",
 };
+// Every slot an equippable piece can be classified into: one per paperdoll layer the classifier knows (Pants and
+// Skirt share "legs"). The Suit Builder's Manual mode shows them all; the optimizer fills OPTIMIZER_SLOTS.
+export const GEAR_SLOTS: string[] = [...new Set(Object.values(LAYER_TO_SLOT))];
 export const OPTIMIZER_SLOTS: string[] = ["helmet", "chest", "arms", "hands", "legs", "neck", "ring", "bracelet", "talisman", "cloak", "oneHanded", "twoHanded"];
 export const SLOT_LABELS: Record<string, string> = {
   helmet: "Head", chest: "Chest", arms: "Arms", hands: "Hands", legs: "Legs", neck: "Neck", ring: "Ring",
