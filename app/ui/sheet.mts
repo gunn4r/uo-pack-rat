@@ -34,6 +34,9 @@ export interface SheetOptions {
   // false: an `after` suit drawn with its own figures only, no "now → after" (the Suit Builder's Manual stats card,
   // where `before` is only the base the attributes are worked out from).
   compare?: boolean | undefined;
+  // true: no resist tiles and no worn gear card, for a caller that draws neither (the Suit Builder's Manual stats card),
+  // and the footnote says nothing about resists.
+  statsOnly?: boolean | undefined;
 }
 
 // ---------------------------------------------------------------- formatting (pure, unit-tested)
@@ -203,7 +206,7 @@ export function sheetNode(name: string, before: SheetAssignment, after: SheetAss
 // The sheet's parts: the KPI row's five resist tiles and its Attributes and Pools lists, the worn gear card and the
 // properties card (with the skills). The Suit Builder's Manual mode draws the lists and the properties for its suit;
 // with no character (`name` null) they are the items' own totals, the attributes and pools "—" and no skills.
-export function sheetParts(name: string | null, before: SheetAssignment, after: SheetAssignment | null, opts: SheetOptions = {}): { resists: HTMLElement[]; lists: HTMLElement[]; gear: HTMLElement; props: HTMLElement } {
+export function sheetParts(name: string | null, before: SheetAssignment, after: SheetAssignment | null, opts: SheetOptions = {}): { resists: HTMLElement[]; lists: HTMLElement[]; gear: HTMLElement | null; props: HTMLElement } {
   const single = after == null, diff = !single && opts.compare !== false;
   const then = after ?? before;
   const c = name ? state.inv!.characters[name] : undefined;
@@ -220,7 +223,7 @@ export function sheetParts(name: string | null, before: SheetAssignment, after: 
   const mv = (bv: number | string, av: number | string, suffix = ""): string => (diff ? moveText(bv as number, av as number, suffix) : `${av}${suffix}`);
 
   // KPI row: five resists, then attributes and pools
-  const resistTiles = RESISTS.map(([k, lbl, cls]) => {
+  const resistTiles = opts.statsOnly ? [] : RESISTS.map(([k, lbl, cls]) => {
     const cap = resistCap(k), rawB = (b[k] || 0) + rsb, rawA = (a[k] || 0) + rsb;
     const vb = Math.min(cap, rawB), va = Math.min(cap, rawA), full = atCap(va, cap), over = capBadgeText(rawA, cap);
     return box("div", { class: `resist kpi tint tint-${cls}${full ? " at-cap" : ""}` },
@@ -245,35 +248,38 @@ export function sheetParts(name: string | null, before: SheetAssignment, after: 
     box("div", { class: "resist kpi kpi-list" }, txt("Pools", "t-sm muted"), pools)];
 
   // worn gear: the shown suit plus the extras, one tile per fixed slot, anything else under "Other"
-  const bySlot = new Map<string, SheetItem>(), other: SheetItem[] = [];
-  const nowSerials = new Set(Object.values(extras(before)).filter(Boolean).map((x) => (x as SheetItem).serial));
-  for (const it of Object.values(extras(then))) {
-    if (!it) continue;
-    if (it.slot && FIXED_SLOTS.has(it.slot) && !bySlot.has(it.slot)) bySlot.set(it.slot, it); else other.push(it);
-  }
-  const caps = (state.rules?.caps || {}) as Record<string, number>;
-  const tile = (slot: string | null, it: SheetItem | undefined): HTMLElement => {
-    const head = txt(slot ? slotLabel(slot) : "Other", "t-sm muted");
-    if (!it) return box("div", { class: "slot empty" }, head, txt("Empty", "faint"));
-    const token = rarityToken(it.rarity);
-    const nums = keyNumbers(it.props || {}, caps), tags = (it.tags || []).slice(0, 2);
-    const isNew = diff && !nowSerials.has(it.serial);
-    // only the one-suit sheet: an optimizer piece carries no durability, so a before/after sheet would badge some pieces and not others
-    const low = single ? lowDurability(it) : null;
-    const t = box("button", { type: "button", class: "slot", ...(token ? { style: `border-color:var(${token})` } : {}) },
-      isNew ? box("span", { class: "slot-head" }, head, badge("New", "accent")) : head,
-      txt(it.name, "nm"),
-      tags.length || nums.length ? box("span", { class: "slot-meta t-sm" }, ...tags.map((x) => tag(x, tagTone(x))), nums.length ? txt(nums.join(" · "), "muted") : null) : null,
-      low ? badge(low, "warn") : null);
-    if (opts.onSlot) t.addEventListener("click", () => opts.onSlot!(it, t));
-    return itemTip(t, it);
+  const gearCard = (): HTMLElement => {
+    const bySlot = new Map<string, SheetItem>(), other: SheetItem[] = [];
+    const nowSerials = new Set(Object.values(extras(before)).filter(Boolean).map((x) => (x as SheetItem).serial));
+    for (const it of Object.values(extras(then))) {
+      if (!it) continue;
+      if (it.slot && FIXED_SLOTS.has(it.slot) && !bySlot.has(it.slot)) bySlot.set(it.slot, it); else other.push(it);
+    }
+    const caps = (state.rules?.caps || {}) as Record<string, number>;
+    const tile = (slot: string | null, it: SheetItem | undefined): HTMLElement => {
+      const head = txt(slot ? slotLabel(slot) : "Other", "t-sm muted");
+      if (!it) return box("div", { class: "slot empty" }, head, txt("Empty", "faint"));
+      const token = rarityToken(it.rarity);
+      const nums = keyNumbers(it.props || {}, caps), tags = (it.tags || []).slice(0, 2);
+      const isNew = diff && !nowSerials.has(it.serial);
+      // only the one-suit sheet: an optimizer piece carries no durability, so a before/after sheet would badge some pieces and not others
+      const low = single ? lowDurability(it) : null;
+      const t = box("button", { type: "button", class: "slot", ...(token ? { style: `border-color:var(${token})` } : {}) },
+        isNew ? box("span", { class: "slot-head" }, head, badge("New", "accent")) : head,
+        txt(it.name, "nm"),
+        tags.length || nums.length ? box("span", { class: "slot-meta t-sm" }, ...tags.map((x) => tag(x, tagTone(x))), nums.length ? txt(nums.join(" · "), "muted") : null) : null,
+        low ? badge(low, "warn") : null);
+      if (opts.onSlot) t.addEventListener("click", () => opts.onSlot!(it, t));
+      return itemTip(t, it);
+    };
+    const groups = SLOT_GROUPS.map(([title, slots]) => box("div", { class: "slot-group" }, txt(title, "caps"),
+      box("div", { class: "slot-grid" }, ...slots.map((s) => tile(s, bySlot.get(s))))));
+    if (other.length) groups.push(box("div", { class: "slot-group" }, txt("Other", "caps"), box("div", { class: "slot-grid" }, ...other.map((it) => tile(it.slot, it)))));
+    const gear = el("section", { class: "card", "aria-label": "Worn gear" },
+      box("div", { class: "card-head" }, el("h2", {}, "Worn gear"), txt(`${bySlot.size} of ${FIXED_SLOTS.size} slots`, "t-sm muted"), el("span", { class: "spacer" }), opts.onSlot ? txt("Click a slot for the item detail", "t-sm muted") : null),
+      box("div", { class: "sheet-slots" }, ...groups));
+    return gear;
   };
-  const groups = SLOT_GROUPS.map(([title, slots]) => box("div", { class: "slot-group" }, txt(title, "caps"),
-    box("div", { class: "slot-grid" }, ...slots.map((s) => tile(s, bySlot.get(s))))));
-  if (other.length) groups.push(box("div", { class: "slot-group" }, txt("Other", "caps"), box("div", { class: "slot-grid" }, ...other.map((it) => tile(it.slot, it)))));
-  const gear = el("section", { class: "card", "aria-label": "Worn gear" },
-    box("div", { class: "card-head" }, el("h2", {}, "Worn gear"), txt(`${bySlot.size} of ${FIXED_SLOTS.size} slots`, "t-sm muted"), el("span", { class: "spacer" }), opts.onSlot ? txt("Click a slot for the item detail", "t-sm muted") : null),
-    box("div", { class: "sheet-slots" }, ...groups));
 
   // properties: value / shard cap, the caps muted
   const propGroups = (): HTMLElement[] => {
@@ -302,13 +308,13 @@ export function sheetParts(name: string | null, before: SheetAssignment, after: 
     : message({ tone: "info", text: `Skills weren't in this scan. Rescan ${name} in game to record them.` });
   const raceNote = race !== "human" ? ` (${race[0]!.toUpperCase()}${race.slice(1)} racial caps may raise this for some resists)` : "";
   const moved = RESISTS.filter(([k]) => override(k)).map(([k, lbl]) => `${lbl} at ${override(k)!.cap} (the shard's is ${override(k)!.shard})`);
-  const note = (name ? `Resists include the Resisting Spells bonus (+${rsb}) and are capped at ${capsFor(name).resistCap("physResist")}${raceNote}.` : "Item totals only: with no character there are no attributes, pools, skills or Resisting Spells bonus.") +
+  const note = (opts.statsOnly && name ? "" : name ? `Resists include the Resisting Spells bonus (+${rsb}) and are capped at ${capsFor(name).resistCap("physResist")}${raceNote}.` : "Item totals only: with no character there are no attributes, pools, skills or Resisting Spells bonus.") +
     (moved.length ? ` This build caps ${moved.join(", ")}.` : "") +
     (!diff ? "" : " Hits, Stamina and Mana after = the current max plus the change in STR/2, DEX, INT and the HP, Stamina and Mana Increase properties (an estimate).");
   const props = el("section", { class: "card", "aria-label": "Properties" },
     box("div", { class: "card-head" }, el("h2", {}, "Properties"), el("span", { class: "spacer" }), txt(`${diff ? "now → after" : "value"} / ${RESISTS.some(([k]) => override(k)) ? "build cap" : "shard cap"}`, "t-sm muted"), picker),
     propBody,
-    box("div", { class: "sheet-foot" }, skillBlock, el("p", { class: "t-sm muted" }, txt(note))));
+    box("div", { class: "sheet-foot" }, skillBlock, note ? el("p", { class: "t-sm muted" }, txt(note)) : null));
 
-  return { resists: resistTiles, lists, gear, props };
+  return { resists: resistTiles, lists, gear: opts.statsOnly ? null : gearCard(), props };
 }

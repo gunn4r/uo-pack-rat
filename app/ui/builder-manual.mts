@@ -169,7 +169,11 @@ function stepHistory(kind: "undo" | "redo"): void {
   const next = kind === "undo" ? r.step.before : r.step.after;
   const text = `${kind === "undo" ? "Undid" : "Redid"}: ${r.step.label}`, focused = document.activeElement?.id;
   setSlots(next, null);
-  if (focused === "mb-undo" || focused === "mb-redo") $<HTMLElement>(`#${focused}`)?.focus();   // the redrawn button keeps the focus
+  // The redrawn button keeps the focus; when it is now disabled (nothing more that way), the other one, else the card.
+  if (focused === "mb-undo" || focused === "mb-redo") {
+    const same = $<HTMLButtonElement>(`#${focused}`), other = $<HTMLButtonElement>(focused === "mb-undo" ? "#mb-redo" : "#mb-undo");
+    (same && !same.disabled ? same : other && !other.disabled ? other : $<HTMLElement>("#mb-suit h2"))?.focus();
+  }
   if (pickSlot) setStatus(text); else toast(text);
   if (Object.values(next).some((s) => !items[s])) void syncManual();   // a piece from before a scan reload: resolve it
 }
@@ -222,9 +226,11 @@ function totalsCard(): HTMLElement {
 // now → after sum, drawn with the after figures only), or the items' totals alone with no character.
 function statsCard(): HTMLElement {
   const name = manualCharacter();
-  const worn = name ? Object.fromEntries((state.inv!.worn[name] || []).filter((i) => i.slot && GEAR_SLOTS.includes(i.slot)).map((i) => [i.slot!, i])) : {};
+  // Every worn piece is the base, so the character's own points are its totals less all it wears (a spellbook, a
+  // second legs piece included) and the after side is exactly the manual suit: no worn piece rides along as an extra.
+  const worn = name ? Object.fromEntries((state.inv!.worn[name] || []).map((i) => [`w${i.serial}`, i])) : {};
   const suit = Object.fromEntries(Object.entries(slots).flatMap(([s, serial]) => (items[serial] ? [[s, items[serial]!]] : [])));
-  const { lists, props } = sheetParts(name, worn, suit, { resistCaps: profileResistCaps(profile()), compare: false });
+  const { lists, props } = sheetParts(name, worn, suit, { compare: false, statsOnly: true });
   // The resists are the totals strip's; the attributes and pools (the character's own, so none with no character) are not.
   return box("div", { class: "sheet mb-stats", id: "mb-stats", role: "group", "aria-label": name ? `${name} in this suit` : "This suit's item totals" },
     name ? box("div", { class: "mb-kpis" }, ...lists) : null, props);
@@ -232,9 +238,12 @@ function statsCard(): HTMLElement {
 function suitCard(): HTMLElement {
   const name = manualCharacter(), filled = Object.keys(slots).length, missing = missingSlots(slots, items).length;
   const worn = name ? button({ label: `Start from what ${name} wears`, size: "sm", attrs: { id: "mb-worn" }, onClick: () => { void startFromWorn(name); } }) : null;
+  // "4 / 18", said in full to a screen reader and on hover
+  const said = filled ? `${filled} of ${GEAR_SLOTS.length} slots filled${missing ? `, ${missing} missing from your scans` : ""}` : "Every slot is empty";
+  const count = box("span", { class: `t-sm ellip ${missing ? "tone-warn" : "muted"}`, title: said }, txt(filled ? `${filled} / ${GEAR_SLOTS.length}${missing ? `, ${missing} missing` : ""}` : "Empty"), el("span", { class: "sr" }, ` (${said})`));
   const clear = filled ? button({ label: "Clear all", variant: "ghost", size: "sm", attrs: { id: "mb-clear" }, onClick: () => { void clearAll(); } }) : null;
   return el("section", { class: "card mb-suit", id: "mb-suit", "aria-label": "Suit" },
-    box("div", { class: "card-head" }, el("h2", {}, "Suit"), txt(filled ? `${filled} of ${GEAR_SLOTS.length} slots filled${missing ? `, ${missing} missing from your scans` : ""}` : "Every slot is empty", `t-sm ellip ${missing ? "tone-warn" : "muted"}`), historyButton("undo"), historyButton("redo"), worn, clear),
+    box("div", { class: "card-head" }, el("h2", { tabindex: "-1" }, "Suit"), count, historyButton("undo"), historyButton("redo"), worn, clear),
     box("div", { class: "mb-suit-body" }, ...MANUAL_GROUPS.map((column) => box("div", { class: "mb-suit-col" },
       ...column.map(([title, group]) => box("div", { class: "mb-group", role: "group", "aria-label": title }, txt(title, "caps muted"), box("div", { class: "mb-grid" }, ...group.map(slotCard))))))));
 }
