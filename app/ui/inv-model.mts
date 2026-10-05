@@ -119,6 +119,9 @@ export function queryParams(q: ItemQuery): URLSearchParams {
   p.set("limit", String(q.limit));
   return p;
 }
+// The query an item browser asks for: its own filters with its fixed part (item-browser.mts's `fixed`) laid over
+// them, so a field the fixed part names is always the fixed value, whatever the player picked.
+export const withFixed = (q: ItemQuery, fixed: Partial<ItemQuery>): ItemQuery => ({ ...q, ...fixed });
 
 // ---------------------------------------------------------------- active filters
 // What the wording needs from the page: labels for slots and properties, the location facet (root

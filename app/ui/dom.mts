@@ -27,7 +27,7 @@ export const $ = <E extends Element = Element>(s: string, el: ParentNode = docum
 // binding already stringifies whatever's passed via ToString, exactly as before: passing a number or
 // null through it already produced "6"/"null", per this file's own rarity/tag-chip callers elsewhere
 // in this page, which rely on exactly that coercion).
-// `boolean` covers aria-* attributes (e.g. "aria-pressed": state.cols.includes(k)) — setAttribute's
+// `boolean` covers aria-* attributes (e.g. "aria-pressed": cols.includes(k)) — setAttribute's
 // ToString coercion turns `true`/`false` into the literal strings "true"/"false", which is exactly
 // the value an aria attribute wants.
 export type ElAttrValue = string | number | boolean | null | undefined;
