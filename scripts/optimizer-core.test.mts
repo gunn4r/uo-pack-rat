@@ -203,8 +203,8 @@ test("[fast] finds the known optimum that requires two individually-inferior pie
   const r = optimizeSuit(pools, current, profile, { seed: 2024, restarts: 0 });
   const rWithRestarts = optimizeSuit(pools, current, profile, { seed: 2024, restarts: 30 });
 
-  // 10 filler slots x di 5 = 50 di, fire 40 + 30 = 70 >= 65.
-  const OPTIMUM = 1000 + 0.1 * 70 + 50;
+  // 17 filler slots x di 5 = 85 di, fire 40 + 30 = 70 >= 65.
+  const OPTIMUM = 1000 + 0.1 * 70 + 85;
   assert.equal(r.best.helmet!.name, "Fire Crown", `helmet was ${r.best.helmet && r.best.helmet.name}`);
   assert.equal(r.best.chest!.name, "Ember Plate", `chest was ${r.best.chest && r.best.chest.name}`);
   assert.ok(Math.abs(r.score - OPTIMUM) < 1e-6, `score ${r.score} != optimum ${OPTIMUM}`);
@@ -237,8 +237,8 @@ test("[fast] perSlotChanges reports every changed slot with its property delta",
   assert.deepEqual(r.totals.before, before);
 });
 
-// (5) Runtime: 12 slots x 30 candidates must finish well under 2 seconds.
-test("[fast] runtime: 12 slots x 30 candidates under 2s", (t) => {
+// (5) Runtime: 19 slots x 30 candidates must finish well under 2 seconds.
+test("[fast] runtime: 19 slots x 30 candidates under 2s", (t) => {
   const { pools, current } = makeWorld(8675309, 30);
   const runs = 5;
   const t0 = process.hrtime.bigint();
@@ -248,7 +248,7 @@ test("[fast] runtime: 12 slots x 30 candidates under 2s", (t) => {
     evals = r.evaluations;
   }
   const ms = Number(process.hrtime.bigint() - t0) / 1e6 / runs;
-  t.diagnostic(`${ms.toFixed(1)} ms mean over ${runs} runs (12 slots x 30 candidates, default restarts, ${evals.toLocaleString("en-US")} set evaluations per run)`);
+  t.diagnostic(`${ms.toFixed(1)} ms mean over ${runs} runs (19 slots x 30 candidates, default restarts, ${evals.toLocaleString("en-US")} set evaluations per run)`);
   assert.ok(ms < 2000, `mean run took ${ms.toFixed(1)}ms`);
 });
 
@@ -288,8 +288,35 @@ test("[fast] dominance pruning keeps the better item on a negatively weighted, f
   const profile = { weights: { luck: -1 }, caps: {}, floors: { luck: 10 }, floorBonus: 100 };
   assert.ok(scoreSet([a], profile) > scoreSet([b], profile));
   const space = core.optBuildSpace(core.optCollectKeys({ ring: [a, b] }, {}, profile), profile);
-  assert.ok(core.optDominancePrune([a, b], space, false).includes(a));
+  assert.ok(core.optDominancePrune([a, b], space, false, false).includes(a));
   const r = optimizeSuit({ ring: [b, a] }, {}, profile, { exact: true, restarts: 0, slots: ["ring"], optionalSlots: ["ring"] });
   assert.equal(r.proven, true);
   assert.equal(r.best.ring?.serial, a.serial);
+});
+
+// Issue #202: a worn plain piece (boots with no properties) scores exactly like an empty slot. Outside the hands the
+// exact search drops the empty choice for it, so it does not branch on every such tie (four of them made the fixture's
+// proof four times slower); in a hand the empty choice stays, since it is what lets a two-hander in.
+// The reviewer's probe: unworn boots with only Luck, a profile that weights HCI and DI. They tie with bare feet, and the
+// search must not send the player to fetch them, whichever path found the suit; worn, they stay.
+test("[fast] an unworn piece that adds nothing to the score is left off the suit", () => {
+  const boots: OptItem = { serial: 1, name: "Lucky Boots", slot: "feet", props: { luck: 5 } }, ring: OptItem = { serial: 2, name: "R", slot: "ring", props: { hci: 5, di: 10 } };
+  const profile = { weights: { hci: 1, di: 1 }, caps: {} };
+  const opts = { restarts: 3, slots: ["feet", "ring"], optionalSlots: ["feet", "ring"], warmStart: { feet: 1, ring: 2 } };
+  for (const exact of [false, true]) {
+    const r = optimizeSuit({ feet: [boots], ring: [ring] }, {}, profile, { ...opts, exact });
+    assert.deepEqual([r.score, r.best.feet, r.best.ring?.serial], [15, null, 2], `exact ${exact}`);
+    assert.equal(optimizeSuit({ feet: [boots], ring: [ring] }, { feet: boots }, profile, { ...opts, exact }).best.feet?.serial, 1, "worn, they stay");
+  }
+});
+
+test("[fast] dominance pruning drops an empty slot for a piece that scores like it, outside the hands", () => {
+  const boots: OptItem = { serial: 1, name: "Boots", slot: "feet", props: {} }, ring: OptItem = { serial: 2, name: "R", slot: "ring", props: { luck: 5 } };
+  const profile = { weights: { luck: 1 }, caps: {} };
+  const space = core.optBuildSpace(core.optCollectKeys({ feet: [boots], ring: [ring] }, {}, profile), profile);
+  assert.deepEqual(core.optDominancePrune([boots, null], space, true, false), [boots]);
+  assert.deepEqual(core.optDominancePrune([boots, null], space, true, true), [boots, null], "a hand keeps the empty choice");
+  assert.deepEqual(core.optDominancePrune([ring, null], space, true, false), [ring, null], "a piece that scores is no stand-in for empty");
+  const r = optimizeSuit({ feet: [boots], ring: [ring] }, { feet: boots }, profile, { exact: true, restarts: 0, slots: ["feet", "ring"], optionalSlots: ["feet", "ring"] });
+  assert.deepEqual([r.proven, r.score, r.best.feet?.serial], [true, 5, boots.serial]);
 });

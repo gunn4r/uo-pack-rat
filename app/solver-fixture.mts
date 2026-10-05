@@ -7,7 +7,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { dirname, join } from "node:path";
-import { buildPools, setRules, foldSnapshots, type ProfilesFile, type Template, type BuildPoolsResult } from "./vault-lib.mts";
+import { buildPools, setRules, foldSnapshots, GEAR_SLOTS, type ProfilesFile, type Template, type BuildPoolsResult } from "./vault-lib.mts";
 import { upgradeScan } from "./scan-schema.mts";
 import { buffSkillValues, plannedProfile } from "./buffs.mts";
 import type { ScanV2 } from "./schema/types.d.mts";
@@ -74,6 +74,16 @@ type CorePooledItem = NonNullable<OptPools[string]>[number];
 type VaultPooledItem = NonNullable<BuildPoolsResult["pools"][string]>[number];
 const _pooledSlotAssignable: CorePooledItem["slot"] = null as unknown as VaultPooledItem["slot"];
 void _pooledSlotAssignable;
+
+// A fuzz instance's slots, in GEAR_SLOTS order: two to `max` of the nineteen gear slots (issue #202), so items land in
+// every slot over a run while brute force stays small. The hand pair comes together in about half the instances, so
+// the hand rule is exercised.
+export function fuzzSlots(rnd: () => number, max: number): string[] {
+  const pair = rnd() < 0.5, picked = pair ? ["oneHanded", "twoHanded"] : [];
+  const rest = GEAR_SLOTS.filter((s) => !picked.includes(s)), want = 2 + Math.floor(rnd() * (max - 1));
+  while (picked.length < want) picked.push(rest.splice(Math.floor(rnd() * rest.length), 1)[0]!);
+  return GEAR_SLOTS.filter((s) => picked.includes(s));
+}
 
 export const sig = (assignment: OptAssignment | null | undefined): string => DEFAULT_SLOTS.map((s) => (assignment && assignment[s] ? assignment[s]!.serial : null)).join(",");
 

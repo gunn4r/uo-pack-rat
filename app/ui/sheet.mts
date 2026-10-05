@@ -186,12 +186,19 @@ function capsFor(name: string): { capOf: (k: string) => number | undefined; resi
     race,
   };
 }
-// Worn pieces the optimizer never touches (feet, robe, waist, earrings, a second chest-layer item) count
-// on both sides of a before/after sheet.
+// Worn pieces the suit's `before` leaves out count on a side of a before/after sheet whose suit has nothing in their slot:
+// those a run saved while the optimizer searched twelve slots never planned (feet, robe, waist…), those no slot holds,
+// and one a filter kept out of the search (a bracelet with a forbidden skill), which the suit's own piece replaces. A
+// piece in `before` is never one, so a result's worn boots count once, on the side that keeps them.
 function withExtras(name: string, before: SheetAssignment): (set: SheetAssignment) => SheetAssignment {
   const inSuit = new Set(Object.values(before).filter(Boolean).map((x) => (x as SheetItem).serial));
   const extra = (state.inv!.worn[name] || []).filter((i) => !inSuit.has(i.serial));
-  return (set) => ({ ...set, ...Object.fromEntries(extra.map((i) => ["_x" + i.serial, i])) });
+  return (set) => {
+    const filled = new Set(Object.values(set).filter(Boolean).map((x) => (x as SheetItem).slot));
+    // a two-handed weapon takes both hands (the core's hand rule); a sheet item is any piece, an OptItem or an Item
+    if ((set.twoHanded as { twoHanded?: boolean } | null | undefined)?.twoHanded) filled.add("oneHanded");
+    return { ...set, ...Object.fromEntries(extra.filter((i) => !i.slot || !filled.has(i.slot)).map((i) => ["_x" + i.serial, i])) };
+  };
 }
 export interface ResistFigure { key: string; label: string; cls: string; cap: number; raw: number; value: number }
 // A character's paperdoll resists in one suit: gear totals plus the Resisting Spells bonus, capped per

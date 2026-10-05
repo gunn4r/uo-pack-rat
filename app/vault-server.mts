@@ -133,7 +133,7 @@ import { upgradeScan, validateScan } from "./scan-schema.mts";
 import { loadRules, listRules, DEFAULT_SHARD } from "./rules.mts";
 import { validate, type ValidatorSchema } from "./schema/validate.mts";
 import { parseItemQuery, applyItemQuery, facetsOf, wantsHits, hitRow, type ItemQueryRows, type ItemQueryGroups } from "./item-query.mts";
-import { DEFAULT_OPTIONAL_SLOTS } from "./mip.mts";
+import { optionalSlotsFor } from "./mip.mts";
 import { GEAR_SLOTS } from "./vault-lib.mts";
 import { isBuffList, isBuffListsByCharacter, isBuffSkillsByCharacter, isRunBuffs, normalizeBuffs, normalizeBuffListsByCharacter } from "./buffs.mts";
 import { startWatcher, jsonErrorReason, MAX_INBOX_BYTES, type StartWatcherOptions, type WatcherHandle } from "./watcher.mts";
@@ -1989,7 +1989,7 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
           skipped = Object.fromEntries(Object.entries(built.skipped).map(([k, v]) => [k, v.length]));
           for (const slot of blocked) delete current[slot];       // a worn piece the filters now rule out must not stay "current"
           if (!fill) for (const slot of lockedList) pools[slot] = [];   // a locked slot offers no alternatives — it always keeps current
-          opts = { ...(opts as RunOpts), optionalSlots: DEFAULT_OPTIONAL_SLOTS.filter((slot) => !keep.includes(slot)) };
+          opts = { ...(opts as RunOpts), optionalSlots: optionalSlotsFor(built.current, keep) };   // `current`, its blocked pieces deleted above
           // The saved run keeps the page's whole settings snapshot (floors, weights, race, search knobs:
           // the runs drawer labels, compares and re-applies runs from it), with the pool settings it
           // actually ran on written over it.
@@ -2070,7 +2070,10 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
       }
       if (req.method === "GET" && url.pathname === "/api/runs") {
         const who = url.searchParams.get("character");
-        return send(res, 200, { ok: true, runs: readRuns().filter((r) => !who || r.character === who).map(runSummary) });
+        // a run saved with twelve slots counts what its character wears in the others (runs-lib.mts totalsAfter)
+        const { inv } = await getInventory(), { toOptItem } = await lib(), worn = new Map<string, OptItem[]>();
+        for (const it of Object.values(inv.items)) if (it.equippedBy && it.gear && it.slot) worn.set(it.equippedBy, [...(worn.get(it.equippedBy) || []), toOptItem(it)]);
+        return send(res, 200, { ok: true, runs: readRuns().filter((r) => !who || r.character === who).map((r) => runSummary(r, worn.get(r.character ?? "") || [])) });
       }
       const runMatch = url.pathname.match(/^\/api\/runs\/([\w-]+)$/);
       if (runMatch) {

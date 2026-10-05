@@ -43,10 +43,9 @@ test("[fast] manual model: the picker's filter is the slot itself, so the two-ha
   assert.equal(SLOT_LABELS.twoHanded, "Weapon 2H / Shield");
 });
 
-test("[fast] manual model: Manual's groups hold every slot the classifier knows, once", () => {
+test("[fast] manual model: Manual's groups hold every slot the classifier knows, once, in GEAR_SLOTS order", () => {
   const grouped = MANUAL_GROUPS.flat().flatMap(([, slots]) => slots);
-  assert.equal(new Set(grouped).size, grouped.length, "no slot twice");
-  assert.deepEqual([...grouped].sort(), [...GEAR_SLOTS].sort());
+  assert.deepEqual(grouped, GEAR_SLOTS, "every slot list on the page (plan, fetch, compare, locked slots) follows Manual's order");
   assert.equal(GEAR_SLOTS.length, 19);
   for (const s of GEAR_SLOTS) assert.ok(SLOT_LABELS[s], `${s} has a label`);
   const armor = MANUAL_GROUPS[0]![0]![1];
@@ -111,7 +110,7 @@ test("[fast] manual model: a saved suit keeps only known slots holding whole ser
   assert.deepEqual(savedSlots({ ring: 5, cloak: 0, helmet: 2.5, feet: 9, neck: "7", twoHanded: 11, backpack: 3 }), { ring: 5, twoHanded: 11, feet: 9 });
   assert.deepEqual(savedSlots(null), {});
   assert.deepEqual(savedSlots([1, 2]), {});
-  assert.deepEqual(missingSlots({ twoHanded: 11, ring: 5, helmet: 3, feet: 4 }, { 5: {} }), ["twoHanded", "helmet", "feet"]);
+  assert.deepEqual(missingSlots({ twoHanded: 11, ring: 5, helmet: 3, feet: 4 }, { 5: {} }), ["helmet", "feet", "twoHanded"]);
   assert.deepEqual(missingSlots({}, {}), []);
 });
 
