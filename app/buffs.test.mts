@@ -9,7 +9,7 @@ import { readFileSync } from "node:fs";
 import { setRules } from "./vault-lib.mts";
 import type { PropMap } from "./vault-lib.mts";
 import type { RulesV1 } from "./schema/types.d.mts";
-import { BUFFS, BUFF_IDS, BUFF_GROUPS, BUFF_INPUTS, applyBuffs, buffSkillValues, buffText, isBuffList, isBuffSkills, toggleBuff } from "./buffs.mts";
+import { BUFFS, BUFF_IDS, BUFF_GROUPS, BUFF_INPUTS, applyBuffs, buffById, buffSkillValues, buffText, isBuffList, isBuffSkills, isBuffSkillsByCharacter, toggleBuff } from "./buffs.mts";
 import type { Skills, Stats } from "./buffs.mts";
 
 setRules(JSON.parse(readFileSync(new URL("./rules/uoalive.json", import.meta.url), "utf8")) as RulesV1);
@@ -54,7 +54,8 @@ test("[fast] buffs: the Necromancy forms' resists, regeneration and DI, Horrific
   assert.deepEqual(alone("wraithForm").add, { physResist: 15, fireResist: -5, energyResist: -5 });
   assert.match(buffText("wraithForm", { "Spirit Speak": 120 }, null, {}), /24% mana leech/);
   assert.match(buffText("wraithForm", { "Spirit Speak": 50 }, null, {}), /10% mana leech/);
-  assert.deepEqual(alone("lichForm").add, { fireResist: -10, coldResist: 10, poisonResist: 10, manaRegen: 13, hpRegen: -5 });
+  assert.deepEqual(alone("lichForm").add, { fireResist: -10, coldResist: 10, poisonResist: 10, manaRegen: 13 }, "its HP drain is no HPR");
+  assert.match(buffText("lichForm", {}, null, {}), /drains 1 HP every 2 s/);
   assert.deepEqual(alone("vampiricEmbrace").add, { fireResist: -25, stamRegen: 15, manaRegen: 3 });
   const hb = alone("horrificBeast");
   assert.deepEqual(hb.add, { di: 25 });
@@ -112,6 +113,8 @@ test("[fast] buffs: Mysticism: Stone Form's resists and resist caps by (Mysticis
   assert.deepEqual(alone("stoneForm", { Mysticism: 32.9 }).add, {}, "below the skill it takes, nothing");
   assert.deepEqual(alone("enchant.hitLightning", { Mysticism: 120, "Focus or Imbuing": 120 }).add, { hitLightning: 60, fc: -1 });
   assert.deepEqual(alone("enchant.hitFireball", { Mysticism: 70, "Focus or Imbuing": 50 }).add, { hitFireball: 30 }, "under 80 and 80: no Spell Channeling");
+  const sc = applyBuffs({}, CAPS, ["enchant.hitLightning"], { Mysticism: 120, "Focus or Imbuing": 120 }, null, { weaponFlags: ["spell channeling"] });
+  assert.deepEqual([sc.totals.hitLightning, sc.totals.fc], [60, undefined], "a weapon with Spell Channeling keeps its own: no second FC −1");
 });
 
 test("[fast] buffs: Ninjitsu's forms, White Tiger's DCI cap raise, and Honorable Execution by Bushido", () => {
@@ -132,6 +135,12 @@ test("[fast] buffs: the bard songs at 120 in every bard skill, and at the 90 the
   assert.deepEqual(alone("invigorate", all).add, { strBonus: 14, dexBonus: 14, intBonus: 14, hitsPool: 26 });
   assert.deepEqual(alone("resilience", all).add, { hpRegen: 22, stamRegen: 22, manaRegen: 22 });
   assert.deepEqual(alone("perseverance", all).add, { dci: 30, castingFocus: 6 });
+  // a Provocation and Musicianship bard: no collective bonus once the other two read 0
+  assert.deepEqual(alone("inspire", { Musicianship: 120, Provocation: 120, Peacemaking: 0, Discordance: 0 }).add, { hci: 16, sdi: 16, di: 40 });
+  // lacking them, they count at 120 and the song is planned: every bard skill is one of its inputs
+  const bard = buffSkillValues({ Provocation: { value: 120 }, Musicianship: { value: 120 } }, {});
+  assert.ok(bard.planned.has("Peacemaking") && bard.planned.has("Discordance") && !bard.planned.has("Provocation"));
+  for (const id of ["inspire", "invigorate", "resilience", "perseverance"]) assert.ok(buffById(id)!.inputs.some((i) => bard.planned.has(i)), `${id} is planned`);
   const low = { Musicianship: 90, Provocation: 90, Peacemaking: 0, Discordance: 0 };
   assert.deepEqual(alone("inspire", low).add, { hci: 4, sdi: 4, di: 10 }, "base 2, no collective bonus");
   assert.deepEqual(alone("inspire", { ...low, Provocation: 89 }).add, {}, "below 90 the song can't be sung");
@@ -143,7 +152,7 @@ test("[fast] buffs: the other masteries by skill and mastery level", () => {
   assert.equal(alone("toughness", { "Mace Fighting": 120, Tactics: 120, "Mastery level": 3 }).add.hitsPool, 30);
   assert.equal(alone("intuition", { "Mastery level": 3 }).add.manaPool, 15);
   assert.deepEqual(alone("savingThrow", { "Mastery level": 3 }).add, { hci: 5, dci: 5, strBonus: 5, di: 5 });
-  assert.deepEqual(alone("savingThrow", { "Mastery level": 1 }).add, { hci: 5 });
+  assert.deepEqual(alone("savingThrow", { "Mastery level": 1 }).add, { hci: 5, strBonus: 5 }, "STR +5 at every level");
 });
 
 test("[fast] buffs: potions scale with the suit's Enhance Potions (at most 50) and 10 per 33 Alchemy; the Human's +2 HPR", () => {
@@ -151,7 +160,10 @@ test("[fast] buffs: potions scale with the suit's Enhance Potions (at most 50) a
   assert.equal(alone("greaterStrengthPotion", { Alchemy: 120 }).add.strBonus, 26);
   assert.equal(alone("greaterAgilityPotion", { Alchemy: 0 }).add.dexBonus, 20);
   assert.equal(alone("greaterStrengthPotion", { Alchemy: 120 }, null, { enhancePotions: 60 }).add.strBonus, 36, "EP 50 + 30");
-  assert.deepEqual(alone("human").add, { hpRegen: 2 });
+  assert.deepEqual(alone("human").add, { hpRegen: 2 }, "with no character, any race's is open");
+  assert.deepEqual(applyBuffs({}, CAPS, ["human"], {}, null, { race: "human" }).totals, { hpRegen: 2 });
+  const elf = applyBuffs({}, CAPS, ["human"], {}, null, { race: "elf" });
+  assert.deepEqual([elf.totals, elf.blocked], [{}, ["human"]], "an Elf has no Human passive");
 });
 
 test("[fast] buffs: one form at a time, a turned-on form names the one it replaced", () => {
@@ -170,6 +182,12 @@ test("[fast] buffs: a stat slot counts its largest share, so Greater Strength be
   assert.equal(r.totals.dexBonus, 11);
   assert.equal(r.totals.intBonus, 5);
   assert.deepEqual(r.beaten, [{ id: "bless", key: "strBonus", by: "greaterStrengthPotion" }]);
+  // with no character Bless is a percent: which of it and a flat potion is larger depends on the base STR, so the
+  // potion counts and neither is beaten
+  const free = applyBuffs({}, CAPS, ["bless", "greaterStrengthPotion"], { Alchemy: 120 }, null);
+  assert.equal(free.totals.strBonus, 26);
+  assert.deepEqual(free.beaten, []);
+  assert.deepEqual(free.unsure, [{ id: "bless", key: "strBonus", with: "greaterStrengthPotion" }]);
   // Invigorate has its own slot and stacks
   const inv = applyBuffs({}, CAPS, ["bless", "invigorate"], { "Evaluating Intelligence": 120, Musicianship: 120, Provocation: 120, Peacemaking: 120, Discordance: 120 }, { str: 125, dex: 80, int: 35 });
   assert.equal(inv.totals.strBonus, 17 + 14);
@@ -214,13 +232,16 @@ test("[fast] buffs: the picker's words for an entry", () => {
   assert.equal(buffText("stoneForm", { Mysticism: 120, "Focus or Imbuing": 120 }, null, {}), "All resists +10 · SSI −10 · FC −2 · Resist caps +5");
   assert.equal(buffText("whiteTiger", {}, null, {}), "DCI +20 · DCI cap +5");
   assert.equal(buffText("wolfKitsune", {}, null, {}), "HCI +20 · Hits +20");
-  assert.equal(buffText("savingThrow", { "Mastery level": 1 }, null, {}), "HCI +5");
+  assert.equal(buffText("savingThrow", { "Mastery level": 1 }, null, {}), "HCI +5 · STR +5");
 });
 
 test("[fast] buffs: the saved choices' checks", () => {
   assert.ok(isBuffList([]) && isBuffList(["divineFury", "bless"]));
   for (const bad of [null, "divineFury", ["nope"], ["bless", "bless"], [5], {}]) assert.equal(isBuffList(bad), false, JSON.stringify(bad));
   assert.ok(isBuffSkills({}) && isBuffSkills({ Chivalry: 105.5, Karma: -15000, "Mastery level": 2 }));
+  for (const bad of [{ "Mastery level": 2.5 }, { "Arcane Focus": 1.5 }, { Karma: 0.5 }]) assert.equal(isBuffSkills(bad), false, `${JSON.stringify(bad)}: a whole number`);
+  assert.ok(isBuffSkillsByCharacter({ Fury: { Chivalry: 120 }, "": { Necromancy: 100 } }));
+  for (const bad of [{ Chivalry: 120 }, { Fury: { Hiding: 1 } }, { ["x".repeat(65)]: {} }, JSON.parse('{"__proto__": {}}') as unknown, []]) assert.equal(isBuffSkillsByCharacter(bad), false, JSON.stringify(bad));
   for (const bad of [null, [], { Chivalry: 151 }, { Karma: 15001 }, { "Mastery level": 0 }, { Chivalry: "120" }, { Chivalry: Number.NaN }, { Hiding: 100 }, JSON.parse('{"__proto__": 5}') as unknown]) {
     assert.equal(isBuffSkills(bad), false, JSON.stringify(bad));
   }

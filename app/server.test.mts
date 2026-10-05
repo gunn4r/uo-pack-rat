@@ -3234,12 +3234,14 @@ test("[fast] PUT /api/ui-prefs keeps the Suit Builder's mode, its Manual suit an
     assert.equal((await put(s2.url, { manualSuit: {} })).status, 200, "an empty suit is a suit");
     assert.deepEqual(asJson<{ prefs: Record<string, unknown> }>(await (await fetch(s2.url + "/api/ui-prefs")).json()).prefs.manualSuit, {});
     // its buffs (app/buffs.mts): catalog ids each once, the edited numbers within their bounds, and the count switch
-    assert.equal((await put(s2.url, { manualBuffs: ["divineFury", "whiteTiger"], buffSkills: { Chivalry: 105.5, Karma: -200 }, buffsCount: "off" })).status, 200);
-    for (const bad of [{ manualBuffs: ["nope"] }, { manualBuffs: ["bless", "bless"] }, { manualBuffs: "bless" }, { buffSkills: { Chivalry: 151 } }, { buffSkills: { Hiding: 100 } }, { buffSkills: [] }, { buffsCount: "yes" }]) {
+    const edits = { Dorran: { Chivalry: 105.5, Karma: -200 }, "": { "Mastery level": 2 } };
+    assert.equal((await put(s2.url, { manualBuffs: ["divineFury", "whiteTiger"], buffSkills: edits, buffsCount: "off" })).status, 200);
+    for (const bad of [{ manualBuffs: ["nope"] }, { manualBuffs: ["bless", "bless"] }, { manualBuffs: "bless" }, { buffSkills: { Dorran: { Chivalry: 151 } } }, { buffSkills: { Dorran: { Hiding: 100 } } },
+      { buffSkills: { Dorran: { "Mastery level": 2.5 } } }, { buffSkills: { Chivalry: 105 } }, { buffSkills: [] }, { buffsCount: "yes" }]) {
       assert.equal((await put(s2.url, bad)).status, 400, JSON.stringify(bad));
     }
     const prefs = asJson<{ prefs: Record<string, unknown> }>(await (await fetch(s2.url + "/api/ui-prefs")).json()).prefs;
-    assert.deepEqual([prefs.manualBuffs, prefs.buffSkills, prefs.buffsCount], [["divineFury", "whiteTiger"], { Chivalry: 105.5, Karma: -200 }, "off"]);
+    assert.deepEqual([prefs.manualBuffs, prefs.buffSkills, prefs.buffsCount], [["divineFury", "whiteTiger"], edits, "off"]);
   } finally { await s2.close(); }
 });
 

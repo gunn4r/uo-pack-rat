@@ -9,16 +9,16 @@ import type { PropMap } from "./vault-lib.mts";
 // ---------------------------------------------------------------- the numbers a buff scales with
 // A skill, by the scan's name for it (a character's own value is the highest of `skills`), or a value no scan carries
 // (karma, an Arcane Focus level, a mastery level). `def` is used with no character, and for a skill the character
-// lacks. Edited values are kept within min..max.
-export interface BuffInput { label: string; skills: string[]; min: number; max: number; def: number }
+// lacks. Edited values are kept within min..max, and whole for an `int` input.
+export interface BuffInput { label: string; skills: string[]; min: number; max: number; def: number; int?: true }
 const skill = (name: string, label = name): BuffInput => ({ label, skills: [name], min: 0, max: 150, def: 120 });
 export const BUFF_INPUTS: Record<string, BuffInput> = {
   Chivalry: skill("Chivalry"),
-  Karma: { label: "Karma", skills: [], min: -15000, max: 15000, def: 15000 },
+  Karma: { label: "Karma", skills: [], min: -15000, max: 15000, def: 15000, int: true },
   Necromancy: skill("Necromancy"),
   "Spirit Speak": skill("Spirit Speak"),
   Spellweaving: skill("Spellweaving"),
-  "Arcane Focus": { label: "Arcane Focus", skills: [], min: 0, max: 6, def: 0 },
+  "Arcane Focus": { label: "Arcane Focus", skills: [], min: 0, max: 6, def: 0, int: true },
   "Evaluating Intelligence": skill("Evaluating Intelligence", "Eval Int"),
   Inscription: skill("Inscription"),
   Mysticism: skill("Mysticism"),
@@ -32,7 +32,7 @@ export const BUFF_INPUTS: Record<string, BuffInput> = {
   Swordsmanship: skill("Swordsmanship", "Swords"),
   "Mace Fighting": skill("Mace Fighting", "Mace"),
   Tactics: skill("Tactics"),
-  "Mastery level": { label: "Mastery level", skills: [], min: 1, max: 3, def: 3 },
+  "Mastery level": { label: "Mastery level", skills: [], min: 1, max: 3, def: 3, int: true },
   Alchemy: skill("Alchemy"),
 };
 // The picker's groups, in order, each with the numbers its entries scale with.
@@ -64,7 +64,9 @@ export interface Stats { str: number; dex: number; int: number }
 export type Skills = Record<string, number>;
 // What an entry's numbers are worked out from: an input's value, the raw stats (null with no character) and the
 // suit's own totals (a potion reads the suit's Enhance Potions). `resist` is the character's Resisting Spells, or null.
-export interface BuffContext { s: (input: string) => number; stats: Stats | null; totals: PropMap; resist: number | null }
+// `who` is what the evaluator knows beyond the numbers: the character's race and the held weapon's flags.
+export interface BuffWho { race?: string | null | undefined; weaponFlags?: readonly string[] | undefined }
+export interface BuffContext { s: (input: string) => number; stats: Stats | null; totals: PropMap; resist: number | null; who: BuffWho }
 // One effect. `outside`: added after the cap (Enemy of One's damage), so it never counts toward it. `slot`: a stat
 // buff that shares its stat with others, the largest counting (Bless, the potions). `pct`: a share of the raw stat,
 // kept so the page can say "+13%" when there is no character to take it of.
@@ -74,6 +76,7 @@ export interface Buff {
   name: string;
   group: string;
   inputs: string[];                       // what its numbers scale with; the first is named on its chip
+  race?: string;                          // a racial passive: only that race has it
   excl?: keyof typeof EXCLUSIVE;
   min?: [string, number];                 // the skill it takes to cast
   effects: (c: BuffContext) => BuffEffect[];
@@ -95,6 +98,8 @@ const potion = (c: BuffContext, offset: number): number => tr((offset * (100 + M
 // A bard song's numbers (BardSpells/BardSpell.cs): BaseSkillBonus from the casting skill and Musicianship, and the
 // collective bonus from each other bard skill at 100 or more.
 const BARD = ["Provocation", "Peacemaking", "Discordance"];
+// A song's inputs: its casting skill first (named on its chip), then Musicianship and the other two.
+const bardInputs = (cast: string): string[] => [cast, "Musicianship", ...BARD.filter((b) => b !== cast)];
 function bard(c: BuffContext, cast: string): { base: number; coll: number } {
   const base = Math.floor(2 + (c.s(cast) - 90) / 10 + (c.s("Musicianship") - 90) / 10);
   const coll = BARD.filter((b) => b !== cast && c.s(b) >= 100).reduce((n, b) => n + 1 + (c.s(b) - 100) / 10, 0);
@@ -126,9 +131,10 @@ export const BUFFS: Buff[] = [
   { id: "wraithForm", name: "Wraith Form", group: "Necromancy", inputs: ["Necromancy", "Spirit Speak"], excl: "form", min: ["Necromancy", 20],
     effects: () => [{ key: "physResist", value: 15 }, { key: "fireResist", value: -5 }, { key: "energyResist", value: -5 }],
     extra: (c) => [`${tr(c.s("Spirit Speak") / 5)}% mana leech`] },   // Misc/AOS.cs DoLeech: Spirit Speak / 5
-  // Lich Form: LichForm.cs; MR +13 in RegenRates.cs; the HP drain as the wiki's HPR −5 (Lich_Form).
+  // Lich Form: LichForm.cs; MR +13 in RegenRates.cs; its HP drain (LichForm.cs OnTick) is no HPR, so it is said only.
   { id: "lichForm", name: "Lich Form", group: "Necromancy", inputs: ["Necromancy"], excl: "form", min: ["Necromancy", 70],
-    effects: () => [{ key: "fireResist", value: -10 }, { key: "coldResist", value: 10 }, { key: "poisonResist", value: 10 }, { key: "manaRegen", value: 13 }, { key: "hpRegen", value: -5 }] },
+    effects: () => [{ key: "fireResist", value: -10 }, { key: "coldResist", value: 10 }, { key: "poisonResist", value: 10 }, { key: "manaRegen", value: 13 }],
+    extra: () => ["drains 1 HP every 2 s"] },
   // Vampiric Embrace: VampiricEmbrace.cs; SR +15 and MR +3 in RegenRates.cs; 20% life leech in AOS.cs DoLeech.
   { id: "vampiricEmbrace", name: "Vampiric Embrace", group: "Necromancy", inputs: ["Necromancy"], excl: "form", min: ["Necromancy", 99],
     effects: () => [{ key: "fireResist", value: -25 }, { key: "stamRegen", value: 15 }, { key: "manaRegen", value: 3 }],
@@ -172,9 +178,10 @@ export const BUFFS: Buff[] = [
     effects: (c) => [...resists(Math.max(2, tr(mystSum(c) / 24))), { key: "ssi", value: -10 }, { key: "fc", value: -2 }],
     caps: (c) => Object.fromEntries(RESIST_KEYS.map((k) => [k, Math.max(2, tr(mystSum(c) / 48))])),
     note: "No cap raise while wearing refined armor" },
-  // Enchant: EnchantSpell.cs, 60 × (Mysticism + Focus or Imbuing) / 240, and Spell Channeling with FC −1 at 80 and 80.
+  // Enchant: EnchantSpell.cs, 60 × (Mysticism + Focus or Imbuing) / 240, and Spell Channeling with FC −1 at 80 and 80
+  // when the weapon lacks it (a weapon that has it keeps its own, and its own FC −1 is in the suit already).
   ...ENCHANTS.map(([key, spell]): Buff => ({ id: `enchant.${key}`, name: `Enchant: Hit ${spell}`, group: "Mysticism", inputs: MYST, excl: "enchant",
-    effects: (c) => [{ key, value: tr((60 * mystSum(c)) / 240) }, ...(c.s("Mysticism") >= 80 && c.s("Focus or Imbuing") >= 80 ? [{ key: "fc", value: -1 }] : [])],
+    effects: (c) => [{ key, value: tr((60 * mystSum(c)) / 240) }, ...(c.s("Mysticism") >= 80 && c.s("Focus or Imbuing") >= 80 && !c.who.weaponFlags?.includes("spell channeling") ? [{ key: "fc", value: -1 }] : [])],
     note: "On a weapon with no hit spell. At 80 in both skills it also gains Spell Channeling (FC −1)" })),
 
   // Ninjitsu. Animal Form: HCI +20 (AOS.cs) and Hits +20 after the HPI cap (PlayerMobile.cs HitsMax); wiki Animal_Form (85).
@@ -192,16 +199,18 @@ export const BUFFS: Buff[] = [
     effects: (c) => [{ key: "ssi", value: Math.max(1, tr((c.s("Bushido") * c.s("Bushido")) / 720)) }], note: "For 20 s after a kill" },
 
   // Bard masteries: Spells/Skill Masteries/BardSpells/<Song>.cs. Each is a party song, so another bard's skills count.
-  { id: "inspire", name: "Inspire", group: "Bard masteries", inputs: ["Provocation", "Musicianship"], min: ["Provocation", 90],
+  // Every song scales with all four bard skills (the other two give the collective bonus), so a song whose bard lacks
+  // one of them is planned, the lacking skill's field showing the 120 it is counted at.
+  { id: "inspire", name: "Inspire", group: "Bard masteries", inputs: bardInputs("Provocation"), min: ["Provocation", 90],
     effects: (c) => { const { base, coll } = bard(c, "Provocation"); return [{ key: "hci", value: tr(base * 2 + coll) }, { key: "sdi", value: tr(base * 2 + coll) }, { key: "di", value: tr(base * 5 + coll * 3) }]; },
     note: "Provocation mastery" },
-  { id: "invigorate", name: "Invigorate", group: "Bard masteries", inputs: ["Provocation", "Musicianship"], min: ["Provocation", 90],
+  { id: "invigorate", name: "Invigorate", group: "Bard masteries", inputs: bardInputs("Provocation"), min: ["Provocation", 90],
     effects: (c) => { const { base, coll } = bard(c, "Provocation"), st = tr(base + coll); return [{ key: "strBonus", value: st }, { key: "dexBonus", value: st }, { key: "intBonus", value: st }, { key: "hitsPool", value: tr(2.5 * base + coll) }]; },
     note: "Its own stat slot, so it adds on top of Bless and potions. Provocation mastery" },
-  { id: "resilience", name: "Resilience", group: "Bard masteries", inputs: ["Peacemaking", "Musicianship"], min: ["Peacemaking", 90],
+  { id: "resilience", name: "Resilience", group: "Bard masteries", inputs: bardInputs("Peacemaking"), min: ["Peacemaking", 90],
     effects: (c) => { const { base, coll } = bard(c, "Peacemaking"), v = tr(base * 2 + coll); return [{ key: "hpRegen", value: v }, { key: "stamRegen", value: v }, { key: "manaRegen", value: v }]; },
     note: "Peacemaking mastery" },
-  { id: "perseverance", name: "Perseverance", group: "Bard masteries", inputs: ["Peacemaking", "Musicianship"], min: ["Peacemaking", 90],
+  { id: "perseverance", name: "Perseverance", group: "Bard masteries", inputs: bardInputs("Peacemaking"), min: ["Peacemaking", 90],
     effects: (c) => { const { base, coll } = bard(c, "Peacemaking"); return [{ key: "dci", value: tr(base * 3 + coll) }, { key: "castingFocus", value: tr(base / 2 + coll / 3) }]; },
     note: "Peacemaking mastery" },
 
@@ -213,7 +222,8 @@ export const BUFFS: Buff[] = [
   { id: "intuition", name: "Intuition (passive)", group: "Other masteries", inputs: ["Mastery level"],
     effects: (c) => [{ key: "manaPool", value: 5 * c.s("Mastery level") }], note: "Bushido, Ninjitsu or Chivalry mastery" },
   { id: "savingThrow", name: "Saving Throw (passive)", group: "Other masteries", inputs: ["Mastery level"],
-    effects: (c) => { const l = c.s("Mastery level"); return [{ key: "hci", value: 5 }, { key: "dci", value: l >= 2 ? 5 : 0 }, { key: "strBonus", value: l >= 3 ? 5 : 0 }, { key: "di", value: l >= 3 ? 5 : 0 }]; },
+    // STR +5 at every level: MasteryInfo.cs:311 adds the "SavingThrow_Str" stat mod whatever the level
+    effects: (c) => { const l = c.s("Mastery level"); return [{ key: "hci", value: 5 }, { key: "dci", value: l >= 2 ? 5 : 0 }, { key: "strBonus", value: 5 }, { key: "di", value: l >= 3 ? 5 : 0 }]; },
     note: "A weapon-skill mastery" },
 
   // Potions: Items/Consumables/Base{Strength,Agility}Potion.cs, the same "[Magic] <stat> Buff" as Bless.
@@ -224,7 +234,7 @@ export const BUFFS: Buff[] = [
 
   // Racial: the Human's +2 HPR, inside the 18 cap (RegenRates.cs; wiki Humans). The Elf's Energy cap is the rules
   // file's raceCaps and its +20 mana is in the scanned maximum already, so the Elf has no entry.
-  { id: "human", name: "Human: Tough", group: "Racial", inputs: [], effects: () => [{ key: "hpRegen", value: 2 }], note: "Humans only" },
+  { id: "human", name: "Human: Tough", group: "Racial", inputs: [], race: "human", effects: () => [{ key: "hpRegen", value: 2 }] },
 ];
 export const BUFF_IDS: string[] = BUFFS.map((b) => b.id);
 const BY_ID = new Map(BUFFS.map((b) => [b.id, b]));
@@ -247,10 +257,12 @@ export function buffSkillValues(charSkills: Record<string, unknown> | null, edit
   if (charSkills?.["Resisting Spells"] != null) values["Resisting Spells"] = own("Resisting Spells");
   return { values, planned };
 }
-export const buffContext = (skills: Skills, stats: Stats | null, totals: PropMap): BuffContext =>
-  ({ s: (id) => skills[id] ?? BUFF_INPUTS[id]?.def ?? 0, stats, totals, resist: skills["Resisting Spells"] ?? null });
-// The input below the skill an entry needs, as "Needs Necromancy 70", or null.
-export function buffNeeds(b: Buff, skills: Skills): string | null {
+export const buffContext = (skills: Skills, stats: Stats | null, totals: PropMap, who: BuffWho = {}): BuffContext =>
+  ({ s: (id) => skills[id] ?? BUFF_INPUTS[id]?.def ?? 0, stats, totals, resist: skills["Resisting Spells"] ?? null, who });
+// Why an entry can't count, or null: below the skill it takes ("Needs Necromancy 70"), or another race's passive
+// ("Humans only"; with no character every race's is open).
+export function buffNeeds(b: Buff, skills: Skills, who: BuffWho = {}): string | null {
+  if (b.race && who.race && who.race !== b.race) return `${b.race[0]!.toUpperCase()}${b.race.slice(1)}s only`;
   if (!b.min) return null;
   const [id, at] = b.min;
   return (skills[id] ?? BUFF_INPUTS[id]!.def) < at ? `Needs ${BUFF_INPUTS[id]!.label} ${at}` : null;
@@ -278,23 +290,36 @@ export interface BuffResult {
   shares: Record<string, BuffShare[]>;     // per key, each buff's share (the page's markers)
   capShares: Record<string, BuffShare[]>;  // per key, each buff's cap change
   beaten: Array<{ id: string; key: string; by: string }>;   // a stat share a larger one in its slot replaced
-  blocked: string[];                       // on, but below the skill it needs: counts for nothing
+  // with no character, a share of the raw stat (Bless's 13%) beside a flat one in its slot (a potion's +26): which is
+  // larger depends on the stat, so the flat one is counted and neither is said to be beaten
+  unsure: Array<{ id: string; key: string; with: string }>;
+  blocked: string[];                       // on, but it can't count (below the skill it needs, another race's): nothing
 }
 // The suit's totals with the `buffs` that are on. `totals` and `caps` are in the page's terms (resists as on the
 // paperdoll, Resisting Spells' bonus included). The order is the game's: the caps change first, the in-cap shares are
 // added (a stat slot takes its largest share only) and clamped, and the outside shares come after the cap.
-export function applyBuffs(totals: PropMap, caps: Readonly<Record<string, number>>, buffs: readonly string[], skills: Skills, stats: Stats | null): BuffResult {
-  const c = buffContext(skills, stats, totals);
-  const r: BuffResult = { totals: { ...totals }, caps: { ...caps }, outside: {}, effective: {}, shares: {}, capShares: {}, beaten: [], blocked: [] };
-  const live = BUFFS.filter((b) => buffs.includes(b.id) && (buffNeeds(b, skills) ? (r.blocked.push(b.id), false) : true));
+export function applyBuffs(totals: PropMap, caps: Readonly<Record<string, number>>, buffs: readonly string[], skills: Skills, stats: Stats | null, who: BuffWho = {}): BuffResult {
+  const c = buffContext(skills, stats, totals, who);
+  const r: BuffResult = { totals: { ...totals }, caps: { ...caps }, outside: {}, effective: {}, shares: {}, capShares: {}, beaten: [], unsure: [], blocked: [] };
+  const live = BUFFS.filter((b) => buffs.includes(b.id) && (buffNeeds(b, skills, who) ? (r.blocked.push(b.id), false) : true));
   const add = (map: Record<string, BuffShare[]>, key: string, s: BuffShare): void => { (map[key] ||= []).push(s); };
   for (const b of live) for (const [k, d] of Object.entries(b.caps?.(c) || {})) { r.caps[k] = (r.caps[k] ?? 0) + d; add(r.capShares, k, { id: b.id, value: d }); }
   const effects = live.map((b) => [b, b.effects(c)] as const);
-  const best: Record<string, { id: string; value: number }> = {};
-  for (const [b, list] of effects) for (const e of list) if (e.slot && (!best[e.key] || e.value > best[e.key]!.value)) best[e.key] = { id: b.id, value: e.value };
+  // A slot's largest share: flat shares compared by value; with no character, percent shares only among themselves.
+  const pctOnly = (e: BuffEffect): boolean => e.pct != null && !stats;
+  const best: Record<string, { id: string; value: number }> = {}, bestPct: Record<string, { id: string; value: number }> = {};
+  for (const [b, list] of effects) for (const e of list) {
+    if (!e.slot) continue;
+    const [map, v] = pctOnly(e) ? [bestPct, e.pct!] : [best, e.value];
+    if (!map[e.key] || v > map[e.key]!.value) map[e.key] = { id: b.id, value: v };
+  }
   for (const [b, list] of effects) for (const e of list) {
     if (!e.value && e.pct == null) continue;
-    if (e.slot && best[e.key]!.id !== b.id) { r.beaten.push({ id: b.id, key: e.key, by: best[e.key]!.id }); continue; }
+    if (e.slot) {
+      const win = (pctOnly(e) ? bestPct : best)[e.key]!;
+      if (win.id !== b.id) { r.beaten.push({ id: b.id, key: e.key, by: win.id }); continue; }
+      if (pctOnly(e) && best[e.key]) r.unsure.push({ id: b.id, key: e.key, with: best[e.key]!.id });
+    }
     const map = e.outside ? r.outside : r.totals;
     map[e.key] = (map[e.key] || 0) + e.value;
     add(r.shares, e.key, { id: b.id, value: e.value, ...(e.outside ? { outside: true } : {}), ...(e.pct != null && !stats ? { pct: e.pct } : {}) });
@@ -321,8 +346,8 @@ function joined(items: Array<[string, string]>): string[] {
 }
 // An entry's line in the picker for these skills and stats: "HCI +10 · DI +10 · SSI +10 · DCI −20",
 // "DI +7 past the cap · hits the lowest resist", "STR, DEX, INT +13% of base" with no character.
-export function buffText(id: string, skills: Skills, stats: Stats | null, totals: PropMap): string {
-  const b = BY_ID.get(id)!, c = buffContext(skills, stats, totals);
+export function buffText(id: string, skills: Skills, stats: Stats | null, totals: PropMap, who: BuffWho = {}): string {
+  const b = BY_ID.get(id)!, c = buffContext(skills, stats, totals, who);
   const eff = b.effects(c).filter((e) => e.value || e.pct != null).map((e): [string, string] =>
     [e.key, e.pct != null && !stats ? `+${e.pct}% of base` : `${signed(e.value)}${e.outside ? " past the cap" : ""}`]);
   const caps = Object.entries(b.caps?.(c) || {}).map(([k, d]): [string, string] => [k, `cap ${signed(d)}`]);
@@ -334,8 +359,19 @@ export function buffText(id: string, skills: Skills, stats: Stats | null, totals
 // The buffs that are on: known ids, each once.
 export const isBuffList = (v: unknown): v is string[] =>
   Array.isArray(v) && v.length <= BUFF_IDS.length && new Set(v).size === v.length && v.every((x) => typeof x === "string" && BY_ID.has(x));
-// The edited inputs: known inputs, each a number within its bounds.
+// One character's edited inputs: known inputs, each a number within its bounds, whole for an `int` input.
 export function isBuffSkills(v: unknown): v is Record<string, number> {
   if (!v || typeof v !== "object" || Array.isArray(v)) return false;
-  return Object.entries(v).every(([k, n]) => Object.hasOwn(BUFF_INPUTS, k) && typeof n === "number" && Number.isFinite(n) && n >= BUFF_INPUTS[k]!.min && n <= BUFF_INPUTS[k]!.max);
+  return Object.entries(v).every(([k, n]) => {
+    const i = Object.hasOwn(BUFF_INPUTS, k) ? BUFF_INPUTS[k]! : null;
+    return !!i && typeof n === "number" && Number.isFinite(n) && n >= i.min && n <= i.max && (!i.int || Number.isInteger(n));
+  });
+}
+// The edits by character (ui-prefs `buffSkills`): a character's name, or NO_CHARACTER (""), to its edited inputs, so one
+// character's plan never marks another's. At most 200 names of at most 64 characters.
+export const NO_CHARACTER = "";
+export function isBuffSkillsByCharacter(v: unknown): v is Record<string, Record<string, number>> {
+  if (!v || typeof v !== "object" || Array.isArray(v)) return false;
+  const entries = Object.entries(v);
+  return entries.length <= 200 && entries.every(([name, edits]) => name.length <= 64 && name !== "__proto__" && isBuffSkills(edits));
 }

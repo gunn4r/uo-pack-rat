@@ -9,8 +9,8 @@
 // the switch are ui-prefs fields too, and turning one on or off is a step in the suit's undo history.
 import { GEAR_SLOTS, RESIST_KEYS, effectiveProfile, profileResistCaps, toOptItem, totalsOf } from "../vault-lib.mts";
 import type { Character, EffectiveProfile, Item, OptItem, PropMap } from "../vault-lib.mts";
-import { applyBuffs, buffById, buffSkillValues, isBuffList, isBuffSkills, toggleBuff } from "../buffs.mts";
-import type { BuffResult, Stats } from "../buffs.mts";
+import { applyBuffs, buffById, buffSkillValues, isBuffList, isBuffSkillsByCharacter, toggleBuff, NO_CHARACTER, signed } from "../buffs.mts";
+import type { BuffResult, BuffWho, Stats } from "../buffs.mts";
 import type { ItemQuery } from "../item-query.mts";
 import { state } from "./store.mts";
 import { $, el, label, slotLabel, itemTip, toast } from "./dom.mts";
@@ -24,7 +24,7 @@ import { sheetParts, wornSet } from "./sheet.mts";
 import { createItemBrowser } from "./item-browser.mts";
 import type { ItemBrowser } from "./item-browser.mts";
 import type { UiPrefs } from "./api-types.mts";
-import { MANUAL_GROUPS, emptyHistory, record, undoStep, redoStep, historyKey, historyKeyNames, type History, type Suit, TOTAL_KEYS, STAT_KEYS, capped, capLine, slotQuery, handConflict, handNote, savedSlots, missingSlots, deltaKeys, slotDelta } from "./manual-model.mts";
+import { MANUAL_GROUPS, emptyHistory, record, undoStep, redoStep, historyKey, historyKeyNames, type History, type Suit, TOTAL_KEYS, STAT_KEYS, STRIP_KEYS, capped, capLine, slotQuery, handConflict, handNote, savedSlots, missingSlots, deltaKeys, slotDelta } from "./manual-model.mts";
 import { buffMarker, buffStrip, focusBuffSearch, initBuffPicker, paintBuffPicker, type BuffActions, type BuffView } from "./builder-buffs.mts";
 
 type Mode = "automatic" | "manual";
@@ -40,7 +40,7 @@ let seg: (HTMLDivElement & { setValue: (v: string) => void }) | null = null;
 // The buffs that are on, the buff numbers the player edited, whether the totals count the buffs, whether the buff
 // picker is open, and the form a just-turned-on form replaced (its note in the picker, until the next change).
 let buffs: string[] = [];
-let buffEdits: Record<string, number> = {};
+let buffEdits: Record<string, Record<string, number>> = {};   // by character, NO_CHARACTER for No character
 let countBuffs = true;
 let buffsOpen = false;
 let replaced: { on: string; off: string } | null = null;
@@ -58,7 +58,7 @@ export function applyBuilderPrefs(prefs: UiPrefs | null): void {
   slots = savedSlots(prefs?.manualSuit);
   // through toggleBuff, so a hand-edited file's second form is dropped and the list is in catalog order
   buffs = isBuffList(prefs?.manualBuffs) ? prefs.manualBuffs.reduce<string[]>((on, id) => (on.includes(id) ? on : toggleBuff(on, id).next), []) : [];
-  buffEdits = isBuffSkills(prefs?.buffSkills) ? prefs.buffSkills : {};
+  buffEdits = isBuffSkillsByCharacter(prefs?.buffSkills) ? prefs.buffSkills : {};
   countBuffs = prefs?.buffsCount !== "off";
   synced = false;
   if (seg) showMode();
@@ -146,20 +146,29 @@ function profile(): EffectiveProfile {
   const name = manualCharacter();
   return name && state.builder.profile ? effectiveProfile(state.builder.profile, state.inv!.characters[name] as Character) : effectiveProfile({}, null);
 }
-// The buff numbers for Manual's character (or for No character), which inputs are planned, and the raw stats Bless
-// takes a share of: the scanned stats less what the character wears.
-function buffInputs(): { values: Record<string, number>; planned: Set<string>; stats: Stats | null } {
+// The buff numbers for Manual's character (or for No character) with that character's edits, which inputs are
+// planned, the raw stats Bless takes a share of (the scanned stats less what the character wears) and the race. Worked
+// out once per draw: every row's Change cell reads it.
+type BuffInputs = { values: Record<string, number>; planned: Set<string>; stats: Stats | null; race: string | null };
+let inputsMemo: BuffInputs | null = null;
+const editsFor = (): Record<string, number> => buffEdits[manualCharacter() ?? NO_CHARACTER] || {};
+function buffInputs(): BuffInputs {
+  if (inputsMemo) return inputsMemo;
   const name = manualCharacter(), c = name ? state.inv!.characters[name] : null;
-  const { values, planned } = buffSkillValues(c ? c.skills || {} : null, buffEdits);
-  if (!name || !c) return { values, planned, stats: null };
+  const { values, planned } = buffSkillValues(c ? c.skills || {} : null, editsFor());
+  if (!name || !c) return (inputsMemo = { values, planned, stats: null, race: null });
   const worn = totalsOf(wornSet(name)), st = c.stats || {};
   const raw = (k: string, pk: string): number => (Number(st[k]) || 0) - (worn[pk] || 0);
-  return { values, planned, stats: { str: raw("str", "strBonus"), dex: raw("dex", "dexBonus"), int: raw("int", "intBonus") } };
+  return (inputsMemo = { values, planned, stats: { str: raw("str", "strBonus"), dex: raw("dex", "dexBonus"), int: raw("int", "intBonus") }, race: state.profiles?.characters?.[name]?.race || "human" });
 }
+// The suit's pieces by slot (a piece no longer in the scans left out), and the held weapon's flags: a two-handed
+// weapon, else the one-handed slot's piece (Enchant reads its Spell Channeling).
+const suitItems = (): Record<string, Item> => Object.fromEntries(Object.entries(slots).flatMap(([s, serial]) => (items[serial] ? [[s, items[serial]!]] : [])));
+const weaponFlags = (suit: Record<string, Item | undefined>): string[] => ((suit.twoHanded?.twoHanded ? suit.twoHanded : suit.oneHanded)?.flags) || [];
 // The strip's totals (paperdoll terms) and caps with the buffs that count: all that are on, or none with the switch off.
-function buffed(t: PropMap, caps: Record<string, number>, all = false): BuffResult {
-  const { values, stats } = buffInputs();
-  return applyBuffs(t, caps, countBuffs || all ? buffs : [], values, stats);
+function buffed(t: PropMap, caps: Record<string, number>, all = false, suit: Record<string, Item | undefined> = suitItems()): BuffResult {
+  const { values, stats, race } = buffInputs(), who: BuffWho = { race, weaponFlags: weaponFlags(suit) };
+  return applyBuffs(t, caps, countBuffs || all ? buffs : [], values, stats, who);
 }
 // Every change to the suit or its buffs is one undo step, named by `label` ("Ring → Arcane Ring", "Divine Fury on");
 // undo and redo pass none. `note` is the form a turned-on form replaced, said in the buff picker until the next change.
@@ -235,6 +244,7 @@ export function renderManual(): void {
   refresh();
 }
 function draw(): void {
+  inputsMemo = null;
   const root = $<HTMLElement>("#b-manual")!;
   root.querySelector("#mb-totals")!.replaceWith(totalsCard());
   root.querySelector("#mb-suit")!.replaceWith(suitCard());
@@ -276,14 +286,19 @@ function statsCard(): HTMLElement {
   // Every worn piece is the base, so the character's own points are its totals less all it wears (a spellbook, a
   // second legs piece included) and the after side is exactly the manual suit: no worn piece rides along as an extra.
   const worn = name ? Object.fromEntries((state.inv!.worn[name] || []).map((i) => [`w${i.serial}`, i])) : {};
-  const suit = Object.fromEntries(Object.entries(slots).flatMap(([s, serial]) => (items[serial] ? [[s, items[serial]!]] : [])));
-  // The buffs' in-cap shares count in the attributes, pools and properties, against the caps they change.
+  const suit = suitItems();
+  // With buffs counted, their in-cap shares count in the attributes, pools and properties, against the caps they
+  // change; with none, the card is exactly the suit's. What they add past the cap to a property the strip doesn't
+  // show (Horrific Beast's HPR) is said under the card.
   const t = totalsOf(suitOpt()), r = buffed(t, paperdollCaps(profileResistCaps(profile())));
   const added = Object.fromEntries(Object.keys(r.shares).filter((k) => !RESIST_KEYS.includes(k)).map((k) => [k, (r.totals[k] || 0) - (t[k] || 0)]));
-  const { lists, props } = sheetParts(name, worn, suit, { compare: false, statsOnly: true, buffs: added, caps: r.caps });
+  const counted = countBuffs && buffs.length;
+  const { lists, props } = sheetParts(name, worn, suit, { compare: false, statsOnly: true, ...(counted ? { buffs: added, caps: r.caps } : {}) });
+  const past = Object.keys(r.outside).filter((k) => !STRIP_KEYS.includes(k)).flatMap((k) => (r.shares[k] || []).filter((x) => x.outside).map((x) => `${label(k)} ${signed(x.value)} (${buffById(x.id)!.name})`));
   // The resists are the totals strip's; the attributes and pools (the character's own, so none with no character) are not.
   return box("div", { class: "sheet mb-stats", id: "mb-stats", role: "group", "aria-label": name ? `${name} in this suit` : "This suit's item totals" },
-    name ? box("div", { class: "mb-kpis" }, ...lists) : null, props);
+    name ? box("div", { class: "mb-kpis" }, ...lists) : null,
+    past.length ? el("p", { class: "t-sm bf-past" }, `Past the cap from the buffs: ${past.join(", ")}`) : null, props);
 }
 function suitCard(): HTMLElement {
   const name = manualCharacter(), filled = Object.keys(slots).length, missing = missingSlots(slots, items).length;
@@ -364,10 +379,10 @@ function paintPicker(): void {
 function deltaCell(it: Item): HTMLElement {
   if (pickSlot && slots[pickSlot] === it.serial) return txt("In this slot", "t-sm muted mb-delta");
   const slot = pickSlot!, prof = profile(), rsb = prof.resistBonus || 0, cur = suitOpt();
-  const after = { ...cur, [slot]: toOptItem(it) };
+  const after = { ...cur, [slot]: toOptItem(it) }, afterItems: Record<string, Item> = { ...suitItems(), [slot]: it };
   const cleared = handConflict(slot, it, held());
-  if (cleared) delete after[cleared];
-  const caps = paperdollCaps(profileResistCaps(prof)), was = buffed(paperdoll(totalsOf(cur), rsb), caps), now = buffed(paperdoll(totalsOf(after), rsb), caps);
+  if (cleared) { delete after[cleared]; delete afterItems[cleared]; }
+  const caps = paperdollCaps(profileResistCaps(prof)), was = buffed(paperdoll(totalsOf(cur), rsb), caps), now = buffed(paperdoll(totalsOf(after), rsb), caps, false, afterItems);
   const parts = slotDelta(was.totals, now.totals, deltaKeys(prof), now.caps);
   const kids = parts.flatMap((p, i) => [i ? txt(" · ", "faint") : null, txt(p.text, `tone-${p.tone}`)]);
   const worn = it.equippedBy ? tag(`Worn by ${it.equippedBy}`, it.equippedBy === manualCharacter() ? undefined : "warn") : null;
@@ -389,8 +404,8 @@ function closeBuffs(): void {
   $<HTMLElement>("#bf-add")?.focus();
 }
 function buffView(): BuffView {
-  const { values, planned, stats } = buffInputs(), t = paperdoll(totalsOf(suitOpt()), profile().resistBonus);
-  return { name: manualCharacter(), on: buffs, values, planned, edits: buffEdits, stats, totals: t, all: buffed(t, {}, true), replaced, count: countBuffs, open: buffsOpen };
+  const { values, planned, stats, race } = buffInputs(), t = paperdoll(totalsOf(suitOpt()), profile().resistBonus);
+  return { name: manualCharacter(), on: buffs, values, planned, edits: editsFor(), stats, who: { race, weaponFlags: weaponFlags(suitItems()) }, totals: t, all: buffed(t, {}, true), replaced, count: countBuffs, open: buffsOpen };
 }
 const buffActions: BuffActions = {
   // A buff on or off is an undo step; a form turned on says which one it replaced. A chip's × keeps the focus in the
@@ -403,8 +418,8 @@ const buffActions: BuffActions = {
     if (chip) ($<HTMLElement>(`.bf-strip .token[data-buff="${after}"] button`) ?? $<HTMLElement>("#bf-add"))?.focus();
   },
   setInput: (id, value) => {
-    const { [id]: _was, ...rest } = buffEdits;
-    buffEdits = value == null ? rest : { ...rest, [id]: value };
+    const key = manualCharacter() ?? NO_CHARACTER, { [id]: _was, ...rest } = editsFor();
+    buffEdits = { ...buffEdits, [key]: value == null ? rest : { ...rest, [id]: value } };
     savePrefs({ buffSkills: buffEdits });
     refresh();
   },

@@ -4,7 +4,7 @@
 // out from the character's skills, a field per number a group scales with, and the note when a form replaced another.
 // The model is app/buffs.mts; ui/builder-manual.mts holds the state and calls these with it.
 import { BUFFS, BUFF_GROUPS, BUFF_INPUTS, EXCLUSIVE, buffById, buffContext, buffNeeds, buffText, signed } from "../buffs.mts";
-import type { Buff, BuffResult, Skills, Stats } from "../buffs.mts";
+import type { Buff, BuffResult, BuffWho, Skills, Stats } from "../buffs.mts";
 import type { PropMap } from "../vault-lib.mts";
 import { el, label } from "./dom.mts";
 import { box, txt, button, icon, filterChip, token, badge, tag, message, searchInput, switchControl } from "./components.mts";
@@ -16,6 +16,7 @@ export interface BuffView {
   planned: Set<string>;                  // the inputs edited, or a skill the character lacks
   edits: Record<string, number>;
   stats: Stats | null;
+  who: BuffWho;                          // the character's race and the held weapon's flags
   totals: PropMap;                       // the suit's totals (a potion reads its Enhance Potions)
   all: BuffResult;                       // every buff that is on applied, counted or not: which are beaten or blocked
   replaced: { on: string; off: string } | null;
@@ -38,7 +39,7 @@ const nameOf = (id: string): string => buffById(id)?.name ?? id;
 // What a chip says after the name: the skill it needs, "planned" while its numbers are not all the character's own,
 // or with no character the number its first input took ("Eval Int 120").
 function chipNote(b: Buff, v: BuffView): string | null {
-  const needs = buffNeeds(b, v.values), i = b.inputs[0];
+  const needs = buffNeeds(b, v.values, v.who), i = b.inputs[0];
   if (needs) return needs.replace("Needs", "needs");
   if (v.name) return b.inputs.some((x) => v.planned.has(x)) ? "planned" : null;
   return i ? `${BUFF_INPUTS[i]!.label} ${v.values[i]}` : null;
@@ -48,7 +49,7 @@ export function buffStrip(v: BuffView, a: BuffActions): HTMLElement {
   const chips = v.on.map((id) => {
     const b = buffById(id)!, note = chipNote(b, v);
     const t = token({ label: b.name, removeLabel: `Remove ${b.name}`, onRemove: () => a.toggle(id) });
-    t.title = `${b.name}: ${buffText(id, v.values, v.stats, v.totals)}${b.inputs.length ? ` (${b.inputs.map((x) => `${BUFF_INPUTS[x]!.label} ${v.values[x]}`).join(", ")})` : ""}`;
+    t.title = `${b.name}: ${buffText(id, v.values, v.stats, v.totals, v.who)}${b.inputs.length ? ` (${b.inputs.map((x) => `${BUFF_INPUTS[x]!.label} ${v.values[x]}`).join(", ")})` : ""}`;
     t.firstElementChild!.replaceWith(el("span", {}, b.name, note ? el("span", { class: "muted" }, ` · ${note}`) : null));
     if (v.name && b.inputs.some((i) => v.planned.has(i))) t.classList.add("bf-planned");
     t.dataset.buff = id;
@@ -95,7 +96,7 @@ export const focusBuffSearch = (): void => search?.focus();
 // The tags beside an entry's name: a form, a stat share where the largest counts or one that stacks, a bonus past the
 // cap, a cap raise.
 function tagsOf(b: Buff, v: BuffView): HTMLElement[] {
-  const c = buffContext(v.values, v.stats, v.totals);
+  const c = buffContext(v.values, v.stats, v.totals, v.who);
   const fx = b.effects(c), caps = Object.values(b.caps?.(c) || {});
   const stat = fx.filter((e) => /^(str|dex|int)Bonus$/.test(e.key) && e.value);
   const out: Array<[string, string]> = [];
@@ -111,7 +112,10 @@ function row(b: Buff, v: BuffView, a: BuffActions): HTMLElement {
   const on = v.on.includes(b.id), off = v.replaced?.off === b.id;
   const cb = el("input", { type: "checkbox", id: `bf-cb-${b.id}`, onchange: () => a.toggle(b.id) });
   cb.checked = on;
-  const needs = buffNeeds(b, v.values);
+  const needs = buffNeeds(b, v.values, v.who);
+  if (needs && b.race && !on) cb.disabled = true;   // another race's passive: nothing to turn on (one already on can go off)
+  const unsure = v.all.unsure.filter((x) => x.id === b.id).map((x) =>
+    `${label(x.key)}: the larger of this and ${nameOf(x.with)}'s ${signed(v.all.shares[x.key]?.find((s) => s.id === x.with)?.value ?? 0)} counts, depending on base ${label(x.key)}`);
   const beaten = v.all.beaten.filter((x) => x.id === b.id).map((x) => {
     const won = v.all.shares[x.key]?.find((s) => s.id === x.by);
     return `${label(x.key)}: ${nameOf(x.by)}'s ${won?.pct != null ? `+${won.pct}%` : signed(won?.value ?? 0)} counts instead`;
@@ -119,9 +123,10 @@ function row(b: Buff, v: BuffView, a: BuffActions): HTMLElement {
   const note = off ? `Turned off: ${nameOf(v.replaced!.on)} is your form now` : b.note;
   return el("label", { class: `bf-item${off ? " bf-off" : ""}` }, cb, box("span", { class: "bf-item-text" },
     box("span", { class: "bf-name" }, txt(b.name, "strong"), ...tagsOf(b, v)),
-    txt(buffText(b.id, v.values, v.stats, v.totals), "bf-eff"),
-    needs ? txt(`${needs}: it counts for nothing below that`, "bf-warn") : null,
+    txt(buffText(b.id, v.values, v.stats, v.totals, v.who), "bf-eff"),
+    needs ? txt(`${needs}, so it counts for nothing`, "bf-warn") : null,
     beaten.length ? txt(beaten.join(". "), "bf-warn") : null,
+    unsure.length ? txt(unsure.join(". "), "bf-note") : null,
     note ? txt(note, "bf-note") : null));
 }
 // A group's head: its name, whose numbers they are, and a field per number, each marked while planned.
@@ -132,11 +137,11 @@ function groupHead(g: (typeof BUFF_GROUPS)[number], v: BuffView, a: BuffActions)
     : g.inputs.some((i) => BUFF_INPUTS[i]!.skills.length) ? badge(`${v.name}'s skills`) : null;
   const fields = g.inputs.map((i) => {
     const def = BUFF_INPUTS[i]!, id = fieldId(i);
-    const f = el("input", { class: `input input-sm num${def.max > 999 ? " bf-wide" : ""}${v.planned.has(i) ? " bf-plan" : ""}`, type: "number", id, min: String(def.min), max: String(def.max), step: "any" });
+    const f = el("input", { class: `input input-sm num${def.max > 999 ? " bf-wide" : ""}${v.planned.has(i) ? " bf-plan" : ""}`, type: "number", id, min: String(def.min), max: String(def.max), step: def.int ? "1" : "any" });
     f.value = String(v.values[i]);
     f.addEventListener("change", () => {
       const n = Number(f.value);
-      a.setInput(i, f.value.trim() === "" || !Number.isFinite(n) ? null : Math.min(def.max, Math.max(def.min, n)));
+      a.setInput(i, f.value.trim() === "" || !Number.isFinite(n) ? null : Math.min(def.max, Math.max(def.min, def.int ? Math.round(n) : n)));
     });
     return box("span", { class: "bf-skill" }, el("label", { class: "t-sm muted", for: id }, def.label), f);
   });
@@ -149,7 +154,7 @@ function groupHead(g: (typeof BUFF_GROUPS)[number], v: BuffView, a: BuffActions)
 export function paintBuffPicker(v: BuffView, a: BuffActions): void {
   const list = document.getElementById("bf-list")!, focused = document.activeElement?.closest("#bf-list") ? document.activeElement.id : null, top = list.scrollTop;
   const q = (search?.value || "").trim().toLowerCase();
-  const hits = BUFFS.filter((b) => !q || [b.name, b.group, buffText(b.id, v.values, v.stats, v.totals)].some((s) => s.toLowerCase().includes(q)));
+  const hits = BUFFS.filter((b) => !q || [b.name, b.group, buffText(b.id, v.values, v.stats, v.totals, v.who)].some((s) => s.toLowerCase().includes(q)));
   document.getElementById("bf-h")!.textContent = v.name ? `Buffs for ${v.name}` : "Buffs";
   const forms = v.on.filter((id) => buffById(id)?.excl === "form").length;
   document.getElementById("bf-status")!.textContent = [q ? `${hits.length} of ${BUFFS.length} match “${search!.value.trim()}”` : null, `${v.on.length} on`,

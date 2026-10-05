@@ -228,6 +228,7 @@
 .bf-hint .msg-body > :first-child { flex: 1 1 auto; min-width: 0; }
 .bf-hint .msg-actions { flex: none; margin-top: 0; }
 .bf-none { padding: var(--space-3) var(--space-4); }
+.bf-past { color: var(--color-accent); }   /* the stats card's past-cap line */
 .bf-foot { padding: var(--space-2) var(--space-4); border-top: var(--border-width) solid var(--color-border); }
 
 /* ---------------------------------------------------------------- responsive (design spec 3.7) */

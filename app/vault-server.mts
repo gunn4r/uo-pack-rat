@@ -133,7 +133,7 @@ import { validate, type ValidatorSchema } from "./schema/validate.mts";
 import { parseItemQuery, applyItemQuery, facetsOf, wantsHits, hitRow, type ItemQueryRows, type ItemQueryGroups } from "./item-query.mts";
 import { DEFAULT_OPTIONAL_SLOTS } from "./mip.mts";
 import { GEAR_SLOTS } from "./vault-lib.mts";
-import { isBuffList, isBuffSkills } from "./buffs.mts";
+import { isBuffList, isBuffSkillsByCharacter } from "./buffs.mts";
 import { startWatcher, jsonErrorReason, MAX_INBOX_BYTES, type StartWatcherOptions, type WatcherHandle } from "./watcher.mts";
 import { parsePastedScan, writeScanToInbox } from "./import.mts";
 import { moveAside, writeFileAtomic } from "./atomic-write.mts";
@@ -206,7 +206,7 @@ const UI_PREF_LISTS = ["cols", "sheetProps"] as const;
 // The version fields: the release whose in-app update notice was dismissed (ui/settings.mts's automatic
 // update check), and the ClassicUO web scanner last copied into the client (ui/paste-scanner.mts).
 const UI_PREF_VERSIONS = ["dismissedUpdate", "copiedScanner"] as const;
-type UiPrefsFile = { -readonly [K in typeof UI_PREF_LISTS[number]]?: string[] } & { -readonly [K in keyof typeof UI_PREF_CHOICES]?: string } & { -readonly [K in typeof UI_PREF_VERSIONS[number]]?: string } & { colWidths?: Record<string, number>; mapDrawerWidth?: number; manualSuit?: Record<string, number>; manualBuffs?: string[]; buffSkills?: Record<string, number> };
+type UiPrefsFile = { -readonly [K in typeof UI_PREF_LISTS[number]]?: string[] } & { -readonly [K in keyof typeof UI_PREF_CHOICES]?: string } & { -readonly [K in typeof UI_PREF_VERSIONS[number]]?: string } & { colWidths?: Record<string, number>; mapDrawerWidth?: number; manualSuit?: Record<string, number>; manualBuffs?: string[]; buffSkills?: Record<string, Record<string, number>> };
 // The House map's contents drawer width in px (app/ui/house-map.mts, issue #10): the page clamps it to the window.
 const isDrawerWidth = (v: unknown): v is number => isBoundedInt(v, 320, 4000);
 // The Inventory columns' dragged widths ({colKey: px}): at most 200 column keys (the same keys `cols` holds), each a whole 40 to 1200 px.
@@ -897,7 +897,7 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
     if (isDrawerWidth(raw.mapDrawerWidth)) out.mapDrawerWidth = raw.mapDrawerWidth;
     if (isManualSuit(raw.manualSuit)) out.manualSuit = raw.manualSuit;
     if (isBuffList(raw.manualBuffs)) out.manualBuffs = raw.manualBuffs;
-    if (isBuffSkills(raw.buffSkills)) out.buffSkills = raw.buffSkills;
+    if (isBuffSkillsByCharacter(raw.buffSkills)) out.buffSkills = raw.buffSkills;   // an older flat shape is dropped
     for (const key of UI_PREF_VERSIONS) if (isBoundedString(raw[key], 64)) out[key] = raw[key];
     return out;
   }
@@ -1526,7 +1526,7 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
           next.manualBuffs = body.manualBuffs;
         }
         if (Object.prototype.hasOwnProperty.call(body, "buffSkills")) {
-          if (!isBuffSkills(body.buffSkills)) return send(res, 400, { ok: false, error: "buffSkills must map known buff skills to numbers within their range" });
+          if (!isBuffSkillsByCharacter(body.buffSkills)) return send(res, 400, { ok: false, error: "buffSkills must map characters to known buff skills, each a number within its range" });
           next.buffSkills = body.buffSkills;
         }
         for (const key of UI_PREF_VERSIONS) {

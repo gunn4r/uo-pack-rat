@@ -6,7 +6,7 @@
 import "../scripts/localstorage-shim-for-tests.mts";   // app/ui/store.mts reads localStorage at module scope
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { capOver, capBadgeText, atCap, bonusBreakdown, moveText, keyNumbers, tagTone, plural, lowDurability, lowDurabilityCount, lowDurabilitySummary, SHEET_CATALOGUE, DEFAULT_SHEET_PROPS } from "./ui/sheet.mts";
+import { capOver, capBadgeText, atCap, bonusBreakdown, poolChanges, moveText, keyNumbers, tagTone, plural, lowDurability, lowDurabilityCount, lowDurabilitySummary, SHEET_CATALOGUE, DEFAULT_SHEET_PROPS } from "./ui/sheet.mts";
 import { rosterView, triple, sheetMeta, openedRoots, type RosterRow } from "./ui/roster.mts";
 
 test("[fast] sheet: the cap badge says how far the raw value is past the cap, and nothing at or under it", () => {
@@ -35,6 +35,10 @@ test("[fast] sheet: an attribute's bonus split reads (own + gear), a negative bo
   // Manual's buffs (issue #12): their share after the gear's
   assert.equal(bonusBreakdown(155, 13, 17), "(125 + 13 + 17 buffs)");
   assert.equal(bonusBreakdown(40, 0, 5), "(35 + 5 buffs)");
+  // the pools: a stat's points past the 150 maximum raise none, a buff's own Hits do
+  const none = { str: 0, dex: 0, int: 0 };
+  assert.deepEqual(poolChanges({ strBonus: 30, hpi: 5, dexBonus: 11, manaInc: 2 }, {}, none), { hits: 20, stam: 11, mana: 2 });
+  assert.deepEqual(poolChanges({ strBonus: 30, dexBonus: 11 }, { hitsPool: 20 }, { str: 5, dex: 11, int: 0 }), { hits: 32, stam: 0, mana: 0 });
 });
 
 test("[fast] sheet: a figure that moves reads 'now → after', one that doesn't reads once", () => {

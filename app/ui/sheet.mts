@@ -58,6 +58,15 @@ export function bonusBreakdown(total: number, bonus: number, buffs = 0): string 
   return `(${total - bonus - buffs}${bonus ? part(bonus) : ""}${buffs ? part(buffs, " buffs") : ""})`;
 }
 // "18 → 22" when a value moves, the one number when it doesn't.
+// The pools' change for a suit: Hits by STR / 2 and HP Increase, Stamina by DEX and Stamina Increase, Mana by INT and
+// Mana Increase (`d`: what each moves by), plus a buff's own Hits, Stamina or Mana, which is added past the HPI cap
+// (`buffs`: Animal Form's +20 Hits). `over` is what a stat passes STAT_MAX by: points past it raise no pool.
+export function poolChanges(d: Record<string, number>, buffs: Record<string, number>, over: { str: number; dex: number; int: number }): { hits: number; stam: number; mana: number } {
+  const v = (m: Record<string, number>, k: string): number => m[k] || 0;
+  return { hits: Math.floor((v(d, "strBonus") - over.str) / 2) + v(d, "hpi") + v(buffs, "hitsPool"),
+    stam: v(d, "dexBonus") - over.dex + v(d, "stamInc") + v(buffs, "stamPool"),
+    mana: v(d, "intBonus") - over.int + v(d, "manaInc") + v(buffs, "manaPool") };
+}
 export const moveText = (b: number, a: number, suffix = ""): string => (b === a ? `${a}${suffix}` : `${b}${suffix} → ${a}${suffix}`);
 // Up to two numbers a slot tile shows under the piece's name: the properties nearest their shard cap (a
 // property with no cap is measured against 100), in the order the item lists them. Skill bonuses read
@@ -243,17 +252,19 @@ export function sheetParts(name: string | null, before: SheetAssignment, after: 
   });
   // attributes: the scan's stats are totals with the current suit on; own points = total − current bonus
   const st = (c?.stats || {}) as Record<string, unknown>;
-  const attrs = kvList(([["str", "STR", "strBonus"], ["dex", "DEX", "dexBonus"], ["int", "INT", "intBonus"]] as Array<[string, string, string]>).map(([k, lbl, pk]): [string, Node] => {
-    const total = numOr0(st[k]), own = total - (b[pk] || 0), next = own + (a[pk] || 0), split = bonusBreakdown(next, gear[pk] || 0, bf[pk] || 0);
+  const STATS: Array<["str" | "dex" | "int", string, string]> = [["str", "STR", "strBonus"], ["dex", "DEX", "dexBonus"], ["int", "INT", "intBonus"]];
+  const statAfter = (k: string, pk: string): number => numOr0(st[k]) - (b[pk] || 0) + (a[pk] || 0);
+  // with the buffs, a stat is held to the per-stat maximum, and what passes it is said (and raises no pool)
+  const over = Object.fromEntries(STATS.map(([k, , pk]) => [k, opts.buffs ? Math.max(0, statAfter(k, pk) - STAT_MAX) : 0])) as Record<"str" | "dex" | "int", number>;
+  const attrs = kvList(STATS.map(([k, lbl, pk]): [string, Node] => {
+    const total = numOr0(st[k]), next = statAfter(k, pk), split = bonusBreakdown(next, gear[pk] || 0, bf[pk] || 0), shown = next - over[k];
     if (!name) return [lbl, txt("—", "muted")];
-    // with the buffs, a stat is held to the per-stat maximum, and what passes it is said
-    const over = opts.buffs ? Math.max(0, next - STAT_MAX) : 0, shown = next - over;
-    return [lbl, el("span", { class: dirCls(shown - total) }, mv(total, shown), split ? " " : "", split ? txt(split, "muted") : null, over ? txt(` ${over} over the ${STAT_MAX} cap`, "tone-warn") : null)];
+    return [lbl, el("span", { class: dirCls(shown - total) }, mv(total, shown), split ? " " : "", split ? txt(split, "muted") : null, over[k] ? txt(` ${over[k]} over the ${STAT_MAX} cap`, "tone-warn") : null)];
   }), "kv-tight");
   const mx = (c?.maxes || {}) as Record<string, unknown>;
-  // a buff's own Hits, Stamina or Mana (Animal Form's +20 Hits) is added past the HPI cap
-  const pools = kvList(([["hits", "Hits", () => Math.floor(d("strBonus") / 2) + d("hpi") + (bf.hitsPool || 0)], ["stam", "Stamina", () => d("dexBonus") + d("stamInc") + (bf.stamPool || 0)], ["mana", "Mana", () => d("intBonus") + d("manaInc") + (bf.manaPool || 0)]] as Array<[string, string, () => number]>).map(([k, lbl, f]): [string, Node] => {
-    const dd = f(), cur = numOrNull(mx[k]);
+  const poolMove = poolChanges(Object.fromEntries(["strBonus", "dexBonus", "intBonus", "hpi", "stamInc", "manaInc"].map((k) => [k, d(k)])), bf, over);
+  const pools = kvList(([["hits", "Hits"], ["stam", "Stamina"], ["mana", "Mana"]] as Array<["hits" | "stam" | "mana", string]>).map(([k, lbl]): [string, Node] => {
+    const dd = poolMove[k], cur = numOrNull(mx[k]);
     return [lbl, txt(!name ? "—" : cur == null ? "?" : mv(cur, cur + dd), dirCls(dd))];
   }), "kv-tight");
   const lists = [box("div", { class: "resist kpi kpi-list" }, txt("Attributes", "t-sm muted"), attrs),
