@@ -3,7 +3,7 @@
 // did to it, and the buff picker in the side column: a search, the catalog by group with each entry's numbers worked
 // out from the character's skills, a field per number a group scales with, and the note when a form replaced another.
 // The model is app/buffs.mts; ui/builder-manual.mts holds the state and calls these with it.
-import { BUFFS, BUFF_GROUPS, BUFF_INPUTS, EXCLUSIVE, buffById, buffContext, buffNeeds, buffText, signed } from "../buffs.mts";
+import { BUFFS, BUFF_GROUPS, BUFF_INPUTS, EXCLUSIVE, buffById, buffContext, buffNeeds, buffText, signed, signedPct } from "../buffs.mts";
 import type { Buff, BuffResult, BuffWho, Skills, Stats } from "../buffs.mts";
 import type { PropMap } from "../vault-lib.mts";
 import { el, label } from "./dom.mts";
@@ -68,9 +68,9 @@ export function buffMarker(k: string, r: BuffResult, baseCap: number | undefined
   const sum = (outside: boolean): number => shares.filter((s) => !!s.outside === outside).reduce((n, s) => n + s.value, 0);
   const inCap = sum(false), past = sum(true), raise = baseCap == null ? 0 : (r.caps[k] ?? baseCap) - baseCap;
   const pct = shares.find((s) => s.pct != null)?.pct;
-  const parts = [inCap ? signed(inCap) : pct != null ? `+${pct}%` : null, raise ? `cap ${signed(raise)}` : null, past ? `${signed(past)} past cap` : null].filter(Boolean);
+  const parts = [inCap ? signed(inCap) : pct != null ? signedPct(pct) : null, raise ? `cap ${signed(raise)}` : null, past ? `${signed(past)} past cap` : null].filter(Boolean);
   if (!parts.length) return null;
-  const who = [...shares.map((s) => `${nameOf(s.id)} ${s.pct != null ? `+${s.pct}%` : signed(s.value)}${s.outside ? " past the cap" : ""}`),
+  const who = [...shares.map((s) => `${nameOf(s.id)} ${s.pct != null ? signedPct(s.pct) : signed(s.value)}${s.outside ? " past the cap" : ""}`),
     ...capShares.map((s) => `${nameOf(s.id)} cap ${signed(s.value)}`)].join(", ");
   return box("span", { class: "t-sm bf-sub", title: `From the buffs: ${who}` }, icon("spark", { size: "sm" }), txt(parts.join(" · ")), el("span", { class: "sr" }, `, from the buffs: ${who}`));
 }
@@ -94,18 +94,21 @@ export function initBuffPicker(a: BuffActions, repaint: () => void): void {
 export const focusBuffSearch = (): void => search?.focus();
 
 // The tags beside an entry's name: a form, a stat share where the largest counts or one that stacks, a bonus past the
-// cap, a cap raise.
+// cap, a cap change, numbers not yet checked in game, and a ServUO item not known on UO Alive.
 function tagsOf(b: Buff, v: BuffView): HTMLElement[] {
   const c = buffContext(v.values, v.stats, v.totals, v.who);
   const fx = b.effects(c), caps = Object.values(b.caps?.(c) || {});
-  const stat = fx.filter((e) => /^(str|dex|int)Bonus$/.test(e.key) && e.value);
+  const stat = fx.filter((e) => /^(str|dex|int)Bonus$/.test(e.key) && e.value > 0);
   const out: Array<[string, string]> = [];
   if (b.excl === "form") out.push(["Form", ""]);
   if (stat.some((e) => e.slot)) out.push(["Largest wins", ""]);
   else if (stat.length) out.push(["Stacks", "bf-tag-ok"]);
   if (fx.some((e) => e.outside && e.value)) out.push(["Outside cap", "bf-tag-accent"]);
   if (caps.length) out.push([`Cap ${signed(Math.max(...caps))}`, "bf-tag-accent"]);
-  return out.map(([t, cls]) => { const x = tag(t); if (cls) x.classList.add(cls); return x; });
+  if (b.unconfirmed) out.push(["May not exist on UO Alive", ""]);
+  const tags = out.map(([t, cls]) => { const x = tag(t); if (cls) x.classList.add(cls); return x; });
+  if (b.confidence) tags.push(el("span", { class: "t-sm bf-unverified", title: `${b.confidence === "low" ? "Low" : "Medium"} confidence: check these numbers in game` }, "unverified"));
+  return tags;
 }
 // One entry: its checkbox, its name and tags, its numbers, and a line on what overrides it or what to know.
 function row(b: Buff, v: BuffView, a: BuffActions): HTMLElement {
@@ -118,7 +121,7 @@ function row(b: Buff, v: BuffView, a: BuffActions): HTMLElement {
     `${label(x.key)}: the larger of this and ${nameOf(x.with)}'s ${signed(v.all.shares[x.key]?.find((s) => s.id === x.with)?.value ?? 0)} counts, depending on base ${label(x.key)}`);
   const beaten = v.all.beaten.filter((x) => x.id === b.id).map((x) => {
     const won = v.all.shares[x.key]?.find((s) => s.id === x.by);
-    return `${label(x.key)}: ${nameOf(x.by)}'s ${won?.pct != null ? `+${won.pct}%` : signed(won?.value ?? 0)} counts instead`;
+    return `${label(x.key)}: ${nameOf(x.by)}'s ${won?.pct != null ? signedPct(won.pct) : signed(won?.value ?? 0)} counts instead`;
   });
   const note = off ? `Turned off: ${nameOf(v.replaced!.on)} is your form now` : b.note;
   return el("label", { class: `bf-item${off ? " bf-off" : ""}` }, cb, box("span", { class: "bf-item-text" },
@@ -129,8 +132,11 @@ function row(b: Buff, v: BuffView, a: BuffActions): HTMLElement {
     unsure.length ? txt(unsure.join(". "), "bf-note") : null,
     note ? txt(note, "bf-note") : null));
 }
-// A group's head: its name, whose numbers they are, and a field per number, each marked while planned.
-function groupHead(g: (typeof BUFF_GROUPS)[number], v: BuffView, a: BuffActions): HTMLElement {
+// A group's head: its name, whose numbers they are, and a field per number, each marked while planned. A collapsed
+// group (the debuffs) has a show / hide button and, folded, no fields.
+const unfolded = new Set<string>();
+const isOpen = (g: (typeof BUFF_GROUPS)[number]): boolean => !g.collapsed || unfolded.has(g.name);
+function groupHead(g: (typeof BUFF_GROUPS)[number], v: BuffView, a: BuffActions, repaint: () => void): HTMLElement {
   const edited = g.inputs.some((i) => Object.hasOwn(v.edits, i)), lacking = g.inputs.some((i) => v.planned.has(i) && !Object.hasOwn(v.edits, i));
   const who = !v.name || !g.inputs.length ? null
     : edited ? badge("Planned", "accent") : lacking ? badge(`Planned: ${v.name} doesn't have it`, "accent")
@@ -147,7 +153,10 @@ function groupHead(g: (typeof BUFF_GROUPS)[number], v: BuffView, a: BuffActions)
   });
   const reset = edited ? button({ label: `Reset ${g.name}'s numbers to ${v.name ? `${v.name}'s skills` : "the defaults"}`, icon: "undo", iconOnly: true, variant: "ghost", size: "sm",
     onClick: () => g.inputs.forEach((i) => a.setInput(i, null)) }) : null;
-  return box("div", { class: "bf-group-head" }, txt(g.name, "caps"), who, ...fields, reset);
+  const open = isOpen(g);
+  const fold = g.collapsed ? button({ label: `${open ? "Hide" : "Show"} ${g.name}`, icon: open ? "chevron-down" : "chevron-right", iconOnly: true, variant: "ghost", size: "sm",
+    attrs: { id: `bf-fold-${g.name.replace(/\W+/g, "-")}`, "aria-expanded": String(open) }, onClick: () => { if (open) unfolded.delete(g.name); else unfolded.add(g.name); repaint(); } }) : null;
+  return box("div", { class: "bf-group-head" }, fold, txt(g.name, "caps"), ...(open ? [who, ...fields, reset] : []));
 }
 // The picker for the current state: its title, status, the replaced-form note and the matching entries by group.
 // The list is redrawn whole; the focused control and the scroll position are kept.
@@ -164,9 +173,11 @@ export function paintBuffPicker(v: BuffView, a: BuffActions): void {
   const hint = r && excl ? message({ tone: "info", attrs: { class: "msg info bf-hint" },
     text: el("span", {}, el("span", { class: "strong" }, `${nameOf(r.on)} replaced ${nameOf(r.off)}. `), EXCLUSIVE[excl]!),
     actions: [button({ label: "Undo", variant: "ghost", size: "sm", attrs: { id: "bf-undo" }, onClick: a.undo })] }) : null;
+  // a folded group lists its rows only when a search matches them. Each group is its own box, so its sticky head
+  // scrolls away with it rather than staying under the next group's.
   const groups = BUFF_GROUPS.flatMap((g) => {
     const rows = hits.filter((b) => b.group === g.name);
-    return rows.length ? [groupHead(g, v, a), ...rows.map((b) => row(b, v, a))] : [];
+    return rows.length ? [box("section", { class: "bf-group", "aria-label": g.name }, groupHead(g, v, a, () => paintBuffPicker(v, a)), ...(isOpen(g) || q ? rows.map((b) => row(b, v, a)) : []))] : [];
   });
   list.replaceChildren(...[hint, ...groups].filter((x): x is HTMLElement => !!x), ...(groups.length ? [] : [el("p", { class: "t-sm muted bf-none" }, "No buff matches.")]));
   list.scrollTop = top;

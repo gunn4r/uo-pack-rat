@@ -168,11 +168,11 @@ test("[fast] buffs: the other masteries by skill and mastery level", () => {
   assert.deepEqual(alone("savingThrow", { "Mastery level": 1 }).add, { hci: 5, strBonus: 5 }, "STR +5 at every level");
 });
 
-test("[fast] buffs: potions scale with the suit's Enhance Potions (at most 50) and 10 per 33 Alchemy; the Human's +2 HPR", () => {
-  assert.equal(alone("strengthPotion", { Alchemy: 120 }).add.strBonus, 13);
-  assert.equal(alone("greaterStrengthPotion", { Alchemy: 120 }).add.strBonus, 26);
+test("[fast] buffs: potions scale with the shard wiki's Enhance Potions (the suit's, at most 50, + Alchemy / 3.3, or Alchemy / 2); the Human's +2 HPR", () => {
+  assert.equal(alone("strengthPotion", { Alchemy: 120 }).add.strBonus, 16, "Alchemy / 2: EP 60");
+  assert.equal(alone("greaterStrengthPotion", { Alchemy: 120 }).add.strBonus, 32);
   assert.equal(alone("greaterAgilityPotion", { Alchemy: 0 }).add.dexBonus, 20);
-  assert.equal(alone("greaterStrengthPotion", { Alchemy: 120 }, null, { enhancePotions: 60 }).add.strBonus, 36, "EP 50 + 30");
+  assert.equal(alone("greaterStrengthPotion", { Alchemy: 120 }, null, { enhancePotions: 60 }).add.strBonus, 37, "EP 50 + 36.4");
   assert.deepEqual(alone("human").add, { hpRegen: 2 }, "with no character, any race's is open");
   assert.deepEqual(applyBuffs({}, CAPS, ["human"], {}, null, { race: "human" }).totals, { hpRegen: 2 });
   const elf = applyBuffs({}, CAPS, ["human"], {}, null, { race: "elf" });
@@ -191,14 +191,14 @@ test("[fast] buffs: one form at a time, a turned-on form names the one it replac
 
 test("[fast] buffs: a stat slot counts its largest share, so Greater Strength beats Bless on STR while Bless keeps DEX and INT", () => {
   const r = applyBuffs({ strBonus: 13 }, CAPS, ["bless", "greaterStrengthPotion"], { "Evaluating Intelligence": 120, Alchemy: 120 }, { str: 125, dex: 80, int: 35 });
-  assert.equal(r.totals.strBonus, 13 + 26);
+  assert.equal(r.totals.strBonus, 13 + 32);
   assert.equal(r.totals.dexBonus, 11);
   assert.equal(r.totals.intBonus, 5);
   assert.deepEqual(r.beaten, [{ id: "bless", key: "strBonus", by: "greaterStrengthPotion" }]);
   // with no character Bless is a percent: which of it and a flat potion is larger depends on the base STR, so the
   // potion counts and neither is beaten
   const free = applyBuffs({}, CAPS, ["bless", "greaterStrengthPotion"], { Alchemy: 120 }, null);
-  assert.equal(free.totals.strBonus, 26);
+  assert.equal(free.totals.strBonus, 32);
   assert.deepEqual(free.beaten, []);
   assert.deepEqual(free.unsure, [{ id: "bless", key: "strBonus", with: "greaterStrengthPotion" }]);
   // Invigorate has its own slot and stacks
@@ -242,7 +242,7 @@ test("[fast] buffs: the picker's words for an entry", () => {
   assert.equal(buffText("divineFury", { Chivalry: 105 }, null, {}), "HCI +10 · DI +10 · SSI +10 · DCI −20");
   assert.equal(buffText("consecrateWeapon", { Chivalry: 105 }, null, {}), "DI +7 past the cap · hits the lowest resist");
   assert.equal(buffText("reaperForm", {}, null, {}), "SSI +5 · SDI +10 · Phys, Cold, Poison, Energy +5 · Fire −25");
-  assert.equal(buffText("stoneForm", { Mysticism: 120, "Focus or Imbuing": 120 }, null, {}), "All resists +10 · SSI −10 · FC −2 · Resist caps +5");
+  assert.equal(buffText("stoneForm", { Mysticism: 120, "Focus or Imbuing": 120 }, null, {}), "All resists +10 · SSI −10 · FC −2 · DI +5 past the cap · Resist caps +5");
   assert.equal(buffText("whiteTiger", {}, null, {}), "DCI +20 · DCI cap +5");
   assert.equal(buffText("wolfKitsune", {}, null, {}), "HCI +20 · Hits +20");
   assert.equal(buffText("savingThrow", { "Mastery level": 1 }, null, {}), "HCI +5 · STR +5");
@@ -258,4 +258,95 @@ test("[fast] buffs: the saved choices' checks", () => {
   for (const bad of [null, [], { Chivalry: 151 }, { Karma: 15001 }, { "Mastery level": 0 }, { Chivalry: "120" }, { Chivalry: Number.NaN }, { Hiding: 100 }, JSON.parse('{"__proto__": 5}') as unknown]) {
     assert.equal(isBuffSkills(bad), false, JSON.stringify(bad));
   }
+});
+
+test("[fast] buffs: Spellweaving's Arcane Empowerment, Attunement and Ethereal Form", () => {
+  assert.deepEqual(alone("arcaneEmpowerment", { Spellweaving: 120, "Arcane Focus": 0 }).add, { sdi: 10 });
+  assert.deepEqual(alone("arcaneEmpowerment", { Spellweaving: 120, "Arcane Focus": 2 }).add, { sdi: 20 });
+  assert.deepEqual(alone("arcaneEmpowerment", { Spellweaving: 23 }).add, {}, "the shard's minimum of 24");
+  assert.match(buffText("arcaneEmpowerment", { Spellweaving: 120, "Arcane Focus": 0 }, null, {}), /healing \+20%/);
+  assert.match(buffText("attunement", { Spellweaving: 120, "Arcane Focus": 0 }, null, {}), /absorbs the next 51 melee damage/);
+  assert.match(buffText("attunement", { Spellweaving: 10, "Arcane Focus": 6 }, null, {}), /absorbs the next 54 /);
+  assert.deepEqual(alone("etherealForm").add, { physResist: -10, fireResist: -5, coldResist: -5, poisonResist: -5, energyResist: -5 });
+  assert.deepEqual(alone("etherealForm", { Spellweaving: 119 }).add, {}, "the full Summoner only");
+  assert.deepEqual(toggleBuff(["wraithForm"], "etherealForm"), { next: ["etherealForm"], replaced: "wraithForm" }, "a form");
+});
+
+test("[fast] buffs: Curse Weapon, and Ninjitsu's smaller forms and Mysterious Wisp", () => {
+  assert.match(buffText("curseWeapon", { "Spirit Speak": 120 }, null, {}), /50% life leech on weapon hits · lasts 36 s/);
+  assert.deepEqual(alone("ratRabbit").add, { "sk:stealth": 20 });
+  assert.equal(buffText("ratRabbit", {}, null, {}), "Stealth +20");
+  assert.deepEqual(alone("ferret").add, { "sk:stealing": 25 });
+  assert.deepEqual(alone("catDog", { Ninjitsu: 120 }).outside, { hpRegen: 40 });
+  assert.deepEqual(alone("catDog", { Ninjitsu: 40 }).outside, { hpRegen: 13 });
+  assert.deepEqual(alone("catDog", { Ninjitsu: 39 }).outside, {}, "below 40");
+  assert.deepEqual(alone("mysteriousWisp").add, { physResist: -10, fireResist: -5, coldResist: -5, poisonResist: -5, energyResist: -5 });
+  assert.deepEqual(alone("mysteriousWisp", { Ninjitsu: 119 }).add, {});
+  for (const id of ["ratRabbit", "ferret", "catDog", "mysteriousWisp"]) assert.equal(buffById(id)!.excl, "form");
+});
+
+test("[fast] buffs: Rampage by its stacks and mastery level, Playing the Odds as ServUO writes it", () => {
+  const full = alone("rampage", { "Rampage hits": 60, "Mastery level": 3 });
+  assert.deepEqual([full.add, full.outside], [{ ssi: 60, castingFocus: 12 }, { hpRegen: 18, stamRegen: 24 }]);
+  const one = alone("rampage", { "Rampage hits": 1, "Mastery level": 3 });
+  assert.deepEqual([one.add, one.outside], [{ ssi: 3, castingFocus: 3 }, { hpRegen: 4, stamRegen: 3 }]);
+  assert.deepEqual(alone("rampage", { "Rampage hits": 0 }).add, {});
+  assert.deepEqual(alone("playingTheOdds", { Archery: 120, Tactics: 120 }).add, { hci: 45, ssi: 30 });
+  assert.deepEqual(alone("playingTheOdds", { Archery: 0, Tactics: 0 }).add, { hci: 45, ssi: 30 }, "Math.Max: never below 45 and 30");
+});
+
+test("[fast] buffs: the Eodon potions, Urali's FC −2 shared with Protection, Grapes of Wrath, fish pies and tinctures", () => {
+  assert.deepEqual(alone("barrab").outside, { hpRegen: 100 });
+  assert.deepEqual(alone("jukari").add, { fireResist: 10, stamPool: 10 });
+  assert.deepEqual(alone("barako").add, { physResist: 10, coldResist: 5 });
+  assert.deepEqual(alone("sakkhra").add, { poisonResist: 10, energyResist: 5 });
+  assert.deepEqual(alone("urali").add, { manaPool: 10 });
+  const both = applyBuffs({ fc: 2 }, CAPS, ["protection", "urali"], { Inscription: 0 }, null);
+  assert.equal(both.effective.fc, 0, "one penalty, not two");
+  assert.deepEqual(both.beaten, [{ id: "urali", key: "fc", by: "protection" }]);
+  assert.deepEqual(alone("grapesOfWrath").add, { di: 35, sdi: 15 });
+  for (const [key, value] of [["di", 5], ["sdi", 5], ["hci", 8], ["dci", 8], ["hpRegen", 3], ["stamRegen", 3], ["manaRegen", 3]] as const) assert.deepEqual(alone(`fishPie.${key}`).add, { [key]: value });
+  assert.deepEqual(alone("tincture.minstrel").add, {}, "its size is unknown: no number");
+  assert.match(buffText("tincture.minstrel", {}, null, {}), /raises Musicianship for an hour/);
+  for (const id of ["barrab", "jukari", "barako", "sakkhra", "urali", "grapesOfWrath", "fishPie.di", "tincture.shadows"]) assert.equal(buffById(id)!.unconfirmed, true, `${id} may not exist on UO Alive`);
+});
+
+test("[fast] buffs: the Gargoyle's passive and Berserk by HP lost (the shard wiki's tiers), locked to Gargoyles like the Human's to Humans", () => {
+  const g = applyBuffs({}, CAPS, ["gargoyle"], {}, null, { race: "gargoyle" });
+  assert.deepEqual([g.totals, g.caps.hci], [{ hci: 5, manaRegen: 2 }, 50]);
+  for (const [lost, di, sdi] of [[0, 0, 0], [19, 0, 0], [20, 15, 3], [60, 45, 9], [80, 60, 12], [100, 60, 12]] as const) {
+    const r = applyBuffs({}, CAPS, ["berserk"], { "HP lost": lost }, null, { race: "gargoyle" });
+    assert.deepEqual([r.totals.di ?? 0, r.totals.sdi ?? 0], [di, sdi], `${lost}% lost`);
+  }
+  for (const id of ["gargoyle", "berserk"]) assert.deepEqual(applyBuffs({}, CAPS, [id], {}, null, { race: "human" }).blocked, [id], `${id}: Gargoyles only`);
+  assert.deepEqual(applyBuffs({}, CAPS, ["human"], {}, null, { race: "gargoyle" }).blocked, ["human"]);
+  assert.deepEqual(alone("berserk").add, { di: 60, sdi: 12 }, "with no character any race's is open");
+});
+
+test("[fast] buffs: the debuffs cast on you, in their own group, folded by default", () => {
+  const g = BUFF_GROUPS.find((x) => x.name === "Debuffs (cast on you)")!;
+  assert.equal(g.collapsed, true);
+  assert.deepEqual(BUFFS.filter((b) => b.group === g.name).map((b) => b.id), ["curse", "corpseSkin", "mindRot"]);
+  // Curse: 8 + 12 − 0 = 20% of each raw stat, rounded up, and every resist cap but Physical 10 lower above 60
+  const fury = { str: 125, dex: 80, int: 35 };
+  const c = applyBuffs({}, { ...CAPS, energyResist: 75 }, ["curse"], { "Enemy Eval Int": 120, "Resisting Spells": 0 }, fury);
+  assert.deepEqual([c.totals.strBonus, c.totals.dexBonus, c.totals.intBonus], [-25, -16, -7]);
+  assert.deepEqual([c.caps.physResist, c.caps.fireResist, c.caps.energyResist], [70, 60, 65], "an Elf's 75 Energy cap goes to 65");
+  assert.equal(applyBuffs({}, { ...CAPS, fireResist: 60 }, ["curse"], {}, null).caps.fireResist, 60, "a cap of 60 or less stays");
+  // your Resisting Spells 100 takes 10 points off; 120 more than cancels it
+  assert.equal(applyBuffs({}, CAPS, ["curse"], { "Enemy Eval Int": 120, "Resisting Spells": 100 }, fury).totals.strBonus, -13);
+  assert.deepEqual(applyBuffs({}, CAPS, ["curse"], { "Enemy Eval Int": 0, "Resisting Spells": 120 }, fury).shares.strBonus, undefined);
+  assert.equal(buffText("curse", { "Enemy Eval Int": 120 }, null, {}), "STR, DEX, INT −20% of base · Fire, Cold, Poison, Energy cap −10");
+  // Corpse Skin: malus min(15, (Necromancy + Spirit Speak) × 0.075), Fire and Poison caps 70 − malus
+  const cs = applyBuffs({}, CAPS, ["corpseSkin"], { "Enemy Necro + SS": 240 }, null);
+  assert.deepEqual([cs.totals.fireResist, cs.totals.poisonResist, cs.totals.coldResist, cs.totals.physResist, cs.caps.fireResist, cs.caps.poisonResist], [-15, -15, 10, 10, 55, 55]);
+  assert.equal(applyBuffs({}, CAPS, ["corpseSkin"], { "Enemy Necro + SS": 100 }, null).caps.fireResist, 63);
+  assert.match(buffText("mindRot", {}, null, {}), /spells cost 25% more mana, after LMC/);
+});
+
+test("[fast] buffs: the less sure entries carry their confidence; the high ones carry none", () => {
+  const conf = Object.fromEntries(BUFFS.filter((b) => b.confidence).map((b) => [b.id, b.confidence]));
+  for (const id of ["catDog", "playingTheOdds", "barrab", "tincture.minstrel"]) assert.equal(conf[id], "low", id);
+  for (const id of ["magicReflection", "arcaneEmpowerment", "etherealForm", "mysteriousWisp", "berserk", "curse", "stoneForm", "strengthPotion"]) assert.equal(conf[id], "medium", id);
+  for (const id of ["divineFury", "wraithForm", "bless", "rampage", "attunement"]) assert.equal(conf[id], undefined, id);
 });
