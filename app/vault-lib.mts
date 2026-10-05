@@ -317,7 +317,9 @@ export interface BuffShift { caps: Record<string, number>; shares: Record<string
 // replace the shard's per resist, and a resist floor counts up to its resist's cap. Every floor not marked soft is hard.
 // `shift` is what planned buffs change (app/buffs.mts plannedProfile): their caps replace these, and a buff's in-cap
 // share is a base the gear needn't supply, so it comes off the cap and the floor the way the Resisting Spells bonus
-// does (a negative share, Divine Fury's DCI −20, adds to both), neither going below 0.
+// does (a negative share, Divine Fury's DCI −20, adds to both). The cap may go below 0, which keeps it exact:
+// min(gear, cap − share) + share = min(gear + share, cap) for any gear, a negative total included. A floor stops at
+// 0, which the solvers read as no requirement: the buff alone meets it.
 export function effectiveProfile(p: Profile = {}, character: Character | null = null, shift: BuffShift | null = null): EffectiveProfile {
   const rules = getRules();
   const rsb = resistSkillBonus(character?.skills);
@@ -329,13 +331,13 @@ export function effectiveProfile(p: Profile = {}, character: Character | null = 
   for (const k of RESIST_KEYS) {
     const { cap: own, shard } = view[k]!, cap = shift?.caps[k] ?? own;
     if (own !== shard) overrides[k] = { cap: own, shard };
-    caps[k] = Math.max(0, cap - rsb - share(k));
+    caps[k] = Math.max(0, cap - rsb) - share(k);
     if (floors[k] != null) floors[k] = Math.max(0, Math.min(floors[k], cap) - rsb - share(k));
   }
   for (const k of new Set([...Object.keys(shift?.caps || {}), ...Object.keys(shift?.shares || {})])) {
     if (RESIST_KEYS.includes(k)) continue;
     const cap = shift!.caps[k] ?? caps[k];
-    if (cap != null) caps[k] = Math.max(0, cap - share(k));
+    if (cap != null) caps[k] = cap - share(k);
     if (floors[k] != null) floors[k] = Math.max(0, floors[k] - share(k));
   }
   const hardFloors = Object.keys(floors).filter((k) => !(p.softFloors || []).includes(k));

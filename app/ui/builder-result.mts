@@ -167,7 +167,7 @@ function headlineCard(res: OptimizeResult, current: OptSuit, suit: OptSuit, prof
 function plannedWith(prof: EffectiveProfile, name: string): HTMLElement | null {
   if (!prof.buffs) return null;
   const worn = plannedFromWorn(prof.buffs.on).map((id) => buffById(id)!.name);
-  const flip = button({ label: withoutBuffs ? "Show with buffs" : "Show without buffs", variant: "ghost", size: "sm", attrs: { id: "b-buffs-shown", "aria-pressed": String(withoutBuffs) }, onClick: () => {
+  const flip = button({ label: withoutBuffs ? "Show with buffs" : "Show without buffs", variant: "ghost", size: "sm", attrs: { id: "b-buffs-shown" }, onClick: () => {
     withoutBuffs = !withoutBuffs; void rerender().then(() => document.getElementById("b-buffs-shown")?.focus());
   } });
   return box("div", { class: "b-planned" }, txt("Planned with", "t-sm muted"), ...prof.buffs.on.map((id) => badge(buffById(id)!.name, "accent")), txt("·", "faint"), flip,

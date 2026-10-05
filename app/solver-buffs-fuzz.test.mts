@@ -1,0 +1,130 @@
+// solver-buffs-fuzz.test.mts — Automatic's buffs (issue #12) under a seeded fuzz, the pattern of solver-fuzz.test.mts:
+// random buff sets (forms one at a time, through toggleBuff), random numbers for every input, random raw stats, race,
+// worn Enhance Potions and Resisting Spells, random requirements, weights and resist cap overrides in paperdoll terms,
+// and random small pools with negative values. Each instance is small enough to enumerate, so for the planned profile
+// (app/buffs.mts plannedProfile):
+//   - the core's exact search and HiGHS both prove the brute-force maximum of the core's own scoreSet;
+//   - over every suit, what the solver is paid for weighted properties differs from what the character really has with
+//     the buffs (min(gear + Resisting Spells bonus + in-cap share, buffed cap), applyBuffs' numbers) by one constant,
+//     so no suit is ever paid for points past a real cap, and the best suit's paid totals stay within the real caps;
+//   - a requirement is met by a suit's gear exactly when gear + bonus + share reaches it (a resist's up to its buffed
+//     cap), for every gear total the solvers can tell apart (a floor at 0 reads as none, which a negative gear total
+//     below it would really miss: no real suit carries one).
+// The one place the plan is not exact is a resist cap a buff pushes under the Resisting Spells bonus (effectiveProfile
+// stops a resist cap at 0 before the share); the generator's overrides stay at 50 or more, where that cannot happen.
+// Tags: [fast]. Run: node --test app/solver-buffs-fuzz.test.mts
+import { test } from "node:test";
+import assert from "node:assert/strict";
+import { effectiveProfile, profileResistCaps, RESIST_KEYS } from "./vault-lib.mts";
+import type { Character, Profile } from "./vault-lib.mts";
+import { BUFF_IDS, BUFF_INPUTS, applyBuffs, plannedProfile, toggleBuff } from "./buffs.mts";
+import type { BuffPlan, Skills } from "./buffs.mts";
+import { solveExact, type OptPools, type OptAssignment, type OptProfile } from "./exact-solver.mts";
+import { core } from "./solver-fixture.mts";   // also loads the uoalive rules
+
+type Item = NonNullable<OptPools[string]>[number];
+const SLOTS = ["helmet", "chest", "ring", "neck"];
+const DIMS = ["hci", "dci", "ssi", "di", "fc", "manaRegen", "hpRegen", "luck", "strBonus", "physResist", "fireResist", "coldResist", "energyResist"];
+const EPS = 1e-6;
+
+interface Instance { slots: string[]; optionalSlots: string[]; pools: OptPools; current: OptAssignment; p: Profile; ch: Character | null; plan: BuffPlan }
+function generate(rnd: () => number, serialBase: number): Instance {
+  const int = (lo: number, hi: number): number => lo + Math.floor(rnd() * (hi - lo + 1));
+  const pickSome = <T,>(list: T[], pr: number): T[] => list.filter(() => rnd() < pr);
+  let serial = serialBase;
+  const mkItem = (slot: string): Item => ({ serial: ++serial, name: `item${serial}`, slot, props: Object.fromEntries(pickSome(DIMS, 0.35).map((d) => [d, int(-8, 30)])) });
+  const slots = pickSome(SLOTS, 0.7);
+  if (slots.length < 2) slots.push(...SLOTS.filter((s) => !slots.includes(s)).slice(0, 2 - slots.length));
+  const pools: OptPools = {}, current: OptAssignment = {};
+  for (const s of slots) {
+    pools[s] = Array.from({ length: int(1, 4) }, () => mkItem(s));
+    if (rnd() < 0.4) current[s] = pools[s]![int(0, pools[s]!.length - 1)]!;
+  }
+  // buffs: each with a small chance, forms and Enchants one at a time; every input at a random value in its range
+  const on = BUFF_IDS.filter(() => rnd() < 0.08).reduce<string[]>((acc, id) => toggleBuff(acc, id).next, []);
+  const skills: Skills = Object.fromEntries(Object.entries(BUFF_INPUTS).map(([k, i]) => [k, i.int ? int(i.min, i.max) : Math.round((i.min + rnd() * (i.max - i.min)) * 10) / 10]));
+  const rs = rnd() < 0.5 ? int(0, 120) : null;
+  if (rs != null) skills["Resisting Spells"] = rs;
+  const race = ["human", "elf", "gargoyle"][int(0, 2)]!;
+  const p: Profile = {
+    race,
+    weights: Object.fromEntries(DIMS.map((d) => [d, int(-2, 3)])),
+    floors: Object.fromEntries(pickSome(DIMS, 0.3).map((d) => [d, int(3, RESIST_KEYS.includes(d) ? 85 : 50)])),
+    resistCaps: rnd() < 0.3 ? { [RESIST_KEYS[int(0, 4)]!]: int(50, 95) } : undefined,
+  };
+  p.softFloors = pickSome(Object.keys(p.floors!), 0.4);
+  const plan: BuffPlan = { on, skills, stats: rnd() < 0.7 ? { str: int(10, 125), dex: int(10, 125), int: int(10, 125) } : null, who: { race }, worn: { enhancePotions: int(0, 60) } };
+  return { slots, optionalSlots: pickSome(slots, 0.5), pools, current, p, ch: rs == null ? null : ({ skills: { "Resisting Spells": { value: rs } } } as unknown as Character), plan };
+}
+
+// Every suit of an instance, by the core's candidate rules (the pool plus the worn piece, and "empty" where allowed).
+function suits(inst: Instance): OptAssignment[] {
+  const cands = inst.slots.map((s) => {
+    const list: Array<Item | null> = [...inst.pools[s]!];
+    const cur = inst.current[s];
+    if (cur && !list.some((it) => it?.serial === cur.serial)) list.push(cur);
+    if (inst.optionalSlots.includes(s) || !cur) list.push(null);
+    return list;
+  });
+  const out: OptAssignment[] = [];
+  const rec = (i: number, pick: OptAssignment): void => {
+    if (i === inst.slots.length) { out.push({ ...pick }); return; }
+    for (const it of cands[i]!) rec(i + 1, { ...pick, [inst.slots[i]!]: it });
+  };
+  rec(0, {});
+  return out;
+}
+const gear = (a: OptAssignment, k: string): number => Object.values(a).reduce((n, it) => n + (it?.props[k] || 0), 0);
+
+const SEEDS = [5, 11, 2026];
+const PER_SEED = 400;
+for (const seed of SEEDS) {
+  test(`[fast] buffs fuzz: both solvers prove the brute-force best of the planned profile, which pays only for real capped totals (seed ${seed})`, async () => {
+    const rnd = core.optMulberry32(seed);
+    let shifted = 0;
+    for (let i = 0; i < PER_SEED; i++) {
+      const inst = generate(rnd, seed * 100000 + i * 100), label = `seed ${seed} instance ${i} (${inst.plan.on.join(", ") || "no buffs"})`;
+      const base = effectiveProfile(inst.p, inst.ch), planned = plannedProfile(inst.p, inst.ch, inst.plan), prof = planned as OptProfile;
+      if (JSON.stringify(planned.caps) !== JSON.stringify(base.caps) || JSON.stringify(planned.floors) !== JSON.stringify(base.floors)) shifted++;
+      // what the character really has: applyBuffs on the caps before the buffs
+      const view = profileResistCaps(base), caps0 = { ...base.caps };
+      for (const k of RESIST_KEYS) caps0[k] = view[k]!.cap;
+      const r = applyBuffs(inst.plan.worn, caps0, inst.plan.on, inst.plan.skills, inst.plan.stats, inst.plan.who);
+      const share = (k: string): number => (r.shares[k] || []).filter((x) => !x.outside).reduce((n, x) => n + x.value, 0);
+      const bonus = (k: string): number => (RESIST_KEYS.includes(k) ? base.resistBonus : 0);
+      const real = (k: string, g: number): number => Math.min(g + bonus(k) + share(k), r.caps[k] ?? Infinity);
+      const weightsOnly = { ...prof, floors: {}, hardFloors: [] };
+      const w = planned.weights;
+
+      const all = suits(inst);
+      let oracle = -Infinity, offset: number | null = null;
+      for (const a of all) {
+        oracle = Math.max(oracle, core.scoreSet(a, prof));
+        const truth = DIMS.reduce((n, k) => n + (w[k] || 0) * real(k, gear(a, k)), 0);
+        const d = truth - core.scoreSet(a, weightsOnly);
+        if (offset == null) offset = d;
+        assert.ok(Math.abs(d - offset) < EPS, `${label}: a suit is paid ${d - offset} off what the buffs really leave it`);
+        for (const [k, f] of Object.entries(inst.p.floors || {})) {
+          const g = gear(a, k), gearFloor = planned.floors[k]!, want = RESIST_KEYS.includes(k) ? Math.min(f, r.caps[k]!) : f;
+          if (gearFloor <= 0 && g < 0) continue;   // a floor at 0 reads as none: only a negative gear total could tell
+          assert.equal(gearFloor > 0 ? g >= gearFloor : true, g + bonus(k) + share(k) >= want, `${label}: ${k} ≥ ${f} at gear ${g}`);
+        }
+      }
+
+      const opts = { seed: 1, restarts: 2, slots: inst.slots, optionalSlots: inst.optionalSlots };
+      const exact = core.optimizeSuit(inst.pools, inst.current, prof, { ...opts, exact: true, timeBudgetMs: 5000 });
+      assert.equal(exact.proven, true, `${label}: the core did not prove`);
+      assert.ok(Math.abs(exact.score - oracle) < EPS, `${label}: core ${exact.score} != brute force ${oracle}`);
+      const h = await solveExact({ core, pools: inst.pools, current: inst.current, profile: prof, opts: { ...opts, exact: true, timeBudgetMs: 10000 }, onProgress: () => {} });
+      assert.equal(h.solver === "highs" || h.solver === "none", true, `${label}: solver ${h.solver} (${h.fallbackReason})`);
+      assert.equal(h.proven, true, `${label}: HiGHS did not prove`);
+      assert.ok(Math.abs(h.score - oracle) < 1e-3, `${label}: HiGHS ${h.score} != brute force ${oracle}`);
+      // the best suit's paid totals, with the bonus and the shares, never pass a real cap
+      for (const [k, c] of Object.entries(planned.caps)) {
+        if (!w[k]) continue;
+        assert.ok(Math.min(gear(h.best, k), c) + bonus(k) + share(k) <= r.caps[k]! + EPS, `${label}: ${k} paid past its real cap ${r.caps[k]}`);
+      }
+    }
+    assert.ok(shifted > PER_SEED / 3, `the buffs moved the profile in ${shifted} of ${PER_SEED} instances`);
+  });
+}

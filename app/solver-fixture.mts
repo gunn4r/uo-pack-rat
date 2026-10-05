@@ -7,7 +7,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { dirname, join } from "node:path";
-import { buildPools, effectiveProfile, setRules, foldSnapshots, type ProfilesFile, type Template, type BuildPoolsResult } from "./vault-lib.mts";
+import { buildPools, setRules, foldSnapshots, type ProfilesFile, type Template, type BuildPoolsResult } from "./vault-lib.mts";
 import { upgradeScan } from "./scan-schema.mts";
 import { buffSkillValues, plannedProfile } from "./buffs.mts";
 import type { ScanV2 } from "./schema/types.d.mts";
@@ -53,7 +53,7 @@ export const templateNames = Object.keys(defaultProfiles.templates!);
 export function cell(profileName: string, { soft = [], overrides = {}, buffs = [] }: { soft?: string[] | undefined; overrides?: Partial<Template> | undefined; buffs?: string[] | undefined } = {}): { pools: OptPools; current: OptAssignment; profile: OptProfile } {
   const template = defaultProfiles.templates![profileName]!;
   const p = { ...template, softFloors: [...soft], ...overrides }, c = inv.characters.Fixture!;
-  const profile = buffs.length ? plannedProfile(p, c, { on: buffs, skills: buffSkillValues(c.skills || {}, {}).values, stats: null, who: {}, worn: {} }) : effectiveProfile(p, c);
+  const profile = plannedProfile(p, c, buffs.length ? { on: buffs, skills: buffSkillValues(c.skills || {}, {}).values, stats: null, who: {}, worn: {} } : null);
   return { pools: fixturePools as unknown as OptPools, current: fixtureCurrent as unknown as OptAssignment, profile };
 }
 
