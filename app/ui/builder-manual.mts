@@ -18,8 +18,8 @@ import { box, txt, button, icon, segmented, tag, confirmDialog, modalOpen, toolt
 import { api } from "./api.mts";
 import { resolveItems, rarityToken } from "./items.mts";
 import { closeCompare, fetchCard, grabAllButton, keyProps, verdict, RESIST_NAMES } from "./builder-result.mts";
-import { capNote, paperdoll, paperdollCaps, plural } from "./builder-model.mts";
-import { followJob, poolSettings, readControls, searchOpts, progressText } from "./builder.mts";
+import { capNote, knobError, paperdoll, paperdollCaps, plural, type KnobField } from "./builder-model.mts";
+import { followJob, knobs, poolSettings, readControls, searchOpts, progressText } from "./builder.mts";
 import { loadRuns, settingsSnapshot } from "./runs.mts";
 import { optimizeErrorMessage } from "./messages.mts";
 import { itemActions } from "./inventory.mts";
@@ -27,7 +27,7 @@ import { sheetParts, wornSet } from "./sheet.mts";
 import { createItemBrowser } from "./item-browser.mts";
 import type { ItemBrowser } from "./item-browser.mts";
 import type { UiPrefs, OptimizeResult, OptimizeStartApiResponse, OptSuit } from "./api-types.mts";
-import { MANUAL_GROUPS, emptyHistory, record, undoStep, redoStep, historyKey, historyKeyNames, type History, type Suit, TOTAL_KEYS, STAT_KEYS, STRIP_KEYS, capped, capLine, slotQuery, handConflict, handNote, suitFrom, fillableSlots, fetchPieces, fillPicks, keptSlots, listWords, type FillStart, savedSlots, missingSlots, deltaKeys, slotDelta } from "./manual-model.mts";
+import { MANUAL_GROUPS, emptyHistory, record, undoStep, redoStep, historyKey, historyKeyNames, type History, type Suit, TOTAL_KEYS, STAT_KEYS, STRIP_KEYS, capped, capLine, slotQuery, handConflict, handNote, suitFrom, fillableSlots, fetchPieces, fillPicks, keptSlots, listWords, applyEditStep, type FillStart, type EditStep, savedSlots, missingSlots, deltaKeys, slotDelta } from "./manual-model.mts";
 import { buffMarker, buffStrip, createBuffPicker, keepChipFocus, type BuffActions, type BuffPicker, type BuffView } from "./builder-buffs.mts";
 
 type Mode = "automatic" | "manual";
@@ -50,9 +50,10 @@ let buffPicker: BuffPicker | null = null;
 let replaced: { on: string; off: string } | null = null;
 // The suit's undo history, its steps holding the suit and its buffs (in memory: a reload starts a new one; another
 // character keeps it, the suit is shared).
-// A step that also changed the Count buffs switch or the buff numbers (Open in Manual) carries them too, so undo puts
-// them back; other steps leave them out, so undoing them never touches a number edited since.
-interface Snapshot { slots: Suit; buffs: string[]; count?: boolean; edits?: Record<string, Record<string, number>> }
+// A step that also changed the Count buffs switch or some buff numbers (Open in Manual) carries them too, so undo puts
+// them back: the numbers as only the ones it set, for one character (null: back to its own), and a number edited since
+// is left as edited (manual-model.mts applyEditStep). Other steps leave them out.
+interface Snapshot { slots: Suit; buffs: string[]; count?: boolean; edits?: EditStep }
 let history: History<Snapshot> = emptyHistory();
 const MAC = /Mac|iPhone|iPad/.test(navigator.platform), KEY_NAMES = historyKeyNames(MAC);
 
@@ -205,17 +206,19 @@ function buffed(t: PropMap, caps: Record<string, number>, all = false, suit: Rec
   return applyBuffs(t, caps, countBuffs || all ? buffs : [], values, stats, who);
 }
 // Every change to the suit or its buffs is one undo step, named by `label` ("Ring → Arcane Ring", "Divine Fury on");
-// undo and redo pass none. `note` is the form a turned-on form replaced, said in the buff picker until the next change.
-function commit(next: Partial<Snapshot>, label: string | null, note: typeof replaced = null): void {
-  const extra = (count: boolean, edits: Snapshot["edits"]): Partial<Snapshot> => ({ ...(next.count != null ? { count } : {}), ...(next.edits && edits ? { edits } : {}) });
-  const after: Snapshot = { slots: next.slots ?? slots, buffs: next.buffs ?? buffs, ...extra(next.count!, next.edits) };
-  if (label) history = record(history, { slots, buffs, ...extra(countBuffs, buffEdits) }, after, label);
+// undo and redo pass none, and `from`, the step's other side (the numbers it expects to find). `note` is the form a
+// turned-on form replaced, said in the buff picker until the next change.
+function commit(next: Partial<Snapshot>, label: string | null, note: typeof replaced = null, from: Snapshot | null = null): void {
+  const e = next.edits, was: EditStep | undefined = e && { who: e.who, values: Object.fromEntries(Object.keys(e.values).map((k) => [k, ownEntry(buffEdits, e.who)?.[k] ?? null])) };
+  const after: Snapshot = { slots: next.slots ?? slots, buffs: next.buffs ?? buffs, ...(next.count != null ? { count: next.count } : {}), ...(e ? { edits: e } : {}) };
+  if (label) history = record(history, { slots, buffs, ...(next.count != null ? { count: countBuffs } : {}), ...(was ? { edits: was } : {}) }, after, label);
+  const edits = e ? applyEditStep(buffEdits, e.who, (from?.edits ?? was)!.values, e.values) : buffEdits;
   const changed = { ...(after.slots !== slots ? { manualSuit: after.slots } : {}), ...(after.buffs !== buffs ? { manualBuffs: after.buffs } : {}),
-    ...(after.count != null && after.count !== countBuffs ? { buffsCount: after.count ? "on" as const : "off" as const } : {}), ...(after.edits && after.edits !== buffEdits ? { buffSkills: after.edits } : {}) };
+    ...(after.count != null && after.count !== countBuffs ? { buffsCount: after.count ? "on" as const : "off" as const } : {}), ...(edits !== buffEdits ? { buffSkills: edits } : {}) };
   if (Object.keys(changed).length) savePrefs(changed);
   slots = after.slots; buffs = after.buffs; replaced = note; fillNote = null;
   if (after.count != null) countBuffs = after.count;
-  if (after.edits) buffEdits = after.edits;
+  buffEdits = edits;
   refresh();
 }
 // The screen, and the rows' deltas and the current row, follow the suit, its buffs and their numbers.
@@ -258,7 +261,7 @@ function stepHistory(kind: "undo" | "redo"): void {
   history = r.history;
   const next = kind === "undo" ? r.step.before : r.step.after;
   const text = `${kind === "undo" ? "Undid" : "Redid"}: ${r.step.label}`, focused = document.activeElement?.id;
-  commit(next, null);
+  commit(next, null, null, kind === "undo" ? r.step.after : r.step.before);
   // The redrawn button keeps the focus; when it is now disabled (nothing more that way), the other one, else the card.
   if (focused === "mb-undo" || focused === "mb-redo") {
     const same = $<HTMLButtonElement>(`#${focused}`), other = $<HTMLButtonElement>(focused === "mb-undo" ? "#mb-redo" : "#mb-undo");
@@ -479,8 +482,9 @@ let fillUi: { text: HTMLElement; bar: ReturnType<typeof progress> } | null = nul
 // The last search's outcome, under the suit card's head until the next change.
 let fillNote: { text: string; tone: "ok" | "warn" | "bad" | "muted" } | null = null;
 export const filling = (): boolean => !!fill;
-// What a fill is checked against when it lands (manual-model.mts fillPicks): whose suit, the counted buffs, the suit.
-const fillNow = (): Omit<FillStart, "empty"> => ({ who: manualCharacter(), buffs: countBuffs ? buffs : [], suit: slots });
+// What a fill is checked against when it lands (manual-model.mts fillPicks): whose suit, the counted buffs, the suit,
+// and what it plans with (the profile, buff numbers included, and the pool settings).
+const fillNow = (): Omit<FillStart, "empty"> => ({ who: manualCharacter(), buffs: countBuffs ? buffs : [], suit: slots, plan: JSON.stringify([fillProfile(), poolSettings()]) });
 const fillable = (): string[] => fillableSlots(slots, slots.twoHanded != null && !!items[slots.twoHanded]?.twoHanded);
 function fillProfile(): EffectiveProfile {
   const name = manualCharacter(), p = readControls(), suit = suitItems(), { values, stats, race } = buffInputs();
@@ -570,7 +574,12 @@ function saveButton(missing: number): HTMLElement {
   const b = button({ label: "Save as run", size: "sm", disabled: !!why, attrs: { id: "mb-save-run" }, onClick: () => { void saveAsRun(name!); } });
   return why ? tipWrap(b, why) : b;
 }
+// The search knobs a run's settings carry (the STR limit is the profile's last good one), by the Advanced field's name.
+const RUN_KNOBS: Array<[KnobField, string]> = [["restarts", "Restarts"], ["budgetS", "Time budget"], ["altCount", "Other suits"], ["altTol", "Within points"]];
 async function saveAsRun(name: string): Promise<void> {
+  // a knob typed out of range in Automatic would be saved with the run, so it is said here rather than refused there
+  const bad = RUN_KNOBS.find(([f]) => knobError(f, knobs[f]));
+  if (bad) { toast(`Automatic's ${bad[1]} field reads "${knobs[bad[0]]}": ${knobError(bad[0], knobs[bad[0]])} Fix it under Advanced to save a run.`, "bad"); return; }
   const settings = { ...settingsSnapshot(), buffs: runBuffs(countBuffs ? buffs : [], buffInputs().values) };
   try { await api("/api/runs", { method: "POST", body: { character: name, suit: slots, settings, inventoryStamp: invStamp() } }); }
   catch (e) { toast(`Could not save the run: ${(e as Error).message}`, "bad"); return; }
@@ -588,7 +597,7 @@ export async function openInManual(suit: OptSuit, covered: readonly string[], ru
   if (noCharacter) { noCharacter = false; savePrefs({ manualFor: "character" }); }
   // the run's buffs (none for a run without), counted, with the numbers they took: all in the same undo step
   const name = manualCharacter(), runEdits = runInputEdits(name, runB);
-  const edits = Object.keys(runEdits).length ? { ...buffEdits, [name ?? NO_CHARACTER]: { ...buffEditsOf(name), ...runEdits } } : undefined;
+  const edits: EditStep | undefined = Object.keys(runEdits).length ? { who: name ?? NO_CHARACTER, values: runEdits } : undefined;
   synced = true;
   commit({ slots: next, buffs: runB?.on ?? [], ...(runB ? { count: true } : {}), ...(edits ? { edits } : {}) }, label);
   setMode("manual");

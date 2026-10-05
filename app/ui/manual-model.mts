@@ -136,16 +136,33 @@ export function suitFrom(current: Suit, best: Partial<Record<string, { serial: n
 export function fillableSlots(suit: Suit, twoHanded: boolean): string[] {
   return OPTIMIZER_SLOTS.filter((s) => suit[s] == null && !(s === "oneHanded" && twoHanded));
 }
-// "Fill the rest": what a search started from (whose suit, the buffs the totals counted, the suit and its empty slots)
-// and its answer against Manual now. Stale, with why, when any of them changed meanwhile (a character switched, a buff
-// or the Count switch flipped, a piece placed or cleared); else the found pieces for the slots that were empty, never
+// Buff numbers an undo step set for one character (`who`) by key, null for "back to the character's own": applied key
+// by key, and only where the number is still the one the other side of the step left (`expect`), so undoing a step
+// never takes back a number edited after it.
+export type EditMap = Record<string, Record<string, number>>;
+export interface EditStep { who: string; values: Record<string, number | null> }
+export function applyEditStep(all: EditMap, who: string, expect: Record<string, number | null>, set: Record<string, number | null>): EditMap {
+  const mine = { ...(Object.hasOwn(all, who) ? all[who] : {}) };
+  let moved = false;
+  for (const [k, v] of Object.entries(set)) {
+    if ((mine[k] ?? null) !== (expect[k] ?? null) || (mine[k] ?? null) === v) continue;
+    if (v == null) delete mine[k]; else mine[k] = v;
+    moved = true;
+  }
+  return moved ? { ...all, [who]: mine } : all;
+}
+// "Fill the rest": what a search started from (whose suit, the buffs the totals counted, the suit and its empty slots,
+// and `plan`, a key of what it planned with: the profile, the buff numbers in it, the pool settings) and its answer
+// against Manual now. Stale, with why, when any of them changed meanwhile (a character switched, a buff or the Count
+// switch flipped, a piece placed or cleared, a requirement, weight or buff number edited); else the found pieces for the slots that were empty, never
 // a placed piece again.
-export interface FillStart { who: string | null; buffs: string[]; suit: Suit; empty: string[] }
+export interface FillStart { who: string | null; buffs: string[]; suit: Suit; plan: string; empty: string[] }
 export function fillPicks(start: FillStart, now: Omit<FillStart, "empty">, best: Partial<Record<string, { serial: number } | null>>): { stale: string } | { picks: Suit } {
   if (start.who !== now.who) return { stale: "Fill canceled: the character changed" };
   if (start.buffs.join() !== now.buffs.join()) return { stale: "Fill canceled: the buffs changed" };
   const keys = Object.keys(start.suit);
   if (keys.length !== Object.keys(now.suit).length || keys.some((s) => start.suit[s] !== now.suit[s])) return { stale: "Fill canceled: the suit changed" };
+  if (start.plan !== now.plan) return { stale: "Fill canceled: the settings changed" };
   const placed = new Set(Object.values(start.suit));
   return { picks: Object.fromEntries(start.empty.flatMap((s) => { const it = best[s]; return it && !placed.has(it.serial) ? [[s, it.serial]] : []; })) };
 }

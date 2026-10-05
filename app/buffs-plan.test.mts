@@ -15,7 +15,7 @@ import { BUFFS, STAT_MAX, applyBuffs, article, buffSkillValues, gearNeedsText, o
 import type { BuffPlan, BuffResult, Skills, Stats } from "./buffs.mts";
 import { solveExact, type OptPools, type OptProfile } from "./exact-solver.mts";
 import { cell, core, defaultProfiles, fixture, templateNames } from "./solver-fixture.mts";   // also loads the uoalive rules
-import { runKey, SOLVER_VERSION } from "./runs-lib.mts";
+import { runKey } from "./runs-lib.mts";
 
 const DEFAULTS = buffSkillValues(null, {}).values;
 // A shipped template as the panel holds it, and the fixture character (the solver fixture's own cell builds these too).
@@ -217,7 +217,7 @@ test("[fast] buffs plan: a requirement's note: its article, a full cap, no cap a
 test("[fast] buffs plan: the run key follows the plan: Enemy of One alone keys as none, numbers no buff reads change nothing", () => {
   const c = cell("melee"), key = (pl: BuffPlan | null): string => runKey({ pools: c.pools, current: c.current, profile: plannedProfile(defaultTemplate("melee"), FIXTURE, pl), opts: { seed: 2026, restarts: 200 } });
   const none = key(null);
-  if ((SOLVER_VERSION as number) === 3) assert.equal(none, "ac4629c8a8ca3cf77dbcba655c8e8bf8cd65f4a8", "main's key (02b052e) for the melee template");
+  assert.equal(none, "2c90c9b185e929e2cc44d6c6295995e288e4f918", "the key for the melee template at SOLVER_VERSION 4 (was ac4629c8… at 3, main 02b052e): a change here means every saved run stops being reused");
   assert.equal(key(plan(["enemyOfOne"])), none, "Enemy of One plans like none");
   assert.notEqual(key(plan(["divineFury"], { Chivalry: 105 })), key(plan(["divineFury"], { Chivalry: 120 })), "another tier, another plan");
   assert.equal(key(plan(["divineFury"], { Chivalry: 105 })), key(plan(["divineFury"], { Chivalry: 105, Necromancy: 40, Bushido: 3 })), "an edit no buff on reads");

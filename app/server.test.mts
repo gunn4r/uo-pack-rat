@@ -3527,10 +3527,14 @@ test("[fast] POST /api/runs saves Manual's suit as a manual run: its shape, its 
   assert.equal((await post({ character, suit, settings: { buffs: { on: ["noSuchBuff"], skills: {} } } })).status, 400);
   assert.equal((await post({ character, suit, settings: { resistCaps: { fireResist: 900 } } })).status, 400);
   // the whole snapshot is checked: an absurd floor, a weight that is not a number, a __proto__ key, an unknown field
-  for (const bad of ['{"floors":{"physResist":1e308}}', '{"weights":{"a":null}}', '{"floors":{"__proto__":5}}', '{"race":"orc"}', '{"lockedSlots":"ring"}', '{"strLimit":-1}', '{"whatever":1}']) {
+  for (const bad of ['{"floors":{"physResist":1e308}}', '{"weights":{"a":null}}', '{"floors":{"__proto__":5}}', '{"race":"orc"}', '{"lockedSlots":"ring"}', '{"strLimit":-1}', '{"restarts":0.5}', '{"restarts":20000}', '{"altCount":101}', '{"altTol":-1}', '{"budgetMs":1e12}', '{"whatever":1}']) {
     const r = await fetch(srv.url + "/api/runs", { method: "POST", headers: JSON_HEADERS, body: `{"character":${JSON.stringify(character)},"suit":${JSON.stringify(suit)},"settings":${bad}}` });
     assert.equal(r.status, 400, bad);
   }
+  const range = asJson<ErrorBody>(await (await post({ character, suit, settings: { restarts: 20000 } })).json()).error;
+  assert.equal(range, "settings.restarts must be a whole number from 1 to 10000", "the error names the range");
+  // every knob at the edge of the range the page allows is taken
+  assert.equal((await post({ character, suit, settings: { strLimit: 1000, restarts: 10000, budgetMs: 3600000, altCount: 100, altTol: 12.5, exact: false } })).status, 200);
   const twoH = loose.find((it) => it.slot === "twoHanded" && it.twoHanded) ?? worn.find((it) => it.slot === "twoHanded" && it.twoHanded);
   const oneH = [...loose, ...worn].find((it) => it.slot === "oneHanded");
   if (twoH && oneH) assert.equal((await post({ character, suit: { twoHanded: twoH.serial, oneHanded: oneH.serial }, settings })).status, 400);

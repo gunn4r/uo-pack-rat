@@ -223,32 +223,6 @@ function isManualSuit(v: unknown): v is Record<string, number> {
   if (!v || typeof v !== "object" || Array.isArray(v)) return false;
   return Object.entries(v).every(([k, s]) => GEAR_SLOTS.includes(k) && isBoundedInt(s, 1, MAX_SERIAL));
 }
-// A saved run's settings snapshot (ui/runs.mts settingsSnapshot), as POST /api/runs takes it: only its known fields,
-// each of its type and in a sane range, property maps with plain keys (no __proto__), and the resist caps, weapon
-// exclusions and buffs held to their own rules.
-const RUN_SETTING_FLAGS = ["allowGargoyle", "medOnly", "allowOthersWorn", "ubwsAnyWeapon", "exact"];
-const RUN_SETTING_NUMBERS = ["strLimit", "restarts", "budgetMs", "altCount", "altTol"];
-const RUN_SETTING_LISTS = ["softFloors", "lockedSlots", "excludeTags", "excludeRoots", "excludeSkills"];
-const plainKey = (k: string): boolean => isBoundedString(k, 64) && !["__proto__", "constructor", "prototype"].includes(k);
-function runSettingsError(st: Record<string, unknown>, vl: typeof VaultLib): string | null {
-  for (const [k, v] of Object.entries(st)) {
-    if (v == null) continue;
-    if (k === "floors" || k === "weights") {
-      if (typeof v !== "object" || Array.isArray(v)) return `settings.${k} must be an object`;
-      const bad = Object.entries(v).find(([p, n]) => !plainKey(p) || typeof n !== "number" || !Number.isFinite(n) || Math.abs(n) > 1e6);
-      if (bad) return `settings.${k}.${short(bad[0])} must be a number between -1000000 and 1000000`;
-    } else if (RUN_SETTING_FLAGS.includes(k)) { if (typeof v !== "boolean") return `settings.${k} must be a boolean`; }
-    else if (RUN_SETTING_NUMBERS.includes(k)) { if (typeof v !== "number" || !Number.isFinite(v) || v < 0 || v > OPTS_MAX_TIME_BUDGET_MS) return `settings.${k} must be a non-negative number`; }
-    else if (RUN_SETTING_LISTS.includes(k)) {
-      if (!Array.isArray(v) || v.length > 200 || v.some((x) => !(isBoundedString(x, 64) || (k === "excludeRoots" && isBoundedInt(x, 0, MAX_SERIAL))))) return `settings.${k} must be a list of names`;
-    } else if (k === "race") { if (!["human", "elf", "gargoyle"].includes(v as string)) return "settings.race must be human, elf or gargoyle"; }
-    else if (k === "excludeWeapons") { const e = vl.excludeWeaponsError(v, "settings.excludeWeapons"); if (e) return e; }
-    else if (k === "resistCaps") { const e = vl.resistCapsError(v, "settings.resistCaps"); if (e) return e; }
-    else if (k === "buffs") { if (!isRunBuffs(v)) return "settings.buffs must list known buffs, each once and one form at most, with their numbers in range"; }
-    else return `settings.${short(k)} is not a run setting`;
-  }
-  return null;
-}
 // Manual's suit against the inventory (a fill's `pinned`, a manual run's `suit`): each serial a gear piece of its slot in
 // the scans, and no two-handed weapon beside a one-hander.
 function manualSuitError(inv: Inventory, suit: Record<string, number>, path: string): string | null {
@@ -464,6 +438,40 @@ const OPTS_MAX_TIME_BUDGET_MS = 60 * 60 * 1000;
 // The same ranges as numbers the page can show: the Suit Builder's Advanced fields validate against a copy
 // (app/ui/builder-model.mts's SOLVER_LIMITS; app/server.test.mts checks the two agree).
 export const OPTS_LIMITS = { restarts: { min: 1, max: 10000 }, timeBudgetMs: { min: 0, max: OPTS_MAX_TIME_BUDGET_MS }, alternativesCount: { min: 0, max: 100 } } as const;
+// A saved run's settings snapshot (ui/runs.mts settingsSnapshot), as POST /api/runs takes it: only its known fields,
+// each of its type and in a sane range, property maps with plain keys (no __proto__), and the resist caps, weapon
+// exclusions and buffs held to their own rules.
+const RUN_SETTING_FLAGS = ["allowGargoyle", "medOnly", "allowOthersWorn", "ubwsAnyWeapon", "exact"];
+// Each search knob's range, as the Suit Builder's Advanced fields hold them (builder-model.mts KNOB_RANGES, from
+// OPTS_LIMITS): [min, max, whole number].
+const RUN_SETTING_NUMBERS: Record<string, [number, number, boolean]> = {
+  strLimit: [1, 1000, true], restarts: [OPTS_LIMITS.restarts.min, OPTS_LIMITS.restarts.max, true], budgetMs: [0, OPTS_MAX_TIME_BUDGET_MS, true],
+  altCount: [OPTS_LIMITS.alternativesCount.min, OPTS_LIMITS.alternativesCount.max, true], altTol: [0, 1e9, false],
+};
+const RUN_SETTING_LISTS = ["softFloors", "lockedSlots", "excludeTags", "excludeRoots", "excludeSkills"];
+const plainKey = (k: string): boolean => isBoundedString(k, 64) && !["__proto__", "constructor", "prototype"].includes(k);
+function runSettingsError(st: Record<string, unknown>, vl: typeof VaultLib): string | null {
+  for (const [k, v] of Object.entries(st)) {
+    if (v == null) continue;
+    if (k === "floors" || k === "weights") {
+      if (typeof v !== "object" || Array.isArray(v)) return `settings.${k} must be an object`;
+      const bad = Object.entries(v).find(([p, n]) => !plainKey(p) || typeof n !== "number" || !Number.isFinite(n) || Math.abs(n) > 1e6);
+      if (bad) return `settings.${k}.${short(bad[0])} must be a number between -1000000 and 1000000`;
+    } else if (RUN_SETTING_FLAGS.includes(k)) { if (typeof v !== "boolean") return `settings.${k} must be a boolean`; }
+    else if (Object.hasOwn(RUN_SETTING_NUMBERS, k)) {
+      const [min, max, whole] = RUN_SETTING_NUMBERS[k]!;
+      if (typeof v !== "number" || !Number.isFinite(v) || v < min || v > max || (whole && !Number.isInteger(v))) return `settings.${k} must be a ${whole ? "whole " : ""}number from ${min} to ${max}`;
+    }
+    else if (RUN_SETTING_LISTS.includes(k)) {
+      if (!Array.isArray(v) || v.length > 200 || v.some((x) => !(isBoundedString(x, 64) || (k === "excludeRoots" && isBoundedInt(x, 0, MAX_SERIAL))))) return `settings.${k} must be a list of names`;
+    } else if (k === "race") { if (!["human", "elf", "gargoyle"].includes(v as string)) return "settings.race must be human, elf or gargoyle"; }
+    else if (k === "excludeWeapons") { const e = vl.excludeWeaponsError(v, "settings.excludeWeapons"); if (e) return e; }
+    else if (k === "resistCaps") { const e = vl.resistCapsError(v, "settings.resistCaps"); if (e) return e; }
+    else if (k === "buffs") { if (!isRunBuffs(v)) return "settings.buffs must list known buffs, each once and one form at most, with their numbers in range"; }
+    else return `settings.${short(k)} is not a run setting`;
+  }
+  return null;
+}
 function optsError(opts: Record<string, unknown>): string | null {
   for (const [k, v] of Object.entries(opts)) {
     switch (k) {

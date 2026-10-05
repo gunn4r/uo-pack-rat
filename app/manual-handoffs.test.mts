@@ -14,7 +14,7 @@ import { DEFAULT_OPTIONAL_SLOTS } from "./mip.mts";
 import { solveExact, type OptAssignment, type OptProfile } from "./exact-solver.mts";
 import { core } from "./solver-fixture.mts";   // also loads the uoalive rules
 import { slotsOf } from "./ui/builder-model.mts";
-import { suitFrom, fillableSlots, fetchPieces, fillPicks, keptSlots, listWords } from "./ui/manual-model.mts";
+import { suitFrom, fillableSlots, fetchPieces, fillPicks, keptSlots, listWords, applyEditStep } from "./ui/manual-model.mts";
 import { savedBuffs } from "./buffs.mts";
 
 let next = 1000;
@@ -122,17 +122,32 @@ test("[fast] a warm start never empties a pinned slot", async () => {
 });
 
 test("[fast] a fill lands only where it started: the same character, counted buffs and suit, the slots that were empty", () => {
-  const start = { who: "A", buffs: ["divineFury"], suit: { ring: 1, feet: 2 }, empty: ["helmet", "neck"] };
+  const start = { who: "A", buffs: ["divineFury"], suit: { ring: 1, feet: 2 }, plan: "p1", empty: ["helmet", "neck"] };
   const best = { ring: { serial: 1 }, helmet: { serial: 7 }, neck: { serial: 8 }, cloak: { serial: 9 } };
-  const now = { who: "A", buffs: ["divineFury"], suit: { ring: 1, feet: 2 } };
+  const now = { who: "A", buffs: ["divineFury"], suit: { ring: 1, feet: 2 }, plan: "p1" };
   assert.deepEqual(fillPicks(start, now, best), { picks: { helmet: 7, neck: 8 } }, "only the slots empty at the start; the pinned ring is not placed again");
   assert.deepEqual(fillPicks(start, { ...now, who: "B" }, best), { stale: "Fill canceled: the character changed" });
   assert.deepEqual(fillPicks(start, { ...now, who: null }, best), { stale: "Fill canceled: the character changed" }, "No character picked meanwhile");
   assert.deepEqual(fillPicks(start, { ...now, buffs: [] }, best), { stale: "Fill canceled: the buffs changed" }, "a buff off, or Count buffs off");
   assert.deepEqual(fillPicks(start, { ...now, suit: { feet: 2 } }, best), { stale: "Fill canceled: the suit changed" }, "the placed ring cleared meanwhile never comes back");
   assert.deepEqual(fillPicks(start, { ...now, suit: { ring: 1, feet: 2, helmet: 5 } }, best), { stale: "Fill canceled: the suit changed" });
+  assert.deepEqual(fillPicks(start, { ...now, plan: "p2" }, best), { stale: "Fill canceled: the settings changed" }, "a requirement, weight or buff number edited");
   // a pinned serial the search returns in another slot is never placed twice
   assert.deepEqual(fillPicks(start, now, { helmet: { serial: 2 } }), { picks: {} });
+});
+
+test("[fast] undoing Open in Manual puts back only the buff numbers it set, and never one edited since", () => {
+  const before = { A: { Chivalry: 100, Bushido: 80 }, B: { Magery: 90 } };
+  // Open in Manual sets A's Chivalry to 120 and its Necromancy (A's own until now) to 50
+  const was = { Chivalry: 100, Necromancy: null }, set = { Chivalry: 120, Necromancy: 50 };
+  const opened = applyEditStep(before, "A", was, set);
+  assert.deepEqual(opened, { A: { Chivalry: 120, Bushido: 80, Necromancy: 50 }, B: { Magery: 90 } });
+  // then the player edits Chivalry to 105, and B's Magery
+  const edited = { A: { ...opened.A!, Chivalry: 105 }, B: { Magery: 95 } };
+  // undo past the Open: Necromancy goes back to A's own, Chivalry keeps the edit, B and Bushido are untouched
+  assert.deepEqual(applyEditStep(edited, "A", set, was), { A: { Chivalry: 105, Bushido: 80 }, B: { Magery: 95 } });
+  // nothing to change: the same map back
+  assert.equal(applyEditStep(before, "A", was, was), before);
 });
 
 test("[fast] Start from this result names the pieces it kept", () => {
