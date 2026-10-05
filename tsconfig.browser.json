@@ -13,6 +13,7 @@
     "app/item-query.*",
     "app/scan-schema.*",
     "app/paste-scan.*",
+    "app/buffs.*",
     "app/schema/validate.*",
     "app/schema/types.d.mts"
   ],
