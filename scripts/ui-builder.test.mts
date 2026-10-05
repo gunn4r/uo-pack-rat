@@ -6,7 +6,7 @@
 // under TEST_SKIP_ELECTRON.
 import test from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, rmSync, writeFileSync, mkdirSync, copyFileSync } from "node:fs";
+import { mkdtempSync, rmSync, writeFileSync, mkdirSync, copyFileSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -432,6 +432,49 @@ test("[slow] a switch's on state stands apart from its off state in each theme a
       assert.ok(got.fills >= 3, `${theme} ${mode}: on vs off track ${got.fills.toFixed(2)}:1`);
       assert.ok(got.onLeft > got.offLeft + 8, `${theme} ${mode}: the knob moves right when on`);
     }
+    assert.deepEqual(errors, []);
+  } finally {
+    await app.close();
+    rmSync(dataDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
+  }
+});
+
+// Manual mode (issue #12): a slot opens the picker on its pieces, a picked row fills the slot and moves the totals,
+// and the picker stays on that slot with the row marked as the one in it. Esc closes it onto the slot card, and the
+// suit is kept in ui-prefs.json.
+test("[slow] Manual mode: a picked piece fills its slot, moves the totals and leaves the picker on the slot", async (t) => {
+  const why = unavailable();
+  if (why) return t.skip(why);
+  const dataDir = seedDataDir("packrat-ui-manual-");
+  const { app, page, errors } = await launch(dataDir);
+  try {
+    await openBuilder(page);
+    await page.click('#b-mode [data-value="manual"]');
+    await page.waitForSelector("#b-manual:not([hidden]) #mb-suit .mb-slot");
+    assert.equal(await page.locator("#b-panel").isVisible(), false, "the Automatic panel is out of the way");
+    const ring = page.locator('.mb-slot-pick[data-slot="ring"]');
+    await ring.click();
+    await page.waitForSelector("#mb-picker:not([hidden]) tbody tr.item");
+    assert.equal(await page.locator("#mb-picker-h").textContent(), "Ring: choose a piece");
+    const totalsBefore = await page.locator("#mb-totals").innerText();
+    const row = page.locator("#mb-picker tbody tr.item").first();
+    const name = (await row.locator("td").first().innerText()).trim();
+    await row.click();
+    await page.waitForFunction((n) => document.querySelector('.mb-slot-pick[data-slot="ring"]')?.textContent?.includes(n), name);
+    assert.notEqual(await page.locator("#mb-totals").innerText(), totalsBefore, "the totals moved");
+    assert.equal(await page.locator("#mb-picker").isVisible(), true, "the picker stays open");
+    assert.equal(await page.locator("#mb-picker-h").textContent(), "Ring: choose a piece", "on the same slot");
+    assert.ok((await page.locator("#mb-status").textContent() || "").includes(`${name} is in Ring`), "the status line says where it went");
+    const current = page.locator('#mb-picker tbody tr.item[aria-selected="true"]');
+    await current.first().waitFor();
+    assert.equal(await current.count(), 1, "one row marked as the piece in the slot");
+    assert.match(await current.innerText(), /In this slot/);
+    await page.keyboard.press("Escape");
+    await page.waitForSelector("#mb-picker", { state: "hidden" });
+    assert.equal(await page.evaluate(() => (document.activeElement as HTMLElement | null)?.dataset.slot), "ring", "focus back on the slot card");
+    const prefs = JSON.parse(readFileSync(join(dataDir, "ui-prefs.json"), "utf8")) as { builderMode?: string; manualSuit?: Record<string, number> };
+    assert.equal(prefs.builderMode, "manual");
+    assert.equal(typeof prefs.manualSuit?.ring, "number", "the suit is kept for the next launch");
     assert.deepEqual(errors, []);
   } finally {
     await app.close();

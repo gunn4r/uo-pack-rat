@@ -123,6 +123,33 @@
         </aside>
         <div class="b-results" id="b-results"><div id="b-msg"></div><div id="b-result"></div></div>
         <div class="b-compare-view" id="b-compare-view" hidden></div>
+        <!-- Manual mode (ui/builder-manual.mts): the totals strip, the slot cards and, beside them, the hint or the picker -->
+        <div class="b-manual" id="b-manual" hidden>
+          <section id="mb-totals"></section>
+          <div class="mb-main">
+            <section id="mb-suit"></section>
+            <aside class="card mb-side" id="mb-hint" aria-labelledby="mb-hint-h">
+              <h2 class="t-lg" id="mb-hint-h">Build a suit by hand</h2>
+              <p class="muted">Click a slot to list the pieces that fit it, each with what it would change in the totals. Picking one puts it in the slot, and the list stays on that slot so you can try others.</p>
+            </aside>
+            <aside class="card mb-side mb-picker" id="mb-picker" aria-labelledby="mb-picker-h" hidden>
+              <div class="mb-pick-head"><h2 class="t-lg" id="mb-picker-h"></h2><span class="spacer"></span><button class="btn btn-ghost btn-sm btn-icon" type="button" id="mb-picker-close" aria-label="Close the picker (Esc)"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"></path></svg></button></div>
+              <p class="t-sm mb-status" id="mb-status" role="status"></p>
+              <div class="inv-view mb-browser" id="mb-browser">
+                <div class="inv-toolbar" role="toolbar" aria-label="Filters"></div>
+                <div class="inv-active" role="group" aria-label="Active filters" hidden></div>
+                <div class="inv-card">
+                  <div class="inv-scroll">
+                    <table class="tbl inv-tbl" role="grid" aria-label="Pieces"><colgroup></colgroup><thead></thead><tbody></tbody></table>
+                    <div class="inv-state" hidden></div>
+                  </div>
+                  <div class="inv-fade" aria-hidden="true" hidden></div>
+                  <div class="tbl-foot"></div>
+                </div>
+              </div>
+            </aside>
+          </div>
+        </div>
       </div>
     </main>
 

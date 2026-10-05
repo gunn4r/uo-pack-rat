@@ -3208,6 +3208,25 @@ test("[fast] PUT /api/ui-prefs keeps the House map contents drawer's width (issu
   } finally { await s3.close(); }
 });
 
+test("[fast] PUT /api/ui-prefs keeps the Suit Builder's mode and its Manual suit (issue #12) across a restart, and refuses anything else", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "qm-uiprefs-manual-"));
+  const put = (url: string, body: unknown): Promise<Response> => fetch(url + "/api/ui-prefs", { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
+  const s1 = await startServer(ensureLayout(resolveConfig(["--port", "0", "--data", dir], {})));
+  try {
+    assert.equal((await put(s1.url, { builderMode: "manual", manualFor: "none", manualSuit: { ring: 1879769144, twoHanded: 0xFFFFFFFF } })).status, 200);
+    const tooMany = Object.fromEntries(Array.from({ length: 13 }, (_, i) => [`s${i}`, i + 1]));
+    for (const bad of [{ builderMode: "auto" }, { manualFor: "Dorran" }, { manualSuit: [1] }, { manualSuit: { ring: 0 } }, { manualSuit: { ring: 1.5 } }, { manualSuit: { ring: "5" } }, { manualSuit: { ring: 0x100000000 } }, { manualSuit: { ["x".repeat(17)]: 5 } }, { manualSuit: tooMany }, { manualSuit: null }]) {
+      assert.equal((await put(s1.url, bad)).status, 400, JSON.stringify(bad));
+    }
+  } finally { await s1.close(); }
+  const s2 = await startServer(ensureLayout(resolveConfig(["--port", "0", "--data", dir], {})));
+  try {
+    assert.deepEqual(asJson(await (await fetch(s2.url + "/api/ui-prefs")).json()), { ok: true, prefs: { builderMode: "manual", manualFor: "none", manualSuit: { ring: 1879769144, twoHanded: 0xFFFFFFFF } } });
+    assert.equal((await put(s2.url, { manualSuit: {} })).status, 200, "an empty suit is a suit");
+    assert.deepEqual(asJson<{ prefs: Record<string, unknown> }>(await (await fetch(s2.url + "/api/ui-prefs")).json()).prefs.manualSuit, {});
+  } finally { await s2.close(); }
+});
+
 // A deleted, renamed or transferred character used to keep its card and worn set in the inventory
 // forever: the fold only drops what a newer scan of the same root or character replaces.
 test("[fast] POST /api/forget-character drops the character, its worn set, backpack and bank, and a rescan brings it back", async () => {

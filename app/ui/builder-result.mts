@@ -17,10 +17,10 @@ import { splitSerial } from "./inventory.mts";
 import { afterChange, compareModel, hiddenRowsNote, locationCrumbs, otherChanges, plural, resistOutcome, toggleCompare, propName, capNote, capsLine, anyOverridden, effectiveFloor, type CompareMember } from "./builder-model.mts";
 import type { OptSuit, OptimizeResult, SavedRunLike } from "./api-types.mts";
 
-const RESIST_NAMES: Record<string, [string, string]> = { physResist: ["Physical", "--res-phys"], fireResist: ["Fire", "--res-fire"], coldResist: ["Cold", "--res-cold"], poisonResist: ["Poison", "--res-poison"], energyResist: ["Energy", "--res-energy"] };
+export const RESIST_NAMES: Record<string, [string, string]> = { physResist: ["Physical", "--res-phys"], fireResist: ["Fire", "--res-fire"], coldResist: ["Cold", "--res-cold"], poisonResist: ["Poison", "--res-poison"], energyResist: ["Energy", "--res-energy"] };
 const serialHex = (s: number): string => `0x${s.toString(16)}`;
 // A piece's key properties, strongest first: "SSI 35 · DCI 11 · Hit Fireball 36".
-function keyProps(props: PropMap | undefined, n = 3): string {
+export function keyProps(props: PropMap | undefined, n = 3): string {
   return Object.entries(props || {}).filter(([k, v]) => k !== "tagPenalty" && !k.endsWith("Pool") && v).sort((a, b) => Math.abs(b[1]) - Math.abs(a[1])).slice(0, n).map(([k, v]) => `${label(k)} ${v}`).join(" · ");
 }
 // A piece the item tooltip answers for (dom.mts's itemTip): on hover, and after 400 ms of keyboard focus.
