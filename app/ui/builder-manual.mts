@@ -219,7 +219,7 @@ function openPicker(slot: string): void {
   Object.assign(fixed, slotQuery(slot));
   const host = $<HTMLElement>("#mb-browser")!;
   if (!browser) {
-    browser = createItemBrowser(host, { fixed, columns: ["tags"], extraColumn: { label: "Change", title: "What the suit's totals do with this piece in the slot", width: 260, cell: deltaCell },
+    browser = createItemBrowser(host, { fixed, columns: ["tags"], extraColumn: { label: "Change", title: "What the suit's totals do with this piece in the slot", width: 240, cell: deltaCell },
       onActivate: (it) => pick(it), rowActions: itemActions, persist: false,
       // Marks the row whose piece is in the slot now; there is no detail panel to open.
       detail: { open: () => false, serial: () => (pickSlot ? slots[pickSlot] ?? null : null), close: () => {}, refresh: () => {} } });
@@ -240,6 +240,7 @@ function setStatus(text: string): void { $<HTMLElement>("#mb-status")!.textConte
 function paintPicker(): void {
   const picker = $<HTMLElement>("#mb-picker")!;
   $<HTMLElement>("#mb-hint")!.hidden = !!pickSlot;
+  $<HTMLElement>("#b-manual")!.classList.toggle("picking", !!pickSlot);
   picker.hidden = !pickSlot;
   if (!pickSlot) return;
   $<HTMLElement>("#mb-picker-h")!.textContent = `${slotLabel(pickSlot)}: choose a piece`;

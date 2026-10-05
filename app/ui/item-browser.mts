@@ -659,7 +659,9 @@ export function createItemBrowser(root: HTMLElement, opts: ItemBrowserOptions): 
     const extra = x ? [{ ...c(EXTRA, x.label, x.width, true, x.title), sortable: false }] : [];
     // Tags, when shown, sits right after Name wherever the saved list names it; it has nothing to sort on.
     const tags = view.cols.includes("tags") ? [{ ...c("tags", "Tags", 108), sortable: false }] : [];
-    return [c("name", "Name", 250), ...extra, ...tags, c("rarity", "Rarity", 156), c("slot", "Slot", 120), c("location", "Location", 180),
+    // Fixed to one slot (the Suit Builder's picker), every row would read the same in a Slot column.
+    const slot = fixed.slot?.length === 1 ? [] : [c("slot", "Slot", 120)];
+    return [c("name", "Name", 250), ...extra, ...tags, c("rarity", "Rarity", 156), ...slot, c("location", "Location", 180),
       ...view.cols.filter((k) => k !== "tags").map((k) => c(k, colShort(k, label), width(k), !["kind", "seen", "med"].includes(k), colFull(k, full)))];
   }
   // Numbers sort highest first at dir 1 and names A to Z (item-query.mts), so the arrow follows the kind.
