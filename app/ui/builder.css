@@ -128,12 +128,13 @@
 /* On a short window the slot cards and the picker keep a usable height (about six picker rows), and the screen
    scrolls the totals strip away rather than squeezing the picker's list down to a row or two. */
 .b-manual { flex: 1 1 auto; min-width: 0; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; gap: var(--space-4); }
-.mb-totals { flex: none; display: flex; flex-direction: column; gap: var(--space-3); padding: var(--space-4) var(--space-5); }
+.mb-totals { flex: none; display: flex; flex-direction: column; gap: var(--space-2); padding: var(--space-3) var(--space-5); }
 .mb-totals-head { display: flex; align-items: baseline; gap: var(--space-3); min-width: 0; }
-.mb-totals .resist { padding: var(--space-2) var(--space-3); }
-.mb-props { display: grid; grid-template-columns: repeat(11, minmax(0, 1fr)); gap: var(--space-2); padding-top: var(--space-3); border-top: var(--border-width) solid var(--color-border); }
-.mb-props .b-stat .v { font-variant-numeric: tabular-nums; }
-.mb-props .mb-stat-sep { padding-left: var(--space-3); border-left: var(--border-width) solid var(--color-border); }
+/* the totals as one compact row: the five resists, the eight capped totals, then the stats, a hairline between */
+.mb-totals-row { display: grid; grid-template-columns: repeat(16, minmax(max-content, 1fr)); gap: var(--space-2) var(--space-4); }
+.mb-total { display: flex; flex-direction: column; gap: var(--space-0-5); min-width: 0; }
+.mb-total.mb-sep { padding-left: var(--space-3); border-left: var(--border-width) solid var(--color-border); }
+.mb-total-v { display: flex; align-items: baseline; gap: var(--space-1); white-space: nowrap; font-variant-numeric: tabular-nums; }
 .mb-main { flex: 1 0 auto; height: 0; min-height: 420px; display: flex; gap: var(--space-4); position: relative; }
 /* the left column: the suit card, then the character's stats in this suit, scrolling together */
 .mb-left { flex: 2 1 0; min-width: 320px; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; gap: var(--space-4); }
@@ -167,9 +168,8 @@
 .mb-name { font-weight: var(--weight-medium); }
 .mb-choose { display: flex; align-items: center; gap: var(--space-1-5); color: var(--color-text-muted); }
 .mb-slot.mb-sel .mb-choose { color: var(--color-accent); }
-/* the character's stats in this suit (sheet.mts's KPI row and Properties card) in the narrow left column: the resist
-   figures one step smaller, so "15 / 70" stays on one line */
-@container (max-width: 640px) { .mb-stats .kpi-value .t-2xl { font-size: var(--text-lg); line-height: var(--lh-lg); } }
+/* the character's attributes and pools in this suit (sheet.mts's lists; the resists are the totals strip's) */
+.mb-stats .mb-kpis { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-3); }
 .mb-slot .mb-clear { position: absolute; top: var(--space-0-5); right: var(--space-0-5); }
 /* the side column: the hint, or the picker (one item browser, fixed to the selected slot) */
 /* the hint is a narrow column; the picker takes about three fifths of the row */
@@ -202,8 +202,8 @@
 /* narrow: the hint goes and the picker lies over the slot cards */
 @media (max-width: 1179px) {
   #mb-hint { display: none; }
-  .mb-props { column-gap: var(--space-1-5); }
-  .mb-props .mb-stat-sep { padding-left: var(--space-1-5); }
+  .mb-totals-row { grid-template-columns: repeat(8, minmax(max-content, 1fr)); }
+  .mb-total.mb-sep { padding-left: 0; border-left: 0; }
   .mb-side.mb-picker { position: absolute; top: 0; right: 0; bottom: 0; width: min(560px, 100%); min-width: 0; z-index: var(--z-peek); box-shadow: var(--shadow-3); }
 }
 /* under 1024 the panel becomes a full-width collapsible section above the results, its footer a sticky bar */

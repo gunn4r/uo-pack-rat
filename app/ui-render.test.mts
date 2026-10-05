@@ -153,7 +153,7 @@ test("[fast] sheetParts: Manual's figures are the suit's own, with a character's
   const picked = { serial: 2, name: "New Helm", slot: "helmet", props: { strBonus: 8, lrc: 20 } };
   withCharacter("Kestrel", { stats: { str: 105 }, skills: { Magery: { value: 100, cap: 100 } } });
   (state.inv as unknown as { worn: Record<string, unknown[]> }).worn.Kestrel = [worn];
-  const text = (name: string | null): string => { const p = sheetParts(name, name ? { helmet: worn as never } : {}, { helmet: picked as never }, { compare: false }); return `${p.kpis.textContent} ${p.props.textContent}`; };
+  const text = (name: string | null): string => { const p = sheetParts(name, name ? { helmet: worn as never } : {}, { helmet: picked as never }, { compare: false }); return `${p.resists.map((r) => r.textContent).join(" ")} ${p.lists.map((l) => l.textContent).join(" ")} ${p.props.textContent}`; };
   const mine = text("Kestrel");
   assert.ok(mine.includes("108"), `STR is the character's own 100 plus the picked helm's 8: ${mine.slice(0, 300)}`);
   assert.ok(!mine.includes("→"), "no now → after in the Manual card");

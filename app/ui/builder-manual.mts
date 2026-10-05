@@ -10,7 +10,7 @@ import type { Character, EffectiveProfile, Item, OptItem } from "../vault-lib.mt
 import type { ItemQuery } from "../item-query.mts";
 import { state } from "./store.mts";
 import { $, el, label, slotLabel, itemTip, toast } from "./dom.mts";
-import { box, txt, button, icon, meter, segmented, tag, confirmDialog, modalOpen, tooltip, tipWrap } from "./components.mts";
+import { box, txt, button, icon, segmented, tag, confirmDialog, modalOpen, tooltip, tipWrap } from "./components.mts";
 import { api } from "./api.mts";
 import { resolveItems, rarityToken } from "./items.mts";
 import { closeCompare, keyProps, RESIST_NAMES } from "./builder-result.mts";
@@ -198,36 +198,36 @@ function draw(): void {
 function totalsCard(): HTMLElement {
   const name = manualCharacter(), prof = profile(), resists = profileResistCaps(prof), caps = paperdollCaps(resists);
   const suit = suitOpt(), t = paperdoll(totalsOf(suit), prof.resistBonus);
-  const tiles = RESIST_KEYS.map((k) => {
-    const [nm, color] = RESIST_NAMES[k]!, c = resists[k]!, v = t[k] || 0, { shown, wasted } = capped(v, c.cap), line = capLine(v, c.cap), note = capNote(c);
-    return box("div", { class: `resist tint tint-${color.slice(6)}`, "data-key": k }, el("span", { class: "t-sm resist-name", style: `color:var(${color})` }, nm),
-      box("span", { class: "b-resist-val" }, txt(shown, "t-xl"), txt(`/ ${c.cap}`, "muted")),
-      meter(shown, c.cap, { tone: wasted ? "warn" : "ok", label: `${nm} ${shown} of ${c.cap}` }), txt(line.text, `t-sm tone-${line.tone}`),
-      note ? txt(`Cap ${note}`, "t-sm strong b-cap-note") : null);
-  });
-  const stat = (k: string): HTMLElement => {
-    const v = t[k] || 0, cap = caps[k], line = capLine(v, cap);
-    return box("div", { class: `b-stat${k === STAT_KEYS[0] ? " mb-stat-sep" : ""}`, "data-key": k }, txt(label(k), "t-sm muted"),
-      box("span", { class: "v" }, txt(cap == null ? v : capped(v, cap).shown, "strong"), cap == null ? null : txt(` / ${cap}`, "muted")),
-      txt(line.text, `t-sm tone-${line.tone}`));
+  // One compact row: each total as "value / cap", in the ok tone at its cap, with "+N" (warn) for what is wasted past
+  // it; the line a fuller tile would show ("23 to cap") is its tooltip and, for a screen reader, part of its text.
+  const cell = (k: string, cap: number | undefined, head: HTMLElement, note: string | null, sep: boolean): HTMLElement => {
+    const v = t[k] || 0, { shown, wasted } = capped(v, cap), line = `${capLine(v, cap).text}${note ? `, cap ${note}` : ""}`;
+    return box("div", { class: `mb-total${sep ? " mb-sep" : ""}`, "data-key": k, title: line }, head,
+      box("span", { class: "mb-total-v" }, txt(shown, `strong${cap != null && v >= cap ? " tone-ok" : ""}`), cap == null ? null : txt(`/ ${cap}`, note ? "strong b-cap-note" : "muted"),
+        wasted ? txt(`+${wasted}`, "t-sm tone-warn") : null, el("span", { class: "sr" }, `: ${line}`)));
   };
+  const row = [
+    ...RESIST_KEYS.map((k) => { const [nm, color] = RESIST_NAMES[k]!; return cell(k, resists[k]!.cap, el("span", { class: "t-sm resist-name", style: `color:var(${color})` }, nm), capNote(resists[k]!), false); }),
+    ...[...TOTAL_KEYS, ...STAT_KEYS].map((k) => cell(k, caps[k], txt(label(k), "t-sm muted"), null, k === TOTAL_KEYS[0] || k === STAT_KEYS[0])),
+  ];
   const rsb = prof.resistBonus || 0;
   const note = name ? `${name}'s paperdoll values: +${rsb} to each resist from Resisting Spells, against ${name}'s resist caps` : "Raw item totals: with no character there is no Resisting Spells or race bonus";
   const filled = Object.keys(suit).length;   // a missing piece counts for nothing
   return el("section", { class: "card mb-totals", id: "mb-totals", "aria-label": "Suit totals" },
     box("div", { class: "mb-totals-head" }, el("h2", { class: "t-md" }, "Suit totals"), txt(note, "t-sm muted"), el("span", { class: "spacer" }), txt(`${filled} of ${GEAR_SLOTS.length} slots`, "t-sm muted")),
-    box("div", { class: "b-resists" }, ...tiles),
-    box("div", { class: "mb-props" }, ...[...TOTAL_KEYS, ...STAT_KEYS].map(stat)));
+    box("div", { class: "mb-totals-row" }, ...row));
 }
-// The character sheet's figures (sheet.mts's KPI row and Properties card, with the skills) for the manual suit: the
+// The character sheet's figures (sheet.mts's Attributes and Pools and its Properties card with the skills) for the manual suit: the
 // character's own attributes with the suit's bonuses in place of what it wears in those slots (the sheet's
 // now → after sum, drawn with the after figures only), or the items' totals alone with no character.
 function statsCard(): HTMLElement {
   const name = manualCharacter();
   const worn = name ? Object.fromEntries((state.inv!.worn[name] || []).filter((i) => i.slot && GEAR_SLOTS.includes(i.slot)).map((i) => [i.slot!, i])) : {};
   const suit = Object.fromEntries(Object.entries(slots).flatMap(([s, serial]) => (items[serial] ? [[s, items[serial]!]] : [])));
-  const { kpis, props } = sheetParts(name, worn, suit, { resistCaps: profileResistCaps(profile()), compare: false });
-  return box("div", { class: "sheet mb-stats", id: "mb-stats", role: "group", "aria-label": name ? `${name} in this suit` : "This suit's item totals" }, kpis, props);
+  const { lists, props } = sheetParts(name, worn, suit, { resistCaps: profileResistCaps(profile()), compare: false });
+  // The resists are the totals strip's; the attributes and pools (the character's own, so none with no character) are not.
+  return box("div", { class: "sheet mb-stats", id: "mb-stats", role: "group", "aria-label": name ? `${name} in this suit` : "This suit's item totals" },
+    name ? box("div", { class: "mb-kpis" }, ...lists) : null, props);
 }
 function suitCard(): HTMLElement {
   const name = manualCharacter(), filled = Object.keys(slots).length, missing = missingSlots(slots, items).length;

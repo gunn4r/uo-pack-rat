@@ -196,13 +196,14 @@ function kvList(pairs: Array<[string, Node]>, cls = ""): HTMLDivElement {
 // with an `after` every figure that moves reads "now → after" and the tiles show the `after` suit, its
 // new pieces badged. Only called once load() has populated state.inv/state.rules.
 export function sheetNode(name: string, before: SheetAssignment, after: SheetAssignment | null, opts: SheetOptions = {}): HTMLElement {
-  const { kpis, gear, props } = sheetParts(name, before, after, opts);
-  return box("div", { class: `sheet${after != null && opts.compare !== false ? " sheet-diff" : ""}`, "data-character": name }, kpis, box("div", { class: "sheet-cols" }, gear, props));
+  const { resists, lists, gear, props } = sheetParts(name, before, after, opts);
+  return box("div", { class: `sheet${after != null && opts.compare !== false ? " sheet-diff" : ""}`, "data-character": name },
+    box("div", { class: "sheet-kpis" }, ...resists, ...lists), box("div", { class: "sheet-cols" }, gear, props));
 }
-// The sheet's three parts: the KPI row, the worn gear card and the properties card (with the skills). The Suit
-// Builder's Manual mode draws the KPI row and the properties for its suit; with no character (`name` null) they
-// are the items' own totals, the attributes and pools "—" and no skills.
-export function sheetParts(name: string | null, before: SheetAssignment, after: SheetAssignment | null, opts: SheetOptions = {}): { kpis: HTMLElement; gear: HTMLElement; props: HTMLElement } {
+// The sheet's parts: the KPI row's five resist tiles and its Attributes and Pools lists, the worn gear card and the
+// properties card (with the skills). The Suit Builder's Manual mode draws the lists and the properties for its suit;
+// with no character (`name` null) they are the items' own totals, the attributes and pools "—" and no skills.
+export function sheetParts(name: string | null, before: SheetAssignment, after: SheetAssignment | null, opts: SheetOptions = {}): { resists: HTMLElement[]; lists: HTMLElement[]; gear: HTMLElement; props: HTMLElement } {
   const single = after == null, diff = !single && opts.compare !== false;
   const then = after ?? before;
   const c = name ? state.inv!.characters[name] : undefined;
@@ -240,9 +241,8 @@ export function sheetParts(name: string | null, before: SheetAssignment, after: 
     const dd = f(), cur = numOrNull(mx[k]);
     return [lbl, txt(!name ? "—" : cur == null ? "?" : mv(cur, cur + dd), dirCls(dd))];
   }), "kv-tight");
-  const kpis = box("div", { class: "sheet-kpis" }, ...resistTiles,
-    box("div", { class: "resist kpi kpi-list" }, txt("Attributes", "t-sm muted"), attrs),
-    box("div", { class: "resist kpi kpi-list" }, txt("Pools", "t-sm muted"), pools));
+  const lists = [box("div", { class: "resist kpi kpi-list" }, txt("Attributes", "t-sm muted"), attrs),
+    box("div", { class: "resist kpi kpi-list" }, txt("Pools", "t-sm muted"), pools)];
 
   // worn gear: the shown suit plus the extras, one tile per fixed slot, anything else under "Other"
   const bySlot = new Map<string, SheetItem>(), other: SheetItem[] = [];
@@ -310,5 +310,5 @@ export function sheetParts(name: string | null, before: SheetAssignment, after: 
     propBody,
     box("div", { class: "sheet-foot" }, skillBlock, el("p", { class: "t-sm muted" }, txt(note))));
 
-  return { kpis, gear, props };
+  return { resists: resistTiles, lists, gear, props };
 }
