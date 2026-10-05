@@ -12,7 +12,7 @@ import { bindDrawer, box, txt, button, badge, message, input, confirmDialog, men
 import { renderNavCounts } from "./shell.mts";
 import { resolveItems } from "./items.mts";
 import { renderPanel, readControls, knobs, applyKnobs, clearCapDrafts, panelBuffs, buffPlan, loadRunBuffs } from "./builder.mts";
-import { renderResult, openRunCompare, closeCompare } from "./builder-result.mts";
+import { renderResult, openRunCompare, closeCompare, renderCurrentSuit, resetResultView } from "./builder-result.mts";
 import { openInManual, showAutomatic } from "./builder-manual.mts";
 import { paperdollCaps, slotsOf, runAutoLabel, runBadges, runSettingsDiff, toggleCompare, plural, withBuffs } from "./builder-model.mts";
 import type { RunsListApiResponse, RunApiResponse, RunPutApiResponse, RunSummaryLike, SavedRunLike } from "./api-types.mts";
@@ -170,7 +170,11 @@ async function deleteRun(run: RunSummaryLike, title: string): Promise<void> {
   if (!await confirmDialog({ title: `Delete the run from ${fmtRunTime(run.createdAt)}?`, body: `"${title}" and its suit are removed from the saved runs. Building again with the same settings makes a new one.`, confirmLabel: "Delete run" })) return;
   try { await api(`/api/runs/${run.id}`, { method: "DELETE" }); } catch (err) { toast((err as Error).message, "bad"); return; }
   state.builder.compare.delete(run.id);
-  if (state.builder.openRun === run.id) state.builder.openRun = null;
+  // the run on screen is gone: its result (with Start from this result, Grab all) goes too, back to the current suit
+  if (state.builder.openRun === run.id) {
+    state.builder.openRun = null;
+    if (!state.builder.job && state.builder.character) { state.builder.result = null; $<HTMLElement>("#b-msg")!.replaceChildren(); resetResultView(); renderCurrentSuit(state.builder.character); }
+  }
   await loadRuns();
   toast("Run deleted.", "good");
 }

@@ -223,6 +223,32 @@ function isManualSuit(v: unknown): v is Record<string, number> {
   if (!v || typeof v !== "object" || Array.isArray(v)) return false;
   return Object.entries(v).every(([k, s]) => GEAR_SLOTS.includes(k) && isBoundedInt(s, 1, MAX_SERIAL));
 }
+// A saved run's settings snapshot (ui/runs.mts settingsSnapshot), as POST /api/runs takes it: only its known fields,
+// each of its type and in a sane range, property maps with plain keys (no __proto__), and the resist caps, weapon
+// exclusions and buffs held to their own rules.
+const RUN_SETTING_FLAGS = ["allowGargoyle", "medOnly", "allowOthersWorn", "ubwsAnyWeapon", "exact"];
+const RUN_SETTING_NUMBERS = ["strLimit", "restarts", "budgetMs", "altCount", "altTol"];
+const RUN_SETTING_LISTS = ["softFloors", "lockedSlots", "excludeTags", "excludeRoots", "excludeSkills"];
+const plainKey = (k: string): boolean => isBoundedString(k, 64) && !["__proto__", "constructor", "prototype"].includes(k);
+function runSettingsError(st: Record<string, unknown>, vl: typeof VaultLib): string | null {
+  for (const [k, v] of Object.entries(st)) {
+    if (v == null) continue;
+    if (k === "floors" || k === "weights") {
+      if (typeof v !== "object" || Array.isArray(v)) return `settings.${k} must be an object`;
+      const bad = Object.entries(v).find(([p, n]) => !plainKey(p) || typeof n !== "number" || !Number.isFinite(n) || Math.abs(n) > 1e6);
+      if (bad) return `settings.${k}.${short(bad[0])} must be a number between -1000000 and 1000000`;
+    } else if (RUN_SETTING_FLAGS.includes(k)) { if (typeof v !== "boolean") return `settings.${k} must be a boolean`; }
+    else if (RUN_SETTING_NUMBERS.includes(k)) { if (typeof v !== "number" || !Number.isFinite(v) || v < 0 || v > OPTS_MAX_TIME_BUDGET_MS) return `settings.${k} must be a non-negative number`; }
+    else if (RUN_SETTING_LISTS.includes(k)) {
+      if (!Array.isArray(v) || v.length > 200 || v.some((x) => !(isBoundedString(x, 64) || (k === "excludeRoots" && isBoundedInt(x, 0, MAX_SERIAL))))) return `settings.${k} must be a list of names`;
+    } else if (k === "race") { if (!["human", "elf", "gargoyle"].includes(v as string)) return "settings.race must be human, elf or gargoyle"; }
+    else if (k === "excludeWeapons") { const e = vl.excludeWeaponsError(v, "settings.excludeWeapons"); if (e) return e; }
+    else if (k === "resistCaps") { const e = vl.resistCapsError(v, "settings.resistCaps"); if (e) return e; }
+    else if (k === "buffs") { if (!isRunBuffs(v)) return "settings.buffs must list known buffs, each once and one form at most, with their numbers in range"; }
+    else return `settings.${short(k)} is not a run setting`;
+  }
+  return null;
+}
 // Manual's suit against the inventory (a fill's `pinned`, a manual run's `suit`): each serial a gear piece of its slot in
 // the scans, and no two-handed weapon beside a one-hander.
 function manualSuitError(inv: Inventory, suit: Record<string, number>, path: string): string | null {
@@ -2018,10 +2044,8 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
         if (!isManualSuit(suit) || !Object.keys(suit).length) return send(res, 400, { ok: false, error: "suit must map gear slots to serials, at least one" });
         if (!settings || typeof settings !== "object" || Array.isArray(settings) || JSON.stringify(settings).length > META_MAX_BYTES) return send(res, 400, { ok: false, error: "settings must be an object" });
         if (inventoryStamp != null && !isBoundedString(inventoryStamp, 256)) return send(res, 400, { ok: false, error: "inventoryStamp must be a string" });
-        const badCaps = (await lib()).resistCapsError((settings as Record<string, unknown>).resistCaps, "settings.resistCaps");
-        if (badCaps) return send(res, 400, { ok: false, error: badCaps });
-        const runBuffs = (settings as Record<string, unknown>).buffs;
-        if (runBuffs != null && !isRunBuffs(runBuffs)) return send(res, 400, { ok: false, error: "settings.buffs must list known buffs, each once and one form at most, with their numbers in range" });
+        const badSettings = runSettingsError(settings as Record<string, unknown>, await lib());
+        if (badSettings) return send(res, 400, { ok: false, error: badSettings });
         const { inv } = await getInventory();
         if (!Object.hasOwn(inv.characters, character)) return send(res, 404, { ok: false, error: `no scans for character ${JSON.stringify(character)}` });
         const { toOptItem } = await lib();

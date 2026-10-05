@@ -3526,6 +3526,11 @@ test("[fast] POST /api/runs saves Manual's suit as a manual run: its shape, its 
   assert.equal((await post({ character, suit: { [piece.slot!]: piece.serial + 999999 }, settings })).status, 400);
   assert.equal((await post({ character, suit, settings: { buffs: { on: ["noSuchBuff"], skills: {} } } })).status, 400);
   assert.equal((await post({ character, suit, settings: { resistCaps: { fireResist: 900 } } })).status, 400);
+  // the whole snapshot is checked: an absurd floor, a weight that is not a number, a __proto__ key, an unknown field
+  for (const bad of ['{"floors":{"physResist":1e308}}', '{"weights":{"a":null}}', '{"floors":{"__proto__":5}}', '{"race":"orc"}', '{"lockedSlots":"ring"}', '{"strLimit":-1}', '{"whatever":1}']) {
+    const r = await fetch(srv.url + "/api/runs", { method: "POST", headers: JSON_HEADERS, body: `{"character":${JSON.stringify(character)},"suit":${JSON.stringify(suit)},"settings":${bad}}` });
+    assert.equal(r.status, 400, bad);
+  }
   const twoH = loose.find((it) => it.slot === "twoHanded" && it.twoHanded) ?? worn.find((it) => it.slot === "twoHanded" && it.twoHanded);
   const oneH = [...loose, ...worn].find((it) => it.slot === "oneHanded");
   if (twoH && oneH) assert.equal((await post({ character, suit: { twoHanded: twoH.serial, oneHanded: oneH.serial }, settings })).status, 400);

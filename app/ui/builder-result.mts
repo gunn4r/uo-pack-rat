@@ -360,7 +360,7 @@ function detailsCard(res: OptimizeResult, meta: BuildMeta | undefined, view: num
 
 // ---------------------------------------------------------------- compare (2-3 suits or saved runs)
 interface CompareColumn extends CompareMember { head: HTMLElement; token: string; removeLabel: string; outcome: string[]; action: HTMLElement }
-interface CompareSpec { title: string; noun: string; slots?: string[] | undefined; columns: CompareColumn[]; outcomeRows: string[]; settingsRow?: string[] | undefined; keys: string[]; caps: Record<string, number>; onRemove: (i: number) => void }
+interface CompareSpec { title: string; noun: string; slots?: string[] | undefined; footnote?: string | undefined; columns: CompareColumn[]; outcomeRows: string[]; settingsRow?: string[] | undefined; keys: string[]; caps: Record<string, number>; onRemove: (i: number) => void }
 let diffOnly = true;
 let openSpec: (() => CompareSpec) | null = null;
 export function closeCompare(): void {
@@ -399,7 +399,7 @@ function showCompare(spec: () => CompareSpec): void {
   body.push(tr("", el("td", { class: "b-cmp-act" }, el("span", { class: "sr" }, "Actions")), ...cols.map((c) => el("td", { class: "b-cmp-act" }, c.action))));
   const tbl = el("table", { class: "tbl b-cmp", "aria-label": s.title }, el("colgroup", {}, el("col", { style: "width:220px" }), ...cols.map(() => el("col"))),
     el("thead", {}, el("tr", {}, el("th", { scope: "col" }, txt("Property")), ...cols.map((c) => el("th", { scope: "col" }, c.head)))), el("tbody", {}, ...body));
-  const note = diffOnly ? hiddenRowsNote(cols.length, m.hiddenTotals, m.hiddenPieces) : "";
+  const note = [diffOnly ? hiddenRowsNote(cols.length, m.hiddenTotals, m.hiddenPieces) : "", s.footnote || ""].filter(Boolean).join(" ");
   const sw = switchControl({ label: "Differences only", checked: diffOnly, onChange: (v) => { diffOnly = v; if (openSpec) showCompare(openSpec); } });
   view.replaceChildren(
     box("div", { class: "b-cmp-bar" }, txt("Comparing", "t-sm muted"), ...cols.map((c, i) => token({ label: c.token, removeLabel: c.removeLabel, onRemove: () => { s.onRemove(i); } })), txt("up to 3", "t-sm muted"), el("span", { class: "spacer" }), sw.root),
@@ -449,8 +449,8 @@ export function openRunCompare(runs: SavedRunLike[], titleOf: (r: SavedRunLike) 
     const capped = views.some(anyOverridden);
     const columns: CompareColumn[] = list.map((r, i) => {
       const floors = r.settings.floors || {};
-      // the optimizer's slots only, so a manual run's feet, robe and so on never tip the comparison with a search
-      const { totals, caps } = withBuffs(totalsOf(Object.fromEntries(OPTIMIZER_SLOTS.map((sl) => [sl, r.result.best[sl]]))), rsb, paperdollCaps(views[i]!), buffPlan(name, r.settings.race, savedBuffs(r.settings)));
+      // a manual run's totals count its feet, robe and so on, as Manual shows them (the note under the table says so)
+      const { totals, caps } = withBuffs(totalsOf(r.result.best), rsb, paperdollCaps(views[i]!), buffPlan(name, r.settings.race, savedBuffs(r.settings)));
       const met = Object.keys(floors).filter((k) => (totals[k] || 0) >= effectiveFloor(k, floors[k]!, caps)).length;
       const v = verdict(r.result);
       const head = box("span", { class: "b-cmp-col" }, box("span", { class: "b-row" }, el("span", { class: "strong ellip", title: titleOf(r) }, titleOf(r)), v.text ? badge(v.text, v.tone === "bad" ? "bad" : v.tone) : null), txt(`${fmtRunTime(r.createdAt)} · ${r.result.method === "manual" ? "built by hand" : fmtSecs(r.ms || 0)}`, "t-sm"));
@@ -461,7 +461,8 @@ export function openRunCompare(runs: SavedRunLike[], titleOf: (r: SavedRunLike) 
     const first = list[0]!;
     const settingsRow = list.map((r, i) => (i === 0 ? "—" : runSettingsDiff(first.settings, r.settings).join(" · ") || "same settings"));
     const keys = compareKeys(columns, { floors: Object.assign({}, ...list.map((r) => r.settings.floors || {})), weights: Object.assign({}, ...list.map((r) => r.settings.weights || {})) });
-    return { title: "Compare runs", noun: "runs", slots: list.some((r) => r.result.method === "manual") ? GEAR_SLOTS : OPTIMIZER_SLOTS, columns, outcomeRows: ["Changes", "Requirements met", "Verdict", ...(capped ? ["Resist caps"] : [])], settingsRow, keys, caps: paperdollCaps(views[0]!),
+    const manual = list.some((r) => r.result.method === "manual");
+    return { title: "Compare runs", noun: "runs", slots: manual ? GEAR_SLOTS : OPTIMIZER_SLOTS, footnote: manual ? "A manual run's totals include its feet, robe and other pieces the optimizer doesn't fill." : undefined, columns, outcomeRows: ["Changes", "Requirements met", "Verdict", ...(capped ? ["Resist caps"] : [])], settingsRow, keys, caps: paperdollCaps(views[0]!),
       onRemove: (i) => { const gone = list[i]!; list = list.filter((_, j) => j !== i); onRemove(gone.id); if (list.length < 2) closeCompare(); else showCompare(openSpec!); } };
   });
 }

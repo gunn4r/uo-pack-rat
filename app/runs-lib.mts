@@ -106,7 +106,7 @@ export function reusableRun(runs: SavedRun[], key: string, opts: { timeBudgetMs?
 // wears now. Its result has the shape a search's has (best, perSlotChanges, totals before and after), with method
 // "manual" and no score: the core's score needs the profile the page plans with, and a number a search never
 // produced would only mislead beside the searched runs. Its totals `after` are the optimizer's twelve slots, like a
-// search's, so the drawer's badges and compare weigh the two alike; `outside` holds the six other slots'. Its key
+// search's; `outside` holds the six other slots', which the drawer's badges add back (runSummary). Its key
 // starts "manual:", so no search request can match it.
 export interface ManualRunInput {
   id: string; character: string; createdAt: string; settings: RunSettingsRaw; inventoryStamp: unknown;
@@ -150,6 +150,15 @@ export interface RunSummary {
   changes: number | null;                        // how many slots the run's suit changes
   totalsAfter: Record<string, number> | null;    // the suit's item totals, for the drawer's resist and requirement badges
 }
+// The suit's item totals the drawer's badges read: a manual run's include its six other slots' pieces (`outside`), as
+// Manual and the result view show it.
+function totalsAfter(res: RunResult): Record<string, number> | null {
+  const t = res.totals as { after?: Record<string, number>; outside?: Record<string, number> } | undefined;
+  if (!t?.after) return null;
+  const out = { ...t.after };
+  for (const [k, v] of Object.entries(t.outside || {})) out[k] = (out[k] || 0) + v;
+  return out;
+}
 // What the run list needs: everything except the suit itself.
 export function runSummary(r: SavedRun): RunSummary {
   const res = r.result || {};
@@ -160,7 +169,7 @@ export function runSummary(r: SavedRun): RunSummary {
     method: res.method || null, proven: res.proven ?? null, score: res.score ?? null, currentScore: res.currentScore ?? null,
     delta: res.delta ?? null, nodes: res.nodes ?? null, explored: r.explored ?? null,
     changes: Array.isArray(res.perSlotChanges) ? res.perSlotChanges.length : null,
-    totalsAfter: (res.totals as { after?: Record<string, number> } | undefined)?.after ?? null,
+    totalsAfter: totalsAfter(res),
   };
 }
 

@@ -14,7 +14,7 @@ import { DEFAULT_OPTIONAL_SLOTS } from "./mip.mts";
 import { solveExact, type OptAssignment, type OptProfile } from "./exact-solver.mts";
 import { core } from "./solver-fixture.mts";   // also loads the uoalive rules
 import { slotsOf } from "./ui/builder-model.mts";
-import { suitFrom, fillableSlots, fetchPieces } from "./ui/manual-model.mts";
+import { suitFrom, fillableSlots, fetchPieces, fillPicks, keptSlots, listWords } from "./ui/manual-model.mts";
 import { savedBuffs } from "./buffs.mts";
 
 let next = 1000;
@@ -73,6 +73,7 @@ test("[fast] a manual run: every gear slot, the changes from what the character 
   assert.equal(reusableRun([run], run.key!), null, "a manual run never answers a search, even by its own key");
   const sum = runSummary(normalizeRun(run));
   assert.deepEqual([sum.method, sum.changes, sum.score], ["manual", 2, null]);
+  assert.deepEqual(sum.totalsAfter, { luck: 40, physResist: 2, lrc: 20 }, "the drawer's badges count the six other slots, as Manual shows the suit");
   assert.deepEqual(slotsOf(sum), GEAR_SLOTS);
   // the same suit and settings key alike; another suit does not
   assert.equal(manualRun({ ...{ id: "m2", character: "A", createdAt: "", settings: { floors: { lrc: 100 } }, inventoryStamp: null, worn, slots: GEAR_SLOTS }, suit }).key, run.key);
@@ -118,6 +119,26 @@ test("[fast] a warm start never empties a pinned slot", async () => {
   assert.deepEqual([exact.score, exact.best.helmet?.serial], [-10, pinnedHelm.serial]);
   const h = await solveExact({ core, pools: pools as never, current: current as never, profile, opts: { ...opts, exact: true, timeBudgetMs: 10000 }, onProgress: () => {}, onWarn: () => {} });
   assert.deepEqual([h.score, h.best.helmet?.serial, h.proven], [-10, pinnedHelm.serial, true]);
+});
+
+test("[fast] a fill lands only where it started: the same character, counted buffs and suit, the slots that were empty", () => {
+  const start = { who: "A", buffs: ["divineFury"], suit: { ring: 1, feet: 2 }, empty: ["helmet", "neck"] };
+  const best = { ring: { serial: 1 }, helmet: { serial: 7 }, neck: { serial: 8 }, cloak: { serial: 9 } };
+  const now = { who: "A", buffs: ["divineFury"], suit: { ring: 1, feet: 2 } };
+  assert.deepEqual(fillPicks(start, now, best), { picks: { helmet: 7, neck: 8 } }, "only the slots empty at the start; the pinned ring is not placed again");
+  assert.deepEqual(fillPicks(start, { ...now, who: "B" }, best), { stale: "Fill canceled: the character changed" });
+  assert.deepEqual(fillPicks(start, { ...now, who: null }, best), { stale: "Fill canceled: the character changed" }, "No character picked meanwhile");
+  assert.deepEqual(fillPicks(start, { ...now, buffs: [] }, best), { stale: "Fill canceled: the buffs changed" }, "a buff off, or Count buffs off");
+  assert.deepEqual(fillPicks(start, { ...now, suit: { feet: 2 } }, best), { stale: "Fill canceled: the suit changed" }, "the placed ring cleared meanwhile never comes back");
+  assert.deepEqual(fillPicks(start, { ...now, suit: { ring: 1, feet: 2, helmet: 5 } }, best), { stale: "Fill canceled: the suit changed" });
+  // a pinned serial the search returns in another slot is never placed twice
+  assert.deepEqual(fillPicks(start, now, { helmet: { serial: 2 } }), { picks: {} });
+});
+
+test("[fast] Start from this result names the pieces it kept", () => {
+  assert.deepEqual(keptSlots({ ring: 1, waist: 2, earrings: 3 }, OPTIMIZER_SLOTS), ["waist", "earrings"]);
+  assert.deepEqual(keptSlots({ ring: 1 }, GEAR_SLOTS), []);
+  assert.deepEqual(["Waist", "Waist and Earrings", "Feet, Waist and Earrings"], [listWords(["Waist"]), listWords(["Waist", "Earrings"]), listWords(["Feet", "Waist", "Earrings"])]);
 });
 
 // ---- the fuzz: random pinned subsets, both solvers against brute force over the unpinned slots
