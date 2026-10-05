@@ -171,6 +171,13 @@ export const BUFFS: Buff[] = [
   // Reactive Armor: Spells/First/ReactiveArmor.cs.
   { id: "reactiveArmor", name: "Reactive Armor", group: "Magery", inputs: ["Inscription"],
     effects: (c) => [{ key: "physResist", value: 15 + tr(c.s("Inscription") / 20) }, ...resists(-5, RESIST_KEYS.filter((k) => k !== "physResist"))] },
+  // Magic Reflection: the shard wiki's numbers (uoalive.com/wiki/Magic_Reflection): Phys −(20 − Inscription / 20) and a
+  // Phys cap 5 lower, the others +10. ServUO's Spells/Fifth/MagicReflect.cs has Phys −25 + Inscription / 20 and no cap
+  // change. Like Protection and Reactive Armor it is its own toggle, so the three stack.
+  { id: "magicReflection", name: "Magic Reflection", group: "Magery", inputs: ["Inscription"],
+    effects: (c) => [{ key: "physResist", value: -(20 - tr(c.s("Inscription") / 20)) }, ...resists(10, RESIST_KEYS.filter((k) => k !== "physResist"))],
+    caps: () => ({ physResist: -5 }),
+    note: "This uses the shard wiki. ServUO: −25 + Inscription/20, no cap change; the in-game buff tooltip shows the real value" },
 
   // Stone Form: Spells/Mysticism/SpellDefinitions/StoneForm.cs (GetResBonus, GetMaxResistance); FC −2 and SSI −10 in
   // AOS.cs. Its melee damage bonus is left out: the code and the buff text disagree.

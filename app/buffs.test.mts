@@ -87,6 +87,19 @@ test("[fast] buffs: Magery: Bless takes 1 + Eval / 10 percent of the raw stats, 
   assert.equal(buffText("protection", { Inscription: 0 }, null, {}), "Phys −15 · FC −2 past the cap · Resisting Spells −35");
 });
 
+test("[fast] buffs: Magic Reflection by the shard wiki: Phys −(20 − Inscription / 20) and its cap −5, the others +10", () => {
+  for (const [insc, phys] of [[0, -20], [60, -17], [120, -14]] as const) {
+    const r = alone("magicReflection", { Inscription: insc });
+    assert.deepEqual(r.add, { physResist: phys, fireResist: 10, coldResist: 10, poisonResist: 10, energyResist: 10 }, `Inscription ${insc}`);
+    assert.deepEqual(r.caps, { physResist: -5 }, `Inscription ${insc}: the Phys cap 5 lower`);
+  }
+  // its own toggle: it stacks with Reactive Armor and Protection
+  const all = applyBuffs({}, CAPS, ["reactiveArmor", "protection", "magicReflection"], { Inscription: 0 }, null);
+  assert.equal(all.totals.physResist, 15 - 15 - 20);
+  assert.equal(all.caps.physResist, 65);
+  assert.equal(buffText("magicReflection", { Inscription: 0 }, null, {}), "Phys −20 · Fire, Cold, Poison, Energy +10 · Phys cap −5");
+});
+
 test("[fast] buffs: Protection lowers Resisting Spells, and so the free resists it gives on UO Alive", () => {
   // Resisting Spells 100 gives +40; 35 less (Inscription 0) is 65, +26: every resist 14 lower, Phys 15 more on top
   const r = applyBuffs({ physResist: 70, fireResist: 70 }, CAPS, ["protection"], { Inscription: 0, "Resisting Spells": 100 }, null);
