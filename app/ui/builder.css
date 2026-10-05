@@ -152,7 +152,7 @@
 .mb-suit .card-head { gap: var(--space-2); }
 .mb-suit .card-head > .ellip { flex: 1 1 auto; min-width: 0; }
 .mb-suit .card-head > :not(.ellip):not(h2) { flex: none; }
-/* compact: all eighteen slots stay in view beside the picker at 1440 × 900, in two columns of nine (armor and
+/* compact: all nineteen slots stay in view beside the picker at 1440 × 900, in two columns (armor and
    weapons; clothing and jewelry), each group's cards as many across as its column fits */
 .mb-suit > .card-head { min-height: 0; padding-top: var(--space-2); padding-bottom: var(--space-2); }
 /* Fill the rest automatically and Save as run, then the search's progress (dot, words, bar, Cancel) or its outcome */
