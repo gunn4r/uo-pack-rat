@@ -7,12 +7,13 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { setRules, resistCapsFor } from "./vault-lib.mts";
+import { buffSkillValues, runBuffs } from "./buffs.mts";
 import type { RulesV1 } from "./schema/types.d.mts";
 import {
   propName, weightsSummary, requirementsSummary, poolSummary, advancedSummary, knobError, firstKnobError, knobFromServerError, ruleValueError,
   resistOutcome, locationCrumbs, otherChanges, afterChange, compareModel, hiddenRowsNote, toggleCompare, runAutoLabel, runBadges, plural, SOLVER_LIMITS,
   resistCapError, withResistCap, capNote, resistCapsSummary, gearCapsText, capsLine, anyOverridden, effectiveFloor, floorCapWarning, pruneResistCaps,
-  weaponsSummary, weaponsChipText, toggleWeapon,
+  weaponsSummary, weaponsChipText, toggleWeapon, withBuffs, paperdollFloors, pastCapBadges, runSettingsDiff,
   type Knobs,
 } from "./ui/builder-model.mts";
 import { OPTS_LIMITS } from "./vault-server.mts";
@@ -177,6 +178,27 @@ test("[fast] builder model: a run's automatic label and its badges", () => {
   assert.deepEqual(runBadges(null, null, {}, 0, {}), [], "an old run with no summary data gets no badges");
   assert.equal(plural(1, "change"), "1 change");
   assert.equal(plural(2, "skill bonus", "skill bonuses"), "2 skill bonuses");
+});
+
+test("[fast] builder model: a run's buffs show in its label and diff, and a run saved before buffs reads as none", () => {
+  const values = { ...buffSkillValues(null, {}).values, Chivalry: 105 };
+  const df = runBuffs(["divineFury"], values)!, old = { floors: { ssi: 60 } };
+  assert.equal(runAutoLabel(old, { ...old, buffs: df }).text, "+Divine Fury");
+  assert.equal(runAutoLabel({ ...old, buffs: df }, old).text, "−Divine Fury");
+  assert.equal(runAutoLabel(old, { floors: { ssi: 50 }, buffs: df }).text, "SSI floor 60 → 50 · +Divine Fury");
+  assert.equal(runAutoLabel(old, { ...old }).text, "Same settings as the run before", "two runs from before buffs");
+  assert.deepEqual(runSettingsDiff({ ...old, buffs: df }, { ...old, buffs: runBuffs(["divineFury"], { ...values, Chivalry: 120 }) }), ["Chivalry 105 → 120"]);
+});
+
+test("[fast] builder model: a result's totals with the buffs it planned with, in paperdoll terms, and what they add past the cap", () => {
+  const caps = { physResist: 70, fireResist: 70, coldResist: 70, poisonResist: 70, energyResist: 70, ssi: 60, dci: 45, di: 100 };
+  const plan = { on: ["divineFury", "enemyOfOne"], skills: { ...buffSkillValues(null, {}).values, Chivalry: 105 }, stats: null, who: {} };
+  const r = withBuffs({ ssi: 45, dci: 30, di: 90, fireResist: 30 }, 20, caps, plan);
+  assert.deepEqual([r.totals.ssi, r.totals.dci, r.totals.fireResist, r.totals.di], [55, 10, 50, 100]);
+  assert.deepEqual(pastCapBadges(r), ["DI +68 past the cap (Enemy of One)"]);
+  const none = withBuffs({ ssi: 45 }, 20, caps, null);
+  assert.deepEqual([none.totals.ssi, none.totals.fireResist, pastCapBadges(none)], [45, 20, []], "without buffs: the paperdoll totals alone");
+  assert.deepEqual(paperdollFloors({ fireResist: 50, ssi: 60 }, 20), { fireResist: 70, ssi: 60 }, "only the floors set, resists with the bonus back");
 });
 
 // ---- resist cap overrides (issue #44)

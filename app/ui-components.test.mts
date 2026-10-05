@@ -191,3 +191,10 @@ test("[fast] popoverPlacement: below the anchor, above when only that fits, and 
   // Squeezed against the left edge.
   assert.equal(C.popoverPlacement({ top: 40, bottom: 68, left: -20 }, { width: 288, height: 100 }, vp).left, 8);
 });
+test("[fast] besidePlacement: right of the column, level with the anchor, kept inside the viewport", () => {
+  const vp = { width: 1440, height: 900 }, size = { width: 480, height: 640 };
+  assert.deepEqual(C.besidePlacement({ top: 220 }, { right: 600 }, size, vp), { top: 220, left: 606, maxHeight: 884 });
+  assert.deepEqual(C.besidePlacement({ top: 500 }, { right: 600 }, size, vp), { top: 252, left: 606, maxHeight: 884 }, "moved up to fit");
+  assert.deepEqual(C.besidePlacement({ top: 220 }, { right: 600 }, size, { width: 1024, height: 600 }), { top: 8, left: 536, maxHeight: 584 }, "a narrow, short window");
+});
+

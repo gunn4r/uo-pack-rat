@@ -6,11 +6,11 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { setRules } from "./vault-lib.mts";
-import type { PropMap } from "./vault-lib.mts";
+import { effectiveProfile, profileResistCaps, setRules } from "./vault-lib.mts";
+import type { Character, Profile, PropMap } from "./vault-lib.mts";
 import type { RulesV1 } from "./schema/types.d.mts";
-import { BUFFS, BUFF_IDS, BUFF_GROUPS, BUFF_INPUTS, applyBuffs, buffById, buffSkillValues, buffText, isBuffList, isBuffSkills, isBuffSkillsByCharacter, toggleBuff } from "./buffs.mts";
-import type { Skills, Stats } from "./buffs.mts";
+import { BUFFS, BUFF_IDS, BUFF_GROUPS, BUFF_INPUTS, applyBuffs, buffById, buffShift, buffSkillValues, buffText, buffsDiff, gearNeedsText, isBuffList, isBuffListsByCharacter, isBuffSkills, isBuffSkillsByCharacter, isRunBuffs, normalizeBuffListsByCharacter, normalizeBuffs, ownEntry, plannedFromWorn, plannedProfile, runBuffs, savedBuffs, toggleBuff } from "./buffs.mts";
+import type { BuffPlan, Skills, Stats } from "./buffs.mts";
 
 setRules(JSON.parse(readFileSync(new URL("./rules/uoalive.json", import.meta.url), "utf8")) as RulesV1);
 const CAPS = (JSON.parse(readFileSync(new URL("./rules/uoalive.json", import.meta.url), "utf8")) as { caps: Record<string, number> }).caps;
@@ -84,7 +84,7 @@ test("[fast] buffs: Magery: Bless takes 1 + Eval / 10 percent of the raw stats, 
   // Protection with no character's Resisting Spells: Phys −15 + Inscription / 20 and FC −2 after the cap
   assert.deepEqual(alone("protection", { Inscription: 0 }).add, { physResist: -15 });
   assert.deepEqual(alone("protection", { Inscription: 100 }).add, { physResist: -10 });
-  assert.equal(buffText("protection", { Inscription: 0 }, null, {}), "Phys −15 · FC −2 past the cap · Resisting Spells −35");
+  assert.equal(buffText("protection", { Inscription: 0 }, null, {}), "Phys −15 · FC −2 after the cap · Resisting Spells −35");
 });
 
 test("[fast] buffs: Magic Reflection by the shard wiki: Phys −(20 − Inscription / 20) and its cap −5, the others +10", () => {
@@ -260,6 +260,22 @@ test("[fast] buffs: the saved choices' checks", () => {
   }
 });
 
+test("[fast] buffs: one form at a time in a sent list; a saved one is healed on reading; a name like constructor is a name", () => {
+  for (const bad of [["wraithForm", "lichForm"], ["enchant.hitLightning", "enchant.hitHarm"]]) assert.equal(isBuffList(bad), false, `${bad.join(" + ")}: one of an exclusive set`);
+  assert.equal(isBuffList(["wraithForm", "enchant.hitHarm", "divineFury"]), true, "one of each set");
+  assert.deepEqual(normalizeBuffs(["bless", "wraithForm", "lichForm", "bless", "divineFury"]), ["divineFury", "lichForm", "bless"], "the later form replaces the earlier, a repeat drops, catalog order");
+  for (const bad of [null, "bless", ["nope"], [3]]) assert.equal(normalizeBuffs(bad), null, JSON.stringify(bad));
+  const skills = runBuffs(["divineFury"], buffSkillValues(null, {}).values)!.skills;
+  assert.deepEqual(savedBuffs({ buffs: { on: ["wraithForm", "lichForm"], skills } }), { on: ["lichForm"], skills }, "an old run's two forms, healed");
+  assert.equal(isRunBuffs({ on: ["wraithForm", "lichForm"], skills }), false, "but never sent so");
+  assert.equal(savedBuffs({ buffs: { on: [], skills } }), undefined, "an empty list is none");
+  assert.deepEqual(normalizeBuffListsByCharacter({ constructor: ["reaperForm", "wraithForm"], toString: [] }), { constructor: ["wraithForm"], toString: [] });
+  assert.equal(normalizeBuffListsByCharacter({ Kestrel: ["nope"] }), null);
+  assert.ok(isBuffListsByCharacter({ constructor: ["bless"] }) && isBuffSkillsByCharacter({ constructor: { Chivalry: 100 } }));
+  assert.equal(ownEntry({}, "constructor"), undefined, "never Object.prototype.constructor");
+  assert.deepEqual(ownEntry({ constructor: ["bless"] }, "constructor"), ["bless"]);
+});
+
 test("[fast] buffs: Spellweaving's Arcane Empowerment, Attunement and Ethereal Form", () => {
   assert.deepEqual(alone("arcaneEmpowerment", { Spellweaving: 120, "Arcane Focus": 0 }).add, { sdi: 10 });
   assert.deepEqual(alone("arcaneEmpowerment", { Spellweaving: 120, "Arcane Focus": 2 }).add, { sdi: 20 });
@@ -365,4 +381,104 @@ test("[fast] buffs: the less sure entries carry their confidence; the high ones 
   for (const id of ["catDog", "playingTheOdds", "barrab", "tincture.minstrel"]) assert.equal(conf[id], "low", id);
   for (const id of ["magicReflection", "arcaneEmpowerment", "etherealForm", "mysteriousWisp", "berserk", "curse", "stoneForm", "strengthPotion"]) assert.equal(conf[id], "medium", id);
   for (const id of ["divineFury", "wraithForm", "bless", "rampage", "attunement"]) assert.equal(conf[id], undefined, id);
+});
+
+// ---------------------------------------------------------------- Automatic: the buffs in the optimizer's profile
+// A plan for `on` with every input at its default (120 skills, 15,000 karma) over `skills`, no stats and nothing worn.
+const plan = (on: string[], skills: Skills = {}, worn: PropMap = {}): BuffPlan => ({ on, skills: { ...buffSkillValues(null, {}).values, ...skills }, stats: null, who: {}, worn });
+const PROFILE: Profile = { floors: { ssi: 40, dci: 30, physResist: 70, fireResist: 60, coldResist: 65 }, weights: { ssi: 1, luck: 1 } };
+
+test("[fast] buffs: a planned buff's in-cap share comes off the cap and the floor, a negative one adds to both", () => {
+  const base = effectiveProfile(PROFILE, null), p = plannedProfile(PROFILE, null, plan(["divineFury"], { Chivalry: 105 }));
+  // the flat tier: SSI +10, DCI −20, HCI and DI +10
+  assert.deepEqual([p.caps.ssi, p.floors.ssi], [50, 30], "SSI: the gear needs 10 less, and 10 less is worth anything");
+  assert.deepEqual([p.caps.dci, p.floors.dci], [65, 50], "DCI −20: the gear has to make up the 20, and can be worth 20 more");
+  assert.deepEqual([p.caps.hci, p.caps.di], [35, 90]);
+  assert.equal(p.floors.hci, undefined, "no floor is invented for a key the profile has none on");
+  assert.deepEqual(p.weights, base.weights);
+  assert.deepEqual(p.buffs, { on: ["divineFury"], skills: plan([], { Chivalry: 105 }).skills, stats: null, who: {}, caps: base.caps, floors: base.floors }, "the profile carries the plan, and the caps and floors before it");
+  assert.deepEqual(profileResistCaps(p), profileResistCaps(base), "a result is shown against the caps before the buffs");
+  // a share past the cap: never below 0
+  const big = plannedProfile({ floors: { ssi: 5 } }, null, plan(["playingTheOdds"]));   // SSI +30
+  assert.deepEqual([big.caps.ssi, big.floors.ssi], [30, 0]);
+  assert.deepEqual(plannedProfile(PROFILE, null, plan([])), base, "no buffs: the plain profile, no buffs field");
+  assert.deepEqual(plannedProfile(PROFILE, null, null), base);
+});
+
+test("[fast] buffs: a cap change lands before the share is taken off, in applyBuffs' order", () => {
+  // White Tiger: DCI +20 and its cap +5 → gear's DCI cap 50 − 20, its floor 30 − 20
+  const wt = plannedProfile(PROFILE, null, plan(["whiteTiger"]));
+  assert.deepEqual([wt.caps.dci, wt.floors.dci], [30, 10]);
+  // Divine Fury's −20 with it: they cancel, the cap still 5 higher
+  const both = plannedProfile(PROFILE, null, plan(["divineFury", "whiteTiger"], { Chivalry: 105 }));
+  assert.deepEqual([both.caps.dci, both.floors.dci], [50, 30]);
+  // Magic Reflection: Phys cap 65 and Phys −20 at no Inscription, so the Phys floor of 70 counts to 65 and gear needs 85
+  const mr = plannedProfile(PROFILE, null, plan(["magicReflection"], { Inscription: 0 }));
+  assert.deepEqual([mr.caps.physResist, mr.floors.physResist, mr.caps.fireResist, mr.floors.fireResist], [85, 85, 60, 50]);
+  // Corpse Skin sets Fire and Poison caps to 70 − 15 and takes 15 from each: gear's Fire cap 70, its floor 55 + 15
+  const cs = plannedProfile(PROFILE, null, plan(["corpseSkin"], { "Enemy Necro + SS": 240 }));
+  assert.deepEqual([cs.caps.fireResist, cs.floors.fireResist, cs.caps.poisonResist, cs.caps.coldResist, cs.floors.coldResist], [70, 70, 70, 60, 55]);
+  // Stone Form raises every resist cap: a floor above the old cap now counts to the new one
+  const sf = plannedProfile({ floors: { coldResist: 80 } }, null, plan(["stoneForm"], { Mysticism: 120, "Focus or Imbuing": 120 }));
+  assert.deepEqual([sf.caps.coldResist, sf.floors.coldResist], [65, 65], "cap 75, share +10: gear needs 65 of 65");
+});
+
+test("[fast] buffs: with a character, the Resisting Spells bonus and the shares both come off; Protection lowers that bonus", () => {
+  const ch = { skills: { "Resisting Spells": { value: 100 } } } as unknown as Character;   // +40 on uoalive
+  const values = buffSkillValues({ "Resisting Spells": { value: 100 } }, {}).values;
+  const p = plannedProfile(PROFILE, ch, { on: ["protection"], skills: { ...values, Inscription: 0 }, stats: null, who: {}, worn: {} });
+  // Resisting Spells 100 → 65: its bonus 40 → 26, so every resist −14, and Phys −15 more
+  assert.deepEqual([p.caps.physResist, p.floors.physResist, p.caps.fireResist, p.floors.fireResist], [59, 59, 44, 34]);
+  assert.equal(p.resistBonus, 40);
+});
+
+test("[fast] buffs: what a buff adds past the cap never shapes the plan, so Enemy of One changes nothing", () => {
+  const base = effectiveProfile(PROFILE, null);
+  for (const on of [["enemyOfOne"], ["consecrateWeapon"], ["enemyOfOne", "consecrateWeapon"]]) {
+    const { buffs, ...rest } = plannedProfile(PROFILE, null, plan(on));
+    assert.deepEqual(rest, base, on.join(", "));
+    assert.deepEqual(buffs!.on, on, "but it is named in the plan");
+  }
+  // Horrific Beast: its DI counts (in the cap), its HPR +20 is past the cap and does not
+  const hb = plannedProfile({ floors: { hpRegen: 10, di: 50 } }, null, plan(["horrificBeast"]));
+  assert.deepEqual([hb.floors.hpRegen, hb.caps.hpRegen, hb.floors.di, hb.caps.di], [10, 18, 25, 75]);
+});
+
+test("[fast] buffs: a potion is planned with the worn suit's Enhance Potions, and is named as taken from it", () => {
+  const at = (ep: number): number => plannedProfile({ floors: { strBonus: 40 } }, null, plan(["greaterStrengthPotion"], { Alchemy: 0 }, { enhancePotions: ep })).floors.strBonus!;
+  assert.deepEqual([at(0), at(50)], [20, 10], "+20, or +30 with 50 Enhance Potions");
+  assert.deepEqual(plannedFromWorn(["divineFury", "greaterStrengthPotion", "enchant.hitLightning", "bless"]), ["greaterStrengthPotion", "enchant.hitLightning"]);
+});
+
+test("[fast] buffs: a requirement's note says what gear still needs and which buff gave what", () => {
+  const prof = (on: string[], skills: Skills = {}) => { const pl = plan(on, skills); return { p: plannedProfile(PROFILE, null, pl), r: buffShift(effectiveProfile(PROFILE, null), pl).r }; };
+  const df = prof(["divineFury"], { Chivalry: 105 });
+  assert.equal(gearNeedsText("ssi", df.p.floors.ssi!, df.p.caps.ssi, df.r), "Gear needs 30: Divine Fury gives 10");
+  assert.equal(gearNeedsText("dci", df.p.floors.dci!, df.p.caps.dci, df.r), "Gear needs 50: Divine Fury takes 20");
+  assert.equal(gearNeedsText("luck", 0, undefined, df.r), null, "a requirement no buff touches has no note");
+  const two = prof(["divineFury", "whiteTiger"], { Chivalry: 105 });
+  assert.equal(gearNeedsText("dci", two.p.floors.dci!, two.p.caps.dci, two.r), "Gear needs 30 of a 50 cap: Divine Fury −20, White Tiger Form +20, White Tiger Form cap +5");
+  const eoo = prof(["enemyOfOne"]);
+  assert.equal(gearNeedsText("di", 100, 100, eoo.r), null, "past the cap: no note");
+});
+
+test("[fast] buffs: a run saves its buffs and their numbers; a change shows in the diff; a run saved before them has none", () => {
+  const values = buffSkillValues(null, {}).values;
+  assert.equal(runBuffs([], values), undefined, "none on: nothing saved, so the settings keep their old shape");
+  const r = runBuffs(["divineFury"], { ...values, Chivalry: 105, "Resisting Spells": 80 })!;
+  assert.deepEqual(r.on, ["divineFury"]);
+  assert.equal(r.skills.Chivalry, 105);
+  assert.equal(r.skills["Resisting Spells"], undefined, "the character's own, never saved as an input");
+  assert.deepEqual(Object.keys(r.skills).sort(), Object.keys(BUFF_INPUTS).sort());
+  assert.deepEqual(savedBuffs({ buffs: r }), r);
+  for (const bad of [undefined, null, {}, { on: ["nope"], skills: {} }, { on: ["bless"], skills: { Chivalry: 999 } }]) assert.equal(savedBuffs({ buffs: bad }), undefined, JSON.stringify(bad));
+  const two = runBuffs(["divineFury", "bless"], { ...values, Chivalry: 120 })!;
+  assert.deepEqual(buffsDiff(undefined, r), ["+Divine Fury"]);
+  assert.deepEqual(buffsDiff(r, undefined), ["−Divine Fury"]);
+  assert.deepEqual(buffsDiff(r, two), ["+Bless", "Chivalry 105 → 120"]);
+  assert.deepEqual(buffsDiff(two, two), []);
+  assert.deepEqual(buffsDiff(undefined, { on: ["bogus"] }), [], "a damaged entry counts as none");
+  // the panel's buffs by character, held to the same rule as the edits
+  assert.equal(isBuffListsByCharacter({ Dorran: ["divineFury", "bless"], Kestrel: [] }), true);
+  for (const bad of [[], { Dorran: ["nope"] }, { Dorran: ["bless", "bless"] }, { Dorran: "bless" }, null]) assert.equal(isBuffListsByCharacter(bad), false, JSON.stringify(bad));
 });

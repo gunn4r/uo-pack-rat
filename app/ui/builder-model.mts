@@ -4,7 +4,8 @@
 // and a saved run's label and badges. No DOM and no page state, so app/builder-model.test.mts can check it
 // all directly; ui/builder.mts, ui/builder-result.mts and ui/runs.mts draw what it returns.
 import { getRules, labelOf, fullOf, NOT_BUILDER_KEYS, RESIST_KEYS, RESIST_CAP_LIMITS, SLOT_LABELS, settingsDiff, shardResistCap, WEAPON_SKILLS, MELEE_SKILLS, ubwsLetsIn } from "../vault-lib.mts";
-import type { PropMap, ResistCap, RunSettings } from "../vault-lib.mts";
+import type { PlannedBuffs, PropMap, ResistCap, RunSettings } from "../vault-lib.mts";
+import { applyBuffs, buffById, buffsDiff, capWord, signed, type BuffResult } from "../buffs.mts";
 
 export const plural = (n: number, word: string, many = `${word}s`): string => `${n.toLocaleString("en-US")} ${n === 1 ? word : many}`;
 const num = (n: number): string => n.toLocaleString("en-US", { maximumFractionDigits: 2 });
@@ -33,6 +34,17 @@ export function paperdollCaps(resists: Record<string, ResistCap>): Record<string
   for (const k of RESIST_KEYS) caps[k] = resists[k]!.cap;
   return caps;
 }
+// A suit's item totals in paperdoll terms with the buffs a build planned with (none: `b` null), against `caps`.
+export function withBuffs(t: PropMap, rsb: number, caps: Record<string, number>, b: Pick<PlannedBuffs, "on" | "skills" | "stats" | "who"> | null | undefined): BuffResult {
+  return applyBuffs(paperdoll(t, rsb), caps, b?.on || [], b?.skills || {}, b?.stats ?? null, b?.who);
+}
+// Floors in paperdoll terms: a resist's with the Resisting Spells bonus added back.
+export const paperdollFloors = (floors: Record<string, number>, rsb: number): Record<string, number> =>
+  Object.fromEntries(Object.entries(floors).map(([k, v]) => [k, RESIST_KEYS.includes(k) ? v + rsb : v]));
+// What the buffs add past the cap, as badges: "DI +68 past the cap (Enemy of One)"; a penalty applied after it, such
+// as Protection's casting delay, "FC −2 after the cap (Protection)".
+export const pastCapBadges = (r: BuffResult): string[] =>
+  Object.entries(r.outside).filter(([, v]) => v).map(([k, v]) => `${labelOf(k)} ${signed(v)} ${capWord(v)} the cap (${(r.shares[k] || []).filter((x) => x.outside).map((x) => buffById(x.id)!.name).join(", ")})`);
 
 // ---------------------------------------------------------------- panel summaries
 // "each resist 6" when all five resists carry the same value, else each one on its own.
@@ -311,10 +323,12 @@ export function toggleCompare(selected: ReadonlySet<string>, id: string, on: boo
 }
 
 // ---------------------------------------------------------------- saved runs
+// What changed between two runs' settings, their buffs included ("+Divine Fury").
+export const runSettingsDiff = (a: RunSettings, b: RunSettings): string[] => [...settingsDiff(a, b), ...buffsDiff(a.buffs, b.buffs)];
 // A run's name when the player gave it none: how its settings differ from the run saved before it.
 export function runAutoLabel(prev: RunSettings | null, settings: RunSettings): { text: string; diff: string[] } {
   if (!prev) return { text: "First saved run", diff: [] };
-  const diff = settingsDiff(prev, settings);
+  const diff = runSettingsDiff(prev, settings);
   if (!diff.length) return { text: "Same settings as the run before", diff };
   const head = diff.slice(0, 3).join(" · ") + (diff.length > 3 ? ` · ${diff.length - 3} more` : "");
   return { text: head[0]!.toUpperCase() + head.slice(1), diff };

@@ -1493,12 +1493,15 @@ test("[fast] resist cap overrides: profiles and saved runs keep them, and a bad 
       method: "POST", headers: { "content-type": "application/json" },
       body: JSON.stringify({ character, settings, profile, opts: { exact: false, restarts: 3 }, meta: { character, settings: snapshot } }) });
     for (const [settings, snapshot, msg] of [[{}, { resistCaps: { fireResist: -1 } }, /meta\.settings\.resistCaps\.fireResist must be a whole number from 0 to 150/],
-      [{}, { resistCaps: [95] }, /meta\.settings\.resistCaps must be an object/], [{ resistCaps: { hci: 5 } }, {}, /settings\.resistCaps\.hci is not a resist/]] as const) {
+      [{}, { resistCaps: [95] }, /meta\.settings\.resistCaps must be an object/], [{ resistCaps: { hci: 5 } }, {}, /settings\.resistCaps\.hci is not a resist/],
+      // and the buffs it was planned with (issue #12): known, one form at most, numbers in range
+      [{}, { buffs: { on: ["wraithForm", "lichForm"], skills: {} } }, /meta\.settings\.buffs must list known buffs/], [{}, { buffs: { on: ["nope"], skills: {} } }, /meta\.settings\.buffs/],
+      [{}, { buffs: { on: ["divineFury"], skills: { Chivalry: 999 } } }, /meta\.settings\.buffs/], [{}, { buffs: "divineFury" }, /meta\.settings\.buffs/]] as const) {
       const r = await post(settings, snapshot);
       assert.equal(r.status, 400, JSON.stringify(snapshot));
       assert.match(asJson<ErrorBody>(await r.json()).error, msg);
     }
-    const r = await post({}, { race: "human", resistCaps: { fireResist: 95 } });
+    const r = await post({}, { race: "human", resistCaps: { fireResist: 95 }, buffs: { on: ["divineFury"], skills: { Chivalry: 105 } } });
     const j = asJson<OptimizeJobResponse>(await r.json());
     assert.equal(r.status, 200, JSON.stringify(j));
     let status: OptimizeJobResponse = j;
@@ -1508,6 +1511,7 @@ test("[fast] resist cap overrides: profiles and saved runs keep them, and a bad 
     }
     const run = asJson<{ run: { settings: Record<string, unknown> } }>(await (await fetch(s2.url + `/api/runs/${j.id}`)).json()).run;
     assert.deepEqual(run.settings.resistCaps, { fireResist: 95 }, "reopening the run shows the caps it was built with");
+    assert.deepEqual(run.settings.buffs, { on: ["divineFury"], skills: { Chivalry: 105 } }, "and the buffs");
   } finally {
     await s2.close();
     rmSync(dir, { recursive: true, force: true });
@@ -3215,7 +3219,7 @@ test("[fast] PUT /api/ui-prefs keeps the House map contents drawer's width (issu
   } finally { await s3.close(); }
 });
 
-test("[fast] PUT /api/ui-prefs keeps the Suit Builder's mode, its Manual suit and buffs (issue #12) across a restart, and refuses anything else, an unknown slot or __proto__ included", async () => {
+test("[fast] PUT /api/ui-prefs keeps the Suit Builder's mode, its Manual suit and buffs and Automatic's buffs by character (issue #12) across a restart, and refuses anything else, an unknown slot or __proto__ included", async () => {
   const dir = mkdtempSync(join(tmpdir(), "qm-uiprefs-manual-"));
   const put = (url: string, body: unknown): Promise<Response> => fetch(url + "/api/ui-prefs", { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
   const s1 = await startServer(ensureLayout(resolveConfig(["--port", "0", "--data", dir], {})));
@@ -3235,13 +3239,20 @@ test("[fast] PUT /api/ui-prefs keeps the Suit Builder's mode, its Manual suit an
     assert.deepEqual(asJson<{ prefs: Record<string, unknown> }>(await (await fetch(s2.url + "/api/ui-prefs")).json()).prefs.manualSuit, {});
     // its buffs (app/buffs.mts): catalog ids each once, the edited numbers within their bounds, and the count switch
     const edits = { Dorran: { Chivalry: 105.5, Karma: -200 }, "": { "Mastery level": 2 } };
-    assert.equal((await put(s2.url, { manualBuffs: ["divineFury", "whiteTiger"], buffSkills: edits, buffsCount: "off" })).status, 200);
-    for (const bad of [{ manualBuffs: ["nope"] }, { manualBuffs: ["bless", "bless"] }, { manualBuffs: "bless" }, { buffSkills: { Dorran: { Chivalry: 151 } } }, { buffSkills: { Dorran: { Hiding: 100 } } },
+    // Automatic's buffs, by character
+    const auto = { Dorran: ["divineFury", "bless"], Kestrel: ["reaperForm"] };
+    assert.equal((await put(s2.url, { manualBuffs: ["divineFury", "whiteTiger"], autoBuffs: auto, buffSkills: edits, buffsCount: "off" })).status, 200);
+    for (const bad of [{ autoBuffs: ["bless"] }, { autoBuffs: { Dorran: ["nope"] } }, { autoBuffs: { Dorran: ["bless", "bless"] } }, { autoBuffs: { Dorran: "bless" } }, { manualBuffs: ["nope"] }, { manualBuffs: ["bless", "bless"] }, { manualBuffs: "bless" }, { buffSkills: { Dorran: { Chivalry: 151 } } }, { buffSkills: { Dorran: { Hiding: 100 } } },
       { buffSkills: { Dorran: { "Mastery level": 2.5 } } }, { buffSkills: { Chivalry: 105 } }, { buffSkills: [] }, { buffsCount: "yes" }]) {
       assert.equal((await put(s2.url, bad)).status, 400, JSON.stringify(bad));
     }
     const prefs = asJson<{ prefs: Record<string, unknown> }>(await (await fetch(s2.url + "/api/ui-prefs")).json()).prefs;
-    assert.deepEqual([prefs.manualBuffs, prefs.buffSkills, prefs.buffsCount], [["divineFury", "whiteTiger"], edits, "off"]);
+    assert.deepEqual([prefs.manualBuffs, prefs.autoBuffs, prefs.buffSkills, prefs.buffsCount], [["divineFury", "whiteTiger"], auto, edits, "off"]);
+    for (const bad of [{ manualBuffs: ["wraithForm", "lichForm"] }, { autoBuffs: { Dorran: ["wraithForm", "lichForm"] } }]) assert.equal((await put(s2.url, bad)).status, 400, `${JSON.stringify(bad)}: one form at most`);
+    // a hand-edited file with two forms is healed on reading: the later replaces the earlier, as turning it on would
+    writeFileSync(join(dir, "ui-prefs.json"), JSON.stringify({ manualBuffs: ["wraithForm", "lichForm"], autoBuffs: { constructor: ["reaperForm", "wraithForm", "bless"] } }));
+    const healed = asJson<{ prefs: Record<string, unknown> }>(await (await fetch(s2.url + "/api/ui-prefs")).json()).prefs;
+    assert.deepEqual([healed.manualBuffs, healed.autoBuffs], [["lichForm"], { constructor: ["wraithForm", "bless"] }]);
   } finally { await s2.close(); }
 });
 
