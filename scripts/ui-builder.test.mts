@@ -526,3 +526,55 @@ test("[slow] Manual mode: a picked piece fills its slot, moves the totals and le
     rmSync(dataDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
   }
 });
+
+// Manual's hand-offs (issue #12): Fill the rest automatically fills the empty slots in one undo step and keeps the
+// placed piece; Save as run puts the suit in the runs drawer as a manual run, which opens in the result view with
+// Open in Manual; and an Automatic result's Start from this result loads it into Manual in one undo step.
+test("[slow] Manual hand-offs: fill the rest, save as run, reopen it, and start from an Automatic result", async (t) => {
+  const why = unavailable();
+  if (why) return t.skip(why);
+  const dataDir = seedDataDir("packrat-ui-handoffs-");
+  const { app, page, errors } = await launch(dataDir);
+  try {
+    await openBuilder(page);
+    await page.click('#b-mode [data-value="manual"]');
+    await page.waitForSelector("#b-manual:not([hidden]) #mb-suit .mb-slot");
+    // one placed piece: the first ring in the picker
+    await page.click('.mb-slot-pick[data-slot="ring"]');
+    const row = page.locator("#mb-picker tbody tr.item").first();
+    await row.waitFor();
+    const ringName = (await row.locator("td").first().innerText()).trim();
+    await row.click();
+    await page.waitForFunction((n) => document.querySelector('.mb-slot-pick[data-slot="ring"]')?.textContent?.includes(n), ringName);
+    await page.keyboard.press("Escape");
+    const filled = (): Promise<number> => page.locator("#mb-suit .mb-slot:not(.mb-empty)").count();
+    assert.equal(await filled(), 1);
+    await page.click("#mb-fill");
+    await page.waitForFunction(() => /^(Filled|Nothing filled)/.test(document.querySelector(".mb-fill")?.textContent || ""), undefined, { timeout: 60_000 });
+    assert.ok(await filled() > 1, "the search filled empty slots");
+    assert.match(await page.locator('.mb-slot-pick[data-slot="ring"]').innerText(), new RegExp(ringName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")), "the placed ring stays");
+    assert.match(await page.locator("#mb-undo").getAttribute("aria-label") || "", /^Undo: Fill the rest: \d+ slots?/, "one undo step");
+    assert.ok(await page.locator("#mb-fetch").isVisible(), "the fetch list shows the pieces to fetch");
+    // Save as run, then open it from the drawer: the result view, a manual run, with Open in Manual
+    await page.click("#mb-save-run");
+    await page.waitForFunction(() => Number(document.querySelector("#b-runs-count")?.textContent) >= 1);
+    await page.click("#b-runs-open");
+    const card = page.locator("#b-runs .run-card").first();
+    assert.match(await card.innerText(), /Manual[\s\S]*Suit built by hand/);
+    await card.locator(".btn-icon").click();
+    await page.click('.pop-over-drawer [role="menuitem"]:has-text("Open")');
+    await page.waitForFunction(() => /Manual suit for/.test(document.querySelector("#b-result h2")?.textContent || ""));
+    assert.equal(await page.locator("#b-manual").isVisible(), false, "the run shows in Automatic's result view");
+    assert.equal(await page.locator("#b-to-manual").innerText(), "Open in Manual");
+    // an Automatic result into Manual: Build, then Start from this result, one undo step
+    await page.click("#b-run");
+    await built(page);
+    await page.click("#b-to-manual");
+    await page.waitForSelector("#b-manual:not([hidden]) #mb-suit .mb-slot");
+    assert.match(await page.locator("#mb-undo").getAttribute("aria-label") || "", /^Undo: Start from the result/);
+    assert.deepEqual(errors, []);
+  } finally {
+    await app.close();
+    rmSync(dataDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
+  }
+});

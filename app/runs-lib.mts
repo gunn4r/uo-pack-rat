@@ -1,7 +1,7 @@
 // runs-lib.mts — saved suit-builder runs: the cache key, the reuse rule, and the list summary.
 // Server-side only (uses node:crypto); the page never imports it.
 import { createHash } from "node:crypto";
-import { migrateWeaponSetting } from "./vault-lib.mts";
+import { migrateWeaponSetting, totalsOf, type OptItem } from "./vault-lib.mts";
 
 // The optimizer search options a saved run was made with. Loosely shaped (an index signature) because
 // this module only ever serializes opts wholesale (runKey) or reads the few named fields below — the
@@ -94,9 +94,34 @@ export interface SavedRun {
 // fallback (`solver: "fallback"`: HiGHS failed to load, or the floors-conflict retry ran out of time)
 // never answers — it depends on the environment and the clock, not only on the inputs. `runs` is
 // newest first, so the newest match wins.
+// A manual run (manualRun below) never answers: nothing searched for it.
 export function reusableRun(runs: SavedRun[], key: string, opts: { timeBudgetMs?: number } = {}): SavedRun | null {
   const want = typeof opts.timeBudgetMs === "number" ? opts.timeBudgetMs : 15000;
-  return runs.find((r) => r.key === key && r.result && r.result.solver !== "fallback" && (r.result.proven || r.result.method !== "exact" || (r.budgetMs ?? 0) >= want)) || null;
+  return runs.find((r) => r.key === key && r.result && r.result.method !== "manual" && r.result.solver !== "fallback" && (r.result.proven || r.result.method !== "exact" || (r.budgetMs ?? 0) >= want)) || null;
+}
+
+// A suit built by hand in the Suit Builder's Manual mode, saved as a run (issue #12, "Save as run"): `suit` and `worn`
+// are slot -> piece over every gear slot (the six the optimizer has no slot for included), `worn` what the character
+// wears now. Its result has the shape a search's has (best, perSlotChanges, totals before and after), with method
+// "manual" and no score: the core's score needs the profile the page plans with, and a number a search never
+// produced would only mislead beside the searched runs. Its key starts "manual:", so no search request can match it.
+export interface ManualRunInput {
+  id: string; character: string; createdAt: string; settings: RunSettingsRaw; inventoryStamp: unknown;
+  suit: Record<string, OptItem>; worn: Record<string, OptItem>; slots: readonly string[];
+}
+export function manualRun({ id, character, createdAt, settings, inventoryStamp, suit, worn, slots }: ManualRunInput): SavedRun {
+  const best = Object.fromEntries(slots.map((s) => [s, suit[s] ?? null]));
+  const perSlotChanges = slots.filter((s) => (suit[s]?.serial ?? 0) !== (worn[s]?.serial ?? 0)).map((s) => {
+    const from = worn[s], to = suit[s], gainedProps: Record<string, number> = {};
+    for (const k of new Set([...Object.keys(to?.props || {}), ...Object.keys(from?.props || {})].sort())) {
+      const d = (to?.props[k] || 0) - (from?.props[k] || 0);
+      if (d) gainedProps[k] = d;
+    }
+    return { slot: s, from: from?.name ?? null, fromSerial: from?.serial ?? 0, to: to?.name ?? null, toSerial: to?.serial ?? 0, gainedProps };
+  });
+  const key = `manual:${createHash("sha1").update(JSON.stringify({ character, suit: Object.fromEntries(Object.entries(best).map(([s, it]) => [s, it?.serial ?? null])), settings })).digest("hex")}`;
+  return { id, key, character, createdAt, label: "", settings, schemaVersion: 1, solverVersion: SOLVER_VERSION, inventoryStamp, poolSize: null, skipped: {}, ms: 0,
+    result: { method: "manual", best, perSlotChanges, totals: { before: totalsOf(worn), after: totalsOf(suit) } } };
 }
 
 export interface RunSummary {

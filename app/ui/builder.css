@@ -82,8 +82,9 @@
 
 /* ---------------------------------------------------------------- result */
 .b-head-card { display: flex; flex-direction: column; gap: var(--space-4); padding: var(--space-5); }
-.b-headline { display: flex; align-items: center; gap: var(--space-3); min-width: 0; }
-.b-headline-text { display: flex; flex-direction: column; gap: var(--space-0-5); flex: 1 1 auto; min-width: 0; }
+.b-headline { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-3); min-width: 0; }   /* the actions drop under the title on a narrow result */
+.b-head-acts { flex: none; display: flex; align-items: center; gap: var(--space-2); }
+.b-headline-text { display: flex; flex-direction: column; gap: var(--space-0-5); flex: 1 1 320px; min-width: 0; }
 /* "Planned with [chips] · Show without buffs", and the note on numbers taken from the suit worn now */
 .b-planned { display: flex; align-items: center; flex-wrap: wrap; gap: var(--space-1-5); }
 .b-planned-note { flex: 1 1 100%; }
@@ -154,6 +155,10 @@
 /* compact: all eighteen slots stay in view beside the picker at 1440 × 900, in two columns of nine (armor and
    weapons; clothing and jewelry), each group's cards as many across as its column fits */
 .mb-suit > .card-head { min-height: 0; padding-top: var(--space-2); padding-bottom: var(--space-2); }
+/* Fill the rest automatically and Save as run, then the search's progress (dot, words, bar, Cancel) or its outcome */
+.mb-suit-acts { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); padding: var(--space-2) var(--space-3); border-bottom: var(--border-width) solid var(--color-border); }
+.mb-fill { flex: 1 1 240px; min-width: 0; display: flex; align-items: center; gap: var(--space-2); }
+.mb-fill .progress { flex: 1 1 80px; min-width: 60px; }
 .mb-suit-body { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-3); align-items: start; padding: var(--space-2) var(--space-3) var(--space-3); }
 .mb-suit-col { display: flex; flex-direction: column; gap: var(--space-2); min-width: 0; }
 .mb-group { display: flex; flex-direction: column; gap: var(--space-1); }
@@ -161,8 +166,8 @@
 /* a slot card: the whole card is its button (opens the picker on the slot); Clear sits over its top-right corner */
 .mb-slot { position: relative; min-width: 0; }
 .pr .mb-slot-pick { display: flex; flex-direction: column; align-items: stretch; width: 100%; padding: var(--space-1-5) var(--space-2); text-align: left; font-size: var(--text-sm); line-height: var(--lh-sm); font-weight: var(--weight-regular);
-  border: var(--border-width) solid var(--color-border); border-radius: var(--radius-lg); background: var(--color-surface); color: var(--color-text); cursor: pointer; }
-.pr .mb-slot-pick:hover { border-color: var(--color-border-strong); background: var(--color-row-hover); color: var(--color-on-row-hover); }
+  border: var(--border-width) solid var(--color-border-strong); border-radius: var(--radius-lg); background: var(--color-surface); color: var(--color-text); cursor: pointer; }
+.pr .mb-slot-pick:hover { background: var(--color-row-hover); color: var(--color-on-row-hover); }
 .pr .mb-slot-pick:focus-visible { outline: none; box-shadow: var(--ring-focus); }
 .pr .mb-slot.mb-empty .mb-slot-pick { border-style: dashed; background: var(--color-surface-subtle); }
 .pr .mb-slot.mb-missing .mb-slot-pick { border-color: var(--color-warning); }

@@ -1,9 +1,9 @@
 // ui/manual-model.mts — the Suit Builder's Manual mode, its pure logic (issue #12): the totals strip's keys and the
 // line under each total, the slot groups, the picker's slot filter, the one-hand/two-hand rule, a saved suit read
-// back, the slots whose piece left the scans, a picker row's delta ("LRC +20 → 77"), and the suit's undo history and
-// keys. No DOM and no page state, so app/manual-model.test.mts checks it directly; ui/builder-manual.mts draws what it
+// back, the slots whose piece left the scans, a picker row's delta ("LRC +20 → 77"), the suit's undo history and
+// keys, and the hand-offs with Automatic (a result into the suit, the pieces to fetch). No DOM and no page state, so app/manual-model.test.mts checks it directly; ui/builder-manual.mts draws what it
 // returns.
-import { RESIST_KEYS, GEAR_SLOTS, labelOf } from "../vault-lib.mts";
+import { RESIST_KEYS, GEAR_SLOTS, OPTIMIZER_SLOTS, labelOf } from "../vault-lib.mts";
 import type { PropMap } from "../vault-lib.mts";
 import type { ItemQuery } from "../item-query.mts";
 
@@ -122,3 +122,20 @@ export function historyKey(e: KeyLike, mac: boolean): "undo" | "redo" | null {
 }
 // The keys' names on this platform, for the buttons' tooltips.
 export const historyKeyNames = (mac: boolean): { undo: string; redo: string } => (mac ? { undo: "⌘Z", redo: "⇧⌘Z" } : { undo: "Ctrl+Z", redo: "Ctrl+Y" });
+
+// ---------------------------------------------------------------- hand-offs with Automatic
+// A result's or a saved run's suit into Manual's ("Start from this result", "Open in Manual"): each slot it plans
+// (`covered`) takes its piece or is emptied, and every other slot keeps its own.
+export function suitFrom(current: Suit, best: Partial<Record<string, { serial: number } | null>>, covered: readonly string[]): Suit {
+  const next = { ...current };
+  for (const s of covered) { const it = best[s]; if (it) next[s] = it.serial; else delete next[s]; }
+  return next;
+}
+// The search's slots that are empty: "Fill the rest automatically" fills these, less the one-hand slot beside a
+// two-handed weapon. A slot the search has no slot for (feet, robe…) is never one.
+export function fillableSlots(suit: Suit, twoHanded: boolean): string[] {
+  return OPTIMIZER_SLOTS.filter((s) => suit[s] == null && !(s === "oneHanded" && twoHanded));
+}
+// The fetch list's pieces: those the character doesn't wear, every piece with No character (`name` null).
+export const fetchPieces = <T extends { equippedBy?: string | null | undefined }>(pieces: T[], name: string | null): T[] =>
+  pieces.filter((it) => !name || it.equippedBy !== name);

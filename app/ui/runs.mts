@@ -2,7 +2,7 @@
 // meta line and summary badges, a ⋯ menu (Open, Rename inline, Delete with a confirm dialog), a filter, and a
 // footer that ticks up to three runs for the compare view (ui/builder-result.mts's openRunCompare). Also the
 // settings snapshot a run is saved with, and putting a saved run's settings back into the panel.
-import { OPTIMIZER_SLOTS, RESIST_KEYS, resistSkillBonus, totalsOf, resistCapsFor } from "../vault-lib.mts";
+import { RESIST_KEYS, resistSkillBonus, totalsOf, resistCapsFor } from "../vault-lib.mts";
 import { buffById, plannedProfile, savedBuffs } from "../buffs.mts";
 import type { RunSettings, OptItem, PropMap, Character, EffectiveProfile } from "../vault-lib.mts";
 import { state, invStamp } from "./store.mts";
@@ -13,7 +13,8 @@ import { renderNavCounts } from "./shell.mts";
 import { resolveItems } from "./items.mts";
 import { renderPanel, readControls, knobs, applyKnobs, clearCapDrafts, panelBuffs, buffPlan, loadRunBuffs } from "./builder.mts";
 import { renderResult, openRunCompare, closeCompare } from "./builder-result.mts";
-import { paperdollCaps, runAutoLabel, runBadges, runSettingsDiff, toggleCompare, plural, withBuffs } from "./builder-model.mts";
+import { openInManual, showAutomatic } from "./builder-manual.mts";
+import { paperdollCaps, slotsOf, runAutoLabel, runBadges, runSettingsDiff, toggleCompare, plural, withBuffs } from "./builder-model.mts";
 import type { RunsListApiResponse, RunApiResponse, RunPutApiResponse, RunSummaryLike, SavedRunLike } from "./api-types.mts";
 
 // ---------------------------------------------------------------- settings snapshot / apply
@@ -99,7 +100,8 @@ export function renderRuns(): void {
   const q = ($<HTMLInputElement>("#b-runs-filter")!.value || "").trim().toLowerCase();
   const rsb = resistSkillBonus(state.inv?.characters[name]?.skills);
   const kept = runs.map((run, i) => {
-    const auto = runAutoLabel(runs[i + 1]?.settings ?? null, run.settings);
+    // a suit built by hand is named for that, never by its settings (they are the panel's when it was saved)
+    const auto = run.method === "manual" ? { text: "Suit built by hand", diff: [] } : runAutoLabel(runs[i + 1]?.settings ?? null, run.settings);
     const title = run.label || auto.text;
     if (q && !`${run.label || ""} ${auto.text} ${auto.diff.join(" ")} ${fmtRunTime(run.createdAt)}`.toLowerCase().includes(q)) return null;
     // the resist caps the run was built with (its race, its overrides), against the shard's for that race
@@ -115,6 +117,7 @@ export function renderRuns(): void {
 }
 // null: an exact run whose proof the server withdrew (saved before the soft-floor fix, normalizeRun) shows no verdict.
 function verdictOf(run: RunSummaryLike): { text: string; cls: string } | null {
+  if (run.method === "manual") return { text: "saved from Manual", cls: "muted" };
   if (run.method !== "exact") return { text: "heuristic", cls: "muted" };
   if (run.proven == null) return null;
   return run.proven ? { text: "proven optimal", cls: "tone-ok" } : { text: "best within budget", cls: "tone-warn" };
@@ -131,14 +134,15 @@ function runCard(run: RunSummaryLike, title: string, diff: string[], badges: Arr
     if (r.refused) $<HTMLElement>(`#b-runs [data-run="${CSS.escape(run.id)}"] input[type=checkbox]`)?.focus();
   });
   const v = verdictOf(run);
-  const titleRow = box("div", { class: "run-title" }, txt(title, "strong ellip"), showing ? badge("Showing", "accent") : null, stale ? badge("Inventory changed", "warn") : null);
-  const main = box("div", { class: "run-main" }, titleRow, el("span", { class: "t-sm muted" }, txt(`${when} · ${fmtSecs(run.ms || 0)}${v ? " · " : ""}`), v ? txt(v.text, v.cls) : null),
+  const manual = run.method === "manual";
+  const titleRow = box("div", { class: "run-title" }, manual ? badge("Manual", "accent") : null, txt(title, "strong ellip"), showing ? badge("Showing", "accent") : null, stale ? badge("Inventory changed", "warn") : null);
+  const main = box("div", { class: "run-main" }, titleRow, el("span", { class: "t-sm muted" }, txt(`${when}${manual ? "" : ` · ${fmtSecs(run.ms || 0)}`}${v ? " · " : ""}`), v ? txt(v.text, v.cls) : null),
     diff.length && run.label ? el("span", { class: "t-sm muted run-diff" }, txt(`vs the run before: ${diff.join(" · ")}`)) : null);
-  const more = button({ label: `Run actions: open, rename, delete`, icon: "more", iconOnly: true, variant: "ghost", size: "sm", attrs: { "aria-haspopup": "menu", "aria-expanded": "false" } });
+  const more = button({ label: `Run actions: open, open in Manual, rename, delete`, icon: "more", iconOnly: true, variant: "ghost", size: "sm", attrs: { "aria-haspopup": "menu", "aria-expanded": "false" } });
   const li = box("li", { class: `card run-card${showing ? " showing" : ""}`, "data-run": run.id }, tick, main, more,
     badges.length ? box("div", { class: "run-badges" }, ...badges.map((b) => badge(b.text, b.tone))) : null);
   more.onclick = () => {
-    const m = menu(more, [{ label: "Open", onSelect: () => openRun(run.id) }, { label: "Rename", onSelect: () => renameRun(run, main) }, { label: "Delete…", onSelect: () => deleteRun(run, title), danger: true }], { label: "Run actions", width: 180 });
+    const m = menu(more, [{ label: "Open", onSelect: () => openRun(run.id) }, { label: "Open in Manual", onSelect: () => { void runToManual(run.id); } }, { label: "Rename", onSelect: () => renameRun(run, main) }, { label: "Delete…", onSelect: () => deleteRun(run, title), danger: true }], { label: "Run actions", width: 180 });
     m.root.classList.add("pop-over-drawer");   // the popover lives on <body>: it must sit above the drawer
   };
   return li;
@@ -171,18 +175,28 @@ async function deleteRun(run: RunSummaryLike, title: string): Promise<void> {
 // GET /api/runs/<id> only resolves here as a real 200 (api.mts throws for anything else, caught into the
 // synthetic `{ok:false}` branch).
 type RunFetch = (RunApiResponse & { ok: true }) | { ok: false; error?: string | undefined };
+async function fetchRun(id: string): Promise<SavedRunLike | null> {
+  let r: RunFetch;
+  try { r = (await api<RunApiResponse>(`/api/runs/${id}`)) as RunApiResponse & { ok: true }; } catch (e) { r = { ok: false, error: (e as Error).message }; }
+  if (!r.ok) { toast(r.error!, "bad"); return null; }
+  return r.run;
+}
+// A saved run's suit into Manual (one undo step there), with the buffs it was planned with.
+async function runToManual(id: string): Promise<void> {
+  const name = state.builder.character, run = await fetchRun(id);
+  if (!run || state.builder.character !== name) return;
+  closeRunsDrawer();
+  await openInManual(run.result.best, slotsOf(run.result), savedBuffs(run.settings), `Open the run from ${fmtRunTime(run.createdAt)}`);
+}
 export async function openRun(id: string): Promise<void> {
   if (state.builder.job) { toast("A build is running. Cancel it or wait before opening a saved run."); return; }
   // The run belongs to the character selected now; if the player picks another one while it loads, it is
   // dropped rather than drawn (with its Fetch list and Grab all) under that one.
   const name = state.builder.character;
   if (!name) return;
-  let r: RunFetch;
-  try { r = (await api<RunApiResponse>(`/api/runs/${id}`)) as RunApiResponse & { ok: true }; } catch (e) { r = { ok: false, error: (e as Error).message }; }
-  if (!r.ok) { toast(r.error!, "bad"); return; }
-  if (state.builder.character !== name) return;
-  const run = r.run;
-  state.builder.openRun = id; renderRuns(); closeRunsDrawer(); closeCompare();
+  const run = await fetchRun(id);
+  if (!run || state.builder.character !== name) return;
+  state.builder.openRun = id; renderRuns(); closeRunsDrawer(); showAutomatic(); closeCompare();
   const diff = runSettingsDiff(settingsSnapshot(), run.settings);
   // A saved run never persisted the assignment it started from, only its result (best, perSlotChanges,
   // totals). Reconstruct a per-slot "current" from that: an unchanged slot is whatever `best` has; a changed
@@ -191,7 +205,7 @@ export async function openRun(id: string): Promise<void> {
   // everything the other slots account for, parked on one of the unresolved pieces (totalsOf() sums across
   // the whole assignment, so which slot carries it doesn't matter).
   const best = run.result.best || {};
-  const current: Record<string, OptItem | null> = Object.fromEntries(OPTIMIZER_SLOTS.map((slot): [string, OptItem | null] => [slot, best[slot] || null]));
+  const current: Record<string, OptItem | null> = Object.fromEntries(slotsOf(run.result).map((slot): [string, OptItem | null] => [slot, best[slot] || null]));
   const changes = run.result.perSlotChanges || [];
   const resolved = await resolveItems(changes.map((c) => c.fromSerial).filter(Boolean));
   if (state.builder.character !== name) return;
@@ -229,6 +243,7 @@ export async function compareSelected(): Promise<void> {
   // Every element passed the `.ok` check above; `.every()` doesn't narrow the source array.
   const runs = (got as Array<RunApiResponse & { ok: true }>).map((g) => g.run).sort((x, y) => String(x.createdAt).localeCompare(String(y.createdAt))) as SavedRunLike[];
   closeRunsDrawer();
+  showAutomatic();
   // Each run under the name the drawer shows it by: its own, else its automatic label.
   const list = state.builder.runs;
   const titleOf = (r: SavedRunLike): string => { const i = list.findIndex((x) => x.id === r.id); return r.label || runAutoLabel(i >= 0 ? list[i + 1]?.settings ?? null : null, r.settings).text; };
