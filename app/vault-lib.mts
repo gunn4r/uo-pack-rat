@@ -254,8 +254,9 @@ export function shardResistCap(k: string, race: string | null | undefined): numb
 // resistCaps, a saved run's settings.resistCaps): whole paperdoll numbers.
 export const RESIST_CAP_LIMITS = { min: 0, max: 150 } as const;
 // A resist's cap for one build, in paperdoll terms: `cap` is what the build values the resist up to, `shard` what
-// the shard's rules give this race. They differ only where the player overrode the cap (a suit worn in Reaper
-// Form, which takes 25 Fire, is built with a Fire cap of 95).
+// the shard's rules give this race. They differ only where the player overrode the cap. For a form or spell that
+// lowers a resist (Reaper Form takes 25 Fire), turn the buff on in the Buffs section rather than raising the cap: the
+// plan then counts the loss itself, and ignores an override above the shard's cap while it does (app/buffs.mts).
 export interface ResistCap { cap: number; shard: number }
 export function resistCapsFor(race: string | null | undefined, overrides: Record<string, number> | null | undefined): Record<string, ResistCap> {
   return Object.fromEntries(RESIST_KEYS.map((k) => {
@@ -308,6 +309,7 @@ export interface PlannedBuffs {
   who: { race?: string | null | undefined; weaponFlags?: readonly string[] | undefined };
   caps: Record<string, number>;
   floors: Record<string, number>;
+  overridesIgnored?: Record<string, number> | undefined;   // resist overrides set aside: the buffs count that resist's loss
 }
 // What the buffs that are on change, in paperdoll terms: the caps once they changed them, and each key's in-cap share.
 export interface BuffShift { caps: Record<string, number>; shares: Record<string, number> }
@@ -317,9 +319,10 @@ export interface BuffShift { caps: Record<string, number>; shares: Record<string
 // replace the shard's per resist, and a resist floor counts up to its resist's cap. Every floor not marked soft is hard.
 // `shift` is what planned buffs change (app/buffs.mts plannedProfile): their caps replace these, and a buff's in-cap
 // share is a base the gear needn't supply, so it comes off the cap and the floor the way the Resisting Spells bonus
-// does (a negative share, Divine Fury's DCI −20, adds to both). The cap may go below 0, which keeps it exact:
-// min(gear, cap − share) + share = min(gear + share, cap) for any gear, a negative total included. A floor stops at
-// 0, which the solvers read as no requirement: the buff alone meets it.
+// does (a negative share, Divine Fury's DCI −20, adds to both). A cap the shift sets may go below 0, which keeps it
+// exact: min(gear, cap − share) + share = min(gear + share, cap) for any gear, a negative total included; a resist
+// the shift leaves alone keeps the gear's cap at 0 or more, as before buffs. A floor stops at 0, which the solvers
+// read as no requirement: the buff alone meets it. The shift also carries the stat caps (STR, DEX, INT past raw).
 export function effectiveProfile(p: Profile = {}, character: Character | null = null, shift: BuffShift | null = null): EffectiveProfile {
   const rules = getRules();
   const rsb = resistSkillBonus(character?.skills);
@@ -331,7 +334,7 @@ export function effectiveProfile(p: Profile = {}, character: Character | null = 
   for (const k of RESIST_KEYS) {
     const { cap: own, shard } = view[k]!, cap = shift?.caps[k] ?? own;
     if (own !== shard) overrides[k] = { cap: own, shard };
-    caps[k] = Math.max(0, cap - rsb) - share(k);
+    caps[k] = shift?.caps[k] != null ? cap - rsb - share(k) : Math.max(0, cap - rsb);
     if (floors[k] != null) floors[k] = Math.max(0, Math.min(floors[k], cap) - rsb - share(k));
   }
   for (const k of new Set([...Object.keys(shift?.caps || {}), ...Object.keys(shift?.shares || {})])) {

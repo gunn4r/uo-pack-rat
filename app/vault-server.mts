@@ -133,7 +133,7 @@ import { validate, type ValidatorSchema } from "./schema/validate.mts";
 import { parseItemQuery, applyItemQuery, facetsOf, wantsHits, hitRow, type ItemQueryRows, type ItemQueryGroups } from "./item-query.mts";
 import { DEFAULT_OPTIONAL_SLOTS } from "./mip.mts";
 import { GEAR_SLOTS } from "./vault-lib.mts";
-import { isBuffList, isBuffListsByCharacter, isBuffSkillsByCharacter } from "./buffs.mts";
+import { isBuffList, isBuffListsByCharacter, isBuffSkillsByCharacter, isRunBuffs, normalizeBuffs, normalizeBuffListsByCharacter } from "./buffs.mts";
 import { startWatcher, jsonErrorReason, MAX_INBOX_BYTES, type StartWatcherOptions, type WatcherHandle } from "./watcher.mts";
 import { parsePastedScan, writeScanToInbox } from "./import.mts";
 import { moveAside, writeFileAtomic } from "./atomic-write.mts";
@@ -896,8 +896,10 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
     if (isColWidths(raw.colWidths)) out.colWidths = raw.colWidths;
     if (isDrawerWidth(raw.mapDrawerWidth)) out.mapDrawerWidth = raw.mapDrawerWidth;
     if (isManualSuit(raw.manualSuit)) out.manualSuit = raw.manualSuit;
-    if (isBuffList(raw.manualBuffs)) out.manualBuffs = raw.manualBuffs;
-    if (isBuffListsByCharacter(raw.autoBuffs)) out.autoBuffs = raw.autoBuffs;
+    // the buffs read back healed (app/buffs.mts normalizeBuffs): a hand-edited second form replaces the first
+    const manualBuffs = normalizeBuffs(raw.manualBuffs), autoBuffs = normalizeBuffListsByCharacter(raw.autoBuffs);
+    if (manualBuffs) out.manualBuffs = manualBuffs;
+    if (autoBuffs) out.autoBuffs = autoBuffs;
     if (isBuffSkillsByCharacter(raw.buffSkills)) out.buffSkills = raw.buffSkills;   // an older flat shape is dropped
     for (const key of UI_PREF_VERSIONS) if (isBoundedString(raw[key], 64)) out[key] = raw[key];
     return out;
@@ -1523,12 +1525,12 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
         }
         // Manual's buffs (app/buffs.mts): catalog ids, and the numbers they scale with, each within its bounds.
         if (Object.prototype.hasOwnProperty.call(body, "manualBuffs")) {
-          if (!isBuffList(body.manualBuffs)) return send(res, 400, { ok: false, error: "manualBuffs must list known buffs, each once" });
+          if (!isBuffList(body.manualBuffs)) return send(res, 400, { ok: false, error: "manualBuffs must list known buffs, each once, one form at most" });
           next.manualBuffs = body.manualBuffs;
         }
         // Automatic's, by character.
         if (Object.prototype.hasOwnProperty.call(body, "autoBuffs")) {
-          if (!isBuffListsByCharacter(body.autoBuffs)) return send(res, 400, { ok: false, error: "autoBuffs must map characters to known buffs, each once" });
+          if (!isBuffListsByCharacter(body.autoBuffs)) return send(res, 400, { ok: false, error: "autoBuffs must map characters to known buffs, each once, one form at most" });
           next.autoBuffs = body.autoBuffs;
         }
         if (Object.prototype.hasOwnProperty.call(body, "buffSkills")) {
@@ -1877,6 +1879,9 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
         // the run was built with), held to the rule profiles.json's are.
         const badCaps = (await lib()).resistCapsError((meta.settings as Record<string, unknown> | undefined)?.resistCaps, "meta.settings.resistCaps");
         if (badCaps) return send(res, 400, { ok: false, error: badCaps });
+        // …and the buffs it was planned with (app/buffs.mts), which it is reopened, labeled and compared with
+        const runBuffs = (meta.settings as Record<string, unknown> | undefined)?.buffs;
+        if (runBuffs != null && !isRunBuffs(runBuffs)) return send(res, 400, { ok: false, error: "meta.settings.buffs must list known buffs, each once and one form at most, with their numbers in range" });
         let skipped: Record<string, number> = {}, blocked: string[] = [];
         // The by-character form: the caller sends {character, settings} instead of building pools/current
         // itself, and the server runs buildPools() against the cached inventory — the same function and

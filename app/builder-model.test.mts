@@ -195,7 +195,7 @@ test("[fast] builder model: a result's totals with the buffs it planned with, in
   const plan = { on: ["divineFury", "enemyOfOne"], skills: { ...buffSkillValues(null, {}).values, Chivalry: 105 }, stats: null, who: {} };
   const r = withBuffs({ ssi: 45, dci: 30, di: 90, fireResist: 30 }, 20, caps, plan);
   assert.deepEqual([r.totals.ssi, r.totals.dci, r.totals.fireResist, r.totals.di], [55, 10, 50, 100]);
-  assert.deepEqual(pastCapBadges(r), ["DI +68 past the cap · Enemy of One"]);
+  assert.deepEqual(pastCapBadges(r), ["DI +68 past the cap (Enemy of One)"]);
   const none = withBuffs({ ssi: 45 }, 20, caps, null);
   assert.deepEqual([none.totals.ssi, none.totals.fireResist, pastCapBadges(none)], [45, 20, []], "without buffs: the paperdoll totals alone");
   assert.deepEqual(paperdollFloors({ fireResist: 50, ssi: 60 }, 20), { fireResist: 70, ssi: 60 }, "only the floors set, resists with the bonus back");

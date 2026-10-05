@@ -9,14 +9,18 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { effectiveProfile, profileResistCaps, RESIST_KEYS } from "./vault-lib.mts";
+import { effectiveProfile, foldSnapshots, profileResistCaps, RESIST_KEYS } from "./vault-lib.mts";
 import type { Character, EffectiveProfile, Profile, PropMap } from "./vault-lib.mts";
-import { BUFFS, applyBuffs, buffSkillValues, plannedProfile, toggleBuff } from "./buffs.mts";
+import { BUFFS, STAT_MAX, applyBuffs, article, buffSkillValues, gearNeedsText, overrideNote, planBuffs, plannedProfile, toggleBuff } from "./buffs.mts";
 import type { BuffPlan, BuffResult, Skills, Stats } from "./buffs.mts";
 import { solveExact, type OptPools, type OptProfile } from "./exact-solver.mts";
-import { cell, core, templateNames } from "./solver-fixture.mts";   // also loads the uoalive rules
+import { cell, core, defaultProfiles, fixture, templateNames } from "./solver-fixture.mts";   // also loads the uoalive rules
+import { runKey, SOLVER_VERSION } from "./runs-lib.mts";
 
 const DEFAULTS = buffSkillValues(null, {}).values;
+// A shipped template as the panel holds it, and the fixture character (the solver fixture's own cell builds these too).
+const defaultTemplate = (n: string): Profile => ({ ...defaultProfiles.templates![n]!, softFloors: [] });
+const FIXTURE = foldSnapshots([fixture]).characters.Fixture!;
 const plan = (on: string[], skills: Skills = {}, { stats = null, race, worn = {} }: { stats?: Stats | null; race?: string; worn?: PropMap } = {}): BuffPlan =>
   ({ on, skills: { ...DEFAULTS, ...skills }, stats, who: race ? { race } : {}, worn });
 // A character with Resisting Spells 100: +40 to each resist on uoalive.
@@ -38,6 +42,7 @@ function checkPlan(p: Profile, ch: Character | null, pl: BuffPlan, label: string
   const base = effectiveProfile(p, ch), planned = plannedProfile(p, ch, pl), rsb = base.resistBonus, view = profileResistCaps(base);
   const caps = { ...base.caps };
   for (const k of RESIST_KEYS) caps[k] = view[k]!.cap;
+  if (pl.stats) Object.assign(caps, { strBonus: STAT_MAX - pl.stats.str, dexBonus: STAT_MAX - pl.stats.dex, intBonus: STAT_MAX - pl.stats.int });
   const r = applyBuffs(pl.worn, caps, pl.on, pl.skills, pl.stats, pl.who);
   const bonus = (k: string): number => (RESIST_KEYS.includes(k) ? rsb : 0);
   for (const [k, cap] of Object.entries(planned.caps)) {
@@ -109,7 +114,7 @@ test("[fast] buffs plan: a stat slot takes its largest share beside gear STR, wh
   assert.deepEqual([sum(r, "strBonus"), sum(r, "dexBonus")], [20, 11]);
   assert.deepEqual(r.beaten, [{ id: "bless", key: "strBonus", by: "greaterStrengthPotion" }]);
   assert.deepEqual([planned.floors.strBonus, planned.floors.dexBonus], [0, 0], "STR 20 met by the potion, DEX 10 by Bless");
-  assert.equal(planned.caps.strBonus, undefined, "no cap is invented: gear STR adds on top of either, uncapped here");
+  assert.equal(planned.caps.strBonus, 30, "gear STR adds on top of either, up to 150: 150 − raw 100 − the potion's 20");
   // raw stats are what Bless takes its share of: a stronger character gets more
   assert.equal(sum(applyBuffs({}, {}, ["bless"], pl.skills, { str: 125, dex: 0, int: 0 }), "strBonus"), 17);
 });
@@ -153,6 +158,69 @@ test("[fast] buffs plan: no buffs give main's profile for every default template
     assert.equal(createHash("sha1").update(JSON.stringify(c.profile)).digest("hex"), MAIN[`${n}${soft.length ? "+soft" : ""}`], `${n}${soft.length ? " with a soft floor and Fire 95" : ""}`);
   }
   assert.deepEqual(plannedProfile(ALL, RS100, plan([])), effectiveProfile(ALL, RS100), "an empty set is no set");
+});
+
+test("[fast] buffs plan: gear STR, DEX and INT are capped at what raw stats and the buffs leave to 150, with or without buffs", () => {
+  const stats = { str: 90, dex: 125, int: 40 }, p: Profile = { weights: { dexBonus: 1, luck: 1 } };
+  assert.equal(plannedProfile(p, null, null).caps.dexBonus, undefined, "no character: no stat caps");
+  const none = plannedProfile(p, null, plan([], {}, { stats }));
+  assert.deepEqual([none.caps.strBonus, none.caps.dexBonus, none.caps.intBonus], [60, 25, 110]);
+  assert.equal(none.buffs, undefined, "no buffs planned: nothing to name in the result");
+  // Greater Agility at no Alchemy: DEX +20, so gear can add 5 before 150
+  const gap = checkPlan(p, null, plan(["greaterAgilityPotion"], { Alchemy: 0 }, { stats }), "Greater Agility at raw DEX 125").planned;
+  assert.equal(gap.caps.dexBonus, 5);
+  // past 150 already (Invigorate's +13 and the potion's +30 on raw 125): gear earns nothing there, exactly
+  const past = checkPlan(p, null, plan(["greaterAgilityPotion", "invigorate"], { Alchemy: 100 }, { stats }), "Greater Agility and Invigorate").planned;
+  assert.ok(past.caps.dexBonus! < 0, "below 0, which keeps min(gear, cap − share) + share exact");
+  // the guard below holds stat caps apart: with raw stats and no buffs, every other number is main's
+  for (const n of templateNames) {
+    const c = cell(n), { strBonus: _s, dexBonus: _d, intBonus: _i, ...caps } = plannedProfile(defaultTemplate(n), FIXTURE, plan([], {}, { stats })).caps;
+    assert.deepEqual(caps, c.profile.caps, `${n}: only the stat caps are new`);
+  }
+});
+
+test("[fast] buffs plan: a resist override above the shard's cap is set aside while a buff lowers that resist, and the note says so", () => {
+  const p: Profile = { floors: { fireResist: 70, coldResist: 70 }, weights: { fireResist: 1 }, resistCaps: { fireResist: 95, coldResist: 60 } };
+  const reaper = withRS(plan(["reaperForm"], { Spellweaving: 120, "Arcane Focus": 0 }));
+  const { prof, r } = planBuffs(p, RS100, reaper);
+  assert.deepEqual(prof.buffs!.overridesIgnored, { fireResist: 95 }, "Fire's 95 would count Reaper's −25 twice; Cold's 60 is below the shard's cap and stays");
+  assert.deepEqual([prof.caps.fireResist, prof.floors.fireResist], [55, 55], "planned at the shard's 70: gear supplies 70 − 40 + 25");
+  assert.deepEqual([prof.caps.coldResist, prof.floors.coldResist], [15, 15], "Cold at its own 60, less 40 and Reaper's +5");
+  assert.equal(overrideNote("fireResist", 95, r!), "Fire 95 override ignored: Reaper Form's −25 is counted");
+  assert.equal(plannedProfile(p, RS100, withRS(plan(["divineFury"]))).buffs!.overridesIgnored, undefined, "no buff lowers Fire: the override counts");
+  checkPlan({ ...p, resistCaps: { coldResist: 60 } }, RS100, reaper, "Reaper with Cold at 60");
+});
+
+test("[fast] buffs plan: a resist cap under the Resisting Spells bonus is exact once a buff touches it, and main's with none", () => {
+  const p: Profile = { weights: { coldResist: 2, luck: 1 }, resistCaps: { coldResist: 20 } };
+  assert.equal(plannedProfile(p, RS100, withRS(plan([]))).caps.coldResist, 0, "no buff on Cold: stopped at 0, as main does");
+  const mr = checkPlan(p, RS100, withRS(plan(["magicReflection"], { Inscription: 0 })), "Magic Reflection with Cold at 20").planned;
+  assert.equal(mr.caps.coldResist, -30, "20 − 40 − 10");
+});
+
+test("[fast] buffs plan: a requirement's note: its article, a full cap, no cap at or under 0, Protection's lower Resisting Spells", () => {
+  const notes = (p: Profile, ch: Character | null, pl: BuffPlan, k: string): string | null => { const { prof, r } = planBuffs(p, ch, pl); return gearNeedsText(k, prof.floors[k]!, prof.caps[k], r!); };
+  assert.equal(notes(ALL, null, plan(["divineFury"], { Chivalry: 105 }), "dci"), "Gear needs 50: Divine Fury takes 20");
+  assert.equal(notes({ floors: { dci: 45 } }, null, plan(["divineFury"], { Chivalry: 105 }), "dci"), "Gear needs its full 65 cap: Divine Fury takes 20");
+  assert.equal(notes({ floors: { physResist: 65 } }, null, plan(["magicReflection"], { Inscription: 120 }), "physResist"), "Gear needs its full 79 cap: Magic Reflection −14, Magic Reflection cap −5");
+  assert.equal(notes({ floors: { physResist: 60 } }, null, plan(["magicReflection"], { Inscription: 120 }), "physResist"), "Gear needs 74 of a 79 cap: Magic Reflection −14, Magic Reflection cap −5");
+  assert.equal(notes({ floors: { physResist: 60 } }, null, plan(["magicReflection", "reactiveArmor"], { Inscription: 120 }), "physResist"), "Gear needs 53 of a 58 cap: Reactive Armor +21, Magic Reflection −14, Magic Reflection cap −5");
+  assert.equal(notes({ floors: { physResist: 60 } }, null, plan(["magicReflection"], { Inscription: 100 }), "physResist"), "Gear needs 75 of an 80 cap: Magic Reflection −15, Magic Reflection cap −5");
+  assert.deepEqual([1, 7, 8, 11, 18, 80, 88, 110, 180, 800, 1100, 1800].map(article), ["a", "a", "an", "an", "an", "an", "an", "a", "a", "an", "an", "an"]);
+  assert.equal(notes({ floors: { dci: 45 } }, null, plan(["whiteTiger", "perseverance", "savingThrow"], { "Mastery level": 3 }), "dci"), "Gear needs 0: White Tiger Form +20, Perseverance +30, Saving Throw (passive) +5, White Tiger Form cap +5", "a cap at or under 0 (50 − 55) is not named");
+  assert.equal(notes({ floors: { fireResist: 70 } }, RS100, withRS(plan(["protection"], { Inscription: 0 })), "fireResist"), "Gear needs its full 44 cap: Protection takes 14 (lower Resisting Spells)");
+  assert.equal(notes({ floors: { physResist: 70 } }, RS100, withRS(plan(["protection"], { Inscription: 0 })), "physResist"), "Gear needs its full 59 cap: Protection −15, Protection −14 (lower Resisting Spells)");
+});
+
+// The run key leaves out the plan's own bookkeeping, so it follows what the solvers read and nothing else.
+test("[fast] buffs plan: the run key follows the plan: Enemy of One alone keys as none, numbers no buff reads change nothing", () => {
+  const c = cell("melee"), key = (pl: BuffPlan | null): string => runKey({ pools: c.pools, current: c.current, profile: plannedProfile(defaultTemplate("melee"), FIXTURE, pl), opts: { seed: 2026, restarts: 200 } });
+  const none = key(null);
+  if (SOLVER_VERSION === 3) assert.equal(none, "ac4629c8a8ca3cf77dbcba655c8e8bf8cd65f4a8", "main's key (02b052e) for the melee template");
+  assert.equal(key(plan(["enemyOfOne"])), none, "Enemy of One plans like none");
+  assert.notEqual(key(plan(["divineFury"], { Chivalry: 105 })), key(plan(["divineFury"], { Chivalry: 120 })), "another tier, another plan");
+  assert.equal(key(plan(["divineFury"], { Chivalry: 105 })), key(plan(["divineFury"], { Chivalry: 105, Necromancy: 40, Bushido: 3 })), "an edit no buff on reads");
+  assert.notEqual(key(plan(["divineFury"], { Chivalry: 105 })), none);
 });
 
 // ---------------------------------------------------------------- the solvers on small pools
@@ -211,6 +279,14 @@ test("[fast] buffs plan: resist shares past a resist's cap with Resisting Spells
   assert.deepEqual([planned.caps.physResist, planned.floors.physResist], [-26, 0]);
   const pools = { helmet: [{ serial: 92401, name: "Plate Helm", slot: "helmet", props: { physResist: 12 } }, { serial: 92402, name: "Lucky Helm", slot: "helmet", props: { luck: 5 } }] };
   assert.equal((await both(pools, planned)).best.helmet?.serial, 92402, "Physical from gear is worth nothing more");
+});
+
+test("[fast] buffs plan: past the 150 a potion fills, gear DEX earns nothing, so Luck wins", async () => {
+  const pools = { helmet: [{ serial: 92501, name: "Nimble Helm", slot: "helmet", props: { dexBonus: 30 } }, { serial: 92502, name: "Lucky Helm", slot: "helmet", props: { luck: 10 } }] };
+  const p: Profile = { weights: { dexBonus: 1, luck: 1 } }, stats = { str: 66, dex: 125, int: 42 };
+  assert.equal((await both(pools, plannedProfile(p, null, null))).best.helmet?.serial, 92501, "no character: 30 DEX beats 10 Luck");
+  assert.equal((await both(pools, plannedProfile(p, null, plan([], {}, { stats })))).best.helmet?.serial, 92501, "raw 125: 25 DEX still beats 10 Luck");
+  assert.equal((await both(pools, plannedProfile(p, null, plan(["greaterAgilityPotion"], { Alchemy: 0 }, { stats })))).best.helmet?.serial, 92502, "the potion's +20 leaves 5");
 });
 
 test("[fast] buffs plan: a buff that lowers a cap under the worn total makes the excess worthless", async () => {

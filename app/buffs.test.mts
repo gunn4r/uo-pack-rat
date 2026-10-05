@@ -9,7 +9,7 @@ import { readFileSync } from "node:fs";
 import { effectiveProfile, profileResistCaps, setRules } from "./vault-lib.mts";
 import type { Character, Profile, PropMap } from "./vault-lib.mts";
 import type { RulesV1 } from "./schema/types.d.mts";
-import { BUFFS, BUFF_IDS, BUFF_GROUPS, BUFF_INPUTS, applyBuffs, buffById, buffShift, buffSkillValues, buffText, buffsDiff, gearNeedsText, isBuffList, isBuffListsByCharacter, isBuffSkills, isBuffSkillsByCharacter, plannedFromWorn, plannedProfile, runBuffs, savedBuffs, toggleBuff } from "./buffs.mts";
+import { BUFFS, BUFF_IDS, BUFF_GROUPS, BUFF_INPUTS, applyBuffs, buffById, buffShift, buffSkillValues, buffText, buffsDiff, gearNeedsText, isBuffList, isBuffListsByCharacter, isBuffSkills, isBuffSkillsByCharacter, isRunBuffs, normalizeBuffListsByCharacter, normalizeBuffs, ownEntry, plannedFromWorn, plannedProfile, runBuffs, savedBuffs, toggleBuff } from "./buffs.mts";
 import type { BuffPlan, Skills, Stats } from "./buffs.mts";
 
 setRules(JSON.parse(readFileSync(new URL("./rules/uoalive.json", import.meta.url), "utf8")) as RulesV1);
@@ -84,7 +84,7 @@ test("[fast] buffs: Magery: Bless takes 1 + Eval / 10 percent of the raw stats, 
   // Protection with no character's Resisting Spells: Phys −15 + Inscription / 20 and FC −2 after the cap
   assert.deepEqual(alone("protection", { Inscription: 0 }).add, { physResist: -15 });
   assert.deepEqual(alone("protection", { Inscription: 100 }).add, { physResist: -10 });
-  assert.equal(buffText("protection", { Inscription: 0 }, null, {}), "Phys −15 · FC −2 past the cap · Resisting Spells −35");
+  assert.equal(buffText("protection", { Inscription: 0 }, null, {}), "Phys −15 · FC −2 after the cap · Resisting Spells −35");
 });
 
 test("[fast] buffs: Magic Reflection by the shard wiki: Phys −(20 − Inscription / 20) and its cap −5, the others +10", () => {
@@ -258,6 +258,22 @@ test("[fast] buffs: the saved choices' checks", () => {
   for (const bad of [null, [], { Chivalry: 151 }, { Karma: 15001 }, { "Mastery level": 0 }, { Chivalry: "120" }, { Chivalry: Number.NaN }, { Hiding: 100 }, JSON.parse('{"__proto__": 5}') as unknown]) {
     assert.equal(isBuffSkills(bad), false, JSON.stringify(bad));
   }
+});
+
+test("[fast] buffs: one form at a time in a sent list; a saved one is healed on reading; a name like constructor is a name", () => {
+  for (const bad of [["wraithForm", "lichForm"], ["enchant.hitLightning", "enchant.hitHarm"]]) assert.equal(isBuffList(bad), false, `${bad.join(" + ")}: one of an exclusive set`);
+  assert.equal(isBuffList(["wraithForm", "enchant.hitHarm", "divineFury"]), true, "one of each set");
+  assert.deepEqual(normalizeBuffs(["bless", "wraithForm", "lichForm", "bless", "divineFury"]), ["divineFury", "lichForm", "bless"], "the later form replaces the earlier, a repeat drops, catalog order");
+  for (const bad of [null, "bless", ["nope"], [3]]) assert.equal(normalizeBuffs(bad), null, JSON.stringify(bad));
+  const skills = runBuffs(["divineFury"], buffSkillValues(null, {}).values)!.skills;
+  assert.deepEqual(savedBuffs({ buffs: { on: ["wraithForm", "lichForm"], skills } }), { on: ["lichForm"], skills }, "an old run's two forms, healed");
+  assert.equal(isRunBuffs({ on: ["wraithForm", "lichForm"], skills }), false, "but never sent so");
+  assert.equal(savedBuffs({ buffs: { on: [], skills } }), undefined, "an empty list is none");
+  assert.deepEqual(normalizeBuffListsByCharacter({ constructor: ["reaperForm", "wraithForm"], toString: [] }), { constructor: ["wraithForm"], toString: [] });
+  assert.equal(normalizeBuffListsByCharacter({ Kestrel: ["nope"] }), null);
+  assert.ok(isBuffListsByCharacter({ constructor: ["bless"] }) && isBuffSkillsByCharacter({ constructor: { Chivalry: 100 } }));
+  assert.equal(ownEntry({}, "constructor"), undefined, "never Object.prototype.constructor");
+  assert.deepEqual(ownEntry({ constructor: ["bless"] }, "constructor"), ["bless"]);
 });
 
 test("[fast] buffs: Spellweaving's Arcane Empowerment, Attunement and Ethereal Form", () => {
