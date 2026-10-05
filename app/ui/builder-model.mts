@@ -325,10 +325,10 @@ export function toggleCompare(selected: ReadonlySet<string>, id: string, on: boo
 // ---------------------------------------------------------------- saved runs
 // What changed between two runs' settings, their buffs included ("+Divine Fury").
 export const runSettingsDiff = (a: RunSettings, b: RunSettings): string[] => [...settingsDiff(a, b), ...buffsDiff(a.buffs, b.buffs)];
-// A run's name when the player gave it none: how its settings differ from the run saved before it.
 // The slots a result plans: a suit built by hand (Manual's "Save as run", method "manual") has every gear slot, a
 // search (and a run saved before Manual) the optimizer's twelve.
 export const slotsOf = (res: { method?: string | null | undefined }): string[] => (res.method === "manual" ? GEAR_SLOTS : OPTIMIZER_SLOTS);
+// A run's name when the player gave it none: how its settings differ from the run saved before it.
 export function runAutoLabel(prev: RunSettings | null, settings: RunSettings): { text: string; diff: string[] } {
   if (!prev) return { text: "First saved run", diff: [] };
   const diff = runSettingsDiff(prev, settings);

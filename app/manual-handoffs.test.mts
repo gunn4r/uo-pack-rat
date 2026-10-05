@@ -68,7 +68,7 @@ test("[fast] a manual run: every gear slot, the changes from what the character 
   assert.equal(run.result!.method, "manual");
   assert.equal(run.result!.score, undefined);
   assert.deepEqual((run.result!.perSlotChanges as Array<{ slot: string; gainedProps: object }>).map((c) => [c.slot, c.gainedProps]), [["ring", { luck: 30 }], ["waist", { lrc: 20 }]]);
-  assert.deepEqual((run.result!.totals as { after: object }).after, { luck: 40, physResist: 2, lrc: 20 });
+  assert.deepEqual(run.result!.totals, { before: { luck: 10, physResist: 2 }, after: { luck: 40 }, outside: { physResist: 2, lrc: 20 } }, "after: the optimizer's slots, like a search; outside: the six others");
   assert.match(run.key!, /^manual:/);
   assert.equal(reusableRun([run], run.key!), null, "a manual run never answers a search, even by its own key");
   const sum = runSummary(normalizeRun(run));

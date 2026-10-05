@@ -1,8 +1,8 @@
 // ui/manual-model.mts — the Suit Builder's Manual mode, its pure logic (issue #12): the totals strip's keys and the
 // line under each total, the slot groups, the picker's slot filter, the one-hand/two-hand rule, a saved suit read
 // back, the slots whose piece left the scans, a picker row's delta ("LRC +20 → 77"), the suit's undo history and
-// keys, and the hand-offs with Automatic (a result into the suit, the pieces to fetch). No DOM and no page state, so app/manual-model.test.mts checks it directly; ui/builder-manual.mts draws what it
-// returns.
+// keys, and the hand-offs with Automatic (a result into the suit, the pieces to fetch). No DOM and no page state, so
+// app/manual-model.test.mts checks it directly; ui/builder-manual.mts draws what it returns.
 import { RESIST_KEYS, GEAR_SLOTS, OPTIMIZER_SLOTS, labelOf } from "../vault-lib.mts";
 import type { PropMap } from "../vault-lib.mts";
 import type { ItemQuery } from "../item-query.mts";

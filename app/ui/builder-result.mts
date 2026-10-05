@@ -148,13 +148,9 @@ function headlineCard(res: OptimizeResult, current: OptSuit, suit: OptSuit, prof
   const report = requirementReport(after, prof), floors = prof.buffs ? floorKeys.length : report.filter((r) => r.met != null).length;
   const unmet = prof.buffs ? floorKeys.filter((k) => (now.totals[k] || 0) < effectiveFloor(k, pdFloors[k]!, now.caps)).length : report.filter((r) => r.met === false).length;
   const v = verdict(res);
-  const vb = v.text ? box("span", { class: `badge${v.tone ? " " + v.tone : ""}` }, v.tone === "ok" ? icon("check", { size: "sm" }) : null, txt(v.text)) : null;
+  const vb = v.text && res.method !== "manual" ? box("span", { class: `badge${v.tone ? " " + v.tone : ""}` }, v.tone === "ok" ? icon("check", { size: "sm" }) : null, txt(v.text)) : null;
   const line = [plural(nChanges, "change"), floors ? (unmet ? `${plural(unmet, "requirement")} not met` : "every requirement met") : "",
     res.method === "manual" ? "built by hand" : meta ? (meta.reused ? `reused the run from ${fmtRunTime(meta.reused.createdAt)}` : `found in ${fmtSecs(meta.ms)}`) : ""].filter(Boolean).join(" · ");
-  const todo = grabbable(fetchItems, name);
-  const gate = todo.length ? bridgeActionReason("grab", todo[0]!) : null;
-  const grab = button({ label: todo.length ? `Grab all ${todo.length}` : "Grab all", icon: "grab", variant: "primary", disabled: !!gate || !todo.length, onClick: () => grabAll(fetchItems, name), attrs: { id: "b-grab-all" } });
-  const grabCtl = gate || !todo.length ? tipWrap(grab, gate || `Nothing to grab: every piece is already with ${name} or worn.`) : grab;
   // Manual takes the suit as it is shown, with the buffs it was planned with (one undo step there)
   const manual = res.method === "manual", buffsUsed: RunBuffs | undefined = prof.buffs ? runBuffs(prof.buffs.on, prof.buffs.skills) : undefined;
   const start = button({ label: manual ? "Open in Manual" : "Start from this result", icon: "pencil", attrs: { id: "b-to-manual" },
@@ -165,7 +161,7 @@ function headlineCard(res: OptimizeResult, current: OptSuit, suit: OptSuit, prof
   return box("section", { class: "card b-head-card", "aria-label": view == null ? "Best suit" : `Suit ${view + 2}` },
     box("div", { class: "b-headline" },
       box("div", { class: "b-headline-text" }, box("div", { class: "b-row" }, el("h2", { class: "t-xl" }, manual ? `Manual suit for ${name}` : view == null ? `Best suit for ${name}` : `Suit #${view + 2} for ${name}`), vb), el("p", { class: "muted" }, txt(line)), plannedWith(prof, name)),
-      box("div", { class: "b-head-acts" }, start, grabCtl)),
+      box("div", { class: "b-head-acts" }, start, grabAllButton(fetchItems, name, { id: "b-grab-all" }))),
     v.detail ? message({ tone: v.tone === "bad" ? "bad" : "warn", text: v.detail }) : null,
     unreachable,
     box("div", { class: "b-resists" }, ...tiles),
@@ -247,9 +243,17 @@ function copyButton(text: string, what: string): HTMLButtonElement {
   tooltip(b, `Copy ${what}`, { side: "right" });   // beside it, never over the place's path above
   return b;
 }
-// Also Manual's (issue #12), for the manual suit's pieces the character doesn't wear; with no character (`name` null)
-// there is no backpack to grab into, and Go to still works.
-export function fetchCard(items: Item[], name: string | null): HTMLElement | null {
+// Grab all the pieces to fetch into `name`'s backpack (the result's headline, Manual's fetch list), disabled with its
+// reason; with no character (`name` null, Manual) a plain "Grab", disabled: there is no backpack to grab into.
+export function grabAllButton(items: Item[], name: string | null, { id, size }: { id: string; size?: "sm" | undefined }): HTMLElement {
+  const todo = name ? grabbable(items, name) : [];
+  const gate = !name ? "Choose a character to grab for" : todo.length ? bridgeActionReason("grab", todo[0]!) : `Nothing to grab: every piece is already with ${name} or worn.`;
+  const grab = button({ label: !name ? "Grab" : todo.length ? `Grab all ${todo.length}` : "Grab all", icon: "grab", variant: "primary", size, disabled: !!gate, onClick: () => grabAll(items, name!), attrs: { id } });
+  return gate ? tipWrap(grab, gate) : grab;
+}
+// Also Manual's (issue #12), for the manual suit's pieces the character doesn't wear, with `head` (its Grab all) in the
+// card's head; with no character (`name` null) there is no backpack to grab into, and Go to still works.
+export function fetchCard(items: Item[], name: string | null, head: HTMLElement | null = null): HTMLElement | null {
   if (!items.length) return null;
   const groups = new Map<string, Item[]>();
   for (const it of items) { const k = `${it.container ?? it.location?.text}`; groups.set(k, [...(groups.get(k) || []), it]); }
@@ -272,7 +276,7 @@ export function fetchCard(items: Item[], name: string | null): HTMLElement | nul
       box("span", { class: "b-fetch-acts" }, goGate ? tipWrap(go, goGate) : go, grabGate ? tipWrap(grab, grabGate) : grab));
   });
   return el("section", { class: "card", "aria-label": "Fetch list" },
-    box("div", { class: "card-head" }, el("h2", {}, "Fetch list"), txt("Walk to each container once", "t-sm muted")),
+    box("div", { class: "card-head" }, el("h2", {}, "Fetch list"), txt("Walk to each container once", "t-sm muted"), head ? el("span", { class: "spacer" }) : null, head),
     box("div", { class: "b-fetch-list" }, ...rows));
 }
 
@@ -445,7 +449,8 @@ export function openRunCompare(runs: SavedRunLike[], titleOf: (r: SavedRunLike) 
     const capped = views.some(anyOverridden);
     const columns: CompareColumn[] = list.map((r, i) => {
       const floors = r.settings.floors || {};
-      const { totals, caps } = withBuffs(totalsOf(r.result.best), rsb, paperdollCaps(views[i]!), buffPlan(name, r.settings.race, savedBuffs(r.settings)));
+      // the optimizer's slots only, so a manual run's feet, robe and so on never tip the comparison with a search
+      const { totals, caps } = withBuffs(totalsOf(Object.fromEntries(OPTIMIZER_SLOTS.map((sl) => [sl, r.result.best[sl]]))), rsb, paperdollCaps(views[i]!), buffPlan(name, r.settings.race, savedBuffs(r.settings)));
       const met = Object.keys(floors).filter((k) => (totals[k] || 0) >= effectiveFloor(k, floors[k]!, caps)).length;
       const v = verdict(r.result);
       const head = box("span", { class: "b-cmp-col" }, box("span", { class: "b-row" }, el("span", { class: "strong ellip", title: titleOf(r) }, titleOf(r)), v.text ? badge(v.text, v.tone === "bad" ? "bad" : v.tone) : null), txt(`${fmtRunTime(r.createdAt)} · ${r.result.method === "manual" ? "built by hand" : fmtSecs(r.ms || 0)}`, "t-sm"));

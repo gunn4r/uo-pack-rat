@@ -100,8 +100,7 @@ export function renderRuns(): void {
   const q = ($<HTMLInputElement>("#b-runs-filter")!.value || "").trim().toLowerCase();
   const rsb = resistSkillBonus(state.inv?.characters[name]?.skills);
   const kept = runs.map((run, i) => {
-    // a suit built by hand is named for that, never by its settings (they are the panel's when it was saved)
-    const auto = run.method === "manual" ? { text: "Suit built by hand", diff: [] } : runAutoLabel(runs[i + 1]?.settings ?? null, run.settings);
+    const auto = autoLabel(run, runs[i + 1]);
     const title = run.label || auto.text;
     if (q && !`${run.label || ""} ${auto.text} ${auto.diff.join(" ")} ${fmtRunTime(run.createdAt)}`.toLowerCase().includes(q)) return null;
     // the resist caps the run was built with (its race, its overrides), against the shard's for that race
@@ -115,9 +114,14 @@ export function renderRuns(): void {
   }).filter((x): x is HTMLLIElement => !!x);
   box_.replaceChildren(...(kept.length ? kept : [el("li", { class: "runs-empty" }, el("p", { class: "muted" }, txt("No saved run matches the filter.")))]));
 }
+// A run's automatic label: what changed from the run before it; a suit built by hand is named for that, never by its
+// settings (they are the panel's when it was saved).
+function autoLabel(run: { result?: { method?: string | undefined }; method?: string | null; settings: RunSettings }, before: { settings: RunSettings } | undefined): { text: string; diff: string[] } {
+  return (run.method ?? run.result?.method) === "manual" ? { text: "Suit built by hand", diff: [] } : runAutoLabel(before?.settings ?? null, run.settings);
+}
 // null: an exact run whose proof the server withdrew (saved before the soft-floor fix, normalizeRun) shows no verdict.
 function verdictOf(run: RunSummaryLike): { text: string; cls: string } | null {
-  if (run.method === "manual") return { text: "saved from Manual", cls: "muted" };
+  if (run.method === "manual") return null;   // its Manual badge says it
   if (run.method !== "exact") return { text: "heuristic", cls: "muted" };
   if (run.proven == null) return null;
   return run.proven ? { text: "proven optimal", cls: "tone-ok" } : { text: "best within budget", cls: "tone-warn" };
@@ -246,6 +250,6 @@ export async function compareSelected(): Promise<void> {
   showAutomatic();
   // Each run under the name the drawer shows it by: its own, else its automatic label.
   const list = state.builder.runs;
-  const titleOf = (r: SavedRunLike): string => { const i = list.findIndex((x) => x.id === r.id); return r.label || runAutoLabel(i >= 0 ? list[i + 1]?.settings ?? null : null, r.settings).text; };
+  const titleOf = (r: SavedRunLike): string => { const i = list.findIndex((x) => x.id === r.id); return r.label || autoLabel(r, i >= 0 ? list[i + 1] : undefined).text; };
   openRunCompare(runs, titleOf, (id) => { openRun(id); }, (id) => { state.builder.compare.delete(id); renderRuns(); });
 }

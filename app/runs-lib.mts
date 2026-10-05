@@ -1,7 +1,7 @@
 // runs-lib.mts — saved suit-builder runs: the cache key, the reuse rule, and the list summary.
 // Server-side only (uses node:crypto); the page never imports it.
 import { createHash } from "node:crypto";
-import { migrateWeaponSetting, totalsOf, type OptItem } from "./vault-lib.mts";
+import { migrateWeaponSetting, totalsOf, OPTIMIZER_SLOTS, type OptItem } from "./vault-lib.mts";
 
 // The optimizer search options a saved run was made with. Loosely shaped (an index signature) because
 // this module only ever serializes opts wholesale (runKey) or reads the few named fields below — the
@@ -105,11 +105,15 @@ export function reusableRun(runs: SavedRun[], key: string, opts: { timeBudgetMs?
 // are slot -> piece over every gear slot (the six the optimizer has no slot for included), `worn` what the character
 // wears now. Its result has the shape a search's has (best, perSlotChanges, totals before and after), with method
 // "manual" and no score: the core's score needs the profile the page plans with, and a number a search never
-// produced would only mislead beside the searched runs. Its key starts "manual:", so no search request can match it.
+// produced would only mislead beside the searched runs. Its totals `after` are the optimizer's twelve slots, like a
+// search's, so the drawer's badges and compare weigh the two alike; `outside` holds the six other slots'. Its key
+// starts "manual:", so no search request can match it.
 export interface ManualRunInput {
   id: string; character: string; createdAt: string; settings: RunSettingsRaw; inventoryStamp: unknown;
   suit: Record<string, OptItem>; worn: Record<string, OptItem>; slots: readonly string[];
 }
+// the pieces in the optimizer's slots (`inside`), or in the others
+const pick = (suit: Record<string, OptItem>, inside: boolean): Record<string, OptItem> => Object.fromEntries(Object.entries(suit).filter(([s]) => OPTIMIZER_SLOTS.includes(s) === inside));
 export function manualRun({ id, character, createdAt, settings, inventoryStamp, suit, worn, slots }: ManualRunInput): SavedRun {
   const best = Object.fromEntries(slots.map((s) => [s, suit[s] ?? null]));
   const perSlotChanges = slots.filter((s) => (suit[s]?.serial ?? 0) !== (worn[s]?.serial ?? 0)).map((s) => {
@@ -122,7 +126,7 @@ export function manualRun({ id, character, createdAt, settings, inventoryStamp, 
   });
   const key = `manual:${createHash("sha1").update(JSON.stringify({ character, suit: Object.fromEntries(Object.entries(best).map(([s, it]) => [s, it?.serial ?? null])), settings })).digest("hex")}`;
   return { id, key, character, createdAt, label: "", settings, schemaVersion: 1, solverVersion: SOLVER_VERSION, inventoryStamp, poolSize: null, skipped: {}, ms: 0,
-    result: { method: "manual", best, perSlotChanges, totals: { before: totalsOf(worn), after: totalsOf(suit) } } };
+    result: { method: "manual", best, perSlotChanges, totals: { before: totalsOf(worn), after: totalsOf(pick(suit, true)), outside: totalsOf(pick(suit, false)) } } };
 }
 
 export interface RunSummary {

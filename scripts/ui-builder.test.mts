@@ -555,6 +555,13 @@ test("[slow] Manual hand-offs: fill the rest, save as run, reopen it, and start 
     assert.match(await page.locator('.mb-slot-pick[data-slot="ring"]').innerText(), new RegExp(ringName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")), "the placed ring stays");
     assert.match(await page.locator("#mb-undo").getAttribute("aria-label") || "", /^Undo: Fill the rest: \d+ slots?/, "one undo step");
     assert.ok(await page.locator("#mb-fetch").isVisible(), "the fetch list shows the pieces to fetch");
+    assert.ok(await page.locator("#mb-fetch #mb-grab-all").count(), "with its Grab all");
+    // a buff on in Manual, which a result planned without buffs takes off (and undo puts back)
+    await page.click("#bf-add");
+    await page.locator("#bf-cb-divineFury").check();
+    await page.keyboard.press("Escape");
+    const fury = page.locator('#mb-totals .bf-strip .token[data-buff="divineFury"]');
+    await fury.waitFor();
     // Save as run, then open it from the drawer: the result view, a manual run, with Open in Manual
     await page.click("#mb-save-run");
     await page.waitForFunction(() => Number(document.querySelector("#b-runs-count")?.textContent) >= 1);
@@ -572,6 +579,9 @@ test("[slow] Manual hand-offs: fill the rest, save as run, reopen it, and start 
     await page.click("#b-to-manual");
     await page.waitForSelector("#b-manual:not([hidden]) #mb-suit .mb-slot");
     assert.match(await page.locator("#mb-undo").getAttribute("aria-label") || "", /^Undo: Start from the result/);
+    assert.equal(await fury.count(), 0, "the result's buffs (none) replace Manual's");
+    await page.click("#mb-undo");
+    await fury.waitFor();
     assert.deepEqual(errors, []);
   } finally {
     await app.close();

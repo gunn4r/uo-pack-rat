@@ -17,8 +17,8 @@ import { $, el, label, slotLabel, itemTip, toast } from "./dom.mts";
 import { box, txt, button, icon, segmented, tag, confirmDialog, modalOpen, tooltip, tipWrap, progress } from "./components.mts";
 import { api } from "./api.mts";
 import { resolveItems, rarityToken } from "./items.mts";
-import { closeCompare, fetchCard, keyProps, verdict, RESIST_NAMES } from "./builder-result.mts";
-import { capNote, paperdoll, paperdollCaps, plural, propName } from "./builder-model.mts";
+import { closeCompare, fetchCard, grabAllButton, keyProps, verdict, RESIST_NAMES } from "./builder-result.mts";
+import { capNote, paperdoll, paperdollCaps, plural } from "./builder-model.mts";
 import { followJob, poolSettings, readControls, searchOpts, progressText } from "./builder.mts";
 import { loadRuns, settingsSnapshot } from "./runs.mts";
 import { optimizeErrorMessage } from "./messages.mts";
@@ -50,7 +50,9 @@ let buffPicker: BuffPicker | null = null;
 let replaced: { on: string; off: string } | null = null;
 // The suit's undo history, its steps holding the suit and its buffs (in memory: a reload starts a new one; another
 // character keeps it, the suit is shared).
-interface Snapshot { slots: Suit; buffs: string[] }
+// A step that also changed the Count buffs switch or the buff numbers (Open in Manual) carries them too, so undo puts
+// them back; other steps leave them out, so undoing them never touches a number edited since.
+interface Snapshot { slots: Suit; buffs: string[]; count?: boolean; edits?: Record<string, Record<string, number>> }
 let history: History<Snapshot> = emptyHistory();
 const MAC = /Mac|iPhone|iPad/.test(navigator.platform), KEY_NAMES = historyKeyNames(MAC);
 
@@ -186,9 +188,12 @@ export function editBuffInputs(name: string | null, values: Readonly<Record<stri
 }
 // A saved run's buff numbers, where they differ from the character's now, so its buffs count as they did.
 export function applyRunInputs(name: string | null, b: RunBuffs | undefined): void {
-  const now = buffInputsOf(name).values, used = new Set((b?.on ?? []).flatMap((id) => buffById(id)!.inputs));
-  const edits = Object.fromEntries([...used].filter((i) => b!.skills[i] != null && b!.skills[i] !== now[i]).map((i) => [i, b!.skills[i]!]));
+  const edits = runInputEdits(name, b);
   if (Object.keys(edits).length) editBuffInputs(name, edits);
+}
+function runInputEdits(name: string | null, b: RunBuffs | undefined): Record<string, number> {
+  const now = buffInputsOf(name).values, used = new Set((b?.on ?? []).flatMap((id) => buffById(id)!.inputs));
+  return Object.fromEntries([...used].filter((i) => b!.skills[i] != null && b!.skills[i] !== now[i]).map((i) => [i, b!.skills[i]!]));
 }
 // The suit's pieces by slot (a piece no longer in the scans left out), and the held weapon's flags: a two-handed
 // weapon, else the one-handed slot's piece (Enchant reads its Spell Channeling).
@@ -202,11 +207,15 @@ function buffed(t: PropMap, caps: Record<string, number>, all = false, suit: Rec
 // Every change to the suit or its buffs is one undo step, named by `label` ("Ring → Arcane Ring", "Divine Fury on");
 // undo and redo pass none. `note` is the form a turned-on form replaced, said in the buff picker until the next change.
 function commit(next: Partial<Snapshot>, label: string | null, note: typeof replaced = null): void {
-  const after = { slots: next.slots ?? slots, buffs: next.buffs ?? buffs };
-  if (label) history = record(history, { slots, buffs }, after, label);
-  const changed = { ...(after.slots !== slots ? { manualSuit: after.slots } : {}), ...(after.buffs !== buffs ? { manualBuffs: after.buffs } : {}) };
+  const extra = (count: boolean, edits: Snapshot["edits"]): Partial<Snapshot> => ({ ...(next.count != null ? { count } : {}), ...(next.edits && edits ? { edits } : {}) });
+  const after: Snapshot = { slots: next.slots ?? slots, buffs: next.buffs ?? buffs, ...extra(next.count!, next.edits) };
+  if (label) history = record(history, { slots, buffs, ...extra(countBuffs, buffEdits) }, after, label);
+  const changed = { ...(after.slots !== slots ? { manualSuit: after.slots } : {}), ...(after.buffs !== buffs ? { manualBuffs: after.buffs } : {}),
+    ...(after.count != null && after.count !== countBuffs ? { buffsCount: after.count ? "on" as const : "off" as const } : {}), ...(after.edits && after.edits !== buffEdits ? { buffSkills: after.edits } : {}) };
   if (Object.keys(changed).length) savePrefs(changed);
   slots = after.slots; buffs = after.buffs; replaced = note; fillNote = null;
+  if (after.count != null) countBuffs = after.count;
+  if (after.edits) buffEdits = after.edits;
   refresh();
 }
 // The screen, and the rows' deltas and the current row, follow the suit, its buffs and their numbers.
@@ -274,12 +283,14 @@ export function renderManual(): void {
 }
 function draw(): void {
   inputsMemo = null;
+  const cancelFocused = document.activeElement?.id === "mb-fill-cancel";
   const root = $<HTMLElement>("#b-manual")!;
   root.querySelector("#mb-totals")!.replaceWith(totalsCard());
   root.querySelector("#mb-suit")!.replaceWith(suitCard());
   root.querySelector("#mb-stats")!.replaceWith(statsCard());
   root.querySelector("#mb-fetch")!.replaceWith(fetchList());
   paintPicker();
+  if (cancelFocused) $<HTMLElement>("#mb-fill-cancel")?.focus();   // a change made during a fill redraws the row
 }
 function totalsCard(): HTMLElement {
   const name = manualCharacter(), prof = profile(), resists = profileResistCaps(prof), base = paperdollCaps(resists);
@@ -471,7 +482,7 @@ const fillable = (): string[] => fillableSlots(slots, slots.twoHanded != null &&
 function fillProfile(): EffectiveProfile {
   const name = manualCharacter(), p = readControls(), suit = suitItems(), { values, stats, race } = buffInputs();
   const outside = Object.fromEntries(Object.entries(suit).filter(([s]) => !OPTIMIZER_SLOTS.includes(s)).map(([s, it]) => [s, toOptItem(it)]));
-  return plannedProfile(name ? p : { ...p, race: undefined, resistCaps: undefined }, name ? state.inv!.characters[name] as Character : null,
+  return plannedProfile(name ? p : { ...p, race: undefined, resistCaps: undefined, caps: undefined }, name ? state.inv!.characters[name] as Character : null,
     { on: countBuffs ? buffs : [], skills: values, stats, who: { race, weaponFlags: weaponFlags(suit) }, worn: totalsOf(suitOpt()), base: totalsOf(outside) });
 }
 async function fillRest(): Promise<void> {
@@ -519,9 +530,10 @@ async function landFill(f: Fill, res: OptimizeResult): Promise<void> {
   }
   const n = Object.keys(next).length - Object.keys(slots).length;
   const gear = Object.fromEntries(OPTIMIZER_SLOTS.flatMap((s) => (next[s] != null && items[next[s]!] ? [[s, toOptItem(items[next[s]!]!)]] : [])));
-  const short = requirementReport(totalsOf(gear), f.prof).filter((r) => r.met === false).map((r) => propName(r.key));
-  const v = verdict(res).text;
-  const text = [n ? `Filled ${plural(n, "slot")}` : "Nothing filled: no piece in the pool improves the suit", v ? v[0]!.toLowerCase() + v.slice(1) : "", short.length ? `short of ${short.join(", ")}` : ""].filter(Boolean).join(" · ");
+  const short = requirementReport(totalsOf(gear), f.prof).filter((r) => r.met === false).map((r) => label(r.key));
+  // the requirements still missed, else how sure the search is (a proof here is about the empty slots only)
+  const v = res.method === "exact" && res.proven ? "best for the empty slots" : verdict(res).text.toLowerCase();
+  const text = [n ? `Filled ${plural(n, "slot")}` : "Nothing filled: no piece in the pool improves the suit", short.length ? `short of ${short.join(", ")}` : v].filter(Boolean).join(" · ");
   if (n) commit({ slots: next }, `Fill the rest: ${plural(n, "slot")}`);
   endFill({ text, tone: short.length ? "warn" : n ? "ok" : "muted" });
 }
@@ -568,12 +580,11 @@ export async function openInManual(suit: OptSuit, covered: readonly string[], ru
   const next = suitFrom(slots, suit, covered);
   Object.assign(items, await resolveItems(Object.values(next)));   // drawn whole at once: no piece flashes up as missing
   if (noCharacter) { noCharacter = false; savePrefs({ manualFor: "character" }); }
-  if (runB) {
-    applyRunInputs(manualCharacter(), runB);
-    if (!countBuffs) { countBuffs = true; savePrefs({ buffsCount: "on" }); }
-  }
+  // the run's buffs (none for a run without), counted, with the numbers they took: all in the same undo step
+  const name = manualCharacter(), runEdits = runInputEdits(name, runB);
+  const edits = Object.keys(runEdits).length ? { ...buffEdits, [name ?? NO_CHARACTER]: { ...buffEditsOf(name), ...runEdits } } : undefined;
   synced = true;
-  commit({ slots: next, ...(runB ? { buffs: runB.on } : {}) }, label);
+  commit({ slots: next, buffs: runB?.on ?? [], ...(runB ? { count: true } : {}), ...(edits ? { edits } : {}) }, label);
   setMode("manual");
   paintCharSelect();
   $<HTMLElement>("#mb-suit h2")?.focus();
@@ -582,7 +593,7 @@ export async function openInManual(suit: OptSuit, covered: readonly string[], ru
 
 // The fetch list for the suit's pieces the character doesn't wear (the result's, builder-result.mts fetchCard).
 function fetchList(): HTMLElement {
-  const name = manualCharacter(), card = fetchCard(fetchPieces(Object.values(suitItems()), name), name);
+  const name = manualCharacter(), pieces = fetchPieces(Object.values(suitItems()), name), card = fetchCard(pieces, name, grabAllButton(pieces, name, { id: "mb-grab-all", size: "sm" }));
   if (!card) return el("div", { id: "mb-fetch", hidden: "" });
   card.id = "mb-fetch";
   return card;
