@@ -18,6 +18,7 @@ export interface BuffView {
   stats: Stats | null;
   who: BuffWho;                          // the character's race and the held weapon's flags
   totals: PropMap;                       // the suit's totals (a potion reads its Enhance Potions)
+  caps: Record<string, number>;          // the caps before any buff, which a cap change is described against
   all: BuffResult;                       // every buff that is on applied, counted or not: which are beaten or blocked
   replaced: { on: string; off: string } | null;
   count: boolean;
@@ -49,7 +50,7 @@ export function buffStrip(v: BuffView, a: BuffActions): HTMLElement {
   const chips = v.on.map((id) => {
     const b = buffById(id)!, note = chipNote(b, v);
     const t = token({ label: b.name, removeLabel: `Remove ${b.name}`, onRemove: () => a.toggle(id) });
-    t.title = `${b.name}: ${buffText(id, v.values, v.stats, v.totals, v.who)}${b.inputs.length ? ` (${b.inputs.map((x) => `${BUFF_INPUTS[x]!.label} ${v.values[x]}`).join(", ")})` : ""}`;
+    t.title = `${b.name}: ${buffText(id, v.values, v.stats, v.totals, v.who, v.caps)}${b.inputs.length ? ` (${b.inputs.map((x) => `${BUFF_INPUTS[x]!.label} ${v.values[x]}`).join(", ")})` : ""}`;
     t.firstElementChild!.replaceWith(el("span", {}, b.name, note ? el("span", { class: "muted" }, ` · ${note}`) : null));
     if (v.name && b.inputs.some((i) => v.planned.has(i))) t.classList.add("bf-planned");
     t.dataset.buff = id;
@@ -67,8 +68,8 @@ export function buffMarker(k: string, r: BuffResult, baseCap: number | undefined
   const shares = r.shares[k] || [], capShares = r.capShares[k] || [];
   const sum = (outside: boolean): number => shares.filter((s) => !!s.outside === outside).reduce((n, s) => n + s.value, 0);
   const inCap = sum(false), past = sum(true), raise = baseCap == null ? 0 : (r.caps[k] ?? baseCap) - baseCap;
-  const pct = shares.find((s) => s.pct != null)?.pct;
-  const parts = [inCap ? signed(inCap) : pct != null ? signedPct(pct) : null, raise ? `cap ${signed(raise)}` : null, past ? `${signed(past)} past cap` : null].filter(Boolean);
+  const pct = shares.reduce((n, s) => n + (s.pct ?? 0), 0);   // with no character, Bless's +13% and Curse's −20% are of the same base
+  const parts = [inCap ? signed(inCap) : pct ? signedPct(pct) : null, raise ? `cap ${signed(raise)}` : null, past ? `${signed(past)} past cap` : null].filter(Boolean);
   if (!parts.length) return null;
   const who = [...shares.map((s) => `${nameOf(s.id)} ${s.pct != null ? signedPct(s.pct) : signed(s.value)}${s.outside ? " past the cap" : ""}`),
     ...capShares.map((s) => `${nameOf(s.id)} cap ${signed(s.value)}`)].join(", ");
@@ -96,8 +97,8 @@ export const focusBuffSearch = (): void => search?.focus();
 // The tags beside an entry's name: a form, a stat share where the largest counts or one that stacks, a bonus past the
 // cap, a cap change, numbers not yet checked in game, and a ServUO item not known on UO Alive.
 function tagsOf(b: Buff, v: BuffView): HTMLElement[] {
-  const c = buffContext(v.values, v.stats, v.totals, v.who);
-  const fx = b.effects(c), caps = Object.values(b.caps?.(c) || {});
+  const c = buffContext(v.values, v.stats, v.totals, v.who, v.caps);
+  const fx = b.effects(c), caps = Object.values({ ...b.caps?.(c), ...b.capsLate?.(c) }), sets = Object.values(b.capsSet?.(c) || {});
   const stat = fx.filter((e) => /^(str|dex|int)Bonus$/.test(e.key) && e.value > 0);
   const out: Array<[string, string]> = [];
   if (b.excl === "form") out.push(["Form", ""]);
@@ -105,6 +106,7 @@ function tagsOf(b: Buff, v: BuffView): HTMLElement[] {
   else if (stat.length) out.push(["Stacks", "bf-tag-ok"]);
   if (fx.some((e) => e.outside && e.value)) out.push(["Outside cap", "bf-tag-accent"]);
   if (caps.length) out.push([`Cap ${signed(Math.max(...caps))}`, "bf-tag-accent"]);
+  else if (sets.length) out.push([`Cap ${Math.min(...sets)}`, "bf-tag-accent"]);
   if (b.unconfirmed) out.push(["May not exist on UO Alive", ""]);
   const tags = out.map(([t, cls]) => { const x = tag(t); if (cls) x.classList.add(cls); return x; });
   if (b.confidence) tags.push(el("span", { class: "t-sm bf-unverified", title: `${b.confidence === "low" ? "Low" : "Medium"} confidence: check these numbers in game` }, "unverified"));
@@ -126,7 +128,7 @@ function row(b: Buff, v: BuffView, a: BuffActions): HTMLElement {
   const note = off ? `Turned off: ${nameOf(v.replaced!.on)} is your form now` : b.note;
   return el("label", { class: `bf-item${off ? " bf-off" : ""}` }, cb, box("span", { class: "bf-item-text" },
     box("span", { class: "bf-name" }, txt(b.name, "strong"), ...tagsOf(b, v)),
-    txt(buffText(b.id, v.values, v.stats, v.totals, v.who), "bf-eff"),
+    txt(buffText(b.id, v.values, v.stats, v.totals, v.who, v.caps), "bf-eff"),
     needs ? txt(`${needs}, so it counts for nothing`, "bf-warn") : null,
     beaten.length ? txt(beaten.join(". "), "bf-warn") : null,
     unsure.length ? txt(unsure.join(". "), "bf-note") : null,
@@ -136,7 +138,9 @@ function row(b: Buff, v: BuffView, a: BuffActions): HTMLElement {
 // group (the debuffs) has a show / hide button and, folded, no fields.
 const unfolded = new Set<string>();
 const isOpen = (g: (typeof BUFF_GROUPS)[number]): boolean => !g.collapsed || unfolded.has(g.name);
-function groupHead(g: (typeof BUFF_GROUPS)[number], v: BuffView, a: BuffActions, repaint: () => void): HTMLElement {
+// A search shows a folded group's matching rows, so its button says so and waits until the search is cleared.
+const groupId = (g: (typeof BUFF_GROUPS)[number]): string => `bf-group-${g.name.replace(/\W+/g, "-")}`;
+function groupHead(g: (typeof BUFF_GROUPS)[number], v: BuffView, a: BuffActions, repaint: () => void, searching: boolean): HTMLElement {
   const edited = g.inputs.some((i) => Object.hasOwn(v.edits, i)), lacking = g.inputs.some((i) => v.planned.has(i) && !Object.hasOwn(v.edits, i));
   const who = !v.name || !g.inputs.length ? null
     : edited ? badge("Planned", "accent") : lacking ? badge(`Planned: ${v.name} doesn't have it`, "accent")
@@ -153,9 +157,10 @@ function groupHead(g: (typeof BUFF_GROUPS)[number], v: BuffView, a: BuffActions,
   });
   const reset = edited ? button({ label: `Reset ${g.name}'s numbers to ${v.name ? `${v.name}'s skills` : "the defaults"}`, icon: "undo", iconOnly: true, variant: "ghost", size: "sm",
     onClick: () => g.inputs.forEach((i) => a.setInput(i, null)) }) : null;
-  const open = isOpen(g);
-  const fold = g.collapsed ? button({ label: `${open ? "Hide" : "Show"} ${g.name}`, icon: open ? "chevron-down" : "chevron-right", iconOnly: true, variant: "ghost", size: "sm",
-    attrs: { id: `bf-fold-${g.name.replace(/\W+/g, "-")}`, "aria-expanded": String(open) }, onClick: () => { if (open) unfolded.delete(g.name); else unfolded.add(g.name); repaint(); } }) : null;
+  const open = isOpen(g) || searching;
+  const fold = g.collapsed ? button({ label: `${open ? "Hide" : "Show"} ${g.name}`, icon: open ? "chevron-down" : "chevron-right", iconOnly: true, variant: "ghost", size: "sm", disabled: searching,
+    attrs: { id: `bf-fold-${g.name.replace(/\W+/g, "-")}`, "aria-expanded": String(open), "aria-controls": groupId(g) },
+    onClick: () => { if (isOpen(g)) unfolded.delete(g.name); else unfolded.add(g.name); repaint(); } }) : null;
   return box("div", { class: "bf-group-head" }, fold, txt(g.name, "caps"), ...(open ? [who, ...fields, reset] : []));
 }
 // The picker for the current state: its title, status, the replaced-form note and the matching entries by group.
@@ -163,7 +168,7 @@ function groupHead(g: (typeof BUFF_GROUPS)[number], v: BuffView, a: BuffActions,
 export function paintBuffPicker(v: BuffView, a: BuffActions): void {
   const list = document.getElementById("bf-list")!, focused = document.activeElement?.closest("#bf-list") ? document.activeElement.id : null, top = list.scrollTop;
   const q = (search?.value || "").trim().toLowerCase();
-  const hits = BUFFS.filter((b) => !q || [b.name, b.group, buffText(b.id, v.values, v.stats, v.totals, v.who)].some((s) => s.toLowerCase().includes(q)));
+  const hits = BUFFS.filter((b) => !q || [b.name, b.group, buffText(b.id, v.values, v.stats, v.totals, v.who, v.caps)].some((s) => s.toLowerCase().includes(q)));
   document.getElementById("bf-h")!.textContent = v.name ? `Buffs for ${v.name}` : "Buffs";
   const forms = v.on.filter((id) => buffById(id)?.excl === "form").length;
   document.getElementById("bf-status")!.textContent = [q ? `${hits.length} of ${BUFFS.length} match “${search!.value.trim()}”` : null, `${v.on.length} on`,
@@ -177,7 +182,7 @@ export function paintBuffPicker(v: BuffView, a: BuffActions): void {
   // scrolls away with it rather than staying under the next group's.
   const groups = BUFF_GROUPS.flatMap((g) => {
     const rows = hits.filter((b) => b.group === g.name);
-    return rows.length ? [box("section", { class: "bf-group", "aria-label": g.name }, groupHead(g, v, a, () => paintBuffPicker(v, a)), ...(isOpen(g) || q ? rows.map((b) => row(b, v, a)) : []))] : [];
+    return rows.length ? [box("section", { class: "bf-group", id: groupId(g), "aria-label": g.name }, groupHead(g, v, a, () => paintBuffPicker(v, a), !!q), ...(isOpen(g) || q ? rows.map((b) => row(b, v, a)) : []))] : [];
   });
   list.replaceChildren(...[hint, ...groups].filter((x): x is HTMLElement => !!x), ...(groups.length ? [] : [el("p", { class: "t-sm muted bf-none" }, "No buff matches.")]));
   list.scrollTop = top;

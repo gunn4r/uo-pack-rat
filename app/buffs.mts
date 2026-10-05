@@ -74,7 +74,7 @@ export type Skills = Record<string, number>;
 // What an entry's numbers are worked out from: an input's value, the raw stats (null with no character) and the
 // suit's own totals (a potion reads the suit's Enhance Potions). `resist` is the character's Resisting Spells, or null.
 // `who` is what the evaluator knows beyond the numbers: the character's race and the held weapon's flags.
-// `caps` are the caps before any buff (Curse lowers a resist's only above 60).
+// `caps` are the caps a cap change reads: before any buff, or the running caps for a `capsLate` change.
 export interface BuffWho { race?: string | null | undefined; weaponFlags?: readonly string[] | undefined }
 export interface BuffContext { s: (input: string) => number; stats: Stats | null; totals: PropMap; resist: number | null; who: BuffWho; caps: Readonly<Record<string, number>> }
 // One effect. `outside`: added after the cap (Enemy of One's damage), so it never counts toward it. `slot`: a stat
@@ -91,7 +91,12 @@ export interface Buff {
   excl?: keyof typeof EXCLUSIVE;
   min?: [string, number];                 // the skill it takes to cast
   effects: (c: BuffContext) => BuffEffect[];
-  caps?: (c: BuffContext) => PropMap;     // cap changes, applied before any effect
+  // Cap changes, applied before any effect and in ServUO's order (PlayerMobile.cs GetMaxResistance): `caps` adds to a
+  // cap; `capsLate` adds after every `caps`, reading the running caps in c.caps (Curse's "above 60"); `capsSet` sets a
+  // cap outright, last (Corpse Skin's 70 − malus).
+  caps?: (c: BuffContext) => PropMap;
+  capsLate?: (c: BuffContext) => PropMap;
+  capsSet?: (c: BuffContext) => PropMap;
   extra?: (c: BuffContext) => string[];   // what it does that no total shows
   note?: string;
   confidence?: "medium" | "low";          // how sure its numbers are (absent: high); the picker marks the others unverified
@@ -299,14 +304,15 @@ export const BUFFS: Buff[] = [
   { id: "mysteriousWisp", name: "Mysterious Wisp", group: "Ninjitsu", inputs: ["Ninjitsu"], excl: "form", min: ["Ninjitsu", 120], confidence: "medium",
     effects: () => [{ key: "physResist", value: -10 }, ...resists(-5, RESIST_KEYS.filter((k) => k !== "physResist"))], extra: () => ["8% mana leech"],
     note: "Needs 120 Ninjitsu and 120 Stealth. Whether it counts as a form is unverified" },
-  // Rampage, fully stacked: Spells/Skill Masteries/Rampage.cs:199-216, per hit HPR 1 + level (to 18) and SR, SSI and CF
-  // by the level (to 24, 60, 12); the HPR and SR after their caps (RegenRates.cs). Lost on a miss.
+  // Rampage, fully stacked: Spells/Skill Masteries/Rampage.cs:199-216, per hit HPR 1 + level (to 18) and SR and SSI by
+  // the level (to 24, 60); the HPR and SR after their caps (RegenRates.cs). Lost on a miss. Its Casting Focus (to 12)
+  // is stored but read nowhere (BonusType.Focus has no consumer), so it is said, not counted.
   { id: "rampage", name: "Rampage", group: "Other masteries", inputs: ["Rampage hits", "Mastery level"],
     effects: (c) => {
       const n = c.s("Rampage hits"), l = c.s("Mastery level");
-      return [{ key: "ssi", value: Math.min(60, l * n) }, { key: "castingFocus", value: Math.min(12, l * n) }, { key: "hpRegen", value: Math.min(18, (1 + l) * n), outside: true }, { key: "stamRegen", value: Math.min(24, l * n), outside: true }];
+      return [{ key: "ssi", value: Math.min(60, l * n) }, { key: "hpRegen", value: Math.min(18, (1 + l) * n), outside: true }, { key: "stamRegen", value: Math.min(24, l * n), outside: true }];
     },
-    note: "Wrestling mastery. Its stacks build per hit and are lost on a miss" },
+    note: "Wrestling mastery. Its stacks build per hit and are lost on a miss. ServUO stores a Casting Focus bonus that nothing reads" },
   // Playing the Odds: PlayingTheOdds.cs:72-73, as written: Math.Max, which looks like a ServUO bug for Math.Min.
   { id: "playingTheOdds", name: "Playing the Odds", group: "Other masteries", inputs: ["Archery", "Tactics"], confidence: "low",
     effects: (c) => { const avg = (c.s("Archery") + c.s("Tactics")) / 2; return [{ key: "hci", value: Math.max(45, tr(avg / 2.667)) }, { key: "ssi", value: Math.max(30, tr(avg / 4)) }]; },
@@ -344,13 +350,13 @@ export const BUFFS: Buff[] = [
       const share = (key: string, raw: number | undefined): BuffEffect => ({ key, pct: -pct, value: raw == null ? 0 : -Math.ceil(raw * (pct * 0.01)) });
       return pct ? [share("strBonus", c.stats?.str), share("dexBonus", c.stats?.dex), share("intBonus", c.stats?.int)] : [];
     },
-    caps: (c) => Object.fromEntries(RESIST_KEYS.filter((k) => k !== "physResist" && (c.caps[k] ?? 70) > 60).map((k) => [k, -10])),
+    capsLate: (c) => Object.fromEntries(RESIST_KEYS.filter((k) => k !== "physResist" && (c.caps[k] ?? 70) > 60).map((k) => [k, -10])),
     note: "Your Resisting Spells lowers the stat loss. With no character it is counted at 0" },
   // Corpse Skin: CorpseSkin.cs:122-129, malus min(15, (enemy Necromancy + Spirit Speak) × 0.075); Fire and Poison caps
   // become 70 − malus (GetResistMalus, PlayerMobile.cs:1011).
   { id: "corpseSkin", name: "Corpse Skin", group: "Debuffs (cast on you)", inputs: ["Enemy Necro + SS"], confidence: "medium",
     effects: (c) => { const m = tr(Math.min(15, c.s("Enemy Necro + SS") * 0.075)); return [{ key: "fireResist", value: -m }, { key: "poisonResist", value: -m }, { key: "coldResist", value: 10 }, { key: "physResist", value: 10 }]; },
-    caps: (c) => { const m = tr(Math.min(15, c.s("Enemy Necro + SS") * 0.075)); return Object.fromEntries(["fireResist", "poisonResist"].map((k) => [k, 70 - m - (c.caps[k] ?? 70)]).filter(([, d]) => d)); } },
+    capsSet: (c) => { const m = tr(Math.min(15, c.s("Enemy Necro + SS") * 0.075)); return { fireResist: 70 - m, poisonResist: 70 - m }; } },
   // Mind Rot: MindRot.cs:125, spells cost 25% more mana on a player, after Lower Mana Cost.
   { id: "mindRot", name: "Mind Rot", group: "Debuffs (cast on you)", inputs: [], confidence: "medium",
     effects: () => [], extra: () => ["spells cost 25% more mana, after LMC"] },
@@ -422,7 +428,11 @@ export function applyBuffs(totals: PropMap, caps: Readonly<Record<string, number
   const r: BuffResult = { totals: { ...totals }, caps: { ...caps }, outside: {}, effective: {}, shares: {}, capShares: {}, beaten: [], unsure: [], blocked: [] };
   const live = BUFFS.filter((b) => buffs.includes(b.id) && (buffNeeds(b, skills, who) ? (r.blocked.push(b.id), false) : true));
   const add = (map: Record<string, BuffShare[]>, key: string, s: BuffShare): void => { (map[key] ||= []).push(s); };
-  for (const b of live) for (const [k, d] of Object.entries(b.caps?.(c) || {})) { r.caps[k] = (r.caps[k] ?? 0) + d; add(r.capShares, k, { id: b.id, value: d }); }
+  // the caps in ServUO's order: every addition, then the late ones on the running caps, then the absolute ones
+  const capTo = (b: Buff, k: string, to: number): void => { const d = to - (r.caps[k] ?? 0); r.caps[k] = to; if (d) add(r.capShares, k, { id: b.id, value: d }); };
+  for (const b of live) for (const [k, d] of Object.entries(b.caps?.(c) || {})) capTo(b, k, (r.caps[k] ?? 0) + d);
+  for (const b of live) for (const [k, d] of Object.entries(b.capsLate?.({ ...c, caps: r.caps }) || {})) capTo(b, k, (r.caps[k] ?? 0) + d);
+  for (const b of live) for (const [k, v] of Object.entries(b.capsSet?.(c) || {})) capTo(b, k, v);
   const effects = live.map((b) => [b, b.effects(c)] as const);
   // A slot's largest share: flat shares compared by value; with no character, percent shares only among themselves.
   const pctOnly = (e: BuffEffect): boolean => e.pct != null && !stats;
@@ -466,12 +476,14 @@ function joined(items: Array<[string, string]>): string[] {
 }
 // An entry's line in the picker for these skills and stats: "HCI +10 · DI +10 · SSI +10 · DCI −20",
 // "DI +7 past the cap · hits the lowest resist", "STR, DEX, INT +13% of base" with no character.
-export function buffText(id: string, skills: Skills, stats: Stats | null, totals: PropMap, who: BuffWho = {}): string {
-  const b = BY_ID.get(id)!, c = buffContext(skills, stats, totals, who);
+// `caps` are the caps before any buff, so a cap change reads as it would on its own.
+export function buffText(id: string, skills: Skills, stats: Stats | null, totals: PropMap, who: BuffWho = {}, caps: Readonly<Record<string, number>> = {}): string {
+  const b = BY_ID.get(id)!, c = buffContext(skills, stats, totals, who, caps);
   const eff = b.effects(c).filter((e) => e.value || e.pct != null).map((e): [string, string] =>
     [e.key, e.pct != null && !stats ? `${signedPct(e.pct)} of base` : `${signed(e.value)}${e.outside ? " past the cap" : ""}`]);
-  const caps = Object.entries(b.caps?.(c) || {}).map(([k, d]): [string, string] => [k, `cap ${signed(d)}`]);
-  const parts = [...joined(eff), ...joined(caps).map((t) => t.replace("All resists cap", "Resist caps")), ...(b.extra?.(c) || [])];
+  const capText = [...Object.entries({ ...b.caps?.(c), ...b.capsLate?.(c) }).map(([k, d]): [string, string] => [k, `cap ${signed(d)}`]),
+    ...Object.entries(b.capsSet?.(c) || {}).map(([k, v]): [string, string] => [k, `cap ${v}`])];
+  const parts = [...joined(eff), ...joined(capText).map((t) => t.replace("All resists cap", "Resist caps")), ...(b.extra?.(c) || [])];
   return parts.length ? parts.join(" · ") : "No change at this level";
 }
 

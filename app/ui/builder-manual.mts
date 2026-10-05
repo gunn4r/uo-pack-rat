@@ -404,8 +404,8 @@ function closeBuffs(): void {
   $<HTMLElement>("#bf-add")?.focus();
 }
 function buffView(): BuffView {
-  const { values, planned, stats, race } = buffInputs(), t = paperdoll(totalsOf(suitOpt()), profile().resistBonus);
-  return { name: manualCharacter(), on: buffs, values, planned, edits: editsFor(), stats, who: { race, weaponFlags: weaponFlags(suitItems()) }, totals: t, all: buffed(t, {}, true), replaced, count: countBuffs, open: buffsOpen };
+  const { values, planned, stats, race } = buffInputs(), prof = profile(), t = paperdoll(totalsOf(suitOpt()), prof.resistBonus), caps = paperdollCaps(profileResistCaps(prof));
+  return { name: manualCharacter(), on: buffs, values, planned, edits: editsFor(), stats, who: { race, weaponFlags: weaponFlags(suitItems()) }, totals: t, caps, all: buffed(t, caps, true), replaced, count: countBuffs, open: buffsOpen };
 }
 const buffActions: BuffActions = {
   // A buff on or off is an undo step; a form turned on says which one it replaced. A chip's × keeps the focus in the

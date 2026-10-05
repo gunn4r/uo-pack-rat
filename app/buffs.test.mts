@@ -287,9 +287,9 @@ test("[fast] buffs: Curse Weapon, and Ninjitsu's smaller forms and Mysterious Wi
 
 test("[fast] buffs: Rampage by its stacks and mastery level, Playing the Odds as ServUO writes it", () => {
   const full = alone("rampage", { "Rampage hits": 60, "Mastery level": 3 });
-  assert.deepEqual([full.add, full.outside], [{ ssi: 60, castingFocus: 12 }, { hpRegen: 18, stamRegen: 24 }]);
+  assert.deepEqual([full.add, full.outside], [{ ssi: 60 }, { hpRegen: 18, stamRegen: 24 }], "its Casting Focus is read nowhere in ServUO");
   const one = alone("rampage", { "Rampage hits": 1, "Mastery level": 3 });
-  assert.deepEqual([one.add, one.outside], [{ ssi: 3, castingFocus: 3 }, { hpRegen: 4, stamRegen: 3 }]);
+  assert.deepEqual([one.add, one.outside], [{ ssi: 3 }, { hpRegen: 4, stamRegen: 3 }]);
   assert.deepEqual(alone("rampage", { "Rampage hits": 0 }).add, {});
   assert.deepEqual(alone("playingTheOdds", { Archery: 120, Tactics: 120 }).add, { hci: 45, ssi: 30 });
   assert.deepEqual(alone("playingTheOdds", { Archery: 0, Tactics: 0 }).add, { hci: 45, ssi: 30 }, "Math.Max: never below 45 and 30");
@@ -342,6 +342,22 @@ test("[fast] buffs: the debuffs cast on you, in their own group, folded by defau
   assert.deepEqual([cs.totals.fireResist, cs.totals.poisonResist, cs.totals.coldResist, cs.totals.physResist, cs.caps.fireResist, cs.caps.poisonResist], [-15, -15, 10, 10, 55, 55]);
   assert.equal(applyBuffs({}, CAPS, ["corpseSkin"], { "Enemy Necro + SS": 100 }, null).caps.fireResist, 63);
   assert.match(buffText("mindRot", {}, null, {}), /spells cost 25% more mana, after LMC/);
+  assert.equal(buffText("corpseSkin", { "Enemy Necro + SS": 240 }, null, {}), "Fire, Poison −15 · Cold, Phys +10 · Fire, Poison cap 55");
+});
+
+test("[fast] buffs: resist caps change in ServUO's order: additions, then Curse on the running cap, then Corpse Skin's absolute cap", () => {
+  const skills = { Mysticism: 120, "Focus or Imbuing": 120, "Enemy Necro + SS": 240, "Enemy Eval Int": 120 };
+  // Corpse Skin sets Fire and Poison to 70 − 15 whatever came before: Stone Form's +5 is gone, Curse's −10 too
+  const stone = applyBuffs({}, CAPS, ["stoneForm", "corpseSkin"], skills, null);
+  assert.deepEqual([stone.caps.fireResist, stone.caps.poisonResist, stone.caps.coldResist], [55, 55, 75]);
+  const cursed = applyBuffs({}, CAPS, ["curse", "corpseSkin"], skills, null);
+  assert.deepEqual([cursed.caps.fireResist, cursed.caps.coldResist], [55, 60]);
+  // Curse reads the running cap: a 55 cap raised to 60 by a weak Stone Form is not above 60, so it stays
+  const low = applyBuffs({}, { ...CAPS, coldResist: 55 }, ["stoneForm", "curse"], { ...skills, Mysticism: 60, "Focus or Imbuing": 60 }, null);
+  assert.equal(low.caps.coldResist, 57, "55 + Stone Form's 2, not above 60: Curse leaves it");
+  const high = applyBuffs({}, { ...CAPS, coldResist: 58 }, ["stoneForm", "curse"], skills, null);
+  assert.equal(high.caps.coldResist, 53, "58 + 5 = 63 is above 60: Curse takes 10");
+  assert.deepEqual(high.capShares.coldResist, [{ id: "stoneForm", value: 5 }, { id: "curse", value: -10 }]);
 });
 
 test("[fast] buffs: the less sure entries carry their confidence; the high ones carry none", () => {
