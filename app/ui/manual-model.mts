@@ -66,16 +66,19 @@ export const missingSlots = (slots: Record<string, number>, found: Record<number
   GEAR_SLOTS.filter((s) => slots[s] != null && !found[slots[s]!]);
 // A saved suit against the scans now (issue #202): a piece the classifier has since moved (a kilt saved under legs, a
 // shirt under chest) goes to its slot, unless a piece of that slot's own is there. A piece no longer in the scans stays
-// where it was. The same suit back when nothing moved.
-export function reslotted(slots: Suit, found: Record<number, { slot?: string | null | undefined } | undefined>): Suit {
-  const next: Suit = {}, moved: Array<[string, number]> = [];
+// where it was. The same suit back when nothing moved; `dropped`, each piece that left because its slot was taken.
+export interface Reslot { slots: Suit; dropped: Array<{ serial: number; slot: string }> }
+export function reslotted(slots: Suit, found: Record<number, { slot?: string | null | undefined } | undefined>): Reslot {
+  const next: Suit = {}, moved: Array<[string, number]> = [], dropped: Reslot["dropped"] = [];
   for (const [s, serial] of Object.entries(slots)) {
     const now = found[serial]?.slot;
     if (now && now !== s && GEAR_SLOTS.includes(now)) moved.push([now, serial]); else next[s] = serial;
   }
-  for (const [s, serial] of moved) next[s] ??= serial;
-  return moved.length ? next : slots;
+  for (const [s, serial] of moved) if (next[s] == null) next[s] = serial; else dropped.push({ serial, slot: s });
+  return { slots: moved.length ? next : slots, dropped };
 }
+// The notice for a dropped piece: "Kilt moved to Kilt / Skirt; Fancy Kilt kept there."
+export const reslotNote = (piece: string, slotName: string, other: string): string => `${piece} moved to ${slotName}; ${other} kept there.`;
 
 // ---------------------------------------------------------------- a picker row's delta
 // The properties a row's delta speaks about: the strip's, then any other with a floor or a weight in the profile.

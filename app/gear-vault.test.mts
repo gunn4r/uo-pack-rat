@@ -194,6 +194,7 @@ test("[smoke] classify: names map to optimizer slots, containers/consumables are
   assert.equal(classify("Bag of Sending").gear, false);
   assert.equal(classify("Greater Heal Potion").gear, false);
   assert.equal(classify("Blade Spirits").gear, false);
+  assert.deepEqual(classify("2 Blade Spirits", null, null, 0x1F4D), { slot: null, twoHanded: false, gear: false }, "a stack of spell scrolls, named with its count, is no weapon");
   assert.equal(classify("Mystic Ring").slot, "ring");
   assert.equal(classify("Mystic Heater Shield").slot, "twoHanded");
   assert.equal(classify("Book Of Chivalry").slot, "oneHanded");
@@ -261,6 +262,9 @@ const GOLDEN_SLOTS: Array<[string, number, string | null]> = [
   // names that had no slot
   ["Tiger Pelt Collar", 0x7829, "neck"], ["Leather Ninja Mitts", 0x2792, "hands"], ["Flower Garland", 0x2305, "helmet"],
   ["Half Apron", 0x153b, "waist"], ["Gold Beads", 0x1089, "neck"], ["Silver Beads", 0x1f05, "neck"],
+  // the rest of the layer table's surprises: cloth chest pieces, gargish legs and earrings, a spellbook, a shield
+  ["Cloth Ninja Jacket", 0x2794, "chest"], ["Gargish Cloth Chest", 0x405, "chest"], ["Gargish Platemail Legs", 0x30e, "legs"],
+  ["Gargish Earrings", 0x4213, "earrings"], ["Spellbook", 0xefa, "oneHanded"], ["Heater Shield", 0x1b76, "twoHanded"],
 ];
 test("[fast] classify: the golden table, by graphic and by name alone", () => {
   for (const [name, graphic, slot] of GOLDEN_SLOTS) {
@@ -271,9 +275,13 @@ test("[fast] classify: the golden table, by graphic and by name alone", () => {
   const byName: Array<[string, string | null]> = [["Gargish Leather Legs", "legs"], ["Gargish Cloth Legs", "legs"], ["Gargish Cloth Kilt", "hands"],
     ["Fur Sarong", "outerLegs"], ["Fancy Kilt", "outerLegs"], ["Evening Gown", "robe"], ["Kamishimo", "robe"], ["Epaulette", "robe"],
     ["Assassin's Cowl", "helmet"], ["Chef's Toque", "helmet"], ["Elegant Collar", "neck"], ["Gargish Stone Amulet", "neck"],
-    ["Leather Tunic Of Defense", "chest"], ["Beads", null]];
+    ["Leather Tunic Of Defense", "chest"], ["Elven Plate Belt", "waist"], ["Sorcerer's Skirt", "legs"], ["Malabelle's Dress", "outerLegs"],
+    ["Kobakama", "legs"], ["Tabard", "robe"], ["Beads", null]];
   for (const [name, slot] of byName) assert.equal(classify(name).slot, slot, name);
   assert.equal(classify("Beads").gear, false, "beads are not worn");
+  // a light is a tool in the pack (never a suit candidate) and fills the two-handed slot only while held
+  assert.equal(classify("Lantern", null, null, 0xa25).gear, false);
+  assert.equal(classify("Lantern", null, "TwoHanded").slot, "twoHanded");
 });
 
 // The client's own tiledata says which layer every wearable graphic goes on; the graphic decides

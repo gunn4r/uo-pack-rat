@@ -10,7 +10,7 @@ import { setRules, effectiveProfile, profileResistCaps, GEAR_SLOTS, LAYER_TO_SLO
 import type { RulesV1 } from "./schema/types.d.mts";
 import { optIsValidAssignment } from "../scripts/optimizer-core.mts";
 import { paperdoll, paperdollCaps } from "./ui/builder-model.mts";
-import { MANUAL_GROUPS, emptyHistory, record, undoStep, redoStep, historyKey, historyKeyNames, HISTORY_MAX, capped, capLine, slotQuery, handConflict, handNote, savedSlots, missingSlots, reslotted, deltaKeys, slotDelta, STRIP_KEYS } from "./ui/manual-model.mts";
+import { MANUAL_GROUPS, emptyHistory, record, undoStep, redoStep, historyKey, historyKeyNames, HISTORY_MAX, capped, capLine, slotQuery, handConflict, handNote, savedSlots, missingSlots, reslotted, reslotNote, deltaKeys, slotDelta, STRIP_KEYS } from "./ui/manual-model.mts";
 
 setRules(JSON.parse(readFileSync(new URL("./rules/uoalive.json", import.meta.url), "utf8")) as RulesV1);
 
@@ -68,13 +68,14 @@ test("[fast] manual model: each paperdoll layer has its own slot", () => {
 test("[fast] manual model: a saved piece the classifier has moved goes to its slot now, unless that slot has its own", () => {
   const found = { 1: { slot: "outerLegs" }, 2: { slot: "shirt" }, 3: { slot: "chest" }, 4: { slot: "ring" } };
   // a kilt saved under legs and a shirt under chest (beside no chest piece) move; the ring stays; a gone piece stays
-  assert.deepEqual(reslotted({ legs: 1, chest: 2, ring: 4, feet: 9 }, found), { outerLegs: 1, shirt: 2, ring: 4, feet: 9 });
-  // the shirt under chest when the shirt slot holds another shirt: the shirt slot's own piece wins and the stale one goes
-  assert.deepEqual(reslotted({ chest: 2, shirt: 5 }, { ...found, 5: { slot: "shirt" } }), { shirt: 5 });
+  assert.deepEqual(reslotted({ legs: 1, chest: 2, ring: 4, feet: 9 }, found), { slots: { outerLegs: 1, shirt: 2, ring: 4, feet: 9 }, dropped: [] });
+  // the shirt under chest when the shirt slot holds another shirt: the shirt slot's own piece wins and the stale one is dropped
+  assert.deepEqual(reslotted({ chest: 2, shirt: 5 }, { ...found, 5: { slot: "shirt" } }), { slots: { shirt: 5 }, dropped: [{ serial: 2, slot: "shirt" }] });
   // a slot a moved piece leaves takes a piece moving into it
-  assert.deepEqual(reslotted({ chest: 2, shirt: 7, legs: 3 }, { ...found, 7: { slot: "shirt" } }), { shirt: 7, chest: 3 });
+  assert.deepEqual(reslotted({ chest: 2, shirt: 7, legs: 3 }, { ...found, 7: { slot: "shirt" } }), { slots: { shirt: 7, chest: 3 }, dropped: [{ serial: 2, slot: "shirt" }] });
   const same = { chest: 3, ring: 4 };
-  assert.equal(reslotted(same, found), same, "nothing moved: the same suit back");
+  assert.equal(reslotted(same, found).slots, same, "nothing moved: the same suit back");
+  assert.equal(reslotNote("Kilt", "Kilt / Skirt", "Fancy Kilt"), "Kilt moved to Kilt / Skirt; Fancy Kilt kept there.");
 });
 
 test("[fast] manual model: the hand rule clears what the optimizer would refuse, and nothing else", () => {

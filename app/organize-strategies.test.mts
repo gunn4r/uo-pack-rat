@@ -248,9 +248,9 @@ test("[fast] Simple and Detailed: neck armour goes with the armour, necklaces wi
   assert.deepEqual(of("detailed"), [["armour-neck", ["Leather Gorget", "Studded Gorget", "Armor Of Initiation"]], ["necklaces", ["Gold Necklace", "Gold Beads"]]]);
 });
 
-// Issue #202: a shirt is no chest piece and a cloth kilt no legs piece, so both leave the armour for Other gear; a
-// gargish kilt sits on the gloves layer, so it is hand armour.
-test("[fast] Simple and Detailed: shirts and cloth kilts are other gear, a gargish kilt is hand armour (issue #202)", () => {
+// Issue #202: a shirt is no chest piece and a cloth kilt no legs piece, so both leave the armor for Other gear; a
+// gargish kilt sits on the gloves layer, so it is hand armor.
+test("[fast] Simple and Detailed: shirts and cloth kilts are other gear, a gargish kilt is hand armor (issue #202)", () => {
   const worn: ThingSpec[] = [["Shirt", 0x1517], ["Kilt", 0x1537], ["Tunic", 0x1fa1], ["Gargish Platemail Kilt", 0x30b], ["Platemail Legs", 0x1411], ["Leather Tunic", 0x13ca]]
     .map(([name, graphic], i) => ({ serial: ITEM + 1 + i, name: name as string, graphic: graphic as number, in: A }));
   const items = Object.values(fold([{ serial: A }], worn).items);

@@ -540,10 +540,11 @@ const SPELLBOOK_RE = /\b(spellbook|book of (chivalry|bushido|ninjitsu|magery|nec
 const JEWEL_SLOTS: Array<[string, RegExp]> = [["ring", /\bring\b/i], ["bracelet", /\bbracelet\b/i], ["talisman", /\btalisman\b/i], ["neck", /\bnecklace\b/i], ["earrings", /\bearrings\b/i]];
 // First match wins, and the order settles the names two slots share (issue #202, from the layers in ServUO's item
 // classes): gargish glasses are earrings and elven glasses a helm; a gargish kilt sits on the gloves layer; wing armor
-// is a cloak; leather and tiger pelt skirts and shorts, the leaf tonlet and the tattsuke hakama are legs, while a cloth
-// kilt, skirt, hakama or sarong goes over them; the hakama-shita is a robe; a formal shirt, a full apron and every sash
-// are the middle torso; a tunic is chest armor when a material names it and the middle torso when bare; gold and silver
-// beads are necklaces, bare beads are not worn. These only decide a graphic the tiledata table does not know.
+// is a cloak; leather, tiger pelt and Sorcerer's skirts, shorts, the leaf tonlet and the tattsuke hakama are legs, while
+// a cloth kilt, skirt, hakama or sarong and Malabelle's Dress go over them; the hakama-shita is a robe; a formal shirt,
+// a full apron and every sash are the middle torso; a tunic is chest armor when a material names it and the middle
+// torso when bare; a belt is waist even in plate; gold and silver beads are necklaces, bare beads are not worn. These
+// only decide a graphic the tiledata table does not know.
 const ARMOR_SLOTS: Array<[string, RegExp]> = [
   ["earrings", /\bgargish glasses\b/i],
   ["helmet", /\b(helm|helmet|bascinet|circlet|coif|cap|hat|mask|skullcap|bandana|bonnet|hood|cowl|garland|toque|hachimaki|glasses|goggles|hatsuburi|jingasa|kabuto|kasa)\b/i],
@@ -551,14 +552,14 @@ const ARMOR_SLOTS: Array<[string, RegExp]> = [
   ["hands", /\b(gloves|gauntlets|mitts)\b|\bgargish\b.*\bkilt\b/i],
   ["arms", /\b(arms|sleeves|vambraces|rerebrace|pauldrons|hiro sode|bracers)\b/i],
   ["cloak", /\b(cloak|cape|mantle|quiver|wing armor)\b/i],
-  ["legs", /\b(leggings|legs|chausses|greaves|shorts|haidate|suneate|leg guards|tonlet|pants|kobakama|tattsuke.?hakama|(leather|tiger pelt( long)?) skirt)\b/i],
+  ["legs", /\b(leggings|legs|chausses|greaves|shorts|haidate|suneate|leg guards|tonlet|pants|kobakama|tattsuke.?hakama|(leather|tiger pelt( long)?|sorcerer'?s) skirt)\b/i],
   ["feet", /\b(sandals|boots|shoes|thigh boots|tabi|talons|waraji)\b/i],
+  ["outerLegs", /\b(kilt|skirt|hakama(?!.?shita)|sarong|malabelle'?s dress)\b/i],
   ["robe", /\b(robe|tunic top|tabard|shroud|dress|gown|kimono|kamishimo|hakama.?shita|epaulet(te|s)?)\b/i],
-  ["outerLegs", /\b(kilt|skirt|hakama|sarong)\b/i],
   ["tunic", /\b(doublet|surcoat|sash|formal shirt|full apron|jin.?baori|jester suit)\b|(?<!\b(leather|studded|ringmail|chainmail|platemail|bone|hide|leaf|woodland|dragon) )\btunic\b/i],
   ["shirt", /\bshirt\b/i],
-  ["chest", /\b(armor|tunic|breastplate|hauberk|ringmail|chainmail|platemail|plate|hide|do|chest|jacket|vest|bustier|female plate)\b/i],
   ["waist", /\b(apron|obi|belt)\b/i],
+  ["chest", /\b(armor|tunic|breastplate|hauberk|ringmail|chainmail|platemail|plate|hide|do|chest|jacket|vest|bustier|female plate)\b/i],
 ];
 // No bare "gold": gold coins are caught by "coin", and "Gold Ring" / "Gold Bracelet" are jewellery.
 // "cloth" is a resource unless it names a garment ("Cloth Ninja Hood", "Gargish Cloth Kilt").
@@ -670,6 +671,8 @@ export function classify(name: string | null | undefined, parsed?: ParsedTooltip
   const n = name || "";
   let slot = null, two = false;
   if (PRIMER_RE.test(n)) return { slot: null, twoHanded: false, gear: false };
+  // A spell scroll's graphic is never gear, whatever its name says: "2 Blade Spirits" holds a weapon word (issue #202).
+  if (graphic && SCHOOLS.some(([, s]) => inRange(graphic, s.graphics))) return { slot: null, twoHanded: false, gear: false };
   if (layer && LAYER_TO_SLOT[layer]) {
     slot = LAYER_TO_SLOT[layer]!;
     two = slot === "twoHanded" && !SHIELD_RE.test(n) && (parsed?.twoHanded ?? TWO_H_RE.test(n));

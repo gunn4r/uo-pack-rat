@@ -163,13 +163,15 @@ function openPropsPicker(anchor: HTMLElement, redraw: () => void): void {
   ], { label: "Properties shown", width: 288 });
   h.root.classList.add("inv-pop", "inv-settings-pop");
 }
-// The worn-gear tiles, in fixed groups so every row has equal height and nothing is orphaned.
+// The worn-gear tiles, in fixed groups so every row has equal height and nothing is orphaned. A kilt or skirt (issue
+// #202) is a Clothing tile only when one is worn, so the usual 3 × 2 groups stay whole.
 export const SLOT_GROUPS: Array<[string, string[]]> = [
   ["Armor", ["helmet", "neck", "chest", "arms", "hands", "legs"]],
   ["Weapons and jewelry", ["oneHanded", "twoHanded", "ring", "bracelet", "earrings", "talisman"]],
-  ["Clothing", ["cloak", "robe", "tunic", "shirt", "waist", "feet"]],
+  ["Clothing", ["cloak", "robe", "tunic", "shirt", "waist", "feet", "outerLegs"]],
 ];
 const FIXED_SLOTS = new Set(SLOT_GROUPS.flatMap(([, s]) => s));
+const WORN_ONLY = new Set(["outerLegs"]);
 
 // Resist caps are race-aware (an Elf's Energy cap of 75 on uoalive), read from the character's profile
 // race (default human). rules.caps/raceCaps are loose records in the rules schema — cast at this one
@@ -295,11 +297,12 @@ export function sheetParts(name: string | null, before: SheetAssignment, after: 
       if (opts.onSlot) t.addEventListener("click", () => opts.onSlot!(it, t));
       return itemTip(t, it);
     };
+    const shown = (s: string): boolean => !WORN_ONLY.has(s) || bySlot.has(s);
     const groups = SLOT_GROUPS.map(([title, slots]) => box("div", { class: "slot-group" }, txt(title, "caps"),
-      box("div", { class: "slot-grid" }, ...slots.map((s) => tile(s, bySlot.get(s))))));
+      box("div", { class: "slot-grid" }, ...slots.filter(shown).map((s) => tile(s, bySlot.get(s))))));
     if (other.length) groups.push(box("div", { class: "slot-group" }, txt("Other", "caps"), box("div", { class: "slot-grid" }, ...other.map((it) => tile(it.slot, it)))));
     const gear = el("section", { class: "card", "aria-label": "Worn gear" },
-      box("div", { class: "card-head" }, el("h2", {}, "Worn gear"), txt(`${bySlot.size} of ${FIXED_SLOTS.size} slots`, "t-sm muted"), el("span", { class: "spacer" }), opts.onSlot ? txt("Click a slot for the item detail", "t-sm muted") : null),
+      box("div", { class: "card-head" }, el("h2", {}, "Worn gear"), txt(`${bySlot.size} of ${[...FIXED_SLOTS].filter(shown).length} slots`, "t-sm muted"), el("span", { class: "spacer" }), opts.onSlot ? txt("Click a slot for the item detail", "t-sm muted") : null),
       box("div", { class: "sheet-slots" }, ...groups));
     return gear;
   };
