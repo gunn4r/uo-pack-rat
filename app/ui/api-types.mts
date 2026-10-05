@@ -79,6 +79,9 @@ export interface UiPrefs {
   density?: "dense" | "regular" | undefined;           // the Inventory table's rows: 32 or 40 px
   areaLabels?: "show" | "hide" | undefined;            // the House map's area name pills (absent = shown)
   mapDrawerWidth?: number | undefined;                 // the House map contents drawer's width in px (absent = 400)
+  builderMode?: "automatic" | "manual" | undefined;    // the Suit Builder's mode (absent = Automatic)
+  manualFor?: "character" | "none" | undefined;        // Manual totals with the picked character's bonuses, or raw items (absent = character)
+  manualSuit?: Record<string, number> | undefined;     // the Manual suit: a serial per slot (builder-manual.mts)
   dismissedUpdate?: string | undefined;                // the release whose update notice was dismissed (settings.mts)
   copiedScanner?: string | undefined;                  // the ClassicUO web scanner version last copied (paste-scanner.mts)
 }

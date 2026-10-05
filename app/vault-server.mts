@@ -69,7 +69,7 @@
 //         Put away (issue #131; no route: the TazUO panel drops inbox/<adapter>/putaway-request.json, the watcher hands it
 //         to putAway, which queues the first trip of the plan for the container the player picked like POST /api/organize/trip
 //         and answers in bridge/<adapter>/putaway.json; app/put-away.mts) ·
-//         GET|PUT /api/ui-prefs (<data>/ui-prefs.json: {cols?, colsVersion?, colWidths?, sheetProps?, theme?, appearance?, sidebar?, density?, areaLabels?, mapDrawerWidth?, dismissedUpdate?, copiedScanner?}, the page's view choices)
+//         GET|PUT /api/ui-prefs (<data>/ui-prefs.json: {cols?, colsVersion?, colWidths?, sheetProps?, theme?, appearance?, sidebar?, density?, areaLabels?, mapDrawerWidth?, builderMode?, manualFor?, manualSuit?, dismissedUpdate?, copiedScanner?}, the page's view choices)
 //         POST /api/bridge {action, serial, name, chain: [root…parent], pos|null} (queue for packrat-bridge.py) · GET /api/bridge/status · POST /api/bridge/stop {} (Organize's Stop: writes <data>/bridge/stop, which packrat-bridge.py checks between a trip's steps)
 //         GET /api/events — SSE, one stream shared by every connected client (not per-job like the
 //         optimize events above): hello {ok, watching: [adapter ids]} on connect, inventory
@@ -132,6 +132,7 @@ import { loadRules, listRules, DEFAULT_SHARD } from "./rules.mts";
 import { validate, type ValidatorSchema } from "./schema/validate.mts";
 import { parseItemQuery, applyItemQuery, facetsOf, wantsHits, hitRow, type ItemQueryRows, type ItemQueryGroups } from "./item-query.mts";
 import { DEFAULT_OPTIONAL_SLOTS } from "./mip.mts";
+import { GEAR_SLOTS } from "./vault-lib.mts";
 import { startWatcher, jsonErrorReason, MAX_INBOX_BYTES, type StartWatcherOptions, type WatcherHandle } from "./watcher.mts";
 import { parsePastedScan, writeScanToInbox } from "./import.mts";
 import { moveAside, writeFileAtomic } from "./atomic-write.mts";
@@ -195,13 +196,15 @@ const UI_PREF_CHOICES = {
   density: ["dense", "regular"],   // the Inventory table's row height
   colsVersion: ["2"],              // the column set `cols` was saved against (app/ui/view-state.mts's COLS_VERSION)
   areaLabels: ["show", "hide"],    // the House map's area name pills (app/ui/house-map.mts, issue #10)
+  builderMode: ["automatic", "manual"],   // the Suit Builder's mode (app/ui/builder-manual.mts, issue #12)
+  manualFor: ["character", "none"],       // whether Manual totals take the picked character's bonuses
 } as const satisfies Record<string, readonly string[]>;
 // The list fields: the Inventory tab's columns and the character sheet's shown properties (absent = the default set).
 const UI_PREF_LISTS = ["cols", "sheetProps"] as const;
 // The version fields: the release whose in-app update notice was dismissed (ui/settings.mts's automatic
 // update check), and the ClassicUO web scanner last copied into the client (ui/paste-scanner.mts).
 const UI_PREF_VERSIONS = ["dismissedUpdate", "copiedScanner"] as const;
-type UiPrefsFile = { -readonly [K in typeof UI_PREF_LISTS[number]]?: string[] } & { -readonly [K in keyof typeof UI_PREF_CHOICES]?: string } & { -readonly [K in typeof UI_PREF_VERSIONS[number]]?: string } & { colWidths?: Record<string, number>; mapDrawerWidth?: number };
+type UiPrefsFile = { -readonly [K in typeof UI_PREF_LISTS[number]]?: string[] } & { -readonly [K in keyof typeof UI_PREF_CHOICES]?: string } & { -readonly [K in typeof UI_PREF_VERSIONS[number]]?: string } & { colWidths?: Record<string, number>; mapDrawerWidth?: number; manualSuit?: Record<string, number> };
 // The House map's contents drawer width in px (app/ui/house-map.mts, issue #10): the page clamps it to the window.
 const isDrawerWidth = (v: unknown): v is number => isBoundedInt(v, 320, 4000);
 // The Inventory columns' dragged widths ({colKey: px}): at most 200 column keys (the same keys `cols` holds), each a whole 40 to 1200 px.
@@ -209,6 +212,12 @@ function isColWidths(v: unknown): v is Record<string, number> {
   if (!v || typeof v !== "object" || Array.isArray(v)) return false;
   const entries = Object.entries(v);
   return entries.length <= 200 && entries.every(([k, w]) => isBoundedString(k, 64) && isBoundedInt(w, 40, 1200));
+}
+// The Suit Builder's Manual suit ({slot: serial}, app/ui/builder-manual.mts): each key one of the classifier's slots
+// (vault-lib.mts's GEAR_SLOTS), each value a serial.
+function isManualSuit(v: unknown): v is Record<string, number> {
+  if (!v || typeof v !== "object" || Array.isArray(v)) return false;
+  return Object.entries(v).every(([k, s]) => GEAR_SLOTS.includes(k) && isBoundedInt(s, 1, MAX_SERIAL));
 }
 // Localhost security (spec §4.5): a request's Host must name this server, an Origin (when present)
 // must be this same origin, and — with a token configured — every /api/* route except the SSE
@@ -884,6 +893,7 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
     }
     if (isColWidths(raw.colWidths)) out.colWidths = raw.colWidths;
     if (isDrawerWidth(raw.mapDrawerWidth)) out.mapDrawerWidth = raw.mapDrawerWidth;
+    if (isManualSuit(raw.manualSuit)) out.manualSuit = raw.manualSuit;
     for (const key of UI_PREF_VERSIONS) if (isBoundedString(raw[key], 64)) out[key] = raw[key];
     return out;
   }
@@ -1499,6 +1509,10 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
         if (Object.prototype.hasOwnProperty.call(body, "mapDrawerWidth")) {
           if (!isDrawerWidth(body.mapDrawerWidth)) return send(res, 400, { ok: false, error: "mapDrawerWidth must be a whole width from 320 to 4000 px" });
           next.mapDrawerWidth = body.mapDrawerWidth;
+        }
+        if (Object.prototype.hasOwnProperty.call(body, "manualSuit")) {
+          if (!isManualSuit(body.manualSuit)) return send(res, 400, { ok: false, error: "manualSuit must map the suit's slots to item serials" });
+          next.manualSuit = body.manualSuit;
         }
         for (const key of UI_PREF_VERSIONS) {
           if (!Object.prototype.hasOwnProperty.call(body, key)) continue;

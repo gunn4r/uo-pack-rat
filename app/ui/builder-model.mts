@@ -3,7 +3,7 @@
 // "other changes" badges and "after the change" values, the compare table's differing rows and best values,
 // and a saved run's label and badges. No DOM and no page state, so app/builder-model.test.mts can check it
 // all directly; ui/builder.mts, ui/builder-result.mts and ui/runs.mts draw what it returns.
-import { labelOf, fullOf, NOT_BUILDER_KEYS, RESIST_KEYS, RESIST_CAP_LIMITS, SLOT_LABELS, settingsDiff, shardResistCap, WEAPON_SKILLS, MELEE_SKILLS, ubwsLetsIn } from "../vault-lib.mts";
+import { getRules, labelOf, fullOf, NOT_BUILDER_KEYS, RESIST_KEYS, RESIST_CAP_LIMITS, SLOT_LABELS, settingsDiff, shardResistCap, WEAPON_SKILLS, MELEE_SKILLS, ubwsLetsIn } from "../vault-lib.mts";
 import type { PropMap, ResistCap, RunSettings } from "../vault-lib.mts";
 
 export const plural = (n: number, word: string, many = `${word}s`): string => `${n.toLocaleString("en-US")} ${n === 1 ? word : many}`;
@@ -18,6 +18,20 @@ export function propName(k: string): string {
   if (k.startsWith("sk:")) return `${labelOf(k).slice(1)} skill bonus`;
   const f = fullOf(k);
   return f.replace(/(?!^)\b([A-Z])([a-z]+)/g, (_m, a: string, b: string) => a.toLowerCase() + b);
+}
+
+// ---------------------------------------------------------------- paperdoll terms
+// Resists in paperdoll values (item totals + the Resisting Spells bonus), for the compare view and Manual's totals.
+export function paperdoll(totals: PropMap, rsb: number): PropMap {
+  const t = { ...totals };
+  for (const k of RESIST_KEYS) t[k] = (t[k] || 0) + rsb;
+  return t;
+}
+// The shard's caps with the build's resist caps (overrides included) in place of its resist ones.
+export function paperdollCaps(resists: Record<string, ResistCap>): Record<string, number> {
+  const caps = { ...(getRules().caps as Record<string, number>) };
+  for (const k of RESIST_KEYS) caps[k] = resists[k]!.cap;
+  return caps;
 }
 
 // ---------------------------------------------------------------- panel summaries

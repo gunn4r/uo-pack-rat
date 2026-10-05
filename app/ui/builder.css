@@ -119,6 +119,77 @@
 .tbl.b-cmp td { white-space: normal; }
 .tbl.b-cmp td.b-cmp-act { height: 44px; }
 
+/* ---------------------------------------------------------------- Manual mode (ui/builder-manual.mts) */
+/* the mode switch replaces the panel and results with the totals strip on top and, under it, the slot cards
+   beside the hint or the picker; each column scrolls inside its own box */
+#tab-builder.manual .b-panel, #tab-builder.manual .b-results { display: none; }
+/* Manual is fluid: the picker's table wants every pixel, so the page's --page-max does not apply (Automatic keeps it) */
+#tab-builder.manual > .page { max-width: none; }
+/* On a short window the slot cards and the picker keep a usable height (about six picker rows), and the screen
+   scrolls the totals strip away rather than squeezing the picker's list down to a row or two. */
+.b-manual { flex: 1 1 auto; min-width: 0; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; gap: var(--space-4); }
+.mb-totals { flex: none; display: flex; flex-direction: column; gap: var(--space-2); padding: var(--space-3) var(--space-5); }
+.mb-totals-head { display: flex; align-items: baseline; gap: var(--space-3); min-width: 0; }
+/* the totals as one compact row: the five resists, the eight capped totals, then the stats, a hairline between */
+/* a flex row that wraps rather than overflowing, each total its own width, a line that wraps starting at the left */
+.mb-totals-row { display: flex; flex-wrap: wrap; gap: var(--space-2) var(--space-5); }
+.mb-total { flex: none; display: flex; flex-direction: column; gap: var(--space-0-5); }
+.mb-total.mb-sep { padding-left: var(--space-3); border-left: var(--border-width) solid var(--color-border); }
+.mb-total-v { display: flex; align-items: baseline; gap: var(--space-1); white-space: nowrap; font-variant-numeric: tabular-nums; }
+.mb-main { flex: 1 0 auto; height: 0; min-height: 420px; display: flex; gap: var(--space-4); position: relative; }
+/* the left column: the suit card, then the character's stats in this suit, scrolling together */
+.mb-left { flex: 2 1 0; min-width: 320px; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; gap: var(--space-4); }
+.mb-left > *, .mb-suit > * { flex: none; }   /* a scrolling column: its cards keep their height */
+.mb-suit { display: flex; flex-direction: column; }
+/* one line: the count gives way (the totals strip says it too) before a button wraps */
+.mb-suit .card-head { gap: var(--space-2); }
+.mb-suit .card-head > .ellip { flex: 1 1 auto; min-width: 0; }
+.mb-suit .card-head > :not(.ellip):not(h2) { flex: none; }
+/* compact: all eighteen slots stay in view beside the picker at 1440 × 900, in two columns of nine (armor and
+   weapons; clothing and jewelry), each group's cards as many across as its column fits */
+.mb-suit > .card-head { min-height: 0; padding-top: var(--space-2); padding-bottom: var(--space-2); }
+.mb-suit-body { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-3); align-items: start; padding: var(--space-2) var(--space-3) var(--space-3); }
+.mb-suit-col { display: flex; flex-direction: column; gap: var(--space-2); min-width: 0; }
+.mb-group { display: flex; flex-direction: column; gap: var(--space-1); }
+.mb-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: var(--space-1) var(--space-1-5); }
+/* a slot card: the whole card is its button (opens the picker on the slot); Clear sits over its top-right corner */
+.mb-slot { position: relative; min-width: 0; }
+.pr .mb-slot-pick { display: flex; flex-direction: column; align-items: stretch; width: 100%; padding: var(--space-1-5) var(--space-2); text-align: left; font-size: var(--text-sm); line-height: var(--lh-sm); font-weight: var(--weight-regular);
+  border: var(--border-width) solid var(--color-border); border-radius: var(--radius-lg); background: var(--color-surface); color: var(--color-text); cursor: pointer; }
+.pr .mb-slot-pick:hover { border-color: var(--color-border-strong); background: var(--color-row-hover); color: var(--color-on-row-hover); }
+.pr .mb-slot-pick:focus-visible { outline: none; box-shadow: var(--ring-focus); }
+.pr .mb-slot.mb-empty .mb-slot-pick { border-style: dashed; background: var(--color-surface-subtle); }
+.pr .mb-slot.mb-missing .mb-slot-pick { border-color: var(--color-warning); }
+.pr .mb-slot.mb-sel .mb-slot-pick { border-style: solid; border-color: var(--color-accent); box-shadow: 0 0 0 1px var(--color-accent); background: var(--color-surface); }
+/* the slot and the piece's name on one line, clear of the Clear button */
+.mb-slot-line { display: flex; align-items: center; gap: var(--space-2); min-width: 0; padding-right: var(--control-sm); }
+.mb-slot-line > .caps { flex: none; }
+.mb-slot-line > .mb-name, .mb-slot-line > .mb-choose { flex: 1 1 auto; min-width: 0; }
+.mb-slot-pick .ellip { display: block; }
+.mb-name { font-weight: var(--weight-medium); }
+.mb-choose { display: flex; align-items: center; gap: var(--space-1-5); color: var(--color-text-muted); }
+.mb-slot.mb-sel .mb-choose { color: var(--color-accent); }
+/* the character's attributes and pools in this suit (sheet.mts's lists; the resists are the totals strip's) */
+.mb-stats .mb-kpis { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-3); }
+.mb-slot .mb-clear { position: absolute; top: var(--space-0-5); right: var(--space-0-5); }
+/* the side column: the hint, or the picker (one item browser, fixed to the selected slot) */
+/* the hint is a narrow column; the picker takes about three fifths of the row */
+.mb-side { width: var(--constraints-w); flex: none; min-height: 0; display: flex; flex-direction: column; }
+.mb-side.mb-picker { flex: 3 1 0; width: auto; min-width: 480px; }
+#mb-hint { gap: var(--space-2); padding: var(--space-5); align-self: flex-start; }
+.mb-picker { overflow: hidden; box-shadow: var(--shadow-2); }
+.mb-pick-head, .mb-status { flex: none; }
+.mb-pick-head { display: flex; align-items: center; gap: var(--space-2); padding: var(--space-3) var(--space-4) 0; }
+.mb-status { padding: var(--space-1) var(--space-4) var(--space-1-5); min-height: var(--lh-sm); color: var(--color-text-muted); }
+.mb-browser { padding: 0 var(--space-4) var(--space-4); gap: var(--space-2); }
+.mb-browser .inv-toolbar { flex-wrap: wrap; }
+.mb-browser .inv-search { flex: 1 1 100%; width: auto; }
+.mb-browser .inv-card { border: var(--border-width) solid var(--color-border); border-radius: var(--radius-md); }
+.mb-browser .tbl-foot { flex: none; overflow: hidden; container-type: inline-size; }
+.mb-browser .tbl-foot > span, .mb-browser .inv-foot-view > span { white-space: nowrap; }
+.mb-delta { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-align: left; font-variant-numeric: tabular-nums; }
+.mb-delta .tag { margin-right: var(--space-1-5); }
+
 /* ---------------------------------------------------------------- responsive (design spec 3.7) */
 @media (max-width: 1179px) {
   .b-panel { width: 320px; }
@@ -126,7 +197,15 @@
   .b-head-card .b-resists { grid-template-columns: repeat(3, minmax(0, 1fr)); }
   .b-plan col:nth-child(4), .b-plan th:nth-child(4), .b-plan td:nth-child(4) { display: none; }
 }
-@media (max-width: 1279px) { .b-after { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+@media (max-width: 1279px) {
+  .b-after { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}
+/* narrow: the hint goes and the picker lies over the slot cards */
+@media (max-width: 1179px) {
+  #mb-hint { display: none; }
+  .mb-total.mb-sep { padding-left: 0; border-left: 0; }
+  .mb-side.mb-picker { position: absolute; top: 0; right: 0; bottom: 0; width: min(560px, 100%); min-width: 0; z-index: var(--z-peek); box-shadow: var(--shadow-3); }
+}
 /* under 1024 the panel becomes a full-width collapsible section above the results, its footer a sticky bar */
 @media (max-width: 1023px) {
   #tab-builder .page.b-page { flex-direction: column; overflow-y: auto; }
