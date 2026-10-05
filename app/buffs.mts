@@ -4,8 +4,8 @@
 // Scripts/) or the UO Alive wiki, which wins where the two disagree (the other's number is said in the entry's note),
 // and carries how sure those numbers are. No DOM: Manual (ui/builder-manual.mts) and Automatic read the same model,
 // and app/buffs.test.mts checks it.
-import { RESIST_KEYS, resistSkillBonus, labelOf } from "./vault-lib.mts";
-import type { PropMap } from "./vault-lib.mts";
+import { RESIST_KEYS, resistSkillBonus, labelOf, effectiveProfile, profileResistCaps } from "./vault-lib.mts";
+import type { BuffShift, Character, EffectiveProfile, Profile, PropMap, RunBuffs } from "./vault-lib.mts";
 
 // ---------------------------------------------------------------- the numbers a buff scales with
 // A skill, by the scan's name for it (a character's own value is the highest of `skills`), or a value no scan carries
@@ -460,11 +460,67 @@ export function applyBuffs(totals: PropMap, caps: Readonly<Record<string, number
   return r;
 }
 
+// ---------------------------------------------------------------- planning (Automatic)
+// What Automatic plans with: the buffs that are on, their numbers (with the character's own Resisting Spells, which
+// Protection lowers), the raw stats, the race and the held weapon's flags, and `worn`, the item totals of what the
+// character wears now.
+export interface BuffPlan { on: string[]; skills: Skills; stats: Stats | null; who: BuffWho; worn: PropMap }
+// The optimizer's profile with the buffs that are on counted as always on. applyBuffs works the caps out in the
+// game's order; each key's in-cap share is then a constant base the gear needn't supply, so it comes off the cap and
+// the floor (effectiveProfile's `shift`), and both solvers search the same profile unchanged. What a buff adds past the
+// cap (Enemy of One's damage) never counts toward a cap, so it plays no part. Two numbers depend on the suit, and are
+// taken from what the character wears now rather than the suit being searched: a potion's Enhance Potions and Enchant's
+// Spell Channeling (plannedFromWorn says which buffs those are). Exact handling would make those MIP variables.
+export function plannedProfile(p: Profile, character: Character | null, plan: BuffPlan | null): EffectiveProfile {
+  const base = effectiveProfile(p, character);
+  if (!plan?.on.length) return base;
+  return { ...effectiveProfile(p, character, buffShift(base, plan).shift), buffs: { on: plan.on, skills: plan.skills, stats: plan.stats, who: plan.who, caps: base.caps, floors: base.floors } };
+}
+// The buffs applied to a profile's caps (in paperdoll terms) and the worn suit, and what that shifts: the caps, and
+// each key's in-cap share. `r` says which buff gave what (a requirement's note).
+export function buffShift(base: EffectiveProfile, plan: BuffPlan): { shift: BuffShift; r: BuffResult } {
+  const view = profileResistCaps(base), caps = { ...base.caps };
+  for (const k of RESIST_KEYS) caps[k] = view[k]!.cap;
+  const r = applyBuffs(plan.worn, caps, plan.on, plan.skills, plan.stats, plan.who);
+  const shares = Object.fromEntries(Object.entries(r.shares).map(([k, list]) => [k, list.filter((x) => !x.outside).reduce((n, x) => n + x.value, 0)]));
+  return { shift: { caps: r.caps, shares }, r };
+}
+// The buffs among `on` whose numbers Automatic takes from the suit worn now: the potions (its Enhance Potions) and an
+// Enchant (the held weapon's Spell Channeling).
+export const plannedFromWorn = (on: readonly string[]): string[] => on.filter((id) => { const b = BY_ID.get(id); return !!b && (b.inputs.includes("Alchemy") || b.excl === "enchant"); });
+// A run's buffs as saved: the ids and the inputs' values (never Resisting Spells, which is the character's own).
+export function runBuffs(on: readonly string[], skills: Skills): RunBuffs | undefined {
+  return on.length ? { on: [...on], skills: Object.fromEntries(Object.keys(BUFF_INPUTS).map((k) => [k, skills[k] ?? BUFF_INPUTS[k]!.def])) } : undefined;
+}
+export const isRunBuffs = (v: unknown): v is RunBuffs => !!v && typeof v === "object" && isBuffList((v as RunBuffs).on) && isBuffSkills((v as RunBuffs).skills);
+// A saved run's buffs, or none for a run saved before them (or a damaged entry).
+export const savedBuffs = (settings: { buffs?: unknown }): RunBuffs | undefined => (isRunBuffs(settings.buffs) ? settings.buffs : undefined);
+// What changed in the buffs between two runs' settings: "+Divine Fury", "−Bless", "Chivalry 105 → 120" (an input one
+// of the buffs on in both scales with). A run saved before buffs, or with a damaged entry, has none.
+export function buffsDiff(a: unknown, b: unknown): string[] {
+  const A = isRunBuffs(a) ? a : { on: [], skills: {} }, B = isRunBuffs(b) ? b : { on: [], skills: {} };
+  const out = [...B.on.filter((id) => !A.on.includes(id)).map((id) => `+${BY_ID.get(id)!.name}`), ...A.on.filter((id) => !B.on.includes(id)).map((id) => `−${BY_ID.get(id)!.name}`)];
+  const inputs = new Set(B.on.filter((id) => A.on.includes(id)).flatMap((id) => BY_ID.get(id)!.inputs));
+  for (const i of inputs) if (A.skills[i] !== B.skills[i]) out.push(`${BUFF_INPUTS[i]!.label} ${A.skills[i] ?? "?"} → ${B.skills[i] ?? "?"}`);
+  return out;
+}
+
 // ---------------------------------------------------------------- the words
 const POOL_NAMES: Record<string, string> = { hitsPool: "Hits", stamPool: "Stamina", manaPool: "Mana" };
 const nameOf = (k: string): string => POOL_NAMES[k] ?? (k.startsWith("sk:") ? labelOf(k).slice(1) : labelOf(k));   // "Stealth +20", not "+Stealth +20"
 export const signed = (n: number): string => `${n < 0 ? "−" : "+"}${Math.abs(n)}`;
 export const signedPct = (n: number): string => `${signed(Math.round(n * 100) / 100)}%`;
+// A requirement's note with buffs planned: what gear still has to supply (`need`, against its cap `gearCap`), and which
+// buff gave what. "Gear needs 35: Divine Fury gives 10", "Gear needs 45 of a 50 cap: Divine Fury −20, White Tiger Form
+// +20, White Tiger Form cap +5". Null when no buff counts toward `k` (a bonus past the cap never does).
+export function gearNeedsText(k: string, need: number, gearCap: number | undefined, r: BuffResult): string | null {
+  const shares = (r.shares[k] || []).filter((x) => !x.outside), caps = r.capShares[k] || [];
+  if (!shares.length && !caps.length) return null;
+  const one = shares.length === 1 && !caps.length ? shares[0]! : null;
+  const parts = one ? [`${BY_ID.get(one.id)!.name} ${one.value < 0 ? "takes" : "gives"} ${Math.abs(one.value)}`]
+    : [...shares.map((x) => `${BY_ID.get(x.id)!.name} ${signed(x.value)}`), ...caps.map((x) => `${BY_ID.get(x.id)!.name} cap ${signed(x.value)}`)];
+  return `Gear needs ${need}${caps.length && gearCap != null ? ` of a ${gearCap} cap` : ""}: ${parts.join(", ")}`;
+}
 // "Phys, Cold, Poison, Energy +5", "All resists +5", "STR, DEX, INT +14": resists, and stats, with the same text are
 // named together; any other key on its own.
 const STATS = ["strBonus", "dexBonus", "intBonus"];
@@ -502,6 +558,13 @@ export function isBuffSkills(v: unknown): v is Record<string, number> {
 // The edits by character (ui-prefs `buffSkills`): a character's name, or NO_CHARACTER (""), to its edited inputs, so one
 // character's plan never marks another's. At most 200 names of at most 64 characters.
 export const NO_CHARACTER = "";
+// Automatic's buffs by character (ui-prefs `autoBuffs`): a character's name to the buffs that are on, by the same
+// bounds as the edits.
+export function isBuffListsByCharacter(v: unknown): v is Record<string, string[]> {
+  if (!v || typeof v !== "object" || Array.isArray(v)) return false;
+  const entries = Object.entries(v);
+  return entries.length <= 200 && entries.every(([name, on]) => name.length <= 64 && name !== "__proto__" && isBuffList(on));
+}
 export function isBuffSkillsByCharacter(v: unknown): v is Record<string, Record<string, number>> {
   if (!v || typeof v !== "object" || Array.isArray(v)) return false;
   const entries = Object.entries(v);

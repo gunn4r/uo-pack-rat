@@ -10,7 +10,7 @@ import { api } from "./api.mts";
 import { pollBridge } from "./bridge.mts";
 import { buildFilters, fetchItems, initFilters, applyUiPrefs, inventoryFailed } from "./inventory.mts";
 import { renderCharacters, showCharacter } from "./characters.mts";
-import { initBuilder, syncBuilderCharacters, selectCharacter } from "./builder.mts";
+import { initBuilder, syncBuilderCharacters, selectCharacter, applyAutoBuffPrefs } from "./builder.mts";
 import { applyBuilderPrefs } from "./builder-manual.mts";
 import { renderContainers, showContainers } from "./containers.mts";
 import { showScrolls, scrollsChanged } from "./scrolls.mts";
@@ -72,6 +72,7 @@ export async function load(): Promise<void> {
   applyShellPrefs(prefs ? prefs.prefs : null);
   applyMapPrefs(prefs ? prefs.prefs : null);
   applyBuilderPrefs(prefs ? prefs.prefs : null);
+  applyAutoBuffPrefs(prefs ? prefs.prefs : null);
   // Settings, Import, the live-scan stream and the first-run wizard need nothing from the inventory,
   // so they come up before it: a failed inventory or profiles fetch must not take the Settings tab
   // (the page's way to the data folder) down with it.

@@ -263,7 +263,7 @@ test("[slow] STR limit sits beside Race, in view with Advanced closed, and a bad
 // Resist cap overrides (issue #44): a Fire cap raised to 95 for a Reaper Form suit is marked in the panel, the
 // result is measured against it and says so, the saved run shows it, and Save profile keeps it across a reload.
 // A cap out of range stops the build with its reason under the field; the reset puts the shard's cap back.
-test("[slow] a raised resist cap is marked, built with, shown in the result and the run, and saved with the profile", async (t) => {
+test("[slow] a raised resist cap is marked, built with, shown in the result and the run, and saved with the profile; a buff is planned with", async (t) => {
   const why = unavailable();
   if (why) return t.skip(why);
   const dataDir = seedDataDir("packrat-ui-rescaps-");
@@ -277,12 +277,22 @@ test("[slow] a raised resist cap is marked, built with, shown in the result and 
     await fire.fill("95");
     assert.match(await fireRow.innerText(), /raised from 70/);
     assert.equal(await fireRow.getByRole("button", { name: "Reset Fire resist cap to the shard's 70" }).count(), 1);
+    // A buff (issue #12): Divine Fury turned on in Automatic's picker is a chip in the Buffs section, and the build
+    // plans with it: its headline says so, and "Show without buffs" redraws the totals without it.
+    await page.click("#b-buff-add");
+    await page.locator("#abf-cb-divineFury").check();
+    await page.keyboard.press("Escape");
+    assert.match(await page.locator('#b-buff-chips .token[data-buff="divineFury"]').innerText(), /Divine Fury/);
 
     await page.click("#b-run");
     await built(page);
     const tile = page.locator("#b-result .b-head-card .resist", { hasText: "Fire" });
     assert.match(await tile.innerText(), /\/ 95/);
     assert.match(await tile.innerText(), /Cap raised from 70/);
+    assert.match(await page.locator("#b-result .b-planned").innerText(), /Planned with\s*Divine Fury/);
+    await page.click("#b-buffs-shown");
+    await page.waitForSelector('#b-buffs-shown[aria-pressed="true"]');
+    assert.equal(await page.locator("#b-buffs-shown").innerText(), "Show with buffs");
     await page.click("#b-runs-open");
     await page.waitForSelector("#runs-drawer:not([hidden]) .run-card");
     assert.match(await page.locator("#b-runs .run-card").first().innerText(), /cap 95/, "the saved run names its cap");

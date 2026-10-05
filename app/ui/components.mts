@@ -353,6 +353,12 @@ function setBackgroundInert(on: boolean): void {
 // viewport's edges (8 px margin). maxHeight is the room on the chosen side, so a popover taller than that
 // scrolls inside itself (.pop has overflow: auto) and its last control — "Done" — stays reachable.
 const EDGE = 8, GAP = 6;
+// Beside a column instead (the `beside` option): right of its right edge, level with the anchor's top, moved up as far
+// as it takes to stay in the viewport, and pulled left over the column when the viewport is too narrow.
+export function besidePlacement(a: { top: number }, col: { right: number }, size: { width: number; height: number }, vp: { width: number; height: number }): { top: number; left: number; maxHeight: number } {
+  const room = Math.max(0, vp.height - 2 * EDGE), h = Math.min(size.height, room);
+  return { top: Math.max(EDGE, Math.min(a.top, vp.height - EDGE - h)), left: Math.max(EDGE, Math.min(col.right + GAP, vp.width - size.width - EDGE)), maxHeight: room };
+}
 export function popoverPlacement(a: { top: number; bottom: number; left: number }, size: { width: number; height: number }, vp: { width: number; height: number }): { top: number; left: number; maxHeight: number } {
   const below = Math.max(0, vp.height - EDGE - (a.bottom + GAP)), above = Math.max(0, a.top - GAP - EDGE);
   const up = size.height > below && above > below;
@@ -362,11 +368,12 @@ export function popoverPlacement(a: { top: number; bottom: number; left: number 
   const left = Math.max(EDGE, Math.min(a.left, vp.width - size.width - EDGE));
   return { top: Math.max(EDGE, top), left, maxHeight: Math.max(room, 0) };
 }
-// Anchored, non-modal: opens under its anchor (above when there's no room), closes on a click outside, on
-// Esc and on a second click of the anchor, and hands focus back to the anchor when it closed with focus inside.
+// Anchored, non-modal: opens under its anchor (above when there's no room), or beside the `beside` element, closes on
+// a click outside, on Esc and on a second click of the anchor, and hands focus back to the anchor when it closed with
+// focus inside.
 export interface PopoverHandle { root: HTMLElement; close: () => void; isOpen: () => boolean }
 let openPopover: PopoverHandle | null = null;
-export function popover(anchor: HTMLElement, content: Kids, { label, width, minWidth, onClose, role = "dialog" }: { label: string; width?: number | undefined; minWidth?: number | undefined; onClose?: (() => void) | undefined; role?: "dialog" | "menu" | "listbox" } = { label: "" }): PopoverHandle {
+export function popover(anchor: HTMLElement, content: Kids, { label, width, minWidth, onClose, role = "dialog", beside }: { label: string; width?: number | undefined; minWidth?: number | undefined; onClose?: (() => void) | undefined; role?: "dialog" | "menu" | "listbox"; beside?: HTMLElement | undefined } = { label: "" }): PopoverHandle {
   if (openPopover) { const was = openPopover.root.dataset.anchor === anchor.dataset.popAnchor; openPopover.close(); if (was) return openPopover; }
   anchor.dataset.popAnchor ||= nextId("pop");
   const root = box("div", { class: "pop", role, "aria-label": label, tabindex: "-1", "data-anchor": anchor.dataset.popAnchor, ...(width ? { style: `width:${width}px` } : minWidth ? { style: `min-width:${minWidth}px` } : {}) },
@@ -375,7 +382,8 @@ export function popover(anchor: HTMLElement, content: Kids, { label, width, minW
   anchor.setAttribute("aria-expanded", "true");
   const place = (): void => {
     root.style.maxHeight = "";   // measure its natural height
-    const p = popoverPlacement(anchor.getBoundingClientRect(), { width: root.offsetWidth, height: root.offsetHeight }, { width: innerWidth, height: innerHeight });
+    const size = { width: root.offsetWidth, height: root.offsetHeight }, vp = { width: innerWidth, height: innerHeight };
+    const p = beside ? besidePlacement(anchor.getBoundingClientRect(), beside.getBoundingClientRect(), size, vp) : popoverPlacement(anchor.getBoundingClientRect(), size, vp);
     root.style.left = `${p.left}px`; root.style.top = `${p.top}px`; root.style.maxHeight = `${p.maxHeight}px`;
   };
   place();

@@ -41,6 +41,8 @@
 .rule-row.weight { grid-template-columns: minmax(0, 1fr) 64px var(--control-sm); }
 .pr .rule-row .input.num { width: 100%; }
 .rule-row .field-error, .rule-row .field-warn { grid-column: 1 / -1; }
+/* with buffs on: what gear still has to supply, under the requirement it changes */
+.rule-row .b-buff-note { grid-column: 1 / -1; color: var(--color-accent); }
 /* a resist cap: name · number · "shard cap" or the override's note · reset; an overridden number is outlined in
    the accent, and its note says what it was raised or lowered from (the outline is never the only signal) */
 .rule-row.cap { grid-template-columns: minmax(0, 1fr) 56px auto var(--control-sm); }
@@ -82,6 +84,9 @@
 .b-head-card { display: flex; flex-direction: column; gap: var(--space-4); padding: var(--space-5); }
 .b-headline { display: flex; align-items: center; gap: var(--space-3); min-width: 0; }
 .b-headline-text { display: flex; flex-direction: column; gap: var(--space-0-5); flex: 1 1 auto; min-width: 0; }
+/* "Planned with [chips] · Show without buffs", and the note on numbers taken from the suit worn now */
+.b-planned { display: flex; align-items: center; flex-wrap: wrap; gap: var(--space-1-5); }
+.b-planned-note { flex: 1 1 100%; }
 .b-resists { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: var(--space-3); }
 .b-resist-val { display: flex; align-items: baseline; gap: var(--space-1-5); min-width: 0; }
 .b-resist-val .i { align-self: center; color: var(--color-text-muted); }
@@ -272,3 +277,6 @@
 .b-fetch-pieces li:not(:last-child)::after { content: ", "; }
 .b-fetch-piece { text-decoration: underline dotted var(--color-border-strong); text-underline-offset: 3px; cursor: default; border-radius: var(--radius-sm); }
 .b-fetch-piece:hover { color: var(--color-text); }
+/* Automatic's buff picker, in a popover from the Buffs section: the same picker as Manual's side column */
+.pop-body:has(> .bf-pick) { padding: 0; gap: 0; }
+.pop-body > .bf-pick { display: flex; flex-direction: column; height: min(640px, calc(100vh - 32px)); }

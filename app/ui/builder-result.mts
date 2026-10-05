@@ -3,7 +3,7 @@
 // resist tiles and the other changes, the Plan, the Fetch list, the other suits, "<name> after the change",
 // Solver details), and the compare view for 2-3 suits or saved runs. The numbers come from
 // ui/builder-model.mts; the bridge actions are gated by ui/bridge.mts's bridgeActionReason().
-import { OPTIMIZER_SLOTS, RESIST_KEYS, resistSkillBonus, totalsOf, requirementReport, settingsDiff, resistCapsFor, profileResistCaps } from "../vault-lib.mts";
+import { OPTIMIZER_SLOTS, RESIST_KEYS, resistSkillBonus, totalsOf, requirementReport, resistCapsFor, profileResistCaps } from "../vault-lib.mts";
 import type { EffectiveProfile, Item, OptItem, PropMap, ResistCap } from "../vault-lib.mts";
 import { state } from "./store.mts";
 import type { BuildMeta } from "./store.mts";
@@ -12,9 +12,10 @@ import { box, txt, button, icon, badge, message, meter, switchControl, check, ta
 import { sheetNode } from "./sheet.mts";
 import { bridgeActionReason, runBridgeAction, grabAll, grabbable } from "./bridge.mts";
 import { resolveItems } from "./items.mts";
-import { renderPanel } from "./builder.mts";
 import { splitSerial } from "./inventory.mts";
-import { paperdoll, paperdollCaps, afterChange, compareModel, hiddenRowsNote, locationCrumbs, otherChanges, plural, resistOutcome, toggleCompare, propName, capNote, capsLine, anyOverridden, effectiveFloor, type CompareMember } from "./builder-model.mts";
+import { buffPlan, renderPanel } from "./builder.mts";
+import { savedBuffs, plannedFromWorn, buffById } from "../buffs.mts";
+import { paperdoll, paperdollCaps, paperdollFloors, pastCapBadges, runSettingsDiff, withBuffs, afterChange, compareModel, hiddenRowsNote, locationCrumbs, otherChanges, plural, resistOutcome, toggleCompare, propName, capNote, capsLine, anyOverridden, effectiveFloor, type CompareMember } from "./builder-model.mts";
 import type { OptSuit, OptimizeResult, SavedRunLike } from "./api-types.mts";
 
 export const RESIST_NAMES: Record<string, [string, string]> = { physResist: ["Physical", "--res-phys"], fireResist: ["Fire", "--res-fire"], coldResist: ["Cold", "--res-cold"], poisonResist: ["Poison", "--res-poison"], energyResist: ["Energy", "--res-energy"] };
@@ -81,13 +82,15 @@ function currentSuitCard(name: string): HTMLElement {
 let renderSeq = 0;
 let last: { res: OptimizeResult; current: OptSuit; prof: EffectiveProfile; name: string; meta: BuildMeta | undefined } | null = null;
 let showUnchanged = false, sheetOpen = false, detailsOpen = false;
+// "Show without buffs": the result's totals drawn without the buffs it was planned with (no new search).
+let withoutBuffs = false;
 let picked = new Set<string>();   // the other suits ticked for comparison: "0" is the best, "n" is suit #n+1
 let pickRefused: string | null = null;
 export function resetResultView(): void { renderSeq++; last = null; picked = new Set(); pickRefused = null; }
 export function resultLoadError(e: unknown): void {
   $<HTMLElement>("#b-result")!.replaceChildren(message({ tone: "bad", title: "Could not load the suit's items", text: (e as Error).message }));
 }
-const rerender = (): void => { if (last) renderResult(last.res, last.current, last.prof, last.name, last.meta).catch(resultLoadError); };
+const rerender = (): Promise<void> => (last ? renderResult(last.res, last.current, last.prof, last.name, last.meta).catch(resultLoadError) : Promise.resolve());
 // The bridge coming online or going away changes which actions are live.
 document.addEventListener("bridgechange", () => { if (last && !state.builder.job) rerender(); });
 
@@ -95,7 +98,7 @@ document.addEventListener("bridgechange", () => { if (last && !state.builder.job
 // anything before this call may find another character selected by now.
 export async function renderResult(res: OptimizeResult, current: OptSuit, prof: EffectiveProfile, name: string, meta?: BuildMeta): Promise<void> {
   const mySeq = ++renderSeq;
-  if (last?.res !== res) { picked = new Set(); pickRefused = null; }
+  if (last?.res !== res) { picked = new Set(); pickRefused = null; withoutBuffs = false; }
   last = { res, current, prof, name, meta };
   currentShown = null;
   const alts = res.alternatives || [];
@@ -143,18 +146,32 @@ function headlineCard(res: OptimizeResult, current: OptSuit, suit: OptSuit, prof
   const gate = todo.length ? bridgeActionReason("grab", todo[0]!) : null;
   const grab = button({ label: todo.length ? `Grab all ${todo.length}` : "Grab all", icon: "grab", variant: "primary", disabled: !!gate || !todo.length, onClick: () => grabAll(fetchItems, name), attrs: { id: "b-grab-all" } });
   const grabCtl = gate || !todo.length ? tipWrap(grab, gate || `Nothing to grab: every piece is already with ${name} or worn.`) : grab;
-  const caps = profileResistCaps(prof);
-  const tiles = RESIST_KEYS.map((k) => resistTile(k, (after[k] || 0) + rsb, prof.floors[k] != null ? prof.floors[k]! + rsb : null, caps[k]!, (before[k] || 0) + rsb));
-  const other = otherChanges([...Object.keys(prof.floors), ...Object.keys(prof.weights)], before, after, prof.caps, prof.floors);
-  const unreachable = (res.unreachableFloors || []).length ? message({ tone: "warn", text: `No suit in the pool can reach these requirements: ${res.unreachableFloors!.map((k) => propName(k)).join(", ")}.` }) : null;
+  // in paperdoll terms, with the buffs it was planned with unless "Show without buffs" is on, against the caps they leave
+  const caps = profileResistCaps(prof), base = paperdollCaps(caps), shown = withoutBuffs ? null : prof.buffs;
+  const was = withBuffs(before, rsb, base, shown), now = withBuffs(after, rsb, base, shown), pdFloors = paperdollFloors(prof.buffs?.floors ?? prof.floors, rsb);
+  const tiles = RESIST_KEYS.map((k) => resistTile(k, now.totals[k]!, pdFloors[k] ?? null, { cap: now.caps[k]!, shard: caps[k]!.shard }, was.totals[k]!));
+  const other = [...otherChanges([...Object.keys(prof.floors), ...Object.keys(prof.weights)], was.totals, now.totals, now.caps, pdFloors), ...pastCapBadges(now).map((text) => ({ text, tone: "ok" as const }))];
+  const unreachable = (res.unreachableFloors || []).length ? message({ tone: "warn", text: `No suit in the pool can reach these requirements${prof.buffs ? ", even with the buffs" : ""}: ${res.unreachableFloors!.map((k) => propName(k)).join(", ")}.` }) : null;
   return box("section", { class: "card b-head-card", "aria-label": view == null ? "Best suit" : `Suit ${view + 2}` },
     box("div", { class: "b-headline" },
-      box("div", { class: "b-headline-text" }, box("div", { class: "b-row" }, el("h2", { class: "t-xl" }, view == null ? `Best suit for ${name}` : `Suit #${view + 2} for ${name}`), vb), el("p", { class: "muted" }, txt(line))),
+      box("div", { class: "b-headline-text" }, box("div", { class: "b-row" }, el("h2", { class: "t-xl" }, view == null ? `Best suit for ${name}` : `Suit #${view + 2} for ${name}`), vb), el("p", { class: "muted" }, txt(line)), plannedWith(prof, name)),
       grabCtl),
     v.detail ? message({ tone: v.tone === "bad" ? "bad" : "warn", text: v.detail }) : null,
     unreachable,
     box("div", { class: "b-resists" }, ...tiles),
     other.length ? box("div", { class: "b-badges", role: "list", "aria-label": "Other changes" }, ...other.map((o) => box("span", { class: `badge ${o.tone}`, role: "listitem" }, txt(o.text)))) : null);
+}
+
+// "Planned with [Divine Fury] [Bless] · Show without buffs", and which numbers were taken from the suit worn now. The
+// switch redraws the totals; the suit stays the one the search found with the buffs.
+function plannedWith(prof: EffectiveProfile, name: string): HTMLElement | null {
+  if (!prof.buffs) return null;
+  const worn = plannedFromWorn(prof.buffs.on).map((id) => buffById(id)!.name);
+  const flip = button({ label: withoutBuffs ? "Show with buffs" : "Show without buffs", variant: "ghost", size: "sm", attrs: { id: "b-buffs-shown", "aria-pressed": String(withoutBuffs) }, onClick: () => {
+    withoutBuffs = !withoutBuffs; void rerender().then(() => document.getElementById("b-buffs-shown")?.focus());
+  } });
+  return box("div", { class: "b-planned" }, txt("Planned with", "t-sm muted"), ...prof.buffs.on.map((id) => badge(buffById(id)!.name, "accent")), txt("·", "faint"), flip,
+    worn.length ? el("p", { class: "t-sm muted b-planned-note" }, txt(`${worn.join(", ")}: planned with what ${name} wears now (its Enhance Potions, its weapon's Spell Channeling)`)) : null);
 }
 
 // ---- 2. plan: the slots that change, with lock / highlight / grab
@@ -387,7 +404,7 @@ function openSuitCompare(indices: number[]): void {
       const sub = i === 0 ? (res.proven ? "the proven best" : "the best found") : Math.abs(d) < 1e-6 ? "ties the best" : `${fmtN(Math.abs(Math.round(d)))} points ${d < 0 ? "below" : "above"}`;
       const head = box("span", { class: "b-cmp-col" }, i === 0 ? box("span", { class: "b-row" }, badge("Best", "best"), res.proven ? badge("Proven optimal", "ok") : null) : txt(`#${i + 1}`, "strong"), txt(sub, "t-sm"));
       const action = i === shownIdx ? txt("Showing in the result", "t-sm muted") : button({ label: "Show this suit", size: "sm", onClick: () => { state.builder.altView = i === 0 ? null : i - 1; closeCompare(); rerender(); } });
-      return { assignment: s.best, totals: paperdoll(totalsOf(s.best), prof.resistBonus || 0), head, token: i === 0 ? "Best" : `#${i + 1} · ${Math.abs(d) < 1e-6 ? "ties" : `${d < 0 ? "−" : "+"}${fmtN(Math.abs(Math.round(d)))}`}`,
+      return { assignment: s.best, totals: withBuffs(totalsOf(s.best), prof.resistBonus || 0, paperdollCaps(profileResistCaps(prof)), withoutBuffs ? null : prof.buffs).totals, head, token: i === 0 ? "Best" : `#${i + 1} · ${Math.abs(d) < 1e-6 ? "ties" : `${d < 0 ? "−" : "+"}${fmtN(Math.abs(Math.round(d)))}`}`,
         removeLabel: i === 0 ? "Remove Best from comparison" : `Remove suit ${i + 1} from comparison`, outcome: [i === 0 ? "—" : Math.abs(d) < 1e-6 ? "0" : `${d < 0 ? "−" : "+"}${fmtN(Math.abs(Math.round(d)))}`], action };
     });
     // Every suit of one result was built with the same caps; an override is named on each column's outcome.
@@ -410,16 +427,16 @@ export function openRunCompare(runs: SavedRunLike[], titleOf: (r: SavedRunLike) 
     const capped = views.some(anyOverridden);
     const columns: CompareColumn[] = list.map((r, i) => {
       const floors = r.settings.floors || {};
-      const totals = paperdoll(totalsOf(r.result.best), rsb);
-      const met = Object.keys(floors).filter((k) => (totals[k] || 0) >= effectiveFloor(k, floors[k]!, paperdollCaps(views[i]!))).length;
+      const { totals, caps } = withBuffs(totalsOf(r.result.best), rsb, paperdollCaps(views[i]!), buffPlan(name, r.settings.race, savedBuffs(r.settings)));
+      const met = Object.keys(floors).filter((k) => (totals[k] || 0) >= effectiveFloor(k, floors[k]!, caps)).length;
       const v = verdict(r.result);
       const head = box("span", { class: "b-cmp-col" }, box("span", { class: "b-row" }, txt(titleOf(r), "strong"), v.text ? badge(v.text, v.tone === "bad" ? "bad" : v.tone) : null), txt(`${fmtRunTime(r.createdAt)} · ${fmtSecs(r.ms || 0)}`, "t-sm"));
       const action = r.id === state.builder.openRun ? txt("Showing in the result", "t-sm muted") : button({ label: "Open this run", size: "sm", onClick: () => { closeCompare(); open(r.id); } });
-      return { assignment: r.result.best, totals, caps: paperdollCaps(views[i]!), head, token: r.label || fmtRunTime(r.createdAt), removeLabel: `Remove the run from ${fmtRunTime(r.createdAt)} from comparison`,
+      return { assignment: r.result.best, totals, caps, head, token: r.label || fmtRunTime(r.createdAt), removeLabel: `Remove the run from ${fmtRunTime(r.createdAt)} from comparison`,
         outcome: [plural((r.result.perSlotChanges || []).length, "change"), Object.keys(floors).length ? `${met} of ${Object.keys(floors).length}` : "none set", v.text, ...(capped ? [capsLine(views[i]!)] : [])], action };
     });
     const first = list[0]!;
-    const settingsRow = list.map((r, i) => (i === 0 ? "—" : settingsDiff(first.settings, r.settings).join(" · ") || "same settings"));
+    const settingsRow = list.map((r, i) => (i === 0 ? "—" : runSettingsDiff(first.settings, r.settings).join(" · ") || "same settings"));
     const keys = compareKeys(columns, { floors: Object.assign({}, ...list.map((r) => r.settings.floors || {})), weights: Object.assign({}, ...list.map((r) => r.settings.weights || {})) });
     return { title: "Compare runs", noun: "runs", columns, outcomeRows: ["Changes", "Requirements met", "Verdict", ...(capped ? ["Resist caps"] : [])], settingsRow, keys, caps: paperdollCaps(views[0]!),
       onRemove: (i) => { const gone = list[i]!; list = list.filter((_, j) => j !== i); onRemove(gone.id); if (list.length < 2) closeCompare(); else showCompare(openSpec!); } };

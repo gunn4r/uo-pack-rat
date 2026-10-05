@@ -2,17 +2,18 @@
 // meta line and summary badges, a ⋯ menu (Open, Rename inline, Delete with a confirm dialog), a filter, and a
 // footer that ticks up to three runs for the compare view (ui/builder-result.mts's openRunCompare). Also the
 // settings snapshot a run is saved with, and putting a saved run's settings back into the panel.
-import { OPTIMIZER_SLOTS, RESIST_KEYS, resistSkillBonus, effectiveProfile, totalsOf, settingsDiff, resistCapsFor } from "../vault-lib.mts";
-import type { RunSettings, OptItem, PropMap, Character } from "../vault-lib.mts";
+import { OPTIMIZER_SLOTS, RESIST_KEYS, resistSkillBonus, totalsOf, resistCapsFor } from "../vault-lib.mts";
+import { buffById, plannedProfile, savedBuffs } from "../buffs.mts";
+import type { RunSettings, OptItem, PropMap, Character, EffectiveProfile } from "../vault-lib.mts";
 import { state, invStamp } from "./store.mts";
 import { $, el, fmtSecs, fmtRunTime, toast } from "./dom.mts";
 import { api } from "./api.mts";
 import { bindDrawer, box, txt, button, badge, message, input, confirmDialog, menu, type DrawerHandle } from "./components.mts";
 import { renderNavCounts } from "./shell.mts";
 import { resolveItems } from "./items.mts";
-import { renderPanel, readControls, knobs, applyKnobs, clearCapDrafts } from "./builder.mts";
+import { renderPanel, readControls, knobs, applyKnobs, clearCapDrafts, panelBuffs, buffPlan, setPanelBuffs } from "./builder.mts";
 import { renderResult, openRunCompare, closeCompare } from "./builder-result.mts";
-import { runAutoLabel, runBadges, toggleCompare, plural } from "./builder-model.mts";
+import { paperdollCaps, runAutoLabel, runBadges, runSettingsDiff, toggleCompare, plural, withBuffs } from "./builder-model.mts";
 import type { RunsListApiResponse, RunApiResponse, RunPutApiResponse, RunSummaryLike, SavedRunLike } from "./api-types.mts";
 
 // ---------------------------------------------------------------- settings snapshot / apply
@@ -23,7 +24,7 @@ export function settingsSnapshot(): RunSettings {
     excludeTags: [...(p.excludeTags || [])], excludeRoots: [...(p.excludeRoots || [])], strLimit: p.strLimit, allowGargoyle: !!p.allowGargoyle,
     medOnly: !!p.medOnly, excludeWeapons: [...(p.excludeWeapons || [])], ubwsAnyWeapon: p.ubwsAnyWeapon !== false, allowOthersWorn: !!p.allowOthersWorn,
     restarts: Number(knobs.restarts) || 200, exact: knobs.exact, budgetMs: 1000 * (Number(knobs.budgetS) || 300),
-    altCount: Number(knobs.altCount) || 0, altTol: Number(knobs.altTol) || 0, race: p.race || "human", excludeSkills: [...(p.excludeSkills || [])], resistCaps: { ...(p.resistCaps || {}) } };
+    altCount: Number(knobs.altCount) || 0, altTol: Number(knobs.altTol) || 0, race: p.race || "human", excludeSkills: [...(p.excludeSkills || [])], resistCaps: { ...(p.resistCaps || {}) }, buffs: panelBuffs() };
 }
 export function applySettings(st: RunSettings): void {
   const p = state.builder.profile!;
@@ -31,12 +32,17 @@ export function applySettings(st: RunSettings): void {
     excludeTags: [...(st.excludeTags || [])], excludeRoots: [...(st.excludeRoots || [])], strLimit: st.strLimit, allowGargoyle: !!st.allowGargoyle, medOnly: !!st.medOnly, excludeWeapons: [...(st.excludeWeapons || [])], ubwsAnyWeapon: st.ubwsAnyWeapon !== false,
     race: st.race || p.race || "human", excludeSkills: [...(st.excludeSkills || [])], allowOthersWorn: !!st.allowOthersWorn, resistCaps: { ...(st.resistCaps || {}) } });
   applyKnobs(st);
+  setPanelBuffs(savedBuffs(st)?.on ?? []);
   clearCapDrafts();
   renderPanel();
   toast("Settings loaded into the panel. Save profile to keep them.", "good");
 }
-// effectiveProfile's own default parameter already treats an omitted character the same as null.
-export const profileFromSettings = (st: RunSettings) => effectiveProfile(st, state.inv!.characters[state.builder.character!] as Character | null);
+// The profile a run was built with, its buffs planned as they were (effectiveProfile's own default parameter already
+// treats an omitted character the same as null).
+export function profileFromSettings(st: RunSettings): EffectiveProfile {
+  const name = state.builder.character!;
+  return plannedProfile(st, state.inv!.characters[name] as Character | null, buffPlan(name, st.race, savedBuffs(st)));
+}
 
 // ---------------------------------------------------------------- the list
 // A generation counter: a slow list for the previously selected character must not land after the
@@ -97,9 +103,13 @@ export function renderRuns(): void {
     const title = run.label || auto.text;
     if (q && !`${run.label || ""} ${auto.text} ${auto.diff.join(" ")} ${fmtRunTime(run.createdAt)}`.toLowerCase().includes(q)) return null;
     // the resist caps the run was built with (its race, its overrides), against the shard's for that race
-    const view = resistCapsFor(run.settings.race, run.settings.resistCaps);
+    // with the buffs it was planned with: their shares in its totals, the caps they leave, and their names
+    const view = resistCapsFor(run.settings.race, run.settings.resistCaps), buffs = savedBuffs(run.settings);
     const pick = (f: "cap" | "shard"): Record<string, number> => Object.fromEntries(RESIST_KEYS.map((k) => [k, view[k]![f]]));
-    return runCard(run, title, auto.diff, runBadges(run.changes, run.totalsAfter, run.settings.floors || {}, rsb, pick("cap"), pick("shard")), run.inventoryStamp != null && run.inventoryStamp !== "" && run.inventoryStamp !== stamp);
+    const b = run.totalsAfter && buffs ? withBuffs(run.totalsAfter, rsb, paperdollCaps(view), buffPlan(name, run.settings.race, buffs)) : null;
+    const badges = b ? runBadges(run.changes, b.totals, run.settings.floors || {}, 0, b.caps, pick("shard")) : runBadges(run.changes, run.totalsAfter, run.settings.floors || {}, rsb, pick("cap"), pick("shard"));
+    if (buffs) badges.push({ text: buffs.on.length === 1 ? `with ${buffById(buffs.on[0]!)!.name}` : `with ${plural(buffs.on.length, "buff")}` });
+    return runCard(run, title, auto.diff, badges, run.inventoryStamp != null && run.inventoryStamp !== "" && run.inventoryStamp !== stamp);
   }).filter((x): x is HTMLLIElement => !!x);
   box_.replaceChildren(...(kept.length ? kept : [el("li", { class: "runs-empty" }, el("p", { class: "muted" }, txt("No saved run matches the filter.")))]));
 }
@@ -173,7 +183,7 @@ export async function openRun(id: string): Promise<void> {
   if (state.builder.character !== name) return;
   const run = r.run;
   state.builder.openRun = id; renderRuns(); closeRunsDrawer(); closeCompare();
-  const diff = settingsDiff(settingsSnapshot(), run.settings);
+  const diff = runSettingsDiff(settingsSnapshot(), run.settings);
   // A saved run never persisted the assignment it started from, only its result (best, perSlotChanges,
   // totals). Reconstruct a per-slot "current" from that: an unchanged slot is whatever `best` has; a changed
   // slot's original piece is resolved through the inventory so its real props come back. A piece the

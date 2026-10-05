@@ -3215,7 +3215,7 @@ test("[fast] PUT /api/ui-prefs keeps the House map contents drawer's width (issu
   } finally { await s3.close(); }
 });
 
-test("[fast] PUT /api/ui-prefs keeps the Suit Builder's mode, its Manual suit and buffs (issue #12) across a restart, and refuses anything else, an unknown slot or __proto__ included", async () => {
+test("[fast] PUT /api/ui-prefs keeps the Suit Builder's mode, its Manual suit and buffs and Automatic's buffs by character (issue #12) across a restart, and refuses anything else, an unknown slot or __proto__ included", async () => {
   const dir = mkdtempSync(join(tmpdir(), "qm-uiprefs-manual-"));
   const put = (url: string, body: unknown): Promise<Response> => fetch(url + "/api/ui-prefs", { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
   const s1 = await startServer(ensureLayout(resolveConfig(["--port", "0", "--data", dir], {})));
@@ -3235,13 +3235,15 @@ test("[fast] PUT /api/ui-prefs keeps the Suit Builder's mode, its Manual suit an
     assert.deepEqual(asJson<{ prefs: Record<string, unknown> }>(await (await fetch(s2.url + "/api/ui-prefs")).json()).prefs.manualSuit, {});
     // its buffs (app/buffs.mts): catalog ids each once, the edited numbers within their bounds, and the count switch
     const edits = { Dorran: { Chivalry: 105.5, Karma: -200 }, "": { "Mastery level": 2 } };
-    assert.equal((await put(s2.url, { manualBuffs: ["divineFury", "whiteTiger"], buffSkills: edits, buffsCount: "off" })).status, 200);
-    for (const bad of [{ manualBuffs: ["nope"] }, { manualBuffs: ["bless", "bless"] }, { manualBuffs: "bless" }, { buffSkills: { Dorran: { Chivalry: 151 } } }, { buffSkills: { Dorran: { Hiding: 100 } } },
+    // Automatic's buffs, by character
+    const auto = { Dorran: ["divineFury", "bless"], Kestrel: ["reaperForm"] };
+    assert.equal((await put(s2.url, { manualBuffs: ["divineFury", "whiteTiger"], autoBuffs: auto, buffSkills: edits, buffsCount: "off" })).status, 200);
+    for (const bad of [{ autoBuffs: ["bless"] }, { autoBuffs: { Dorran: ["nope"] } }, { autoBuffs: { Dorran: ["bless", "bless"] } }, { autoBuffs: { Dorran: "bless" } }, { manualBuffs: ["nope"] }, { manualBuffs: ["bless", "bless"] }, { manualBuffs: "bless" }, { buffSkills: { Dorran: { Chivalry: 151 } } }, { buffSkills: { Dorran: { Hiding: 100 } } },
       { buffSkills: { Dorran: { "Mastery level": 2.5 } } }, { buffSkills: { Chivalry: 105 } }, { buffSkills: [] }, { buffsCount: "yes" }]) {
       assert.equal((await put(s2.url, bad)).status, 400, JSON.stringify(bad));
     }
     const prefs = asJson<{ prefs: Record<string, unknown> }>(await (await fetch(s2.url + "/api/ui-prefs")).json()).prefs;
-    assert.deepEqual([prefs.manualBuffs, prefs.buffSkills, prefs.buffsCount], [["divineFury", "whiteTiger"], edits, "off"]);
+    assert.deepEqual([prefs.manualBuffs, prefs.autoBuffs, prefs.buffSkills, prefs.buffsCount], [["divineFury", "whiteTiger"], auto, edits, "off"]);
   } finally { await s2.close(); }
 });
 

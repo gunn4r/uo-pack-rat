@@ -4,29 +4,32 @@
 // suit). The result, the compare view and the Solver details are ui/builder-result.mts; the saved-runs drawer
 // is ui/runs.mts. The panel is drawn from state.builder.profile plus the Advanced knobs below, so what a
 // build sends, what a profile saves and what a run snapshots are read from state, never from the DOM.
-import { PROP_LABELS, NOT_BUILDER_KEYS, OPTIMIZER_SLOTS, tagUnits, WEAPON_SKILLS, MELEE_SKILLS, resistSkillBonus, effectiveProfile, getRules, RESIST_KEYS, RESIST_CAP_LIMITS, resistCapsFor, templateFrom, settingsDiff, bagLabel } from "../vault-lib.mts";
-import type { EffectiveProfile, ResistCap, RunSettings, Character } from "../vault-lib.mts";
+import { PROP_LABELS, NOT_BUILDER_KEYS, OPTIMIZER_SLOTS, tagUnits, WEAPON_SKILLS, MELEE_SKILLS, resistSkillBonus, effectiveProfile, profileResistCaps, totalsOf, getRules, RESIST_KEYS, RESIST_CAP_LIMITS, resistCapsFor, templateFrom, settingsDiff, bagLabel } from "../vault-lib.mts";
+import type { EffectiveProfile, ResistCap, RunBuffs, RunSettings, Character } from "../vault-lib.mts";
+import { applyBuffs, buffById, buffShift, gearNeedsText, isBuffListsByCharacter, plannedProfile, runBuffs, toggleBuff, type BuffPlan } from "../buffs.mts";
 import { state, invStamp } from "./store.mts";
 import type { BuilderProfile, BuilderJob, BuilderJobUi, FinishedBuild, BuildMeta } from "./store.mts";
 import { $, el, label, full, fmtN, fmtSecs, slotLabel, toast } from "./dom.mts";
 import { promptText } from "./dialog.mts";
 import { box, txt, button, icon, kbd, badge, message, select, input, field, switchControl, check, segmented, filterChip, pill, popover, closePopover, menu, searchInput, stepper, progress, tooltip, confirmDialog, modalOpen } from "./components.mts";
 import { api, CLIENT_ID } from "./api.mts";
+import { buffChip, createBuffPicker, type BuffPicker, type BuffView, type PickerActions } from "./builder-buffs.mts";
+import { wornSet } from "./sheet.mts";
 import { optimizeErrorMessage } from "./messages.mts";
 import { parseRoute, routeFor } from "./app.mts";
 import { setNavBusy } from "./shell.mts";
 import { loadRuns, settingsSnapshot, openRunsDrawer } from "./runs.mts";
-import { initManual, paintCharSelect, setManualFor, renderManual, syncManual } from "./builder-manual.mts";
+import { initManual, paintCharSelect, setManualFor, renderManual, syncManual, buffInputsOf, buffEditsOf, editBuffInput, weaponFlags } from "./builder-manual.mts";
 import { renderResult, renderCurrentSuit, refreshCurrentSuit, resultLoadError, closeCompare, resetResultView } from "./builder-result.mts";
-import { propName, weightsSummary, requirementsSummary, poolSummary, advancedSummary, knobError, firstKnobError, knobFromServerError, ruleValueError, resistCapError, withResistCap, capNote, resistCapsSummary, gearCapsText, pruneResistCaps, floorCapWarning, weaponsChipText, weaponName, toggleWeapon, type Knobs, type KnobField } from "./builder-model.mts";
-import type { OptimizeResult, OptimizeProgress, SavedRunLike, OptimizeStartApiResponse, OptimizeCancelApiResponse, JobSnapshotEvent, JobDoneEvent, JobFailedEvent, JobCancelledEvent } from "./api-types.mts";
+import { paperdoll, paperdollCaps, propName, weightsSummary, requirementsSummary, poolSummary, advancedSummary, knobError, firstKnobError, knobFromServerError, ruleValueError, resistCapError, withResistCap, capNote, resistCapsSummary, gearCapsText, pruneResistCaps, floorCapWarning, weaponsChipText, weaponName, toggleWeapon, type Knobs, type KnobField } from "./builder-model.mts";
+import type { UiPrefs, OptimizeResult, OptimizeProgress, SavedRunLike, OptimizeStartApiResponse, OptimizeCancelApiResponse, JobSnapshotEvent, JobDoneEvent, JobFailedEvent, JobCancelledEvent } from "./api-types.mts";
 
 // ---------------------------------------------------------------- panel state
 // The solver knobs as typed (strings, so a bad value can sit in its field with its error until fixed): STR
 // limit, beside Race, and the Advanced fields. STR limit lives on the profile too (it is saved with it); the
 // others are search options a profile never carried. And which sections are open.
 export const knobs: Knobs = { strLimit: "", restarts: "200", exact: true, budgetS: "300", altCount: "5", altTol: "0" };
-const open: Record<string, boolean> = { req: true, caps: false, weights: false, pool: true, adv: false };
+const open: Record<string, boolean> = { buffs: true, req: true, caps: false, weights: false, pool: true, adv: false };
 // A requirement or weight row's property name: up to two lines, the full name in its title.
 const ruleName = (nm: string): HTMLSpanElement => { const t = txt(nm, "rule-name"); t.title = nm; return t; };
 // A resist cap typed out of range, as typed (the profile keeps the last good cap): kept here rather than read back
@@ -149,13 +152,13 @@ export function renderPanel(): void {
   const p = state.builder.profile;
   if (!p) return;
   p.floors ||= {}; p.softFloors ||= []; p.weights ||= {}; p.lockedSlots ||= []; p.excludeTags ||= []; p.excludeSkills ||= []; p.excludeRoots ||= [];
-  $<HTMLElement>("#b-panel-body")!.replaceChildren(templateSection(), requirementsSection(), capsSection(), weightsSection(), poolSection(), advancedSection());
+  $<HTMLElement>("#b-panel-body")!.replaceChildren(templateSection(), buffsSection(), requirementsSection(), capsSection(), weightsSection(), poolSection(), advancedSection());
   updateTemplateBadge();
 }
 // Redraw one section in place (its open state or its rows changed), keeping the rest of the panel and its
 // scroll position as they are.
 function redraw(id: string): void {
-  const build: Record<string, () => HTMLElement> = { req: requirementsSection, caps: capsSection, weights: weightsSection, pool: poolSection, adv: advancedSection };
+  const build: Record<string, () => HTMLElement> = { buffs: buffsSection, req: requirementsSection, caps: capsSection, weights: weightsSection, pool: poolSection, adv: advancedSection };
   const old = document.getElementById(`b-sec-${id}`);
   if (old && build[id]) old.replaceWith(build[id]!());
   updateTemplateBadge();
@@ -258,6 +261,94 @@ async function deleteTemplate(): Promise<void> {
   await saveTemplates(`Template ${name} deleted.`);
 }
 
+// ---- buffs (issue #12): the ones on count as always on, so the search doesn't spend gear on what they give
+// Kept by character (ui-prefs autoBuffs). The numbers they scale with are the character's, and an edited one is shared
+// with Manual. `replaced` is the form a just-turned-on form replaced, said in the picker until the next change.
+let autoBuffs: Record<string, string[]> = {};
+let replaced: { on: string; off: string } | null = null;
+let picker: BuffPicker | null = null;
+// load()'s GET /api/ui-prefs answer: each list through toggleBuff, so a hand-edited file's second form is dropped.
+export function applyAutoBuffPrefs(prefs: UiPrefs | null): void {
+  const saved = isBuffListsByCharacter(prefs?.autoBuffs) ? prefs.autoBuffs : {};
+  autoBuffs = Object.fromEntries(Object.entries(saved).map(([n, ids]) => [n, ids.reduce<string[]>((on, id) => toggleBuff(on, id).next, [])]));
+}
+const buffsOn = (): string[] => autoBuffs[state.builder.character!] || [];
+// The panel's buffs, as a run saves them (absent with none on).
+export const panelBuffs = (): RunBuffs | undefined => runBuffs(buffsOn(), buffInputsOf(state.builder.character!).values);
+// What a build for `name` plans with: `buffs` (the panel's, or a saved run's) and the numbers they took, over the
+// character's own; its raw stats and `race`; and what it wears now, which a potion's Enhance Potions and Enchant's
+// Spell Channeling are read from (app/buffs.mts plannedProfile).
+export function buffPlan(name: string, race: string | null | undefined, buffs: RunBuffs | undefined): BuffPlan | null {
+  if (!buffs) return null;
+  const inputs = buffInputsOf(name), worn = state.inv!.worn[name] || [];
+  return { on: buffs.on, skills: { ...inputs.values, ...buffs.skills }, stats: inputs.stats, worn: totalsOf(wornSet(name)),
+    who: { race: race || "human", weaponFlags: weaponFlags(Object.fromEntries(worn.map((i) => [i.slot, i]))) } };
+}
+// A saved run's buffs back on ("Load these settings"); the panel is redrawn by the caller.
+export function setPanelBuffs(on: string[]): void {
+  const { [state.builder.character!]: _was, ...rest } = autoBuffs;
+  autoBuffs = on.length ? { ...rest, [state.builder.character!]: on } : rest;
+  saveAutoBuffs();
+}
+const saveAutoBuffs = (): void => { api("/api/ui-prefs", { method: "PUT", body: { autoBuffs } }).catch((e: Error) => toast(`Could not save the buffs: ${e.message}`, "bad")); };
+function buffsSection(): HTMLElement {
+  const on = buffsOn();
+  return section("buffs", "Buffs", { count: on.length, summary: () => (on.length ? on.map((id) => buffById(id)!.name).join(", ") : "None on"), body: () => {
+    const v = buffView();
+    const add = filterChip({ label: "Add buff", add: true, attrs: { id: "b-buff-add", "aria-haspopup": "dialog" } });
+    add.onclick = () => openBuffPicker(add);
+    return [el("p", { class: "help" }, txt("Counted as always on. The search doesn't spend gear on what they already give.")),
+      box("div", { class: "b-chips", id: "b-buff-chips" }, ...on.map((id) => buffChip(id, v, buffActions)), add)];
+  } });
+}
+// The picker's state: the buffs on, their numbers, and what each would add, against the caps before any buff.
+function buffView(): BuffView {
+  const name = state.builder.character!, p = state.builder.profile!, inputs = buffInputsOf(name), plan = buffPlan(name, p.race, { on: buffsOn(), skills: {} })!;
+  const prof = effectiveProfile(p, state.inv!.characters[name] as Character | null), totals = paperdoll(plan.worn, prof.resistBonus), caps = paperdollCaps(profileResistCaps(prof));
+  return { name, on: plan.on, values: plan.skills, planned: inputs.planned, edits: buffEditsOf(name), stats: plan.stats, who: plan.who, totals, caps,
+    all: applyBuffs(totals, caps, plan.on, plan.skills, plan.stats, plan.who), replaced, count: true, open: !!picker };
+}
+// A buff on or off, a form turned on saying which one it replaced. Saved, and the chips, the requirements' notes and
+// the picker follow.
+function setBuffs(next: string[], note: typeof replaced): void {
+  setPanelBuffs(next);
+  replaced = note;
+  repaintBuffs();
+}
+function repaintBuffs(): void {
+  const row = document.getElementById("b-buff-chips"), add = document.getElementById("b-buff-add");
+  const v = buffView();
+  if (row && add) row.replaceChildren(...v.on.map((id) => buffChip(id, v, buffActions)), add);
+  const count = document.querySelector("#b-sec-buffs .b-sec-head .badge");
+  if (count) count.textContent = String(v.on.length);
+  redraw("req");
+  picker?.paint(v);
+}
+const buffActions: PickerActions = {
+  // A chip's × keeps the focus in the row: on the next chip, else Add buff.
+  toggle: (id) => {
+    const chip = document.activeElement?.closest<HTMLElement>("#b-buff-chips .token");
+    const after = chip ? (chip.nextElementSibling as HTMLElement | null)?.dataset.buff : undefined;
+    const { next, replaced: off } = toggleBuff(buffsOn(), id);
+    setBuffs(next, off ? { on: id, off } : null);
+    if (chip) (document.querySelector<HTMLElement>(`#b-buff-chips .token[data-buff="${after}"] button`) ?? document.getElementById("b-buff-add"))?.focus();
+  },
+  setInput: (id, value) => { editBuffInput(state.builder.character, id, value); repaintBuffs(); },
+  clear: () => setBuffs([], null),
+  close: closePopover,
+  // the replaced-form note's Undo: the form it replaced is back on, and its checkbox takes the focus
+  undo: () => { const off = replaced?.off; if (off) { setBuffs(toggleBuff(buffsOn(), off).next, null); document.getElementById(`abf-cb-${off}`)?.focus(); } },
+};
+// Add buff opens the picker in a popover beside the panel; a second press, Esc or a click outside closes it.
+function openBuffPicker(anchor: HTMLElement): void {
+  if (picker) { closePopover(); return; }
+  const host = box("div", { class: "bf-pick" });
+  picker = createBuffPicker(host, "abf", buffActions, () => "Counted as always on: the search plans around them. A bonus past the cap, like Enemy of One's damage, never changes the plan.");
+  popover(anchor, [host], { label: `Buffs for ${state.builder.character}`, width: 480, beside: $<HTMLElement>("#b-panel")!, onClose: () => { picker = null; replaced = null; } });
+  picker.paint(buffView());
+  picker.focusSearch();
+}
+
 // ---- requirements and weights: rule rows
 // Every property a requirement or weight can name: the labelled ones, every property in the inventory, the
 // pools, and the skill bonuses gear carries.
@@ -301,6 +392,8 @@ function requirementsSection(): HTMLElement {
   const keys = Object.keys(p.floors!).filter((k) => !NOT_BUILDER_KEYS.has(k));
   return section("req", "Requirements", { count: keys.length, summary: () => requirementsSummary(p.floors, p.softFloors), body: () => {
     const rsb = resistSkillBonus(state.inv!.characters[name]?.skills);
+    // with buffs on, each requirement they touch says what gear still has to supply
+    const plan = buffPlan(name, p.race, panelBuffs()), buffs = plan && { prof: optimizerProfile(), r: buffShift(effectiveProfile(p, state.inv!.characters[name] as Character | null), plan).r };
     const help = el("p", { class: "help" }, txt(`The suit must reach every hard requirement. Soft ones are preferences. Resisting Spells gives ${name} +${rsb}, ${gearCapsText(panelResistCaps(), rsb)}.`));
     const rows = keys.map((k) => {
       const nm = propName(k);
@@ -310,6 +403,8 @@ function requirementsSection(): HTMLElement {
       const row = box("div", { class: "rule-row", "data-key": k }, ruleName(nm), txt("≥", "muted"), num, hard,
         button({ label: `Remove requirement: ${nm}`, icon: "close", iconOnly: true, variant: "ghost", size: "sm", onClick: () => { delete p.floors![k]; p.softFloors = p.softFloors!.filter((x) => x !== k); redraw("req"); focusIn("req", ".b-add"); } }));
       floorWarning(row, num, k);
+      const note = buffs && gearNeedsText(k, buffs.prof.floors[k]!, buffs.prof.caps[k], buffs.r);
+      if (note) row.append(el("span", { class: "t-sm b-buff-note" }, note));
       return row;
     });
     const add = filterChip({ label: "Add requirement", add: true, attrs: { class: "fchip add b-add", id: "b-addfloor" } });
@@ -551,7 +646,8 @@ function focusKnob(f: KnobField, err: string): void {
 
 // ---------------------------------------------------------------- the build
 function optimizerProfile(): EffectiveProfile {
-  return effectiveProfile(state.builder.profile!, state.inv!.characters[state.builder.character!] as Character | null);
+  const name = state.builder.character!, p = state.builder.profile!;
+  return plannedProfile(p, state.inv!.characters[name] as Character | null, buffPlan(name, p.race, panelBuffs()));
 }
 async function runBuild(): Promise<void> {
   if (state.builder.job) return;

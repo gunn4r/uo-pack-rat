@@ -297,35 +297,58 @@ export interface EffectiveProfile {
   // Only the resists whose cap the player overrode, in paperdoll terms; absent when none is, so a profile with no
   // override keeps the exact shape (and so the run key, runs-lib.mts) it had before overrides existed.
   resistCapOverrides?: Record<string, ResistCap> | undefined;
+  // The buffs the search planned with (app/buffs.mts plannedProfile), absent with none: which, the numbers they took
+  // (so a result can show them, and runs with other buffs key apart), and the caps and floors before them.
+  buffs?: PlannedBuffs | undefined;
 }
+export interface PlannedBuffs {
+  on: string[];
+  skills: Record<string, number>;
+  stats: { str: number; dex: number; int: number } | null;
+  who: { race?: string | null | undefined; weaponFlags?: readonly string[] | undefined };
+  caps: Record<string, number>;
+  floors: Record<string, number>;
+}
+// What the buffs that are on change, in paperdoll terms: the caps once they changed them, and each key's in-cap share.
+export interface BuffShift { caps: Record<string, number>; shares: Record<string, number> }
 // The optimizer's profile for one character. Resist floors and caps are written in paperdoll terms (what the
 // character sheet shows): the character's Resisting Spells bonus is subtracted so the search works on item totals,
 // and a race can raise a resist's cap (rules.raceCaps, e.g. an Elf's Energy cap). The player's own resistCaps
 // replace the shard's per resist, and a resist floor counts up to its resist's cap. Every floor not marked soft is hard.
-export function effectiveProfile(p: Profile = {}, character: Character | null = null): EffectiveProfile {
+// `shift` is what planned buffs change (app/buffs.mts plannedProfile): their caps replace these, and a buff's in-cap
+// share is a base the gear needn't supply, so it comes off the cap and the floor the way the Resisting Spells bonus
+// does (a negative share, Divine Fury's DCI −20, adds to both), neither going below 0.
+export function effectiveProfile(p: Profile = {}, character: Character | null = null, shift: BuffShift | null = null): EffectiveProfile {
   const rules = getRules();
   const rsb = resistSkillBonus(character?.skills);
   const caps: Record<string, number> = { ...rules.caps as Record<string, number>, ...(p.caps || {}) };
   const floors: Record<string, number> = { ...(p.floors || {}) };
   const view = resistCapsFor(p.race, p.resistCaps);
   const overrides: Record<string, ResistCap> = {};
+  const share = (k: string): number => shift?.shares[k] || 0;
   for (const k of RESIST_KEYS) {
-    const { cap, shard } = view[k]!;
-    if (cap !== shard) overrides[k] = { cap, shard };
-    caps[k] = Math.max(0, cap - rsb);
-    if (floors[k] != null) floors[k] = Math.max(0, Math.min(floors[k], cap) - rsb);
+    const { cap: own, shard } = view[k]!, cap = shift?.caps[k] ?? own;
+    if (own !== shard) overrides[k] = { cap: own, shard };
+    caps[k] = Math.max(0, cap - rsb - share(k));
+    if (floors[k] != null) floors[k] = Math.max(0, Math.min(floors[k], cap) - rsb - share(k));
+  }
+  for (const k of new Set([...Object.keys(shift?.caps || {}), ...Object.keys(shift?.shares || {})])) {
+    if (RESIST_KEYS.includes(k)) continue;
+    const cap = shift!.caps[k] ?? caps[k];
+    if (cap != null) caps[k] = Math.max(0, cap - share(k));
+    if (floors[k] != null) floors[k] = Math.max(0, floors[k] - share(k));
   }
   const hardFloors = Object.keys(floors).filter((k) => !(p.softFloors || []).includes(k));
   return { weights: { ...(p.weights || {}) }, caps, floors, floorBonus: p.floorBonus ?? 1000, hardFloors, resistBonus: rsb,
     ...(Object.keys(overrides).length ? { resistCapOverrides: overrides } : {}) };
 }
-// A built profile's resist caps in paperdoll terms, what a result is shown against: the override where there is
-// one, else the item-total cap plus the Resisting Spells bonus.
+// A built profile's resist caps in paperdoll terms, before any planned buff, what a result is shown against: the
+// override where there is one, else the item-total cap plus the Resisting Spells bonus.
 export function profileResistCaps(prof: EffectiveProfile): Record<string, ResistCap> {
   return Object.fromEntries(RESIST_KEYS.map((k) => {
     const o = prof.resistCapOverrides?.[k];
     if (o) return [k, o];
-    const cap = (prof.caps[k] ?? 70) + (prof.resistBonus || 0);
+    const cap = ((prof.buffs?.caps ?? prof.caps)[k] ?? 70) + (prof.resistBonus || 0);
     return [k, { cap, shard: cap }];
   }));
 }
@@ -1175,7 +1198,10 @@ export interface RunSettings {
   altCount?: number | undefined;
   altTol?: number | undefined;
   resistCaps?: Record<string, number> | undefined;
+  buffs?: RunBuffs | undefined;   // the buffs planned with (app/buffs.mts); absent with none, and in a run saved before them
 }
+// A run's buffs: which were on, and the numbers they scale with (app/buffs.mts's inputs, Resisting Spells aside).
+export interface RunBuffs { on: string[]; skills: Record<string, number> }
 // What changed between two saved runs' builder settings, as short readable lines (b relative to a).
 export function settingsDiff(a: RunSettings = {}, b: RunSettings = {}): string[] {
   const out: string[] = [];
