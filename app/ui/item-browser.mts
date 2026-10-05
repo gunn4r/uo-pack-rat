@@ -165,7 +165,7 @@ function checklist({ title, options, selected, onChange, searchable = options.le
   return [box("div", { class: "inv-pop-head" }, txt(title, "caps"), el("span", { class: "spacer" }), clear), find?.root, list];
 }
 const SLOT_GROUPS: Record<string, string> = {
-  helmet: "Armor", chest: "Armor", arms: "Armor", hands: "Armor", legs: "Armor",
+  helmet: "Armor", chest: "Armor", arms: "Armor", hands: "Armor", legs: "Armor", outerLegs: "Clothing",
   neck: "Jewelry", ring: "Jewelry", bracelet: "Jewelry", earrings: "Jewelry", talisman: "Jewelry",
   oneHanded: "Weapons", twoHanded: "Weapons",
   cloak: "Clothing", robe: "Clothing", tunic: "Clothing", shirt: "Clothing", feet: "Clothing", waist: "Clothing",

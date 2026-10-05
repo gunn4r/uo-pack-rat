@@ -248,6 +248,17 @@ test("[fast] Simple and Detailed: neck armour goes with the armour, necklaces wi
   assert.deepEqual(of("detailed"), [["armour-neck", ["Leather Gorget", "Studded Gorget", "Armor Of Initiation"]], ["necklaces", ["Gold Necklace", "Gold Beads"]]]);
 });
 
+// Issue #202: a shirt is no chest piece and a cloth kilt no legs piece, so both leave the armor for Other gear; a
+// gargish kilt sits on the gloves layer, so it is hand armor.
+test("[fast] Simple and Detailed: shirts and cloth kilts are other gear, a gargish kilt is hand armor (issue #202)", () => {
+  const worn: ThingSpec[] = [["Shirt", 0x1517], ["Kilt", 0x1537], ["Tunic", 0x1fa1], ["Gargish Platemail Kilt", 0x30b], ["Platemail Legs", 0x1411], ["Leather Tunic", 0x13ca]]
+    .map(([name, graphic], i) => ({ serial: ITEM + 1 + i, name: name as string, graphic: graphic as number, in: A }));
+  const items = Object.values(fold([{ serial: A }], worn).items);
+  const of = (id: keyof typeof STRATEGIES) => groupItems(STRATEGIES[id], items).map((g) => [g.key, g.items.map((it) => it.name)]);
+  assert.deepEqual(of("simple"), [["armour", ["Gargish Platemail Kilt", "Platemail Legs", "Leather Tunic"]], ["other-gear", ["Shirt", "Kilt", "Tunic"]]]);
+  assert.deepEqual(of("detailed"), [["armour-chest", ["Leather Tunic"]], ["armour-hands", ["Gargish Platemail Kilt"]], ["armour-legs", ["Platemail Legs"]], ["other-gear", ["Shirt", "Kilt", "Tunic"]]]);
+});
+
 // Gear for By build, one piece of each build, each written as its tooltip reads.
 const BUILD_GEAR: ThingSpec[] = [
   { name: "Gold Ring", lines: ["Faster Casting 1", "Lower Mana Cost 8"] },
