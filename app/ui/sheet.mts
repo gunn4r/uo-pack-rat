@@ -195,6 +195,8 @@ function withExtras(name: string, before: SheetAssignment): (set: SheetAssignmen
   const extra = (state.inv!.worn[name] || []).filter((i) => !inSuit.has(i.serial));
   return (set) => {
     const filled = new Set(Object.values(set).filter(Boolean).map((x) => (x as SheetItem).slot));
+    // a two-handed weapon takes both hands (the core's hand rule); a sheet item is any piece, an OptItem or an Item
+    if ((set.twoHanded as { twoHanded?: boolean } | null | undefined)?.twoHanded) filled.add("oneHanded");
     return { ...set, ...Object.fromEntries(extra.filter((i) => !i.slot || !filled.has(i.slot)).map((i) => ["_x" + i.serial, i])) };
   };
 }

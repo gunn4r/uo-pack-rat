@@ -203,6 +203,12 @@ test("[fast] sheetParts: a worn piece the search left out counts before, and the
   (state.inv as unknown as { worn: Record<string, unknown[]> }).worn.Kestrel = [helm, bracelet];
   const text = sheetParts("Kestrel", { helmet: helm } as never, { helmet: helm, bracelet: { serial: 3, name: "Bracelet", slot: "bracelet", props: { physResist: 9 } } } as never).resists[0]!.textContent;
   assert.match(text, /15.*19/, `not 24: ${text}`);
+  // a blocked worn sword, and a result with a two-handed weapon: the sword leaves the after side
+  const sword = { serial: 4, name: "Sword", slot: "oneHanded", props: { physResist: 3 } };
+  (state.inv as unknown as { worn: Record<string, unknown[]> }).worn.Kestrel = [helm, sword];
+  const bow = { serial: 5, name: "Bow", slot: "twoHanded", twoHanded: true, props: { physResist: 1 } };
+  const hands = sheetParts("Kestrel", { helmet: helm } as never, { helmet: helm, twoHanded: bow } as never).resists[0]!.textContent;
+  assert.match(hands, /13.*11/, `not 14: ${hands}`);
 });
 
 test("[fast] safeColor accepts only #rgb / #rrggbb and drops everything else", () => {
