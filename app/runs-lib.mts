@@ -147,17 +147,20 @@ export interface RunSummary {
   changes: number | null;                        // how many slots the run's suit changes
   totalsAfter: Record<string, number> | null;    // the suit's item totals, for the drawer's resist and requirement badges
 }
-// The suit's item totals the drawer's badges read. A manual run saved while the optimizer searched only twelve slots
-// (SOLVER_VERSION 4) kept its other slots' pieces apart (`outside`); they count, as Manual shows the suit.
-function totalsAfter(res: RunResult): Record<string, number> | null {
+// The suit's item totals the drawer's badges read. A run saved while the optimizer searched only twelve slots
+// (SOLVER_VERSION 4) did not plan the others: a search's count the character's `worn` pieces there, so it compares
+// like for like with a run of every slot, and a manual run's kept those slots' pieces apart (`outside`).
+function totalsAfter(res: RunResult, worn: OptItem[]): Record<string, number> | null {
   const t = res.totals as { after?: Record<string, number>; outside?: Record<string, number> } | undefined;
   if (!t?.after) return null;
-  const out = { ...t.after };
-  for (const [k, v] of Object.entries(t.outside || {})) out[k] = (out[k] || 0) + v;
+  const out = { ...t.after }, planned = (res.best ?? {}) as object;
+  const add = (props: Record<string, number>): void => { for (const [k, v] of Object.entries(props)) out[k] = (out[k] || 0) + v; };
+  add(t.outside || {});
+  for (const it of worn) if (it.slot && !Object.hasOwn(planned, it.slot)) add(it.props);
   return out;
 }
-// What the run list needs: everything except the suit itself.
-export function runSummary(r: SavedRun): RunSummary {
+// What the run list needs: everything except the suit itself. `worn`: what the run's character wears now.
+export function runSummary(r: SavedRun, worn: OptItem[] = []): RunSummary {
   const res = r.result || {};
   return {
     id: r.id, character: r.character, createdAt: r.createdAt, label: r.label || "", settings: r.settings || {},
@@ -166,7 +169,7 @@ export function runSummary(r: SavedRun): RunSummary {
     method: res.method || null, proven: res.proven ?? null, score: res.score ?? null, currentScore: res.currentScore ?? null,
     delta: res.delta ?? null, nodes: res.nodes ?? null, explored: r.explored ?? null,
     changes: Array.isArray(res.perSlotChanges) ? res.perSlotChanges.length : null,
-    totalsAfter: totalsAfter(res),
+    totalsAfter: totalsAfter(res, worn),
   };
 }
 

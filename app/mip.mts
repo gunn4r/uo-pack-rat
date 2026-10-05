@@ -9,6 +9,14 @@ export const HARD_FLOOR_BONUS = 1e7;   // == scripts/optimizer-core.mts HARD_FLO
 // imports nothing), and app/solver.test.mts checks the two agree.
 export const DEFAULT_SLOTS: string[] = GEAR_SLOTS;
 export const DEFAULT_OPTIONAL_SLOTS: string[] = GEAR_SLOTS.filter((s) => !REQUIRED_SLOTS.includes(s));
+// A search's optional slots: the defaults less `keep` (the locked or pinned slots) and less a slot, the hands aside,
+// whose worn piece has no properties at all. Such a piece ties with wearing nothing, so the search would plan plain
+// boots or a shirt off for no gain and list every on/off mix as another suit of the same score; the hands stay
+// optional for the two-hander rule.
+export function optionalSlotsFor(current: Partial<Record<string, OptItem | null | undefined>>, keep: readonly string[] = []): string[] {
+  const plainWorn = (s: string): boolean => !!current[s] && s !== "oneHanded" && s !== "twoHanded" && !Object.values(current[s]!.props).some(Boolean);
+  return DEFAULT_OPTIONAL_SLOTS.filter((s) => !keep.includes(s) && !plainWorn(s));
+}
 const INF = Infinity;
 
 // One CSR-row entry: [columnIndex, coefficient]. A plain inline `[a, b]` array literal infers as

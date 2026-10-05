@@ -195,6 +195,16 @@ test("[fast] sheetParts: worn boots count once in a result that replaces them, a
   assert.match(phys({ helmet: helm }, { helmet: { serial: 4, name: "Better Helm", slot: "helmet", props: { physResist: 12 } } }), /15.*17/, "an old run: the worn boots on both sides");
 });
 
+// A worn piece a filter kept out of the search (a bracelet with a forbidden skill) is not in the result's `before`: it
+// counts now, and the result's own bracelet replaces it rather than adding to it.
+test("[fast] sheetParts: a worn piece the search left out counts before, and the result's piece in its slot replaces it", () => {
+  const helm = { serial: 1, name: "Helm", slot: "helmet", props: { physResist: 10 } }, bracelet = { serial: 2, name: "Ninjitsu Bracelet", slot: "bracelet", props: { physResist: 5 } };
+  withCharacter("Kestrel", {});
+  (state.inv as unknown as { worn: Record<string, unknown[]> }).worn.Kestrel = [helm, bracelet];
+  const text = sheetParts("Kestrel", { helmet: helm } as never, { helmet: helm, bracelet: { serial: 3, name: "Bracelet", slot: "bracelet", props: { physResist: 9 } } } as never).resists[0]!.textContent;
+  assert.match(text, /15.*19/, `not 24: ${text}`);
+});
+
 test("[fast] safeColor accepts only #rgb / #rrggbb and drops everything else", () => {
   assert.equal(safeColor("#fff"), "#fff");
   assert.equal(safeColor("#A335EE"), "#A335EE");

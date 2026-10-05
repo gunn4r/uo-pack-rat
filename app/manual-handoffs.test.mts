@@ -11,7 +11,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { buildPools, GEAR_SLOTS, toOptItem, type Inventory, type Item, type OptItem } from "./vault-lib.mts";
 import { manualRun, normalizeRun, reusableRun, runSummary, type SavedRun } from "./runs-lib.mts";
-import { DEFAULT_OPTIONAL_SLOTS } from "./mip.mts";
+import { DEFAULT_OPTIONAL_SLOTS, optionalSlotsFor } from "./mip.mts";
 import { solveExact, type OptAssignment, type OptProfile } from "./exact-solver.mts";
 import { core, fuzzSlots } from "./solver-fixture.mts";   // also loads the uoalive rules
 import { slotsOf } from "./ui/builder-model.mts";
@@ -63,9 +63,10 @@ test("[fast] buildPools: every gear slot has a pool, the pieces worn in the new 
   assert.deepEqual([r.current.waist?.serial, r.current.feet?.serial], [sash.serial, boots.serial]);
   // a piece with no properties only ties with an empty slot: no candidate where the slot may stay empty, but a worn one
   // stays current, and an armor slot (kept filled while worn) keeps it
-  const shirt = mk("shirt", {}), worn = mk("robe", {}, { equippedBy: "A" }), helm = mk("helmet", {});
-  const plain = buildPools(invOf([shirt, worn, helm]), "A");
-  assert.deepEqual([plain.pools.shirt, plain.pools.robe, serials(plain.pools.helmet), plain.current.robe?.serial], [undefined, undefined, [helm.serial], worn.serial]);
+  // (a tag penalty is no property here, as classify reads it)
+  const shirt = mk("shirt", {}), cursed = mk("earrings", { tagPenalty: 1 }), worn = mk("robe", {}, { equippedBy: "A" }), helm = mk("helmet", {});
+  const plain = buildPools(invOf([shirt, cursed, worn, helm]), "A");
+  assert.deepEqual([plain.pools.shirt, plain.pools.earrings, plain.pools.robe, serials(plain.pools.helmet), plain.current.robe?.serial], [undefined, undefined, undefined, [helm.serial], worn.serial]);
 });
 
 test("[fast] buildPools with no character: the pieces nobody wears, plus what is pinned", () => {
@@ -105,6 +106,10 @@ test("[fast] an old run (twelve slots, no method) still loads with the slots it 
   // a manual run saved then kept its other slots' totals apart: the drawer's badges still count them
   const manual: SavedRun = { id: "o2", result: { method: "manual", best: {}, totals: { before: {}, after: { luck: 40 }, outside: { lrc: 20 } } } };
   assert.deepEqual(runSummary(normalizeRun(manual)).totalsAfter, { luck: 40, lrc: 20 });
+  // a twelve-slot search counts what the character wears in the slots it never planned, like for like with a new run
+  const search: SavedRun = { id: "o3", result: { method: "exact", best: { ring: { serial: 1, name: "r", slot: "ring", props: { luck: 40 } } }, totals: { before: {}, after: { luck: 40 } } } };
+  const wornNow = [toOptItem(mk("ring", { luck: 10 })), toOptItem(mk("feet", { physResist: 2 }))];
+  assert.deepEqual(runSummary(normalizeRun(search), wornNow).totalsAfter, { luck: 40, physResist: 2 }, "the worn ring is the run's own slot; the boots count");
 });
 
 test("[fast] Open in Manual: the slots a run plans take its pieces or are emptied, every other slot keeps its own; its buffs come with it", () => {
@@ -137,6 +142,20 @@ test("[fast] a warm start never empties a pinned slot", async () => {
   assert.deepEqual([exact.score, exact.best.helmet?.serial], [-10, pinnedHelm.serial]);
   const h = await solveExact({ core, pools: pools as never, current: current as never, profile, opts: { ...opts, exact: true, timeBudgetMs: 10000 }, onProgress: () => {}, onWarn: () => {} });
   assert.deepEqual([h.score, h.best.helmet?.serial, h.proven], [-10, pinnedHelm.serial, true]);
+});
+
+// Elven Boots and a plain shirt carry no properties, so wearing them ties with wearing nothing: their slots keep them
+// (optionalSlotsFor), or the search plans them off and fills Other suits with every on/off mix (issue #202).
+test("[fast] a worn plain piece in a new slot stays in the plan and makes no tie alternatives", async () => {
+  const boots = mk("feet", {}, { equippedBy: "A" }), ring = mk("ring", { luck: 10 }), ring2 = mk("ring", { luck: 5 });
+  const { pools, current } = buildPools(invOf([boots, ring, ring2]), "A");
+  const profile: OptProfile = { weights: { luck: 1 }, caps: {}, floors: {}, hardFloors: [], floorBonus: 1000 };
+  const solve = (optionalSlots: string[]) => solveExact({ core, pools: pools as never, current: current as never, profile, opts: { seed: 1, restarts: 3, optionalSlots, exact: true, timeBudgetMs: 10000, alternatives: { count: 5, tolerance: 0 } }, onProgress: () => {}, onWarn: () => {} });
+  assert.ok(!optionalSlotsFor(current).includes("feet"));
+  assert.ok(optionalSlotsFor({ ...current, twoHanded: toOptItem(mk("twoHanded", {})) as never }).includes("twoHanded"), "a hand stays optional");
+  const r = await solve(optionalSlotsFor(current));
+  assert.deepEqual([r.score, r.best.feet?.serial, r.best.ring?.serial, r.alternatives?.length ?? 0], [10, boots.serial, ring.serial, 0]);
+  assert.ok(((await solve(DEFAULT_OPTIONAL_SLOTS)).alternatives?.length ?? 0) > 0, "with the feet optional, boots off ties");
 });
 
 // A sash placed in Manual is searched like any piece now (issue #202): its LRC 20 leaves the ring 80 to find, so the

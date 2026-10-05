@@ -3,7 +3,7 @@
 // resist tiles and the other changes, the Plan, the Fetch list, the other suits, "<name> after the change",
 // Solver details), and the compare view for 2-3 suits or saved runs. The numbers come from
 // ui/builder-model.mts; the bridge actions are gated by ui/bridge.mts's bridgeActionReason().
-import { GEAR_SLOTS, RESIST_KEYS, resistSkillBonus, totalsOf, requirementReport, resistCapsFor, profileResistCaps } from "../vault-lib.mts";
+import { GEAR_SLOTS, RESIST_KEYS, resistSkillBonus, toOptItem, totalsOf, requirementReport, resistCapsFor, profileResistCaps } from "../vault-lib.mts";
 import type { EffectiveProfile, Item, OptItem, PropMap, ResistCap } from "../vault-lib.mts";
 import { state } from "./store.mts";
 import type { BuildMeta } from "./store.mts";
@@ -441,7 +441,7 @@ function openSuitCompare(indices: number[]): void {
 export function openRunCompare(runs: SavedRunLike[], titleOf: (r: SavedRunLike) => string, open: (id: string) => void, onRemove: (id: string) => void): void {
   let list = [...runs];
   const name = state.builder.character || "";
-  const rsb = resistSkillBonus(state.inv!.characters[name]?.skills);
+  const rsb = resistSkillBonus(state.inv!.characters[name]?.skills), worn = state.inv!.worn[name] || [];
   showCompare(() => {
     // Each run is judged by the resist caps it was built with (its best values, and a "Resist caps" outcome row
     // when any of them overrode one).
@@ -449,7 +449,9 @@ export function openRunCompare(runs: SavedRunLike[], titleOf: (r: SavedRunLike) 
     const capped = views.some(anyOverridden);
     const columns: CompareColumn[] = list.map((r, i) => {
       const floors = r.settings.floors || {};
-      const { totals, caps } = withBuffs(totalsOf(r.result.best), rsb, paperdollCaps(views[i]!), buffPlan(name, r.settings.race, savedBuffs(r.settings)));
+      // a run saved with twelve slots, with what the character wears in the others: like for like with a run of every slot
+      const planned = slotsOf(r.result.best), rest = worn.filter((it) => it.slot && !planned.includes(it.slot));
+      const { totals, caps } = withBuffs(totalsOf({ ...r.result.best, ...Object.fromEntries(rest.map((it) => [`_w${it.serial}`, toOptItem(it)])) }), rsb, paperdollCaps(views[i]!), buffPlan(name, r.settings.race, savedBuffs(r.settings)));
       const met = Object.keys(floors).filter((k) => (totals[k] || 0) >= effectiveFloor(k, floors[k]!, caps)).length;
       const v = verdict(r.result);
       const head = box("span", { class: "b-cmp-col" }, box("span", { class: "b-row" }, el("span", { class: "strong ellip", title: titleOf(r) }, titleOf(r)), v.text ? badge(v.text, v.tone === "bad" ? "bad" : v.tone) : null), txt(`${fmtRunTime(r.createdAt)} · ${r.result.method === "manual" ? "built by hand" : fmtSecs(r.ms || 0)}`, "t-sm"));

@@ -1037,10 +1037,10 @@ export function buildPools(inv: Inventory, character: string | null, opts: Build
     if (it.strReq > strength) { skipped.str.push(it); continue; }
     if (it.tags.some((t) => excludeTags.includes(t))) { skipped.tags.push(it); continue; }
     if (it.root != null && exRoots.has(+it.root)) { skipped.roots.push(it); continue; }
-    // a piece with no properties can only tie with an empty slot, so where a slot may stay empty it is no candidate:
-    // the search would otherwise send the player for a plain robe or shirt that changes nothing. A plain weapon or
-    // shield stays one: what a weapon is for is not in its properties.
-    if (!REQUIRED_SLOTS.includes(it.slot) && !HAND_SLOTS.includes(it.slot) && !Object.values(opt.props).some(Boolean)) continue;
+    // a piece with no properties (a tag penalty aside, as classify reads it) never beats an empty slot, so where a slot
+    // may stay empty it is no candidate: the search would otherwise send the player for a plain robe or shirt that
+    // changes nothing. A plain weapon or shield stays one: what a weapon is for is not in its properties.
+    if (!REQUIRED_SLOTS.includes(it.slot) && !HAND_SLOTS.includes(it.slot) && !Object.entries(opt.props).some(([k, v]) => v && k !== "tagPenalty")) continue;
     (pools[it.slot] ||= []).push(opt);
   }
   // A pinned piece is kept whoever wears it and whatever the filters say. The hand rule holds in the pools: a pinned
