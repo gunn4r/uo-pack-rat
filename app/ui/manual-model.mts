@@ -136,6 +136,23 @@ export function suitFrom(current: Suit, best: Partial<Record<string, { serial: n
 export function fillableSlots(suit: Suit, twoHanded: boolean): string[] {
   return OPTIMIZER_SLOTS.filter((s) => suit[s] == null && !(s === "oneHanded" && twoHanded));
 }
+// "Fill the rest": what a search started from (whose suit, the buffs the totals counted, the suit and its empty slots)
+// and its answer against Manual now. Stale, with why, when any of them changed meanwhile (a character switched, a buff
+// or the Count switch flipped, a piece placed or cleared); else the found pieces for the slots that were empty, never
+// a placed piece again.
+export interface FillStart { who: string | null; buffs: string[]; suit: Suit; empty: string[] }
+export function fillPicks(start: FillStart, now: Omit<FillStart, "empty">, best: Partial<Record<string, { serial: number } | null>>): { stale: string } | { picks: Suit } {
+  if (start.who !== now.who) return { stale: "Fill canceled: the character changed" };
+  if (start.buffs.join() !== now.buffs.join()) return { stale: "Fill canceled: the buffs changed" };
+  const keys = Object.keys(start.suit);
+  if (keys.length !== Object.keys(now.suit).length || keys.some((s) => start.suit[s] !== now.suit[s])) return { stale: "Fill canceled: the suit changed" };
+  const placed = new Set(Object.values(start.suit));
+  return { picks: Object.fromEntries(start.empty.flatMap((s) => { const it = best[s]; return it && !placed.has(it.serial) ? [[s, it.serial]] : []; })) };
+}
+// "Waist", "Waist and Earrings", "Feet, Waist and Earrings".
+export const listWords = (xs: readonly string[]): string => (xs.length < 2 ? xs.join("") : `${xs.slice(0, -1).join(", ")} and ${xs[xs.length - 1]}`);
+// Start from this result: the filled slots it leaves as they were (Manual's feet, robe and so on), by name.
+export const keptSlots = (suit: Suit, covered: readonly string[]): string[] => Object.keys(suit).filter((s) => !covered.includes(s));
 // The fetch list's pieces: those the character doesn't wear, every piece with No character (`name` null).
 export const fetchPieces = <T extends { equippedBy?: string | null | undefined }>(pieces: T[], name: string | null): T[] =>
   pieces.filter((it) => !name || it.equippedBy !== name);

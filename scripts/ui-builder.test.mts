@@ -549,6 +549,15 @@ test("[slow] Manual hand-offs: fill the rest, save as run, reopen it, and start 
     await page.keyboard.press("Escape");
     const filled = (): Promise<number> => page.locator("#mb-suit .mb-slot:not(.mb-empty)").count();
     assert.equal(await filled(), 1);
+    // another character picked while a fill runs: the fill is canceled, and nothing lands in the shared suit
+    await page.evaluate(() => {
+      document.querySelector<HTMLButtonElement>("#mb-fill")!.click();
+      const sel = document.querySelector<HTMLSelectElement>("#b-char")!, other = [...sel.options].find((o) => o.value && o.value !== sel.value)!;
+      sel.value = other.value; sel.dispatchEvent(new Event("change"));
+    });
+    await page.waitForFunction(() => document.querySelector(".mb-fill")?.textContent === "Fill canceled: the character changed");
+    await page.waitForTimeout(1500);
+    assert.equal(await filled(), 1, "the canceled fill left the suit alone");
     await page.click("#mb-fill");
     await page.waitForFunction(() => /^(Filled|Nothing filled)/.test(document.querySelector(".mb-fill")?.textContent || ""), undefined, { timeout: 60_000 });
     assert.ok(await filled() > 1, "the search filled empty slots");

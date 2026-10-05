@@ -27,7 +27,7 @@ import { sheetParts, wornSet } from "./sheet.mts";
 import { createItemBrowser } from "./item-browser.mts";
 import type { ItemBrowser } from "./item-browser.mts";
 import type { UiPrefs, OptimizeResult, OptimizeStartApiResponse, OptSuit } from "./api-types.mts";
-import { MANUAL_GROUPS, emptyHistory, record, undoStep, redoStep, historyKey, historyKeyNames, type History, type Suit, TOTAL_KEYS, STAT_KEYS, STRIP_KEYS, capped, capLine, slotQuery, handConflict, handNote, suitFrom, fillableSlots, fetchPieces, savedSlots, missingSlots, deltaKeys, slotDelta } from "./manual-model.mts";
+import { MANUAL_GROUPS, emptyHistory, record, undoStep, redoStep, historyKey, historyKeyNames, type History, type Suit, TOTAL_KEYS, STAT_KEYS, STRIP_KEYS, capped, capLine, slotQuery, handConflict, handNote, suitFrom, fillableSlots, fetchPieces, fillPicks, keptSlots, listWords, type FillStart, savedSlots, missingSlots, deltaKeys, slotDelta } from "./manual-model.mts";
 import { buffMarker, buffStrip, createBuffPicker, keepChipFocus, type BuffActions, type BuffPicker, type BuffView } from "./builder-buffs.mts";
 
 type Mode = "automatic" | "manual";
@@ -278,6 +278,7 @@ function historyButton(kind: "undo" | "redo"): HTMLElement {
 // ---------------------------------------------------------------- drawing
 // Another character picked (its bonuses and its profile's floors and weights): the screen and the rows' deltas.
 export function renderManual(): void {
+  if (fill && fill.start.who !== manualCharacter()) cancelFill("Fill canceled: the character changed");
   if (!isManual() || !state.inv || syncing || !synced) return;
   refresh();
 }
@@ -472,12 +473,14 @@ const buffActions: BuffActions = {
 // resist caps, the buffs Manual's totals count, and, as a constant base, the placed pieces the search has no slot for
 // (feet, robe, waist and so on). With No character it plans on Manual's raw item totals (no Resisting Spells, race or
 // stat headroom) from the pieces nobody wears. One search at a time, with Cancel; Automatic's Build waits for it.
-interface Fill { id: string | null; es: EventSource | null; prof: EffectiveProfile; text: string; frac: number }
+interface Fill { id: string | null; es: EventSource | null; prof: EffectiveProfile; start: FillStart; text: string; frac: number }
 let fill: Fill | null = null;
 let fillUi: { text: HTMLElement; bar: ReturnType<typeof progress> } | null = null;
 // The last search's outcome, under the suit card's head until the next change.
 let fillNote: { text: string; tone: "ok" | "warn" | "bad" | "muted" } | null = null;
 export const filling = (): boolean => !!fill;
+// What a fill is checked against when it lands (manual-model.mts fillPicks): whose suit, the counted buffs, the suit.
+const fillNow = (): Omit<FillStart, "empty"> => ({ who: manualCharacter(), buffs: countBuffs ? buffs : [], suit: slots });
 const fillable = (): string[] => fillableSlots(slots, slots.twoHanded != null && !!items[slots.twoHanded]?.twoHanded);
 function fillProfile(): EffectiveProfile {
   const name = manualCharacter(), p = readControls(), suit = suitItems(), { values, stats, race } = buffInputs();
@@ -487,7 +490,7 @@ function fillProfile(): EffectiveProfile {
 }
 async function fillRest(): Promise<void> {
   if (fill || state.builder.job) return;
-  const f: Fill = { id: null, es: null, prof: fillProfile(), text: "Starting…", frac: 0 };
+  const f: Fill = { id: null, es: null, prof: fillProfile(), start: { ...fillNow(), empty: fillable() }, text: "Starting…", frac: 0 };
   fill = f; fillNote = null;
   draw();
   $<HTMLElement>("#mb-fill-cancel")?.focus();
@@ -503,10 +506,10 @@ async function fillRest(): Promise<void> {
     cancelled: () => { if (fill === f) endFill({ text: "Fill canceled.", tone: "muted" }); },
   });
 }
-function cancelFill(): void {
+function cancelFill(text = "Fill canceled."): void {
   if (!fill) return;
   if (fill.id) api(`/api/optimize/${fill.id}/cancel`, { method: "POST" }).catch(() => {});
-  endFill({ text: "Fill canceled.", tone: "muted" });
+  endFill({ text, tone: "muted" });
 }
 // The search ended: its outcome under the head, said to a screen reader, and Cancel's focus to the fill button.
 function endFill(note: NonNullable<typeof fillNote>): void {
@@ -520,13 +523,15 @@ function endFill(note: NonNullable<typeof fillNote>): void {
 // The suit found, into the slots still empty (a piece placed meanwhile stays, and so does a hand the rule would clear)
 // as one undo step, with the verdict and the requirements the filled suit still misses.
 async function landFill(f: Fill, res: OptimizeResult): Promise<void> {
-  const want = OPTIMIZER_SLOTS.filter((s) => res.best[s] && slots[s] == null);
-  const found = await resolveItems(want.map((s) => res.best[s]!.serial));
+  const want = fillPicks(f.start, fillNow(), res.best);
+  const found = "picks" in want ? await resolveItems(Object.values(want.picks)) : {};
   if (fill !== f) return;
+  const r = fillPicks(f.start, fillNow(), res.best);   // checked again: the suit may have changed while the pieces resolved
+  if ("stale" in r) { f.id = null; cancelFill(r.stale); return; }
   const next = { ...slots };
-  for (const s of want) {
-    const it = found[res.best[s]!.serial];
-    if (it && next[s] == null && !handConflict(s, it, held(next))) { next[s] = it.serial; items[it.serial] = it; }
+  for (const [s, serial] of Object.entries(r.picks)) {
+    const it = found[serial];
+    if (it && !handConflict(s, it, held(next))) { next[s] = it.serial; items[it.serial] = it; }
   }
   const n = Object.keys(next).length - Object.keys(slots).length;
   const gear = Object.fromEntries(OPTIMIZER_SLOTS.flatMap((s) => (next[s] != null && items[next[s]!] ? [[s, toOptItem(items[next[s]!]!)]] : [])));
@@ -549,7 +554,7 @@ function fillLine(): HTMLElement {
   if (!fill) return box("div", { class: "mb-fill" }, txt(fillNote!.text, `t-sm ${fillNote!.tone === "muted" ? "muted" : `tone-${fillNote!.tone}`}`));
   fillUi = { text: txt(fill.text, "t-sm"), bar: progress(fill.frac * 1000, 1000, "Fill progress") };
   return box("div", { class: "mb-fill", role: "group", "aria-label": "Filling the empty slots" }, el("span", { class: "dot busy", role: "img", "aria-label": "Searching" }),
-    fillUi.text, fillUi.bar, button({ label: "Cancel", size: "sm", attrs: { id: "mb-fill-cancel" }, onClick: cancelFill }));
+    fillUi.text, fillUi.bar, button({ label: "Cancel", size: "sm", attrs: { id: "mb-fill-cancel" }, onClick: () => cancelFill() }));
 }
 function paintFill(): void {
   if (!fill || !fillUi) return;
@@ -577,7 +582,8 @@ async function saveAsRun(name: string): Promise<void> {
 // emptied, the others keep theirs, and the buffs it was planned with are turned on with their numbers, so the totals
 // match it. Manual opens on the same character.
 export async function openInManual(suit: OptSuit, covered: readonly string[], runB: RunBuffs | undefined, label: string): Promise<void> {
-  const next = suitFrom(slots, suit, covered);
+  cancelFill("Fill canceled: another suit was opened");
+  const next = suitFrom(slots, suit, covered), kept = keptSlots(next, covered);
   Object.assign(items, await resolveItems(Object.values(next)));   // drawn whole at once: no piece flashes up as missing
   if (noCharacter) { noCharacter = false; savePrefs({ manualFor: "character" }); }
   // the run's buffs (none for a run without), counted, with the numbers they took: all in the same undo step
@@ -588,7 +594,9 @@ export async function openInManual(suit: OptSuit, covered: readonly string[], ru
   setMode("manual");
   paintCharSelect();
   $<HTMLElement>("#mb-suit h2")?.focus();
-  toast(`Opened in Manual. ${KEY_NAMES.undo} puts back the suit you had.`);
+  // a search plans the optimizer's slots only: say which of Manual's other pieces stayed, as the totals count them
+  const keptText = kept.length ? ` Kept your ${listWords(kept.map(slotLabel))} ${kept.length === 1 ? "piece" : "pieces"}.` : "";
+  toast(`Opened in Manual.${keptText} ${KEY_NAMES.undo} puts back the suit you had.`);
 }
 
 // The fetch list for the suit's pieces the character doesn't wear (the result's, builder-result.mts fetchCard).
