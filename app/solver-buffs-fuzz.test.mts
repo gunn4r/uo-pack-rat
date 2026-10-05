@@ -17,14 +17,13 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { effectiveProfile, profileResistCaps, RESIST_KEYS } from "./vault-lib.mts";
-import type { Character, Profile } from "./vault-lib.mts";
+import type { Character, EffectiveProfile, Profile } from "./vault-lib.mts";
 import { BUFF_IDS, BUFF_INPUTS, STAT_MAX, applyBuffs, plannedProfile, toggleBuff } from "./buffs.mts";
-import type { BuffPlan, Skills } from "./buffs.mts";
+import type { BuffPlan, BuffResult, Skills } from "./buffs.mts";
 import { solveExact, type OptPools, type OptAssignment, type OptProfile } from "./exact-solver.mts";
-import { core } from "./solver-fixture.mts";   // also loads the uoalive rules
+import { core, fuzzSlots } from "./solver-fixture.mts";   // also loads the uoalive rules
 
 type Item = NonNullable<OptPools[string]>[number];
-const SLOTS = ["helmet", "chest", "ring", "neck"];
 const DIMS = ["hci", "dci", "ssi", "di", "fc", "manaRegen", "hpRegen", "luck", "strBonus", "dexBonus", "physResist", "fireResist", "coldResist", "energyResist"];
 const EPS = 1e-6;
 
@@ -34,8 +33,7 @@ function generate(rnd: () => number, serialBase: number): Instance {
   const pickSome = <T,>(list: T[], pr: number): T[] => list.filter(() => rnd() < pr);
   let serial = serialBase;
   const mkItem = (slot: string): Item => ({ serial: ++serial, name: `item${serial}`, slot, props: Object.fromEntries(pickSome(DIMS, 0.35).map((d) => [d, int(-8, 30)])) });
-  const slots = pickSome(SLOTS, 0.7);
-  if (slots.length < 2) slots.push(...SLOTS.filter((s) => !slots.includes(s)).slice(0, 2 - slots.length));
+  const slots = fuzzSlots(rnd, 4);
   const pools: OptPools = {}, current: OptAssignment = {};
   for (const s of slots) {
     pools[s] = Array.from({ length: int(1, 4) }, () => mkItem(s));
@@ -86,14 +84,22 @@ for (const seed of SEEDS) {
     const unproven: string[] = [];
     for (let i = 0; i < PER_SEED; i++) {
       const inst = generate(rnd, seed * 100000 + i * 100), label = `seed ${seed} instance ${i} (${inst.plan.on.join(", ") || "no buffs"})`;
-      const base = effectiveProfile(inst.p, inst.ch), planned = plannedProfile(inst.p, inst.ch, inst.plan), prof = planned as OptProfile;
-      if (JSON.stringify(planned.caps) !== JSON.stringify(base.caps) || JSON.stringify(planned.floors) !== JSON.stringify(base.floors)) shifted++;
+      const planned = plannedProfile(inst.p, inst.ch, inst.plan), prof = planned as OptProfile;
       // what the character really has: applyBuffs on the caps before the buffs
-      const view = profileResistCaps(base), caps0 = { ...base.caps };
-      for (const k of RESIST_KEYS) caps0[k] = view[k]!.cap;
       const st = inst.plan.stats;
-      if (st) Object.assign(caps0, { strBonus: STAT_MAX - st.str, dexBonus: STAT_MAX - st.dex, intBonus: STAT_MAX - st.int });
-      const r = applyBuffs(inst.plan.worn, caps0, inst.plan.on, inst.plan.skills, inst.plan.stats, inst.plan.who);
+      const buffed = (b: EffectiveProfile): { caps0: Record<string, number>; r: BuffResult } => {
+        const view = profileResistCaps(b), caps0 = { ...b.caps };
+        for (const k of RESIST_KEYS) caps0[k] = view[k]!.cap;
+        if (st) Object.assign(caps0, { strBonus: STAT_MAX - st.str, dexBonus: STAT_MAX - st.dex, intBonus: STAT_MAX - st.int });
+        return { caps0, r: applyBuffs(inst.plan.worn, caps0, inst.plan.on, inst.plan.skills, inst.plan.stats, inst.plan.who) };
+      };
+      // an override above the shard's cap on a resist a buff lowers (a negative in-cap share) is set aside by design
+      // (docs/solver.md), so the character really has the shard's cap there
+      const unfiltered = effectiveProfile(inst.p, inst.ch), r0 = buffed(unfiltered).r;
+      const ignored = RESIST_KEYS.filter((k) => { const o = unfiltered.resistCapOverrides?.[k]; return !!o && o.cap > o.shard && (r0.shares[k] || []).some((x) => !x.outside && x.value < 0); });
+      const base = effectiveProfile({ ...inst.p, resistCaps: Object.fromEntries(Object.entries(inst.p.resistCaps || {}).filter(([k]) => !ignored.includes(k))) }, inst.ch);
+      if (JSON.stringify(planned.caps) !== JSON.stringify(base.caps) || JSON.stringify(planned.floors) !== JSON.stringify(base.floors)) shifted++;
+      const { caps0, r } = buffed(base);
       const share = (k: string): number => (r.shares[k] || []).filter((x) => !x.outside).reduce((n, x) => n + x.value, 0);
       const bonus = (k: string): number => (RESIST_KEYS.includes(k) ? base.resistBonus : 0);
       // a resist no buff touches keeps main's cap, stopped at 0 when an override puts it under the Resisting Spells

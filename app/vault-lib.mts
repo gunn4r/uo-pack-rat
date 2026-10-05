@@ -567,18 +567,19 @@ const SKIP_RE = /\b(bandage|potion|reagent|ore|ingot|log|board|scroll|deed|arrow
 // One slot per paperdoll layer, since the server refuses an item only when another worn item is on the same layer
 // (issue #202). So middle-torso clothing (the Tunic layer: doublet, cloth tunic, surcoat, sashes) goes over chest armor
 // (the Torso layer) and a shirt under it, and a cloth kilt or skirt (the Skirt layer) over pants or armor legs, which
-// share the Pants layer. TazUO's "Legs" layer holds no item; it folds into "legs". Like robe, shirt, feet, waist,
-// earrings and outerLegs, middle torso is tracked but not one of the slots the optimizer fills.
+// share the Pants layer. TazUO's "Legs" layer holds no item; it folds into "legs".
 export const LAYER_TO_SLOT: Record<string, string> = {
-  OneHanded: "oneHanded", TwoHanded: "twoHanded", Helmet: "helmet", Gloves: "hands", Arms: "arms",
-  Legs: "legs", Pants: "legs", Necklace: "neck", Ring: "ring", Bracelet: "bracelet", Talisman: "talisman",
-  Torso: "chest", Cloak: "cloak", Shoes: "feet", Robe: "robe", Earrings: "earrings", Waist: "waist",
-  Tunic: "tunic", Shirt: "shirt", Skirt: "outerLegs",
+  Helmet: "helmet", Necklace: "neck", Torso: "chest", Arms: "arms", Gloves: "hands", Pants: "legs", Legs: "legs",
+  Skirt: "outerLegs", Shoes: "feet", OneHanded: "oneHanded", TwoHanded: "twoHanded", Shirt: "shirt", Tunic: "tunic",
+  Robe: "robe", Waist: "waist", Cloak: "cloak", Ring: "ring", Bracelet: "bracelet", Earrings: "earrings", Talisman: "talisman",
 };
-// Every slot an equippable piece can be classified into: one per paperdoll layer the classifier knows. The Suit
-// Builder's Manual mode shows them all; the optimizer fills OPTIMIZER_SLOTS.
+// Every slot an equippable piece can be classified into: one per paperdoll layer the classifier knows, in the order
+// Manual groups them (armor, weapons, clothing, jewelry), which every slot list on the page follows. Both solvers
+// search them all, and the Suit Builder's Manual mode shows them all.
 export const GEAR_SLOTS: string[] = [...new Set(Object.values(LAYER_TO_SLOT))];
-export const OPTIMIZER_SLOTS: string[] = ["helmet", "chest", "arms", "hands", "legs", "neck", "ring", "bracelet", "talisman", "cloak", "oneHanded", "twoHanded"];
+// The armor slots a search keeps filled while something is worn there; every other slot may be left empty.
+export const REQUIRED_SLOTS: string[] = ["helmet", "chest", "arms", "hands", "legs"];
+const HAND_SLOTS = ["oneHanded", "twoHanded"];
 export const SLOT_LABELS: Record<string, string> = {
   helmet: "Head", chest: "Chest", arms: "Arms", hands: "Hands", legs: "Legs", outerLegs: "Kilt / Skirt", neck: "Neck", ring: "Ring",
   bracelet: "Bracelet", talisman: "Talisman", cloak: "Cloak", oneHanded: "Weapon (1H)", twoHanded: "Weapon 2H / Shield",
@@ -1022,7 +1023,7 @@ export function buildPools(inv: Inventory, character: string | null, opts: Build
   const pools: Partial<Record<string, PooledOptItem[]>> = {}, current: Partial<Record<string, PooledOptItem>> = {}, skipped: SkippedLists = { str: [], tags: [], worn: [], roots: [], gargoyle: [], nonMed: [], weapon: [], skill: [] };
   const exRoots = new Set(excludeRoots.map(Number));
   for (const it of Object.values(inv.items)) {
-    if (!it.gear || !it.slot || !OPTIMIZER_SLOTS.includes(it.slot)) continue;
+    if (!it.gear || !it.slot || !GEAR_SLOTS.includes(it.slot)) continue;
     // toOptItem's own return type is the plain OptItem (slot: string | null) — this cast is the one
     // place that fact narrows to PooledOptItem, backed by the `!it.slot` check just above (no runtime
     // change: opt.slot is it.slot, already known non-null here).
@@ -1036,19 +1037,23 @@ export function buildPools(inv: Inventory, character: string | null, opts: Build
     if (it.strReq > strength) { skipped.str.push(it); continue; }
     if (it.tags.some((t) => excludeTags.includes(t))) { skipped.tags.push(it); continue; }
     if (it.root != null && exRoots.has(+it.root)) { skipped.roots.push(it); continue; }
+    // a piece with no properties (a tag penalty aside, as classify reads it) never beats an empty slot, so where a slot
+    // may stay empty it is no candidate: the search would otherwise send the player for a plain robe or shirt that
+    // changes nothing. A plain weapon or shield stays one: what a weapon is for is not in its properties.
+    if (!REQUIRED_SLOTS.includes(it.slot) && !HAND_SLOTS.includes(it.slot) && !Object.entries(opt.props).some(([k, v]) => v && k !== "tagPenalty")) continue;
     (pools[it.slot] ||= []).push(opt);
   }
   // A pinned piece is kept whoever wears it and whatever the filters say. The hand rule holds in the pools: a pinned
   // two-handed weapon empties the one-hand slot, and a pinned one-hander keeps two-handed weapons out of the other hand.
   for (const [slot, serial] of Object.entries(pinned || {})) {
     const it = serial != null ? inv.items[serial] : undefined;
-    if (it?.gear && it.slot === slot && OPTIMIZER_SLOTS.includes(slot)) pools[slot] = [current[slot] = toOptItem(it) as PooledOptItem];
+    if (it?.gear && it.slot === slot && GEAR_SLOTS.includes(slot)) pools[slot] = [current[slot] = toOptItem(it) as PooledOptItem];
   }
   if (current.twoHanded?.twoHanded && pinned?.twoHanded != null) pools.oneHanded = [];
   if (current.oneHanded && pinned?.oneHanded != null) pools.twoHanded = (pools.twoHanded || []).filter((it) => !it.twoHanded);
   // A worn piece the filters rule out (wrong weapon type, a forbidden skill bonus) must not stay a candidate through
   // the "keep what you wear" rule. A pinned piece is never blocked.
-  const blocked = OPTIMIZER_SLOTS.filter((sl) => {
+  const blocked = GEAR_SLOTS.filter((sl) => {
     const it = current[sl] && pinned?.[sl] == null ? inv.items[current[sl]!.serial] || ({} as Item) : null;
     return it && (!weaponAllowed(it, excludeWeapons, ubwsAnyWeapon) || hasSkillBonus(it, excludeSkills));
   });

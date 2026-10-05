@@ -194,7 +194,7 @@ async function runToManual(id: string): Promise<void> {
   const name = state.builder.character, run = await fetchRun(id);
   if (!run || state.builder.character !== name) return;
   closeRunsDrawer();
-  await openInManual(run.result.best, slotsOf(run.result), savedBuffs(run.settings), `Open the run from ${fmtRunTime(run.createdAt)}`);
+  await openInManual(run.result.best, slotsOf(run.result.best), savedBuffs(run.settings), `Open the run from ${fmtRunTime(run.createdAt)}`);
 }
 export async function openRun(id: string): Promise<void> {
   if (state.builder.job) { toast("A build is running. Cancel it or wait before opening a saved run."); return; }
@@ -213,7 +213,7 @@ export async function openRun(id: string): Promise<void> {
   // everything the other slots account for, parked on one of the unresolved pieces (totalsOf() sums across
   // the whole assignment, so which slot carries it doesn't matter).
   const best = run.result.best || {};
-  const current: Record<string, OptItem | null> = Object.fromEntries(slotsOf(run.result).map((slot): [string, OptItem | null] => [slot, best[slot] || null]));
+  const current: Record<string, OptItem | null> = Object.fromEntries(slotsOf(run.result.best).map((slot): [string, OptItem | null] => [slot, best[slot] || null]));
   const changes = run.result.perSlotChanges || [];
   const resolved = await resolveItems(changes.map((c) => c.fromSerial).filter(Boolean));
   if (state.builder.character !== name) return;

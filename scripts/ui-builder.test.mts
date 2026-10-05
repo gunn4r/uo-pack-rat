@@ -180,7 +180,7 @@ test("[slow] the Plan's worn and replacement names each show their own piece's t
     assert.equal(await tipName(page), await next.innerText());
     // An unchanged ("keep") row still shows the worn piece's tooltip.
     await page.getByRole("switch", { name: "Show unchanged slots" }).click();
-    const kept = plan.locator("tr", { has: page.locator("td:nth-child(3)", { hasText: /^keep$/ }) }).locator("td").nth(1).locator(".b-tip").first();
+    const kept = plan.locator("tr", { has: page.locator("td:nth-child(3)", { hasText: /^keep$/ }) }).filter({ has: page.locator("td:nth-child(2) .b-tip") }).first().locator("td").nth(1).locator(".b-tip");
     await kept.scrollIntoViewIfNeeded();
     assert.equal(await hoverTip(page, kept), await kept.innerText());
     assert.deepEqual(errors, []);

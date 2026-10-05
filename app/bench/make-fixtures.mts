@@ -27,7 +27,7 @@ function pickEquippable(items: (SynthItem & { container: number })[], max: numbe
   for (const it of items) {
     const parsed = lib.parseTooltip(it.tooltip);
     const cls = lib.classify(parsed.name, parsed, null, it.graphic);
-    if (!cls.gear || !cls.slot || !lib.OPTIMIZER_SLOTS.includes(cls.slot)) continue;
+    if (!cls.gear || !cls.slot || !lib.GEAR_SLOTS.includes(cls.slot)) continue;
     if (!bySlot.has(cls.slot)) bySlot.set(cls.slot, it);
     if (bySlot.size >= max) break;
   }

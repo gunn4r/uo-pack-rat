@@ -5,19 +5,15 @@
 // through HiGHS (proven, equal to the oracle, bound never below its own score). The generator leans
 // on the cases that broke before: negative property values under soft and hard floors, negative
 // weights on capped and floored properties, locked slots, the shield / two-hander pair, and a warm start that
-// lacks a locked slot's piece.
+// lacks a locked slot's piece. Each instance fills two to six of the nineteen gear slots (fuzzSlots).
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { pathToFileURL } from "node:url";
-import { corePath } from "./config.mts";
 import { solveExact, type OptPools, type OptAssignment, type OptProfile } from "./exact-solver.mts";
-import type * as Core from "../scripts/optimizer-core.mts";
+import { core, fuzzSlots } from "./solver-fixture.mts";
 
-const core = (await import(pathToFileURL(corePath()).href)) as typeof Core;
 type OptOptions = Parameters<typeof solveExact>[0]["opts"];
 type Item = NonNullable<OptPools[string]>[number];
 
-const ALL_SLOTS = ["helmet", "chest", "neck", "ring", "bracelet", "cloak", "oneHanded", "twoHanded"];
 const DIMS = ["hci", "dci", "luck", "mr", "fc"];
 
 interface Instance { slots: string[]; optionalSlots: string[]; pools: OptPools; current: OptAssignment; profile: OptProfile }
@@ -33,8 +29,7 @@ function generate(rnd: () => number, serialBase: number): Instance {
     if (slot === "twoHanded" && rnd() < 0.5) it.twoHanded = true;
     return it;
   };
-  const slots = pickSome(ALL_SLOTS, 0.6).slice(0, 6);
-  for (const s of ["ring", "oneHanded"]) if (slots.length < 2 && !slots.includes(s)) slots.push(s);
+  const slots = fuzzSlots(rnd, 6);
   const optionalSlots = pickSome(slots, 0.5);
   const pools: OptPools = {}, current: OptAssignment = {};
   for (const s of slots) {

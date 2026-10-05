@@ -464,10 +464,8 @@ export function applyBuffs(totals: PropMap, caps: Readonly<Record<string, number
 // ---------------------------------------------------------------- planning (Automatic)
 // What Automatic plans with: the buffs that are on, their numbers (with the character's own Resisting Spells, which
 // Protection lowers), the raw stats, the race and the held weapon's flags, and `worn`, the item totals of what the
-// character wears now. `base` is the item totals of pieces the search keeps but has no slot for (Manual's feet, robe,
-// waist and so on, when "Fill the rest automatically" plans around them): a constant the gear needn't supply, as a
-// buff's in-cap share is.
-export interface BuffPlan { on: string[]; skills: Skills; stats: Stats | null; who: BuffWho; worn: PropMap; base?: PropMap | undefined }
+// character wears now.
+export interface BuffPlan { on: string[]; skills: Skills; stats: Stats | null; who: BuffWho; worn: PropMap }
 // The optimizer's profile for a character with the buffs that are on counted as always on. applyBuffs works the caps
 // out in the game's order; each key's in-cap share is then a constant base the gear needn't supply, so it comes off
 // the cap and the floor (effectiveProfile's `shift`), and both solvers search the same profile unchanged. What a buff
@@ -501,7 +499,7 @@ export function planBuffs(p: Profile, character: Character | null, plan: BuffPla
 const STAT_KEYS: Array<[keyof Stats, string]> = [["str", "strBonus"], ["dex", "dexBonus"], ["int", "intBonus"]];
 // The buffs applied to a profile's caps (in paperdoll terms, the stats' 150 less the raw stats) and the worn suit, and
 // what that shifts: every cap a buff changed or has an in-cap share on, and the stat caps; and each key's in-cap
-// share, the plan's `base` items added to it. A resist no buff touches is left out, so it keeps effectiveProfile's own cap (main's, stopped at 0 under the
+// share. A resist no buff touches is left out, so it keeps effectiveProfile's own cap (main's, stopped at 0 under the
 // Resisting Spells bonus), and buffs that touch nothing (Enemy of One) plan and key exactly as none. `r` says which
 // buff gave what (a requirement's note).
 export function buffShift(base: EffectiveProfile, plan: BuffPlan): { shift: BuffShift; r: BuffResult } {
@@ -510,7 +508,6 @@ export function buffShift(base: EffectiveProfile, plan: BuffPlan): { shift: Buff
   if (plan.stats) for (const [s, k] of STAT_KEYS) caps[k] = STAT_MAX - plan.stats[s];
   const r = applyBuffs(plan.worn, caps, plan.on, plan.skills, plan.stats, plan.who);
   const shares = Object.fromEntries(Object.entries(r.shares).map(([k, list]) => [k, list.filter((x) => !x.outside).reduce((n, x) => n + x.value, 0)]));
-  for (const [k, v] of Object.entries(plan.base || {})) if (v) shares[k] = (shares[k] || 0) + v;
   const touched = (k: string, v: number): boolean => v !== caps[k] || Object.hasOwn(shares, k) || (!!plan.stats && STAT_KEYS.some(([, sk]) => sk === k));
   const kept = Object.entries(r.caps).filter(([k, v]) => touched(k, v));
   return { shift: { caps: Object.fromEntries(kept), shares }, r };

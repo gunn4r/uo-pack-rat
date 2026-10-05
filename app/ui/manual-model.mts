@@ -3,7 +3,7 @@
 // back, the slots whose piece left the scans, a picker row's delta ("LRC +20 → 77"), the suit's undo history and
 // keys, and the hand-offs with Automatic (a result into the suit, the pieces to fetch). No DOM and no page state, so
 // app/manual-model.test.mts checks it directly; ui/builder-manual.mts draws what it returns.
-import { RESIST_KEYS, GEAR_SLOTS, OPTIMIZER_SLOTS, labelOf } from "../vault-lib.mts";
+import { RESIST_KEYS, GEAR_SLOTS, labelOf } from "../vault-lib.mts";
 import type { PropMap } from "../vault-lib.mts";
 import type { ItemQuery } from "../item-query.mts";
 
@@ -31,7 +31,7 @@ export function capLine(value: number, cap: number | null | undefined): { text: 
 // ---------------------------------------------------------------- slots
 // Manual's slot cards: every slot the classifier knows (GEAR_SLOTS), grouped as on the paperdoll, in two columns
 // (armor and weapons, then clothing and jewelry), a kilt or skirt beside the legs it goes over. A test checks the
-// groups hold GEAR_SLOTS exactly, so a slot the classifier gains has to be placed here.
+// groups hold GEAR_SLOTS exactly and in its order, so a slot the classifier gains has to be placed here.
 export const MANUAL_GROUPS: Array<Array<[string, string[]]>> = [
   [["Armor", ["helmet", "neck", "chest", "arms", "hands", "legs", "outerLegs", "feet"]], ["Weapons", ["oneHanded", "twoHanded"]]],
   [["Clothing", ["shirt", "tunic", "robe", "waist", "cloak"]], ["Jewelry", ["ring", "bracelet", "earrings", "talisman"]]],
@@ -146,10 +146,9 @@ export function suitFrom(current: Suit, best: Partial<Record<string, { serial: n
   for (const s of covered) { const it = best[s]; if (it) next[s] = it.serial; else delete next[s]; }
   return next;
 }
-// The search's slots that are empty: "Fill the rest automatically" fills these, less the one-hand slot beside a
-// two-handed weapon. A slot the search has no slot for (feet, robe…) is never one.
+// The empty slots: "Fill the rest automatically" fills these, less the one-hand slot beside a two-handed weapon.
 export function fillableSlots(suit: Suit, twoHanded: boolean): string[] {
-  return OPTIMIZER_SLOTS.filter((s) => suit[s] == null && !(s === "oneHanded" && twoHanded));
+  return GEAR_SLOTS.filter((s) => suit[s] == null && !(s === "oneHanded" && twoHanded));
 }
 // Buff numbers an undo step set for one character (`who`) by key, null for "back to the character's own": applied key
 // by key, and only where the number is still the one the other side of the step left (`expect`), so undoing a step
@@ -183,7 +182,7 @@ export function fillPicks(start: FillStart, now: Omit<FillStart, "empty">, best:
 }
 // "Waist", "Waist and Earrings", "Feet, Waist and Earrings".
 export const listWords = (xs: readonly string[]): string => (xs.length < 2 ? xs.join("") : `${xs.slice(0, -1).join(", ")} and ${xs[xs.length - 1]}`);
-// Start from this result: the filled slots it leaves as they were (Manual's feet, robe and so on), by name.
+// A suit into Manual: the filled slots a run saved with twelve slots leaves as they were (Manual's feet, robe and so on).
 export const keptSlots = (suit: Suit, covered: readonly string[]): string[] => Object.keys(suit).filter((s) => !covered.includes(s));
 // The fetch list's pieces: those the character doesn't wear, every piece with No character (`name` null).
 export const fetchPieces = <T extends { equippedBy?: string | null | undefined }>(pieces: T[], name: string | null): T[] =>

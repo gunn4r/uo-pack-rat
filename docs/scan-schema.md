@@ -139,7 +139,7 @@ Every item in an opened container, not equipped. `serial`, `container` and `name
 
 ## `equipped`
 
-Every item on the character's paperdoll. Same fields as `items` (only `serial` and `nameSource` required), plus `layer` (string or `null`) — the equip-layer name (`"OneHanded"`, `"Helmet"`, …), used to classify which optimizer slot the item occupies (`LAYER_TO_SLOT` in `app/vault-lib.mts`) even when the name alone wouldn't say. `Tunic` (middle torso: doublet, cloth tunic, surcoat, body sash) is its own `tunic` slot, worn over the `Torso` layer's chest armor rather than competing with it; like robe, shirt, feet, waist and earrings, it is not one of the slots the optimizer fills. `equipped` entries have no `container` field — they aren't in any container.
+Every item on the character's paperdoll. Same fields as `items` (only `serial` and `nameSource` required), plus `layer` (string or `null`) — the equip-layer name (`"OneHanded"`, `"Helmet"`, …), used to classify which optimizer slot the item occupies (`LAYER_TO_SLOT` in `app/vault-lib.mts`) even when the name alone wouldn't say. `Tunic` (middle torso: doublet, cloth tunic, surcoat, body sash) is its own `tunic` slot, worn over the `Torso` layer's chest armor rather than competing with it. `equipped` entries have no `container` field — they aren't in any container.
 
 ## v1 → v2 upgrade
 

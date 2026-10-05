@@ -6,8 +6,8 @@
 // written as plain interfaces + function declarations. Everything is deterministic given a
 // seed (mulberry32 — `Math.random` is banned in the sandbox and is never called here).
 //
-// The problem: you have ~30 candidate items per slot across 12 slots. Exhaustive search is
-// 30^12. The point of optimizing a SET rather than each slot independently is that scoring is
+// The problem: you have ~30 candidate items per slot across 19 slots. Exhaustive search is
+// 30^19. The point of optimizing a SET rather than each slot independently is that scoring is
 // NOT separable — a property that is already at its cap contributes ZERO more, and resist
 // FLOORS ("all five resists >= 65") are a whole-suit property that individually-inferior
 // pieces can reach together. So per-item greedy is provably wrong and the search has to move
@@ -61,7 +61,7 @@ const HARD_FLOOR_BONUS = 1e7;
 
 interface OptOptions {
   seed?: number;          // PRNG seed; same seed => byte-identical result
-  restarts?: number;      // seeded-random restart count (default 200; ~100ms at 12 slots x 30 candidates)
+  restarts?: number;      // seeded-random restart count (default 200; ~160ms at 19 slots x 30 candidates)
   maxPasses?: number;     // safety bound on hill-climb passes per start (default 200)
   slots?: string[];       // slot universe (default optDefaultSlots())
   optionalSlots?: string[]; // slots where "equip nothing" is a legal choice
@@ -159,15 +159,17 @@ function optMulberry32(seed: number): () => number {
 // Slot model
 // ---------------------------------------------------------------------------
 
-// The 12 slots we optimize. `oneHanded` is the weapon layer; `twoHanded` holds EITHER a shield
-// OR a two-handed weapon.
+// The 19 slots we optimize, one per paperdoll layer: the game refuses an item only when another worn item is on the
+// same layer, plus the hand rule below. `oneHanded` is the weapon layer; `twoHanded` holds EITHER a shield OR a
+// two-handed weapon.
 function optDefaultSlots(): string[] {
-  return ["helmet", "chest", "arms", "hands", "legs", "neck", "ring", "bracelet", "talisman", "cloak", "oneHanded", "twoHanded"];
+  return ["helmet", "neck", "chest", "arms", "hands", "legs", "outerLegs", "feet", "oneHanded", "twoHanded",
+    "shirt", "tunic", "robe", "waist", "cloak", "ring", "bracelet", "earrings", "talisman"];
 }
 
-// Slots where wearing nothing is a legitimate choice rather than a hole to be filled.
+// Slots where wearing nothing is a legitimate choice rather than a hole to be filled: all but the five armor pieces.
 function optDefaultOptionalSlots(): string[] {
-  return ["cloak", "talisman", "ring", "bracelet", "neck", "oneHanded", "twoHanded"];
+  return optDefaultSlots().filter(function (s) { return ["helmet", "chest", "arms", "hands", "legs"].indexOf(s) < 0; });
 }
 
 function optIsTwoHandedWeapon(it: OptItem | null): boolean {
@@ -584,11 +586,22 @@ function optDominates(a: number[], b: number[], space: OptSpace): boolean {
   return true;
 }
 
-function optDominancePrune(list: (OptItem | null)[], space: OptSpace, keepNull: boolean): (OptItem | null)[] {
+// `keepNull`: the slot may stay empty. Outside the hands an empty slot is then still dropped for a piece that scores
+// exactly like it (a worn pair of plain boots): the same score, and the search no longer splits on every such tie.
+function optDominancePrune(list: (OptItem | null)[], space: OptSpace, keepNull: boolean, hand: boolean): (OptItem | null)[] {
   const out: (OptItem | null)[] = [];
+  const asEmpty = function (b: OptItem | null): boolean {
+    if (b === null) return false;
+    const v = optVec(b, space);
+    return optDominates(v, space.zero, space) && optDominates(space.zero, v, space);
+  };
   for (let i = 0; i < list.length; i++) {
     const a = list[i] as OptItem | null;
-    if (a === null) { if (keepNull || !list.some((b) => b !== null && optDominates(optVec(b, space), space.zero, space))) out.push(null); continue; }
+    if (a === null) {
+      const keep = keepNull ? hand || !list.some(asEmpty) : !list.some((b) => b !== null && optDominates(optVec(b, space), space.zero, space));
+      if (keep) out.push(null);
+      continue;
+    }
     const va = optVec(a, space);
     let dominated = false;
     for (let j = 0; j < list.length && !dominated; j++) {
@@ -880,9 +893,9 @@ function optimizeSuit(pools: Record<string, OptItem[]>, current: OptAssignment, 
     const pcands: Record<string, (OptItem | null)[]> = {};
     for (let i = 0; i < slots.length; i++) {
       const s = slots[i]!;
-      const keepNull = s === "oneHanded" || s === "twoHanded" || !!optional[s];
+      const hand = s === "oneHanded" || s === "twoHanded", keepNull = hand || !!optional[s];
       // Dominance pruning is safe for the single best suit only: a dominated piece can still belong in a runner-up.
-      pcands[s] = alt ? cands[s]!.slice() : optDominancePrune(cands[s]!, space, keepNull);
+      pcands[s] = alt ? cands[s]!.slice() : optDominancePrune(cands[s]!, space, keepNull, hand);
       before += cands[s]!.length; after += pcands[s]!.length;
     }
     prog.phase = "exact"; prog.candidates = after; emit(true);
@@ -915,6 +928,18 @@ function optimizeSuit(pools: Record<string, OptItem[]>, current: OptAssignment, 
     prog.improvements = heuristicImprovements + bb.improvements;
   }
   prog.phase = "done"; emit(true);
+
+  // An unworn piece in an optional slot (the hands aside) that adds nothing to the score comes off: a tie with wearing
+  // nothing would only send the player to fetch it. One pass after the search, so both solvers' final suits agree.
+  const untrimmed = scoreSet(best, profile);
+  let tied = untrimmed;
+  for (let i = 0; i < slots.length; i++) {
+    const s = slots[i]!, it = best[s] || null;
+    if (!it || !optional[s] || s === "oneHanded" || s === "twoHanded" || (cur[s] && cur[s]!.serial === it.serial)) continue;
+    const without: OptAssignment = { ...best, [s]: null }, sc = scoreSet(without, profile);
+    if (sc >= tied - 1e-9) { best = without; tied = sc; }
+  }
+  bestScore += tied - untrimmed;
 
   // Per-slot diff report.
   const changes: OptSlotChange[] = [];

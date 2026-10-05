@@ -27,6 +27,7 @@ import { resolveConfig, corePath } from "../config.mts";
 import { upgradeScan } from "../scan-schema.mts";
 import { loadRules } from "../rules.mts";
 import { migrateProfiles } from "../vault-lib.mts";
+import { DEFAULT_OPTIONAL_SLOTS } from "../mip.mts";
 import type * as VaultLib from "../vault-lib.mts";
 import type * as Core from "../../scripts/optimizer-core.mts";
 import type { OptPools, OptAssignment, OptProfile, OptResult, SolveProgress, ExactSolveResult } from "../exact-solver.mts";
@@ -134,7 +135,7 @@ type OptSpace = ReturnType<typeof Core.optBuildSpace>;
 function corePruneCount(pools: OptPools, current: OptAssignment, profile: OptProfile): { sizes: Record<string, number>; total: number } {
   const space: OptSpace = core.optBuildSpace(core.optCollectKeys(pools, current, profile), profile);
   const sizes: Record<string, number> = {};
-  for (const [slot, list] of Object.entries(pools)) sizes[slot] = core.optDominancePrune(list, space, true).length;
+  for (const [slot, list] of Object.entries(pools)) sizes[slot] = core.optDominancePrune(list, space, true, slot === "oneHanded" || slot === "twoHanded").length;
   return { sizes, total: Object.values(sizes).reduce((a, b) => a + b, 0) };
 }
 const real = readRealSnapshots();
@@ -162,9 +163,9 @@ function buildCell(inv: VaultLib.Inventory, who: string, patch: Partial<BenchCha
   for (const s of p.lockedSlots || []) pools[s] = [];
   const optCurrent = { ...current };
   for (const s of blocked) delete optCurrent[s];
-  const optionalSlots = ["cloak", "talisman", "ring", "bracelet", "neck", "oneHanded", "twoHanded"].filter((s) => !(p.lockedSlots || []).includes(s));
+  const optionalSlots = DEFAULT_OPTIONAL_SLOTS.filter((s) => !(p.lockedSlots || []).includes(s));
   const profile = lib.effectiveProfile(p, c);
-  const poolSizes: Record<string, number> = Object.fromEntries(lib.OPTIMIZER_SLOTS.map((s): [string, number] => [s, (pools[s] || []).length]));
+  const poolSizes: Record<string, number> = Object.fromEntries(lib.GEAR_SLOTS.map((s): [string, number] => [s, (pools[s] || []).length]));
   return { pools: pools as unknown as OptPools, current: optCurrent as unknown as OptAssignment, profile, optionalSlots, poolSizes, poolTotal: Object.values(poolSizes).reduce((a, b) => a + b, 0),
     shape: { locked: p.lockedSlots || [], hardFloors: profile.hardFloors.length, weights: Object.keys(profile.weights).length, excludeWeapons: p.excludeWeapons || [], medOnly: !!p.medOnly } };
 }
@@ -297,7 +298,7 @@ for (const N of NS) {
     const snaps = [...real, scan].map((s) => upgradeScan(s, { shard: BENCH_SHARD }) as ScanV2);   // bench-only: real snapshots come from <dataDir>/scans/, already validateScan()-checked by watcher.mts on the way in; `scan` is this repo's own generateScan() output — never re-validated here
     const { ms: foldMs, out: inv } = timeMin(() => lib.foldSnapshots(snaps));
     const items = Object.values(inv.items);
-    const gear = items.filter((i) => i.gear), slotted = gear.filter((i) => i.slot && lib.OPTIMIZER_SLOTS.includes(i.slot));
+    const gear = items.filter((i) => i.gear), slotted = gear.filter((i) => i.slot && lib.GEAR_SLOTS.includes(i.slot));
     // hypothesis (a): fold cost of the non-gear items (same snapshots with every non-gear raw item removed)
     const nonGear = new Set(items.filter((i) => !i.gear).map((i) => i.serial));
     const gearOnlySnaps = snaps.map((s) => ({ ...s, items: (s.items || []).filter((it) => !nonGear.has(+it.serial)) }));
