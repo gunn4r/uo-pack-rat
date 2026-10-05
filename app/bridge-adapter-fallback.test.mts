@@ -7,9 +7,9 @@
 // settings.client is unset.
 //
 // app/ui/bridge.mts is not DOM-free like app/ui/adapters.mts (app/wizard-default-adapter.test.mts) —
-// it imports app/ui/store.mts, which reads `localStorage.getItem` at MODULE SCOPE to seed
-// state.cols. Nothing else in the bridge.mts -> {store,dom,api}.mts import chain touches `document` or
-// `localStorage` at module scope: app/ui/dom.mts's `document` uses are all inside function bodies (or
+// it imports app/ui/store.mts, which once read `localStorage.getItem` at MODULE SCOPE to seed the
+// Inventory's columns (they now live in ui/item-browser.mts). Nothing in the bridge.mts -> {store,dom,api}.mts
+// import chain touches `document` or `localStorage` at module scope now: app/ui/dom.mts's `document` uses are all inside function bodies (or
 // a default-parameter expression, evaluated lazily at call time, not at import time), and
 // app/ui/api.mts's `sessionStorage` read is already wrapped in its own try/catch with a fallback for
 // exactly this "no Web Storage global" case. So a minimal `globalThis.localStorage` stub — imported
