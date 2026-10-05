@@ -6,11 +6,11 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { setRules, effectiveProfile, profileResistCaps, OPTIMIZER_SLOTS, SLOT_LABELS } from "./vault-lib.mts";
+import { setRules, effectiveProfile, profileResistCaps, GEAR_SLOTS, LAYER_TO_SLOT, SLOT_LABELS } from "./vault-lib.mts";
 import type { RulesV1 } from "./schema/types.d.mts";
 import { optIsValidAssignment } from "../scripts/optimizer-core.mts";
 import { paperdoll, paperdollCaps } from "./ui/builder-model.mts";
-import { capped, capLine, slotQuery, handConflict, handNote, savedSlots, missingSlots, deltaKeys, slotDelta, STRIP_KEYS } from "./ui/manual-model.mts";
+import { MANUAL_GROUPS, emptyHistory, record, undoStep, redoStep, historyKey, historyKeyNames, HISTORY_MAX, capped, capLine, slotQuery, handConflict, handNote, savedSlots, missingSlots, deltaKeys, slotDelta, STRIP_KEYS } from "./ui/manual-model.mts";
 
 setRules(JSON.parse(readFileSync(new URL("./rules/uoalive.json", import.meta.url), "utf8")) as RulesV1);
 
@@ -39,8 +39,17 @@ test("[fast] manual model: resists count in paperdoll terms, the character's Res
 });
 
 test("[fast] manual model: the picker's filter is the slot itself, so the two-handed slot lists two-handers and shields", () => {
-  for (const slot of OPTIMIZER_SLOTS) assert.deepEqual(slotQuery(slot), { slot: [slot] });
+  for (const slot of GEAR_SLOTS) assert.deepEqual(slotQuery(slot), { slot: [slot] });
   assert.equal(SLOT_LABELS.twoHanded, "Weapon 2H / Shield");
+});
+
+test("[fast] manual model: Manual's groups hold every slot the classifier knows, once", () => {
+  const grouped = MANUAL_GROUPS.flat().flatMap(([, slots]) => slots);
+  assert.equal(new Set(grouped).size, grouped.length, "no slot twice");
+  assert.deepEqual([...grouped].sort(), [...GEAR_SLOTS].sort());
+  for (const s of ["feet", "robe", "tunic", "shirt", "waist", "earrings"]) assert.ok(GEAR_SLOTS.includes(s), s);
+  assert.equal(LAYER_TO_SLOT.Skirt, "legs", "a skirt is a legs piece");
+  for (const s of GEAR_SLOTS) assert.ok(SLOT_LABELS[s], `${s} has a label`);
 });
 
 test("[fast] manual model: the hand rule clears what the optimizer would refuse, and nothing else", () => {
@@ -73,10 +82,10 @@ test("[fast] manual model: the hand rule clears what the optimizer would refuse,
 });
 
 test("[fast] manual model: a saved suit keeps only known slots holding whole serials, and missing serials are found in slot order", () => {
-  assert.deepEqual(savedSlots({ ring: 5, cloak: 0, helmet: 2.5, feet: 9, neck: "7", twoHanded: 11 }), { ring: 5, twoHanded: 11 });
+  assert.deepEqual(savedSlots({ ring: 5, cloak: 0, helmet: 2.5, feet: 9, neck: "7", twoHanded: 11, backpack: 3 }), { ring: 5, twoHanded: 11, feet: 9 });
   assert.deepEqual(savedSlots(null), {});
   assert.deepEqual(savedSlots([1, 2]), {});
-  assert.deepEqual(missingSlots({ twoHanded: 11, ring: 5, helmet: 3 }, { 5: {} }), ["helmet", "twoHanded"]);
+  assert.deepEqual(missingSlots({ twoHanded: 11, ring: 5, helmet: 3, feet: 4 }, { 5: {} }), ["twoHanded", "helmet", "feet"]);
   assert.deepEqual(missingSlots({}, {}), []);
 });
 
@@ -99,4 +108,44 @@ test("[fast] manual model: a row's delta says what moves, up to the cap, gains a
   const withProfile = deltaKeys({ floors: { lrc: 100, hpRegen: 2 }, weights: { manaRegen: 3, tagPenalty: -25 } });
   assert.deepEqual(withProfile.slice(STRIP_KEYS.length), ["hpRegen", "manaRegen"]);
   assert.deepEqual(slotDelta({}, { manaRegen: 3, luck: 100 }, withProfile, caps).map((p) => p.text), ["MR +3 → 3"], "a property neither in the strip nor the profile is left out");
+});
+
+test("[fast] manual model: the suit's history undoes and redoes, keeps 40 steps, and forgets the redo branch on a new change", () => {
+  let h = emptyHistory();
+  h = record(h, {}, { ring: 1 }, "Ring → Arcane Ring");
+  h = record(h, { ring: 1 }, { ring: 1, oneHanded: 2 }, "Weapon (1H) → Katana");
+  assert.equal(record(h, { ring: 1 }, { ring: 1 }, "nothing"), h, "a change that changes nothing is no step");
+  const u = undoStep(h)!;
+  assert.deepEqual(u.step.before, { ring: 1 }); assert.equal(u.step.label, "Weapon (1H) → Katana");
+  const r = redoStep(u.history)!;
+  assert.deepEqual(r.step.after, { ring: 1, oneHanded: 2 });
+  assert.deepEqual(r.history, h, "undo then redo is where it was");
+  assert.equal(undoStep(emptyHistory()), null); assert.equal(redoStep(h), null);
+  // a new change after an undo drops the redo branch
+  const branched = record(u.history, { ring: 1 }, { ring: 3 }, "Ring → Ring");
+  assert.equal(branched.future.length, 0); assert.equal(branched.past.length, 2);
+  // 40 steps back at most, the oldest dropped
+  let big = emptyHistory();
+  for (let i = 0; i < HISTORY_MAX + 5; i++) big = record(big, { ring: i }, { ring: i + 1 }, `step ${i}`);
+  assert.equal(big.past.length, HISTORY_MAX);
+  assert.equal(big.past[0]!.label, "step 5");
+  let back = big, n = 0;
+  for (let s = undoStep(back); s; s = undoStep(back)) { back = s.history; n++; }
+  assert.equal(n, HISTORY_MAX); assert.equal(back.future.length, HISTORY_MAX);
+});
+
+test("[fast] manual model: the undo and redo keys per platform", () => {
+  const k = (key: string, mods: Partial<{ metaKey: boolean; ctrlKey: boolean; shiftKey: boolean; altKey: boolean }> = {}) => ({ key, metaKey: false, ctrlKey: false, shiftKey: false, altKey: false, ...mods });
+  assert.equal(historyKey(k("z", { metaKey: true }), true), "undo");
+  assert.equal(historyKey(k("Z", { metaKey: true, shiftKey: true }), true), "redo");
+  assert.equal(historyKey(k("z", { ctrlKey: true }), true), null, "Ctrl+Z is not undo on a Mac");
+  assert.equal(historyKey(k("y", { metaKey: true }), true), null);
+  assert.equal(historyKey(k("z", { ctrlKey: true }), false), "undo");
+  assert.equal(historyKey(k("y", { ctrlKey: true }), false), "redo");
+  assert.equal(historyKey(k("Z", { ctrlKey: true, shiftKey: true }), false), "redo");
+  assert.equal(historyKey(k("z", { metaKey: true }), false), null);
+  assert.equal(historyKey(k("z", { ctrlKey: true, altKey: true }), false), null);
+  assert.equal(historyKey(k("z"), false), null);
+  assert.deepEqual(historyKeyNames(true), { undo: "⌘Z", redo: "⇧⌘Z" });
+  assert.deepEqual(historyKeyNames(false), { undo: "Ctrl+Z", redo: "Ctrl+Y" });
 });

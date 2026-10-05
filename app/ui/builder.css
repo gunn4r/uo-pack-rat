@@ -139,15 +139,20 @@
 .mb-left { flex: 2 1 0; min-width: 320px; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; gap: var(--space-4); }
 .mb-left > *, .mb-suit > * { flex: none; }   /* a scrolling column: its cards keep their height */
 .mb-suit { display: flex; flex-direction: column; }
-.mb-suit .card-head { flex-wrap: wrap; }
-.mb-suit-body { display: flex; flex-direction: column; gap: var(--space-3); padding: var(--space-3) var(--space-4) var(--space-4); }
-.mb-group { display: flex; flex-direction: column; gap: var(--space-1-5); }
-.mb-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: var(--space-2); }
-/* beside the picker, at most three columns, so each group of six reads as two full rows */
-.b-manual.picking .mb-grid { grid-template-columns: repeat(auto-fill, minmax(max(160px, 30%), 1fr)); }
+/* one line: the count gives way (the totals strip says it too) before a button wraps */
+.mb-suit .card-head { gap: var(--space-2); }
+.mb-suit .card-head > .ellip { flex: 1 1 auto; min-width: 0; }
+.mb-suit .card-head > :not(.ellip):not(h2) { flex: none; }
+/* compact: all eighteen slots stay in view beside the picker at 1440 × 900, in two columns of nine (armor and
+   weapons; clothing and jewelry), each group's cards as many across as its column fits */
+.mb-suit > .card-head { min-height: 0; padding-top: var(--space-2); padding-bottom: var(--space-2); }
+.mb-suit-body { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-3); align-items: start; padding: var(--space-2) var(--space-3) var(--space-3); }
+.mb-suit-col { display: flex; flex-direction: column; gap: var(--space-2); min-width: 0; }
+.mb-group { display: flex; flex-direction: column; gap: var(--space-1); }
+.mb-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: var(--space-1) var(--space-1-5); }
 /* a slot card: the whole card is its button (opens the picker on the slot); Clear sits over its top-right corner */
 .mb-slot { position: relative; min-width: 0; }
-.pr .mb-slot-pick { display: flex; flex-direction: column; align-items: stretch; gap: var(--space-0-5); width: 100%; padding: var(--space-2) var(--space-3); text-align: left; font-weight: var(--weight-regular);
+.pr .mb-slot-pick { display: flex; flex-direction: column; align-items: stretch; width: 100%; padding: var(--space-1-5) var(--space-2); text-align: left; font-size: var(--text-sm); line-height: var(--lh-sm); font-weight: var(--weight-regular);
   border: var(--border-width) solid var(--color-border); border-radius: var(--radius-lg); background: var(--color-surface); color: var(--color-text); cursor: pointer; }
 .pr .mb-slot-pick:hover { border-color: var(--color-border-strong); background: var(--color-row-hover); color: var(--color-on-row-hover); }
 .pr .mb-slot-pick:focus-visible { outline: none; box-shadow: var(--ring-focus); }
@@ -165,15 +170,16 @@
 /* the character's stats in this suit (sheet.mts's KPI row and Properties card) in the narrow left column: the resist
    figures one step smaller, so "15 / 70" stays on one line */
 @container (max-width: 640px) { .mb-stats .kpi-value .t-2xl { font-size: var(--text-lg); line-height: var(--lh-lg); } }
-.mb-slot .mb-clear { position: absolute; top: var(--space-1); right: var(--space-1); }
+.mb-slot .mb-clear { position: absolute; top: var(--space-0-5); right: var(--space-0-5); }
 /* the side column: the hint, or the picker (one item browser, fixed to the selected slot) */
 /* the hint is a narrow column; the picker takes about three fifths of the row */
 .mb-side { width: var(--constraints-w); flex: none; min-height: 0; display: flex; flex-direction: column; }
 .mb-side.mb-picker { flex: 3 1 0; width: auto; min-width: 480px; }
 #mb-hint { gap: var(--space-2); padding: var(--space-5); align-self: flex-start; }
 .mb-picker { overflow: hidden; box-shadow: var(--shadow-2); }
+.mb-pick-head, .mb-status { flex: none; }
 .mb-pick-head { display: flex; align-items: center; gap: var(--space-2); padding: var(--space-3) var(--space-4) 0; }
-.mb-status { padding: 0 var(--space-4); min-height: var(--lh-sm); color: var(--color-text-muted); }
+.mb-status { padding: var(--space-1) var(--space-4) var(--space-1-5); min-height: var(--lh-sm); color: var(--color-text-muted); }
 .mb-browser { padding: 0 var(--space-4) var(--space-4); gap: var(--space-2); }
 .mb-browser .inv-toolbar { flex-wrap: wrap; }
 .mb-browser .inv-search { flex: 1 1 100%; width: auto; }

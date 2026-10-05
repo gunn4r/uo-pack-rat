@@ -131,7 +131,8 @@ import { upgradeScan, validateScan } from "./scan-schema.mts";
 import { loadRules, listRules, DEFAULT_SHARD } from "./rules.mts";
 import { validate, type ValidatorSchema } from "./schema/validate.mts";
 import { parseItemQuery, applyItemQuery, facetsOf, wantsHits, hitRow, type ItemQueryRows, type ItemQueryGroups } from "./item-query.mts";
-import { DEFAULT_OPTIONAL_SLOTS, DEFAULT_SLOTS } from "./mip.mts";
+import { DEFAULT_OPTIONAL_SLOTS } from "./mip.mts";
+import { GEAR_SLOTS } from "./vault-lib.mts";
 import { startWatcher, jsonErrorReason, MAX_INBOX_BYTES, type StartWatcherOptions, type WatcherHandle } from "./watcher.mts";
 import { parsePastedScan, writeScanToInbox } from "./import.mts";
 import { moveAside, writeFileAtomic } from "./atomic-write.mts";
@@ -212,11 +213,11 @@ function isColWidths(v: unknown): v is Record<string, number> {
   const entries = Object.entries(v);
   return entries.length <= 200 && entries.every(([k, w]) => isBoundedString(k, 64) && isBoundedInt(w, 40, 1200));
 }
-// The Suit Builder's Manual suit ({slot: serial}, app/ui/builder-manual.mts): each key one of the optimizer's twelve
-// slots (mip.mts's DEFAULT_SLOTS, vault-lib.mts's OPTIMIZER_SLOTS), each value a serial.
+// The Suit Builder's Manual suit ({slot: serial}, app/ui/builder-manual.mts): each key one of the classifier's slots
+// (vault-lib.mts's GEAR_SLOTS), each value a serial.
 function isManualSuit(v: unknown): v is Record<string, number> {
   if (!v || typeof v !== "object" || Array.isArray(v)) return false;
-  return Object.entries(v).every(([k, s]) => DEFAULT_SLOTS.includes(k) && isBoundedInt(s, 1, MAX_SERIAL));
+  return Object.entries(v).every(([k, s]) => GEAR_SLOTS.includes(k) && isBoundedInt(s, 1, MAX_SERIAL));
 }
 // Localhost security (spec §4.5): a request's Host must name this server, an Origin (when present)
 // must be this same origin, and — with a token configured — every /api/* route except the SSE

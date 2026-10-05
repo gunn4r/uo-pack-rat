@@ -440,7 +440,7 @@ test("[slow] a switch's on state stands apart from its off state in each theme a
 });
 
 // Manual mode (issue #12): a slot opens the picker on its pieces, a picked row fills the slot and moves the totals,
-// and the picker stays on that slot with the row marked as the one in it. Esc closes it onto the slot card, and the
+// and the picker stays on that slot with the row marked as the one in it; the undo key takes it out, redo puts it back. Esc closes it onto the slot card, and the
 // suit is kept in ui-prefs.json.
 test("[slow] Manual mode: a picked piece fills its slot, moves the totals and leaves the picker on the slot", async (t) => {
   const why = unavailable();
@@ -475,6 +475,15 @@ test("[slow] Manual mode: a picked piece fills its slot, moves the totals and le
     await current.first().waitFor();
     assert.equal(await current.count(), 1, "one row marked as the piece in the slot");
     assert.match(await current.innerText(), /In this slot/);
+    // Undo takes the pick back out of the slot, and redo puts it back (⌘Z / ⇧⌘Z on a Mac, Ctrl+Z / Ctrl+Y elsewhere).
+    const mod = process.platform === "darwin" ? "Meta" : "Control";
+    const ringText = (): Promise<string> => page.locator('.mb-slot-pick[data-slot="ring"]').innerText();
+    await page.keyboard.press(`${mod}+z`);
+    await page.waitForFunction((n) => !document.querySelector('.mb-slot-pick[data-slot="ring"]')?.textContent?.includes(n), name);
+    assert.match(await ringText(), /Choosing/, "the slot is empty again");
+    assert.ok((await page.locator("#mb-status").textContent() || "").startsWith("Undid: Ring → "), "the status line says what was undone");
+    await page.keyboard.press(process.platform === "darwin" ? "Meta+Shift+z" : "Control+y");
+    await page.waitForFunction((n) => document.querySelector('.mb-slot-pick[data-slot="ring"]')?.textContent?.includes(n), name);
     await page.keyboard.press("Escape");
     await page.waitForSelector("#mb-picker", { state: "hidden" });
     assert.equal(await page.evaluate(() => (document.activeElement as HTMLElement | null)?.dataset.slot), "ring", "focus back on the slot card");

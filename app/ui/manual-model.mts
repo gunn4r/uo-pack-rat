@@ -1,8 +1,9 @@
 // ui/manual-model.mts — the Suit Builder's Manual mode, its pure logic (issue #12): the totals strip's keys and the
-// line under each total, the picker's slot filter, the one-hand/two-hand rule, a
-// saved suit read back, the slots whose piece left the scans, and a picker row's delta ("LRC +20 → 77"). No DOM and
-// no page state, so app/manual-model.test.mts checks it directly; ui/builder-manual.mts draws what it returns.
-import { RESIST_KEYS, OPTIMIZER_SLOTS, labelOf } from "../vault-lib.mts";
+// line under each total, the slot groups, the picker's slot filter, the one-hand/two-hand rule, a saved suit read
+// back, the slots whose piece left the scans, a picker row's delta ("LRC +20 → 77"), and the suit's undo history and
+// keys. No DOM and no page state, so app/manual-model.test.mts checks it directly; ui/builder-manual.mts draws what it
+// returns.
+import { RESIST_KEYS, GEAR_SLOTS, labelOf } from "../vault-lib.mts";
 import type { PropMap } from "../vault-lib.mts";
 import type { ItemQuery } from "../item-query.mts";
 
@@ -28,7 +29,14 @@ export function capLine(value: number, cap: number | null | undefined): { text: 
 }
 
 // ---------------------------------------------------------------- slots
-// The picker's fixed filter for a slot. An item's slot is one of OPTIMIZER_SLOTS as is, so it is that slot alone:
+// Manual's slot cards: every slot the classifier knows (GEAR_SLOTS), grouped as on the paperdoll, in two columns of
+// nine (armor and weapons, then clothing and jewelry). A test checks the groups hold GEAR_SLOTS exactly, so a slot the
+// classifier gains has to be placed here.
+export const MANUAL_GROUPS: Array<Array<[string, string[]]>> = [
+  [["Armor", ["helmet", "neck", "chest", "arms", "hands", "legs", "feet"]], ["Weapons", ["oneHanded", "twoHanded"]]],
+  [["Clothing", ["shirt", "tunic", "robe", "waist", "cloak"]], ["Jewelry", ["ring", "bracelet", "earrings", "talisman"]]],
+];
+// The picker's fixed filter for a slot. An item's slot is one of GEAR_SLOTS as is, so it is that slot alone:
 // "twoHanded" holds two-handed weapons and shields alike.
 export const slotQuery = (slot: string): Partial<ItemQuery> => ({ slot: [slot] });
 
@@ -48,14 +56,14 @@ export const handNote = (removed: string, slotName: string): string => `${remove
 // A saved suit (ui-prefs `manualSuit`) as the page uses it: only the slots it knows, each a whole serial.
 export function savedSlots(raw: unknown): Record<string, number> {
   if (!raw || typeof raw !== "object" || Array.isArray(raw)) return {};
-  return Object.fromEntries(OPTIMIZER_SLOTS.flatMap((s) => {
+  return Object.fromEntries(GEAR_SLOTS.flatMap((s) => {
     const v = (raw as Record<string, unknown>)[s];
     return typeof v === "number" && Number.isInteger(v) && v > 0 ? [[s, v]] : [];
   }));
 }
-// The slots whose saved serial no longer resolves to an item (rescanned away, sold, forgotten), in slot order.
+// The slots whose saved serial no longer resolves to an item (rescanned away, sold, forgotten), in GEAR_SLOTS order.
 export const missingSlots = (slots: Record<string, number>, found: Record<number, unknown>): string[] =>
-  OPTIMIZER_SLOTS.filter((s) => slots[s] != null && !found[slots[s]!]);
+  GEAR_SLOTS.filter((s) => slots[s] != null && !found[slots[s]!]);
 
 // ---------------------------------------------------------------- a picker row's delta
 // The properties a row's delta speaks about: the strip's, then any other with a floor or a weight in the profile.
@@ -79,3 +87,36 @@ export function slotDelta(before: PropMap, after: PropMap, keys: string[], caps:
     return [{ key: k, text: `${labelOf(k)} ${sign(now - was)} → ${num(now)}`, tone: now > was ? "ok" : "bad" }];
   });
 }
+
+// ---------------------------------------------------------------- undo and redo
+// The manual suit's history: each change to it is one step (a pick, with the hand rule's clear in the same step; a
+// Clear; Clear all; Start from what <name> wears), kept 40 back. Undo returns the step to apply its `before`; redo
+// its `after`. A new change after an undo drops what could have been redone; a change that changes nothing is no step.
+export type Suit = Record<string, number>;
+export interface Step { before: Suit; after: Suit; label: string }
+export interface History { past: Step[]; future: Step[] }
+export const HISTORY_MAX = 40;
+export const emptyHistory = (): History => ({ past: [], future: [] });
+const sameSuit = (a: Suit, b: Suit): boolean => Object.keys(a).length === Object.keys(b).length && Object.keys(a).every((k) => a[k] === b[k]);
+export function record(h: History, before: Suit, after: Suit, label: string): History {
+  if (sameSuit(before, after)) return h;
+  return { past: [...h.past, { before, after, label }].slice(-HISTORY_MAX), future: [] };
+}
+export function undoStep(h: History): { history: History; step: Step } | null {
+  const step = h.past[h.past.length - 1];
+  return step ? { history: { past: h.past.slice(0, -1), future: [step, ...h.future] }, step } : null;
+}
+export function redoStep(h: History): { history: History; step: Step } | null {
+  const [step, ...rest] = h.future;
+  return step ? { history: { past: [...h.past, step], future: rest }, step } : null;
+}
+// The undo and redo keys: ⌘Z and ⇧⌘Z on a Mac; Ctrl+Z, Ctrl+Y and Ctrl+Shift+Z elsewhere. Alt never.
+interface KeyLike { key: string; metaKey: boolean; ctrlKey: boolean; shiftKey: boolean; altKey: boolean }
+export function historyKey(e: KeyLike, mac: boolean): "undo" | "redo" | null {
+  const mod = mac ? e.metaKey && !e.ctrlKey : e.ctrlKey && !e.metaKey, k = e.key.toLowerCase();
+  if (!mod || e.altKey) return null;
+  if (k === "z") return e.shiftKey ? "redo" : "undo";
+  return !mac && k === "y" && !e.shiftKey ? "redo" : null;
+}
+// The keys' names on this platform, for the buttons' tooltips.
+export const historyKeyNames = (mac: boolean): { undo: string; redo: string } => (mac ? { undo: "⌘Z", redo: "⇧⌘Z" } : { undo: "Ctrl+Z", redo: "Ctrl+Y" });

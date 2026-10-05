@@ -5,12 +5,12 @@
 // stays on it, so piece after piece can be tried. The mode, "No character" and the suit (a serial per slot) are
 // ui-prefs fields, so they survive a reload; a scan reload resolves the serials again, and one that no longer
 // resolves shows as a missing card. The numbers come from ui/manual-model.mts.
-import { OPTIMIZER_SLOTS, RESIST_KEYS, effectiveProfile, profileResistCaps, toOptItem, totalsOf } from "../vault-lib.mts";
+import { GEAR_SLOTS, RESIST_KEYS, effectiveProfile, profileResistCaps, toOptItem, totalsOf } from "../vault-lib.mts";
 import type { Character, EffectiveProfile, Item, OptItem } from "../vault-lib.mts";
 import type { ItemQuery } from "../item-query.mts";
 import { state } from "./store.mts";
 import { $, el, label, slotLabel, itemTip, toast } from "./dom.mts";
-import { box, txt, button, icon, meter, segmented, tag, confirmDialog, modalOpen } from "./components.mts";
+import { box, txt, button, icon, meter, segmented, tag, confirmDialog, modalOpen, tooltip, tipWrap } from "./components.mts";
 import { api } from "./api.mts";
 import { resolveItems, rarityToken } from "./items.mts";
 import { closeCompare, keyProps, RESIST_NAMES } from "./builder-result.mts";
@@ -20,7 +20,7 @@ import { sheetParts } from "./sheet.mts";
 import { createItemBrowser } from "./item-browser.mts";
 import type { ItemBrowser } from "./item-browser.mts";
 import type { UiPrefs } from "./api-types.mts";
-import { TOTAL_KEYS, STAT_KEYS, capped, capLine, slotQuery, handConflict, handNote, savedSlots, missingSlots, deltaKeys, slotDelta } from "./manual-model.mts";
+import { MANUAL_GROUPS, emptyHistory, record, undoStep, redoStep, historyKey, historyKeyNames, type History, TOTAL_KEYS, STAT_KEYS, capped, capLine, slotQuery, handConflict, handNote, savedSlots, missingSlots, deltaKeys, slotDelta } from "./manual-model.mts";
 
 type Mode = "automatic" | "manual";
 let mode: Mode = "automatic";
@@ -32,6 +32,9 @@ let pickSlot: string | null = null;
 let browser: ItemBrowser | null = null;
 const fixed: Partial<ItemQuery> = {};
 let seg: (HTMLDivElement & { setValue: (v: string) => void }) | null = null;
+// The suit's undo history (in memory: a reload starts a new one; another character keeps it, the suit is shared).
+let history: History = emptyHistory();
+const MAC = /Mac|iPhone|iPad/.test(navigator.platform), KEY_NAMES = historyKeyNames(MAC);
 
 // ---------------------------------------------------------------- prefs and the mode
 // load()'s GET /api/ui-prefs answer (null when that request failed).
@@ -61,6 +64,17 @@ export function initManual(): void {
     if (e.key !== "Escape" || !pickSlot || e.defaultPrevented || root.offsetParent === null || root.closest("[inert]") || modalOpen()) return;
     e.preventDefault();
     closePicker();
+  });
+  // ⌘Z / ⇧⌘Z (Ctrl+Z / Ctrl+Y / Ctrl+Shift+Z elsewhere) undo and redo a change to the suit while Manual is on screen.
+  // Never from a text field, a select or anything editable (the search keeps its own undo), and not behind a dialog,
+  // a popover or a drawer. Taking the key (preventDefault) also keeps the desktop app's Edit › Undo from acting on it:
+  // Chromium hands a key to the page first and to the menu only when the page leaves it.
+  document.addEventListener("keydown", (e) => {
+    const kind = historyKey(e, MAC), t = e.target as HTMLElement;
+    if (!kind || e.defaultPrevented || root.offsetParent === null || root.closest("[inert]") || modalOpen() || document.querySelector(".pop")) return;
+    if (t.closest?.("input, textarea, select, [contenteditable]") || t.isContentEditable) return;
+    e.preventDefault();
+    stepHistory(kind);
   });
   showMode();
 }
@@ -112,7 +126,9 @@ function profile(): EffectiveProfile {
   const name = manualCharacter();
   return name && state.builder.profile ? effectiveProfile(state.builder.profile, state.inv!.characters[name] as Character) : effectiveProfile({}, null);
 }
-function setSlots(next: Record<string, number>): void {
+// Every change to the suit is one undo step, named by `label` ("Ring → Arcane Ring"); undo and redo pass none.
+function setSlots(next: Record<string, number>, label: string | null): void {
+  if (label) history = record(history, slots, next, label);
   slots = next;
   savePrefs({ manualSuit: slots });
   draw();
@@ -120,7 +136,7 @@ function setSlots(next: Record<string, number>): void {
 }
 function clearSlot(slot: string): void {
   const { [slot]: _gone, ...rest } = slots;
-  setSlots(rest);
+  setSlots(rest, `Clear ${slotLabel(slot)}`);
   $<HTMLElement>(`#b-manual .mb-slot-pick[data-slot="${slot}"]`)?.focus();
 }
 // A row activated in the picker: into the slot, clearing what the hand rule rules out, and the picker stays.
@@ -132,18 +148,37 @@ function pick(it: Item): void {
   if (cleared) delete next[cleared];
   items[it.serial] = it;
   setStatus(cleared ? `${it.name} is in ${slotLabel(slot)}. ${handNote(items[slots[cleared]!]?.name || "The piece", slotLabel(cleared))}` : `${it.name} is in ${slotLabel(slot)}.`);
-  setSlots(next);
+  setSlots(next, `${slotLabel(slot)} → ${it.name}`);
 }
 async function clearAll(): Promise<void> {
   if (!await confirmDialog({ title: "Clear every slot?", body: "The manual suit is emptied.", confirmLabel: "Clear all" })) return;
-  setSlots({});
+  setSlots({}, "Clear all");
 }
 // Every slot takes the piece the character wears there.
 async function startFromWorn(name: string): Promise<void> {
   if (Object.keys(slots).length && !await confirmDialog({ title: `Replace the suit with what ${name} wears?`, body: `Each slot takes the piece ${name} wears there, and a slot ${name} leaves empty is cleared.`, confirmLabel: "Replace the suit", danger: false })) return;
   const next: Record<string, number> = {};
-  for (const it of state.inv!.worn[name] || []) if (it.slot && OPTIMIZER_SLOTS.includes(it.slot)) { next[it.slot] = it.serial; items[it.serial] = it; }
-  setSlots(next);
+  for (const it of state.inv!.worn[name] || []) if (it.slot && GEAR_SLOTS.includes(it.slot)) { next[it.slot] = it.serial; items[it.serial] = it; }
+  setSlots(next, `Start from what ${name} wears`);
+}
+// Undo or redo one step: the suit as it was, the totals, the stats and the rows' deltas with it, and a line saying so.
+function stepHistory(kind: "undo" | "redo"): void {
+  const r = kind === "undo" ? undoStep(history) : redoStep(history);
+  if (!r) return;
+  history = r.history;
+  const next = kind === "undo" ? r.step.before : r.step.after;
+  const text = `${kind === "undo" ? "Undid" : "Redid"}: ${r.step.label}`, focused = document.activeElement?.id;
+  setSlots(next, null);
+  if (focused === "mb-undo" || focused === "mb-redo") $<HTMLElement>(`#${focused}`)?.focus();   // the redrawn button keeps the focus
+  if (pickSlot) setStatus(text); else toast(text);
+  if (Object.values(next).some((s) => !items[s])) void syncManual();   // a piece from before a scan reload: resolve it
+}
+// The suit card's Undo and Redo: what each would do, with its key, or disabled when there is nothing to undo or redo.
+function historyButton(kind: "undo" | "redo"): HTMLElement {
+  const step = kind === "undo" ? history.past[history.past.length - 1] : history.future[0], name = kind === "undo" ? "Undo" : "Redo";
+  const text = step ? `${name}: ${step.label} (${KEY_NAMES[kind]})` : `${name} (${KEY_NAMES[kind]})`;
+  const b = button({ label: text, icon: kind, iconOnly: true, variant: "ghost", size: "sm", disabled: !step, attrs: { id: `mb-${kind}` }, onClick: () => stepHistory(kind) });
+  return step ? tooltip(b, text) : tipWrap(b, `Nothing to ${kind}`);
 }
 
 // ---------------------------------------------------------------- drawing
@@ -180,7 +215,7 @@ function totalsCard(): HTMLElement {
   const note = name ? `${name}'s paperdoll values: +${rsb} to each resist from Resisting Spells, against ${name}'s resist caps` : "Raw item totals: with no character there is no Resisting Spells or race bonus";
   const filled = Object.keys(suit).length;   // a missing piece counts for nothing
   return el("section", { class: "card mb-totals", id: "mb-totals", "aria-label": "Suit totals" },
-    box("div", { class: "mb-totals-head" }, el("h2", { class: "t-md" }, "Suit totals"), txt(note, "t-sm muted"), el("span", { class: "spacer" }), txt(`${filled} of ${OPTIMIZER_SLOTS.length} slots`, "t-sm muted")),
+    box("div", { class: "mb-totals-head" }, el("h2", { class: "t-md" }, "Suit totals"), txt(note, "t-sm muted"), el("span", { class: "spacer" }), txt(`${filled} of ${GEAR_SLOTS.length} slots`, "t-sm muted")),
     box("div", { class: "b-resists" }, ...tiles),
     box("div", { class: "mb-props" }, ...[...TOTAL_KEYS, ...STAT_KEYS].map(stat)));
 }
@@ -189,20 +224,19 @@ function totalsCard(): HTMLElement {
 // now → after sum, drawn with the after figures only), or the items' totals alone with no character.
 function statsCard(): HTMLElement {
   const name = manualCharacter();
-  const worn = name ? Object.fromEntries((state.inv!.worn[name] || []).filter((i) => i.slot && OPTIMIZER_SLOTS.includes(i.slot)).map((i) => [i.slot!, i])) : {};
+  const worn = name ? Object.fromEntries((state.inv!.worn[name] || []).filter((i) => i.slot && GEAR_SLOTS.includes(i.slot)).map((i) => [i.slot!, i])) : {};
   const suit = Object.fromEntries(Object.entries(slots).flatMap(([s, serial]) => (items[serial] ? [[s, items[serial]!]] : [])));
   const { kpis, props } = sheetParts(name, worn, suit, { resistCaps: profileResistCaps(profile()), compare: false });
   return box("div", { class: "sheet mb-stats", id: "mb-stats", role: "group", "aria-label": name ? `${name} in this suit` : "This suit's item totals" }, kpis, props);
 }
-// Armor first, then jewelry, the cloak and the hands, as on the paperdoll.
-const GROUPS: Array<[string, string[]]> = [["Armor", ["helmet", "neck", "chest", "arms", "hands", "legs"]], ["Jewelry, cloak and weapons", ["ring", "bracelet", "talisman", "cloak", "oneHanded", "twoHanded"]]];
 function suitCard(): HTMLElement {
   const name = manualCharacter(), filled = Object.keys(slots).length, missing = missingSlots(slots, items).length;
   const worn = name ? button({ label: `Start from what ${name} wears`, size: "sm", attrs: { id: "mb-worn" }, onClick: () => { void startFromWorn(name); } }) : null;
   const clear = filled ? button({ label: "Clear all", variant: "ghost", size: "sm", attrs: { id: "mb-clear" }, onClick: () => { void clearAll(); } }) : null;
   return el("section", { class: "card mb-suit", id: "mb-suit", "aria-label": "Suit" },
-    box("div", { class: "card-head" }, el("h2", {}, "Suit"), txt(filled ? `${filled} of ${OPTIMIZER_SLOTS.length} slots filled${missing ? `, ${missing} missing from your scans` : ""}` : "Every slot is empty", `t-sm ${missing ? "tone-warn" : "muted"}`), el("span", { class: "spacer" }), worn, clear),
-    box("div", { class: "mb-suit-body" }, ...GROUPS.map(([title, group]) => box("div", { class: "mb-group", role: "group", "aria-label": title }, txt(title, "caps muted"), box("div", { class: "mb-grid" }, ...group.map(slotCard))))));
+    box("div", { class: "card-head" }, el("h2", {}, "Suit"), txt(filled ? `${filled} of ${GEAR_SLOTS.length} slots filled${missing ? `, ${missing} missing from your scans` : ""}` : "Every slot is empty", `t-sm ellip ${missing ? "tone-warn" : "muted"}`), historyButton("undo"), historyButton("redo"), worn, clear),
+    box("div", { class: "mb-suit-body" }, ...MANUAL_GROUPS.map((column) => box("div", { class: "mb-suit-col" },
+      ...column.map(([title, group]) => box("div", { class: "mb-group", role: "group", "aria-label": title }, txt(title, "caps muted"), box("div", { class: "mb-grid" }, ...group.map(slotCard))))))));
 }
 // A slot card, two lines: a button that opens the picker on the slot (the slot and the piece's name in its rarity's
 // color, then its key properties, with where it lives in its item tooltip; "Empty"; or "Missing" for a serial the
@@ -257,7 +291,6 @@ function setStatus(text: string): void { $<HTMLElement>("#mb-status")!.textConte
 function paintPicker(): void {
   const picker = $<HTMLElement>("#mb-picker")!;
   $<HTMLElement>("#mb-hint")!.hidden = !!pickSlot;
-  $<HTMLElement>("#b-manual")!.classList.toggle("picking", !!pickSlot);
   picker.hidden = !pickSlot;
   if (!pickSlot) return;
   $<HTMLElement>("#mb-picker-h")!.textContent = `${slotLabel(pickSlot)}: choose a piece`;

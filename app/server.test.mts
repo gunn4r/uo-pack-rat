@@ -3213,8 +3213,8 @@ test("[fast] PUT /api/ui-prefs keeps the Suit Builder's mode and its Manual suit
   const put = (url: string, body: unknown): Promise<Response> => fetch(url + "/api/ui-prefs", { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
   const s1 = await startServer(ensureLayout(resolveConfig(["--port", "0", "--data", dir], {})));
   try {
-    assert.equal((await put(s1.url, { builderMode: "manual", manualFor: "none", manualSuit: { ring: 1879769144, twoHanded: 0xFFFFFFFF } })).status, 200);
-    for (const bad of [{ builderMode: "auto" }, { manualFor: "Dorran" }, { manualSuit: [1] }, { manualSuit: { ring: 0 } }, { manualSuit: { ring: 1.5 } }, { manualSuit: { ring: "5" } }, { manualSuit: { ring: 0x100000000 } }, { manualSuit: { feet: 5 } }, { manualSuit: null }]) {
+    assert.equal((await put(s1.url, { builderMode: "manual", manualFor: "none", manualSuit: { ring: 1879769144, twoHanded: 0xFFFFFFFF, feet: 7 } })).status, 200);
+    for (const bad of [{ builderMode: "auto" }, { manualFor: "Dorran" }, { manualSuit: [1] }, { manualSuit: { ring: 0 } }, { manualSuit: { ring: 1.5 } }, { manualSuit: { ring: "5" } }, { manualSuit: { ring: 0x100000000 } }, { manualSuit: { backpack: 5 } }, { manualSuit: null }]) {
       assert.equal((await put(s1.url, bad)).status, 400, JSON.stringify(bad));
     }
     // a "__proto__" key, as JSON.parse makes it (an own property), is no slot
@@ -3223,7 +3223,7 @@ test("[fast] PUT /api/ui-prefs keeps the Suit Builder's mode and its Manual suit
   } finally { await s1.close(); }
   const s2 = await startServer(ensureLayout(resolveConfig(["--port", "0", "--data", dir], {})));
   try {
-    assert.deepEqual(asJson(await (await fetch(s2.url + "/api/ui-prefs")).json()), { ok: true, prefs: { builderMode: "manual", manualFor: "none", manualSuit: { ring: 1879769144, twoHanded: 0xFFFFFFFF } } });
+    assert.deepEqual(asJson(await (await fetch(s2.url + "/api/ui-prefs")).json()), { ok: true, prefs: { builderMode: "manual", manualFor: "none", manualSuit: { ring: 1879769144, twoHanded: 0xFFFFFFFF, feet: 7 } } });
     assert.equal((await put(s2.url, { manualSuit: {} })).status, 200, "an empty suit is a suit");
     assert.deepEqual(asJson<{ prefs: Record<string, unknown> }>(await (await fetch(s2.url + "/api/ui-prefs")).json()).prefs.manualSuit, {});
   } finally { await s2.close(); }
