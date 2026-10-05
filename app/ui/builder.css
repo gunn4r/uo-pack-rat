@@ -189,6 +189,46 @@
 .mb-browser .tbl-foot > span, .mb-browser .inv-foot-view > span { white-space: nowrap; }
 .mb-delta { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-align: left; font-variant-numeric: tabular-nums; }
 .mb-delta .tag { margin-right: var(--space-1-5); }
+/* the buffs (ui/builder-buffs.mts): the Buffs row under the totals, a total's marker line, a raised cap underlined */
+.bf-strip { display: flex; align-items: center; flex-wrap: wrap; gap: var(--space-1-5) var(--space-2); padding-top: var(--space-2); border-top: var(--border-width) solid var(--color-border); }
+.bf-strip > .check { flex: none; font-size: var(--text-sm); align-items: center; }
+.bf-lead { display: inline-flex; align-items: center; gap: var(--space-1); flex: none; margin-right: var(--space-1); color: var(--color-accent); }
+.bf-lead .caps { color: var(--color-text-muted); }
+.token.bf-planned { border-style: dashed; }
+.token .muted { font-weight: var(--weight-regular); }
+.bf-sub { display: inline-flex; align-items: center; gap: var(--space-0-5); color: var(--color-accent); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.bf-capup { color: var(--color-accent); text-decoration: underline dotted; text-underline-offset: 3px; }
+/* the buff picker, in the side column like the slot picker: tools, the grouped list scrolling, a footnote */
+.bf-pick > * { flex: none; }
+.bf-tools { display: flex; flex-direction: column; gap: var(--space-2); padding: var(--space-3) var(--space-4) var(--space-2); }
+.bf-toolrow { display: flex; align-items: center; gap: var(--space-2); min-width: 0; }
+.bf-toolrow > .ellip { flex: 1 1 auto; min-width: 0; }
+.bf-pick > .bf-list { flex: 1 1 auto; min-height: 0; overflow-y: auto; border-top: var(--border-width) solid var(--color-border); }
+.bf-group-head { position: sticky; top: 0; z-index: 1; display: flex; align-items: center; flex-wrap: wrap; gap: var(--space-1-5) var(--space-3); padding: var(--space-2) var(--space-4); background: var(--color-surface-subtle); border-bottom: var(--border-width) solid var(--color-border); }
+.bf-group-head > .caps { flex: 1 1 auto; min-width: 0; }
+.bf-group-head > :not(.caps) { flex: none; }
+.bf-skill { display: flex; align-items: center; gap: var(--space-1-5); }
+.pr .bf-skill .input.num { width: 64px; height: var(--control-xs); }
+.pr .bf-skill .input.num.bf-wide { width: 80px; }   /* karma's five digits and a sign */
+.pr .bf-skill .input.num.bf-plan { border-color: var(--color-accent); box-shadow: 0 0 0 1px var(--color-accent); }
+.bf-item { display: flex; gap: var(--space-2); padding: var(--space-2) var(--space-4); border-bottom: var(--border-width) solid var(--color-border); cursor: pointer; }
+.bf-item:hover { background: var(--color-row-hover); }
+.bf-item > input { margin-top: 3px; flex: none; accent-color: var(--color-accent); }
+.bf-item-text { display: flex; flex-direction: column; gap: var(--space-0-5); flex: 1 1 auto; min-width: 0; }
+.bf-name { display: flex; align-items: center; flex-wrap: wrap; gap: var(--space-1-5); }
+.bf-name > .strong { font-weight: var(--weight-medium); }
+.bf-eff, .bf-note, .bf-warn { font-size: var(--text-sm); line-height: var(--lh-sm); font-variant-numeric: tabular-nums; }
+.bf-note { color: var(--color-text-muted); }
+.bf-warn { color: var(--color-warning); }
+.bf-item.bf-off .bf-name > .strong, .bf-item.bf-off .bf-eff { color: var(--color-text-muted); }
+.tag.bf-tag-accent { border-color: var(--color-accent); color: var(--color-accent); }
+.tag.bf-tag-ok { border-color: var(--color-success); color: var(--color-success); }
+.bf-hint { margin: var(--space-2) var(--space-4); }
+.bf-hint .msg-body { flex-direction: row; align-items: center; gap: var(--space-2); }
+.bf-hint .msg-body > :first-child { flex: 1 1 auto; min-width: 0; }
+.bf-hint .msg-actions { flex: none; margin-top: 0; }
+.bf-none { padding: var(--space-3) var(--space-4); }
+.bf-foot { padding: var(--space-2) var(--space-4); border-top: var(--border-width) solid var(--color-border); }
 
 /* ---------------------------------------------------------------- responsive (design spec 3.7) */
 @media (max-width: 1179px) {

@@ -14,6 +14,7 @@ import { rarityToken } from "./items.mts";
 import { txt, box, badge, tag, meter, message, button, check, searchInput, popover } from "./components.mts";
 import type { SkillEntry } from "./api-types.mts";
 import { capNote } from "./builder-model.mts";
+import { STAT_MAX } from "../buffs.mts";
 
 // The slot value the sheet needs out of a worn/candidate piece — both a full scanned Item (the
 // Characters screen's worn set) and an optimizer OptItem (the builder's `suit`/`current`) carry these,
@@ -37,6 +38,10 @@ export interface SheetOptions {
   // true: no resist tiles and no worn gear card, for a caller that draws neither (the Suit Builder's Manual stats card),
   // and the footnote says nothing about resists.
   statsOnly?: boolean | undefined;
+  // The Suit Builder's Manual buffs (app/buffs.mts): what they add to the `after` suit's totals, counted in its
+  // attributes (each held to STAT_MAX), pools and properties, and the caps they change.
+  buffs?: Record<string, number> | undefined;
+  caps?: Record<string, number> | undefined;
 }
 
 // ---------------------------------------------------------------- formatting (pure, unit-tested)
@@ -45,11 +50,12 @@ export const capOver = (raw: number, cap: number): number => Math.max(0, raw - c
 export function capBadgeText(raw: number, cap: number): string | null { const n = capOver(raw, cap); return n > 0 ? `cap +${n}` : null; }
 // A meter is full and green once the value reaches its cap.
 export const atCap = (value: number, cap: number | null | undefined): boolean => cap != null && cap > 0 && value >= cap;
-// An attribute's split into the character's own points and the gear bonus: STR 110 with +8 from gear is
-// "(102 + 8)", a −2 bonus "(62 − 2)", and no bonus says nothing.
-export function bonusBreakdown(total: number, bonus: number): string {
-  if (!bonus) return "";
-  return `(${total - bonus} ${bonus > 0 ? "+" : "−"} ${Math.abs(bonus)})`;
+// An attribute's split into the character's own points, the gear bonus and the buffs' share: STR 110 with +8 from gear
+// is "(102 + 8)", a −2 bonus "(62 − 2)", with 17 from buffs "(85 + 8 + 17 buffs)", and no bonus says nothing.
+export function bonusBreakdown(total: number, bonus: number, buffs = 0): string {
+  if (!bonus && !buffs) return "";
+  const part = (n: number, word = ""): string => ` ${n > 0 ? "+" : "−"} ${Math.abs(n)}${word}`;
+  return `(${total - bonus - buffs}${bonus ? part(bonus) : ""}${buffs ? part(buffs, " buffs") : ""})`;
 }
 // "18 → 22" when a value moves, the one number when it doesn't.
 export const moveText = (b: number, a: number, suffix = ""): string => (b === a ? `${a}${suffix}` : `${b}${suffix} → ${a}${suffix}`);
@@ -210,12 +216,15 @@ export function sheetParts(name: string | null, before: SheetAssignment, after: 
   const single = after == null, diff = !single && opts.compare !== false;
   const then = after ?? before;
   const c = name ? state.inv!.characters[name] : undefined;
-  const { capOf, race } = capsFor(name ?? "");
+  const { capOf: shardCap, race } = capsFor(name ?? "");
+  const capOf = (k: string): number | undefined => opts.caps?.[k] ?? shardCap(k);
   const resistCap = (k: string): number => opts.resistCaps?.[k]?.cap ?? capsFor(name ?? "").resistCap(k);
   // a build's override, said on its tile and in the footnote: "cap raised from 70"
   const override = (k: string): ResistCap | null => { const c = opts.resistCaps?.[k]; return c && c.cap !== c.shard ? c : null; };
   const extras = withExtras(name ?? "", before);
-  const b = totalsOf(extras(before)), a = totalsOf(extras(then));
+  const b = totalsOf(extras(before)), gear = totalsOf(extras(then)), bf = opts.buffs || {};
+  const a: Record<string, number> = { ...gear };
+  for (const [k, v] of Object.entries(bf)) a[k] = (a[k] || 0) + v;
   const d = (k: string): number => (a[k] || 0) - (b[k] || 0);
   const rsb = resistSkillBonus(c?.skills);
   // the after number's colour is never the only signal: the arrow and both numbers say it too
@@ -235,12 +244,15 @@ export function sheetParts(name: string | null, before: SheetAssignment, after: 
   // attributes: the scan's stats are totals with the current suit on; own points = total − current bonus
   const st = (c?.stats || {}) as Record<string, unknown>;
   const attrs = kvList(([["str", "STR", "strBonus"], ["dex", "DEX", "dexBonus"], ["int", "INT", "intBonus"]] as Array<[string, string, string]>).map(([k, lbl, pk]): [string, Node] => {
-    const total = numOr0(st[k]), own = total - (b[pk] || 0), next = own + (a[pk] || 0), split = bonusBreakdown(next, a[pk] || 0);
+    const total = numOr0(st[k]), own = total - (b[pk] || 0), next = own + (a[pk] || 0), split = bonusBreakdown(next, gear[pk] || 0, bf[pk] || 0);
     if (!name) return [lbl, txt("—", "muted")];
-    return [lbl, el("span", { class: dirCls(next - total) }, mv(total, next), split ? " " : "", split ? txt(split, "muted") : null)];
+    // with the buffs, a stat is held to the per-stat maximum, and what passes it is said
+    const over = opts.buffs ? Math.max(0, next - STAT_MAX) : 0, shown = next - over;
+    return [lbl, el("span", { class: dirCls(shown - total) }, mv(total, shown), split ? " " : "", split ? txt(split, "muted") : null, over ? txt(` ${over} over the ${STAT_MAX} cap`, "tone-warn") : null)];
   }), "kv-tight");
   const mx = (c?.maxes || {}) as Record<string, unknown>;
-  const pools = kvList(([["hits", "Hits", () => Math.floor(d("strBonus") / 2) + d("hpi")], ["stam", "Stamina", () => d("dexBonus") + d("stamInc")], ["mana", "Mana", () => d("intBonus") + d("manaInc")]] as Array<[string, string, () => number]>).map(([k, lbl, f]): [string, Node] => {
+  // a buff's own Hits, Stamina or Mana (Animal Form's +20 Hits) is added past the HPI cap
+  const pools = kvList(([["hits", "Hits", () => Math.floor(d("strBonus") / 2) + d("hpi") + (bf.hitsPool || 0)], ["stam", "Stamina", () => d("dexBonus") + d("stamInc") + (bf.stamPool || 0)], ["mana", "Mana", () => d("intBonus") + d("manaInc") + (bf.manaPool || 0)]] as Array<[string, string, () => number]>).map(([k, lbl, f]): [string, Node] => {
     const dd = f(), cur = numOrNull(mx[k]);
     return [lbl, txt(!name ? "—" : cur == null ? "?" : mv(cur, cur + dd), dirCls(dd))];
   }), "kv-tight");

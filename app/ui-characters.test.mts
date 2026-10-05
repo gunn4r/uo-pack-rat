@@ -32,6 +32,9 @@ test("[fast] sheet: an attribute's bonus split reads (own + gear), a negative bo
   assert.equal(bonusBreakdown(110, 8), "(102 + 8)");
   assert.equal(bonusBreakdown(60, -2), "(62 − 2)");
   assert.equal(bonusBreakdown(60, 0), "");
+  // Manual's buffs (issue #12): their share after the gear's
+  assert.equal(bonusBreakdown(155, 13, 17), "(125 + 13 + 17 buffs)");
+  assert.equal(bonusBreakdown(40, 0, 5), "(35 + 5 buffs)");
 });
 
 test("[fast] sheet: a figure that moves reads 'now → after', one that doesn't reads once", () => {
