@@ -142,6 +142,7 @@ import { startWatcher, MAX_INBOX_BYTES, type StartWatcherOptions, type WatcherHa
 import { parsePastedScan, writeScanToInbox } from "./import.mts";
 import { createMcp } from "./mcp.mts";
 import { readBody, type HttpError } from "./read-body.mts";
+import { createSettingsStore, type ClientSettings, type SettingsDoc } from "./store/settings.mts";
 import { send, asObject, SSE_HEADERS } from "./http/respond.mts";
 import { isBoundedInt, isBoundedString, MAX_SERIAL } from "./guards.mts";
 import { moveAside, writeFileAtomic } from "./atomic-write.mts";
@@ -494,29 +495,6 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
   if (!existsSync(CONFIG.paths.core)) throw new Error(`optimizer core not found at ${CONFIG.paths.core} — check PACKRAT_CORE, or that the repo checkout has scripts/optimizer-core.mts`);
   const CORE_URL = pathToFileURL(CONFIG.paths.core).href;
 
-  // settings.json is user-editable, on-disk data with no schema check at read time (PUT /api/settings
-  // below validates each field it writes; a hand-edited file is trusted here the same way profiles.json
-  // is in readProfiles) — the cast documents that trust boundary, same pattern as rules.mts's loadFile.
-  interface ClientSettings { adapter: string; scriptsDir: string; }
-  interface SettingsDoc {
-    schemaVersion?: number;
-    shard: string;
-    setupDone?: boolean;
-    client?: ClientSettings | null;
-    retention?: unknown;
-    autoUpdateCheck?: boolean;
-    uoFolder?: string | null;
-    [key: string]: unknown;
-  }
-  // The shard picker: <data>/settings.json ({schemaVersion, shard}) names which app/rules/<shard>.json
-  // (or <data>/rules/<shard>.json override) is currently active. ensureLayout() already wrote a default
-  // settings.json if none existed, so this file exists by the time startServer runs.
-  // A settings.json that does not parse, or is not an object, used to throw out of startServer and
-  // stop the app from starting at all (exit 2) — for a file the app itself writes and a player may
-  // hand-edit. It now starts on defaults instead, with a logged warning, and the unreadable file is
-  // moved aside as settings.json.corrupt (never overwritten: an older .corrupt keeps its name and the
-  // new one gets a timestamp) so whatever was in it can still be recovered by hand. Defaults are then
-  // written back, the same file ensureLayout() writes on a fresh data directory.
   // A persisted client whose adapter id is not one this install ships is dropped IN MEMORY ONLY (the
   // same rule as the shard fallback below — settings.json is left as it stands): bridgeAdapter()
   // joins that id into the bridge queue/status paths, and PUT /api/settings already refuses an
@@ -525,26 +503,7 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
     console.warn(msg);
     safeAppendLog(CONFIG.paths.log, `${new Date().toISOString()} startup-fallback ${msg}\n`);
   }
-  function loadSettings(): SettingsDoc {
-    const defaults: SettingsDoc = { schemaVersion: 1, shard: DEFAULT_SHARD };
-    if (!existsSync(SETTINGS)) return defaults;
-    let doc: unknown, why = "not a JSON object";
-    try { doc = JSON.parse(readFileSync(SETTINGS, "utf8")); }
-    catch (e) { doc = undefined; why = jsonErrorReason(e); }
-    if (!doc || typeof doc !== "object" || Array.isArray(doc)) {
-      let aside: string;
-      try {
-        aside = moveAside(SETTINGS);
-        writeFileAtomic(SETTINGS, JSON.stringify(defaults, null, 2) + "\n", DATA_FILE_MODE);
-      } catch (e) {
-        startupWarning(`settings.json could not be moved aside (${(e as Error).message}); running on defaults without touching it`);
-        return defaults;
-      }
-      startupWarning(`settings.json is unreadable (${why}); starting on defaults — the old file was kept as ${aside}`);
-      return defaults;
-    }
-    return doc as SettingsDoc;
-  }
+  const settingsStore = createSettingsStore({ file: SETTINGS, warn: startupWarning });
   function clientIsKnown(doc: SettingsDoc): boolean {
     const client = doc.client as unknown;
     if (client == null) return true;
@@ -560,7 +519,7 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
   // can never be persisted over the player's real value by an unrelated save (a wizard's setupDone,
   // say): fixing the rules file or reinstalling the newer version and restarting picks the original
   // choice back up, as the fallback promises.
-  let savedSettings = loadSettings();
+  let savedSettings = settingsStore.load();
   let clientIgnored = !clientIsKnown(savedSettings);
   // The shard fallback below sets this; declared here so effectiveSettings() can read it.
   let rulesFallback = false;
@@ -570,8 +529,7 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
   let currentSettings = effectiveSettings();
   function saveSettings(changes: Partial<SettingsDoc>): void {
     const next: SettingsDoc = { ...savedSettings, schemaVersion: 1, ...changes };
-    mkdirSync(dirname(SETTINGS), { recursive: true, mode: DATA_DIR_MODE });
-    writeFileAtomic(SETTINGS, JSON.stringify(next, null, 2) + "\n", DATA_FILE_MODE);
+    settingsStore.write(next);
     savedSettings = next;
     if ("client" in changes) clientIgnored = false;
     currentSettings = effectiveSettings();
@@ -867,7 +825,7 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
   }
   // <data>/organize.json: Organize's setup (issue #11, app/organize-config.mts). Read through the salvage, so a
   // hand edit that breaks one rule drops that rule, not the whole setup, and `problems` says what went; a file
-  // that does not parse is moved aside (the way loadSettings() treats settings.json) and Organize starts empty.
+  // that does not parse is moved aside (the way the settings store treats settings.json) and Organize starts empty.
   // Written only by PUT /api/organize, whole.
   const ORGANIZE = join(CONFIG.dataDir, "organize.json");
   function readOrganize(): { config: OrganizeConfig; problems: string[] } {
@@ -1033,7 +991,7 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
   }
   // A profiles.json that does not parse (a write cut short before writes were atomic, or a bad hand
   // edit) used to answer every GET /api/profiles with a 500 until someone fixed the file by hand. It
-  // is now moved aside the same way loadSettings() moves an unreadable settings.json, and the
+  // is now moved aside the same way the settings store moves an unreadable settings.json, and the
   // defaults are seeded in its place, with a log line naming where the old file went.
   async function readProfiles(): Promise<ProfilesFile> {
     const seed = (): void => {
