@@ -1,5 +1,6 @@
-// scan-schema.test.mts — tests for the scan v2 schema and the v1→v2 upgrade-on-read.
-// Tags: [smoke] [fast]. Run: node --test app/scan-schema.test.mts
+// scan-schema.test.mts — `app/scan-schema.mts`: the scan v2 schema and the v1→v2 upgrade on read.
+//
+// `app/scan-schema.mts`: `SCAN_V2_SCHEMA` is byte-identical to `app/schema/scan.v2.schema.json` (the two must never drift, since the `.mjs` copy is what gets served to the browser); `upgradeScan`'s v1→v2 conversion (naive-local `scannedAt` → RFC 3339 with this machine's DST-correct offset, `adapter` stamped — `"app"` for a `_`-prefixed tombstone character, `"tazuo"` otherwise — every root `opened: true`, every serial coerced to a number, `nameSource: "opl"` on every item/equipped entry); a v2 document passed through unchanged except a missing `shard` gets stamped; neither v1 nor v2 shaped throws; `validateScan` against the schema (including the fractional-seconds `scannedAt` shape `/api/forget` actually writes, refusing a `scannedAt` that is not a real date and time, and a container `pos` whose `facet` is not a whole number 0-5; the optional `house` section (issue #10): five-integer tiles, at most 20,000, `items` optional, a negative z, an empty items list and an extra key accepted); `parseStamp` for fold ordering. A house-only file (`kind: "house"`, issue #10) validates with an empty inventory, and is refused with another `kind`, without its `house`, or with anything in `roots`, `containers`, `items` or `equipped`.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";

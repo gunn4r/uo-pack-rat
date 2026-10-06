@@ -1,5 +1,6 @@
-// missing.test.mts — missingSinceLastScan (issue #99): what left a root container between its last two scans
-// and is nowhere else in the inventory now. Tags: [fast]. Run: node --test app/missing.test.mts
+// missing.test.mts — `app/missing.mts`, Missing since last scan (issue #99): what left a root container between its last two scans and is nowhere else in the inventory now.
+//
+// `app/missing.mts`, Missing since last scan (issue #99), over hand-built scans folded by the real fold: a root scanned once reports nothing; an item gone from a root and from everywhere else is missing with when it was last seen there; one moved to another scanned container or now worn is not; a stack that shrank in place is "N fewer" and one that grew is nothing; only a root's last two opened scans are compared; a bag that went takes its contents with it; what a bag the newest scan could not open still holds, what sat in a trash container, and a forgotten root report nothing; a vanished stack merged into a same-kind stack in another scanned chest, or combined with one in the same chest, is not missing, one sold outright is, a same-kind stack seen only before the previous scan explains nothing, one too small explains only its amount (the rest is "N fewer"), a stack partly used in place is "N fewer" even with more elsewhere, and a single item is never taken as merged into a same-named one. `[fast]`; `app/server.test.mts` covers `missingCounts` in `GET /api/inventory` and `GET /api/missing`, and a blacklisted root reporting nothing in either.
 import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";

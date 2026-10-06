@@ -1,9 +1,8 @@
-// contracts.test.mts — folds every adapter's fixture.scan.json against its own capabilities.json,
-// checking the two contracts agree with each other and with the shared scan/bridge schemas. An
-// "adapter" here is any directory under adapters/ that ships both a capabilities.json and a
-// fixture.scan.json (today: adapters/tazuo/ and adapters/razor-enhanced/); a future adapter picks these tests up for free just by
-// shipping those two files.
-// Run: node --test app/contracts.test.mts   or   node app/contracts.test.mts
+// contracts.test.mts — folds every adapter's fixture.scan.json against its own capabilities.json, checking the two agree with each other and with the shared scan and bridge schemas.
+//
+// walks every `adapters/<id>/` directory that ships both `capabilities.json` and `fixture.scan.json` (today: `adapters/tazuo/`, and `adapters/razor-enhanced/`, whose fixture comes from the fake client) and checks, with no adapter-specific code: `capabilities.json` validates against the scan schema's `adapter.capabilities` shape; `fixture.scan.json` validates against the full `scan.v2.schema.json`; the fixture folds into a character with at least one nested container and at least one worn item located on it; and `capabilities.json`'s `capabilities` object is deep-equal to the fixture's own `adapter.capabilities` (catches a script's `CAPABILITIES` dict, its `capabilities.json`, and its fixture drifting apart from each other). Every ground root in a fixture carries its tooltip, with a Contents line, and a facet (issue #11). A guard test fails the whole suite if no adapter directory ships a contract at all. Also covers `app/schema/bridge.v1.schema.json` directly: the documented command/result/status examples (including a `stopped: true` status) validate, and an unknown `action` is rejected. See `docs/adapter-guide.md` for what shipping a contract requires.
+//
+// An "adapter" here is any directory under adapters/ that ships both a capabilities.json and a fixture.scan.json; a future adapter picks these tests up for free just by shipping those two files. With app/scan-schema.test.mts, app/rules.test.mts and app/bridge-trip.test.mts it keeps the contracts in docs/scan-schema.md, docs/bridge-protocol.md and docs/shard-rules.md honest against the code that ships.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync, readdirSync, existsSync } from "node:fs";

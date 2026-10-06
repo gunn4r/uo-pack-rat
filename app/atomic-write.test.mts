@@ -1,7 +1,8 @@
-// atomic-write.test.mts — app/atomic-write.mts's renameRetrying: on Windows a rename onto a file another process
-// holds open fails for a moment (EPERM, EACCES, EBUSY) and is tried again; any other error, and any error on another
-// platform, is final. Pure: the rename is a stand-in. Tags: [fast].
-// Run: node --test app/atomic-write.test.mts
+// atomic-write.test.mts — `app/atomic-write.mts`'s `renameRetrying` and its Windows retry.
+//
+// `app/atomic-write.mts`'s `renameRetrying`: on Windows a rename onto a file another process holds open (EPERM, EACCES, EBUSY) is tried again for about a second and then fails; any other error, and any error on another platform, is final.
+//
+// Pure: the rename is a stand-in. Tags: [fast].
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { renameRetrying } from "./atomic-write.mts";

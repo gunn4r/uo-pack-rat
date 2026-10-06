@@ -1,8 +1,6 @@
-// buffs.test.mts — app/buffs.mts, the Suit Builder's buffs, abilities and forms (issue #12): each shipped effect's
-// formula against the research's numbers, skill scaling at 0, the threshold and 120, one form at a time, the stat
-// slots where the largest share counts, a cap raise, a bonus past the cap that never counts toward it, Protection's
-// lower Resisting Spells, the words the picker shows, and the saved choices' checks.
-// Tags: [fast]. Run: node --test app/buffs.test.mts
+// buffs.test.mts — `app/buffs.mts`, the Suit Builder's buffs, abilities and forms (issue #12).
+//
+// `[fast]`: `app/buffs.mts`, the Suit Builder's buffs, abilities and forms (issue #12): each shipped effect's formula against the research's numbers, skill scaling at 0, the threshold and 120, one form at a time, the stat slots where the largest share counts, a cap raise, a bonus past the cap that never counts toward it, Protection's lower Resisting Spells, the words the picker shows, and the saved choices' checks.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";

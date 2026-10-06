@@ -1,4 +1,6 @@
-// tiledata.test.mts — app/tiledata.mts: reading a 7.x tiledata.mul's item entries (flags, height, name), classifying a tile the way the house map draws it, and finding the file through TazUO's launcher profiles. Tags: [fast]. Run: node --test app/tiledata.test.mts
+// tiledata.test.mts — `app/tiledata.mts` (issue #10): reading a 7.x tiledata.mul, classifying a tile the way the house map draws it, and finding the file.
+//
+// `app/tiledata.mts` (issue #10) against synthetic 7.x tiledata.mul files built byte by byte: an item graphic's flags, height and name (a 20-character name with no terminator read whole), a file of the wrong layout refused, `classify` (door, stair, roof, window, wall, floor, block, other, and impassable = wall without the file), finding the UO folder through TazUO's launcher profiles (a profile whose folder has no tiledata.mul passed over, and with several profiles the newest one's folder winning), and `loadTileData`'s cache by mtime and size. All `[fast]`.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { mkdtempSync, mkdirSync, writeFileSync, utimesSync } from "node:fs";

@@ -1,4 +1,8 @@
-// organize.test.mts — app/services/organize.mts on its own: with nothing pending a harvest only reads the state file (no write, no event); the saved suits are read only when a rule asks to skip them; a Put away request file is removed and always answered. The Organize routes themselves are app/organize-server.test.mts. Tags: [fast]. Run: node --test app/services/organize.test.mts
+// organize.test.mts — `app/services/organize.mts` on its own, with stand-in stores.
+//
+// `app/services/organize.mts` with stand-in stores: a harvest with nothing pending only reading the state file, the saved suits read only when a rule skips them, a Put away request removed and always answered. All `[fast]`; the routes are `app/organize-server.test.mts`.
+//
+// With nothing pending a harvest writes nothing and sends no event.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { existsSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";

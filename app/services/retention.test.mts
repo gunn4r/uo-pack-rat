@@ -1,4 +1,6 @@
-// retention.test.mts — app/services/retention.mts on its own: under --demo nothing is planned; a prune removes the runs past the per-character count (a labeled one kept), logs what it removed and tells the pages; two prunes run one after the other. Tags: [fast]. Run: node --test app/services/retention.test.mts
+// retention.test.mts — `app/services/retention.mts` on its own: what a prune removes, logs and tells the pages.
+//
+// `app/services/retention.mts`: nothing under `--demo`, a prune removing the runs past the per-character count (a labeled one kept) with its log line and event, and two prunes run one after the other. All `[fast]`.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { existsSync, mkdirSync, mkdtempSync } from "node:fs";

@@ -1,6 +1,8 @@
-// organize.test.mts — app/organize.mts, Organize's planner (issue #11), on hand-built house scans
-// (app/organize-fixture.mts) folded by the real foldSnapshots, plus a fold of the TazUO adapter fixture.
-// Pure: no server. Tags: [fast], one [smoke]. Run: node --test app/organize.test.mts
+// organize.test.mts — `app/organize.mts`, Organize's planner (issue #11), on hand-built house scans folded by the real fold.
+//
+// `app/organize.mts`, the planner, on hand-built house scans (`app/organize-fixture.mts`) folded by the real fold: scope (unlabelled, pinned, blacklisted, never-opened, backpack, positionless and vanished containers), first match wins, location-free rules, the overlay and in-place, the capacity simulation (freed slots, nested caps, stack merges, stone caps), sites and cross-site reports, full chests trading contents, trash containers left alone, the room report counting nested free room once, trips within item, stone and byte limits, carried items, determinism, the plan stamp, a trip command `queueTrip` accepts, and Put away's sources (issue #131: only what lies directly in the picked container, never a bag in it or its contents or a pinned item, blessed and insured items and the catch-all's items filed like any, into the site the character stands in; a container in a labelled chest likewise); one `[smoke]` replays the TazUO fixture's trips and checks no put overfills a container. The rest `[fast]`.
+//
+// The scans come from app/organize-fixture.mts, folded by the real foldSnapshots, plus a fold of the TazUO adapter fixture. Pure: no server.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync, mkdtempSync } from "node:fs";

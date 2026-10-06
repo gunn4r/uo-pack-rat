@@ -1,7 +1,8 @@
-"""test_panel.py -- the TazUO in-game panel (adapters/tazuo/packrat-panel.py) run end to end against
-the fake client (fake_clients.tazuo_panel_api): its window, what each button starts or stops and under
-which relative path, the show/hide hotkey read from the app's tazuo-panel.json, and the heartbeat the
-installer reads.
+"""test_panel.py -- the TazUO in-game panel (adapters/tazuo/packrat-panel.py) run end to end against the fake client.
+
+The fake is fake_clients.tazuo_panel_api: its window, what each button starts or stops and under which relative path, the show/hide hotkey read from the app's tazuo-panel.json, and the heartbeat the installer reads.
+
+Covers: each button's script path under a group folder, the bridge button following state, the not-started message, the hotkey re-read from `tazuo-panel.json` (a bare letter refused), the window hidden and rebuilt, starting hidden when `showAtLogin` is off, the Show at login button, and the heartbeat. Put away (issue #131): the target cursor (nothing picked, not a container, a book, a corpse, trash, another mobile's pack, a chest out of reach, a blacklisted bag, each refused with its reason, and only a chest in reach starting a scan), the refresh run for a bag in the pack, the request written after its scan file with the picked container, the character and where it stands, the shared variable set to that container for the run and cleared after it, each trip's result followed and a new request after a trip that put everything, the bridge required, an app that does not answer, Cancel put away (the stop flag written, the button's name back), a trip that never reports back ending the run with the stop flag written, and a client whose shared variable does not hold ending the run before any request. Also (2.12.0, issue #10) the House map refresh button beside Character refresh starting `packrat-house-map-refresh.py`, refused while a Put away runs, a `-house` file neither the last scan nor the scan Put away waits for, the Running line within 48 characters with all five scripts running, and every button and line inside the window with no two buttons overlapping.
 
 Run: python3 adapters/test_panel.py  (app/adapters.test.mts also spawns it, so `npm test` does).
 """

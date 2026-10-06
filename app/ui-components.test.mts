@@ -1,9 +1,8 @@
-// ui-components.test.mts — app/ui/components.mts's builders, on a fake DOM just big enough for them. The
-// structural rule under test is the one-span rule (docs/ui.md): no element the builders draw as a flex or grid
-// container ever holds a bare text node, and FLEX_CLASSES — the list that rule is checked against — matches
-// what app/ui/components.css really draws as flex/grid. Behaviour that needs a real browser (focus traps,
-// popovers, the native <dialog>) is driven in the Electron window by scripts/ui-components.test.mts.
-// Lives in app/ rather than app/ui/ for the reason app/ui-render.test.mts gives. Tags: [fast].
+// ui-components.test.mts — `app/ui/components.mts`'s builders on a fake DOM just big enough for them.
+//
+// `app/ui/components.mts`'s builders on a fake DOM: the one-span rule (no element a builder draws with a flex/grid class holds a bare text node, for every builder), `FLEX_CLASSES` matching every class `app/ui/components.css` draws as flex or grid, `box()` refusing a bare string, `txt()` being one span, button variants as compound classes and icon-only buttons named, `field()` wiring `for`/`aria-describedby`/`aria-invalid`, the segmented control's radios, roving tab stop and arrow keys, the stepper's `aria-current` and done markers, the table footer's middots and the table's sortable headers.
+//
+// The structural rule under test is the one-span rule (docs/ui.md): no element the builders draw as a flex or grid container ever holds a bare text node. Behavior that needs a real browser (focus traps, popovers, the native <dialog>) is driven in the Electron window by scripts/ui-components.test.mts. Lives in app/ rather than app/ui/ for the reason app/ui-render.test.mts gives. Tags: [fast].
 import "../scripts/localstorage-shim-for-tests.mts";
 import { test } from "node:test";
 import assert from "node:assert/strict";

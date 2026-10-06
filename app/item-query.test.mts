@@ -1,6 +1,8 @@
-// item-query.test.mts — app/item-query.mts: parseItemQuery's defaults/clamps, applyItemQuery's predicate
-// (parity with ui/inventory.mts's filtered()) and sort (parity with renderInventory()), facetsOf, and
-// rarityRank. Hand-built fixture items (no scan files, no server) so this stays fast and pure.
+// item-query.test.mts — `app/item-query.mts`, the item-list filtering, sorting, paging and faceting shared by the page and `GET /api/items`.
+//
+// `app/item-query.mts` (the pure item-list filtering/sorting/paging/faceting shared by the browser and the server's `GET /api/items`): `parseItemQuery`'s defaults and clamping, the list filters taken as repeated params (character, slot, kind, location, root container), prop rules with an operator (at least, at most, exactly), every `applyItemQuery` filter (kind, slot, location, root, character, rarity and rarity-at-least, seenDays, slayer, nogarg, med, hideTags, a prop rule incl. `EXTRA_COLS` keys) and sort (by prop column, by rarity ladder order), paging (offset/limit against `total`/`pieces`), group mode's JSON-safe shape and its stack and piece counts, `facetsOf` (including the places the Location filter's tree is built from), `rarityRank`, `rarityMax` (an item with no tier or one off the ladder counting as below every tier, an unknown ceiling ignored, a floor above the ceiling matching nothing), and `matchesItem` (an Organize rule's per-item checks, agreeing with `applyItemQuery` on every filter a rule keeps, its free text never matching location text). All `[fast]`.
+//
+// applyItemQuery's predicate and sort keep parity with what the Inventory screen used to do on its own. Hand-built fixture items (no scan files, no server) keep this fast and pure.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { EXTRA_COLS, colVal, rarityRank, parseItemQuery, applyItemQuery, facetsOf, matchesItem } from "./item-query.mts";

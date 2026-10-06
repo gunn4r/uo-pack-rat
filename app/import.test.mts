@@ -1,7 +1,6 @@
-// import.test.mts — app/import.mts: parsePastedScan's marker-or-bare extraction, JSON/schema
-// rejection, the v1→v2 upgrade it shares with app/watcher.mts's ingestFile, and writeScanToInbox's
-// own write.
-// Tags: [fast]. Run: node --test app/import.test.mts
+// import.test.mts — `app/import.mts`: `parsePastedScan`'s extraction and refusals, the v1→v2 upgrade it shares with the watcher, and `writeScanToInbox`'s own write.
+//
+// `app/import.mts`'s `parsePastedScan`: accepts a bare JSON document and a marked block with log noise around it; rejects text with no JSON at all (naming what it looked for), a document that's valid JSON but not a scan, and malformed JSON (a parse error, not a schema error); the v1→v2 upgrade matches what the watcher does; a BEGIN marker with no matching END gets a specific "looks truncated" error instead of the generic "not valid JSON" one; and a compact (whitespace-free) scan pasted as newline-joined fixed-size chunks — including a chunk boundary that lands in the middle of a string value, the shape `adapters/classicuo-web/packrat-scanner.ts`'s print loop actually produces — still parses, because `extractJsonText` strips every `\r`/`\n` before handing the text to `JSON.parse`. Also covers a real astral character (outside the Basic Multilingual Plane — a UTF-16 surrogate pair) split across a chunk boundary chosen specifically to force it: loads the scanner's actual, shipped `chunkEnd()` function (via `node:module`'s `stripTypeScriptTypes` plus a `data:` URL import — not a reimplementation, and not `new Function`/`eval` on extracted source) and proves the pair survives intact through a real `parsePastedScan` round trip. All `[fast]`.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync, writeFileSync, readdirSync, mkdtempSync, symlinkSync, lstatSync } from "node:fs";

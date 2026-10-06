@@ -1,4 +1,8 @@
-// houses.test.mts — app/services/houses.mts on its own: why there is no tiledata.mul or facet (no client, a set folder that is gone or not an absolute path), read from the settings on every call, and the facet PNG cache answering a repeat without making it again and dropping the oldest past 32 MB. Tags: [fast]. Run: node --test app/services/houses.test.mts
+// houses.test.mts — `app/services/houses.mts` on its own: why there is no tiledata.mul or facet, and the facet PNG cache.
+//
+// `app/services/houses.mts`: why there is no tiledata.mul or facet as the settings change, and the facet PNG cache answering a repeat and dropping the oldest past 32 MB. All `[fast]`.
+//
+// The reason is read from the settings on every call (no client, a set folder that is gone or not an absolute path).
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { mkdtempSync } from "node:fs";

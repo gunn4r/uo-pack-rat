@@ -1,7 +1,6 @@
-// solver-large.test.mts — app/solver.test.mts's one real-sized case, in a file of its own so the runner
-// can run it alongside the rest of that file: HiGHS must prove a 3,000-item generated cell, and the core
-// agree with it wherever the core also proves in its budget (it gets 60 s, which is most of this file's
-// time; on a real-sized cell it usually runs out, and then HiGHS only has to be no worse).
+// solver-large.test.mts — app/solver.test.mts's one real-sized case, a 3,000-item generated cell, in a file of its own.
+//
+// `[slow]`: solver.test.mts's real-sized case, in its own file so it runs in parallel with the rest: a generated 3,000-item cell that HiGHS must prove (in about 10 s), with the core agreeing wherever the core also proves it in its 60 s budget, and otherwise no better than HiGHS. The core usually runs out that budget, which makes this the suite's slowest file.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { buildPools, effectiveProfile, foldSnapshots } from "./vault-lib.mts";

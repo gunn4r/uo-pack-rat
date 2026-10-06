@@ -1,8 +1,8 @@
-// builder-model.test.mts — app/ui/builder-model.mts, the Suit Builder's pure logic: the collapsed sections'
-// summaries, the Advanced fields' validation messages, a resist tile's outcome, the result's other-changes
-// badges and after-the-change values, the compare table's differing rows and best values, and a saved run's
-// label, badges and the three-run compare limit. Lives in app/ for the reason app/ui-render.test.mts gives.
-// Tags: [fast]. Run: node --test app/builder-model.test.mts
+// builder-model.test.mts — `app/ui/builder-model.mts`, the Suit Builder's pure logic.
+//
+// `app/ui/builder-model.mts`, the Suit Builder's pure logic: the one-line summaries collapsed panel sections show (weights heaviest first with equal resists folded into "each resist", requirements with soft ones marked, the candidate pool, the Advanced knobs), the Advanced fields' validation messages with the allowed range ("Enter a whole number from 1 to 10,000.") and that the page's limits equal the server's `OPTS_LIMITS`, which field a server refusal names, a resist tile's outcome line (short, meets, at cap, over cap), the result's other-changes badges (gains first, missed requirements as losses), "after the change" values and pool estimates, the compare table's differing piece cells, best totals (past the cap counts as the cap) and hidden-rows note, the three-run compare limit, and a saved run's automatic label and badges, and the Weapons chip and summary wording. All `[fast]`.
+//
+// Lives in app/ for the reason app/ui-render.test.mts gives.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";

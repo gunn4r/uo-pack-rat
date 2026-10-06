@@ -1,15 +1,8 @@
-// electron-guards.test.mts — the shell's guards, from the phase-7 review. Two kinds of check live
-// here, and the split is deliberate. `electron/host-args.mts`, `electron/navigation.mts` and
-// `electron/pending-calls.mts` hold the decisions that stand between the server child's wire messages
-// or the page and an OS call (and the registry that bounds one in flight), so those get real unit
-// tests with real forged values. Everything else in `electron/main.mts` is unreachable from
-// `node:test` — that file imports `electron` at the top level and only loads inside a real Electron
-// process — so it gets source-level assertions in the `scripts/packaging.test.mts` idiom: they pin
-// the *presence* of each guard and that its call site routes through the tested decision, while
-// `scripts/shell-smoke.test.mts` proves the file as a whole still boots. A source pin cannot prove
-// what a guard decides, so a decision that matters belongs in one of the pure modules, not here.
-// All `[fast]`: reading two source files and calling a handful of pure functions costs nothing, and
-// these are exactly the checks that should run on every `--fast` pass.
+// electron-guards.test.mts — the Electron shell's guards, from the phase-7 review: unit tests of the pure decisions and source-level checks on `electron/main.mts`.
+//
+// the Electron shell's guards: real unit tests of the pure decisions in `electron/host-args.mts` (an `openPath` discriminator mapped to the two known folders, never a path from the message; a dialog title coerced to a short single line), `electron/navigation.mts` (navigation kept on the local server's origin, external links only over https, at most 2048 characters and one a second), `electron/pending-calls.mts` (a host call answered once, or expiring with a 504) and `electron/restart-policy.mts` (a second crash soon after a restart gives up), plus source-level checks on `electron/main.mts`, which cannot load outside Electron: every permission, device request and the spellchecker denied, every `webContents` routed through those decisions, DevTools off in a packaged build unless `--devtools` is passed and documented in `electron/README.md`, the shell's log folder and file created `0700`/`0600`. All `[fast]`.
+//
+// The split is deliberate. The pure modules hold the decisions that stand between the server child's wire messages or the page and an OS call (and the registry that bounds one in flight), so they get real unit tests with real forged values. electron/main.mts imports `electron` at the top level and only loads inside a real Electron process, so it gets source-level assertions in the scripts/packaging.test.mts idiom: they pin the presence of each guard and that its call site routes through the tested decision, while scripts/shell-smoke.test.mts proves the file as a whole still boots. A source pin cannot prove what a guard decides, so a decision that matters belongs in one of the pure modules, not here. All [fast] because these are exactly the checks that should run on every --fast pass.
 import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";

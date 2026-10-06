@@ -1,6 +1,8 @@
-// theme.test.mts — app/ui/theme.mts's pure resolution: which theme family and light/dark mode the page
-// draws for a stored ui-prefs choice. The live prefers-color-scheme follow and the attributes on <html>
-// are checked in the real window by scripts/ui-contrast.test.mts, which renders both modes.
+// theme.test.mts — `app/ui/theme.mts`'s pure look resolution and `app/ui/items.mts`'s `rarityToken`.
+//
+// `app/ui/theme.mts`'s pure look resolution (`resolveMode`: light and dark are fixed, System follows the OS, a missing or unknown choice reads as System; `resolveTheme`: only a theme family whose tokens ship is applied) and `app/ui/items.mts`'s `rarityToken` (every tier in `app/rules/uoalive.json` maps to a `--rarity-*` token defined in both mode blocks of `app/ui/tokens.css`; an unknown tier maps to nothing).
+//
+// The live prefers-color-scheme follow and the attributes on <html> are checked in the real window by scripts/ui-contrast.test.mts, which renders both modes.
 import test from "node:test";
 import assert from "node:assert/strict";
 import { resolveMode, resolveTheme, resolveAppearance } from "./ui/theme.mts";

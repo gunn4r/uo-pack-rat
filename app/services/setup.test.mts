@@ -1,4 +1,6 @@
-// setup.test.mts — app/services/setup.mts on its own, over the repo's own adapters/: the ids it ships, which bridge runs trips, an adapter folder added at run time seen at once, and the data-folder check (none under --demo, the auto-detected folders only with no client set). Tags: [fast]. Run: node --test app/services/setup.test.mts
+// setup.test.mts — `app/services/setup.mts` on its own, over copies of the repo's adapters.
+//
+// `app/services/setup.mts` over copies of the repo's adapters: the shipped ids, an adapter folder added at run time seen at once, which bridge runs trips, and the data-folder check (none under `--demo`, candidates asked only with no client set). All `[fast]`.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { cpSync, mkdtempSync } from "node:fs";

@@ -1,7 +1,8 @@
-// ui-inventory.test.mts — app/ui/inv-model.mts, the Inventory screen's pure rules: the query string a
-// filter state sends, the active-filter tokens (wording, removal, the empty-result sentence), the counts
-// and plurals in the strip and footer, the column groups, the virtual table's row window and chunk
-// fetches, and the table's keyboard model. The rendered screen is driven by scripts/ui-state.test.mts.
+// ui-inventory.test.mts — `app/ui/inv-model.mts`, the Inventory screen's pure rules.
+//
+// `app/ui/inv-model.mts`, the Inventory screen's pure rules: `plural` ("1 stack", "1,204 pieces"), `queryParams` round-tripping a full filter state through the server's `parseItemQuery`, the active-filter tokens (their words, each removing only itself, the search counted as a filter and cleared by Clear all, the Rarity at most token and its empty-result sentence), the strip's "45 of 160 stacks match" and the footer's count fact, the empty-result sentence (the one filter that excludes everything alone, a single filter being its own cause, else the combination), tier and rule labels, the nine default columns and the column picker's groups and order, the virtual table's row window (clamped at the end) and chunk fetches, and the table's keyboard model (arrows, Home/End, Page keys, Enter/Space, Esc). All `[fast]`.
+//
+// The rendered screen is driven by scripts/ui-state.test.mts.
 import test from "node:test";
 import assert from "node:assert/strict";
 import { plural, queryParams, withFixed, activeFilters, clearAll, matchLine, countFact, emptyCause, rowWindow, chunksToFetch, gridKey, colGroup, groupColumns, DEFAULT_COLS, shortTier, propRuleLabel, slayerTree, slayerLabel } from "./ui/inv-model.mts";

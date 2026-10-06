@@ -1,5 +1,6 @@
-// properties.test.mts — vault-lib.mts's property registry (PROPERTIES): the lists derived from it, frozen as the literals
-// they replaced, and the shard rules files' cap keys checked against it. Tags are name prefixes: [smoke] [fast] [slow].
+// properties.test.mts — `app/vault-lib.mts`'s property registry (`PROPERTIES`): the lists derived from it, frozen as the literals they replaced.
+//
+// `[fast]`: `app/vault-lib.mts`'s property registry (`PROPERTIES`): `PROP_PATTERNS`, `PROP_LABELS`, `PROP_FULL`, `NOT_BUILDER_KEYS` and `item-query.mts`'s `EXTRA_COLS` each equal a frozen copy of the hand-written list they replaced (the patterns and the extra columns in order), the keys are unique, and every builtin `app/rules/*.json` caps only known property keys.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync, readdirSync } from "node:fs";

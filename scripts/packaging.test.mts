@@ -1,6 +1,6 @@
-// packaging.test.mts — the electron-builder config is product interface: which files reach a
-// player's machine, under which target, with which identifiers. It lives in package.json (JSON,
-// so it needs no YAML parser to check) and these tests are what keep it honest.
+// packaging.test.mts — the electron-builder config, which is product interface: which files reach a player's machine, under which target, with which identifiers.
+//
+// It lives in package.json (JSON, so it needs no YAML parser to check) and these tests are what keep it honest. It also checks that ELECTRON_DISABLE_SANDBOX and --no-sandbox are never set, in the CI workflow or in any shipped or test file.
 import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync, readdirSync } from "node:fs";

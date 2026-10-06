@@ -1,4 +1,6 @@
-// settings.test.mts — app/services/settings.mts on its own: an unknown client adapter and a shard that does not load are dropped in memory only, with a warning each; a save writes only the fields it changed, so a fallback is never persisted, and a new client clears the ignored one; a shard switch hands the rules over; the bridge adapter defaults to tazuo. Tags: [fast]. Run: node --test app/services/settings.test.mts
+// settings.test.mts — `app/services/settings.mts` on its own: fallbacks kept in memory, saves that write only their own fields, and a shard switch.
+//
+// `app/services/settings.mts`: an unknown client adapter and a shard that does not load dropped in memory only with their warnings, a save writing only its own fields (a fallback never persisted, a new client clearing the ignored one), a shard switch handing its rules to vault-lib, the bridge adapter's tazuo default. All `[fast]`.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";

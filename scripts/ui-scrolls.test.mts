@@ -1,8 +1,8 @@
-// ui-scrolls.test.mts — [slow]: the Inventory's Scrolls view (issue #181) in the real Electron window at 1024 × 768,
-// over the demo scans with more scrolls in Kestrel's chest (scripts/scrolls-fixture.mts) on a writable --data folder:
-// the power scrolls per skill with their counts and the next roll-up, the Scrolls of Transcendence tab's exact binder
-// plan, the detail opened and stepped by keyboard with its items' tooltips, and a count cell landing on exactly those
-// scrolls in the Items view. Skipped when electron or playwright is absent, or under TEST_SKIP_ELECTRON.
+// ui-scrolls.test.mts — [slow]: the Inventory's Scrolls view (issue #181) in the real Electron window.
+//
+// `[slow]`: the Inventory's Scrolls view (issue #181) in the real Electron window at 1024 × 768, over the demo scans with more scrolls in Kestrel's chest (`scripts/scrolls-fixture.mts`: 12 Meditation 110s that bind now, Provocation 5 × 110 and 1 × 115, Archery 3 × 115, Meditation Transcendence 1.0 + 0.6 + 0.4 + 0.3, 18 × 0.3 Tactics that can only bind past 5.0, and an empty Scroll Binder, written into a temp `--data` folder's `scans/` so the committed demo fixtures and every other test's counts stay as they are): the third option of the view switch and `#/scrolls`, the tab counts and the facts line, one row per skill in roll-up order with its level counts (a zero blank), the next roll-up and "N more", the Ready badge and Bind everything only on a row that binds, the meter's label, the skill filter and the footer's "1 of 6 skills", with the facts line (a live region) left undrawn while typing; the detail opened with Enter (roll-up, the scrolls by place with who scanned them, Show in Inventory and no Grab), an item tooltip on its rows, ↓ stepping to the next skill and Esc closing it with the focus back on the row; the Scrolls of Transcendence tab (`#/scrolls/sot`) with its warning, chips, total, the exact "Bind 1.0 + 0.6 + 0.4 → 2.0" and "0.8 short of 2.0" plans, the overshoot "Bind 17 × 0.3 → 5.0 (0.1 lost)" with its 18 scrolls on one "18 × 0.3" chip with its meter's value held at 5 and its text "5.4 points", and the meter's text; and a count cell landing on the Items view searching for exactly those five scrolls.
+//
+// Skipped when electron or playwright is absent, or under TEST_SKIP_ELECTRON.
 import test from "node:test";
 import assert from "node:assert/strict";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";

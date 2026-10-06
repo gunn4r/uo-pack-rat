@@ -1,9 +1,14 @@
-"""test_bridges.py -- both bridges' main() loops run end to end against a fake client
-(fake_clients.py): lines appear in the queue file while the bridge runs, the fake clock moves only
-when the script pauses, and the test reads back what the bridge did in the world and wrote to its
-status file. Covers what the pure-block tests in test_adapters.py cannot reach: the heartbeat during
-long actions, refusals reaching the page under the command's own id, and the container chain checks
-that decide what may be double-clicked.
+"""test_bridges.py -- both bridges' main() loops run end to end against a fake client.
+
+The fake client is fake_clients.py: lines appear in the queue file while the bridge runs, the fake clock moves only when the script pauses (so an 8-second highlight costs nothing), and the test reads back what the bridge did in the world and wrote to its status file. Covers what the pure-block tests in test_adapters.py cannot reach: the heartbeat during long actions, refusals reaching the page under the command's own id, and the container chain checks that decide what may be double-clicked.
+
+Covers: the status heartbeat never lapses more than 3 seconds during a highlight or a walk that never arrives; a backpack grab needs no walk; a Grab all is never refused by the chain check; a stranger's pack (as root or tucked after a real chest), a book or a piece of armour, and a chain that does not nest are refused without being opened; an expired command is recorded under its own id with the reason; and a duplicate line in one read runs once.
+
+TazUO trips: takes at an explicit drop spot, puts only of the bridge's carried set, the stop flag between steps (a Stop pressed while a trip waited ends it before its first step, a flag left over from before is cleared, a directory in its place wedges nothing), the backpack item and weight cut-off (`partial`), untaken items' puts skipped, takes refused from your own backpack or bank, and puts refused into your own pack, a stranger's pack, a corpse, trash, a container whose name has not loaded or a blacklisted container. Issue #122: a put of an item that cannot stack reads none of the container's contents while a stackable one merges through `FindTypeAll` (only stacks directly in the container count), falling back to reading every child when the call is missing or fails, and an unreadable stackable flag means stackable. Issue #131: a `putAway` trip refused whole without the panel's shared variable naming that container (missing, not a consent, expired, another container, or a container not in the pack), and with it putting only what lies directly in the picked container (an item in a bag inside it refused; the bag picked next gives up its own; a bag dragged out of the pack mid-trip stopping the remaining puts), never a bag, a blessed or insured item put like any other, nothing joining the carried set. Issue #155: an item a failed trip left carried is put away from the picked bag it was dropped in (and leaves the carried set), while one dropped in a bag the player did not pick is still refused as no longer at the top of the backpack.
+
+The TazUO bridge's window closing (2.15.0, issue #196): a trip or a Grab closes the windows it opened, innermost first, and only after the last move; a window already open, the backpack, and a chest holding a window the player opened stay open; a Highlight closes nothing; a stopped trip's result and the stopped marker are written before the first close, and after a Stop closing gives up 0.5 s after the Stop was first seen; a stopped or failed command still closes what it opened; a client without `GetContainerGump()` or `Dispose()` gets one message per container per bridge run; and a failing message or an interrupt mid-close never breaks the next command.
+
+With `PACKRAT_TEST_OUTPUTS` set to a folder, `fake_clients.py`'s `run_script` copies every bridge `status.json` a script writes into it (statuses that differ only in their timestamps kept once), for `app/adapter-outputs.test.mts`.
 
 Run: python3 adapters/test_bridges.py  (app/adapters.test.mts also spawns it, so `npm test` does).
 """

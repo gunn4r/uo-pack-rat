@@ -1,8 +1,8 @@
-// manual-model.test.mts — app/ui/manual-model.mts, the Suit Builder Manual mode's pure logic (issue #12): a total
-// capped with what is wasted and the line under it, the caps in paperdoll terms, the picker's slot filter, the
-// one-hand/two-hand rule against the optimizer's own, a saved suit read back, the slots whose piece left the scans,
-// and a picker row's delta. Lives in app/ for the reason app/ui-render.test.mts gives.
-// Tags: [fast]. Run: node --test app/manual-model.test.mts
+// manual-model.test.mts — `app/ui/manual-model.mts`, the Suit Builder Manual mode's pure logic (issue #12).
+//
+// `app/ui/manual-model.mts`, the Suit Builder Manual mode's pure logic (issue #12): the slot groups holding every slot the classifier knows (`GEAR_SLOTS`) exactly once and in its order, the undo history (undo, redo, 40 steps kept, a new change dropping the redo branch, a change that changes nothing not recorded) and the undo and redo keys per platform, a total past its cap shown at the cap with "+N wasted" and the line under each total, resists in paperdoll terms with the Resisting Spells bonus, a race's cap and the player's override, the picker's slot filter (the slot itself, so the two-handed slot lists two-handers and shields), the one-hand/two-hand rule checked against the optimizer's own `optIsValidAssignment` (it clears exactly what the optimizer would refuse), a saved suit read back (known slots, whole serials), the slots whose serial no longer resolves and a saved piece the classifier has since moved going to its slot now (`reslotted`, with the notice for one dropped because its slot is taken), `LAYER_TO_SLOT` against the paperdoll layer table (issue #202), and a picker row's delta (gains and losses apart, counted up to the cap, a change wholly past the cap muted, the profile's floor and weight properties after the strip's). All `[fast]`.
+//
+// Lives in app/ for the reason app/ui-render.test.mts gives.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";

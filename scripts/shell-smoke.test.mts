@@ -1,8 +1,8 @@
-// shell-smoke.test.mts — proves the packaged Electron shell (electron/main.mts +
-// electron/server-entry.mts) actually boots: forks the server, loads the page over the token-bearing
-// local server, and exits clean. `[slow]` — it launches a real Electron binary, tens of seconds even
-// when everything works. Skipped when electron isn't installed (a plain `npm test` clone/CI box) or
-// when TEST_SKIP_ELECTRON=1 is set, same shape as TEST_SKIP_SLOW for the other `[slow]` cases.
+// shell-smoke.test.mts — proves the packaged Electron shell (`electron/main.mts` + `electron/server-entry.mts`) boots, serves the page and exits clean.
+//
+// `[slow]`: launches the real `electron/` app (`electron . --smoke --demo --data <tmp>`) and asserts it boots, forks the server, loads the page over the token-bearing local server, and exits 0 with `SMOKE OK <port>` in stdout, within a 60 s harness timeout (the shell's own internal smoke check gives up after 30 s; a shell still running at 60 s is SIGKILLed, so it fails once instead of also tripping the watchdog; the result is read on `close`, not `exit`, so the last stdout chunk is never lost to a shell that leaves right after writing it). The shell exits through Node's direct exit because Chromium's native teardown on a busy macOS machine can outlast the timeout on its own (issue #106, `electron/README.md`). Skipped with a note when `electron` isn't installed (a plain clone/CI box without the dev dependency) or when `TEST_SKIP_ELECTRON=1` is set — same shape as `TEST_SKIP_SLOW` for the other `[slow]` cases, for a machine where launching a real Electron binary isn't practical.
+//
+// [slow] because it launches a real Electron binary, tens of seconds even when everything works. To skip it: TEST_SKIP_ELECTRON=1 npm test
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { mkdtempSync, rmSync } from "node:fs";
