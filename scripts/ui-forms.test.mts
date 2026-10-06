@@ -266,7 +266,7 @@ test("[slow] Settings: sections with the client warning, theme and appearance, R
     // No section nav while the page is this short: the four sections' headings, and the client warning beside
     // Game client's.
     assert.equal(await page.locator("#settings-nav").count(), 0);
-    assert.deepEqual(await page.locator("#settings-body .set-section h2").allInnerTexts(), ["General", "Game client", "Data", "Updates"]);
+    assert.deepEqual(await page.locator("#settings-body .set-section h2").allInnerTexts(), ["General", "Game client", "Data", "AI assistants (MCP)", "Updates"]);
     assert.equal(await page.locator("#set-client .set-section-head .dot.warn[aria-label='needs attention']").count(), 1, "no client set up: a warning dot on Game client");
     assert.equal(await page.locator("#settings-body .dot.warn").count(), 1, "and on no other section");
     // The Logs path is the data folder's logs folder in the platform's own separators (Windows is where it matters).
@@ -319,6 +319,51 @@ test("[slow] Settings: sections with the client warning, theme and appearance, R
     await page.click("#set-check-updates");
     await page.waitForSelector("#set-updates .msg.ok");
     assert.equal(await page.locator("#set-updates .msg.ok").innerText(), "You have the latest version, 0.1.0.");
+    assert.deepEqual(errors, []);
+  } finally {
+    await app.close();
+    rmSync(dataDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
+  }
+});
+
+// Issue #211: the MCP server's switches, and how to connect a client while it runs. mcp.json asks for any free port, so
+// the test never collides with a Pack Rat running on the machine.
+test("[slow] Settings › AI assistants (MCP): the switch opens the server, the token stays hidden until Show, New token asks first", async (t) => {
+  const why = unavailable();
+  if (why) return t.skip(why);
+  const dataDir = mkdtempSync(join(tmpdir(), "packrat-forms-mcp-"));
+  setupDone(dataDir);
+  writeFileSync(join(dataDir, "mcp.json"), JSON.stringify({ version: 1, enabled: false, allowActions: false, port: 0, token: "11111111-2222-3333-4444-555555555555" }));
+  const mcp = (): { enabled: boolean; allowActions: boolean; token: string } => JSON.parse(readFileSync(join(dataDir, "mcp.json"), "utf8"));
+  const { app, page, errors } = await launch(dataDir);
+  try {
+    await page.locator("#inv-table tbody tr.item").first().waitFor({ timeout: 30_000 });
+    await page.evaluate(() => { location.hash = "#/settings"; });
+    await page.waitForSelector("#set-mcp-on");
+    await page.locator("#set-mcp").scrollIntoViewIfNeeded();
+    assert.equal(await page.locator("#set-mcp-card .set-row").count(), 2, "off: only the two switches");
+    await page.locator("#set-mcp-card label.check").first().click();
+    await page.waitForSelector("#set-mcp-url");
+    assert.equal(mcp().enabled, true);
+    const url = await page.locator("#set-mcp-url").innerText();
+    assert.match(url, /^http:\/\/127\.0\.0\.1:\d+\/mcp$/);
+    assert.doesNotMatch(await page.locator("#set-mcp-card").innerText(), /11111111/, "the token is hidden");
+    assert.match(await page.locator("#set-mcp-command").innerText(), new RegExp(`^claude mcp add --transport http --scope user pack-rat ${url.replace(/[.]/g, "\\.")} --header`));
+    await page.click("#set-mcp-show");
+    await page.waitForFunction(() => document.querySelector("#set-mcp-token")?.textContent === "11111111-2222-3333-4444-555555555555");
+    assert.match(await page.locator("#set-mcp-json").innerText(), /"Authorization": "Bearer 11111111-2222-3333-4444-555555555555"/);
+    await page.click("#set-mcp-new-token");
+    await page.waitForSelector("dialog.dialog[open]");
+    assert.equal(await page.locator("dialog.dialog[open] h2").innerText(), "Make a new token?");
+    await page.locator("dialog.dialog[open] [data-confirm]").click();
+    await page.waitForFunction(() => document.querySelector("#set-mcp-token")?.textContent !== "11111111-2222-3333-4444-555555555555");
+    assert.equal(await page.locator("#set-mcp-token").innerText(), mcp().token);
+    await page.locator("#set-mcp-card label.check").nth(1).click();
+    await page.waitForFunction(() => (document.querySelector("#set-mcp-actions") as HTMLInputElement | null)?.checked === true);
+    assert.equal(mcp().allowActions, true);
+    await page.locator("#set-mcp-card label.check").first().click();
+    await page.waitForFunction(() => !document.querySelector("#set-mcp-url"));
+    assert.equal(mcp().enabled, false);
     assert.deepEqual(errors, []);
   } finally {
     await app.close();
