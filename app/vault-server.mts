@@ -72,6 +72,8 @@
 //         to putAway, which queues the first trip of the plan for the container the player picked like POST /api/organize/trip
 //         and answers in bridge/<adapter>/putaway.json; app/put-away.mts) ·
 //         GET|PUT /api/ui-prefs (<data>/ui-prefs.json: {cols?, colsVersion?, colWidths?, sheetProps?, theme?, appearance?, sidebar?, density?, areaLabels?, mapDrawerWidth?, builderMode?, manualFor?, manualSuit?, manualBuffs?, autoBuffs?, buffSkills?, buffsCount?, dismissedUpdate?, copiedScanner?}, the page's view choices)
+//         GET /api/mcp -> {config: {enabled, allowActions, port, token}, live: {listening, port, portBusy}} · PUT /api/mcp {enabled?, allowActions?}
+//         · POST /api/mcp/token {} (rotate) — the built-in MCP server's settings (<data>/mcp.json, app/mcp.mts; it listens on its own port)
 //         POST /api/bridge {action, serial, name, chain: [root…parent], pos|null} (queue for packrat-bridge.py) · GET /api/bridge/status · POST /api/bridge/stop {} (Organize's Stop: writes <data>/bridge/stop, which packrat-bridge.py checks between a trip's steps)
 //         GET /api/events — SSE, one stream shared by every connected client (not per-job like the
 //         optimize events above): hello {ok, watching: [adapter ids]} on connect, inventory
@@ -138,6 +140,7 @@ import { GEAR_SLOTS } from "./vault-lib.mts";
 import { isBuffList, isBuffListsByCharacter, isBuffSkillsByCharacter, isRunBuffs, normalizeBuffs, normalizeBuffListsByCharacter } from "./buffs.mts";
 import { startWatcher, jsonErrorReason, MAX_INBOX_BYTES, type StartWatcherOptions, type WatcherHandle } from "./watcher.mts";
 import { parsePastedScan, writeScanToInbox } from "./import.mts";
+import { createMcp } from "./mcp.mts";
 import { moveAside, writeFileAtomic } from "./atomic-write.mts";
 import { addPanelAutostart, panelPrefsError, readPanelPrefs, tazuoRunning, writePanelPrefs } from "./tazuo-panel.mts";
 import { queueTrip, writeBridgeStop } from "./bridge-trip.mts";
@@ -1426,6 +1429,12 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
     return run;
   }
 
+  // The built-in MCP server (app/mcp.mts, issue #211): its own listener and token, opened once this server listens
+  // (when mcp.json says on) and on PUT /api/mcp; its tools call this server's routes over loopback.
+  const mcp = createMcp({ file: CONFIG.paths.mcp, version: PACKAGE_JSON.version, appPort: () => (server.address() as AddressInfo).port, appToken: CONFIG.token,
+    log: (line) => safeAppendLog(CONFIG.paths.log, line.endsWith("\n") ? line : `${new Date().toISOString()} ${line}\n`) });
+  const mcpState = () => { const { config: c, live } = mcp.state(); return { ok: true, config: { enabled: c.enabled, allowActions: c.allowActions, port: c.port, token: c.token }, live }; };
+
   const server = http.createServer(async (req, res) => {
     const url = new URL(req.url!, `http://localhost:${CONFIG.port}`);   // req.url is always set for a real request this server routes (Node only leaves it undefined for CONNECT, which no route here handles)
     try {
@@ -2122,6 +2131,22 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
           return streamJob(job, res);
         }
       }
+      if (req.method === "GET" && url.pathname === "/api/mcp") return send(res, 200, mcpState());
+      if (req.method === "PUT" && url.pathname === "/api/mcp") {
+        // Settings' two switches; the port and token are not set here (the token only by POST /api/mcp/token).
+        const body = asObject(await readBody(req, { limit: 8e3 }));
+        const unknown = Object.keys(body).find((k) => k !== "enabled" && k !== "allowActions");
+        if (unknown) return send(res, 400, { ok: false, error: `${short(unknown)} is not an MCP setting` });
+        const bad = (["enabled", "allowActions"] as const).find((k) => k in body && typeof body[k] !== "boolean");
+        if (bad) return send(res, 400, { ok: false, error: `${bad} must be a boolean` });
+        await mcp.update(body as { enabled?: boolean; allowActions?: boolean });
+        return send(res, 200, mcpState());
+      }
+      if (req.method === "POST" && url.pathname === "/api/mcp/token") {
+        asObject(await readBody(req, { limit: 8e3 }));
+        mcp.rotateToken();
+        return send(res, 200, mcpState());
+      }
       if (req.method === "POST" && url.pathname === "/api/bridge") {
         // queue a command for packrat-bridge.py: {action, serial, name, chain: [root…parent], pos|null}
         const cmd = asObject(await readBody(req, { limit: 64e3, tooLargeMsg: "bridge command too large" }));
@@ -2461,6 +2486,7 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
     server.listen(CONFIG.port, "127.0.0.1");
   });
   startWatchers();
+  await mcp.start();
   pruneData("startup").catch((e: Error) => safeAppendLog(CONFIG.paths.log, `${new Date().toISOString()} retention (startup) failed: ${e.stack || e.message}\n`));
   const port = (server.address() as AddressInfo).port;
   const url = `http://localhost:${port}`;
@@ -2472,7 +2498,7 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
   }
   return {
     server, port, url,
-    close: () => new Promise<void>((ok) => {
+    close: () => mcp.close().then(() => new Promise<void>((ok) => {
       for (const t of timers) clearTimeout(t);   // clearTimeout also clears intervals (same id space)
       timers.clear();
       // closing first: a build still running when the server quits ends because of the quit, and its
@@ -2494,7 +2520,7 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
       // controlled shutdown, so passing the SAME function through an erased cast changes nothing at
       // runtime.
       server.close(ok as (err?: Error) => void);
-    }),
+    })),
   };
 }
 

@@ -38,6 +38,7 @@ export interface ConfigPaths {
   adaptersDir: string;
   inbox: string;
   inboxFor: (adapter: string) => string;
+  mcp: string;
 }
 
 export interface Config {
@@ -129,6 +130,8 @@ export function resolveConfig(argv: string[] = process.argv.slice(2), env: NodeJ
       // failing to parse/validate is computed by app/watcher.mts itself (join(inboxDir, "rejected")),
       // not exposed here — nothing outside the watcher needs it.
       inbox, inboxFor: (adapter: string) => join(inbox, adapter),
+      // mcp: the MCP server's settings and token (app/mcp.mts), written only when it is first turned on.
+      mcp: join(dataDir, "mcp.json"),
     },
   };
 }
