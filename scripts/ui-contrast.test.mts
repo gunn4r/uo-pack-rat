@@ -142,8 +142,10 @@ const SCENES: Scene[] = [
   { name: "builder result", enter: async (p) => {
     await route(p, "#/builder", "#b-run");
     await p.waitForFunction(() => document.querySelector<HTMLSelectElement>("#b-char")?.value, undefined, { timeout: 10_000 });
-    await p.click("#b-sec-adv .b-sec-head button");   // Advanced: a short budget, and other suits so that card draws too
-    await p.fill("#b-budget", "2"); await p.fill("#b-altcount", "5"); await p.fill("#b-alttol", "40");
+    // Advanced: other suits, so that card draws too. The budget leaves a slow runner time to find the two other suits
+    // "builder compare suits" ticks (issue #240); a fast runner finishes well inside it.
+    await p.click("#b-sec-adv .b-sec-head button");
+    await p.fill("#b-budget", "10"); await p.fill("#b-altcount", "5"); await p.fill("#b-alttol", "40");
     await p.click("#b-sec-adv .b-sec-head button");
     await p.click("#b-run");
     await p.waitForFunction(() => !document.querySelector<HTMLButtonElement>("#b-run")?.disabled && document.querySelector("#b-result h2"), undefined, { timeout: 60_000 });
