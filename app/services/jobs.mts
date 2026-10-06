@@ -2,7 +2,7 @@
 import type http from "node:http";
 import { Worker } from "node:worker_threads";
 import { randomUUID } from "node:crypto";
-import { stripOpts, SOLVER_VERSION, type RunOpts } from "../runs-lib.mts";
+import { runRecord, stripOpts, type RunOpts, type RunSettingsRaw } from "../runs-lib.mts";
 import type { WorkerMessage, WorkerDoneMessage } from "../optimize-worker.mts";
 import type { OptResult, ExactSolveResult, SolveProgress } from "../exact-solver.mts";
 import { sse } from "./events.mts";
@@ -161,11 +161,10 @@ export function createJobsService({ coreUrl, timings = {}, runStore, log, create
   }
   function saveRun(job: Job) {
     const meta = job.meta || {};
-    const run = { id: job.id, key: job.key, character: meta.character || "?", createdAt: new Date().toISOString(), label: "",
-      schemaVersion: 1, solverVersion: SOLVER_VERSION,
-      settings: meta.settings || {}, inventoryStamp: meta.inventoryStamp || null, poolSize: meta.poolSize ?? null, skipped: meta.skipped || {},
-      opts: stripOpts(job.input.opts), budgetMs: job.input.opts.timeBudgetMs ?? null, explored: job.progress?.explored ?? null,
-      result: job.result, ms: job.ms };
+    const run = runRecord({ id: job.id, key: job.key, character: (meta.character as string) || "?", createdAt: new Date().toISOString(),
+      settings: (meta.settings as RunSettingsRaw) || {}, inventoryStamp: meta.inventoryStamp || null, poolSize: (meta.poolSize as number) ?? null, skipped: meta.skipped || {},
+      search: { opts: stripOpts(job.input.opts), budgetMs: job.input.opts.timeBudgetMs ?? null, explored: job.progress?.explored ?? null },
+      result: job.result, ms: job.ms });
     runStore.write(run);
     return run;
   }

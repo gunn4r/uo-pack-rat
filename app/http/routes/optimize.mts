@@ -1,16 +1,16 @@
 // optimize.mts — the Suit Builder's builds and saved runs: POST /api/optimize, the per-job /api/optimize/<id>/events|cancel|status, POST|GET /api/runs and GET|PUT|DELETE /api/runs/<id>.
 import { randomUUID } from "node:crypto";
 import http from "node:http";
-import { isRunBuffs } from "../../buffs.mts";
-import { isBoundedInt, isBoundedString, MAX_SERIAL, short } from "../../guards.mts";
+import { isBoundedInt, isBoundedString, short } from "../../guards.mts";
 import { optionalSlotsFor } from "../../mip.mts";
 import { readBody } from "../../read-body.mts";
 import { runKey, reusableRun, runSummary, manualRun, type RunOpts, type SavedRun } from "../../runs-lib.mts";
+import { OPTS_LIMITS, RUN_DEFAULTS, runSettingsError, type RunSettings } from "../../run-settings.mts";
 import type { RunBody, RunsListBody, RunSummary } from "../../runs-types.mts";
 import { sse } from "../../services/events.mts";
 import type { Job } from "../../services/jobs.mts";
 import { isManualSuit } from "../../store/ui-prefs.mts";
-import { GEAR_SLOTS, buildPools, excludeWeaponsError, resistCapsError, toOptItem, type Inventory, type OptItem } from "../../vault-lib.mts";
+import { GEAR_SLOTS, buildPools, toOptItem, type Inventory, type OptItem } from "../../vault-lib.mts";
 import { send, asObject, SSE_HEADERS } from "../respond.mts";
 import { NEXT, type Route } from "../router.mts";
 import type { ServerContext } from "../context.mts";
@@ -58,49 +58,13 @@ function currentError(current: unknown): string | null {
   }
   return null;
 }
-// The search options a caller may set, and the range each one may sit in. An allowlist rather than a
-// shape check, so an unknown key is refused rather than handed to the solver — which also means an
-// own `__proto__` key out of JSON.parse never reaches the Object.assign that builds fullOpts.
+// The search options a caller may set, and the range each one may sit in (app/run-settings.mts OPTS_LIMITS). An
+// allowlist rather than a shape check, so an unknown key is refused rather than handed to the solver — which also means
+// an own `__proto__` key out of JSON.parse never reaches the Object.assign that builds fullOpts.
 // optionalSlots/warmStart are set by the route itself after this runs; seed/restarts/timeBudgetMs/
 // exact/alternatives are what app/ui/builder.mts actually sends.
-const OPTS_MAX_TIME_BUDGET_MS = 60 * 60 * 1000;
-// The same ranges as numbers the page can show: the Suit Builder's Advanced fields validate against a copy
-// (app/ui/builder-model.mts's SOLVER_LIMITS; app/server.test.mts checks the two agree).
-export const OPTS_LIMITS = { restarts: { min: 1, max: 10000 }, timeBudgetMs: { min: 0, max: OPTS_MAX_TIME_BUDGET_MS }, alternativesCount: { min: 0, max: 100 } } as const;
-// A saved run's settings snapshot (ui/runs.mts settingsSnapshot), as POST /api/runs takes it: only its known fields,
-// each of its type and in a sane range, property maps with plain keys (no __proto__), and the resist caps, weapon
-// exclusions and buffs held to their own rules.
-const RUN_SETTING_FLAGS = ["allowGargoyle", "medOnly", "allowOthersWorn", "ubwsAnyWeapon", "exact"];
-// Each search knob's range, as the Suit Builder's Advanced fields hold them (builder-model.mts KNOB_RANGES, from
-// OPTS_LIMITS): [min, max, whole number].
-const RUN_SETTING_NUMBERS: Record<string, [number, number, boolean]> = {
-  strLimit: [1, 1000, true], restarts: [OPTS_LIMITS.restarts.min, OPTS_LIMITS.restarts.max, true], budgetMs: [0, OPTS_MAX_TIME_BUDGET_MS, true],
-  altCount: [OPTS_LIMITS.alternativesCount.min, OPTS_LIMITS.alternativesCount.max, true], altTol: [0, 1e9, false],
-};
-const RUN_SETTING_LISTS = ["softFloors", "lockedSlots", "excludeTags", "excludeRoots", "excludeSkills"];
-const plainKey = (k: string): boolean => isBoundedString(k, 64) && !["__proto__", "constructor", "prototype"].includes(k);
-function runSettingsError(st: Record<string, unknown>): string | null {
-  for (const [k, v] of Object.entries(st)) {
-    if (v == null) continue;
-    if (k === "floors" || k === "weights") {
-      if (typeof v !== "object" || Array.isArray(v)) return `settings.${k} must be an object`;
-      const bad = Object.entries(v).find(([p, n]) => !plainKey(p) || typeof n !== "number" || !Number.isFinite(n) || Math.abs(n) > 1e6);
-      if (bad) return `settings.${k}.${short(bad[0])} must be a number between -1000000 and 1000000`;
-    } else if (RUN_SETTING_FLAGS.includes(k)) { if (typeof v !== "boolean") return `settings.${k} must be a boolean`; }
-    else if (Object.hasOwn(RUN_SETTING_NUMBERS, k)) {
-      const [min, max, whole] = RUN_SETTING_NUMBERS[k]!;
-      if (typeof v !== "number" || !Number.isFinite(v) || v < min || v > max || (whole && !Number.isInteger(v))) return `settings.${k} must be a ${whole ? "whole " : ""}number from ${min} to ${max}`;
-    }
-    else if (RUN_SETTING_LISTS.includes(k)) {
-      if (!Array.isArray(v) || v.length > 200 || v.some((x) => !(isBoundedString(x, 64) || (k === "excludeRoots" && isBoundedInt(x, 0, MAX_SERIAL))))) return `settings.${k} must be a list of names`;
-    } else if (k === "race") { if (!["human", "elf", "gargoyle"].includes(v as string)) return "settings.race must be human, elf or gargoyle"; }
-    else if (k === "excludeWeapons") { const e = excludeWeaponsError(v, "settings.excludeWeapons"); if (e) return e; }
-    else if (k === "resistCaps") { const e = resistCapsError(v, "settings.resistCaps"); if (e) return e; }
-    else if (k === "buffs") { if (!isRunBuffs(v)) return "settings.buffs must list known buffs, each once and one form at most, with their numbers in range"; }
-    else return `settings.${short(k)} is not a run setting`;
-  }
-  return null;
-}
+export { OPTS_LIMITS };
+const OPTS_MAX_TIME_BUDGET_MS = OPTS_LIMITS.timeBudgetMs.max;
 function optsError(opts: Record<string, unknown>): string | null {
   for (const [k, v] of Object.entries(opts)) {
     switch (k) {
@@ -176,13 +140,10 @@ export function routes(ctx: ServerContext): Route[] {
       if (!meta || typeof meta !== "object" || Array.isArray(meta)) return send(res, 400, { ok: false, error: "meta must be an object" });
       meta = pickMeta(meta);
       if (JSON.stringify(meta).length > META_MAX_BYTES) return send(res, 400, { ok: false, error: "meta is too large" });
-      // The resist cap overrides a saved run is reopened and compared with (the page reads them back as the caps
-      // the run was built with), held to the rule profiles.json's are.
-      const badCaps = resistCapsError((meta.settings as Record<string, unknown> | undefined)?.resistCaps, "meta.settings.resistCaps");
-      if (badCaps) return send(res, 400, { ok: false, error: badCaps });
-      // …and the buffs it was planned with (app/buffs.mts), which it is reopened, labeled and compared with
-      const runBuffs = (meta.settings as Record<string, unknown> | undefined)?.buffs;
-      if (runBuffs != null && !isRunBuffs(runBuffs)) return send(res, 400, { ok: false, error: "meta.settings.buffs must list known buffs, each once and one form at most, with their numbers in range" });
+      // The settings snapshot the saved run keeps (the runs drawer labels, compares and reopens runs from it) and the
+      // pool settings: held to the one rule a manual run's settings are (app/run-settings.mts).
+      const badSettings = runSettingsError(meta.settings, "meta.settings") || runSettingsError(settings, "settings");
+      if (badSettings) return send(res, 400, { ok: false, error: badSettings });
       let skipped: Record<string, number> = {}, blocked: string[] = [];
       // The by-character form: the caller sends {character, settings} instead of building pools/current
       // itself, and the server runs buildPools() against the cached inventory — the same function and
@@ -200,35 +161,14 @@ export function routes(ctx: ServerContext): Route[] {
       if (character || fill) {
         // A `null` in any optional field (as a saved run's settings can carry — e.g. re-posted from
         // the runs drawer) means "use the default", exactly like an absent field, not "the value is
-        // null": normalise both to absent BEFORE validation, so the type checks below and the
-        // destructuring defaults treat null and undefined alike (post-review fix — null used to slip
-        // past `!= null` and then either reach buildPools as a literal `strLimit: null` or throw when
-        // an array field's null hit code expecting an array).
+        // null": runSettingsError skips it, and normalising both to absent here lets the destructuring
+        // defaults treat null and undefined alike (post-review fix — null used to reach buildPools as a
+        // literal `strLimit: null` or throw when an array field's null hit code expecting an array).
         const s = Object.fromEntries(Object.entries(settings || {}).filter(([, v]) => v != null));
-        const badWeapons = excludeWeaponsError(s.excludeWeapons, "settings.excludeWeapons");
-        if (badWeapons) return send(res, 400, { ok: false, error: badWeapons });
-        for (const f of ["excludeTags", "excludeRoots", "excludeSkills", "lockedSlots"] as const) {
-          if (s[f] != null && !Array.isArray(s[f])) return send(res, 400, { ok: false, error: `settings.${f} must be an array` });
-        }
-        for (const f of ["allowOthersWorn", "allowGargoyle", "medOnly", "ubwsAnyWeapon"] as const) {
-          if (s[f] != null && typeof s[f] !== "boolean") return send(res, 400, { ok: false, error: `settings.${f} must be a boolean` });
-        }
-        if (s.strLimit != null && typeof s.strLimit !== "number") return send(res, 400, { ok: false, error: "settings.strLimit must be a number" });
-        const badSettingsCaps = resistCapsError(s.resistCaps, "settings.resistCaps");
-        if (badSettingsCaps) return send(res, 400, { ok: false, error: badSettingsCaps });
-        // Every field of `s` was checked above (when present); this cast is the trust boundary the
-        // migration recipe describes — placed AFTER those checks, not instead of them. The four list
-        // fields are `unknown[]` because Array.isArray() is all that ran on them: nothing looked at
-        // their elements.
-        const { allowOthersWorn = false, strLimit = Infinity, excludeTags = [], excludeRoots = [], allowGargoyle = false, medOnly = false, excludeWeapons = [], ubwsAnyWeapon = true, excludeSkills = [], lockedSlots = [] } = s as {
-          allowOthersWorn?: boolean; strLimit?: number; excludeTags?: unknown[]; excludeRoots?: unknown[];
-          allowGargoyle?: boolean; medOnly?: boolean; excludeWeapons?: string[]; ubwsAnyWeapon?: boolean; excludeSkills?: unknown[]; lockedSlots?: unknown[];
-        };
-        // The hand-off to buildPools() and the slot loops below need element types, and nothing above
-        // established any. These casts are that gap, written down in one place: today it is harmless
-        // (every use is an includes()/Set lookup or an object key, which tolerate any element), and a
-        // real element check would be a behaviour change that belongs to the security review.
-        const tagList = excludeTags as string[], rootList = excludeRoots as Array<string | number>, skillList = excludeSkills as string[], lockedList = lockedSlots as string[];
+        // runSettingsError checked every field of `s` above. A missing strLimit means no limit here, where the page and
+        // build_suit default to the character's STR (run-settings.mts defaultStrLimit): a known difference the
+        // BuildSpec work settles.
+        const { allowOthersWorn = false, strLimit = Infinity, excludeTags = [], excludeRoots = [], allowGargoyle = false, medOnly = false, excludeWeapons = [], ubwsAnyWeapon = true, excludeSkills = [], lockedSlots = [] } = s as RunSettings;
         const { inv } = await getInventory();
         // buildPools would happily build pools from every other character's gear and save the run
         // under a name the inventory has never seen.
@@ -237,12 +177,12 @@ export function routes(ctx: ServerContext): Route[] {
         const badPin = manualSuitError(inv, pins, "pinned");
         if (badPin) return send(res, 400, { ok: false, error: badPin });
         // a fill keeps the placed pieces in place of the locked slots: they are the only slots that keep their piece
-        const keep = fill ? Object.keys(pins) : lockedList;
-        const built = buildPools(inv, (character as string) || null, { allowOthersWorn: allowOthersWorn && !!character, strength: strLimit, excludeTags: tagList, excludeRoots: rootList, excludeGargoyle: !allowGargoyle, medOnly, excludeWeapons, ubwsAnyWeapon, excludeSkills: skillList, ...(fill ? { pinned: pins } : {}) });
+        const keep = fill ? Object.keys(pins) : lockedSlots;
+        const built = buildPools(inv, (character as string) || null, { allowOthersWorn: allowOthersWorn && !!character, strength: strLimit, excludeTags, excludeRoots, excludeGargoyle: !allowGargoyle, medOnly, excludeWeapons, ubwsAnyWeapon, excludeSkills, ...(fill ? { pinned: pins } : {}) });
         pools = built.pools; current = built.current; blocked = built.blocked;
         skipped = Object.fromEntries(Object.entries(built.skipped).map(([k, v]) => [k, v.length]));
         for (const slot of blocked) delete current[slot];       // a worn piece the filters now rule out must not stay "current"
-        if (!fill) for (const slot of lockedList) pools[slot] = [];   // a locked slot offers no alternatives — it always keeps current
+        if (!fill) for (const slot of lockedSlots) pools[slot] = [];   // a locked slot offers no alternatives — it always keeps current
         opts = { ...(opts as RunOpts), optionalSlots: optionalSlotsFor(built.current, keep) };   // `current`, its blocked pieces deleted above
         // The saved run keeps the page's whole settings snapshot (floors, weights, race, search knobs:
         // the runs drawer labels, compares and re-applies runs from it), with the pool settings it
@@ -258,7 +198,7 @@ export function routes(ctx: ServerContext): Route[] {
       }
       // profile is scored against in the worker; a string or a number would fail there, not here.
       if (!profile || typeof profile !== "object" || Array.isArray(profile)) return send(res, 400, { ok: false, error: "profile required" });
-      const fullOpts = Object.assign({ seed: 2026, restarts: 200 }, opts as RunOpts);
+      const fullOpts = Object.assign({ seed: RUN_DEFAULTS.seed, restarts: RUN_DEFAULTS.restarts }, opts as RunOpts);
       const key = runKey({ pools, current, profile, opts: fullOpts });
       const runs = runStore.all();
       const hit = fill ? null : reusableRun(runs, key, fullOpts as { timeBudgetMs?: number });
@@ -291,7 +231,7 @@ export function routes(ctx: ServerContext): Route[] {
       if (!isManualSuit(suit) || !Object.keys(suit).length) return send(res, 400, { ok: false, error: "suit must map gear slots to serials, at least one" });
       if (!settings || typeof settings !== "object" || Array.isArray(settings) || JSON.stringify(settings).length > META_MAX_BYTES) return send(res, 400, { ok: false, error: "settings must be an object" });
       if (inventoryStamp != null && !isBoundedString(inventoryStamp, 256)) return send(res, 400, { ok: false, error: "inventoryStamp must be a string" });
-      const badSettings = runSettingsError(settings as Record<string, unknown>);
+      const badSettings = runSettingsError(settings, "settings");
       if (badSettings) return send(res, 400, { ok: false, error: badSettings });
       const { inv } = await getInventory();
       if (!Object.hasOwn(inv.characters, character)) return send(res, 404, { ok: false, error: `no scans for character ${JSON.stringify(character)}` });

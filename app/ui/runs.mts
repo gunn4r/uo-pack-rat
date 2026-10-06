@@ -5,6 +5,7 @@
 import { RESIST_KEYS, resistSkillBonus, totalsOf, resistCapsFor } from "../vault-lib.mts";
 import { buffById, plannedProfile, savedBuffs } from "../buffs.mts";
 import type { RunSettings, OptItem, PropMap, Character, EffectiveProfile } from "../vault-lib.mts";
+import { RUN_DEFAULTS } from "../run-settings.mts";
 import { state, invStamp } from "./store.mts";
 import { $, el, fmtSecs, fmtRunTime, toast } from "./dom.mts";
 import { api } from "./api.mts";
@@ -24,7 +25,7 @@ export function settingsSnapshot(): RunSettings {
   return { floors: { ...(p.floors || {}) }, softFloors: [...(p.softFloors || [])], weights: { ...(p.weights || {}) }, lockedSlots: [...(p.lockedSlots || [])],
     excludeTags: [...(p.excludeTags || [])], excludeRoots: [...(p.excludeRoots || [])], strLimit: p.strLimit, allowGargoyle: !!p.allowGargoyle,
     medOnly: !!p.medOnly, excludeWeapons: [...(p.excludeWeapons || [])], ubwsAnyWeapon: p.ubwsAnyWeapon !== false, allowOthersWorn: !!p.allowOthersWorn,
-    restarts: Number(knobs.restarts) || 200, exact: knobs.exact, budgetMs: 1000 * (Number(knobs.budgetS) || 300),
+    restarts: Number(knobs.restarts) || RUN_DEFAULTS.restarts, exact: knobs.exact, budgetMs: 1000 * Number(knobs.budgetS) || RUN_DEFAULTS.budgetMs,
     altCount: Number(knobs.altCount) || 0, altTol: Number(knobs.altTol) || 0, race: p.race || "human", excludeSkills: [...(p.excludeSkills || [])], resistCaps: { ...(p.resistCaps || {}) }, buffs: panelBuffs() };
 }
 export function applySettings(st: RunSettings): void {

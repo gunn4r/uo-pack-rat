@@ -26,6 +26,10 @@ export function routes(_ctx: ServerContext): Route[] {
     { method: "GET", path: "/organize-config.mjs", handle: (_req, res) => send(res, 200, readFileSync(join(WEB, "organize-config.mjs"), "utf8"), "text/javascript") },
     // Manual's buffs read the same catalog the server checks ui-prefs with (app/buffs.mts, issue #12).
     { method: "GET", path: "/buffs.mjs", handle: (_req, res) => send(res, 200, readFileSync(join(WEB, "buffs.mjs"), "utf8"), "text/javascript") },
+    // The Suit Builder's Advanced fields check against the server's run-setting ranges (app/run-settings.mts), which
+    // import the request guards.
+    { method: "GET", path: "/run-settings.mjs", handle: (_req, res) => send(res, 200, readFileSync(join(WEB, "run-settings.mjs"), "utf8"), "text/javascript") },
+    { method: "GET", path: "/guards.mjs", handle: (_req, res) => send(res, 200, readFileSync(join(WEB, "guards.mjs"), "utf8"), "text/javascript") },
     { method: "GET", path: "/data-dir-notice.mjs", handle: (_req, res) => send(res, 200, readFileSync(join(WEB, "data-dir-notice.mjs"), "utf8"), "text/javascript") },
     { method: "GET", path: "/scan-schema.mjs", handle: (_req, res) => send(res, 200, readFileSync(join(WEB, "scan-schema.mjs"), "utf8"), "text/javascript") },
     // The Import drawer's instant preview parses a paste with the server's own rule (app/paste-scan.mts).
