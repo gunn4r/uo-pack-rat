@@ -31,7 +31,8 @@ export function createProfilesStore({ file, defaults, templatesDir, shard, log, 
   file: string; defaults: string; templatesDir: string; shard: () => string; log: (line: string) => void; uiPrefs: { file: string; read(): UiPrefsFile; write(prefs: UiPrefsFile): void };
   scanned?: (() => Promise<string[]>) | undefined;
 }) {
-  async function read(): Promise<ProfilesV3> {
+  // The file as it is on disk: seeded when missing, moved aside and reseeded when damaged.
+  function load(): unknown {
     const seed = (): void => {
       mkdirSync(dirname(file), { recursive: true, mode: DATA_DIR_MODE });
       writeFileAtomic(file, readFileSync(defaults, "utf8"), DATA_FILE_MODE);
@@ -39,25 +40,22 @@ export function createProfilesStore({ file, defaults, templatesDir, shard, log, 
     if (!existsSync(file)) seed();
     // an I/O failure is not a damaged file — leave it alone
     const got = readJsonFile(file, { onBad: "aside", ioErrors: "throw", check: (doc) => !doc || typeof doc !== "object" || Array.isArray(doc) ? "not a JSON object" : null });
-    let doc: unknown;
-    if ("doc" in got) doc = got.doc;
-    else if ("bad" in got) {
+    if ("doc" in got) return got.doc;
+    if ("bad" in got) {
       if ("asideError" in got) throw got.asideError;
       seed();
       const why = got.bad.why === "check" ? got.bad.reason : got.bad.why === "too-big" ? "" : jsonErrorReason(got.bad.error);
       log(`${new Date().toISOString()} profiles.json is unreadable (${why}); reseeded from the defaults — the old file was kept as ${got.aside}\n`);
-      doc = readJsonFile(file, { onBad: "skip" });
     }
-    // profiles.json is trusted, unvalidated file content at this point (the same trust readRules'
-    // loadFile and readScans' upgradeScan extend to their own on-disk inputs) — the migration's own
-    // loose input shape (every field optional) is what actually tolerates a malformed file.
-    const raw = uiPrefs.read();
-    let names: Set<string> | null = null;
-    if (scanned && ((doc as ProfilesV3).schemaVersion ?? 0) < PROFILES_VERSION && ("autoBuffs" in raw || "buffSkills" in raw)) {
-      try { names = new Set(await scanned()); }
-      catch (e) { log(`${new Date().toISOString()} profiles.json migration: the scanned characters could not be read (${(e as Error).message}); every character's buffs are moved\n`); }
-    }
-    const { profiles, prefs, changed, prefsChanged, healed } = migrateProfilesV3(doc as ProfilesV3, raw, { scanned: names ? (n) => names!.has(n) : undefined });
+    return readJsonFile(file, { onBad: "skip" });
+  }
+  // The file migrated, with ui-prefs.json beside it, and both written: synchronous, so nothing can come between reading
+  // the two files and writing them. `names`: the scanned characters, or null when not asked.
+  // profiles.json is trusted, unvalidated file content at this point (the same trust readRules'
+  // loadFile and readScans' upgradeScan extend to their own on-disk inputs) — the migration's own
+  // loose input shape (every field optional) is what actually tolerates a malformed file.
+  function migrateNow(doc: unknown, names: Set<string> | null): ProfilesV3 {
+    const { profiles, prefs, changed, prefsChanged, healed } = migrateProfilesV3(doc as ProfilesV3, uiPrefs.read(), { scanned: names ? (n) => names.has(n) : undefined });
     for (const line of healed) log(`${new Date().toISOString()} profiles.json migration: ${line}\n`);
     const day = new Date().toISOString().slice(0, 10);
     if (changed) {
@@ -75,6 +73,22 @@ export function createProfilesStore({ file, defaults, templatesDir, shard, log, 
       } catch (e) { log(`${new Date().toISOString()} ui-prefs.json still holds autoBuffs or buffSkills, and they could not be removed (${(e as Error).message})\n`); }
     }
     return profiles;
+  }
+  // A v2 file whose ui-prefs still hold buffs waits on the scanned characters first. That wait is shared: concurrent
+  // first reads run one migration, and it reads both files again after the wait, so a save made meanwhile is what it
+  // migrates (a v3 file is left as it is) rather than being written over.
+  let migration: Promise<ProfilesV3> | null = null;
+  async function read(): Promise<ProfilesV3> {
+    if (migration) await migration.catch(() => {});
+    const doc = load(), prefs = uiPrefs.read();
+    if (!scanned || ((doc as ProfilesV3).schemaVersion ?? 0) >= PROFILES_VERSION || !("autoBuffs" in prefs || "buffSkills" in prefs)) return migrateNow(doc, null);
+    migration ??= (async () => {
+      let names: Set<string> | null = null;
+      try { names = new Set(await scanned()); }
+      catch (e) { log(`${new Date().toISOString()} profiles.json migration: the scanned characters could not be read (${(e as Error).message}); every character's buffs are moved\n`); }
+      return migrateNow(load(), names);
+    })().finally(() => { migration = null; });
+    return migration;
   }
   // PUT /api/profiles: the whole file, already checked against the schema and app/build-spec.mts's buildSpecError.
   function write(doc: ProfilesV3): void { writeJsonFile(file, doc, { indent: 2 }); }

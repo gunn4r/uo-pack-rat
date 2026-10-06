@@ -20,6 +20,7 @@ import { emptyKindOverrides, kindsText, MAX_KINDS_BYTES } from "../item-kinds.mt
 import { emptyOrganizeConfig, MAX_SETUP_BYTES } from "../organize-config.mts";
 import { emptyOrganizeState } from "../organize-state.mts";
 import { DEFAULT_SHARD } from "../rules.mts";
+import { buildSpec } from "../build-spec.mts";
 
 const APP = fileURLToPath(new URL("..", import.meta.url));
 const dir = (): string => mkdtempSync(join(tmpdir(), "pr-stores-"));
@@ -107,6 +108,35 @@ test("[fast] stores: profiles moves no buffs for a character the scans no longer
   const all = await profilesIn(copy(dir()), failed, "uoalive", async () => { throw new Error("no scans"); }).read();
   assert.deepEqual(Object.keys(all.characters), ["Aldric", "Brena", "Corwin"]);
   assert.match(failed[0]!, /the scanned characters could not be read \(no scans\); every character's buffs are moved/);
+});
+
+test("[fast] stores: concurrent first reads run one migration, and a save made while it waits on the scans is kept", async () => {
+  const gold = join(APP, "fixtures", "profiles-v2"), copy = (d: string): string => { for (const n of ["profiles.json", "ui-prefs.json"]) copyFileSync(join(gold, n), join(d, n)); return d; };
+  const gate = (): { wait: Promise<string[]>; open: () => void; asked: number } => {
+    let open = (): void => {};
+    const g = { wait: new Promise<string[]>((res) => { open = () => res(["Aldric", "Brena", "Corwin"]); }), open: () => open(), asked: 0 };
+    return g;
+  };
+  // two first reads at once: one migration, one backup pair, the same answer
+  const d1 = copy(dir()), g1 = gate();
+  const s1 = profilesIn(d1, [], "uoalive", () => { g1.asked++; return g1.wait; });
+  const both = Promise.all([s1.read(), s1.read()]);
+  g1.open();
+  const [a, b] = await both;
+  assert.deepEqual(a, b);
+  assert.equal(g1.asked, 1, "the scans are asked once");
+  assert.equal(backups(d1).length, 2, "one backup of each file");
+  // a save while the migration waits: the migration reads the files again and leaves the saved v3 file as it is
+  const d2 = copy(dir()), g2 = gate();
+  const s2 = profilesIn(d2, [], "uoalive", () => { g2.asked++; return g2.wait; });
+  const first = s2.read(), second = s2.read();
+  const saved = { schemaVersion: 3 as const, characters: { Saved: { spec: buildSpec() } }, templates: {} };
+  s2.write(saved);
+  g2.open();
+  assert.deepEqual(await first, saved);
+  assert.deepEqual(await second, saved);
+  assert.deepEqual(JSON.parse(readFileSync(join(d2, "profiles.json"), "utf8")), saved, "the save is not written over");
+  assert.equal(g2.asked, 1);
 });
 
 test("[fast] stores: profiles hands out the shard's built-in templates, none for a shard that ships none, and leaves a bad one out with a log line", () => {
