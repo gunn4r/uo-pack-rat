@@ -1,7 +1,7 @@
 // contracts.test.mts — folds every adapter's fixture.scan.json against its own capabilities.json,
 // checking the two contracts agree with each other and with the shared scan/bridge schemas. An
 // "adapter" here is any directory under adapters/ that ships both a capabilities.json and a
-// fixture.scan.json (today: adapters/tazuo/); a future adapter picks these tests up for free just by
+// fixture.scan.json (today: adapters/tazuo/ and adapters/razor-enhanced/); a future adapter picks these tests up for free just by
 // shipping those two files.
 // Run: node --test app/contracts.test.mts   or   node app/contracts.test.mts
 import { test } from "node:test";
