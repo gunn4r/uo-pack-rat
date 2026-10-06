@@ -19,14 +19,26 @@ Pack Rat has a built-in [Model Context Protocol](https://modelcontextprotocol.io
 - **Other MCP clients** — **Copy JSON** copies a snippet for a client's MCP settings (Streamable HTTP):
 
   ```json
-  { "mcpServers": { "pack-rat": { "type": "http", "url": "http://127.0.0.1:47615/mcp", "headers": { "Authorization": "Bearer <token>" } } } }
+  {
+    "mcpServers": {
+      "pack-rat": {
+        "type": "http",
+        "url": "http://127.0.0.1:47615/mcp",
+        "headers": {
+          "Authorization": "Bearer <token>"
+        }
+      }
+    }
+  }
   ```
 
-The port and the token stay the same across restarts, so a client is set up once. If another program holds port 47615 when Pack Rat starts, Pack Rat uses a free port for that run and Settings says so; clients set up with the usual address can't connect until the next launch frees it (or copy the command again). Both live in `mcp.json` in the data folder; to use another port for good, quit Pack Rat and change `port` there.
+The port and the token stay the same across restarts, so a client is set up once. If another program holds port 47615 when Pack Rat starts the MCP server (at launch, or when you turn it on), Pack Rat uses a free port for that run and Settings says so; clients set up with the usual address can't connect until the next launch frees it (or copy the command again). Both live in `mcp.json` in the data folder; to use another port for good, quit Pack Rat and change `port` there.
 
 ## What a client gets
 
-Every client receives a short usage guide when it connects (the `instructions` of MCP's `initialize`), so there is no skill to install. Lists are paged: `limit` (25 by default, 100 at most) and `offset`, with `total` in every answer. Item rows are compact (serial, name, kind, slot, rarity, where it is, who wears it, its properties); `get_item` has the full tooltip.
+Every client receives a short usage guide when it connects (the `instructions` of MCP's `initialize`), so there is no skill to install. Paged lists take `limit` (25 by default, 100 at most) and `offset` and answer with `total`. Item rows are compact (serial, name, kind, slot, rarity, where it is, the serials of the container it sits in and of that container's root, who wears it, its properties); `get_item` has the full tooltip. Slots, kinds, slayers and tags match whatever their case, and a property rule that does not parse, or names a property no item has, is refused with the forms it takes.
+
+Tools that wait (`build_suit` for its result, the in-game tools for the bridge's report) wait 45 seconds by default and 50 at most, inside the 60-second timeout most MCP clients use; past that they answer with an id to poll (`get_suit_build`, `get_action_status`).
 
 **Reading** (never change anything):
 
@@ -46,8 +58,8 @@ Every client receives a short usage guide when it connects (the `instructions` o
 
 | Tool | What it does |
 |---|---|
-| `build_suit`, `get_suit_build` | Runs the Suit Builder for a character with their saved profile, or a template, the buffs you name (the character's Automatic buffs by default), pinned pieces, or No character; waits for the result or answers with an id to ask again. A finished build is saved as a run, like one from the app |
-| `score_suit` | Totals a hand-picked suit against a profile, buffs counted, the way Manual does |
+| `build_suit`, `get_suit_build` | Runs the Suit Builder for a character with their saved profile, or a template, the buffs you name (the character's Automatic buffs by default), pinned pieces, or No character; waits for the result or answers with an id to poll. A finished build is saved as a run, like one from the app, so it counts toward the saved runs kept per character (Settings › Data retention). One runs at a time: a new call replaces one still running, and the replaced one says so |
+| `score_suit` | Totals a hand-picked suit against a profile, with Manual's buffs (or those you name), the way Manual does |
 
 **In game** (need **Allow in-game actions** and the bridge running in the game client):
 
@@ -65,6 +77,7 @@ These go through the same routes and checks as the app's buttons: the bridge mus
 - The server listens on `127.0.0.1` only, on its own port, and every request needs the token. A request naming any other host, or carrying an `Origin` header (which every web page's request does), is refused, so a website you visit cannot reach it.
 - The token is stored in `mcp.json` in the data folder, a file only your account can read (on Windows, the data folder's own permissions decide). A program on this computer that has the token can read your inventory, so make a new token if it leaks.
 - What a client reads goes where that client sends it. Claude Code, for one, sends tool results to its model like anything else in the conversation. Pack Rat itself still sends nothing anywhere.
-- In-game actions are a second switch on purpose: you can leave MCP read-only.
+- In-game actions are a second switch on purpose: you can leave MCP read-only. Turning it off refuses new commands; one already queued still runs.
+- A program that takes port 47615 while Pack Rat is not listening on it receives the token from every client set up for it. Pack Rat assumes a computer used by one person; on a shared one, make a new token if you suspect this.
 
 `docs/threat-model.md` (boundary 14) has the reasoning.

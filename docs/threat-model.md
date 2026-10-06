@@ -180,6 +180,8 @@ The token is its own `crypto.randomUUID()`, minted the first time MCP is turned 
 
 **Load-bearing:** the token and the switch. A local process that has the MCP token can read the whole inventory and, with actions allowed, move items as the buttons can; one without it gets a 401. That process is the out-of-scope attacker when it runs as the player; for another user on a shared machine the token is the barrier, and on this listener it exists even under `npm start`. What the client sends onward — Claude Code sends tool results to its model like the rest of a conversation — is outside this app; `PRIVACY.md` says so.
 
+**Left standing: the port can be squatted.** The port is fixed so a client is set up once, and a bearer token cannot prove which server receives it. A program that binds `127.0.0.1:47615` while Pack Rat is not listening there (Pack Rat closed, MCP off, or a squatter that got there first, which also sends Pack Rat to a fallback port for that run) receives `Authorization: Bearer <token>` from every client that tries to connect, and can then use it against Pack Rat's listener. A same-user process gains nothing by this (it can read `mcp.json`); another user on a shared machine gains the token. Pack Rat assumes a single-user machine, as the bare server's missing token already does; **New token** recovers, since the stolen one is refused from the next request.
+
 ## Rulings
 
 Findings deliberately left standing, with the reason. Each is a decision, not an oversight; re-litigating one should start here.
