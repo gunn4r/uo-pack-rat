@@ -228,7 +228,7 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
   const runStore = createRunsStore(RUNS);
   const jobService = createJobsService({ coreUrl: CORE_URL, timings: jobTimings, runStore, log: (line) => safeAppendLog(CONFIG.paths.log, line) });
   const organizeService = createOrganizeService({ paths: CONFIG.paths, getInventory: () => getInventory(), organizeStore, organizeStateStore, blacklistStore, runStore,
-    rules: appSettings.rules, runsTrips: setupService.runsTrips, events: eventBus, log: (line) => safeAppendLog(CONFIG.paths.log, line) });
+    rules: appSettings.rules, bridgeAdapter: () => appSettings.bridgeAdapter(), manifest: setupService.manifest, events: eventBus, log: (line) => safeAppendLog(CONFIG.paths.log, line) });
   // Organize is built first, so the harvest hook below never reaches it before it exists; it reads the inventory through a getter.
   const inventoryService = createInventoryService({ scanStore, itemKindsStore, organizeStateStore, shard: () => appSettings.current().shard, harvest: (now) => organizeService.harvestNow(now) });
   const getInventory = inventoryService.getInventory;

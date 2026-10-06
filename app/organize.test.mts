@@ -746,6 +746,13 @@ test("[fast] the plan lists empty bags, and with a gather container moves them t
   const stale = planOrganize(old, cfg, [], { now: NOW });
   assert.deepEqual([stale.moves, stale.emptyBags.length], [[], 1], "scripts whose bridge does not declare trip-bags are never sent a bag");
   assert.deepEqual(stale.warnings.map((w) => [w.kind, w.serial]), [["old-scripts", C]]);
+  // What the bridge can do, when the caller knows (the running bridge's report): it decides, not the scan.
+  assert.deepEqual(planOrganize(old, cfg, [], { now: NOW, features: new Set(["trip", "trip-bags"]) }).moves.map((m) => m.serial), [BAG]);
+  assert.deepEqual(planOrganize(inv, cfg, [], { now: NOW, features: new Set(["trip"]) }).moves, [], "a bridge that reports no trip-bags is never sent a bag");
+  // Scripts after 2.16.0 put trip-bags in adapter.features rather than among the actions.
+  const moved = foldSnapshots([houseScan({ boxes: [{ serial: A }, { serial: BAG, parent: A, name: "Weapons" }, { serial: C, pos: at(106) }], bridge: ["highlight", "grab", "goto", "trip"] })]);
+  Object.values(moved.characters)[0]!.adapter!.features = ["trip-bags"];
+  assert.deepEqual(planOrganize(moved, cfg, [], { now: NOW }).moves.map((m) => m.serial), [BAG]);
 });
 
 test("[fast] a target past 90% after the plan, with no later target to overflow into, is warned about, empty bags counted", () => {

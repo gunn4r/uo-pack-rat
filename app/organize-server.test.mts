@@ -1,6 +1,6 @@
 // organize-server.test.mts — the Organize routes (issue #11) and the item kinds routes (issue #150) on a real server and temp data folder.
 //
-// the Organize routes on a real server and temp data folder: `GET|PUT /api/organize` (a broken setup and a blacklisted label refused, a hand-edited file salvaged, an unparsable or non-version-1 one moved aside), `GET /api/organize/plan`, `GET /api/organize/presets`, `POST /api/organize/propose` (Auto organize: the proposal over every offered chest saved as it is with PUT and proposing again changing nothing; an unknown strategy, a bad container list and a salvaged setup refused; a container it cannot use reported), `POST /api/organize/match` (what one rule filter takes of the movable items in labelled roots, ignoring the other rules; the strict filter check; the body limit), and `POST /api/organize/trip` (a stale stamp, a second trip before the first reports back, a trip that is not its site's first, a salvaged setup and a client without `trip` refused; the largest valid setup accepted and read back; a trip whose bridge went quiet stops holding the queue; a reported trip read into the overlay), and Put away (issue #131): a request dropped after a refresh's scan answered with one trip carrying the picked container's `putAway`, only the pack's own items (never the pouch's), a second request refused while it has not reported back, what stayed once it has ("1 bag stays in your pack"), a chest last scanned before the click refused, a stale request with a bad id refused, and the pouch picked next giving up its own items. The item kinds routes (issue #150): `POST /api/item-kinds` re-kinds an item with no rescan, the plan follows, it survives a restart, a name beats a graphic and kind null resets; the refusals (gear, an unknown kind, a bad name or graphic, neither named); an import merges with its entries winning and says what it left out, a file with nothing to import is refused, and export then import on a fresh data folder reproduces the kinds; a file that does not parse is moved aside with a warning. All `[fast]`.
+// the Organize routes on a real server and temp data folder: `GET|PUT /api/organize` (a broken setup and a blacklisted label refused, a hand-edited file salvaged, an unparsable or non-version-1 one moved aside), `GET /api/organize/plan`, `GET /api/organize/presets`, `POST /api/organize/propose` (Auto organize: the proposal over every offered chest saved as it is with PUT and proposing again changing nothing; planned with what the running bridge can do, like the plan; an unknown strategy, a bad container list and a salvaged setup refused; a container it cannot use reported), `POST /api/organize/match` (what one rule filter takes of the movable items in labelled roots, ignoring the other rules; the strict filter check; the body limit), and `POST /api/organize/trip` (a stale stamp, a second trip before the first reports back, a trip that is not its site's first, a salvaged setup and a client without `trip` refused, a running bridge that reports no `trip` refused while one too old to report itself is judged by the newest scan as before; the largest valid setup accepted and read back; a trip whose bridge went quiet stops holding the queue; a reported trip read into the overlay), and Put away (issue #131): a request dropped after a refresh's scan answered with one trip carrying the picked container's `putAway`, only the pack's own items (never the pouch's), a second request refused while it has not reported back, what stayed once it has ("1 bag stays in your pack"), a chest last scanned before the click refused, a stale request with a bad id refused, and the pouch picked next giving up its own items. The item kinds routes (issue #150): `POST /api/item-kinds` re-kinds an item with no rescan, the plan follows, it survives a restart, a name beats a graphic and kind null resets; the refusals (gear, an unknown kind, a bad name or graphic, neither named); an import merges with its entries winning and says what it left out, a file with nothing to import is refused, and export then import on a fresh data folder reproduces the kinds; a file that does not parse is moved aside with a warning. All `[fast]`.
 import { test, mock } from "node:test";
 import assert from "node:assert/strict";
 import { mkdtempSync, writeFileSync, readFileSync, existsSync, renameSync } from "node:fs";
@@ -125,6 +125,31 @@ test("[fast] GET /api/organize/plan plans the moves; POST /api/organize/trip que
   }
 });
 
+test("[fast] POST /api/organize/trip asks the running bridge first: one that reports no trips is refused, and one too old to report itself is judged as before", async () => {
+  const { s, dir } = await serve();
+  try {
+    await call(s, "/api/organize", body("PUT", CONFIG_DOC));
+    const plan = (await call<{ plan: Plan }>(s, "/api/organize/plan")).body.plan;
+    const status = (adapter?: unknown): void => writeFileSync(join(dir, "bridge", "tazuo", "status.json"), JSON.stringify({ alive: new Date().toISOString(), character: "Tester",
+      current: null, results: {}, counts: { done: 0, failed: 0 }, ...(adapter ? { adapter } : {}) }));
+    status({ id: "tazuo", version: "2.16.0", protocol: 1, features: ["highlight", "grab", "goto"] });
+    const refused = await call(s, "/api/organize/trip", body("POST", { index: 1, stamp: plan.stamp }));
+    assert.equal(refused.status, 409);
+    assert.match(String(refused.body.error), /cannot run Organize trips/);
+    assert.deepEqual(queued(dir), []);
+    const reported = await call(s, "/api/bridge/status");
+    assert.deepEqual([reported.body.online, reported.body.adapter], [true, { id: "tazuo", version: "2.16.0", protocol: 1, features: ["highlight", "grab", "goto"] }]);
+    // No adapter block: the bridge predates the report, and the newest scan (which lists trip) decides, as before.
+    status();
+    const old = await call(s, "/api/organize/trip", body("POST", { index: 1, stamp: plan.stamp }));
+    assert.equal(old.status, 200, JSON.stringify(old.body));
+    assert.equal(queued(dir)[0]!.protocol, 1);
+    assert.equal((await call(s, "/api/bridge/status")).body.online, true);
+  } finally {
+    await s.close();
+  }
+});
+
 test("[fast] GET /api/organize/plan names the trip in flight, and whether its bridge has picked it up, so a reloaded page can follow it", async () => {
   const { s, dir } = await serve();
   try {
@@ -134,7 +159,7 @@ test("[fast] GET /api/organize/plan names the trip in flight, and whether its br
     const id = String((await call(s, "/api/organize/trip", body("POST", { index: 1, stamp: first.plan.stamp }))).body.id);
     const queuedAt = (JSON.parse(readFileSync(join(dir, "organize-state.json"), "utf8")) as { pending: { queuedAt: string }[] }).pending[0]!.queuedAt;
     assert.deepEqual((await call(s, "/api/organize/plan")).body.running, { id, index: 1, queuedAt, picked: false });
-    const status = (current: unknown, results: unknown = {}) => writeFileSync(join(dir, "bridge", "tazuo", "status.json"), JSON.stringify({ alive: new Date().toISOString(), character: "Tester", current, results, counts: {} }));
+    const status = (current: unknown, results: unknown = {}) => writeFileSync(join(dir, "bridge", "tazuo", "status.json"), JSON.stringify({ alive: new Date().toISOString(), character: "Tester", current, results, counts: { done: 0, failed: 0 } }));
     status({ id, action: "trip" });
     assert.deepEqual((await call(s, "/api/organize/plan")).body.running, { id, index: 1, queuedAt, picked: true });
     status(null, { [id]: { ok: true, msg: "trip 1: stopped", t: new Date().toISOString(), stopped: true, steps: [] } });
@@ -249,7 +274,7 @@ test("[fast] a trip whose bridge went quiet mid-run stops holding the queue once
     const st = JSON.parse(readFileSync(join(dir, "organize-state.json"), "utf8"));
     st.pending[0].queuedAt = old;
     writeFileSync(join(dir, "organize-state.json"), JSON.stringify(st));
-    const status = (alive: string) => writeFileSync(join(dir, "bridge", "tazuo", "status.json"), JSON.stringify({ alive, character: "Tester", current: { id, action: "trip" }, results: {}, counts: {} }));
+    const status = (alive: string) => writeFileSync(join(dir, "bridge", "tazuo", "status.json"), JSON.stringify({ alive, character: "Tester", current: { id, action: "trip" }, results: {}, counts: { done: 0, failed: 0 } }));
     status(new Date().toISOString());
     assert.match(String((await call(s, "/api/organize/trip", body("POST", { index: 1, stamp: plan.stamp }))).body.error), /has not reported back/);
     status(old);
@@ -360,6 +385,24 @@ test("[fast] POST /api/organize/propose: Simple over every offered chest; PUT sa
   }
 });
 
+test("[fast] POST /api/organize/propose plans with what the running bridge can do, as the plan Organize then shows does", async () => {
+  const BAG = 0x40000003;
+  const { s, dir } = await serve([], [{ serial: BAG, parent: A, name: "Weapons" }]);
+  try {
+    await call(s, "/api/organize", body("PUT", { ...CONFIG_DOC, emptyBagsTo: B }));
+    const propose = async (): Promise<number> => (await call<{ proposal: Proposal }>(s, "/api/organize/propose", body("POST", { strategy: "simple" }))).body.proposal.plan.moves;
+    const planned = async (): Promise<number> => (await call<{ plan: Plan }>(s, "/api/organize/plan")).body.plan.moves.filter((m) => m.serial === BAG).length;
+    assert.equal(await planned(), 1, "the newest scan's scripts gather bags");
+    const withBag = await propose();
+    writeFileSync(join(dir, "bridge", "tazuo", "status.json"), JSON.stringify({ alive: new Date().toISOString(), character: "Tester", current: null, results: {},
+      counts: { done: 0, failed: 0 }, adapter: { id: "tazuo", version: "2.16.0", protocol: 1, features: ["highlight", "grab", "goto", "trip"] } }));
+    assert.equal(await planned(), 0, "a running bridge without trip-bags is never sent a bag");
+    assert.equal(await propose(), withBag - 1, "and the proposal plans the same");
+  } finally {
+    await s.close();
+  }
+});
+
 test("[fast] POST /api/organize/propose refuses an unknown strategy, a bad container list and a salvaged setup, and reports a container it cannot use", async () => {
   const { s, dir } = await serve();
   try {
@@ -414,7 +457,7 @@ test("[fast] Put away: a request dropped after a refresh plans the fresh backpac
     assert.equal(busy.ok, false);
     assert.match(String(busy.msg), /has not reported back/);
     const t = new Date().toISOString();
-    writeFileSync(join(dir, "bridge", "tazuo", "status.json"), JSON.stringify({ alive: t, character: "Tester", current: null, counts: {},
+    writeFileSync(join(dir, "bridge", "tazuo", "status.json"), JSON.stringify({ alive: t, character: "Tester", current: null, counts: { done: 0, failed: 0 },
       results: { [String(line!.id)]: { ok: true, msg: "trip 1: 1 put away", t, steps: [{ op: "put", serial: LOOT, ok: true, msg: "put away" }] } } }));
     const done = await ask("r-3");
     assert.deepEqual([done.ok, done.msg, done.detail, done.trip], [true, "Nothing to put away.", "1 container stays in your pack", undefined]);
@@ -448,7 +491,7 @@ test("[fast] a Grab that worked frees its slot in the full container it left, an
     assert.equal(grab.status, 200, JSON.stringify(grab.body));
     assert.deepEqual((JSON.parse(readFileSync(join(dir, "organize-state.json"), "utf8")) as { grabs: { id: string; from: number }[] }).grabs.map((g) => [g.id, g.from]), [[grab.body.id, C]]);
     const t = new Date().toISOString();
-    writeFileSync(join(dir, "bridge", "tazuo", "status.json"), JSON.stringify({ alive: t, character: "Tester", current: null, counts: {},
+    writeFileSync(join(dir, "bridge", "tazuo", "status.json"), JSON.stringify({ alive: t, character: "Tester", current: null, counts: { done: 0, failed: 0 },
       results: { [String(grab.body.id)]: { ok: true, msg: "grabbed Sapphire — it is in your backpack", t } } }));
     const inv = (await call<{ inventory: { containers: Record<string, Container> } }>(s, "/api/inventory")).body.inventory;
     assert.deepEqual([inv.containers[C]!.capacity?.items, inv.containers[PACK]!.capacity?.items], [0, 1]);

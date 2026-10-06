@@ -7311,7 +7311,7 @@
  "schemaVersion": 2,
  "adapter": {
   "id": "tazuo",
-  "version": "2.15.1",
+  "version": "2.16.0",
   "client": "TazUO",
   "clientVersion": null,
   "capabilities": {

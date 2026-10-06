@@ -1,7 +1,9 @@
 // bridge.mts — the in-game bridge: POST /api/bridge, POST /api/bridge/stop and GET /api/bridge/status.
 import { randomUUID } from "node:crypto";
-import { readFileSync, appendFileSync, existsSync, mkdirSync } from "node:fs";
+import { readFileSync, appendFileSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
+import { BRIDGE_PROTOCOL } from "../../bridge-contract.mts";
+import { readBridgeStatus } from "../../bridge-status.mts";
 import { writeBridgeStop } from "../../bridge-trip.mts";
 import { DATA_DIR_MODE, DATA_FILE_MODE } from "../../config.mts";
 import { isBoundedString } from "../../guards.mts";
@@ -14,7 +16,7 @@ import type { Route } from "../router.mts";
 import type { ServerContext } from "../context.mts";
 
 const HERE = APP_DIR;
-const BRIDGE_SCHEMA = JSON.parse(readFileSync(join(HERE, "schema", "bridge.v1.schema.json"), "utf8")) as { command: ValidatorSchema; result: ValidatorSchema; status: ValidatorSchema };
+const BRIDGE_SCHEMA = JSON.parse(readFileSync(join(HERE, "schema", "bridge.v1.schema.json"), "utf8")) as { command: ValidatorSchema };
 
 export function routes(ctx: ServerContext): Route[] {
   const { config: CONFIG, appSettings, organizeService, organizeStateStore } = ctx;
@@ -32,7 +34,7 @@ export function routes(ctx: ServerContext): Route[] {
       const id = randomUUID();
       // Copy exactly the documented fields into the queue line — the page may send extras (e.g. a
       // human-readable location string) that the bridge does not need and should not carry forward.
-      const line = { id, action: cmd.action, serial: cmd.serial, name: cmd.name, chain: cmd.chain || [], pos: cmd.pos ?? null, queuedAt: new Date().toISOString() };
+      const line = { id, action: cmd.action, serial: cmd.serial, name: cmd.name, chain: cmd.chain || [], pos: cmd.pos ?? null, queuedAt: new Date().toISOString(), protocol: BRIDGE_PROTOCOL };
       // Enforce the bridge contract at the only place the app writes it (post-review fix): a page
       // bug, or any other local caller, could otherwise queue a line that violates
       // BRIDGE_SCHEMA.command (unknown action, non-integer serial/chain entries, missing name) —
@@ -67,23 +69,12 @@ export function routes(ctx: ServerContext): Route[] {
     } },
     { method: "GET", path: "/api/bridge/status", handle: (_req, res) => {
       organizeService.harvestNow(Date.now());
-      const f = CONFIG.paths.bridgeStatusFor(appSettings.bridgeAdapter());
-      if (!existsSync(f)) return send(res, 200, { ok: true, online: false });
-      try {
-        const parsed: unknown = JSON.parse(readFileSync(f, "utf8"));
-        // status.json is written by the adapter's own bridge script and is hand-editable; a file that
-        // parses to an array, a string or a number would otherwise be spread into the response as
-        // index keys. Anything but a plain object reads as "not running".
-        if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return send(res, 200, { ok: true, online: false });
-        const st = parsed as Record<string, unknown>;
-        // The bridge's "alive" timestamp is either a legacy epoch-seconds number or an RFC 3339 string
-        // (new format, Task 7) — accept both, and nothing else.
-        const aliveMs = typeof st.alive === "number" ? st.alive * 1000 : typeof st.alive === "string" ? Date.parse(st.alive) : NaN;
-        const age = st.alive != null && !Number.isNaN(aliveMs) ? (Date.now() - aliveMs) / 1000 : Infinity;
-        // The file's own fields go first, so a stray ok/online/age in a hand-edited or foreign file
-        // (the bridge schema allows none of them) can never override what this server computed.
-        return send(res, 200, { ...st, ok: true, online: age < 8, age: Math.round(age) });
-      } catch { return send(res, 200, { ok: true, online: false }); }
+      // readBridgeStatus is the one reader of status.json: a missing, unreadable or off-schema file reads as offline.
+      const { status, online, age } = readBridgeStatus(CONFIG.paths.bridgeStatusFor(appSettings.bridgeAdapter()), Date.now());
+      if (!status) return send(res, 200, { ok: true, online: false });
+      // The file's own fields go first, so a stray ok/online/age in a hand-edited or foreign file can never override
+      // what this server computed.
+      return send(res, 200, { ...status, ok: true, online, age: Math.round(age) });
     } },
   ];
 }

@@ -159,6 +159,7 @@ export interface AdapterSummary {
   platform: string | null;
   summary: string;
   capabilities: { bridge: string[]; [key: string]: unknown };
+  features: string[];
 }
 export interface InstalledVersionInfo {
   version: string | null;
@@ -412,10 +413,18 @@ export interface BridgeResultEntry {
   steps?: TripStepResult[] | undefined;
   ms?: number | undefined;           // how long a trip took, in milliseconds (TazUO 2.9.0 onward)
 }
+// The running bridge itself (status.json's adapter; left out by bridges before TazUO 2.16.0 / Razor Enhanced 1.12.0).
+export interface BridgeAdapterReport {
+  id: string;
+  version: string;
+  protocol: number;
+  features: string[];          // every action and feature it has
+}
 export interface BridgeStatusApiResponse {
   ok: boolean;
   online: boolean;
   character?: string | undefined;
+  adapter?: BridgeAdapterReport | undefined;
   current?: BridgeCurrentCommand | null | undefined;
   results?: Record<string, BridgeResultEntry> | undefined;
 }

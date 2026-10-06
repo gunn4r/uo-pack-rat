@@ -1,7 +1,7 @@
 // scans.mts — <data>/scans/: every accepted scan, one JSON file each (the watcher writes them, /api/forget* adds tombstones, retention removes old ones).
 import { existsSync, readdirSync, statSync } from "node:fs";
 import { join } from "node:path";
-import { validateScan } from "../scan-schema.mts";
+import { isKnownKind, validateScan } from "../scan-schema.mts";
 import { migrate } from "../migrate.mts";
 import type { ScanV2 } from "../schema/types.d.mts";
 import type { ScanFile } from "../retention.mts";
@@ -33,7 +33,13 @@ export function createScansStore({ dir, shard }: { dir: string; shard: () => str
     }
     return out;
   }
-  const all = (): ScanV2[] => files().map((s) => s.doc);
+  // Every scan the readers use (the fold, Missing, the house map): a file of a kind from a newer adapter is kept on
+  // disk and left out here, with a line in the log.
+  const all = (): ScanV2[] => files().filter((s) => {
+    if (isKnownKind(s.doc)) return true;
+    console.warn(`skipping ${s.file}: kind ${JSON.stringify(s.doc.kind)} is from a newer Pack Rat`);
+    return false;
+  }).map((s) => s.doc);
   // Every *.json file's name, mtimeMs and size, so an add/edit/delete/rename is caught with no restart.
   function signature(): string {
     if (!existsSync(dir)) return "no-scans-dir";

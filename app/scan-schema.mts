@@ -16,6 +16,11 @@ export const TAZUO_V1_CAPS: ScanV2AdapterCapabilities = {
   bridge: ["highlight", "grab", "goto"],
 };
 
+// The kinds of scan file this build reads: a scan (no kind) and a house-only file. A file of any other kind comes from a
+// newer adapter: it is kept, and every reader skips it rather than read it as a scan.
+export const SCAN_KINDS: readonly string[] = ["house"];
+export const isKnownKind = (doc: { kind?: string | undefined }): boolean => doc.kind === undefined || SCAN_KINDS.includes(doc.kind);
+
 // A UO serial is a 32-bit unsigned integer, and a graphic/hue is a 16-bit one. Without these bounds
 // `serial: 1e308` satisfied `{type: "integer"}` (Number.isInteger says so), and two serials above
 // 2^53 that round to the same double collapsed into ONE fold entry — silent data loss, and a cheap
@@ -36,7 +41,7 @@ const NUMBER_MAP_OR_NULL = { type: ["object", "null"], additionalProperties: { t
 
 // Keep byte-for-byte identical to app/schema/scan.v2.schema.json (a test enforces this).
 export const SCAN_V2_SCHEMA = {
-  "$comment": "Pack Rat scan file schema v2. Draft-07 style, restricted to the keyword subset app/schema/validate.mts supports. additionalProperties is true at the top level (adapters may add fields, e.g. refresh's meta) but false inside adapter and adapter.capabilities, which are a closed contract every adapter must match exactly, and a SUBSCHEMA on the arbitrarily-keyed maps (stats, maxes, resists, position, skills, containers), which is how their values get checked at all. This JSON literal must stay identical to SCAN_V2_SCHEMA in app/scan-schema.mts (app/scan-schema.test.mts asserts that) because scan-schema.mts is served to the browser and cannot load this file via fs or a JSON import attribute.",
+  "$comment": "Pack Rat scan file schema v2. Draft-07 style, restricted to the keyword subset app/schema/validate.mts supports. additionalProperties is true at the top level (adapters may add fields, e.g. refresh's meta) true inside adapter and adapter.capabilities, whose known fields are still required and checked (a newer adapter's addition never makes an older app drop the scan), and a SUBSCHEMA on the arbitrarily-keyed maps (stats, maxes, resists, position, skills, containers), which is how their values get checked at all. This JSON literal must stay identical to SCAN_V2_SCHEMA in app/scan-schema.mts (app/scan-schema.test.mts asserts that) because scan-schema.mts is served to the browser and cannot load this file via fs or a JSON import attribute.",
   type: "object",
   additionalProperties: true,
   required: ["schemaVersion", "character", "scannedAt", "adapter", "stats", "roots", "containers", "items", "equipped"],
@@ -46,10 +51,10 @@ export const SCAN_V2_SCHEMA = {
     scannedAt: { type: "string", pattern: "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d+)?([+-]\\d{2}:\\d{2}|Z)$" },
     shard: { type: ["string", "null"] },
     account: { type: "string", pattern: "^[a-f0-9]{16,64}$", "$comment": "an opaque hashed account id (e.g. hex SHA-256 of the account name) — never the plaintext name" },
-    kind: { type: "string", enum: ["house"], "$comment": "Left out for a scan. \"house\" marks a house-only file (TazUO's packrat-house-map-refresh.py, 2.12.0 and later): it carries the house section and nothing else (stats {}, every inventory list empty, which validateScan checks), and only the house map reads it; the fold, Missing and Organize skip it." },
+    kind: { type: "string", minLength: 1, maxLength: 64, "$comment": "Left out for a scan. \"house\" marks a house-only file (TazUO's packrat-house-map-refresh.py, 2.12.0 and later): it carries the house section and nothing else (stats {}, every inventory list empty, which validateScan checks), and only the house map reads it; the fold, Missing and Organize skip it. Any other value is a kind from a newer adapter: the file is kept, and every reader skips it (the scans store logs it)." },
     adapter: {
       type: "object",
-      additionalProperties: false,
+      additionalProperties: true,
       required: ["id", "version", "client", "clientVersion", "capabilities"],
       properties: {
         id: { type: "string", minLength: 1, maxLength: 64, pattern: "^[a-z0-9-]+$", "$comment": "the same shape app/installer.mts's ADAPTER_ID_RE admits and every adapter-taking route checks — this id names an inbox, a bridge directory and a capabilities folder, so a scan must not be able to carry one that could not be an adapter directory name; 64 matches the bound PUT /api/settings puts on client.adapter" },
@@ -58,7 +63,7 @@ export const SCAN_V2_SCHEMA = {
         clientVersion: { type: ["string", "null"] },
         capabilities: {
           type: "object",
-          additionalProperties: false,
+          additionalProperties: true,
           required: ["layers", "arms", "bank", "ground", "nested", "tooltips", "bridge"],
           properties: {
             layers: { type: "array", items: { type: "string" } },
@@ -70,6 +75,7 @@ export const SCAN_V2_SCHEMA = {
             bridge: { type: "array", items: { type: "string" } },
           },
         },
+        features: { type: "array", maxItems: 64, items: { type: "string", minLength: 1, maxLength: 64 }, "$comment": "Optional: what the adapter's bridge does besides the actions in capabilities.bridge, by name (\"trip-bags\", TazUO 2.16.0 and later; older scripts listed it in capabilities.bridge, where it is still recognized). A name this app does not know is ignored. The shipped scanners do not write it yet: trip-bags stays in capabilities.bridge, which every Pack Rat reads, until an app that accepts this field has been out for a release." },
       },
     },
     stats: NUMBER_MAP,
@@ -239,10 +245,13 @@ const num = (v: unknown): number | null | undefined => (v == null ? v : Number(v
 // A scan's character name starting with "_" is not a character: the app's own documents (the "_vault" tombstones) use it.
 export const isPseudoCharacter = (name: unknown): boolean => String(name ?? "").startsWith("_");
 
+// The adapter version upgradeScan stamps on a v1 scan: its adapter block is the app's own stand-in, not what the scripts
+// declared (no real adapter version is "1").
+export const V1_ADAPTER_VERSION = "1";
 function tazuoAdapter(character: unknown): ScanV2Adapter {
   return {
     id: isPseudoCharacter(character) ? "app" : "tazuo",
-    version: "1", client: "TazUO", clientVersion: null, capabilities: TAZUO_V1_CAPS,
+    version: V1_ADAPTER_VERSION, client: "TazUO", clientVersion: null, capabilities: TAZUO_V1_CAPS,
   };
 }
 

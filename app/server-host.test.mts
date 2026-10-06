@@ -437,7 +437,7 @@ test("[fast] POST /api/bridge refuses a name or chain past the bridge schema's o
 test("[fast] GET /api/bridge/status: a status file cannot override the server's own ok/online/age", async () => {
   const dir = mkdtempSync(join(tmpdir(), "qm-bridge-override-"));
   mkdirSync(join(dir, "bridge", "tazuo"), { recursive: true });
-  writeFileSync(join(dir, "bridge", "tazuo", "status.json"), JSON.stringify({ alive: "2020-01-01T00:00:00Z", ok: false, online: true, age: 0, character: "Old" }));
+  writeFileSync(join(dir, "bridge", "tazuo", "status.json"), JSON.stringify({ alive: "2020-01-01T00:00:00Z", ok: false, online: true, age: 0, character: "Old", current: null, results: {}, counts: { done: 0, failed: 0 } }));
   const s2 = await startServer(ensureLayout(resolveConfig(["--demo", "--port", "0", "--data", dir], {})));
   try {
     const st = asJson(await (await fetch(s2.url + "/api/bridge/status")).json());
