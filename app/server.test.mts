@@ -2765,7 +2765,7 @@ test("[fast] POST /api/host/pick-folder passes on only a short string title, and
 // through here, so this pins the wiring rather than the clock: both host calls go through the bounded
 // wrapper, which the unbounded original did not have at all.
 test("[fast] both POST /api/host/* routes await a BOUNDED host call, and a timed-out one answers 504", () => {
-  const src = readFileSync(join(HERE, "vault-server.mts"), "utf8");
+  const src = readFileSync(join(HERE, "http", "routes", "host.mts"), "utf8");
   assert.match(src, /withHostTimeout\(host\.pickFolder\(/, "pick-folder goes through the timeout wrapper");
   assert.match(src, /withHostTimeout\(host\.openPath\(/, "so does open-path");
   assert.match(src, /e\.statusCode = 504;/, "and a timed-out host call answers 504");
@@ -2815,7 +2815,7 @@ test("[fast] the event streams carry the same anti-framing headers every other r
     await s2.close();
   }
   // The per-job stream needs a running job to open; it is pinned to the same constant at the source.
-  const source = readFileSync(join(HERE, "vault-server.mts"), "utf8");
+  const source = ["host.mts", "optimize.mts"].map((f) => readFileSync(join(HERE, "http", "routes", f), "utf8")).join("\n");
   assert.equal((source.match(/res\.writeHead\(200, SSE_HEADERS\)/g) || []).length, 2, "both stream routes use SSE_HEADERS");
   assert.doesNotMatch(source, /"content-type": "text\/event-stream", "cache-control": "no-store", connection: "keep-alive", "x-content-type-options": "nosniff" \}/, "no stream writes its own header set any more");
 });

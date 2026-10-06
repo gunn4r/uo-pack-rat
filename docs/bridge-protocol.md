@@ -2,7 +2,7 @@
 
 The bridge is how the app reaches back into the game client: the Highlight, Grab, and Go-to buttons on Inventory rows, the item peek and the Suit Builder's result panel don't move anything themselves — they queue a command, and an adapter script running inside the game client (attended, one command at a time) carries it out. This document describes protocol v1: the file layout, the three message shapes plus Organize's trip, the actions, and the rules that keep it safe to leave running.
 
-Ground truth: `app/schema/bridge.v1.schema.json` (validated by `app/contracts.test.mts`), `app/vault-server.mts` (`POST /api/bridge`, `GET /api/bridge/status`), `adapters/tazuo/packrat-bridge.py` (the reference adapter implementation), and `app/ui/bridge.mts` (the page's side).
+Ground truth: `app/schema/bridge.v1.schema.json` (validated by `app/contracts.test.mts`), `app/http/routes/bridge.mts` (`POST /api/bridge`, `GET /api/bridge/status`), `adapters/tazuo/packrat-bridge.py` (the reference adapter implementation), and `app/ui/bridge.mts` (the page's side).
 
 ## Files
 

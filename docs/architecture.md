@@ -107,6 +107,119 @@ Auto mode (`app/organize-strategies.mts`, spec §5) is pure too. `STRATEGIES` ho
 
 Everything above except the token, the host bridge, and the two `logs/shell.log`/desktop-specific data-directory defaults applies equally to `node app/vault-server.mts` / `npm start`. The bare server watches the same inbox, runs the same installer routes, and serves the same page — it just has no native folder picker or Finder integration (`POST /api/host/*` answers 501 without an embedder-supplied `host`, so the wizard and Settings tab fall back to a plain text input for a folder path) and, without a `--token`/`PACKRAT_TOKEN` set, runs with no token check on `/api/*` at all. Nothing in `app/` imports from `electron/` — the dependency runs one way, shell to server, which is what keeps `npm start`, `npm test`, and every non-Electron embedding of `startServer()` working unchanged.
 
+## HTTP routes
+
+Every route lives in `app/http/routes/`, one module per area, each exporting `routes(ctx)`. `app/vault-server.mts` builds the context (`app/http/context.mts`), runs the Host, Origin and token checks, and tries the routes through `app/http/router.mts` in the order of the modules below; a route may pass a request on (the run and optimize-job routes do for a method they do not handle), and a request no route answers is a 404 "not found", never a 405. What each route takes and answers:
+
+### `app/http/routes/static.mts`
+
+- `GET /` (index.html)
+- `GET /favicon.png` (app/assets/, the logo at 64 px)
+- `GET /logo-mark.png` (the rat's head cropped from the logo, 80 px, the sidebar's mark)
+- `GET /vault-lib.mjs`
+- `GET /item-query.mjs` (pure filter/sort/facet logic shared by the browser and GET /api/items below — no DOM, no node: imports, servable byte for byte like vault-lib.mts)
+- `GET /scan-schema.mjs` (vault-lib.mts imports it for parseStamp, so it must be servable to the browser the same way)
+- `GET /schema/validate.mjs` (scan-schema.mts's own import, same reason)
+- `GET /organize-config.mjs` (the rule editor's import, same reason)
+- `GET /buffs.mjs` (the Suit Builder's Manual buffs, same reason)
+- `GET /data-dir-notice.mjs` (ui/messages.mts's import, same reason)
+- `GET /paste-scan.mjs` (the Import drawer's instant preview parses a paste with the server's own rule, same reason)
+- `GET /ui/<name>` (name matching /^[a-z0-9-]+\.(mjs|css)$/, served from app/ui/, else 404)
+- `GET /ui/fonts/<name>.woff2` (the bundled IBM Plex faces, app/ui/fonts/, as binary font/woff2)
+
+### `app/http/routes/inventory.mts`
+
+- `GET /api/inventory` (the cached fold of every scan, with Organize's results overlay applied — getInventory(), keyed by a signature of the scans directory + shard, and of organize-state.json for the overlay, so an edited/added/removed scan file or a finished trip is picked up on the next request with no restart; each scan file is upgraded v1→v2 and schema- validated on read — scanStore.all() — an invalid or unparsable file is logged and skipped) — the response carries facets/worn/rootCounts/missingCounts/itemCount/propKeys — never the full item map (that stopped shipping in Task 5, once the page moved to paging GET /api/items instead)
+- `GET /api/missing?root=` — what left that root since its last scan (app/missing.mts, issue #99)
+- `GET /api/items?q=&slot=&loc=&rarity=&kind=&seenDays=&slayer=&nogarg=&med=&hide=&prop=&group=&sort=&dir=&offset=&limit=` — a paged, server-side search/sort over the same folded inventory (parseItemQuery/applyItemQuery, app/item-query.mts); &fields=hits answers lean rows (hitRow), up to HIT_LIMIT a page, for the House map's search
+- `GET /api/items/by-serial?serials=1,2,3` — full item records (location/tags/equippedBy…) by serial, 1-200 at a time (400 otherwise); a serial with no item is simply absent from the response
+
+### `app/http/routes/prefs.mts`
+
+- `GET|PUT /api/profiles` (`<data>/profiles.json`)
+- `GET|PUT /api/tazuo-panel` ({hotkey?, showAtLogin?} -> {prefs}: the TazUO panel's hotkey and whether it shows its window at login, `<data>/tazuo-panel.json`, app/tazuo-panel.mts)
+- `GET|PUT /api/ui-prefs` (`<data>/ui-prefs.json:` {cols?, colsVersion?, colWidths?, sheetProps?, theme?, appearance?, sidebar?, density?, areaLabels?, mapDrawerWidth?, builderMode?, manualFor?, manualSuit?, manualBuffs?, autoBuffs?, buffSkills?, buffsCount?, dismissedUpdate?, copiedScanner?}, the page's view choices)
+
+### `app/http/routes/settings.mts`
+
+- `GET|PUT /api/settings` (`<data>/settings.json:` {shard, setupDone?, client?, retention?, autoUpdateCheck?, uoFolder?})
+- `POST /api/retention/cleanup` {dryRun} -> {scans, runs, refused} (prune old scans and saved runs now, or count what that would remove; app/retention.mts; 409 under --demo)
+- `GET /api/rules` (the current shard's rules object plus every {id,name,source} listRules() finds — builtin and `<data>/rules/*.json`)
+
+### `app/http/routes/setup.mts`
+
+- Setup wizard (app/installer.mts backs all of these): GET /api/setup {firstRun, settings, adapters, candidates, installed, available, dataDir, dataDirCheck}
+- `GET /api/setup/scanner?adapter=<id>` {version, script} (a paste-transport adapter's bundled scanner, for the page's Copy button)
+- `POST /api/setup/locate` {adapter, dir}
+- `POST /api/setup/install` {adapter, scriptsDir} (409 while a Legion script is running in the client, per installer.mts's bridge-status guard)
+- `GET /api/update-check` (a GitHub releases/latest check, 10 s timeout, a success cached for an hour; {configured: false} when package.json names no GitHub repo)
+
+### `app/http/routes/import.mts`
+
+- `POST /api/import/paste` {text, adapter} (413 past watcher.mts's MAX_INBOX_BYTES; app/import.mts's parsePastedScan: what the ClassicUO web-client scanner prints, marker block or bare JSON, upgraded/validated and written straight into that adapter's inbox — for a client whose sandbox can't write files at all)
+- `POST /api/import/rescan` {} (scanOnce() on every running watcher, for a scan file the folder watcher missed; {adapters: [ids swept]}, empty under --demo; 503 with {failed: [ids]} when an inbox could not be swept)
+
+### `app/http/routes/host.mts`
+
+- `GET /api/events` — SSE, one stream shared by every connected client (not per-job like the optimize events above): hello {ok, watching: [adapter ids]} on connect, inventory {file, character, scannedAt, at} once an inbox file is accepted into paths.scans, rejected {file, reason, at} once one is moved to its adapter's rejected/ folder, changed {what: "inventory"|"runs", by?, at} (by: the forgetting tab's x-client-id) after a forget, forget-character, run deletion or retention prune (so other open tabs reload), ping every 15s. A normal token-protected /api/* route (no SSE exemption — unlike `/api/optimize/<id>/events`, this stream carries no per-job secret an EventSource couldn't send anyway). Non-demo mode starts one app/watcher.mts per `adapters/<id>/` directory that ships a capabilities.json (today: tazuo, razor-enhanced and classicuo-web), watching paths.inboxFor(id) and normalising accepted files into paths.scans; --demo starts none (paths.scans there is the committed app/fixtures/, which must never be written to).
+- `POST /api/host/pick-folder` {title} and POST /api/host/open-path {which: "data"|"logs"} — both need the optional `host` startServer({..}, {host}) was given (a folder-picker/opener the Electron shell supplies); 501 on the bare server. GET/PUT /api/settings additionally carries setupDone and client ({adapter, scriptsDir} | null).
+
+### `app/http/routes/optimize.mts`
+
+- `POST /api/optimize` {pools,current,profile,opts} -> {id}, or {character,settings,profile,opts} to have the server build the pools itself (buildPools, per-slot lockedSlots/blocked handling — see the route below; with `pinned`, Manual's suit {slot: serial}, it fills only the empty slots, for a character or none, and is never saved as a run); either form's response carries poolSize/skipped/current/blocked/warning?
+- `GET /api/optimize/<id>/events` (SSE: hello, progress, done|failed|cancelled)
+- `POST /api/optimize/<id>/cancel`
+- `GET /api/optimize/<id>/status`
+- A POST /api/optimize whose inputs match a saved run that cannot be bettered returns {cached: true, run} at once.
+- `GET /api/runs?character=` (saved runs, newest first)
+- `GET|PUT {label}|DELETE /api/runs/<id>`
+- `POST /api/runs` {character, suit, settings, inventoryStamp} (save Manual's suit as a run, method "manual")
+
+### `app/http/routes/mcp.mts`
+
+- `GET /api/mcp` -> {config: {enabled, allowActions, port, token}, live: {listening, port, portBusy}}
+- `PUT /api/mcp` {enabled?, allowActions?}
+- `POST /api/mcp/token` {} (rotate) — the built-in MCP server's settings (`<data>/mcp.json`, app/mcp.mts; it listens on its own port)
+
+### `app/http/routes/bridge.mts`
+
+- `POST /api/bridge` {action, serial, name, chain: [root…parent], pos|null} (queue for packrat-bridge.py)
+- `GET /api/bridge/status`
+- `POST /api/bridge/stop` {} (Organize's Stop: writes `<data>/bridge/stop`, which packrat-bridge.py checks between a trip's steps)
+
+### `app/http/routes/forget.mts`
+
+- `POST /api/forget` {root} (drop a container from the inventory: writes a tombstone scan; 409 under --demo, which must never write into the committed app/fixtures/)
+- `POST /api/forget-character` {character} (drop a character's card, worn set, backpack and bank: a `_vault` tombstone carrying forgetCharacter; 409 under --demo)
+
+### `app/http/routes/blacklist.mts`
+
+- `GET|POST {serial, name, where?} /api/blacklist`
+- `DELETE /api/blacklist/<serial>` (`<data>/scan-blacklist.json`, the containers scans never open)
+
+### `app/http/routes/houses.mts`
+
+- `GET /api/houses` (the houses scans captured: app/house-capture.mts, each with its container serials; tiledataFrom says where tiledata.mul came from, or why there is none)
+- `GET /api/houses/<id>` (one house's model: app/house-model.mts, tiledata.mul via app/tiledata.mts or the uoFolder setting)
+- `GET /api/facet-map/<facet>.png?x0&y0&x1&y1&w` (x-region: the region drawn, slid inside the facet; a facet overview from the same UO folder's facetNN.mul: app/facet-map.mts, app/png.mts; 404 {reason} when there is none)
+- `GET /api/house-map`
+- `PUT /api/house-map/<id>` {name, bounds?, areas?} (`<data>/house-map.json`, the player's house names and drawn areas: app/house-names.mts; an empty name with no areas removes the entry; 400 on a bad name, area or id, 409 when a change would grow it past 500 names or 1 MB)
+
+### `app/http/routes/kinds.mts`
+
+- `GET|POST {name?, graphic?, kind} /api/item-kinds`
+- `POST /api/item-kinds/import` {names?, graphics?} (`<data>/item-kinds.json`, the player's own item kinds: app/item-kinds.mts; kind null resets, an import merges)
+
+### `app/http/routes/organize.mts`
+
+- `GET|PUT /api/organize` (`<data>/organize.json`, Organize's labels, rules, catch-all and pinned items: app/organize-config.mts; GET salvages a hand-edited file and lists what it dropped in `problems`)
+- `GET /api/organize/presets` (app/organize-presets.mts's PRESETS, the rule filters the Organize page offers to start a rule from; read-only)
+- `POST /api/organize/match` {match} -> {count, pieces, sample} (the movable items in labelled roots that one rule filter takes, ignoring the other rules: the rule editor's live count; read-only)
+- `POST /api/organize/propose` {strategy: "simple"|"detailed"|"build", containers?: [serial…]} -> {proposal} (Auto organize: app/organize-strategies.mts's proposeOrganize over the ticked ground chests, or every one it ticks by default; the proposal carries the whole next setup, which the page saves with PUT /api/organize; read-only; 409 when organize.json needed salvage or the proposal would not save)
+- `GET /api/organize/plan` (app/organize.mts's planOrganize over the fold, organize.json, the blacklist and the results overlay `<data>/organize-state.json`, after reading finished trips out of the bridge's status.json; `running` = {id, index, queuedAt, picked} for the trip not reported back yet, or null)
+- `POST /api/organize/trip` {index, stamp} (queues that trip of the CURRENT plan with app/bridge-trip.mts's queueTrip; 409 when the client's bridge has no "trip", organize.json needed salvage, a trip has not reported back (while its bridge's heartbeat is fresh), stamp is not the plan's, or the trip is not its site's first)
+- Put away (issue #131; no route: the TazUO panel drops `inbox/<adapter>/putaway-request.json`, the watcher hands it to putAway, which queues the first trip of the plan for the container the player picked like POST /api/organize/trip and answers in `bridge/<adapter>/putaway.json`; app/put-away.mts)
+
 ## Logs
 
 `<data>/logs/server.log` is the server's own log, unchanged by the shell: an activity and error log, not a request log — successful requests are never logged. It carries watcher accepts and rejects (by absolute path, so it names the player's folder layout and their character names), install progress, and ref-keyed stack traces for a route or job failure (see `CONTRIBUTING.md`'s Security section), never returned to the client itself. `<data>/logs/shell.log` is desktop-only, written by `main.mts`: its own lifecycle lines (`shell: starting …`, `shell: quitting …`) plus everything the server child prints to stdout/stderr, prefixed `server: `. A player reporting a bug needs to attach both files, or the ref from `server.log` alone if that's all that's relevant — and `PRIVACY.md` warns them what attaching one discloses.

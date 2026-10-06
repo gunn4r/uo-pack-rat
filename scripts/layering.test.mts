@@ -3,7 +3,7 @@
 //   1. nothing outside app/ui/ imports from app/ui/ (tests excluded);
 //   2. the browser-shared modules (tsconfig.browser.json's include, minus app/ui/**) reach no node: module;
 //   3. the modules outside app/ui/ have no import cycles, and the app/ui/ modules no cycles beyond the known groups below;
-//   4. every module app/ui/ reaches outside app/ui/ has its own "/<path>.mjs" route in app/vault-server.mts (the page
+//   4. every module app/ui/ reaches outside app/ui/ has its own "/<path>.mjs" route in app/http/routes/static.mts (the page
 //      gets a 404 at load otherwise; build:ui compiles it whether or not the include lists it) and reaches no node: module;
 //   5. app/store/ and app/services/ import nothing from app/http/ (type imports included);
 //   6. nothing imports app/vault-server.mts except electron/, scripts/, the test fixtures (*-fixture.mts) and tests;
@@ -111,8 +111,8 @@ test("[smoke] layering: no app/ui/ module imports app/ui/app.mts", () => {
   assert.deepEqual(found, []);
 });
 
-// The static routes app/vault-server.mts serves a shared module on, read from its `url.pathname === "/x.mjs"` checks.
-const routes = new Set([...readFileSync(posix.join(root, "app/vault-server.mts"), "utf8").matchAll(/url\.pathname === "(\/[^"]+\.mjs)"/g)].map((m) => m[1]!));
+// The static routes the server serves a shared module on, read from app/http/routes/static.mts's `path: "/x.mjs"` entries.
+const routes = new Set([...readFileSync(posix.join(root, "app/http/routes/static.mts"), "utf8").matchAll(/path: "(\/[^"]+\.mjs)"/g)].map((m) => m[1]!));
 const routeOf = (f: string): string => `/${f.slice("app/".length).replace(/\.mts$/, ".mjs")}`;
 
 test("[smoke] layering: every module app/ui/ reaches outside app/ui/ has its static route and reaches no node: module", () => {
@@ -122,7 +122,7 @@ test("[smoke] layering: every module app/ui/ reaches outside app/ui/ has its sta
     for (const [to, path] of reach(f)) {
       if (isUi(to) || found.has(to)) continue;
       if (!to.startsWith("app/")) found.set(to, `${path.join(" → ")}: not a module the page can load`);
-      else if (!routes.has(routeOf(to))) found.set(to, `${path.join(" → ")}: no ${routeOf(to)} route in app/vault-server.mts`);
+      else if (!routes.has(routeOf(to))) found.set(to, `${path.join(" → ")}: no ${routeOf(to)} route in app/http/routes/static.mts`);
     }
   }
   assert.deepEqual([...found.values()], []);

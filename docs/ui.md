@@ -137,7 +137,7 @@ To add another theme family `<family>`:
 
 1. Write `app/ui/<family>.css` with two blocks, `[data-theme="<family>"][data-mode="light"], [data-theme="<family>"] [data-mode="light"]` and the same for `dark`. Each must set every `--color-*` role Default's light block sets and every property Default's dark block sets (game colors, shadows, `--ring-focus`, the aliases), and nothing Default doesn't define; `app/theme.test.mts` checks both, so a new role added to Default later can't silently fall back to Default's light value inside the family. Structural tokens (spacing, type scale, heights, layout widths, z-layers, motion) are not overridable.
 2. Bundle any font as woff2 under `app/ui/fonts/` with its license text, `@font-face` in the family's stylesheet, and name it only through `--font-display`. Keep images inline (`data:`); the CSP allows `img-src 'self' data:` and the theme test refuses any other `url()`.
-3. Link the stylesheet in `app/index.html` right after `tokens.css`, add the id to `BUILT_THEMES` in `app/ui/theme.mts`, the label to `THEMES` in `app/ui/settings.mts`, and the id to `UI_PREF_CHOICES.theme` in `app/vault-server.mts`.
+3. Link the stylesheet in `app/index.html` right after `tokens.css`, add the id to `BUILT_THEMES` in `app/ui/theme.mts`, the label to `THEMES` in `app/ui/settings.mts`, and the id to `UI_PREF_CHOICES.theme` in `app/store/ui-prefs.mts`.
 4. Add the id to `FAMILIES` in `scripts/ui-contrast.test.mts`, which then measures every scene in the new family in both modes, and look at every screen in both modes before calling it done.
 
 ## Contrast check

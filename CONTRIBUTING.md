@@ -55,7 +55,7 @@ The **one** compile step anywhere in the project is the page, because a browser 
 
 `npm run typecheck` (`tsc -p tsconfig.json`, no emit) is what CI enforces on macOS, Windows and Linux, and it checks the whole project, build step or not.
 
-`tsconfig.json` turns on `noUnusedLocals` and `noUnusedParameters`, so an unused import, local or parameter fails the typecheck, and `scripts/layering.test.mts` enforces the import layering: nothing outside `app/ui/` imports from it, the browser-shared modules (`tsconfig.browser.json`'s `include`) reach no `node:` module, modules outside `app/ui/` have no import cycles, and every module the page imports from outside `app/ui/` has its own static route in `app/vault-server.mts` and reaches no `node:` module.
+`tsconfig.json` turns on `noUnusedLocals` and `noUnusedParameters`, so an unused import, local or parameter fails the typecheck, and `scripts/layering.test.mts` enforces the import layering: nothing outside `app/ui/` imports from it, the browser-shared modules (`tsconfig.browser.json`'s `include`) reach no `node:` module, modules outside `app/ui/` have no import cycles, and every module the page imports from outside `app/ui/` has its own static route in `app/http/routes/static.mts` and reaches no `node:` module; `app/store/` and `app/services/` import nothing from `app/http/`, and only `electron/`, `scripts/` and the test fixtures import `app/vault-server.mts`.
 
 `app/schema/types.d.mts` is **generated** from the five JSON Schema files by `npm run build:types` (`scripts/build-schema-types.mts`, see Run / dev loop below). The schemas remain the authority — a shape change is made there, never by hand-editing the generated file, which is git-ignored and simply overwritten on the next build.
 
