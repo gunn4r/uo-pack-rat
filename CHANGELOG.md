@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- **One message when a view choice cannot be saved** (issue #218): when the app cannot save a column choice, a density, the look, a drawer width or another view choice, it now says "Could not save your view choice" with the reason, the same words on every screen. For contributors: the item widgets (rarity, tags, location, row actions and the ⋯ menu) live in `app/ui/item-parts.mts`, and the resist names in one `RESIST_META` table.
 - **The Inventory's Slot filter lists Neck under Armor** (issue #218): the neck slot sits on the paperdoll's armor row, so the Slot filter now shows it with Head, Chest, Arms, Hands and Legs instead of under Jewelry. Every screen now takes its slot groups from one table, so they can't disagree again.
 - **One rule for neck armor** (issue #218): meditation and Organize used two slightly different word lists to tell neck armor from a necklace. Both now use one: a gorget, a mempo, a collar, or a piece named Armor. A neck piece named Armor now counts as armor for the meditation filter and a meditation-safe suit, and a collar now goes with the armor in Organize (Simple's Armor, Detailed's and the preset's **Armor: neck**) instead of with the necklaces.
 - **For contributors: a module map and change checklists** (issue #218): `docs/module-map.md` says where each module and concept lives, `docs/change-checklists.md` lists everything else to change for each kind of change, the pull request template asks which kinds a change is, and `CLAUDE.md` is a short guide for coding agents. A test keeps the map current.

@@ -260,7 +260,17 @@ const titleCase = (x: string): string => x.replace(/\b\w/g, (c) => c.toUpperCase
 export const labelOf = (k: string): string => (k.startsWith("sk:") ? "+" + titleCase(k.slice(3)) : PROP_LABELS[k] || k);
 export const fullOf = (k: string): string => (k.startsWith("sk:") ? `${titleCase(k.slice(3))} skill bonus from items` : PROP_FULL[k] || k);
 
-export const RESIST_KEYS: string[] = ["physResist", "fireResist", "coldResist", "poisonResist", "energyResist"];
+// The five resists in paperdoll order, with the names the page shows: the long one ("Physical"), the short one
+// ("Phys") and the colour token (--res-phys).
+export interface ResistMeta { key: string; long: string; short: string; token: string }
+export const RESIST_META: ResistMeta[] = [
+  { key: "physResist", long: "Physical", short: "Phys", token: "--res-phys" },
+  { key: "fireResist", long: "Fire", short: "Fire", token: "--res-fire" },
+  { key: "coldResist", long: "Cold", short: "Cold", token: "--res-cold" },
+  { key: "poisonResist", long: "Poison", short: "Poison", token: "--res-poison" },
+  { key: "energyResist", long: "Energy", short: "Energy", token: "--res-energy" },
+];
+export const RESIST_KEYS: string[] = RESIST_META.map((r) => r.key);
 // A shard's Resisting Spells bonus, from its rules file's resistSkillBonus.breakpoints (uoalive: +0.4/pt
 // to 100, +0.2/pt 100-120; a shard with no such bonus ships an empty breakpoints array).  Each
 // breakpoint is [to, rate]: rate applies to the slice of skill between the previous breakpoint and

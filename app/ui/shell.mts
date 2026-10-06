@@ -4,7 +4,7 @@
 // its own <main> in index.html with its h1 in the top bar.
 import { state } from "./store.mts";
 import { $, el } from "./dom.mts";
-import { api } from "./api.mts";
+import { prefs } from "./prefs.mts";
 import { box, button, keyValue, popover, txt, type PopoverHandle, modalOpen } from "./components.mts";
 import { currentBridgeView, bridgeLastAnswered, currentAdapter, pollBridge } from "./bridge.mts";
 import { relativeWhen } from "./messages.mts";
@@ -31,7 +31,7 @@ export function applyShellPrefs(prefs: UiPrefs | null): void {
 function togglePin(): void {
   pinned = !pinned;
   paintCollapse();
-  api("/api/ui-prefs", { method: "PUT", body: { sidebar: pinned ? "collapsed" : "auto" } }).catch(() => { /* a view choice; the next launch just starts expanded */ });
+  prefs.set({ sidebar: pinned ? "collapsed" : "auto" }, { quiet: true });   // a view choice; the next launch just starts expanded
 }
 
 // ---------------------------------------------------------------- nav
