@@ -154,6 +154,9 @@ import { proposeOrganize, STRATEGY_IDS, type StrategyId } from "./organize-strat
 import { latestHouses, type HouseSource } from "./house-capture.mts";
 import { checkHouseEntry, isHouseId, readHouseMap, saveHouseEntry, MAX_ENTRY_BYTES, type HouseMapDoc } from "./house-names.mts";
 import { buildHouseModel, plotBounds, plotSize, type HouseContainerInput, type HouseModel } from "./house-model.mts";
+import type { HouseApiResponse, HousesApiResponse } from "./house-model-types.mts";
+import type { OrganizePlanApiResponse, ProposeResult } from "./organize-types.mts";
+import type { RunBody, RunsListBody, RunSummary } from "./runs-types.mts";
 import { uoFolderFromTazuo, loadTileData, type TileData } from "./tiledata.mts";
 import { decodeFacet, renderRegion, type FacetBitmap, type Region } from "./facet-map.mts";
 import { encodePng } from "./png.mts";
@@ -1999,14 +2002,14 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
         const run = manualRun({ id: randomUUID(), character, createdAt: new Date().toISOString(), settings: settings as Record<string, unknown>, inventoryStamp, suit: pieces, worn, slots: GEAR_SLOTS });
         writeFileAtomic(join(RUNS, `${run.id}.json`), JSON.stringify(run), DATA_FILE_MODE);
         broadcastEvent("changed", { what: "runs", at: Date.now() });
-        return send(res, 200, { ok: true, run: runSummary(run) });
+        return send(res, 200, { ok: true, run: runSummary(run) } satisfies RunBody<RunSummary>);
       }
       if (req.method === "GET" && url.pathname === "/api/runs") {
         const who = url.searchParams.get("character");
         // a run saved with twelve slots counts what its character wears in the others (runs-lib.mts totalsAfter)
         const { inv } = await getInventory(), { toOptItem } = await lib(), worn = new Map<string, OptItem[]>();
         for (const it of Object.values(inv.items)) if (it.equippedBy && it.gear && it.slot) worn.set(it.equippedBy, [...(worn.get(it.equippedBy) || []), toOptItem(it)]);
-        return send(res, 200, { ok: true, runs: readRuns().filter((r) => !who || r.character === who).map((r) => runSummary(r, worn.get(r.character ?? "") || [])) });
+        return send(res, 200, { ok: true, runs: readRuns().filter((r) => !who || r.character === who).map((r) => runSummary(r, worn.get(r.character ?? "") || [])) } satisfies RunsListBody);
       }
       const runMatch = url.pathname.match(/^\/api\/runs\/([\w-]+)$/);
       if (runMatch) {
@@ -2021,7 +2024,7 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
         const DAMAGED_RUN = "that saved run's file is damaged and cannot be read; delete it";
         if (req.method === "GET") {
           const run = readRun();
-          return run ? send(res, 200, { ok: true, run }) : send(res, 404, { ok: false, error: DAMAGED_RUN });
+          return run ? send(res, 200, { ok: true, run } satisfies RunBody) : send(res, 404, { ok: false, error: DAMAGED_RUN });
         }
         if (req.method === "DELETE") { unlinkSync(f); broadcastEvent("changed", { what: "runs", at: Date.now() }); return send(res, 200, { ok: true }); }
         if (req.method === "PUT") {
@@ -2033,7 +2036,7 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
           if (!run) return send(res, 404, { ok: false, error: DAMAGED_RUN });
           run.label = label.slice(0, 120);
           writeFileAtomic(f, JSON.stringify(run), DATA_FILE_MODE);
-          return send(res, 200, { ok: true, run: runSummary(run) });
+          return send(res, 200, { ok: true, run: runSummary(run) } satisfies RunBody<RunSummary>);
         }
       }
       const jobMatch = url.pathname.match(/^\/api\/optimize\/([\w-]+)\/(events|cancel|status)$/);
@@ -2218,11 +2221,11 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
         }
         const from = houseTileData(), td = from.td, names = readNames().houses;
         const named = (id: string): { name?: string } => (names[id]?.name ? { name: names[id].name } : {});
-        if (one) return send(res, 200, { ok: true, house: { ...houseModel(inv, one, td), ...named(one.id) } });
+        if (one) return send(res, 200, { ok: true, house: { ...houseModel(inv, one, td), ...named(one.id) } } satisfies HouseApiResponse);
         return send(res, 200, { ok: true, tiledata: td !== null, tiledataFrom: { folder: from.folder, source: from.source, reason: from.reason }, houses: houses.map((h) => {
           const m = houseModel(inv, h, td);
           return { id: h.id, ...named(h.id), facet: h.facet, capturedAt: h.capturedAt, captures: h.captures, ...plotSize(m), plot: plotBounds(m), levels: m.levels.length, containers: m.stacks.reduce((a, st) => a + st.serials.length, 0), serials: m.stacks.flatMap((st) => st.serials) };
-        }) });
+        }) } satisfies HousesApiResponse);
       }
       // The facet overview (issue #164): GET /api/facet-map/<facet>.png?x0&y0&x1&y1[&w], the facet 0 to 5, a region in tiles (x1, y1 exclusive) and a size of at most 2048 on either side (1024 by default), never larger than the region. A region reaching past the facet is slid inside it (and cut to the facet's size), and `x-region: x0,y0,x1,y1` says which one was drawn. A 404 says why there is no image (no UO folder, the file missing or not a facet bitmap) as a reason word, never with the path.
       if (req.method === "GET" && url.pathname.startsWith("/api/facet-map/")) {
@@ -2318,13 +2321,13 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
         const { fold, config, state, problems } = await organizeNow();
         if (problems.length) return send(res, 409, { ok: false, error: `organize.json was hand-edited and parts of it were dropped (${problems[0]}); open Organize and save the setup first` });
         const r = proposeOrganize(fold, config, state.moves, { strategy: strategy as StrategyId, containers: containers as number[] | undefined, now: Date.now(), rarity: currentRules.rarity, suitPieces: suitsFor(config.rules.map((r) => r.match)), blacklist: readBlacklist().map((e) => e.serial), seen: state.seen });
-        return send(res, r.ok ? 200 : 409, r);
+        return send(res, r.ok ? 200 : 409, r satisfies ProposeResult);
       }
       if (req.method === "GET" && url.pathname === "/api/organize/plan") {
         // `running`: the trip in flight, if any, so a page reloaded (or opened in a second window) mid-trip follows it.
         const { state, plan, bridges } = await organizeNow();
         const p = state.pending[0];
-        return send(res, 200, { ok: true, plan, running: p ? { id: p.id, index: p.index, queuedAt: p.queuedAt, picked: bridges[p.adapter]?.current === p.id } : null });
+        return send(res, 200, { ok: true, plan, running: p ? { id: p.id, index: p.index, queuedAt: p.queuedAt, picked: bridges[p.adapter]?.current === p.id } : null } satisfies OrganizePlanApiResponse);
       }
       if (req.method === "POST" && url.pathname === "/api/organize/trip") {
         // One trip of the CURRENT plan, built here and queued with queueTrip: the page names the trip and the plan it

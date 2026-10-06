@@ -10,10 +10,10 @@ import { ancestry, applyOverlay, claimOf, emptyBagsOf, planOrganize, posOk, rule
 import { bagLabel, TRASH_RE, type Container, type ContainerCapacity, type Inventory, type Item } from "./vault-lib.mts";
 import type { RuleQuery } from "./item-query.mts";
 import type { RulesV1RarityItem } from "./schema/types.d.mts";
+import type { Candidate, Family, GroupReport, Layout, ProposeResult, StrategyId, Unusable } from "./organize-types.mts";
+export type { BagGap, Candidate, Family, GroupReport, Layout, Proposal, ProposeResult, StrategyId, Unusable } from "./organize-types.mts";
 
-export type StrategyId = "simple" | "detailed" | "build";
 export const STRATEGY_IDS: readonly StrategyId[] = ["simple", "detailed", "build"];
-export type Family = "armour" | "jewelry" | "weapons" | "other-gear" | "gear" | "reagents" | "scrolls" | "maps" | "resources" | "potions" | "runes-books" | "deeds" | "gems" | "tools" | "clothing" | "other";
 // One group of a strategy: the name its chests are labelled with and its rules carry, and the filters that make it
 // (an item is in the group when any passes). Each filter becomes one rule, in this order, all filling the group's
 // chests: Armour needs two, since one filter cannot say "these slots, or the neck slot named gorget".
@@ -279,39 +279,7 @@ function sharedChests(groups: readonly { key: string }[], chains: ReadonlyMap<st
   return new Map([...by].filter(([, keys]) => keys.length > 1));
 }
 
-// A ground chest Auto organize may use: its name as the player knows it (its label, else its engraving or name),
-// its house (site), its fill, its label, and whether the player's own setup uses it (a manual label, or a target
-// of a manual rule or of the catch-all), which leaves it unticked by default unless an earlier strategy rule fills
-// it (the player ticked it last time, and unticking it now would move its items out on a re-run).
-export interface Candidate { serial: number; name: string; site: number; fill: { items: number; max: number }; label: { name: string; origin: Origin } | null; mine: boolean; ticked: boolean }
-export interface Unusable { serial: number; name: string; reason: string }
-// One group of the proposal. needSlots = its items at its home site (one slot each: merges are the plan's to find),
-// roomSlots = what its chests take, crossSite = its items at other houses (never moved). A group sharing a chest
-// fills its own bag there (targets = [the bag], bagIn = the chest), or, with no bag left for it, the chest itself
-// among the other groups' bags (needsBag).
-export interface GroupReport { key: string; name: string; family: Family; ruleIds: string[]; items: number; needSlots: number; targets: number[]; bagIn: number | null; needsBag: boolean; roomSlots: number; shortfall: number; addContainers: number; crossSite: number }
-// What the full layout (FILL, a bag for each group sharing a chest) needs beyond what the player has: `chests` more
-// house chests, and bags: for each shared chest (null: one of the chests to add, by its family's name) how many more
-// bags it needs. `spareBags`: empty bags already in the ticked chests that no group was given, to move in first.
-// `roomy`: the proposal fills to FILL where filling to the top would have given other chests.
-export interface BagGap { chest: number | null; family: string; bags: number }
-export interface Layout { chests: number; bags: BagGap[]; spareBags: number; roomy: boolean }
-export interface Proposal {
-  strategy: StrategyId;
-  candidates: Candidate[];
-  unusable: Unusable[];
-  containers: number[];                         // the ticked chests it used, ascending
-  refused: { serial: number; reason: string }[];   // asked for, but not usable
-  groups: GroupReport[];                        // in rule order
-  unassigned: number;                           // groups that got no chest
-  layout: Layout;
-  manualRules: number;
-  config: OrganizeConfig;                       // the whole setup Accept saves (PUT /api/organize)
-  changed: boolean;                             // false when config is the current setup
-  plan: { moves: number; trips: number; noRoom: number; crossSite: number; unclaimed: number; seconds: number };   // planOrganize on config
-}
 export interface ProposeOptions extends ScopeOptions { strategy: StrategyId; containers?: readonly number[] | undefined; rarity?: RulesV1RarityItem[] | undefined; suitPieces?: ReadonlySet<number> | undefined }
-export type ProposeResult = { ok: true; proposal: Proposal } | { ok: false; error: string };
 
 const bySerial = (a: number, b: number): number => a - b;
 const plainName = (c: Container): string => ((c.label || bagLabel(c)) || `0x${(+c.serial).toString(16)}`).slice(0, 64);
