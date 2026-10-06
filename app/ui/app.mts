@@ -6,12 +6,11 @@ import { state } from "./store.mts";
 import { $, el, installTooltip, toast } from "./dom.mts";
 import { api, onReadOnly } from "./api.mts";
 import { pollBridge } from "./bridge.mts";
-import { fetchItems, initFilters, applyUiPrefs, inventoryFailed } from "./inventory.mts";
+import { initFilters, applyUiPrefs, inventoryFailed } from "./inventory.mts";
 import { showCharacter } from "./characters.mts";
 import { initBuilder } from "./builder.mts";
-import { applyBuilderPrefs } from "./builder-manual.mts";
-import { renderContainers } from "./containers.mts";
-import { scrollsChanged } from "./scrolls.mts";
+import { applyBuilderPrefs, initManual } from "./builder-manual.mts";
+import "./builder-result.mts";   // provides the result commands to ui/builder-session.mts; nothing else imports it
 import { connectEvents } from "./events.mts";
 import { openWizard } from "./wizard.mts";
 import { renderSettings, startUpdateChecks } from "./settings.mts";
@@ -21,7 +20,9 @@ import { applyLook } from "./theme.mts";
 import { initShell, applyShellPrefs, setCurrentNav } from "./shell.mts";
 import { segmented, clearToasts, closePopover } from "./components.mts";
 import { openRunsDrawer, closeRunsDrawer } from "./runs.mts";
+import { session } from "./builder-session.mts";
 import "./organize.mts";   // registers its route and its inventorychange listener; nothing else imports it
+import "./scrolls.mts";    // the same for the Scrolls view
 import { applyMapPrefs } from "./house-map.mts";
 import { parseRoute, routeFor, showRoute } from "./nav.mts";
 import { get, reload, setPageLoad } from "./inventory-data.mts";
@@ -77,7 +78,7 @@ async function load(): Promise<void> {
   renderImport();
   connectEvents();
   if (setupRes.firstRun && !state.wizardShown) { state.wizardShown = true; openWizard({ firstRun: true }); }
-  if (!wired) { wired = true; initBuilder(); }
+  if (!wired) { wired = true; initBuilder(); initManual(); }
   try { await reload(); } catch (e) { loadFailed(e, DATA_PANELS); }
 }
 
@@ -123,15 +124,13 @@ for (const a of document.querySelectorAll<HTMLAnchorElement>("#sidebar [data-nav
   if (location.hash === next) showTab(a.dataset.nav as string); else location.hash = next;
 });
 window.addEventListener("hashchange", applyRoute);
-// A saved Organize setup changes how locations read: the Containers view and the Items rows redraw.
-document.addEventListener("organizechange", () => { if (state.inv) { renderContainers(); fetchItems(); scrollsChanged(); } });
 initShell();
 initFilters();   // the Inventory's toolbar and loading skeleton, before any data arrives
 showTab(parseRoute().tab);   // before the inventory loads, so a reload never flashes the wrong screen
 showCharacter(parseRoute().sheet);   // and a reload on a sheet lands on that sheet
 
 // A build left running when the tab closes would burn CPU for nothing: tell the server to drop it.
-window.addEventListener("pagehide", () => { const j = state.builder.job; if (j?.id) navigator.sendBeacon(`/api/optimize/${j.id}/cancel`); });
+window.addEventListener("pagehide", () => { const j = session.job; if (j?.id) navigator.sendBeacon(`/api/optimize/${j.id}/cancel`); });
 
 // The look before any data arrives: the system's light/dark until the saved choice lands in load().
 applyLook(null);

@@ -5,6 +5,7 @@
 import type { Item } from "../vault-lib.mts";
 import type { ItemQuery } from "../item-query.mts";
 import { $ } from "./dom.mts";
+import { state } from "./store.mts";
 import { clearAll } from "./inv-model.mts";
 import type { UiPrefs } from "./api-types.mts";
 import { initPeek, openPeek, closePeek, peekOpen, peekSerial, peekRefresh } from "./peek.mts";
@@ -50,6 +51,8 @@ export function initFilters(): void {
 }
 // Every load and refresh: the facets changed, and the rows come back with the same filters.
 document.addEventListener("inventorychange", () => { buildFilters(); fetchItems(); });
+// A saved Organize setup changes how locations read: the rows come back with the new labels.
+document.addEventListener("organizechange", () => { if (state.inv) fetchItems(); });
 // After every load and refresh: the facets changed, so the chips' words and the strip are redrawn, and
 // the toolbar comes back to life after a failed load.
 export function buildFilters(): void { inv.sync(); }

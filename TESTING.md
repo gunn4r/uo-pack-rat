@@ -74,6 +74,7 @@ Each test file says what it covers in its own header comment (a `.test.mts` file
 - `app/house-model.test.mts` — `app/house-model.mts` (issue #10) on synthetic houses (`app/house-fixture.mts`).
 - `app/house-names.test.mts` — `app/house-names.mts`, the house names and drawn areas in `<data>/house-map.json` (issue #164).
 - `app/house-server.test.mts` — the house routes (issue #10) and the facet overview (issue #164) on a real server and temp data folder.
+- `app/houses-data.test.mts` — `app/ui/houses-data.mts`, the House map's cache of house models by id and capture stamp (issue #10).
 - `app/http/router.test.mts` — `app/http/router.mts` on its own: which route answers a request.
 - `app/import-children.test.mts` — `app/ui/dom.mts`'s `compactChildren()`, the fix for the Import tab rendering the word "null".
 - `app/import-preview.test.mts` — `app/ui/import-preview.mts`, the Import drawer's preview card as data (design spec 4.9).
@@ -144,6 +145,7 @@ Each test file says what it covers in its own header comment (a `.test.mts` file
 - `scripts/american-spelling.test.mts` — a [smoke] guard for American spelling in what a player reads (issue #10).
 - `scripts/build-schema-types.test.mts` — the JSON Schema to TypeScript generator (`scripts/build-schema-types.mts`).
 - `scripts/build-ui.test.mts` — `scripts/build-ui.mts`'s `buildUi()`, the page build.
+- `scripts/css-guard.test.mts` — a [smoke] guard that keeps screen stylesheets from restyling the shared components, and the window breakpoints in one list.
 - `scripts/docs-links.test.mts` — a [smoke] guard that every repo path the Markdown names in backticks exists.
 - `scripts/electron-guards.test.mts` — the Electron shell's guards, from the phase-7 review: unit tests of the pure decisions and source-level checks on `electron/main.mts`.
 - `scripts/gen-contracts.test.mts` — `scripts/gen-contracts.mts`, the generator that copies `adapters/_shared/` fragments into the adapter scripts.

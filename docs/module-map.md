@@ -71,13 +71,15 @@ Profiles, buffs, pools, solvers, saved runs and Manual. `docs/solver.md` describ
 | `app/bench/run-bench.mts` | The scale benchmark sweep through `app/optimize-worker.mts`. | — |
 | `app/bench/make-fixtures.mts` | Regenerates the demo fixtures from the generator's model (needs real scans). | — |
 | `app/bench/mip-spike.mts` | The HiGHS spike, superseded by `app/mip.mts`; kept as evidence for `app/bench/REPORT.md`. | — |
-| `app/ui/builder.mts` | The Suit Builder screen: the panel, the optimize job over SSE, the empty state. | `initBuilder`, `selectCharacter`, `readControls`, `followJob`, `cancelJob` |
-| `app/ui/builder-result.mts` | The result beside the panel and the compare view. | `renderResult`, `renderCurrentSuit`, `openRunCompare` |
-| `app/ui/builder-manual.mts` | Manual mode: slot cards, picker, totals, undo, Fill the rest, Save as run; the builder's ui-prefs. | `renderManual`, `openInManual`, `applyBuilderPrefs`, `savePrefs`, `buffInputsOf`, `editBuffInputs` |
+| `app/ui/builder-session.mts` | The Suit Builder's one session: the state its four modules share (character, profile, result, job, saved runs and compare picks, Automatic or Manual, the knobs), with setters that fire `builderchange`, and the commands they call on each other, registered with `provide()`. | `session`, `commands`, `provide`, `readControls`, `applyKnobs` |
+| `app/ui/builder-parts.mts` | What more than one builder module draws or reads: key properties, the item tooltip, the verdict, the Fetch list and Grab all, an optimize job's events and progress words. | `fetchCard`, `grabAllButton`, `verdict`, `followJob`, `progressText` |
+| `app/ui/builder.mts` | The Suit Builder screen: the panel, the optimize job over SSE, the empty state. Provides the panel commands. | `initBuilder`, `selectCharacter`, `cancelJob` |
+| `app/ui/builder-result.mts` | The result beside the panel and the compare view. Provides the result commands. | — |
+| `app/ui/builder-manual.mts` | Manual mode: slot cards, picker, totals, undo, Fill the rest, Save as run; the builder's ui-prefs. Provides the Manual and buff-number commands. | `initManual`, `applyBuilderPrefs`, `savePrefs` |
 | `app/ui/builder-buffs.mts` | The buff chips, Manual's Buffs row and the buff picker. | `buffChip`, `createBuffPicker` |
 | `app/ui/builder-model.mts` | Pure: summaries, Advanced-field checks, resist-cap lines, badges, compare rows, run labels. | `KNOB_RANGES`, `compareModel`, `runAutoLabel` |
 | `app/ui/manual-model.mts` | Pure: Manual's totals keys, slot groups, hand rule, deltas, undo history, hand-offs. | `TOTAL_KEYS`, `STAT_KEYS`, `MANUAL_GROUPS`, `handConflict`, `slotDelta`, `fillableSlots` |
-| `app/ui/runs.mts` | The Saved runs drawer, and the settings snapshot a run is saved with. | `settingsSnapshot`, `applySettings`, `openRunsDrawer` |
+| `app/ui/runs.mts` | The Saved runs drawer, and the settings snapshot a run is saved with. Provides the runs commands. | `applySettings`, `openRunsDrawer`, `loadRuns` |
 
 ## Organize
 
@@ -122,6 +124,7 @@ Profiles, buffs, pools, solvers, saved runs and Manual. `docs/solver.md` describ
 | `app/house-names.mts` | `<data>/house-map.json`: house names and drawn areas, with its own reads and saves. A file that does not parse is moved aside as `.corrupt`, a newer one is read-only; a save that would grow the map past 500 names or 1 MB is refused (the route answers 409). | `checkHouseEntry`, `readHouseMap`, `saveHouseEntry`, `NAME_MAX`, `MAX_AREAS`, `AREA_COLORS` |
 | `app/house-fixture.mts`, `app/tiledata-fixture.mts`, `app/facet-fixture.mts` | Test fixtures: synthetic houses, tiledata and facet files. | `syntheticTileData`, `syntheticFacet` |
 | `app/ui/house-map.mts` | The House map screen: SVG levels, callouts, cut-away, pan and zoom, the detail panel. | `showMap`, `applyMapPrefs` |
+| `app/ui/houses-data.mts` | The House map's data: the house list and names fetched per visit, each model kept by id and capture stamp, and the house entry save. | `houses`, `housesData` |
 | `app/ui/house-map-model.mts` | Pure: projection, painter's order, fit, container joins with the inventory, color modes, callouts, totals, house picker. | `project`, `paintOrder`, `chestViews`, `pickHouse` |
 | `app/ui/house-links.mts` | Which house holds each container, for "Show on map". | `houseOfContainer`, `houseOfItem`, `showOnMap` |
 | `app/ui/world-map.mts` | The world map lightbox. | `openWorldMap` |
@@ -240,6 +243,7 @@ The page is `app/index.html` plus `app/ui/`, compiled by `scripts/build-ui.mts` 
 | `app/ui/nav.mts` | The hash routes, the screen registry they dispatch to, and the ways into the Items view other screens use. | `parseRoute`, `routeFor`, `registerScreen`, `showRoute`, `showItem`, `showContainer`, `showSearch`, `showKind`, `showCharacterItems` |
 | `app/ui/inventory-data.mts` | `reload()`: the inventory and profiles into the store, then the `inventorychange` event the screens redraw on. | `reload`, `retryLoad` |
 | `app/ui/shell.mts` | The left sidebar: nav with counts, the shard and last-scan line, the bridge control, collapse. | `initShell`, `renderNavCounts` |
+| `app/ui/breakpoints.mts` | The window-width breakpoints the stylesheets write as literals (`app/ui/tokens.css` lists them, `scripts/css-guard.test.mts` checks them). | `BREAKPOINTS`, `upTo` |
 | `app/ui/theme.mts` | Theme family and light/system/dark mode. | `resolveTheme`, `resolveMode`, `applyLook`, `BUILT_THEMES` |
 
 ### Infrastructure
@@ -263,7 +267,7 @@ The page is `app/index.html` plus `app/ui/`, compiled by `scripts/build-ui.mts` 
 | `app/ui/components.mts` | The component primitives as DOM builders, styled by `app/ui/components.css`. `box()` refuses a bare text child. | `box`, `txt`, `button`, `input`, `select`, `popover`, `createDrawer`, `openDialog`, `confirmDialog`, `table`, `menu`, `FLEX_CLASSES` |
 | `app/ui/dialog.mts` | A one-field prompt (Electron has no `window.prompt`). | `promptText` |
 | `app/ui/item-parts.mts` | The item widgets every screen shares: rarity, tags and location elements, the row actions and the ⋯ menu, and the filter wording's context. | `rarityEl`, `tagEls`, `locationEl`, `tagWords`, `itemActions`, `itemMenu`, `filterContext`, `setItemNav` |
-| `app/ui/item-browser.mts` | The item browser: filter toolbar, filter strip, column popover and virtual table, mounted more than once. | `createItemBrowser` |
+| `app/ui/item-browser.mts` | The item browser: filter toolbar, filter strip, column popover and virtual table, mounted more than once, over a data source (`GET /api/items` and the inventory's facets by default). | `createItemBrowser`, `itemsSource` |
 | `app/ui/sheet.mts` | The character sheet, shared by Characters and the Suit Builder. | `sheetNode`, `SLOT_GROUPS`, `SHEET_GROUPS`, `RESISTS` |
 | `app/ui/tazuo-panel.mts` | The TazUO panel's two options as controls. | `panelControls` |
 | `app/ui/paste-scanner.mts` | The Copy scanner script button for a paste-transport client. | `scannerCopy` |

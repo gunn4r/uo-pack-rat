@@ -45,7 +45,7 @@ Selection is two attributes on `<html>`, set by `app/ui/theme.mts` from the ui-p
 | Inventory, with its Items, Containers and Scrolls views | `main#tab-inventory` (`#inv-view-items`, `#tab-containers`, `#tab-scrolls`) | `ui/inventory.mts`, `ui/containers.mts`, `ui/scrolls.mts` (`ui/scrolls-model.mts`) | `ui/inventory.css` |
 | House map | `main#tab-map` (body `#map-body`) | `ui/house-map.mts` (screen, SVG, events), `ui/house-map-model.mts` (pure geometry, joins and modes) | `ui/house-map.css` |
 | Characters | `main#tab-characters` | `ui/characters.mts`, `ui/sheet.mts` | `ui/characters.css` |
-| Suit Builder | `main#tab-builder` (Manual: `#b-manual`) | `ui/builder.mts` (panel, build), `ui/builder-result.mts` (result, compare), `ui/builder-model.mts` (pure logic), `ui/builder-manual.mts` (Manual mode), `ui/manual-model.mts` (its pure logic) | `ui/builder.css` |
+| Suit Builder | `main#tab-builder` (Manual: `#b-manual`) | `ui/builder.mts` (panel, build), `ui/builder-result.mts` (result, compare), `ui/builder-model.mts` (pure logic), `ui/builder-manual.mts` (Manual mode), `ui/manual-model.mts` (its pure logic), `ui/runs.mts` (saved runs), `ui/builder-session.mts` (their shared state and commands), `ui/builder-parts.mts` (what more than one of them draws) | `ui/builder.css` |
 | Saved runs drawer | `#runs-drawer` | `ui/runs.mts` | `ui/runs.css` |
 | Organize, with its rule drawer and the Auto organize drawer | `main#tab-organize` (body `#org-body`); the drawer is built by its module | `ui/organize.mts` (screen, trips), `ui/rule-editor.mts` (drawer), `ui/auto-organize.mts` (Auto organize drawer), `ui/organize-data.mts` (the setup), `ui/organize-model.mts` (pure logic) | `ui/organize.css` |
 | Settings | `main#tab-settings` | `ui/settings.mts` | `ui/settings.css` |
@@ -67,6 +67,8 @@ The sidebar's brand row is the mark, the rat's head cropped from the logo, as a 
 - `app/ui/styles.css` — the older shared classes the screens still use (`.panel`, `.stack`, `.field`, `.empty`, `.small`, plain tables, the item tooltip, the scrollbars) until each screen moves onto components. No literal colors anywhere: every color is a token.
 
 `<body class="pr">` is the root the resets hang off.
+
+A screen stylesheet does not restyle a component class: a new look or size becomes a component option. `scripts/css-guard.test.mts` fails on a rule whose subject carries a component class beyond its list of today's overrides, each under its reason. The window-width breakpoints are `app/ui/breakpoints.mts` (media queries cannot read custom properties, so the stylesheets write the numbers as literals, listed in `tokens.css`), and the same test fails on any other width in an `@media` rule or a `matchMedia()` call.
 
 ## Components (`app/ui/components.mts`)
 
@@ -117,7 +119,7 @@ To add another theme family `<family>`:
 
 A page module may import a server-side module, type or value, when that module and everything it imports is browser-safe (no `node:` import anywhere in the chain). One that reaches `node:` cannot be imported even for a type, because the browser build type-checks with `"types": []`. A shape the page needs from such a module goes in a types-only module beside it (`app/house-model-types.mts`, `app/organize-types.mts`, `app/runs-types.mts`): the owner re-exports it, the route `satisfies` it and `app/ui/api-types.mts` re-exports it, so a renamed field fails the typecheck on both sides. The rest are still declared by hand in `app/ui/api-types.mts`.
 
-`scripts/layering.test.mts` holds the rest: nothing outside `app/ui/` imports from it; every module the page imports from outside `app/ui/` has its own static route in `app/http/routes/static.mts` and reaches no `node:` module; and no `app/ui/` module imports `app/ui/app.mts`. Screens open each other through `ui/nav.mts` (see "How screens are wired" above).
+`scripts/layering.test.mts` holds the rest: nothing outside `app/ui/` imports from it; every module the page imports from outside `app/ui/` has its own static route in `app/http/routes/static.mts` and reaches no `node:` module; no `app/ui/` module imports `app/ui/app.mts`; and the Suit Builder's four modules (`builder`, `builder-manual`, `builder-result`, `runs`) never import each other: they read and set the builder's state through `ui/builder-session.mts` and call each other through its `commands`, which each module registers with `provide()` as it loads. Screens open each other through `ui/nav.mts` (see "How screens are wired" above).
 
 ## Rules learned building it
 

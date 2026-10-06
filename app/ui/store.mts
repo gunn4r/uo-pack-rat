@@ -4,7 +4,7 @@ import type { Item, EffectiveProfile } from "../vault-lib.mts";
 import type { FlatProfile, ProfilesV3, TemplateMap } from "../build-spec.mts";
 import type { Facets } from "../item-query.mts";
 import type { RulesV1 } from "../schema/types.d.mts";
-import type { BridgeAdapterReport, InventoryData, SettingsData, ShardOption, SetupApiResponse, OptSuit, OptimizeResult, OptimizeProgress, RunSummaryLike, SavedRunLike, OrganizeConfig, OrganizePlan, OrganizePreset } from "./api-types.mts";
+import type { BridgeAdapterReport, InventoryData, SettingsData, ShardOption, SetupApiResponse, OptSuit, OptimizeResult, OptimizeProgress, SavedRunLike, OrganizeConfig, OrganizePlan, OrganizePreset } from "./api-types.mts";
 
 // The suit builder's own working copy of a character's settings: the flat profile app/build-spec.mts's
 // characterProfile hands out (a saved character's spec, or the first template applied), with its race and template.
@@ -14,7 +14,7 @@ import type { BridgeAdapterReport, InventoryData, SettingsData, ShardOption, Set
 export type BuilderProfile = FlatProfile;
 
 // The suit builder's live-progress UI object (builder.mts's runPanel() return value) — kept here,
-// next to BuilderJob, since it's part of what state.builder.job actually holds.
+// next to BuilderJob, since it's part of what the builder session's job (builder-session.mts) actually holds.
 export interface BuilderJobUi {
   root: HTMLElement;
   update: (j: BuilderJob) => void;
@@ -67,18 +67,6 @@ export interface BuildMeta {
   skipped: Record<string, unknown> | undefined;
   reused: SavedRunLike | null;
 }
-export interface BuilderState {
-  character: string | null;
-  profile: BuilderProfile | null;
-  result: OptimizeResult | null;
-  job: BuilderJob | null;
-  runs: RunSummaryLike[];
-  compare: Set<string>;
-  openRun: string | null;
-  altView: number | null;
-  // A build that finished while another character was selected, shown when its character is next.
-  parked: FinishedBuild | null;
-}
 export interface BridgeState {
   online: boolean;
   character: string | null;
@@ -121,7 +109,6 @@ export interface AppState {
   // inventory (a rescan can move or drop a piece).
   itemCache: Map<number, Item>;
   sheetProps: string[] | null;    // the character sheet's shown properties (ui-prefs `sheetProps`); null = the default set
-  builder: BuilderState;
   organize: OrganizePage;
   // Set only once inventory-data.mts's reload() has fetched the inventory at least once — absent (not
   // null) before that, exactly as it is at runtime today (nothing in the initial object literal below
@@ -144,7 +131,6 @@ export const state: AppState = {
   // renders its own rows, which already carry full records. Cleared whenever load() refreshes the
   // inventory (a rescan can move or drop a piece).
   itemCache: new Map(),
-  builder: { character: null, profile: null, result: null, job: null, runs: [], compare: new Set(), openRun: null, altView: null, parked: null },
   organize: { config: null, problems: [], blacklist: [], places: new Map(), plan: null, presets: null },
 };
 

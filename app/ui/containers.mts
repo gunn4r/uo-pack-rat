@@ -128,6 +128,8 @@ export function showContainers(name: string | null): void {
 }
 registerScreen({ name: "containers", show: (r) => showContainers(r.scanner) });
 document.addEventListener("inventorychange", () => renderContainers());
+// A saved Organize setup changes how the containers read.
+document.addEventListener("organizechange", () => { if (state.inv) renderContainers(); });
 const showAll = (): HTMLElement => el("a", { href: "#/containers", id: "cont-show-all" }, "Show all");
 
 export function renderContainers(): void {
