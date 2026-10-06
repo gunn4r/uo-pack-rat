@@ -21,6 +21,8 @@
 .pr .set-forget-select { width: 140px; }
 
 /* AI assistants (MCP): the command and the JSON a client is set up with, as they will be pasted */
+/* On a narrow window a row with several buttons (the token's) puts them under its text rather than squeezing the text */
+@media (max-width: 720px) { #set-mcp .set-row { grid-template-columns: minmax(0, 1fr); } #set-mcp .set-row-control { justify-content: flex-start; } }
 .set-code { margin: 0; padding: var(--space-3); border-radius: var(--radius-md); background: var(--color-surface-sunken); color: var(--color-text); font-size: var(--text-sm); white-space: pre-wrap; overflow-wrap: anywhere; }
 
 /* a folder: label 160px · path fluid · Open */

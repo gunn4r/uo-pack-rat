@@ -45,6 +45,7 @@ export async function renderSettings(setup?: SetupApiResponse): Promise<void> {
     catch (e) { root.replaceChildren(message({ tone: "bad", title: "Could not load setup info", text: errorText(e) })); return; }
   }
   state.setup = setup;
+  mcpTokenShown = false;   // the token is hidden again whenever Settings is drawn afresh
   renderDataDirNotice();
   root.replaceChildren(generalSection(), clientSection(setup), dataSection(setup), mcpSection(), updatesSection(setup));
   void syncSettingsBlacklist();
@@ -393,20 +394,20 @@ function mcpCard(r: McpApiResponse): HTMLElement {
   const on = switchControl({ label: c.enabled ? "On" : "Off", checked: c.enabled, attrs: { id: "set-mcp-on" }, onChange: (v) => { void save({ enabled: v }); } });
   const acts = switchControl({ label: c.allowActions ? "On" : "Off", checked: c.allowActions, attrs: { id: "set-mcp-actions" }, onChange: (v) => { void save({ allowActions: v }); } });
   const rows: HTMLElement[] = [
-    row({ title: "MCP server", control: on.root, help: "Lets Claude Code and other MCP clients search your inventory, read character sheets, compare saved runs and run the Suit Builder. Only programs on this computer that have the token can connect.",
+    row({ title: "MCP server", label: "set-mcp-on", control: on.root, help: "Lets Claude Code and other MCP clients search your inventory, read character sheets, compare saved runs and run the Suit Builder. Only programs on this computer that have the token can connect. What a connected assistant reads can be sent to its AI provider.",
       below: [c.enabled && !live.listening ? message({ tone: "bad", text: "The MCP server could not start. The server log in the data folder says why." }) : null] }),
-    row({ title: "Allow in-game actions", control: acts.root, help: "Also lets them Highlight, Go to, Grab and run Organize trips, through the same bridge and checks as the buttons." }),
+    row({ title: "Allow in-game actions", label: "set-mcp-actions", control: acts.root, help: "Also lets them Highlight, Go to, Grab and run Organize trips, through the same bridge and checks as the buttons." }),
   ];
   if (c.enabled && live.listening && live.port != null && c.token) {
     const url = `http://127.0.0.1:${live.port}/mcp`, token = c.token;
-    const shown = mcpTokenShown ? token : "••••••••-…";
+    const shown = mcpTokenShown ? token : token.replace(/[^-]/g, "•");
     rows.push(
-      row({ title: "Address", help: el("span", { class: "mono", id: "set-mcp-url" }, url), control: button({ label: "Copy", attrs: { id: "set-mcp-copy-url" }, onClick: () => { void copyWith(url, "address"); } }),
+      row({ title: "Address", help: el("span", { class: "mono", id: "set-mcp-url" }, url), control: button({ label: "Copy", attrs: { id: "set-mcp-copy-url", "aria-label": "Copy address" }, onClick: () => { void copyWith(url, "address"); } }),
         below: [live.portBusy != null ? message({ tone: "warn", title: `Port ${live.portBusy} was busy`, text: `Pack Rat is using port ${live.port} this time. Clients set up with the old address can't connect until the next launch frees it, or copy the command again.` }) : null] }),
-      row({ title: "Token", help: el("span", {}, el("span", { class: "mono", id: "set-mcp-token" }, mcpTokenShown ? token : token.replace(/[^-]/g, "•")), " A new token disconnects every client set up with the old one."),
+      row({ title: "Token", help: el("span", {}, el("span", { class: "mono", id: "set-mcp-token" }, shown), " A new token disconnects every client set up with the old one."),
         control: box("div", { class: "set-inline" },
           button({ label: mcpTokenShown ? "Hide" : "Show", variant: "ghost", attrs: { id: "set-mcp-show" }, onClick: () => { mcpTokenShown = !mcpTokenShown; void syncMcpCard(); } }),
-          button({ label: "Copy", attrs: { id: "set-mcp-copy-token" }, onClick: () => { void copyWith(token, "token"); } }),
+          button({ label: "Copy", attrs: { id: "set-mcp-copy-token", "aria-label": "Copy token" }, onClick: () => { void copyWith(token, "token"); } }),
           button({ label: "New token", attrs: { id: "set-mcp-new-token" }, onClick: async () => {
             if (!await confirmDialog({ title: "Make a new token?", body: "Every MCP client set up with the current token stops connecting until you give it the new one: copy the command or the JSON again.", confirmLabel: "New token" })) return;
             try { await api("/api/mcp/token", { method: "POST", body: {} }); showToast("New token made. Copy the command or the JSON again.", "ok"); }
