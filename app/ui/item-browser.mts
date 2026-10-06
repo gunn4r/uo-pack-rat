@@ -1,5 +1,5 @@
 // ui/item-browser.mts — the item browser (issue #12): the filter toolbar and its popovers, the active-filter strip,
-// the columns and density popover, and the virtual table over GET /api/items, as a factory that can be mounted
+// the columns and density popover, and the virtual table over its data source (GET /api/items by default), as a factory that can be mounted
 // more than once. Each instance owns its query, its loaded page, its columns and its timers, and finds its parts
 // inside its own root, never by a global id. The Inventory's Items view (inventory.mts) is one instance;
 // inv-model.mts holds the pure rules (query string, token wording, counts, row window, keyboard model).
@@ -10,7 +10,7 @@
 // a pager click.
 import { SLOT_LABELS, SLOT_GROUP, RESIST_KEYS, tagUnits, flagLabel } from "../vault-lib.mts";
 import type { Item } from "../vault-lib.mts";
-import type { ItemQuery, ItemQueryGroups, Place } from "../item-query.mts";
+import type { Facets, ItemQuery, ItemQueryGroups, Place } from "../item-query.mts";
 import { state } from "./store.mts";
 import { el, label, full, slotLabel, toast, whereText } from "./dom.mts";
 import { api } from "./api.mts";
@@ -26,9 +26,10 @@ import { openRuleEditor } from "./rule-editor.mts";
 import { showItemTip, hideItemTip } from "./dom.mts";
 import { filterContext, tagEls, rarityEl, locationEl } from "./item-parts.mts";
 import { retryLoad } from "./inventory-data.mts";
+import { BREAKPOINTS, upTo } from "./breakpoints.mts";
 
 const CHUNK = 500;              // rows per GET /api/items request (the server's own cap)
-const NARROW = "(max-width: 1179px)";
+const NARROW = upTo(BREAKPOINTS.narrow);
 const narrow = (): boolean => matchMedia(NARROW).matches;
 
 // What a browser's table has loaded of its query from GET /api/items — rows XOR groups, matching
@@ -53,6 +54,17 @@ export interface DetailHooks {
   close: (focusRow?: boolean) => void;
   refresh: (find: (serial: number) => Item | undefined, stillThere: boolean) => void;
 }
+// Where a browser's rows and filter choices come from: one chunk of the rows matching a query (the fixed fields already
+// applied), and the facets its chips list.
+export interface ItemSource {
+  fetch: (query: ItemQuery, offset: number, limit: number) => Promise<ItemsApiResponse>;
+  facets: () => Facets | null;
+}
+// The default source: GET /api/items, and the facets of the inventory as last loaded.
+export const itemsSource: ItemSource = {
+  fetch: (query, offset, limit) => api<ItemsApiResponse>(`/api/items?${queryParams({ ...query, offset, limit }).toString()}`),
+  facets: () => state.facets,
+};
 export interface ItemBrowserOptions {
   // Always applied (e.g. `{ slot: ["ring"] }`), overriding the player's value of any field it names. Only the matching
   // chips are hidden: the search box and the "+ Filter" entries for property rules, tags and gargoyle/meditation stay.
@@ -70,6 +82,8 @@ export interface ItemBrowserOptions {
   // Whether the controls the factory builds carry the Inventory's ids (#f-text, #inv-settings, …), which its CSS
   // and the Electron tests select. A second instance leaves them off: an id is page-wide.
   globalIds?: boolean;
+  // The rows and the facets (itemsSource when left out).
+  source?: ItemSource;
 }
 export interface ItemBrowser {
   readonly query: ItemQuery;
@@ -158,37 +172,37 @@ function checklist({ title, options, selected, onChange, searchable = options.le
   return [box("div", { class: "inv-pop-head" }, txt(title, "caps"), el("span", { class: "spacer" }), clear), find?.root, list];
 }
 const SLOT_GROUP_ORDER = ["Armor", "Jewelry", "Weapons", "Clothing", "Other"];
-function placesByCharacter(): Map<string, Place[]> {
+function placesByCharacter(f: Facets | null): Map<string, Place[]> {
   const m = new Map<string, Place[]>();
-  for (const p of state.facets?.places || []) m.set(p.character, [...(m.get(p.character) || []), p]);
+  for (const p of f?.places || []) m.set(p.character, [...(m.get(p.character) || []), p]);
   return m;
 }
 // A picked value the facets no longer have (its last item was forgotten) stays listed, so the list keeps
 // showing the filter the table still applies (view-state.mts's optionsKeeping).
 const keeping = (opts: Option[], picked: string[], labelOf: (v: string) => string): Option[] =>
   picked.reduce<Option[]>((acc, v) => optionsKeeping(acc as Array<Option & { label: string }>, v, (x) => `${labelOf(x)} (none now)`), opts);
-function charOptions(q: ItemQuery): Option[] {
-  const by = placesByCharacter();
+function charOptions(q: ItemQuery, f: Facets | null): Option[] {
+  const by = placesByCharacter(f);
   const names = [...new Set([...Object.keys(state.inv?.characters || {}), ...by.keys()])].filter((n) => n && n !== "?").sort();
   return keeping(names.map((n) => ({ value: n, label: n, count: (by.get(n) || []).reduce((a, p) => a + p.count, 0) })), q.chars, String);
 }
-function slotOptions(q: ItemQuery): Option[] {
+function slotOptions(q: ItemQuery, f: Facets | null): Option[] {
   const order = Object.keys(SLOT_LABELS);
-  const opts: Option[] = (state.facets?.slots || []).map((s) => ({ value: s, label: slotLabel(s), group: SLOT_GROUP[s] || "Other" }))
+  const opts: Option[] = (f?.slots || []).map((s) => ({ value: s, label: slotLabel(s), group: SLOT_GROUP[s] || "Other" }))
     .sort((a, b) => SLOT_GROUP_ORDER.indexOf(a.group!) - SLOT_GROUP_ORDER.indexOf(b.group!) || order.indexOf(a.value) - order.indexOf(b.value));
   opts.push({ value: "?", label: "No known slot", group: "Other" });
   return keeping(opts, q.slot, slotLabel);
 }
 // Issue #188: the weapon skills weapons count under, with Use Best Weapon Skill weapons under each melee skill.
-function weaponSkillOptions(q: ItemQuery): Option[] {
-  return keeping((state.facets?.weaponSkills || []).map((w) => ({ value: w.name, label: flagLabel(w.name), count: w.count })), q.wskill, flagLabel);
+function weaponSkillOptions(q: ItemQuery, f: Facets | null): Option[] {
+  return keeping((f?.weaponSkills || []).map((w) => ({ value: w.name, label: flagLabel(w.name), count: w.count })), q.wskill, flagLabel);
 }
-function kindOptions(q: ItemQuery): Option[] {
-  return keeping((state.facets?.kinds || []).map((k) => ({ value: k.name, label: k.name, count: k.count })), q.kind, String);
+function kindOptions(q: ItemQuery, f: Facets | null): Option[] {
+  return keeping((f?.kinds || []).map((k) => ({ value: k.name, label: k.name, count: k.count })), q.kind, String);
 }
 // The Location tree: each character's worn set, backpack and bank (with the bags inside them), then the
 // containers on the ground. A root's checkbox takes everything inside it; a bag's takes just that bag.
-function locationOptions(q: ItemQuery): Option[] {
+function locationOptions(q: ItemQuery, f: Facets | null): Option[] {
   const out: Option[] = [];
   const add = (group: string, ps: Place[], nameOf: (p: Place) => string): void => {
     const roots = new Map<number, Place[]>();
@@ -201,7 +215,7 @@ function locationOptions(q: ItemQuery): Option[] {
     }
   };
   const ground: Place[] = [];
-  for (const [who, ps] of [...placesByCharacter()].sort(([a], [b]) => a.localeCompare(b))) {
+  for (const [who, ps] of [...placesByCharacter(f)].sort(([a], [b]) => a.localeCompare(b))) {
     const worn = ps.find((p) => p.kind === "equipped");
     if (worn) out.push({ value: `loc:${worn.text}`, label: "Worn", group: who, count: worn.count });
     add(who, ps.filter((p) => p.kind === "backpack"), () => "Backpack");
@@ -283,6 +297,7 @@ const dot = (): HTMLElement => el("span", { class: "faint", "aria-hidden": "true
 // .inv-scroll (the table.inv-tbl with its colgroup, thead and tbody, and .inv-state), .inv-fade and .tbl-foot.
 export function createItemBrowser(root: HTMLElement, opts: ItemBrowserOptions): ItemBrowser {
   const fixed = opts.fixed || {};
+  const source = opts.source || itemsSource;
   const defaultCols = opts.columns || DEFAULT_COLS;
   const idOf = (name: string): { id?: string } => (opts.globalIds ? { id: name } : {});
   const part = <E extends HTMLElement = HTMLElement>(sel: string): E => root.querySelector<E>(sel)!;
@@ -320,7 +335,7 @@ export function createItemBrowser(root: HTMLElement, opts: ItemBrowserOptions): 
     switch (id) {
       case "char": return many(q.chars);
       case "slot": return many(q.slot.map((s) => (s === "?" ? "no slot" : slotLabel(s))));
-      case "loc": return many([...q.roots.map((r) => splitSerial(rootName(r, state.facets?.places || [])).name), ...q.loc]);
+      case "loc": return many([...q.roots.map((r) => splitSerial(rootName(r, source.facets()?.places || [])).name), ...q.loc]);
       case "rarity": return q.rarityMin && q.rarityMax ? `Rarity: ${shortTier(q.rarityMin)} – ${shortTier(q.rarityMax)}`
         : q.rarityMin ? `Rarity ≥ ${shortTier(q.rarityMin)}` : q.rarityMax ? `Rarity ≤ ${shortTier(q.rarityMax)}` : name;
       case "kind": return many(q.kind);
@@ -403,7 +418,7 @@ export function createItemBrowser(root: HTMLElement, opts: ItemBrowserOptions): 
   // Laid out like the shard's slayer charts (issue #189, inv-model.mts's slayerTree): each super slayer, its lesser slayers
   // one step in, the talisman slayers and any others under small titles, a hairline between groups.
   function slayerPanel(close: () => void): Kids {
-    const f = state.facets;
+    const f = source.facets();
     const tree = slayerTree(f?.slayers || [], state.rules?.slayerGroups);
     const rows = tree.map((r): RadioRow => {
       const cls = (...c: string[]) => [...c, r.first ? "sep" : ""].filter(Boolean).join(" ") || undefined;
@@ -435,12 +450,12 @@ export function createItemBrowser(root: HTMLElement, opts: ItemBrowserOptions): 
   function facetPanel(id: ChipId, close: () => void): Kids {
     const q = query;
     switch (id) {
-      case "char": return checklist({ title: "Character", options: charOptions(q), selected: q.chars, onChange: (v) => setQuery({ ...query, chars: v }) });
-      case "slot": return checklist({ title: "Slot", options: slotOptions(q), selected: q.slot, searchable: false, onChange: (v) => setQuery({ ...query, slot: v }) });
-      case "kind": return checklist({ title: "Kind", options: kindOptions(q), selected: q.kind, onChange: (v) => setQuery({ ...query, kind: v }) });
-      case "wskill": return [...checklist({ title: "Weapon skill", options: weaponSkillOptions(q), selected: q.wskill, searchable: false, onChange: (v) => setQuery({ ...query, wskill: v }) }),
+      case "char": return checklist({ title: "Character", options: charOptions(q, source.facets()), selected: q.chars, onChange: (v) => setQuery({ ...query, chars: v }) });
+      case "slot": return checklist({ title: "Slot", options: slotOptions(q, source.facets()), selected: q.slot, searchable: false, onChange: (v) => setQuery({ ...query, slot: v }) });
+      case "kind": return checklist({ title: "Kind", options: kindOptions(q, source.facets()), selected: q.kind, onChange: (v) => setQuery({ ...query, kind: v }) });
+      case "wskill": return [...checklist({ title: "Weapon skill", options: weaponSkillOptions(q, source.facets()), selected: q.wskill, searchable: false, onChange: (v) => setQuery({ ...query, wskill: v }) }),
         txt("Use Best Weapon Skill weapons count under Swordsmanship, Fencing and Mace Fighting.", "t-sm muted")];
-      case "loc": return checklist({ title: "Location", options: locationOptions(q), selected: [...q.roots.map((r) => `root:${r}`), ...q.loc.map((l) => `loc:${l}`)], searchable: true,
+      case "loc": return checklist({ title: "Location", options: locationOptions(q, source.facets()), selected: [...q.roots.map((r) => `root:${r}`), ...q.loc.map((l) => `loc:${l}`)], searchable: true,
         onChange: (v) => setQuery({ ...query, roots: v.filter((x) => x.startsWith("root:")).map((x) => +x.slice(5)), loc: v.filter((x) => x.startsWith("loc:")).map((x) => x.slice(4)) }) });
       case "rarity": return rarityPanel(close);
       case "slayer": return slayerPanel(close);
@@ -467,8 +482,8 @@ export function createItemBrowser(root: HTMLElement, opts: ItemBrowserOptions): 
   // add up (an item must pass every one), which the popover says. A yes/no property (issue #182, the last group)
   // is just "has": picking one hides the comparison and the number.
   function propertyPanel(close: () => void): Kids {
-    const keys = [...new Set([...state.propKeys, ...(state.facets?.extraKeys || []), "strReq", "weight"])];
-    const flags = state.facets?.flagKeys || [];
+    const keys = [...new Set([...state.propKeys, ...(source.facets()?.extraKeys || []), "strReq", "weight"])];
+    const flags = source.facets()?.flagKeys || [];
     let key = "", op = "ge", flag = false;
     const chosen = txt("Pick a property", "t-sm muted");
     const find = searchInput({ label: "Find a property", placeholder: "Find a property" });
@@ -522,7 +537,7 @@ export function createItemBrowser(root: HTMLElement, opts: ItemBrowserOptions): 
     if (!tokens.length) { strip.replaceChildren(); return; }
     const p = page;
     strip.replaceChildren(
-      txt(matchLine({ shown: p.stacks, total: state.facets?.itemCount || 0, grouped: !!p.groups, names: p.total }), "t-sm muted inv-match"),
+      txt(matchLine({ shown: p.stacks, total: source.facets()?.itemCount || 0, grouped: !!p.groups, names: p.total }), "t-sm muted inv-match"),
       ...tokenEls(tokens),
       button({ label: "Save as rule…", variant: "ghost", size: "sm", attrs: idOf("f-save-rule"), onClick: () => { closePopover(); void openRuleEditor({ fromQuery: query }); } }),
       button({ label: "Clear all", variant: "ghost", size: "sm", attrs: idOf("f-clear"), onClick: () => { closePopover(); setQuery(clearAll(query)); search.focus(); } }));
@@ -701,7 +716,7 @@ export function createItemBrowser(root: HTMLElement, opts: ItemBrowserOptions): 
   async function fetchChunk(offset: number, g: number): Promise<void> {
     have.add(offset);
     let res: ItemsApiResponse;
-    try { res = await api<ItemsApiResponse>(`/api/items?${queryParams(withFixed({ ...query, offset, limit: CHUNK }, fixed)).toString()}`); }
+    try { res = await source.fetch(withFixed(query, fixed), offset, CHUNK); }
     catch (e) {
       if (g !== gen) return;
       have.delete(offset);
@@ -809,7 +824,7 @@ export function createItemBrowser(root: HTMLElement, opts: ItemBrowserOptions): 
     }
     t.removeAttribute("aria-busy");
     t.setAttribute("aria-rowcount", String(p.total + 1));
-    if (!p.total) { body.replaceChildren(); showState(state.facets?.itemCount ? emptyResultState() : noScansState()); renderFoot(); return; }
+    if (!p.total) { body.replaceChildren(); showState(source.facets()?.itemCount ? emptyResultState() : noScansState()); renderFoot(); return; }
     stateHolder.hidden = true;
     const head = t.tHead?.offsetHeight || 36;
     const { start, end } = rowWindow({ scrollTop: scroller.scrollTop, viewport: scroller.clientHeight - head, rowHeight: rowH, count: p.total });
@@ -847,7 +862,7 @@ export function createItemBrowser(root: HTMLElement, opts: ItemBrowserOptions): 
   }
   function emptyResultState(): HTMLElement {
     const tokens = tokensNow();
-    const cause = emptyAlone ? emptyCause(tokens, emptyAlone, state.facets?.itemCount || 0) : tokens.length === 1 ? emptyCause(tokens, [], state.facets?.itemCount || 0) : "Checking which filter excludes everything…";
+    const cause = emptyAlone ? emptyCause(tokens, emptyAlone, source.facets()?.itemCount || 0) : tokens.length === 1 ? emptyCause(tokens, [], source.facets()?.itemCount || 0) : "Checking which filter excludes everything…";
     return box("div", { class: "empty-state", ...idOf("inv-empty") }, icon("search"), el("h3", { class: "t-lg" }, "No items match"), el("p", { class: "muted" }, txt(cause)),
       tokens.length ? box("div", { class: "inv-empty-tokens" }, txt("Remove a filter:", "t-sm muted"), ...tokenEls(tokens)) : null,
       button({ label: "Clear all filters", variant: "primary", onClick: () => { setQuery(clearAll(query)); search.focus(); } }));
@@ -862,7 +877,7 @@ export function createItemBrowser(root: HTMLElement, opts: ItemBrowserOptions): 
       // The query holding only this filter: every OTHER filter removed.
       const only = tokens.filter((o) => o.id !== t.id).reduce((q, o) => o.remove(q), { ...query });
       try {
-        const r = await api<ItemsApiResponse>(`/api/items?${queryParams(withFixed({ ...only, group: false, offset: 0, limit: 1 }, fixed)).toString()}`);
+        const r = await source.fetch(withFixed({ ...only, group: false }, fixed), 0, 1);
         if (!r.total) alone.push(t.id);
       } catch { /* the sentence falls back to naming the combination */ }
     }));
@@ -889,7 +904,7 @@ export function createItemBrowser(root: HTMLElement, opts: ItemBrowserOptions): 
       fade.hidden = true;
       return;
     }
-    const tokens = tokensNow(), all = allCols(), more = hiddenCols(), total = state.facets?.itemCount || 0;
+    const tokens = tokensNow(), all = allCols(), more = hiddenCols(), total = source.facets()?.itemCount || 0;
     fade.hidden = !more;
     const stacks = countFact({ shown: p.groups ? p.stacks : p.total, total, pieces: p.pieces, filtered: tokens.length > 0 });
     const kids: Array<HTMLElement | null> = [txt(p.groups ? `${plural(p.total, "name")} · ${stacks}` : stacks, "inv-count"),

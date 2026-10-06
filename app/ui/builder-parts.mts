@@ -30,7 +30,7 @@ export function verdict(res: OptimizeResult): { text: string; tone?: "ok" | "war
   if (res.floorsConflict) return { text: "Requirements can't all be met", tone: "bad", detail: "No suit in the pool meets every hard requirement; this is the best partial suit." };
   if (res.solver === "fallback") return { text: "Heuristic fallback", tone: "warn", detail: res.fallbackReason || "The exact solver was unavailable, so this is the heuristic's answer." };
   if (res.method === "exact" && res.proven) return { text: "Proven optimal", tone: "ok" };
-  // A saved run whose proof the server withdrew (normalizeRun): no verdict, rather than a different one.
+  // A saved run whose proof the server withdrew (app/migrate.mts): no verdict, rather than a different one.
   if (res.method === "exact" && res.proven == null) return { text: "" };
   if (res.method === "exact") return { text: "Best within budget", tone: "warn", detail: res.gapPoints == null ? "No bound was established: raise the time budget to finish the proof." : `At most ${fmtN(res.gapPoints)} points from the bound: raise the time budget to finish the proof.` };
   return { text: "Heuristic" };

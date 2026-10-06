@@ -6,7 +6,7 @@ import { renderRegion, type Region } from "../../facet-map.mts";
 import type { HouseSource } from "../../house-capture.mts";
 import type { HouseApiResponse, HousesApiResponse } from "../../house-model-types.mts";
 import { plotBounds, plotSize } from "../../house-model.mts";
-import { checkHouseEntry, isHouseId, readHouseMap, saveHouseEntry, MAX_ENTRY_BYTES, type HouseMapDoc } from "../../house-names.mts";
+import { checkHouseEntry, isHouseId, readHouseMap, saveHouseEntry, MAX_ENTRY_BYTES } from "../../house-names.mts";
 import { safeAppendLog } from "../../log.mts";
 import { encodePng } from "../../png.mts";
 import { readBody } from "../../read-body.mts";
@@ -20,11 +20,11 @@ export function routes(ctx: ServerContext): Route[] {
   // moved aside and the houses read unnamed; what a read set aside or left out goes to the log, once while it stays the same.
   const HOUSE_MAP = join(CONFIG.dataDir, "house-map.json");
   let namesProblem: string | null = null;
-  function readNames(): HouseMapDoc {
-    const { doc, problem } = readHouseMap(HOUSE_MAP);
-    if (problem && problem !== namesProblem) safeAppendLog(CONFIG.paths.log, `${new Date().toISOString()} ${problem}\n`);
-    namesProblem = problem;
-    return doc;
+  function readNames(): ReturnType<typeof readHouseMap> {
+    const got = readHouseMap(HOUSE_MAP);
+    if (got.problem && got.problem !== namesProblem) safeAppendLog(CONFIG.paths.log, `${new Date().toISOString()} ${got.problem}\n`);
+    namesProblem = got.problem;
+    return got;
   }
   return [
     // The houses the scans captured (issue #10): GET /api/houses lists each with its size, chest count and container serials (what Inventory's "Show on map" looks an item's container up in), GET /api/houses/<id> serves one house's whole model. Both come from the fold's cache and the built models are memoised (houseModel); an id that names no house (or does not decode) is a 404.
@@ -37,7 +37,7 @@ export function routes(ctx: ServerContext): Route[] {
         one = houses.find((h) => h.id === id);
         if (!one) return send(res, 404, { ok: false, error: "no such house" });
       }
-      const from = houseService.tileData(), td = from.td, names = readNames().houses;
+      const from = houseService.tileData(), td = from.td, names = readNames().doc.houses;
       const named = (id: string): { name?: string } => (names[id]?.name ? { name: names[id].name } : {});
       if (one) return send(res, 200, { ok: true, house: { ...houseService.model(inv, one, td), ...named(one.id) } } satisfies HouseApiResponse);
       return send(res, 200, { ok: true, tiledata: td !== null, tiledataFrom: { folder: from.folder, source: from.source, reason: from.reason }, houses: houses.map((h) => {
@@ -65,15 +65,21 @@ export function routes(ctx: ServerContext): Route[] {
     // The house names and areas (issues #164, #10): GET the whole map; PUT /api/house-map/<id> {name, bounds?, areas?, …}
     // replaces that house's entry (an empty name with no areas removes it). Any id of the house-id shape is taken, listed or not: a name kept for a house
     // that was redesigned or moved is what the page offers to carry over to its new id.
-    { method: "GET", path: "/api/house-map", handle: (_req, res) => send(res, 200, { ok: true, houses: readNames().houses }) },
+    // `readOnly`: why the map cannot be changed (a newer Pack Rat made it), when it cannot; every PUT is then a 409.
+    { method: "GET", path: "/api/house-map", handle: (_req, res) => {
+      const { doc, readOnly } = readNames();
+      return send(res, 200, { ok: true, houses: doc.houses, ...(readOnly ? { readOnly } : {}) });
+    } },
     { method: "PUT", path: /^\/api\/house-map\//, handle: async (req, res, url) => {
       let id: string | null;
       try { id = decodeURIComponent(url.pathname.slice("/api/house-map/".length)); } catch { id = null; }
       if (id == null || !isHouseId(id)) return send(res, 400, { ok: false, error: "that is not a house id (<facet>-<x>-<y>)" });
       const checked = checkHouseEntry(await readBody(req, { limit: MAX_ENTRY_BYTES }));
       if (!checked.ok) return send(res, 400, { ok: false, error: checked.error });
+      const { doc, readOnly } = readNames();
+      if (readOnly) return send(res, 409, { ok: false, error: readOnly });
       mkdirSync(dirname(HOUSE_MAP), { recursive: true, mode: DATA_DIR_MODE });
-      const refused = saveHouseEntry(HOUSE_MAP, readNames(), id, checked.entry);
+      const refused = saveHouseEntry(HOUSE_MAP, doc, id, checked.entry);
       if (refused) return send(res, 409, { ok: false, error: refused });
       return send(res, 200, { ok: true, entry: checked.entry });
     } },

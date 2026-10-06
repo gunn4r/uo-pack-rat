@@ -59,7 +59,7 @@ function load(): void {
     });
 }
 
-// ---------------------------------------------------------------- entry points (nav.mts, app.mts)
+// ---------------------------------------------------------------- entry points (nav.mts)
 // The route picked the view and a tab, or the inventory reloaded (a scan landed, a Forget): draw what is loaded and
 // fetch what is stale.
 registerScreen({ name: "scrolls", show: (r) => showScrolls(r.scrolls) });
@@ -71,9 +71,7 @@ export function showScrolls(next: Tab): void {
   if (state.inv && loadedFor !== state.inv && !loading) load();
 }
 // The Organize labels changed: the places read differently.
-export function scrollsChanged(): void {
-  if (built && !root().hidden) render();
-}
+document.addEventListener("organizechange", () => { if (state.inv && built && !root().hidden) render(); });
 
 // ---------------------------------------------------------------- the frame, built once
 let tabs: HTMLDivElement & { setValue: (v: string) => void };

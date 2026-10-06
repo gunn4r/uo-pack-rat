@@ -23,9 +23,15 @@ export function routes(ctx: ServerContext): Route[] {
   const { config: CONFIG, panelPrefsFile: PANEL_PREFS, profilesStore, savePanel, uiPrefsStore } = ctx;
   return [
     // The player's profiles, and the shard's built-in templates beside them (read-only, never written into the file).
-    { method: "GET", path: "/api/profiles", handle: async (_req, res) => send(res, 200, { ok: true, profiles: await profilesStore.read(), builtinTemplates: profilesStore.builtins() }) },
+    // `readOnly`: why the file cannot be saved (a newer Pack Rat made it), when it cannot; every PUT is then a 409.
+    { method: "GET", path: "/api/profiles", handle: async (_req, res) => {
+      const profiles = await profilesStore.read(), readOnly = profilesStore.readOnly();
+      return send(res, 200, { ok: true, profiles, builtinTemplates: profilesStore.builtins(), ...(readOnly ? { readOnly } : {}) });
+    } },
     { method: "PUT", path: "/api/profiles", handle: async (req, res) => {
       const body = await readBody(req, { limit: 1e6, tooLargeMsg: "profiles too large" });
+      const readOnly = profilesStore.readOnly();
+      if (readOnly) return send(res, 409, { ok: false, error: readOnly });
       const version = (body as { schemaVersion?: unknown } | null)?.schemaVersion;
       if (typeof version === "number" && version < PROFILES_VERSION) return send(res, 400, { ok: false, error: OLD_PAGE });
       const { ok, errors } = validate(PROFILES_SCHEMA, body);

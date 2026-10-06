@@ -73,6 +73,7 @@ Each test file says what it covers in its own header comment (a `.test.mts` file
 - `app/house-model.test.mts` — `app/house-model.mts` (issue #10) on synthetic houses (`app/house-fixture.mts`).
 - `app/house-names.test.mts` — `app/house-names.mts`, the house names and drawn areas in `<data>/house-map.json` (issue #164).
 - `app/house-server.test.mts` — the house routes (issue #10) and the facet overview (issue #164) on a real server and temp data folder.
+- `app/houses-data.test.mts` — `app/ui/houses-data.mts`, the House map's cache of house models by id and capture stamp (issue #10).
 - `app/http/router.test.mts` — `app/http/router.mts` on its own: which route answers a request.
 - `app/import-children.test.mts` — `app/ui/dom.mts`'s `compactChildren()`, the fix for the Import tab rendering the word "null".
 - `app/import-preview.test.mts` — `app/ui/import-preview.mts`, the Import drawer's preview card as data (design spec 4.9).
@@ -83,8 +84,10 @@ Each test file says what it covers in its own header comment (a `.test.mts` file
 - `app/manual-handoffs.test.mts` — the Suit Builder's Manual ↔ Automatic hand-offs (issue #12), with a seeded fuzz over pinned pieces.
 - `app/manual-model.test.mts` — `app/ui/manual-model.mts`, the Suit Builder Manual mode's pure logic (issue #12).
 - `app/mcp.test.mts` — the built-in MCP server (issue #211; `app/mcp.mts`, `app/mcp-tools.mts`) on a real server and temp data folder.
+- `app/migrate.test.mts` — `app/migrate.mts`, the one registry of data-file migrations: every golden file in `app/fixtures/golden/<kind>/<version>.json` loads through `migrate` to its kind's current version and passes that kind's own check, and migrating it again changes nothing; every kind has a golden file at its current version; a document newer than the build comes back untouched and marked `newer`, with the "made by a newer Pack Rat" notice; `version` and `schemaVersion` read as one field, written as the file writes it; a document with no version its kind accepts comes back untouched for its reader to refuse; and each kind's steps are in order and end at its current version.
 - `app/mip.test.mts` — `app/mip.mts`, the pure MIP builder, and `app/mip-solve.mts`, the HiGHS solve.
 - `app/missing.test.mts` — `app/missing.mts`, Missing since last scan (issue #99): what left a root container between its last two scans and is nowhere else in the inventory now.
+- `app/newer-files.test.mts` — data files made by a newer Pack Rat (app/migrate.mts), on a real server and temp data folder: `GET /api/organize`, `/api/item-kinds`, `/api/house-map` and `/api/profiles` read what they can and say `readOnly` ("made by a newer Pack Rat"), and every save to them (`PUT /api/organize`, `POST /api/item-kinds` and its import, `PUT /api/house-map/<id>`, `PUT /api/profiles`) is a 409 with that message, the file left byte for byte.
 - `app/organize-config.test.mts` — `app/organize-config.mts` (issue #11): the strict check PUT /api/organize runs on an Organize setup, and the salvage every read of a hand-edited organize.json goes through.
 - `app/organize-presets.test.mts` — `app/organize-presets.mts` (issue #11): every preset is a valid rule and finds what its name promises.
 - `app/organize-server.test.mts` — the Organize routes (issue #11) and the item kinds routes (issue #150) on a real server and temp data folder.
@@ -141,6 +144,7 @@ Each test file says what it covers in its own header comment (a `.test.mts` file
 - `scripts/american-spelling.test.mts` — a [smoke] guard for American spelling in what a player reads (issue #10).
 - `scripts/build-schema-types.test.mts` — the JSON Schema to TypeScript generator (`scripts/build-schema-types.mts`).
 - `scripts/build-ui.test.mts` — `scripts/build-ui.mts`'s `buildUi()`, the page build.
+- `scripts/css-guard.test.mts` — a [smoke] guard that keeps screen stylesheets from restyling the shared components, and the window breakpoints in one list.
 - `scripts/docs-links.test.mts` — a [smoke] guard that every repo path the Markdown names in backticks exists.
 - `scripts/electron-guards.test.mts` — the Electron shell's guards, from the phase-7 review: unit tests of the pure decisions and source-level checks on `electron/main.mts`.
 - `scripts/gen-contracts.test.mts` — `scripts/gen-contracts.mts`, the generator that copies `adapters/_shared/` fragments into the adapter scripts.
