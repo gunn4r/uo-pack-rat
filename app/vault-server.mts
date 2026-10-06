@@ -135,7 +135,7 @@ import { loadRules, listRules } from "./rules.mts";
 import { validate, type ValidatorSchema } from "./schema/validate.mts";
 import { parseItemQuery, applyItemQuery, facetsOf, wantsHits, hitRow, type ItemQueryRows, type ItemQueryGroups } from "./item-query.mts";
 import { optionalSlotsFor } from "./mip.mts";
-import { GEAR_SLOTS, buildPools, excludeWeaponsError, foldSnapshots, resistCapsError, toOptItem } from "./vault-lib.mts";
+import { GEAR_SLOTS, buildPools, excludeWeaponsError, resistCapsError, toOptItem } from "./vault-lib.mts";
 import { isBuffList, isBuffListsByCharacter, isBuffSkillsByCharacter, isRunBuffs } from "./buffs.mts";
 import { startWatcher, MAX_INBOX_BYTES, type StartWatcherOptions, type WatcherHandle } from "./watcher.mts";
 import { parsePastedScan, writeScanToInbox } from "./import.mts";
@@ -155,6 +155,7 @@ import { createEventBus, sse } from "./services/events.mts";
 import { createSetupService } from "./services/setup.mts";
 import { createHousesService } from "./services/houses.mts";
 import { createRetentionService } from "./services/retention.mts";
+import { createInventoryService } from "./services/inventory.mts";
 import { createJobsService, type Job, type JobTimings } from "./services/jobs.mts";
 export type { JobTimings } from "./services/jobs.mts";
 import { send, asObject, SSE_HEADERS } from "./http/respond.mts";
@@ -163,12 +164,12 @@ import { writeFileAtomic } from "./atomic-write.mts";
 import { addPanelAutostart, panelPrefsError, readPanelPrefs, tazuoRunning, writePanelPrefs } from "./tazuo-panel.mts";
 import { queueTrip, writeBridgeStop } from "./bridge-trip.mts";
 import { checkOrganizeConfig, LIMITS, matchProblem, MAX_SETUP_BYTES, type OrganizeConfig, type RuleMatch } from "./organize-config.mts";
-import { ancestry, applyOverlay, packKept, planOrganize, stampMs, tripCommand, matchCount, overlaidInventory, type Plan, type PutAway } from "./organize.mts";
+import { ancestry, applyOverlay, packKept, planOrganize, stampMs, tripCommand, matchCount, type Plan, type PutAway } from "./organize.mts";
 import { checkPutAwayRequest, nothingDetail, requestId, tripMsg, FRESH_MARGIN_MS, MAX_REQUEST_BYTES, PUT_AWAY_REPLY, PUT_AWAY_REQUEST, type PutAwayReply, type PutAwayRequest } from "./put-away.mts";
 import { PRESETS } from "./organize-presets.mts";
 import { isKindName, kindCount, kindsDocument, kindsFor, salvageKindOverrides, withKinds, withoutKinds, KIND_LIMITS, MAX_KINDS_BYTES, OVERRIDE_KINDS } from "./item-kinds.mts";
 import { proposeOrganize, STRATEGY_IDS, type StrategyId } from "./organize-strategies.mts";
-import { latestHouses, type HouseSource } from "./house-capture.mts";
+import type { HouseSource } from "./house-capture.mts";
 import { checkHouseEntry, isHouseId, readHouseMap, saveHouseEntry, MAX_ENTRY_BYTES, type HouseMapDoc } from "./house-names.mts";
 import { plotBounds, plotSize } from "./house-model.mts";
 import type { HouseApiResponse, HousesApiResponse } from "./house-model-types.mts";
@@ -178,7 +179,6 @@ import { renderRegion, type Region } from "./facet-map.mts";
 import { encodePng } from "./png.mts";
 import { addGrab, harvestTrips, noteSeen, pruneOverlay, PENDING_GRACE_MS, type BridgeView, type OrganizeState } from "./organize-state.mts";
 import { retentionError, retentionOf } from "./retention.mts";
-import { missingSinceLastScan, type MissingItem } from "./missing.mts";
 import {
   candidateClientRoots, validateScriptsDir, badPathShape, installedVersion, installScripts, pasteScanner,
   repoFromPackage, checkForUpdates, type CheckForUpdatesResult, type FetchLike, type AdapterInfo,
@@ -508,48 +508,11 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
 
   const scanStore = createScansStore({ dir: SCANS, shard: () => appSettings.current().shard });
 
-  // getInventory() caches the fold (readScans + foldSnapshots) — the expensive part of every route that
-  // needs the inventory — keyed by a signature of the scans directory (every *.json file's name, mtimeMs
-  // and size, so an add/edit/delete/rename is caught with no restart), the current shard id (a shard
-  // switch changes parseTooltip/classify via rules). /api/forget's tombstone is just another file landing in the scans
-  // directory, so it invalidates the cache the same way — no separate invalidation path needed. item-kinds.json's
-  // inode, mtime and size are in it too (issue #150): a changed override re-kinds the inventory by folding the same
-  // scans again, and the Organize plan, worked out from the fold on every request, follows.
-  // What it serves is that fold with Organize's results overlay applied (issue #127, overlaidInventory): every
-  // view and bridge command sees where a trip put an item, not where the last scan saw it. The overlay is cached
-  // on its own, keyed by the fold's signature, organize-state.json's inode, mtime and size (every write replaces
-  // the file) and the hour, so a finished trip re-applies the overlay without folding the scans again. `fold` is
-  // the scans alone: only organizeNow reads it, since the planner applies the overlay itself (with the counts it
-  // needs for capacity), and it hands it on as `fold` too, so no Organize route has an `inv` to pass by habit.
   // GET /api/update-check's last successful answer (see that route).
   const UPDATE_CHECK_TTL_MS = 60 * 60 * 1000;
   let updateCheckCache: { at: number; result: CheckForUpdatesResult } | null = null;
 
-  type FoldValue = { fold: Inventory; missing: Record<string, MissingItem[]>; snapshotCount: number; houses: HouseSource[] };
-  type InvValue = FoldValue & { inv: Inventory };
-  let foldCache: { sig: string | null; value: FoldValue | null } = { sig: null, value: null };
-  let invCache: { sig: string | null; value: InvValue | null } = { sig: null, value: null };
   const houseService = createHousesService({ settings: appSettings.current });
-  async function getInventory(): Promise<InvValue> {
-    harvestNow(Date.now());   // a trip that finished since is part of what every view shows
-    let kindsSig = "no-kinds";
-    try { const st = statSync(itemKindsStore.file); kindsSig = `${st.ino}:${st.mtimeMs}:${st.size}`; } catch { /* no overrides */ }
-    const sig = `${scanStore.signature()}::${appSettings.current().shard}::${kindsSig}`;
-    if (foldCache.sig !== sig) {   // sig and value are only ever set together
-      const snaps = scanStore.all();
-      const fold = foldSnapshots(snaps, itemKindsStore.read());
-      foldCache = { sig, value: { fold, missing: missingSinceLastScan(snaps, fold), snapshotCount: snaps.length, houses: latestHouses(snaps) } };
-    }
-    const folded = foldCache.value!;
-    let stateSig = "no-state";
-    try { const st = statSync(organizeStateStore.file); stateSig = `${st.ino}:${st.mtimeMs}:${st.size}`; } catch { /* no overlay yet */ }
-    // The hour, so a move the week-old cut in pruneOverlay has retired leaves the view of a long-running server.
-    const invSig = `${sig}::${stateSig}::${Math.floor(Date.now() / 3600e3)}`;
-    if (invCache.sig === invSig) return invCache.value!;
-    const { moves } = pruneOverlay(organizeStateStore.read(), folded.fold, Date.now());
-    invCache = { sig: invSig, value: { ...folded, inv: overlaidInventory(folded.fold, moves) } };
-    return invCache.value!;
-  }
 
   const uiPrefsStore = createUiPrefsStore(join(CONFIG.dataDir, "ui-prefs.json"));
   // The TazUO panel's hotkey and show-at-login choice (app/tazuo-panel.mts); the in-game panel writes it too.
@@ -569,6 +532,8 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
     return doc;
   }
   const organizeStateStore = createOrganizeStateStore(join(CONFIG.dataDir, "organize-state.json"));
+  const inventoryService = createInventoryService({ scanStore, itemKindsStore, organizeStateStore, shard: () => appSettings.current().shard, harvest: (now) => harvestNow(now) });
+  const getInventory = inventoryService.getInventory;
   // What harvestTrips needs of one adapter's status.json (GET /api/bridge/status reads the same file for the page).
   // `current` counts only while the bridge's heartbeat is recent: a client that quit mid-trip leaves its last
   // `current` in the file for good, which would otherwise hold Organize's one trip in flight forever.
