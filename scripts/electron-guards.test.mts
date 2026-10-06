@@ -232,7 +232,7 @@ test("[fast] ids are per-call, so one call's answer never settles another", asyn
 });
 
 test("[fast] the two host-call bounds agree with each other", () => {
-  assert.match(readFileSync(join(root, "app", "vault-server.mts"), "utf8"), /HOST_CALL_TIMEOUT_MS = 60 \* 1000/, "the HTTP layer's own 504 timeout");
+  assert.match(readFileSync(join(root, "app", "http", "routes", "host.mts"), "utf8"), /HOST_CALL_TIMEOUT_MS = 60 \* 1000/, "the HTTP layer's own 504 timeout");
   assert.equal(HOST_CALL_TIMEOUT_MS, 60 * 1000);
   assert.match(entrySource, /createPendingHostCalls\(/, "server-entry.mts must register host calls through the expiring registry");
 });
