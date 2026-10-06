@@ -5,7 +5,7 @@
 import { matchesItem } from "./item-query.mts";
 import { parseStamp } from "./scan-schema.mts";
 import { CATCH_ALL_ID, EMPTY_BAGS_ID, ruleMatchOf, type Build, type OrganizeConfig, type RuleMatch } from "./organize-config.mts";
-import { RESIST_KEYS, gameName, spellSchoolOf, TRASH_RE, locationOf, type Character, type Container, type ContainerCapacity, type Inventory, type Item } from "./vault-lib.mts";
+import { RESIST_KEYS, bridgeFeatures, gameName, spellSchoolOf, TRASH_RE, locationOf, type Character, type Container, type ContainerCapacity, type Inventory, type Item } from "./vault-lib.mts";
 import type { RulesV1RarityItem } from "./schema/types.d.mts";
 import { TRIP_NAME_MAX } from "./bridge-contract.mts";
 import type { TripInput } from "./bridge-trip.mts";
@@ -576,6 +576,9 @@ export function tripSeconds(input: TripInput): number {
 export type PutAway = { from: "pack"; container: number; at: Spot } | { from: "ground"; container: number };
 export interface PlanOptions extends ScopeOptions {
   putAway?: PutAway | undefined;
+  // What the bridge can do (vault-lib.mts's bridgeFeatures); the server always passes it. Left out (tests only), the
+  // newest scan's adapter block says.
+  features?: ReadonlySet<string> | undefined;
   rarity?: RulesV1RarityItem[] | undefined;
   suitPieces?: ReadonlySet<number> | undefined;
   tripItems?: number | undefined;
@@ -720,13 +723,13 @@ export function planOrganize(inv: Inventory, cfg: OrganizeConfig, overlay: Overl
     : [...new Set([...scope.movable, ...loose])]).sort(bySerial);
   // Empty bags go to the gather container like one rule's items (issue #128); so does a bag a trip took and did
   // not put away. Without a gather container they stay where they are.
-  // Only a bridge that checks live that a bag is empty before lifting it is sent one: the newest scan's scripts
-  // (installed with the bridge) must declare "trip-bags", else the bags stay put with a warning to reinstall.
+  // Only a bridge that checks live that a bag is empty before lifting it is sent one: it must have "trip-bags" (opts.features,
+  // else the newest scan's scripts, installed with the bridge), or the bags stay put with a warning to reinstall.
   // Put away (issue #131) moves only what its source holds, and a backpack Put away trip takes nothing, so it
   // gathers no bags.
   const bags = put ? [] : emptyBagsOf(view, placed.counts, cfg, scope.roots, opts.blacklist);
   const newest = Object.values(view.characters).reduce<Character | null>((b, c) => (!b || stampMs(c.scannedAt) > stampMs(b.scannedAt) ? c : b), null);
-  const bagTakes = !!newest?.adapter?.capabilities.bridge.includes(BAG_TAKES);
+  const bagTakes = (opts.features ?? bridgeFeatures({ scan: newest?.adapter }).features).has(BAG_TAKES);
   if (gather != null && !bagTakes && bags.length) warnings.push({ kind: "old-scripts", serial: gather, detail: "empty bags are not gathered here until you reinstall the TazUO scripts from Settings and rescan: the installed bridge does not check that a bag is empty before taking it" });
   const bagClaim: Claim | null = gather != null && bagTakes && !put ? { ruleId: EMPTY_BAGS_ID, alsoMatched: [] } : null;
   const claims: [number, Claim | null][] = candidates.map((s) => [s, view.containers[s] && bagClaim ? bagClaim : claimOf(view.items[s]!, cfg, rarity, opts.suitPieces)]);

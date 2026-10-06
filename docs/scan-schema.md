@@ -26,9 +26,9 @@ Ground truth: `app/schema/scan.v2.schema.json` (the portable JSON Schema, restri
 | `items` | array, required | Every non-equipped item this scan saw, in any opened container — see below. |
 | `equipped` | array, required | Every item on the character's paperdoll — see below. |
 | `house` | object, optional | The house the player stood in when the scan ran — see "House capture" below. Written by TazUO 2.10.0 and later. |
-| `kind` | string, optional, only `"house"` | Left out for a scan. `"house"` marks a house-only file — see "House-only files" below. |
+| `kind` | string, optional, 1–64 characters | Left out for a scan. `"house"` marks a house-only file — see "House-only files" below. Any other value is a kind from a newer adapter: the file is accepted and kept, and every reader skips it (the scans store logs "kind … is from a newer Pack Rat"; the fold and the house map skip it too). |
 
-A scan file may carry additional top-level fields beyond these (`additionalProperties: true` at the top level) — the quick-refresh adapter script adds a `meta: {mode, name, roots}` key, which the fold simply ignores. `adapter` and `adapter.capabilities`, though, are a **closed contract**: `additionalProperties: false` there, so an adapter must match the shape below exactly, no extra fields.
+A scan file may carry additional top-level fields beyond these (`additionalProperties: true` at the top level) — the quick-refresh adapter script adds a `meta: {mode, name, roots}` key, which the fold simply ignores. `adapter` and `adapter.capabilities` are open too (`additionalProperties: true`): their known fields are required and checked, and a field a newer adapter adds is ignored, so this app keeps the scan. Apps before this change kept both closed, so the shipped scripts add nothing to either until an app that accepts the addition has been out for a release (`app/adapter-outputs.test.mts` checks every scan they write against that closed shape).
 
 ## Types and bounds
 
@@ -88,6 +88,7 @@ TazUO's `packrat-house-map-refresh.py` (2.12.0 and later) records the house with
 | `client` | string | The game client the adapter runs inside, e.g. `"TazUO"`. |
 | `clientVersion` | string or `null` | The client's own version, when the adapter can read it. |
 | `capabilities` | object, required | What this adapter can see and do — see below. |
+| `features` | array of strings, optional, at most 64 of 1–64 characters | What the adapter's bridge does besides the actions in `capabilities.bridge`, by name, e.g. `"trip-bags"`. A name this app does not know is ignored. The shipped scripts do not write it yet: `trip-bags` stays in `capabilities.bridge` until an app that accepts `features` has been out for a release. See `docs/bridge-protocol.md`, Features. |
 
 ### `adapter.capabilities`
 
@@ -99,9 +100,9 @@ TazUO's `packrat-house-map-refresh.py` (2.12.0 and later) records the house with
 | `ground` | boolean | Can this adapter read containers sitting on the ground? |
 | `nested` | boolean | Can this adapter recurse into bags inside bags? |
 | `tooltips` | string, `"opl"` or `"label"` | Whether item text comes from the client's full on-paperdoll-line tooltip (`"opl"`, every property line readable) or just the bare name label (`"label"`, no properties). |
-| `bridge` | array of strings | Which bridge actions (`"highlight"`, `"grab"`, `"goto"`, and `"trip"` for Organize, plus the `"trip-bags"` flag: its trips take a bag only once they have read it empty) this adapter's bridge script can execute — see `docs/bridge-protocol.md`. Empty for an adapter that ships no bridge. |
+| `bridge` | array of strings | Which bridge actions (`"highlight"`, `"grab"`, `"goto"`, and `"trip"` for Organize) this adapter's bridge script can execute — see `docs/bridge-protocol.md`. Empty for an adapter that ships no bridge. The TazUO scripts also list the `"trip-bags"` feature here (its trips take a bag only once they have read it empty), where every Pack Rat reads it. |
 
-The page does not read this per scan: which Highlight/Grab/Go-to buttons are enabled is one global decision taken from the configured client's own `capabilities.json` (`app/ui/bridge.mts`'s `currentAdapter` and `bridgeActionReason`; `docs/architecture.md`'s "Capability-driven bridge controls"), since only one client is connected at a time. The bridge script itself is still the final word on what it will actually do.
+Other keys are allowed and ignored. Which Highlight/Grab/Go-to buttons and Organize trips are offered is one decision per configured client (`bridgeFeatures` in `app/vault-lib.mts`): the running bridge's own report first, then the newest scan made with that adapter (its `capabilities.bridge` and `features`), then the client's shipped `capabilities.json` (`docs/bridge-protocol.md`, Features). The bridge script itself is still the final word on what it will actually do.
 
 ## `roots`
 
@@ -149,7 +150,7 @@ A v1 file is recognized by `version: 1` (instead of `schemaVersion`). The upgrad
 
 - Sets `schemaVersion: 2` and drops `version`.
 - Converts `scannedAt` from v1's naive local wall-clock string (`"2026-09-13T14:20:44"`, no offset — what `packrat-scanner.py`/`packrat-refresh.py` (now `packrat-character-refresh.py`) and the pre-v2 server both wrote) to RFC 3339, using **this machine's** UTC offset for that specific date and time (DST-correct — the offset is computed from a `Date` built out of the same year/month/day/hour/minute/second, not from "now").
-- Stamps `adapter`: `{id: "tazuo", version: "1", client: "TazUO", clientVersion: null, capabilities: TAZUO_V1_CAPS}` — except a tombstone (`character` starting with `_`), which gets `id: "app"` instead, since a v1-shaped tombstone was never written by a game-client adapter. `TAZUO_V1_CAPS` (in `app/scan-schema.mts`) is the capability set the original scanner script actually had: all 20 equip layers, arms/bank/ground/nested all `true`, `tooltips: "opl"`, `bridge: ["highlight", "grab", "goto"]`.
+- Stamps `adapter`: `{id: "tazuo", version: "1", client: "TazUO", clientVersion: null, capabilities: TAZUO_V1_CAPS}` — except a tombstone (`character` starting with `_`), which gets `id: "app"` instead, since a v1-shaped tombstone was never written by a game-client adapter. `TAZUO_V1_CAPS` (in `app/scan-schema.mts`) is the capability set the original scanner script actually had: all 20 equip layers, arms/bank/ground/nested all `true`, `tooltips: "opl"`, `bridge: ["highlight", "grab", "goto"]`. That block is the app's own stand-in, so `bridgeFeatures` skips it when it looks for the newest scan's.
 - Marks every `roots[]` entry `opened: true` — v1 had no concept of a root the scan couldn't open, so every listed root is treated as successfully opened.
 - Coerces every serial-shaped field to a number: `roots[].serial`, `containers` keys and each entry's `.serial`/`.parent`/`.root`, `items[].serial`/`.container`, `equipped[].serial`. (v1 data was occasionally serialized with string serials; the fold assumes numbers throughout.)
 - Gives every `items[]`/`equipped[]` entry `nameSource: "opl"` (v1 tooltips were always the full on-paperdoll-line read; there was no `"label"`-only mode yet).

@@ -2,7 +2,7 @@
 
 The fake client is fake_clients.py: lines appear in the queue file while the bridge runs, the fake clock moves only when the script pauses (so an 8-second highlight costs nothing), and the test reads back what the bridge did in the world and wrote to its status file. Covers what the pure-block tests in test_adapters.py cannot reach: the heartbeat during long actions, refusals reaching the page under the command's own id, and the container chain checks that decide what may be double-clicked.
 
-Covers: the status heartbeat never lapses more than 3 seconds during a highlight or a walk that never arrives; a backpack grab needs no walk; a Grab all is never refused by the chain check; a stranger's pack (as root or tucked after a real chest), a book or a piece of armour, and a chain that does not nest are refused without being opened; an expired command is recorded under its own id with the reason; and a duplicate line in one read runs once.
+Covers: the status heartbeat never lapses more than 3 seconds during a highlight or a walk that never arrives; a backpack grab needs no walk; a Grab all is never refused by the chain check; a stranger's pack (as root or tucked after a real chest), a book or a piece of armour, and a chain that does not nest are refused without being opened; an expired command, or one in a newer protocol, is recorded under its own id with the reason; the status reports the bridge itself (id, version, protocol and every action and feature); and a duplicate line in one read runs once.
 
 TazUO trips: takes at an explicit drop spot, puts only of the bridge's carried set, the stop flag between steps (a Stop pressed while a trip waited ends it before its first step, a flag left over from before is cleared, a directory in its place wedges nothing), the backpack item and weight cut-off (`partial`), untaken items' puts skipped, takes refused from your own backpack or bank, and puts refused into your own pack, a stranger's pack, a corpse, trash, a container whose name has not loaded or a blacklisted container. Issue #122: a put of an item that cannot stack reads none of the container's contents while a stackable one merges through `FindTypeAll` (only stacks directly in the container count), falling back to reading every child when the call is missing or fails, and an unreadable stackable flag means stackable. Issue #131: a `putAway` trip refused whole without the panel's shared variable naming that container (missing, not a consent, expired, another container, or a container not in the pack), and with it putting only what lies directly in the picked container (an item in a bag inside it refused; the bag picked next gives up its own; a bag dragged out of the pack mid-trip stopping the remaining puts), never a bag, a blessed or insured item put like any other, nothing joining the carried set. Issue #155: an item a failed trip left carried is put away from the picked bag it was dropped in (and leaves the carried set), while one dropped in a bag the player did not pick is still refused as no longer at the top of the backpack.
 
@@ -237,6 +237,22 @@ class BridgeCase(object):
         self.assertFalse(final["results"]["old"]["ok"])
         self.assertIn("expired", final["results"]["old"]["msg"])
         self.assertEqual(self.moved(w), [])
+
+    def test_a_command_in_a_newer_protocol_is_refused_under_its_own_id_and_never_run(self):
+        w = home()
+        final, _ = self.run_bridge(w, 1, [self.cmd("new", "grab", AMULET, [CHEST, BAG], protocol=2)])
+        self.assertFalse(final["results"]["new"]["ok"])
+        self.assertIn("reinstall the scripts", final["results"]["new"]["msg"])
+        self.assertEqual((self.opened(w), self.moved(w)), ([], []))
+
+    def test_the_status_reports_this_bridge_and_what_it_can_do(self):
+        caps = json.load(open(adapter_path(self.ADAPTER, "capabilities.json"), encoding="utf-8"))
+        final, writes = self.run_bridge(home(), 1, [])
+        want = {"id": self.ADAPTER, "version": caps["version"], "protocol": caps["protocol"],
+                "features": caps["capabilities"]["bridge"] + caps.get("features", [])}
+        self.assertEqual(final["adapter"], want)
+        self.assertTrue(final.get("stopped"))
+        self.assertTrue(all(s["adapter"] == want for _, s in writes))
 
     def test_a_deleted_queue_file_reads_as_empty_and_the_next_command_still_runs(self):
         w = home()
@@ -555,7 +571,7 @@ class TazUOBridge(BridgeCase, unittest.TestCase):
             self.assertIn("not empty", final["results"]["t1"]["steps"][0]["msg"], kw)
             self.assertEqual(self.moves(w), [], kw)
 
-    def test_trip_bags_is_a_capability_not_an_action(self):
+    def test_trip_bags_is_a_feature_not_an_action(self):
         w = trip_home()
         final, _ = self.run_bridge(w, 1, [self.cmd("c1", "trip-bags", AMULET, [CHEST, BAG])])
         self.assertEqual((final["results"]["c1"]["ok"], final["results"]["c1"]["msg"]), (False, "unknown action"))
