@@ -278,6 +278,13 @@ test("[smoke] /buffs.mjs, Manual's buff catalog, is served as text/javascript (i
   assert.match(await r.text(), /export function applyBuffs/);
 });
 
+test("[smoke] /evaluate.mjs, the suit evaluation Manual and Automatic share, is served as text/javascript (issue #216)", async () => {
+  const r = await get("/evaluate.mjs");
+  assert.equal(r.status, 200);
+  assert.equal(r.headers.get("content-type"), "text/javascript; charset=utf-8");
+  assert.match(await r.text(), /export function evaluateSuit/);
+});
+
 // ---- Phase 7 security review: the server's own hardening ------------------------------------------
 // One block, one finding per test, each named after the property it pins rather than the bug it came
 // from. Every test here was verified RED against the pre-fix server before the fix landed.
