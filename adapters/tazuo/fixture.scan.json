@@ -7311,7 +7311,7 @@
  "schemaVersion": 2,
  "adapter": {
   "id": "tazuo",
-  "version": "2.15.1",
+  "version": "2.16.0",
   "client": "TazUO",
   "clientVersion": null,
   "capabilities": {
@@ -7346,10 +7346,12 @@
     "highlight",
     "grab",
     "goto",
-    "trip",
-    "trip-bags"
+    "trip"
    ]
-  }
+  },
+  "features": [
+   "trip-bags"
+  ]
  },
  "house": {
   "capturedAt": "2026-01-01T12:00:00+00:00",

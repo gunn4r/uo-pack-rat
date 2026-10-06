@@ -1,8 +1,8 @@
 # Bridge protocol
 
-The bridge is how the app reaches back into the game client: the Highlight, Grab, and Go-to buttons on Inventory rows, the item peek and the Suit Builder's result panel don't move anything themselves — they queue a command, and an adapter script running inside the game client (attended, one command at a time) carries it out. This document describes protocol v1: the file layout, the three message shapes plus Organize's trip, the actions, and the rules that keep it safe to leave running.
+The bridge is how the app reaches back into the game client: the Highlight, Grab, and Go-to buttons on Inventory rows, the item peek and the Suit Builder's result panel don't move anything themselves — they queue a command, and an adapter script running inside the game client (attended, one command at a time) carries it out. This document describes protocol v1: the file layout, the three message shapes plus Organize's trip, the actions, how the app learns what a bridge can do, and the rules that keep it safe to leave running.
 
-Ground truth: `app/schema/bridge.v1.schema.json` (validated by `app/contracts.test.mts`), `app/http/routes/bridge.mts` (`POST /api/bridge`, `GET /api/bridge/status`), `adapters/tazuo/packrat-bridge.py` (the reference adapter implementation), and `app/ui/bridge.mts` (the page's side).
+Ground truth: `app/schema/bridge.v1.schema.json` (validated by `app/contracts.test.mts`), `app/http/routes/bridge.mts` (`POST /api/bridge`, `GET /api/bridge/status`), `app/bridge-status.mts` (the one reader of `status.json`), `adapters/tazuo/packrat-bridge.py` (the reference adapter implementation), and `app/ui/bridge.mts` (the page's side).
 
 ## Files
 
@@ -24,7 +24,7 @@ On TazUO the same directory also holds `panel.json`, the in-game panel's heartbe
 One line of `queue.jsonl`, one JSON object per line:
 
 ```json
-{"id": "0b6f3c1e-2a4d-4e8f-9c3a-5d7e1f2a3b4c", "action": "grab", "serial": 1234567890, "name": "Leather Gorget", "chain": [1073741825, 1073741826], "pos": {"x": 1520, "y": 1631, "z": 0}, "queuedAt": "2026-09-13T14:20:44.123Z"}
+{"id": "0b6f3c1e-2a4d-4e8f-9c3a-5d7e1f2a3b4c", "action": "grab", "serial": 1234567890, "name": "Leather Gorget", "chain": [1073741825, 1073741826], "pos": {"x": 1520, "y": 1631, "z": 0}, "queuedAt": "2026-09-13T14:20:44.123Z", "protocol": 1}
 ```
 
 | Field | Type | Meaning |
@@ -36,8 +36,9 @@ One line of `queue.jsonl`, one JSON object per line:
 | `chain` | array of integers ≥ 1, at most 8 | The container chain from the root down to the item's immediate parent, outermost first (`[root, …, parent]`) — what the bridge needs to open, in order, to reach the item. Empty for an item sitting directly in a root already open (rare in practice). The cap is 8 because the page walks at most 8 parents and the scanner's own nesting limit is 4, so nothing legitimate is longer. |
 | `pos` | object or `null` | The root container's last known world tile, when the app has one on file (from the scan that found it, or, for a chest a house capture saw but no scan opened, the place the capture saw it: the House map's Highlight, issue #10) — lets the bridge walk there even if the container isn't currently in view. A typed, closed shape: required integer `x` (0–7168), `y` (0–4096) and `z` (−128–127), plus an optional `facet` (0–5, Felucca through Ter Mur), which the scanners record on a ground root's `pos` (TazUO 2.9.0, Razor Enhanced 1.9.0, ClassicUO web 1.3.0) and the bridges validate but do not act on yet. The x/y bounds are the widest UO facet, so they are a sanity check rather than a per-facet one. `null` when no position is on file. |
 | `queuedAt` | string, RFC 3339 | When the server appended this command. Not decoration — see Freshness below. |
+| `protocol` | integer ≥ 1 | The protocol the line is written in: `app/bridge-contract.mts`'s `BRIDGE_PROTOCOL`, 1 today. See Protocol below. |
 
-`POST /api/bridge` builds this line itself from the request body (`{action, serial, name, chain, pos}` — `location` and any other extra field the page might send along is dropped, never carried into the queue), assigns the `id` and `queuedAt`, validates the assembled line against the `command` schema, and only then appends it. It requires `action` and `serial`; everything else defaults (`chain: []`, `pos: null`). The body is capped at 64 KB.
+`POST /api/bridge` builds this line itself from the request body (`{action, serial, name, chain, pos}` — `location` and any other extra field the page might send along is dropped, never carried into the queue), assigns the `id`, `queuedAt` and `protocol`, validates the assembled line against the `command` schema, and only then appends it. It requires `action` and `serial`; everything else defaults (`chain: []`, `pos: null`). The body is capped at 64 KB.
 
 ## Result
 
@@ -69,20 +70,22 @@ The whole of `status.json`, replaced atomically (temp file + rename) roughly eve
   "results": {
     "0b6f3c1e-2a4d-4e8f-9c3a-5d7e1f2a3b4c": {"ok": true, "msg": "grabbed Leather Gorget — it is in your backpack", "t": "2026-09-13T14:20:46+00:00"}
   },
-  "counts": {"done": 4, "failed": 1}
+  "counts": {"done": 4, "failed": 1},
+  "adapter": {"id": "tazuo", "version": "2.16.0", "protocol": 1, "features": ["highlight", "grab", "goto", "trip", "trip-bags"]}
 }
 ```
 
 | Field | Type | Meaning |
 |---|---|---|
-| `alive` | string, RFC 3339 | A heartbeat timestamp, rewritten on every status write. `GET /api/bridge/status` calls the bridge online when this is under 8 seconds old (`age < 8`, computed server-side); it also accepts a legacy numeric epoch-seconds `alive` from an older bridge build, for one release's worth of backward compatibility. |
+| `alive` | string, RFC 3339 | A heartbeat timestamp, rewritten on every status write. The bridge is online while this is under 8 seconds old (`ONLINE_S`, computed server-side; one in the future counts). A numeric epoch-seconds `alive` from an older bridge build is still read. |
 | `character` | string | Whose game client the bridge is running in. |
 | `current` | object or `null` | The command being worked on right now (`{id, action, name}`), or `null` between commands. |
 | `results` | object | The last ~30 results, keyed by command id (older ones age out — the bridge only keeps a rolling window, not a full history). |
 | `counts` | object, `{done, failed}` | Running totals for this bridge session (reset when the script restarts). |
+| `adapter` | object, optional | The bridge itself: `{id, version, protocol, features}` — its adapter id, script version, the newest queue-line protocol it reads, and every action and feature it has (see Features). Written by TazUO 2.16.0 and Razor Enhanced 1.12.0 on every status write; older bridges leave it out. |
 | `stopped` | boolean, optional | Present and `true` only in the final status write after a clean Stop — never `false`; its absence means the bridge is still running or was killed some other way (crash, client exit) rather than stopped cleanly. Both bridges write it from a `finally` around their main loop, so it is written whether the loop ended on its own (Stop seen between polls, `MAX_HOURS`, a flooded queue) or the client's Stop interrupted the script mid-pause (TazUO throws at the next `API.Pause`). The next start's first status write omits it again. The installer's running-script guard treats a status with `stopped: true` as not running whatever its age, so a reinstall right after `-stopall` goes ahead at once instead of waiting out the 30 s heartbeat window (issue #121). |
 
-`GET /api/bridge/status` on a fresh data directory (no `status.json` yet) returns `{ok: true, online: false}` rather than erroring.
+`app/bridge-status.mts`'s `readBridgeStatus` is the one reader of this file. It checks it against the status schema, which is open (a newer bridge's added field still reads), and a missing, unreadable or off-schema file reads as not running: `GET /api/bridge/status` then returns `{ok: true, online: false}` rather than erroring. It answers the page and the MCP tools with the file's fields plus `online` and `age`. Two waits read the same `alive`, each for its own caller: **online** (8 s) is what the page, the MCP tools and the features below go by, and Organize keeps a trip pending, trusting the file's `current`, while `alive` is within 90 s either way (`PENDING_GRACE_MS`), so a trip in flight is not given up over one missed heartbeat, while a client that quit mid-trip does not hold the queue for good.
 
 ## Actions
 
@@ -93,7 +96,23 @@ The whole of `status.json`, replaced atomically (temp file + rename) roughly eve
 | `goto` | Walk within reach of the root container (from `chain[0]`, or straight to `pos` when there's no chain) and stop — no opening, no moving. Requires either a `chain` or a `pos`; an item with neither reports failure ("no container position known for this item"). |
 | `trip` | Organize (TazUO only). Takes, then puts, one step at a time — see Trip, below. |
 
-An `action` the adapter's own `capabilities.bridge` list doesn't include (see `docs/scan-schema.md`'s `adapter.capabilities.bridge`) is refused with `"unknown action"` rather than attempted — the reference TazUO adapter supports all three, plus `trip` and the `trip-bags` flag, which is not an action (`CAPABILITIES["bridge"] = ["highlight", "grab", "goto", "trip", "trip-bags"]`, `ACTIONS` without the flag).
+An `action` the adapter's own `capabilities.bridge` list doesn't include (see `docs/scan-schema.md`'s `adapter.capabilities.bridge`) is refused with `"unknown action"` rather than attempted — the reference TazUO adapter supports all three, plus `trip` (`CAPABILITIES["bridge"] = ["highlight", "grab", "goto", "trip"]`). `trip-bags` is a feature, not an action (Features, below).
+
+## Protocol
+
+Every queue line carries `protocol`, the version of the line format it is written in, and every bridge's `capabilities.json` declares `protocol`, the newest it reads (its scripts' `PROTOCOL`, in the shared untrusted-input block). A bridge refuses a line in a newer protocol than its own, before any other check, recording "this bridge is older than Pack Rat: reinstall the scripts from Settings" under the line's id; it reads a line with no `protocol` (from an app older than the field) as protocol 1, and refuses one that is not a whole number of 1 or more. Raise `BRIDGE_PROTOCOL` and every shipped `capabilities.json`'s `protocol` together when a line's meaning changes in a way an older bridge would misread; an added field an older bridge can safely ignore needs no new protocol. Bridges before TazUO 2.16.0 and Razor Enhanced 1.12.0 ignore the field.
+
+## Features
+
+What a bridge can do is one set of names: the actions it runs (`highlight`, `grab`, `goto`, `trip`) and what it does besides (`trip-bags`: its trips take a bag only once they have read it empty, issue #128). `capabilities.json` and a scan's adapter block keep them in two lists, `capabilities.bridge` for the actions and `features` for the rest; scripts before TazUO 2.16.0 listed `trip-bags` among the actions, and it is still read from there. The status `adapter.features` is the one list.
+
+The page (Highlight, Grab and Go to, and Organize's Run buttons), Organize's planner and trip route, Put away and the MCP tools all ask `bridgeFeatures` (`app/vault-lib.mts`), which answers from:
+
+1. the running bridge's own report, `status.json`'s `adapter.features`, while it is online;
+2. otherwise the newest scan made with that adapter (its scripts were installed with the bridge; a v1 scan's adapter block is the app's own stand-in and is skipped);
+3. otherwise the manifest this app ships, `adapters/<id>/capabilities.json`.
+
+A bridge too old to report itself (no `adapter` in its status) is judged by the newest scan and the manifest, as before. Settings still compares the installed scripts' version with the shipped one and asks for a reinstall when they differ; the shipped manifest only says what a reinstall would give.
 
 ## The offset rule
 
@@ -105,6 +124,7 @@ The bridge script only ever acts on commands queued **after it started**. On lau
 
 `queue.jsonl` is an ordinary file in the data directory. The app writes it, but so can anything else on the machine, and a line in it moves a real character in a live game. So a bridge script trusts nothing in that file and re-checks every line itself rather than assuming the server validated it — the server's check is real, but the file is not the server's to guard. The block of checks below is byte-identical in both bridge scripts, and a test asserts it stays that way. An adapter that ships a bridge is expected to implement all of it.
 
+- **Protocol.** A line in a newer protocol than the bridge reads is refused before anything else (Protocol, above).
 - **Freshness.** `queuedAt` is parsed, not ignored. A command older than **60 seconds**, more than **5 seconds** in the future, or carrying a missing or unparseable stamp is recorded as expired and never executed. This is what makes a replayed backlog inert, and the offset rule above is still the first line of that.
 - **Duplicates.** An id the bridge has already accepted in this session is skipped — checked when the line is read, so two copies in one read, or a copy arriving while the first is still waiting its turn, run once. The last 500 are remembered. An id longer than 64 characters is refused (the app's own are 36-character UUIDs).
 - **Rate.** At most **4 commands per poll** and **40 per rolling minute**. The excess is *deferred*, never dropped, and reading pauses while 64 are already pending, so nothing is lost to backpressure. Exceeding the minute budget is treated as a signal rather than a nuisance: the bridge records the refusal, says plainly in-game that the queue is being written faster than a person clicks, and **stops**. Forty a minute is comfortably above the largest burst the app itself produces (a twenty-piece "Grab all", sent a few hundred milliseconds apart).
@@ -122,7 +142,7 @@ A refusal is always *recorded*, never silent: it becomes a `result` with `ok: fa
 One line of the same queue, with its own shape (ground truth: `app/schema/bridge-trip.v1.schema.json`):
 
 ```json
-{"id": "0b6f3c1e-2a4d-4e8f-9c3a-5d7e1f2a3b4c", "action": "trip", "index": 3, "stamp": "2026-09-28T12:00:00.000Z", "queuedAt": "2026-09-28T12:05:00.000Z",
+{"id": "0b6f3c1e-2a4d-4e8f-9c3a-5d7e1f2a3b4c", "action": "trip", "index": 3, "stamp": "2026-09-28T12:00:00.000Z", "queuedAt": "2026-09-28T12:05:00.000Z", "protocol": 1,
  "roots": {"1073741825": {"x": 1520, "y": 1631, "z": 0, "facet": 1}, "1073741904": {"x": 1522, "y": 1631, "z": 0}},
  "takes": [{"serial": 1073741840, "name": "Black Pearl", "chain": [1073741825, 1073741826]}],
  "puts":  [{"serial": 1073741840, "name": "Black Pearl", "dest":  [1073741904, 1073741905]}]}
@@ -179,4 +199,4 @@ Every message the bridge (or the scanner/refresh scripts) prints in-game must be
 
 ## How the page uses the bridge
 
-The Highlight / Grab / Go to buttons (the Inventory's row menu and item peek, and the Suit Builder's result) queue commands for the in-game bridge script: `POST /api/bridge {action: highlight|grab|goto, serial, name, chain: [root … parent], pos: {x,y,z}|null}` appends to `<data>/bridge/<adapter>/queue.jsonl` with an id, where `<adapter>` is the currently CONFIGURED client (`settings.client.adapter`, falling back to `tazuo` only when nothing is configured) — not a fixed `tazuo` (`docs/bridge-protocol.md`'s Files section). The bridge script (`adapters/tazuo/`, see its README, for the reference implementation — `adapters/razor-enhanced/` is the other one) starts reading at the end of the file (old commands ignored), re-checks every line itself rather than trusting that the server validated it (freshness, duplicate ids, rate, chain length, container-ness, walk distance, grab source — `docs/bridge-protocol.md`'s "What the bridge refuses" is the list, and it is a contract an adapter with a bridge is expected to implement), walks to the item when out of reach, opens the chain of containers down to it, then highlights it for a few seconds or moves it to the backpack with a landed check, and writes `<data>/bridge/<adapter>/status.json {alive, character, current, results{id:{ok,msg}}, counts}` every couple of seconds. The page polls status every 2.5 s (online = alive < 8 s old) and toasts results for the ids it queued. `sendBridge(action, item)` is the one POST both per-item buttons and Grab all use. **Grab all**: one `grab` per piece of the suit currently shown (the alternative suit's list when Show picked one), sent one after another a few hundred ms apart and stopping at the first refusal; pieces worn by anyone or already in this character's backpack are left out (the count next to the button says so); disabled with a title while the bridge is offline or nothing is left; a running "Grabbing 3/7: name…" then a summary; each grab's result toasts through the same poll as a single Grab. It confirms first when the bridge is running on another character, because the pieces land in that character's backpack.
+The Highlight / Grab / Go to buttons (the Inventory's row menu and item peek, and the Suit Builder's result) queue commands for the in-game bridge script: `POST /api/bridge {action: highlight|grab|goto, serial, name, chain: [root … parent], pos: {x,y,z}|null}` appends to `<data>/bridge/<adapter>/queue.jsonl` with an id, where `<adapter>` is the currently CONFIGURED client (`settings.client.adapter`, falling back to `tazuo` only when nothing is configured) — not a fixed `tazuo` (`docs/bridge-protocol.md`'s Files section). The bridge script (`adapters/tazuo/`, see its README, for the reference implementation — `adapters/razor-enhanced/` is the other one) starts reading at the end of the file (old commands ignored), re-checks every line itself rather than trusting that the server validated it (freshness, duplicate ids, rate, chain length, container-ness, walk distance, grab source — `docs/bridge-protocol.md`'s "What the bridge refuses" is the list, and it is a contract an adapter with a bridge is expected to implement), walks to the item when out of reach, opens the chain of containers down to it, then highlights it for a few seconds or moves it to the backpack with a landed check, and writes `<data>/bridge/<adapter>/status.json {alive, character, current, results{id:{ok,msg}}, counts, adapter}` every couple of seconds. The page polls status every 2.5 s (online = alive < 8 s old), keeps the bridge's own report to decide which actions it offers (Features), and toasts results for the ids it queued. `sendBridge(action, item)` is the one POST both per-item buttons and Grab all use. **Grab all**: one `grab` per piece of the suit currently shown (the alternative suit's list when Show picked one), sent one after another a few hundred ms apart and stopping at the first refusal; pieces worn by anyone or already in this character's backpack are left out (the count next to the button says so); disabled with a title while the bridge is offline or nothing is left; a running "Grabbing 3/7: name…" then a summary; each grab's result toasts through the same poll as a single Grab. It confirms first when the bridge is running on another character, because the pieces land in that character's backpack.

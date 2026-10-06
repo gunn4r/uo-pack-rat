@@ -1,6 +1,6 @@
 // watcher.test.mts — `app/watcher.mts`: the accepted-name rule, ingesting a file, and the watcher's debounce, retry, reject, sweep and self-healing.
 //
-// `app/watcher.mts`: `acceptedName`'s naming rule (slug + RFC 3339 stamp, collision suffixes), `ingestFile`'s normalise-then-move and idempotency (a doc already present in `scans/` under its accepted name is recognised and skipped, even across a simulated restart), and `startWatcher`'s debounce/retry/reject/`scanOnce`/`close` behavior against an injected fake `fs.watch`. Also the self-healing watch (issue #18): an accepted scan is written `0600` with no temp left behind, an inbox the watcher creates is `0700`, an `'error'` from the watch is logged and the watch re-armed (the fake emits one the way Windows reports a deleted folder), `scanOnce()` recreates a deleted inbox and re-arms the watch, and reports `false` when the inbox cannot be recreated; an inbox deleted and recreated by something else is re-armed by the next sweep (the watch follows the directory's device and inode, not its name), including when the only sign is a watch event arriving after the folder is back; and a watch that keeps failing is retried with a doubling delay and logged once per streak, not once per attempt; the Put away request file goes to its handler after a scan dropped before it, and after every scan beside it in a sweep, never ingested (issue #131); a drop whose watch event never comes found by the periodic sweep. All `[fast]`; the two mode checks skip on Windows. A house-only file is accepted as `<Char>-<stamp>-house.json` beside a scan of the same character and second, and a second copy of it as its duplicate (issue #10).
+// `app/watcher.mts`: `acceptedName`'s naming rule (slug + RFC 3339 stamp, collision suffixes), `ingestFile`'s normalise-then-move and idempotency (a doc already present in `scans/` under its accepted name is recognised and skipped, even across a simulated restart; a newer adapter's scan with an unknown capability or feature accepted and read, and a file of an unknown kind accepted but skipped by the scans store and the fold, never quarantined), and `startWatcher`'s debounce/retry/reject/`scanOnce`/`close` behavior against an injected fake `fs.watch`. Also the self-healing watch (issue #18): an accepted scan is written `0600` with no temp left behind, an inbox the watcher creates is `0700`, an `'error'` from the watch is logged and the watch re-armed (the fake emits one the way Windows reports a deleted folder), `scanOnce()` recreates a deleted inbox and re-arms the watch, and reports `false` when the inbox cannot be recreated; an inbox deleted and recreated by something else is re-armed by the next sweep (the watch follows the directory's device and inode, not its name), including when the only sign is a watch event arriving after the folder is back; and a watch that keeps failing is retried with a doubling delay and logged once per streak, not once per attempt; the Put away request file goes to its handler after a scan dropped before it, and after every scan beside it in a sweep, never ingested (issue #131); a drop whose watch event never comes found by the periodic sweep. All `[fast]`; the two mode checks skip on Windows. A house-only file is accepted as `<Char>-<stamp>-house.json` beside a scan of the same character and second, and a second copy of it as its duplicate (issue #10).
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { mkdtempSync, writeFileSync, readFileSync, existsSync, readdirSync, renameSync, chmodSync, symlinkSync, statSync, realpathSync, rmSync, mkdirSync, type WatchListener } from "node:fs";
@@ -11,9 +11,13 @@ import {
   type StartWatcherOnAcceptedInfo, type StartWatcherOnRejectedInfo,
 } from "./watcher.mts";
 import { TAZUO_V1_CAPS } from "./scan-schema.mts";
+import { createScansStore } from "./store/scans.mts";
+import { foldSnapshots, setRules } from "./vault-lib.mts";
+import { loadRules } from "./rules.mts";
 import type { ScanV2 } from "./schema/types.d.mts";
 
 const SHARD = "uoalive";
+setRules(loadRules(SHARD));
 const tmp = (prefix: string): string => mkdtempSync(join(tmpdir(), prefix));
 
 function validDoc(overrides: Partial<ScanV2> = {}): ScanV2 {
@@ -89,6 +93,28 @@ test("[fast] ingestFile: a house-only file is accepted as <Char>-<stamp>-house.j
   const again = ingestFile({ path: src, scansDir, shard: SHARD });
   assert.deepEqual([again.file, again.duplicate], ["Fixture-20260101T120000+0000-house.json", true]);
   assert.deepEqual(readdirSync(scansDir).sort(), ["Fixture-20260101T120000+0000-house.json", "Fixture-20260101T120000+0000.json"]);
+});
+
+// Golden: what a newer adapter writes. An unknown capability or feature is ignored, and a file of an unknown kind is kept
+// but read by nothing; neither is ever quarantined.
+test("[fast] ingestFile: a newer adapter's scan (an unknown capability and feature) is accepted and read, and a file of an unknown kind is accepted and skipped by the readers", (t) => {
+  const inboxDir = tmp("qm-inbox-newer-"), scansDir = tmp("qm-scans-newer-");
+  const capabilities = { ...TAZUO_V1_CAPS, appearance: true };
+  const newer = validDoc({ adapter: { id: "tazuo", version: "9.0.0", client: "TazUO", clientVersion: null, capabilities, features: ["trip-bags", "bag-move"] } });
+  writeFileSync(join(inboxDir, "newer.json"), JSON.stringify(newer));
+  const read = ingestFile({ path: join(inboxDir, "newer.json"), scansDir, shard: SHARD });
+  assert.equal(read.ok, true, read.reason);
+  writeFileSync(join(inboxDir, "market.json"), JSON.stringify(validDoc({ character: "Vendor", kind: "market" })));
+  const kept = ingestFile({ path: join(inboxDir, "market.json"), scansDir, shard: SHARD });
+  assert.equal(kept.ok, true, kept.reason);
+  assert.equal(readdirSync(inboxDir).length, 0, "nothing left behind to be quarantined");
+  const warned: string[] = [];
+  t.mock.method(console, "warn", (line: string) => { warned.push(line); });
+  const scans = createScansStore({ dir: scansDir, shard: () => SHARD }).all();
+  assert.deepEqual(scans.map((s) => s.character), ["Fixture"]);
+  assert.deepEqual(Object.keys(foldSnapshots(scans).characters), ["Fixture"]);
+  assert.deepEqual(warned, [`skipping ${kept.file}: kind "market" is from a newer Pack Rat`]);
+  assert.deepEqual(Object.keys(foldSnapshots([JSON.parse(readFileSync(join(scansDir, kept.file!), "utf8")) as ScanV2]).characters), [], "the fold skips it too");
 });
 
 test("[fast] ingestFile: a schema-invalid doc reports the validation reason and leaves the file alone", () => {

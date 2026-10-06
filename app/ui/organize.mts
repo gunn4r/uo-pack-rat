@@ -9,7 +9,7 @@ import { state, bridge } from "./store.mts";
 import { $, el, itemTip, toast, compactChildren } from "./dom.mts";
 import { api } from "./api.mts";
 import { box, txt, button, badge, card, message, menu, select, tipWrap, table, type Kids } from "./components.mts";
-import { currentAdapter, BRIDGE_OFFLINE } from "./bridge.mts";
+import { bridgeFeatureSet, currentAdapter, BRIDGE_OFFLINE } from "./bridge.mts";
 import { setNavBusy } from "./shell.mts";
 import { errorText } from "./messages.mts";
 import { parseRoute, registerScreen, showKind } from "./nav.mts";
@@ -206,7 +206,7 @@ function paintPlan(): void {
   const cfg = state.organize.config, old = $<HTMLElement>("#org-plan");
   if (cfg && old) old.replaceWith(planCard(cfg));
 }
-const canTrip = (): boolean => (currentAdapter()?.capabilities?.bridge || []).includes("trip");
+const canTrip = (): boolean => bridgeFeatureSet().has("trip");
 // Why no trip can start now (organize-model.mts's tripGate), or null.
 function gate(): string | null {
   const a = currentAdapter();

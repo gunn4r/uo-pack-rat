@@ -11,7 +11,7 @@ import type { Route } from "../router.mts";
 import type { ServerContext } from "../context.mts";
 
 export function routes(ctx: ServerContext): Route[] {
-  const { appSettings, blacklistStore, getInventory, organizeService, organizeStore, setupService } = ctx;
+  const { appSettings, blacklistStore, getInventory, organizeService, organizeStore } = ctx;
   return [
     { method: "GET", path: "/api/organize", handle: (_req, res) => send(res, 200, { ok: true, ...organizeStore.read() }) },
     { method: "PUT", path: "/api/organize", handle: async (req, res) => {
@@ -62,8 +62,8 @@ export function routes(ctx: ServerContext): Route[] {
       const { index, stamp } = asObject(await readBody(req, { limit: 8e3 }));
       if (!isBoundedInt(index, 1, 10000) || !isBoundedString(stamp, 64)) return send(res, 400, { ok: false, error: "index (a trip number) and stamp (the plan's) are required" });
       const adapter = appSettings.bridgeAdapter();
-      if (!setupService.runsTrips(adapter)) return send(res, 409, { ok: false, error: `the ${adapter} bridge cannot run Organize trips` });
-      const { fold, state, plan, problems } = await organizeService.organizeNow();
+      const { fold, state, plan, problems, features } = await organizeService.organizeNow();
+      if (!features.has("trip")) return send(res, 409, { ok: false, error: `the ${adapter} bridge cannot run Organize trips` });
       // A salvaged setup lost rules or targets, and their items may now fall through to another rule or the
       // catch-all: nothing moves until the player has seen that and saved the setup again.
       if (problems.length) return send(res, 409, { ok: false, error: `organize.json was hand-edited and parts of it were dropped (${problems[0]}); open Organize and save the setup first` });

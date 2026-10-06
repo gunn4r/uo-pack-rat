@@ -6,7 +6,7 @@
 // page does (buffs.mts, vault-lib.mts). One entry per tool: its name, description, JSON Schema for its arguments
 // (the subset app/schema/validate.mts checks, which mcp.mts runs before the handler), annotations and handler.
 // `action: true` marks a tool that acts in game: refused while Settings' "Allow in-game actions" is off.
-import { BRIDGE_ACTION_LABELS, BRIDGE_OFFLINE, GEAR_SLOTS, bridgeRefusal, containerChain, fullOf, isPseudoCharacter, resistSkillBonus, toOptItem, totalsOf } from "./vault-lib.mts";
+import { BRIDGE_ACTION_LABELS, BRIDGE_OFFLINE, GEAR_SLOTS, bridgeFeatures, bridgeRefusal, containerChain, newestScanAdapter, fullOf, isPseudoCharacter, resistSkillBonus, toOptItem, totalsOf } from "./vault-lib.mts";
 import type { BridgeAction, Character, Container, Item, OptItem, Profile, PropMap } from "./vault-lib.mts";
 import { buffPlanOf, normalizeBuffs, savedBuffs, BUFFS } from "./buffs.mts";
 import { BUILTIN_PREFIX, characterBuffs, characterProfile, findTemplate, planBuild, specFromProfile, templateRefs, templateSettings, type PlannedBuild, type ProfilesV3, type TemplateMap } from "./build-spec.mts";
@@ -47,8 +47,8 @@ export const INSTRUCTIONS = [
 
 // ---------------------------------------------------------------- shapes the routes answer with (only what is read)
 interface InventoryDoc { characters: Record<string, Character>; containers: Record<string, Container>; worn: Record<string, Item[]>; scans: Array<{ character: string; scannedAt: string }>; itemCount: number; facets: Record<string, unknown> & { kinds: Array<{ name: string; count: number }>; propKeys: string[] } }
-interface SetupDoc { settings: { client?: { adapter: string } | null }; bridgeAdapter: string | null; adapters: Array<{ id: string; name?: string; capabilities?: { bridge?: string[] } }> }
-interface BridgeStatus { online: boolean; age?: number; character?: string; current?: { id?: string } | null; results?: Record<string, BridgeResult> }
+interface SetupDoc { settings: { client?: { adapter: string } | null }; bridgeAdapter: string | null; adapters: Array<{ id: string; name?: string; capabilities?: { bridge?: string[] }; features?: string[] }> }
+interface BridgeStatus { online: boolean; age?: number; character?: string; adapter?: { features?: string[] }; current?: { id?: string } | null; results?: Record<string, BridgeResult> }
 interface BridgeResult { ok: boolean; msg: string; t?: string; partial?: boolean; stopped?: boolean; steps?: Array<{ op: string; serial: number; ok: boolean; msg: string }> }
 interface RunDoc { id: string; character?: string; createdAt: string; label?: string; settings?: Record<string, unknown>; result?: Record<string, unknown> | null; ms?: number | null; inventoryStamp?: string | null }
 interface PlanDoc { stamp: string; inventoryStamp: string; moves: PlanMove[]; trips: Array<{ index: number; site: number }>; rules: unknown[]; warnings: unknown[]; seconds: number; unclaimed: number }
@@ -212,7 +212,9 @@ function bridgeTool(action: BridgeAction, name: string, what: string): Tool {
       if (!it && action === "grab") throw new ToolError("Grab takes items, not a container a scan opened at its root");
       const target = it ? { serial, name: it.name, container: it.container, root: it.root, equippedBy: it.equippedBy } : { serial, name: box!.label || box!.name || "container", container: box!.parent ?? null, root: box!.root, equippedBy: null };
       const pos = (target.root != null ? inv.containers[target.root] : null)?.pos || null;
-      const refused = bridgeRefusal(action, target, { adapter: gate.adapter, online: !!gate.status.online, hasPos: !!pos });
+      // What the bridge can do, decided as the page decides it (vault-lib.mts's bridgeFeatures).
+      const { features } = bridgeFeatures({ running: gate.status.online ? gate.status.adapter : null, scan: newestScanAdapter(inv.characters, gate.adapter?.id), manifest: gate.adapter });
+      const refused = bridgeRefusal(action, target, { adapter: gate.adapter, features, online: !!gate.status.online, hasPos: !!pos });
       if (refused) throw new ToolError(refused);
       const r = await ctx.api<{ id: string }>("/api/bridge", { method: "POST", body: { action, serial, name: target.name || "?", chain: containerChain(inv.containers, target.container), pos } });
       ctx.memory.actions.set(r.id, Date.now());

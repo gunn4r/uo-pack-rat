@@ -2,8 +2,9 @@
   "$comment": "Pack Rat bridge trip v1 (Organize, issue #11): one line of <dataDir>/bridge/<adapter-id>/queue.jsonl whose action is \"trip\". Written only by app/bridge-trip.mts's queueTrip (never by POST /api/bridge, whose command schema has no trip action), read by an adapter bridge that declares \"trip\" in capabilities.bridge (TazUO only) and re-checked field by field by check_trip in the shared untrusted-input block of every packrat-bridge.py. Draft-07 style within app/schema/validate.mts's keyword subset: roots is a map keyed by container serial, and the validator cannot check keys, so queueTrip and check_trip both check them (decimal serial). Result: bridge.v1.schema.json's result, with steps/partial/stopped. See docs/bridge-protocol.md, Trip.",
   "type": "object",
   "additionalProperties": false,
-  "required": ["id", "action", "index", "stamp", "queuedAt", "roots", "takes", "puts"],
+  "required": ["id", "action", "index", "stamp", "queuedAt", "roots", "takes", "puts", "protocol"],
   "properties": {
+    "protocol": { "type": "integer", "minimum": 1, "$comment": "As a bridge.v1 command's protocol: app/bridge-contract.mts's BRIDGE_PROTOCOL." },
     "id": { "type": "string", "minLength": 1, "maxLength": 64 },
     "action": { "type": "string", "enum": ["trip"] },
     "index": { "type": "integer", "minimum": 1, "maximum": 10000, "$comment": "The trip's number in its plan, printed in game. MAX_TRIP_INDEX in every packrat-bridge.py." },

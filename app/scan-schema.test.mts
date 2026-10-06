@@ -1,12 +1,12 @@
 // scan-schema.test.mts — `app/scan-schema.mts`: the scan v2 schema and the v1→v2 upgrade on read.
 //
-// `app/scan-schema.mts`: `SCAN_V2_SCHEMA` is byte-identical to `app/schema/scan.v2.schema.json` (the two must never drift, since the `.mjs` copy is what gets served to the browser); `upgradeScan`'s v1→v2 conversion (naive-local `scannedAt` → RFC 3339 with this machine's DST-correct offset, `adapter` stamped — `"app"` for a `_`-prefixed tombstone character, `"tazuo"` otherwise — every root `opened: true`, every serial coerced to a number, `nameSource: "opl"` on every item/equipped entry); a v2 document passed through unchanged except a missing `shard` gets stamped; neither v1 nor v2 shaped throws; `validateScan` against the schema (including the fractional-seconds `scannedAt` shape `/api/forget` actually writes, refusing a `scannedAt` that is not a real date and time, and a container `pos` whose `facet` is not a whole number 0-5; the optional `house` section (issue #10): five-integer tiles, at most 20,000, `items` optional, a negative z, an empty items list and an extra key accepted); `parseStamp` for fold ordering. A house-only file (`kind: "house"`, issue #10) validates with an empty inventory, and is refused with another `kind`, without its `house`, or with anything in `roots`, `containers`, `items` or `equipped`.
+// `app/scan-schema.mts`: `SCAN_V2_SCHEMA` is byte-identical to `app/schema/scan.v2.schema.json` (the two must never drift, since the `.mjs` copy is what gets served to the browser); `upgradeScan`'s v1→v2 conversion (naive-local `scannedAt` → RFC 3339 with this machine's DST-correct offset, `adapter` stamped — `"app"` for a `_`-prefixed tombstone character, `"tazuo"` otherwise — every root `opened: true`, every serial coerced to a number, `nameSource: "opl"` on every item/equipped entry); a v2 document passed through unchanged except a missing `shard` gets stamped; neither v1 nor v2 shaped throws; `validateScan` against the schema (including the fractional-seconds `scannedAt` shape `/api/forget` actually writes, refusing a `scannedAt` that is not a real date and time, and a container `pos` whose `facet` is not a whole number 0-5; the optional `house` section (issue #10): five-integer tiles, at most 20,000, `items` optional, a negative z, an empty items list and an extra key accepted); `parseStamp` for fold ordering. An unknown capability, an adapter's `features` and an unknown `kind` (a newer adapter's) validate. A house-only file (`kind: "house"`, issue #10) validates with an empty inventory, and is refused with an empty `kind`, without its `house`, or with anything in `roots`, `containers`, `items` or `equipped`.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
-import { upgradeScan, validateScan, parseStamp, TAZUO_V1_CAPS, SCAN_V2_SCHEMA } from "./scan-schema.mts";
+import { isKnownKind, upgradeScan, validateScan, parseStamp, TAZUO_V1_CAPS, SCAN_V2_SCHEMA } from "./scan-schema.mts";
 import type { ScanV2 } from "./schema/types.d.mts";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -263,11 +263,24 @@ test("[fast] scan schema: a house tile with a negative z (a boat or a basement) 
   assert.equal(validateScan({ ...bounded, house: { ...house, designMode: true } }).ok, true, "a newer adapter's key must not make this app drop the whole scan");
 });
 
+test("[fast] scan schema: an older app keeps a newer adapter's scan: an unknown capability, its features and an unknown kind validate", () => {
+  const adapter = { ...bounded.adapter, capabilities: { ...TAZUO_V1_CAPS, appearance: true, layerNames: ["Arms"] }, features: ["trip-bags", "bag-move"] };
+  assert.equal(validateScan({ ...bounded, adapter }).ok, true);
+  assert.equal(validateScan({ ...bounded, kind: "market" }).ok, true, "a kind this build does not know: kept, and skipped by every reader");
+  assert.equal(isKnownKind({ kind: "market" }), false);
+  assert.deepEqual([isKnownKind({}), isKnownKind({ kind: "house" })], [true, true]);
+  assert.equal(invalid({ ...bounded, adapter: { ...adapter, features: "trip-bags" } }), "/adapter/features expected array");
+  assert.equal(invalid({ ...bounded, adapter: { ...adapter, features: [""] } }), "/adapter/features/0 shorter than minLength 1");
+  const { bridge: _, ...noBridge } = TAZUO_V1_CAPS;
+  assert.equal(invalid({ ...bounded, adapter: { ...adapter, capabilities: noBridge } }), "/adapter/capabilities missing required: bridge", "the known capabilities stay required");
+  assert.equal(invalid({ ...bounded, adapter: { ...adapter, extra: 1 } }), "/adapter/extra additional property not allowed: extra", "the adapter block itself stays closed");
+});
+
 test("[fast] scan schema: a house-only file (kind \"house\", TazUO 2.12.0) carries a house and nothing else", () => {
   const house = { facet: 1, capturedAt: "2026-10-01T12:00:00Z", at: { x: 100, y: 200 }, tiles: [[1, 100, 200, 7, 0]], items: [], containers: [] };
   const only = { ...bounded, stats: {}, kind: "house", house };
   assert.equal(validateScan(only).ok, true);
-  assert.equal(invalid({ ...only, kind: "inventory" }), "/kind expected one of [\"house\"]");
+  assert.equal(invalid({ ...only, kind: "" }), "/kind shorter than minLength 1");
   const { house: _, ...houseless } = only;
   assert.equal(invalid(houseless), "/house is required in a house-only file");
   for (const [key, value] of [["roots", [{ serial: 1, kind: "backpack", name: "Backpack", opened: true }]], ["containers", { 1: { serial: 1, root: 1 } }], ["items", [{ serial: 2, container: 1, nameSource: "opl" }]], ["equipped", [{ serial: 3, nameSource: "opl" }]]] as const) {

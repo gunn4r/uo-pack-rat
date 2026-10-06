@@ -98,10 +98,10 @@ Examples: `2b30944`, `9b03dcc`, `219861a`.
 Examples: `23fb19e`, `a86c64d`, `28a38de`.
 
 1. Contract: `app/schema/bridge.v1.schema.json` and `app/schema/bridge-trip.v1.schema.json`; `scripts/build-schema-types.mts` if the generator needs a new shape.
-2. Server: `app/bridge-trip.mts`, `app/bridge-contract.mts` (`TRIP_MAX_BYTES` and `TRIP_NAME_MAX`, which mirror the bridges' `MAX_LINE_BYTES` and `MAX_TRIP_NAME`), `app/config.mts` (paths), `app/http/routes/bridge.mts` (the queue route), `app/organize-state.mts` if the result changes where the app believes items are.
-3. Both bridge scripts: `adapters/tazuo/packrat-bridge.py` and `adapters/razor-enhanced/packrat-bridge.py` (a check in the untrusted-input block is edited once, in `adapters/_shared/untrusted_input.py`, then `npm run gen:contracts`); each `capabilities.json` (`actions`); `adapters/tazuo/README.md`; a version bump per adapter.
+2. Server: `app/bridge-trip.mts`, `app/bridge-contract.mts` (`BRIDGE_PROTOCOL`, raised with every `capabilities.json`'s `protocol` when an older bridge would misread a line; `TRIP_MAX_BYTES` and `TRIP_NAME_MAX`, which mirror the bridges' `MAX_LINE_BYTES` and `MAX_TRIP_NAME`), `app/config.mts` (paths), `app/http/routes/bridge.mts` (the queue route), `app/bridge-status.mts` if the status changes, `app/organize-state.mts` if the result changes where the app believes items are.
+3. Both bridge scripts: `adapters/tazuo/packrat-bridge.py` and `adapters/razor-enhanced/packrat-bridge.py` (a check in the untrusted-input block is edited once, in `adapters/_shared/untrusted_input.py`, then `npm run gen:contracts`); each `capabilities.json` (`actions`, and `capabilities.bridge` or `features` for a new action or feature, which the bridges also report in `status.json`); `adapters/tazuo/README.md`; a version bump per adapter.
 4. Fakes and tests: `adapters/fake_clients.py`, `adapters/test_bridges.py`, `adapters/test_adapters.py`, `app/adapters.test.mts`, `app/contracts.test.mts`, `app/bridge-trip.test.mts`.
-5. UI: `app/ui/bridge.mts` (labels, toasts), `app/ui/api-types.mts`; `BRIDGE_ACTION_LABELS` and `bridgeRefusal` in `app/vault-lib.mts`.
+5. UI: `app/ui/bridge.mts` (labels, toasts), `app/ui/api-types.mts`; `BRIDGE_ACTION_LABELS`, `bridgeRefusal` and `bridgeFeatures` in `app/vault-lib.mts` (a new feature is gated by name through it, never by a version number).
 6. MCP: the `bridgeTool(...)` entries and `get_action_status` in `app/mcp-tools.mts`.
 7. Docs: `docs/bridge-protocol.md`, `docs/threat-model.md`, `docs/adapter-guide.md`.
 

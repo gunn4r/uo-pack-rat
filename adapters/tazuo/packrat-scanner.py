@@ -74,14 +74,15 @@ def read_blacklist(path):
 
 
 ADAPTER_ID = "tazuo"
-ADAPTER_VERSION = "2.15.1"
+ADAPTER_VERSION = "2.16.0"
 CAPABILITIES = {
     "layers": ["OneHanded", "TwoHanded", "Shoes", "Pants", "Shirt", "Helmet", "Gloves",
                "Ring", "Talisman", "Necklace", "Waist", "Torso", "Bracelet", "Tunic",
                "Earrings", "Arms", "Cloak", "Robe", "Skirt", "Legs"],
     "arms": True, "bank": True, "ground": True, "nested": True, "tooltips": "opl",
-    "bridge": ["highlight", "grab", "goto", "trip", "trip-bags"],
+    "bridge": ["highlight", "grab", "goto", "trip"],
 }
+FEATURES = ["trip-bags"]   # what the bridge does besides its actions (capabilities.json's "features")
 
 
 SCAN_RANGE = 3           # tiles: ground containers within reach (house chests open only when close)
@@ -564,7 +565,7 @@ def main():
     snap = {"schemaVersion": 2, "character": char,
             "scannedAt": rfc3339_now(),
             "adapter": {"id": ADAPTER_ID, "version": ADAPTER_VERSION, "client": "TazUO",
-                        "clientVersion": None, "capabilities": CAPABILITIES},
+                        "clientVersion": None, "capabilities": CAPABILITIES, "features": FEATURES},
             "stats": {"str": int(p.Strength), "dex": int(p.Dexterity), "int": int(p.Intelligence)},
             "position": {"x": int(p.X), "y": int(p.Y)},
             "maxes": {"hits": int(getattr(p, "HitsMax", 0) or 0), "stam": int(getattr(p, "StaminaMax", 0) or 0),

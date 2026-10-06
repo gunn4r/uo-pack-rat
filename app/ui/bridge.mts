@@ -7,7 +7,7 @@ import { api } from "./api.mts";
 import { confirmDialog, icon } from "./components.mts";
 import { bridgeView, dataDirNotice, dataDirBanner } from "./messages.mts";
 import type { BridgeView } from "./messages.mts";
-import { containerChain, bridgeRefusal, BRIDGE_OFFLINE, BRIDGE_ACTION_LABELS } from "../vault-lib.mts";
+import { containerChain, bridgeFeatures, bridgeRefusal, newestScanAdapter, BRIDGE_OFFLINE, BRIDGE_ACTION_LABELS } from "../vault-lib.mts";
 import type { BridgeAction, Item } from "../vault-lib.mts";
 import type { BridgeQueueApiResponse, BridgeStatusApiResponse } from "./api-types.mts";
 
@@ -80,6 +80,12 @@ export function currentAdapter() {
   if (!id) return null;
   return state.setup?.adapters?.find((a) => a.id === id) || null;
 }
+// What the current client's bridge can do (vault-lib.mts's bridgeFeatures): the running bridge's own report while it is
+// online, else the newest scan made with that client, else what this app ships.
+export function bridgeFeatureSet(): Set<string> {
+  const a = currentAdapter();
+  return bridgeFeatures({ running: bridge.online ? bridge.adapter : null, scan: newestScanAdapter(state.inv?.characters, a?.id), manifest: a }).features;
+}
 const ALL_BRIDGE_ACTIONS: BridgeAction[] = ["highlight", "grab", "goto"];
 // One short line explaining what the bridge controls are doing or why they're missing/limited — null
 // only when a real configured client is present AND every KNOWN action is present (today, that's
@@ -110,7 +116,7 @@ export function bridgeNote(): string | null {
     if (adapter) return `No client set up — in-game actions are going to ${adapter.name || adapter.id} by default; pick a different one in Settings.`;
     return "No client set up yet — visit Settings to install one that supports in-game actions like Highlight/Grab/Go to.";
   }
-  const allowedSet = new Set(adapter?.capabilities?.bridge || []);
+  const allowedSet = bridgeFeatureSet();
   if (ALL_BRIDGE_ACTIONS.every((a) => allowedSet.has(a))) return null;
   const name = adapter?.name || client.adapter;
   const known = ALL_BRIDGE_ACTIONS.filter((a) => allowedSet.has(a));
@@ -162,10 +168,11 @@ function renderBridgeControl(view: BridgeView): void {
 export async function pollBridge(): Promise<void> {
   try {
     const st = await api<BridgeStatusApiResponse>("/api/bridge/status");
-    const was = `${bridge.online}|${bridge.character}`;
-    bridge.online = !!st.online; bridge.character = st.character || null;
+    const key = (): string => `${bridge.online}|${bridge.character}|${bridge.adapter?.features.join(",") ?? ""}`;
+    const was = key();
+    bridge.online = !!st.online; bridge.character = st.character || null; bridge.adapter = st.adapter ?? null;
     // Screens that gate actions on the bridge (the Inventory's row actions and peek) redraw on this.
-    if (was !== `${bridge.online}|${bridge.character}`) document.dispatchEvent?.(new Event("bridgechange"));
+    if (was !== key()) document.dispatchEvent?.(new Event("bridgechange"));
     if (st.online) lastAnswered = Date.now();
     renderBridgeControl(bridgeView(st, { clientSet: !!state.setup?.settings?.client, clientName: currentAdapter()?.name || null, check: state.setup?.dataDirCheck }));
     // Every answer goes to the page as it came: the Organize screen follows a running trip from it (current.id,
@@ -221,7 +228,7 @@ function showDataSection(): void {
 // Why one bridge action cannot run on one item right now, in words for its disabled button's tooltip, or
 // null when it can (spec 3.5: offline actions are disabled with the reason, never left live to fail).
 export function bridgeActionReason(action: BridgeAction, it: BridgeTarget): string | null {
-  return bridgeRefusal(action, it, { adapter: currentAdapter(), online: bridge.online, hasPos: !!rootPos(it) });
+  return bridgeRefusal(action, it, { adapter: currentAdapter(), features: bridgeFeatureSet(), online: bridge.online, hasPos: !!rootPos(it) });
 }
 // One bridge action from a row or the item peek: queued, and toasted as queued (the status poll toasts
 // the game's answer later).

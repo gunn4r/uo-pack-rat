@@ -1,10 +1,11 @@
 {
-  "$comment": "Pack Rat bridge protocol v1. Draft-07 style, restricted to the keyword subset app/schema/validate.mts supports (no $ref/oneOf), so this file holds three independent schemas — command, result and status — each validated separately (app/contracts.test.mts does one validate() call per shape). command = one line of <dataDir>/bridge/<adapter-id>/queue.jsonl (app/config.mts's paths.bridgeQueueFor(adapter) — per adapter, not a fixed 'tazuo'), written by POST /api/bridge (app/vault-server.mts, resolving <adapter-id> from settings.client.adapter) and read by that adapter's own packrat-bridge.py (e.g. adapters/tazuo/packrat-bridge.py). result = one entry of status.results, keyed by the command's id. status = <dataDir>/bridge/<adapter-id>/status.json (paths.bridgeStatusFor(adapter)), written by that adapter's packrat-bridge.py (alive is always rfc3339_now(); a clean stop adds stopped:true, never the old numeric 0) and read by GET /api/bridge/status.",
+  "$comment": "Pack Rat bridge protocol v1. Draft-07 style, restricted to the keyword subset app/schema/validate.mts supports (no $ref/oneOf), so this file holds three independent schemas — command, result and status — each validated separately (app/contracts.test.mts does one validate() call per shape). command = one line of <dataDir>/bridge/<adapter-id>/queue.jsonl (app/config.mts's paths.bridgeQueueFor(adapter) — per adapter, not a fixed 'tazuo'), written by POST /api/bridge (app/vault-server.mts, resolving <adapter-id> from settings.client.adapter) and read by that adapter's own packrat-bridge.py (e.g. adapters/tazuo/packrat-bridge.py). result = one entry of status.results, keyed by the command's id. status = <dataDir>/bridge/<adapter-id>/status.json (paths.bridgeStatusFor(adapter)), written by that adapter's packrat-bridge.py (alive is always rfc3339_now(); a clean stop adds stopped:true, never the old numeric 0) and read only through app/bridge-status.mts's readBridgeStatus (GET /api/bridge/status and the Organize service). Every queue line carries protocol: a bridge refuses a line in a newer protocol than it reads.",
   "command": {
     "type": "object",
     "additionalProperties": false,
-    "required": ["id", "action", "serial", "name", "chain", "pos", "queuedAt"],
+    "required": ["id", "action", "serial", "name", "chain", "pos", "queuedAt", "protocol"],
     "properties": {
+      "protocol": { "type": "integer", "minimum": 1, "$comment": "The protocol this line is written in: app/bridge-contract.mts's BRIDGE_PROTOCOL. Every packrat-bridge.py refuses a line in a newer protocol than its own PROTOCOL (its capabilities.json's protocol) and reads a line with none, from an app older than the field, as protocol 1." },
       "id": { "type": "string", "minLength": 1, "maxLength": 64, "$comment": "The app writes a 36-character randomUUID(). 64 matches MAX_ID in every packrat-bridge.py, which refuses a longer id: results are keyed by id, so an unbounded one would grow status.json." },
       "action": { "type": "string", "enum": ["highlight", "grab", "goto"] },
       "serial": { "type": "integer", "minimum": 1 },
@@ -56,10 +57,23 @@
   },
   "status": {
     "type": "object",
-    "additionalProperties": false,
+    "additionalProperties": true,
+    "$comment": "Open, so a newer bridge's added field never makes this app read the bridge as offline. app/bridge-status.mts's readBridgeStatus is the one reader, and it checks every status against this schema.",
     "required": ["alive", "character", "current", "results", "counts"],
     "properties": {
-      "alive": { "type": "string", "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d+)?([+-]\\d{2}:\\d{2}|Z)$" },
+      "alive": { "type": ["string", "number"], "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d+)?([+-]\\d{2}:\\d{2}|Z)$", "$comment": "RFC 3339. A number is the epoch seconds an older bridge build wrote, still read." },
+      "adapter": {
+        "type": "object",
+        "additionalProperties": true,
+        "$comment": "The running bridge itself (TazUO 2.16.0, Razor Enhanced 1.12.0 and later): its adapter id, script version, the newest queue-line protocol it reads, and every action and feature it has. Left out by older bridges, which the app then judges by the newest scan and the shipped manifest.",
+        "required": ["id", "version", "protocol", "features"],
+        "properties": {
+          "id": { "type": "string", "minLength": 1, "maxLength": 64 },
+          "version": { "type": "string", "maxLength": 64 },
+          "protocol": { "type": "integer", "minimum": 1 },
+          "features": { "type": "array", "maxItems": 64, "items": { "type": "string", "minLength": 1, "maxLength": 64 } }
+        }
+      },
       "character": { "type": "string" },
       "current": { "type": ["object", "null"] },
       "results": { "type": "object" },
