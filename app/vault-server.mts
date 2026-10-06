@@ -123,20 +123,18 @@
 import http from "node:http";
 import { readFileSync, appendFileSync, readdirSync, existsSync, mkdirSync } from "node:fs";
 import { pathToFileURL } from "node:url";
-import { basename, dirname, join, resolve } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import { spawn } from "node:child_process";
-import { statSync, lstatSync } from "node:fs";
-import { Worker } from "node:worker_threads";
-import { unlinkSync } from "node:fs";
+import { statSync } from "node:fs";
 import { randomUUID, timingSafeEqual } from "node:crypto";
 import type { AddressInfo } from "node:net";
-import { runKey, reusableRun, runSummary, stripOpts, suitPieces, manualRun, SOLVER_VERSION, type RunOpts, type SavedRun } from "./runs-lib.mts";
+import { runKey, reusableRun, runSummary, manualRun, type RunOpts, type SavedRun } from "./runs-lib.mts";
 import { isPseudoCharacter, validateScan } from "./scan-schema.mts";
-import { loadRules, listRules, DEFAULT_SHARD } from "./rules.mts";
+import { loadRules, listRules } from "./rules.mts";
 import { validate, type ValidatorSchema } from "./schema/validate.mts";
 import { parseItemQuery, applyItemQuery, facetsOf, wantsHits, hitRow, type ItemQueryRows, type ItemQueryGroups } from "./item-query.mts";
 import { optionalSlotsFor } from "./mip.mts";
-import { GEAR_SLOTS, buildPools, excludeWeaponsError, foldSnapshots, resistCapsError, setRules, toOptItem } from "./vault-lib.mts";
+import { GEAR_SLOTS, buildPools, excludeWeaponsError, resistCapsError, toOptItem } from "./vault-lib.mts";
 import { isBuffList, isBuffListsByCharacter, isBuffSkillsByCharacter, isRunBuffs } from "./buffs.mts";
 import { startWatcher, MAX_INBOX_BYTES, type StartWatcherOptions, type WatcherHandle } from "./watcher.mts";
 import { parsePastedScan, writeScanToInbox } from "./import.mts";
@@ -151,41 +149,45 @@ import { createBlacklistStore } from "./store/blacklist.mts";
 import { createProfilesStore } from "./store/profiles.mts";
 import { createUiPrefsStore, isColWidths, isDrawerWidth, isManualSuit, UI_PREF_CHOICES, UI_PREF_LISTS, UI_PREF_VERSIONS } from "./store/ui-prefs.mts";
 import { createSettingsStore, type ClientSettings, type SettingsDoc } from "./store/settings.mts";
+import { createSettingsService } from "./services/settings.mts";
+import { createEventBus, sse } from "./services/events.mts";
+import { createSetupService } from "./services/setup.mts";
+import { createHousesService } from "./services/houses.mts";
+import { createRetentionService } from "./services/retention.mts";
+import { createInventoryService } from "./services/inventory.mts";
+import { createOrganizeService } from "./services/organize.mts";
+import { createJobsService, type Job, type JobTimings } from "./services/jobs.mts";
+export type { JobTimings } from "./services/jobs.mts";
 import { send, asObject, SSE_HEADERS } from "./http/respond.mts";
-import { isBoundedInt, isBoundedString, MAX_SERIAL } from "./guards.mts";
+import { isBoundedInt, isBoundedString, MAX_SERIAL, short } from "./guards.mts";
 import { writeFileAtomic } from "./atomic-write.mts";
 import { addPanelAutostart, panelPrefsError, readPanelPrefs, tazuoRunning, writePanelPrefs } from "./tazuo-panel.mts";
-import { queueTrip, writeBridgeStop } from "./bridge-trip.mts";
-import { checkOrganizeConfig, LIMITS, matchProblem, MAX_SETUP_BYTES, type OrganizeConfig, type RuleMatch } from "./organize-config.mts";
-import { ancestry, applyOverlay, packKept, planOrganize, stampMs, tripCommand, matchCount, overlaidInventory, type Plan, type PutAway } from "./organize.mts";
-import { checkPutAwayRequest, nothingDetail, requestId, tripMsg, FRESH_MARGIN_MS, MAX_REQUEST_BYTES, PUT_AWAY_REPLY, PUT_AWAY_REQUEST, type PutAwayReply, type PutAwayRequest } from "./put-away.mts";
+import { writeBridgeStop } from "./bridge-trip.mts";
+import { checkOrganizeConfig, LIMITS, matchProblem, MAX_SETUP_BYTES, type RuleMatch } from "./organize-config.mts";
+import { matchCount } from "./organize.mts";
+import { PUT_AWAY_REQUEST } from "./put-away.mts";
 import { PRESETS } from "./organize-presets.mts";
 import { isKindName, kindCount, kindsDocument, kindsFor, salvageKindOverrides, withKinds, withoutKinds, KIND_LIMITS, MAX_KINDS_BYTES, OVERRIDE_KINDS } from "./item-kinds.mts";
 import { proposeOrganize, STRATEGY_IDS, type StrategyId } from "./organize-strategies.mts";
-import { latestHouses, type HouseSource } from "./house-capture.mts";
+import type { HouseSource } from "./house-capture.mts";
 import { checkHouseEntry, isHouseId, readHouseMap, saveHouseEntry, MAX_ENTRY_BYTES, type HouseMapDoc } from "./house-names.mts";
-import { buildHouseModel, plotBounds, plotSize, type HouseContainerInput, type HouseModel } from "./house-model.mts";
+import { plotBounds, plotSize } from "./house-model.mts";
 import type { HouseApiResponse, HousesApiResponse } from "./house-model-types.mts";
 import type { OrganizePlanApiResponse, ProposeResult } from "./organize-types.mts";
 import type { RunBody, RunsListBody, RunSummary } from "./runs-types.mts";
-import { uoFolderFromTazuo, loadTileData, type TileData } from "./tiledata.mts";
-import { decodeFacet, renderRegion, type FacetBitmap, type Region } from "./facet-map.mts";
+import { renderRegion, type Region } from "./facet-map.mts";
 import { encodePng } from "./png.mts";
-import { addGrab, harvestTrips, noteSeen, pruneOverlay, PENDING_GRACE_MS, type BridgeView, type OrganizeState } from "./organize-state.mts";
-import { retentionError, retentionOf, runsToPrune, scansToPrune } from "./retention.mts";
-import { missingSinceLastScan, type MissingItem } from "./missing.mts";
+import { addGrab } from "./organize-state.mts";
+import { retentionError, retentionOf } from "./retention.mts";
 import {
-  listAdapters, candidateClientRoots, validateScriptsDir, badPathShape, installedVersion, installScripts, pasteScanner,
-  repoFromPackage, checkForUpdates, type CheckForUpdatesResult, type FetchLike, checkScriptsDataDir, type DataDirCheck, type AdapterInfo,
+  candidateClientRoots, validateScriptsDir, badPathShape, installedVersion, installScripts, pasteScanner,
+  repoFromPackage, checkForUpdates, type CheckForUpdatesResult, type FetchLike, type AdapterInfo,
 } from "./installer.mts";
 import { dataDirNotice } from "./data-dir-notice.mts";
 import { homedir } from "node:os";
 
 import { resolveConfig, ensureLayout, APP_DIR, DATA_DIR_MODE, DATA_FILE_MODE, type Config } from "./config.mts";
 import type { Item, Inventory, OptItem } from "./vault-lib.mts";
-import type { RulesV1 } from "./schema/types.d.mts";
-import type { WorkerMessage, WorkerDoneMessage } from "./optimize-worker.mts";
-import type { OptResult, ExactSolveResult, SolveProgress } from "./exact-solver.mts";
 const HERE = APP_DIR;
 // package.json content, handed to us already-parsed — the only fields this file reads off it
 // (version, repository) are trusted the same way installer.mts's repoFromPackage trusts its own
@@ -218,8 +220,6 @@ const BRIDGE_SCHEMA = JSON.parse(readFileSync(join(HERE, "schema", "bridge.v1.sc
 const EVENTS_ROUTE_RE = /^\/api\/optimize\/[\w-]+\/events$/;
 
 
-// Bounds a caller-supplied value before it is interpolated into an error message or a log line.
-function short(v: unknown): string { return String(v).slice(0, 64); }
 
 const MAX_PATH_LEN = 4096;
 // A `_vault` tombstone scan, which the fold reads as "forget": the roots it lists (POST /api/forget) or, with
@@ -381,13 +381,6 @@ export interface HostBridge {
   openPath?: ((which: "data" | "logs") => Promise<void>) | undefined;
 }
 
-// How long a finished build's result stays readable (retentionMs, timed from when it finished), and
-// how far past its own time budget a build may still be running before it is cancelled as stuck
-// (runGraceMs). Only tests set these, for the same reason as watcherOptions below.
-export interface JobTimings {
-  retentionMs?: number | undefined;
-  runGraceMs?: number | undefined;
-}
 
 // Where the server looks for the player's game client: `home` (the scripts' ~ and ~/.pack-rat default)
 // and the auto-detected scripts folders per adapter (GET /api/setup's `candidates`, and the data-folder
@@ -468,99 +461,24 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
   if (!existsSync(CONFIG.paths.core)) throw new Error(`optimizer core not found at ${CONFIG.paths.core} — check PACKRAT_CORE, or that the repo checkout has scripts/optimizer-core.mts`);
   const CORE_URL = pathToFileURL(CONFIG.paths.core).href;
 
-  // A persisted client whose adapter id is not one this install ships is dropped IN MEMORY ONLY (the
-  // same rule as the shard fallback below — settings.json is left as it stands): bridgeAdapter()
-  // joins that id into the bridge queue/status paths, and PUT /api/settings already refuses an
-  // unknown one, so a hand-edited file must not be a way round that check.
   function startupWarning(msg: string): void {
     console.warn(msg);
     safeAppendLog(CONFIG.paths.log, `${new Date().toISOString()} startup-fallback ${msg}\n`);
   }
-  const settingsStore = createSettingsStore({ file: SETTINGS, warn: startupWarning });
-  function clientIsKnown(doc: SettingsDoc): boolean {
-    const client = doc.client as unknown;
-    if (client == null) return true;
-    const rec = typeof client === "object" && !Array.isArray(client) ? client as Record<string, unknown> : null;
-    const known = !!rec && typeof rec.adapter === "string" && typeof rec.scriptsDir === "string" && listAdapters(ADAPTERS_DIR).some((a) => a.id === rec.adapter);
-    if (!known) startupWarning(`settings.json names a client adapter this install does not ship (${JSON.stringify(short(rec?.adapter))}); ignoring that client for this run — settings.json is unchanged`);
-    return known;
-  }
-  // Two views of the same settings. savedSettings is exactly what settings.json holds, and the only
-  // thing ever written back to it; currentSettings is what this run actually uses — savedSettings
-  // with the two startup fallbacks (an unknown client dropped, an unloadable shard replaced) laid on
-  // top. Every write merges only the fields its request changed into savedSettings, so a fallback
-  // can never be persisted over the player's real value by an unrelated save (a wizard's setupDone,
-  // say): fixing the rules file or reinstalling the newer version and restarting picks the original
-  // choice back up, as the fallback promises.
-  let savedSettings = settingsStore.load();
-  let clientIgnored = !clientIsKnown(savedSettings);
-  // The shard fallback below sets this; declared here so effectiveSettings() can read it.
-  let rulesFallback = false;
-  function effectiveSettings(): SettingsDoc {
-    return { ...savedSettings, retention: retentionOf(savedSettings.retention), autoUpdateCheck: savedSettings.autoUpdateCheck !== false, ...(clientIgnored ? { client: null } : {}), ...(rulesFallback ? { shard: DEFAULT_SHARD } : {}) };
-  }
-  let currentSettings = effectiveSettings();
-  function saveSettings(changes: Partial<SettingsDoc>): void {
-    const next: SettingsDoc = { ...savedSettings, schemaVersion: 1, ...changes };
-    settingsStore.write(next);
-    savedSettings = next;
-    if ("client" in changes) clientIgnored = false;
-    currentSettings = effectiveSettings();
-  }
-  // Which adapter's bridge the page-facing bridge routes (POST /api/bridge, GET /api/bridge/status)
-  // talk to — the currently CONFIGURED client, re-read live off currentSettings on every call rather
-  // than captured once at startup, so a client switch (a fresh install, or "Run setup again") takes
-  // effect on the very next request with no restart. Falls back to DEFAULT_BRIDGE_ADAPTER when no
-  // client is configured at all, matching this route's own pre-existing behavior before it became
-  // per-adapter (Phase 6 final review follow-up). GET /api/setup below reports this exact same id back
-  // to the page as `bridgeAdapter` (guarded there against a discovered-adapters list that doesn't
-  // actually contain it — a throwaway test fixture dir, say) so app/ui/bridge.mts's currentAdapter()
-  // can show the Highlight/Grab/Go-to buttons for an unconfigured/hand-installed player against the
-  // SAME adapter this function is already routing their commands to, rather than the page guessing
-  // "tazuo" independently and risking the two disagreeing.
-  const DEFAULT_BRIDGE_ADAPTER = "tazuo";
-  const bridgeAdapter = (): string => currentSettings.client?.adapter || DEFAULT_BRIDGE_ADAPTER;
-  // The app must never fail to start because settings.json names a shard that no longer loads (its
-  // rules file was deleted, edited into invalid shape, or never existed — e.g. a stale user override).
-  // Fall back to DEFAULT_SHARD IN MEMORY ONLY: settings.json itself is left untouched, so fixing the
-  // named shard's rules file and restarting picks the original choice back up. GET /api/rules reports
-  // this as `fallback: true` so the page can tell the user rather than silently serving a different
-  // shard than settings.json names.
-  let currentRules: RulesV1;
-  try {
-    currentRules = loadRules(currentSettings.shard, { userRulesDir: USER_RULES_DIR });
-  } catch (e) {
-    const msg = `settings.json names shard "${currentSettings.shard}", which failed to load (${(e as Error).message}); falling back to "${DEFAULT_SHARD}" for this run — settings.json is unchanged`;
-    startupWarning(msg);
-    currentRules = loadRules(DEFAULT_SHARD, { userRulesDir: USER_RULES_DIR });
-    rulesFallback = true;
-    currentSettings = effectiveSettings();
-  }
-  // vault-lib is one module instance for the whole process (this file, organize, buffs, missing, the MCP tools…), and
-  // it holds the shard's rules: hand them over here and again wherever currentRules changes (PUT /api/settings).
-  setRules(currentRules);
+  const setupService = createSetupService({ adaptersDir: ADAPTERS_DIR, dataDir: CONFIG.dataDir, demo: CONFIG.demo, clientSearch });
+  const appSettings = createSettingsService({ store: createSettingsStore({ file: SETTINGS, warn: startupWarning }), rulesDir: USER_RULES_DIR,
+    isKnownAdapter: setupService.isKnown, warn: startupWarning });
 
-  // Whether the client's installed scripts write to this data folder (installer.mts's
-  // checkScriptsDataDir). Run on every GET /api/setup, so a reinstall clears the page's banner with no
-  // restart, and once here, so a plain `npm start` on the default folder against scripts pointed at a
-  // dev folder says so in the terminal instead of just showing nothing. Never under --demo: its
-  // fixtures don't come from any client. The sentence is the page's own (ui/messages.mts).
-  function dataDirCheck(): DataDirCheck {
-    if (CONFIG.demo) return { status: "none" };
-    const candidates = currentSettings.client ? [] : listAdapters(ADAPTERS_DIR).flatMap((a) => clientSearch.candidates(a));
-    return checkScriptsDataDir({ dataDir: CONFIG.dataDir, client: currentSettings.client, candidates, home: clientSearch.home, platform: process.platform });
-  }
-  const dataDirWarning = dataDirNotice(dataDirCheck());
+  const dataDirWarning = dataDirNotice(setupService.dataDirCheck(appSettings.current().client));
   if (dataDirWarning) console.warn(dataDirWarning);
 
   // ---- /api/events: one shared SSE stream, fed by one app/watcher.mts per adapter ------------------
   // Non-demo only — --demo's paths.scans is the committed app/fixtures/, which a watcher must never
   // write into. Each adapter is a directory under adapters/ that ships a capabilities.json; today
-  // that's just adapters/tazuo/. watchers: id -> {close(), scanOnce()}; eventClients: every response
+  // that's just adapters/tazuo/. watchers: id -> {close(), scanOnce()}; eventBus: every response
   // currently attached to GET /api/events, so a later accept/reject can broadcast to all of them.
   const watchers = new Map<string, WatcherHandle>();
-  const eventClients = new Set<http.ServerResponse>();
-  function broadcastEvent(event: string, data: unknown): void { for (const c of eventClients) sse(c, event, data); }
+  const eventBus = createEventBus();
   // The watchers themselves start only once the port is bound (startWatchers(), called after
   // listen() below): their startup sweep moves inbox files into scans/, and a server that then fails
   // to bind (EADDRINUSE) must not have done that, nor leave live watchers behind it.
@@ -575,126 +493,26 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
     } catch { /* no adapters/ directory at all — nothing to watch */ }
     for (const id of adapterIds) {
       const handle = startWatcher({
-        // getShard reads currentSettings.shard live, per ingest — not captured once here — so a
+        // getShard reads appSettings.current().shard live, per ingest — not captured once here — so a
         // PUT /api/settings shard switch takes effect on the very next dropped file (app/watcher.mts).
-        inboxDir: CONFIG.paths.inboxFor(id), adapter: id, scansDir: SCANS, getShard: () => currentSettings.shard,
+        inboxDir: CONFIG.paths.inboxFor(id), adapter: id, scansDir: SCANS, getShard: () => appSettings.current().shard,
         log: (msg) => safeAppendLog(CONFIG.paths.log, `${new Date().toISOString()} watcher[${id}] ${msg}\n`),
-        onAccepted: ({ file, character, scannedAt }) => broadcastEvent("inventory", { file, character, scannedAt, at: Date.now() }),
-        onRejected: ({ file, reason }) => broadcastEvent("rejected", { file, reason, at: Date.now() }),
-        request: { name: PUT_AWAY_REQUEST, handle: (path) => putAway(id, path) },
+        onAccepted: ({ file, character, scannedAt }) => eventBus.broadcast("inventory", { file, character, scannedAt, at: Date.now() }),
+        onRejected: ({ file, reason }) => eventBus.broadcast("rejected", { file, reason, at: Date.now() }),
+        request: { name: PUT_AWAY_REQUEST, handle: (path) => organizeService.putAway(id, path) },
         ...watcherOptions,
       });
       watchers.set(id, handle);
     }
   }
 
-  const scanStore = createScansStore({ dir: SCANS, shard: () => currentSettings.shard });
+  const scanStore = createScansStore({ dir: SCANS, shard: () => appSettings.current().shard });
 
-  // getInventory() caches the fold (readScans + foldSnapshots) — the expensive part of every route that
-  // needs the inventory — keyed by a signature of the scans directory (every *.json file's name, mtimeMs
-  // and size, so an add/edit/delete/rename is caught with no restart), the current shard id (a shard
-  // switch changes parseTooltip/classify via rules). /api/forget's tombstone is just another file landing in the scans
-  // directory, so it invalidates the cache the same way — no separate invalidation path needed. item-kinds.json's
-  // inode, mtime and size are in it too (issue #150): a changed override re-kinds the inventory by folding the same
-  // scans again, and the Organize plan, worked out from the fold on every request, follows.
-  // What it serves is that fold with Organize's results overlay applied (issue #127, overlaidInventory): every
-  // view and bridge command sees where a trip put an item, not where the last scan saw it. The overlay is cached
-  // on its own, keyed by the fold's signature, organize-state.json's inode, mtime and size (every write replaces
-  // the file) and the hour, so a finished trip re-applies the overlay without folding the scans again. `fold` is
-  // the scans alone: only organizeNow reads it, since the planner applies the overlay itself (with the counts it
-  // needs for capacity), and it hands it on as `fold` too, so no Organize route has an `inv` to pass by habit.
   // GET /api/update-check's last successful answer (see that route).
   const UPDATE_CHECK_TTL_MS = 60 * 60 * 1000;
   let updateCheckCache: { at: number; result: CheckForUpdatesResult } | null = null;
 
-  type FoldValue = { fold: Inventory; missing: Record<string, MissingItem[]>; snapshotCount: number; houses: HouseSource[] };
-  type InvValue = FoldValue & { inv: Inventory };
-  let foldCache: { sig: string | null; value: FoldValue | null } = { sig: null, value: null };
-  let invCache: { sig: string | null; value: InvValue | null } = { sig: null, value: null };
-  // Where the house map's tiledata.mul comes from (issue #10): the UO folder set in Settings wins; else, with TazUO the chosen client, the folder its launcher profile names. `reason` says why there is none, for the page to put in words: the folder set here lost its tiledata.mul (or, hand-edited into settings.json, is not an absolute non-UNC path: refused on its shape before any filesystem call, as PUT /api/settings does, and not passed over for the automatic one, since the player chose a folder), no client to look through, no TazUO profile naming one, or a file that is not a 7.x tiledata.mul.
-  interface TileDataFrom { td: TileData | null; folder: string | null; source: "settings" | "tazuo-profile" | null; reason: null | "override-missing" | "no-client" | "no-tazuo-profile" | "unreadable" }
-  type UoFolder = { folder: string; source: "settings" | "tazuo-profile" } | { folder: null; reason: "override-missing" | "no-client" | "no-tazuo-profile" };
-  function uoFolder(): UoFolder {
-    const o = currentSettings.uoFolder;
-    if (o != null && o !== "") return typeof o !== "string" || badPathShape(o) ? { folder: null, reason: "override-missing" } : { folder: o, source: "settings" };
-    const c = currentSettings.client;
-    if (!c || c.adapter !== "tazuo") return { folder: null, reason: "no-client" };
-    const uo = uoFolderFromTazuo(c.scriptsDir);
-    return uo ? { folder: uo, source: "tazuo-profile" } : { folder: null, reason: "no-tazuo-profile" };
-  }
-  function houseTileData(): TileDataFrom {
-    const at = uoFolder();
-    if (at.folder === null) return { td: null, folder: null, source: null, reason: at.reason };
-    const path = join(at.folder, "tiledata.mul"), td = loadTileData(path);
-    return { td, folder: at.folder, source: at.source, reason: td ? null : at.source === "settings" && !existsSync(path) ? "override-missing" : "unreadable" };
-  }
-  // The facet overview (issue #164): the UO folder's facetNN.mul, checked once while the file stays the same and kept per facet as the file's own bytes and its row starts (all six together are about 30 MB), and the PNGs cut from them kept by facet file, region and size up to 32 MB in all, the oldest dropped first. Never written to disk. `reason` says why there is none, the folder never: a folder set in Settings that is gone reads as override-missing, as it does for tiledata.mul.
-  const facetMemo = new Map<number, { key: string; bitmap: FacetBitmap | null }>();
-  const facetPngs = new Map<string, Buffer>();
-  let facetPngBytes = 0;
-  const FACET_MAX_BYTES = 64 * 1024 * 1024, FACET_PNG_BYTES = 32 * 1024 * 1024;
-  function facetBitmap(facet: number): { bitmap: FacetBitmap; key: string } | { reason: string } {
-    const at = uoFolder();
-    if (at.folder === null) return { reason: at.reason };
-    if (at.source === "settings") { try { if (!statSync(at.folder).isDirectory()) return { reason: "override-missing" }; } catch { return { reason: "override-missing" }; } }
-    const path = join(at.folder, `facet0${facet}.mul`);
-    let key: string;
-    try { const st = statSync(path); if (!st.isFile()) return { reason: "missing" }; if (st.size > FACET_MAX_BYTES) return { reason: "unreadable" }; key = `${path}:${st.mtimeMs}:${st.size}`; } catch { return { reason: "missing" }; }
-    let memo = facetMemo.get(facet);
-    if (memo?.key !== key) {
-      let bitmap: FacetBitmap | null;
-      try { bitmap = decodeFacet(readFileSync(path)); } catch { bitmap = null; }
-      memo = { key, bitmap };
-      facetMemo.set(facet, memo);
-    }
-    return memo.bitmap ? { bitmap: memo.bitmap, key } : { reason: "unreadable" };
-  }
-  function facetPng(key: string, make: () => Buffer): Buffer {
-    let out = facetPngs.get(key);
-    if (out) return out;
-    out = make();
-    for (const [k, v] of facetPngs) { if (facetPngBytes + out.length <= FACET_PNG_BYTES) break; facetPngs.delete(k); facetPngBytes -= v.length; }
-    facetPngs.set(key, out);
-    facetPngBytes += out.length;
-    return out;
-  }
-  // Built house models, kept while the served inventory (a new object whenever the scans, the item kinds or the overlay change; the houses come from the same fold) and the tiledata (loadTileData answers the same object until the file changes) stay the same. The ground chests are the inventory's ground roots with a position, as Organize picks them.
-  let houseMemo: { inv: Inventory | null; td: TileData | null; ground: HouseContainerInput[]; models: Map<string, HouseModel> } = { inv: null, td: null, ground: [], models: new Map() };
-  function houseModel(inv: Inventory, house: HouseSource, td: TileData | null): HouseModel {
-    if (houseMemo.inv !== inv || houseMemo.td !== td) {
-      const ground = Object.values(inv.containers).flatMap((c) => (c.parent == null && c.kind === "ground" && c.pos && Number.isFinite(c.pos.x) && Number.isFinite(c.pos.y))
-        ? [{ serial: c.serial, name: c.name ?? "", facet: c.pos.facet ?? null, x: c.pos.x!, y: c.pos.y!, z: c.pos.z ?? 0, opened: true }] : []);
-      houseMemo = { inv, td, ground, models: new Map() };
-    }
-    let m = houseMemo.models.get(house.id);
-    if (!m) {
-      // The chests this house's captures saw that no scan has opened: on the map from the first scan, named from tiledata, as not opened yet. A chest the fold knows is drawn from the fold. The fold and Organize never see these; retention keeps the captures that contribute them.
-      const seen = house.containers.flatMap(([serial, graphic, x, y, z]) => inv.containers[String(serial)] ? [] : [{ serial, name: td?.info(graphic)?.name || "container", facet: house.facet, x, y, z, opened: false }]);
-      m = buildHouseModel(house, td, [...houseMemo.ground, ...seen]);
-      houseMemo.models.set(house.id, m);
-    }
-    return m;
-  }
-  async function getInventory(): Promise<InvValue> {
-    harvestNow(Date.now());   // a trip that finished since is part of what every view shows
-    let kindsSig = "no-kinds";
-    try { const st = statSync(itemKindsStore.file); kindsSig = `${st.ino}:${st.mtimeMs}:${st.size}`; } catch { /* no overrides */ }
-    const sig = `${scanStore.signature()}::${currentSettings.shard}::${kindsSig}`;
-    if (foldCache.sig !== sig) {   // sig and value are only ever set together
-      const snaps = scanStore.all();
-      const fold = foldSnapshots(snaps, itemKindsStore.read());
-      foldCache = { sig, value: { fold, missing: missingSinceLastScan(snaps, fold), snapshotCount: snaps.length, houses: latestHouses(snaps) } };
-    }
-    const folded = foldCache.value!;
-    let stateSig = "no-state";
-    try { const st = statSync(organizeStateStore.file); stateSig = `${st.ino}:${st.mtimeMs}:${st.size}`; } catch { /* no overlay yet */ }
-    // The hour, so a move the week-old cut in pruneOverlay has retired leaves the view of a long-running server.
-    const invSig = `${sig}::${stateSig}::${Math.floor(Date.now() / 3600e3)}`;
-    if (invCache.sig === invSig) return invCache.value!;
-    const { moves } = pruneOverlay(organizeStateStore.read(), folded.fold, Date.now());
-    invCache = { sig: invSig, value: { ...folded, inv: overlaidInventory(folded.fold, moves) } };
-    return invCache.value!;
-  }
+  const houseService = createHousesService({ settings: appSettings.current });
 
   const uiPrefsStore = createUiPrefsStore(join(CONFIG.dataDir, "ui-prefs.json"));
   // The TazUO panel's hotkey and show-at-login choice (app/tazuo-panel.mts); the in-game panel writes it too.
@@ -714,196 +532,18 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
     return doc;
   }
   const organizeStateStore = createOrganizeStateStore(join(CONFIG.dataDir, "organize-state.json"));
-  // What harvestTrips needs of one adapter's status.json (GET /api/bridge/status reads the same file for the page).
-  // `current` counts only while the bridge's heartbeat is recent: a client that quit mid-trip leaves its last
-  // `current` in the file for good, which would otherwise hold Organize's one trip in flight forever.
-  function bridgeView(adapter: string, now: number): BridgeView {
-    try {
-      const st: unknown = JSON.parse(readFileSync(CONFIG.paths.bridgeStatusFor(adapter), "utf8"));
-      if (!st || typeof st !== "object" || Array.isArray(st)) return { results: {}, current: null };
-      const { results, current, alive, character } = st as Record<string, unknown>;
-      const aliveMs = typeof alive === "number" ? alive * 1000 : typeof alive === "string" ? Date.parse(alive) : NaN;
-      const live = Math.abs(now - aliveMs) <= PENDING_GRACE_MS;
-      const id = live && current && typeof current === "object" ? (current as { id?: unknown }).id : null;
-      return { results: results && typeof results === "object" && !Array.isArray(results) ? results as Record<string, unknown> : {}, current: typeof id === "string" ? id : null,
-        character: isBoundedString(character, 64) ? character : null };
-    } catch { return { results: {}, current: null }; }
-  }
-  // Finished trips read out of their bridges' status files into the overlay. Runs on every getInventory() and on the
-  // page's bridge status poll (every 2.5 s while any page is open), so a trip that reports back moves its items in
-  // every view even with Organize closed; when it brought moves in, the state file is rewritten and every open page
-  // told to reload its inventory. A Grab is harvested the same way. With nothing pending it only reads the state file.
-  function harvestNow(now: number): { state: OrganizeState; bridges: Record<string, BridgeView> } {
-    const before = organizeStateStore.read();
-    if (!before.pending.length && !before.grabs.length) return { state: before, bridges: {} };
-    const bridges = Object.fromEntries([...new Set([...before.pending, ...before.grabs].map((p) => p.adapter))].map((a) => [a, bridgeView(a, now)]));
-    const state = harvestTrips(before, bridges, now);
-    if (JSON.stringify(state) !== JSON.stringify(before)) organizeStateStore.write(state);
-    if (JSON.stringify(state.moves) !== JSON.stringify(before.moves)) broadcastEvent("changed", { what: "inventory", at: now });
-    return { state, bridges };
-  }
-  // What a plan starts from now: finished trips harvested, entries a newer scan has settled dropped, labels' last-seen
-  // times refreshed (the state file is rewritten only when that changed something). Organize works on the fold alone
-  // and applies the overlay itself. organizeNow adds the plan; Put away plans its own (planOf with a source).
-  async function organizeInputs(): Promise<{ fold: Inventory; config: OrganizeConfig; state: OrganizeState; problems: string[]; bridges: Record<string, BridgeView> }> {
-    const { fold } = await getInventory();
-    const { config, problems } = organizeStore.read();
-    const now = Date.now();
-    const { state: harvested, bridges } = harvestNow(now);
-    const state = noteSeen(pruneOverlay(harvested, fold, now), config, fold);
-    if (JSON.stringify(state) !== JSON.stringify(harvested)) organizeStateStore.write(state);
-    return { fold, config, state, problems, bridges };
-  }
-  const planOf = (fold: Inventory, config: OrganizeConfig, state: OrganizeState, putAway?: PutAway): Plan =>
-    planOrganize(fold, config, state.moves, { now: Date.now(), rarity: currentRules.rarity, suitPieces: suitsFor(config.rules.map((r) => r.match)), blacklist: blacklistStore.read().map((e) => e.serial), seen: state.seen, putAway });
-  async function organizeNow(): Promise<{ fold: Inventory; config: OrganizeConfig; state: OrganizeState; plan: Plan; problems: string[]; bridges: Record<string, BridgeView> }> {
-    const got = await organizeInputs();
-    return { ...got, plan: planOf(got.fold, got.config, got.state) };
-  }
-  const runsTrips = (adapter: string): boolean => {
-    const caps = listAdapters(ADAPTERS_DIR).find((a) => a.id === adapter)?.capabilities as { bridge?: unknown } | undefined;
-    return Array.isArray(caps?.bridge) && caps.bridge.includes("trip");
-  };
-  // Trip `index` of `plan` queued with queueTrip and recorded as pending, so its result is read back into the
-  // overlay (harvestTrips). A Put away trip from the pack carries putAway, the picked container (docs/bridge-protocol.md, Put away).
-  function queuePlanTrip(adapter: string, fold: Inventory, state: OrganizeState, plan: Plan, index: number, putAway?: number): { ok: true; id: string } | { ok: false; error: string } {
-    const input = tripCommand(applyOverlay(fold, state.moves).inv, plan, index);
-    if (!input) return { ok: false, error: `trip ${index} cannot be built from the current scans` };
-    const now = new Date();
-    const queued = queueTrip(CONFIG.paths, adapter, putAway ? { ...input, putAway } : input, now);
-    if (!queued.ok) return queued;
-    const steps = plan.moves.filter((m) => m.trip === index).map(({ serial, name, from, to }) => ({ serial, name, from, to }));
-    organizeStateStore.write({ ...state, pending: [...state.pending, { id: queued.id, adapter, index, stamp: plan.stamp, queuedAt: now.toISOString(), steps }] });
-    return queued;
-  }
-  // Put away (issue #131, app/put-away.mts): the TazUO panel's request, handed over by the watcher of the inbox it was
-  // dropped in, in its turn after the scan the panel ran first. The file is removed before anything else and read as
-  // untrusted; the answer, whatever it is, goes to <data>/bridge/<adapter>/putaway.json for the panel.
-  async function putAway(adapter: string, path: string): Promise<void> {
-    let raw: unknown = null;
-    try {
-      const st = lstatSync(path);
-      if (st.isFile() && st.size <= MAX_REQUEST_BYTES) raw = JSON.parse(readFileSync(path, "utf8"));
-    } catch { /* refused below as not a request */ }
-    try { unlinkSync(path); } catch { /* gone already */ }
-    const checked = checkPutAwayRequest(raw, Date.now());
-    let answer: Omit<PutAwayReply, "id" | "t">;
-    try { answer = checked.ok ? await putAwayRun(adapter, checked.request) : { ok: false, msg: "Put away was refused.", detail: checked.error }; }
-    catch (e) {
-      const ref = randomUUID().slice(0, 8);
-      safeAppendLog(CONFIG.paths.log, `${new Date().toISOString()} ${ref} put away\n${(e as Error)?.stack ?? e}\n`);
-      answer = { ok: false, msg: "Put away failed.", detail: `See server.log (${ref}).` };
-    }
-    const reply: PutAwayReply = { id: requestId(raw), ...answer, t: new Date().toISOString() };
-    try {
-      mkdirSync(CONFIG.paths.bridgeFor(adapter), { recursive: true, mode: DATA_DIR_MODE });
-      writeFileAtomic(join(CONFIG.paths.bridgeFor(adapter), PUT_AWAY_REPLY), JSON.stringify(reply) + "\n", DATA_FILE_MODE);
-    } catch (e) { safeAppendLog(CONFIG.paths.log, `${reply.t} put away: could not write the answer: ${(e as Error).message}\n`); }
-  }
-  // One Put away step: the first trip of a plan whose only source is what lies directly in the container the player
-  // picked (their backpack or a bag in it, put into the house they stand in, or a container in a labelled chest).
-  // The panel asks again after each trip until nothing is left.
-  async function putAwayRun(adapter: string, req: PutAwayRequest): Promise<Omit<PutAwayReply, "id" | "t">> {
-    if (!runsTrips(adapter)) return { ok: false, msg: "This client's bridge cannot run Put away." };
-    const { fold, config, state, problems } = await organizeInputs();
-    if (problems.length) return { ok: false, msg: "Organize's setup was hand-edited.", detail: "Open Organize in the app and save it." };
-    if (state.pending[0]) return { ok: false, msg: `Trip ${state.pending[0].index} has not reported back yet.` };
-    // The picked container: the character's backpack or a bag at any depth in it, or a container in a labelled ground
-    // chest (the chest itself included). Only what lies directly in it moves.
-    const picked = fold.containers[String(req.container)];
-    const chain = picked ? ancestry(fold, +picked.serial) : null;
-    const root = chain ? fold.containers[String(chain.at(-1))] : undefined;
-    // Planned only from a scan made for this run (the panel's refresh or scan), never from an older one, and never from
-    // a bag that scan could not open (the fold keeps older contents there).
-    if (!picked || !chain || !root || picked.opened === false || stampMs(picked.scannedAt) < stampMs(req.clickedAt) - FRESH_MARGIN_MS) {
-      return { ok: false, msg: "Pack Rat has not read that container yet.", detail: "Stand next to it and try again." };
-    }
-    let source: PutAway;
-    if (root.kind === "backpack" && root.scannedBy === req.character) source = { from: "pack", container: +picked.serial, at: req.at };
-    else if (root.kind === "ground" && config.labels[String(root.serial)]) source = { from: "ground", container: +picked.serial };
-    else return { ok: false, msg: root.kind === "ground" ? "That container is not labeled for Organize." : "Pick your backpack, a container in it,", detail: root.kind === "ground" ? "Label it in the app first." : "or a container in a labeled one on the ground." };
-    const black = new Set(blacklistStore.read().map((e) => e.serial));
-    if (chain.some((s) => black.has(s))) return { ok: false, msg: "That container is blacklisted.", detail: "Pack Rat never opens it." };
-    if (chain.some((s) => config.labels[String(s)]?.pinned)) return { ok: false, msg: "That container is pinned.", detail: "Organize never takes items out of it." };
-    const plan = planOf(fold, config, state, source);
-    if (source.from === "ground" && !plan.sites.some((s) => s.roots.includes(+root.serial))) {
-      const why = plan.warnings.find((w) => w.serial === +root.serial);
-      return { ok: false, msg: "That container cannot be used.", detail: why?.detail ?? "It needs a scan with its position." };
-    }
-    const trip = plan.trips[0];
-    const kept = source.from === "pack" ? packKept(fold, source.container, new Set(config.pinnedItems)) : undefined;
-    const where = +picked.serial === +root.serial && source.from === "pack" ? "your pack" : "that container";
-    if (!trip) return { ok: true, msg: "Nothing to put away.", detail: nothingDetail(plan, where, kept) };
-    const queued = queuePlanTrip(adapter, fold, state, plan, trip.index, source.from === "pack" ? source.container : undefined);
-    if (!queued.ok) return { ok: false, msg: "The trip could not be queued.", detail: queued.error };
-    return { ok: true, msg: tripMsg(trip.puts.length, plan.moves.length - trip.puts.length), trip: queued.id };
-  }
+  // ---- saved runs: one JSON file per finished build in app/data/runs/ -------------------------------
+  const runStore = createRunsStore(RUNS);
+  const jobService = createJobsService({ coreUrl: CORE_URL, timings: jobTimings, runStore, log: (line) => safeAppendLog(CONFIG.paths.log, line) });
+  const organizeService = createOrganizeService({ paths: CONFIG.paths, getInventory: () => getInventory(), organizeStore, organizeStateStore, blacklistStore, runStore,
+    rules: appSettings.rules, runsTrips: setupService.runsTrips, events: eventBus, log: (line) => safeAppendLog(CONFIG.paths.log, line) });
+  // Organize is built first, so the harvest hook below never reaches it before it exists; it reads the inventory through a getter.
+  const inventoryService = createInventoryService({ scanStore, itemKindsStore, organizeStateStore, shard: () => appSettings.current().shard, harvest: (now) => organizeService.harvestNow(now) });
+  const getInventory = inventoryService.getInventory;
   const profilesStore = createProfilesStore({ file: PROFILES, defaults: DEFAULT_PROFILES, log: (line) => safeAppendLog(CONFIG.paths.log, line) });
 
   // ---- optimizer jobs: one worker thread per build, progress over Server-Sent Events -----------
-  // A job keeps its last progress snapshot and its final result, so a page that reconnects (or
-  // reloads) can catch up. Cancel = terminate the worker. Finished jobs are dropped after a while.
-  // An exact build (opts.exact) runs entirely inside that one worker: app/exact-solver.mts hands the
-  // problem to HiGHS, which explores the tree itself — there is nothing left to split across a
-  // thread pool, so (unlike the pre-HiGHS branch-and-bound) this is always exactly one worker per job.
-  //
-  // input.pools/current/profile stay `unknown` all the way through a job's life, same as the request
-  // body they came from — runKey (runs-lib.mts) and the Worker constructor's own workerData option
-  // (typed `any` by @types/node) are the only two places that ever touch them, and neither requires a
-  // narrower type. meta is the caller's own free-form bookkeeping object (poolSize/skipped/character/
-  // settings/warning are added to it by this file; nothing beyond that is read off it besides what a
-  // caller chooses to stash there, e.g. a saved run's inventoryStamp).
-  interface JobInput {
-    pools: unknown;
-    current: unknown;
-    profile: unknown;
-    opts: RunOpts;
-  }
-  type JobState = "running" | "done" | "cancelled" | "error";
-  interface Job {
-    id: string;
-    // Mirrors the `x-client-id` header's own declared type (string | string[] | undefined, per
-    // @types/node's IncomingHttpHeaders index signature for a header with no dedicated field) — this
-    // value is only ever compared for equality or handed back verbatim, never treated as a string
-    // specifically, so no narrowing cast is needed anywhere it's read.
-    clientId: string | string[] | null;
-    key: string;
-    meta: Record<string, unknown>;
-    input: JobInput;
-    save: boolean;                       // saved as a run when done (a Manual fill is not)
-    state: JobState;
-    startedAt: number;
-    progress: SolveProgress | null;
-    result: OptResult | ExactSolveResult | null;
-    ms: number | null;
-    error: string | null;
-    runId: string | null;
-    clients: Set<http.ServerResponse>;
-    workers: Set<Worker>;
-    // The stuck-build timer (budget + JOB_RUN_GRACE_MS); finish() clears it, so a finished job's
-    // result is held by the retention timer alone rather than pinned by this one's closure too.
-    stuckTimer: NodeJS.Timeout | null;
-  }
-  const jobs = new Map<string, Job>();
-  // A finished job (done, failed or cancelled) stays readable for this long AFTER it finishes, so a
-  // page that reconnects or reloads can still collect its result. This clock used to start with the
-  // build and also cancel a build still running when it rang: a player's 15-minute budget (the route
-  // accepts up to 60) was killed at 10:00, and a result finishing at 9:59 was dropped a second later.
-  const JOB_RETENTION_MS = jobTimings.retentionMs ?? 10 * 60 * 1000;
-  // A running build is only cancelled as stuck once it is this far past its own time budget (the
-  // core's 15 s default when it names none) — never before the budget the route accepted for it. The
-  // grace covers the heuristic restarts that run ahead of the exact phase's budget.
-  const JOB_RUN_GRACE_MS = jobTimings.runGraceMs ?? 10 * 60 * 1000;
-  const DEFAULT_TIME_BUDGET_MS = 15000;
-  // Set by close(): a worker terminated by shutdown is not a failed build.
-  let closing = false;
-  // A server-wide ceiling on live worker threads, on top of the per-X-Client-Id supersede below: that
-  // rule is skipped entirely when the header is absent, so a caller that omits (or rotates) it could
-  // start arbitrarily many `new Worker()` threads, each holding its full result for JOB_RETENTION_MS
-  // (post-review fix, Important 5). Four is well past what one page ever has in flight — it only ever
-  // runs one build at a time — and leaves room for a couple of stale jobs a client has walked away from.
-  const MAX_RUNNING_JOBS = 4;
-  const timers = new Set<NodeJS.Timeout>();   // every setTimeout/setInterval this instance owns, so close() can stop them all
+  const timers = new Set<NodeJS.Timeout>();   // the host-call timeouts and stream pings this server owns, so close() can stop them all; the jobs service clears its own
 
   // A folder dialog whose answer never comes back would otherwise hang this request for ever:
   // server.requestTimeout governs request RECEIPT only and never touches a response that has not
@@ -925,79 +565,9 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
     });
   }
 
-  // Job ids are crypto.randomUUID() (spec §4.5) rather than the old Date.now()-based id: the SSE
-  // events route is exempt from the bearer token (EventSource can't carry one), so the id itself
-  // must be unguessable — the events route's ownership check (below) is the other half of that.
-  function startJob(input: JobInput, key: string, meta: Record<string, unknown>, clientId: string | string[] | null = null, save = true): Job {
-    const id = randomUUID();
-    const job: Job = { id, clientId, key, meta, input, save, state: "running", startedAt: Date.now(), progress: null, result: null, ms: null, error: null, runId: null, clients: new Set(), workers: new Set(), stuckTimer: null };
-    jobs.set(id, job);
-    runJob(job).catch((e) => {
-      // Cancelled (or the server is shutting down): the terminated workers reject, nothing to report.
-      if (job.state !== "running" || closing) return;
-      // Same stack-free rule as the route-level 500s, and now the same ref-keyed, file-backed log too
-      // (post-review: job failures used to go to console.error only, with no ref and no file trail —
-      // unrecoverable in a headless/backgrounded deployment). Note the worker's own try/catch
-      // (optimize-worker.mts) already stringifies a caught error as `${e.stack}` before it ever leaves
-      // the worker thread, so e.message here can ALREADY be a full stack trace in that path (an
-      // uncaught worker crash instead reaches here as a normal Error with a normal e.message) — logging
-      // e.stack ?? e.message covers both, and the client only ever sees the sanitized ref line either way.
-      const ref = randomUUID().slice(0, 8);
-      safeAppendLog(CONFIG.paths.log, `${new Date().toISOString()} ${ref} job ${job.id}\n${(e && ((e as Error).stack || (e as Error).message)) || e}\n`);
-      job.state = "error"; job.error = `internal error (ref ${ref})`;
-      finish(job, "failed", { error: job.error });
-    });
-    const t = setTimeout(() => { timers.delete(t); job.stuckTimer = null; cancelJob(job); }, (input.opts.timeBudgetMs ?? DEFAULT_TIME_BUDGET_MS) + JOB_RUN_GRACE_MS);
-    t.unref(); timers.add(t); job.stuckTimer = t;
-    return job;
-  }
-  function spawnWorker(job: Job, data: { pools: unknown; current: unknown; profile: unknown; opts: RunOpts }, onProgress: (p: SolveProgress) => void, onWarn?: (message: string) => void): Promise<WorkerDoneMessage> {
-    return new Promise((resolve, reject) => {
-      const w = new Worker(new URL("./optimize-worker.mts", import.meta.url), { workerData: { coreUrl: CORE_URL, ...data } });
-      job.workers.add(w);
-      let settled = false;
-      w.on("message", (m: WorkerMessage) => {
-        if (m.type === "progress") onProgress(m.progress);
-        else if (m.type === "warn") { if (onWarn) onWarn(m.message); }
-        else if (m.type === "done") { settled = true; resolve(m); }
-        else if (m.type === "error") { settled = true; reject(new Error(m.error)); }
-      });
-      w.on("error", (e) => { settled = true; reject(e); });
-      w.on("exit", (code) => { job.workers.delete(w); if (!settled) reject(new Error(`worker exited with code ${code}`)); });
-    });
-  }
-  function emitProgress(job: Job, p: SolveProgress): void { job.progress = p; broadcast(job, "progress", p); }
-
-  async function runJob(job: Job): Promise<void> {
-    const { pools, current, profile, opts } = job.input;
-    const t0 = Date.now();
-    const onWarn = (message: string) => safeAppendLog(CONFIG.paths.log, `${new Date().toISOString()} job ${job.id} warn: ${message}\n`);
-    const { result } = await spawnWorker(job, { pools, current, profile, opts }, (p) => emitProgress(job, p), onWarn);
-    if (job.state !== "running") return;
-    job.state = "done"; job.result = result; job.ms = Date.now() - t0;
-    if (job.save) try { job.runId = saveRun(job).id; } catch (e) { console.error(`could not save run ${job.id}: ${(e as Error).message}`); }
-    finish(job, "done", { result, ms: job.ms, runId: job.runId });
-  }
-  function cancelJob(job: Job): void {
-    if (job.state !== "running") return;
-    job.state = "cancelled";
-    job.ms = Date.now() - job.startedAt;
-    for (const w of job.workers) w.terminate();
-    finish(job, "cancelled", { ms: job.ms });
-  }
-  function jobSnapshot(job: Job) { return { id: job.id, state: job.state, progress: job.progress, result: job.result, ms: job.ms, error: job.error, runId: job.runId }; }
-  function sse(res: http.ServerResponse, event: string, data: unknown): void { res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`); }
-  function broadcast(job: Job, event: string, data: unknown): void { for (const c of job.clients) sse(c, event, data); }
-  // The retention clock starts here, when the job ends — however it ends.
-  function finish(job: Job, event: string, data: unknown): void {
-    broadcast(job, event, data); for (const c of job.clients) c.end(); job.clients.clear();
-    if (job.stuckTimer) { clearTimeout(job.stuckTimer); timers.delete(job.stuckTimer); job.stuckTimer = null; }
-    const t = setTimeout(() => { jobs.delete(job.id); timers.delete(t); }, JOB_RETENTION_MS);
-    t.unref(); timers.add(t);
-  }
   function streamJob(job: Job, res: http.ServerResponse): void {
     res.writeHead(200, SSE_HEADERS);
-    sse(res, "hello", jobSnapshot(job));   // catch-up: last progress, or the final outcome if it already ended
+    sse(res, "hello", jobService.snapshot(job));   // catch-up: last progress, or the final outcome if it already ended
     if (job.state !== "running") { res.end(); return; }
     job.clients.add(res);
     const ping = setInterval(() => sse(res, "ping", { at: Date.now() }), 5000);
@@ -1005,64 +575,10 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
     res.on("close", () => { clearInterval(ping); timers.delete(ping); job.clients.delete(res); });
   }
 
-  // ---- saved runs: one JSON file per finished build in app/data/runs/ -------------------------------
-  const runStore = createRunsStore(RUNS);
-  // Every saved suit's pieces, for Organize (issue #133), read only when a rule asks to skip them: the live count
-  // asks on every pause in typing, and few setups have such a rule.
-  function suitsFor(matches: RuleMatch[]): Set<number> | undefined { return matches.some((m) => m.skipSuits) ? suitPieces(runStore.all()) : undefined; }
 
   // ---- retention (issue #28): old scans and saved runs, per settings.json's `retention` ----------------
-  // Only files scanStore.files()/runStore.files() read are ever candidates (a scan that fails validation or
-  // a run that does not parse stays), only by their bare name inside scans/ or runs/, and only a
-  // regular file: lstat, so a symlink is left alone rather than followed. Nothing is pruned under
-  // --demo: its scans are the committed fixtures and its runs folder is still the player's own.
-  // `refused`: old scans were due to go, but the fold without them differed (or, `reason: "houses"`, a listed house would have changed), so every scan was kept.
-  interface PrunePlan { scans: string[]; runs: string[]; refused: boolean; reason?: "houses" }
-  async function planPrune(): Promise<PrunePlan> {
-    if (CONFIG.demo) return { scans: [], runs: [], refused: false };
-    const r = retentionOf(savedSettings.retention);
-    const scans = scansToPrune(scanStore.files(), foldSnapshots, r, Date.now());
-    const runs = runsToPrune(runStore.files().map(({ file, run }) => ({ file, character: String(run.character), createdAt: String(run.createdAt), label: String(run.label || "") })), r);
-    return { scans: scans.files, runs, refused: scans.refused, ...(scans.reason ? { reason: scans.reason } : {}) };
-  }
-  function removeFiles(dir: string, files: string[]): string[] {
-    const removed: string[] = [];
-    for (const f of files) {
-      const p = join(dir, f);
-      try {
-        if (basename(f) !== f || !f.endsWith(".json") || !lstatSync(p).isFile()) continue;
-        unlinkSync(p);
-        removed.push(f);
-      } catch (e) { safeAppendLog(CONFIG.paths.log, `${new Date().toISOString()} retention could not remove ${JSON.stringify(f)}: ${(e as Error).message}\n`); }
-    }
-    return removed;
-  }
-  // One prune at a time: each call waits for the one before it to finish.
-  let pruning: Promise<unknown> = Promise.resolve();
-  function pruneData(why: string): Promise<{ scans: number; runs: number; refused: boolean }> {
-    const next = pruning.catch(() => {}).then(async () => {
-      const plan = await planPrune();
-      const scans = removeFiles(SCANS, plan.scans), runs = removeFiles(RUNS, plan.runs);
-      const at = new Date().toISOString();
-      if (plan.refused) safeAppendLog(CONFIG.paths.log, `${at} retention (${why}) kept every scan: ${plan.reason === "houses" ? "a house's newest capture or furniture would have changed without the old ones" : "the inventory folded without the old ones differed"}\n`);
-      if (scans.length || runs.length) safeAppendLog(CONFIG.paths.log, `${at} retention (${why}) removed ${scans.length} scans ${JSON.stringify(scans)} and ${runs.length} runs ${JSON.stringify(runs)}\n`);
-      if (scans.length) broadcastEvent("changed", { what: "inventory", at: Date.now() });
-      if (runs.length) broadcastEvent("changed", { what: "runs", at: Date.now() });
-      return { scans: scans.length, runs: runs.length, refused: plan.refused };
-    });
-    pruning = next;
-    return next;
-  }
-  function saveRun(job: Job) {
-    const meta = job.meta || {};
-    const run = { id: job.id, key: job.key, character: meta.character || "?", createdAt: new Date().toISOString(), label: "",
-      schemaVersion: 1, solverVersion: SOLVER_VERSION,
-      settings: meta.settings || {}, inventoryStamp: meta.inventoryStamp || null, poolSize: meta.poolSize ?? null, skipped: meta.skipped || {},
-      opts: stripOpts(job.input.opts), budgetMs: job.input.opts.timeBudgetMs ?? null, explored: job.progress?.explored ?? null,
-      result: job.result, ms: job.ms };
-    runStore.write(run);
-    return run;
-  }
+  const retentionService = createRetentionService({ demo: CONFIG.demo, retention: () => appSettings.saved().retention, scanStore, runStore, events: eventBus,
+    log: (line) => safeAppendLog(CONFIG.paths.log, line) });
 
   // The built-in MCP server (app/mcp.mts, issue #211): its own listener and token, opened once this server listens
   // (when mcp.json says on) and on PUT /api/mcp; its tools call this server's routes over loopback.
@@ -1133,7 +649,7 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
           if (it.equippedBy) (worn[it.equippedBy] ||= []).push(it);
           if (it.root != null) rootCounts[it.root] = (rootCounts[it.root] || 0) + 1;
         }
-        const facets = facetsOf(itemsArr, { rarity: currentRules.rarity });
+        const facets = facetsOf(itemsArr, { rarity: appSettings.rules().rarity });
         // A blacklisted container is never opened again, so its last two scans are stale: it reports nothing.
         const listed = new Set(blacklistStore.read().map((e) => String(e.serial)));
         const missingCounts = Object.fromEntries(Object.entries(missing).filter(([root]) => !listed.has(root)).map(([root, list]) => [root, list.length]));
@@ -1152,7 +668,7 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
       if (req.method === "GET" && url.pathname === "/api/items") {
         const { inv } = await getInventory();
         const query = parseItemQuery(url.searchParams);
-        const result = applyItemQuery(Object.values(inv.items), query, { rarity: currentRules.rarity });
+        const result = applyItemQuery(Object.values(inv.items), query, { rarity: appSettings.rules().rarity });
         if (wantsHits(url.searchParams)) return send(res, 200, { ok: true, total: result.total, offset: query.offset, limit: query.limit, rows: (result as ItemQueryRows).rows.map(hitRow) });
         // applyItemQuery returns the ItemQueryRows | ItemQueryGroups union; narrow at each call site
         // by query.group, same as app/item-query.test.mts does — `total` is common to both branches.
@@ -1236,7 +752,7 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
         uiPrefsStore.write(next);
         return send(res, 200, { ok: true });
       }
-      if (req.method === "GET" && url.pathname === "/api/settings") return send(res, 200, { ok: true, settings: currentSettings });
+      if (req.method === "GET" && url.pathname === "/api/settings") return send(res, 200, { ok: true, settings: appSettings.current() });
       if (req.method === "PUT" && url.pathname === "/api/settings") {
         // Any subset of {shard, setupDone, client} — Task 2 extended this route to carry the setup
         // wizard's own state without disturbing the shard-switch contract above it. Each field present
@@ -1248,7 +764,7 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
         // every page load, hanging the whole single-threaded process on a FIFO and dialling out over
         // SMB for a UNC path). These three are the only fields this route persists.
         const body = asObject(await readBody(req));
-        let nextRules = currentRules, nextFallback = rulesFallback;
+        let nextRules = appSettings.rules(), nextFallback = appSettings.rulesFallback();
         const hasShard = Object.prototype.hasOwnProperty.call(body, "shard");
         if (hasShard) {
           if (!isBoundedString(body.shard, 64)) return send(res, 400, { ok: false, error: "settings.shard must be a string" });
@@ -1281,7 +797,7 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
             const adapter = rec.adapter;
             // Security (post-review fix): client.adapter must be a real, known adapter id before it can
             // ever reach installer.mts's path.join calls — see the /api/setup/install note below.
-            const info = listAdapters(ADAPTERS_DIR).find((a) => a.id === adapter);
+            const info = setupService.adapters().find((a) => a.id === adapter);
             if (!info) {
               return send(res, 400, { ok: false, error: `settings.client.adapter: unknown adapter "${adapter}"` });
             }
@@ -1319,13 +835,10 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
         if (Object.prototype.hasOwnProperty.call(body, "autoUpdateCheck")) changes.autoUpdateCheck = body.autoUpdateCheck as boolean;
         if (nextClient !== undefined) changes.client = nextClient;
         if (nextUoFolder !== undefined) changes.uoFolder = nextUoFolder;
-        if (hasRetention) changes.retention = { ...retentionOf(savedSettings.retention), ...(body.retention as object) };
-        saveSettings(changes);
-        currentRules = nextRules;
-        setRules(currentRules);
-        rulesFallback = nextFallback;
-        currentSettings = effectiveSettings();
-        return send(res, 200, { ok: true, settings: currentSettings });
+        if (hasRetention) changes.retention = { ...retentionOf(appSettings.saved().retention), ...(body.retention as object) };
+        appSettings.save(changes);
+        appSettings.applyRules(nextRules, nextFallback);
+        return send(res, 200, { ok: true, settings: appSettings.current() });
       }
       if (req.method === "GET" && url.pathname === "/api/tazuo-panel") {
         return send(res, 200, { ok: true, prefs: readPanelPrefs(PANEL_PREFS) });
@@ -1345,15 +858,15 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
         const { dryRun } = asObject(await readBody(req, { limit: 8e3 }));
         if (typeof dryRun !== "boolean") return send(res, 400, { ok: false, error: "dryRun must be a boolean" });
         if (CONFIG.demo) return send(res, 409, { ok: false, error: "demo data is read-only" });
-        if (dryRun) { const plan = await planPrune(); return send(res, 200, { ok: true, scans: plan.scans.length, runs: plan.runs.length, refused: plan.refused }); }
-        return send(res, 200, { ok: true, ...await pruneData("clean up now") });
+        if (dryRun) { const plan = await retentionService.plan(); return send(res, 200, { ok: true, scans: plan.scans.length, runs: plan.runs.length, refused: plan.refused }); }
+        return send(res, 200, { ok: true, ...await retentionService.prune("clean up now") });
       }
       if (req.method === "GET" && url.pathname === "/api/rules") {
-        return send(res, 200, { ok: true, shard: currentSettings.shard, rules: currentRules, available: listRules({ userRulesDir: USER_RULES_DIR }), fallback: rulesFallback });
+        return send(res, 200, { ok: true, shard: appSettings.current().shard, rules: appSettings.rules(), available: listRules({ userRulesDir: USER_RULES_DIR }), fallback: appSettings.rulesFallback() });
       }
       // ---- Setup wizard (Task 2): adapter discovery, client-folder install, scan import, update check.
       if (req.method === "GET" && url.pathname === "/api/setup") {
-        const adapters = listAdapters(ADAPTERS_DIR);
+        const adapters = setupService.adapters();
         const candidates: Record<string, string[]> = {}, available: Record<string, string | null> = {};
         for (const a of adapters) {
           candidates[a.id] = clientSearch.candidates(a);
@@ -1363,25 +876,26 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
         // render. PUT /api/settings and POST /api/setup/install both validate that path now, and
         // installer.mts opens only regular files there (never following a symlink, never blocking on a
         // FIFO, bounded read) — so a hand-edited settings.json can no longer hang or over-read here.
-        const installed = currentSettings.client ? installedVersion(currentSettings.client.scriptsDir, currentSettings.client.adapter) : null;
-        // The id bridgeAdapter() is ACTUALLY routing POST /api/bridge / GET /api/bridge/status to right
+        const client = appSettings.current().client;
+        const installed = client ? installedVersion(client.scriptsDir, client.adapter) : null;
+        // The id appSettings.bridgeAdapter() is ACTUALLY routing POST /api/bridge / GET /api/bridge/status to right
         // now — reused, not restated, so this can never drift from the real routing decision. Guarded
         // to null when that id doesn't name a real discovered adapter (a test's throwaway --adapters
         // dir with no "tazuo" in it, say): reporting an id nothing can resolve would just move the
         // "buttons for an adapter that doesn't exist" bug onto the page instead of fixing it.
-        const resolvedBridgeAdapter = bridgeAdapter();
+        const resolvedBridgeAdapter = appSettings.bridgeAdapter();
         const bridgeAdapterField = adapters.some((a) => a.id === resolvedBridgeAdapter) ? resolvedBridgeAdapter : null;
         return send(res, 200, {
-          ok: true, firstRun: !currentSettings.setupDone, settings: currentSettings, adapters,
+          ok: true, firstRun: !appSettings.current().setupDone, settings: appSettings.current(), adapters,
           // platform: this machine's process.platform — on this desktop app, always the same machine
           // the player's game client runs on. Lets the wizard/Import tab (app/ui/adapters.mts's
           // availableAdapters) hide a platform-restricted adapter (Razor Enhanced, Windows-only)
           // instead of offering a choice that can never work (Phase 6 final review, deferred minor).
           candidates, installed, available, dataDir: CONFIG.dataDir, platform: process.platform,
           // app/ui/bridge.mts's currentAdapter() falls back to this when settings.client is unset (a
-          // hand-installed or Skip-through-the-wizard player) — see the bridgeAdapter() comment above.
+          // hand-installed or Skip-through-the-wizard player) — see the appSettings.bridgeAdapter() comment above.
           bridgeAdapter: bridgeAdapterField,
-          dataDirCheck: dataDirCheck(),
+          dataDirCheck: setupService.dataDirCheck(appSettings.current().client),
           // Settings › Updates names the running version ("Pack Rat 0.1.0") before any update check.
           version: PACKAGE_JSON.version,
           // Whether POST /api/host/open-path can do anything: only the desktop shell opens a folder. The
@@ -1394,7 +908,7 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
         // Read-only and path-free: the id must name a known paste-transport adapter, and the script is that
         // adapter's own bundled packrat-scanner.ts (installer.mts's pasteScanner).
         const adapter = url.searchParams.get("adapter");
-        if (!listAdapters(ADAPTERS_DIR).some((a) => a.id === adapter && a.transport === "paste")) return send(res, 400, { ok: false, error: `unknown paste adapter: ${short(adapter)}` });
+        if (!setupService.adapters().some((a) => a.id === adapter && a.transport === "paste")) return send(res, 400, { ok: false, error: `unknown paste adapter: ${short(adapter)}` });
         const scanner = pasteScanner(ADAPTERS_DIR, adapter as string);
         if (!scanner) return send(res, 404, { ok: false, error: "this build ships no scanner for that client" });
         return send(res, 200, { ok: true, ...scanner });
@@ -1404,7 +918,7 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
         // Security (post-review fix): adapter is only ever used in an error string by validateScriptsDir
         // itself, but every route taking an adapter id is checked against the real, known ids the same
         // way, so a caller can't probe with an arbitrary string here either.
-        if (!listAdapters(ADAPTERS_DIR).some((a) => a.id === adapter)) return send(res, 400, { ok: false, error: `unknown adapter: ${short(adapter)}` });
+        if (!setupService.adapters().some((a) => a.id === adapter)) return send(res, 400, { ok: false, error: `unknown adapter: ${short(adapter)}` });
         // Every refusal from here down is the same opaque line: this route's whole purpose is to say
         // yes or no about a folder the user picked, and validateScriptsDir's own messages name the
         // path they probed — which made that yes/no a filesystem oracle for any absolute path on the
@@ -1424,7 +938,7 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
         // arbitrary packrat-*.py from anywhere on disk into the user's LegionScripts folder.
         // installScripts also re-validates the id itself (defence in depth), but the route rejects it
         // first so the error is the clear "unknown adapter" rather than installScripts' own message.
-        if (!listAdapters(ADAPTERS_DIR).some((a) => a.id === adapter)) return send(res, 400, { ok: false, error: `unknown adapter: ${short(adapter)}` });
+        if (!setupService.adapters().some((a) => a.id === adapter)) return send(res, 400, { ok: false, error: `unknown adapter: ${short(adapter)}` });
         // The destination goes through the SAME acceptance POST /api/setup/locate applies (post-review
         // fix, area-3 finding 4): the two halves of the wizard used to disagree about what a scripts
         // folder is — locate validated, install took the raw body value and only installScripts'
@@ -1435,7 +949,7 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
         if (!located.ok) return send(res, 400, { ok: false, error: NO_CLIENT_FOLDER, code: "badDir" });
         const destDir = located.scriptsDir;
         // bridgeStatusPath is THIS adapter's own bridge status (the one whose scripts are about to be
-        // overwritten on disk), not necessarily the currently-configured client's (bridgeAdapter()) —
+        // overwritten on disk), not necessarily the currently-configured client's (appSettings.bridgeAdapter()) —
         // those can differ, e.g. installing razor-enhanced for the first time while tazuo is still the
         // configured client from an earlier setup. Guarding against the wrong adapter's running-script
         // state would both miss a real conflict (razor-enhanced's own bridge actually running) and
@@ -1449,7 +963,7 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
         if (!result.ok) {
           return send(res, result.code === "running" ? 409 : 400, { ok: false, error: result.error, code: result.code, installed: result.installed });
         }
-        saveSettings({ client: { adapter: adapter as string, scriptsDir: destDir } });
+        appSettings.save({ client: { adapter: adapter as string, scriptsDir: destDir } });
         // The wizard sends its panel options; either install puts the panel in TazUO's autostart list, which
         // it can only do while TazUO is closed (app/tazuo-panel.mts's addPanelAutostart).
         if (panel !== undefined && !CONFIG.demo) savePanel(panel as object);
@@ -1465,7 +979,7 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
         const { text, adapter } = asObject(await readBody(req, { limit: MAX_INBOX_BYTES, tooLargeMsg: "paste too large" }));
         // Same allowlist as every other adapter-taking route — adapter reaches
         // CONFIG.paths.inboxFor -> path.join, so it must be a real, known id before that.
-        if (!listAdapters(ADAPTERS_DIR).some((a) => a.id === adapter)) return send(res, 400, { ok: false, error: `unknown adapter: ${short(adapter)}` });
+        if (!setupService.adapters().some((a) => a.id === adapter)) return send(res, 400, { ok: false, error: `unknown adapter: ${short(adapter)}` });
         const parsed = parsePastedScan(text);
         if (!parsed.ok) return send(res, 400, { ok: false, error: parsed.error });
         // Post-review minor: `adapter` (which inbox the file gets filed under, from the Import tab's
@@ -1535,10 +1049,10 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
       if (req.method === "GET" && url.pathname === "/api/events") {
         res.writeHead(200, SSE_HEADERS);
         sse(res, "hello", { ok: true, watching: Array.from(watchers.keys()) });
-        eventClients.add(res);
+        eventBus.add(res);
         const ping = setInterval(() => sse(res, "ping", { at: Date.now() }), 15000);
         ping.unref(); timers.add(ping);
-        res.on("close", () => { clearInterval(ping); timers.delete(ping); eventClients.delete(res); });
+        res.on("close", () => { clearInterval(ping); timers.delete(ping); eventBus.remove(res); });
         return;
       }
       if (req.method === "POST" && url.pathname === "/api/optimize") {
@@ -1658,7 +1172,7 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
         const poolSize = typeof meta.poolSize === "number" ? meta.poolSize : Object.values(pools).reduce((a: number, v) => a + (Array.isArray(v) ? v.length : 0), 0);
         // The by-character form doesn't hand the caller's meta a poolSize/skipped up front (unlike the
         // old form, whose client computes them itself — ui/builder.mts) — fill them in now so a saved
-        // run started this way (saveRun() below reads job.meta) carries the same figures the response does.
+        // run started this way (the jobs service's saveRun() reads job.meta) carries the same figures the response does.
         if (character) { meta.poolSize = poolSize; meta.skipped = skipped; }
         if (hit) return send(res, 200, { ok: true, cached: true, run: hit, poolSize, skipped, current, blocked });
         // warm start: this character's newest saved suit, re-scored under the new settings
@@ -1667,25 +1181,10 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
         // real shape is an OptAssignment-like {slot -> {serial} | null} map, looser than RunResult's
         // own declared fields (an index-signature read, same trust as everywhere else in this route).
         if (last) fullOpts.warmStart = Object.fromEntries(Object.entries(last.result!.best as Record<string, { serial: number } | null>).map(([slot, it]) => [slot, it ? it.serial : null]));
-        // Cap: one running optimize job per client. A real client id is only ever supplied by the
-        // page's own ui/api.mts; a curl/test caller with no X-Client-Id is never deduped against itself.
-        let previous: Job | null = null;
-        if (headerClientId) {
-          for (const j of jobs.values()) {
-            if (j.clientId && j.clientId === headerClientId && j.state === "running") { previous = j; break; }
-          }
-        }
-        // …and a server-wide ceiling behind it, for the callers the per-client rule can't see (see
-        // MAX_RUNNING_JOBS). Checked BEFORE the supersede, counting the job it would replace as already
-        // freed, so a refused request never cancels anything: a page that rebuilds while its own job
-        // is still running never trips it, and one that does trip it keeps the build it had.
-        let running = 0;
-        for (const j of jobs.values()) if (j.state === "running" && j !== previous) running++;
-        if (running >= MAX_RUNNING_JOBS) return send(res, 429, { ok: false, error: "too many builds are already running; try again in a moment" });
-        if (previous) cancelJob(previous);
-        const superseded = previous ? previous.id : null;
-        const jobClientId = headerClientId || randomUUID();
-        const job = startJob({ pools, current, profile, opts: fullOpts }, key, meta, jobClientId, !fill);
+        // One running build per client, behind a server-wide ceiling (app/services/jobs.mts submit).
+        const started = jobService.submit({ pools, current, profile, opts: fullOpts }, key, meta, headerClientId, !fill);
+        if (!started) return send(res, 429, { ok: false, error: "too many builds are already running; try again in a moment" });
+        const { job, superseded } = started;
         if (poolSize > 50000) job.meta.warning = "over 50,000 candidates; the exact solver may take a while";
         return send(res, 200, { ok: true, id: job.id, warmFrom: last ? last.id : null, superseded, warning: job.meta.warning, poolSize, skipped, current, blocked });
       }
@@ -1708,7 +1207,7 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
         for (const it of Object.values(inv.items)) if (it.equippedBy === character && it.slot && GEAR_SLOTS.includes(it.slot)) worn[it.slot] ??= toOptItem(it);
         const run = manualRun({ id: randomUUID(), character, createdAt: new Date().toISOString(), settings: settings as Record<string, unknown>, inventoryStamp, suit: pieces, worn, slots: GEAR_SLOTS });
         runStore.write(run);
-        broadcastEvent("changed", { what: "runs", at: Date.now() });
+        eventBus.broadcast("changed", { what: "runs", at: Date.now() });
         return send(res, 200, { ok: true, run: runSummary(run) } satisfies RunBody<RunSummary>);
       }
       if (req.method === "GET" && url.pathname === "/api/runs") {
@@ -1730,7 +1229,7 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
           const run = readRun();
           return run ? send(res, 200, { ok: true, run } satisfies RunBody) : send(res, 404, { ok: false, error: DAMAGED_RUN });
         }
-        if (req.method === "DELETE") { runStore.remove(id); broadcastEvent("changed", { what: "runs", at: Date.now() }); return send(res, 200, { ok: true }); }
+        if (req.method === "DELETE") { runStore.remove(id); eventBus.broadcast("changed", { what: "runs", at: Date.now() }); return send(res, 200, { ok: true }); }
         if (req.method === "PUT") {
           const { label = "" } = asObject(await readBody(req, { limit: 8e3 }));
           // String() throws on an object with a null prototype or a throwing toString — a 500 plus a
@@ -1745,10 +1244,10 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
       }
       const jobMatch = url.pathname.match(/^\/api\/optimize\/([\w-]+)\/(events|cancel|status)$/);
       if (jobMatch) {
-        const job = jobs.get(jobMatch[1]!);
+        const job = jobService.get(jobMatch[1]!);
         if (!job) return send(res, 404, { ok: false, error: "no such job (the server may have restarted)" });
-        if (jobMatch[2] === "cancel" && req.method === "POST") { cancelJob(job); return send(res, 200, { ok: true, state: job.state }); }
-        if (jobMatch[2] === "status") return send(res, 200, { ok: true, ...jobSnapshot(job) });
+        if (jobMatch[2] === "cancel" && req.method === "POST") { jobService.cancel(job); return send(res, 200, { ok: true, state: job.state }); }
+        if (jobMatch[2] === "status") return send(res, 200, { ok: true, ...jobService.snapshot(job) });
         if (jobMatch[2] === "events" && req.method === "GET") {
           // The events route is exempt from the bearer token (EventSource can't send one), so this
           // ownership check is what stops a different client from reading this job's progress: the
@@ -1800,14 +1299,14 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
         // deliverable, and it was unenforced at the only place the app writes it.
         const { ok, errors } = validate(BRIDGE_SCHEMA.command, line);
         if (!ok) return send(res, 400, { ok: false, error: `${errors[0]!.path} ${errors[0]!.msg}`, errors });
-        // Queue into the CONFIGURED client's own bridge directory (bridgeAdapter(), above) — not a
+        // Queue into the CONFIGURED client's own bridge directory (appSettings.bridgeAdapter(), above) — not a
         // fixed "tazuo" — so a Razor Enhanced player's Highlight/Grab/Go-to buttons reach the bridge
         // script that's actually reading commands (Phase 6 final review follow-up).
         // pos is `object|null` in the contract with no shape of its own, so the assembled line is
         // size-checked once at the end — the only bound the field-level checks above can't give.
         const text = JSON.stringify(line) + "\n";
         if (text.length > 4096) return send(res, 400, { ok: false, error: "bridge command too large" });
-        const adapter = bridgeAdapter();
+        const adapter = appSettings.bridgeAdapter();
         mkdirSync(CONFIG.paths.bridgeFor(adapter), { recursive: true, mode: DATA_DIR_MODE });
         appendFileSync(CONFIG.paths.bridgeQueueFor(adapter), text, { mode: DATA_FILE_MODE });
         // A Grab is remembered like a trip (issue #148), so when it reports back the item reads as in the backpack
@@ -1826,8 +1325,8 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
         return send(res, 200, { ok: true });
       }
       if (req.method === "GET" && url.pathname === "/api/bridge/status") {
-        harvestNow(Date.now());
-        const f = CONFIG.paths.bridgeStatusFor(bridgeAdapter());
+        organizeService.harvestNow(Date.now());
+        const f = CONFIG.paths.bridgeStatusFor(appSettings.bridgeAdapter());
         if (!existsSync(f)) return send(res, 200, { ok: true, online: false });
         try {
           const parsed: unknown = JSON.parse(readFileSync(f, "utf8"));
@@ -1873,7 +1372,7 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
         const label = name.slice(0, 64).trim() || "forgotten";   // a display label, and the schema wants a non-empty one
         mkdirSync(SCANS, { recursive: true, mode: DATA_DIR_MODE });
         const stamp = new Date().toISOString();
-        const snap = tombstone(stamp, currentSettings.shard, [{ serial, kind: "ground", name: label, opened: true }]);
+        const snap = tombstone(stamp, appSettings.current().shard, [{ serial, kind: "ground", name: label, opened: true }]);
         // Nothing this route writes may be a file the fold then skips — check the assembled document
         // against the same contract scanStore.all() checks every file against. A failure here is this
         // app's own bug, so it takes the 500-with-a-ref path and no file is written.
@@ -1886,7 +1385,7 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
         // exactly what the fold wants anyway (newest scan of a root wins, by parseStamp — the file
         // name has never been what orders them).
         writeFileAtomic(join(SCANS, `_forget-${serial.toString(16)}.json`), JSON.stringify(snap), DATA_FILE_MODE);
-        broadcastEvent("changed", { what: "inventory", by: req.headers["x-client-id"], at: Date.now() });
+        eventBus.broadcast("changed", { what: "inventory", by: req.headers["x-client-id"], at: Date.now() });
         return send(res, 200, { ok: true });
       }
       if (req.method === "GET" && url.pathname === "/api/blacklist") return send(res, 200, { ok: true, containers: blacklistStore.read() });
@@ -1917,11 +1416,11 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
           one = houses.find((h) => h.id === id);
           if (!one) return send(res, 404, { ok: false, error: "no such house" });
         }
-        const from = houseTileData(), td = from.td, names = readNames().houses;
+        const from = houseService.tileData(), td = from.td, names = readNames().houses;
         const named = (id: string): { name?: string } => (names[id]?.name ? { name: names[id].name } : {});
-        if (one) return send(res, 200, { ok: true, house: { ...houseModel(inv, one, td), ...named(one.id) } } satisfies HouseApiResponse);
+        if (one) return send(res, 200, { ok: true, house: { ...houseService.model(inv, one, td), ...named(one.id) } } satisfies HouseApiResponse);
         return send(res, 200, { ok: true, tiledata: td !== null, tiledataFrom: { folder: from.folder, source: from.source, reason: from.reason }, houses: houses.map((h) => {
-          const m = houseModel(inv, h, td);
+          const m = houseService.model(inv, h, td);
           return { id: h.id, ...named(h.id), facet: h.facet, capturedAt: h.capturedAt, captures: h.captures, ...plotSize(m), plot: plotBounds(m), levels: m.levels.length, containers: m.stacks.reduce((a, st) => a + st.serials.length, 0), serials: m.stacks.flatMap((st) => st.serials) };
         }) } satisfies HousesApiResponse);
       }
@@ -1934,12 +1433,12 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
         if (w == null || w < 1 || w > 2048) return send(res, 400, { ok: false, error: "w must be a size from 1 to 2048" });
         const [x0, y0, x1, y1] = (["x0", "y0", "x1", "y1"] as const).map(int);
         if (x0 == null || y0 == null || x1 == null || y1 == null || x0 >= x1 || y0 >= y1) return send(res, 400, { ok: false, error: "a region is x0, y0, x1 and y1, whole numbers with x0 < x1 and y0 < y1" });
-        const got = facetBitmap(Number(m[1]));
+        const got = houseService.facetBitmap(Number(m[1]));
         if ("reason" in got) return send(res, 404, { ok: false, reason: got.reason });
         const f = got.bitmap, slide = (a: number, b: number, max: number): [number, number] => { const span = Math.min(b - a, max), from = Math.min(a, max - span); return [from, from + span]; };
         const [rx0, rx1] = slide(x0, x1, f.width), [ry0, ry1] = slide(y0, y1, f.height), r: Region = { x0: rx0, y0: ry0, x1: rx1, y1: ry1 };
         const region = `${r.x0},${r.y0},${r.x1},${r.y1}`;
-        const out = facetPng(`${got.key}|${region}|${w}`, () => { const img = renderRegion(f, r, w); return encodePng(img.width, img.height, img.rgb); });
+        const out = houseService.facetPng(`${got.key}|${region}|${w}`, () => { const img = renderRegion(f, r, w); return encodePng(img.width, img.height, img.rgb); });
         return send(res, 200, out, "image/png", { "x-region": region });
       }
       // The house names and areas (issues #164, #10): GET the whole map; PUT /api/house-map/<id> {name, bounds?, areas?, …}
@@ -1972,7 +1471,7 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
         const next = kind === null ? withoutKinds(base, at) : withKinds(base, kindsFor(at, kind as string));
         const refused = itemKindsStore.save(next);
         if (refused) return send(res, 409, { ok: false, error: refused });
-        broadcastEvent("changed", { what: "inventory", by: req.headers["x-client-id"], at: Date.now() });
+        eventBus.broadcast("changed", { what: "inventory", by: req.headers["x-client-id"], at: Date.now() });
         return send(res, 200, { ok: true, ...kindsDocument(next!) });
       }
       if (req.method === "POST" && url.pathname === "/api/item-kinds/import") {
@@ -1982,7 +1481,7 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
         const next = withKinds(itemKindsStore.read(), overrides);
         const refused = itemKindsStore.save(next);
         if (refused) return send(res, 409, { ok: false, error: `the import was refused: ${refused}` });
-        broadcastEvent("changed", { what: "inventory", by: req.headers["x-client-id"], at: Date.now() });
+        eventBus.broadcast("changed", { what: "inventory", by: req.headers["x-client-id"], at: Date.now() });
         return send(res, 200, { ok: true, ...kindsDocument(next!), skipped: problems.length, problems: problems.slice(0, 5) });
       }
       if (req.method === "GET" && url.pathname === "/api/organize") return send(res, 200, { ok: true, ...organizeStore.read() });
@@ -2003,7 +1502,7 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
         const problem = matchProblem(match);
         if (problem) return send(res, 400, { ok: false, error: problem });
         const { inv } = await getInventory();
-        const counted = matchCount(inv, organizeStore.read().config, match as RuleMatch, { now: Date.now(), rarity: currentRules.rarity, suitPieces: suitsFor([match as RuleMatch]), blacklist: blacklistStore.read().map((e) => e.serial) });
+        const counted = matchCount(inv, organizeStore.read().config, match as RuleMatch, { now: Date.now(), rarity: appSettings.rules().rarity, suitPieces: organizeService.suitsFor([match as RuleMatch]), blacklist: blacklistStore.read().map((e) => e.serial) });
         return send(res, 200, { ok: true, ...counted });
       }
       if (req.method === "POST" && url.pathname === "/api/organize/propose") {
@@ -2015,14 +1514,14 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
         if (containers !== undefined && !(Array.isArray(containers) && containers.length <= LIMITS.labels && containers.every((v) => isBoundedInt(v, 1, MAX_SERIAL)))) {
           return send(res, 400, { ok: false, error: "containers must be a list of container serials" });
         }
-        const { fold, config, state, problems } = await organizeNow();
+        const { fold, config, state, problems } = await organizeService.organizeNow();
         if (problems.length) return send(res, 409, { ok: false, error: `organize.json was hand-edited and parts of it were dropped (${problems[0]}); open Organize and save the setup first` });
-        const r = proposeOrganize(fold, config, state.moves, { strategy: strategy as StrategyId, containers: containers as number[] | undefined, now: Date.now(), rarity: currentRules.rarity, suitPieces: suitsFor(config.rules.map((r) => r.match)), blacklist: blacklistStore.read().map((e) => e.serial), seen: state.seen });
+        const r = proposeOrganize(fold, config, state.moves, { strategy: strategy as StrategyId, containers: containers as number[] | undefined, now: Date.now(), rarity: appSettings.rules().rarity, suitPieces: organizeService.suitsFor(config.rules.map((r) => r.match)), blacklist: blacklistStore.read().map((e) => e.serial), seen: state.seen });
         return send(res, r.ok ? 200 : 409, r satisfies ProposeResult);
       }
       if (req.method === "GET" && url.pathname === "/api/organize/plan") {
         // `running`: the trip in flight, if any, so a page reloaded (or opened in a second window) mid-trip follows it.
-        const { state, plan, bridges } = await organizeNow();
+        const { state, plan, bridges } = await organizeService.organizeNow();
         const p = state.pending[0];
         return send(res, 200, { ok: true, plan, running: p ? { id: p.id, index: p.index, queuedAt: p.queuedAt, picked: bridges[p.adapter]?.current === p.id } : null } satisfies OrganizePlanApiResponse);
       }
@@ -2033,9 +1532,9 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
         // count on room an earlier trip makes.
         const { index, stamp } = asObject(await readBody(req, { limit: 8e3 }));
         if (!isBoundedInt(index, 1, 10000) || !isBoundedString(stamp, 64)) return send(res, 400, { ok: false, error: "index (a trip number) and stamp (the plan's) are required" });
-        const adapter = bridgeAdapter();
-        if (!runsTrips(adapter)) return send(res, 409, { ok: false, error: `the ${adapter} bridge cannot run Organize trips` });
-        const { fold, state, plan, problems } = await organizeNow();
+        const adapter = appSettings.bridgeAdapter();
+        if (!setupService.runsTrips(adapter)) return send(res, 409, { ok: false, error: `the ${adapter} bridge cannot run Organize trips` });
+        const { fold, state, plan, problems } = await organizeService.organizeNow();
         // A salvaged setup lost rules or targets, and their items may now fall through to another rule or the
         // catch-all: nothing moves until the player has seen that and saved the setup again.
         if (problems.length) return send(res, 409, { ok: false, error: `organize.json was hand-edited and parts of it were dropped (${problems[0]}); open Organize and save the setup first` });
@@ -2046,7 +1545,7 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
         if (!trip) return send(res, 404, { ok: false, error: `the plan has no trip ${index}` });
         const first = plan.trips.find((t) => t.site === trip.site)!;
         if (first.index !== index) return send(res, 409, { ok: false, error: `run trip ${first.index} first: this trip counts on the room it makes` });
-        const queued = queuePlanTrip(adapter, fold, state, plan, index);
+        const queued = organizeService.queuePlanTrip(adapter, fold, state, plan, index);
         if (!queued.ok) return send(res, 409, { ok: false, error: queued.error });
         return send(res, 200, { ok: true, id: queued.id, index });
       }
@@ -2060,13 +1559,13 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
         // Only a character the inventory has: a tombstone per arbitrary name would pile up in scans/.
         if (!Object.hasOwn((await getInventory()).inv.characters, character)) return send(res, 404, { ok: false, error: `no scanned character named ${short(character)}` });
         mkdirSync(SCANS, { recursive: true, mode: DATA_DIR_MODE });
-        const snap = tombstone(new Date().toISOString(), currentSettings.shard, [], character);
+        const snap = tombstone(new Date().toISOString(), appSettings.current().shard, [], character);
         const { ok: snapOk, errors: snapErrors } = validateScan(snap);
         if (!snapOk) throw new Error(`refusing to write an invalid tombstone: ${snapErrors.map((e) => `${e.path} ${e.msg}`).join("; ")}`);
         // One file per forgotten character (hex of the name: any name is a safe file name that way),
         // replaced with a newer stamp if the character is forgotten again.
         writeFileAtomic(join(SCANS, `_forget-char-${Buffer.from(character).toString("hex")}.json`), JSON.stringify(snap), DATA_FILE_MODE);
-        broadcastEvent("changed", { what: "inventory", by: req.headers["x-client-id"], at: Date.now() });
+        eventBus.broadcast("changed", { what: "inventory", by: req.headers["x-client-id"], at: Date.now() });
         return send(res, 200, { ok: true });
       }
       send(res, 404, { ok: false, error: "not found" });
@@ -2107,7 +1606,7 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
   });
   startWatchers();
   await mcp.start();
-  pruneData("startup").catch((e: Error) => safeAppendLog(CONFIG.paths.log, `${new Date().toISOString()} retention (startup) failed: ${e.stack || e.message}\n`));
+  retentionService.prune("startup").catch((e: Error) => safeAppendLog(CONFIG.paths.log, `${new Date().toISOString()} retention (startup) failed: ${e.stack || e.message}\n`));
   const port = (server.address() as AddressInfo).port;
   const url = `http://localhost:${port}`;
   console.log(`Pack Rat: ${url}  (data: ${CONFIG.dataDir})  token: ${CONFIG.token ? "set" : "none (dev)"}`);
@@ -2124,16 +1623,14 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
       // closing first: a build still running when the server quits ends because of the quit, and its
       // worker's exit must not be logged as an internal error with a ref (a phantom crash in every
       // server.log attached to a bug report after a quit mid-build).
-      closing = true;
-      for (const job of jobs.values()) for (const w of job.workers) w.terminate();
+      jobService.stop();
       for (const w of watchers.values()) w.close();
       // server.close() waits for every connection "waiting for a response" — an attached SSE stream
       // is one, and would otherwise hold teardown open until its keep-alive idle timeout. End every
       // open stream (both the per-job optimize streams and the shared /api/events stream) and
       // force-close the sockets so close() resolves promptly.
-      for (const job of jobs.values()) { for (const c of job.clients) c.end(); job.clients.clear(); }
-      for (const c of eventClients) c.end();
-      eventClients.clear();
+      jobService.endStreams();
+      eventBus.close();
       server.closeAllConnections();
       // ok's declared parameter type (void | PromiseLike<void>) is narrower than server.close()'s own
       // callback type (err?: Error) — this server always calls it with no error at this point in a

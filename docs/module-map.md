@@ -149,7 +149,7 @@ The recipes are the shard rules' `scrollBinder` (Shard rules, above).
 | `app/data-dir-notice.mts` | The sentence that says the client's scripts write to another data folder. Browser-safe, so the server's startup log and the page (`app/ui/messages.mts` re-exports it) share one sentence. | `dataDirNotice`, `DataDirCheckInfo` |
 | `app/atomic-write.mts` | The one way this app replaces a file. | `atomicReplace`, `writeFileAtomic`, `moveAside` |
 | `app/http/respond.mts` | How the server answers: `send()` with the headers every response carries, the event streams' header set, the Content-Security-Policy, and `asObject`'s 400 for a body that is not an object. | `send`, `SSE_HEADERS`, `CSP`, `asObject` |
-| `app/guards.mts` | The bounded string, integer and serial checks, shared by the HTTP layer and the stores. | `isBoundedString`, `isBoundedInt`, `MAX_SERIAL` |
+| `app/guards.mts` | The bounded string, integer and serial checks, shared by the HTTP layer, the stores and the services. | `isBoundedString`, `isBoundedInt`, `MAX_SERIAL`, `short` |
 | `app/store/json-file.mts` | The one way a store reads and writes a JSON data file: each reader's bad-file policy named (`empty`, `aside`, `skip`), and the writer's folder, atomic write, indent and trailing newline. | `readJsonFile`, `writeJsonFile` |
 | `app/store/settings.mts` | `<data>/settings.json`: read with the move-aside-and-default fallback, written whole. | `createSettingsStore`, `SettingsDoc`, `ClientSettings` |
 | `app/store/profiles.mts` | `<data>/profiles.json`: seeded from the defaults, a damaged file moved aside and reseeded, an old shape migrated with a dated backup. | `createProfilesStore` |
@@ -161,12 +161,25 @@ The recipes are the shard rules' `scrollBinder` (Shard rules, above).
 | `app/store/runs.mts` | `<data>/runs/`: one file per saved run, a damaged one skipped in the list and reported on its own. | `createRunsStore` |
 | `app/store/scans.mts` | `<data>/scans/`: every scan upgraded and validated on read (a bad one skipped), and the folder's signature. | `createScansStore` |
 
-What still lives inside `startServer` (each a closure over the config, the settings and the rules, so none can be imported on its own; the stores above are built here from the config's paths):
+The services below are factories with explicit dependencies (stores, getters, a log function), built once by `startServer` and never importing `app/http/`:
 
-- **Logging:** `safeAppendLog`.
+| Module | Role | Owns |
+|---|---|---|
+| `app/services/settings.mts` | The settings this run uses: settings.json as saved, with the unknown-client and unloadable-shard fallbacks laid over it in memory only; the current rules, handed to vault-lib; a save that merges only the changed fields; the bridge adapter. | `createSettingsService` |
+| `app/services/events.mts` | Server-Sent Events: one frame written, and the bus behind `GET /api/events`. | `sse`, `createEventBus` |
+| `app/services/setup.mts` | The adapters this install ships (read from disk on every call), which bridge runs trips, and the data-folder check. | `createSetupService` |
+| `app/services/houses.mts` | The house map's client files and models: the UO folder, tiledata, the facet bitmaps and PNG cache, the house model memo. | `createHousesService` |
+| `app/services/inventory.mts` | `getInventory`: the fold cached by the scans folder, shard and item-kinds.json, and the overlay cached by organize-state.json and the hour. | `createInventoryService`, `FoldValue`, `InvValue` |
+| `app/services/organize.mts` | Organize: finished trips harvested, what a plan starts from, the plan, a trip queued, Put away's requests, the saved suits a rule skips. | `createOrganizeService` |
+| `app/services/jobs.mts` | Optimizer jobs: worker threads, the per-job broadcast, one build per client with a server-wide ceiling, the stuck and retention timers, a finished build saved as a run. | `createJobsService`, `Job`, `JobTimings` |
+| `app/services/retention.mts` | Pruning old scans and saved runs per settings.json's `retention`, one prune at a time. | `createRetentionService` |
+
+What still lives inside `startServer` (a closure over the config and the services):
+
+- **Logging:** `safeAppendLog`, and the startup warning.
 - **Build request checks:** `poolsError`, `currentError`, `optsError`, `runSettingsError`, `pickMeta`, `OPTS_LIMITS`.
-- **Settings:** the saved and effective settings (`saveSettings` merges a change and writes it through the settings store) and the current rules. The single files in the data folder (`<data>/ui-prefs.json`, `<data>/tazuo-panel.json`, `<data>/scan-blacklist.json`, `<data>/item-kinds.json`, `<data>/organize.json`, `<data>/house-map.json`, `<data>/organize-state.json`) have their paths built here, not in `app/config.mts`; `<data>/tazuo-panel.json` is read and written through `app/tazuo-panel.mts` and `<data>/house-map.json` through `app/house-names.mts` (`readNames` logs its problems once).
-- **Services:** the inventory (`getInventory` and the fold cache), saved runs (`saveRun` builds a finished build's record), houses (`uoFolder`, `houseTileData`, `facetPng`, `houseModel`), Organize (`bridgeView`, `organizeInputs`, `organizeNow`, `queuePlanTrip`, `putAway`), optimize jobs (`startJob`, `spawnWorker`, `runJob`, `cancelJob`, `streamJob`), retention (`planPrune`, `pruneData`), the inbox watchers and the shared event stream (`startWatchers`, `broadcastEvent`).
+- **Wiring:** the stores and services, built from the config's paths. The single files in the data folder (`<data>/ui-prefs.json`, `<data>/tazuo-panel.json`, `<data>/scan-blacklist.json`, `<data>/item-kinds.json`, `<data>/organize.json`, `<data>/house-map.json`, `<data>/organize-state.json`) have their paths built here, not in `app/config.mts`; `<data>/tazuo-panel.json` is read and written through `app/tazuo-panel.mts` and `<data>/house-map.json` through `app/house-names.mts` (`readNames` logs its problems once).
+- **Streams and timers:** the inbox watchers (`startWatchers`), the per-job event stream's headers and pings (`streamJob`), the host-call timeout (`withHostTimeout`), the update-check cache.
 - **Routes:** one request handler with the Host, Origin, token and content-type checks ahead of every route (`CONTRIBUTING.md`, Security).
 
 ## Desktop shell
