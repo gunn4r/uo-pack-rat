@@ -271,11 +271,11 @@ test("[fast] no trip runs off a salvaged organize.json, and a file that is not a
     assert.equal(refused.status, 409);
     assert.match(String(refused.body.error), /save the setup first/);
     assert.deepEqual(queued(dir), []);
-    writeFileSync(join(dir, "organize.json"), JSON.stringify({ version: 2, future: true }));
+    writeFileSync(join(dir, "organize.json"), JSON.stringify({ labels: {}, future: true }));
     const got = await call<{ config: OrganizeConfig; problems: string[] }>(s, "/api/organize");
     assert.deepEqual(got.body.config, emptyOrganizeConfig());
     assert.match(got.body.problems.join("\n"), /not a version 1 Organize setup; it was moved to organize\.json\.corrupt/);
-    assert.deepEqual(JSON.parse(readFileSync(join(dir, "organize.json.corrupt"), "utf8")), { version: 2, future: true });
+    assert.deepEqual(JSON.parse(readFileSync(join(dir, "organize.json.corrupt"), "utf8")), { labels: {}, future: true });
   } finally {
     await s.close();
   }

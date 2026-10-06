@@ -25,6 +25,7 @@ import { DATA_FILE_MODE } from "./config.mts";
 import { validate } from "./schema/validate.mts";
 import { INSTRUCTIONS, TOOLS, ToolError, type ToolContext } from "./mcp-tools.mts";
 import { isJsonContentType, readBody, type HttpError } from "./read-body.mts";
+import { migrate } from "./migrate.mts";
 
 export const MCP_DEFAULT_PORT = 47615;
 // Newest first: an initialize naming one of these gets it back, any other gets the newest.
@@ -49,7 +50,7 @@ export function readMcpConfig(file: string, warn: (msg: string) => void): McpCon
   let d: Record<string, unknown> | null = null;
   try {
     const doc: unknown = JSON.parse(readFileSync(file, "utf8").replace(/^\uFEFF/, ""));
-    if (doc && typeof doc === "object" && !Array.isArray(doc)) d = doc as Record<string, unknown>;
+    if (doc && typeof doc === "object" && !Array.isArray(doc)) d = migrate("mcp", doc).doc as Record<string, unknown>;
   } catch { d = null; }
   if (!d) { warn("mcp.json does not parse; MCP stays off until a Settings switch replaces the file"); return cfg; }
   const bad: string[] = [];

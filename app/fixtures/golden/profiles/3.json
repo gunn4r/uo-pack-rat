@@ -1,0 +1,83 @@
+{
+  "schemaVersion": 3,
+  "characters": {
+    "Kestrel": {
+      "race": "human",
+      "template": "archer",
+      "spec": {
+        "intent": {
+          "floors": {
+            "hci": 45
+          },
+          "softFloors": [],
+          "weights": {
+            "dci": 10
+          },
+          "floorBonus": 1000,
+          "resistCaps": {}
+        },
+        "buffs": {
+          "on": [
+            "divineFury"
+          ],
+          "skills": {}
+        },
+        "pool": {
+          "lockedSlots": [],
+          "excludeTags": [],
+          "excludeSkills": [],
+          "excludeRoots": [
+            1879769088
+          ],
+          "excludeWeapons": [
+            "swordsmanship",
+            "fencing",
+            "mace fighting",
+            "throwing"
+          ],
+          "ubwsAnyWeapon": true,
+          "allowOthersWorn": false,
+          "allowGargoyle": false,
+          "medOnly": false,
+          "strLimit": 125
+        }
+      }
+    }
+  },
+  "templates": {
+    "archer": {
+      "spec": {
+        "intent": {
+          "floors": {
+            "hci": 45
+          },
+          "softFloors": [
+            "hci"
+          ],
+          "weights": {
+            "dci": 10
+          },
+          "floorBonus": 1000,
+          "resistCaps": {}
+        },
+        "pool": {
+          "lockedSlots": [],
+          "excludeTags": [],
+          "excludeSkills": [],
+          "excludeRoots": [],
+          "excludeWeapons": [
+            "swordsmanship",
+            "fencing",
+            "mace fighting",
+            "throwing"
+          ],
+          "ubwsAnyWeapon": true,
+          "allowOthersWorn": false,
+          "allowGargoyle": false,
+          "medOnly": false,
+          "strLimit": "character"
+        }
+      }
+    }
+  }
+}

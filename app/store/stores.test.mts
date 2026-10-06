@@ -1,6 +1,6 @@
 // stores.test.mts — each store in `app/store/` on its own: size caps, bad files and the exact bytes written.
 //
-// each store in `app/store/` on its own: its size cap at the cap and one byte past it (blacklist 256 KiB, organize-state 4 MB, item-kinds and organize their own limits), what a missing, damaged or partly bad file reads as (moved aside, empty, salvaged or skipped) with the exact warning, log or problem text, and the exact bytes each write leaves (indent, trailing newline, a run compact with none). All `[fast]`; they pin the policies the routes rely on while the server is split.
+// each store in `app/store/` on its own: its size cap at the cap and one byte past it (blacklist 256 KiB, organize-state 4 MB, item-kinds and organize their own limits), what a missing, damaged or partly bad file reads as (moved aside, empty, salvaged or skipped) with the exact warning, log or problem text, and the exact bytes each write leaves (indent, trailing newline, a run compact with none); a file a newer Pack Rat made (organize, item-kinds, profiles) read as far as it can be, marked read-only and never written over. All `[fast]`; they pin the policies the routes rely on while the server is split.
 import { test, type TestContext } from "node:test";
 import assert from "node:assert/strict";
 import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
@@ -207,7 +207,7 @@ test("[fast] stores: organize reads up to MAX_SETUP_BYTES, moves a larger, damag
   assert.ok(existsSync(f));
   writeFileSync(f, padded(emptyOrganizeConfig(), MAX_SETUP_BYTES + 1));
   assert.deepEqual(store.read().problems, [`organize.json is over ${MAX_SETUP_BYTES / 1e6} MB; it was moved to organize.json.corrupt and Organize starts empty`]);
-  writeFileSync(f, JSON.stringify({ version: 2 }));
+  writeFileSync(f, JSON.stringify({ version: "2" }));
   assert.match(store.read().problems[0]!, /^organize\.json is not a version 1 Organize setup; it was moved to organize\.json\.corrupt-\d+ and Organize starts empty$/);
   writeFileSync(f, "{oops");
   assert.match(store.read().problems[0]!, /^organize\.json did not parse \(invalid JSON: syntax error at position 1\); it was moved to organize\.json\.corrupt-\d+ and Organize starts empty$/);
@@ -260,4 +260,36 @@ test("[fast] stores: scans skips a damaged file with a warning, reads a valid on
   assert.deepEqual(store.files().map((s) => s.file), ["kestrel.json"]);
   assert.deepEqual(warned().map((w) => w.replace(/: .*/, ":")), ["skipping bad.json:"]);
   assert.match(store.signature(), /^bad\.json:[\d.]+:5\|kestrel\.json:[\d.]+:\d+$/);
+});
+
+test("[fast] stores: a file made by a newer Pack Rat is read as far as this build understands it, marked read-only, and never written over (organize, item-kinds, profiles)", async (t) => {
+  const d = dir(), notice = (name: string, v: number): string => `${name} was made by a newer Pack Rat (version ${v}); it is read-only here until Pack Rat is updated`;
+  const organize = createOrganizeStore(join(d, "organize.json")), label = { serial: 0x40000001, name: "Gems", origin: "manual" };
+  const newerSetup = JSON.stringify({ ...emptyOrganizeConfig(), version: 2, labels: { [String(label.serial)]: label }, future: true });
+  writeFileSync(join(d, "organize.json"), newerSetup);
+  assert.deepEqual(organize.read(), { config: { ...emptyOrganizeConfig(), labels: { [String(label.serial)]: label } }, problems: [], readOnly: notice("organize.json", 2) });
+  assert.throws(() => organize.write(emptyOrganizeConfig()), (e: Error & { statusCode?: number }) => e.statusCode === 409 && e.message === notice("organize.json", 2));
+  assert.equal(readFileSync(join(d, "organize.json"), "utf8"), newerSetup);
+  assert.deepEqual(readdirSync(d), ["organize.json"], "nothing moved aside");
+
+  const warned = warnings(t), kinds = createItemKindsStore(join(d, "item-kinds.json"));
+  const newerKinds = JSON.stringify({ version: 2, names: { ruby: "gem", rock: "boulder" }, graphics: {}, future: {} });
+  writeFileSync(join(d, "item-kinds.json"), newerKinds);
+  assert.deepEqual(kinds.read(), { names: { ruby: "gem" }, graphics: {} });
+  assert.deepEqual(warned(), ['item-kinds.json: left out names "rock": "boulder" is not a kind']);
+  assert.equal(kinds.readOnly(), notice("item-kinds.json", 2));
+  assert.equal(kinds.save({ names: {}, graphics: {} }), notice("item-kinds.json", 2));
+  assert.equal(readFileSync(join(d, "item-kinds.json"), "utf8"), newerKinds);
+
+  const pd = dir(), logged: string[] = [], profiles = profilesIn(pd, logged);
+  const newerProfiles = JSON.stringify({ schemaVersion: 4, characters: { Kestrel: { spec: { future: 1 } } }, templates: {} });
+  writeFileSync(join(pd, "profiles.json"), newerProfiles);
+  writeFileSync(join(pd, "ui-prefs.json"), JSON.stringify({ theme: "default", autoBuffs: { Kestrel: ["bless"] } }));
+  assert.deepEqual(await profiles.read(), JSON.parse(newerProfiles));
+  assert.equal(profiles.readOnly(), notice("profiles.json", 4));
+  assert.throws(() => profiles.write({ schemaVersion: 3, characters: {}, templates: {} }), (e: Error & { statusCode?: number }) => e.statusCode === 409);
+  assert.equal(readFileSync(join(pd, "profiles.json"), "utf8"), newerProfiles);
+  assert.deepEqual(JSON.parse(readFileSync(join(pd, "ui-prefs.json"), "utf8")), { theme: "default", autoBuffs: { Kestrel: ["bless"] } }, "ui-prefs.json left alone");
+  assert.deepEqual(backups(pd), []);
+  assert.deepEqual(logged, []);
 });
