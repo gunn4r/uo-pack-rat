@@ -113,7 +113,7 @@ export function renderRuns(): void {
 function autoLabel(run: { result?: { method?: string | undefined }; method?: string | null; settings: RunSettings }, before: { settings: RunSettings } | undefined): { text: string; diff: string[] } {
   return (run.method ?? run.result?.method) === "manual" ? { text: "Suit built by hand", diff: [] } : runAutoLabel(before?.settings ?? null, run.settings);
 }
-// null: an exact run whose proof the server withdrew (saved before the soft-floor fix, normalizeRun) shows no verdict.
+// null: an exact run whose proof the server withdrew (saved before the soft-floor fix, app/migrate.mts) shows no verdict.
 function verdictOf(run: RunSummaryLike): { text: string; cls: string } | null {
   if (run.method === "manual") return null;   // its Manual badge says it
   if (run.method !== "exact") return { text: "heuristic", cls: "muted" };

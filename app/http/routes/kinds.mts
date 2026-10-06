@@ -13,7 +13,11 @@ export function routes(ctx: ServerContext): Route[] {
     // POST {name?, graphic?, kind} sets the kind for an exact item name and/or a graphic, and kind null takes those
     // entries away (Reset to automatic); POST /api/item-kinds/import {names?, graphics?} merges a file in, its
     // entries winning, and says what it left out. Every change re-kinds the inventory with no rescan (getInventory).
-    { method: "GET", path: "/api/item-kinds", handle: (_req, res) => send(res, 200, { ok: true, ...kindsDocument(itemKindsStore.read()) }) },
+    // `readOnly`: why the file cannot be changed (a newer Pack Rat made it), when it cannot; every change is then a 409.
+    { method: "GET", path: "/api/item-kinds", handle: (_req, res) => {
+      const readOnly = itemKindsStore.readOnly();
+      return send(res, 200, { ok: true, ...kindsDocument(itemKindsStore.read()), ...(readOnly ? { readOnly } : {}) });
+    } },
     { method: "POST", path: "/api/item-kinds", handle: async (req, res) => {
       const { name, graphic, kind } = asObject(await readBody(req, { limit: 8e3 }));
       if (name !== undefined && !(typeof name === "string" && isKindName(name))) return send(res, 400, { ok: false, error: `name must be an item name of at most ${KIND_LIMITS.name} characters` });

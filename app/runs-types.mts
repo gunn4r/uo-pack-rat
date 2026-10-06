@@ -10,7 +10,7 @@ export interface RunResult {
   [key: string]: unknown;
 }
 // A run's settings snapshot as saved to disk, possibly still in its pre-2026-09-13 shape (see
-// runs-lib.mts normalizeRun).
+// app/migrate.mts, the runs steps).
 export interface RunSettingsRaw {
   allowOthers?: boolean | undefined;
   allowOthersWorn?: boolean | undefined;

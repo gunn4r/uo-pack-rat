@@ -2,6 +2,7 @@
 import { GEAR_SLOTS } from "../vault-lib.mts";
 import { isBuffSkills, isBuffSkillsByCharacter, normalizeBuffs, normalizeBuffListsByCharacter } from "../buffs.mts";
 import { isBoundedInt, isBoundedString, MAX_SERIAL } from "../guards.mts";
+import { migrate } from "../migrate.mts";
 import { readJsonFile, writeJsonFile } from "./json-file.mts";
 
 // The closed-choice fields of <data>/ui-prefs.json (GET/PUT /api/ui-prefs) and what each may hold. The
@@ -47,7 +48,7 @@ export function isManualSuit(v: unknown): v is Record<string, number> {
 // Each field is read on its own: one bad value (a hand edit) drops that field, not the whole file.
 export function createUiPrefsStore(file: string) {
   function read(): UiPrefsFile {
-    return readJsonFile(file, { onBad: "empty", salvage: salvageUiPrefs });
+    return readJsonFile(file, { onBad: "empty", salvage: (doc) => salvageUiPrefs(migrate("ui-prefs", doc).doc) });
   }
   function write(prefs: UiPrefsFile): void { writeJsonFile(file, prefs, { indent: 2 }); }
   return { file, read, write };

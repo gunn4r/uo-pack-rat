@@ -3,6 +3,7 @@ import { existsSync, lstatSync, readFileSync } from "node:fs";
 import { basename } from "node:path";
 import { moveAside, writeFileAtomic } from "./atomic-write.mts";
 import { DATA_FILE_MODE } from "./config.mts";
+import { migrate, newerNotice } from "./migrate.mts";
 
 export interface HouseBounds { x0: number; y0: number; x1: number; y1: number; facet: number | null }
 export interface AreaRect { x0: number; y0: number; x1: number; y1: number }
@@ -94,9 +95,10 @@ export function checkHouseEntry(v: unknown): { ok: true; entry: HouseEntry | nul
 
 // The file as the server reads it. A file that is too big, does not parse or is not version 1 is moved aside and reads
 // as empty (the next PUT would otherwise overwrite it); an entry with a bad id, name or area is left out of the read and the
-// file is left alone until the next save, which drops it. `problem` says what happened, for the log.
-export function readHouseMap(file: string): { doc: HouseMapDoc; problem: string | null } {
-  if (!existsSync(file)) return { doc: emptyHouseMap(), problem: null };
+// file is left alone until the next save, which drops it. `problem` says what happened, for the log. A file made by a
+// newer Pack Rat is read as far as this build understands it, and `readOnly` says why it must not be saved over.
+export function readHouseMap(file: string): { doc: HouseMapDoc; problem: string | null; readOnly: string | null } {
+  if (!existsSync(file)) return { doc: emptyHouseMap(), problem: null, readOnly: null };
   let why: string | null = null, raw: unknown = null;
   if (lstatSync(file).size > MAX_HOUSE_MAP_BYTES) why = `is over ${MAX_HOUSE_MAP_BYTES / 1e6} MB`;
   else {
@@ -105,16 +107,21 @@ export function readHouseMap(file: string): { doc: HouseMapDoc; problem: string 
       if (!(e instanceof SyntaxError)) throw e;
       why = "did not parse";
     }
-    if (!why && !(isObj(raw) && raw.version === 1 && isObj(raw.houses))) why = "is not a version 1 house map";
+    if (!why) {
+      const m = migrate("house-map", raw);
+      raw = m.doc;
+      if (!(isObj(raw) && (m.fromVersion === 1 || m.newer) && isObj(raw.houses))) why = "is not a version 1 house map";
+    }
   }
-  if (why) return { doc: emptyHouseMap(), problem: `house-map.json ${why}; it was moved to ${basename(moveAside(file))} and the houses start unnamed` };
+  if (why) return { doc: emptyHouseMap(), problem: `house-map.json ${why}; it was moved to ${basename(moveAside(file))} and the houses start unnamed`, readOnly: null };
   const houses: Record<string, HouseEntry> = {};
   let dropped = 0;
   for (const [id, v] of Object.entries((raw as { houses: Record<string, unknown> }).houses)) {
     const r = isHouseId(id) ? checkHouseEntry(v) : null;
     if (r?.ok && r.entry) houses[id] = r.entry; else dropped++;
   }
-  return { doc: { version: 1, houses }, problem: dropped ? `house-map.json: ${dropped} ${dropped === 1 ? "entry" : "entries"} with a bad id, name or area left out` : null };
+  return { doc: { version: 1, houses }, problem: dropped ? `house-map.json: ${dropped} ${dropped === 1 ? "entry" : "entries"} with a bad id, name or area left out` : null,
+    readOnly: newerNotice(basename(file), "house-map", raw) };
 }
 
 const textOf = (doc: HouseMapDoc): string => JSON.stringify(doc, null, 2) + "\n";

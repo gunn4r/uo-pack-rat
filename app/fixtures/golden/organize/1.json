@@ -1,0 +1,13 @@
+{
+  "version": 1,
+  "labels": {
+    "1073741825": { "serial": 1073741825, "name": "Reagents", "origin": "manual" },
+    "1073741826": { "serial": 1073741826, "name": "Gems", "color": "#3366cc", "origin": "manual" }
+  },
+  "rules": [
+    { "id": "reagents", "name": "Reagents", "match": { "query": { "q": "", "slot": [], "rarity": "", "rarityMin": "", "rarityMax": "", "kind": ["reagent"], "slayer": "", "nogarg": false, "med": false, "hideTags": [], "props": [] } }, "targets": [1073741825], "origin": "manual" },
+    { "id": "gems", "name": "Gems", "match": { "query": { "q": "", "slot": [], "rarity": "", "rarityMin": "", "rarityMax": "", "kind": ["gem"], "slayer": "", "nogarg": false, "med": false, "hideTags": [], "props": [] } }, "targets": [1073741826], "origin": "manual" }
+  ],
+  "catchAll": null,
+  "pinnedItems": [1073745921]
+}

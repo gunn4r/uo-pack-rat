@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "houses": {
+    "1-100-100": {
+      "name": "Main house",
+      "bounds": { "x0": 100, "y0": 100, "x1": 114, "y1": 114, "facet": 1 },
+      "areas": [{ "id": "a1", "name": "Forge", "level": 0, "color": "area-1", "rects": [{ "x0": 101, "y0": 101, "x1": 104, "y1": 104 }] }]
+    },
+    "x-5-6": { "name": "Shop" }
+  }
+}

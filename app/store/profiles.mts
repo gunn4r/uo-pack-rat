@@ -1,11 +1,12 @@
 // profiles.mts — <data>/profiles.json: the Suit Builder's characters and templates (GET/PUT /api/profiles).
 import { copyFileSync, existsSync, mkdirSync, readFileSync } from "node:fs";
 import { basename, dirname, join } from "node:path";
-import { PROFILES_VERSION, buildSpecError, migrateProfilesV3, type ProfilesV3, type TemplateEntry, type TemplateMap } from "../build-spec.mts";
+import { PROFILES_VERSION, buildSpecError, type ProfilesV3, type TemplateEntry, type TemplateMap } from "../build-spec.mts";
 import { writeFileAtomic } from "../atomic-write.mts";
 import { DATA_DIR_MODE, DATA_FILE_MODE } from "../config.mts";
 import { jsonErrorReason } from "../paste-scan.mts";
-import { readJsonFile, writeJsonFile } from "./json-file.mts";
+import { migrate } from "../migrate.mts";
+import { newerOnDisk, readJsonFile, refuseNewer, writeJsonFile } from "./json-file.mts";
 import type { UiPrefsFile } from "./ui-prefs.mts";
 
 // A copy of `file` kept before a migration rewrites it, as <name>.backup-<date>.json beside it (-2, -3… when that day
@@ -18,8 +19,9 @@ function backup(file: string, day: string): void {
 }
 
 // Seeds profiles.json from the default on first run and migrates an older file to schemaVersion 3 in place
-// (app/build-spec.mts migrateProfilesV3): Automatic's buffs and their numbers move in from ui-prefs.json, which loses
-// those two keys. Before the first write, both files are kept as <name>.backup-<date>.json next to them.
+// (app/migrate.mts, the profiles steps): Automatic's buffs and their numbers move in from ui-prefs.json, which loses
+// those two keys. Before the first write, both files are kept as <name>.backup-<date>.json next to them. A file made by
+// a newer Pack Rat is read as it is, neither file is touched, and every save is refused (readOnly says why).
 // A profiles.json that does not parse (a write cut short before writes were atomic, or a bad hand
 // edit) used to answer every GET /api/profiles with a 500 until someone fixed the file by hand. It
 // is now moved aside the same way the settings store moves an unreadable settings.json, and the
@@ -55,7 +57,10 @@ export function createProfilesStore({ file, defaults, templatesDir, shard, log, 
   // loadFile and readScans' upgradeScan extend to their own on-disk inputs) — the migration's own
   // loose input shape (every field optional) is what actually tolerates a malformed file.
   function migrateNow(doc: unknown, names: Set<string> | null): ProfilesV3 {
-    const { profiles, prefs, changed, prefsChanged, healed } = migrateProfilesV3(doc as ProfilesV3, uiPrefs.read(), { scanned: names ? (n) => names.has(n) : undefined });
+    const out = { prefs: uiPrefs.read(), prefsChanged: false, healed: [] as string[] };
+    const m = migrate("profiles", doc, { prefs: out.prefs, scanned: names ? (n) => names.has(n) : undefined, out });
+    if (m.newer) return doc as ProfilesV3;
+    const profiles = m.doc as ProfilesV3, { prefs, prefsChanged, healed } = out, changed = m.changed;
     for (const line of healed) log(`${new Date().toISOString()} profiles.json migration: ${line}\n`);
     const day = new Date().toISOString().slice(0, 10);
     if (changed) {
@@ -91,7 +96,12 @@ export function createProfilesStore({ file, defaults, templatesDir, shard, log, 
     return migration;
   }
   // PUT /api/profiles: the whole file, already checked against the schema and app/build-spec.mts's buildSpecError.
-  function write(doc: ProfilesV3): void { writeJsonFile(file, doc, { indent: 2 }); }
+  function write(doc: ProfilesV3): void {
+    refuseNewer(file, "profiles");
+    writeJsonFile(file, doc, { indent: 2 });
+  }
+  // Why profiles.json may not be saved (a newer Pack Rat made it), or null.
+  const readOnly = (): string | null => newerOnDisk(file, "profiles");
   // The shard's built-in templates (<templatesDir>/<shard>.json), read on every call so a release's changes show at once.
   // None for a shard that ships none; a template its spec check refuses is left out, with a log line.
   function builtins(): TemplateMap {
@@ -106,5 +116,5 @@ export function createProfilesStore({ file, defaults, templatesDir, shard, log, 
     }
     return out;
   }
-  return { read, write, builtins };
+  return { read, write, readOnly, builtins };
 }

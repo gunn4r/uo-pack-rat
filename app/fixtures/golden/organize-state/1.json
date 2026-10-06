@@ -1,0 +1,13 @@
+{
+  "version": 1,
+  "pending": [
+    { "id": "trip-1", "adapter": "tazuo", "index": 1, "stamp": "plan-stamp", "queuedAt": "2026-09-01T12:00:00.000Z", "steps": [{ "serial": 1073745921, "name": "Ruby", "from": 1073741825, "to": 1073741826 }] }
+  ],
+  "grabs": [
+    { "id": "grab-1", "adapter": "tazuo", "serial": 1073745922, "name": "Black Pearl", "from": 1073741826, "queuedAt": "2026-09-01T12:01:00.000Z" }
+  ],
+  "moves": [
+    { "serial": 1073745923, "name": "Sapphire", "from": 1073741825, "to": 1073741826, "at": "2026-09-01T11:00:00.000Z", "trip": "trip-0", "character": "Kestrel" }
+  ],
+  "seen": { "1073741825": "2026-09-01T11:00:00.000Z" }
+}

@@ -1,0 +1,16 @@
+{
+  "version": 1,
+  "character": "Kestrel",
+  "scannedAt": "2026-01-01T12:00:00",
+  "stats": { "str": 70, "dex": 100, "int": 40 },
+  "equipped": [
+    { "serial": 1879769093, "name": "Heater Shield", "graphic": 7030, "hue": 0, "amount": 1, "tooltip": ["Heater Shield", "Physical Resist 1%", "Durability 55 / 55"] }
+  ],
+  "roots": [{ "serial": "1879769088", "kind": "ground", "name": "Metal Chest" }],
+  "containers": {
+    "1879769088": { "serial": "1879769088", "name": "Metal Chest", "kind": "ground", "root": "1879769088", "parent": null, "pos": { "x": 100, "y": 100, "z": 0 }, "tooltip": ["Metal Chest"] }
+  },
+  "items": [
+    { "serial": "1879769089", "name": "Gold Ring", "amount": 1, "tooltip": ["Gold Ring", "Luck 40"], "container": "1879769088" }
+  ]
+}

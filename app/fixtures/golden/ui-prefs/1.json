@@ -1,0 +1,11 @@
+{
+  "theme": "britannia",
+  "appearance": "dark",
+  "density": "dense",
+  "cols": ["name", "slot"],
+  "colWidths": { "name": 240 },
+  "builderMode": "manual",
+  "manualSuit": { "ring": 1073745921 },
+  "manualBuffs": ["protection"],
+  "mapDrawerWidth": 400
+}

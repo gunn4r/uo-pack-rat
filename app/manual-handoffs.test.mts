@@ -4,7 +4,10 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { buildPools, GEAR_SLOTS, toOptItem, type Inventory, type Item, type OptItem } from "./vault-lib.mts";
-import { manualRun, normalizeRun, reusableRun, runSummary, type SavedRun } from "./runs-lib.mts";
+import { manualRun, reusableRun, runSummary, type SavedRun } from "./runs-lib.mts";
+import { migrate } from "./migrate.mts";
+// A run as the runs store reads it (app/migrate.mts, the runs steps).
+const normalizeRun = (run: SavedRun): SavedRun => migrate("runs", run).doc as SavedRun;
 import { DEFAULT_OPTIONAL_SLOTS, optionalSlotsFor } from "./mip.mts";
 import { solveExact, type OptAssignment, type OptProfile } from "./exact-solver.mts";
 import { core, fuzzSlots } from "./solver-fixture.mts";   // also loads the uoalive rules

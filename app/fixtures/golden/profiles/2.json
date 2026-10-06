@@ -1,0 +1,9 @@
+{
+  "schemaVersion": 2,
+  "templates": {
+    "archer": { "floors": { "hci": 45 }, "softFloors": ["hci"], "weights": { "dci": 10 }, "floorBonus": 1000, "lockedSlots": [], "excludeTags": [], "excludeSkills": [], "allowOthersWorn": false, "allowGargoyle": false, "medOnly": false, "weaponSkill": "archery" }
+  },
+  "characters": {
+    "Kestrel": { "template": "archer", "race": "human", "strLimit": 125, "floors": { "hci": 45 }, "weights": { "dci": 10 }, "weaponSkill": "archery", "excludeRoots": [1879769088] }
+  }
+}

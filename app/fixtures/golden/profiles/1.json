@@ -1,0 +1,10 @@
+{
+  "schemaVersion": 1,
+  "caps": { "hci": 45, "dci": 45 },
+  "templates": {
+    "caster": { "floors": { "lrc": 100 }, "softFloors": [], "weights": { "fc": 60 }, "floorBonus": 1000, "lockedSlots": [], "excludeTags": [], "excludeSkills": [], "allowOthersWorn": false, "allowGargoyle": false, "medOnly": true, "excludeWeapons": [], "ubwsAnyWeapon": true, "resistCaps": {} }
+  },
+  "characters": {
+    "Dorran": { "template": "caster", "race": "elf", "floors": { "lrc": 100 }, "weights": { "fc": 60 }, "medOnly": true }
+  }
+}
