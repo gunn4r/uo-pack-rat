@@ -8,8 +8,14 @@ moves only when the script pauses, so an 8-second highlight takes no real time.
 
 run_script() execs a script file with the fake installed: TazUO's `API` module, or Razor Enhanced's
 `Items` / `Player` / `Misc` globals, plus a fake `time` module while the script loads.
+
+With PACKRAT_TEST_OUTPUTS set to a folder, run_script() also copies every scan and bridge status.json
+the script writes into it, so app/adapter-outputs.test.mts can check them against the schemas.
 """
+import hashlib
+import json
 import os
+import shutil
 import sys
 import time as real_time
 import types
@@ -510,7 +516,8 @@ def razor_globals(world, backpack, bank=None, skills=None):
 
         @staticmethod
         def GetItemOnLayer(layer):
-            return None
+            # A worn piece is an item added with Layer=<RE layer name>.
+            return wrap(next((it for it in world.items.values() if getattr(it, "Layer", None) == layer), None))
 
         @staticmethod
         def DistanceTo(it):
@@ -544,8 +551,32 @@ def razor_globals(world, backpack, bank=None, skills=None):
     return {"Items": Items, "Player": Player, "Misc": Misc, "Target": Target}
 
 
+def keep_output(dst):
+    """Copy a scan (<data>/inbox/<adapter>/*.json) or a bridge status (<data>/bridge/<adapter>/status.json)
+    into $PACKRAT_TEST_OUTPUTS, named by kind, adapter and content hash. A status is hashed without its
+    timestamps, so the thousands of heartbeats a bridge test writes collapse into one file per shape."""
+    out = os.environ.get("PACKRAT_TEST_OUTPUTS")
+    parts = os.path.normpath(dst).split(os.sep)
+    if not out or len(parts) < 3 or not parts[-1].endswith(".json"):
+        return
+    if parts[-3] == "inbox":
+        kind = "scan"
+    elif parts[-3] == "bridge" and parts[-1] == "status.json":
+        kind = "status"
+    else:
+        return
+    with open(dst, encoding="utf-8") as f:
+        doc = json.load(f)
+    if kind == "status" and isinstance(doc, dict):
+        doc = dict(doc, alive=None, results=dict((k, dict(r, t=None) if isinstance(r, dict) else r)
+                                                 for k, r in (doc.get("results") or {}).items()))
+    digest = hashlib.sha1(json.dumps(doc, sort_keys=True).encode("utf-8")).hexdigest()[:16]
+    shutil.copyfile(dst, os.path.join(out, "%s--%s--%s.json" % (kind, parts[-2], digest)))
+
+
 def run_script(path, world, api=None, extra_globals=None, with_file=True):
-    """exec one adapter script as its client would: the fake API importable, a fake clock as `time`."""
+    """exec one adapter script as its client would: the fake API importable, a fake clock as `time`.
+    Every adapter writes its files through os.replace, so wrapping it sees each finished write."""
     g = {"__name__": "__main__"}
     if with_file:
         g["__file__"] = path
@@ -554,11 +585,18 @@ def run_script(path, world, api=None, extra_globals=None, with_file=True):
     if api is not None:
         sys.modules["API"] = api
     sys.modules["time"] = world.clock.module()
+    real_replace = os.replace
+
+    def replace(src, dst):
+        real_replace(src, dst)
+        keep_output(dst)
+    os.replace = replace
     try:
         with open(path, encoding="utf-8") as f:
             code = compile(f.read(), path, "exec")
         exec(code, g)
     finally:
+        os.replace = real_replace
         for k, v in saved.items():
             if v is None:
                 sys.modules.pop(k, None)

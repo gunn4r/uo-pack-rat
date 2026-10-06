@@ -16,13 +16,14 @@ import { state, invStamp } from "./store.mts";
 import { $, el, label, slotLabel, itemTip, toast } from "./dom.mts";
 import { box, txt, button, icon, segmented, tag, confirmDialog, modalOpen, tooltip, tipWrap, progress } from "./components.mts";
 import { api } from "./api.mts";
+import { prefs } from "./prefs.mts";
 import { resolveItems, rarityToken } from "./items.mts";
 import { closeCompare, fetchCard, grabAllButton, keyProps, verdict, RESIST_NAMES } from "./builder-result.mts";
 import { capNote, knobError, paperdoll, paperdollCaps, plural, type KnobField } from "./builder-model.mts";
 import { followJob, knobs, poolSettings, readControls, searchOpts, progressText } from "./builder.mts";
 import { loadRuns, settingsSnapshot } from "./runs.mts";
 import { optimizeErrorMessage } from "./messages.mts";
-import { itemActions } from "./inventory.mts";
+import { itemActions } from "./item-parts.mts";
 import { sheetParts, wornSet } from "./sheet.mts";
 import { createItemBrowser } from "./item-browser.mts";
 import type { ItemBrowser } from "./item-browser.mts";
@@ -71,7 +72,7 @@ export function applyBuilderPrefs(prefs: UiPrefs | null): void {
   if (seg) showMode();
 }
 // The Suit Builder's choices into ui-prefs, for both modes.
-export const savePrefs = (body: UiPrefs): void => { api("/api/ui-prefs", { method: "PUT", body }).catch((e: Error) => toast(`Could not save your Suit Builder choices: ${e.message}`, "bad")); };
+export const savePrefs = (body: UiPrefs): void => prefs.set(body);
 const isManual = (): boolean => mode === "manual";
 // The character whose bonuses Manual's totals take: the builder's own, unless "No character" is picked.
 const manualCharacter = (): string | null => (noCharacter ? null : state.builder.character);

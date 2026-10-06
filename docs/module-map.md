@@ -34,7 +34,7 @@ Three files keep names from before the project became Pack Rat: `app/vault-serve
 | Module | Role | Owns |
 |---|---|---|
 | `app/item-query.mts` | Pure item filtering, sorting, paging and facets, shared by `GET /api/items` and the page. | `parseItemQuery`, `matchesItem`, `applyItemQuery`, `facetsOf`, `ItemQuery`, `RuleQuery`, `EXTRA_COLS`, `colVal`, `rarityRank`, `HIT_LIMIT` |
-| `app/vault-lib.mts` (property part) | The property keys a tooltip line becomes, their labels and the search blobs. | `PROPERTIES`, `PropKey`, `PROP_PATTERNS`, `PROP_LABELS`, `PROP_FULL`, `NOT_BUILDER_KEYS`, `SKILL_NAMES`, `RESIST_KEYS`, `labelOf`, `fullOf`, `propertyKeys`, `extraKeys`, `flagKeys`, `itemSearchBlob` |
+| `app/vault-lib.mts` (property part) | The property keys a tooltip line becomes, their labels and the search blobs. | `PROPERTIES`, `PropKey`, `PROP_PATTERNS`, `PROP_LABELS`, `PROP_FULL`, `NOT_BUILDER_KEYS`, `SKILL_NAMES`, `RESIST_META`, `RESIST_KEYS`, `labelOf`, `fullOf`, `propertyKeys`, `extraKeys`, `flagKeys`, `itemSearchBlob` |
 
 ## Shard rules
 
@@ -226,6 +226,7 @@ The page is `app/index.html` plus `app/ui/`, compiled by `scripts/build-ui.mts` 
 |---|---|---|
 | `app/ui/store.mts` | The shared mutable page state. | `state`, `bridge`, `invStamp`, `AppState` |
 | `app/ui/api.mts` | The one place every page fetch goes through. | `api`, `CLIENT_ID` |
+| `app/ui/prefs.mts` | The one writer of the page's view choices (`PUT /api/ui-prefs`), with one failure toast. | `prefs` |
 | `app/ui/api-types.mts` | Every response shape the page reads off its fetches: the house, Organize and saved-run shapes re-exported from the types-only modules (runs narrowed), the rest declared here. | the hand-declared `*ApiResponse` types |
 | `app/ui/events.mts` | The one shared `EventSource("/api/events")`. | `connectEvents` |
 | `app/ui/items.mts` | Turns a serial into a full item record. | `resolveItems` |
@@ -238,6 +239,7 @@ The page is `app/index.html` plus `app/ui/`, compiled by `scripts/build-ui.mts` 
 |---|---|---|
 | `app/ui/components.mts` | The component primitives as DOM builders, styled by `app/ui/components.css`. `box()` refuses a bare text child. | `box`, `txt`, `button`, `input`, `select`, `popover`, `createDrawer`, `openDialog`, `confirmDialog`, `table`, `menu`, `FLEX_CLASSES` |
 | `app/ui/dialog.mts` | A one-field prompt (Electron has no `window.prompt`). | `promptText` |
+| `app/ui/item-parts.mts` | The item widgets every screen shares: rarity, tags and location elements, the row actions and the ⋯ menu, and the filter wording's context. | `rarityEl`, `tagEls`, `locationEl`, `tagWords`, `itemActions`, `itemMenu`, `filterContext`, `setItemNav` |
 | `app/ui/item-browser.mts` | The item browser: filter toolbar, filter strip, column popover and virtual table, mounted more than once. | `createItemBrowser` |
 | `app/ui/sheet.mts` | The character sheet, shared by Characters and the Suit Builder. | `sheetNode`, `SLOT_GROUPS`, `SHEET_GROUPS`, `RESISTS` |
 | `app/ui/tazuo-panel.mts` | The TazUO panel's two options as controls. | `panelControls` |
@@ -248,7 +250,7 @@ The page is `app/index.html` plus `app/ui/`, compiled by `scripts/build-ui.mts` 
 
 | Module | Role | Owns |
 |---|---|---|
-| `app/ui/messages.mts` | The sentences the page shows for a server outcome. | `errorText`, `bridgeView`, `optimizeErrorMessage` |
+| `app/ui/messages.mts` | The sentences the page shows for a server outcome. | `errorText`, `bridgeView`, `optimizeErrorMessage`, `prefsSaveFailed` |
 | `app/ui/adapters.mts` | Adapter-selection helpers. | `defaultAdapterId`, `availableAdapters`, `platformCompatible` |
 | `app/ui/adapter-copy.mts` | What the page says about each game client. | `adapterCopy`, `shortName`, `wizardSteps` |
 | `app/ui/view-state.mts` | What a refresh keeps, what Clear all resets, the starting columns. | `optionsKeeping`, `clearedQuery`, `COLS_VERSION` |
@@ -257,7 +259,7 @@ The page is `app/index.html` plus `app/ui/`, compiled by `scripts/build-ui.mts` 
 
 | Module | Role | Owns |
 |---|---|---|
-| `app/ui/inventory.mts` | The Inventory's Items view and the entry points other screens use to open it. | `showItem`, `showContainer`, `showSearch`, `itemMenu` |
+| `app/ui/inventory.mts` | The Inventory's Items view and the entry points other screens use to open it. | `showItem`, `showContainer`, `showSearch`, `showKind` |
 | `app/ui/containers.mts` | The Inventory's Containers view. | `renderContainers`, `labelContainer` |
 | `app/ui/peek.mts` | The item peek beside the table. | `openPeek`, `closePeek` |
 | `app/ui/kinds.mts` | Classify this…, and the kinds file's export and import. | `openClassify`, `exportKinds`, `importKinds` |

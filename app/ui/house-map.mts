@@ -2,9 +2,11 @@
 import { state, bridge } from "./store.mts";
 import { $, el, itemTip, safeColor, fmtN, toast } from "./dom.mts";
 import { api } from "./api.mts";
+import { prefs } from "./prefs.mts";
 import { box, txt, button, segmented, pill, message, meter, keyValue, modalOpen, tipWrap, input, copyText, icon, kbd, menu, popover, closePopover, confirmDialog, select as selectEl, searchInput, badge } from "./components.mts";
 import { labelContainer } from "./containers.mts";
-import { showContainer, showSearch, itemMenu, itemActions, rarityEl, tagEls } from "./inventory.mts";
+import { showContainer, showSearch } from "./inventory.mts";
+import { itemMenu, itemActions, rarityEl, tagEls } from "./item-parts.mts";
 import { propertyLines, RESISTS } from "./peek.mts";
 import { bridgeActionReason, runBridgeAction, sendBridge, type BridgeTarget } from "./bridge.mts";
 import { errorText } from "./messages.mts";
@@ -63,7 +65,7 @@ function toggleLabels(): void {
   labelsHidden = !labelsHidden;
   paintLabelsButton();
   paintPills();
-  api("/api/ui-prefs", { method: "PUT", body: { areaLabels: labelsHidden ? "hide" : "show" } }).catch((e: Error) => toast(`Could not save the area labels choice: ${e.message}`, "bad"));
+  prefs.set({ areaLabels: labelsHidden ? "hide" : "show" });
 }
 // One name, Hide area labels; pressed while they are hidden.
 function paintLabelsButton(): void { $<HTMLButtonElement>("#map-labels")?.setAttribute("aria-pressed", String(labelsHidden)); }
@@ -1450,7 +1452,7 @@ function setDrawerW(chosen: number, max?: number): void {
   showDrawerW(chosen, max);
   clearTimeout(saveTimer);
   saveTimer = setTimeout(() => {
-    api("/api/ui-prefs", { method: "PUT", body: { mapDrawerWidth: drawerW } }).catch((e: Error) => toast(`Could not save the contents width: ${e.message}`, "bad"));
+    prefs.set({ mapDrawerWidth: drawerW });
   }, 300) as unknown as number;
 }
 // The page's size changes with the window (or the sidebar): fit the drawer again. Watched from the start, so its first call comes before any drawer opens.

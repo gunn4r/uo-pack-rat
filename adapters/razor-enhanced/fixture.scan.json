@@ -1,0 +1,192 @@
+{
+ "schemaVersion": 2,
+ "character": "Fixture",
+ "scannedAt": "2026-01-01T12:00:00+00:00",
+ "adapter": {
+  "id": "razor-enhanced",
+  "version": "1.11.0",
+  "client": "Razor Enhanced",
+  "clientVersion": null,
+  "capabilities": {
+   "layers": [
+    "RightHand",
+    "LeftHand",
+    "Shoes",
+    "Pants",
+    "Shirt",
+    "Head",
+    "Gloves",
+    "Ring",
+    "Talisman",
+    "Neck",
+    "Waist",
+    "InnerTorso",
+    "Bracelet",
+    "MiddleTorso",
+    "Earrings",
+    "Arms",
+    "Cloak",
+    "OuterTorso",
+    "OuterLegs",
+    "InnerLegs"
+   ],
+   "arms": true,
+   "bank": true,
+   "ground": true,
+   "nested": true,
+   "tooltips": "opl",
+   "bridge": [
+    "highlight",
+    "grab",
+    "goto"
+   ]
+  }
+ },
+ "stats": {
+  "str": 50,
+  "dex": 50,
+  "int": 50
+ },
+ "position": {
+  "x": 1,
+  "y": 1
+ },
+ "maxes": {
+  "hits": 1,
+  "stam": 1,
+  "mana": 1
+ },
+ "resists": {
+  "phys": 1,
+  "fire": 1,
+  "cold": 1,
+  "poison": 1,
+  "energy": 1
+ },
+ "skills": {
+  "Resisting Spells": {
+   "value": 80,
+   "base": 80,
+   "cap": 100
+  },
+  "Swordsmanship": {
+   "value": 90,
+   "base": 90,
+   "cap": 100
+  }
+ },
+ "equipped": [
+  {
+   "serial": 1073741829,
+   "graphic": 5119,
+   "hue": 0,
+   "amount": 1,
+   "name": "Katana",
+   "tooltip": [
+    "Katana",
+    "Swordsmanship",
+    "Weapon Damage 10 - 14",
+    "Crafted By Nobody"
+   ],
+   "container": null,
+   "nameSource": "opl",
+   "layer": "RightHand"
+  },
+  {
+   "serial": 1073741830,
+   "graphic": 5069,
+   "hue": 0,
+   "amount": 1,
+   "name": "Armor Of Initiation",
+   "tooltip": [
+    "Armor Of Initiation",
+    "Part Of An Armor Set (6 Pieces)",
+    "Physical Resist 7%",
+    "Durability 123 / 150",
+    "<br>Only When Full Set Is Present:",
+    "Physical Resist +2%"
+   ],
+   "container": null,
+   "nameSource": "opl",
+   "layer": "Arms"
+  }
+ ],
+ "roots": [
+  {
+   "serial": 1073741824,
+   "kind": "backpack",
+   "name": "Backpack",
+   "opened": true
+  },
+  {
+   "serial": 1073741825,
+   "kind": "ground",
+   "name": "Wooden Chest",
+   "opened": true
+  }
+ ],
+ "containers": {
+  "1073741824": {
+   "serial": 1073741824,
+   "name": "Backpack",
+   "parent": null,
+   "root": 1073741824,
+   "kind": "backpack",
+   "pos": null
+  },
+  "1073741825": {
+   "serial": 1073741825,
+   "name": "Wooden Chest",
+   "parent": null,
+   "root": 1073741825,
+   "kind": "ground",
+   "pos": {
+    "x": 1,
+    "y": 1,
+    "z": 0,
+    "facet": 1
+   },
+   "tooltip": [
+    "Wooden Chest",
+    "Contents: 1/125 Items, 3 Stones"
+   ]
+  },
+  "1073741826": {
+   "serial": 1073741826,
+   "name": "Bag",
+   "parent": 1073741825,
+   "root": 1073741825,
+   "kind": "container",
+   "tooltip": [
+    "Bag"
+   ]
+  }
+ },
+ "items": [
+  {
+   "serial": 1073741827,
+   "graphic": 4230,
+   "hue": 0,
+   "amount": 1,
+   "name": "Gold Ring",
+   "tooltip": [
+    "Gold Ring"
+   ],
+   "container": 1073741824,
+   "nameSource": "opl"
+  },
+  {
+   "serial": 1073741828,
+   "graphic": 4230,
+   "hue": 0,
+   "amount": 1,
+   "name": "Ruby Ring",
+   "tooltip": [
+    "Ruby Ring"
+   ],
+   "container": 1073741826,
+   "nameSource": "opl"
+  }
+ ],
+ "shard": null
+}

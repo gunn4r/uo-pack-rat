@@ -126,3 +126,10 @@ export function optimizeErrorMessage(e: unknown): string {
     ? "Too many builds are already running — another tab (or an earlier run) still has one going. Wait for it to finish and try again."
     : errorText(e);
 }
+
+// ---------------------------------------------------------------- PUT /api/ui-prefs
+// A view choice (columns, density, the look, a drawer's width) the server could not keep: the page already shows
+// it, and only the next launch would lose it.
+export function prefsSaveFailed(e: unknown): string {
+  return `Could not save your view choice: ${errorText(e)}`;
+}

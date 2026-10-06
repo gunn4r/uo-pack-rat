@@ -5,6 +5,7 @@
 // script shows in a read-only box, selected, for the player to copy by hand. The version last copied is
 // remembered (ui-prefs copiedScanner), so Settings can say when the app ships a newer one.
 import { api } from "./api.mts";
+import { prefs } from "./prefs.mts";
 import { box, button, copyText, message, showToast, textarea } from "./components.mts";
 import { errorText } from "./messages.mts";
 import type { PasteScannerApiResponse } from "./api-types.mts";
@@ -47,7 +48,7 @@ export function scannerCopy(adapter: string, { id, size, onCopied }: { id: strin
     showToast(COPIED_TEXT, "ok");
     if (s.version) {
       copied = s.version;
-      api("/api/ui-prefs", { method: "PUT", body: { copiedScanner: s.version } }).catch(() => { /* only the "newer scanner" hint depends on it */ });
+      prefs.set({ copiedScanner: s.version }, { quiet: true });   // only the "newer scanner" hint depends on it
     }
     onCopied?.();
   } });
