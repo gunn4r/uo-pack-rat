@@ -119,7 +119,7 @@ export function createMcp(opts: McpOptions): McpController {
       if (!r.ok) throw new ToolError(typeof data.error === "string" ? data.error : `${method} ${path} failed (${r.status})`);
       return data as never;
     },
-    memory: { actions: new Map(), replaced: new Set(), filled: new Set() },
+    memory: { actions: new Map(), replaced: new Set(), filled: new Set(), plans: new Map() },
     sleep: (ms) => new Promise((ok) => setTimeout(ok, ms).unref()),
   };
 
