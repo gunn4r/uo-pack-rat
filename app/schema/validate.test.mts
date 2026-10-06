@@ -159,3 +159,23 @@ test("[fast] validate: minItems bounds an array from below", () => {
   assert.equal(validate({ type: "array", minItems: 2 }, [1, 2]).ok, true);
   assert.equal(validate({ type: "array", minItems: 2 }, [1]).errors[0]!.msg, "fewer than minItems 2");
 });
+
+test("[fast] validate: $ref to a local #/$defs entry checks the value against that entry, with the full path", () => {
+  const schema = {
+    type: "object",
+    $defs: { pos: { type: "object", required: ["x"], properties: { x: { type: "integer" } } }, alias: { $ref: "#/$defs/pos" } },
+    properties: { a: { $ref: "#/$defs/pos" }, list: { type: "array", items: { $ref: "#/$defs/alias" } } },
+    additionalProperties: { $ref: "#/$defs/pos" },
+  };
+  assert.equal(validate(schema, { a: { x: 1 }, list: [{ x: 2 }], extra: { x: 3 } }).ok, true);
+  assert.deepEqual(validate(schema, { a: { x: "1" } }).errors, [{ path: "/a/x", msg: "expected integer" }]);
+  assert.deepEqual(validate(schema, { list: [{ x: 1 }, {}] }).errors, [{ path: "/list/1", msg: "missing required: x" }], "a ref to a ref");
+  assert.deepEqual(validate(schema, { extra: 5 }).errors, [{ path: "/extra", msg: "expected object" }]);
+});
+
+test("[fast] validate: a $ref this subset cannot follow throws instead of passing the document", () => {
+  for (const $ref of ["#/$defs/missing", "#/definitions/pos", "other.json#/$defs/pos", "#/$defs/toString"]) {
+    assert.throws(() => validate({ $defs: { pos: { type: "object" } }, properties: { a: { $ref } } }, { a: {} }), /unsupported \$ref/, $ref);
+  }
+  assert.throws(() => validate({ $defs: { a: { $ref: "#/$defs/b" }, b: { $ref: "#/$defs/a" } }, $ref: "#/$defs/a" }, 1), /\$ref cycle/);
+});
