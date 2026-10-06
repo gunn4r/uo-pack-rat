@@ -12,7 +12,7 @@ import { box, txt, button, badge, card, message, menu, select, tipWrap, table, t
 import { currentAdapter, BRIDGE_OFFLINE } from "./bridge.mts";
 import { setNavBusy } from "./shell.mts";
 import { errorText } from "./messages.mts";
-import { showKind } from "./inventory.mts";
+import { parseRoute, registerScreen, showKind } from "./nav.mts";
 import { filterContext } from "./item-parts.mts";
 import { loadOrganize, refreshPlaces, saveConfig } from "./organize-data.mts";
 import { targetChip, deleteRule, openRuleEditor } from "./rule-editor.mts";
@@ -44,7 +44,9 @@ let lastStatus: BridgeStatusApiResponse | null = null;
 let lastStatusAt = 0;   // when it came: a status the poll has not refreshed for 10 s (the server gone) is not "online"
 
 // The route's entry: the setup (fetched here too when reload() could not), then the screen and its plan. Before
-// the inventory's first load it does nothing; reload() calls it again once the data is in.
+// the inventory's first load it does nothing; it runs again on inventorychange once the data is in.
+registerScreen({ name: "organize", show: () => void showOrganize() });
+document.addEventListener("inventorychange", () => { if (parseRoute().tab === "organize") void showOrganize(); });
 export async function showOrganize(): Promise<void> {
   if (!state.inv) return;
   if (!state.organize.config) {

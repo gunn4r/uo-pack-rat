@@ -1,34 +1,31 @@
-// ui/app.mts — bootstrap: load(), the hash router, tab-nav wiring, the tooltip/bridge kickoff.
-// Moved verbatim out of index.html's inline <script type="module"> (Task 4, the page split).
-// `parseRoute`/`routeFor` are exported beyond the brief's explicit list because builder.mts's
-// syncBuilderCharacters/selectCharacter call them directly (the router reaches into the builder for the
-// #/builder/<name> deep link, and the builder reads the route back).
-import { migrateProfiles, setRules } from "../vault-lib.mts";
-import { state, newestStamp } from "./store.mts";
-import { $, el, installTooltip, forgetTipMisses } from "./dom.mts";
+// ui/app.mts — bootstrap: load(), screen and drawer switching, tab-nav wiring, the tooltip/bridge kickoff.
+// Moved verbatim out of index.html's inline <script type="module"> (Task 4, the page split). The routes and the
+// screen registry are nav.mts; reload() and the inventorychange event are inventory-data.mts.
+import { setRules } from "../vault-lib.mts";
+import { state } from "./store.mts";
+import { $, el, installTooltip } from "./dom.mts";
 import { api } from "./api.mts";
 import { pollBridge } from "./bridge.mts";
-import { buildFilters, fetchItems, initFilters, applyUiPrefs, inventoryFailed } from "./inventory.mts";
-import { renderCharacters, showCharacter } from "./characters.mts";
-import { initBuilder, syncBuilderCharacters, selectCharacter, applyAutoBuffPrefs } from "./builder.mts";
+import { fetchItems, initFilters, applyUiPrefs, inventoryFailed } from "./inventory.mts";
+import { showCharacter } from "./characters.mts";
+import { initBuilder, applyAutoBuffPrefs } from "./builder.mts";
 import { applyBuilderPrefs } from "./builder-manual.mts";
-import { renderContainers, showContainers } from "./containers.mts";
-import { showScrolls, scrollsChanged } from "./scrolls.mts";
+import { renderContainers } from "./containers.mts";
+import { scrollsChanged } from "./scrolls.mts";
 import { connectEvents } from "./events.mts";
 import { openWizard } from "./wizard.mts";
-import { renderSettings, startUpdateChecks, syncSettingsCharacters, syncSettingsBlacklist } from "./settings.mts";
+import { renderSettings, startUpdateChecks } from "./settings.mts";
 import { setCopiedScanner } from "./paste-scanner.mts";
-import { renderImport } from "./import.mts";
+import { renderImport, importDrawer } from "./import.mts";
 import { applyLook } from "./theme.mts";
-import { initShell, applyShellPrefs, renderNavCounts, setCurrentNav } from "./shell.mts";
-import { bindDrawer, segmented, clearToasts, closePopover } from "./components.mts";
+import { initShell, applyShellPrefs, setCurrentNav } from "./shell.mts";
+import { segmented, clearToasts, closePopover } from "./components.mts";
 import { openRunsDrawer, closeRunsDrawer } from "./runs.mts";
-import { loadOrganize, refreshPlaces } from "./organize-data.mts";
-import { showOrganize } from "./organize.mts";
-import { showMap, applyMapPrefs } from "./house-map.mts";
-import { parseMapHash } from "./house-map-model.mts";
-import { loadHouseLinks } from "./house-links.mts";
-import type { SettingsApiResponse, RulesApiResponse, SetupApiResponse, InventoryApiResponse, ProfilesApiResponse, UiPrefsApiResponse } from "./api-types.mts";
+import "./organize.mts";   // registers its route and its inventorychange listener; nothing else imports it
+import { applyMapPrefs } from "./house-map.mts";
+import { parseRoute, routeFor, showRoute } from "./nav.mts";
+import { get, reload, setPageLoad } from "./inventory-data.mts";
+import type { SettingsApiResponse, RulesApiResponse, SetupApiResponse, UiPrefsApiResponse } from "./api-types.mts";
 
 // ---------------------------------------------------------------- data
 // The panels a failed load has to say something in, instead of leaving them on "loading…" or empty.
@@ -47,12 +44,8 @@ function loadFailed(e: unknown, panels: string[]): void {
   }
   inventoryFailed(e);
 }
-// api() throws with the server's own message ("internal error"); the panels above also need to know
-// which request it was.
-function get<T>(path: string): Promise<T> { return api<T>(path).catch((e: Error) => { throw new Error(`${path} failed: ${e.message}`); }); }
-
 let wired = false;
-export async function load(): Promise<void> {
+async function load(): Promise<void> {
   // The shard's rules (property caps, the Resisting Spells formula, race caps, tag units, the rarity
   // ladder, the free-skill list) must be loaded before anything that reads them, so this fetch and
   // setRules() run before the inventory/profiles load below. /api/ui-prefs never fails the load: the
@@ -86,50 +79,10 @@ export async function load(): Promise<void> {
   try { await reload(); } catch (e) { loadFailed(e, DATA_PANELS); }
 }
 
-// The data half of load(): inventory and profiles, and everything drawn from them. A live scan landing
-// (events.mts, the "inventory" SSE event) and Forget run just this; rules/settings/setup don't change
-// from a scan. It keeps the visible tab, the filters, the page and the builder's character and sidebar.
-export async function reload(): Promise<void> {
-  // The Organize setup comes with the inventory (labels change how locations read); a failed one leaves the
-  // locations unlabelled, and the Organize screen says why when it is opened.
-  const [inv, prof] = await Promise.all([get<InventoryApiResponse>("/api/inventory"), get<ProfilesApiResponse>("/api/profiles"), loadOrganize().catch(() => undefined)]);
-  state.inv = inv.inventory; state.profiles = migrateProfiles(prof.profiles).profiles;
-  void loadHouseLinks();   // Show on map, on item rows and in the Containers view
-  state.itemCache.clear();   // a rescan can move or drop a piece — stale by-serial lookups must not survive it
-  forgetTipMisses();
-  state.facets = state.inv.facets;
-  state.propKeys = state.inv.propKeys;
-  refreshPlaces();
-  state.newestScan = newestStamp(state.inv.scans);
-  renderNavCounts();
-  buildFilters(); fetchItems(); renderCharacters(); renderContainers(); syncBuilderCharacters();
-  syncSettingsCharacters();
-  if (parseRoute().tab === "organize") void showOrganize();
-  if (parseRoute().tab === "scrolls") showScrolls(parseRoute().scrolls);
-  if (parseRoute().tab === "map") void showMap(parseMapHash(location.hash));
-}
-
-// ---------------------------------------------------------------- screens + hash routes
-// Six screens (Inventory, House map, Characters, Suit Builder, Organize, Settings), each a <main> in index.html, and routes on
-// top of them: #/inventory, #/containers (Inventory's Containers view), #/containers/<Character> (only the containers that character's scans opened), #/scrolls and #/scrolls/sot (Inventory's Scrolls view on its Power scrolls or Scrolls of Transcendence tab, issue #181), #/map (the House map, the house with the most chests), #/map/<house id> (that house, or #/map/plain for chests outside any drawn house; ?q=<query> searches it, ?select=<container serial> opens on that container's stack: ui/house-map-model.mts parseMapHash), #/characters,
-// #/characters/<Character> (that character's sheet), #/builder/<Character>, #/runs (the Suit Builder with the saved-runs drawer open), #/organize (Organize: labels, rules, the plan and its trips), #/import (the Import
-// drawer over whichever screen was showing) and #/settings. A reload lands where you were; nav clicks add a
-// history entry (back/forward walk them, and close a drawer); switching the builder's character replaces the
-// entry instead.
-const ROUTES = ["inventory", "containers", "scrolls", "map", "characters", "builder", "runs", "organize", "import", "settings"];
-export function parseRoute(): { tab: string; character: string | null; sheet: string | null; house: string | null; scanner: string | null; scrolls: "power" | "sot" } {
-  const parts = location.hash.replace(/^#\/?/, "").split("?")[0]!.split("/").filter(Boolean).map((x) => { try { return decodeURIComponent(x); } catch { return x; } });
-  const tab = ROUTES.includes(parts[0] as string) ? parts[0]! : "inventory";
-  return { tab, character: tab === "builder" ? parts[1] || null : null, sheet: tab === "characters" ? parts[1] || null : null, house: tab === "map" ? parts[1] || null : null, scanner: tab === "containers" ? parts[1] || null : null, scrolls: tab === "scrolls" && parts[1] === "sot" ? "sot" : "power" };
-}
-export function routeFor(tab: string): string { return tab === "builder" && state.builder.character ? `#/builder/${encodeURIComponent(state.builder.character)}` : `#/${tab}`; }
-
+// ---------------------------------------------------------------- screens (the routes are nav.mts)
 let lastScreen = "inventory";
 const isInvView = (tab: string): boolean => tab === "inventory" || tab === "containers" || tab === "scrolls";
 const screenOf = (tab: string): string => (isInvView(tab) ? "inventory" : tab === "runs" ? "builder" : tab === "import" ? lastScreen : tab);
-const importDrawer = bindDrawer($<HTMLElement>("#import-drawer")!);
-// The Import drawer closes itself once a scan lands (ui/import.mts); the drawerclose listener below puts the route back.
-export const closeImportDrawer = (): void => importDrawer.close();
 // Inventory's Items | Containers | Scrolls switch (in its top bar) is a view of one screen, not a screen of its own.
 type InvView = "items" | "containers" | "scrolls";
 const invView = segmented({ label: "View", options: [{ value: "items", label: "Items" }, { value: "containers", label: "Containers" }, { value: "scrolls", label: "Scrolls" }], value: "items", onChange: (v) => { location.hash = v === "items" ? "#/inventory" : `#/${v}`; } });
@@ -156,16 +109,7 @@ function showTab(tab: string): void {
 function applyRoute(): void {
   const r = parseRoute();
   showTab(r.tab);
-  if (r.tab === "settings") void syncSettingsBlacklist();
-  if (r.tab === "organize") void showOrganize();
-  if (r.tab === "map") void showMap(parseMapHash(location.hash));
-  if (r.tab === "characters") showCharacter(r.sheet);
-  if (r.tab === "containers") showContainers(r.scanner);
-  if (r.tab === "scrolls") showScrolls(r.scrolls);
-  if (r.tab === "builder" && state.inv) {
-    if (r.character && r.character !== state.builder.character && state.inv.characters[r.character]) selectCharacter(r.character);
-    else if (!r.character && state.builder.character) history.replaceState(null, "", routeFor("builder"));
-  }
+  showRoute(r);
 }
 // A drawer the player closed (Esc, the scrim, ×) takes its route with it, without a history entry.
 importDrawer.root.addEventListener("drawerclose", () => { if (parseRoute().tab === "import") { history.replaceState(null, "", routeFor(lastScreen)); setCurrentNav(lastScreen); } });
@@ -192,4 +136,5 @@ applyLook(null);
 installTooltip();
 setInterval(pollBridge, 2500); pollBridge();
 
+setPageLoad(load);
 load().catch((e) => { $<HTMLElement>("#status")!.textContent = "failed to load: " + (e as Error).message; });

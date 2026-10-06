@@ -5,9 +5,9 @@ import { state } from "./store.mts";
 import { $, el, toast, tipNode, hideItemTip, compactChildren } from "./dom.mts";
 import { txt, box, badge, button, meter, table, searchInput, message, popover, menu, confirmDialog, tooltip, type Column } from "./components.mts";
 import { api } from "./api.mts";
-import { reload } from "./app.mts";
+import { reload } from "./inventory-data.mts";
 import { selectCharacter } from "./builder.mts";
-import { showCharacterItems, showItem } from "./inventory.mts";
+import { registerScreen, showCharacterItems, showItem } from "./nav.mts";
 import { openWizard } from "./wizard.mts";
 import { relativeWhen } from "./messages.mts";
 import { sheetNode, wornSet, resistFigures, atCap, plural, lowDurabilityCount, lowDurabilitySummary, type ResistFigure, type SheetItem } from "./sheet.mts";
@@ -46,11 +46,13 @@ const search = searchInput({ label: "Find a character", placeholder: "Find a cha
 search.root.classList.add("char-search");
 search.input.addEventListener("input", () => { query = search.input.value; renderRoster(); });
 
-// The router (app.mts) calls this for #/characters and #/characters/<Name>.
+// The router (nav.mts) calls this for #/characters and #/characters/<Name>.
 export function showCharacter(name: string | null): void {
   current = name;
   if (state.inv) renderCharacters();
 }
+registerScreen({ name: "characters", show: (r) => showCharacter(r.sheet) });
+document.addEventListener("inventorychange", () => renderCharacters());
 export function renderCharacters(): void {
   if (current && !names().includes(current)) { current = null; history.replaceState(null, "", "#/characters"); }
   if (current) renderSheet(current); else renderRoster();

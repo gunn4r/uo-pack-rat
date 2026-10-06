@@ -15,7 +15,7 @@ import { box, txt, button, icon, kbd, badge, message, select, input, field, swit
 import { api, CLIENT_ID } from "./api.mts";
 import { buffChip, createBuffPicker, keepChipFocus, type BuffPicker, type BuffView, type PickerActions } from "./builder-buffs.mts";
 import { optimizeErrorMessage } from "./messages.mts";
-import { parseRoute, routeFor } from "./app.mts";
+import { parseRoute, registerScreen, routeFor } from "./nav.mts";
 import { setNavBusy } from "./shell.mts";
 import { loadRuns, settingsSnapshot, openRunsDrawer } from "./runs.mts";
 import { initManual, paintCharSelect, setManualFor, renderManual, syncManual, buffInputsOf, buffEditsOf, editBuffInputs, applyRunInputs, savePrefs, filling } from "./builder-manual.mts";
@@ -74,6 +74,13 @@ export function initBuilder(): void {
 // A character still present stays selected and keeps its panel, unsaved edits included; the panel is redrawn
 // so a newly scanned chest or gear skill is offered. Only when the selection is gone (or there was none) does
 // it move: to the route's character, else the first.
+document.addEventListener("inventorychange", () => syncBuilderCharacters());
+// #/builder/<Name>: the route's character once the inventory is in; with no name, the route takes the selected one.
+registerScreen({ name: "builder", show: (r) => {
+  if (!state.inv) return;
+  if (r.character && r.character !== state.builder.character && state.inv.characters[r.character]) selectCharacter(r.character);
+  else if (!r.character && state.builder.character) history.replaceState(null, "", routeFor("builder"));
+} });
 export function syncBuilderCharacters(): void {
   const names = [...new Set([...Object.keys(state.inv!.characters), ...Object.keys(state.profiles!.characters || {})])];
   const keep = state.builder.character;

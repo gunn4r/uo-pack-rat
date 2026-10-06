@@ -326,7 +326,7 @@ test("[slow] House map: the keyboard alone walks the screen, and focus stays put
 
     // a reload rebuilds the map and keeps the focus on the stack
     await page.evaluate(() => { (document.querySelector("#map-svg > g") as SVGGElement).dataset.mark = "old"; });
-    await page.evaluate(async () => { await (await import("/ui/app.mjs" as string)).reload(); });
+    await page.evaluate(async () => { await (await import("/ui/inventory-data.mjs" as string)).reload(); });
     await page.waitForFunction(() => !document.querySelector('#map-svg > g[data-mark="old"]') && !!document.querySelector('#map-svg [aria-pressed="true"]'), undefined, { timeout: 15_000 });
     assert.ok(await focused(page, stack), "focus is on the stack after a reload");
 
@@ -391,7 +391,7 @@ test("[slow] House map: the panel lists a vault stack top first with its label, 
     await page.keyboard.press("Escape");
 
     // data changing while the map is open: a reload keeps the selected stack
-    await page.evaluate(async () => { await (await import("/ui/app.mjs" as string)).reload(); });
+    await page.evaluate(async () => { await (await import("/ui/inventory-data.mjs" as string)).reload(); });
     await page.waitForSelector(`#map-svg [data-stack="${back}"][aria-pressed="true"]`);
     assert.equal(await rows.count(), 5);
 
@@ -1065,7 +1065,7 @@ test("[slow] House map: Show items opens the contents drawer as a column of its 
     assert.ok(scrolled > 50, `the list scrolls (${scrolled})`);
     await page.waitForTimeout(150);
     writeVault(dir, true, [{ serial: 0x40500300, name: "Pearl 41", in: SUPPLIES }]);
-    await page.evaluate(async () => { await (await import("/ui/app.mjs" as string)).reload(); });
+    await page.evaluate(async () => { await (await import("/ui/inventory-data.mjs" as string)).reload(); });
     await summaryIs("47 items · 1 loose, 44 in 2 containers");
     assert.ok((await names()).includes("Pearl 41"), "the new item shows");
     assert.equal(await page.locator("#map-drawer-chest").inputValue(), String(UNDER));

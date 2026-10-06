@@ -1,6 +1,6 @@
 // ui/shell.mts — the app shell (design spec 3.1): the left sidebar (nav, the shard and last-scan line, the
 // bridge status control and its popover), collapsing to icons below 1180 px or when pinned collapsed, the
-// nav's counts and current item, and ⌘I for Import. The routes themselves live in app.mts; each screen is
+// nav's counts and current item, and ⌘I for Import. The routes themselves live in nav.mts; each screen is
 // its own <main> in index.html with its h1 in the top bar.
 import { state } from "./store.mts";
 import { $, el } from "./dom.mts";
@@ -40,7 +40,7 @@ export function setCurrentNav(screen: string): void {
     if (a.dataset.nav === screen) a.setAttribute("aria-current", "page"); else a.removeAttribute("aria-current");
   }
 }
-// The nav counts and the sidebar's shard/last-scan line, after every inventory load (app.mts's reload) and
+// The nav counts and the sidebar's shard/last-scan line, after every inventory load (inventory-data.mts's reload) and
 // whenever the saved-runs list changes (runs.mts).
 export function renderNavCounts(): void {
   const inv = state.inv;
