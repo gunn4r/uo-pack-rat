@@ -6,11 +6,10 @@
 // ui-prefs fields, so they survive a reload; a scan reload resolves the serials again, and one that no longer
 // resolves shows as a missing card. The numbers come from ui/manual-model.mts. Buffs, abilities and forms (app/buffs.mts,
 // drawn by ui/builder-buffs.mts) can be counted in the totals: the ones that are on, the numbers the player edited and
-// the switch are ui-prefs fields too, and turning one on or off is a step in the suit's undo history.
+// the switch are ui-prefs fields too, and turning one on or off is a step in the suit's undo history. The mode is the builder session's (ui/builder-session.mts), and Manual provides its commands there.
 import { GEAR_SLOTS, RESIST_KEYS, effectiveProfile, profileResistCaps, requirementReport, toOptItem, totalsOf } from "../vault-lib.mts";
-import type { Character, EffectiveProfile, Item, OptItem, RunBuffs } from "../vault-lib.mts";
+import type { Character, EffectiveProfile, Item, OptItem, RunBuffs, RunSettings } from "../vault-lib.mts";
 import { buffById, buffSkillValues, isBuffSkills, manualPlan, manualProfile, normalizeBuffs, ownEntry, rawStats, runBuffs, toggleBuff, weaponFlags, NO_CHARACTER, signed } from "../buffs.mts";
-import type { Stats } from "../buffs.mts";
 import { characterBuffs } from "../build-spec.mts";
 import { evaluateSuit, type SuitEvaluation } from "../evaluate.mts";
 import type { ItemQuery } from "../item-query.mts";
@@ -21,10 +20,9 @@ import { api } from "./api.mts";
 import { prefs } from "./prefs.mts";
 import { setCharacterBuffs } from "./profiles.mts";
 import { resolveItems, rarityToken } from "./items.mts";
-import { closeCompare, fetchCard, grabAllButton, keyProps, verdict, RESIST_NAMES } from "./builder-result.mts";
+import { fetchCard, followJob, grabAllButton, keyProps, progressText, verdict, RESIST_NAMES } from "./builder-parts.mts";
 import { capNote, knobError, paperdoll, paperdollCaps, plural, type KnobField } from "./builder-model.mts";
-import { followJob, knobs, poolSettings, readControls, searchOpts, progressText } from "./builder.mts";
-import { loadRuns, settingsSnapshot } from "./runs.mts";
+import { session, commands, provide, readControls, type BuffInputs, type BuilderMode } from "./builder-session.mts";
 import { optimizeErrorMessage } from "./messages.mts";
 import { itemActions } from "./item-parts.mts";
 import { sheetParts, wornSet } from "./sheet.mts";
@@ -34,8 +32,6 @@ import type { UiPrefs, OptimizeResult, OptimizeStartApiResponse, OptSuit } from 
 import { MANUAL_GROUPS, emptyHistory, record, undoStep, redoStep, historyKey, historyKeyNames, type History, type Suit, TOTAL_KEYS, STAT_KEYS, STRIP_KEYS, capped, capLine, slotQuery, handConflict, handNote, suitFrom, fillableSlots, fetchPieces, fillPicks, keptSlots, listWords, applyEditStep, type FillStart, type EditStep, type Reslot, savedSlots, missingSlots, reslotted, reslotNote, deltaKeys, slotDelta } from "./manual-model.mts";
 import { buffMarker, buffStrip, createBuffPicker, keepChipFocus, type BuffActions, type BuffPicker, type BuffView } from "./builder-buffs.mts";
 
-type Mode = "automatic" | "manual";
-let mode: Mode = "automatic";
 let noCharacter = false;
 // The suit: a serial per slot, and the records those serials resolved to (a slot whose serial is not here is missing).
 let slots: Record<string, number> = {};
@@ -64,7 +60,7 @@ const MAC = /Mac|iPhone|iPad/.test(navigator.platform), KEY_NAMES = historyKeyNa
 // ---------------------------------------------------------------- prefs and the mode
 // load()'s GET /api/ui-prefs answer (null when that request failed).
 export function applyBuilderPrefs(prefs: UiPrefs | null): void {
-  mode = prefs?.builderMode === "manual" ? "manual" : "automatic";
+  session.mode = prefs?.builderMode === "manual" ? "manual" : "automatic";
   noCharacter = prefs?.manualFor === "none";
   slots = savedSlots(prefs?.manualSuit);
   // healed (normalizeBuffs): a hand-edited file's second form replaces the first, and the list is in catalog order
@@ -77,14 +73,14 @@ export function applyBuilderPrefs(prefs: UiPrefs | null): void {
 }
 // The Suit Builder's choices into ui-prefs, for both modes.
 export const savePrefs = (body: UiPrefs): void => prefs.set(body);
-const isManual = (): boolean => mode === "manual";
+const isManual = (): boolean => session.mode === "manual";
 // The character whose bonuses Manual's totals take: the builder's own, unless "No character" is picked.
-const manualCharacter = (): string | null => (noCharacter ? null : state.builder.character);
+const manualCharacter = (): string | null => (noCharacter ? null : session.character);
 
 // Once, from initBuilder(): the mode switch beside the title, and Manual's screen.
 export function initManual(): void {
-  seg = segmented({ label: "Builder mode", options: [{ value: "automatic", label: "Automatic" }, { value: "manual", label: "Manual" }], value: mode, size: "md",
-    onChange: (v) => setMode(v as Mode) });
+  seg = segmented({ label: "Builder mode", options: [{ value: "automatic", label: "Automatic" }, { value: "manual", label: "Manual" }], value: session.mode, size: "md",
+    onChange: (v) => setMode(v as BuilderMode) });
   seg.id = "b-mode";
   $<HTMLElement>("#h-builder")!.after(seg);
   const root = $<HTMLElement>("#b-manual")!;
@@ -114,30 +110,30 @@ export function initManual(): void {
 }
 function showMode(): void {
   const manual = isManual();
-  if (manual) closeCompare();
-  seg!.setValue(mode);
+  if (manual) commands.closeCompare();
+  seg!.setValue(session.mode);
   $<HTMLElement>("#tab-builder")!.classList.toggle("manual", manual);
   $<HTMLElement>("#b-manual")!.hidden = !manual;
   paintCharSelect();
   if (manual) void syncManual();
 }
-function setMode(m: Mode): void {
-  if (mode === m) return;
-  mode = m;
-  savePrefs({ builderMode: mode });
+function setMode(m: BuilderMode): void {
+  if (session.mode === m) return;
+  session.mode = m;
+  savePrefs({ builderMode: m });
   showMode();
 }
 // A saved run opened or compared from Manual's runs drawer is shown in Automatic's result view.
-export const showAutomatic = (): void => setMode("automatic");
+const showAutomatic = (): void => setMode("automatic");
 // The character select: Manual adds "No character" (raw item totals) at its top.
-export function paintCharSelect(): void {
+function paintCharSelect(): void {
   const sel = $<HTMLSelectElement>("#b-char")!, none = sel.querySelector('option[value=""]');
   if (isManual() && !none) sel.prepend(el("option", { value: "" }, "No character"));
   if (!isManual()) none?.remove();
-  sel.value = isManual() && !manualCharacter() ? "" : state.builder.character || "";
+  sel.value = isManual() && !manualCharacter() ? "" : session.character || "";
 }
 // The select changed in Manual: "No character", or a character (which the caller selects when it is another one).
-export function setManualFor(character: string | null): void {
+function setManualFor(character: string | null): void {
   if (!isManual()) return;
   noCharacter = !character;
   savePrefs({ manualFor: noCharacter ? "none" : "character" });
@@ -148,7 +144,7 @@ export function setManualFor(character: string | null): void {
 // After a load, a scan reload or a switch to Manual: the saved serials resolved to their records again.
 // Until it lands the screen is not drawn, so a piece still resolving never flashes up as missing.
 let syncSeq = 0, syncing = false, synced = false;
-export async function syncManual(): Promise<void> {
+async function syncManual(): Promise<void> {
   if (!isManual() || !state.inv) return;
   const mine = ++syncSeq, asked = slots;
   syncing = true;
@@ -172,15 +168,14 @@ const held = (suit = slots): Record<string, Item | Record<string, never>> => Obj
 const suitOpt = (): Record<string, OptItem> => Object.fromEntries(Object.entries(slots).flatMap(([s, serial]) => (items[serial] ? [[s, toOptItem(items[serial]!)]] : [])));
 function profile(): EffectiveProfile {
   const name = manualCharacter();
-  return name && state.builder.profile ? effectiveProfile(state.builder.profile, state.inv!.characters[name] as Character) : effectiveProfile({}, null);
+  return name && session.profile ? effectiveProfile(session.profile, state.inv!.characters[name] as Character) : effectiveProfile({}, null);
 }
 // A character's buff numbers (or No character's, for null) with its edits, which inputs are planned, the raw stats
 // Bless takes a share of (the scanned stats less what the character wears) and the race. Automatic reads them too:
 // the edits are one set per character, shared by both modes. Manual works them out once per draw: every row's
 // Change cell reads them.
-export type BuffInputs = { values: Record<string, number>; planned: Set<string>; stats: Stats | null; race: string | null };
 let inputsMemo: BuffInputs | null = null;
-export const buffEditsOf = (name: string | null): Record<string, number> =>
+const buffEditsOf = (name: string | null): Record<string, number> =>
   (name && name !== NO_CHARACTER ? (state.profiles ? characterBuffs(state.profiles, name).skills : {}) : noCharacterEdits);
 // Every set of edits by who they are for (NO_CHARACTER for No character), as manual-model.mts's undo steps take them.
 const allEdits = (): Record<string, Record<string, number>> =>
@@ -191,7 +186,7 @@ function saveEdits(who: string, edits: Record<string, number>): void {
   else setCharacterBuffs(who, { skills: edits });
 }
 const editsFor = (): Record<string, number> => buffEditsOf(manualCharacter());
-export function buffInputsOf(name: string | null): BuffInputs {
+function buffInputsOf(name: string | null): BuffInputs {
   const c = name ? state.inv!.characters[name] : null;
   const { values, planned } = buffSkillValues(c ? c.skills || {} : null, buffEditsOf(name));
   if (!name || !c) return { values, planned, stats: null, race: null };
@@ -199,14 +194,14 @@ export function buffInputsOf(name: string | null): BuffInputs {
 }
 const buffInputs = (): BuffInputs => (inputsMemo ||= buffInputsOf(manualCharacter()));
 // Buff numbers edited for a character (null: back to its own skill, or the default), saved for both modes.
-export function editBuffInputs(name: string | null, values: Readonly<Record<string, number | null>>): void {
+function editBuffInputs(name: string | null, values: Readonly<Record<string, number | null>>): void {
   const next = { ...buffEditsOf(name) };
   for (const [id, value] of Object.entries(values)) { if (value == null) delete next[id]; else next[id] = value; }
   inputsMemo = null;
   saveEdits(name ?? NO_CHARACTER, next);
 }
 // A saved run's buff numbers, where they differ from the character's now, so its buffs count as they did.
-export function applyRunInputs(name: string | null, b: RunBuffs | undefined): void {
+function applyRunInputs(name: string | null, b: RunBuffs | undefined): void {
   const edits = runInputEdits(name, b);
   if (Object.keys(edits).length) editBuffInputs(name, edits);
 }
@@ -220,9 +215,9 @@ const suitItems = (): Record<string, Item> => Object.fromEntries(Object.entries(
 // The suit evaluated as the strip shows it (app/evaluate.mts): paperdoll terms, against profile()'s caps, with the buffs
 // that count (all that are on, or none with the switch off), Enhance Potions and Spell Channeling read from `suit`.
 function evaluated(suit: Record<string, Item> = suitItems(), all = false): SuitEvaluation {
-  const name = manualCharacter(), c = name ? (state.inv!.characters[name] as Character | undefined) ?? null : null, own = !!name && !!state.builder.profile;
+  const name = manualCharacter(), c = name ? (state.inv!.characters[name] as Character | undefined) ?? null : null, own = !!name && !!session.profile;
   const opt = Object.fromEntries(Object.entries(suit).map(([s, it]) => [s, toOptItem(it)]));
-  return evaluateSuit({ profile: own ? state.builder.profile! : {}, character: own ? c : null, suit: opt,
+  return evaluateSuit({ profile: own ? session.profile! : {}, character: own ? c : null, suit: opt,
     buffs: manualPlan(c, name ? state.inv!.worn[name] || [] : [], suit, buffInputs().race, countBuffs || all ? buffs : [], editsFor()) });
 }
 // Every change to the suit or its buffs is one undo step, named by `label` ("Ring → Arcane Ring", "Divine Fury on");
@@ -300,7 +295,7 @@ function historyButton(kind: "undo" | "redo"): HTMLElement {
 
 // ---------------------------------------------------------------- drawing
 // Another character picked (its bonuses and its profile's floors and weights): the screen and the rows' deltas.
-export function renderManual(): void {
+function renderManual(): void {
   if (fill && fill.start.who !== manualCharacter()) cancelFill("Fill canceled: the character changed");
   if (!isManual() || !state.inv || syncing || !synced) return;
   refresh();
@@ -500,17 +495,21 @@ let fill: Fill | null = null;
 let fillUi: { text: HTMLElement; bar: ReturnType<typeof progress> } | null = null;
 // The last search's outcome, under the suit card's head until the next change.
 let fillNote: { text: string; tone: "ok" | "warn" | "bad" | "muted" } | null = null;
-export const filling = (): boolean => !!fill;
+const filling = (): boolean => !!fill;
 // What a fill is checked against when it lands (manual-model.mts fillPicks): whose suit, the counted buffs, the suit,
 // and what it plans with (the profile, buff numbers included, and the pool settings).
 const fillNow = (): Omit<FillStart, "empty"> => ({ who: manualCharacter(), buffs: countBuffs ? buffs : [], suit: slots, plan: JSON.stringify([fillProfile(), poolSettings()]) });
+// Automatic's candidate pool settings, as POST /api/optimize's by-character form takes them, and its search options without
+// other suits (the budget field is disabled without exact search: the server's default applies).
+const poolSettings = (): RunSettings => commands.panelBuild().pool;
+const searchOpts = (): { restarts: number; exact: boolean; timeBudgetMs?: number } => { const { alternatives: _alt, ...opts } = commands.panelBuild().opts; return opts; };
 const fillable = (): string[] => fillableSlots(slots, slots.twoHanded != null && !!items[slots.twoHanded]?.twoHanded);
 function fillProfile(): EffectiveProfile {
   const name = manualCharacter();
   return manualProfile(readControls(), name ? (state.inv!.characters[name] as Character | undefined) ?? null : null, name ? state.inv!.worn[name] || [] : [], suitItems(), buffInputs().race, countBuffs ? buffs : [], editsFor());
 }
 async function fillRest(): Promise<void> {
-  if (fill || state.builder.job) return;
+  if (fill || session.job) return;
   const f: Fill = { id: null, es: null, prof: fillProfile(), start: { ...fillNow(), empty: fillable() }, text: "Starting…", frac: 0 };
   fill = f; fillNote = null;
   draw();
@@ -565,8 +564,8 @@ async function landFill(f: Fill, res: OptimizeResult): Promise<void> {
 }
 function fillButton(missing: number): HTMLElement {
   const open = fillable().length;
-  const why = fill ? null : !state.builder.profile ? "Import a scan first: the search plans with a character's settings"
-    : state.builder.job ? "A build is running in Automatic" : missing ? "Clear the missing pieces first" : !open ? "Every slot the search fills is taken" : null;
+  const why = fill ? null : !session.profile ? "Import a scan first: the search plans with a character's settings"
+    : session.job ? "A build is running in Automatic" : missing ? "Clear the missing pieces first" : !open ? "Every slot the search fills is taken" : null;
   const b = button({ label: fill ? "Filling…" : "Fill the rest automatically", icon: "builder", variant: "primary", size: "sm", disabled: !!fill || !!why, attrs: { id: "mb-fill" }, onClick: () => { void fillRest(); } });
   return why ? tipWrap(b, why) : fill ? b : tooltip(b, `Searches ${plural(open, "empty slot")} with Automatic's requirements and weights, keeping every piece placed here.`);
 }
@@ -595,19 +594,19 @@ function saveButton(missing: number): HTMLElement {
 const RUN_KNOBS: Array<[KnobField, string]> = [["restarts", "Restarts"], ["budgetS", "Time budget"], ["altCount", "Other suits"], ["altTol", "Within points"]];
 async function saveAsRun(name: string): Promise<void> {
   // a knob typed out of range in Automatic would be saved with the run, so it is said here rather than refused there
-  const bad = RUN_KNOBS.find(([f]) => knobError(f, knobs[f]));
+  const knobs = session.knobs, bad = RUN_KNOBS.find(([f]) => knobError(f, knobs[f]));
   if (bad) { toast(`Automatic's ${bad[1]} field reads "${knobs[bad[0]]}": ${knobError(bad[0], knobs[bad[0]])} Fix it under Advanced to save a run.`, "bad"); return; }
-  const settings = { ...settingsSnapshot(), buffs: runBuffs(countBuffs ? buffs : [], buffInputs().values) };
+  const settings = { ...commands.panelBuild().snapshot, buffs: runBuffs(countBuffs ? buffs : [], buffInputs().values) };
   try { await api("/api/runs", { method: "POST", body: { character: name, suit: slots, settings, inventoryStamp: invStamp() } }); }
   catch (e) { toast(`Could not save the run: ${(e as Error).message}`, "bad"); return; }
   toast(`Saved to ${name}'s runs as a manual suit.`, "good");
-  void loadRuns();
+  void commands.loadRuns();
 }
 
 // A suit from Automatic (a result, a saved run) into Manual as one undo step: each slot it plans takes its piece or is
 // emptied, the others keep theirs, and the buffs it was planned with are turned on with their numbers, so the totals
 // match it. Manual opens on the same character.
-export async function openInManual(suit: OptSuit, covered: readonly string[], runB: RunBuffs | undefined, label: string): Promise<void> {
+async function openInManual(suit: OptSuit, covered: readonly string[], runB: RunBuffs | undefined, label: string): Promise<void> {
   cancelFill("Fill canceled: another suit was opened");
   const planned = suitFrom(slots, suit, covered);
   Object.assign(items, await resolveItems(Object.values(planned)));   // drawn whole at once: no piece flashes up as missing
@@ -628,10 +627,11 @@ export async function openInManual(suit: OptSuit, covered: readonly string[], ru
   toast(`Opened in Manual.${keptText} ${KEY_NAMES.undo} puts back the suit you had.`);
 }
 
-// The fetch list for the suit's pieces the character doesn't wear (the result's, builder-result.mts fetchCard).
+// The fetch list for the suit's pieces the character doesn't wear (the result's, builder-parts.mts fetchCard).
 function fetchList(): HTMLElement {
   const name = manualCharacter(), pieces = fetchPieces(Object.values(suitItems()), name), card = fetchCard(pieces, name, grabAllButton(pieces, name, { id: "mb-grab-all", size: "sm" }));
   if (!card) return el("div", { id: "mb-fetch", hidden: "" });
   card.id = "mb-fetch";
   return card;
 }
+provide({ openInManual, showAutomatic, paintCharSelect, setManualFor, renderManual, syncManual, buffEditsOf, buffInputsOf, editBuffInputs, applyRunInputs, filling });

@@ -7,7 +7,8 @@
 //   4. every module app/ui/ reaches outside app/ui/ has its own "/<path>.mjs" route in app/http/routes/static.mts (the page gets a 404 at load otherwise; build:ui compiles it whether or not the include lists it) and reaches no node: module;
 //   5. app/store/ and app/services/ import nothing from app/http/ (type imports included);
 //   6. nothing imports app/vault-server.mts except electron/, scripts/, the test fixtures (*-fixture.mts) and tests;
-//   7. no app/ui/ module imports app/ui/app.mts, the page's bootstrap (routes are nav.mts, the inventory reload is inventory-data.mts).
+//   7. no app/ui/ module imports app/ui/app.mts, the page's bootstrap (routes are nav.mts, the inventory reload is inventory-data.mts);
+//   8. the Suit Builder's four modules (builder, builder-manual, builder-result, runs) never import each other: they share state and call each other through builder-session.mts.
 // Rules 2-4 follow runtime imports only: `import type` and `export type` are erased, so they load nothing.
 import test from "node:test";
 import assert from "node:assert/strict";
@@ -87,11 +88,11 @@ test("[smoke] layering: no import cycles outside app/ui/", () => {
 });
 
 // The import cycles app/ui/ still has, each a group whose members may import each other. dom ↔ components is documented
-// as safe (dom.mts's toast); the second is the Suit Builder cluster plus the screens that reach into it. A new cycle, or
-// one that joins two groups, fails; a group that shrinks is fine, and is shrunk here.
+// as safe (dom.mts's toast); the second is the Settings screen, the first-run wizard and the Characters screen, which open
+// each other. A new cycle, or one that joins two groups, fails; a group that shrinks is fine, and is shrunk here.
 const UI_CYCLES = [
   ["dom", "components"],
-  ["builder", "builder-manual", "builder-result", "runs", "characters", "settings", "wizard", "item-browser"],
+  ["characters", "settings", "wizard"],
 ].map((g) => new Set(g.map((m) => `app/ui/${m}.mts`)));
 
 test("[smoke] layering: no import cycles in app/ui/ beyond the known groups", () => {
@@ -104,6 +105,12 @@ test("[smoke] layering: no import cycles in app/ui/ beyond the known groups", ()
     }
   }
   assert.deepEqual([...found], []);
+});
+
+const BUILDER = ["builder", "builder-manual", "builder-result", "runs"].map((m) => `app/ui/${m}.mts`);
+test("[smoke] layering: the Suit Builder's modules never import each other (builder-session.mts is their interface)", () => {
+  const found = BUILDER.flatMap((f) => edges.get(f)!.filter((e) => !e.typeOnly && e.to && BUILDER.includes(e.to)).map((e) => `${f} → ${e.spec}`));
+  assert.deepEqual(found, []);
 });
 
 test("[smoke] layering: no app/ui/ module imports app/ui/app.mts", () => {

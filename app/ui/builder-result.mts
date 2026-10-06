@@ -2,36 +2,24 @@
 // the character's current suit before any build, then a result in answer-first order (headline with the
 // resist tiles and the other changes, the Plan, the Fetch list, the other suits, "<name> after the change",
 // Solver details), and the compare view for 2-3 suits or saved runs. The numbers come from
-// ui/builder-model.mts; the bridge actions are gated by ui/bridge.mts's bridgeActionReason().
-import { GEAR_SLOTS, RESIST_KEYS, RESIST_META, resistSkillBonus, toOptItem, totalsOf, requirementReport, resistCapsFor, profileResistCaps } from "../vault-lib.mts";
+// ui/builder-model.mts; the bridge actions are gated by ui/bridge.mts's bridgeActionReason(). It shares the builder's
+// state through ui/builder-session.mts and provides the result and compare commands there.
+import { GEAR_SLOTS, RESIST_KEYS, resistSkillBonus, toOptItem, totalsOf, requirementReport, resistCapsFor, profileResistCaps } from "../vault-lib.mts";
 import type { EffectiveProfile, Item, OptItem, PropMap, ResistCap } from "../vault-lib.mts";
 import { state } from "./store.mts";
 import type { BuildMeta } from "./store.mts";
-import { $, el, label, fmtN, fmtSecs, fmtRunTime, slotLabel, rarCell, itemTip, toast, whereText } from "./dom.mts";
-import { box, txt, button, icon, badge, message, meter, switchControl, check, table, tableFoot, rowActions, tipWrap, tooltip, keyValue, token, copyText } from "./components.mts";
+import { $, el, label, fmtN, fmtSecs, fmtRunTime, slotLabel, rarCell, whereText } from "./dom.mts";
+import { box, txt, button, icon, badge, message, meter, switchControl, check, table, tableFoot, rowActions, tipWrap, tooltip, keyValue, token } from "./components.mts";
 import { sheetNode } from "./sheet.mts";
-import { bridgeActionReason, runBridgeAction, grabAll, grabbable } from "./bridge.mts";
+import { bridgeActionReason, runBridgeAction } from "./bridge.mts";
 import { resolveItems } from "./items.mts";
-import { splitSerial } from "./item-parts.mts";
-import { buffPlan, renderPanel } from "./builder.mts";
-import { openInManual } from "./builder-manual.mts";
+import { session, commands, provide } from "./builder-session.mts";
+import { RESIST_NAMES, keyProps, tipTarget, verdict, grabAllButton, fetchCard } from "./builder-parts.mts";
 import { savedBuffs, plannedFromWorn, buffById, buffsDiff, runBuffs } from "../buffs.mts";
 import type { RunBuffs } from "../vault-lib.mts";
-import { slotsOf, paperdollCaps, paperdollFloors, pastCapBadges, runSettingsDiff, withBuffs, afterChange, compareModel, hiddenRowsNote, locationCrumbs, otherChanges, plural, resistOutcome, toggleCompare, propName, capNote, capsLine, anyOverridden, effectiveFloor, type CompareMember } from "./builder-model.mts";
+import { slotsOf, paperdollCaps, paperdollFloors, pastCapBadges, runSettingsDiff, withBuffs, afterChange, compareModel, hiddenRowsNote, otherChanges, plural, resistOutcome, toggleCompare, propName, capNote, capsLine, anyOverridden, effectiveFloor, type CompareMember } from "./builder-model.mts";
 import type { OptSuit, OptimizeResult, SavedRunLike } from "./api-types.mts";
 
-export const RESIST_NAMES: Record<string, [string, string]> = Object.fromEntries(RESIST_META.map((r) => [r.key, [r.long, r.token]]));
-const serialHex = (s: number): string => `0x${s.toString(16)}`;
-
-// A piece's key properties, strongest first: "SSI 35 · DCI 11 · Hit Fireball 36".
-export function keyProps(props: PropMap | undefined, n = 3): string {
-  return Object.entries(props || {}).filter(([k, v]) => k !== "tagPenalty" && !k.endsWith("Pool") && v).sort((a, b) => Math.abs(b[1]) - Math.abs(a[1])).slice(0, n).map(([k, v]) => `${label(k)} ${v}`).join(" · ");
-}
-// A piece the item tooltip answers for (dom.mts's itemTip): on hover, and after 400 ms of keyboard focus.
-function tipTarget<T extends HTMLElement>(node: T, item: { serial: number; name: string }): T {
-  node.classList.add("b-tip");
-  return itemTip(node, item);
-}
 // One resist tile: its name in its resist colour, the value (before → after when there is a before) against
 // the requirement or cap, a meter and the outcome line, and under it the cap's override when the build has one
 // ("Cap raised from 70"): the tile's numbers are then against the player's cap, not the shard's.
@@ -52,16 +40,16 @@ function resistTile(k: string, after: number, floor: number | null, c: ResistCap
 // Before any build: the five resists of what the character wears now against the panel's requirements, and
 // the worn pieces. It is also what a result is compared against.
 let currentShown: string | null = null;
-export function renderCurrentSuit(name: string): void {
+function renderCurrentSuit(name: string): void {
   currentShown = name;
   $<HTMLElement>("#b-result")!.replaceChildren(currentSuitCard(name));
 }
-export function refreshCurrentSuit(): void {
-  if (currentShown && currentShown === state.builder.character && !state.builder.result && document.getElementById("b-current")) renderCurrentSuit(currentShown);
+function refreshCurrentSuit(): void {
+  if (currentShown && currentShown === session.character && !session.result && document.getElementById("b-current")) renderCurrentSuit(currentShown);
 }
 function currentSuitCard(name: string): HTMLElement {
   const worn = state.inv!.worn[name] || [];
-  const p = state.builder.profile;
+  const p = session.profile;
   const rsb = resistSkillBonus(state.inv!.characters[name]?.skills);
   const totals = totalsOf(Object.fromEntries(worn.map((i) => [String(i.serial), i as unknown as OptItem])));
   const caps = resistCapsFor(p?.race, p?.resistCaps);
@@ -89,23 +77,23 @@ let showUnchanged = false, sheetOpen = false, detailsOpen = false;
 let withoutBuffs = false;
 let picked = new Set<string>();   // the other suits ticked for comparison: "0" is the best, "n" is suit #n+1
 let pickRefused: string | null = null;
-export function resetResultView(): void { renderSeq++; last = null; picked = new Set(); pickRefused = null; }
-export function resultLoadError(e: unknown): void {
+function resetResultView(): void { renderSeq++; last = null; picked = new Set(); pickRefused = null; }
+function resultLoadError(e: unknown): void {
   $<HTMLElement>("#b-result")!.replaceChildren(message({ tone: "bad", title: "Could not load the suit's items", text: (e as Error).message }));
 }
 const rerender = (): Promise<void> => (last ? renderResult(last.res, last.current, last.prof, last.name, last.meta).catch(resultLoadError) : Promise.resolve());
 // The bridge coming online or going away changes which actions are live.
-document.addEventListener("bridgechange", () => { if (last && !state.builder.job) rerender(); });
+document.addEventListener("bridgechange", () => { if (last && !session.job) rerender(); });
 
 // `name` is the character the result was built for, never read from the selection: a caller that awaited
 // anything before this call may find another character selected by now.
-export async function renderResult(res: OptimizeResult, current: OptSuit, prof: EffectiveProfile, name: string, meta?: BuildMeta): Promise<void> {
+async function renderResult(res: OptimizeResult, current: OptSuit, prof: EffectiveProfile, name: string, meta?: BuildMeta): Promise<void> {
   const mySeq = ++renderSeq;
   if (last?.res !== res) { picked = new Set(); pickRefused = null; withoutBuffs = false; }
   last = { res, current, prof, name, meta };
   currentShown = null;
   const alts = res.alternatives || [];
-  const view = state.builder.altView != null && alts[state.builder.altView] ? state.builder.altView : null;
+  const view = session.altView != null && alts[session.altView] ? session.altView : null;
   const suit = view == null ? res.best : alts[view]!.best;
   const slots = slotsOf(res.best), changes = slots.filter((sl) => (current[sl]?.serial || 0) !== (suit[sl]?.serial || 0));
   // The optimizer's own item shape has no location or equippedBy: resolve full records for the pieces the
@@ -126,17 +114,7 @@ export async function renderResult(res: OptimizeResult, current: OptSuit, prof: 
   out.replaceChildren(...nodes);
 }
 
-// ---- 1. headline: the answer, its verdict, the resists and every other change
-export function verdict(res: OptimizeResult): { text: string; tone?: "ok" | "warn" | "bad" | undefined; detail?: string | undefined } {
-  if (res.method === "manual") return { text: "Manual" };
-  if (res.floorsConflict) return { text: "Requirements can't all be met", tone: "bad", detail: "No suit in the pool meets every hard requirement; this is the best partial suit." };
-  if (res.solver === "fallback") return { text: "Heuristic fallback", tone: "warn", detail: res.fallbackReason || "The exact solver was unavailable, so this is the heuristic's answer." };
-  if (res.method === "exact" && res.proven) return { text: "Proven optimal", tone: "ok" };
-  // A saved run whose proof the server withdrew (normalizeRun): no verdict, rather than a different one.
-  if (res.method === "exact" && res.proven == null) return { text: "" };
-  if (res.method === "exact") return { text: "Best within budget", tone: "warn", detail: res.gapPoints == null ? "No bound was established: raise the time budget to finish the proof." : `At most ${fmtN(res.gapPoints)} points from the bound: raise the time budget to finish the proof.` };
-  return { text: "Heuristic" };
-}
+// ---- 1. headline: the answer, its verdict (ui/builder-parts.mts), the resists and every other change
 function headlineCard(res: OptimizeResult, current: OptSuit, suit: OptSuit, prof: EffectiveProfile, name: string, view: number | null, nChanges: number, fetchItems: Item[], meta: BuildMeta | undefined): HTMLElement {
   const before = totalsOf(current), after = totalsOf(suit);
   const rsb = prof.resistBonus || 0;
@@ -154,7 +132,7 @@ function headlineCard(res: OptimizeResult, current: OptSuit, suit: OptSuit, prof
   // Manual takes the suit as it is shown, with the buffs it was planned with (one undo step there)
   const manual = res.method === "manual", buffsUsed: RunBuffs | undefined = prof.buffs ? runBuffs(prof.buffs.on, prof.buffs.skills) : undefined;
   const start = button({ label: manual ? "Open in Manual" : "Start from this result", icon: "pencil", attrs: { id: "b-to-manual" },
-    onClick: () => { void openInManual(suit, slotsOf(res.best), buffsUsed, manual ? "Open the manual run" : "Start from the result"); } });
+    onClick: () => { void commands.openInManual(suit, slotsOf(res.best), buffsUsed, manual ? "Open the manual run" : "Start from the result"); } });
   const tiles = RESIST_KEYS.map((k) => resistTile(k, now.totals[k]!, pdFloors[k] ?? null, { cap: now.caps[k]!, shard: caps[k]!.shard }, was.totals[k]!));
   const other = [...otherChanges([...Object.keys(prof.floors), ...Object.keys(prof.weights)], was.totals, now.totals, now.caps, pdFloors), ...pastCapBadges(now).map((text) => ({ text, tone: "ok" as const }))];
   const unreachable = (res.unreachableFloors || []).length ? message({ tone: "warn", text: `No suit in the pool can reach these requirements${prof.buffs ? ", even with the buffs" : ""}: ${res.unreachableFloors!.map((k) => propName(k)).join(", ")}.` }) : null;
@@ -184,7 +162,7 @@ function plannedWith(prof: EffectiveProfile, name: string): HTMLElement | null {
 
 // ---- 2. plan: the slots that change, with lock / highlight / grab
 function planCard(current: OptSuit, suit: OptSuit, name: string, all: string[], changes: string[], resolved: Record<number, Item>): HTMLElement {
-  const p = state.builder.profile;
+  const p = session.profile;
   const unchanged = all.filter((sl) => !changes.includes(sl));
   const slots = showUnchanged ? all : changes;
   const rows = slots.map((slot) => {
@@ -192,9 +170,9 @@ function planCard(current: OptSuit, suit: OptSuit, name: string, all: string[], 
     const item = changed && next ? resolved[next.serial] || null : null;
     const locked = !!p?.lockedSlots?.includes(slot);
     const acts: Parameters<typeof rowActions>[0] = [];
-    if (p && state.builder.character === name) acts.push({ label: locked ? `Unlock ${slotLabel(slot)}` : `Lock ${slotLabel(slot)} in the next build`, icon: "lock", onClick: () => {
+    if (p && session.character === name) acts.push({ label: locked ? `Unlock ${slotLabel(slot)}` : `Lock ${slotLabel(slot)} in the next build`, icon: "lock", onClick: () => {
       p.lockedSlots = locked ? p.lockedSlots!.filter((x) => x !== slot) : [...(p.lockedSlots || []), slot];
-      renderPanel(); rerender();
+      commands.renderPanel(); rerender();
     } });
     if (item && !item.equippedBy) {
       acts.push({ label: `Highlight ${item.name}`, icon: "highlight", disabled: bridgeActionReason("highlight", item), onClick: () => runBridgeAction("highlight", item) });
@@ -222,64 +200,7 @@ function planCard(current: OptSuit, suit: OptSuit, name: string, all: string[], 
     tbl || box("div", { class: "card-pad" }, el("p", { class: "muted" }, txt(`Nothing to change: what ${name} wears is already this suit.`))),
     !showUnchanged && unchanged.length && changes.length ? tableFoot(txt(`Unchanged: ${unchangedNames.join(", ")}`, "ellip")) : null);
 }
-// ---- 3. fetch list: one row per container, walk to each once
-// The row's place in full, as a path that wraps between and inside crumbs, never cut short: "Dorran's bank ›
-// Metal Chest 0x… › A Bag", selectable so any part of it can be copied. A crumb's serial (a same-named sibling's
-// tell) is drawn in faint mono; the last crumb's is left out when the row's meta line already shows it.
-function crumbsEl(where: string, contHex: string): HTMLOListElement {
-  const crumbs = locationCrumbs(where);
-  return el("ol", { class: "b-place", "aria-label": `Location: ${where}` }, ...crumbs.map((c, i) => {
-    const { name: nm, serial } = splitSerial(c);
-    const showSerial = serial && !(i === crumbs.length - 1 && serial.toLowerCase() === contHex);
-    return el("li", {}, i ? el("span", { class: "b-place-sep", "aria-hidden": "true" }, "›") : null, i ? " " : null,
-      txt(nm, "b-place-name"), showSerial ? " " : null, showSerial ? txt(serial, "mono faint t-sm") : null, " ");
-  }));
-}
-// A small icon button that copies `text` (a serial) and says so in a toast; it ends its line, so its tooltip
-// sits in the free space to its right.
-function copyButton(text: string, what: string): HTMLButtonElement {
-  const b = button({ label: `Copy ${what} ${text}`, icon: "clipboard", iconOnly: true, size: "sm", variant: "ghost",
-    onClick: async () => { if (await copyText(text)) toast(`Copied ${text}`, "good"); else toast(`Could not copy the ${what}.`, "bad"); } });
-  tooltip(b, `Copy ${what}`, { side: "right" });   // beside it, never over the place's path above
-  return b;
-}
-// Grab all the pieces to fetch into `name`'s backpack (the result's headline, Manual's fetch list), disabled with its
-// reason; with no character (`name` null, Manual) a plain "Grab", disabled: there is no backpack to grab into.
-export function grabAllButton(items: Item[], name: string | null, { id, size }: { id: string; size?: "sm" | undefined }): HTMLElement {
-  const todo = name ? grabbable(items, name) : [];
-  const gate = !name ? "Choose a character to grab for" : todo.length ? bridgeActionReason("grab", todo[0]!) : `Nothing to grab: every piece is already with ${name} or worn.`;
-  const grab = button({ label: !name ? "Grab" : todo.length ? `Grab all ${todo.length}` : "Grab all", icon: "grab", variant: "primary", size, disabled: !!gate, onClick: () => grabAll(items, name!), attrs: { id } });
-  return gate ? tipWrap(grab, gate) : grab;
-}
-// Also Manual's (issue #12), for the manual suit's pieces the character doesn't wear, with `head` (its Grab all) in the
-// card's head; with no character (`name` null) there is no backpack to grab into, and Go to still works.
-export function fetchCard(items: Item[], name: string | null, head: HTMLElement | null = null): HTMLElement | null {
-  if (!items.length) return null;
-  const groups = new Map<string, Item[]>();
-  for (const it of items) { const k = `${it.container ?? it.location?.text}`; groups.set(k, [...(groups.get(k) || []), it]); }
-  const rows = [...groups.values()].map((list) => {
-    const first = list[0]!, cont = first.container != null ? state.inv!.containers[first.container] : null;
-    const where = first.equippedBy ? `Worn by ${first.equippedBy}` : whereText(first.location?.text) || "Unknown place";
-    const mine = name ? grabbable(list, name) : [];
-    const goGate = bridgeActionReason("goto", first);
-    const grabGate = !name ? "Choose a character to grab for" : mine.length ? bridgeActionReason("grab", mine[0]!) : `Nothing to grab here: it is already with ${name} or worn.`;
-    const go = button({ label: "Go to", size: "sm", icon: "goto", disabled: !!goGate, onClick: () => runBridgeAction("goto", first) });
-    const grab = button({ label: `Grab ${mine.length || list.length}`, size: "sm", icon: "grab", disabled: !!grabGate, onClick: () => grabAll(list, name!) });
-    const pieces = el("ul", { class: "b-fetch-pieces", "aria-label": `${plural(list.length, "piece")} to fetch` },
-      ...list.map((it) => el("li", {}, tipTarget(txt(it.name, "b-fetch-piece"), it))));
-    const contHex = cont ? serialHex(+cont.serial) : "";
-    return box("div", { class: "b-fetch" },
-      box("div", { class: "b-fetch-where" }, crumbsEl(where, contHex),
-        box("div", { class: "b-fetch-meta t-sm" }, txt(`${plural(list.length, "piece")}${contHex ? " ·" : ""}`, "faint"),
-          contHex ? txt(contHex, "mono") : null, contHex ? copyButton(contHex, "container serial") : null)),
-      pieces,
-      box("span", { class: "b-fetch-acts" }, goGate ? tipWrap(go, goGate) : go, grabGate ? tipWrap(grab, grabGate) : grab));
-  });
-  return el("section", { class: "card", "aria-label": "Fetch list" },
-    box("div", { class: "card-head" }, el("h2", {}, "Fetch list"), txt("Walk to each container once", "t-sm muted"), head ? el("span", { class: "spacer" }) : null, head),
-    box("div", { class: "b-fetch-list" }, ...rows));
-}
-
+// ---- 3. fetch list: ui/builder-parts.mts fetchCard
 // ---- 4. other suits within the tolerance, tick 2 or 3 to compare
 function otherSuitsCard(res: OptimizeResult, view: number | null): HTMLElement {
   const all = [{ best: res.best, score: res.score }, ...(res.alternatives || [])];
@@ -300,7 +221,7 @@ function otherSuitsCard(res: OptimizeResult, view: number | null): HTMLElement {
     return { cells: [tick.input, i === 0 ? badge("Best", "best") : txt(`#${i + 1}`), i === 0 ? txt("—", "muted") : txt(Math.abs(d) < 1e-6 ? "ties" : `${d > 0 ? "+" : "−"}${fmtN(Math.abs(Math.round(d)))}`),
       i === 0 ? txt(res.proven ? "the proven best" : "the best found", "muted") : txt(slotsDiff.map((sl) => `${slotLabel(sl)}: ${s.best[sl] ? s.best[sl]!.name : "nothing"}`).join(" · ")),
       i === 0 ? txt("") : txt(propDiff.join(" · ") || "same totals", "muted"),
-      i === shownIdx ? txt("Showing", "t-sm muted") : button({ label: "Show", size: "sm", onClick: () => { state.builder.altView = i === 0 ? null : i - 1; rerender(); } })],
+      i === shownIdx ? txt("Showing", "t-sm muted") : button({ label: "Show", size: "sm", onClick: () => { session.altView = i === 0 ? null : i - 1; rerender(); } })],
       attrs: picked.has(String(i)) ? { class: "sel" } : {} };
   });
   const n = picked.size;
@@ -363,7 +284,7 @@ interface CompareColumn extends CompareMember { head: HTMLElement; token: string
 interface CompareSpec { title: string; noun: string; columns: CompareColumn[]; outcomeRows: string[]; settingsRow?: string[] | undefined; keys: string[]; caps: Record<string, number>; onRemove: (i: number) => void }
 let diffOnly = true;
 let openSpec: (() => CompareSpec) | null = null;
-export function closeCompare(): void {
+function closeCompare(): void {
   if (!openSpec) return;
   openSpec = null;
   $<HTMLElement>("#tab-builder")!.classList.remove("comparing");
@@ -376,7 +297,7 @@ function showCompare(spec: () => CompareSpec): void {
   openSpec = spec;
   const s = spec();
   if (s.columns.length < 2) { closeCompare(); return; }
-  const name = state.builder.character || "";
+  const name = session.character || "";
   const back = button({ label: "Back to result", icon: "chevron-left", size: "sm", onClick: () => closeCompare() });
   const crumb = el("a", { href: `#/builder/${encodeURIComponent(name)}` }, `Suit Builder · ${name}`);
   crumb.addEventListener("click", (e) => { e.preventDefault(); closeCompare(); });
@@ -420,12 +341,12 @@ function openSuitCompare(indices: number[]): void {
   let idx = [...indices];
   showCompare(() => {
     const all = [{ best: res.best, score: res.score }, ...(res.alternatives || [])];
-    const shownIdx = state.builder.altView == null ? 0 : state.builder.altView + 1;
+    const shownIdx = session.altView == null ? 0 : session.altView + 1;
     const columns: CompareColumn[] = idx.map((i) => {
       const s = all[i]!, d = s.score - res.score;
       const sub = i === 0 ? (res.proven ? "the proven best" : "the best found") : Math.abs(d) < 1e-6 ? "ties the best" : `${fmtN(Math.abs(Math.round(d)))} points ${d < 0 ? "below" : "above"}`;
       const head = box("span", { class: "b-cmp-col" }, i === 0 ? box("span", { class: "b-row" }, badge("Best", "best"), res.proven ? badge("Proven optimal", "ok") : null) : txt(`#${i + 1}`, "strong"), txt(sub, "t-sm"));
-      const action = i === shownIdx ? txt("Showing in the result", "t-sm muted") : button({ label: "Show this suit", size: "sm", onClick: () => { state.builder.altView = i === 0 ? null : i - 1; closeCompare(); rerender(); } });
+      const action = i === shownIdx ? txt("Showing in the result", "t-sm muted") : button({ label: "Show this suit", size: "sm", onClick: () => { session.altView = i === 0 ? null : i - 1; closeCompare(); rerender(); } });
       return { assignment: s.best, totals: withBuffs(totalsOf(s.best), prof.resistBonus || 0, paperdollCaps(profileResistCaps(prof)), withoutBuffs ? null : prof.buffs).totals, head, token: i === 0 ? "Best" : `#${i + 1} · ${Math.abs(d) < 1e-6 ? "ties" : `${d < 0 ? "−" : "+"}${fmtN(Math.abs(Math.round(d)))}`}`,
         removeLabel: i === 0 ? "Remove Best from comparison" : `Remove suit ${i + 1} from comparison`, outcome: [i === 0 ? "—" : Math.abs(d) < 1e-6 ? "0" : `${d < 0 ? "−" : "+"}${fmtN(Math.abs(Math.round(d)))}`], action };
     });
@@ -438,9 +359,9 @@ function openSuitCompare(indices: number[]): void {
   void name;
 }
 // Saved runs from the drawer, oldest first. `open` shows one of them in the result.
-export function openRunCompare(runs: SavedRunLike[], titleOf: (r: SavedRunLike) => string, open: (id: string) => void, onRemove: (id: string) => void): void {
+function openRunCompare(runs: SavedRunLike[], titleOf: (r: SavedRunLike) => string, open: (id: string) => void, onRemove: (id: string) => void): void {
   let list = [...runs];
-  const name = state.builder.character || "";
+  const name = session.character || "";
   const rsb = resistSkillBonus(state.inv!.characters[name]?.skills), worn = state.inv!.worn[name] || [];
   showCompare(() => {
     // Each run is judged by the resist caps it was built with (its best values, and a "Resist caps" outcome row
@@ -451,11 +372,11 @@ export function openRunCompare(runs: SavedRunLike[], titleOf: (r: SavedRunLike) 
       const floors = r.settings.floors || {};
       // a run saved with twelve slots, with what the character wears in the others: like for like with a run of every slot
       const planned = slotsOf(r.result.best), rest = worn.filter((it) => it.slot && !planned.includes(it.slot));
-      const { totals, caps } = withBuffs(totalsOf({ ...r.result.best, ...Object.fromEntries(rest.map((it) => [`_w${it.serial}`, toOptItem(it)])) }), rsb, paperdollCaps(views[i]!), buffPlan(name, r.settings.race, savedBuffs(r.settings)));
+      const { totals, caps } = withBuffs(totalsOf({ ...r.result.best, ...Object.fromEntries(rest.map((it) => [`_w${it.serial}`, toOptItem(it)])) }), rsb, paperdollCaps(views[i]!), commands.buffPlan(name, r.settings.race, savedBuffs(r.settings)));
       const met = Object.keys(floors).filter((k) => (totals[k] || 0) >= effectiveFloor(k, floors[k]!, caps)).length;
       const v = verdict(r.result);
       const head = box("span", { class: "b-cmp-col" }, box("span", { class: "b-row" }, el("span", { class: "strong ellip", title: titleOf(r) }, titleOf(r)), v.text ? badge(v.text, v.tone === "bad" ? "bad" : v.tone) : null), txt(`${fmtRunTime(r.createdAt)} · ${r.result.method === "manual" ? "built by hand" : fmtSecs(r.ms || 0)}`, "t-sm"));
-      const action = r.id === state.builder.openRun ? txt("Showing in the result", "t-sm muted") : button({ label: "Open this run", size: "sm", onClick: () => { closeCompare(); open(r.id); } });
+      const action = r.id === session.openRun ? txt("Showing in the result", "t-sm muted") : button({ label: "Open this run", size: "sm", onClick: () => { closeCompare(); open(r.id); } });
       return { assignment: r.result.best, totals, caps, head, token: r.label || fmtRunTime(r.createdAt), removeLabel: `Remove the run from ${fmtRunTime(r.createdAt)} from comparison`,
         outcome: [plural((r.result.perSlotChanges || []).length, "change"), Object.keys(floors).length ? `${met} of ${Object.keys(floors).length}` : "none set", v.text, ...(capped ? [capsLine(views[i]!)] : [])], action };
     });
@@ -466,3 +387,4 @@ export function openRunCompare(runs: SavedRunLike[], titleOf: (r: SavedRunLike) 
       onRemove: (i) => { const gone = list[i]!; list = list.filter((_, j) => j !== i); onRemove(gone.id); if (list.length < 2) closeCompare(); else showCompare(openSpec!); } };
   });
 }
+provide({ renderResult, renderCurrentSuit, refreshCurrentSuit, resetResultView, resultLoadError, closeCompare, openRunCompare });

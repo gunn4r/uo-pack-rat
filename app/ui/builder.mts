@@ -2,36 +2,34 @@
 // constraints panel (template, race, requirements, weights, candidate pool, Advanced) with its sticky Build
 // footer, the optimize job (inline progress card over SSE) and the empty state (the character's current
 // suit). The result, the compare view and the Solver details are ui/builder-result.mts; the saved-runs drawer
-// is ui/runs.mts. The panel is drawn from state.builder.profile plus the Advanced knobs below, so what a
-// build sends, what a profile saves and what a run snapshots are read from state, never from the DOM.
+// is ui/runs.mts; they share the builder's state and call each other through ui/builder-session.mts. The panel is drawn
+// from the session's profile plus its Advanced knobs, so what a build sends, what a profile saves and what a run
+// snapshots are read from state, never from the DOM.
 import { PROP_LABELS, NOT_BUILDER_KEYS, GEAR_SLOTS, tagUnits, WEAPON_SKILLS, MELEE_SKILLS, resistSkillBonus, getRules, RESIST_KEYS, RESIST_CAP_LIMITS, resistCapsFor, templateFrom, settingsDiff, bagLabel } from "../vault-lib.mts";
 import { BUILTIN_PREFIX, characterBuffs, characterEntry, characterProfile, findTemplate, planBuild, specFromProfile, templateLabel, templateRefs, templateSettings, templateSpecFrom, type PlannedBuild } from "../build-spec.mts";
-import type { ResistCap, RunBuffs, RunSettings, Character } from "../vault-lib.mts";
+import type { ResistCap, RunBuffs, Character } from "../vault-lib.mts";
 import { buffById, gearNeedsText, overrideNote, planBuffs, normalizeBuffs, runBuffs, toggleBuff, buffPlanOf, type BuffPlan } from "../buffs.mts";
-import { defaultStrLimit, RUN_DEFAULTS } from "../run-settings.mts";
+import { defaultStrLimit } from "../run-settings.mts";
 import { evaluateSuit } from "../evaluate.mts";
 import { state, invStamp } from "./store.mts";
-import type { BuilderProfile, BuilderJob, BuilderJobUi, FinishedBuild, BuildMeta } from "./store.mts";
+import type { BuilderJob, BuilderJobUi, FinishedBuild, BuildMeta } from "./store.mts";
 import { $, el, label, full, fmtN, fmtSecs, slotLabel, toast } from "./dom.mts";
 import { promptText } from "./dialog.mts";
 import { box, txt, button, icon, kbd, badge, message, select, input, field, switchControl, check, segmented, filterChip, pill, popover, closePopover, menu, searchInput, stepper, progress, tooltip, confirmDialog, modalOpen } from "./components.mts";
-import { api, CLIENT_ID } from "./api.mts";
+import { api } from "./api.mts";
 import { buffChip, createBuffPicker, keepChipFocus, type BuffPicker, type BuffView, type PickerActions } from "./builder-buffs.mts";
 import { optimizeErrorMessage } from "./messages.mts";
 import { parseRoute, registerScreen, routeFor } from "./nav.mts";
 import { setNavBusy } from "./shell.mts";
-import { loadRuns, openRunsDrawer } from "./runs.mts";
-import { initManual, paintCharSelect, setManualFor, renderManual, syncManual, buffInputsOf, buffEditsOf, editBuffInputs, applyRunInputs, filling } from "./builder-manual.mts";
 import { putProfiles, setCharacterBuffs } from "./profiles.mts";
-import { renderResult, renderCurrentSuit, refreshCurrentSuit, resultLoadError, closeCompare, resetResultView } from "./builder-result.mts";
-import { paperdoll, propName, weightsSummary, requirementsSummary, poolSummary, advancedSummary, knobError, firstKnobError, knobFromServerError, ruleValueError, resistCapError, withResistCap, capNote, resistCapsSummary, gearCapsText, pruneResistCaps, floorCapWarning, weaponsChipText, weaponName, toggleWeapon, type Knobs, type KnobField } from "./builder-model.mts";
-import type { OptimizeResult, OptimizeProgress, SavedRunLike, OptimizeStartApiResponse, OptimizeCancelApiResponse, JobSnapshotEvent, JobDoneEvent, JobFailedEvent, JobCancelledEvent } from "./api-types.mts";
+import { session, commands, provide, readControls } from "./builder-session.mts";
+import { followJob, progressText } from "./builder-parts.mts";
+import { paperdoll, propName, weightsSummary, requirementsSummary, poolSummary, advancedSummary, knobError, firstKnobError, knobFromServerError, ruleValueError, resistCapError, withResistCap, capNote, resistCapsSummary, gearCapsText, pruneResistCaps, floorCapWarning, weaponsChipText, weaponName, toggleWeapon, type KnobField } from "./builder-model.mts";
+import type { OptimizeResult, SavedRunLike, OptimizeStartApiResponse, OptimizeCancelApiResponse } from "./api-types.mts";
 
 // ---------------------------------------------------------------- panel state
-// The solver knobs as typed (strings, so a bad value can sit in its field with its error until fixed): STR
-// limit, beside Race, and the Advanced fields. STR limit lives on the profile too (it is saved with it); the
-// others are search options a profile never carried. And which sections are open.
-export const knobs: Knobs = { strLimit: "", restarts: String(RUN_DEFAULTS.restarts), exact: RUN_DEFAULTS.exact, budgetS: String(RUN_DEFAULTS.budgetMs / 1000), altCount: String(RUN_DEFAULTS.altCount), altTol: String(RUN_DEFAULTS.altTol) };
+// The solver knobs as typed (ui/builder-session.mts), and which sections are open.
+const knobs = session.knobs;
 const open: Record<string, boolean> = { buffs: true, req: true, caps: false, weights: false, pool: true, adv: false };
 // A requirement or weight row's property name: up to two lines, the full name in its title.
 const ruleName = (nm: string): HTMLSpanElement => { const t = txt(nm, "rule-name"); t.title = nm; return t; };
@@ -39,7 +37,7 @@ const ruleName = (nm: string): HTMLSpanElement => { const t = txt(nm, "rule-name
 // from the field so the section can close and reopen, and Build still refuses it with the section closed.
 const capDrafts: Record<string, string> = {};
 // A new set of caps (another character, a template or a saved run's settings applied) replaces anything typed.
-export function clearCapDrafts(): void { for (const k of Object.keys(capDrafts)) delete capDrafts[k]; }
+function clearCapDrafts(): void { for (const k of Object.keys(capDrafts)) delete capDrafts[k]; }
 const KNOB_IDS: Record<KnobField, string> = { strLimit: "b-str", restarts: "b-restarts", budgetS: "b-budget", altCount: "b-altcount", altTol: "b-alttol" };
 
 // ---------------------------------------------------------------- wiring
@@ -49,12 +47,12 @@ export function initBuilder(): void {
   // Manual's "No character" is the empty value; a character is selected for both modes.
   $<HTMLSelectElement>("#b-char")!.onchange = () => {
     const v = $<HTMLSelectElement>("#b-char")!.value;
-    setManualFor(v || null);
-    if (v && v !== state.builder.character) selectCharacter(v);   // back from "No character" to the same one keeps its panel and result
+    commands.setManualFor(v || null);
+    if (v && v !== session.character) selectCharacter(v);   // back from "No character" to the same one keeps its panel and result
   };
   $<HTMLButtonElement>("#b-run")!.onclick = runBuild;
   $<HTMLButtonElement>("#b-save")!.onclick = saveProfile;
-  $<HTMLButtonElement>("#b-runs-open")!.onclick = openRunsDrawer;
+  $<HTMLButtonElement>("#b-runs-open")!.onclick = () => commands.openRunsDrawer();
   // ⌘↵ (Ctrl+Enter off the Mac) builds from anywhere on the screen. Listened for on the document, not the
   // screen: after a click on blank space focus is on <body>, outside #tab-builder, so a listener there never
   // heard the key. It does what pressing Build would, and nothing while the button is disabled (no character,
@@ -62,7 +60,7 @@ export function initBuilder(): void {
   document.addEventListener("keydown", (e) => {
     if (!(e.metaKey || e.ctrlKey) || e.altKey || e.shiftKey || e.key !== "Enter") return;
     const run = $<HTMLButtonElement>("#b-run")!;
-    if (run.disabled || state.builder.job || !run.getClientRects().length || run.closest("[inert]") || modalOpen()) return;
+    if (run.disabled || session.job || !run.getClientRects().length || run.closest("[inert]") || modalOpen()) return;
     e.preventDefault();
     runBuild();
   });
@@ -72,7 +70,6 @@ export function initBuilder(): void {
     toggle.setAttribute("aria-expanded", String(!folded));
     toggle.querySelector("svg")?.replaceWith(icon(folded ? "chevron-down" : "chevron-up", { size: "sm" }));
   };
-  initManual();
 }
 // The character list after the inventory or profiles changed (a first load, a scan landing, a Forget).
 // A character still present stays selected and keeps its panel, unsaved edits included; the panel is redrawn
@@ -82,28 +79,28 @@ document.addEventListener("inventorychange", () => syncBuilderCharacters());
 // #/builder/<Name>: the route's character once the inventory is in; with no name, the route takes the selected one.
 registerScreen({ name: "builder", show: (r) => {
   if (!state.inv) return;
-  if (r.character && r.character !== state.builder.character && state.inv.characters[r.character]) selectCharacter(r.character);
-  else if (!r.character && state.builder.character) history.replaceState(null, "", routeFor("builder"));
+  if (r.character && r.character !== session.character && state.inv.characters[r.character]) selectCharacter(r.character);
+  else if (!r.character && session.character) history.replaceState(null, "", routeFor("builder"));
 } });
 export function syncBuilderCharacters(): void {
   const names = [...new Set([...Object.keys(state.inv!.characters), ...Object.keys(state.profiles!.characters || {})])];
-  const keep = state.builder.character;
+  const keep = session.character;
   $<HTMLSelectElement>("#b-char")!.replaceChildren(...names.map((n) => el("option", { value: n }, n)));
-  if (keep && names.includes(keep) && state.builder.profile) {
+  if (keep && names.includes(keep) && session.profile) {
     $<HTMLSelectElement>("#b-char")!.value = keep;
     renderPanel();
-    if (!state.builder.result && !state.builder.job) renderCurrentSuit(keep);
+    if (!session.result && !session.job) commands.renderCurrentSuit(keep);
   } else if (names.length) {
     const want = parseRoute().character;
     selectCharacter(names.includes(want as string) ? want as string : names[0]!);
   } else {
-    state.builder.character = null; state.builder.profile = null;
+    session.character = null; session.profile = null;
     $<HTMLElement>("#b-panel-body")!.replaceChildren(el("p", { class: "muted b-no-char", id: "b-no-char" }, txt(NO_CHARACTER)));
     $<HTMLElement>("#b-result")!.replaceChildren(box("div", { class: "card empty-state" }, el("h2", { class: "t-lg" }, "No characters yet"), el("p", { class: "muted" }, txt("Import a scan and its character shows up here."))));
   }
   setNoCharacter(!names.length);
-  paintCharSelect();
-  void syncManual();
+  commands.paintCharSelect();
+  void commands.syncManual();
 }
 // With no character there is nothing to build or save: both buttons are disabled, and say why — in their
 // title, and in the panel's own line that they are described by.
@@ -111,52 +108,37 @@ const NO_CHARACTER = "There is no character to build for yet. Import a scan firs
 function setNoCharacter(none: boolean): void {
   for (const id of ["#b-run", "#b-save"]) {
     const b = $<HTMLButtonElement>(id)!;
-    if (!state.builder.job) b.disabled = none;
+    if (!session.job) b.disabled = none;
     if (none) { b.title = NO_CHARACTER; b.setAttribute("aria-describedby", "b-no-char"); }
     else { b.removeAttribute("title"); b.removeAttribute("aria-describedby"); }
   }
 }
 export function selectCharacter(name: string): void {
-  state.builder.character = name;
+  session.character = name;
   if (parseRoute().tab === "builder") history.replaceState(null, "", routeFor("builder"));
-  state.builder.profile = characterProfile(state.profiles!, name, state.builtinTemplates);
-  state.builder.profile!.excludeRoots ??= [];
+  session.profile = characterProfile(state.profiles!, name, state.builtinTemplates);
+  session.profile!.excludeRoots ??= [];
   clearCapDrafts();
   $<HTMLSelectElement>("#b-char")!.value = name;
   const c = state.inv!.characters[name];
-  knobs.strLimit = String(state.builder.profile!.strLimit ?? defaultStrLimit(c));
+  knobs.strLimit = String(session.profile!.strLimit ?? defaultStrLimit(c));
   renderPanel();
-  state.builder.compare = new Set(); state.builder.openRun = null; state.builder.result = null;
-  closeCompare();
-  resetResultView();   // a result still resolving its pieces for the previous character must not draw now
-  if (!state.builder.job) $<HTMLElement>("#b-msg")!.replaceChildren();   // a running build keeps its progress card
+  session.compare = new Set(); session.openRun = null; session.result = null;
+  commands.closeCompare();
+  commands.resetResultView();   // a result still resolving its pieces for the previous character must not draw now
+  if (!session.job) $<HTMLElement>("#b-msg")!.replaceChildren();   // a running build keeps its progress card
   // A build that finished while another character was on screen waits here for its own character.
-  const parked = state.builder.parked;
-  if (parked?.name === name) { state.builder.parked = null; showFinished(parked); }
-  else renderCurrentSuit(name);
-  loadRuns();
-  paintCharSelect();
-  renderManual();
-}
-// The profile with the panel's STR limit folded in: what a build sends and a profile saves.
-export function readControls(): BuilderProfile {
-  const p = state.builder.profile!;
-  if (!knobError("strLimit", knobs.strLimit)) p.strLimit = Number(knobs.strLimit);
-  return p;
-}
-// Settings a saved run carried, back into the panel ("Load these settings").
-export function applyKnobs(st: RunSettings): void {
-  if (st.strLimit != null) knobs.strLimit = String(st.strLimit);
-  if (st.restarts != null) knobs.restarts = String(st.restarts);
-  if (st.exact != null) knobs.exact = !!st.exact;
-  if (st.budgetMs != null) knobs.budgetS = String(st.budgetMs / 1000);
-  if (st.altCount != null) knobs.altCount = String(st.altCount);
-  if (st.altTol != null) knobs.altTol = String(st.altTol);
+  const parked = session.parked;
+  if (parked?.name === name) { session.parked = null; showFinished(parked); }
+  else commands.renderCurrentSuit(name);
+  commands.loadRuns();
+  commands.paintCharSelect();
+  commands.renderManual();
 }
 
 // ---------------------------------------------------------------- the panel
-export function renderPanel(): void {
-  const p = state.builder.profile;
+function renderPanel(): void {
+  const p = session.profile;
   if (!p) return;
   p.floors ||= {}; p.softFloors ||= []; p.weights ||= {}; p.lockedSlots ||= []; p.excludeTags ||= []; p.excludeSkills ||= []; p.excludeRoots ||= [];
   $<HTMLElement>("#b-panel-body")!.replaceChildren(templateSection(), buffsSection(), requirementsSection(), capsSection(), weightsSection(), poolSection(), advancedSection());
@@ -191,7 +173,7 @@ function section(id: string, title: string, { count, summary, body, inline = fal
 
 // ---- template and race
 function templateSection(): HTMLElement {
-  const p = state.builder.profile!;
+  const p = session.profile!;
   const names = templateRefs(state.profiles!, state.builtinTemplates);
   const tpl = select(names.map((n) => ({ value: n, label: templateLabel(state.builtinTemplates, n) })), names.includes(p.template as string) ? p.template as string : names[0] || "", { attrs: { id: "b-tpl" } });
   tpl.addEventListener("change", updateTemplateBadge);
@@ -211,7 +193,7 @@ function templateSection(): HTMLElement {
 // A template is a saved set of builder settings with no character in it; the badge says whether the panel
 // still matches the one it was applied from.
 function templateDrift(): { tone: "ok" | "warn" | "bad" | ""; text: string; detail: string } {
-  const ref = state.builder.profile!.template, tpl = findTemplate(state.profiles!, state.builtinTemplates, ref), name = ref && templateLabel(state.builtinTemplates, ref);
+  const ref = session.profile!.template, tpl = findTemplate(state.profiles!, state.builtinTemplates, ref), name = ref && templateLabel(state.builtinTemplates, ref);
   if (!name) return { tone: "", text: "none", detail: "Save as… stores these settings as a template." };
   if (!tpl) return { tone: "bad", text: "missing", detail: `These settings came from a template named ${name}, which no longer exists.` };
   const lines = settingsDiff(templateSettings(tpl), templateFrom(readControls()));
@@ -221,11 +203,11 @@ function templateDrift(): { tone: "ok" | "warn" | "bad" | ""; text: string; deta
 // screen reader, part of its text.
 export function updateTemplateBadge(): void {
   const s = $<HTMLElement>("#b-tpl-state");
-  if (!s || !state.builder.profile) return;
+  if (!s || !session.profile) return;
   const d = templateDrift();
   const next = box("span", { id: "b-tpl-state", class: `badge${d.tone ? " " + d.tone : ""}`, tabindex: "0" }, txt(d.text), el("span", { class: "sr" }, `. ${d.detail}`));
   s.replaceWith(tooltip(next, d.detail));
-  refreshCurrentSuit();
+  commands.refreshCurrentSuit();
 }
 // A built-in template (app/data/templates/<shard>.json) is read-only: Save as… makes the player's own copy.
 const BUILTIN_READ_ONLY = "Built-in templates can't be changed. Save as… makes your own copy.";
@@ -244,19 +226,19 @@ async function saveTemplates(done: string): Promise<void> {
 function applyTemplate(): void {
   const ref = selectedTemplate(), t = findTemplate(state.profiles!, state.builtinTemplates, ref), name = templateLabel(state.builtinTemplates, ref);
   if (!t) return;
-  Object.assign(state.builder.profile!, templateSettings(t), { template: ref });
-  if (t.spec.buffs) setCharacterBuffs(state.builder.character!, { on: t.spec.buffs.on, skills: { ...buffEditsOf(state.builder.character!), ...t.spec.buffs.skills } });
+  Object.assign(session.profile!, templateSettings(t), { template: ref });
+  if (t.spec.buffs) setCharacterBuffs(session.character!, { on: t.spec.buffs.on, skills: { ...commands.buffEditsOf(session.character!), ...t.spec.buffs.skills } });
   clearCapDrafts();
   renderPanel();
   toast(`${name} applied. Save profile to keep it.`, "good");
 }
 async function saveTemplateAs(): Promise<void> {
-  const was = state.builder.profile!.template || "";
+  const was = session.profile!.template || "";
   const name = await promptText({ title: "Template name", value: was.startsWith(BUILTIN_PREFIX) ? "" : was });
   if (name?.startsWith(BUILTIN_PREFIX)) { toast(`A template's name can't start with "${BUILTIN_PREFIX}".`, "bad"); return; }
   if (!name || (state.profiles!.templates[name] && !await confirmDialog({ title: `Overwrite the ${name} template?`, body: `The ${name} template is replaced with these settings.`, confirmLabel: `Overwrite ${name}` }))) return;
   state.profiles!.templates[name] = { spec: templateSpecFrom(readControls()) };
-  state.builder.profile!.template = name;
+  session.profile!.template = name;
   renderPanel();
   await saveTemplates(`Template ${name} saved.`);
 }
@@ -264,7 +246,7 @@ async function updateTemplate(): Promise<void> {
   const name = selectedTemplate();
   if (!Object.hasOwn(state.profiles!.templates, name) || !await confirmDialog({ title: `Update the ${name} template?`, body: `The ${name} template is overwritten with these settings.`, confirmLabel: `Update ${name}` })) return;
   state.profiles!.templates[name] = { ...state.profiles!.templates[name], spec: templateSpecFrom(readControls()) };
-  state.builder.profile!.template = name;
+  session.profile!.template = name;
   updateTemplateBadge();
   await saveTemplates(`Template ${name} updated.`);
 }
@@ -283,22 +265,22 @@ async function deleteTemplate(): Promise<void> {
 let note: { replaced: { on: string; off: string } } | { cleared: string[] } | null = null;
 let picker: BuffPicker | null = null;
 // The list healed as a saved one is read back (normalizeBuffs): a hand edit's second form replaces the first.
-const buffsOn = (): string[] => normalizeBuffs(characterBuffs(state.profiles!, state.builder.character!).on) ?? [];
+const buffsOn = (): string[] => normalizeBuffs(characterBuffs(state.profiles!, session.character!).on) ?? [];
 // The panel's buffs, as a run saves them (absent with none on).
-export const panelBuffs = (): RunBuffs | undefined => runBuffs(buffsOn(), buffInputsOf(state.builder.character!).values);
+export const panelBuffs = (): RunBuffs | undefined => runBuffs(buffsOn(), commands.buffInputsOf(session.character!).values);
 // What a build for `name` plans with: `buffs` (the panel's, or a saved run's; none is a plan too, for the stat caps)
 // and the numbers they took, over the character's own; its raw stats and `race`; and what it wears now, which a
 // potion's Enhance Potions and Enchant's Spell Channeling are read from (app/buffs.mts plannedProfile).
-export function buffPlan(name: string, race: string | null | undefined, buffs: RunBuffs | undefined): BuffPlan {
-  return buffPlanOf((state.inv!.characters[name] as Character | undefined) ?? null, state.inv!.worn[name] || [], race, buffs, buffEditsOf(name));
+function buffPlan(name: string, race: string | null | undefined, buffs: RunBuffs | undefined): BuffPlan {
+  return buffPlanOf((state.inv!.characters[name] as Character | undefined) ?? null, state.inv!.worn[name] || [], race, buffs, commands.buffEditsOf(name));
 }
 // The panel's buffs set (healed, as a saved list is), and saved.
-function setPanelBuffs(on: string[]): void { setCharacterBuffs(state.builder.character!, { on: normalizeBuffs(on) ?? [] }); }
+function setPanelBuffs(on: string[]): void { setCharacterBuffs(session.character!, { on: normalizeBuffs(on) ?? [] }); }
 // A saved run's buffs back ("Load these settings"): the ones on, and the numbers they scale with where the run's differ
 // from the character's now, so building again plans as the run did. The panel is redrawn by the caller.
-export function loadRunBuffs(b: RunBuffs | undefined): void {
+function loadRunBuffs(b: RunBuffs | undefined): void {
   setPanelBuffs(b?.on ?? []);
-  applyRunInputs(state.builder.character!, b);
+  commands.applyRunInputs(session.character!, b);
 }
 function buffsSection(): HTMLElement {
   const on = buffsOn();
@@ -312,10 +294,10 @@ function buffsSection(): HTMLElement {
 }
 // The picker's state: the buffs on, their numbers, and what each would add, against the caps before any buff.
 function buffView(): BuffView {
-  const name = state.builder.character!, p = state.builder.profile!, inputs = buffInputsOf(name), plan = buffPlan(name, p.race, { on: buffsOn(), skills: {} });
+  const name = session.character!, p = session.profile!, inputs = commands.buffInputsOf(name), plan = buffPlan(name, p.race, { on: buffsOn(), skills: {} });
   // what the character wears now, evaluated with the panel's buffs (app/evaluate.mts)
   const ev = evaluateSuit({ profile: p, character: state.inv!.characters[name] as Character | null, suit: Object.fromEntries((state.inv!.worn[name] || []).map((i) => [String(i.serial), i])), buffs: plan });
-  return { name, on: plan.on, values: plan.skills, planned: inputs.planned, edits: buffEditsOf(name), stats: plan.stats, who: plan.who,
+  return { name, on: plan.on, values: plan.skills, planned: inputs.planned, edits: commands.buffEditsOf(name), stats: plan.stats, who: plan.who,
     totals: paperdoll(ev.gearTotals, ev.planned.resistBonus), caps: ev.baseCaps, all: ev.buffs, replaced: note && "replaced" in note ? note.replaced : null,
     cleared: note && "cleared" in note ? note.cleared : null, count: true, open: !!picker };
 }
@@ -335,7 +317,7 @@ const buffActions: PickerActions = {
     const { next, replaced: off } = toggleBuff(buffsOn(), id);
     setBuffs(next, off ? { replaced: { on: id, off } } : null);
   }),
-  setInput: (id, value) => { editBuffInputs(state.builder.character, { [id]: value }); setBuffs(buffsOn(), note); },
+  setInput: (id, value) => { commands.editBuffInputs(session.character, { [id]: value }); setBuffs(buffsOn(), note); },
   clear: () => setBuffs([], buffsOn().length ? { cleared: buffsOn() } : null),
   close: closePopover,
   // the note's Undo: the form it replaced, or the buffs it cleared, back on; the replaced form's checkbox takes the focus
@@ -350,7 +332,7 @@ function openBuffPicker(anchor: HTMLElement): void {
   if (picker) { closePopover(); return; }
   const host = box("div", { class: "bf-pick" });
   picker = createBuffPicker(host, "abf", buffActions, () => "Counted as always on: the search plans around them. A bonus past the cap, like Enemy of One's damage, never changes the plan.");
-  popover(anchor, [host], { label: `Buffs for ${state.builder.character}`, width: 480, beside: $<HTMLElement>("#b-panel")!, onClose: () => { picker = null; note = null; } });
+  popover(anchor, [host], { label: `Buffs for ${session.character}`, width: 480, beside: $<HTMLElement>("#b-panel")!, onClose: () => { picker = null; note = null; } });
   picker.paint(buffView());
   picker.focusSearch();
 }
@@ -364,7 +346,7 @@ function allPropKeys(): string[] {
 }
 // The panel's resist caps: the player's override, else the shard's cap for this character's race (an Elf's
 // Energy is 75 on uoalive).
-const panelResistCaps = (): Record<string, ResistCap> => resistCapsFor(state.builder.profile!.race, state.builder.profile!.resistCaps);
+const panelResistCaps = (): Record<string, ResistCap> => resistCapsFor(session.profile!.race, session.profile!.resistCaps);
 // A property's cap for this build: a resist's from the panel's resist caps, anything else the shard's.
 function capFor(k: string): number | null {
   if (RESIST_KEYS.includes(k)) return panelResistCaps()[k]!.cap;
@@ -394,7 +376,7 @@ function setInlineError(control: HTMLElement, err: string | null): void {
   } else { control.removeAttribute("aria-invalid"); control.removeAttribute("aria-describedby"); }
 }
 function requirementsSection(): HTMLElement {
-  const p = state.builder.profile!, name = state.builder.character!;
+  const p = session.profile!, name = session.character!;
   const keys = Object.keys(p.floors!).filter((k) => !NOT_BUILDER_KEYS.has(k));
   return section("req", "Requirements", { count: keys.length, summary: () => requirementsSummary(p.floors, p.softFloors), body: () => {
     const rsb = resistSkillBonus(state.inv!.characters[name]?.skills);
@@ -422,7 +404,7 @@ function requirementsSection(): HTMLElement {
 // A resist requirement above its resist's cap is kept (a saved profile may carry one) but counts only up to the
 // cap, as the solver scores it: the row says so, and keeps saying so as the floor is typed.
 function floorWarning(row: HTMLElement, num: HTMLInputElement, k: string): void {
-  const p = state.builder.profile!, id = `${num.id || (num.id = `b-in-${Math.random().toString(36).slice(2, 8)}`)}-warn`;
+  const p = session.profile!, id = `${num.id || (num.id = `b-in-${Math.random().toString(36).slice(2, 8)}`)}-warn`;
   const paint = (): void => {
     row.querySelector(`#${CSS.escape(id)}`)?.remove();
     const w = floorCapWarning(k, p.floors![k]!, capFor(k));
@@ -437,13 +419,13 @@ function floorWarning(row: HTMLElement, num: HTMLInputElement, k: string): void 
 // Each row is the resist, its cap (the shard's for the race until the player types another) and, once overridden,
 // what it was raised or lowered from with a reset. A cap back at the shard's value is no override at all.
 function capsSection(): HTMLElement {
-  const p = state.builder.profile!;
+  const p = session.profile!;
   return section("caps", "Resist caps", { summary: () => resistCapsSummary(panelResistCaps()), body: () => [
     el("p", { class: "help" }, txt(`The highest paperdoll value each resist is worth, for the score and for requirements. Raise one for a suit worn in a form that lowers it: Reaper Form takes 25 Fire, so a Fire cap of 95 keeps 70 in form. Whole numbers from ${RESIST_CAP_LIMITS.min} to ${RESIST_CAP_LIMITS.max}.`)),
     box("div", { class: "b-rules" }, ...RESIST_KEYS.map((k) => capRow(p, k))),
   ] });
 }
-function capRow(p: NonNullable<typeof state.builder.profile>, k: string): HTMLElement {
+function capRow(p: NonNullable<typeof session.profile>, k: string): HTMLElement {
   const nm = propName(k), c = panelResistCaps()[k]!;
   const i = input({ type: "number", size: "sm", value: capDrafts[k] ?? c.cap, attrs: { id: `b-cap-${k}`, "aria-label": `${nm} cap`, "data-key": k } });
   const row = box("div", { class: "rule-row cap", "data-key": k }, ruleName(nm), i);
@@ -477,7 +459,7 @@ function capRow(p: NonNullable<typeof state.builder.profile>, k: string): HTMLEl
   return row;
 }
 function weightsSection(): HTMLElement {
-  const p = state.builder.profile!;
+  const p = session.profile!;
   const keys = Object.keys(p.weights!).filter((k) => !NOT_BUILDER_KEYS.has(k));
   return section("weights", "Weights", { count: keys.length, summary: () => weightsSummary(p.weights), body: () => {
     const rows = keys.map((k) => {
@@ -525,7 +507,7 @@ function propertyPicker(anchor: HTMLElement, title: string, taken: string[], pic
 
 // ---- candidate pool
 function poolSection(): HTMLElement {
-  const p = state.builder.profile!;
+  const p = session.profile!;
   return section("pool", "Candidate pool", { summary: () => poolSummary(p), body: () => {
     const sw = (id: string, text: string, key: "allowOthersWorn" | "allowGargoyle" | "medOnly"): HTMLLabelElement =>
       switchControl({ label: text, checked: !!p[key], attrs: { id }, onChange: (v) => { p[key] = v; updateTemplateBadge(); } }).root;
@@ -551,7 +533,7 @@ function paintChip(chip: HTMLButtonElement, text: string, set: boolean): void {
 // The Weapons chip: a checklist of the weapon skills, where a tick EXCLUDES that skill's weapons from the pool, and
 // under it the Use Best Weapon Skill switch (profile `ubwsAnyWeapon`, absent means on).
 function weaponChip(): HTMLButtonElement {
-  const p = state.builder.profile!;
+  const p = session.profile!;
   const text = (): string => weaponsChipText(p.excludeWeapons, p.ubwsAnyWeapon !== false);
   const chip = filterChip({ label: text(), set: !!p.excludeWeapons?.length, attrs: { id: "b-weapon" } });
   chip.onclick = () => {
@@ -580,7 +562,7 @@ function weaponChip(): HTMLButtonElement {
   return chip;
 }
 function tagsChip(): HTMLButtonElement {
-  const p = state.builder.profile!;
+  const p = session.profile!;
   const text = (): string => (p.excludeTags!.length ? `Exclude tags: ${p.excludeTags!.length}` : "Exclude tags");
   const chip = filterChip({ label: text(), set: !!p.excludeTags!.length, attrs: { id: "b-extags" } });
   chip.onclick = () => popover(chip, [el("p", { class: "help" }, txt("Leave out every piece carrying a pressed tag.")),
@@ -654,21 +636,16 @@ function focusKnob(f: KnobField, err: string): void {
 // ---------------------------------------------------------------- the build
 // The panel as a build (app/build-spec.mts planBuild): its settings, the character's buffs and the Advanced fields'
 // search knobs, planned for the character as scanned. What a build sends and a saved run keeps both come from it.
-export function panelBuild(): PlannedBuild {
-  const name = state.builder.character!, p = readControls();
-  const spec = { ...specFromProfile(p, { on: buffsOn(), skills: buffEditsOf(name) }),
+function panelBuild(): PlannedBuild {
+  const name = session.character!, p = readControls();
+  const spec = { ...specFromProfile(p, { on: buffsOn(), skills: commands.buffEditsOf(name) }),
     search: { restarts: Number(knobs.restarts), exact: knobs.exact, budgetMs: 1000 * Number(knobs.budgetS), altCount: Number(knobs.altCount), altTol: Number(knobs.altTol) } };
   return planBuild(spec, { character: (state.inv!.characters[name] as Character | undefined) ?? null, worn: state.inv!.worn[name] || [], race: p.race });
 }
-// The panel's candidate pool settings, as POST /api/optimize's by-character form takes them.
-export const poolSettings = (): RunSettings => panelBuild().pool;
-// The Advanced search options without other suits, for Manual's fill (the budget field is disabled without exact search:
-// the server's default applies).
-export const searchOpts = (): { restarts: number; exact: boolean; timeBudgetMs?: number } => { const { alternatives: _alt, ...opts } = panelBuild().opts; return opts; };
 async function runBuild(): Promise<void> {
-  if (state.builder.job) return;
-  if (filling()) { toast("Manual is filling its empty slots. Wait for it, or cancel it there, before building."); return; }
-  if (!state.builder.character || !state.builder.profile) { toast("No character to build for yet: scan one first.", "bad"); return; }
+  if (session.job) return;
+  if (commands.filling()) { toast("Manual is filling its empty slots. Wait for it, or cancel it there, before building."); return; }
+  if (!session.character || !session.profile) { toast("No character to build for yet: scan one first.", "bad"); return; }
   // A bad field stops the build and takes focus, with its reason under it; the button itself stays enabled.
   const bad = firstKnobError(knobs);
   if (bad) { focusKnob(bad.field, bad.error); return; }
@@ -682,15 +659,15 @@ async function runBuild(): Promise<void> {
   }
   const badRule = document.querySelector<HTMLInputElement>("#b-panel-body .rule-row input[aria-invalid='true']");
   if (badRule) { badRule.focus(); return; }
-  const name = state.builder.character, { pool: settings, opts, profile, snapshot } = panelBuild();
+  const name = session.character, { pool: settings, opts, profile, snapshot } = panelBuild();
   const exact = knobs.exact, budgetMs = 1000 * Number(knobs.budgetS);
-  closeCompare();
+  commands.closeCompare();
   // Pools/current/skipped are the server's job (buildPools against its own cached inventory, POST
   // /api/optimize's by-character form): the page sends the character + settings and reads poolSize/skipped/
   // current/warning back. The job keeps the character and the effective profile it was started with: the
   // player can switch characters while it runs, and the result is judged against these.
   const job: BuilderJob = { id: null, es: null, name, profile, exact, budgetMs, poolSize: null, skipped: {}, current: {}, warning: null, startedAt: Date.now(), lastProgressAt: Date.now(), lastServerAt: Date.now(), last: null, connected: true, ui: null, timer: null };
-  state.builder.job = job;
+  session.job = job;
   setBuilding(true);
   job.ui = runPanel(job);
   $<HTMLElement>("#b-msg")!.replaceChildren(job.ui.root);
@@ -702,7 +679,7 @@ async function runBuild(): Promise<void> {
     // optimizeErrorMessage (ui/messages.mts) explains the one refusal that isn't about this build at all: 429,
     // four jobs already running (vault-server.mts's MAX_RUNNING_JOBS) — this page only ever runs one.
   } catch (e) { r = { ok: false, error: optimizeErrorMessage(e) }; }
-  if (state.builder.job !== job) { if (r.ok) api(`/api/optimize/${r.id}/cancel`, { method: "POST" }).catch(() => {}); return; }   // cancelled while the request was in flight
+  if (session.job !== job) { if (r.ok) api(`/api/optimize/${r.id}/cancel`, { method: "POST" }).catch(() => {}); return; }   // cancelled while the request was in flight
   if (!r.ok) { failJob(job, r.error); return; }
   job.poolSize = r.poolSize; job.skipped = r.skipped; job.current = r.current; job.warning = r.warning || null;
   // r.run.ms is `number | null` (a saved run's on-disk shape); a genuinely null one has never been guarded here.
@@ -717,33 +694,6 @@ async function runBuild(): Promise<void> {
     cancelled: (ms) => endJob(job, cancelledNote(ms)),
   });
 }
-export interface JobEvents { progress(p: OptimizeProgress): void; alive?(connected: boolean): void; done(d: JobDoneEvent): void; failed(error: string): void; cancelled(ms: number): void }
-// An optimize job's events (the Automatic build, and Manual's "Fill the rest automatically"): its progress, then done,
-// failed or cancelled. EventSource can't carry the X-Client-Id header (or the token): the server checks this ?client=
-// param against the job's own owner instead (vault-server.mts's events route).
-export function followJob(id: string, on: JobEvents): EventSource {
-  const es = new EventSource(`/api/optimize/${id}/events?client=${encodeURIComponent(CLIENT_ID)}`);
-  es.addEventListener("hello", (e: MessageEvent<string>) => {
-    const snap = JSON.parse(e.data) as JobSnapshotEvent;
-    if (snap.progress) on.progress(snap.progress);
-    if (snap.state === "done") on.done({ result: snap.result!, ms: snap.ms!, runId: snap.runId });
-    else if (snap.state === "error") on.failed(snap.error || "The build failed.");
-    // job.ms is always set immediately before cancelJob()'s finish() call that produces this event.
-    else if (snap.state === "cancelled") on.cancelled(snap.ms!);
-  });
-  es.addEventListener("progress", (e: MessageEvent<string>) => on.progress(JSON.parse(e.data) as OptimizeProgress));
-  es.addEventListener("ping", () => on.alive?.(true));
-  es.addEventListener("done", (e: MessageEvent<string>) => on.done(JSON.parse(e.data) as JobDoneEvent));
-  es.addEventListener("failed", (e: MessageEvent<string>) => on.failed((JSON.parse(e.data) as JobFailedEvent).error));
-  es.addEventListener("cancelled", (e: MessageEvent<string>) => on.cancelled((JSON.parse(e.data) as JobCancelledEvent).ms));
-  // EventSource reconnects by itself and "hello" then catches us up — unless the server refused the stream (a
-  // restart forgot the job: 404), after which it stays closed for good.
-  es.onerror = () => {
-    on.alive?.(false);
-    if (es.readyState === EventSource.CLOSED) on.failed("Lost the build: the server no longer knows this job (it may have restarted). Build again.");
-  };
-  return es;
-}
 // While a build runs: the footer button says so and is disabled, the sidebar's Suit Builder item shows a busy
 // dot, and a result already on screen stays there dimmed and out of reach until the new one lands.
 function setBuilding(on: boolean): void {
@@ -753,7 +703,7 @@ function setBuilding(on: boolean): void {
   b.querySelector(".kbd")?.setAttribute("aria-hidden", "true");
   setNavBusy("builder", on);
   const res = $<HTMLElement>("#b-result")!;
-  const stale = on && !!state.builder.result;
+  const stale = on && !!session.result;
   res.classList.toggle("b-stale", stale);
   res.inert = stale;
   if (stale) res.setAttribute("aria-hidden", "true"); else res.removeAttribute("aria-hidden");
@@ -771,10 +721,10 @@ function failJob(job: BuilderJob, text: string): void {
 // has focus from the moment a build starts), so the caller can hand it on instead of dropping it on <body>:
 // endJob itself hands it to the node's first button ("Build again"), finishJob to the result's heading.
 function endJob(job: BuilderJob, node?: HTMLElement | null): boolean {
-  if (state.builder.job !== job) return false;
+  if (session.job !== job) return false;
   const msg = $<HTMLElement>("#b-msg")!;
   const hadFocus = msg.contains(document.activeElement);
-  clearInterval(job.timer as number | undefined); job.es?.close(); state.builder.job = null;
+  clearInterval(job.timer as number | undefined); job.es?.close(); session.job = null;
   setBuilding(false);
   msg.replaceChildren(...(node ? [node] : []));
   if (hadFocus) node?.querySelector<HTMLElement>("button")?.focus();
@@ -786,24 +736,24 @@ function finishJob(job: BuilderJob, r: JobFinishInfo): void {
   const finished: FinishedBuild = { name: job.name, result: r.result, current: job.current, profile: job.profile, runId: r.runId || null, meta };
   // Switched to another character while it ran: never draw this suit (or its Plan and Grab all) under that
   // character. It waits until its own character is selected again.
-  const away = job.name !== state.builder.character;
+  const away = job.name !== session.character;
   const notes = [away ? message({ tone: "info", text: `${job.name}'s build finished. Switch back to ${job.name} to see it.`, attrs: { class: "msg info parked-note" } }) : null,
     job.warning ? message({ tone: "warn", text: job.warning }) : null].filter((x): x is HTMLDivElement => x !== null);
   const hadFocus = endJob(job, null);
   $<HTMLElement>("#b-msg")!.replaceChildren(...notes);
-  if (away) { state.builder.parked = finished; if (hadFocus) $<HTMLButtonElement>("#b-run")!.focus(); return; }
+  if (away) { session.parked = finished; if (hadFocus) $<HTMLButtonElement>("#b-run")!.focus(); return; }
   showFinished(finished, hadFocus);
-  loadRuns();
+  commands.loadRuns();
 }
 // `focus`: the finished build's heading takes the focus the progress card had (tabindex -1: a target, not a stop).
 function showFinished(f: FinishedBuild, focus = false): void {
-  state.builder.result = f.result;
-  state.builder.openRun = f.runId;
-  state.builder.altView = null;
-  renderResult(f.result, f.current, f.profile, f.name, f.meta).then(() => {
+  session.result = f.result;
+  session.openRun = f.runId;
+  session.altView = null;
+  commands.renderResult(f.result, f.current, f.profile, f.name, f.meta).then(() => {
     const h = focus ? $<HTMLElement>("#b-result h2") : null;
     if (h) { h.tabIndex = -1; h.focus(); }
-  }).catch(resultLoadError);
+  }).catch(commands.resultLoadError);
 }
 export async function cancelJob(job: BuilderJob): Promise<void> {
   if (!job.id) { endJob(job, cancelledNote(Date.now() - job.startedAt)); return; }
@@ -812,16 +762,6 @@ export async function cancelJob(job: BuilderJob): Promise<void> {
   endJob(job, cancelledNote(Date.now() - job.startedAt));
 }
 
-// A progress packet in words, with how far along it is (0 to 1): the build's progress card and Manual's fill read it.
-// Every field read bare below is one the server's progress packet always sets for that phase (see api-types.mts's
-// OptimizeProgress): the `!` documents that rather than inventing a fallback value.
-export function progressText(p: OptimizeProgress): { frac: number; text: string; detail: string } {
-  const clamp = (f: number): number => Math.max(0, Math.min(1, f));
-  if (p.phase === "heuristic") return { frac: clamp(p.restarts ? p.restartsDone! / p.restarts : 0), text: `Restart ${fmtN(p.restartsDone)} of ${fmtN(p.restarts)}`, detail: `${fmtN(p.candidates)} candidate items` };
-  if (p.phase === "exact") return { frac: clamp(p.budgetMs ? p.elapsedMs! / p.budgetMs : 0), text: p.gapPoints == null ? "Proving: no bound yet" : `Proving: at most ${fmtN(p.gapPoints)} points from the bound`, detail: `${fmtN(p.nodes)} search nodes · ${fmtN(p.candidates)} candidates` };
-  if (p.phase === "alternatives") return { frac: clamp(p.wanted ? p.found! / p.wanted : 1), text: `${fmtN(p.found)} of ${fmtN(p.wanted)} other suits found`, detail: "" };
-  return { frac: 1, text: "Finishing…", detail: "" };
-}
 // The inline progress card: busy dot, what is being built, Cancel (Esc while the card has focus), the three
 // phases, a determinate bar (restarts, then the time budget of the exact phase, then the other suits found),
 // and the stat row. The phase changes are announced; the numbers that tick every 200 ms are not.
@@ -882,12 +822,13 @@ function runPanel(job: BuilderJob): BuilderJobUi {
 
 // ---------------------------------------------------------------- save
 async function saveProfile(): Promise<void> {
-  if (!state.builder.character || !state.builder.profile) { toast("No character to save a profile for yet: scan one first.", "bad"); return; }
+  if (!session.character || !session.profile) { toast("No character to save a profile for yet: scan one first.", "bad"); return; }
   // A copy (later panel edits must not ride along with a template save), keeping what the panel doesn't edit: any
   // other field of the entry, and the spec's goal and search.
-  const name = state.builder.character!, chars = state.profiles!.characters, entry = characterEntry(readControls(), characterBuffs(state.profiles!, name));
+  const name = session.character!, chars = state.profiles!.characters, entry = characterEntry(readControls(), characterBuffs(state.profiles!, name));
   const { race: _race, template: _template, spec: was, ...rest } = Object.hasOwn(chars, name) ? chars[name]! : { spec: undefined };
   chars[name] = { ...rest, ...entry, spec: { ...was, ...entry.spec } };
   const r = await putProfiles();
-  toast(r.ok ? `Profile for ${state.builder.character} saved.` : r.error!, r.ok ? "good" : "bad");
+  toast(r.ok ? `Profile for ${session.character} saved.` : r.error!, r.ok ? "good" : "bad");
 }
+provide({ renderPanel, clearCapDrafts, panelBuild, buffPlan, loadRunBuffs });

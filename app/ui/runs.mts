@@ -11,32 +11,30 @@ import { api } from "./api.mts";
 import { bindDrawer, box, txt, button, badge, message, input, confirmDialog, menu, type DrawerHandle } from "./components.mts";
 import { renderNavCounts } from "./shell.mts";
 import { resolveItems } from "./items.mts";
-import { renderPanel, applyKnobs, clearCapDrafts, panelBuild, buffPlan, loadRunBuffs } from "./builder.mts";
-import { renderResult, openRunCompare, closeCompare, renderCurrentSuit, resetResultView } from "./builder-result.mts";
-import { openInManual, showAutomatic } from "./builder-manual.mts";
+import { session, commands, provide, applyKnobs } from "./builder-session.mts";
 import { paperdollCaps, slotsOf, runAutoLabel, runBadges, runSettingsDiff, toggleCompare, plural, withBuffs } from "./builder-model.mts";
 import type { RunsListApiResponse, RunApiResponse, RunPutApiResponse, RunSummaryLike, SavedRunLike } from "./api-types.mts";
 
 // ---------------------------------------------------------------- settings snapshot / apply
 // Everything a run can differ by, read from the panel's state (the profile, the buffs and the Advanced fields):
 // app/build-spec.mts planBuild's snapshot of the panel.
-export const settingsSnapshot = (): RunSettings => panelBuild().snapshot;
+const settingsSnapshot = (): RunSettings => commands.panelBuild().snapshot;
 export function applySettings(st: RunSettings): void {
-  const p = state.builder.profile!;
+  const p = session.profile!;
   Object.assign(p, { floors: { ...(st.floors || {}) }, softFloors: [...(st.softFloors || [])], weights: { ...(st.weights || {}) }, lockedSlots: [...(st.lockedSlots || [])],
     excludeTags: [...(st.excludeTags || [])], excludeRoots: [...(st.excludeRoots || [])], strLimit: st.strLimit, allowGargoyle: !!st.allowGargoyle, medOnly: !!st.medOnly, excludeWeapons: [...(st.excludeWeapons || [])], ubwsAnyWeapon: st.ubwsAnyWeapon !== false,
     race: st.race || p.race || "human", excludeSkills: [...(st.excludeSkills || [])], allowOthersWorn: !!st.allowOthersWorn, resistCaps: { ...(st.resistCaps || {}) } });
   applyKnobs(st);
-  loadRunBuffs(savedBuffs(st));
-  clearCapDrafts();
-  renderPanel();
+  commands.loadRunBuffs(savedBuffs(st));
+  commands.clearCapDrafts();
+  commands.renderPanel();
   toast("Settings loaded into the panel. Save profile to keep them.", "good");
 }
 // The profile a run was built with, its buffs planned as they were (effectiveProfile's own default parameter already
 // treats an omitted character the same as null).
 export function profileFromSettings(st: RunSettings): EffectiveProfile {
-  const name = state.builder.character!;
-  return plannedProfile(st, state.inv!.characters[name] as Character | null, buffPlan(name, st.race, savedBuffs(st)));
+  const name = session.character!;
+  return plannedProfile(st, state.inv!.characters[name] as Character | null, commands.buffPlan(name, st.race, savedBuffs(st)));
 }
 
 // ---------------------------------------------------------------- the list
@@ -45,13 +43,13 @@ export function profileFromSettings(st: RunSettings): EffectiveProfile {
 let runsSeq = 0;
 let compareNote: string | null = null;
 export async function loadRuns(): Promise<void> {
-  const name = state.builder.character, mine = ++runsSeq;
+  const name = session.character, mine = ++runsSeq;
   if (!name) return;
   let runs: RunSummaryLike[];
   try { runs = (await api<RunsListApiResponse>(`/api/runs?character=${encodeURIComponent(name)}`)).runs || []; }
   catch { runs = []; }
   if (mine !== runsSeq) return;
-  state.builder.runs = runs;
+  session.runs = runs;
   renderRuns();
 }
 // The drawer's behaviour (focus trap, Esc, scrim, inert when closed, focus back to the opener) is
@@ -62,7 +60,7 @@ const runsDrawer = (): DrawerHandle => {
   if (!wired) {
     wired = true;
     $<HTMLInputElement>("#b-runs-filter")!.addEventListener("input", () => renderRuns());
-    $<HTMLButtonElement>("#b-runs-clear")!.onclick = () => { state.builder.compare = new Set(); compareNote = null; renderRuns(); };
+    $<HTMLButtonElement>("#b-runs-clear")!.onclick = () => { session.compare = new Set(); compareNote = null; renderRuns(); };
     $<HTMLButtonElement>("#b-runs-compare")!.onclick = compareSelected;
   }
   return (drawer ||= bindDrawer($<HTMLElement>("#runs-drawer")!));
@@ -74,7 +72,7 @@ export function openRunsDrawer(): void {
 export function closeRunsDrawer(): void { runsDrawer().close(); }
 // The footer: how many are ticked, Clear, and Compare. A fourth tick is refused and said here.
 function paintFooter(): void {
-  const n = state.builder.compare.size;
+  const n = session.compare.size;
   $<HTMLElement>("#b-runs-sel")!.replaceChildren(compareNote ? txt(compareNote, "tone-warn") : txt(`${n} of 3 selected`));
   const btn = $<HTMLButtonElement>("#b-runs-compare")!;
   btn.disabled = n < 2;
@@ -83,9 +81,10 @@ function paintFooter(): void {
 }
 export function renderRuns(): void {
   runsDrawer();
-  const box_ = $<HTMLElement>("#b-runs")!, runs = state.builder.runs || [], sel = state.builder.compare, stamp = invStamp();
-  for (const id of [...sel]) if (!runs.some((r) => r.id === id)) sel.delete(id);
-  const name = state.builder.character || "";
+  const box_ = $<HTMLElement>("#b-runs")!, runs = session.runs || [], stamp = invStamp();
+  const ticked = [...session.compare].filter((id) => runs.some((r) => r.id === id));
+  if (ticked.length !== session.compare.size) session.compare = new Set(ticked);
+  const name = session.character || "";
   $<HTMLElement>("#b-runs-count")!.textContent = String(runs.length);
   $<HTMLElement>("#b-runs-who")!.textContent = name ? `${name} · ${plural(runs.length, "run")} · newest first` : "";
   renderNavCounts();
@@ -101,7 +100,7 @@ export function renderRuns(): void {
     // with the buffs it was planned with: their shares in its totals, the caps they leave, and their names
     const view = resistCapsFor(run.settings.race, run.settings.resistCaps), buffs = savedBuffs(run.settings);
     const pick = (f: "cap" | "shard"): Record<string, number> => Object.fromEntries(RESIST_KEYS.map((k) => [k, view[k]![f]]));
-    const b = run.totalsAfter && buffs ? withBuffs(run.totalsAfter, rsb, paperdollCaps(view), buffPlan(name, run.settings.race, buffs)) : null;
+    const b = run.totalsAfter && buffs ? withBuffs(run.totalsAfter, rsb, paperdollCaps(view), commands.buffPlan(name, run.settings.race, buffs)) : null;
     const badges = b ? runBadges(run.changes, b.totals, run.settings.floors || {}, 0, b.caps, pick("shard")) : runBadges(run.changes, run.totalsAfter, run.settings.floors || {}, rsb, pick("cap"), pick("shard"));
     if (buffs) badges.push({ text: buffs.on.length === 1 ? `with ${buffById(buffs.on[0]!)!.name}` : `with ${plural(buffs.on.length, "buff")}` });
     return runCard(run, title, auto.diff, badges, run.inventoryStamp != null && run.inventoryStamp !== "" && run.inventoryStamp !== stamp);
@@ -121,12 +120,12 @@ function verdictOf(run: RunSummaryLike): { text: string; cls: string } | null {
   return run.proven ? { text: "proven optimal", cls: "tone-ok" } : { text: "best within budget", cls: "tone-warn" };
 }
 function runCard(run: RunSummaryLike, title: string, diff: string[], badges: Array<{ text: string; tone?: "ok" | "warn" | undefined }>, stale: boolean): HTMLLIElement {
-  const sel = state.builder.compare, showing = state.builder.openRun === run.id, when = fmtRunTime(run.createdAt);
+  const sel = session.compare, showing = session.openRun === run.id, when = fmtRunTime(run.createdAt);
   const tick = el("input", { type: "checkbox", "aria-label": `Select run from ${when}${run.label ? "" : `, ${title},`} for comparison` });
   tick.checked = sel.has(run.id);
   tick.addEventListener("change", () => {
     const r = toggleCompare(sel, run.id, tick.checked);
-    state.builder.compare = r.next; compareNote = r.refused;
+    session.compare = r.next; compareNote = r.refused;
     if (r.refused) tick.checked = false;
     renderRuns();
     if (r.refused) $<HTMLElement>(`#b-runs [data-run="${CSS.escape(run.id)}"] input[type=checkbox]`)?.focus();
@@ -163,11 +162,11 @@ export function renameRun(run: RunSummaryLike, main: HTMLElement): void {
 async function deleteRun(run: RunSummaryLike, title: string): Promise<void> {
   if (!await confirmDialog({ title: `Delete the run from ${fmtRunTime(run.createdAt)}?`, body: `"${title}" and its suit are removed from the saved runs. Building again with the same settings makes a new one.`, confirmLabel: "Delete run" })) return;
   try { await api(`/api/runs/${run.id}`, { method: "DELETE" }); } catch (err) { toast((err as Error).message, "bad"); return; }
-  state.builder.compare.delete(run.id);
+  session.compare = toggleCompare(session.compare, run.id, false).next;
   // the run on screen is gone: its result (with Start from this result, Grab all) goes too, back to the current suit
-  if (state.builder.openRun === run.id) {
-    state.builder.openRun = null;
-    if (!state.builder.job && state.builder.character) { state.builder.result = null; $<HTMLElement>("#b-msg")!.replaceChildren(); resetResultView(); renderCurrentSuit(state.builder.character); }
+  if (session.openRun === run.id) {
+    session.openRun = null;
+    if (!session.job && session.character) { session.result = null; $<HTMLElement>("#b-msg")!.replaceChildren(); commands.resetResultView(); commands.renderCurrentSuit(session.character); }
   }
   await loadRuns();
   toast("Run deleted.", "good");
@@ -185,20 +184,20 @@ async function fetchRun(id: string): Promise<SavedRunLike | null> {
 }
 // A saved run's suit into Manual (one undo step there), with the buffs it was planned with.
 async function runToManual(id: string): Promise<void> {
-  const name = state.builder.character, run = await fetchRun(id);
-  if (!run || state.builder.character !== name) return;
+  const name = session.character, run = await fetchRun(id);
+  if (!run || session.character !== name) return;
   closeRunsDrawer();
-  await openInManual(run.result.best, slotsOf(run.result.best), savedBuffs(run.settings), `Open the run from ${fmtRunTime(run.createdAt)}`);
+  await commands.openInManual(run.result.best, slotsOf(run.result.best), savedBuffs(run.settings), `Open the run from ${fmtRunTime(run.createdAt)}`);
 }
 export async function openRun(id: string): Promise<void> {
-  if (state.builder.job) { toast("A build is running. Cancel it or wait before opening a saved run."); return; }
+  if (session.job) { toast("A build is running. Cancel it or wait before opening a saved run."); return; }
   // The run belongs to the character selected now; if the player picks another one while it loads, it is
   // dropped rather than drawn (with its Fetch list and Grab all) under that one.
-  const name = state.builder.character;
+  const name = session.character;
   if (!name) return;
   const run = await fetchRun(id);
-  if (!run || state.builder.character !== name) return;
-  state.builder.openRun = id; renderRuns(); closeRunsDrawer(); showAutomatic(); closeCompare();
+  if (!run || session.character !== name) return;
+  session.openRun = id; renderRuns(); closeRunsDrawer(); commands.showAutomatic(); commands.closeCompare();
   const diff = runSettingsDiff(settingsSnapshot(), run.settings);
   // A saved run never persisted the assignment it started from, only its result (best, perSlotChanges,
   // totals). Reconstruct a per-slot "current" from that: an unchanged slot is whatever `best` has; a changed
@@ -210,7 +209,7 @@ export async function openRun(id: string): Promise<void> {
   const current: Record<string, OptItem | null> = Object.fromEntries(slotsOf(run.result.best).map((slot): [string, OptItem | null] => [slot, best[slot] || null]));
   const changes = run.result.perSlotChanges || [];
   const resolved = await resolveItems(changes.map((c) => c.fromSerial).filter(Boolean));
-  if (state.builder.character !== name) return;
+  if (session.character !== name) return;
   const unresolvedSlots: string[] = [];
   for (const c of changes) {
     if (!c.fromSerial) { current[c.slot] = null; continue; }
@@ -229,25 +228,26 @@ export async function openRun(id: string): Promise<void> {
     text: diff.length ? `Your settings → this run: ${diff.join(" · ")}` : "Same settings as the panel.",
     actions: [button({ label: "Load these settings", size: "sm", onClick: () => applySettings(run.settings) })], attrs: { class: "msg info saved-run" } }),
     ...(stale ? [message({ tone: "warn", text: "The inventory has been rescanned since this run, so some pieces may have moved or changed." })] : []));
-  state.builder.altView = null;
-  state.builder.result = run.result;
+  session.altView = null;
+  session.result = run.result;
   // run.ms is `number | null` (a saved run's on-disk shape); run.skipped is whatever that run stored (live
   // arrays or plain counts), which the Solver details' counter reads either way.
-  await renderResult(run.result, current, profileFromSettings(run.settings), name, { ms: run.ms ?? 0, poolSize: run.poolSize, skipped: run.skipped as Record<string, unknown> | undefined, reused: null });
+  await commands.renderResult(run.result, current, profileFromSettings(run.settings), name, { ms: run.ms ?? 0, poolSize: run.poolSize, skipped: run.skipped as Record<string, unknown> | undefined, reused: null });
 }
 export async function compareSelected(): Promise<void> {
   // Same rule as openRun: a build finishing would draw over the comparison.
-  if (state.builder.job) { toast("A build is running. Cancel it or wait before comparing runs."); return; }
-  const ids = [...state.builder.compare];
+  if (session.job) { toast("A build is running. Cancel it or wait before comparing runs."); return; }
+  const ids = [...session.compare];
   if (ids.length < 2) return;
   const got = await Promise.all(ids.map((id) => api<RunApiResponse>(`/api/runs/${id}`).catch(() => ({ ok: false }))));
   if (!got.every((g) => g.ok)) { toast("Could not load the runs.", "bad"); return; }
   // Every element passed the `.ok` check above; `.every()` doesn't narrow the source array.
   const runs = (got as Array<RunApiResponse & { ok: true }>).map((g) => g.run).sort((x, y) => String(x.createdAt).localeCompare(String(y.createdAt))) as SavedRunLike[];
   closeRunsDrawer();
-  showAutomatic();
+  commands.showAutomatic();
   // Each run under the name the drawer shows it by: its own, else its automatic label.
-  const list = state.builder.runs;
+  const list = session.runs;
   const titleOf = (r: SavedRunLike): string => { const i = list.findIndex((x) => x.id === r.id); return r.label || autoLabel(r, i >= 0 ? list[i + 1] : undefined).text; };
-  openRunCompare(runs, titleOf, (id) => { openRun(id); }, (id) => { state.builder.compare.delete(id); renderRuns(); });
+  commands.openRunCompare(runs, titleOf, (id) => { openRun(id); }, (id) => { session.compare = toggleCompare(session.compare, id, false).next; renderRuns(); });
 }
+provide({ loadRuns, openRunsDrawer });
