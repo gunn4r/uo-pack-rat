@@ -6,7 +6,7 @@
 // page does (buffs.mts, vault-lib.mts). One entry per tool: its name, description, JSON Schema for its arguments
 // (the subset app/schema/validate.mts checks, which mcp.mts runs before the handler), annotations and handler.
 // `action: true` marks a tool that acts in game: refused while Settings' "Allow in-game actions" is off.
-import { BRIDGE_ACTION_LABELS, BRIDGE_OFFLINE, GEAR_SLOTS, bridgeRefusal, characterProfile, containerChain, fullOf, requirementReport, resistSkillBonus, setRules, templateFrom, toOptItem, totalsOf } from "./vault-lib.mts";
+import { BRIDGE_ACTION_LABELS, BRIDGE_OFFLINE, GEAR_SLOTS, bridgeRefusal, characterProfile, containerChain, fullOf, isPseudoCharacter, requirementReport, resistSkillBonus, setRules, templateFrom, toOptItem, totalsOf } from "./vault-lib.mts";
 import type { BridgeAction, Character, CharacterEntryRaw, Container, EffectiveProfile, Item, ProfilesFile, PropMap, RunBuffs } from "./vault-lib.mts";
 import { buffPlanOf, buffSkillValues, manualProfile, normalizeBuffs, ownEntry, plannedProfile, runBuffs, BUFFS } from "./buffs.mts";
 import { EXTRA_COLS, parseItemQuery } from "./item-query.mts";
@@ -78,7 +78,7 @@ function row(it: Item): Record<string, unknown> {
 const nonZero = (m: PropMap | Record<string, number> | undefined): Record<string, number> => Object.fromEntries(Object.entries(m || {}).filter(([, v]) => v));
 const inventory = async (ctx: ToolContext): Promise<InventoryDoc> => (await ctx.api<{ inventory: InventoryDoc }>("/api/inventory")).inventory;
 const scannedCharacter = (inv: InventoryDoc, name: string): Character => {
-  if (!Object.hasOwn(inv.characters, name) || name.startsWith("_")) throw new ToolError(`no scans for character ${JSON.stringify(name)}; list_characters names them`);
+  if (!Object.hasOwn(inv.characters, name) || isPseudoCharacter(name)) throw new ToolError(`no scans for character ${JSON.stringify(name)}; list_characters names them`);
   return inv.characters[name]!;
 };
 async function itemsBySerial(ctx: ToolContext, serials: number[]): Promise<Record<string, Item>> {
@@ -220,7 +220,7 @@ export const TOOLS: Tool[] = [
     async handler(_a, ctx) {
       const inv = await inventory(ctx);
       const f = inv.facets;
-      return { characters: Object.keys(inv.characters).filter((n) => !n.startsWith("_")).sort(), itemCount: inv.itemCount, slots: f.slots, kinds: f.kinds, rarities: f.rarities, slayers: f.slayers,
+      return { characters: Object.keys(inv.characters).filter((n) => !isPseudoCharacter(n)).sort(), itemCount: inv.itemCount, slots: f.slots, kinds: f.kinds, rarities: f.rarities, slayers: f.slayers,
         weaponSkills: f.weaponSkills, flags: f.flagKeys, properties: f.propKeys.map((key) => ({ key, name: fullOf(key) })), extraKeys: [...(f.extraKeys as string[]), ...Object.keys(EXTRA_COLS)] };
     },
   },
@@ -335,7 +335,7 @@ export const TOOLS: Tool[] = [
       const inv = await inventory(ctx);
       const roots = (name: string): Record<string, number> => Object.fromEntries(Object.values(inv.containers)
         .filter((c) => c.parent == null && (c.kind === "backpack" || c.kind === "bank") && c.scannedBy === name).map((c) => [c.kind!, c.serial]));
-      return { characters: Object.values(inv.characters).filter((c) => !c.name.startsWith("_")).sort((x, y) => x.name.localeCompare(y.name)).map((c) => ({
+      return { characters: Object.values(inv.characters).filter((c) => !isPseudoCharacter(c.name)).sort((x, y) => x.name.localeCompare(y.name)).map((c) => ({
         name: c.name, scannedAt: c.scannedAt, stats: c.stats, wearing: (inv.worn[c.name] || []).length, ...roots(c.name) })) };
     },
   },
@@ -427,7 +427,7 @@ export const TOOLS: Tool[] = [
     async handler(_a, ctx) {
       const [inv, st, { settings }] = await Promise.all([inventory(ctx), ctx.api<BridgeStatus>("/api/bridge/status"), ctx.api<{ settings: { client?: { adapter: string } | null } }>("/api/settings")]);
       return { scans: inv.scans.length, newestScan: newestStamp(inv.scans) || null, client: settings.client?.adapter ?? null,
-        characters: Object.values(inv.characters).filter((c) => !c.name.startsWith("_")).map((c) => ({ name: c.name, scannedAt: c.scannedAt })),
+        characters: Object.values(inv.characters).filter((c) => !isPseudoCharacter(c.name)).map((c) => ({ name: c.name, scannedAt: c.scannedAt })),
         bridge: { online: !!st.online, character: st.character ?? null, secondsSinceHeartbeat: Number.isFinite(st.age) ? st.age : null } };
     },
   },
