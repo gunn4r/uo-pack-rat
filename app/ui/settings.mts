@@ -1,9 +1,10 @@
-// ui/settings.mts — the Settings screen (design spec 4.11): four sections (General, Game client, Data,
-// Updates) in a column of cards made of setting rows — title and help on the left, the control
+// ui/settings.mts — the Settings screen (design spec 4.11): five sections (General, Game client, Data,
+// AI assistants (MCP), Updates) in a column of cards made of setting rows — title and help on the left, the control
 // on the right. General holds the look (theme family, appearance) and the shard rules; Game client its
 // status, Run setup and Reinstall; Data the data folder and logs with Open, the blacklisted containers, export and
 // import of the item kinds the player set,
-// how long old scans and saved runs are kept, and the danger zone (forget a character, forget a container); Updates the version, the update check and its automatic switch. Always re-fetches GET
+// how long old scans and saved runs are kept, and the danger zone (forget a character, forget a container); AI assistants
+// the built-in MCP server's two switches and how to connect a client (issue #211); Updates the version, the update check and its automatic switch. Always re-fetches GET
 // /api/setup on render (a cheap directory listing) so it reflects whatever the wizard, or this screen's
 // own actions, just changed.
 import { state } from "./store.mts";
@@ -22,7 +23,7 @@ import { clientErrorMessage, uoFolderErrorMessage, dataDirNotice, errorText, hos
 import { autostartNote, hotkeyLabel, panelControls } from "./tazuo-panel.mts";
 import { exportKinds, importKinds } from "./kinds.mts";
 import { tiledataNote } from "./house-map-model.mts";
-import type { SetupApiResponse, InstallApiResponse, UpdateCheckApiResponse, BlacklistApiResponse, CleanupApiResponse, RetentionSetting, SettingsApiResponse, PanelPrefs, TazuoPanelApiResponse, HousesApiResponse, TiledataFrom, HostPickFolderApiResponse, ApiError } from "./api-types.mts";
+import type { SetupApiResponse, InstallApiResponse, UpdateCheckApiResponse, BlacklistApiResponse, CleanupApiResponse, RetentionSetting, SettingsApiResponse, PanelPrefs, TazuoPanelApiResponse, McpApiResponse, HousesApiResponse, TiledataFrom, HostPickFolderApiResponse, ApiError } from "./api-types.mts";
 import type { BlacklistEntry } from "../vault-lib.mts";
 
 // Reinstall's own confirmation and result — separate from the wizard's, since this row acts on the client
@@ -44,9 +45,11 @@ export async function renderSettings(setup?: SetupApiResponse): Promise<void> {
     catch (e) { root.replaceChildren(message({ tone: "bad", title: "Could not load setup info", text: errorText(e) })); return; }
   }
   state.setup = setup;
+  mcpTokenShown = false;   // the token is hidden again whenever Settings is drawn afresh
   renderDataDirNotice();
-  root.replaceChildren(generalSection(), clientSection(setup), dataSection(setup), updatesSection(setup));
+  root.replaceChildren(generalSection(), clientSection(setup), dataSection(setup), mcpSection(), updatesSection(setup));
   void syncSettingsBlacklist();
+  void syncMcpCard();
   void syncPanelCard();
   void syncUoFolderCard();
 }
@@ -359,6 +362,66 @@ export function syncSettingsCharacters(): void {
   const names = knownCharacters();
   if (names.join("\n") === [...who.options].map((o) => o.value).join("\n")) return;
   void renderSettings(state.setup);
+}
+
+// ---------------------------------------------------------------- AI assistants (MCP), issue #211
+// The built-in MCP server (app/mcp.mts): its switch, the second switch for in-game actions, and, while it runs, the
+// address, the token (hidden until Show), and a Claude Code command and a JSON snippet built from both. The card is
+// filled once GET /api/mcp answers, and drawn again after every change. While it is off only the two switches show.
+let mcpTokenShown = false;
+function mcpSection(): HTMLElement {
+  return section("set-mcp", "AI assistants (MCP)", box("div", { class: "card set-card", id: "set-mcp-card" }));
+}
+async function syncMcpCard(): Promise<void> {
+  if (!$("#set-mcp-card")) return;
+  let card: HTMLElement;
+  try { card = mcpCard(await api<McpApiResponse>("/api/mcp")); }
+  catch (e) { card = box("div", { class: "card set-card", id: "set-mcp-card" }, box("div", { class: "set-row-below set-pad" }, message({ tone: "bad", title: "Could not read the MCP settings", text: errorText(e) }))); }
+  $<HTMLElement>("#set-mcp-card")?.replaceWith(card);
+}
+// One line, so it pastes the same into any shell (a trailing backslash continues a line only in POSIX shells).
+const mcpCommand = (url: string, token: string): string => `claude mcp add --transport http --scope user pack-rat ${url} --header "Authorization: Bearer ${token}"`;
+const mcpJson = (url: string, token: string): string => JSON.stringify({ mcpServers: { "pack-rat": { type: "http", url, headers: { Authorization: `Bearer ${token}` } } } }, null, 2);
+async function copyWith(text: string, what: string): Promise<void> {
+  if (await copyText(text)) showToast(`Copied the ${what}.`, "ok"); else showToast(`Could not copy the ${what}.`, "bad");
+}
+function mcpCard(r: McpApiResponse): HTMLElement {
+  const { config: c, live } = r;
+  const save = async (change: { enabled?: boolean; allowActions?: boolean }): Promise<void> => {
+    try { await api("/api/mcp", { method: "PUT", body: change }); } catch (e) { showToast(`Could not save: ${errorText(e)}`, "bad"); }
+    void syncMcpCard();
+  };
+  const on = switchControl({ label: c.enabled ? "On" : "Off", checked: c.enabled, attrs: { id: "set-mcp-on" }, onChange: (v) => { void save({ enabled: v }); } });
+  const acts = switchControl({ label: c.allowActions ? "On" : "Off", checked: c.allowActions, attrs: { id: "set-mcp-actions" }, onChange: (v) => { void save({ allowActions: v }); } });
+  const rows: HTMLElement[] = [
+    row({ title: "MCP server", label: "set-mcp-on", control: on.root, help: "Lets Claude Code and other MCP clients search your inventory, read character sheets, compare saved runs and run the Suit Builder. Only programs on this computer that have the token can connect. What a connected assistant reads can be sent to its AI provider.",
+      below: [c.enabled && !live.listening ? message({ tone: "bad", text: "The MCP server could not start. The server log in the data folder says why." }) : null] }),
+    row({ title: "Allow in-game actions", label: "set-mcp-actions", control: acts.root, help: "Also lets them Highlight, Go to, Grab and run Organize trips, through the same bridge and checks as the buttons." }),
+  ];
+  if (c.enabled && live.listening && live.port != null && c.token) {
+    const url = `http://127.0.0.1:${live.port}/mcp`, token = c.token;
+    const shown = mcpTokenShown ? token : token.replace(/[^-]/g, "•");
+    rows.push(
+      row({ title: "Address", help: el("span", { class: "mono", id: "set-mcp-url" }, url), control: button({ label: "Copy", attrs: { id: "set-mcp-copy-url", "aria-label": "Copy address" }, onClick: () => { void copyWith(url, "address"); } }),
+        below: [live.portBusy != null ? message({ tone: "warn", title: `Port ${live.portBusy} was busy`, text: `Pack Rat is using port ${live.port} this time. Clients set up with the old address can't connect until the next launch frees it, or copy the command again.` }) : null] }),
+      row({ title: "Token", help: el("span", {}, el("span", { class: "mono", id: "set-mcp-token" }, shown), " A new token disconnects every client set up with the old one."),
+        control: box("div", { class: "set-inline" },
+          button({ label: mcpTokenShown ? "Hide" : "Show", variant: "ghost", attrs: { id: "set-mcp-show" }, onClick: () => { mcpTokenShown = !mcpTokenShown; void syncMcpCard(); } }),
+          button({ label: "Copy", attrs: { id: "set-mcp-copy-token", "aria-label": "Copy token" }, onClick: () => { void copyWith(token, "token"); } }),
+          button({ label: "New token", attrs: { id: "set-mcp-new-token" }, onClick: async () => {
+            if (!await confirmDialog({ title: "Make a new token?", body: "Every MCP client set up with the current token stops connecting until you give it the new one: copy the command or the JSON again.", confirmLabel: "New token" })) return;
+            try { await api("/api/mcp/token", { method: "POST", body: {} }); showToast("New token made. Copy the command or the JSON again.", "ok"); }
+            catch (e) { showToast(`Could not make a new token: ${errorText(e)}`, "bad"); }
+            void syncMcpCard();
+          } })) }),
+      row({ title: "Claude Code", help: el("span", {}, "Run this once in a terminal. ", el("span", { class: "mono" }, "--scope user"), " makes Pack Rat available in every project."),
+        control: button({ label: "Copy command", variant: "primary", attrs: { id: "set-mcp-copy-command" }, onClick: () => { void copyWith(mcpCommand(url, token), "command"); } }),
+        below: [el("pre", { class: "set-code", id: "set-mcp-command" }, mcpCommand(url, shown))] }),
+      row({ title: "Other MCP clients", help: "Paste into the client's MCP settings (Streamable HTTP).",
+        control: button({ label: "Copy JSON", attrs: { id: "set-mcp-copy-json" }, onClick: () => { void copyWith(mcpJson(url, token), "JSON"); } }),
+        below: [el("pre", { class: "set-code", id: "set-mcp-json" }, mcpJson(url, shown))] }));
+  }
+  return box("div", { class: "card set-card", id: "set-mcp-card" }, ...rows);
 }
 
 // ---------------------------------------------------------------- Updates

@@ -219,6 +219,13 @@ export interface InstallApiResponse {
 // The TazUO panel (app/tazuo-panel-prefs.mts): GET/PUT /api/tazuo-panel, and POST /api/setup/install's `panel`.
 export type { AutostartOutcome, PanelHotkey, PanelPrefs };
 export interface TazuoPanelApiResponse { ok: boolean; prefs: PanelPrefs }
+// GET/PUT /api/mcp and POST /api/mcp/token: the built-in MCP server's settings and its listener (app/mcp.mts). `token` is
+// null until MCP is first turned on; `live.portBusy` names the saved port when another program held it at launch.
+export interface McpApiResponse {
+  ok: boolean;
+  config: { enabled: boolean; allowActions: boolean; port: number; token: string | null };
+  live: { listening: boolean; port: number | null; portBusy: number | null };
+}
 export interface HostPickFolderApiResponse {
   ok: boolean;
   path: string | null;

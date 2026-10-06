@@ -7,9 +7,9 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { effectiveProfile, profileResistCaps, setRules } from "./vault-lib.mts";
-import type { Character, Profile, PropMap } from "./vault-lib.mts";
+import type { Character, Item, Profile, PropMap } from "./vault-lib.mts";
 import type { RulesV1 } from "./schema/types.d.mts";
-import { BUFFS, BUFF_IDS, BUFF_GROUPS, BUFF_INPUTS, applyBuffs, buffById, buffShift, buffSkillValues, buffText, buffsDiff, gearNeedsText, isBuffList, isBuffListsByCharacter, isBuffSkills, isBuffSkillsByCharacter, isRunBuffs, normalizeBuffListsByCharacter, normalizeBuffs, ownEntry, plannedFromWorn, plannedProfile, runBuffs, savedBuffs, toggleBuff } from "./buffs.mts";
+import { BUFFS, BUFF_IDS, BUFF_GROUPS, BUFF_INPUTS, applyBuffs, buffById, buffShift, buffSkillValues, buffText, buffsDiff, gearNeedsText, isBuffList, isBuffListsByCharacter, isBuffSkills, isBuffSkillsByCharacter, isRunBuffs, manualProfile, normalizeBuffListsByCharacter, normalizeBuffs, ownEntry, plannedFromWorn, plannedProfile, runBuffs, savedBuffs, toggleBuff } from "./buffs.mts";
 import type { BuffPlan, Skills, Stats } from "./buffs.mts";
 
 setRules(JSON.parse(readFileSync(new URL("./rules/uoalive.json", import.meta.url), "utf8")) as RulesV1);
@@ -481,4 +481,18 @@ test("[fast] buffs: a run saves its buffs and their numbers; a change shows in t
   // the panel's buffs by character, held to the same rule as the edits
   assert.equal(isBuffListsByCharacter({ Dorran: ["divineFury", "bless"], Kestrel: [] }), true);
   for (const bad of [[], { Dorran: ["nope"] }, { Dorran: ["bless", "bless"] }, { Dorran: "bless" }, null]) assert.equal(isBuffListsByCharacter(bad), false, JSON.stringify(bad));
+});
+
+test("[fast] buffs: manualProfile plans a hand-picked suit from that suit's weapon and totals, the raw stats from what is worn now", () => {
+  const item = (serial: number, slot: string, props: PropMap, flags: string[] = []): Item => ({ serial, name: `Piece ${serial}`, amount: 1, props, setBonus: {}, extras: {}, flags, tags: [], strReq: 0, rarity: null, weight: null, skillReq: null,
+    lines: [], gargoyle: false, slayers: [], medable: false, slot, twoHanded: false, gear: true, kind: "gear", root: null, container: null, equippedBy: null, layer: null, seenAt: "", scannedBy: "" });
+  const ch = { name: "Kestrel", stats: { str: 100, dex: 90, int: 60 }, skills: {}, scannedAt: "", position: null, maxes: null, resists: null, adapter: null } as unknown as Character;
+  const worn = [item(1, "oneHanded", { dexBonus: 10 })];
+  const picked = { oneHanded: item(2, "oneHanded", { ep: 15 }, ["spell channeling"]) };
+  const p = manualProfile({ floors: { hci: 10 } }, ch, worn, picked, "human", ["divineFury"], {});
+  assert.deepEqual(p.buffs?.who.weaponFlags, ["spell channeling"], "the picked weapon's flags, not the worn one's");
+  assert.deepEqual(p.buffs?.stats, { str: 100, dex: 80, int: 60 }, "raw stats: the scan less what is worn now");
+  const none = manualProfile({ floors: { hci: 10 }, race: "elf" }, null, [], picked, null, ["divineFury"], {});
+  assert.equal(none.buffs?.stats, null);
+  assert.equal(none.buffs?.who.race, null, "no character: no race");
 });

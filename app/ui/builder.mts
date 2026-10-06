@@ -4,9 +4,9 @@
 // suit). The result, the compare view and the Solver details are ui/builder-result.mts; the saved-runs drawer
 // is ui/runs.mts. The panel is drawn from state.builder.profile plus the Advanced knobs below, so what a
 // build sends, what a profile saves and what a run snapshots are read from state, never from the DOM.
-import { PROP_LABELS, NOT_BUILDER_KEYS, GEAR_SLOTS, tagUnits, WEAPON_SKILLS, MELEE_SKILLS, resistSkillBonus, effectiveProfile, profileResistCaps, totalsOf, getRules, RESIST_KEYS, RESIST_CAP_LIMITS, resistCapsFor, templateFrom, settingsDiff, bagLabel } from "../vault-lib.mts";
+import { PROP_LABELS, NOT_BUILDER_KEYS, GEAR_SLOTS, tagUnits, WEAPON_SKILLS, MELEE_SKILLS, resistSkillBonus, effectiveProfile, profileResistCaps, getRules, RESIST_KEYS, RESIST_CAP_LIMITS, resistCapsFor, templateFrom, characterProfile, settingsDiff, bagLabel } from "../vault-lib.mts";
 import type { EffectiveProfile, ResistCap, RunBuffs, RunSettings, Character } from "../vault-lib.mts";
-import { applyBuffs, buffById, gearNeedsText, overrideNote, planBuffs, normalizeBuffs, normalizeBuffListsByCharacter, ownEntry, plannedProfile, runBuffs, toggleBuff, type BuffPlan } from "../buffs.mts";
+import { applyBuffs, buffById, gearNeedsText, overrideNote, planBuffs, normalizeBuffs, normalizeBuffListsByCharacter, ownEntry, plannedProfile, runBuffs, toggleBuff, buffPlanOf, type BuffPlan } from "../buffs.mts";
 import { state, invStamp } from "./store.mts";
 import type { BuilderProfile, BuilderJob, BuilderJobUi, FinishedBuild, BuildMeta } from "./store.mts";
 import { $, el, label, full, fmtN, fmtSecs, slotLabel, toast } from "./dom.mts";
@@ -14,12 +14,11 @@ import { promptText } from "./dialog.mts";
 import { box, txt, button, icon, kbd, badge, message, select, input, field, switchControl, check, segmented, filterChip, pill, popover, closePopover, menu, searchInput, stepper, progress, tooltip, confirmDialog, modalOpen } from "./components.mts";
 import { api, CLIENT_ID } from "./api.mts";
 import { buffChip, createBuffPicker, keepChipFocus, type BuffPicker, type BuffView, type PickerActions } from "./builder-buffs.mts";
-import { wornSet } from "./sheet.mts";
 import { optimizeErrorMessage } from "./messages.mts";
 import { parseRoute, routeFor } from "./app.mts";
 import { setNavBusy } from "./shell.mts";
 import { loadRuns, settingsSnapshot, openRunsDrawer } from "./runs.mts";
-import { initManual, paintCharSelect, setManualFor, renderManual, syncManual, buffInputsOf, buffEditsOf, editBuffInputs, applyRunInputs, savePrefs, weaponFlags, filling } from "./builder-manual.mts";
+import { initManual, paintCharSelect, setManualFor, renderManual, syncManual, buffInputsOf, buffEditsOf, editBuffInputs, applyRunInputs, savePrefs, filling } from "./builder-manual.mts";
 import { renderResult, renderCurrentSuit, refreshCurrentSuit, resultLoadError, closeCompare, resetResultView } from "./builder-result.mts";
 import { paperdoll, paperdollCaps, propName, weightsSummary, requirementsSummary, poolSummary, advancedSummary, knobError, firstKnobError, knobFromServerError, ruleValueError, resistCapError, withResistCap, capNote, resistCapsSummary, gearCapsText, pruneResistCaps, floorCapWarning, weaponsChipText, weaponName, toggleWeapon, type Knobs, type KnobField } from "./builder-model.mts";
 import type { UiPrefs, OptimizeResult, OptimizeProgress, SavedRunLike, OptimizeStartApiResponse, OptimizeCancelApiResponse, JobSnapshotEvent, JobDoneEvent, JobFailedEvent, JobCancelledEvent } from "./api-types.mts";
@@ -109,10 +108,7 @@ function setNoCharacter(none: boolean): void {
 export function selectCharacter(name: string): void {
   state.builder.character = name;
   if (parseRoute().tab === "builder") history.replaceState(null, "", routeFor("builder"));
-  const profiles = state.profiles!;
-  const saved = profiles.characters?.[name];
-  const [firstTpl] = Object.keys(profiles.templates || {});
-  state.builder.profile = saved ? JSON.parse(JSON.stringify(saved)) : { ...templateFrom(profiles.templates?.[firstTpl as string]), template: firstTpl, race: "human" };
+  state.builder.profile = characterProfile(state.profiles!, name);
   state.builder.profile!.excludeRoots ??= [];
   clearCapDrafts();
   $<HTMLSelectElement>("#b-char")!.value = name;
@@ -282,9 +278,7 @@ export const panelBuffs = (): RunBuffs | undefined => runBuffs(buffsOn(), buffIn
 // and the numbers they took, over the character's own; its raw stats and `race`; and what it wears now, which a
 // potion's Enhance Potions and Enchant's Spell Channeling are read from (app/buffs.mts plannedProfile).
 export function buffPlan(name: string, race: string | null | undefined, buffs: RunBuffs | undefined): BuffPlan {
-  const inputs = buffInputsOf(name), worn = state.inv!.worn[name] || [];
-  return { on: buffs?.on ?? [], skills: { ...inputs.values, ...buffs?.skills }, stats: inputs.stats, worn: totalsOf(wornSet(name)),
-    who: { race: race || "human", weaponFlags: weaponFlags(Object.fromEntries(worn.map((i) => [i.slot, i]))) } };
+  return buffPlanOf((state.inv!.characters[name] as Character | undefined) ?? null, state.inv!.worn[name] || [], race, buffs, buffEditsOf(name));
 }
 // The panel's buffs set (healed, as a saved list is), and saved.
 function setPanelBuffs(on: string[]): void {
