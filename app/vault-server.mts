@@ -153,6 +153,7 @@ import { createUiPrefsStore, isColWidths, isDrawerWidth, isManualSuit, UI_PREF_C
 import { createSettingsStore, type ClientSettings, type SettingsDoc } from "./store/settings.mts";
 import { createSettingsService } from "./services/settings.mts";
 import { createEventBus, sse } from "./services/events.mts";
+import { createSetupService } from "./services/setup.mts";
 import { send, asObject, SSE_HEADERS } from "./http/respond.mts";
 import { isBoundedInt, isBoundedString, MAX_SERIAL, short } from "./guards.mts";
 import { writeFileAtomic } from "./atomic-write.mts";
@@ -177,8 +178,8 @@ import { addGrab, harvestTrips, noteSeen, pruneOverlay, PENDING_GRACE_MS, type B
 import { retentionError, retentionOf, runsToPrune, scansToPrune } from "./retention.mts";
 import { missingSinceLastScan, type MissingItem } from "./missing.mts";
 import {
-  listAdapters, candidateClientRoots, validateScriptsDir, badPathShape, installedVersion, installScripts, pasteScanner,
-  repoFromPackage, checkForUpdates, type CheckForUpdatesResult, type FetchLike, checkScriptsDataDir, type DataDirCheck, type AdapterInfo,
+  candidateClientRoots, validateScriptsDir, badPathShape, installedVersion, installScripts, pasteScanner,
+  repoFromPackage, checkForUpdates, type CheckForUpdatesResult, type FetchLike, type AdapterInfo,
 } from "./installer.mts";
 import { dataDirNotice } from "./data-dir-notice.mts";
 import { homedir } from "node:os";
@@ -471,20 +472,11 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
     console.warn(msg);
     safeAppendLog(CONFIG.paths.log, `${new Date().toISOString()} startup-fallback ${msg}\n`);
   }
+  const setupService = createSetupService({ adaptersDir: ADAPTERS_DIR, dataDir: CONFIG.dataDir, demo: CONFIG.demo, clientSearch });
   const appSettings = createSettingsService({ store: createSettingsStore({ file: SETTINGS, warn: startupWarning }), rulesDir: USER_RULES_DIR,
-    isKnownAdapter: (id) => listAdapters(ADAPTERS_DIR).some((a) => a.id === id), warn: startupWarning });
+    isKnownAdapter: setupService.isKnown, warn: startupWarning });
 
-  // Whether the client's installed scripts write to this data folder (installer.mts's
-  // checkScriptsDataDir). Run on every GET /api/setup, so a reinstall clears the page's banner with no
-  // restart, and once here, so a plain `npm start` on the default folder against scripts pointed at a
-  // dev folder says so in the terminal instead of just showing nothing. Never under --demo: its
-  // fixtures don't come from any client. The sentence is the page's own (ui/messages.mts).
-  function dataDirCheck(): DataDirCheck {
-    if (CONFIG.demo) return { status: "none" };
-    const candidates = appSettings.current().client ? [] : listAdapters(ADAPTERS_DIR).flatMap((a) => clientSearch.candidates(a));
-    return checkScriptsDataDir({ dataDir: CONFIG.dataDir, client: appSettings.current().client, candidates, home: clientSearch.home, platform: process.platform });
-  }
-  const dataDirWarning = dataDirNotice(dataDirCheck());
+  const dataDirWarning = dataDirNotice(setupService.dataDirCheck(appSettings.current().client));
   if (dataDirWarning) console.warn(dataDirWarning);
 
   // ---- /api/events: one shared SSE stream, fed by one app/watcher.mts per adapter ------------------
@@ -693,10 +685,7 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
     const got = await organizeInputs();
     return { ...got, plan: planOf(got.fold, got.config, got.state) };
   }
-  const runsTrips = (adapter: string): boolean => {
-    const caps = listAdapters(ADAPTERS_DIR).find((a) => a.id === adapter)?.capabilities as { bridge?: unknown } | undefined;
-    return Array.isArray(caps?.bridge) && caps.bridge.includes("trip");
-  };
+
   // Trip `index` of `plan` queued with queueTrip and recorded as pending, so its result is read back into the
   // overlay (harvestTrips). A Put away trip from the pack carries putAway, the picked container (docs/bridge-protocol.md, Put away).
   function queuePlanTrip(adapter: string, fold: Inventory, state: OrganizeState, plan: Plan, index: number, putAway?: number): { ok: true; id: string } | { ok: false; error: string } {
@@ -737,7 +726,7 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
   // picked (their backpack or a bag in it, put into the house they stand in, or a container in a labelled chest).
   // The panel asks again after each trip until nothing is left.
   async function putAwayRun(adapter: string, req: PutAwayRequest): Promise<Omit<PutAwayReply, "id" | "t">> {
-    if (!runsTrips(adapter)) return { ok: false, msg: "This client's bridge cannot run Put away." };
+    if (!setupService.runsTrips(adapter)) return { ok: false, msg: "This client's bridge cannot run Put away." };
     const { fold, config, state, problems } = await organizeInputs();
     if (problems.length) return { ok: false, msg: "Organize's setup was hand-edited.", detail: "Open Organize in the app and save it." };
     if (state.pending[0]) return { ok: false, msg: `Trip ${state.pending[0].index} has not reported back yet.` };
@@ -1213,7 +1202,7 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
             const adapter = rec.adapter;
             // Security (post-review fix): client.adapter must be a real, known adapter id before it can
             // ever reach installer.mts's path.join calls — see the /api/setup/install note below.
-            const info = listAdapters(ADAPTERS_DIR).find((a) => a.id === adapter);
+            const info = setupService.adapters().find((a) => a.id === adapter);
             if (!info) {
               return send(res, 400, { ok: false, error: `settings.client.adapter: unknown adapter "${adapter}"` });
             }
@@ -1282,7 +1271,7 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
       }
       // ---- Setup wizard (Task 2): adapter discovery, client-folder install, scan import, update check.
       if (req.method === "GET" && url.pathname === "/api/setup") {
-        const adapters = listAdapters(ADAPTERS_DIR);
+        const adapters = setupService.adapters();
         const candidates: Record<string, string[]> = {}, available: Record<string, string | null> = {};
         for (const a of adapters) {
           candidates[a.id] = clientSearch.candidates(a);
@@ -1311,7 +1300,7 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
           // app/ui/bridge.mts's currentAdapter() falls back to this when settings.client is unset (a
           // hand-installed or Skip-through-the-wizard player) — see the appSettings.bridgeAdapter() comment above.
           bridgeAdapter: bridgeAdapterField,
-          dataDirCheck: dataDirCheck(),
+          dataDirCheck: setupService.dataDirCheck(appSettings.current().client),
           // Settings › Updates names the running version ("Pack Rat 0.1.0") before any update check.
           version: PACKAGE_JSON.version,
           // Whether POST /api/host/open-path can do anything: only the desktop shell opens a folder. The
@@ -1324,7 +1313,7 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
         // Read-only and path-free: the id must name a known paste-transport adapter, and the script is that
         // adapter's own bundled packrat-scanner.ts (installer.mts's pasteScanner).
         const adapter = url.searchParams.get("adapter");
-        if (!listAdapters(ADAPTERS_DIR).some((a) => a.id === adapter && a.transport === "paste")) return send(res, 400, { ok: false, error: `unknown paste adapter: ${short(adapter)}` });
+        if (!setupService.adapters().some((a) => a.id === adapter && a.transport === "paste")) return send(res, 400, { ok: false, error: `unknown paste adapter: ${short(adapter)}` });
         const scanner = pasteScanner(ADAPTERS_DIR, adapter as string);
         if (!scanner) return send(res, 404, { ok: false, error: "this build ships no scanner for that client" });
         return send(res, 200, { ok: true, ...scanner });
@@ -1334,7 +1323,7 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
         // Security (post-review fix): adapter is only ever used in an error string by validateScriptsDir
         // itself, but every route taking an adapter id is checked against the real, known ids the same
         // way, so a caller can't probe with an arbitrary string here either.
-        if (!listAdapters(ADAPTERS_DIR).some((a) => a.id === adapter)) return send(res, 400, { ok: false, error: `unknown adapter: ${short(adapter)}` });
+        if (!setupService.adapters().some((a) => a.id === adapter)) return send(res, 400, { ok: false, error: `unknown adapter: ${short(adapter)}` });
         // Every refusal from here down is the same opaque line: this route's whole purpose is to say
         // yes or no about a folder the user picked, and validateScriptsDir's own messages name the
         // path they probed — which made that yes/no a filesystem oracle for any absolute path on the
@@ -1354,7 +1343,7 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
         // arbitrary packrat-*.py from anywhere on disk into the user's LegionScripts folder.
         // installScripts also re-validates the id itself (defence in depth), but the route rejects it
         // first so the error is the clear "unknown adapter" rather than installScripts' own message.
-        if (!listAdapters(ADAPTERS_DIR).some((a) => a.id === adapter)) return send(res, 400, { ok: false, error: `unknown adapter: ${short(adapter)}` });
+        if (!setupService.adapters().some((a) => a.id === adapter)) return send(res, 400, { ok: false, error: `unknown adapter: ${short(adapter)}` });
         // The destination goes through the SAME acceptance POST /api/setup/locate applies (post-review
         // fix, area-3 finding 4): the two halves of the wizard used to disagree about what a scripts
         // folder is — locate validated, install took the raw body value and only installScripts'
@@ -1395,7 +1384,7 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
         const { text, adapter } = asObject(await readBody(req, { limit: MAX_INBOX_BYTES, tooLargeMsg: "paste too large" }));
         // Same allowlist as every other adapter-taking route — adapter reaches
         // CONFIG.paths.inboxFor -> path.join, so it must be a real, known id before that.
-        if (!listAdapters(ADAPTERS_DIR).some((a) => a.id === adapter)) return send(res, 400, { ok: false, error: `unknown adapter: ${short(adapter)}` });
+        if (!setupService.adapters().some((a) => a.id === adapter)) return send(res, 400, { ok: false, error: `unknown adapter: ${short(adapter)}` });
         const parsed = parsePastedScan(text);
         if (!parsed.ok) return send(res, 400, { ok: false, error: parsed.error });
         // Post-review minor: `adapter` (which inbox the file gets filed under, from the Import tab's
@@ -1964,7 +1953,7 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
         const { index, stamp } = asObject(await readBody(req, { limit: 8e3 }));
         if (!isBoundedInt(index, 1, 10000) || !isBoundedString(stamp, 64)) return send(res, 400, { ok: false, error: "index (a trip number) and stamp (the plan's) are required" });
         const adapter = appSettings.bridgeAdapter();
-        if (!runsTrips(adapter)) return send(res, 409, { ok: false, error: `the ${adapter} bridge cannot run Organize trips` });
+        if (!setupService.runsTrips(adapter)) return send(res, 409, { ok: false, error: `the ${adapter} bridge cannot run Organize trips` });
         const { fold, state, plan, problems } = await organizeNow();
         // A salvaged setup lost rules or targets, and their items may now fall through to another rule or the
         // catch-all: nothing moves until the player has seen that and saved the setup again.
