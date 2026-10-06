@@ -7,7 +7,7 @@
 //         shared by the browser and GET /api/items below — no DOM, no node: imports, servable byte for
 //         byte like vault-lib.mts) · GET /scan-schema.mjs (vault-lib.mts imports it for parseStamp, so
 //         it must be servable to the browser the same way) ·
-//         GET /schema/validate.mjs (scan-schema.mts's own import, same reason) · GET /organize-config.mjs (the rule editor's import, same reason) · GET /buffs.mjs (the Suit Builder's Manual buffs, same reason) ·
+//         GET /schema/validate.mjs (scan-schema.mts's own import, same reason) · GET /organize-config.mjs (the rule editor's import, same reason) · GET /buffs.mjs (the Suit Builder's Manual buffs, same reason) · GET /data-dir-notice.mjs (ui/messages.mts's import, same reason) ·
 //         GET /ui/<name> (name matching /^[a-z0-9-]+\.(mjs|css)$/, served from app/ui/, else 404) ·
 //         GET /ui/fonts/<name>.woff2 (the bundled IBM Plex faces, app/ui/fonts/, as binary font/woff2) ·
 //         GET /api/inventory (the cached fold of every scan, with Organize's results overlay applied —
@@ -138,7 +138,7 @@ import { parseItemQuery, applyItemQuery, facetsOf, wantsHits, hitRow, type ItemQ
 import { optionalSlotsFor } from "./mip.mts";
 import { GEAR_SLOTS } from "./vault-lib.mts";
 import { isBuffList, isBuffListsByCharacter, isBuffSkillsByCharacter, isRunBuffs, normalizeBuffs, normalizeBuffListsByCharacter } from "./buffs.mts";
-import { startWatcher, jsonErrorReason, MAX_INBOX_BYTES, type StartWatcherOptions, type WatcherHandle } from "./watcher.mts";
+import { startWatcher, MAX_INBOX_BYTES, type StartWatcherOptions, type WatcherHandle } from "./watcher.mts";
 import { parsePastedScan, writeScanToInbox } from "./import.mts";
 import { createMcp } from "./mcp.mts";
 import { readBody, type HttpError } from "./read-body.mts";
@@ -164,7 +164,8 @@ import {
   listAdapters, candidateClientRoots, validateScriptsDir, badPathShape, installedVersion, installScripts, pasteScanner,
   repoFromPackage, checkForUpdates, type CheckForUpdatesResult, type FetchLike, checkScriptsDataDir, type DataDirCheck, type AdapterInfo,
 } from "./installer.mts";
-import { dataDirNotice } from "./ui/messages.mts";
+import { dataDirNotice } from "./data-dir-notice.mts";
+import { jsonErrorReason } from "./paste-scan.mts";
 import { homedir } from "node:os";
 
 import { resolveConfig, ensureLayout, APP_DIR, DATA_DIR_MODE, DATA_FILE_MODE, type Config } from "./config.mts";
@@ -1389,6 +1390,7 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
       if (req.method === "GET" && url.pathname === "/organize-config.mjs") return send(res, 200, readFileSync(join(WEB, "organize-config.mjs"), "utf8"), "text/javascript");
       // Manual's buffs read the same catalog the server checks ui-prefs with (app/buffs.mts, issue #12).
       if (req.method === "GET" && url.pathname === "/buffs.mjs") return send(res, 200, readFileSync(join(WEB, "buffs.mjs"), "utf8"), "text/javascript");
+      if (req.method === "GET" && url.pathname === "/data-dir-notice.mjs") return send(res, 200, readFileSync(join(WEB, "data-dir-notice.mjs"), "utf8"), "text/javascript");
       if (req.method === "GET" && url.pathname === "/scan-schema.mjs") return send(res, 200, readFileSync(join(WEB, "scan-schema.mjs"), "utf8"), "text/javascript");
       // The Import drawer's instant preview parses a paste with the server's own rule (app/paste-scan.mts).
       if (req.method === "GET" && url.pathname === "/paste-scan.mjs") return send(res, 200, readFileSync(join(WEB, "paste-scan.mjs"), "utf8"), "text/javascript");

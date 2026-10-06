@@ -121,10 +121,10 @@ test("[fast] house map: a callout lists a stack's chests top first with their fi
   assert.equal(chestCount(m), 27);
   assert.equal(m.levels.reduce((a, l) => a + chestCount(m, l.index), 0), 27, "a level's count; the levels add up to the house");
   assert.equal(chestCount(m, m.levels.length), 0, "a level with no stacks");
-  assert.match(stackWhere(m, s), new RegExp(`^Whole floor · [NESW]+ of standing spot 1 · 4 containers, top first$`));
+  assert.match(stackWhere(s), new RegExp(`^Whole floor · [NESW]+ of standing spot 1 · 4 containers, top first$`));
   const area: HouseArea = { id: "a1", name: "Reagents", level: 0, color: "area-1", rects: [{ x0: s.x, y0: s.y, x1: s.x, y1: s.y }] };
-  assert.match(stackWhere(m, s, [area]), /^Reagents · /);
-  assert.match(stackWhere(m, m.stacks.find((x) => x !== s)!, [area]), /^Everything else · /);
+  assert.match(stackWhere(s, [area]), /^Reagents · /);
+  assert.match(stackWhere(m.stacks.find((x) => x !== s)!, [area]), /^Everything else · /);
 });
 
 test("[fast] house map: the picker takes the deep-linked house, else the last one shown, else the one with the most chests; the plain grid only when nothing else", () => {

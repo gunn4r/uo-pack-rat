@@ -48,6 +48,7 @@ import {
 } from "node:fs";
 import { basename, join } from "node:path";
 import { upgradeScan, validateScan, type UnvalidatedScan } from "./scan-schema.mts";
+// Keeps the shape of a JSON parse failure, never the bytes (shared with the pasted-scan path and the page).
 import { jsonErrorReason } from "./paste-scan.mts";
 import { writeFileAtomic } from "./atomic-write.mts";
 import { DATA_DIR_MODE, DATA_FILE_MODE } from "./config.mts";
@@ -79,10 +80,6 @@ const WATCH_STABLE_MS = 60 * 1000;
 function dirIdentity(path: string): string | null {
   try { const st = statSync(path, { bigint: true }); return `${st.dev}:${st.ino}:${st.birthtimeNs}`; } catch { return null; }
 }
-
-// Keep the shape of a JSON parse failure, never the bytes: the rule lives in app/paste-scan.mts (shared
-// with the pasted-scan path and the page) and is re-exported here for app/vault-server.mts.
-export { jsonErrorReason };
 
 function stampFor(scannedAt: unknown): string {
   const m = SCANNED_AT_RE.exec(String(scannedAt));

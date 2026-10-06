@@ -3,7 +3,7 @@
 // real network (checkForUpdates takes an injected fetchImpl in every test here).
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, readdirSync, existsSync, lstatSync, chmodSync, cpSync, symlinkSync, truncateSync } from "node:fs";
+import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, readdirSync, existsSync, lstatSync, cpSync, symlinkSync } from "node:fs";
 import { execFileSync } from "node:child_process";
 import { join, dirname } from "node:path";
 import { tmpdir } from "node:os";
@@ -12,7 +12,6 @@ import {
   listAdapters, candidateClientRoots, validateScriptsDir, installedVersion, installScripts,
   repoFromPackage, checkForUpdates, checkScriptsDataDir, pasteScanner, RUNNING_MESSAGE, RUNNING_MESSAGE_OTHER,
 } from "./installer.mts";
-import { MAX_INBOX_BYTES } from "./watcher.mts";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const REAL_ADAPTERS_DIR = join(HERE, "..", "adapters");
