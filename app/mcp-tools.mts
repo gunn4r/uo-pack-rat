@@ -6,9 +6,10 @@
 // page does (buffs.mts, vault-lib.mts). One entry per tool: its name, description, JSON Schema for its arguments
 // (the subset app/schema/validate.mts checks, which mcp.mts runs before the handler), annotations and handler.
 // `action: true` marks a tool that acts in game: refused while Settings' "Allow in-game actions" is off.
-import { BRIDGE_ACTION_LABELS, BRIDGE_OFFLINE, GEAR_SLOTS, bridgeRefusal, characterProfile, containerChain, fullOf, isPseudoCharacter, requirementReport, resistSkillBonus, templateFrom, toOptItem, totalsOf } from "./vault-lib.mts";
-import type { BridgeAction, Character, CharacterEntryRaw, Container, EffectiveProfile, Item, ProfilesFile, PropMap, RunBuffs } from "./vault-lib.mts";
-import { buffPlanOf, buffSkillValues, manualProfile, normalizeBuffs, ownEntry, plannedProfile, runBuffs, BUFFS } from "./buffs.mts";
+import { BRIDGE_ACTION_LABELS, BRIDGE_OFFLINE, GEAR_SLOTS, bridgeRefusal, characterProfile, containerChain, fullOf, isPseudoCharacter, resistSkillBonus, templateFrom, toOptItem, totalsOf } from "./vault-lib.mts";
+import type { BridgeAction, Character, CharacterEntryRaw, Container, EffectiveProfile, Item, Profile, ProfilesFile, PropMap, RunBuffs } from "./vault-lib.mts";
+import { buffPlanOf, buffSkillValues, manualBase, manualPlan, normalizeBuffs, ownEntry, plannedProfile, runBuffs, BUFFS, type BuffPlan } from "./buffs.mts";
+import { evaluateSuit } from "./evaluate.mts";
 import { EXTRA_COLS, parseItemQuery } from "./item-query.mts";
 import { defaultStrLimit, RUN_DEFAULTS } from "./run-settings.mts";
 import type { ValidatorSchema } from "./schema/validate.mts";
@@ -96,7 +97,8 @@ const newestStamp = (scans: InventoryDoc["scans"]): string => {
 // (buffs.mts's buffPlanOf; the character's Automatic buffs when none are named). With one (score_suit, build_suit with
 // pinned pieces or no character) it is planned as Manual plans its suit (buffs.mts's manualProfile: Enhance Potions
 // and Spell Channeling read from that suit; Manual's own buffs, while its totals count them, when none are named).
-interface Planned { profile: EffectiveProfile; settings: Record<string, unknown>; snapshot: Record<string, unknown>; buffs: string[] }
+// `base`, `character` and `plan` are what evaluate.mts's evaluateSuit takes, and `profile` is plannedProfile of them.
+interface Planned { profile: EffectiveProfile; settings: Record<string, unknown>; snapshot: Record<string, unknown>; buffs: string[]; base: Profile; character: Character | null; plan: BuffPlan }
 interface Prefs { autoBuffs?: Record<string, string[]>; manualBuffs?: string[]; buffsCount?: string; buffSkills?: Record<string, Record<string, number>> }
 async function planProfile(ctx: ToolContext, inv: InventoryDoc, name: string | null, args: Record<string, unknown>, suit: Record<string, Item> | null): Promise<Planned> {
   const [{ profiles }, { prefs }] = await Promise.all([ctx.api<{ profiles: ProfilesFile }>("/api/profiles"), ctx.api<{ prefs: Prefs }>("/api/ui-prefs")]);
@@ -114,13 +116,15 @@ async function planProfile(ctx: ToolContext, inv: InventoryDoc, name: string | n
   const edits = ownEntry(prefs.buffSkills || {}, name ?? "") || {};
   const worn = name ? inv.worn[name] || [] : [];
   const rb: RunBuffs | undefined = runBuffs(on, buffSkillValues(c ? c.skills || {} : null, edits).values);
-  const profile = suit ? manualProfile(p, c, worn, suit, c ? p.race || "human" : null, on, edits) : plannedProfile(p, c, buffPlanOf(c, worn, p.race, rb, edits));
+  const base = suit ? manualBase(p, c) : p;
+  const plan = suit ? manualPlan(c, worn, suit, c ? p.race || "human" : null, on, edits) : buffPlanOf(c, worn, p.race, rb, edits);
+  const profile = plannedProfile(base, c, plan);
   const strLimit = p.strLimit ?? defaultStrLimit(c);
   const settings = { allowOthersWorn: !!p.allowOthersWorn, strLimit, excludeTags: p.excludeTags || [], excludeRoots: p.excludeRoots || [], allowGargoyle: !!p.allowGargoyle, medOnly: !!p.medOnly,
     excludeWeapons: p.excludeWeapons || [], ubwsAnyWeapon: p.ubwsAnyWeapon !== false, excludeSkills: p.excludeSkills || [], lockedSlots: p.lockedSlots || [] };
   // The saved run's settings, as the page's settingsSnapshot writes them (the runs drawer labels and compares from it).
   const snapshot = { ...settings, floors: p.floors || {}, softFloors: p.softFloors || [], weights: p.weights || {}, race: p.race || "human", resistCaps: p.resistCaps || {}, ...(rb ? { buffs: rb } : {}) };
-  return { profile, settings, snapshot, buffs: on };
+  return { profile, settings, snapshot, buffs: on, base, character: c, plan };
 }
 
 // A suit (slot → piece) as names and serials.
@@ -510,9 +514,9 @@ export const TOOLS: Tool[] = [
         }
       }
       const plan = await planProfile(ctx, inv, name, a, suit);
-      const totals = totalsOf(Object.fromEntries(Object.entries(suit).map(([slot, it]) => [slot, toOptItem(it)])));
-      return { character: name, buffs: plan.buffs, resistBonus: plan.profile.resistBonus, suit: Object.fromEntries(Object.entries(suit).map(([slot, it]) => [slot, { serial: it.serial, name: it.name }])),
-        totals: nonZero(totals), requirements: requirementReport(totals, plan.profile).map(({ key, label, value, floor, cap, met }) => ({ key, label, value, floor, cap, met })) };
+      const ev = evaluateSuit({ profile: plan.base, character: plan.character, suit: Object.fromEntries(Object.entries(suit).map(([slot, it]) => [slot, toOptItem(it)])), buffs: plan.plan });
+      return { character: name, buffs: plan.buffs, resistBonus: ev.planned.resistBonus, suit: Object.fromEntries(Object.entries(suit).map(([slot, it]) => [slot, { serial: it.serial, name: it.name }])),
+        totals: nonZero(ev.gearTotals), requirements: ev.requirements.map(({ key, label, value, floor, cap, met }) => ({ key, label, value, floor, cap, met })) };
     },
   },
   {
