@@ -75,7 +75,7 @@ Examples: `166eb05`, `d311bdb`, `f1eced4`.
 
 Examples: `e6288f2`, `5416327`, `97c6363`.
 
-1. `app/vault-server.mts`: the handler, the body read through `readBody` with a size cap, `asObject` and a check of every field, and the route in the header comment.
+1. `app/vault-server.mts`: the handler, the body read through `readBody` with a size cap, `asObject` (`app/http/respond.mts`) and a check of every field (`app/guards.mts`), and the route in the header comment. A route that reads or writes a data file goes through that file's store in `app/store/`; a new data file gets its own store there, built on `app/store/json-file.mts`.
 2. The matching server test: `app/server.test.mts`, `app/organize-server.test.mts`, `app/house-server.test.mts` or `app/mcp.test.mts`.
 3. `app/ui/api-types.mts` (the response shape, by hand: no test compares it with the server) and the caller (`app/ui/app.mts`, `app/ui/store.mts` or the view).
 4. If the page needs a server module at run time: `tsconfig.browser.json`'s `include`, a static route in `app/vault-server.mts`, and the lists in the header comments of `scripts/build-ui.mts` and `app/vault-server.mts`.

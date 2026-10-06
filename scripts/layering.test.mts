@@ -4,7 +4,9 @@
 //   2. the browser-shared modules (tsconfig.browser.json's include, minus app/ui/**) reach no node: module;
 //   3. the modules outside app/ui/ have no import cycles (app/ui/ has some today; stage 4 extends this rule to it);
 //   4. every module app/ui/ reaches outside app/ui/ has its own "/<path>.mjs" route in app/vault-server.mts (the page
-//      gets a 404 at load otherwise; build:ui compiles it whether or not the include lists it) and reaches no node: module.
+//      gets a 404 at load otherwise; build:ui compiles it whether or not the include lists it) and reaches no node: module;
+//   5. app/store/ and app/services/ import nothing from app/http/ (type imports included);
+//   6. nothing imports app/vault-server.mts except electron/, scripts/, the test fixtures (*-fixture.mts) and tests.
 // Rules 2-4 follow runtime imports only: `import type` and `export type` are erased, so they load nothing.
 import test from "node:test";
 import assert from "node:assert/strict";
@@ -98,4 +100,16 @@ test("[smoke] layering: every module app/ui/ reaches outside app/ui/ has its sta
     }
   }
   assert.deepEqual([...found.values()], []);
+});
+
+test("[smoke] layering: app/store/ and app/services/ import nothing from app/http/", () => {
+  const found = modules.filter((f) => f.startsWith("app/store/") || f.startsWith("app/services/"))
+    .flatMap((f) => edges.get(f)!.filter((e) => e.to?.startsWith("app/http/")).map((e) => `${f} → ${e.spec}`));
+  assert.deepEqual(found, []);
+});
+
+test("[smoke] layering: only electron/, scripts/ and the test fixtures import app/vault-server.mts", () => {
+  const allowed = (f: string): boolean => f.startsWith("electron/") || f.startsWith("scripts/") || f.endsWith("-fixture.mts");
+  const found = modules.filter((f) => !allowed(f)).flatMap((f) => edges.get(f)!.filter((e) => e.to === "app/vault-server.mts").map((e) => `${f} → ${e.spec}`));
+  assert.deepEqual(found, []);
 });
