@@ -9,9 +9,8 @@ import { RESIST_KEYS, gameName, spellSchoolOf, TRASH_RE, locationOf, type Charac
 import type { RulesV1RarityItem } from "./schema/types.d.mts";
 import { TRIP_NAME_MAX } from "./bridge-contract.mts";
 import type { TripInput } from "./bridge-trip.mts";
-
-export type WarningKind = "stale-container" | "missing-target" | "missing-label" | "unknown-capacity" | "old-scripts" | "blacklisted" | "no-position" | "not-ground" | "nearly-full";
-export interface PlanWarning { kind: WarningKind; serial: number; detail: string }
+import type { Carried, EmptyBag, Plan, PlanMove, PlanTrip, PlanWarning, WarningKind } from "./organize-types.mts";
+export type { Carried, EmptyBag, Plan, PlanMove, PlanTrip, PlanWarning, RoomReport, RuleReport, WarningKind } from "./organize-types.mts";
 
 // A container last scanned longer ago than this is warned about, and still planned: the bridge rechecks live
 // state before every step.
@@ -95,7 +94,6 @@ export function scopeOf(inv: Inventory, cfg: OrganizeConfig, { now, blacklist = 
 // its Contents line, when it has one, reads 0), and sits in one of `roots` (scopeOf's labelled ground roots) with
 // nothing pinned, blacklisted or unopened around it. A bag the newest scan could not open is never one: its
 // contents are unknown, not nothing. `container` is the bag's place as the overlay has it. Serial order.
-export interface EmptyBag { serial: number; name: string; container: number }
 export function emptyBagsOf(inv: Inventory, counts: Map<number, ContainerCapacity>, cfg: OrganizeConfig, roots: readonly number[], blacklist: readonly number[] = []): EmptyBag[] {
   const inRoots = new Set(roots), black = new Set(blacklist), pinnedItems = new Set(cfg.pinnedItems);
   const pinned = new Set(Object.values(cfg.labels).filter((l) => l.pinned).map((l) => l.serial));
@@ -194,7 +192,6 @@ export function claimOf(it: Item, cfg: OrganizeConfig, rarity: RulesV1RarityItem
 // the trip in, when its status file said (issue #127: where a carried item reads as being). `grab`: a bridge Grab
 // (issue #148; `trip` is its command id), a take the player asked for, so Organize does not put the item away.
 export interface OverlayMove { serial: number; name: string; from: number | null; to: number | null; at: string; trip: string; character?: string | undefined; grab?: true | undefined }
-export interface Carried { serial: number; name: string }
 // The inventory as the overlay says it stands: moved items re-homed, and every container's fill (a copy of its
 // Contents line) adjusted for the steps it does not yet include.
 export interface Placed { inv: Inventory; counts: Map<number, ContainerCapacity>; carried: Carried[] }
@@ -571,25 +568,6 @@ export function tripSeconds(input: TripInput): number {
   return STEP_S.trip + opened * STEP_S.open + direct * STEP_S.direct + (input.takes.length - direct) * STEP_S.take + (input.puts.length - direct) * STEP_S.put;
 }
 
-export interface PlanMove { serial: number; name: string; amount: number; from: number | null; to: number; ruleId: string; alsoMatched: string[]; trip: number }
-export interface PlanTrip { index: number; site: number; takes: number[]; puts: number[] }
-export interface RuleReport { ruleId: string; matched: number; inPlace: number; toMove: number; noRoom: number }
-export interface RoomReport { ruleId: string; needSlots: number; freeSlots: number; shortfall: number }
-export interface Plan {
-  inventoryStamp: string;
-  stamp: string;
-  sites: { index: number; roots: number[] }[];
-  moves: PlanMove[];
-  trips: PlanTrip[];
-  rules: RuleReport[];
-  room: RoomReport[];
-  crossSite: { ruleId: string; count: number }[];
-  warnings: PlanWarning[];
-  carried: Carried[];
-  unclaimed: number;
-  seconds: number;          // about how long the trips take (tripSeconds), whole seconds
-  emptyBags: EmptyBag[];   // emptyBagsOf's, less those already in the gather container
-}
 // Put away (issue #131, the TazUO panel's button): the one source a run takes from, instead of every labelled
 // root, always a container the player picked in game, and only what lies directly in it (packItems: never a bag in it
 // or what the bag holds). `pack`: the backpack or a bag inside it, put only
