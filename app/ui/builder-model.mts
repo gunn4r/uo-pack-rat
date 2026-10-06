@@ -6,6 +6,7 @@
 import { getRules, labelOf, fullOf, GEAR_SLOTS, NOT_BUILDER_KEYS, RESIST_KEYS, RESIST_CAP_LIMITS, SLOT_LABELS, settingsDiff, shardResistCap, WEAPON_SKILLS, MELEE_SKILLS, ubwsLetsIn } from "../vault-lib.mts";
 import type { PlannedBuffs, PropMap, ResistCap, RunSettings } from "../vault-lib.mts";
 import { applyBuffs, buffById, buffsDiff, capWord, signed, type BuffResult } from "../buffs.mts";
+import { RUN_SETTING_LIMITS, type Range } from "../run-settings.mts";
 
 export const plural = (n: number, word: string, many = `${word}s`): string => `${n.toLocaleString("en-US")} ${n === 1 ? word : many}`;
 const num = (n: number): string => n.toLocaleString("en-US", { maximumFractionDigits: 2 });
@@ -172,19 +173,16 @@ export function capsLine(view: Record<string, ResistCap>): string {
 export const anyOverridden = (view: Record<string, ResistCap>): boolean => overridden(view).length > 0;
 
 // ---------------------------------------------------------------- Advanced: the solver knobs
-// The ranges the server accepts (app/vault-server.mts's OPTS_LIMITS; app/server.test.mts checks this copy
-// agrees). The page asks for the time budget in seconds, and a budget of 0 would leave the exact search no
-// time at all, so its field starts at 1.
-export const SOLVER_LIMITS = { restarts: { min: 1, max: 10000 }, timeBudgetMs: { min: 0, max: 60 * 60 * 1000 }, alternativesCount: { min: 0, max: 100 } } as const;
+// The ranges the server accepts (app/run-settings.mts RUN_SETTING_LIMITS, one table for both). The page asks for the
+// time budget in seconds, and a budget of 0 would leave the exact search no time at all, so its field starts at 1.
 export interface Knobs { strLimit: string; restarts: string; exact: boolean; budgetS: string; altCount: string; altTol: string }
 export type KnobField = Exclude<keyof Knobs, "exact">;
-interface Range { min: number; max?: number | undefined; whole: boolean }
 export const KNOB_RANGES: Record<KnobField, Range> = {
-  strLimit: { min: 1, max: 1000, whole: true },
-  restarts: { min: SOLVER_LIMITS.restarts.min, max: SOLVER_LIMITS.restarts.max, whole: true },
-  budgetS: { min: 1, max: SOLVER_LIMITS.timeBudgetMs.max / 1000, whole: true },
-  altCount: { min: SOLVER_LIMITS.alternativesCount.min, max: SOLVER_LIMITS.alternativesCount.max, whole: true },
-  altTol: { min: 0, whole: false },
+  strLimit: RUN_SETTING_LIMITS.strLimit,
+  restarts: RUN_SETTING_LIMITS.restarts,
+  budgetS: { min: 1, max: RUN_SETTING_LIMITS.budgetMs.max / 1000, whole: true },
+  altCount: RUN_SETTING_LIMITS.altCount,
+  altTol: RUN_SETTING_LIMITS.altTol,
 };
 // The field's error in plain words with the allowed range, or null when the value is fine.
 export function rangeError(raw: string, r: Range): string | null {

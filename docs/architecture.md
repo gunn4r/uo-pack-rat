@@ -122,6 +122,7 @@ Every route lives in `app/http/routes/`, one module per area, each exporting `ro
 - `GET /schema/validate.mjs` (scan-schema.mts's own import, same reason)
 - `GET /organize-config.mjs` (the rule editor's import, same reason)
 - `GET /buffs.mjs` (the Suit Builder's Manual buffs, same reason)
+- `GET /run-settings.mjs` and `GET /guards.mjs` (the Suit Builder's Advanced fields check against the server's run-setting ranges, same reason)
 - `GET /data-dir-notice.mjs` (ui/messages.mts's import, same reason)
 - `GET /paste-scan.mjs` (the Import drawer's instant preview parses a paste with the server's own rule, same reason)
 - `GET /ui/<name>` (name matching /^[a-z0-9-]+\.(mjs|css)$/, served from app/ui/, else 404)

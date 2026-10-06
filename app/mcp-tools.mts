@@ -10,6 +10,7 @@ import { BRIDGE_ACTION_LABELS, BRIDGE_OFFLINE, GEAR_SLOTS, bridgeRefusal, charac
 import type { BridgeAction, Character, CharacterEntryRaw, Container, EffectiveProfile, Item, ProfilesFile, PropMap, RunBuffs } from "./vault-lib.mts";
 import { buffPlanOf, buffSkillValues, manualProfile, normalizeBuffs, ownEntry, plannedProfile, runBuffs, BUFFS } from "./buffs.mts";
 import { EXTRA_COLS, parseItemQuery } from "./item-query.mts";
+import { defaultStrLimit, RUN_DEFAULTS } from "./run-settings.mts";
 import type { ValidatorSchema } from "./schema/validate.mts";
 import type { PlanMove } from "./organize-types.mts";
 
@@ -114,7 +115,7 @@ async function planProfile(ctx: ToolContext, inv: InventoryDoc, name: string | n
   const worn = name ? inv.worn[name] || [] : [];
   const rb: RunBuffs | undefined = runBuffs(on, buffSkillValues(c ? c.skills || {} : null, edits).values);
   const profile = suit ? manualProfile(p, c, worn, suit, c ? p.race || "human" : null, on, edits) : plannedProfile(p, c, buffPlanOf(c, worn, p.race, rb, edits));
-  const strLimit = p.strLimit ?? (Number((c?.stats as Record<string, unknown> | undefined)?.str) || 125);
+  const strLimit = p.strLimit ?? defaultStrLimit(c);
   const settings = { allowOthersWorn: !!p.allowOthersWorn, strLimit, excludeTags: p.excludeTags || [], excludeRoots: p.excludeRoots || [], allowGargoyle: !!p.allowGargoyle, medOnly: !!p.medOnly,
     excludeWeapons: p.excludeWeapons || [], ubwsAnyWeapon: p.ubwsAnyWeapon !== false, excludeSkills: p.excludeSkills || [], lockedSlots: p.lockedSlots || [] };
   // The saved run's settings, as the page's settingsSnapshot writes them (the runs drawer labels and compares from it).
@@ -451,10 +452,10 @@ export const TOOLS: Tool[] = [
         suit = Object.fromEntries(Object.entries(pinned).flatMap(([slot, serial]) => (found[serial] ? [[slot, found[serial]!]] : [])));
       }
       const plan = await planProfile(ctx, inv, name, a, suit);
-      const budget = ((a.timeBudgetSeconds as number | undefined) ?? 60) * 1000, alt = (a.otherSuits as number | undefined) ?? 0;
-      const opts = { restarts: 200, exact: true, timeBudgetMs: budget, ...(alt ? { alternatives: { count: alt, tolerance: 0 } } : {}) };
+      const budget = ((a.timeBudgetSeconds as number | undefined) ?? RUN_DEFAULTS.mcpBudgetMs / 1000) * 1000, alt = (a.otherSuits as number | undefined) ?? 0;
+      const opts = { restarts: RUN_DEFAULTS.restarts, exact: true, timeBudgetMs: budget, ...(alt ? { alternatives: { count: alt, tolerance: 0 } } : {}) };
       const body = { character: name, settings: plan.settings, profile: plan.profile, opts, ...(pinned ? { pinned } : {}),
-        ...(name ? { meta: { character: name, settings: { ...plan.snapshot, restarts: 200, exact: true, budgetMs: budget, altCount: alt, altTol: 0 }, inventoryStamp: newestStamp(inv.scans) } } : {}) };
+        ...(name ? { meta: { character: name, settings: { ...plan.snapshot, restarts: RUN_DEFAULTS.restarts, exact: true, budgetMs: budget, altCount: alt, altTol: 0 }, inventoryStamp: newestStamp(inv.scans) } } : {}) };
       const r = await ctx.api<{ id?: string; cached?: boolean; run?: RunDoc; superseded?: string | null; warning?: string; poolSize: number }>("/api/optimize", { method: "POST", body, clientId: "mcp" });
       if (r.superseded) ctx.memory.replaced.add(r.superseded);
       if (pinned && r.id) ctx.memory.filled.add(r.id);

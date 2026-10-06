@@ -60,7 +60,8 @@ Profiles, buffs, pools, solvers, saved runs and Manual. `docs/solver.md` describ
 | `app/mip-solve.mts` | The HiGHS runtime: load, solve, add a no-good cut, close. | `loadHighs`, `openModel`, `solveModel`, `addNoGood`, `closeModel`, `gapFromEvents` |
 | `app/exact-solver.mts` | One exact solve: the core's heuristic for an incumbent, then HiGHS for the proof, alternatives and the floors-conflict retry. | `solveExact` |
 | `app/optimize-worker.mts` | Worker thread that runs one optimize job off the main thread: the core's heuristic, or the exact orchestrator, falling back to the core when HiGHS does not load. One worker per job; cancel terminates it. | the worker message types |
-| `app/runs-lib.mts` | Saved runs: the cache key (pools, worn suit, scoring profile and options, minus budget and warm start), the reuse rule (proven, heuristic, or a budget already as large; never a fallback result), the list summary, a manual run. Node-only (`node:crypto`). Bump `SOLVER_VERSION` on any change to the model, the orchestration or the core's scoring. | `SOLVER_VERSION`, `runKey`, `reusableRun`, `runSummary`, `manualRun`, `normalizeRun` |
+| `app/runs-lib.mts` | Saved runs: the cache key (pools, worn suit, scoring profile and options, minus budget and warm start), the reuse rule (proven, heuristic, or a budget already as large; never a fallback result), the list summary, a manual run, and the one constructor of a saved run's document. Node-only (`node:crypto`). Bump `SOLVER_VERSION` on any change to the model, the orchestration or the core's scoring. | `SOLVER_VERSION`, `runKey`, `reusableRun`, `runSummary`, `manualRun`, `runRecord`, `normalizeRun` |
+| `app/run-settings.mts` | A run's settings: the one check `POST /api/optimize` (`settings`, `meta.settings`) and `POST /api/runs` hold them to, the search knobs' ranges the page's Advanced fields share, and the defaults. Pure, page and server alike. | `runSettingsError`, `RUN_SETTING_LIMITS`, `OPTS_LIMITS`, `RUN_DEFAULTS`, `defaultStrLimit` |
 | `app/runs-types.mts` | A saved run and its list summary, and the `/api/runs` response bodies. Types only, no imports: `app/runs-lib.mts` re-exports them, the routes `satisfies` them, and the page narrows them in `app/ui/api-types.mts`. | `SavedRun`, `RunSummary`, `RunResult`, `RunSettingsRaw`, `RunsListBody`, `RunBody` |
 | `app/solver-fixture.mts` | Test fixture: the adapter fixture folded and pooled, and `runBoth` to check HiGHS against the core. | `cell`, `runBoth`, `fuzzSlots` |
 | `app/bench/gen-inventory.mts` | Synthetic scan generator learned from real gear, for the scale benchmark. | `learnModel`, `generateScan` |
@@ -71,7 +72,7 @@ Profiles, buffs, pools, solvers, saved runs and Manual. `docs/solver.md` describ
 | `app/ui/builder-result.mts` | The result beside the panel and the compare view. | `renderResult`, `renderCurrentSuit`, `openRunCompare` |
 | `app/ui/builder-manual.mts` | Manual mode: slot cards, picker, totals, undo, Fill the rest, Save as run; the builder's ui-prefs. | `renderManual`, `openInManual`, `applyBuilderPrefs`, `savePrefs`, `buffInputsOf`, `editBuffInputs` |
 | `app/ui/builder-buffs.mts` | The buff chips, Manual's Buffs row and the buff picker. | `buffChip`, `createBuffPicker` |
-| `app/ui/builder-model.mts` | Pure: summaries, Advanced-field checks, resist-cap lines, badges, compare rows, run labels. | `KNOB_RANGES`, `SOLVER_LIMITS`, `compareModel`, `runAutoLabel` |
+| `app/ui/builder-model.mts` | Pure: summaries, Advanced-field checks, resist-cap lines, badges, compare rows, run labels. | `KNOB_RANGES`, `compareModel`, `runAutoLabel` |
 | `app/ui/manual-model.mts` | Pure: Manual's totals keys, slot groups, hand rule, deltas, undo history, hand-offs. | `TOTAL_KEYS`, `STAT_KEYS`, `MANUAL_GROUPS`, `handConflict`, `slotDelta`, `fillableSlots` |
 | `app/ui/runs.mts` | The Saved runs drawer, and the settings snapshot a run is saved with. | `settingsSnapshot`, `applySettings`, `openRunsDrawer` |
 
@@ -160,7 +161,7 @@ The recipes are the shard rules' `scrollBinder` (Shard rules, above).
 | `app/http/routes/setup.mts` | The setup wizard's routes and `GET /api/update-check` (with its hour-long cache). | `routes`, `MAX_PATH_LEN`, `NO_CLIENT_FOLDER` |
 | `app/http/routes/import.mts` | `POST /api/import/paste`, `/api/import/rescan`. | `routes` |
 | `app/http/routes/host.mts` | `POST /api/host/pick-folder` and `/api/host/open-path` (bounded by `withHostTimeout`), and the shared `GET /api/events` stream. | `routes` |
-| `app/http/routes/optimize.mts` | `POST /api/optimize` with its request checks, the per-job event stream (`streamJob`), cancel and status, and the saved runs' routes. | `routes`, `OPTS_LIMITS` |
+| `app/http/routes/optimize.mts` | `POST /api/optimize` with its request checks, the per-job event stream (`streamJob`), cancel and status, and the saved runs' routes. | `routes` |
 | `app/http/routes/mcp.mts` | `GET\|PUT /api/mcp`, `POST /api/mcp/token`. | `routes` |
 | `app/http/routes/bridge.mts` | `POST /api/bridge`, `/api/bridge/stop`, `GET /api/bridge/status`. | `routes` |
 | `app/http/routes/forget.mts` | `POST /api/forget`, `/api/forget-character` (tombstone scans). | `routes` |
