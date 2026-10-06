@@ -152,6 +152,7 @@ import { createProfilesStore } from "./store/profiles.mts";
 import { createUiPrefsStore, isColWidths, isDrawerWidth, isManualSuit, UI_PREF_CHOICES, UI_PREF_LISTS, UI_PREF_VERSIONS } from "./store/ui-prefs.mts";
 import { createSettingsStore, type ClientSettings, type SettingsDoc } from "./store/settings.mts";
 import { createSettingsService } from "./services/settings.mts";
+import { createEventBus, sse } from "./services/events.mts";
 import { send, asObject, SSE_HEADERS } from "./http/respond.mts";
 import { isBoundedInt, isBoundedString, MAX_SERIAL, short } from "./guards.mts";
 import { writeFileAtomic } from "./atomic-write.mts";
@@ -489,11 +490,10 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
   // ---- /api/events: one shared SSE stream, fed by one app/watcher.mts per adapter ------------------
   // Non-demo only — --demo's paths.scans is the committed app/fixtures/, which a watcher must never
   // write into. Each adapter is a directory under adapters/ that ships a capabilities.json; today
-  // that's just adapters/tazuo/. watchers: id -> {close(), scanOnce()}; eventClients: every response
+  // that's just adapters/tazuo/. watchers: id -> {close(), scanOnce()}; eventBus: every response
   // currently attached to GET /api/events, so a later accept/reject can broadcast to all of them.
   const watchers = new Map<string, WatcherHandle>();
-  const eventClients = new Set<http.ServerResponse>();
-  function broadcastEvent(event: string, data: unknown): void { for (const c of eventClients) sse(c, event, data); }
+  const eventBus = createEventBus();
   // The watchers themselves start only once the port is bound (startWatchers(), called after
   // listen() below): their startup sweep moves inbox files into scans/, and a server that then fails
   // to bind (EADDRINUSE) must not have done that, nor leave live watchers behind it.
@@ -512,8 +512,8 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
         // PUT /api/settings shard switch takes effect on the very next dropped file (app/watcher.mts).
         inboxDir: CONFIG.paths.inboxFor(id), adapter: id, scansDir: SCANS, getShard: () => appSettings.current().shard,
         log: (msg) => safeAppendLog(CONFIG.paths.log, `${new Date().toISOString()} watcher[${id}] ${msg}\n`),
-        onAccepted: ({ file, character, scannedAt }) => broadcastEvent("inventory", { file, character, scannedAt, at: Date.now() }),
-        onRejected: ({ file, reason }) => broadcastEvent("rejected", { file, reason, at: Date.now() }),
+        onAccepted: ({ file, character, scannedAt }) => eventBus.broadcast("inventory", { file, character, scannedAt, at: Date.now() }),
+        onRejected: ({ file, reason }) => eventBus.broadcast("rejected", { file, reason, at: Date.now() }),
         request: { name: PUT_AWAY_REQUEST, handle: (path) => putAway(id, path) },
         ...watcherOptions,
       });
@@ -672,7 +672,7 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
     const bridges = Object.fromEntries([...new Set([...before.pending, ...before.grabs].map((p) => p.adapter))].map((a) => [a, bridgeView(a, now)]));
     const state = harvestTrips(before, bridges, now);
     if (JSON.stringify(state) !== JSON.stringify(before)) organizeStateStore.write(state);
-    if (JSON.stringify(state.moves) !== JSON.stringify(before.moves)) broadcastEvent("changed", { what: "inventory", at: now });
+    if (JSON.stringify(state.moves) !== JSON.stringify(before.moves)) eventBus.broadcast("changed", { what: "inventory", at: now });
     return { state, bridges };
   }
   // What a plan starts from now: finished trips harvested, entries a newer scan has settled dropped, labels' last-seen
@@ -919,7 +919,6 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
     finish(job, "cancelled", { ms: job.ms });
   }
   function jobSnapshot(job: Job) { return { id: job.id, state: job.state, progress: job.progress, result: job.result, ms: job.ms, error: job.error, runId: job.runId }; }
-  function sse(res: http.ServerResponse, event: string, data: unknown): void { res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`); }
   function broadcast(job: Job, event: string, data: unknown): void { for (const c of job.clients) sse(c, event, data); }
   // The retention clock starts here, when the job ends — however it ends.
   function finish(job: Job, event: string, data: unknown): void {
@@ -979,8 +978,8 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
       const at = new Date().toISOString();
       if (plan.refused) safeAppendLog(CONFIG.paths.log, `${at} retention (${why}) kept every scan: ${plan.reason === "houses" ? "a house's newest capture or furniture would have changed without the old ones" : "the inventory folded without the old ones differed"}\n`);
       if (scans.length || runs.length) safeAppendLog(CONFIG.paths.log, `${at} retention (${why}) removed ${scans.length} scans ${JSON.stringify(scans)} and ${runs.length} runs ${JSON.stringify(runs)}\n`);
-      if (scans.length) broadcastEvent("changed", { what: "inventory", at: Date.now() });
-      if (runs.length) broadcastEvent("changed", { what: "runs", at: Date.now() });
+      if (scans.length) eventBus.broadcast("changed", { what: "inventory", at: Date.now() });
+      if (runs.length) eventBus.broadcast("changed", { what: "runs", at: Date.now() });
       return { scans: scans.length, runs: runs.length, refused: plan.refused };
     });
     pruning = next;
@@ -1466,10 +1465,10 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
       if (req.method === "GET" && url.pathname === "/api/events") {
         res.writeHead(200, SSE_HEADERS);
         sse(res, "hello", { ok: true, watching: Array.from(watchers.keys()) });
-        eventClients.add(res);
+        eventBus.add(res);
         const ping = setInterval(() => sse(res, "ping", { at: Date.now() }), 15000);
         ping.unref(); timers.add(ping);
-        res.on("close", () => { clearInterval(ping); timers.delete(ping); eventClients.delete(res); });
+        res.on("close", () => { clearInterval(ping); timers.delete(ping); eventBus.remove(res); });
         return;
       }
       if (req.method === "POST" && url.pathname === "/api/optimize") {
@@ -1639,7 +1638,7 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
         for (const it of Object.values(inv.items)) if (it.equippedBy === character && it.slot && GEAR_SLOTS.includes(it.slot)) worn[it.slot] ??= toOptItem(it);
         const run = manualRun({ id: randomUUID(), character, createdAt: new Date().toISOString(), settings: settings as Record<string, unknown>, inventoryStamp, suit: pieces, worn, slots: GEAR_SLOTS });
         runStore.write(run);
-        broadcastEvent("changed", { what: "runs", at: Date.now() });
+        eventBus.broadcast("changed", { what: "runs", at: Date.now() });
         return send(res, 200, { ok: true, run: runSummary(run) } satisfies RunBody<RunSummary>);
       }
       if (req.method === "GET" && url.pathname === "/api/runs") {
@@ -1661,7 +1660,7 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
           const run = readRun();
           return run ? send(res, 200, { ok: true, run } satisfies RunBody) : send(res, 404, { ok: false, error: DAMAGED_RUN });
         }
-        if (req.method === "DELETE") { runStore.remove(id); broadcastEvent("changed", { what: "runs", at: Date.now() }); return send(res, 200, { ok: true }); }
+        if (req.method === "DELETE") { runStore.remove(id); eventBus.broadcast("changed", { what: "runs", at: Date.now() }); return send(res, 200, { ok: true }); }
         if (req.method === "PUT") {
           const { label = "" } = asObject(await readBody(req, { limit: 8e3 }));
           // String() throws on an object with a null prototype or a throwing toString — a 500 plus a
@@ -1817,7 +1816,7 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
         // exactly what the fold wants anyway (newest scan of a root wins, by parseStamp — the file
         // name has never been what orders them).
         writeFileAtomic(join(SCANS, `_forget-${serial.toString(16)}.json`), JSON.stringify(snap), DATA_FILE_MODE);
-        broadcastEvent("changed", { what: "inventory", by: req.headers["x-client-id"], at: Date.now() });
+        eventBus.broadcast("changed", { what: "inventory", by: req.headers["x-client-id"], at: Date.now() });
         return send(res, 200, { ok: true });
       }
       if (req.method === "GET" && url.pathname === "/api/blacklist") return send(res, 200, { ok: true, containers: blacklistStore.read() });
@@ -1903,7 +1902,7 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
         const next = kind === null ? withoutKinds(base, at) : withKinds(base, kindsFor(at, kind as string));
         const refused = itemKindsStore.save(next);
         if (refused) return send(res, 409, { ok: false, error: refused });
-        broadcastEvent("changed", { what: "inventory", by: req.headers["x-client-id"], at: Date.now() });
+        eventBus.broadcast("changed", { what: "inventory", by: req.headers["x-client-id"], at: Date.now() });
         return send(res, 200, { ok: true, ...kindsDocument(next!) });
       }
       if (req.method === "POST" && url.pathname === "/api/item-kinds/import") {
@@ -1913,7 +1912,7 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
         const next = withKinds(itemKindsStore.read(), overrides);
         const refused = itemKindsStore.save(next);
         if (refused) return send(res, 409, { ok: false, error: `the import was refused: ${refused}` });
-        broadcastEvent("changed", { what: "inventory", by: req.headers["x-client-id"], at: Date.now() });
+        eventBus.broadcast("changed", { what: "inventory", by: req.headers["x-client-id"], at: Date.now() });
         return send(res, 200, { ok: true, ...kindsDocument(next!), skipped: problems.length, problems: problems.slice(0, 5) });
       }
       if (req.method === "GET" && url.pathname === "/api/organize") return send(res, 200, { ok: true, ...organizeStore.read() });
@@ -1997,7 +1996,7 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
         // One file per forgotten character (hex of the name: any name is a safe file name that way),
         // replaced with a newer stamp if the character is forgotten again.
         writeFileAtomic(join(SCANS, `_forget-char-${Buffer.from(character).toString("hex")}.json`), JSON.stringify(snap), DATA_FILE_MODE);
-        broadcastEvent("changed", { what: "inventory", by: req.headers["x-client-id"], at: Date.now() });
+        eventBus.broadcast("changed", { what: "inventory", by: req.headers["x-client-id"], at: Date.now() });
         return send(res, 200, { ok: true });
       }
       send(res, 404, { ok: false, error: "not found" });
@@ -2063,8 +2062,7 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
       // open stream (both the per-job optimize streams and the shared /api/events stream) and
       // force-close the sockets so close() resolves promptly.
       for (const job of jobs.values()) { for (const c of job.clients) c.end(); job.clients.clear(); }
-      for (const c of eventClients) c.end();
-      eventClients.clear();
+      eventBus.close();
       server.closeAllConnections();
       // ok's declared parameter type (void | PromiseLike<void>) is narrower than server.close()'s own
       // callback type (err?: Error) — this server always calls it with no error at this point in a
