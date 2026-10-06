@@ -2,6 +2,8 @@
 // Server-side only (uses node:crypto); the page never imports it.
 import { createHash } from "node:crypto";
 import { migrateWeaponSetting, totalsOf, type OptItem } from "./vault-lib.mts";
+import type { RunResult, RunSettingsRaw, RunSummary, SavedRun } from "./runs-types.mts";
+export type { RunResult, RunSettingsRaw, RunSummary, SavedRun } from "./runs-types.mts";
 
 // The optimizer search options a saved run was made with. Loosely shaped (an index signature) because
 // this module only ever serializes opts wholesale (runKey) or reads the few named fields below — the
@@ -53,42 +55,6 @@ export function runKey({ pools = {}, current = {}, profile = {}, opts = {} }: Ru
   return createHash("sha1").update(JSON.stringify({ solver: SOLVER_VERSION, pools, current, profile: solved, opts: stripOpts(opts) })).digest("hex");
 }
 
-export interface RunResult {
-  proven?: boolean | undefined;
-  method?: string | undefined;
-  score?: number | undefined;
-  currentScore?: number | undefined;
-  delta?: number | undefined;
-  nodes?: number | undefined;
-  [key: string]: unknown;
-}
-// A run's settings snapshot as saved to disk, possibly still in its pre-2026-09-13 shape (see
-// normalizeRun below).
-export interface RunSettingsRaw {
-  allowOthers?: boolean | undefined;
-  allowOthersWorn?: boolean | undefined;
-  budgetS?: number | undefined;
-  budgetMs?: number | undefined;
-  [key: string]: unknown;
-}
-export interface SavedRun {
-  id?: string | undefined;
-  key?: string | undefined;
-  character?: string | undefined;
-  createdAt?: string | undefined;
-  label?: string | undefined;
-  settings?: RunSettingsRaw | undefined;
-  schemaVersion?: number | undefined;
-  solverVersion?: number | undefined;           // SOLVER_VERSION when saved; missing on runs saved before it was stamped
-  inventoryStamp?: unknown;
-  poolSize?: number | null | undefined;
-  skipped?: unknown;
-  ms?: number | null | undefined;
-  budgetMs?: number | undefined;
-  explored?: unknown;
-  result?: RunResult | undefined;
-}
-
 // A saved run answers a new request when its inputs match and running again is not expected to do
 // better: it was proven optimal, it was a heuristic run (its restarts are fixed by the seed; the warm
 // start the server adds can only lift a rerun, so the saved one may trail a fresh one slightly), or
@@ -126,27 +92,6 @@ export function manualRun({ id, character, createdAt, settings, inventoryStamp, 
     result: { method: "manual", best, perSlotChanges, totals: { before: totalsOf(worn), after: totalsOf(suit) } } };
 }
 
-export interface RunSummary {
-  id: string | undefined;
-  character: string | undefined;
-  createdAt: string | undefined;
-  label: string;
-  settings: RunSettingsRaw | Record<string, never>;
-  schemaVersion: number;
-  inventoryStamp: unknown;
-  poolSize: number | null;
-  skipped: unknown;
-  ms: number | null;
-  method: string | null;
-  proven: boolean | null;
-  score: number | null;
-  currentScore: number | null;
-  delta: number | null;
-  nodes: number | null;
-  explored: unknown;
-  changes: number | null;                        // how many slots the run's suit changes
-  totalsAfter: Record<string, number> | null;    // the suit's item totals, for the drawer's resist and requirement badges
-}
 // The suit's item totals the drawer's badges read. A run saved while the optimizer searched only twelve slots
 // (SOLVER_VERSION 4) did not plan the others: a search's count the character's `worn` pieces there, so it compares
 // like for like with a run of every slot, and a manual run's kept those slots' pieces apart (`outside`).

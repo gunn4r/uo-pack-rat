@@ -11,6 +11,7 @@ import type { BridgeAction, Character, CharacterEntryRaw, Container, EffectivePr
 import { buffPlanOf, buffSkillValues, manualProfile, normalizeBuffs, ownEntry, plannedProfile, runBuffs, BUFFS } from "./buffs.mts";
 import { EXTRA_COLS, parseItemQuery } from "./item-query.mts";
 import type { ValidatorSchema } from "./schema/validate.mts";
+import type { PlanMove } from "./organize-types.mts";
 
 // A tool's failure in words the model reads (a route's own refusal, a bad argument): a tool result with isError.
 export class ToolError extends Error {}
@@ -46,7 +47,6 @@ interface SetupDoc { settings: { client?: { adapter: string } | null }; bridgeAd
 interface BridgeStatus { online: boolean; age?: number; character?: string; current?: { id?: string } | null; results?: Record<string, BridgeResult> }
 interface BridgeResult { ok: boolean; msg: string; t?: string; partial?: boolean; stopped?: boolean; steps?: Array<{ op: string; serial: number; ok: boolean; msg: string }> }
 interface RunDoc { id: string; character?: string; createdAt: string; label?: string; settings?: Record<string, unknown>; result?: Record<string, unknown> | null; ms?: number | null; inventoryStamp?: string | null }
-interface PlanMove { serial: number; name: string; amount: number; from: number | null; to: number; ruleId: string; trip: number }
 interface PlanDoc { stamp: string; inventoryStamp: string; moves: PlanMove[]; trips: Array<{ index: number; site: number }>; rules: unknown[]; warnings: unknown[]; seconds: number; unclaimed: number }
 
 // ---------------------------------------------------------------- helpers

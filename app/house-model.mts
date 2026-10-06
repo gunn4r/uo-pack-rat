@@ -1,15 +1,10 @@
 // house-model.mts — a house as the map draws it (issue #10), built from the newest capture of its tiles (app/house-capture.mts), the client's tiledata.mul (app/tiledata.mts; null when it was not found) and the fold's ground containers. Pure. Spec: docs/superpowers/specs/2026-10-01-house-map-design.md, section 3.
 import { classify, FLAG, type TileData, type TileClass } from "./tiledata.mts";
 import type { HouseItem, HouseSource } from "./house-capture.mts";
-
-// opened: false = a chest a house capture saw that no scan has opened (issue #10); absent = opened.
-export interface HouseContainerInput { serial: number; name: string; facet: number | null; x: number; y: number; z: number; opened?: boolean | undefined }
-export interface Level { index: number; name: string; floorZ: number; status: "built" | "floor-only" }
-export type CellKind = "floor" | "wall" | "window" | "stair" | "roof";
-export interface Cell { level: number; x: number; y: number; kind: CellKind; material: string; family: MaterialFamily; z: number; lip: boolean; indoor: boolean; doorway: boolean }
+import type { Cell, CellKind, Furniture, HouseContainerInput, HouseModel, Level, MaterialFamily, Spot, Stack } from "./house-model-types.mts";
+export type { Cell, CellKind, Furniture, HouseContainerInput, HouseModel, Level, MaterialFamily, Spot, Stack } from "./house-model-types.mts";
 
 // The colour a tile is drawn in, from its tiledata name by keyword (spec section 2). Order matters: sandstone, marble and brick before stone, and "sand" alone (not sandstone) is dirt; "gold" floors read as marble, pavers as tile. A name nothing matches, or no name (no tiledata.mul), is neutral.
-export type MaterialFamily = "stone" | "brick" | "plaster" | "wood" | "marble" | "sandstone" | "dirt" | "grass" | "water" | "tile" | "neutral";
 const FAMILIES: ReadonlyArray<[MaterialFamily, RegExp]> = [
   ["water", /water|pool|pond|fountain|swamp/],
   ["grass", /grass|jungle|hedge|lea(f|ves)|palm|fern/],
@@ -27,10 +22,6 @@ export function materialFamily(name: string): MaterialFamily {
   for (const [family, re] of FAMILIES) if (re.test(n)) return family;
   return "neutral";
 }
-export interface Furniture { serial: number; kind: "block" | "door" | "teleporter"; name: string; level: number; x: number; y: number; z: number; height: number }
-export interface Stack { level: number; x: number; y: number; serials: number[]; zs: number[]; spot: number | null; direction: string; letter: string }
-export interface Spot { id: number; level: number; x: number; y: number; teleporter: boolean }
-export interface HouseModel { id: string; facet: number | null; capturedAt: string; captures: number; x0: number; y0: number; x1: number; y1: number; levels: Level[]; cells: Cell[]; furniture: Furniture[]; stacks: Stack[]; spots: Spot[]; codes: Record<string, string>; tiledata: boolean; unopened: number[]; unopenedNames: Record<string, string> }
 
 const LEVEL_GAP = 15;
 const LEVEL_SLACK = 3;

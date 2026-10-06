@@ -133,7 +133,7 @@ These are the invariants the phase-7 review turned into commitments. Breaking on
 
 `app/ui/` is what used to be the page's single inline `<script type="module">`, split one concern per file — strict TypeScript now (Phase 8), compiled by `build:ui` (see Run / dev loop above) and served from `app/dist/` through the `/ui/<name>` route. `docs/module-map.md`'s UI section has one line per module. The pure, DOM-free modules are the ones the `node:test` suites import directly.
 
-A page module may import a server-side module, type or value, when that module and everything it imports is browser-safe (no `node:` import anywhere in the chain). One that reaches `node:` cannot be imported even for a type, because the browser build type-checks with `"types": []`; `app/ui/api-types.mts` declares the response shapes those modules define by hand.
+A page module may import a server-side module, type or value, when that module and everything it imports is browser-safe (no `node:` import anywhere in the chain). One that reaches `node:` cannot be imported even for a type, because the browser build type-checks with `"types": []`. A shape the page needs from such a module goes in a types-only module beside it (`app/house-model-types.mts`, `app/organize-types.mts`, `app/runs-types.mts`): the owner re-exports it, the route `satisfies` it and `app/ui/api-types.mts` re-exports it, so a renamed field fails the typecheck on both sides. The rest are still declared by hand in `app/ui/api-types.mts`.
 
 ## Data model (what the fold produces)
 
