@@ -29,6 +29,7 @@ Read this first, then `CONTRIBUTING.md` for the full contributor guide.
 
 - A JSON Schema in `app/schema/` and its TypeScript copy change together: the scan schema has an inline copy in `app/scan-schema.mts` that a test compares, and the generated types come from `npm run build:types`. A new schema keyword needs both `app/schema/validate.mts` and `scripts/build-schema-types.mts`.
 - An adapter script change bumps that adapter's version: `version` in its `capabilities.json` and every `ADAPTER_VERSION` line together (`docs/adapter-guide.md`, Versions).
+- A helper between `# BEGIN generated: <fragment>` / `# END generated: <fragment>` lines in an adapter script is a copy: edit `adapters/_shared/<fragment>.py`, then run `npm run gen:contracts`. `scripts/gen-contracts.test.mts` fails while any copy differs (`docs/adapter-guide.md`, Shared helpers).
 - A solver change that can change a result bumps `SOLVER_VERSION` in `app/runs-lib.mts`, so older saved runs stop being reused.
 - A route's response and its type change together. The houses, Organize plan and proposal, and `/api/runs` responses are shared types the route `satisfies` (`app/house-model-types.mts`, `app/organize-types.mts`, `app/runs-types.mts`), so the typecheck catches a mismatch; the rest are declared by hand in `app/ui/api-types.mts`.
 

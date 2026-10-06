@@ -20,6 +20,7 @@ import re
 import time
 
 
+# BEGIN generated: tazuo/paths
 def data_dir():
     """<script folder>/packrat-paths.json {"dataDir": "..."} → $PACKRAT_DATA → ~/.pack-rat"""
     try:
@@ -44,15 +45,19 @@ def write_json_atomic(path, obj):
     with open(tmp, "w", encoding="utf-8") as f:
         json.dump(obj, f, indent=1)
     os.replace(tmp, path)
+# END generated: tazuo/paths
 
 
+# BEGIN generated: rfc3339_now
 def rfc3339_now():
     t = time.localtime()
     off = time.strftime("%z", t)
     tz = "Z" if not off else off if ":" in off else off[:3] + ":" + off[3:]
     return time.strftime("%Y-%m-%dT%H:%M:%S", t) + tz
+# END generated: rfc3339_now
 
 
+# BEGIN generated: read_blacklist
 def read_blacklist(path):
     """The valid entries of <data directory>/scan-blacklist.json, the containers the player blacklisted
     ({serial, name, addedAt, where?}). A bad entry is dropped, and a missing, unreadable or oversized
@@ -65,6 +70,7 @@ def read_blacklist(path):
         return [e for e in doc if isinstance(e, dict) and type(e.get("serial")) is int and 0 < e["serial"] <= 0xFFFFFFFF]
     except Exception:
         return []
+# END generated: read_blacklist
 
 
 ADAPTER_ID = "tazuo"
@@ -79,6 +85,7 @@ CAPABILITIES = {
 
 
 SCAN_RANGE = 3           # tiles: ground containers within reach (house chests open only when close)
+# BEGIN generated: tazuo/house_limits
 HOUSE_RADIUS = 40        # tiles searched around the player for the house's tiles (a castle is about 32 across)
 HOUSE_MAX_TILES = 20000  # a capture larger than this is left out rather than bloating the scan
 HOUSE_ITEM_REACH = 18    # the server sends ground items within about this many tiles
@@ -86,58 +93,84 @@ HOUSE_MULTI_IDS = (0x13EC, 0x147B)   # custom-house multi ids (ServUO HousePlace
 HOUSE_ITEM_CENTRE_RADIUS = 2   # the bounds include steps and the rim, so their centre sits up to about a tile off the multi origin, and an even-sized plot has a .5 centre
 HOUSE_MAX_ITEMS = 5000   # the scan schema's cap on house items: past it the nearest are kept, so the scan file still validates
 HOUSE_MAX_CONTAINERS = 5000  # the scan schema's cap on the house's containers: past it the nearest are kept
+# END generated: tazuo/house_limits
 SCAN_GROUND = True       # False = backpack/bank only, never touch containers on the ground
 GROUND_ONLY_AT_HOME = True   # when the bank box is open (you are at a bank) skip ground containers entirely
 PAUSE_OPEN = 1.2         # after UseObject on a container (raise on laggy connections)
 MAX_NEST = 4             # bags in bags in bags
 OPENED_HERE = []         # container windows this run opened itself, in opening order (close_opened)
+# BEGIN generated: blacklist
 BLACKLIST = set(e["serial"] for e in read_blacklist(os.path.join(data_dir(), "scan-blacklist.json")))
+# END generated: blacklist
 SKIPPED = set()          # blacklisted containers this run never opened
 TRASHED = set()          # trash containers this run never opened (TRASH_RE)
+# BEGIN generated: tazuo/house_files
 HOUSE_LEFT_OUT = set()   # furniture past HOUSE_MAX_ITEMS this run left out of the house section (the farthest from the player)
 HOUSE_TOO_LARGE = []     # the tile count of a house this run left out for passing HOUSE_MAX_TILES
+# END generated: tazuo/house_files
 STOP_CLOSE_S = 1.5       # after a Stop, stop closing windows after this long: the client gives a stopped script 2 s
+# BEGIN generated: tazuo/out_dir
 OUT_DIR = os.path.join(data_dir(), "inbox", "tazuo")
+# END generated: tazuo/out_dir
 ALARM_HUE, OK_HUE, INFO_HUE = 33, 68, 88
 
+# BEGIN generated: tazuo/all_layers
 ALL_LAYERS = ["OneHanded", "TwoHanded", "Shoes", "Pants", "Shirt", "Helmet", "Gloves",
               "Ring", "Talisman", "Necklace", "Waist", "Torso", "Bracelet", "Tunic",
               "Earrings", "Arms", "Cloak", "Robe", "Skirt", "Legs"]
+# END generated: tazuo/all_layers
+# BEGIN generated: tazuo/container_re
 CONTAINER_RE = re.compile(r"\b(chest|box|toolbox|crate|bag|pouch|basket|trunk|armoire|cabinet|backpack)\b", re.I)
+# END generated: tazuo/container_re
 # Named like a container (or carrying a bag graphic) but never one: a deed places an addon, a bag
 # of sending raises a target cursor, a music box plays. Double-clicking them opens nothing. A book of
 # any kind (spellbooks of every school, runebooks, a runic atlas, a tome) is a container to the
 # client, but double-clicking one opens a spellbook or runebook window, never a container window.
+# BEGIN generated: not_a_container_re
 NOT_A_CONTAINER_RE = re.compile(r"\b(deed(?!\s+box)|sending|music box|\w*book|tome|atlas|compendium)\b", re.I)   # a "Commodity Deed Box" IS one
+# END generated: not_a_container_re
 # The books by graphic too, whatever they are called (ServUO's item classes; the first three seen live).
+# BEGIN generated: not_a_container_graphics
 NOT_A_CONTAINER_GRAPHICS = {0x0EFA, 0x2D50, 0x2D9D, 0x2252, 0x2253, 0x225A, 0x225B, 0x238C, 0x23A0, 0x22C5, 0x9C16}
+# END generated: not_a_container_graphics
 # A trash barrel or chest is a real container, but the server deletes its contents on a timer, so
 # nothing in one is worth recording. Never opened, never recorded, contents included. By name only:
 # a trash barrel has the same graphic as an ordinary barrel.
+# BEGIN generated: trash_re
 TRASH_RE = re.compile(r"\btrash\b", re.I)
+# END generated: trash_re
 # A piece of armour or clothing is never a container, however its name reads ("Platemail Chest"). No
 # "gargish" here: a Gargish Chest is a real container; gargoyle armour is caught by the client's
 # own wearable flag instead.
+# BEGIN generated: tazuo/wearable_re
 WEARABLE_RE = re.compile(r"\b(plate\w*|chain\w*|ring\s*mail|studded|leather|armou?r)\b", re.I)
+# END generated: tazuo/wearable_re
 # Engraved bags and Backpacks match no name pattern — detect by graphic too (probe-verified Aug 2026).
+# BEGIN generated: tazuo/container_graphics
 CONTAINER_GRAPHICS = {0x0E75, 0x0E76, 0x0E79, 0x0E7D, 0x09AA, 0x09A8, 0x09A9, 0x09AB,
                       0x0E3C, 0x0E3D, 0x0E3E, 0x0E3F, 0x0E40, 0x0E41, 0x0E42, 0x0E43,
                       0x0E7C, 0x0E7E, 0x0E7F, 0xA32F, 0xA333,
                       0x4025, 0x4026}   # Gargish Chest: UO Alive's tiledata does not flag it
+# END generated: tazuo/container_graphics
 
 
+# BEGIN generated: tazuo/sysmsg
 def sysmsg(msg, hue=OK_HUE):
     API.SysMsg(msg, hue)
+# END generated: tazuo/sysmsg
 
 
+# BEGIN generated: tazuo/tooltip_lines
 def tooltip_lines(serial):
     try:
         data = API.ItemNameAndProps(int(serial), True)
     except Exception:
         data = None
     return [ln.strip() for ln in str(data or "").splitlines() if ln.strip()]
+# END generated: tazuo/tooltip_lines
 
 
+# BEGIN generated: tazuo/is_container
 def is_container(item, name):
     try:
         graphic = int(getattr(item, "Graphic", 0) or 0)
@@ -169,13 +202,16 @@ def is_container(item, name):
     except Exception:
         pass
     return bool(CONTAINER_RE.search(name or ""))
+# END generated: tazuo/is_container
 
 
+# BEGIN generated: tazuo/is_trash
 def is_trash(serial, name):
     """A container is trash by its tooltip name ("A Trash Barrel"): the client's own cached name for the
     art may be just "barrel". The cached name is the fallback when the tooltip reads nothing."""
     lines = tooltip_lines(serial)
     return bool(TRASH_RE.search(lines[0] if lines else name or ""))
+# END generated: tazuo/is_trash
 
 
 def dist(item):
@@ -185,6 +221,7 @@ def dist(item):
         return 999
 
 
+# BEGIN generated: tazuo/item_dict
 def item_dict(it, lines, container, layer=None):
     d = {"serial": int(it.Serial), "graphic": int(getattr(it, "Graphic", 0) or 0),
          "hue": int(getattr(it, "Hue", 0) or 0), "amount": int(getattr(it, "Amount", 1) or 1),
@@ -193,8 +230,10 @@ def item_dict(it, lines, container, layer=None):
     if layer:
         d["layer"] = layer
     return d
+# END generated: tazuo/item_dict
 
 
+# BEGIN generated: tazuo/facet
 def facet():
     """The map the player stands on (0 Felucca .. 5 Ter Mur), and so every ground root's: they are all
     within reach. None when the client cannot say. GetMap() is looked up with getattr, since the Legion
@@ -205,8 +244,10 @@ def facet():
     except Exception:
         return None
     return m if 0 <= m <= 5 else None
+# END generated: tazuo/facet
 
 
+# BEGIN generated: tazuo/root
 def root_pos(serial, kind):
     """World position of a ground container (so the bridge can walk to it later), with its facet when
     the client says; None for pack/bank."""
@@ -233,8 +274,10 @@ def root_entry(serial, kind, label):
     if kind == "ground":
         entry["tooltip"] = tooltip_lines(serial)
     return entry
+# END generated: tazuo/root
 
 
+# BEGIN generated: tazuo/house_capture
 def house_capture(px, py):
     """The house the player stands in, from the client's own house tiles (issue #10), or None outside a house or on a build without the multi calls. Only the tiles connected to the player's tile are kept (8-connected in x/y, across every z), so a neighbouring house is left out. What stands on the ground inside that footprint is recorded too (both left out when the ground cannot be read): furniture and fixtures as `items`, and every container as `containers` (2.11.0), opened or not, so the map shows a chest from the first scan even when it stood too far away to open; corpses, trash containers and blacklisted ones are left out (trash by name, or because the roots pass, which runs first, read its tooltip; a far trash container whose cached name is generic cannot be told apart without a tooltip query, which this never makes). Names come from tiledata in the app, so this asks the server nothing. A house of more than HOUSE_MAX_TILES tiles is left out and its count noted in HOUSE_TOO_LARGE."""
     at = getattr(API, "GetMultisAt", None)
@@ -312,8 +355,10 @@ def house_capture(px, py):
     chests.sort(key=nearest)
     house["containers"] = sorted(chests[:HOUSE_MAX_CONTAINERS])
     return house
+# END generated: tazuo/house_capture
 
 
+# BEGIN generated: tazuo/walk
 def was_opened(serial):
     """The client's own word that a container's contents arrived (its gump opened)."""
     try:
@@ -481,8 +526,10 @@ def close_opened():
                    f"closed (TazUO cannot find a window while its name plate shows) - close by hand.", INFO_HUE)
         except Exception:
             pass
+# END generated: tazuo/walk
 
 
+# BEGIN generated: tazuo/skills
 SKILL_NAMES = ["Anatomy", "Archery", "Bushido", "Chivalry", "Discordance", "Evaluating Intelligence", "Fencing", "Focus",
                "Healing", "Imbuing", "Mace Fighting", "Magery", "Meditation", "Musicianship", "Mysticism", "Necromancy",
                "Ninjitsu", "Parry", "Peacemaking", "Provocation", "Resisting Spells", "Spellweaving", "Spirit Speak",
@@ -507,6 +554,7 @@ def read_skills():
         except Exception:
             continue
     return out
+# END generated: tazuo/skills
 
 
 def main():

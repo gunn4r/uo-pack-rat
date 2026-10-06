@@ -22,6 +22,7 @@ import re
 import time
 
 
+# BEGIN generated: razor-enhanced/paths
 def data_dir():
     """<script folder>/packrat-paths.json {"dataDir": "..."} -> $PACKRAT_DATA -> ~/.pack-rat"""
     try:
@@ -45,15 +46,19 @@ def write_json_atomic(path, obj):
     with open(tmp, "w", encoding="utf-8") as f:
         json.dump(obj, f, indent=1)
     os.replace(tmp, path)
+# END generated: razor-enhanced/paths
 
 
+# BEGIN generated: rfc3339_now
 def rfc3339_now():
     t = time.localtime()
     off = time.strftime("%z", t)
     tz = "Z" if not off else off if ":" in off else off[:3] + ":" + off[3:]
     return time.strftime("%Y-%m-%dT%H:%M:%S", t) + tz
+# END generated: rfc3339_now
 
 
+# BEGIN generated: read_blacklist
 def read_blacklist(path):
     """The valid entries of <data directory>/scan-blacklist.json, the containers the player blacklisted
     ({serial, name, addedAt, where?}). A bad entry is dropped, and a missing, unreadable or oversized
@@ -66,6 +71,7 @@ def read_blacklist(path):
         return [e for e in doc if isinstance(e, dict) and type(e.get("serial")) is int and 0 < e["serial"] <= 0xFFFFFFFF]
     except Exception:
         return []
+# END generated: read_blacklist
 
 
 ADAPTER_ID = "razor-enhanced"
@@ -94,7 +100,9 @@ GROUND_ONLY_AT_HOME = True    # when the bank box is already open (you are at a 
 CONTENTS_WAIT_MS = 1500   # Items.WaitForContents' own open-and-wait timeout, per container
 PROPS_WAIT_MS = 800       # Items.WaitForProps' own request-and-wait timeout, per item
 MAX_NEST = 4              # bags in bags in bags
+# BEGIN generated: blacklist
 BLACKLIST = set(e["serial"] for e in read_blacklist(os.path.join(data_dir(), "scan-blacklist.json")))
+# END generated: blacklist
 SKIPPED = set()           # blacklisted containers this run never opened
 TRASHED = set()           # trash containers this run never opened (TRASH_RE)
 OPENED_HERE = []          # containers this run opened itself, in opening order (close_opened)
@@ -102,27 +110,34 @@ OUT_DIR = os.path.join(data_dir(), "inbox", "razor-enhanced")
 ALARM_HUE, OK_HUE, INFO_HUE = 33, 68, 88
 
 
+# BEGIN generated: razor-enhanced/sysmsg
 def sysmsg(msg, hue=OK_HUE):
     # Misc.SendMessage prints to this client's own message area -- never a network speech packet,
     # unlike Player.ChatSay/ChatYell/ChatWhisper (see docs/bridge-protocol.md's "adapters never
     # speak publicly" rule, and README.md's Sources section for the citation on this distinction).
     Misc.SendMessage(msg, hue, False)
+# END generated: razor-enhanced/sysmsg
 
 
+# BEGIN generated: razor-enhanced/as_int
 def as_int(v, default=0):
     try:
         return int(v)
     except Exception:
         return default
+# END generated: razor-enhanced/as_int
 
 
+# BEGIN generated: razor-enhanced/as_float
 def as_float(v, default=0.0):
     try:
         return float(v)
     except Exception:
         return default
+# END generated: razor-enhanced/as_float
 
 
+# BEGIN generated: razor-enhanced/tooltips
 def tooltip_lines(it):
     """RAW tooltip lines for one Item, via Item.Properties (List[Property]; Property.ToString()
     renders one line, per razorenhanced.readthedocs.io/api/Property.html). Requests the read first
@@ -152,8 +167,10 @@ def name_of(it):
     (just "barrel" for that art); the cached Name is the fallback when the tooltip reads nothing."""
     lines = tooltip_lines(it)
     return lines[0] if lines else str(getattr(it, "Name", "") or "")
+# END generated: razor-enhanced/tooltips
 
 
+# BEGIN generated: razor-enhanced/item_dict
 def item_dict(it, lines, container_serial, layer=None):
     d = {
         "serial": as_int(getattr(it, "Serial", 0)),
@@ -168,21 +185,29 @@ def item_dict(it, lines, container_serial, layer=None):
     if layer:
         d["layer"] = layer
     return d
+# END generated: razor-enhanced/item_dict
 
 
 # Named like a container (or carrying a bag graphic) but never one: a deed places an addon, a bag of
 # sending raises a target cursor, a music box plays. Opening them opens nothing. A book of any kind
 # (spellbooks of every school, runebooks, a runic atlas, a tome) is a container to the client, but
 # opening one opens a spellbook or runebook window, never a container window.
+# BEGIN generated: not_a_container_re
 NOT_A_CONTAINER_RE = re.compile(r"\b(deed(?!\s+box)|sending|music box|\w*book|tome|atlas|compendium)\b", re.I)   # a "Commodity Deed Box" IS one
+# END generated: not_a_container_re
 # The books by graphic too, whatever they are called (ServUO's item classes; the first three seen live).
+# BEGIN generated: not_a_container_graphics
 NOT_A_CONTAINER_GRAPHICS = {0x0EFA, 0x2D50, 0x2D9D, 0x2252, 0x2253, 0x225A, 0x225B, 0x238C, 0x23A0, 0x22C5, 0x9C16}
+# END generated: not_a_container_graphics
 # A trash barrel or chest is a real container, but the server deletes its contents on a timer, so
 # nothing in one is worth recording. Never opened, never recorded, contents included. By name only:
 # a trash barrel has the same graphic as an ordinary barrel.
+# BEGIN generated: trash_re
 TRASH_RE = re.compile(r"\btrash\b", re.I)
+# END generated: trash_re
 
 
+# BEGIN generated: razor-enhanced/is_container
 def is_container(it):
     # Only the client's own IsContainer flag says yes; there is no name fallback, so armour named
     # like a chest ("Platemail Chest") is never taken for one.
@@ -199,8 +224,10 @@ def is_container(it):
         return bool(getattr(it, "IsContainer", False))
     except Exception:
         return False
+# END generated: razor-enhanced/is_container
 
 
+# BEGIN generated: razor-enhanced/walk
 def facet():
     """The map the player stands on (Player.Map: 0 Felucca .. 5 Ter Mur), and so every ground root's:
     they are all within reach. None when this build cannot say, or says anything but 0-5."""
@@ -350,6 +377,7 @@ def close_opened():
 def note_unopened(entry, label):
     sysmsg("  {0} in {1} was not opened -- its contents are kept from the last scan".format(
         entry["name"] or "a container", label), ALARM_HUE)
+# END generated: razor-enhanced/walk
 
 
 # Razor Enhanced's own skill names (Player.GetRealSkillValue / Player.UseSkill's documented
@@ -357,6 +385,7 @@ def note_unopened(entry, label):
 # for "Resisting Spells", "Swords" for "Swordsmanship", ...), so each is written under the game's
 # name: the app's Resisting Spells resist bonus, for one, looks for exactly that key. Skill names,
 # unlike RE's torso layers, map one to one.
+# BEGIN generated: razor-enhanced/skills
 SKILL_NAMES = [
     "Alchemy", "Anatomy", "Animal Lore", "Item ID", "Arms Lore", "Parry", "Begging", "Blacksmith",
     "Fletching", "Peacemaking", "Camping", "Carpentry", "Cartography", "Cooking", "Detect Hidden",
@@ -395,6 +424,7 @@ def read_skills():
             continue
         out[GAME_SKILL_NAME.get(name, name)] = {"value": round(val, 1), "base": round(base, 1), "cap": round(cap, 1)}
     return out
+# END generated: razor-enhanced/skills
 
 
 def main():

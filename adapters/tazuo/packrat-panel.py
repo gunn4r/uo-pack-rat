@@ -48,6 +48,7 @@ import re
 import time
 
 
+# BEGIN generated: tazuo/paths
 def data_dir():
     """<script folder>/packrat-paths.json {"dataDir": "..."} → $PACKRAT_DATA → ~/.pack-rat"""
     try:
@@ -72,13 +73,16 @@ def write_json_atomic(path, obj):
     with open(tmp, "w", encoding="utf-8") as f:
         json.dump(obj, f, indent=1)
     os.replace(tmp, path)
+# END generated: tazuo/paths
 
 
+# BEGIN generated: rfc3339_now
 def rfc3339_now():
     t = time.localtime()
     off = time.strftime("%z", t)
     tz = "Z" if not off else off if ":" in off else off[:3] + ":" + off[3:]
     return time.strftime("%Y-%m-%dT%H:%M:%S", t) + tz
+# END generated: rfc3339_now
 
 
 ADAPTER_ID = "tazuo"
@@ -118,9 +122,15 @@ TARGET_S = 30             # how long Put away's target cursor waits for a click
 SCAN_RANGE = 3            # packrat-scanner.py's reach: a chest must be this close to be scanned first
 MAX_NEST = 4              # bags in bags in bags, as the scanners walk them
 # What the scanners never take for a container (a book is one to the client) and what they never read.
+# BEGIN generated: not_a_container_re
 NOT_A_CONTAINER_RE = re.compile(r"\b(deed(?!\s+box)|sending|music box|\w*book|tome|atlas|compendium)\b", re.I)   # a "Commodity Deed Box" IS one
+# END generated: not_a_container_re
+# BEGIN generated: not_a_container_graphics
 NOT_A_CONTAINER_GRAPHICS = {0x0EFA, 0x2D50, 0x2D9D, 0x2252, 0x2253, 0x225A, 0x225B, 0x238C, 0x23A0, 0x22C5, 0x9C16}
+# END generated: not_a_container_graphics
+# BEGIN generated: trash_re
 TRASH_RE = re.compile(r"\btrash\b", re.I)
+# END generated: trash_re
 MAX_DIR_ENTRIES = 5000    # names looked at per folder per refresh
 DEFAULT_HOTKEY = "CTRL+SHIFT+P"
 HOTKEY_MODS = ("CTRL", "ALT", "SHIFT")
@@ -398,6 +408,7 @@ def away_buttons():
     set_text("away_btn", "Cancel put away" if state["run"] else "Put away...")
 
 
+# BEGIN generated: read_blacklist
 def read_blacklist(path):
     """The valid entries of <data directory>/scan-blacklist.json, the containers the player blacklisted
     ({serial, name, addedAt, where?}). A bad entry is dropped, and a missing, unreadable or oversized
@@ -410,6 +421,7 @@ def read_blacklist(path):
         return [e for e in doc if isinstance(e, dict) and type(e.get("serial")) is int and 0 < e["serial"] <= 0xFFFFFFFF]
     except Exception:
         return []
+# END generated: read_blacklist
 
 
 def picked_source(serial):
