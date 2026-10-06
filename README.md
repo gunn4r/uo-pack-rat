@@ -108,7 +108,7 @@ Turn on **Settings › AI assistants (MCP)** and Claude Code (or another MCP cli
 
 ### Play attended
 
-The scripts only read what your character can see, and only move an item when you click a button in the app. They never fight, gather or loot, and they don't keep acting while you are away. Most shards ban unattended fighting, gathering and looting, sometimes harshly; check your own shard's rules before running any script.
+The scripts only read what your character can see, and only move an item when you click a button in the app, or when an AI assistant you've allowed in-game actions asks (Settings, AI assistants). They never fight, gather or loot, and they don't keep acting while you are away. Most shards ban unattended fighting, gathering and looting, sometimes harshly; check your own shard's rules before running any script.
 
 The Razor Enhanced and ClassicUO web client scripts have not been tried against a live game yet. If something goes wrong, please [open an issue](https://github.com/gunn4r/uo-pack-rat/issues).
 
