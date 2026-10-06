@@ -236,9 +236,12 @@ function naiveLocalToRfc3339(stamp: string): string {
 
 const num = (v: unknown): number | null | undefined => (v == null ? v : Number(v));
 
+// A scan's character name starting with "_" is not a character: the app's own documents (the "_vault" tombstones) use it.
+export const isPseudoCharacter = (name: unknown): boolean => String(name ?? "").startsWith("_");
+
 function tazuoAdapter(character: unknown): ScanV2Adapter {
   return {
-    id: String(character ?? "").startsWith("_") ? "app" : "tazuo",
+    id: isPseudoCharacter(character) ? "app" : "tazuo",
     version: "1", client: "TazUO", clientVersion: null, capabilities: TAZUO_V1_CAPS,
   };
 }

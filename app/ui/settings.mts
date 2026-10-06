@@ -24,7 +24,7 @@ import { autostartNote, hotkeyLabel, panelControls } from "./tazuo-panel.mts";
 import { exportKinds, importKinds } from "./kinds.mts";
 import { tiledataNote } from "./house-map-model.mts";
 import type { SetupApiResponse, InstallApiResponse, UpdateCheckApiResponse, BlacklistApiResponse, CleanupApiResponse, RetentionSetting, SettingsApiResponse, PanelPrefs, TazuoPanelApiResponse, McpApiResponse, HousesApiResponse, TiledataFrom, HostPickFolderApiResponse, ApiError } from "./api-types.mts";
-import type { BlacklistEntry } from "../vault-lib.mts";
+import { isPseudoCharacter, type BlacklistEntry } from "../vault-lib.mts";
 
 // Reinstall's own confirmation and result — separate from the wizard's, since this row acts on the client
 // that is already set up (no need to re-walk shard/client/folder).
@@ -247,7 +247,7 @@ function pathRow(label: string, which: string, path: string, canOpen: boolean): 
 // Everyone Pack Rat knows by name: scanned characters and characters with only a saved Suit Builder profile.
 function knownCharacters(): string[] {
   return [...new Set([...Object.keys(state.inv?.characters || {}), ...Object.keys(state.profiles?.characters || {})])]
-    .filter((n) => !n.startsWith("_")).sort((a, b) => a.localeCompare(b));
+    .filter((n) => !isPseudoCharacter(n)).sort((a, b) => a.localeCompare(b));
 }
 // The containers scans never open, newest first, each with Unblacklist. Containers and the in-game
 // packrat-blacklist.py both change the list, so this card alone is fetched again on every visit (app.mts).

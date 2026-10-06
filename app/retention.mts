@@ -10,7 +10,7 @@
 // something in the fold still carries the timestamp of (a character's card and worn set, a bag a later
 // scan could not open, which keeps what an older one saw in it), and a house's captures from its oldest kept one on (issue #10). Then the fold (and every house still listed) of what is left is
 // compared with the fold of everything, and when they differ nothing is pruned at all.
-import { parseStamp } from "./scan-schema.mts";
+import { isPseudoCharacter, parseStamp } from "./scan-schema.mts";
 import { houseGroups, latestHouses } from "./house-capture.mts";
 import type { Inventory } from "./vault-lib.mts";
 import type { ScanV2 } from "./schema/types.d.mts";
@@ -61,7 +61,7 @@ export function scansToPrune(scans: ScanFile[], fold: (s: ScanV2[]) => Inventory
   const newest = new Map<string, ScanFile>();   // by root serial
   const claim = (key: string, s: ScanFile): void => { const cur = newest.get(key); if (!cur || stamp(s) >= stamp(cur)) newest.set(key, s); };
   for (const s of scans) {
-    if (stamp(s) >= cutoff || s.doc.character === "_vault") keep.add(s.file);
+    if (stamp(s) >= cutoff || isPseudoCharacter(s.doc.character)) keep.add(s.file);
     for (const root of s.doc.roots || []) if (root.opened !== false) claim(`${+root.serial}`, s);
   }
   for (const s of newest.values()) keep.add(s.file);
