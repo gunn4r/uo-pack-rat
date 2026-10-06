@@ -5,7 +5,7 @@
 // app/import-children.test.mts and app/wizard-default-adapter.test.mts do: tsconfig.browser.json
 // compiles app/ui/** for the browser, and a node:test file has no business in that build.
 // Tags: [fast]. Run: node --test app/ui-render.test.mts
-import "../scripts/localstorage-shim-for-tests.mts";   // app/ui/store.mts reads localStorage at module scope — must be in place before that import evaluates
+import "../scripts/localstorage-shim-for-tests.mts";   // a localStorage stub for the page modules below; none reads it at module scope today (app/ui/store.mts no longer does), so it is a safety net, kept first so it would be in place before any import evaluates
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
