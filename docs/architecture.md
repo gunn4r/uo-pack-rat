@@ -176,6 +176,7 @@ Every route lives in `app/http/routes/`, one module per area, each exporting `ro
 - `GET /api/runs?character=` (saved runs, newest first)
 - `GET|PUT {label}|DELETE /api/runs/<id>`
 - `POST /api/runs` {character, suit, settings, inventoryStamp} (save Manual's suit as a run, method "manual")
+- `POST /api/evaluate` {character (null: No character), suit, profile?, buffs?} (a hand-picked suit evaluated as Manual evaluates it, `app/evaluate.mts`: gear totals, effective totals with the buffs, caps, waste and requirements; `profile` is a run's settings snapshot, the character's saved profile without it)
 
 ### `app/http/routes/mcp.mts`
 

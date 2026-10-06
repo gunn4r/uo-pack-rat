@@ -297,7 +297,7 @@ const OBJECT_BODY_ROUTES: Array<[string, string]> = [
   ["POST", "/api/import/paste"], ["POST", "/api/import/rescan"],
   ["POST", "/api/host/pick-folder"], ["POST", "/api/host/open-path"], ["POST", "/api/optimize"],
   ["POST", "/api/bridge"], ["POST", "/api/forget"], ["POST", "/api/forget-character"], ["PUT", "/api/ui-prefs"],
-  ["POST", "/api/blacklist"], ["POST", "/api/retention/cleanup"],
+  ["POST", "/api/blacklist"], ["POST", "/api/retention/cleanup"], ["POST", "/api/evaluate"],
 ];
 
 test("[fast] a null/array/scalar JSON body is a clean 400 on every body-reading route, and the log does not grow", async () => {

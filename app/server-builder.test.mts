@@ -7,7 +7,9 @@ import { tmpdir } from "node:os";
 import { resolveConfig, ensureLayout } from "./config.mts";
 import type { ServerHandle } from "./vault-server.mts";
 import { startTestServer as startServer } from "./server-fixture.mts";
-import { buildPools, setRules, type Item, type ProfilesFile } from "./vault-lib.mts";
+import { buildPools, characterProfile, setRules, toOptItem, type Item, type Profile, type ProfilesFile } from "./vault-lib.mts";
+import { manualBase, manualPlan } from "./buffs.mts";
+import { evaluateSuit, type SuitEvaluation } from "./evaluate.mts";
 import { DEFAULT_OPTIONAL_SLOTS } from "./mip.mts";
 import { buildUi } from "../scripts/build-ui.mts";
 import { buildSchemaTypes } from "../scripts/build-schema-types.mts";
@@ -807,4 +809,42 @@ test("[fast] POST /api/runs saves Manual's suit as a manual run: its shape, its 
   const twoH = loose.find((it) => it.slot === "twoHanded" && it.twoHanded) ?? worn.find((it) => it.slot === "twoHanded" && it.twoHanded);
   const oneH = [...loose, ...worn].find((it) => it.slot === "oneHanded");
   if (twoH && oneH) assert.equal((await post({ character, suit: { twoHanded: twoH.serial, oneHanded: oneH.serial }, settings })).status, 400);
+});
+
+test("[fast] POST /api/evaluate answers evaluateSuit's evaluation of a hand-picked suit, planned as Manual plans it, and checks its body (issue #216)", async () => {
+  const { character, worn, loose } = await demoGear();
+  const piece = loose.find((it) => it.slot === "ring") ?? loose[0]!;
+  const suit = { ...Object.fromEntries(worn.filter((it) => it.slot !== piece.slot).map((it) => [it.slot!, it.serial])), [piece.slot!]: piece.serial };
+  const post = (body: unknown) => fetch(srv.url + "/api/evaluate", { method: "POST", headers: JSON_HEADERS, body: JSON.stringify(body) });
+  const answer = async (body: unknown): Promise<SuitEvaluation> => {
+    const r = await post(body), j = asJson<{ evaluation: SuitEvaluation }>(await r.json());
+    assert.equal(r.status, 200, JSON.stringify(j));
+    return j.evaluation;
+  };
+  // the same evaluation, computed here from the same fixtures and the saved profile
+  const inv = foldFixtures(join(HERE, "fixtures")), c = inv.characters[character]!;
+  const { profiles } = asJson<ProfilesResponse>(await (await get("/api/profiles")).json());
+  const { caps: _caps, ...saved } = characterProfile(profiles, character);
+  const pieces = Object.fromEntries(Object.entries(suit).map(([slot, serial]) => [slot, inv.items[serial]!]));
+  const wornNow = Object.values(inv.items).filter((it) => it.equippedBy === character);
+  const local = (p: Profile, on: string[], skills: Record<string, number> = {}): SuitEvaluation => JSON.parse(JSON.stringify(evaluateSuit({ profile: manualBase(p, c), character: c,
+    suit: Object.fromEntries(Object.entries(pieces).map(([slot, it]) => [slot, toOptItem(it)])), buffs: manualPlan(c, wornNow, pieces, p.race || "human", on, skills) }))) as SuitEvaluation;
+  assert.deepEqual(await answer({ character, suit }), local(saved, []), "the saved profile, no buffs");
+  const profile = { floors: { dci: 20, physResist: 60 }, weights: { hci: 1 }, race: "elf" as const };
+  const df = await answer({ character, suit, profile, buffs: { on: ["divineFury"], skills: { Chivalry: 100, Karma: 0 } } });
+  assert.deepEqual(df, local(profile, ["divineFury"], { Chivalry: 100, Karma: 0 }));
+  assert.equal(df.effectiveTotals.dci, (df.gearTotals.dci || 0) - 20, "Divine Fury's DCI −20 in the effective totals, not the gear's");
+  assert.deepEqual(await answer({ character, suit, profile: { ...profile, buffs: { on: ["divineFury"], skills: { Chivalry: 100, Karma: 0 } } } }), df, "a run's settings bring their buffs");
+  const none = await answer({ character: null, suit: { [piece.slot!]: piece.serial } });
+  assert.equal(none.planned.resistBonus, 0, "No character: raw item totals");
+  // the checks
+  assert.equal((await post({ character: "Nobody", suit })).status, 404);
+  assert.equal((await post({ suit })).status, 400, "a character, or null");
+  assert.equal((await post({ character, suit: { ring: "x" } })).status, 400);
+  assert.equal((await post({ character, suit: { [piece.slot!]: piece.serial + 999999 } })).status, 400);
+  assert.equal((await post({ character, suit, profile: { race: "orc" } })).status, 400);
+  assert.equal((await post({ character, suit, profile: { whatever: 1 } })).status, 400);
+  assert.equal(asJson<ErrorBody>(await (await post({ character, suit, buffs: { on: ["noSuchBuff"], skills: {} } })).json()).error, "body.buffs must list known buffs, each once and one form at most, with their numbers in range");
+  const twoH = [...loose, ...worn].find((it) => it.slot === "twoHanded" && it.twoHanded), oneH = [...loose, ...worn].find((it) => it.slot === "oneHanded");
+  if (twoH && oneH) assert.equal((await post({ character, suit: { twoHanded: twoH.serial, oneHanded: oneH.serial } })).status, 400);
 });
