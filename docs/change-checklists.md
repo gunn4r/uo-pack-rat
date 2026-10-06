@@ -32,7 +32,7 @@ Examples: `ee9da51`, `97c6363`.
 1. `app/vault-lib.mts` (`KINDS`, `kindOf`, `OVERRIDE_KINDS`), `app/item-kinds.mts` (the player's overrides, `<data>/item-kinds.json`).
 2. Organize: `app/organize-config.mts`, `app/organize-strategies.mts`, `app/organize.mts`, `app/ui/rule-editor.mts`.
 3. UI: `app/ui/kinds.mts`, `app/ui/inventory.mts`, `app/ui/organize.mts`, `app/ui/settings.mts`, `app/ui/api-types.mts`.
-4. Server: the routes in `app/vault-server.mts`. If a server module becomes page-visible, the browser-shared list (see Add an HTTP route).
+4. Server: the routes in `app/http/routes/`. If a server module becomes page-visible, the browser-shared list (see Add an HTTP route).
 5. MCP: `list_item_kinds` and the `kind` filter's description in `app/mcp-tools.mts`.
 6. Tests: `app/slot-groups.test.mts`, `scripts/slot-lists.test.mts` (its allow-list, if a hand-kept list changed size), `app/gear-vault.test.mts`, `app/item-kinds.test.mts`, `app/organize-config.test.mts`, `app/organize-strategies.test.mts`, `app/organize-server.test.mts`, `app/server.test.mts`, `scripts/ui-organize.test.mts`.
 7. Docs: `README.md` (kinds are player-visible), `CONTRIBUTING.md`, `docs/architecture.md` (data folder), `docs/ui.md`.
@@ -54,7 +54,7 @@ Examples: `1486452`, `826f586`.
 Examples: `02b052e`, `e0b1eb0`.
 
 1. Catalog and math: `app/buffs.mts`; `app/vault-lib.mts` (profile planning); `app/runs-lib.mts` (runs record the buffs used).
-2. Server: the routes in `app/vault-server.mts`; `app/ui/api-types.mts`.
+2. Server: the routes in `app/http/routes/`; `app/ui/api-types.mts`.
 3. UI: `app/ui/builder-buffs.mts`, `app/ui/builder-manual.mts`, `app/ui/builder.mts`, `app/ui/builder-model.mts`, `app/ui/builder-result.mts`, `app/ui/manual-model.mts`, `app/ui/sheet.mts`, `app/ui/components.mts`, `app/ui/runs.mts`, `app/ui/app.mts`, `app/ui/builder.css`, `app/ui/tokens.css`.
 4. MCP: `BUFF_LIST` in `app/mcp-tools.mts` (built from `BUFFS`; two tools send it).
 5. Tests: `app/buffs.test.mts`, `app/buffs-plan.test.mts`, `app/solver-buffs-fuzz.test.mts`, `app/solver.test.mts`, `app/builder-model.test.mts`, `app/ui-components.test.mts`, `scripts/ui-builder.test.mts`, `scripts/ui-contrast.test.mts`.
@@ -65,7 +65,7 @@ Examples: `02b052e`, `e0b1eb0`.
 Examples: `166eb05`, `d311bdb`, `f1eced4`.
 
 1. Contract: `app/schema/profiles.v2.schema.json` (types regenerate with `npm run build:types`); the defaults in `app/data/profiles.default.json`; `TEMPLATE_KEYS` in `app/vault-lib.mts` if templates carry it.
-2. Logic: `app/vault-lib.mts` (normalize, migrate, templates, `settingsDiff`); `app/runs-lib.mts` (run identity and instant repeats: bump `SOLVER_VERSION` if results change); `app/vault-server.mts` (`runSettingsError`, `OPTS_LIMITS`); `app/bench/mip-spike.mts`, `app/bench/run-bench.mts`.
+2. Logic: `app/vault-lib.mts` (normalize, migrate, templates, `settingsDiff`); `app/runs-lib.mts` (run identity and instant repeats: bump `SOLVER_VERSION` if results change); `app/http/routes/optimize.mts` (`runSettingsError`, `OPTS_LIMITS`); `app/bench/mip-spike.mts`, `app/bench/run-bench.mts`.
 3. UI: `app/ui/builder-model.mts`, `app/ui/builder.mts`, `app/ui/builder-result.mts`, `app/ui/runs.mts` (`settingsSnapshot`), `app/ui/sheet.mts`, `app/ui/components.mts`, `app/ui/builder.css`.
 4. MCP: the `build_suit` and `score_suit` arguments in `app/mcp-tools.mts` if a model should set it.
 5. Tests: `app/builder-model.test.mts`, `app/gear-vault.test.mts`, `app/server.test.mts`, `app/solver.test.mts`, `app/ui-render.test.mts`, `scripts/ui-builder.test.mts`, `scripts/ui-contrast.test.mts`, `scripts/ui-state.test.mts`.
@@ -75,10 +75,10 @@ Examples: `166eb05`, `d311bdb`, `f1eced4`.
 
 Examples: `e6288f2`, `5416327`, `97c6363`.
 
-1. `app/vault-server.mts`: the handler, the body read through `readBody` with a size cap, `asObject` (`app/http/respond.mts`) and a check of every field (`app/guards.mts`), and the route in the header comment. A route that reads or writes a data file goes through that file's store in `app/store/`; a new data file gets its own store there, built on `app/store/json-file.mts`.
+1. The route module in `app/http/routes/` for its area (a new area gets a new module, added to the route table in `app/vault-server.mts`): an entry `{ method, path, handle }` (`app/http/router.mts`; `path` a string or a RegExp, and `handle` answers `NEXT` to pass a request on), the body read through `readBody` with a size cap, `asObject` (`app/http/respond.mts`) and a check of every field (`app/guards.mts`), anything new the handler needs added to `ServerContext` (`app/http/context.mts`), and the route in `docs/architecture.md`'s HTTP routes. A route that reads or writes a data file goes through that file's store in `app/store/`; a new data file gets its own store there, built on `app/store/json-file.mts`.
 2. The matching server test: `app/server.test.mts`, `app/organize-server.test.mts`, `app/house-server.test.mts` or `app/mcp.test.mts`.
 3. `app/ui/api-types.mts` (the response shape, by hand: no test compares it with the server) and the caller (`app/ui/app.mts`, `app/ui/store.mts` or the view).
-4. If the page needs a server module at run time: `tsconfig.browser.json`'s `include`, a static route in `app/vault-server.mts`, and the lists in the header comments of `scripts/build-ui.mts` and `app/vault-server.mts`.
+4. If the page needs a server module at run time: `tsconfig.browser.json`'s `include`, a static route in `app/http/routes/static.mts`, the list in the header comment of `scripts/build-ui.mts`, and `docs/architecture.md`'s HTTP routes.
 5. `docs/architecture.md` (the data folder, if it writes a file), `docs/threat-model.md` (a new boundary), `PRIVACY.md` (if it stores or forgets player data).
 6. `app/mcp-tools.mts` if a model should reach it.
 
@@ -98,7 +98,7 @@ Examples: `2b30944`, `9b03dcc`, `219861a`.
 Examples: `23fb19e`, `a86c64d`, `28a38de`.
 
 1. Contract: `app/schema/bridge.v1.schema.json` and `app/schema/bridge-trip.v1.schema.json`; `scripts/build-schema-types.mts` if the generator needs a new shape.
-2. Server: `app/bridge-trip.mts`, `app/bridge-contract.mts` (`TRIP_MAX_BYTES` and `TRIP_NAME_MAX`, which mirror the bridges' `MAX_LINE_BYTES` and `MAX_TRIP_NAME`), `app/config.mts` (paths), `app/vault-server.mts` (the queue route), `app/organize-state.mts` if the result changes where the app believes items are.
+2. Server: `app/bridge-trip.mts`, `app/bridge-contract.mts` (`TRIP_MAX_BYTES` and `TRIP_NAME_MAX`, which mirror the bridges' `MAX_LINE_BYTES` and `MAX_TRIP_NAME`), `app/config.mts` (paths), `app/http/routes/bridge.mts` (the queue route), `app/organize-state.mts` if the result changes where the app believes items are.
 3. Both bridge scripts: `adapters/tazuo/packrat-bridge.py` and `adapters/razor-enhanced/packrat-bridge.py`; each `capabilities.json` (`actions`); `adapters/tazuo/README.md`; a version bump per adapter.
 4. Fakes and tests: `adapters/fake_clients.py`, `adapters/test_bridges.py`, `adapters/test_adapters.py`, `app/adapters.test.mts`, `app/contracts.test.mts`, `app/bridge-trip.test.mts`.
 5. UI: `app/ui/bridge.mts` (labels, toasts), `app/ui/api-types.mts`; `BRIDGE_ACTION_LABELS` and `bridgeRefusal` in `app/vault-lib.mts`.
