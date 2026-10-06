@@ -24,6 +24,7 @@ import { clientErrorMessage, uoFolderErrorMessage, dataDirNotice, errorText, hos
 import { autostartNote, hotkeyLabel, panelControls } from "./tazuo-panel.mts";
 import { exportKinds, importKinds } from "./kinds.mts";
 import { tiledataNote } from "./house-map-model.mts";
+import { registerScreen } from "./nav.mts";
 import type { SetupApiResponse, InstallApiResponse, UpdateCheckApiResponse, BlacklistApiResponse, CleanupApiResponse, RetentionSetting, SettingsApiResponse, PanelPrefs, TazuoPanelApiResponse, McpApiResponse, HousesApiResponse, TiledataFrom, HostPickFolderApiResponse, ApiError, UiPrefs } from "./api-types.mts";
 import { isPseudoCharacter, type BlacklistEntry } from "../vault-lib.mts";
 
@@ -251,7 +252,8 @@ function knownCharacters(): string[] {
     .filter((n) => !isPseudoCharacter(n)).sort((a, b) => a.localeCompare(b));
 }
 // The containers scans never open, newest first, each with Unblacklist. Containers and the in-game
-// packrat-blacklist.py both change the list, so this card alone is fetched again on every visit (app.mts).
+// packrat-blacklist.py both change the list, so this card alone is fetched again on every visit (nav.mts).
+registerScreen({ name: "settings", show: () => void syncSettingsBlacklist() });
 export async function syncSettingsBlacklist(): Promise<void> {
   if (!$("#set-blacklist")) return;
   try { $<HTMLElement>("#set-blacklist")?.replaceWith(blacklistCard((await api<BlacklistApiResponse>("/api/blacklist")).containers)); } catch { /* the card keeps what it showed */ }
@@ -356,7 +358,8 @@ function dataSection(setup: SetupApiResponse): HTMLElement {
       row({ title: "Forget a container", control: box("a", { class: "btn btn-danger-outline", href: "#/containers" }, txt("Choose in Containers…")),
         help: "Drop a container you emptied. Its last known contents leave the inventory until a scan sees it again." })));
 }
-// After a scan lands or a Forget, the danger zone's character list follows the inventory (app.mts's reload()).
+// After a scan lands or a Forget, the danger zone's character list follows the inventory (inventory-data.mts's reload()).
+document.addEventListener("inventorychange", () => syncSettingsCharacters());
 export function syncSettingsCharacters(): void {
   const who = $<HTMLSelectElement>("#set-forget-who");
   if (!who || !state.setup) return;
