@@ -1,7 +1,7 @@
 // runs-lib.mts — saved suit-builder runs: the cache key, the reuse rule, and the list summary.
 // Server-side only (uses node:crypto); the page never imports it.
 import { createHash } from "node:crypto";
-import { migrateWeaponSetting, totalsOf, type OptItem } from "./vault-lib.mts";
+import { totalsOf, type OptItem } from "./vault-lib.mts";
 import type { RunResult, RunSettingsRaw, RunSummary, SavedRun } from "./runs-types.mts";
 export type { RunResult, RunSettingsRaw, RunSummary, SavedRun } from "./runs-types.mts";
 
@@ -137,20 +137,4 @@ export function suitPieces(runs: SavedRun[]): Set<number> {
   const out = new Set<number>();
   for (const r of runs) for (const it of Object.values((r.result?.best ?? {}) as Record<string, { serial?: unknown } | null>)) if (typeof it?.serial === "number") out.add(it.serial);
   return out;
-}
-
-// A run saved before the contract settled (2026-09-13) may carry `settings.allowOthers` (now
-// `allowOthersWorn`) and `settings.budgetS` (now `settings.budgetMs`, milliseconds like every other
-// stored/transmitted budget) and may be missing `schemaVersion`; one saved before the weapon exclusion
-// list carries `settings.weaponSkill`, now `settings.excludeWeapons` (migrateWeaponSetting). A run without a
-// solverVersion of at least PROOF_SOUND_SINCE loses its `proven` claim (undefined, which the page shows as no
-// verdict at all rather than as "best within budget"). Apply wherever a run is read from
-// disk so every run the server hands out — fresh or old — matches the current shape. Pure and
-// idempotent: normalizeRun(normalizeRun(r)) deep-equals normalizeRun(r).
-export function normalizeRun(run: SavedRun): SavedRun {
-  const s: RunSettingsRaw = migrateWeaponSetting({ ...(run.settings || {}) });
-  if ("allowOthers" in s) { s.allowOthersWorn = !!s.allowOthers; delete s.allowOthers; }
-  if ("budgetS" in s) { s.budgetMs = 1000 * s.budgetS!; delete s.budgetS; }
-  const result = run.result?.proven && (run.solverVersion ?? 1) < PROOF_SOUND_SINCE ? { ...run.result, proven: undefined } : run.result;
-  return { ...run, schemaVersion: run.schemaVersion ?? 1, settings: s, result };
 }

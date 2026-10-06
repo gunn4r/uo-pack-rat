@@ -3,8 +3,8 @@
 // screen registry are nav.mts; reload() and the inventorychange event are inventory-data.mts.
 import { setRules } from "../vault-lib.mts";
 import { state } from "./store.mts";
-import { $, el, installTooltip } from "./dom.mts";
-import { api } from "./api.mts";
+import { $, el, installTooltip, toast } from "./dom.mts";
+import { api, onReadOnly } from "./api.mts";
 import { pollBridge } from "./bridge.mts";
 import { initFilters, applyUiPrefs, inventoryFailed } from "./inventory.mts";
 import { showCharacter } from "./characters.mts";
@@ -27,6 +27,9 @@ import { get, reload, setPageLoad } from "./inventory-data.mts";
 import type { SettingsApiResponse, RulesApiResponse, SetupApiResponse, UiPrefsApiResponse } from "./api-types.mts";
 
 // ---------------------------------------------------------------- data
+// A data file made by a newer Pack Rat (organize.json, item-kinds.json, house-map.json, profiles.json) is read-only:
+// said once, as an error that stays until dismissed.
+onReadOnly((msg) => toast(msg, "bad"));
 // The panels a failed load has to say something in, instead of leaving them on "loading…" or empty.
 // The inventory-backed tabs depend on /api/inventory and /api/profiles; Settings and Import only on the
 // first three routes.

@@ -2,6 +2,7 @@
 import { existsSync } from "node:fs";
 import { DEFAULT_SHARD } from "../rules.mts";
 import { jsonErrorReason } from "../paste-scan.mts";
+import { migrate } from "../migrate.mts";
 import { readJsonFile, writeJsonFile } from "./json-file.mts";
 
 // settings.json is user-editable, on-disk data with no schema check at read time (PUT /api/settings
@@ -34,7 +35,7 @@ export function createSettingsStore({ file, warn }: { file: string; warn: (msg: 
     const defaults: SettingsDoc = { schemaVersion: 1, shard: DEFAULT_SHARD };
     if (!existsSync(file)) return defaults;
     const read = readJsonFile(file, { onBad: "aside", check: (doc) => !doc || typeof doc !== "object" || Array.isArray(doc) ? "not a JSON object" : null });
-    if ("doc" in read) return read.doc as SettingsDoc;
+    if ("doc" in read) return migrate("settings", read.doc).doc as SettingsDoc;
     if ("missing" in read) return defaults;
     let aside: string;
     try {
