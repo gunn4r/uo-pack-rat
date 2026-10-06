@@ -123,9 +123,9 @@ export interface AppState {
   sheetProps: string[] | null;    // the character sheet's shown properties (ui-prefs `sheetProps`); null = the default set
   builder: BuilderState;
   organize: OrganizePage;
-  // Set only once app.mts's load()/reload() has fetched the inventory at least once — absent (not
+  // Set only once inventory-data.mts's reload() has fetched the inventory at least once — absent (not
   // null) before that, exactly as it is at runtime today (nothing in the initial object literal below
-  // ever assigned it; app.mts's `state.newestScan = …` is the only place that creates the property).
+  // ever assigned it; inventory-data.mts's `state.newestScan = …` is the only place that creates the property).
   newestScan?: string | null | undefined;
 }
 

@@ -5,7 +5,7 @@ import { api } from "./api.mts";
 import { prefs } from "./prefs.mts";
 import { box, txt, button, segmented, pill, message, meter, keyValue, modalOpen, tipWrap, input, copyText, icon, kbd, menu, popover, closePopover, confirmDialog, select as selectEl, searchInput, badge } from "./components.mts";
 import { labelContainer } from "./containers.mts";
-import { showContainer, showSearch } from "./inventory.mts";
+import { parseRoute, registerScreen, showContainer, showSearch } from "./nav.mts";
 import { itemMenu, itemActions, rarityEl, tagEls } from "./item-parts.mts";
 import { propertyLines, RESISTS } from "./peek.mts";
 import { bridgeActionReason, runBridgeAction, sendBridge, type BridgeTarget } from "./bridge.mts";
@@ -293,10 +293,13 @@ function hitRow(m: HouseModel, c: HitChest, v: ChestView, areas: readonly HouseA
     box("div", { class: "map-chest-actions" }, button({ label: "Show items", size: "sm", attrs: { "data-act": "items" }, onClick: () => { select(c.serial); openDrawer(c.serial); } })));
 }
 
+// The route (nav.mts), and the inventory reloaded while the map is showing.
+registerScreen({ name: "map", show: () => void showMap(parseMapHash(location.hash)) });
+document.addEventListener("inventorychange", () => { if (parseRoute().tab === "map") void showMap(parseMapHash(location.hash)); });
 export async function showMap(r: MapRoute): Promise<void> {
   const want = r.house, newQuery = r.q !== query;
   if (newQuery) { query = r.q; search.input.value = r.q; found = null; searchSeq++; }
-  if (!state.inv) return;   // before the first load; reload() calls it again
+  if (!state.inv) return;   // before the first load; inventorychange calls it again
   const my = ++seq;
   if (!S.model && !S.error) body().replaceChildren(message({ tone: "info", text: "Drawing the house map…", attrs: { "aria-busy": "true" } }));
   try {

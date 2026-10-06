@@ -95,7 +95,7 @@ test("[slow] refresh, Clear all, the virtual table and Forget keep the page's st
     await waitCount(page, /^\d+ of 160 stacks/);
     const filtered = await countText(page);
     // The page's own module (same URL as its <script>, so the same instance).
-    await page.evaluate(async (url) => { await (await import(url)).reload(); }, "/ui/app.mjs");
+    await page.evaluate(async (url) => { await (await import(url)).reload(); }, "/ui/inventory-data.mjs");
     await page.waitForTimeout(500);
     await waitCount(page, /stacks/);
     assert.equal(await page.locator("#f-slot").innerText(), "Slot: Bracelet", "the Slot chip still reads Bracelet after a refresh");

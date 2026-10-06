@@ -10,16 +10,18 @@ import { state } from "./store.mts";
 import { $, el } from "./dom.mts";
 import { api } from "./api.mts";
 import { parsePastedScan, type ParsePastedScanResult } from "../paste-scan.mts";
-import { box, button, icon, message, segmented, select, textarea, txt, showToast, type Kids, modalOpen } from "./components.mts";
+import { bindDrawer, box, button, icon, message, segmented, select, textarea, txt, showToast, type Kids, modalOpen } from "./components.mts";
 import { defaultImportAdapterId, platformCompatible } from "./adapters.mts";
 import { importOptionLabel } from "./adapter-copy.mts";
 import { importActionLabel, listText, plural, scanPreview, sendEach, sizeText, type ScanPreview } from "./import-preview.mts";
 import { errorText, relativeWhen } from "./messages.mts";
-import { closeImportDrawer } from "./app.mts";
 import type { ImportPasteApiResponse, RescanApiResponse } from "./api-types.mts";
 
 // A scan file bigger than the inbox accepts (app/watcher.mts's MAX_INBOX_BYTES) is refused before it is read.
 const MAX_FILE_BYTES = 32 * 1024 * 1024;
+// The drawer this screen lives in. It closes itself once a scan lands; app.mts opens it for #/import, and its
+// drawerclose listener puts the route back.
+export const importDrawer = bindDrawer($<HTMLElement>("#import-drawer")!);
 
 interface ScanFile { name: string; size: number; text: string; parsed: ParsePastedScanResult }
 type Mode = "paste" | "files";
@@ -213,7 +215,7 @@ async function doImport(): Promise<void> {
   // Success closes the drawer and says so in a toast; the inventory refresh rides the SSE event.
   if (imp.mode === "paste") imp.text = ""; else imp.files = [];
   renderImport();
-  closeImportDrawer();
+  importDrawer.close();
   const names = [...new Set(landed)];
   showToast(landed.length === 1 ? `${names[0]}'s scan landed` : `${plural(landed.length, "scan")} landed for ${listText(names)}`, "ok");
 }

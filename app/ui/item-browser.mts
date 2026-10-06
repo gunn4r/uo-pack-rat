@@ -25,6 +25,7 @@ import type { ItemsApiResponse, UiPrefs } from "./api-types.mts";
 import { openRuleEditor } from "./rule-editor.mts";
 import { showItemTip, hideItemTip } from "./dom.mts";
 import { filterContext, tagEls, rarityEl, locationEl } from "./item-parts.mts";
+import { retryLoad } from "./inventory-data.mts";
 
 const CHUNK = 500;              // rows per GET /api/items request (the server's own cap)
 const NARROW = "(max-width: 1179px)";
@@ -872,7 +873,7 @@ export function createItemBrowser(root: HTMLElement, opts: ItemBrowserOptions): 
   function errorState(text: string): HTMLElement {
     return box("div", { class: "inv-error" }, message({ tone: "bad", title: "Couldn't load the inventory", text: `${text}. Your scans are safe on disk.`,
       actions: [
-        button({ label: "Try again", variant: "primary", size: "sm", onClick: async () => { loadError = null; loadedOnce = false; renderTable(); const { load } = await import("./app.mts"); load(); } }),
+        button({ label: "Try again", variant: "primary", size: "sm", onClick: () => { loadError = null; loadedOnce = false; renderTable(); void retryLoad(); } }),
         button({ label: "Open logs", size: "sm", onClick: () => { api("/api/host/open-path", { method: "POST", body: { which: "logs" } }).catch(() => { location.hash = "#/settings"; }); } }),
       ] }));
   }

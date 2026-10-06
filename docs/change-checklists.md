@@ -109,7 +109,7 @@ Examples: `23fb19e`, `a86c64d`, `28a38de`.
 
 Examples: `c1bb797` (Organize), `e378aff` (Scrolls), `43225d1` (a view inside House map).
 
-1. `app/index.html`, `app/ui/app.mts` (routing), the screen module and its pure model (`app/ui/<view>.mts`, `app/ui/<view>-model.mts`) and stylesheet, `app/ui/store.mts`, `app/ui/components.mts` for any new shared piece.
+1. `app/index.html`, `app/ui/nav.mts` (the route; the screen registers its `show` there), `app/ui/app.mts` (screen switching), the screen module and its pure model (`app/ui/<view>.mts`, `app/ui/<view>-model.mts`) and stylesheet, `app/ui/store.mts`, `app/ui/components.mts` for any new shared piece.
 2. Server routes and `app/ui/api-types.mts` (see Add an HTTP route).
 3. Tests: a DOM-free `app/ui-<view>.test.mts` for the model, an Electron `scripts/ui-<view>.test.mts`, a fixture if it needs data (`scripts/scrolls-fixture.mts` is the pattern), `scripts/ui-contrast.test.mts` for new CSS; add the stems to `SCREENS` in `scripts/select-tests.mts` so `--changed` finds the Electron test.
 4. Docs: `docs/ui.md`, `README.md`.

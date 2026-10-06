@@ -4,8 +4,7 @@
 // "Show missing items" (a root with items missing since its last scan, which also shows a badge; issue #99),
 // "Highlight in game" (ground containers; the bridge's highlight with the container as its target, issue #10),
 // "Label…" / "Edit label…" (ground containers not blacklisted; Organize, issue #11), "Blacklist…" (ground
-// containers) and "Forget…". A container labelled for Organize shows its label, colour and Pinned. The Forget and Blacklist handlers call `reload` from app.mts — a module cycle (containers
-// ↔ app) that is fine here since both are function declarations only called after bootstrap. reload(),
+// containers) and "Forget…". A container labelled for Organize shows its label, colour and Pinned. The Forget and Blacklist handlers call `reload` from inventory-data.mts. reload(),
 // not load(): a Forget changes the inventory and nothing else, and must keep the filters and the builder
 // as they are.
 import { bagLabel, compareNames } from "../vault-lib.mts";
@@ -18,10 +17,10 @@ import { relativeWhen, errorText } from "./messages.mts";
 import { loadOrganize, saveConfig } from "./organize-data.mts";
 import { withLabel, withoutLabel, pinNote, LABEL_COLOURS, fillTone } from "./organize-model.mts";
 import { plural } from "./inv-model.mts";
-import { reload } from "./app.mts";
+import { reload } from "./inventory-data.mts";
 import { houseOfContainer, showOnMap } from "./house-links.mts";
 import { openedRoots } from "./roster.mts";
-import { showContainer } from "./inventory.mts";
+import { registerScreen, showContainer } from "./nav.mts";
 import { splitSerial } from "./item-parts.mts";
 import { bridgeActionReason, runBridgeAction } from "./bridge.mts";
 import type { ForgetApiResponse, MissingApiResponse, OrganizeConfig } from "./api-types.mts";
@@ -127,6 +126,8 @@ export function showContainers(name: string | null): void {
   scanner = name;
   if (state.inv) renderContainers();
 }
+registerScreen({ name: "containers", show: (r) => showContainers(r.scanner) });
+document.addEventListener("inventorychange", () => renderContainers());
 const showAll = (): HTMLElement => el("a", { href: "#/containers", id: "cont-show-all" }, "Show all");
 
 export function renderContainers(): void {

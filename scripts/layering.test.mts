@@ -2,11 +2,12 @@
 // `import … from`, `export … from` and `import()` specifiers of every non-test .mts in the tree, untracked ones included (comment lines skipped):
 //   1. nothing outside app/ui/ imports from app/ui/ (tests excluded);
 //   2. the browser-shared modules (tsconfig.browser.json's include, minus app/ui/**) reach no node: module;
-//   3. the modules outside app/ui/ have no import cycles (app/ui/ has some today; stage 4 extends this rule to it);
+//   3. the modules outside app/ui/ have no import cycles, and the app/ui/ modules no cycles beyond the known groups below;
 //   4. every module app/ui/ reaches outside app/ui/ has its own "/<path>.mjs" route in app/vault-server.mts (the page
 //      gets a 404 at load otherwise; build:ui compiles it whether or not the include lists it) and reaches no node: module;
 //   5. app/store/ and app/services/ import nothing from app/http/ (type imports included);
-//   6. nothing imports app/vault-server.mts except electron/, scripts/, the test fixtures (*-fixture.mts) and tests.
+//   6. nothing imports app/vault-server.mts except electron/, scripts/, the test fixtures (*-fixture.mts) and tests;
+//   7. no app/ui/ module imports app/ui/app.mts, the page's bootstrap (routes are nav.mts, the inventory reload is inventory-data.mts).
 // Rules 2-4 follow runtime imports only: `import type` and `export type` are erased, so they load nothing.
 import test from "node:test";
 import assert from "node:assert/strict";
@@ -83,6 +84,31 @@ test("[smoke] layering: no import cycles outside app/ui/", () => {
     }
   }
   assert.deepEqual([...found], []);
+});
+
+// The import cycles app/ui/ still has, each a group whose members may import each other. dom ↔ components is documented
+// as safe (dom.mts's toast); the second is the Suit Builder cluster plus the screens that reach into it. A new cycle, or
+// one that joins two groups, fails; a group that shrinks is fine, and is shrunk here.
+const UI_CYCLES = [
+  ["dom", "components"],
+  ["builder", "builder-manual", "builder-result", "runs", "characters", "settings", "wizard", "item-browser"],
+].map((g) => new Set(g.map((m) => `app/ui/${m}.mts`)));
+
+test("[smoke] layering: no import cycles in app/ui/ beyond the known groups", () => {
+  const found = new Set<string>();
+  for (const f of modules.filter(isUi)) {
+    for (const e of runtime(f)) {
+      if (!e.to || !isUi(e.to)) continue;
+      const back = reach(e.to, isUi).get(f);
+      if (back && !UI_CYCLES.some((g) => [f, ...back].every((m) => g.has(m)))) found.add([f, ...back].join(" → "));
+    }
+  }
+  assert.deepEqual([...found], []);
+});
+
+test("[smoke] layering: no app/ui/ module imports app/ui/app.mts", () => {
+  const found = modules.filter(isUi).flatMap((f) => edges.get(f)!.filter((e) => e.to === "app/ui/app.mts").map((e) => `${f} → ${e.spec}`));
+  assert.deepEqual(found, []);
 });
 
 // The static routes app/vault-server.mts serves a shared module on, read from its `url.pathname === "/x.mjs"` checks.

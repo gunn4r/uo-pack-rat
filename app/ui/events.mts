@@ -4,7 +4,7 @@
 // that stream, so a scan dropped in game shows up here without the user ever touching the reload
 // button. EventSource reconnects on its own (the browser's default behaviour) — no retry logic needed.
 import { toast } from "./dom.mts";
-import { reload } from "./app.mts";
+import { reload } from "./inventory-data.mts";
 import { loadRuns } from "./runs.mts";
 import { CLIENT_ID } from "./api.mts";
 import type { InventoryEvent, RejectedEvent, ChangedEvent } from "./api-types.mts";

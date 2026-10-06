@@ -203,7 +203,9 @@ The page is `app/index.html` plus `app/ui/`, compiled by `scripts/build-ui.mts` 
 | Module | Role | Owns |
 |---|---|---|
 | `app/index.html` | The page shell: markup, one `<main>` per screen, the stylesheet links, the one module script. No inline scripts (the CSP forbids them) and no remote loads: the fonts are bundled under `app/ui/fonts/` with their OFL license texts. | the screens' containers |
-| `app/ui/app.mts` | `load()` / `reload()`, the hash router, screen and drawer switching. | `load`, `reload`, `parseRoute`, `routeFor` |
+| `app/ui/app.mts` | `load()`, screen and drawer switching on a route change, the sidebar nav clicks. | — |
+| `app/ui/nav.mts` | The hash routes, the screen registry they dispatch to, and the ways into the Items view other screens use. | `parseRoute`, `routeFor`, `registerScreen`, `showRoute`, `showItem`, `showContainer`, `showSearch`, `showKind`, `showCharacterItems` |
+| `app/ui/inventory-data.mts` | `reload()`: the inventory and profiles into the store, then the `inventorychange` event the screens redraw on. | `reload`, `retryLoad` |
 | `app/ui/shell.mts` | The left sidebar: nav with counts, the shard and last-scan line, the bridge control, collapse. | `initShell`, `renderNavCounts` |
 | `app/ui/theme.mts` | Theme family and light/system/dark mode. | `resolveTheme`, `resolveMode`, `applyLook`, `BUILT_THEMES` |
 
@@ -246,7 +248,7 @@ The page is `app/index.html` plus `app/ui/`, compiled by `scripts/build-ui.mts` 
 
 | Module | Role | Owns |
 |---|---|---|
-| `app/ui/inventory.mts` | The Inventory's Items view and the entry points other screens use to open it. | `showItem`, `showContainer`, `showSearch`, `showKind` |
+| `app/ui/inventory.mts` | The Inventory's Items view, and what `app/ui/nav.mts`'s ways into it do. | `initFilters`, `fetchItems` |
 | `app/ui/containers.mts` | The Inventory's Containers view. | `renderContainers`, `labelContainer` |
 | `app/ui/peek.mts` | The item peek beside the table. | `openPeek`, `closePeek` |
 | `app/ui/kinds.mts` | Classify this…, and the kinds file's export and import. | `openClassify`, `exportKinds`, `importKinds` |
