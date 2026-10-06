@@ -44,6 +44,8 @@ const SKILL_SCROLLS: RuleMatch = { query: q({ kind: ["scroll"] }), names: ["scro
 // rule keeps the id an earlier proposal gave it; instruments are tools (vault-lib's kindOf), so Tools needs none, and
 // crafting tools come in by a second filter the same way (issue #150). Decor and Quest & event items are in Other's
 // family: what they hold used to be Other, so short of chests they share its chest rather than take one from a group.
+// Armor and Jewelry list their slots here rather than read vault-lib's GEAR_SLOT_GROUPS: a neck piece is a necklace
+// unless its name says armor, so the neck slot sits with Jewelry and neck armor joins Armor by the "armour-neck" preset.
 const SIMPLE: readonly GroupDef[] = [
   def("armour", "Armor", "armour", gear(["helmet", "chest", "arms", "hands", "legs"]), preset("armour-neck")),
   def("jewelry", "Jewelry", "jewelry", gear(["ring", "bracelet", "neck", "earrings", "talisman"])),
