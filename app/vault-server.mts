@@ -19,7 +19,7 @@
 // Host must name this server and its Origin (if any) must match, or 403; with CONFIG.token set,
 // every /api/* route but the SSE events stream needs `Authorization: Bearer <token>`, or 401 — the
 // bare `node app/vault-server.mts` path runs with no token at all. PUT /api/profiles is capped at 1 MB
-// and schema-checked (app/schema/profiles.v2.schema.json). One running optimize job per X-Client-Id
+// and schema-checked (app/schema/profiles.v3.schema.json). One running optimize job per X-Client-Id
 // (a second POST cancels the first and reports {superseded}); job ids are crypto.randomUUID() and the
 // events route checks the job's own id against a ?client= query param instead of the token. A route
 // that throws returns {error:"internal error", ref} with the stack only in CONFIG.paths.log, keyed by ref.
@@ -232,7 +232,8 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
   // Organize is built first, so the harvest hook below never reaches it before it exists; it reads the inventory through a getter.
   const inventoryService = createInventoryService({ scanStore, itemKindsStore, organizeStateStore, shard: () => appSettings.current().shard, harvest: (now) => organizeService.harvestNow(now) });
   const getInventory = inventoryService.getInventory;
-  const profilesStore = createProfilesStore({ file: PROFILES, defaults: DEFAULT_PROFILES, log: (line) => safeAppendLog(CONFIG.paths.log, line) });
+  const profilesStore = createProfilesStore({ file: PROFILES, defaults: DEFAULT_PROFILES, templatesDir: CONFIG.paths.builtinTemplates, shard: () => appSettings.current().shard,
+    log: (line) => safeAppendLog(CONFIG.paths.log, line), uiPrefs: uiPrefsStore });
   const timers = new Set<NodeJS.Timeout>();   // the host-call timeouts and stream pings the routes own, so close() can stop them all; the jobs service clears its own
 
   // ---- retention (issue #28): old scans and saved runs, per settings.json's `retention` ----------------

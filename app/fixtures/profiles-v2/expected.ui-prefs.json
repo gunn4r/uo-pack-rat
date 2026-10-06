@@ -1,0 +1,15 @@
+{
+  "theme": "britannia",
+  "builderMode": "manual",
+  "manualSuit": {
+    "ring": 1073750000
+  },
+  "manualBuffs": [
+    "protection"
+  ],
+  "buffsCount": "on",
+  "manualBuffSkills": {
+    "Chivalry": 120,
+    "Karma": 10000
+  }
+}

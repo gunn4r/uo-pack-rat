@@ -1,0 +1,57 @@
+{
+  "_comment": "A v2 profiles.json as a player's data folder holds it before the update.",
+  "schemaVersion": 2,
+  "characters": {
+    "Aldric": {
+      "template": "melee",
+      "race": "elf",
+      "strLimit": 95,
+      "floors": { "hci": 45, "physResist": 60 },
+      "softFloors": ["hci"],
+      "weights": { "dci": 10, "ssi": 5, "tagPenalty": -25 },
+      "floorBonus": 1000,
+      "lockedSlots": ["twoHanded"],
+      "excludeTags": ["Cursed"],
+      "excludeSkills": ["Necromancy"],
+      "excludeRoots": [1073746484, "bank"],
+      "allowOthersWorn": true,
+      "allowGargoyle": false,
+      "medOnly": false,
+      "excludeWeapons": ["archery", "throwing"],
+      "ubwsAnyWeapon": false,
+      "resistCaps": { "fireResist": 75 },
+      "caps": { "hci": 45 },
+      "note": "a field a newer build added"
+    },
+    "Brena": {
+      "template": "my caster",
+      "race": "human",
+      "strLimit": 5000,
+      "floors": { "lrc": 100 },
+      "weights": { "fc": 60 },
+      "medOnly": "yes"
+    }
+  },
+  "templates": {
+    "melee": {
+      "floors": { "physResist": 65, "fireResist": 65, "coldResist": 65, "poisonResist": 65, "energyResist": 65 },
+      "softFloors": [],
+      "weights": { "dci": 10, "hci": 10, "tagPenalty": -25 },
+      "floorBonus": 1000,
+      "lockedSlots": [],
+      "excludeTags": [],
+      "excludeSkills": [],
+      "allowOthersWorn": false,
+      "allowGargoyle": false,
+      "medOnly": false,
+      "excludeWeapons": []
+    },
+    "my caster": {
+      "floors": { "lrc": 100, "fcr": 6 },
+      "weights": { "fc": 60, "fcr": 30 },
+      "medOnly": true,
+      "resistCaps": { "energyResist": 80 },
+      "shared": true
+    }
+  }
+}

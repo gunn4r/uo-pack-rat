@@ -1,0 +1,9 @@
+{
+  "theme": "britannia",
+  "builderMode": "manual",
+  "manualSuit": { "ring": 1073750000 },
+  "manualBuffs": ["protection"],
+  "buffsCount": "on",
+  "autoBuffs": { "Aldric": ["divineFury", "consecrateWeapon"], "Corwin": ["bless"] },
+  "buffSkills": { "Aldric": { "Chivalry": 90 }, "Corwin": { "Evaluating Intelligence": 80 }, "": { "Chivalry": 120, "Karma": 10000 } }
+}

@@ -195,7 +195,7 @@ test("[fast] two different schema locations that derive the same name collide ev
   );
 });
 
-test("[fast] buildSchemaTypes against the real five schema files exports the 22 expected type names", () => {
+test("[fast] buildSchemaTypes against the real five schema files exports the 31 expected type names", () => {
   const out = join(mkdtempSync(join(tmpdir(), "schema-types-")), "types.d.mts");
   buildSchemaTypes({ out });
   const src = readFileSync(out, "utf8");
@@ -205,7 +205,8 @@ test("[fast] buildSchemaTypes against the real five schema files exports the 22 
     "BridgeV1Command", "BridgeV1Result", "BridgeV1ResultStepsItem", "BridgeV1Status", "BridgeV1StatusCounts",
     "BridgeTripV1", "BridgeTripV1RootsValue", "BridgeTripV1TakesItem", "BridgeTripV1PutsItem",
     "RulesV1", "RulesV1ResistSkillBonus", "RulesV1RarityItem", "RulesV1RaceLock",
-    "ProfilesV2",
+    "ProfilesV3", "ProfilesV3Character", "ProfilesV3Template", "ProfilesV3Spec", "ProfilesV3Intent", "ProfilesV3IntentResistCaps", "ProfilesV3Buffs",
+    "ProfilesV3Pool", "ProfilesV3Goal", "ProfilesV3Search",
   ];
   for (const name of expected) assert.match(src, new RegExp(`export type ${name} = `), name);
 });

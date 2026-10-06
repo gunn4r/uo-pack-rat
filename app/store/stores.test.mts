@@ -3,7 +3,7 @@
 // each store in `app/store/` on its own: its size cap at the cap and one byte past it (blacklist 256 KiB, organize-state 4 MB, item-kinds and organize their own limits), what a missing, damaged or partly bad file reads as (moved aside, empty, salvaged or skipped) with the exact warning, log or problem text, and the exact bytes each write leaves (indent, trailing newline, a run compact with none). All `[fast]`; they pin the policies the routes rely on while the server is split.
 import { test, type TestContext } from "node:test";
 import assert from "node:assert/strict";
-import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
@@ -48,9 +48,16 @@ test("[fast] stores: settings reads a missing file as the defaults, moves a dama
   assert.equal(readFileSync(f, "utf8"), "{\n  \"schemaVersion\": 1,\n  \"shard\": \"x\",\n  \"setupDone\": true\n}\n");
 });
 
+// A profiles store over `d`, with its ui-prefs store beside it and the shipped built-in templates.
+function profilesIn(d: string, logged: string[] = [], shard = "uoalive") {
+  const uiPrefs = createUiPrefsStore(join(d, "ui-prefs.json"));
+  return createProfilesStore({ file: join(d, "profiles.json"), defaults: join(APP, "data", "profiles.default.json"), templatesDir: join(APP, "data", "templates"), shard: () => shard, log: (line) => logged.push(line), uiPrefs });
+}
+const backups = (d: string): string[] => readdirSync(d).filter((n) => n.includes(".backup-")).sort();
+
 test("[fast] stores: profiles seeds a missing file from the defaults, moves a damaged one aside and reseeds it with a log line, and writes indent 2 with a newline", async () => {
   const d = dir(), f = join(d, "profiles.json"), defaults = join(APP, "data", "profiles.default.json"), logged: string[] = [];
-  const store = createProfilesStore({ file: f, defaults, log: (line) => logged.push(line) });
+  const store = profilesIn(d, logged);
   const seeded = await store.read();
   assert.equal(readFileSync(f, "utf8"), readFileSync(defaults, "utf8"), "seeded byte for byte");
   writeFileSync(f, "null");
@@ -58,8 +65,44 @@ test("[fast] stores: profiles seeds a missing file from the defaults, moves a da
   assert.equal(readFileSync(`${f}.corrupt`, "utf8"), "null");
   assert.equal(logged.length, 1);
   assert.match(logged[0]!, /^\S+ profiles\.json is unreadable \(not a JSON object\); reseeded from the defaults — the old file was kept as .*profiles\.json\.corrupt\n$/);
-  store.write({ schemaVersion: 2, characters: {}, templates: {} });
-  assert.equal(readFileSync(f, "utf8"), "{\n  \"schemaVersion\": 2,\n  \"characters\": {},\n  \"templates\": {}\n}\n");
+  store.write({ schemaVersion: 3, characters: {}, templates: {} });
+  assert.equal(readFileSync(f, "utf8"), "{\n  \"schemaVersion\": 3,\n  \"characters\": {},\n  \"templates\": {}\n}\n");
+  assert.deepEqual(backups(d), [], "a new or reseeded file needs no backup");
+});
+
+// The v2 → v3 migration on real files (app/fixtures/profiles-v2/): a v2 profiles.json and its ui-prefs.json become the
+// golden v3 file and ui-prefs, each kept first as a dated backup, byte for byte; reading again changes nothing.
+test("[fast] stores: profiles migrates a v2 file and its ui-prefs to v3 once, with a dated backup of each", async () => {
+  const d = dir(), gold = join(APP, "fixtures", "profiles-v2"), day = new Date().toISOString().slice(0, 10);
+  for (const n of ["profiles.json", "ui-prefs.json"]) copyFileSync(join(gold, n), join(d, n));
+  const store = profilesIn(d);
+  const got = await store.read();
+  assert.equal(readFileSync(join(d, "profiles.json"), "utf8"), readFileSync(join(gold, "expected.profiles.json"), "utf8"), "the golden v3 file");
+  assert.deepEqual(got, JSON.parse(readFileSync(join(gold, "expected.profiles.json"), "utf8")));
+  assert.deepEqual(JSON.parse(readFileSync(join(d, "ui-prefs.json"), "utf8")), JSON.parse(readFileSync(join(gold, "expected.ui-prefs.json"), "utf8")), "autoBuffs and buffSkills gone, No character's numbers kept");
+  assert.deepEqual(backups(d), [`profiles.backup-${day}.json`, `ui-prefs.backup-${day}.json`]);
+  for (const n of ["profiles", "ui-prefs"]) assert.equal(readFileSync(join(d, `${n}.backup-${day}.json`), "utf8"), readFileSync(join(gold, `${n}.json`), "utf8"), `${n}: the file as it was`);
+  const before = readFileSync(join(d, "profiles.json"), "utf8");
+  assert.deepEqual(await store.read(), got, "idempotent");
+  assert.equal(readFileSync(join(d, "profiles.json"), "utf8"), before, "not rewritten");
+  assert.equal(backups(d).length, 2, "no second backup");
+  // ui-prefs keys left behind (the write after the profiles one was cut short) leave on the next read, kept once more first
+  writeFileSync(join(d, "ui-prefs.json"), JSON.stringify({ theme: "default", autoBuffs: { Aldric: ["bless"] } }));
+  assert.deepEqual(await store.read(), got, "the profiles keep what they hold");
+  assert.deepEqual(JSON.parse(readFileSync(join(d, "ui-prefs.json"), "utf8")), { theme: "default" });
+  assert.deepEqual(backups(d), [`profiles.backup-${day}.json`, `ui-prefs.backup-${day}-2.json`, `ui-prefs.backup-${day}.json`]);
+});
+
+test("[fast] stores: profiles hands out the shard's built-in templates, none for a shard that ships none, and leaves a bad one out with a log line", () => {
+  const d = dir(), logged: string[] = [];
+  assert.deepEqual(Object.keys(profilesIn(d).builtins()), ["melee", "caster", "archer", "tank"]);
+  assert.deepEqual(profilesIn(d, logged, "no-such-shard").builtins(), {});
+  const tpl = join(d, "templates");
+  mkdirSync(tpl);
+  writeFileSync(join(tpl, "test.json"), JSON.stringify({ schemaVersion: 3, templates: { good: { spec: { intent: {}, pool: {} } }, bad: { spec: { intent: { floors: { hci: "x" } }, pool: {} } } } }));
+  const store = createProfilesStore({ file: join(d, "profiles.json"), defaults: join(APP, "data", "profiles.default.json"), templatesDir: tpl, shard: () => "test", log: (line) => logged.push(line), uiPrefs: createUiPrefsStore(join(d, "ui-prefs.json")) });
+  assert.deepEqual(Object.keys(store.builtins()), ["good"]);
+  assert.match(logged[0]!, /a built-in template was left out: test\.json templates\.bad\.spec\.intent\.floors\.hci must be a number/);
 });
 
 test("[fast] stores: ui-prefs reads a missing or damaged file as nothing chosen, keeps only the valid fields, and writes indent 2 with a newline", () => {

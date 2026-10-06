@@ -652,13 +652,12 @@ const byCharacter = (v: unknown, ok: (x: unknown) => boolean): boolean => {
   const entries = Object.entries(v);
   return entries.length <= 200 && entries.every(([name, x]) => name.length <= 64 && name !== "__proto__" && ok(x));
 };
-// The edits by character (ui-prefs `buffSkills`): a character's name, or NO_CHARACTER (""), to its edited inputs, so one
+// The edits by character (ui-prefs `buffSkills` before profiles.json v3, read once by its migration): a character's name, or NO_CHARACTER (""), to its edited inputs, so one
 // character's plan never marks another's.
 export const NO_CHARACTER = "";
 export const isBuffSkillsByCharacter = (v: unknown): v is Record<string, Record<string, number>> => byCharacter(v, isBuffSkills);
-// Automatic's buffs by character (ui-prefs `autoBuffs`): a character's name to the buffs that are on. Read back, each
+// Automatic's buffs by character (ui-prefs `autoBuffs` before profiles.json v3, read once by its migration): a character's name to the buffs that are on. Read back, each
 // list is healed (normalizeBuffs) and a name whose list is no list of known ids is dropped.
-export const isBuffListsByCharacter = (v: unknown): v is Record<string, string[]> => byCharacter(v, isBuffList);
 export function normalizeBuffListsByCharacter(v: unknown): Record<string, string[]> | null {
   if (!byCharacter(v, (x) => normalizeBuffs(x) != null)) return null;
   return Object.fromEntries(Object.entries(v as Record<string, unknown>).map(([n, x]) => [n, normalizeBuffs(x)!]));

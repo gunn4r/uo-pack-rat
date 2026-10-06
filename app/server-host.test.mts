@@ -547,7 +547,7 @@ test("[fast] PUT /api/ui-prefs keeps the House map contents drawer's width (issu
   } finally { await s3.close(); }
 });
 
-test("[fast] PUT /api/ui-prefs keeps the Suit Builder's mode, its Manual suit and buffs and Automatic's buffs by character (issue #12) across a restart, and refuses anything else, an unknown slot or __proto__ included; the kilt slot is a slot (issue #202)", async () => {
+test("[fast] PUT /api/ui-prefs keeps the Suit Builder's mode, its Manual suit and buffs and No character's buff numbers (issue #12) across a restart, refuses Automatic's buffs (the profiles hold them now), and refuses anything else, an unknown slot or __proto__ included; the kilt slot is a slot (issue #202)", async () => {
   const dir = mkdtempSync(join(tmpdir(), "qm-uiprefs-manual-"));
   const put = (url: string, body: unknown): Promise<Response> => fetch(url + "/api/ui-prefs", { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
   const s1 = await startServer(ensureLayout(resolveConfig(["--port", "0", "--data", dir], {})));
@@ -565,21 +565,26 @@ test("[fast] PUT /api/ui-prefs keeps the Suit Builder's mode, its Manual suit an
     assert.deepEqual(asJson(await (await fetch(s2.url + "/api/ui-prefs")).json()), { ok: true, prefs: { builderMode: "manual", manualFor: "none", manualSuit: { ring: 1879769144, twoHanded: 0xFFFFFFFF, feet: 7, outerLegs: 8 } } });
     assert.equal((await put(s2.url, { manualSuit: {} })).status, 200, "an empty suit is a suit");
     assert.deepEqual(asJson<{ prefs: Record<string, unknown> }>(await (await fetch(s2.url + "/api/ui-prefs")).json()).prefs.manualSuit, {});
-    // its buffs (app/buffs.mts): catalog ids each once, the edited numbers within their bounds, and the count switch
-    const edits = { Dorran: { Chivalry: 105.5, Karma: -200 }, "": { "Mastery level": 2 } };
-    // Automatic's buffs, by character
-    const auto = { Dorran: ["divineFury", "bless"], Kestrel: ["reaperForm"] };
-    assert.equal((await put(s2.url, { manualBuffs: ["divineFury", "whiteTiger"], autoBuffs: auto, buffSkills: edits, buffsCount: "off" })).status, 200);
-    for (const bad of [{ autoBuffs: ["bless"] }, { autoBuffs: { Dorran: ["nope"] } }, { autoBuffs: { Dorran: ["bless", "bless"] } }, { autoBuffs: { Dorran: "bless" } }, { manualBuffs: ["nope"] }, { manualBuffs: ["bless", "bless"] }, { manualBuffs: "bless" }, { buffSkills: { Dorran: { Chivalry: 151 } } }, { buffSkills: { Dorran: { Hiding: 100 } } },
-      { buffSkills: { Dorran: { "Mastery level": 2.5 } } }, { buffSkills: { Chivalry: 105 } }, { buffSkills: [] }, { buffsCount: "yes" }]) {
+    // its buffs (app/buffs.mts): catalog ids each once, No character's edited numbers within their bounds, and the count switch
+    const edits = { Chivalry: 105.5, Karma: -200, "Mastery level": 2 };
+    assert.equal((await put(s2.url, { manualBuffs: ["divineFury", "whiteTiger"], manualBuffSkills: edits, buffsCount: "off" })).status, 200);
+    for (const bad of [{ manualBuffs: ["nope"] }, { manualBuffs: ["bless", "bless"] }, { manualBuffs: "bless" }, { manualBuffSkills: { Chivalry: 151 } }, { manualBuffSkills: { Hiding: 100 } },
+      { manualBuffSkills: { "Mastery level": 2.5 } }, { manualBuffSkills: { Dorran: { Chivalry: 105 } } }, { manualBuffSkills: [] }, { buffsCount: "yes" }]) {
       assert.equal((await put(s2.url, bad)).status, 400, JSON.stringify(bad));
     }
+    // Automatic's buffs and a character's numbers are the character's profile now (PUT /api/profiles): an older page's are refused
+    for (const bad of [{ autoBuffs: { Dorran: ["bless"] } }, { buffSkills: { Dorran: { Chivalry: 105 } } }]) {
+      const r = await put(s2.url, bad);
+      assert.equal(r.status, 400, JSON.stringify(bad));
+      assert.match(asJson<{ error: string }>(await r.json()).error, /is kept with the profiles now; reload the page$/);
+    }
     const prefs = asJson<{ prefs: Record<string, unknown> }>(await (await fetch(s2.url + "/api/ui-prefs")).json()).prefs;
-    assert.deepEqual([prefs.manualBuffs, prefs.autoBuffs, prefs.buffSkills, prefs.buffsCount], [["divineFury", "whiteTiger"], auto, edits, "off"]);
-    for (const bad of [{ manualBuffs: ["wraithForm", "lichForm"] }, { autoBuffs: { Dorran: ["wraithForm", "lichForm"] } }]) assert.equal((await put(s2.url, bad)).status, 400, `${JSON.stringify(bad)}: one form at most`);
-    // a hand-edited file with two forms is healed on reading: the later replaces the earlier, as turning it on would
-    writeFileSync(join(dir, "ui-prefs.json"), JSON.stringify({ manualBuffs: ["wraithForm", "lichForm"], autoBuffs: { constructor: ["reaperForm", "wraithForm", "bless"] } }));
+    assert.deepEqual([prefs.manualBuffs, prefs.manualBuffSkills, prefs.buffsCount], [["divineFury", "whiteTiger"], edits, "off"]);
+    assert.equal((await put(s2.url, { manualBuffs: ["wraithForm", "lichForm"] })).status, 400, "one form at most");
+    // a hand-edited file with two forms is healed on reading: the later replaces the earlier, as turning it on would; a
+    // file still holding Automatic's buffs (its profiles not migrated yet) never hands them out
+    writeFileSync(join(dir, "ui-prefs.json"), JSON.stringify({ manualBuffs: ["wraithForm", "lichForm"], autoBuffs: { Dorran: ["bless"] }, buffSkills: { Dorran: { Chivalry: 90 } } }));
     const healed = asJson<{ prefs: Record<string, unknown> }>(await (await fetch(s2.url + "/api/ui-prefs")).json()).prefs;
-    assert.deepEqual([healed.manualBuffs, healed.autoBuffs], [["lichForm"], { constructor: ["wraithForm", "bless"] }]);
+    assert.deepEqual(healed, { manualBuffs: ["lichForm"] });
   } finally { await s2.close(); }
 });

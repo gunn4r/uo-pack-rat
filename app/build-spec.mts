@@ -6,7 +6,7 @@
 // Suit Builder's panel edits. Pure and browser-safe, like run-settings.mts and evaluate.mts.
 import { buffPlanOf, buffSkillValues, isBuffList, isBuffSkills, isBuffSkillsByCharacter, manualBase, manualPlan, normalizeBuffListsByCharacter, NO_CHARACTER, plannedProfile, runBuffs, type BuffPlan } from "./buffs.mts";
 import { RUN_DEFAULTS, RUN_SETTING_LIMITS, defaultStrLimit, runSettingsError } from "./run-settings.mts";
-import { migrateProfiles, templateFrom, TEMPLATE_KEYS, type Character, type EffectiveProfile, type Item, type Profile, type ProfilesFile, type RunBuffs, type RunSettings, type TemplateSource } from "./vault-lib.mts";
+import { migrateProfiles, templateFrom, TEMPLATE_KEYS, type Character, type EffectiveProfile, type Item, type Profile, type ProfilesFile, type RunBuffs, type RunSettings, type Template, type TemplateSource } from "./vault-lib.mts";
 
 // ---------------------------------------------------------------- the document
 export interface BuildIntent { floors: Record<string, number>; softFloors: string[]; weights: Record<string, number>; floorBonus: number; resistCaps: Record<string, number> }
@@ -156,7 +156,7 @@ export function templateLabel(builtins: TemplateMap, ref: string): string {
   return `${builtins[id]?.name || id} (built-in)`;
 }
 // The template fields a template sets, as the panel's settings.
-export const templateSettings = (t: TemplateEntry): FlatProfile => templateFrom(profileFromSpec(t.spec));
+export const templateSettings = (t: TemplateEntry): Template => templateFrom(profileFromSpec(t.spec));
 
 // A character's working profile for the Suit Builder: a copy of its saved settings, or, for a character with none, the
 // first template applied (the player's own, else the first built-in) with race human. The page's character picker,
@@ -183,12 +183,14 @@ export interface PlanContext {
   race?: string | null | undefined;
   suit?: Record<string, Item> | undefined;   // a hand-picked suit: planned as Manual plans it (buffs.mts manualPlan)
 }
+// A spec's pool with its STR limit worked out for the character.
+export type PoolSettings = Omit<BuildPool, "strLimit"> & { strLimit: number };
 export interface PlannedBuild {
   base: Profile;               // the profile before any buff (Manual's for a hand-picked suit): evaluate.mts's `profile`
   plan: BuffPlan;              // what the buffs plan with: evaluate.mts's `buffs`
   profile: EffectiveProfile;   // what the solvers score with (buffs.mts plannedProfile)
   buffs: RunBuffs | undefined; // the buffs a run keeps, absent with none on
-  pool: RunSettings;           // the candidate pool settings, as POST /api/optimize's by-character form takes them
+  pool: PoolSettings;          // the candidate pool settings, as POST /api/optimize's by-character form takes them
   opts: { restarts: number; exact: boolean; timeBudgetMs?: number; alternatives?: { count: number; tolerance: number } };
   snapshot: RunSettings;       // the settings a saved run keeps (the runs drawer labels, compares and reopens runs from it)
 }
@@ -202,7 +204,7 @@ export function planBuild(spec: BuildSpec, { character, worn, race, suit }: Plan
   const plan = suit ? manualPlan(character, worn, suit, character ? p.race! : null, on, edits) : buffPlanOf(character, worn, p.race, buffs, edits);
   const { intent, pool: sp } = spec, s = spec.search || {};
   const strLimit = sp.strLimit === "character" ? defaultStrLimit(character) : sp.strLimit;
-  const pool: RunSettings = { allowOthersWorn: sp.allowOthersWorn, strLimit, excludeTags: sp.excludeTags, excludeRoots: sp.excludeRoots, allowGargoyle: sp.allowGargoyle, medOnly: sp.medOnly,
+  const pool: PoolSettings = { allowOthersWorn: sp.allowOthersWorn, strLimit, excludeTags: sp.excludeTags, excludeRoots: sp.excludeRoots, allowGargoyle: sp.allowGargoyle, medOnly: sp.medOnly,
     excludeWeapons: sp.excludeWeapons, ubwsAnyWeapon: sp.ubwsAnyWeapon, excludeSkills: sp.excludeSkills, lockedSlots: sp.lockedSlots };
   const exact = s.exact ?? RUN_DEFAULTS.exact, budgetMs = s.budgetMs ?? RUN_DEFAULTS.budgetMs, altCount = s.altCount ?? 0, altTol = s.altTol ?? 0;
   const opts = { restarts: s.restarts ?? RUN_DEFAULTS.restarts, exact, ...(exact ? { timeBudgetMs: budgetMs } : {}), ...(exact && altCount > 0 ? { alternatives: { count: altCount, tolerance: altTol } } : {}) };
@@ -214,7 +216,21 @@ export function planBuild(spec: BuildSpec, { character, worn, race, suit }: Plan
 // ---------------------------------------------------------------- v2 → v3
 // What moves out of ui-prefs.json: Automatic's buffs by character, and the buff numbers edited by character ("" for
 // Manual's No character, which stays a view choice as `manualBuffSkills`).
-export interface LegacyBuffPrefs { autoBuffs?: unknown; buffSkills?: unknown; [key: string]: unknown }
+interface LegacyBuffPrefs { autoBuffs?: unknown; buffSkills?: unknown; manualBuffSkills?: unknown }
+const RACES = ["human", "elf", "gargoyle"];
+// A migrated spec keeps only the values the v3 check takes: a v2 file was checked loosely, so a value buildSpecError
+// refuses (a hand edit, say) takes its default instead, and the file stays one PUT /api/profiles accepts.
+function healSpec<T extends TemplateSpec>(spec: T): T {
+  const blank = buildSpec(), out = { ...spec } as T;
+  for (const group of ["intent", "pool"] as const) {
+    const fields = { ...spec[group] } as Record<string, unknown>;
+    for (const [k, v] of Object.entries(fields)) {
+      if (buildSpecError({ ...blank, [group]: { ...blank[group], [k]: v } }, "spec")) fields[k] = (blank[group] as unknown as Record<string, unknown>)[k];
+    }
+    (out as Record<string, unknown>)[group] = fields;
+  }
+  return out;
+}
 export interface MigratedProfiles<P> { profiles: ProfilesV3; prefs: P; changed: boolean; prefsChanged: boolean }
 // profiles.json to v3, once, with ui-prefs.json beside it. A v1 or v2 file goes through vault-lib's migrateProfiles
 // first; then each character's settings become its spec, with its Automatic buffs (ui-prefs `autoBuffs`) and its
@@ -232,14 +248,19 @@ export function migrateProfilesV3<P extends LegacyBuffPrefs>(file: ProfilesFile 
   const buffsOf = (name: string): BuildBuffs => ({ on: Object.hasOwn(on, name) ? on[name]! : [], skills: Object.hasOwn(skills, name) ? { ...skills[name] } : {} });
   const SETTINGS = new Set([...TEMPLATE_KEYS, "excludeRoots", "strLimit", "race", "template", "caps"]);
   const others = (e: object): Record<string, unknown> => Object.fromEntries(Object.entries(e).filter(([k]) => !SETTINGS.has(k)));
+  const isEntry = (e: unknown): e is FlatProfile => !!e && typeof e === "object" && !Array.isArray(e);
   const templates: Record<string, TemplateEntry> = {};
-  for (const [id, t] of Object.entries(v2.templates || {})) templates[id] = { ...others(t), spec: templateSpecFrom(t) };
+  for (const [id, t] of Object.entries(v2.templates || {})) if (isEntry(t)) templates[id] = { ...others(t), spec: healSpec(templateSpecFrom(t)) };
   const characters: Record<string, CharacterEntry> = {};
-  for (const [name, c] of Object.entries(v2.characters || {})) characters[name] = { ...others(c), ...characterEntry(c as FlatProfile, buffsOf(name)) };
-  const [first] = Object.keys(v2.templates || {});
+  const entry = (c: FlatProfile, buffs: BuildBuffs): CharacterEntry => {
+    const { race, template, spec } = characterEntry(c, buffs);
+    return { ...(RACES.includes(race as string) ? { race } : {}), ...(typeof template === "string" && template.length <= 128 ? { template } : {}), spec: healSpec(spec) };
+  };
+  for (const [name, c] of Object.entries(v2.characters || {})) if (isEntry(c)) characters[name] = { ...others(c), ...entry(c, buffsOf(name)) };
+  const [first] = Object.keys(templates);
   for (const name of new Set([...Object.keys(on), ...Object.keys(skills)])) {
     if (name === NO_CHARACTER || Object.hasOwn(characters, name)) continue;
-    characters[name] = characterEntry({ ...templateFrom(first ? v2.templates![first] : undefined), template: first, race: "human" }, buffsOf(name));
+    characters[name] = entry({ ...(first ? templateSettings(templates[first]!) : templateFrom()), template: first, race: "human" }, buffsOf(name));
   }
   const { templates: _t, characters: _c, schemaVersion: _v, ...top } = v2;
   const noCharacter = Object.hasOwn(skills, NO_CHARACTER) && Object.keys(skills[NO_CHARACTER]!).length ? { manualBuffSkills: { ...skills[NO_CHARACTER] } } : {};
