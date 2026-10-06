@@ -16,6 +16,8 @@ export const isJsonContentType = (v: string | string[] | undefined): boolean => 
 interface ReadBodyOptions {
   limit?: number;
   tooLargeMsg?: string;
+  // An empty body is a parse error (400) instead of {} (the MCP listener: JSON-RPC needs a message).
+  requireBody?: boolean;
 }
 
 // limit defaults to 50 MB (the prior, unnamed global cap); a route can pass a tighter one (profiles:
@@ -33,7 +35,7 @@ interface ReadBodyOptions {
 // client gets to finish writing and actually read its 413 — see the overflow branch below.
 const OVERFLOW_DRAIN_BYTES = 4 * 1024 * 1024;
 
-export function readBody(req: http.IncomingMessage, { limit = 50e6, tooLargeMsg = "body too large" }: ReadBodyOptions = {}): Promise<unknown> {
+export function readBody(req: http.IncomingMessage, { limit = 50e6, tooLargeMsg = "body too large", requireBody = false }: ReadBodyOptions = {}): Promise<unknown> {
   return new Promise((resolve, reject) => {
     // Global Constraint (spec §4.5): a PUT/POST must declare a JSON body. The SSE cancel beacon
     // (navigator.sendBeacon, no body) never calls readBody, so it's naturally exempt.
@@ -73,7 +75,7 @@ export function readBody(req: http.IncomingMessage, { limit = 50e6, tooLargeMsg 
       if (tooLarge) return reject(tooLarge);
       // A body that does not parse is the caller's mistake, not this server's: a 400 carrying
       // jsonErrorReason's shape of the failure (never the body's own bytes), and no stack in the log.
-      try { const buf = Buffer.concat(chunks); resolve(buf.length ? JSON.parse(buf.toString("utf8")) : {}); }
+      try { const buf = Buffer.concat(chunks); resolve(buf.length || requireBody ? JSON.parse(buf.toString("utf8")) : {}); }
       catch (e) {
         const bad = new Error(jsonErrorReason(e)) as HttpError;
         bad.statusCode = 400;

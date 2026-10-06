@@ -119,7 +119,7 @@ export function createMcp(opts: McpOptions): McpController {
       if (!r.ok) throw new ToolError(typeof data.error === "string" ? data.error : `${method} ${path} failed (${r.status})`);
       return data as never;
     },
-    memory: { actions: new Map(), replaced: new Set() },
+    memory: { actions: new Map(), replaced: new Set(), filled: new Set() },
     sleep: (ms) => new Promise((ok) => setTimeout(ok, ms).unref()),
   };
 
@@ -174,7 +174,7 @@ export function createMcp(opts: McpOptions): McpController {
       const asked = req.headers["mcp-protocol-version"];
       if (asked != null && !PROTOCOL_VERSIONS.includes(String(asked))) { req.resume(); return reply(res, 400, rpcError(null, -32600, `Unsupported MCP-Protocol-Version: ${String(asked).slice(0, 32)}`)); }
       let msg: unknown;
-      try { msg = await readBody(req, { limit: MAX_BODY_BYTES }); }
+      try { msg = await readBody(req, { limit: MAX_BODY_BYTES, requireBody: true }); }
       catch (e) {
         const status = (e as HttpError).statusCode;
         if (status === 413) { res.setHeader("connection", "close"); return reply(res, 413, { error: "body too large" }); }

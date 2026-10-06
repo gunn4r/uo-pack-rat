@@ -106,9 +106,10 @@ test("[fast] JSON-RPC edges: notifications, unknown methods and tools, parse err
     assert.equal(note.text, "");
     assert.equal((await rpc(port, "resources/list")).json!.error.code, -32601);
     assert.equal((await rpc(port, "tools/call", { name: "no_such_tool", arguments: {} })).json!.error.code, -32602);
-    const parse = await raw(port, { headers: AUTH, body: "{oops" });
-    assert.equal(parse.status, 400);
-    assert.equal(parse.json!.error.code, -32700);
+    for (const body of ["{oops", ""]) {
+      const parse = await raw(port, { headers: AUTH, body });
+      assert.deepEqual([parse.status, parse.json!.error.code], [400, -32700], JSON.stringify(body));
+    }
     const batch = await raw(port, { headers: AUTH, body: JSON.stringify([{ jsonrpc: "2.0", id: 1, method: "ping" }]) });
     assert.equal(batch.status, 400);
     assert.equal(batch.json!.error.code, -32600);
@@ -295,6 +296,9 @@ test("[fast] search_items: property rules the route cannot parse are refused, an
     assert.match((await call(port, "search_items", { props: ["nosuchkey:5"] })).text, /no item has the property "nosuchkey"/);
     const total = async (args: Record<string, unknown>): Promise<number> => { const r = await call(port, "search_items", args); assert.equal(r.ok, true, r.text); return r.data.total; };
     assert.equal(await total({ props: ["LRC:20"] }), await total({ props: ["lrc:20"] }));
+    // The extras the Inventory's property filter also offers.
+    for (const rule of ["strReq:le:60", "weight:le:5"]) assert.ok(await total({ props: [rule] }) > 0, rule);
+    assert.ok(((await call(port, "inventory_facets")).data.extraKeys as string[]).includes("strReq"));
     for (const [upper, lower] of [[{ slot: ["Ring"] }, { slot: ["ring"] }], [{ kind: ["Gear"] }, { kind: ["gear"] }], [{ tags: ["Cursed"] }, { tags: ["cursed"] }], [{ slot: ["ONEHANDED"] }, { slot: ["oneHanded"] }]] as const) {
       const n = await total(lower);
       assert.ok(n > 0, JSON.stringify(lower));
@@ -369,12 +373,19 @@ test("[fast] build_suit runs the Suit Builder for a character and saves the run;
     assert.equal((await call(port, "build_suit", { character: "Kestrel", noCharacter: true })).ok, false);
     assert.match((await call(port, "build_suit", { character: "Kestrel", template: "Nope" })).text, /no template named "Nope"/);
     assert.equal((await call(port, "build_suit", { character: "Kestrel", pinned: {}, timeBudgetSeconds: 2 })).data.reused, true, "an empty pinned map is no pins");
-    const ring = (k.suit as Record<string, { serial: number } | null>).ring;
-    if (ring) {
-      const pinned = (await call(port, "build_suit", { character: "Kestrel", pinned: { ring: ring.serial }, timeBudgetSeconds: 2 })).data;
+    // Any piece of the built suit, pinned in its slot.
+    const [pinSlot, ring] = Object.entries(k.suit as Record<string, { serial: number } | null>).find(([, it]) => it)!;
+    {
+      const pinned = (await call(port, "build_suit", { character: "Kestrel", pinned: { [pinSlot]: ring!.serial }, timeBudgetSeconds: 2 })).data;
       assert.equal(pinned.state, "done", JSON.stringify(pinned));
       assert.equal(pinned.currentScore, undefined, "a fill's currentScore is the pins' own, left out");
-      assert.equal(pinned.suit.ring.serial, ring.serial);
+      assert.equal(pinned.suit[pinSlot].serial, ring!.serial);
+      // Followed with get_suit_build instead, the same fill still leaves it out.
+      const started = (await call(port, "build_suit", { character: "Kestrel", pinned: { [pinSlot]: ring!.serial }, timeBudgetSeconds: 3, waitSeconds: 0 })).data;
+      let polled: Record<string, any> = started;
+      for (let i = 0; i < 200 && polled.state === "running"; i++) { await new Promise((ok) => setTimeout(ok, 25)); polled = (await call(port, "get_suit_build", { id: started.id })).data; }
+      assert.equal(polled.state, "done", JSON.stringify(polled));
+      assert.equal(polled.currentScore, undefined);
     }
     const fill = (await call(port, "build_suit", { noCharacter: true, timeBudgetSeconds: 2 })).data;
     assert.equal(fill.state, "done", JSON.stringify(fill));

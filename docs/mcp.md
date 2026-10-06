@@ -58,7 +58,7 @@ Tools that wait (`build_suit` for its result, the in-game tools for the bridge's
 
 | Tool | What it does |
 |---|---|
-| `build_suit`, `get_suit_build` | Runs the Suit Builder for a character with their saved profile, or a template, the buffs you name (the character's Automatic buffs by default), pinned pieces, or No character; waits for the result or answers with an id to poll. A finished build is saved as a run, like one from the app, so it counts toward the saved runs kept per character (Settings › Data retention). One runs at a time: a new call replaces one still running, and the replaced one says so |
+| `build_suit`, `get_suit_build` | Runs the Suit Builder for a character with their saved profile, or a template, the buffs you name (by default the character's Automatic buffs, or with pinned pieces or No character Manual's buffs while its totals count them), pinned pieces, or No character; waits for the result or answers with an id to poll. A finished build is saved as a run, like one from the app, so it counts toward the saved runs kept per character (Settings › Data retention). One runs at a time: a new call replaces one still running, and the replaced one says so |
 | `score_suit` | Totals a hand-picked suit against a profile, with Manual's buffs (or those you name), the way Manual does |
 
 **In game** (need **Allow in-game actions** and the bridge running in the game client):

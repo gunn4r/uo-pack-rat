@@ -9,18 +9,19 @@
 import { BRIDGE_ACTION_LABELS, BRIDGE_OFFLINE, GEAR_SLOTS, bridgeRefusal, characterProfile, containerChain, fullOf, requirementReport, resistSkillBonus, setRules, templateFrom, toOptItem, totalsOf } from "./vault-lib.mts";
 import type { BridgeAction, Character, CharacterEntryRaw, Container, EffectiveProfile, Item, ProfilesFile, PropMap, RunBuffs } from "./vault-lib.mts";
 import { buffPlanOf, buffSkillValues, manualProfile, normalizeBuffs, ownEntry, plannedProfile, runBuffs, BUFFS } from "./buffs.mts";
-import { parseItemQuery } from "./item-query.mts";
+import { EXTRA_COLS, parseItemQuery } from "./item-query.mts";
 import type { ValidatorSchema } from "./schema/validate.mts";
 import type { RulesV1 } from "./schema/types.d.mts";
 
 // A tool's failure in words the model reads (a route's own refusal, a bad argument): a tool result with isError.
 export class ToolError extends Error {}
 // `memory` lives as long as the server: the in-game commands this server queued (id → when), so a status check can tell
-// one still waiting for the bridge from an id it never queued, and the builds a newer build_suit call replaced.
+// one still waiting for the bridge from an id it never queued, the builds a newer build_suit call replaced, and the
+// builds that filled around pinned pieces (whose currentScore is left out).
 export interface ToolContext {
   api<T = Record<string, unknown>>(path: string, init?: { method?: string; body?: unknown; clientId?: string }): Promise<T>;
   sleep(ms: number): Promise<void>;
-  memory: { actions: Map<string, number>; replaced: Set<string> };
+  memory: { actions: Map<string, number>; replaced: Set<string>; filled: Set<string> };
 }
 type Schema = ValidatorSchema & { description?: string; properties?: Record<string, Schema>; items?: Schema };
 export interface Tool {
@@ -144,9 +145,10 @@ function resultSummary(result: Record<string, unknown> | null | undefined): Reco
   };
 }
 interface JobStatus { id: string; state: string; progress: Record<string, unknown> | null; result: Record<string, unknown> | null; ms: number | null; error: string | null; runId: string | null }
-// `filled`: a build that filled empty slots around pinned pieces, whose currentScore is the pins' own and reads as a huge
-// gain beside the score, so it is left out.
-function jobSummary(j: JobStatus, memory: ToolContext["memory"], filled = false): Record<string, unknown> {
+// A build that filled empty slots around pinned pieces (memory.filled) leaves out currentScore: it is the pins' own and
+// reads as a huge gain beside the score.
+function jobSummary(j: JobStatus, memory: ToolContext["memory"]): Record<string, unknown> {
+  const filled = memory.filled.has(j.id);
   if (j.state === "done") { const { currentScore, ...rest } = resultSummary(j.result); return { id: j.id, state: "done", runId: j.runId, ms: j.ms, ...rest, ...(filled ? {} : { currentScore }) }; }
   if (j.state === "running") return { id: j.id, state: "running", progress: j.progress ? { phase: j.progress.phase, elapsedMs: j.progress.elapsedMs, bestScore: j.progress.bestScore, explored: j.progress.explored } : null, hint: "poll get_suit_build with this id" };
   if (j.state === "cancelled" && memory.replaced.has(j.id)) return { id: j.id, state: "cancelled", error: "replaced by a newer build_suit call (one build_suit runs at a time)" };
@@ -172,9 +174,9 @@ async function follow(ctx: ToolContext, id: string, seconds: number): Promise<Re
     if (r) return { id, state: r.stopped ? "stopped" : r.ok && !(r.steps || []).some((s) => !s.ok) ? "done" : "failed", result: r };
     let state = st.current?.id === id ? "running" : null;
     if (!state) {
+      // This server's own record first; the Organize plan (a whole plan computed) only for an id it does not know.
       const at = ctx.memory.actions.get(id);
-      const trip = (await ctx.api<{ running: { id: string } | null }>("/api/organize/plan")).running;
-      if ((at != null && Date.now() - at < QUEUED_FOR_MS) || trip?.id === id) state = "queued";
+      if ((at != null && Date.now() - at < QUEUED_FOR_MS) || (await ctx.api<{ running: { id: string } | null }>("/api/organize/plan")).running?.id === id) state = "queued";
       else throw new ToolError("No such action (unknown or expired)");
     }
     if (Date.now() >= until) return { id, state, bridgeOnline: !!st.online, hint: "poll get_action_status with this id" };
@@ -219,7 +221,7 @@ export const TOOLS: Tool[] = [
       const inv = await inventory(ctx);
       const f = inv.facets;
       return { characters: Object.keys(inv.characters).filter((n) => !n.startsWith("_")).sort(), itemCount: inv.itemCount, slots: f.slots, kinds: f.kinds, rarities: f.rarities, slayers: f.slayers,
-        weaponSkills: f.weaponSkills, flags: f.flagKeys, properties: f.propKeys.map((key) => ({ key, name: fullOf(key) })), extraKeys: f.extraKeys };
+        weaponSkills: f.weaponSkills, flags: f.flagKeys, properties: f.propKeys.map((key) => ({ key, name: fullOf(key) })), extraKeys: [...(f.extraKeys as string[]), ...Object.keys(EXTRA_COLS)] };
     },
   },
   {
@@ -259,13 +261,14 @@ export const TOOLS: Tool[] = [
       const slot = spelled(f.slots), kind = spelled(f.kinds.map((k) => k.name)), slayer = spelled(f.slayers.map((x) => x.name)), lower = (v: string): string => v.toLowerCase();
       // Each property rule must parse the way the route parses it (item-query.mts's parseItemQuery), with a number and a
       // key the inventory has; a rule the route would drop would otherwise search the whole inventory without a word.
-      const keyOf = spelled([...f.propKeys, ...f.extraKeys]);
+      // The Inventory's property filter also takes the extras no property models (strReq, weight: item-query.mts's EXTRA_COLS).
+      const known = [...f.propKeys, ...f.extraKeys, ...Object.keys(EXTRA_COLS)], keyOf = spelled(known);
       const props = ((a.props as string[] | undefined) || []).map((rule) => {
         const parsed = parseItemQuery(new URLSearchParams([["prop", rule]])).props;
         const value = rule.split(":").at(-1)!.trim();
         if (parsed.length !== 1 || value === "" || !Number.isFinite(Number(value))) throw new ToolError(`property rule ${JSON.stringify(rule)} is not one of key:min, key:le:max, key:eq:value (a number, a key from inventory_facets)`);
         const key = keyOf(parsed[0]!.key);
-        if (!f.propKeys.includes(key) && !f.extraKeys.includes(key)) throw new ToolError(`property rule ${JSON.stringify(rule)}: no item has the property ${JSON.stringify(parsed[0]!.key)}; inventory_facets lists the keys`);
+        if (!known.includes(key)) throw new ToolError(`property rule ${JSON.stringify(rule)}: no item has the property ${JSON.stringify(parsed[0]!.key)}; inventory_facets lists the keys`);
         return [key, ...rule.split(":").slice(1).map((x) => x.trim())].join(":");
       });
       const sp = new URLSearchParams({ limit: String(limit), offset: String(offset) });
@@ -435,7 +438,7 @@ export const TOOLS: Tool[] = [
       character: CHARACTER,
       noCharacter: { type: "boolean", description: "Build from pieces nobody wears, on raw item totals (no Resisting Spells bonus, race or stats), as Manual's No character does. Leave character out." },
       template: { type: "string", minLength: 1, maxLength: 120, description: "A template's name, applied over the character's profile (the Suit Builder's templates)." },
-      buffs: BUFF_LIST,
+      buffs: { ...BUFF_LIST, description: "Buffs, forms and abilities counted as always on, by id. With none named: the character's Automatic buffs, or with pinned pieces or no character, Manual's buffs (while its totals count them)." },
       pinned: { type: "object", additionalProperties: SERIAL, description: `Pieces kept in place, slot → serial (slots: ${GEAR_SLOTS.join(", ")}); only the other slots are searched.` },
       timeBudgetSeconds: { type: "integer", minimum: 1, maximum: 3600, description: "How long the exact search may take, 60 by default." },
       otherSuits: { type: "integer", minimum: 0, maximum: 20, description: "Also list this many next-best suits (0 by default)." },
@@ -461,12 +464,13 @@ export const TOOLS: Tool[] = [
         ...(name ? { meta: { character: name, settings: { ...plan.snapshot, restarts: 200, exact: true, budgetMs: budget, altCount: alt, altTol: 0 }, inventoryStamp: newestStamp(inv.scans) } } : {}) };
       const r = await ctx.api<{ id?: string; cached?: boolean; run?: RunDoc; superseded?: string | null; warning?: string; poolSize: number }>("/api/optimize", { method: "POST", body, clientId: "mcp" });
       if (r.superseded) ctx.memory.replaced.add(r.superseded);
+      if (pinned && r.id) ctx.memory.filled.add(r.id);
       const head = { character: name, buffs: plan.buffs, poolSize: r.poolSize, ...(r.warning ? { warning: r.warning } : {}), ...(r.superseded ? { superseded: r.superseded } : {}) };
       if (r.cached && r.run) return { ...head, state: "done", reused: true, runId: r.run.id, ms: r.run.ms ?? null, ...resultSummary(r.run.result) };
       const until = Date.now() + waitOf(a) * 1000;
       for (;;) {
         const j = await ctx.api<JobStatus>(`/api/optimize/${r.id}/status`);
-        if (j.state !== "running" || Date.now() >= until) return { ...head, ...jobSummary(j, ctx.memory, !!pinned) };
+        if (j.state !== "running" || Date.now() >= until) return { ...head, ...jobSummary(j, ctx.memory) };
         await ctx.sleep(500);
       }
     },
