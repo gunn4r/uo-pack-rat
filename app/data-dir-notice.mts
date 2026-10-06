@@ -3,8 +3,8 @@
 // (app/ui/messages.mts re-exports it), so the banner and the terminal never disagree. Served to the page at
 // /data-dir-notice.mjs.
 
-// app/installer.mts's DataDirCheck, restated here because the page can't import that node:fs module: whether the
-// client's installed scripts write to this data folder.
+// Whether the client's installed scripts write to this data folder: app/installer.mts's checkScriptsDataDir
+// returns it (as DataDirCheck), and the page reads it from GET /api/setup.
 export type DataDirCheckInfo =
   | { status: "none" }
   | { status: "match"; scriptsDir: string }

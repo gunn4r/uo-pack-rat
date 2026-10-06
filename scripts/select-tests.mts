@@ -30,10 +30,10 @@ export const SCREENS: Record<string, string | string[]> = {
   runs: "ui-state", peek: "ui-state", containers: "ui-state", "view-state": "ui-state",
   scrolls: "ui-scrolls", "scrolls-model": "ui-scrolls",
   "house-map": "ui-map", "house-map-model": "ui-map", "world-map": "ui-map", "world-map-model": "ui-map",
-  organize: "ui-organize", "auto-organize": "ui-organize", "organize-data": "ui-organize", "rule-editor": "ui-organize",
+  organize: "ui-organize", "auto-organize": "ui-organize", "rule-editor": "ui-organize",
   "organize-model": ["ui-organize", "ui-map"], kinds: "ui-organize",
   "builder-buffs": "ui-builder", "builder-manual": "ui-builder", "manual-model": "ui-builder",
-  "item-browser": ["ui-state", "ui-builder"], "item-tip": "ui-tooltips",
+  "item-browser": ["ui-state", "ui-builder"],
 };
 
 const LITERAL = /["'`](\.\.?\/[^"'`\s]+)["'`]/g;

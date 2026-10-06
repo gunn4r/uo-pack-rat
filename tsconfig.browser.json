@@ -14,7 +14,6 @@
     "app/scan-schema.*",
     "app/paste-scan.*",
     "app/buffs.*",
-    "app/organize-config.*",
     "app/data-dir-notice.*",
     "app/schema/validate.*",
     "app/schema/types.d.mts"

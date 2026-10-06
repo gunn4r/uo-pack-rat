@@ -138,7 +138,7 @@ import { parseItemQuery, applyItemQuery, facetsOf, wantsHits, hitRow, type ItemQ
 import { optionalSlotsFor } from "./mip.mts";
 import { GEAR_SLOTS } from "./vault-lib.mts";
 import { isBuffList, isBuffListsByCharacter, isBuffSkillsByCharacter, isRunBuffs, normalizeBuffs, normalizeBuffListsByCharacter } from "./buffs.mts";
-import { startWatcher, jsonErrorReason, MAX_INBOX_BYTES, type StartWatcherOptions, type WatcherHandle } from "./watcher.mts";
+import { startWatcher, MAX_INBOX_BYTES, type StartWatcherOptions, type WatcherHandle } from "./watcher.mts";
 import { parsePastedScan, writeScanToInbox } from "./import.mts";
 import { createMcp } from "./mcp.mts";
 import { readBody, type HttpError } from "./read-body.mts";
@@ -165,6 +165,7 @@ import {
   repoFromPackage, checkForUpdates, type CheckForUpdatesResult, type FetchLike, checkScriptsDataDir, type DataDirCheck, type AdapterInfo,
 } from "./installer.mts";
 import { dataDirNotice } from "./data-dir-notice.mts";
+import { jsonErrorReason } from "./paste-scan.mts";
 import { homedir } from "node:os";
 
 import { resolveConfig, ensureLayout, APP_DIR, DATA_DIR_MODE, DATA_FILE_MODE, type Config } from "./config.mts";

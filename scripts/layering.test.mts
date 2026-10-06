@@ -1,27 +1,28 @@
 // layering.test.mts — [smoke]: the import layering of app/, scripts/ and electron/, read from the static
-// `import … from`, `export … from` and `import()` specifiers of every tracked non-test .mts (comment lines skipped):
+// `import … from`, `export … from` and `import()` specifiers of every non-test .mts in the tree, untracked ones included (comment lines skipped):
 //   1. nothing outside app/ui/ imports from app/ui/ (tests excluded);
 //   2. the browser-shared modules (tsconfig.browser.json's include, minus app/ui/**) reach no node: module;
 //   3. the modules outside app/ui/ have no import cycles (app/ui/ has some today; stage 4 extends this rule to it);
-//   4. everything app/ui/ reaches outside app/ui/ is in that include list, so it is compiled and served.
+//   4. every module app/ui/ reaches outside app/ui/ has its own "/<path>.mjs" route in app/vault-server.mts (the page
+//      gets a 404 at load otherwise; build:ui compiles it whether or not the include lists it) and reaches no node: module.
 // Rules 2-4 follow runtime imports only: `import type` and `export type` are erased, so they load nothing.
 import test from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { posix } from "node:path";
 
 const root = fileURLToPath(new URL("..", import.meta.url));
-const tracked = execFileSync("git", ["ls-files", "app", "scripts", "electron"], { cwd: root, encoding: "utf8" }).split("\n");
-const modules = tracked.filter((f) => f.endsWith(".mts") && !f.endsWith(".test.mts") && !f.endsWith(".d.mts"));
+const tracked = execFileSync("git", ["ls-files", "--cached", "--others", "--exclude-standard", "app", "scripts", "electron"], { cwd: root, encoding: "utf8" }).split("\n");
+const modules = tracked.filter((f) => f.endsWith(".mts") && !f.endsWith(".test.mts") && !f.endsWith(".d.mts") && existsSync(posix.join(root, f)));
 const isUi = (f: string): boolean => f.startsWith("app/ui/");
 
 type Edge = { spec: string; to: string | null; typeOnly: boolean };
 const STATIC = /^\s*(import|export)(\s+type\b)?(?:[^;'"`]*?\bfrom)?\s*["']([^"']+)["']/gm;
 const DYNAMIC = /\bimport\(\s*["']([^"']+)["']\s*\)/g;
 function edgesOf(file: string): Edge[] {
-  const text = readFileSync(posix.join(root, file), "utf8").replace(/^\s*\/\/.*$/gm, "").replace(/\/\*[\s\S]*?\*\//g, "");
+  const text = readFileSync(posix.join(root, file), "utf8").replace(/^\s*\/\/.*$/gm, "").replace(/^\s*\/\*[\s\S]*?\*\//gm, "");
   const resolve = (spec: string): string | null => spec.startsWith(".") ? posix.normalize(posix.join(posix.dirname(file), spec)) : null;
   return [
     ...[...text.matchAll(STATIC)].map((m) => ({ spec: m[3]!, to: resolve(m[3]!), typeOnly: !!m[2] })),
@@ -82,10 +83,19 @@ test("[smoke] layering: no import cycles outside app/ui/", () => {
   assert.deepEqual([...found], []);
 });
 
-test("[smoke] layering: everything app/ui/ reaches outside app/ui/ is in tsconfig.browser.json's include", () => {
+// The static routes app/vault-server.mts serves a shared module on, read from its `url.pathname === "/x.mjs"` checks.
+const routes = new Set([...readFileSync(posix.join(root, "app/vault-server.mts"), "utf8").matchAll(/url\.pathname === "(\/[^"]+\.mjs)"/g)].map((m) => m[1]!));
+const routeOf = (f: string): string => `/${f.slice("app/".length).replace(/\.mts$/, ".mjs")}`;
+
+test("[smoke] layering: every module app/ui/ reaches outside app/ui/ has its static route and reaches no node: module", () => {
+  assert.ok(routes.has("/vault-lib.mjs") && routes.has("/schema/validate.mjs"), `routes read: ${[...routes].join(", ")}`);
   const found = new Map<string, string>();
   for (const f of modules.filter(isUi)) {
-    for (const [to, path] of reach(f)) if (!isUi(to) && !browserIncluded(to) && !found.has(to)) found.set(to, path.join(" → "));
+    for (const [to, path] of reach(f)) {
+      if (isUi(to) || found.has(to)) continue;
+      if (!to.startsWith("app/")) found.set(to, `${path.join(" → ")}: not a module the page can load`);
+      else if (!routes.has(routeOf(to))) found.set(to, `${path.join(" → ")}: no ${routeOf(to)} route in app/vault-server.mts`);
+    }
   }
   assert.deepEqual([...found.values()], []);
 });
