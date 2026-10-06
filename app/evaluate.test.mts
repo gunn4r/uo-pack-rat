@@ -13,6 +13,7 @@ import type { RulesV1 } from "./schema/types.d.mts";
 import { upgradeScan } from "./scan-schema.mts";
 import { applyBuffs, buffPlanOf, buffSkillValues, manualBase, manualPlan, manualProfile, rawStats, weaponFlags } from "./buffs.mts";
 import { evaluateSuit, paperdoll, paperdollCaps } from "./evaluate.mts";
+import { templateSettings, type TemplateMap } from "./build-spec.mts";
 
 const HERE = fileURLToPath(new URL(".", import.meta.url));
 setRules(JSON.parse(readFileSync(join(HERE, "rules", "uoalive.json"), "utf8")) as RulesV1);
@@ -23,7 +24,8 @@ for (const it of Object.values(inv.items)) if (it.equippedBy) (wornBy[it.equippe
 const SKILLS = { "Resisting Spells": 100, Chivalry: 120, Necromancy: 100, "Spirit Speak": 100, Magery: 100, "Evaluating Intelligence": 110, Alchemy: 100, Bushido: 100 };
 const withSkills = (c: Character): Character => ({ ...c, skills: Object.fromEntries(Object.entries(SKILLS).map(([k, v]) => [k, { value: v }])) } as Character);
 const CHARACTERS: Array<[string, Character | null]> = [["Kestrel", withSkills(inv.characters.Kestrel!)], ["Dorran", withSkills(inv.characters.Dorran!)], ["Dorran, no skills", inv.characters.Dorran!], ["No character", null]];
-const templates = (JSON.parse(readFileSync(join(HERE, "data", "profiles.default.json"), "utf8")) as { templates: Record<string, Profile> }).templates;
+const templates: Record<string, Profile> = Object.fromEntries(Object.entries((JSON.parse(readFileSync(join(HERE, "data", "templates", "uoalive.json"), "utf8")) as { templates: TemplateMap }).templates)
+  .map(([id, t]) => [id, templateSettings(t)]));
 const PROFILES: Array<[string, Profile]> = [
   ["melee", { ...templates.melee!, softFloors: [] }],
   ["caster, elf, fire cap 95", { ...templates.caster!, softFloors: ["sdi"], race: "elf", resistCaps: { fireResist: 95 } }],

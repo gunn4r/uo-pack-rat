@@ -1,0 +1,58 @@
+{
+  "_comment": "Built-in Suit Builder templates for this shard (app/build-spec.mts). Read at run time and shown read-only as Built-in; Save as makes a player's own copy in <data>/profiles.json. Never copied there, so a release can change them. Each spec is held to buildSpecError (app/build-spec.test.mts checks every shipped file). weights = value of one point; floors = must-have minimums; caps are the shard's rules (app/rules/<shard>.json).",
+  "schemaVersion": 3,
+  "templates": {
+    "melee": {
+      "name": "Melee",
+      "spec": {
+        "intent": {
+          "floors": { "physResist": 65, "fireResist": 65, "coldResist": 65, "poisonResist": 65, "energyResist": 65 },
+          "softFloors": [],
+          "weights": { "physResist": 6, "fireResist": 6, "coldResist": 6, "poisonResist": 6, "energyResist": 6, "dci": 10, "hci": 10, "ssi": 5, "di": 3, "hpRegen": 4, "dexBonus": 4, "strBonus": 3, "hpi": 3, "stamRegen": 3, "stamInc": 2, "lmc": 1, "luck": 0.05, "tagPenalty": -25 },
+          "floorBonus": 1000,
+          "resistCaps": {}
+        },
+        "pool": { "lockedSlots": [], "excludeTags": [], "excludeSkills": [], "excludeRoots": [], "excludeWeapons": [], "ubwsAnyWeapon": true, "allowOthersWorn": false, "allowGargoyle": false, "medOnly": false, "strLimit": "character" }
+      }
+    },
+    "caster": {
+      "name": "Caster",
+      "spec": {
+        "intent": {
+          "floors": { "lrc": 100, "lmc": 40, "fc": 2, "fcr": 6, "physResist": 60, "fireResist": 60, "coldResist": 60, "poisonResist": 60, "energyResist": 60 },
+          "softFloors": [],
+          "weights": { "fc": 60, "fcr": 30, "lrc": 8, "lmc": 8, "manaRegen": 8, "dci": 6, "castingFocus": 6, "sdi": 4, "intBonus": 4, "physResist": 4, "fireResist": 4, "coldResist": 4, "poisonResist": 4, "energyResist": 4, "manaInc": 3, "hpi": 2, "tagPenalty": -25 },
+          "floorBonus": 1000,
+          "resistCaps": {}
+        },
+        "pool": { "lockedSlots": [], "excludeTags": [], "excludeSkills": [], "excludeRoots": [], "excludeWeapons": [], "ubwsAnyWeapon": true, "allowOthersWorn": false, "allowGargoyle": false, "medOnly": false, "strLimit": "character" }
+      }
+    },
+    "archer": {
+      "name": "Archer",
+      "spec": {
+        "intent": {
+          "floors": { "physResist": 65, "fireResist": 65, "coldResist": 65, "poisonResist": 65, "energyResist": 65, "hci": 35 },
+          "softFloors": [],
+          "weights": { "physResist": 6, "fireResist": 6, "coldResist": 6, "poisonResist": 6, "energyResist": 6, "ssi": 10, "hci": 10, "dci": 8, "di": 6, "dexBonus": 5, "stamInc": 3, "stamRegen": 3, "hpi": 3, "intBonus": 3, "manaInc": 2, "manaRegen": 2, "strBonus": 2, "lmc": 2, "hpRegen": 1, "luck": 0.05, "tagPenalty": -25 },
+          "floorBonus": 1000,
+          "resistCaps": {}
+        },
+        "pool": { "lockedSlots": [], "excludeTags": [], "excludeSkills": [], "excludeRoots": [], "excludeWeapons": [], "ubwsAnyWeapon": true, "allowOthersWorn": false, "allowGargoyle": false, "medOnly": false, "strLimit": "character" }
+      }
+    },
+    "tank": {
+      "name": "Tank",
+      "spec": {
+        "intent": {
+          "floors": { "physResist": 70, "fireResist": 70, "coldResist": 70, "poisonResist": 70, "energyResist": 70 },
+          "softFloors": [],
+          "weights": { "physResist": 8, "fireResist": 8, "coldResist": 8, "poisonResist": 8, "energyResist": 8, "dci": 10, "hpRegen": 8, "hpi": 6, "stamRegen": 3, "strBonus": 3, "hci": 2, "reflectPhys": 1, "tagPenalty": -25 },
+          "floorBonus": 1000,
+          "resistCaps": {}
+        },
+        "pool": { "lockedSlots": [], "excludeTags": [], "excludeSkills": [], "excludeRoots": [], "excludeWeapons": [], "ubwsAnyWeapon": true, "allowOthersWorn": false, "allowGargoyle": false, "medOnly": false, "strLimit": "character" }
+      }
+    }
+  }
+}
