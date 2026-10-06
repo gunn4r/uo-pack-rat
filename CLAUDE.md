@@ -25,6 +25,9 @@ Read this first, then `CONTRIBUTING.md` for the full contributor guide.
 - `TEST_SKIP_ELECTRON=1 ./scripts/test_runner.sh --changed`, then `TEST_SKIP_ELECTRON=1 ./scripts/test_runner.sh --fast`.
 - Read `test_logs/latest_summary.json` for results, not the console.
 - Do not run the Electron UI tests locally (`TEST_SKIP_ELECTRON=1` skips them). CI runs the full suite on macOS, Windows and Linux, and that is the merge gate.
+- The Electron tests reach into page modules by name (`page.evaluate` importing `/ui/<module>.mjs` and calling an export). Before moving or renaming an export under `app/ui/`, grep `scripts/ui-*.test.mts` for it: a test that calls a moved function fails only on CI.
+- Windows checks text files out with CRLF line endings (`.gitattributes` has `* text=auto`). Never compare a checked-in text fixture byte for byte with what the code writes; compare parsed JSON, or normalize `\r\n` first.
+- An Electron test that clicks something and then reads a file or a count must wait for the server or the page to finish (poll until it changes), not read once: slow CI runners expose every such race.
 
 ## Contract rules
 
