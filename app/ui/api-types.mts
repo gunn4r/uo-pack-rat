@@ -21,6 +21,7 @@ import type { RulesV1 } from "../schema/types.d.mts";
 import type { AutostartOutcome, Hotkey as PanelHotkey, PanelPrefs } from "../tazuo-panel-prefs.mts";
 import type { OrganizeConfig, Origin, RuleMatch } from "../organize-config.mts";
 import type { MissingItem } from "../missing.mts";
+import type { DataDirCheckInfo } from "../data-dir-notice.mts";
 
 // ---------------------------------------------------------------- shared fragments
 
@@ -168,13 +169,8 @@ export interface InstalledVersionInfo {
   version: string | null;
   files: Record<string, boolean>;
 }
-// GET /api/setup's dataDirCheck — app/installer.mts's DataDirCheck, restated here because the page
-// can't import that node:fs module: whether the client's installed scripts write to this data folder.
-export type DataDirCheckInfo =
-  | { status: "none" }
-  | { status: "match"; scriptsDir: string }
-  | { status: "mismatch"; scriptsDir: string; scriptsDataDir: string; dataDir: string }
-  | { status: "unreadable"; scriptsDir: string; error: string };
+// GET /api/setup's dataDirCheck (app/data-dir-notice.mts).
+export type { DataDirCheckInfo };
 export interface SetupApiResponse {
   ok: boolean;
   firstRun: boolean;

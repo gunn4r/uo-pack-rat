@@ -4,11 +4,10 @@
 // takes an injectable fetchImpl so callers (and tests) never depend on a real fetch global.
 import {
   existsSync, statSync, lstatSync, readdirSync, readFileSync, copyFileSync, realpathSync,
-  mkdirSync, openSync, readSync, closeSync, fstatSync, unlinkSync, constants, type Dirent, type Stats,
+  openSync, readSync, closeSync, fstatSync, unlinkSync, constants, type Dirent, type Stats,
 } from "node:fs";
 import { basename, join, resolve, dirname, isAbsolute } from "node:path";
 import { atomicReplace, writeFileAtomic } from "./atomic-write.mts";
-import { DATA_DIR_MODE } from "./config.mts";
 
 const VERSION_RE = /ADAPTER_VERSION\s*=\s*"([^"]+)"/;
 const ADAPTER_ID_RE = /^[a-z0-9-]+$/;
