@@ -9,7 +9,7 @@
 // the switch are ui-prefs fields too, and turning one on or off is a step in the suit's undo history.
 import { GEAR_SLOTS, RESIST_KEYS, effectiveProfile, profileResistCaps, requirementReport, toOptItem, totalsOf } from "../vault-lib.mts";
 import type { Character, EffectiveProfile, Item, OptItem, PropMap, RunBuffs } from "../vault-lib.mts";
-import { applyBuffs, buffById, buffSkillValues, isBuffSkillsByCharacter, normalizeBuffs, ownEntry, plannedProfile, runBuffs, toggleBuff, NO_CHARACTER, signed } from "../buffs.mts";
+import { applyBuffs, buffById, buffSkillValues, isBuffSkillsByCharacter, manualProfile, normalizeBuffs, ownEntry, plannedProfile, rawStats, runBuffs, toggleBuff, weaponFlags, NO_CHARACTER, signed } from "../buffs.mts";
 import type { BuffResult, BuffWho, Stats } from "../buffs.mts";
 import type { ItemQuery } from "../item-query.mts";
 import { state, invStamp } from "./store.mts";
@@ -181,9 +181,7 @@ export function buffInputsOf(name: string | null): BuffInputs {
   const c = name ? state.inv!.characters[name] : null;
   const { values, planned } = buffSkillValues(c ? c.skills || {} : null, buffEditsOf(name));
   if (!name || !c) return { values, planned, stats: null, race: null };
-  const worn = totalsOf(wornSet(name)), st = c.stats || {};
-  const raw = (k: string, pk: string): number => (Number(st[k]) || 0) - (worn[pk] || 0);
-  return { values, planned, stats: { str: raw("str", "strBonus"), dex: raw("dex", "dexBonus"), int: raw("int", "intBonus") }, race: state.profiles?.characters?.[name]?.race || "human" };
+  return { values, planned, stats: rawStats(c as Character, totalsOf(wornSet(name))), race: state.profiles?.characters?.[name]?.race || "human" };
 }
 const buffInputs = (): BuffInputs => (inputsMemo ||= buffInputsOf(manualCharacter()));
 // Buff numbers edited for a character (null: back to its own skill, or the default), saved for both modes.
@@ -206,7 +204,6 @@ function runInputEdits(name: string | null, b: RunBuffs | undefined): Record<str
 // The suit's pieces by slot (a piece no longer in the scans left out), and the held weapon's flags: a two-handed
 // weapon, else the one-handed slot's piece (Enchant reads its Spell Channeling).
 const suitItems = (): Record<string, Item> => Object.fromEntries(Object.entries(slots).flatMap(([s, serial]) => (items[serial] ? [[s, items[serial]!]] : [])));
-export const weaponFlags = (suit: Record<string, Item | undefined>): string[] => ((suit.twoHanded?.twoHanded ? suit.twoHanded : suit.oneHanded)?.flags) || [];
 // The strip's totals (paperdoll terms) and caps with the buffs that count: all that are on, or none with the switch off.
 function buffed(t: PropMap, caps: Record<string, number>, all = false, suit: Record<string, Item | undefined> = suitItems()): BuffResult {
   const { values, stats, race } = buffInputs(), who: BuffWho = { race, weaponFlags: weaponFlags(suit) };
@@ -494,9 +491,8 @@ export const filling = (): boolean => !!fill;
 const fillNow = (): Omit<FillStart, "empty"> => ({ who: manualCharacter(), buffs: countBuffs ? buffs : [], suit: slots, plan: JSON.stringify([fillProfile(), poolSettings()]) });
 const fillable = (): string[] => fillableSlots(slots, slots.twoHanded != null && !!items[slots.twoHanded]?.twoHanded);
 function fillProfile(): EffectiveProfile {
-  const name = manualCharacter(), p = readControls(), suit = suitItems(), { values, stats, race } = buffInputs();
-  return plannedProfile(name ? p : { ...p, race: undefined, resistCaps: undefined, caps: undefined }, name ? state.inv!.characters[name] as Character : null,
-    { on: countBuffs ? buffs : [], skills: values, stats, who: { race, weaponFlags: weaponFlags(suit) }, worn: totalsOf(suitOpt()) });
+  const name = manualCharacter();
+  return manualProfile(readControls(), name ? (state.inv!.characters[name] as Character | undefined) ?? null : null, name ? state.inv!.worn[name] || [] : [], suitItems(), buffInputs().race, countBuffs ? buffs : [], editsFor());
 }
 async function fillRest(): Promise<void> {
   if (fill || state.builder.job) return;

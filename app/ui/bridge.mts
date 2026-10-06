@@ -7,19 +7,16 @@ import { api } from "./api.mts";
 import { confirmDialog, icon } from "./components.mts";
 import { bridgeView, dataDirNotice, dataDirBanner } from "./messages.mts";
 import type { BridgeView } from "./messages.mts";
-import type { Item } from "../vault-lib.mts";
+import { containerChain, bridgeRefusal, BRIDGE_OFFLINE, BRIDGE_ACTION_LABELS } from "../vault-lib.mts";
+import type { BridgeAction, Item } from "../vault-lib.mts";
 import type { BridgeQueueApiResponse, BridgeStatusApiResponse } from "./api-types.mts";
 
 // ---------------------------------------------------------------- bridge (Highlight / Grab / Go to)
 // What a command needs of its target: an item, or a container highlighted as itself (the Containers view's
 // Highlight in game, issue #10: its own serial, `container` its parent, so the chain stops above it).
 export type BridgeTarget = Pick<Item, "serial" | "name" | "container" | "root"> & Partial<Pick<Item, "equippedBy" | "location">>;
-export function chainOf(it: BridgeTarget): number[] {
-  const chain: number[] = []; let cur = it.container != null ? state.inv!.containers[it.container] : null, guard = 0;
-  while (cur && guard++ < 8) { chain.unshift(+cur.serial); cur = cur.parent != null ? state.inv!.containers[cur.parent] : null; }
-  return chain;
-}
-export const BRIDGE_OFFLINE = "Bridge offline. Press Play on packrat-bridge.py in game.";
+export const chainOf = (it: BridgeTarget): number[] => containerChain(state.inv!.containers, it.container);
+export { BRIDGE_OFFLINE };
 // A ground root's position, which the bridge's "Go to" walks to. The fold copies every scanned
 // container field onto inv.containers, `pos` included (docs/scan-schema.md), so a ground root from a
 // scanner that records positions carries one; a backpack or bank root has none.
@@ -83,14 +80,7 @@ export function currentAdapter() {
   if (!id) return null;
   return state.setup?.adapters?.find((a) => a.id === id) || null;
 }
-function allowedBridgeActions(): string[] {
-  return currentAdapter()?.capabilities?.bridge || [];
-}
-const ALL_BRIDGE_ACTIONS = ["highlight", "grab", "goto"];
-// The action names the page's buttons use — the note names actions the same way the
-// missing buttons would have read, not the raw capability strings ("goto" reads as "Go to" in here,
-// same as the button that isn't there).
-const ACTION_LABELS: Record<string, string> = { highlight: "Highlight", grab: "Grab", goto: "Go to" };
+const ALL_BRIDGE_ACTIONS: BridgeAction[] = ["highlight", "grab", "goto"];
 // One short line explaining what the bridge controls are doing or why they're missing/limited — null
 // only when a real configured client is present AND every KNOWN action is present (today, that's
 // exactly TazUO's set, so a TazUO player who ran the wizard's install step sees nothing new here). A
@@ -126,7 +116,7 @@ export function bridgeNote(): string | null {
   const known = ALL_BRIDGE_ACTIONS.filter((a) => allowedSet.has(a));
   const missing = ALL_BRIDGE_ACTIONS.filter((a) => !allowedSet.has(a));
   if (!known.length) return `${name} can't run in-game actions — Highlight, Grab and Go to aren't available for this client.`;
-  return `${name} only supports ${known.map((a) => ACTION_LABELS[a]).join(", ")} here — ${missing.map((a) => ACTION_LABELS[a]).join(", ")} ${missing.length === 1 ? "isn't" : "aren't"} available for this client.`;
+  return `${name} only supports ${known.map((a) => BRIDGE_ACTION_LABELS[a]).join(", ")} here — ${missing.map((a) => BRIDGE_ACTION_LABELS[a]).join(", ")} ${missing.length === 1 ? "isn't" : "aren't"} available for this client.`;
 }
 // The note as a ready-to-insert element, or null when there's nothing to say (keeps callers from
 // repeating the `bridgeNote() ? el(...) : null` conditional at every call site).
@@ -230,19 +220,12 @@ function showDataSection(): void {
 // ---- inventory
 // Why one bridge action cannot run on one item right now, in words for its disabled button's tooltip, or
 // null when it can (spec 3.5: offline actions are disabled with the reason, never left live to fail).
-export function bridgeActionReason(action: "highlight" | "grab" | "goto", it: BridgeTarget): string | null {
-  const name = ACTION_LABELS[action];
-  if (it.equippedBy) return `${it.equippedBy} is wearing it.`;
-  const adapter = currentAdapter();
-  if (!adapter) return "No game client is set up. Choose one in Settings.";
-  if (!allowedBridgeActions().includes(action)) return `${adapter.name || adapter.id} can't ${name} from Pack Rat.`;
-  if (action === "goto" && !rootPos(it)) return "Go to needs a container on the ground whose position was scanned.";
-  if (!bridge.online) return BRIDGE_OFFLINE;
-  return null;
+export function bridgeActionReason(action: BridgeAction, it: BridgeTarget): string | null {
+  return bridgeRefusal(action, it, { adapter: currentAdapter(), online: bridge.online, hasPos: !!rootPos(it) });
 }
 // One bridge action from a row or the item peek: queued, and toasted as queued (the status poll toasts
 // the game's answer later).
-export async function runBridgeAction(action: "highlight" | "grab" | "goto", it: BridgeTarget, opts: { pos?: unknown } = {}): Promise<void> {
+export async function runBridgeAction(action: BridgeAction, it: BridgeTarget, opts: { pos?: unknown } = {}): Promise<void> {
   const r = await sendBridge(action, it, opts);
-  toast(r.ok ? `${ACTION_LABELS[action]}: ${it.name} queued for ${bridge.character}` : r.error, r.ok ? "" : "bad");
+  toast(r.ok ? `${BRIDGE_ACTION_LABELS[action]}: ${it.name} queued for ${bridge.character}` : r.error, r.ok ? "" : "bad");
 }

@@ -137,6 +137,31 @@ export interface Inventory {
   items: Record<string, Item>;
   scans: ScanSummary[];
 }
+// The containers a bridge command opens to reach something inside `container`: its root first, then each bag down to
+// `container` itself (at most 8, the bridge protocol's chain limit). The Highlight / Grab / Go to buttons and the MCP
+// tools both send it.
+export function containerChain(containers: Record<string, Container>, container: number | null): number[] {
+  const chain: number[] = []; let cur = container != null ? containers[container] : null, guard = 0;
+  while (cur && guard++ < 8) { chain.unshift(+cur.serial); cur = cur.parent != null ? containers[cur.parent] : null; }
+  return chain;
+}
+export type BridgeAction = "highlight" | "grab" | "goto";
+export const BRIDGE_ACTION_LABELS: Record<BridgeAction, string> = { highlight: "Highlight", grab: "Grab", goto: "Go to" };
+export const BRIDGE_OFFLINE = "Bridge offline. Press Play on packrat-bridge.py in game.";
+// What the refusal below knows of the bridge: the client it routes to (null: none set up), whether its heartbeat is
+// fresh, and whether the target's root has a scanned position (Go to walks there).
+export interface BridgeGate { adapter: { id: string; name?: string | undefined; capabilities?: { bridge?: string[] | undefined } | undefined } | null; online: boolean; hasPos: boolean }
+// Why one bridge action cannot run on one target right now, in words, or null when it can: the page's disabled
+// buttons (ui/bridge.mts) and the MCP tools refuse with the same sentence.
+export function bridgeRefusal(action: BridgeAction, it: { equippedBy?: string | null | undefined }, gate: BridgeGate): string | null {
+  if (it.equippedBy) return `${it.equippedBy} is wearing it.`;
+  const a = gate.adapter;
+  if (!a) return "No game client is set up. Choose one in Settings.";
+  if (!(a.capabilities?.bridge || []).includes(action)) return `${a.name || a.id} can't ${BRIDGE_ACTION_LABELS[action]} from Pack Rat.`;
+  if (action === "goto" && !gate.hasPos) return "Go to needs a container on the ground whose position was scanned.";
+  if (!gate.online) return BRIDGE_OFFLINE;
+  return null;
+}
 
 // What propertyKeys()/gearSkills() actually read — just `.items`, either the fold's Record form or
 // the plain array item-query.mts's facetsOf() passes ({items} over an already-filtered Item[]).
@@ -1176,6 +1201,14 @@ export interface ProfilesFile {
   characters?: Record<string, CharacterEntryRaw> | undefined;
   caps?: unknown;
   [key: string]: unknown;
+}
+// A character's working profile for the Suit Builder: a copy of its saved entry, or, for a character with none, the
+// first template applied (race human). The page's character picker and the MCP build tool both start from it.
+export function characterProfile(profiles: ProfilesFile, name: string): CharacterEntryRaw {
+  const saved = profiles.characters && Object.hasOwn(profiles.characters, name) ? profiles.characters[name] : undefined;
+  if (saved) return JSON.parse(JSON.stringify(saved)) as CharacterEntryRaw;
+  const [first] = Object.keys(profiles.templates || {});
+  return { ...templateFrom(first ? profiles.templates![first] : undefined), template: first, race: "human" };
 }
 // Profiles-file migration: `archetypes` (weights + floors, bound to a character by its `archetype`) became `templates`,
 // and the binding is the character's `template` (schemaVersion 1). `caps` (the global property-cap object) moved out

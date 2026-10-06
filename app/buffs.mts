@@ -4,8 +4,8 @@
 // Scripts/) or the UO Alive wiki, which wins where the two disagree (the other's number is said in the entry's note),
 // and carries how sure those numbers are. No DOM: Manual (ui/builder-manual.mts) and Automatic read the same model,
 // and app/buffs.test.mts checks it.
-import { RESIST_KEYS, resistSkillBonus, labelOf, effectiveProfile, profileResistCaps } from "./vault-lib.mts";
-import type { BuffShift, Character, EffectiveProfile, Profile, PropMap, RunBuffs } from "./vault-lib.mts";
+import { RESIST_KEYS, resistSkillBonus, labelOf, effectiveProfile, profileResistCaps, toOptItem, totalsOf } from "./vault-lib.mts";
+import type { BuffShift, Character, EffectiveProfile, Item, Profile, PropMap, RunBuffs } from "./vault-lib.mts";
 
 // ---------------------------------------------------------------- the numbers a buff scales with
 // A skill, by the scan's name for it (a character's own value is the highest of `skills`), or a value no scan carries
@@ -382,6 +382,35 @@ export function buffSkillValues(charSkills: Record<string, unknown> | null, edit
   }
   if (charSkills?.["Resisting Spells"] != null) values["Resisting Spells"] = own("Resisting Spells");
   return { values, planned };
+}
+// The held weapon's flags (the two-hander, else the one-hander), which Enchant's Spell Channeling check reads.
+export const weaponFlags = (suit: Record<string, Item | undefined>): string[] => ((suit.twoHanded?.twoHanded ? suit.twoHanded : suit.oneHanded)?.flags) || [];
+// A character's raw stats: what the scan says less what `wornTotals` (the worn suit's item totals) adds.
+export function rawStats(character: Character, wornTotals: PropMap): Stats {
+  const st = character.stats || {};
+  const raw = (k: string, pk: string): number => (Number(st[k]) || 0) - (wornTotals[pk] || 0);
+  return { str: raw("str", "strBonus"), dex: raw("dex", "dexBonus"), int: raw("int", "intBonus") };
+}
+// What a build for a character plans with (BuffPlan, below): `buffs` (the panel's, a saved run's, or an MCP tool's)
+// and the numbers they took, over the character's own and `edits` (the numbers edited for it); its raw stats and
+// `race`; and `worn`, what it wears now, which a potion's Enhance Potions and Enchant's Spell Channeling are read from.
+// The Suit Builder and the MCP tools (app/mcp-tools.mts) both plan through it.
+export function buffPlanOf(character: Character | null, worn: Item[], race: string | null | undefined, buffs: RunBuffs | undefined, edits: Readonly<Record<string, number>>): BuffPlan {
+  const { values } = buffSkillValues(character ? character.skills || {} : null, edits);
+  const totals = itemTotals(worn);
+  return { on: buffs?.on ?? [], skills: { ...values, ...buffs?.skills }, stats: character ? rawStats(character, totals) : null, worn: totals,
+    who: { race: race || "human", weaponFlags: weaponFlags(Object.fromEntries(worn.map((i) => [i.slot, i]))) } };
+}
+const itemTotals = (items: Item[]): PropMap => totalsOf(Object.fromEntries(items.map(({ serial, name, slot, props }) => [String(serial), { serial, name, slot, props }])));
+// What Manual plans a hand-picked suit with (its "Fill the rest automatically"; the MCP tools' score_suit and pinned
+// build_suit): the buffs `on`, whose Enhance Potions and Spell Channeling are read from `suit` (slot → piece) itself,
+// the raw stats from what the character wears now (`wornNow`) and `race` (null with no character); with no character
+// the profile's race, resist caps and caps are left out, so it plans on raw item totals.
+export function manualProfile(p: Profile, character: Character | null, wornNow: Item[], suit: Record<string, Item>, race: string | null, on: string[], edits: Readonly<Record<string, number>>): EffectiveProfile {
+  const { values } = buffSkillValues(character ? character.skills || {} : null, edits);
+  return plannedProfile(character ? p : { ...p, race: undefined, resistCaps: undefined, caps: undefined }, character,
+    { on, skills: values, stats: character ? rawStats(character, itemTotals(wornNow)) : null, who: { race, weaponFlags: weaponFlags(suit) },
+      worn: totalsOf(Object.fromEntries(Object.entries(suit).map(([slot, it]) => [slot, toOptItem(it)]))) });
 }
 export const buffContext = (skills: Skills, stats: Stats | null, totals: PropMap, who: BuffWho = {}, caps: Readonly<Record<string, number>> = {}): BuffContext =>
   ({ s: (id) => skills[id] ?? BUFF_INPUTS[id]?.def ?? 0, stats, totals, resist: skills["Resisting Spells"] ?? null, who, caps });
