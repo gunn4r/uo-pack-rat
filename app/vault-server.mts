@@ -678,30 +678,30 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
   async function getInventory(): Promise<InvValue> {
     harvestNow(Date.now());   // a trip that finished since is part of what every view shows
     let kindsSig = "no-kinds";
-    try { const st = statSync(itemKinds.file); kindsSig = `${st.ino}:${st.mtimeMs}:${st.size}`; } catch { /* no overrides */ }
+    try { const st = statSync(itemKindsStore.file); kindsSig = `${st.ino}:${st.mtimeMs}:${st.size}`; } catch { /* no overrides */ }
     const sig = `${scanStore.signature()}::${currentSettings.shard}::${kindsSig}`;
     if (foldCache.sig !== sig) {   // sig and value are only ever set together
       const snaps = scanStore.all();
-      const fold = foldSnapshots(snaps, itemKinds.read());
+      const fold = foldSnapshots(snaps, itemKindsStore.read());
       foldCache = { sig, value: { fold, missing: missingSinceLastScan(snaps, fold), snapshotCount: snaps.length, houses: latestHouses(snaps) } };
     }
     const folded = foldCache.value!;
     let stateSig = "no-state";
-    try { const st = statSync(organizeState.file); stateSig = `${st.ino}:${st.mtimeMs}:${st.size}`; } catch { /* no overlay yet */ }
+    try { const st = statSync(organizeStateStore.file); stateSig = `${st.ino}:${st.mtimeMs}:${st.size}`; } catch { /* no overlay yet */ }
     // The hour, so a move the week-old cut in pruneOverlay has retired leaves the view of a long-running server.
     const invSig = `${sig}::${stateSig}::${Math.floor(Date.now() / 3600e3)}`;
     if (invCache.sig === invSig) return invCache.value!;
-    const { moves } = pruneOverlay(organizeState.read(), folded.fold, Date.now());
+    const { moves } = pruneOverlay(organizeStateStore.read(), folded.fold, Date.now());
     invCache = { sig: invSig, value: { ...folded, inv: overlaidInventory(folded.fold, moves) } };
     return invCache.value!;
   }
 
-  const uiPrefs = createUiPrefsStore(join(CONFIG.dataDir, "ui-prefs.json"));
+  const uiPrefsStore = createUiPrefsStore(join(CONFIG.dataDir, "ui-prefs.json"));
   // The TazUO panel's hotkey and show-at-login choice (app/tazuo-panel.mts); the in-game panel writes it too.
   const PANEL_PREFS = join(CONFIG.dataDir, "tazuo-panel.json");
   const savePanel = (change: object): void => writePanelPrefs(PANEL_PREFS, { ...readPanelPrefs(PANEL_PREFS), ...change }, DATA_FILE_MODE);
-  const blacklist = createBlacklistStore(join(CONFIG.dataDir, "scan-blacklist.json"));
-  const itemKinds = createItemKindsStore(join(CONFIG.dataDir, "item-kinds.json"));
+  const blacklistStore = createBlacklistStore(join(CONFIG.dataDir, "scan-blacklist.json"));
+  const itemKindsStore = createItemKindsStore(join(CONFIG.dataDir, "item-kinds.json"));
   const organizeStore = createOrganizeStore(join(CONFIG.dataDir, "organize.json"));
   // <data>/house-map.json: the player's house names (issue #164, app/house-names.mts). A file that does not parse is
   // moved aside and the houses read unnamed; what a read set aside or left out goes to the log, once while it stays the same.
@@ -713,7 +713,7 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
     namesProblem = problem;
     return doc;
   }
-  const organizeState = createOrganizeStateStore(join(CONFIG.dataDir, "organize-state.json"));
+  const organizeStateStore = createOrganizeStateStore(join(CONFIG.dataDir, "organize-state.json"));
   // What harvestTrips needs of one adapter's status.json (GET /api/bridge/status reads the same file for the page).
   // `current` counts only while the bridge's heartbeat is recent: a client that quit mid-trip leaves its last
   // `current` in the file for good, which would otherwise hold Organize's one trip in flight forever.
@@ -734,11 +734,11 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
   // every view even with Organize closed; when it brought moves in, the state file is rewritten and every open page
   // told to reload its inventory. A Grab is harvested the same way. With nothing pending it only reads the state file.
   function harvestNow(now: number): { state: OrganizeState; bridges: Record<string, BridgeView> } {
-    const before = organizeState.read();
+    const before = organizeStateStore.read();
     if (!before.pending.length && !before.grabs.length) return { state: before, bridges: {} };
     const bridges = Object.fromEntries([...new Set([...before.pending, ...before.grabs].map((p) => p.adapter))].map((a) => [a, bridgeView(a, now)]));
     const state = harvestTrips(before, bridges, now);
-    if (JSON.stringify(state) !== JSON.stringify(before)) organizeState.write(state);
+    if (JSON.stringify(state) !== JSON.stringify(before)) organizeStateStore.write(state);
     if (JSON.stringify(state.moves) !== JSON.stringify(before.moves)) broadcastEvent("changed", { what: "inventory", at: now });
     return { state, bridges };
   }
@@ -751,11 +751,11 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
     const now = Date.now();
     const { state: harvested, bridges } = harvestNow(now);
     const state = noteSeen(pruneOverlay(harvested, fold, now), config, fold);
-    if (JSON.stringify(state) !== JSON.stringify(harvested)) organizeState.write(state);
+    if (JSON.stringify(state) !== JSON.stringify(harvested)) organizeStateStore.write(state);
     return { fold, config, state, problems, bridges };
   }
   const planOf = (fold: Inventory, config: OrganizeConfig, state: OrganizeState, putAway?: PutAway): Plan =>
-    planOrganize(fold, config, state.moves, { now: Date.now(), rarity: currentRules.rarity, suitPieces: suitsFor(config.rules.map((r) => r.match)), blacklist: blacklist.read().map((e) => e.serial), seen: state.seen, putAway });
+    planOrganize(fold, config, state.moves, { now: Date.now(), rarity: currentRules.rarity, suitPieces: suitsFor(config.rules.map((r) => r.match)), blacklist: blacklistStore.read().map((e) => e.serial), seen: state.seen, putAway });
   async function organizeNow(): Promise<{ fold: Inventory; config: OrganizeConfig; state: OrganizeState; plan: Plan; problems: string[]; bridges: Record<string, BridgeView> }> {
     const got = await organizeInputs();
     return { ...got, plan: planOf(got.fold, got.config, got.state) };
@@ -773,7 +773,7 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
     const queued = queueTrip(CONFIG.paths, adapter, putAway ? { ...input, putAway } : input, now);
     if (!queued.ok) return queued;
     const steps = plan.moves.filter((m) => m.trip === index).map(({ serial, name, from, to }) => ({ serial, name, from, to }));
-    organizeState.write({ ...state, pending: [...state.pending, { id: queued.id, adapter, index, stamp: plan.stamp, queuedAt: now.toISOString(), steps }] });
+    organizeStateStore.write({ ...state, pending: [...state.pending, { id: queued.id, adapter, index, stamp: plan.stamp, queuedAt: now.toISOString(), steps }] });
     return queued;
   }
   // Put away (issue #131, app/put-away.mts): the TazUO panel's request, handed over by the watcher of the inbox it was
@@ -822,7 +822,7 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
     if (root.kind === "backpack" && root.scannedBy === req.character) source = { from: "pack", container: +picked.serial, at: req.at };
     else if (root.kind === "ground" && config.labels[String(root.serial)]) source = { from: "ground", container: +picked.serial };
     else return { ok: false, msg: root.kind === "ground" ? "That container is not labeled for Organize." : "Pick your backpack, a container in it,", detail: root.kind === "ground" ? "Label it in the app first." : "or a container in a labeled one on the ground." };
-    const black = new Set(blacklist.read().map((e) => e.serial));
+    const black = new Set(blacklistStore.read().map((e) => e.serial));
     if (chain.some((s) => black.has(s))) return { ok: false, msg: "That container is blacklisted.", detail: "Pack Rat never opens it." };
     if (chain.some((s) => config.labels[String(s)]?.pinned)) return { ok: false, msg: "That container is pinned.", detail: "Organize never takes items out of it." };
     const plan = planOf(fold, config, state, source);
@@ -1135,7 +1135,7 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
         }
         const facets = facetsOf(itemsArr, { rarity: currentRules.rarity });
         // A blacklisted container is never opened again, so its last two scans are stale: it reports nothing.
-        const listed = new Set(blacklist.read().map((e) => String(e.serial)));
+        const listed = new Set(blacklistStore.read().map((e) => String(e.serial)));
         const missingCounts = Object.fromEntries(Object.entries(missing).filter(([root]) => !listed.has(root)).map(([root, list]) => [root, list.length]));
         const inventory = { scans: inv.scans, characters: inv.characters, containers: inv.containers, worn, rootCounts, missingCounts, itemCount: itemsArr.length, facets, propKeys: facets.propKeys };
         return send(res, 200, { ok: true, snapshotCount, demo: CONFIG.demo, inventory });
@@ -1146,7 +1146,7 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
         const root = url.searchParams.get("root") || "";
         if (!/^\d{1,10}$/.test(root)) return send(res, 400, { ok: false, error: "root must be a container serial" });
         const { missing } = await getInventory();
-        const listed = blacklist.read().some((e) => e.serial === +root);
+        const listed = blacklistStore.read().some((e) => e.serial === +root);
         return send(res, 200, { ok: true, items: (!listed && missing[String(+root)]) || [] });
       }
       if (req.method === "GET" && url.pathname === "/api/items") {
@@ -1183,13 +1183,13 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
         profilesStore.write(body);
         return send(res, 200, { ok: true });
       }
-      if (req.method === "GET" && url.pathname === "/api/ui-prefs") return send(res, 200, { ok: true, prefs: uiPrefs.read() });
+      if (req.method === "GET" && url.pathname === "/api/ui-prefs") return send(res, 200, { ok: true, prefs: uiPrefsStore.read() });
       if (req.method === "PUT" && url.pathname === "/api/ui-prefs") {
         // The page's own view choices (the Inventory tab's columns, the look, the sidebar). Kept here rather than in
         // the page's localStorage because the desktop app serves the page from a new port, and so a new
         // origin, on every launch. Only known fields, each checked, are written.
         const body = asObject(await readBody(req, { limit: 16e3 }));
-        const next = uiPrefs.read();
+        const next = uiPrefsStore.read();
         for (const key of UI_PREF_LISTS) {
           if (!Object.prototype.hasOwnProperty.call(body, key)) continue;
           const v = body[key];
@@ -1233,7 +1233,7 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
           if (!isBoundedString(body[key], 64)) return send(res, 400, { ok: false, error: `${key} must be a version of at most 64 characters` });
           next[key] = body[key];
         }
-        uiPrefs.write(next);
+        uiPrefsStore.write(next);
         return send(res, 200, { ok: true });
       }
       if (req.method === "GET" && url.pathname === "/api/settings") return send(res, 200, { ok: true, settings: currentSettings });
@@ -1813,8 +1813,8 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
         // A Grab is remembered like a trip (issue #148), so when it reports back the item reads as in the backpack
         // and the container it left has that slot free again (harvestTrips), until a scan says otherwise.
         if (line.action === "grab") {
-          const state = organizeState.read();
-          organizeState.write(addGrab(state, { id, adapter, serial: line.serial as number, name: line.name as string, from: (line.chain as number[]).at(-1) ?? null, queuedAt: line.queuedAt }));
+          const state = organizeStateStore.read();
+          organizeStateStore.write(addGrab(state, { id, adapter, serial: line.serial as number, name: line.name as string, from: (line.chain as number[]).at(-1) ?? null, queuedAt: line.queuedAt }));
         }
         return send(res, 200, { ok: true, id });
       }
@@ -1889,22 +1889,22 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
         broadcastEvent("changed", { what: "inventory", by: req.headers["x-client-id"], at: Date.now() });
         return send(res, 200, { ok: true });
       }
-      if (req.method === "GET" && url.pathname === "/api/blacklist") return send(res, 200, { ok: true, containers: blacklist.read() });
+      if (req.method === "GET" && url.pathname === "/api/blacklist") return send(res, 200, { ok: true, containers: blacklistStore.read() });
       if (req.method === "POST" && url.pathname === "/api/blacklist") {
         const { serial, name, where } = asObject(await readBody(req, { limit: 8e3 }));
         if (!isBoundedInt(serial, 1, MAX_SERIAL)) return send(res, 400, { ok: false, error: "serial required (positive integer)" });
         if (typeof name !== "string" || (where !== undefined && typeof where !== "string")) return send(res, 400, { ok: false, error: "name and where must be strings" });
-        const entries = blacklist.read();
+        const entries = blacklistStore.read();
         if (entries.some((e) => e.serial === serial)) return send(res, 200, { ok: true });
         if (entries.length >= 1000) return send(res, 409, { ok: false, error: "the blacklist is full (1000 containers)" });
         const place = where?.slice(0, 64).trim();
         entries.push({ serial, name: name.slice(0, 64).trim() || "container", addedAt: new Date().toISOString(), ...(place ? { where: place } : {}) });
-        blacklist.write(entries);
+        blacklistStore.write(entries);
         return send(res, 200, { ok: true });
       }
       const unlist = req.method === "DELETE" ? /^\/api\/blacklist\/(\d{1,10})$/.exec(url.pathname) : null;
       if (unlist) {
-        blacklist.write(blacklist.read().filter((e) => e.serial !== Number(unlist[1])));
+        blacklistStore.write(blacklistStore.read().filter((e) => e.serial !== Number(unlist[1])));
         return send(res, 200, { ok: true });
       }
       // The houses the scans captured (issue #10): GET /api/houses lists each with its size, chest count and container serials (what Inventory's "Show on map" looks an item's container up in), GET /api/houses/<id> serves one house's whole model. Both come from the fold's cache and the built models are memoised (houseModel); an id that names no house (or does not decode) is a 404.
@@ -1961,16 +1961,16 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
       // POST {name?, graphic?, kind} sets the kind for an exact item name and/or a graphic, and kind null takes those
       // entries away (Reset to automatic); POST /api/item-kinds/import {names?, graphics?} merges a file in, its
       // entries winning, and says what it left out. Every change re-kinds the inventory with no rescan (getInventory).
-      if (req.method === "GET" && url.pathname === "/api/item-kinds") return send(res, 200, { ok: true, ...kindsDocument(itemKinds.read()) });
+      if (req.method === "GET" && url.pathname === "/api/item-kinds") return send(res, 200, { ok: true, ...kindsDocument(itemKindsStore.read()) });
       if (req.method === "POST" && url.pathname === "/api/item-kinds") {
         const { name, graphic, kind } = asObject(await readBody(req, { limit: 8e3 }));
         if (name !== undefined && !(typeof name === "string" && isKindName(name))) return send(res, 400, { ok: false, error: `name must be an item name of at most ${KIND_LIMITS.name} characters` });
         if (graphic !== undefined && !isBoundedInt(graphic, 0, 0xFFFF)) return send(res, 400, { ok: false, error: "graphic must be an item graphic (0 to 65535)" });
         if (name === undefined && graphic === undefined) return send(res, 400, { ok: false, error: "name or graphic is required" });
         if (kind !== null && !OVERRIDE_KINDS.includes(kind as string)) return send(res, 400, { ok: false, error: `kind must be null or one of ${OVERRIDE_KINDS.join(", ")}` });
-        const base = itemKinds.read(), at = { name: name as string | undefined, graphic: graphic as number | undefined };
+        const base = itemKindsStore.read(), at = { name: name as string | undefined, graphic: graphic as number | undefined };
         const next = kind === null ? withoutKinds(base, at) : withKinds(base, kindsFor(at, kind as string));
-        const refused = itemKinds.save(next);
+        const refused = itemKindsStore.save(next);
         if (refused) return send(res, 409, { ok: false, error: refused });
         broadcastEvent("changed", { what: "inventory", by: req.headers["x-client-id"], at: Date.now() });
         return send(res, 200, { ok: true, ...kindsDocument(next!) });
@@ -1979,8 +1979,8 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
         const body = asObject(await readBody(req, { limit: MAX_KINDS_BYTES, tooLargeMsg: "the item kinds file is too large" }));
         const { overrides, problems } = salvageKindOverrides(body);
         if (!kindCount(overrides)) return send(res, 400, { ok: false, error: `the file holds no item kinds to import${problems.length ? ` (${problems[0]})` : ""}` });
-        const next = withKinds(itemKinds.read(), overrides);
-        const refused = itemKinds.save(next);
+        const next = withKinds(itemKindsStore.read(), overrides);
+        const refused = itemKindsStore.save(next);
         if (refused) return send(res, 409, { ok: false, error: `the import was refused: ${refused}` });
         broadcastEvent("changed", { what: "inventory", by: req.headers["x-client-id"], at: Date.now() });
         return send(res, 200, { ok: true, ...kindsDocument(next!), skipped: problems.length, problems: problems.slice(0, 5) });
@@ -1990,7 +1990,7 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
         const checked = checkOrganizeConfig(await readBody(req, { limit: MAX_SETUP_BYTES, tooLargeMsg: "the Organize setup is too large" }));
         if (!checked.ok) return send(res, 400, { ok: false, error: checked.error });
         // A blacklisted container is never opened by a scan, so a label on one could only plan from stale contents.
-        const black = new Set(blacklist.read().map((e) => e.serial));
+        const black = new Set(blacklistStore.read().map((e) => e.serial));
         const listed = Object.values(checked.config.labels).find((l) => black.has(l.serial));
         if (listed) return send(res, 400, { ok: false, error: `container ${listed.serial} is blacklisted and cannot be labeled` });
         organizeStore.write(checked.config);
@@ -2003,7 +2003,7 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
         const problem = matchProblem(match);
         if (problem) return send(res, 400, { ok: false, error: problem });
         const { inv } = await getInventory();
-        const counted = matchCount(inv, organizeStore.read().config, match as RuleMatch, { now: Date.now(), rarity: currentRules.rarity, suitPieces: suitsFor([match as RuleMatch]), blacklist: blacklist.read().map((e) => e.serial) });
+        const counted = matchCount(inv, organizeStore.read().config, match as RuleMatch, { now: Date.now(), rarity: currentRules.rarity, suitPieces: suitsFor([match as RuleMatch]), blacklist: blacklistStore.read().map((e) => e.serial) });
         return send(res, 200, { ok: true, ...counted });
       }
       if (req.method === "POST" && url.pathname === "/api/organize/propose") {
@@ -2017,7 +2017,7 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
         }
         const { fold, config, state, problems } = await organizeNow();
         if (problems.length) return send(res, 409, { ok: false, error: `organize.json was hand-edited and parts of it were dropped (${problems[0]}); open Organize and save the setup first` });
-        const r = proposeOrganize(fold, config, state.moves, { strategy: strategy as StrategyId, containers: containers as number[] | undefined, now: Date.now(), rarity: currentRules.rarity, suitPieces: suitsFor(config.rules.map((r) => r.match)), blacklist: blacklist.read().map((e) => e.serial), seen: state.seen });
+        const r = proposeOrganize(fold, config, state.moves, { strategy: strategy as StrategyId, containers: containers as number[] | undefined, now: Date.now(), rarity: currentRules.rarity, suitPieces: suitsFor(config.rules.map((r) => r.match)), blacklist: blacklistStore.read().map((e) => e.serial), seen: state.seen });
         return send(res, r.ok ? 200 : 409, r satisfies ProposeResult);
       }
       if (req.method === "GET" && url.pathname === "/api/organize/plan") {
