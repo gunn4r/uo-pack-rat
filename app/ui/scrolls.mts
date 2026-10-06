@@ -12,7 +12,7 @@ import { api } from "./api.mts";
 import { txt, box, icon, button, badge, kbd, keyValue, message, meter, searchInput, segmented, tableFoot } from "./components.mts";
 import { errorText } from "./messages.mts";
 import { plural, splitSerial } from "./inv-model.mts";
-import { showSearch } from "./inventory.mts";
+import { parseRoute, registerScreen, showSearch } from "./nav.mts";
 import { tagEls } from "./item-parts.mts";
 import {
   powerRows, powerLevels, sotRows, emptyBinderCount, scrollFacts, filterRows, powerQuery, sotQuery, placeGroups, planText, runText, fmtTenths, toTenths, whoText, listName,
@@ -59,9 +59,11 @@ function load(): void {
     });
 }
 
-// ---------------------------------------------------------------- entry points (app.mts)
+// ---------------------------------------------------------------- entry points (nav.mts, app.mts)
 // The route picked the view and a tab, or the inventory reloaded (a scan landed, a Forget): draw what is loaded and
 // fetch what is stale.
+registerScreen({ name: "scrolls", show: (r) => showScrolls(r.scrolls) });
+document.addEventListener("inventorychange", () => { if (parseRoute().tab === "scrolls") showScrolls(parseRoute().scrolls); });
 export function showScrolls(next: Tab): void {
   build();
   if (next !== tab) { tab = next; selected = null; }

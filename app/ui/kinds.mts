@@ -3,9 +3,8 @@
 // of the fixed kinds for every item with its name (the default) or its graphic, or puts back the automatic kind; the
 // server folds the same scans again and reload() redraws the Inventory, the Kind filter and the Organize plan from
 // that. Export saves the file through the browser's download (Electron's own Save dialog in the desktop app) and
-// Import reads one with a file input and merges it in, its entries winning (Settings › Data). reload() is imported
-// when it is needed: app.mts wires the page up as it loads, and this module is reached from inventory.mts, which the
-// DOM-less unit tests import.
+// Import reads one with a file input and merges it in, its entries winning (Settings › Data). reload() (inventory-data.mts) is
+// imported when it is needed.
 import { OVERRIDE_KINDS, gameName, kindNameKey, kindGraphicKey, ownKind, type Item } from "../vault-lib.mts";
 import { el, toast } from "./dom.mts";
 import { api } from "./api.mts";
@@ -40,7 +39,7 @@ export async function openClassify(it: Item): Promise<void> {
     catch (e) { toast(errorText(e), "bad"); return; }
     d?.close();
     toast(done, "good");
-    await (await import("./app.mts")).reload();
+    await (await import("./inventory-data.mts")).reload();
   };
   const save = (): Promise<void> => {
     const byGraphicNow = scopes.querySelector<HTMLInputElement>("input:checked")?.value === "graphic";
@@ -75,5 +74,5 @@ export async function importKinds(file: File): Promise<void> {
   try { r = await api<ItemKindsApiResponse>("/api/item-kinds/import", { method: "POST", body }); } catch (e) { toast(errorText(e), "bad"); return; }
   const n = Object.keys(r.names).length + Object.keys(r.graphics).length;
   toast(`Imported ${file.name}: you now have ${plural(n, "item kind")}.${r.skipped ? ` ${plural(r.skipped, "entry", "entries")} left out: ${r.problems?.[0]}.` : ""}`, r.skipped ? "" : "good");
-  await (await import("./app.mts")).reload();
+  await (await import("./inventory-data.mts")).reload();
 }

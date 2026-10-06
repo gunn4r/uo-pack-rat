@@ -4,7 +4,7 @@
 // row that's scrolled out of view don't carry everything the Suit Builder's result panel or the
 // hover tooltip need, so this fills state.itemCache from GET /api/items/by-serial on demand.
 // state.itemCache is seeded opportunistically by ui/inventory.mts's renderInventory() (a row it just
-// drew already IS a full record) and cleared by ui/app.mts's load() whenever the inventory refreshes.
+// drew already IS a full record) and cleared by ui/inventory-data.mts's reload() whenever the inventory refreshes.
 import { state } from "./store.mts";
 import { api } from "./api.mts";
 import type { Item } from "../vault-lib.mts";
