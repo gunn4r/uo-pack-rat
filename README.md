@@ -102,6 +102,10 @@ Organize reads each container's fill from its tooltip. If the plan says a contai
 
 Click **Copy scanner script** (in setup, or later in **Settings › Game client**, which also says when a newer scanner ships) and paste it into the web client's scripting window as a new script; run it near what you want scanned. Copy the block it prints (from `-----BEGIN PACK RAT SCAN-----` to `-----END PACK RAT SCAN-----`), open **Import** in Pack Rat (⌘I, or Ctrl+I on Windows and Linux) and paste it. The web client can't see your bank box and has no bridge, so Highlight, Grab and Go to don't work for it. More in [adapters/classicuo-web/README.md](adapters/classicuo-web/README.md).
 
+### AI assistants (MCP)
+
+Turn on **Settings › AI assistants (MCP)** and Claude Code (or another MCP client) can search your inventory, read character sheets and saved runs, and run the Suit Builder for you: "what's my best LRC ring?", "build Kestrel a 70-resist suit with Divine Fury on". **Copy command** gives a one-line `claude mcp add …` to run once. A second switch, **Allow in-game actions**, also lets it Highlight, Go to, Grab and run Organize trips, while you are at the keyboard. What the client reads, it may send to its own AI provider. [docs/mcp.md](docs/mcp.md) has the tools and the details.
+
 ### Play attended
 
 The scripts only read what your character can see, and only move an item when you click a button in the app. They never fight, gather or loot, and they don't keep acting while you are away. Most shards ban unattended fighting, gathering and looting, sometimes harshly; check your own shard's rules before running any script.
@@ -124,7 +128,7 @@ Everything Pack Rat knows lives in one folder on your computer (**Settings › D
 | Windows | `%APPDATA%\Pack Rat` |
 | Linux | `~/.config/Pack Rat` |
 
-The app sends nothing anywhere except the update check, which asks GitHub for the latest version number. A scan file lists everything a character owns and where your scanned chests are, which usually means where your house is, so look before you post one in public. [PRIVACY.md](PRIVACY.md) has the details.
+The app sends nothing anywhere except the update check, which asks GitHub for the latest version number. An MCP client you connect (above) reads what it asks for, and what it does with that is up to it. A scan file lists everything a character owns and where your scanned chests are, which usually means where your house is, so look before you post one in public. [PRIVACY.md](PRIVACY.md) has the details.
 
 ## Verifying a download
 

@@ -263,7 +263,7 @@ test("[slow] Settings: sections with the client warning, theme and appearance, R
     await page.locator("#inv-table tbody tr.item").first().waitFor({ timeout: 30_000 });
     await page.evaluate(() => { location.hash = "#/settings"; });
     await page.waitForSelector("#set-general .set-row");
-    // No section nav while the page is this short: the four sections' headings, and the client warning beside
+    // No section nav while the page is this short: the five sections' headings, and the client warning beside
     // Game client's.
     assert.equal(await page.locator("#settings-nav").count(), 0);
     assert.deepEqual(await page.locator("#settings-body .set-section h2").allInnerTexts(), ["General", "Game client", "Data", "AI assistants (MCP)", "Updates"]);
