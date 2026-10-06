@@ -17,7 +17,7 @@ import type * as Core from "../scripts/optimizer-core.mts";
 type OptOptionsFull = NonNullable<Parameters<typeof Core.optimizeSuit>[3]>;
 type OptResult = ReturnType<typeof Core.optimizeSuit>;
 
-// What app/vault-server.mts's `new Worker(new URL("./optimize-worker.mts", import.meta.url),
+// What app/services/jobs.mts's `new Worker(new URL("../optimize-worker.mts", import.meta.url),
 // { workerData: {...} })` call constructs (see CONTRIBUTING.md's optimize-worker.mts row).
 export interface OptimizeWorkerData {
   coreUrl: string;

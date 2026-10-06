@@ -126,11 +126,10 @@ import { pathToFileURL } from "node:url";
 import { dirname, join, resolve } from "node:path";
 import { spawn } from "node:child_process";
 import { statSync, lstatSync } from "node:fs";
-import { Worker } from "node:worker_threads";
 import { unlinkSync } from "node:fs";
 import { randomUUID, timingSafeEqual } from "node:crypto";
 import type { AddressInfo } from "node:net";
-import { runKey, reusableRun, runSummary, stripOpts, suitPieces, manualRun, SOLVER_VERSION, type RunOpts, type SavedRun } from "./runs-lib.mts";
+import { runKey, reusableRun, runSummary, suitPieces, manualRun, type RunOpts, type SavedRun } from "./runs-lib.mts";
 import { isPseudoCharacter, validateScan } from "./scan-schema.mts";
 import { loadRules, listRules } from "./rules.mts";
 import { validate, type ValidatorSchema } from "./schema/validate.mts";
@@ -156,6 +155,8 @@ import { createEventBus, sse } from "./services/events.mts";
 import { createSetupService } from "./services/setup.mts";
 import { createHousesService } from "./services/houses.mts";
 import { createRetentionService } from "./services/retention.mts";
+import { createJobsService, type Job, type JobTimings } from "./services/jobs.mts";
+export type { JobTimings } from "./services/jobs.mts";
 import { send, asObject, SSE_HEADERS } from "./http/respond.mts";
 import { isBoundedInt, isBoundedString, MAX_SERIAL, short } from "./guards.mts";
 import { writeFileAtomic } from "./atomic-write.mts";
@@ -187,8 +188,6 @@ import { homedir } from "node:os";
 
 import { resolveConfig, ensureLayout, APP_DIR, DATA_DIR_MODE, DATA_FILE_MODE, type Config } from "./config.mts";
 import type { Item, Inventory, OptItem } from "./vault-lib.mts";
-import type { WorkerMessage, WorkerDoneMessage } from "./optimize-worker.mts";
-import type { OptResult, ExactSolveResult, SolveProgress } from "./exact-solver.mts";
 const HERE = APP_DIR;
 // package.json content, handed to us already-parsed — the only fields this file reads off it
 // (version, repository) are trusted the same way installer.mts's repoFromPackage trusts its own
@@ -382,13 +381,6 @@ export interface HostBridge {
   openPath?: ((which: "data" | "logs") => Promise<void>) | undefined;
 }
 
-// How long a finished build's result stays readable (retentionMs, timed from when it finished), and
-// how far past its own time budget a build may still be running before it is cancelled as stuck
-// (runGraceMs). Only tests set these, for the same reason as watcherOptions below.
-export interface JobTimings {
-  retentionMs?: number | undefined;
-  runGraceMs?: number | undefined;
-}
 
 // Where the server looks for the player's game client: `home` (the scripts' ~ and ~/.pack-rat default)
 // and the auto-detected scripts folders per adapter (GET /api/setup's `candidates`, and the data-folder
@@ -701,68 +693,6 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
   const profilesStore = createProfilesStore({ file: PROFILES, defaults: DEFAULT_PROFILES, log: (line) => safeAppendLog(CONFIG.paths.log, line) });
 
   // ---- optimizer jobs: one worker thread per build, progress over Server-Sent Events -----------
-  // A job keeps its last progress snapshot and its final result, so a page that reconnects (or
-  // reloads) can catch up. Cancel = terminate the worker. Finished jobs are dropped after a while.
-  // An exact build (opts.exact) runs entirely inside that one worker: app/exact-solver.mts hands the
-  // problem to HiGHS, which explores the tree itself — there is nothing left to split across a
-  // thread pool, so (unlike the pre-HiGHS branch-and-bound) this is always exactly one worker per job.
-  //
-  // input.pools/current/profile stay `unknown` all the way through a job's life, same as the request
-  // body they came from — runKey (runs-lib.mts) and the Worker constructor's own workerData option
-  // (typed `any` by @types/node) are the only two places that ever touch them, and neither requires a
-  // narrower type. meta is the caller's own free-form bookkeeping object (poolSize/skipped/character/
-  // settings/warning are added to it by this file; nothing beyond that is read off it besides what a
-  // caller chooses to stash there, e.g. a saved run's inventoryStamp).
-  interface JobInput {
-    pools: unknown;
-    current: unknown;
-    profile: unknown;
-    opts: RunOpts;
-  }
-  type JobState = "running" | "done" | "cancelled" | "error";
-  interface Job {
-    id: string;
-    // Mirrors the `x-client-id` header's own declared type (string | string[] | undefined, per
-    // @types/node's IncomingHttpHeaders index signature for a header with no dedicated field) — this
-    // value is only ever compared for equality or handed back verbatim, never treated as a string
-    // specifically, so no narrowing cast is needed anywhere it's read.
-    clientId: string | string[] | null;
-    key: string;
-    meta: Record<string, unknown>;
-    input: JobInput;
-    save: boolean;                       // saved as a run when done (a Manual fill is not)
-    state: JobState;
-    startedAt: number;
-    progress: SolveProgress | null;
-    result: OptResult | ExactSolveResult | null;
-    ms: number | null;
-    error: string | null;
-    runId: string | null;
-    clients: Set<http.ServerResponse>;
-    workers: Set<Worker>;
-    // The stuck-build timer (budget + JOB_RUN_GRACE_MS); finish() clears it, so a finished job's
-    // result is held by the retention timer alone rather than pinned by this one's closure too.
-    stuckTimer: NodeJS.Timeout | null;
-  }
-  const jobs = new Map<string, Job>();
-  // A finished job (done, failed or cancelled) stays readable for this long AFTER it finishes, so a
-  // page that reconnects or reloads can still collect its result. This clock used to start with the
-  // build and also cancel a build still running when it rang: a player's 15-minute budget (the route
-  // accepts up to 60) was killed at 10:00, and a result finishing at 9:59 was dropped a second later.
-  const JOB_RETENTION_MS = jobTimings.retentionMs ?? 10 * 60 * 1000;
-  // A running build is only cancelled as stuck once it is this far past its own time budget (the
-  // core's 15 s default when it names none) — never before the budget the route accepted for it. The
-  // grace covers the heuristic restarts that run ahead of the exact phase's budget.
-  const JOB_RUN_GRACE_MS = jobTimings.runGraceMs ?? 10 * 60 * 1000;
-  const DEFAULT_TIME_BUDGET_MS = 15000;
-  // Set by close(): a worker terminated by shutdown is not a failed build.
-  let closing = false;
-  // A server-wide ceiling on live worker threads, on top of the per-X-Client-Id supersede below: that
-  // rule is skipped entirely when the header is absent, so a caller that omits (or rotates) it could
-  // start arbitrarily many `new Worker()` threads, each holding its full result for JOB_RETENTION_MS
-  // (post-review fix, Important 5). Four is well past what one page ever has in flight — it only ever
-  // runs one build at a time — and leaves room for a couple of stale jobs a client has walked away from.
-  const MAX_RUNNING_JOBS = 4;
   const timers = new Set<NodeJS.Timeout>();   // every setTimeout/setInterval this instance owns, so close() can stop them all
 
   // A folder dialog whose answer never comes back would otherwise hang this request for ever:
@@ -785,78 +715,9 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
     });
   }
 
-  // Job ids are crypto.randomUUID() (spec §4.5) rather than the old Date.now()-based id: the SSE
-  // events route is exempt from the bearer token (EventSource can't carry one), so the id itself
-  // must be unguessable — the events route's ownership check (below) is the other half of that.
-  function startJob(input: JobInput, key: string, meta: Record<string, unknown>, clientId: string | string[] | null = null, save = true): Job {
-    const id = randomUUID();
-    const job: Job = { id, clientId, key, meta, input, save, state: "running", startedAt: Date.now(), progress: null, result: null, ms: null, error: null, runId: null, clients: new Set(), workers: new Set(), stuckTimer: null };
-    jobs.set(id, job);
-    runJob(job).catch((e) => {
-      // Cancelled (or the server is shutting down): the terminated workers reject, nothing to report.
-      if (job.state !== "running" || closing) return;
-      // Same stack-free rule as the route-level 500s, and now the same ref-keyed, file-backed log too
-      // (post-review: job failures used to go to console.error only, with no ref and no file trail —
-      // unrecoverable in a headless/backgrounded deployment). Note the worker's own try/catch
-      // (optimize-worker.mts) already stringifies a caught error as `${e.stack}` before it ever leaves
-      // the worker thread, so e.message here can ALREADY be a full stack trace in that path (an
-      // uncaught worker crash instead reaches here as a normal Error with a normal e.message) — logging
-      // e.stack ?? e.message covers both, and the client only ever sees the sanitized ref line either way.
-      const ref = randomUUID().slice(0, 8);
-      safeAppendLog(CONFIG.paths.log, `${new Date().toISOString()} ${ref} job ${job.id}\n${(e && ((e as Error).stack || (e as Error).message)) || e}\n`);
-      job.state = "error"; job.error = `internal error (ref ${ref})`;
-      finish(job, "failed", { error: job.error });
-    });
-    const t = setTimeout(() => { timers.delete(t); job.stuckTimer = null; cancelJob(job); }, (input.opts.timeBudgetMs ?? DEFAULT_TIME_BUDGET_MS) + JOB_RUN_GRACE_MS);
-    t.unref(); timers.add(t); job.stuckTimer = t;
-    return job;
-  }
-  function spawnWorker(job: Job, data: { pools: unknown; current: unknown; profile: unknown; opts: RunOpts }, onProgress: (p: SolveProgress) => void, onWarn?: (message: string) => void): Promise<WorkerDoneMessage> {
-    return new Promise((resolve, reject) => {
-      const w = new Worker(new URL("./optimize-worker.mts", import.meta.url), { workerData: { coreUrl: CORE_URL, ...data } });
-      job.workers.add(w);
-      let settled = false;
-      w.on("message", (m: WorkerMessage) => {
-        if (m.type === "progress") onProgress(m.progress);
-        else if (m.type === "warn") { if (onWarn) onWarn(m.message); }
-        else if (m.type === "done") { settled = true; resolve(m); }
-        else if (m.type === "error") { settled = true; reject(new Error(m.error)); }
-      });
-      w.on("error", (e) => { settled = true; reject(e); });
-      w.on("exit", (code) => { job.workers.delete(w); if (!settled) reject(new Error(`worker exited with code ${code}`)); });
-    });
-  }
-  function emitProgress(job: Job, p: SolveProgress): void { job.progress = p; broadcast(job, "progress", p); }
-
-  async function runJob(job: Job): Promise<void> {
-    const { pools, current, profile, opts } = job.input;
-    const t0 = Date.now();
-    const onWarn = (message: string) => safeAppendLog(CONFIG.paths.log, `${new Date().toISOString()} job ${job.id} warn: ${message}\n`);
-    const { result } = await spawnWorker(job, { pools, current, profile, opts }, (p) => emitProgress(job, p), onWarn);
-    if (job.state !== "running") return;
-    job.state = "done"; job.result = result; job.ms = Date.now() - t0;
-    if (job.save) try { job.runId = saveRun(job).id; } catch (e) { console.error(`could not save run ${job.id}: ${(e as Error).message}`); }
-    finish(job, "done", { result, ms: job.ms, runId: job.runId });
-  }
-  function cancelJob(job: Job): void {
-    if (job.state !== "running") return;
-    job.state = "cancelled";
-    job.ms = Date.now() - job.startedAt;
-    for (const w of job.workers) w.terminate();
-    finish(job, "cancelled", { ms: job.ms });
-  }
-  function jobSnapshot(job: Job) { return { id: job.id, state: job.state, progress: job.progress, result: job.result, ms: job.ms, error: job.error, runId: job.runId }; }
-  function broadcast(job: Job, event: string, data: unknown): void { for (const c of job.clients) sse(c, event, data); }
-  // The retention clock starts here, when the job ends — however it ends.
-  function finish(job: Job, event: string, data: unknown): void {
-    broadcast(job, event, data); for (const c of job.clients) c.end(); job.clients.clear();
-    if (job.stuckTimer) { clearTimeout(job.stuckTimer); timers.delete(job.stuckTimer); job.stuckTimer = null; }
-    const t = setTimeout(() => { jobs.delete(job.id); timers.delete(t); }, JOB_RETENTION_MS);
-    t.unref(); timers.add(t);
-  }
   function streamJob(job: Job, res: http.ServerResponse): void {
     res.writeHead(200, SSE_HEADERS);
-    sse(res, "hello", jobSnapshot(job));   // catch-up: last progress, or the final outcome if it already ended
+    sse(res, "hello", jobService.snapshot(job));   // catch-up: last progress, or the final outcome if it already ended
     if (job.state !== "running") { res.end(); return; }
     job.clients.add(res);
     const ping = setInterval(() => sse(res, "ping", { at: Date.now() }), 5000);
@@ -866,6 +727,7 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
 
   // ---- saved runs: one JSON file per finished build in app/data/runs/ -------------------------------
   const runStore = createRunsStore(RUNS);
+  const jobService = createJobsService({ coreUrl: CORE_URL, timings: jobTimings, runStore, log: (line) => safeAppendLog(CONFIG.paths.log, line) });
   // Every saved suit's pieces, for Organize (issue #133), read only when a rule asks to skip them: the live count
   // asks on every pause in typing, and few setups have such a rule.
   function suitsFor(matches: RuleMatch[]): Set<number> | undefined { return matches.some((m) => m.skipSuits) ? suitPieces(runStore.all()) : undefined; }
@@ -873,16 +735,6 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
   // ---- retention (issue #28): old scans and saved runs, per settings.json's `retention` ----------------
   const retentionService = createRetentionService({ demo: CONFIG.demo, retention: () => appSettings.saved().retention, scanStore, runStore, events: eventBus,
     log: (line) => safeAppendLog(CONFIG.paths.log, line) });
-  function saveRun(job: Job) {
-    const meta = job.meta || {};
-    const run = { id: job.id, key: job.key, character: meta.character || "?", createdAt: new Date().toISOString(), label: "",
-      schemaVersion: 1, solverVersion: SOLVER_VERSION,
-      settings: meta.settings || {}, inventoryStamp: meta.inventoryStamp || null, poolSize: meta.poolSize ?? null, skipped: meta.skipped || {},
-      opts: stripOpts(job.input.opts), budgetMs: job.input.opts.timeBudgetMs ?? null, explored: job.progress?.explored ?? null,
-      result: job.result, ms: job.ms };
-    runStore.write(run);
-    return run;
-  }
 
   // The built-in MCP server (app/mcp.mts, issue #211): its own listener and token, opened once this server listens
   // (when mcp.json says on) and on PUT /api/mcp; its tools call this server's routes over loopback.
@@ -1476,7 +1328,7 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
         const poolSize = typeof meta.poolSize === "number" ? meta.poolSize : Object.values(pools).reduce((a: number, v) => a + (Array.isArray(v) ? v.length : 0), 0);
         // The by-character form doesn't hand the caller's meta a poolSize/skipped up front (unlike the
         // old form, whose client computes them itself — ui/builder.mts) — fill them in now so a saved
-        // run started this way (saveRun() below reads job.meta) carries the same figures the response does.
+        // run started this way (the jobs service's saveRun() reads job.meta) carries the same figures the response does.
         if (character) { meta.poolSize = poolSize; meta.skipped = skipped; }
         if (hit) return send(res, 200, { ok: true, cached: true, run: hit, poolSize, skipped, current, blocked });
         // warm start: this character's newest saved suit, re-scored under the new settings
@@ -1485,25 +1337,10 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
         // real shape is an OptAssignment-like {slot -> {serial} | null} map, looser than RunResult's
         // own declared fields (an index-signature read, same trust as everywhere else in this route).
         if (last) fullOpts.warmStart = Object.fromEntries(Object.entries(last.result!.best as Record<string, { serial: number } | null>).map(([slot, it]) => [slot, it ? it.serial : null]));
-        // Cap: one running optimize job per client. A real client id is only ever supplied by the
-        // page's own ui/api.mts; a curl/test caller with no X-Client-Id is never deduped against itself.
-        let previous: Job | null = null;
-        if (headerClientId) {
-          for (const j of jobs.values()) {
-            if (j.clientId && j.clientId === headerClientId && j.state === "running") { previous = j; break; }
-          }
-        }
-        // …and a server-wide ceiling behind it, for the callers the per-client rule can't see (see
-        // MAX_RUNNING_JOBS). Checked BEFORE the supersede, counting the job it would replace as already
-        // freed, so a refused request never cancels anything: a page that rebuilds while its own job
-        // is still running never trips it, and one that does trip it keeps the build it had.
-        let running = 0;
-        for (const j of jobs.values()) if (j.state === "running" && j !== previous) running++;
-        if (running >= MAX_RUNNING_JOBS) return send(res, 429, { ok: false, error: "too many builds are already running; try again in a moment" });
-        if (previous) cancelJob(previous);
-        const superseded = previous ? previous.id : null;
-        const jobClientId = headerClientId || randomUUID();
-        const job = startJob({ pools, current, profile, opts: fullOpts }, key, meta, jobClientId, !fill);
+        // One running build per client, behind a server-wide ceiling (app/services/jobs.mts submit).
+        const started = jobService.submit({ pools, current, profile, opts: fullOpts }, key, meta, headerClientId, !fill);
+        if (!started) return send(res, 429, { ok: false, error: "too many builds are already running; try again in a moment" });
+        const { job, superseded } = started;
         if (poolSize > 50000) job.meta.warning = "over 50,000 candidates; the exact solver may take a while";
         return send(res, 200, { ok: true, id: job.id, warmFrom: last ? last.id : null, superseded, warning: job.meta.warning, poolSize, skipped, current, blocked });
       }
@@ -1563,10 +1400,10 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
       }
       const jobMatch = url.pathname.match(/^\/api\/optimize\/([\w-]+)\/(events|cancel|status)$/);
       if (jobMatch) {
-        const job = jobs.get(jobMatch[1]!);
+        const job = jobService.get(jobMatch[1]!);
         if (!job) return send(res, 404, { ok: false, error: "no such job (the server may have restarted)" });
-        if (jobMatch[2] === "cancel" && req.method === "POST") { cancelJob(job); return send(res, 200, { ok: true, state: job.state }); }
-        if (jobMatch[2] === "status") return send(res, 200, { ok: true, ...jobSnapshot(job) });
+        if (jobMatch[2] === "cancel" && req.method === "POST") { jobService.cancel(job); return send(res, 200, { ok: true, state: job.state }); }
+        if (jobMatch[2] === "status") return send(res, 200, { ok: true, ...jobService.snapshot(job) });
         if (jobMatch[2] === "events" && req.method === "GET") {
           // The events route is exempt from the bearer token (EventSource can't send one), so this
           // ownership check is what stops a different client from reading this job's progress: the
@@ -1942,14 +1779,13 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
       // closing first: a build still running when the server quits ends because of the quit, and its
       // worker's exit must not be logged as an internal error with a ref (a phantom crash in every
       // server.log attached to a bug report after a quit mid-build).
-      closing = true;
-      for (const job of jobs.values()) for (const w of job.workers) w.terminate();
+      jobService.stop();
       for (const w of watchers.values()) w.close();
       // server.close() waits for every connection "waiting for a response" — an attached SSE stream
       // is one, and would otherwise hold teardown open until its keep-alive idle timeout. End every
       // open stream (both the per-job optimize streams and the shared /api/events stream) and
       // force-close the sockets so close() resolves promptly.
-      for (const job of jobs.values()) { for (const c of job.clients) c.end(); job.clients.clear(); }
+      jobService.endStreams();
       eventBus.close();
       server.closeAllConnections();
       // ok's declared parameter type (void | PromiseLike<void>) is narrower than server.close()'s own
