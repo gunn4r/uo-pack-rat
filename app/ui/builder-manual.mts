@@ -9,7 +9,7 @@
 // the switch are ui-prefs fields too, and turning one on or off is a step in the suit's undo history.
 import { GEAR_SLOTS, RESIST_KEYS, effectiveProfile, profileResistCaps, requirementReport, toOptItem, totalsOf } from "../vault-lib.mts";
 import type { Character, EffectiveProfile, Item, OptItem, PropMap, RunBuffs } from "../vault-lib.mts";
-import { applyBuffs, buffById, buffSkillValues, isBuffSkillsByCharacter, normalizeBuffs, ownEntry, plannedProfile, rawStats, runBuffs, toggleBuff, weaponFlags, NO_CHARACTER, signed } from "../buffs.mts";
+import { applyBuffs, buffById, buffSkillValues, isBuffSkillsByCharacter, manualProfile, normalizeBuffs, ownEntry, plannedProfile, rawStats, runBuffs, toggleBuff, weaponFlags, NO_CHARACTER, signed } from "../buffs.mts";
 import type { BuffResult, BuffWho, Stats } from "../buffs.mts";
 import type { ItemQuery } from "../item-query.mts";
 import { state, invStamp } from "./store.mts";
@@ -491,9 +491,8 @@ export const filling = (): boolean => !!fill;
 const fillNow = (): Omit<FillStart, "empty"> => ({ who: manualCharacter(), buffs: countBuffs ? buffs : [], suit: slots, plan: JSON.stringify([fillProfile(), poolSettings()]) });
 const fillable = (): string[] => fillableSlots(slots, slots.twoHanded != null && !!items[slots.twoHanded]?.twoHanded);
 function fillProfile(): EffectiveProfile {
-  const name = manualCharacter(), p = readControls(), suit = suitItems(), { values, stats, race } = buffInputs();
-  return plannedProfile(name ? p : { ...p, race: undefined, resistCaps: undefined, caps: undefined }, name ? state.inv!.characters[name] as Character : null,
-    { on: countBuffs ? buffs : [], skills: values, stats, who: { race, weaponFlags: weaponFlags(suit) }, worn: totalsOf(suitOpt()) });
+  const name = manualCharacter();
+  return manualProfile(readControls(), name ? (state.inv!.characters[name] as Character | undefined) ?? null : null, name ? state.inv!.worn[name] || [] : [], suitItems(), buffInputs().race, countBuffs ? buffs : [], editsFor());
 }
 async function fillRest(): Promise<void> {
   if (fill || state.builder.job) return;
