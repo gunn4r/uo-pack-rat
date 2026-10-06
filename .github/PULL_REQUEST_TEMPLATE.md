@@ -4,7 +4,7 @@ Closes #N / Part of #N
 
 ## Change kind(s)
 
-Which kinds of change from [`docs/change-checklists.md`](../../blob/main/docs/change-checklists.md) this is (for example: add an HTTP route, change the scan format).
+Which kinds of change from [`docs/change-checklists.md`](https://github.com/gunn4r/uo-pack-rat/blob/main/docs/change-checklists.md) this is (for example: add an HTTP route, change the scan format).
 
 - [ ] Checklist walked for each kind.
 
